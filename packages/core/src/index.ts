@@ -745,3 +745,16 @@ export type {
   StreamReadOptions,
   StreamSegment,
 } from "./akasha.js";
+// TCRN-CROSS-STORY-468 R3-R5, STORY-470 R4: every stream of a library read (with a timeout per
+// file) and replayed merged: the version vector, rejected events and key aliases.
+export { AKASHA_READ_TIMEOUT_DEFAULT_MS, compareMergedEvents, readAllStreams } from "./akasha.js";
+export type { LibraryRead, LibraryReadOptions, MergedEvent, StreamRead } from "./akasha.js";
+export {
+  LIBRARY_HEAD_SCHEMA_VERSION,
+  libraryHeadDigest,
+  libraryWorkspaceMetadata,
+  materializeLibrary,
+  materializeLibraryRead,
+  recordAliases,
+} from "./workspace.js";
+export type { KeyAlias, LibraryReplay, LibraryStreamHead, RejectedEvent } from "./workspace.js";

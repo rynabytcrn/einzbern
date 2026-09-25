@@ -42,6 +42,10 @@ import type { StorageBackend, StorageDirectoryEntry } from "./storage-backend.js
 import { SegmentedBackend } from "./segmented-backend.js";
 import { readStorageHomeDeclaration } from "./storage-home.js";
 import { FileLockError, acquireFileLock, withFileLock } from "./file-lock.js";
+import { readAllStreams } from "./akasha.js";
+import type { LibraryReadOptions, MergedEvent, StreamManifest } from "./akasha.js";
+import { openLibrary } from "./ether-library.js";
+import type { Library } from "./ether-library.js";
 import { LEGACY_CONTROL_DIRECTORY, WORKSPACE_WRITE_LOCK_FILE } from "./names.js";
 import { recordClosureValidation, recordCollectionScan, recordExtensionClosureValidation, recordFullMaterialize, recordSnapshotMaterialize, recordTerminalGraphValidation } from "./workspace-perf-instrumentation.js";
 import {
@@ -321,10 +325,61 @@ export interface ProjectRecord {
   readonly tombstone: boolean;
 }
 
+// TCRN-CROSS-STORY-468 R4, R5: what a merged read of a library reports beside the state. An
+// event that was valid on the device that wrote it but does not apply to the merged state is
+// rejected: recorded here, skipped, and never silently dropped. A create whose key another
+// device took first keeps its record under the next free key, and the alias says so.
+export interface RejectedEvent {
+  readonly eventId: string;
+  readonly streamId: string;
+  readonly deviceId: string;
+  readonly sequence: number;
+  readonly clock: number;
+  readonly operation: string | null;
+  readonly recordId: string | null;
+  readonly reasonCode: string;
+  readonly detail: string;
+}
+
+export interface KeyAlias {
+  readonly kind: "project" | "work";
+  // The key and id the later writer asked for; the earlier writer's record holds them.
+  readonly externalKey: string;
+  readonly id: string;
+  // The next free key, and its id, under which the later writer's record now lives.
+  readonly aliasExternalKey: string;
+  readonly aliasId: string;
+  readonly deviceId: string;
+  readonly streamId: string;
+  readonly sequence: number;
+}
+
+export interface LibraryStreamHead {
+  readonly deviceId: string;
+  readonly streamId: string;
+  readonly displayName: string;
+  readonly identityScheme: "einzbern" | "legacy";
+  readonly sequence: number;
+  readonly headEventHash: string | null;
+  readonly clockHighWater: number;
+  readonly engineVersion: string;
+  readonly formatVersion: number;
+}
+
+export interface LibraryReplay {
+  readonly libraryRoot: string;
+  readonly versionVector: Readonly<Record<string, number>>;
+  readonly streams: readonly LibraryStreamHead[];
+  readonly rejectedEvents: readonly RejectedEvent[];
+  readonly aliases: readonly KeyAlias[];
+}
+
 export interface WorkspaceState {
   readonly metadata: WorkspaceMetadata;
   readonly version: number;
   readonly headEventHash: string | null;
+  // Present when the state was merged from the streams of a library.
+  readonly library?: LibraryReplay;
   readonly projects: readonly ProjectRecord[];
   readonly work: readonly WorkRecord[];
   // WSD-1: additive extension-record collections materialized from the same
@@ -2149,30 +2204,213 @@ function assertGateClearance(gates: Iterable<GateRecord>, workId: string, target
   }
 }
 
-function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[], snapshot?: ReplaySnapshotSeed): WorkspaceState {
+// TCRN-CROSS-STORY-468 R5: in a merged replay an event that does not apply is undone, not fatal.
+// The reducer's collections record what each event changes while a journal is open, so a
+// rejected event's partial effects are rolled back before the next event is applied.
+class ReplayJournal {
+  entries: (() => void)[] | null = null;
+
+  begin(): void {
+    this.entries = [];
+  }
+
+  commit(): void {
+    this.entries = null;
+  }
+
+  rollback(): void {
+    const entries = this.entries ?? [];
+    this.entries = null;
+    for (let index = entries.length - 1; index >= 0; index -= 1) entries[index]?.();
+  }
+}
+
+class JournaledMap<K, V> extends Map<K, V> {
+  private journal: ReplayJournal | undefined;
+
+  constructor(entries: Iterable<readonly [K, V]>, journal: ReplayJournal) {
+    super(entries);
+    this.journal = journal;
+  }
+
+  override set(key: K, value: V): this {
+    const entries = this.journal?.entries;
+    if (entries !== null && entries !== undefined) {
+      const had = super.has(key);
+      const previous = super.get(key);
+      entries.push(() => {
+        if (had) super.set(key, previous as V);
+        else super.delete(key);
+      });
+    }
+    return super.set(key, value);
+  }
+
+  override delete(key: K): boolean {
+    const entries = this.journal?.entries;
+    if (entries !== null && entries !== undefined && super.has(key)) {
+      const previous = super.get(key) as V;
+      entries.push(() => {
+        super.set(key, previous);
+      });
+    }
+    return super.delete(key);
+  }
+}
+
+interface ReplayOrigin {
+  readonly deviceId: string;
+  readonly streamId: string;
+  readonly clock: number;
+}
+
+// The next free key after a collision: the numeric suffix counts up (keeping its width), and a key
+// without one gains "-2", "-3", ... Deterministic, so every device renames the same way.
+function nextFreeExternalKey(externalKey: string, taken: (candidate: string) => boolean): string {
+  const match = /^(.*?)(\d+)$/u.exec(externalKey);
+  for (let step = 1; ; step += 1) {
+    const candidate = match === null
+      ? `${externalKey}-${step + 1}`
+      : `${match[1] ?? ""}${(BigInt(match[2] ?? "0") + BigInt(step)).toString().padStart((match[2] ?? "").length, "0")}`;
+    if (!taken(candidate)) return candidate;
+  }
+}
+
+class MergeReplay {
+  readonly rejected: RejectedEvent[] = [];
+  readonly aliases: KeyAlias[] = [];
+  private readonly origins: ReadonlyMap<EventRecord, ReplayOrigin>;
+  // Per stream: an id that stream created under a key another device held first, and where the
+  // record now lives. Only that stream's later events follow the redirect.
+  private readonly redirects = new Map<string, Map<string, { readonly id: string; readonly externalKey: string }>>();
+  private readonly reserved = new Set<string>();
+  private pending: KeyAlias | null = null;
+
+  constructor(origins: ReadonlyMap<EventRecord, ReplayOrigin>) {
+    this.origins = origins;
+  }
+
+  origin(event: EventRecord): ReplayOrigin {
+    const origin = this.origins.get(event);
+    if (origin === undefined) fail("WORKSPACE_EVENT_CORRUPT", `event ${event.id} has no stream`);
+    return origin;
+  }
+
+  /** The event as this merge applies it: a colliding create renamed, a renamed record's later events redirected. */
+  view(event: EventRecord, projects: ReadonlyMap<string, ProjectRecord>, work: ReadonlyMap<string, WorkRecord>): EventRecord {
+    this.pending = null;
+    const payload = event.payload;
+    if (!isJsonObject(payload) || typeof payload.operation !== "string" || !isJsonObject(payload.record)) return event;
+    const kind = payload.operation.startsWith("work.") ? "work" : payload.operation.startsWith("project.") ? "project" : null;
+    const source = payload.record;
+    if (kind === null || typeof source.id !== "string") return event;
+    const origin = this.origin(event);
+    const redirects = this.redirects.get(origin.streamId) ?? new Map<string, { readonly id: string; readonly externalKey: string }>();
+    this.redirects.set(origin.streamId, redirects);
+    const existing: ReadonlyMap<string, unknown> = kind === "work" ? work : projects;
+    const record: Record<string, JsonValue> = { ...source };
+    let changed = false;
+    if (payload.operation === `${kind}.created` && existing.has(source.id) && typeof source.externalKey === "string") {
+      const aliasExternalKey = nextFreeExternalKey(source.externalKey, (candidate) => {
+        const candidateId = deriveStableId(kind, candidate);
+        return existing.has(candidateId) || this.reserved.has(candidateId);
+      });
+      const aliasId = deriveStableId(kind, aliasExternalKey);
+      this.reserved.add(aliasId);
+      redirects.set(source.id, { id: aliasId, externalKey: aliasExternalKey });
+      this.pending = {
+        kind,
+        externalKey: source.externalKey,
+        id: source.id,
+        aliasExternalKey,
+        aliasId,
+        deviceId: origin.deviceId,
+        streamId: origin.streamId,
+        sequence: event.sequence,
+      };
+      record.id = aliasId;
+      record.externalKey = aliasExternalKey;
+      changed = true;
+    } else {
+      const target = redirects.get(source.id);
+      if (target !== undefined) {
+        record.id = target.id;
+        record.externalKey = target.externalKey;
+        changed = true;
+      }
+    }
+    if (kind === "work") {
+      for (const field of ["parentId", "projectId"]) {
+        const value = record[field];
+        const target = typeof value === "string" ? redirects.get(value) : undefined;
+        if (target !== undefined) {
+          record[field] = target.id;
+          changed = true;
+        }
+      }
+    }
+    return changed ? { ...event, payload: { ...payload, record } } : event;
+  }
+
+  reject(event: EventRecord, viewed: EventRecord, error: unknown): void {
+    const origin = this.origin(event);
+    const payload = viewed.payload;
+    const record = isJsonObject(payload) && isJsonObject(payload.record) ? payload.record : null;
+    const recordId = [record?.id, record?.registrationId, record?.key].find((value) => typeof value === "string");
+    this.rejected.push({
+      eventId: event.id,
+      streamId: origin.streamId,
+      deviceId: origin.deviceId,
+      sequence: event.sequence,
+      clock: origin.clock,
+      operation: isJsonObject(payload) && typeof payload.operation === "string" ? payload.operation : null,
+      recordId: typeof recordId === "string" ? recordId : null,
+      reasonCode: String((error as { reasonCode?: unknown }).reasonCode ?? "WORKSPACE_EVENT_CORRUPT"),
+      detail: String((error as { message?: unknown }).message ?? error).slice(0, 512),
+    });
+  }
+
+  settle(rejected: boolean): void {
+    if (!rejected && this.pending !== null) this.aliases.push(this.pending);
+    this.pending = null;
+  }
+}
+
+function isReplayRejection(error: unknown): boolean {
+  return error instanceof WorkspaceError || error instanceof ProtocolError;
+}
+
+function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[], snapshot?: ReplaySnapshotSeed, merge?: MergeReplay): WorkspaceState {
   if (snapshot === undefined) {
     recordFullMaterialize();
   } else {
     recordSnapshotMaterialize();
   }
-  const projects = new Map<string, ProjectRecord>((snapshot?.projects ?? []).map((record) => [record.id, record]));
-  const work = new Map<string, WorkRecord>((snapshot?.work ?? []).map((record) => [record.id, record]));
-  const conferences = new Map<string, ConferenceRequest>((snapshot?.conferences ?? []).map((record) => [record.id, record]));
-  const conferencePositions = new Map<string, ConferencePosition>((snapshot?.conferencePositions ?? []).map((record) => [record.id, record]));
-  const conferenceMinutes = new Map<string, ConferenceMinutes>((snapshot?.conferenceMinutes ?? []).map((record) => [record.id, record]));
-  const gates = new Map<string, GateRecord>((snapshot?.gates ?? []).map((record) => [record.id, record]));
+  const journal = merge === undefined ? null : new ReplayJournal();
+  const collection = <K, V>(entries: Iterable<readonly [K, V]>): Map<K, V> => (journal === null ? new Map<K, V>(entries) : new JournaledMap<K, V>(entries, journal));
+  const projects = collection<string, ProjectRecord>((snapshot?.projects ?? []).map((record) => [record.id, record]));
+  const work = collection<string, WorkRecord>((snapshot?.work ?? []).map((record) => [record.id, record]));
+  const conferences = collection<string, ConferenceRequest>((snapshot?.conferences ?? []).map((record) => [record.id, record]));
+  const conferencePositions = collection<string, ConferencePosition>((snapshot?.conferencePositions ?? []).map((record) => [record.id, record]));
+  const conferenceMinutes = collection<string, ConferenceMinutes>((snapshot?.conferenceMinutes ?? []).map((record) => [record.id, record]));
+  const gates = collection<string, GateRecord>((snapshot?.gates ?? []).map((record) => [record.id, record]));
   // TCRN-CROSS-INC-389 R2: a replay snapshot taken while a key was live still lists it after the key
   // retires, as a 1.1.0-1.2.0 snapshot lists fitness.windowDays. The snapshot is verified exactly as
   // stored (state digest, manifest, segment digests); only the seed drops retired keys, the rule the
   // settings.updated arm below applies on a replay from genesis, so both reads hold the same settings.
   // The convention is the one settings.ts states for RETIRED_SETTING_KEYS: historical events remain
   // legible without reopening new writes.
-  const settings = new Map<string, WorkspaceSettingRecord>((snapshot?.settings ?? []).filter((record) => !isRetiredSettingKey(record.key)).map((record) => [record.key, record]));
+  const settings = collection<string, WorkspaceSettingRecord>((snapshot?.settings ?? []).filter((record) => !isRetiredSettingKey(record.key)).map((record) => [record.key, record]));
   let executionConfig: ExecutionConfigState = snapshot?.executionConfig ?? EMPTY_EXECUTION_CONFIG;
-  const templates = new Map<string, TemplateAdmissionRecord>((snapshot?.templates ?? []).map((record) => [record.registrationId, record]));
+  const templates = collection<string, TemplateAdmissionRecord>((snapshot?.templates ?? []).map((record) => [record.registrationId, record]));
   const workspaceRoot = metadata.roots.find((root) => root.kind === "workspace")?.path;
   let attestationEnabledAtSequence: number | null = snapshot?.attestationEnabledAtSequence ?? null;
-  for (const event of events) {
+  for (const sourceEvent of events) {
+    const event = merge === undefined ? sourceEvent : merge.view(sourceEvent, projects, work);
+    const scalars = { executionConfig, attestationEnabledAtSequence };
+    journal?.begin();
+    let rejected = false;
+    try {
     const payload = event.payload;
     if (!isJsonObject(payload) || typeof payload.operation !== "string") {
       fail("WORKSPACE_EVENT_CORRUPT", `event ${event.id} payload is invalid`);
@@ -2632,6 +2870,17 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
       continue;
     }
     fail("WORKSPACE_EVENT_CORRUPT", `unknown operation ${operation}`);
+    } catch (error) {
+      if (merge === undefined || journal === null || !isReplayRejection(error)) throw error;
+      rejected = true;
+      journal.rollback();
+      executionConfig = scalars.executionConfig;
+      attestationEnabledAtSequence = scalars.attestationEnabledAtSequence;
+      merge.reject(sourceEvent, event, error);
+    } finally {
+      journal?.commit();
+      merge?.settle(rejected);
+    }
   }
   const projectRecords = [...projects.values()].sort((left, right) => compareCanonicalText(left.id, right.id));
   recordTerminalGraphValidation();
@@ -3161,6 +3410,89 @@ export async function materializeWorkspace(workspaceRootInput: string): Promise<
 export async function materializeWorkspaceFromGenesis(workspaceRootInput: string): Promise<WorkspaceState> {
   const workspace = await resolveWorkspace(workspaceRootInput);
   return materialize(workspace.metadata, await readSegmentEvents(workspace.root, workspace.metadata));
+}
+
+// TCRN-CROSS-STORY-468 R4, STORY-469: a library's metadata in the shape the reducer reads. A
+// library has no roots to bind and no external key of its own; its id is the workspace id
+// every record and receipt reports.
+export const LIBRARY_HEAD_SCHEMA_VERSION = "einzbern.library-head.v1" as const;
+
+export function libraryWorkspaceMetadata(library: Library): WorkspaceMetadata {
+  const identity = library.manifest.libraryId.slice(library.manifest.libraryId.indexOf(":") + 1);
+  return {
+    schemaVersion: WORKSPACE_SCHEMA_VERSION,
+    storageVersion: WORKSPACE_STORAGE_VERSION,
+    minimumStorageVersion: 1,
+    maximumStorageVersion: WORKSPACE_STORAGE_VERSION,
+    workspaceId: library.manifest.libraryId,
+    externalKey: `LIBRARY-${identity.toUpperCase()}`,
+    createdAt: library.manifest.createdAt,
+    segmentEventLimit: WORKSPACE_SEGMENT_BYTES_DEFAULT,
+    roots: [{ kind: "workspace", path: library.root, canonicalPath: library.root, portableIdentity: rootPortableIdentity(library.root) }],
+  };
+}
+
+/** A library's head: one digest over every stream's head, so it moves whenever any stream does. */
+export function libraryHeadDigest(streams: readonly Pick<LibraryStreamHead, "deviceId" | "headEventHash">[]): string | null {
+  const heads = streams
+    .filter((stream) => stream.headEventHash !== null)
+    .map((stream) => [stream.deviceId, stream.headEventHash as string])
+    .sort((left, right) => compareCanonicalText(left[0] as string, right[0] as string));
+  return heads.length === 0 ? null : canonicalSha256({ schemaVersion: LIBRARY_HEAD_SCHEMA_VERSION, heads });
+}
+
+function streamHead(manifest: StreamManifest): LibraryStreamHead {
+  return {
+    deviceId: manifest.deviceId,
+    streamId: manifest.streamId,
+    displayName: manifest.displayName,
+    identityScheme: manifest.identityScheme,
+    sequence: manifest.sequence,
+    headEventHash: manifest.headEventHash,
+    clockHighWater: manifest.clockHighWater,
+    engineVersion: manifest.engineVersion,
+    formatVersion: manifest.formatVersion,
+  };
+}
+
+/**
+ * Replay a library's merged events from genesis (TCRN-CROSS-STORY-468 R3-R5). Streams were
+ * validated structurally when they were read; here an event that does not apply to the merged
+ * state is rejected, and a create whose key another device held first is renamed with an alias.
+ * The result does not depend on which device merges: the order and the renaming are both
+ * deterministic.
+ */
+export function materializeLibraryRead(library: Library, read: { readonly streams: readonly { readonly manifest: StreamManifest | null }[]; readonly events: readonly MergedEvent[]; readonly versionVector: Readonly<Record<string, number>> }): WorkspaceState {
+  const origins = new Map<EventRecord, ReplayOrigin>(read.events.map((entry) => [entry.event, { deviceId: entry.deviceId, streamId: entry.streamId, clock: entry.clock }]));
+  const merge = new MergeReplay(origins);
+  const state = materialize(libraryWorkspaceMetadata(library), read.events.map((entry) => entry.event), undefined, merge);
+  const streams = read.streams.flatMap((stream) => (stream.manifest === null ? [] : [streamHead(stream.manifest)]));
+  return {
+    ...state,
+    headEventHash: libraryHeadDigest(streams),
+    library: {
+      libraryRoot: library.root,
+      versionVector: read.versionVector,
+      streams,
+      rejectedEvents: merge.rejected,
+      aliases: merge.aliases,
+    },
+  };
+}
+
+/** Read every stream of a library and replay them merged. */
+export async function materializeLibrary(libraryOrRoot: Library | string, options: LibraryReadOptions = {}): Promise<WorkspaceState> {
+  const library = typeof libraryOrRoot === "string" ? await openLibrary(libraryOrRoot) : libraryOrRoot;
+  return materializeLibraryRead(library, await readAllStreams(library.root, options));
+}
+
+/** The keys a record was renamed from, and the records renamed away from its key (TCRN-CROSS-STORY-468 R5). */
+export function recordAliases(state: WorkspaceState, id: string): { readonly aliases: readonly KeyAlias[]; readonly aliasedBy: readonly KeyAlias[] } {
+  const aliases = state.library?.aliases ?? [];
+  return {
+    aliases: aliases.filter((entry) => entry.aliasId === id),
+    aliasedBy: aliases.filter((entry) => entry.id === id),
+  };
 }
 
 // TCRN-CROSS-STORY-466 R2 / STORY-467 R4: the read-only faces the old-layout reader

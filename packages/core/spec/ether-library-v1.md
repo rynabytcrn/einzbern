@@ -68,6 +68,27 @@ directory without a manifest has no committed events. Each new event takes the n
 of its stream and a clock one above the largest clock any stream manifest on the machine
 records.
 
+## Merged reading
+
+A read lists every stream directory, validates each stream on its own (manifest, segment
+digests, then every event's identity, sequence, rising clock, hashes and priorHash), and
+merges all events by clock, then device id, then sequence (TCRN-CROSS-STORY-468 R3). Any
+structural failure fails closed and names the device, stream and sequence. Every file read
+carries a timeout, so a segment a sync client has evicted to a placeholder yields
+`AKASHA_READ_TIMEOUT` naming the device and file instead of a hang (TCRN-CROSS-STORY-470 R4).
+
+The merged events replay from genesis. An event that was valid on the device that wrote it
+but does not apply to the merged state (a transition the other device already made, a
+revision that no longer follows) is a rejected event: its partial effects are undone, it is
+listed with its device, stream, sequence, clock, operation, record and reason, and replay
+continues. A create whose key another device took first, earlier in merge order, keeps its
+record under the next free key (the numeric suffix counts up; a key without one gains
+`-2`, `-3`, ...) and an alias records both keys; that stream's later events that name the
+old id (as the record, its parent or its project) follow the rename. The library's version
+is a vector of each device's stream sequence, and its head is one digest over every stream's
+head. Both the order and the renaming are deterministic, so every device merges the same
+streams to the same state.
+
 ## Writes that readers never see half-done
 
 Every manifest, and every other small file a reader must see whole, is replaced atomically:

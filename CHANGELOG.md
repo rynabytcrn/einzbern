@@ -98,6 +98,12 @@ length and SHA-256. An append takes this machine's lock of the library, cuts off
 crashed writer left, appends, and commits by replacing the stream manifest atomically;
 readers trust only the manifest. A new event's clock is one above the largest clock any
 stream manifest on the machine records.
+A library is read by merging every device's stream by clock, device id and sequence
+(TCRN-CROSS-STORY-468 R3-R5): its version is a vector of stream sequences and its head one
+digest over the stream heads. An event that does not apply to the merged state is a rejected
+event, listed and skipped; a create whose key another device took first is renamed to the
+next free key with an alias, and its stream's later events follow. Each file read times out
+with `AKASHA_READ_TIMEOUT` instead of hanging on a sync placeholder (TCRN-CROSS-STORY-470 R4).
 
 ## 1.2.1 — patch candidate
 

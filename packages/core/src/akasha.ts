@@ -503,3 +503,86 @@ export async function appendToOwnStream(
     return { manifest: await appendStreamEvents(library, manifest, events, options), events };
   }, options);
 }
+
+// TCRN-CROSS-STORY-468 R3, R4 and STORY-470 R4: reading every stream of a library. Each read of a
+// file carries a timeout, because a sync client may have evicted a segment to a placeholder
+// whose read blocks until the file is fetched: a read that does not finish in time fails with
+// AKASHA_READ_TIMEOUT naming the device and the file, rather than hanging the engine.
+export const AKASHA_READ_TIMEOUT_DEFAULT_MS = 30_000 as const;
+
+export interface LibraryReadOptions extends StreamReadOptions {
+  readonly timeoutMs?: number;
+}
+
+export interface StreamRead {
+  readonly deviceId: string;
+  // null: the device directory holds no manifest yet, so the stream has no committed events.
+  readonly manifest: StreamManifest | null;
+  readonly events: readonly EventRecord[];
+}
+
+export interface MergedEvent {
+  readonly event: EventRecord;
+  readonly deviceId: string;
+  readonly streamId: string;
+  readonly clock: number;
+}
+
+export interface LibraryRead {
+  readonly streams: readonly StreamRead[];
+  // Every committed event of every stream, in merge order: clock, then device id, then sequence.
+  readonly events: readonly MergedEvent[];
+  // Each device's stream sequence: the library's version is this vector, not one number.
+  readonly versionVector: Readonly<Record<string, number>>;
+}
+
+function timed(readFile: ReadBytes, timeoutMs: number, deviceId: string): ReadBytes {
+  return (path) => new Promise<Buffer>((resolveRead, rejectRead) => {
+    const timer = setTimeout(() => {
+      rejectRead(new AkashaError("AKASHA_READ_TIMEOUT", `reading ${path} did not finish in ${timeoutMs} ms`, {
+        deviceId,
+        file: path.split(/[\\/]/u).slice(-2).join("/"),
+        timeoutMs: String(timeoutMs),
+      }));
+    }, timeoutMs);
+    readFile(path).then((bytes) => {
+      clearTimeout(timer);
+      resolveRead(bytes);
+    }, (error: unknown) => {
+      clearTimeout(timer);
+      rejectRead(error);
+    });
+  });
+}
+
+/** Merge order: clock, then device id, then sequence. The same streams merge the same way on every device. */
+export function compareMergedEvents(left: MergedEvent, right: MergedEvent): number {
+  return left.clock - right.clock ||
+    (left.deviceId < right.deviceId ? -1 : left.deviceId > right.deviceId ? 1 : 0) ||
+    left.event.sequence - right.event.sequence;
+}
+
+/**
+ * Read and validate every stream of a library and merge their events. A structural failure in
+ * any stream (a manifest, a segment digest, an event's identity, hash, priorHash or clock) fails
+ * closed, naming the device, stream and sequence; whether events apply to the merged state is
+ * the reducer's question, not this one.
+ */
+export async function readAllStreams(libraryRoot: string, options: LibraryReadOptions = {}): Promise<LibraryRead> {
+  const readFile = options.readFile ?? readFileBytes;
+  const timeoutMs = options.timeoutMs ?? AKASHA_READ_TIMEOUT_DEFAULT_MS;
+  const streams: StreamRead[] = [];
+  const merged: MergedEvent[] = [];
+  const versionVector: Record<string, number> = {};
+  for (const deviceId of await listStreamDevices(libraryRoot)) {
+    const reader = timed(readFile, timeoutMs, deviceId);
+    const manifest = await readStreamManifest(libraryRoot, deviceId, { readFile: reader });
+    const events = manifest === null ? [] : await readStreamEvents(libraryRoot, manifest, { readFile: reader });
+    streams.push({ deviceId, manifest, events });
+    if (manifest === null) continue;
+    versionVector[deviceId] = manifest.sequence;
+    for (const event of events) merged.push({ event, deviceId, streamId: manifest.streamId, clock: eventClock(event) });
+  }
+  merged.sort(compareMergedEvents);
+  return { streams, events: merged, versionVector: Object.freeze(versionVector) };
+}

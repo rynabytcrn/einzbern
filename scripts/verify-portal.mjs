@@ -14,9 +14,6 @@ const commands = [
   [process.execPath, ["--test", "tests/cross-repo-privacy.test.mjs"]],
   [process.execPath, ["scripts/ds-component-css-reconcile.mjs"]],
   [process.execPath, ["scripts/ds-component-css-proof.mjs"]],
-  [process.execPath, ["scripts/coverage-conservation.mjs"]],
-  [process.execPath, ["tests/coverage-conservation.test.mjs"]],
-  [process.execPath, ["scripts/coverage-conservation-proof.mjs"]],
   [process.execPath, ["scripts/verbatim-evidence-proof.mjs", "--check"]],
   [process.execPath, ["scripts/verbatim-evidence-meta-proof.mjs"]],
 ];

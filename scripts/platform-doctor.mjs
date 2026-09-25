@@ -441,123 +441,6 @@ function helperReleaseVerdict(published, trusted, source) {
   return check("helperReleaseAlignment", true, { comparable: true, digest: trusted.slice(0, 12), source });
 }
 
-// TCRN-CROSS-STORY-356: the proof-to-product ratio STORY-301 pinned bounds a relationship,
-// not a size -- proof mass and product mass can grow together forever, in step, without
-// the ratio ever moving. This leg pins two raw counts beside it instead: how many
-// verify:* scripts package.json declares and how many lines packages/core/src holds. Both
-// are recorded in scripts/policy/proof-budget.json's surfaceCaps field at zero margin, the
-// same posture frozenRatio itself was frozen at. The third, the claim count, left with the
-// claim map (TCRN-CROSS-STORY-467 R2).
-//
-// A container that only consumes this engine, rather than checking it out, has no
-// verify:* roster and no packages/core/src to count -- so an absent policy or
-// an absent surfaceCaps field is reported uncomparable rather than passed quietly, the
-// same distinction inspectHelperReleaseAlignment draws above.
-//
-// What this leg cannot do, and is not written to look like it can: decide who is
-// authorised to raise a cap. Since TCRN-CROSS-INC-292 it answers two mechanical questions
-// -- does every key ending in Cap carry a measurement, and does any measurement exceed its
-// recorded cap. That authorization is Owner's, recorded as a policy edit the same way a
-// frozenRatio exception is above -- a human act in review, not a verdict this doctor renders.
-async function inspectProofBudget(platformRoot, homeRoot, options) {
-  if (options.proofBudget && typeof options.proofBudget === "object") {
-    return proofBudgetVerdict(options.proofBudget, "synthetic");
-  }
-  const checkoutRoot = join(platformRoot, LOCAL_DIRECTORY_NAMES.engine);
-  const policyPath = join(checkoutRoot, "scripts", "policy", "proof-budget.json");
-  let policy = null;
-  try {
-    policy = JSON.parse(await readFile(policyPath, "utf8"));
-  } catch (error) {
-    if (error?.code !== "ENOENT" && error?.code !== "ENOTDIR") throw error;
-  }
-  const caps = policy?.surfaceCaps;
-  if (caps === null || caps === undefined || typeof caps !== "object") {
-    return check("proofBudget", true, {
-      comparable: false,
-      reason: "no surface-cap policy in this container, so the proof surface has nothing to compare against",
-      source: "live-engine-checkout",
-    });
-  }
-  const packageValue = JSON.parse(await readFile(join(checkoutRoot, "package.json"), "utf8"));
-  const verifyScriptCount = Object.keys(packageValue.scripts ?? {}).filter((name) => name.startsWith("verify:")).length;
-  // Same deliberately crude counting method as scripts/task.mjs's reportBudget (WSG-7):
-  // a raw 0x0a byte count, blank lines and comments included, over a fixed file set --
-  // packages/core/src alone here, rather than every packages/*/src reportBudget spans.
-  let coreSourceLines = 0;
-  for (const absolute of await walkFiles(join(checkoutRoot, "packages", "core", "src"))) {
-    if (!toPosixPath(relative(checkoutRoot, absolute)).endsWith(".ts")) continue;
-    const content = await readFile(absolute);
-    for (const byte of content) {
-      if (byte === 0x0a) coreSourceLines += 1;
-    }
-  }
-  return proofBudgetVerdict({
-    verifyScriptCount,
-    verifyScriptCap: caps.verifyScriptCap,
-    coreSourceLines,
-    coreSourceLineCap: caps.coreSourceLineCap,
-  }, "live-engine-checkout", caps);
-}
-
-function proofBudgetVerdict(values, source, surfaceCaps = values) {
-  // The current policy mixes caps with metadata. Every actual cap-class field
-  // must have a valid measurement; adding an unknown cap must never pass silently.
-  const metrics = {
-    verifyScriptCap: "verifyScriptCount",
-    coreSourceLineCap: "coreSourceLines",
-  };
-  const capFields = Object.keys(surfaceCaps).filter((name) => name.endsWith("Cap"));
-  const judged = [];
-  const unjudged = [];
-  const exceeded = [];
-  const raw = {};
-  for (const [capField, metric] of Object.entries(metrics)) {
-    raw[metric] = values[metric];
-    raw[capField] = surfaceCaps[capField];
-  }
-  for (const capField of capFields) {
-    const metric = Object.hasOwn(metrics, capField) ? metrics[capField] : undefined;
-    const cap = surfaceCaps[capField];
-    const observed = metric === undefined ? undefined : values[metric];
-    if (!Number.isSafeInteger(cap) || cap < 0
-      || !Number.isSafeInteger(observed) || observed < 0) {
-      unjudged.push(capField);
-      continue;
-    }
-    judged.push(capField);
-    if (observed > cap) {
-      exceeded.push({ metric, observed, cap, over: observed - cap });
-    }
-  }
-  const missing = Object.keys(metrics).filter((name) => !Object.hasOwn(surfaceCaps, name));
-  const details = {
-    ...raw,
-    capFieldCount: capFields.length,
-    judgedCapFieldCount: judged.length,
-    source,
-  };
-  if (judged.length !== capFields.length || missing.length > 0) {
-    return check("proofBudget", false, {
-      ...details,
-      reasonCode: "PLATFORM_PROOF_BUDGET_UNJUDGED_CAP",
-      unjudged,
-      missing,
-      exceeded,
-      remedy: "provide a valid measurement for every cap-class field present in surfaceCaps",
-    });
-  }
-  if (exceeded.length > 0) {
-    return check("proofBudget", false, {
-      ...details,
-      reasonCode: "PLATFORM_PROOF_BUDGET_EXCEEDED",
-      exceeded,
-      remedy: "retire an equivalent amount of the same kind of proof surface in this change, or record an Owner-authorised cap increase in scripts/policy/proof-budget.json",
-    });
-  }
-  return check("proofBudget", true, details);
-}
-
 // TCRN-CROSS-STORY-361: the charter rule "no consumer, isolate it", with a leg that can
 // see whether it is being followed. `packages/core/src/index.ts` is this engine's public
 // surface, and until this leg existed nothing measured how much of that surface anything
@@ -566,13 +449,12 @@ function proofBudgetVerdict(values, source, surfaceCaps = values) {
 //
 // What counts as a consumer is data rather than code: the roots live in
 // scripts/policy/core-export-consumers.json, so widening them is an act somebody has to
-// write down, the same posture surfaceCaps above takes toward raising a cap. Tests are
+// write down. Tests are
 // excluded on purpose. A symbol whose only caller is its own test is exactly the shape
 // STORY-358 spent an Epic removing, and admitting tests here would have reported every
 // one of those modules as consumed on the day before it was deleted.
 //
-// The matching is deliberately crude, the same posture scripts/task.mjs's reportBudget
-// takes toward counting lines: the consumer files are tokenised once into the set of
+// The matching is deliberately crude: the consumer files are tokenised once into the set of
 // JavaScript identifiers they contain, and a symbol is consumed if its name is in that
 // set. It can call a symbol consumed because its name appears in a comment. It cannot
 // call one consumed that appears nowhere.
@@ -641,8 +523,7 @@ async function inspectUnusedExports(platformRoot, options) {
     if (error?.code !== "ENOENT" && error?.code !== "ENOTDIR") throw error;
   }
   if (policy === null || typeof policy !== "object") {
-    // The same distinction proofBudget draws above: a container that only consumes this
-    // engine has no core to walk, and "nothing to compare" must not read as "compared
+    // A container that only consumes this engine has no core to walk, and "nothing to compare" must not read as "compared
     // and passed".
     return check("unusedExports", true, {
       comparable: false,
@@ -2680,7 +2561,6 @@ export async function inspectPlatform(platformRootArgument, options = {}) {
     checks.push(
       await inspectHelperCopies(root, homeRoot, manifest, options),
       await inspectHelperReleaseAlignment(root, homeRoot, options),
-      await inspectProofBudget(root, homeRoot, options),
       await inspectUnusedExports(root, options),
       await inspectChainHeadroom(root, options),
       await inspectChainValidation(root, options),

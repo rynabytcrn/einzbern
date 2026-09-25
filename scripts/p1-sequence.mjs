@@ -45,16 +45,8 @@ export const P1_SEQUENCE = Object.freeze([
   { task: "archive", script: "archive" },
   { task: "no-sibling-dependency", script: "verify:no-sibling-dependency" },
   { task: "offline", script: "verify:offline" },
-  // TCRN-CROSS-STORY-359: the toolchain aggregate. It ran runtime, licenses and
-  // lifecycle before; it now also runs the dependency-graph and Git-history checks that
-  // had their own roster entries. The checks are the same code on the same inputs -- what
-  // was retired is three more `verify:*` names for them, not the assertions.
-  { task: "governance", script: "verify:governance" },
   { task: "privacy", script: "verify:privacy" },
-  // STORY-301: last, because it measures the tree the gates above just proved, and
-  // because a budget that runs first would judge a build nobody had checked yet.
-  { task: "budget", script: "verify:budget" },
-  // TCRN-CROSS-INC-232: after the budget, because it is the cheapest leg in the train
+  // TCRN-CROSS-INC-232: near the end, because it is the cheapest leg in the train
   // and ordering it early would delay every expensive gate behind a documentation
   // question. It exists because a published code of conduct spent a day telling readers
   // the authoritative text was at a path that did not exist, and every gate above was

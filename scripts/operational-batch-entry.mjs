@@ -366,7 +366,6 @@ function codeOwnedImpact({ baselineCommit = PACK_SOURCE_BASELINE_COMMIT } = {}) 
     baselineBytes = Buffer.concat([
       readFileSync(resolve(platformRoot, "platform-docs/acceptance-gate-groups.json")),
       readFileSync(containmentPath),
-      readFileSync(resolve(repositoryRoot, "scripts/policy/coverage-baseline.json")),
     ]);
   } catch {
     baselineBytes = Buffer.from("baseline-unreadable", "utf8");
@@ -455,13 +454,12 @@ async function executeDynamicRoots(qualification) {
     const result = run(invocation.executable, invocation.argv ?? invocation.args, { cwd: invocation.cwd, timeout: 30 * 60_000, maxBuffer: 64 * 1024 * 1024 });
     return writeRunnerReceipt(receiptAuthority, entry, result, entry.inputs ?? impact.inputs, invocation);
   }, { getInputs: async () => codeOwnedImpact(baselineCommit === undefined ? {} : { baselineCommit }).inputs });
-  const budgetBlocked = execution.executed?.some((row) => row.reasonCode === "PROOF_BUDGET_EXCEEDED" || row.failureReasonCode === "PROOF_BUDGET_EXCEEDED" || row.terminalEvidence?.reasonCode === "PROOF_BUDGET_EXCEEDED") === true;
   const completed = execution.executable === true && execution.blocked?.length === 0;
   const governanceNotices = execution.executed?.flatMap((row) => row.governanceNotices ?? row.terminalEvidence?.governanceNotices ?? []) ?? [];
   return {
     ok: completed,
-    status: completed ? "completed" : budgetBlocked ? "not-verifiable" : "failed",
-    reasonCode: completed ? "BATCH_DYNAMIC_GATE_COMPLETED" : budgetBlocked ? "BATCH_ROOT_BUDGET_NOT_VERIFIABLE" : execution.reasonCode ?? "BATCH_DYNAMIC_GATE_FAILED",
+    status: completed ? "completed" : "failed",
+    reasonCode: completed ? "BATCH_DYNAMIC_GATE_COMPLETED" : execution.reasonCode ?? "BATCH_DYNAMIC_GATE_FAILED",
     plan,
     execution,
     governanceNotices,
@@ -485,7 +483,6 @@ export async function executeProductionBatch(request = {}) {
     trigger: boundRequest.trigger ?? "formal-batch-gate",
     primaryWorkId: boundRequest.primaryWorkId,
     scopeDigest: boundRequest.scopeDigest,
-    proofBudgetScopeBinding: boundRequest.proofBudgetScopeBinding,
     expectedBinding: boundRequest.expectedBinding,
     currentBinding: boundRequest.currentBinding,
     previousRuns: boundRequest.previousRuns,

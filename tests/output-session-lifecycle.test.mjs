@@ -11,7 +11,6 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import test from "node:test";
 
-import { countCoverage } from "../scripts/coverage-conservation.mjs";
 import { admitLegacyOutputSessionReceipt, bindOutputSessionProcessGroup, readBoundClaim, recoverStaleOutputSessionLock, safeWriteOutput, withExclusiveOutputSession } from "../scripts/lib/safe-io.mjs";
 
 const ownerSchema = "tcrn.output-session-owner.v1";
@@ -164,17 +163,13 @@ function runGit(root, arguments_) {
   assert.equal(result.status, 0, `${arguments_.join(" ")}\n${result.stdout}${result.stderr}`);
 }
 
-// TCRN-CROSS-STORY-359: the `test` verb's success payload gained two fields when the
-// coverage registry was folded into it (Owner ruling TCRN-CROSS-MIN-144). Stated once
-// here rather than four times below, so the contract these cases pin cannot drift apart
-// between them. A synthetic fixture root has no retired test file, so its
-// surviving-module leg is empty and says so rather than being absent.
+// The `test` verb's success payload, stated once here rather than four times below so
+// the contract these cases pin cannot drift apart between them. The two coverage fields
+// STORY-359 folded into it left with coverage conservation (TCRN-CROSS-STORY-467 R2).
 const fixtureTestResult = Object.freeze({
   reasonCode: "TESTS_VERIFIED",
   tests: ["tests/entrypoint.test.mjs"],
   result: "passed",
-  coverageConservation: "COVERAGE_CONSERVATION_VERIFIED",
-  survivingModuleCoverage: { reasonCode: "SURVIVING_MODULE_COVERAGE_VERIFIED", retiredTestFiles: [], modules: [] },
 });
 
 function assertProgressReport(progress) {
@@ -194,18 +189,10 @@ function assertTaskSuccess(actual) {
   return progress;
 }
 
-// TCRN-CROSS-STORY-359: writing the fixture's one test file and writing the coverage
-// registry that describes it are the same act, so they happen in one place. Two cases
-// below replace the test file mid-run to prove recovery; before this helper existed they
-// would have left the registry describing a file that no longer had those cases in it.
+// The fixture's one test file. The coverage registry written beside it until
+// TCRN-CROSS-STORY-467 R2 retired coverage conservation is no longer part of the fixture.
 async function writeFixtureTest(root, testSource) {
   await writeFile(resolve(root, "tests/entrypoint.test.mjs"), testSource, { mode: 0o600 });
-  const measured = countCoverage(testSource);
-  await writeFile(resolve(root, "scripts/policy/coverage-baseline.json"), `${JSON.stringify({
-    schemaVersion: "tcrn.coverage-baseline.v1",
-    files: { "tests/entrypoint.test.mjs": { testCount: measured.testCount, testNames: measured.testNames, assertionCount: measured.assertionCount } },
-  }, null, 2)}\n`, { mode: 0o600 });
-  await writeFile(resolve(root, "scripts/policy/coverage-waivers.json"), `${JSON.stringify({ schemaVersion: "tcrn.coverage-waivers.v1", waivers: [] }, null, 2)}\n`, { mode: 0o600 });
 }
 
 async function taskEntrypointFixture(context, testSource) {
@@ -216,12 +203,6 @@ async function taskEntrypointFixture(context, testSource) {
   await mkdir(resolve(root, "tests"));
   await writeFile(resolve(root, "package.json"), "{\"name\":\"tcrn-task-entrypoint-fixture\",\"type\":\"module\"}\n", { mode: 0o600 });
   await writeFile(resolve(root, ".gitignore"), "dist/\nnode_modules/\n", { mode: 0o600 });
-  // TCRN-CROSS-STORY-359: the `test` verb now runs the coverage registry after the suite
-  // (Owner ruling TCRN-CROSS-MIN-144 -- the registry gated nothing before). This fixture
-  // is a real task entrypoint in a synthetic root, so it needs a registry describing its
-  // own one test file rather than the engine's copy that came along with scripts/. Given
-  // here rather than skipped for a synthetic root: a gate that turns itself off when the
-  // tree looks unfamiliar is a gate with a hole in the exact shape of a fixture.
   await writeFixtureTest(root, testSource);
   runGit(root, ["init", "--quiet"]);
   runGit(root, ["config", "user.email", "tcrn-fixture"]);
@@ -2568,7 +2549,7 @@ test("a fresh real task entrypoint fails closed while a killed predecessor group
     'test("fresh task fixture", () => { assert.equal(2 + 2, 4); });',
     "",
   ].join("\n"));
-  runGit(root, ["add", "tests/entrypoint.test.mjs", "scripts/policy/coverage-baseline.json"]);
+  runGit(root, ["add", "tests/entrypoint.test.mjs"]);
   runGit(root, ["commit", "--quiet", "-m", "recovery fixture"]);
   assert.equal(spawnSync("git", ["status", "--porcelain=v1"], { cwd: root, encoding: "utf8" }).stdout, "");
   const recovered = startTaskEntrypoint(root);
@@ -2681,7 +2662,7 @@ test("the real command-five test path rejects detached inherited-pipe descendant
     'test("recovered fixture", () => {});',
     "",
   ].join("\n"));
-  runGit(rejected, ["add", "tests/entrypoint.test.mjs", "scripts/policy/coverage-baseline.json"]);
+  runGit(rejected, ["add", "tests/entrypoint.test.mjs"]);
   runGit(rejected, ["commit", "--quiet", "-m", "recovery fixture"]);
   const recovered = await startTaskEntrypoint(rejected).result;
   assert.equal(recovered.code, 0, recovered.stderr);

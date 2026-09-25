@@ -18,8 +18,8 @@
 // relocated here from tests/p7-compatibility-modes.test.mjs, which retires whole-file
 // in this same change. It had no adapter or compatibility-mode dependency, so losing it
 // with that file would have dropped the only coverage of scripts/einzbern.mjs's
-// "status" read verb over the real shipped binary. See
-// scripts/policy/coverage-waivers.json for the pointer from its old path.
+// "status" read verb over the real shipped binary. The coverage waiver that pointed here
+// from its old path retired with coverage conservation (TCRN-CROSS-STORY-467 R2).
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";

@@ -14,43 +14,6 @@ function fail(reasonCode, message) {
   throw new DependencyGraphError(reasonCode, message);
 }
 
-export function evaluateVulnerabilityPolicyFreshness(policy, nowMilliseconds = Date.now()) {
-  const snapshotDate = policy?.snapshotDate;
-  if (typeof snapshotDate !== "string" || !/^\d{4}-\d{2}-\d{2}$/u.test(snapshotDate)) {
-    fail("VULNERABILITY_POLICY_DATE_INVALID", String(snapshotDate));
-  }
-  const [year, month, day] = snapshotDate.split("-").map(Number);
-  const snapshot = Date.UTC(year, month - 1, day);
-  if (!Number.isFinite(snapshot) || new Date(snapshot).toISOString().slice(0, 10) !== snapshotDate) {
-    fail("VULNERABILITY_POLICY_DATE_INVALID", snapshotDate);
-  }
-  const { maxAgeDays, noticeBeforeDays } = policy;
-  if (
-    !Number.isSafeInteger(maxAgeDays)
-    || maxAgeDays < 1
-    || !Number.isSafeInteger(noticeBeforeDays)
-    || noticeBeforeDays < 1
-    || noticeBeforeDays >= maxAgeDays
-    || !Number.isFinite(nowMilliseconds)
-  ) {
-    fail("VULNERABILITY_POLICY_INVALID", "freshness-window");
-  }
-  const ageDays = Math.floor((nowMilliseconds - snapshot) / 86_400_000);
-  if (ageDays < 0 || ageDays > maxAgeDays) {
-    fail("VULNERABILITY_POLICY_STALE", String(ageDays));
-  }
-  const daysRemaining = maxAgeDays - ageDays;
-  const notice = daysRemaining <= noticeBeforeDays
-    ? { reasonCode: "VULNERABILITY_POLICY_EXPIRING", daysRemaining }
-    : null;
-  return {
-    ageDays,
-    daysRemaining,
-    freshnessState: notice === null ? "current" : "expiring",
-    notice,
-  };
-}
-
 function splitIdentity(identity) {
   // pnpm emits peer-contextualised snapshot keys of the form
   // `pg-pool@3.14.0(pg@8.22.0)` when a dependency is resolved against a peer.
@@ -343,20 +306,4 @@ export function validateFrozenDependencyGraph({ packageJson, dependencyPolicy, l
     directIdentities,
     transitiveIdentities: lockIdentities.filter((identity) => !directSet.has(identity)),
   };
-}
-
-export function assertNoKnownVulnerabilities(graph, knownVulnerabilities) {
-  if (!Array.isArray(knownVulnerabilities)) {
-    fail("VULNERABILITY_POLICY_INVALID", "knownVulnerabilities");
-  }
-  for (const vulnerability of knownVulnerabilities) {
-    if (typeof vulnerability?.package !== "string" || typeof vulnerability.version !== "string") {
-      fail("VULNERABILITY_POLICY_INVALID", JSON.stringify(vulnerability));
-    }
-    const identity = `${vulnerability.package}@${vulnerability.version}`;
-    if (graph.identities.has(identity)) {
-      fail("VULNERABLE_DEPENDENCY", identity);
-    }
-  }
-  return { checkedPackages: graph.records.length, knownVulnerabilityTuples: knownVulnerabilities.length };
 }

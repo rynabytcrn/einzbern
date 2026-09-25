@@ -15,7 +15,7 @@ import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
 
-import { countCoverage } from "./coverage-conservation.mjs";
+import { countTests } from "./lib/test-count.mjs";
 import { normalizeNativeImplementationResult } from "./final-gate-plan.mjs";
 
 export const REVIEW_EVIDENCE_VERSION = "tcrn.review-evidence.v1";
@@ -317,8 +317,8 @@ export function astTestEvidence(repositoryRoot, base, head = null, testFiles = c
     const afterSource = head === null || head === undefined
       ? existsSync(resolve(repositoryRoot, path)) ? readFileSync(resolve(repositoryRoot, path), "utf8") : ""
       : readGitFile(repositoryRoot, head, path);
-    const beforeCount = countCoverage(beforeSource);
-    const afterCount = countCoverage(afterSource);
+    const beforeCount = countTests(beforeSource);
+    const afterCount = countTests(afterSource);
     before.testCount += beforeCount.testCount;
     before.assertionCount += beforeCount.assertionCount;
     after.testCount += afterCount.testCount;

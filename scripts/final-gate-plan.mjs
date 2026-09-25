@@ -13,7 +13,6 @@ import { fileURLToPath } from "node:url";
 
 import { ENGINE_REPOSITORY_NAMES, LOCAL_DIRECTORY_NAMES } from "./lib/names.mjs";
 import { buildContainedExecutionPlan } from "./lib/push-gate-children.mjs";
-import { isNonBlockingProofBudgetWarning, validateProofBudgetScopeBinding } from "./lib/proof-budget.mjs";
 
 export const FINAL_GATE_PLAN_VERSION = "tcrn.gate-execution-plan.v1";
 export const FINAL_GATE_PHASES = Object.freeze(["candidate-final", "publication", "merge-sensitive"]);
@@ -230,7 +229,9 @@ export function issueGateReceipt(authority, { entry, result: rawResult, inputs, 
   const phase = entry.phase ?? "candidate-final";
   const exitCode = Number.isSafeInteger(result.exitCode) ? result.exitCode : Number.isSafeInteger(result.status) ? result.status : null;
   const status = result.ok === true && (exitCode === 0 || acceptedExceptions.length > 0) ? "completed" : "failed";
-  const reasonCode = result.reasonCode ?? (/PROOF_BUDGET_EXCEEDED/u.test(`${result.stdout ?? ""}\n${result.stderr ?? ""}`) ? "PROOF_BUDGET_EXCEEDED" : null);
+  // The budget refusal this used to recognise in raw output is retired with the proof budget
+  // (TCRN-CROSS-STORY-467 R2); a result names its own reason or none.
+  const reasonCode = result.reasonCode ?? null;
   const governanceNotices = runnerGovernanceNotices(result);
   const document = {
     schemaVersion: GATE_RECEIPT_DOCUMENT_VERSION,
@@ -2171,60 +2172,6 @@ function unchangedFailureDiagnostic(input, initial) {
   return null;
 }
 
-function scopedBudgetBatchBinding(input) {
-  const validation = validateProofBudgetScopeBinding(input?.proofBudgetScopeBinding);
-  if (!validation.ok) return { ok: false, reasonCode: "BATCH_PROOF_BUDGET_SCOPE_BINDING_INVALID" };
-  const binding = input.proofBudgetScopeBinding;
-  const ids = input.workIds;
-  const exactWorkIds = Array.isArray(ids)
-    && JSON.stringify([...ids].sort()) === JSON.stringify(binding.allowedWork.map((work) => work.id).sort());
-  const allowedIds = new Set(binding.allowedWork.map((work) => work.id));
-  if (input.series !== "INIT-051" || !exactWorkIds
-    || input.primaryWorkId !== undefined && !allowedIds.has(input.primaryWorkId)
-    || input.scopeDigest !== undefined && (typeof input.scopeDigest !== "string" || input.scopeDigest.trim().length === 0)) {
-    return { ok: false, reasonCode: "BATCH_PROOF_BUDGET_SCOPE_CONTEXT_MISMATCH" };
-  }
-  return { ...validation, ok: true, binding };
-}
-
-function proofBudgetNoticeAllowed(notice, input) {
-  if (notice?.reasonCode !== "PROOF_BUDGET_EXCEEDED_SCOPED_NONBLOCKING") {
-    return isNonBlockingProofBudgetWarning(notice);
-  }
-  const binding = scopedBudgetBatchBinding(input);
-  return binding.ok === true
-    && isNonBlockingProofBudgetWarning(notice, { scopeBindingSha256: binding.bindingSha256 });
-}
-
-function scopedBudgetNativeProblems(input, acquired) {
-  if (input?.proofBudgetScopeBinding === undefined) return [];
-  const bindingCheck = scopedBudgetBatchBinding(input);
-  if (!bindingCheck.ok) return [bindingCheck.reasonCode];
-  const binding = input.proofBudgetScopeBinding;
-  const native = acquired?.nativeState;
-  const status = native?.nativeStatus ?? native?.status;
-  if (!native || native.ok !== true || !status || status.workspaceId !== binding.workspaceId) {
-    return ["native workspace does not match the authorized ratio scope"];
-  }
-  if (native.workListComplete !== true || !Array.isArray(native.workListRecords) || !Array.isArray(native.workShows)) {
-    return ["complete native work-list and work-show evidence is required for the authorized ratio scope"];
-  }
-  const records = new Map(native.workListRecords.map((record) => [record?.id, record]));
-  const missing = binding.allowedWork.filter((work) => {
-    const record = records.get(work.id);
-    return !record || record.externalKey !== work.externalKey;
-  });
-  if (missing.length > 0) return [`authorized work set differs from the live queue: ${missing.map((work) => work.externalKey).join(", ")}`];
-  const primary = binding.allowedWork.find((work) => work.id === input.primaryWorkId);
-  const shown = primary === undefined ? null : native.workShows.find((record) => record?.id === primary.id);
-  if (!primary || !shown || shown.externalKey !== primary.externalKey
-    || input.scopeDigest !== undefined && shown.scopeDigest !== input.scopeDigest) {
-    return ["primary live work-show differs from the authorized ratio scope"];
-  }
-  if (binding.excludedWork.some((work) => input.workIds?.includes(work.id))) return ["excluded future work is present in the active ratio execution set"];
-  return [];
-}
-
 /** Execute the only formal batch entry point after a fresh qualification. */
 export async function executeQualifiedBatch(input = {}, runner, { recheck } = {}) {
   const initial = qualifyBatch(qualificationRequest(input));
@@ -2249,12 +2196,14 @@ export async function executeQualifiedBatch(input = {}, runner, { recheck } = {}
     ...(Array.isArray(result?.warnings) ? result.warnings : []),
     ...(result?.warning === undefined || result?.warning === null ? [] : [result.warning]),
   ];
-  const disallowedNotices = notices.filter((notice) => !proofBudgetNoticeAllowed(notice, input));
+  // The proof budget's warning was the one notice a formal batch could carry and still
+  // complete; the budget is retired (TCRN-CROSS-STORY-467 R2), so any notice blocks.
+  const disallowedNotices = notices;
   const terminalReplay = replayProductionTerminal(result ?? {});
   const ok = terminalReplay.ok === true && disallowedNotices.length === 0;
   if (!ok) return { ...initial, status: "failed", reasonCode: result?.reasonCode ?? (disallowedNotices.length > 0 ? "BATCH_FORMAL_GATE_FAILED" : terminalReplay.reasonCode ?? "BATCH_FORMAL_GATE_FAILED"), formalGateAllowed: false, executed: [], formalGateExecutions: 1, result: result ?? null, reasons: [
     ...(terminalReplay.ok === true ? [] : [terminalReplay.reasonCode === "GATE_PLAN_TERMINAL_EVIDENCE_INVALID" ? "retained production terminal output contradicted the outer runner result" : "formal batch runner did not report success"]),
-    ...(disallowedNotices.length > 0 ? ["a non-budget warning is blocking formal batch aggregation"] : []),
+    ...(disallowedNotices.length > 0 ? ["a warning is blocking formal batch aggregation"] : []),
   ], terminalReplay };
   if (typeof recheck === "function") {
     let after;
@@ -2301,18 +2250,6 @@ export async function executeOperationalBatch(input = {}, runner, { readNative =
     nativeState: acquired.native ?? null,
     reasons: [acquired.error ?? "native work/dependency or runtime observation unavailable"],
   };
-  const budgetScopeProblems = scopedBudgetNativeProblems(input, acquired);
-  if (budgetScopeProblems.length > 0) return {
-    schemaVersion: OPERATIONAL_BATCH_VERSION,
-    status: "not-verifiable",
-    reasonCode: "BATCH_PROOF_BUDGET_SCOPE_NOT_VERIFIABLE",
-    eligible: false,
-    formalGateAllowed: false,
-    formalGateExecutions: 0,
-    executed: [],
-    nativeState: acquired.nativeState ?? null,
-    reasons: budgetScopeProblems,
-  };
   const observed = normalizeBatchRuntimeObserver(acquired, { requireCandidate: true, requireDependencyRecords: true });
   if (!observed.ok) return {
     schemaVersion: OPERATIONAL_BATCH_VERSION,
@@ -2345,18 +2282,6 @@ export async function executeOperationalBatch(input = {}, runner, { readNative =
   const result = await executeQualifiedBatch({
     qualification,
     workspace: input.workspace,
-    ...(input.proofBudgetScopeBinding === undefined ? {} : {
-      series: input.series,
-      pack: input.pack,
-      primaryWorkId: input.primaryWorkId,
-      scopeDigest: input.scopeDigest,
-      role: input.role,
-      phase: input.phase,
-      taskClass: input.taskClass,
-      personaProfileId: input.personaProfileId,
-      workIds: input.workIds,
-      proofBudgetScopeBinding: input.proofBudgetScopeBinding,
-    }),
   }, runner, { recheck: refresh });
   return { ...result, schemaVersion: OPERATIONAL_BATCH_VERSION };
 }

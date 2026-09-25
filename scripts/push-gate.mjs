@@ -41,11 +41,10 @@ import { fileURLToPath } from "node:url";
 import { P8_VERSION } from "./lib/p8-workflow-rc.mjs";
 import { pushGateExecutionPlan, ENGINE_PUSH_GATE_CHILDREN } from "./lib/push-gate-children.mjs";
 import { requiredFailurePatternProblems } from "./preflight.mjs";
-import { budgetWarningNotices, hasWarningOrError, inspectStructuredChildOutput, onlyBudgetWarning, validateHostEvidenceProvenance, validateStructuredChildExpectations } from "./lib/push-gate-output.mjs";
+import { hasWarningOrError, inspectStructuredChildOutput, validateHostEvidenceProvenance, validateStructuredChildExpectations } from "./lib/push-gate-output.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
-const governanceNotices = [];
 const childResults = [];
 const timingProbe = process.env.TCRN_PUSH_GATE_TIMING_PROBE === "1";
 const timingEvidencePath = resolve(
@@ -411,11 +410,7 @@ for (const { reasonCode, script } of ENGINE_PUSH_GATE_CHILDREN) {
       ? { ok: true, command: ["pnpm", "run", "--silent", script], cwd: repositoryRoot, exitCode: 0, signal: null, error: null, stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), output: "" }
       : runChild("pnpm", ["run", "--silent", script])),
   );
-  const budgetNotices = budgetWarningNotices(result.output, script);
-  if (budgetNotices.length > 0) governanceNotices.push(...budgetNotices);
-  const p1Diagnostic = script === "verify:p1"
-    && hasWarningOrError(result.output, script)
-    && !onlyBudgetWarning(result.output, script);
+  const p1Diagnostic = script === "verify:p1" && hasWarningOrError(result.output, script);
   const assessment = timingProbe
     ? { ok: true, reasonCode: "TIMING_PROBE_SYNTHETIC_OUTPUT", findings: [] }
     : script === "verify:p1"
@@ -460,10 +455,11 @@ process.stdout.write = (chunk, ...arguments_) => {
   stdoutObserved += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString(encoding);
   return originalStdoutWrite(chunk, ...arguments_);
 };
-const noticeFields = governanceNotices.length === 0 ? {} : { governanceNotices };
+// The budget notices this output used to carry beside the verdict left with the proof
+// budget (TCRN-CROSS-STORY-467 R2).
 const output = failures.length > 0
-  ? JSON.stringify({ ok: false, reasonCode: "PUSH_GATE_BLOCKED", failures, childResults, ...noticeFields }, null, 2)
-  : JSON.stringify({ ok: true, reasonCode: "PUSH_GATE_VERIFIED", version: P8_VERSION, childResults, ...noticeFields });
+  ? JSON.stringify({ ok: false, reasonCode: "PUSH_GATE_BLOCKED", failures, childResults }, null, 2)
+  : JSON.stringify({ ok: true, reasonCode: "PUSH_GATE_VERIFIED", version: P8_VERSION, childResults });
 process.stdout.write(`${output}\n`);
 await writeTimingEvidence(failures.length === 0, stdoutObserved.replace(/\n$/u, ""));
 if (failures.length > 0) {

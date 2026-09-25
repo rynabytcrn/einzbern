@@ -77,7 +77,7 @@ test("STORY-460 AC3: a doctor root red only for a roster exception passes and na
   const accepted = apply("platform-layout", launchdOnly, ROSTER);
   assert.equal(accepted.result.ok, true);
   assert.deepEqual(accepted.acceptedExceptions, ["PLATFORM_LAUNCHD_NOT_ON_DUTY"]);
-  const twoReds = doctor([{ name: "launchd", ok: false, reasonCode: "PLATFORM_LAUNCHD_NOT_ON_DUTY" }, { name: "proofBudget", ok: false, reasonCode: "PLATFORM_PROOF_BUDGET_EXCEEDED" }]);
+  const twoReds = doctor([{ name: "launchd", ok: false, reasonCode: "PLATFORM_LAUNCHD_NOT_ON_DUTY" }, { name: "hooks", ok: false, reasonCode: "PLATFORM_HOOK_TARGET_UNAVAILABLE" }]);
   assert.equal(apply("platform-layout", twoReds, ROSTER).result.ok, false);
   assert.equal(apply("engine-release", launchdOnly, ROSTER).result.ok, false, "another group's exception is not this group's");
   assert.equal(apply("platform-layout", { ...launchdOnly, stdout: "not json" }, ROSTER).result.ok, false, "an unreadable result is not an exception");
@@ -141,9 +141,9 @@ test("INC-383: another red, or an exception the tracked roster does not accept, 
   assert.equal(other.receipts[0].status, "failed");
   assert.match(other.outcome, /^failed/u);
 
-  const budgetOnly = doctor([{ name: "proofBudget", ok: false, reasonCode: "PLATFORM_PROOF_BUDGET_EXCEEDED" }]);
-  const forgedRoster = { groups: FIXTURE_ROSTER.groups.map((group) => group.id === "platform-layout" ? { ...group, acceptedExceptions: [{ acceptedAt: "2026-09-24", reasonCode: "PLATFORM_PROOF_BUDGET_EXCEEDED", reason: "NOT_IN_THE_TRACKED_ROSTER" }] } : group) };
-  const forged = await runLayoutRoot(budgetOnly, forgedRoster);
-  assert.deepEqual([forged.receipts[0].status, forged.receipts[0].acceptedExceptions], ["completed", ["PLATFORM_PROOF_BUDGET_EXCEEDED"]], "the issuing call was handed a roster that accepts the code");
+  const hooksOnly = doctor([{ name: "hooks", ok: false, reasonCode: "PLATFORM_HOOK_TARGET_UNAVAILABLE" }]);
+  const forgedRoster = { groups: FIXTURE_ROSTER.groups.map((group) => group.id === "platform-layout" ? { ...group, acceptedExceptions: [{ acceptedAt: "2026-09-24", reasonCode: "PLATFORM_HOOK_TARGET_UNAVAILABLE", reason: "NOT_IN_THE_TRACKED_ROSTER" }] } : group) };
+  const forged = await runLayoutRoot(hooksOnly, forgedRoster);
+  assert.deepEqual([forged.receipts[0].status, forged.receipts[0].acceptedExceptions], ["completed", ["PLATFORM_HOOK_TARGET_UNAVAILABLE"]], "the issuing call was handed a roster that accepts the code");
   assert.equal(forged.outcome, "failed:GATE_PLAN_TERMINAL_EVIDENCE_INVALID", "the runner re-reads the tracked roster and refuses a self-reported exception");
 });

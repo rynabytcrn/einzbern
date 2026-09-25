@@ -22,12 +22,9 @@ version: 2
 # structural reason as any other npm bump, so it is still an artifact to be worked rather
 # than merged -- just rare enough to be worth the interrupt, which the weekly one was not.
 #
-# And this was never the only backstop. verify:p1 runs the vulnerability gate, and
-# scripts/policy/vulnerability-policy.json carries maxAgeDays: 30, so a snapshot older
-# than a month fails VULNERABILITY_POLICY_STALE and stops the gate outright. Refreshing it
-# means looking at advisories. That pull check was already forcing a monthly review before
-# any of this changed; the alerts are an improvement on its latency, not a rescue from
-# having nothing.
+# Until TCRN-CROSS-STORY-467 R2 retired the governance leg, verify:p1 also ran the
+# vulnerability snapshot check, whose maxAgeDays: 30 forced a monthly advisory review. The
+# snapshot and its policy file retired with the leg, so the alerts are the signal.
 #
 # Routine bumps are done by hand as governed work: update all three pinned surfaces
 # together, regenerate, and record why the version moved.

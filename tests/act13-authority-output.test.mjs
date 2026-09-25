@@ -10,8 +10,8 @@
 // declares" scanned packages/core/src for hand-authored host-shaped field declarations
 // and bound them two-way to AUTHORITY_OUTPUT_FIELDS; every declaration it ever found
 // lived in the Codex adapter activation and installer modules, both retired
-// here, so there is nothing left anywhere in core for it to scan. See
-// scripts/policy/coverage-waivers.json for the disposition of all three. The two
+// here, so there is nothing left anywhere in core for it to scan. The coverage waivers
+// that recorded the disposition of all three retired with coverage conservation. The two
 // surviving cases below test packages/cli/src/index.ts's CLI write boundary directly
 // and carry no adapter dependency.
 

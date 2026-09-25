@@ -861,8 +861,8 @@ assertCatalogCategoriesExclusive(COMMAND_CATALOG);
 // observed host trust state. TCRN-CROSS-STORY-358 retired the only core modules that ever
 // hand-declared them (the Codex adapter activation and installer modules) along with
 // the test that bound this list two-way against that live declaration
-// (tests/act13-authority-output.test.mjs's former vocabulary case; see
-// scripts/policy/coverage-waivers.json for its disposition). The list below is now a fixed
+// (tests/act13-authority-output.test.mjs's former vocabulary case; the coverage waiver that
+// recorded its disposition retired with coverage conservation). The list below is now a fixed
 // historical allowlist, still enforced by the fail-closed tests that remain in that file.
 export const AUTHORITY_OUTPUT_FIELDS = Object.freeze([
   "activationState",

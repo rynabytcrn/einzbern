@@ -57,6 +57,10 @@ checks, the proof-artifact generator, the RC1 candidate manifest and its input p
 the source allowlist are gone, with `guard-check`, `verify:map`, `verify:source`,
 `generate:proof-artifacts`, `regen:map-digests` and `regen:rc1-inputs`. The source
 archive and the P8 source set are the tracked file list, and the push gate runs P1 and P8.
+The proof budget (its policy, the `verify:budget` and `report:budget` scripts and the
+doctor's `proofBudget` leg), the governance leg (`verify:governance`: licences, lifecycle,
+vulnerability snapshot, Git history, with the history and vulnerability policy files) and
+coverage conservation with its baseline and waivers are gone. The test leg runs the suite only, and P1 runs twelve legs.
 
 ## 1.2.1 — patch candidate
 

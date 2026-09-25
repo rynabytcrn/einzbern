@@ -105,7 +105,7 @@ empty at teardown. Killing the direct child is not enough — a package-manager 
 lets the real binary reparent to init and survive. A daemon a tool registers itself is not
 a leak; the test is whether anything owns the record of it.
 
-## Two boundaries that are easy to cross by accident
+## A boundary that is easy to cross by accident
 
 - **Only the engine may write inside a control tree.** Everything under a workspace control
   directory (the old-layout name is in `docs/wiki/Glossary.md`)
@@ -115,42 +115,6 @@ a leak; the test is whether anything owns the record of it.
   is. **A remote tree is not an exception**: `cat >`, `sed -i` or `rsync` over SSH is the
   same act with the same outcome, and a write to a chain that lives on another host must be
   performed by the engine *on that host*.
-
-## The proof-surface caps, and what they cannot decide
-
-`platform-doctor.mjs`'s `proofBudget` leg (TCRN-CROSS-STORY-356) reads raw counts
-from a live engine checkout — how many `verify:*` scripts `package.json` declares and
-how many lines `packages/core/src/**/*.ts` holds, counted the same deliberately crude way
-`scripts/task.mjs`'s `reportBudget` (WSG-7) counts `productLines`: a raw `0x0a` byte
-count, blank lines and comments included, over a different file set — `core` alone here,
-not every `packages/*/src` directory reportBudget spans, so the two counts are not
-expected to agree. Each count is compared to the cap recorded in
-`scripts/policy/proof-budget.json`'s `surfaceCaps` field, all pinned at zero
-margin — each the value measured the day that field was last written, not a value with
-headroom already spent. Read `surfaceCaps` itself for the current numbers; this file
-does not mirror them. A container that only consumes this engine, without a checkout,
-has nothing to count; that state is reported `comparable: false`, never a quiet pass.
-
-**What this leg cannot do: decide who may raise a cap.** Since TCRN-CROSS-INC-292 it
-answers two mechanical questions — does every cap-class field in `surfaceCaps` (each key
-ending in `Cap`) carry a measurement this engine implements, and does any measured count
-exceed its recorded cap — and nothing more. A cap-class field with no measurement reds the
-leg with `PLATFORM_PROOF_BUDGET_UNJUDGED_CAP` rather than being ignored. Raising a
-cap is authorised the same way a `frozenRatio` exception is authorised in the same policy
-file: by Owner, in review, recorded as a policy edit with the reasoning written down. No
-verb in this engine checks who wrote that edit or whether they had standing to make it. A
-green `proofBudget` leg is not evidence that a cap increase was authorised; it can only
-say the measured count and the recorded cap currently agree. Raising a cap in practice:
-edit `surfaceCaps` to the value measured after the change that needs it lands, in the
-same commit, and append an entry to `exceptions` naming the work item that raises it and
-citing the authorising decision (the convention MIN-144 D8 records). Lowering a cap needs
-no exception.
-
-The current caps are a snapshot, not a destination. The `verify:*` roster they
-measure changes over time through separate work items. Do not infer the current
-roster, its size, or whether any such change has landed from anything frozen in this
-section — check `verifyScriptCap` in `scripts/policy/proof-budget.json` and the
-`verify:*` roster in `package.json` directly.
 
 ## Native dispatch boundary
 

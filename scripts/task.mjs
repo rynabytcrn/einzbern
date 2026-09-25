@@ -21,12 +21,7 @@ import { P1_TASKS } from "./p1-sequence.mjs";
 import { compareCanonicalText } from "./lib/canonical-order.mjs";
 import { codeOnly, controlByteOffset } from "./lib/code-only.mjs";
 import { LocalCommandError, runLocalCommand } from "./lib/local-command.mjs";
-import {
-  DependencyGraphError,
-  assertNoKnownVulnerabilities,
-  evaluateVulnerabilityPolicyFreshness,
-  validateFrozenDependencyGraph,
-} from "./lib/dependency-graph.mjs";
+import { DependencyGraphError, validateFrozenDependencyGraph } from "./lib/dependency-graph.mjs";
 import {
   aggregatePrivacySurface,
   decodeGitMetadataBytes,
@@ -51,7 +46,6 @@ import {
 import { delay, PROGRESS_WAIT_MAX_MS, readProgressDelta, summarizeProgress, waitForProgress } from "./lib/incremental-output.mjs";
 import { installNoNetworkGuard } from "./no-network.mjs";
 import { ScopedStripTypesError, stripTypesWithScopedExperimentalWarning } from "./lib/scoped-strip-types.mjs";
-import { classifyProofResponsibility, evaluateProofBudget } from "./lib/proof-budget.mjs";
 
 installNoNetworkGuard();
 
@@ -565,68 +559,11 @@ async function runTests({ trustOnly = false, p8Only = false, extraEnvironment = 
   );
 }
 
-// TCRN-CROSS-STORY-359 and Owner ruling TCRN-CROSS-MIN-144.
-//
-// `scripts/policy/coverage-baseline.json` gated nothing. It was a registry every unit was
-// told to keep current and no gate ever read, which is the state that lets a registry rot
-// while still looking like coverage -- the same shape as the hand-kept P1 roster this
-// repository already paid for once. Owner's direction for this Story was to fold it into
-// the test gate or retire it; folding costs one command and keeps a check the repository
-// already relies on in review.
-//
-// The suite runs under NODE_V8_COVERAGE so the second leg can read what actually
-// executed rather than what was merely imported. The directory lives outside the
-// repository: it is scratch for one run, not an output artifact, and the output session
-// owns everything under dist/.
+// TCRN-CROSS-STORY-467 R2 (TCRN-CROSS-MIN-227 D3): the test leg runs the suite and nothing
+// beside it. The coverage registry and the surviving-module coverage read that used to run
+// under NODE_V8_COVERAGE after it are retired with coverage conservation.
 async function verifyTestSuite() {
-  const {
-    evaluateCoverageRegistry,
-    evaluateSurvivingModuleCoverage,
-  } = await import("./coverage-conservation.mjs");
-  const coverageDirectory = await mkdtemp(join(tmpdir(), "tcrn-suite-coverage-"));
-  let retainCoverage = false;
-  let tests;
-  try {
-    tests = await runTests({ extraEnvironment: { NODE_V8_COVERAGE: coverageDirectory } });
-    const registry = await evaluateCoverageRegistry();
-    assertion(registry.ok, registry.reasonCode, JSON.stringify({
-      problems: (registry.problems ?? []).map((entry) => entry.path ?? entry),
-      waiverProblems: registry.waiverProblems,
-      baselineCompleteness: registry.baselineCompleteness,
-    }));
-    const survivingModules = await evaluateSurvivingModuleCoverage({
-      coverageDirectory,
-      waivers: registry.waivers,
-      currentTestPaths: registry.currentTestPaths,
-    });
-    assertion(survivingModules.ok, survivingModules.reasonCode, survivingModules.problems.join("; "));
-    return success("TESTS_VERIFIED", {
-      tests: tests.tests,
-      result: "passed",
-      progress: tests.progress,
-      coverageConservation: registry.reasonCode,
-      survivingModuleCoverage: {
-        reasonCode: survivingModules.reasonCode,
-        retiredTestFiles: survivingModules.retiredTestFiles,
-        modules: survivingModules.modules.map(({ module, executedBlocks }) => ({ module, executedBlocks })),
-      },
-    });
-  } catch (error) {
-    // A failed P1 run is itself evidence. Preserve the complete coverage
-    // directory until the caller has captured its receipt; only successful
-    // runs are disposable. The controller failure detail already contains raw
-    // streams and the final progress event, and this stable path binds them to
-    // the coverage documents that survived the failure.
-    retainCoverage = true;
-    if (error && typeof error === "object") {
-      error.coverageDirectory = coverageDirectory;
-      const detail = `\ncoverageDirectory=${coverageDirectory}`;
-      if (typeof error.message === "string" && !error.message.includes(detail)) error.message += detail;
-    }
-    throw error;
-  } finally {
-    if (!retainCoverage) await rm(coverageDirectory, { recursive: true, force: true });
-  }
+  return runTests();
 }
 
 async function verifyP8() {
@@ -810,45 +747,6 @@ async function sbom() {
     transitiveComponents: graph.transitiveIdentities.length,
     dependencyGraphClosure: "complete",
     basis,
-  });
-}
-
-async function verifyLicenses() {
-  const license = await readText(resolve(repositoryRoot, "LICENSE"));
-  const notice = await readText(resolve(repositoryRoot, "NOTICE"));
-  assertion(license.includes("Apache License") && license.includes("Version 2.0"), "LICENSE_APACHE_REQUIRED");
-  assertion(notice.includes("Apache-2.0"), "NOTICE_SPDX_REQUIRED");
-  const sourceFiles = (await walkFiles()).filter((path) => [".mjs", ".ts"].includes(extname(path)));
-  const missing = [];
-  for (const path of sourceFiles) {
-    const content = await readText(path);
-    if (!content.split("\n").slice(0, 4).some((line) => line.includes("SPDX-License-Identifier: Apache-2.0"))) {
-      missing.push(toPosixPath(relative(repositoryRoot, path)));
-    }
-  }
-  assertion(missing.length === 0, "SPDX_HEADER_MISSING", missing.join(","));
-  return success("LICENSES_VERIFIED", { sourceFiles: sourceFiles.length });
-}
-
-async function verifyVulnerabilities() {
-  const packageJson = await readJson(resolve(repositoryRoot, "package.json"));
-  const dependencyPolicy = await readJson(resolve(repositoryRoot, "scripts/policy/dependency-policy.json"));
-  const lockContent = (await readSourceFile(resolve(repositoryRoot, "pnpm-lock.yaml"))).toString("utf8");
-  const policy = await readJson(resolve(repositoryRoot, "scripts/policy/vulnerability-policy.json"));
-  const freshness = evaluateVulnerabilityPolicyFreshness(policy);
-  const graph = validateFrozenDependencyGraph({ packageJson, dependencyPolicy, lockContent });
-  const vulnerabilityReadback = assertNoKnownVulnerabilities(graph, policy.knownVulnerabilities);
-  return success("VULNERABILITY_POLICY_VERIFIED", {
-    disposition: policy.disposition,
-    snapshotDate: policy.snapshotDate,
-    maxAgeDays: policy.maxAgeDays,
-    noticeBeforeDays: policy.noticeBeforeDays,
-    ...freshness,
-    dependencyGraphPackages: vulnerabilityReadback.checkedPackages,
-    directPackages: graph.directIdentities.length,
-    transitivePackages: graph.transitiveIdentities.length,
-    policyClosure: "complete-lock-graph",
-    externalAdvisoryScan: "not-performed-by-offline-command",
   });
 }
 
@@ -1063,26 +961,6 @@ async function verifyNoSiblingDependency() {
   return success("NO_SIBLING_DEPENDENCY", { siblings: result.siblings, scannedRoots: result.scannedRoots });
 }
 
-async function verifyLifecycle() {
-  const manifests = (await walkFiles()).filter((path) => path.endsWith("package.json"));
-  const forbidden = new Set(["preinstall", "install", "postinstall", "prepare", "prepublish", "prepublishOnly"]);
-  for (const path of manifests) {
-    const manifest = await readJson(path);
-    for (const script of Object.keys(manifest.scripts ?? {})) {
-      assertion(!forbidden.has(script), "LIFECYCLE_SCRIPT_FORBIDDEN", `${path}:${script}`);
-    }
-    for (const section of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"]) {
-      for (const [name, version] of Object.entries(manifest[section] ?? {})) {
-        assertion(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(version), "DEPENDENCY_NOT_EXACT", `${name}@${version}`);
-      }
-    }
-  }
-  const npmrc = await readText(resolve(repositoryRoot, ".npmrc"));
-  assertion(/^ignore-scripts=true$/mu.test(npmrc), "IGNORE_SCRIPTS_REQUIRED");
-  assertion(/^offline=true$/mu.test(npmrc), "OFFLINE_DEFAULT_REQUIRED");
-  return success("LIFECYCLE_POLICY_VERIFIED", { manifests: manifests.length });
-}
-
 async function verifyOfflineBoundary() {
   const guardFiles = new Set(["scripts/no-network.mjs", "tests/offline-boundary.test.mjs"]);
   const localUnixSocketTest = "tests/output-session-lifecycle.test.mjs";
@@ -1147,63 +1025,6 @@ async function verifyOfflineBoundary() {
   });
 }
 
-async function verifyHistory() {
-  const policy = await readJson(resolve(repositoryRoot, "scripts/policy/history-policy.json"));
-  const remotes = run("git", ["remote"]).split("\n").filter(Boolean);
-  assertion(remotes.length === 1 && remotes[0] === "origin", "HISTORY_REMOTE_SET", remotes.join(","));
-  const remote = run("git", ["remote", "get-url", "--all", "origin"]).split("\n").filter(Boolean);
-  const origin = new RegExp(`^https://github\\.com/[^/]+/(?:${repositoryNamePattern(await engineRepositoryNames())})\\.git$`, "u");
-  assertion(remote.length === 1 && origin.test(remote[0]), "HISTORY_ORIGIN", remote.join(","));
-  const roots = run("git", ["rev-list", "--max-parents=0", "--all"]).split("\n").filter(Boolean);
-  assertion(roots.length === 1, "HISTORY_ROOT_COUNT", String(roots.length));
-  assertion(roots[0] === policy.requiredRootCommit, "HISTORY_ROOT_REWRITTEN", roots[0]);
-  const rootLine = run("git", ["rev-list", "--parents", "-n", "1", roots[0]]).split(/\s+/u);
-  assertion(rootLine.length === 1, "HISTORY_ROOT_HAS_PARENT");
-  const refs = run("git", ["for-each-ref", "--format=%(refname)"]).split("\n").filter(Boolean);
-  assertion(refs.every((ref) => !ref.startsWith("refs/replace/") && !ref.startsWith("refs/notes/")), "HISTORY_FORBIDDEN_REF", refs.join(","));
-  try {
-    await lstat(resolve(repositoryRoot, ".git/objects/info/alternates"));
-    fail("HISTORY_ALTERNATES", "Object-store alternates are forbidden");
-  } catch (error) {
-    if (error.code !== "ENOENT") {
-      throw error;
-    }
-  }
-  run("git", ["fsck", "--strict", "--no-reflogs", "--unreachable"]);
-  const reachable = new Set(
-    run("git", ["rev-list", "--objects", "--all"]).split("\n").filter(Boolean).map((line) => line.split(" ")[0]),
-  );
-  const stored = new Set(
-    run("git", ["cat-file", "--batch-all-objects", "--batch-check=%(objectname)"]).split("\n").filter(Boolean),
-  );
-  const unreachable = [...stored].filter((object) => !reachable.has(object));
-  assertion(unreachable.length === 0, "HISTORY_UNREACHABLE_OBJECTS", unreachable.join(","));
-  const reflog = run("git", ["reflog", "show", "--all", "--format=%H"]).split("\n").filter(Boolean);
-  assertion(reflog.every((object) => reachable.has(object)), "HISTORY_REFLOG_UNREACHABLE");
-  return success("HISTORY_CLEAN", {
-    rootCommit: roots[0],
-    objects: stored.size,
-    refs: refs.length,
-    reflogEntries: reflog.length,
-  });
-}
-
-// TCRN-CROSS-STORY-359. This verb aggregated runtime, licenses and lifecycle. The
-// dependency-graph gate and the Git-history gate each carried their own `verify:*` name
-// and their own P1 roster entry, and both answer the same question this one does: is the
-// toolchain this repository builds on the one it declares. Their names retired here; the
-// checks did not move an inch -- they run from this verb, in the same P1 position, over
-// the same inputs, and their claims re-hang on this command rather than on a script that
-// no longer exists.
-async function verifyGovernance() {
-  const runtime = await verifyRuntime();
-  const licenses = await verifyLicenses();
-  const lifecycle = await verifyLifecycle();
-  const vulnerabilities = await verifyVulnerabilities();
-  const history = await verifyHistory();
-  return success("GOVERNANCE_TOOLCHAIN_VERIFIED", { runtime, licenses, lifecycle, vulnerabilities, history });
-}
-
 async function verifyP1() {
   assertCleanExclusiveSourceBasis(run("git", ["status", "--porcelain=v1", "--untracked-files=all"]));
   // The roster lives in scripts/p1-sequence.mjs so preflight runs this same list rather
@@ -1235,74 +1056,6 @@ async function clean() {
   return success("OUTPUTS_CLEANED", result);
 }
 
-// WSG-7: proof-to-product budget measurement. Proof mass = newline count of
-// tests/**/*.mjs plus scripts/**/*.mjs (scripts/policy JSON is excluded by the
-// .mjs filter); product mass = newline count of packages/*/src/**/*.ts. Deliberately
-// crude (blanks and comments included) so the number is deterministic and not open
-// to reformatting debate. The policy has a non-blocking warning band and a hard
-// candidate-release ceiling; both are evaluated from the same raw counts here.
-async function reportBudget() {
-  const files = await walkFiles();
-  let proofLines = 0;
-  let productLines = 0;
-  const proofFiles = [];
-  for (const absolute of files) {
-    const path = toPosixPath(relative(repositoryRoot, absolute));
-    const isProof = (path.startsWith("tests/") || path.startsWith("scripts/")) && path.endsWith(".mjs");
-    const isProduct = /^packages\/[^/]+\/src\//u.test(path) && path.endsWith(".ts");
-    if (!isProof && !isProduct) {
-      continue;
-    }
-    const content = await readSourceFile(absolute);
-    let newlines = 0;
-    for (const byte of content) {
-      if (byte === 0x0a) {
-        newlines += 1;
-      }
-    }
-    if (isProof) {
-      proofLines += newlines;
-      proofFiles.push({ path, lines: newlines });
-    } else {
-      productLines += newlines;
-    }
-  }
-  let policy;
-  let evaluated;
-  try {
-    policy = await readJson(resolve(repositoryRoot, "scripts/policy/proof-budget.json"));
-    evaluated = evaluateProofBudget({
-      proofLines,
-      productLines,
-      policy,
-    });
-  } catch (error) {
-    const ratio = productLines === 0 ? 0 : Number((proofLines / productLines).toFixed(4));
-    fail(error?.reasonCode ?? "PROOF_BUDGET_POLICY_INVALID", error?.message ?? "proof budget policy is invalid", {
-      proofBudget: {
-        proofLines,
-        productLines,
-        ratio,
-        status: "rejected",
-        rawStatus: "unknown",
-        rawReasonCode: error?.reasonCode ?? "PROOF_BUDGET_POLICY_INVALID",
-        blocking: true,
-        warningRatio: typeof policy?.warningRatio === "number" ? policy.warningRatio : null,
-        hardRatio: typeof policy?.hardRatio === "number" ? policy.hardRatio : null,
-      },
-    });
-  }
-  // TCRN-CROSS-STORY-462: the same proof files by responsibility, reported beside the raw
-  // count. The verdict above is already settled and never reads this view.
-  const responsibility = classifyProofResponsibility(proofFiles, policy.responsibilityView);
-  if (!evaluated.ok) fail(evaluated.reasonCode, evaluated.error, { proofBudget: evaluated, responsibility });
-  return success(evaluated.reasonCode, {
-    ...evaluated,
-    responsibility,
-    ...(evaluated.warning === null ? {} : { notice: evaluated.warning }),
-  });
-}
-
 // TCRN-CROSS-INC-232: every relative Markdown link in a tracked file must resolve.
 // Dispatched through here like every other leg rather than pointed straight at its
 // script -- the p1 roster criterion asserts exactly that, and caught it when this one
@@ -1319,12 +1072,10 @@ async function verifyLinks() {
 
 const handlers = {
   archive,
-  budget: reportBudget,
   build,
   clean,
   "format-check": () => formatCheck(),
   "format-write": () => formatCheck({ write: true }),
-  governance: verifyGovernance,
   links: verifyLinks,
   lint,
   offline: verifyOfflineBoundary,

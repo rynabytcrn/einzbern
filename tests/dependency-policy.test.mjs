@@ -4,12 +4,9 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import {
-  DependencyGraphError,
-  assertNoKnownVulnerabilities,
-  evaluateVulnerabilityPolicyFreshness,
-  validateFrozenDependencyGraph,
-} from "../scripts/lib/dependency-graph.mjs";
+// The vulnerability snapshot check and its freshness window were the governance leg's, and
+// retire with it (TCRN-CROSS-STORY-467 R2); the frozen graph read by the SBOM stays.
+import { DependencyGraphError, validateFrozenDependencyGraph } from "../scripts/lib/dependency-graph.mjs";
 
 async function dependencyInputs() {
   const [packageJson, dependencyPolicy, lockContent] = await Promise.all([
@@ -54,23 +51,6 @@ test("the exact frozen dependency graph has complete policy and integrity closur
   ]);
 });
 
-test("each exact transitive is checked by the vulnerability denylist", async () => {
-  const graph = validateFrozenDependencyGraph(await dependencyInputs());
-  assert.doesNotThrow(() => assertNoKnownVulnerabilities(graph, []));
-  for (const identity of graph.transitiveIdentities) {
-    const separator = identity.lastIndexOf("@");
-    const vulnerability = {
-      package: identity.slice(0, separator),
-      version: identity.slice(separator + 1),
-    };
-    assert.throws(
-      () => assertNoKnownVulnerabilities(graph, [vulnerability]),
-      (error) => error instanceof DependencyGraphError && error.reasonCode === "VULNERABLE_DEPENDENCY",
-      identity,
-    );
-  }
-});
-
 test("unapproved lock packages and integrity drift fail closed", async () => {
   const inputs = await dependencyInputs();
   const missingPolicy = structuredClone(inputs.dependencyPolicy);
@@ -89,43 +69,6 @@ test("unapproved lock packages and integrity drift fail closed", async () => {
   assert.throws(
     () => validateFrozenDependencyGraph({ ...inputs, lockContent: importerDrift }),
     (error) => error instanceof DependencyGraphError && error.reasonCode === "DEPENDENCY_LOCK_IMPORTER_NOT_EXACT",
-  );
-});
-
-test("vulnerability policy gives seven days of visible notice before failing closed", () => {
-  const policy = { snapshotDate: "2026-08-01", maxAgeDays: 30, noticeBeforeDays: 7 };
-  assert.deepEqual(evaluateVulnerabilityPolicyFreshness(policy, Date.parse("2026-08-23T00:00:00Z")), {
-    ageDays: 22,
-    daysRemaining: 8,
-    freshnessState: "current",
-    notice: null,
-  });
-  assert.deepEqual(evaluateVulnerabilityPolicyFreshness(policy, Date.parse("2026-08-24T00:00:00Z")), {
-    ageDays: 23,
-    daysRemaining: 7,
-    freshnessState: "expiring",
-    notice: { reasonCode: "VULNERABILITY_POLICY_EXPIRING", daysRemaining: 7 },
-  });
-  assert.throws(
-    () => evaluateVulnerabilityPolicyFreshness(policy, Date.parse("2026-09-01T00:00:00Z")),
-    (error) => error instanceof DependencyGraphError && error.reasonCode === "VULNERABILITY_POLICY_STALE",
-  );
-});
-
-test("the committed vulnerability snapshot is current on 2026-09-29 and the 2026-08-29 snapshot is stale", async () => {
-  // TCRN-CROSS-STORY-450: the governance leg reads this file with the wall clock. The
-  // clock below is the day the 2026-08-29 snapshot would have turned the leg red.
-  const policy = JSON.parse(
-    await readFile(new URL("../scripts/policy/vulnerability-policy.json", import.meta.url), "utf8"),
-  );
-  const clock = Date.parse("2026-09-29T00:00:00Z");
-  const expectedAgeDays = Math.floor((clock - Date.parse(`${policy.snapshotDate}T00:00:00Z`)) / 86_400_000);
-  const freshness = evaluateVulnerabilityPolicyFreshness(policy, clock);
-  assert.equal(freshness.ageDays, expectedAgeDays);
-  assert.equal(freshness.daysRemaining, policy.maxAgeDays - expectedAgeDays);
-  assert.throws(
-    () => evaluateVulnerabilityPolicyFreshness({ ...policy, snapshotDate: "2026-08-29" }, clock),
-    (error) => error instanceof DependencyGraphError && error.reasonCode === "VULNERABILITY_POLICY_STALE",
   );
 });
 

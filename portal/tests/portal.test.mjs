@@ -514,7 +514,7 @@ test("launcher generation emits regular files, starts macOS launcher, and names 
   await mkdir(badOutput);
   await execFileAsync(process.execPath, [generator, "--container", vanished, "--output-dir", badOutput, "--prose-root", proseRoot, "--port", "0"], { encoding: "utf8" });
   let failure;
-  try { await execFileAsync(join(badOutput, "tcrn-workflow-portal.sh"), [], { encoding: "utf8", env: { ...process.env, HOME: home } }); } catch (error) { failure = error; }
+  try { await execFileAsync(join(badOutput, "atelier.sh"), [], { encoding: "utf8", env: { ...process.env, HOME: home } }); } catch (error) { failure = error; }
   assert.ok(failure);
   assert.match(String(failure.stderr), /PORTAL_CONTAINER_UNAVAILABLE/u);
 });

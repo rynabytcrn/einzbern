@@ -358,7 +358,7 @@ function assertFileEntry(value: JsonValue): asserts value is { readonly path: st
   }
 }
 
-// Recompute the control tree under `rootDirectory/.tcrn-workflow` and prove it
+// Recompute the control tree under the root directory and prove it
 // matches `manifestJson`. Read-only: no lease, no validate — the target is a copy,
 // not a live workspace. Throws SNAPSHOT_MISMATCH naming the first differing path.
 export async function verifySnapshotManifest(

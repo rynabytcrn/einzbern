@@ -43,7 +43,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertInstallManifestComplete, readInstallManifest } from "../dist/build/packages/core/src/index.js";
+import { BRAND, LOCAL_DIRECTORY_NAMES, assertInstallManifestComplete, readInstallManifest } from "../dist/build/packages/core/src/index.js";
 import { canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -62,6 +62,11 @@ export class SiblingDependencyInputError extends Error {
   }
 }
 
+// The Helper is installed as a Skill directory named by its id; its checkout folder on this
+// machine keeps its old name (LOCAL_DIRECTORY_NAMES), and a line naming either reaches the
+// same sibling tree.
+const HELPER_SKILL_DIRECTORY = new RegExp(`(?:^|/)${BRAND.helper.id}/?$`, "u");
+const HELPER_LOCAL_FOLDER = LOCAL_DIRECTORY_NAMES.helper.split("/").at(-1);
 const HELPER_SKILL_PROBE = /^probe:helper-skill-digest;source=trusted-archive-state;archive=skill-archive\.json;state=state\.json;marker=installed-copy-[^;]+\.json;entry=SKILL\.md$/u;
 
 function ownPackageIdentity(repoRoot) {
@@ -107,8 +112,7 @@ export function canonicalSiblingRoster({ repoRoot = REPO_ROOT, manifest, manifes
 
   const helperItems = resolvedManifest.items.filter((item) => typeof item?.acceptanceProbe === "string" && HELPER_SKILL_PROBE.test(item.acceptanceProbe));
   const helperNames = helperItems.map((item) => {
-    const match = /(?:^|\/)tcrn-workflow-helper\/?$/u.exec(item.pathTemplate);
-    return match === null ? null : "tcrn-workflow-helper";
+    return HELPER_SKILL_DIRECTORY.test(item.pathTemplate) ? BRAND.helper.id : null;
   });
   if (helperItems.length !== 2 || helperNames.some((name) => name === null) || new Set(helperNames).size !== 1) {
     throw new SiblingDependencyInputError("install-manifest Helper identity is missing, invalid, or ambiguous");
@@ -116,7 +120,7 @@ export function canonicalSiblingRoster({ repoRoot = REPO_ROOT, manifest, manifes
   const helperIdentity = helperNames[0];
   if (projectNames.includes(helperIdentity)) throw new SiblingDependencyInputError("install-manifest Helper identity collides with a project identity");
 
-  const siblings = [...projectNames, helperIdentity].filter((name) => name !== self).sort();
+  const siblings = [...new Set([...projectNames, helperIdentity, HELPER_LOCAL_FOLDER])].filter((name) => name !== self).sort();
   return {
     siblings,
     self,

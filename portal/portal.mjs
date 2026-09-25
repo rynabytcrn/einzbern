@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { LOCALE_CONTRACT } from "./locale-contract.mjs";
+import { LEGACY_CONTROL_DIRECTORY } from "../scripts/lib/names.mjs";
 
 const execFileAsync = promisify(execFile);
 const portalRoot = dirname(fileURLToPath(import.meta.url));
@@ -148,7 +149,7 @@ const currentProseRoot = () => {
 try { currentProseRoot(); } catch (error) { failStartup(error); }
 async function currentWorkspaceName() {
   try {
-    const metadata = JSON.parse(await readFile(join(currentPartition().workspace, ".tcrn-workflow", "workspace.json"), "utf8"));
+    const metadata = JSON.parse(await readFile(join(currentPartition().workspace, LEGACY_CONTROL_DIRECTORY, "workspace.json"), "utf8"));
     if (typeof metadata.externalKey === "string" && metadata.externalKey.length > 0) return metadata.externalKey;
   } catch { /* legacy or incomplete workspace metadata falls back to the partition id */ }
   return currentPartition().id;

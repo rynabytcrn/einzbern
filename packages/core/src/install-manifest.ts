@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { compareCanonicalText } from "../../protocol/src/index.js";
+import { BRAND, DIRECTORY, LEGACY_ENGINE_NAME, LOCAL_DIRECTORY_NAMES } from "./names.js";
+
+// This machine's checkout folders keep their names; they are read from the names module.
+const PLATFORM_FOLDER = `<PLATFORM_ROOT>/${LOCAL_DIRECTORY_NAMES.classificationFolder}`;
+// Items that still carry the old engine name in their id or path (the adapters and the
+// engine repository settings fixture) spell it from the alias, never as a literal.
 
 export const INSTALL_MANIFEST_VERSION = "tcrn.install-manifest.v1" as const;
 
@@ -58,10 +64,11 @@ function item(
 }
 
 const projects: readonly InstallManifestProject[] = Object.freeze([
-  Object.freeze({ name: "TCRN-AOS", host: "shared", pathTemplate: "<PLATFORM_ROOT>/TCRN Platform/TCRN-AOS" }),
-  Object.freeze({ name: "TCRN-Design-System", host: "shared", pathTemplate: "<PLATFORM_ROOT>/TCRN Platform/TCRN-Design-System" }),
-  Object.freeze({ name: "TCRN-TMS", host: "shared", pathTemplate: "<PLATFORM_ROOT>/TCRN Platform/TCRN-TMS" }),
-  Object.freeze({ name: "tcrn-workflow", host: "shared", pathTemplate: "<PLATFORM_ROOT>/TCRN Platform/tcrn-workflow" }),
+  Object.freeze({ name: "TCRN-AOS", host: "shared", pathTemplate: `${PLATFORM_FOLDER}/TCRN-AOS` }),
+  Object.freeze({ name: "TCRN-Design-System", host: "shared", pathTemplate: `${PLATFORM_FOLDER}/TCRN-Design-System` }),
+  Object.freeze({ name: "TCRN-TMS", host: "shared", pathTemplate: `${PLATFORM_FOLDER}/TCRN-TMS` }),
+  // The engine project is named Einzbern; its checkout folder keeps its local name.
+  Object.freeze({ name: BRAND.engine.id, host: "shared", pathTemplate: `<PLATFORM_ROOT>/${LOCAL_DIRECTORY_NAMES.engine}` }),
   // Case is contractual: this is the external project directory, not a prose
   // rendering of the partition label "Joi-Button".
   Object.freeze({ name: "joi-button", host: "shared", pathTemplate: "<PLATFORM_ROOT>/joi-button" }),
@@ -80,7 +87,7 @@ const projects: readonly InstallManifestProject[] = Object.freeze([
 // tests. It stays declared here so the harness-surface leg can tell an accounted-for
 // directory from a stray, with its provenance stated rather than implied.
 const projectItems = [
-  item("project.tcrn-workflow.claude-settings", "project", "claude", "<PLATFORM_ROOT>/TCRN Platform/tcrn-workflow/.claude/settings.json", "host-self", "probe:regular-file"),
+  item(`project.${LEGACY_ENGINE_NAME}.claude-settings`, "project", "claude", `<PLATFORM_ROOT>/${LOCAL_DIRECTORY_NAMES.engine}/.claude/settings.json`, "host-self", "probe:regular-file"),
 ];
 
 export const INSTALL_MANIFEST_ITEMS: readonly InstallManifestItem[] = Object.freeze([
@@ -88,9 +95,9 @@ export const INSTALL_MANIFEST_ITEMS: readonly InstallManifestItem[] = Object.fre
   item("container.mcp", "container", "claude", "<PLATFORM_ROOT>/.mcp.json", "engine-adapter", "probe:regular-file"),
   item("container.platform-agents", "container", "shared", "<PLATFORM_ROOT>/AGENTS.md", "engine-adapter", "probe:regular-file"),
   item("container.platform-claude-bridge", "container", "claude", "<PLATFORM_ROOT>/CLAUDE.md", "engine-adapter", "probe:regular-file"),
-  item("container.claude-adapter", "container", "claude", "<PLATFORM_ROOT>/.claude/tcrn-workflow", "engine-adapter",
+  item("container.claude-adapter", "container", "claude", `<PLATFORM_ROOT>/.claude/${LEGACY_ENGINE_NAME}`, "engine-adapter",
     "probe:adapter-bundle-digest;receipt=<PLATFORM_ROOT>/.tcrn-artifacts/install-receipts/platform-container/claude.json"),
-  item("container.codex-adapter", "container", "codex", "<PLATFORM_ROOT>/.codex/tcrn-workflow", "engine-adapter",
+  item("container.codex-adapter", "container", "codex", `<PLATFORM_ROOT>/.codex/${LEGACY_ENGINE_NAME}`, "engine-adapter",
     "probe:adapter-bundle-digest;receipt=<PLATFORM_ROOT>/.tcrn-artifacts/install-receipts/platform-container/codex.json"),
   // STORY-286: the two adapter entries used to accept a directory merely existing, which
   // is the ceiling INC-208 recorded — a bundle whose bytes had been edited passed. They
@@ -106,18 +113,18 @@ export const INSTALL_MANIFEST_ITEMS: readonly InstallManifestItem[] = Object.fre
   // session is opened, which is a stronger guarantee than the per-project copies were.
   item("machine.claude-settings", "machine", "claude", "<HOME>/.claude/settings.json", "user-guided", "probe:regular-file"),
   item("machine.codex-config", "machine", "codex", "<HOME>/.codex/config.toml", "user-guided", "probe:regular-file"),
-  item("machine.claude-skill", "machine", "claude", "<HOME>/.claude/skills/tcrn-workflow-helper", "user-guided", "probe:helper-skill-digest;source=trusted-archive-state;archive=skill-archive.json;state=state.json;marker=installed-copy-claude.json;entry=SKILL.md"),
+  item("machine.claude-skill", "machine", "claude", `<HOME>/.claude/skills/${BRAND.helper.id}`, "user-guided", "probe:helper-skill-digest;source=trusted-archive-state;archive=skill-archive.json;state=state.json;marker=installed-copy-claude.json;entry=SKILL.md"),
   // Codex's universal user Skill root is ~/.agents/skills.  The older
   // ~/.codex/skills copy is legacy history and is deliberately not an install
   // obligation; skills@1.7.0 owns the canonical placement here.
-  item("machine.agents-skill", "machine", "codex", "<HOME>/.agents/skills/tcrn-workflow-helper", "user-guided", "probe:helper-skill-digest;source=trusted-archive-state;archive=skill-archive.json;state=state.json;marker=installed-copy-agents.json;entry=SKILL.md"),
-  item("machine.workflow-engine", "machine", "shared", "<HOME>/.tcrn-workflow", "user-guided", "probe:engine-version"),
-  item("machine.trust-archive", "machine", "shared", "<HOME>/.tcrn-workflow/skill-archive.json", "user-guided", "probe:trust-archive-freshness"),
+  item("machine.agents-skill", "machine", "codex", `<HOME>/.agents/skills/${BRAND.helper.id}`, "user-guided", "probe:helper-skill-digest;source=trusted-archive-state;archive=skill-archive.json;state=state.json;marker=installed-copy-agents.json;entry=SKILL.md"),
+  item("machine.workflow-engine", "machine", "shared", `<HOME>/${DIRECTORY.device}`, "user-guided", "probe:engine-version"),
+  item("machine.trust-archive", "machine", "shared", `<HOME>/${DIRECTORY.device}/skill-archive.json`, "user-guided", "probe:trust-archive-freshness"),
   item("machine.local-snapshot-artifacts", "machine", "shared", "<PLATFORM_ROOT>/.tcrn-artifacts/chain-snapshots", "user-guided", "probe:regular-directory"),
   item("machine.launchd-local-snapshot", "machine", "shared", "<HOME>/Library/LaunchAgents/com.tcrn.platform.local-snapshot.plist", "user-guided", "probe:launchd-duty;label=com.tcrn.platform.local-snapshot;maxAgeHours=26"),
-  item("machine.portal-launcher-command", "machine", "shared", "<PLATFORM_ROOT>/tcrn-workflow-portal.command", "user-guided", "probe:regular-executable"),
-  item("machine.portal-launcher-sh", "machine", "shared", "<PLATFORM_ROOT>/tcrn-workflow-portal.sh", "user-guided", "probe:regular-executable"),
-  item("machine.portal-launcher-cmd", "machine", "shared", "<PLATFORM_ROOT>/tcrn-workflow-portal.cmd", "user-guided", "probe:regular-file"),
+  item("machine.portal-launcher-command", "machine", "shared", `<PLATFORM_ROOT>/${BRAND.portal.id}.command`, "user-guided", "probe:regular-executable"),
+  item("machine.portal-launcher-sh", "machine", "shared", `<PLATFORM_ROOT>/${BRAND.portal.id}.sh`, "user-guided", "probe:regular-executable"),
+  item("machine.portal-launcher-cmd", "machine", "shared", `<PLATFORM_ROOT>/${BRAND.portal.id}.cmd`, "user-guided", "probe:regular-file"),
   ...projectItems,
 ].sort((left, right) => compareCanonicalText(left.id, right.id)));
 
@@ -148,7 +155,7 @@ const REQUIRED_ITEM_ID_CATALOG = [
   // INC-207: only the engine repository's own committed fixture remains at project
   // layer. This catalog stays written out by hand rather than derived from the item
   // list, so deleting the entry above still fails the completeness test.
-  "project.tcrn-workflow.claude-settings",
+  `project.${LEGACY_ENGINE_NAME}.claude-settings`,
 ].sort(compareCanonicalText);
 export const INSTALL_MANIFEST_REQUIRED_ITEM_IDS = Object.freeze(REQUIRED_ITEM_ID_CATALOG);
 

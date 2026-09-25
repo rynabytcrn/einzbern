@@ -96,7 +96,7 @@ test("exclusive output session preserves a foreign lock whose identity is outsid
   context.after(() => rm(temporary, { recursive: true, force: true }));
   const gitDirectory = resolve(temporary, ".git");
   await mkdir(gitDirectory);
-  await mkdir(resolve(gitDirectory, "tcrn-workflow-output.lock"));
+  await mkdir(resolve(gitDirectory, "einzbern-output.lock"));
   await assert.rejects(
     withExclusiveOutputSession(temporary, async () => undefined),
     (error) => error.reasonCode === "OUTPUT_SESSION_RECOVERY_IDENTITY",

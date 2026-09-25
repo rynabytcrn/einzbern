@@ -105,8 +105,8 @@ node ~/.tcrn-workflow/tcrn-workflow/portal/scripts/generate-launchers.mjs \
   --port 4319
 ```
 
-This generates `tcrn-workflow-portal.command` for macOS,
-`tcrn-workflow-portal.sh` for Linux, and `tcrn-workflow-portal.cmd` for
+This generates `atelier.command` for macOS,
+`atelier.sh` for Linux, and `atelier.cmd` for
 Windows. The Windows launcher shape is generated here; full Windows-host
 runtime validation remains a separate verification item.
 

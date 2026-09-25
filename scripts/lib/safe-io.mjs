@@ -18,20 +18,20 @@ const locallyPublishingRecoveryClaims = new Map();
 // repository path (with the lexical path reserved synchronously first so the
 // second same-path caller cannot reach the first await).
 const locallyRecoveringOutputSessions = new Map();
-const outputLockName = "tcrn-workflow-output.lock";
+const outputLockName = "einzbern-output.lock";
 const outputLockMetadataName = "owner.json";
 const outputOwnerStagePrefix = ".owner.json.staging-";
-const outputRecoveryClaimName = ".tcrn-workflow-output-recovery-claim";
-const outputAcquisitionClaimName = ".tcrn-workflow-output-acquisition-claim";
-const outputAcquisitionStagePrefix = ".tcrn-workflow-output-acquisition-claim.staging-";
+const outputRecoveryClaimName = ".einzbern-output-recovery-claim";
+const outputAcquisitionClaimName = ".einzbern-output-acquisition-claim";
+const outputAcquisitionStagePrefix = ".einzbern-output-acquisition-claim.staging-";
 const maximumRecoveryClaimBytes = 65_536;
 const outputOwnerFields = ["schemaVersion", "pid", "uid", "lockDev", "lockIno", "ownerDev", "ownerIno", "processGroup"];
 const recoveryClaimFields = ["schemaVersion", "pid", "uid", "repositoryPath", "lockPath", "stagingName", "claimDev", "claimIno", "lockDev", "lockIno", "lockCtimeMs", "lockMtimeMs", "ownerDev", "ownerIno", "ownerBytes"];
 const acquisitionClaimFields = ["schemaVersion", "pid", "uid", "repositoryPath", "lockPath", "claimDev", "claimIno"];
-const recoveryStagePattern = /^\.tcrn-workflow-output-recovery-claim\.staging-([1-9][0-9]*)-([1-9][0-9]*)$/;
+const recoveryStagePattern = /^\.einzbern-output-recovery-claim\.staging-([1-9][0-9]*)-([1-9][0-9]*)$/;
 const recoveryClaimCanonicalPrefix = '{"schemaVersion":"tcrn.output-session-recovery-claim.v1",';
 const outputOwnerStagePattern = /^\.owner\.json\.staging-([1-9][0-9]*)-(0|[1-9][0-9]*)-([1-9][0-9]*)$/;
-const outputAcquisitionStagePattern = /^\.tcrn-workflow-output-acquisition-claim\.staging-([1-9][0-9]*)-([1-9][0-9]*)$/;
+const outputAcquisitionStagePattern = /^\.einzbern-output-acquisition-claim\.staging-([1-9][0-9]*)-([1-9][0-9]*)$/;
 const legacyAuthorityBrand = new WeakSet();
 const legacyReceiptFields = ["schemaVersion", "repositoryPath", "lockPath", "lockDev", "lockIno", "lockCtimeMs", "lockMtimeMs", "lockUid", "lockMode", "lockEntries", "findingId", "reviewReceiptPath", "reviewReceiptSha256", "reviewReceiptDev", "reviewReceiptIno", "reviewReceiptCtimeMs", "reviewReceiptMtimeMs"];
 const legacyFindingId = "RC4-ROUND2-OUTPUT-SESSION-LIFECYCLE-1";
@@ -727,7 +727,7 @@ async function assertRecoveryClean(gitDirectory, lockPath, claimPath, reasonCode
     if (present) fail(reasonCode, path);
   }
   const entries = await readdir(gitDirectory).catch((error) => fail(reasonCode, `${gitDirectory}: ${error.code ?? error.message}`));
-  if (entries.some((name) => name.startsWith(".tcrn-workflow-output-recovery-claim.staging-") || name.startsWith(outputAcquisitionStagePrefix))) fail(reasonCode, gitDirectory);
+  if (entries.some((name) => name.startsWith(".einzbern-output-recovery-claim.staging-") || name.startsWith(outputAcquisitionStagePrefix))) fail(reasonCode, gitDirectory);
 }
 
 async function findRecoveryObjects(gitDirectory, claimPath, reasonCode) {
@@ -736,7 +736,7 @@ async function findRecoveryObjects(gitDirectory, claimPath, reasonCode) {
     fail(reasonCode, `${claimPath}: ${error.code ?? error.message}`);
   });
   const entries = await readdir(gitDirectory).catch((error) => fail(reasonCode, `${gitDirectory}: ${error.code ?? error.message}`));
-  const stages = entries.filter((name) => name.startsWith(".tcrn-workflow-output-recovery-claim.staging-"));
+  const stages = entries.filter((name) => name.startsWith(".einzbern-output-recovery-claim.staging-"));
   return { fixed, stages };
 }
 
@@ -784,7 +784,7 @@ async function isExactPrepublicationRecoveryClaimPrefix(gitDirectory, stagePath,
 async function clearDeadStageOnlyOrphans(gitDirectory, claimPath) {
   const entries = await readdir(gitDirectory).catch((error) => fail("OUTPUT_SESSION_RECOVERY_CLAIM_INVALID", `${gitDirectory}: ${error.code ?? error.message}`));
   for (const name of entries) {
-    if (!name.startsWith(".tcrn-workflow-output-recovery-claim.staging-")) continue;
+    if (!name.startsWith(".einzbern-output-recovery-claim.staging-")) continue;
     const match = recoveryStagePattern.exec(name);
     if (!match) fail("OUTPUT_SESSION_RECOVERY_CLAIM_INVALID", resolve(gitDirectory, name));
     const stagePath = resolve(gitDirectory, name);

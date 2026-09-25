@@ -69,9 +69,9 @@ const windowsLauncher = [
 ].join("\r\n");
 
 const files = [
-  { name: "tcrn-workflow-portal.command", content: commandLauncher, mode: 0o755 },
-  { name: "tcrn-workflow-portal.sh", content: linuxLauncher, mode: 0o755 },
-  { name: "tcrn-workflow-portal.cmd", content: windowsLauncher, mode: 0o644 },
+  { name: "atelier.command", content: commandLauncher, mode: 0o755 },
+  { name: "atelier.sh", content: linuxLauncher, mode: 0o755 },
+  { name: "atelier.cmd", content: windowsLauncher, mode: 0o644 },
 ];
 
 for (const file of files) {

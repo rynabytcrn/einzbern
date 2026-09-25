@@ -18,7 +18,11 @@ import {
   judgeNoSiblingDependency,
   REPO_ROOT,
 } from "../scripts/no-sibling-dependency-proof.mjs";
-import { INSTALL_MANIFEST } from "../dist/build/packages/core/src/index.js";
+import { BRAND, INSTALL_MANIFEST, LEGACY_HELPER_NAME } from "../dist/build/packages/core/src/index.js";
+
+// The Helper is recognised by its id (the Skill directory the manifest names) and by the
+// checkout folder that keeps its old name on this machine.
+const ROSTER = ["TCRN-AOS", "TCRN-Design-System", "TCRN-TMS", "joi-button", BRAND.helper.id, LEGACY_HELPER_NAME].sort();
 
 const SIBLINGS = ["TCRN-AOS", "TCRN-Design-System"];
 
@@ -49,18 +53,18 @@ test("the real repository carries no reaching line", () => {
 
 test("siblings are discovered, not typed", () => {
   const roster = canonicalSiblingRoster({ repoRoot: REPO_ROOT, manifest: INSTALL_MANIFEST });
-  assert.deepEqual(roster.siblings, ["TCRN-AOS", "TCRN-Design-System", "TCRN-TMS", "joi-button", "tcrn-workflow-helper"]);
-  assert.equal(roster.self, "tcrn-workflow");
-  assert.equal(roster.helperIdentity, "tcrn-workflow-helper");
+  assert.deepEqual(roster.siblings, ROSTER);
+  assert.equal(roster.self, BRAND.engine.id);
+  assert.equal(roster.helperIdentity, BRAND.helper.id);
   assert.match(roster.manifestDigest, /^[a-f0-9]{64}$/u);
 });
 
 test("a clone-layout checkout agrees with the manifest roster without inspecting parent directories", () => {
   const root = mkdtempSync(join(tmpdir(), "tcrn-siblings-clone-"));
   try {
-    writeFileSync(join(root, "package.json"), JSON.stringify({ name: "tcrn-workflow" }));
+    writeFileSync(join(root, "package.json"), JSON.stringify({ name: BRAND.engine.id }));
     const roster = canonicalSiblingRoster({ repoRoot: root, manifest: INSTALL_MANIFEST });
-    assert.deepEqual(roster.siblings, ["TCRN-AOS", "TCRN-Design-System", "TCRN-TMS", "joi-button", "tcrn-workflow-helper"]);
+    assert.deepEqual(roster.siblings, ROSTER);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -71,9 +75,12 @@ test("canonical roster findings remain comparable for a synthetic sibling violat
   const findings = judgeSource(`const raw = readFileSync(resolve(PLATFORM_ROOT, "TCRN-AOS/docs/thing.json"), "utf8");`, roster.siblings);
   assert.equal(findings.length, 1);
   assert.equal(findings[0].sibling, "TCRN-AOS");
-  const spawned = judgeSource(`spawn(process.execPath, [join(root, "tcrn-workflow-helper/scripts/check.mjs")]);`, roster.siblings);
+  const spawned = judgeSource(`spawn(process.execPath, [join(root, "${LEGACY_HELPER_NAME}/scripts/check.mjs")]);`, roster.siblings);
   assert.equal(spawned.length, 1);
-  assert.equal(spawned[0].sibling, "tcrn-workflow-helper");
+  assert.equal(spawned[0].sibling, LEGACY_HELPER_NAME);
+  const byId = judgeSource(`spawn(process.execPath, [join(root, "${BRAND.helper.id}/scripts/check.mjs")]);`, roster.siblings);
+  assert.equal(byId.length, 1);
+  assert.equal(byId[0].sibling, BRAND.helper.id);
 });
 
 test("invalid, incomplete, and ambiguous manifest inputs are not-verifiable", () => {
@@ -81,7 +88,7 @@ test("invalid, incomplete, and ambiguous manifest inputs are not-verifiable", ()
   assert.equal(invalid.reasonCode, "SIBLING_DEPENDENCY_NOT_VERIFIABLE");
   assert.equal(invalid.comparable, false);
 
-  const missingSelf = { ...INSTALL_MANIFEST, projects: INSTALL_MANIFEST.projects.filter((project) => project.name !== "tcrn-workflow") };
+  const missingSelf = { ...INSTALL_MANIFEST, projects: INSTALL_MANIFEST.projects.filter((project) => project.name !== BRAND.engine.id) };
   const incomplete = judgeNoSiblingDependency({ repoRoot: REPO_ROOT, manifest: missingSelf });
   assert.equal(incomplete.reasonCode, "SIBLING_DEPENDENCY_NOT_VERIFIABLE");
   assert.equal(incomplete.comparable, false);
@@ -289,7 +296,7 @@ test("GREENS on HOME mentioned in a string but not accessed", () => {
 test("GREENS on fixture-rooted path with sibling name (TCRN-CROSS-INC-274 exemption)", () => {
   // Paths rooted at fixture.home are synthetic test artifacts, not real reaches into siblings
   const findings = judgeSource(
-    `const skillPath = join(fixture.home, ".agents", "skills", "tcrn-workflow-helper", "SKILL.md"); const content = readFileSync(skillPath, "utf8");`
+    `const skillPath = join(fixture.home, ".agents", "skills", "${BRAND.helper.id}", "SKILL.md"); const content = readFileSync(skillPath, "utf8");`
   );
   assert.deepEqual(findings, [], "fixture-rooted path containing sibling name must not be flagged");
 });
@@ -297,11 +304,11 @@ test("GREENS on fixture-rooted path with sibling name (TCRN-CROSS-INC-274 exempt
 test("REDS on non-fixture-rooted path containing sibling name, even via tmpdir exemption", () => {
   // A path that reaches into a sibling directory must be flagged, regardless of route
   const findings = judgeSource(
-    `const engineRoot = resolve("/opt/engine"); const path = resolve(engineRoot, "../tcrn-workflow-helper"); readFileSync(path, "utf8");`,
-    ["TCRN-AOS", "tcrn-workflow-helper"]
+    `const engineRoot = resolve("/opt/engine"); const path = resolve(engineRoot, "../${LEGACY_HELPER_NAME}"); readFileSync(path, "utf8");`,
+    ["TCRN-AOS", LEGACY_HELPER_NAME]
   );
   assert.equal(findings.length, 1, "non-fixture-rooted path with sibling name must be flagged");
-  assert.equal(findings[0].sibling, "tcrn-workflow-helper");
+  assert.equal(findings[0].sibling, LEGACY_HELPER_NAME);
   assert.equal(findings[0].operation, "filesystem-read");
 });
 

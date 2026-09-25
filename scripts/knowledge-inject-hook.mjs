@@ -20,6 +20,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { DEFAULT_STATE_DIRECTORY, acknowledgeInjection } from "./injection-session.mjs";
+import { DIRECTORY, LEGACY_CONTAINER_DIRECTORY, LEGACY_CONTROL_DIRECTORY } from "./lib/names.mjs";
 import { INJECTION_PROTOCOL_VERSION, MAX_INJECTION_PROTOCOL_BYTES, hasChildAgentMarker, parseInjectionProtocol } from "./knowledge-inject.mjs";
 
 export const PLATFORM_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -72,7 +73,8 @@ export function validateInjectionPlacementManifest(value) {
   }
   if (manifest.modelMapping?.setting !== "execution.dispatchTiers" || manifest.modelMapping?.maxCallsPerPrompt !== 1 || manifest.modelMapping?.timeoutMs !== 10_000 || manifest.modelMapping?.subagentAuxiliaryModels !== false || JSON.stringify(manifest.modelMapping?.contextBinding) !== JSON.stringify(["role", "workId", "pack"])) return false;
   if (manifest.protocol?.version !== INJECTION_PROTOCOL_VERSION || manifest.protocol?.maxBytes !== MAX_INJECTION_PROTOCOL_BYTES || manifest.protocol?.acknowledgement !== "wrapper-after-parse" || manifest.protocol?.retryLimit !== 1) return false;
-  if (manifest.runtimeState?.path?.includes(".tcrn-workflow") || manifest.runtimeState?.path?.includes(".tcrn-workspace")) return false;
+  // Runtime state never lives inside a library or a legacy control tree or container.
+  if ([DIRECTORY.library, LEGACY_CONTROL_DIRECTORY, LEGACY_CONTAINER_DIRECTORY].some((name) => manifest.runtimeState?.path?.includes(name))) return false;
   return manifest.placementOwner === "STORY-371" && manifest.installer === null;
 }
 

@@ -116,7 +116,7 @@ try {
     throw new Error(`ISOLATED_P1_REASON:${JSON.stringify(terminal)}`);
   }
   try {
-    await lstat(resolve(checkout, ".git/tcrn-workflow-output.lock"));
+    await lstat(resolve(checkout, ".git/einzbern-output.lock"));
     throw new Error("ISOLATED_OUTPUT_LOCK_RETAINED");
   } catch (error) {
     if (error.code !== "ENOENT") {

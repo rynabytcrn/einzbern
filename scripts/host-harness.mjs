@@ -35,6 +35,8 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { LEGACY_CONTAINER_DIRECTORY, LEGACY_CONTROL_DIRECTORY, LOCAL_DIRECTORY_NAMES } from "./lib/names.mjs";
+
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const HOSTS = Object.freeze(["claude", "codex"]);
 const CONTAINER_ROOT_HANDLERS = new Set(["scripts/knowledge-inject-hook.mjs", "scripts/knowledge-capture-hook.mjs"]);
@@ -50,7 +52,7 @@ const CODEX_ONLY_CONTAINER_ROOT_HANDLERS = new Set([
 ]);
 
 /** The control trees no host may be edited into. Kept here so both renderings cite one list. */
-export const GUARDED_TREES = Object.freeze([".tcrn-workspace", ".tcrn-workflow"]);
+export const GUARDED_TREES = Object.freeze([LEGACY_CONTAINER_DIRECTORY, LEGACY_CONTROL_DIRECTORY]);
 
 /**
  * What the harness must guarantee, and how each host is made to guarantee it.
@@ -68,7 +70,7 @@ export const HARNESS_CAPABILITIES = Object.freeze([
   },
   {
     id: "control-tree-write-refusal",
-    purpose: "no file-editing tool may write inside .tcrn-workspace or .tcrn-workflow",
+    purpose: `no file-editing tool may write inside ${GUARDED_TREES.join(", ")}`,
     claude: {
       mechanism: "settings-deny",
       note: "Claude Code expresses this declaratively in permissions.deny, which needs no handler and cannot be bypassed by a handler crashing.",
@@ -217,7 +219,7 @@ function handlerArguments(handler, host, containerRoot) {
 
 function claudeCommand(handler) {
   const argumentsText = handlerArguments(handler, "claude", null);
-  const target = `\${CLAUDE_PROJECT_DIR}/TCRN Platform/tcrn-workflow/${handler}`;
+  const target = `\${CLAUDE_PROJECT_DIR}/${LOCAL_DIRECTORY_NAMES.engine}/${handler}`;
   return `if [ -f "${target}" ]; then node "${target}"${argumentsText}; fi`;
 }
 

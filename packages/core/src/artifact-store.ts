@@ -178,7 +178,7 @@ async function boundFileBytes(path: string, maximumBytes: number): Promise<Buffe
  * The effective blob root for a workspace, resolved but NOT yet proved to exist.
  *
  * A relative value is workspace-relative, which is what the setting has always meant
- * and what its default (`.tcrn-workflow/artifacts`) still is. An absolute value is
+ * and what its default (`artifacts` inside the control directory) still is. An absolute value is
  * taken as written.
  */
 export function resolveGeneratedArtifactsRoot(workspaceRoot: string, value: string): string {

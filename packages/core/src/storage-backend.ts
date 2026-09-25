@@ -20,8 +20,9 @@ import {
 import { dirname, relative, resolve, sep } from "node:path";
 
 import { PROTOCOL_LIMITS } from "../../protocol/src/index.js";
+import { LEGACY_CONTROL_DIRECTORY } from "./names.js";
 
-export const WORKSPACE_CONTROL_DIRECTORY = ".tcrn-workflow" as const;
+export const WORKSPACE_CONTROL_DIRECTORY = LEGACY_CONTROL_DIRECTORY;
 
 export type WorkspaceCrashPoint =
   | "before-write"

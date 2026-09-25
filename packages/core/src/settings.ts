@@ -5,6 +5,7 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 import { assertStrictInstant, canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
 import { ARTIFACT_LANGUAGE_TAGS, parsePromptLanguages } from "./knowledge-language.js";
 import { dispatchSettingDefault, validateDispatchSetting } from "./dispatch-config.js";
+import { LEGACY_CONTROL_DIRECTORY } from "./names.js";
 
 /**
  * Settings are a deliberately small engine-owned overlay surface. The generic
@@ -182,7 +183,7 @@ function assertAbsoluteArtifactsSettingPath(value: string, label: string, worksp
   if (workspaceRoot === undefined) return;
   const workspace = resolve(workspaceRoot);
   const destination = resolve(value);
-  if (isInside(workspace, destination) || isInside(resolve(workspace, ".tcrn-workflow"), destination)) {
+  if (isInside(workspace, destination) || isInside(resolve(workspace, LEGACY_CONTROL_DIRECTORY), destination)) {
     fail("SETTINGS_VALUE_INVALID", `${label} must be outside the workspace and its control tree`);
   }
 }
@@ -446,7 +447,7 @@ const catalogEntries: readonly SettingsCatalogEntry[] = [
     type: "path",
     controlType: "text",
     layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: ".tcrn-workflow/artifacts",
+    defaultValue: `${LEGACY_CONTROL_DIRECTORY}/artifacts`,
   },
 ];
 
@@ -570,12 +571,12 @@ export function validateSettingValue(key: unknown, value: unknown, workspaceRoot
       if (value.includes("\\") || resolve(value) !== value) {
         fail("SETTINGS_VALUE_INVALID", `${entry.key} must be a normalized absolute path`);
       }
-      if (workspaceRoot !== undefined && isInside(resolve(workspaceRoot, ".tcrn-workflow"), resolve(value))) {
+      if (workspaceRoot !== undefined && isInside(resolve(workspaceRoot, LEGACY_CONTROL_DIRECTORY), resolve(value))) {
         fail("SETTINGS_VALUE_INVALID", `${entry.key} must not target the workspace control tree`);
       }
     } else {
       assertWorkspaceRelativeSettingPath(value, entry.key);
-      if (workspaceRoot !== undefined && isInside(resolve(workspaceRoot, ".tcrn-workflow"), resolve(workspaceRoot, value))) {
+      if (workspaceRoot !== undefined && isInside(resolve(workspaceRoot, LEGACY_CONTROL_DIRECTORY), resolve(workspaceRoot, value))) {
         fail("SETTINGS_VALUE_INVALID", `${entry.key} must not target the workspace control tree`);
       }
     }
@@ -587,7 +588,7 @@ export function validateSettingValue(key: unknown, value: unknown, workspaceRoot
     if (workspaceRoot !== undefined) {
       const workspace = resolve(workspaceRoot);
       const destination = resolve(value);
-      if (isInside(workspace, destination) || isInside(resolve(workspace, ".tcrn-workflow"), destination)) {
+      if (isInside(workspace, destination) || isInside(resolve(workspace, LEGACY_CONTROL_DIRECTORY), destination)) {
         fail("SETTINGS_VALUE_INVALID", `${entry.key} must be outside the workspace and its control tree`);
       }
     }

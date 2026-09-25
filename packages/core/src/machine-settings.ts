@@ -10,7 +10,7 @@
 //
 // So this layer is deliberately NOT chain-backed. It is a single canonical JSON file
 // under the machine-level engine home the install manifest already declares
-// (`machine.workflow-engine`, `<HOME>/.tcrn-workflow`). Two properties are kept from
+// (`machine.workflow-engine`, the device directory `<HOME>/.einzbern`). Two properties are kept from
 // the governed layer because they are not about governance: only the engine writes the
 // file, and every value is validated against a closed catalogue before it is stored.
 //
@@ -23,12 +23,13 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { canonicalJson } from "../../protocol/src/index.js";
+import { DIRECTORY } from "./names.js";
 
 export const MACHINE_SETTINGS_VERSION = "tcrn.machine-settings.v1" as const;
 export const MACHINE_SETTINGS_LAYER_KIND = "machine_configuration" as const;
 export const MACHINE_SETTINGS_FILE_NAME = "machine-settings.json" as const;
 /** The machine-level engine home, as declared by install-manifest item machine.workflow-engine. */
-export const MACHINE_SETTINGS_DIRECTORY = ".tcrn-workflow" as const;
+export const MACHINE_SETTINGS_DIRECTORY = DIRECTORY.device;
 
 export const MACHINE_SETTING_KEYS = Object.freeze([
   "portal.defaultLocale",

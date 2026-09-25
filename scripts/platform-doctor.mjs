@@ -12,8 +12,12 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // the built public core so the same bytes are used by the CLI's install-manifest
 // read surface and by this host probe; there is no second path table here.
 import {
+  BRAND,
+  DIRECTORY,
   INSTALL_MANIFEST,
+  LEGACY_CONTROL_DIRECTORY,
   LEGACY_ENGINE_NAME,
+  LOCAL_DIRECTORY_NAMES,
   assertInstallManifestComplete,
   compareEngineVersions,
   WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES,
@@ -68,7 +72,7 @@ function manifestPath(manifest, id, platformRoot, homeRoot) {
 
 const CHAIN_CONTAINER_REPOSITORY = "chain container";
 const CHAIN_CONTAINER_DIRECTORY = [".tcrn", "workspace"].join("-");
-const WORKFLOW_DIRECTORY = [".tcrn", "workflow"].join("-");
+const WORKFLOW_DIRECTORY = LEGACY_CONTROL_DIRECTORY;
 const ACCEPTANCE_BINDING_SCHEMA = "tcrn.acceptance-binding.v1";
 const CHAIN_VALIDATE_GROUP_ID = "chain-validate";
 
@@ -405,7 +409,7 @@ async function inspectHelperReleaseAlignment(platformRoot, homeRoot, options) {
     const { published, trusted } = options.helperReleaseAlignment;
     return helperReleaseVerdict(published ?? null, trusted ?? null, "synthetic");
   }
-  const bootstrapPath = join(platformRoot, "TCRN Platform", "tcrn-workflow-helper", "bootstrap", "trusted-bootstrap.mjs");
+  const bootstrapPath = join(platformRoot, LOCAL_DIRECTORY_NAMES.helper, "bootstrap", "trusted-bootstrap.mjs");
   let published = null;
   try {
     published = /EXPECTED_ARCHIVE_SHA256\s*=\s*'([0-9a-f]{64})'/u.exec(await readFile(bootstrapPath, "utf8"))?.[1] ?? null;
@@ -414,7 +418,7 @@ async function inspectHelperReleaseAlignment(platformRoot, homeRoot, options) {
   }
   let trusted = null;
   try {
-    trusted = createHash("sha256").update(await readFile(join(homeRoot, ".tcrn-workflow", "skill-archive.json"))).digest("hex");
+    trusted = createHash("sha256").update(await readFile(join(homeRoot, DIRECTORY.device, "skill-archive.json"))).digest("hex");
   } catch (error) {
     if (error?.code !== "ENOENT" && error?.code !== "ENOTDIR") throw error;
   }
@@ -462,7 +466,7 @@ async function inspectProofBudget(platformRoot, homeRoot, options) {
   if (options.proofBudget && typeof options.proofBudget === "object") {
     return proofBudgetVerdict(options.proofBudget, "synthetic");
   }
-  const checkoutRoot = join(platformRoot, "TCRN Platform", "tcrn-workflow");
+  const checkoutRoot = join(platformRoot, LOCAL_DIRECTORY_NAMES.engine);
   const policyPath = join(checkoutRoot, "scripts", "policy", "proof-budget.json");
   let policy = null;
   try {
@@ -637,7 +641,7 @@ async function inspectUnusedExports(platformRoot, options) {
   if (options.unusedExports && typeof options.unusedExports === "object") {
     return unusedExportsVerdict(options.unusedExports, "synthetic");
   }
-  const checkoutRoot = join(platformRoot, "TCRN Platform", "tcrn-workflow");
+  const checkoutRoot = join(platformRoot, LOCAL_DIRECTORY_NAMES.engine);
   let policy = null;
   try {
     policy = JSON.parse(await readFile(join(checkoutRoot, "scripts", "policy", "core-export-consumers.json"), "utf8"));
@@ -1359,7 +1363,7 @@ export async function inspectHostRenderDrift(root, options) {
   let repoRoot = options.hostRenderRepoRoot ?? null;
   if (repoRoot === null) {
     const engineRoot = manifestPath(options.manifest ?? INSTALL_MANIFEST, "machine.workflow-engine", root, options.homeRoot ?? process.env.HOME ?? "");
-    repoRoot = engineRoot === null ? null : join(engineRoot, "tcrn-workflow");
+    repoRoot = engineRoot === null ? null : join(engineRoot, LEGACY_ENGINE_NAME);
   }
   if (repoRoot === null) {
     return check("hostRenderDrift", false, {
@@ -1604,7 +1608,7 @@ async function readTrustedHelperDigest(homeRoot, parameters) {
   if (parameters.source !== "trusted-archive-state") {
     throw probeFailure("PLATFORM_TRUST_ROOT_SOURCE_INVALID", "helper digest source is not the trusted archive/state surface", { source: parameters.source ?? null });
   }
-  const trustRoot = join(homeRoot, ".tcrn-workflow");
+  const trustRoot = join(homeRoot, DIRECTORY.device);
   const archivePath = join(trustRoot, parameters.archive ?? "skill-archive.json");
   const statePath = join(trustRoot, parameters.state ?? "state.json");
   const archiveStats = await existingPath(archivePath);
@@ -1753,7 +1757,7 @@ export async function inspectHarnessCoverage(platformRoot) {
   const hosts = [];
   const failures = [];
   for (const host of HOSTS) {
-    const adapterRoot = join(platformRoot, `.${host}`, "tcrn-workflow");
+    const adapterRoot = join(platformRoot, `.${host}`, LEGACY_ENGINE_NAME);
     const adapter = await existingPath(adapterRoot);
     if (!adapter?.isDirectory()) {
       hosts.push({ host, adapterInstalled: false, harness: "not-required" });
@@ -1873,7 +1877,7 @@ async function inspectDeploymentFreshness(homeRoot, manifest) {
   const helperSkills = helperEntries.map((entry) => ({ entry, path: expandTemplate(entry.pathTemplate, "<PLATFORM_ROOT>", homeRoot) }));
   if (engineRoot === null || helperSkills.some(({ path }) => path === null)) return check("deploymentFreshness", false, { reasonCode: "PLATFORM_MANIFEST_PATH_INVALID" });
   try {
-    const packageValue = JSON.parse(await readFile(join(engineRoot, "tcrn-workflow", "package.json"), "utf8"));
+    const packageValue = JSON.parse(await readFile(join(engineRoot, LEGACY_ENGINE_NAME, "package.json"), "utf8"));
     const engineVersion = packageValue.version;
     const helperVersions = [];
     for (const { entry, path } of helperSkills) {
@@ -1928,12 +1932,12 @@ async function engineCopyVersions(root, homeRoot, manifest, options) {
   }
   const copies = {};
   const installedRoot = manifestPath(manifest, "machine.workflow-engine", "<PLATFORM_ROOT>", homeRoot);
-  const engineProject = (manifest.projects ?? []).find((project) => project.name === "tcrn-workflow");
+  const engineProject = (manifest.projects ?? []).find((project) => project.name === BRAND.engine.id);
   const worktreeRoot = engineProject?.pathTemplate?.startsWith("<PLATFORM_ROOT>/")
     ? join(root, engineProject.pathTemplate.slice("<PLATFORM_ROOT>/".length))
     : null;
   const candidates = [
-    ["installed", installedRoot === null ? null : join(installedRoot, "tcrn-workflow", "package.json")],
+    ["installed", installedRoot === null ? null : join(installedRoot, LEGACY_ENGINE_NAME, "package.json")],
     ["worktree", worktreeRoot === null ? null : join(worktreeRoot, "package.json")],
   ];
   for (const [name, packagePath] of candidates) {
@@ -2076,7 +2080,7 @@ async function inspectEngineCapabilitySurface(root, homeRoot, manifest, options)
   // Resolve the installed and worktree copy roots. Use the same resolution as
   // engineCopyVersions to ensure consistent paths across legs.
   const installedRoot = manifestPath(manifest, "machine.workflow-engine", "<PLATFORM_ROOT>", homeRoot);
-  const engineProject = (manifest.projects ?? []).find((project) => project.name === "tcrn-workflow");
+  const engineProject = (manifest.projects ?? []).find((project) => project.name === BRAND.engine.id);
   const worktreeRoot = engineProject?.pathTemplate?.startsWith("<PLATFORM_ROOT>/")
     ? join(root, engineProject.pathTemplate.slice("<PLATFORM_ROOT>/".length))
     : null;
@@ -2614,7 +2618,7 @@ async function inspectTrustArchiveFreshness(platformRoot, homeRoot, manifest, op
       }
       if (missing.length > 0 || extra.length > 0 || mismatched.length > 0) consumerProblems.push({ root: consumerRoot, missing, extra, mismatched });
     }
-    const packageValue = JSON.parse(await readFile(join(engineRoot, "tcrn-workflow", "package.json"), "utf8"));
+    const packageValue = JSON.parse(await readFile(join(engineRoot, LEGACY_ENGINE_NAME, "package.json"), "utf8"));
     const expectedVersion = `v${packageValue.version}`;
     const markerProblems = [];
     for (const consumer of helperConsumers) {
@@ -2622,7 +2626,7 @@ async function inspectTrustArchiveFreshness(platformRoot, homeRoot, manifest, op
         markerProblems.push({ id: consumer.entry.id, reasonCode: "PLATFORM_MARKER_DECLARATION_INVALID" });
         continue;
       }
-      const markerPath = join(homeRoot, ".tcrn-workflow", consumer.markerName);
+      const markerPath = join(homeRoot, DIRECTORY.device, consumer.markerName);
       const marker = JSON.parse(await readFile(markerPath, "utf8"));
       if (marker.version !== expectedVersion) markerProblems.push({ id: consumer.entry.id, markerPath, expectedVersion, actualVersion: marker.version ?? null });
     }
@@ -2634,7 +2638,7 @@ async function inspectTrustArchiveFreshness(platformRoot, homeRoot, manifest, op
     // Report them by host, path, and version, but do not fail the leg over them alone.
     const orphanMarkers = [];
     try {
-      const markerDir = join(homeRoot, ".tcrn-workflow");
+      const markerDir = join(homeRoot, DIRECTORY.device);
       const files = await readdir(markerDir);
       for (const file of files) {
         if (!file.startsWith("installed-copy-") || !file.endsWith(".json")) continue;
@@ -2650,7 +2654,7 @@ async function inspectTrustArchiveFreshness(platformRoot, homeRoot, manifest, op
         }
       }
     } catch {
-      // If .tcrn-workflow doesn't exist or can't be read, there are no orphans to report.
+      // If the device directory doesn't exist or can't be read, there are no orphans to report.
     }
     if (archiveProblems.length > 0 || consumerProblems.length > 0 || markerProblems.length > 0) {
       return check("trustArchive", false, {

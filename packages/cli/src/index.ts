@@ -129,6 +129,8 @@ import {
   readTelemetryStats,
   probeHost,
   validateTemplateDocument,
+  LEGACY_CONTROL_DIRECTORY,
+  LEGACY_KNOWLEDGE_DIRECTORY,
 } from "../../core/src/index.js";
 import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider } from "../../core/src/index.js";
 import type {
@@ -507,7 +509,7 @@ function workspaceHeadOf(value: unknown): string | null {
 async function autoRebaseKnowledgeAfterWorkspaceWrite(workspace: string, at: string, beforeHead: string | null, result: unknown): Promise<void> {
   const afterHead = workspaceHeadOf(result);
   if (beforeHead === null || afterHead === null || afterHead === beforeHead) return;
-  const storeRoot = join(workspace, ".tcrn-workflow", "knowledge");
+  const storeRoot = join(workspace, LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY);
   if (!existsSync(join(storeRoot, "store.json"))) return;
   const current = await readKnowledgeStoreMarker(workspace);
   if (current.eventHighWaterDigest === afterHead) return;

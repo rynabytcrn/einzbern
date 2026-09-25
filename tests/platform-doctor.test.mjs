@@ -25,7 +25,7 @@ function test(name, optionsOrBody, maybeBody) {
 import { adapterIdentityObservations, coreExportedSymbols, inspectChainValidation, inspectHostRenderDrift, inspectPlatform } from "../scripts/platform-doctor.mjs";
 import { GUARDED_TREES, HOSTS, claudeHookSettings, codexHookDocument, hookEntriesFor } from "../scripts/host-harness.mjs";
 import { applyHostHarness } from "../scripts/host-harness-apply.mjs";
-import { INSTALL_MANIFEST, initializeWorkspace, materializeWorkspace, workspaceBudgets } from "../dist/build/packages/core/src/index.js";
+import { BRAND, DIRECTORY, INSTALL_MANIFEST, LEGACY_ENGINE_NAME, initializeWorkspace, materializeWorkspace, workspaceBudgets } from "../dist/build/packages/core/src/index.js";
 import { PROTOCOL_LIMITS, canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
 
 const topology = "## 三、分区拓扑\n";
@@ -396,7 +396,8 @@ async function completeInstallFixture(context, { engineVersion = "0.11.15", help
   context.after(() => rm(base, { recursive: true, force: true }));
   const root = join(base, "platform");
   const home = join(base, "home");
-  const managedRepoRoot = join(home, "." + "tcrn-workflow", "tcrn-workflow");
+  // The managed engine copy sits inside the device directory the manifest names.
+  const managedRepoRoot = join(home, DIRECTORY.device, LEGACY_ENGINE_NAME);
   await mkdir(join(root, ".tcrn-workspace", "cross-project", "workspace"), { recursive: true });
   await mkdir(home, { recursive: true });
   // STORY-300: a complete container carries the acceptance-lane roster. INC-234: and its
@@ -466,14 +467,14 @@ async function completeInstallFixture(context, { engineVersion = "0.11.15", help
   }
   await writeFile(join(root, "AGENTS.md"), `${topology}fixture\n`);
   await writeFile(join(root, "CLAUDE.md"), "@AGENTS.md\n");
-  await mkdir(join(home, ".tcrn-workflow", "tcrn-workflow"), { recursive: true });
-  await writeFile(join(home, ".tcrn-workflow", "tcrn-workflow", "package.json"), `${JSON.stringify({ version: engineVersion })}\n`);
+  await mkdir(managedRepoRoot, { recursive: true });
+  await writeFile(join(managedRepoRoot, "package.json"), `${JSON.stringify({ version: engineVersion })}\n`);
   for (const host of [".agents", ".claude"]) {
-    await mkdir(join(home, host, "skills", "tcrn-workflow-helper"), { recursive: true });
-    await writeFile(join(home, host, "skills", "tcrn-workflow-helper", "SKILL.md"), `${helperPin} \`v${helperVersion}\`\n`);
+    await mkdir(join(home, host, "skills", BRAND.helper.id), { recursive: true });
+    await writeFile(join(home, host, "skills", BRAND.helper.id, "SKILL.md"), `${helperPin} \`v${helperVersion}\`\n`);
   }
   for (const host of ["agents", "claude"]) {
-    await writeFile(join(home, [".tcrn", "workflow"].join("-"), `installed-copy-${host}.json`), JSON.stringify({ version: `v${helperVersion}` }));
+    await writeFile(join(home, DIRECTORY.device, `installed-copy-${host}.json`), JSON.stringify({ version: `v${helperVersion}` }));
   }
   return { root, home };
 }
@@ -530,7 +531,7 @@ test("S264 each install-completeness leg has a distinct synthetic red reason", a
   assert.equal(staleRed.reasonCode, "PLATFORM_DEPLOYMENT_STALE");
 
   const helper = await completeInstallFixture(context);
-  await rm(join(helper.home, ".agents", "skills", "tcrn-workflow-helper"), { recursive: true, force: true });
+  await rm(join(helper.home, ".agents", "skills", BRAND.helper.id), { recursive: true, force: true });
   const helperRed = await inspectInstallFixture(helper);
   assert.equal(helperRed.reasonCode, "PLATFORM_HELPER_COPIES_INCOMPLETE");
 
@@ -747,8 +748,8 @@ test("S270 install wiring executes every safe manifest probe, including codex co
 
 test("S270 helper copies reject a declared digest mismatch", async (context) => {
   const fixture = await completeInstallFixture(context);
-  const agents = join(fixture.home, ".agents", "skills", "tcrn-workflow-helper", "SKILL.md");
-  const claude = join(fixture.home, ".claude", "skills", "tcrn-workflow-helper", "SKILL.md");
+  const agents = join(fixture.home, ".agents", "skills", BRAND.helper.id, "SKILL.md");
+  const claude = join(fixture.home, ".claude", "skills", BRAND.helper.id, "SKILL.md");
   const digests = {
     "machine.agents-skill": createHash("sha256").update(await readFile(agents)).digest("hex"),
     "machine.claude-skill": createHash("sha256").update(await readFile(claude)).digest("hex"),
@@ -784,14 +785,14 @@ test("S270 unsupported acceptanceProbe syntax is a red leg rather than a shell e
 });
 
 async function installTrustedHelperSource(fixture) {
-  const skill = await readFile(join(fixture.home, ".agents", "skills", "tcrn-workflow-helper", "SKILL.md"));
+  const skill = await readFile(join(fixture.home, ".agents", "skills", BRAND.helper.id, "SKILL.md"));
   const archive = {
     entries: [{ path: "SKILL.md", contentBase64: skill.toString("base64"), sha256: createHash("sha256").update(skill).digest("hex") }],
     schemaVersion: "tcrn.workflow.helper.archive.v1",
   };
   const archiveBytes = Buffer.from(JSON.stringify(archive), "utf8");
-  await writeFile(join(fixture.home, ".tcrn-workflow", "skill-archive.json"), archiveBytes);
-  await writeFile(join(fixture.home, ".tcrn-workflow", "state.json"), JSON.stringify({
+  await writeFile(join(fixture.home, DIRECTORY.device, "skill-archive.json"), archiveBytes);
+  await writeFile(join(fixture.home, DIRECTORY.device, "state.json"), JSON.stringify({
     schemaVersion: "tcrn.workflow.helper.state.v1",
     verifiedArchiveSha256: createHash("sha256").update(archiveBytes).digest("hex"),
   }));
@@ -807,16 +808,16 @@ test("INC-161 helper digest probe resolves from the trusted archive/state and fa
   assert.equal(greenCheck.source, "trusted-archive-state");
   assert.match(greenCheck.archiveDigest, /^[a-f0-9]{64}$/u);
 
-  await writeFile(join(fixture.home, ".agents", "skills", "tcrn-workflow-helper", "SKILL.md"), "tampered trusted helper\n");
+  await writeFile(join(fixture.home, ".agents", "skills", BRAND.helper.id, "SKILL.md"), "tampered trusted helper\n");
   const tampered = await inspectInstallFixture(fixture, options);
   assert.equal(tampered.reasonCode, "PLATFORM_HELPER_COPY_DIGEST_MISMATCH");
 
-  await rm(join(fixture.home, ".tcrn-workflow", "skill-archive.json"));
+  await rm(join(fixture.home, DIRECTORY.device, "skill-archive.json"));
   const missingRoot = await inspectInstallFixture(fixture, options);
   assert.equal(missingRoot.reasonCode, "PLATFORM_TRUST_ROOT_MISSING");
 
   await installTrustedHelperSource(fixture);
-  await writeFile(join(fixture.home, ".tcrn-workflow", "state.json"), JSON.stringify({
+  await writeFile(join(fixture.home, DIRECTORY.device, "state.json"), JSON.stringify({
     schemaVersion: "tcrn.workflow.helper.state.v1",
     verifiedArchiveSha256: "0".repeat(64),
   }));
@@ -826,13 +827,13 @@ test("INC-161 helper digest probe resolves from the trusted archive/state and fa
 
 test("S273 trust archive freshness compares the archive to all installed consumers and marker versions", async (context) => {
   const fixture = await completeInstallFixture(context);
-  const skillPath = join(fixture.home, ".agents", "skills", "tcrn-workflow-helper", "SKILL.md");
+  const skillPath = join(fixture.home, ".agents", "skills", BRAND.helper.id, "SKILL.md");
   const skill = await readFile(skillPath);
   const entry = { path: "SKILL.md", contentBase64: skill.toString("base64"), sha256: createHash("sha256").update(skill).digest("hex") };
-  await writeFile(join(fixture.home, ".tcrn-workflow", "skill-archive.json"), JSON.stringify({ schemaVersion: "tcrn.workflow.helper.archive.v1", entries: [entry] }));
+  await writeFile(join(fixture.home, DIRECTORY.device, "skill-archive.json"), JSON.stringify({ schemaVersion: "tcrn.workflow.helper.archive.v1", entries: [entry] }));
   // The canonical roster is agents + claude; the old codex marker is orphan history.
-  for (const host of ["agents", "claude", "codex"]) await writeFile(join(fixture.home, ".tcrn-workflow", `installed-copy-${host}.json`), JSON.stringify({ version: "v0.11.14" }));
-  await writeFile(join(fixture.home, ".agents", "skills", "tcrn-workflow-helper", "extra.md"), "drift\n");
+  for (const host of ["agents", "claude", "codex"]) await writeFile(join(fixture.home, DIRECTORY.device, `installed-copy-${host}.json`), JSON.stringify({ version: "v0.11.14" }));
+  await writeFile(join(fixture.home, ".agents", "skills", BRAND.helper.id, "extra.md"), "drift\n");
   const red = await inspectInstallFixture(fixture, { enforceTrustArchive: true });
   const redCheck = red.checks.find((item) => item.name === "trustArchive");
   assert.equal(redCheck.ok, false);

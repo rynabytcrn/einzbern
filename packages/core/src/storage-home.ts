@@ -6,7 +6,7 @@
 // truth live" was never declared by the thing whose truth it is.
 //
 // This module is the declaration. When a file→pg migration completes, the engine
-// writes a canonical sentinel (`.tcrn-workflow/storage-home.json`) into the source
+// writes a canonical sentinel (`storage-home.json` in the control directory) into the source
 // file workspace saying `storage: pg` and naming the schema. From then on:
 //   - the file backend refuses every MUTATING verb on that workspace with
 //     WORKSPACE_STORAGE_RELOCATED (the write door is closed — the incident's exact

@@ -50,6 +50,7 @@ import { FileBackend, StorageError } from "./storage-backend.js";
 import type { StorageBackend, StorageDirectoryEntry } from "./storage-backend.js";
 import { SegmentedBackend } from "./segmented-backend.js";
 import { readStorageHomeDeclaration } from "./storage-home.js";
+import { LEGACY_CONTROL_DIRECTORY } from "./names.js";
 import { consumeQuarantineReplacementTestInstrumentation } from "./workspace-test-instrumentation.js";
 import { recordClosureValidation, recordCollectionScan, recordExtensionClosureValidation, recordFullMaterialize, recordSnapshotMaterialize, recordTerminalGraphValidation } from "./workspace-perf-instrumentation.js";
 import {
@@ -146,7 +147,8 @@ export const WORKSPACE_SEGMENT_BYTES_DEFAULT = 16_777_216 as const;
 export const WORKSPACE_SEGMENT_BYTES_MIN = 4_096 as const;
 export const WORKSPACE_SEGMENT_BYTES_MAX = 67_108_864 as const;
 export const WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES = 4_194_304 as const;
-export const WORKSPACE_CONTROL_DIRECTORY = ".tcrn-workflow" as const;
+// The old-layout control directory, named by the names module (read-only from EPIC-141 on).
+export const WORKSPACE_CONTROL_DIRECTORY = LEGACY_CONTROL_DIRECTORY;
 export const WORKSPACE_REASON_CODES = Object.freeze([
   "WORKSPACE_ACTOR_INVALID",
   "WORKSPACE_ACTOR_REQUIRED",
@@ -213,7 +215,7 @@ export const WORKSPACE_REASON_CODES = Object.freeze([
   "WORKSPACE_SCHEMA_INVALID",
   "WORKSPACE_SNAPSHOT_INVALID",
   // INC-074: a workspace whose chain has been migrated to Postgres carries a
-  // storage-home sentinel (`.tcrn-workflow/storage-home.json`). The file backend
+  // storage-home sentinel (`storage-home.json` in the control directory). The file backend
   // refuses every mutating verb on such a workspace — the write door is closed, so
   // a caller driving the engine without TCRN_PG_* (the ceremony.mjs fork mechanism)
   // can no longer fork the chain. Read-only verbs stay open so the tree remains a

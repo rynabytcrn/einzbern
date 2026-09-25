@@ -9,6 +9,7 @@ import {
 } from "../../protocol/src/index.js";
 import { readAuthorityFile } from "./authority-file-reader.js";
 import type { AuthorityFileReasonCodes } from "./authority-file-reader.js";
+import { LEGACY_CONTROL_DIRECTORY } from "./names.js";
 
 export const GENERIC_PROFILE_VERSION = "tcrn.generic-profile.v1" as const;
 export const GENERIC_PROFILE_BUNDLE_VERSION = "tcrn.generic-profile-starter-bundle.v1" as const;
@@ -787,7 +788,7 @@ function starterBasis(): Omit<GenericProfileStarterBundle, "bundleDigest"> {
         profileSchemaVersion: 1,
       },
       restrictOnly: {
-        writePaths: [".tcrn-workflow"],
+        writePaths: [LEGACY_CONTROL_DIRECTORY],
         tools: ["node-filesystem"],
         budgets: {
           maximumOperations: 256,

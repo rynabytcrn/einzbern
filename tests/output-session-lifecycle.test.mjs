@@ -37,19 +37,19 @@ async function emptyLockFixture(context) {
 }
 
 function lockPath(root) {
-  return resolve(root, ".git/tcrn-workflow-output.lock");
+  return resolve(root, ".git/einzbern-output.lock");
 }
 
 function recoveryClaimPath(root) {
-  return resolve(root, ".git/.tcrn-workflow-output-recovery-claim");
+  return resolve(root, ".git/.einzbern-output-recovery-claim");
 }
 
 function acquisitionClaimPath(root) {
-  return resolve(root, ".git/.tcrn-workflow-output-acquisition-claim");
+  return resolve(root, ".git/.einzbern-output-acquisition-claim");
 }
 
 async function sealAcquisitionStage(root, pid = 999999, { sequence = 1, bytes } = {}) {
-  const stagePath = resolve(root, `.git/.tcrn-workflow-output-acquisition-claim.staging-${pid}-${sequence}`);
+  const stagePath = resolve(root, `.git/.einzbern-output-acquisition-claim.staging-${pid}-${sequence}`);
   await writeFile(stagePath, "", { mode: 0o600 });
   const identity = await lstat(stagePath);
   const value = {
@@ -68,7 +68,7 @@ async function sealAcquisitionStage(root, pid = 999999, { sequence = 1, bytes } 
 
 async function sealRecoveryClaim(root, pid, overrides = {}) {
   const claimPath = recoveryClaimPath(root);
-  const stagingName = `.tcrn-workflow-output-recovery-claim.staging-${pid}-1`;
+  const stagingName = `.einzbern-output-recovery-claim.staging-${pid}-1`;
   const base = {
     schemaVersion: "tcrn.output-session-recovery-claim.v1",
     pid,
@@ -118,7 +118,7 @@ async function deadOwnerLock(context) {
 
 async function sealPublishedRecoveryClaim(root, lock, { pid = 999999, keepStage = false } = {}) {
   const claimPath = recoveryClaimPath(root);
-  const stagingName = `.tcrn-workflow-output-recovery-claim.staging-${pid}-1`;
+  const stagingName = `.einzbern-output-recovery-claim.staging-${pid}-1`;
   const stagingPath = resolve(root, ".git", stagingName);
   const lockMetadata = await lstat(lock);
   const ownerPath = resolve(lock, "owner.json");
@@ -154,7 +154,7 @@ async function assertRecoveryStateClean(root) {
   await assert.rejects(lstat(lockPath(root)), { code: "ENOENT" });
   await assert.rejects(lstat(recoveryClaimPath(root)), { code: "ENOENT" });
   const names = await (await import("node:fs/promises")).readdir(resolve(root, ".git"));
-  assert.equal(names.some((name) => name.startsWith(".tcrn-workflow-output-recovery-claim.staging-") || name.startsWith(".tcrn-workflow-output-acquisition-claim")), false);
+  assert.equal(names.some((name) => name.startsWith(".einzbern-output-recovery-claim.staging-") || name.startsWith(".einzbern-output-acquisition-claim")), false);
 }
 
 const productRoot = resolve(import.meta.dirname, "..");
@@ -914,7 +914,7 @@ test("nested work uses the existing session and releases once", async (context) 
 test("normal acquisition preserves malformed recovery claims", async (context) => {
   const root = await fixture(context);
   const lock = lockPath(root);
-  const claim = resolve(root, ".git/.tcrn-workflow-output-recovery-claim");
+  const claim = resolve(root, ".git/.einzbern-output-recovery-claim");
   const claimBytes = (pid) => `${JSON.stringify({ schemaVersion: "tcrn.output-session-recovery-claim.v1", pid, uid: process.getuid(), lockPath: lock, lockDev: 1, lockIno: 1, lockCtimeMs: 1, lockMtimeMs: 1, ownerDev: null, ownerIno: null, ownerBytes: null })}\n`;
   await writeFile(claim, claimBytes(process.pid), { mode: 0o600 });
   await chmod(claim, 0o600);
@@ -928,14 +928,14 @@ test("normal acquisition preserves malformed recovery claims", async (context) =
 
 test("normal acquisition clears only governed dead stage-only residue and preserves live residue", async (context) => {
   const dead = await fixture(context);
-  const deadStage = resolve(dead, ".git/.tcrn-workflow-output-recovery-claim.staging-999999-1");
+  const deadStage = resolve(dead, ".git/.einzbern-output-recovery-claim.staging-999999-1");
   await writeFile(deadStage, "", { mode: 0o600 });
   await withExclusiveOutputSession(dead, async () => {});
   await assert.rejects(lstat(deadStage), { code: "ENOENT" });
   await assert.rejects(lstat(lockPath(dead)), { code: "ENOENT" });
 
   const live = await fixture(context);
-  const liveStage = resolve(live, `.git/.tcrn-workflow-output-recovery-claim.staging-${process.pid}-1`);
+  const liveStage = resolve(live, `.git/.einzbern-output-recovery-claim.staging-${process.pid}-1`);
   await writeFile(liveStage, "", { mode: 0o600 });
   await assert.rejects(withExclusiveOutputSession(live, async () => {}), expectReason("OUTPUT_SESSION_RECOVERY_CLAIM_LIVE"));
   await lstat(liveStage);
@@ -946,7 +946,7 @@ test("normal acquisition clears only governed dead stage-only residue and preser
 test("post-mkdir recovery-object scan removes only the caller lock and preserves recovery state", async (context) => {
   for (const [name, installRecoveryObject] of [
     ["fixed", async (root) => writeFile(recoveryClaimPath(root), "fixed\n", { mode: 0o600 })],
-    ["stage", async (root) => writeFile(resolve(root, ".git/.tcrn-workflow-output-recovery-claim.staging-999999-1"), "stage\n", { mode: 0o600 })],
+    ["stage", async (root) => writeFile(resolve(root, ".git/.einzbern-output-recovery-claim.staging-999999-1"), "stage\n", { mode: 0o600 })],
   ]) {
     const root = await fixture(context);
     const harness = await loadPostMkdirBarrierHarness(root);
@@ -955,7 +955,7 @@ test("post-mkdir recovery-object scan removes only the caller lock and preserves
     let before;
     globalThis.__tcrnOutputSessionPostMkdirBarrier = async (lock) => {
       await installRecoveryObject(root);
-      recoveryPath = name === "fixed" ? recoveryClaimPath(root) : resolve(root, ".git/.tcrn-workflow-output-recovery-claim.staging-999999-1");
+      recoveryPath = name === "fixed" ? recoveryClaimPath(root) : resolve(root, ".git/.einzbern-output-recovery-claim.staging-999999-1");
       before = { identity: await lstat(recoveryPath), bytes: await readFile(recoveryPath, "utf8") };
       assert.equal(lock, lockPath(root));
     };
@@ -1380,7 +1380,7 @@ test("a live empty initialization cannot be deleted with a caller-minted receipt
 test("a sibling recovery claim remains an identity-bound barrier and is never removed by a losing caller", async (context) => {
   const { root, lock } = await emptyLockFixture(context);
   const exact = await receipt(lock);
-  const claim = resolve(root, ".git/.tcrn-workflow-output-recovery-claim");
+  const claim = resolve(root, ".git/.einzbern-output-recovery-claim");
   await writeFile(claim, "foreign\n", { mode: 0o600 });
   await assert.rejects(recoverStaleOutputSessionLock(root, exact), expectReason("OUTPUT_SESSION_RECOVERY_CLAIM_INVALID"));
   assert.equal((await lstat(lock)).ino, exact.lockIno);
@@ -1576,7 +1576,7 @@ test("dead-owner recovery leaves at most one claim winner and neither lock nor s
   // What actually has to hold: the lock is gone and no claim is left behind, whether
   // or not anyone was told they did it.
   await assert.rejects(lstat(lock), { code: "ENOENT" });
-  await assert.rejects(lstat(resolve(root, ".git/.tcrn-workflow-output-recovery-claim")), { code: "ENOENT" });
+  await assert.rejects(lstat(resolve(root, ".git/.einzbern-output-recovery-claim")), { code: "ENOENT" });
 });
 
 test("two and three concurrent dead-owner recoverers permit one winner and leave CLEAN", async (context) => {
@@ -1665,7 +1665,7 @@ test("repeated two-and-three recoverer stress records only causal losers and alw
 test("recovery resumes each dead crash state to the exact clean terminal state", async (context) => {
   await (async () => {
     const { root, lock } = await deadOwnerLock(context);
-    const stagePath = resolve(root, ".git/.tcrn-workflow-output-recovery-claim.staging-999999-1");
+    const stagePath = resolve(root, ".git/.einzbern-output-recovery-claim.staging-999999-1");
     await writeFile(stagePath, "", { mode: 0o600 });
     assert.equal((await recoverStaleOutputSessionLock(root)).reasonCode, "OUTPUT_SESSION_STALE_LOCK_RECOVERED");
     await assertRecoveryStateClean(root);
@@ -1896,7 +1896,7 @@ test("FIFO and Unix-socket fixed and staging claims fail closed without mutation
 });
 
 test("stage-only orphan matrix cleans only exact governed dead residue and preserves every failure state", async (context) => {
-  const stage = (root, name = ".tcrn-workflow-output-recovery-claim.staging-999999-1") => resolve(root, ".git", name);
+  const stage = (root, name = ".einzbern-output-recovery-claim.staging-999999-1") => resolve(root, ".git", name);
   const successCases = [
     {
       name: "dead zero-byte stage",
@@ -1934,14 +1934,14 @@ test("stage-only orphan matrix cleans only exact governed dead residue and prese
   }
 
   const failureCases = [
-    { name: "live claimant", create: async (root) => [stage(root, `.tcrn-workflow-output-recovery-claim.staging-${process.pid}-1`)], bytes: "", reason: "OUTPUT_SESSION_RECOVERY_CLAIM_LIVE" },
-    { name: "PID reuse", create: async (root) => [stage(root, `.tcrn-workflow-output-recovery-claim.staging-${process.pid}-2`)], bytes: "", reason: "OUTPUT_SESSION_RECOVERY_CLAIM_LIVE" },
+    { name: "live claimant", create: async (root) => [stage(root, `.einzbern-output-recovery-claim.staging-${process.pid}-1`)], bytes: "", reason: "OUTPUT_SESSION_RECOVERY_CLAIM_LIVE" },
+    { name: "PID reuse", create: async (root) => [stage(root, `.einzbern-output-recovery-claim.staging-${process.pid}-2`)], bytes: "", reason: "OUTPUT_SESSION_RECOVERY_CLAIM_LIVE" },
     { name: "malformed bytes", create: async (root) => [stage(root)], bytes: "{broken}\n", reason: "OUTPUT_SESSION_RECOVERY_CLAIM_INVALID" },
     { name: "noncanonical bytes", create: async (root) => [stage(root)], bytes: '{"unexpected":true}\n', reason: "OUTPUT_SESSION_RECOVERY_CLAIM_INVALID" },
     { name: "oversize bytes", create: async (root) => [stage(root)], bytes: Buffer.alloc(65_537, 0x61), reason: "OUTPUT_SESSION_RECOVERY_CLAIM_INVALID" },
-    { name: "wrong filename grammar", create: async (root) => [stage(root, ".tcrn-workflow-output-recovery-claim.staging-x-1")], bytes: "", reason: "OUTPUT_SESSION_RECOVERY_CLAIM_INVALID" },
-    { name: "wrong filename pid", create: async (root) => [stage(root, ".tcrn-workflow-output-recovery-claim.staging-0-1")], bytes: "", reason: "OUTPUT_SESSION_RECOVERY_CLAIM_INVALID" },
-    { name: "wrong filename nonce", create: async (root) => [stage(root, ".tcrn-workflow-output-recovery-claim.staging-999999-0")], bytes: "", reason: "OUTPUT_SESSION_RECOVERY_CLAIM_INVALID" },
+    { name: "wrong filename grammar", create: async (root) => [stage(root, ".einzbern-output-recovery-claim.staging-x-1")], bytes: "", reason: "OUTPUT_SESSION_RECOVERY_CLAIM_INVALID" },
+    { name: "wrong filename pid", create: async (root) => [stage(root, ".einzbern-output-recovery-claim.staging-0-1")], bytes: "", reason: "OUTPUT_SESSION_RECOVERY_CLAIM_INVALID" },
+    { name: "wrong filename nonce", create: async (root) => [stage(root, ".einzbern-output-recovery-claim.staging-999999-0")], bytes: "", reason: "OUTPUT_SESSION_RECOVERY_CLAIM_INVALID" },
     { name: "wrong mode", create: async (root) => [stage(root)], bytes: "", mode: 0o644, reason: "OUTPUT_SESSION_RECOVERY_CLAIM_INVALID" },
     { name: "extra hardlink", create: async (root) => [stage(root), `${stage(root)}.extra`], bytes: "", link: true, reason: "OUTPUT_SESSION_RECOVERY_CLAIM_INVALID" },
     {
@@ -2049,7 +2049,7 @@ test("terminal recovery matrix emits success only after CLEAN readback and prese
     const state = await snapshotFilesystem([gitDirectory, lock, claim]);
     assert.equal(state[lock].state, "ENOENT");
     assert.equal(state[claim].state, "ENOENT");
-    assert.equal(state[gitDirectory].entries.some((entry) => entry.startsWith(".tcrn-workflow-output-recovery-claim.staging-")), false);
+    assert.equal(state[gitDirectory].entries.some((entry) => entry.startsWith(".einzbern-output-recovery-claim.staging-")), false);
     cleanReadback = true;
   };
   try {
@@ -2071,19 +2071,19 @@ test("terminal recovery matrix emits success only after CLEAN readback and prese
 
 test("stage-only live and malformed residue is preserved while exact dead canonical partial residue is cleared", async (context) => {
   const live = await deadOwnerLock(context);
-  const liveStage = resolve(live.root, ".git", `.tcrn-workflow-output-recovery-claim.staging-${process.pid}-1`);
+  const liveStage = resolve(live.root, ".git", `.einzbern-output-recovery-claim.staging-${process.pid}-1`);
   await writeFile(liveStage, "", { mode: 0o600 });
   await assert.rejects(recoverStaleOutputSessionLock(live.root), expectReason("OUTPUT_SESSION_RECOVERY_CLAIM_LIVE"));
   await lstat(liveStage);
 
   const malformed = await deadOwnerLock(context);
-  const malformedStage = resolve(malformed.root, ".git/.tcrn-workflow-output-recovery-claim.staging-999999-1");
+  const malformedStage = resolve(malformed.root, ".git/.einzbern-output-recovery-claim.staging-999999-1");
   await mkdir(malformedStage, { mode: 0o700 });
   await assert.rejects(recoverStaleOutputSessionLock(malformed.root), expectReason("OUTPUT_SESSION_RECOVERY_CLAIM_INVALID"));
   await lstat(malformedStage);
 
   const dead = await deadOwnerLock(context);
-  const deadStage = resolve(dead.root, ".git/.tcrn-workflow-output-recovery-claim.staging-999999-1");
+  const deadStage = resolve(dead.root, ".git/.einzbern-output-recovery-claim.staging-999999-1");
   // The stage writer may be killed at any byte boundary.  Recovery accepts
   // only a proper prefix of the exact claim it can derive from this lock and
   // owner, rather than treating arbitrary short bytes as ours.
@@ -2096,14 +2096,14 @@ test("stage-only live and malformed residue is preserved while exact dead canoni
     '{"schemaVersion":"tcrn.output-session-recovery-claim.v1","pid":999999,"uid":',
   ]) {
     const partial = await deadOwnerLock(context);
-    await writeFile(resolve(partial.root, ".git/.tcrn-workflow-output-recovery-claim.staging-999999-1"), bytes, { mode: 0o600 });
+    await writeFile(resolve(partial.root, ".git/.einzbern-output-recovery-claim.staging-999999-1"), bytes, { mode: 0o600 });
     assert.equal((await recoverStaleOutputSessionLock(partial.root)).reasonCode, "OUTPUT_SESSION_STALE_LOCK_RECOVERED");
     await assertRecoveryStateClean(partial.root);
   }
 
   for (const bytes of ["not-a-prefix", '{"schemaVersion":"tcrn.output-session-recovery-claim.v1"}\n']) {
     const invalid = await deadOwnerLock(context);
-    const stagePath = resolve(invalid.root, ".git/.tcrn-workflow-output-recovery-claim.staging-999999-1");
+    const stagePath = resolve(invalid.root, ".git/.einzbern-output-recovery-claim.staging-999999-1");
     await writeFile(stagePath, bytes, { mode: 0o600 });
     const before = await snapshotFilesystem([invalid.lock, resolve(invalid.lock, "owner.json"), stagePath]);
     await assert.rejects(recoverStaleOutputSessionLock(invalid.root), expectReason("OUTPUT_SESSION_RECOVERY_CLAIM_INVALID"));
@@ -2349,7 +2349,7 @@ test("two-process release and acquisition interleavings preserve the release tra
   assert.equal(scheduleALockAfter.ino, scheduleA.lock.ino);
   assert.equal(await readFile(recoveryClaimPath(scheduleARoot), "utf8"), scheduleA.claimBytes);
   await assert.rejects(lstat(acquisitionClaimPath(scheduleARoot)), { code: "ENOENT" });
-  assert.equal((await readdir(resolve(scheduleARoot, ".git"))).some((name) => name.startsWith(".tcrn-workflow-output-acquisition-claim.staging-")), false);
+  assert.equal((await readdir(resolve(scheduleARoot, ".git"))).some((name) => name.startsWith(".einzbern-output-acquisition-claim.staging-")), false);
   process.kill(scheduleA.owner.child.pid, 0);
   await release(scheduleA);
   await assertRecoveryStateClean(scheduleARoot);
@@ -3165,7 +3165,7 @@ test("SIGKILL injection at each staged publication and release boundary resumes 
     await crashInjectionHarness(root, name, marker, options);
     const claim = recoveryClaimPath(root);
     if (state === "stage") {
-      const stages = (await (await import("node:fs/promises")).readdir(resolve(root, ".git"))).filter((entry) => entry.startsWith(".tcrn-workflow-output-recovery-claim.staging-"));
+      const stages = (await (await import("node:fs/promises")).readdir(resolve(root, ".git"))).filter((entry) => entry.startsWith(".einzbern-output-recovery-claim.staging-"));
       assert.equal(stages.length, 1, name);
       const stage = await lstat(resolve(root, ".git", stages[0]));
       assert.equal(stage.nlink, 1, name);
@@ -3175,7 +3175,7 @@ test("SIGKILL injection at each staged publication and release boundary resumes 
       await assert.rejects(lstat(claim), { code: "ENOENT" });
     } else if (state === "nlink2") {
       const fixed = await lstat(claim);
-      const stages = (await (await import("node:fs/promises")).readdir(resolve(root, ".git"))).filter((entry) => entry.startsWith(".tcrn-workflow-output-recovery-claim.staging-"));
+      const stages = (await (await import("node:fs/promises")).readdir(resolve(root, ".git"))).filter((entry) => entry.startsWith(".einzbern-output-recovery-claim.staging-"));
       assert.equal(stages.length, 1, name);
       const stage = await lstat(resolve(root, ".git", stages[0]));
       assert.equal(fixed.nlink, 2, name);

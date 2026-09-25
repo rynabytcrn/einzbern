@@ -36,16 +36,6 @@ import {
   scanPrivacyEntries,
 } from "./lib/privacy.mjs";
 import { privateRuntimeConfig } from "./lib/private-token-roster.mjs";
-import {
-  P8_SUPPORTED_AOS_RELEASES,
-  P8_TAG,
-  P8_VERSION,
-  buildP8ReleaseArtifacts,
-  moveStaleReleaseArtifacts,
-  p8ArtifactRecords,
-  p8ReleaseArtifactSetMatches,
-  rebuildP8SourceArchiveInIndependentRoots,
-} from "./lib/p8-workflow-rc.mjs";
 import { assertP8TagPreconditions, assertReleaseCommitShape } from "./lib/release-tag-gate.mjs";
 import { ProtocolProofError } from "./lib/protocol-proof.mjs";
 import {
@@ -78,6 +68,14 @@ const textNames = new Set([
 ]);
 const noNetworkImport = pathToFileURL(resolve(repositoryRoot, "scripts/no-network.mjs")).href;
 const testControllerBootstrapPath = resolve(repositoryRoot, "scripts/test-controller-bootstrap.mjs");
+
+// The release library reads the names module (packages/core/src/names.ts), so it is loaded
+// when a release command needs it, never when this runner starts: the disposable
+// task-entrypoint fixtures carry only scripts/ and node_modules/, and the runner must
+// start there.
+async function p8Release() {
+  return import("./lib/p8-workflow-rc.mjs");
+}
 
 class TaskError extends Error {
   constructor(reasonCode, message, details = null) {
@@ -132,7 +130,7 @@ async function runDetachedTestController(arguments_, extraEnvironment) {
       npm_config_fund: "false",
       npm_config_offline: "true",
       ...extraEnvironment,
-      TCRN_TEST_CONTROLLER_LOCK_PATH: resolve(repositoryRoot, ".git/tcrn-workflow-output.lock"),
+      TCRN_TEST_CONTROLLER_LOCK_PATH: resolve(repositoryRoot, ".git/einzbern-output.lock"),
       TCRN_TEST_CONTROLLER_OUTER_PID: String(process.pid),
       TCRN_TEST_CONTROLLER_PROGRESS_PATH: progressPath,
     };
@@ -639,6 +637,15 @@ async function verifyTestSuite() {
 }
 
 async function verifyP8() {
+  const {
+    P8_SUPPORTED_AOS_RELEASES,
+    P8_TAG,
+    P8_VERSION,
+    buildP8ReleaseArtifacts,
+    moveStaleReleaseArtifacts,
+    p8ArtifactRecords,
+    rebuildP8SourceArchiveInIndependentRoots,
+  } = await p8Release();
   assertCleanExclusiveSourceBasis(run("git", ["status", "--porcelain=v1", "--untracked-files=all"]));
   const packagePaths = ["package.json", "packages/cli/package.json", "packages/core/package.json", "packages/protocol/package.json"];
   const packages = await Promise.all(packagePaths.map((path) => readJson(resolve(repositoryRoot, path))));
@@ -707,7 +714,7 @@ async function verifyReleaseTagPreflight() {
   const format = await formatCheck();
   const p8 = await verifyP8();
   const expectedTagIndex = process.argv.indexOf("--tag");
-  const expectedTag = expectedTagIndex >= 0 ? process.argv[expectedTagIndex + 1] : P8_TAG;
+  const expectedTag = expectedTagIndex >= 0 ? process.argv[expectedTagIndex + 1] : (await p8Release()).P8_TAG;
   const tagCommit = run("git", ["rev-parse", "HEAD"]);
   const parentRecord = run("git", ["rev-list", "--parents", "-n", "1", "HEAD"]).split(/\s+/u);
   assertion(parentRecord.length === 2, "RELEASE_TAG_COMMIT_PARENT_INVALID", parentRecord.join(" "));
@@ -990,6 +997,7 @@ async function verifyPrivacy({ requireP8Surfaces = false, historyScope = "head" 
     });
     const buildRecords = await filesForPrivacySurface(buildRoot, "dist/build/");
     const releaseRecords = await filesForPrivacySurface(releaseRoot, "dist/release/");
+    const { p8ReleaseArtifactSetMatches } = await p8Release();
     assertion(p8ReleaseArtifactSetMatches(releaseRecords.map((record) => record.path.slice("dist/release/".length))), "P8_PRIVACY_RELEASE_ARTIFACT_SET");
     entries.push(...buildRecords.map((record) => ({ label: record.path, kind: "build", content: record.content.toString("utf8") })));
     entries.push({ label: "dist/source/einzbern-source.tar", kind: "archive", content: sourceArchive.content.toString("utf8") });

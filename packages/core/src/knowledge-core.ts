@@ -42,6 +42,7 @@ import type { KnowledgeExpansions, KnowledgeLanguageProvider } from "./knowledge
 import { activeBinding, activeWorkspaceRoot, materializeWorkspace } from "./workspace.js";
 import type { ProjectRecord, WorkspaceState } from "./workspace.js";
 import { SETTINGS_CATALOG, resolveKnowledgeArticlesPath } from "./settings.js";
+import { LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY } from "./names.js";
 import { readTelemetryRecords } from "./telemetry.js";
 import type { TelemetryRecord } from "./telemetry.js";
 
@@ -437,12 +438,11 @@ function extensionsAreBounded(value: unknown): boolean {
 
 // STORY-327/348: provenance is data, not code. The policy file is loaded from
 // the repository's own policy directory so adding a kind changes behavior without
-// editing this algorithm; the fallback URLs cover both source execution and the
-// compiled CLI invoked from the platform container.
+// editing this algorithm; the module-relative URLs cover both source execution and the
+// compiled CLI. There is no lookup by a sibling checkout folder name.
 function readKnowledgeProvenancePolicy(): Readonly<{ readonly relaxedKinds: readonly string[]; readonly strictKinds: readonly string[] }> {
   const candidates = [
     resolve(process.cwd(), "scripts/policy/knowledge-provenance.json"),
-    resolve(process.cwd(), "TCRN Platform/tcrn-workflow/scripts/policy/knowledge-provenance.json"),
     new URL("../../../scripts/policy/knowledge-provenance.json", import.meta.url),
     new URL("../../../../../scripts/policy/knowledge-provenance.json", import.meta.url),
   ];
@@ -1344,7 +1344,7 @@ async function scanKnowledgeStore(
   if (storedWorkspaceRoot !== workspaceRoot) {
     fail("KNOWLEDGE_PATH_INVALID", "knowledge store is not under the Workspace authority root");
   }
-  const storeRoot = await boundDirectory(resolve(workspaceRoot, ".tcrn-workflow/knowledge"), workspaceRoot);
+  const storeRoot = await boundDirectory(resolve(workspaceRoot, LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY), workspaceRoot);
   const metadataRoot = await boundDirectory(resolve(storeRoot, "metadata"), storeRoot);
   const bodiesRoot = await boundDirectory(resolve(storeRoot, "bodies"), storeRoot);
   const viewsRoot = await boundDirectory(resolve(storeRoot, "views"), storeRoot);
@@ -1478,7 +1478,7 @@ async function mutationAdmissionScan(workspaceRoot: string, options: KnowledgeRe
     return await scanKnowledgeStore(workspaceRoot, options, false, "full", rebase);
   } catch (error) {
     if (error instanceof KnowledgeCoreError && error.reasonCode === "KNOWLEDGE_PARTIAL_STATE") {
-      const root = resolve(workspaceRoot, ".tcrn-workflow/knowledge");
+      const root = resolve(workspaceRoot, LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY);
       if (await claimPresence(root) === "present") fail("KNOWLEDGE_LOCKED", "knowledge mutation claim exists");
     }
     throw error;
@@ -1536,7 +1536,7 @@ export function processIsAlive(pid: number): boolean {
  * malformed claim remains blocked instead of being guessed away.
  */
 export async function recoverKnowledgeStore(workspaceRoot: string, options: KnowledgeReadOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
-  const claimedRoot = resolve(workspaceRoot, "." + "tcrn-workflow", "knowledge");
+  const claimedRoot = resolve(workspaceRoot, LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY);
   const claim = await readMutationClaim(claimedRoot);
   if (claim === null) {
     return { schemaVersion: "tcrn.knowledge-recovery-result.v1", reasonCode: "KNOWLEDGE_RECOVERY_NOT_NEEDED", recovered: false };
@@ -1776,7 +1776,7 @@ export async function initializeKnowledgeStore(workspaceRootInput: string, optio
     fail("KNOWLEDGE_HIGH_WATER_MISMATCH", "knowledge store requires a non-empty Workspace authority");
   }
   const workspaceRoot = await boundDirectory(workspaceRootInput);
-  const storeRoot = await ensureNewDirectory(resolve(workspaceRoot, ".tcrn-workflow/knowledge"), workspaceRoot);
+  const storeRoot = await ensureNewDirectory(resolve(workspaceRoot, LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY), workspaceRoot);
   const metadataRoot = await ensureNewDirectory(resolve(storeRoot, "metadata"), storeRoot);
   const bodiesRoot = await ensureNewDirectory(resolve(storeRoot, "bodies"), storeRoot);
   const viewsRoot = await ensureNewDirectory(resolve(storeRoot, "views"), storeRoot);

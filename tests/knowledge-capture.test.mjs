@@ -1,5 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// TCRN-CROSS-STORY-365 — capture, the Stop-hook write, and write-time conflict scoring.
+// TCRN-CROSS-STORY-365 — capture and write-time conflict scoring.
+//
+// The Stop-hook write and its lesson extraction are retired with the capture hook
+// (TCRN-CROSS-STORY-467 R3); the capture verb and the core write path stay, and those
+// are what the cases below exercise.
 //
 // Owner ruling TCRN-CROSS-MIN-146 is the behaviour under test: a small card is official
 // the moment it is written. Every case below therefore asserts the WRITTEN state, never a
@@ -7,11 +11,8 @@
 // candidate, which is the ruling stated as a machine check rather than as prose.
 
 import assert from "node:assert/strict";
-import childProcess from "node:child_process";
-import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { syncBuiltinESMExports } from "node:module";
 import { join } from "node:path";
 import test from "node:test";
 
@@ -28,22 +29,13 @@ import {
   LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalJson } from "../dist/build/packages/protocol/src/index.js";
-import {
-  boundedUtf8,
-  captureArguments,
-  cardFor,
-  containerRootFromArgv,
-  extractLessons,
-  hostFromArgv,
-  runCaptureHook,
-} from "../scripts/knowledge-capture-hook.mjs";
 
 const instant = (day, second = 0) => `2026-09-${String(day).padStart(2, "0")}T09:00:${String(second).padStart(2, "0")}Z`;
 const OWNER = "owner:agent-session";
 
 /**
  * A throwaway platform container with one governed workspace in the cross-project
- * partition, so the hook can be driven at the same path shape it runs at in production.
+ * partition, the path shape a governed container has in production.
  */
 async function containerFixture(externalKey = "FIXTURE-CAPTURE") {
   const container = await realpath(await mkdtemp(join(tmpdir(), "tcrn-s365-")));
@@ -75,116 +67,6 @@ async function cliJson(argv) {
   await runCli(argv, { write: (value) => { output += value; } });
   return JSON.parse(output);
 }
-
-test("STORY-365 lessons are the declared paragraphs, bounded and in order", () => {
-  const turn = [
-    "先说结论，这段不是经验。",
-    "",
-    "经验：guard-check 运行期间不要并发编辑工作树",
-    "它在运行时真实变异工作树，当独占操作对待。",
-    "",
-    "Lesson: clone, not worktree, for a dry run",
-    "",
-    "经验:策略 JSON 按键定位，不按行号",
-    "",
-    "经验：第四条应当被丢弃",
-  ].join("\n");
-  const lessons = extractLessons(turn);
-  assert.equal(lessons.length, 3, "at most three lessons per turn");
-  assert.equal(lessons[0].split("\n").length, 2, "a lesson runs to the blank line, so it stays one card");
-  assert.equal(lessons[1], "clone, not worktree, for a dry run");
-  assert.equal(lessons[2], "策略 JSON 按键定位，不按行号");
-  assert.deepEqual(extractLessons("没有标记的一段话"), [], "prose that declared nothing writes nothing");
-  assert.deepEqual(extractLessons(null), [], "an unreadable transcript writes nothing");
-});
-
-test("STORY-365 a bounded field never splits a UTF-8 sequence", () => {
-  assert.equal(boundedUtf8("经验记录", 7), "经验", "seven bytes hold two three-byte characters and no half of a third");
-  assert.equal(Buffer.byteLength(boundedUtf8("经验记录", 7), "utf8"), 6);
-  assert.equal(boundedUtf8("abc", 8), "abc", "a short value is returned whole");
-  const card = cardFor("头一行\n第二行");
-  assert.equal(card.subject, "头一行", "the subject is the headline, not the whole lesson");
-  assert.equal(card.body, "头一行\n第二行");
-  assert.ok(captureArguments(card, "/ws", instant(2)).includes("--coexist"), "the hook path answers coexist by default");
-});
-
-test("STORY-365 GWT1: a declared lesson becomes a promoted card default recall finds", async () => {
-  const fixture = await containerFixture("FIXTURE-CAPTURE-HOOK");
-  try {
-    const transcript = join(fixture.container, "transcript.jsonl");
-    await writeFile(transcript, `${JSON.stringify({
-      type: "assistant",
-      message: { role: "assistant", model: "claude-opus-5", content: [{ type: "text", text: "收尾。\n\n经验：guard-check 运行期间不要并发编辑工作树" }] },
-    })}\n`);
-    const report = runCaptureHook({ hook_event_name: "Stop", transcript_path: transcript }, {
-      containerRoot: fixture.container,
-      now: () => instant(2),
-    });
-    assert.equal(report.written, 1, JSON.stringify(report));
-    const listed = await listKnowledgeMetadata(fixture.workspace, { at: instant(3), allowTrailing: true });
-    const card = listed.records.find((record) => record.subject.includes("guard-check"));
-    assert.ok(card, `default recall must find the captured card: ${JSON.stringify(listed.records.map((r) => r.subject))}`);
-    assert.equal(card.promotionState, "promoted", "written is retrievable; there is no candidate state");
-    assert.equal(card.lifecycle, "active");
-    assert.deepEqual(card.extensions, {}, "a first card has nothing to coexist with");
-  } finally {
-    await fixture.close();
-  }
-});
-
-test("STORY-365 correction 1: the Codex Stop payload carries no transcript_path, only last_assistant_message inline", async () => {
-  const fixture = await containerFixture("FIXTURE-CAPTURE-CODEX");
-  try {
-    const report = runCaptureHook({
-      hook_event_name: "Stop",
-      last_assistant_message: "收尾。\n\n经验：Codex 的 Stop payload 没有 transcript_path，经验要走 last_assistant_message",
-    }, {
-      containerRoot: fixture.container,
-      now: () => instant(2),
-    });
-    assert.equal(report.written, 1, JSON.stringify(report));
-    const listed = await listKnowledgeMetadata(fixture.workspace, { at: instant(3), allowTrailing: true });
-    const card = listed.records.find((record) => record.subject.includes("Codex"));
-    assert.ok(card, `default recall must find the captured card: ${JSON.stringify(listed.records.map((r) => r.subject))}`);
-    assert.equal(card.promotionState, "promoted", "the Codex host path is retrievable exactly like the Claude Code path");
-  } finally {
-    await fixture.close();
-  }
-});
-
-// TCRN-CROSS-MIN-225 D3 (TCRN-CROSS-SUB-257): the Stop hook no longer writes an observation
-// boundary. Until v1.2.0 it spawned `knowledge-inject.mjs --observation-boundary stop` for every
-// Stop that was not a replay; the spy below records every spawnSync the hook makes, so the child
-// is caught even when a spawned copy would write nothing. The host argv rules still hold.
-test("MIN-225: a Stop writes no observation boundary and spawns no boundary child", async () => {
-  assert.equal(hostFromArgv(["--host", "codex"], { host: "claude" }, {}), "codex");
-  assert.equal(hostFromArgv([], {}, { TCRN_HOST: "codex" }), "codex");
-  assert.equal(hostFromArgv([], {}, {}), "unknown-host");
-  assert.deepEqual([containerRootFromArgv(["--container-root", "/governed/container"]), containerRootFromArgv(["--container-root=/governed/container"])], ["/governed/container", "/governed/container"]);
-  const fixture = await containerFixture("FIXTURE-CAPTURE-NO-BOUNDARY");
-  const spawned = [];
-  const original = childProcess.spawnSync;
-  childProcess.spawnSync = function spawnSyncSpy(command, args, ...rest) {
-    spawned.push([command, ...(Array.isArray(args) ? args : [])]);
-    return original.call(this, command, args, ...rest);
-  };
-  syncBuiltinESMExports();
-  try {
-    const input = { hook_event_name: "Stop", session_id: "capture-session", host: "codex" };
-    for (const [index, payload] of [input, { ...input, stop_hook_active: true }, { ...input, stopHookActive: true }].entries()) {
-      const report = runCaptureHook(payload, { containerRoot: fixture.container, now: () => instant(2, index) });
-      assert.deepEqual(report, { ok: true, reasonCode: "NO_LESSON_DECLARED", written: 0, attempts: [] }, JSON.stringify(report));
-    }
-    assert.deepEqual(spawned.filter((argv) => argv.includes("--observation-boundary")), [], "no boundary child is spawned");
-    const telemetryRoot = join(fixture.container, ".tcrn-workspace", "cross-project", "transient");
-    // The telemetry store is retired (TCRN-CROSS-STORY-467 R3): nothing may create it.
-    assert.equal(existsSync(join(telemetryRoot, "telemetry")), false, "and no boundary row is written");
-  } finally {
-    childProcess.spawnSync = original;
-    syncBuiltinESMExports();
-    await fixture.close();
-  }
-});
 
 test("STORY-365 GWT2/GWT3: the same subject twice is scored, refused, and released by supersedes", async () => {
   const fixture = await containerFixture("FIXTURE-CAPTURE-CONFLICT");

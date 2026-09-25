@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { chmod, lstat, mkdir, mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,8 +22,8 @@ function test(name, optionsOrBody, maybeBody) {
   queuedTests.push([name, { ...options, concurrency: true }, body]);
 }
 
-import { adapterIdentityObservations, coreExportedSymbols, inspectChainValidation, inspectHostRenderDrift, inspectPlatform } from "../scripts/platform-doctor.mjs";
-import { GUARDED_TREES, HOSTS, claudeHookSettings, codexHookDocument, hookEntriesFor } from "../scripts/host-harness.mjs";
+import { coreExportedSymbols, inspectChainValidation, inspectHostRenderDrift, inspectPlatform } from "../scripts/platform-doctor.mjs";
+import { HOSTS, claudeHookSettings, codexHookDocument, hookEntriesFor } from "../scripts/host-harness.mjs";
 import { applyHostHarness } from "../scripts/host-harness-apply.mjs";
 import { BRAND, DIRECTORY, INSTALL_MANIFEST, LEGACY_BRAND_NAME, LEGACY_ENGINE_NAME, LOCAL_DIRECTORY_NAMES, initializeWorkspace, materializeWorkspace, workspaceBudgets } from "../dist/build/packages/core/src/index.js";
 import { PROTOCOL_LIMITS, canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
@@ -417,28 +417,12 @@ async function completeInstallFixture(context, { engineVersion = "0.11.15", help
   await writeFile(join(root, docsDirectory, "platform-root-agents.md"), `${topology}fixture\n`);
   for (const entry of INSTALL_MANIFEST.items) {
     const path = entry.pathTemplate.replaceAll("<PLATFORM_ROOT>", root).replaceAll("<HOME>", home);
-    if (entry.acceptanceProbe.startsWith("probe:regular-directory") || entry.acceptanceProbe.startsWith("probe:helper-skill-digest") || entry.acceptanceProbe.startsWith("probe:engine-version") || entry.acceptanceProbe.startsWith("probe:adapter-bundle-digest")) await mkdir(path, { recursive: true });
+    if (entry.acceptanceProbe.startsWith("probe:regular-directory") || entry.acceptanceProbe.startsWith("probe:helper-skill-digest") || entry.acceptanceProbe.startsWith("probe:engine-version")) await mkdir(path, { recursive: true });
     else {
       await mkdir(join(path, ".."), { recursive: true });
       await writeFile(path, "{}\n");
       if (entry.acceptanceProbe.startsWith("probe:regular-executable")) await chmod(path, 0o755);
     }
-  }
-  // STORY-286: the adapter entries are accepted by their receipt's digests now, so a
-  // complete fixture has to install a bundle AND record what it installed — which is the
-  // whole point: "a directory is here" stopped being enough.
-  for (const entry of INSTALL_MANIFEST.items.filter((item) => item.acceptanceProbe.startsWith("probe:adapter-bundle-digest"))) {
-    const bundle = entry.pathTemplate.replaceAll("<PLATFORM_ROOT>", root).replaceAll("<HOME>", home);
-    const relativeFile = `${entry.pathTemplate.replace("<PLATFORM_ROOT>/", "")}/project.json`;
-    await writeFile(join(bundle, "project.json"), "{}\n");
-    const receiptTemplate = /receipt=([^;]+)/u.exec(entry.acceptanceProbe)?.[1] ?? "";
-    const receiptPath = receiptTemplate.replaceAll("<PLATFORM_ROOT>", root).replaceAll("<HOME>", home);
-    await mkdir(join(receiptPath, ".."), { recursive: true });
-    await writeFile(receiptPath, JSON.stringify({
-      schemaVersion: "tcrn.adapter-installation-generation.v1",
-      installationRoot: root,
-      entries: [{ path: relativeFile, contentDigest: createHash("sha256").update(await readFile(join(bundle, "project.json"))).digest("hex") }],
-    }));
   }
   // TCRN-CROSS-INC-220: a complete install now includes each host's harness, because
   // Owner ruled a host is under the harness from the moment it installs its adapter. The
@@ -459,10 +443,7 @@ async function completeInstallFixture(context, { engineVersion = "0.11.15", help
         await writeFile(managedHandler, "export {}\n");
       }
     }
-    await writeFile(join(root, ".claude", "settings.json"), `${JSON.stringify({
-      hooks: claudeHookSettings(),
-      permissions: { deny: GUARDED_TREES.map((tree) => `Write(//${tree}/**)`) },
-    }, null, 2)}\n`);
+    await writeFile(join(root, ".claude", "settings.json"), `${JSON.stringify({ hooks: claudeHookSettings() }, null, 2)}\n`);
     applyHostHarness("codex", root, { repoRoot: managedRepoRoot });
   }
   await writeFile(join(root, "AGENTS.md"), `${topology}fixture\n`);
@@ -856,8 +837,8 @@ test("STORY-286 the hook leg reads codex too, and absence is deferral rather tha
     Stop: [{ hooks: [{ type: "command", command: 'node "${CLAUDE_PROJECT_DIR}/scripts/hook.mjs"' }] }],
   } }));
 
-  // The adapter bundle installs inert and activation is a separate governed step, so a
-  // container with no hooks file has not failed anything — it has not been activated.
+  // Writing the Codex hooks file is a separate step, so a container with no hooks file
+  // has not failed anything — the Codex harness has not been written there yet.
   const absent = await inspectInstallFixture(fixture);
   const absentHooks = absent.checks.find((item) => item.name === "hooks");
   assert.equal(absentHooks.ok, true);
@@ -894,139 +875,6 @@ test("STORY-286 a registered codex hook whose target cannot run turns the leg re
   const invalidHooks = invalid.checks.find((item) => item.name === "hooks");
   assert.equal(invalidHooks.ok, false);
   assert.equal(invalidHooks.reasonCode, "PLATFORM_CODEX_HOOKS_INVALID");
-});
-
-test("STORY-286 an adapter bundle is accepted by its receipt's digests, not by existing", async (context) => {
-  // INC-208 recorded the ceiling: the two adapter entries accepted a directory merely
-  // being there, so a bundle whose bytes had been edited passed. The receipt names each
-  // installed file with a content digest, which makes acceptance mean "still what was
-  // installed" rather than "something is at this path".
-  const fixture = await completeInstallFixture(context);
-  const bundle = join(fixture.root, ".codex", LEGACY_ENGINE_NAME);
-  await mkdir(bundle, { recursive: true });
-  await writeFile(join(bundle, "project.json"), "{}\n");
-  const receiptDir = join(fixture.root, ".tcrn-artifacts", "install-receipts", "platform-container");
-  await mkdir(receiptDir, { recursive: true });
-  const digestOf = async (path) => createHash("sha256").update(await readFile(path)).digest("hex");
-  const receiptPath = join(receiptDir, "codex.json");
-  const writeReceipt = async () => writeFile(receiptPath, JSON.stringify({
-    schemaVersion: "tcrn.codex-adapter-installation-generation.v1",
-    installationRoot: fixture.root,
-    entries: [{ path: `.codex/${LEGACY_ENGINE_NAME}/project.json`, contentDigest: await digestOf(join(bundle, "project.json")) }],
-  }));
-  await writeReceipt();
-
-  const entry = {
-    id: "container.codex-adapter-under-test",
-    layer: "container",
-    host: "codex",
-    pathTemplate: `<PLATFORM_ROOT>/.codex/${LEGACY_ENGINE_NAME}`,
-    writer: "engine-adapter",
-    acceptanceProbe: "probe:adapter-bundle-digest;receipt=<PLATFORM_ROOT>/.tcrn-artifacts/install-receipts/platform-container/codex.json",
-  };
-  const manifest = { ...INSTALL_MANIFEST, items: [...INSTALL_MANIFEST.items, entry] };
-  const wiring = async () => {
-    const result = await inspectInstallFixture(fixture, { manifest });
-    return result.checks.find((item) => item.name === "installWiring");
-  };
-
-  assert.equal((await wiring()).ok, true, "an untouched bundle matches its receipt");
-
-  await writeFile(join(bundle, "project.json"), "{}\n\n");
-  const drifted = await wiring();
-  assert.equal(drifted.ok, false);
-  const finding = drifted.invalid.find((item) => item.id === entry.id);
-  assert.equal(finding.reasonCode, "PLATFORM_ADAPTER_BUNDLE_DRIFTED");
-  assert.equal(finding.drifted[0].path, `.codex/${LEGACY_ENGINE_NAME}/project.json`, "a drift names the file");
-
-  await writeReceipt();
-  assert.equal((await wiring()).ok, true, "re-recording the receipt accepts the new bytes deliberately");
-
-  await writeFile(receiptPath, "{ not json");
-  const unreadable = await wiring();
-  assert.equal(unreadable.invalid.find((item) => item.id === entry.id).reasonCode, "PLATFORM_ADAPTER_RECEIPT_UNREADABLE",
-    "an unreadable receipt is the finding; it never falls back to the directory being there");
-});
-
-// TCRN-CROSS-INC-219 — identity drift is reported beside the verdict, never inside it.
-// The observation leg is exercised directly against a synthetic receipt so it needs no
-// platform container: the question is only whether a drifted identity is named and
-// whether naming it can move the verdict.
-
-test("an identity drift is named as an observation, with the moment it happened", async () => {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "tcrn-doctor-identity-")));
-  try {
-    const installedDirectory = join(root, ".codex", LEGACY_ENGINE_NAME);
-    await mkdir(installedDirectory, { recursive: true });
-    const installed = join(installedDirectory, "project.json");
-    await writeFile(installed, "{}\n");
-    const receiptPath = join(root, "receipt.json");
-    const bytes = await readFile(installed);
-    await writeFile(receiptPath, `${JSON.stringify({
-      installationRoot: root,
-      entries: [{
-        path: `.codex/${LEGACY_ENGINE_NAME}/project.json`,
-        contentDigest: createHash("sha256").update(bytes).digest("hex"),
-        // A digest that cannot be the live one, so the leg must report.
-        identityDigest: createHash("sha256").update("not-the-live-identity").digest("hex"),
-      }],
-    })}\n`);
-    const manifest = {
-      items: [{
-        id: "container.codex-adapter",
-        // Templates, exactly as the real manifest writes them: expandTemplate returns
-        // null for a path carrying no <PLATFORM_ROOT>, so a raw path is silently skipped.
-        pathTemplate: `<PLATFORM_ROOT>/.codex/${LEGACY_ENGINE_NAME}`,
-        acceptanceProbe: "probe:adapter-bundle-digest;receipt=<PLATFORM_ROOT>/receipt.json",
-      }],
-    };
-    const observations = await adapterIdentityObservations(manifest, root, root);
-    assert.equal(observations.length, 1);
-    assert.equal(observations[0].reasonCode, "PLATFORM_ADAPTER_IDENTITY_DRIFTED");
-    assert.equal(observations[0].path, `.codex/${LEGACY_ENGINE_NAME}/project.json`);
-    assert.equal(observations[0].remedy, "adapter-rebind", "and it names the governed way back");
-    assert.ok(!Number.isNaN(Date.parse(observations[0].modifiedAt)), "with the timestamp that moved");
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
-});
-
-test("a matching identity produces no observation at all", async () => {
-  const root = await realpath(await mkdtemp(join(tmpdir(), "tcrn-doctor-identity-")));
-  try {
-    const installedDirectory = join(root, ".codex", LEGACY_ENGINE_NAME);
-    await mkdir(installedDirectory, { recursive: true });
-    const installed = join(installedDirectory, "project.json");
-    await writeFile(installed, "{}\n");
-    const stats = await lstat(installed);
-    const receiptPath = join(root, "receipt.json");
-    await writeFile(receiptPath, `${JSON.stringify({
-      installationRoot: root,
-      entries: [{
-        path: `.codex/${LEGACY_ENGINE_NAME}/project.json`,
-        contentDigest: createHash("sha256").update(await readFile(installed)).digest("hex"),
-        identityDigest: canonicalSha256({
-          dev: String(stats.dev),
-          ino: String(stats.ino),
-          size: String(stats.size),
-          mtimeMs: String(stats.mtimeMs),
-          ctimeMs: String(stats.ctimeMs),
-        }),
-      }],
-    })}\n`);
-    const manifest = {
-      items: [{
-        id: "container.codex-adapter",
-        // Templates, exactly as the real manifest writes them: expandTemplate returns
-        // null for a path carrying no <PLATFORM_ROOT>, so a raw path is silently skipped.
-        pathTemplate: `<PLATFORM_ROOT>/.codex/${LEGACY_ENGINE_NAME}`,
-        acceptanceProbe: "probe:adapter-bundle-digest;receipt=<PLATFORM_ROOT>/receipt.json",
-      }],
-    };
-    assert.deepEqual(await adapterIdentityObservations(manifest, root, root), []);
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
 });
 
 // TCRN-CROSS-MIN-102 批0. The alignment leg has to be able to go red, and it has to

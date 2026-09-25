@@ -9,7 +9,7 @@ identifiers at a strict generation instant. It inherits every canonical-JSON,
 ordering, instant, identifier, and extension rule from `protocol-common-v1`. A
 context document carries the AOS requirement `AOS-REQ-008` (deterministic
 context). This document also anchors the context-route injection budgets that
-the activation ladder (`claude-adapter-session-start`, `persona-render`) cites.
+the retired activation ladder's session-start summary and persona rendering cited.
 
 ## Record Shape
 

@@ -639,8 +639,8 @@
       "semantics": "native work status plus a genuine successful, evidence-bound native implementation result are the completion authority; an advisory verify command alone is not a result, and external mirrored completion stores are not prerequisites",
       "landing": "scripts/final-gate-plan.mjs native status qualification and scripts/operational-batch-entry.mjs",
       "enforcementHost": "einzbern",
-      "positiveLeg": "tests/codex-stop-pact.test.mjs native status qualification plus native result annotation acceptance",
-      "redLeg": "tests/codex-stop-pact.test.mjs a caller completion store, bare advisory verify command, missing dependency schema, or failed/stale native result cannot make a non-terminal work item complete",
+      "positiveLeg": "tests/final-gate-plan-batch-verify.test.mjs a non-blocked bound Story with a valid native result qualifies through readNativeBatchState",
+      "redLeg": "tests/final-gate-plan-batch-verify.test.mjs a native result bound to other scope text is still refused (the caller-store, bare-verify, dependency-schema and stale-result legs lived in the Codex stop pact test file, retired with the stop pact by TCRN-CROSS-STORY-467 R3)",
       "disposition": "retained",
       "strictnessProof": "The retired stage-completion authority accepted a second receipt/store state beside the chain. Qualification now derives completion only from the fresh native work status and retains runner result evidence for the gate itself; a caller-supplied completion receipt cannot alter task status or enter the formal batch."
     }

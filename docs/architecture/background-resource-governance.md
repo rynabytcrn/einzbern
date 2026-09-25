@@ -72,36 +72,13 @@ The right automatic trigger is the host's **session-end / stop** event: run
 wired live without an explicit operator decision, and for the *same underlying
 reason* on each — a new live host surface is a governed step, not a code change.
 
-### Claude Code — proposed ladder step, not activated
+### Claude Code — no ladder to extend
 
-Claude Code's activation ladder ships exactly one live hook: a fail-open
-`SessionStart` summary (`docs/activation/activation-ladder-v1.md`). `Stop` is a
-**deliberate KEEP-INERT non-goal** — "a live misfire silences the agent; it stays
-simulate-only." A read-only detector on `Stop` is observation, not response
-suppression, so it does not violate the *intent* of that non-goal, but it is
-still a **new active host surface** and therefore needs an Owner-signed ladder
-step. The recipe, when that step is authorized:
-
-1. Add a `session-stop.mjs` generator mirroring `claude-adapter-session-start.ts`;
-   its handler runs `spawn-guard.mjs detect` and **always `process.exit(0)`** (a
-   nonzero Stop-hook exit can block the host's stop), writing the residue report
-   to a project-local path, never suppressing a response.
-2. Relax the single-event guard in `claude-adapter-activation.ts`
-   (`validateClaudeAdapterActivationFragment`) from `{SessionStart}` to the closed
-   set `{SessionStart, Stop}`, keeping `ACTIVATION_HOOK_SURFACE_EXCEEDED` for
-   anything else; add the second handler path to `CLAUDE_ADAPTER_ACTIVATION_PATHS`
-   and to the installer's write + byte-inverse rollback loop.
-3. Keep the handler's writes **project-local** (the adapter directory under `.claude/`); never
-   mutate the workspace control tree or run git working-tree operations
-   from the hook (a live-sync-class hazard — see `backup-git-tier.md`).
-4. Validate with an extended `host-evidence.mjs` group-A observation: install the
-   Stop handler, run `claude -p`, and assert (by filesystem side effect, the
-   before-auth technique the SessionStart evidence already uses) that the handler
-   fired and wrote its residue marker. First confirm `Stop` hooks fire in `-p`
-   one-shot mode, which is currently unexercised.
-
-Until that ladder step is signed, the honest receipt is **proposed, not
-activated**.
+The Claude Code activation ladder this section proposed a `Stop` step for, its single
+fail-open `SessionStart` summary and the adapter modules behind it are retired with the
+rest of the host hook scripts (TCRN-CROSS-STORY-467 R3). A read-only `Stop` detector would
+now be new host wiring from scratch, which is decided with the host hooks
+(TCRN-CROSS-STORY-477), not an extension of an existing step.
 
 ### Codex — proposed only, pending a session-end survey
 
@@ -122,12 +99,11 @@ effort:
   survey's own `versionPinnedHookSurface.hookEvents`
   (`docs/verification/host/codex-0.139.0-facts.json`), read from a real
   `codex app-server generate-json-schema`, lists `Stop`. TCRN-CROSS-STORY-357 then
-  put that event into production use by two independent capabilities —
-  `tools/stop-pact/codex-executor.mjs` (STORY-194) and
-  `tools/stop-pact/codex-response-style-hook.mjs` (STORY-357), both registered as
-  `stop-pact` and `stop-response-style-check` in `scripts/host-harness.mjs`'s
-  `HARNESS_CAPABILITIES` roster and each exercised by its own test suite — which
-  closes "does Codex expose a Stop hook event at all" for good. What is still true:
+  put that event into production use by two independent capabilities, the Codex stop
+  pact executor (STORY-194) and the Codex response-style check (STORY-357), each exercised
+  by its own test suite until both were retired with the host hook scripts
+  (TCRN-CROSS-STORY-467 R3) — which closed "does Codex expose a Stop hook event at all"
+  for good. What is still true:
   Codex's distinct **SessionEnd** event stayed `schemaUnavailable` in that same
   0.139.0 survey, STORY-357 did not re-run the schema generator against the
   0.148.0 binary now installed (see `docs/verification/host/codex-0.148.0-facts.json`),

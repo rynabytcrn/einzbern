@@ -315,7 +315,7 @@ test("STORY-420: dynamic impact selects affected roots, reuses only bound termin
 test("STORY-439: gate selection is derivable from containment", () => {
   const containment = JSON.parse(readFileSync(CONTAINMENT_PATH, "utf8"));
 
-  const engine = buildGateImpactMap({ containment, changedFiles: ["scripts/agents-zero-hook.mjs"] });
+  const engine = buildGateImpactMap({ containment, changedFiles: ["scripts/knowledge-inject-hook.mjs"] });
   assert.deepEqual(engine.affected, ["engine-release"]);
 
   assert.deepEqual(containment.topLevel, ["engine-release", "platform-layout", "product-gates"]);
@@ -477,11 +477,11 @@ test("STORY-414: progress waits report cursor deltas, unchanged polls, and termi
 // is a host hook, not an agent; real agents are still seen. Red leg: drop the distinction.
 test("STORY-460 AC4: running hook processes are host hooks, not running agents, and real agents still count", () => {
   const summarize = operationalBatchEntry.summarizeProcesses ?? ((rows) => ({ agents: { records: rows.map((row) => classifyProcess(row, { selfPid: 1 })).filter((row) => row.scope !== "unrelated" && row.scope !== "unknown") } }));
+  // The registry now holds the knowledge-inject handler alone; the other handlers this list
+  // carried are retired with their scripts (TCRN-CROSS-STORY-467 R3).
   const hooks = [
     `node ${REPOSITORY_ROOT}/scripts/knowledge-inject-hook.mjs --container-root /container --host claude`,
-    `node ${REPOSITORY_ROOT}/scripts/ssh-write-observer.mjs`,
-    `node ${REPOSITORY_ROOT}/scripts/knowledge-capture-hook.mjs --container-root /container --host claude`,
-    `node ${REPOSITORY_ROOT}/scripts/agents-zero-hook.mjs`,
+    `node ${REPOSITORY_ROOT}/scripts/knowledge-inject-hook.mjs --container-root /container --host codex`,
     `${process.execPath} ${REPOSITORY_ROOT}/scripts/knowledge-inject.mjs --hook-input {} --container-root /container --host claude`,
   ].map((command, index) => ({ pid: 200 + index, ppid: 1, pgid: 200 + index, state: "S", command }));
   const hookSummary = summarize(hooks, { selfPid: 1, selfPgid: null });
@@ -525,15 +525,18 @@ test("INC-384: engine CLI reads started under a host hook are part of the hook, 
 test("INC-384: a governed write under a hook stays in writes and a read with no hook ancestor is still orchestration", () => {
   const cli = `${process.execPath} ${REPOSITORY_ROOT}/scripts/einzbern.mjs`;
   const workspace = "/container/.tcrn-workspace/cross-project/workspace";
-  const capture = [
-    { pid: 510, ppid: 500, pgid: 510, state: "S", command: `node ${REPOSITORY_ROOT}/scripts/knowledge-capture-hook.mjs --container-root /container --host claude` },
+  // The capture hook that started this write in a live session is retired
+  // (TCRN-CROSS-STORY-467 R3). The rule is structural — any registered hook ancestor — so
+  // the remaining handler stands in as the ancestor.
+  const hookWrite = [
+    { pid: 510, ppid: 500, pgid: 510, state: "S", command: `node ${REPOSITORY_ROOT}/scripts/knowledge-inject-hook.mjs --container-root /container --host claude` },
     { pid: 511, ppid: 510, pgid: 510, state: "S", command: `${cli} knowledge-capture --workspace ${workspace} --from-file /tmp/card.json` },
   ];
   const mainSessionRead = { pid: 520, ppid: 500, pgid: 520, state: "S", command: `${cli} work-show --workspace ${workspace} --id work:000000000000000000000384` };
   const orphanRead = { pid: 521, ppid: 9999, pgid: 521, state: "S", command: `${cli} status --workspace ${workspace}` };
   const loopA = { pid: 530, ppid: 531, pgid: 530, state: "S", command: `${cli} work-list --workspace ${workspace}` };
   const loopB = { pid: 531, ppid: 530, pgid: 530, state: "S", command: `${cli} status --workspace ${workspace}` };
-  const summary = operationalBatchEntry.summarizeProcesses([...hookedSnapshot(), ...capture, mainSessionRead, orphanRead, loopA, loopB], { selfPid: 1, selfPgid: null });
+  const summary = operationalBatchEntry.summarizeProcesses([...hookedSnapshot(), ...hookWrite, mainSessionRead, orphanRead, loopA, loopB], { selfPid: 1, selfPgid: null });
   assert.deepEqual(summary.writes.records.map((row) => row.pid), [511], "the batch still waits for a real write a hook started");
   assert.deepEqual(summary.agents.records.map((row) => [row.pid, row.role]).sort((left, right) => left[0] - right[0]), [[511, "orchestration"], [520, "orchestration"], [521, "orchestration"], [530, "orchestration"], [531, "orchestration"]], "no hook ancestor, a missing parent, or a parent cycle keeps the existing rule");
 });

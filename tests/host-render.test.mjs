@@ -92,7 +92,8 @@ test("STORY-371: Claude rendering preserves user fields, writes tier fields, and
   assert.equal(renderedSettings.env.CLAUDE_CODE_EFFORT_LEVEL, "max");
   assert.equal(renderedSettings.custom, "keep");
   assert.equal(renderedSettings.hooks.Other[0].hooks[0].command, "user-hook");
-  assert.equal(renderedSettings.hooks.Stop.length, 3);
+  // No Stop group is generated since the Stop handlers were retired (TCRN-CROSS-STORY-467 R3).
+  assert.deepEqual(Object.keys(renderedSettings.hooks).sort(), ["Other", "PostToolUse", "SessionStart", "SubagentStart", "UserPromptSubmit"]);
   assert.deepEqual(renderedSettings.hooks.PostToolUse, [{ hooks: [{ type: "command", command: `if [ -f "\${CLAUDE_PROJECT_DIR}/${LOCAL_DIRECTORY_NAMES.engine}/scripts/knowledge-inject-hook.mjs" ]; then node "\${CLAUDE_PROJECT_DIR}/${LOCAL_DIRECTORY_NAMES.engine}/scripts/knowledge-inject-hook.mjs" --container-root "\${CLAUDE_PROJECT_DIR}" --host claude; fi`, timeout: 30 }] }]);
   const agent = await readFile(join(root, ".claude", "agents", "implement.md"), "utf8");
   assert.match(agent, /description: user-owned/u);
@@ -131,9 +132,10 @@ test("STORY-371: Codex rendering changes only root model keys and generated hook
   assert.equal(hooks.custom, true);
   assert.equal(hooks.hooks.User[0].hooks[0].command, "user-hook");
   assert.deepEqual(hooks.hooks.PostToolUse, [{ hooks: [{ type: "command", command: `node ${JSON.stringify(join(repoRoot, "scripts/knowledge-inject-hook.mjs"))} --container-root ${JSON.stringify(root)} --host codex`, timeout: 30 }] }]);
-  for (const event of ["PreToolUse", "SessionStart", "Stop", "SubagentStart", "SubagentStop"]) {
+  for (const event of ["SessionStart", "UserPromptSubmit", "SubagentStart"]) {
     assert.deepEqual(hooks.hooks[event], codexHookDocument(repoRoot, root).hooks[event]);
   }
+  assert.deepEqual(Object.keys(hooks.hooks).sort(), ["PostToolUse", "SessionStart", "SubagentStart", "User", "UserPromptSubmit"]);
   const green = await inspectHostRenderDrift({ host: "codex", settings: config, root, repoRoot });
   assert.equal(green.ok, true);
   assert.equal(green.drift.length, 0);
@@ -181,28 +183,27 @@ test("TCRN-CROSS-STORY-417: exact legacy groups without the host suffix migrate 
 });
 
 test("TCRN-CROSS-STORY-393 R2: absolute guarded Claude hooks replace in place and stay project-scoped", async (t) => {
+  // The guarded groups this case first used ran the Stop and prompt handlers retired in
+  // TCRN-CROSS-STORY-467 R3; the same guarded form over the knowledge-inject handler takes
+  // the same in-place path.
   const root = await scratchFor(t, "tcrn-host-render-r2-legacy-");
   const guarded = (handler, host = false) => `if [ "$CLAUDE_PROJECT_DIR" = "${resolve(repoRoot, "..", "..")}" ]; then node "${resolve(repoRoot, handler)}"${host ? " --host claude" : ""}; fi`;
   const existingHooks = {
-    Stop: [
-      { hooks: [{ type: "command", command: guarded("tools/stop-pact/hook.mjs"), timeout: 10 }] },
-      { hooks: [{ type: "command", command: guarded("scripts/knowledge-capture-hook.mjs"), timeout: 30 }] },
-    ],
-    UserPromptSubmit: [{ hooks: [{ type: "command", command: guarded("scripts/agents-zero-hook.mjs"), timeout: 10 }] }],
+    UserPromptSubmit: [{ hooks: [{ type: "command", command: guarded("scripts/knowledge-inject-hook.mjs", true), timeout: 30 }] }],
+    SubagentStart: [{ hooks: [{ type: "command", command: guarded("scripts/knowledge-inject-hook.mjs"), timeout: 30 }] }],
   };
   const existing = new Map([[".claude/settings.json", JSON.stringify({ hooks: existingHooks })]]);
   const plan = renderHostPlan({ host: "claude-code", scope: "hooks-only", settings: settings("claude-code"), root, repoRoot, existing });
   const file = plan.files[0];
   const document = JSON.parse(file.content);
   const generated = claudeHookSettings();
-  assert.equal(document.hooks.Stop.length, generated.Stop.length, "Stop groups are upgraded in place instead of appended");
-  assert.equal(document.hooks.UserPromptSubmit.length, generated.UserPromptSubmit.length, "UserPromptSubmit groups are upgraded in place instead of appended");
-  assert.equal(document.hooks.Stop.filter((group) => group.hooks[0].command.includes("knowledge-capture-hook.mjs")).length, 1);
-  assert.equal(document.hooks.UserPromptSubmit.filter((group) => group.hooks[0].command.includes("agents-zero-hook.mjs")).length, 1);
-  assert.ok(document.hooks.Stop.every((group) => group.hooks[0].command.startsWith("if [ -f \"${CLAUDE_PROJECT_DIR}/")), "the generated projection is guarded");
+  for (const event of ["UserPromptSubmit", "SubagentStart"]) {
+    assert.deepEqual(document.hooks[event], generated[event], `${event} groups are upgraded in place instead of appended`);
+    assert.ok(document.hooks[event].every((group) => group.hooks[0].command.startsWith("if [ -f \"${CLAUDE_PROJECT_DIR}/")), "the generated projection is guarded");
+  }
   const otherProject = await scratchFor(t, "tcrn-host-render-other-project-");
-  const captureCommand = document.hooks.Stop.find((group) => group.hooks[0].command.includes("knowledge-capture-hook.mjs")).hooks[0].command;
-  const result = execFileSync("sh", ["-c", captureCommand], { env: { ...process.env, CLAUDE_PROJECT_DIR: otherProject }, encoding: "utf8" });
+  const promptCommand = document.hooks.UserPromptSubmit[0].hooks[0].command;
+  const result = execFileSync("sh", ["-c", promptCommand], { env: { ...process.env, CLAUDE_PROJECT_DIR: otherProject }, encoding: "utf8" });
   assert.equal(result, "", "an unrelated project does not invoke a missing platform hook");
 });
 
@@ -210,21 +211,21 @@ test("TCRN-CROSS-STORY-393 R6: real user guard forms normalize to the generated 
   const root = await scratchFor(t, "tcrn-host-render-r6-user-guards-");
   const projectRoot = resolve(repoRoot, "..", "..");
   const absolute = (handler) => resolve(repoRoot, handler);
+  // The three real user forms first wrapped the Stop and prompt handlers retired in
+  // TCRN-CROSS-STORY-467 R3; each now wraps the knowledge-inject handler on its own event.
   const existingHooks = {
-    Stop: [
-      { hooks: [{ type: "command", command: `node "${absolute("tools/stop-pact/hook.mjs")}"`, timeout: 10 }] },
-      { hooks: [{ type: "command", command: `[ "$CLAUDE_PROJECT_DIR" = "${projectRoot}" ] && node "${absolute("scripts/knowledge-capture-hook.mjs")}" || true`, timeout: 30 }] },
-    ],
-    UserPromptSubmit: [{ hooks: [{ type: "command", command: `if [ "$CLAUDE_PROJECT_DIR" = "${projectRoot}" ]; then node "${absolute("scripts/agents-zero-hook.mjs")}"; else cat >/dev/null; fi`, timeout: 10 }] }],
+    SessionStart: [{ hooks: [{ type: "command", command: `node "${absolute("scripts/knowledge-inject-hook.mjs")}"`, timeout: 30 }] }],
+    PostToolUse: [{ hooks: [{ type: "command", command: `[ "$CLAUDE_PROJECT_DIR" = "${projectRoot}" ] && node "${absolute("scripts/knowledge-inject-hook.mjs")}" || true`, timeout: 30 }] }],
+    UserPromptSubmit: [{ hooks: [{ type: "command", command: `if [ "$CLAUDE_PROJECT_DIR" = "${projectRoot}" ]; then node "${absolute("scripts/knowledge-inject-hook.mjs")}"; else cat >/dev/null; fi`, timeout: 30 }] }],
   };
   const existing = new Map([[".claude/settings.json", JSON.stringify({ hooks: existingHooks })]]);
   const plan = renderHostPlan({ host: "claude-code", scope: "hooks-only", settings: settings("claude-code"), root, repoRoot, existing });
   const document = JSON.parse(plan.files[0].content);
   const generated = claudeHookSettings();
-  const sortByCommand = (groups) => groups.slice().sort((left, right) => left.hooks[0].command.localeCompare(right.hooks[0].command));
-  assert.deepEqual(sortByCommand(document.hooks.Stop), sortByCommand(generated.Stop), "the real && guard replaces Stop in place");
-  assert.deepEqual(sortByCommand(document.hooks.UserPromptSubmit), sortByCommand(generated.UserPromptSubmit), "the real if/then/else guard replaces UserPromptSubmit in place");
-  for (const event of ["Stop", "UserPromptSubmit"]) {
+  assert.deepEqual(document.hooks.SessionStart, generated.SessionStart, "the bare absolute form replaces SessionStart in place");
+  assert.deepEqual(document.hooks.PostToolUse, generated.PostToolUse, "the real && guard replaces PostToolUse in place");
+  assert.deepEqual(document.hooks.UserPromptSubmit, generated.UserPromptSubmit, "the real if/then/else guard replaces UserPromptSubmit in place");
+  for (const event of ["SessionStart", "PostToolUse", "UserPromptSubmit"]) {
     const handlers = document.hooks[event].flatMap((group) => group.hooks ?? [])
       .map((hook) => hook.command.match(/(?:scripts|tools)\/[^"'\s]+?\.mjs/u)?.[0])
       .filter(Boolean);
@@ -465,18 +466,19 @@ test("TCRN-CROSS-STORY-429: native CLI scope selects hooks-only or the explicit 
 });
 
 test("TCRN-CROSS-STORY-429: the authorized per-host hook changes do not alter other managed or user groups", async (t) => {
-  // The telemetry pair this case replaced in place went with the dispatch-telemetry hook
-  // (TCRN-CROSS-STORY-467 R3); the knowledge-capture Stop group carries the same --host
-  // suffix and stands in as the group replaced in place.
+  // The telemetry pair this case replaced in place went with the dispatch-telemetry hook,
+  // and the lesson-capture Stop group that stood in for it went with the capture hook
+  // (TCRN-CROSS-STORY-467 R3); the per-prompt knowledge-injection group carries the same
+  // --host suffix and is the group replaced in place now.
   for (const host of ["claude-code", "codex"]) {
     const { root, generated } = await generatedFixture(t, host, `tcrn-host-render-hooks-only-delta-${host}-`);
     const beforeHooks = structuredClone(generated);
-    const capture = generated.Stop.find((group) => group.hooks?.some((hook) => hook.command?.includes("knowledge-capture-hook.mjs")));
+    const prompt = generated.UserPromptSubmit.find((group) => group.hooks?.some((hook) => hook.command?.includes("knowledge-inject-hook.mjs")));
     const knowledge = generated.SubagentStart.find((group) => group.hooks?.some((hook) => hook.command?.includes("knowledge-inject-hook.mjs")));
-    assert.ok(capture);
+    assert.ok(prompt);
     assert.ok(knowledge);
-    const legacyCapture = withoutHostSuffix(capture, host);
-    beforeHooks.Stop = beforeHooks.Stop.map((group) => JSON.stringify(group) === JSON.stringify(capture) ? legacyCapture : group);
+    const legacyPrompt = withoutHostSuffix(prompt, host);
+    beforeHooks.UserPromptSubmit = beforeHooks.UserPromptSubmit.map((group) => JSON.stringify(group) === JSON.stringify(prompt) ? legacyPrompt : group);
     beforeHooks.SubagentStart = beforeHooks.SubagentStart.filter((group) => JSON.stringify(group) !== JSON.stringify(knowledge));
     const userGroup = { matcher: "UserOwned", timeout: null, metadata: { retain: [1, { nested: true }] }, hooks: [{ type: "command", command: "user hook" }] };
     beforeHooks.UserPromptSubmit.push(userGroup);
@@ -489,8 +491,8 @@ test("TCRN-CROSS-STORY-429: the authorized per-host hook changes do not alter ot
     const file = plan.files[0];
     const actual = JSON.parse(file.content);
     const expected = structuredClone(beforeDocument);
-    const captureIndex = expected.hooks.Stop.findIndex((group) => JSON.stringify(group) === JSON.stringify(legacyCapture));
-    expected.hooks.Stop[captureIndex] = capture;
+    const promptIndex = expected.hooks.UserPromptSubmit.findIndex((group) => JSON.stringify(group) === JSON.stringify(legacyPrompt));
+    expected.hooks.UserPromptSubmit[promptIndex] = prompt;
     expected.hooks.SubagentStart.push(knowledge);
     assert.deepEqual(actual, expected, `${host}: exactly one in-place replacement and one full task-bound knowledge group addition`);
     assert.deepEqual(actual.hooks.UserPromptSubmit.at(-1), userGroup, `${host}: unowned user group and metadata are retained`);

@@ -859,7 +859,7 @@ assertCatalogCategoriesExclusive(COMMAND_CATALOG);
 // authorityBearing now reddens at the write boundary below, present or future verb alike.
 // These are the field names and the state tokens that make a document readable as
 // observed host trust state. TCRN-CROSS-STORY-358 retired the only core modules that ever
-// hand-declared them (codex-adapter-activation.ts, codex-adapter-installer.ts) along with
+// hand-declared them (the Codex adapter activation and installer modules) along with
 // the test that bound this list two-way against that live declaration
 // (tests/act13-authority-output.test.mjs's former vocabulary case; see
 // scripts/policy/coverage-waivers.json for its disposition). The list below is now a fixed

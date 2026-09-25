@@ -6,8 +6,8 @@
 //     is orphaned is a criterion with no machine red leg).
 //
 // A test file is "wired" when a pipeline glob covers it (the root tests/ glob) or
-// the wiring registry names its owner with a dated reason (the parity / ssh-breakglass
-// allowlist shape — directed, dated, cannot silently widen).
+// the wiring registry names its owner with a dated reason (the parity allowlist shape —
+// directed, dated, cannot silently widen).
 
 import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";

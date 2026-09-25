@@ -45,6 +45,13 @@ The `dispatch-*` and `telemetry-*` verbs, `scripts/dispatch-adapter.mjs`, the di
 hook and the local telemetry store are gone: nothing writes or reads telemetry, `work-transition`
 no longer takes `--evidence`, and knowledge fitness reports zero observations. A work record
 that already carries a telemetry evidence snapshot still replays and is still checked.
+The host hook scripts are gone with the inert adapter templates: the stop pact and the
+response-style checks (`tools/stop-pact`), `scripts/chain-write-guard.mjs`,
+`scripts/ssh-write-observer.mjs` with its channel proof and break-glass allowlist,
+`scripts/agents-zero-hook.mjs` and `scripts/knowledge-capture-hook.mjs`, the Claude and Codex
+adapter bundles with their install receipts, and this repository's own
+`.claude/settings.json` observer fixture. The harness renders governed context injection
+only, and the `knowledge-capture` verb stays.
 
 ## 1.2.1 — patch candidate
 

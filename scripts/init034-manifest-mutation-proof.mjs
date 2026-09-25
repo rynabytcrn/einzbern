@@ -15,7 +15,7 @@ const testPath = join(repositoryRoot, "tests/init033-install-surface.test.mjs");
 
 const mutations = [
   { name: "container", id: "container.mcp", distId: "<PLATFORM_ROOT>/.mcp.json", pattern: /^\s*item\("container\.mcp"[^\n]*\n/mu },
-  { name: "project", id: "project.TCRN-TMS", distId: "project.TCRN-TMS.claude-adapter", pattern: /^\s*Object\.freeze\(\{ name: "TCRN-TMS"[^\n]*\n/mu },
+  { name: "project", id: "project.TCRN-TMS", distId: 'name: "TCRN-TMS"', pattern: /^\s*Object\.freeze\(\{ name: "TCRN-TMS"[^\n]*\n/mu },
   { name: "machine", id: "machine.portal-launcher-command", pattern: /^\s*item\("machine\.portal-launcher-command"[^\n]*\n/mu },
 ];
 

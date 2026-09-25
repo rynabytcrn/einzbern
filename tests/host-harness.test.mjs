@@ -13,11 +13,9 @@
 
 import test from "node:test";
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import {
   HARNESS_CAPABILITIES,
@@ -30,14 +28,7 @@ import {
   nonHookCapabilitiesFor,
 } from "../scripts/host-harness.mjs";
 import { applyHostHarness, harnessBytes } from "../scripts/host-harness-apply.mjs";
-import { guardDecision, responseFor, stringsIn } from "../scripts/chain-write-guard.mjs";
-import { LEGACY_CONTROL_DIRECTORY, LOCAL_DIRECTORY_NAMES } from "../dist/build/packages/core/src/index.js";
-
-// TCRN-CROSS-INC-373: the previous two constants exercise the renderer only -- they prove
-// the generated command *line* carries `--container-root`, not that agents-zero-hook.mjs's
-// own `containerRootArgument()` entry point actually reads it. This path lets the tests
-// below spawn the real handler, the way an installed Codex copy actually invokes it.
-const AGENTS_ZERO_HOOK_PATH = fileURLToPath(new URL("../scripts/agents-zero-hook.mjs", import.meta.url));
+import { LOCAL_DIRECTORY_NAMES } from "../dist/build/packages/core/src/index.js";
 
 // Codex's documented event set. Every event the harness uses must be in it, and Codex's
 // set is a strict subset of Claude Code's, so membership here settles both directions.
@@ -48,12 +39,20 @@ const CODEX_EVENTS = new Set([
 
 test("INC-220 every capability is claimed by every host", () => {
   assert.deepEqual(capabilityGaps(), [], "a capability blank for one host is how the harness became Claude-only");
-  assert.ok(HARNESS_CAPABILITIES.length >= 5);
+  // TCRN-CROSS-STORY-467 R3: governed context injection is what remains of the roster.
+  assert.deepEqual(HARNESS_CAPABILITIES.map((capability) => capability.id), [
+    "governed-context-injection",
+    "per-prompt-context-injection",
+    "post-tool-reference",
+    "subagent-task-context-injection",
+  ]);
 });
 
 test("INC-220 a host that reaches a capability without a hook must say how", () => {
-  // This is the workaround requirement, made checkable. Claude's declarative deny list has
-  // no Codex equivalent; the roster has to record what Codex does instead.
+  // This is the workaround requirement, made checkable. Its first case, Claude's declarative
+  // deny list with no Codex equivalent, went with the control-tree refusal
+  // (TCRN-CROSS-STORY-467 R3); the next capability a host reaches without a hook still has
+  // to record what that host does instead.
   for (const host of HOSTS) {
     for (const entry of nonHookCapabilitiesFor(host)) {
       assert.equal(typeof entry.note, "string");
@@ -68,12 +67,19 @@ test("INC-220 every rostered event exists on Codex", () => {
   }
 });
 
-test("STORY-467 R3: neither host registers the retired dispatch-telemetry hook", () => {
-  // STORY-372 generated SubagentStart and SubagentStop telemetry hooks for both hosts; the
-  // hook and the telemetry store it wrote are retired (TCRN-CROSS-STORY-467 R3).
+test("STORY-467 R3: every rendered hook runs the knowledge-inject handler and nothing else", () => {
+  // STORY-372 generated SubagentStart and SubagentStop telemetry hooks for both hosts, and
+  // the roster also carried the governed-write observer, the control-tree guard, the stop
+  // pact, lesson capture, the output-contract injection and the Codex response-style check.
+  // All of them are retired with their scripts (TCRN-CROSS-STORY-467 R3).
   for (const host of HOSTS) {
-    assert.deepEqual(hookEntriesFor(host).filter((entry) => entry.handler.includes("dispatch-telemetry")), []);
+    assert.deepEqual([...new Set(hookEntriesFor(host).map((entry) => entry.handler))], ["scripts/knowledge-inject-hook.mjs"]);
   }
+  const commands = [...Object.values(claudeHookSettings()), ...Object.values(codexHookDocument("/repo").hooks)]
+    .flat()
+    .flatMap((group) => group.hooks.map((hook) => hook.command));
+  assert.equal(commands.length, 2 * HARNESS_CAPABILITIES.length);
+  for (const command of commands) assert.match(command, /scripts\/knowledge-inject-hook\.mjs" --container-root /u);
 });
 
 test("STORY-418 both hosts register the bound subagent context path separately from telemetry", () => {
@@ -100,8 +106,8 @@ test("TCRN-CROSS-STORY-393 both hosts register the PostToolUse reference path", 
 });
 
 test("INC-220 the two renderings carry the same handlers for the same capabilities", () => {
-  // Rendering differences are legitimate — file shape, command form, one host-specific
-  // Stop handler. A capability present on one host and absent on the other is not.
+  // Rendering differences are legitimate — file shape and command form. A capability
+  // present on one host and absent on the other is not.
   const claude = new Set(hookEntriesFor("claude").map((entry) => entry.id));
   const codex = new Set(hookEntriesFor("codex").map((entry) => entry.id));
   const claudeOnly = [...claude].filter((id) => !codex.has(id));
@@ -127,19 +133,15 @@ test("INC-220 the Codex document is shaped the way the host documents it", () =>
       }
     }
   }
-  const injection = document.hooks.SessionStart[0].hooks[0].command;
-  assert.match(injection, /scripts\/knowledge-inject-hook\.mjs" --container-root "[^"]+" --host codex$/u);
-  const capture = document.hooks.Stop.find((group) => group.hooks[0].command.includes("knowledge-capture-hook.mjs")).hooks[0].command;
-  assert.match(capture, /scripts\/knowledge-capture-hook\.mjs" --container-root "[^"]+" --host codex$/u);
-  // TCRN-CROSS-INC-368: the managed handlers that used to self-derive their container
-  // root (and get it wrong from a managed Codex copy's install location) now carry
-  // `--container-root` on Codex. Each is checked individually — a single representative
-  // leg standing in for all of them was exactly accept-r3 issue #157's lesson. (The third,
-  // the dispatch-telemetry hook, is retired: TCRN-CROSS-STORY-467 R3.)
-  const agentsZero = document.hooks.UserPromptSubmit.find((group) => group.hooks[0].command.includes("agents-zero-hook.mjs")).hooks[0].command;
-  assert.match(agentsZero, /scripts\/agents-zero-hook\.mjs" --container-root "[^"]+"$/u, "agents-zero-hook takes no --host, only --container-root");
-  const sshObserver = document.hooks.PreToolUse.find((group) => group.hooks[0].command.includes("ssh-write-observer.mjs")).hooks[0].command;
-  assert.match(sshObserver, /scripts\/ssh-write-observer\.mjs" --container-root "[^"]+"$/u, "ssh-write-observer takes no --host, only --container-root");
+  // TCRN-CROSS-INC-368: a managed Codex copy's install location says nothing about the
+  // container, so every Codex command names its container root. Each event is checked,
+  // not one representative leg (accept-r3 issue #157's lesson). The other handlers that
+  // carried the flag are retired with their scripts (TCRN-CROSS-STORY-467 R3).
+  for (const groups of Object.values(document.hooks)) {
+    for (const group of groups) {
+      assert.match(group.hooks[0].command, /scripts\/knowledge-inject-hook\.mjs" --container-root "[^"]+" --host codex$/u);
+    }
+  }
 });
 
 test("INC-220 the Claude rendering keeps the project-dir form that host resolves", () => {
@@ -151,84 +153,10 @@ test("INC-220 the Claude rendering keeps the project-dir form that host resolves
       }
     }
   }
-  const injection = claudeHookSettings().SessionStart[0].hooks[0].command;
-  assert.match(injection, /scripts\/knowledge-inject-hook\.mjs" --container-root "\$\{CLAUDE_PROJECT_DIR\}" --host claude; fi$/u);
-  const capture = claudeHookSettings().Stop.find((group) => group.hooks[0].command.includes("knowledge-capture-hook.mjs")).hooks[0].command;
-  assert.match(capture, /scripts\/knowledge-capture-hook\.mjs" --container-root "\$\{CLAUDE_PROJECT_DIR\}" --host claude; fi$/u);
-  // TCRN-CROSS-INC-368: the same handlers stay byte-identical on Claude, which
-  // already runs them via ${CLAUDE_PROJECT_DIR} and needs no explicit root. Checked
-  // individually, same reasoning as the Codex-side assertions above.
-  const agentsZero = claudeHookSettings().UserPromptSubmit.find((group) => group.hooks[0].command.includes("agents-zero-hook.mjs")).hooks[0].command;
-  assert.match(agentsZero, /scripts\/agents-zero-hook\.mjs"; fi$/u, "Claude's agents-zero-hook command must stay byte-identical: no --container-root");
-  const sshObserver = claudeHookSettings().PreToolUse.find((group) => group.hooks[0].command.includes("ssh-write-observer.mjs")).hooks[0].command;
-  assert.match(sshObserver, /scripts\/ssh-write-observer\.mjs"; fi$/u, "Claude's ssh-write-observer command must stay byte-identical: no --container-root");
-});
-
-// TCRN-CROSS-INC-373: agents-zero-hook.mjs's containerRootArgument() CLI entry point had
-// no automated coverage at all -- host-harness.test.mjs only ever asserted the *rendered
-// command line* contains the flag (see the two constants above). A fixture AGENTS.md
-// carries only the legacy `## 零、输出行文（硬约束）` heading agents-zero-hook.mjs's
-// readZeroSection() still recognises (production's resident index does not; see that
-// file's own comment), each with a distinct marker so a mis-resolved root is visible as
-// the WRONG marker rather than merely a missing one.
-function agentsZeroFixture(marker) {
-  const root = mkdtempSync(join(tmpdir(), "tcrn-agents-zero-"));
-  writeFileSync(
-    join(root, "AGENTS.md"),
-    `## 零、输出行文（硬约束）\n\n${marker}: fixture body recorded for TCRN-CROSS-INC-373 counterfactual coverage.\n\n## 一、unrelated\n\nnot part of the injected section.\n`,
-  );
-  return root;
-}
-
-function runAgentsZeroHook({ containerRootArgument, projectDir } = {}) {
-  const args = containerRootArgument ? ["--container-root", containerRootArgument] : [];
-  const env = { ...process.env };
-  delete env.CLAUDE_PROJECT_DIR;
-  if (projectDir) env.CLAUDE_PROJECT_DIR = projectDir;
-  const run = spawnSync(process.execPath, [AGENTS_ZERO_HOOK_PATH, ...args], {
-    encoding: "utf8",
-    env,
-    input: `${JSON.stringify({ hook_event_name: "UserPromptSubmit" })}\n`,
-  });
-  assert.equal(run.status, 0, `agents-zero-hook.mjs must exit clean: stderr=${run.stderr}`);
-  return JSON.parse(run.stdout);
-}
-
-test("TCRN-CROSS-INC-373 leg a: --container-root is read by the hook process itself, not only rendered into a command line", () => {
-  const fixture = agentsZeroFixture("INC373-FIXTURE-MARKER");
-  try {
-    const result = runAgentsZeroHook({ containerRootArgument: fixture });
-    assert.match(
-      result.hookSpecificOutput.additionalContext,
-      /INC373-FIXTURE-MARKER/u,
-      `--container-root must steer containerRoot(), not just the rendered command line: ${JSON.stringify(result)}`,
-    );
-  } finally {
-    rmSync(fixture, { recursive: true, force: true });
-  }
-});
-
-test("TCRN-CROSS-INC-373 leg b: argv --container-root outranks CLAUDE_PROJECT_DIR, same precedence as the other two self-deriving handlers", () => {
-  const fixture = agentsZeroFixture("INC373-FIXTURE-MARKER");
-  const envDir = agentsZeroFixture("INC373-ENV-MARKER");
-  try {
-    const result = runAgentsZeroHook({ containerRootArgument: fixture, projectDir: envDir });
-    assert.match(result.hookSpecificOutput.additionalContext, /INC373-FIXTURE-MARKER/u, "argv --container-root must win over CLAUDE_PROJECT_DIR");
-    assert.doesNotMatch(result.hookSpecificOutput.additionalContext, /INC373-ENV-MARKER/u, "the env-derived root must not leak through when argv is given");
-  } finally {
-    rmSync(fixture, { recursive: true, force: true });
-    rmSync(envDir, { recursive: true, force: true });
-  }
-});
-
-test("TCRN-CROSS-INC-373 leg c: omitting --container-root leaves CLAUDE_PROJECT_DIR resolution unchanged (transition safety)", () => {
-  const envDir = agentsZeroFixture("INC373-ENV-MARKER");
-  try {
-    const result = runAgentsZeroHook({ projectDir: envDir });
-    assert.match(result.hookSpecificOutput.additionalContext, /INC373-ENV-MARKER/u, "default CLAUDE_PROJECT_DIR resolution must still work with the flag absent");
-    assert.doesNotMatch(result.hookSpecificOutput.additionalContext, /INC373-FIXTURE-MARKER/u);
-  } finally {
-    rmSync(envDir, { recursive: true, force: true });
+  for (const groups of Object.values(claudeHookSettings())) {
+    for (const group of groups) {
+      assert.match(group.hooks[0].command, /scripts\/knowledge-inject-hook\.mjs" --container-root "\$\{CLAUDE_PROJECT_DIR\}" --host claude; fi$/u);
+    }
   }
 });
 
@@ -236,10 +164,12 @@ test("INC-220 harness drift is reported when a live Claude hook is gone", () => 
   const root = mkdtempSync(join(tmpdir(), "tcrn-harness-"));
   try {
     const path = join(root, "settings.json");
-    writeFileSync(path, JSON.stringify({ hooks: {}, permissions: { deny: [] } }));
+    writeFileSync(path, JSON.stringify({ hooks: {} }));
     const drift = claudeHarnessDrift(path);
-    assert.ok(drift.length >= hookEntriesFor("claude").length, "every missing hook is named");
-    assert.ok(drift.some((finding) => finding.capability === "control-tree-write-refusal"), "and the missing deny rules too");
+    assert.deepEqual(drift.map((finding) => finding.capability), hookEntriesFor("claude").map((entry) => entry.id), "every missing hook is named");
+    // The control-tree deny rules are no longer part of the harness (TCRN-CROSS-STORY-467 R3).
+    writeFileSync(path, JSON.stringify({ hooks: claudeHookSettings() }));
+    assert.deepEqual(claudeHarnessDrift(path), [], "a rendered harness without deny rules has no drift");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -263,44 +193,4 @@ test("INC-220 applying the Codex harness is idempotent and atomic", () => {
 test("INC-220 Claude's settings are not writable through the applier", () => {
   // Rewriting a live session's settings underneath it is a worse failure than the drift.
   assert.throws(() => harnessBytes("claude"), (error) => error?.reasonCode === "HOST_HARNESS_NOT_WRITABLE");
-});
-
-test("INC-220 the guard REFUSES an edit into a control tree", () => {
-  for (const tool of ["Write", "Edit", "apply_patch"]) {
-    const decision = guardDecision({ tool_name: tool, tool_input: { file_path: "/x/.tcrn-workspace/cross-project/workspace/head.json" } });
-    assert.equal(decision.deny, true, tool);
-    const response = responseFor(decision);
-    assert.equal(response.hookSpecificOutput.permissionDecision, "deny");
-    assert.equal(response.hookSpecificOutput.hookEventName, "PreToolUse");
-    assert.ok(response.hookSpecificOutput.permissionDecisionReason.includes(tool));
-  }
-});
-
-test("INC-220 the guard finds a target nested anywhere in the tool input", () => {
-  // apply_patch carries its targets inside patch text, and the host owns that schema. A
-  // rule bound to tool_input.file_path would read as coverage while missing it.
-  const decision = guardDecision({
-    tool_name: "apply_patch",
-    tool_input: { changes: [{ patch: `*** Update File: ${LEGACY_CONTROL_DIRECTORY}/state.json\n+x` }] },
-  });
-  assert.equal(decision.deny, true);
-  assert.deepEqual(decision.trees, [LEGACY_CONTROL_DIRECTORY]);
-  assert.ok(stringsIn({ a: { b: ["deep"] } }).includes("deep"));
-});
-
-test("INC-220 the guard does NOT touch Bash, or the engine could not read its own chain", () => {
-  // Every governed read names the workspace it reads. A path-substring rule over shell
-  // would refuse the engine itself, which is why Bash belongs to the SSH write observer.
-  const decision = guardDecision({
-    tool_name: "Bash",
-    tool_input: { command: "node scripts/einzbern.mjs status --workspace .tcrn-workspace/cross-project/workspace" },
-  });
-  assert.equal(decision.deny, false);
-});
-
-test("INC-220 the guard leaves ordinary edits and reads alone", () => {
-  assert.equal(guardDecision({ tool_name: "Edit", tool_input: { file_path: "/repo/README.md" } }).deny, false);
-  assert.equal(guardDecision({ tool_name: "Read", tool_input: { file_path: "/x/.tcrn-workspace/a" } }).deny, false);
-  assert.equal(guardDecision({}).deny, false);
-  assert.equal(responseFor({ deny: false }), null);
 });

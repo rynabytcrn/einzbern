@@ -23,16 +23,10 @@ import {
   compareEngineVersions,
   WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES,
 } from "../dist/build/packages/core/src/index.js";
-// The identity digest is computed by the engine's own canonicaliser rather than
-// reproduced here. A second implementation of a digest is a second answer waiting to
-// disagree with the first (TCRN-CROSS-INC-219).
+// Digests are computed by the engine's own canonicaliser rather than reproduced here. A
+// second implementation of a digest is a second answer waiting to disagree with the first
+// (TCRN-CROSS-INC-219).
 import { PROTOCOL_LIMITS, canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
-import {
-  HOSTS,
-  claudeHarnessDrift,
-  codexHookDocument,
-  hookEntriesFor,
-} from "./host-harness.mjs";
 import { inspectHostRenderDrift as inspectRenderedHostDrift } from "./host-render.mjs";
 import { toPosixPath, walkFiles } from "./lib/files.mjs";
 
@@ -1465,17 +1459,6 @@ export async function inspectInstallWiring(platformRoot, homeRoot, manifest = IN
           invalid.push({ id: entry.id, reasonCode: "PLATFORM_ACCEPTANCE_PROBE_FAILED", pathTemplate: entry.pathTemplate, probe: probe.kind, error: error?.code ?? "INVALID_JSON" });
         }
       }
-    } else if (probe.kind === "adapter-bundle-digest") {
-      // STORY-286. A directory that exists says nothing about what is in it — the ceiling
-      // INC-208 recorded, where an edited bundle passed. The receipt this bundle was
-      // installed from carries a digest per file, so acceptance means the bytes are still
-      // the bytes that were installed.
-      if (!stats.isDirectory()) {
-        invalid.push({ id: entry.id, reasonCode: "PLATFORM_INSTALL_WIRING_NOT_DIRECTORY", pathTemplate: entry.pathTemplate, probe: probe.kind });
-      } else {
-        const failure = await adapterBundleDrift(path, expandTemplate(probe.parameters.receipt ?? "", platformRoot, homeRoot));
-        if (failure !== null) invalid.push({ id: entry.id, reasonCode: failure.reasonCode, pathTemplate: entry.pathTemplate, probe: probe.kind, ...failure.detail });
-      }
     } else if (probe.kind === "regular-directory" || probe.kind === "helper-skill-digest" || probe.kind === "engine-version") {
       if (!stats.isDirectory()) invalid.push({ id: entry.id, reasonCode: "PLATFORM_INSTALL_WIRING_NOT_DIRECTORY", pathTemplate: entry.pathTemplate, probe: probe.kind });
     } else {
@@ -1492,113 +1475,12 @@ export async function inspectInstallWiring(platformRoot, homeRoot, manifest = IN
     });
 }
 
-/**
- * Does an installed adapter bundle still carry the bytes its receipt recorded?
- *
- * Returns null when it does. The receipt names each installed file with a content digest;
- * a drifted, deleted or added file is a bundle that is no longer the one that was
- * accepted. An unreadable receipt is itself the finding — the probe never falls back to
- * "the directory is there", because that fallback is the ceiling this replaces.
- */
-async function adapterBundleDrift(bundlePath, receiptPath) {
-  if (!receiptPath) return { reasonCode: "PLATFORM_ADAPTER_RECEIPT_UNDECLARED", detail: {} };
-  let receipt;
-  try {
-    receipt = JSON.parse(await readFile(receiptPath, "utf8"));
-  } catch (error) {
-    return { reasonCode: "PLATFORM_ADAPTER_RECEIPT_UNREADABLE", detail: { receiptPath, error: error?.code ?? "INVALID_JSON" } };
-  }
-  const entries = Array.isArray(receipt?.entries) ? receipt.entries : null;
-  if (entries === null || entries.length === 0) {
-    return { reasonCode: "PLATFORM_ADAPTER_RECEIPT_EMPTY", detail: { receiptPath } };
-  }
-  const installationRoot = typeof receipt.installationRoot === "string" ? receipt.installationRoot : null;
-  const drifted = [];
-  for (const entry of entries) {
-    if (typeof entry?.path !== "string" || typeof entry?.contentDigest !== "string") {
-      drifted.push({ path: entry?.path ?? null, reason: "receipt entry is not path plus contentDigest" });
-      continue;
-    }
-    const target = installationRoot === null ? resolve(bundlePath, entry.path) : resolve(installationRoot, entry.path);
-    let bytes;
-    try {
-      bytes = await readFile(target);
-    } catch {
-      drifted.push({ path: entry.path, reason: "installed file is absent" });
-      continue;
-    }
-    const actual = createHash("sha256").update(bytes).digest("hex");
-    if (actual !== entry.contentDigest) drifted.push({ path: entry.path, reason: "content digest differs from the receipt" });
-  }
-  return drifted.length === 0 ? null : { reasonCode: "PLATFORM_ADAPTER_BUNDLE_DRIFTED", detail: { receiptPath, drifted } };
-}
-
-/**
- * Installed adapter files whose bytes match their receipt but whose file identity moved.
- *
- * TCRN-CROSS-INC-219. This reports; it never decides. The two digests answer different
- * questions: `contentDigest` answers "are these the bytes we installed", which is what an
- * acceptance probe should ask and what the verdict stays bound to; `identityDigest` covers
- * mtime and ctime and therefore moves on a chmod, an editor save or a restore from backup.
- * Wiring identity into the verdict would turn benign touches into platform-red.
- *
- * Silence would be worse than either, though — two checks over one installation giving
- * opposite answers, with only one of them visible, is how a green comes to mean nothing.
- * So the drift is named here, with the timestamp that moved, and `adapter-rebind` is the
- * governed way to clear it.
- */
-export async function adapterIdentityObservations(manifest, platformRoot, homeRoot) {
-  const observations = [];
-  for (const entry of manifest.items ?? []) {
-    const probe = parseAcceptanceProbe(entry.acceptanceProbe);
-    if (probe?.kind !== "adapter-bundle-digest") continue;
-    const receiptPath = expandTemplate(probe.parameters.receipt ?? "", platformRoot, homeRoot);
-    if (!receiptPath) continue;
-    let receipt;
-    try {
-      receipt = JSON.parse(await readFile(receiptPath, "utf8"));
-    } catch {
-      continue; // An unreadable receipt is already the installWiring check's finding.
-    }
-    const installationRoot = typeof receipt?.installationRoot === "string" ? receipt.installationRoot : null;
-    for (const item of Array.isArray(receipt?.entries) ? receipt.entries : []) {
-      if (typeof item?.path !== "string" || typeof item?.identityDigest !== "string") continue;
-      const target = installationRoot === null
-        ? resolve(expandTemplate(entry.pathTemplate, platformRoot, homeRoot), item.path)
-        : resolve(installationRoot, item.path);
-      let stats;
-      try {
-        stats = await lstat(target);
-      } catch {
-        continue; // Absence is a content finding, not an identity one.
-      }
-      const observed = canonicalSha256({
-        dev: String(stats.dev),
-        ino: String(stats.ino),
-        size: String(stats.size),
-        mtimeMs: String(stats.mtimeMs),
-        ctimeMs: String(stats.ctimeMs),
-      });
-      if (observed === item.identityDigest) continue;
-      observations.push({
-        reasonCode: "PLATFORM_ADAPTER_IDENTITY_DRIFTED",
-        id: entry.id,
-        path: item.path,
-        receiptPath,
-        modifiedAt: new Date(stats.mtimeMs).toISOString(),
-        remedy: "adapter-rebind",
-      });
-    }
-  }
-  return observations;
-}
-
 function parseAcceptanceProbe(value) {
   if (typeof value !== "string") return null;
   const [head, ...segments] = value.split(";");
   if (!head?.startsWith("probe:")) return null;
   const kind = head.slice("probe:".length);
-  if (!["regular-file", "regular-directory", "regular-executable", "receipt-json", "helper-skill-digest", "engine-version", "trust-archive-freshness", "local-snapshot-freshness", "offsite-push-freshness", "launchd-duty", "adapter-bundle-digest"].includes(kind)) return null;
+  if (!["regular-file", "regular-directory", "regular-executable", "receipt-json", "helper-skill-digest", "engine-version", "trust-archive-freshness", "local-snapshot-freshness", "offsite-push-freshness", "launchd-duty"].includes(kind)) return null;
   const parameters = Object.fromEntries(segments.map((segment) => segment.split("=")).filter(([key, val]) => typeof key === "string" && typeof val === "string" && key.length > 0 && val.length > 0));
   return { kind, parameters };
 }
@@ -1744,69 +1626,6 @@ async function inspectCodexHooks(platformRoot) {
   };
 }
 
-/**
- * Is every host that installed an adapter actually under the harness?
- *
- * TCRN-CROSS-INC-220, and the predicate is Owner's ruling written down: a host comes under
- * the harness from the moment it installs its adapter. So the requirement is conditional
- * on the adapter, not on the host being in a list — a machine that never installed Codex
- * is not missing anything, and one that did is missing something real. Before this leg,
- * Codex carried four inert declaration files and no harness at all, and nothing said so.
- *
- * This red has a governed way back to green (`scripts/host-harness-apply.mjs`), which is
- * what makes it a fair red rather than an ornament.
- */
-export async function inspectHarnessCoverage(platformRoot) {
-  const hosts = [];
-  const failures = [];
-  for (const host of HOSTS) {
-    const adapterRoot = join(platformRoot, `.${host}`, LEGACY_ENGINE_NAME);
-    const adapter = await existingPath(adapterRoot);
-    if (!adapter?.isDirectory()) {
-      hosts.push({ host, adapterInstalled: false, harness: "not-required" });
-      continue;
-    }
-    if (host === "claude") {
-      const drift = claudeHarnessDrift(join(platformRoot, ".claude", "settings.json"));
-      hosts.push({ host, adapterInstalled: true, harness: drift.length === 0 ? "complete" : "incomplete", findings: drift });
-      if (drift.length > 0) failures.push({ host, reasonCode: "PLATFORM_HARNESS_INCOMPLETE", findings: drift });
-      continue;
-    }
-    const hooksPath = join(platformRoot, ".codex", "hooks.json");
-    const stats = await existingPath(hooksPath);
-    if (!stats?.isFile()) {
-      hosts.push({ host, adapterInstalled: true, harness: "absent" });
-      failures.push({ host, reasonCode: "PLATFORM_HARNESS_ABSENT", path: hooksPath, remedy: "scripts/host-harness-apply.mjs" });
-      continue;
-    }
-    let live;
-    try {
-      live = JSON.parse(await readFile(hooksPath, "utf8"));
-    } catch (error) {
-      hosts.push({ host, adapterInstalled: true, harness: "unreadable" });
-      failures.push({ host, reasonCode: "PLATFORM_HARNESS_UNREADABLE", path: hooksPath, error: error?.code ?? "INVALID_JSON" });
-      continue;
-    }
-    // Compared capability by capability rather than by whole-document equality: the file
-    // is a two-zone document that may legitimately acquire user-owned hooks, and refusing
-    // those would push someone to delete this leg rather than keep it.
-    const missing = [];
-    for (const entry of hookEntriesFor(host)) {
-      const groups = Array.isArray(live?.hooks?.[entry.event]) ? live.hooks[entry.event] : [];
-      const commands = groups.flatMap((group) => (Array.isArray(group?.hooks) ? group.hooks : []))
-        .map((hook) => String(hook?.command ?? ""));
-      if (!commands.some((command) => command.includes(entry.handler))) {
-        missing.push({ capability: entry.id, event: entry.event, handler: entry.handler });
-      }
-    }
-    hosts.push({ host, adapterInstalled: true, harness: missing.length === 0 ? "complete" : "incomplete", findings: missing });
-    if (missing.length > 0) failures.push({ host, reasonCode: "PLATFORM_HARNESS_INCOMPLETE", findings: missing, remedy: "scripts/host-harness-apply.mjs" });
-  }
-  return failures.length === 0
-    ? check("harnessCoverage", true, { hosts, capabilities: hookEntriesFor("codex").length })
-    : check("harnessCoverage", false, { reasonCode: failures[0].reasonCode, hosts, failures });
-}
-
 async function inspectHookExecutability(platformRoot, manifest) {
   const codex = await inspectCodexHooks(platformRoot);
   const entry = manifest.items.find((candidate) => candidate.id === "container.claude-settings");
@@ -1832,7 +1651,7 @@ async function inspectHookExecutability(platformRoot, manifest) {
       failures.push({ event: hook.event, command: hook.command, reasonCode: "PLATFORM_HOOK_COMMAND_UNSUPPORTED" });
       continue;
     }
-    if (/scripts\/knowledge-(?:inject|capture)-hook\.mjs$/u.test(match[1]) && match[2] !== "${CLAUDE_PROJECT_DIR}") {
+    if (/scripts\/knowledge-inject-hook\.mjs$/u.test(match[1]) && match[2] !== "${CLAUDE_PROJECT_DIR}") {
       failures.push({ event: hook.event, command: hook.command, reasonCode: "PLATFORM_HOOK_CONTAINER_ROOT_INVALID", expected: "${CLAUDE_PROJECT_DIR}" });
       continue;
     }
@@ -2752,6 +2571,10 @@ async function inspectHarnessSurface(root, manifest) {
   const declaredPrefixes = manifest.items
     .filter((entry) => entry.pathTemplate.startsWith("<PLATFORM_ROOT>/"))
     .map((entry) => join(root, entry.pathTemplate.slice("<PLATFORM_ROOT>/".length)));
+  // The container's Codex hooks file is read by the hooks leg itself (TCRN-CROSS-STORY-286),
+  // where absence is deferral rather than a missing install item, so it is accounted for
+  // here. The retired Codex adapter item used to cover this directory (TCRN-CROSS-STORY-467 R3).
+  declaredPrefixes.push(join(root, ".codex", "hooks.json"));
   const declaresSomethingUnder = (directory) =>
     declaredPrefixes.some((path) => path === directory || path.startsWith(`${directory}${sep}`));
 
@@ -2877,17 +2700,14 @@ export async function inspectPlatform(platformRootArgument, options = {}) {
       await inspectTrustArchiveFreshness(root, homeRoot, manifest, options),
       await inspectLaunchdDuty({ ...options, platformRoot: root, homeRoot }, manifest),
       await inspectHarnessSurface(root, manifest),
-      await inspectHarnessCoverage(root),
       await inspectSnapshotReadPerformance(root, options),
     );
   }
   const firstFailure = checks.find((item) => !item.ok);
-  // Observations are reported beside the verdict, never inside it: `firstFailure` reads
-  // `checks` only, so an identity drift is visible without being able to turn the
-  // platform red (TCRN-CROSS-INC-219).
-  const observations = options.includeInstallSurface === false
-    ? []
-    : await adapterIdentityObservations(manifest, root, homeRoot);
+  // Observations are reported beside the verdict, never inside it (TCRN-CROSS-INC-219). Their
+  // one source, the adapter identity drift, went with the adapter bundles
+  // (TCRN-CROSS-STORY-467 R3); the field stays so readers keep the same shape.
+  const observations = [];
   return { ok: !firstFailure, reasonCode: firstFailure?.reasonCode ?? "PLATFORM_LAYOUT_HEALTHY", checks, observations };
 }
 

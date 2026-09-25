@@ -5,8 +5,7 @@
 // it accepts an explicit --platform-root, not a unit test.
 
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -34,8 +33,7 @@ async function createInstallFixture(context, { skipItems = [] } = {}) {
     if (
       entry.acceptanceProbe.startsWith("probe:regular-directory") ||
       entry.acceptanceProbe.startsWith("probe:helper-skill-digest") ||
-      entry.acceptanceProbe.startsWith("probe:engine-version") ||
-      entry.acceptanceProbe.startsWith("probe:adapter-bundle-digest")
+      entry.acceptanceProbe.startsWith("probe:engine-version")
     ) {
       await mkdir(path, { recursive: true });
     } else {
@@ -45,28 +43,6 @@ async function createInstallFixture(context, { skipItems = [] } = {}) {
         await chmod(path, 0o755);
       }
     }
-  }
-
-  // Handle adapter bundles with receipts
-  for (const entry of INSTALL_MANIFEST.items.filter((item) => item.acceptanceProbe.startsWith("probe:adapter-bundle-digest"))) {
-    if (skipItems.includes(entry.id)) continue;
-
-    const bundle = entry.pathTemplate.replaceAll("<PLATFORM_ROOT>", root).replaceAll("<HOME>", home);
-    const relativeFile = `${entry.pathTemplate.replace("<PLATFORM_ROOT>/", "")}/project.json`;
-    await writeFile(join(bundle, "project.json"), "{}\n");
-
-    const receiptTemplate = /receipt=([^;]+)/u.exec(entry.acceptanceProbe)?.[1] ?? "";
-    const receiptPath = receiptTemplate.replaceAll("<PLATFORM_ROOT>", root).replaceAll("<HOME>", home);
-
-    await mkdir(join(receiptPath, ".."), { recursive: true });
-    await writeFile(
-      receiptPath,
-      JSON.stringify({
-        schemaVersion: "tcrn.adapter-installation-generation.v1",
-        installationRoot: root,
-        entries: [{ path: relativeFile, contentDigest: createHash("sha256").update(await readFile(join(bundle, "project.json"))).digest("hex") }],
-      }),
-    );
   }
 
   return { root, home };
@@ -81,7 +57,9 @@ test("INC-258 install wiring accepts the stopped backup removal", async (context
 test("INC-258 install manifest matches the post-removal surface and rejects restored receipts", async (context) => {
   const fixture = await createInstallFixture(context, { skipItems: REMOVED_IDS });
   assertInstallManifestComplete(INSTALL_MANIFEST);
-  assert.equal(INSTALL_MANIFEST.items.length, 20);
+  // 20 until TCRN-CROSS-STORY-467 R3 retired the two adapter bundles, their two install
+  // receipts and the engine repository's own settings fixture.
+  assert.equal(INSTALL_MANIFEST.items.length, 15);
   assert.deepEqual(REMOVED_IDS.filter((id) => INSTALL_MANIFEST.items.some((entry) => entry.id === id)), []);
   assert.deepEqual(REMOVED_IDS.filter((id) => INSTALL_MANIFEST_REQUIRED_ITEM_IDS.includes(id)), []);
   const restored = {

@@ -1,12 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { compareCanonicalText } from "../../protocol/src/index.js";
-import { BRAND, DIRECTORY, LEGACY_ENGINE_NAME, LOCAL_DIRECTORY_NAMES } from "./names.js";
+import { BRAND, DIRECTORY, LOCAL_DIRECTORY_NAMES } from "./names.js";
 
 // This machine's checkout folders keep their names; they are read from the names module.
 const PLATFORM_FOLDER = `<PLATFORM_ROOT>/${LOCAL_DIRECTORY_NAMES.classificationFolder}`;
-// Items that still carry the old engine name in their id or path (the adapters and the
-// engine repository settings fixture) spell it from the alias, never as a literal.
 
 export const INSTALL_MANIFEST_VERSION = "tcrn.install-manifest.v1" as const;
 
@@ -79,32 +77,17 @@ const projects: readonly InstallManifestProject[] = Object.freeze([
 // directories whose repositories are deliberately clean of them, and made "which
 // hooks am I running" a function of which folder happened to be opened. The Owner
 // ruled on 2026-08-16 that harness files belong to the workspace root; the container
-// and machine layers below carry the whole surface now.
-//
-// One project entry survives, and it is not a materialisation: the engine
-// repository commits its own `.claude/settings.json` as a sanitised CI fixture —
-// git-tracked, covered by that repository's source allowlist, and read by two of its
-// tests. It stays declared here so the harness-surface leg can tell an accounted-for
-// directory from a stray, with its provenance stated rather than implied.
-const projectItems = [
-  item(`project.${LEGACY_ENGINE_NAME}.claude-settings`, "project", "claude", `<PLATFORM_ROOT>/${LOCAL_DIRECTORY_NAMES.engine}/.claude/settings.json`, "host-self", "probe:regular-file"),
-];
+// and machine layers below carry the whole surface now. The engine repository's own
+// committed `.claude/settings.json` CI fixture, the one project entry that survived, is
+// retired with the observer it exercised (TCRN-CROSS-STORY-467 R3).
 
 export const INSTALL_MANIFEST_ITEMS: readonly InstallManifestItem[] = Object.freeze([
   item("container.claude-settings", "container", "claude", "<PLATFORM_ROOT>/.claude/settings.json", "engine-adapter", "probe:regular-file"),
   item("container.mcp", "container", "claude", "<PLATFORM_ROOT>/.mcp.json", "engine-adapter", "probe:regular-file"),
   item("container.platform-agents", "container", "shared", "<PLATFORM_ROOT>/AGENTS.md", "engine-adapter", "probe:regular-file"),
   item("container.platform-claude-bridge", "container", "claude", "<PLATFORM_ROOT>/CLAUDE.md", "engine-adapter", "probe:regular-file"),
-  item("container.claude-adapter", "container", "claude", `<PLATFORM_ROOT>/.claude/${LEGACY_ENGINE_NAME}`, "engine-adapter",
-    "probe:adapter-bundle-digest;receipt=<PLATFORM_ROOT>/.tcrn-artifacts/install-receipts/platform-container/claude.json"),
-  item("container.codex-adapter", "container", "codex", `<PLATFORM_ROOT>/.codex/${LEGACY_ENGINE_NAME}`, "engine-adapter",
-    "probe:adapter-bundle-digest;receipt=<PLATFORM_ROOT>/.tcrn-artifacts/install-receipts/platform-container/codex.json"),
-  // STORY-286: the two adapter entries used to accept a directory merely existing, which
-  // is the ceiling INC-208 recorded — a bundle whose bytes had been edited passed. They
-  // now verify against the digests their own install receipt recorded, so an accepted
-  // bundle is one that still is what was installed.
-  item("container.platform-container.claude-receipt", "container", "claude", "<PLATFORM_ROOT>/.tcrn-artifacts/install-receipts/platform-container/claude.json", "engine-adapter", "probe:receipt-json"),
-  item("container.platform-container.codex-receipt", "container", "codex", "<PLATFORM_ROOT>/.tcrn-artifacts/install-receipts/platform-container/codex.json", "engine-adapter", "probe:receipt-json"),
+  // The two inert adapter bundles and their install receipts are retired with the hook
+  // scripts they carried (TCRN-CROSS-STORY-467 R3).
   // INC-208: the chain-write refusal lives at the machine layer because project
   // settings do not inherit from a parent directory. INC-207 moved the harness to the
   // container root, and the three project settings files it retired were the only
@@ -125,7 +108,6 @@ export const INSTALL_MANIFEST_ITEMS: readonly InstallManifestItem[] = Object.fre
   item("machine.portal-launcher-command", "machine", "shared", `<PLATFORM_ROOT>/${BRAND.portal.id}.command`, "user-guided", "probe:regular-executable"),
   item("machine.portal-launcher-sh", "machine", "shared", `<PLATFORM_ROOT>/${BRAND.portal.id}.sh`, "user-guided", "probe:regular-executable"),
   item("machine.portal-launcher-cmd", "machine", "shared", `<PLATFORM_ROOT>/${BRAND.portal.id}.cmd`, "user-guided", "probe:regular-file"),
-  ...projectItems,
 ].sort((left, right) => compareCanonicalText(left.id, right.id)));
 
 // This catalog is intentionally independent from INSTALL_MANIFEST_ITEMS.  A
@@ -133,14 +115,10 @@ export const INSTALL_MANIFEST_ITEMS: readonly InstallManifestItem[] = Object.fre
 // materialized item list; deriving this array from that list would make the
 // predicate tautological.
 const REQUIRED_ITEM_ID_CATALOG = [
-  "container.claude-adapter",
   "container.claude-settings",
-  "container.codex-adapter",
   "container.mcp",
   "container.platform-agents",
   "container.platform-claude-bridge",
-  "container.platform-container.claude-receipt",
-  "container.platform-container.codex-receipt",
   "machine.claude-settings",
   "machine.claude-skill",
   "machine.codex-config",
@@ -152,10 +130,8 @@ const REQUIRED_ITEM_ID_CATALOG = [
   "machine.portal-launcher-sh",
   "machine.trust-archive",
   "machine.workflow-engine",
-  // INC-207: only the engine repository's own committed fixture remains at project
-  // layer. This catalog stays written out by hand rather than derived from the item
-  // list, so deleting the entry above still fails the completeness test.
-  `project.${LEGACY_ENGINE_NAME}.claude-settings`,
+  // This catalog stays written out by hand rather than derived from the item list, so
+  // deleting an entry above still fails the completeness test.
 ].sort(compareCanonicalText);
 export const INSTALL_MANIFEST_REQUIRED_ITEM_IDS = Object.freeze(REQUIRED_ITEM_ID_CATALOG);
 

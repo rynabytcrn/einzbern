@@ -49,8 +49,11 @@ import { canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const PLATFORM_ROOT = resolve(REPO_ROOT, "..");
 
-/** Directories scanned. Source only: docs and reports cite freely, and should. */
-export const SCANNED_ROOTS = Object.freeze(["scripts", "packages", "portal", "tools", "tests"]);
+/**
+ * Directories scanned. Source only: docs and reports cite freely, and should. `tools`
+ * left with the stop pact, its only content (TCRN-CROSS-STORY-467 R3).
+ */
+export const SCANNED_ROOTS = Object.freeze(["scripts", "packages", "portal", "tests"]);
 export const SCANNED_EXTENSIONS = Object.freeze([".mjs", ".js", ".ts", ".tsx"]);
 
 export class SiblingDependencyInputError extends Error {

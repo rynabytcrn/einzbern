@@ -34,7 +34,6 @@ const ALLOWED_ENV_NAMES = Object.freeze([
 
 export const LESSON_GATE_SPECS = Object.freeze([
   ["lessons", ["node", "scripts/verify-s6.mjs"]],
-  ["observer", ["node", "scripts/ssh-write-observer.mjs", "--verify-channel", "--project-dir", "."]],
 ]);
 
 const PnpmRun = (script) => ["pnpm", "run", "--silent", script];

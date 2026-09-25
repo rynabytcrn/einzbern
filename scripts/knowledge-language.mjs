@@ -8,7 +8,7 @@
 // offline leg measures both. So the model's answers arrive here as data — a bundle the
 // Agent produced by asking the economy-tier model configured for the current host — and this file turns
 // them into the provider the core write path requires. It decides what to say; the engine
-// decides how to store it, exactly as scripts/knowledge-capture-hook.mjs already does.
+// decides how to store it, exactly as the (since retired) capture hook did.
 //
 // FOUR WRITE PATHS, ONE ENFORCEMENT POINT. knowledge-capture, knowledge-create,
 // conference-close --distill and knowledge-batch's create members all reach

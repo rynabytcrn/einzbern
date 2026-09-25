@@ -12,7 +12,7 @@
 // the generator (see docs/reports/init-018/S7/commands.md) and review the diff.
 //
 // TCRN-CROSS-STORY-358 family 1 retired the adapter-generate golden and its shared
-// inputs with packages/core/src/codex-adapter.ts.
+// inputs with the (since retired) Codex adapter module.
 //
 // Rework: WSB-5 below is not a golden-snapshot case -- it is a plain CLI smoke test
 // relocated here from tests/p7-compatibility-modes.test.mjs, which retires whole-file

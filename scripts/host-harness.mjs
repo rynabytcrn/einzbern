@@ -2,9 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-INC-220 — the platform harness, written once and rendered per host.
 //
-// The harness is what actually holds the workflow in place: it observes governed writes,
-// injects governed context, refuses writes into the control trees, and keeps a turn from
-// ending on an unmet pact. Until this file existed it was Claude-only, because it lived
+// The harness is what the hosts run around a session. It observed governed writes, refused
+// writes into the control trees, kept a turn from ending on an unmet pact, re-injected the
+// output contract and captured declared lessons; TCRN-CROSS-STORY-467 R3 (MIN-227 D3)
+// retired all of that with its scripts, and what remains is governed context injection.
+// Until this file existed the harness was Claude-only, because it lived
 // as hand-kept JSON inside `.claude/settings.json` and nothing rendered it anywhere else.
 // A Codex session on this platform ran under no harness at all — and under
 // `approval_policy = "never"` with `sandbox_mode = "danger-full-access"`, which makes the
@@ -35,53 +37,18 @@ import { readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { LEGACY_CONTAINER_DIRECTORY, LEGACY_CONTROL_DIRECTORY, LOCAL_DIRECTORY_NAMES } from "./lib/names.mjs";
+import { LOCAL_DIRECTORY_NAMES } from "./lib/names.mjs";
 
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const HOSTS = Object.freeze(["claude", "codex"]);
-const CONTAINER_ROOT_HANDLERS = new Set(["scripts/knowledge-inject-hook.mjs", "scripts/knowledge-capture-hook.mjs"]);
-// TCRN-CROSS-INC-368: these handlers self-derive their container root from their
-// own installed location, which resolves to the wrong ancestor from a managed Codex
-// copy's actual position. Claude already runs them via `${CLAUDE_PROJECT_DIR}` and does
-// not need the flag (see `claudeCommand`/`handlerArguments` below — Claude rendering for
-// these handlers is untouched), so this set is consulted for the `codex` host only.
-const CODEX_ONLY_CONTAINER_ROOT_HANDLERS = new Set([
-  "scripts/agents-zero-hook.mjs",
-  "scripts/ssh-write-observer.mjs",
-]);
-
-/** The control trees no host may be edited into. Kept here so both renderings cite one list. */
-export const GUARDED_TREES = Object.freeze([LEGACY_CONTAINER_DIRECTORY, LEGACY_CONTROL_DIRECTORY]);
-
+const CONTAINER_ROOT_HANDLERS = new Set(["scripts/knowledge-inject-hook.mjs"]);
 /**
  * What the harness must guarantee, and how each host is made to guarantee it.
  *
- * `mechanism: "hook"` renders into that host's hook file. `mechanism: "settings-deny"` is
- * Claude Code's declarative permission list, which Codex has no equivalent of — the
- * `note` on such an entry is the workaround Owner asked for, recorded where it is read.
+ * `mechanism: "hook"` renders into that host's hook file. A capability a host reaches some
+ * other way carries a `note` naming the workaround, recorded where it is read.
  */
 export const HARNESS_CAPABILITIES = Object.freeze([
-  {
-    id: "governed-write-observation",
-    purpose: "every shell command is seen by the SSH write observer before it runs",
-    claude: { mechanism: "hook", event: "PreToolUse", matcher: "Bash", handler: "scripts/ssh-write-observer.mjs" },
-    codex: { mechanism: "hook", event: "PreToolUse", matcher: "Bash", handler: "scripts/ssh-write-observer.mjs" },
-  },
-  {
-    id: "control-tree-write-refusal",
-    purpose: `no file-editing tool may write inside ${GUARDED_TREES.join(", ")}`,
-    claude: {
-      mechanism: "settings-deny",
-      note: "Claude Code expresses this declaratively in permissions.deny, which needs no handler and cannot be bypassed by a handler crashing.",
-    },
-    codex: {
-      mechanism: "hook",
-      event: "PreToolUse",
-      matcher: "Edit|Write|apply_patch",
-      handler: "scripts/chain-write-guard.mjs",
-      note: "Codex has no permissions.deny, so the same refusal is a PreToolUse hook. Its documented tool coverage is Bash, apply_patch (Edit/Write matchers), MCP and local function tools — hosted tools such as WebSearch never fire it, and that gap is real rather than papered over.",
-    },
-  },
   {
     id: "governed-context-injection",
     purpose: "a session opens with governed work and knowledge context in front of it",
@@ -101,48 +68,10 @@ export const HARNESS_CAPABILITIES = Object.freeze([
     codex: { mechanism: "hook", event: "PostToolUse", matcher: null, handler: "scripts/knowledge-inject-hook.mjs", timeout: 30 },
   },
   {
-    id: "stop-pact",
-    purpose: "a turn cannot end while an active pact says the work is unfinished",
-    claude: { mechanism: "hook", event: "Stop", matcher: null, handler: "tools/stop-pact/hook.mjs", timeout: 10 },
-    codex: {
-      mechanism: "hook",
-      event: "Stop",
-      matcher: null,
-      handler: "tools/stop-pact/codex-executor.mjs",
-      timeout: 10,
-      note: "A different handler, not a different decider: codex-executor normalises the Codex Stop payload and calls the shared decider (TCRN-CROSS-STORY-194).",
-    },
-  },
-  {
-    id: "stop-knowledge-capture",
-    purpose: "a turn that declared a lesson leaves it in the knowledge base rather than in the transcript",
-    claude: { mechanism: "hook", event: "Stop", matcher: null, handler: "scripts/knowledge-capture-hook.mjs", timeout: 30 },
-    codex: { mechanism: "hook", event: "Stop", matcher: null, handler: "scripts/knowledge-capture-hook.mjs", timeout: 30 },
-  },
-  {
-    id: "per-prompt-agents-zero-injection",
-    purpose: "each prompt carries the platform output-contract rules re-injected fresh, not just at session start",
-    claude: { mechanism: "hook", event: "UserPromptSubmit", matcher: null, handler: "scripts/agents-zero-hook.mjs", timeout: 10 },
-    codex: { mechanism: "hook", event: "UserPromptSubmit", matcher: null, handler: "scripts/agents-zero-hook.mjs", timeout: 10 },
-  },
-  {
     id: "subagent-task-context-injection",
     purpose: "an explicitly bound subagent receives only its task context at start; unbound children receive no generic knowledge injection",
     claude: { mechanism: "hook", event: "SubagentStart", matcher: null, handler: "scripts/knowledge-inject-hook.mjs", timeout: 30 },
     codex: { mechanism: "hook", event: "SubagentStart", matcher: null, handler: "scripts/knowledge-inject-hook.mjs", timeout: 30 },
-  },
-  {
-    id: "stop-response-style-check",
-    purpose: "a response that violates the platform output-contract rules is caught and fed back before the turn stops",
-    claude: { mechanism: "hook", event: "Stop", matcher: null, handler: "tools/stop-pact/response-style-hook.mjs", timeout: 10 },
-    codex: {
-      mechanism: "hook",
-      event: "Stop",
-      matcher: null,
-      handler: "tools/stop-pact/codex-response-style-hook.mjs",
-      timeout: 10,
-      note: "A different handler, not a different rule set: codex-response-style-hook adapts Codex's inline last_assistant_message Stop field to the shared checkResponseText/responseStyleReason rules (TCRN-CROSS-STORY-357), the same relationship codex-executor.mjs has to decide.mjs.",
-    },
   },
 ]);
 
@@ -191,15 +120,10 @@ export function capabilityGaps() {
 }
 
 function handlerArguments(handler, host, containerRoot) {
-  const hostArgument = handler === "scripts/knowledge-inject-hook.mjs" || handler === "scripts/knowledge-capture-hook.mjs" ? ` --host ${host}` : "";
+  const hostArgument = handler === "scripts/knowledge-inject-hook.mjs" ? ` --host ${host}` : "";
   if (CONTAINER_ROOT_HANDLERS.has(handler)) {
     const rootArgument = host === "claude" ? '"${CLAUDE_PROJECT_DIR}"' : JSON.stringify(resolve(containerRoot));
     return ` --container-root ${rootArgument}${hostArgument}`;
-  }
-  // Codex-only: Claude rendering for these three stays byte-identical to before this set
-  // existed (`hostArgument` alone — none of the three take `--host` either).
-  if (host === "codex" && CODEX_ONLY_CONTAINER_ROOT_HANDLERS.has(handler)) {
-    return ` --container-root ${JSON.stringify(resolve(containerRoot))}${hostArgument}`;
   }
   return hostArgument;
 }
@@ -241,7 +165,7 @@ export function claudeHookSettings() {
 /** The whole `.codex/hooks.json` document. */
 export function codexHookDocument(repoRoot = REPO_ROOT, containerRoot = resolve(REPO_ROOT, "../..")) {
   return {
-    description: "Einzbern platform harness for Codex: governed write observation, control-tree write refusal, governed context injection, and the stop pact.",
+    description: "Einzbern platform harness for Codex: governed context injection.",
     hooks: renderHooks("codex", (entry) => codexCommand(entry.handler, repoRoot, containerRoot)),
   };
 }
@@ -268,12 +192,6 @@ export function claudeHarnessDrift(settingsPath) {
       .map((hook) => String(hook?.command ?? ""));
     if (!commands.some((command) => command.includes(entry.handler))) {
       findings.push({ capability: entry.id, event: entry.event, reason: "no live hook runs this handler", handler: entry.handler });
-    }
-  }
-  const deny = Array.isArray(settings?.permissions?.deny) ? settings.permissions.deny : [];
-  for (const tree of GUARDED_TREES) {
-    if (!deny.some((rule) => String(rule).includes(tree))) {
-      findings.push({ capability: "control-tree-write-refusal", reason: "no deny rule covers this tree", tree });
     }
   }
   return findings;

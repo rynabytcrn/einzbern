@@ -23,7 +23,7 @@ test("S261 install manifest is closed, placeholder-only, and complete", async ()
   assert.equal(manifest.schemaVersion, INSTALL_MANIFEST_VERSION);
   assert.deepEqual(manifest.placeholders, ["<HOME>", "<PLATFORM_ROOT>"]);
   assert.equal(manifest.projects.find((project) => project.name === "joi-button")?.pathTemplate, "<PLATFORM_ROOT>/joi-button");
-  assert.ok(manifest.items.length >= 20);
+  assert.ok(manifest.items.length >= 15);
   for (const entry of manifest.items) {
     assert.equal(typeof entry.layer, "string");
     assert.equal(typeof entry.pathTemplate, "string");

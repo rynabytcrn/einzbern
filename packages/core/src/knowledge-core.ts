@@ -39,12 +39,10 @@ import {
   readKnowledgeLanguagePolicy,
 } from "./knowledge-language.js";
 import type { KnowledgeExpansions, KnowledgeLanguageProvider } from "./knowledge-language.js";
-import { activeBinding, activeWorkspaceRoot, materializeWorkspace } from "./workspace.js";
+import { activeWorkspaceRoot, materializeWorkspace } from "./workspace.js";
 import type { ProjectRecord, WorkspaceState } from "./workspace.js";
 import { SETTINGS_CATALOG, resolveKnowledgeArticlesPath } from "./settings.js";
 import { LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY } from "./names.js";
-import { readTelemetryRecords } from "./telemetry.js";
-import type { TelemetryRecord } from "./telemetry.js";
 
 export const KNOWLEDGE_CORE_VERSION = "tcrn.knowledge-core.v1" as const;
 export const KNOWLEDGE_STORE_SCHEMA_VERSION = "tcrn.knowledge-store.v1" as const;
@@ -2557,14 +2555,6 @@ export async function transitionKnowledgePromotion(workspaceRoot: string, input:
   }
 }
 
-function telemetryIds(record: TelemetryRecord): readonly string[] {
-  const payload = record.payload as Readonly<Record<string, unknown>>;
-  const candidates = Array.isArray(payload.candidateIds) ? payload.candidateIds : [];
-  const singular = [payload.id, payload.artifactId, payload.workId, payload.gateId, payload.decisionId, payload.evidenceId]
-    .filter((value): value is string => typeof value === "string");
-  return [...new Set([...candidates, ...singular].filter((value): value is string => typeof value === "string" && value.length > 0))];
-}
-
 function workspaceArtifactDigest(id: string, workspace: WorkspaceState): string | null {
   const artifact = [...workspace.work, ...workspace.gates, ...workspace.conferences, ...workspace.conferenceMinutes]
     .find((entry) => entry.id === id);
@@ -2587,26 +2577,6 @@ function addFitnessCounts(into: Map<string, FitnessCounts>, id: string, counts: 
   if (counts.firstObservedAt !== null && (current.firstObservedAt === null || counts.firstObservedAt < current.firstObservedAt)) current.firstObservedAt = counts.firstObservedAt;
   if (counts.lastActiveAt !== null && (current.lastActiveAt === null || counts.lastActiveAt > current.lastActiveAt)) current.lastActiveAt = counts.lastActiveAt;
   into.set(id, current);
-}
-
-// Fitness counts per raw telemetry id, before any card link.
-function rawFitnessCounts(records: readonly TelemetryRecord[], into = new Map<string, FitnessCounts>()): Map<string, FitnessCounts> {
-  for (const record of records) {
-    // TCRN-CROSS-STORY-452 R3: a self-check observes a write path, never a card. The record class
-    // is retired (TCRN-CROSS-MIN-225); the ones already written are still skipped.
-    if (record.kind === "collector-self-check") continue;
-    const payload = record.payload as Readonly<Record<string, unknown>>;
-    const field = record.kind === "retrieval-hit" ? "retrievalCount"
-      : record.kind === "pull" || record.kind === "reference" ? "referenceCount"
-        : record.kind === "trigger" || record.kind === "rule-trigger" ? "triggerCount"
-          : record.kind === "verify" && payload.passed === false ? "verifyFailureCount" : null;
-    for (const id of telemetryIds(record)) {
-      const counts = { ...emptyFitnessCounts(), observedEvents: 1, firstObservedAt: record.at, lastActiveAt: record.at };
-      if (field !== null) counts[field] = 1;
-      addFitnessCounts(into, id, counts);
-    }
-  }
-  return into;
 }
 
 function fitnessRows(rawCounts: ReadonlyMap<string, FitnessCounts>, metadata: readonly KnowledgeUnitMetadata[], workspace: WorkspaceState): readonly KnowledgeFitnessRecord[] {
@@ -2638,23 +2608,19 @@ function fitnessRows(rawCounts: ReadonlyMap<string, FitnessCounts>, metadata: re
   });
 }
 
-// TCRN-CROSS-MIN-225 D1/D4 (TCRN-CROSS-SUB-258): fitness counts every readable telemetry record at or
-// before `at`, per artifact, as a read-only statistic. There is no window, no observation day, no
-// eligibility and no proposal. Unreadable lines are skipped, and the legacy observation records
-// (boundary rows, seal receipts, collector self-checks) name no artifact, so they count nowhere.
+// TCRN-CROSS-MIN-225 D1/D4 (TCRN-CROSS-SUB-258): fitness is a read-only statistic per artifact,
+// with no window, no observation day, no eligibility and no proposal. It was counted from local
+// telemetry records; that store is retired (TCRN-CROSS-STORY-467 R3), so nothing is counted any
+// more and every card reports zero observations. The shape is unchanged for its readers.
 export async function evaluateKnowledgeFitness(workspaceRoot: string, input: { readonly at: string }): Promise<KnowledgeFitnessResult> {
   assertEvaluationInstant(input.at);
-  const at = parseStrictInstant(input.at);
   const scan = await scanKnowledgeStore(workspaceRoot, { allowTrailing: true }, false, "metadata-only");
-  const transient = activeBinding(scan.workspace.metadata).find((root) => root.kind === "transient");
-  const telemetry = transient === undefined ? [] : (await readTelemetryRecords(transient.path, { limit: Number.MAX_SAFE_INTEGER })).records
-    .filter((record) => parseStrictInstant(record.at) <= at);
   return {
     schemaVersion: "tcrn.knowledge-fitness.v2",
     reasonCode: "KNOWLEDGE_FITNESS_READY",
     at: input.at,
     lastSweepAt: scan.marker.lastSweepAt ?? null,
-    records: fitnessRows(rawFitnessCounts(telemetry), scan.units.map((unit) => unit.metadata), scan.workspace),
+    records: fitnessRows(new Map(), scan.units.map((unit) => unit.metadata), scan.workspace),
   };
 }
 

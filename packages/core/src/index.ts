@@ -297,7 +297,6 @@ export {
   validateNote,
 } from "./execution-config.js";
 export {
-  dispatchSettingUpdate,
   readDispatchConfig,
   resolveDispatch,
 } from "./dispatch-config.js";
@@ -607,13 +606,6 @@ export type { RecallKnowledgeInput, RecallMinutesInput, RecallWorkInput } from "
 export {
   probeHost,
 } from "./host-probe.js";
-export {
-  appendTelemetryRecord,
-  createTelemetryRecord,
-  readTelemetryRecordById,
-  readTelemetryRecords,
-  readTelemetryStats,
-} from "./telemetry.js";
 // TCRN-CROSS-STORY-466: every product, directory and schema name, and the legacy alias
 // table, come from one module.
 export {

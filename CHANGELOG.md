@@ -41,6 +41,10 @@ The authority family is gone too: the `gate-*`, `profile-*` and `context-*` verb
 `knowledge-candidates`, the operator-pins channel (`--authority-pins`) and the authority
 files they read. Gate records already on a chain still replay, and a pending one still
 holds its work item back from `done`.
+The `dispatch-*` and `telemetry-*` verbs, `scripts/dispatch-adapter.mjs`, the dispatch-telemetry
+hook and the local telemetry store are gone: nothing writes or reads telemetry, `work-transition`
+no longer takes `--evidence`, and knowledge fitness reports zero observations. A work record
+that already carries a telemetry evidence snapshot still replays and is still checked.
 
 ## 1.2.1 — patch candidate
 

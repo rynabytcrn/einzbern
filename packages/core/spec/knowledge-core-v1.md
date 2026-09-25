@@ -162,13 +162,12 @@ aggregate limit refuses the next write with `KNOWLEDGE_LIMIT_EXCEEDED` rather th
 evicting anything. `knowledge-retire`, and `--retire-invalid` during a rebase, remain
 explicit operator actions.
 
-`evaluateKnowledgeFitness` is a read-only statistic (`tcrn.knowledge-fitness.v2`). It
-counts, per artifact id, every readable telemetry record at or before the evaluation
-instant: retrievals, references, triggers, verification failures, total observed
-events, and the first/last observed times. It has no window, eligibility or proposal.
-Unreadable lines are skipped, and the collector self-checks, observation boundary rows
-and seal receipts that earlier versions wrote name no artifact, so they count nowhere.
-`retire-proposals` returns these counts together with the cards already retired and
+`evaluateKnowledgeFitness` is a read-only statistic (`tcrn.knowledge-fitness.v2`) with
+no window, eligibility or proposal. It counted, per artifact id, the local telemetry
+records up to the evaluation instant; that store is retired (TCRN-CROSS-STORY-467 R3), so
+nothing is read and every card reports zero retrievals, references, triggers,
+verification failures and observed events. Telemetry files left on disk are not read.
+`retire-proposals` returns these rows together with the cards already retired and
 their historical retirement metadata; its `proposals` and `ruleDiffs` are always empty.
 `retire-sweep` (`tcrn.knowledge-retire-sweep.v2`, `KNOWLEDGE_RETIRE_SWEEP_CONFLICT_ONLY`)
 reads the store once, metadata only, and neither retires nor writes anything. The

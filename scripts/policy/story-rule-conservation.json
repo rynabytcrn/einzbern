@@ -106,12 +106,6 @@
       ]
     },
     {
-      "source": "scripts/dispatch-telemetry-hook.mjs",
-      "rules": [
-        "DISPATCH-LIFECYCLE-003"
-      ]
-    },
-    {
       "source": "tests/story-scope-compliance.test.mjs",
       "rules": [
         "DISPATCH-LEGACY-001",
@@ -131,32 +125,6 @@
       "source": "chain:cross-project:TCRN-CROSS-MIN-172",
       "rules": [
         "STORY-COMPLETION-LINKS"
-      ]
-    },
-    {
-      "source": "scripts/dispatch-adapter.mjs",
-      "rules": [
-        "DISPATCH-BRIEF-001",
-        "DISPATCH-BRIEF-002",
-        "DISPATCH-BRIEF-003",
-        "DISPATCH-BRIEF-004",
-        "DISPATCH-BRIEF-005",
-        "DISPATCH-LIFECYCLE-001",
-        "DISPATCH-LIFECYCLE-002",
-        "DISPATCH-LIFECYCLE-003"
-      ]
-    },
-    {
-      "source": "tests/dispatch-native.test.mjs",
-      "rules": [
-        "DISPATCH-BRIEF-001",
-        "DISPATCH-BRIEF-002",
-        "DISPATCH-BRIEF-003",
-        "DISPATCH-BRIEF-004",
-        "DISPATCH-BRIEF-005",
-        "DISPATCH-LIFECYCLE-001",
-        "DISPATCH-LIFECYCLE-002",
-        "DISPATCH-LIFECYCLE-003"
       ]
     },
     {
@@ -218,86 +186,105 @@
       "id": "DISPATCH-BRIEF-001",
       "source": "docs/dispatch-readiness-convention.md#第二层-红线边界",
       "semantics": "dispatch identifies applicable hard boundaries",
-      "landing": "scripts/dispatch-adapter.mjs live work/config read",
+      "landing": "none in the engine since TCRN-CROSS-STORY-467 R3 (was: scripts/dispatch-adapter.mjs live work/config read)",
       "enforcementHost": "dispatch caller and helper",
-      "positiveLeg": "tests/dispatch-native.test.mjs native resolution and direct lifecycle",
-      "redLeg": "tests/dispatch-native.test.mjs wrong work, scope, model, or effort",
-      "disposition": "superseded-by-stricter",
-      "strictnessProof": "The prior brief-field check accepted a caller-authored JSON transport object as a dispatch prerequisite. The native adapter now reads the current work item and dispatch configuration directly from the engine at the call boundary, so stale or missing transport fields cannot authorize a call; the retained work/scope/model/effort refusals cover the effective safety boundary without preserving a second qualification interface."
+      "positiveLeg": "none since TCRN-CROSS-STORY-467 R3 (was: tests/dispatch-native.test.mjs native resolution and direct lifecycle)",
+      "redLeg": "none since TCRN-CROSS-STORY-467 R3 (was: tests/dispatch-native.test.mjs wrong work, scope, model, or effort)",
+      "disposition": "deferred",
+      "reason": "TCRN-CROSS-MIN-227 D3 / TCRN-CROSS-STORY-467 R3 retired scripts/dispatch-adapter.mjs, the dispatch-telemetry hook and the dispatch-* verbs that were this rule's landing and legs; the rule has no engine enforcement until native dispatch is decided with the host hooks.",
+      "timing": "TCRN-CROSS-STORY-477",
+      "owner": "Owner"
     },
     {
       "id": "DISPATCH-BRIEF-002",
       "source": "docs/dispatch-readiness-convention.md#第二层-文件指针",
       "semantics": "dispatch names concrete files and hosts",
-      "landing": "scripts/dispatch-adapter.mjs live work/config read",
+      "landing": "none in the engine since TCRN-CROSS-STORY-467 R3 (was: scripts/dispatch-adapter.mjs live work/config read)",
       "enforcementHost": "dispatch caller and helper",
-      "positiveLeg": "tests/dispatch-native.test.mjs native resolution and direct lifecycle",
-      "redLeg": "tests/dispatch-native.test.mjs wrong work, scope, model, or effort",
-      "disposition": "superseded-by-stricter",
-      "strictnessProof": "The prior brief-field check accepted a caller-authored JSON transport object as a dispatch prerequisite. The native adapter now reads the current work item and dispatch configuration directly from the engine at the call boundary, so stale or missing transport fields cannot authorize a call; the retained work/scope/model/effort refusals cover the effective safety boundary without preserving a second qualification interface."
+      "positiveLeg": "none since TCRN-CROSS-STORY-467 R3 (was: tests/dispatch-native.test.mjs native resolution and direct lifecycle)",
+      "redLeg": "none since TCRN-CROSS-STORY-467 R3 (was: tests/dispatch-native.test.mjs wrong work, scope, model, or effort)",
+      "disposition": "deferred",
+      "reason": "TCRN-CROSS-MIN-227 D3 / TCRN-CROSS-STORY-467 R3 retired scripts/dispatch-adapter.mjs, the dispatch-telemetry hook and the dispatch-* verbs that were this rule's landing and legs; the rule has no engine enforcement until native dispatch is decided with the host hooks.",
+      "timing": "TCRN-CROSS-STORY-477",
+      "owner": "Owner"
     },
     {
       "id": "DISPATCH-BRIEF-003",
       "source": "docs/dispatch-readiness-convention.md#第二层-验证命令",
       "semantics": "dispatch carries baseline and completion commands",
-      "landing": "scripts/dispatch-adapter.mjs live work/config read",
+      "landing": "none in the engine since TCRN-CROSS-STORY-467 R3 (was: scripts/dispatch-adapter.mjs live work/config read)",
       "enforcementHost": "dispatch caller and helper",
-      "positiveLeg": "tests/dispatch-native.test.mjs native resolution and direct lifecycle",
-      "redLeg": "tests/dispatch-native.test.mjs wrong work, scope, model, or effort",
-      "disposition": "superseded-by-stricter",
-      "strictnessProof": "The prior brief-field check accepted a caller-authored JSON transport object as a dispatch prerequisite. The native adapter now reads the current work item and dispatch configuration directly from the engine at the call boundary, so stale or missing transport fields cannot authorize a call; the retained work/scope/model/effort refusals cover the effective safety boundary without preserving a second qualification interface."
+      "positiveLeg": "none since TCRN-CROSS-STORY-467 R3 (was: tests/dispatch-native.test.mjs native resolution and direct lifecycle)",
+      "redLeg": "none since TCRN-CROSS-STORY-467 R3 (was: tests/dispatch-native.test.mjs wrong work, scope, model, or effort)",
+      "disposition": "deferred",
+      "reason": "TCRN-CROSS-MIN-227 D3 / TCRN-CROSS-STORY-467 R3 retired scripts/dispatch-adapter.mjs, the dispatch-telemetry hook and the dispatch-* verbs that were this rule's landing and legs; the rule has no engine enforcement until native dispatch is decided with the host hooks.",
+      "timing": "TCRN-CROSS-STORY-477",
+      "owner": "Owner"
     },
     {
       "id": "DISPATCH-BRIEF-004",
       "source": "docs/dispatch-readiness-convention.md#第二层-链上收口动作",
       "semantics": "dispatch carries governed closeout and readback action",
-      "landing": "scripts/dispatch-adapter.mjs live work/config read",
+      "landing": "none in the engine since TCRN-CROSS-STORY-467 R3 (was: scripts/dispatch-adapter.mjs live work/config read)",
       "enforcementHost": "dispatch caller and helper",
-      "positiveLeg": "tests/dispatch-native.test.mjs native resolution and direct lifecycle",
-      "redLeg": "tests/dispatch-native.test.mjs wrong work, scope, model, or effort",
-      "disposition": "superseded-by-stricter",
-      "strictnessProof": "The prior brief-field check accepted a caller-authored JSON transport object as a dispatch prerequisite. The native adapter now reads the current work item and dispatch configuration directly from the engine at the call boundary, so stale or missing transport fields cannot authorize a call; the retained work/scope/model/effort refusals cover the effective safety boundary without preserving a second qualification interface."
+      "positiveLeg": "none since TCRN-CROSS-STORY-467 R3 (was: tests/dispatch-native.test.mjs native resolution and direct lifecycle)",
+      "redLeg": "none since TCRN-CROSS-STORY-467 R3 (was: tests/dispatch-native.test.mjs wrong work, scope, model, or effort)",
+      "disposition": "deferred",
+      "reason": "TCRN-CROSS-MIN-227 D3 / TCRN-CROSS-STORY-467 R3 retired scripts/dispatch-adapter.mjs, the dispatch-telemetry hook and the dispatch-* verbs that were this rule's landing and legs; the rule has no engine enforcement until native dispatch is decided with the host hooks.",
+      "timing": "TCRN-CROSS-STORY-477",
+      "owner": "Owner"
     },
     {
       "id": "DISPATCH-BRIEF-005",
       "source": "docs/dispatch-readiness-convention.md#第二层-生效证据命令",
       "semantics": "dispatch carries deployment-position evidence",
-      "landing": "scripts/dispatch-adapter.mjs live work/config read",
+      "landing": "none in the engine since TCRN-CROSS-STORY-467 R3 (was: scripts/dispatch-adapter.mjs live work/config read)",
       "enforcementHost": "dispatch caller and helper",
-      "positiveLeg": "tests/dispatch-native.test.mjs native resolution and direct lifecycle",
-      "redLeg": "tests/dispatch-native.test.mjs wrong work, scope, model, or effort",
-      "disposition": "superseded-by-stricter",
-      "strictnessProof": "The prior brief-field check accepted a caller-authored JSON transport object as a dispatch prerequisite. The native adapter now reads the current work item and dispatch configuration directly from the engine at the call boundary, so stale or missing transport fields cannot authorize a call; the retained work/scope/model/effort refusals cover the effective safety boundary without preserving a second qualification interface."
+      "positiveLeg": "none since TCRN-CROSS-STORY-467 R3 (was: tests/dispatch-native.test.mjs native resolution and direct lifecycle)",
+      "redLeg": "none since TCRN-CROSS-STORY-467 R3 (was: tests/dispatch-native.test.mjs wrong work, scope, model, or effort)",
+      "disposition": "deferred",
+      "reason": "TCRN-CROSS-MIN-227 D3 / TCRN-CROSS-STORY-467 R3 retired scripts/dispatch-adapter.mjs, the dispatch-telemetry hook and the dispatch-* verbs that were this rule's landing and legs; the rule has no engine enforcement until native dispatch is decided with the host hooks.",
+      "timing": "TCRN-CROSS-STORY-477",
+      "owner": "Owner"
     },
     {
       "id": "DISPATCH-LIFECYCLE-001",
       "source": "docs/dispatch-readiness-convention.md#任务轮次与子代理生命周期",
       "semantics": "For Codex native dispatch, fresh task-pack, rework, decision, and acceptance rounds require a new bound instance with forkTurns none; Claude Code follows its prompt for host details",
-      "landing": "scripts/dispatch-adapter.mjs lifecycle declaration and scripts/dispatch-telemetry-hook.mjs factual telemetry",
+      "landing": "none in the engine since TCRN-CROSS-STORY-467 R3 (was: scripts/dispatch-adapter.mjs lifecycle declaration and scripts/dispatch-telemetry-hook.mjs factual telemetry)",
       "enforcementHost": "Codex dispatch caller and helper; Claude Code host behavior is prompt-defined",
-      "positiveLeg": "tests/dispatch-native.test.mjs lifecycle and missing native role/provider observation",
-      "redLeg": "newInstance=false or forkTurns=all returns a lifecycle refusal",
-      "disposition": "retained"
+      "positiveLeg": "none since TCRN-CROSS-STORY-467 R3 (was: tests/dispatch-native.test.mjs lifecycle and missing native role/provider observation)",
+      "redLeg": "none since TCRN-CROSS-STORY-467 R3 (was: newInstance=false or forkTurns=all returns a lifecycle refusal)",
+      "disposition": "deferred",
+      "reason": "TCRN-CROSS-MIN-227 D3 / TCRN-CROSS-STORY-467 R3 retired scripts/dispatch-adapter.mjs, the dispatch-telemetry hook and the dispatch-* verbs that were this rule's landing and legs; the rule has no engine enforcement until native dispatch is decided with the host hooks.",
+      "timing": "TCRN-CROSS-STORY-477",
+      "owner": "Owner"
     },
     {
       "id": "DISPATCH-LIFECYCLE-002",
       "source": "docs/dispatch-readiness-convention.md#任务轮次与子代理生命周期",
       "semantics": "For Codex native dispatch, same-task clarification is the only same-instance exception and requires an explicitly running bounded task; Claude Code follows its prompt for host details",
-      "landing": "scripts/dispatch-adapter.mjs lifecycle declaration and scripts/dispatch-telemetry-hook.mjs factual telemetry",
+      "landing": "none in the engine since TCRN-CROSS-STORY-467 R3 (was: scripts/dispatch-adapter.mjs lifecycle declaration and scripts/dispatch-telemetry-hook.mjs factual telemetry)",
       "enforcementHost": "Codex dispatch caller and helper; Claude Code host behavior is prompt-defined",
-      "positiveLeg": "tests/dispatch-native.test.mjs lifecycle and missing native role/provider observation",
-      "redLeg": "missing sameTaskRunning or a restart in clarification returns a lifecycle refusal",
-      "disposition": "retained"
+      "positiveLeg": "none since TCRN-CROSS-STORY-467 R3 (was: tests/dispatch-native.test.mjs lifecycle and missing native role/provider observation)",
+      "redLeg": "none since TCRN-CROSS-STORY-467 R3 (was: missing sameTaskRunning or a restart in clarification returns a lifecycle refusal)",
+      "disposition": "deferred",
+      "reason": "TCRN-CROSS-MIN-227 D3 / TCRN-CROSS-STORY-467 R3 retired scripts/dispatch-adapter.mjs, the dispatch-telemetry hook and the dispatch-* verbs that were this rule's landing and legs; the rule has no engine enforcement until native dispatch is decided with the host hooks.",
+      "timing": "TCRN-CROSS-STORY-477",
+      "owner": "Owner"
     },
     {
       "id": "DISPATCH-LIFECYCLE-003",
       "source": "docs/dispatch-readiness-convention.md#任务轮次与子代理生命周期",
       "semantics": "For Codex native dispatch, role/Pack/evidence bindings are explicit; terminal agent reuse and prompt self-claims are rejected while evidence digests may be reused; Claude Code follows its prompt for host details",
-      "landing": "scripts/dispatch-adapter.mjs lifecycle declaration and scripts/dispatch-telemetry-hook.mjs factual telemetry",
+      "landing": "none in the engine since TCRN-CROSS-STORY-467 R3 (was: scripts/dispatch-adapter.mjs lifecycle declaration and scripts/dispatch-telemetry-hook.mjs factual telemetry)",
       "enforcementHost": "Codex dispatch caller and helper; Claude Code host behavior is prompt-defined",
-      "positiveLeg": "tests/dispatch-native.test.mjs lifecycle and missing native role/provider observation",
-      "redLeg": "prompt claim, same predecessor id, or running predecessor returns a lifecycle refusal",
-      "disposition": "retained"
+      "positiveLeg": "none since TCRN-CROSS-STORY-467 R3 (was: tests/dispatch-native.test.mjs lifecycle and missing native role/provider observation)",
+      "redLeg": "none since TCRN-CROSS-STORY-467 R3 (was: prompt claim, same predecessor id, or running predecessor returns a lifecycle refusal)",
+      "disposition": "deferred",
+      "reason": "TCRN-CROSS-MIN-227 D3 / TCRN-CROSS-STORY-467 R3 retired scripts/dispatch-adapter.mjs, the dispatch-telemetry hook and the dispatch-* verbs that were this rule's landing and legs; the rule has no engine enforcement until native dispatch is decided with the host hooks.",
+      "timing": "TCRN-CROSS-STORY-477",
+      "owner": "Owner"
     },
     {
       "id": "CLOSEOUT-001",

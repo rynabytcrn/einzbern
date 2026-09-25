@@ -300,62 +300,6 @@ async function languageModule() {
   return coreLanguageModule;
 }
 
-// TCRN-CROSS-MIN-225 D3 (TCRN-CROSS-SUB-257): the four channel events below keep their phase and
-// sequence, so their payloads are unchanged. The collector self-checks, observation boundary rows,
-// per-day seal receipts and fitness summaries once written beside them are retired; the records
-// already written stay readable through the ordinary telemetry reads.
-const OBSERVATION_CHANNEL_BY_KIND = Object.freeze({ retrieval: "retrieval", "retrieval-hit": "retrieval", reference: "reference", pull: "reference", trigger: "trigger", "rule-trigger": "trigger", verify: "verify", "gate-result": "verify" });
-
-async function nextObservationSequence(core, root, kind, source) {
-  const channel = OBSERVATION_CHANNEL_BY_KIND[kind];
-  if (channel === undefined || typeof core.readTelemetryRecords !== "function") return null;
-  const read = await core.readTelemetryRecords(root, { limit: Number.MAX_SAFE_INTEGER });
-  const values = read.records
-    .filter((record) => OBSERVATION_CHANNEL_BY_KIND[record.kind] === channel && record.payload.source === source)
-    .map((record) => record.payload.sequence)
-    .filter((sequence) => Number.isSafeInteger(sequence) && sequence >= 1);
-  return Math.max(0, ...values) + 1;
-}
-
-async function telemetryWriter(partition, containerRoot, sessionId, suppliedState = null) {
-  const core = await languageModule();
-  if (core?.createTelemetryRecord === undefined || core?.appendTelemetryRecord === undefined || core?.activeBinding === undefined) return null;
-  const state = suppliedState ?? await workspaceStateForInjection(partition, containerRoot);
-  const root = state?.metadata === undefined
-    ? null
-    : core.activeBinding(state.metadata).find((entry) => entry.kind === "transient")?.path ?? null;
-  if (root === null) return null;
-  const write = async ({ kind, payload, observationPhase, observationSource }) => {
-    try {
-      const source = observationSource ?? `knowledge-inject:${kind}`;
-      const sequence = observationPhase === "start" || observationPhase === "stop"
-        ? await nextObservationSequence(core, root, kind, source)
-        : null;
-      const record = core.createTelemetryRecord({
-        at: new Date().toISOString(),
-        kind,
-        session: sessionId,
-        payload: {
-          ...payload,
-          source,
-          availability: "available",
-          ...(sequence === null ? {} : { phase: observationPhase, sequence }),
-        },
-      });
-      const receipt = await core.appendTelemetryRecord(root, record);
-      return { availability: "available", id: receipt.record.id };
-    } catch {
-      return { availability: "unavailable", id: null };
-    }
-  };
-  return write;
-}
-
-async function emitTelemetry(writer, event) {
-  if (typeof writer !== "function") return { availability: "unavailable", id: null };
-  try { return await writer(event); } catch { return { availability: "unavailable", id: null }; }
-}
-
 async function queryLanguageAnswer(prompt, settings, host) {
   const core = await languageModule();
   if (core?.readKnowledgeLanguagePolicy && core?.resolveQueryLanguage) {
@@ -419,7 +363,6 @@ export async function runInjection({
   translate = null,
   settings = null,
   recall = null,
-  telemetry = null,
   dispatchContext = null,
   context = null,
   searchScope = null,
@@ -471,8 +414,6 @@ export async function runInjection({
       return { ok: false, reasonCode: "RECALL_FAILED", error: String(error?.reasonCode ?? error?.message ?? error) };
     }
   };
-  const retrievalSource = "knowledge-inject:retrieval";
-  await emitTelemetry(telemetry, { kind: "retrieval", observationPhase: "start", observationSource: retrievalSource, payload: { stage: "start" } });
   const originalPrompt = String(prompt ?? "");
   let query = originalPrompt;
   let translatedQuery = null;
@@ -506,7 +447,6 @@ export async function runInjection({
   }
   const call = await invokeRecall(query);
   if (!call.ok) {
-    await emitTelemetry(telemetry, { kind: "retrieval", observationPhase: "stop", observationSource: retrievalSource, payload: { stage: "stop" } });
     return { ok: false, reasonCode: call.reasonCode, error: call.error, injected: false, candidates: [], injectedBytes: 0 };
   }
   let payload = recallPayload(call);
@@ -533,16 +473,6 @@ export async function runInjection({
     : filterCandidatesByDispatchContext(rawCandidates, boundContext);
   const candidates = scoped.records;
   payload = { ...payload, records: candidates };
-  await emitTelemetry(telemetry, {
-    kind: "retrieval-hit",
-    observationPhase: "stop",
-    observationSource: retrievalSource,
-    payload: {
-      candidateCount: candidates.length,
-      candidateIds: candidates.map(recordIdentity).filter(Boolean),
-      queryTranslations,
-    },
-  });
   const lines = [];
   for (const candidate of candidates) {
     // The kind and the key are spoken because the answer now spans three record
@@ -554,15 +484,6 @@ export async function runInjection({
   const joined = lines.join("\n");
   const injectedBytes = Buffer.byteLength(joined, "utf8");
   const budgetExceeded = injectedBytes > effectiveBudget;
-  await emitTelemetry(telemetry, {
-    kind: "injection-bytes",
-    payload: {
-      candidateCount: candidates.length,
-      injectedBytes,
-      budget: effectiveBudget,
-      budgetExceeded,
-    },
-  });
   return {
     ok: true,
     injected: true,
@@ -699,7 +620,6 @@ export async function runSessionInjection({
   try {
     const effectiveSettings = settings ?? await configuredSettingRecords(partition, containerRoot);
     const economyModel = await economyModelForHost(effectiveSettings, host);
-    const telemetry = await telemetryWriter(partition, containerRoot, sessionId, workspaceState);
     // A malformed or unbound hook payload receives a stable refusal and no
     // context/model work.  Direct library callers with no hook payload retain
     // the legacy main-session behaviour for compatibility.
@@ -740,16 +660,12 @@ export async function runSessionInjection({
     }
 
     if (dispatch.ok === true && event === "PostToolUse") {
-      const referenceSource = "knowledge-inject:reference";
-      await emitTelemetry(telemetry, { kind: "reference", observationPhase: "start", observationSource: referenceSource, payload: { stage: "start" } });
       const correlation = pullCorrelation(hookInput, lease.session.emittedIds, lease.session.pulledIds);
       if (correlation !== null) {
         lease.session.pulledIds.push(correlation.id);
         lease.session.pullCorrelations.push({ ...correlation, at: new Date().toISOString() });
-        await emitTelemetry(telemetry, { kind: "pull", observationPhase: "stop", observationSource: referenceSource, payload: { id: correlation.id, verb: correlation.verb } });
         decisionReason = "PULL_RECORDED";
       } else {
-        await emitTelemetry(telemetry, { kind: "reference", observationPhase: "stop", observationSource: referenceSource, payload: { stage: "stop" } });
         decisionReason = "PULL_IGNORED";
       }
     } else if (dispatch.ok === true && event === "SubagentStop") {
@@ -758,25 +674,19 @@ export async function runSessionInjection({
       if (lease.session.l1Bytes >= effectiveBudget) {
         decisionReason = parts.length > 0 ? "BUDGET_SATURATED_L0_ONLY" : "BUDGET_SATURATED";
       } else {
-        await emitTelemetry(telemetry, { kind: "trigger", observationPhase: "start", observationSource: "knowledge-inject:trigger", payload: { event: "UserPromptSubmit", stage: "start" } });
-        try {
-          recallResult = await runInjection({
-            prompt,
-            partition,
-            budget: effectiveBudget,
-            limit,
-            containerRoot,
-            settings: effectiveSettings,
-            translate: subagent ? null : calls.translate,
-            recall,
-            searchScope,
-            telemetry,
-            host,
-            dispatchContext: dispatch.bound === true ? dispatch : null,
-          });
-        } finally {
-          await emitTelemetry(telemetry, { kind: "trigger", observationPhase: "stop", observationSource: "knowledge-inject:trigger", payload: { event: "UserPromptSubmit", stage: "stop" } });
-        }
+        recallResult = await runInjection({
+          prompt,
+          partition,
+          budget: effectiveBudget,
+          limit,
+          containerRoot,
+          settings: effectiveSettings,
+          translate: subagent ? null : calls.translate,
+          recall,
+          searchScope,
+          host,
+          dispatchContext: dispatch.bound === true ? dispatch : null,
+        });
         const dedupeIds = [
           ...lease.session.emittedIds,
           ...(retryPending ? [] : lease.session.pendingIds),
@@ -811,19 +721,6 @@ export async function runSessionInjection({
             model: judgement?.model ?? economyModel,
             ...(judgement?.reasonCode ? { reasonCode: judgement.reasonCode } : {}),
             at: new Date().toISOString(),
-          });
-          await emitTelemetry(telemetry, {
-            kind: "judge",
-            payload: {
-              candidateCount: fresh.length,
-              judgment: typeof judgment === "boolean" ? judgment : null,
-              model: judgement?.model ?? economyModel,
-              ...(judgement?.reasonCode ? { reasonCode: judgement.reasonCode } : {}),
-              // TCRN-CROSS-STORY-459 R1: bounded and redacted at the source; re-bounded here.
-              ...(typeof judgement?.failureDetail === "string" && judgement.failureDetail.length > 0 ? { failureDetail: redactFailureDetail(judgement.failureDetail, [prompt]) } : {}),
-              // STORY-459 R2: which CLI ran the judge (host = CLAUDE_CODE_EXECPATH), read from real sessions.
-              ...(judgement?.cliSource === "host" || judgement?.cliSource === "path" ? { cliSource: judgement.cliSource } : {}),
-            },
           });
         }
         if (recallResult.telemetry?.queryTranslations > 0 || recallResult.translatedQuery !== null || recallResult.telemetry?.translationFailure) lease.session.translationAttempts += 1;

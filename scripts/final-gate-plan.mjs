@@ -2225,36 +2225,6 @@ function scopedBudgetNativeProblems(input, acquired) {
   return [];
 }
 
-/**
- * The batch entry's verify emitter: one passing verify record after a formal run. Telemetry
- * never changes the batch result. The collector self-check mode is retired (TCRN-CROSS-MIN-225
- * D3, TCRN-CROSS-SUB-257): a call that still passes `selfCheck`, as the v1.2.0 session boundary
- * did, is answered by name and writes nothing, so it can never leave a passing verify record.
- */
-export async function emitBatchVerifyTelemetry({ workspace = null, root = null, sessionId = null, selfCheck = null, at = new Date().toISOString() } = {}) {
-  if (selfCheck !== null) return { reasonCode: "TELEMETRY_SELF_CHECK_RETIRED", written: false };
-  try {
-    const session = typeof sessionId === "string" && sessionId.length > 0 ? sessionId : "unknown-batch-session";
-    const core = await import("../dist/build/packages/core/src/index.js");
-    let telemetryRoot = root;
-    if (telemetryRoot === null) {
-      if (typeof workspace !== "string" || workspace.trim().length === 0) return null;
-      const state = await core.materializeWorkspace(workspace);
-      telemetryRoot = core.activeBinding(state.metadata).find((entry) => entry.kind === "transient")?.path ?? null;
-      if (telemetryRoot === null) return null;
-    }
-    const record = core.createTelemetryRecord({
-      at,
-      kind: "verify",
-      session,
-      payload: { source: "final-gate-plan:batch-verify", availability: "available", passed: true },
-    });
-    return await core.appendTelemetryRecord(telemetryRoot, record);
-  } catch {
-    return null;
-  }
-}
-
 /** Execute the only formal batch entry point after a fresh qualification. */
 export async function executeQualifiedBatch(input = {}, runner, { recheck } = {}) {
   const initial = qualifyBatch(qualificationRequest(input));
@@ -2294,7 +2264,6 @@ export async function executeQualifiedBatch(input = {}, runner, { recheck } = {}
     if (after.eligible !== true || after.formalGateAllowed !== true) return { ...initial, status: "failed", reasonCode: "BATCH_RECHECK_NOT_ELIGIBLE", formalGateAllowed: false, executed: [{ ...(result ?? {}), ok: false, invalidated: true }], formalGateExecutions: 1, result: result ?? null, reasons: [after.reasons?.join("; ") || "full qualification vetoed the result after execution"] };
     if (after.idempotencyKey !== initial.idempotencyKey) return { ...initial, status: "failed", reasonCode: "BATCH_INPUT_DRIFT", formalGateAllowed: false, executed: [{ ...(result ?? {}), ok: false, invalidated: true }], formalGateExecutions: 1, result: result ?? null, reasons: ["batch qualification drifted during formal execution"] };
   }
-  if (typeof input?.workspace === "string" && input.workspace.trim().length > 0) await emitBatchVerifyTelemetry({ workspace: input.workspace, sessionId: input.sessionId });
   return { ...initial, status: "completed", reasonCode: "BATCH_FORMAL_GATE_COMPLETED", formalGateAllowed: false, executed: [result ?? { ok: true }], formalGateExecutions: 1, result: result ?? null, reasons: ["formal batch runner completed once"] };
 }
 

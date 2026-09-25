@@ -8,13 +8,10 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  activeBinding,
   annotateWork,
   createProject,
   createWork,
   initializeWorkspace,
-  materializeWorkspace,
-  readTelemetryRecords,
 } from "../dist/build/packages/core/src/index.js";
 import {
   acquireOperationalBatchInput,
@@ -26,7 +23,6 @@ import {
 import * as finalGatePlan from "../scripts/final-gate-plan.mjs";
 
 const createdAt = "2026-08-19T18:00:00Z";
-const boundaryPrefix = "telemetry:observation-collector:";
 
 async function workspace(key) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-batch-verify-")));
@@ -53,31 +49,9 @@ function batchInput(workspaceRoot) {
   };
 }
 
-async function nonBoundaryVerifyRecords(fixture) {
-  const state = await materializeWorkspace(fixture.root);
-  const transient = activeBinding(state.metadata).find((entry) => entry.kind === "transient");
-  assert.ok(transient);
-  const read = await readTelemetryRecords(transient.path, { kind: "verify", limit: Number.MAX_SAFE_INTEGER });
-  return read.records.filter((record) => typeof record.payload?.source === "string" && !record.payload.source.startsWith(boundaryPrefix));
-}
-
-test("successful qualified batch writes one real verify telemetry record", async (context) => {
-  const fixture = await workspace("batch-verify-pass");
-  context.after(() => rm(fixture.base, { recursive: true, force: true }));
-
-  const result = await executeQualifiedBatch(batchInput(fixture.root), async () => ({ ok: true }));
-
-  assert.equal(result.status, "completed");
-  const records = await nonBoundaryVerifyRecords(fixture);
-  assert.equal(records.length, 1);
-  assert.equal(records[0].kind, "verify");
-  assert.equal(records[0].payload.source.startsWith(boundaryPrefix), false);
-  assert.equal(records[0].payload.source, "final-gate-plan:batch-verify");
-  assert.equal(records[0].payload.availability, "available");
-  assert.equal(records[0].payload.passed, true);
-});
-
-test("failed formal runner does not write verify telemetry", async (context) => {
+// The batch entry no longer writes a verify telemetry record (TCRN-CROSS-STORY-467 R3); what
+// these cases still pin is the result a failed or invalidated run reports.
+test("failed formal runner fails the batch with the runner's reason", async (context) => {
   const fixture = await workspace("batch-verify-fail");
   context.after(() => rm(fixture.base, { recursive: true, force: true }));
 
@@ -85,18 +59,16 @@ test("failed formal runner does not write verify telemetry", async (context) => 
 
   assert.equal(result.status, "failed");
   assert.equal(result.reasonCode, "X");
-  assert.equal((await nonBoundaryVerifyRecords(fixture)).length, 0);
+  assert.deepEqual(result.executed, []);
 });
 
-test("post-execution recheck failure does not write verify telemetry", async (context) => {
+test("post-execution recheck failure invalidates the batch result", async (context) => {
   const fixture = await workspace("batch-verify-recheck");
   context.after(() => rm(fixture.base, { recursive: true, force: true }));
   const input = batchInput(fixture.root);
   const qualified = qualifyBatch(input);
   let rechecks = 0;
 
-  // This case pins the emitter after the post-execution recheck: moving the call
-  // above that block would leave a verify record despite this invalidation.
   const result = await executeQualifiedBatch(input, async () => ({ ok: true }), {
     recheck: async () => {
       rechecks += 1;
@@ -106,7 +78,7 @@ test("post-execution recheck failure does not write verify telemetry", async (co
 
   assert.equal(result.status, "failed");
   assert.equal(result.reasonCode, "BATCH_RECHECK_NOT_ELIGIBLE");
-  assert.equal((await nonBoundaryVerifyRecords(fixture)).length, 0);
+  assert.equal(result.executed[0].invalidated, true);
 });
 
 test("missing or unusable workspace leaves the qualified batch result unchanged", async () => {
@@ -120,27 +92,6 @@ test("missing or unusable workspace leaves the qualified batch result unchanged"
   );
   assert.equal(nonexistent.status, "completed");
   assert.equal(nonexistent.reasonCode, "BATCH_FORMAL_GATE_COMPLETED");
-});
-
-// TCRN-CROSS-MIN-225 D3 (TCRN-CROSS-SUB-257): the verify emitter has no collector self-check mode
-// any more. A caller that still passes `selfCheck` (the v1.2.0 session boundary did) gets a named
-// answer and nothing is written -- above all no passing verify record, which the formal path alone
-// writes, unchanged.
-test("MIN-225: the batch verify emitter has no self-check mode and a legacy self-check call writes nothing", async (context) => {
-  const fixture = await workspace("batch-verify-no-self-check");
-  context.after(() => rm(fixture.base, { recursive: true, force: true }));
-  const state = await materializeWorkspace(fixture.root);
-  const transient = activeBinding(state.metadata).find((entry) => entry.kind === "transient").path;
-  for (const call of [
-    { root: transient, sessionId: "legacy-self-check", selfCheck: { host: "claude" } },
-    { workspace: fixture.root, sessionId: "legacy-self-check", selfCheck: { host: "codex" } },
-  ]) {
-    assert.deepEqual(await finalGatePlan.emitBatchVerifyTelemetry(call), { reasonCode: "TELEMETRY_SELF_CHECK_RETIRED", written: false });
-  }
-  assert.deepEqual((await readTelemetryRecords(transient, { limit: Number.MAX_SAFE_INTEGER })).records, [], "no self-check and no verify record");
-  const result = await executeQualifiedBatch({ ...batchInput(fixture.root), sessionId: "formal-batch-session" }, async () => ({ ok: true }));
-  assert.equal(result.status, "completed");
-  assert.deepEqual((await readTelemetryRecords(transient, { limit: Number.MAX_SAFE_INTEGER })).records.map((record) => [record.kind, record.session, record.payload.source, record.payload.passed]), [["verify", "formal-batch-session", "final-gate-plan:batch-verify", true]], "the formal run still writes its one verify record, under its own session");
 });
 
 // TCRN-CROSS-STORY-460 R4 (SUB-239). The fixture below goes through the engine the way the
@@ -263,10 +214,11 @@ test("STORY-460 R4 SUB-239: a native result bound to other scope text is still r
   assert.doesNotMatch(qualification.reasons.join("; "), /native stable scope text is missing/u);
 });
 
-// AC5. The roster root stand-in is always green, so the only thing between the entry and
-// the verify record is the qualification above. Red leg: the R4 revert keeps the entry at
-// BATCH_IMPLEMENTATION_RESULT_NOT_VERIFIABLE, the stand-in never runs, and nothing is written.
-test("STORY-460 AC5 SUB-239: the operational entry with an always-green roster root stand-in writes one batch verify record", async (context) => {
+// AC5. The roster root stand-in is always green, so the only thing between the entry and a
+// completed batch is the qualification above. Red leg: the R4 revert keeps the entry at
+// BATCH_IMPLEMENTATION_RESULT_NOT_VERIFIABLE and the stand-in never runs. (The verify
+// telemetry record this case also counted went with the telemetry store, STORY-467 R3.)
+test("STORY-460 AC5 SUB-239: the operational entry with an always-green roster root stand-in completes the batch", async (context) => {
   const fixture = await boundStoryWorkspace("batch-verify-entry");
   context.after(() => rm(fixture.base, { recursive: true, force: true }));
   const handed = [];
@@ -281,9 +233,4 @@ test("STORY-460 AC5 SUB-239: the operational entry with an always-green roster r
   assert.equal(result.reasonCode, "BATCH_FORMAL_GATE_COMPLETED");
   assert.equal(handed.length, 1, "the stand-in runs exactly once");
   assert.equal(handed[0].reasonCode, "BATCH_FORMAL_GATE_ELIGIBLE");
-  const records = await nonBoundaryVerifyRecords(fixture);
-  assert.equal(records.length, 1);
-  assert.equal(records[0].kind, "verify");
-  assert.equal(records[0].payload.source, "final-gate-plan:batch-verify");
-  assert.equal(records[0].payload.passed, true);
 });

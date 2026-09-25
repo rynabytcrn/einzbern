@@ -159,10 +159,12 @@ section — check `verifyScriptCap` in `scripts/policy/proof-budget.json` and th
 
 ## Native dispatch boundary
 
-Native task dispatch uses `scripts/dispatch-adapter.mjs` or the CLI's current
-`dispatch-mode-list` read. Resolve the host, task class, mode, model, and effort
-from the live workspace immediately before the host call, then pass the returned
-model and effort to the native tool. Read the bound Story with `work-show` when
+The dispatch adapter (`scripts/dispatch-adapter.mjs`), the dispatch-telemetry hook and
+the `dispatch-*` verbs are retired (TCRN-CROSS-STORY-467 R3); the dispatch settings remain
+readable through `settings-catalog` and `scripts/host-render.mjs` until the host wiring
+is redecided. When a caller resolves the host, task class, mode, model, and effort, it
+does so from the live workspace immediately before the host call, then passes the
+resolved model and effort to the native tool. Read the bound Story with `work-show` when
 the call carries a work id; a missing or changed work, scope, configuration,
 model, or effort is a refusal. An unrelated chain append is not a dispatch
 failure, because the dispatch decision depends on the relevant record and

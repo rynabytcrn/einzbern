@@ -157,12 +157,15 @@ test("STORY-391: a mixed managed-looking user group stays whole and ordered", as
   assert.equal(plan.drift.some((entry) => entry.path === ".codex/hooks.json"), true);
 });
 
-test("TCRN-CROSS-STORY-417: exact legacy telemetry groups migrate in place on both hosts", async (t) => {
+test("TCRN-CROSS-STORY-417: exact legacy groups without the host suffix migrate in place on both hosts", async (t) => {
+  // This case was written for the dispatch-telemetry groups, retired with that hook
+  // (TCRN-CROSS-STORY-467 R3). The SubagentStart knowledge-injection group carries the same
+  // --host suffix, so it is the legacy group that migrates now.
   for (const host of ["claude-code", "codex"]) {
     const { root, generated } = await generatedFixture(t, host, `tcrn-host-render-legacy-${host}-`);
     const existingHooks = Object.fromEntries(Object.entries(generated).map(([event, groups]) => [
       event,
-      groups.map((group) => event === "SubagentStart" || event === "SubagentStop" ? withoutHostSuffix(group, host) : structuredClone(group)),
+      groups.map((group) => event === "SubagentStart" ? withoutHostSuffix(group, host) : structuredClone(group)),
     ]));
     const existing = new Map([[hookFilePath(host), JSON.stringify(host === "codex" ? { hooks: existingHooks } : { hooks: existingHooks })]]);
     const config = settings(host);
@@ -170,9 +173,7 @@ test("TCRN-CROSS-STORY-417: exact legacy telemetry groups migrate in place on bo
     const file = plan.files.find((entry) => entry.path === hookFilePath(host));
     const document = JSON.parse(file.content);
     assert.equal(document.hooks.SubagentStart.length, generated.SubagentStart.length);
-    assert.equal(document.hooks.SubagentStop.length, generated.SubagentStop.length);
     assert.deepEqual(document.hooks.SubagentStart, generated.SubagentStart, `${host} Start legacy replacement is exact`);
-    assert.deepEqual(document.hooks.SubagentStop, generated.SubagentStop, `${host} Stop legacy replacement is exact`);
     const actualHooks = host === "codex" ? file.actualManaged : file.actualManaged.hooks;
     assert.equal(actualHooks.SubagentStart[0].hooks[0].command.endsWith(` --host ${host === "codex" ? "codex" : "claude"}`), false, "actual projection records the legacy before state");
     assert.equal(file.drift, true);
@@ -293,19 +294,21 @@ test("TCRN-CROSS-STORY-417: duplicate nonmatching user groups and unknown event 
       matcher: "UserOwnedStructural",
       timeout: null,
       metadata: { unknown: [null, "value", { array: [1, 2] }] },
-      hooks: [{ type: "command", command: `${generated.SubagentStop[0].hooks[0].command} --user-owned-extra`, timeout: "17" }],
+      hooks: [{ type: "command", command: `${generated.SessionStart[0].hooks[0].command} --user-owned-extra`, timeout: "17" }],
     };
+    // SessionStart, not SubagentStop: the SubagentStop telemetry group this case used went with
+    // the dispatch-telemetry hook (TCRN-CROSS-STORY-467 R3).
     const hooks = structuredClone(generated);
-    hooks.SubagentStop = [userGroup, structuredClone(userGroup), ...hooks.SubagentStop];
+    hooks.SessionStart = [userGroup, structuredClone(userGroup), ...hooks.SessionStart];
     hooks.UserOwnedUnknownEvent = { value: [null, { keep: true }] };
     const existing = new Map([[hookFilePath(host), JSON.stringify({ hooks })]]);
     const plan = renderHostPlan({ host, settings: settings(host), root, repoRoot, existing });
     const file = plan.files.find((entry) => entry.path === hookFilePath(host));
     const document = JSON.parse(file.content);
-    assert.deepEqual(document.hooks.SubagentStop.slice(0, 2), [userGroup, userGroup], `${host} duplicate user groups preserve multiplicity and all types`);
+    assert.deepEqual(document.hooks.SessionStart.slice(0, 2), [userGroup, userGroup], `${host} duplicate user groups preserve multiplicity and all types`);
     assert.deepEqual(document.hooks.UserOwnedUnknownEvent, hooks.UserOwnedUnknownEvent, `${host} unknown event value is unchanged`);
     const actualHooks = host === "codex" ? file.actualManaged : file.actualManaged.hooks;
-    assert.equal(actualHooks.SubagentStop.length, generated.SubagentStop.length, `${host} managed projection excludes duplicate user groups`);
+    assert.equal(actualHooks.SessionStart.length, generated.SessionStart.length, `${host} managed projection excludes duplicate user groups`);
   }
 });
 
@@ -461,20 +464,20 @@ test("TCRN-CROSS-STORY-429: native CLI scope selects hooks-only or the explicit 
   assert.ok(fullPlan.plan.files.some((entry) => entry.path === ".codex/config.toml"));
 });
 
-test("TCRN-CROSS-STORY-429: the six authorized per-host hook changes do not alter other managed or user groups", async (t) => {
+test("TCRN-CROSS-STORY-429: the authorized per-host hook changes do not alter other managed or user groups", async (t) => {
+  // The telemetry pair this case replaced in place went with the dispatch-telemetry hook
+  // (TCRN-CROSS-STORY-467 R3); the knowledge-capture Stop group carries the same --host
+  // suffix and stands in as the group replaced in place.
   for (const host of ["claude-code", "codex"]) {
     const { root, generated } = await generatedFixture(t, host, `tcrn-host-render-hooks-only-delta-${host}-`);
     const beforeHooks = structuredClone(generated);
-    const telemetry = (event) => generated[event].find((group) => group.hooks?.some((hook) => hook.command?.includes("dispatch-telemetry-hook.mjs")));
+    const capture = generated.Stop.find((group) => group.hooks?.some((hook) => hook.command?.includes("knowledge-capture-hook.mjs")));
     const knowledge = generated.SubagentStart.find((group) => group.hooks?.some((hook) => hook.command?.includes("knowledge-inject-hook.mjs")));
-    assert.ok(telemetry("SubagentStart"));
-    assert.ok(telemetry("SubagentStop"));
+    assert.ok(capture);
     assert.ok(knowledge);
-    const legacyStart = withoutHostSuffix(telemetry("SubagentStart"), host);
-    const legacyStop = withoutHostSuffix(telemetry("SubagentStop"), host);
-    beforeHooks.SubagentStart = beforeHooks.SubagentStart.map((group) => JSON.stringify(group) === JSON.stringify(telemetry("SubagentStart")) ? legacyStart : group);
+    const legacyCapture = withoutHostSuffix(capture, host);
+    beforeHooks.Stop = beforeHooks.Stop.map((group) => JSON.stringify(group) === JSON.stringify(capture) ? legacyCapture : group);
     beforeHooks.SubagentStart = beforeHooks.SubagentStart.filter((group) => JSON.stringify(group) !== JSON.stringify(knowledge));
-    beforeHooks.SubagentStop = beforeHooks.SubagentStop.map((group) => JSON.stringify(group) === JSON.stringify(telemetry("SubagentStop")) ? legacyStop : group);
     const userGroup = { matcher: "UserOwned", timeout: null, metadata: { retain: [1, { nested: true }] }, hooks: [{ type: "command", command: "user hook" }] };
     beforeHooks.UserPromptSubmit.push(userGroup);
     const beforeDocument = host === "claude-code"
@@ -486,12 +489,10 @@ test("TCRN-CROSS-STORY-429: the six authorized per-host hook changes do not alte
     const file = plan.files[0];
     const actual = JSON.parse(file.content);
     const expected = structuredClone(beforeDocument);
-    const startIndex = expected.hooks.SubagentStart.findIndex((group) => JSON.stringify(group) === JSON.stringify(legacyStart));
-    const stopIndex = expected.hooks.SubagentStop.findIndex((group) => JSON.stringify(group) === JSON.stringify(legacyStop));
-    expected.hooks.SubagentStart[startIndex] = telemetry("SubagentStart");
+    const captureIndex = expected.hooks.Stop.findIndex((group) => JSON.stringify(group) === JSON.stringify(legacyCapture));
+    expected.hooks.Stop[captureIndex] = capture;
     expected.hooks.SubagentStart.push(knowledge);
-    expected.hooks.SubagentStop[stopIndex] = telemetry("SubagentStop");
-    assert.deepEqual(actual, expected, `${host}: exactly two telemetry replacements and one full task-bound knowledge group addition`);
+    assert.deepEqual(actual, expected, `${host}: exactly one in-place replacement and one full task-bound knowledge group addition`);
     assert.deepEqual(actual.hooks.UserPromptSubmit.at(-1), userGroup, `${host}: unowned user group and metadata are retained`);
   }
 });

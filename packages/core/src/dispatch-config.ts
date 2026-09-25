@@ -173,36 +173,6 @@ export function readDispatchConfig(settings: readonly Setting[]): DispatchConfig
   };
 }
 
-export function dispatchSettingUpdate(
-  settings: readonly Setting[],
-  kind: "classes" | "tiers" | "mode",
-  key: string,
-  value: unknown,
-): Readonly<{ key: string; value: string }> {
-  const current = readDispatchConfig(settings);
-  if (kind === "classes") {
-    return {
-      key: "execution.dispatchClasses",
-      value: canonicalJson({ ...current.classes, ...classes(value) }),
-    };
-  }
-  if (kind === "tiers") {
-    const host = name(key, "host");
-    return {
-      key: "execution.dispatchTiers",
-      value: canonicalJson({ ...current.tiers, [host]: hostTiers(value, host) }),
-    };
-  }
-  const mode = name(key, "mode");
-  return {
-    key: "execution.dispatchModes",
-    value: canonicalJson({
-      ...current.modes,
-      [mode]: { ...(own(current.modes, mode) ?? {}), ...mapping(value) },
-    }),
-  };
-}
-
 export function resolveDispatch(
   config: DispatchConfig,
   host: string,

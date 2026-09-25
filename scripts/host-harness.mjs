@@ -40,13 +40,12 @@ import { LEGACY_CONTAINER_DIRECTORY, LEGACY_CONTROL_DIRECTORY, LOCAL_DIRECTORY_N
 export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 export const HOSTS = Object.freeze(["claude", "codex"]);
 const CONTAINER_ROOT_HANDLERS = new Set(["scripts/knowledge-inject-hook.mjs", "scripts/knowledge-capture-hook.mjs"]);
-// TCRN-CROSS-INC-368: these three handlers self-derive their container root from their
+// TCRN-CROSS-INC-368: these handlers self-derive their container root from their
 // own installed location, which resolves to the wrong ancestor from a managed Codex
 // copy's actual position. Claude already runs them via `${CLAUDE_PROJECT_DIR}` and does
 // not need the flag (see `claudeCommand`/`handlerArguments` below — Claude rendering for
 // these handlers is untouched), so this set is consulted for the `codex` host only.
 const CODEX_ONLY_CONTAINER_ROOT_HANDLERS = new Set([
-  "scripts/dispatch-telemetry-hook.mjs",
   "scripts/agents-zero-hook.mjs",
   "scripts/ssh-write-observer.mjs",
 ]);
@@ -127,18 +126,6 @@ export const HARNESS_CAPABILITIES = Object.freeze([
     codex: { mechanism: "hook", event: "UserPromptSubmit", matcher: null, handler: "scripts/agents-zero-hook.mjs", timeout: 10 },
   },
   {
-    id: "dispatch-telemetry-start",
-    purpose: "a subagent start records the parent session and dispatch class in local telemetry",
-    claude: { mechanism: "hook", event: "SubagentStart", matcher: null, handler: "scripts/dispatch-telemetry-hook.mjs", timeout: 10 },
-    codex: { mechanism: "hook", event: "SubagentStart", matcher: null, handler: "scripts/dispatch-telemetry-hook.mjs", timeout: 10 },
-  },
-  {
-    id: "dispatch-telemetry-stop",
-    purpose: "a subagent stop records observed model and token usage in local telemetry",
-    claude: { mechanism: "hook", event: "SubagentStop", matcher: null, handler: "scripts/dispatch-telemetry-hook.mjs", timeout: 10 },
-    codex: { mechanism: "hook", event: "SubagentStop", matcher: null, handler: "scripts/dispatch-telemetry-hook.mjs", timeout: 10 },
-  },
-  {
     id: "subagent-task-context-injection",
     purpose: "an explicitly bound subagent receives only its task context at start; unbound children receive no generic knowledge injection",
     claude: { mechanism: "hook", event: "SubagentStart", matcher: null, handler: "scripts/knowledge-inject-hook.mjs", timeout: 30 },
@@ -204,7 +191,7 @@ export function capabilityGaps() {
 }
 
 function handlerArguments(handler, host, containerRoot) {
-  const hostArgument = handler === "scripts/knowledge-inject-hook.mjs" || handler === "scripts/knowledge-capture-hook.mjs" || handler === "scripts/dispatch-telemetry-hook.mjs" ? ` --host ${host}` : "";
+  const hostArgument = handler === "scripts/knowledge-inject-hook.mjs" || handler === "scripts/knowledge-capture-hook.mjs" ? ` --host ${host}` : "";
   if (CONTAINER_ROOT_HANDLERS.has(handler)) {
     const rootArgument = host === "claude" ? '"${CLAUDE_PROJECT_DIR}"' : JSON.stringify(resolve(containerRoot));
     return ` --container-root ${rootArgument}${hostArgument}`;

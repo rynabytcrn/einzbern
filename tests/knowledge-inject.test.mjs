@@ -25,7 +25,6 @@ import {
   initializeKnowledgeStore,
   initializeWorkspace,
   materializeWorkspace,
-  readTelemetryRecords,
   transitionKnowledgePromotion,
   LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
@@ -253,40 +252,6 @@ test("STORY-419 protocol truncation is explicit and never looks like delivered c
 // collector self-check and the SessionStart sweep moved the knowledge store marker. As in
 // production, no workspace state is handed in: each hook reads it from the container. The second
 // session keeps the failure paths in view: a recall that fails and a tool call that pulls nothing.
-const MIN225_FOUR_CHANNEL_ROWS = Object.freeze([
-  "injection-bytes|availability,budget,budgetExceeded,candidateCount,injectedBytes,source",
-  "pull|availability,id,phase,sequence,source,verb",
-  "reference|availability,phase,sequence,source,stage",
-  "retrieval-hit|availability,candidateCount,candidateIds,phase,queryTranslations,sequence,source",
-  "retrieval|availability,phase,sequence,source,stage",
-  "trigger|availability,event,phase,sequence,source,stage",
-  "trigger|availability,event,phase,sequence,source,stage",
-]);
-const MIN225_FOUR_CHANNEL_PHASES = Object.freeze([
-  "injection-bytes|knowledge-inject:injection-bytes|-|-",
-  "pull|knowledge-inject:reference|stop|2",
-  "reference|knowledge-inject:reference|start|1",
-  "retrieval-hit|knowledge-inject:retrieval|stop|2",
-  "retrieval|knowledge-inject:retrieval|start|1",
-  "trigger|knowledge-inject:trigger|start|1",
-  "trigger|knowledge-inject:trigger|stop|2",
-]);
-const MIN225_FAILURE_ROWS = Object.freeze([
-  "reference|availability,phase,sequence,source,stage",
-  "reference|availability,phase,sequence,source,stage",
-  "retrieval|availability,phase,sequence,source,stage",
-  "retrieval|availability,phase,sequence,source,stage",
-  "trigger|availability,event,phase,sequence,source,stage",
-  "trigger|availability,event,phase,sequence,source,stage",
-]);
-const MIN225_FAILURE_PHASES = Object.freeze([
-  "reference|knowledge-inject:reference|start|3",
-  "reference|knowledge-inject:reference|stop|4",
-  "retrieval|knowledge-inject:retrieval|start|3",
-  "retrieval|knowledge-inject:retrieval|stop|4",
-  "trigger|knowledge-inject:trigger|start|3",
-  "trigger|knowledge-inject:trigger|stop|4",
-]);
 const INJECT_SCRIPT_PATH = fileURLToPath(new URL("../scripts/knowledge-inject.mjs", import.meta.url));
 
 // A container-shaped fixture: the hooks resolve `<container>/.tcrn-workspace/cross-project`, so a
@@ -305,7 +270,9 @@ async function isolatedHookContainer(t, externalKey) {
   return { base, workspace, transient: join(partition, "transient"), storePath, storeBefore: readFileSync(storePath, "utf8") };
 }
 
-test("MIN-225: hook events write the four channel events and no boundary, seal receipt, self-check, summary, or sweep", async (t) => {
+// The four channel events this case counted went with the telemetry store
+// (TCRN-CROSS-STORY-467 R3): the hooks write no telemetry of any kind now.
+test("MIN-225: hook events write no telemetry, boundary, seal receipt, self-check, summary, or sweep", async (t) => {
   const fixture = await isolatedHookContainer(t, "FIXTURE-MIN-225-HOOK-EVENTS");
   const candidate = { id: "knowledge:000000000000000000000225", kind: "card", key: "K225", status: "active", title: "Hooks", summary: "Hooks" };
   const common = { partition: "cross-project", containerRoot: fixture.base, sessionId: "min225-hooks", stateDirectory: join(fixture.transient, "session-state"), settings: [], budget: 24_576, perPromptBytes: 1_600, judgeEnabled: false, host: "claude" };
@@ -316,18 +283,7 @@ test("MIN-225: hook events write the four channel events and no boundary, seal r
   const failure = { ...common, sessionId: "min225-hooks-failure" };
   const failedPrompt = await runSessionInjection({ ...failure, event: "UserPromptSubmit", prompt: "min225 failing recall prompt", recall: async () => ({ ok: false, reasonCode: "RECALL_UNAVAILABLE" }) });
   const ignoredPull = await runSessionInjection({ ...failure, event: "PostToolUse", prompt: "", hookInput: { tool_name: "work-show", tool_response: "{}" } });
-  const read = await readTelemetryRecords(fixture.transient, { limit: Number.MAX_SAFE_INTEGER });
-  assert.deepEqual(read.problems, []);
-  const rows = (session) => read.records.filter((record) => record.session === session).map((record) => `${record.kind}|${Object.keys(record.payload).sort().join(",")}`).sort();
-  const phases = (session) => read.records.filter((record) => record.session === session).map((record) => `${record.kind}|${record.payload.source}|${record.payload.phase ?? "-"}|${record.payload.sequence ?? "-"}`).sort();
-  assert.deepEqual(rows("min225-hooks"), MIN225_FOUR_CHANNEL_ROWS, "exactly the four channel events, with their payload keys");
-  assert.deepEqual(phases("min225-hooks"), MIN225_FOUR_CHANNEL_PHASES, "and their phase and sequence");
-  assert.deepEqual(rows("min225-hooks-failure"), MIN225_FAILURE_ROWS, "a failed recall and an ignored pull still close their channel events");
-  assert.deepEqual(phases("min225-hooks-failure"), MIN225_FAILURE_PHASES);
-  assert.equal(read.records.length, MIN225_FOUR_CHANNEL_ROWS.length + MIN225_FAILURE_ROWS.length, "and nothing else in any session");
-  assert.equal(read.records.some((record) => String(record.payload.source).startsWith("telemetry:observation-collector:")), false, "no boundary row");
-  assert.equal(read.records.some((record) => record.kind === "observation-coverage" || record.kind === "collector-self-check"), false, "no seal receipt and no self-check");
-  assert.deepEqual(readdirSync(join(fixture.transient, "telemetry")).filter((name) => !/^\d{4}-\d{2}-\d{2}\.ndjson$/u.test(name)), [], "no telemetry/summaries");
+  assert.equal(existsSync(join(fixture.transient, "telemetry")), false, "no telemetry record of any kind");
   assert.equal(readFileSync(fixture.storePath, "utf8"), fixture.storeBefore, "the knowledge store marker is untouched: SessionStart no longer sweeps");
   assert.deepEqual([sessionStart, prompt, pull, stop, failedPrompt, ignoredPull].map((result) => result.decision), ["L0_CHANGED", "INJECTION_EMITTED", "PULL_RECORDED", "NO_CONTEXT", "RECALL_UNAVAILABLE", "PULL_IGNORED"]);
   for (const result of [sessionStart, stop]) {
@@ -346,28 +302,4 @@ test("MIN-225: the retired observation-boundary argument is answered and writes 
   }
   assert.equal(existsSync(join(fixture.transient, "telemetry")), false, "no telemetry record of any kind");
   assert.equal(readFileSync(fixture.storePath, "utf8"), fixture.storeBefore);
-});
-
-// TCRN-CROSS-STORY-459 AC1 (SUB-235): the judge telemetry record carries the failure detail
-// next to the reason code, bounded, under a field name the telemetry validator admits.
-test("STORY-459 AC1: judge telemetry keeps the failure detail with the reason code", async (t) => {
-  const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-judge-failure-")));
-  t.after(() => rm(base, { recursive: true, force: true }));
-  const roots = ["framework", "workspace", "transient", "evidence-locator", "release-trust"].map((kind) => ({ kind, path: join(base, kind) }));
-  for (const root of roots) await mkdir(root.path, { recursive: true });
-  await initializeWorkspace({ roots, externalKey: "STORY-459-JUDGE", createdAt: "2026-09-01T00:00:00Z" });
-  const transient = join(base, "transient");
-  const candidate = { id: "knowledge:000000000000000000000459", kind: "card", key: "K459", status: "active", title: "Judge", summary: "Judge" };
-  const prompt = "judge failure prompt 459";
-  await runSessionInjection({
-    prompt, sessionId: "s459", event: "UserPromptSubmit", host: "claude",
-    stateDirectory: join(transient, "session-state"), workspaceState: await materializeWorkspace(join(base, "workspace")), settings: [], budget: 24_576, perPromptBytes: 1_600,
-    recall: async () => ({ ok: true, result: { records: [candidate] } }),
-    judge: async () => ({ judgment: null, model: "test-economy", reasonCode: "UNINJECTED_MODEL_FAILED", failureDetail: "API Error: 400 model not supported" }),
-  });
-  const judge = (await readTelemetryRecords(transient, { kind: "judge", limit: 10 })).records;
-  assert.equal(judge.length, 1);
-  assert.equal(judge[0].payload.reasonCode, "UNINJECTED_MODEL_FAILED");
-  assert.equal(judge[0].payload.failureDetail, "API Error: 400 model not supported");
-  assert.equal(JSON.stringify(judge[0]).includes(prompt), false, "the prompt never reaches the record");
 });

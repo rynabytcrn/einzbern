@@ -121,7 +121,6 @@ import {
 } from "./settings.js";
 import type { WorkspaceSettingRecord } from "./settings.js";
 import {
-  readTelemetryRecordById,
   telemetryEvidenceSnapshot,
   TelemetryError,
   validateTelemetryRecord,
@@ -173,7 +172,6 @@ export const WORKSPACE_REASON_CODES = Object.freeze([
   "WORKSPACE_GATE_IDENTITY_REFUSED",
   "WORKSPACE_GATE_IDENTITY_REQUIRED",
   "WORKSPACE_GATE_PENDING",
-  "WORKSPACE_TELEMETRY_EVIDENCE_UNRESOLVED",
   "WORKSPACE_INPUT_INVALID",
   "WORKSPACE_INPUT_OVERSIZED",
   "WORKSPACE_LOCKED",
@@ -3808,18 +3806,7 @@ function hasLiveNonTerminalDescendant(work: readonly WorkRecord[], recordId: str
 // exactly what the WSA-3 comment below was warning about. A rule placed there would refuse
 // a chain that legitimately closed an Initiative before 0.10.0 while descendants were open.
 // A rule placed here fires on live mutations only, which is what it always did.
-function assertTelemetryEvidenceInput(input: { readonly status: WorkStatus; readonly evidence?: string }, reasonCode: WorkspaceReasonCode): void {
-  if (input.evidence === undefined) return;
-  if (input.status !== "done") {
-    fail(reasonCode, "telemetry evidence applies only to a done transition");
-  }
-  if (!/^telemetry:[a-f0-9]{24}$/u.test(input.evidence)) {
-    fail(reasonCode, "telemetry evidence must be a telemetry id");
-  }
-}
-
-function assertTransitionAdmission(state: WorkspaceState, input: { readonly id: string; readonly status: WorkStatus; readonly evidence?: string }): void {
-  assertTelemetryEvidenceInput(input, "WORKSPACE_INPUT_INVALID");
+function assertTransitionAdmission(state: WorkspaceState, input: { readonly id: string; readonly status: WorkStatus }): void {
   // Scope is a live write-path admission rule. Historical chains remain replayable;
   // unbound Stories use the legacy ten-block contract, while a bound Story is checked
   // against its admitted template and the same engine floor before it enters an execution
@@ -3854,40 +3841,28 @@ function assertTransitionAdmission(state: WorkspaceState, input: { readonly id: 
   }
 }
 
-export function transitionWorkDelta(input: { readonly id: string; readonly status: WorkStatus; readonly summary?: string | null; readonly evidence?: string; readonly occurredAt: string }): (state: WorkspaceState) => MutationDelta {
+export function transitionWorkDelta(input: { readonly id: string; readonly status: WorkStatus; readonly summary?: string | null; readonly occurredAt: string }): (state: WorkspaceState) => MutationDelta {
   return (state) => {
     assertTransitionAdmission(state, input);
     return transitionWorkReducerDelta(state, input);
   };
 }
 
+// TCRN-CROSS-STORY-467 R3: a transition no longer cites a telemetry record as evidence --
+// the telemetry it named is neither written nor read any more. A record that already
+// carries advisory:evidence and its snapshot keeps both, and replay still checks them.
 export async function transitionWork(workspaceRoot: string, input: {
   readonly id: string;
   readonly status: WorkStatus;
   readonly summary?: string | null;
-  readonly evidence?: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  assertTelemetryEvidenceInput(input, "WORKSPACE_INPUT_INVALID");
-  let evidenceSnapshot: TelemetryEvidenceSnapshot | undefined;
-  if (input.evidence !== undefined) {
-    const state = await materializeWorkspace(workspaceRoot);
-    const transient = activeBinding(state.metadata).find((root) => root.kind === "transient");
-    if (transient === undefined) {
-      fail("WORKSPACE_TELEMETRY_EVIDENCE_UNRESOLVED", "workspace has no transient root for telemetry evidence");
-    }
-    const record = await readTelemetryRecordById(transient.path, input.evidence);
-    if (record === null) {
-      fail("WORKSPACE_TELEMETRY_EVIDENCE_UNRESOLVED", `telemetry evidence ${input.evidence} is not available`);
-    }
-    evidenceSnapshot = telemetryEvidenceSnapshot(record);
-  }
   return appendEvent(workspaceRoot, (state) => {
     assertTransitionAdmission(state, input);
-    return transitionWorkReducerDelta(state, { ...input, ...(evidenceSnapshot === undefined ? {} : { evidenceSnapshot }) });
+    return transitionWorkReducerDelta(state, input);
   }, input);
 }
 
-function transitionWorkReducerDelta(state: WorkspaceState, input: { readonly id: string; readonly status: WorkStatus; readonly summary?: string | null; readonly evidence?: string; readonly evidenceSnapshot?: TelemetryEvidenceSnapshot; readonly occurredAt: string }): MutationDelta {
+function transitionWorkReducerDelta(state: WorkspaceState, input: { readonly id: string; readonly status: WorkStatus; readonly summary?: string | null; readonly occurredAt: string }): MutationDelta {
   {
     const current = workById(state, input.id);
     assertWorkTransition(current.status, input.status);
@@ -3903,7 +3878,9 @@ function transitionWorkReducerDelta(state: WorkspaceState, input: { readonly id:
     const summarised: WorkRecord = input.summary === undefined
       ? workFieldsForWrite(current)
       : { ...workFieldsForWrite(current), summary: normalizeWorkSummary(input.summary) };
-    const extensions = workAdvisoryExtensions(summarised.extensions, input);
+    // A transition carries no advisory input since the telemetry evidence id went
+    // (TCRN-CROSS-STORY-467 R3); the record keeps the extensions it has.
+    const extensions = summarised.extensions;
     const record: WorkRecord = { ...summarised, extensions: extensions as WorkRecord["extensions"], scopeDigest: workExtensionsDigest(extensions), status: input.status, revision: current.revision + 1, updatedAt: input.occurredAt };
     assertWorkTransitionEvidence(current, record, "WORKSPACE_INPUT_INVALID");
     validateBoundTemplateWork(record, state.templates);

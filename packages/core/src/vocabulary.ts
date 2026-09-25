@@ -79,9 +79,7 @@ export function readVocabulary(): Readonly<{
       controlType: entry.controlType,
       defaultValue: entry.defaultValue,
       allowedValues: Object.freeze([...(entry.allowedValues ?? [])]),
-      valueSource: entry.key === "execution.dispatchMode"
-        ? "dispatch-mode-list"
-        : entry.key === "execution.claudeCodeSubagentPlan" ||
+      valueSource: entry.key === "execution.claudeCodeSubagentPlan" ||
             entry.key === "execution.codexSubagentPlan"
           ? "legacy-model-plan-history"
           : "settings-catalog",

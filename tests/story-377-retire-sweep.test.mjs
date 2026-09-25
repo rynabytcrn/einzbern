@@ -3,9 +3,11 @@
 // TCRN-CROSS-MIN-225 (TCRN-CROSS-SUB-258): knowledge retires only through write-time conflict and
 // --supersedes, and fitness is a read-only statistic. The fixtures below still write the observation
 // records v1.2.0 relied on, so each case shows that none of them retires or counts anything now.
+// TCRN-CROSS-STORY-467 R3 retired the telemetry store itself: nothing in the engine writes or reads
+// it, so the fixtures lay the records down on disk the way v1.2.0 did and fitness counts nothing.
 
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import test from "node:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,10 +16,8 @@ import { inflateSync } from "node:zlib";
 import { COMMAND_CATALOG, runCli } from "../dist/build/packages/cli/src/index.js";
 import {
   appendEvents,
-  appendTelemetryRecord,
   captureKnowledgeUnit,
   createKnowledgeUnit,
-  createTelemetryRecord,
   createProject,
   createWork,
   evaluateKnowledgeFreshness,
@@ -56,6 +56,16 @@ function eventAt(offset, second = 0) {
 
 function dayFile(offset) {
   return `${windowDay(offset).toISOString().slice(0, 10)}.ndjson`;
+}
+
+// A telemetry record exactly as v1.2.0's appendTelemetryRecord laid it down: one canonical line in
+// the day file under <transient>/telemetry, identified by the digest of its fields.
+async function appendLegacyTelemetry(root, { at, kind, session, payload }) {
+  const schemaVersion = "tcrn.telemetry.v1";
+  const id = `telemetry:${canonicalSha256({ schemaVersion, kind, at, session, payload }).slice(0, 24)}`;
+  const directory = join(root, "telemetry");
+  await mkdir(directory, { recursive: true });
+  await appendFile(join(directory, `${new Date(at).toISOString().slice(0, 10)}.ndjson`), canonicalJson({ schemaVersion, id, at, kind, session, payload }));
 }
 
 async function fixture(t, externalKey, { aggregateBytes, workItem = false } = {}) {
@@ -111,12 +121,12 @@ async function fillWindow(fx, days = 90, events = [], sealed = true) {
     });
   }
   for (const [index, event] of events.entries()) {
-    await appendTelemetryRecord(fx.transient, createTelemetryRecord({
+    await appendLegacyTelemetry(fx.transient, {
       at: eventAt(event.offset, index),
       kind: event.kind,
       session: `story-377-${index}`,
       payload: { source: `story-377:${event.kind}`, availability: "available", ...event.payload },
-    }));
+    });
   }
   if (sealed) await sealWindow(fx, days);
 }
@@ -127,12 +137,12 @@ async function sealWindow(fx, days = 90, overrides = {}) {
   for (let offset = days; offset >= 1; offset -= 1) {
     for (const channel of ["retrieval", "reference", "trigger", "verify"]) {
       const kind = { retrieval: "retrieval-hit", reference: "reference", trigger: "trigger", verify: "verify" }[channel];
-      await appendTelemetryRecord(fx.transient, createTelemetryRecord({
+      await appendLegacyTelemetry(fx.transient, {
         at: eventAt(offset, 30),
         kind,
         session: `story-377-actual-${offset}-${channel}`,
         payload: { source: `story-377:actual:${channel}`, availability: "available" },
-      }));
+      });
     }
     const beforeBoundaries = (await readFile(join(fx.transient, "telemetry", dayFile(offset)), "utf8"))
       .split("\n").filter(Boolean).map((line) => JSON.parse(line));
@@ -145,12 +155,12 @@ async function sealWindow(fx, days = 90, overrides = {}) {
       const actual = beforeBoundaries.filter((record) => record.kind === kind && !String(record.payload.source).startsWith("telemetry:observation-collector:"));
       const highWater = { highWaterCount: actual.length, highWaterDigest: canonicalSha256(actual), highWaterAt: actual.at(-1)?.at ?? null };
       for (const [phase, at] of [["start", start], ["stop", end]]) {
-        await appendTelemetryRecord(fx.transient, createTelemetryRecord({
+        await appendLegacyTelemetry(fx.transient, {
           at,
           kind,
           session: `story-377-checkpoint-${offset}-${channel}`,
           payload: { source: `telemetry:observation-collector:story-377:${offset}:${channel}`, availability: "available", phase, sequence: phase === "start" ? 1 : 2, highWaterDay: start.slice(0, 10), ...highWater },
-        }));
+        });
       }
     }
     const source = await readFile(join(fx.transient, "telemetry", dayFile(offset)), "utf8");
@@ -172,7 +182,7 @@ async function sealWindow(fx, days = 90, overrides = {}) {
         highWaterDigest: canonicalSha256(actual),
       }];
     }));
-    await appendTelemetryRecord(fx.transient, createTelemetryRecord({
+    await appendLegacyTelemetry(fx.transient, {
       at: windowDay(offset - 1).toISOString(),
       kind: "observation-coverage",
       session: "story-377-test-collector",
@@ -186,7 +196,7 @@ async function sealWindow(fx, days = 90, overrides = {}) {
         recordCount: records.length, sourceDigest: canonicalSha256(records),
         collectionErrors: 0, ...overrides,
       },
-    }));
+    });
   }
 }
 
@@ -221,19 +231,19 @@ async function storeBytes(fx, { cardsOnly = false } = {}) {
 async function legacyObservationRecords(fx, offset, cardId) {
   const day = windowDay(offset).toISOString().slice(0, 10);
   for (const [phase, at, sequence] of [["start", `${day}T00:00:00.000Z`, 1], ["stop", `${day}T23:59:59.999Z`, 2]]) {
-    await appendTelemetryRecord(fx.transient, createTelemetryRecord({
+    await appendLegacyTelemetry(fx.transient, {
       at, kind: "retrieval", session: `${day.replace(/-/gu, "")}.min-225`,
       payload: { source: `telemetry:observation-collector:claude:${day.replace(/-/gu, "")}.min-225:retrieval`, availability: "available", phase, sequence, highWaterDay: day, highWaterCount: 0, highWaterDigest: canonicalSha256([]), highWaterAt: null },
-    }));
+    });
   }
-  await appendTelemetryRecord(fx.transient, createTelemetryRecord({
+  await appendLegacyTelemetry(fx.transient, {
     at: eventAt(offset, 55), kind: "collector-self-check", session: "min-225-self-check",
     payload: { source: "knowledge-inject:retrieval", channel: "retrieval", host: "claude", verdict: "ok", reasonCode: null, availability: "available", candidateIds: [cardId] },
-  }));
-  await appendTelemetryRecord(fx.transient, createTelemetryRecord({
+  });
+  await appendLegacyTelemetry(fx.transient, {
     at: windowDay(offset - 1).toISOString(), kind: "observation-coverage", session: `observation-seal-${day}-retrieval`,
     payload: { source: "telemetry:observation-collector", availability: "available", coverageVersion: "tcrn.telemetry-observation-coverage.v2", coveredFrom: `${day}T00:00:00.000Z`, coveredUntil: windowDay(offset - 1).toISOString(), channel: "retrieval", outcome: "observed-zero", selfCheckIds: [], recordCount: 0, sourceDigest: canonicalSha256([]), collectionErrors: 0 },
-  }));
+  });
 }
 
 // Per-day fitness summaries as the v1.2.0 seal wrote them under telemetry/summaries, each giving the
@@ -384,12 +394,12 @@ test("MIN-225: a stale card and a full store lose nothing", async (t) => {
   assert.deepEqual((await listKnowledgeMetadata(full.workspace, { at: AT, selection: "all" })).records.map((record) => `${record.id}|${record.lifecycle}`).sort(), written.map((entry) => `${entry.id}|active`).sort());
 });
 
-// AC5: fitness is a read-only statistic over every readable record up to --at. The same cards and the
-// same four-channel events give the same counts whether or not the telemetry also holds the retired
-// observation records (v1 and v2 receipts, boundary rows, self-checks naming a card, per-day summaries),
-// a historical lastSweepAt and a retirement record written the way the v1.2.0 sweep wrote one, through a
-// stopped write that knowledge-recover completes.
-test("MIN-225: fitness counts are read-only statistics that legacy observation records do not change", async (t) => {
+// AC5: fitness is a read-only statistic. It was counted from the telemetry store, which is retired
+// (TCRN-CROSS-STORY-467 R3): records left on disk -- four-channel events, v1 and v2 receipts, boundary
+// rows, self-checks naming a card, per-day summaries -- are read by nothing, so every card reports zero
+// observations with or without them, beside a historical lastSweepAt and a retirement record written
+// the way the v1.2.0 sweep wrote one, through a stopped write that knowledge-recover completes.
+test("MIN-225: fitness reads no telemetry, and legacy observation records change nothing", async (t) => {
   const build = async (withLegacy) => {
     const fx = await fixture(t, `FIXTURE-MIN-225-LEGACY-${withLegacy ? "WITH" : "WITHOUT"}`, { workItem: true });
     const idle = await card(fx, "MIN-225-LEGACY-IDLE", { occurredAt: "2026-04-01T00:00:00.000Z" });
@@ -436,20 +446,17 @@ test("MIN-225: fitness counts are read-only statistics that legacy observation r
   // The work record's id and digest differ between the two fixtures by construction; its counts may not.
   const telemetryOnly = (result) => result.proposals.records.filter((record) => record.artifactKind === "telemetry-only")
     .map((record) => (record.id === result.fx.workId ? { ...record, id: "work", baseDigest: "work-record" } : record));
-  assert.deepEqual(telemetryOnly(withLegacy).map((record) => record.id), ["rule:min-225", "verify-script:min-225", "work"]);
-  assert.deepEqual(telemetryOnly(withLegacy), telemetryOnly(without), "the rule, the check and the work record keep their counts");
-  const workRow = withLegacy.proposals.records.find((record) => record.id === withLegacy.fx.workId);
-  const workRecord = (await materializeWorkspace(withLegacy.fx.workspace)).work.find((entry) => entry.id === withLegacy.fx.workId);
-  assert.deepEqual([workRow.retrievalCount, workRow.baseDigest], [1, canonicalSha256(workRecord)], "a work record named by an event is digested from the chain");
-  assert.equal(withLegacy.proposals.records.length, without.proposals.records.length, "the same artifacts are counted");
+  assert.deepEqual([telemetryOnly(withLegacy), telemetryOnly(without)], [[], []], "no artifact appears from telemetry alone");
+  assert.equal(withLegacy.proposals.records.length, without.proposals.records.length, "the same artifacts are listed");
+  assert.deepEqual(withLegacy.proposals.records.map((record) => record.id).sort(), [withLegacy.idle.id, withLegacy.busy.id, withLegacy.swept.id].sort(), "the cards and only the cards");
   for (const [label, pick] of [["idle", (result) => result.idle.id], ["busy", (result) => result.busy.id], ["swept", (result) => result.swept.id]]) {
     const row = (result) => Object.fromEntries(Object.entries(result.proposals.records.find((record) => record.id === pick(result))).filter(([key]) => key !== "id"));
     assert.deepEqual(row(withLegacy), row(without), `${label}: every count is the same with and without the legacy records`);
   }
   const busyRow = withLegacy.proposals.records.find((record) => record.id === withLegacy.busy.id);
-  assert.deepEqual([busyRow.retrievalCount, busyRow.referenceCount, busyRow.observedEvents], [1, 1, 2], "the real events are counted");
+  assert.deepEqual([busyRow.retrievalCount, busyRow.referenceCount, busyRow.observedEvents], [0, 0, 0], "events left on disk are not counted");
   const idleRow = withLegacy.proposals.records.find((record) => record.id === withLegacy.idle.id);
-  assert.deepEqual([idleRow.retrievalCount, idleRow.referenceCount, idleRow.observedEvents], [0, 0, 1], "a self-check or summary naming the card adds nothing");
+  assert.deepEqual([idleRow.retrievalCount, idleRow.referenceCount, idleRow.observedEvents], [0, 0, 0], "a self-check or summary naming the card adds nothing");
   for (const result of [without, withLegacy]) {
     assert.equal(result.proposals.schemaVersion, "tcrn.knowledge-fitness.v2");
     assert.equal(result.proposals.reasonCode, "KNOWLEDGE_RETIRE_PROPOSALS_READY");
@@ -460,10 +467,10 @@ test("MIN-225: fitness counts are read-only statistics that legacy observation r
   }
   assert.deepEqual([without.proposals.lastSweepAt, withLegacy.proposals.lastSweepAt], [null, "2026-09-01T00:47:10.039Z"], "a historical lastSweepAt is listed, read-only");
   const fx = withLegacy.fx;
-  assert.equal((await cliJson(["telemetry-list", "--workspace", fx.workspace, "--limit", "4096"])).reasonCode, "TELEMETRY_LIST_READY");
-  assert.equal((await cliJson(["telemetry-stats", "--workspace", fx.workspace])).reasonCode, "TELEMETRY_STATS_READY");
+  for (const verb of ["telemetry-list", "telemetry-stats", "telemetry-observation"]) {
+    assert.equal(await reasonOf([verb, "--workspace", fx.workspace]), "CLI_COMMAND_UNKNOWN", `${verb} is retired with the store`);
+  }
   assert.equal((await cliJson(["knowledge-list", "--workspace", fx.workspace, "--at", AT, "--selection", "all", "--allow-trailing", "true"])).records.length, 3);
-  assert.equal(await reasonOf(["telemetry-observation", "--workspace", fx.workspace, "--day", "2026-09-01"]), "TELEMETRY_OBSERVATION_RETIRED");
   for (const name of ["retire-proposals", "retire-sweep"]) {
     assert.deepEqual(COMMAND_CATALOG.find((entry) => entry.name === name)?.flags, [
       { name: "workspace", required: true, valueKind: "string" },

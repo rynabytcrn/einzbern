@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-import { appendFile, lstat, mkdir, readdir, readFile, rm } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+
+// TCRN-CROSS-STORY-467 R3 (MIN-227 D3): the local telemetry store is retired -- nothing
+// writes, reads, counts or prunes telemetry records any more, and work-transition no longer
+// cites one as evidence. What stays is the record shape and the evidence snapshot, because a
+// work record that already carries advisory:evidence-snapshot is re-checked on replay.
 
 import { canonicalJson, canonicalSha256, parseStrictInstant } from "../../protocol/src/index.js";
 
 export const TELEMETRY_SCHEMA_VERSION = "tcrn.telemetry.v1" as const;
 export const TELEMETRY_AVAILABILITY = Object.freeze(["available", "unavailable", "unknown"] as const);
 export const TELEMETRY_LINE_BYTES = 16 * 1024;
-export const TELEMETRY_RETENTION_DAYS = 90;
 export type TelemetryAvailability = typeof TELEMETRY_AVAILABILITY[number];
 
 export interface TelemetryUsage {
@@ -25,14 +27,6 @@ export interface TelemetryRecord {
   readonly kind: string;
   readonly session: string;
   readonly payload: TelemetryPayload;
-}
-
-export interface TelemetryReadResult {
-  readonly records: readonly TelemetryRecord[];
-  readonly total: number;
-  readonly offset: number;
-  readonly limit: number;
-  readonly problems: readonly { readonly path: string; readonly line: number; readonly reasonCode: string }[];
 }
 
 export interface TelemetryEvidenceSnapshot {
@@ -59,12 +53,6 @@ export class TelemetryError extends Error {
 
 function fail(reasonCode: string, message: string): never {
   throw new TelemetryError(reasonCode, message);
-}
-
-function errorCode(error: unknown): string | undefined {
-  return error !== null && typeof error === "object" && typeof (error as { readonly code?: unknown }).code === "string"
-    ? (error as { readonly code: string }).code
-    : undefined;
 }
 
 function object(value: unknown, label: string): Record<string, unknown> {
@@ -182,26 +170,6 @@ export function validateTelemetryRecord(value: unknown): TelemetryRecord {
   return record;
 }
 
-function telemetryId(kind: string, at: string, session: string, body: TelemetryPayload): string {
-  return `telemetry:${canonicalSha256({ schemaVersion: TELEMETRY_SCHEMA_VERSION, kind, at, session, payload: body }).slice(0, 24)}`;
-}
-
-export function createTelemetryRecord(input: {
-  readonly at: string;
-  readonly kind: string;
-  readonly session: string;
-  readonly payload: TelemetryPayload;
-  readonly id?: string;
-}): TelemetryRecord {
-  const body = payload(input.payload);
-  const at = requiredText(input.at, "at", 64);
-  const session = requiredText(input.session, "session");
-  const kind = requiredText(input.kind, "kind", 128);
-  try { parseStrictInstant(at); } catch { fail("TELEMETRY_RECORD_INVALID", "at is not a strict instant"); }
-  const id = input.id ?? telemetryId(kind, at, session, body);
-  return validateTelemetryRecord({ schemaVersion: TELEMETRY_SCHEMA_VERSION, id, at, kind, session, payload: body });
-}
-
 export function telemetryEvidenceSnapshot(record: TelemetryRecord): TelemetryEvidenceSnapshot {
   const validated = validateTelemetryRecord(record);
   return Object.freeze({
@@ -215,250 +183,4 @@ export function telemetryEvidenceSnapshot(record: TelemetryRecord): TelemetryEvi
       payload: validated.payload,
     }),
   });
-}
-
-function rootDirectory(root: string): string {
-  if (typeof root !== "string" || !root.startsWith("/") || root.includes("\u0000")) fail("TELEMETRY_ROOT_INVALID", "telemetry root must be an absolute path");
-  return resolve(root);
-}
-
-function fileFor(root: string, at: string): string {
-  return join(rootDirectory(root), "telemetry", `${new Date(at).toISOString().slice(0, 10)}.ndjson`);
-}
-
-async function regularDirectory(path: string, create = false): Promise<void> {
-  let stats;
-  try { stats = await lstat(path); }
-  catch (error) {
-    if (!create || errorCode(error) !== "ENOENT") throw error;
-    try { await mkdir(path, { recursive: false, mode: 0o700 }); }
-    catch (mkdirError) { if (errorCode(mkdirError) !== "EEXIST") throw mkdirError; }
-    stats = await lstat(path);
-  }
-  if (!stats.isDirectory() || stats.isSymbolicLink()) fail("TELEMETRY_ROOT_INVALID", `${path} must be a real directory`);
-}
-
-async function regularFileIfPresent(path: string): Promise<void> {
-  try {
-    const stats = await lstat(path);
-    if (!stats.isFile() || stats.isSymbolicLink()) fail("TELEMETRY_FILE_INVALID", `${path} must be a regular file`);
-  } catch (error) {
-    if (errorCode(error) !== "ENOENT") throw error;
-  }
-}
-
-async function telemetryLock(lockPath: string): Promise<void> {
-  const started = Date.now();
-  for (;;) {
-    try {
-      await mkdir(lockPath, { recursive: false, mode: 0o700 });
-      return;
-    } catch (error) {
-      if (errorCode(error) !== "EEXIST") throw error;
-      if (Date.now() - started >= 2_000) fail("TELEMETRY_LOCKED", "telemetry writer lock did not clear");
-      await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
-    }
-  }
-}
-
-function lineRecord(path: string, line: string, lineNumber: number): { record?: TelemetryRecord; problem?: { path: string; line: number; reasonCode: string } } {
-  try { return { record: validateTelemetryRecord(JSON.parse(line)) }; }
-  catch (error) { return { problem: { path, line: lineNumber, reasonCode: error !== null && typeof error === "object" && typeof (error as { readonly reasonCode?: unknown }).reasonCode === "string" ? (error as { readonly reasonCode: string }).reasonCode : "TELEMETRY_RECORD_INVALID" } }; }
-}
-
-export async function appendTelemetryRecord(root: string, record: TelemetryRecord): Promise<{ readonly record: TelemetryRecord; readonly path: string; readonly duplicate: boolean }> {
-  const validated = validateTelemetryRecord(record);
-  const path = fileFor(root, validated.at);
-  const directory = dirname(path);
-  await regularDirectory(rootDirectory(root), true);
-  await regularDirectory(directory, true);
-  await regularFileIfPresent(path);
-  const lockPath = `${path}.lock`;
-  await telemetryLock(lockPath);
-  try {
-    let existing = "";
-    try { existing = await readFile(path, "utf8"); } catch (error) { if (errorCode(error) !== "ENOENT") throw error; }
-    for (const [index, line] of existing.split("\n").entries()) {
-      if (line.length === 0) continue;
-      const parsed = lineRecord(path, line, index + 1).record;
-      if (parsed?.id === validated.id) return { record: parsed, path, duplicate: true };
-    }
-    const serialized = canonicalJson(validated as unknown as import("../../protocol/src/index.js").JsonValue);
-    const prefix = existing.length > 0 && !existing.endsWith("\n") ? "\n" : "";
-    await appendFile(path, `${prefix}${serialized}`, { mode: 0o600 });
-    return { record: validated, path, duplicate: false };
-  } finally {
-    await rm(lockPath, { recursive: true, force: true });
-  }
-}
-
-export async function readTelemetryRecords(root: string, options: {
-  readonly kind?: string;
-  readonly taskClass?: string;
-  readonly since?: string;
-  readonly limit?: number;
-  readonly offset?: number;
-} = {}): Promise<TelemetryReadResult> {
-  if (options.kind !== undefined) requiredText(options.kind, "kind", 128);
-  if (options.taskClass !== undefined) requiredText(options.taskClass, "taskClass", 128);
-  const since = options.since === undefined ? undefined : (() => {
-    try { return parseStrictInstant(options.since); } catch { fail("TELEMETRY_FILTER_INVALID", "since is not a strict instant"); }
-  })();
-  const offset = options.offset === undefined ? 0 : options.offset;
-  const limit = options.limit === undefined ? 100 : options.limit;
-  if (!Number.isSafeInteger(offset) || offset < 0) fail("TELEMETRY_FILTER_INVALID", "offset must be a non-negative integer");
-  if (!Number.isSafeInteger(limit) || limit < 1) fail("TELEMETRY_FILTER_INVALID", "limit must be a positive integer");
-  const base = rootDirectory(root);
-  const directory = join(base, "telemetry");
-  try {
-    const rootStats = await lstat(base);
-    if (!rootStats.isDirectory() || rootStats.isSymbolicLink()) fail("TELEMETRY_ROOT_INVALID", `${base} must be a real directory`);
-  } catch (error) {
-    if (errorCode(error) === "ENOENT") return { records: [], total: 0, offset, limit, problems: [] };
-    throw error;
-  }
-  let names: string[];
-  try {
-    const directoryStats = await lstat(directory);
-    if (!directoryStats.isDirectory() || directoryStats.isSymbolicLink()) fail("TELEMETRY_ROOT_INVALID", `${directory} must be a real directory`);
-    names = (await readdir(directory, { withFileTypes: true })).filter((entry) => entry.isFile() && /^\d{4}-\d{2}-\d{2}\.ndjson$/u.test(entry.name)).map((entry) => entry.name).sort();
-  }
-  catch (error) { if (errorCode(error) === "ENOENT") return { records: [], total: 0, offset, limit, problems: [] }; throw error; }
-  const records: TelemetryRecord[] = [];
-  const problems: { path: string; line: number; reasonCode: string }[] = [];
-  for (const name of names) {
-    const path = join(directory, basename(name));
-    await regularFileIfPresent(path);
-    const source = await readFile(path, "utf8");
-    for (const [index, line] of source.split("\n").entries()) {
-      if (line.length === 0) continue;
-      const parsed = lineRecord(path, line, index + 1);
-      if (parsed.problem) problems.push(parsed.problem);
-      else if (parsed.record) records.push(parsed.record);
-    }
-  }
-  const filtered = records.filter((record) => (options.kind === undefined || record.kind === options.kind)
-    && (options.taskClass === undefined || record.payload.taskClass === options.taskClass)
-    && (since === undefined || parseStrictInstant(record.at) >= since));
-  filtered.sort((left, right) => {
-    const leftAt = parseStrictInstant(left.at);
-    const rightAt = parseStrictInstant(right.at);
-    return leftAt < rightAt ? -1 : leftAt > rightAt ? 1 : left.id.localeCompare(right.id);
-  });
-  return { records: filtered.slice(offset, offset + limit), total: filtered.length, offset, limit, problems };
-}
-
-export async function readTelemetryStats(root: string, options: {
-  readonly kind?: string;
-  readonly taskClass?: string;
-  readonly since?: string;
-} = {}): Promise<{
-  readonly records: number;
-  readonly countsByKind: Readonly<Record<string, number>>;
-  readonly usage: { readonly observedRecords: number; readonly inputTokens: number | null; readonly outputTokens: number | null; readonly totalTokens: number | null };
-  readonly problems: TelemetryReadResult["problems"];
-}> {
-  const result = await readTelemetryRecords(root, {
-    ...(options.kind === undefined ? {} : { kind: options.kind }),
-    ...(options.taskClass === undefined ? {} : { taskClass: options.taskClass }),
-    ...(options.since === undefined ? {} : { since: options.since }),
-    limit: Number.MAX_SAFE_INTEGER,
-  });
-  const counts = new Map<string, number>();
-  let observedRecords = 0;
-  let inputTotal = 0;
-  let outputTotal = 0;
-  let totalTotal = 0;
-  let inputKnown = false;
-  let outputKnown = false;
-  let totalKnown = false;
-  for (const record of result.records) {
-    counts.set(record.kind, (counts.get(record.kind) ?? 0) + 1);
-    const usageValue = record.payload.usage as TelemetryUsage | null | undefined;
-    if (usageValue !== null && typeof usageValue === "object") {
-      observedRecords += 1;
-      if (typeof usageValue.inputTokens === "number") { inputKnown = true; inputTotal += usageValue.inputTokens; }
-      if (typeof usageValue.outputTokens === "number") { outputKnown = true; outputTotal += usageValue.outputTokens; }
-      if (typeof usageValue.totalTokens === "number") { totalKnown = true; totalTotal += usageValue.totalTokens; }
-    }
-  }
-  const countsByKind = Object.fromEntries([...counts.entries()].sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0));
-  return {
-    records: result.total,
-    countsByKind,
-    usage: {
-      observedRecords,
-      inputTokens: inputKnown ? inputTotal : null,
-      outputTokens: outputKnown ? outputTotal : null,
-      totalTokens: totalKnown ? totalTotal : null,
-    },
-    problems: result.problems,
-  };
-}
-
-function telemetryManifest(value: unknown): readonly { readonly file: string; readonly closedAt: string }[] {
-  const entry = object(value, "telemetry manifest");
-  if (entry.schemaVersion !== "tcrn.telemetry-manifest.v1" || !Array.isArray(entry.days)) fail("TELEMETRY_MANIFEST_INVALID", "telemetry manifest");
-  return entry.days.map((dayEntry, index) => {
-    const day = object(dayEntry, `telemetry manifest day ${index}`);
-    const file = requiredText(day.file, "telemetry manifest file", 64);
-    const closedAt = requiredText(day.closedAt, "telemetry manifest closedAt", 64);
-    if (!/^\d{4}-\d{2}-\d{2}\.ndjson$/u.test(file)) fail("TELEMETRY_MANIFEST_INVALID", "telemetry manifest file name");
-    try { parseStrictInstant(closedAt); } catch { fail("TELEMETRY_MANIFEST_INVALID", "telemetry manifest closedAt"); }
-    return { file, closedAt };
-  });
-}
-
-/** Delete only old real day files explicitly registered as closed in a manifest. */
-export async function pruneTelemetryRecords(root: string, options: {
-  readonly now?: string;
-  readonly retentionDays?: number;
-} = {}): Promise<{ readonly deleted: readonly string[]; readonly skipped: readonly string[] }> {
-  const now = options.now ?? new Date().toISOString();
-  const retentionDays = options.retentionDays ?? TELEMETRY_RETENTION_DAYS;
-  if (!Number.isSafeInteger(retentionDays) || retentionDays < 0) fail("TELEMETRY_FILTER_INVALID", "retentionDays must be a non-negative integer");
-  let cutoff;
-  try { cutoff = parseStrictInstant(now) - BigInt(retentionDays) * 86_400_000_000_000n; }
-  catch { fail("TELEMETRY_FILTER_INVALID", "now is not a strict instant"); }
-  const base = rootDirectory(root);
-  const directory = join(base, "telemetry");
-  try { await regularDirectory(base, false); } catch (error) {
-    if (errorCode(error) === "ENOENT") return { deleted: [], skipped: ["manifest.json"] };
-    throw error;
-  }
-  try { await regularDirectory(directory, false); } catch (error) {
-    if (errorCode(error) === "ENOENT") return { deleted: [], skipped: ["manifest.json"] };
-    throw error;
-  }
-  const manifestPath = join(directory, "manifest.json");
-  await regularFileIfPresent(manifestPath);
-  let manifestSource;
-  try { manifestSource = await readFile(manifestPath, "utf8"); }
-  catch (error) {
-    if (errorCode(error) === "ENOENT") return { deleted: [], skipped: ["manifest.json"] };
-    throw error;
-  }
-  const days = telemetryManifest(JSON.parse(manifestSource));
-  const deleted: string[] = [];
-  const skipped: string[] = [];
-  for (const dayEntry of days) {
-    if (parseStrictInstant(dayEntry.closedAt) > cutoff) { skipped.push(dayEntry.file); continue; }
-    const path = join(directory, dayEntry.file);
-    try {
-      const stats = await lstat(path);
-      if (!stats.isFile() || stats.isSymbolicLink()) fail("TELEMETRY_FILE_INVALID", `${path} must be a regular file`);
-      await rm(path);
-      deleted.push(dayEntry.file);
-    } catch (error) {
-      if (errorCode(error) === "ENOENT") { skipped.push(dayEntry.file); continue; }
-      throw error;
-    }
-  }
-  return { deleted, skipped };
-}
-
-export async function readTelemetryRecordById(root: string, id: string): Promise<TelemetryRecord | null> {
-  if (!/^telemetry:[a-f0-9]{24}$/u.test(id)) return null;
-  const result = await readTelemetryRecords(root, { limit: Number.MAX_SAFE_INTEGER });
-  return result.records.find((record) => record.id === id) ?? null;
 }

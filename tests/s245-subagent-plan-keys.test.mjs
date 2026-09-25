@@ -55,42 +55,40 @@ test("S369: dispatch settings are cataloged, sorted, and vocabulary-linked", asy
     assert.equal(entry.type, "string");
     assert.equal(entry.defaultValue.length > 0, true);
   }
-  const classes = await invoke(["dispatch-classes-list", "--workspace", workspace]);
-  assert.deepEqual(Object.keys(classes.classes).sort(), ["acceptance", "chain-ops", "decision", "dispatch-review", "docs", "implement", "knowledge-expand", "plan", "research", "retrieval-gate"]);
-  assert.ok(Object.values(classes.classes).every((value) => typeof value.dispatch === "boolean" && typeof value.verify === "boolean"));
-  const modes = await invoke(["dispatch-mode-list", "--workspace", workspace]);
-  assert.deepEqual(Object.keys(modes.modes).sort(), ["eco", "frontier"]);
-  const expectedClasses = Object.keys(classes.classes).sort();
-  for (const mapping of Object.values(modes.modes)) assert.deepEqual(Object.keys(mapping).sort(), expectedClasses);
+  // The dispatch-* read verbs are retired (TCRN-CROSS-STORY-467 R3); the default classes and
+  // modes are read from the settings catalog they always came from.
+  const defaultOf = (key) => JSON.parse(catalog.settings.find((entry) => entry.key === key).defaultValue);
+  const classes = defaultOf("execution.dispatchClasses");
+  assert.deepEqual(Object.keys(classes).sort(), ["acceptance", "chain-ops", "decision", "dispatch-review", "docs", "implement", "knowledge-expand", "plan", "research", "retrieval-gate"]);
+  assert.ok(Object.values(classes).every((value) => typeof value.dispatch === "boolean" && typeof value.verify === "boolean"));
+  const modes = defaultOf("execution.dispatchModes");
+  assert.deepEqual(Object.keys(modes).sort(), ["eco", "frontier"]);
+  const expectedClasses = Object.keys(classes).sort();
+  for (const mapping of Object.values(modes)) assert.deepEqual(Object.keys(mapping).sort(), expectedClasses);
 
   const vocabulary = await invoke(["vocabulary"]);
   assert.equal(vocabulary.hostValueKind, "string");
   assert.equal(vocabulary.effortValueKind, "string");
   assert.deepEqual(vocabulary.hosts, ["claude-code", "codex"]);
   assert.equal(Object.hasOwn(vocabulary, "roles"), false);
-  assert.equal(vocabulary.settingsEnums.find((term) => term.key === "execution.dispatchMode").valueSource, "dispatch-mode-list");
+  assert.equal(vocabulary.settingsEnums.find((term) => term.key === "execution.dispatchMode").valueSource, "settings-catalog");
   assert.equal(vocabulary.settingsEnums.find((term) => term.key === "execution.claudeCodeSubagentPlan").valueSource, "legacy-model-plan-history");
   assert.equal(vocabulary.settingsEnums.find((term) => term.key === "execution.codexSubagentPlan").valueSource, "legacy-model-plan-history");
 });
 
-test("S369: custom classes and modes merge, while unknown hosts stay absent from renderer hints", async (t) => {
+// The dispatch-* verbs that merged custom classes, modes and tiers are retired
+// (TCRN-CROSS-STORY-467 R3). What stands: a dispatch setting written directly is still
+// validated, and the retired model-plan names point at the reads that survive.
+test("S369: a dispatch setting written directly is validated, and the retired model-plan names point at the surviving reads", async (t) => {
   const workspace = await fixture(t);
-  const tiers = await invoke(write("dispatch-tiers-set", workspace, 0, 1, ["--host", "gemini", "--tiers", JSON.stringify({ flagship: null, main: { model: "gemini-main", effort: "xhigh2" }, economy: null })]));
-  assert.equal(tiers.reasonCode, "DISPATCH_CONFIG_WRITE_COMMITTED");
-  const classes = await invoke(write("dispatch-classes-set", workspace, 1, 2, ["--classes", JSON.stringify({ "review-visual": { dispatch: false, verify: true } })]));
-  const mode = await invoke(write("dispatch-mode-set", workspace, 2, 3, ["--name", "visual", "--mapping", JSON.stringify({ "review-visual": "main" })]));
-  assert.equal(classes.version, 2);
-  assert.equal(mode.version, 3);
-  const resolved = await invoke(["dispatch-mode-list", "--workspace", workspace, "--host", "gemini", "--class", "review-visual", "--mode", "visual"]);
-  assert.deepEqual(resolved.resolution.value, { model: "gemini-main", effort: "xhigh2" });
   const vocabulary = await invoke(["vocabulary"]);
   assert.equal(vocabulary.hosts.includes("gemini"), false);
   assert.equal(Object.hasOwn(vocabulary, "efforts"), false);
 
-  const bypass = await invoke(write("settings-set", workspace, 3, 4, ["--key", "execution.dispatchClasses", "--value", JSON.stringify({ "bad-class": { dispatch: true } })]));
+  const bypass = await invoke(write("settings-set", workspace, 0, 1, ["--key", "execution.dispatchClasses", "--value", JSON.stringify({ "bad-class": { dispatch: true } })]));
   assert.equal(bypass.reasonCode, "DISPATCH_CLASS_BEHAVIOUR_REQUIRED");
-  assert.equal((await invoke(["status", "--workspace", workspace])).version, 3);
+  assert.equal((await invoke(["status", "--workspace", workspace])).version, 0);
   const retired = await invoke(["model-plan-list", "--workspace", workspace]);
   assert.equal(retired.reasonCode, "CLI_COMMAND_UNKNOWN");
-  assert.match(retired.message, /dispatch-classes-list.*dispatch-mode-list.*vocabulary/u);
+  assert.match(retired.message, /settings-catalog.*vocabulary/u);
 });

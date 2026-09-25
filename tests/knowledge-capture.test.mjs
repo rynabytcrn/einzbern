@@ -8,6 +8,7 @@
 
 import assert from "node:assert/strict";
 import childProcess from "node:child_process";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { syncBuiltinESMExports } from "node:module";
@@ -24,7 +25,6 @@ import {
   knowledgeConflictHits,
   knowledgeRelevanceScore,
   listKnowledgeMetadata,
-  readTelemetryRecords,
   LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalJson } from "../dist/build/packages/protocol/src/index.js";
@@ -177,7 +177,8 @@ test("MIN-225: a Stop writes no observation boundary and spawns no boundary chil
     }
     assert.deepEqual(spawned.filter((argv) => argv.includes("--observation-boundary")), [], "no boundary child is spawned");
     const telemetryRoot = join(fixture.container, ".tcrn-workspace", "cross-project", "transient");
-    assert.deepEqual((await readTelemetryRecords(telemetryRoot, { limit: Number.MAX_SAFE_INTEGER })).records, [], "and no boundary row is written");
+    // The telemetry store is retired (TCRN-CROSS-STORY-467 R3): nothing may create it.
+    assert.equal(existsSync(join(telemetryRoot, "telemetry")), false, "and no boundary row is written");
   } finally {
     childProcess.spawnSync = original;
     syncBuiltinESMExports();

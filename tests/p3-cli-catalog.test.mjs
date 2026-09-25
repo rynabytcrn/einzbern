@@ -120,20 +120,6 @@ test("WSB-7/WSD-2 retired by STORY-467 R1: no verb carries expected-version or a
   }
 });
 
-test("dispatch tier catalog declares its payload and write flags", async () => {
-  const entry = COMMAND_CATALOG.find((candidate) => candidate.name === "dispatch-tiers-set");
-  assert.ok(entry);
-  assert.deepEqual(entry.flags.map((flag) => flag.name), [
-    "workspace", "at", "host", "tiers", "actor",
-  ]);
-  assert.deepEqual(entry.flags.find((flag) => flag.name === "tiers"), { name: "tiers", required: true, valueKind: "string" });
-
-  const policy = JSON.parse(await readFile(new URL("../scripts/policy/source-allowlist.json", import.meta.url), "utf8"));
-  for (const path of ["packages/core/src/effort.ts", "portal/design-baseline.html", "scripts/s278-component-coverage.mjs"]) {
-    assert.ok(policy.allowedFiles.includes(path), `${path} must be source-allowlisted`);
-  }
-});
-
 test("S369 retired model-plan commands refuse with and without their legacy flags", async () => {
   for (const command of ["model-plan-assign", "model-plan-list", "model-plan-remove", "model-plan-set", "model-plan-unassign"]) {
     const empty = await invoke([command]);
@@ -143,7 +129,8 @@ test("S369 retired model-plan commands refuse with and without their legacy flag
     assert.equal(legacy.ok, false);
     assert.equal(legacy.reasonCode, "CLI_COMMAND_UNKNOWN");
   }
-  assert.equal(COMMAND_CATALOG.filter((entry) => entry.name.startsWith("dispatch-")).length, 5);
+  // The dispatch-* verbs went too (TCRN-CROSS-STORY-467 R3).
+  assert.equal(COMMAND_CATALOG.filter((entry) => entry.name.startsWith("dispatch-")).length, 0);
   assert.equal(COMMAND_CATALOG.filter((entry) => entry.name.startsWith("model-plan-")).length, 0);
 });
 

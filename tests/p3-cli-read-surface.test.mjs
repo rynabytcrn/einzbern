@@ -602,23 +602,15 @@ test("INC-027: the default window never stands in for a supplied one, and event-
   assert.equal(await reasonOf(["event-list", ...ws]), "WORKSPACE_VIEW_STALE");
 });
 
-// TCRN-CROSS-MIN-225 D3 (TCRN-CROSS-SUB-257): per-channel observation days are no longer sealed or
-// judged, so the read is retired. Its catalog entry stays as v1.2.0 published it (the catalog does
-// not shrink before a release that installs the change); the arguments are still validated, and
-// the verb then refuses by name without opening the workspace or reading any telemetry.
-test("MIN-225: telemetry-observation keeps its catalog entry and refuses as retired without reading telemetry", async (context) => {
+// TCRN-CROSS-MIN-225 D3 (TCRN-CROSS-SUB-257) retired telemetry-observation's per-channel days, and
+// TCRN-CROSS-STORY-467 R3 retired the telemetry store itself: the three telemetry reads are gone
+// from the catalog and the dispatcher, and asking for one opens nothing.
+test("STORY-467 R3: the telemetry reads are retired with the store they read", async (context) => {
   const fx = await fixture(context);
   const before = await validateWorkspace(fx.workspace);
-  assert.equal(await reasonOf(["telemetry-observation", "--workspace", fx.workspace, "--day", "2026-09-10"]), "TELEMETRY_OBSERVATION_RETIRED");
-  assert.equal(await reasonOf(["telemetry-observation", "--workspace", join(fx.base, "no-such-workspace"), "--day", "2026-09-10"]), "TELEMETRY_OBSERVATION_RETIRED", "the workspace is never opened");
-  assert.equal(await reasonOf(["telemetry-observation", "--workspace", fx.workspace]), "CLI_ARGUMENT_MISSING");
-  assert.equal(await reasonOf(["telemetry-observation", "--day", "2026-09-10"]), "CLI_ARGUMENT_MISSING");
-  assert.equal(await reasonOf(["telemetry-observation", "--workspace", fx.workspace, "--day", "2026-02-30"]), "CLI_ARGUMENT_MALFORMED");
-  assert.deepEqual(COMMAND_CATALOG.find((entry) => entry.name === "telemetry-observation"), {
-    name: "telemetry-observation",
-    availability: "cli",
-    mutates: false,
-    flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "day", required: true, valueKind: "string" }],
-  }, "the catalog entry is the v1.2.0 one");
+  for (const verb of ["telemetry-list", "telemetry-observation", "telemetry-stats"]) {
+    assert.equal(await reasonOf([verb, "--workspace", fx.workspace]), "CLI_COMMAND_UNKNOWN", verb);
+    assert.equal(COMMAND_CATALOG.some((entry) => entry.name === verb), false, `${verb} is not in the catalog`);
+  }
   assert.equal((await validateWorkspace(fx.workspace)).version, before.version, "refusing appends nothing");
 });

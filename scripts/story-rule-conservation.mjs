@@ -14,9 +14,7 @@ export const REQUIRED_SOURCES = Object.freeze([
   "mana-orchestrate/skill/mana-orchestrate/references/workflow-operations.md",
   "TCRN-AOS/deploy/aos-local-client/closeout-chain-proof.mjs",
   "scripts/closeout-verify.mjs",
-  "scripts/dispatch-adapter.mjs",
   "tests/closeout-verify-dispositions.test.mjs",
-  "tests/dispatch-native.test.mjs",
   "chain:cross-project:TCRN-CROSS-MIN-CHAIN-NATIVE-20260916",
   "tests/story-scope-compliance.test.mjs",
 ]);

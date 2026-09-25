@@ -482,7 +482,6 @@ test("STORY-460 AC4: running hook processes are host hooks, not running agents, 
     `node ${REPOSITORY_ROOT}/scripts/ssh-write-observer.mjs`,
     `node ${REPOSITORY_ROOT}/scripts/knowledge-capture-hook.mjs --container-root /container --host claude`,
     `node ${REPOSITORY_ROOT}/scripts/agents-zero-hook.mjs`,
-    `node ${REPOSITORY_ROOT}/scripts/dispatch-telemetry-hook.mjs --host codex`,
     `${process.execPath} ${REPOSITORY_ROOT}/scripts/knowledge-inject.mjs --hook-input {} --container-root /container --host claude`,
   ].map((command, index) => ({ pid: 200 + index, ppid: 1, pgid: 200 + index, state: "S", command }));
   const hookSummary = summarize(hooks, { selfPid: 1, selfPgid: null });

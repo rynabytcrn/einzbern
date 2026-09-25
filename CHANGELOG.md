@@ -61,6 +61,11 @@ The proof budget (its policy, the `verify:budget` and `report:budget` scripts an
 doctor's `proofBudget` leg), the governance leg (`verify:governance`: licences, lifecycle,
 vulnerability snapshot, Git history, with the history and vulnerability policy files) and
 coverage conservation with its baseline and waivers are gone. The test leg runs the suite only, and P1 runs twelve legs.
+Release trust is the install-tree digest: `einzbern-release-verify --tree <dir> --sha256
+<digest>` admits an unpacked release when its digest (sorted files, CRLF text read as LF,
+symbolic links refused) equals the stated one. The signed manifest, the external trust root,
+the in-toto build statement, the P8 trust leg, the helper trust archive and its install
+markers are gone, and the helper copies are accepted as directories.
 
 ## 1.2.1 — patch candidate
 

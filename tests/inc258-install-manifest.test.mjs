@@ -32,7 +32,6 @@ async function createInstallFixture(context, { skipItems = [] } = {}) {
 
     if (
       entry.acceptanceProbe.startsWith("probe:regular-directory") ||
-      entry.acceptanceProbe.startsWith("probe:helper-skill-digest") ||
       entry.acceptanceProbe.startsWith("probe:engine-version")
     ) {
       await mkdir(path, { recursive: true });
@@ -58,8 +57,9 @@ test("INC-258 install manifest matches the post-removal surface and rejects rest
   const fixture = await createInstallFixture(context, { skipItems: REMOVED_IDS });
   assertInstallManifestComplete(INSTALL_MANIFEST);
   // 20 until TCRN-CROSS-STORY-467 R3 retired the two adapter bundles, their two install
-  // receipts and the engine repository's own settings fixture.
-  assert.equal(INSTALL_MANIFEST.items.length, 15);
+  // receipts and the engine repository's own settings fixture; 14 since R2 retired the
+  // helper trust archive.
+  assert.equal(INSTALL_MANIFEST.items.length, 14);
   assert.deepEqual(REMOVED_IDS.filter((id) => INSTALL_MANIFEST.items.some((entry) => entry.id === id)), []);
   assert.deepEqual(REMOVED_IDS.filter((id) => INSTALL_MANIFEST_REQUIRED_ITEM_IDS.includes(id)), []);
   const restored = {

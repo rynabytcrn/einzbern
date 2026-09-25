@@ -23,12 +23,11 @@ roster in TCRN-CROSS-STORY-359; retained historical tags may still contain retir
 bytes, and no gate in this repository judges them.
 
 Dependencies must be exact versions, compatible with Apache-2.0 distribution,
-and added to the offline dependency and vulnerability policies. Source files
+and added to the offline dependency policy. Source files
 that accept comments must include `SPDX-License-Identifier: Apache-2.0`.
 
-Release behavior must fail closed when an external trust root is absent,
-candidate-controlled, expired, revoked, or inconsistent with the signed
-manifest.
+Release admission must fail closed when an unpacked release tree's install-tree
+digest differs from the digest stated for it (`specs/release-trust-v1.md`).
 
 ## Proof budget, surface caps and coverage conservation are retired
 

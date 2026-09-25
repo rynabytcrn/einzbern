@@ -121,13 +121,12 @@ import type { JsonValue, PlannedDeliveryKind, WorkRecord, WorkStatus } from "../
 // runtime check the repo had.
 import type { ProjectRecord } from "../../core/src/index.js";
 
+// einzbern-release-verify's inputs: the unpacked tree and its stated install-tree digest.
+// The trust root, bundle, subject, repository, workflow and clock it took are retired with
+// the signature chain (TCRN-CROSS-STORY-467 R2).
 export const RELEASE_REQUIRED_ARGUMENTS = [
-  "trust-root",
-  "bundle",
-  "subject",
-  "repository",
-  "workflow",
-  "now",
+  "tree",
+  "sha256",
 ] as const;
 
 export type ReleaseRequiredArgument =

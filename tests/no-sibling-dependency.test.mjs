@@ -93,7 +93,7 @@ test("invalid, incomplete, and ambiguous manifest inputs are not-verifiable", ()
   assert.equal(incomplete.reasonCode, "SIBLING_DEPENDENCY_NOT_VERIFIABLE");
   assert.equal(incomplete.comparable, false);
 
-  const helperItems = INSTALL_MANIFEST.items.filter((item) => item.acceptanceProbe.includes("probe:helper-skill-digest"));
+  const helperItems = INSTALL_MANIFEST.items.filter((item) => ["machine.agents-skill", "machine.claude-skill"].includes(item.id));
   const ambiguous = { ...INSTALL_MANIFEST, items: INSTALL_MANIFEST.items.map((item) => item === helperItems[0] ? { ...item, pathTemplate: "<HOME>/.agents/skills/other-helper" } : item) };
   const ambiguousResult = judgeNoSiblingDependency({ repoRoot: REPO_ROOT, manifest: ambiguous });
   assert.equal(ambiguousResult.reasonCode, "SIBLING_DEPENDENCY_NOT_VERIFIABLE");

@@ -11,10 +11,10 @@ compatibility, or production support.
 
 ## Release
 
-Release mode is admitted only when `scripts/verify-release-trust.mjs` validates
-an immutable bundle against a Release Trust Root V1 document outside the
-candidate checkout. Missing, candidate-controlled, expired, revoked, rolled
-back, or claim-mismatched trust input is rejected.
+Release mode is admitted only when `einzbern-release-verify`
+(`scripts/verify-release-trust.mjs`) finds that an unpacked release tree's
+install-tree digest equals the one stated for it. A changed byte, a symbolic link
+or any other non-regular file in the tree is rejected.
 
 P1 defines and tests this admission boundary. It does not publish a release.
 

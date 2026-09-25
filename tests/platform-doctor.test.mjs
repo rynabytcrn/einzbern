@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -417,7 +416,7 @@ async function completeInstallFixture(context, { engineVersion = "0.11.15", help
   await writeFile(join(root, docsDirectory, "platform-root-agents.md"), `${topology}fixture\n`);
   for (const entry of INSTALL_MANIFEST.items) {
     const path = entry.pathTemplate.replaceAll("<PLATFORM_ROOT>", root).replaceAll("<HOME>", home);
-    if (entry.acceptanceProbe.startsWith("probe:regular-directory") || entry.acceptanceProbe.startsWith("probe:helper-skill-digest") || entry.acceptanceProbe.startsWith("probe:engine-version")) await mkdir(path, { recursive: true });
+    if (entry.acceptanceProbe.startsWith("probe:regular-directory") || entry.acceptanceProbe.startsWith("probe:engine-version")) await mkdir(path, { recursive: true });
     else {
       await mkdir(join(path, ".."), { recursive: true });
       await writeFile(path, "{}\n");
@@ -453,9 +452,6 @@ async function completeInstallFixture(context, { engineVersion = "0.11.15", help
   for (const host of [".agents", ".claude"]) {
     await mkdir(join(home, host, "skills", BRAND.helper.id), { recursive: true });
     await writeFile(join(home, host, "skills", BRAND.helper.id, "SKILL.md"), `${helperPin} \`v${helperVersion}\`\n`);
-  }
-  for (const host of ["agents", "claude"]) {
-    await writeFile(join(home, DIRECTORY.device, `installed-copy-${host}.json`), JSON.stringify({ version: `v${helperVersion}` }));
   }
   return { root, home };
 }
@@ -727,23 +723,6 @@ test("S270 install wiring executes every safe manifest probe, including codex co
   assert.equal(wiring.probes, "safe-manifest-expression");
 });
 
-test("S270 helper copies reject a declared digest mismatch", async (context) => {
-  const fixture = await completeInstallFixture(context);
-  const agents = join(fixture.home, ".agents", "skills", BRAND.helper.id, "SKILL.md");
-  const claude = join(fixture.home, ".claude", "skills", BRAND.helper.id, "SKILL.md");
-  const digests = {
-    "machine.agents-skill": createHash("sha256").update(await readFile(agents)).digest("hex"),
-    "machine.claude-skill": createHash("sha256").update(await readFile(claude)).digest("hex"),
-  };
-  await writeFile(agents, "tampered synthetic helper\n");
-  const result = await inspectInstallFixture(fixture, {
-    enforceHelperDigest: true,
-    helperSkillDigests: digests,
-  });
-  assert.equal(result.reasonCode, "PLATFORM_HELPER_COPY_DIGEST_MISMATCH");
-  assert.equal(result.checks.find((item) => item.name === "helperCopies").mismatched[0].id, "machine.agents-skill");
-});
-
 test("S270 lstat plus file-kind probing rejects a directory in a file residence", async (context) => {
   const fixture = await completeInstallFixture(context);
   const config = join(fixture.home, ".codex", "config.toml");
@@ -763,63 +742,6 @@ test("S270 unsupported acceptanceProbe syntax is a red leg rather than a shell e
   const result = await inspectInstallFixture(fixture, { manifest });
   assert.equal(result.reasonCode, "PLATFORM_INSTALL_WIRING_INCOMPLETE");
   assert.equal(result.checks.find((item) => item.name === "installWiring").invalid.find((item) => item.id === "machine.codex-config").reasonCode, "PLATFORM_ACCEPTANCE_PROBE_INVALID");
-});
-
-async function installTrustedHelperSource(fixture) {
-  const skill = await readFile(join(fixture.home, ".agents", "skills", BRAND.helper.id, "SKILL.md"));
-  const archive = {
-    entries: [{ path: "SKILL.md", contentBase64: skill.toString("base64"), sha256: createHash("sha256").update(skill).digest("hex") }],
-    schemaVersion: "tcrn.workflow.helper.archive.v1",
-  };
-  const archiveBytes = Buffer.from(JSON.stringify(archive), "utf8");
-  await writeFile(join(fixture.home, DIRECTORY.device, "skill-archive.json"), archiveBytes);
-  await writeFile(join(fixture.home, DIRECTORY.device, "state.json"), JSON.stringify({
-    schemaVersion: "tcrn.workflow.helper.state.v1",
-    verifiedArchiveSha256: createHash("sha256").update(archiveBytes).digest("hex"),
-  }));
-}
-
-test("INC-161 helper digest probe resolves from the trusted archive/state and fails closed", async (context) => {
-  const fixture = await completeInstallFixture(context);
-  await installTrustedHelperSource(fixture);
-  const options = { enforceHelperDigest: true };
-  const green = await inspectInstallFixture(fixture, options);
-  const greenCheck = green.checks.find((item) => item.name === "helperCopies");
-  assert.equal(greenCheck.ok, true);
-  assert.equal(greenCheck.source, "trusted-archive-state");
-  assert.match(greenCheck.archiveDigest, /^[a-f0-9]{64}$/u);
-
-  await writeFile(join(fixture.home, ".agents", "skills", BRAND.helper.id, "SKILL.md"), "tampered trusted helper\n");
-  const tampered = await inspectInstallFixture(fixture, options);
-  assert.equal(tampered.reasonCode, "PLATFORM_HELPER_COPY_DIGEST_MISMATCH");
-
-  await rm(join(fixture.home, DIRECTORY.device, "skill-archive.json"));
-  const missingRoot = await inspectInstallFixture(fixture, options);
-  assert.equal(missingRoot.reasonCode, "PLATFORM_TRUST_ROOT_MISSING");
-
-  await installTrustedHelperSource(fixture);
-  await writeFile(join(fixture.home, DIRECTORY.device, "state.json"), JSON.stringify({
-    schemaVersion: "tcrn.workflow.helper.state.v1",
-    verifiedArchiveSha256: "0".repeat(64),
-  }));
-  const mismatchedState = await inspectInstallFixture(fixture, options);
-  assert.equal(mismatchedState.reasonCode, "PLATFORM_TRUST_ROOT_STATE_MISMATCH");
-});
-
-test("S273 trust archive freshness compares the archive to all installed consumers and marker versions", async (context) => {
-  const fixture = await completeInstallFixture(context);
-  const skillPath = join(fixture.home, ".agents", "skills", BRAND.helper.id, "SKILL.md");
-  const skill = await readFile(skillPath);
-  const entry = { path: "SKILL.md", contentBase64: skill.toString("base64"), sha256: createHash("sha256").update(skill).digest("hex") };
-  await writeFile(join(fixture.home, DIRECTORY.device, "skill-archive.json"), JSON.stringify({ schemaVersion: "tcrn.workflow.helper.archive.v1", entries: [entry] }));
-  // The canonical roster is agents + claude; the old codex marker is orphan history.
-  for (const host of ["agents", "claude", "codex"]) await writeFile(join(fixture.home, DIRECTORY.device, `installed-copy-${host}.json`), JSON.stringify({ version: "v0.11.14" }));
-  await writeFile(join(fixture.home, ".agents", "skills", BRAND.helper.id, "extra.md"), "drift\n");
-  const red = await inspectInstallFixture(fixture, { enforceTrustArchive: true });
-  const redCheck = red.checks.find((item) => item.name === "trustArchive");
-  assert.equal(redCheck.ok, false);
-  assert.equal(redCheck.reasonCode, "PLATFORM_TRUST_ARCHIVE_STALE");
-  assert.equal(redCheck.consumerProblems.length > 0, true);
 });
 
 test("STORY-286 the hook leg reads codex too, and absence is deferral rather than health", async (context) => {
@@ -962,53 +884,6 @@ test("MIN-103 the platform names a setting the placed Helper never teaches", asy
     helperSettingKeys: { catalog, taught: [...catalog, "some.future.key"] },
   });
   assert.equal(coverage(extra).ok, true);
-});
-
-// TCRN-CROSS-INC-233. Two internal-consistency checks were green while every host ran a
-// skill payload from the day before. `helperCopies` proves the deployed copies match the
-// locally trusted archive; `deploymentFreshness` proves the engine version string agrees
-// across them. Neither can see a trust root and its deployed copies going stale together,
-// which is what happened -- and the payload can move without the version string moving at
-// all, which is what made it invisible.
-//
-// The leg these criteria pin makes the one comparison nobody was making: the locally
-// trusted archive against what the helper repository has actually released.
-test("INC-233: helper release alignment separates stale, aligned, uncomparable and missing", async (context) => {
-  const fixture = await completeInstallFixture(context);
-  const leg = (result) => result.checks.find((entry) => entry.name === "helperReleaseAlignment");
-  const run = (helperReleaseAlignment) => inspectInstallFixture(fixture, { helperReleaseAlignment });
-
-  // Stale: the state this platform was actually in on 2026-08-19, with both existing
-  // checks green. Red leg: drop the inequality branch and it reads as aligned.
-  const stale = leg(await run({ published: "a".repeat(64), trusted: "b".repeat(64) }));
-  assert.equal(stale.ok, false);
-  assert.equal(stale.reasonCode, "PLATFORM_HELPER_PAYLOAD_STALE");
-  assert.equal(stale.published, "a".repeat(12));
-  assert.equal(stale.trusted, "b".repeat(12));
-  // The remedy must say deploying is an Owner stop. A red whose obvious fix looks like
-  // something the reader may simply do is how a separate stop gets inferred from a gate.
-  assert.match(stale.remedy, /Owner stop/u);
-
-  // Aligned. Red leg: return ok on any input and the leg stops distinguishing anything.
-  const digest = "c".repeat(64);
-  const aligned = leg(await run({ published: digest, trusted: digest }));
-  assert.equal(aligned.ok, true);
-  assert.equal(aligned.comparable, true);
-  assert.equal(aligned.digest, "c".repeat(12));
-
-  // A container that consumes the helper without checking it out cannot compare and must
-  // not be failed for that -- but "nothing to compare" must never read as "compared and
-  // equal". Red leg: drop `comparable` and those two answers become one.
-  const uncomparable = leg(await run({ published: null, trusted: "d".repeat(64) }));
-  assert.equal(uncomparable.ok, true, "a consumer container is not broken");
-  assert.equal(uncomparable.comparable, false);
-  assert.match(uncomparable.reason, /unknown here/u);
-
-  // Red leg: treat a missing trust root as uncomparable too, and a host with no installed
-  // helper at all reports the same green as one that is correctly aligned.
-  const missing = leg(await run({ published: "e".repeat(64), trusted: null }));
-  assert.equal(missing.ok, false);
-  assert.equal(missing.reasonCode, "PLATFORM_HELPER_TRUST_ROOT_MISSING");
 });
 
 // TCRN-CROSS-INC-224. Headroom is reported before the wall, not at it.

@@ -460,6 +460,54 @@ test("exact instants preserve nanoseconds and normalize offsets without Date par
   }
 });
 
+// The strict RFC 3339 grammar, stated as a corpus. It was pinned by an equivalence case
+// against the release-trust parser; that parser retired with the signature chain
+// (TCRN-CROSS-STORY-467 R2), and the corpus stays here so the product parser keeps its
+// accept and reject sets.
+test("the strict RFC 3339 grammar accepts and rejects exactly this corpus", () => {
+  const accepted = [
+    "2026-07-11T12:00:00Z",
+    "2026-07-11T12:00:00.1Z",
+    "2026-07-11T12:00:00.123Z",
+    "2026-07-11T12:00:00.123456789Z",
+    "2026-07-11T12:00:00+08:00",
+    "2026-07-11T12:00:00-05:30",
+    "2026-07-11T12:00:00.5+00:00",
+    "2024-02-29T00:00:00Z",
+    "2000-02-29T23:59:59Z",
+    "1970-01-01T00:00:00Z",
+    "2026-12-31T23:59:59.999999999-12:00",
+  ];
+  const rejected = [
+    "2026-07-11",
+    "July 11, 2026 12:00:00",
+    "2026-02-30T00:00:00Z",
+    "2023-02-29T00:00:00Z",
+    "1900-02-29T00:00:00Z",
+    "2026-13-01T00:00:00Z",
+    "2026-00-10T00:00:00Z",
+    "2026-07-00T00:00:00Z",
+    "2026-07-11T24:00:00Z",
+    "2026-07-11T12:60:00Z",
+    "2026-07-11T12:00:60Z",
+    "2026-07-11t12:00:00z",
+    "2026-07-11T12:00:00",
+    "2026-07-11T12:00:00.1234567890Z",
+    "2026-07-11T12:00:00.Z",
+    "2026-07-11T12:00:00+24:00",
+    "2026-07-11T12:00:00+08:60",
+    "2026-07-11T12:00:00 Z",
+    " 2026-07-11T12:00:00Z",
+    "",
+  ];
+  const admits = (value) => {
+    try { parseStrictInstant(value); return true; } catch { return false; }
+  };
+  for (const value of accepted) assert.equal(admits(value), true, `must accept ${value}`);
+  for (const value of rejected) assert.equal(admits(value), false, `must reject ${value}`);
+  for (const value of [null, undefined, 42, {}, [], new Date()]) assert.equal(admits(value), false, "non-strings are refused rather than coerced");
+});
+
 test("raw external keys reject non-ASCII aliases before normalization or case conversion", () => {
   assert.equal(canonicalExternalKey("ss"), "SS");
   for (const value of ["ß", "é", "ＳＳ", "é"]) {

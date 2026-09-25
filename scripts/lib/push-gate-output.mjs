@@ -7,7 +7,7 @@ const DIAGNOSTIC_WORD = /(?:^|[^A-Za-z])(?:warning|warn|error|errors|failed|fail
 const P8_SUCCESS_FIELDS = Object.freeze([
   "artifacts", "command", "mutation", "network", "ok", "p8BasisCommit", "privacy", "privacySurfaces",
   "publication", "reasonCode", "releaseStatus", "reproducibility", "sbom",
-  "sourceArchive", "staleReleaseArtifacts", "supportedAosReleases", "tag", "tests", "trust",
+  "sourceArchive", "staleReleaseArtifacts", "supportedAosReleases", "tag", "tests",
 ]);
 const P8_ARCHIVE_FIELDS = Object.freeze(["files", "path", "reasonCode", "sha256"]);
 const P8_SBOM_FIELDS = Object.freeze([
@@ -165,7 +165,7 @@ function inspectP8Receipt(receipt, expectedSourceFiles, expectedBasisCommit, fin
   if (receipt.tag !== P8_TAG) findings.push({ code: "P8_TAG_MISMATCH", location: "$.tag", expected: P8_TAG, actual: receipt.tag ?? null });
   if (typeof receipt.p8BasisCommit !== "string" || !/^[a-f0-9]{40}$/u.test(receipt.p8BasisCommit)) findings.push({ code: "P8_BASIS_COMMIT_INVALID", location: "$.p8BasisCommit" });
   if (typeof expectedBasisCommit === "string" && receipt.p8BasisCommit !== expectedBasisCommit) findings.push({ code: "P8_BASIS_COMMIT_MISMATCH", location: "$.p8BasisCommit", expected: expectedBasisCommit, actual: receipt.p8BasisCommit ?? null });
-  for (const [field, expected] of [["tests", "P8_WORKFLOW_RC_TESTS_VERIFIED"], ["trust", "TRUST_NEGATIVE_MATRIX_VERIFIED"], ["privacy", "PRIVACY_SOURCE_CLEAN"]]) {
+  for (const [field, expected] of [["tests", "P8_WORKFLOW_RC_TESTS_VERIFIED"], ["privacy", "PRIVACY_SOURCE_CLEAN"]]) {
     if (receipt[field] !== expected) findings.push({ code: "P8_SUCCESS_FIELD_INVALID", location: `$.${field}`, expected, actual: receipt[field] ?? null });
   }
   for (const field of ["network", "mutation", "publication"]) {

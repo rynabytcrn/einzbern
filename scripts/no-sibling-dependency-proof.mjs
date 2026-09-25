@@ -70,7 +70,9 @@ export class SiblingDependencyInputError extends Error {
 // same sibling tree.
 const HELPER_SKILL_DIRECTORY = new RegExp(`(?:^|/)${BRAND.helper.id}/?$`, "u");
 const HELPER_LOCAL_FOLDER = LOCAL_DIRECTORY_NAMES.helper.split("/").at(-1);
-const HELPER_SKILL_PROBE = /^probe:helper-skill-digest;source=trusted-archive-state;archive=skill-archive\.json;state=state\.json;marker=installed-copy-[^;]+\.json;entry=SKILL\.md$/u;
+// The Helper's two installed copies, named by manifest id since their digest probe retired
+// with the trusted archive (TCRN-CROSS-STORY-467 R2).
+const HELPER_SKILL_ITEM_IDS = Object.freeze(["machine.agents-skill", "machine.claude-skill"]);
 
 function ownPackageIdentity(repoRoot) {
   try {
@@ -113,7 +115,7 @@ export function canonicalSiblingRoster({ repoRoot = REPO_ROOT, manifest, manifes
   const self = ownPackageIdentity(repoRoot);
   if (!projectNames.includes(self)) throw new SiblingDependencyInputError(`repository identity ${self} is absent from the install-manifest project roster`);
 
-  const helperItems = resolvedManifest.items.filter((item) => typeof item?.acceptanceProbe === "string" && HELPER_SKILL_PROBE.test(item.acceptanceProbe));
+  const helperItems = resolvedManifest.items.filter((item) => HELPER_SKILL_ITEM_IDS.includes(item?.id));
   const helperNames = helperItems.map((item) => {
     return HELPER_SKILL_DIRECTORY.test(item.pathTemplate) ? BRAND.helper.id : null;
   });

@@ -13,7 +13,6 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // read surface and by this host probe; there is no second path table here.
 import {
   BRAND,
-  DIRECTORY,
   INSTALL_MANIFEST,
   LEGACY_BRAND_NAME,
   LEGACY_CONTROL_DIRECTORY,
@@ -382,63 +381,6 @@ async function inspectAgentsHistory(root) {
     });
   }
   return check("platformAgentsHistory", true, { bytes: liveBytes.length });
-}
-
-// TCRN-CROSS-INC-233: the one comparison nobody was making. `helperCopies` proves the
-// deployed skill copies match the locally trusted archive, and `deploymentFreshness`
-// proves the engine version string in each host's SKILL.md matches the engine's
-// package.json. Both were green on 2026-08-19 while every host carried a skill payload
-// from the day before -- because the payload can change without the version string
-// moving, and the deployed copies and the trust root were stale together, which is
-// exactly the state internal-consistency checks cannot see.
-//
-// What that cost: the corrected retrieval pipeline, the trailing-read guidance and the
-// commit-citation amendment were all published and none of them had reached either host.
-// A session on Claude Code or Codex was still reading a document naming five commands
-// the engine does not have.
-//
-// The helper repository is the authority for what has been released, and it may legally
-// be absent from a container that only consumes the helper. Absent is reported as
-// uncomparable rather than passed quietly, because "nothing to compare" and "compared
-// and equal" are the two answers this leg exists to keep apart.
-async function inspectHelperReleaseAlignment(platformRoot, homeRoot, options) {
-  if (options.helperReleaseAlignment && typeof options.helperReleaseAlignment === "object") {
-    const { published, trusted } = options.helperReleaseAlignment;
-    return helperReleaseVerdict(published ?? null, trusted ?? null, "synthetic");
-  }
-  const bootstrapPath = join(platformRoot, LOCAL_DIRECTORY_NAMES.helper, "bootstrap", "trusted-bootstrap.mjs");
-  let published = null;
-  try {
-    published = /EXPECTED_ARCHIVE_SHA256\s*=\s*'([0-9a-f]{64})'/u.exec(await readFile(bootstrapPath, "utf8"))?.[1] ?? null;
-  } catch (error) {
-    if (error?.code !== "ENOENT" && error?.code !== "ENOTDIR") throw error;
-  }
-  let trusted = null;
-  try {
-    trusted = createHash("sha256").update(await readFile(join(homeRoot, DIRECTORY.device, "skill-archive.json"))).digest("hex");
-  } catch (error) {
-    if (error?.code !== "ENOENT" && error?.code !== "ENOTDIR") throw error;
-  }
-  return helperReleaseVerdict(published, trusted, "helper-repository");
-}
-
-function helperReleaseVerdict(published, trusted, source) {
-  if (published === null) {
-    return check("helperReleaseAlignment", true, { comparable: false, reason: "no bootstrap in the helper repository, so the released payload is unknown here: TCRN-CROSS-STORY-382 shrank that repository to its Skill payload and this leg has had nothing to compare since", source });
-  }
-  if (trusted === null) {
-    return check("helperReleaseAlignment", false, { reasonCode: "PLATFORM_HELPER_TRUST_ROOT_MISSING", published: published.slice(0, 12), source });
-  }
-  if (published !== trusted) {
-    return check("helperReleaseAlignment", false, {
-      reasonCode: "PLATFORM_HELPER_PAYLOAD_STALE",
-      published: published.slice(0, 12),
-      trusted: trusted.slice(0, 12),
-      remedy: "the hosts carry a skill payload older than the helper's released one; deploying it is an Owner stop, not a consequence of the push that released it",
-      source,
-    });
-  }
-  return check("helperReleaseAlignment", true, { comparable: true, digest: trusted.slice(0, 12), source });
 }
 
 // TCRN-CROSS-STORY-361: the charter rule "no consumer, isolate it", with a leg that can
@@ -1325,17 +1267,17 @@ export async function inspectInstallWiring(platformRoot, homeRoot, manifest = IN
       invalid.push({ id: entry.id, reasonCode: "PLATFORM_ACCEPTANCE_PROBE_INVALID", acceptanceProbe: entry.acceptanceProbe });
       continue;
     }
-    if (["regular-file", "receipt-json", "trust-archive-freshness", "local-snapshot-freshness", "offsite-push-freshness", "launchd-duty", "regular-executable"].includes(probe.kind)) {
+    if (["regular-file", "receipt-json", "local-snapshot-freshness", "offsite-push-freshness", "launchd-duty", "regular-executable"].includes(probe.kind)) {
       if (!stats.isFile()) invalid.push({ id: entry.id, reasonCode: "PLATFORM_INSTALL_WIRING_NOT_FILE", pathTemplate: entry.pathTemplate, probe: probe.kind });
       else if (probe.kind === "regular-executable" && (stats.mode & 0o111) === 0) invalid.push({ id: entry.id, reasonCode: "PLATFORM_INSTALL_WIRING_NOT_EXECUTABLE", pathTemplate: entry.pathTemplate, probe: probe.kind });
-      else if (["receipt-json", "trust-archive-freshness", "local-snapshot-freshness", "offsite-push-freshness"].includes(probe.kind)) {
+      else if (["receipt-json", "local-snapshot-freshness", "offsite-push-freshness"].includes(probe.kind)) {
         try {
           JSON.parse(await readFile(path, "utf8"));
         } catch (error) {
           invalid.push({ id: entry.id, reasonCode: "PLATFORM_ACCEPTANCE_PROBE_FAILED", pathTemplate: entry.pathTemplate, probe: probe.kind, error: error?.code ?? "INVALID_JSON" });
         }
       }
-    } else if (probe.kind === "regular-directory" || probe.kind === "helper-skill-digest" || probe.kind === "engine-version") {
+    } else if (probe.kind === "regular-directory" || probe.kind === "engine-version") {
       if (!stats.isDirectory()) invalid.push({ id: entry.id, reasonCode: "PLATFORM_INSTALL_WIRING_NOT_DIRECTORY", pathTemplate: entry.pathTemplate, probe: probe.kind });
     } else {
       invalid.push({ id: entry.id, reasonCode: "PLATFORM_ACCEPTANCE_PROBE_UNSUPPORTED", pathTemplate: entry.pathTemplate, probe: probe.kind });
@@ -1356,64 +1298,13 @@ function parseAcceptanceProbe(value) {
   const [head, ...segments] = value.split(";");
   if (!head?.startsWith("probe:")) return null;
   const kind = head.slice("probe:".length);
-  if (!["regular-file", "regular-directory", "regular-executable", "receipt-json", "helper-skill-digest", "engine-version", "trust-archive-freshness", "local-snapshot-freshness", "offsite-push-freshness", "launchd-duty"].includes(kind)) return null;
+  if (!["regular-file", "regular-directory", "regular-executable", "receipt-json", "engine-version", "local-snapshot-freshness", "offsite-push-freshness", "launchd-duty"].includes(kind)) return null;
   const parameters = Object.fromEntries(segments.map((segment) => segment.split("=")).filter(([key, val]) => typeof key === "string" && typeof val === "string" && key.length > 0 && val.length > 0));
   return { kind, parameters };
 }
 
 function probeFailure(reasonCode, message, details = {}) {
   return Object.assign(new Error(message), { reasonCode, ...details });
-}
-
-async function readTrustedHelperDigest(homeRoot, parameters) {
-  if (parameters.source !== "trusted-archive-state") {
-    throw probeFailure("PLATFORM_TRUST_ROOT_SOURCE_INVALID", "helper digest source is not the trusted archive/state surface", { source: parameters.source ?? null });
-  }
-  const trustRoot = join(homeRoot, DIRECTORY.device);
-  const archivePath = join(trustRoot, parameters.archive ?? "skill-archive.json");
-  const statePath = join(trustRoot, parameters.state ?? "state.json");
-  const archiveStats = await existingPath(archivePath);
-  const stateStats = await existingPath(statePath);
-  if (!archiveStats?.isFile() || !stateStats?.isFile()) {
-    throw probeFailure("PLATFORM_TRUST_ROOT_MISSING", "trusted archive/state is unavailable", { archivePath, statePath });
-  }
-  const [archiveBytes, stateBytes] = await Promise.all([readFile(archivePath), readFile(statePath)]);
-  let archive;
-  let state;
-  try {
-    archive = JSON.parse(archiveBytes.toString("utf8"));
-    state = JSON.parse(stateBytes.toString("utf8"));
-  } catch (error) {
-    throw probeFailure("PLATFORM_TRUST_ROOT_INVALID", "trusted archive/state is not valid JSON", { archivePath, statePath, error: error?.code ?? "INVALID_JSON" });
-  }
-  if (archive?.schemaVersion !== "tcrn.workflow.helper.archive.v1" || state?.schemaVersion !== "tcrn.workflow.helper.state.v1") {
-    throw probeFailure("PLATFORM_TRUST_ROOT_INVALID", "trusted archive/state schema is unsupported", { archivePath, statePath });
-  }
-  const archiveDigest = createHash("sha256").update(archiveBytes).digest("hex");
-  if (state.verifiedArchiveSha256 !== archiveDigest) {
-    throw probeFailure("PLATFORM_TRUST_ROOT_STATE_MISMATCH", "state does not attest to the archive bytes", { archivePath, statePath, expectedArchiveSha256: state.verifiedArchiveSha256 ?? null, actualArchiveSha256: archiveDigest });
-  }
-  if (!Array.isArray(archive.entries) || archive.entries.length === 0) {
-    throw probeFailure("PLATFORM_TRUST_ROOT_INVALID", "trusted archive has no entries", { archivePath });
-  }
-  const declared = new Map();
-  for (const entry of archive.entries) {
-    if (entry === null || typeof entry !== "object" || typeof entry.path !== "string" || typeof entry.sha256 !== "string" || typeof entry.contentBase64 !== "string" || declared.has(entry.path)) {
-      throw probeFailure("PLATFORM_TRUST_ROOT_INVALID", "trusted archive entry is malformed or duplicated", { archivePath, entryPath: entry?.path ?? null });
-    }
-    const content = Buffer.from(entry.contentBase64, "base64");
-    const digest = createHash("sha256").update(content).digest("hex");
-    if (digest !== entry.sha256) {
-      throw probeFailure("PLATFORM_TRUST_ROOT_ARCHIVE_DIGEST_MISMATCH", "trusted archive entry digest does not match its bytes", { archivePath, entryPath: entry.path, expected: entry.sha256, actual: digest });
-    }
-    declared.set(entry.path, entry.sha256);
-  }
-  const entryPath = parameters.entry ?? "SKILL.md";
-  const digest = declared.get(entryPath);
-  if (typeof digest !== "string") {
-    throw probeFailure("PLATFORM_TRUST_ROOT_ENTRY_MISSING", "trusted archive does not contain the requested helper entry", { archivePath, entryPath });
-  }
-  return { digest, archiveDigest, archivePath, statePath, entryPath, declaredEntryCount: declared.size };
 }
 
 function hookCommands(settings) {
@@ -1568,8 +1459,16 @@ function versionFromSkill(text) {
   return versions[0];
 }
 
+// The helper's two installed copies, one per host skill root. Named by id since their
+// digest probe retired with the trusted archive (TCRN-CROSS-STORY-467 R2).
+const HELPER_SKILL_ITEM_IDS = Object.freeze(["machine.agents-skill", "machine.claude-skill"]);
+
+function helperSkillEntries(manifest) {
+  return manifest.items.filter((entry) => HELPER_SKILL_ITEM_IDS.includes(entry.id));
+}
+
 async function inspectDeploymentFreshness(homeRoot, manifest) {
-  const helperEntries = manifest.items.filter((entry) => entry.acceptanceProbe.startsWith("probe:helper-skill-digest"));
+  const helperEntries = helperSkillEntries(manifest);
   const engineRoot = manifestPath(manifest, "machine.workflow-engine", "<PLATFORM_ROOT>", homeRoot);
   if (engineRoot === null || helperEntries.length === 0) return check("deploymentFreshness", false, { reasonCode: "PLATFORM_MANIFEST_DEPLOYMENT_ITEMS_MISSING" });
   const helperSkills = helperEntries.map((entry) => ({ entry, path: expandTemplate(entry.pathTemplate, "<PLATFORM_ROOT>", homeRoot) }));
@@ -1761,9 +1660,8 @@ async function inspectEngineFloorSatisfied(root, homeRoot, manifest, options) {
 // The verdict follows the Owner ruling (2026-09-04): worktree ahead is expected and
 // green (development in progress), installed ahead is red (deployment carries code absent
 // from the source), both diverging is red, unreadable is uncomparable. The leg is
-// structurally consistent with inspectHelperReleaseAlignment (INC-233): digest comparison,
-// not version-string comparison, and the same principle that "nothing to compare" and
-// "compared and equal" are two answers that must stay apart.
+// a digest comparison, not a version-string comparison, and it keeps "nothing to compare"
+// and "compared and equal" as two answers that must stay apart.
 async function inspectEngineCapabilitySurface(root, homeRoot, manifest, options) {
   // Synthetic injection hook: for hermetic tests, pass catalogs directly.
   if (options.engineCommandCatalogs && typeof options.engineCommandCatalogs === "object") {
@@ -2130,30 +2028,10 @@ async function taughtSettingKeys(skillRoot, catalogKeys) {
   return catalogKeys.filter((key) => prose.includes(key));
 }
 
-async function inspectHelperCopies(platformRoot, homeRoot, manifest, options) {
-  const entries = manifest.items.filter((entry) => entry.acceptanceProbe.startsWith("probe:helper-skill-digest"));
+async function inspectHelperCopies(platformRoot, homeRoot, manifest) {
+  const entries = helperSkillEntries(manifest);
   const hosts = entries.map((entry) => /^<HOME>\/\.([^/]+)\/skills\//u.exec(entry.pathTemplate)?.[1] ?? entry.id).sort();
   const missing = [];
-  const mismatched = [];
-  const probe = entries.length > 0 ? parseAcceptanceProbe(entries[0].acceptanceProbe) : null;
-  let trustedSource = null;
-  const syntheticByEntry = options.helperSkillDigests && typeof options.helperSkillDigests === "object";
-  const syntheticLaunchd = Array.isArray(options.launchdLabels) && options.enforceHelperDigest !== true;
-  if (!syntheticByEntry && !syntheticLaunchd) {
-    try {
-      trustedSource = await readTrustedHelperDigest(homeRoot, probe?.parameters ?? {});
-    } catch (error) {
-      return check("helperCopies", false, {
-        reasonCode: error?.reasonCode ?? "PLATFORM_TRUST_ROOT_UNAVAILABLE",
-        source: "trusted-archive-state",
-        ...(error?.archivePath ? { archivePath: error.archivePath } : {}),
-        ...(error?.statePath ? { statePath: error.statePath } : {}),
-        ...(error?.entryPath ? { entryPath: error.entryPath } : {}),
-        ...(error?.expectedArchiveSha256 ? { expectedArchiveSha256: error.expectedArchiveSha256 } : {}),
-        ...(error?.actualArchiveSha256 ? { actualArchiveSha256: error.actualArchiveSha256 } : {}),
-      });
-    }
-  }
   for (const entry of entries) {
     const path = expandTemplate(entry.pathTemplate, platformRoot, homeRoot);
     const rootStats = path === null ? null : await existingPath(path);
@@ -2161,16 +2039,11 @@ async function inspectHelperCopies(platformRoot, homeRoot, manifest, options) {
     const skillStats = skillPath === null ? null : await existingPath(skillPath);
     if (!rootStats?.isDirectory() || !skillStats?.isFile()) {
       missing.push({ id: entry.id, pathTemplate: entry.pathTemplate, reasonCode: "PLATFORM_HELPER_COPY_NOT_REGULAR" });
-      continue;
     }
-    const actual = createHash("sha256").update(await readFile(skillPath)).digest("hex");
-    const entryProbe = parseAcceptanceProbe(entry.acceptanceProbe);
-    const expected = options.helperSkillDigests?.[entry.id] ?? (syntheticLaunchd ? actual : trustedSource?.digest);
-    if (actual !== expected) mismatched.push({ id: entry.id, reasonCode: "PLATFORM_HELPER_COPY_DIGEST_MISMATCH", expected, actual, source: syntheticByEntry ? "synthetic-helper-digest" : syntheticLaunchd ? "synthetic-launchd-labels" : entryProbe?.parameters.source ?? "trusted-archive-state" });
   }
-  return missing.length === 0 && mismatched.length === 0
-    ? check("helperCopies", true, { hosts, source: syntheticByEntry ? "synthetic-helper-digest" : syntheticLaunchd ? "synthetic-launchd-labels" : "trusted-archive-state", archiveDigest: trustedSource?.archiveDigest ?? null, declaredEntryCount: trustedSource?.declaredEntryCount ?? null })
-    : check("helperCopies", false, { reasonCode: missing.length > 0 ? "PLATFORM_HELPER_COPIES_INCOMPLETE" : "PLATFORM_HELPER_COPY_DIGEST_MISMATCH", missing, mismatched });
+  return missing.length === 0
+    ? check("helperCopies", true, { hosts, source: "install-manifest" })
+    : check("helperCopies", false, { reasonCode: "PLATFORM_HELPER_COPIES_INCOMPLETE", missing });
 }
 
 function parseLaunchdProbe(entry) {
@@ -2243,133 +2116,6 @@ async function offsitePushFreshness(options, platformRoot, manifest, maxAgeHours
   const entry = manifest.items.find((candidate) => candidate.id === "machine.offsite-push-receipt");
   const path = entry ? expandTemplate(entry.pathTemplate, platformRoot, options.homeRoot ?? process.env.HOME ?? "") : join(platformRoot, ".tcrn-artifacts", "chain-snapshots", "offsite-push.json");
   return readFreshnessReceipt(path, maxAgeHours, "offsite");
-}
-
-async function listRegularFiles(root, prefix = "") {
-  const entries = await readdir(root, { withFileTypes: true });
-  const files = [];
-  for (const entry of entries) {
-    const relativePath = prefix.length > 0 ? join(prefix, entry.name) : entry.name;
-    const path = join(root, entry.name);
-    if (entry.isDirectory()) files.push(...await listRegularFiles(path, relativePath));
-    else if (entry.isFile()) files.push(relativePath);
-  }
-  return files.sort();
-}
-
-async function inspectTrustArchiveFreshness(platformRoot, homeRoot, manifest, options) {
-  if (options.trustArchiveFreshness && typeof options.trustArchiveFreshness === "object") return check("trustArchive", options.trustArchiveFreshness.ok === true, options.trustArchiveFreshness);
-  if (Array.isArray(options.launchdLabels) && options.enforceTrustArchive !== true) return check("trustArchive", true, { source: "synthetic-launchd-labels" });
-  const archiveEntry = manifest.items.find((entry) => entry.id === "machine.trust-archive");
-  if (!archiveEntry || manifestPath(manifest, "machine.workflow-engine", platformRoot, homeRoot) === null) return check("trustArchive", false, { reasonCode: "PLATFORM_TRUST_ARCHIVE_MANIFEST_ITEMS_MISSING" });
-  const archivePath = expandTemplate(archiveEntry.pathTemplate, platformRoot, homeRoot);
-  const engineRoot = manifestPath(manifest, "machine.workflow-engine", platformRoot, homeRoot);
-  if (!archivePath || !engineRoot) return check("trustArchive", false, { reasonCode: "PLATFORM_TRUST_ARCHIVE_PATH_INVALID" });
-  try {
-    const archive = JSON.parse(await readFile(archivePath, "utf8"));
-    const entries = Array.isArray(archive.entries) ? archive.entries : [];
-    const declared = new Map();
-    const archiveProblems = [];
-    for (const entry of entries) {
-      if (entry === null || typeof entry !== "object" || typeof entry.path !== "string" || typeof entry.sha256 !== "string" || typeof entry.contentBase64 !== "string") {
-        archiveProblems.push({ reasonCode: "PLATFORM_TRUST_ARCHIVE_ENTRY_INVALID", path: entry?.path ?? null });
-        continue;
-      }
-      const content = Buffer.from(entry.contentBase64, "base64");
-      const digest = createHash("sha256").update(content).digest("hex");
-      if (digest !== entry.sha256 || declared.has(entry.path)) archiveProblems.push({ reasonCode: "PLATFORM_TRUST_ARCHIVE_ENTRY_DIGEST_INVALID", path: entry.path });
-      declared.set(entry.path, entry.sha256);
-    }
-    // The Helper manifest entries are the single source for both canonical
-    // consumer roots and their managed marker names. Do not rebuild a host
-    // roster from .agents/.claude/.codex conventions: a removed legacy entry
-    // must disappear from the required set while its old marker remains visible
-    // as orphan history.
-    const helperConsumers = manifest.items
-      .filter((item) => item.acceptanceProbe.startsWith("probe:helper-skill-digest"))
-      .map((entry) => {
-        const probe = parseAcceptanceProbe(entry.acceptanceProbe);
-        const markerName = probe?.parameters.marker ?? null;
-        const markerValid = typeof markerName === "string" && /^[^/]+\.json$/u.test(markerName);
-        return {
-          entry,
-          root: expandTemplate(entry.pathTemplate, platformRoot, homeRoot),
-          markerName: markerValid ? markerName : null,
-        };
-      });
-    const consumerRoots = helperConsumers.map(({ root }) => root).filter((root) => root !== null);
-    const consumerProblems = [];
-    for (const consumer of helperConsumers) {
-      const consumerRoot = consumer.root;
-      if (consumerRoot === null) {
-        consumerProblems.push({ id: consumer.entry.id, root: null, reasonCode: "PLATFORM_MANIFEST_PATH_INVALID" });
-        continue;
-      }
-      const actualPaths = await listRegularFiles(consumerRoot);
-      const actualSet = new Set(actualPaths);
-      const missing = [...declared.keys()].filter((path) => !actualSet.has(path));
-      const extra = actualPaths.filter((path) => !declared.has(path));
-      const mismatched = [];
-      for (const path of actualPaths.filter((candidate) => declared.has(candidate))) {
-        const actual = createHash("sha256").update(await readFile(join(consumerRoot, path))).digest("hex");
-        if (actual !== declared.get(path)) mismatched.push({ path, expected: declared.get(path), actual });
-      }
-      if (missing.length > 0 || extra.length > 0 || mismatched.length > 0) consumerProblems.push({ root: consumerRoot, missing, extra, mismatched });
-    }
-    const packageValue = JSON.parse(await readFile(join(engineRoot, LEGACY_ENGINE_NAME, "package.json"), "utf8"));
-    const expectedVersion = `v${packageValue.version}`;
-    const markerProblems = [];
-    for (const consumer of helperConsumers) {
-      if (consumer.markerName === null) {
-        markerProblems.push({ id: consumer.entry.id, reasonCode: "PLATFORM_MARKER_DECLARATION_INVALID" });
-        continue;
-      }
-      const markerPath = join(homeRoot, DIRECTORY.device, consumer.markerName);
-      const marker = JSON.parse(await readFile(markerPath, "utf8"));
-      if (marker.version !== expectedVersion) markerProblems.push({ id: consumer.entry.id, markerPath, expectedVersion, actualVersion: marker.version ?? null });
-    }
-    // TCRN-CROSS-INC-272: detect orphan markers. An orphan is an installed-copy-*.json file
-    // whose host is not in the known consumer set. Orphans occur when install shapes change
-    // (e.g., an old "claude-home" marker from v0.11.17 sitting three versions behind current
-    // ones). They mislead a reader into thinking an install position is live, but they don't
-    // break a live position — they are cargo for human visibility, not platform failures.
-    // Report them by host, path, and version, but do not fail the leg over them alone.
-    const orphanMarkers = [];
-    try {
-      const markerDir = join(homeRoot, DIRECTORY.device);
-      const files = await readdir(markerDir);
-      for (const file of files) {
-        if (!file.startsWith("installed-copy-") || !file.endsWith(".json")) continue;
-        if (!helperConsumers.some((consumer) => consumer.markerName === file)) {
-          const host = file.replace(/^installed-copy-/, "").replace(/\.json$/, "");
-          const orphanPath = join(markerDir, file);
-          try {
-            const orphan = JSON.parse(await readFile(orphanPath, "utf8"));
-            orphanMarkers.push({ host, path: orphanPath, version: orphan.version ?? null });
-          } catch {
-            orphanMarkers.push({ host, path: orphanPath, version: null, error: "ORPHAN_MARKER_UNREADABLE" });
-          }
-        }
-      }
-    } catch {
-      // If the device directory doesn't exist or can't be read, there are no orphans to report.
-    }
-    if (archiveProblems.length > 0 || consumerProblems.length > 0 || markerProblems.length > 0) {
-      return check("trustArchive", false, {
-        reasonCode: "PLATFORM_TRUST_ARCHIVE_STALE",
-        archivePath,
-        declaredEntryCount: declared.size,
-        consumerProblems,
-        archiveProblems,
-        markerProblems,
-        expectedVersion,
-        ...(orphanMarkers.length > 0 && { orphanMarkers }),
-      });
-    }
-    return check("trustArchive", true, { archivePath, declaredEntryCount: declared.size, consumerRoots: consumerRoots.length, expectedVersion, source: "archive-vs-installed-consumers-and-engine-version", ...(orphanMarkers.length > 0 && { orphanMarkers }) });
-  } catch (error) {
-    return check("trustArchive", false, { reasonCode: "PLATFORM_TRUST_ARCHIVE_UNAVAILABLE", archivePath, error: error?.code ?? "INVALID_TRUST_ARCHIVE" });
-  }
 }
 
 // INC-195. Whether an automatic snapshot train is owed is a question the chains
@@ -2559,8 +2305,7 @@ export async function inspectPlatform(platformRootArgument, options = {}) {
   ];
   if (options.includeInstallSurface !== false) {
     checks.push(
-      await inspectHelperCopies(root, homeRoot, manifest, options),
-      await inspectHelperReleaseAlignment(root, homeRoot, options),
+      await inspectHelperCopies(root, homeRoot, manifest),
       await inspectUnusedExports(root, options),
       await inspectChainHeadroom(root, options),
       await inspectChainValidation(root, options),
@@ -2572,7 +2317,6 @@ export async function inspectPlatform(platformRootArgument, options = {}) {
       await inspectEngineCapabilitySurface(root, homeRoot, manifest, options),
       await inspectHelperSettingsCoverage(root, homeRoot, manifest, options),
       await inspectHostRenderDrift(root, { ...options, manifest, homeRoot }),
-      await inspectTrustArchiveFreshness(root, homeRoot, manifest, options),
       await inspectLaunchdDuty({ ...options, platformRoot: root, homeRoot }, manifest),
       await inspectHarnessSurface(root, manifest),
       await inspectSnapshotReadPerformance(root, options),

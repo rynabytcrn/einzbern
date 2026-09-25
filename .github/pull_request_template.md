@@ -8,7 +8,7 @@ Describe the bounded change and its public contract impact.
 - [ ] Dependency versions and executable actions are immutable pins.
 - [ ] Dependency lifecycle scripts remain disabled or have an accepted exception.
 - [ ] No private paths, credentials, runtime state, or control-plane material is included.
-- [ ] Release mode still requires an external trust root.
+- [ ] Release admission still checks the install-tree digest.
 
 ## Verification
 

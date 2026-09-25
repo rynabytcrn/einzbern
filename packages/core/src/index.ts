@@ -652,3 +652,13 @@ export { materializeFromGenesis, parseLegacyWorkspaceMetadata } from "./workspac
 // TCRN-CROSS-STORY-467 R1: the engine-held file lock that serialises writers.
 export { FILE_LOCK_REASON_CODES, FILE_LOCK_SCHEMA_VERSION, FileLockError, acquireFileLock, withFileLock } from "./file-lock.js";
 export type { FileLock, FileLockOptions, FileLockReasonCode } from "./file-lock.js";
+// TCRN-CROSS-STORY-467 R2: release trust is the install-tree digest.
+export {
+  INSTALL_TREE_DIGEST_VERSION,
+  INSTALL_TREE_REASON_CODES,
+  InstallTreeError,
+  computeInstallTreeDigest,
+  normalizedInstallBytes,
+  verifyInstallTree,
+} from "./install-tree-digest.js";
+export type { InstallTreeDigest, InstallTreeEntry, InstallTreeReasonCode, InstallTreeVerification } from "./install-tree-digest.js";

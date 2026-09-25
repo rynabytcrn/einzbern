@@ -21,6 +21,6 @@ component used alternate spelling. Portable identity also rejects two existing
 case-only variants on case-sensitive filesystems.
 
 Development mode can operate on framework and explicitly selected workspace or
-transient roots. Release mode additionally requires an external release-trust
-root and a verified bundle. Evidence locators are references; they are not a
+transient roots. Release mode additionally requires a release tree whose
+install-tree digest matches the stated one. Evidence locators are references; they are not a
 license to embed private evidence in source or release archives.

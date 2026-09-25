@@ -534,15 +534,14 @@ async function build() {
 }
 
 // TCRN-CROSS-STORY-359: this took twenty-nine filter options, one per retired verb, and
-// each one selected a subset of the same `tests/**/*.test.mjs` set. Two survive, and both
-// have a caller that is not a `verify:*` name: `p8Only` is the release train's dogfood
-// leg, `trustOnly` its external-trust leg.
-async function runTests({ trustOnly = false, p8Only = false, extraEnvironment = {} } = {}) {
+// each one selected a subset of the same `tests/**/*.test.mjs` set. One survives, with a
+// caller that is not a `verify:*` name: `p8Only` is the release train's dogfood leg. The
+// external-trust leg (`trustOnly`) retired with the trust root (TCRN-CROSS-STORY-467 R2).
+async function runTests({ p8Only = false, extraEnvironment = {} } = {}) {
   await build();
   const tests = (await walkFiles())
     .map((path) => toPosixPath(relative(repositoryRoot, path)))
     .filter((path) => path.startsWith("tests/") && path.endsWith(".test.mjs"))
-    .filter((path) => !trustOnly || path === "tests/release-trust.test.mjs")
     .filter((path) => !p8Only || ["tests/local-command-byte-fidelity.test.mjs", "tests/p8-workflow-rc.test.mjs"].includes(path));
   const controller = await runDetachedTestController(["--test", ...tests], {
     NODE_OPTIONS: `--import=${noNetworkImport}`,
@@ -550,11 +549,7 @@ async function runTests({ trustOnly = false, p8Only = false, extraEnvironment = 
     ...extraEnvironment,
   });
   return success(
-    trustOnly
-      ? "TRUST_NEGATIVE_MATRIX_VERIFIED"
-      : p8Only
-        ? "P8_WORKFLOW_RC_TESTS_VERIFIED"
-        : "TESTS_VERIFIED",
+    p8Only ? "P8_WORKFLOW_RC_TESTS_VERIFIED" : "TESTS_VERIFIED",
     { tests, result: "passed", progress: controller.progress },
   );
 }
@@ -584,7 +579,6 @@ async function verifyP8() {
   assertion(frameworkSource.includes(`FRAMEWORK_VERSION = \"${P8_VERSION}\"`), "P8_FRAMEWORK_VERSION_MISMATCH");
   assertion(P8_SUPPORTED_AOS_RELEASES.length === 0, "P8_SUPPORTED_AOS_RELEASES_MISMATCH");
   const dogfood = await runTests({ p8Only: true });
-  const trust = await runTests({ trustOnly: true });
   const sourceArchive = await archive();
   const sbomResult = await sbom();
   const sourceBytes = await readSourceFile(resolve(repositoryRoot, sourceArchive.path));
@@ -611,7 +605,6 @@ async function verifyP8() {
     tag: P8_TAG,
     p8BasisCommit,
     tests: dogfood.reasonCode,
-    trust: trust.reasonCode,
     sourceArchive,
     sbom: sbomResult,
     artifacts: p8ArtifactRecords(artifacts),

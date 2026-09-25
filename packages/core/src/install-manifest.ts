@@ -96,13 +96,14 @@ export const INSTALL_MANIFEST_ITEMS: readonly InstallManifestItem[] = Object.fre
   // session is opened, which is a stronger guarantee than the per-project copies were.
   item("machine.claude-settings", "machine", "claude", "<HOME>/.claude/settings.json", "user-guided", "probe:regular-file"),
   item("machine.codex-config", "machine", "codex", "<HOME>/.codex/config.toml", "user-guided", "probe:regular-file"),
-  item("machine.claude-skill", "machine", "claude", `<HOME>/.claude/skills/${BRAND.helper.id}`, "user-guided", "probe:helper-skill-digest;source=trusted-archive-state;archive=skill-archive.json;state=state.json;marker=installed-copy-claude.json;entry=SKILL.md"),
+  // The helper copies are accepted as directories: the trusted archive and install
+  // markers their digest probe compared against are retired (TCRN-CROSS-STORY-467 R2).
+  item("machine.claude-skill", "machine", "claude", `<HOME>/.claude/skills/${BRAND.helper.id}`, "user-guided", "probe:regular-directory"),
   // Codex's universal user Skill root is ~/.agents/skills.  The older
   // ~/.codex/skills copy is legacy history and is deliberately not an install
   // obligation; skills@1.7.0 owns the canonical placement here.
-  item("machine.agents-skill", "machine", "codex", `<HOME>/.agents/skills/${BRAND.helper.id}`, "user-guided", "probe:helper-skill-digest;source=trusted-archive-state;archive=skill-archive.json;state=state.json;marker=installed-copy-agents.json;entry=SKILL.md"),
+  item("machine.agents-skill", "machine", "codex", `<HOME>/.agents/skills/${BRAND.helper.id}`, "user-guided", "probe:regular-directory"),
   item("machine.workflow-engine", "machine", "shared", `<HOME>/${DIRECTORY.device}`, "user-guided", "probe:engine-version"),
-  item("machine.trust-archive", "machine", "shared", `<HOME>/${DIRECTORY.device}/skill-archive.json`, "user-guided", "probe:trust-archive-freshness"),
   item("machine.local-snapshot-artifacts", "machine", "shared", "<PLATFORM_ROOT>/.tcrn-artifacts/chain-snapshots", "user-guided", "probe:regular-directory"),
   item("machine.launchd-local-snapshot", "machine", "shared", "<HOME>/Library/LaunchAgents/com.tcrn.platform.local-snapshot.plist", "user-guided", "probe:launchd-duty;label=com.tcrn.platform.local-snapshot;maxAgeHours=26"),
   item("machine.portal-launcher-command", "machine", "shared", `<PLATFORM_ROOT>/${BRAND.portal.id}.command`, "user-guided", "probe:regular-executable"),
@@ -128,7 +129,6 @@ const REQUIRED_ITEM_ID_CATALOG = [
   "machine.portal-launcher-cmd",
   "machine.portal-launcher-command",
   "machine.portal-launcher-sh",
-  "machine.trust-archive",
   "machine.workflow-engine",
   // This catalog stays written out by hand rather than derived from the item list, so
   // deleting an entry above still fails the completeness test.

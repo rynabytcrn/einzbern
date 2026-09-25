@@ -55,22 +55,12 @@ test("development mode is explicitly offline and telemetry-free", () => {
   });
 });
 
+// TCRN-CROSS-STORY-467 R2: release verification takes the unpacked tree and its stated
+// install-tree digest, and nothing else.
 test("release mode declares every required external input", () => {
-  assert.deepEqual(RELEASE_REQUIRED_ARGUMENTS, [
-    "trust-root",
-    "bundle",
-    "subject",
-    "repository",
-    "workflow",
-    "now",
-  ]);
-  assert.deepEqual(missingReleaseArguments({ repository: "einzbern" }), [
-    "trust-root",
-    "bundle",
-    "subject",
-    "workflow",
-    "now",
-  ]);
+  assert.deepEqual(RELEASE_REQUIRED_ARGUMENTS, ["tree", "sha256"]);
+  assert.deepEqual(missingReleaseArguments({ tree: "/release" }), ["sha256"]);
+  assert.deepEqual(missingReleaseArguments({ repository: "einzbern" }), ["tree", "sha256"]);
 });
 
 test("P2 exposes the frozen normative protocol without claiming P3", () => {

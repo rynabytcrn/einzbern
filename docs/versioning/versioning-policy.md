@@ -10,5 +10,6 @@ change between minor versions. There is still no supported AOS release. Schemas 
 versioned identifiers independent of package versions.
 
 Compatibility or trust semantics may not change under an existing schema
-identifier. A release sequence and trust-root version are monotonic integers;
-rollback is rejected even when a signature is otherwise valid.
+identifier. Release trust is the install-tree digest a publisher states for each
+release (`specs/release-trust-v1.md`); the signed sequence and trust-root version it
+replaced are retired.

@@ -20,13 +20,12 @@ export const P8_RELEASE_ARTIFACTS = Object.freeze([
   `${BRAND.engine.id}-${P8_VERSION}-source.tar`,
   "sbom.cdx.json",
   "release-manifest.json",
-  "provenance.json",
   "checksums.txt",
   "release-notes.md",
 ]);
 
 // TCRN-CROSS-STORY-461 R1 (#232). After a version bump dist/release can still hold the
-// previous release's source archive beside the six new artifacts, and the closed
+// previous release's source archive beside the new artifacts, and the closed
 // artifact set (P8_PRIVACY_RELEASE_ARTIFACT_SET) then fails. Stale artifacts go to an
 // ignored directory beside the release directory, never into dist/evidence.
 export const P8_STALE_RELEASE_DIRECTORY = "dist/stale-release";
@@ -268,14 +267,6 @@ export function validateP8ReleaseDocuments(documents) {
     assertion(match, "P8_RELEASE_CHECKSUMS_INVALID", line);
     assertion(expected.get(match[2]) === match[1], "P8_RELEASE_CHECKSUM_MISMATCH", match[2]);
   }
-  const provenance = JSON.parse(documents.get("provenance.json").toString("utf8"));
-  assertion(provenance?._type === "https://in-toto.io/Statement/v1" && provenance?.predicateType === "https://slsa.dev/provenance/v1" && provenance?.predicate?.buildDefinition?.externalParameters?.version === P8_VERSION, "P8_RELEASE_PROVENANCE_INVALID");
-  // Cross-bind the provenance subject digests to the actual shipped bytes.
-  assertion(Array.isArray(provenance.subject) && provenance.subject.length > 0, "P8_RELEASE_PROVENANCE_INVALID", "subject");
-  for (const subject of provenance.subject) {
-    const bytes = documents.get(subject.path);
-    assertion(Buffer.isBuffer(bytes) && subject.sha256 === sha256(bytes) && subject.size === bytes.length, "P8_RELEASE_PROVENANCE_SUBJECT_MISMATCH", String(subject.path));
-  }
   return { releaseStatus: "accepted_release", supportedAosReleases: [], artifactCount: documents.size };
 }
 
@@ -294,21 +285,14 @@ export function buildP8ReleaseArtifacts({ sourceArchive, sbom }) {
     artifacts: [documentRecord(sourcePath, sourceArchive), documentRecord("sbom.cdx.json", sbom), documentRecord("release-notes.md", notes)],
   };
   const manifest = Buffer.from(`${canonicalJson({ ...manifestBasis, manifestDigest: sha256(Buffer.from(canonicalJson(manifestBasis), "utf8")) })}\n`, "utf8");
-  const provenance = Buffer.from(`${canonicalJson({
-    _type: "https://in-toto.io/Statement/v1",
-    predicateType: "https://slsa.dev/provenance/v1",
-    subject: [documentRecord(sourcePath, sourceArchive)],
-    predicate: {
-      buildType: "tcrn.workflow.local-unpublished-candidate.v1",
-      buildDefinition: { externalParameters: { version: P8_VERSION, tag: P8_TAG, supportedAosReleases: P8_SUPPORTED_AOS_RELEASES }, resolvedDependencies: [documentRecord("release-manifest.json", manifest)] },
-      runDetails: { builder: { id: `${BRAND.engine.id}-local` }, metadata: { invocationId: sha256(manifest), startedOn: "1970-01-01T00:00:00.000Z", finishedOn: "1970-01-01T00:00:00.000Z" } },
-    },
-  })}\n`, "utf8");
+  // The in-toto build statement this train also produced is retired with the trust
+  // root it was checked against (TCRN-CROSS-STORY-467 R2); release trust is the
+  // install-tree digest (packages/core/src/install-tree-digest.ts).
   const checksums = Buffer.from([
-    documentRecord(sourcePath, sourceArchive), documentRecord("sbom.cdx.json", sbom), documentRecord("release-manifest.json", manifest), documentRecord("provenance.json", provenance), documentRecord("release-notes.md", notes),
+    documentRecord(sourcePath, sourceArchive), documentRecord("sbom.cdx.json", sbom), documentRecord("release-manifest.json", manifest), documentRecord("release-notes.md", notes),
   ].sort((left, right) => compareCanonicalText(left.path, right.path)).map((record) => `${record.sha256}  ${record.path}`).join("\n") + "\n", "utf8");
   const artifacts = new Map([
-    [sourcePath, sourceArchive], ["sbom.cdx.json", sbom], ["release-manifest.json", manifest], ["provenance.json", provenance], ["checksums.txt", checksums], ["release-notes.md", notes],
+    [sourcePath, sourceArchive], ["sbom.cdx.json", sbom], ["release-manifest.json", manifest], ["checksums.txt", checksums], ["release-notes.md", notes],
   ]);
   validateP8ReleaseDocuments(artifacts);
   return artifacts;

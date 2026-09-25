@@ -1,476 +1,116 @@
 // SPDX-License-Identifier: Apache-2.0
+// TCRN-CROSS-STORY-467 R2 (TCRN-CROSS-MIN-227 D3): release trust is the install-tree digest.
+// The signed-manifest and trust root cases this file carried retired with that code; what
+// is proved here is the one question left -- are the installed bytes the published bytes --
+// through the core module and the einzbern-release-verify entry.
 
 import assert from "node:assert/strict";
-import { createHash, generateKeyPairSync, sign } from "node:crypto";
-import { link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import test from "node:test";
 
-import { canonicalJson, canonicalJsonBytes } from "../scripts/lib/canonical-json.mjs";
 import {
-  strictRfc3339Instant,
-  TrustVerificationError,
-  verifyReleaseBundle,
-} from "../scripts/lib/release-trust.mjs";
+  INSTALL_TREE_DIGEST_VERSION,
+  InstallTreeError,
+  computeInstallTreeDigest,
+  verifyInstallTree,
+} from "../dist/build/packages/core/src/index.js";
 import { repositoryRoot } from "../scripts/lib/files.mjs";
 
-const now = "2026-07-11T12:00:00.000Z";
+const verifier = resolve(repositoryRoot, "scripts/verify-release-trust.mjs");
 
-async function createFixture() {
-  const root = await mkdtemp(resolve(tmpdir(), "tcrn-release-trust-"));
-  const bundlePath = resolve(root, "bundle");
-  await mkdir(bundlePath);
-  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
-  const artifact = Buffer.from("deterministic release artifact\n", "utf8");
-  const artifactPath = resolve(bundlePath, "artifact.bin");
-  await writeFile(artifactPath, artifact);
-  const manifest = {
-    schemaVersion: "tcrn.release-manifest.v1",
-    subject: "tcrn-workflow-source",
-    repository: "tcrn-workflow",
-    workflow: "release",
-    sequence: 7,
-    issuedAt: "2026-07-11T00:00:00.000Z",
-    expiresAt: "2026-07-12T00:00:00.000Z",
-    signerKeyId: "release-key-1",
-    artifact: {
-      path: "artifact.bin",
-      sha256: createHash("sha256").update(artifact).digest("hex"),
-      size: artifact.length,
-    },
-  };
-  const trustRoot = {
-    schemaVersion: "tcrn.release-trust-root.v1",
-    rootVersion: 3,
-    validFrom: "2026-07-10T00:00:00.000Z",
-    validUntil: "2026-07-13T00:00:00.000Z",
-    repository: "tcrn-workflow",
-    workflow: "release",
-    minimumSequence: 7,
-    keys: [
-      {
-        keyId: "release-key-1",
-        algorithm: "ed25519",
-        publicKeyPem: publicKey.export({ type: "spki", format: "pem" }).toString(),
-        revokedAt: null,
-      },
-    ],
-  };
-  const trustRootPath = resolve(root, "trust-root.json");
-  const manifestPath = resolve(bundlePath, "manifest.json");
-  const signaturePath = resolve(bundlePath, "manifest.sig");
-
-  async function writeSignedManifest(signingKey = privateKey) {
-    await writeFile(manifestPath, `${canonicalJson(manifest)}\n`);
-    await writeFile(
-      signaturePath,
-      `${sign(null, canonicalJsonBytes(manifest), signingKey).toString("base64")}\n`,
-    );
+async function treeFixture(context, files) {
+  const root = await mkdtemp(join(tmpdir(), "einzbern-install-tree-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  for (const [path, bytes] of Object.entries(files)) {
+    await mkdir(join(root, path, ".."), { recursive: true });
+    await writeFile(join(root, path), bytes);
   }
-
-  async function writeTrustRoot() {
-    await writeFile(trustRootPath, `${canonicalJson(trustRoot)}\n`);
-  }
-
-  await writeSignedManifest();
-  await writeTrustRoot();
-  return {
-    root,
-    bundlePath,
-    artifactPath,
-    manifestPath,
-    signaturePath,
-    manifest,
-    trustRoot,
-    trustRootPath,
-    writeSignedManifest,
-    writeTrustRoot,
-  };
+  return root;
 }
 
-function request(fixture, overrides = {}) {
-  return {
-    repositoryRoot,
-    trustRootPath: fixture.trustRootPath,
-    bundlePath: fixture.bundlePath,
-    expectedSubject: "tcrn-workflow-source",
-    expectedRepository: "tcrn-workflow",
-    expectedWorkflow: "release",
-    now,
-    ...overrides,
-  };
+const releaseFiles = () => ({
+  "package.json": "{\n  \"name\": \"einzbern\"\n}\n",
+  "scripts/einzbern.mjs": "#!/usr/bin/env node\nconsole.log(\"einzbern\");\n",
+  "dist/build/index.js": "export {};\n",
+  "assets/logo.bin": Buffer.from([0, 1, 2, 13, 10, 255]),
+});
+
+function runVerifier(argv) {
+  return spawnSync(process.execPath, [verifier, ...argv], { encoding: "utf8" });
 }
 
-async function expectReason(fixture, reasonCode, overrides = {}) {
-  await assert.rejects(
-    verifyReleaseBundle(request(fixture, overrides)),
-    (error) => error instanceof TrustVerificationError && error.reasonCode === reasonCode,
-  );
-}
+test("an install tree is admitted when its digest equals the stated one", async (context) => {
+  const root = await treeFixture(context, releaseFiles());
+  const digest = await computeInstallTreeDigest(root);
+  assert.equal(digest.schemaVersion, INSTALL_TREE_DIGEST_VERSION);
+  assert.match(digest.sha256, /^[0-9a-f]{64}$/u);
+  assert.deepEqual(digest.entries.map((entry) => entry.path), ["assets/logo.bin", "dist/build/index.js", "package.json", "scripts/einzbern.mjs"]);
+  const verified = await verifyInstallTree(root, digest.sha256);
+  assert.deepEqual([verified.ok, verified.reasonCode, verified.files], [true, "INSTALL_TREE_VERIFIED", 4]);
 
-test("valid external trust root admits the signed bundle", async (context) => {
-  const fixture = await createFixture();
-  context.after(() => rm(fixture.root, { recursive: true, force: true }));
-  const result = await verifyReleaseBundle(request(fixture));
-  assert.deepEqual(result, {
-    admitted: true,
-    reasonCode: "TRUST_VERIFIED",
-    rootVersion: 3,
-    rootVersionRollbackDisposition: "external-prior-root-floor-required",
-    sequence: 7,
-    signerKeyId: "release-key-1",
-    artifactSha256: fixture.manifest.artifact.sha256,
-  });
+  const admitted = runVerifier(["--tree", root, "--sha256", digest.sha256]);
+  assert.equal(admitted.status, 0, admitted.stderr);
+  assert.equal(admitted.stderr, "");
+  const receipt = JSON.parse(admitted.stdout);
+  assert.deepEqual([receipt.admitted, receipt.reasonCode, receipt.actual], [true, "INSTALL_TREE_VERIFIED", digest.sha256]);
 });
 
-test("candidate-controlled trust root is rejected", async (context) => {
-  const fixture = await createFixture();
-  const candidateRoot = resolve(repositoryRoot, "dist/test/trust-root.json");
-  await mkdir(resolve(repositoryRoot, "dist/test"), { recursive: true });
-  await writeFile(candidateRoot, await readFile(fixture.trustRootPath));
-  context.after(async () => {
-    await rm(fixture.root, { recursive: true, force: true });
-    await rm(resolve(repositoryRoot, "dist/test"), { recursive: true, force: true });
-  });
-  await expectReason(fixture, "TRUST_ROOT_CANDIDATE_CONTROLLED", { trustRootPath: candidateRoot });
+test("one changed byte refuses the tree and names both digests", async (context) => {
+  const root = await treeFixture(context, releaseFiles());
+  const stated = (await computeInstallTreeDigest(root)).sha256;
+  await writeFile(join(root, "dist/build/index.js"), "export {};\n//\n");
+  const refused = await verifyInstallTree(root, stated);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.reasonCode, "INSTALL_TREE_DIGEST_MISMATCH");
+  assert.equal(refused.expected, stated);
+  assert.notEqual(refused.actual, stated);
+
+  const cli = runVerifier(["--tree", root, "--sha256", stated]);
+  assert.equal(cli.status, 1);
+  assert.equal(cli.stdout, "");
+  const receipt = JSON.parse(cli.stderr);
+  assert.deepEqual([receipt.admitted, receipt.reasonCode], [false, "INSTALL_TREE_DIGEST_MISMATCH"]);
 });
 
-test("forged signature is rejected", async (context) => {
-  const fixture = await createFixture();
-  context.after(() => rm(fixture.root, { recursive: true, force: true }));
-  const forged = generateKeyPairSync("ed25519");
-  await fixture.writeSignedManifest(forged.privateKey);
-  await expectReason(fixture, "TRUST_SIGNATURE_INVALID");
+test("a symbolic link or other non-regular file in the tree is refused, never followed", async (context) => {
+  const root = await treeFixture(context, releaseFiles());
+  const outside = await treeFixture(context, { "secret.txt": "outside the tree\n" });
+  await symlink(join(outside, "secret.txt"), join(root, "scripts", "linked.txt"));
+  await assert.rejects(() => computeInstallTreeDigest(root), (error) => error instanceof InstallTreeError && error.reasonCode === "INSTALL_TREE_ENTRY_NOT_REGULAR");
+  const cli = runVerifier(["--tree", root, "--sha256", "0".repeat(64)]);
+  assert.equal(cli.status, 1);
+  assert.equal(JSON.parse(cli.stderr).reasonCode, "INSTALL_TREE_ENTRY_NOT_REGULAR");
 });
 
-test("tampered artifact is rejected", async (context) => {
-  const fixture = await createFixture();
-  context.after(() => rm(fixture.root, { recursive: true, force: true }));
-  const tampered = Buffer.from(await readFile(fixture.artifactPath));
-  tampered[0] ^= 1;
-  await writeFile(fixture.artifactPath, tampered);
-  await expectReason(fixture, "TRUST_ARTIFACT_DIGEST");
+test("CRLF and LF text digest the same, and a binary file is measured as it is", async (context) => {
+  const lf = await treeFixture(context, { "a.txt": "one\ntwo\n", "b.bin": Buffer.from([0, 13, 10]) });
+  const crlf = await treeFixture(context, { "a.txt": "one\r\ntwo\r\n", "b.bin": Buffer.from([0, 13, 10]) });
+  const binaryLf = await treeFixture(context, { "a.txt": "one\ntwo\n", "b.bin": Buffer.from([0, 10]) });
+  const lfDigest = await computeInstallTreeDigest(lf);
+  assert.equal((await computeInstallTreeDigest(crlf)).sha256, lfDigest.sha256, "a text file's line endings do not move the digest");
+  assert.equal(lfDigest.entries.find((entry) => entry.path === "a.txt").size, 8);
+  assert.notEqual((await computeInstallTreeDigest(binaryLf)).sha256, lfDigest.sha256, "a binary file's CRLF is part of its bytes");
 });
 
-test("claim mismatch and rollback fail closed", async (context) => {
-  const fixture = await createFixture();
-  context.after(() => rm(fixture.root, { recursive: true, force: true }));
-  await expectReason(fixture, "TRUST_SUBJECT_MISMATCH", { expectedSubject: "wrong-subject" });
-  fixture.trustRoot.minimumSequence = 8;
-  await fixture.writeTrustRoot();
-  await expectReason(fixture, "TRUST_SEQUENCE_ROLLBACK");
+test("a malformed stated digest and a missing tree are refused with their own reasons", async (context) => {
+  const root = await treeFixture(context, releaseFiles());
+  await assert.rejects(() => verifyInstallTree(root, "ABC"), (error) => error.reasonCode === "INSTALL_TREE_DIGEST_INVALID");
+  await assert.rejects(() => computeInstallTreeDigest(join(root, "absent")), (error) => error.reasonCode === "INSTALL_TREE_NOT_DIRECTORY");
 });
 
-test("repository and workflow mismatch fail closed", async (context) => {
-  const fixture = await createFixture();
-  context.after(() => rm(fixture.root, { recursive: true, force: true }));
-  await expectReason(fixture, "TRUST_REPOSITORY_MISMATCH", { expectedRepository: "other-repository" });
-  await expectReason(fixture, "TRUST_WORKFLOW_MISMATCH", { expectedWorkflow: "other-workflow" });
-});
-
-test("revoked and expired authority fail closed", async (context) => {
-  const fixture = await createFixture();
-  context.after(() => rm(fixture.root, { recursive: true, force: true }));
-  fixture.trustRoot.keys[0].revokedAt = "2026-07-11T01:00:00.000Z";
-  await fixture.writeTrustRoot();
-  await expectReason(fixture, "TRUST_KEY_REVOKED");
-  fixture.trustRoot.keys[0].revokedAt = null;
-  await fixture.writeTrustRoot();
-  await expectReason(fixture, "TRUST_ROOT_EXPIRED", { now: "2026-07-14T00:00:00.000Z" });
-});
-
-test("artifact path escape is rejected", async (context) => {
-  const fixture = await createFixture();
-  context.after(() => rm(fixture.root, { recursive: true, force: true }));
-  fixture.manifest.artifact.path = "../outside.bin";
-  await fixture.writeSignedManifest();
-  await expectReason(fixture, "TRUST_ARTIFACT_PATH_ESCAPE");
-});
-
-test("symbolic and hard-linked artifacts are rejected", async (context) => {
-  const fixture = await createFixture();
-  context.after(() => rm(fixture.root, { recursive: true, force: true }));
-  const original = resolve(fixture.root, "original.bin");
-  await writeFile(original, await readFile(fixture.artifactPath));
-  await rm(fixture.artifactPath);
-  await symlink(original, fixture.artifactPath);
-  await expectReason(fixture, "TRUST_ARTIFACT_FILE");
-  await rm(fixture.artifactPath);
-  await link(original, fixture.artifactPath);
-  await expectReason(fixture, "TRUST_ARTIFACT_HARDLINK");
-});
-
-test("trust root, manifest, and signature links fail closed", async (context) => {
-  const fixture = await createFixture();
-  context.after(() => rm(fixture.root, { recursive: true, force: true }));
-
-  const rootAlias = resolve(fixture.root, "trust-root-alias.json");
-  await link(fixture.trustRootPath, rootAlias);
-  await expectReason(fixture, "TRUST_ROOT_HARDLINK");
-  await rm(rootAlias);
-  const rootOriginal = resolve(fixture.root, "trust-root-original.json");
-  await writeFile(rootOriginal, await readFile(fixture.trustRootPath));
-  await rm(fixture.trustRootPath);
-  await symlink(rootOriginal, fixture.trustRootPath);
-  await expectReason(fixture, "TRUST_ROOT_FILE");
-  await rm(fixture.trustRootPath);
-  await writeFile(fixture.trustRootPath, await readFile(rootOriginal));
-
-  const manifestAlias = resolve(fixture.root, "manifest-alias.json");
-  await link(fixture.manifestPath, manifestAlias);
-  await expectReason(fixture, "TRUST_MANIFEST_HARDLINK");
-  await rm(manifestAlias);
-  const manifestOriginal = resolve(fixture.root, "manifest-original.json");
-  await writeFile(manifestOriginal, await readFile(fixture.manifestPath));
-  await rm(fixture.manifestPath);
-  await symlink(manifestOriginal, fixture.manifestPath);
-  await expectReason(fixture, "TRUST_MANIFEST_FILE");
-  await rm(fixture.manifestPath);
-  await writeFile(fixture.manifestPath, await readFile(manifestOriginal));
-
-  const signatureAlias = resolve(fixture.root, "signature-alias.txt");
-  await link(fixture.signaturePath, signatureAlias);
-  await expectReason(fixture, "TRUST_SIGNATURE_HARDLINK");
-  await rm(signatureAlias);
-  const signatureOriginal = resolve(fixture.root, "signature-original.txt");
-  await writeFile(signatureOriginal, await readFile(fixture.signaturePath));
-  await rm(fixture.signaturePath);
-  await symlink(signatureOriginal, fixture.signaturePath);
-  await expectReason(fixture, "TRUST_SIGNATURE_FILE");
-});
-
-test("bundle directory symlink fails closed", async (context) => {
-  const fixture = await createFixture();
-  context.after(() => rm(fixture.root, { recursive: true, force: true }));
-  const alias = resolve(fixture.root, "bundle-alias");
-  await symlink(fixture.bundlePath, alias);
-  await expectReason(fixture, "TRUST_BUNDLE_SYMLINK", { bundlePath: alias });
-});
-
-test("strict RFC 3339 rejects normalization and impossible instants", () => {
-  assert.equal(
-    strictRfc3339Instant("2026-07-11T12:00:00.123456789+08:00", "TIME", "value"),
-    strictRfc3339Instant("2026-07-11T04:00:00.123456789Z", "TIME", "value"),
-  );
-  for (const value of [
-    "2026-07-11",
-    "July 11, 2026 12:00:00",
-    "2026-02-30T00:00:00Z",
-    "2026-07-11T24:00:00Z",
-    "2026-07-11T12:00:60Z",
-    "2026-07-11t12:00:00z",
-    "2026-07-11T12:00:00",
-    "2026-07-11T12:00:00.1234567890Z",
+test("the verifier rejects missing, duplicate and unknown arguments", () => {
+  for (const [argv, reasonCode] of [
+    [[], "RELEASE_VERIFY_ARGUMENTS_REQUIRED"],
+    [["--tree", "/x"], "RELEASE_VERIFY_ARGUMENTS_REQUIRED"],
+    [["--tree", "/x", "--tree", "/y", "--sha256", "0".repeat(64)], "RELEASE_VERIFY_ARGUMENTS_INVALID"],
+    [["--tree", "/x", "--sha256", "0".repeat(64), "--bundle", "/z"], "RELEASE_VERIFY_ARGUMENT_UNKNOWN"],
+    [["--tree"], "RELEASE_VERIFY_ARGUMENTS_INVALID"],
   ]) {
-    assert.throws(() => strictRfc3339Instant(value, "TIME", "value"), (error) => error.reasonCode === "TIME");
-  }
-});
-
-test("verification, root, and manifest time vectors fail closed", async (context) => {
-  const fixture = await createFixture();
-  context.after(() => rm(fixture.root, { recursive: true, force: true }));
-  await expectReason(fixture, "TRUST_TIME_INVALID", { now: "2026-07-11" });
-  await expectReason(fixture, "TRUST_ROOT_NOT_YET_VALID", { now: "2026-07-09T00:00:00Z" });
-  fixture.manifest.issuedAt = "2026-07-11T13:00:00Z";
-  await fixture.writeSignedManifest();
-  await expectReason(fixture, "TRUST_MANIFEST_NOT_YET_VALID");
-  fixture.manifest.issuedAt = "2026-07-10T00:00:00Z";
-  fixture.manifest.expiresAt = "2026-07-11T01:00:00Z";
-  await fixture.writeSignedManifest();
-  await expectReason(fixture, "TRUST_MANIFEST_EXPIRED");
-  fixture.trustRoot.validFrom = "not-a-date";
-  await fixture.writeTrustRoot();
-  await expectReason(fixture, "TRUST_ROOT_TIME_INVALID");
-});
-
-test("canonical JSON and strict schemas fail closed", async (context) => {
-  const fixture = await createFixture();
-  context.after(() => rm(fixture.root, { recursive: true, force: true }));
-  await writeFile(fixture.trustRootPath, `${JSON.stringify(fixture.trustRoot, null, 2)}\n`);
-  await expectReason(fixture, "TRUST_ROOT_CANONICAL_JSON");
-  await fixture.writeTrustRoot();
-  await writeFile(fixture.manifestPath, `${JSON.stringify(fixture.manifest, null, 2)}\n`);
-  await expectReason(fixture, "TRUST_MANIFEST_CANONICAL_JSON");
-  fixture.manifest.unexpected = true;
-  await fixture.writeSignedManifest();
-  await expectReason(fixture, "TRUST_MANIFEST_MALFORMED");
-  delete fixture.manifest.unexpected;
-  fixture.trustRoot.unexpected = true;
-  await fixture.writeTrustRoot();
-  await fixture.writeSignedManifest();
-  await expectReason(fixture, "TRUST_ROOT_MALFORMED");
-  delete fixture.trustRoot.unexpected;
-  fixture.trustRoot.schemaVersion = "unknown";
-  await fixture.writeTrustRoot();
-  await expectReason(fixture, "TRUST_ROOT_SCHEMA");
-});
-
-test("release-trust canonical JSON rejects malformed Unicode before claim or signature evaluation", async (context) => {
-  const fixture = await createFixture();
-  context.after(() => rm(fixture.root, { recursive: true, force: true }));
-  const canonicalManifest = await readFile(fixture.manifestPath, "utf8");
-  for (const escaped of ["\\ud800", "\\udfff"]) {
-    await writeFile(
-      fixture.manifestPath,
-      canonicalManifest.replace('"subject":"tcrn-workflow-source"', `"subject":"bad${escaped}"`),
-    );
-    await expectReason(fixture, "TRUST_MANIFEST_CANONICAL_JSON");
-    await writeFile(
-      fixture.manifestPath,
-      canonicalManifest.replace(/"artifact":\{[^}]+\}/u, `"artifact":{"key-${escaped}":1}`),
-    );
-    await expectReason(fixture, "TRUST_MANIFEST_CANONICAL_JSON");
-  }
-});
-
-test("release-trust canonical parsing uses UTF-8 order for integer-like keys", async (context) => {
-  const fixture = await createFixture();
-  context.after(() => rm(fixture.root, { recursive: true, force: true }));
-  const canonicalManifest = await readFile(fixture.manifestPath, "utf8");
-  await writeFile(fixture.manifestPath, `{"2":2,"10":1,${canonicalManifest.slice(1)}`);
-  await expectReason(fixture, "TRUST_MANIFEST_CANONICAL_JSON");
-  await writeFile(fixture.manifestPath, `{"10":1,"2":2,${canonicalManifest.slice(1)}`);
-  await expectReason(fixture, "TRUST_MANIFEST_MALFORMED");
-});
-
-test("unknown and invalid signing keys fail closed", async (context) => {
-  const fixture = await createFixture();
-  context.after(() => rm(fixture.root, { recursive: true, force: true }));
-  fixture.manifest.signerKeyId = "unknown-key";
-  await fixture.writeSignedManifest();
-  await expectReason(fixture, "TRUST_KEY_UNKNOWN");
-  fixture.manifest.signerKeyId = "release-key-1";
-  fixture.trustRoot.keys[0].publicKeyPem = "not-a-public-key";
-  await fixture.writeTrustRoot();
-  await fixture.writeSignedManifest();
-  await expectReason(fixture, "TRUST_KEY_INVALID");
-});
-
-test("canonical base64 and Ed25519 length are enforced", async (context) => {
-  const fixture = await createFixture();
-  context.after(() => rm(fixture.root, { recursive: true, force: true }));
-  const canonical = (await readFile(fixture.signaturePath, "utf8")).trim();
-  await writeFile(fixture.signaturePath, `${canonical.replace(/=+$/u, "")}\n`);
-  await expectReason(fixture, "TRUST_SIGNATURE_ENCODING");
-  await writeFile(fixture.signaturePath, `${Buffer.alloc(63).toString("base64")}\n`);
-  await expectReason(fixture, "TRUST_SIGNATURE_LENGTH");
-  await writeFile(fixture.signaturePath, "!!!!\n");
-  await expectReason(fixture, "TRUST_SIGNATURE_ENCODING");
-});
-
-test("artifact size and non-canonical paths fail closed", async (context) => {
-  const fixture = await createFixture();
-  context.after(() => rm(fixture.root, { recursive: true, force: true }));
-  fixture.manifest.artifact.size += 1;
-  await fixture.writeSignedManifest();
-  await expectReason(fixture, "TRUST_ARTIFACT_SIZE");
-  fixture.manifest.artifact.size -= 1;
-  for (const [path, reasonCode] of [
-    ["/absolute.bin", "TRUST_ARTIFACT_PATH"],
-    ["folder\\artifact.bin", "TRUST_ARTIFACT_PATH"],
-    ["folder/../artifact.bin", "TRUST_ARTIFACT_PATH"],
-    [".", "TRUST_ARTIFACT_PATH_ESCAPE"],
-  ]) {
-    fixture.manifest.artifact.path = path;
-    await fixture.writeSignedManifest();
-    await expectReason(fixture, reasonCode);
-  }
-});
-
-test("CLI rejects missing, duplicate, and unknown arguments", () => {
-  const cli = resolve(repositoryRoot, "scripts/verify-release-trust.mjs");
-  const cases = [
-    [[], "TRUST_ARGUMENTS_REQUIRED"],
-    [["--now", now, "--now", now], "TRUST_ARGUMENTS_INVALID"],
-    [["--unknown", "value"], "TRUST_ARGUMENT_UNKNOWN"],
-  ];
-  for (const [arguments_, reasonCode] of cases) {
-    const result = spawnSync(process.execPath, [cli, ...arguments_], { encoding: "utf8" });
-    assert.equal(result.status, 1);
-    assert.equal(JSON.parse(result.stderr).reasonCode, reasonCode);
-  }
-});
-
-// OD-16 F7. Two strict RFC 3339 parsers exist and neither is going away: the protocol
-// package's `parseStrictInstant` (integer civil arithmetic, used by the product) and
-// this module's `strictRfc3339Instant` (Date arithmetic, reachable from the published
-// `tcrn-workflow-release-verify` bin, which must run with no build step). The 2026-07-18
-// audit recorded them as "equivalent today, will drift on the next edit" and nothing was
-// checking that. This corpus is the check: one grammar, two implementations, and any edit
-// that moves one and not the other turns it red.
-//
-// The helper repository's `cliNow` is deliberately NOT in scope. It accepts a narrower
-// grammar on purpose -- Z only, exactly three fractional digits -- and pinning it to this
-// corpus would convert a designed restriction into a reported defect.
-// As with the serializer pin in protocol-proof.test.mjs: this reads the product parser
-// from dist/build while this claim's fixturePaths list only the release-trust side, so a
-// protocol edit does not invalidate this claim's digest. Deliberate -- the protocol source
-// carries ten claims of its own, and the equivalence assertion below is the guard, run
-// against freshly built bytes on every full suite run.
-test("both strict RFC 3339 implementations accept and reject exactly the same grammar", async () => {
-  const { parseStrictInstant } = await import("../dist/build/packages/protocol/src/index.js");
-
-  const accepted = [
-    "2026-07-11T12:00:00Z",
-    "2026-07-11T12:00:00.1Z",
-    "2026-07-11T12:00:00.123Z",
-    "2026-07-11T12:00:00.123456789Z",
-    "2026-07-11T12:00:00+08:00",
-    "2026-07-11T12:00:00-05:30",
-    "2026-07-11T12:00:00.5+00:00",
-    "2024-02-29T00:00:00Z",
-    "2000-02-29T23:59:59Z",
-    "1970-01-01T00:00:00Z",
-    "2026-12-31T23:59:59.999999999-12:00",
-  ];
-  const rejected = [
-    "2026-07-11",
-    "July 11, 2026 12:00:00",
-    "2026-02-30T00:00:00Z",
-    "2023-02-29T00:00:00Z",
-    "1900-02-29T00:00:00Z",
-    "2026-13-01T00:00:00Z",
-    "2026-00-10T00:00:00Z",
-    "2026-07-00T00:00:00Z",
-    "2026-07-11T24:00:00Z",
-    "2026-07-11T12:60:00Z",
-    "2026-07-11T12:00:60Z",
-    "2026-07-11t12:00:00z",
-    "2026-07-11T12:00:00",
-    "2026-07-11T12:00:00.1234567890Z",
-    "2026-07-11T12:00:00.Z",
-    "2026-07-11T12:00:00+24:00",
-    "2026-07-11T12:00:00+08:60",
-    "2026-07-11T12:00:00 Z",
-    " 2026-07-11T12:00:00Z",
-    "",
-  ];
-
-  const admits = (parse, value) => {
-    try { parse(value); return true; } catch { return false; }
-  };
-
-  for (const value of accepted) {
-    assert.equal(admits((v) => strictRfc3339Instant(v, "TIME", "value"), value), true, `release-trust must accept ${value}`);
-    assert.equal(admits(parseStrictInstant, value), true, `protocol must accept ${value}`);
-    // Agreeing on admission is not enough: they must agree on the instant itself, or a
-    // receipt verified by one and produced by the other silently disagrees about when.
-    assert.equal(
-      strictRfc3339Instant(value, "TIME", "value"),
-      parseStrictInstant(value),
-      `both implementations must derive the same nanoseconds for ${value}`,
-    );
-  }
-  for (const value of rejected) {
-    assert.equal(admits((v) => strictRfc3339Instant(v, "TIME", "value"), value), false, `release-trust must reject ${value}`);
-    assert.equal(admits(parseStrictInstant, value), false, `protocol must reject ${value}`);
-  }
-
-  // Non-strings are refused by both rather than coerced.
-  for (const value of [null, undefined, 42, {}, [], new Date()]) {
-    assert.equal(admits((v) => strictRfc3339Instant(v, "TIME", "value"), value), false);
-    assert.equal(admits(parseStrictInstant, value), false);
+    const result = runVerifier(argv);
+    assert.equal(result.status, 1, argv.join(" "));
+    assert.equal(JSON.parse(result.stderr).reasonCode, reasonCode, argv.join(" "));
   }
 });

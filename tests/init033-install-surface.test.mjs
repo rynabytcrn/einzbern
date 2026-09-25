@@ -23,7 +23,7 @@ test("S261 install manifest is closed, placeholder-only, and complete", async ()
   assert.equal(manifest.schemaVersion, INSTALL_MANIFEST_VERSION);
   assert.deepEqual(manifest.placeholders, ["<HOME>", "<PLATFORM_ROOT>"]);
   assert.equal(manifest.projects.find((project) => project.name === "joi-button")?.pathTemplate, "<PLATFORM_ROOT>/joi-button");
-  assert.ok(manifest.items.length >= 15);
+  assert.ok(manifest.items.length >= 14);
   for (const entry of manifest.items) {
     assert.equal(typeof entry.layer, "string");
     assert.equal(typeof entry.pathTemplate, "string");
@@ -35,8 +35,9 @@ test("S261 install manifest is closed, placeholder-only, and complete", async ()
   }
   for (const id of ["machine.agents-skill", "machine.claude-skill"]) {
     const entry = manifest.items.find((candidate) => candidate.id === id);
-    assert.match(entry.acceptanceProbe, /^probe:helper-skill-digest;source=trusted-archive-state;archive=skill-archive\.json;state=state\.json;marker=installed-copy-[^;]+\.json;entry=SKILL\.md$/u);
-    assert.doesNotMatch(entry.acceptanceProbe, /sha256=/u);
+    // A directory since the trusted archive and install markers the digest probe compared
+    // against retired (TCRN-CROSS-STORY-467 R2).
+    assert.equal(entry.acceptanceProbe, "probe:regular-directory");
   }
   assertInstallManifestComplete(manifest);
 });

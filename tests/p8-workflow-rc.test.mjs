@@ -61,7 +61,8 @@ test("P8 creates a closed unpublished release candidate without supported AOS re
   const manifest = JSON.parse(artifacts.get("release-manifest.json").toString("utf8"));
   assert.equal(manifest.releaseStatus, "accepted_release");
   assert.deepEqual(manifest.supportedAosReleases, []);
-  assert.equal(p8ArtifactRecords(artifacts).length, 6);
+  // Five since the in-toto build statement retired with the trust root (TCRN-CROSS-STORY-467 R2).
+  assert.equal(p8ArtifactRecords(artifacts).length, 5);
   assert.throws(
     () => assertClosedReleaseArtifactAllowlist(new Map([["unexpected.txt", Buffer.from("")]])),
     (error) => error.reasonCode === "P8_RELEASE_ALLOWLIST_MISMATCH",
@@ -69,7 +70,7 @@ test("P8 creates a closed unpublished release candidate without supported AOS re
 });
 
 // TCRN-CROSS-STORY-461 R1 (SUB-240, #232). A temporary repository with an ignored dist tree:
-// the previous version's source archive sits beside the six current artifacts, as it did
+// the previous version's source archive sits beside the current artifacts, as it did
 // after the 1.1.3 bump. Red leg: drop the move and the closed artifact set stays red.
 // A release archive from before the rename carries the old engine name and is still stale.
 const PREVIOUS_SOURCE_ARCHIVE = `${LEGACY_ENGINE_NAME}-1.1.2-source.tar`;
@@ -98,7 +99,7 @@ async function treeBytes(root, prefix = "") {
 
 const releaseNames = async (root) => readdir(join(root, "dist", "release"));
 
-test("STORY-461 SUB-240: a previous-version source archive moves to dist/stale-release and the six current artifacts stay", async (context) => {
+test("STORY-461 SUB-240: a previous-version source archive moves to dist/stale-release and the current artifacts stay", async (context) => {
   assert.notEqual(P8_VERSION, "1.1.2");
   const root = await staleReleaseFixture(context, [PREVIOUS_SOURCE_ARCHIVE, ...P8_RELEASE_ARTIFACTS]);
   const evidenceBefore = await treeBytes(root, "dist/evidence");

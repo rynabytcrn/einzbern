@@ -1,34 +1,30 @@
-# Release Trust V1 Normative Contract
+# Release Trust V1: Install-Tree Digest
 
 The words MUST, MUST NOT, REQUIRED, SHALL, SHALL NOT, SHOULD, SHOULD NOT, and
 MAY are interpreted as described by RFC 2119.
 
-1. A release verifier MUST receive the trust-root path explicitly.
-2. The resolved trust-root path MUST be outside the candidate framework root.
-3. Trust roots and manifests MUST be canonical UTF-8 JSON with one terminal LF,
-   conform to the committed V1 schemas, and reject unknown fields. Every scalar
-   string and object key is validated independently; malformed Unicode fails
-   with the applicable `TRUST_*_CANONICAL_JSON` reason before claim or signature
-   evaluation. Object keys use direct UTF-8 byte ordering, including integer-like
-   keys where `"10"` precedes `"2"`; host object-enumeration order is not
-   canonical.
-4. The manifest signature MUST be Ed25519 over canonical JSON UTF-8 bytes.
-5. Repository, workflow, and subject MUST match caller expectations.
-6. Every instant MUST use the strict no-leap-second RFC 3339 subset without
-   parser normalization. Seconds `60` and impossible calendar instants are
-   rejected. Trust-root and manifest validity windows MUST contain the supplied
-   verification time.
-7. Revoked or invalid keys, unknown keys, sequence rollback, path escape,
-   symlinks, any multi-link security input, path replacement, invalid canonical
-   base64, non-64-byte signatures, invalid signatures, and artifact mismatches
-   MUST fail.
-8. Failure MUST return a stable reason code and MUST NOT admit release mode.
-9. The verifier MUST NOT search the checkout, environment, or network for
-   replacement trust material.
-10. Trust root, manifest, signature, and artifact bytes MUST be read from the
-    same no-follow descriptor whose identity and link count were validated.
-11. Root-version rollback across invocations is external in V1 because the
-    verifier accepts no prior-root or root-version-floor input. A caller MUST
-    enforce that policy before relying on `rootVersion` continuity.
+Release trust answers one question: are the installed bytes the bytes that were
+published? The signed manifest, the external trust root, the in-toto build statement,
+the transaction log and the test-root restriction of the earlier contract are
+retired (TCRN-CROSS-STORY-467 R2, TCRN-CROSS-MIN-227 D3).
 
-The executable reference is `scripts/verify-release-trust.mjs`.
+1. A publisher MUST state one install-tree digest per release: 64 lowercase
+   hexadecimal characters.
+2. The digest covers every regular file under the unpacked release directory. Files
+   are ordered by their POSIX relative path, compared by UTF-8 bytes.
+3. Each file contributes its relative path, its size and its sha256. A text file
+   (no NUL byte, valid UTF-8) is measured after CRLF line endings are read as LF, so
+   a checkout that converted line endings still matches; any other file is measured
+   as it is.
+4. The tree digest is the sha256 of the canonical JSON document
+   `{"entries": [...], "schemaVersion": "einzbern.install-tree-digest.v1"}`.
+5. A symbolic link or any other non-regular file in the tree MUST be refused with
+   `INSTALL_TREE_ENTRY_NOT_REGULAR`; it is never followed or skipped.
+6. A verifier MUST admit the tree only when the computed digest equals the stated
+   one, and MUST otherwise refuse with `INSTALL_TREE_DIGEST_MISMATCH`, naming both
+   digests. A stated digest that is not 64 lowercase hexadecimal characters is
+   refused with `INSTALL_TREE_DIGEST_INVALID`.
+
+The executable reference is `einzbern-release-verify --tree <directory> --sha256
+<digest>` (`scripts/verify-release-trust.mjs`), which reads the one definition in
+`packages/core/src/install-tree-digest.ts`.

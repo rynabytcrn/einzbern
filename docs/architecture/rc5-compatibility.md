@@ -67,9 +67,10 @@ read past an event it cannot reduce, and none is planned for V1.
 
 ## Attestation is one-way
 
-Actor attestation is enabled by appending a single `attestation.actor.enabled`
-chain event, via `attestation-enable` (CLI) or `enableActorAttestation` (engine).
-The record is minimal (`{schemaVersion, version:1}`) and touches no record graph.
+Actor attestation was enabled by appending a single `attestation.actor.enabled`
+chain event. The verb that wrote it (`attestation-enable`) is retired
+(TCRN-CROSS-STORY-467 R2); a chain that carries the event keeps the rule below. The
+record is minimal (`{schemaVersion, version:1}`) and touches no record graph.
 
 From the enabling event's sequence onward — that event included — a valid `actor`
 id is **mandatory** on every appended event. The live append path and the replay

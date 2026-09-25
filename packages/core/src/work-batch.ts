@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // STORY-300 slice 3: apply an ordered, heterogeneous sequence of work-record writes as
-// one act -- one lease, one CAS decision, one clock reading, one view projection, one
-// time-attestation receipt.
+// one act -- one write lock, one replay, one clock reading and one view projection.
 //
 // The Story this belongs to opens with the cost it exists to remove: recording N facts
 // should cost O(1) chain-write round trips. Filing four knowledge cards on 2026-08-19 took

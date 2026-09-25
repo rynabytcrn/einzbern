@@ -10,6 +10,7 @@ import test from "node:test";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { initializeWorkspace, validateWorkspace } from "../dist/build/packages/core/src/index.js";
 import { setModelPlanInWorkspace } from "../dist/build/packages/core/src/workspace.js";
+import { appendHistoricalAttestationEnable } from "./helpers/workspace-fixture.mjs";
 
 const instant = (second) => new Date(Date.UTC(2026, 0, 1) + second * 1000).toISOString().replace(/\.\d+Z$/u, "Z");
 
@@ -43,7 +44,9 @@ const write = (command, workspace, at, args) => [command, "--workspace", workspa
 
 test("S369: dispatch writes preserve actor, settings.updated, and exact round-trip values", async (t) => {
   const { workspace } = await fixture(t, "dispatch-writes");
-  const enabled = await json(["attestation-enable", "--workspace", workspace, "--at", instant(1), "--actor", "agent:attester"]);
+  // The attestation.actor.enabled event is history now (TCRN-CROSS-STORY-467 R2); a chain
+  // that carries it still demands an actor, which these writes supply.
+  const enabled = await appendHistoricalAttestationEnable(workspace, { occurredAt: instant(1), actorId: "agent:attester" });
   assert.equal(enabled.version, 1);
 
   const tiers = JSON.stringify({ flagship: null, main: { model: "main-model", effort: "xhigh2" }, economy: { model: "economy-model", effort: "" } });

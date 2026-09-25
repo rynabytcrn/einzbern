@@ -129,7 +129,7 @@ test("dispatch tier catalog declares its payload and write flags", async () => {
   const entry = COMMAND_CATALOG.find((candidate) => candidate.name === "dispatch-tiers-set");
   assert.ok(entry);
   assert.deepEqual(entry.flags.map((flag) => flag.name), [
-    "workspace", "at", "host", "tiers", "actor", "attest-dir",
+    "workspace", "at", "host", "tiers", "actor",
   ]);
   assert.deepEqual(entry.flags.find((flag) => flag.name === "tiers"), { name: "tiers", required: true, valueKind: "string" });
 

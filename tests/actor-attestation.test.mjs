@@ -20,13 +20,13 @@ import {
   buildEventPayload,
   createProject,
   createWork,
-  enableActorAttestation,
   exportWorkspace,
   initializeWorkspace,
   materializeWorkspace,
   validateActorAttestationEnableRecord,
   LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
+import { appendHistoricalAttestationEnable } from "./helpers/workspace-fixture.mjs";
 import { canonicalJson, createEvent, validateExtensionRegistration } from "../dist/build/packages/protocol/src/index.js";
 
 const instant = (second) => `2026-07-11T00:00:${String(second).padStart(2, "0")}Z`;
@@ -166,7 +166,7 @@ async function attestedChain(fixture) {
   const created = await createProject(fixture.workspace, {
     occurredAt: instant(1), externalKey: "PROJECT-CHAIN", name: "Chain",
   });
-  await enableActorAttestation(fixture.workspace, {
+  await appendHistoricalAttestationEnable(fixture.workspace, {
     occurredAt: instant(2), actorId: "owner:release-gate",
   });
   await createWork(fixture.workspace, {
@@ -202,7 +202,7 @@ test("WSE-2 live: enabling attestation makes a valid actor mandatory on every la
     });
     assert.equal(created.attestationEnabledAtSequence, null);
 
-    const enabled = await enableActorAttestation(fixture.workspace, {
+    const enabled = await appendHistoricalAttestationEnable(fixture.workspace, {
       occurredAt: instant(3), actorId: "owner:release-gate",
     });
     assert.equal(enabled.attestationEnabledAtSequence, 2);
@@ -228,10 +228,6 @@ test("WSE-2 live: enabling attestation makes a valid actor mandatory on every la
     assert.equal(worked.version, 3);
     assert.equal(worked.attestationEnabledAtSequence, 2);
 
-    // Re-enabling an already-attested workspace fails closed.
-    await reasonAsync("WORKSPACE_INPUT_INVALID", () => enableActorAttestation(fixture.workspace, {
-      occurredAt: instant(5), actorId: "owner:release-gate",
-    }));
     const exported = JSON.parse(await exportWorkspace(fixture.workspace));
     assert.equal("actor" in exported.events[0].payload, false);
     assert.equal(exported.events[1].payload.operation, ACTOR_ATTESTATION_ENABLE_OPERATION);

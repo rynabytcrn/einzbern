@@ -30,6 +30,14 @@ is rendered from `packages/core/src/names.ts` and is the same table as
 | `.tcrn-artifacts` | （不改名、不迁移） | 平台档案，归平台层，不随改名迁移 |
 <!-- einzbern:alias-table:end -->
 
+The governance layer is trimmed (TCRN-CROSS-MIN-227 D3; TCRN-CROSS-STORY-467). Writes are
+serialised by an engine file lock: `--expected-version`, its `head` sentinel and the
+`lease-inspect`, `lease-break` and `lease-recovery-break` verbs are gone, and every
+workspace write receipt carries the ids it wrote beside `version` and `headEventHash`.
+The time-attestation store, `--attest-dir` and the `attestation-enable`,
+`attestation-migrate` and `attestation-verify` verbs are gone; a chain that already
+carries `attestation.actor.enabled` still replays and still requires an actor.
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

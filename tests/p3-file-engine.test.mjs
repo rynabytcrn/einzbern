@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import {
   chmod,
   link,
@@ -21,7 +19,6 @@ import {
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
 
 import Ajv2020 from "ajv/dist/2020.js";
 
@@ -37,23 +34,20 @@ import {
   createProject,
   createWorkspaceArchive,
   createWork,
-  deleteLegacyAttestations,
   deleteProject,
   deleteWork,
   exportWorkspace,
   initializeWorkspace,
   materializeWorkspace,
-  migrateAttestationDirectory,
   planWorkspaceMigration,
-  readAttestationReceipt,
   recoverWorkspace,
-  reportAttestationDirectory,
   transitionWork,
   updateProject,
   validateWorkspace,
   LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import * as publicCore from "../dist/build/packages/core/src/index.js";
+import { appendHistoricalAttestationEnable } from "./helpers/workspace-fixture.mjs";
 import {
   canonicalJson,
   canonicalSha256,
@@ -341,243 +335,6 @@ test("WSB-1: mutation responses carry the created/mutated record identity", asyn
     }
   } finally {
     await fixture.close();
-  }
-});
-
-test("WSE-4: --attest-dir writes one deterministic advisory receipt outside the workspace, opt-in and clock-gated", async () => {
-  const observed = "2026-07-11T09:15:30Z";
-  // Happy path with an injected FIXED clock (hermetic — no real clock is read): the
-  // receipt is exactly {schemaVersion, eventHash, observedAt, occurredAt} in canonical
-  // JSON, named <headEventHash>.json, written to a directory OUTSIDE the workspace.
-  const runReceipt = async (fixture) => {
-    const attestDir = join(fixture.base, "receipts");
-    let output = "";
-    await runCli(
-      ["project-create", "--workspace", fixture.workspace, "--at", instant(1),
-        "--external-key", "PROJECT-T1", "--name", "T1", "--attest-dir", attestDir],
-      { write: (value) => { output += value; }, clock: () => observed },
-    );
-    const parsed = JSON.parse(output);
-    const entries = await readdir(attestDir);
-    assert.deepEqual(entries, [`${parsed.headEventHash}.json`], "exactly one receipt named <headEventHash>.json");
-    const receipt = await readFile(join(attestDir, entries[0]), "utf8");
-    assert.equal(receipt, canonicalJson({
-      schemaVersion: "tcrn.time-attestation.v1",
-      eventHash: parsed.headEventHash,
-      observedAt: observed,
-      occurredAt: instant(1),
-    }), "receipt is canonical JSON of the four advisory fields");
-    // GAP-5 privacy: the receipt embeds no filesystem path and no hostname.
-    assert.ok(!receipt.includes(fixture.base) && !receipt.includes(attestDir), "receipt carries no raw paths");
-    return receipt;
-  };
-  const first = await workspaceFixture();
-  const second = await workspaceFixture();
-  try {
-    const a = await runReceipt(first);
-    const b = await runReceipt(second);
-    assert.equal(a, b, "a fixed injected clock makes the receipt byte-deterministic across fixtures");
-  } finally {
-    await first.close();
-    await second.close();
-  }
-});
-
-test("WSE-4: --attest-dir fails closed inside the workspace root and with no injected clock, writing nothing", async () => {
-  const fixture = await workspaceFixture();
-  try {
-    // Containment: a directory resolving INSIDE the workspace root is rejected and no
-    // receipt is written (the advisory receipt must never masquerade as in-workspace).
-    const insideDir = join(fixture.workspace, "attest-inside");
-    await expectReasonAsync("CLI_ARGUMENT_MALFORMED", () => runCli(
-      ["project-create", "--workspace", fixture.workspace, "--at", instant(1),
-        "--external-key", "PROJECT-T2", "--name", "T2", "--attest-dir", insideDir],
-      { write: () => {}, clock: () => "2026-07-11T09:15:30Z" },
-    ));
-    await assert.rejects(readdir(insideDir), (error) => error.code === "ENOENT", "no receipt directory is created on containment rejection");
-    // Missing clock: --attest-dir with no injected clock fails closed rather than
-    // falling through to an implicit Date. Since TCRN-CROSS-INC-378 both refusals happen
-    // before the workspace lease is taken, so the rejection above committed nothing and
-    // this call still targets version 0; an OUTSIDE directory isolates the clock-absence
-    // path from the containment path.
-    const outsideDir = join(fixture.base, "receipts-noclock");
-    await expectReasonAsync("CLI_ARGUMENT_MISSING", () => runCli(
-      ["project-create", "--workspace", fixture.workspace, "--at", instant(2),
-        "--external-key", "PROJECT-T3", "--name", "T3", "--attest-dir", outsideDir],
-      { write: () => {} },
-    ));
-    await assert.rejects(readdir(outsideDir), (error) => error.code === "ENOENT", "no receipt directory is created when the clock is absent");
-    assert.equal((await materializeWorkspace(fixture.workspace)).version, 0, "neither refusal committed an event");
-  } finally {
-    await fixture.close();
-  }
-});
-
-// TCRN-CROSS-INC-378. A workspace with a segmented attestation store built the way the
-// live stores were: attested writes, then a one-shot migration. With inconsistent set, one
-// more attested write follows and the old manifest is put back, which is the shape event
-// 8249 left in cross-project: a segment holding a record its manifest never counted.
-const ATTEST_IO = { write: () => {}, clock: () => "2026-07-11T09:15:30Z" };
-
-async function attestedStoreFixture(inconsistent) {
-  const fixture = await workspaceFixture();
-  const attestDir = join(fixture.base, "attestations");
-  const create = (version, key) => runCli(["project-create", "--workspace", fixture.workspace, "--at", instant(version + 1), "--external-key", key, "--name", key, "--attest-dir", attestDir], ATTEST_IO);
-  for (const [version, key] of ["PROJECT-A0", "PROJECT-A1", "PROJECT-A2"].entries()) await create(version, key);
-  const baseline = await reportAttestationDirectory(attestDir);
-  await migrateAttestationDirectory(attestDir);
-  await deleteLegacyAttestations(attestDir, baseline);
-  if (inconsistent) {
-    const manifest = await readFile(join(attestDir, "manifest.json"));
-    await create(3, "PROJECT-A3");
-    await writeFile(join(attestDir, "manifest.json"), manifest);
-  }
-  return { ...fixture, attestDir };
-}
-
-async function directoryDigests(directory) {
-  const digests = {};
-  for (const name of (await readdir(directory)).sort()) digests[name] = createHash("sha256").update(await readFile(join(directory, name))).digest("hex");
-  return digests;
-}
-
-test("INC-378 every mutating verb that takes --attest-dir refuses an inconsistent store before the lease and changes nothing", async () => {
-  const fixture = await attestedStoreFixture(true);
-  try {
-    // Just enough arguments for each verb to pass its own checks, which run first; the
-    // attestation check comes next, before the lease, so nothing is read against the chain.
-    const templatePath = join(fixture.base, "inc378.template.json");
-    await writeFile(templatePath, canonicalJson({
-      schemaVersion: "tcrn.template.v1", id: "inc378.defect.v1", version: 1, appliesTo: ["Incident"],
-      headings: ["URI", "Preconditions", "Steps to Reproduce", "Actual", "Expected", "Credentials 引用", "Attachments 引用"],
-      acceptanceHeadings: ["Expected"], referenceHeadings: ["Attachments 引用", "Credentials 引用"], couplings: [],
-    }), "utf8");
-    const batchPath = join(fixture.base, "inc378.batch.json");
-    await writeFile(batchPath, "{}", "utf8");
-    const specific = {
-      "template-admit": { template: templatePath },
-      "work-annotate": { title: "attested" },
-      "work-batch": { "from-file": batchPath },
-      "work-create": { kind: "Initiative" },
-      "work-transition": { status: "ready" },
-    };
-    const verbs = COMMAND_CATALOG.filter((entry) => entry.mutates && entry.flags.some((flag) => flag.name === "attest-dir"));
-    assert.equal(verbs.length, 22, "the catalog declares --attest-dir on 22 mutating verbs");
-    const version = (await materializeWorkspace(fixture.workspace)).version;
-    const digests = await directoryDigests(fixture.attestDir);
-    for (const entry of verbs) {
-      const values = {};
-      for (const flag of entry.flags.filter((candidate) => candidate.required)) values[flag.name] = flag.valueKind === "instant" ? instant(9) : "x";
-      Object.assign(values, { workspace: fixture.workspace, "attest-dir": fixture.attestDir }, specific[entry.name] ?? {});
-      const argv = [entry.name, ...Object.entries(values).flatMap(([name, value]) => [`--${name}`, value])];
-      const outcome = await runCli(argv, ATTEST_IO).then(() => "completed", (error) => error?.reasonCode);
-      assert.equal(outcome, "ATTESTATION_STORE_INCONSISTENT", entry.name);
-      assert.equal((await materializeWorkspace(fixture.workspace)).version, version, `${entry.name} committed nothing`);
-      assert.deepEqual(await directoryDigests(fixture.attestDir), digests, `${entry.name} changed no attestation byte`);
-    }
-  } finally {
-    await fixture.close();
-  }
-});
-
-test("INC-378 work-batch refuses an inconsistent store before the lease and changes nothing", async () => {
-  const fixture = await attestedStoreFixture(true);
-  try {
-    const batchPath = join(fixture.base, "inc378.batch.json");
-    await writeFile(batchPath, JSON.stringify({ schemaVersion: "tcrn.work-batch.v1", members: [
-      { verb: "work-create", projectId: deriveStableId("project", "PROJECT-A0"), externalKey: "INIT-B378", kind: "Initiative", parentId: null, status: "planned", title: "batch" },
-    ] }), "utf8");
-    const version = (await materializeWorkspace(fixture.workspace)).version;
-    const digests = await directoryDigests(fixture.attestDir);
-    const batch = ["work-batch", "--workspace", fixture.workspace, "--at", instant(9), "--from-file", batchPath];
-    await expectReasonAsync("ATTESTATION_STORE_INCONSISTENT", () => runCli([...batch, "--attest-dir", fixture.attestDir], ATTEST_IO));
-    assert.equal((await materializeWorkspace(fixture.workspace)).version, version, "the batch committed nothing");
-    assert.deepEqual(await directoryDigests(fixture.attestDir), digests, "no attestation byte changed");
-    // The same batch without --attest-dir commits, so the refusal above was the store's.
-    await runCli(batch, { write: () => {} });
-    assert.equal((await materializeWorkspace(fixture.workspace)).version, version + 1);
-  } finally {
-    await fixture.close();
-  }
-});
-
-test("INC-378 a consistent store still takes the receipt and it reads back by eventHash", async () => {
-  const fixture = await attestedStoreFixture(false);
-  try {
-    let output = "";
-    await runCli(["project-create", "--workspace", fixture.workspace, "--at", instant(9),
-      "--external-key", "PROJECT-C1", "--name", "C1", "--attest-dir", fixture.attestDir], { ...ATTEST_IO, write: (value) => { output += value; } });
-    const head = JSON.parse(output).headEventHash;
-    assert.equal(await readAttestationReceipt(fixture.attestDir, head), canonicalJson({
-      schemaVersion: "tcrn.time-attestation.v1", eventHash: head, observedAt: "2026-07-11T09:15:30Z", occurredAt: instant(9),
-    }));
-    assert.equal(JSON.parse(await readFile(join(fixture.attestDir, "manifest.json"), "utf8")).count, 4);
-  } finally {
-    await fixture.close();
-  }
-});
-
-test("INC-378 a receipt that fails after the commit reports committed, the version and the new head", async () => {
-  const fixture = await attestedStoreFixture(false);
-  try {
-    // A read-only store passes the pre-lease check and then refuses the receipt itself.
-    const create = (version, key) => ["project-create", "--workspace", fixture.workspace, "--at", instant(9 + version), "--external-key", key, "--name", key, "--attest-dir", fixture.attestDir];
-    await chmod(fixture.attestDir, 0o500);
-    const failure = await runCli(create(3, "PROJECT-D1"), ATTEST_IO).then(() => null, (error) => error)
-      .finally(() => chmod(fixture.attestDir, 0o700));
-    const committed = await materializeWorkspace(fixture.workspace);
-    assert.equal(committed.version, 4, "the event is committed");
-    assert.equal(failure?.reasonCode, "ATTESTATION_RECEIPT_UNWRITTEN");
-    assert.deepEqual(failure.details, { committed: "true", version: "4", headEventHash: committed.headEventHash });
-
-    // The bin prints the same three keys on stderr.
-    await chmod(fixture.attestDir, 0o500);
-    let run;
-    try {
-      run = spawnSync(process.execPath, [fileURLToPath(new URL("../scripts/einzbern.mjs", import.meta.url)), ...create(4, "PROJECT-D2")], { encoding: "utf8" });
-    } finally {
-      await chmod(fixture.attestDir, 0o700);
-    }
-    const after = await materializeWorkspace(fixture.workspace);
-    const printed = JSON.parse(run.stderr);
-    assert.equal(run.status, 1);
-    assert.equal(printed.reasonCode, "ATTESTATION_RECEIPT_UNWRITTEN");
-    assert.deepEqual([printed.committed, printed.version, printed.headEventHash], ["true", "5", after.headEventHash]);
-  } finally {
-    await fixture.close();
-  }
-});
-
-test("WSE-4: export and archive bytes are identical with and without attestation receipts", async () => {
-  const withAttest = await workspaceFixture();
-  const without = await workspaceFixture();
-  try {
-    const mutate = async (fixture, attest) => {
-      const attestFlag = attest ? ["--attest-dir", join(fixture.base, "receipts")] : [];
-      const io = attest ? { write: () => {}, clock: () => "2026-07-11T09:15:30Z" } : { write: () => {} };
-      await runCli(["project-create", "--workspace", fixture.workspace, "--at", instant(1),
-        "--external-key", "PROJECT-EXP", "--name", "EXP", ...attestFlag], io);
-      await runCli(["work-create", "--title", "record-title", "--workspace", fixture.workspace, "--at", instant(2),
-        "--project-id", deriveStableId("project", "PROJECT-EXP"), "--external-key", "INIT-EXP", "--kind", "Initiative", ...attestFlag], io);
-    };
-    await mutate(withAttest, true);
-    await mutate(without, false);
-    // The receipt exists for the attested run, proving attestation actually happened.
-    assert.deepEqual((await readdir(join(withAttest.base, "receipts"))).length, 2, "one receipt per mutation");
-    // exportWorkspace and createWorkspaceArchive read only the chain, so the advisory
-    // receipts outside the workspace leave both byte-identical.
-    assert.equal(await exportWorkspace(withAttest.workspace), await exportWorkspace(without.workspace), "export bytes unchanged by receipts");
-    assert.equal(
-      Buffer.compare(
-        await createWorkspaceArchive(withAttest.workspace),
-        await createWorkspaceArchive(without.workspace),
-      ),
-      0,
-      "archive bytes unchanged by receipts",
-    );
-  } finally {
-    await withAttest.close();
-    await without.close();
   }
 });
 
@@ -1124,7 +881,7 @@ async function readEventPayloads(workspace) {
   return events.map((event) => event.payload);
 }
 
-test("WSE-3: --actor threads through attestation-enable and the mutation verbs into the appended event payload, fail-closed after enable", async () => {
+test("WSE-3: --actor threads through the mutation verbs into the appended event payload, fail-closed after the historical enable event", async () => {
   const fixture = await workspaceFixture({ externalKey: "WORKSPACE-WSE3" });
   try {
     const ws = ["--workspace", fixture.workspace];
@@ -1135,8 +892,9 @@ test("WSE-3: --actor threads through attestation-enable and the mutation verbs i
     };
     // The attestation.actor.enabled event is the boundary (sequence >= enabledAtSequence),
     // so the enabling event itself carries a valid actor and every later mutation must too.
-    const enabled = await run(["attestation-enable", ...ws, "--at", instant(1), "--actor", "owner:release-gate"]);
-    assert.equal(enabled.reasonCode, "WORKSPACE_COMMAND_COMPLETED");
+    // Its verb is retired (TCRN-CROSS-STORY-467 R2); the event is history a chain can carry.
+    const enabled = await appendHistoricalAttestationEnable(fixture.workspace, { occurredAt: instant(1), actorId: "owner:release-gate" });
+    assert.equal(enabled.attestationEnabledAtSequence, 1);
     // Happy path: a mutation on an enabled workspace with a valid --actor succeeds and
     // the actor string joins the hashed event payload (acceptance criterion 1).
     const projectCreate = await run(["project-create", ...ws, "--at", instant(2), "--external-key", "PROJECT-WSE3", "--name", "WSE3", "--actor", "agent:builder-7"]);
@@ -1160,11 +918,6 @@ test("WSE-3: --actor threads through attestation-enable and the mutation verbs i
     // (WORKSPACE_ACTOR_INVALID) — the CLI never duplicates the allowlist.
     await expectReasonAsync("WORKSPACE_ACTOR_INVALID", () => runCli(
       ["project-create", ...ws, "--at", instant(4), "--external-key", "PROJECT-WSE3B", "--name", "WSE3B", "--actor", "role:nope"],
-      { write: () => {} },
-    ));
-    // Re-enabling an already-attested workspace fails closed WORKSPACE_INPUT_INVALID.
-    await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => runCli(
-      ["attestation-enable", ...ws, "--at", instant(4), "--actor", "owner:release-gate"],
       { write: () => {} },
     ));
     // --actor stays unknown on read/non-mutation verbs (no sweep leakage): the flag

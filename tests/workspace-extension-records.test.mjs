@@ -20,7 +20,6 @@ import {
   cancelConferenceInWorkspace,
   closeConferenceInWorkspace,
   createGateInWorkspace,
-  enableActorAttestation,
   readGateIdentityAuthority,
   createProject,
   createWork,
@@ -50,6 +49,7 @@ import {
   validateEventChain,
 } from "../dist/build/packages/protocol/src/index.js";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
+import { appendHistoricalAttestationEnable } from "./helpers/workspace-fixture.mjs";
 
 const instant = (second) => `2026-07-11T00:${String(Math.floor(second / 60)).padStart(2, "0")}:${String(second % 60).padStart(2, "0")}Z`;
 
@@ -1225,7 +1225,7 @@ test("gate-v1: the identity decision is written down, and replay judges it witho
 
   // Identity gating only means something on a chain that records who acted, so this
   // is the configuration the feature is for.
-  await enableActorAttestation(fx.workspace, { occurredAt: instant(3), actorId: "owner:governance" });
+  await appendHistoricalAttestationEnable(fx.workspace, { occurredAt: instant(3), actorId: "owner:governance" });
   let state = await openConferenceInWorkspace(fx.workspace, {
     occurredAt: instant(4), externalKey: "CONF-DEC", projectId: fx.projectId, type: "architecture",
     title: "Decision", linkedWorkIds: [fx.workId], desiredOutcome: "rule", participantIds: [], actorId: "owner:governance",
@@ -1278,7 +1278,7 @@ test("gate-v1: a decision that disagrees with its own event is corrupt", async (
 
   // Identity gating only means something on a chain that records who acted, so this
   // is the configuration the feature is for.
-  await enableActorAttestation(fx.workspace, { occurredAt: instant(3), actorId: "owner:governance" });
+  await appendHistoricalAttestationEnable(fx.workspace, { occurredAt: instant(3), actorId: "owner:governance" });
   let state = await openConferenceInWorkspace(fx.workspace, {
     occurredAt: instant(4), externalKey: "CONF-MIS", projectId: fx.projectId, type: "architecture",
     title: "Mismatch", linkedWorkIds: [fx.workId], desiredOutcome: "rule", participantIds: [], actorId: "owner:governance",
@@ -1372,7 +1372,9 @@ test("gate-v1: the roster reaches gate-transition through the CLI, and every ref
     assert.equal(outcome.ok, true, `${label} failed: ${outcome.reasonCode}`);
     return outcome;
   };
-  await step("attestation-enable", ["attestation-enable", "--workspace", ws, "--at", instant(3), "--actor", "owner:governance"]);
+  // The attestation.actor.enabled event is history (TCRN-CROSS-STORY-467 R2); the chain
+  // carries it, so every write below supplies an actor.
+  await appendHistoricalAttestationEnable(ws, { occurredAt: instant(3), actorId: "owner:governance" });
   await invokeCli(["conference-open", "--workspace", ws, "--at", instant(4),
     "--external-key", "CONF-CLI-ID", "--project-id", fx.projectId, "--type", "architecture", "--title", "Ruling",
     "--work-ids", fx.workId, "--desired-outcome", "rule", "--participant-ids", "-", "--actor", "owner:governance"]);

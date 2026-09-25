@@ -47,7 +47,6 @@ import {
   ActorAttestationError,
   EVENT_PAYLOAD_OPERATION_EXTRAS,
   assertActorId,
-  buildActorAttestationEnableRecord,
   buildEventPayload,
   validateActorAttestationEnableRecord,
 } from "./actor-attestation.js";
@@ -3999,22 +3998,10 @@ export async function deleteWork(workspaceRoot: string, input: {
   }, input);
 }
 
-// WSE-2: turn on mandatory actor attestation for this workspace by appending the
-// attestation.actor.enabled chain event. It carries the enabling actor (injected
-// by appendEvent, which treats the enable event as actor-mandatory), touches no
-// record graph, and is one-way — v1 defines no disable operation. Re-enabling an
-// already-attested workspace fails closed WORKSPACE_INPUT_INVALID.
-export async function enableActorAttestation(workspaceRoot: string, input: {
-  readonly actorId: string;
-} & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, (state) => {
-    if (state.attestationEnabledAtSequence !== null) {
-      fail("WORKSPACE_INPUT_INVALID", "actor attestation is already enabled");
-    }
-    const record = buildActorAttestationEnableRecord() as unknown as JsonValue;
-    return { payload: { operation: ACTOR_ATTESTATION_ENABLE_OPERATION, record }, projects: state.projects, work: state.work };
-  }, input);
-}
+// WSE-2: the attestation.actor.enabled chain event is history now. Its write verb is
+// retired (TCRN-CROSS-STORY-467 R2); a chain that carries it still replays through the
+// reducer above and still demands an actor from that event on, which appendEvents
+// enforces for every later write.
 
 // WSD-1: verb-side lookups for the extension collections. The referenced record
 // must exist; conference mutations additionally require the referenced

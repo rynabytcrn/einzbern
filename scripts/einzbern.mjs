@@ -6,18 +6,14 @@ import { runOperatorCli } from "../dist/build/packages/cli/src/index.js";
 try {
   await runOperatorCli(process.argv.slice(2), {
     write: (value) => process.stdout.write(value),
-    // WSE-4: the outermost layer supplies the wall-clock reader. It exists only here,
-    // never inside library code, so --attest-dir advisory time receipts read the real
-    // clock in production while every hermetic runCli caller injects a fixed instant or
-    // omits it (in which case --attest-dir fails closed rather than falling through).
+    // The outermost layer supplies the wall-clock reader; it exists only here, never inside
+    // library code. Its one reader is the operator-authority path (--authority-pins).
     clock: () => new Date().toISOString(),
   });
 } catch (error) {
   const reasonCode = typeof error?.reasonCode === "string" ? error.reasonCode : "CLI_INTERNAL_ERROR";
-  // TCRN-CROSS-INC-378: committed, version and headEventHash tell a caller that the event
-  // landed although its time-attestation receipt was not written.
   // TCRN-CROSS-STORY-467 R4: a chain break names its stream, sequence, event and kind.
-  const stringDetails = ["required", "actual", "committed", "version", "headEventHash", "layout", "streamId", "sequence", "eventId", "break", "segment", "line"];
+  const stringDetails = ["required", "actual", "layout", "streamId", "sequence", "eventId", "break", "segment", "line"];
   const details = error?.details !== null && typeof error?.details === "object"
     ? Object.fromEntries(Object.entries(error.details).filter(([key, value]) =>
       (stringDetails.includes(key) && typeof value === "string") ||

@@ -10,7 +10,12 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { runCli } from "../../dist/build/packages/cli/src/index.js";
-import { initializeWorkspace } from "../../dist/build/packages/core/src/index.js";
+import {
+  ACTOR_ATTESTATION_ENABLE_OPERATION,
+  appendEvents,
+  buildActorAttestationEnableRecord,
+  initializeWorkspace,
+} from "../../dist/build/packages/core/src/index.js";
 
 export const repositoryRoot = resolve(import.meta.dirname, "../..");
 export const cliPath = join(repositoryRoot, "scripts/einzbern.mjs");
@@ -59,4 +64,18 @@ export async function workspaceFixture(context, { externalKey = "FIXTURE-WORKSPA
     projectId = created.record.id;
   }
   return { base, workspace, projectId };
+}
+
+/**
+ * Append the historical attestation.actor.enabled event. Its write verb is retired
+ * (TCRN-CROSS-STORY-467 R2), but chains that carry it still replay and still demand an
+ * actor from it on, so a test of that rule builds the event through the engine's own
+ * append path, exactly as the retired verb did.
+ */
+export async function appendHistoricalAttestationEnable(workspace, { occurredAt, actorId }) {
+  return appendEvents(workspace, [(state) => ({
+    payload: { operation: ACTOR_ATTESTATION_ENABLE_OPERATION, record: buildActorAttestationEnableRecord() },
+    projects: state.projects,
+    work: state.work,
+  })], { occurredAt, actorId });
 }

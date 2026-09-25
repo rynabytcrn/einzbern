@@ -54,23 +54,6 @@ export { StorageError, FileBackend, WORKSPACE_CONTROL_DIRECTORY } from "./storag
 export type { StorageBackend, StorageBackendKind, StorageDirectoryEntry, WorkspaceCrashPoint } from "./storage-backend.js";
 export { SegmentedBackend, SEGMENTED_BACKEND_PROFILE } from "./segmented-backend.js";
 export type { SegmentIndexDocument, SegmentIndexEntry, SegmentManifest, SegmentManifestEntry, SegmentedBackendProfile } from "./segmented-backend.js";
-export {
-  ATTESTATION_MANIFEST_VERSION,
-  assessAttestationLock,
-  attestationRecordsDigest,
-  backupAttestationStore,
-  checkAttestationStore,
-  deleteLegacyAttestations,
-  migrateAttestationDirectory,
-  parseAttestationManifest,
-  readAttestationDirectory,
-  readAttestationReceipt,
-  reportAttestationDirectory,
-  restoreAttestationStore,
-  rewriteAttestationStore,
-  withAttestationLock,
-  writeAttestationReceipt,
-} from "./attestation-storage.js";
 // INC-074: the storage-home sentinel declares where a workspace's chain lives
 // after a file→pg migration. The file backend refuses mutating verbs on a
 // sentinel workspace (WORKSPACE_STORAGE_RELOCATED), and a PG-facing path must
@@ -190,7 +173,6 @@ export {
   consumeViewWriteFailure,
   deleteProject,
   deleteWork,
-  enableActorAttestation,
   exportWorkspace,
   initializeWorkspace,
   materializeWorkspace,

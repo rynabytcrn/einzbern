@@ -47,8 +47,8 @@ const MINUTES_LOCATOR_PREFIX = "conference-minutes:";
 const CONFERENCE_TAGS = ["conference-decision", "distilled", "type-architecture"];
 
 // Drive one governed command through runCli with a write-capture stub and return
-// the parsed canonical output. No clock is injected and --attest-dir is never
-// supplied, so the CLI never reaches for a wall clock (constraint 6).
+// the parsed canonical output. No clock is injected, so the CLI never reaches for a
+// wall clock (constraint 6).
 async function invoke(tokens) {
   let output = "";
   await runCli(tokens, { write: (value) => { output += value; } });

@@ -19,7 +19,12 @@ operation can carry an unvalidated or absent actor once enforcement is on.
 
 ## Enablement
 
-Attestation is turned on by appending a chain event with operation
+The write entrance for enablement is retired (TCRN-CROSS-STORY-467 R2): no verb appends
+the event any more, so a new workspace never enables attestation. A chain that already
+carries the event keeps replaying, and keeps demanding an actor, exactly as this section
+and the next describe; the reducer and the append path still enforce the rule.
+
+Attestation was turned on by appending a chain event with operation
 `attestation.actor.enabled` and record `{schemaVersion: "tcrn.actor-attestation.v1",
 version: 1}`. Let `enabledAtSequence` be that event's sequence. From
 `enabledAtSequence` onward — the enabling event itself included, since it carries
@@ -54,15 +59,13 @@ enforcement without defining their own mechanism.
 
 ## CLI surface (WSE-3)
 
-The CLI exposes the attestation contract through two additions, both over the
-WSE-2 engine exports; the CLI adds no actor vocabulary of its own.
+The CLI exposes what remains of the attestation contract through one flag over the
+WSE-2 engine rules; the CLI adds no actor vocabulary of its own.
 
-- `attestation-enable --workspace <root> --at <instant>
-  --actor <stableId>` appends the one-way `attestation.actor.enabled` chain event
-  under a held lease. All four flags are required. The `--actor` supplied here is
-  the enabling actor carried by the enabling event itself (the boundary event).
-  Re-running it on an already-attested workspace fails closed
-  `WORKSPACE_INPUT_INVALID`.
+- `attestation-enable` is retired with the time-attestation store and the other
+  `attestation-*` verbs (TCRN-CROSS-STORY-467 R2). It used to append the one-way
+  `attestation.actor.enabled` event carrying the enabling actor; chains that carry
+  that event are unaffected.
 - `--actor <stableId>` is an optional flag on every workspace-event mutation verb
   — `project-create`/`-update`/`-delete`, `work-create`/`-transition`/`-delete`,
   and the conference/gate verbs `conference-open`/`-append-position`/`-close`/

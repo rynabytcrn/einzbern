@@ -116,6 +116,15 @@ test("the two gates this drift hid are on the roster", () => {
   assert.ok(P1_TASKS.includes("portal"));
 });
 
+test("467-R4/R5: the roster is the twelve retained legs, in order", () => {
+  // TCRN-CROSS-STORY-467 R2 removed source, verification-map, governance and budget with
+  // the scripts they ran; the retained list is stated literally so a removal is an edit here.
+  assert.deepEqual([...P1_TASKS], [
+    "format-check", "lint", "typecheck", "build", "test", "portal", "archive",
+    "no-sibling-dependency", "offline", "privacy", "links", "retrieval-eval",
+  ]);
+});
+
 test("the roster names each verb once", () => {
   assert.equal(new Set(P1_TASKS).size, P1_TASKS.length);
 });

@@ -17,7 +17,7 @@ import {
   toPosixPath,
   walkFiles,
 } from "./lib/files.mjs";
-import { P1_TASKS } from "./p1-sequence.mjs";
+import { P1_TASKS, runAllP1Legs } from "./p1-sequence.mjs";
 import { compareCanonicalText } from "./lib/canonical-order.mjs";
 import { codeOnly, controlByteOffset } from "./lib/code-only.mjs";
 import { LocalCommandError, runLocalCommand } from "./lib/local-command.mjs";
@@ -1018,24 +1018,51 @@ async function verifyOfflineBoundary() {
   });
 }
 
+// TCRN-CROSS-STORY-467 R5: a test seam, and only that. EINZBERN_P1_INJECT is a JSON object
+// naming rostered legs: a reason code makes that leg red without running it, `true` makes
+// it pass without running it. A run that used the seam lists the injected legs and never
+// reports P1_VERIFIED, so no caller that requires P1_VERIFIED can be satisfied through it.
+function p1Injection() {
+  const raw = process.env.EINZBERN_P1_INJECT;
+  if (raw === undefined || raw === "") return {};
+  let value;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    fail("P1_INJECTION_INVALID", "EINZBERN_P1_INJECT is not JSON");
+  }
+  assertion(value !== null && typeof value === "object" && !Array.isArray(value), "P1_INJECTION_INVALID", "EINZBERN_P1_INJECT must be an object");
+  for (const [task, outcome] of Object.entries(value)) {
+    assertion(P1_TASKS.includes(task), "P1_INJECTION_INVALID", `unknown leg ${task}`);
+    assertion(outcome === true || typeof outcome === "string" && /^[A-Z][A-Z0-9_]*$/u.test(outcome), "P1_INJECTION_INVALID", `${task}: an outcome is true or a reason code`);
+  }
+  return value;
+}
+
 async function verifyP1() {
   assertCleanExclusiveSourceBasis(run("git", ["status", "--porcelain=v1", "--untracked-files=all"]));
+  const injection = p1Injection();
+  const injected = Object.keys(injection);
   // The roster lives in scripts/p1-sequence.mjs so preflight runs this same list rather
-  // than a copy of it (TCRN-CROSS-INC-218). The copy had lost `portal` and
-  // `no-sibling-dependency`, and nothing compared them.
-  const sequence = P1_TASKS;
-  const results = [];
-  for (const name of sequence) {
-    results.push(await invoke(name));
+  // than a copy of it (TCRN-CROSS-INC-218). Every leg runs, and every red is reported with
+  // its own reason code (TCRN-CROSS-STORY-467 R5).
+  const outcome = await runAllP1Legs(async (name) => {
+    if (!Object.hasOwn(injection, name)) return invoke(name);
+    if (injection[name] === true) return success("P1_LEG_INJECTED_PASS");
+    return fail(injection[name], `${name}: injected red (EINZBERN_P1_INJECT)`);
+  });
+  const receipt = {
+    commands: P1_TASKS,
+    legs: outcome.legs,
+    ...(injected.length === 0 ? {} : { injected }),
+  };
+  if (outcome.reds.length > 0) {
+    fail("P1_RED", outcome.reds.map((red) => `${red.task}: ${red.reasonCode}`).join("; "), { ...receipt, reds: outcome.reds });
   }
-  const notices = results.flatMap((result, index) => (
-    result.notice === null || result.notice === undefined
-      ? []
-      : [{ command: sequence[index], ...result.notice }]
-  ));
-  return success("P1_VERIFIED", {
-    commands: sequence,
-    observedReasonCodes: results.map((result) => result.reasonCode),
+  const notices = outcome.legs.flatMap((leg) => leg.notice === undefined ? [] : [{ command: leg.task, ...leg.notice }]);
+  return success(injected.length === 0 ? "P1_VERIFIED" : "P1_VERIFIED_WITH_INJECTION", {
+    ...receipt,
+    observedReasonCodes: outcome.legs.map((leg) => leg.reasonCode),
     notices,
   });
 }

@@ -66,6 +66,8 @@ Release trust is the install-tree digest: `einzbern-release-verify --tree <dir> 
 symbolic links refused) equals the stated one. The signed manifest, the external trust root,
 the in-toto build statement, the P8 trust leg, the helper trust archive and its install
 markers are gone, and the helper copies are accepted as directories.
+`verify:p1` runs all twelve legs and reports every red with its reason code (`P1_RED` with
+`legs` and `reds`) instead of stopping at the first one.
 
 ## 1.2.1 — patch candidate
 

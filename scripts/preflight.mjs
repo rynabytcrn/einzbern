@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-INIT-021 INC-123/125 — reproduce the public CI world before push.
-// This runner is intentionally independent of `verify:p1`: P1 is fail-fast, while
-// preflight must collect every red leg in one isolated run so the first failure cannot
-// hide a second-world mismatch.
+// This runner is intentionally independent of `verify:p1`: both collect every red leg
+// (P1 since TCRN-CROSS-STORY-467 R5), but preflight runs each leg as its own process in an
+// isolated clone, so a second-world mismatch cannot hide behind the working tree.
 
 import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
@@ -13,9 +13,8 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // The roster is shared with `verify:p1` rather than copied from it (TCRN-CROSS-INC-218).
-// This runner stays independent of P1 in the way that matters — collect-all against
-// fail-fast, isolated clone against working tree — and that independence was never a
-// licence to run a shorter list. It had become one: two gates P1 ran, this world did not.
+// This runner stays independent of P1 in the way that matters — isolated clone against
+// working tree — and that independence was never a licence to run a shorter list. It had become one: two gates P1 ran, this world did not.
 import { P1_GATE_SPECS } from "./p1-sequence.mjs";
 
 export { P1_GATE_SPECS };

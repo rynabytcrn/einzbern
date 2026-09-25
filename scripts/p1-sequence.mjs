@@ -2,9 +2,10 @@
 // TCRN-CROSS-INC-218 — the P1 gate roster, written once.
 //
 // Two runners drive P1 and they need different things from it. `verify:p1` runs the
-// verbs in-process and fails fast; `preflight` runs each as its own `pnpm` process in a
-// scrubbed environment inside an isolated clone, and collects every red so the first
-// failure cannot hide a second-world mismatch. Those are two ways of running the same
+// verbs in-process; `preflight` runs each as its own `pnpm` process in a scrubbed
+// environment inside an isolated clone. Both collect every red, so the first failure
+// cannot hide a second one (`verify:p1` stopped at the first red until
+// TCRN-CROSS-STORY-467 R5). Those are two ways of running the same
 // list, and until this file existed each runner carried its own copy of it.
 //
 // The copies had already drifted. `verify:p1` ran `portal` and `no-sibling-dependency`;
@@ -57,6 +58,34 @@ export const P1_SEQUENCE = Object.freeze([
 
 /** The verb names, in order — what `verify:p1` walks. */
 export const P1_TASKS = Object.freeze(P1_SEQUENCE.map((entry) => entry.task));
+
+/**
+ * Run every rostered leg and collect every red (TCRN-CROSS-STORY-467 R5): a red leg no
+ * longer hides the legs after it. `runLeg(task)` resolves to the leg's result, which must
+ * carry a `reasonCode`, or rejects with an error that carries one. A leg that rejects
+ * without a reason code, or resolves without one, is still a named red.
+ */
+export async function runAllP1Legs(runLeg, tasks = P1_TASKS) {
+  const legs = [];
+  const reds = [];
+  for (const task of tasks) {
+    try {
+      const result = await runLeg(task);
+      if (typeof result?.reasonCode !== "string" || result.reasonCode.length === 0) {
+        legs.push({ task, ok: false, reasonCode: "P1_LEG_REASON_MISSING" });
+        reds.push({ task, reasonCode: "P1_LEG_REASON_MISSING", message: "the leg returned no reason code" });
+        continue;
+      }
+      const notice = result.notice === null || result.notice === undefined ? {} : { notice: result.notice };
+      legs.push({ task, ok: true, reasonCode: result.reasonCode, ...notice });
+    } catch (error) {
+      const reasonCode = typeof error?.reasonCode === "string" && error.reasonCode.length > 0 ? error.reasonCode : "P1_LEG_INTERNAL_ERROR";
+      legs.push({ task, ok: false, reasonCode });
+      reds.push({ task, reasonCode, message: String(error?.message ?? error).slice(0, 2000) });
+    }
+  }
+  return { reasonCode: reds.length === 0 ? "P1_VERIFIED" : "P1_RED", legs, reds };
+}
 
 /** `[key, argv]` pairs — what preflight spawns, one process per gate. */
 export const P1_GATE_SPECS = Object.freeze(

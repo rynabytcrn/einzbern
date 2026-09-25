@@ -33,7 +33,6 @@ try {
     roots[kind] = await realpath(path);
   }
   const workspace = roots.workspace;
-  const attestDir = join(base, "attestations");
   const init = runCli([
     "init",
     "--workspace", roots.workspace,
@@ -49,12 +48,10 @@ try {
   const write = runCli([
     "settings-set",
     "--workspace", workspace,
-    "--expected-version", String(init.version),
     "--at", "2026-08-11T04:15:01Z",
     "--key", "backup.cadence",
     "--value", "manual",
     "--actor", "agent:codex",
-    "--attest-dir", attestDir,
   ]);
   const after = runCli(["settings-catalog", "--workspace", workspace]);
   const readback = after.settings.find((entry) => entry.key === "backup.cadence");

@@ -52,8 +52,6 @@ const workspace = workspaceArgument ? resolve(workspaceArgument) : "";
 const containerRoot = containerArgument ? resolve(containerArgument) : "";
 const proseRootArgument = argument("prose-root", process.env.TCRN_PORTAL_PROSE_ROOT ?? "");
 const portArgument = argument("port", process.env.TCRN_PORTAL_PORT ?? "");
-const attestDirArgument = argument("attest-dir", process.env.TCRN_PORTAL_ATTEST_DIR ?? "");
-const attestDir = attestDirArgument ? resolve(attestDirArgument) : "";
 const requestedPartition = argument("partition", process.env.TCRN_PORTAL_PARTITION ?? "");
 
 if (workspace && containerRoot) failStartup(startupError("PORTAL_TARGET_AMBIGUOUS", {}, "choose exactly one target"));
@@ -74,12 +72,7 @@ async function discoverPartitions(root) {
     const partitionWorkspace = join(partitionRoot, "workspace");
     try {
       if (!(await stat(partitionWorkspace)).isDirectory()) continue;
-      let partitionAttestDir = attestDir;
-      if (!partitionAttestDir) {
-        const candidate = join(partitionRoot, "attestations");
-        try { if ((await stat(candidate)).isDirectory()) partitionAttestDir = candidate; } catch { /* optional */ }
-      }
-      partitions.push({ id: entry.name, workspace: partitionWorkspace, attestDir: partitionAttestDir });
+      partitions.push({ id: entry.name, workspace: partitionWorkspace });
     } catch { /* non-partition directories are ignored */ }
   }
   if (partitions.length === 0) throw startupError("PORTAL_CONTAINER_EMPTY", { container: root });
@@ -90,7 +83,7 @@ let partitionCatalog;
 try {
   partitionCatalog = containerRoot
     ? await discoverPartitions(containerRoot)
-    : [{ id: "workspace", workspace, attestDir }];
+    : [{ id: "workspace", workspace }];
 } catch (error) { failStartup(error); }
 
 if (requestedPartition && !partitionCatalog.some((entry) => entry.id === requestedPartition)) {
@@ -154,10 +147,6 @@ async function currentWorkspaceName() {
   } catch { /* legacy or incomplete workspace metadata falls back to the partition id */ }
   return currentPartition().id;
 }
-const currentPaths = () => {
-  const root = dirname(currentPartition().workspace);
-  return Object.fromEntries(["framework", "workspace", "transient", "evidence-locator", "release-trust"].map((kind) => [kind, join(root, kind)]));
-};
 const TOKEN = randomBytes(24).toString("hex");
 const sessionWrites = [];
 let writeSequence = 0;
@@ -237,13 +226,6 @@ async function knowledgeBody(id) {
   return result;
 }
 
-async function gateProjection() {
-  const selected = currentPartition();
-  const result = await cliResult(["gate-list-all", "--workspace", selected.workspace]);
-  if (!result.ok) return { ok: false, reasonCode: "PORTAL_GATES_READ_FAILED", source: result.body, records: [], total: 0 };
-  return { ok: true, reasonCode: "PORTAL_GATES_READY", workspaceId: result.body.workspaceId ?? null, version: result.body.version ?? null, headEventHash: result.body.headEventHash ?? null, total: result.body.total ?? 0, records: result.body.records ?? [] };
-}
-
 async function hostSettingsProjection(host) {
   const args = [HOST_RENDER, "--host", host, "--workspace", currentPartition().workspace, "--root", defaultProseRoot(), "--plan-only", "--hooks-only"];
   try {
@@ -263,32 +245,6 @@ async function retrievalEvaluation() {
   } catch (error) {
     return childResult(error, "PORTAL_RETRIEVAL_EVAL_UNAVAILABLE");
   }
-}
-
-function modeStats(records) {
-  const modes = new Map();
-  for (const record of records) {
-    const payload = record?.payload ?? {};
-    const mode = typeof payload.mode === "string" && payload.mode.length > 0 ? payload.mode : "unknown";
-    const current = modes.get(mode) ?? { events: 0, inputTokens: 0, outputTokens: 0, totalTokens: 0, inputKnown: false, outputKnown: false, totalKnown: false, reworkKnown: 0, reworkCount: 0 };
-    current.events += 1;
-    const usage = payload.usage;
-    if (usage && typeof usage === "object") {
-      if (typeof usage.inputTokens === "number") { current.inputKnown = true; current.inputTokens += usage.inputTokens; }
-      if (typeof usage.outputTokens === "number") { current.outputKnown = true; current.outputTokens += usage.outputTokens; }
-      if (typeof usage.totalTokens === "number") { current.totalKnown = true; current.totalTokens += usage.totalTokens; }
-    }
-    if (typeof payload.rework === "boolean") { current.reworkKnown += 1; if (payload.rework) current.reworkCount += 1; }
-    modes.set(mode, current);
-  }
-  return Object.fromEntries([...modes.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([mode, value]) => [mode, {
-    events: value.events,
-    inputTokens: value.inputKnown ? value.inputTokens : null,
-    outputTokens: value.outputKnown ? value.outputTokens : null,
-    totalTokens: value.totalKnown ? value.totalTokens : null,
-    reworkRate: value.reworkKnown === 0 ? null : Number((value.reworkCount / value.reworkKnown).toFixed(4)),
-    reworkObserved: value.reworkKnown,
-  }]));
 }
 
 // TCRN-CROSS-MIN-225 D3 (TCRN-CROSS-SUB-259): the only automatic retirement left is a --supersedes
@@ -318,49 +274,21 @@ async function conflictRetirements(workspace, at) {
 async function evolutionProjection() {
   const selected = currentPartition();
   const at = readInstant();
-  const [stats, listing, conflicts, retrieval, claude, codex] = await Promise.all([
-    cliResult(["telemetry-stats", "--workspace", selected.workspace]),
-    cliResult(["telemetry-list", "--workspace", selected.workspace, "--limit", "4096"]),
+  const [conflicts, retrieval, claude, codex] = await Promise.all([
     conflictRetirements(selected.workspace, at),
     retrievalEvaluation(),
     hostSettingsProjection("claude-code"),
     hostSettingsProjection("codex"),
   ]);
-  const telemetryRecords = listing.ok && Array.isArray(listing.body.records) ? listing.body.records : [];
   return {
     ok: true,
     reasonCode: "PORTAL_EVOLUTION_READY",
     at,
-    partial: !stats.ok || !listing.ok || !conflicts.ok || retrieval.ok === false,
-    telemetry: stats.body,
-    modeStats: modeStats(telemetryRecords),
+    partial: !conflicts.ok || retrieval.ok === false,
     conflictRetirements: conflicts.records,
     conflictRetirementCount: conflicts.ok ? conflicts.records.length : null,
     retrievalEval: retrieval,
     hosts: [claude, codex],
-  };
-}
-
-async function executionState() {
-  const [settings, classes, dispatch] = await Promise.all([
-    settingsCatalog(),
-    cli(["dispatch-classes-list", "--workspace", currentPartition().workspace]),
-    cli(["dispatch-mode-list", "--workspace", currentPartition().workspace]),
-  ]);
-  return {
-    ok: true,
-    reasonCode: "PORTAL_EXECUTION_READY",
-    workspaceId: settings.workspaceId,
-    version: settings.version ?? classes.version ?? null,
-    headEventHash: settings.headEventHash ?? classes.headEventHash ?? null,
-    settings: settings.settings,
-    plans: [],
-    classes: classes.classes,
-    dispatch: {
-      mode: dispatch.mode,
-      modes: dispatch.modes,
-      tiers: dispatch.tiers,
-    },
   };
 }
 
@@ -420,9 +348,7 @@ async function governedWrite(build, action, summary) {
   let result;
   try {
     if (!ACTOR) throw new Error("TCRN_PORTAL_ACTOR must be a non-empty actor id");
-    const status = await cli(["status", "--workspace", selected.workspace]);
-    const common = ["--workspace", selected.workspace, "--expected-version", String(status.version), "--at", occurredAt, "--actor", ACTOR];
-    if (selected.attestDir) common.push("--attest-dir", selected.attestDir);
+    const common = ["--workspace", selected.workspace, "--at", occurredAt, "--actor", ACTOR];
     result = await cliResult(build(common));
   } catch (error) {
     result = { ok: false, body: { ok: false, reasonCode: "PORTAL_CLI_UNAVAILABLE", error: String(error?.message ?? error) } };
@@ -455,25 +381,6 @@ async function removeSetting(key) {
     `${key} reset`,
   );
   if (result.ok && DISPATCH_SETTING_KEYS.has(key)) {
-    return { ...result, body: { ...result.body, hostRender: await renderHostProjection() } };
-  }
-  return result;
-}
-
-async function writeExecution(action, body) {
-  const text = (value) => String(value ?? "");
-  const verbs = {
-    "dispatch-tiers-set": (common) => ["dispatch-tiers-set", ...common, "--host", text(body.host), "--tiers", JSON.stringify(body.tiers ?? {})],
-    "dispatch-mode-set": (common) => ["dispatch-mode-set", ...common, "--name", text(body.name), "--mapping", JSON.stringify(body.mapping ?? {})],
-  };
-  const build = verbs[action];
-  if (!build) {
-    const result = { ok: false, body: { ok: false, reasonCode: "PORTAL_UNKNOWN_ACTION", error: action } };
-    recordSessionWrite(action, result, action, new Date().toISOString());
-    return Promise.resolve(result);
-  }
-  const result = await governedWrite(build, action, body.summary ?? action);
-  if (result.ok && ["dispatch-tiers-set", "dispatch-mode-set"].includes(action)) {
     return { ...result, body: { ...result.body, hostRender: await renderHostProjection() } };
   }
   return result;
@@ -591,7 +498,6 @@ const server = createServer(async (request, response) => {
         partitions: (await refreshPartitionCatalog()).map(({ id }) => ({ id })),
         selectedPartition: selectedPartitionId,
         proseRoot: currentProseRoot(),
-        paths: currentPaths(),
         actor: ACTOR,
         proseFiles: PROSE_FILES,
         machineDefaults: {
@@ -637,10 +543,6 @@ const server = createServer(async (request, response) => {
       send(response, 200, (await machineSettings()) ?? { reasonCode: "MACHINE_SETTINGS_UNAVAILABLE", settings: [] });
       return;
     }
-    if (request.method === "GET" && pathname === "/api/execution") {
-      send(response, 200, await executionState());
-      return;
-    }
     if (request.method === "GET" && pathname === "/api/work") {
       send(response, 200, await workProjection());
       return;
@@ -652,10 +554,6 @@ const server = createServer(async (request, response) => {
     if (request.method === "GET" && pathname === "/api/knowledge/body") {
       const result = await knowledgeBody(url.searchParams.get("id") ?? "");
       send(response, result.ok ? 200 : 409, result.body);
-      return;
-    }
-    if (request.method === "GET" && pathname === "/api/gates") {
-      send(response, 200, await gateProjection());
       return;
     }
     if (request.method === "GET" && pathname === "/api/evolution") {
@@ -719,7 +617,7 @@ const server = createServer(async (request, response) => {
       const selected = partitionCatalog.find((entry) => entry.id === next);
       if (!selected) { send(response, 404, { ok: false, reasonCode: "PORTAL_PARTITION_UNKNOWN", requestedPartition: next }); return; }
       selectedPartitionId = selected.id;
-      send(response, 200, { ok: true, reasonCode: "PORTAL_PARTITION_SELECTED", selectedPartition: selected.id, workspace: selected.workspace, workspaceName: await currentWorkspaceName(), proseRoot: currentProseRoot(), paths: currentPaths() });
+      send(response, 200, { ok: true, reasonCode: "PORTAL_PARTITION_SELECTED", selectedPartition: selected.id, workspace: selected.workspace, workspaceName: await currentWorkspaceName(), proseRoot: currentProseRoot() });
       return;
     }
     if (request.method === "POST" && pathname === "/api/settings") {
@@ -739,13 +637,6 @@ const server = createServer(async (request, response) => {
         : await cliResult(["machine-settings-set", "--at", now, "--key", key, "--value", String(body.value ?? "")]);
       const readback = result.ok ? await machineSettings() : null;
       send(response, result.ok ? 200 : 409, { ...result.body, readback: readback?.settings?.find((entry) => entry.key === key) ?? null });
-      return;
-    }
-    if (request.method === "POST" && pathname === "/api/execution") {
-      const body = await readJsonBody(request);
-      const result = await writeExecution(String(body.action ?? ""), body);
-      const readback = result.ok ? await executionState() : null;
-      send(response, result.ok ? 200 : 409, { ...result.body, readback });
       return;
     }
     if (request.method === "GET" && pathname === "/api/agents-md") {

@@ -3693,34 +3693,6 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .tcrn-top-bar__actions .tcrn-search-input { min-width: 0; flex: 1 1 auto; max-width: 430px; }
 .tcrn-form { display: grid; gap: var(--tcrn-space-3); }
 .tcrn-form__row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--tcrn-space-3); }
-.tcrn-dispatch-config { display: grid; gap: var(--tcrn-space-4); margin-bottom: var(--tcrn-space-4); }
-.tcrn-dispatch-surface { display: grid; gap: var(--tcrn-space-4); }
-.tcrn-dispatch-mode { display: grid; gap: var(--tcrn-space-2); padding: var(--tcrn-space-3); border-radius: var(--tcrn-radius-panel); background: var(--tcrn-color-surface-muted); }
-.tcrn-dispatch-mode__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--tcrn-space-3); }
-.tcrn-dispatch-mode__head strong { font-size: var(--tcrn-type-size-ui); }
-.tcrn-dispatch-mode__choices { display: flex; flex-wrap: wrap; gap: var(--tcrn-space-1); }
-.tcrn-dispatch-mode__choice[data-selected="true"] { border-color: var(--tcrn-selection-edge); background: var(--tcrn-color-brand-primary-bg); color: var(--tcrn-color-brand-primary); }
-.tcrn-dispatch-hosts { display: block; min-width: 0; }
-.tcrn-dispatch-host { min-width: 0; }
-.tcrn-dispatch-host__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--tcrn-space-2); margin-bottom: var(--tcrn-space-2); }
-.tcrn-dispatch-host__head h3 { margin: 0; font-size: var(--tcrn-type-size-heading-3); }
-.tcrn-dispatch-tier-table { --tcrn-table-shell-columns: minmax(88px, .42fr) minmax(150px, 1.2fr) minmax(120px, .72fr) auto; --tcrn-table-shell-min-width: 100%; }
-.tcrn-dispatch-tier-cell { display: grid; align-content: center; gap: var(--tcrn-space-1); }
-.tcrn-dispatch-tier-cell .tcrn-field { margin: 0; }
-.tcrn-dispatch-tier-cell .tcrn-input { min-width: 0; width: 100%; }
-.tcrn-dispatch-tier-label { color: var(--tcrn-color-text-secondary); font-weight: var(--tcrn-type-weight-strong); }
-.tcrn-dispatch-probe { min-width: max-content; }
-.tcrn-dispatch-probe-result { grid-column: 1 / -1; min-height: 0; color: var(--tcrn-color-text-secondary); font-size: var(--tcrn-type-size-caption); white-space: pre-wrap; overflow-wrap: anywhere; }
-.tcrn-dispatch-probe-result[data-state="error"] { color: var(--tcrn-color-state-blocked); }
-.tcrn-dispatch-probe-result[data-state="success"] { color: var(--tcrn-color-state-ready); }
-.tcrn-dispatch-advanced { display: grid; gap: var(--tcrn-space-3); }
-.tcrn-dispatch-advanced__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--tcrn-space-3); }
-.tcrn-dispatch-advanced__head h3 { margin: 0; font-size: var(--tcrn-type-size-heading-3); }
-.tcrn-dispatch-override-table { --tcrn-table-shell-columns: minmax(160px, 1fr) minmax(112px, .55fr) minmax(112px, .55fr) minmax(160px, 1fr); --tcrn-table-shell-min-width: 100%; }
-.tcrn-dispatch-override-table .tcrn-select { width: 100%; min-width: 0; }
-.tcrn-dispatch-boolean { display: inline-flex; align-items: center; gap: var(--tcrn-space-1); color: var(--tcrn-color-text-secondary); }
-.tcrn-dispatch-boolean[data-value="true"] { color: var(--tcrn-color-state-ready); }
-.tcrn-dispatch-boolean[data-value="false"] { color: var(--tcrn-color-text-muted); }
 .tcrn-scope-note { margin: var(--tcrn-space-2) 0 0; color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); }
 .tcrn-editor-shell { display: grid; grid-template-columns: 184px minmax(0, 1fr); gap: var(--tcrn-space-3); }
 .tcrn-editor__bar { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: var(--tcrn-space-3); }
@@ -3817,9 +3789,6 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .tcrn-vocabulary__source { display: block; color: var(--tcrn-color-brand-primary); text-decoration: none; }
 .tcrn-vocabulary__source + .tcrn-vocabulary__source { margin-top: var(--tcrn-space-1); }
 .tcrn-vocabulary__source:hover { text-decoration: underline; }
-.tcrn-paths { display: grid; gap: var(--tcrn-space-1); }
-.tcrn-path { display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; gap: var(--tcrn-space-2); align-items: center; min-height: 32px; }
-.tcrn-path__value { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tcrn-color-text-secondary); font-family: var(--tcrn-type-family-mono); font-size: var(--tcrn-type-size-caption); }
 .tcrn-search-results { position: absolute; z-index: var(--tcrn-z-popover); top: 42px; right: var(--tcrn-space-4); width: min(440px, calc(100vw - 32px)); max-height: 360px; overflow: auto; padding: var(--tcrn-space-2); border: 1px solid var(--tcrn-color-border-strong); border-radius: var(--tcrn-radius-panel); background: var(--tcrn-color-surface-panel); box-shadow: var(--tcrn-elevation-floating); }
 .tcrn-search-result { display: grid; gap: var(--tcrn-space-1); width: 100%; padding: var(--tcrn-space-2); border: 0; border-radius: var(--tcrn-radius-control); background: transparent; color: var(--tcrn-color-text-primary); text-align: left; }
 .tcrn-search-result:hover, .tcrn-search-result[aria-current="true"] { background: var(--tcrn-color-brand-primary-bg); }
@@ -3846,7 +3815,6 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 [data-tcrn-locale="ko"] { --tcrn-type-family-ui: var(--tcrn-type-family-ko); }
 @media (max-width: 980px) {
   .tcrn-product-shell { grid-template-columns: 1fr; }
-  .tcrn-dispatch-hosts { display: block; }
   .tcrn-product-shell__sidebar { border-right: 0; border-bottom: 1px solid var(--tcrn-color-border-subtle); padding: var(--tcrn-space-2) var(--tcrn-space-3); }
   .tcrn-rail__mark, .tcrn-rail__footer { display: none; }
   .tcrn-side-nav { flex-direction: row; overflow: auto; }
@@ -4197,17 +4165,16 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
             <div class="tcrn-page__head"><div><h1 data-i18n="page.dashboard">Workspace overview</h1><p class="tcrn-page__lede" data-i18n="dashboard.lede">A readable status surface for the live governed workspace.</p></div><div class="tcrn-page__actions"><span class="tcrn-badge tcrn-badge--positive" id="health-chip"><span id="health-chip-text" data-i18n="health.healthy">healthy</span></span><button class="tcrn-button" id="audit-button" data-i18n="dashboard.audit">Audit</button></div></div>
           </div>
           <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs">
-            <div class="tcrn-section-tabs" role="tablist" data-ui="workspace-tabs" aria-label="Workspace views"><button class="tcrn-button" role="tab" aria-selected="true" data-selected="true" data-workspace-tab="overview" data-i18n="dashboard.overview">Overview</button><button class="tcrn-button" role="tab" aria-selected="false" data-selected="false" data-workspace-tab="work" data-i18n="dashboard.work">Work</button><button class="tcrn-button" role="tab" aria-selected="false" data-selected="false" data-workspace-tab="knowledge" data-i18n="dashboard.knowledge">Knowledge</button><button class="tcrn-button" role="tab" aria-selected="false" data-selected="false" data-workspace-tab="gates" data-i18n="dashboard.gates">Gates</button><button class="tcrn-button" role="tab" aria-selected="false" data-selected="false" data-workspace-tab="evolution" data-i18n="dashboard.evolution">Evolution</button><button class="tcrn-button" role="tab" aria-selected="false" data-selected="false" data-workspace-tab="audit" data-i18n="dashboard.auditTab">Audit</button></div>
+            <div class="tcrn-section-tabs" role="tablist" data-ui="workspace-tabs" aria-label="Workspace views"><button class="tcrn-button" role="tab" aria-selected="true" data-selected="true" data-workspace-tab="overview" data-i18n="dashboard.overview">Overview</button><button class="tcrn-button" role="tab" aria-selected="false" data-selected="false" data-workspace-tab="work" data-i18n="dashboard.work">Work</button><button class="tcrn-button" role="tab" aria-selected="false" data-selected="false" data-workspace-tab="knowledge" data-i18n="dashboard.knowledge">Knowledge</button><button class="tcrn-button" role="tab" aria-selected="false" data-selected="false" data-workspace-tab="evolution" data-i18n="dashboard.evolution">Evolution</button><button class="tcrn-button" role="tab" aria-selected="false" data-selected="false" data-workspace-tab="audit" data-i18n="dashboard.auditTab">Audit</button></div>
           </div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content">
         <div data-workspace-panel="overview">
           <div class="tcrn-grid tcrn-grid--4"><article class="tcrn-stat-card" data-stat-card="true" data-stat-tone="neutral"><span class="tcrn-stat-card__label" data-i18n="dashboard.chain">Chain version</span><strong class="tcrn-stat-card__value" id="stat-version">—</strong><span class="tcrn-stat-card__note" id="stat-head"></span></article><article class="tcrn-stat-card" data-stat-card="true" data-stat-tone="neutral"><span class="tcrn-stat-card__label" data-i18n="dashboard.events">Events</span><strong class="tcrn-stat-card__value" id="stat-events">—</strong><span class="tcrn-stat-card__note" data-i18n="dashboard.eventsNote">materialized chain</span></article><article class="tcrn-stat-card" data-stat-card="true" data-stat-tone="neutral"><span class="tcrn-stat-card__label" data-i18n="dashboard.engine">Engine</span><strong class="tcrn-stat-card__value" id="stat-engine">—</strong><span class="tcrn-stat-card__note" data-i18n="dashboard.engineNote">local loopback</span></article><article class="tcrn-stat-card" data-stat-card="true" data-stat-tone="neutral"><span class="tcrn-stat-card__label" data-i18n="dashboard.healthCard">Health</span><strong class="tcrn-stat-card__value" id="stat-health">—</strong><span class="tcrn-stat-card__note" data-i18n="dashboard.healthCardNote">read-only checks</span></article></div>
-          <div class="tcrn-grid tcrn-grid--2 tcrn-dashboard-grid"><article class="tcrn-surface"><div class="tcrn-surface__head"><div><h2 data-i18n="dashboard.healthTitle">Health</h2><p class="tcrn-surface__note" data-i18n="dashboard.healthNote">Read-only checks from the workspace and engine.</p></div><span class="tcrn-badge tcrn-badge--positive" id="validate-chip">validate</span></div><div class="tcrn-list" id="health-list"></div></article><article class="tcrn-surface"><div class="tcrn-surface__head"><div><h2 data-i18n="dashboard.pathsTitle">Workspace paths</h2><p class="tcrn-surface__note" data-i18n="dashboard.pathsNote">The five explicit roots used by this partition.</p></div></div><div class="tcrn-paths" id="workspace-paths" data-ui="workspace-paths" role="region"></div></article></div>
+          <div class="tcrn-grid tcrn-grid--2 tcrn-dashboard-grid"><article class="tcrn-surface"><div class="tcrn-surface__head"><div><h2 data-i18n="dashboard.healthTitle">Health</h2><p class="tcrn-surface__note" data-i18n="dashboard.healthNote">Read-only checks from the workspace and engine.</p></div><span class="tcrn-badge tcrn-badge--positive" id="validate-chip">validate</span></div><div class="tcrn-list" id="health-list"></div></article></div>
         </div>
         <div data-workspace-panel="work" hidden><div class="tcrn-surface" data-ui="work-tree"><div class="tcrn-surface__head"><div><h2 data-i18n="dashboard.workTitle">Work tree</h2><p class="tcrn-surface__note" data-i18n="dashboard.workNote">Initiatives, Epics, and Stories read from the engine.</p></div><span class="tcrn-badge" id="work-count">—</span></div><div id="work-tree-content"></div></div></div>
         <div data-workspace-panel="knowledge" hidden><div class="tcrn-surface" data-ui="knowledge-view"><div class="tcrn-surface__head"><div><h2 data-i18n="dashboard.knowledgeTitle">Knowledge inventory</h2><p class="tcrn-surface__note" data-i18n="dashboard.knowledgeNote">Cards and article indexes, metadata only.</p></div><span class="tcrn-badge" id="knowledge-count">—</span></div><div id="knowledge-view-content"></div></div></div>
-        <div data-workspace-panel="gates" hidden><div class="tcrn-surface" data-ui="gates-view"><div class="tcrn-surface__head"><div><h2 data-i18n="dashboard.gatesTitle">Gate view</h2><p class="tcrn-surface__note" data-i18n="dashboard.gatesNote">Gates grouped by their work item.</p></div><span class="tcrn-badge" id="gates-count">—</span></div><div id="gates-view-content"></div></div></div>
-        <div data-workspace-panel="evolution" hidden><div class="tcrn-surface" data-ui="evolution-dashboard"><div class="tcrn-surface__head"><div><h2 data-i18n="dashboard.evolutionTitle">Evolution dashboard</h2><p class="tcrn-surface__note" data-i18n="dashboard.evolutionNote">Telemetry, conflict retirements, and retrieval evaluation.</p></div><span class="tcrn-badge" id="evolution-at">—</span></div><div class="tcrn-grid tcrn-grid--4" id="evolution-stats"></div><div class="tcrn-grid tcrn-grid--2 tcrn-dashboard-grid"><article class="tcrn-surface"><div class="tcrn-surface__head"><div><h3 data-i18n="dashboard.conflictRetirementTitle">Conflict retirements</h3><p class="tcrn-surface__note" data-i18n="dashboard.conflictRetirementNote">Cards a later --supersedes write replaced. Read-only.</p></div></div><div id="evolution-retirement"></div></article><article class="tcrn-surface"><div class="tcrn-surface__head"><div><h3 data-i18n="dashboard.evolutionEvalTitle">Retrieval evaluation</h3><p class="tcrn-surface__note" data-i18n="dashboard.evolutionEvalNote">Latest frozen-corpus result.</p></div></div><div id="evolution-eval"></div></article></div><div class="tcrn-grid tcrn-grid--2 tcrn-dashboard-grid"><article class="tcrn-surface"><div class="tcrn-surface__head"><div><h3 data-i18n="dashboard.evolutionModesTitle">Modes and usage</h3><p class="tcrn-surface__note" data-i18n="dashboard.evolutionModesNote">Unknown denominators stay visible.</p></div></div><div id="evolution-modes"></div></article><article class="tcrn-surface"><div class="tcrn-surface__head"><div><h3 data-i18n="dashboard.evolutionHostsTitle">Host render state</h3><p class="tcrn-surface__note" data-i18n="dashboard.evolutionHostsNote">Read-only managed-field drift.</p></div></div><div id="evolution-hosts"></div></article></div></div></div>
+        <div data-workspace-panel="evolution" hidden><div class="tcrn-surface" data-ui="evolution-dashboard"><div class="tcrn-surface__head"><div><h2 data-i18n="dashboard.evolutionTitle">Evolution dashboard</h2><p class="tcrn-surface__note" data-i18n="dashboard.evolutionNote">Conflict retirements, retrieval evaluation, and host render state.</p></div><span class="tcrn-badge" id="evolution-at">—</span></div><div class="tcrn-grid tcrn-grid--4" id="evolution-stats"></div><div class="tcrn-grid tcrn-grid--2 tcrn-dashboard-grid"><article class="tcrn-surface"><div class="tcrn-surface__head"><div><h3 data-i18n="dashboard.conflictRetirementTitle">Conflict retirements</h3><p class="tcrn-surface__note" data-i18n="dashboard.conflictRetirementNote">Cards a later --supersedes write replaced. Read-only.</p></div></div><div id="evolution-retirement"></div></article><article class="tcrn-surface"><div class="tcrn-surface__head"><div><h3 data-i18n="dashboard.evolutionEvalTitle">Retrieval evaluation</h3><p class="tcrn-surface__note" data-i18n="dashboard.evolutionEvalNote">Latest frozen-corpus result.</p></div></div><div id="evolution-eval"></div></article></div><div class="tcrn-grid tcrn-grid--2 tcrn-dashboard-grid"><article class="tcrn-surface"><div class="tcrn-surface__head"><div><h3 data-i18n="dashboard.evolutionHostsTitle">Host render state</h3><p class="tcrn-surface__note" data-i18n="dashboard.evolutionHostsNote">Read-only managed-field drift.</p></div></div><div id="evolution-hosts"></div></article></div></div></div>
         <div data-workspace-panel="audit" hidden><article class="tcrn-surface"><div class="tcrn-surface__head"><div><h2 data-i18n="dashboard.auditTitle">This session</h2><p class="tcrn-surface__note" data-i18n="dashboard.auditNote">Every attempted governed write stays visible.</p></div></div><div class="tcrn-work-activity-feed" id="dashboard-audit"></div></article></div>
           </div>
         </div>
@@ -4221,7 +4188,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
             <nav class="tcrn-subnav tcrn-settings-layout__nav" data-settings-layout-nav data-settings-local-nav="true" aria-label="Settings groups" role="tablist"><button class="tcrn-subnav__item" data-setting-group="workspace" data-i18n="settings.workspace">Workspace</button><button class="tcrn-subnav__item" data-setting-group="backup" data-i18n="settings.backup">Backup</button><button class="tcrn-subnav__item" data-setting-group="execution" data-i18n="settings.execution">Execution</button><button class="tcrn-subnav__item" data-setting-group="machine" data-i18n="settings.machine">Workflow</button></nav>
           </div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content">
-            <div class="tcrn-manage tcrn-settings-layout" data-settings-layout-component="SettingsLayout" data-settings-layout="true" data-settings-layout-navigation-location="page-hierarchy-section-tabs" data-ds-candidate="TCRN-Design-System@610680b81a950e91e9e1e77718ea7f3f3b19bc27" data-ds-contract-status="candidate-consumed-pending-coordination" data-ds-contract-version="ai_consumption_contract_v1" data-ds-contract-digest="a56fcf3427866d4034ede1c59b59b888ac8169ca19fcd1c3af66b0a49cd16138" data-ds-component-css-sha256="025be2c8b3380cfc20c7c1b468243d6e61fe5291f28483a614de469235788877" data-ds-rules="DS-106-R1 DS-106-R2 DS-107-R1 DS-107-R2 DS-108-R1 DS-108-R2 DS-112-R1 DS-112-R2 DS-116-R1 DS-116-R2 DS-117-R1 DS-117-R2 DS-118-R1 DS-118-R2 DS-119-R1 DS-119-R2" data-ds-surface-contracts="overlay-boundary-contract-v1 field-value-selection-contract-v1 dictionary-content-contract-v1 operation-feedback-contract-v1 content-scope-contract-v1 consumer-evidence-contract-v1 verification-cadence-contract-v1" data-ds-static-overlay-bridge="mountStaticOverlayBoundary" data-ds-candidate-status="fixed-candidate-pending-coordination" data-settings-layout-mode="container-driven" data-settings-layout-form-policy="single-host-single-column" data-settings-layout-breakpoint="960px" data-settings-content-breakpoint="720px" data-settings-local-navigation="compact" data-settings-overflow-policy="no-page-overflow" data-settings-long-value-policy="native-inline-scroll-copy"><div class="tcrn-settings-layout__frame"><div class="tcrn-settings-layout__grid" data-settings-layout-grid><div class="tcrn-settings-layout__content" data-settings-layout-content data-settings-content="true" data-settings-complete-form="true"><div id="design-authority" hidden></div><div id="dispatch-config" class="tcrn-settings-layout__form" hidden></div><div id="settings-rows" class="tcrn-settings-layout__form"></div><div id="machine-settings" class="tcrn-settings-layout__form" hidden></div></div></div></div></div>
+            <div class="tcrn-manage tcrn-settings-layout" data-settings-layout-component="SettingsLayout" data-settings-layout="true" data-settings-layout-navigation-location="page-hierarchy-section-tabs" data-ds-candidate="TCRN-Design-System@610680b81a950e91e9e1e77718ea7f3f3b19bc27" data-ds-contract-status="candidate-consumed-pending-coordination" data-ds-contract-version="ai_consumption_contract_v1" data-ds-contract-digest="a56fcf3427866d4034ede1c59b59b888ac8169ca19fcd1c3af66b0a49cd16138" data-ds-component-css-sha256="025be2c8b3380cfc20c7c1b468243d6e61fe5291f28483a614de469235788877" data-ds-rules="DS-106-R1 DS-106-R2 DS-107-R1 DS-107-R2 DS-108-R1 DS-108-R2 DS-112-R1 DS-112-R2 DS-116-R1 DS-116-R2 DS-117-R1 DS-117-R2 DS-118-R1 DS-118-R2 DS-119-R1 DS-119-R2" data-ds-surface-contracts="overlay-boundary-contract-v1 field-value-selection-contract-v1 dictionary-content-contract-v1 operation-feedback-contract-v1 content-scope-contract-v1 consumer-evidence-contract-v1 verification-cadence-contract-v1" data-ds-static-overlay-bridge="mountStaticOverlayBoundary" data-ds-candidate-status="fixed-candidate-pending-coordination" data-settings-layout-mode="container-driven" data-settings-layout-form-policy="single-host-single-column" data-settings-layout-breakpoint="960px" data-settings-content-breakpoint="720px" data-settings-local-navigation="compact" data-settings-overflow-policy="no-page-overflow" data-settings-long-value-policy="native-inline-scroll-copy"><div class="tcrn-settings-layout__frame"><div class="tcrn-settings-layout__grid" data-settings-layout-grid><div class="tcrn-settings-layout__content" data-settings-layout-content data-settings-content="true" data-settings-complete-form="true"><div id="design-authority" hidden></div><div id="settings-rows" class="tcrn-settings-layout__form"></div><div id="machine-settings" class="tcrn-settings-layout__form" hidden></div></div></div></div></div>
           </div>
         </div>
       </section>
@@ -4275,7 +4242,7 @@ const BOOT = __PORTAL_BOOT__;
   const storedTheme = tcrnReadPreference("theme", ["light", "dark"], null);
   const machineTheme = ["light", "dark"].includes(BOOT.machineDefaults?.theme) ? BOOT.machineDefaults.theme : null;
   if (storedTheme === null && machineTheme !== null) document.documentElement.dataset.tcrnTheme = machineTheme;
-  const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? "en", theme: document.documentElement.dataset.tcrnTheme, page: "dashboard", dashboardTab: "overview", settingGroup: "workspace", settings: null, machineSettings: null, execution: null, vocabulary: null, status: null, work: null, knowledge: null, knowledgeQuery: "", knowledgeBody: null, gates: null, evolution: null, commands: [], audit: [], selectedVocabulary: "conferenceTypes", receipt: null, operationDetailsOpen: false, dispatchNotice: null, dispatchHost: null, agentsText: "", reconciliation: null, searchIndex: [], searchResults: [], searchSelection: 0 };
+  const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? "en", theme: document.documentElement.dataset.tcrnTheme, page: "dashboard", dashboardTab: "overview", settingGroup: "workspace", settings: null, machineSettings: null, vocabulary: null, status: null, work: null, knowledge: null, knowledgeQuery: "", knowledgeBody: null, evolution: null, commands: [], audit: [], selectedVocabulary: "conferenceTypes", receipt: null, operationDetailsOpen: false, agentsText: "", reconciliation: null, searchIndex: [], searchResults: [], searchSelection: 0 };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   // DS Tabs is a behavior contract, not a role decoration. Every tablist below
@@ -4426,7 +4393,6 @@ const BOOT = __PORTAL_BOOT__;
   const toggleReceiptDetails = () => { state.operationDetailsOpen = !state.operationDetailsOpen; renderReceipt(); };
   const showReceipt = (body) => {
     state.receipt = body || { ok: false, reasonCode: "PORTAL_EMPTY_RECEIPT" };
-    state.dispatchNotice = state.receipt.hostRender || null;
     const success = state.receipt.ok !== false && !String(state.receipt.reasonCode || "").includes("REFUSED");
     const phase = success ? "success" : "error";
     const feedback = $("#operation-feedback");
@@ -4809,90 +4775,6 @@ const BOOT = __PORTAL_BOOT__;
     $$("[data-machine-control]").forEach((control) => control.addEventListener("change", () => saveMachineSetting(control.dataset.machineControl, control.value)));
     attachEcho($("#machine-settings"));
   };
-  const renderDispatch = () => {
-    const target = $("#dispatch-config");
-    if (!target) return;
-    if (state.settingGroup !== "execution") {
-      target.hidden = true;
-      target.innerHTML = "";
-      return;
-    }
-    target.hidden = false;
-    const dispatch = state.execution?.dispatch || {};
-    const modes = Object.keys(dispatch.modes || {}).sort();
-    const currentMode = dispatch.mode || modes[0] || "";
-    const tiers = dispatch.tiers || {};
-    const hosts = [...new Set([...(state.vocabulary?.hosts || []), ...Object.keys(tiers)])].sort();
-    const hostList = hosts.length > 0 ? hosts : ["claude-code", "codex"];
-    const tierNames = ["flagship", "main", "economy"];
-    const tierValue = (host, tier) => tiers[host]?.[tier] || {};
-    const probeText = (body) => {
-      const lines = [`${body?.reasonCode || "HOST_PROBE_UNAVAILABLE"} · ${t("dispatch.exit")}: ${body?.exitCode ?? "—"}`];
-      if (body?.stdout) lines.push(`${t("dispatch.stdout")}: ${body.stdout}`);
-      if (body?.stderr) lines.push(`${t("dispatch.stderr")}: ${body.stderr}`);
-      if (!body?.stdout && !body?.stderr && body?.error) lines.push(String(body.error));
-      return lines.join("\n");
-    };
-    const renderNotice = () => {
-      const notice = state.dispatchNotice;
-      if (!notice) return "";
-      const details = notice.hosts?.map((entry) => `${entry.host}: ${entry.reasonCode || "HOST_RENDER_FAILED"}${entry.error ? ` — ${entry.error}` : ""}`).join("\n") || "";
-      return `<div class="tcrn-inline-alert ${notice.ok ? "tcrn-inline-alert--positive" : "tcrn-inline-alert--warning"}" data-ui="dispatch-host-render-status" role="status"><span><strong>${esc(notice.ok ? t("dispatch.renderApplied") : t("dispatch.renderSavedNotApplied"))}</strong>${details ? `<br><span class="tcrn-meta">${esc(details)}</span>` : ""}</span></div>`;
-    };
-    const hostPanel = (host) => `<section class="tcrn-surface tcrn-dispatch-host" data-dispatch-host-card="${esc(host)}"><div class="tcrn-dispatch-host__head"><h3>${esc(host)}</h3><span class="tcrn-badge">${esc(t("dispatch.hostLocal"))}</span></div><div class="tcrn-table-shell tcrn-dispatch-tier-table" data-ui="dispatch-tier-table"><div class="tcrn-table-shell__head" role="row"><span>${esc(t("dispatch.tier"))}</span><span>${esc(t("dispatch.model"))}</span><span>${esc(t("dispatch.effort"))}</span><span>${esc(t("dispatch.probe"))}</span></div>${tierNames.map((tier) => { const value = tierValue(host, tier); const key = JSON.stringify({ host, tier }); return `<div class="tcrn-table-shell__row" role="row" data-dispatch-tier-row="${esc(key)}"><div class="tcrn-table-shell__cell tcrn-dispatch-tier-cell" data-label="${esc(t("dispatch.tier"))}"><span class="tcrn-dispatch-tier-label">${esc(t(`dispatch.tier.${tier}`))}</span></div><div class="tcrn-table-shell__cell tcrn-dispatch-tier-cell" data-label="${esc(t("dispatch.model"))}"><label class="tcrn-sr-only" for="dispatch-model-${esc(host)}-${esc(tier)}">${esc(t("dispatch.model"))}</label><input class="tcrn-input" id="dispatch-model-${esc(host)}-${esc(tier)}" data-dispatch-model="${esc(key)}" maxlength="256" value="${esc(value.model ?? "")}" autocomplete="off"></div><div class="tcrn-table-shell__cell tcrn-dispatch-tier-cell" data-label="${esc(t("dispatch.effort"))}"><label class="tcrn-sr-only" for="dispatch-effort-${esc(host)}-${esc(tier)}">${esc(t("dispatch.effort"))}</label><input class="tcrn-input" id="dispatch-effort-${esc(host)}-${esc(tier)}" data-dispatch-effort="${esc(key)}" maxlength="128" value="${esc(value.effort ?? "")}" autocomplete="off"></div><div class="tcrn-table-shell__cell tcrn-dispatch-tier-cell" data-label="${esc(t("dispatch.probe"))}"><button type="button" class="tcrn-button tcrn-button--secondary tcrn-dispatch-probe" data-dispatch-probe="${esc(key)}" data-cli-action="host-probe">${esc(t("dispatch.probe"))}</button></div><div class="tcrn-dispatch-probe-result" data-dispatch-probe-result="${esc(key)}" data-state="idle" aria-live="polite"></div></div>`; }).join("")}</div><div class="tcrn-action-row"><button type="button" class="tcrn-button tcrn-button--primary" data-dispatch-save-host="${esc(host)}" data-cli-action="dispatch-tiers-set">${esc(t("dispatch.saveHost"))}</button></div></section>`;
-    const classes = Object.keys(dispatch.classes || state.execution?.classes || {}).sort();
-    const mapping = dispatch.modes?.[currentMode] || {};
-    const advancedRows = classes.map((taskClass) => { const behaviour = dispatch.classes?.[taskClass] || state.execution?.classes?.[taskClass] || {}; return `<div class="tcrn-table-shell__row" role="row"><div class="tcrn-table-shell__cell" data-label="${esc(t("dispatch.class"))}"><code>${esc(taskClass)}</code></div><div class="tcrn-table-shell__cell" data-label="${esc(t("dispatch.dispatch"))}"><span class="tcrn-dispatch-boolean" data-value="${String(behaviour.dispatch)}">${esc(behaviour.dispatch ? t("dispatch.yes") : t("dispatch.no"))}</span></div><div class="tcrn-table-shell__cell" data-label="${esc(t("dispatch.verify"))}"><span class="tcrn-dispatch-boolean" data-value="${String(behaviour.verify)}">${esc(behaviour.verify ? t("dispatch.yes") : t("dispatch.no"))}</span></div><div class="tcrn-table-shell__cell" data-label="${esc(t("dispatch.override"))}"><label class="tcrn-sr-only" for="dispatch-override-${esc(taskClass)}">${esc(t("dispatch.override"))}</label><select class="tcrn-select" id="dispatch-override-${esc(taskClass)}" data-dispatch-override="${esc(taskClass)}" data-cli-action="dispatch-mode-set">${tierNames.map((tier) => `<option value="${esc(tier)}" ${mapping[taskClass] === tier ? "selected" : ""}>${esc(t(`dispatch.tier.${tier}`))}</option>`).join("")}</select></div></div>`; }).join("");
-    const selectedHost = hostList.includes(state.dispatchHost) ? state.dispatchHost : hostList[0];
-    state.dispatchHost = selectedHost;
-    const modeOptions = modes.map((mode) => `<option value="${esc(mode)}" data-dispatch-mode="${esc(mode)}" ${mode === currentMode ? "selected" : ""}>${esc(mode)}</option>`).join("");
-    const hostOptions = hostList.map((host) => `<option value="${esc(host)}" ${host === selectedHost ? "selected" : ""}>${esc(host)}</option>`).join("");
-    const modeChoice = `<div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(modes, "execution.dispatchMode")}><label class="tcrn-setting-choice__select-label" for="dispatch-mode-select"><span class="tcrn-field__label">${esc(t("dispatch.mode"))}</span><select class="tcrn-select" id="dispatch-mode-select" data-dispatch-mode-select="true" data-cli-action="settings-set" aria-label="${esc(t("dispatch.mode"))}">${modeOptions}</select></label></div>`;
-    const hostChoice = `<div class="tcrn-setting-choice tcrn-settings-host-switcher" data-setting-choice-component="SettingChoice" data-settings-host-switcher="true" data-settings-host-switcher-component="SettingsHostSwitcher" ${settingChoiceAttrs(hostList, "execution.dispatchHost")}><label class="tcrn-setting-choice__select-label" for="dispatch-host-switcher"><span class="tcrn-field__label">${esc(t("dispatch.host"))}</span><select class="tcrn-select" id="dispatch-host-switcher" data-dispatch-host-switcher="true" data-cli-action="settings-set" aria-label="${esc(t("dispatch.host"))}">${hostOptions}</select></label></div>`;
-    target.innerHTML = `<div class="tcrn-dispatch-config"><section class="tcrn-surface tcrn-dispatch-surface" data-ui="dispatch-config-surface"><div class="tcrn-surface__head"><div><h2>${esc(t("dispatch.title"))}</h2><p class="tcrn-surface__note">${esc(t("dispatch.note"))}</p><p class="tcrn-scope-note">${esc(t("dispatch.nextSession"))}</p></div><span class="tcrn-badge">${esc(currentMode || t("dispatch.unset"))}</span></div><div class="tcrn-dispatch-mode"><div class="tcrn-dispatch-mode__head"><span class="tcrn-meta">${esc(t("dispatch.modeHint"))}</span></div>${modeChoice}</div>${hostChoice}<div class="tcrn-dispatch-hosts">${hostPanel(selectedHost)}</div></section>${renderNotice()}<section class="tcrn-surface tcrn-dispatch-advanced" data-ui="dispatch-advanced"><div class="tcrn-dispatch-advanced__head"><div><h2>${esc(t("dispatch.advanced"))}</h2><p class="tcrn-surface__note">${esc(t("dispatch.advancedNote"))}</p></div><span class="tcrn-badge">${esc(currentMode || t("dispatch.unset"))}</span></div><div class="tcrn-table-shell tcrn-dispatch-override-table" data-ui="dispatch-override-table"><div class="tcrn-table-shell__head" role="row"><span>${esc(t("dispatch.class"))}</span><span>${esc(t("dispatch.dispatch"))}</span><span>${esc(t("dispatch.verify"))}</span><span>${esc(t("dispatch.override"))}</span></div>${advancedRows || `<div class="tcrn-table-shell__empty">${esc(t("dispatch.noClasses"))}</div>`}</div></section></div>`;
-    target.querySelector("[data-dispatch-host-switcher]")?.addEventListener("change", (event) => {
-      state.dispatchHost = event.currentTarget.value;
-      renderDispatch();
-    });
-    target.querySelector("[data-dispatch-mode-select]")?.addEventListener("change", (event) => saveSetting("execution.dispatchMode", event.currentTarget.value));
-    $$('[data-dispatch-save-host]').forEach((button) => button.addEventListener("click", () => {
-      const host = button.dataset.dispatchSaveHost;
-      const card = button.closest("[data-dispatch-host-card]");
-      if (!host || !card) return;
-      const values = {};
-      tierNames.forEach((tier) => {
-        const controlFor = (attribute) => [...card.querySelectorAll(`[${attribute}]`)].find((candidate) => {
-          try { return JSON.parse(candidate.getAttribute(attribute)).tier === tier; } catch { return false; }
-        });
-        const model = controlFor("data-dispatch-model")?.value ?? "";
-        const effort = controlFor("data-dispatch-effort")?.value ?? "";
-        values[tier] = { model, effort };
-      });
-      writeExecution("dispatch-tiers-set", { host, tiers: values, summary: `${t("dispatch.saveHost")}: ${host}` });
-    }));
-    $$('[data-dispatch-probe]').forEach((button) => button.addEventListener("click", async () => {
-      const key = JSON.parse(button.dataset.dispatchProbe);
-      const row = button.closest("[data-dispatch-tier-row]");
-      const model = row?.querySelector("[data-dispatch-model]")?.value?.trim() ?? "";
-      const result = row?.querySelector("[data-dispatch-probe-result]");
-      if (!result) return;
-      if (!model) { result.dataset.state = "error"; result.textContent = t("dispatch.probeMissing"); return; }
-      button.disabled = true;
-      result.dataset.state = "loading";
-      result.textContent = t("dispatch.probeLoading");
-      try {
-        const body = await api("/api/host-probe", { method: "POST", body: JSON.stringify({ host: key.host, model }) });
-        result.dataset.state = body.ok === true ? "success" : "error";
-        result.textContent = probeText(body);
-      } catch (error) {
-        result.dataset.state = "error";
-        result.textContent = `${t("dispatch.probeFailed")}: ${String(error?.message ?? error)}`;
-      } finally { button.disabled = false; }
-    }));
-    $$('[data-dispatch-override]').forEach((select) => select.addEventListener("change", () => writeExecution("dispatch-mode-set", { name: currentMode, mapping: { [select.dataset.dispatchOverride]: select.value }, summary: `${t("dispatch.override")}: ${select.dataset.dispatchOverride}` })));
-    $$('[data-dispatch-model], [data-dispatch-effort]').forEach((input) => input.addEventListener("input", () => input.closest("[data-dispatch-host-card]")?.setAttribute("data-dirty", "true")));
-    attachEcho(target);
-  };
   const renderSettings = () => {
     destroyStaticOverlayMounts();
     const settingsPanel = $("[data-settings-layout-content]");
@@ -4917,8 +4799,6 @@ const BOOT = __PORTAL_BOOT__;
       const dot = `<span class="tcrn-setting-row__modified" data-ui="setting-modified-dot" role="img" aria-label="${esc(t("config.modified"))}" ${modified ? "" : "hidden"}><span class="tcrn-dot" aria-hidden="true"></span></span>`;
       return `<div class="tcrn-setting-row ${modified ? "tcrn-setting-row--modified tcrn-highlightable" : ""}" data-setting-row="${esc(entry.key)}" data-modified="${modified ? "true" : "false"}"><div class="tcrn-setting-row__label"><code class="tcrn-setting-row__key">${esc(entry.key)}</code><span class="tcrn-setting-row__name">${esc(settingLabel(entry.key))}${conceptTip("setting." + entry.key)}</span><span class="tcrn-setting-row__description">${esc(settingDescription(entry.key))}</span></div><div class="tcrn-setting-row__control">${controlFor(entry)}</div><div class="tcrn-setting-row__tools">${dot}${dictionary}${reset}</div></div>`;
     }).join("") || `<div class="tcrn-state-surface">${esc(t("config.empty"))}</div>`;
-    $("#dispatch-config").hidden = state.settingGroup !== "execution";
-    if (state.settingGroup === "execution") renderDispatch();
     $("#design-authority").hidden = state.settingGroup !== "workspace" || designAuthorityState.status === "unset";
     if (state.settingGroup === "workspace") { renderDesignAuthority(); refreshDesignAuthority(); }
     $("#machine-settings").hidden = state.settingGroup !== "machine";
@@ -5009,26 +4889,11 @@ const BOOT = __PORTAL_BOOT__;
     }));
     attachEcho($("#knowledge-view-content"));
   };
-  const renderGatesView = () => {
-    const data = state.gates;
-    const records = Array.isArray(data?.records) ? data.records : [];
-    const works = new Map((state.work?.records || []).map((entry) => [entry.id, entry.externalKey || entry.id]));
-    setText("#gates-count", `${records.length} ${t("dashboard.gatesCount")}`);
-    if (records.length === 0) {
-      $("#gates-view-content").innerHTML = `<div class="tcrn-state-surface">${esc(data?.reasonCode ?? t("dashboard.gatesEmpty"))}</div>`;
-      return;
-    }
-    $("#gates-view-content").innerHTML = `<div class="tcrn-read-list" role="list">${records.slice(0, 240).map((gate) => `<div class="tcrn-read-list__row" role="listitem"><div class="tcrn-read-list__main"><strong>${esc(gate.title || gate.externalKey || gate.id)}</strong><span class="tcrn-read-list__summary">${esc(works.get(gate.workId) || gate.workId || t("dashboard.noWorkLink"))}</span><span class="tcrn-read-list__meta"><code>${esc(gate.id)}</code><span class="tcrn-badge">${esc(gate.outcomeClass || "—")}</span>${statusBadge(gate.status, statusTone(gate.status))}</span></div></div>`).join("")}</div>${records.length > 240 ? `<p class="tcrn-scope-note">${esc(t("dashboard.showingFirst", { count: 240 }))}</p>` : ""}`;
-  };
   const renderEvolutionView = () => {
     const data = state.evolution || {};
-    const telemetry = data.telemetry || {};
-    const usage = telemetry.usage || {};
     setText("#evolution-at", String(data.at || "—").slice(0, 10));
+    // The telemetry, mode and token cells left with the telemetry store (TCRN-CROSS-STORY-467 R3).
     $("#evolution-stats").innerHTML = [
-      [t("dashboard.evolutionTelemetry"), telemetry.records, t("dashboard.records")],
-      [t("dashboard.evolutionModes"), Object.keys(data.modeStats || {}).length, t("dashboard.modes")],
-      [t("dashboard.evolutionTokens"), usage.totalTokens ?? t("dashboard.unknown"), t("dashboard.tokens")],
       [t("dashboard.conflictRetirementTitle"), data.conflictRetirementCount ?? t("dashboard.unknown"), t("dashboard.items")],
     ].map(([label, value, note]) => `<article class="tcrn-inline-metric"><span class="tcrn-meta">${esc(label)}</span><strong>${unknownValue(value)}</strong><span class="tcrn-meta">${esc(note)}</span></article>`).join("");
     // TCRN-CROSS-MIN-225 D3 (TCRN-CROSS-SUB-259): the only automatic retirement left is a --supersedes
@@ -5042,16 +4907,13 @@ const BOOT = __PORTAL_BOOT__;
     $("#evolution-eval").innerHTML = evaluation.ok === true
       ? `<div class="tcrn-inline-metrics"><div class="tcrn-inline-metric"><span class="tcrn-meta">${esc(t("dashboard.evalPairs"))}</span><strong>${unknownValue(evaluation.incidentReplay?.pairs)}</strong></div><div class="tcrn-inline-metric"><span class="tcrn-meta">${esc(t("dashboard.evalHitAt8"))}</span><strong>${unknownValue(evaluation.incidentReplay?.hitAt8)}</strong></div></div><p class="tcrn-scope-note">${esc(evaluation.reasonCode || t("dashboard.evalPass"))}</p>`
       : `<div class="tcrn-state-surface">${esc(evaluation.reasonCode || t("dashboard.evalUnavailable"))}</div>`;
-    const modes = Object.entries(data.modeStats || {});
-    $("#evolution-modes").innerHTML = modes.length === 0 ? `<div class="tcrn-state-surface">${esc(t("dashboard.noModeData"))}</div>` : `<table class="tcrn-read-table"><thead><tr><th>${esc(t("dashboard.mode"))}</th><th>${esc(t("dashboard.events"))}</th><th>${esc(t("dashboard.rework"))}</th><th>${esc(t("dashboard.totalTokens"))}</th></tr></thead><tbody>${modes.map(([mode, value]) => `<tr><td><code>${esc(mode)}</code></td><td>${unknownValue(value.events)}</td><td>${unknownValue(value.reworkRate === null ? null : `${value.reworkRate * 100}%`)}</td><td>${unknownValue(value.totalTokens)}</td></tr>`).join("")}</tbody></table>`;
     const hosts = Array.isArray(data.hosts) ? data.hosts : [];
     $("#evolution-hosts").innerHTML = hosts.length === 0 ? `<div class="tcrn-state-surface">${esc(t("dashboard.hostsUnavailable"))}</div>` : `<div class="tcrn-read-list">${hosts.map((host) => { const plan = host.plan || {}; const drift = Array.isArray(plan.drift) ? plan.drift.length : null; const fields = Object.entries(plan.resolutions || {}).slice(0, 12).map(([name, value]) => `${name}: ${value?.model || t("dashboard.unknown")} / ${value?.effort || t("dashboard.unknown")}`).join(" · "); return `<div class="tcrn-read-list__row"><div class="tcrn-read-list__main"><strong>${esc(host.host)}</strong><span class="tcrn-read-list__summary">${esc(plan.reasonCode || host.reasonCode || t("dashboard.unknown"))} · ${esc(t("dashboard.drift"))}: ${unknownValue(drift)}</span><span class="tcrn-read-list__summary">${esc(t("dashboard.hostFields"))}: ${esc(fields || t("dashboard.unknown"))}</span></div>${statusBadge(plan.reasonCode || host.reasonCode || t("dashboard.unknown"), plan.drift?.length ? "danger" : "positive")}</div>`; }).join("")}</div>`;
   };
   const renderDashboard = () => {
-    const execution = state.execution || {};
     const status = state.status || {};
-    setText("#stat-version", status.version ?? execution.version ?? "—");
-    setText("#stat-head", String(status.headEventHash || execution.headEventHash || "—").slice(0, 16));
+    setText("#stat-version", status.version ?? "—");
+    setText("#stat-head", String(status.headEventHash || "—").slice(0, 16));
     setText("#stat-events", status.eventCount ?? "—");
     setText("#stat-engine", status.engineVersion ?? "—");
     const checks = status.checks || [];
@@ -5065,11 +4927,8 @@ const BOOT = __PORTAL_BOOT__;
     $("#health-list").innerHTML = displayChecks.map((check) => `<div class="tcrn-list__row"><span>${esc(healthLabel(check.key))}</span><span class="tcrn-badge ${check.ok ? "tcrn-badge--positive" : "tcrn-badge--danger"}">${esc(check.ok ? t("health.ok") : t("health.failed"))}</span></div>`).join("") || `<div class="tcrn-state-surface">${esc(t("health.unavailable"))}</div>`;
     setText("#validate-chip", healthy ? t("health.healthy") : t("health.degraded"));
     $("#validate-chip").className = `tcrn-badge ${healthy ? "tcrn-badge--positive" : "tcrn-badge--danger"}`;
-    $("#workspace-paths").innerHTML = Object.entries(BOOT.paths || {}).map(([key, value]) => `<div class="tcrn-path"><strong>${esc(key)}</strong><span class="tcrn-path__value" title="${esc(value)}">${esc(value)}</span><button type="button" type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md tcrn-icon-button" data-ui="path-copy" data-path="${esc(value)}" aria-label="${esc(t("dashboard.copyPath"))}"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="5.5" y="5.5" width="8" height="8" rx="1.5"/><path d="M10.5 5.5v-1a1.5 1.5 0 0 0-1.5-1.5H4a1.5 1.5 0 0 0-1.5 1.5v5A1.5 1.5 0 0 0 4 11h1"/></svg></button></div>`).join("");
-    $$('[data-path]').forEach((button) => button.addEventListener("click", async () => { try { await navigator.clipboard.writeText(button.dataset.path); button.textContent = "✓"; setTimeout(() => { button.textContent = "⧉"; }, 700); } catch { setText("#echo-command", t("dashboard.copyUnavailable")); } }));
     renderWorkView();
     renderKnowledgeView();
-    renderGatesView();
     renderEvolutionView();
     renderAudit("#dashboard-audit");
     bindTabList($('[data-ui="workspace-tabs"]'), {
@@ -5278,27 +5137,26 @@ const BOOT = __PORTAL_BOOT__;
     showReceipt(result);
     await refresh();
   };
-  const writeExecution = async (action, body) => { echo(action); const result = await api("/api/execution", { method: "POST", body: JSON.stringify({ action, ...body }) }); showReceipt(result); await refresh(); };
   const loadPartitions = () => { const select = $("#partition-select"); select.innerHTML = (BOOT.partitions || [{ id: "workspace" }]).map((partition) => `<option value="${esc(partition.id)}" ${partition.id === BOOT.selectedPartition ? "selected" : ""}>${esc(partition.id)}</option>`).join(""); select.disabled = !BOOT.partitionMode; };
-  const refresh = async () => { try { const [settings, execution, vocabularyResult, status, commandsResult, audit, machine, work, knowledge, gates, evolution] = await Promise.all([api("/api/settings"), api("/api/execution"), api("/api/vocabulary"), api("/api/status"), api("/api/commands"), api("/api/session-audit"), api("/api/machine-settings"), api("/api/work"), api("/api/knowledge"), api("/api/gates"), api("/api/evolution")]); state.machineSettings = machine; state.settings = settings; state.execution = execution; state.vocabulary = vocabularyResult; state.status = status; state.work = work; state.knowledge = knowledge; state.gates = gates; state.evolution = evolution; state.commands = commandsResult.commands || []; state.audit = audit.writes || []; renderDashboard(); renderSettings(); renderVocabulary(); rebuildSearchIndex(); } catch (error) { state.status = { ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE", checks: [{ key: "validate", ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE" }, { key: "catalog", ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE" }, { key: "actor", ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE" }] }; renderDashboard(); showReceipt({ ok: false, reasonCode: "PORTAL_READ_FAILED", error: String(error?.message ?? error) }); } };
+  const refresh = async () => { try { const [settings, vocabularyResult, status, commandsResult, audit, machine, work, knowledge, evolution] = await Promise.all([api("/api/settings"), api("/api/vocabulary"), api("/api/status"), api("/api/commands"), api("/api/session-audit"), api("/api/machine-settings"), api("/api/work"), api("/api/knowledge"), api("/api/evolution")]); state.machineSettings = machine; state.settings = settings; state.vocabulary = vocabularyResult; state.status = status; state.work = work; state.knowledge = knowledge; state.evolution = evolution; state.commands = commandsResult.commands || []; state.audit = audit.writes || []; renderDashboard(); renderSettings(); renderVocabulary(); rebuildSearchIndex(); } catch (error) { state.status = { ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE", checks: [{ key: "validate", ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE" }, { key: "catalog", ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE" }, { key: "actor", ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE" }] }; renderDashboard(); showReceipt({ ok: false, reasonCode: "PORTAL_READ_FAILED", error: String(error?.message ?? error) }); } };
   const rebuildSearchIndex = () => {
     const rows = [];
     for (const entry of state.settings?.settings || []) {
-      if (LEGACY_MODEL_SETTING_KEYS.has(entry.key)) continue;
-      rows.push({ text: `${entry.key} ${settingLabel(entry.key)} ${settingDescription(entry.key)}`, label: entry.key, meta: t("search.settings"), page: "settings", key: entry.key, dispatch: DISPATCH_SETTING_KEYS.has(entry.key) });
+      if (LEGACY_MODEL_SETTING_KEYS.has(entry.key) || DISPATCH_SETTING_KEYS.has(entry.key)) continue;
+      rows.push({ text: `${entry.key} ${settingLabel(entry.key)} ${settingDescription(entry.key)}`, label: entry.key, meta: t("search.settings"), page: "settings", key: entry.key });
     }
     for (const category of vocabularyCategories()) for (const term of vocabularyRows(category)) rows.push({ text: `${termValue(term)} ${vocabularyDefinition(category, term)}`, label: termValue(term), meta: t("search.vocabulary"), page: "vocabulary", vocabulary: category });
     state.searchIndex = rows;
   };
   const renderSearchResults = () => { const target = $("#search-results"); target.hidden = state.searchResults.length === 0; target.innerHTML = state.searchResults.map((result, index) => `<button type="button" class="tcrn-search-result" aria-current="${index === state.searchSelection ? "true" : "false"}" data-search-index="${index}"><strong>${esc(result.label)}</strong><span class="tcrn-search-result__meta">${esc(result.meta)} · ${esc(result.page)}</span></button>`).join(""); $$('[data-search-index]').forEach((button) => button.addEventListener("click", () => chooseSearch(Number(button.dataset.searchIndex)))); };
   const search = (query) => { const normalized = query.trim().toLocaleLowerCase(); state.searchResults = normalized ? state.searchIndex.filter((entry) => entry.text.toLocaleLowerCase().includes(normalized)).slice(0, 12) : []; state.searchSelection = 0; renderSearchResults(); };
-  const chooseSearch = (index = 0) => { const result = state.searchResults[index]; if (!result) return; navigate(result.page); state.searchResults = []; renderSearchResults(); if (result.vocabulary) { state.selectedVocabulary = result.vocabulary; renderVocabulary(); } if (result.key) { state.settingGroup = settingGroup(result.key); renderSettings(); const target = result.dispatch ? $("#dispatch-config") : $(`[data-setting-row="${CSS.escape(result.key)}"]`); target?.classList.add("tcrn-highlight"); target?.scrollIntoView({ block: "center" }); } };
+  const chooseSearch = (index = 0) => { const result = state.searchResults[index]; if (!result) return; navigate(result.page); state.searchResults = []; renderSearchResults(); if (result.vocabulary) { state.selectedVocabulary = result.vocabulary; renderVocabulary(); } if (result.key) { state.settingGroup = settingGroup(result.key); renderSettings(); const target = $(`[data-setting-row="${CSS.escape(result.key)}"]`); target?.classList.add("tcrn-highlight"); target?.scrollIntoView({ block: "center" }); } };
   $$('[data-page-target]').forEach((button) => button.addEventListener("click", () => navigate(button.dataset.pageTarget)));
   $("#save-agents").addEventListener("click", async () => { echo("agents-write"); const result = await api("/api/agents-md", { method: "PUT", body: JSON.stringify({ file: "AGENTS.md", text: $("#agents-md").value }) }); showReceipt(result); await loadAgents(); });
   $("#agents-md").addEventListener("input", (event) => { state.agentsText = event.target.value; renderProseDirectory(); renderGutter(); });
   $("#agents-md").addEventListener("scroll", () => { $("#prose-gutter").scrollTop = $("#agents-md").scrollTop; });
   $("#receipt-chip").addEventListener("click", openReceipt); $("#receipt-details-trigger").addEventListener("click", toggleReceiptDetails); $("#audit-button").addEventListener("click", () => selectTabByIdentity($('[data-ui="workspace-tabs"]'), "audit")); $("#drawer-button").addEventListener("click", openReceipt); $("#drawer-close").addEventListener("click", closeReceipt);
-  $("#partition-select").addEventListener("change", async (event) => { if (!BOOT.partitionMode) return; const selected = await api("/api/partition", { method: "POST", body: JSON.stringify({ partition: event.target.value }) }); if (selected.ok) { BOOT.selectedPartition = selected.selectedPartition; BOOT.workspace = selected.workspace; BOOT.workspaceName = selected.workspaceName; BOOT.proseRoot = selected.proseRoot; BOOT.paths = selected.paths; setText("#workspace-label", BOOT.workspace); $("#workspace-label").title = BOOT.workspace; applyRailIdentity(); await refresh(); await loadAgents(); } else showReceipt(selected); });
+  $("#partition-select").addEventListener("change", async (event) => { if (!BOOT.partitionMode) return; const selected = await api("/api/partition", { method: "POST", body: JSON.stringify({ partition: event.target.value }) }); if (selected.ok) { BOOT.selectedPartition = selected.selectedPartition; BOOT.workspace = selected.workspace; BOOT.workspaceName = selected.workspaceName; BOOT.proseRoot = selected.proseRoot; setText("#workspace-label", BOOT.workspace); $("#workspace-label").title = BOOT.workspace; applyRailIdentity(); await refresh(); await loadAgents(); } else showReceipt(selected); });
   $("#theme-button").addEventListener("click", () => {
     state.theme = state.theme === "light" ? "dark" : "light";
     document.documentElement.dataset.tcrnTheme = state.theme;

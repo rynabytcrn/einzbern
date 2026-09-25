@@ -119,10 +119,11 @@ test("portal boots from the live engine and exposes the new read surfaces", asyn
   const settings = await request(url, "/api/settings", readOptions(boot.token));
   assert.equal(settings.body.reasonCode, "SETTINGS_CATALOG_READY");
   assert.deepEqual(settings.body.settings.filter((entry) => entry.key.includes("SubagentPlan")).map((entry) => entry.key), ["execution.claudeCodeSubagentPlan", "execution.codexSubagentPlan"]);
+  // TCRN-CROSS-STORY-467 R3: the execution projection read the dispatch-* verbs and left with
+  // them; the route answers as unknown rather than from a retired verb.
   const execution = await request(url, "/api/execution", readOptions(boot.token));
-  assert.equal(execution.body.reasonCode, "PORTAL_EXECUTION_READY");
-  assert.ok(Array.isArray(execution.body.plans));
-  assert.equal(Object.hasOwn(execution.body, "personas"), false);
+  assert.equal(execution.response.status, 404);
+  assert.equal(execution.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
   const dictionary = await request(url, "/api/vocabulary", readOptions(boot.token));
   assert.equal(dictionary.body.reasonCode, "VOCABULARY_READY");
   assert.equal(Object.hasOwn(dictionary.body, "roles"), false);
@@ -135,7 +136,9 @@ test("STORY-379 read views use CLI projections and keep partial data visible", a
   const { child, url } = await startPortal(fixture);
   t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
   const { page, boot } = await readBoot(url);
-  for (const tab of ["work", "knowledge", "gates", "evolution"]) assert.match(page, new RegExp(`data-workspace-tab="${tab}"`, "u"));
+  for (const tab of ["work", "knowledge", "evolution"]) assert.match(page, new RegExp(`data-workspace-tab="${tab}"`, "u"));
+  // TCRN-CROSS-STORY-467 R3: the gate view read the gate listing and left with the gate-* verbs.
+  assert.doesNotMatch(page, /data-workspace-tab="gates"/u);
 
   const work = await request(url, "/api/work", readOptions(boot.token));
   assert.equal(work.body.reasonCode, "PORTAL_WORK_READY");
@@ -144,12 +147,13 @@ test("STORY-379 read views use CLI projections and keep partial data visible", a
   assert.match(knowledge.body.reasonCode, /^PORTAL_KNOWLEDGE_/u);
   assert.ok(Array.isArray(knowledge.body.records));
   const gates = await request(url, "/api/gates", readOptions(boot.token));
-  assert.equal(gates.body.reasonCode, "PORTAL_GATES_READY");
-  assert.ok(Array.isArray(gates.body.records));
+  assert.equal(gates.response.status, 404);
+  assert.equal(gates.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
   const evolution = await request(url, "/api/evolution", readOptions(boot.token));
   assert.equal(evolution.body.reasonCode, "PORTAL_EVOLUTION_READY");
   assert.ok(evolution.body.retrievalEval.reasonCode);
-  assert.ok(Object.hasOwn(evolution.body, "modeStats"));
+  // Telemetry is retired (TCRN-CROSS-STORY-467 R3): neither telemetry nor mode statistics remain.
+  for (const field of ["telemetry", "modeStats"]) assert.equal(Object.hasOwn(evolution.body, field), false, field);
   assert.ok(Array.isArray(evolution.body.hosts));
 
   const untokened = await request(url, "/api/evolution");
@@ -164,7 +168,7 @@ test("STORY-379 read views use CLI projections and keep partial data visible", a
 test("MIN-225 the evolution projection reads every page of the knowledge list and never calls retire-proposals", async (t) => {
   const fixture = await scratch("tcrn-portal-min225-", "FIXTURE-TCRN-PORTAL-MIN225");
   t.after(() => rm(fixture.base, { recursive: true, force: true }));
-  await cli(["project-create", "--workspace", fixture.workspace, "--expected-version", "0", "--at", "2026-09-20T09:00:00Z", "--external-key", "FIXTURE-PORTAL-MIN225-PROJECT", "--name", "MIN-225"]);
+  await cli(["project-create", "--workspace", fixture.workspace, "--at", "2026-09-20T09:00:00Z", "--external-key", "FIXTURE-PORTAL-MIN225-PROJECT", "--name", "MIN-225"]);
   await cli(["knowledge-init", "--workspace", fixture.workspace]);
   const capture = (subject, extra = []) => cli(["knowledge-capture", "--workspace", fixture.workspace, "--at", "2026-09-20T10:00:00Z",
     "--subject", subject, "--summary", `${subject} summary`, "--snippet", `${subject} snippet`, "--tags", "min225",
@@ -200,7 +204,7 @@ process.exitCode = actual.status ?? 1;
   assert.deepEqual(pages, [0, 4, 8], "the list is read page by page until it is no longer truncated");
 });
 
-test("portal writes use actor plus live CAS, then return readback and session audit", async (t) => {
+test("portal writes carry the actor under the engine's write lock, then return readback and session audit", async (t) => {
   const fixture = await scratch("tcrn-portal-write-", "TCRN-PORTAL-WRITE");
   const { child, url } = await startPortal(fixture);
   t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
@@ -230,30 +234,33 @@ test("portal writes use actor plus live CAS, then return readback and session au
     value: JSON.stringify({ custom: { "review-visual": "main" } }),
   }));
   assert.equal(modes.body.reasonCode, "SETTINGS_WRITE_COMMITTED");
+  // TCRN-CROSS-STORY-467 R3: the execution write route carried the dispatch-* writes and the
+  // retired plan and persona actions. It is gone, so those posts reach no writer and leave
+  // nothing in the session audit.
   const retired = await request(url, "/api/execution", writeOptions(boot.token, "POST", { action: "model-plan-set", host: "claude-code", name: "daily", defaultModel: "opus-5" }));
-  assert.equal(retired.response.status, 409);
-  assert.equal(retired.body.reasonCode, "PORTAL_UNKNOWN_ACTION");
+  assert.equal(retired.response.status, 404);
+  assert.equal(retired.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
   const active = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "execution.dispatchMode", value: "custom" }));
   assert.equal(active.body.reasonCode, "SETTINGS_WRITE_COMMITTED");
   const retiredPersona = await request(url, "/api/execution", writeOptions(boot.token, "POST", { action: RETIRED_PERSONA_ACTIONS.override, name: "Verity", fields: { mission: "Review governed evidence", role: "reviewer" } }));
-  assert.equal(retiredPersona.response.status, 409);
-  assert.equal(retiredPersona.body.reasonCode, "PORTAL_UNKNOWN_ACTION");
+  assert.equal(retiredPersona.response.status, 404);
+  assert.equal(retiredPersona.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
 
   const audit = await request(url, "/api/session-audit", readOptions(boot.token));
   assert.equal(audit.body.reasonCode, "PORTAL_SESSION_AUDIT_READY");
-  assert.equal(audit.body.writes.length, 7);
+  assert.equal(audit.body.writes.length, 5);
   assert.equal(audit.body.writes.filter((entry) => entry.ok).length, 5);
-  assert.equal(audit.body.writes.find((entry) => entry.action === "model-plan-set").ok, false);
+  assert.ok(audit.body.writes.every((entry) => entry.action === "settings-set"));
   assert.ok(audit.body.writes.every((entry) => entry.action && entry.occurredAt));
 });
 
 // STORY-403 replaces the old STORY-366 manual-writing interaction while retaining
 // the native CLI/data contract tested by this same integration case.
-test("STORY-366: the article endpoint uses knowledge-store CAS and returns the engine receipt unchanged", async (t) => {
+test("STORY-366: the article endpoint is refused while the native article stays readable through the knowledge index", async (t) => {
   const fixture = await scratch("tcrn-portal-article-", "TCRN-PORTAL-ARTICLE");
-  await cli(["project-create", "--workspace", fixture.workspace, "--expected-version", "0", "--at", "2026-08-11T15:00:01Z", "--external-key", "PORTAL-ARTICLE-PROJECT", "--name", "Articles"]);
+  await cli(["project-create", "--workspace", fixture.workspace, "--at", "2026-08-11T15:00:01Z", "--external-key", "PORTAL-ARTICLE-PROJECT", "--name", "Articles"]);
   await cli(["knowledge-init", "--workspace", fixture.workspace, "--acknowledge-disposable", "true"]);
-  const native = await cli(["knowledge-article-create", "--workspace", fixture.workspace, "--expected-version", "0", "--at", "2026-08-11T15:00:01Z", "--path", "portal-article.md", "--category", "architecture", "--title", "Agent article", "--summary", "Agent article summary", "--content", "Agent article body", "--accountable-owner-id", "owner:portal", "--evidence-ids", "evidence:portal-article"]);
+  const native = await cli(["knowledge-article-create", "--workspace", fixture.workspace, "--at", "2026-08-11T15:00:01Z", "--path", "portal-article.md", "--category", "architecture", "--title", "Agent article", "--summary", "Agent article summary", "--content", "Agent article body", "--accountable-owner-id", "owner:portal", "--evidence-ids", "evidence:portal-article"]);
   assert.equal(native.reasonCode, "KNOWLEDGE_ARTICLE_CREATED");
   assert.equal(await readFile(native.path, "utf8").then((text) => text.includes("Agent article body")), true);
   const { child, url } = await startPortal(fixture);
@@ -489,7 +496,7 @@ test("launcher generation emits regular files, starts macOS launcher, and names 
     const root = join(container, id);
     await mkdir(root);
     const roots = {};
-    for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust", "attestations"]) { const path = join(root, kind); await mkdir(path); roots[kind] = path; }
+    for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) { const path = join(root, kind); await mkdir(path); roots[kind] = path; }
     await cli(["init", "--workspace", roots.workspace, "--framework", roots.framework, "--transient", roots.transient, "--evidence-locator", roots["evidence-locator"], "--release-trust", roots["release-trust"], "--external-key", `TCRN-PORTAL-LAUNCH-${id}`, "--at", "2026-08-11T15:00:00Z"]);
   }
   const outputDir = join(base, "launchers");
@@ -553,24 +560,25 @@ test("i18n full-table proof turns red when an existing translation regresses", a
   assert.ok(leg.problems.some((problem) => problem.locale === "ja" && problem.unexpected.includes("receipt.title")));
 });
 
-test("execution surface: the owner scenario end to end with the engine", async (t) => {
+// TCRN-CROSS-STORY-467 R3: the execution route and its page left with the dispatch-* verbs. The
+// owner's dispatch mode is still a registered setting, written and read back through settings.
+test("execution settings: the owner scenario writes through settings while the execution route is gone", async (t) => {
   const fixture = await scratch("tcrn-portal-conservation-execution-", "TCRN-PORTAL-CONSERVATION-EXECUTION");
   const { child, url } = await startPortal(fixture);
   t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
   const { boot } = await readBoot(url);
-  const post = async (payload) => request(url, "/api/execution", writeOptions(boot.token, "POST", payload));
-  const refusedWrite = await post({ action: "model-plan-set", host: "claude-code", name: "owner-scenario", defaultModel: "opus-5" });
-  assert.equal(refusedWrite.response.status, 409);
-  assert.equal(refusedWrite.body.reasonCode, "PORTAL_UNKNOWN_ACTION");
+  const refusedWrite = await request(url, "/api/execution", writeOptions(boot.token, "POST", { action: "model-plan-set", host: "claude-code", name: "owner-scenario", defaultModel: "opus-5" }));
+  assert.equal(refusedWrite.response.status, 404);
+  assert.equal(refusedWrite.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
   const historical = await request(url, "/api/execution", readOptions(boot.token));
-  assert.deepEqual(historical.body.plans, []);
+  assert.equal(historical.response.status, 404);
   const active = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "execution.dispatchMode", value: "eco" }));
   assert.equal(active.body.reasonCode, "SETTINGS_WRITE_COMMITTED");
-  const readback = await request(url, "/api/execution", readOptions(boot.token));
-  assert.deepEqual(readback.body.plans, []);
+  assert.equal(active.body.readback.currentValue, "eco");
+  const readback = await request(url, "/api/settings", readOptions(boot.token));
   assert.equal(readback.body.settings.find((entry) => entry.key === "execution.dispatchMode").currentValue, "eco");
   const audit = await request(url, "/api/session-audit", readOptions(boot.token));
-  assert.equal(audit.body.writes.find((entry) => entry.action === "model-plan-set").ok, false);
+  assert.deepEqual(audit.body.writes.map((entry) => [entry.action, entry.ok]), [["settings-set", true]]);
 });
 
 test("STORY-370 the retired identity surface is absent while execution policy remains writable", async (t) => {
@@ -578,22 +586,43 @@ test("STORY-370 the retired identity surface is absent while execution policy re
   const { child, url } = await startPortal(fixture);
   t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
   const { page, boot } = await readBoot(url);
+  // The persona actions went through the execution route, which left with the dispatch-* verbs
+  // (TCRN-CROSS-STORY-467 R3): every one of them now reaches no route at all.
   const post = async (payload) => request(url, "/api/execution", writeOptions(boot.token, "POST", payload));
-  const initial = await request(url, "/api/execution", readOptions(boot.token));
-  assert.equal(Object.hasOwn(initial.body, "personas"), false);
-  assert.doesNotMatch(page, /<section[^>]+data-page="entities"/u);
   assert.doesNotMatch(page, /<section[^>]+data-page="entities"/u);
   const override = await post({ action: RETIRED_PERSONA_ACTIONS.override, name: "Verity", fields: { mission: "temporary portal override", role: "reviewer" } });
-  assert.equal(override.body.reasonCode, "PORTAL_UNKNOWN_ACTION");
+  assert.equal(override.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
   const restoreAll = await post({ action: RETIRED_PERSONA_ACTIONS.restore, name: "Verity" });
-  assert.equal(restoreAll.body.reasonCode, "PORTAL_UNKNOWN_ACTION");
+  assert.equal(restoreAll.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
   const custom = await post({ action: RETIRED_PERSONA_ACTIONS.set, name: "Portal auditor", role: "reviewer", mission: "Review exact evidence", refusals: "No unsupported claims" });
-  assert.equal(custom.body.reasonCode, "PORTAL_UNKNOWN_ACTION");
+  assert.equal(custom.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
   const refused = await post({ action: RETIRED_PERSONA_ACTIONS.remove, name: "Portal auditor" });
-  assert.equal(refused.body.reasonCode, "PORTAL_UNKNOWN_ACTION");
+  assert.equal(refused.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
   const policy = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "execution.subagentPolicy", value: "forbidden" }));
   assert.equal(policy.body.setting.value, "forbidden");
-  assert.equal(Object.hasOwn((await request(url, "/api/execution", readOptions(boot.token))).body, "personas"), false);
+  const settings = await request(url, "/api/settings", readOptions(boot.token));
+  assert.equal(settings.body.settings.some((entry) => /persona/iu.test(entry.key)), false);
+});
+
+// STORY-373's host probe lost its page control with the dispatch surface (TCRN-CROSS-STORY-467 R3);
+// the route still passes the host's own failure back unchanged.
+test("STORY-373 the host probe route returns the raw host failure", async (t) => {
+  const fixture = await scratch("tcrn-portal-host-probe-", "TCRN-PORTAL-HOST-PROBE");
+  const bin = join(fixture.base, "fake-host-bin");
+  await mkdir(bin);
+  await writeFile(join(bin, "claude"), "#!/usr/bin/env node\nprocess.stderr.write('host says model missing\\n'); process.exitCode = 7;\n", { mode: 0o700 });
+  // TCRN-CROSS-INC-387: host-probe prefers the host CLI named by CLAUDE_CODE_EXECPATH, which a
+  // Claude Code session sets; clearing it keeps this case on the fake claude first on PATH.
+  const { child, url } = await startPortal({ ...fixture, env: { PATH: `${bin}:${process.env.PATH}`, CLAUDE_CODE_EXECPATH: "" } });
+  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
+  const { boot } = await readBoot(url);
+  const probe = await request(url, "/api/host-probe", writeOptions(boot.token, "POST", { host: "claude-code", model: "does-not-exist" }));
+  // The CLI answers with the probe's own observation, so a failing host is a 200 carrying ok false.
+  assert.equal(probe.response.status, 200);
+  assert.equal(probe.body.ok, false);
+  assert.equal(probe.body.reasonCode, "HOST_PROBE_EXIT_NONZERO");
+  assert.equal(probe.body.exitCode, 7);
+  assert.match(probe.body.stderr, /host says model missing/u);
 });
 
 test("STORY-355 GWT1+GWT2: a forged Host header is refused on every route, and the token now guards every GET under /api/", async (t) => {

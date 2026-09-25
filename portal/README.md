@@ -14,9 +14,8 @@ node <engine>/portal/portal.mjs --container <platform>/.tcrn-workspace
 ```
 
 The container contains one directory per partition, each with a governed
-`workspace/` child and (for attested writes) an `attestations/` child. The page
-lists every discovered partition and switches the live CLI read/write target
-from its selector.
+`workspace/` child. The page lists every discovered partition and switches the
+live CLI read/write target from its selector.
 
 ## What it is
 
@@ -45,9 +44,9 @@ convention it defines *how work is done*, never *who may decide*.
 
 Opening `index.html` from disk would drop the three things that make this more
 than a mockup: a live catalog instead of a snapshot, a real receipt instead of a
-rendered guess, and a reconciliation that actually runs. Governed writes require
-compare-and-swap against the live head and an attested actor — a browser cannot
-supply either.
+rendered guess, and a reconciliation that actually runs. Governed writes name an
+actor the process declares and are serialised by the engine's own lock — a browser
+cannot supply the first.
 
 ## Safety
 
@@ -90,7 +89,6 @@ evidence, where reproducing them verbatim is the point.
 | `--prose-root` | container parent | Directory holding `AGENTS.md` |
 | `--port` | `4319` | Loopback port (`0` picks a free one) |
 | `TCRN_PORTAL_ACTOR` | `agent:portal` | Actor recorded on governed writes |
-| `--attest-dir` | *(unset)* | Attestation directory passed through to writes |
 | `TCRN_WORKFLOW_CLI` | `scripts/einzbern.mjs` beside the portal | CLI entry point |
 
 ## Launchers

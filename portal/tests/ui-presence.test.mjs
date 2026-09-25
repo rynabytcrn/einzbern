@@ -23,19 +23,13 @@ const COMPONENTS = Object.freeze([
   ["prose directory", '[data-ui="prose-directory"]'],
   ["prose line-number gutter", '[data-ui="prose-gutter"]'],
   ["prose finding link", '[data-ui="prose-finding-link"]'],
-  ["workspace paths", '[data-ui="workspace-paths"]'],
   ["work tree", '[data-ui="work-tree"]'],
   ["knowledge view", '[data-ui="knowledge-view"]'],
-  ["gates view", '[data-ui="gates-view"]'],
   ["evolution dashboard", '[data-ui="evolution-dashboard"]'],
-  ["path copy control", '[data-ui="path-copy"]'],
   ["partition switcher", '[data-ui="partition-switcher"]'],
   ["engine connection", '[data-ui="engine-connection"]'],
   ["setting modified dot", '[data-ui="setting-modified-dot"]'],
   ["setting dictionary link", '[data-ui="setting-dictionary-link"]'],
-  ["dispatch configuration surface", '[data-ui="dispatch-config-surface"]'],
-  ["dispatch tier table", '[data-ui="dispatch-tier-table"]'],
-  ["dispatch override table", '[data-ui="dispatch-override-table"]'],
   ["DS NumberInput", ".tcrn-number-input"],
   ["DS SettingChoice", ".tcrn-setting-choice"],
   ["returned stat card", ".tcrn-stat-card"],
@@ -76,8 +70,8 @@ async function scratch(prefix) {
 }
 
 async function writeScratch(fixture, command, args) {
-  const status = await cli(["status", "--workspace", fixture.workspace]);
-  return cli([command, "--workspace", fixture.workspace, "--expected-version", String(status.version), "--at", nextAt(), "--actor", "agent:test", ...args]);
+  // The engine serialises writers with its own lock (TCRN-CROSS-STORY-467 R1): no version to read first.
+  return cli([command, "--workspace", fixture.workspace, "--at", nextAt(), "--actor", "agent:test", ...args]);
 }
 
 async function seed(fixture) {
@@ -585,19 +579,9 @@ if (process.argv[2] === "status" && actual.status === 0) {
         && choice.getAttribute("data-setting-choice-rejection-reason") !== null));
       assert.equal(layout.querySelectorAll(".tcrn-stepper").length, 0, "Stepper must not carry numeric setting semantics");
 
-      page.document.querySelector('[data-setting-group="execution"]')?.click();
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      assert.equal(layout.querySelectorAll('[data-settings-host-switcher="true"]').length, 1, "one host switcher must precede the selected host form");
-      assert.equal(layout.querySelectorAll("[data-dispatch-host-card]").length, 1, "only one complete host form may be rendered");
-      assert.equal(layout.querySelectorAll('[data-dispatch-mode-select="true"]').length, 1, "dispatch mode must use a native select fallback when width is unknown");
-      assert.equal(layout.querySelectorAll("button[data-dispatch-mode]").length, 0, "navigation-style buttons must not carry setting values");
-      const hostSelect = layout.querySelector('[data-dispatch-host-switcher="true"]');
-      const alternateHost = [...hostSelect.options].find((option) => option.value !== hostSelect.value);
-      if (alternateHost) {
-        hostSelect.value = alternateHost.value;
-        hostSelect.dispatchEvent(new page.window.Event("change", { bubbles: true }));
-        assert.equal(layout.querySelector('[data-dispatch-host-card]')?.getAttribute("data-dispatch-host-card"), alternateHost.value);
-      }
+      // The host switcher and the single host form were the dispatch surface's, which left with
+      // the dispatch-* verbs (TCRN-CROSS-STORY-467 R3); the layout contract above is what remains.
+      assert.equal(layout.querySelectorAll("[data-dispatch-host-card], [data-settings-host-switcher]").length, 0);
       for (const locale of ["en", "zh-CN", "ja", "ko", "fr"]) {
         page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
         assert.equal(page.document.documentElement.lang, locale);
@@ -634,10 +618,6 @@ if (process.argv[2] === "status" && actual.status === 0) {
           "data-settings-long-value-policy": "native-inline-scroll-copy",
         };
         for (const [attribute, expected] of Object.entries(required)) if (root.getAttribute(attribute) !== expected) output.push(attribute);
-        if (root.querySelectorAll("[data-dispatch-host-card]").length !== 1) output.push("parallel-host-columns");
-        if (!root.querySelector('[data-settings-host-switcher="true"]')) output.push("host-switcher");
-        if (!root.querySelector('[data-dispatch-mode-select="true"]')) output.push("mode-select");
-        if (root.querySelectorAll("button[data-dispatch-mode]").length > 0) output.push("setting-value-navigation-button");
         if (root.querySelectorAll(".tcrn-stepper").length > 0) output.push("stepper-numeric-entry");
         for (const input of root.querySelectorAll('[data-number-input-component="NumberInput"]')) {
           if (!input.classList.contains("tcrn-number-input")) output.push("number-input-identity");
@@ -658,12 +638,6 @@ if (process.argv[2] === "status" && actual.status === 0) {
       assert.ok(findings(layout).includes("number-input-identity") && findings(layout).includes("number-input-visibility"), "a NumberInput lookalike must red");
       numberInput.classList.add("tcrn-number-input");
       numberInput.setAttribute("data-number-input-visibility", "full-value");
-
-      const hostContainer = layout.querySelector(".tcrn-dispatch-hosts");
-      const duplicate = hostContainer.querySelector("[data-dispatch-host-card]").cloneNode(true);
-      hostContainer.append(duplicate);
-      assert.ok(findings(layout).includes("parallel-host-columns"), "a second host form must red");
-      duplicate.remove();
 
       const stepper = page.document.createElement("div");
       stepper.className = "tcrn-stepper";
@@ -1466,69 +1440,20 @@ if (process.argv[2] === "status" && actual.status === 0) {
     } finally { await page.cleanup(); }
   });
 
-  test("STORY-373 the dispatch surface replaces the old model page and directory", async () => {
+  // STORY-373 replaced the model page and its directory with the dispatch surface, which then
+  // left with the dispatch-* verbs (TCRN-CROSS-STORY-467 R3). None of the three may come back.
+  test("STORY-373/467 the model page, its directory and the dispatch surface are all absent", async () => {
     const page = await preparePage();
     try {
       assert.equal(page.document.querySelector('[data-setting-group="models"]'), null);
       assert.equal(page.document.querySelector("#model-plans"), null);
       assert.equal(page.document.querySelector('[data-ui="vendor-directory-toggle"]'), null);
       assert.equal(page.document.querySelector('[data-ui="vendor-directory-drawer"]'), null);
-      const surface = page.document.querySelector('[data-ui="dispatch-config-surface"]');
-      assert.ok(surface, "the execution group must render the dispatch configuration surface");
-      assert.ok(surface.textContent.includes("next session") || surface.textContent.includes("下次会话"), "the activation boundary must be visible");
-      assert.equal(page.document.querySelectorAll("[data-dispatch-tier-row]").length, 3);
-      assert.equal(page.document.querySelectorAll("[data-dispatch-model]").length, 3);
-      assert.equal(page.document.querySelectorAll("[data-dispatch-effort]").length, 3);
-      assert.ok(page.document.querySelector('[data-ui="dispatch-override-table"]'));
-      assert.ok(page.document.querySelector('[data-dispatch-mode-select] option[value="eco"]'));
+      assert.equal(page.document.querySelector('[data-ui="dispatch-config-surface"]'), null);
+      assert.equal(page.document.querySelectorAll("[data-dispatch-tier-row], [data-dispatch-mode-select], [data-dispatch-probe]").length, 0);
+      assert.doesNotMatch(page.source, /api\/execution|dispatch-[a-z]+-(?:set|list)/u);
     } finally { await page.cleanup(); }
   });
-
-  test("STORY-373 mode save returns the engine receipt and host probe shows raw host failure", async () => {
-    const fixture = await scratch("tcrn-story373-dispatch-dom-");
-    await seed(fixture);
-    const bin = join(fixture.base, "fake-host-bin");
-    await mkdir(bin);
-    const fake = join(bin, "claude");
-    await writeFile(fake, "#!/usr/bin/env node\nprocess.stderr.write('host says model missing\\n'); process.exitCode = 7;\n", { mode: 0o700 });
-    // TCRN-CROSS-INC-387: host-probe prefers the host CLI named by CLAUDE_CODE_EXECPATH, which a
-    // Claude Code session sets; clearing it keeps this case on the fake claude first on PATH.
-    const page = await loadExecutedDom(fixture, { PATH: `${bin}:${process.env.PATH}`, CLAUDE_CODE_EXECPATH: "" });
-    page.workspace = fixture.workspace;
-    page.cleanup = async () => { page.child.kill(); await rm(fixture.base, { recursive: true, force: true }); };
-    page.document.querySelector('[data-page-target="settings"]')?.click();
-    page.document.querySelector('[data-setting-group="execution"]')?.click();
-    await new Promise((resolve) => setTimeout(resolve, 80));
-    try {
-      const mode = page.document.querySelector('[data-dispatch-mode-select]');
-      assert.ok(mode);
-      const before = receiptText(page.document);
-      mode.value = "eco";
-      mode.dispatchEvent(new page.window.Event("change", { bubbles: true }));
-      await waitFor(receiptAdvanced(page.document, before), "the dispatch-mode receipt");
-      assert.match(page.document.querySelector("#receipt-body")?.textContent ?? "", /SETTINGS_WRITE_COMMITTED/u);
-      assert.equal((await cli(["settings-catalog", "--workspace", fixture.workspace])).settings.find((entry) => entry.key === "execution.dispatchMode").currentValue, "eco");
-
-      const row = [...page.document.querySelectorAll("[data-dispatch-tier-row]")].find((candidate) => JSON.parse(candidate.dataset.dispatchTierRow).host === "claude-code" && JSON.parse(candidate.dataset.dispatchTierRow).tier === "main");
-      assert.ok(row);
-      row.querySelector("[data-dispatch-model]").value = "does-not-exist";
-      row.querySelector("[data-dispatch-effort]").value = "high";
-      const beforeTierSave = receiptText(page.document);
-      page.document.querySelector('[data-dispatch-save-host="claude-code"]')?.dispatchEvent(new page.window.Event("click", { bubbles: true }));
-      await waitFor(receiptAdvanced(page.document, beforeTierSave), "the dispatch-tier receipt");
-      assert.match(page.document.querySelector("#receipt-body")?.textContent ?? "", /DISPATCH_CONFIG_WRITE_COMMITTED/u);
-      const savedTiers = JSON.parse((await cli(["settings-catalog", "--workspace", fixture.workspace])).settings.find((entry) => entry.key === "execution.dispatchTiers").currentValue);
-      assert.equal(savedTiers["claude-code"].main.model, "does-not-exist");
-      const probe = row.querySelector("[data-dispatch-probe]");
-      probe.dispatchEvent(new page.window.Event("click", { bubbles: true }));
-      const result = row.querySelector("[data-dispatch-probe-result]");
-      await waitFor(() => result.dataset.state === "error", "the host probe error result");
-      assert.match(result.textContent, /HOST_PROBE_EXIT_NONZERO/u);
-      assert.match(result.textContent, /host says model missing/u);
-      assert.match(result.textContent, /7/u);
-    } finally { await page.cleanup(); }
-  });
-
 
   // STORY-355 GWT3. Evidence boundary, stated plainly rather than overclaimed: this
   // proves the toggle exists, that clicking it flips the two state attributes the CSS
@@ -1581,11 +1506,13 @@ if (process.argv[2] === "status" && actual.status === 0) {
     } finally { await page.cleanup(); }
   });
 
-  test("STORY-379 GWT2/GWT3: work, knowledge, gates, and evolution views are reachable, read-only, and translated", async () => {
+  test("STORY-379 GWT2/GWT3: work, knowledge, and evolution views are reachable, read-only, and translated", async () => {
     const page = await preparePage();
     try {
       page.document.querySelector('[data-page-target="dashboard"]')?.click();
-      for (const target of ["work", "knowledge", "gates", "evolution"]) {
+      // TCRN-CROSS-STORY-467 R3: the gate view read the gate listing and left with the gate-* verbs.
+      assert.equal(page.document.querySelector('[data-workspace-tab="gates"], [data-workspace-panel="gates"], [data-ui="gates-view"]'), null);
+      for (const target of ["work", "knowledge", "evolution"]) {
         page.document.querySelector(`[data-workspace-tab="${target}"]`)?.click();
         await new Promise((resolve) => setTimeout(resolve, 40));
         assert.equal(page.document.querySelector(`[data-workspace-panel="${target}"]`)?.hidden, false, `${target} panel must be reachable`);
@@ -1655,39 +1582,29 @@ if (process.argv[2] === "knowledge-list") {
       }
       assert.equal(dashboard.querySelectorAll("button").length, 0, "the list is read-only");
       const cells = [...page.document.querySelectorAll("#evolution-stats .tcrn-inline-metric")].map((cell) => cell.textContent.replace(/\s+/gu, " ").trim());
-      assert.equal(cells.length, 4, "the stats block keeps its four cells");
-      assert.match(cells[3], /^Conflict retirements ?2 ?items$/u, "and counts the conflict retirements in the fourth");
+      // The telemetry, mode and token cells left with the telemetry store (TCRN-CROSS-STORY-467 R3).
+      assert.equal(cells.length, 1, "the stats block keeps the conflict retirement cell only");
+      assert.match(cells[0], /^Conflict retirements ?2 ?items$/u, "and counts the conflict retirements");
     } finally { page.child.kill(); await rm(fixture.base, { recursive: true, force: true }); }
   });
 
-  test("STORY-389: narrow execution cards, status receipts, and French tab labels keep their boundaries", async () => {
+  // The narrow execution cards were the dispatch surface's host cards, which left with the
+  // dispatch-* verbs (TCRN-CROSS-STORY-467 R3); the status receipt and tab label boundaries stay.
+  test("STORY-389: status receipts and French tab labels keep their boundaries", async () => {
     const page = await preparePage();
     try {
       const source = await readFile(join(portalRoot, "index.html"), "utf8");
-      assert.match(source, /\.tcrn-dispatch-hosts\s*\{[^}]*display:\s*block;/u);
       assert.match(source, /@media \(max-width: 520px\)[\s\S]*?\.tcrn-app-status-bar__command[\s\S]*?white-space:\s*normal;/u);
-      assert.equal(page.document.querySelectorAll("[data-dispatch-host-card]").length, 1);
+      assert.doesNotMatch(source, /tcrn-dispatch-hosts|data-dispatch-host-card/u);
+      for (const locale of ["fr", "en", "zh-CN", "ja", "ko"]) {
+        page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
+        const labels = [...page.document.querySelectorAll("[data-workspace-tab]")].map((tab) => tab.textContent.trim());
+        assert.equal(new Set(labels).size, labels.length, `${locale} workspace tab labels must stay distinct: ${JSON.stringify(labels)}`);
+      }
       page.document.querySelector('[data-locale-option="fr"]')?.click();
-      assert.notEqual(page.document.querySelector('[data-workspace-tab="gates"]')?.textContent, page.document.querySelector('[data-workspace-tab="audit"]')?.textContent);
       assert.equal(page.document.querySelector('[data-workspace-tab="audit"]')?.textContent, "Audit");
       page.document.querySelector('[data-locale-option="en"]')?.click();
       assert.equal(page.document.querySelector('[data-workspace-tab="audit"]')?.textContent, "Audit");
-      assert.equal(page.document.querySelector('[data-dispatch-tier-row] [data-label]')?.getAttribute("data-label"), "Tier");
-      for (const locale of ["en", "zh-CN", "ja", "ko", "fr"]) {
-        page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
-        await new Promise((resolve) => setTimeout(resolve, 40));
-        const effortLabels = [...page.document.querySelectorAll("[data-dispatch-effort]")].map((input) => {
-          const label = page.document.querySelector(`label[for="${input.id}"]`);
-          const cell = input.closest("[data-label]");
-          return { label: label?.textContent.trim(), dataLabel: cell?.getAttribute("data-label") };
-        });
-        assert.equal(effortLabels.length, 3);
-        assert.ok(effortLabels.every(({ label, dataLabel }) => label && dataLabel && label === dataLabel), `${locale} effort fields must share their translated visible and accessible label`);
-        if (locale === "en") {
-          assert.ok(effortLabels.every(({ label }) => label === "Effort"), "English effort labels must be English");
-          assert.ok(effortLabels.every(({ label }) => label !== "Intensité"), "English must not inherit the old French effort label");
-        }
-      }
     } finally { await page.cleanup(); }
   });
 }

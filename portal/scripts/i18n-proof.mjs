@@ -187,7 +187,6 @@ for (const match of sourceForReachability.matchAll(/data-i18n(?:-placeholder|-ar
 const dynamicFamilies = [
   { prefix: "setting.", marker: "t(`setting.", reason: "setting labels/descriptions are assembled from the engine catalog" },
   { prefix: "vocabulary.", marker: "t(`vocabulary.", reason: "dictionary category labels are assembled from the vocabulary read surface" },
-  { prefix: "dispatch.tier.", marker: "t(`dispatch.tier.", reason: "dispatch tier labels are assembled from the fixed tier order" },
   // INC-175: receipt hints are looked up by reason code; unmapped codes fall back to
   // the code alone, so the family is reachable precisely when the receipt carries one.
   { prefix: "reason.", marker: '"reason." + ', reason: "receipt hints are keyed by the engine reason code on the receipt" },

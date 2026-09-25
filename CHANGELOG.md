@@ -68,6 +68,10 @@ the in-toto build statement, the P8 trust leg, the helper trust archive and its 
 markers are gone, and the helper copies are accepted as directories.
 `verify:p1` runs all twelve legs and reports every red with its reason code (`P1_RED` with
 `legs` and `reds`) instead of stopping at the first one.
+The portal follows: the gate view, the dispatch configuration surface with its
+`/api/execution` route, the telemetry, mode and token statistics and the five-root path
+panel are gone. Its writes carry workspace, time and actor only, and it no longer reads
+`--attest-dir` or `TCRN_PORTAL_ATTEST_DIR`.
 
 ## 1.2.1 — patch candidate
 

@@ -3,6 +3,32 @@
 All notable changes will be documented here. The project uses Semantic
 Versioning after the first accepted release.
 
+## Unreleased
+
+The engine is renamed Einzbern (TCRN-CROSS-MIN-227 D1, D2; TCRN-CROSS-STORY-466). The
+helper is Mana Orchestrate, the library directory is `.ether`, events live in `akasha/`,
+knowledge in `crest/`, and the per-machine directory is `~/.einzbern`. Every event and
+record already written keeps its `tcrn.*` schema string byte for byte and is read as the
+legacy namespace; newly written events use `einzbern.*`. Work-item prefixes
+(`TCRN-CROSS-*`) and every historical `externalKey` are unchanged. The alias table below
+is rendered from `packages/core/src/names.ts` and is the same table as
+`docs/wiki/Glossary.md`.
+
+<!-- einzbern:alias-table:start -->
+| 旧名 | 新名 | 说明 |
+| --- | --- | --- |
+| `tcrn-workflow` | `einzbern` | 引擎：仓名、npm 包名与 CLI 命令名 |
+| `tcrn-workflow-helper` | `mana-orchestrate` | 助手：仓名与 Skill id |
+| `.tcrn-workspace` | `.ether` | 项目生成物目录（库） |
+| `.tcrn-workflow/` | `.ether/` | 旧布局的工作区控制目录；新引擎只读打开，不再写入 |
+| `events/` | `akasha/` | 事件目录；新布局每台设备一个子目录 |
+| `knowledge/` | `crest/` | 知识目录 |
+| `~/.tcrn-workflow` | `~/.einzbern` | 设备目录（本机） |
+| `TCRN Workflow Portal` | `Atelier` | 门户 |
+| `tcrn.*` | `einzbern.*` | schema 命名空间；已写入的 tcrn.* 原样保留为只读旧命名空间，新写入用 einzbern.* |
+| `.tcrn-artifacts` | （不改名、不迁移） | 平台档案，归平台层，不随改名迁移 |
+<!-- einzbern:alias-table:end -->
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

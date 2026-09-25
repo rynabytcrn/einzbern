@@ -746,3 +746,30 @@ export {
   readTelemetryRecords,
   readTelemetryStats,
 } from "./telemetry.js";
+// TCRN-CROSS-STORY-466: every product, directory and schema name, and the legacy alias
+// table, come from one module.
+export {
+  ALIAS_TABLE_END_MARKER,
+  ALIAS_TABLE_START_MARKER,
+  BRAND,
+  DIRECTORY,
+  DIRECTORY_GLOSSARY,
+  LEGACY_CONTAINER_DIRECTORY,
+  LEGACY_CONTROL_DIRECTORY,
+  LEGACY_DEVICE_DIRECTORY,
+  LEGACY_ENGINE_NAME,
+  LEGACY_EVENTS_DIRECTORY,
+  LEGACY_HELPER_NAME,
+  LEGACY_KNOWLEDGE_DIRECTORY,
+  LEGACY_NAMES,
+  LEGACY_PORTAL_NAME,
+  LEGACY_REPOSITORY_NAMES,
+  LEGACY_SCHEMA_NAMESPACE,
+  LOCAL_DIRECTORY_NAMES,
+  PLATFORM_ARCHIVE_DIRECTORY,
+  SCHEMA_NAMESPACE,
+  isLegacySchemaVersion,
+  legacyInstalledEnginePath,
+  renderLegacyAliasTable,
+} from "./names.js";
+export type { BrandEntry, DirectoryGlossaryEntry, LegacyNameEntry } from "./names.js";

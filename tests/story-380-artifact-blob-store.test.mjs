@@ -56,7 +56,7 @@ function refusal(args) {
 }
 
 function setArtifactsPath(workspace, version, second, value) {
-  return cli(["settings-set", "--workspace", workspace, "--expected-version", String(version), "--at", instant(second),
+  return cli(["settings-set", "--workspace", workspace, "--at", instant(second),
     "--actor", "agent:claude-opus-5", "--key", "workspace.generatedArtifactsPath", "--value", value]);
 }
 
@@ -88,7 +88,7 @@ test("GWT1: an absolute generatedArtifactsPath under a cloud mount is accepted a
 
 test("GWT1: the path conditions are enforced, and each refusal names its own rule", async (t) => {
   const fx = await fixture(t, "gwt1-refusals");
-  const base = ["settings-set", "--workspace", fx.workspace, "--expected-version", "0", "--at", instant(1),
+  const base = ["settings-set", "--workspace", fx.workspace, "--at", instant(1),
     "--actor", "agent:claude-opus-5", "--key", "workspace.generatedArtifactsPath", "--value"];
 
   // Inside the workspace, and inside its control tree: shape rules, decided by settings.ts

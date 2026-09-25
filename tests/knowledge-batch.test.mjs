@@ -19,7 +19,6 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  acquireWorkspaceLease,
   applyKnowledgeBatch,
   createProject,
   createWork,
@@ -42,13 +41,7 @@ async function workspaceWithStore() {
   }
   await initializeWorkspace({ roots, externalKey: "KBATCH", createdAt: at(0), segmentEventLimit: 64 });
   const root = join(base, "workspace");
-  const lease = await acquireWorkspaceLease(root, { now: at(1) });
-  let state;
-  try {
-    state = await createProject(root, lease, { expectedVersion: 0, occurredAt: at(1), externalKey: "KBATCH-P", name: "KBatch" });
-  } finally {
-    await lease.release();
-  }
+  let state = await createProject(root, { occurredAt: at(1), externalKey: "KBATCH-P", name: "KBatch" });
   await initializeKnowledgeStore(root, { disposableAcknowledged: true });
   return { base, root, projectId: state.projects[0].id, chainVersion: state.version };
 }
@@ -94,19 +87,14 @@ const refusal = async (operation) => {
 test("knowledge-batch: align, four cards and a promote in one act", async () => {
   const fixture = await workspaceWithStore();
   try {
-    const lease = await acquireWorkspaceLease(fixture.root, { now: at(2) });
-    try {
-      await createWork(fixture.root, lease, {
-        expectedVersion: fixture.chainVersion, occurredAt: at(2), projectId: fixture.projectId,
-        externalKey: "KBATCH-W", kind: "Incident", parentId: null, status: "active",
-      });
-    } finally {
-      await lease.release();
-    }
+    await createWork(fixture.root, {
+      occurredAt: at(2), projectId: fixture.projectId,
+      externalKey: "KBATCH-W", kind: "Incident", parentId: null, status: "active",
+    });
     const result = await applyKnowledgeBatch(fixture.root, batch([
       card(fixture, 1, { lifecycle: "candidate" }), card(fixture, 2), card(fixture, 3), card(fixture, 4),
       { verb: "knowledge-promote", externalKey: "KB-CARD-1", state: "promoted" },
-    ]), { expectedVersion: 0, occurredAt: at(3), alignFirst: true });
+    ]), { occurredAt: at(3), alignFirst: true });
     assert.equal(result.reasonCode, "KNOWLEDGE_BATCH_APPLIED");
     assert.equal(result.aligned, true);
     assert.equal(result.applied.length, 6, "the rebase and all five members are receipted");
@@ -135,7 +123,7 @@ test("knowledge-batch: the caller reads the store version once, however many mem
   try {
     const result = await applyKnowledgeBatch(fixture.root, batch([
       card(fixture, 1), card(fixture, 2), card(fixture, 3),
-    ]), { expectedVersion: 0, occurredAt: at(2) });
+    ]), { occurredAt: at(2) });
     assert.equal(result.reasonCode, "KNOWLEDGE_BATCH_APPLIED");
     assert.equal(result.version, 3, "three mutations from the version supplied once");
   } finally {
@@ -155,7 +143,7 @@ test("knowledge-batch: a mid-batch failure names what landed, what failed, and w
       card(fixture, 2),
       { ...card(fixture, 1), externalKey: "KB-CARD-1" }, // duplicate: fails on its own terms
       card(fixture, 4),
-    ]), { expectedVersion: 0, occurredAt: at(2) }));
+    ]), { occurredAt: at(2) }));
     assert.equal(result.reasonCode, "WORK_BATCH_REFUSED");
     assert.equal(result.payload.stage, "apply");
     assert.equal(result.payload.applied.length, 2, "the two cards that landed are receipted");
@@ -182,7 +170,7 @@ test("knowledge-batch: every shape problem is reported at once, before any mutat
       { verb: "knowledge-create", externalKey: "KB-X" },
       { verb: "knowledge-promote", externalKey: "KB-X", state: "sideways" },
       { verb: "knowledge-retire" },
-    ]), { expectedVersion: 0, occurredAt: at(2) }));
+    ]), { occurredAt: at(2) }));
     assert.equal(result.payload.stage, "shape");
     assert.deepEqual([...new Set(result.payload.problems.map((problem) => problem.index))], [0, 1, 2, 3]);
     const rules = new Set(result.payload.problems.map((problem) => problem.rule));
@@ -202,15 +190,15 @@ test("knowledge-batch: every shape problem is reported at once, before any mutat
 test("knowledge-batch: acting on an untouched card demands an explicit revision", async () => {
   const fixture = await workspaceWithStore();
   try {
-    await applyKnowledgeBatch(fixture.root, batch([card(fixture, 1, { lifecycle: "candidate" })]), { expectedVersion: 0, occurredAt: at(2) });
+    await applyKnowledgeBatch(fixture.root, batch([card(fixture, 1, { lifecycle: "candidate" })]), { occurredAt: at(2) });
     const result = await refusal(() => applyKnowledgeBatch(fixture.root, batch([
       { verb: "knowledge-promote", externalKey: "KB-CARD-1", state: "promoted" },
-    ]), { expectedVersion: 1, occurredAt: at(3) }));
+    ]), { occurredAt: at(3) }));
     assert.equal(result.payload.failed.reasonCode, "KNOWLEDGE_CAS_MISMATCH");
     assert.match(result.payload.failed.detail, /expectedRevision is required/u);
     const explicit = await applyKnowledgeBatch(fixture.root, batch([
       { verb: "knowledge-promote", externalKey: "KB-CARD-1", state: "promoted", expectedRevision: 1 },
-    ]), { expectedVersion: 1, occurredAt: at(4) });
+    ]), { occurredAt: at(4) });
     assert.equal(explicit.reasonCode, "KNOWLEDGE_BATCH_APPLIED");
   } finally {
     await rm(fixture.base, { recursive: true, force: true });
@@ -223,7 +211,7 @@ test("knowledge-batch: a batch that is not a batch is refused whole", async () =
   try {
     for (const document of [null, [], {}, { schemaVersion: "tcrn.knowledge-batch.v1", members: [] }, { schemaVersion: "other", members: [{}] }]) {
       await assert.rejects(
-        () => applyKnowledgeBatch(fixture.root, document, { expectedVersion: 0, occurredAt: at(2) }),
+        () => applyKnowledgeBatch(fixture.root, document, { occurredAt: at(2) }),
         (error) => error?.reasonCode === "WORK_BATCH_MALFORMED",
         JSON.stringify(document),
       );

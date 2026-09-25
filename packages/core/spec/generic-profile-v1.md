@@ -123,7 +123,7 @@ owner rebind.
 
 The cold-start proof uses only disposable empty roots. It initializes a
 standalone Workspace, creates a generic project and the four planned-delivery
-records, exercises expected-version transitions, validates the event chain, and
+records, exercises transitions under the engine write lock, validates the event chain, and
 removes the fixture. No live profile store exists: generation, validation,
 resolution, and authorization are read-only computations.
 

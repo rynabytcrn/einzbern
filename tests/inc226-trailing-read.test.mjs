@@ -18,7 +18,6 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  acquireWorkspaceLease,
   createKnowledgeUnit,
   createProject,
   createWork,
@@ -49,22 +48,16 @@ async function emptyWorkspace(externalKey) {
 // That single event is the entire defect: nothing about the store changed.
 async function storeTrailingByOneWrite() {
   const { base, workspace } = await emptyWorkspace("INC226-TRAILING");
-  const lease = await acquireWorkspaceLease(workspace, { now: instant(19, 1) });
-  let state;
-  try {
-    state = await createProject(workspace, lease, {
-      expectedVersion: 0, occurredAt: instant(19, 1), externalKey: "INC226-PROJECT", name: "Retrieval",
-    });
-    state = await createWork(workspace, lease, {
-      expectedVersion: 1, occurredAt: instant(19, 2), projectId: state.projects[0].id,
-      externalKey: "INC226-ANCHOR", kind: "Initiative", parentId: null, status: "active",
-    });
-  } finally {
-    await lease.release();
-  }
+  let state = await createProject(workspace, {
+    occurredAt: instant(19, 1), externalKey: "INC226-PROJECT", name: "Retrieval",
+  });
+  state = await createWork(workspace, {
+    occurredAt: instant(19, 2), projectId: state.projects[0].id,
+    externalKey: "INC226-ANCHOR", kind: "Initiative", parentId: null, status: "active",
+  });
   await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
   await createKnowledgeUnit(workspace, {
-    expectedVersion: 0, occurredAt: instant(19, 3), externalKey: "INC226-CARD",
+    occurredAt: instant(19, 3), externalKey: "INC226-CARD",
     scope: "project", projectId: state.projects[0].id, roleScopes: [],
     category: "workflow", kind: "guide", tags: ["retrieval"],
     subject: "A card filed while the store was aligned",
@@ -82,16 +75,10 @@ async function storeTrailingByOneWrite() {
     stalenessPolicy: { maximumAgeDays: 30, unknownDisposition: "fail-closed" },
     exportDisposition: "metadata-only", body: "Filed before the chain advanced.",
   });
-  const second = await acquireWorkspaceLease(workspace, { now: instant(19, 4) });
-  let advanced;
-  try {
-    advanced = await createWork(workspace, second, {
-      expectedVersion: 2, occurredAt: instant(19, 5), projectId: state.projects[0].id,
-      externalKey: "INC226-THE-ONE-WRITE", kind: "Incident", parentId: null, status: "active",
-    });
-  } finally {
-    await second.release();
-  }
+  const advanced = await createWork(workspace, {
+    occurredAt: instant(19, 5), projectId: state.projects[0].id,
+    externalKey: "INC226-THE-ONE-WRITE", kind: "Incident", parentId: null, status: "active",
+  });
   return { base, workspace, headEventHash: advanced.headEventHash, projectId: state.projects[0].id, workId: state.work[0].id };
 }
 
@@ -163,7 +150,7 @@ test("INC-226: a write is not exempt -- filing still demands an aligned store", 
   try {
     await assert.rejects(
       () => createKnowledgeUnit(workspace, {
-        expectedVersion: 1, occurredAt: instant(19, 6), externalKey: "INC226-CARD-2",
+        occurredAt: instant(19, 6), externalKey: "INC226-CARD-2",
         scope: "project", projectId, roleScopes: [],
         category: "workflow", kind: "guide", tags: ["retrieval"],
         subject: "Filed against a head the store never saw",
@@ -197,14 +184,9 @@ test("INC-226: a write is not exempt -- filing still demands an aligned store", 
 test("INC-226: an aligned read is byte-identical to what it was before the exemption", async () => {
   const { base, workspace } = await emptyWorkspace("INC226-ALIGNED");
   try {
-    const lease = await acquireWorkspaceLease(workspace, { now: instant(19, 1) });
-    try {
-      await createProject(workspace, lease, {
-        expectedVersion: 0, occurredAt: instant(19, 1), externalKey: "INC226-ALIGNED-PROJECT", name: "Aligned",
-      });
-    } finally {
-      await lease.release();
-    }
+    await createProject(workspace, {
+      occurredAt: instant(19, 1), externalKey: "INC226-ALIGNED-PROJECT", name: "Aligned",
+    });
     await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
     const plain = await listKnowledgeMetadata(workspace, { at: instant(19, 6) });
     const asked = await listKnowledgeMetadata(workspace, { at: instant(19, 6), allowTrailing: true });

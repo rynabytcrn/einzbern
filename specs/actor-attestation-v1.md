@@ -57,7 +57,7 @@ enforcement without defining their own mechanism.
 The CLI exposes the attestation contract through two additions, both over the
 WSE-2 engine exports; the CLI adds no actor vocabulary of its own.
 
-- `attestation-enable --workspace <root> --expected-version <n|head> --at <instant>
+- `attestation-enable --workspace <root> --at <instant>
   --actor <stableId>` appends the one-way `attestation.actor.enabled` chain event
   under a held lease. All four flags are required. The `--actor` supplied here is
   the enabling actor carried by the enabling event itself (the boundary event).

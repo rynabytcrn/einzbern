@@ -8,7 +8,6 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  acquireWorkspaceLease,
   activeBinding,
   annotateWork,
   createProject,
@@ -167,42 +166,36 @@ async function boundStoryWorkspace(key, { resultScope = BOUND_STORY_SCOPE } = {}
   const fixture = await workspace(key);
   // The engine stores external keys upper-cased.
   const prefix = key.toUpperCase();
-  const lease = await acquireWorkspaceLease(fixture.root, { now: boundAt(0) });
-  try {
-    let state = await createProject(fixture.root, lease, { expectedVersion: 0, occurredAt: boundAt(1), externalKey: `${prefix}-PROJECT`, name: "Batch entry" });
-    const projectId = state.projects[0].id;
-    state = await createWork(fixture.root, lease, { expectedVersion: state.version, occurredAt: boundAt(2), projectId, externalKey: `${prefix}-INITIATIVE`, kind: "Initiative", parentId: null, title: "Initiative" });
-    const initiativeId = state.work.find((record) => record.externalKey === `${prefix}-INITIATIVE`).id;
-    state = await createWork(fixture.root, lease, { expectedVersion: state.version, occurredAt: boundAt(3), projectId, externalKey: `${prefix}-EPIC`, kind: "Epic", parentId: initiativeId, title: "Epic" });
-    const epicId = state.work.find((record) => record.externalKey === `${prefix}-EPIC`).id;
-    state = await createWork(fixture.root, lease, { expectedVersion: state.version, occurredAt: boundAt(4), projectId, externalKey: `${prefix}-STORY-460`, kind: "Story", parentId: epicId, title: "Bound Story", status: "active", scope: BOUND_STORY_SCOPE });
-    const story = state.work.find((record) => record.externalKey === `${prefix}-STORY-460`);
-    const evidence = join(fixture.base, "native-result-evidence.json");
-    await writeFile(evidence, JSON.stringify({ workId: story.id }));
-    await annotateWork(fixture.root, lease, {
-      expectedVersion: state.version,
-      occurredAt: boundAt(5),
-      id: story.id,
-      result: {
-        schemaVersion: "tcrn.native-implementation-result.v1",
-        status: "passed",
-        ok: true,
-        exitCode: 0,
-        command: "node --test tests/final-gate-plan-batch-verify.test.mjs",
-        dependencies: [],
-        evidence,
-        // The annotation that carries the result is the revision it is bound to.
-        revision: story.revision + 1,
-        scopeDigest: createHash("sha256").update(resultScope).digest("hex"),
-        workId: story.id,
-        candidateId: boundCandidate.id,
-        candidateDigest: boundCandidate.digest,
-      },
-    });
-    return { ...fixture, storyId: story.id };
-  } finally {
-    await lease.release();
-  }
+  let state = await createProject(fixture.root, { occurredAt: boundAt(1), externalKey: `${prefix}-PROJECT`, name: "Batch entry" });
+  const projectId = state.projects[0].id;
+  state = await createWork(fixture.root, { occurredAt: boundAt(2), projectId, externalKey: `${prefix}-INITIATIVE`, kind: "Initiative", parentId: null, title: "Initiative" });
+  const initiativeId = state.work.find((record) => record.externalKey === `${prefix}-INITIATIVE`).id;
+  state = await createWork(fixture.root, { occurredAt: boundAt(3), projectId, externalKey: `${prefix}-EPIC`, kind: "Epic", parentId: initiativeId, title: "Epic" });
+  const epicId = state.work.find((record) => record.externalKey === `${prefix}-EPIC`).id;
+  state = await createWork(fixture.root, { occurredAt: boundAt(4), projectId, externalKey: `${prefix}-STORY-460`, kind: "Story", parentId: epicId, title: "Bound Story", status: "active", scope: BOUND_STORY_SCOPE });
+  const story = state.work.find((record) => record.externalKey === `${prefix}-STORY-460`);
+  const evidence = join(fixture.base, "native-result-evidence.json");
+  await writeFile(evidence, JSON.stringify({ workId: story.id }));
+  await annotateWork(fixture.root, {
+    occurredAt: boundAt(5),
+    id: story.id,
+    result: {
+      schemaVersion: "tcrn.native-implementation-result.v1",
+      status: "passed",
+      ok: true,
+      exitCode: 0,
+      command: "node --test tests/final-gate-plan-batch-verify.test.mjs",
+      dependencies: [],
+      evidence,
+      // The annotation that carries the result is the revision it is bound to.
+      revision: story.revision + 1,
+      scopeDigest: createHash("sha256").update(resultScope).digest("hex"),
+      workId: story.id,
+      candidateId: boundCandidate.id,
+      candidateDigest: boundCandidate.digest,
+    },
+  });
+  return { ...fixture, storyId: story.id };
 }
 
 function boundBatchInput(fixture) {

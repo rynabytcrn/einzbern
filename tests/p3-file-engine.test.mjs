@@ -18,7 +18,7 @@ import {
   utimes,
   writeFile,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -27,11 +27,9 @@ import Ajv2020 from "ajv/dist/2020.js";
 
 import { COMMAND_CATALOG, runCli } from "../dist/build/packages/cli/src/index.js";
 import {
+  FILE_LOCK_SCHEMA_VERSION,
+  WORKSPACE_WRITE_LOCK_FILE,
   WorkspaceError,
-  acquireWorkspaceLease,
-  breakWorkspaceLease,
-  breakWorkspaceRecoveryClaim,
-  inspectWorkspaceLease,
   applyWorkspaceMigration,
   assertSupportedWorkspaceFilesystem,
   assertWorkspaceRecordCount,
@@ -56,11 +54,6 @@ import {
   LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import * as publicCore from "../dist/build/packages/core/src/index.js";
-import {
-  consumeQuarantineReplacementTestInstrumentation,
-  isQuarantineReplacementTestInstrumentationArmed,
-  withQuarantineReplacementTestInstrumentation,
-} from "../dist/build/packages/core/src/workspace-test-instrumentation.js";
 import {
   canonicalJson,
   canonicalSha256,
@@ -163,25 +156,20 @@ async function rewriteEventChain(workspace, transform, identity = {}) {
 }
 
 async function createProjectHistory(fixture, update = false, remove = false) {
-  const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(1) });
-  try {
-    let state = await createProject(fixture.workspace, lease, {
-      expectedVersion: 0, occurredAt: instant(1), externalKey: "PROJECT-FORGED", name: "Forged",
+  let state = await createProject(fixture.workspace, {
+    occurredAt: instant(1), externalKey: "PROJECT-FORGED", name: "Forged",
+  });
+  if (update) {
+    state = await updateProject(fixture.workspace, {
+      occurredAt: instant(2), id: state.projects[0].id, name: "Updated",
     });
-    if (update) {
-      state = await updateProject(fixture.workspace, lease, {
-        expectedVersion: 1, occurredAt: instant(2), id: state.projects[0].id, name: "Updated",
-      });
-    }
-    if (remove) {
-      state = await deleteProject(fixture.workspace, lease, {
-        expectedVersion: 1, occurredAt: instant(2), id: state.projects[0].id,
-      });
-    }
-    return state;
-  } finally {
-    await lease.release();
   }
+  if (remove) {
+    state = await deleteProject(fixture.workspace, {
+      occurredAt: instant(2), id: state.projects[0].id,
+    });
+  }
+  return state;
 }
 
 function expectReason(reasonCode, operation) {
@@ -209,7 +197,6 @@ test("Workspace metadata schema, five-root initialization, CLI readback, and sta
     await runCli([
       "project-create",
       "--workspace", fixture.workspace,
-      "--expected-version", "0",
       "--at", instant(1),
       "--external-key", "PROJECT-CLI",
       "--name", "CLI Project",
@@ -260,168 +247,55 @@ test("Workspace root entries have exact Ajv/runtime field and type parity", asyn
 test("project CRUD and Initiative-Epic-Story-Subtask operations materialize deterministically", async () => {
   const fixture = await workspaceFixture();
   try {
-    const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(1) });
-    try {
-      let state = await createProject(fixture.workspace, lease, {
-        expectedVersion: 0, occurredAt: instant(1), externalKey: "PROJECT-ALPHA", name: "Alpha",
-      });
-      const projectId = state.projects[0].id;
-      state = await createWork(fixture.workspace, lease, {
-        expectedVersion: 1, occurredAt: instant(2), projectId, externalKey: "INITIATIVE-ONE", kind: "Initiative", parentId: null,
-      });
-      const initiativeId = state.work.find((record) => record.kind === "Initiative").id;
-      state = await createWork(fixture.workspace, lease, {
-        expectedVersion: 2, occurredAt: instant(3), projectId, externalKey: "EPIC-ONE", kind: "Epic", parentId: initiativeId,
-      });
-      const epicId = state.work.find((record) => record.kind === "Epic").id;
-      state = await createWork(fixture.workspace, lease, {
-        expectedVersion: 3, occurredAt: instant(4), projectId, externalKey: "STORY-ONE", kind: "Story", parentId: epicId, scope: STORY_SCOPE,
-      });
-      const storyId = state.work.find((record) => record.kind === "Story").id;
-      state = await createWork(fixture.workspace, lease, {
-        expectedVersion: 4, occurredAt: instant(5), projectId, externalKey: "SUBTASK-ONE", kind: "Subtask", parentId: storyId,
-      });
-      state = await transitionWork(fixture.workspace, lease, {
-        expectedVersion: 5, occurredAt: instant(6), id: initiativeId, status: "ready",
-      });
-      state = await updateProject(fixture.workspace, lease, {
-        expectedVersion: 6, occurredAt: instant(7), id: projectId, name: "Alpha Updated",
-      });
-      const subtaskId = state.work.find((record) => record.kind === "Subtask").id;
-      state = await deleteWork(fixture.workspace, lease, {
-        expectedVersion: 7, occurredAt: instant(8), id: subtaskId,
-      });
-      state = await createProject(fixture.workspace, lease, {
-        expectedVersion: 8, occurredAt: instant(9), externalKey: "PROJECT-EMPTY", name: "Empty",
-      });
-      const emptyProjectId = state.projects.find((record) => record.externalKey === "PROJECT-EMPTY").id;
-      state = await deleteProject(fixture.workspace, lease, {
-        expectedVersion: 9, occurredAt: instant(10), id: emptyProjectId,
-      });
-      assert.equal(state.version, 10);
-      assert.deepEqual(state.work.map((record) => record.kind), ["Initiative", "Epic", "Story", "Subtask"]);
-      assert.equal(state.projects.find((record) => record.id === projectId).revision, 2);
-      await expectReasonAsync("GRAPH_PARENT_KIND_INVALID", () => createWork(fixture.workspace, lease, {
-        expectedVersion: 10, occurredAt: instant(11), projectId, externalKey: "BAD-EPIC", kind: "Epic", parentId: storyId,
-      }));
-      const status = await readFile(join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "views", "STATUS.md"), "utf8");
-      assert.match(status, /Work records: 3/u);
-      assert.equal(await exportWorkspace(fixture.workspace), await exportWorkspace(fixture.workspace));
-      assert.deepEqual(await createWorkspaceArchive(fixture.workspace), await createWorkspaceArchive(fixture.workspace));
-      assert.equal((await exportWorkspace(fixture.workspace)).includes(fixture.base), false);
-    } finally {
-      await lease.release();
-    }
-  } finally {
-    await fixture.close();
-  }
-});
-
-test("WSA-4: lease-inspect reports state and lease-break clears the pid-reuse wedge under token+expiry gates", async () => {
-  const fixture = await workspaceFixture();
-  try {
-    // no lease yet
-    assert.deepEqual(await inspectWorkspaceLease(fixture.workspace, { now: instant(5) }), {
-      schemaVersion: "tcrn.workspace-lease-inspection.v1", reasonCode: "WORKSPACE_LEASE_OBSERVED", held: false, recoveryClaim: null,
+    let state = await createProject(fixture.workspace, {
+      occurredAt: instant(1), externalKey: "PROJECT-ALPHA", name: "Alpha",
     });
-    const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(10) });
-    const inspected = await inspectWorkspaceLease(fixture.workspace, { now: instant(20) });
-    assert.equal(inspected.held, true);
-    assert.equal(inspected.token, lease.token);
-    assert.equal(inspected.expired, false);
-    // an unexpired lease cannot be broken, even with the right token
-    await expectReasonAsync("WORKSPACE_LOCKED", () => breakWorkspaceLease(fixture.workspace, { now: instant(20), ownerToken: lease.token }));
-    // expired now (ttl 30s from instant(10) => expires instant(40)); a wrong token still fails
-    assert.equal((await inspectWorkspaceLease(fixture.workspace, { now: instant(50) })).expired, true);
-    await expectReasonAsync("WORKSPACE_LEASE_INVALID", () => breakWorkspaceLease(fixture.workspace, { now: instant(50), ownerToken: "0".repeat(48) }));
-    // correct token + expired => broken, bypassing the processAlive wedge (this test pid is alive)
-    const broken = await breakWorkspaceLease(fixture.workspace, { now: instant(50), ownerToken: lease.token });
-    assert.equal(broken.reasonCode, "WORKSPACE_LEASE_BROKEN");
-    assert.equal(broken.token, lease.token);
-    // the workspace is now acquirable again
-    const fresh = await acquireWorkspaceLease(fixture.workspace, { now: instant(51) });
-    await fresh.release();
-    assert.deepEqual(await inspectWorkspaceLease(fixture.workspace, { now: instant(52) }), {
-      schemaVersion: "tcrn.workspace-lease-inspection.v1", reasonCode: "WORKSPACE_LEASE_OBSERVED", held: false, recoveryClaim: null,
+    const projectId = state.projects[0].id;
+    state = await createWork(fixture.workspace, {
+      occurredAt: instant(2), projectId, externalKey: "INITIATIVE-ONE", kind: "Initiative", parentId: null,
     });
+    const initiativeId = state.work.find((record) => record.kind === "Initiative").id;
+    state = await createWork(fixture.workspace, {
+      occurredAt: instant(3), projectId, externalKey: "EPIC-ONE", kind: "Epic", parentId: initiativeId,
+    });
+    const epicId = state.work.find((record) => record.kind === "Epic").id;
+    state = await createWork(fixture.workspace, {
+      occurredAt: instant(4), projectId, externalKey: "STORY-ONE", kind: "Story", parentId: epicId, scope: STORY_SCOPE,
+    });
+    const storyId = state.work.find((record) => record.kind === "Story").id;
+    state = await createWork(fixture.workspace, {
+      occurredAt: instant(5), projectId, externalKey: "SUBTASK-ONE", kind: "Subtask", parentId: storyId,
+    });
+    state = await transitionWork(fixture.workspace, {
+      occurredAt: instant(6), id: initiativeId, status: "ready",
+    });
+    state = await updateProject(fixture.workspace, {
+      occurredAt: instant(7), id: projectId, name: "Alpha Updated",
+    });
+    const subtaskId = state.work.find((record) => record.kind === "Subtask").id;
+    state = await deleteWork(fixture.workspace, {
+      occurredAt: instant(8), id: subtaskId,
+    });
+    state = await createProject(fixture.workspace, {
+      occurredAt: instant(9), externalKey: "PROJECT-EMPTY", name: "Empty",
+    });
+    const emptyProjectId = state.projects.find((record) => record.externalKey === "PROJECT-EMPTY").id;
+    state = await deleteProject(fixture.workspace, {
+      occurredAt: instant(10), id: emptyProjectId,
+    });
+    assert.equal(state.version, 10);
+    assert.deepEqual(state.work.map((record) => record.kind), ["Initiative", "Epic", "Story", "Subtask"]);
+    assert.equal(state.projects.find((record) => record.id === projectId).revision, 2);
+    await expectReasonAsync("GRAPH_PARENT_KIND_INVALID", () => createWork(fixture.workspace, {
+      occurredAt: instant(11), projectId, externalKey: "BAD-EPIC", kind: "Epic", parentId: storyId,
+    }));
+    const status = await readFile(join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "views", "STATUS.md"), "utf8");
+    assert.match(status, /Work records: 3/u);
+    assert.equal(await exportWorkspace(fixture.workspace), await exportWorkspace(fixture.workspace));
+    assert.deepEqual(await createWorkspaceArchive(fixture.workspace), await createWorkspaceArchive(fixture.workspace));
+    assert.equal((await exportWorkspace(fixture.workspace)).includes(fixture.base), false);
   } finally {
     await fixture.close();
-  }
-});
-
-test("WSA-7: lease-inspect surfaces the recovery claim and lease-recovery-break clears the pid-reuse residue", async () => {
-  const fixture = await workspaceFixture();
-  try {
-    const control = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY);
-    const claimPath = join(control, "lease-recovery.claim");
-    // A claim whose pid is this live process: automatic reclaim refuses it (that is the
-    // pid-reuse residue), so it is exactly what the operator verb exists for.
-    const token = "c".repeat(48);
-    await writeFile(claimPath, canonicalJson({
-      schemaVersion: "tcrn.workspace-lease-recovery.v1",
-      token,
-      pid: process.pid,
-      acquiredAt: instant(1),
-      expiresAtNanoseconds: "1",
-    }), { mode: 0o600 });
-
-    const inspected = await inspectWorkspaceLease(fixture.workspace, { now: instant(5) });
-    assert.equal(inspected.recoveryClaim.token, token);
-    assert.equal(inspected.recoveryClaim.expired, true);
-    assert.equal(inspected.recoveryClaim.processAlive, true);
-    // Not self-reclaiming: the acquire path will not clear this one.
-    assert.equal(inspected.recoveryClaim.selfReclaiming, false);
-
-    // A wrong token fails even though the claim is expired.
-    await expectReasonAsync("WORKSPACE_LEASE_INVALID", () => breakWorkspaceRecoveryClaim(fixture.workspace, { now: instant(5), claimToken: "0".repeat(48) }));
-    const broken = await breakWorkspaceRecoveryClaim(fixture.workspace, { now: instant(5), claimToken: token });
-    assert.equal(broken.reasonCode, "WORKSPACE_RECOVERY_CLAIM_BROKEN");
-    assert.equal((await readdir(control)).includes("lease-recovery.claim"), false);
-    // Nothing left to break, and a fresh lease is obtainable again.
-    await expectReasonAsync("WORKSPACE_LEASE_INVALID", () => breakWorkspaceRecoveryClaim(fixture.workspace, { now: instant(6), claimToken: token }));
-    const fresh = await acquireWorkspaceLease(fixture.workspace, { now: instant(7) });
-    await fresh.release();
-  } finally {
-    await fixture.close();
-  }
-
-  // An unexpired claim is never breakable, even with the exact token.
-  const active = await workspaceFixture();
-  try {
-    const token = "d".repeat(48);
-    await writeFile(join(active.workspace, LEGACY_CONTROL_DIRECTORY, "lease-recovery.claim"), canonicalJson({
-      schemaVersion: "tcrn.workspace-lease-recovery.v1",
-      token,
-      pid: process.pid,
-      acquiredAt: instant(1),
-      expiresAtNanoseconds: "9999999999999999999",
-    }), { mode: 0o600 });
-    await expectReasonAsync("WORKSPACE_LOCKED", () => breakWorkspaceRecoveryClaim(active.workspace, { now: instant(2), claimToken: token }));
-  } finally {
-    await active.close();
-  }
-});
-
-test("WSA-7b: a reclaimed recovery claim quarantines under a residue-visible prefix", async () => {
-  // R2-NEW-1. The reclaim path once wrote `stale-recovery-`, which matches neither RESIDUE_PREFIX
-  // nor .gitignore, so a leaked quarantine file was invisible to the residue gate, entered the
-  // backup manifest, and could be committed and shipped on clone. Assert the prefix the residue
-  // gate actually recognises, so reintroducing the divergence reddens here.
-  // The quarantine file is transient on the success path, so assert the source text instead of
-  // racing to observe it: every recovery-quarantine name the engine can construct must begin with
-  // a prefix RESIDUE_PREFIX recognises. This reddens the moment either side drifts.
-  const engineSource = await readFile(new URL("../packages/core/src/workspace.ts", import.meta.url), "utf8");
-  const residueSource = await readFile(new URL("../packages/core/src/workspace-snapshot.ts", import.meta.url), "utf8");
-  const residuePrefixes = [...residueSource.matchAll(/RESIDUE_PREFIX = \/\^\(\?:([^)]+)\)/gu)][0][1].split("|");
-  assert.ok(residuePrefixes.length >= 3, "residue prefixes were not parsed");
-  const quarantineNames = [...engineSource.matchAll(/controlPath\([^,]+, `([a-z-]+)\$\{/gu)].map((match) => match[1]);
-  const recoveryQuarantines = quarantineNames.filter((name) => name.includes("recovery-"));
-  assert.ok(recoveryQuarantines.length >= 2, "both recovery quarantine sites should be found");
-  for (const name of recoveryQuarantines) {
-    assert.ok(
-      residuePrefixes.some((prefix) => name.startsWith(prefix)),
-      `${name} is invisible to the residue gate, the backup manifest, and .gitignore`,
-    );
   }
 });
 
@@ -434,7 +308,7 @@ test("WSB-1: mutation responses carry the created/mutated record identity", asyn
       return JSON.parse(output);
     };
     const ws = ["--workspace", fixture.workspace];
-    const projectCreate = await run(["project-create", ...ws, "--expected-version", "0", "--at", instant(1), "--external-key", "PROJECT-B1", "--name", "B1"]);
+    const projectCreate = await run(["project-create", ...ws, "--at", instant(1), "--external-key", "PROJECT-B1", "--name", "B1"]);
     assert.equal(projectCreate.record.id, deriveStableId("project", "PROJECT-B1"));
     assert.equal(projectCreate.record.revision, 1);
     assert.equal(projectCreate.record.tombstone, false);
@@ -443,23 +317,23 @@ test("WSB-1: mutation responses carry the created/mutated record identity", asyn
     assert.equal(projectCreate.version, 1);
     assert.equal(typeof projectCreate.headEventHash, "string");
     const projectId = projectCreate.record.id;
-    const workCreate = await run(["work-create", "--title", "record-title", ...ws, "--expected-version", "1", "--at", instant(2), "--project-id", projectId, "--external-key", "INIT-B1", "--kind", "Initiative"]);
+    const workCreate = await run(["work-create", "--title", "record-title", ...ws, "--at", instant(2), "--project-id", projectId, "--external-key", "INIT-B1", "--kind", "Initiative"]);
     assert.equal(workCreate.record.id, deriveStableId("work", "INIT-B1"));
     assert.deepEqual({ kind: workCreate.record.kind, status: workCreate.record.status, projectId: workCreate.record.projectId, parentId: workCreate.record.parentId, revision: workCreate.record.revision, tombstone: workCreate.record.tombstone },
       { kind: "Initiative", status: "planned", projectId, parentId: null, revision: 1, tombstone: false });
     const workId = workCreate.record.id;
-    const transitioned = await run(["work-transition", ...ws, "--expected-version", "2", "--at", instant(3), "--id", workId, "--status", "ready"]);
+    const transitioned = await run(["work-transition", ...ws, "--at", instant(3), "--id", workId, "--status", "ready"]);
     assert.equal(transitioned.record.status, "ready");
     assert.equal(transitioned.record.revision, 2);
-    const deleted = await run(["work-delete", ...ws, "--expected-version", "3", "--at", instant(4), "--id", workId]);
+    const deleted = await run(["work-delete", ...ws, "--at", instant(4), "--id", workId]);
     assert.equal(deleted.record.tombstone, true);
     // byte-identical repeat on a fresh fixture
     const other = await workspaceFixture();
     try {
       let a = "";
-      await runCli(["project-create", "--workspace", other.workspace, "--expected-version", "0", "--at", instant(1), "--external-key", "PROJECT-B1", "--name", "B1"], { write: (value) => { a += value; } });
+      await runCli(["project-create", "--workspace", other.workspace, "--at", instant(1), "--external-key", "PROJECT-B1", "--name", "B1"], { write: (value) => { a += value; } });
       let b = "";
-      await runCli(["project-create", "--workspace", fixture.workspace, "--expected-version", "4", "--at", instant(5), "--external-key", "PROJECT-B1B", "--name", "B1"], { write: (value) => { b += value; } });
+      await runCli(["project-create", "--workspace", fixture.workspace, "--at", instant(5), "--external-key", "PROJECT-B1B", "--name", "B1"], { write: (value) => { b += value; } });
       assert.notEqual(a, b);
       assert.equal(JSON.parse(a).record.id, deriveStableId("project", "PROJECT-B1"));
     } finally {
@@ -479,7 +353,7 @@ test("WSE-4: --attest-dir writes one deterministic advisory receipt outside the 
     const attestDir = join(fixture.base, "receipts");
     let output = "";
     await runCli(
-      ["project-create", "--workspace", fixture.workspace, "--expected-version", "0", "--at", instant(1),
+      ["project-create", "--workspace", fixture.workspace, "--at", instant(1),
         "--external-key", "PROJECT-T1", "--name", "T1", "--attest-dir", attestDir],
       { write: (value) => { output += value; }, clock: () => observed },
     );
@@ -516,7 +390,7 @@ test("WSE-4: --attest-dir fails closed inside the workspace root and with no inj
     // receipt is written (the advisory receipt must never masquerade as in-workspace).
     const insideDir = join(fixture.workspace, "attest-inside");
     await expectReasonAsync("CLI_ARGUMENT_MALFORMED", () => runCli(
-      ["project-create", "--workspace", fixture.workspace, "--expected-version", "0", "--at", instant(1),
+      ["project-create", "--workspace", fixture.workspace, "--at", instant(1),
         "--external-key", "PROJECT-T2", "--name", "T2", "--attest-dir", insideDir],
       { write: () => {}, clock: () => "2026-07-11T09:15:30Z" },
     ));
@@ -528,7 +402,7 @@ test("WSE-4: --attest-dir fails closed inside the workspace root and with no inj
     // path from the containment path.
     const outsideDir = join(fixture.base, "receipts-noclock");
     await expectReasonAsync("CLI_ARGUMENT_MISSING", () => runCli(
-      ["project-create", "--workspace", fixture.workspace, "--expected-version", "0", "--at", instant(2),
+      ["project-create", "--workspace", fixture.workspace, "--at", instant(2),
         "--external-key", "PROJECT-T3", "--name", "T3", "--attest-dir", outsideDir],
       { write: () => {} },
     ));
@@ -548,8 +422,7 @@ const ATTEST_IO = { write: () => {}, clock: () => "2026-07-11T09:15:30Z" };
 async function attestedStoreFixture(inconsistent) {
   const fixture = await workspaceFixture();
   const attestDir = join(fixture.base, "attestations");
-  const create = (version, key) => runCli(["project-create", "--workspace", fixture.workspace, "--expected-version", String(version),
-    "--at", instant(version + 1), "--external-key", key, "--name", key, "--attest-dir", attestDir], ATTEST_IO);
+  const create = (version, key) => runCli(["project-create", "--workspace", fixture.workspace, "--at", instant(version + 1), "--external-key", key, "--name", key, "--attest-dir", attestDir], ATTEST_IO);
   for (const [version, key] of ["PROJECT-A0", "PROJECT-A1", "PROJECT-A2"].entries()) await create(version, key);
   const baseline = await reportAttestationDirectory(attestDir);
   await migrateAttestationDirectory(attestDir);
@@ -595,7 +468,7 @@ test("INC-378 every mutating verb that takes --attest-dir refuses an inconsisten
     for (const entry of verbs) {
       const values = {};
       for (const flag of entry.flags.filter((candidate) => candidate.required)) values[flag.name] = flag.valueKind === "instant" ? instant(9) : "x";
-      Object.assign(values, { workspace: fixture.workspace, "expected-version": "head", "attest-dir": fixture.attestDir }, specific[entry.name] ?? {});
+      Object.assign(values, { workspace: fixture.workspace, "attest-dir": fixture.attestDir }, specific[entry.name] ?? {});
       const argv = [entry.name, ...Object.entries(values).flatMap(([name, value]) => [`--${name}`, value])];
       const outcome = await runCli(argv, ATTEST_IO).then(() => "completed", (error) => error?.reasonCode);
       assert.equal(outcome, "ATTESTATION_STORE_INCONSISTENT", entry.name);
@@ -616,7 +489,7 @@ test("INC-378 work-batch refuses an inconsistent store before the lease and chan
     ] }), "utf8");
     const version = (await materializeWorkspace(fixture.workspace)).version;
     const digests = await directoryDigests(fixture.attestDir);
-    const batch = ["work-batch", "--workspace", fixture.workspace, "--expected-version", String(version), "--at", instant(9), "--from-file", batchPath];
+    const batch = ["work-batch", "--workspace", fixture.workspace, "--at", instant(9), "--from-file", batchPath];
     await expectReasonAsync("ATTESTATION_STORE_INCONSISTENT", () => runCli([...batch, "--attest-dir", fixture.attestDir], ATTEST_IO));
     assert.equal((await materializeWorkspace(fixture.workspace)).version, version, "the batch committed nothing");
     assert.deepEqual(await directoryDigests(fixture.attestDir), digests, "no attestation byte changed");
@@ -632,7 +505,7 @@ test("INC-378 a consistent store still takes the receipt and it reads back by ev
   const fixture = await attestedStoreFixture(false);
   try {
     let output = "";
-    await runCli(["project-create", "--workspace", fixture.workspace, "--expected-version", "3", "--at", instant(9),
+    await runCli(["project-create", "--workspace", fixture.workspace, "--at", instant(9),
       "--external-key", "PROJECT-C1", "--name", "C1", "--attest-dir", fixture.attestDir], { ...ATTEST_IO, write: (value) => { output += value; } });
     const head = JSON.parse(output).headEventHash;
     assert.equal(await readAttestationReceipt(fixture.attestDir, head), canonicalJson({
@@ -648,8 +521,7 @@ test("INC-378 a receipt that fails after the commit reports committed, the versi
   const fixture = await attestedStoreFixture(false);
   try {
     // A read-only store passes the pre-lease check and then refuses the receipt itself.
-    const create = (version, key) => ["project-create", "--workspace", fixture.workspace, "--expected-version", String(version),
-      "--at", instant(9 + version), "--external-key", key, "--name", key, "--attest-dir", fixture.attestDir];
+    const create = (version, key) => ["project-create", "--workspace", fixture.workspace, "--at", instant(9 + version), "--external-key", key, "--name", key, "--attest-dir", fixture.attestDir];
     await chmod(fixture.attestDir, 0o500);
     const failure = await runCli(create(3, "PROJECT-D1"), ATTEST_IO).then(() => null, (error) => error)
       .finally(() => chmod(fixture.attestDir, 0o700));
@@ -683,9 +555,9 @@ test("WSE-4: export and archive bytes are identical with and without attestation
     const mutate = async (fixture, attest) => {
       const attestFlag = attest ? ["--attest-dir", join(fixture.base, "receipts")] : [];
       const io = attest ? { write: () => {}, clock: () => "2026-07-11T09:15:30Z" } : { write: () => {} };
-      await runCli(["project-create", "--workspace", fixture.workspace, "--expected-version", "0", "--at", instant(1),
+      await runCli(["project-create", "--workspace", fixture.workspace, "--at", instant(1),
         "--external-key", "PROJECT-EXP", "--name", "EXP", ...attestFlag], io);
-      await runCli(["work-create", "--title", "record-title", "--workspace", fixture.workspace, "--expected-version", "1", "--at", instant(2),
+      await runCli(["work-create", "--title", "record-title", "--workspace", fixture.workspace, "--at", instant(2),
         "--project-id", deriveStableId("project", "PROJECT-EXP"), "--external-key", "INIT-EXP", "--kind", "Initiative", ...attestFlag], io);
     };
     await mutate(withAttest, true);
@@ -712,11 +584,11 @@ test("WSE-4: export and archive bytes are identical with and without attestation
 test("WSB-4: work-create --parent-id '-' yields a null parent byte-identical to omitting the flag", async () => {
   const createRoot = async (fixture, parentFlag) => {
     let projectOut = "";
-    await runCli(["project-create", "--workspace", fixture.workspace, "--expected-version", "0", "--at", instant(1), "--external-key", "PROJECT-B4", "--name", "B4"], { write: (value) => { projectOut += value; } });
+    await runCli(["project-create", "--workspace", fixture.workspace, "--at", instant(1), "--external-key", "PROJECT-B4", "--name", "B4"], { write: (value) => { projectOut += value; } });
     const projectId = JSON.parse(projectOut).record.id;
     let workOut = "";
     await runCli([
-      "work-create", "--title", "record-title", "--workspace", fixture.workspace, "--expected-version", "1", "--at", instant(2),
+      "work-create", "--title", "record-title", "--workspace", fixture.workspace, "--at", instant(2),
       "--project-id", projectId, "--external-key", "INIT-B4", "--kind", "Initiative", ...parentFlag,
     ], { write: (value) => { workOut += value; } });
     return JSON.parse(workOut);
@@ -736,50 +608,6 @@ test("WSB-4: work-create --parent-id '-' yields a null parent byte-identical to 
   }
 });
 
-test("WSB-7: --expected-version head derives the current version under the lease; numeric CAS still fails closed", async () => {
-  const fixture = await workspaceFixture();
-  try {
-    const run = async (args) => {
-      let output = "";
-      await runCli(args, { write: (value) => { output += value; } });
-      return JSON.parse(output);
-    };
-    const ws = ["--workspace", fixture.workspace];
-    // (a) head on a workspace at version 0 commits exactly version 1 with the correct record id.
-    const projectCreate = await run(["project-create", ...ws, "--expected-version", "head", "--at", instant(1), "--external-key", "PROJECT-B7", "--name", "B7"]);
-    assert.equal(projectCreate.version, 1);
-    assert.equal(projectCreate.record.id, deriveStableId("project", "PROJECT-B7"));
-    const projectId = projectCreate.record.id;
-    // (b) two further sequential head mutations commit versions 2 then 3 with no manual version tracking.
-    const workCreate = await run(["work-create", "--title", "record-title", ...ws, "--expected-version", "head", "--at", instant(2), "--project-id", projectId, "--external-key", "INIT-B7", "--kind", "Initiative"]);
-    assert.equal(workCreate.version, 2);
-    assert.equal(workCreate.record.id, deriveStableId("work", "INIT-B7"));
-    const workId = workCreate.record.id;
-    const transitioned = await run(["work-transition", ...ws, "--expected-version", "head", "--at", instant(3), "--id", workId, "--status", "ready"]);
-    assert.equal(transitioned.version, 3);
-    assert.equal(transitioned.record.status, "ready");
-    // (d) a stale NUMERIC expected-version stays byte-identical to baseline and still fails closed.
-    await expectReasonAsync("WORKSPACE_CAS_MISMATCH", () => runCli(
-      ["project-create", ...ws, "--expected-version", "1", "--at", instant(4), "--external-key", "PROJECT-B7B", "--name", "B7B"],
-      { write: () => {} },
-    ));
-    // (e) near-miss spellings are not the head marker and fail malformed on an in-scope verb.
-    for (const spelling of ["HEAD", "latest"]) {
-      await expectReasonAsync("CLI_ARGUMENT_MALFORMED", () => runCli(
-        ["work-delete", ...ws, "--expected-version", spelling, "--at", instant(5), "--id", workId],
-        { write: () => {} },
-      ));
-    }
-    // (c) head is rejected on out-of-scope knowledge-marker mutations, which keep numeric-only expected-version.
-    await expectReasonAsync("CLI_ARGUMENT_MALFORMED", () => runCli(
-      ["knowledge-promote", ...ws, "--expected-version", "head", "--expected-revision", "1", "--at", instant(6), "--id", "irrelevant", "--state", "promoted"],
-      { write: () => {} },
-    ));
-  } finally {
-    await fixture.close();
-  }
-});
-
 test("WSB-8: --flag=value representability round-trips literal values and invalid enum flags fail closed naming flag=value", async () => {
   const fixture = await workspaceFixture();
   try {
@@ -792,12 +620,12 @@ test("WSB-8: --flag=value representability round-trips literal values and invali
     // A --name whose value begins with "--" is unrepresentable in the two-token form
     // (the value would be rejected as a flag) but is expressible via the attached =
     // form and round-trips byte-exactly onto disk.
-    const created = await run(["project-create", ...ws, "--expected-version", "0", "--at", instant(1), "--external-key", "PROJECT-B8", "--name=--leading-dashes"]);
+    const created = await run(["project-create", ...ws, "--at", instant(1), "--external-key", "PROJECT-B8", "--name=--leading-dashes"]);
     assert.equal(created.version, 1);
     const afterCreate = await materializeWorkspace(fixture.workspace);
     assert.equal(afterCreate.projects.find((entry) => entry.id === created.record.id).name, "--leading-dashes");
     // Split on the FIRST "=" only: a value carrying further "=" is preserved verbatim.
-    const updated = await run(["project-update", ...ws, "--expected-version", "1", "--at", instant(2), "--id", created.record.id, "--name=a=b=c"]);
+    const updated = await run(["project-update", ...ws, "--at", instant(2), "--id", created.record.id, "--name=a=b=c"]);
     const afterUpdate = await materializeWorkspace(fixture.workspace);
     assert.equal(afterUpdate.projects.find((entry) => entry.id === updated.record.id).name, "a=b=c");
     // A duplicate flag across the attached and two-token spellings still fails closed.
@@ -809,7 +637,7 @@ test("WSB-8: --flag=value representability round-trips literal values and invali
     // (CLI_ARGUMENT_MALFORMED), never as an opaque core RECORD_MALFORMED on the id.
     await assert.rejects(
       () => runCli(
-        ["work-create", "--title", "record-title", ...ws, "--expected-version", "1", "--at", instant(3), "--project-id", created.record.id, "--external-key", "INIT-B8", "--kind", "Task"],
+        ["work-create", "--title", "record-title", ...ws, "--at", instant(3), "--project-id", created.record.id, "--external-key", "INIT-B8", "--kind", "Task"],
         { write() {} },
       ),
       (error) => error?.reasonCode === "CLI_ARGUMENT_MALFORMED" && error?.message === "kind=Task",
@@ -828,36 +656,31 @@ test("WSB-8: --flag=value representability round-trips literal values and invali
 test("WSA-1: every mutation returns state identical to a fresh materialize (single-replay pipeline)", async () => {
   const fixture = await workspaceFixture();
   try {
-    const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(1) });
     const projection = (state) => ({ version: state.version, headEventHash: state.headEventHash, projects: state.projects, work: state.work });
     const assertFresh = async (returned) => {
       const fresh = await materializeWorkspace(fixture.workspace);
       assert.deepEqual(projection(returned), projection(fresh), "returned state must equal a fresh materialize");
     };
-    try {
-      let state = await createProject(fixture.workspace, lease, { expectedVersion: 0, occurredAt: instant(1), externalKey: "PROJECT-ALPHA", name: "Alpha" });
-      await assertFresh(state);
-      const projectId = state.projects[0].id;
-      state = await createWork(fixture.workspace, lease, { expectedVersion: 1, occurredAt: instant(2), projectId, externalKey: "INITIATIVE-ONE", kind: "Initiative", parentId: null });
-      await assertFresh(state);
-      const initiativeId = state.work.find((record) => record.kind === "Initiative").id;
-      state = await createWork(fixture.workspace, lease, { expectedVersion: 2, occurredAt: instant(3), projectId, externalKey: "EPIC-ONE", kind: "Epic", parentId: initiativeId });
-      await assertFresh(state);
-      const epicId = state.work.find((record) => record.kind === "Epic").id;
-      state = await transitionWork(fixture.workspace, lease, { expectedVersion: 3, occurredAt: instant(4), id: epicId, status: "ready" });
-      await assertFresh(state);
-      state = await updateProject(fixture.workspace, lease, { expectedVersion: 4, occurredAt: instant(5), id: projectId, name: "Alpha Two" });
-      await assertFresh(state);
-      state = await deleteWork(fixture.workspace, lease, { expectedVersion: 5, occurredAt: instant(6), id: epicId });
-      await assertFresh(state);
-      state = await deleteWork(fixture.workspace, lease, { expectedVersion: 6, occurredAt: instant(7), id: initiativeId });
-      await assertFresh(state);
-      state = await deleteProject(fixture.workspace, lease, { expectedVersion: 7, occurredAt: instant(8), id: projectId });
-      await assertFresh(state);
-      assert.equal(state.version, 8);
-    } finally {
-      await lease.release();
-    }
+    let state = await createProject(fixture.workspace, { occurredAt: instant(1), externalKey: "PROJECT-ALPHA", name: "Alpha" });
+    await assertFresh(state);
+    const projectId = state.projects[0].id;
+    state = await createWork(fixture.workspace, { occurredAt: instant(2), projectId, externalKey: "INITIATIVE-ONE", kind: "Initiative", parentId: null });
+    await assertFresh(state);
+    const initiativeId = state.work.find((record) => record.kind === "Initiative").id;
+    state = await createWork(fixture.workspace, { occurredAt: instant(3), projectId, externalKey: "EPIC-ONE", kind: "Epic", parentId: initiativeId });
+    await assertFresh(state);
+    const epicId = state.work.find((record) => record.kind === "Epic").id;
+    state = await transitionWork(fixture.workspace, { occurredAt: instant(4), id: epicId, status: "ready" });
+    await assertFresh(state);
+    state = await updateProject(fixture.workspace, { occurredAt: instant(5), id: projectId, name: "Alpha Two" });
+    await assertFresh(state);
+    state = await deleteWork(fixture.workspace, { occurredAt: instant(6), id: epicId });
+    await assertFresh(state);
+    state = await deleteWork(fixture.workspace, { occurredAt: instant(7), id: initiativeId });
+    await assertFresh(state);
+    state = await deleteProject(fixture.workspace, { occurredAt: instant(8), id: projectId });
+    await assertFresh(state);
+    assert.equal(state.version, 8);
   } finally {
     await fixture.close();
   }
@@ -868,59 +691,42 @@ test("WSA-2: a 400-record deep-hierarchy build completes and exports determinist
   // exceeded the test-controller timeout. It must now simply finish.
   const fixture = await workspaceFixture();
   try {
-    const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(1) });
     const at = (n) => new Date(Date.UTC(2026, 6, 11, 0, 0, 0) + n * 1000).toISOString().replace(/\.000Z$/u, "Z");
-    try {
-      let version = 0;
-      let state = await createProject(fixture.workspace, lease, { expectedVersion: version, occurredAt: at(version), externalKey: "PROJECT-DEEP", name: "Deep" });
+    let version = 0;
+    let state = await createProject(fixture.workspace, { occurredAt: at(version), externalKey: "PROJECT-DEEP", name: "Deep" });
+    version += 1;
+    const projectId = state.projects[0].id;
+    const chains = 100;
+    for (let i = 0; i < chains; i += 1) {
+      state = await createWork(fixture.workspace, { occurredAt: at(version), projectId, externalKey: `INITIATIVE-${i}`, kind: "Initiative", parentId: null });
+      const initiativeId = state.work.find((record) => record.externalKey === `INITIATIVE-${i}`).id;
       version += 1;
-      const projectId = state.projects[0].id;
-      const chains = 100;
-      for (let i = 0; i < chains; i += 1) {
-        state = await createWork(fixture.workspace, lease, { expectedVersion: version, occurredAt: at(version), projectId, externalKey: `INITIATIVE-${i}`, kind: "Initiative", parentId: null });
-        const initiativeId = state.work.find((record) => record.externalKey === `INITIATIVE-${i}`).id;
-        version += 1;
-        state = await createWork(fixture.workspace, lease, { expectedVersion: version, occurredAt: at(version), projectId, externalKey: `EPIC-${i}`, kind: "Epic", parentId: initiativeId });
-        const epicId = state.work.find((record) => record.externalKey === `EPIC-${i}`).id;
-        version += 1;
-        state = await createWork(fixture.workspace, lease, { expectedVersion: version, occurredAt: at(version), projectId, externalKey: `STORY-${i}`, kind: "Story", parentId: epicId, scope: STORY_SCOPE });
-        const storyId = state.work.find((record) => record.externalKey === `STORY-${i}`).id;
-        version += 1;
-        state = await createWork(fixture.workspace, lease, { expectedVersion: version, occurredAt: at(version), projectId, externalKey: `SUBTASK-${i}`, kind: "Subtask", parentId: storyId });
-        version += 1;
-      }
-      assert.equal(state.version, 1 + chains * 4);
-      assert.equal(state.work.length, chains * 4);
-      assert.equal(await exportWorkspace(fixture.workspace), await exportWorkspace(fixture.workspace));
-    } finally {
-      await lease.release();
+      state = await createWork(fixture.workspace, { occurredAt: at(version), projectId, externalKey: `EPIC-${i}`, kind: "Epic", parentId: initiativeId });
+      const epicId = state.work.find((record) => record.externalKey === `EPIC-${i}`).id;
+      version += 1;
+      state = await createWork(fixture.workspace, { occurredAt: at(version), projectId, externalKey: `STORY-${i}`, kind: "Story", parentId: epicId, scope: STORY_SCOPE });
+      const storyId = state.work.find((record) => record.externalKey === `STORY-${i}`).id;
+      version += 1;
+      state = await createWork(fixture.workspace, { occurredAt: at(version), projectId, externalKey: `SUBTASK-${i}`, kind: "Subtask", parentId: storyId });
+      version += 1;
     }
+    assert.equal(state.version, 1 + chains * 4);
+    assert.equal(state.work.length, chains * 4);
+    assert.equal(await exportWorkspace(fixture.workspace), await exportWorkspace(fixture.workspace));
   } finally {
     await fixture.close();
   }
 });
 
-test("single-writer lease, CAS, stale-lock recovery, and atomic crash points fail closed", async () => {
+test("single-writer lock, stale-lock recovery, and atomic crash points fail closed", async () => {
   const fixture = await workspaceFixture();
   try {
-    const active = await acquireWorkspaceLease(fixture.workspace, { now: instant(1) });
-    await expectReasonAsync("WORKSPACE_LOCKED", () => acquireWorkspaceLease(fixture.workspace, { now: instant(2) }));
-    await expectReasonAsync("WORKSPACE_CAS_MISMATCH", () => createProject(fixture.workspace, active, {
-      expectedVersion: 1, occurredAt: instant(2), externalKey: "PROJECT-CAS", name: "CAS",
-    }));
-    await active.release();
-
-    const leaseRoot = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "lease");
-    await mkdir(leaseRoot);
-    await writeFile(join(leaseRoot, "owner.json"), canonicalJson({
-      schemaVersion: "tcrn.workspace-lease.v1",
-      token: "b".repeat(48),
-      pid: 999999,
-      acquiredAt: "2000-01-01T00:00:00Z",
-      expiresAtNanoseconds: "946684801000000000",
-    }));
-    const recoveredLease = await acquireWorkspaceLease(fixture.workspace, { now: instant(3) });
-    await recoveredLease.release();
+    // TCRN-CROSS-STORY-467 R1: a write lock left by a holder that is gone is broken, and the
+    // write proceeds and releases it.
+    const lockPath = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, WORKSPACE_WRITE_LOCK_FILE);
+    await writeFile(lockPath, `${JSON.stringify({ schemaVersion: FILE_LOCK_SCHEMA_VERSION, pid: 2_147_483_000, token: "b".repeat(32), hostname: hostname(), createdAt: "2000-01-01T00:00:00Z" })}\n`);
+    await createProject(fixture.workspace, { occurredAt: instant(3), externalKey: "PROJECT-AFTER-STALE", name: "After stale" });
+    await assert.rejects(readFile(lockPath), { code: "ENOENT" });
   } finally {
     await fixture.close();
   }
@@ -929,24 +735,18 @@ test("single-writer lease, CAS, stale-lock recovery, and atomic crash points fai
   for (const fault of cases.faultCases) {
     const crashFixture = await workspaceFixture();
     try {
-      const lease = await acquireWorkspaceLease(crashFixture.workspace, { now: instant(1) });
-      try {
-        await expectReasonAsync(fault.expectedReasonCode, () => createProject(crashFixture.workspace, lease, {
-          expectedVersion: 0,
-          occurredAt: instant(2),
-          externalKey: `PROJECT-${fault.id.toUpperCase()}`,
-          name: fault.id,
-          crashAt: fault.id,
-        }));
-        assert.equal((await materializeWorkspace(crashFixture.workspace)).version, fault.committed ? 1 : 0);
-        if (fault.committed) {
-          await expectReasonAsync("WORKSPACE_VIEW_STALE", () => validateWorkspace(crashFixture.workspace));
-          assert.equal((await recoverWorkspace(crashFixture.workspace, lease)).version, 1);
-        } else {
-          assert.equal((await validateWorkspace(crashFixture.workspace)).version, 0);
-        }
-      } finally {
-        await lease.release();
+      await expectReasonAsync(fault.expectedReasonCode, () => createProject(crashFixture.workspace, {
+        occurredAt: instant(2),
+        externalKey: `PROJECT-${fault.id.toUpperCase()}`,
+        name: fault.id,
+        crashAt: fault.id,
+      }));
+      assert.equal((await materializeWorkspace(crashFixture.workspace)).version, fault.committed ? 1 : 0);
+      if (fault.committed) {
+        await expectReasonAsync("WORKSPACE_VIEW_STALE", () => validateWorkspace(crashFixture.workspace));
+        assert.equal((await recoverWorkspace(crashFixture.workspace)).version, 1);
+      } else {
+        assert.equal((await validateWorkspace(crashFixture.workspace)).version, 0);
       }
     } finally {
       await crashFixture.close();
@@ -954,64 +754,41 @@ test("single-writer lease, CAS, stale-lock recovery, and atomic crash points fai
   }
 });
 
-test("same lease and expected version admit exactly one concurrent mutation", async () => {
+test("two concurrent mutations are serialised by the write lock and both land in order", async () => {
   const fixture = await workspaceFixture();
   try {
-    const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(1) });
-    try {
-      let claimEntered;
-      const entered = new Promise((resolve) => { claimEntered = resolve; });
-      let releaseBarrier;
-      const barrier = new Promise((resolve) => { releaseBarrier = resolve; });
-      const winner = createProject(fixture.workspace, lease, {
-        expectedVersion: 0,
-        occurredAt: instant(2),
-        externalKey: "PROJECT-CONCURRENT-ALPHA",
-        name: "Concurrent Alpha",
-        async afterMutationClaimForTest() {
-          claimEntered();
-          await barrier;
-        },
-      });
-      await entered;
-      const leaseAlias = {
-        workspaceRoot: lease.workspaceRoot,
-        token: lease.token,
-        acquiredAt: lease.acquiredAt,
-        release: lease.release.bind(lease),
-      };
-      assert.notEqual(leaseAlias, lease);
-      const loser = createProject(fixture.workspace, leaseAlias, {
-        expectedVersion: 0,
-        occurredAt: instant(2),
-        externalKey: "PROJECT-CONCURRENT-BETA",
-        name: "Concurrent Beta",
-      }).finally(() => {
-        releaseBarrier();
-      });
-      const settle = async (operation) => {
-        try {
-          return { status: "fulfilled", value: await operation };
-        } catch (reason) {
-          return { status: "rejected", reason };
-        }
-      };
-      const outcomes = await Promise.all([settle(winner), settle(loser)]);
-      const fulfilled = outcomes.filter((outcome) => outcome.status === "fulfilled");
-      const rejected = outcomes.filter((outcome) => outcome.status === "rejected");
-      assert.equal(fulfilled.length, 1);
-      assert.equal(rejected.length, 1);
-      assert.equal(rejected[0].reason.reasonCode, "WORKSPACE_CAS_MISMATCH");
-      const state = await materializeWorkspace(fixture.workspace);
-      assert.equal(state.version, 1);
-      assert.equal(state.events.length, 1);
-      assert.deepEqual(state.projects.filter((record) => !record.tombstone).map((record) => record.externalKey), [
-        "PROJECT-CONCURRENT-ALPHA",
-      ]);
-      assert.equal((await validateWorkspace(fixture.workspace)).version, 1);
-    } finally {
-      await lease.release();
-    }
+    let lockEntered;
+    const entered = new Promise((resolve) => { lockEntered = resolve; });
+    let releaseBarrier;
+    const barrier = new Promise((resolve) => { releaseBarrier = resolve; });
+    const first = createProject(fixture.workspace, {
+      occurredAt: instant(2),
+      externalKey: "PROJECT-CONCURRENT-ALPHA",
+      name: "Concurrent Alpha",
+      async insideWriteLockForTest() {
+        lockEntered();
+        await barrier;
+      },
+    });
+    await entered;
+    // The second writer starts while the first holds the lock; it waits rather than
+    // failing, and builds its delta against the state the first one left.
+    const second = createProject(fixture.workspace, {
+      occurredAt: instant(2),
+      externalKey: "PROJECT-CONCURRENT-BETA",
+      name: "Concurrent Beta",
+    });
+    releaseBarrier();
+    const [alpha, beta] = await Promise.all([first, second]);
+    assert.equal(alpha.version, 1);
+    assert.equal(beta.version, 2);
+    const state = await materializeWorkspace(fixture.workspace);
+    assert.deepEqual(state.events.map((event) => event.sequence), [1, 2]);
+    assert.deepEqual(state.projects.filter((record) => !record.tombstone).map((record) => record.externalKey).sort(), [
+      "PROJECT-CONCURRENT-ALPHA",
+      "PROJECT-CONCURRENT-BETA",
+    ]);
+    assert.equal((await validateWorkspace(fixture.workspace)).version, 2);
   } finally {
     await fixture.close();
   }
@@ -1020,22 +797,17 @@ test("same lease and expected version admit exactly one concurrent mutation", as
 test("segment rotation and replay, truncation, reordering, corruption, gap, and special-entry attacks are rejected", async () => {
   const fixture = await workspaceFixture({ segmentEventLimit: 2 });
   try {
-    const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(1) });
-    try {
-      let state = await createProject(fixture.workspace, lease, {
-        expectedVersion: 0, occurredAt: instant(1), externalKey: "PROJECT-SEGMENT", name: "Segment",
-      });
-      const projectId = state.projects[0].id;
-      state = await createWork(fixture.workspace, lease, {
-        expectedVersion: 1, occurredAt: instant(2), projectId, externalKey: "INITIATIVE-SEGMENT", kind: "Initiative", parentId: null,
-      });
-      const initiativeId = state.work[0].id;
-      await createWork(fixture.workspace, lease, {
-        expectedVersion: 2, occurredAt: instant(3), projectId, externalKey: "EPIC-SEGMENT", kind: "Epic", parentId: initiativeId,
-      });
-    } finally {
-      await lease.release();
-    }
+    let state = await createProject(fixture.workspace, {
+      occurredAt: instant(1), externalKey: "PROJECT-SEGMENT", name: "Segment",
+    });
+    const projectId = state.projects[0].id;
+    state = await createWork(fixture.workspace, {
+      occurredAt: instant(2), projectId, externalKey: "INITIATIVE-SEGMENT", kind: "Initiative", parentId: null,
+    });
+    const initiativeId = state.work[0].id;
+    await createWork(fixture.workspace, {
+      occurredAt: instant(3), projectId, externalKey: "EPIC-SEGMENT", kind: "Epic", parentId: initiativeId,
+    });
     const eventsRoot = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "events");
     const firstPath = join(eventsRoot, "000001.json");
     const secondPath = join(eventsRoot, "000002.json");
@@ -1149,25 +921,19 @@ test("event admission rejects unknown operations, lifecycle forgery, resurrectio
 
   const workFixture = await workspaceFixture();
   try {
-    const lease = await acquireWorkspaceLease(workFixture.workspace, { now: instant(1) });
-    try {
-      let state = await createProject(workFixture.workspace, lease, {
-        expectedVersion: 0, occurredAt: instant(1), externalKey: "PROJECT-WORK-FORGE", name: "Work Forge",
-      });
-      state = await createWork(workFixture.workspace, lease, {
-        expectedVersion: 1,
-        occurredAt: instant(2),
-        projectId: state.projects[0].id,
-        externalKey: "INITIATIVE-WORK-FORGE",
-        kind: "Initiative",
-        parentId: null,
-      });
-      await transitionWork(workFixture.workspace, lease, {
-        expectedVersion: 2, occurredAt: instant(3), id: state.work[0].id, status: "ready",
-      });
-    } finally {
-      await lease.release();
-    }
+    let state = await createProject(workFixture.workspace, {
+      occurredAt: instant(1), externalKey: "PROJECT-WORK-FORGE", name: "Work Forge",
+    });
+    state = await createWork(workFixture.workspace, {
+      occurredAt: instant(2),
+      projectId: state.projects[0].id,
+      externalKey: "INITIATIVE-WORK-FORGE",
+      kind: "Initiative",
+      parentId: null,
+    });
+    await transitionWork(workFixture.workspace, {
+      occurredAt: instant(3), id: state.work[0].id, status: "ready",
+    });
     await rewriteEventChain(workFixture.workspace, (events) => {
       events[2].payload.operation = "work.archived";
       return events;
@@ -1179,22 +945,16 @@ test("event admission rejects unknown operations, lifecycle forgery, resurrectio
 
   const relationshipFixture = await workspaceFixture();
   try {
-    const lease = await acquireWorkspaceLease(relationshipFixture.workspace, { now: instant(1) });
-    try {
-      let state = await createProject(relationshipFixture.workspace, lease, {
-        expectedVersion: 0, occurredAt: instant(1), externalKey: "PROJECT-RELATIONSHIP", name: "Relationship",
-      });
-      await createWork(relationshipFixture.workspace, lease, {
-        expectedVersion: 1,
-        occurredAt: instant(2),
-        projectId: state.projects[0].id,
-        externalKey: "INITIATIVE-RELATIONSHIP",
-        kind: "Initiative",
-        parentId: null,
-      });
-    } finally {
-      await lease.release();
-    }
+    let state = await createProject(relationshipFixture.workspace, {
+      occurredAt: instant(1), externalKey: "PROJECT-RELATIONSHIP", name: "Relationship",
+    });
+    await createWork(relationshipFixture.workspace, {
+      occurredAt: instant(2),
+      projectId: state.projects[0].id,
+      externalKey: "INITIATIVE-RELATIONSHIP",
+      kind: "Initiative",
+      parentId: null,
+    });
     await rewriteEventChain(relationshipFixture.workspace, (events) => {
       events[1].payload.record.projectId = "project:missing";
       return events;
@@ -1262,540 +1022,6 @@ test("event stream and event IDs are bound to canonical Workspace metadata", asy
   }
 });
 
-test("a crashed dir-only lease is reclaimable once ttl of real time elapses, even when the injected event time predates the real clock", async () => {
-  const crashFixture = await workspaceFixture();
-  try {
-    await expectReasonAsync("WORKSPACE_FAULT_INJECTED", () => acquireWorkspaceLease(crashFixture.workspace, {
-      now: instant(1),
-      crashAfterLeaseDirectoryForTest: true,
-    }));
-    const incompleteLease = join(crashFixture.workspace, LEGACY_CONTROL_DIRECTORY, "lease");
-    assert.deepEqual(await readdir(incompleteLease), []);
-    // Backdate the lease directory to a real-recent time well beyond the 30s ttl,
-    // WITHOUT year-2000 backdating. The injected event time (2026-07-11) predates
-    // the real machine clock, which is exactly the domain in which the previous
-    // injected-time grace produced a negative age and wedged the workspace forever.
-    // The real-clock grace correctly measures 60s of real elapsed time and reclaims.
-    await utimes(incompleteLease, new Date(Date.now() - 60_000), new Date(Date.now() - 60_000));
-    const recovered = await acquireWorkspaceLease(crashFixture.workspace, { now: instant(2) });
-    assert.deepEqual(await readdir(incompleteLease), ["owner.json"]);
-    await recovered.release();
-  } finally {
-    await crashFixture.close();
-  }
-});
-
-test("lease creation crash and recovery-claim contention are recoverable and single-writer", async () => {
-  const crashFixture = await workspaceFixture();
-  try {
-    await expectReasonAsync("WORKSPACE_FAULT_INJECTED", () => acquireWorkspaceLease(crashFixture.workspace, {
-      now: instant(1),
-      crashAfterLeaseDirectoryForTest: true,
-    }));
-    const incompleteLease = join(crashFixture.workspace, LEGACY_CONTROL_DIRECTORY, "lease");
-    const incompleteIdentity = await lstat(incompleteLease);
-    await utimes(incompleteLease, new Date("2000-01-01T00:00:00Z"), new Date("2000-01-01T00:00:00Z"));
-    let quarantined = false;
-    let reusedTupleObserved = false;
-    const recovered = await acquireWorkspaceLease(crashFixture.workspace, {
-      now: instant(2),
-      async afterLeaseQuarantineForTest({ identity, entries }) {
-        assert.deepEqual(identity, { dev: incompleteIdentity.dev, ino: incompleteIdentity.ino });
-        assert.deepEqual(entries, []);
-        assert.equal(Object.isFrozen(identity), true);
-        assert.equal(Object.isFrozen(entries), true);
-        assert.throws(() => { identity.dev = 0; }, TypeError);
-        assert.throws(() => { entries.push("mutation"); }, TypeError);
-        assert.deepEqual(identity, { dev: incompleteIdentity.dev, ino: incompleteIdentity.ino });
-        assert.deepEqual(entries, []);
-        quarantined = true;
-      },
-      // A filesystem may reuse the tuple after removal.  Recovery is bound to
-      // the quarantined pathname/generation, not to global inode uniqueness.
-      freshLeaseIdentityObservationForTest: () => ({ dev: incompleteIdentity.dev, ino: incompleteIdentity.ino }),
-      async afterFreshLeaseForTest({ observedIdentity, freshIdentity }) {
-        assert.deepEqual(observedIdentity, { dev: incompleteIdentity.dev, ino: incompleteIdentity.ino });
-        assert.deepEqual(freshIdentity, observedIdentity);
-        reusedTupleObserved = true;
-      },
-    });
-    assert.equal(quarantined, true);
-    assert.equal(reusedTupleObserved, true);
-    assert.deepEqual(await readdir(incompleteLease), ["owner.json"]);
-    await recovered.release();
-  } finally {
-    await crashFixture.close();
-  }
-
-  const contenderFixture = await workspaceFixture();
-  try {
-    await mkdir(join(contenderFixture.workspace, LEGACY_CONTROL_DIRECTORY, "lease"));
-    await utimes(
-      join(contenderFixture.workspace, LEGACY_CONTROL_DIRECTORY, "lease"),
-      new Date("2000-01-01T00:00:00Z"),
-      new Date("2000-01-01T00:00:00Z"),
-    );
-    let arrivals = 0;
-    let releaseBarrier;
-    const barrier = new Promise((resolve) => { releaseBarrier = resolve; });
-    const beforeClaimForTest = async () => {
-      arrivals += 1;
-      if (arrivals === 2) {
-        releaseBarrier();
-      }
-      await barrier;
-    };
-    const outcomes = await Promise.allSettled([
-      acquireWorkspaceLease(contenderFixture.workspace, { now: instant(3), beforeClaimForTest }),
-      acquireWorkspaceLease(contenderFixture.workspace, { now: instant(3), beforeClaimForTest }),
-    ]);
-    const winners = outcomes.filter((outcome) => outcome.status === "fulfilled");
-    const losers = outcomes.filter((outcome) => outcome.status === "rejected");
-    assert.equal(winners.length, 1);
-    assert.equal(losers.length, 1);
-    assert.ok(["WORKSPACE_LOCKED", "WORKSPACE_LEASE_INVALID"].includes(losers[0].reason.reasonCode));
-    const winner = winners[0].value;
-    await createProject(contenderFixture.workspace, winner, {
-      expectedVersion: 0, occurredAt: instant(4), externalKey: "PROJECT-WINNER", name: "Winner",
-    });
-    await winner.release();
-    const next = await acquireWorkspaceLease(contenderFixture.workspace, { now: instant(5) });
-    try {
-      await expectReasonAsync("WORKSPACE_CAS_MISMATCH", () => createProject(contenderFixture.workspace, next, {
-        expectedVersion: 0, occurredAt: instant(5), externalKey: "PROJECT-LOSER", name: "Loser",
-      }));
-    } finally {
-      await next.release();
-    }
-  } finally {
-    await contenderFixture.close();
-  }
-
-  const delayedFixture = await workspaceFixture();
-  try {
-    let creatorEntered;
-    const entered = new Promise((resolve) => { creatorEntered = resolve; });
-    let resumeCreator;
-    const resume = new Promise((resolve) => { resumeCreator = resolve; });
-    const original = acquireWorkspaceLease(delayedFixture.workspace, {
-      now: instant(1),
-      async beforeLeaseOwnerForTest() {
-        creatorEntered();
-        await resume;
-      },
-    });
-    await entered;
-    const leasePath = join(delayedFixture.workspace, LEGACY_CONTROL_DIRECTORY, "lease");
-    await utimes(leasePath, new Date("2000-01-01T00:00:00Z"), new Date("2000-01-01T00:00:00Z"));
-    let winnerEntered;
-    const winnerAtOwner = new Promise((resolve) => { winnerEntered = resolve; });
-    let resumeWinner;
-    const winnerResume = new Promise((resolve) => { resumeWinner = resolve; });
-    const winnerOperation = acquireWorkspaceLease(delayedFixture.workspace, {
-      now: instant(2),
-      async beforeLeaseOwnerForTest() {
-        winnerEntered();
-        await winnerResume;
-      },
-    });
-    await winnerAtOwner;
-    resumeCreator();
-    await expectReasonAsync("WORKSPACE_LEASE_INVALID", () => original);
-    resumeWinner();
-    const winner = await winnerOperation;
-    await createProject(delayedFixture.workspace, winner, {
-      expectedVersion: 0, occurredAt: instant(3), externalKey: "PROJECT-DELAYED-WINNER", name: "Delayed Winner",
-    });
-    await winner.release();
-    assert.equal((await materializeWorkspace(delayedFixture.workspace)).version, 1);
-  } finally {
-    await delayedFixture.close();
-  }
-});
-
-test("ownerless stale generations are quarantined without carrying unexpected entries", async () => {
-  for (const kind of ["file", "symlink", "directory"]) {
-    const fixture = await workspaceFixture({ externalKey: `WORKSPACE-STALE-${kind.toUpperCase()}` });
-    try {
-      const control = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY);
-      const leasePath = join(control, "lease");
-      const unexpected = join(leasePath, "unexpected");
-      await mkdir(leasePath);
-      if (kind === "file") {
-        await writeFile(unexpected, "stale");
-      } else if (kind === "symlink") {
-        await symlink(join(fixture.base, "missing-target"), unexpected);
-      } else {
-        await mkdir(unexpected);
-      }
-      const staleIdentity = await lstat(leasePath);
-      await utimes(leasePath, new Date("2000-01-01T00:00:00Z"), new Date("2000-01-01T00:00:00Z"));
-      let quarantined = false;
-      const recovered = await acquireWorkspaceLease(fixture.workspace, { now: instant(3), async afterLeaseQuarantineForTest({ identity, entries }) {
-        assert.deepEqual(identity, { dev: staleIdentity.dev, ino: staleIdentity.ino });
-        assert.ok(entries.includes("unexpected"));
-        quarantined = true;
-      } });
-      assert.equal(quarantined, true);
-      assert.deepEqual(await readdir(leasePath), ["owner.json"]);
-      assert.deepEqual((await readdir(control)).filter((name) => name.startsWith("stale-lease-")), []);
-      await recovered.release();
-    } finally {
-      await fixture.close();
-    }
-  }
-});
-
-test("quarantine replacement is preserved and fails closed before recursive cleanup", async () => {
-  const fixture = await workspaceFixture({ externalKey: "WORKSPACE-QUARANTINE-REPLACEMENT" });
-  try {
-    const [packageManifest, packageIndex, publicSignature] = await Promise.all([
-      readFile(new URL("../packages/core/package.json", import.meta.url), "utf8"),
-      readFile(new URL("../packages/core/src/index.ts", import.meta.url), "utf8"),
-      readFile(new URL("../dist/build/packages/core/src/workspace.js", import.meta.url), "utf8"),
-    ]);
-    assert.equal(packageManifest.includes("workspace-test-instrumentation"), false);
-    assert.equal(packageIndex.includes("workspace-test-instrumentation"), false);
-    assert.equal(publicSignature.includes("quarantineReplacementForTest"), false);
-    assert.equal(Object.keys(publicCore).some((name) => name.toLowerCase().includes("instrumentation")), false);
-    const control = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY);
-    const leasePath = join(control, "lease");
-    const attemptOwned = join(control, "attempt-owned-quarantine-for-test");
-    await mkdir(leasePath);
-    await writeFile(join(leasePath, "attempt-entry"), "attempt-owned");
-    await utimes(leasePath, new Date("2000-01-01T00:00:00Z"), new Date("2000-01-01T00:00:00Z"));
-    await expectReasonAsync("WORKSPACE_LEASE_INVALID", () => withQuarantineReplacementTestInstrumentation(() => acquireWorkspaceLease(fixture.workspace, {
-      now: instant(3),
-    })));
-    assert.equal(isQuarantineReplacementTestInstrumentationArmed(), false);
-    assert.equal(await readFile(join(attemptOwned, "attempt-entry"), "utf8"), "attempt-owned");
-    const replacement = (await readdir(control)).find((entry) => entry.startsWith("stale-lease-incomplete-"));
-    assert.ok(replacement);
-    assert.equal(await readFile(join(control, replacement, "foreign-sentinel"), "utf8"), "foreign-survives");
-    const ordinaryCaller = await acquireWorkspaceLease(fixture.workspace, {
-      now: instant(4),
-      quarantineReplacementForTest: true,
-    });
-    try {
-      assert.equal(isQuarantineReplacementTestInstrumentationArmed(), false);
-      assert.equal(await readFile(join(attemptOwned, "attempt-entry"), "utf8"), "attempt-owned");
-    } finally {
-      await ordinaryCaller.release();
-    }
-  } finally {
-    await fixture.close();
-  }
-});
-
-test("quarantine replacement instrumentation is operation-local, one-shot, and cleaned after overlap", async () => {
-  async function prepareStale(fixture, entry) {
-    const control = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY);
-    const leasePath = join(control, "lease");
-    await mkdir(leasePath);
-    await writeFile(join(leasePath, entry), "attempt-owned");
-    await utimes(leasePath, new Date("2000-01-01T00:00:00Z"), new Date("2000-01-01T00:00:00Z"));
-    return { control, leasePath };
-  }
-
-  async function runOverlap(ordinaryFirst) {
-    const intended = await workspaceFixture({ externalKey: `WORKSPACE-INTENDED-${ordinaryFirst}` });
-    const ordinary = await workspaceFixture({ externalKey: `WORKSPACE-ORDINARY-${ordinaryFirst}` });
-    try {
-      const intendedPaths = await prepareStale(intended, "intended-entry");
-      const ordinaryPaths = await prepareStale(ordinary, "ordinary-entry");
-      const intendedAttempt = join(intendedPaths.control, "attempt-owned-quarantine-for-test");
-      let intendedEntered;
-      const intendedAtBarrier = new Promise((resolve) => { intendedEntered = resolve; });
-      let releaseIntended;
-      const intendedResume = new Promise((resolve) => { releaseIntended = resolve; });
-      let intendedContextVisible = false;
-      let intendedOperation;
-      const startIntended = () => {
-        intendedOperation = withQuarantineReplacementTestInstrumentation(() => acquireWorkspaceLease(intended.workspace, {
-          now: instant(3),
-          async beforeClaimForTest() {
-            intendedContextVisible = isQuarantineReplacementTestInstrumentationArmed();
-            intendedEntered();
-            await intendedResume;
-          },
-        }));
-      };
-
-      let ordinaryLease;
-      if (ordinaryFirst) {
-        let ordinaryEntered;
-        const ordinaryAtBarrier = new Promise((resolve) => { ordinaryEntered = resolve; });
-        let releaseOrdinary;
-        const ordinaryResume = new Promise((resolve) => { releaseOrdinary = resolve; });
-        const ordinaryOperation = acquireWorkspaceLease(ordinary.workspace, {
-          now: instant(3),
-          async beforeClaimForTest() {
-            ordinaryEntered();
-            await ordinaryResume;
-          },
-        });
-        await ordinaryAtBarrier;
-        startIntended();
-        await intendedAtBarrier;
-        releaseOrdinary();
-        ordinaryLease = await ordinaryOperation;
-      } else {
-        startIntended();
-        await intendedAtBarrier;
-        ordinaryLease = await acquireWorkspaceLease(ordinary.workspace, { now: instant(3) });
-      }
-      try {
-        assert.equal(intendedContextVisible, true);
-        assert.equal(isQuarantineReplacementTestInstrumentationArmed(), false);
-        assert.equal((await readdir(ordinaryPaths.control)).some((entry) => entry.startsWith("attempt-owned-") || entry.startsWith("stale-lease-")), false);
-        assert.deepEqual(await readdir(ordinaryPaths.leasePath), ["owner.json"]);
-      } finally {
-        await ordinaryLease.release();
-      }
-
-      releaseIntended();
-      await expectReasonAsync("WORKSPACE_LEASE_INVALID", () => intendedOperation);
-      assert.equal(isQuarantineReplacementTestInstrumentationArmed(), false);
-      assert.equal(await readFile(join(intendedAttempt, "intended-entry"), "utf8"), "attempt-owned");
-      const replacement = (await readdir(intendedPaths.control)).find((entry) => entry.startsWith("stale-lease-incomplete-"));
-      assert.ok(replacement);
-      assert.equal(await readFile(join(intendedPaths.control, replacement, "foreign-sentinel"), "utf8"), "foreign-survives");
-    } finally {
-      await intended.close();
-      await ordinary.close();
-    }
-  }
-
-  await runOverlap(false);
-  await runOverlap(true);
-  await assert.rejects(withQuarantineReplacementTestInstrumentation(async () => {
-    assert.equal(isQuarantineReplacementTestInstrumentationArmed(), true);
-    throw new Error("private wrapper rejection");
-  }), /private wrapper rejection/u);
-  assert.equal(isQuarantineReplacementTestInstrumentationArmed(), false);
-  await assert.rejects(withQuarantineReplacementTestInstrumentation(async () => withQuarantineReplacementTestInstrumentation(async () => {})), /nesting is unsupported/u);
-  assert.equal(isQuarantineReplacementTestInstrumentationArmed(), false);
-});
-
-test("detached instrumentation descendants cannot consume closed operation capabilities", async () => {
-  async function deferredConsumer({ consumeBeforeReturn = false, rejectWrapper = false } = {}) {
-    let childEntered;
-    const childAtBarrier = new Promise((resolve) => { childEntered = resolve; });
-    let releaseChild;
-    const childResume = new Promise((resolve) => { releaseChild = resolve; });
-    let detached;
-    const wrapper = withQuarantineReplacementTestInstrumentation(async () => {
-      detached = (async () => {
-        childEntered();
-        await childResume;
-        return consumeQuarantineReplacementTestInstrumentation();
-      })();
-      await childAtBarrier;
-      if (consumeBeforeReturn) {
-        assert.equal(consumeQuarantineReplacementTestInstrumentation(), true);
-      }
-      if (rejectWrapper) {
-        throw new Error("wrapper closes detached capability");
-      }
-      return "detached-started";
-    });
-    if (rejectWrapper) {
-      await assert.rejects(wrapper, /wrapper closes detached capability/u);
-    } else {
-      await wrapper;
-    }
-    assert.equal(isQuarantineReplacementTestInstrumentationArmed(), false);
-    releaseChild();
-    assert.equal(await detached, false);
-    assert.equal(isQuarantineReplacementTestInstrumentationArmed(), false);
-  }
-
-  await deferredConsumer();
-  await deferredConsumer({ rejectWrapper: true });
-  await deferredConsumer({ consumeBeforeReturn: true });
-});
-
-test("unsafe or active recovery claims fail closed", async () => {
-  const fixture = await workspaceFixture();
-  try {
-    const claimPath = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "lease-recovery.claim");
-    await writeFile(claimPath, canonicalJson({
-      schemaVersion: "tcrn.workspace-lease-recovery.v1",
-      token: "a".repeat(48),
-      pid: process.pid,
-      acquiredAt: instant(1),
-      expiresAtNanoseconds: "9999999999999999999",
-    }));
-    await expectReasonAsync("WORKSPACE_LOCKED", () => acquireWorkspaceLease(fixture.workspace, { now: instant(2) }));
-  } finally {
-    await fixture.close();
-  }
-
-  // WSA-7: the counterpart of the case above. A claim whose writer is provably gone --
-  // expired TTL and a dead pid -- must be reclaimed, or a single SIGKILL during recovery
-  // leaves the Workspace unopenable forever with no verb able to clear it. The lease
-  // directory is backdated past the creation grace so recovery actually engages.
-  const staleClaim = await workspaceFixture();
-  try {
-    const control = join(staleClaim.workspace, LEGACY_CONTROL_DIRECTORY);
-    const leasePath = join(control, "lease");
-    await mkdir(leasePath, { mode: 0o700 });
-    const backdated = new Date(Date.now() - 600_000);
-    await utimes(leasePath, backdated, backdated);
-    await writeFile(join(control, "lease-recovery.claim"), canonicalJson({
-      schemaVersion: "tcrn.workspace-lease-recovery.v1",
-      token: "b".repeat(48),
-      pid: 999_999,
-      acquiredAt: instant(1),
-      expiresAtNanoseconds: "1",
-    }), { mode: 0o600 });
-    const recovered = await acquireWorkspaceLease(staleClaim.workspace, { now: instant(2) });
-    await recovered.release();
-    assert.equal((await readdir(control)).includes("lease-recovery.claim"), false);
-  } finally {
-    await staleClaim.close();
-  }
-
-  const malformedOwner = await workspaceFixture();
-  try {
-    const leasePath = join(malformedOwner.workspace, LEGACY_CONTROL_DIRECTORY, "lease");
-    await mkdir(leasePath);
-    await writeFile(join(leasePath, "owner.json"), canonicalJson({ invalid: true }));
-    await expectReasonAsync("WORKSPACE_LEASE_INVALID", () => acquireWorkspaceLease(malformedOwner.workspace, { now: instant(2) }));
-  } finally {
-    await malformedOwner.close();
-  }
-
-  for (const kind of ["symlink", "hardlink"]) {
-    const unsafeOwner = await workspaceFixture();
-    try {
-      const leasePath = join(unsafeOwner.workspace, LEGACY_CONTROL_DIRECTORY, "lease");
-      await mkdir(leasePath);
-      const ownerPath = join(leasePath, "owner.json");
-      const backing = join(leasePath, `owner-${kind}.json`);
-      await writeFile(backing, canonicalJson({
-        schemaVersion: "tcrn.workspace-lease.v1",
-        token: "c".repeat(48),
-        pid: 999999,
-        acquiredAt: "2000-01-01T00:00:00Z",
-        expiresAtNanoseconds: "946684801000000000",
-      }));
-      if (kind === "symlink") {
-        await symlink(backing, ownerPath);
-      } else {
-        await link(backing, ownerPath);
-      }
-      await expectReasonAsync("WORKSPACE_LEASE_INVALID", () => acquireWorkspaceLease(unsafeOwner.workspace, { now: instant(2) }));
-    } finally {
-      await unsafeOwner.close();
-    }
-  }
-
-  for (const kind of ["symlink", "hardlink", "directory"]) {
-    const unsafe = await workspaceFixture();
-    try {
-      const control = join(unsafe.workspace, LEGACY_CONTROL_DIRECTORY);
-      const claimPath = join(control, "lease-recovery.claim");
-      const backing = join(control, `claim-${kind}.json`);
-      await writeFile(backing, canonicalJson({ invalid: true }));
-      if (kind === "symlink") {
-        await symlink(backing, claimPath);
-      } else if (kind === "hardlink") {
-        await link(backing, claimPath);
-      } else {
-        await mkdir(claimPath);
-      }
-      await expectReasonAsync("WORKSPACE_LEASE_INVALID", () => acquireWorkspaceLease(unsafe.workspace, { now: instant(2) }));
-    } finally {
-      await unsafe.close();
-    }
-  }
-
-  for (const kind of ["symlink", "hardlink", "directory"]) {
-    const unsafe = await workspaceFixture();
-    const lease = await acquireWorkspaceLease(unsafe.workspace, { now: instant(1) });
-    try {
-      const leasePath = join(unsafe.workspace, LEGACY_CONTROL_DIRECTORY, "lease");
-      const claimPath = join(leasePath, "mutation.claim");
-      const backing = join(leasePath, `mutation-${kind}.json`);
-      await writeFile(backing, canonicalJson({ invalid: true }));
-      if (kind === "symlink") {
-        await symlink(backing, claimPath);
-      } else if (kind === "hardlink") {
-        await link(backing, claimPath);
-      } else {
-        await mkdir(claimPath);
-      }
-      await expectReasonAsync("WORKSPACE_LEASE_INVALID", () => createProject(unsafe.workspace, lease, {
-        expectedVersion: 0,
-        occurredAt: instant(2),
-        externalKey: `PROJECT-MUTATION-${kind.toUpperCase()}`,
-        name: kind,
-      }));
-    } finally {
-      await lease.release();
-      await unsafe.close();
-    }
-  }
-
-  for (const kind of ["malformed", "foreign-generation"]) {
-    const unsafe = await workspaceFixture();
-    const lease = await acquireWorkspaceLease(unsafe.workspace, { now: instant(1) });
-    try {
-      const claimPath = join(unsafe.workspace, LEGACY_CONTROL_DIRECTORY, "lease", "mutation.claim");
-      await writeFile(claimPath, canonicalJson(kind === "malformed" ? { invalid: true } : {
-        schemaVersion: "tcrn.workspace-mutation-claim.v1",
-        leaseToken: "f".repeat(48),
-        token: "a".repeat(48),
-        pid: process.pid,
-      }));
-      await expectReasonAsync("WORKSPACE_LEASE_INVALID", () => createProject(unsafe.workspace, lease, {
-        expectedVersion: 0,
-        occurredAt: instant(2),
-        externalKey: `PROJECT-MUTATION-${kind.toUpperCase()}`,
-        name: kind,
-      }));
-    } finally {
-      await lease.release();
-      await unsafe.close();
-    }
-  }
-
-  const staleMutation = await workspaceFixture();
-  try {
-    const leasePath = join(staleMutation.workspace, LEGACY_CONTROL_DIRECTORY, "lease");
-    const leaseToken = "d".repeat(48);
-    await mkdir(leasePath);
-    await writeFile(join(leasePath, "owner.json"), canonicalJson({
-      schemaVersion: "tcrn.workspace-lease.v1",
-      token: leaseToken,
-      pid: 999999,
-      acquiredAt: "2000-01-01T00:00:00Z",
-      expiresAtNanoseconds: "946684801000000000",
-    }));
-    await writeFile(join(leasePath, "mutation.claim"), canonicalJson({
-      schemaVersion: "tcrn.workspace-mutation-claim.v1",
-      leaseToken,
-      token: "e".repeat(48),
-      pid: 999999,
-    }));
-    const recovered = await acquireWorkspaceLease(staleMutation.workspace, { now: instant(2) });
-    try {
-      const state = await createProject(staleMutation.workspace, recovered, {
-        expectedVersion: 0,
-        occurredAt: instant(3),
-        externalKey: "PROJECT-STALE-MUTATION-RECOVERED",
-        name: "Recovered",
-      });
-      assert.equal(state.version, 1);
-    } finally {
-      await recovered.release();
-    }
-  } finally {
-    await staleMutation.close();
-  }
-});
-
 test("path, link, Unicode, size, record, filesystem, and migration boundaries have stable failures", async () => {
   expectReason("WORKSPACE_PATH_ESCAPE", () => assertWorkspaceRelativePath("../escape"));
   expectReason("WORKSPACE_PATH_ESCAPE", () => assertWorkspaceRelativePath("a\\b"));
@@ -1809,17 +1035,12 @@ test("path, link, Unicode, size, record, filesystem, and migration boundaries ha
 
   const malformed = await workspaceFixture();
   try {
-    const lease = await acquireWorkspaceLease(malformed.workspace, { now: instant(1) });
-    try {
-      await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => createProject(malformed.workspace, lease, {
-        expectedVersion: 0, occurredAt: instant(1), externalKey: "PROJECT-UNICODE", name: "\ud800",
-      }));
-      await expectReasonAsync("WORKSPACE_INPUT_OVERSIZED", () => createProject(malformed.workspace, lease, {
-        expectedVersion: 0, occurredAt: instant(1), externalKey: "PROJECT-LARGE", name: "x".repeat(513),
-      }));
-    } finally {
-      await lease.release();
-    }
+    await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => createProject(malformed.workspace, {
+      occurredAt: instant(1), externalKey: "PROJECT-UNICODE", name: "\ud800",
+    }));
+    await expectReasonAsync("WORKSPACE_INPUT_OVERSIZED", () => createProject(malformed.workspace, {
+      occurredAt: instant(1), externalKey: "PROJECT-LARGE", name: "x".repeat(513),
+    }));
     const plan = await planWorkspaceMigration(malformed.workspace, 1);
     assert.equal(plan.dryRun, true);
     assert.equal(plan.applyAvailable, false);
@@ -1865,18 +1086,13 @@ test("path, link, Unicode, size, record, filesystem, and migration boundaries ha
 test("derived ordering, readback hashes, and export bytes remain deterministic across 64 permutations", async () => {
   const fixture = await workspaceFixture();
   try {
-    const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(1) });
-    try {
-      let state = fixture.state;
-      for (const [index, key] of ["PROJECT-Z", "PROJECT-A", "PROJECT-M"].entries()) {
-        state = await createProject(fixture.workspace, lease, {
-          expectedVersion: index, occurredAt: instant(index + 1), externalKey: key, name: key,
-        });
-      }
-      assert.deepEqual(state.projects.map((record) => record.externalKey), ["PROJECT-A", "PROJECT-M", "PROJECT-Z"]);
-    } finally {
-      await lease.release();
+    let seeded = fixture.state;
+    for (const [index, key] of ["PROJECT-Z", "PROJECT-A", "PROJECT-M"].entries()) {
+      seeded = await createProject(fixture.workspace, {
+        occurredAt: instant(index + 1), externalKey: key, name: key,
+      });
     }
+    assert.deepEqual(seeded.projects.map((record) => record.externalKey), ["PROJECT-A", "PROJECT-M", "PROJECT-Z"]);
     const state = await validateWorkspace(fixture.workspace);
     const expected = canonicalSha256(state.projects);
     let seed = 113;
@@ -1919,14 +1135,14 @@ test("WSE-3: --actor threads through attestation-enable and the mutation verbs i
     };
     // The attestation.actor.enabled event is the boundary (sequence >= enabledAtSequence),
     // so the enabling event itself carries a valid actor and every later mutation must too.
-    const enabled = await run(["attestation-enable", ...ws, "--expected-version", "0", "--at", instant(1), "--actor", "owner:release-gate"]);
+    const enabled = await run(["attestation-enable", ...ws, "--at", instant(1), "--actor", "owner:release-gate"]);
     assert.equal(enabled.reasonCode, "WORKSPACE_COMMAND_COMPLETED");
     // Happy path: a mutation on an enabled workspace with a valid --actor succeeds and
     // the actor string joins the hashed event payload (acceptance criterion 1).
-    const projectCreate = await run(["project-create", ...ws, "--expected-version", "1", "--at", instant(2), "--external-key", "PROJECT-WSE3", "--name", "WSE3", "--actor", "agent:builder-7"]);
+    const projectCreate = await run(["project-create", ...ws, "--at", instant(2), "--external-key", "PROJECT-WSE3", "--name", "WSE3", "--actor", "agent:builder-7"]);
     assert.equal(projectCreate.reasonCode, "WORKSPACE_COMMAND_COMPLETED");
     const projectId = projectCreate.record.id;
-    await run(["work-create", "--title", "record-title", ...ws, "--expected-version", "2", "--at", instant(3), "--project-id", projectId, "--external-key", "INIT-WSE3", "--kind", "Initiative", "--actor", "owner:release-gate"]);
+    await run(["work-create", "--title", "record-title", ...ws, "--at", instant(3), "--project-id", projectId, "--external-key", "INIT-WSE3", "--kind", "Initiative", "--actor", "owner:release-gate"]);
     const payloads = await readEventPayloads(fixture.workspace);
     assert.deepEqual(payloads.map((payload) => payload.operation), [
       "attestation.actor.enabled", "project.created", "work.created",
@@ -1937,18 +1153,18 @@ test("WSE-3: --actor threads through attestation-enable and the mutation verbs i
     // Fail-closed: the engine (WSE-2), not the CLI, requires the actor once enabled —
     // omitting --actor surfaces WORKSPACE_ACTOR_REQUIRED, not a CLI missing-argument.
     await expectReasonAsync("WORKSPACE_ACTOR_REQUIRED", () => runCli(
-      ["project-create", ...ws, "--expected-version", "3", "--at", instant(4), "--external-key", "PROJECT-WSE3B", "--name", "WSE3B"],
+      ["project-create", ...ws, "--at", instant(4), "--external-key", "PROJECT-WSE3B", "--name", "WSE3B"],
       { write: () => {} },
     ));
     // A supplied actor with an unlisted prefix is rejected by the engine's vocabulary
     // (WORKSPACE_ACTOR_INVALID) — the CLI never duplicates the allowlist.
     await expectReasonAsync("WORKSPACE_ACTOR_INVALID", () => runCli(
-      ["project-create", ...ws, "--expected-version", "3", "--at", instant(4), "--external-key", "PROJECT-WSE3B", "--name", "WSE3B", "--actor", "role:nope"],
+      ["project-create", ...ws, "--at", instant(4), "--external-key", "PROJECT-WSE3B", "--name", "WSE3B", "--actor", "role:nope"],
       { write: () => {} },
     ));
     // Re-enabling an already-attested workspace fails closed WORKSPACE_INPUT_INVALID.
     await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => runCli(
-      ["attestation-enable", ...ws, "--expected-version", "3", "--at", instant(4), "--actor", "owner:release-gate"],
+      ["attestation-enable", ...ws, "--at", instant(4), "--actor", "owner:release-gate"],
       { write: () => {} },
     ));
     // --actor stays unknown on read/non-mutation verbs (no sweep leakage): the flag
@@ -1967,10 +1183,10 @@ test("WSE-3: legacy mutations without --actor on a non-enabled workspace never w
   try {
     const ws = ["--workspace", fixture.workspace];
     let output = "";
-    await runCli(["project-create", ...ws, "--expected-version", "0", "--at", instant(1), "--external-key", "PROJECT-LEGACY", "--name", "Legacy"], { write: (value) => { output += value; } });
+    await runCli(["project-create", ...ws, "--at", instant(1), "--external-key", "PROJECT-LEGACY", "--name", "Legacy"], { write: (value) => { output += value; } });
     assert.equal(JSON.parse(output).reasonCode, "WORKSPACE_COMMAND_COMPLETED");
     // A supplied --actor before enablement is a no-op: no actor field enters the payload.
-    await runCli(["work-create", "--title", "record-title", ...ws, "--expected-version", "1", "--at", instant(2), "--project-id", JSON.parse(output).record.id, "--external-key", "INIT-LEGACY", "--kind", "Initiative", "--actor", "owner:release-gate"], { write: () => {} });
+    await runCli(["work-create", "--title", "record-title", ...ws, "--at", instant(2), "--project-id", JSON.parse(output).record.id, "--external-key", "INIT-LEGACY", "--kind", "Initiative", "--actor", "owner:release-gate"], { write: () => {} });
     const payloads = await readEventPayloads(fixture.workspace);
     assert.deepEqual(payloads.map((payload) => payload.operation), ["project.created", "work.created"]);
     for (const payload of payloads) {
@@ -1984,33 +1200,28 @@ test("WSE-3: legacy mutations without --actor on a non-enabled workspace never w
 test("WSA-3 (create side): a done Initiative may not acquire a new live child, while a live Initiative may", async () => {
   const fixture = await workspaceFixture({ externalKey: "WORKSPACE-WSA3C" });
   try {
-    const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(1) });
-    try {
-      let state = await createProject(fixture.workspace, lease, { expectedVersion: 0, occurredAt: instant(1), externalKey: "PROJECT-WSA3C", name: "WSA3C" });
-      const projectId = state.projects[0].id;
-      // Two Initiatives: one will be closed, one stays live. The rule must tell them apart.
-      state = await createWork(fixture.workspace, lease, { expectedVersion: 1, occurredAt: instant(2), projectId, externalKey: "INIT-WSA3C-CLOSED", kind: "Initiative", parentId: null });
-      const closedInitiative = state.work.find((record) => record.externalKey === "INIT-WSA3C-CLOSED").id;
-      state = await createWork(fixture.workspace, lease, { expectedVersion: 2, occurredAt: instant(3), projectId, externalKey: "INIT-WSA3C-LIVE", kind: "Initiative", parentId: null });
-      const liveInitiative = state.work.find((record) => record.externalKey === "INIT-WSA3C-LIVE").id;
-      // Close the first one legally: it has no descendants, so the transition-side rule permits it.
-      state = await transitionWork(fixture.workspace, lease, { expectedVersion: 3, occurredAt: instant(4), id: closedInitiative, status: "ready" });
-      state = await transitionWork(fixture.workspace, lease, { expectedVersion: 4, occurredAt: instant(5), id: closedInitiative, status: "active" });
-      state = await transitionWork(fixture.workspace, lease, { expectedVersion: 5, occurredAt: instant(6), id: closedInitiative, status: "done" });
+    let state = await createProject(fixture.workspace, { occurredAt: instant(1), externalKey: "PROJECT-WSA3C", name: "WSA3C" });
+    const projectId = state.projects[0].id;
+    // Two Initiatives: one will be closed, one stays live. The rule must tell them apart.
+    state = await createWork(fixture.workspace, { occurredAt: instant(2), projectId, externalKey: "INIT-WSA3C-CLOSED", kind: "Initiative", parentId: null });
+    const closedInitiative = state.work.find((record) => record.externalKey === "INIT-WSA3C-CLOSED").id;
+    state = await createWork(fixture.workspace, { occurredAt: instant(3), projectId, externalKey: "INIT-WSA3C-LIVE", kind: "Initiative", parentId: null });
+    const liveInitiative = state.work.find((record) => record.externalKey === "INIT-WSA3C-LIVE").id;
+    // Close the first one legally: it has no descendants, so the transition-side rule permits it.
+    state = await transitionWork(fixture.workspace, { occurredAt: instant(4), id: closedInitiative, status: "ready" });
+    state = await transitionWork(fixture.workspace, { occurredAt: instant(5), id: closedInitiative, status: "active" });
+    state = await transitionWork(fixture.workspace, { occurredAt: instant(6), id: closedInitiative, status: "done" });
 
-      await assert.rejects(
-        createWork(fixture.workspace, lease, { expectedVersion: 6, occurredAt: instant(7), projectId, externalKey: "EPIC-WSA3C-REOPEN", kind: "Epic", parentId: closedInitiative }),
-        (error) => error?.reasonCode === "WORKSPACE_INPUT_INVALID" && /it is already done/u.test(String(error?.message)),
-        "adding live work under a done Initiative must be refused"
-      );
+    await assert.rejects(
+      createWork(fixture.workspace, { occurredAt: instant(7), projectId, externalKey: "EPIC-WSA3C-REOPEN", kind: "Epic", parentId: closedInitiative }),
+      (error) => error?.reasonCode === "WORKSPACE_INPUT_INVALID" && /it is already done/u.test(String(error?.message)),
+      "adding live work under a done Initiative must be refused"
+    );
 
-      // The other side of the predicate: the identical create under a live Initiative is accepted,
-      // so the rule discriminates on the parent's state rather than refusing every child.
-      state = await createWork(fixture.workspace, lease, { expectedVersion: 6, occurredAt: instant(7), projectId, externalKey: "EPIC-WSA3C-OK", kind: "Epic", parentId: liveInitiative });
-      assert.equal(state.work.find((record) => record.externalKey === "EPIC-WSA3C-OK").parentId, liveInitiative);
-    } finally {
-      await lease.release();
-    }
+    // The other side of the predicate: the identical create under a live Initiative is accepted,
+    // so the rule discriminates on the parent's state rather than refusing every child.
+    state = await createWork(fixture.workspace, { occurredAt: instant(7), projectId, externalKey: "EPIC-WSA3C-OK", kind: "Epic", parentId: liveInitiative });
+    assert.equal(state.work.find((record) => record.externalKey === "EPIC-WSA3C-OK").parentId, liveInitiative);
   } finally {
     await fixture.close();
   }
@@ -2019,33 +1230,28 @@ test("WSA-3 (create side): a done Initiative may not acquire a new live child, w
 test("WSA-3: closing an Initiative to done with live non-terminal descendants is refused; terminalising first lets it close", async () => {
   const fixture = await workspaceFixture({ externalKey: "WORKSPACE-WSA3" });
   try {
-    const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(1) });
-    try {
-      let state = await createProject(fixture.workspace, lease, { expectedVersion: 0, occurredAt: instant(1), externalKey: "PROJECT-WSA3", name: "WSA3" });
-      const projectId = state.projects[0].id;
-      state = await createWork(fixture.workspace, lease, { expectedVersion: 1, occurredAt: instant(2), projectId, externalKey: "INIT-WSA3", kind: "Initiative", parentId: null });
-      const initiativeId = state.work.find((record) => record.kind === "Initiative").id;
-      state = await createWork(fixture.workspace, lease, { expectedVersion: 2, occurredAt: instant(3), projectId, externalKey: "EPIC-WSA3", kind: "Epic", parentId: initiativeId });
-      const epicId = state.work.find((record) => record.kind === "Epic").id;
-      // Bring the INIT to active so done is a legal status-machine transition; WSA-3 must then refuse it while the Epic is live.
-      state = await transitionWork(fixture.workspace, lease, { expectedVersion: 3, occurredAt: instant(4), id: initiativeId, status: "ready" });
-      state = await transitionWork(fixture.workspace, lease, { expectedVersion: 4, occurredAt: instant(5), id: initiativeId, status: "active" });
+    let state = await createProject(fixture.workspace, { occurredAt: instant(1), externalKey: "PROJECT-WSA3", name: "WSA3" });
+    const projectId = state.projects[0].id;
+    state = await createWork(fixture.workspace, { occurredAt: instant(2), projectId, externalKey: "INIT-WSA3", kind: "Initiative", parentId: null });
+    const initiativeId = state.work.find((record) => record.kind === "Initiative").id;
+    state = await createWork(fixture.workspace, { occurredAt: instant(3), projectId, externalKey: "EPIC-WSA3", kind: "Epic", parentId: initiativeId });
+    const epicId = state.work.find((record) => record.kind === "Epic").id;
+    // Bring the INIT to active so done is a legal status-machine transition; WSA-3 must then refuse it while the Epic is live.
+    state = await transitionWork(fixture.workspace, { occurredAt: instant(4), id: initiativeId, status: "ready" });
+    state = await transitionWork(fixture.workspace, { occurredAt: instant(5), id: initiativeId, status: "active" });
 
-      await assert.rejects(
-        transitionWork(fixture.workspace, lease, { expectedVersion: 5, occurredAt: instant(6), id: initiativeId, status: "done" }),
-        (error) => error?.reasonCode === "WORKSPACE_INPUT_INVALID" && /still holds live non-terminal work/u.test(String(error?.message)),
-        "closing an active INIT with a live descendant must be refused"
-      );
+    await assert.rejects(
+      transitionWork(fixture.workspace, { occurredAt: instant(6), id: initiativeId, status: "done" }),
+      (error) => error?.reasonCode === "WORKSPACE_INPUT_INVALID" && /still holds live non-terminal work/u.test(String(error?.message)),
+      "closing an active INIT with a live descendant must be refused"
+    );
 
-      // Terminalise the Epic (ready -> active -> done), then the INIT can close.
-      state = await transitionWork(fixture.workspace, lease, { expectedVersion: 5, occurredAt: instant(6), id: epicId, status: "ready" });
-      state = await transitionWork(fixture.workspace, lease, { expectedVersion: 6, occurredAt: instant(7), id: epicId, status: "active" });
-      state = await transitionWork(fixture.workspace, lease, { expectedVersion: 7, occurredAt: instant(8), id: epicId, status: "done" });
-      state = await transitionWork(fixture.workspace, lease, { expectedVersion: 8, occurredAt: instant(9), id: initiativeId, status: "done" });
-      assert.equal(state.work.find((record) => record.id === initiativeId).status, "done");
-    } finally {
-      await lease.release();
-    }
+    // Terminalise the Epic (ready -> active -> done), then the INIT can close.
+    state = await transitionWork(fixture.workspace, { occurredAt: instant(6), id: epicId, status: "ready" });
+    state = await transitionWork(fixture.workspace, { occurredAt: instant(7), id: epicId, status: "active" });
+    state = await transitionWork(fixture.workspace, { occurredAt: instant(8), id: epicId, status: "done" });
+    state = await transitionWork(fixture.workspace, { occurredAt: instant(9), id: initiativeId, status: "done" });
+    assert.equal(state.work.find((record) => record.id === initiativeId).status, "done");
   } finally {
     await fixture.close();
   }

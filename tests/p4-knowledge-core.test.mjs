@@ -25,7 +25,6 @@ import { runCli } from "../dist/build/packages/cli/src/index.js";
 import {
   KNOWLEDGE_LIMITS,
   KnowledgeCoreError,
-  acquireWorkspaceLease,
   checkKnowledgeSources,
   createKnowledgeUnit,
   knowledgeLinkIndexCountsForTest,
@@ -38,7 +37,6 @@ import {
   initializeWorkspace,
   knowledgeContextCandidates,
   listKnowledgeMetadata,
-  materializeWorkspace,
   readKnowledgeBody,
   readKnowledgeSnippet,
   rebaseKnowledgeStore,
@@ -76,27 +74,19 @@ async function workspaceFixture({ externalKey = "FIXTURE-KNOWLEDGE-CORE", initia
   }
   const workspace = join(base, "workspace");
   await initializeWorkspace({ roots, externalKey, createdAt: instant(11), segmentEventLimit: 64 });
-  const lease = await acquireWorkspaceLease(workspace, { now: instant(11, 1) });
-  let state;
-  try {
-    state = await createProject(workspace, lease, {
-      expectedVersion: 0,
-      occurredAt: instant(11, 1),
-      externalKey: "FIXTURE-KNOWLEDGE-PROJECT",
-      name: "Knowledge Fixture",
-    });
-    state = await createWork(workspace, lease, {
-      expectedVersion: 1,
-      occurredAt: instant(11, 2),
-      projectId: state.projects[0].id,
-      externalKey: "FIXTURE-KNOWLEDGE-WORK",
-      kind: "Initiative",
-      parentId: null,
-      status: "active",
-    });
-  } finally {
-    await lease.release();
-  }
+  let state = await createProject(workspace, {
+    occurredAt: instant(11, 1),
+    externalKey: "FIXTURE-KNOWLEDGE-PROJECT",
+    name: "Knowledge Fixture",
+  });
+  state = await createWork(workspace, {
+    occurredAt: instant(11, 2),
+    projectId: state.projects[0].id,
+    externalKey: "FIXTURE-KNOWLEDGE-WORK",
+    kind: "Initiative",
+    parentId: null,
+    status: "active",
+  });
   if (initialize) await initializeKnowledgeStore(workspace);
   return {
     base,
@@ -219,14 +209,9 @@ test("WSC-1: knowledge-init CLI round-trips the acknowledgment flag", async () =
 test("WSC-2: knowledge-rebase re-binds the store to an advanced workspace head", async () => {
   const fixture = await workspaceFixture();
   try {
-    const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(20, 1) });
-    try {
-      await createProject(fixture.workspace, lease, { expectedVersion: 2, occurredAt: instant(20, 2), externalKey: "FIXTURE-KNOWLEDGE-PROJECT-TWO", name: "Two" });
-    } finally {
-      await lease.release();
-    }
+    await createProject(fixture.workspace, { occurredAt: instant(20, 2), externalKey: "FIXTURE-KNOWLEDGE-PROJECT-TWO", name: "Two" });
     await expectReason("KNOWLEDGE_HIGH_WATER_MISMATCH", () => validateKnowledgeStore(fixture.workspace));
-    const result = await rebaseKnowledgeStore(fixture.workspace, { expectedVersion: 0, at: instant(20, 3), retireInvalid: false });
+    const result = await rebaseKnowledgeStore(fixture.workspace, { at: instant(20, 3), retireInvalid: false });
     assert.equal(result.reasonCode, "KNOWLEDGE_STORE_REBASED");
     assert.equal(result.retired, 0);
     assert.deepEqual(result.offenders, []);
@@ -239,15 +224,10 @@ test("WSC-2: knowledge-rebase re-binds the store to an advanced workspace head",
 test("WSC-2: knowledge-rebase blocks on a link-invalid record and retires it under retire-invalid", async () => {
   const fixture = await workspaceFixture();
   try {
-    const created = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "REBASE-OFFENDER", { expectedVersion: 0 }));
-    const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(21, 1) });
-    try {
-      await deleteWork(fixture.workspace, lease, { expectedVersion: 2, occurredAt: instant(21, 2), id: fixture.workId });
-    } finally {
-      await lease.release();
-    }
-    await expectReason("KNOWLEDGE_REBASE_BLOCKED", () => rebaseKnowledgeStore(fixture.workspace, { expectedVersion: 1, at: instant(21, 3), retireInvalid: false }));
-    const result = await rebaseKnowledgeStore(fixture.workspace, { expectedVersion: 1, at: instant(21, 3), retireInvalid: true });
+    const created = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "REBASE-OFFENDER", {}));
+    await deleteWork(fixture.workspace, { occurredAt: instant(21, 2), id: fixture.workId });
+    await expectReason("KNOWLEDGE_REBASE_BLOCKED", () => rebaseKnowledgeStore(fixture.workspace, { at: instant(21, 3), retireInvalid: false }));
+    const result = await rebaseKnowledgeStore(fixture.workspace, { at: instant(21, 3), retireInvalid: true });
     assert.equal(result.reasonCode, "KNOWLEDGE_STORE_REBASED");
     assert.equal(result.retired, 1);
     assert.deepEqual(result.offenders, [created.id]);
@@ -257,25 +237,21 @@ test("WSC-2: knowledge-rebase blocks on a link-invalid record and retires it und
   }
 });
 
-test("WSC-2: knowledge-rebase enforces CAS and fails closed at fault points leaving the store locked", async () => {
+test("WSC-2: knowledge-rebase fails closed at fault points leaving the store locked", async () => {
   const fixture = await workspaceFixture();
   try {
-    const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(22, 1) });
-    try {
-      await createProject(fixture.workspace, lease, { expectedVersion: 2, occurredAt: instant(22, 2), externalKey: "FIXTURE-KNOWLEDGE-PROJECT-THREE", name: "Three" });
-    } finally {
-      await lease.release();
-    }
-    await expectReason("KNOWLEDGE_CAS_MISMATCH", () => rebaseKnowledgeStore(fixture.workspace, { expectedVersion: 9, at: instant(22, 3), retireInvalid: false }));
+    await createProject(fixture.workspace, { occurredAt: instant(22, 2), externalKey: "FIXTURE-KNOWLEDGE-PROJECT-THREE", name: "Three" });
+    // The store-version CAS this case opened with went with the expected-version input
+    // (TCRN-CROSS-STORY-467 R1); the claim contract below is unchanged.
     // WSC-6: the two claim-state assertions below are the executable form of the crash
     // contract. A failure that leaves the process alive must give the claim back, so the
     // store stays usable; a simulated crash must NOT, because a real SIGKILL cannot run a
     // finally block and the retained claim is what marks the store as mid-write. Removing
     // the KNOWLEDGE_FAULT_INJECTED exemption from the mutation finallys flips the second.
     assert.equal((await readdir(fixture.store)).includes("mutation.claim"), false);
-    await expectReason("KNOWLEDGE_FAULT_INJECTED", () => rebaseKnowledgeStore(fixture.workspace, { expectedVersion: 0, at: instant(22, 4), retireInvalid: false }, { faultAt: "after-marker-write" }));
+    await expectReason("KNOWLEDGE_FAULT_INJECTED", () => rebaseKnowledgeStore(fixture.workspace, { at: instant(22, 4), retireInvalid: false }, { faultAt: "after-marker-write" }));
     assert.equal((await readdir(fixture.store)).includes("mutation.claim"), true);
-    await expectReason("KNOWLEDGE_LOCKED", () => rebaseKnowledgeStore(fixture.workspace, { expectedVersion: 0, at: instant(22, 5), retireInvalid: false }));
+    await expectReason("KNOWLEDGE_LOCKED", () => rebaseKnowledgeStore(fixture.workspace, { at: instant(22, 5), retireInvalid: false }));
   } finally {
     await fixture.close();
   }
@@ -335,7 +311,6 @@ test("metadata/body separation, default omission, explicit reads, promotion, fre
     // promoted transition is proved on the lifecycle-"candidate" path, which is the only
     // writer that still produces a candidate.
     await expectReason("KNOWLEDGE_PROMOTION_INVALID", () => transitionKnowledgePromotion(fixture.workspace, {
-      expectedVersion: 1,
       expectedRevision: 1,
       occurredAt: instant(12, 1),
       id,
@@ -352,7 +327,6 @@ test("metadata/body separation, default omission, explicit reads, promotion, fre
     await expectReason("KNOWLEDGE_BODY_ACCESS_DENIED", () => readKnowledgeBody(fixture.workspace, id, { at: "2026-08-20T14:00:00Z" }));
     assert.equal((await readKnowledgeBody(fixture.workspace, id, { at: "2026-08-20T14:00:00Z", allowStale: true })).body, input.body);
     await expectReason("KNOWLEDGE_PROMOTION_INVALID", () => transitionKnowledgePromotion(fixture.workspace, {
-      expectedVersion: 1,
       expectedRevision: 1,
       occurredAt: instant(12, 2),
       id,
@@ -400,9 +374,9 @@ test("metadata-only surfaces never open bodies while explicit/full integrity pat
 test("checkpoint is exactly the promoted fresh default-selection corpus", async () => {
   const fixture = await workspaceFixture({ externalKey: "FIXTURE-KNOWLEDGE-CHECKPOINT-PARITY" });
   try {
-    const defaultUnit = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "KNOWLEDGE-DEFAULT", { expectedVersion: 0 }));
+    const defaultUnit = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "KNOWLEDGE-DEFAULT", {}));
     const explicitUnit = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "KNOWLEDGE-EXPLICIT", {
-      expectedVersion: 1, occurredAt: instant(11, 4), retrievalDisposition: "explicit-only",
+      occurredAt: instant(11, 4), retrievalDisposition: "explicit-only",
     }));
     // TCRN-CROSS-INC-282: both cards are promoted at write; what keeps the explicit-only
     // card out of the checkpoint is its retrieval disposition, which is the point.
@@ -451,7 +425,7 @@ test("governed Knowledge CLI exposes init, validate, create, list, snippet, body
     // still has a candidate to move. An active write lands promoted and refuses promotion.
     const input = unitInput(fixture, "KNOWLEDGE-CLI", { lifecycle: "candidate" });
     const createArguments = [
-      "knowledge-create", "--workspace", fixture.workspace, "--expected-version", "0", "--at", input.occurredAt,
+      "knowledge-create", "--workspace", fixture.workspace, "--at", input.occurredAt,
       "--external-key", input.externalKey, "--scope", input.scope, "--project-id", input.projectId,
       "--role-scopes", "-", "--category", input.category, "--kind", input.kind, "--tags", input.tags.join(","),
       "--subject", input.subject, "--summary", input.summary, "--snippet", input.snippet,
@@ -485,13 +459,13 @@ test("governed Knowledge CLI exposes init, validate, create, list, snippet, body
     assert.equal(JSON.parse(output).body, input.body);
     output = "";
     await expectReason("KNOWLEDGE_PROMOTION_INVALID", () => runCli([
-      "knowledge-promote", "--workspace", fixture.workspace, "--expected-version", "1", "--expected-revision", "1",
+      "knowledge-promote", "--workspace", fixture.workspace, "--expected-revision", "1",
       "--at", instant(12, 1), "--id", created.id, "--state", "approved",
     ], { write() {} }));
     assert.equal((await readdir(fixture.store)).includes("mutation.claim"), false);
     assert.equal((await validateKnowledgeStore(fixture.workspace)).reasonCode, "KNOWLEDGE_STORE_VALID");
     output = "";
-    await runCli(["knowledge-promote", "--workspace", fixture.workspace, "--expected-version", "1", "--expected-revision", "1",
+    await runCli(["knowledge-promote", "--workspace", fixture.workspace, "--expected-revision", "1",
       "--at", instant(12, 1), "--id", created.id, "--state", "promoted"], { write: (value) => { output += value; } });
     assert.equal(JSON.parse(output).reasonCode, "KNOWLEDGE_PROMOTION_UPDATED");
     output = "";
@@ -507,7 +481,6 @@ test("governed Knowledge CLI exposes init, validate, create, list, snippet, body
 
 test("WSB-4: knowledge-create null sentinel '-' round-trips to null and the deprecated 'null' alias is byte-equivalent", async () => {
   const sentinelInput = (fixture) => unitInput(fixture, "KNOWLEDGE-SENTINEL", {
-    expectedVersion: 0,
     scope: "workspace",
     projectId: null,
     roleScopes: [],
@@ -519,7 +492,7 @@ test("WSB-4: knowledge-create null sentinel '-' round-trips to null and the depr
   const createArguments = (fixture, projectSpelling, lastVerifiedSpelling) => {
     const input = sentinelInput(fixture);
     return [
-      "knowledge-create", "--workspace", fixture.workspace, "--expected-version", "0", "--at", input.occurredAt,
+      "knowledge-create", "--workspace", fixture.workspace, "--at", input.occurredAt,
       "--external-key", input.externalKey, "--scope", input.scope, "--project-id", projectSpelling,
       "--role-scopes", "-", "--category", input.category, "--kind", input.kind, "--tags", listFlag(input.tags),
       "--subject", input.subject, "--summary", input.summary, "--snippet", input.snippet,
@@ -628,7 +601,7 @@ test("WSC-3: provenance is enforced at capture for an active card and at promoti
       assert.equal(created.promotionState, "candidate");
       // rejecting a candidate never needs provenance
       const rejected = await transitionKnowledgePromotion(fixture.workspace, {
-        expectedVersion: 1, expectedRevision: 1, occurredAt: instant(12), id: created.id, promotionState: "rejected",
+        expectedRevision: 1, occurredAt: instant(12), id: created.id, promotionState: "rejected",
       });
       assert.equal(rejected.reasonCode, "KNOWLEDGE_PROMOTION_UPDATED");
     } finally {
@@ -645,7 +618,7 @@ test("WSC-3: provenance is enforced at capture for an active card and at promoti
       const created = await createKnowledgeUnit(fixture.workspace,
         unitInput(fixture, `KNOWLEDGE-PROMOTE-BLOCK-${label.toUpperCase()}`, { ...override, lifecycle: "candidate" }));
       await expectReason("KNOWLEDGE_PROVENANCE_INVALID", () => transitionKnowledgePromotion(fixture.workspace, {
-        expectedVersion: 1, expectedRevision: 1, occurredAt: instant(12), id: created.id, promotionState: "promoted",
+        expectedRevision: 1, occurredAt: instant(12), id: created.id, promotionState: "promoted",
       }));
     } finally {
       await fixture.close();
@@ -663,11 +636,11 @@ test("WSC-6: promotion enforces machine checks for tags and snippet", async () =
       const created = await createKnowledgeUnit(fixture.workspace,
         unitInput(fixture, `KNOWLEDGE-CHECK-${label.toUpperCase()}`, { ...override, lifecycle: "candidate" }));
       await expectReason("KNOWLEDGE_PROMOTION_INVALID", () => transitionKnowledgePromotion(fixture.workspace, {
-        expectedVersion: 1, expectedRevision: 1, occurredAt: instant(11, 5), id: created.id, promotionState: "promoted",
+        expectedRevision: 1, occurredAt: instant(11, 5), id: created.id, promotionState: "promoted",
       }));
       // rejecting never needs the promotion checks
       const rejected = await transitionKnowledgePromotion(fixture.workspace, {
-        expectedVersion: 1, expectedRevision: 1, occurredAt: instant(11, 6), id: created.id, promotionState: "rejected",
+        expectedRevision: 1, occurredAt: instant(11, 6), id: created.id, promotionState: "rejected",
       });
       assert.equal(rejected.reasonCode, "KNOWLEDGE_PROMOTION_UPDATED");
     } finally {
@@ -693,7 +666,7 @@ test("WSC-6: promotion enforces machine checks for tags and snippet", async () =
   try {
     const created = await createKnowledgeUnit(ok.workspace, unitInput(ok, "KNOWLEDGE-CHECK-OK", { lifecycle: "candidate" }));
     const promoted = await transitionKnowledgePromotion(ok.workspace, {
-      expectedVersion: 1, expectedRevision: 1, occurredAt: instant(11, 5), id: created.id, promotionState: "promoted",
+      expectedRevision: 1, occurredAt: instant(11, 5), id: created.id, promotionState: "promoted",
     });
     assert.equal(promoted.promotionState, "promoted");
   } finally {
@@ -730,7 +703,7 @@ test("WSE-5: a work-log candidate carrying an event reference and chain-matching
       // The promotion path stays exercised for the records that still reach it.
       assert.equal(created.promotionState, "promoted");
       const promoted = created.promotionState === "promoted" ? created : await transitionKnowledgePromotion(fixture.workspace, {
-        expectedVersion: 1, expectedRevision: 1, occurredAt: instant(12), id: created.id, promotionState: "promoted",
+        expectedRevision: 1, occurredAt: instant(12), id: created.id, promotionState: "promoted",
       });
       assert.equal(promoted.promotionState, "promoted");
     } finally {
@@ -762,20 +735,20 @@ test("WSC-5: retire and reverify lifecycle transitions fail closed", async () =>
   const fixture = await workspaceFixture({ externalKey: "FIXTURE-LIFECYCLE" });
   try {
     // retire: a candidate is retired and drops out of default selection; re-retire fails
-    const candidate = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "KNOWLEDGE-RETIRE-ME", { expectedVersion: 0, occurredAt: instant(11, 3) }));
-    const retired = await retireKnowledgeUnit(fixture.workspace, { expectedVersion: 1, expectedRevision: 1, occurredAt: instant(11, 4), id: candidate.id });
+    const candidate = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "KNOWLEDGE-RETIRE-ME", { occurredAt: instant(11, 3) }));
+    const retired = await retireKnowledgeUnit(fixture.workspace, { expectedRevision: 1, occurredAt: instant(11, 4), id: candidate.id });
     assert.equal(retired.reasonCode, "KNOWLEDGE_RETIRED");
     const listed = await listKnowledgeMetadata(fixture.workspace, { at: instant(12), selection: "default" });
     assert.equal(listed.records.some((r) => r.id === candidate.id), false);
-    await expectReason("KNOWLEDGE_LIFECYCLE_INVALID", () => retireKnowledgeUnit(fixture.workspace, { expectedVersion: 2, expectedRevision: 2, occurredAt: instant(11, 5), id: candidate.id }));
+    await expectReason("KNOWLEDGE_LIFECYCLE_INVALID", () => retireKnowledgeUnit(fixture.workspace, { expectedRevision: 2, occurredAt: instant(11, 5), id: candidate.id }));
 
     // reverify: promoted record can be re-verified; a candidate cannot
     // TCRN-CROSS-INC-282: written lifecycle "candidate", the one shape that is still a
     // candidate, so "a candidate cannot be re-verified" is still a reachable refusal.
-    const promotable = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "KNOWLEDGE-REVERIFY-ME", { expectedVersion: 2, occurredAt: instant(11, 6), lifecycle: "candidate" }));
-    await expectReason("KNOWLEDGE_LIFECYCLE_INVALID", () => reverifyKnowledgeUnit(fixture.workspace, { expectedVersion: 3, expectedRevision: 1, occurredAt: instant(11, 7), id: promotable.id }));
-    await transitionKnowledgePromotion(fixture.workspace, { expectedVersion: 3, expectedRevision: 1, occurredAt: instant(11, 8), id: promotable.id, promotionState: "promoted" });
-    const reverified = await reverifyKnowledgeUnit(fixture.workspace, { expectedVersion: 4, expectedRevision: 2, occurredAt: instant(13, 9), id: promotable.id });
+    const promotable = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "KNOWLEDGE-REVERIFY-ME", { occurredAt: instant(11, 6), lifecycle: "candidate" }));
+    await expectReason("KNOWLEDGE_LIFECYCLE_INVALID", () => reverifyKnowledgeUnit(fixture.workspace, { expectedRevision: 1, occurredAt: instant(11, 7), id: promotable.id }));
+    await transitionKnowledgePromotion(fixture.workspace, { expectedRevision: 1, occurredAt: instant(11, 8), id: promotable.id, promotionState: "promoted" });
+    const reverified = await reverifyKnowledgeUnit(fixture.workspace, { expectedRevision: 2, occurredAt: instant(13, 9), id: promotable.id });
     assert.equal(reverified.reasonCode, "KNOWLEDGE_REVERIFIED");
     assert.equal(reverified.lastVerified, instant(13, 9));
   } finally {
@@ -786,8 +759,8 @@ test("WSC-5: retire and reverify lifecycle transitions fail closed", async () =>
 test("WSC-4: knowledge-list supports bounded substring search over subject and tags", async () => {
   const fixture = await workspaceFixture({ externalKey: "FIXTURE-SEARCH" });
   try {
-    await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "KNOWLEDGE-ALPHA", { expectedVersion: 0, occurredAt: instant(11, 3), subject: "Retry backoff policy", tags: ["knowledge", "resilience"] }));
-    await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "KNOWLEDGE-BETA", { expectedVersion: 1, occurredAt: instant(11, 4), subject: "Cache invalidation rules", tags: ["knowledge", "caching"] }));
+    await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "KNOWLEDGE-ALPHA", { occurredAt: instant(11, 3), subject: "Retry backoff policy", tags: ["knowledge", "resilience"] }));
+    await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "KNOWLEDGE-BETA", { occurredAt: instant(11, 4), subject: "Cache invalidation rules", tags: ["knowledge", "caching"] }));
     const bySubject = await listKnowledgeMetadata(fixture.workspace, { at: instant(12), selection: "all", search: "backoff" });
     assert.equal(bySubject.total, 1);
     assert.equal(bySubject.records[0].subject, "Retry backoff policy");
@@ -872,7 +845,6 @@ test("64 real insertion orders produce exact index, list, and checkpoint parity"
     try {
       for (const [version, key] of order.entries()) {
         await createKnowledgeUnit(fixture.workspace, unitInput(fixture, key, {
-          expectedVersion: version,
           occurredAt: instant(11, 3 + logicalKeys.indexOf(key)),
         }));
       }
@@ -969,7 +941,7 @@ test("custom schema proof enforces the normative UTF-8 byte budgets", async () =
   }
 });
 
-test("duplicate, CAS, promotion, and concurrent writer integrity fail closed", async () => {
+test("duplicate, revision CAS, promotion, and concurrent writer integrity fail closed", async () => {
   const fixture = await workspaceFixture();
   try {
     // TCRN-CROSS-INC-282: lifecycle "candidate" keeps a promotable target, so the CAS and
@@ -977,19 +949,18 @@ test("duplicate, CAS, promotion, and concurrent writer integrity fail closed", a
     const input = unitInput(fixture, "KNOWLEDGE-CAS", { lifecycle: "candidate" });
     const created = await createKnowledgeUnit(fixture.workspace, input);
     await expectReason("KNOWLEDGE_PROMOTION_INVALID", () => transitionKnowledgePromotion(fixture.workspace, {
-      expectedVersion: 1, expectedRevision: 1, occurredAt: instant(12), id: created.id, promotionState: "approved",
+      expectedRevision: 1, occurredAt: instant(12), id: created.id, promotionState: "approved",
     }));
     assert.equal((await readdir(fixture.store)).includes("mutation.claim"), false);
     assert.equal((await validateKnowledgeStore(fixture.workspace)).version, 1);
-    await expectReason("KNOWLEDGE_DUPLICATE", () => createKnowledgeUnit(fixture.workspace, { ...input, expectedVersion: 1 }));
+    await expectReason("KNOWLEDGE_DUPLICATE", () => createKnowledgeUnit(fixture.workspace, { ...input }));
+    // The record revision is still compared; the store-version CAS beside it is gone
+    // (TCRN-CROSS-STORY-467 R1).
     await expectReason("KNOWLEDGE_CAS_MISMATCH", () => transitionKnowledgePromotion(fixture.workspace, {
-      expectedVersion: 0, expectedRevision: 1, occurredAt: instant(12), id: created.id, promotionState: "promoted",
-    }));
-    await expectReason("KNOWLEDGE_CAS_MISMATCH", () => transitionKnowledgePromotion(fixture.workspace, {
-      expectedVersion: 1, expectedRevision: 2, occurredAt: instant(12), id: created.id, promotionState: "promoted",
+      expectedRevision: 2, occurredAt: instant(12), id: created.id, promotionState: "promoted",
     }));
     assert.equal((await transitionKnowledgePromotion(fixture.workspace, {
-      expectedVersion: 1, expectedRevision: 1, occurredAt: instant(12), id: created.id, promotionState: "promoted",
+      expectedRevision: 1, occurredAt: instant(12), id: created.id, promotionState: "promoted",
     })).version, 2);
   } finally {
     await fixture.close();
@@ -1000,10 +971,15 @@ test("duplicate, CAS, promotion, and concurrent writer integrity fail closed", a
       settle(createKnowledgeUnit(concurrent.workspace, unitInput(concurrent, "KNOWLEDGE-CONCURRENT-A"))),
       settle(createKnowledgeUnit(concurrent.workspace, unitInput(concurrent, "KNOWLEDGE-CONCURRENT-B"))),
     ]);
-    assert.equal(outcomes.filter((entry) => entry.status === "fulfilled").length, 1);
-    const rejected = outcomes.find((entry) => entry.status === "rejected");
-    assert.ok(["KNOWLEDGE_LOCKED", "KNOWLEDGE_CAS_MISMATCH"].includes(rejected.reason.reasonCode));
-    assert.equal((await validateKnowledgeStore(concurrent.workspace)).version, 1);
+    // Without a store-version CAS two writers that do not overlap both land; two that do
+    // overlap meet the mutation claim and one is refused. Either way nothing is lost or
+    // half-written: the store validates at exactly the number of writes that landed.
+    const fulfilled = outcomes.filter((entry) => entry.status === "fulfilled").length;
+    assert.ok(fulfilled >= 1);
+    for (const entry of outcomes.filter((outcome) => outcome.status === "rejected")) {
+      assert.equal(entry.reason.reasonCode, "KNOWLEDGE_LOCKED");
+    }
+    assert.equal((await validateKnowledgeStore(concurrent.workspace)).version, fulfilled);
   } finally {
     await concurrent.close();
   }
@@ -1099,7 +1075,7 @@ test("link, special-file, source-replacement, unknown-field, and partial-state a
       const version = 1;
       const revision = 1;
       const run = () => {
-        const common = { expectedVersion: version, expectedRevision: revision, occurredAt: instant(12, 5), id: unit.id };
+        const common = { expectedRevision: revision, occurredAt: instant(12, 5), id: unit.id };
         if (verb === "promote") return transitionKnowledgePromotion(fixture.workspace, { ...common, promotionState: "promoted" }, { faultAt: "after-metadata-write" });
         if (verb === "retire") return retireKnowledgeUnit(fixture.workspace, common, { faultAt: "after-metadata-write" });
         return reverifyKnowledgeUnit(fixture.workspace, common, { faultAt: "after-metadata-write" });
@@ -1118,7 +1094,6 @@ test("INIT-047 knowledge inventory admits more than 64 records while query pages
     assert.equal(Object.hasOwn(KNOWLEDGE_LIMITS, "maximumRecords"), false);
     for (let index = 0; index < 65; index += 1) {
       await createKnowledgeUnit(count.workspace, unitInput(count, `KNOWLEDGE-COUNT-${index}`, {
-        expectedVersion: index,
         occurredAt: instant(11, 3),
         body: "small",
       }));
@@ -1133,7 +1108,6 @@ test("INIT-047 knowledge inventory admits more than 64 records while query pages
   try {
     for (let index = 0; index <= KNOWLEDGE_LIMITS.maximumQueryResults; index += 1) {
       await createKnowledgeUnit(query.workspace, unitInput(query, `KNOWLEDGE-QUERY-${index}`, {
-        expectedVersion: index,
         occurredAt: instant(11, 3 + index),
       }));
     }
@@ -1155,7 +1129,6 @@ test("INIT-047 knowledge inventory admits more than 64 records while query pages
     for (let index = 0; index < 200; index += 1) {
       try {
         await createKnowledgeUnit(aggregate.workspace, unitInput(aggregate, `KNOWLEDGE-AGGREGATE-${index}`, {
-          expectedVersion: index,
           occurredAt: instant(11, 3),
           body: "x".repeat(7_500),
         }));
@@ -1195,19 +1168,19 @@ test("WSC-7: knowledge metadata maps to digest-valid context-metadata candidates
   const fixture = await workspaceFixture({ externalKey: "FIXTURE-WSC7-BRIDGE" });
   try {
     const workspaceUnit = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "WSC7-WORKSPACE", {
-      expectedVersion: 0, occurredAt: instant(11, 3), scope: "workspace", projectId: null, roleScopes: [],
+      occurredAt: instant(11, 3), scope: "workspace", projectId: null, roleScopes: [],
       linkedWorkIds: [], subject: "Workspace scope subject", summary: "Workspace scope summary",
     }));
     const projectUnit = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "WSC7-PROJECT", {
-      expectedVersion: 1, occurredAt: instant(11, 4), subject: "Project scope subject", summary: "Project scope summary",
+      occurredAt: instant(11, 4), subject: "Project scope subject", summary: "Project scope summary",
     }));
     // Role-scoped record carrying a LIVE project reference (knowledge admits this).
     const roleUnit = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "WSC7-ROLE", {
-      expectedVersion: 2, occurredAt: instant(11, 5), scope: "role", roleScopes: ["reviewer"],
+      occurredAt: instant(11, 5), scope: "role", roleScopes: ["reviewer"],
       subject: "Role scope subject", summary: "Role scope summary",
     }));
     const staleUnit = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "WSC7-STALE", {
-      expectedVersion: 3, occurredAt: instant(11, 6), freshnessState: "stale", lastVerified: instant(11),
+      occurredAt: instant(11, 6), freshnessState: "stale", lastVerified: instant(11),
       subject: "Stale scope subject", summary: "Stale scope summary",
     }));
 
@@ -1318,7 +1291,7 @@ test("CQ-02c: knowledge metadata scope refuses values that only coerce to a memb
     ];
     for (const [index, [scope, shape]] of legalScopes.entries()) {
       const created = await createKnowledgeUnit(fixture.workspace, {
-        ...unitInput(fixture, `SCOPE-OK-${scope.toUpperCase()}`, { ...shape, expectedVersion: index }),
+        ...unitInput(fixture, `SCOPE-OK-${scope.toUpperCase()}`, { ...shape }),
         scope,
       });
       assert.equal(created.reasonCode, "KNOWLEDGE_UNIT_CREATED", scope);
@@ -1345,7 +1318,7 @@ test("CQ-10: knowledge link liveness builds one index per workspace state, not o
   try {
     const recordCount = 6;
     for (let index = 0; index < recordCount; index += 1) {
-      await createKnowledgeUnit(fixture.workspace, unitInput(fixture, `LINK-INDEX-${index}`, { expectedVersion: index }));
+      await createKnowledgeUnit(fixture.workspace, unitInput(fixture, `LINK-INDEX-${index}`, {}));
     }
     const before = knowledgeLinkIndexCountsForTest();
     const listed = await listKnowledgeMetadata(fixture.workspace, { at: instant(12), selection: "all" });
@@ -1407,7 +1380,7 @@ test("TCRN-CROSS-STORY-023: the aggregate cap counts marker+metadata+body but no
     for (let i = 0; i < 200; i += 1) {
       try {
         await createKnowledgeUnit(fx.workspace, unitInput(fx, `S023-${i}`, {
-          expectedVersion: i, occurredAt: instant(11, 3), body: "x".repeat(7_500),
+          occurredAt: instant(11, 3), body: "x".repeat(7_500),
         }));
         admitted += 1;
       } catch (error) {
@@ -1452,19 +1425,19 @@ test("TCRN-CROSS-STORY-024: retiring reclaims the body, keeps the store valid, a
   try {
     const bodiesDir = join(fx.workspace, `${LEGACY_CONTROL_DIRECTORY}/knowledge/bodies`);
     const created = await createKnowledgeUnit(fx.workspace, unitInput(fx, "S024-RECLAIM", {
-      expectedVersion: 0, occurredAt: instant(11, 3), body: "x".repeat(7_500),
+      occurredAt: instant(11, 3), body: "x".repeat(7_500),
     }));
     const bodyFile = join(bodiesDir, `${created.id}.body`);
     assert.equal((await readFile(bodyFile)).length, 7_500, "body present before retire");
     // Retire reclaims the body file, and the store is still valid without it.
-    await retireKnowledgeUnit(fx.workspace, { expectedVersion: 1, expectedRevision: 1, occurredAt: instant(11, 4), id: created.id });
+    await retireKnowledgeUnit(fx.workspace, { expectedRevision: 1, occurredAt: instant(11, 4), id: created.id });
     await assert.rejects(readFile(bodyFile), "retired body must be deleted");
     assert.equal((await validateKnowledgeStore(fx.workspace)).reasonCode, "KNOWLEDGE_STORE_VALID");
     // The retired record survives as a metadata-only audit entry.
     const all = await listKnowledgeMetadata(fx.workspace, { at: instant(12), selection: "all" });
     assert.equal(all.records.some((r) => r.id === created.id), true, "retired record kept as audit entry");
     // Integrity still fires: a LIVE record missing its body corrupts the store.
-    const live = await createKnowledgeUnit(fx.workspace, unitInput(fx, "S024-LIVE", { expectedVersion: 2, occurredAt: instant(11, 5) }));
+    const live = await createKnowledgeUnit(fx.workspace, unitInput(fx, "S024-LIVE", { occurredAt: instant(11, 5) }));
     await rm(join(bodiesDir, `${live.id}.body`));
     await expectReason("KNOWLEDGE_PARTIAL_STATE", () => validateKnowledgeStore(fx.workspace));
   } finally { await fx.close(); }
@@ -1501,7 +1474,6 @@ test("INIT-047 supersedes rejects an unavailable target before writing", async (
   const fx = await workspaceFixture({ externalKey: "FIXTURE-INIT047-SUPERSEDES" });
   try {
     await expectReason("KNOWLEDGE_LINK_INVALID", () => createKnowledgeUnit(fx.workspace, unitInput(fx, "INIT047-MISSING-TARGET", {
-      expectedVersion: 0,
       supersedes: deriveStableId("knowledge", "INIT047-MISSING-TARGET-NOT-HERE"),
     })));
     assert.equal((await validateKnowledgeStore(fx.workspace)).records, 0);
@@ -1513,7 +1485,6 @@ test("INIT-047 source digest check reports changes without hiding metadata", asy
   try {
     await writeFile(join(fx.workspace, "source.md"), "source-v1");
     const sourced = await createKnowledgeUnit(fx.workspace, unitInput(fx, "INIT047-SOURCE-CHECK", {
-      expectedVersion: 0,
       kind: "reference",
       sourceReferences: ["source.md"],
       sourceDigest: null,
@@ -1535,7 +1506,6 @@ test("INIT-047 article index cards stay explicit-only for default context", asyn
   try {
     await writeFile(join(fx.workspace, "article.md"), "article-v1");
     const article = await createKnowledgeUnit(fx.workspace, unitInput(fx, "INIT047-ARTICLE-INDEX", {
-      expectedVersion: 0,
       kind: "reference",
       sourceReferences: ["article.md"],
       sourceDigest: null,
@@ -1557,13 +1527,7 @@ test("STORY-366 GWT1: an article stores full Markdown outside the chain and only
     const content = "中文".repeat(1_500);
     const owner = deriveStableId("owner", "STORY-366-OWNER");
     const evidence = deriveStableId("evidence", "STORY-366-ARTICLE");
-    const workspaceVersion = (await materializeWorkspace(fx.workspace)).version;
-    await assert.rejects(
-      () => cliJson(["knowledge-article-create", "--workspace", fx.workspace, "--expected-version", String(workspaceVersion), "--at", instant(11, 3), "--path", "wrong-version.md", "--category", "architecture", "--title", "Wrong store version", "--summary", "Not written", "--content", content, "--accountable-owner-id", owner, "--evidence-ids", evidence]),
-      (error) => error?.reasonCode === "KNOWLEDGE_CAS_MISMATCH",
-      "article CAS is the knowledge-store marker, not the workspace chain version",
-    );
-    const created = await cliJson(["knowledge-article-create", "--workspace", fx.workspace, "--expected-version", "0", "--at", instant(11, 3), "--path", "topology.md", "--category", "architecture", "--title", "分区 拓扑", "--summary", "迁移摘要", "--content", content, "--accountable-owner-id", owner, "--evidence-ids", evidence]);
+    const created = await cliJson(["knowledge-article-create", "--workspace", fx.workspace, "--at", instant(11, 3), "--path", "topology.md", "--category", "architecture", "--title", "分区 拓扑", "--summary", "迁移摘要", "--content", content, "--accountable-owner-id", owner, "--evidence-ids", evidence]);
     assert.equal(created.reasonCode, "KNOWLEDGE_ARTICLE_CREATED");
     assert.ok(created.articleBytes > Buffer.byteLength(content, "utf8"));
     assert.ok(created.bodyBytes <= 8_192);
@@ -1585,11 +1549,11 @@ test("STORY-366 GWT1: an article stores full Markdown outside the chain and only
     assert.equal((await listKnowledgeMetadata(fx.workspace, { at: instant(12) })).records.length, 0);
     assert.equal((await listKnowledgeMetadata(fx.workspace, { at: instant(12), search: "分区 拓扑" })).records.length, 1);
     await assert.rejects(
-      () => cliJson(["knowledge-article-create", "--workspace", fx.workspace, "--expected-version", "1", "--at", instant(11, 4), "--path", "topology.md", "--category", "architecture", "--title", "分区 拓扑", "--summary", "duplicate", "--content", content, "--accountable-owner-id", owner, "--evidence-ids", evidence]),
+      () => cliJson(["knowledge-article-create", "--workspace", fx.workspace, "--at", instant(11, 4), "--path", "topology.md", "--category", "architecture", "--title", "分区 拓扑", "--summary", "duplicate", "--content", content, "--accountable-owner-id", owner, "--evidence-ids", evidence]),
       (error) => error?.reasonCode === "KNOWLEDGE_ALREADY_EXISTS",
     );
     await assert.rejects(
-      () => cliJson(["knowledge-article-create", "--workspace", fx.workspace, "--expected-version", "1", "--at", instant(11, 4), "--path", "../escape.md", "--category", "architecture", "--title", "Unsafe", "--summary", "unsafe", "--content", content, "--accountable-owner-id", owner, "--evidence-ids", evidence]),
+      () => cliJson(["knowledge-article-create", "--workspace", fx.workspace, "--at", instant(11, 4), "--path", "../escape.md", "--category", "architecture", "--title", "Unsafe", "--summary", "unsafe", "--content", content, "--accountable-owner-id", owner, "--evidence-ids", evidence]),
       (error) => error?.reasonCode === "KNOWLEDGE_PATH_INVALID",
     );
   } finally { await fx.close(); }
@@ -1600,11 +1564,11 @@ test("STORY-366 GWT2: refresh reads the edited file, updates its digest and summ
   try {
     const owner = deriveStableId("owner", "STORY-366-REFRESH-OWNER");
     const evidence = deriveStableId("evidence", "STORY-366-REFRESH");
-    const created = await cliJson(["knowledge-article-create", "--workspace", fx.workspace, "--expected-version", "0", "--at", instant(11, 3), "--path", "refresh.md", "--category", "workflow", "--title", "刷新文章", "--summary", "初始摘要", "--content", "正文一".repeat(1_500), "--accountable-owner-id", owner, "--evidence-ids", evidence]);
+    const created = await cliJson(["knowledge-article-create", "--workspace", fx.workspace, "--at", instant(11, 3), "--path", "refresh.md", "--category", "workflow", "--title", "刷新文章", "--summary", "初始摘要", "--content", "正文一".repeat(1_500), "--accountable-owner-id", owner, "--evidence-ids", evidence]);
     const articlePath = join(fx.workspace, "docs/knowledge/articles/refresh.md");
     const before = await readFile(articlePath, "utf8");
     await writeFile(articlePath, `${before}追加的正文标记`);
-    const refreshed = await cliJson(["knowledge-article-refresh", "--workspace", fx.workspace, "--expected-version", "1", "--expected-revision", "1", "--at", instant(11, 4), "--id", created.id, "--path", "refresh.md", "--summary", "更新摘要"]);
+    const refreshed = await cliJson(["knowledge-article-refresh", "--workspace", fx.workspace, "--expected-revision", "1", "--at", instant(11, 4), "--id", created.id, "--path", "refresh.md", "--summary", "更新摘要"]);
     assert.equal(refreshed.reasonCode, "KNOWLEDGE_ARTICLE_REFRESHED");
     assert.equal(refreshed.id, created.id);
     assert.equal(refreshed.revision, 2);
@@ -1616,7 +1580,7 @@ test("STORY-366 GWT2: refresh reads the edited file, updates its digest and summ
     assert.equal(metadata.summary, "更新摘要");
     assert.equal((await listKnowledgeMetadata(fx.workspace, { at: instant(12), search: "更新摘要" })).records[0].id, created.id);
     await assert.rejects(
-      () => cliJson(["knowledge-article-refresh", "--workspace", fx.workspace, "--expected-version", "1", "--expected-revision", "2", "--at", instant(11, 5), "--id", created.id, "--path", "refresh.md", "--summary", "stale"]),
+      () => cliJson(["knowledge-article-refresh", "--workspace", fx.workspace, "--expected-revision", "1", "--at", instant(11, 5), "--id", created.id, "--path", "refresh.md", "--summary", "stale"]),
       (error) => error?.reasonCode === "KNOWLEDGE_CAS_MISMATCH",
     );
   } finally { await fx.close(); }
@@ -1638,12 +1602,11 @@ test("INIT-047: supersedes is validated, source digests are computed and source 
     assert.equal(listed.records.find((record) => record.id === replacement.id).supersedes, old.id);
     // TCRN-CROSS-STORY-365: the supersede marked `old` with extensions.supersededBy, so
     // it is at revision 2 by the time this retire compares.
-    await retireKnowledgeUnit(fx.workspace, { expectedVersion: 2, expectedRevision: 2, occurredAt: instant(11, 4), id: old.id });
+    await retireKnowledgeUnit(fx.workspace, { expectedRevision: 2, occurredAt: instant(11, 4), id: old.id });
     await expectReason("KNOWLEDGE_LINK_INVALID", () => createKnowledgeUnit(fx.workspace, fragment("INIT047-AFTER-RETIRE", 3, { supersedes: old.id })));
 
     await writeFile(join(fx.workspace, "source.md"), "source-v1");
     const sourced = await createKnowledgeUnit(fx.workspace, unitInput(fx, "INIT047-SOURCE", {
-      expectedVersion: 3,
       kind: "reference",
       sourceReferences: ["source.md"], sourceDigest: null, linkedEvidenceIds: [deriveStableId("evidence", "INIT047-SOURCE")],
       retrievalDisposition: "explicit-only", lastVerified: instant(11, 3), freshnessState: "fresh",

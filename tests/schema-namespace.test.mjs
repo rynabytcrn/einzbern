@@ -66,8 +66,8 @@ test("466-AC3 (engine): a new workspace writes every event as einzbern.event.v1"
     await runCli(args, { write: (value) => { output += value; } });
     return JSON.parse(output);
   };
-  const project = await run(["project-create", "--workspace", workspace, "--expected-version", "0", "--at", "2026-01-01T00:00:01Z", "--external-key", "NAMESPACE-PROJECT", "--name", "Namespace"]);
-  await run(["work-create", "--workspace", workspace, "--expected-version", "1", "--at", "2026-01-01T00:00:02Z", "--project-id", project.record.id, "--external-key", "NAMESPACE-INITIATIVE", "--kind", "Initiative", "--title", "Namespace initiative"]);
+  const project = await run(["project-create", "--workspace", workspace, "--at", "2026-01-01T00:00:01Z", "--external-key", "NAMESPACE-PROJECT", "--name", "Namespace"]);
+  await run(["work-create", "--workspace", workspace, "--at", "2026-01-01T00:00:02Z", "--project-id", project.record.id, "--external-key", "NAMESPACE-INITIATIVE", "--kind", "Initiative", "--title", "Namespace initiative"]);
   const state = await materializeWorkspace(workspace);
   assert.equal(state.events.length, 2);
   assert.deepEqual(state.events.map((event) => event.schemaVersion), ["einzbern.event.v1", "einzbern.event.v1"]);

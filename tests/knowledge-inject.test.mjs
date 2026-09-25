@@ -20,7 +20,6 @@ import {
 } from "../scripts/knowledge-inject.mjs";
 import { filterCandidatesByDispatchContext, normalizeDispatchContext } from "../scripts/injection-session.mjs";
 import {
-  acquireWorkspaceLease,
   createKnowledgeUnit,
   createProject,
   initializeKnowledgeStore,
@@ -67,18 +66,11 @@ async function createSyntheticWorkspace() {
 
   // Populate with knowledge content so budget tests discriminate.
   // We need content matching "hook" keyword to exceed 10-byte budget.
-  const lease = await acquireWorkspaceLease(workspace, { now: instant(1) });
-  let state;
-  try {
-    state = await createProject(workspace, lease, {
-      expectedVersion: 0,
-      occurredAt: instant(1),
-      externalKey: "KNOWLEDGE-INJECT-PROJ",
-      name: "Knowledge Inject Test"
-    });
-  } finally {
-    await lease.release();
-  }
+  let state = await createProject(workspace, {
+    occurredAt: instant(1),
+    externalKey: "KNOWLEDGE-INJECT-PROJ",
+    name: "Knowledge Inject Test"
+  });
 
   // Initialize the knowledge store before creating knowledge units
   await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
@@ -124,7 +116,6 @@ async function createSyntheticWorkspace() {
   let knowledgeVersion = 0;
   for (const unit of knowledgeUnits) {
     const created = await createKnowledgeUnit(workspace, {
-      expectedVersion: knowledgeVersion,
       occurredAt: instant(knowledgeVersion + 2),
       externalKey: unit.externalKey,
       scope: "workspace",
@@ -159,7 +150,6 @@ async function createSyntheticWorkspace() {
     // Promote the knowledge unit so it shows up in search results. STORY-365 writes a
     // sourced-and-evidenced card promoted already, so this is now a no-op for these three.
     const promoted = created.promotionState === "promoted" ? created : await transitionKnowledgePromotion(workspace, {
-      expectedVersion: created.version,
       expectedRevision: created.revision,
       occurredAt: instant(knowledgeVersion + 1),
       id: created.id,
@@ -309,12 +299,7 @@ async function isolatedHookContainer(t, externalKey) {
   for (const root of roots) await mkdir(root.path, { recursive: true });
   const workspace = join(partition, "workspace");
   await initializeWorkspace({ roots, externalKey, createdAt: "2026-09-01T00:00:00Z" });
-  const lease = await acquireWorkspaceLease(workspace, { now: "2026-09-01T00:00:01Z" });
-  try {
-    await createProject(workspace, lease, { expectedVersion: 0, occurredAt: "2026-09-01T00:00:01Z", externalKey: `${externalKey}-PROJECT`, name: "MIN-225 hooks" });
-  } finally {
-    await lease.release();
-  }
+  await createProject(workspace, { occurredAt: "2026-09-01T00:00:01Z", externalKey: `${externalKey}-PROJECT`, name: "MIN-225 hooks" });
   await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
   const storePath = join(workspace, LEGACY_CONTROL_DIRECTORY, "knowledge", "store.json");
   return { base, workspace, transient: join(partition, "transient"), storePath, storeBefore: readFileSync(storePath, "utf8") };

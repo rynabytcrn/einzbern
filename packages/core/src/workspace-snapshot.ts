@@ -13,8 +13,8 @@ import {
   compareCanonicalText,
 } from "../../protocol/src/index.js";
 import type { JsonValue } from "../../protocol/src/index.js";
-import { WORKSPACE_CONTROL_DIRECTORY, WORKSPACE_SEGMENT_BYTES_MAX, validateWorkspace } from "./workspace.js";
-import type { WorkspaceLease } from "./workspace.js";
+import { WORKSPACE_CONTROL_DIRECTORY, WORKSPACE_SEGMENT_BYTES_MAX, validateWorkspace, withWorkspaceWriteLock } from "./workspace.js";
+import { WORKSPACE_WRITE_LOCK_FILE } from "./names.js";
 import { validateKnowledgeStore } from "./knowledge-core.js";
 
 // WSF-2: the read-only snapshot witness. It computes a deterministic manifest over
@@ -71,6 +71,8 @@ function isJsonObject(value: JsonValue | undefined): value is { readonly [key: s
 // knowledge/artifact in-flight mutation claims. Excluding them keeps the manifest
 // stable across the claim churn of normal operation.
 const EXCLUDED_RELATIVE_PATHS = Object.freeze([
+  // TCRN-CROSS-STORY-467: the engine write lock, held while the manifest is computed.
+  WORKSPACE_WRITE_LOCK_FILE,
   "lease",
   "lease-recovery.claim",
   "knowledge/mutation.claim",
@@ -256,37 +258,19 @@ async function directoryExists(path: string): Promise<boolean> {
   }
 }
 
-// Assert the passed lease still owns the workspace, mirroring assertLease's
-// owner.json read (workspace.ts) rather than exporting it. In the CLI path the lease
-// is always held (acquisition already fail-closed WORKSPACE_LOCKED on contention);
-// this is defense in depth for direct programmatic callers.
-async function assertHeldLease(workspaceRoot: string, lease: WorkspaceLease): Promise<void> {
-  if (lease === null || typeof lease !== "object" || typeof lease.token !== "string" || lease.workspaceRoot !== workspaceRoot) {
-    fail("SNAPSHOT_INPUT_INVALID", "lease does not hold this workspace");
-  }
-  const ownerPath = resolve(workspaceRoot, WORKSPACE_CONTROL_DIRECTORY, "lease", "owner.json");
-  const content = await boundReadFileBytes(ownerPath, 16_384);
-  let owner: JsonValue;
-  try {
-    owner = assertCanonicalJson(content.toString("utf8"));
-  } catch (error) {
-    fail("SNAPSHOT_INPUT_INVALID", String(error));
-  }
-  if (!isJsonObject(owner) || owner.schemaVersion !== "tcrn.workspace-lease.v1" || owner.token !== lease.token) {
-    fail("SNAPSHOT_INPUT_INVALID", "lease token no longer owns the workspace");
-  }
-}
-
-// Build a canonical snapshot manifest for a quiesced, leased workspace. The lease
-// is the quiesce proof (only one holder can own it). Emits sorted per-file sha256,
+// Build a canonical snapshot manifest for a quiesced workspace. The engine write lock is
+// the quiesce proof (only one writer can hold it), taken here for the whole computation. Emits sorted per-file sha256,
 // the workspace headEventHash/version/workspaceId, and the embedded validate result
 // for both stores. No Date.now, no randomness — determinism constraint 6.
-export async function createSnapshotManifest(workspaceRootInput: string, lease: WorkspaceLease): Promise<string> {
+export async function createSnapshotManifest(workspaceRootInput: string): Promise<string> {
   if (typeof workspaceRootInput !== "string" || workspaceRootInput.length === 0) {
     fail("SNAPSHOT_INPUT_INVALID", "workspace root");
   }
   const root = await boundReadDirectory(workspaceRootInput);
-  await assertHeldLease(root, lease);
+  return withWorkspaceWriteLock(root, () => snapshotManifestHoldingLock(root));
+}
+
+async function snapshotManifestHoldingLock(root: string): Promise<string> {
   // INC-086 (superseded, TCRN-CROSS-STORY-354): the manifest walks the DISK
   // file tree (walkControlTree below), so validate here was pinned to the FILE
   // backend rather than the ambient factory, which served PG before STORY-189

@@ -17,7 +17,6 @@ import test from "node:test";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import {
   KNOWLEDGE_CONFLICT_SCORE_THRESHOLD,
-  acquireWorkspaceLease,
   captureKnowledgeUnit,
   createProject,
   initializeKnowledgeStore,
@@ -57,14 +56,9 @@ async function containerFixture(externalKey = "FIXTURE-CAPTURE") {
   }
   const workspace = join(base, "workspace");
   await initializeWorkspace({ roots, externalKey, createdAt: instant(1), segmentEventLimit: 64 });
-  const lease = await acquireWorkspaceLease(workspace, { now: instant(1, 1) });
-  try {
-    await createProject(workspace, lease, {
-      expectedVersion: 0, occurredAt: instant(1, 1), externalKey: "FIXTURE-CAPTURE-PROJECT", name: "Capture Fixture",
-    });
-  } finally {
-    await lease.release();
-  }
+  await createProject(workspace, {
+    occurredAt: instant(1, 1), externalKey: "FIXTURE-CAPTURE-PROJECT", name: "Capture Fixture",
+  });
   await initializeKnowledgeStore(workspace);
   return { container, workspace, close: () => rm(container, { recursive: true, force: true }) };
 }
@@ -260,7 +254,6 @@ test("STORY-365 GWT4/GWT5: create needs no backlink lists, and nothing new lands
     const created = await cliJson([
       "knowledge-create",
       "--workspace", fixture.workspace,
-      "--expected-version", "0",
       "--at", instant(2),
       "--external-key", "S365-NO-LINK-LISTS",
       "--scope", "role",

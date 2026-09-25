@@ -11,7 +11,6 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  acquireWorkspaceLease,
   initializeWorkspace,
   recoverWorkspace,
   withStorageBackendFactory,
@@ -85,19 +84,11 @@ test("STORY-344 workspace lifecycle data-plane operations use StorageBackend", a
       "ensureControlDirectory:snapshots",
     ]);
 
-    const lease = await withStorageBackendFactory(
+    await writeFile(join(fx.workspace, controlDirectory, "events", ".tmp-story-344"), "temporary");
+    await withStorageBackendFactory(
       () => backend,
-      () => acquireWorkspaceLease(fx.workspace, { now: instant(1) }),
+      () => recoverWorkspace(fx.workspace),
     );
-    try {
-      await writeFile(join(fx.workspace, controlDirectory, "events", ".tmp-story-344"), "temporary");
-      await withStorageBackendFactory(
-        () => backend,
-        () => recoverWorkspace(fx.workspace, lease),
-      );
-    } finally {
-      await lease.release();
-    }
     assert.deepEqual(backend.calls.slice(5), [
       "listControlEntries:events",
       "removeControlFile:events/.tmp-story-344",
@@ -121,16 +112,8 @@ test("STORY-344 workspace lifecycle has no direct data-plane fs calls", async ()
       () => backend,
       () => initializeWorkspace({ roots: fx.roots, externalKey: "STORY-344-RUNTIME", createdAt: instant(0) }),
     );
-    const lease = await withStorageBackendFactory(
-      () => backend,
-      () => acquireWorkspaceLease(fx.workspace, { now: instant(1) }),
-    );
-    try {
-      await writeFile(join(fx.workspace, controlDirectory, "events", ".tmp-story-344-runtime"), "temporary");
-      await withStorageBackendFactory(() => backend, () => recoverWorkspace(fx.workspace, lease));
-    } finally {
-      await lease.release();
-    }
+    await writeFile(join(fx.workspace, controlDirectory, "events", ".tmp-story-344-runtime"), "temporary");
+    await withStorageBackendFactory(() => backend, () => recoverWorkspace(fx.workspace));
     assert.deepEqual(backend.calls, [
       "createControlDirectory",
       "ensureControlDirectory:events",

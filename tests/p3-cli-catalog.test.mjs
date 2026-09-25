@@ -112,47 +112,26 @@ test("WSB-4: exactly the nullable flags carry the '-' sentinel, and only knowled
   });
 });
 
-test("WSB-7/WSD-2: exactly the workspace-event mutation verbs carry headSentinel, only on expected-version", () => {
-  const sentinelVerbs = [];
+test("WSB-7/WSD-2 retired by STORY-467 R1: no verb carries expected-version or a head sentinel", () => {
+  // WSB-7/WSD-2 pinned the head sentinel to the expected-version flag of every workspace-event
+  // appender. TCRN-CROSS-STORY-467 R1 removed the caller-supplied version together with the
+  // lease: a writer takes the engine write lock and appends to the head it finds under it, so
+  // there is no version to supply and no sentinel for one.
   for (const entry of COMMAND_CATALOG) {
     for (const flag of entry.flags) {
-      if (flag.headSentinel !== undefined) {
-        assert.equal(flag.headSentinel, true, `${entry.name}.${flag.name} headSentinel must be true`);
-        assert.equal(flag.name, "expected-version", `${entry.name}.${flag.name} may not carry headSentinel`);
-        sentinelVerbs.push(entry.name);
-      }
+      assert.notEqual(flag.name, "expected-version", `${entry.name} still declares expected-version`);
+      assert.equal(Object.hasOwn(flag, "headSentinel"), false, `${entry.name}.${flag.name} still carries headSentinel`);
     }
   }
-  // WSD-2 adds the seven conference/gate event-log mutation verbs to the six
-  // original project/work verbs; WSE-3 adds attestation-enable (the one-way
-  // attestation.actor.enabled appender); E05 adds work-annotate (the advisory
-  // scope-on-record appender). Head resolves under the held lease for all of
-  // them and is still rejected on knowledge-marker verbs by construction.
-  //
-  // STORY-300 slice 3 adds work-batch, which is the ordinary case rather than an
-  // exception: it appends a whole ordered sequence under one lease and one CAS decision,
-  // so head means exactly what it means for a single appender -- resolve against whatever
-  // the chain's head is right now and refuse if it moved. That it writes several events
-  // instead of one changes nothing about the question the sentinel answers.
-  assert.deepEqual([...sentinelVerbs].sort(), [
-    "attestation-enable",
-    "conference-append-position", "conference-cancel", "conference-close", "conference-open",
-    "dispatch-classes-set", "dispatch-mode-set", "dispatch-tiers-set",
-    "gate-create", "gate-delete", "gate-transition",
-    "project-create", "project-delete", "project-update",
-    "settings-remove", "settings-set", "template-admit", "work-annotate", "work-batch", "work-create", "work-delete", "work-transition",
-  ]);
 });
 
-test("dispatch tier catalog declares its payload and CAS boundary", async () => {
+test("dispatch tier catalog declares its payload and write flags", async () => {
   const entry = COMMAND_CATALOG.find((candidate) => candidate.name === "dispatch-tiers-set");
   assert.ok(entry);
   assert.deepEqual(entry.flags.map((flag) => flag.name), [
-    "workspace", "expected-version", "at", "host", "tiers", "actor", "attest-dir",
+    "workspace", "at", "host", "tiers", "actor", "attest-dir",
   ]);
   assert.deepEqual(entry.flags.find((flag) => flag.name === "tiers"), { name: "tiers", required: true, valueKind: "string" });
-  assert.equal(entry.flags.find((flag) => flag.name === "expected-version")?.headSentinel, true);
-  assert.equal(entry.flags.find((flag) => flag.name === "tiers")?.headSentinel, undefined);
 
   const policy = JSON.parse(await readFile(new URL("../scripts/policy/source-allowlist.json", import.meta.url), "utf8"));
   for (const path of ["packages/core/src/effort.ts", "portal/design-baseline.html", "scripts/s278-component-coverage.mjs"]) {
@@ -165,7 +144,7 @@ test("S369 retired model-plan commands refuse with and without their legacy flag
     const empty = await invoke([command]);
     assert.equal(empty.ok, false);
     assert.equal(empty.reasonCode, "CLI_COMMAND_UNKNOWN");
-    const legacy = await invoke([command, "--workspace", "/tmp/retired", "--expected-version", "0", "--at", "2026-01-01T00:00:00Z", "--host", "codex", "--name", "legacy", "--default-model", "model"]);
+    const legacy = await invoke([command, "--workspace", "/tmp/retired", "--at", "2026-01-01T00:00:00Z", "--host", "codex", "--name", "legacy", "--default-model", "model"]);
     assert.equal(legacy.ok, false);
     assert.equal(legacy.reasonCode, "CLI_COMMAND_UNKNOWN");
   }

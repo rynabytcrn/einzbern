@@ -47,8 +47,7 @@ import type { JsonValue } from "../../protocol/src/index.js";
 import { MACHINE_SETTINGS_DIRECTORY } from "./machine-settings.js";
 import { SETTINGS_CATALOG } from "./settings.js";
 import { WORKSPACE_CONTROL_DIRECTORY } from "./storage-backend.js";
-import { materializeWorkspace } from "./workspace.js";
-import type { WorkspaceLease } from "./workspace.js";
+import { materializeWorkspace, withWorkspaceWriteLock } from "./workspace.js";
 
 export const ARTIFACT_MANIFEST_SCHEMA_VERSION = "tcrn.artifact-manifest.v1" as const;
 export const ARTIFACT_PUT_SCHEMA_VERSION = "tcrn.artifact-put.v1" as const;
@@ -332,25 +331,6 @@ async function writeManifest(workspaceRoot: string, document: ArtifactManifestDo
   await rename(staging, path);
 }
 
-// The lease proof, in the same shape workspace-snapshot.ts asserts it: the token in hand
-// must be the token the control tree records as the holder.
-async function assertHeldLease(workspaceRoot: string, lease: WorkspaceLease): Promise<void> {
-  if (lease === null || typeof lease !== "object" || typeof lease.token !== "string" || lease.workspaceRoot !== workspaceRoot) {
-    fail("ARTIFACT_INPUT_INVALID", "lease does not hold this workspace");
-  }
-  const ownerPath = resolve(workspaceRoot, WORKSPACE_CONTROL_DIRECTORY, "lease", "owner.json");
-  const content = await boundFileBytes(ownerPath, 16_384);
-  let owner: JsonValue;
-  try {
-    owner = assertCanonicalJson(content.toString("utf8"));
-  } catch (error) {
-    fail("ARTIFACT_INPUT_INVALID", String(error));
-  }
-  if (!isJsonObject(owner) || owner.schemaVersion !== "tcrn.workspace-lease.v1" || owner.token !== lease.token) {
-    fail("ARTIFACT_INPUT_INVALID", "lease token does not match the recorded holder");
-  }
-}
-
 function blobPath(root: string, digest: string): string {
   return resolve(root, `${digest}${BLOB_SUFFIX}`);
 }
@@ -382,13 +362,12 @@ export interface ArtifactPutReceipt {
 /**
  * Put one file into the workspace's configured blob root, named for its content.
  *
- * The lease is the quiesce proof, exactly as it is for `snapshot-manifest`: two callers
- * appending to one manifest without it would each write a manifest missing the other's
- * entry, and the loser's blob would be on disk with nothing pointing at it.
+ * The workspace write lock serialises it, exactly as it does `snapshot-manifest`: two
+ * callers appending to one manifest without it would each write a manifest missing the
+ * other's entry, and the loser's blob would be on disk with nothing pointing at it.
  */
 export async function putArtifact(
   workspaceRootInput: string,
-  lease: WorkspaceLease,
   options: { readonly file: string; readonly at: string },
 ): Promise<ArtifactPutReceipt> {
   if (typeof workspaceRootInput !== "string" || workspaceRootInput.length === 0) {
@@ -398,11 +377,15 @@ export async function putArtifact(
     fail("ARTIFACT_INPUT_INVALID", "file");
   }
   try { assertStrictInstant(options.at); } catch { fail("ARTIFACT_INPUT_INVALID", "at"); }
-  const workspace = await boundDirectory(workspaceRootInput);
-  await assertHeldLease(workspace, lease);
+  const file = options.file;
+  const at = options.at;
+  return withWorkspaceWriteLock(await boundDirectory(workspaceRootInput), (workspace) => putArtifactHoldingLock(workspace, file, at));
+}
+
+async function putArtifactHoldingLock(workspace: string, file: string, at: string): Promise<ArtifactPutReceipt> {
   const root = await assertGeneratedArtifactsRoot(workspace, await effectiveArtifactsSetting(workspace));
 
-  const source = resolve(options.file);
+  const source = resolve(file);
   const plaintext = await boundFileBytes(source, ARTIFACT_BYTES_MAX);
   const digest = sha256(plaintext);
   const name = basename(source);
@@ -444,7 +427,7 @@ export async function putArtifact(
     bytes: plaintext.length,
     storedBytes: stored.length,
     name,
-    storedAt: options.at,
+    storedAt: at,
   };
   const artifacts = [...manifest.artifacts.filter((candidate) => candidate.sha256 !== digest), entry]
     .sort((left, right) => compareCanonicalText(left.sha256, right.sha256));

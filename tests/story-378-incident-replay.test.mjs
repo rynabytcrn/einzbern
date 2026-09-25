@@ -9,7 +9,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
-  acquireWorkspaceLease,
   captureKnowledgeUnit,
   createProject,
   initializeKnowledgeStore,
@@ -41,17 +40,11 @@ async function knowledgeFixture(t) {
   for (const root of roots) await mkdir(root.path);
   const workspace = join(base, "workspace");
   await initializeWorkspace({ roots, externalKey: "FIXTURE-STORY-378", createdAt: "2026-01-01T00:00:00Z" });
-  const lease = await acquireWorkspaceLease(workspace, { now: "2026-01-01T00:00:01Z" });
-  try {
-    await createProject(workspace, lease, {
-      expectedVersion: 0,
-      occurredAt: "2026-01-01T00:00:01Z",
-      externalKey: "FIXTURE-STORY-378-PROJECT",
-      name: "Story 378 fixture",
-    });
-  } finally {
-    await lease.release();
-  }
+  await createProject(workspace, {
+    occurredAt: "2026-01-01T00:00:01Z",
+    externalKey: "FIXTURE-STORY-378-PROJECT",
+    name: "Story 378 fixture",
+  });
   await initializeKnowledgeStore(workspace);
   return workspace;
 }

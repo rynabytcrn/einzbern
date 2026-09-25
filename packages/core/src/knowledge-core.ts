@@ -259,7 +259,6 @@ export interface KnowledgeUnitMetadata {
 }
 
 export interface CreateKnowledgeUnitInput {
-  readonly expectedVersion: number;
   readonly occurredAt: string;
   readonly externalKey: string;
   readonly scope: KnowledgeScope;
@@ -292,7 +291,6 @@ export interface CreateKnowledgeUnitInput {
 }
 
 export interface KnowledgeArticleCreateInput {
-  readonly expectedVersion: number;
   readonly occurredAt: string;
   /** Markdown file path relative to the effective articles directory. */
   readonly path: string;
@@ -305,7 +303,6 @@ export interface KnowledgeArticleCreateInput {
 }
 
 export interface KnowledgeArticleRefreshInput {
-  readonly expectedVersion: number;
   readonly expectedRevision: number;
   readonly occurredAt: string;
   readonly id: string;
@@ -1839,9 +1836,6 @@ export async function validateKnowledgeStore(workspaceRoot: string, options: Kno
 }
 
 export async function createKnowledgeUnit(workspaceRoot: string, input: CreateKnowledgeUnitInput, options: KnowledgeMutationOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
-  if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 0) {
-    fail("KNOWLEDGE_INPUT_INVALID", "expected version");
-  }
   assertBoundedString(input.body, KNOWLEDGE_LIMITS.maximumBodyBytes, "body");
   const body = Buffer.from(input.body, "utf8");
   const workspace = await materializeWorkspace(workspaceRoot);
@@ -1866,9 +1860,6 @@ export async function createKnowledgeUnit(workspaceRoot: string, input: CreateKn
   let released = false;
   try {
     const scan = await scanKnowledgeStore(workspaceRoot, options, true);
-    if (scan.marker.version !== input.expectedVersion) {
-      fail("KNOWLEDGE_CAS_MISMATCH", `${input.expectedVersion}:${scan.marker.version}`);
-    }
     let superseded: ScannedKnowledgeUnit | undefined;
     if (metadata.supersedes !== null) {
       superseded = scan.units.find((unit) => unit.metadata.id === metadata.supersedes);
@@ -1958,7 +1949,6 @@ export async function createKnowledgeArticle(
   input: KnowledgeArticleCreateInput,
   options: KnowledgeMutationOptions = {},
 ): Promise<Readonly<Record<string, JsonValue>>> {
-  if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 0) fail("KNOWLEDGE_INPUT_INVALID", "expected version");
   try { assertStrictInstant(input.occurredAt); } catch (error) { fail("KNOWLEDGE_INPUT_INVALID", String(error)); }
   if (!ARTICLE_CATEGORY_VALUES.includes(input.category)) fail("KNOWLEDGE_INPUT_INVALID", "article category");
   assertArticleField(input.title, 512, "article title");
@@ -1988,7 +1978,6 @@ export async function createKnowledgeArticle(
   const externalKey = `ARTICLE-${sha256(input.path).slice(0, 24).toUpperCase()}`;
   try {
     const created = await createKnowledgeUnit(workspaceRoot, {
-      expectedVersion: input.expectedVersion,
       occurredAt: input.occurredAt,
       externalKey,
       scope: "workspace",
@@ -2043,7 +2032,6 @@ export interface CaptureKnowledgeUnitInput {
   readonly tags: readonly string[];
   readonly accountableOwnerId: string;
   readonly body: string;
-  readonly expectedVersion?: number;
   readonly externalKey?: string;
   readonly roleScopes?: readonly string[];
   readonly category?: KnowledgeCategory;
@@ -2073,13 +2061,11 @@ export async function captureKnowledgeUnit(
   input: CaptureKnowledgeUnitInput,
   options: KnowledgeMutationOptions = {},
 ): Promise<Readonly<Record<string, JsonValue>>> {
-  const expectedVersion = input.expectedVersion ?? Number((await readKnowledgeStoreMarker(workspaceRoot, options)).version);
   // A derived key so the hook never has to invent one, and so the same lesson written
   // twice at the same instant is a duplicate rather than a second card.
   const externalKey = input.externalKey ??
     `CAPTURE-${createHash("sha256").update(`${input.subject}\u0000${input.body}\u0000${input.occurredAt}`, "utf8").digest("hex").slice(0, 24).toUpperCase()}`;
   return createKnowledgeUnit(workspaceRoot, {
-    expectedVersion,
     occurredAt: input.occurredAt,
     externalKey,
     scope: "role",
@@ -2115,13 +2101,9 @@ export async function captureKnowledgeUnit(
 // unless retireInvalid retires them as tombstoned audit records (their dangling
 // backlinks are then durably tolerated). Single version step under a mutation claim.
 export async function rebaseKnowledgeStore(workspaceRoot: string, input: {
-  readonly expectedVersion: number;
   readonly at: string;
   readonly retireInvalid?: boolean;
 }, options: KnowledgeMutationOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
-  if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 0) {
-    fail("KNOWLEDGE_INPUT_INVALID", "expected version");
-  }
   assertStrictInstant(input.at);
   const workspace = await materializeWorkspace(workspaceRoot);
   const initial = await mutationAdmissionScan(workspaceRoot, options, true);
@@ -2134,9 +2116,6 @@ export async function rebaseKnowledgeStore(workspaceRoot: string, input: {
   let released = false;
   try {
     const scan = await scanKnowledgeStore(workspaceRoot, options, true, "full", true);
-    if (scan.marker.version !== input.expectedVersion) {
-      fail("KNOWLEDGE_CAS_MISMATCH", `${input.expectedVersion}:${scan.marker.version}`);
-    }
     const offenders = scan.linkInvalid;
     if (offenders.length > 0 && input.retireInvalid !== true) {
       fail("KNOWLEDGE_REBASE_BLOCKED", offenders.join(","));
@@ -2543,7 +2522,6 @@ export async function checkKnowledgeSources(workspaceRoot: string, options: Know
 }
 
 export async function transitionKnowledgePromotion(workspaceRoot: string, input: {
-  readonly expectedVersion: number;
   readonly expectedRevision: number;
   readonly occurredAt: string;
   readonly id: string;
@@ -2555,8 +2533,7 @@ export async function transitionKnowledgePromotion(workspaceRoot: string, input:
   } catch (error) {
     fail("KNOWLEDGE_INPUT_INVALID", String(error));
   }
-  if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 0 ||
-    !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) {
+  if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) {
     fail("KNOWLEDGE_INPUT_INVALID", "promotion versions");
   }
   if (input.promotionState !== "promoted" && input.promotionState !== "rejected") {
@@ -2567,9 +2544,6 @@ export async function transitionKnowledgePromotion(workspaceRoot: string, input:
   let released = false;
   try {
     const scan = await scanKnowledgeStore(workspaceRoot, options, true);
-    if (scan.marker.version !== input.expectedVersion) {
-      fail("KNOWLEDGE_CAS_MISMATCH", `${input.expectedVersion}:${scan.marker.version}`);
-    }
     const unit = scan.units.find((entry) => entry.metadata.id === input.id);
     if (!unit) fail("KNOWLEDGE_NOT_FOUND", input.id);
     if (unit.metadata.revision !== input.expectedRevision) {
@@ -2748,7 +2722,6 @@ export async function retireKnowledgeSweep(workspaceRoot: string, input: { reado
 // "retired") that no longer occupies a live-record slot, and its dangling
 // backlinks are durably tolerated (WSC-2). One version step under the claim.
 export async function retireKnowledgeUnit(workspaceRoot: string, input: {
-  readonly expectedVersion: number;
   readonly expectedRevision: number;
   readonly occurredAt: string;
   readonly id: string;
@@ -2760,8 +2733,7 @@ export async function retireKnowledgeUnit(workspaceRoot: string, input: {
   } catch (error) {
     fail("KNOWLEDGE_INPUT_INVALID", String(error));
   }
-  if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 0 ||
-    !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) {
+  if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) {
     fail("KNOWLEDGE_INPUT_INVALID", "retire versions");
   }
   if (input.retirement !== undefined) validateRetirementRecord(input.retirement, input.id);
@@ -2770,9 +2742,6 @@ export async function retireKnowledgeUnit(workspaceRoot: string, input: {
   let released = false;
   try {
     const scan = await scanKnowledgeStore(workspaceRoot, options, true);
-    if (scan.marker.version !== input.expectedVersion) {
-      fail("KNOWLEDGE_CAS_MISMATCH", `${input.expectedVersion}:${scan.marker.version}`);
-    }
     const unit = scan.units.find((entry) => entry.metadata.id === input.id);
     if (!unit) fail("KNOWLEDGE_NOT_FOUND", input.id);
     if (unit.metadata.revision !== input.expectedRevision) {
@@ -2829,7 +2798,6 @@ export async function retireKnowledgeUnit(workspaceRoot: string, input: {
 // restore a fresh posture, so promoted knowledge does not decay irreversibly out
 // of default selection. Admitted for promoted records only (OD-17).
 export async function reverifyKnowledgeUnit(workspaceRoot: string, input: {
-  readonly expectedVersion: number;
   readonly expectedRevision: number;
   readonly occurredAt: string;
   readonly id: string;
@@ -2840,8 +2808,7 @@ export async function reverifyKnowledgeUnit(workspaceRoot: string, input: {
   } catch (error) {
     fail("KNOWLEDGE_INPUT_INVALID", String(error));
   }
-  if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 0 ||
-    !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) {
+  if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) {
     fail("KNOWLEDGE_INPUT_INVALID", "reverify versions");
   }
   const initial = await mutationAdmissionScan(workspaceRoot, options);
@@ -2849,9 +2816,6 @@ export async function reverifyKnowledgeUnit(workspaceRoot: string, input: {
   let released = false;
   try {
     const scan = await scanKnowledgeStore(workspaceRoot, options, true);
-    if (scan.marker.version !== input.expectedVersion) {
-      fail("KNOWLEDGE_CAS_MISMATCH", `${input.expectedVersion}:${scan.marker.version}`);
-    }
     const unit = scan.units.find((entry) => entry.metadata.id === input.id);
     if (!unit) fail("KNOWLEDGE_NOT_FOUND", input.id);
     if (unit.metadata.revision !== input.expectedRevision) {
@@ -2904,8 +2868,7 @@ export async function refreshKnowledgeArticle(
   } catch (error) {
     fail("KNOWLEDGE_INPUT_INVALID", String(error));
   }
-  if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 0 ||
-    !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) {
+  if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) {
     fail("KNOWLEDGE_INPUT_INVALID", "article refresh versions");
   }
   assertArticleField(input.summary, KNOWLEDGE_LIMITS.maximumSummaryBytes, "article summary");
@@ -2914,7 +2877,6 @@ export async function refreshKnowledgeArticle(
   let released = false;
   try {
     const scan = await scanKnowledgeStore(workspaceRoot, options, true);
-    if (scan.marker.version !== input.expectedVersion) fail("KNOWLEDGE_CAS_MISMATCH", `${input.expectedVersion}:${scan.marker.version}`);
     const unit = scan.units.find((entry) => entry.metadata.id === input.id);
     if (unit === undefined) fail("KNOWLEDGE_NOT_FOUND", input.id);
     if (unit.metadata.revision !== input.expectedRevision) fail("KNOWLEDGE_CAS_MISMATCH", `${input.expectedRevision}:${unit.metadata.revision}`);
@@ -3007,7 +2969,6 @@ export async function refreshKnowledgeArticle(
 // calendar policy; a later explicit source check or re-verification can mark the
 // record stale again when a current source actually warrants it.
 export async function updateKnowledgeStalenessPolicy(workspaceRoot: string, input: {
-  readonly expectedVersion: number;
   readonly expectedRevision: number;
   readonly occurredAt: string;
   readonly id: string;
@@ -3019,8 +2980,7 @@ export async function updateKnowledgeStalenessPolicy(workspaceRoot: string, inpu
   } catch (error) {
     fail("KNOWLEDGE_INPUT_INVALID", String(error));
   }
-  if (!Number.isSafeInteger(input.expectedVersion) || input.expectedVersion < 0 ||
-    !Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) {
+  if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) {
     fail("KNOWLEDGE_INPUT_INVALID", "policy versions");
   }
   const maximumAgeDays = input.stalenessPolicy?.maximumAgeDays;
@@ -3034,9 +2994,6 @@ export async function updateKnowledgeStalenessPolicy(workspaceRoot: string, inpu
   let released = false;
   try {
     const scan = await scanKnowledgeStore(workspaceRoot, options, true);
-    if (scan.marker.version !== input.expectedVersion) {
-      fail("KNOWLEDGE_CAS_MISMATCH", `${input.expectedVersion}:${scan.marker.version}`);
-    }
     const unit = scan.units.find((entry) => entry.metadata.id === input.id);
     if (!unit) fail("KNOWLEDGE_NOT_FOUND", input.id);
     if (unit.metadata.revision !== input.expectedRevision) {

@@ -6,7 +6,7 @@
 // about how this machine's portal opens — which partition, which language, which
 // theme, which port — and none of them is a claim anyone needs to audit. Putting them
 // on a chain would mean every laptop preference became a governed event on a shared
-// ledger, and choosing a partition to open in would need an expected-version.
+// ledger, and choosing a partition to open in would take the chain write lock.
 //
 // So this layer is deliberately NOT chain-backed. It is a single canonical JSON file
 // under the machine-level engine home the install manifest already declares

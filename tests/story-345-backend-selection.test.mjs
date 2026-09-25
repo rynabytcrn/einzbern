@@ -9,7 +9,6 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  acquireWorkspaceLease,
   createProject,
   initializeWorkspace,
   materializeWorkspace,
@@ -38,24 +37,17 @@ test("STORY-345 default segmented and explicit file backends produce the same wo
   const file = await fixture("FILE");
   try {
     for (const [fixture, backend] of [[segmented, "file-segmented"], [file, "file"]]) {
-      const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(1) });
-      try {
-        let state = await setWorkspaceSetting(fixture.workspace, lease, {
-          key: "storage.backend",
-          value: backend,
-          expectedVersion: 0,
-          occurredAt: instant(1),
-        });
-        state = await createProject(fixture.workspace, lease, {
-          externalKey: "STORY-345-PROJECT",
-          name: "Same result",
-          expectedVersion: state.version,
-          occurredAt: instant(2),
-        });
-        assert.equal(state.version, 2);
-      } finally {
-        await lease.release();
-      }
+      let state = await setWorkspaceSetting(fixture.workspace, {
+        key: "storage.backend",
+        value: backend,
+        occurredAt: instant(1),
+      });
+      state = await createProject(fixture.workspace, {
+        externalKey: "STORY-345-PROJECT",
+        name: "Same result",
+        occurredAt: instant(2),
+      });
+      assert.equal(state.version, 2);
     }
     const left = await validateWorkspace(segmented.workspace);
     const right = await validateWorkspace(file.workspace);
@@ -74,30 +66,18 @@ test("STORY-345 default segmented and explicit file backends produce the same wo
 test("STORY-345 backend selection rejects unknown values and does not silently fall back", async () => {
   const fx = await fixture("UNKNOWN");
   try {
-    const lease = await acquireWorkspaceLease(fx.workspace, { now: instant(1) });
-    try {
-      await assert.rejects(() => setWorkspaceSetting(fx.workspace, lease, {
-        key: "storage.backend",
-        value: "pg",
-        expectedVersion: 0,
-        occurredAt: instant(1),
-      }), (error) => error?.reasonCode === "SETTINGS_VALUE_INVALID");
-    } finally {
-      await lease.release();
-    }
+    await assert.rejects(() => setWorkspaceSetting(fx.workspace, {
+      key: "storage.backend",
+      value: "pg",
+      occurredAt: instant(1),
+    }), (error) => error?.reasonCode === "SETTINGS_VALUE_INVALID");
     const state = await materializeWorkspace(fx.workspace);
     assert.equal(state.version, 0, "an invalid backend setting must not append an event");
-    const freshLease = await acquireWorkspaceLease(fx.workspace, { now: instant(2) });
-    try {
-      await createProject(fx.workspace, freshLease, {
-        externalKey: "STORY-345-DEFAULT-PROJECT",
-        name: "Default segmented backend",
-        expectedVersion: state.version,
-        occurredAt: instant(2),
-      });
-    } finally {
-      await freshLease.release();
-    }
+    await createProject(fx.workspace, {
+      externalKey: "STORY-345-DEFAULT-PROJECT",
+      name: "Default segmented backend",
+      occurredAt: instant(2),
+    });
     const entries = await readdir(join(fx.workspace, controlDirectory, "events"));
     assert.ok(entries.includes("000001.idx"), "the default backend must retain the segmented point index");
     assert.ok(entries.includes("manifest.json"), "the default backend must retain the segmented manifest");

@@ -21,9 +21,10 @@ The loop is:
   sibling roots). Identifiers written as `<project-id>`, `<story-id>`, and so on
   stand for the id echoed by the previous command's receipt — copy the real value
   from that output.
-- Every mutation takes an explicit `--at` instant and an `--expected-version`
-  compare-and-set guard. The instants here are illustrative and deterministic;
-  supply your own real timestamps in practice.
+- Every mutation takes an explicit `--at` instant. The engine serialises writers
+  with its own write lock, so no version is passed; each receipt echoes the ids it
+  wrote, the new `version` and `headEventHash`. The instants here are illustrative
+  and deterministic; supply your own real timestamps in practice.
 - The loop stays actor-optional: attestation is never enabled, so no `--actor` is
   required. Enable it first if your workspace mandates attested writes.
 
@@ -46,10 +47,10 @@ echoes the new record's id in `record.id`; capture each one for the next parent.
 key and by nothing a reader would think to type.
 
 ```console
-$ einzbern project-create --workspace ./flagship/workspace --expected-version 0 --at 2026-07-11T00:00:01Z --external-key FLAGSHIP-PROJECT --name Flagship
-$ einzbern work-create --workspace ./flagship/workspace --expected-version 1 --at 2026-07-11T00:00:02Z --project-id <project-id> --external-key FLAGSHIP-INITIATIVE --kind Initiative --title Flagship-initiative
-$ einzbern work-create --workspace ./flagship/workspace --expected-version 2 --at 2026-07-11T00:00:03Z --project-id <project-id> --external-key FLAGSHIP-EPIC --kind Epic --parent-id <initiative-id> --title Flagship-epic
-$ einzbern work-create --workspace ./flagship/workspace --expected-version 3 --at 2026-07-11T00:00:04Z --project-id <project-id> --external-key FLAGSHIP-STORY --kind Story --parent-id <epic-id> --scope <story-scope> --title Flagship-story
+$ einzbern project-create --workspace ./flagship/workspace --at 2026-07-11T00:00:01Z --external-key FLAGSHIP-PROJECT --name Flagship
+$ einzbern work-create --workspace ./flagship/workspace --at 2026-07-11T00:00:02Z --project-id <project-id> --external-key FLAGSHIP-INITIATIVE --kind Initiative --title Flagship-initiative
+$ einzbern work-create --workspace ./flagship/workspace --at 2026-07-11T00:00:03Z --project-id <project-id> --external-key FLAGSHIP-EPIC --kind Epic --parent-id <initiative-id> --title Flagship-epic
+$ einzbern work-create --workspace ./flagship/workspace --at 2026-07-11T00:00:04Z --project-id <project-id> --external-key FLAGSHIP-STORY --kind Story --parent-id <epic-id> --scope <story-scope> --title Flagship-story
 ```
 
 Each verb returns `WORKSPACE_COMMAND_COMPLETED` with the created `record`. The Epic
@@ -62,8 +63,8 @@ A story is planned when created. Walk it through the lifecycle to `active`, the
 state from which a governing gate will stand between it and `done`.
 
 ```console
-$ einzbern work-transition --workspace ./flagship/workspace --expected-version 4 --at 2026-07-11T00:00:05Z --id <story-id> --status ready
-$ einzbern work-transition --workspace ./flagship/workspace --expected-version 5 --at 2026-07-11T00:00:06Z --id <story-id> --status active
+$ einzbern work-transition --workspace ./flagship/workspace --at 2026-07-11T00:00:05Z --id <story-id> --status ready
+$ einzbern work-transition --workspace ./flagship/workspace --at 2026-07-11T00:00:06Z --id <story-id> --status active
 ```
 
 ## 3. Raise the gate
@@ -73,7 +74,7 @@ engine refuses to move the story to `done` (`WORKSPACE_GATE_PENDING`) — the ga
 the governed decision point the rest of the loop resolves.
 
 ```console
-$ einzbern gate-create --workspace ./flagship/workspace --expected-version 6 --at 2026-07-11T00:00:07Z --external-key FLAGSHIP-GATE --project-id <project-id> --work-id <story-id> --title Decision-gate --outcome-class role_decision
+$ einzbern gate-create --workspace ./flagship/workspace --at 2026-07-11T00:00:07Z --external-key FLAGSHIP-GATE --project-id <project-id> --work-id <story-id> --title Decision-gate --outcome-class role_decision
 ```
 
 Capture the gate id from `recordId`.
@@ -84,8 +85,8 @@ Open a conference anchored to the story, record a position, then close it into
 minutes. The close is the anchoring evidence the gate will require.
 
 ```console
-$ einzbern conference-open --workspace ./flagship/workspace --expected-version 7 --at 2026-07-11T00:00:08Z --external-key FLAGSHIP-CONFERENCE --project-id <project-id> --type architecture --title Decide-the-story --work-ids <story-id> --desired-outcome ratify-the-approach --participant-ids profile:architect-01
-$ einzbern conference-append-position --workspace ./flagship/workspace --expected-version 8 --at 2026-07-11T00:00:09Z --conference-id <conference-id> --external-key FLAGSHIP-POSITION --actor-id profile:architect-01 --position persist-via-event-log --risks forward-reads-as-corruption --recommendations document-the-posture --evidence-ids evidence:position-01
+$ einzbern conference-open --workspace ./flagship/workspace --at 2026-07-11T00:00:08Z --external-key FLAGSHIP-CONFERENCE --project-id <project-id> --type architecture --title Decide-the-story --work-ids <story-id> --desired-outcome ratify-the-approach --participant-ids profile:architect-01
+$ einzbern conference-append-position --workspace ./flagship/workspace --at 2026-07-11T00:00:09Z --conference-id <conference-id> --external-key FLAGSHIP-POSITION --actor-id profile:architect-01 --position persist-via-event-log --risks forward-reads-as-corruption --recommendations document-the-posture --evidence-ids evidence:position-01
 ```
 
 Capture the conference id from the open receipt's `recordId`.
@@ -106,7 +107,7 @@ each minutes decision is captured as a promotable knowledge candidate. The recei
 carries the minutes id in `recordId` and the new candidate id in `knowledgeUnitIds`.
 
 ```console
-$ einzbern conference-close --workspace ./flagship/workspace --expected-version 9 --at 2026-07-11T00:00:10Z --conference-id <conference-id> --minutes-external-key FLAGSHIP-MINUTES --summary approach-ratified --outcome-class role_decision --decisions persist-conference-and-gate-records --unresolved-issues - --distill true --accountable-owner-id owner:governance --stale-days 90 --evidence-ids evidence:close-01
+$ einzbern conference-close --workspace ./flagship/workspace --at 2026-07-11T00:00:10Z --conference-id <conference-id> --minutes-external-key FLAGSHIP-MINUTES --summary approach-ratified --outcome-class role_decision --decisions persist-conference-and-gate-records --unresolved-issues - --distill true --accountable-owner-id owner:governance --stale-days 90 --evidence-ids evidence:close-01
 ```
 
 The candidate carries the fixed conference tag set
@@ -123,7 +124,7 @@ head — before the final workspace mutations advance it.
 ```console
 $ einzbern knowledge-validate --workspace ./flagship/workspace
 $ einzbern knowledge-list --workspace ./flagship/workspace --at 2026-07-11T00:00:11Z --selection all
-$ einzbern knowledge-promote --workspace ./flagship/workspace --expected-version <knowledge-version> --expected-revision <knowledge-revision> --at 2026-07-11T00:00:12Z --id <knowledge-id> --state promoted
+$ einzbern knowledge-promote --workspace ./flagship/workspace --expected-revision <knowledge-revision> --at 2026-07-11T00:00:12Z --id <knowledge-id> --state promoted
 ```
 
 `knowledge-validate` reports the marker `version` (use it as `<knowledge-version>`);
@@ -138,9 +139,9 @@ satisfaction locator is `conference-minutes:` followed by the minutes id's suffi
 Once the gate is `satisfied`, the story is free to reach `done`.
 
 ```console
-$ einzbern gate-transition --workspace ./flagship/workspace --expected-version 10 --at 2026-07-11T00:00:13Z --id <gate-id> --status satisfied --minutes-locator <minutes-locator>
-$ einzbern work-annotate --workspace ./flagship/workspace --expected-version 11 --at 2026-07-11T00:00:14Z --id <story-id> --decided-by <minutes-id>
-$ einzbern work-transition --workspace ./flagship/workspace --expected-version 12 --at 2026-07-11T00:00:15Z --id <story-id> --status done
+$ einzbern gate-transition --workspace ./flagship/workspace --at 2026-07-11T00:00:13Z --id <gate-id> --status satisfied --minutes-locator <minutes-locator>
+$ einzbern work-annotate --workspace ./flagship/workspace --at 2026-07-11T00:00:14Z --id <story-id> --decided-by <minutes-id>
+$ einzbern work-transition --workspace ./flagship/workspace --at 2026-07-11T00:00:15Z --id <story-id> --status done
 ```
 
 ## 8. Trace the chain

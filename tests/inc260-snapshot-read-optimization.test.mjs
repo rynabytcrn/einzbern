@@ -9,7 +9,6 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 
 import {
-  acquireWorkspaceLease,
   createProject,
   initializeWorkspace,
   materializeWorkspace,
@@ -48,17 +47,14 @@ async function fixture(context) {
   }
   const workspace = join(base, "workspace");
   await initializeWorkspace({ roots, externalKey: "INC260-SNAPSHOT-FIXTURE", createdAt: "2026-09-02T04:00:00Z" });
-  const lease = await acquireWorkspaceLease(workspace, { now: "2026-09-02T04:00:01Z" });
   let state = await materializeWorkspace(workspace);
   for (let index = 0; index < 4; index += 1) {
-    state = await createProject(workspace, lease, {
+    state = await createProject(workspace, {
       externalKey: `INC260-PROJECT-${index}`,
       name: `Project ${index}`,
-      expectedVersion: state.version,
       occurredAt: `2026-09-02T04:00:0${index + 2}Z`,
     });
   }
-  await lease.release();
   await rebuildReplaySnapshot(workspace);
   return { base, workspace };
 }

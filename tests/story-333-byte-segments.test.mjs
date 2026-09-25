@@ -9,7 +9,6 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  acquireWorkspaceLease,
   createProject,
   initializeWorkspace,
   materializeWorkspace,
@@ -61,26 +60,19 @@ test("STORY-333 byte threshold creates bounded segments and preserves legacy seg
       segmentEventLimit: 16_777_216,
     });
 
-    const lease = await acquireWorkspaceLease(modern.workspace, { now: instant(1) });
-    try {
-      let state = await setWorkspaceSetting(modern.workspace, lease, {
-        key: "storage.segmentBytes",
-        value: "4096",
-        expectedVersion: 0,
-        occurredAt: instant(1),
+    let state = await setWorkspaceSetting(modern.workspace, {
+      key: "storage.segmentBytes",
+      value: "4096",
+      occurredAt: instant(1),
+    });
+    for (let index = 0; index < 12; index += 1) {
+      state = await createProject(modern.workspace, {
+        externalKey: `STORY-333-PROJECT-${String(index).padStart(2, "0")}`,
+        name: `Project ${index} ${"x".repeat(index % 2 === 0 ? 80 : 260)}`,
+        occurredAt: instant(index + 2),
       });
-      for (let index = 0; index < 12; index += 1) {
-        state = await createProject(modern.workspace, lease, {
-          externalKey: `STORY-333-PROJECT-${String(index).padStart(2, "0")}`,
-          name: `Project ${index} ${"x".repeat(index % 2 === 0 ? 80 : 260)}`,
-          expectedVersion: state.version,
-          occurredAt: instant(index + 2),
-        });
-      }
-      assert.equal(state.version, 13);
-    } finally {
-      await lease.release();
     }
+    assert.equal(state.version, 13);
 
     const entries = (await readdir(join(modern.workspace, controlDirectory, "events"))).sort();
     const segments = entries.filter((entry) => entry.endsWith(".ndjson"));
@@ -96,17 +88,11 @@ test("STORY-333 byte threshold creates bounded segments and preserves legacy seg
   const legacy = await fixture("LEGACY", { segmentEventLimit: 2 });
   try {
     const before = await readFile(join(legacy.workspace, controlDirectory, "workspace.json"), "utf8");
-    const lease = await acquireWorkspaceLease(legacy.workspace, { now: instant(1) });
-    try {
-      await createProject(legacy.workspace, lease, {
-        externalKey: "STORY-333-LEGACY-PROJECT",
-        name: "Legacy",
-        expectedVersion: 0,
-        occurredAt: instant(1),
-      });
-    } finally {
-      await lease.release();
-    }
+    await createProject(legacy.workspace, {
+      externalKey: "STORY-333-LEGACY-PROJECT",
+      name: "Legacy",
+      occurredAt: instant(1),
+    });
     const entries = (await readdir(join(legacy.workspace, controlDirectory, "events"))).sort();
     assert.ok(entries.includes("000001.json"));
     assert.equal(JSON.parse(await readFile(join(legacy.workspace, controlDirectory, "workspace.json"), "utf8")).storageVersion, 1);
@@ -120,26 +106,19 @@ test("STORY-333 byte threshold creates bounded segments and preserves legacy seg
 test("STORY-333 byte rolling is not replaced by event-count rolling", async () => {
   const fx = await fixture("RUNTIME");
   try {
-    const lease = await acquireWorkspaceLease(fx.workspace, { now: instant(1) });
-    try {
-      let state = await setWorkspaceSetting(fx.workspace, lease, {
-        key: "storage.segmentBytes",
-        value: "4096",
-        expectedVersion: 0,
-        occurredAt: instant(1),
+    let state = await setWorkspaceSetting(fx.workspace, {
+      key: "storage.segmentBytes",
+      value: "4096",
+      occurredAt: instant(1),
+    });
+    for (let index = 0; index < 12; index += 1) {
+      state = await createProject(fx.workspace, {
+        externalKey: `STORY-333-RUNTIME-${String(index).padStart(2, "0")}`,
+        name: `Runtime project ${"x".repeat(index % 2 === 0 ? 80 : 260)}`,
+        occurredAt: instant(index + 2),
       });
-      for (let index = 0; index < 12; index += 1) {
-        state = await createProject(fx.workspace, lease, {
-          externalKey: `STORY-333-RUNTIME-${String(index).padStart(2, "0")}`,
-          name: `Runtime project ${"x".repeat(index % 2 === 0 ? 80 : 260)}`,
-          expectedVersion: state.version,
-          occurredAt: instant(index + 2),
-        });
-      }
-      assert.equal(state.version, 13);
-    } finally {
-      await lease.release();
     }
+    assert.equal(state.version, 13);
     const entries = (await readdir(join(fx.workspace, controlDirectory, "events"))).filter((entry) => entry.endsWith(".ndjson"));
     assert.ok(entries.length >= 3, `byte rolling must create multiple segments, got ${entries.length}`);
     const sizes = await Promise.all(entries.map(async (entry) => (await stat(join(fx.workspace, controlDirectory, "events", entry))).size));

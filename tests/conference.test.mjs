@@ -93,16 +93,16 @@ test("close distils each decision into a knowledge candidate backlinking the con
 test("WSD-3: distillConferenceKnowledge emits one governed knowledge input per decision", () => {
   const options = {
     occurredAt: "2026-07-16T02:00:00Z",
-    expectedVersionBase: 3,
     stalenessDays: 90,
     accountableOwnerId: "owner:governance",
     evidenceIds: ["evidence:extra", "work:notevidence"],
   };
   const inputs = distillConferenceKnowledge(minutes(), request(), [position()], options);
   const checks = [
-    // One input per minutes decision, each a candidate carrying the base-relative CAS.
+    // One input per minutes decision, each a candidate. No store-version CAS rides along any
+    // more: the knowledge write takes the engine lock itself (TCRN-CROSS-STORY-467 R1).
     () => assert.equal(inputs.length, minutes().decisions.length),
-    () => assert.deepEqual(inputs.map((input) => input.expectedVersion), [3, 4]),
+    () => assert.equal(inputs.every((input) => !Object.hasOwn(input, "expectedVersion")), true),
     () => assert.equal(inputs.every((input) => input.lifecycle === "candidate" && input.category === "decision" && input.kind === "decision"), true),
     // Hyphen-only external keys the canonicalizer admits (uppercased), unique per decision.
     () => assert.deepEqual(inputs.map((input) => input.externalKey), ["conference-decision-one-one-1", "conference-decision-one-one-2"]),
@@ -131,7 +131,7 @@ test("WSD-3: knowledge fields truncate on a code-point boundary without splittin
   // before it, leaving a well-formed string at or under the byte cap (no partial unit).
   const decision = `${"a".repeat(510)}\u{1f600}tail`;
   const inputs = distillConferenceKnowledge(minutes({ decisions: [decision] }), request(), [], {
-    occurredAt: "2026-07-16T02:00:00Z", expectedVersionBase: 0, stalenessDays: 30,
+    occurredAt: "2026-07-16T02:00:00Z", stalenessDays: 30,
   });
   const [input] = inputs;
   assert.equal(Buffer.byteLength(input.snippet, "utf8") <= 512, true);

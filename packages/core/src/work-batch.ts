@@ -41,7 +41,7 @@ import {
   annotateWorkDelta,
   transitionWorkDelta,
 } from "./workspace.js";
-import type { MutationDelta, WorkspaceLease, WorkspaceState } from "./workspace.js";
+import type { MutationDelta, WorkspaceState } from "./workspace.js";
 
 export const WORK_BATCH_SCHEMA_VERSION = "tcrn.work-batch.v1" as const;
 export const WORK_BATCH_VERBS = Object.freeze(["work-create", "work-transition", "work-annotate"]);
@@ -164,16 +164,14 @@ function deltaFor(member: Readonly<Record<string, unknown>>, occurredAt: string)
 }
 
 export interface WorkBatchOptions {
-  // The head sentinel is resolved at the CLI boundary like every other verb, so this
-  // takes the number it resolved to and nothing here has to know the sentinel exists.
-  readonly expectedVersion: number;
+  // TCRN-CROSS-STORY-467 R1: no expected version -- the engine applies the batch under its
+  // write lock against the latest state.
   readonly occurredAt: string;
   readonly actorId?: string;
 }
 
 export async function applyWorkBatch(
   workspaceRoot: string,
-  lease: WorkspaceLease,
   document: unknown,
   options: WorkBatchOptions,
 ): Promise<WorkspaceState> {
@@ -195,12 +193,12 @@ export async function applyWorkBatch(
   }
   const deltas = members.map((member) => deltaFor(member as Readonly<Record<string, unknown>>, options.occurredAt));
   try {
-    return await appendEvents(workspaceRoot, lease, deltas, options);
+    return await appendEvents(workspaceRoot, deltas, options);
   } catch (error) {
     // The index comes from appendEvents, which is the only thing that knows it. Counting
     // completed closures from out here was wrong three ways: the counter advanced after
     // the closure returned while actor injection and event construction ran afterwards
-    // and throw too, a pre-loop failure (instant, lease, CAS) left it at zero and blamed
+    // and throw too, a pre-loop failure (instant, lock) left it at zero and blamed
     // member zero, and a last-member failure fell through unattributed.
     const failing = (error as { memberIndex?: unknown }).memberIndex;
     if (typeof failing !== "number") throw error;

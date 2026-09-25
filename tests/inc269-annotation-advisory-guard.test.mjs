@@ -21,7 +21,6 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  acquireWorkspaceLease,
   annotateWork,
   createProject,
   createWork,
@@ -39,23 +38,21 @@ async function incidentFixture(context, externalKey) {
   for (const root of roots) await mkdir(root.path);
   const workspace = join(base, "workspace");
   await initializeWorkspace({ roots, externalKey, createdAt: instant(0), segmentEventLimit: 64 });
-  const lease = await acquireWorkspaceLease(workspace, { now: instant(1) });
   context.after(async () => {
-    await lease.release().catch(() => undefined);
     await rm(base, { recursive: true, force: true });
   });
-  let state = await createProject(workspace, lease, {
-    expectedVersion: 0, occurredAt: instant(2), externalKey: `${externalKey}-PROJECT`, name: "INC269",
+  let state = await createProject(workspace, {
+    occurredAt: instant(2), externalKey: `${externalKey}-PROJECT`, name: "INC269",
   });
-  state = await createWork(workspace, lease, {
-    expectedVersion: 1, occurredAt: instant(3), projectId: state.projects[0].id,
+  state = await createWork(workspace, {
+    occurredAt: instant(3), projectId: state.projects[0].id,
     externalKey: `${externalKey}-INCIDENT`, kind: "Incident", parentId: null, status: "active",
   });
-  return { workspace, lease, id: state.work[0].id, version: state.version };
+  return { workspace, id: state.work[0].id, version: state.version };
 }
 
 test("INC-269 an annotation that moves no annotatable field is refused before it is written", async (context) => {
-  const { workspace, lease, id, version } = await incidentFixture(context, "INC269-GUARD");
+  const { workspace, id, version } = await incidentFixture(context, "INC269-GUARD");
   assert.equal(version, 2);
 
   // TCRN-CROSS-STORY-363 moved this boundary out by three fields: title, labels and
@@ -65,8 +62,8 @@ test("INC-269 an annotation that moves no annotatable field is refused before it
   // the probe is now an annotation that restates the record's own values and moves
   // nothing at all. The record is fresh: its title is null and its labels are empty.
   await assert.rejects(
-    () => annotateWork(workspace, lease, {
-      expectedVersion: version, occurredAt: instant(4), id, title: null, labels: [],
+    () => annotateWork(workspace, {
+      occurredAt: instant(4), id, title: null, labels: [],
     }),
     (error) => error?.reasonCode === "WORKSPACE_INPUT_INVALID"
       && error.message === `work ${id} annotation changed no annotatable field`,
@@ -87,12 +84,12 @@ test("INC-269 an annotation that moves no annotatable field is refused before it
   // The criterion is "a value moved", not "a flag was passed": re-sending the same scope
   // and the same title moves nothing and is refused identically. This is the reducer's
   // predicate, so the verb and replay cannot disagree about it.
-  const annotated = await annotateWork(workspace, lease, {
-    expectedVersion: version, occurredAt: instant(5), id, scope: "INC-269 advisory guard probe", title: "T",
+  const annotated = await annotateWork(workspace, {
+    occurredAt: instant(5), id, scope: "INC-269 advisory guard probe", title: "T",
   });
   await assert.rejects(
-    () => annotateWork(workspace, lease, {
-      expectedVersion: annotated.version, occurredAt: instant(6), id,
+    () => annotateWork(workspace, {
+      occurredAt: instant(6), id,
       scope: "INC-269 advisory guard probe", title: "T",
     }),
     (error) => error?.reasonCode === "WORKSPACE_INPUT_INVALID"
@@ -102,10 +99,10 @@ test("INC-269 an annotation that moves no annotatable field is refused before it
 });
 
 test("INC-269 title and labels land, with or without an advisory field beside them", async (context) => {
-  const { workspace, lease, id, version } = await incidentFixture(context, "INC269-POSITIVE");
+  const { workspace, id, version } = await incidentFixture(context, "INC269-POSITIVE");
 
-  const state = await annotateWork(workspace, lease, {
-    expectedVersion: version, occurredAt: instant(4), id,
+  const state = await annotateWork(workspace, {
+    occurredAt: instant(4), id,
     scope: "INC-269 advisory guard probe", title: "T", labels: ["a", "b"],
   });
   const record = state.work.find((entry) => entry.id === id);
@@ -120,8 +117,8 @@ test("INC-269 title and labels land, with or without an advisory field beside th
   // TCRN-CROSS-STORY-363: a title-only annotation now lands too, and the workspace still
   // reads back. Under INC-269's disposition this was refused, which left title, labels and
   // summary writable only in the company of a scope the writer had no business touching.
-  const retitled = await annotateWork(workspace, lease, {
-    expectedVersion: validated.version, occurredAt: instant(5), id, title: "T2",
+  const retitled = await annotateWork(workspace, {
+    occurredAt: instant(5), id, title: "T2",
   });
   assert.equal(retitled.work.find((entry) => entry.id === id).title, "T2");
   const replayed = await validateWorkspace(workspace);

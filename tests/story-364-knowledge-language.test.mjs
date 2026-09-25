@@ -25,7 +25,6 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  acquireWorkspaceLease,
   applyWriteLanguagePolicy,
   createProject,
   createWork,
@@ -87,27 +86,22 @@ async function languageWorkspace(context, settings) {
   }
   await initializeWorkspace({ roots, externalKey: "STORY-364-LANGUAGE", createdAt: instant(0) });
   const workspace = join(partitionPath, "workspace");
-  const lease = await acquireWorkspaceLease(workspace, { now: instant(1) });
-  try {
-    let state = await createProject(workspace, lease, {
-      expectedVersion: 0, occurredAt: instant(1), externalKey: "STORY-364-PROJECT", name: "Language",
+  let state = await createProject(workspace, {
+    occurredAt: instant(1), externalKey: "STORY-364-PROJECT", name: "Language",
+  });
+  state = await createWork(workspace, {
+    occurredAt: instant(2), projectId: state.projects[0].id,
+    externalKey: "TCRN-CROSS-STORY-364", kind: "Initiative", parentId: null,
+    title: "生成物语言与写入时问法扩展",
+  });
+  let version = Number(state.version);
+  let second = 3;
+  for (const [key, value] of Object.entries(settings)) {
+    const state = await setWorkspaceSetting(workspace, {
+      occurredAt: instant(second), key, value,
     });
-    state = await createWork(workspace, lease, {
-      expectedVersion: state.version, occurredAt: instant(2), projectId: state.projects[0].id,
-      externalKey: "TCRN-CROSS-STORY-364", kind: "Initiative", parentId: null,
-      title: "生成物语言与写入时问法扩展",
-    });
-    let version = Number(state.version);
-    let second = 3;
-    for (const [key, value] of Object.entries(settings)) {
-      const state = await setWorkspaceSetting(workspace, lease, {
-        expectedVersion: version, occurredAt: instant(second), key, value,
-      });
-      version = Number(state.version);
-      second += 1;
-    }
-  } finally {
-    await lease.release();
+    version = Number(state.version);
+    second += 1;
   }
   await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
   return workspace;
@@ -530,8 +524,7 @@ test("STORY-364 R3: knowledge-create reaches the write-path hook, and is refused
     translations: TRANSLATIONS,
     expansions: { "STORY-364-CREATE": { "zh-CN": PHRASINGS_ZH } },
   });
-  const argv = (...extra) => ["knowledge-create", "--workspace", workspace, "--expected-version", "0",
-    "--at", instant(10), "--external-key", "STORY-364-CREATE", "--scope", "workspace", "--project-id", "-",
+  const argv = (...extra) => ["knowledge-create", "--workspace", workspace, "--at", instant(10), "--external-key", "STORY-364-CREATE", "--scope", "workspace", "--project-id", "-",
     "--role-scopes", "-", "--category", "workflow", "--kind", "fact", "--tags", "lesson",
     "--subject", englishCard.subject, "--summary", englishCard.summary, "--snippet", englishCard.snippet,
     "--accountable-owner-id", OWNER, "--source-references", "evidence://story-364/create",
@@ -581,8 +574,7 @@ test("STORY-364 R3: a batch's create members each get their own answers, keyed b
       "STORY-364-BATCH-B": { "zh-CN": ["密钥没批下来能不能先做别的", "第二张卡的问法", "凭据要不要先到位"] },
     },
   });
-  const argv = (...extra) => ["knowledge-batch", "--workspace", workspace, "--expected-version", "0",
-    "--at", instant(10), "--from-file", document, "--host", "claude-code", ...extra];
+  const argv = (...extra) => ["knowledge-batch", "--workspace", workspace, "--at", instant(10), "--from-file", document, "--host", "claude-code", ...extra];
 
   await assert.rejects(() => cliJson(argv()),
     (error) => JSON.parse(error.message).failed.reasonCode === "KNOWLEDGE_LANGUAGE_MODEL_UNAVAILABLE",
@@ -611,8 +603,7 @@ test("STORY-364 R3: conference-close --distill reaches the write-path hook", asy
   // has already closed its conference. The refusal and the success therefore need one
   // conference each; that ordering is WSD-3's, not this change's.
   const open = async (suffix, second) => {
-    const opened = await cliJson(["conference-open", "--workspace", workspace, "--expected-version", "head",
-      "--at", instant(second), "--external-key", `STORY-364-CONFERENCE-${suffix}`, "--project-id", deriveStableId("project", "STORY-364-PROJECT"),
+    const opened = await cliJson(["conference-open", "--workspace", workspace, "--at", instant(second), "--external-key", `STORY-364-CONFERENCE-${suffix}`, "--project-id", deriveStableId("project", "STORY-364-PROJECT"),
       "--type", "architecture", "--title", "Decide the artefact language",
       "--work-ids", deriveStableId("work", "TCRN-CROSS-STORY-364"),
       "--desired-outcome", "ratify the approach", "--participant-ids", "profile:architect-01"]);
@@ -620,8 +611,7 @@ test("STORY-364 R3: conference-close --distill reaches the write-path hook", asy
   };
   await open("A", 10);
   await open("B", 11);
-  const argv = (suffix, second, ...extra) => ["conference-close", "--workspace", workspace, "--expected-version", "head",
-    "--at", instant(second), "--conference-id", deriveStableId("conference", `STORY-364-CONFERENCE-${suffix}`),
+  const argv = (suffix, second, ...extra) => ["conference-close", "--workspace", workspace, "--at", instant(second), "--conference-id", deriveStableId("conference", `STORY-364-CONFERENCE-${suffix}`),
     "--minutes-external-key", `STORY-364-MINUTES-${suffix}`, "--summary", "the approach was ratified",
     "--outcome-class", "role_decision", "--decisions", "record the artefact language as a setting",
     "--unresolved-issues", "-", "--distill", "true", "--accountable-owner-id", OWNER, "--host", "claude-code",

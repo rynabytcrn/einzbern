@@ -21,7 +21,6 @@ import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import {
-  acquireWorkspaceLease,
   createKnowledgeUnit,
   createProject,
   createWork,
@@ -45,22 +44,16 @@ async function trailingFixture() {
   }
   await initializeWorkspace({ roots, externalKey: "INC232", createdAt: instant(), segmentEventLimit: 64 });
   const workspace = join(base, "workspace");
-  const lease = await acquireWorkspaceLease(workspace, { now: instant(1) });
-  let state;
-  try {
-    state = await createProject(workspace, lease, {
-      expectedVersion: 0, occurredAt: instant(1), externalKey: "INC232-PROJECT", name: "Transport",
-    });
-    state = await createWork(workspace, lease, {
-      expectedVersion: 1, occurredAt: instant(2), projectId: state.projects[0].id,
-      externalKey: "INC232-ANCHOR", kind: "Initiative", parentId: null, status: "active",
-    });
-  } finally {
-    await lease.release();
-  }
+  let state = await createProject(workspace, {
+    occurredAt: instant(1), externalKey: "INC232-PROJECT", name: "Transport",
+  });
+  state = await createWork(workspace, {
+    occurredAt: instant(2), projectId: state.projects[0].id,
+    externalKey: "INC232-ANCHOR", kind: "Initiative", parentId: null, status: "active",
+  });
   await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
   const created = await createKnowledgeUnit(workspace, {
-    expectedVersion: 0, occurredAt: instant(3), externalKey: "INC232-CARD",
+    occurredAt: instant(3), externalKey: "INC232-CARD",
     scope: "project", projectId: state.projects[0].id, roleScopes: [],
     category: "workflow", kind: "guide", tags: ["transport"],
     subject: "A card that outlives the head it was filed against",
@@ -83,15 +76,10 @@ async function trailingFixture() {
   // an explicit allow-unpromoted, so promotion would add a dependency this criterion does
   // not need and whose own rules would then be able to fail it for unrelated reasons.
   // The one event that puts the store behind. Nothing about the store changes.
-  const second = await acquireWorkspaceLease(workspace, { now: instant(5) });
-  try {
-    await createWork(workspace, second, {
-      expectedVersion: 2, occurredAt: instant(6), projectId: state.projects[0].id,
-      externalKey: "INC232-THE-ONE-WRITE", kind: "Incident", parentId: null, status: "active",
-    });
-  } finally {
-    await second.release();
-  }
+  await createWork(workspace, {
+    occurredAt: instant(6), projectId: state.projects[0].id,
+    externalKey: "INC232-THE-ONE-WRITE", kind: "Incident", parentId: null, status: "active",
+  });
   return { base, workspace, id };
 }
 

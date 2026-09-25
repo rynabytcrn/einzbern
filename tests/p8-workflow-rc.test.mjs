@@ -8,7 +8,6 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  acquireWorkspaceLease,
   authorizeGenericProfileOperation,
   calculateContextRouteRequestDigest,
   calculateGenericProfileAdmissionClaims,
@@ -273,16 +272,10 @@ test("P8 dogfood completes one disposable local_primary initiative with Knowledg
   }
   const workspace = join(base, "workspace");
   await initializeWorkspace({ roots, externalKey: "FIXTURE-P8-LOCAL-PRIMARY", createdAt: "2026-07-14T00:00:00Z", segmentEventLimit: 64 });
-  const lease = await acquireWorkspaceLease(workspace, { now: "2026-07-14T00:00:01Z" });
-  let state;
-  try {
-    state = await createProject(workspace, lease, { expectedVersion: 0, occurredAt: "2026-07-14T00:00:01Z", externalKey: "FIXTURE-P8-PROJECT", name: "P8 local_primary" });
-    state = await createWork(workspace, lease, { expectedVersion: 1, occurredAt: "2026-07-14T00:00:02Z", projectId: state.projects[0].id, externalKey: "FIXTURE-P8-INITIATIVE", kind: "Initiative", parentId: null, status: "planned" });
-    for (const [expectedVersion, status, occurredAt] of [[2, "ready", "2026-07-14T00:00:03Z"], [3, "active", "2026-07-14T00:00:04Z"], [4, "done", "2026-07-14T00:00:05Z"]]) {
-      state = await transitionWork(workspace, lease, { expectedVersion, occurredAt, id: state.work[0].id, status });
-    }
-  } finally {
-    await lease.release();
+  let state = await createProject(workspace, { occurredAt: "2026-07-14T00:00:01Z", externalKey: "FIXTURE-P8-PROJECT", name: "P8 local_primary" });
+  state = await createWork(workspace, { occurredAt: "2026-07-14T00:00:02Z", projectId: state.projects[0].id, externalKey: "FIXTURE-P8-INITIATIVE", kind: "Initiative", parentId: null, status: "planned" });
+  for (const [expectedVersion, status, occurredAt] of [[2, "ready", "2026-07-14T00:00:03Z"], [3, "active", "2026-07-14T00:00:04Z"], [4, "done", "2026-07-14T00:00:05Z"]]) {
+    state = await transitionWork(workspace, { expectedVersion, occurredAt, id: state.work[0].id, status });
   }
   assert.equal(state.work[0].status, "done");
   const exportOne = await exportWorkspace(workspace);
@@ -306,7 +299,6 @@ test("P8 dogfood completes one disposable local_primary initiative with Knowledg
   }), (error) => error.reasonCode === "PROFILE_BINDING_MISMATCH");
   await initializeKnowledgeStore(workspace);
   const knowledge = await createKnowledgeUnit(workspace, {
-    expectedVersion: 0,
     occurredAt: "2026-07-14T00:00:06Z",
     externalKey: "FIXTURE-P8-KNOWLEDGE",
     scope: "project",

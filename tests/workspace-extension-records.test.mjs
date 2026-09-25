@@ -14,7 +14,6 @@ import test from "node:test";
 
 import {
   EVENT_PAYLOAD_OPERATION_EXTRAS,
-  acquireWorkspaceLease,
   annotateWork,
   appendConferencePositionInWorkspace,
   CONFERENCE_POSITION_CEILING_BYTES,
@@ -80,17 +79,15 @@ async function workspaceFixture(context, options = {}) {
 // A project plus one Initiative, the anchor surface for conferences and gates.
 async function seededFixture(context, options = {}) {
   const fixture = await workspaceFixture(context, options);
-  const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(1) });
-  context.after(() => lease.release().catch(() => undefined));
-  let state = await createProject(fixture.workspace, lease, {
-    expectedVersion: 0, occurredAt: instant(1), externalKey: "PROJECT-EXT", name: "Extension",
+  let state = await createProject(fixture.workspace, {
+    occurredAt: instant(1), externalKey: "PROJECT-EXT", name: "Extension",
   });
   const projectId = state.projects[0].id;
-  state = await createWork(fixture.workspace, lease, {
-    expectedVersion: 1, occurredAt: instant(2), projectId, externalKey: "INITIATIVE-EXT", kind: "Initiative", parentId: null,
+  state = await createWork(fixture.workspace, {
+    occurredAt: instant(2), projectId, externalKey: "INITIATIVE-EXT", kind: "Initiative", parentId: null,
   });
   const workId = state.work[0].id;
-  return { ...fixture, lease, state, projectId, workId };
+  return { ...fixture, state, projectId, workId };
 }
 
 function expectedStreamId(metadata) {
@@ -213,60 +210,60 @@ async function invokeCli(args) {
   );
 }
 
-// The mutating verbs take no held lease into the fixture: they acquire their own
-// under withLease. Seed the project + Initiative anchor through the CLI itself so
-// the whole path — parse, lease, CAS, engine append, canonical receipt — is exercised.
+// The mutating verbs take the engine write lock themselves. Seed the project + Initiative
+// anchor through the CLI itself so the whole path — parse, write lock, engine append,
+// canonical receipt — is exercised.
 async function cliSeededFixture(context) {
   const fx = await workspaceFixture(context);
   const ws = fx.workspace;
-  const project = JSON.parse((await invokeCli(["project-create", "--workspace", ws, "--expected-version", "0", "--at", instant(1), "--external-key", "PROJECT-CLI", "--name", "CLI"])).output);
-  const work = JSON.parse((await invokeCli(["work-create", "--title", "record-title", "--workspace", ws, "--expected-version", "1", "--at", instant(2), "--project-id", project.record.id, "--external-key", "INITIATIVE-CLI", "--kind", "Initiative"])).output);
+  const project = JSON.parse((await invokeCli(["project-create", "--workspace", ws, "--at", instant(1), "--external-key", "PROJECT-CLI", "--name", "CLI"])).output);
+  const work = JSON.parse((await invokeCli(["work-create", "--title", "record-title", "--workspace", ws, "--at", instant(2), "--project-id", project.record.id, "--external-key", "INITIATIVE-CLI", "--kind", "Initiative"])).output);
   return { ...fx, ws, projectId: project.record.id, workId: work.record.id };
 }
 
 test("conference and gate mutations round-trip through the event log with chained hashes, sorted collections, fresh views, and materialize parity", async (context) => {
   const fx = await seededFixture(context);
-  let state = await openConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 2, occurredAt: instant(3), externalKey: "CONF-ALPHA", projectId: fx.projectId, type: "architecture",
+  let state = await openConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(3), externalKey: "CONF-ALPHA", projectId: fx.projectId, type: "architecture",
     title: "Store design", linkedWorkIds: [fx.workId], desiredOutcome: "pick the persistence route", participantIds: ["profile:architect-01"],
   });
   const conferenceId = state.conferences[0].id;
   assert.equal(conferenceId, deriveStableId("conference", "CONF-ALPHA"));
-  state = await appendConferencePositionInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 3, occurredAt: instant(4), conferenceId, externalKey: "POSITION-ALPHA-1", authorActorId: "profile:architect-01",
+  state = await appendConferencePositionInWorkspace(fx.workspace, {
+    occurredAt: instant(4), conferenceId, externalKey: "POSITION-ALPHA-1", authorActorId: "profile:architect-01",
     position: "Persist through the workspace event log.", risks: ["forward-compat reads as corruption"], recommendations: ["document the posture"], evidenceIds: [],
   });
-  state = await closeConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 4, occurredAt: instant(5), conferenceId, minutesExternalKey: "MINUTES-ALPHA",
+  state = await closeConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(5), conferenceId, minutesExternalKey: "MINUTES-ALPHA",
     summary: "Event-log persistence ratified.", outcomeClass: "role_decision",
     decisions: ["persist conference and gate records as event operations"], unresolvedIssues: [],
   });
-  state = await openConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 5, occurredAt: instant(6), externalKey: "CONF-BETA", projectId: fx.projectId, type: "risk",
+  state = await openConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(6), externalKey: "CONF-BETA", projectId: fx.projectId, type: "risk",
     title: "Rollout risk", linkedWorkIds: [fx.workId], desiredOutcome: "assess rollout", participantIds: [],
   });
   const cancelledId = state.conferences.find((entry) => entry.id !== conferenceId).id;
-  state = await cancelConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 6, occurredAt: instant(7), conferenceId: cancelledId,
+  state = await cancelConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(7), conferenceId: cancelledId,
   });
-  state = await createGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 7, occurredAt: instant(8), externalKey: "GATE-ALPHA", projectId: fx.projectId, workId: fx.workId,
+  state = await createGateInWorkspace(fx.workspace, {
+    occurredAt: instant(8), externalKey: "GATE-ALPHA", projectId: fx.projectId, workId: fx.workId,
     title: "Decision gate", outcomeClass: "role_decision",
   });
   const gateId = state.gates[0].id;
-  state = await transitionGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 8, occurredAt: instant(9), id: gateId, status: "blocked",
+  state = await transitionGateInWorkspace(fx.workspace, {
+    occurredAt: instant(9), id: gateId, status: "blocked",
   });
-  state = await transitionGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 9, occurredAt: instant(10), id: gateId, status: "satisfied", minutesLocator: minutesLocator("MINUTES-ALPHA"),
+  state = await transitionGateInWorkspace(fx.workspace, {
+    occurredAt: instant(10), id: gateId, status: "satisfied", minutesLocator: minutesLocator("MINUTES-ALPHA"),
   });
-  state = await createGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 10, occurredAt: instant(11), externalKey: "GATE-BETA", projectId: fx.projectId, workId: null,
+  state = await createGateInWorkspace(fx.workspace, {
+    occurredAt: instant(11), externalKey: "GATE-BETA", projectId: fx.projectId, workId: null,
     title: "Project-scoped gate", outcomeClass: "recommendation",
   });
   const deletedGateId = state.gates.find((entry) => entry.id !== gateId).id;
-  state = await deleteGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 11, occurredAt: instant(12), id: deletedGateId,
+  state = await deleteGateInWorkspace(fx.workspace, {
+    occurredAt: instant(12), id: deletedGateId,
   });
 
   assert.equal(state.version, 12, "version equals the event count");
@@ -335,58 +332,55 @@ test("conference and gate mutations round-trip through the event log with chaine
 
 test("mutation-time rules fail closed without appending an event", async (context) => {
   const fx = await seededFixture(context);
-  let state = await openConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 2, occurredAt: instant(3), externalKey: "CONF-RULES", projectId: fx.projectId, type: "verification",
+  let state = await openConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(3), externalKey: "CONF-RULES", projectId: fx.projectId, type: "verification",
     title: "Rules", linkedWorkIds: [fx.workId], desiredOutcome: "verify the rules", participantIds: [],
   });
   const conferenceId = state.conferences[0].id;
-  state = await closeConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 3, occurredAt: instant(4), conferenceId, minutesExternalKey: "MINUTES-RULES",
+  state = await closeConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(4), conferenceId, minutesExternalKey: "MINUTES-RULES",
     summary: "Closed.", outcomeClass: "discussion_only", decisions: [], unresolvedIssues: [],
   });
   const version = state.version;
   const closedConferenceCases = [
-    () => appendConferencePositionInWorkspace(fx.workspace, fx.lease, {
-      expectedVersion: version, occurredAt: instant(5), conferenceId, externalKey: "POSITION-LATE", actorId: "profile:late-01",
+    () => appendConferencePositionInWorkspace(fx.workspace, {
+      occurredAt: instant(5), conferenceId, externalKey: "POSITION-LATE", actorId: "profile:late-01",
       position: "Too late.", risks: [], recommendations: [], evidenceIds: [],
     }),
-    () => closeConferenceInWorkspace(fx.workspace, fx.lease, {
-      expectedVersion: version, occurredAt: instant(5), conferenceId, minutesExternalKey: "MINUTES-AGAIN",
+    () => closeConferenceInWorkspace(fx.workspace, {
+      occurredAt: instant(5), conferenceId, minutesExternalKey: "MINUTES-AGAIN",
       summary: "Again.", outcomeClass: "discussion_only", decisions: [], unresolvedIssues: [],
     }),
-    () => cancelConferenceInWorkspace(fx.workspace, fx.lease, {
-      expectedVersion: version, occurredAt: instant(5), conferenceId,
+    () => cancelConferenceInWorkspace(fx.workspace, {
+      occurredAt: instant(5), conferenceId,
     }),
   ];
   for (const operation of closedConferenceCases) {
     await expectReasonAsync("WORKSPACE_CONFERENCE_NOT_OPEN", operation);
   }
-  await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => appendConferencePositionInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: version, occurredAt: instant(5), conferenceId: "conference:000000000000000000000000", externalKey: "POSITION-NOWHERE",
+  await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => appendConferencePositionInWorkspace(fx.workspace, {
+    occurredAt: instant(5), conferenceId: "conference:000000000000000000000000", externalKey: "POSITION-NOWHERE",
     actorId: "profile:late-01", position: "No conference.", risks: [], recommendations: [], evidenceIds: [],
   }));
-  await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => openConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: version, occurredAt: instant(5), externalKey: "CONF-DEAD-WORK", projectId: fx.projectId, type: "risk",
+  await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => openConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(5), externalKey: "CONF-DEAD-WORK", projectId: fx.projectId, type: "risk",
     title: "Dead anchor", linkedWorkIds: ["work:000000000000000000000000"], desiredOutcome: "anchor", participantIds: [],
   }));
-  await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => createGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: version, occurredAt: instant(5), externalKey: "GATE-DEAD-WORK", projectId: fx.projectId,
+  await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => createGateInWorkspace(fx.workspace, {
+    occurredAt: instant(5), externalKey: "GATE-DEAD-WORK", projectId: fx.projectId,
     workId: "work:000000000000000000000000", title: "Dead anchor", outcomeClass: "recommendation",
   }));
-  await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => transitionGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: version, occurredAt: instant(5), id: "gate:000000000000000000000000", status: "blocked",
+  await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => transitionGateInWorkspace(fx.workspace, {
+    occurredAt: instant(5), id: "gate:000000000000000000000000", status: "blocked",
   }));
   // Validator failures surface verbatim for the CLI layer to pass through.
-  await expectReasonAsync("CONFERENCE_SCHEMA_INVALID", () => openConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: version, occurredAt: instant(5), externalKey: "CONF-BAD-TYPE", projectId: fx.projectId, type: "committee",
+  await expectReasonAsync("CONFERENCE_SCHEMA_INVALID", () => openConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(5), externalKey: "CONF-BAD-TYPE", projectId: fx.projectId, type: "committee",
     title: "Bad type", linkedWorkIds: [fx.workId], desiredOutcome: "reject", participantIds: [],
   }));
-  await expectReasonAsync("GATE_SCHEMA_INVALID", () => createGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: version, occurredAt: instant(5), externalKey: "GATE-BAD-CLASS", projectId: fx.projectId, workId: fx.workId,
+  await expectReasonAsync("GATE_SCHEMA_INVALID", () => createGateInWorkspace(fx.workspace, {
+    occurredAt: instant(5), externalKey: "GATE-BAD-CLASS", projectId: fx.projectId, workId: fx.workId,
     title: "Bad class", outcomeClass: "committee_decision",
-  }));
-  await expectReasonAsync("WORKSPACE_CAS_MISMATCH", () => cancelConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: version + 7, occurredAt: instant(5), conferenceId,
   }));
   assert.equal((await materializeWorkspace(fx.workspace)).version, version, "no failed mutation appended an event");
 });
@@ -545,20 +539,18 @@ test("hand-crafted event logs fail replay closed: unknown operations, openness, 
 
 test("INC-198 index size follows record count rather than extension prose, and still detects a prose change", async (context) => {
   const fixture = await workspaceFixture(context, { externalKey: "WORKSPACE-BOUNDED" });
-  const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(1) });
-  context.after(() => lease.release().catch(() => undefined));
-  let state = await createProject(fixture.workspace, lease, {
-    expectedVersion: 0, occurredAt: instant(1), externalKey: "PROJECT-BOUNDED", name: "Bounded",
+  let state = await createProject(fixture.workspace, {
+    occurredAt: instant(1), externalKey: "PROJECT-BOUNDED", name: "Bounded",
   });
-  state = await createWork(fixture.workspace, lease, {
-    expectedVersion: 1, occurredAt: instant(2), projectId: state.projects[0].id, externalKey: "INITIATIVE-BOUNDED", kind: "Initiative", parentId: null,
+  state = await createWork(fixture.workspace, {
+    occurredAt: instant(2), projectId: state.projects[0].id, externalKey: "INITIATIVE-BOUNDED", kind: "Initiative", parentId: null,
   });
   const viewsRoot = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "views");
   const indexBytes = async () => (await readFile(join(viewsRoot, "index.json"), "utf8")).length;
   const digest = async () => JSON.parse(await readFile(join(viewsRoot, "readback.json"), "utf8")).graphDigest;
 
-  const small = await annotateWork(fixture.workspace, lease, {
-    expectedVersion: 2, occurredAt: instant(3), id: state.work[0].id, scope: "x",
+  const small = await annotateWork(fixture.workspace, {
+    occurredAt: instant(3), id: state.work[0].id, scope: "x",
   });
   const smallSize = await indexBytes();
   const smallDigest = await digest();
@@ -569,8 +561,8 @@ test("INC-198 index size follows record count rather than extension prose, and s
   // pushed the whole view past the one-MiB canonical ceiling and made the workspace
   // unreadable. The index now carries the extension's digest, so the growth here is
   // a fixed-width hash, not the prose.
-  await annotateWork(fixture.workspace, lease, {
-    expectedVersion: small.version, occurredAt: instant(4), id: state.work[0].id, scope: "y".repeat(8_000),
+  await annotateWork(fixture.workspace, {
+    occurredAt: instant(4), id: state.work[0].id, scope: "y".repeat(8_000),
   });
   const largeSize = await indexBytes();
   const largeDigest = await digest();
@@ -582,16 +574,14 @@ test("INC-198 index size follows record count rather than extension prose, and s
 
 test("a workspace with zero conference/gate events keeps pre-change golden view bytes, view set, and export digest", async (context) => {
   const fixture = await workspaceFixture(context, { externalKey: "WORKSPACE-GOLDEN" });
-  const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(1) });
-  context.after(() => lease.release().catch(() => undefined));
-  let state = await createProject(fixture.workspace, lease, {
-    expectedVersion: 0, occurredAt: instant(1), externalKey: "PROJECT-GOLDEN", name: "Golden",
+  let state = await createProject(fixture.workspace, {
+    occurredAt: instant(1), externalKey: "PROJECT-GOLDEN", name: "Golden",
   });
-  state = await createWork(fixture.workspace, lease, {
-    expectedVersion: 1, occurredAt: instant(2), projectId: state.projects[0].id, externalKey: "INITIATIVE-GOLDEN", kind: "Initiative", parentId: null,
+  state = await createWork(fixture.workspace, {
+    occurredAt: instant(2), projectId: state.projects[0].id, externalKey: "INITIATIVE-GOLDEN", kind: "Initiative", parentId: null,
   });
-  state = await transitionWork(fixture.workspace, lease, {
-    expectedVersion: 2, occurredAt: instant(3), id: state.work[0].id, status: "ready",
+  state = await transitionWork(fixture.workspace, {
+    occurredAt: instant(3), id: state.work[0].id, status: "ready",
   });
   assert.deepEqual(state.conferences, []);
   assert.deepEqual(state.conferencePositions, []);
@@ -662,18 +652,18 @@ test("a crash across conference.closed leaves the event durable and recover() re
   for (const crashAt of ["after-event-commit", "before-view-commit"]) {
     await context.test(crashAt, async (caseContext) => {
       const fx = await seededFixture(caseContext);
-      let state = await openConferenceInWorkspace(fx.workspace, fx.lease, {
-        expectedVersion: 2, occurredAt: instant(3), externalKey: "CONF-CRASH", projectId: fx.projectId, type: "release",
+      let state = await openConferenceInWorkspace(fx.workspace, {
+        occurredAt: instant(3), externalKey: "CONF-CRASH", projectId: fx.projectId, type: "release",
         title: "Crash close", linkedWorkIds: [fx.workId], desiredOutcome: "close across a crash", participantIds: [],
       });
       const conferenceId = state.conferences[0].id;
-      await expectReasonAsync("WORKSPACE_FAULT_INJECTED", () => closeConferenceInWorkspace(fx.workspace, fx.lease, {
-        expectedVersion: 3, occurredAt: instant(4), conferenceId, minutesExternalKey: "MINUTES-CRASH",
+      await expectReasonAsync("WORKSPACE_FAULT_INJECTED", () => closeConferenceInWorkspace(fx.workspace, {
+        occurredAt: instant(4), conferenceId, minutesExternalKey: "MINUTES-CRASH",
         summary: "Crashed close.", outcomeClass: "role_decision", decisions: ["recover"], unresolvedIssues: [], crashAt,
       }));
       // The event committed before the crash, so views are stale until recovery.
       await expectReasonAsync("WORKSPACE_VIEW_STALE", () => validateWorkspace(fx.workspace));
-      const recovered = await recoverWorkspace(fx.workspace, fx.lease);
+      const recovered = await recoverWorkspace(fx.workspace);
       assert.equal(recovered.version, 4);
       assert.equal(recovered.conferences.find((entry) => entry.id === conferenceId).status, "closed");
       assert.equal(recovered.conferenceMinutes.length, 1);
@@ -701,7 +691,7 @@ test("WSD-2: the eight governed verbs plus gate-delete mutate and read under lea
   const ws = fx.ws;
 
   // conference-open — version 2 -> 3, receipt is canonical and names the new id.
-  const openResult = await invokeCli(["conference-open", "--workspace", ws, "--expected-version", "2", "--at", instant(3),
+  const openResult = await invokeCli(["conference-open", "--workspace", ws, "--at", instant(3),
     "--external-key", "CONF-CLI", "--project-id", fx.projectId, "--type", "architecture", "--title", "Store design",
     "--work-ids", fx.workId, "--desired-outcome", "pick the persistence route", "--participant-ids", "profile:architect-01"]);
   const openReceipt = assertCanonicalJson(openResult.output);
@@ -712,7 +702,7 @@ test("WSD-2: the eight governed verbs plus gate-delete mutate and read under lea
 
   // conference-append-position — empty list flags via the "-" sentinel.
   const positionReceipt = assertCanonicalJson((await invokeCli(["conference-append-position", "--workspace", ws,
-    "--expected-version", "3", "--at", instant(4), "--conference-id", conferenceId, "--external-key", "POSITION-CLI-1",
+    "--at", instant(4), "--conference-id", conferenceId, "--external-key", "POSITION-CLI-1",
     "--actor-id", "profile:architect-01", "--position", "persist through the workspace event log",
     "--risks", "forward reads corruption", "--recommendations", "document the posture", "--evidence-ids", "-"])).output);
   assert.equal(positionReceipt.version, 4);
@@ -720,20 +710,20 @@ test("WSD-2: the eight governed verbs plus gate-delete mutate and read under lea
 
   // conference-close via the head sentinel — resolves to 4 under the lease, appends to 5.
   const closeReceipt = assertCanonicalJson((await invokeCli(["conference-close", "--workspace", ws,
-    "--expected-version", "head", "--at", instant(5), "--conference-id", conferenceId, "--minutes-external-key", "MINUTES-CLI",
+    "--at", instant(5), "--conference-id", conferenceId, "--minutes-external-key", "MINUTES-CLI",
     "--summary", "event-log persistence ratified", "--outcome-class", "role_decision",
     "--decisions", "persist conference and gate records as event operations", "--unresolved-issues", "-"])).output);
   assert.equal(closeReceipt.version, 5);
   assert.equal(closeReceipt.recordId, deriveStableId("minutes", "MINUTES-CLI"));
 
   // A second conference so conference-list-by-work returns more than one record to order.
-  await invokeCli(["conference-open", "--workspace", ws, "--expected-version", "5", "--at", instant(6),
+  await invokeCli(["conference-open", "--workspace", ws, "--at", instant(6),
     "--external-key", "CONF-CLI-2", "--project-id", fx.projectId, "--type", "risk", "--title", "Risk review",
     "--work-ids", fx.workId, "--desired-outcome", "accept residual risk", "--participant-ids", "-"]);
 
   // conference-cancel — the second conference, recordId echoes the supplied id.
   const cancelReceipt = assertCanonicalJson((await invokeCli(["conference-cancel", "--workspace", ws,
-    "--expected-version", "6", "--at", instant(7), "--conference-id", deriveStableId("conference", "CONF-CLI-2")])).output);
+    "--at", instant(7), "--conference-id", deriveStableId("conference", "CONF-CLI-2")])).output);
   assert.equal(cancelReceipt.version, 7);
   assert.equal(cancelReceipt.recordId, deriveStableId("conference", "CONF-CLI-2"));
 
@@ -748,8 +738,7 @@ test("WSD-2: the eight governed verbs plus gate-delete mutate and read under lea
     .sort((left, right) => compareCanonicalText(left, right)));
 
   // gate-create with a work anchor, then a second workspace-level gate ("-").
-  const gateReceipt = assertCanonicalJson((await invokeCli(["gate-create", "--workspace", ws, "--expected-version", "7",
-    "--at", instant(8), "--external-key", "GATE-CLI", "--project-id", fx.projectId, "--work-id", fx.workId,
+  const gateReceipt = assertCanonicalJson((await invokeCli(["gate-create", "--workspace", ws, "--at", instant(8), "--external-key", "GATE-CLI", "--project-id", fx.projectId, "--work-id", fx.workId,
     "--title", "Decision gate", "--outcome-class", "role_decision"])).output);
   assert.equal(gateReceipt.version, 8);
   assert.equal(gateReceipt.recordId, deriveStableId("gate", "GATE-CLI"));
@@ -757,13 +746,13 @@ test("WSD-2: the eight governed verbs plus gate-delete mutate and read under lea
   // the other three classes reached no engine behaviour and were never used on any
   // gate here. The record vocabulary is unchanged, so this fixture's second gate just
   // uses a class the write path still mints.
-  await invokeCli(["gate-create", "--workspace", ws, "--expected-version", "8", "--at", instant(9),
+  await invokeCli(["gate-create", "--workspace", ws, "--at", instant(9),
     "--external-key", "GATE-CLI-2", "--project-id", fx.projectId, "--work-id", fx.workId,
     "--title", "Second gate", "--outcome-class", "role_decision"]);
 
   // gate-transition pending -> satisfied, carrying the resolving minutes locator.
   const transitionReceipt = assertCanonicalJson((await invokeCli(["gate-transition", "--workspace", ws,
-    "--expected-version", "9", "--at", instant(10), "--id", deriveStableId("gate", "GATE-CLI"), "--status", "satisfied",
+    "--at", instant(10), "--id", deriveStableId("gate", "GATE-CLI"), "--status", "satisfied",
     "--minutes-locator", minutesLocator("MINUTES-CLI")])).output);
   assert.equal(transitionReceipt.version, 10);
   assert.equal(transitionReceipt.recordId, deriveStableId("gate", "GATE-CLI"));
@@ -778,8 +767,7 @@ test("WSD-2: the eight governed verbs plus gate-delete mutate and read under lea
     .sort((left, right) => compareCanonicalText(left, right)));
 
   // gate-delete (GAP-10) tombstones the gate; it then drops out of gate-list.
-  const deleteReceipt = assertCanonicalJson((await invokeCli(["gate-delete", "--workspace", ws, "--expected-version", "10",
-    "--at", instant(11), "--id", deriveStableId("gate", "GATE-CLI")])).output);
+  const deleteReceipt = assertCanonicalJson((await invokeCli(["gate-delete", "--workspace", ws, "--at", instant(11), "--id", deriveStableId("gate", "GATE-CLI")])).output);
   assert.equal(deleteReceipt.version, 11);
   assert.equal(deleteReceipt.recordId, deriveStableId("gate", "GATE-CLI"));
   const gatesAfterDelete = JSON.parse((await invokeCli(["gate-list", "--workspace", ws, "--work-id", fx.workId])).output);
@@ -789,15 +777,15 @@ test("WSD-2: the eight governed verbs plus gate-delete mutate and read under lea
 test("STORY-370: conference positions accept actor attribution and an optional stance without a profile roster", async (context) => {
   const fx = await cliSeededFixture(context);
   const ws = fx.ws;
-  const opened = JSON.parse((await invokeCli(["conference-open", "--workspace", ws, "--expected-version", "2", "--at", instant(3),
+  const opened = JSON.parse((await invokeCli(["conference-open", "--workspace", ws, "--at", instant(3),
     "--external-key", "CONF-STORY-370", "--project-id", fx.projectId, "--type", "verification", "--title", "Attribution",
     "--work-ids", fx.workId, "--desired-outcome", "record positions", "--participant-ids", "-"])).output);
   const conferenceId = opened.recordId;
-  const historical = JSON.parse((await invokeCli(["conference-append-position", "--workspace", ws, "--expected-version", "3", "--at", instant(4),
+  const historical = JSON.parse((await invokeCli(["conference-append-position", "--workspace", ws, "--at", instant(4),
     "--conference-id", conferenceId, "--external-key", "POSITION-HISTORICAL-MARA", "--actor-id", "profile:tcrn-mara-v1",
     "--position", "Historical profile attribution remains readable.", "--risks", "-", "--recommendations", "-", "--evidence-ids", "-"])).output);
   assert.equal(historical.reasonCode, "WORKSPACE_COMMAND_COMPLETED");
-  const current = JSON.parse((await invokeCli(["conference-append-position", "--workspace", ws, "--expected-version", "4", "--at", instant(5),
+  const current = JSON.parse((await invokeCli(["conference-append-position", "--workspace", ws, "--at", instant(5),
     "--conference-id", conferenceId, "--external-key", "POSITION-ACTOR-STANCE", "--actor-id", "agent:claude-sonnet-5", "--stance", "反对",
     "--position", "The current actor records a bounded disagreement.", "--risks", "-", "--recommendations", "-", "--evidence-ids", "-"])).output);
   assert.equal(current.reasonCode, "WORKSPACE_COMMAND_COMPLETED");
@@ -819,53 +807,36 @@ test("INC-086: gate-list distinguishes a nonexistent work-id from 'no gates'", a
   assert.deepEqual(gates, []);
 });
 
-test("WSD-2: every mutating verb fails closed on stale CAS, malformed enums pass through to the engine, and contention reports WORKSPACE_LOCKED", async (context) => {
+test("WSD-2: malformed enums pass through to the engine verbatim", async (context) => {
   const fx = await cliSeededFixture(context);
   const ws = fx.ws;
 
-  // CAS discipline: conference-open twice with the same expected-version. The second
-  // materialize sees version 3, not 2, and fails before the reducer runs.
-  await invokeCli(["conference-open", "--workspace", ws, "--expected-version", "2", "--at", instant(3),
-    "--external-key", "CONF-CAS", "--project-id", fx.projectId, "--type", "architecture", "--title", "CAS",
-    "--work-ids", fx.workId, "--desired-outcome", "prove CAS", "--participant-ids", "-"]);
-  const casReplay = await invokeCli(["conference-open", "--workspace", ws, "--expected-version", "2", "--at", instant(4),
-    "--external-key", "CONF-CAS-B", "--project-id", fx.projectId, "--type", "architecture", "--title", "CAS again",
-    "--work-ids", fx.workId, "--desired-outcome", "prove CAS", "--participant-ids", "-"]);
-  assert.equal(casReplay.ok, false);
-  assert.equal(casReplay.reasonCode, "WORKSPACE_CAS_MISMATCH");
-
   // Fail-closed enum passthrough: a bogus --type surfaces the engine's verbatim code.
-  const badType = await invokeCli(["conference-open", "--workspace", ws, "--expected-version", "3", "--at", instant(5),
+  const badType = await invokeCli(["conference-open", "--workspace", ws, "--at", instant(5),
     "--external-key", "CONF-BAD", "--project-id", fx.projectId, "--type", "not-a-type", "--title", "Bad",
     "--work-ids", fx.workId, "--desired-outcome", "fail closed", "--participant-ids", "-"]);
   assert.equal(badType.ok, false);
   assert.equal(badType.reasonCode, "CONFERENCE_SCHEMA_INVALID");
 
-  const badGate = await invokeCli(["gate-create", "--workspace", ws, "--expected-version", "3", "--at", instant(6),
+  const badGate = await invokeCli(["gate-create", "--workspace", ws, "--at", instant(6),
     "--external-key", "GATE-BAD", "--project-id", fx.projectId, "--work-id", fx.workId, "--title", "Bad gate",
     "--outcome-class", "not-a-class"]);
   assert.equal(badGate.ok, false);
   assert.equal(badGate.reasonCode, "GATE_SCHEMA_INVALID");
 
-  // Lease contention: hold the lease out of band, then a mutating verb cannot acquire it.
-  const held = await acquireWorkspaceLease(ws, { now: instant(7) });
-  context.after(() => held.release().catch(() => undefined));
-  const contended = await invokeCli(["gate-create", "--workspace", ws, "--expected-version", "3", "--at", instant(8),
-    "--external-key", "GATE-LOCKED", "--project-id", fx.projectId, "--work-id", fx.workId, "--title", "Locked",
-    "--outcome-class", "role_decision"]);
-  assert.equal(contended.ok, false);
-  assert.equal(contended.reasonCode, "WORKSPACE_LOCKED");
+  // Contention is no longer a refusal: a second writer waits for the engine write lock
+  // (TCRN-CROSS-STORY-467 R1, proved in tests/file-lock-concurrency.test.mjs).
 });
 
 test("WSD-3: conference-close --distill governs each decision into a promotable knowledge candidate under one lease", async (context) => {
   const fx = await cliSeededFixture(context);
   const ws = fx.ws;
 
-  const conferenceId = JSON.parse((await invokeCli(["conference-open", "--workspace", ws, "--expected-version", "2", "--at", instant(3),
+  const conferenceId = JSON.parse((await invokeCli(["conference-open", "--workspace", ws, "--at", instant(3),
     "--external-key", "CONF-DISTILL", "--project-id", fx.projectId, "--type", "architecture", "--title", "Distill design",
     "--work-ids", fx.workId, "--desired-outcome", "pick route", "--participant-ids", "profile:architect-01"])).output).recordId;
   // A position contributes an evidence:-prefixed id to the distilled provenance union.
-  await invokeCli(["conference-append-position", "--workspace", ws, "--expected-version", "3", "--at", instant(4),
+  await invokeCli(["conference-append-position", "--workspace", ws, "--at", instant(4),
     "--conference-id", conferenceId, "--external-key", "POSITION-DISTILL-1", "--actor-id", "profile:architect-01",
     "--position", "persist via log", "--risks", "drift", "--recommendations", "doc", "--evidence-ids", "evidence:position-01"]);
 
@@ -875,8 +846,7 @@ test("WSD-3: conference-close --distill governs each decision into a promotable 
   assert.equal(init.reasonCode, "KNOWLEDGE_STORE_INITIALIZED");
 
   const decisions = ["adopt cross-host parity fixture", "keep host surface enumerated"];
-  const closeReceipt = assertCanonicalJson((await invokeCli(["conference-close", "--workspace", ws, "--expected-version", "head",
-    "--at", instant(5), "--conference-id", conferenceId, "--minutes-external-key", "MINUTES-DISTILL",
+  const closeReceipt = assertCanonicalJson((await invokeCli(["conference-close", "--workspace", ws, "--at", instant(5), "--conference-id", conferenceId, "--minutes-external-key", "MINUTES-DISTILL",
     "--summary", "event-log persistence ratified", "--outcome-class", "role_decision",
     "--decisions", decisions.join(","), "--unresolved-issues", "-",
     "--distill", "true", "--accountable-owner-id", "owner:governance", "--stale-days", "90", "--evidence-ids", "evidence:close-01"])).output);
@@ -904,8 +874,7 @@ test("WSD-3: conference-close --distill governs each decision into a promotable 
   // Promotable by construction: owner + evidence + tag + snippet clear the WSC-6 gates.
   const first = listing.records[0];
   const knowledgeVersion = assertCanonicalJson((await invokeCli(["knowledge-validate", "--workspace", ws])).output).version;
-  const promote = await invokeCli(["knowledge-promote", "--workspace", ws, "--expected-version", String(knowledgeVersion),
-    "--expected-revision", String(first.revision), "--at", instant(7), "--id", first.id, "--state", "promoted"]);
+  const promote = await invokeCli(["knowledge-promote", "--workspace", ws, "--expected-revision", String(first.revision), "--at", instant(7), "--id", first.id, "--state", "promoted"]);
   assert.equal(promote.ok, true);
   assert.equal(assertCanonicalJson(promote.output).promotionState, "promoted");
 });
@@ -913,18 +882,18 @@ test("WSD-3: conference-close --distill governs each decision into a promotable 
 test("WSD-3: --distill with no knowledge store fails closed BEFORE the close event is appended", async (context) => {
   const fx = await cliSeededFixture(context);
   const ws = fx.ws;
-  const conferenceId = JSON.parse((await invokeCli(["conference-open", "--workspace", ws, "--expected-version", "2", "--at", instant(3),
+  const conferenceId = JSON.parse((await invokeCli(["conference-open", "--workspace", ws, "--at", instant(3),
     "--external-key", "CONF-NOSTORE", "--project-id", fx.projectId, "--type", "architecture", "--title", "No store",
     "--work-ids", fx.workId, "--desired-outcome", "pick route", "--participant-ids", "-"])).output).recordId;
   // No knowledge-init: the pre-close store read fails and no close event lands.
-  const close = await invokeCli(["conference-close", "--workspace", ws, "--expected-version", "3", "--at", instant(4),
+  const close = await invokeCli(["conference-close", "--workspace", ws, "--at", instant(4),
     "--conference-id", conferenceId, "--minutes-external-key", "MINUTES-NOSTORE", "--summary", "should not persist",
     "--outcome-class", "role_decision", "--decisions", "unreachable", "--unresolved-issues", "-", "--distill", "true", "--stale-days", "30"]);
   assert.equal(close.ok, false);
   // Version is unchanged (open was version 3) — the conference is still open, provable
   // by closing it again WITHOUT distillation.
   assert.equal((await materializeWorkspace(ws)).version, 3);
-  const reclose = assertCanonicalJson((await invokeCli(["conference-close", "--workspace", ws, "--expected-version", "3", "--at", instant(5),
+  const reclose = assertCanonicalJson((await invokeCli(["conference-close", "--workspace", ws, "--at", instant(5),
     "--conference-id", conferenceId, "--minutes-external-key", "MINUTES-NOSTORE", "--summary", "plain close",
     "--outcome-class", "role_decision", "--decisions", "adopt", "--unresolved-issues", "-"])).output);
   assert.equal(reclose.version, 4);
@@ -934,20 +903,20 @@ test("WSD-3: --distill with no knowledge store fails closed BEFORE the close eve
 // WSD-4: a work item at active, the surface a pending gate governs on its way to done.
 async function activeGatedFixture(context) {
   const fx = await seededFixture(context);
-  await transitionWork(fx.workspace, fx.lease, { expectedVersion: 2, occurredAt: instant(3), id: fx.workId, status: "ready" });
-  const state = await transitionWork(fx.workspace, fx.lease, { expectedVersion: 3, occurredAt: instant(4), id: fx.workId, status: "active" });
+  await transitionWork(fx.workspace, { occurredAt: instant(3), id: fx.workId, status: "ready" });
+  const state = await transitionWork(fx.workspace, { occurredAt: instant(4), id: fx.workId, status: "active" });
   return { ...fx, state };
 }
 
 test("WSD-4: a pending gate fails a work transition to done closed at the verb and appends no event", async (context) => {
   const fx = await activeGatedFixture(context);
-  const seeded = await createGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 4, occurredAt: instant(5), externalKey: "GATE-BLOCK", projectId: fx.projectId, workId: fx.workId,
+  const seeded = await createGateInWorkspace(fx.workspace, {
+    occurredAt: instant(5), externalKey: "GATE-BLOCK", projectId: fx.projectId, workId: fx.workId,
     title: "Decision gate", outcomeClass: "role_decision",
   });
   const version = seeded.version;
-  await expectReasonAsync("WORKSPACE_GATE_PENDING", () => transitionWork(fx.workspace, fx.lease, {
-    expectedVersion: version, occurredAt: instant(6), id: fx.workId, status: "done",
+  await expectReasonAsync("WORKSPACE_GATE_PENDING", () => transitionWork(fx.workspace, {
+    occurredAt: instant(6), id: fx.workId, status: "done",
   }));
   assert.equal((await materializeWorkspace(fx.workspace)).version, version, "the blocked transition appended no event");
 });
@@ -959,26 +928,26 @@ test("WSD-4: a pending gate fails a work transition to done closed at the verb a
 // resolving minutes, so it is the only one that may clear.
 test("MIN-102 flipping a gate to blocked does not release the work item", async (context) => {
   const fx = await activeGatedFixture(context);
-  const seeded = await createGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 4, occurredAt: instant(5), externalKey: "GATE-DISARM", projectId: fx.projectId, workId: fx.workId,
+  const seeded = await createGateInWorkspace(fx.workspace, {
+    occurredAt: instant(5), externalKey: "GATE-DISARM", projectId: fx.projectId, workId: fx.workId,
     title: "Decision gate", outcomeClass: "role_decision",
   });
   const gateId = seeded.gates[0].id;
-  const blocked = await transitionGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: seeded.version, occurredAt: instant(6), id: gateId, status: "blocked",
+  const blocked = await transitionGateInWorkspace(fx.workspace, {
+    occurredAt: instant(6), id: gateId, status: "blocked",
   });
   assert.equal(blocked.gates[0].status, "blocked", "the move itself stays legal — cleanup must never wedge");
-  await expectReasonAsync("WORKSPACE_GATE_PENDING", () => transitionWork(fx.workspace, fx.lease, {
-    expectedVersion: blocked.version, occurredAt: instant(7), id: fx.workId, status: "done",
+  await expectReasonAsync("WORKSPACE_GATE_PENDING", () => transitionWork(fx.workspace, {
+    occurredAt: instant(7), id: fx.workId, status: "done",
   }));
   assert.equal((await materializeWorkspace(fx.workspace)).version, blocked.version, "the refused transition appended no event");
 
   // The escape is unchanged and is still the tombstone, not the blocked state.
-  const removed = await deleteGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: blocked.version, occurredAt: instant(8), id: gateId,
+  const removed = await deleteGateInWorkspace(fx.workspace, {
+    occurredAt: instant(8), id: gateId,
   });
-  const done = await transitionWork(fx.workspace, fx.lease, {
-    expectedVersion: removed.version, occurredAt: instant(9), id: fx.workId, status: "done",
+  const done = await transitionWork(fx.workspace, {
+    occurredAt: instant(9), id: fx.workId, status: "done",
   });
   assert.equal(done.work.find((entry) => entry.id === fx.workId).status, "done");
   assert.deepEqual(await materializeWorkspace(fx.workspace), done, "the committed delta equals a full replay");
@@ -986,29 +955,29 @@ test("MIN-102 flipping a gate to blocked does not release the work item", async 
 
 test("WSD-4: minutes-backed satisfaction unblocks the transition to done and the whole chain replays deterministically", async (context) => {
   const fx = await activeGatedFixture(context);
-  let state = await openConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 4, occurredAt: instant(5), externalKey: "CONF-SAT", projectId: fx.projectId, type: "architecture",
+  let state = await openConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(5), externalKey: "CONF-SAT", projectId: fx.projectId, type: "architecture",
     title: "Decide", linkedWorkIds: [fx.workId], desiredOutcome: "decide the gate", participantIds: [],
   });
   const conferenceId = state.conferences[0].id;
-  state = await closeConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 5, occurredAt: instant(6), conferenceId, minutesExternalKey: "MINUTES-SAT",
+  state = await closeConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(6), conferenceId, minutesExternalKey: "MINUTES-SAT",
     summary: "ratified", outcomeClass: "role_decision", decisions: ["proceed"], unresolvedIssues: [],
   });
-  state = await createGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 6, occurredAt: instant(7), externalKey: "GATE-SAT", projectId: fx.projectId, workId: fx.workId,
+  state = await createGateInWorkspace(fx.workspace, {
+    occurredAt: instant(7), externalKey: "GATE-SAT", projectId: fx.projectId, workId: fx.workId,
     title: "Decision gate", outcomeClass: "role_decision",
   });
   const gateId = state.gates[0].id;
   // Still pending: the transition to done is blocked.
-  await expectReasonAsync("WORKSPACE_GATE_PENDING", () => transitionWork(fx.workspace, fx.lease, {
-    expectedVersion: 7, occurredAt: instant(8), id: fx.workId, status: "done",
+  await expectReasonAsync("WORKSPACE_GATE_PENDING", () => transitionWork(fx.workspace, {
+    occurredAt: instant(8), id: fx.workId, status: "done",
   }));
-  state = await transitionGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 7, occurredAt: instant(8), id: gateId, status: "satisfied", minutesLocator: minutesLocator("MINUTES-SAT"),
+  state = await transitionGateInWorkspace(fx.workspace, {
+    occurredAt: instant(8), id: gateId, status: "satisfied", minutesLocator: minutesLocator("MINUTES-SAT"),
   });
-  state = await transitionWork(fx.workspace, fx.lease, {
-    expectedVersion: 8, occurredAt: instant(9), id: fx.workId, status: "done",
+  state = await transitionWork(fx.workspace, {
+    occurredAt: instant(9), id: fx.workId, status: "done",
   });
   assert.equal(state.work.find((entry) => entry.id === fx.workId).status, "done");
   const fresh = await materializeWorkspace(fx.workspace);
@@ -1018,13 +987,13 @@ test("WSD-4: minutes-backed satisfaction unblocks the transition to done and the
 
 test("WSD-4: the gate.deleted tombstone is the deadlock escape that lets a wedged work item reach done", async (context) => {
   const fx = await activeGatedFixture(context);
-  let state = await createGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 4, occurredAt: instant(5), externalKey: "GATE-DEL", projectId: fx.projectId, workId: fx.workId,
+  let state = await createGateInWorkspace(fx.workspace, {
+    occurredAt: instant(5), externalKey: "GATE-DEL", projectId: fx.projectId, workId: fx.workId,
     title: "Decision gate", outcomeClass: "role_decision",
   });
   const gateId = state.gates[0].id;
-  state = await deleteGateInWorkspace(fx.workspace, fx.lease, { expectedVersion: 5, occurredAt: instant(6), id: gateId });
-  state = await transitionWork(fx.workspace, fx.lease, { expectedVersion: 6, occurredAt: instant(7), id: fx.workId, status: "done" });
+  state = await deleteGateInWorkspace(fx.workspace, { occurredAt: instant(6), id: gateId });
+  state = await transitionWork(fx.workspace, { occurredAt: instant(7), id: fx.workId, status: "done" });
   assert.equal(state.work.find((entry) => entry.id === fx.workId).status, "done");
 });
 
@@ -1032,21 +1001,21 @@ test("WSD-4: the designated set is exactly done — a pending gate leaves other 
   for (const target of ["blocked", "cancelled"]) {
     await context.test(`active to ${target}`, async (caseContext) => {
       const fx = await activeGatedFixture(caseContext);
-      await createGateInWorkspace(fx.workspace, fx.lease, {
-        expectedVersion: 4, occurredAt: instant(5), externalKey: `GATE-${target}`, projectId: fx.projectId, workId: fx.workId,
+      await createGateInWorkspace(fx.workspace, {
+        occurredAt: instant(5), externalKey: `GATE-${target}`, projectId: fx.projectId, workId: fx.workId,
         title: "Decision gate", outcomeClass: "role_decision",
       });
-      const state = await transitionWork(fx.workspace, fx.lease, { expectedVersion: 5, occurredAt: instant(6), id: fx.workId, status: target });
+      const state = await transitionWork(fx.workspace, { occurredAt: instant(6), id: fx.workId, status: target });
       assert.equal(state.work.find((entry) => entry.id === fx.workId).status, target);
     });
   }
   await context.test("planned to ready", async (caseContext) => {
     const fx = await seededFixture(caseContext);
-    await createGateInWorkspace(fx.workspace, fx.lease, {
-      expectedVersion: 2, occurredAt: instant(3), externalKey: "GATE-READY", projectId: fx.projectId, workId: fx.workId,
+    await createGateInWorkspace(fx.workspace, {
+      occurredAt: instant(3), externalKey: "GATE-READY", projectId: fx.projectId, workId: fx.workId,
       title: "Decision gate", outcomeClass: "role_decision",
     });
-    const state = await transitionWork(fx.workspace, fx.lease, { expectedVersion: 3, occurredAt: instant(4), id: fx.workId, status: "ready" });
+    const state = await transitionWork(fx.workspace, { occurredAt: instant(4), id: fx.workId, status: "ready" });
     assert.equal(state.work.find((entry) => entry.id === fx.workId).status, "ready");
   });
 });
@@ -1054,22 +1023,22 @@ test("WSD-4: the designated set is exactly done — a pending gate leaves other 
 test("WSD-4: satisfaction fails closed when the locator resolves to no or non-anchoring minutes, appending no event", async (context) => {
   const fx = await seededFixture(context);
   // A second work item plus a conference anchored only to it, closed with minutes.
-  let state = await createWork(fx.workspace, fx.lease, {
-    expectedVersion: 2, occurredAt: instant(3), projectId: fx.projectId, externalKey: "INITIATIVE-OTHER", kind: "Initiative", parentId: null,
+  let state = await createWork(fx.workspace, {
+    occurredAt: instant(3), projectId: fx.projectId, externalKey: "INITIATIVE-OTHER", kind: "Initiative", parentId: null,
   });
   const otherWorkId = state.work.find((entry) => entry.id !== fx.workId).id;
-  state = await openConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 3, occurredAt: instant(4), externalKey: "CONF-OTHER", projectId: fx.projectId, type: "architecture",
+  state = await openConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(4), externalKey: "CONF-OTHER", projectId: fx.projectId, type: "architecture",
     title: "Other", linkedWorkIds: [otherWorkId], desiredOutcome: "decide elsewhere", participantIds: [],
   });
   const conferenceId = state.conferences[0].id;
-  state = await closeConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 4, occurredAt: instant(5), conferenceId, minutesExternalKey: "MINUTES-OTHER",
+  state = await closeConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(5), conferenceId, minutesExternalKey: "MINUTES-OTHER",
     summary: "closed", outcomeClass: "role_decision", decisions: ["done"], unresolvedIssues: [],
   });
   // The gate anchors the FIRST work item, which those minutes do not cover.
-  state = await createGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 5, occurredAt: instant(6), externalKey: "GATE-EV", projectId: fx.projectId, workId: fx.workId,
+  state = await createGateInWorkspace(fx.workspace, {
+    occurredAt: instant(6), externalKey: "GATE-EV", projectId: fx.projectId, workId: fx.workId,
     title: "Decision gate", outcomeClass: "role_decision",
   });
   const gateId = state.gates[0].id;
@@ -1081,44 +1050,44 @@ test("WSD-4: satisfaction fails closed when the locator resolves to no or non-an
     "conference-minutes:BAD SUFFIX",              // not a protocol id
   ];
   for (const locator of unresolvable) {
-    await expectReasonAsync("WORKSPACE_GATE_EVIDENCE_UNRESOLVED", () => transitionGateInWorkspace(fx.workspace, fx.lease, {
-      expectedVersion: version, occurredAt: instant(7), id: gateId, status: "satisfied", minutesLocator: locator,
+    await expectReasonAsync("WORKSPACE_GATE_EVIDENCE_UNRESOLVED", () => transitionGateInWorkspace(fx.workspace, {
+      occurredAt: instant(7), id: gateId, status: "satisfied", minutesLocator: locator,
     }));
   }
   // An absent locator fails closed too.
-  await expectReasonAsync("WORKSPACE_GATE_EVIDENCE_UNRESOLVED", () => transitionGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: version, occurredAt: instant(7), id: gateId, status: "satisfied",
+  await expectReasonAsync("WORKSPACE_GATE_EVIDENCE_UNRESOLVED", () => transitionGateInWorkspace(fx.workspace, {
+    occurredAt: instant(7), id: gateId, status: "satisfied",
   }));
   assert.equal((await materializeWorkspace(fx.workspace)).version, version, "no failed satisfaction appended an event");
 });
 
 test("WSD-4: the gate lifecycle graph is enforced at the verb — satisfied is terminal and a locator is rejected off the satisfied path", async (context) => {
   const fx = await seededFixture(context);
-  let state = await openConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 2, occurredAt: instant(3), externalKey: "CONF-GRAPH", projectId: fx.projectId, type: "architecture",
+  let state = await openConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(3), externalKey: "CONF-GRAPH", projectId: fx.projectId, type: "architecture",
     title: "Graph", linkedWorkIds: [fx.workId], desiredOutcome: "decide", participantIds: [],
   });
   const conferenceId = state.conferences[0].id;
-  state = await closeConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 3, occurredAt: instant(4), conferenceId, minutesExternalKey: "MINUTES-GRAPH",
+  state = await closeConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(4), conferenceId, minutesExternalKey: "MINUTES-GRAPH",
     summary: "closed", outcomeClass: "role_decision", decisions: ["go"], unresolvedIssues: [],
   });
-  state = await createGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 4, occurredAt: instant(5), externalKey: "GATE-GRAPH", projectId: fx.projectId, workId: fx.workId,
+  state = await createGateInWorkspace(fx.workspace, {
+    occurredAt: instant(5), externalKey: "GATE-GRAPH", projectId: fx.projectId, workId: fx.workId,
     title: "Decision gate", outcomeClass: "role_decision",
   });
   const gateId = state.gates[0].id;
   // A minutes locator on a non-satisfied transition is rejected.
-  await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => transitionGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 5, occurredAt: instant(6), id: gateId, status: "blocked", minutesLocator: minutesLocator("MINUTES-GRAPH"),
+  await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => transitionGateInWorkspace(fx.workspace, {
+    occurredAt: instant(6), id: gateId, status: "blocked", minutesLocator: minutesLocator("MINUTES-GRAPH"),
   }));
-  state = await transitionGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 5, occurredAt: instant(6), id: gateId, status: "satisfied", minutesLocator: minutesLocator("MINUTES-GRAPH"),
+  state = await transitionGateInWorkspace(fx.workspace, {
+    occurredAt: instant(6), id: gateId, status: "satisfied", minutesLocator: minutesLocator("MINUTES-GRAPH"),
   });
   // satisfied is terminal: no further status move is admissible.
   const version = state.version;
-  await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => transitionGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: version, occurredAt: instant(7), id: gateId, status: "blocked",
+  await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => transitionGateInWorkspace(fx.workspace, {
+    occurredAt: instant(7), id: gateId, status: "blocked",
   }));
   assert.equal((await materializeWorkspace(fx.workspace)).version, version, "the off-graph transition appended no event");
 });
@@ -1142,22 +1111,22 @@ test("gate-v1: an owner_intent_required gate cannot be satisfied without a roste
     expectedFileSha256: canonicalSha256(roster),
   });
 
-  let state = await openConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 2, occurredAt: instant(3), externalKey: "CONF-OWNER", projectId: fx.projectId, type: "architecture",
+  let state = await openConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(3), externalKey: "CONF-OWNER", projectId: fx.projectId, type: "architecture",
     title: "Owner ruling", linkedWorkIds: [fx.workId], desiredOutcome: "rule", participantIds: [],
   });
   const conferenceId = state.conferences[0].id;
-  state = await closeConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 3, occurredAt: instant(4), conferenceId, minutesExternalKey: "MINUTES-OWNER",
+  state = await closeConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(4), conferenceId, minutesExternalKey: "MINUTES-OWNER",
     summary: "Ruled.", outcomeClass: "owner_intent_required", decisions: ["ruled"], unresolvedIssues: [],
   });
-  state = await createGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 4, occurredAt: instant(5), externalKey: "GATE-OWNER", projectId: fx.projectId, workId: fx.workId,
+  state = await createGateInWorkspace(fx.workspace, {
+    occurredAt: instant(5), externalKey: "GATE-OWNER", projectId: fx.projectId, workId: fx.workId,
     title: "Owner gate", outcomeClass: "owner_intent_required",
   });
   const gateId = state.gates[0].id;
-  const satisfy = (extra) => transitionGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 5, occurredAt: instant(6), id: gateId, status: "satisfied",
+  const satisfy = (extra) => transitionGateInWorkspace(fx.workspace, {
+    occurredAt: instant(6), id: gateId, status: "satisfied",
     minutesLocator: minutesLocator("MINUTES-OWNER"), ...extra,
   });
   const refused = async (code, extra) => {
@@ -1201,38 +1170,38 @@ test("gate-v1: a supplied roster is honoured for every class, and no class but o
     expectedFileSha256: canonicalSha256(roster),
   });
 
-  let state = await openConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 2, occurredAt: instant(3), externalKey: "CONF-ROLE", projectId: fx.projectId, type: "risk",
+  let state = await openConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(3), externalKey: "CONF-ROLE", projectId: fx.projectId, type: "risk",
     title: "Role call", linkedWorkIds: [fx.workId], desiredOutcome: "decide", participantIds: [],
   });
   const conferenceId = state.conferences[0].id;
-  state = await closeConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 3, occurredAt: instant(4), conferenceId, minutesExternalKey: "MINUTES-ROLE",
+  state = await closeConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(4), conferenceId, minutesExternalKey: "MINUTES-ROLE",
     summary: "Decided.", outcomeClass: "role_decision", decisions: ["decided"], unresolvedIssues: [],
   });
-  state = await createGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 4, occurredAt: instant(5), externalKey: "GATE-ROLE", projectId: fx.projectId, workId: fx.workId,
+  state = await createGateInWorkspace(fx.workspace, {
+    occurredAt: instant(5), externalKey: "GATE-ROLE", projectId: fx.projectId, workId: fx.workId,
     title: "Role gate", outcomeClass: "role_decision",
   });
   const gateId = state.gates[0].id;
 
   // Supplied against a class the roster does not grant: still refused.
-  await assert.rejects(transitionGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 5, occurredAt: instant(6), id: gateId, status: "satisfied",
+  await assert.rejects(transitionGateInWorkspace(fx.workspace, {
+    occurredAt: instant(6), id: gateId, status: "satisfied",
     minutesLocator: minutesLocator("MINUTES-ROLE"), identityAuthority: admitted, actorId: "owner:governance",
   }), (error) => error?.reasonCode === "WORKSPACE_GATE_IDENTITY_REFUSED");
 
   // Supplied without an actor, on a class that does not itself demand one. The
   // roster still cannot answer "who", and answering anyway would be the skip.
-  await assert.rejects(transitionGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 5, occurredAt: instant(6), id: gateId, status: "satisfied",
+  await assert.rejects(transitionGateInWorkspace(fx.workspace, {
+    occurredAt: instant(6), id: gateId, status: "satisfied",
     minutesLocator: minutesLocator("MINUTES-ROLE"), identityAuthority: admitted,
   }), (error) => error?.reasonCode === "WORKSPACE_GATE_IDENTITY_REQUIRED");
   assert.equal((await materializeWorkspace(fx.workspace)).version, 5, "the refusal appended no event");
 
   // Not supplied against a non-owner class: unchanged from before gate-v1.
-  state = await transitionGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 5, occurredAt: instant(6), id: gateId, status: "satisfied",
+  state = await transitionGateInWorkspace(fx.workspace, {
+    occurredAt: instant(6), id: gateId, status: "satisfied",
     minutesLocator: minutesLocator("MINUTES-ROLE"),
   });
   assert.equal(state.gates[0].status, "satisfied");
@@ -1256,23 +1225,23 @@ test("gate-v1: the identity decision is written down, and replay judges it witho
 
   // Identity gating only means something on a chain that records who acted, so this
   // is the configuration the feature is for.
-  await enableActorAttestation(fx.workspace, fx.lease, { expectedVersion: 2, occurredAt: instant(3), actorId: "owner:governance" });
-  let state = await openConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 3, occurredAt: instant(4), externalKey: "CONF-DEC", projectId: fx.projectId, type: "architecture",
+  await enableActorAttestation(fx.workspace, { occurredAt: instant(3), actorId: "owner:governance" });
+  let state = await openConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(4), externalKey: "CONF-DEC", projectId: fx.projectId, type: "architecture",
     title: "Decision", linkedWorkIds: [fx.workId], desiredOutcome: "rule", participantIds: [], actorId: "owner:governance",
   });
   const conferenceId = state.conferences[0].id;
-  state = await closeConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 4, occurredAt: instant(5), conferenceId, minutesExternalKey: "MINUTES-DEC",
+  state = await closeConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(5), conferenceId, minutesExternalKey: "MINUTES-DEC",
     summary: "Ruled.", outcomeClass: "owner_intent_required", decisions: ["ruled"], unresolvedIssues: [], actorId: "owner:governance",
   });
-  state = await createGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 5, occurredAt: instant(6), externalKey: "GATE-DEC", projectId: fx.projectId, workId: fx.workId,
+  state = await createGateInWorkspace(fx.workspace, {
+    occurredAt: instant(6), externalKey: "GATE-DEC", projectId: fx.projectId, workId: fx.workId,
     title: "Decision gate", outcomeClass: "owner_intent_required", actorId: "owner:governance",
   });
   const gateId = state.gates[0].id;
-  state = await transitionGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 6, occurredAt: instant(7), id: gateId, status: "satisfied",
+  state = await transitionGateInWorkspace(fx.workspace, {
+    occurredAt: instant(7), id: gateId, status: "satisfied",
     minutesLocator: minutesLocator("MINUTES-DEC"), identityAuthority: admitted, actorId: "owner:governance",
   });
 
@@ -1309,23 +1278,23 @@ test("gate-v1: a decision that disagrees with its own event is corrupt", async (
 
   // Identity gating only means something on a chain that records who acted, so this
   // is the configuration the feature is for.
-  await enableActorAttestation(fx.workspace, fx.lease, { expectedVersion: 2, occurredAt: instant(3), actorId: "owner:governance" });
-  let state = await openConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 3, occurredAt: instant(4), externalKey: "CONF-MIS", projectId: fx.projectId, type: "architecture",
+  await enableActorAttestation(fx.workspace, { occurredAt: instant(3), actorId: "owner:governance" });
+  let state = await openConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(4), externalKey: "CONF-MIS", projectId: fx.projectId, type: "architecture",
     title: "Mismatch", linkedWorkIds: [fx.workId], desiredOutcome: "rule", participantIds: [], actorId: "owner:governance",
   });
   const conferenceId = state.conferences[0].id;
-  state = await closeConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 4, occurredAt: instant(5), conferenceId, minutesExternalKey: "MINUTES-MIS",
+  state = await closeConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(5), conferenceId, minutesExternalKey: "MINUTES-MIS",
     summary: "Ruled.", outcomeClass: "owner_intent_required", decisions: ["ruled"], unresolvedIssues: [], actorId: "owner:governance",
   });
-  state = await createGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 5, occurredAt: instant(6), externalKey: "GATE-MIS", projectId: fx.projectId, workId: fx.workId,
+  state = await createGateInWorkspace(fx.workspace, {
+    occurredAt: instant(6), externalKey: "GATE-MIS", projectId: fx.projectId, workId: fx.workId,
     title: "Mismatch gate", outcomeClass: "owner_intent_required", actorId: "owner:governance",
   });
   const gateId = state.gates[0].id;
-  await transitionGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 6, occurredAt: instant(7), id: gateId, status: "satisfied",
+  await transitionGateInWorkspace(fx.workspace, {
+    occurredAt: instant(7), id: gateId, status: "satisfied",
     minutesLocator: minutesLocator("MINUTES-MIS"), identityAuthority: admitted, actorId: "owner:governance",
   });
 
@@ -1403,21 +1372,20 @@ test("gate-v1: the roster reaches gate-transition through the CLI, and every ref
     assert.equal(outcome.ok, true, `${label} failed: ${outcome.reasonCode}`);
     return outcome;
   };
-  await step("attestation-enable", ["attestation-enable", "--workspace", ws, "--expected-version", "2", "--at", instant(3), "--actor", "owner:governance"]);
-  await invokeCli(["conference-open", "--workspace", ws, "--expected-version", "3", "--at", instant(4),
+  await step("attestation-enable", ["attestation-enable", "--workspace", ws, "--at", instant(3), "--actor", "owner:governance"]);
+  await invokeCli(["conference-open", "--workspace", ws, "--at", instant(4),
     "--external-key", "CONF-CLI-ID", "--project-id", fx.projectId, "--type", "architecture", "--title", "Ruling",
     "--work-ids", fx.workId, "--desired-outcome", "rule", "--participant-ids", "-", "--actor", "owner:governance"]);
-  await step("conference-close", ["conference-close", "--workspace", ws, "--expected-version", "4", "--at", instant(5),
+  await step("conference-close", ["conference-close", "--workspace", ws, "--at", instant(5),
     "--conference-id", deriveStableId("conference", "CONF-CLI-ID"), "--minutes-external-key", "MINUTES-CLI-ID",
     "--summary", "Ruled.", "--outcome-class", "owner_intent_required", "--decisions", "ruled",
     "--unresolved-issues", "-", "--actor", "owner:governance"]);
-  await invokeCli(["gate-create", "--workspace", ws, "--expected-version", "5", "--at", instant(6),
+  await invokeCli(["gate-create", "--workspace", ws, "--at", instant(6),
     "--external-key", "GATE-CLI-ID", "--project-id", fx.projectId, "--work-id", fx.workId,
     "--title", "Owner gate", "--outcome-class", "owner_intent_required", "--actor", "owner:governance"]);
 
   const gateId = deriveStableId("gate", "GATE-CLI-ID");
-  const satisfy = (extra) => invokeCli(["gate-transition", "--workspace", ws, "--expected-version", "6",
-    "--at", instant(7), "--id", gateId, "--status", "satisfied",
+  const satisfy = (extra) => invokeCli(["gate-transition", "--workspace", ws, "--at", instant(7), "--id", gateId, "--status", "satisfied",
     "--minutes-locator", minutesLocator("MINUTES-CLI-ID"), ...extra]);
   const refused = async (code, extra) => {
     const outcome = await satisfy(extra);
@@ -1453,24 +1421,24 @@ test("gate-v1: a chain written before gate-v1 still replays, owner gates and all
   // such gates between them; if replay rejected them the feature would have bricked
   // every workspace that ever used owner_intent_required.
   const fx = await seededFixture(context);
-  let state = await openConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 2, occurredAt: instant(3), externalKey: "CONF-LEGACY", projectId: fx.projectId, type: "architecture",
+  let state = await openConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(3), externalKey: "CONF-LEGACY", projectId: fx.projectId, type: "architecture",
     title: "Legacy", linkedWorkIds: [fx.workId], desiredOutcome: "rule", participantIds: [],
   });
   const conferenceId = state.conferences[0].id;
-  state = await closeConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 3, occurredAt: instant(4), conferenceId, minutesExternalKey: "MINUTES-LEGACY",
+  state = await closeConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(4), conferenceId, minutesExternalKey: "MINUTES-LEGACY",
     summary: "Ruled.", outcomeClass: "owner_intent_required", decisions: ["ruled"], unresolvedIssues: [],
   });
-  state = await createGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 4, occurredAt: instant(5), externalKey: "GATE-LEGACY", projectId: fx.projectId, workId: fx.workId,
+  state = await createGateInWorkspace(fx.workspace, {
+    occurredAt: instant(5), externalKey: "GATE-LEGACY", projectId: fx.projectId, workId: fx.workId,
     title: "Legacy owner gate", outcomeClass: "owner_intent_required",
   });
   const gate = state.gates[0];
 
   // The verb refuses this now, which is why the event is written by hand.
-  await assert.rejects(transitionGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 5, occurredAt: instant(6), id: gate.id, status: "satisfied",
+  await assert.rejects(transitionGateInWorkspace(fx.workspace, {
+    occurredAt: instant(6), id: gate.id, status: "satisfied",
     minutesLocator: minutesLocator("MINUTES-LEGACY"),
   }), (error) => error?.reasonCode === "WORKSPACE_GATE_IDENTITY_REQUIRED");
 
@@ -1510,17 +1478,17 @@ test("gate-v1: replay accepts a forged tail-append, and this is proved rather th
   // If this case ever goes red, the boundary has moved and the written statement in
   // docs/architecture/agent-integration-v1.md must move with it.
   const fx = await seededFixture(context);
-  let state = await openConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 2, occurredAt: instant(3), externalKey: "CONF-FORGE", projectId: fx.projectId, type: "architecture",
+  let state = await openConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(3), externalKey: "CONF-FORGE", projectId: fx.projectId, type: "architecture",
     title: "Forge", linkedWorkIds: [fx.workId], desiredOutcome: "rule", participantIds: [],
   });
   const conferenceId = state.conferences[0].id;
-  state = await closeConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 3, occurredAt: instant(4), conferenceId, minutesExternalKey: "MINUTES-FORGE",
+  state = await closeConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(4), conferenceId, minutesExternalKey: "MINUTES-FORGE",
     summary: "Ruled.", outcomeClass: "owner_intent_required", decisions: ["ruled"], unresolvedIssues: [],
   });
-  state = await createGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 4, occurredAt: instant(5), externalKey: "GATE-FORGE", projectId: fx.projectId, workId: fx.workId,
+  state = await createGateInWorkspace(fx.workspace, {
+    occurredAt: instant(5), externalKey: "GATE-FORGE", projectId: fx.projectId, workId: fx.workId,
     title: "Forge gate", outcomeClass: "owner_intent_required",
   });
   const gate = state.gates[0];
@@ -1565,8 +1533,8 @@ test("E05: work-annotate attaches advisory extensions, round-trips, replays, and
   const workId = fx.workId;
   const minutesId = deriveStableId("minutes", "MINUTES-FORGED");
 
-  let state = await annotateWork(fx.workspace, fx.lease, {
-    expectedVersion: 2, occurredAt: instant(3), id: workId,
+  let state = await annotateWork(fx.workspace, {
+    occurredAt: instant(3), id: workId,
     scope: "carry the authoritative scope on the record", decidedBy: [minutesId],
   });
   const annotated = state.work.find((entry) => entry.id === workId);
@@ -1580,8 +1548,8 @@ test("E05: work-annotate attaches advisory extensions, round-trips, replays, and
   assert.deepEqual(replayed.work.find((entry) => entry.id === workId).extensions, annotated.extensions, "replay reproduces the advisory extensions exactly");
 
   // A scope-only annotation updates scope and leaves the earlier decided-by in place.
-  state = await annotateWork(fx.workspace, fx.lease, {
-    expectedVersion: 3, occurredAt: instant(4), id: workId, scope: "revised scope",
+  state = await annotateWork(fx.workspace, {
+    occurredAt: instant(4), id: workId, scope: "revised scope",
   });
   const merged = state.work.find((entry) => entry.id === workId);
   assert.equal(merged.revision, 3);
@@ -1601,16 +1569,16 @@ test("E05: work-annotate fails closed at the verb on empty, malformed, or no-op 
     { decidedBy: ["not-a-minutes-id"] },
     { decidedBy: ["gate:abc123"] },
   ]) {
-    await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => annotateWork(fx.workspace, fx.lease, {
-      expectedVersion: 2, occurredAt: instant(3), id: workId, ...bad,
+    await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => annotateWork(fx.workspace, {
+      occurredAt: instant(3), id: workId, ...bad,
     }));
   }
   assert.equal((await materializeWorkspace(fx.workspace)).version, 2, "no rejected annotation appended an event");
 
   // One real annotation, then a byte-identical repeat is refused as a no-op.
-  await annotateWork(fx.workspace, fx.lease, { expectedVersion: 2, occurredAt: instant(3), id: workId, scope: "s", decidedBy: [good] });
-  await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => annotateWork(fx.workspace, fx.lease, {
-    expectedVersion: 3, occurredAt: instant(4), id: workId, scope: "s", decidedBy: [good],
+  await annotateWork(fx.workspace, { occurredAt: instant(3), id: workId, scope: "s", decidedBy: [good] });
+  await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => annotateWork(fx.workspace, {
+    occurredAt: instant(4), id: workId, scope: "s", decidedBy: [good],
   }));
 });
 
@@ -1618,8 +1586,8 @@ test("E05: a forged work.annotated event fails replay closed on a status change 
   const forge = async (context, mutateRecord) => {
     const fx = await seededFixture(context);
     const workId = fx.workId;
-    await annotateWork(fx.workspace, fx.lease, {
-      expectedVersion: 2, occurredAt: instant(3), id: workId, scope: "s", decidedBy: [deriveStableId("minutes", "MINUTES-FORGED")],
+    await annotateWork(fx.workspace, {
+      occurredAt: instant(3), id: workId, scope: "s", decidedBy: [deriveStableId("minutes", "MINUTES-FORGED")],
     });
     assert.equal((await materializeWorkspace(fx.workspace)).version, 3, "the honest chain replays");
     await rewriteEventChain(fx.workspace, (events) => events.map((event) => event.payload.operation === "work.annotated"
@@ -1660,16 +1628,13 @@ test("INIT-004: the CLI opens Incident for creation and it materializes outside 
     "【Permissions】the test owner may create work.",
     "【Implementation Notes】fixture-only scope.",
   ].join("\n\n");
-  const story = JSON.parse((await invokeCli(["work-create", "--title", "record-title", "--workspace", ws, "--expected-version", "2",
-    "--at", instant(3), "--project-id", fx.projectId, "--external-key", "EPIC-X", "--kind", "Epic",
+  const story = JSON.parse((await invokeCli(["work-create", "--title", "record-title", "--workspace", ws, "--at", instant(3), "--project-id", fx.projectId, "--external-key", "EPIC-X", "--kind", "Epic",
     "--parent-id", fx.workId])).output);
-  const st = JSON.parse((await invokeCli(["work-create", "--title", "record-title", "--workspace", ws, "--expected-version", "3",
-    "--at", instant(4), "--project-id", fx.projectId, "--external-key", "STORY-X", "--kind", "Story",
+  const st = JSON.parse((await invokeCli(["work-create", "--title", "record-title", "--workspace", ws, "--at", instant(4), "--project-id", fx.projectId, "--external-key", "STORY-X", "--kind", "Story",
     "--parent-id", story.record.id, "--scope", storyScope])).output);
 
   // Incident, found in that Story, via the CLI.
-  const incident = await invokeCli(["work-create", "--title", "record-title", "--workspace", ws, "--expected-version", "4",
-    "--at", instant(5), "--project-id", fx.projectId, "--external-key", "BUG-1", "--kind", "Incident",
+  const incident = await invokeCli(["work-create", "--title", "record-title", "--workspace", ws, "--at", instant(5), "--project-id", fx.projectId, "--external-key", "BUG-1", "--kind", "Incident",
     "--parent-id", st.record.id]);
   assert.equal(incident.ok, true, `incident create failed: ${incident.reasonCode}`);
   const rec = JSON.parse(incident.output).record;
@@ -1683,16 +1648,14 @@ test("INIT-004: the CLI opens Incident for creation and it materializes outside 
   assert.equal((await validateWorkspace(fx.workspace, false)).version, 5);
 
   // A parentless Incident is equally valid (found nowhere in particular).
-  const orphan = await invokeCli(["work-create", "--title", "record-title", "--workspace", ws, "--expected-version", "5",
-    "--at", instant(6), "--project-id", fx.projectId, "--external-key", "BUG-2", "--kind", "Incident",
+  const orphan = await invokeCli(["work-create", "--title", "record-title", "--workspace", ws, "--at", instant(6), "--project-id", fx.projectId, "--external-key", "BUG-2", "--kind", "Incident",
     "--parent-id", "-"]);
   assert.equal(orphan.ok, true, `parentless incident failed: ${orphan.reasonCode}`);
 
   // The two kinds still closed at the CLI stay closed. (Release was opened in 0.5.0 for
   // sprints / release trains — see the sprint tests below.)
   for (const closed of ["Review", "Knowledge"]) {
-    const r = await invokeCli(["work-create", "--title", "record-title", "--workspace", ws, "--expected-version", "6",
-      "--at", instant(7), "--project-id", fx.projectId, "--external-key", `X-${closed}`, "--kind", closed]);
+    const r = await invokeCli(["work-create", "--title", "record-title", "--workspace", ws, "--at", instant(7), "--project-id", fx.projectId, "--external-key", `X-${closed}`, "--kind", closed]);
     assert.equal(r.ok, false);
     assert.equal(r.reasonCode, "CLI_ARGUMENT_MALFORMED", `${closed} should stay closed at the CLI`);
   }
@@ -1709,8 +1672,7 @@ test("MIN-102 the write path stops minting the retired outcome classes, and stil
   const ws = fx.ws;
 
   for (const [index, retired] of ["blocked", "discussion_only", "recommendation"].entries()) {
-    const r = await invokeCli(["gate-create", "--workspace", ws, "--expected-version", "head",
-      "--at", instant(20), "--external-key", `GATE-RETIRED-${index + 1}`, "--project-id", fx.projectId,
+    const r = await invokeCli(["gate-create", "--workspace", ws, "--at", instant(20), "--external-key", `GATE-RETIRED-${index + 1}`, "--project-id", fx.projectId,
       "--work-id", fx.workId, "--title", "retired", "--outcome-class", retired]);
     assert.equal(r.ok, false, retired);
     assert.equal(r.reasonCode, "CLI_ARGUMENT_MALFORMED", `gate ${retired} must not be mintable`);
@@ -1720,14 +1682,13 @@ test("MIN-102 the write path stops minting the retired outcome classes, and stil
   // built from the class name: the key grammar admits no underscore, so
   // `owner_intent_required` cannot appear in one.
   for (const [index, kept] of ["role_decision", "owner_intent_required"].entries()) {
-    const r = await invokeCli(["gate-create", "--workspace", ws, "--expected-version", "head", "--at", instant(21 + index),
+    const r = await invokeCli(["gate-create", "--workspace", ws, "--at", instant(21 + index),
       "--external-key", `GATE-KEPT-${index + 1}`, "--project-id", fx.projectId, "--work-id", fx.workId,
       "--title", "kept", "--outcome-class", kept]);
     assert.equal(r.ok, true, `${kept} must still be mintable: ${r.reasonCode}`);
   }
 
-  const garbage = await invokeCli(["gate-create", "--workspace", ws, "--expected-version", "head",
-    "--at", instant(22), "--external-key", "GATE-GARBAGE", "--project-id", fx.projectId,
+  const garbage = await invokeCli(["gate-create", "--workspace", ws, "--at", instant(22), "--external-key", "GATE-GARBAGE", "--project-id", fx.projectId,
     "--work-id", fx.workId, "--title", "garbage", "--outcome-class", "not-a-class"]);
   assert.equal(garbage.ok, false);
   assert.equal(garbage.reasonCode, "GATE_SCHEMA_INVALID", "an unrecognised value must still reach the engine");
@@ -1741,8 +1702,8 @@ test("sprint: a Release is created parentless", async (context) => {
   // ever fails, the parentage rule that keeps the timebox axis from entangling the scope
   // tree has been dropped.
   const fx = await seededFixture(context);
-  const state = await createWork(fx.workspace, fx.lease, {
-    expectedVersion: 2, occurredAt: instant(3), projectId: fx.projectId, externalKey: "SPRINT-W31", kind: "Release", parentId: null,
+  const state = await createWork(fx.workspace, {
+    occurredAt: instant(3), projectId: fx.projectId, externalKey: "SPRINT-W31", kind: "Release", parentId: null,
   });
   const sprint = state.work.find((entry) => entry.externalKey === "SPRINT-W31");
   assert.equal(sprint.kind, "Release");
@@ -1752,8 +1713,8 @@ test("sprint: a Release is created parentless", async (context) => {
 
 test("sprint: a Release cannot take a parent", async (context) => {
   const fx = await seededFixture(context);
-  await expectReasonAsync("GRAPH_PARENT_KIND_INVALID", () => createWork(fx.workspace, fx.lease, {
-    expectedVersion: 2, occurredAt: instant(3), projectId: fx.projectId, externalKey: "SPRINT-BAD", kind: "Release", parentId: fx.workId,
+  await expectReasonAsync("GRAPH_PARENT_KIND_INVALID", () => createWork(fx.workspace, {
+    occurredAt: instant(3), projectId: fx.projectId, externalKey: "SPRINT-BAD", kind: "Release", parentId: fx.workId,
   }));
 });
 
@@ -1762,12 +1723,12 @@ test("sprint: a valid sprint annotation is stored and round-trips", async (conte
   // sprint by a qualified reference to the sprint's Release record.
   const fx = await seededFixture(context);
   const workspaceId = fx.state.metadata.workspaceId;
-  let state = await createWork(fx.workspace, fx.lease, {
-    expectedVersion: 2, occurredAt: instant(3), projectId: fx.projectId, externalKey: "SPRINT-W31", kind: "Release", parentId: null,
+  let state = await createWork(fx.workspace, {
+    occurredAt: instant(3), projectId: fx.projectId, externalKey: "SPRINT-W31", kind: "Release", parentId: null,
   });
   const sprintId = state.work.find((entry) => entry.externalKey === "SPRINT-W31").id;
   const ref = { workspaceId, workId: sprintId };
-  state = await annotateWork(fx.workspace, fx.lease, { expectedVersion: 3, occurredAt: instant(4), id: fx.workId, sprint: ref });
+  state = await annotateWork(fx.workspace, { occurredAt: instant(4), id: fx.workId, sprint: ref });
   const member = state.work.find((entry) => entry.id === fx.workId);
   assert.deepEqual(member.extensions["advisory:sprint"], { required: false, value: ref });
   assert.equal(member.status, "planned", "a sprint annotation never changes status");
@@ -1782,8 +1743,8 @@ test("sprint: a malformed sprint reference fails closed at the verb", async (con
     { workspaceId: "workspace:7732a51de4c38afb83bb77cf", workId: "notwork:abc" },
     { workspaceId: "workspace:7732a51de4c38afb83bb77cf" },
   ]) {
-    await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => annotateWork(fx.workspace, fx.lease, {
-      expectedVersion: 2, occurredAt: instant(3), id: fx.workId, sprint: bad,
+    await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => annotateWork(fx.workspace, {
+      occurredAt: instant(3), id: fx.workId, sprint: bad,
     }));
   }
   assert.equal((await materializeWorkspace(fx.workspace)).version, 2, "no rejected annotation appended an event");
@@ -1791,11 +1752,11 @@ test("sprint: a malformed sprint reference fails closed at the verb", async (con
 
 test("sprint: a forged advisory:sprint value fails replay closed", async (context) => {
   const fx = await seededFixture(context);
-  let state = await createWork(fx.workspace, fx.lease, {
-    expectedVersion: 2, occurredAt: instant(3), projectId: fx.projectId, externalKey: "SPRINT-W31", kind: "Release", parentId: null,
+  let state = await createWork(fx.workspace, {
+    occurredAt: instant(3), projectId: fx.projectId, externalKey: "SPRINT-W31", kind: "Release", parentId: null,
   });
   const ref = { workspaceId: fx.state.metadata.workspaceId, workId: state.work.find((e) => e.externalKey === "SPRINT-W31").id };
-  await annotateWork(fx.workspace, fx.lease, { expectedVersion: 3, occurredAt: instant(4), id: fx.workId, sprint: ref });
+  await annotateWork(fx.workspace, { occurredAt: instant(4), id: fx.workId, sprint: ref });
   assert.equal((await materializeWorkspace(fx.workspace)).version, 4, "the honest chain replays");
   await rewriteEventChain(fx.workspace, (events) => events.map((event) => event.payload.operation === "work.annotated"
     ? { ...event, payload: { ...event.payload, record: { ...event.payload.record,
@@ -1824,14 +1785,12 @@ test("sprint: the CLI opens Release create and work-list --sprint filters member
   const ws = fx.ws;
   const workspaceId = (await validateWorkspace(ws)).metadata.workspaceId;
   // Release is now creatable at the CLI (parentless).
-  const sprint = await invokeCli(["work-create", "--title", "record-title", "--workspace", ws, "--expected-version", "2",
-    "--at", instant(3), "--project-id", fx.projectId, "--external-key", "SPRINT-W31", "--kind", "Release", "--parent-id", "-"]);
+  const sprint = await invokeCli(["work-create", "--title", "record-title", "--workspace", ws, "--at", instant(3), "--project-id", fx.projectId, "--external-key", "SPRINT-W31", "--kind", "Release", "--parent-id", "-"]);
   assert.equal(sprint.ok, true, `release create failed: ${sprint.reasonCode}`);
   const sprintId = JSON.parse(sprint.output).record.id;
   const qualified = `${workspaceId}#${sprintId}`;
   // Annotate the Initiative into the sprint through the CLI.
-  const annotated = await invokeCli(["work-annotate", "--workspace", ws, "--expected-version", "3",
-    "--at", instant(4), "--id", fx.workId, "--sprint", qualified]);
+  const annotated = await invokeCli(["work-annotate", "--workspace", ws, "--at", instant(4), "--id", fx.workId, "--sprint", qualified]);
   assert.equal(annotated.ok, true, `sprint annotate failed: ${annotated.reasonCode}`);
   // work-list --sprint returns exactly the member; a different sprint ref returns none.
   const listed = JSON.parse((await invokeCli(["work-list", "--workspace", ws, "--sprint", qualified])).output);
@@ -1840,14 +1799,14 @@ test("sprint: the CLI opens Release create and work-list --sprint filters member
   const other = JSON.parse((await invokeCli(["work-list", "--workspace", ws, "--sprint", `${workspaceId}#work:000000000000000000000000`])).output);
   assert.equal(other.records.length, 0);
   // A malformed --sprint spelling fails closed at the CLI.
-  const bad = await invokeCli(["work-annotate", "--workspace", ws, "--expected-version", "4", "--at", instant(5), "--id", fx.workId, "--sprint", "no-hash-here"]);
+  const bad = await invokeCli(["work-annotate", "--workspace", ws, "--at", instant(5), "--id", fx.workId, "--sprint", "no-hash-here"]);
   assert.equal(bad.ok, false);
   assert.equal(bad.reasonCode, "CLI_ARGUMENT_MALFORMED");
   // work-show projects the sprint tag as the qualified object.
   const shown = JSON.parse((await invokeCli(["work-show", "--workspace", ws, "--id", fx.workId])).output);
   assert.deepEqual(shown.advisory.sprint, { workspaceId, workId: sprintId });
   // A byte-identical sprint-only re-annotation is refused as a no-op.
-  const noop = await invokeCli(["work-annotate", "--workspace", ws, "--expected-version", "4", "--at", instant(6), "--id", fx.workId, "--sprint", qualified]);
+  const noop = await invokeCli(["work-annotate", "--workspace", ws, "--at", instant(6), "--id", fx.workId, "--sprint", qualified]);
   assert.equal(noop.ok, false);
   assert.equal(noop.reasonCode, "WORKSPACE_INPUT_INVALID");
 });
@@ -1859,13 +1818,13 @@ test("sprint: the CLI opens Release create and work-list --sprint filters member
 // replay knows, and a per-deployment budget that only the write path consults.
 test("MIN-102 the position ceiling is fixed for replay while the budget is a write-path setting", async (context) => {
   const fx = await seededFixture(context);
-  let state = await openConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 2, occurredAt: instant(3), externalKey: "CONF-BUDGET", projectId: fx.projectId,
+  let state = await openConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(3), externalKey: "CONF-BUDGET", projectId: fx.projectId,
     type: "architecture", title: "Budget", linkedWorkIds: [fx.workId], desiredOutcome: "size a position", participantIds: [],
   });
   const conferenceId = state.conferences[0].id;
-  const append = (version, key, size) => appendConferencePositionInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: version, occurredAt: instant(4), conferenceId, externalKey: key,
+  const append = (version, key, size) => appendConferencePositionInWorkspace(fx.workspace, {
+    occurredAt: instant(4), conferenceId, externalKey: key,
     authorActorId: "actor:minerva", position: "x".repeat(size), risks: [], recommendations: [], evidenceIds: [],
   });
 
@@ -1875,16 +1834,16 @@ test("MIN-102 the position ceiling is fixed for replay while the budget is a wri
   await expectReasonAsync("CONFERENCE_BUDGET_EXCEEDED", () => append(state.version, "POS-OVER-DEFAULT", 4097));
 
   // Raising the setting admits more, up to the ceiling and never past it.
-  state = await setWorkspaceSetting(fx.workspace, fx.lease, {
-    expectedVersion: state.version, occurredAt: instant(5), key: "conference.positionBudgetBytes", value: "8192",
+  state = await setWorkspaceSetting(fx.workspace, {
+    occurredAt: instant(5), key: "conference.positionBudgetBytes", value: "8192",
   });
   state = await append(state.version, "POS-AT-CEILING", CONFERENCE_POSITION_CEILING_BYTES);
   await expectReasonAsync("CONFERENCE_BUDGET_EXCEEDED", () => append(state.version, "POS-PAST-CEILING", CONFERENCE_POSITION_CEILING_BYTES + 1));
 
   // Lowering the budget refuses new writes and leaves the written ones readable: the
   // record's validity is a function of its bytes, not of where it sits in the chain.
-  state = await setWorkspaceSetting(fx.workspace, fx.lease, {
-    expectedVersion: state.version, occurredAt: instant(6), key: "conference.positionBudgetBytes", value: "1024",
+  state = await setWorkspaceSetting(fx.workspace, {
+    occurredAt: instant(6), key: "conference.positionBudgetBytes", value: "1024",
   });
   await expectReasonAsync("CONFERENCE_BUDGET_EXCEEDED", () => append(state.version, "POS-AFTER-LOWERING", 2048));
   const replayed = await materializeWorkspace(fx.workspace);
@@ -1893,8 +1852,8 @@ test("MIN-102 the position ceiling is fixed for replay while the budget is a wri
 
   // The setting is bounded by the ceiling at the catalog layer too, so a deployment
   // cannot declare a budget the reducer would then refuse.
-  await expectReasonAsync("SETTINGS_VALUE_INVALID", () => setWorkspaceSetting(fx.workspace, fx.lease, {
-    expectedVersion: state.version, occurredAt: instant(7), key: "conference.positionBudgetBytes",
+  await expectReasonAsync("SETTINGS_VALUE_INVALID", () => setWorkspaceSetting(fx.workspace, {
+    occurredAt: instant(7), key: "conference.positionBudgetBytes",
     value: String(CONFERENCE_POSITION_CEILING_BYTES + 1),
   }));
 });
@@ -1916,15 +1875,15 @@ async function extensionIndexBytes(workspace) {
 // difference tracks the prose instead of staying flat.
 test("STORY-299: extension view size is independent of the prose inside the records", async (context) => {
   const fx = await seededFixture(context);
-  let state = await openConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 2, occurredAt: instant(3), externalKey: "CONF-BOUND", projectId: fx.projectId, type: "release",
+  let state = await openConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(3), externalKey: "CONF-BOUND", projectId: fx.projectId, type: "release",
     title: "Bounded", linkedWorkIds: [fx.workId], desiredOutcome: "short", participantIds: [],
   });
   const smallBytes = await extensionIndexBytes(fx.workspace);
   const smallDigest = assertCanonicalJson(await readFile(join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "views", "extensions.json"), "utf8")).conferences.digest;
 
-  state = await appendConferencePositionInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: state.version, occurredAt: instant(4), conferenceId: state.conferences[0].id,
+  state = await appendConferencePositionInWorkspace(fx.workspace, {
+    occurredAt: instant(4), conferenceId: state.conferences[0].id,
     externalKey: "POS-BOUND", authorActorId: "profile:analyst-01",
     position: "z".repeat(2_000), risks: [], recommendations: [], evidenceIds: [],
   });
@@ -1951,8 +1910,8 @@ test("STORY-299: ten times the records changes the extension view by less than 6
   let version = 2;
   let bytesAtTen = 0;
   for (let index = 1; index <= 100; index += 1) {
-    const state = await openConferenceInWorkspace(fx.workspace, fx.lease, {
-      expectedVersion: version, occurredAt: instant(3 + index), externalKey: `CONF-SCALE-${index}`, projectId: fx.projectId,
+    const state = await openConferenceInWorkspace(fx.workspace, {
+      occurredAt: instant(3 + index), externalKey: `CONF-SCALE-${index}`, projectId: fx.projectId,
       type: "release", title: `Scale ${index}`, linkedWorkIds: [fx.workId],
       desiredOutcome: `outcome ${"w".repeat(200)}`, participantIds: [],
     });
@@ -1971,28 +1930,28 @@ test("STORY-299: ten times the records changes the extension view by less than 6
 // per-record hash and hash a set instead, and the reorder leg fails.
 test("STORY-299: any single byte inside any extension record still moves the view", async (context) => {
   const fx = await seededFixture(context);
-  let state = await openConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 2, occurredAt: instant(3), externalKey: "CONF-DETECT", projectId: fx.projectId, type: "release",
+  let state = await openConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(3), externalKey: "CONF-DETECT", projectId: fx.projectId, type: "release",
     title: "Detect", linkedWorkIds: [fx.workId], desiredOutcome: "detect", participantIds: [],
   });
   const conferenceId = state.conferences[0].id;
-  state = await createGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: state.version, occurredAt: instant(4), externalKey: "GATE-DETECT", projectId: fx.projectId,
+  state = await createGateInWorkspace(fx.workspace, {
+    occurredAt: instant(4), externalKey: "GATE-DETECT", projectId: fx.projectId,
     workId: fx.workId, title: "Gate detect", outcomeClass: "role_decision",
   });
   const readView = async () => assertCanonicalJson(await readFile(join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "views", "extensions.json"), "utf8"));
   const before = await readView();
 
-  state = await appendConferencePositionInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: state.version, occurredAt: instant(5), conferenceId,
+  state = await appendConferencePositionInWorkspace(fx.workspace, {
+    occurredAt: instant(5), conferenceId,
     externalKey: "POS-DETECT", authorActorId: "profile:analyst-01",
     position: "first position", risks: [], recommendations: [], evidenceIds: [],
   });
   const afterFirstPosition = await readView();
   assert.notEqual(afterFirstPosition.conferencePositions.digest, before.conferencePositions.digest, "a position's body must move its digest");
 
-  state = await appendConferencePositionInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: state.version, occurredAt: instant(6), conferenceId,
+  state = await appendConferencePositionInWorkspace(fx.workspace, {
+    occurredAt: instant(6), conferenceId,
     externalKey: "POS-DETECT-2", authorActorId: "profile:reviewer-01",
     position: "second position", risks: [], recommendations: [], evidenceIds: [],
   });
@@ -2007,8 +1966,8 @@ test("STORY-299: any single byte inside any extension record still moves the vie
     "reordering two records must change the collection digest",
   );
 
-  state = await transitionGateInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: state.version, occurredAt: instant(7), id: state.gates[0].id, status: "blocked",
+  state = await transitionGateInWorkspace(fx.workspace, {
+    occurredAt: instant(7), id: state.gates[0].id, status: "blocked",
   });
   const afterGate = await readView();
   assert.notEqual(afterGate.gates.digest, before.gates.digest, "a gate's status must move its digest");
@@ -2021,8 +1980,8 @@ test("STORY-299: any single byte inside any extension record still moves the vie
 test("STORY-299: an over-budget projection is refused with the chain untouched", async (context) => {
   const fx = await seededFixture(context);
   const before = await materializeWorkspaceForBudgets(fx.workspace);
-  await expectReasonAsync("WORKSPACE_VIEW_BUDGET_EXCEEDED", () => openConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 2, occurredAt: instant(3), externalKey: "CONF-BUDGET", projectId: fx.projectId, type: "release",
+  await expectReasonAsync("WORKSPACE_VIEW_BUDGET_EXCEEDED", () => openConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(3), externalKey: "CONF-BUDGET", projectId: fx.projectId, type: "release",
     title: "Over budget", linkedWorkIds: [fx.workId], desiredOutcome: "refused", participantIds: [],
     viewBudgetBytes: 128,
   }));
@@ -2051,8 +2010,8 @@ test("STORY-299: a view write failure after commit keeps the command successful 
       },
     });
   };
-  const committed = await withStorageBackendFactory(failingBackend, () => openConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 2, occurredAt: instant(3), externalKey: "CONF-UNWRITTEN", projectId: fx.projectId, type: "release",
+  const committed = await withStorageBackendFactory(failingBackend, () => openConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(3), externalKey: "CONF-UNWRITTEN", projectId: fx.projectId, type: "release",
     title: "Unwritten", linkedWorkIds: [fx.workId], desiredOutcome: "durable", participantIds: [],
   }));
   assert.equal(committed.version, 3, "the fact is committed even though its view could not be written");
@@ -2062,7 +2021,7 @@ test("STORY-299: a view write failure after commit keeps the command successful 
   const rematerialized = await materializeWorkspaceForBudgets(fx.workspace);
   assert.equal(rematerialized.version, 3);
   await expectReasonAsync("WORKSPACE_VIEW_STALE", () => validateWorkspace(fx.workspace));
-  const recovered = await recoverWorkspace(fx.workspace, fx.lease);
+  const recovered = await recoverWorkspace(fx.workspace);
   assert.equal(recovered.version, 3);
   assert.equal((await validateWorkspace(fx.workspace)).version, 3);
 });
@@ -2072,8 +2031,8 @@ test("STORY-299: a view write failure after commit keeps the command successful 
 // work index -- the next wall by measurement -- goes unwatched again.
 test("STORY-299: the budget report covers every view and the record cap", async (context) => {
   const fx = await seededFixture(context);
-  await openConferenceInWorkspace(fx.workspace, fx.lease, {
-    expectedVersion: 2, occurredAt: instant(3), externalKey: "CONF-BUDGETS", projectId: fx.projectId, type: "release",
+  await openConferenceInWorkspace(fx.workspace, {
+    occurredAt: instant(3), externalKey: "CONF-BUDGETS", projectId: fx.projectId, type: "release",
     title: "Budgets", linkedWorkIds: [fx.workId], desiredOutcome: "measured", participantIds: [],
   });
   const budgets = workspaceBudgets(await materializeWorkspaceForBudgets(fx.workspace));

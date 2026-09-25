@@ -19,7 +19,6 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  acquireWorkspaceLease,
   annotateWork,
   createProject,
   createWork,
@@ -46,9 +45,6 @@ const STORY_SCOPE = [
   "【Implementation Notes】决策点及裁定状态=summary is derived from the Goal block。",
 ].join("\n");
 
-// The lease is taken to seed the project and released again: runCli acquires its own,
-// and a fixture that kept one would answer WORKSPACE_LOCKED to every CLI probe below.
-// A test that needs the core verbs takes a fresh lease itself.
 async function fixture(context, externalKey) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-s363-")));
   const roots = ["framework", "workspace", "transient", "evidence-locator", "release-trust"]
@@ -59,18 +55,10 @@ async function fixture(context, externalKey) {
   context.after(async () => {
     await rm(base, { recursive: true, force: true });
   });
-  const seed = await acquireWorkspaceLease(workspace, { now: instant(1) });
-  const state = await createProject(workspace, seed, {
-    expectedVersion: 0, occurredAt: instant(2), externalKey: `${externalKey}-PROJECT`, name: "S363",
+  const state = await createProject(workspace, {
+    occurredAt: instant(2), externalKey: `${externalKey}-PROJECT`, name: "S363",
   });
-  await seed.release();
   return { workspace, projectId: state.projects[0].id, version: state.version };
-}
-
-async function lease(context, workspace) {
-  const held = await acquireWorkspaceLease(workspace, { now: instant(1) });
-  context.after(() => held.release().catch(() => undefined));
-  return held;
 }
 
 async function invoke(tokens) {
@@ -85,7 +73,7 @@ async function invoke(tokens) {
 test("GWT1: work-create without --title is refused at the CLI boundary and appends nothing", async (context) => {
   const { workspace, projectId, version } = await fixture(context, "S363-GWT1");
   const refused = await invoke([
-    "work-create", "--workspace", workspace, "--expected-version", String(version), "--at", instant(3),
+    "work-create", "--workspace", workspace, "--at", instant(3),
     "--project-id", projectId, "--external-key", "S363-NO-TITLE", "--kind", "Initiative",
   ]);
   assert.equal(refused.ok, false);
@@ -95,7 +83,7 @@ test("GWT1: work-create without --title is refused at the CLI boundary and appen
   assert.equal(state.work.length, 0);
 
   const accepted = await invoke([
-    "work-create", "--workspace", workspace, "--expected-version", String(version), "--at", instant(4),
+    "work-create", "--workspace", workspace, "--at", instant(4),
     "--project-id", projectId, "--external-key", "S363-WITH-TITLE", "--kind", "Initiative", "--title", "A named initiative",
   ]);
   assert.equal(accepted.ok, true, JSON.stringify(accepted));
@@ -104,21 +92,20 @@ test("GWT1: work-create without --title is refused at the CLI boundary and appen
 
 test("GWT2: a Story created with a Goal block carries a derived summary inside the byte bound", async (context) => {
   const { workspace, projectId, version } = await fixture(context, "S363-GWT2");
-  const held = await lease(context, workspace);
-  let state = await createWork(workspace, held, {
-    expectedVersion: version, occurredAt: instant(3), projectId, externalKey: "S363-INITIATIVE",
+  let state = await createWork(workspace, {
+    occurredAt: instant(3), projectId, externalKey: "S363-INITIATIVE",
     kind: "Initiative", parentId: null, title: "Initiative",
   });
   assert.equal(state.work[0].summary, null, "a record with no scope to derive from carries an explicit null");
   const initiativeId = state.work[0].id;
-  state = await createWork(workspace, held, {
-    expectedVersion: state.version, occurredAt: instant(4), projectId, externalKey: "S363-EPIC",
+  state = await createWork(workspace, {
+    occurredAt: instant(4), projectId, externalKey: "S363-EPIC",
     kind: "Epic", parentId: initiativeId, title: "Epic",
   });
   const epicId = state.work.find((record) => record.externalKey === "S363-EPIC").id;
 
-  state = await createWork(workspace, held, {
-    expectedVersion: state.version, occurredAt: instant(5), projectId, externalKey: "S363-STORY",
+  state = await createWork(workspace, {
+    occurredAt: instant(5), projectId, externalKey: "S363-STORY",
     kind: "Story", parentId: epicId, title: "Summary story", scope: STORY_SCOPE,
   });
   const story = state.work.find((record) => record.externalKey === "S363-STORY");
@@ -138,10 +125,8 @@ test("GWT2: a Story created with a Goal block carries a derived summary inside t
   assert.equal(truncated.includes("�"), false, "the cut lands on a code-point boundary, not mid-sequence");
 
   // An explicit --summary wins over the derivation, and the bound is enforced on it.
-  // The lease goes back before the CLI probes: runCli takes its own.
-  await held.release();
   const explicit = await invoke([
-    "work-create", "--workspace", workspace, "--expected-version", String(state.version), "--at", instant(6),
+    "work-create", "--workspace", workspace, "--at", instant(6),
     "--project-id", projectId, "--external-key", "S363-EXPLICIT", "--kind", "Incident", "--title", "Explicit",
     "--summary", "现象：门未比对元素是否存在；根因：只比对属性值。",
   ]);
@@ -149,7 +134,7 @@ test("GWT2: a Story created with a Goal block carries a derived summary inside t
   assert.equal(explicit.value.record.summary, "现象：门未比对元素是否存在；根因：只比对属性值。");
 
   const oversized = await invoke([
-    "work-create", "--workspace", workspace, "--expected-version", String(explicit.value.version), "--at", instant(7),
+    "work-create", "--workspace", workspace, "--at", instant(7),
     "--project-id", projectId, "--external-key", "S363-OVERSIZED", "--kind", "Incident", "--title", "Oversized",
     "--summary", "格".repeat(54),
   ]);
@@ -190,28 +175,27 @@ test("STORY-363: a record written before the field existed replays unchanged, an
 
 test("STORY-363: transition and annotate both write the summary, and annotate is how a pre-363 record gets one", async (context) => {
   const { workspace, projectId, version } = await fixture(context, "S363-WRITE");
-  const held = await lease(context, workspace);
-  let state = await createWork(workspace, held, {
-    expectedVersion: version, occurredAt: instant(3), projectId, externalKey: "S363-CLOSING",
+  let state = await createWork(workspace, {
+    occurredAt: instant(3), projectId, externalKey: "S363-CLOSING",
     kind: "Incident", parentId: null, status: "active", title: "Closing line",
   });
   const id = state.work[0].id;
   assert.equal(state.work[0].summary, null);
 
-  state = await transitionWork(workspace, held, {
-    expectedVersion: state.version, occurredAt: instant(4), id, status: "done",
+  state = await transitionWork(workspace, {
+    occurredAt: instant(4), id, status: "done",
     summary: "现象：收口句无处可写；根因：记录没有这个字段。",
   });
   assert.equal(state.work[0].summary, "现象：收口句无处可写；根因：记录没有这个字段。");
 
-  state = await annotateWork(workspace, held, {
-    expectedVersion: state.version, occurredAt: instant(5), id, summary: "重写过的收口句。",
+  state = await annotateWork(workspace, {
+    occurredAt: instant(5), id, summary: "重写过的收口句。",
   });
   assert.equal(state.work[0].summary, "重写过的收口句。", "annotate refreshes it without touching status");
   assert.equal(state.work[0].status, "done");
 
   await assert.rejects(
-    annotateWork(workspace, held, { expectedVersion: state.version, occurredAt: instant(6), id, summary: "重写过的收口句。" }),
+    annotateWork(workspace, { occurredAt: instant(6), id, summary: "重写过的收口句。" }),
     (error) => error.reasonCode === "WORKSPACE_INPUT_INVALID",
     "an annotation that moves nothing is still refused",
   );
@@ -220,13 +204,12 @@ test("STORY-363: transition and annotate both write the summary, and annotate is
 
 test("GWT3: work-list --search matches a keyword that appears only in the title, the labels, or the summary", async (context) => {
   const { workspace, projectId, version } = await fixture(context, "S363-SEARCH");
-  const held = await lease(context, workspace);
-  let state = await createWork(workspace, held, {
-    expectedVersion: version, occurredAt: instant(3), projectId, externalKey: "S363-A",
+  let state = await createWork(workspace, {
+    occurredAt: instant(3), projectId, externalKey: "S363-A",
     kind: "Initiative", parentId: null, title: "Retrieval overhaul", labels: ["indexed"],
   });
-  state = await createWork(workspace, held, {
-    expectedVersion: state.version, occurredAt: instant(4), projectId, externalKey: "S363-B",
+  state = await createWork(workspace, {
+    occurredAt: instant(4), projectId, externalKey: "S363-B",
     kind: "Incident", parentId: null, title: "Unrelated", summary: "the closing sentence mentions ratchet",
   });
 
@@ -253,24 +236,22 @@ const { backfillWorkSummaries: backfill } = await import("../scripts/backfill-wo
 
 test("STORY-363: the backfill tool plans before it writes, and writes through work-annotate", async (context) => {
   const { workspace, projectId, version } = await fixture(context, "S363-BACKFILL");
-  const held = await lease(context, workspace);
-  let state = await createWork(workspace, held, {
-    expectedVersion: version, occurredAt: instant(3), projectId, externalKey: "S363-BF-INITIATIVE",
+  let state = await createWork(workspace, {
+    occurredAt: instant(3), projectId, externalKey: "S363-BF-INITIATIVE",
     kind: "Initiative", parentId: null, title: "Initiative",
   });
-  state = await createWork(workspace, held, {
-    expectedVersion: state.version, occurredAt: instant(4), projectId, externalKey: "S363-BF-EPIC",
+  state = await createWork(workspace, {
+    occurredAt: instant(4), projectId, externalKey: "S363-BF-EPIC",
     kind: "Epic", parentId: state.work[0].id, title: "Epic",
   });
   const epicId = state.work.find((record) => record.externalKey === "S363-BF-EPIC").id;
-  state = await createWork(workspace, held, {
-    expectedVersion: state.version, occurredAt: instant(5), projectId, externalKey: "S363-BF-STORY",
+  state = await createWork(workspace, {
+    occurredAt: instant(5), projectId, externalKey: "S363-BF-STORY",
     kind: "Story", parentId: epicId, title: "Scoped story", scope: STORY_SCOPE, summary: null,
   });
   const storyId = state.work.find((record) => record.externalKey === "S363-BF-STORY").id;
   assert.equal(state.work.find((record) => record.id === storyId).summary, null,
     "an explicit null stands in for the pre-363 record this tool exists for");
-  await held.release();
 
   const planned = await backfill(["--workspace", workspace]);
   assert.equal(planned.reasonCode, "BACKFILL_PLANNED");

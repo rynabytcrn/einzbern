@@ -14,7 +14,6 @@ import {
   ACTOR_ATTESTATION_SCHEMA_VERSION,
   ACTOR_PREFIXES,
   EVENT_PAYLOAD_OPERATION_EXTRAS,
-  acquireWorkspaceLease,
   assertActorId,
   buildActorAttestationEnableRecord,
   buildActorAttestationRegistration,
@@ -164,36 +163,26 @@ test("the actor-attestation schema validates the enable record and actor strings
 // ---------------------------------------------------------------------------
 
 async function attestedChain(fixture) {
-  const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(1) });
-  try {
-    const created = await createProject(fixture.workspace, lease, {
-      expectedVersion: 0, occurredAt: instant(1), externalKey: "PROJECT-CHAIN", name: "Chain",
-    });
-    await enableActorAttestation(fixture.workspace, lease, {
-      expectedVersion: 1, occurredAt: instant(2), actorId: "owner:release-gate",
-    });
-    await createWork(fixture.workspace, lease, {
-      expectedVersion: 2, occurredAt: instant(3), projectId: created.projects[0].id, externalKey: "INIT-CHAIN", kind: "Initiative", parentId: null, actorId: "agent:builder-7",
-    });
-  } finally {
-    await lease.release();
-  }
+  const created = await createProject(fixture.workspace, {
+    occurredAt: instant(1), externalKey: "PROJECT-CHAIN", name: "Chain",
+  });
+  await enableActorAttestation(fixture.workspace, {
+    occurredAt: instant(2), actorId: "owner:release-gate",
+  });
+  await createWork(fixture.workspace, {
+    occurredAt: instant(3), projectId: created.projects[0].id, externalKey: "INIT-CHAIN", kind: "Initiative", parentId: null, actorId: "agent:builder-7",
+  });
 }
 
 test("WSE-2 default: no enable event keeps mutations actor-optional and export actor-free", async () => {
   const fixture = await workspaceFixture();
   try {
-    const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(1) });
     let state;
-    try {
-      // An actor supplied before any enable event is a no-op: accepted, never
-      // written, so the derived state and export bytes stay actor-free.
-      state = await createProject(fixture.workspace, lease, {
-        expectedVersion: 0, occurredAt: instant(1), externalKey: "PROJECT-DEFAULT", name: "Default", actorId: "owner:release-gate",
-      });
-    } finally {
-      await lease.release();
-    }
+    // An actor supplied before any enable event is a no-op: accepted, never
+    // written, so the derived state and export bytes stay actor-free.
+    state = await createProject(fixture.workspace, {
+      occurredAt: instant(1), externalKey: "PROJECT-DEFAULT", name: "Default", actorId: "owner:release-gate",
+    });
     assert.equal(state.attestationEnabledAtSequence, null);
     const exported = await exportWorkspace(fixture.workspace);
     assert.equal(exported.includes("\"actor\""), false);
@@ -208,47 +197,41 @@ test("WSE-2 default: no enable event keeps mutations actor-optional and export a
 test("WSE-2 live: enabling attestation makes a valid actor mandatory on every later write", async () => {
   const fixture = await workspaceFixture();
   try {
-    const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(1) });
-    let created;
-    try {
-      created = await createProject(fixture.workspace, lease, {
-        expectedVersion: 0, occurredAt: instant(1), externalKey: "PROJECT-A", name: "Alpha",
-      });
-      assert.equal(created.attestationEnabledAtSequence, null);
+    let created = await createProject(fixture.workspace, {
+      occurredAt: instant(1), externalKey: "PROJECT-A", name: "Alpha",
+    });
+    assert.equal(created.attestationEnabledAtSequence, null);
 
-      const enabled = await enableActorAttestation(fixture.workspace, lease, {
-        expectedVersion: 1, occurredAt: instant(3), actorId: "owner:release-gate",
-      });
-      assert.equal(enabled.attestationEnabledAtSequence, 2);
+    const enabled = await enableActorAttestation(fixture.workspace, {
+      occurredAt: instant(3), actorId: "owner:release-gate",
+    });
+    assert.equal(enabled.attestationEnabledAtSequence, 2);
 
-      // A missing actor fails closed and writes nothing (version and head unchanged).
-      const before = await materializeWorkspace(fixture.workspace);
-      await reasonAsync("WORKSPACE_ACTOR_REQUIRED", () => createWork(fixture.workspace, lease, {
-        expectedVersion: 2, occurredAt: instant(4), projectId: created.projects[0].id, externalKey: "INIT-A", kind: "Initiative", parentId: null,
-      }));
-      const afterFail = await materializeWorkspace(fixture.workspace);
-      assert.equal(afterFail.version, before.version);
-      assert.equal(afterFail.headEventHash, before.headEventHash);
+    // A missing actor fails closed and writes nothing (version and head unchanged).
+    const before = await materializeWorkspace(fixture.workspace);
+    await reasonAsync("WORKSPACE_ACTOR_REQUIRED", () => createWork(fixture.workspace, {
+      occurredAt: instant(4), projectId: created.projects[0].id, externalKey: "INIT-A", kind: "Initiative", parentId: null,
+    }));
+    const afterFail = await materializeWorkspace(fixture.workspace);
+    assert.equal(afterFail.version, before.version);
+    assert.equal(afterFail.headEventHash, before.headEventHash);
 
-      // An unlisted prefix fails closed as an invalid actor.
-      await reasonAsync("WORKSPACE_ACTOR_INVALID", () => createWork(fixture.workspace, lease, {
-        expectedVersion: 2, occurredAt: instant(4), projectId: created.projects[0].id, externalKey: "INIT-A", kind: "Initiative", parentId: null, actorId: "role:nope",
-      }));
+    // An unlisted prefix fails closed as an invalid actor.
+    await reasonAsync("WORKSPACE_ACTOR_INVALID", () => createWork(fixture.workspace, {
+      occurredAt: instant(4), projectId: created.projects[0].id, externalKey: "INIT-A", kind: "Initiative", parentId: null, actorId: "role:nope",
+    }));
 
-      // A valid actor succeeds.
-      const worked = await createWork(fixture.workspace, lease, {
-        expectedVersion: 2, occurredAt: instant(4), projectId: created.projects[0].id, externalKey: "INIT-A", kind: "Initiative", parentId: null, actorId: "agent:builder-7",
-      });
-      assert.equal(worked.version, 3);
-      assert.equal(worked.attestationEnabledAtSequence, 2);
+    // A valid actor succeeds.
+    const worked = await createWork(fixture.workspace, {
+      occurredAt: instant(4), projectId: created.projects[0].id, externalKey: "INIT-A", kind: "Initiative", parentId: null, actorId: "agent:builder-7",
+    });
+    assert.equal(worked.version, 3);
+    assert.equal(worked.attestationEnabledAtSequence, 2);
 
-      // Re-enabling an already-attested workspace fails closed.
-      await reasonAsync("WORKSPACE_INPUT_INVALID", () => enableActorAttestation(fixture.workspace, lease, {
-        expectedVersion: 3, occurredAt: instant(5), actorId: "owner:release-gate",
-      }));
-    } finally {
-      await lease.release();
-    }
+    // Re-enabling an already-attested workspace fails closed.
+    await reasonAsync("WORKSPACE_INPUT_INVALID", () => enableActorAttestation(fixture.workspace, {
+      occurredAt: instant(5), actorId: "owner:release-gate",
+    }));
     const exported = JSON.parse(await exportWorkspace(fixture.workspace));
     assert.equal("actor" in exported.events[0].payload, false);
     assert.equal(exported.events[1].payload.operation, ACTOR_ATTESTATION_ENABLE_OPERATION);
@@ -299,14 +282,9 @@ test("WSE-2 replay: a duplicate enable event and a pre-enable actor both corrupt
 
   const early = await workspaceFixture();
   try {
-    const lease = await acquireWorkspaceLease(early.workspace, { now: instant(1) });
-    try {
-      await createProject(early.workspace, lease, {
-        expectedVersion: 0, occurredAt: instant(1), externalKey: "PROJECT-EARLY", name: "Early",
-      });
-    } finally {
-      await lease.release();
-    }
+    await createProject(early.workspace, {
+      occurredAt: instant(1), externalKey: "PROJECT-EARLY", name: "Early",
+    });
     // The live path never writes an actor before enablement; a hand-crafted
     // pre-enable event carrying one violates the exact {operation, record} shape
     // and the reducer fails it closed as a corrupt event.

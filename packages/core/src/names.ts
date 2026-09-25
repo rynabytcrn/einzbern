@@ -86,6 +86,11 @@ export const LEGACY_PORTAL_NAME = `${LEGACY_BRAND_NAME} Portal` as const;
 export const LEGACY_EVENTS_DIRECTORY = "events" as const;
 export const LEGACY_KNOWLEDGE_DIRECTORY = "knowledge" as const;
 export const PLATFORM_ARCHIVE_DIRECTORY = ".tcrn-artifacts" as const;
+// TCRN-CROSS-STORY-467 R1: the engine write lock inside the old-layout control directory.
+// It is defined here, not in workspace.ts, because workspace-snapshot.ts reads it while it
+// loads and workspace.ts sits in an import cycle with the barrel. From SUB-284 on writes
+// take the device-local lock of the library instead.
+export const WORKSPACE_WRITE_LOCK_FILE = "write.lock" as const;
 
 export interface LegacyNameEntry {
   readonly legacy: string;

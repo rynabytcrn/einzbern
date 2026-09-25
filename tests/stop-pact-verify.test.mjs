@@ -11,7 +11,6 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  acquireWorkspaceLease,
   annotateWork,
   createProject,
   createWork,
@@ -84,16 +83,12 @@ async function fixture(t, verify) {
   for (const root of roots) await mkdir(root.path, { recursive: true });
   await initializeWorkspace({ roots, externalKey: "STORY-374-FIXTURE", createdAt: NOW });
   const workspace = join(base, "workspace");
-  const lease = await acquireWorkspaceLease(workspace, { now: NOW });
-  t.after(() => lease.release().catch(() => undefined));
-  let state = await createProject(workspace, lease, {
-    expectedVersion: 0,
+  let state = await createProject(workspace, {
     occurredAt: NOW,
     externalKey: "STORY-374-PROJECT",
     name: "Story 374",
   });
-  state = await createWork(workspace, lease, {
-    expectedVersion: state.version,
+  state = await createWork(workspace, {
     occurredAt: NOW,
     projectId: state.projects[0].id,
     externalKey: "STORY-374-INCIDENT",
@@ -104,8 +99,7 @@ async function fixture(t, verify) {
   });
   const workId = state.work[0].id;
   if (verify !== undefined) {
-    state = await annotateWork(workspace, lease, {
-      expectedVersion: state.version,
+    state = await annotateWork(workspace, {
       occurredAt: NOW,
       id: workId,
       verify,

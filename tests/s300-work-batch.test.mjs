@@ -18,7 +18,6 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  acquireWorkspaceLease,
   applyWorkBatch,
   createProject,
   initializeWorkspace,
@@ -54,25 +53,14 @@ async function workspace(key) {
   }
   await initializeWorkspace({ roots, externalKey: key, createdAt: at(0), segmentEventLimit: 64 });
   const root = join(base, "workspace");
-  const lease = await acquireWorkspaceLease(root, { now: at(1) });
-  let state;
-  try {
-    state = await createProject(root, lease, { expectedVersion: 0, occurredAt: at(1), externalKey: `${key}-P`, name: key });
-  } finally {
-    await lease.release();
-  }
+  let state = await createProject(root, { occurredAt: at(1), externalKey: `${key}-P`, name: key });
   return { base, root, projectId: state.projects[0].id, version: state.version };
 }
 
 const apply = async (fixture, members, second = 2) => {
-  const lease = await acquireWorkspaceLease(fixture.root, { now: at(second) });
-  try {
-    return await applyWorkBatch(fixture.root, lease, { schemaVersion: "tcrn.work-batch.v1", members }, {
-      expectedVersion: fixture.version, occurredAt: at(second),
-    });
-  } finally {
-    await lease.release();
-  }
+  return await applyWorkBatch(fixture.root, { schemaVersion: "tcrn.work-batch.v1", members }, {
+    occurredAt: at(second),
+  });
 };
 
 const refusal = async (fixture, members, second = 2) => {
@@ -208,25 +196,15 @@ test("STORY-300: a batch that is not a batch is refused before anything else hap
   const fixture = await workspace("BATCH-DOC");
   try {
     for (const document of [null, [], { members: [] }, { schemaVersion: "tcrn.work-batch.v1" }, { schemaVersion: "other", members: [{}] }]) {
-      const lease = await acquireWorkspaceLease(fixture.root, { now: at(2) });
-      try {
-        await assert.rejects(
-          () => applyWorkBatch(fixture.root, lease, document, { expectedVersion: fixture.version, occurredAt: at(2) }),
-          (error) => error?.reasonCode === "WORK_BATCH_MALFORMED", JSON.stringify(document));
-      } finally {
-        await lease.release();
-      }
+      await assert.rejects(
+        () => applyWorkBatch(fixture.root, document, { occurredAt: at(2) }),
+        (error) => error?.reasonCode === "WORK_BATCH_MALFORMED", JSON.stringify(document));
     }
     // An empty members array is malformed rather than a no-op: a batch of nothing is a
     // caller mistake, and answering it with a receipt would say an act occurred.
-    const lease = await acquireWorkspaceLease(fixture.root, { now: at(3) });
-    try {
-      await assert.rejects(
-        () => applyWorkBatch(fixture.root, lease, { schemaVersion: "tcrn.work-batch.v1", members: [] }, { expectedVersion: fixture.version, occurredAt: at(3) }),
-        (error) => error?.reasonCode === "WORK_BATCH_MALFORMED");
-    } finally {
-      await lease.release();
-    }
+    await assert.rejects(
+      () => applyWorkBatch(fixture.root, { schemaVersion: "tcrn.work-batch.v1", members: [] }, { occurredAt: at(3) }),
+      (error) => error?.reasonCode === "WORK_BATCH_MALFORMED");
   } finally {
     await rm(fixture.base, { recursive: true, force: true });
   }
@@ -255,26 +233,14 @@ test("STORY-300: a batch spanning segments writes ascending, and every crash win
     // Four events a segment, so fourteen members provably span several.
     await initializeWorkspace({ roots, externalKey: "SEG", createdAt: at(0), segmentEventLimit: 4 });
     const root = join(base, "workspace");
-    const lease = await acquireWorkspaceLease(root, { now: at(1) });
-    let seeded;
-    try {
-      seeded = await createProject(root, lease, { expectedVersion: 0, occurredAt: at(1), externalKey: "SEG-P", name: "Seg" });
-    } finally {
-      await lease.release();
-    }
+    let seeded = await createProject(root, { occurredAt: at(1), externalKey: "SEG-P", name: "Seg" });
     const members = Array.from({ length: 14 }, (_, index) => ({
       verb: "work-create", projectId: seeded.projects[0].id, externalKey: `SEG-${index}`,
       kind: "Incident", parentId: null, status: "planned", title: `SEG-${index}`,
     }));
-    const held = await acquireWorkspaceLease(root, { now: at(2) });
-    let full;
-    try {
-      full = await applyWorkBatch(root, held, { schemaVersion: "tcrn.work-batch.v1", members }, {
-        expectedVersion: seeded.version, occurredAt: at(2),
-      });
-    } finally {
-      await held.release();
-    }
+    const full = await applyWorkBatch(root, { schemaVersion: "tcrn.work-batch.v1", members }, {
+      occurredAt: at(2),
+    });
     const events = join(root, LEGACY_CONTROL_DIRECTORY, "events");
     const segments = (await readdir(events)).sort();
     assert.ok(segments.length > 1, "the batch must actually span segments or this asserts nothing");
@@ -317,24 +283,20 @@ test("STORY-300: the last member can fail, and it is attributed like any other",
   }
 });
 
-// Red leg: attribute a pre-loop failure to a member and a CAS mismatch -- which no member
-// caused -- is reported as member zero's fault.
+// Red leg: attribute a pre-loop failure to a member and an unreadable clock value -- which no
+// member caused -- is reported as member zero's fault. (The CAS mismatch this case used to
+// provoke went with the expected-version input, TCRN-CROSS-STORY-467 R1.)
 test("STORY-300: a failure before any member ran blames no member", async () => {
   const fixture = await workspace("BATCH-PRELOOP");
   try {
-    const lease = await acquireWorkspaceLease(fixture.root, { now: at(2) });
-    try {
-      await assert.rejects(
-        () => applyWorkBatch(fixture.root, lease, {
-          schemaVersion: "tcrn.work-batch.v1",
-          members: [{ verb: "work-create", projectId: fixture.projectId, externalKey: "B-INC-5", kind: "Incident", parentId: null, status: "planned", title: "B-INC-5" }],
-        }, { expectedVersion: fixture.version + 99, occurredAt: at(2) }),
-        (error) => error?.reasonCode === "WORKSPACE_CAS_MISMATCH" && error.memberIndex === undefined,
-        "a CAS mismatch is the batch's failure, not a member's",
-      );
-    } finally {
-      await lease.release();
-    }
+    await assert.rejects(
+      () => applyWorkBatch(fixture.root, {
+        schemaVersion: "tcrn.work-batch.v1",
+        members: [{ verb: "work-create", projectId: fixture.projectId, externalKey: "B-INC-5", kind: "Incident", parentId: null, status: "planned", title: "B-INC-5" }],
+      }, { occurredAt: "2026-08-19 18:00:02" }),
+      (error) => error?.reasonCode === "TIMESTAMP_INVALID" && error.memberIndex === undefined,
+      "an unreadable instant is the batch's failure, not a member's",
+    );
   } finally {
     await rm(fixture.base, { recursive: true, force: true });
   }

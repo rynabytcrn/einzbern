@@ -514,11 +514,12 @@
       "id": "HELPER-004",
       "source": "helper:workflow-operations#cas",
       "semantics": "mutations use live expected version and readback",
-      "landing": "existing engine CAS plus chain ceremony discipline",
+      "landing": "engine write lock: each write reads the latest state under the lock and its receipt echoes the written ids and version (TCRN-CROSS-STORY-467 R1)",
       "enforcementHost": "engine/helper",
-      "positiveLeg": "expected-version write",
-      "redLeg": "stale expected-version refuses",
-      "disposition": "retained"
+      "positiveLeg": "write receipt carries ids, version and head",
+      "redLeg": "a concurrent writer waits for the lock instead of overwriting",
+      "disposition": "superseded-by-stricter",
+      "strictnessProof": "a lost update was possible whenever a caller read a stale version and retried; under the lock no write is built against anything but the latest state, and tests/file-lock-concurrency.test.mjs proves two concurrent creates both land in order"
     },
     {
       "id": "HELPER-005",

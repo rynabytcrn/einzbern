@@ -30,7 +30,6 @@ import {
   selectRecallHits,
 } from "../dist/build/packages/core/src/recall.js";
 import {
-  acquireWorkspaceLease,
   captureKnowledgeUnit,
   createProject,
   createWork,
@@ -162,20 +161,14 @@ async function syntheticWorkspace(context) {
   }
   await initializeWorkspace({ roots, externalKey: "STORY-362-RECALL", createdAt: instant(0) });
   const workspace = join(partitionPath, "workspace");
-  const lease = await acquireWorkspaceLease(workspace, { now: instant(1) });
-  let state;
-  try {
-    state = await createProject(workspace, lease, {
-      expectedVersion: 0, occurredAt: instant(1), externalKey: "STORY-362-PROJECT", name: "Recall",
-    });
-    state = await createWork(workspace, lease, {
-      expectedVersion: state.version, occurredAt: instant(2), projectId: state.projects[0].id,
-      externalKey: "TCRN-CROSS-STORY-362", kind: "Initiative", parentId: null,
-      title: "FTS5 检索核心",
-    });
-  } finally {
-    await lease.release();
-  }
+  let state = await createProject(workspace, {
+    occurredAt: instant(1), externalKey: "STORY-362-PROJECT", name: "Recall",
+  });
+  state = await createWork(workspace, {
+    occurredAt: instant(2), projectId: state.projects[0].id,
+    externalKey: "TCRN-CROSS-STORY-362", kind: "Initiative", parentId: null,
+    title: "FTS5 检索核心",
+  });
   await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
   let version = 0;
   for (const entry of CARDS) {
@@ -183,7 +176,7 @@ async function syntheticWorkspace(context) {
       occurredAt: instant(3), subject: entry.subject, summary: entry.summary, snippet: entry.snippet,
       tags: entry.tags, accountableOwnerId: deriveStableId("owner", "STORY-362-OWNER"),
       body: `${entry.subject} ${entry.summary}`, externalKey: entry.externalKey,
-      expectedVersion: version, coexist: true,
+      coexist: true,
     });
     version = Number(written.version);
   }
@@ -217,7 +210,7 @@ test("STORY-362: the recall verb answers with kind, key, status, title, summary 
 test("STORY-366: recall admits an article index for explicit search but never indexes Markdown body text", async (context) => {
   const { workspace } = await syntheticWorkspace(context);
   resetRecallCache();
-  const article = await cli(["knowledge-article-create", "--workspace", workspace, "--expected-version", "4", "--at", instant(8), "--path", "recall.md", "--category", "architecture", "--title", "文章索引入口", "--summary", "通过标题与摘要检索", "--content", "正文独有术语只存在于 Markdown 文件中", "--accountable-owner-id", deriveStableId("owner", "STORY-366-RECALL"), "--evidence-ids", deriveStableId("evidence", "STORY-366-RECALL")]);
+  const article = await cli(["knowledge-article-create", "--workspace", workspace, "--at", instant(8), "--path", "recall.md", "--category", "architecture", "--title", "文章索引入口", "--summary", "通过标题与摘要检索", "--content", "正文独有术语只存在于 Markdown 文件中", "--accountable-owner-id", deriveStableId("owner", "STORY-366-RECALL"), "--evidence-ids", deriveStableId("evidence", "STORY-366-RECALL")]);
   const defaultList = await cli(["knowledge-list", "--workspace", workspace, "--at", instant(9)]);
   assert.equal(defaultList.records.some((record) => record.id === article.id), false);
   const explicit = await cli(["knowledge-list", "--workspace", workspace, "--at", instant(9), "--search", "文章索引入口"]);

@@ -16,7 +16,6 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  acquireWorkspaceLease,
   createProject,
   createSnapshotManifest,
   initializeWorkspace,
@@ -43,31 +42,23 @@ async function fixture(context, suffix = "SEG") {
 
 test("STORY-354 snapshot-manifest succeeds on a file-segmented workspace and covers its .idx sidecars", async (context) => {
   const fx = await fixture(context);
-  const lease = await acquireWorkspaceLease(fx.workspace, { now: instant(1) });
   let manifestText;
-  let state;
-  try {
-    state = await setWorkspaceSetting(fx.workspace, lease, {
-      key: "storage.backend",
-      value: "file-segmented",
-      expectedVersion: 0,
-      occurredAt: instant(1),
-    });
-    state = await createProject(fx.workspace, lease, {
-      externalKey: "STORY-354-PROJECT",
-      name: "Segmented manifest coverage",
-      expectedVersion: state.version,
-      occurredAt: instant(2),
-    });
+  let state = await setWorkspaceSetting(fx.workspace, {
+    key: "storage.backend",
+    value: "file-segmented",
+    occurredAt: instant(1),
+  });
+  state = await createProject(fx.workspace, {
+    externalKey: "STORY-354-PROJECT",
+    name: "Segmented manifest coverage",
+    occurredAt: instant(2),
+  });
 
-    const entries = await readdir(join(fx.workspace, controlDirectory, "events"));
-    assert.ok(entries.includes("000001.idx"), "fixture must be file-segmented with a built point index");
-    assert.ok(entries.includes("manifest.json"), "fixture must be file-segmented with a built segment manifest");
+  const entries = await readdir(join(fx.workspace, controlDirectory, "events"));
+  assert.ok(entries.includes("000001.idx"), "fixture must be file-segmented with a built point index");
+  assert.ok(entries.includes("manifest.json"), "fixture must be file-segmented with a built segment manifest");
 
-    manifestText = await createSnapshotManifest(fx.workspace, lease);
-  } finally {
-    await lease.release();
-  }
+  manifestText = await createSnapshotManifest(fx.workspace);
   const manifest = JSON.parse(manifestText);
   assert.equal(manifest.schemaVersion, "tcrn.workspace-snapshot-manifest.v1");
   assert.equal(manifest.validate.workspace, "valid");
@@ -83,19 +74,13 @@ test("STORY-354 snapshot-manifest succeeds on a file-segmented workspace and cov
 
 test("STORY-354 a workspace with no explicit storage.backend setting (default segmented) also snapshots cleanly", async (context) => {
   const fx = await fixture(context, "DEFAULT");
-  const lease = await acquireWorkspaceLease(fx.workspace, { now: instant(1) });
-  try {
-    const state = await createProject(fx.workspace, lease, {
-      externalKey: "STORY-354-DEFAULT-PROJECT",
-      name: "Default segmented backend",
-      expectedVersion: 0,
-      occurredAt: instant(1),
-    });
-    const entries = await readdir(join(fx.workspace, controlDirectory, "events"));
-    assert.ok(entries.includes("000001.idx"), "the default backend must retain the segmented point index");
-    const manifestText = await createSnapshotManifest(fx.workspace, lease);
-    assert.equal(JSON.parse(manifestText).version, state.version);
-  } finally {
-    await lease.release();
-  }
+  const state = await createProject(fx.workspace, {
+    externalKey: "STORY-354-DEFAULT-PROJECT",
+    name: "Default segmented backend",
+    occurredAt: instant(1),
+  });
+  const entries = await readdir(join(fx.workspace, controlDirectory, "events"));
+  assert.ok(entries.includes("000001.idx"), "the default backend must retain the segmented point index");
+  const manifestText = await createSnapshotManifest(fx.workspace);
+  assert.equal(JSON.parse(manifestText).version, state.version);
 });

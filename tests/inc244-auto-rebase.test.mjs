@@ -9,7 +9,6 @@ import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import {
-  acquireWorkspaceLease,
   createProject,
   createWork,
   initializeKnowledgeStore,
@@ -29,14 +28,8 @@ async function fixture() {
   }
   const workspace = join(base, "workspace");
   await initializeWorkspace({ roots, externalKey: "FIXTURE-INC-244", createdAt: instant(0), segmentEventLimit: 64 });
-  const lease = await acquireWorkspaceLease(workspace, { now: instant(1) });
-  let state;
-  try {
-    state = await createProject(workspace, lease, { expectedVersion: 0, occurredAt: instant(1), externalKey: "FIXTURE-INC-244-PROJECT", name: "INC-244" });
-    state = await createWork(workspace, lease, { expectedVersion: 1, occurredAt: instant(2), projectId: state.projects[0].id, externalKey: "FIXTURE-INC-244-WORK", kind: "Initiative", parentId: null, status: "active" });
-  } finally {
-    await lease.release();
-  }
+  let state = await createProject(workspace, { occurredAt: instant(1), externalKey: "FIXTURE-INC-244-PROJECT", name: "INC-244" });
+  state = await createWork(workspace, { occurredAt: instant(2), projectId: state.projects[0].id, externalKey: "FIXTURE-INC-244-WORK", kind: "Initiative", parentId: null, status: "active" });
   await initializeKnowledgeStore(workspace);
   return { base, workspace, version: state.version };
 }
@@ -48,7 +41,6 @@ test("INC-244: a CLI workspace event automatically rebinds the knowledge high-wa
     await runCli([
       "project-create",
       "--workspace", state.workspace,
-      "--expected-version", String(state.version),
       "--at", instant(3),
       "--external-key", "FIXTURE-INC-244-PROJECT-TWO",
       "--name", "INC-244 two",

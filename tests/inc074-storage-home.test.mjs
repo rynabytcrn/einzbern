@@ -24,7 +24,7 @@ import { runCli } from "../dist/build/packages/cli/src/index.js";
 import {
   WorkspaceError,
   StorageHomeError,
-  acquireWorkspaceLease,
+  withWorkspaceWriteLock,
   FileBackend,
   initializeWorkspace,
   materializeWorkspace,
@@ -96,13 +96,11 @@ test("INC-074: a workspace declaring the retired PostgreSQL backend is refused (
 
     // Any operation that tries to read the workspace also fails at the same point.
     await expectReasonAsync("STORAGE_HOME_BACKEND_RETIRED", () =>
-      acquireWorkspaceLease(fixture.workspace, { now: instant(5) }));
+      withWorkspaceWriteLock(fixture.workspace, async () => undefined));
 
     // Removing the sentinel (rollback) restores the workspace to usable state.
     await removeStorageHomeDeclaration(fixture.workspace);
     assert.equal(await readStorageHomeDeclaration(fixture.workspace), null);
-    const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(6) });
-    await lease.release();
   } finally {
     await fixture.close();
   }
@@ -120,7 +118,7 @@ test("INC-074: a workspace with retired PG backend fails to read (STORAGE_HOME_B
     });
     // The refusal happens at the parseDeclaration step, before backend selection.
     await assert.rejects(
-      () => withStorageBackendFactory(() => new FileBackend(fixture.workspace), () => acquireWorkspaceLease(fixture.workspace, { now: instant(5) })),
+      () => withStorageBackendFactory(() => new FileBackend(fixture.workspace), () => withWorkspaceWriteLock(fixture.workspace, async () => undefined)),
       (error) => error?.reasonCode === "STORAGE_HOME_BACKEND_RETIRED",
     );
   } finally {

@@ -73,47 +73,47 @@ export const governedLoopStoryline = [
   {
     key: "project-create",
     reasonCode: "WORKSPACE_COMMAND_COMPLETED",
-    command: ["project-create", "--workspace", WORKSPACE_PATH, "--expected-version", "0", "--at", "2026-07-11T00:00:01Z", "--external-key", "FLAGSHIP-PROJECT", "--name", "Flagship"],
+    command: ["project-create", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:01Z", "--external-key", "FLAGSHIP-PROJECT", "--name", "Flagship"],
   },
   {
     key: "work-create-initiative",
     reasonCode: "WORKSPACE_COMMAND_COMPLETED",
-    command: ["work-create", "--workspace", WORKSPACE_PATH, "--expected-version", "1", "--at", "2026-07-11T00:00:02Z", "--project-id", "<project-id>", "--external-key", "FLAGSHIP-INITIATIVE", "--kind", "Initiative", "--title", "Flagship-initiative"],
+    command: ["work-create", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:02Z", "--project-id", "<project-id>", "--external-key", "FLAGSHIP-INITIATIVE", "--kind", "Initiative", "--title", "Flagship-initiative"],
   },
   {
     key: "work-create-epic",
     reasonCode: "WORKSPACE_COMMAND_COMPLETED",
-    command: ["work-create", "--workspace", WORKSPACE_PATH, "--expected-version", "2", "--at", "2026-07-11T00:00:03Z", "--project-id", "<project-id>", "--external-key", "FLAGSHIP-EPIC", "--kind", "Epic", "--parent-id", "<initiative-id>", "--title", "Flagship-epic"],
+    command: ["work-create", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:03Z", "--project-id", "<project-id>", "--external-key", "FLAGSHIP-EPIC", "--kind", "Epic", "--parent-id", "<initiative-id>", "--title", "Flagship-epic"],
   },
   {
     key: "work-create-story",
     reasonCode: "WORKSPACE_COMMAND_COMPLETED",
-    command: ["work-create", "--workspace", WORKSPACE_PATH, "--expected-version", "3", "--at", "2026-07-11T00:00:04Z", "--project-id", "<project-id>", "--external-key", "FLAGSHIP-STORY", "--kind", "Story", "--parent-id", "<epic-id>", "--scope", "<story-scope>", "--title", "Flagship-story"],
+    command: ["work-create", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:04Z", "--project-id", "<project-id>", "--external-key", "FLAGSHIP-STORY", "--kind", "Story", "--parent-id", "<epic-id>", "--scope", "<story-scope>", "--title", "Flagship-story"],
   },
   {
     key: "work-transition-story-ready",
     reasonCode: "WORKSPACE_COMMAND_COMPLETED",
-    command: ["work-transition", "--workspace", WORKSPACE_PATH, "--expected-version", "4", "--at", "2026-07-11T00:00:05Z", "--id", "<story-id>", "--status", "ready"],
+    command: ["work-transition", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:05Z", "--id", "<story-id>", "--status", "ready"],
   },
   {
     key: "work-transition-story-active",
     reasonCode: "WORKSPACE_COMMAND_COMPLETED",
-    command: ["work-transition", "--workspace", WORKSPACE_PATH, "--expected-version", "5", "--at", "2026-07-11T00:00:06Z", "--id", "<story-id>", "--status", "active"],
+    command: ["work-transition", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:06Z", "--id", "<story-id>", "--status", "active"],
   },
   {
     key: "gate-create",
     reasonCode: "WORKSPACE_COMMAND_COMPLETED",
-    command: ["gate-create", "--workspace", WORKSPACE_PATH, "--expected-version", "6", "--at", "2026-07-11T00:00:07Z", "--external-key", "FLAGSHIP-GATE", "--project-id", "<project-id>", "--work-id", "<story-id>", "--title", "Decision-gate", "--outcome-class", "role_decision"],
+    command: ["gate-create", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:07Z", "--external-key", "FLAGSHIP-GATE", "--project-id", "<project-id>", "--work-id", "<story-id>", "--title", "Decision-gate", "--outcome-class", "role_decision"],
   },
   {
     key: "conference-open",
     reasonCode: "WORKSPACE_COMMAND_COMPLETED",
-    command: ["conference-open", "--workspace", WORKSPACE_PATH, "--expected-version", "7", "--at", "2026-07-11T00:00:08Z", "--external-key", "FLAGSHIP-CONFERENCE", "--project-id", "<project-id>", "--type", "architecture", "--title", "Decide-the-story", "--work-ids", "<story-id>", "--desired-outcome", "ratify-the-approach", "--participant-ids", "profile:architect-01"],
+    command: ["conference-open", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:08Z", "--external-key", "FLAGSHIP-CONFERENCE", "--project-id", "<project-id>", "--type", "architecture", "--title", "Decide-the-story", "--work-ids", "<story-id>", "--desired-outcome", "ratify-the-approach", "--participant-ids", "profile:architect-01"],
   },
   {
     key: "conference-append-position",
     reasonCode: "WORKSPACE_COMMAND_COMPLETED",
-    command: ["conference-append-position", "--workspace", WORKSPACE_PATH, "--expected-version", "8", "--at", "2026-07-11T00:00:09Z", "--conference-id", "<conference-id>", "--external-key", "FLAGSHIP-POSITION", "--actor-id", "profile:architect-01", "--position", "persist-via-event-log", "--risks", "forward-reads-as-corruption", "--recommendations", "document-the-posture", "--evidence-ids", "evidence:position-01"],
+    command: ["conference-append-position", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:09Z", "--conference-id", "<conference-id>", "--external-key", "FLAGSHIP-POSITION", "--actor-id", "profile:architect-01", "--position", "persist-via-event-log", "--risks", "forward-reads-as-corruption", "--recommendations", "document-the-posture", "--evidence-ids", "evidence:position-01"],
   },
   {
     key: "knowledge-init",
@@ -123,7 +123,7 @@ export const governedLoopStoryline = [
   {
     key: "conference-close-distill",
     reasonCode: "WORKSPACE_COMMAND_COMPLETED",
-    command: ["conference-close", "--workspace", WORKSPACE_PATH, "--expected-version", "9", "--at", "2026-07-11T00:00:10Z", "--conference-id", "<conference-id>", "--minutes-external-key", "FLAGSHIP-MINUTES", "--summary", "approach-ratified", "--outcome-class", "role_decision", "--decisions", "persist-conference-and-gate-records", "--unresolved-issues", "-", "--distill", "true", "--accountable-owner-id", "owner:governance", "--stale-days", "90", "--evidence-ids", "evidence:close-01"],
+    command: ["conference-close", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:10Z", "--conference-id", "<conference-id>", "--minutes-external-key", "FLAGSHIP-MINUTES", "--summary", "approach-ratified", "--outcome-class", "role_decision", "--decisions", "persist-conference-and-gate-records", "--unresolved-issues", "-", "--distill", "true", "--accountable-owner-id", "owner:governance", "--stale-days", "90", "--evidence-ids", "evidence:close-01"],
   },
   {
     key: "knowledge-validate",
@@ -138,22 +138,22 @@ export const governedLoopStoryline = [
   {
     key: "knowledge-promote",
     reasonCode: "KNOWLEDGE_PROMOTION_UPDATED",
-    command: ["knowledge-promote", "--workspace", WORKSPACE_PATH, "--expected-version", "<knowledge-version>", "--expected-revision", "<knowledge-revision>", "--at", "2026-07-11T00:00:12Z", "--id", "<knowledge-id>", "--state", "promoted"],
+    command: ["knowledge-promote", "--workspace", WORKSPACE_PATH, "--expected-revision", "<knowledge-revision>", "--at", "2026-07-11T00:00:12Z", "--id", "<knowledge-id>", "--state", "promoted"],
   },
   {
     key: "gate-transition-satisfied",
     reasonCode: "WORKSPACE_COMMAND_COMPLETED",
-    command: ["gate-transition", "--workspace", WORKSPACE_PATH, "--expected-version", "10", "--at", "2026-07-11T00:00:13Z", "--id", "<gate-id>", "--status", "satisfied", "--minutes-locator", "<minutes-locator>"],
+    command: ["gate-transition", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:13Z", "--id", "<gate-id>", "--status", "satisfied", "--minutes-locator", "<minutes-locator>"],
   },
   {
     key: "work-annotate-story-owner-acceptance",
     reasonCode: "WORKSPACE_COMMAND_COMPLETED",
-    command: ["work-annotate", "--workspace", WORKSPACE_PATH, "--expected-version", "11", "--at", "2026-07-11T00:00:14Z", "--id", "<story-id>", "--decided-by", "<minutes-id>"],
+    command: ["work-annotate", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:14Z", "--id", "<story-id>", "--decided-by", "<minutes-id>"],
   },
   {
     key: "work-transition-story-done",
     reasonCode: "WORKSPACE_COMMAND_COMPLETED",
-    command: ["work-transition", "--workspace", WORKSPACE_PATH, "--expected-version", "12", "--at", "2026-07-11T00:00:15Z", "--id", "<story-id>", "--status", "done"],
+    command: ["work-transition", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:15Z", "--id", "<story-id>", "--status", "done"],
   },
   {
     key: "work-show-story",

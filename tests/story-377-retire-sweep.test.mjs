@@ -15,7 +15,6 @@ import { COMMAND_CATALOG, runCli } from "../dist/build/packages/cli/src/index.js
 import {
   appendEvents,
   appendTelemetryRecord,
-  acquireWorkspaceLease,
   captureKnowledgeUnit,
   createKnowledgeUnit,
   createTelemetryRecord,
@@ -67,26 +66,20 @@ async function fixture(t, externalKey, { aggregateBytes, workItem = false } = {}
   for (const root of roots) await mkdir(root.path);
   const workspace = join(base, "workspace");
   await initializeWorkspace({ roots, externalKey, createdAt: "2026-01-01T00:00:00Z" });
-  const lease = await acquireWorkspaceLease(workspace, { now: "2026-01-01T00:00:01Z" });
   let workId = null;
-  try {
-    const project = await createProject(workspace, lease, {
-      expectedVersion: 0,
-      occurredAt: "2026-01-01T00:00:01Z",
-      externalKey: `${externalKey}-PROJECT`,
-      name: "Story 377 fixture",
-    });
-    // TCRN-CROSS-MIN-225 AC3: a store small enough to fill, set before the store is initialized.
-    if (aggregateBytes !== undefined) {
-      await setWorkspaceSetting(workspace, lease, { key: "knowledge.aggregateBytes", value: String(aggregateBytes), expectedVersion: 1, occurredAt: "2026-01-01T00:00:02Z" });
-    }
-    // TCRN-CROSS-MIN-225 AC5: a work record a telemetry event can name, so fitness digests it.
-    if (workItem) {
-      const state = await createWork(workspace, lease, { expectedVersion: project.version, occurredAt: "2026-01-01T00:00:03Z", projectId: project.projects[0].id, externalKey: `${externalKey}-INCIDENT`, kind: "Incident", parentId: null, title: "Story 377 telemetry-only artifact" });
-      workId = state.work[0].id;
-    }
-  } finally {
-    await lease.release();
+  const project = await createProject(workspace, {
+    occurredAt: "2026-01-01T00:00:01Z",
+    externalKey: `${externalKey}-PROJECT`,
+    name: "Story 377 fixture",
+  });
+  // TCRN-CROSS-MIN-225 AC3: a store small enough to fill, set before the store is initialized.
+  if (aggregateBytes !== undefined) {
+    await setWorkspaceSetting(workspace, { key: "knowledge.aggregateBytes", value: String(aggregateBytes), occurredAt: "2026-01-01T00:00:02Z" });
+  }
+  // TCRN-CROSS-MIN-225 AC5: a work record a telemetry event can name, so fitness digests it.
+  if (workItem) {
+    const state = await createWork(workspace, { occurredAt: "2026-01-01T00:00:03Z", projectId: project.projects[0].id, externalKey: `${externalKey}-INCIDENT`, kind: "Incident", parentId: null, title: "Story 377 telemetry-only artifact" });
+    workId = state.work[0].id;
   }
   await initializeKnowledgeStore(workspace);
   return { base, workspace, workId, transient: join(base, "transient"), store: join(workspace, LEGACY_CONTROL_DIRECTORY, "knowledge") };
@@ -402,17 +395,16 @@ test("MIN-225: fitness counts are read-only statistics that legacy observation r
     const idle = await card(fx, "MIN-225-LEGACY-IDLE", { occurredAt: "2026-04-01T00:00:00.000Z" });
     const busy = await card(fx, "MIN-225-LEGACY-BUSY", { occurredAt: "2026-04-01T00:00:00.000Z" });
     const swept = await card(fx, "MIN-225-LEGACY-SWEPT", { occurredAt: "2026-04-01T00:00:00.000Z" });
-    const marker = await readKnowledgeStoreMarker(fx.workspace);
     const sweptRevision = (await listKnowledgeMetadata(fx.workspace, { at: AT, selection: "all" })).records.find((record) => record.id === swept.id).revision;
     const retirement = { schemaVersion: "tcrn.knowledge-retirement.v1", id: swept.id, reason: "zero-retrieval-zero-reference", retrievalCount: 0, referenceCount: 0, observedEvents: 1, windowDays: 90, windowStart: "2026-06-03T00:00:00.000Z", windowEnd: "2026-08-31T23:59:59.999Z", sweptAt: "2026-09-01T00:47:10.039Z" };
-    // A manual retirement stays compare-and-swap guarded. The write below stops after its metadata, as a
+    // A manual retirement stays compare-and-swap guarded on the record revision. The write below stops after its metadata, as a
     // sweep could, and knowledge-recover reclaims the body once.
     await assert.rejects(
-      retireKnowledgeUnit(fx.workspace, { expectedVersion: Number(marker.version) + 1, expectedRevision: sweptRevision, occurredAt: retirement.sweptAt, id: swept.id, retirement }),
+      retireKnowledgeUnit(fx.workspace, { expectedRevision: sweptRevision + 1, occurredAt: retirement.sweptAt, id: swept.id, retirement }),
       (error) => error?.reasonCode === "KNOWLEDGE_CAS_MISMATCH",
     );
     await assert.rejects(
-      retireKnowledgeUnit(fx.workspace, { expectedVersion: Number(marker.version), expectedRevision: sweptRevision, occurredAt: retirement.sweptAt, id: swept.id, retirement }, { faultAt: "after-metadata-write" }),
+      retireKnowledgeUnit(fx.workspace, { expectedRevision: sweptRevision, occurredAt: retirement.sweptAt, id: swept.id, retirement }, { faultAt: "after-metadata-write" }),
       (error) => error?.reasonCode === "KNOWLEDGE_FAULT_INJECTED",
     );
     const claimPath = join(fx.store, "mutation.claim");
@@ -486,24 +478,19 @@ test("MIN-225: fitness counts are read-only statistics that legacy observation r
 // unregistered key, and a chain that recorded one of them before the retirement still replays.
 test("MIN-225: the retired fitness settings refuse new writes and their history still replays", async (t) => {
   const fx = await fixture(t, "FIXTURE-MIN-225-SETTINGS");
-  const lease = await acquireWorkspaceLease(fx.workspace, { now: "2026-01-02T00:00:00Z" });
-  try {
-    await appendEvents(fx.workspace, lease, [
-      (state) => ({
-        payload: { operation: "settings.updated", record: { schemaVersion: "tcrn.workspace-setting.v1", key: "fitness.windowDays", layerKind: "workspace_configuration", value: "30", revision: 1, updatedAt: "2026-01-02T00:00:00Z", tombstone: false } },
-        projects: state.projects,
-        work: state.work,
-        settings: state.settings,
-      }),
-    ], { expectedVersion: 1, occurredAt: "2026-01-02T00:00:00Z" });
-  } finally {
-    await lease.release();
-  }
+  await appendEvents(fx.workspace, [
+    (state) => ({
+      payload: { operation: "settings.updated", record: { schemaVersion: "tcrn.workspace-setting.v1", key: "fitness.windowDays", layerKind: "workspace_configuration", value: "30", revision: 1, updatedAt: "2026-01-02T00:00:00Z", tombstone: false } },
+      projects: state.projects,
+      work: state.work,
+      settings: state.settings,
+    }),
+  ], { occurredAt: "2026-01-02T00:00:00Z" });
   const state = await materializeWorkspace(fx.workspace);
   assert.equal(state.version, 2, "the chain with the recorded value replays");
   assert.equal(state.settings.some((entry) => entry.key.startsWith("fitness.")), false, "the recorded value is history, not a current setting");
   for (const key of ["fitness.windowDays", "fitness.minEvents"]) {
-    assert.equal(await reasonOf(["settings-set", "--workspace", fx.workspace, "--expected-version", "2", "--at", "2026-01-03T00:00:00Z", "--key", key, "--value", "30"]), "SETTINGS_KEY_UNREGISTERED", key);
+    assert.equal(await reasonOf(["settings-set", "--workspace", fx.workspace, "--at", "2026-01-03T00:00:00Z", "--key", key, "--value", "30"]), "SETTINGS_KEY_UNREGISTERED", key);
   }
   assert.equal((await cliJson(["settings-catalog", "--workspace", fx.workspace])).settings.some((entry) => entry.key.startsWith("fitness.")), false, "the catalog no longer offers them");
   assert.equal((await cliJson(["retire-proposals", "--workspace", fx.workspace, "--at", AT])).reasonCode, "KNOWLEDGE_RETIRE_PROPOSALS_READY");
@@ -533,13 +520,8 @@ function removedSetting(key, updatedAt) {
   });
 }
 
-async function appendSettingEvents(fx, expectedVersion, occurredAt, members) {
-  const lease = await acquireWorkspaceLease(fx.workspace, { now: occurredAt });
-  try {
-    return await appendEvents(fx.workspace, lease, members, { expectedVersion, occurredAt });
-  } finally {
-    await lease.release();
-  }
+async function appendSettingEvents(fx, occurredAt, members) {
+  return await appendEvents(fx.workspace, members, { occurredAt });
 }
 
 function settle(read) {
@@ -569,8 +551,8 @@ async function newestSnapshotSettings(fx) {
 // is written with both.
 async function snapshotWhileRetiredKeyLive(t, externalKey) {
   const fx = await fixture(t, externalKey);
-  await appendSettingEvents(fx, 1, "2026-01-02T00:00:00Z", [recordedSetting("storage.snapshotEveryEvents", "2", "2026-01-02T00:00:00Z")]);
-  await appendSettingEvents(fx, 2, "2026-01-03T00:00:00Z", [
+  await appendSettingEvents(fx, "2026-01-02T00:00:00Z", [recordedSetting("storage.snapshotEveryEvents", "2", "2026-01-02T00:00:00Z")]);
+  await appendSettingEvents(fx, "2026-01-03T00:00:00Z", [
     recordedSetting("fitness.windowDays", "30", "2026-01-03T00:00:00Z"),
     recordedSetting("artifact.language", "zh-CN", "2026-01-03T00:00:00Z"),
   ]);
@@ -584,8 +566,8 @@ async function snapshotWhileRetiredKeyLive(t, externalKey) {
 test("INC-389: a removed retired fitness setting replays as history in every read", async (t) => {
   for (const [key, value, label] of [["fitness.windowDays", "30", "WINDOW-DAYS"], ["fitness.minEvents", "5", "MIN-EVENTS"]]) {
     const fx = await fixture(t, `FIXTURE-INC-389-REMOVED-${label}`);
-    await appendSettingEvents(fx, 1, "2026-01-02T00:00:00Z", [recordedSetting(key, value, "2026-01-02T00:00:00Z")]);
-    await appendSettingEvents(fx, 2, "2026-01-03T00:00:00Z", [removedSetting(key, "2026-01-03T00:00:00Z")]);
+    await appendSettingEvents(fx, "2026-01-02T00:00:00Z", [recordedSetting(key, value, "2026-01-02T00:00:00Z")]);
+    await appendSettingEvents(fx, "2026-01-03T00:00:00Z", [removedSetting(key, "2026-01-03T00:00:00Z")]);
     for (const [read, { state, error }] of Object.entries(await readEveryWay(fx.workspace))) {
       assert.equal(error, undefined, `${key} ${read}: ${error?.reasonCode} ${error?.message}`);
       assert.equal(state.version, 3, `${key} ${read}`);
@@ -597,8 +579,8 @@ test("INC-389: a removed retired fitness setting replays as history in every rea
 // INC-389 R1: the same holds for a key retired before fitness, model.economyTier.
 test("INC-389: an earlier retired key set then removed replays in every read", async (t) => {
   const fx = await fixture(t, "FIXTURE-INC-389-REMOVED-ECONOMY-TIER");
-  await appendSettingEvents(fx, 1, "2026-01-02T00:00:00Z", [recordedSetting("model.economyTier", "claude-sonnet-5", "2026-01-02T00:00:00Z")]);
-  await appendSettingEvents(fx, 2, "2026-01-03T00:00:00Z", [removedSetting("model.economyTier", "2026-01-03T00:00:00Z")]);
+  await appendSettingEvents(fx, "2026-01-02T00:00:00Z", [recordedSetting("model.economyTier", "claude-sonnet-5", "2026-01-02T00:00:00Z")]);
+  await appendSettingEvents(fx, "2026-01-03T00:00:00Z", [removedSetting("model.economyTier", "2026-01-03T00:00:00Z")]);
   for (const [read, { state, error }] of Object.entries(await readEveryWay(fx.workspace))) {
     assert.equal(error, undefined, `${read}: ${error?.reasonCode} ${error?.message}`);
     assert.equal(state.version, 3, read);
@@ -623,7 +605,7 @@ test("INC-389: a replay snapshot taken while a retired key was live seeds the sa
 // longer holds the key and genesis never did; both read the removal as history and agree.
 test("INC-389: a retired key removed after a replay snapshot reads the same in both replays", async (t) => {
   const fx = await snapshotWhileRetiredKeyLive(t, "FIXTURE-INC-389-SNAPSHOT-REMOVED");
-  await appendSettingEvents(fx, 4, "2026-01-04T00:00:00Z", [removedSetting("fitness.windowDays", "2026-01-04T00:00:00Z")]);
+  await appendSettingEvents(fx, "2026-01-04T00:00:00Z", [removedSetting("fitness.windowDays", "2026-01-04T00:00:00Z")]);
   assert.equal((await newestSnapshotSettings(fx)).version, 4, "the removal comes after the newest snapshot");
   const reads = { snapshotSeeded: await settle(materializeWorkspace(fx.workspace)), genesis: await settle(materializeWorkspaceFromGenesis(fx.workspace)) };
   for (const [read, { state, error }] of Object.entries(reads)) {
@@ -638,14 +620,14 @@ test("INC-389: a retired key removed after a replay snapshot reads the same in b
 // corrupt chain in every read, and the write verbs still refuse both fitness keys without appending.
 test("INC-389: live key rules and retired key refusals are unchanged", async (t) => {
   const corrupt = await fixture(t, "FIXTURE-INC-389-LIVE-REMOVE");
-  await appendSettingEvents(corrupt, 1, "2026-01-02T00:00:00Z", [removedSetting("artifact.language", "2026-01-02T00:00:00Z")]);
+  await appendSettingEvents(corrupt, "2026-01-02T00:00:00Z", [removedSetting("artifact.language", "2026-01-02T00:00:00Z")]);
   for (const [read, { error }] of Object.entries(await readEveryWay(corrupt.workspace))) {
     assert.equal(error?.reasonCode, "WORKSPACE_EVENT_CORRUPT", read);
     assert.match(error.message, /cannot remove unknown setting artifact\.language/u, read);
   }
   const fx = await fixture(t, "FIXTURE-INC-389-REFUSALS");
   for (const key of ["fitness.windowDays", "fitness.minEvents"]) {
-    const write = ["--workspace", fx.workspace, "--expected-version", "1", "--at", "2026-01-02T00:00:00Z", "--key", key];
+    const write = ["--workspace", fx.workspace, "--at", "2026-01-02T00:00:00Z", "--key", key];
     assert.equal(await reasonOf(["settings-set", ...write, "--value", "30"]), "SETTINGS_KEY_UNREGISTERED", key);
     assert.equal(await reasonOf(["settings-remove", ...write]), "WORKSPACE_INPUT_INVALID", key);
   }

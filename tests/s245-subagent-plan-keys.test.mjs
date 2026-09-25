@@ -35,7 +35,7 @@ async function fixture(context) {
   return join(base, "workspace");
 }
 
-const write = (command, workspace, version, second, args) => [command, "--workspace", workspace, "--expected-version", String(version), "--at", at(second), ...args, "--actor", "agent:test"];
+const write = (command, workspace, version, second, args) => [command, "--workspace", workspace, "--at", at(second), ...args, "--actor", "agent:test"];
 
 test("S369: dispatch settings are cataloged, sorted, and vocabulary-linked", async (t) => {
   const workspace = await fixture(t);

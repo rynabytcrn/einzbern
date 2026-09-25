@@ -62,7 +62,7 @@ test("S212: admitted template binds work, red legs stay fail-closed, and pre-era
   const fx = await fixture();
   try {
     const project = await invoke([
-      "project-create", "--workspace", fx.workspace, "--expected-version", "0", "--at", instant(1),
+      "project-create", "--workspace", fx.workspace, "--at", instant(1),
       "--external-key", "S212-PROJECT", "--name", "S212 scratch",
     ]);
     assert.equal(project.ok, true, JSON.stringify(project));
@@ -84,7 +84,7 @@ test("S212: admitted template binds work, red legs stay fail-closed, and pre-era
     assert.equal(validated.value.reasonCode, "TEMPLATE_VALIDATED");
 
     const admitted = await invoke([
-      "template-admit", "--workspace", fx.workspace, "--expected-version", "head", "--at", instant(2),
+      "template-admit", "--workspace", fx.workspace, "--at", instant(2),
       "--template", templatePath, "--owner", "owner:s212", "--actor", "agent:codex",
     ]);
     assert.equal(admitted.ok, true, JSON.stringify(admitted));
@@ -92,18 +92,18 @@ test("S212: admitted template binds work, red legs stay fail-closed, and pre-era
     const receiptJson = JSON.stringify(admitted.value.receipt);
 
     const initiative = await invoke([
-      "work-create", "--title", "record-title", "--workspace", fx.workspace, "--expected-version", "head", "--at", instant(3),
+      "work-create", "--title", "record-title", "--workspace", fx.workspace, "--at", instant(3),
       "--project-id", project.value.record.id, "--external-key", "S212-LEGACY-INITIATIVE", "--kind", "Initiative",
     ]);
     assert.equal(initiative.ok, true, JSON.stringify(initiative));
     const epic = await invoke([
-      "work-create", "--title", "record-title", "--workspace", fx.workspace, "--expected-version", "head", "--at", instant(4),
+      "work-create", "--title", "record-title", "--workspace", fx.workspace, "--at", instant(4),
       "--project-id", project.value.record.id, "--external-key", "S212-LEGACY-EPIC", "--kind", "Epic", "--parent-id", initiative.value.record.id,
     ]);
     assert.equal(epic.ok, true, JSON.stringify(epic));
 
     const bound = await invoke([
-      "work-create", "--title", "record-title", "--workspace", fx.workspace, "--expected-version", "head", "--at", instant(5),
+      "work-create", "--title", "record-title", "--workspace", fx.workspace, "--at", instant(5),
       "--project-id", project.value.record.id, "--external-key", "S212-BOUND-INCIDENT", "--kind", "Incident",
       "--scope", defectScope(), "--template-receipt", receiptJson,
     ]);
@@ -122,7 +122,7 @@ test("S212: admitted template binds work, red legs stay fail-closed, and pre-era
     assert.equal(shown.value.record.templateBinding.registrationId, "template:inc.defect.v1-1");
 
     const missingSteps = await invoke([
-      "work-create", "--title", "record-title", "--workspace", fx.workspace, "--expected-version", "head", "--at", instant(4),
+      "work-create", "--title", "record-title", "--workspace", fx.workspace, "--at", instant(4),
       "--project-id", project.value.record.id, "--external-key", "S212-MISSING-STEPS", "--kind", "Incident",
       "--scope", defectScope().split("\n").filter((line) => !line.startsWith("【Steps to Reproduce】")).join("\n"),
       "--template-receipt", receiptJson,
@@ -131,7 +131,7 @@ test("S212: admitted template binds work, red legs stay fail-closed, and pre-era
     assert.equal(missingSteps.reasonCode, "TEMPLATE_SCOPE_INVALID", JSON.stringify(missingSteps));
 
     const plaintextCredentials = await invoke([
-      "work-create", "--title", "record-title", "--workspace", fx.workspace, "--expected-version", "head", "--at", instant(5),
+      "work-create", "--title", "record-title", "--workspace", fx.workspace, "--at", instant(5),
       "--project-id", project.value.record.id, "--external-key", "S212-PLAINTEXT-CREDENTIALS", "--kind", "Incident",
       "--scope", defectScope("password=not-a-reference"), "--template-receipt", receiptJson,
     ]);
@@ -139,7 +139,7 @@ test("S212: admitted template binds work, red legs stay fail-closed, and pre-era
     assert.equal(plaintextCredentials.reasonCode, "TEMPLATE_SCOPE_INVALID", JSON.stringify(plaintextCredentials));
 
     const legacy = await invoke([
-      "work-create", "--title", "record-title", "--workspace", fx.workspace, "--expected-version", "head", "--at", instant(6),
+      "work-create", "--title", "record-title", "--workspace", fx.workspace, "--at", instant(6),
       "--project-id", project.value.record.id, "--external-key", "STORY-105", "--kind", "Story", "--parent-id", epic.value.record.id, "--scope", legacyStoryScope,
     ]);
     assert.equal(legacy.ok, true, JSON.stringify(legacy));

@@ -10,7 +10,6 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
-  acquireWorkspaceLease,
   appendTelemetryRecord,
   createProject,
   createTelemetryRecord,
@@ -356,18 +355,16 @@ test("STORY-372: telemetry-list filters and done evidence keeps a snapshot after
   assert.equal(page.total, 2);
   assert.equal(page.records.length, 1);
   assert.equal(page.records[0].id, telemetry.id);
-  const lease = await acquireWorkspaceLease(fixture.workspace, { now: INSTANT(5) });
-  let state = await createProject(fixture.workspace, lease, { expectedVersion: fixture.state.version, occurredAt: INSTANT(5), externalKey: "PROJECT", name: "Project" });
-  state = await createWork(fixture.workspace, lease, { expectedVersion: state.version, occurredAt: INSTANT(6), projectId: state.projects[0].id, externalKey: "INCIDENT", kind: "Incident", parentId: null, title: "Telemetry evidence" });
+  let state = await createProject(fixture.workspace, { occurredAt: INSTANT(5), externalKey: "PROJECT", name: "Project" });
+  state = await createWork(fixture.workspace, { occurredAt: INSTANT(6), projectId: state.projects[0].id, externalKey: "INCIDENT", kind: "Incident", parentId: null, title: "Telemetry evidence" });
   const workId = state.work.find((record) => record.externalKey === "INCIDENT").id;
   await assert.rejects(
-    transitionWork(fixture.workspace, lease, { expectedVersion: state.version, occurredAt: INSTANT(7), id: workId, status: "done", evidence: "telemetry:000000000000000000000000" }),
+    transitionWork(fixture.workspace, { occurredAt: INSTANT(7), id: workId, status: "done", evidence: "telemetry:000000000000000000000000" }),
     (error) => error?.reasonCode === "WORKSPACE_TELEMETRY_EVIDENCE_UNRESOLVED",
   );
-  state = await transitionWork(fixture.workspace, lease, { expectedVersion: state.version, occurredAt: INSTANT(7), id: workId, status: "ready" });
-  state = await transitionWork(fixture.workspace, lease, { expectedVersion: state.version, occurredAt: INSTANT(8), id: workId, status: "active" });
-  state = await transitionWork(fixture.workspace, lease, { expectedVersion: state.version, occurredAt: INSTANT(9), id: workId, status: "done", evidence: telemetry.id });
-  await lease.release();
+  state = await transitionWork(fixture.workspace, { occurredAt: INSTANT(7), id: workId, status: "ready" });
+  state = await transitionWork(fixture.workspace, { occurredAt: INSTANT(8), id: workId, status: "active" });
+  state = await transitionWork(fixture.workspace, { occurredAt: INSTANT(9), id: workId, status: "done", evidence: telemetry.id });
   const evidence = state.work.find((record) => record.id === workId).extensions["advisory:evidence"];
   const snapshot = state.work.find((record) => record.id === workId).extensions["advisory:evidence-snapshot"];
   assert.equal(evidence.value, telemetry.id);

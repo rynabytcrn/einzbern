@@ -21,7 +21,6 @@ import test from "node:test";
 
 import { PROTOCOL_LIMITS, canonicalJson, validateEventChain } from "../dist/build/packages/protocol/src/index.js";
 import {
-  acquireWorkspaceLease,
   appendEvents,
   assertWorkspaceRecordCount,
   buildEventPayload,
@@ -92,7 +91,6 @@ test("STORY-451: a chain past the per-document bound replays from genesis withou
   const workspace = join(base, "workspace");
   const occurredAt = "2026-09-23T00:00:01Z";
   await initializeWorkspace({ roots, externalKey: "STORY-451-REPLAY", createdAt: "2026-09-23T00:00:00Z" });
-  const lease = await acquireWorkspaceLease(workspace, { now: occurredAt });
   const settingDelta = (key, value) => (state) => {
     const prior = state.settings.find((entry) => entry.key === key);
     const record = createWorkspaceSettingRecord(key, value, (prior?.revision ?? 0) + 1, occurredAt, workspace);
@@ -110,12 +108,8 @@ test("STORY-451: a chain past the per-document bound replays from genesis withou
   while (deltas.length < events) {
     deltas.push(settingDelta("injection.budgetBytes", deltas.length % 2 === 0 ? "24576" : "24577"));
   }
-  try {
-    const committed = await appendEvents(workspace, lease, deltas, { expectedVersion: 0, occurredAt });
-    assert.equal(committed.version, events);
-  } finally {
-    await lease.release();
-  }
+  const committed = await appendEvents(workspace, deltas, { occurredAt });
+  assert.equal(committed.version, events);
   await assert.rejects(stat(join(workspace, ".tcrn-" + "workflow", "snapshots", "manifest.json")), { code: "ENOENT" },
     "precondition: no replay snapshot exists, so replay walks the whole chain");
   const replayed = await materializeWorkspaceFromGenesis(workspace);

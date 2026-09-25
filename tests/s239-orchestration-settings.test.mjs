@@ -54,10 +54,10 @@ test("S239: defaults, closed enum, and bounded numeric strings are catalog-backe
   });
   assert.equal(entries.has("execution.personalessDispatch"), false);
 
-  const first = await json(["settings-set", "--workspace", workspace, "--expected-version", String(await version()), "--at", instant(1),
+  const first = await json(["settings-set", "--workspace", workspace, "--at", instant(1),
     "--key", "execution.maxConcurrentSubagents", "--value", "32", "--actor", "agent:test"]);
   assert.equal(first.setting.value, "32");
-  const second = await json(["settings-set", "--workspace", workspace, "--expected-version", String(await version()), "--at", instant(2),
+  const second = await json(["settings-set", "--workspace", workspace, "--at", instant(2),
     "--key", "execution.maxDispatchDepth", "--value", "4", "--actor", "agent:test"]);
   assert.equal(second.setting.value, "4");
 });
@@ -74,7 +74,7 @@ test("S239: semantic refusals identify the setting and leave the head unchanged"
   ];
   for (const [key, value, message] of cases) {
     const stable = await version();
-    const error = await refusal(["settings-set", "--workspace", workspace, "--expected-version", String(stable), "--at", instant(10),
+    const error = await refusal(["settings-set", "--workspace", workspace, "--at", instant(10),
       "--key", key, "--value", value, "--actor", "agent:test"]);
     assert.equal(error.reasonCode, key === "execution.personalessDispatch" ? "SETTINGS_KEY_UNREGISTERED" : "SETTINGS_VALUE_INVALID", `${key}=${value}`);
     assert.match(error.message, message);

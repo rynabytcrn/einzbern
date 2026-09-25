@@ -13,7 +13,6 @@ import {
   KNOWLEDGE_LIMITS,
   KNOWLEDGE_PROVENANCE_POLICY,
   SettingsError,
-  acquireWorkspaceLease,
   createProject,
   createWork,
   initializeWorkspace,
@@ -61,26 +60,21 @@ test("STORY-347 settings catalog exposes all six new keys and numeric bounds", a
 
 test("STORY-347 settings reject below-minimum values and retrieval setting supplies the default excerpt window", async (context) => {
   const fx = await fixture(context, "CONSUME");
-  const lease = await acquireWorkspaceLease(fx.workspace, { now: instant(1) });
-  try {
-    await assert.rejects(() => setWorkspaceSetting(fx.workspace, lease, {
-      key: "storage.snapshotEveryEvents", value: "0", expectedVersion: 0, occurredAt: instant(2),
-    }), (error) => error instanceof SettingsError && error.reasonCode === "SETTINGS_VALUE_INVALID");
-    let state = await setWorkspaceSetting(fx.workspace, lease, {
-      key: "retrieval.scopeExcerptBytes", value: "12", expectedVersion: 0, occurredAt: instant(2),
-    });
-    state = await createProject(fx.workspace, lease, { externalKey: "STORY-347-PROJECT", name: "Settings", expectedVersion: state.version, occurredAt: instant(3) });
-    state = await createWork(fx.workspace, lease, {
-      projectId: state.projects[0].id, externalKey: "STORY-347-INCIDENT", kind: "Incident", parentId: null,
-      scope: "【Goal】abcdefghijklmnop", expectedVersion: state.version, occurredAt: instant(4),
-    });
-    const defaultWindow = await cli(["work-list", "--workspace", fx.workspace, "--search", "abc"]);
-    assert.equal(Buffer.byteLength(defaultWindow.records[0].scope, "utf8"), 12);
-    const overridden = await cli(["work-list", "--workspace", fx.workspace, "--search", "abc", "--scope-bytes", "4"]);
-    assert.equal(Buffer.byteLength(overridden.records[0].scope, "utf8"), 4);
-  } finally {
-    await lease.release();
-  }
+  await assert.rejects(() => setWorkspaceSetting(fx.workspace, {
+    key: "storage.snapshotEveryEvents", value: "0", occurredAt: instant(2),
+  }), (error) => error instanceof SettingsError && error.reasonCode === "SETTINGS_VALUE_INVALID");
+  let state = await setWorkspaceSetting(fx.workspace, {
+    key: "retrieval.scopeExcerptBytes", value: "12", occurredAt: instant(2),
+  });
+  state = await createProject(fx.workspace, { externalKey: "STORY-347-PROJECT", name: "Settings", occurredAt: instant(3) });
+  state = await createWork(fx.workspace, {
+    projectId: state.projects[0].id, externalKey: "STORY-347-INCIDENT", kind: "Incident", parentId: null,
+    scope: "【Goal】abcdefghijklmnop", occurredAt: instant(4),
+  });
+  const defaultWindow = await cli(["work-list", "--workspace", fx.workspace, "--search", "abc"]);
+  assert.equal(Buffer.byteLength(defaultWindow.records[0].scope, "utf8"), 12);
+  const overridden = await cli(["work-list", "--workspace", fx.workspace, "--search", "abc", "--scope-bytes", "4"]);
+  assert.equal(Buffer.byteLength(overridden.records[0].scope, "utf8"), 4);
 });
 
 test("STORY-348 provenance policy is an external JSON source and the aggregate setting is bounded by the canonical ceiling", async (context) => {
@@ -91,15 +85,10 @@ test("STORY-348 provenance policy is an external JSON source and the aggregate s
     strictKinds: ["guide", "reference"],
   });
   const fx = await fixture(context, "AGGREGATE");
-  const lease = await acquireWorkspaceLease(fx.workspace, { now: instant(1) });
-  try {
-    const state = await setWorkspaceSetting(fx.workspace, lease, {
-      key: "knowledge.aggregateBytes", value: "65536", expectedVersion: 0, occurredAt: instant(2),
-    });
-    assert.equal(state.settings.find((entry) => entry.key === "knowledge.aggregateBytes").value, "65536");
-  } finally {
-    await lease.release();
-  }
+  const state = await setWorkspaceSetting(fx.workspace, {
+    key: "knowledge.aggregateBytes", value: "65536", occurredAt: instant(2),
+  });
+  assert.equal(state.settings.find((entry) => entry.key === "knowledge.aggregateBytes").value, "65536");
 });
 
 test("STORY-348 protocol validity values remain hardcoded rather than becoming settings", async (context) => {

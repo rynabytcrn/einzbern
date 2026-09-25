@@ -2,7 +2,7 @@
 // TCRN-CROSS-STORY-354 (round 2): walkControlTree's boundReadFileBytes applied the
 // generic PROTOCOL_LIMITS.maxCanonicalBytes ceiling (1 MiB) to every control-tree
 // file, event segments included. That ceiling is right for small control documents
-// (workspace.json, extensions.json, lease/owner.json, ...) but wrong for
+// (workspace.json, extensions.json, ...) but wrong for
 // events/NNNNNN.ndjson: a segment legitimately grows up to its configured
 // segmentEventLimit (WORKSPACE_SEGMENT_BYTES_DEFAULT, 16 MiB, unless a workspace
 // was created with a smaller explicit limit) before rotating to the next segment,
@@ -23,7 +23,6 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  acquireWorkspaceLease,
   appendEvents,
   createProject,
   createSnapshotManifest,
@@ -62,45 +61,39 @@ async function fixture(context) {
 
 test("STORY-354 snapshot-manifest reads an event segment past the generic 1 MiB control-file limit", async (context) => {
   const fx = await fixture(context);
-  const lease = await acquireWorkspaceLease(fx.workspace, { now: instant(1) });
   const segmentPath = join(fx.workspace, controlDirectory, "events", "000001.ndjson");
   let manifestText;
   let state;
   let segmentBytes;
   let segmentSha256;
-  try {
-    state = await createProject(fx.workspace, lease, {
-      externalKey: "STORY-354-SEGLIMIT-PROJECT",
-      name: "Event segment limit coverage",
-      expectedVersion: 0,
-      occurredAt: instant(1),
-    });
-    const projectId = state.projects[0].id;
-    const deltas = [];
-    for (let i = 0; i < PAD_COUNT; i += 1) {
-      deltas.push(createWorkDelta({
-        projectId,
-        externalKey: `STORY-354-PAD-${i}`,
-        kind: "Incident",
-        parentId: null,
-        status: "active",
-        occurredAt: instant(2),
-      }));
-    }
-    state = await appendEvents(fx.workspace, lease, deltas, { expectedVersion: state.version, occurredAt: instant(2) });
-
-    const segmentStat = await stat(segmentPath);
-    segmentBytes = segmentStat.size;
-    assert.ok(
-      segmentBytes > PROTOCOL_LIMITS.maxCanonicalBytes,
-      `precondition: 000001.ndjson must exceed the snapshot read limit (${PROTOCOL_LIMITS.maxCanonicalBytes} bytes) to exercise the fix; got ${segmentBytes} bytes from ${PAD_COUNT} padding events`,
-    );
-    segmentSha256 = createHash("sha256").update(await readFile(segmentPath)).digest("hex");
-
-    manifestText = await createSnapshotManifest(fx.workspace, lease);
-  } finally {
-    await lease.release();
+  state = await createProject(fx.workspace, {
+    externalKey: "STORY-354-SEGLIMIT-PROJECT",
+    name: "Event segment limit coverage",
+    occurredAt: instant(1),
+  });
+  const projectId = state.projects[0].id;
+  const deltas = [];
+  for (let i = 0; i < PAD_COUNT; i += 1) {
+    deltas.push(createWorkDelta({
+      projectId,
+      externalKey: `STORY-354-PAD-${i}`,
+      kind: "Incident",
+      parentId: null,
+      status: "active",
+      occurredAt: instant(2),
+    }));
   }
+  state = await appendEvents(fx.workspace, deltas, { occurredAt: instant(2) });
+
+  const segmentStat = await stat(segmentPath);
+  segmentBytes = segmentStat.size;
+  assert.ok(
+    segmentBytes > PROTOCOL_LIMITS.maxCanonicalBytes,
+    `precondition: 000001.ndjson must exceed the snapshot read limit (${PROTOCOL_LIMITS.maxCanonicalBytes} bytes) to exercise the fix; got ${segmentBytes} bytes from ${PAD_COUNT} padding events`,
+  );
+  segmentSha256 = createHash("sha256").update(await readFile(segmentPath)).digest("hex");
+
+  manifestText = await createSnapshotManifest(fx.workspace);
 
   const manifest = JSON.parse(manifestText);
   assert.equal(manifest.schemaVersion, "tcrn.workspace-snapshot-manifest.v1");

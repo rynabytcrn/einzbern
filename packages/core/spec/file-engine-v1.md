@@ -61,24 +61,23 @@ hostile parent-component replacement outside the process.
 
 ## Writes, events, and recovery
 
-Every mutation requires a live single-writer lease, an exact expected Workspace
-version, and a strict RFC 3339 instant. Writes use an exclusive no-follow
-descriptor, file synchronization, atomic rename, target identity validation,
-and parent-directory synchronization. The Workspace version is the number of
-validated events, so the event chain is also the CAS authority.
+Every mutation takes the engine write lock and a strict RFC 3339 instant; there is no
+caller-supplied version (TCRN-CROSS-STORY-467 R1). The lock is the file `write.lock` in
+the control directory, created exclusively; a second writer waits with backoff until it
+is released, so two concurrent writes both land, in order. Under the lock the engine
+reads the latest state, builds each delta against it, and appends; event construction,
+authoritative segment commit, replay and the derived-view write all happen while it is
+held. A lock whose holder is gone (same host and process not alive) or that is older
+than the stale bound is broken under a short-lived breaker file, after the breaker
+re-reads it and finds the same owner. Every write receipt echoes the record ids written
+beside the new version and head event hash. Writes use an exclusive no-follow
+descriptor, file synchronization, atomic rename, target identity validation, and
+parent-directory synchronization. The Workspace version is the number of validated
+events.
 
-Mutation admission is serialized for every lease generation by a single-link
-`lease/mutation.claim` created with `O_EXCL|O_NOFOLLOW`. The claim binds its
-random identity to the owning lease token, and expected-version validation,
-event construction, authoritative segment commit, replay, and derived-view
-write all occur while that claim is held. A simultaneous alias of the same
-lease cannot bypass the filesystem claim: it fails with
-`WORKSPACE_CAS_MISMATCH`, and replay contains only the admitted event. Normal
-cleanup verifies and quarantines the exact claim identity before removal.
-A process crash retains the claim inside its lease generation; stale-lease
-recovery removes it only while quarantining that already identity-bound stale
-generation. Linked, special, malformed, foreign-generation, or replaced claims
-fail with `WORKSPACE_LEASE_INVALID`. This serializer shares the cooperative P1
+Earlier releases serialized writers with a lease directory, a recovery claim and a
+per-lease mutation claim, and compared an expected version; chains they wrote replay
+unchanged, because none of that state was ever part of an event. This serializer shares the cooperative P1
 Option-B boundary and does not claim safety from hostile concurrent replacement
 of ancestor path components.
 

@@ -62,9 +62,8 @@ export interface KnowledgeBatchProblem {
 }
 
 export interface KnowledgeBatchOptions {
-  // The STORE's version, not the chain's -- the same meaning every knowledge verb gives
-  // this name, and the trap TCRN-CROSS-INC-226 measured a session falling into.
-  readonly expectedVersion: number;
+  // TCRN-CROSS-STORY-467 R1: no expected store version; each member is applied to the
+  // store as it stands, in order.
   readonly occurredAt: string;
   // Rebase the store to the chain head before the first member. In a workspace being
   // written to this is the normal case, because any chain event invalidates the store
@@ -154,13 +153,13 @@ export async function applyKnowledgeBatch(
     throw new WorkspaceError("WORK_BATCH_REFUSED", JSON.stringify({ stage: "shape", problems }));
   }
   const mutation = options.mutation ?? {};
-  let version = options.expectedVersion;
+  let version: number | null = null;
   const applied: JsonValue[] = [];
   // Revisions observed inside this batch, so a later member acting on an earlier
   // member's card needs no revision arithmetic from the caller.
   const revisions = new Map<string, number>();
   if (options.alignFirst === true) {
-    const aligned = await rebaseKnowledgeStore(workspaceRoot, { expectedVersion: version, at: options.occurredAt }, mutation);
+    const aligned = await rebaseKnowledgeStore(workspaceRoot, { at: options.occurredAt }, mutation);
     version = aligned.version as number;
     applied.push({ verb: "knowledge-rebase", reasonCode: aligned.reasonCode as string, version });
   }
@@ -171,8 +170,7 @@ export async function applyKnowledgeBatch(
         const memberProvider = options.languageProviders?.get(String(member.externalKey ?? ""))
           ?? options.languageProviders?.get("NEW");
         const result = await createKnowledgeUnit(workspaceRoot, {
-          ...(member as unknown as Omit<CreateKnowledgeUnitInput, "expectedVersion" | "occurredAt">),
-          expectedVersion: version,
+          ...(member as unknown as Omit<CreateKnowledgeUnitInput, "occurredAt">),
           occurredAt: options.occurredAt,
         }, memberProvider === undefined ? mutation : { ...mutation, languageProvider: memberProvider });
         version = result.version as number;
@@ -197,7 +195,7 @@ export async function applyKnowledgeBatch(
           notEvaluated: Array.from({ length: members.length - index - 1 }, (_, offset) => index + offset + 1),
         }));
       }
-      const shared = { expectedVersion: version, expectedRevision, occurredAt: options.occurredAt, id };
+      const shared = { expectedRevision, occurredAt: options.occurredAt, id };
       const result = member.verb === "knowledge-policy"
         ? await updateKnowledgeStalenessPolicy(workspaceRoot, {
           ...shared,

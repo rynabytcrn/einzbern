@@ -50,14 +50,6 @@ Each entry is `{name, availability, mutates, flags}`, optionally plus
     are exactly the flags whose dispatcher accepts the `"null"` alias, so a caller
     can decide from the catalog alone which spellings a flag admits, and `work-list`
     `parent-id` resolves both spellings identically when filtering.
-  - `headSentinel` — always `true`, marking an `expected-version` flag that also
-    accepts the literal `head`, which the verb resolves to the current version
-    under the held workspace lease (opt-in optimistic-concurrency bypass). Which
-    verbs carry it is read from the catalog itself — `commands`, or `<verb>
-    --help` for one of them — and is deliberately not restated here: this
-    paragraph said "the six" while the catalog carried it on twenty-eight, and a
-    count written in prose beside a machine fact only ever drifts away from it.
-    Knowledge-marker mutations reject `head` with `CLI_ARGUMENT_MALFORMED`.
 
 ## Parity and stability
 

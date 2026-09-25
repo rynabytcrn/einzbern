@@ -8,7 +8,6 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 
 import {
-  acquireWorkspaceLease,
   createProject,
   initializeWorkspace,
   materializeWorkspace,
@@ -50,19 +49,13 @@ async function legacyFixture(context) {
   }
   const workspace = join(base, "workspace");
   await initializeWorkspace({ roots, externalKey: "INC259-LEGACY-FIXTURE", createdAt: "2026-09-02T03:00:00Z", segmentEventLimit: 2 });
-  const lease = await acquireWorkspaceLease(workspace, { now: "2026-09-02T03:00:01Z" });
-  try {
-    let state = await materializeWorkspace(workspace);
-    for (let index = 0; index < 5; index += 1) {
-      state = await createProject(workspace, lease, {
-        externalKey: `INC259-PROJECT-${index}`,
-        name: `Project ${index}`,
-        expectedVersion: state.version,
-        occurredAt: `2026-09-02T03:00:0${index + 2}Z`,
-      });
-    }
-  } finally {
-    await lease.release();
+  let state = await materializeWorkspace(workspace);
+  for (let index = 0; index < 5; index += 1) {
+    state = await createProject(workspace, {
+      externalKey: `INC259-PROJECT-${index}`,
+      name: `Project ${index}`,
+      occurredAt: `2026-09-02T03:00:0${index + 2}Z`,
+    });
   }
   return { base, workspace };
 }

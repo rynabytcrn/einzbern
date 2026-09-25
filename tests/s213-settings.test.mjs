@@ -10,7 +10,6 @@ import { runCli } from "../dist/build/packages/cli/src/index.js";
 import {
   SETTINGS_CATALOG,
   SETTINGS_LAYER_KIND,
-  acquireWorkspaceLease,
   appendEvents,
   initializeWorkspace,
   materializeWorkspace,
@@ -50,7 +49,7 @@ function errorReason(args) {
   return runCli(args, { write() {} }).then(() => null, (error) => error?.reasonCode);
 }
 
-async function appendRetiredHistory(workspace, lease) {
+async function appendRetiredHistory(workspace) {
   const record = {
     schemaVersion: "tcrn.workspace-setting.v1",
     key: "execution.personalessDispatch",
@@ -62,14 +61,14 @@ async function appendRetiredHistory(workspace, lease) {
   };
   // Use appendEvents with a hand-built delta so the real createEvent hash path
   // constructs the synthetic history while createWorkspaceSettingRecord is bypassed.
-  return appendEvents(workspace, lease, [
+  return appendEvents(workspace, [
     (state) => ({
       payload: { operation: "settings.updated", record },
       projects: state.projects,
       work: state.work,
       settings: state.settings,
     }),
-  ], { expectedVersion: 0, occurredAt: instant(2) });
+  ], { occurredAt: instant(2) });
 }
 
 test("INIT-022 S213: catalog exposes every engine-consumed workspace setting", async (t) => {
@@ -85,7 +84,7 @@ test("INIT-022 S213: catalog exposes every engine-consumed workspace setting", a
 
 test("INIT-022 S213: unknown keys fail closed and registered writes receipt plus replay readback", async (t) => {
   const { workspace } = await fixture(t, "write");
-  const baseArgs = ["settings-set", "--workspace", workspace, "--expected-version", "0", "--at", instant(1), "--actor", "agent:codex"];
+  const baseArgs = ["settings-set", "--workspace", workspace, "--at", instant(1), "--actor", "agent:codex"];
   assert.equal(await errorReason([...baseArgs, "--key", "settings.not-registered", "--value", "manual"]), "SETTINGS_KEY_UNREGISTERED");
   assert.equal((await materializeWorkspace(workspace)).version, 0, "a rejected key must not append an event");
 
@@ -104,21 +103,15 @@ test("INIT-022 S213: unknown keys fail closed and registered writes receipt plus
   const catalog = await runRaw(["settings-catalog", "--workspace", workspace]);
   assert.equal(catalog.settings.find((entry) => entry.key === "backup.cadence").currentValue, "manual");
 
-  const lease = await acquireWorkspaceLease(workspace, { now: instant(2) });
-  try {
-    await assert.rejects(
-      setWorkspaceSetting(workspace, lease, {
-        expectedVersion: 1,
-        occurredAt: instant(3),
-        key: "backup.destination",
-        value: workspace,
-        actorId: "agent:codex",
-      }),
-      (error) => error?.reasonCode === "SETTINGS_VALUE_INVALID",
-    );
-  } finally {
-    await lease.release();
-  }
+  await assert.rejects(
+    setWorkspaceSetting(workspace, {
+      occurredAt: instant(3),
+      key: "backup.destination",
+      value: workspace,
+      actorId: "agent:codex",
+    }),
+    (error) => error?.reasonCode === "SETTINGS_VALUE_INVALID",
+  );
   assert.equal((await materializeWorkspace(workspace)).version, 1, "a rejected path must not append an event");
 });
 
@@ -137,43 +130,32 @@ test("STORY-366: article directories are workspace-relative by default and canno
 
 test("INC-321 S3: a retired settings.updated event replays from genesis and stays out of current settings", async (t) => {
   const { workspace } = await fixture(t, "retired-replay");
-  const lease = await acquireWorkspaceLease(workspace, { now: instant(1) });
-  try {
-    await appendRetiredHistory(workspace, lease);
-    const state = await materializeWorkspace(workspace);
-    assert.equal(state.version, 1);
-    assert.equal(state.events.length, 1);
-    assert.equal(state.settings.length, 0, "retired values are not materialized as current settings");
-    assert.equal(isRetiredSettingKey("execution.personalessDispatch"), true);
-    assert.equal(isRetiredSettingKey("backup.cadence"), false);
-    assert.equal(isRetiredSettingKey("settings.random"), false);
-  } finally {
-    await lease.release();
-  }
+  await appendRetiredHistory(workspace);
+  const state = await materializeWorkspace(workspace);
+  assert.equal(state.version, 1);
+  assert.equal(state.events.length, 1);
+  assert.equal(state.settings.length, 0, "retired values are not materialized as current settings");
+  assert.equal(isRetiredSettingKey("execution.personalessDispatch"), true);
+  assert.equal(isRetiredSettingKey("backup.cadence"), false);
+  assert.equal(isRetiredSettingKey("settings.random"), false);
 });
 
 test("INC-321 S3: the normal settings write path still rejects the retired key", async (t) => {
   const { workspace } = await fixture(t, "retired-write");
-  const lease = await acquireWorkspaceLease(workspace, { now: instant(1) });
-  try {
-    await appendRetiredHistory(workspace, lease);
-    await assert.rejects(
-      setWorkspaceSetting(workspace, lease, {
-        key: "execution.personalessDispatch",
-        value: "new-value",
-        expectedVersion: 1,
-        occurredAt: instant(3),
-      }),
-      (error) => error?.reasonCode === "SETTINGS_KEY_UNREGISTERED",
-    );
-    assert.throws(
-      () => settingsCatalogEntry("execution.personalessDispatch"),
-      (error) => error?.reasonCode === "SETTINGS_KEY_UNREGISTERED",
-    );
-    const state = await materializeWorkspace(workspace);
-    assert.equal(state.version, 1, "the rejected write does not append an event");
-    assert.equal(state.settings.length, 0);
-  } finally {
-    await lease.release();
-  }
+  await appendRetiredHistory(workspace);
+  await assert.rejects(
+    setWorkspaceSetting(workspace, {
+      key: "execution.personalessDispatch",
+      value: "new-value",
+      occurredAt: instant(3),
+    }),
+    (error) => error?.reasonCode === "SETTINGS_KEY_UNREGISTERED",
+  );
+  assert.throws(
+    () => settingsCatalogEntry("execution.personalessDispatch"),
+    (error) => error?.reasonCode === "SETTINGS_KEY_UNREGISTERED",
+  );
+  const state = await materializeWorkspace(workspace);
+  assert.equal(state.version, 1, "the rejected write does not append an event");
+  assert.equal(state.settings.length, 0);
 });

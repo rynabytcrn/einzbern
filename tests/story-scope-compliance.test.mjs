@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import { COMMAND_CATALOG, runCli } from "../dist/build/packages/cli/src/index.js";
-import { acquireWorkspaceLease, annotateWork, createProject, createWork, initializeWorkspace, transitionWork } from "../dist/build/packages/core/src/index.js";
+import { annotateWork, createProject, createWork, initializeWorkspace, transitionWork } from "../dist/build/packages/core/src/index.js";
 import { storyScopeNamesOwnerDecider, validateStoryScope } from "../dist/build/packages/core/src/story-scope-compliance.js";
 import { storyScopeNamesOwnerDecider as closeoutNamesOwnerDecider, validateStoryScope as validateCloseoutStoryScope } from "../scripts/story-scope-compliance.mjs";
 
@@ -174,27 +174,18 @@ describe("STORY-209 Story scope contract", () => {
       }
       const workspace = join(base, "workspace");
       await initializeWorkspace({ roots, externalKey: "FIXTURE-STORY-SCOPE-CLI", createdAt: "2026-08-09T00:00:00Z", segmentEventLimit: 64 });
-      let lease = await acquireWorkspaceLease(workspace, { now: "2026-08-09T00:00:01Z" });
-      let projectId;
-      let epicId;
-      try {
-        let state = await createProject(workspace, lease, { expectedVersion: 0, occurredAt: "2026-08-09T00:00:02Z", externalKey: "PROJECT-STORY-SCOPE", name: "Story scope" });
-        projectId = state.projects[0].id;
-        state = await createWork(workspace, lease, { expectedVersion: 1, occurredAt: "2026-08-09T00:00:03Z", projectId, externalKey: "INIT-STORY-SCOPE", kind: "Initiative", parentId: null });
-        const initiativeId = state.work.find((record) => record.externalKey === "INIT-STORY-SCOPE").id;
-        state = await createWork(workspace, lease, { expectedVersion: 2, occurredAt: "2026-08-09T00:00:04Z", projectId, externalKey: "EPIC-STORY-SCOPE", kind: "Epic", parentId: initiativeId });
-        epicId = state.work.find((record) => record.externalKey === "EPIC-STORY-SCOPE").id;
-      } finally {
-        await lease.release();
-      }
+      const seeded = await createProject(workspace, { occurredAt: "2026-08-09T00:00:02Z", externalKey: "PROJECT-STORY-SCOPE", name: "Story scope" });
+      const projectId = seeded.projects[0].id;
+      const withInitiative = await createWork(workspace, { occurredAt: "2026-08-09T00:00:03Z", projectId, externalKey: "INIT-STORY-SCOPE", kind: "Initiative", parentId: null });
+      const initiativeId = withInitiative.work.find((record) => record.externalKey === "INIT-STORY-SCOPE").id;
+      const withEpic = await createWork(workspace, { occurredAt: "2026-08-09T00:00:04Z", projectId, externalKey: "EPIC-STORY-SCOPE", kind: "Epic", parentId: initiativeId });
+      const epicId = withEpic.work.find((record) => record.externalKey === "EPIC-STORY-SCOPE").id;
       await assert.rejects(
-        () => runCli(["work-create", "--title", "record-title", "--workspace", workspace, "--expected-version", "3", "--at", "2026-08-09T00:00:05Z", "--project-id", projectId, "--external-key", "STORY-NO-SCOPE", "--kind", "Story", "--parent-id", epicId], { write() {} }),
+        () => runCli(["work-create", "--title", "record-title", "--workspace", workspace, "--at", "2026-08-09T00:00:05Z", "--project-id", projectId, "--external-key", "STORY-NO-SCOPE", "--kind", "Story", "--parent-id", epicId], { write() {} }),
         (error) => error?.reasonCode === "WORKSPACE_STORY_SCOPE_REQUIRED",
       );
 
-      lease = await acquireWorkspaceLease(workspace, { now: "2026-08-09T00:00:06Z" });
-      let state = await createWork(workspace, lease, {
-        expectedVersion: 3,
+      let state = await createWork(workspace, {
         occurredAt: "2026-08-09T00:00:07Z",
         projectId,
         externalKey: "STORY-OWNER-ACCEPTANCE",
@@ -203,31 +194,22 @@ describe("STORY-209 Story scope contract", () => {
         scope: scope(),
       });
       const storyId = state.work.find((record) => record.externalKey === "STORY-OWNER-ACCEPTANCE").id;
-      await lease.release();
 
-      lease = await acquireWorkspaceLease(workspace, { now: "2026-08-09T00:00:08Z" });
-      state = await transitionWork(workspace, lease, { expectedVersion: 4, occurredAt: "2026-08-09T00:00:09Z", id: storyId, status: "ready" });
-      await lease.release();
-      lease = await acquireWorkspaceLease(workspace, { now: "2026-08-09T00:00:10Z" });
-      state = await transitionWork(workspace, lease, { expectedVersion: 5, occurredAt: "2026-08-09T00:00:11Z", id: storyId, status: "active" });
-      await lease.release();
-      lease = await acquireWorkspaceLease(workspace, { now: "2026-08-09T00:00:12Z" });
+      state = await transitionWork(workspace, { occurredAt: "2026-08-09T00:00:09Z", id: storyId, status: "ready" });
+      state = await transitionWork(workspace, { occurredAt: "2026-08-09T00:00:11Z", id: storyId, status: "active" });
       await assert.rejects(
-        () => transitionWork(workspace, lease, { expectedVersion: 6, occurredAt: "2026-08-09T00:00:13Z", id: storyId, status: "done" }),
+        () => transitionWork(workspace, { occurredAt: "2026-08-09T00:00:13Z", id: storyId, status: "done" }),
         (error) => error?.reasonCode === "WORKSPACE_OWNER_ACCEPTANCE_REQUIRED",
       );
-      state = await annotateWork(workspace, lease, {
-        expectedVersion: 6,
+      state = await annotateWork(workspace, {
         occurredAt: "2026-08-09T00:00:14Z",
         id: storyId,
         decidedBy: ["minutes:" + "a".repeat(24)],
       });
-      await lease.release();
       let output = "";
       await runCli([
         "work-transition",
         "--workspace", workspace,
-        "--expected-version", "7",
         "--at", "2026-08-09T00:00:15Z",
         "--id", storyId,
         "--status", "done",

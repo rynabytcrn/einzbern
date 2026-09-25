@@ -13,8 +13,8 @@
 // → Epic(Initiative) → Story(Epic) → Subtask(Story). The event mix mimics a real
 // governed chain: a project, one Initiative, a handful of Epics, `--events` Stories
 // spread across the Epics, a tail of Subtasks, and a transition pass that moves a
-// fraction of the Stories to active/done. Every mutating call chains
-// `--expected-version` from the previous call's returned version (a CAS, not a guess).
+// fraction of the Stories to active/done. Every mutating call runs under the engine
+// write lock and reports the version it produced.
 //
 // Usage:
 //   node scripts/bench/synthesize-chain.mjs --events <n> [--base-dir <path>]
@@ -81,19 +81,19 @@ const init = run(["init", "--workspace", workspace, "--framework", REPO_ROOT,
   "--release-trust", join(wsDir, "release-trust"), "--external-key", `S12-SYNTH-${eventsTarget}`, "--at", at()]);
 let version = init.version;
 
-const project = run(["project-create", "--workspace", workspace, "--expected-version", String(version),
+const project = run(["project-create", "--workspace", workspace,
   "--at", at(), "--external-key", `S12-PROJECT-${eventsTarget}`, "--name", `S12 synthetic ${eventsTarget}`]);
 version = project.version;
 const projectId = project.record.id;
 
-const initiative = run(["work-create", "--title", "record-title", "--workspace", workspace, "--expected-version", String(version),
+const initiative = run(["work-create", "--title", "record-title", "--workspace", workspace,
   "--at", at(), "--project-id", projectId, "--external-key", `S12-INITIATIVE-${eventsTarget}`, "--kind", "Initiative"]);
 version = initiative.version;
 const initiativeId = initiative.record.id;
 
 const epics = [];
 for (let e = 0; e < epicCount; e += 1) {
-  const epic = run(["work-create", "--title", "record-title", "--workspace", workspace, "--expected-version", String(version),
+  const epic = run(["work-create", "--title", "record-title", "--workspace", workspace,
     "--at", at(), "--project-id", projectId, "--parent-id", initiativeId,
     "--external-key", `S12-EPIC-${eventsTarget}-${e}`, "--kind", "Epic"]);
   version = epic.version;
@@ -115,7 +115,7 @@ const syntheticStoryScope = [
 ].join("\n\n");
 for (let s = 0; s < eventsTarget; s += 1) {
   const epicId = epics[s % epics.length];
-  const story = run(["work-create", "--title", "record-title", "--workspace", workspace, "--expected-version", String(version),
+  const story = run(["work-create", "--title", "record-title", "--workspace", workspace,
     "--at", at(), "--project-id", projectId, "--parent-id", epicId,
     "--external-key", `S12-STORY-${eventsTarget}-${s}`, "--kind", "Story", "--scope", syntheticStoryScope]);
   version = story.version;
@@ -128,7 +128,7 @@ const subtaskTarget = Math.max(1, Math.floor(eventsTarget * 0.05));
 const subtasks = [];
 for (let t = 0; t < subtaskTarget; t += 1) {
   const storyId = stories[t % stories.length];
-  const sub = run(["work-create", "--title", "record-title", "--workspace", workspace, "--expected-version", String(version),
+  const sub = run(["work-create", "--title", "record-title", "--workspace", workspace,
     "--at", at(), "--project-id", projectId, "--parent-id", storyId,
     "--external-key", `S12-SUB-${eventsTarget}-${t}`, "--kind", "Subtask"]);
   version = sub.version;
@@ -138,7 +138,7 @@ for (let t = 0; t < subtaskTarget; t += 1) {
 const transitionCount = Math.floor(stories.length * transitionFraction);
 for (let t = 0; t < transitionCount; t += 1) {
   const id = stories[t];
-  const ready = run(["work-transition", "--workspace", workspace, "--expected-version", String(version),
+  const ready = run(["work-transition", "--workspace", workspace,
     "--at", at(), "--id", id, "--status", "ready"]);
   version = ready.version;
 }

@@ -8,7 +8,6 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  acquireWorkspaceLease,
   applyKnowledgeBatch,
   createKnowledgeUnit,
   createProject,
@@ -35,20 +34,15 @@ async function fixture() {
   }
   const workspace = join(base, "workspace");
   await initializeWorkspace({ roots, externalKey: "FIXTURE-INC-256", createdAt: instant(1), segmentEventLimit: 64 });
-  const lease = await acquireWorkspaceLease(workspace, { now: instant(2) });
   let project;
   let work;
-  try {
-    project = await createProject(workspace, lease, {
-      expectedVersion: 0, occurredAt: instant(3), externalKey: "INC-256-PROJECT", name: "INC-256",
-    });
-    work = await createWork(workspace, lease, {
-      expectedVersion: project.version, occurredAt: instant(4), projectId: project.projects[0].id,
-      externalKey: "INC-256-WORK", kind: "Incident", parentId: null, status: "active",
-    });
-  } finally {
-    await lease.release();
-  }
+  project = await createProject(workspace, {
+    occurredAt: instant(3), externalKey: "INC-256-PROJECT", name: "INC-256",
+  });
+  work = await createWork(workspace, {
+    occurredAt: instant(4), projectId: project.projects[0].id,
+    externalKey: "INC-256-WORK", kind: "Incident", parentId: null, status: "active",
+  });
   await initializeKnowledgeStore(workspace);
   return { base, workspace, projectId: project.projects[0].id, workId: work.work.find((record) => record.externalKey === "INC-256-WORK").id };
 }
@@ -99,7 +93,7 @@ test("INC-256 knowledge-batch migrates all existing cards to no expiry and prese
       // TCRN-CROSS-STORY-365: a relaxed-kind card with source and evidence is written
       // promoted; the strict kinds (guide, reference) still reach promotion this way.
       const promoted = result.promotionState === "promoted" ? result : await transitionKnowledgePromotion(fx.workspace, {
-        expectedVersion: version, expectedRevision: result.revision, occurredAt: instant(6), id: result.id, promotionState: "promoted",
+        expectedRevision: result.revision, occurredAt: instant(6), id: result.id, promotionState: "promoted",
       });
       version = promoted.version;
       created.push({ id: result.id, revision: promoted.revision, kind });
@@ -114,7 +108,7 @@ test("INC-256 knowledge-batch migrates all existing cards to no expiry and prese
       id: record.id,
       expectedRevision: record.revision,
       stalenessPolicy: { maximumAgeDays: null, unknownDisposition: "fail-closed" },
-    }))), { expectedVersion: version, occurredAt: instant(7) });
+    }))), { occurredAt: instant(7) });
     assert.equal(result.reasonCode, "KNOWLEDGE_BATCH_APPLIED");
     assert.equal(result.members, 4);
     assert.equal(result.applied.length, 4);
@@ -138,7 +132,7 @@ test("INC-256 malformed policy red leg refuses the batch before any migration", 
     const created = await createKnowledgeUnit(fx.workspace, card(fx, "CARD-RED", "fact", 0));
     await assert.rejects(
       applyKnowledgeBatch(fx.workspace, policyBatch([{ verb: "knowledge-policy", id: created.id, expectedRevision: 1 }]), {
-        expectedVersion: 1, occurredAt: instant(7),
+        occurredAt: instant(7),
       }),
       (error) => error?.reasonCode === "WORK_BATCH_REFUSED",
     );
@@ -157,12 +151,12 @@ test("INC-256 policy migration also updates retired metadata without requiring a
     // on the write's own version and revision.
     const created = await createKnowledgeUnit(fx.workspace, card(fx, "CARD-RETIRED", "guide", 0));
     await retireKnowledgeUnit(fx.workspace, {
-      expectedVersion: created.version, expectedRevision: created.revision, occurredAt: instant(7), id: created.id,
+      expectedRevision: created.revision, occurredAt: instant(7), id: created.id,
     });
     const result = await applyKnowledgeBatch(fx.workspace, policyBatch([{
       verb: "knowledge-policy", id: created.id, expectedRevision: 2,
       stalenessPolicy: { maximumAgeDays: null, unknownDisposition: "fail-closed" },
-    }]), { expectedVersion: 2, occurredAt: instant(8) });
+    }]), { occurredAt: instant(8) });
     assert.equal(result.reasonCode, "KNOWLEDGE_BATCH_APPLIED");
     const retired = (await listKnowledgeMetadata(fx.workspace, { at: instant(9), selection: "all" })).records.find((record) => record.id === created.id);
     assert.equal(retired.lifecycle, "retired");

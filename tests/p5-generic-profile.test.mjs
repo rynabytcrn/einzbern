@@ -15,7 +15,6 @@ import {
   GENERIC_PROFILE_ADMISSION_RECEIPT_VERSION,
   GENERIC_PROFILE_BASE_DIGEST,
   GENERIC_PROFILE_OPERATIONS,
-  acquireWorkspaceLease,
   authorizeGenericProfileOperation,
   calculateGenericProfileAdmissionClaims,
   createProject,
@@ -1009,53 +1008,45 @@ test("empty non-project-specific Workspace cold-start completes the minimal plan
       segmentEventLimit: 64,
     });
     const workspaceRoot = join(base, "workspace");
-    const lease = await acquireWorkspaceLease(workspaceRoot, { now: "2026-07-11T19:00:01Z" });
-    try {
-      authorizeGenericProfileOperation(resolutionRequest, admitted.context, "project.create", context);
-      state = await createProject(workspaceRoot, lease, {
-        expectedVersion: 0,
-        occurredAt: "2026-07-11T19:00:01Z",
-        externalKey: "GENERIC-PROJECT",
-        name: "Generic Project",
+    authorizeGenericProfileOperation(resolutionRequest, admitted.context, "project.create", context);
+    state = await createProject(workspaceRoot, {
+      occurredAt: "2026-07-11T19:00:01Z",
+      externalKey: "GENERIC-PROJECT",
+      name: "Generic Project",
+    });
+    const projectId = state.projects[0].id;
+    const records = [
+      ["GENERIC-INITIATIVE", "Initiative", null],
+      ["GENERIC-EPIC", "Epic", "GENERIC-INITIATIVE"],
+      ["GENERIC-STORY", "Story", "GENERIC-EPIC"],
+      ["GENERIC-SUBTASK", "Subtask", "GENERIC-STORY"],
+    ];
+    for (let index = 0; index < records.length; index += 1) {
+      const [key, kind, parentKey] = records[index];
+      authorizeGenericProfileOperation(resolutionRequest, admitted.context, "work.create", context);
+      const parentId = parentKey === null ? null : state.work.find((record) => record.externalKey === parentKey).id;
+      state = await createWork(workspaceRoot, {
+        occurredAt: `2026-07-11T19:00:0${index + 2}Z`,
+        projectId,
+        externalKey: key,
+        kind,
+        parentId,
+        status: "planned",
+        scope: kind === "Story" ? GENERIC_STORY_SCOPE : undefined,
       });
-      const projectId = state.projects[0].id;
-      const records = [
-        ["GENERIC-INITIATIVE", "Initiative", null],
-        ["GENERIC-EPIC", "Epic", "GENERIC-INITIATIVE"],
-        ["GENERIC-STORY", "Story", "GENERIC-EPIC"],
-        ["GENERIC-SUBTASK", "Subtask", "GENERIC-STORY"],
-      ];
-      for (let index = 0; index < records.length; index += 1) {
-        const [key, kind, parentKey] = records[index];
-        authorizeGenericProfileOperation(resolutionRequest, admitted.context, "work.create", context);
-        const parentId = parentKey === null ? null : state.work.find((record) => record.externalKey === parentKey).id;
-        state = await createWork(workspaceRoot, lease, {
-          expectedVersion: state.version,
-          occurredAt: `2026-07-11T19:00:0${index + 2}Z`,
-          projectId,
-          externalKey: key,
-          kind,
-          parentId,
-          status: "planned",
-          scope: kind === "Story" ? GENERIC_STORY_SCOPE : undefined,
+    }
+    const completionOrder = ["GENERIC-SUBTASK", "GENERIC-STORY", "GENERIC-EPIC", "GENERIC-INITIATIVE"];
+    let second = 6;
+    for (const key of completionOrder) {
+      for (const status of ["ready", "active", "done"]) {
+        authorizeGenericProfileOperation(resolutionRequest, admitted.context, "work.transition", context);
+        state = await transitionWork(workspaceRoot, {
+          occurredAt: `2026-07-11T19:00:${String(second).padStart(2, "0")}Z`,
+          id: state.work.find((record) => record.externalKey === key).id,
+          status,
         });
+        second += 1;
       }
-      const completionOrder = ["GENERIC-SUBTASK", "GENERIC-STORY", "GENERIC-EPIC", "GENERIC-INITIATIVE"];
-      let second = 6;
-      for (const key of completionOrder) {
-        for (const status of ["ready", "active", "done"]) {
-          authorizeGenericProfileOperation(resolutionRequest, admitted.context, "work.transition", context);
-          state = await transitionWork(workspaceRoot, lease, {
-            expectedVersion: state.version,
-            occurredAt: `2026-07-11T19:00:${String(second).padStart(2, "0")}Z`,
-            id: state.work.find((record) => record.externalKey === key).id,
-            status,
-          });
-          second += 1;
-        }
-      }
-    } finally {
-      await lease.release();
     }
     await admitted.close();
     const validated = await validateWorkspace(workspaceRoot);

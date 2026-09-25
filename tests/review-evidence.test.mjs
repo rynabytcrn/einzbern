@@ -62,9 +62,9 @@ async function reviewWorkspace(t, verifyCommand) {
   const at = (second) => new Date(Date.UTC(2026, 0, 1) + second * 1000).toISOString().replace(/\.\d+Z$/u, "Z");
   await initializeWorkspace({ roots, externalKey: "STORY-375-REVIEW-EVIDENCE", createdAt: at(0) });
   const workspace = join(base, "workspace");
-  const project = await runCliJson(["project-create", "--workspace", workspace, "--expected-version", "0", "--at", at(1), "--external-key", "FIXTURE-PROJECT", "--name", "Fixture"]);
-  const work = await runCliJson(["work-create", "--workspace", workspace, "--expected-version", String(project.version), "--at", at(2), "--project-id", project.record.id, "--external-key", "FIXTURE-WORK", "--kind", "Initiative", "--status", "active", "--scope", "fixture scope", "--title", "Fixture work"]);
-  await runCliJson(["work-annotate", "--workspace", workspace, "--expected-version", String(work.version), "--at", at(3), "--id", work.record.id, "--verify", verifyCommand]);
+  const project = await runCliJson(["project-create", "--workspace", workspace, "--at", at(1), "--external-key", "FIXTURE-PROJECT", "--name", "Fixture"]);
+  const work = await runCliJson(["work-create", "--workspace", workspace, "--at", at(2), "--project-id", project.record.id, "--external-key", "FIXTURE-WORK", "--kind", "Initiative", "--status", "active", "--scope", "fixture scope", "--title", "Fixture work"]);
+  await runCliJson(["work-annotate", "--workspace", workspace, "--at", at(3), "--id", work.record.id, "--verify", verifyCommand]);
   return { workspace, workId: work.record.id };
 }
 

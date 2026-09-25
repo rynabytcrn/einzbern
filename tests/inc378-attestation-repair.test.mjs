@@ -46,7 +46,7 @@ async function cli(argv) {
 
 // One project-create, attested unless told otherwise; returns the new head event hash.
 async function write(fx, key, attested = true) {
-  const result = await cli(["project-create", "--workspace", fx.workspace, "--expected-version", String(fx.version), "--at", instant(fx.version + 1),
+  const result = await cli(["project-create", "--workspace", fx.workspace, "--at", instant(fx.version + 1),
     "--external-key", key, "--name", key, ...(attested ? ["--attest-dir", fx.attestDir] : [])]);
   assert.equal(result.ok, true, JSON.stringify(result));
   fx.version += 1;
@@ -441,7 +441,7 @@ test("STORY-458 R3: attestation-verify lists single writes without a receipt and
   const projectId = (await cli(["project-list", "--workspace", fx.workspace])).value.records[0].id;
   const batchFile = join(fx.base, "batch.json");
   await writeFile(batchFile, JSON.stringify({ schemaVersion: "tcrn.work-batch.v1", members: [0, 1, 2].map((index) => ({ verb: "work-create", projectId, externalKey: `S458-${index}`, kind: "Incident", parentId: null, status: "active", title: `S458 ${index}` })) }));
-  const batched = await cli(["work-batch", "--workspace", fx.workspace, "--expected-version", String(fx.version), "--at", instant(fx.version + 1), "--from-file", batchFile, "--attest-dir", fx.attestDir]);
+  const batched = await cli(["work-batch", "--workspace", fx.workspace, "--at", instant(fx.version + 1), "--from-file", batchFile, "--attest-dir", fx.attestDir]);
   assert.equal(batched.ok, true, JSON.stringify(batched));
   fx.version += 3;
   const unattested = await write(fx, "PROJECT-U1", false);

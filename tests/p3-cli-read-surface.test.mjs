@@ -9,7 +9,6 @@ import test from "node:test";
 
 import { COMMAND_CATALOG, runCli } from "../dist/build/packages/cli/src/index.js";
 import {
-  acquireWorkspaceLease,
   annotateWork,
   createProject,
   createWork,
@@ -46,27 +45,22 @@ async function fixture(context) {
   }
   const workspace = join(base, "workspace");
   await initializeWorkspace({ roots, externalKey: "FIXTURE-CLI-READ", createdAt: instant(1), segmentEventLimit: 64 });
-  const lease = await acquireWorkspaceLease(workspace, { now: instant(2) });
   const ids = {};
-  try {
-    let v = 0;
-    const at = () => instant(v + 3);
-    let s = await createProject(workspace, lease, { expectedVersion: v, occurredAt: at(), externalKey: "PROJECT-A", name: "A" }); v += 1;
-    ids.projectA = s.projects.find((r) => r.externalKey === "PROJECT-A").id;
-    s = await createProject(workspace, lease, { expectedVersion: v, occurredAt: at(), externalKey: "PROJECT-B", name: "B" }); v += 1;
-    ids.projectB = s.projects.find((r) => r.externalKey === "PROJECT-B").id;
-    s = await createWork(workspace, lease, { expectedVersion: v, occurredAt: at(), projectId: ids.projectA, externalKey: "INIT-A", kind: "Initiative", parentId: null }); v += 1;
-    ids.initA = s.work.find((r) => r.externalKey === "INIT-A").id;
-    s = await createWork(workspace, lease, { expectedVersion: v, occurredAt: at(), projectId: ids.projectA, externalKey: "EPIC-A", kind: "Epic", parentId: ids.initA }); v += 1;
-    ids.epicA = s.work.find((r) => r.externalKey === "EPIC-A").id;
-    s = await createWork(workspace, lease, { expectedVersion: v, occurredAt: at(), projectId: ids.projectB, externalKey: "INIT-B", kind: "Initiative", parentId: null }); v += 1;
-    ids.initB = s.work.find((r) => r.externalKey === "INIT-B").id;
-    s = await createWork(workspace, lease, { expectedVersion: v, occurredAt: at(), projectId: ids.projectA, externalKey: "STORY-A", kind: "Story", parentId: ids.epicA, status: "ready", scope: STORY_SCOPE }); v += 1;
-    ids.storyA = s.work.find((r) => r.externalKey === "STORY-A").id;
-    s = await deleteWork(workspace, lease, { expectedVersion: v, occurredAt: at(), id: ids.storyA }); v += 1;
-  } finally {
-    await lease.release();
-  }
+  let v = 0;
+  const at = () => instant(v + 3);
+  let s = await createProject(workspace, { occurredAt: at(), externalKey: "PROJECT-A", name: "A" }); v += 1;
+  ids.projectA = s.projects.find((r) => r.externalKey === "PROJECT-A").id;
+  s = await createProject(workspace, { occurredAt: at(), externalKey: "PROJECT-B", name: "B" }); v += 1;
+  ids.projectB = s.projects.find((r) => r.externalKey === "PROJECT-B").id;
+  s = await createWork(workspace, { occurredAt: at(), projectId: ids.projectA, externalKey: "INIT-A", kind: "Initiative", parentId: null }); v += 1;
+  ids.initA = s.work.find((r) => r.externalKey === "INIT-A").id;
+  s = await createWork(workspace, { occurredAt: at(), projectId: ids.projectA, externalKey: "EPIC-A", kind: "Epic", parentId: ids.initA }); v += 1;
+  ids.epicA = s.work.find((r) => r.externalKey === "EPIC-A").id;
+  s = await createWork(workspace, { occurredAt: at(), projectId: ids.projectB, externalKey: "INIT-B", kind: "Initiative", parentId: null }); v += 1;
+  ids.initB = s.work.find((r) => r.externalKey === "INIT-B").id;
+  s = await createWork(workspace, { occurredAt: at(), projectId: ids.projectA, externalKey: "STORY-A", kind: "Story", parentId: ids.epicA, status: "ready", scope: STORY_SCOPE }); v += 1;
+  ids.storyA = s.work.find((r) => r.externalKey === "STORY-A").id;
+  s = await deleteWork(workspace, { occurredAt: at(), id: ids.storyA }); v += 1;
   return { base, workspace, ids };
 }
 
@@ -82,30 +76,23 @@ function reasonOf(args) {
 
 test("INIT-047 work-list search returns bounded scope and work-draft uses canonical headings", async (context) => {
   const fx = await fixture(context);
-  const lease = await acquireWorkspaceLease(fx.workspace, { now: instant(20) });
-  try {
-    const before = await validateWorkspace(fx.workspace);
-    await annotateWork(fx.workspace, lease, {
-      expectedVersion: before.version,
-      occurredAt: instant(21),
-      id: fx.ids.initA,
-      scope: "引擎检索范围与 scope 片段",
+  const before = await validateWorkspace(fx.workspace);
+  await annotateWork(fx.workspace, {
+    occurredAt: instant(21),
+    id: fx.ids.initA,
+    scope: "引擎检索范围与 scope 片段",
+  });
+  let state = await validateWorkspace(fx.workspace);
+  for (let index = 0; index < 3; index += 1) {
+    state = await createWork(fx.workspace, {
+      occurredAt: instant(22),
+      projectId: fx.ids.projectA,
+      externalKey: `DRAFT-STORY-${index}`,
+      kind: "Story",
+      parentId: fx.ids.epicA,
+      status: "planned",
+      scope: STORY_SCOPE,
     });
-    let state = await validateWorkspace(fx.workspace);
-    for (let index = 0; index < 3; index += 1) {
-      state = await createWork(fx.workspace, lease, {
-        expectedVersion: state.version,
-        occurredAt: instant(22),
-        projectId: fx.ids.projectA,
-        externalKey: `DRAFT-STORY-${index}`,
-        kind: "Story",
-        parentId: fx.ids.epicA,
-        status: "planned",
-        scope: STORY_SCOPE,
-      });
-    }
-  } finally {
-    await lease.release();
   }
   const searched = await run(["work-list", "--workspace", fx.workspace, "--search", "引擎", "--scope-bytes", "10"]);
   assert.equal(searched.total, 1);
@@ -121,18 +108,12 @@ test("INIT-047 work-list search returns bounded scope and work-draft uses canoni
 
 test("INIT-047 work-list search has an independent bounded scope projection", async (context) => {
   const fx = await fixture(context);
-  const lease = await acquireWorkspaceLease(fx.workspace, { now: instant(23) });
-  try {
-    const before = await validateWorkspace(fx.workspace);
-    await annotateWork(fx.workspace, lease, {
-      expectedVersion: before.version,
-      occurredAt: instant(24),
-      id: fx.ids.initA,
-      scope: "独立 work-list 搜索范围与 scope 投影",
-    });
-  } finally {
-    await lease.release();
-  }
+  const before = await validateWorkspace(fx.workspace);
+  await annotateWork(fx.workspace, {
+    occurredAt: instant(24),
+    id: fx.ids.initA,
+    scope: "独立 work-list 搜索范围与 scope 投影",
+  });
   const searched = await run(["work-list", "--workspace", fx.workspace, "--search", "独立", "--scope-bytes", "10"]);
   assert.equal(searched.total, 1);
   assert.equal(searched.records.length, 1);
@@ -142,23 +123,17 @@ test("INIT-047 work-list search has an independent bounded scope projection", as
 
 test("INIT-047 work-draft has an independent canonical heading and example projection", async (context) => {
   const fx = await fixture(context);
-  const lease = await acquireWorkspaceLease(fx.workspace, { now: instant(25) });
-  try {
-    let state = await validateWorkspace(fx.workspace);
-    for (let index = 0; index < 3; index += 1) {
-      state = await createWork(fx.workspace, lease, {
-        expectedVersion: state.version,
-        occurredAt: instant(26),
-        projectId: fx.ids.projectA,
-        externalKey: `INDEPENDENT-DRAFT-${index}`,
-        kind: "Story",
-        parentId: fx.ids.epicA,
-        status: "planned",
-        scope: STORY_SCOPE,
-      });
-    }
-  } finally {
-    await lease.release();
+  let state = await validateWorkspace(fx.workspace);
+  for (let index = 0; index < 3; index += 1) {
+    state = await createWork(fx.workspace, {
+      occurredAt: instant(26),
+      projectId: fx.ids.projectA,
+      externalKey: `INDEPENDENT-DRAFT-${index}`,
+      kind: "Story",
+      parentId: fx.ids.epicA,
+      status: "planned",
+      scope: STORY_SCOPE,
+    });
   }
   const draft = await run(["work-draft", "--workspace", fx.workspace, "--kind", "Story", "--project-id", fx.ids.projectA]);
   assert.deepEqual(draft.headings, [...STORY_SCOPE_HEADINGS]);
@@ -195,18 +170,12 @@ const chainInstant = (n) => new Date(Date.UTC(2026, 6, 11, 0, 0, n)).toISOString
 async function longChainFixture(context, count) {
   const layout = await emptyRoots(context, "tcrn-cli-events-");
   await initializeWorkspace({ roots: layout.roots, externalKey: "FIXTURE-CLI-EVENTS", createdAt: chainInstant(1), segmentEventLimit: 64 });
-  const lease = await acquireWorkspaceLease(layout.workspace, { now: chainInstant(2) });
-  try {
-    for (let version = 0; version < count; version += 1) {
-      await createProject(layout.workspace, lease, {
-        expectedVersion: version,
-        occurredAt: chainInstant(version + 3),
-        externalKey: `PROJECT-${String(version).padStart(3, "0")}`,
-        name: `Project ${version}`,
-      });
-    }
-  } finally {
-    await lease.release();
+  for (let version = 0; version < count; version += 1) {
+    await createProject(layout.workspace, {
+      occurredAt: chainInstant(version + 3),
+      externalKey: `PROJECT-${String(version).padStart(3, "0")}`,
+      name: `Project ${version}`,
+    });
   }
   return layout;
 }
@@ -223,24 +192,19 @@ async function longChainFixture(context, count) {
 async function fatChainFixture(context, annotations) {
   const layout = await emptyRoots(context, "tcrn-cli-fat-events-");
   await initializeWorkspace({ roots: layout.roots, externalKey: "FIXTURE-CLI-FAT", createdAt: chainInstant(1), segmentEventLimit: 64 });
-  const lease = await acquireWorkspaceLease(layout.workspace, { now: chainInstant(2) });
-  try {
-    const state = await createProject(layout.workspace, lease, { expectedVersion: 0, occurredAt: chainInstant(3), externalKey: "PROJECT-FAT", name: "Fat" });
-    const projectId = state.projects[0].id;
-    const created = await createWork(layout.workspace, lease, { expectedVersion: 1, occurredAt: chainInstant(4), projectId, externalKey: "INIT-FAT", kind: "Initiative", parentId: null });
-    const workId = created.work[0].id;
-    for (let index = 0; index < annotations; index += 1) {
-      await annotateWork(layout.workspace, lease, {
-        expectedVersion: 2 + index,
-        occurredAt: chainInstant(5 + index),
-        id: workId,
-        // Distinct each time: an annotation that changes nothing is refused, and the
-        // whole point is that each event carries its own copy of the fat value.
-        scope: `scope ${index} ${"x".repeat(8_000)}`,
-      });
-    }
-  } finally {
-    await lease.release();
+  const state = await createProject(layout.workspace, { occurredAt: chainInstant(3), externalKey: "PROJECT-FAT", name: "Fat" });
+  const projectId = state.projects[0].id;
+  const created = await createWork(layout.workspace, { occurredAt: chainInstant(4), projectId, externalKey: "INIT-FAT", kind: "Initiative", parentId: null });
+  const workId = created.work[0].id;
+  for (let index = 0; index < annotations; index += 1) {
+    await annotateWork(layout.workspace, {
+      expectedVersion: 2 + index,
+      occurredAt: chainInstant(5 + index),
+      id: workId,
+      // Distinct each time: an annotation that changes nothing is refused, and the
+      // whole point is that each event carries its own copy of the fat value.
+      scope: `scope ${index} ${"x".repeat(8_000)}`,
+    });
   }
   return layout;
 }
@@ -320,7 +284,7 @@ test("read verbs and validate fail closed on stale views, but status reads autho
 test("CQ-05(c2): the null sentinel round-trips through work-create and work-list for every accepted spelling", async (context) => {
   const fx = await fixture(context);
   const ws = ["--workspace", fx.workspace];
-  const created = await run(["work-create", "--title", "record-title", ...ws, "--expected-version", "7", "--at", instant(30),
+  const created = await run(["work-create", "--title", "record-title", ...ws, "--at", instant(30),
     "--project-id", fx.ids.projectA, "--external-key", "ROOT-VIA-NULL", "--kind", "Initiative", "--parent-id", "null"]);
   assert.equal(created.record.parentId, null, "the deprecated alias must be stored as null, not as a literal id");
   const rootId = created.record.id;
@@ -372,13 +336,13 @@ test("CQ-05(c): malformed integer flags fail at the CLI boundary naming the flag
   };
   await malformed(["migration-plan", ...ws, "--target-version", "abc", "--dry-run", "true"], "target-version");
   await malformed(["migration-plan", ...ws, "--target-version", "2.5", "--dry-run", "true"], "target-version");
-  await malformed(["knowledge-promote", ...ws, "--expected-version", "7", "--expected-revision", "abc",
+  await malformed(["knowledge-promote", ...ws, "--expected-revision", "abc",
     "--at", instant(31), "--id", "knowledge:0000000000000000000000000000000000000000", "--state", "promoted"], "expected-revision");
   // STORY-366: the article refresh verb is a fourth site sharing this arbiter
   // (CQ-05-expected-revision-arbiter, guard-registry.json expectedMatches: 4). The
   // malformed value must still fail at argument parsing, before core is ever called,
   // so the id/path below need not resolve to a real article.
-  await malformed(["knowledge-article-refresh", ...ws, "--expected-version", "7", "--expected-revision", "abc",
+  await malformed(["knowledge-article-refresh", ...ws, "--expected-revision", "abc",
     "--at", instant(32), "--id", "knowledge:0000000000000000000000000000000000000000",
     "--path", "docs/knowledge/articles/placeholder.md", "--summary", "s"], "expected-revision");
 
@@ -485,12 +449,15 @@ test("WSB-6: the agent-integration reference stays in drift-guarded agreement wi
   const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
   const docText = await readFile(join(repoRoot, "docs/architecture/agent-integration-v1.md"), "utf8");
 
-  // The three retry reason codes with undocumented semantics that motivated the
-  // doc must each appear (relaxed to at-least-once per the verifier correction,
-  // since the error-envelope and retry-table sections both name CAS_MISMATCH).
-  for (const code of ["WORKSPACE_VIEW_STALE", "WORKSPACE_LOCKED", "WORKSPACE_CAS_MISMATCH"]) {
+  // The retry reason codes with undocumented semantics that motivated the doc must each
+  // appear (at least once). WORKSPACE_CAS_MISMATCH was the third; it went with the
+  // expected-version input (TCRN-CROSS-STORY-467 R1), so the retry table must not offer it
+  // and only the behaviour-delta table may still name it.
+  for (const code of ["WORKSPACE_VIEW_STALE", "WORKSPACE_LOCKED"]) {
     assert.ok(docText.includes(code), `retry table must name ${code}`);
   }
+  const retryTable = docText.slice(docText.indexOf("| Reason code | Class | Obligation |"), docText.indexOf("## 4. Sentinels"));
+  assert.equal(retryTable.includes("WORKSPACE_CAS_MISMATCH"), false, "the retry table must not offer the retired CAS code");
 
   // Bidirectional drift guard: the doc's enumerated programmatic-only block must
   // equal exactly the live COMMAND_CATALOG programmatic-only surface.

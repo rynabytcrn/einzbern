@@ -152,8 +152,8 @@ node scripts/einzbern.mjs commands
 # 校验工作区并生成确定性视图
 node scripts/einzbern.mjs validate --workspace <路径>
 
-# 新建工作记录，写入带版本校验
-node scripts/einzbern.mjs work-create --workspace <路径> --expected-version <版本> ...
+# 新建工作记录（引擎写锁串行化写入，回执带 ids 与 version）
+node scripts/einzbern.mjs work-create --workspace <路径> --at <时刻> ...
 
 # 按主题检索工作记录
 node scripts/einzbern.mjs work-list --workspace <路径> --search "<关键词>"

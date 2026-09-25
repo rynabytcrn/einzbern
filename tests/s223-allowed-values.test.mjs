@@ -57,7 +57,6 @@ test("S223: an enum refusal carries its allowed values and appends no event", as
   const error = await runError([
     "settings-set",
     "--workspace", workspace,
-    "--expected-version", "0",
     "--at", instant(1),
     "--key", "backup.cadence",
     "--value", "hourly",

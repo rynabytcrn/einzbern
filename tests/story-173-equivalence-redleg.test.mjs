@@ -2,10 +2,13 @@
 // STORY-173 equivalence-criterion red-leg evidence.
 //
 // The four equivalence criteria (ADR 0004 §9) each state a red leg: a one-byte
-// deviation that must turn the read path red. This test proves each red leg on a
+// deviation that must turn the read path red. Criterion 2 (a stale expectedVersion
+// reddening the mutation) went with the expected-version input, TCRN-CROSS-STORY-467 R1:
+// writes are serialised by the engine write lock and carry no version to go stale. This
+// test proves each remaining red leg on a
 // scratch workspace — the pre-enactment record the story demands ("在 scratch 上改
 // 一字节即红的预演记录"). It is deliberately NOT a dual-backend comparison (that is
-// STORY-176); it pins the four refusals the file backend already enforces, which
+// STORY-176); it pins the three refusals the file backend still enforces, which
 // are the red legs the PG backend must reproduce byte-for-byte.
 
 import assert from "node:assert/strict";
@@ -15,7 +18,6 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  acquireWorkspaceLease,
   createProject,
   initializeWorkspace,
   materializeWorkspace,
@@ -62,18 +64,13 @@ async function writeControlFile(workspace, relativePath, text) {
 }
 
 async function createHistory(fixture) {
-  const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(1) });
-  try {
-    let state = await createProject(fixture.workspace, lease, {
-      expectedVersion: 0, occurredAt: instant(1), externalKey: "PROJECT-S173", name: "Alpha",
-    });
-    state = await updateProject(fixture.workspace, lease, {
-      expectedVersion: 1, occurredAt: instant(2), id: state.projects[0].id, name: "Beta",
-    });
-    return state;
-  } finally {
-    await lease.release();
-  }
+  let state = await createProject(fixture.workspace, {
+    occurredAt: instant(1), externalKey: "PROJECT-S173", name: "Alpha",
+  });
+  state = await updateProject(fixture.workspace, {
+    occurredAt: instant(2), id: state.projects[0].id, name: "Beta",
+  });
+  return state;
 }
 
 // Criterion 1 red leg: flip one byte of a stored payload → the chain-verify must
@@ -144,43 +141,11 @@ async function criterion4ViewStale(workspace, phase) {
   assert.equal(thrown.reasonCode, "WORKSPACE_VIEW_STALE", `${phase}: criterion 4 red code`);
 }
 
-// Criterion 2 (reason-code equivalence) red leg: a CAS mismatch on a stale
-// expectedVersion must red WORKSPACE_CAS_MISMATCH on the live path — the code the
-// PG backend must reproduce exactly.
-async function criterion2CasMismatch(fixture, phase) {
-  const live = await materializeWorkspace(fixture.workspace);
-  const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(6) });
-  try {
-    let thrown = null;
-    try {
-      await updateProject(fixture.workspace, lease, {
-        expectedVersion: 99, occurredAt: instant(6), id: live.projects[0].id, name: "Gamma",
-      });
-    } catch (error) {
-      thrown = error;
-    }
-    assert.ok(thrown, `${phase}: criterion 2 must red on a CAS mismatch`);
-    assert.equal(thrown.reasonCode, "WORKSPACE_CAS_MISMATCH", `${phase}: criterion 2 red code`);
-  } finally {
-    await lease.release();
-  }
-}
-
 test("STORY-173 criterion 1: a one-byte payload flip turns the chain read red", async () => {
   const fixture = await workspaceFixture();
   try {
     await createHistory(fixture);
     await criterion1ByteFlip(fixture.workspace, "criterion1");
-  } finally {
-    await fixture.close();
-  }
-});
-
-test("STORY-173 criterion 2: a stale expectedVersion turns the mutation red (reason-code equivalence)", async () => {
-  const fixture = await workspaceFixture();
-  try {
-    await createHistory(fixture);
-    await criterion2CasMismatch(fixture, "criterion2");
   } finally {
     await fixture.close();
   }

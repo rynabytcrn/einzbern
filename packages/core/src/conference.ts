@@ -368,7 +368,6 @@ const maximumSnippetBytes = 512;
 
 export interface DistillConferenceOptions {
   readonly occurredAt: string;
-  readonly expectedVersionBase: number;
   readonly stalenessDays: number;
   readonly accountableOwnerId?: string;
   readonly evidenceIds?: readonly string[];
@@ -385,7 +384,7 @@ export interface DistillConferenceOptions {
 // admits it; sourceDigest binds the FULL untruncated decision basis even when the
 // stored subject is byte-bounded. The transform is pure — no store access — and
 // the CLI performs the governed high-water rebind before feeding these inputs to
-// createKnowledgeUnit, whose own CAS advances expectedVersion from the base.
+// createKnowledgeUnit, which applies each candidate to the store as it stands.
 export function distillConferenceKnowledge(minutesValue: unknown, requestValue: unknown, positionsValue: readonly unknown[] = [], options: DistillConferenceOptions): readonly CreateKnowledgeUnitInput[] {
   const request = validateConferenceRequest(requestValue);
   const minutes = validateConferenceMinutes(minutesValue);
@@ -407,7 +406,6 @@ export function distillConferenceKnowledge(minutesValue: unknown, requestValue: 
   const tags = ["conference-decision", "distilled", `type-${request.type}`].sort(compareCanonicalText);
   const sourceReferences = [`conference:${requestSuffix}`, `conference-minutes:${minutesSuffix}`];
   return minutes.decisions.map((decision, index): CreateKnowledgeUnitInput => ({
-    expectedVersion: options.expectedVersionBase + index,
     occurredAt: options.occurredAt,
     externalKey: `conference-decision-${requestSuffix}-${minutesSuffix}-${index + 1}`,
     scope: "project",

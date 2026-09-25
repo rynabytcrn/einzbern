@@ -16,7 +16,6 @@ import {
   GENERIC_PROFILE_ADMISSION_RECEIPT_VERSION,
   GENERIC_PROFILE_BASE_DIGEST,
   GENERIC_PROFILE_OPERATIONS,
-  acquireWorkspaceLease,
   calculateContextRouteRequestDigest,
   calculateGenericProfileAdmissionClaims,
   createKnowledgeUnit,
@@ -605,19 +604,12 @@ async function knowledgeBridgeFixture() {
   const workspace = join(base, "workspace");
   const externalKey = "FIXTURE-WSC7-P6-BRIDGE";
   await initializeWorkspace({ roots, externalKey, createdAt: knowledgeInstant(11), segmentEventLimit: 64 });
-  const lease = await acquireWorkspaceLease(workspace, { now: knowledgeInstant(11, 1) });
-  let state;
-  try {
-    state = await createProject(workspace, lease, { expectedVersion: 0, occurredAt: knowledgeInstant(11, 1), externalKey: "FIXTURE-WSC7-P6-PROJECT", name: "Bridge" });
-    state = await createWork(workspace, lease, { expectedVersion: 1, occurredAt: knowledgeInstant(11, 2), projectId: state.projects[0].id, externalKey: "FIXTURE-WSC7-P6-WORK", kind: "Initiative", parentId: null, status: "active" });
-  } finally {
-    await lease.release();
-  }
+  let state = await createProject(workspace, { occurredAt: knowledgeInstant(11, 1), externalKey: "FIXTURE-WSC7-P6-PROJECT", name: "Bridge" });
+  state = await createWork(workspace, { occurredAt: knowledgeInstant(11, 2), projectId: state.projects[0].id, externalKey: "FIXTURE-WSC7-P6-WORK", kind: "Initiative", parentId: null, status: "active" });
   await initializeKnowledgeStore(workspace);
   const projectId = state.projects[0].id;
   const workId = state.work[0].id;
   const unit = (key, overrides) => ({
-    expectedVersion: overrides.expectedVersion,
     occurredAt: overrides.occurredAt,
     externalKey: key,
     scope: "project",
@@ -648,8 +640,8 @@ async function knowledgeBridgeFixture() {
     // here, so the fixture answers coexist rather than being refused.
     coexist: true,
   });
-  const fresh = await createKnowledgeUnit(workspace, unit("WSC7-P6-FRESH", { expectedVersion: 0, occurredAt: knowledgeInstant(11, 3), subject: "Fresh bridge subject", summary: "Fresh bridge summary." }));
-  const stale = await createKnowledgeUnit(workspace, unit("WSC7-P6-STALE", { expectedVersion: 1, occurredAt: knowledgeInstant(11, 4), subject: "Stale bridge subject", summary: "Stale bridge summary.", freshnessState: "stale" }));
+  const fresh = await createKnowledgeUnit(workspace, unit("WSC7-P6-FRESH", { occurredAt: knowledgeInstant(11, 3), subject: "Fresh bridge subject", summary: "Fresh bridge summary." }));
+  const stale = await createKnowledgeUnit(workspace, unit("WSC7-P6-STALE", { occurredAt: knowledgeInstant(11, 4), subject: "Stale bridge subject", summary: "Stale bridge summary.", freshnessState: "stale" }));
   return {
     workspace,
     workspaceId: deriveStableId("workspace", externalKey),

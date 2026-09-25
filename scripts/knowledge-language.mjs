@@ -156,7 +156,6 @@ export async function migrateCommand(core, values) {
     if (dryRun || !changed) continue;
     const body = String((await readKnowledgeBody(workspace, record.id, { at, allowUnpromoted: true })).body ?? "");
     await createKnowledgeUnit(workspace, {
-      expectedVersion: Number((await validateKnowledgeStore(workspace)).version),
       occurredAt: at,
       externalKey: `${record.externalKey}-L`,
       scope: record.scope, projectId: record.projectId, roleScopes: record.roleScopes,

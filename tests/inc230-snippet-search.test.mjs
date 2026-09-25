@@ -19,7 +19,6 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  acquireWorkspaceLease,
   createKnowledgeUnit,
   createProject,
   initializeKnowledgeStore,
@@ -40,18 +39,12 @@ async function storeWithOneCard() {
   }
   await initializeWorkspace({ roots, externalKey: "INC230", createdAt: instant(), segmentEventLimit: 64 });
   const workspace = join(base, "workspace");
-  const lease = await acquireWorkspaceLease(workspace, { now: instant(1) });
-  let state;
-  try {
-    state = await createProject(workspace, lease, {
-      expectedVersion: 0, occurredAt: instant(1), externalKey: "INC230-PROJECT", name: "Retrieval",
-    });
-  } finally {
-    await lease.release();
-  }
+  let state = await createProject(workspace, {
+    occurredAt: instant(1), externalKey: "INC230-PROJECT", name: "Retrieval",
+  });
   await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
   await createKnowledgeUnit(workspace, {
-    expectedVersion: 0, occurredAt: instant(2), externalKey: "INC230-CARD",
+    occurredAt: instant(2), externalKey: "INC230-CARD",
     scope: "project", projectId: state.projects[0].id, roleScopes: [],
     category: "workflow", kind: "guide", tags: ["method"],
     // The distinguishing word lives ONLY in the snippet. Subject, summary and tags are

@@ -52,7 +52,6 @@ async function declare(workspace, value) {
   return runRaw([
     "settings-set",
     "--workspace", workspace,
-    "--expected-version", "0",
     "--at", instant(1),
     "--key", "engine.requiredVersion",
     "--value", value,
@@ -102,7 +101,6 @@ test("S222: the declaration is a stable semantic version, not an arbitrary strin
   const error = await runError([
     "settings-set",
     "--workspace", workspace,
-    "--expected-version", "0",
     "--at", instant(1),
     "--key", "engine.requiredVersion",
     "--value", "next-release",

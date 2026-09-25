@@ -13,7 +13,6 @@ import test from "node:test";
 
 import {
   SETTINGS_CATALOG,
-  acquireWorkspaceLease,
   initializeWorkspace,
   setWorkspaceSetting,
 } from "../dist/build/packages/core/src/index.js";
@@ -64,18 +63,13 @@ test("STORY-346 production backend selection rejects PostgreSQL", async () => {
     }
     const workspace = join(base, "workspace");
     await initializeWorkspace({ roots, externalKey: "STORY-346-RUNTIME", createdAt: "2026-09-02T08:00:00Z" });
-    const lease = await acquireWorkspaceLease(workspace, { now: "2026-09-02T08:00:01Z" });
-    try {
-      await assert.rejects(() => setWorkspaceSetting(workspace, lease, {
-        key: "storage.backend", value: "pg", expectedVersion: 0, occurredAt: "2026-09-02T08:00:02Z",
-      }), (error) => error?.reasonCode === "SETTINGS_VALUE_INVALID");
-      const accepted = await setWorkspaceSetting(workspace, lease, {
-        key: "storage.backend", value: "file", expectedVersion: 0, occurredAt: "2026-09-02T08:00:03Z",
-      });
-      assert.equal(accepted.settings.find((entry) => entry.key === "storage.backend")?.value, "file");
-    } finally {
-      await lease.release();
-    }
+    await assert.rejects(() => setWorkspaceSetting(workspace, {
+      key: "storage.backend", value: "pg", occurredAt: "2026-09-02T08:00:02Z",
+    }), (error) => error?.reasonCode === "SETTINGS_VALUE_INVALID");
+    const accepted = await setWorkspaceSetting(workspace, {
+      key: "storage.backend", value: "file", occurredAt: "2026-09-02T08:00:03Z",
+    });
+    assert.equal(accepted.settings.find((entry) => entry.key === "storage.backend")?.value, "file");
   } finally {
     await rm(base, { recursive: true, force: true });
   }

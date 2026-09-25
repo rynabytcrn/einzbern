@@ -19,7 +19,6 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  acquireWorkspaceLease,
   createProject,
   initializeWorkspace,
   materializeWorkspace,
@@ -57,18 +56,13 @@ async function workspaceFixture() {
 }
 
 async function createHistory(fixture) {
-  const lease = await acquireWorkspaceLease(fixture.workspace, { now: instant(1) });
-  try {
-    let state = await createProject(fixture.workspace, lease, {
-      expectedVersion: 0, occurredAt: instant(1), externalKey: "PROJECT-S174", name: "Alpha",
-    });
-    state = await updateProject(fixture.workspace, lease, {
-      expectedVersion: 1, occurredAt: instant(2), id: state.projects[0].id, name: "Beta",
-    });
-    return state;
-  } finally {
-    await lease.release();
-  }
+  let state = await createProject(fixture.workspace, {
+    occurredAt: instant(1), externalKey: "PROJECT-S174", name: "Alpha",
+  });
+  state = await updateProject(fixture.workspace, {
+    occurredAt: instant(2), id: state.projects[0].id, name: "Beta",
+  });
+  return state;
 }
 
 test("STORY-174 red leg: a one-byte segment deviation at the abstraction layer changes the read bytes", async () => {

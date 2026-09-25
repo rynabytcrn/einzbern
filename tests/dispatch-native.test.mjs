@@ -60,10 +60,10 @@ async function hostFixture(t) {
     await runCli([...args, "--actor", "agent:test"], { write: (value) => { output += value; } });
     return JSON.parse(output);
   };
-  await run(["dispatch-tiers-set", "--workspace", workspace, "--expected-version", "0", "--at", at(1), "--host", "claude-code", "--tiers", JSON.stringify({ economy: { model: "claude-fixture-model", effort: "max" } })]);
-  await run(["dispatch-tiers-set", "--workspace", workspace, "--expected-version", "1", "--at", at(2), "--host", "codex", "--tiers", JSON.stringify({ economy: { model: "gpt-5.6-luna", effort: "max" } })]);
-  const project = await run(["project-create", "--workspace", workspace, "--expected-version", "2", "--at", at(3), "--external-key", "FIXTURE-PROJECT", "--name", "Fixture"]);
-  const work = await run(["work-create", "--workspace", workspace, "--expected-version", "3", "--at", at(4), "--project-id", project.record.id, "--external-key", "FIXTURE-WORK", "--kind", "Initiative", "--status", "active", "--scope", "fixture scope", "--title", "Fixture work"]);
+  await run(["dispatch-tiers-set", "--workspace", workspace, "--at", at(1), "--host", "claude-code", "--tiers", JSON.stringify({ economy: { model: "claude-fixture-model", effort: "max" } })]);
+  await run(["dispatch-tiers-set", "--workspace", workspace, "--at", at(2), "--host", "codex", "--tiers", JSON.stringify({ economy: { model: "gpt-5.6-luna", effort: "max" } })]);
+  const project = await run(["project-create", "--workspace", workspace, "--at", at(3), "--external-key", "FIXTURE-PROJECT", "--name", "Fixture"]);
+  const work = await run(["work-create", "--workspace", workspace, "--at", at(4), "--project-id", project.record.id, "--external-key", "FIXTURE-WORK", "--kind", "Initiative", "--status", "active", "--scope", "fixture scope", "--title", "Fixture work"]);
   return { workspace, workId: work.record.id };
 }
 

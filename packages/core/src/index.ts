@@ -166,7 +166,6 @@ export {
   WORKSPACE_SCHEMA_VERSION,
   WORKSPACE_STORAGE_VERSION,
   WorkspaceError,
-  acquireWorkspaceLease,
   activeBinding,
   activeWorkspaceRoot,
   deriveRelocationId,
@@ -175,13 +174,10 @@ export {
   admitTemplateInWorkspace,
   applyWorkspaceMigration,
   assertSupportedWorkspaceFilesystem,
-  breakWorkspaceLease,
-  breakWorkspaceRecoveryClaim,
   cancelConferenceInWorkspace,
   closeConferenceInWorkspace,
   createGateInWorkspace,
   deleteGateInWorkspace,
-  inspectWorkspaceLease,
   assertWorkspaceRecordCount,
   assertWorkspaceRelativePath,
   createProject,
@@ -226,7 +222,8 @@ export {
   updateProject,
   validateWorkspace,
   withStorageBackendFactory,
-  withWorkspaceLease,
+  withWorkspaceWriteLock,
+  writtenRecordIds,
   workspaceBudgets,
   WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES,
 } from "./workspace.js";
@@ -234,7 +231,7 @@ export type {
   ProjectRecord,
   SprintReference,
   WorkspaceAdmission,
-  WorkspaceLease,
+  WorkspaceWriteLockOptions,
   WorkspaceMetadata,
   WorkspaceMigrationPlan,
   WorkspaceMutationOptions,
@@ -770,6 +767,7 @@ export {
   LOCAL_DIRECTORY_NAMES,
   PLATFORM_ARCHIVE_DIRECTORY,
   SCHEMA_NAMESPACE,
+  WORKSPACE_WRITE_LOCK_FILE,
   isLegacySchemaVersion,
   legacyInstalledEnginePath,
   renderLegacyAliasTable,
@@ -788,3 +786,6 @@ export {
 } from "./legacy-workspace.js";
 export type { ChainBreak, ChainBreakKind, ChainReport, LegacySegment, LegacyWorkspace, LegacyWorkspaceReasonCode } from "./legacy-workspace.js";
 export { materializeFromGenesis, parseLegacyWorkspaceMetadata } from "./workspace.js";
+// TCRN-CROSS-STORY-467 R1: the engine-held file lock that serialises writers.
+export { FILE_LOCK_REASON_CODES, FILE_LOCK_SCHEMA_VERSION, FileLockError, acquireFileLock, withFileLock } from "./file-lock.js";
+export type { FileLock, FileLockOptions, FileLockReasonCode } from "./file-lock.js";

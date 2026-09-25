@@ -103,7 +103,7 @@ export async function backfillWorkSummaries(argv) {
   const written = [];
   for (const [index, entry] of candidates.entries()) {
     const receipt = await annotate([
-      "work-annotate", "--workspace", workspace, "--expected-version", "head",
+      "work-annotate", "--workspace", workspace,
       "--at", instantAt(base, index), "--id", entry.id, "--summary", entry.derived, "--actor", actor,
     ]);
     written.push({ id: entry.id, externalKey: entry.externalKey, version: receipt.version, summary: entry.derived });

@@ -1,21 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { deflateSync, inflateSync } from "node:zlib";
-import { constants } from "node:fs";
-import {
-  lstat,
-  mkdir,
-  open,
-  readdir,
-  realpath,
-  rename,
-  rm,
-  statfs,
-  writeFile,
-} from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { lstat, realpath, statfs } from "node:fs/promises";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 
 import {
   PROTOCOL_LIMITS,
@@ -34,7 +23,6 @@ import {
   deriveStableId,
   EVENT_SCHEMA_VERSION,
   isWorkSummary,
-  parseStrictInstant,
   validateEventChain,
   validateWorkGraph,
 } from "../../protocol/src/index.js";
@@ -51,8 +39,8 @@ import { FileBackend, StorageError } from "./storage-backend.js";
 import type { StorageBackend, StorageDirectoryEntry } from "./storage-backend.js";
 import { SegmentedBackend } from "./segmented-backend.js";
 import { readStorageHomeDeclaration } from "./storage-home.js";
-import { LEGACY_CONTROL_DIRECTORY } from "./names.js";
-import { consumeQuarantineReplacementTestInstrumentation } from "./workspace-test-instrumentation.js";
+import { FileLockError, acquireFileLock, withFileLock } from "./file-lock.js";
+import { LEGACY_CONTROL_DIRECTORY, WORKSPACE_WRITE_LOCK_FILE } from "./names.js";
 import { recordClosureValidation, recordCollectionScan, recordExtensionClosureValidation, recordFullMaterialize, recordSnapshotMaterialize, recordTerminalGraphValidation } from "./workspace-perf-instrumentation.js";
 import {
   ACTOR_ATTESTATION_ENABLE_OPERATION,
@@ -154,7 +142,6 @@ export const WORKSPACE_REASON_CODES = Object.freeze([
   "WORKSPACE_ACTOR_INVALID",
   "WORKSPACE_ACTOR_REQUIRED",
   "WORKSPACE_ALREADY_EXISTS",
-  "WORKSPACE_CAS_MISMATCH",
   "CONFERENCE_INDEPENDENCE_REQUIRED",
   "EXECUTION_PERSONA_IN_USE",
   "EXECUTION_PERSONA_UNKNOWN",
@@ -190,9 +177,6 @@ export const WORKSPACE_REASON_CODES = Object.freeze([
   "WORKSPACE_TELEMETRY_EVIDENCE_UNRESOLVED",
   "WORKSPACE_INPUT_INVALID",
   "WORKSPACE_INPUT_OVERSIZED",
-  "WORKSPACE_LEASE_BROKEN",
-  "WORKSPACE_LEASE_INVALID",
-  "WORKSPACE_LEASE_OBSERVED",
   "WORKSPACE_LOCKED",
   "WORKSPACE_MIGRATION_APPLY_UNAVAILABLE",
   "WORKSPACE_MIGRATION_DOWNGRADE",
@@ -220,7 +204,7 @@ export const WORKSPACE_REASON_CODES = Object.freeze([
   // refuses every mutating verb on such a workspace — the write door is closed, so
   // a caller driving the engine without TCRN_PG_* (the ceremony.mjs fork mechanism)
   // can no longer fork the chain. Read-only verbs stay open so the tree remains a
-  // forensible archive. Named here because acquireWorkspaceLease raises it and
+  // forensible archive. Named here because the write-lock gate raises it and
   // fail() is typed to WorkspaceReasonCode.
   "WORKSPACE_STORAGE_RELOCATED",
   "WORKSPACE_STORY_SCOPE_REQUIRED",
@@ -417,15 +401,7 @@ interface ReplaySnapshotSeed extends ReplaySnapshotState {
   readonly prefixEvents: readonly EventRecord[];
 }
 
-export interface WorkspaceLease {
-  readonly workspaceRoot: string;
-  readonly token: string;
-  readonly acquiredAt: string;
-  release(): Promise<void>;
-}
-
 export interface WorkspaceMutationOptions {
-  readonly expectedVersion: number;
   readonly occurredAt: string;
   // WSE-2: the accountable actor for this mutation. Caller-supplied like
   // occurredAt (no clock, no randomness — determinism preserved). Once
@@ -433,7 +409,9 @@ export interface WorkspaceMutationOptions {
   // validated (WORKSPACE_ACTOR_INVALID); the enabling event carries it too.
   readonly actorId?: string;
   readonly crashAt?: WorkspaceCrashPoint;
-  readonly afterMutationClaimForTest?: () => Promise<void>;
+  // Runs inside the write lock, before the state is read: a test seam that holds the lock
+  // open so a concurrent writer can be observed waiting for it.
+  readonly insideWriteLockForTest?: () => Promise<void>;
   // STORY-299: a test-facing knob for the pre-commit view budget, the same shape
   // and the same purpose as crashAt above. It only ever narrows -- a caller cannot
   // raise the protocol ceiling with it -- so the refusal it exercises is the same
@@ -560,8 +538,8 @@ const segmentedBackends = new Map<string, SegmentedBackend>();
 
 // STORY-176: a package-private backend-factory override so the equivalence gate
 // can run the SAME engine verbs against the PG backend and compare byte output
-// to the file backend. Scope is one async operation (AsyncLocalStorage), like
-// workspace-test-instrumentation; production callers never arm it.
+// to the file backend. Scope is one async operation (AsyncLocalStorage), and
+// production callers never arm it.
 const backendFactoryOverride = new AsyncLocalStorage<() => StorageBackend>();
 
 export function withStorageBackendFactory<T>(factory: () => StorageBackend, operation: () => Promise<T>): Promise<T> {
@@ -656,10 +634,6 @@ function inside(parent: string, candidate: string): boolean {
   return relation === "" || (!relation.startsWith("..") && !relation.startsWith(sep));
 }
 
-function sameIdentity(left: { readonly dev: number | bigint; readonly ino: number | bigint }, right: { readonly dev: number | bigint; readonly ino: number | bigint }): boolean {
-  return left.dev === right.dev && left.ino === right.ino;
-}
-
 export function assertWorkspaceRelativePath(value: unknown): asserts value is string {
   if (typeof value !== "string" || value.length === 0 || value.length > 512 || isAbsolute(value) || value.includes("\\")) {
     fail("WORKSPACE_PATH_ESCAPE", String(value));
@@ -698,14 +672,10 @@ export function assertWorkspaceRecordCount(count: number): void {
 }
 
 // STORY-174 (174.3): the data-plane copies of boundFile/boundDirectory/
-// ensureDirectory/atomicWrite moved into FileBackend (storage-backend.ts). The
-// three filesystem helpers below remain here DELIBERATELY for the lease, recovery
-// and mutation-claim machinery, which is filesystem-specific (dev/ino identity,
-// O_EXCL claims, rename-verify-remove quarantine) and is NOT part of the
-// data-plane abstraction — the PG backend (STORY-175) reimplements single-writer
-// with advisory locks instead. This is the deliberate-duplication exemption:
-// a second copy kept in place with the reason stated, same as
-// workspace-snapshot.ts's boundReadDirectory/boundReadFileBytes precedent.
+// ensureDirectory/atomicWrite moved into FileBackend (storage-backend.ts). The bound
+// directory check below stays here for root resolution and the write-lock gate; the
+// lease, recovery and mutation-claim machinery it once served was replaced by the
+// engine file lock (TCRN-CROSS-STORY-467).
 async function boundDirectory(path: string, workspaceRoot?: string): Promise<string> {
   let metadata;
   try {
@@ -725,40 +695,6 @@ async function boundDirectory(path: string, workspaceRoot?: string): Promise<str
     fail("WORKSPACE_PATH_INVALID", `${path} changed while resolving`);
   }
   return resolved;
-}
-
-async function boundFile(path: string, maximumBytes: number = PROTOCOL_LIMITS.maxCanonicalBytes): Promise<Buffer> {
-  let before;
-  try {
-    before = await lstat(path);
-  } catch (error) {
-    fail("WORKSPACE_PATH_INVALID", `${path}: ${String((error as { code?: string }).code ?? error)}`);
-  }
-  if (before.isSymbolicLink() || !before.isFile() || before.nlink !== 1) {
-    fail("WORKSPACE_PATH_INVALID", `${path} must be a single-link regular file`);
-  }
-  if (before.size > maximumBytes) {
-    fail("WORKSPACE_INPUT_OVERSIZED", path);
-  }
-  if (typeof constants.O_NOFOLLOW !== "number") {
-    fail("WORKSPACE_FILESYSTEM_UNSUPPORTED", "O_NOFOLLOW is unavailable");
-  }
-  let handle;
-  try {
-    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-    const opened = await handle.stat();
-    if (!opened.isFile() || opened.nlink !== 1 || opened.dev !== before.dev || opened.ino !== before.ino) {
-      fail("WORKSPACE_PATH_INVALID", `${path} changed while opening`);
-    }
-    const content = await handle.readFile();
-    const after = await handle.stat();
-    if (after.dev !== opened.dev || after.ino !== opened.ino || after.nlink !== 1 || content.length > maximumBytes) {
-      fail("WORKSPACE_PATH_INVALID", `${path} changed while reading`);
-    }
-    return content;
-  } finally {
-    await handle?.close();
-  }
 }
 
 function crash(point: WorkspaceCrashPoint, selected?: WorkspaceCrashPoint): void {
@@ -1315,10 +1251,9 @@ function validateReplaySnapshotTail(events: readonly EventRecord[], snapshot: Re
 }
 
 // WSR-1: readMetadata is the universal choke point — resolveWorkspace is NOT. Six
-// callers reach it, and acquireWorkspaceLease is one of them, so EVERY mutation
+// callers reach it, and the write-lock gate is one of them, so EVERY mutation
 // passes through here too. That is why the relocation admission check lives here
-// and not in resolveWorkspace: lease-break, lease-recovery-break and the lease
-// acquisition itself never touch resolveWorkspace at all.
+// and not in resolveWorkspace.
 //
 // `admit` DEFAULTS TO THE STRICT VALUE. A permissive default would break nothing
 // visible and would silently disable the entire mechanism; guard G1 mutates it and
@@ -3008,652 +2943,32 @@ export function consumeViewWriteFailure(): ViewWriteFailure | null {
   return failure;
 }
 
-async function assertLease(workspaceRoot: string, lease: WorkspaceLease): Promise<void> {
-  if (lease.workspaceRoot !== workspaceRoot || typeof lease.token !== "string") {
-    fail("WORKSPACE_LEASE_INVALID", "lease belongs to another workspace");
-  }
-  const content = await boundFile(controlPath(workspaceRoot, "lease/owner.json"), 16_384);
-  let owner: JsonValue;
-  try {
-    owner = assertCanonicalJson(content.toString("utf8"));
-  } catch (error) {
-    fail("WORKSPACE_LEASE_INVALID", String(error));
-  }
-  exactFields(owner, ["schemaVersion", "token", "pid", "acquiredAt", "expiresAtNanoseconds"], "WORKSPACE_LEASE_INVALID", "lease owner");
-  if (owner.schemaVersion !== "tcrn.workspace-lease.v1" || owner.token !== lease.token ||
-    typeof owner.pid !== "number" || !Number.isSafeInteger(owner.pid) || typeof owner.acquiredAt !== "string" ||
-    typeof owner.expiresAtNanoseconds !== "string" || !/^[0-9]+$/u.test(owner.expiresAtNanoseconds)) {
-    fail("WORKSPACE_LEASE_INVALID", "lease token no longer owns the workspace");
-  }
-}
+// TCRN-CROSS-STORY-467 R1 (MIN-227 D3): one writer at a time, through an engine-held file
+// lock inside the control directory. It replaces the lease, the recovery claim, the
+// mutation claim and the caller-supplied expected version: a writer takes the lock, reads
+// the latest state under it, builds its delta against that state and appends. A second
+// writer waits for the first instead of failing a version comparison, so two concurrent
+// writes both land, in order. A holder that died leaves a lock the next writer breaks
+// (same host and process gone, or older than the stale bound). From SUB-284 on the lock
+// is the device-local one of the library. The file name is WORKSPACE_WRITE_LOCK_FILE in names.ts.
 
-function processAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as { code?: string }).code === "EPERM";
-  }
-}
-
-// The dev/ino pair that binds a path to the file it resolved to. Used by every
-// rename-verify-remove sequence in this module and referenced by the lease helpers
-// below, which assumed the name was in scope when they were written -- it was not,
-// so this file never compiled under a real tsc.
-interface FileIdentity {
-  readonly dev: number | bigint;
-  readonly ino: number | bigint;
-}
-
-interface RecoveryClaim {
-  readonly path: string;
-  readonly token: string;
-  readonly identity: { readonly dev: number | bigint; readonly ino: number | bigint };
-}
-
-interface MutationClaim {
-  readonly path: string;
-  readonly token: string;
-  readonly leaseToken: string;
-  readonly identity: { readonly dev: number | bigint; readonly ino: number | bigint };
-}
-
-interface LeaseObservation {
-  readonly directoryIdentity: { readonly dev: number | bigint; readonly ino: number | bigint };
-  readonly directoryModifiedMilliseconds: number;
-  readonly owner: Readonly<Record<string, JsonValue>> | null;
-  readonly ownerIdentity: { readonly dev: number | bigint; readonly ino: number | bigint } | null;
-}
-
-async function parseRecoveryClaim(path: string): Promise<{ readonly owner: Readonly<Record<string, JsonValue>>; readonly identity: { readonly dev: number | bigint; readonly ino: number | bigint } }> {
-  let before;
-  try {
-    before = await lstat(path);
-    if (before.isSymbolicLink() || !before.isFile() || before.nlink !== 1) {
-      fail("WORKSPACE_LEASE_INVALID", "recovery claim must be a single-link regular file");
-    }
-    const content = await boundFile(path, 16_384);
-    const after = await lstat(path);
-    if (!sameIdentity(before, after) || after.nlink !== 1 || !after.isFile() || after.isSymbolicLink()) {
-      fail("WORKSPACE_LEASE_INVALID", "recovery claim identity changed");
-    }
-    const owner = assertCanonicalJson(content.toString("utf8"));
-    exactFields(owner, ["schemaVersion", "token", "pid", "acquiredAt", "expiresAtNanoseconds"], "WORKSPACE_LEASE_INVALID", "recovery claim");
-    if (owner.schemaVersion !== "tcrn.workspace-lease-recovery.v1" || typeof owner.token !== "string" ||
-      !/^[a-f0-9]{48}$/u.test(owner.token) || typeof owner.pid !== "number" || !Number.isSafeInteger(owner.pid) ||
-      typeof owner.acquiredAt !== "string" || typeof owner.expiresAtNanoseconds !== "string" ||
-      !/^[0-9]+$/u.test(owner.expiresAtNanoseconds)) {
-      fail("WORKSPACE_LEASE_INVALID", "recovery claim fields are invalid");
-    }
-    assertStrictInstant(owner.acquiredAt);
-    return { owner, identity: { dev: after.dev, ino: after.ino } };
-  } catch (error) {
-    if (error instanceof WorkspaceError) {
-      throw error;
-    }
-    if (error instanceof ProtocolError) {
-      fail("WORKSPACE_LEASE_INVALID", error.message);
-    }
-    fail("WORKSPACE_LEASE_INVALID", String(error));
-  }
-}
-
-// WSA-7: a recovery claim whose writer is provably gone is reclaimable. The claim records
-// pid and expiresAtNanoseconds precisely so this decision can be made, but nothing read
-// them until now, so every SIGKILL left a claim that no code path could clear and the
-// Workspace could never be opened again. Reclaim uses the same rename-verify-remove
-// discipline as releaseRecoveryClaim so a concurrent reclaimer loses the rename instead of
-// racing us. Deliberately fail-closed: the writer counts as gone only when the claim has
-// expired AND its pid is dead, matching the lease-owner probe. Both directions of pid reuse
-// are safe -- a recycled pid reads as alive and we refuse.
-async function reclaimStaleRecoveryClaim(
-  workspaceRoot: string,
-  path: string,
-  existing: { readonly owner: Readonly<Record<string, JsonValue>>; readonly identity: { readonly dev: number | bigint; readonly ino: number | bigint } },
-): Promise<void> {
-  // The prefix must match RESIDUE_PREFIX (workspace-snapshot.ts) and .gitignore, or a leaked
-  // quarantine file is invisible to the residue gate, lands in the backup manifest, and can be
-  // committed and shipped on clone. releaseRecoveryClaim already uses this prefix; both recovery
-  // quarantines share it deliberately, and their tokens keep them distinct.
-  const quarantine = controlPath(workspaceRoot, `released-recovery-${String(existing.owner.token)}`);
-  // Re-verify immediately before the rename, as releaseRecoveryClaim does. Without this the
-  // identity read that authorized the reclaim can be arbitrarily stale, so a claim recreated by a
-  // live writer in the interval would be renamed away on the strength of a dead writer's stat.
-  const current = await lstat(path).catch(() => fail("WORKSPACE_LOCKED", "stale recovery claim disappeared before reclaim"));
-  if (!current.isFile() || current.isSymbolicLink() || current.nlink !== 1 || !sameIdentity(current, existing.identity)) {
-    fail("WORKSPACE_LOCKED", "recovery claim changed before reclaim");
-  }
-  try {
-    await rename(path, quarantine);
-  } catch {
-    fail("WORKSPACE_LOCKED", "stale recovery claim was not exclusively reclaimable");
-  }
-  const moved = await lstat(quarantine);
-  if (!sameIdentity(moved, existing.identity) || !moved.isFile() || moved.nlink !== 1) {
-    // We renamed something other than the claim we checked -- a live writer recreated it in the
-    // window. Put it back and report a lost race, not corruption: leaving a foreign live claim
-    // displaced in quarantine under a non-retriable code is the double-reclaim the claim exists
-    // to prevent. Restore failure is the genuinely unrecoverable case and keeps the hard code.
-    try {
-      await rename(quarantine, path);
-    } catch {
-      fail("WORKSPACE_LEASE_INVALID", "displaced recovery claim could not be restored");
-    }
-    fail("WORKSPACE_LOCKED", "recovery claim was recreated during reclaim");
-  }
-  await rm(quarantine);
-}
-
-async function createRecoveryClaim(workspaceRoot: string, now: string, nowNanoseconds: bigint, ttl: number, reclaimed = false): Promise<RecoveryClaim> {
-  const path = controlPath(workspaceRoot, "lease-recovery.claim");
-  const token = randomBytes(24).toString("hex");
-  let handle;
-  try {
-    handle = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-    await handle.writeFile(canonicalJson({
-      schemaVersion: "tcrn.workspace-lease-recovery.v1",
-      token,
-      pid: process.pid,
-      acquiredAt: now,
-      expiresAtNanoseconds: (nowNanoseconds + BigInt(ttl) * 1_000_000n).toString(),
-    }));
-    await handle.sync();
-    const written = await handle.stat();
-    if (!written.isFile() || written.nlink !== 1) {
-      fail("WORKSPACE_LEASE_INVALID", "recovery claim descriptor is unsafe");
-    }
-    await handle.close();
-    handle = undefined;
-    const named = await lstat(path);
-    if (!named.isFile() || named.isSymbolicLink() || named.nlink !== 1 || !sameIdentity(written, named)) {
-      fail("WORKSPACE_LEASE_INVALID", "recovery claim path does not bind the created file");
-    }
-    return { path, token, identity: { dev: named.dev, ino: named.ino } };
-  } catch (error) {
-    await handle?.close();
-    if ((error as { code?: string }).code === "EEXIST") {
-      const existing = await parseRecoveryClaim(path);
-      const expiresAtNanoseconds = BigInt(String(existing.owner.expiresAtNanoseconds));
-      const pid = Number(existing.owner.pid);
-      // A malformed, linked, or special-file claim never reaches here: parseRecoveryClaim
-      // fails closed on it first, so those still demand operator attention.
-      if (reclaimed || expiresAtNanoseconds > nowNanoseconds || processAlive(pid)) {
-        fail("WORKSPACE_LOCKED", "another lease recovery owns the Workspace");
-      }
-      await reclaimStaleRecoveryClaim(workspaceRoot, path, existing);
-      // One retry only: if the slot is taken again we lost a race with a live writer.
-      return await createRecoveryClaim(workspaceRoot, now, nowNanoseconds, ttl, true);
-    }
-    if (error instanceof WorkspaceError) {
-      throw error;
-    }
-    fail("WORKSPACE_LEASE_INVALID", String(error));
-  }
-}
-
-async function releaseRecoveryClaim(workspaceRoot: string, claim: RecoveryClaim): Promise<void> {
-  const current = await lstat(claim.path).catch(() => fail("WORKSPACE_LEASE_INVALID", "recovery claim disappeared"));
-  if (!current.isFile() || current.isSymbolicLink() || current.nlink !== 1 || !sameIdentity(current, claim.identity)) {
-    fail("WORKSPACE_LEASE_INVALID", "recovery claim ownership changed");
-  }
-  const quarantine = controlPath(workspaceRoot, `released-recovery-${claim.token}`);
-  try {
-    await rename(claim.path, quarantine);
-  } catch {
-    fail("WORKSPACE_LEASE_INVALID", "recovery claim release was not exclusive");
-  }
-  const moved = await lstat(quarantine);
-  if (!sameIdentity(moved, claim.identity) || !moved.isFile() || moved.nlink !== 1) {
-    fail("WORKSPACE_LEASE_INVALID", "released recovery claim identity changed");
-  }
-  await rm(quarantine);
-}
-
-async function parseMutationClaim(path: string): Promise<{
-  readonly owner: Readonly<Record<string, JsonValue>>;
-  readonly identity: { readonly dev: number | bigint; readonly ino: number | bigint };
-}> {
-  let before;
-  try {
-    before = await lstat(path);
-    if (before.isSymbolicLink() || !before.isFile() || before.nlink !== 1) {
-      fail("WORKSPACE_LEASE_INVALID", "mutation claim must be a single-link regular file");
-    }
-    const content = await boundFile(path, 16_384);
-    const after = await lstat(path);
-    if (!sameIdentity(before, after) || after.nlink !== 1 || !after.isFile() || after.isSymbolicLink()) {
-      fail("WORKSPACE_LEASE_INVALID", "mutation claim identity changed");
-    }
-    const owner = assertCanonicalJson(content.toString("utf8"));
-    exactFields(owner, ["schemaVersion", "leaseToken", "token", "pid"], "WORKSPACE_LEASE_INVALID", "mutation claim");
-    if (owner.schemaVersion !== "tcrn.workspace-mutation-claim.v1" || typeof owner.leaseToken !== "string" ||
-      !/^[a-f0-9]{48}$/u.test(owner.leaseToken) || typeof owner.token !== "string" ||
-      !/^[a-f0-9]{48}$/u.test(owner.token) || typeof owner.pid !== "number" || !Number.isSafeInteger(owner.pid)) {
-      fail("WORKSPACE_LEASE_INVALID", "mutation claim fields are invalid");
-    }
-    return { owner, identity: { dev: after.dev, ino: after.ino } };
-  } catch (error) {
-    if (error instanceof WorkspaceError) {
-      throw error;
-    }
-    if (error instanceof ProtocolError) {
-      fail("WORKSPACE_LEASE_INVALID", error.message);
-    }
-    fail("WORKSPACE_LEASE_INVALID", String(error));
-  }
-}
-
-async function createMutationClaim(workspaceRoot: string, lease: WorkspaceLease): Promise<MutationClaim> {
-  const leasePath = controlPath(workspaceRoot, "lease");
-  const path = resolve(leasePath, "mutation.claim");
-  const token = randomBytes(24).toString("hex");
-  const directoryBefore = await lstat(leasePath);
-  if (!directoryBefore.isDirectory() || directoryBefore.isSymbolicLink()) {
-    fail("WORKSPACE_LEASE_INVALID", "lease directory is unsafe for mutation admission");
-  }
-  await boundDirectory(leasePath, workspaceRoot);
-  let handle;
-  try {
-    handle = await open(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-    await handle.writeFile(canonicalJson({
-      schemaVersion: "tcrn.workspace-mutation-claim.v1",
-      leaseToken: lease.token,
-      token,
-      pid: process.pid,
-    }));
-    await handle.sync();
-    const written = await handle.stat();
-    if (!written.isFile() || written.nlink !== 1) {
-      fail("WORKSPACE_LEASE_INVALID", "mutation claim descriptor is unsafe");
-    }
-    await handle.close();
-    handle = undefined;
-    const directoryAfter = await lstat(leasePath);
-    const named = await lstat(path);
-    if (!sameIdentity(directoryBefore, directoryAfter) || !directoryAfter.isDirectory() ||
-      !named.isFile() || named.isSymbolicLink() || named.nlink !== 1 || !sameIdentity(written, named)) {
-      fail("WORKSPACE_LEASE_INVALID", "mutation claim path does not bind the lease generation");
-    }
-    return { path, token, leaseToken: lease.token, identity: { dev: named.dev, ino: named.ino } };
-  } catch (error) {
-    await handle?.close();
-    if ((error as { code?: string }).code === "EEXIST") {
-      const existing = await parseMutationClaim(path);
-      if (existing.owner.leaseToken !== lease.token) {
-        fail("WORKSPACE_LEASE_INVALID", "mutation claim belongs to another lease generation");
-      }
-      fail("WORKSPACE_CAS_MISMATCH", "another mutation owns this lease commit boundary");
-    }
-    if (error instanceof WorkspaceError) {
-      throw error;
-    }
-    fail("WORKSPACE_LEASE_INVALID", String(error));
-  }
-}
-
-async function releaseMutationClaim(workspaceRoot: string, lease: WorkspaceLease, claim: MutationClaim): Promise<void> {
-  await assertLease(workspaceRoot, lease);
-  const current = await parseMutationClaim(claim.path);
-  if (!sameIdentity(current.identity, claim.identity) || current.owner.token !== claim.token ||
-    current.owner.leaseToken !== claim.leaseToken) {
-    fail("WORKSPACE_LEASE_INVALID", "mutation claim ownership changed");
-  }
-  const quarantine = resolve(dirname(claim.path), `released-mutation-${claim.token}`);
-  try {
-    await rename(claim.path, quarantine);
-  } catch {
-    fail("WORKSPACE_LEASE_INVALID", "mutation claim release was not exclusive");
-  }
-  const moved = await lstat(quarantine);
-  if (!sameIdentity(moved, claim.identity) || !moved.isFile() || moved.isSymbolicLink() || moved.nlink !== 1) {
-    fail("WORKSPACE_LEASE_INVALID", "released mutation claim identity changed");
-  }
-  await rm(quarantine);
-}
-
-async function observeLease(leasePath: string, workspaceRoot: string): Promise<LeaseObservation> {
-  let directory;
-  try {
-    directory = await lstat(leasePath);
-  } catch (error) {
-    fail("WORKSPACE_LEASE_INVALID", `${leasePath}: ${String((error as { code?: string }).code ?? error)}`);
-  }
-  if (directory.isSymbolicLink() || !directory.isDirectory()) {
-    fail("WORKSPACE_LEASE_INVALID", "lease path must be a real directory");
-  }
-  await boundDirectory(leasePath, workspaceRoot);
-  const ownerPath = resolve(leasePath, "owner.json");
-  let ownerBefore;
-  try {
-    ownerBefore = await lstat(ownerPath);
-  } catch (error) {
-    if ((error as { code?: string }).code === "ENOENT") {
-      return {
-        directoryIdentity: { dev: directory.dev, ino: directory.ino },
-        directoryModifiedMilliseconds: directory.mtimeMs,
-        owner: null,
-        ownerIdentity: null,
-      };
-    }
-    fail("WORKSPACE_LEASE_INVALID", String(error));
-  }
-  if (ownerBefore.isSymbolicLink() || !ownerBefore.isFile() || ownerBefore.nlink !== 1) {
-    fail("WORKSPACE_LEASE_INVALID", "lease owner must be a single-link regular file");
-  }
-  let owner: JsonValue;
-  try {
-    owner = assertCanonicalJson((await boundFile(ownerPath, 16_384)).toString("utf8"));
-  } catch (error) {
-    fail("WORKSPACE_LEASE_INVALID", String(error));
-  }
-  const ownerAfter = await lstat(ownerPath);
-  if (!sameIdentity(ownerBefore, ownerAfter) || ownerAfter.nlink !== 1 || !ownerAfter.isFile()) {
-    fail("WORKSPACE_LEASE_INVALID", "lease owner identity changed");
-  }
-  exactFields(owner, ["schemaVersion", "token", "pid", "acquiredAt", "expiresAtNanoseconds"], "WORKSPACE_LEASE_INVALID", "lease owner");
-  if (owner.schemaVersion !== "tcrn.workspace-lease.v1" || typeof owner.token !== "string" || !/^[a-f0-9]{48}$/u.test(owner.token) ||
-    typeof owner.pid !== "number" || !Number.isSafeInteger(owner.pid) || typeof owner.acquiredAt !== "string" ||
-    typeof owner.expiresAtNanoseconds !== "string" || !/^[0-9]+$/u.test(owner.expiresAtNanoseconds)) {
-    fail("WORKSPACE_LEASE_INVALID", "lease owner fields are invalid");
-  }
-  try {
-    assertStrictInstant(owner.acquiredAt);
-  } catch (error) {
-    fail("WORKSPACE_LEASE_INVALID", String(error));
-  }
-  return {
-    directoryIdentity: { dev: directory.dev, ino: directory.ino },
-    directoryModifiedMilliseconds: directory.mtimeMs,
-    owner,
-    ownerIdentity: { dev: ownerAfter.dev, ino: ownerAfter.ino },
-  };
-}
-
-async function reclaimObservedLease(leasePath: string, workspaceRoot: string, observed: LeaseObservation, options: {
-  readonly afterLeaseQuarantineForTest?: (value: { readonly identity: FileIdentity; readonly entries: readonly string[] }) => Promise<void>;
-}): Promise<void> {
-  const directory = await lstat(leasePath).catch(() => fail("WORKSPACE_LOCKED", "lease changed before reclaim"));
-  if (!directory.isDirectory() || directory.isSymbolicLink() || !sameIdentity(directory, observed.directoryIdentity)) {
-    fail("WORKSPACE_LOCKED", "lease changed before reclaim");
-  }
-  const ownerPath = resolve(leasePath, "owner.json");
-  if (observed.ownerIdentity) {
-    const owner = await lstat(ownerPath).catch(() => fail("WORKSPACE_LOCKED", "lease owner changed before reclaim"));
-    if (!owner.isFile() || owner.isSymbolicLink() || owner.nlink !== 1 || !sameIdentity(owner, observed.ownerIdentity)) {
-      fail("WORKSPACE_LOCKED", "lease owner changed before reclaim");
-    }
-  } else {
-    try {
-      await lstat(ownerPath);
-      fail("WORKSPACE_LOCKED", "incomplete lease gained an owner before reclaim");
-    } catch (error) {
-      if (error instanceof WorkspaceError || (error as { code?: string }).code !== "ENOENT") {
-        throw error;
-      }
-    }
-  }
-  const suffix = observed.owner ? String(observed.owner.token) : `incomplete-${String(directory.dev)}-${String(directory.ino)}`;
-  const quarantine = controlPath(workspaceRoot, `stale-lease-${suffix}`);
-  try {
-    await rename(leasePath, quarantine);
-  } catch {
-    fail("WORKSPACE_LOCKED", "lease was concurrently replaced");
-  }
-  const moved = await lstat(quarantine);
-  if (!moved.isDirectory() || !sameIdentity(moved, observed.directoryIdentity)) {
-    fail("WORKSPACE_LEASE_INVALID", "quarantined lease identity changed");
-  }
-  const captured = Object.freeze({
-    identity: Object.freeze({ dev: observed.directoryIdentity.dev, ino: observed.directoryIdentity.ino }),
-    entries: Object.freeze([...await readdir(quarantine)]),
-  });
-  if (consumeQuarantineReplacementTestInstrumentation()) {
-    const attemptOwned = controlPath(workspaceRoot, "attempt-owned-quarantine-for-test");
-    await rename(quarantine, attemptOwned);
-    await mkdir(quarantine, { mode: 0o700 });
-    await writeFile(resolve(quarantine, "foreign-sentinel"), "foreign-survives", { mode: 0o600 });
-  }
-  const current = await lstat(quarantine).catch(() => fail("WORKSPACE_LEASE_INVALID", "quarantine disappeared before cleanup"));
-  if (!current.isDirectory() || current.isSymbolicLink() || !sameIdentity(current, observed.directoryIdentity)) {
-    fail("WORKSPACE_LEASE_INVALID", "quarantine changed before cleanup");
-  }
-  await rm(quarantine, { recursive: true, force: true });
-  await options.afterLeaseQuarantineForTest?.(captured);
-}
-
-// WSA-7: read-only view of the recovery claim, so an operator can obtain the token that
-// breakWorkspaceRecoveryClaim demands. Reports rather than throws: a malformed or unsafe
-// claim is exactly what the operator needs to be told about, so it becomes an observation
-// with a reason, not an exception. No mutation.
-async function observeRecoveryClaim(workspaceRoot: string, nowNanoseconds: bigint): Promise<Readonly<Record<string, JsonValue>> | null> {
-  const path = controlPath(workspaceRoot, "lease-recovery.claim");
-  // Absence is probed before parsing: parseRecoveryClaim wraps every failure, ENOENT
-  // included, into WORKSPACE_LEASE_INVALID, so "no claim" and "unsafe claim" are
-  // indistinguishable downstream of it.
-  if (await lstat(path).then(() => false).catch(() => true)) {
-    return null;
-  }
-  try {
-    const existing = await parseRecoveryClaim(path);
-    const pid = Number(existing.owner.pid);
-    const expired = BigInt(String(existing.owner.expiresAtNanoseconds)) <= nowNanoseconds;
-    const alive = processAlive(pid);
-    return {
-      token: String(existing.owner.token),
-      pid,
-      acquiredAt: String(existing.owner.acquiredAt),
-      expired,
-      processAlive: alive,
-      // The acquire path reclaims this automatically; only the pid-reuse wedge
-      // (expired but apparently alive) needs breakWorkspaceRecoveryClaim.
-      selfReclaiming: expired && !alive,
-    };
-  } catch (error) {
-    if (error instanceof WorkspaceError) {
-      return { unsafe: true, reasonCode: error.reasonCode, detail: error.message };
-    }
-    throw error;
-  }
-}
-
-// WSA-4: read-only lease report so an operator can see the wedge (an expired lease
-// whose pid was recycled by a live process, which the acquire path treats as
-// active). No mutation.
-export async function inspectWorkspaceLease(workspaceRootInput: string, options: { readonly now: string }): Promise<Readonly<Record<string, JsonValue>>> {
-  assertStrictInstant(options.now);
-  const nowNanoseconds = parseStrictInstant(options.now);
-  const workspaceRoot = await boundDirectory(workspaceRootInput);
-  // D10: lease-inspect is admitted at a vacated or foreign address. It emits no
-  // workspace content and cannot revive anything — it is pure diagnosis, and an
-  // operator legitimately needs to see a stale lease on a dead tree. lease-break,
-  // lease-recovery-break and lease acquisition are NOT admitted: each mutates the
-  // control tree at an address the design has declared dead.
-  await readMetadata(workspaceRoot, "any");
-  const recoveryClaim = await observeRecoveryClaim(workspaceRoot, nowNanoseconds);
-  const leasePath = controlPath(workspaceRoot, "lease");
-  let observed: LeaseObservation;
-  try {
-    observed = await observeLease(leasePath, workspaceRoot);
-  } catch (error) {
-    if (error instanceof WorkspaceError && error.reasonCode === "WORKSPACE_LEASE_INVALID") {
-      return { schemaVersion: "tcrn.workspace-lease-inspection.v1", reasonCode: "WORKSPACE_LEASE_OBSERVED", held: false, recoveryClaim };
-    }
-    throw error;
-  }
-  if (!observed.owner) {
-    return { schemaVersion: "tcrn.workspace-lease-inspection.v1", reasonCode: "WORKSPACE_LEASE_OBSERVED", held: false, recoveryClaim };
-  }
-  const pid = Number(observed.owner.pid);
-  return {
-    schemaVersion: "tcrn.workspace-lease-inspection.v1",
-    reasonCode: "WORKSPACE_LEASE_OBSERVED",
-    held: true,
-    token: String(observed.owner.token),
-    pid,
-    acquiredAt: String(observed.owner.acquiredAt),
-    expired: BigInt(String(observed.owner.expiresAtNanoseconds)) <= nowNanoseconds,
-    processAlive: processAlive(pid),
-    recoveryClaim,
-  };
-}
-
-// WSA-4: operator-attested break for the pid-reuse wedge. Bypasses the processAlive
-// check the acquire path uses, but requires the exact current owner token (proving
-// the operator inspected it) AND an already-expired lease — so a live or valid
-// lease can never be broken. Fails closed otherwise.
-export async function breakWorkspaceLease(workspaceRootInput: string, options: { readonly now: string; readonly ownerToken: string }): Promise<Readonly<Record<string, JsonValue>>> {
-  assertStrictInstant(options.now);
-  const nowNanoseconds = parseStrictInstant(options.now);
-  const workspaceRoot = await boundDirectory(workspaceRootInput);
-  await readMetadata(workspaceRoot);
-  const leasePath = controlPath(workspaceRoot, "lease");
-  const observed = await observeLease(leasePath, workspaceRoot);
-  if (!observed.owner) {
-    fail("WORKSPACE_LEASE_INVALID", "no lease owner to break");
-  }
-  if (observed.owner.token !== options.ownerToken) {
-    fail("WORKSPACE_LEASE_INVALID", "break requires the current lease owner token");
-  }
-  if (BigInt(String(observed.owner.expiresAtNanoseconds)) > nowNanoseconds) {
-    fail("WORKSPACE_LOCKED", "an unexpired lease cannot be broken");
-  }
-  await reclaimObservedLease(leasePath, workspaceRoot, observed, {});
-  return {
-    schemaVersion: "tcrn.workspace-lease-break.v1",
-    reasonCode: "WORKSPACE_LEASE_BROKEN",
-    token: String(observed.owner.token),
-    pid: Number(observed.owner.pid),
-  };
-}
-
-// WSA-7: the recovery-claim counterpart of breakWorkspaceLease, for the one wedge that
-// survives automatic reclaim. createRecoveryClaim reclaims a claim only when it has
-// expired AND its pid is dead; a recycled pid reads as alive, so an expired claim from a
-// long-dead writer can still wedge the Workspace. This verb bypasses the liveness probe
-// exactly as the lease break does, and demands the same proof of operator attention: the
-// exact current claim token, which is only obtainable by inspecting the claim. An
-// unexpired claim is never breakable, so a live recoverer cannot be stolen from.
-export async function breakWorkspaceRecoveryClaim(workspaceRootInput: string, options: { readonly now: string; readonly claimToken: string }): Promise<Readonly<Record<string, JsonValue>>> {
-  assertStrictInstant(options.now);
-  const nowNanoseconds = parseStrictInstant(options.now);
-  const workspaceRoot = await boundDirectory(workspaceRootInput);
-  await readMetadata(workspaceRoot);
-  const path = controlPath(workspaceRoot, "lease-recovery.claim");
-  // See observeRecoveryClaim: absence must be probed before parsing, which folds ENOENT
-  // into the same reason code as a genuinely unsafe claim.
-  if (await lstat(path).then(() => false).catch(() => true)) {
-    fail("WORKSPACE_LEASE_INVALID", "no recovery claim to break");
-  }
-  const existing = await parseRecoveryClaim(path);
-  if (existing.owner.token !== options.claimToken) {
-    fail("WORKSPACE_LEASE_INVALID", "break requires the current recovery claim token");
-  }
-  if (BigInt(String(existing.owner.expiresAtNanoseconds)) > nowNanoseconds) {
-    fail("WORKSPACE_LOCKED", "an unexpired recovery claim cannot be broken");
-  }
-  await reclaimStaleRecoveryClaim(workspaceRoot, path, existing);
-  return {
-    schemaVersion: "tcrn.workspace-recovery-claim-break.v1",
-    reasonCode: "WORKSPACE_RECOVERY_CLAIM_BROKEN",
-    token: String(existing.owner.token),
-    pid: Number(existing.owner.pid),
-  };
-}
-
-async function createLeaseOwner(
-  leasePath: string,
-  expectedDirectoryIdentity: FileIdentity,
-  now: string,
-  nowNanoseconds: bigint,
-  ttl: number,
-): Promise<string> {
-  const directoryBefore = await lstat(leasePath).catch(() => fail("WORKSPACE_LEASE_INVALID", "lease directory disappeared before owner creation"));
-  if (!directoryBefore.isDirectory() || directoryBefore.isSymbolicLink() || !sameIdentity(directoryBefore, expectedDirectoryIdentity)) {
-    fail("WORKSPACE_LEASE_INVALID", "lease owner parent is unsafe");
-  }
-  const token = randomBytes(24).toString("hex");
-  const ownerPath = resolve(leasePath, "owner.json");
-  let handle;
-  try {
-    handle = await open(ownerPath, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-    await handle.writeFile(canonicalJson({
-      schemaVersion: "tcrn.workspace-lease.v1",
-      token,
-      pid: process.pid,
-      acquiredAt: now,
-      expiresAtNanoseconds: (nowNanoseconds + BigInt(ttl) * 1_000_000n).toString(),
-    }));
-    await handle.sync();
-    const written = await handle.stat();
-    if (!written.isFile() || written.nlink !== 1) {
-      fail("WORKSPACE_LEASE_INVALID", "lease owner descriptor is unsafe");
-    }
-    await handle.close();
-    handle = undefined;
-    const directoryAfter = await lstat(leasePath);
-    const named = await lstat(ownerPath);
-    if (!sameIdentity(directoryBefore, directoryAfter) || !directoryAfter.isDirectory() ||
-      !named.isFile() || named.isSymbolicLink() || named.nlink !== 1 || !sameIdentity(written, named)) {
-      fail("WORKSPACE_LEASE_INVALID", "lease owner creation changed filesystem identity");
-    }
-    const directoryHandle = await open(leasePath, constants.O_RDONLY);
-    try {
-      await directoryHandle.sync();
-    } finally {
-      await directoryHandle.close();
-    }
-    return token;
-  } catch (error) {
-    await handle?.close();
-    if ((error as { code?: string }).code === "EEXIST") {
-      fail("WORKSPACE_LOCKED", "another writer created the lease owner first");
-    }
-    if (error instanceof WorkspaceError) {
-      throw error;
-    }
-    fail("WORKSPACE_LEASE_INVALID", String(error));
-  }
-}
-
-export async function acquireWorkspaceLease(workspaceRootInput: string, options: {
-  readonly now: string;
-  readonly ttlMilliseconds?: number;
-  readonly beforeClaimForTest?: () => Promise<void>;
-  readonly afterLeaseQuarantineForTest?: (value: { readonly identity: FileIdentity; readonly entries: readonly string[] }) => Promise<void>;
-  // Observation-only portability seam: the returned value is never used to
-  // authorize the real fresh lease directory.
-  readonly freshLeaseIdentityObservationForTest?: (identity: FileIdentity) => FileIdentity;
-  readonly afterFreshLeaseForTest?: (value: { readonly observedIdentity: FileIdentity; readonly freshIdentity: FileIdentity }) => Promise<void>;
-  readonly beforeLeaseOwnerForTest?: () => Promise<void>;
-  readonly crashAfterLeaseDirectoryForTest?: boolean;
-  // WSR-1 (D4): the relocation verbs need mutual exclusion at an address whose
-  // ledger state is not `live` — adopt on an ADOPTION_REQUIRED tree, abort on a
-  // VACATED one. They use the lease every other mutating verb uses rather than a
-  // new claim file, which would mint a fifth member of EXCLUDED_RELATIVE_PATHS and
-  // therefore a fifth thing the snapshot manifest is structurally blind to.
-  // Omitted means "live", so no existing caller changes.
-  readonly relocationAdmission?: WorkspaceAdmission;
-  // INC-074: migration-execute is the one governed path allowed to take the
-  // archive-side lease while it lays or removes the storage-home sentinel.
-  // Ordinary file-backed mutations keep the strict sentinel refusal below.
+export interface WorkspaceWriteLockOptions {
+  // INC-074: migration-execute is the one path allowed to write the archive side of a
+  // workspace whose storage-home sentinel says the chain lives elsewhere.
   readonly storageHomeAdmission?: "migration";
-}): Promise<WorkspaceLease> {
-  assertStrictInstant(options.now);
-  const nowNanoseconds = parseStrictInstant(options.now);
-  const workspaceRoot = await boundDirectory(workspaceRootInput);
-  // INC-074 storage-home gate: a workspace whose chain has migrated to Postgres
-  // carries a sentinel declaring where the truth lives. When this process is
-  // serving it via a file backend, the write door is closed: every mutating
-  // verb refuses WORKSPACE_STORAGE_RELOCATED instead of forking the chain the way
-  // ceremony.mjs did during the INIT-020 window. A sentinel that declares
-  // storage=file stays writable (rollback's declared home); read-only verbs are
-  // unaffected (archive forensics keep working, INC-083).
-  const overrideBackendKind = activeOverrideBackendKind();
-  if (overrideBackendKind !== "pg" && options.storageHomeAdmission !== "migration") {
+  // WSR-1: a write at an address whose relocation ledger is not `live`.
+  readonly relocationAdmission?: WorkspaceAdmission;
+}
+
+async function assertWritableWorkspace(workspaceRoot: string, options: WorkspaceWriteLockOptions): Promise<void> {
+  // INC-074 storage-home gate: a workspace whose chain has migrated to Postgres carries a
+  // sentinel declaring where the truth lives, and the file-side write door stays closed.
+  // Read-only verbs are unaffected (archive forensics keep working, INC-083).
+  if (activeOverrideBackendKind() !== "pg" && options.storageHomeAdmission !== "migration") {
     const home = await readStorageHomeDeclaration(workspaceRoot);
     if (home !== null && home.storage === "pg") {
-      // TCRN-CROSS-INC-275: PostgreSQL support removed. A workspace previously
-      // migrated to PG cannot be operated on.
+      // TCRN-CROSS-INC-275: PostgreSQL support removed. A workspace previously migrated
+      // to PG cannot be operated on.
       fail(
         "WORKSPACE_STORAGE_RELOCATED",
         `${workspaceRoot} was migrated to Postgres (storage-home: pg:${home.schema ?? "?"}); ` +
@@ -3662,140 +2977,33 @@ export async function acquireWorkspaceLease(workspaceRootInput: string, options:
     }
   }
   await readMetadata(workspaceRoot, options.relocationAdmission ?? "live");
-  const ttl = options.ttlMilliseconds ?? 30_000;
-  if (!Number.isSafeInteger(ttl) || ttl < 1_000 || ttl > 300_000) {
-    fail("WORKSPACE_LEASE_INVALID", "lease TTL must be 1-300 seconds");
-  }
-  const leasePath = controlPath(workspaceRoot, "lease");
-  let claim: RecoveryClaim | undefined;
+}
+
+// The lock is re-entrant within one async flow: a verb that holds it for a whole
+// read-append-follow-up sequence (the CLI does, so its before/after reads and the knowledge
+// rebind cannot interleave with another writer) calls write functions that take it again.
+const heldWriteLocks = new AsyncLocalStorage<ReadonlySet<string>>();
+
+/** Run `operation` as the only writer of the workspace, holding its write lock. */
+export async function withWorkspaceWriteLock<T>(
+  workspaceRootInput: string,
+  operation: (workspaceRoot: string) => Promise<T>,
+  options: WorkspaceWriteLockOptions = {},
+): Promise<T> {
+  const workspaceRoot = await boundDirectory(workspaceRootInput);
+  await assertWritableWorkspace(workspaceRoot, options);
+  const held = heldWriteLocks.getStore() ?? new Set<string>();
+  if (held.has(workspaceRoot)) return operation(workspaceRoot);
   try {
-    let created = false;
-    let leaseDirectoryIdentity: FileIdentity | undefined;
-    try {
-      await mkdir(leasePath, { mode: 0o700 });
-      created = true;
-    } catch (error) {
-      if ((error as { code?: string }).code !== "EEXIST") {
-        throw error;
-      }
+    return await withFileLock(
+      controlPath(workspaceRoot, WORKSPACE_WRITE_LOCK_FILE),
+      () => heldWriteLocks.run(new Set([...held, workspaceRoot]), () => operation(workspaceRoot)),
+    );
+  } catch (error) {
+    if (error instanceof FileLockError && error.reasonCode === "FILE_LOCK_TIMEOUT") {
+      fail("WORKSPACE_LOCKED", "another writer holds the workspace write lock");
     }
-    if (created) {
-      const createdDirectory = await lstat(leasePath);
-      if (!createdDirectory.isDirectory() || createdDirectory.isSymbolicLink()) {
-        fail("WORKSPACE_LEASE_INVALID", "new lease directory is unsafe");
-      }
-      leaseDirectoryIdentity = { dev: createdDirectory.dev, ino: createdDirectory.ino };
-      const claimPath = controlPath(workspaceRoot, "lease-recovery.claim");
-      try {
-        await lstat(claimPath);
-        await parseRecoveryClaim(claimPath);
-        fail("WORKSPACE_LOCKED", "lease creation overlaps an active recovery");
-      } catch (error) {
-        if (error instanceof WorkspaceError || (error as { code?: string }).code !== "ENOENT") {
-          throw error;
-        }
-      }
-    } else {
-      const initial = await observeLease(leasePath, workspaceRoot);
-      if (initial.owner) {
-        const expiresAtNanoseconds = BigInt(String(initial.owner.expiresAtNanoseconds));
-        const pid = Number(initial.owner.pid);
-        if (expiresAtNanoseconds > nowNanoseconds || processAlive(pid)) {
-          fail("WORKSPACE_LOCKED", "workspace already has an active writer");
-        }
-      } else {
-        // The lease-directory mtime is a real-clock timestamp; the creation grace
-        // is a liveness guard (is another process mid-creating this lease?), so it
-        // is measured against the real wall clock, not the injected event time —
-        // consistent with the real-system processAlive probe above. A negative or
-        // future elapsed is treated as within grace (fail-closed: do not stomp).
-        // This bounds the grace to ttl of real time, so a crashed dir-only lease
-        // becomes reclaimable rather than wedging when the injected event time
-        // predates the real directory mtime.
-        const age = Date.now() - initial.directoryModifiedMilliseconds;
-        if (age < ttl) {
-          fail("WORKSPACE_LOCKED", "incomplete lease is still within its creation grace period");
-        }
-      }
-      await options.beforeClaimForTest?.();
-      claim = await createRecoveryClaim(workspaceRoot, options.now, nowNanoseconds, ttl);
-      const observed = await observeLease(leasePath, workspaceRoot);
-      if (observed.owner) {
-        const expiresAtNanoseconds = BigInt(String(observed.owner.expiresAtNanoseconds));
-        const pid = Number(observed.owner.pid);
-        if (expiresAtNanoseconds > nowNanoseconds || processAlive(pid)) {
-          fail("WORKSPACE_LOCKED", "workspace gained an active writer before reclaim");
-        }
-      } else {
-        // Real-clock creation grace (see the first observation above): a crashed
-        // dir-only lease is reclaimable once ttl of real time has elapsed.
-        const age = Date.now() - observed.directoryModifiedMilliseconds;
-        if (age < ttl) {
-          fail("WORKSPACE_LOCKED", "incomplete lease changed within its creation grace period");
-        }
-      }
-      await reclaimObservedLease(leasePath, workspaceRoot, observed, options);
-      await mkdir(leasePath, { mode: 0o700 });
-      const freshDirectory = await lstat(leasePath);
-      if (!freshDirectory.isDirectory() || freshDirectory.isSymbolicLink()) {
-        fail("WORKSPACE_LEASE_INVALID", "recovered lease directory is unsafe");
-      }
-      leaseDirectoryIdentity = { dev: freshDirectory.dev, ino: freshDirectory.ino };
-      await options.afterFreshLeaseForTest?.({
-        observedIdentity: observed.directoryIdentity,
-        freshIdentity: options.freshLeaseIdentityObservationForTest?.(leaseDirectoryIdentity) ?? leaseDirectoryIdentity,
-      });
-    }
-    await boundDirectory(leasePath, workspaceRoot);
-    if (!leaseDirectoryIdentity) fail("WORKSPACE_LEASE_INVALID", "lease generation identity is unavailable");
-    if (options.crashAfterLeaseDirectoryForTest) {
-      fail("WORKSPACE_FAULT_INJECTED", "injected crash after lease directory creation");
-    }
-    await options.beforeLeaseOwnerForTest?.();
-    if (created) {
-      // A reclaim that started after this creator observed its fresh directory
-      // may have quarantined and replaced that directory, and a removed
-      // directory's dev/ino tuple can recur on the replacement (the filesystem
-      // may reuse the tuple), so directory identity alone cannot prove
-      // generation continuity here. An active recovery claim is the durable
-      // witness of such a reclaim: fail closed instead of completing an owner
-      // file inside a possibly-replaced lease generation.
-      const claimPath = controlPath(workspaceRoot, "lease-recovery.claim");
-      try {
-        await lstat(claimPath);
-        await parseRecoveryClaim(claimPath);
-        fail("WORKSPACE_LEASE_INVALID", "lease creation overlaps an active recovery");
-      } catch (error) {
-        if (error instanceof WorkspaceError || (error as { code?: string }).code !== "ENOENT") {
-          throw error;
-        }
-      }
-    }
-    const token = await createLeaseOwner(leasePath, leaseDirectoryIdentity, options.now, nowNanoseconds, ttl);
-    let released = false;
-    return {
-      workspaceRoot,
-      token,
-      acquiredAt: options.now,
-      // The `this` parameter is erased at run time; it only states what the
-      // method already relies on -- release is called as a member of the lease it
-      // was returned on, which is what assertLease re-verifies below. Without it
-      // `this` picks up the awaited return type's contextual union.
-      async release(this: WorkspaceLease): Promise<void> {
-        if (released) {
-          return;
-        }
-        await assertLease(workspaceRoot, this);
-        const quarantine = controlPath(workspaceRoot, `released-lease-${token}`);
-        await rename(leasePath, quarantine);
-        await rm(quarantine, { recursive: true, force: true });
-        released = true;
-      },
-    };
-  } finally {
-    if (claim) {
-      await releaseRecoveryClaim(workspaceRoot, claim);
-    }
+    throw error;
   }
 }
 
@@ -3848,15 +3056,6 @@ export async function measureWorkspaceChainAt(
 /** The control-tree paths the relocation verbs assert on. */
 export function workspaceControlPath(workspaceRoot: string, relativePath = ""): string {
   return controlPath(workspaceRoot, relativePath);
-}
-
-export async function withWorkspaceLease<T>(workspaceRoot: string, now: string, operation: (lease: WorkspaceLease) => Promise<T>): Promise<T> {
-  const lease = await acquireWorkspaceLease(workspaceRoot, { now });
-  try {
-    return await operation(lease);
-  } finally {
-    await lease.release();
-  }
 }
 
 export async function initializeWorkspace(options: {
@@ -4150,7 +3349,6 @@ function committedFrom(
 
 export async function appendEvents(
   workspaceRootInput: string,
-  lease: WorkspaceLease,
   buildDeltas: readonly ((state: WorkspaceState) => MutationDelta)[],
   options: WorkspaceMutationOptions,
 ): Promise<WorkspaceState> {
@@ -4161,20 +3359,15 @@ export async function appendEvents(
   if (buildDeltas.length === 0) {
     fail("WORKSPACE_INPUT_INVALID", "an append carries at least one event");
   }
-  const workspace = await resolveWorkspace(workspaceRootInput);
-  await assertLease(workspace.root, lease);
-  const claim = await createMutationClaim(workspace.root, lease);
-  try {
-    await options.afterMutationClaimForTest?.();
-    await assertLease(workspace.root, lease);
-    // WSA-1: the single full replay per mutation. Input validation runs against
-    // this claim-fresh state (via buildDelta), closing the entry-path TOCTOU gap.
-    // A batch replays once too -- it is one mutation, so it takes one lease, one
-    // claim, one replay, one concurrency decision and one clock reading.
+  const resolved = await resolveWorkspace(workspaceRootInput);
+  return withWorkspaceWriteLock(resolved.root, async () => {
+    await options.insideWriteLockForTest?.();
+    // WSA-1: the single full replay per mutation, read under the write lock, so the
+    // state every delta is built against is the latest one and nothing can land between
+    // this read and the append. A batch replays once too -- it is one mutation, so it
+    // takes one lock, one replay and one clock reading.
+    const workspace = await resolveWorkspace(resolved.root);
     const state = await materializeResolvedWorkspace(workspace);
-    if (!Number.isSafeInteger(options.expectedVersion) || options.expectedVersion !== state.version) {
-      fail("WORKSPACE_CAS_MISMATCH", `expected=${String(options.expectedVersion)} actual=${state.version}`);
-    }
     const streamId = workspaceStreamId(workspace.metadata);
     const appended: EventRecord[] = [];
     let current = state;
@@ -4343,13 +3536,30 @@ export async function appendEvents(
       };
     }
     return current;
-  } finally {
-    await releaseMutationClaim(workspace.root, lease, claim);
-  }
+  });
 }
 
-async function appendEvent(workspaceRootInput: string, lease: WorkspaceLease, buildDelta: (state: WorkspaceState) => MutationDelta, options: WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvents(workspaceRootInput, lease, [buildDelta], options);
+// TCRN-CROSS-STORY-467 R1: the records a write touched, for the receipt every mutating
+// verb returns: each event after `sinceVersion` contributes its record id (and a closed
+// conference its minutes id), in append order, without repeats.
+export function writtenRecordIds(state: WorkspaceState, sinceVersion: number): readonly string[] {
+  const ids: string[] = [];
+  for (const event of state.events) {
+    if (event.sequence <= sinceVersion || !isJsonObject(event.payload)) continue;
+    for (const key of ["record", "minutes"]) {
+      const value = event.payload[key];
+      if (!isJsonObject(value)) continue;
+      // A record names itself by id; a template admission by its registration id and a
+      // setting by its key, which is the identity its receipt reports as recordId.
+      const identity = [value.id, value.registrationId, value.key].find((candidate) => typeof candidate === "string");
+      if (typeof identity === "string" && !ids.includes(identity)) ids.push(identity);
+    }
+  }
+  return ids;
+}
+
+async function appendEvent(workspaceRootInput: string, buildDelta: (state: WorkspaceState) => MutationDelta, options: WorkspaceMutationOptions): Promise<WorkspaceState> {
+  return appendEvents(workspaceRootInput, [buildDelta], options);
 }
 
 function sortedProjects(records: readonly ProjectRecord[]): readonly ProjectRecord[] {
@@ -4372,13 +3582,13 @@ function workById(state: WorkspaceState, id: string): WorkRecord {
   return record;
 }
 
-export async function createProject(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function createProject(workspaceRoot: string, input: {
   readonly externalKey: string;
   readonly name: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
   const externalKey = canonicalExternalKey(input.externalKey);
   const id = deriveStableId("project", externalKey);
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     if (state.projects.some((record) => record.id === id)) {
       fail("WORKSPACE_INPUT_INVALID", `project ${id} already exists`);
     }
@@ -4395,11 +3605,11 @@ export async function createProject(workspaceRoot: string, lease: WorkspaceLease
   }, input);
 }
 
-export async function updateProject(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function updateProject(workspaceRoot: string, input: {
   readonly id: string;
   readonly name: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     const current = projectById(state, input.id);
     const record = validateProject(
       { ...current, name: input.name, revision: current.revision + 1, updatedAt: input.occurredAt },
@@ -4409,10 +3619,10 @@ export async function updateProject(workspaceRoot: string, lease: WorkspaceLease
   }, input);
 }
 
-export async function deleteProject(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function deleteProject(workspaceRoot: string, input: {
   readonly id: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     const current = projectById(state, input.id);
     if (state.work.some((record) => record.projectId === current.id && !record.tombstone)) {
       fail("WORKSPACE_INPUT_INVALID", `project ${current.id} still owns live work`);
@@ -4442,7 +3652,7 @@ export function createWorkDelta(input: {
   return (state) => createWorkReducerDelta(state, input);
 }
 
-export async function createWork(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function createWork(workspaceRoot: string, input: {
   readonly projectId: string;
   readonly externalKey: string;
   readonly kind: WorkKind;
@@ -4455,7 +3665,7 @@ export async function createWork(workspaceRoot: string, lease: WorkspaceLease, i
   readonly labels?: readonly string[];
   readonly templateAdmission?: unknown;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, lease, (state) => createWorkReducerDelta(state, input), input);
+  return appendEvent(workspaceRoot, (state) => createWorkReducerDelta(state, input), input);
 }
 
 function createWorkReducerDelta(state: WorkspaceState, input: {
@@ -4652,7 +3862,7 @@ export function transitionWorkDelta(input: { readonly id: string; readonly statu
   };
 }
 
-export async function transitionWork(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function transitionWork(workspaceRoot: string, input: {
   readonly id: string;
   readonly status: WorkStatus;
   readonly summary?: string | null;
@@ -4672,7 +3882,7 @@ export async function transitionWork(workspaceRoot: string, lease: WorkspaceLeas
     }
     evidenceSnapshot = telemetryEvidenceSnapshot(record);
   }
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     assertTransitionAdmission(state, input);
     return transitionWorkReducerDelta(state, { ...input, ...(evidenceSnapshot === undefined ? {} : { evidenceSnapshot }) });
   }, input);
@@ -4717,8 +3927,8 @@ export function annotateWorkDelta(input: WorkAnnotationInput): (state: Workspace
   return (state) => annotateWorkReducerDelta(state, input);
 }
 
-export async function annotateWork(workspaceRoot: string, lease: WorkspaceLease, input: WorkAnnotationInput & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, lease, (state) => annotateWorkReducerDelta(state, input), input);
+export async function annotateWork(workspaceRoot: string, input: WorkAnnotationInput & WorkspaceMutationOptions): Promise<WorkspaceState> {
+  return appendEvent(workspaceRoot, (state) => annotateWorkReducerDelta(state, input), input);
 }
 
 function annotateWorkReducerDelta(state: WorkspaceState, input: WorkAnnotationInput): MutationDelta {
@@ -4776,10 +3986,10 @@ function annotateWorkReducerDelta(state: WorkspaceState, input: WorkAnnotationIn
 }
 
 
-export async function deleteWork(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function deleteWork(workspaceRoot: string, input: {
   readonly id: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     const current = workById(state, input.id);
     const record: WorkRecord = { ...workFieldsForWrite(current), revision: current.revision + 1, updatedAt: input.occurredAt, tombstone: true };
     validateBoundTemplateWork(record, state.templates);
@@ -4794,10 +4004,10 @@ export async function deleteWork(workspaceRoot: string, lease: WorkspaceLease, i
 // by appendEvent, which treats the enable event as actor-mandatory), touches no
 // record graph, and is one-way — v1 defines no disable operation. Re-enabling an
 // already-attested workspace fails closed WORKSPACE_INPUT_INVALID.
-export async function enableActorAttestation(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function enableActorAttestation(workspaceRoot: string, input: {
   readonly actorId: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     if (state.attestationEnabledAtSequence !== null) {
       fail("WORKSPACE_INPUT_INVALID", "actor attestation is already enabled");
     }
@@ -4834,7 +4044,7 @@ function gateById(state: WorkspaceState, id: string): GateRecord {
 // validators (validator failures propagate verbatim for the CLI to surface),
 // and appends exactly one event through appendEvent and the shared SDC-2
 // payload constructor.
-export async function openConferenceInWorkspace(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function openConferenceInWorkspace(workspaceRoot: string, input: {
   readonly externalKey: string;
   readonly projectId: string;
   readonly type: ConferenceRequest["type"];
@@ -4844,7 +4054,7 @@ export async function openConferenceInWorkspace(workspaceRoot: string, lease: Wo
   readonly participantIds: readonly string[];
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
   const id = deriveStableId("conference", canonicalExternalKey(input.externalKey));
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     projectById(state, input.projectId);
     for (const workId of input.linkedWorkIds) {
       if (workById(state, workId).projectId !== input.projectId) {
@@ -4878,7 +4088,7 @@ export async function openConferenceInWorkspace(workspaceRoot: string, lease: Wo
   }, input);
 }
 
-export async function appendConferencePositionInWorkspace(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function appendConferencePositionInWorkspace(workspaceRoot: string, input: {
   readonly conferenceId: string;
   readonly externalKey: string;
   // WSE-3 correction: this is the position's author, which is a different thing from the
@@ -4894,7 +4104,7 @@ export async function appendConferencePositionInWorkspace(workspaceRoot: string,
   readonly evidenceIds: readonly string[];
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
   const id = deriveStableId("position", canonicalExternalKey(input.externalKey));
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     const conference = openConferenceById(state, input.conferenceId);
     if (state.conferencePositions.some((entry) => entry.id === id)) {
       fail("WORKSPACE_INPUT_INVALID", `conference position ${id} already exists`);
@@ -4938,7 +4148,7 @@ export async function appendConferencePositionInWorkspace(workspaceRoot: string,
   }, input);
 }
 
-export async function closeConferenceInWorkspace(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function closeConferenceInWorkspace(workspaceRoot: string, input: {
   readonly conferenceId: string;
   readonly minutesExternalKey: string;
   readonly summary: string;
@@ -4948,7 +4158,7 @@ export async function closeConferenceInWorkspace(workspaceRoot: string, lease: W
   readonly executionForm?: string | undefined;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
   const minutesId = deriveStableId("minutes", canonicalExternalKey(input.minutesExternalKey));
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     const conference = openConferenceById(state, input.conferenceId);
     if (state.conferenceMinutes.some((entry) => entry.id === minutesId)) {
       fail("WORKSPACE_INPUT_INVALID", `conference minutes ${minutesId} already exist`);
@@ -4999,7 +4209,7 @@ export async function closeConferenceInWorkspace(workspaceRoot: string, lease: W
 // INIT-027 S238. Custom personas are content records on the same governed
 // execution surface. Their ids are derived from names inside profile-store.ts;
 // callers provide the human name and the event carries the validated record.
-export async function setCustomPersonaInWorkspace(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function setCustomPersonaInWorkspace(workspaceRoot: string, input: {
   readonly name: unknown;
   readonly role: unknown;
   readonly jobTitle?: unknown;
@@ -5011,7 +4221,7 @@ export async function setCustomPersonaInWorkspace(workspaceRoot: string, lease: 
   readonly deliverables?: unknown;
   readonly successCriteria?: unknown;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     const applied = applyCustomPersonaSet(state.executionConfig, {
       name: input.name,
       role: input.role,
@@ -5034,37 +4244,37 @@ export async function setCustomPersonaInWorkspace(workspaceRoot: string, lease: 
   }, input);
 }
 
-export async function setModelPlanInWorkspace(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function setModelPlanInWorkspace(workspaceRoot: string, input: {
   readonly host: string; readonly name: string; readonly defaultModel: string; readonly defaultEffort?: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     const applied = applyModelPlanSetInExecutionConfig(state.executionConfig, { ...input, updatedAt: input.occurredAt });
     return { payload: buildEventPayload("execution.model-plan.set", applied.record as unknown as JsonValue), projects: state.projects, work: state.work, executionConfig: applied.state };
   }, input);
 }
 
-export async function assignModelPlanInWorkspace(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function assignModelPlanInWorkspace(workspaceRoot: string, input: {
   readonly host: string; readonly name: string; readonly persona: string; readonly model: string; readonly effort?: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     const applied = applyModelPlanAssignInExecutionConfig(state.executionConfig, { ...input, updatedAt: input.occurredAt });
     return { payload: buildEventPayload("execution.model-plan.assigned", { ...applied.record, persona: input.persona, model: input.model, ...(input.effort === undefined ? {} : { effort: input.effort }) } as unknown as JsonValue), projects: state.projects, work: state.work, executionConfig: applied.state };
   }, input);
 }
 
-export async function unassignModelPlanInWorkspace(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function unassignModelPlanInWorkspace(workspaceRoot: string, input: {
   readonly host: string; readonly name: string; readonly persona: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     const applied = applyModelPlanUnassignInExecutionConfig(state.executionConfig, { ...input, updatedAt: input.occurredAt });
     return { payload: buildEventPayload("execution.model-plan.unassigned", { ...applied.record, persona: input.persona } as unknown as JsonValue), projects: state.projects, work: state.work, executionConfig: applied.state };
   }, input);
 }
 
-export async function removeModelPlanInWorkspace(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function removeModelPlanInWorkspace(workspaceRoot: string, input: {
   readonly host: string; readonly name: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, lease, (state) => ({
+  return appendEvent(workspaceRoot, (state) => ({
     payload: buildEventPayload("execution.model-plan.removed", { host: input.host, name: input.name, updatedAt: input.occurredAt } as unknown as JsonValue),
     projects: state.projects,
     work: state.work,
@@ -5072,29 +4282,29 @@ export async function removeModelPlanInWorkspace(workspaceRoot: string, lease: W
   }), input);
 }
 
-export async function overridePersonaPresetInWorkspace(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function overridePersonaPresetInWorkspace(workspaceRoot: string, input: {
   readonly name: string; readonly fields: Readonly<Record<string, unknown>>;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     const applied = applyPersonaPresetOverrideInExecutionConfig(state.executionConfig, { ...input, updatedAt: input.occurredAt });
     return { payload: buildEventPayload(`${legacyPresetOperation}.override`, applied.record as unknown as JsonValue), projects: state.projects, work: state.work, executionConfig: applied.state };
   }, input);
 }
 
-export async function restorePersonaPresetInWorkspace(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function restorePersonaPresetInWorkspace(workspaceRoot: string, input: {
   readonly name: string; readonly field?: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     const field = input.field ?? "";
     const next = applyPersonaPresetRestoreInExecutionConfig(state.executionConfig, { name: input.name, field, updatedAt: input.occurredAt });
     return { payload: buildEventPayload(`${legacyPresetOperation}.restore`, { name: input.name, field, updatedAt: input.occurredAt } as unknown as JsonValue), projects: state.projects, work: state.work, executionConfig: next };
   }, input);
 }
 
-export async function removePersonaInWorkspace(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function removePersonaInWorkspace(workspaceRoot: string, input: {
   readonly name: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     const isPreset = state.executionConfig.personaTombstones.includes(input.name) || state.executionConfig.personas.every((persona) => persona.name !== input.name);
     if (isPreset) {
       return { payload: buildEventPayload(`${legacyPresetOperation}.removed`, { name: input.name, updatedAt: input.occurredAt } as unknown as JsonValue), projects: state.projects, work: state.work, executionConfig: applyPersonaPresetRemoveInExecutionConfig(state.executionConfig, { name: input.name }) };
@@ -5103,10 +4313,10 @@ export async function removePersonaInWorkspace(workspaceRoot: string, lease: Wor
   }, input);
 }
 
-export async function removeCustomPersonaInWorkspace(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function removeCustomPersonaInWorkspace(workspaceRoot: string, input: {
   readonly name: unknown;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, lease, (state) => ({
+  return appendEvent(workspaceRoot, (state) => ({
     payload: buildEventPayload("execution.persona.removed", {
       name: input.name as JsonValue,
       updatedAt: input.occurredAt,
@@ -5121,11 +4331,11 @@ export async function removeCustomPersonaInWorkspace(workspaceRoot: string, leas
 // moved" is one legible line, never a diff of a rewritten blob. Validation and
 // referential integrity run in the apply functions, against the claim-fresh
 // state, and the SAME functions run again on every replay.
-export async function setHostConfigurationInWorkspace(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function setHostConfigurationInWorkspace(workspaceRoot: string, input: {
   readonly host: string; readonly name: string; readonly model: string; readonly note: string | null;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
   assertExecutionHost(input.host);
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     const applied = applyHostConfigSet(state.executionConfig, {
       host: input.host as ExecutionHost,
       name: validateConfigurationName(input.name),
@@ -5142,11 +4352,11 @@ export async function setHostConfigurationInWorkspace(workspaceRoot: string, lea
   }, input);
 }
 
-export async function removeHostConfigurationInWorkspace(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function removeHostConfigurationInWorkspace(workspaceRoot: string, input: {
   readonly host: string; readonly name: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
   assertExecutionHost(input.host);
-  return appendEvent(workspaceRoot, lease, (state) => ({
+  return appendEvent(workspaceRoot, (state) => ({
     payload: buildEventPayload("execution.configuration.removed", {
       host: input.host, name: input.name, updatedAt: input.occurredAt,
     } as unknown as JsonValue),
@@ -5155,11 +4365,11 @@ export async function removeHostConfigurationInWorkspace(workspaceRoot: string, 
   }), input);
 }
 
-export async function setHostDefaultInWorkspace(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function setHostDefaultInWorkspace(workspaceRoot: string, input: {
   readonly host: string; readonly configurationName: string | null;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
   assertExecutionHost(input.host);
-  return appendEvent(workspaceRoot, lease, (state) => ({
+  return appendEvent(workspaceRoot, (state) => ({
     payload: buildEventPayload("execution.default.set", {
       host: input.host, configurationName: input.configurationName, updatedAt: input.occurredAt,
     } as unknown as JsonValue),
@@ -5172,11 +4382,11 @@ export async function setHostDefaultInWorkspace(workspaceRoot: string, lease: Wo
   }), input);
 }
 
-export async function setPersonaBindingInWorkspace(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function setPersonaBindingInWorkspace(workspaceRoot: string, input: {
   readonly profileId: string; readonly host: string; readonly configurationName: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
   assertExecutionHost(input.host);
-  return appendEvent(workspaceRoot, lease, (state) => ({
+  return appendEvent(workspaceRoot, (state) => ({
     payload: buildEventPayload("execution.binding.set", {
       profileId: input.profileId, host: input.host, configurationName: input.configurationName, updatedAt: input.occurredAt,
     } as unknown as JsonValue),
@@ -5188,11 +4398,11 @@ export async function setPersonaBindingInWorkspace(workspaceRoot: string, lease:
   }), input);
 }
 
-export async function removePersonaBindingInWorkspace(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function removePersonaBindingInWorkspace(workspaceRoot: string, input: {
   readonly profileId: string; readonly host: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
   assertExecutionHost(input.host);
-  return appendEvent(workspaceRoot, lease, (state) => ({
+  return appendEvent(workspaceRoot, (state) => ({
     payload: buildEventPayload("execution.binding.removed", {
       profileId: input.profileId, host: input.host, updatedAt: input.occurredAt,
     } as unknown as JsonValue),
@@ -5201,10 +4411,10 @@ export async function removePersonaBindingInWorkspace(workspaceRoot: string, lea
   }), input);
 }
 
-export async function cancelConferenceInWorkspace(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function cancelConferenceInWorkspace(workspaceRoot: string, input: {
   readonly conferenceId: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     const conference = openConferenceById(state, input.conferenceId);
     const record = validateConferenceRequest({ ...conference, status: "cancelled", revision: conference.revision + 1, updatedAt: input.occurredAt });
     return {
@@ -5216,7 +4426,7 @@ export async function cancelConferenceInWorkspace(workspaceRoot: string, lease: 
   }, input);
 }
 
-export async function createGateInWorkspace(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function createGateInWorkspace(workspaceRoot: string, input: {
   readonly externalKey: string;
   readonly projectId: string;
   readonly workId: string | null;
@@ -5224,7 +4434,7 @@ export async function createGateInWorkspace(workspaceRoot: string, lease: Worksp
   readonly outcomeClass: GateRecord["outcomeClass"];
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
   const id = deriveStableId("gate", canonicalExternalKey(input.externalKey));
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     projectById(state, input.projectId);
     if (input.workId !== null && workById(state, input.workId).projectId !== input.projectId) {
       fail("WORKSPACE_INPUT_INVALID", `work ${input.workId} is outside project ${input.projectId}`);
@@ -5254,13 +4464,13 @@ export async function createGateInWorkspace(workspaceRoot: string, lease: Worksp
   }, input);
 }
 
-export async function transitionGateInWorkspace(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function transitionGateInWorkspace(workspaceRoot: string, input: {
   readonly id: string;
   readonly status: GateRecord["status"];
   readonly minutesLocator?: string;
   readonly identityAuthority?: GateIdentityAuthorityContext;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     const current = gateById(state, input.id);
     // WSD-4: walk the gate lifecycle graph (satisfied is terminal), and require a
     // resolving conference-minutes locator to reach satisfied — persisting it in
@@ -5329,10 +4539,10 @@ export async function transitionGateInWorkspace(workspaceRoot: string, lease: Wo
   }, input);
 }
 
-export async function deleteGateInWorkspace(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function deleteGateInWorkspace(workspaceRoot: string, input: {
   readonly id: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     const current = gateById(state, input.id);
     const record = validateGateRecord({ ...current, revision: current.revision + 1, updatedAt: input.occurredAt, tombstone: true });
     return {
@@ -5348,13 +4558,13 @@ export async function deleteGateInWorkspace(workspaceRoot: string, lease: Worksp
 // records its digest, version, owner, and schema in the workspace chain. The
 // reducer derives the extension registry from these records; callers cannot
 // smuggle a required template extension in through a work payload alone.
-export async function admitTemplateInWorkspace(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function admitTemplateInWorkspace(workspaceRoot: string, input: {
   readonly template: unknown;
   readonly ownerId: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
   const receipt = admitTemplate(input.template, { ownerId: input.ownerId, admittedAt: input.occurredAt });
   const record = createTemplateAdmissionRecord(input.template, receipt);
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     if (state.templates.some((entry) => entry.template.id === record.template.id && entry.template.version === record.template.version)) {
       throw new TemplateAdmissionError("TEMPLATE_DUPLICATE", `${record.template.id}@${record.template.version}`);
     }
@@ -5371,11 +4581,11 @@ export async function admitTemplateInWorkspace(workspaceRoot: string, lease: Wor
 // INIT-022 S213: settings are a bounded workspace_configuration overlay, not an
 // ungoverned JSON sidecar. Each write is an append-only event and the replay arm
 // above enforces the same key, layer, revision, and value contract.
-export async function setWorkspaceSetting(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function setWorkspaceSetting(workspaceRoot: string, input: {
   readonly key: string;
   readonly value: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     if (input.key === "execution.claudeCodeSubagentPlan" || input.key === "execution.codexSubagentPlan") {
       const host = input.key === "execution.claudeCodeSubagentPlan" ? "claude-code" : "codex";
       if (!state.executionConfig.modelPlans.some((plan) => plan.host === host && plan.name === input.value)) {
@@ -5402,10 +4612,10 @@ export async function setWorkspaceSetting(workspaceRoot: string, lease: Workspac
   }, input);
 }
 
-export async function removeWorkspaceSetting(workspaceRoot: string, lease: WorkspaceLease, input: {
+export async function removeWorkspaceSetting(workspaceRoot: string, input: {
   readonly key: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, lease, (state) => {
+  return appendEvent(workspaceRoot, (state) => {
     const current = state.settings.find((record) => record.key === input.key);
     if (current === undefined) fail("WORKSPACE_INPUT_INVALID", `setting ${input.key} is not set`);
     return {
@@ -5417,17 +4627,21 @@ export async function removeWorkspaceSetting(workspaceRoot: string, lease: Works
   }, input);
 }
 
-export async function rebuildWorkspaceViews(workspaceRoot: string, lease: WorkspaceLease): Promise<WorkspaceState> {
-  const resolved = await boundDirectory(workspaceRoot);
-  await assertLease(resolved, lease);
+async function rebuildViewsHoldingLock(resolved: string): Promise<WorkspaceState> {
   const state = await materializeWorkspace(resolved);
   await writeViews(resolved, state);
   return state;
 }
 
-export async function recoverWorkspace(workspaceRoot: string, lease: WorkspaceLease): Promise<WorkspaceState> {
-  const resolved = await boundDirectory(workspaceRoot);
-  await assertLease(resolved, lease);
+export async function rebuildWorkspaceViews(workspaceRoot: string): Promise<WorkspaceState> {
+  return withWorkspaceWriteLock(workspaceRoot, (resolved) => rebuildViewsHoldingLock(resolved));
+}
+
+export async function recoverWorkspace(workspaceRoot: string): Promise<WorkspaceState> {
+  return withWorkspaceWriteLock(workspaceRoot, (resolved) => recoverHoldingLock(resolved));
+}
+
+async function recoverHoldingLock(resolved: string): Promise<WorkspaceState> {
   const backend = backendFor(resolved);
   for (const directoryName of ["events", "views", WORKSPACE_REPLAY_SNAPSHOT_DIRECTORY]) {
     let entries: readonly StorageDirectoryEntry[];
@@ -5443,7 +4657,7 @@ export async function recoverWorkspace(workspaceRoot: string, lease: WorkspaceLe
       }
     }
   }
-  return rebuildWorkspaceViews(resolved, lease);
+  return rebuildViewsHoldingLock(resolved);
 }
 
 export async function exportWorkspace(workspaceRoot: string): Promise<string> {
@@ -5664,10 +4878,6 @@ async function readStorageMigrationMarker(workspaceRoot: string): Promise<Storag
   return marker as StorageMigrationMarker;
 }
 
-function storageMigrationNow(): string {
-  return new Date().toISOString().replace(/\.\d{3}Z$/u, "Z");
-}
-
 async function removeControlFiles(backend: StorageBackend, directory: string, names: readonly string[]): Promise<void> {
   for (const name of names) {
     await backend.removeControlFile(`${directory}/${name}`);
@@ -5848,7 +5058,7 @@ export async function migrateWorkspaceStorage(workspaceRootInput: string): Promi
   if (existingMarker !== null) {
     fail("WORKSPACE_STORAGE_MIGRATION_IN_PROGRESS", existingMarker.workspaceId);
   }
-  const lease = await acquireWorkspaceLease(root, { now: storageMigrationNow() });
+  const lease = await acquireFileLock(controlPath(root, WORKSPACE_WRITE_LOCK_FILE));
   try {
     const workspace = await resolveWorkspace(root);
     const before = await materializeResolvedWorkspace(workspace);
@@ -5921,7 +5131,7 @@ export async function rollbackWorkspaceStorageMigration(workspaceRootInput: stri
   const root = await boundDirectory(workspaceRootInput);
   const marker = await readStorageMigrationMarker(root);
   if (marker === null) fail("WORKSPACE_STORAGE_MIGRATION_NOT_APPLIED", "no storage migration backup is present");
-  const lease = await acquireWorkspaceLease(root, { now: storageMigrationNow() });
+  const lease = await acquireFileLock(controlPath(root, WORKSPACE_WRITE_LOCK_FILE));
   try {
     const backend = new FileBackend(root);
     const eventEntries = await backend.listControlEntries("events");

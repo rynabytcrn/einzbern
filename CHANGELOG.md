@@ -86,6 +86,11 @@ display name live in `device.json` in the device directory, created on first use
 reinstall that loses the directory gets a new id. Library streams and their events take
 identities derived from the library and device (`einzbern.stream-identity.v1`,
 `einzbern.event-identity.v1`), and `validateStreamChain` checks one stream link by link.
+A library (`.ether`) has exactly seven root entries: `manifest.json` (library id, format
+version, minimum engine version, project hint), `akasha/`, `crest/`, `config/`,
+`artifacts/`, a `README.md` that explains every name and carries the alias table, and a
+`.gitignore` of `*`, so a library inside a Git working tree never shows in `git status`
+(TCRN-CROSS-STORY-469 R1, R6; `packages/core/spec/ether-library-v1.md`).
 
 ## 1.2.1 — patch candidate
 

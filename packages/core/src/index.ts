@@ -634,6 +634,7 @@ export {
   isLegacySchemaVersion,
   legacyInstalledEnginePath,
   renderLegacyAliasTable,
+  renderLibraryReadme,
 } from "./names.js";
 export type { BrandEntry, DirectoryGlossaryEntry, LegacyNameEntry } from "./names.js";
 // TCRN-CROSS-STORY-466 R2 / STORY-467 R4: the old workspace layout, opened read-only for
@@ -693,3 +694,20 @@ export {
   validateDeviceIdentity,
 } from "./device-identity.js";
 export type { DeviceIdentity, DeviceIdentityReasonCode, ReadOrCreateDeviceOptions } from "./device-identity.js";
+// TCRN-CROSS-STORY-469 R1, R6: a library's root, its manifest and README.
+export {
+  LIBRARY_FILES,
+  LIBRARY_FORMAT_VERSION,
+  LIBRARY_GITIGNORE,
+  LIBRARY_ID_PATTERN,
+  LIBRARY_MANIFEST_SCHEMA_VERSION,
+  LIBRARY_REASON_CODES,
+  LIBRARY_ROOT_ENTRIES,
+  LibraryError,
+  createLibrary,
+  hasLibraryManifest,
+  newLibraryId,
+  openLibrary,
+  validateLibraryManifest,
+} from "./ether-library.js";
+export type { CreateLibraryOptions, Library, LibraryManifest, LibraryProjectHint, LibraryReasonCode } from "./ether-library.js";

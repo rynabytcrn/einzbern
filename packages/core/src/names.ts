@@ -150,6 +150,39 @@ export function renderLegacyAliasTable(): readonly string[] {
   ];
 }
 
+// TCRN-CROSS-STORY-466 R5, STORY-469 R1: the README.md every new library carries, for a reader
+// who meets these names for the first time: what the library is, what each name means, and the
+// old names beside the new ones (the same alias table CHANGELOG.md and the glossary carry).
+export function renderLibraryReadme(): string {
+  const brands = Object.values(BRAND).map((entry) => `| ${entry.name} | ${entry.plain} |`);
+  const directories = DIRECTORY_GLOSSARY.map((entry) => `| \`${entry.name}\` | ${entry.plain} |`);
+  return [
+    `# ${BRAND.engine.name} 库（${DIRECTORY.library}）`,
+    "",
+    `这个目录是一个 ${BRAND.engine.name} 库：一个项目的工单、纪要、知识与产物都记在这里。每台设备只追加 \`${DIRECTORY.events}/\` 下以自己设备 id 命名的子目录，读取时合并全部设备的记录，所以放进云盘同步也不会出现两台设备改同一个文件。`,
+    "",
+    `这里的文件只由引擎写入，请不要手工编辑；要查看或修改记录，用 \`${BRAND.engine.id}\` 命令或 ${BRAND.portal.name} 门户。`,
+    "",
+    "## 名词解释",
+    "",
+    "| 名字 | 说明 |",
+    "| --- | --- |",
+    ...brands,
+    ...directories,
+    `| \`${DIRECTORY.library}/README.md\` | 本说明。 |`,
+    `| \`${DIRECTORY.library}/.gitignore\` | 内容为 \`*\`：库放在 Git 仓里时，git status 看不到它。 |`,
+    "",
+    "## 旧名对照",
+    "",
+    "早期版本里这些东西叫别的名字；旧名只用于读懂旧文档与旧记录。",
+    "",
+    ALIAS_TABLE_START_MARKER,
+    ...renderLegacyAliasTable(),
+    ALIAS_TABLE_END_MARKER,
+    "",
+  ].join("\n");
+}
+
 // The legacy engine entry point inside an old installation, spelled from the aliases so
 // no caller has to keep the literal.
 export function legacyInstalledEnginePath(home: string): string {

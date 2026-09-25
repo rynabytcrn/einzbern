@@ -81,7 +81,8 @@ fail with `WORKSPACE_LEASE_INVALID`. This serializer shares the cooperative P1
 Option-B boundary and does not claim safety from hostile concurrent replacement
 of ancestor path components.
 
-Events use the accepted `tcrn.event.v1` hash contract. Segments are contiguous,
+Events use the accepted event hash contract: events already written keep the legacy
+`tcrn.event.v1` namespace, and every new event is written as `einzbern.event.v1`. Segments are contiguous,
 canonical JSON arrays with a frozen per-Workspace event limit. Missing,
 truncated, replayed, reordered, malformed, or hash-corrupt events fail closed;
 recovery never discards authoritative corruption. A crash after an event commit

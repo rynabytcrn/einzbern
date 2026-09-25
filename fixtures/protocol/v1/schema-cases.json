@@ -278,6 +278,19 @@
           "payloadHash": "c686afabbf12d6ad9b5605fd8f88831a1a654bce6085f131eb459308c73162be",
           "eventHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "unexpected": true
+        },
+        {
+          "schemaVersion": "other.event.v1",
+          "id": "event:alpha-1",
+          "streamId": "stream:alpha",
+          "sequence": 1,
+          "occurredAt": "2026-07-11T01:00:00Z",
+          "priorHash": null,
+          "payload": {
+            "revision": 1
+          },
+          "payloadHash": "c686afabbf12d6ad9b5605fd8f88831a1a654bce6085f131eb459308c73162be",
+          "eventHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         }
       ]
     },

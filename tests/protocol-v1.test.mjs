@@ -19,6 +19,8 @@ import {
   compareCanonicalText,
   createEvent,
   deriveStableId,
+  EVENT_SCHEMA_VERSION,
+  LEGACY_EVENT_SCHEMA_VERSION,
   parseStrictInstant,
   validateCompatibility,
   validateContextDocument,
@@ -97,15 +99,37 @@ test("owner-acceptance is a non-terminal work status with an explicit return pat
 });
 
 test("event integrity vectors reject replay and corruption", async () => {
+  // The frozen vector is the legacy namespace: tcrn.event.v1 hashes never change.
   const vector = await fixture("positive/event-chain.json");
-  const first = createEvent(vector.inputs[0]);
-  const second = createEvent(vector.inputs[1]);
+  const first = createEvent(vector.inputs[0], LEGACY_EVENT_SCHEMA_VERSION);
+  const second = createEvent(vector.inputs[1], LEGACY_EVENT_SCHEMA_VERSION);
+  assert.equal(first.schemaVersion, "tcrn.event.v1");
   assert.deepEqual([first.payloadHash, second.payloadHash], vector.expectedPayloadHashes);
   assert.deepEqual([first.eventHash, second.eventHash], vector.expectedEventHashes);
   assert.deepEqual(validateEventChain([second, first]).map((event) => event.id), [first.id, second.id]);
   expectReason("EVENT_REPLAY", () => validateEventChain([first, first]));
   expectReason("EVENT_CHAIN_CORRUPT", () => validateEventChain([first, { ...second, payloadHash: "0".repeat(64) }]));
   expectReason("EVENT_CHAIN_CORRUPT", () => validateEventChain([first, { ...second, streamId: "stream:other" }]));
+});
+
+test("466-R2: new events are written in the einzbern namespace and a chain may run from legacy into it", async () => {
+  const vector = await fixture("positive/event-chain-einzbern.json");
+  assert.equal(EVENT_SCHEMA_VERSION, "einzbern.event.v1");
+  const first = createEvent(vector.inputs[0]);
+  const second = createEvent(vector.inputs[1]);
+  assert.deepEqual([first.schemaVersion, second.schemaVersion], [vector.eventSchemaVersion, vector.eventSchemaVersion]);
+  assert.deepEqual([first.payloadHash, second.payloadHash], vector.expectedPayloadHashes);
+  assert.deepEqual([first.eventHash, second.eventHash], vector.expectedEventHashes);
+  assert.deepEqual(validateEventChain([second, first]).map((event) => event.schemaVersion), ["einzbern.event.v1", "einzbern.event.v1"]);
+  // The namespace is part of the hash basis: a relabelled event no longer verifies.
+  expectReason("EVENT_CHAIN_CORRUPT", () => validateEventChain([{ ...first, schemaVersion: LEGACY_EVENT_SCHEMA_VERSION }, second]));
+
+  const [legacyFirst, newSecond] = vector.mixed.inputs.map((input, index) => createEvent(input, vector.mixed.schemaVersions[index]));
+  assert.deepEqual([legacyFirst.eventHash, newSecond.eventHash], vector.mixed.expectedEventHashes);
+  assert.equal(newSecond.priorHash, legacyFirst.eventHash);
+  assert.deepEqual(validateEventChain([legacyFirst, newSecond]).map((event) => event.schemaVersion), vector.mixed.schemaVersions);
+  expectReason("RECORD_MALFORMED", () => createEvent(vector.inputs[0], "other.event.v1"));
+  expectReason("RECORD_MALFORMED", () => validateEventChain([{ ...legacyFirst, schemaVersion: "other.event.v1" }]));
 });
 
 test("knowledge, context, exchange, compatibility, profile trust, receipt, and registration fixtures validate", async () => {

@@ -139,8 +139,21 @@ export interface WorkRecord {
   readonly summary?: string | null;
 }
 
+// TCRN-CROSS-STORY-466 R2 (MIN-227 D2): events already written keep `tcrn.event.v1` byte for
+// byte and are read as the legacy namespace; every event written from now on carries
+// `einzbern.event.v1`. The hash basis of each event is built with the event's own
+// schemaVersion, so one chain may hold both and its priorHash links run straight through.
+export const EVENT_SCHEMA_VERSION = "einzbern.event.v1" as const;
+export const LEGACY_EVENT_SCHEMA_VERSION = "tcrn.event.v1" as const;
+export type EventSchemaVersion = typeof EVENT_SCHEMA_VERSION | typeof LEGACY_EVENT_SCHEMA_VERSION;
+export const EVENT_SCHEMA_VERSIONS: readonly EventSchemaVersion[] = Object.freeze([LEGACY_EVENT_SCHEMA_VERSION, EVENT_SCHEMA_VERSION]);
+
+export function isEventSchemaVersion(value: unknown): value is EventSchemaVersion {
+  return value === EVENT_SCHEMA_VERSION || value === LEGACY_EVENT_SCHEMA_VERSION;
+}
+
 export interface EventRecord {
-  readonly schemaVersion: "tcrn.event.v1";
+  readonly schemaVersion: EventSchemaVersion;
   readonly id: string;
   readonly streamId: string;
   readonly sequence: number;
@@ -878,8 +891,14 @@ export function assertWorkTransition(from: unknown, to: unknown): void {
   }
 }
 
-export function createEvent(input: Omit<EventRecord, "eventHash" | "payloadHash" | "schemaVersion">): EventRecord {
+export function createEvent(
+  input: Omit<EventRecord, "eventHash" | "payloadHash" | "schemaVersion">,
+  schemaVersion: EventSchemaVersion = EVENT_SCHEMA_VERSION,
+): EventRecord {
   assertExactFields(input, ["id", "streamId", "sequence", "occurredAt", "priorHash", "payload"], "Event inputs");
+  if (!isEventSchemaVersion(schemaVersion)) {
+    fail("RECORD_MALFORMED", "Event schemaVersion");
+  }
   assertProtocolId(input.id);
   assertProtocolId(input.streamId);
   assertStrictInstant(input.occurredAt);
@@ -894,7 +913,7 @@ export function createEvent(input: Omit<EventRecord, "eventHash" | "payloadHash"
   }
   const payloadHash = canonicalSha256(input.payload);
   const basis = {
-    schemaVersion: "tcrn.event.v1" as const,
+    schemaVersion,
     id: input.id,
     streamId: input.streamId,
     sequence: input.sequence,
@@ -927,7 +946,7 @@ export function validateEventChain(events: readonly EventRecord[]): readonly Eve
       ["schemaVersion", "id", "streamId", "sequence", "occurredAt", "priorHash", "payload", "payloadHash", "eventHash"],
       "Event records",
     );
-    if (event.schemaVersion !== "tcrn.event.v1" || typeof event.payloadHash !== "string" || typeof event.eventHash !== "string") {
+    if (!isEventSchemaVersion(event.schemaVersion) || typeof event.payloadHash !== "string" || typeof event.eventHash !== "string") {
       fail("RECORD_MALFORMED", String(event.id ?? "unknown"));
     }
     assertSha256(event.payloadHash);
@@ -939,7 +958,7 @@ export function validateEventChain(events: readonly EventRecord[]): readonly Eve
       occurredAt: event.occurredAt,
       priorHash: event.priorHash,
       payload: event.payload,
-    }));
+    }, event.schemaVersion));
   }
   const ordered = [...events].sort((left, right) => left.sequence - right.sequence || compareCanonicalText(left.id, right.id));
   const headStreamId = ordered[0]?.streamId;

@@ -600,7 +600,9 @@ test("a workspace with zero conference/gate events keeps pre-change golden view 
   assert.deepEqual((await readdir(viewsRoot)).sort(), ["STATUS.md", "index.json", "readback.json"], "extensions.json is absent");
   // Golden bytes. These were the pre-WSD-1 bytes until INC-198 re-derived both the
   // graph digest and the index payload, and TCRN-CROSS-STORY-363 re-derived them
-  // again when WorkRecord gained `summary`.
+  // again when WorkRecord gained `summary`. TCRN-CROSS-STORY-466 R2 moved the head event
+  // hash and the export digest once more: every event this writer creates is now in the
+  // einzbern.event.v1 namespace, and the namespace is part of each event hash basis.
   //
   // That re-derivation is the point of this fixture, not damage to it. The record
   // below is CREATED here, by the current writer, so it carries the new field and
@@ -642,13 +644,13 @@ test("a workspace with zero conference/gate events keeps pre-change golden view 
   );
   assert.equal(
     await readFile(join(viewsRoot, "readback.json"), "utf8"),
-    "{\"authority\":\"derived-rebuildable\",\"graphDigest\":\"29725f3ff695a77cea76f68bfc7244a0a56d1c7d07312d58633d56822c268ba7\",\"headEventHash\":\"f04b802ce70ed30e1a56025a349719efb4465cfe9e3a5f70f0c7b8a1ff508fcd\",\"projectCount\":1,\"schemaVersion\":\"tcrn.workspace-readback.v1\",\"version\":3,\"workCount\":1,\"workspaceId\":\"workspace:fefacf6fbd4eba98d40fdf99\"}\n",
+    "{\"authority\":\"derived-rebuildable\",\"graphDigest\":\"29725f3ff695a77cea76f68bfc7244a0a56d1c7d07312d58633d56822c268ba7\",\"headEventHash\":\"d14937f5be636f34317377432ca56a5c48519ddcea3978f12e8a941bcf5389a6\",\"projectCount\":1,\"schemaVersion\":\"tcrn.workspace-readback.v1\",\"version\":3,\"workCount\":1,\"workspaceId\":\"workspace:fefacf6fbd4eba98d40fdf99\"}\n",
   );
   const exported = await exportWorkspace(fixture.workspace);
   assert.equal(canonicalSha256(assertCanonicalJson(exported)).length, 64);
   assert.equal(
     (await import("node:crypto")).createHash("sha256").update(exported, "utf8").digest("hex"),
-    "e193db00f15fcb4032551358e0147e02b89cdc9f8a8bd5225f87e761437a5f86",
+    "7424d524f9d1d74cfa37231168c700187c29a23d0c722f02150e7b09fc9bc474",
     "export bytes match the recorded build",
   );
   assert.equal(exported.includes("conferences"), false, "no extension keys leak into legacy exports");

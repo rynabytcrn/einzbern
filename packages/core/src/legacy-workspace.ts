@@ -16,7 +16,7 @@ import { lstat, readdir, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 
-import { assertCanonicalJson, canonicalSha256, createEvent } from "../../protocol/src/index.js";
+import { assertCanonicalJson, canonicalSha256, createEvent, isEventSchemaVersion } from "../../protocol/src/index.js";
 import type { EventRecord, JsonValue } from "../../protocol/src/index.js";
 import { LEGACY_CONTROL_DIRECTORY, LEGACY_EVENTS_DIRECTORY } from "./names.js";
 import {
@@ -181,7 +181,9 @@ export function findLegacyChainBreak(workspace: LegacyWorkspace): ChainBreak | n
     if (fields.length !== EVENT_FIELDS.length || fields.some((field, position) => field !== EVENT_FIELDS[position])) {
       return broken("CHAIN_EVENT_CORRUPT", "event fields");
     }
-    if (event.schemaVersion !== "tcrn.event.v1") return broken("CHAIN_EVENT_CORRUPT", "schemaVersion");
+    // An old-layout chain written before EPIC-141 holds tcrn.event.v1 only; one the engine kept
+    // writing until the switch to libraries may continue in einzbern.event.v1.
+    if (!isEventSchemaVersion(event.schemaVersion)) return broken("CHAIN_EVENT_CORRUPT", "schemaVersion");
     if (event.sequence !== sequence) return broken("CHAIN_EVENT_CORRUPT", "sequence");
     if (event.streamId !== workspace.streamId || event.id !== legacyWorkspaceEventId(workspace.streamId, sequence)) {
       return broken("CHAIN_EVENT_CORRUPT", "identity");
@@ -195,7 +197,7 @@ export function findLegacyChainBreak(workspace: LegacyWorkspace): ChainBreak | n
         occurredAt: event.occurredAt,
         priorHash: event.priorHash,
         payload: event.payload,
-      });
+      }, event.schemaVersion);
     } catch {
       return broken("CHAIN_EVENT_CORRUPT", "envelope");
     }

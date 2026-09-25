@@ -43,7 +43,8 @@ it adds no schema and no engine hook.
 
 - Event references: each covered chain event is listed as a `sourceReferences`
   entry of the form `event:<eventHash>`, where `<eventHash>` is that event's
-  `tcrn.event.v1` `eventHash` (lowercase hex). The form is a stableId-safe,
+  `eventHash` (lowercase hex, in either event namespace: legacy `tcrn.event.v1` or
+  `einzbern.event.v1`). The form is a stableId-safe,
   redaction-stable string, so it satisfies the source-reference grammar
   knowledge-core already enforces — bounded, printable, sorted, unique, and left
   unchanged by artifact redaction — with no new grammar.

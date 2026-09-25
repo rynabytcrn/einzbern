@@ -32,6 +32,7 @@ import {
   compareCanonicalText,
   createEvent,
   deriveStableId,
+  EVENT_SCHEMA_VERSION,
   isWorkSummary,
   parseStrictInstant,
   validateEventChain,
@@ -1296,7 +1297,7 @@ function validateReplaySnapshotTail(events: readonly EventRecord[], snapshot: Re
         occurredAt: event.occurredAt,
         priorHash: event.priorHash,
         payload: event.payload,
-      });
+      }, event.schemaVersion);
       if (event.payloadHash !== expected.payloadHash || event.eventHash !== expected.eventHash || event.priorHash !== priorHash) {
         replaySnapshotFail(`tail event ${event.id} is not bound to the snapshot`);
       }
@@ -4223,6 +4224,8 @@ export async function appendEvents(
         payload = { ...(deltaPayload as Readonly<Record<string, JsonValue>>), actor: options.actorId };
       }
       phase = "event";
+      // TCRN-CROSS-STORY-466 R2: every event written from now on is in the einzbern namespace,
+      // and its priorHash links straight onto a legacy tcrn.event.v1 head.
       const event = createEvent({
         id: workspaceEventId(streamId, sequence),
         streamId,
@@ -4230,7 +4233,7 @@ export async function appendEvents(
         occurredAt: options.occurredAt,
         priorHash: current.headEventHash,
         payload,
-      });
+      }, EVENT_SCHEMA_VERSION);
       appended.push(event);
       current = committedFrom(current, delta, event, isEnableEvent, [...state.events, ...appended]);
       } catch (error) {

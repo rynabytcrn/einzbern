@@ -20,7 +20,10 @@
   ],
   "properties": {
     "schemaVersion": {
-      "const": "tcrn.event.v1"
+      "enum": [
+        "tcrn.event.v1",
+        "einzbern.event.v1"
+      ]
     },
     "id": {
       "$ref": "./protocol-common-v1.schema.json#/$defs/stableId"

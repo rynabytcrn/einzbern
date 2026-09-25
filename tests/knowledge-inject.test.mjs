@@ -4,7 +4,7 @@
 // in the runner; these tests hold the pure decision logic (gate, token extraction,
 // budget) without the network, so the harness stays green offline.
 //
-// INC-047: this test lives in the repository that OWNS the source (tcrn-workflow),
+// INC-047: this test lives in the repository that OWNS the source (the engine),
 // not as a sibling-repo import — a lone clone of either repo can run its own suite.
 
 import { test } from "node:test";
@@ -28,6 +28,7 @@ import {
   materializeWorkspace,
   readTelemetryRecords,
   transitionKnowledgePromotion,
+  LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
@@ -315,7 +316,7 @@ async function isolatedHookContainer(t, externalKey) {
     await lease.release();
   }
   await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
-  const storePath = join(workspace, ".tcrn-workflow", "knowledge", "store.json");
+  const storePath = join(workspace, LEGACY_CONTROL_DIRECTORY, "knowledge", "store.json");
   return { base, workspace, transient: join(partition, "transient"), storePath, storeBefore: readFileSync(storePath, "utf8") };
 }
 

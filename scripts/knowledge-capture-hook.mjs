@@ -31,7 +31,7 @@ import { resolveLastAssistantText } from "../tools/stop-pact/mode.mjs";
 
 const SCRIPT_DIRECTORY = dirname(fileURLToPath(import.meta.url));
 export const PLATFORM_ROOT = resolve(SCRIPT_DIRECTORY, "../../..");
-export const ENGINE_CLI = resolve(SCRIPT_DIRECTORY, "tcrn-workflow.mjs");
+export const ENGINE_CLI = resolve(SCRIPT_DIRECTORY, "einzbern.mjs");
 export const DEFAULT_PARTITION = "cross-project";
 export const DEFAULT_ROLE_SCOPE = "implementation";
 // The accountable owner of a card nobody typed. Overridable so a host registration can

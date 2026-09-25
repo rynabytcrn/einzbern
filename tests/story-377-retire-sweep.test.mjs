@@ -35,6 +35,7 @@ import {
   setWorkspaceSetting,
   sortWorkspaceSettings,
   validateWorkspace,
+  LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalJson, canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
 
@@ -88,7 +89,7 @@ async function fixture(t, externalKey, { aggregateBytes, workItem = false } = {}
     await lease.release();
   }
   await initializeKnowledgeStore(workspace);
-  return { base, workspace, workId, transient: join(base, "transient"), store: join(workspace, "." + "tcrn-workflow", "knowledge") };
+  return { base, workspace, workId, transient: join(base, "transient"), store: join(workspace, LEGACY_CONTROL_DIRECTORY, "knowledge") };
 }
 
 async function card(fx, externalKey, options = {}) {
@@ -557,7 +558,7 @@ async function readEveryWay(workspace) {
 
 // The newest replay snapshot as stored: its version and the keys of the settings it seeds.
 async function newestSnapshotSettings(fx) {
-  const directory = join(fx.workspace, "." + "tcrn-workflow", "snapshots");
+  const directory = join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "snapshots");
   const manifest = JSON.parse(await readFile(join(directory, "manifest.json"), "utf8"));
   const parts = await Promise.all(manifest.snapshotParts.map((part) => readFile(join(directory, part))));
   return { version: manifest.version, keys: JSON.parse(inflateSync(Buffer.concat(parts)).toString("utf8")).settings.map((entry) => entry.key) };

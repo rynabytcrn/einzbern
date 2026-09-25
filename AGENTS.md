@@ -1,4 +1,4 @@
-# AGENTS.md — TCRN Workflow agent entry
+# AGENTS.md — Einzbern agent entry
 
 This repository is the governance engine. `CONTRIBUTING.md` is the manual; this file is
 the canonical agent reference, and it covers one thing the manual does not: which instrument
@@ -43,7 +43,7 @@ ordering that a local one-liner cannot prove.
 This repository is not indexed by codegraph (the product repositories on this platform
 are). Its instruments are the command catalog and the test suite. The MCP facade that
 `v0.6.0` added and `v0.11.18` retired is gone from the tree; guidance naming
-`scripts/tcrn-workflow-mcp.mjs` is describing a file that no longer exists, and the CLI
+the MCP facade script is describing a file that no longer exists, and the CLI
 is the only transport.
 
 The freshness trap that a stale index is elsewhere, a stale *copy* is here: the working
@@ -108,7 +108,8 @@ a leak; the test is whether anything owns the record of it.
 
 ## Two boundaries that are easy to cross by accident
 
-- **Only the engine may write inside a control tree.** Everything under `.tcrn-workflow/`
+- **Only the engine may write inside a control tree.** Everything under a workspace control
+  directory (the old-layout name is in `docs/wiki/Glossary.md`)
   is written in the engine's canonical byte form. An editor that reformats on save, a
   linter, a prettifier, or an agent reaching for a file-write tool breaks the chain, and
   then *reading* it stops working too. Inspecting those files is fine; saving them never
@@ -122,7 +123,7 @@ a leak; the test is whether anything owns the record of it.
 ## The proof-surface caps, and what they cannot decide
 
 `platform-doctor.mjs`'s `proofBudget` leg (TCRN-CROSS-STORY-356) reads raw counts
-from a live `TCRN Platform/tcrn-workflow` checkout — how many `verify:*` scripts
+from a live engine checkout — how many `verify:*` scripts
 `package.json` declares, how many claims `verification-map.yaml` carries, and how many
 lines `packages/core/src/**/*.ts` holds, counted the same deliberately crude way
 `scripts/task.mjs`'s `reportBudget` (WSG-7) counts `productLines`: a raw `0x0a` byte

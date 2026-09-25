@@ -8,7 +8,10 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 
 import { privateRuntimeConfig } from "./lib/private-token-roster.mjs";
+import { ENGINE_REPOSITORY_NAMES } from "./lib/names.mjs";
 import { scanPrivacyEntries } from "./lib/privacy.mjs";
+
+const REPOSITORY_NAME_PATTERN = ENGINE_REPOSITORY_NAMES.map((name) => name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|");
 
 const MAX_CAPTURE_BYTES = 64 * 1024 * 1024;
 const STAGED_DIFF_FILTER = "ACMRTUXB";
@@ -56,7 +59,7 @@ function discoverRepositoryRoot() {
 
 function remoteOwner(root) {
   const remote = runGit(root, ["remote", "get-url", "origin"]).toString("utf8").trim();
-  const match = remote.match(/github\.com[/:]([^/]+)\/tcrn-workflow(?:\.git)?$/u);
+  const match = remote.match(new RegExp(`github\\.com[/:]([^/]+)/(?:${REPOSITORY_NAME_PATTERN})(?:\\.git)?$`, "u"));
   if (!match) fail("PRIVACY_ORIGIN_UNEXPECTED", remote);
   return match[1];
 }
@@ -127,7 +130,7 @@ function scanStaged(root) {
   const privateTokens = runtime.configured
     ? [runtime.host, runtime.runtimeRoot, `${runtime.runtimeRoot}/governance`]
     : [];
-  const findings = scanPrivacyEntries(entries, { owner, privateTokens });
+  const findings = scanPrivacyEntries(entries, { owner, privateTokens, repositories: ENGINE_REPOSITORY_NAMES });
   return {
     ok: findings.length === 0,
     reasonCode: findings.length === 0 ? "PRIVACY_STAGED_CLEAN" : "PRIVACY_STAGED_FINDINGS",

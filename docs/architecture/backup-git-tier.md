@@ -11,7 +11,7 @@ git cannot reproduce the empty directories the control tree structurally require
 runbook to *recover* from it.
 
 All paths below are workspace-relative placeholders. `<root>` is the Workspace
-authority root — the directory that contains `.tcrn-workflow/`. Paths with spaces
+authority root — the directory that contains the old-layout control directory, written `<control>/` below (its name is in [the alias table](../wiki/Glossary.md); from EPIC-141 on the engine only reads it). Paths with spaces
 are first-class; always double-quote them.
 
 The current local storage shape adds numbered byte-bounded event segments and
@@ -24,14 +24,14 @@ readback before legacy files are removed.
 ## Where to `git init`
 
 Initialize the repository at the **workspace root**, so the control tree is tracked
-as `.tcrn-workflow/**`:
+as `<control>/**`:
 
 ```
 cd "<root>"
 git init
 ```
 
-Do **not** `git init` inside `.tcrn-workflow`. `resolveWorkspace`'s bound-directory
+Do **not** `git init` inside `<control>`. `resolveWorkspace`'s bound-directory
 checks tolerate extra control-dir entries today, but the knowledge store already
 enforces exact-entry membership (`scanKnowledgeStore`'s `expectedRootEntries` rule
 in `knowledge-core.ts` fails `KNOWLEDGE_PARTIAL_STATE` "knowledge store root entries
@@ -48,16 +48,16 @@ crashed-session residue that `snapshot-manifest` fail-closes on
 `<root>/.gitignore`:
 
 ```gitignore
-.tcrn-workflow/lease/
-.tcrn-workflow/lease-recovery.claim
-.tcrn-workflow/knowledge/mutation.claim
-.tcrn-workflow/knowledge/released-*
-.tcrn-workflow/artifacts/restore.claim
-.tcrn-workflow/artifacts/released-restore-*
-.tcrn-workflow/stale-lease-*/
-.tcrn-workflow/released-*
-.tcrn-workflow/attempt-owned-*
-.tcrn-workflow/**/.tmp-*
+<control>/lease/
+<control>/lease-recovery.claim
+<control>/knowledge/mutation.claim
+<control>/knowledge/released-*
+<control>/artifacts/restore.claim
+<control>/artifacts/released-restore-*
+<control>/stale-lease-*/
+<control>/released-*
+<control>/attempt-owned-*
+<control>/**/.tmp-*
 ```
 
 ### Source of each ignored path
@@ -69,16 +69,16 @@ is that same taxonomy plus the two store-local claim classes.
 
 | Ignore pattern | Source | Why it must never be committed |
 | --- | --- | --- |
-| `.tcrn-workflow/lease/` | `acquireWorkspaceLease` writes `controlPath(root, "lease")` (`workspace.ts`); excluded by `EXCLUDED_RELATIVE_PATHS` | The held lease is live session state; a committed lease resurrects a phantom holder (`WORKSPACE_LOCKED`). Ignoring `lease/` also covers `released-mutation-*`, which lives *inside* `lease/` (dirname of `lease/mutation.claim`) and is therefore not a distinct top-level pattern. |
-| `.tcrn-workflow/lease-recovery.claim` | `controlPath(root, "lease-recovery.claim")` (`workspace.ts`); excluded by `EXCLUDED_RELATIVE_PATHS` | Crash-recovery claim; committing it replays a half-finished recovery. |
-| `.tcrn-workflow/knowledge/mutation.claim` | `scanKnowledgeStore` (`knowledge-core.ts`) fails `KNOWLEDGE_PARTIAL_STATE` "mutation claim is present"; excluded by `EXCLUDED_RELATIVE_PATHS` | An in-flight knowledge mutation; a clone carrying it bricks the store. |
-| `.tcrn-workflow/knowledge/released-*` | the `released-<token>` quarantine directory under the knowledge store root in `knowledge-core.ts` | The knowledge release quarantine that leaks on a crash mid-release. If committed, it becomes an extra knowledge-root entry that bricks the store via the exact-entry rule (`KNOWLEDGE_PARTIAL_STATE`). |
-| `.tcrn-workflow/artifacts/restore.claim` | `resolve(storeRoot, "restore.claim")` in `artifact-lifecycle.ts` fails `ARTIFACT_PARTIAL_STATE` "restore claim is present" | A partial artifact restore; committing it resurrects `ARTIFACT_PARTIAL_STATE`. |
-| `.tcrn-workflow/artifacts/released-restore-*` | the `released-restore-<token>` quarantine directory under the artifact store root in `artifact-lifecycle.ts` | The artifact restore-claim quarantine; same `ARTIFACT_PARTIAL_STATE` hazard on clone. |
-| `.tcrn-workflow/stale-lease-*/` | `RESIDUE_PREFIX` (`workspace-snapshot.ts`) fails `SNAPSHOT_RESIDUE_PRESENT` | A crashed-session lease quarantine. |
-| `.tcrn-workflow/released-*` | `RESIDUE_PREFIX` (`workspace-snapshot.ts`) | Top-level workspace release quarantines (`released-lease-*`, `released-recovery-*`). |
-| `.tcrn-workflow/attempt-owned-*` | `RESIDUE_PREFIX` (`workspace-snapshot.ts`) | Attempt-owned quarantine residue. |
-| `.tcrn-workflow/**/.tmp-*` | `TEMPORARY_PREFIX` — `atomicWrite` stages under `.tmp-<pid>-<seq>` before rename (`workspace.ts`) | Half-written atomic-write temporaries at any control level. |
+| `<control>/lease/` | `acquireWorkspaceLease` writes `controlPath(root, "lease")` (`workspace.ts`); excluded by `EXCLUDED_RELATIVE_PATHS` | The held lease is live session state; a committed lease resurrects a phantom holder (`WORKSPACE_LOCKED`). Ignoring `lease/` also covers `released-mutation-*`, which lives *inside* `lease/` (dirname of `lease/mutation.claim`) and is therefore not a distinct top-level pattern. |
+| `<control>/lease-recovery.claim` | `controlPath(root, "lease-recovery.claim")` (`workspace.ts`); excluded by `EXCLUDED_RELATIVE_PATHS` | Crash-recovery claim; committing it replays a half-finished recovery. |
+| `<control>/knowledge/mutation.claim` | `scanKnowledgeStore` (`knowledge-core.ts`) fails `KNOWLEDGE_PARTIAL_STATE` "mutation claim is present"; excluded by `EXCLUDED_RELATIVE_PATHS` | An in-flight knowledge mutation; a clone carrying it bricks the store. |
+| `<control>/knowledge/released-*` | the `released-<token>` quarantine directory under the knowledge store root in `knowledge-core.ts` | The knowledge release quarantine that leaks on a crash mid-release. If committed, it becomes an extra knowledge-root entry that bricks the store via the exact-entry rule (`KNOWLEDGE_PARTIAL_STATE`). |
+| `<control>/artifacts/restore.claim` | `resolve(storeRoot, "restore.claim")` in `artifact-lifecycle.ts` fails `ARTIFACT_PARTIAL_STATE` "restore claim is present" | A partial artifact restore; committing it resurrects `ARTIFACT_PARTIAL_STATE`. |
+| `<control>/artifacts/released-restore-*` | the `released-restore-<token>` quarantine directory under the artifact store root in `artifact-lifecycle.ts` | The artifact restore-claim quarantine; same `ARTIFACT_PARTIAL_STATE` hazard on clone. |
+| `<control>/stale-lease-*/` | `RESIDUE_PREFIX` (`workspace-snapshot.ts`) fails `SNAPSHOT_RESIDUE_PRESENT` | A crashed-session lease quarantine. |
+| `<control>/released-*` | `RESIDUE_PREFIX` (`workspace-snapshot.ts`) | Top-level workspace release quarantines (`released-lease-*`, `released-recovery-*`). |
+| `<control>/attempt-owned-*` | `RESIDUE_PREFIX` (`workspace-snapshot.ts`) | Attempt-owned quarantine residue. |
+| `<control>/**/.tmp-*` | `TEMPORARY_PREFIX` — `atomicWrite` stages under `.tmp-<pid>-<seq>` before rename (`workspace.ts`) | Half-written atomic-write temporaries at any control level. |
 
 ## Commit cadence
 
@@ -88,7 +88,7 @@ joinable to the engine's event chain. Read it from `status` (the `status` verb
 writes it via `writeState` in `cli/src/index.ts`):
 
 ```
-git -C "<root>" commit -am "$(pnpm --silent exec tcrn-workflow status --workspace "<root>" | node -e 'process.stdin.once("data",d=>process.stdout.write(JSON.parse(d).headEventHash??"empty"))')"
+git -C "<root>" commit -am "$(pnpm --silent exec einzbern status --workspace "<root>" | node -e 'process.stdin.once("data",d=>process.stdout.write(JSON.parse(d).headEventHash??"empty"))')"
 ```
 
 A commit message that is the head hash lets an auditor line up any git commit
@@ -127,13 +127,13 @@ Git does not track empty directories, and the control tree requires several that
 empty in a fresh or between-unit state. A clone- or checkout-based restore therefore
 drops them and fail-closes:
 
-- `.tcrn-workflow/backups/` — created at init and required as a directory at every
+- `<control>/backups/` — created at init and required as a directory at every
   `resolveWorkspace` (`ensureDirectory`/`boundDirectory` on `controlPath(root,
   "backups")` in `workspace.ts`; `WORKSPACE_PATH_INVALID` when missing). It is
   **always empty in V1** (migration-reserved, never a user backup destination).
-- `.tcrn-workflow/knowledge/bodies/` — required by `scanKnowledgeStore`
+- `<control>/knowledge/bodies/` — required by `scanKnowledgeStore`
   (`boundDirectory` on `bodies`); empty until the first knowledge unit.
-- `.tcrn-workflow/knowledge/metadata/` — required by `scanKnowledgeStore`
+- `<control>/knowledge/metadata/` — required by `scanKnowledgeStore`
   (`boundDirectory` on `metadata`); empty until the first knowledge unit.
 
 The `.gitkeep` workaround is **inadmissible inside `knowledge/`**: the store's exact

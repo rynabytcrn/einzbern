@@ -1,6 +1,6 @@
 {
   "schemaVersion": "tcrn.workflow.ds-consumer-contract.v1",
-  "consumer": "TCRN Workflow portal static consumer",
+  "consumer": "Atelier static consumer",
   "candidate": "610680b81a950e91e9e1e77718ea7f3f3b19bc27",
   "candidateTree": "bc11d2fd36648648c93bff9b98d5ce0dea7fd4cf",
   "package": "@tcrn/ui-react@3.0.0",

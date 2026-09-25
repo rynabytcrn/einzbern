@@ -7,7 +7,8 @@ service, or a current external-runtime mutation.
 ## Authority and layout
 
 The five accepted P1 roots remain mandatory and pairwise distinct. The
-`workspace` root contains `.tcrn-workflow/` with immutable V1 metadata,
+`workspace` root contains the control directory (its old-layout name is in
+`docs/wiki/Glossary.md`) with immutable V1 metadata,
 canonical event segments, a cooperative single-writer lease, backup space, and
 derived views. Event segments plus Workspace metadata are authority. `STATUS.md`,
 `index.json`, and `readback.json` are deterministic, rebuildable views and never

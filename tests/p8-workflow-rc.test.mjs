@@ -28,6 +28,7 @@ import {
   readGenericProfileAdmissionReceipt,
   routeContext,
   transitionWork,
+  LEGACY_ENGINE_NAME,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalJson, canonicalSha256, compareCanonicalText, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
@@ -167,7 +168,8 @@ test("P8 creates a closed unpublished release candidate without supported AOS re
 // TCRN-CROSS-STORY-461 R1 (SUB-240, #232). A temporary repository with an ignored dist tree:
 // the previous version's source archive sits beside the six current artifacts, as it did
 // after the 1.1.3 bump. Red leg: drop the move and the closed artifact set stays red.
-const PREVIOUS_SOURCE_ARCHIVE = "tcrn-workflow-1.1.2-source.tar";
+// A release archive from before the rename carries the old engine name and is still stale.
+const PREVIOUS_SOURCE_ARCHIVE = `${LEGACY_ENGINE_NAME}-1.1.2-source.tar`;
 
 async function staleReleaseFixture(context, releaseNames) {
   const root = await realpath(await mkdtemp(join(tmpdir(), "tcrn-p8-stale-release-")));

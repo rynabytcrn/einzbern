@@ -91,8 +91,8 @@ step. The recipe, when that step is authorized:
    set `{SessionStart, Stop}`, keeping `ACTIVATION_HOOK_SURFACE_EXCEEDED` for
    anything else; add the second handler path to `CLAUDE_ADAPTER_ACTIVATION_PATHS`
    and to the installer's write + byte-inverse rollback loop.
-3. Keep the handler's writes **project-local** (`.claude/tcrn-workflow/…`); never
-   mutate the `.tcrn-workflow/` control tree or run git working-tree operations
+3. Keep the handler's writes **project-local** (the adapter directory under `.claude/`); never
+   mutate the workspace control tree or run git working-tree operations
    from the hook (a live-sync-class hazard — see `backup-git-tier.md`).
 4. Validate with an extended `host-evidence.mjs` group-A observation: install the
    Stop handler, run `claude -p`, and assert (by filesystem side effect, the
@@ -105,7 +105,7 @@ activated**.
 
 ### Codex — proposed only, pending a session-end survey
 
-Codex is inert in-repo: templates under `.codex/tcrn-workflow/`, no installer, no
+Codex is inert in-repo: templates under a project-local `.codex/` directory, no installer, no
 CLI verbs. Two constraints bind any future wiring, and neither is a matter of
 effort:
 

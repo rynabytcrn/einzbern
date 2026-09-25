@@ -107,7 +107,7 @@ begin with `--`; the two-token `--flag value` form rejects a value beginning wit
   closed with `CLI_INPUT_OVERSIZED` before parsing.
 - List verbs are bounded by `--limit`/`--offset`; an envelope's `truncated` flag
   signals more records beyond the page.
-- All emitted paths are workspace-relative under `.tcrn-workflow/`; the contract
+- All emitted paths are workspace-relative under the workspace control directory; the contract
   embeds no host root path.
 
 ## 6. Determinism guarantees

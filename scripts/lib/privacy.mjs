@@ -453,12 +453,12 @@ export function normalizePrivacyText(content) {
   return normalized;
 }
 
-function sanitizeAllowedPublicMetadata(entry, owner) {
+function sanitizeAllowedPublicMetadata(entry, owner, repositories) {
   const p3Marker = joinParts([".", "context/platform/workflow-v3-capabilities/p3-local-work-graph.accepted.json"], "");
   const content = entry.content.split(p3Marker).join("[ALLOWED_PUBLIC_P3_MARKER_CONTRACT]");
   if (
     entry.kind === "remote" &&
-    content === `https://github.com/${owner}/tcrn-workflow.git`
+    repositories.some((name) => content === `https://github.com/${owner}/${name}.git`)
   ) {
     return "[ALLOWED_PUBLIC_GIT_REMOTE]";
   }
@@ -481,7 +481,9 @@ function sanitizeAllowedPublicMetadata(entry, owner) {
     .join("\n");
 }
 
-export function scanPrivacyEntries(entries, { owner, privateTokens = [] } = {}) {
+// `repositories` names the public GitHub repositories whose origin URL under `owner` is
+// public metadata rather than a private identifier; callers pass the engine's names.
+export function scanPrivacyEntries(entries, { owner, privateTokens = [], repositories = [] } = {}) {
   if (typeof owner !== "string" || owner.length === 0) {
     throw new Error("PRIVACY_OWNER_REQUIRED");
   }
@@ -491,7 +493,7 @@ export function scanPrivacyEntries(entries, { owner, privateTokens = [] } = {}) 
     if (typeof entry.label !== "string" || typeof entry.kind !== "string" || typeof entry.content !== "string") {
       throw new Error("PRIVACY_ENTRY_INVALID");
     }
-    const content = sanitizeAllowedPublicMetadata(entry, owner);
+    const content = sanitizeAllowedPublicMetadata(entry, owner, repositories);
     const normalized = normalizePrivacyText(content);
     for (const [reasonCode, pattern] of patterns) {
       pattern.lastIndex = 0;

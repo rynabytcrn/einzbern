@@ -19,7 +19,7 @@ import { classifyProcess } from "../scripts/operational-batch-entry.mjs";
 import * as operationalBatchEntry from "../scripts/operational-batch-entry.mjs";
 import { appendProgressEvent, readProgressDelta, summarizeProgress, waitForProgress } from "../scripts/lib/incremental-output.mjs";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { initializeWorkspace } from "../dist/build/packages/core/src/index.js";
+import { LOCAL_DIRECTORY_NAMES, initializeWorkspace } from "../dist/build/packages/core/src/index.js";
 
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROSTER_PATH = resolve(REPOSITORY_ROOT, "tests/fixtures/acceptance-gate-groups.json");
@@ -504,7 +504,7 @@ function hookedSnapshot() {
   const workspace = "/container/.tcrn-workspace/cross-project/workspace";
   return [
     { pid: 500, ppid: 1, pgid: 500, state: "S", command: "claude" },
-    { pid: 501, ppid: 500, pgid: 501, state: "S", command: "/bin/sh -c if [ -f \"${CLAUDE_PROJECT_DIR}/TCRN Platform/tcrn-workflow/scripts/knowledge-inject-hook.mjs\" ]; then node \"${CLAUDE_PROJECT_DIR}/TCRN Platform/tcrn-workflow/scripts/knowledge-inject-hook.mjs\"; fi" },
+    { pid: 501, ppid: 500, pgid: 501, state: "S", command: `/bin/sh -c if [ -f "\${CLAUDE_PROJECT_DIR}/${LOCAL_DIRECTORY_NAMES.engine}/scripts/knowledge-inject-hook.mjs" ]; then node "\${CLAUDE_PROJECT_DIR}/${LOCAL_DIRECTORY_NAMES.engine}/scripts/knowledge-inject-hook.mjs"; fi` },
     { pid: 502, ppid: 501, pgid: 501, state: "S", command: `node ${REPOSITORY_ROOT}/scripts/knowledge-inject-hook.mjs --container-root /container --host claude` },
     { pid: 503, ppid: 502, pgid: 501, state: "S", command: `${process.execPath} ${REPOSITORY_ROOT}/scripts/knowledge-inject.mjs --hook-input {} --container-root /container --host claude` },
     { pid: 504, ppid: 503, pgid: 501, state: "S", command: `${cli} settings-catalog --workspace ${workspace}` },

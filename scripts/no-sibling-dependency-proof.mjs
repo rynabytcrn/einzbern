@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-INC-215 — the dependency-direction gate.
 //
-//   node tcrn-workflow/scripts/no-sibling-dependency-proof.mjs
+//   node scripts/no-sibling-dependency-proof.mjs
 //
 // This repository never reaches into a sibling project's tree. INC-214 cleared five
 // places that did, and every one of them was found by hand — a grep, a judgement, a

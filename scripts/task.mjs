@@ -673,7 +673,7 @@ async function verifyP8() {
   const owner = await remoteOwner();
   const privacyFindings = scanPrivacyEntries(
     [...artifacts.entries()].map(([path, content]) => ({ label: `dist/release/${path}`, kind: "release", content: content.toString("utf8") })),
-    { owner },
+    { owner, repositories: await engineRepositoryNames() },
   );
   assertion(privacyFindings.length === 0, "P8_RELEASE_PRIVACY_FINDINGS", privacyFindings.join(","));
   const privacy = await verifyPrivacy({ requireP8Surfaces: true });
@@ -861,9 +861,19 @@ async function verifyVulnerabilities() {
   });
 }
 
+// The engine repository's GitHub names come from the names module, loaded when a remote is
+// judged rather than when this runner starts (the task-entrypoint fixtures carry scripts/ only).
+async function engineRepositoryNames() {
+  return (await import("./lib/names.mjs")).ENGINE_REPOSITORY_NAMES;
+}
+
+function repositoryNamePattern(names) {
+  return names.map((name) => name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|");
+}
+
 async function remoteOwner() {
   const remote = run("git", ["remote", "get-url", "origin"]);
-  const match = remote.match(/github\.com[/:]([^/]+)\/tcrn-workflow(?:\.git)?$/u);
+  const match = remote.match(new RegExp(`github\\.com[/:]([^/]+)/(?:${repositoryNamePattern(await engineRepositoryNames())})(?:\\.git)?$`, "u"));
   assertion(match, "PRIVACY_ORIGIN_UNEXPECTED");
   return match[1];
 }
@@ -1037,7 +1047,7 @@ async function verifyPrivacy({ requireP8Surfaces = false, historyScope = "head" 
   const privateTokens = runtime.configured
     ? [runtime.host, runtime.runtimeRoot, `${runtime.runtimeRoot}/governance`]
     : [];
-  const findings = scanPrivacyEntries(entries, { owner, privateTokens });
+  const findings = scanPrivacyEntries(entries, { owner, privateTokens, repositories: await engineRepositoryNames() });
   assertion(findings.length === 0, "PRIVACY_FINDINGS", findings.join(","));
   const source = await verifySource();
   return success("PRIVACY_SOURCE_CLEAN", {
@@ -1383,7 +1393,8 @@ async function verifyHistory() {
   const remotes = run("git", ["remote"]).split("\n").filter(Boolean);
   assertion(remotes.length === 1 && remotes[0] === "origin", "HISTORY_REMOTE_SET", remotes.join(","));
   const remote = run("git", ["remote", "get-url", "--all", "origin"]).split("\n").filter(Boolean);
-  assertion(remote.length === 1 && /^https:\/\/github\.com\/[^/]+\/tcrn-workflow\.git$/u.test(remote[0]), "HISTORY_ORIGIN", remote.join(","));
+  const origin = new RegExp(`^https://github\\.com/[^/]+/(?:${repositoryNamePattern(await engineRepositoryNames())})\\.git$`, "u");
+  assertion(remote.length === 1 && origin.test(remote[0]), "HISTORY_ORIGIN", remote.join(","));
   const roots = run("git", ["rev-list", "--max-parents=0", "--all"]).split("\n").filter(Boolean);
   assertion(roots.length === 1, "HISTORY_ROOT_COUNT", String(roots.length));
   assertion(roots[0] === policy.requiredRootCommit, "HISTORY_ROOT_REWRITTEN", roots[0]);

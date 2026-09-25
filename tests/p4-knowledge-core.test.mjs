@@ -46,6 +46,7 @@ import {
   reverifyKnowledgeUnit,
   transitionKnowledgePromotion,
   validateKnowledgeStore,
+  LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalJson, canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
@@ -100,7 +101,7 @@ async function workspaceFixture({ externalKey = "FIXTURE-KNOWLEDGE-CORE", initia
   return {
     base,
     workspace,
-    store: join(workspace, ".tcrn-workflow", "knowledge"),
+    store: join(workspace, LEGACY_CONTROL_DIRECTORY, "knowledge"),
     projectId: state.projects[0].id,
     workId: state.work[0].id,
     async close() {
@@ -1401,7 +1402,7 @@ test("TCRN-CROSS-STORY-023: the aggregate cap counts marker+metadata+body but no
   // failing with KNOWLEDGE_LIMIT_EXCEEDED proves the cap still fires.
   const fx = await workspaceFixture({ externalKey: "FIXTURE-KNOWLEDGE-S023" });
   try {
-    const storeRoot = join(fx.workspace, ".tcrn-workflow/knowledge");
+    const storeRoot = join(fx.workspace, `${LEGACY_CONTROL_DIRECTORY}/knowledge`);
     let admitted = 0, rejected = false;
     for (let i = 0; i < 200; i += 1) {
       try {
@@ -1449,7 +1450,7 @@ test("TCRN-CROSS-STORY-025: search matches the summary, not only subject and tag
 test("TCRN-CROSS-STORY-024: retiring reclaims the body, keeps the store valid, and still requires a live body", async () => {
   const fx = await workspaceFixture({ externalKey: "FIXTURE-KNOWLEDGE-S024" });
   try {
-    const bodiesDir = join(fx.workspace, ".tcrn-workflow/knowledge/bodies");
+    const bodiesDir = join(fx.workspace, `${LEGACY_CONTROL_DIRECTORY}/knowledge/bodies`);
     const created = await createKnowledgeUnit(fx.workspace, unitInput(fx, "S024-RECLAIM", {
       expectedVersion: 0, occurredAt: instant(11, 3), body: "x".repeat(7_500),
     }));

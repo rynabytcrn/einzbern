@@ -254,7 +254,7 @@ export function claudeHookSettings() {
 /** The whole `.codex/hooks.json` document. */
 export function codexHookDocument(repoRoot = REPO_ROOT, containerRoot = resolve(REPO_ROOT, "../..")) {
   return {
-    description: "TCRN Workflow platform harness for Codex: governed write observation, control-tree write refusal, governed context injection, and the stop pact.",
+    description: "Einzbern platform harness for Codex: governed write observation, control-tree write refusal, governed context injection, and the stop pact.",
     hooks: renderHooks("codex", (entry) => codexCommand(entry.handler, repoRoot, containerRoot)),
   };
 }

@@ -40,7 +40,7 @@ const PHASE_ALIASES = Object.freeze({
 const RUNNING_STATUSES = new Set(["running", "active", "in-progress", "in_progress"]);
 
 const ENGINE_ROOT = resolve(fileURLToPath(import.meta.url), "..", "..");
-const ENGINE_CLI = resolve(ENGINE_ROOT, "scripts/tcrn-workflow.mjs");
+const ENGINE_CLI = resolve(ENGINE_ROOT, "scripts/einzbern.mjs");
 
 function isRecord(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);

@@ -26,6 +26,7 @@ import {
   knowledgeRelevanceScore,
   listKnowledgeMetadata,
   readTelemetryRecords,
+  LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalJson } from "../dist/build/packages/protocol/src/index.js";
 import {
@@ -300,7 +301,7 @@ test("STORY-365 the extension slot stays a closed roster of two knowledge-id key
   try {
     const { readFile, writeFile: write } = await import("node:fs/promises");
     const first = await captureKnowledgeUnit(fixture.workspace, lessonCard("扩展槽是有界的两个键"), { allowTrailing: true });
-    const path = join(fixture.workspace, ".tcrn-workflow", "knowledge", "metadata", `${first.id}.json`);
+    const path = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "knowledge", "metadata", `${first.id}.json`);
     const stored = JSON.parse(await readFile(path, "utf8"));
     for (const forged of [{ unknownKey: "x" }, { supersededBy: "not-an-id" }, { coexistsWith: [] }, { coexistsWith: ["knowledge:000000000000000000000002", "knowledge:000000000000000000000001"] }]) {
       await write(path, canonicalJson({ ...stored, extensions: forged }));

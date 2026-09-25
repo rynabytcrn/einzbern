@@ -64,7 +64,7 @@ test("release mode declares every required external input", () => {
     "workflow",
     "now",
   ]);
-  assert.deepEqual(missingReleaseArguments({ repository: "tcrn-workflow" }), [
+  assert.deepEqual(missingReleaseArguments({ repository: "einzbern" }), [
     "trust-root",
     "bundle",
     "subject",

@@ -21,6 +21,7 @@ import {
   materializeWorkspace,
   updateProject,
   validateWorkspace,
+  LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalJson, createEvent } from "../dist/build/packages/protocol/src/index.js";
 
@@ -53,11 +54,11 @@ async function workspaceFixture(options = {}) {
 }
 
 async function controlFile(workspace, relativePath) {
-  return readFile(join(workspace, ".tcrn-workflow", relativePath), "utf8");
+  return readFile(join(workspace, LEGACY_CONTROL_DIRECTORY, relativePath), "utf8");
 }
 
 async function writeControlFile(workspace, relativePath, text) {
-  return writeFile(join(workspace, ".tcrn-workflow", relativePath), text);
+  return writeFile(join(workspace, LEGACY_CONTROL_DIRECTORY, relativePath), text);
 }
 
 async function createHistory(fixture) {

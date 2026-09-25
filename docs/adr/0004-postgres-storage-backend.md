@@ -21,7 +21,7 @@ current deployment assertion.
 ## Context
 
 The engine stores a governed workspace's truth as canonical byte files under
-`.tcrn-workflow/`: a `workspace.json` metadata file (whose tenth, optional field
+the old-layout control directory (named in [the alias table](../wiki/Glossary.md)): a `workspace.json` metadata file (whose tenth, optional field
 carries the relocation ledger), numbered segment files under `events/` holding
 canonical-JSON event records, derived `views/`, and two disposable stores
 (`knowledge/`, `artifacts/`) each with their own marker and claim files. Every

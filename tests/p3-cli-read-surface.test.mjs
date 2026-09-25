@@ -17,6 +17,7 @@ import {
   initializeWorkspace,
   STORY_SCOPE_HEADINGS,
   validateWorkspace,
+  LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { PROTOCOL_LIMITS, validateEventChain } from "../dist/build/packages/protocol/src/index.js";
 
@@ -299,7 +300,7 @@ test("work-show returns one record and fails closed on unknown ids and malformed
 test("read verbs and validate fail closed on stale views, but status reads authority", async (context) => {
   const fx = await fixture(context);
   const ws = ["--workspace", fx.workspace];
-  await writeFile(join(fx.workspace, ".tcrn-workflow", "views", "index.json"), "{}\n");
+  await writeFile(join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "views", "index.json"), "{}\n");
   assert.equal(await reasonOf(["work-list", ...ws]), "WORKSPACE_VIEW_STALE");
   assert.equal(await reasonOf(["project-list", ...ws]), "WORKSPACE_VIEW_STALE");
   assert.equal(await reasonOf(["work-show", ...ws, "--id", fx.ids.epicA]), "WORKSPACE_VIEW_STALE");
@@ -630,7 +631,7 @@ test("INC-027: the default window never stands in for a supplied one, and event-
   assert.equal(await runRaw(["event-list", ...ws]), await runRaw(["event-list", ...ws]));
 
   // WSA-3: a read verb answers from view-verified state, so a stale view refuses.
-  await writeFile(join(fx.workspace, ".tcrn-workflow", "views", "index.json"), "{}\n");
+  await writeFile(join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "views", "index.json"), "{}\n");
   assert.equal(await reasonOf(["event-list", ...ws]), "WORKSPACE_VIEW_STALE");
 });
 

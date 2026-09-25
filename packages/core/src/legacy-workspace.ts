@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-466 R2, AC1 / STORY-467 R4, AC3: the old workspace layout
-// (`<root>/.tcrn-workflow/`) opened read-only. This reader takes no lease, reads no view,
+// (`<root>/<LEGACY_CONTROL_DIRECTORY>/`) opened read-only. This reader takes no lease, reads no view,
 // creates no directory and writes no snapshot, cache or index: it reads workspace.json and
 // the event segments, checks every event's identity and hashes from genesis, and replays
 // through the engine's own reducer. A break is reported with the stream, the sequence and
@@ -140,7 +140,7 @@ function parseSegment(name: string, content: Buffer, ndjson: boolean, streamId: 
 }
 
 /**
- * Open `<root>/.tcrn-workflow/` read-only: metadata and every event, unvalidated beyond
+ * Open `<root>/<LEGACY_CONTROL_DIRECTORY>/` read-only: metadata and every event, unvalidated beyond
  * parsing. Nothing is created, locked or written.
  */
 export async function openLegacyWorkspace(rootInput: string): Promise<LegacyWorkspace> {

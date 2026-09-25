@@ -15,6 +15,7 @@ import {
   renderHostPlan,
 } from "../scripts/host-render.mjs";
 import { claudeHookSettings, codexHookDocument } from "../scripts/host-harness.mjs";
+import { LOCAL_DIRECTORY_NAMES } from "../dist/build/packages/core/src/index.js";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const newline = "\n";
@@ -92,7 +93,7 @@ test("STORY-371: Claude rendering preserves user fields, writes tier fields, and
   assert.equal(renderedSettings.custom, "keep");
   assert.equal(renderedSettings.hooks.Other[0].hooks[0].command, "user-hook");
   assert.equal(renderedSettings.hooks.Stop.length, 3);
-  assert.deepEqual(renderedSettings.hooks.PostToolUse, [{ hooks: [{ type: "command", command: `if [ -f "\${CLAUDE_PROJECT_DIR}/TCRN Platform/tcrn-workflow/scripts/knowledge-inject-hook.mjs" ]; then node "\${CLAUDE_PROJECT_DIR}/TCRN Platform/tcrn-workflow/scripts/knowledge-inject-hook.mjs" --container-root "\${CLAUDE_PROJECT_DIR}" --host claude; fi`, timeout: 30 }] }]);
+  assert.deepEqual(renderedSettings.hooks.PostToolUse, [{ hooks: [{ type: "command", command: `if [ -f "\${CLAUDE_PROJECT_DIR}/${LOCAL_DIRECTORY_NAMES.engine}/scripts/knowledge-inject-hook.mjs" ]; then node "\${CLAUDE_PROJECT_DIR}/${LOCAL_DIRECTORY_NAMES.engine}/scripts/knowledge-inject-hook.mjs" --container-root "\${CLAUDE_PROJECT_DIR}" --host claude; fi`, timeout: 30 }] }]);
   const agent = await readFile(join(root, ".claude", "agents", "implement.md"), "utf8");
   assert.match(agent, /description: user-owned/u);
   assert.match(agent, /model: claude-code-economy/u);
@@ -140,7 +141,7 @@ test("STORY-371: Codex rendering changes only root model keys and generated hook
 
 test("STORY-391: a mixed managed-looking user group stays whole and ordered", async (t) => {
   const root = await scratchFor(t, "tcrn-host-render-mixed-");
-  const old = codexHookDocument("/old/TCRN Platform/tcrn-workflow").hooks.SessionStart[0];
+  const old = codexHookDocument(`/old/${LOCAL_DIRECTORY_NAMES.engine}`).hooks.SessionStart[0];
   old.matcher = "user-session-start";
   old.timeout = 30;
   old.hooks.push({ type: "command", command: "echo user-owned-hook" });

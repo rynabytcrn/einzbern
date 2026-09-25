@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-INIT-019 INC-052 — 收口绑定生效证据:tip 复量协议.
 //
-//   node tcrn-workflow/scripts/closeout-evidence-runner.mjs --batch <batch.json>
+//   node scripts/closeout-evidence-runner.mjs --batch <batch.json>
 //
 // A batch records, for each incident being closed, the set of EVIDENCE COMMANDS that
 // prove the fix is alive (the fifth dispatch element). Closing a batch means re-running

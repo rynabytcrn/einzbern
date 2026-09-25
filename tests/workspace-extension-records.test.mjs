@@ -39,6 +39,7 @@ import {
   materializeWorkspace as materializeWorkspaceForBudgets,
   FileBackend,
   withStorageBackendFactory,
+  LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import {
   assertCanonicalJson,
@@ -112,7 +113,7 @@ function expectedEventId(streamId, sequence) {
 // specifications with correct stream/event identities and hash links, so replay
 // negatives exercise exactly the reducer rules rather than chain integrity.
 async function rewriteEventChain(workspace, transform) {
-  const control = join(workspace, ".tcrn-workflow");
+  const control = join(workspace, LEGACY_CONTROL_DIRECTORY);
   const metadata = JSON.parse(await readFile(join(control, "workspace.json"), "utf8"));
   const eventsRoot = join(control, "events");
   const names = (await readdir(eventsRoot)).filter((name) => /^\d{6}\.json$/u.test(name)).sort();
@@ -302,7 +303,7 @@ test("conference and gate mutations round-trip through the event log with chaine
   // Views are fresh (including the fourth extension view), canonical, and stable.
   const validated = await validateWorkspace(fx.workspace);
   assert.equal(validated.version, 12);
-  const viewsRoot = join(fx.workspace, ".tcrn-workflow", "views");
+  const viewsRoot = join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "views");
   assert.deepEqual((await readdir(viewsRoot)).sort(), ["STATUS.md", "extensions.json", "index.json", "readback.json"]);
   const extensionsBytes = await readFile(join(viewsRoot, "extensions.json"), "utf8");
   const extensionsIndex = assertCanonicalJson(extensionsBytes);
@@ -552,7 +553,7 @@ test("INC-198 index size follows record count rather than extension prose, and s
   state = await createWork(fixture.workspace, lease, {
     expectedVersion: 1, occurredAt: instant(2), projectId: state.projects[0].id, externalKey: "INITIATIVE-BOUNDED", kind: "Initiative", parentId: null,
   });
-  const viewsRoot = join(fixture.workspace, ".tcrn-workflow", "views");
+  const viewsRoot = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "views");
   const indexBytes = async () => (await readFile(join(viewsRoot, "index.json"), "utf8")).length;
   const digest = async () => JSON.parse(await readFile(join(viewsRoot, "readback.json"), "utf8")).graphDigest;
 
@@ -596,7 +597,7 @@ test("a workspace with zero conference/gate events keeps pre-change golden view 
   assert.deepEqual(state.conferencePositions, []);
   assert.deepEqual(state.conferenceMinutes, []);
   assert.deepEqual(state.gates, []);
-  const viewsRoot = join(fixture.workspace, ".tcrn-workflow", "views");
+  const viewsRoot = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "views");
   assert.deepEqual((await readdir(viewsRoot)).sort(), ["STATUS.md", "index.json", "readback.json"], "extensions.json is absent");
   // Golden bytes. These were the pre-WSD-1 bytes until INC-198 re-derived both the
   // graph digest and the index payload, and TCRN-CROSS-STORY-363 re-derived them
@@ -678,7 +679,7 @@ test("a crash across conference.closed leaves the event durable and recover() re
       assert.equal(recovered.conferenceMinutes.length, 1);
       const validated = await validateWorkspace(fx.workspace);
       assert.equal(validated.version, 4);
-      const extensionsIndex = assertCanonicalJson(await readFile(join(fx.workspace, ".tcrn-workflow", "views", "extensions.json"), "utf8"));
+      const extensionsIndex = assertCanonicalJson(await readFile(join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "views", "extensions.json"), "utf8"));
       assert.equal(extensionsIndex.conferenceMinutes.count, 1);
       // STORY-299 replaces v1's single-field check (`conferences[0].status === "closed"`)
       // with a stronger one: every collection digest in the rebuilt view must equal the
@@ -1330,7 +1331,7 @@ test("gate-v1: a decision that disagrees with its own event is corrupt", async (
 
   // Rewrite the tail event so the decision names someone else. The hashes are
   // recomputed the way any forger would, so only the self-consistency check can see it.
-  const eventsDirectory = join(fx.workspace, ".tcrn-workflow", "events");
+  const eventsDirectory = join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "events");
   let segment;
   let events;
   let tail;
@@ -1473,7 +1474,7 @@ test("gate-v1: a chain written before gate-v1 still replays, owner gates and all
     minutesLocator: minutesLocator("MINUTES-LEGACY"),
   }), (error) => error?.reasonCode === "WORKSPACE_GATE_IDENTITY_REQUIRED");
 
-  const eventsDirectory = join(fx.workspace, ".tcrn-workflow", "events");
+  const eventsDirectory = join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "events");
   const segments = (await readdir(eventsDirectory)).sort();
   const lastPath = join(eventsDirectory, segments[segments.length - 1]);
   const lastSegment = JSON.parse(await readFile(lastPath, "utf8"));
@@ -1525,7 +1526,7 @@ test("gate-v1: replay accepts a forged tail-append, and this is proved rather th
   const gate = state.gates[0];
 
   // No roster is consulted, no CLI is run, no permission is held. Only bytes.
-  const eventsDirectory = join(fx.workspace, ".tcrn-workflow", "events");
+  const eventsDirectory = join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "events");
   const segments = (await readdir(eventsDirectory)).sort();
   const lastPath = join(eventsDirectory, segments[segments.length - 1]);
   const lastSegment = JSON.parse(await readFile(lastPath, "utf8"));
@@ -1907,7 +1908,7 @@ test("MIN-102 the position ceiling is fixed for replay while the budget is a wri
 // ---------------------------------------------------------------------------
 
 async function extensionIndexBytes(workspace) {
-  return Buffer.byteLength(await readFile(join(workspace, ".tcrn-workflow", "views", "extensions.json"), "utf8"), "utf8");
+  return Buffer.byteLength(await readFile(join(workspace, LEGACY_CONTROL_DIRECTORY, "views", "extensions.json"), "utf8"), "utf8");
 }
 
 // Grow one conference's governed prose by three orders of magnitude and the view
@@ -1920,7 +1921,7 @@ test("STORY-299: extension view size is independent of the prose inside the reco
     title: "Bounded", linkedWorkIds: [fx.workId], desiredOutcome: "short", participantIds: [],
   });
   const smallBytes = await extensionIndexBytes(fx.workspace);
-  const smallDigest = assertCanonicalJson(await readFile(join(fx.workspace, ".tcrn-workflow", "views", "extensions.json"), "utf8")).conferences.digest;
+  const smallDigest = assertCanonicalJson(await readFile(join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "views", "extensions.json"), "utf8")).conferences.digest;
 
   state = await appendConferencePositionInWorkspace(fx.workspace, fx.lease, {
     expectedVersion: state.version, occurredAt: instant(4), conferenceId: state.conferences[0].id,
@@ -1928,13 +1929,13 @@ test("STORY-299: extension view size is independent of the prose inside the reco
     position: "z".repeat(2_000), risks: [], recommendations: [], evidenceIds: [],
   });
   const largeBytes = await extensionIndexBytes(fx.workspace);
-  const largeDigest = assertCanonicalJson(await readFile(join(fx.workspace, ".tcrn-workflow", "views", "extensions.json"), "utf8")).conferences.digest;
+  const largeDigest = assertCanonicalJson(await readFile(join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "views", "extensions.json"), "utf8")).conferences.digest;
 
   assert.ok(largeBytes - smallBytes < 200, `view grew by ${largeBytes - smallBytes} bytes; prose must not enter the view`);
   // The bound is only worth having if the view still moves when a record does.
   assert.equal(state.conferencePositions.length, 1);
   assert.notEqual(
-    assertCanonicalJson(await readFile(join(fx.workspace, ".tcrn-workflow", "views", "extensions.json"), "utf8")).conferencePositions.digest,
+    assertCanonicalJson(await readFile(join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "views", "extensions.json"), "utf8")).conferencePositions.digest,
     smallDigest,
     "a new position must move its collection digest",
   );
@@ -1979,7 +1980,7 @@ test("STORY-299: any single byte inside any extension record still moves the vie
     expectedVersion: state.version, occurredAt: instant(4), externalKey: "GATE-DETECT", projectId: fx.projectId,
     workId: fx.workId, title: "Gate detect", outcomeClass: "role_decision",
   });
-  const readView = async () => assertCanonicalJson(await readFile(join(fx.workspace, ".tcrn-workflow", "views", "extensions.json"), "utf8"));
+  const readView = async () => assertCanonicalJson(await readFile(join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "views", "extensions.json"), "utf8"));
   const before = await readView();
 
   state = await appendConferencePositionInWorkspace(fx.workspace, fx.lease, {

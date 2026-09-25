@@ -29,6 +29,7 @@ import {
   validateGenericProfileLayer,
   validateGenericStarterBundle,
   validateWorkspace,
+  LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import {
   canonicalExternalKey,
@@ -745,7 +746,7 @@ test("all inherited profile negative vectors remain executable", async () => {
     )]), "PROFILE_REFUSAL_WEAKENING")],
     ["write-path-expansion", () => runResolve(request([base, overlay(
       "workspace_configuration", "profile-layer:path-expansion", { restrictOnly: {
-        ...clone(base.fields.restrictOnly), writePaths: [".tcrn-workflow", "other"],
+        ...clone(base.fields.restrictOnly), writePaths: [LEGACY_CONTROL_DIRECTORY, "other"],
       } },
     )]), "PROFILE_RESTRICTION_EXPANSION")],
     ["tool-expansion", () => runResolve(request([base, overlay(
@@ -1064,7 +1065,7 @@ test("empty non-project-specific Workspace cold-start completes the minimal plan
     assert.deepEqual(validated.work.map((record) => record.kind).sort(compareCanonicalText),
       ["Epic", "Initiative", "Story", "Subtask"].sort(compareCanonicalText));
     assert.equal(validated.work.every((record) => record.status === "done"), true);
-    await assert.rejects(readFile(join(workspaceRoot, ".tcrn-workflow", "profiles", "store.json")),
+    await assert.rejects(readFile(join(workspaceRoot, LEGACY_CONTROL_DIRECTORY, "profiles", "store.json")),
       (error) => error?.code === "ENOENT");
   } finally {
     await rm(base, { recursive: true, force: true });

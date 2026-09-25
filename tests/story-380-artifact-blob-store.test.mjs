@@ -21,6 +21,8 @@ import {
   initializeWorkspace,
   materializeWorkspace,
   validateWorkspace,
+  LEGACY_CONTROL_DIRECTORY,
+  DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 
 const instant = (second) => `2026-09-08T04:00:${String(second).padStart(2, "0")}Z`;
@@ -81,7 +83,7 @@ test("GWT1: an absolute generatedArtifactsPath under a cloud mount is accepted a
   const catalog = await cli(["settings-catalog", "--workspace", fx.workspace]);
   const entry = catalog.settings.find((candidate) => candidate.key === "workspace.generatedArtifactsPath");
   assert.equal(entry.currentValue, fx.cloud);
-  assert.equal(entry.defaultValue, ".tcrn-workflow/artifacts", "the relative default is unchanged");
+  assert.equal(entry.defaultValue, `${LEGACY_CONTROL_DIRECTORY}/artifacts`, "the relative default is unchanged");
 });
 
 test("GWT1: the path conditions are enforced, and each refusal names its own rule", async (t) => {
@@ -92,7 +94,7 @@ test("GWT1: the path conditions are enforced, and each refusal names its own rul
   // Inside the workspace, and inside its control tree: shape rules, decided by settings.ts
   // because they are the two that mean the same thing on every machine.
   assert.equal(await refusal([...base, join(fx.workspace, "artifacts")]), "SETTINGS_VALUE_INVALID");
-  assert.equal(await refusal([...base, join(fx.workspace, ".tcrn-workflow", "artifacts")]), "SETTINGS_VALUE_INVALID");
+  assert.equal(await refusal([...base, join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "artifacts")]), "SETTINGS_VALUE_INVALID");
   assert.equal(await refusal([...base, `${fx.cloud}/./nested`]), "SETTINGS_VALUE_INVALID", "an unnormalized path is refused rather than normalized");
 
   // Absent, and a symbolic link to a real directory: filesystem rules, decided by
@@ -113,7 +115,8 @@ test("GWT1: the path conditions are enforced, and each refusal names its own rul
 test("GWT1: the machine control home is out of bounds even when it is a real directory", async (t) => {
   const fx = await fixture(t, "gwt1-home");
   const home = join(fx.base, "home");
-  const inside = join(home, ".tcrn-workflow", "artifacts");
+  // The machine control home is the device directory the names module declares.
+  const inside = join(home, DIRECTORY.device, "artifacts");
   await mkdir(inside, { recursive: true });
   const outside = join(home, "Documents", "artifacts");
   await mkdir(outside, { recursive: true });
@@ -152,7 +155,7 @@ test("GWT2: artifact-put stores a 2 MB file as <sha256>.bin and records size and
   // The manifest is local. It stays in the workspace control tree even though the blob
   // did not, and it records no absolute path, so the same manifest reads on another
   // machine whose cloud mount sits somewhere else.
-  const manifest = JSON.parse(await readFile(join(fx.workspace, ".tcrn-workflow", "artifact-manifest.json"), "utf8"));
+  const manifest = JSON.parse(await readFile(join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "artifact-manifest.json"), "utf8"));
   assert.equal(manifest.schemaVersion, "tcrn.artifact-manifest.v1");
   assert.deepEqual(Object.keys(manifest.artifacts[0]).sort(), ["bytes", "name", "sha256", "storedAt", "storedBytes"]);
   assert.equal(JSON.stringify(manifest).includes(fx.cloud), false, "the manifest carries no local address");
@@ -270,7 +273,7 @@ test("the default relative root still works and lands inside the control tree", 
   await writeFile(source, "default root");
   const receipt = await cli(["artifact-put", "--workspace", fx.workspace, "--file", source, "--at", instant(2)]);
   assert.equal(receipt.reasonCode, "ARTIFACT_PUT_COMMITTED");
-  assert.deepEqual(await readdir(join(fx.workspace, ".tcrn-workflow", "artifacts")), [`${receipt.sha256}.bin`]);
+  assert.deepEqual(await readdir(join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "artifacts")), [`${receipt.sha256}.bin`]);
 });
 
 test("neither the chain nor the lease follows the blob: artifact-put appends no event", async (t) => {
@@ -284,7 +287,7 @@ test("neither the chain nor the lease follows the blob: artifact-put appends no 
   const after = await validateWorkspace(fx.workspace);
   assert.equal(after.version, before.version, "the chain did not move");
   assert.equal(after.headEventHash, before.headEventHash);
-  assert.equal((await readdir(join(fx.workspace, ".tcrn-workflow"))).includes("lease"), false, "the lease was released");
+  assert.equal((await readdir(join(fx.workspace, LEGACY_CONTROL_DIRECTORY))).includes("lease"), false, "the lease was released");
 });
 
 test("a chain carrying an absolute artifact root replays even where that directory does not exist", async (t) => {

@@ -7,7 +7,7 @@ It records what stays readable, what fails closed on purpose, and the one-way
 boundaries an operator must accept before enabling them.
 
 All paths below are workspace-relative placeholders. `<root>` is the Workspace
-authority root — the directory that contains `.tcrn-workflow/`. Paths with spaces
+authority root — the directory that contains the old-layout control directory, written `<control>/` below (its name is in [the alias table](../wiki/Glossary.md); from EPIC-141 on the engine only reads it). Paths with spaces
 are first-class; always double-quote them. No hostnames or home paths appear in
 this document, and none are written into a workspace by any procedure it
 describes.
@@ -97,7 +97,7 @@ id; a caller that does not will fail closed on its first mutation.
 
 ## Knowledge stores: metadata schema evolution
 
-The Knowledge Core store under `<root>/.tcrn-workflow/knowledge/` is a
+The Knowledge Core store under `<root>/<control>/knowledge/` is a
 **disposable derived index**, never the system of record. Its store marker
 carries `disposable: true` and `authority: "metadata-index-authority-body-separate"`.
 The system of record is the workspace event log (projects, work, conferences,
@@ -124,10 +124,10 @@ interchangeable:
 ### Disposable re-initialization procedure
 
 1. **The authority is safe.** The workspace event log under
-   `<root>/.tcrn-workflow/events/` is the system of record and is untouched by
+   `<root>/<control>/events/` is the system of record and is untouched by
    this procedure. Nothing below rewrites a workspace event.
 
-2. **Remove the derived store.** Delete `<root>/.tcrn-workflow/knowledge/`. This
+2. **Remove the derived store.** Delete `<root>/<control>/knowledge/`. This
    is a derived index; its metadata and views are re-derivable and are not the
    source of truth. (`knowledge-init` writes a *new* store directory and will not
    overwrite an existing one, so the old store must be cleared first.)
@@ -135,7 +135,7 @@ interchangeable:
 3. **Re-initialize under explicit acknowledgment.**
 
    ```
-   pnpm --silent exec tcrn-workflow knowledge-init --workspace "<root>" --acknowledge-disposable
+   pnpm --silent exec einzbern knowledge-init --workspace "<root>" --acknowledge-disposable
    ```
 
    Every non-fixture workspace must pass `--acknowledge-disposable`; without it,

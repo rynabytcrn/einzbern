@@ -24,6 +24,7 @@ import {
   initializeWorkspace,
   materializeWorkspace,
   updateProject,
+  LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { FileBackend } from "../dist/build/packages/core/src/storage-backend.js";
 
@@ -105,7 +106,7 @@ test("STORY-174 red leg: the deviated segment is refused by chain validation", a
     // red leg: a one-byte deviation on the control surface is refused.
     const { writeFile } = await import("node:fs/promises");
     const { join: pathJoin } = await import("node:path");
-    await writeFile(pathJoin(fixture.workspace, ".tcrn-workflow", "events", segmentName), deviated);
+    await writeFile(pathJoin(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "events", segmentName), deviated);
 
     let thrown = null;
     try {

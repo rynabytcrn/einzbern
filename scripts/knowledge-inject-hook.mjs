@@ -5,7 +5,7 @@
 // Claude Code fires a hook with a JSON body on stdin (SessionStart has no prompt;
 // UserPromptSubmit carries `prompt`). This wrapper:
 //   1. reads stdin;
-//   2. runs the injection chain (tcrn-workflow/scripts/knowledge-inject.mjs) with the
+//   2. runs the injection chain (scripts/knowledge-inject.mjs) with the
 //      prompt; ordinary prompts use engine recall, while SubagentStart requires an
 //      explicit role/workId/Pack binding and never receives global L0;
 //   3. writes the hook protocol response with `additionalContext` = the metadata-level

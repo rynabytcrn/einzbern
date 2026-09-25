@@ -19,7 +19,7 @@
 
 - **given**：`verify-installed-copy` 报 `ARCHIVE_LIMIT_EXCEEDED` 或 `INPUT_TOO_LARGE`。
 - **when**：定位根因时。
-- **then**：先怀疑自己把错误对象喂给了验证器——`--installed-dir` 应指向已安装的 **skill 副本**（平台根 `.claude/skills/tcrn-workflow-helper/`），不是引擎树（`~/.tcrn-workflow/tcrn-workflow`）。该验证器 `reconstructArchiveFromDirectory` 重建 skill 归档比对 `EXPECTED_ARCHIVE_SHA256`，喂一棵引擎树必然超限。**结论不是「信任面坏了」**。
+- **then**：先怀疑自己把错误对象喂给了验证器——`--installed-dir` 应指向已安装的 **skill 副本**（平台根 `.claude/skills/mana-orchestrate/`），不是已装的引擎树。该验证器 `reconstructArchiveFromDirectory` 重建 skill 归档比对 `EXPECTED_ARCHIVE_SHA256`，喂一棵引擎树必然超限。**结论不是「信任面坏了」**。
 - **rubric（判定）**：把该错误直接归因于「信任面坏 / 需要重装上报」而未核对输入对象 → **反模式（红）**；先核对 `--installed-dir` 指向的确实是 skill 副本 → **正确（绿）**。
 - **来源**：`helper-trust-state-unreleased`（2026-08-04 完整重钉实测；INC-029 原始症状描述有误，底层发现为真）；平台 CLAUDE.md §三.1。
 
@@ -27,7 +27,7 @@
 
 - **given**：会话首验报 `IDENTITY_MISMATCH`。
 - **when**：处置之前。
-- **then**：先分清两型——**安装副本漂移**（被验对象变了）还是**验证器陈旧**（`~/.tcrn-workflow` 的 bootstrap+archive+provenance+state 落后于被验对象）。方向搞反会降级或写坏 live skill。定案靠经验证据不靠猜：①diff 安装副本 vs 仓内 payload；②用仓内候选 bootstrap 对安装副本做干跑 verify（scratch 0600 canonical state）。
+- **then**：先分清两型——**安装副本漂移**（被验对象变了）还是**验证器陈旧**（设备目录 `~/.einzbern` 里的 bootstrap+archive+provenance+state 落后于被验对象）。方向搞反会降级或写坏 live skill。定案靠经验证据不靠猜：①diff 安装副本 vs 仓内 payload；②用仓内候选 bootstrap 对安装副本做干跑 verify（scratch 0600 canonical state）。
 - **rubric（判定）**：未分诊直接重装/降级修复 → **反模式（红）**；先分诊两型、再选定向工具（diff + 新锚干跑）→ **正确（绿）**。
 - **来源**：`helper-trust-state-unreleased`（2026-07-23 一例：失配是验证器陈旧于 candidate.24，修法=刷新验证器向前，非还原 skill）；`tcrn-adoption-live`。
 
@@ -53,7 +53,7 @@
 - **when**：验证「东西到没到别处」。
 - **then**：问服务器本身（`git ls-remote`）；比较提交比**全 sha**。不用 `git log --not --remotes`（窄 fetch refspec 的克隆上它永远看不见新推的分支），不拿本地截断 sha 对远端截断 sha 报假差异。
 - **rubric（判定）**：用 `git log --not --remotes` 或截断 sha 断言「到了/没到」→ **反模式（红）**；问 `git ls-remote` 并按全 sha 比对 → **正确（绿）**。
-- **来源**：平台 CLAUDE.md §一.4；`tcrn-workflow/CLAUDE.md` §4。
+- **来源**：平台 CLAUDE.md §一.4；引擎仓 `CLAUDE.md` §4。
 
 ---
 

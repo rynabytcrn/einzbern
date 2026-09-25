@@ -28,6 +28,7 @@ import {
   validateKnowledgeStore,
   validateWorkspace,
   verifySnapshotManifest,
+  LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { rootPortableIdentity } from "../dist/build/packages/core/src/root-identity.js";
 import { canonicalJson, canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
@@ -124,7 +125,7 @@ test("WSF-2 case 2: snapshot-manifest fails WORKSPACE_LOCKED against a lease-hel
 test("WSF-2 case 3: control-dir quarantine residue fails closed with SNAPSHOT_RESIDUE_PRESENT", async (t) => {
   const fixture = await workspaceFixture();
   t.after(() => fixture.close());
-  await mkdir(join(fixture.workspace, ".tcrn-workflow", "stale-lease-deadbeef"));
+  await mkdir(join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "stale-lease-deadbeef"));
   await manifestUnderLease(fixture.workspace, 4, async (lease) => {
     await assert.rejects(
       createSnapshotManifest(fixture.workspace, lease),
@@ -177,7 +178,7 @@ test("WSF-2 case 7: snapshot-verify fails SNAPSHOT_MISMATCH naming a tampered se
   const manifest = await manifestUnderLease(fixture.workspace, 4, (lease) => createSnapshotManifest(fixture.workspace, lease));
   const target = join(fixture.base, "restore-copy");
   await mkdir(target);
-  await cp(join(fixture.workspace, ".tcrn-workflow"), join(target, ".tcrn-workflow"), { recursive: true });
+  await cp(join(fixture.workspace, LEGACY_CONTROL_DIRECTORY), join(target, LEGACY_CONTROL_DIRECTORY), { recursive: true });
   // A clean copy verifies.
   assert.deepEqual(await verifySnapshotManifest(target, manifest), {
     schemaVersion: "tcrn.workspace-snapshot-verify.v1",
@@ -185,7 +186,7 @@ test("WSF-2 case 7: snapshot-verify fails SNAPSHOT_MISMATCH naming a tampered se
     files: JSON.parse(manifest).files.length,
   });
   // Flip one byte of a copied event segment.
-  const segment = join(target, ".tcrn-workflow", "events", "000001.json");
+  const segment = join(target, LEGACY_CONTROL_DIRECTORY, "events", "000001.json");
   const bytes = await readFile(segment);
   bytes[0] = bytes[0] === 0x20 ? 0x21 : 0x20;
   await writeFile(segment, bytes);
@@ -256,7 +257,7 @@ async function roundTripFixture() {
   return {
     base,
     workspace,
-    control: join(workspace, ".tcrn-workflow"),
+    control: join(workspace, LEGACY_CONTROL_DIRECTORY),
     async close() {
       await rm(base, { recursive: true, force: true });
     },
@@ -269,10 +270,10 @@ test("WSF-3 case 8: snapshot then wipe then restore round-trips the whole contro
   const manifest = await manifestUnderLease(fixture.workspace, 10, (lease) => createSnapshotManifest(fixture.workspace, lease));
   assert.equal(JSON.parse(manifest).validate.knowledge, "valid", "the manifest embeds a valid knowledge store");
   const copy = join(fixture.base, "snapshot-copy");
-  await cp(fixture.control, join(copy, ".tcrn-workflow"), { recursive: true });
+  await cp(fixture.control, join(copy, LEGACY_CONTROL_DIRECTORY), { recursive: true });
   // Wipe the live control tree entirely, then restore it from the copy in place.
   await rm(fixture.control, { recursive: true, force: true });
-  await cp(join(copy, ".tcrn-workflow"), fixture.control, { recursive: true });
+  await cp(join(copy, LEGACY_CONTROL_DIRECTORY), fixture.control, { recursive: true });
   // The restored copy verifies byte-for-byte against the manifest receipt.
   assert.equal((await verifySnapshotManifest(fixture.workspace, manifest)).reasonCode, "SNAPSHOT_VERIFIED");
   // Both stores validate green after restore, and the workspace head is unchanged.
@@ -324,7 +325,7 @@ test("WSF-3 case 10: restoring the tree to a different path fails WORKSPACE_SCHE
   t.after(() => rm(alternate, { recursive: true, force: true }));
   const relocated = join(alternate, "workspace");
   await mkdir(relocated);
-  await cp(fixture.control, join(relocated, ".tcrn-workflow"), { recursive: true });
+  await cp(fixture.control, join(relocated, LEGACY_CONTROL_DIRECTORY), { recursive: true });
   // The original fixture stays intact so root recanonicalization succeeds and the
   // only failure is the same-path identity mismatch — proving the doctrine is real.
   await assert.rejects(
@@ -341,32 +342,34 @@ test("WSF-3 case 10: restoring the tree to a different path fails WORKSPACE_SCHE
 // ADJACENT to the WSF-2 exclusion list documented in workspace-snapshot.ts so the
 // doc and the engine constants drift together loudly. Hermetic: no git is invoked.
 const GITIGNORE_EXPECTED = [
-  ".tcrn-workflow/lease/",
-  ".tcrn-workflow/lease-recovery.claim",
-  ".tcrn-workflow/knowledge/mutation.claim",
-  ".tcrn-workflow/knowledge/released-*",
-  ".tcrn-workflow/artifacts/restore.claim",
-  ".tcrn-workflow/artifacts/released-restore-*",
-  ".tcrn-workflow/stale-lease-*/",
-  ".tcrn-workflow/released-*",
-  ".tcrn-workflow/attempt-owned-*",
-  ".tcrn-workflow/**/.tmp-*",
+  `${LEGACY_CONTROL_DIRECTORY}/lease/`,
+  `${LEGACY_CONTROL_DIRECTORY}/lease-recovery.claim`,
+  `${LEGACY_CONTROL_DIRECTORY}/knowledge/mutation.claim`,
+  `${LEGACY_CONTROL_DIRECTORY}/knowledge/released-*`,
+  `${LEGACY_CONTROL_DIRECTORY}/artifacts/restore.claim`,
+  `${LEGACY_CONTROL_DIRECTORY}/artifacts/released-restore-*`,
+  `${LEGACY_CONTROL_DIRECTORY}/stale-lease-*/`,
+  `${LEGACY_CONTROL_DIRECTORY}/released-*`,
+  `${LEGACY_CONTROL_DIRECTORY}/attempt-owned-*`,
+  `${LEGACY_CONTROL_DIRECTORY}/**/.tmp-*`,
 ];
 
 test("WSF-4 case 11: backup-git-tier.md prescribes the exact SDC-9 residue .gitignore", async () => {
   const doc = await readFile(new URL("../docs/architecture/backup-git-tier.md", import.meta.url), "utf8");
   const fence = doc.match(/```gitignore\n([\s\S]*?)```/u);
   assert.ok(fence, "the doc must carry a fenced gitignore block");
-  const lines = fence[1].split("\n").map((line) => line.trim()).filter((line) => line !== "" && !line.startsWith("#"));
+  // The doc writes the old-layout control directory as <control>; substituted, the block is
+  // the exact .gitignore residue fence.
+  const lines = fence[1].split("\n").map((line) => line.trim().replaceAll("<control>", LEGACY_CONTROL_DIRECTORY)).filter((line) => line !== "" && !line.startsWith("#"));
   // The block is exactly the SDC-9 taxonomy — no more, no fewer patterns.
   assert.deepEqual(lines, GITIGNORE_EXPECTED, "the gitignore fence must match the SDC-9 residue taxonomy exactly");
   // Targeted invariants the verifier corrections require, stated independently of order:
-  assert.ok(lines.includes(".tcrn-workflow/lease/"), "must ignore the lease directory");
-  assert.ok(lines.includes(".tcrn-workflow/lease-recovery.claim"), "must ignore the recovery claim");
-  assert.ok(lines.includes(".tcrn-workflow/knowledge/mutation.claim"), "must ignore the knowledge mutation claim");
-  assert.ok(lines.includes(".tcrn-workflow/knowledge/released-*"), "must ignore the knowledge release quarantine");
-  assert.ok(lines.includes(".tcrn-workflow/artifacts/restore.claim"), "must ignore the artifact restore claim");
-  assert.ok(lines.includes(".tcrn-workflow/artifacts/released-restore-*"), "must ignore the artifact restore quarantine");
+  assert.ok(lines.includes(`${LEGACY_CONTROL_DIRECTORY}/lease/`), "must ignore the lease directory");
+  assert.ok(lines.includes(`${LEGACY_CONTROL_DIRECTORY}/lease-recovery.claim`), "must ignore the recovery claim");
+  assert.ok(lines.includes(`${LEGACY_CONTROL_DIRECTORY}/knowledge/mutation.claim`), "must ignore the knowledge mutation claim");
+  assert.ok(lines.includes(`${LEGACY_CONTROL_DIRECTORY}/knowledge/released-*`), "must ignore the knowledge release quarantine");
+  assert.ok(lines.includes(`${LEGACY_CONTROL_DIRECTORY}/artifacts/restore.claim`), "must ignore the artifact restore claim");
+  assert.ok(lines.includes(`${LEGACY_CONTROL_DIRECTORY}/artifacts/released-restore-*`), "must ignore the artifact restore quarantine");
   assert.ok(lines.some((line) => line.includes(".tmp-")), "must ignore atomic-write temporaries");
   // The doc downgrades git to witness-only: it must route restores through the copy
   // runbook and carry the quiesce-before-working-tree-ops and headEventHash-message conventions.
@@ -453,7 +456,7 @@ async function ledgerFixture() {
   };
 }
 
-const metadataPath = (workspaceRoot) => join(workspaceRoot, ".tcrn-workflow", "workspace.json");
+const metadataPath = (workspaceRoot) => join(workspaceRoot, LEGACY_CONTROL_DIRECTORY, "workspace.json");
 
 async function readLedgerMetadata(workspaceRoot) {
   return JSON.parse(await readFile(metadataPath(workspaceRoot), "utf8"));
@@ -489,7 +492,7 @@ function ledgerHop(fixture, metadata) {
 
 // The operator moves the bytes; the engine has never had a destination-writing verb.
 async function copyLedgerControlTree(fromWorkspace, toWorkspace) {
-  await cp(join(fromWorkspace, ".tcrn-workflow"), join(toWorkspace, ".tcrn-workflow"), { recursive: true });
+  await cp(join(fromWorkspace, LEGACY_CONTROL_DIRECTORY), join(toWorkspace, LEGACY_CONTROL_DIRECTORY), { recursive: true });
 }
 
 async function vacatedLedgerFixture(t) {

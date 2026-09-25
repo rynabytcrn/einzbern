@@ -23,6 +23,7 @@ import {
   initializeWorkspace,
   materializeWorkspace,
   validateWorkspace,
+  LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { assertCanonicalJson, compareCanonicalText, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
@@ -119,11 +120,11 @@ test("STORY-300: a batch that crosses a segment boundary writes ascending and re
     { expectedVersion: 3, occurredAt: instant(5) });
 
   assert.equal(committed.version, 6, "the batch spans versions four through six");
-  const segments = (await readdir(join(workspace, ".tcrn-workflow", "events"))).sort();
+  const segments = (await readdir(join(workspace, LEGACY_CONTROL_DIRECTORY, "events"))).sort();
   assert.deepEqual(segments, ["000001.json", "000002.json"], "the batch opened the second segment");
   // The non-final segment must be exactly full: an under-full one is what replay
   // reads as a broken chain.
-  const first = assertCanonicalJson(await readFile(join(workspace, ".tcrn-workflow", "events", "000001.json"), "utf8"));
+  const first = assertCanonicalJson(await readFile(join(workspace, LEGACY_CONTROL_DIRECTORY, "events", "000001.json"), "utf8"));
   assert.equal(first.length, 4, "the earlier segment is written to its limit before the next one opens");
   const rematerialized = await materializeWorkspace(workspace);
   assert.equal(rematerialized.version, 6);
@@ -146,7 +147,7 @@ test("STORY-300: a member that refuses leaves the chain untouched", async (conte
   assert.equal(after.version, before.version, "a refused batch does not advance the version");
   assert.equal(after.headEventHash, before.headEventHash, "a refused batch does not move the head");
   assert.equal(after.projects.length, before.projects.length, "not even the member that succeeded is left behind");
-  assert.deepEqual(await readdir(join(workspace, ".tcrn-workflow", "events")), [], "no segment was written");
+  assert.deepEqual(await readdir(join(workspace, LEGACY_CONTROL_DIRECTORY, "events")), [], "no segment was written");
 });
 
 // One batch is one mutation: one lease, one claim, one concurrency decision. Red

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-INIT-019 STORY-162 — the knowledge injection chain.
 //
-//   node tcrn-workflow/scripts/knowledge-inject.mjs --prompt "<p>" [--partition X]
+//   node scripts/knowledge-inject.mjs --prompt "<p>" [--partition X]
 //       [--limit N] [--budget N] [--trigger-keywords "a,b,c"] [--self-test] [--verify-channel]
 //
 // WHAT THIS IS. D2's "webhook/hook 提醒 agent 按 prompt 检索并注入" on Claude Code is a

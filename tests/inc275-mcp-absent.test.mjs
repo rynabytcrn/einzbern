@@ -39,7 +39,7 @@ test("CLI catalog contains no MCP surface verb", async () => {
 
 test("package.json bin field declares no MCP entry", async () => {
   // TCRN-CROSS-INC-275: Verify the shipped binary offers no MCP surface.
-  // This test would fail if a tcrn-workflow-mcp executable entry were added to bin.
+  // This test would fail if an MCP executable entry were added to bin.
   const pkg = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
   const binKeys = Object.keys(pkg.bin || {});
   const mcpBinEntries = binKeys.filter((key) => /mcp/i.test(key));

@@ -282,7 +282,7 @@ export function validateP8ReleaseDocuments(documents) {
 export function buildP8ReleaseArtifacts({ sourceArchive, sbom }) {
   assertion(Buffer.isBuffer(sourceArchive) && Buffer.isBuffer(sbom), "P8_RELEASE_DOCUMENT_INVALID");
   const sourcePath = P8_RELEASE_ARTIFACTS[0];
-  const notes = Buffer.from(`# TCRN Workflow ${P8_VERSION}\n\nThis is an immutable unpublished local release candidate. It supports no AOS releases, performs no publication, and is not a supported release.\n`, "utf8");
+  const notes = Buffer.from(`# ${BRAND.engine.name} ${P8_VERSION}\n\nThis is an immutable unpublished local release candidate. It supports no AOS releases, performs no publication, and is not a supported release.\n`, "utf8");
   const manifestBasis = {
     schemaVersion: "tcrn.workflow-release-candidate-manifest.v1",
     repository: P8_REPOSITORY,
@@ -301,7 +301,7 @@ export function buildP8ReleaseArtifacts({ sourceArchive, sbom }) {
     predicate: {
       buildType: "tcrn.workflow.local-unpublished-candidate.v1",
       buildDefinition: { externalParameters: { version: P8_VERSION, tag: P8_TAG, supportedAosReleases: P8_SUPPORTED_AOS_RELEASES }, resolvedDependencies: [documentRecord("release-manifest.json", manifest)] },
-      runDetails: { builder: { id: "tcrn-workflow-local" }, metadata: { invocationId: sha256(manifest), startedOn: "1970-01-01T00:00:00.000Z", finishedOn: "1970-01-01T00:00:00.000Z" } },
+      runDetails: { builder: { id: `${BRAND.engine.id}-local` }, metadata: { invocationId: sha256(manifest), startedOn: "1970-01-01T00:00:00.000Z", finishedOn: "1970-01-01T00:00:00.000Z" } },
     },
   })}\n`, "utf8");
   const checksums = Buffer.from([

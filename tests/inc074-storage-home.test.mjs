@@ -34,6 +34,7 @@ import {
   sealStorageHomeDeclaration,
   withStorageBackendFactory,
   writeStorageHomeDeclaration,
+  LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 
 const instant = (second) => `2026-07-11T00:00:${String(second).padStart(2, "0")}Z`;
@@ -130,7 +131,7 @@ test("INC-074: a workspace with retired PG backend fails to read (STORAGE_HOME_B
 test("INC-074: a malformed sentinel fails closed rather than being treated as absent", async () => {
   const fixture = await workspaceFixture();
   try {
-    const control = join(fixture.workspace, ".tcrn-workflow");
+    const control = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY);
     const { writeFile } = await import("node:fs/promises");
     await writeFile(join(control, "storage-home.json"), `{"schemaVersion":"${STORAGE_HOME_VERSION}","storage":"bogus"}`, "utf8");
     await assert.rejects(

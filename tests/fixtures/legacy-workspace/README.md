@@ -1,18 +1,19 @@
 # Frozen old-layout workspace
 
-This directory freezes one workspace in the old layout (`<root>/.tcrn-workflow/`), written
+This directory freezes one workspace in the old layout, written
 by the engine before any event was written in the `einzbern.*` namespace. The read-only
 reader (`packages/core/src/legacy-workspace.ts`), `chain-validate` and the later import
 into a library are tested against it. Nothing here may be regenerated: the event bytes are
-the evidence.
+the evidence. `<control>` below is the old-layout control directory; its name is in
+[the alias table](../../../docs/wiki/Glossary.md) and in `LEGACY_CONTROL_DIRECTORY`.
 
 ## Layout and how a test restores it
 
 | In this directory | Restored to | Bytes |
 | --- | --- | --- |
-| `control/events/*.ndjson` | `<root>/.tcrn-workflow/events/` | copied byte for byte |
-| `control/workspace.json` | `<root>/.tcrn-workflow/workspace.json` | stored pretty-printed for the format gate; restored as `canonicalJson(JSON.parse(...))`, which is the byte form the engine wrote |
-| `control/events/manifest.json` | `<root>/.tcrn-workflow/events/manifest.json` | the segment sidecar, restored the same way; the reader never trusts it |
+| `control/events/*.ndjson` | `<root>/<control>/events/` | copied byte for byte |
+| `control/workspace.json` | `<root>/<control>/workspace.json` | stored pretty-printed for the format gate; restored as `canonicalJson(JSON.parse(...))`, which is the byte form the engine wrote |
+| `control/events/manifest.json` | `<root>/<control>/events/manifest.json` | the segment sidecar, restored the same way; the reader never trusts it |
 | `expected.json` | not restored | the replay facts every test compares against |
 
 The five roots in `workspace.json` are the placeholders `<fixture>/<kind>`. Event

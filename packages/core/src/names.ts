@@ -80,7 +80,9 @@ export const LEGACY_CONTROL_DIRECTORY = ".tcrn-workflow" as const;
 // The old per-machine directory (`~/.tcrn-workflow`): recognised to find an old install.
 export const LEGACY_DEVICE_DIRECTORY = ".tcrn-workflow" as const;
 export const LEGACY_CONTAINER_DIRECTORY = ".tcrn-workspace" as const;
-export const LEGACY_PORTAL_NAME = "TCRN Workflow Portal" as const;
+// The old product name as prose and page titles spelled it.
+export const LEGACY_BRAND_NAME = "TCRN Workflow" as const;
+export const LEGACY_PORTAL_NAME = `${LEGACY_BRAND_NAME} Portal` as const;
 export const LEGACY_EVENTS_DIRECTORY = "events" as const;
 export const LEGACY_KNOWLEDGE_DIRECTORY = "knowledge" as const;
 export const PLATFORM_ARCHIVE_DIRECTORY = ".tcrn-artifacts" as const;
@@ -93,6 +95,7 @@ export interface LegacyNameEntry {
 }
 
 export const LEGACY_NAMES: readonly LegacyNameEntry[] = [
+  { legacy: LEGACY_BRAND_NAME, current: BRAND.engine.name, note: "产品名" },
   { legacy: LEGACY_ENGINE_NAME, current: BRAND.engine.id, note: "引擎：仓名、npm 包名与 CLI 命令名" },
   { legacy: LEGACY_HELPER_NAME, current: BRAND.helper.id, note: "助手：仓名与 Skill id" },
   { legacy: LEGACY_CONTAINER_DIRECTORY, current: DIRECTORY.library, note: "项目生成物目录（库）" },
@@ -120,6 +123,10 @@ export const LEGACY_REPOSITORY_NAMES = {
   engine: LEGACY_ENGINE_NAME,
   helper: LEGACY_HELPER_NAME,
 } as const;
+
+// Every GitHub name the engine repository answers to: the new one, and the old one until
+// the Owner renames the remote. A remote or origin check accepts exactly these.
+export const ENGINE_REPOSITORY_NAMES: readonly string[] = Object.freeze([BRAND.engine.id, LEGACY_REPOSITORY_NAMES.engine]);
 
 export const ALIAS_TABLE_START_MARKER = "<!-- einzbern:alias-table:start -->" as const;
 export const ALIAS_TABLE_END_MARKER = "<!-- einzbern:alias-table:end -->" as const;

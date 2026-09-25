@@ -17,6 +17,7 @@ is rendered from `packages/core/src/names.ts` and is the same table as
 <!-- einzbern:alias-table:start -->
 | 旧名 | 新名 | 说明 |
 | --- | --- | --- |
+| `TCRN Workflow` | `Einzbern` | 产品名 |
 | `tcrn-workflow` | `einzbern` | 引擎：仓名、npm 包名与 CLI 命令名 |
 | `tcrn-workflow-helper` | `mana-orchestrate` | 助手：仓名与 Skill id |
 | `.tcrn-workspace` | `.ether` | 项目生成物目录（库） |

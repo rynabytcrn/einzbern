@@ -4,7 +4,7 @@
 
 window.PORTAL_LOCALES = {
   "en": {
-    "app.brand": "TCRN Workflow",
+    "app.brand": "Atelier",
     "app.subtitle": "Portal",
     "app.boundaryBody": "Writes use the public CLI and return the engine receipt.",
     "nav.dashboard": "Dashboard",
@@ -337,7 +337,7 @@ window.PORTAL_LOCALES = {
     "setting.execution.dispatchTiers.description": "JSON map of open host names to flagship, main, and economy model/effort rows."
   },
   "zh-CN": {
-    "app.brand": "TCRN Workflow",
+    "app.brand": "Atelier",
     "app.subtitle": "门户",
     "app.boundaryBody": "写入使用公共 CLI，并返回引擎回执。",
     "nav.dashboard": "仪表盘",
@@ -670,7 +670,7 @@ window.PORTAL_LOCALES = {
     "setting.execution.dispatchTiers.description": "将开放宿主名映射到旗舰、主力、经济模型与 effort 行的 JSON 映射。"
   },
   "ja": {
-    "app.brand": "TCRN Workflow",
+    "app.brand": "Atelier",
     "app.subtitle": "ポータル",
     "app.boundaryBody": "書き込みは公開 CLI を使い、エンジンのレシートを返します。",
     "nav.dashboard": "ダッシュボード",
@@ -1003,7 +1003,7 @@ window.PORTAL_LOCALES = {
     "setting.execution.dispatchTiers.description": "開かれたホスト名を flagship、main、economy のモデルと effort 行へ対応付ける JSON マップです。"
   },
   "ko": {
-    "app.brand": "TCRN Workflow",
+    "app.brand": "Atelier",
     "app.subtitle": "포털",
     "app.boundaryBody": "쓰기는 공개 CLI를 사용하고 엔진 영수증을 반환합니다.",
     "nav.dashboard": "대시보드",
@@ -1336,7 +1336,7 @@ window.PORTAL_LOCALES = {
     "setting.execution.dispatchTiers.description": "열린 호스트 이름을 flagship, main, economy 모델 및 effort 행에 연결하는 JSON 맵입니다."
   },
   "fr": {
-    "app.brand": "TCRN Workflow",
+    "app.brand": "Atelier",
     "app.subtitle": "Portail",
     "app.boundaryBody": "Les écritures utilisent la CLI publique et renvoient le reçu du moteur.",
     "nav.dashboard": "Tableau de bord",

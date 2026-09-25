@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 //
-// The portal's standing proof that it consumes only the public TCRN Workflow
+// The portal's standing proof that it consumes only the public Einzbern
 // boundary. It scans every source file in the repository rather than a named
 // list of directories: a gate that only reads two folders stops protecting the
 // moment someone adds a third.
@@ -9,13 +9,18 @@ import { readdir, readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { BRAND, LOCAL_DIRECTORY_NAMES } from "../../scripts/lib/names.mjs";
+
 const portalRoot = fileURLToPath(new URL("..", import.meta.url));
 const skippedDirectories = new Set([".git", "node_modules", "dist"]);
 const sourceExtensions = new Set([".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".html"]);
 const importPattern = /(?:from\s+|import\s*\(\s*|require\s*\(\s*)["']([^"']+)["']/gu;
 // Engine internals are package paths. The CLI entry point is deliberately not
 // matched: shelling out to `scripts/einzbern.mjs` is the sanctioned route.
-const forbiddenPattern = /(?:^|[\\/])(?:tcrn-workflow[\\/]packages|packages[\\/](?:core|cli|protocol|mcp|pg-backend))(?:[\\/]|$)/u;
+// The engine is reached as <engine folder>/packages whether its checkout keeps the local
+// folder name or carries the product id.
+const engineFolders = [LOCAL_DIRECTORY_NAMES.engine.split("/").at(-1), BRAND.engine.id].join("|");
+const forbiddenPattern = new RegExp(`(?:^|[\\\\/])(?:(?:${engineFolders})[\\\\/]packages|packages[\\\\/](?:core|cli|protocol|mcp|pg-backend))(?:[\\\\/]|$)`, "u");
 
 async function sourceFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });

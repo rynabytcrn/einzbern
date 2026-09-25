@@ -25,7 +25,7 @@ function test(name, optionsOrBody, maybeBody) {
 import { adapterIdentityObservations, coreExportedSymbols, inspectChainValidation, inspectHostRenderDrift, inspectPlatform } from "../scripts/platform-doctor.mjs";
 import { GUARDED_TREES, HOSTS, claudeHookSettings, codexHookDocument, hookEntriesFor } from "../scripts/host-harness.mjs";
 import { applyHostHarness } from "../scripts/host-harness-apply.mjs";
-import { BRAND, DIRECTORY, INSTALL_MANIFEST, LEGACY_ENGINE_NAME, initializeWorkspace, materializeWorkspace, workspaceBudgets } from "../dist/build/packages/core/src/index.js";
+import { BRAND, DIRECTORY, INSTALL_MANIFEST, LEGACY_BRAND_NAME, LEGACY_ENGINE_NAME, LOCAL_DIRECTORY_NAMES, initializeWorkspace, materializeWorkspace, workspaceBudgets } from "../dist/build/packages/core/src/index.js";
 import { PROTOCOL_LIMITS, canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
 
 const topology = "## 三、分区拓扑\n";
@@ -62,11 +62,11 @@ function syntheticRoster(count = 7) {
 
 function inc250Roster() {
   const repositories = [
-    ["engine-suite", "TCRN Platform/tcrn-workflow"],
-    ["engine-p1", "TCRN Platform/tcrn-workflow"],
-    ["engine-guards", "TCRN Platform/tcrn-workflow"],
-    ["engine-release", "TCRN Platform/tcrn-workflow"],
-    ["platform-layout", "TCRN Platform/tcrn-workflow"],
+    ["engine-suite", LOCAL_DIRECTORY_NAMES.engine],
+    ["engine-p1", LOCAL_DIRECTORY_NAMES.engine],
+    ["engine-guards", LOCAL_DIRECTORY_NAMES.engine],
+    ["engine-release", LOCAL_DIRECTORY_NAMES.engine],
+    ["platform-layout", LOCAL_DIRECTORY_NAMES.engine],
     ["chain-validate", "chain container"],
     ["product-gates", "TCRN Platform/TCRN-Design-System"],
   ];
@@ -94,7 +94,7 @@ function chainAcceptanceBinding(marker) {
 function inc250Bindings(roster, { engine = "a", chain = "c", designSystem = "d" } = {}) {
   const bindings = {};
   for (const group of roster.groups) {
-    if (group.repository === "TCRN Platform/tcrn-workflow") bindings[group.id] = gitAcceptanceBinding(group.repository, engine.repeat(40));
+    if (group.repository === LOCAL_DIRECTORY_NAMES.engine) bindings[group.id] = gitAcceptanceBinding(group.repository, engine.repeat(40));
     else if (group.repository === "TCRN Platform/TCRN-Design-System") bindings[group.id] = gitAcceptanceBinding(group.repository, designSystem.repeat(40));
     else bindings[group.id] = chainAcceptanceBinding(chain);
   }
@@ -189,7 +189,7 @@ test("INC-351: doctor compares host-render against the managed engine root", asy
   });
   assert.equal(managed.ok, true, JSON.stringify(managed));
 
-  const developmentRoot = join(fixture.root, "TCRN Platform", "tcrn-workflow");
+  const developmentRoot = join(fixture.root, LOCAL_DIRECTORY_NAMES.engine);
   const development = await inspectHostRenderDrift(fixture.root, {
     homeRoot: fixture.home,
     manifest: INSTALL_MANIFEST,
@@ -204,7 +204,7 @@ test("INC-351: doctor compares host-render against the managed engine root", asy
 
 test("TCRN-CROSS-STORY-429: doctor uses the explicitly selected hooks-only projection", async (context) => {
   const root = await fixture(context);
-  const repoRoot = join(root, "TCRN Platform", "tcrn-workflow");
+  const repoRoot = join(root, LOCAL_DIRECTORY_NAMES.engine);
   await mkdir(join(root, ".codex"), { recursive: true });
   await writeFile(join(root, ".codex", "config.toml"), `model = "user-model"\nmodel_reasoning_effort = "low"\n`);
   await writeFile(join(root, ".codex", "hooks.json"), `${JSON.stringify(codexHookDocument(repoRoot, root), null, 2)}\n`);
@@ -391,7 +391,7 @@ test("S259 bridge syntax skips hidden directories and the workspace container", 
   assert.equal(result.checks.find((item) => item.name === "bridgeSyntax").ok, true);
 });
 
-async function completeInstallFixture(context, { engineVersion = "0.11.15", helperVersion = "0.11.15", helperPin = "Targets TCRN Workflow", harness = true, roster = syntheticRoster() } = {}) {
+async function completeInstallFixture(context, { engineVersion = "0.11.15", helperVersion = "0.11.15", helperPin = `Targets ${LEGACY_BRAND_NAME}`, harness = true, roster = syntheticRoster() } = {}) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-init033-doctor-")));
   context.after(() => rm(base, { recursive: true, force: true }));
   const root = join(base, "platform");
@@ -448,7 +448,7 @@ async function completeInstallFixture(context, { engineVersion = "0.11.15", help
     // point at files that exist and pass `node --check` here rather than reaching into
     // the developer's real checkout. A fixture whose hooks name absent targets would red
     // on executability and teach nothing about coverage.
-    const fixtureRepo = join(root, "TCRN Platform", "tcrn-workflow");
+    const fixtureRepo = join(root, LOCAL_DIRECTORY_NAMES.engine);
     for (const host of HOSTS) {
       for (const entry of hookEntriesFor(host)) {
         const handler = join(fixtureRepo, entry.handler);
@@ -489,7 +489,7 @@ test("S264 four install-completeness legs are green on a synthetic full fixture"
 });
 
 test("INC-351: freshness accepts the three closed Helper pin forms", async (context) => {
-  const forms = ["Supports TCRN Workflow", "Targets TCRN Workflow", "Targets the TCRN Workflow"];
+  const forms = [`Supports ${LEGACY_BRAND_NAME}`, `Targets ${LEGACY_BRAND_NAME}`, `Targets the ${LEGACY_BRAND_NAME}`];
   for (const helperPin of forms) {
     const fixture = await completeInstallFixture(context, { engineVersion: "1.1.2", helperVersion: "1.1.2", helperPin });
     const result = await inspectInstallFixture(fixture);
@@ -503,9 +503,9 @@ test("INC-351: freshness accepts the three closed Helper pin forms", async (cont
 test("INC-351: missing, malformed, and conflicting Helper pins are red", async (context) => {
   const cases = [
     { helperPin: "Targets the Wrong Workflow", expected: "PLATFORM_DEPLOYMENT_VERSION_MISSING" },
-    { helperPin: "Targets the TCRN Workflow `v`", expected: "PLATFORM_DEPLOYMENT_VERSION_MISSING" },
-    { helperPin: "Targets the TCRN Workflow v1.1.2", expected: "PLATFORM_DEPLOYMENT_VERSION_MISSING" },
-    { helperPin: "Supports TCRN Workflow `v1.1.2`\nTargets TCRN Workflow `v1.1.3`", expected: "PLATFORM_DEPLOYMENT_VERSION_MISSING" },
+    { helperPin: `Targets the ${LEGACY_BRAND_NAME} \`v\``, expected: "PLATFORM_DEPLOYMENT_VERSION_MISSING" },
+    { helperPin: `Targets the ${LEGACY_BRAND_NAME} v1.1.2`, expected: "PLATFORM_DEPLOYMENT_VERSION_MISSING" },
+    { helperPin: `Supports ${LEGACY_BRAND_NAME} \`v1.1.2\`\nTargets ${LEGACY_BRAND_NAME} \`v1.1.3\``, expected: "PLATFORM_DEPLOYMENT_VERSION_MISSING" },
   ];
   for (const testCase of cases) {
     const fixture = await completeInstallFixture(context, { engineVersion: "1.1.2", helperVersion: "1.1.2", helperPin: testCase.helperPin });
@@ -902,7 +902,7 @@ test("STORY-286 an adapter bundle is accepted by its receipt's digests, not by e
   // installed file with a content digest, which makes acceptance mean "still what was
   // installed" rather than "something is at this path".
   const fixture = await completeInstallFixture(context);
-  const bundle = join(fixture.root, ".codex", "tcrn-workflow");
+  const bundle = join(fixture.root, ".codex", LEGACY_ENGINE_NAME);
   await mkdir(bundle, { recursive: true });
   await writeFile(join(bundle, "project.json"), "{}\n");
   const receiptDir = join(fixture.root, ".tcrn-artifacts", "install-receipts", "platform-container");
@@ -912,7 +912,7 @@ test("STORY-286 an adapter bundle is accepted by its receipt's digests, not by e
   const writeReceipt = async () => writeFile(receiptPath, JSON.stringify({
     schemaVersion: "tcrn.codex-adapter-installation-generation.v1",
     installationRoot: fixture.root,
-    entries: [{ path: ".codex/tcrn-workflow/project.json", contentDigest: await digestOf(join(bundle, "project.json")) }],
+    entries: [{ path: `.codex/${LEGACY_ENGINE_NAME}/project.json`, contentDigest: await digestOf(join(bundle, "project.json")) }],
   }));
   await writeReceipt();
 
@@ -920,7 +920,7 @@ test("STORY-286 an adapter bundle is accepted by its receipt's digests, not by e
     id: "container.codex-adapter-under-test",
     layer: "container",
     host: "codex",
-    pathTemplate: "<PLATFORM_ROOT>/.codex/tcrn-workflow",
+    pathTemplate: `<PLATFORM_ROOT>/.codex/${LEGACY_ENGINE_NAME}`,
     writer: "engine-adapter",
     acceptanceProbe: "probe:adapter-bundle-digest;receipt=<PLATFORM_ROOT>/.tcrn-artifacts/install-receipts/platform-container/codex.json",
   };
@@ -937,7 +937,7 @@ test("STORY-286 an adapter bundle is accepted by its receipt's digests, not by e
   assert.equal(drifted.ok, false);
   const finding = drifted.invalid.find((item) => item.id === entry.id);
   assert.equal(finding.reasonCode, "PLATFORM_ADAPTER_BUNDLE_DRIFTED");
-  assert.equal(finding.drifted[0].path, ".codex/tcrn-workflow/project.json", "a drift names the file");
+  assert.equal(finding.drifted[0].path, `.codex/${LEGACY_ENGINE_NAME}/project.json`, "a drift names the file");
 
   await writeReceipt();
   assert.equal((await wiring()).ok, true, "re-recording the receipt accepts the new bytes deliberately");
@@ -956,7 +956,7 @@ test("STORY-286 an adapter bundle is accepted by its receipt's digests, not by e
 test("an identity drift is named as an observation, with the moment it happened", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "tcrn-doctor-identity-")));
   try {
-    const installedDirectory = join(root, ".codex", "tcrn-workflow");
+    const installedDirectory = join(root, ".codex", LEGACY_ENGINE_NAME);
     await mkdir(installedDirectory, { recursive: true });
     const installed = join(installedDirectory, "project.json");
     await writeFile(installed, "{}\n");
@@ -965,7 +965,7 @@ test("an identity drift is named as an observation, with the moment it happened"
     await writeFile(receiptPath, `${JSON.stringify({
       installationRoot: root,
       entries: [{
-        path: ".codex/tcrn-workflow/project.json",
+        path: `.codex/${LEGACY_ENGINE_NAME}/project.json`,
         contentDigest: createHash("sha256").update(bytes).digest("hex"),
         // A digest that cannot be the live one, so the leg must report.
         identityDigest: createHash("sha256").update("not-the-live-identity").digest("hex"),
@@ -976,14 +976,14 @@ test("an identity drift is named as an observation, with the moment it happened"
         id: "container.codex-adapter",
         // Templates, exactly as the real manifest writes them: expandTemplate returns
         // null for a path carrying no <PLATFORM_ROOT>, so a raw path is silently skipped.
-        pathTemplate: "<PLATFORM_ROOT>/.codex/tcrn-workflow",
+        pathTemplate: `<PLATFORM_ROOT>/.codex/${LEGACY_ENGINE_NAME}`,
         acceptanceProbe: "probe:adapter-bundle-digest;receipt=<PLATFORM_ROOT>/receipt.json",
       }],
     };
     const observations = await adapterIdentityObservations(manifest, root, root);
     assert.equal(observations.length, 1);
     assert.equal(observations[0].reasonCode, "PLATFORM_ADAPTER_IDENTITY_DRIFTED");
-    assert.equal(observations[0].path, ".codex/tcrn-workflow/project.json");
+    assert.equal(observations[0].path, `.codex/${LEGACY_ENGINE_NAME}/project.json`);
     assert.equal(observations[0].remedy, "adapter-rebind", "and it names the governed way back");
     assert.ok(!Number.isNaN(Date.parse(observations[0].modifiedAt)), "with the timestamp that moved");
   } finally {
@@ -994,7 +994,7 @@ test("an identity drift is named as an observation, with the moment it happened"
 test("a matching identity produces no observation at all", async () => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "tcrn-doctor-identity-")));
   try {
-    const installedDirectory = join(root, ".codex", "tcrn-workflow");
+    const installedDirectory = join(root, ".codex", LEGACY_ENGINE_NAME);
     await mkdir(installedDirectory, { recursive: true });
     const installed = join(installedDirectory, "project.json");
     await writeFile(installed, "{}\n");
@@ -1003,7 +1003,7 @@ test("a matching identity produces no observation at all", async () => {
     await writeFile(receiptPath, `${JSON.stringify({
       installationRoot: root,
       entries: [{
-        path: ".codex/tcrn-workflow/project.json",
+        path: `.codex/${LEGACY_ENGINE_NAME}/project.json`,
         contentDigest: createHash("sha256").update(await readFile(installed)).digest("hex"),
         identityDigest: canonicalSha256({
           dev: String(stats.dev),
@@ -1019,7 +1019,7 @@ test("a matching identity produces no observation at all", async () => {
         id: "container.codex-adapter",
         // Templates, exactly as the real manifest writes them: expandTemplate returns
         // null for a path carrying no <PLATFORM_ROOT>, so a raw path is silently skipped.
-        pathTemplate: "<PLATFORM_ROOT>/.codex/tcrn-workflow",
+        pathTemplate: `<PLATFORM_ROOT>/.codex/${LEGACY_ENGINE_NAME}`,
         acceptanceProbe: "probe:adapter-bundle-digest;receipt=<PLATFORM_ROOT>/receipt.json",
       }],
     };
@@ -1350,7 +1350,7 @@ test("INC-250: each verdict binds to the repository named by its roster entry", 
 
   const engineMoved = { ...bindings };
   for (const id of ["engine-suite", "engine-p1", "engine-guards", "engine-release", "platform-layout"]) {
-    engineMoved[id] = gitAcceptanceBinding("TCRN Platform/tcrn-workflow", "f".repeat(40));
+    engineMoved[id] = gitAcceptanceBinding(LOCAL_DIRECTORY_NAMES.engine, "f".repeat(40));
   }
   const engineRed = await run(engineMoved);
   const engineLeg = engineRed.checks.find((item) => item.name === "acceptanceVerdicts");
@@ -1524,7 +1524,7 @@ test("INC-250: an unresolved declared repository is red rather than an engine-HE
 // roster, no claims, and no packages/core/src to count. "Nothing to compare" must not
 // read as "compared and passed" -- the same distinction INC-233 draws for
 // helperReleaseAlignment above. Red leg: judge only whether the fixture's
-// TCRN Platform/tcrn-workflow directory exists, rather than whether
+// engine checkout directory exists, rather than whether
 // scripts/policy/proof-budget.json is actually there, and this starts reading whatever
 // real proof-budget.json happens to sit on the machine running the suite.
 test("proofBudget is neutral when the platform root carries no proof-budget policy", async (context) => {
@@ -1589,7 +1589,7 @@ test("proofBudget compares each of the three counts to its own cap independently
   // Exercise the file-reading path as well as the synthetic values above.
   // This checkout is manufactured in the test's empty temporary platform.
   // It contains no copied chain or installed engine.
-  const checkout = join(fixture.root, "TCRN Platform", "tcrn-workflow");
+  const checkout = join(fixture.root, LOCAL_DIRECTORY_NAMES.engine);
   const policyDirectory = join(checkout, "scripts", "policy");
   const coreDirectory = join(checkout, "packages", "core", "src");
   await mkdir(policyDirectory, { recursive: true });

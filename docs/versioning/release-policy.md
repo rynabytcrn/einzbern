@@ -47,7 +47,7 @@ a named check.
 
 `verify:p8` is run by both `release:preflight` and the push gate. Before it writes the
 six release artifacts and asserts the closed artifact set, it moves every
-`tcrn-workflow-<version>-source.tar` whose version is not the `package.json` version
+`einzbern-<version>-source.tar` (or, from a release made before the rename, the archive under the old engine name in [the alias table](../wiki/Glossary.md)) whose version is not the `package.json` version
 to `dist/stale-release/<version>/`. Its result lists each move under
 `staleReleaseArtifacts`, and an empty list means nothing was stale. Any other
 unexpected file in `dist/release` is not moved and still fails

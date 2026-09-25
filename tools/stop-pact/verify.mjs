@@ -13,7 +13,7 @@ export const WORK_SHOW_TIMEOUT_MS = 1_500;
 export const MAX_STDERR_TAIL_BYTES = 500;
 const SYNC_SUPERVISOR_ARG = "--sync-supervisor";
 
-const ENGINE_CLI = fileURLToPath(new URL("../../scripts/tcrn-workflow.mjs", import.meta.url));
+const ENGINE_CLI = fileURLToPath(new URL("../../scripts/einzbern.mjs", import.meta.url));
 const WORK_ID_PATTERN = /^work:[a-z0-9][a-z0-9._-]{0,127}$/u;
 
 // Batch qualification is pure and shared by the formal gate runner and both

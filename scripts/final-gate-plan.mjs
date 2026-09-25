@@ -11,6 +11,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
+import { ENGINE_REPOSITORY_NAMES, LOCAL_DIRECTORY_NAMES } from "./lib/names.mjs";
 import { buildContainedExecutionPlan } from "./lib/push-gate-children.mjs";
 import { isNonBlockingProofBudgetWarning, validateProofBudgetScopeBinding } from "./lib/proof-budget.mjs";
 
@@ -564,9 +565,12 @@ function gateMappingEntries(value) {
   }));
 }
 
+// The engine repository is named by its GitHub names, its checkout folder, or "engine".
+const ENGINE_REPOSITORY_WORDS = Object.freeze([...ENGINE_REPOSITORY_NAMES, LOCAL_DIRECTORY_NAMES.engine.split("/").at(-1), "engine"]);
+
 function engineRepositoryName(value) {
   const repository = normalizedRepository(value);
-  return repository !== null && (/tcrn-workflow|engine/u.test(repository) || repository === "engine") ? true : false;
+  return repository !== null && ENGINE_REPOSITORY_WORDS.some((word) => repository.includes(word));
 }
 
 function productRepositoryName(value) {

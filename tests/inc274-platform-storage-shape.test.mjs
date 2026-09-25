@@ -9,7 +9,7 @@ import { realpath } from "node:fs/promises";
 import test from "node:test";
 
 import { inspectPlatform } from "../scripts/platform-doctor.mjs";
-import { WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES } from "../dist/build/packages/core/src/index.js";
+import { LOCAL_DIRECTORY_NAMES, WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES } from "../dist/build/packages/core/src/index.js";
 
 const FIXTURE_COMMIT = "f".repeat(40);
 
@@ -29,7 +29,7 @@ async function createMinimalFixture(context) {
   const roster = {
     schemaVersion: "tcrn.acceptance-gate-groups.v1",
     groups: [
-      { id: "engine-suite", title: "engine-suite", repository: "TCRN Platform/tcrn-workflow", command: "fixture", proves: "fixture" },
+      { id: "engine-suite", title: "engine-suite", repository: LOCAL_DIRECTORY_NAMES.engine, command: "fixture", proves: "fixture" },
     ],
   };
   await writeFile(rosterPath, `${JSON.stringify(roster, null, 2)}\n`);

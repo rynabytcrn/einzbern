@@ -16,7 +16,7 @@
 // time; the gate compares the placeholder tokens verbatim.
 
 // The published binary name each fenced command is prefixed with in the tutorial.
-export const CLI_BINARY = "tcrn-workflow";
+export const CLI_BINARY = "einzbern";
 
 // Workspace-relative root placeholders (identical literal tokens in the tutorial).
 export const WORKSPACE_PATH = "./flagship/workspace";

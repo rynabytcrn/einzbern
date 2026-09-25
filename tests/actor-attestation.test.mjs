@@ -26,6 +26,7 @@ import {
   initializeWorkspace,
   materializeWorkspace,
   validateActorAttestationEnableRecord,
+  LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalJson, createEvent, validateExtensionRegistration } from "../dist/build/packages/protocol/src/index.js";
 
@@ -57,7 +58,7 @@ async function reasonAsync(code, operation) {
 // internally valid — this is a hand-crafted log the live path would never write,
 // proving the replay reducer enforces attestation independently of the writer.
 async function rehashLastEvent(workspace, buildPayload) {
-  const segment = join(workspace, ".tcrn-workflow", "events", "000001.json");
+  const segment = join(workspace, LEGACY_CONTROL_DIRECTORY, "events", "000001.json");
   const events = JSON.parse(await readFile(segment, "utf8"));
   const last = events.at(-1);
   events[events.length - 1] = createEvent({

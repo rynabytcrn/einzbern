@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: Apache-2.0
 //
-// TCRN Workflow Portal — a zero-dependency local projection of the public CLI.
+// Atelier — Einzbern's zero-dependency local portal, a projection of the public CLI.
 // The portal owns no governance state. Chain reads and writes go through the
 // bundled CLI; AGENTS.md is ordinary workspace prose and is handled with fs.
 

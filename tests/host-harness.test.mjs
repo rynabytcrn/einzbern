@@ -31,6 +31,7 @@ import {
 } from "../scripts/host-harness.mjs";
 import { applyHostHarness, harnessBytes } from "../scripts/host-harness-apply.mjs";
 import { guardDecision, responseFor, stringsIn } from "../scripts/chain-write-guard.mjs";
+import { LEGACY_CONTROL_DIRECTORY, LOCAL_DIRECTORY_NAMES } from "../dist/build/packages/core/src/index.js";
 
 // TCRN-CROSS-INC-373: the previous two constants exercise the renderer only -- they prove
 // the generated command *line* carries `--container-root`, not that agents-zero-hook.mjs's
@@ -147,7 +148,7 @@ test("INC-220 the Claude rendering keeps the project-dir form that host resolves
     for (const group of groups) {
       for (const hook of group.hooks) {
         assert.ok(hook.command.includes("${CLAUDE_PROJECT_DIR}"));
-        assert.match(hook.command, /^if \[ -f "\$\{CLAUDE_PROJECT_DIR\}\/TCRN Platform\/tcrn-workflow\//u, "Claude hooks are inert outside the platform tree");
+        assert.ok(hook.command.startsWith(`if [ -f "\${CLAUDE_PROJECT_DIR}/${LOCAL_DIRECTORY_NAMES.engine}/`), "Claude hooks are inert outside the platform tree");
       }
     }
   }
@@ -283,10 +284,10 @@ test("INC-220 the guard finds a target nested anywhere in the tool input", () =>
   // rule bound to tool_input.file_path would read as coverage while missing it.
   const decision = guardDecision({
     tool_name: "apply_patch",
-    tool_input: { changes: [{ patch: "*** Update File: .tcrn-workflow/state.json\n+x" }] },
+    tool_input: { changes: [{ patch: `*** Update File: ${LEGACY_CONTROL_DIRECTORY}/state.json\n+x` }] },
   });
   assert.equal(decision.deny, true);
-  assert.deepEqual(decision.trees, [".tcrn-workflow"]);
+  assert.deepEqual(decision.trees, [LEGACY_CONTROL_DIRECTORY]);
   assert.ok(stringsIn({ a: { b: ["deep"] } }).includes("deep"));
 });
 

@@ -102,7 +102,8 @@ boundary visible to helper authors.
   - **Default:** none — always elicit an explicit path; there is no implicit
     fallback and no managed default location.
   - **Bounds:** an absolute filesystem path outside the workspace root and its
-    control directory `.tcrn-workflow` (`WORKSPACE_CONTROL_DIRECTORY`). The helper
+    control directory (`WORKSPACE_CONTROL_DIRECTORY`; its old-layout name is in
+    `docs/wiki/Glossary.md`). The helper
     elicitation flow may impose additional machine-boundary hygiene for trust-state
     or skills directories. A destination on a synced or cloud-backed filesystem
     means workspace data leaves the machine and requires the explicit off-machine
@@ -123,16 +124,16 @@ boundary visible to helper authors.
 - **Key:** `workspace.generatedArtifactsPath`
   - **Type:** workspace-relative path, or an absolute path.
   - **Layer:** `workspace_configuration`.
-  - **Default:** `.tcrn-workflow/artifacts`.
+  - **Default:** `artifacts` inside the workspace control directory.
   - **Bounds, relative form:** non-empty relative path with no `.`, `..`, empty,
     backslash, or NUL path segment.
   - **Bounds, absolute form:** normalized (`resolve(value) === value`), no
-    backslash, and outside both the workspace and its `.tcrn-workflow` control
+    backslash, and outside both the workspace and its control
     tree. Those are the predicates `validateSettingValue` decides, and it decides
     only those: it also runs on the replay path, so a predicate that consulted the
     filesystem or this machine's home directory would make a chain recorded on one
     machine unreplayable on the next. The remaining conditions — outside
-    `<HOME>/.tcrn-workflow`, an existing directory, not a symbolic link — are
+    the per-machine directory `<HOME>/.einzbern`, an existing directory, not a symbolic link — are
     asserted by `assertGeneratedArtifactsRoot`
     (`packages/core/src/artifact-store.ts`) at the two moments the path is used:
     when `settings-set` records it, and again when `artifact-put` writes to it.
@@ -142,7 +143,7 @@ boundary visible to helper authors.
     consumer is `artifact-put` / `artifact-list` / `artifact-verify`, which store
     files under the resolved root named `<sha256>.bin`, holding the deflate stream
     of the plaintext that digest names. The index of those blobs stays in the
-    workspace control tree (`.tcrn-workflow/artifact-manifest.json`) and records
+    workspace control tree (`artifact-manifest.json` in the control directory) and records
     no absolute path, so the root may be a directory the engine does not own —
     a cloud-synced folder, for instance — without any governed state following the
     blobs there.

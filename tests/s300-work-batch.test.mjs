@@ -24,6 +24,7 @@ import {
   initializeWorkspace,
   materializeWorkspace,
   materializeWorkspaceFromGenesis,
+  LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
@@ -274,7 +275,7 @@ test("STORY-300: a batch spanning segments writes ascending, and every crash win
     } finally {
       await held.release();
     }
-    const events = join(root, ".tcrn-workflow", "events");
+    const events = join(root, LEGACY_CONTROL_DIRECTORY, "events");
     const segments = (await readdir(events)).sort();
     assert.ok(segments.length > 1, "the batch must actually span segments or this asserts nothing");
     assert.deepEqual(segments, [...segments].sort(), "segments are named in ascending order");

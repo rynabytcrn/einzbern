@@ -67,7 +67,7 @@
       "id": "chain-validate",
       "title": "Every partition validates",
       "repository": "chain container",
-      "command": "for each partition: tcrn-workflow validate --workspace <partition>/workspace",
+      "command": "for each partition: einzbern validate --workspace <partition>/workspace",
       "proves": "Each chain replays, and its derived views match what the current engine projects. This is the group a view-shape change makes red until every chain is recovered.",
       "contains": []
     },

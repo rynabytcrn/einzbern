@@ -12,6 +12,7 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { LEGACY_ENGINE_NAME, LOCAL_DIRECTORY_NAMES } from "./lib/names.mjs";
 import { buildContainedExecutionPlan } from "./lib/push-gate-children.mjs";
 import { HOSTS, hookEntriesFor } from "./host-harness.mjs";
 import {
@@ -153,7 +154,9 @@ function currentSourceDigest(files, { baselineCommit = PACK_SOURCE_BASELINE_COMM
   return { digest: digestValue(basis), files: rows, baselineCommit: basis.baselineCommit, headCommit: basis.headCommit, headTree: basis.headTree, deltaMeasured: true };
 }
 
-const GOVERNED_WRITE_COMMAND = /(?:einzbern\.mjs|tcrn-workflow\.mjs|tcrn-workflow\/scripts\/[^\s]+\.mjs).*\b(?:artifact-put|conference-(?:append-position|cancel|close|open)|dispatch-(?:classes-set|mode-set|tiers-set)|gate-(?:create|delete|transition)|knowledge-(?:article-create|article-refresh|batch|bodies-migrate|capture|checkpoint|create|init|promote|rebase|recover|retire|reverify)|lease-(?:break|recovery-break)|machine-settings-(?:remove|set)|migration-execute|project-(?:create|delete|update)|recover|retire-sweep|settings-(?:remove|set)|snapshot-replay-rebuild|template-admit|work-(?:annotate|batch|create|delete|transition))\b/iu;
+// The engine CLI under its new name, or an old installation's entry and scripts.
+const ENGINE_ENTRY_PATTERN = String.raw`(?:einzbern\.mjs|${LEGACY_ENGINE_NAME}\.mjs|${LEGACY_ENGINE_NAME}\/scripts\/[^\s]+\.mjs)`;
+const GOVERNED_WRITE_COMMAND = new RegExp(`${ENGINE_ENTRY_PATTERN}.*${/\b(?:artifact-put|conference-(?:append-position|cancel|close|open)|dispatch-(?:classes-set|mode-set|tiers-set)|gate-(?:create|delete|transition)|knowledge-(?:article-create|article-refresh|batch|bodies-migrate|capture|checkpoint|create|init|promote|rebase|recover|retire|reverify)|lease-(?:break|recovery-break)|machine-settings-(?:remove|set)|migration-execute|project-(?:create|delete|update)|recover|retire-sweep|settings-(?:remove|set)|snapshot-replay-rebuild|template-admit|work-(?:annotate|batch|create|delete|transition))\b/iu.source}`, "iu");
 const RELATIVE_REPOSITORY_COMMAND = /(?:^|\s)(?:node|pnpm)(?:\s+[^\s]+)*\s+(?:scripts\/|tools\/|packages\/|tests\/)/u;
 
 // TCRN-CROSS-STORY-460 R3 (#240): user-level hooks run this working tree's own scripts, so a
@@ -346,9 +349,9 @@ function codeOwnedImpact({ baselineCommit = PACK_SOURCE_BASELINE_COMMIT } = {}) 
   const sourceDelta = sourceDeltaFiles(baselineCommit);
   const changedFiles = sourceDelta.files;
   const source = currentSourceDigest(changedFiles, { baselineCommit, baseline: sourceDelta.baseline, head: sourceDelta.head });
-  const dependencies = changedFiles.filter((path) => /^(?:package\.json|pnpm-lock\.yaml|packages\/[^/]+\/package\.json|packages\/[^/]+\/src\/)/u.test(path)).map((path) => ({ path, repository: "TCRN Platform/tcrn-workflow" }));
-  const configuration = changedFiles.filter((path) => /(?:scripts\/policy\/|\.claude\/|\.codex\/|settings|config)/iu.test(path)).map((path) => ({ path, repository: "TCRN Platform/tcrn-workflow" }));
-  const generated = changedFiles.filter((path) => /^(?:dist\/|generated\/)/u.test(path)).map((path) => ({ path, repository: "TCRN Platform/tcrn-workflow" }));
+  const dependencies = changedFiles.filter((path) => /^(?:package\.json|pnpm-lock\.yaml|packages\/[^/]+\/package\.json|packages\/[^/]+\/src\/)/u.test(path)).map((path) => ({ path, repository: LOCAL_DIRECTORY_NAMES.engine }));
+  const configuration = changedFiles.filter((path) => /(?:scripts\/policy\/|\.claude\/|\.codex\/|settings|config)/iu.test(path)).map((path) => ({ path, repository: LOCAL_DIRECTORY_NAMES.engine }));
+  const generated = changedFiles.filter((path) => /^(?:dist\/|generated\/)/u.test(path)).map((path) => ({ path, repository: LOCAL_DIRECTORY_NAMES.engine }));
   const nodeVersion = process.version;
   const pnpmVersionResult = run("pnpm", ["--version"], { timeout: 5_000, maxBuffer: 100_000 });
   const pnpmVersion = pnpmVersionResult.stdout.trim();
@@ -377,7 +380,7 @@ function codeOwnedImpact({ baselineCommit = PACK_SOURCE_BASELINE_COMMIT } = {}) 
     generated,
     environment,
     crossRepoChanges,
-    repositories: ["TCRN Platform/tcrn-workflow"],
+    repositories: [LOCAL_DIRECTORY_NAMES.engine],
     inputs: {
       sourceDigest: source.digest,
       environmentDigest: digestValue(environment),

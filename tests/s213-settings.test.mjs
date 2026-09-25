@@ -17,6 +17,7 @@ import {
   setWorkspaceSetting,
   validateSettingValue,
   validateWorkspace,
+  LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import {
   isRetiredSettingKey,
@@ -130,8 +131,8 @@ test("STORY-366: article directories are workspace-relative by default and canno
   assert.equal(validateSettingValue("knowledge.articlesPath", "docs/knowledge/articles", workspace), "docs/knowledge/articles");
   assert.equal(validateSettingValue("knowledge.articlesPath", "/tmp/tcrn-article-root", workspace), "/tmp/tcrn-article-root");
   assert.throws(() => validateSettingValue("knowledge.articlesPath", "../outside", workspace), (error) => error?.reasonCode === "SETTINGS_VALUE_INVALID");
-  assert.throws(() => validateSettingValue("knowledge.articlesPath", ".tcrn-workflow/articles", workspace), (error) => error?.reasonCode === "SETTINGS_VALUE_INVALID");
-  assert.throws(() => validateSettingValue("knowledge.articlesPath", `${workspace}/.tcrn-workflow/articles`, workspace), (error) => error?.reasonCode === "SETTINGS_VALUE_INVALID");
+  assert.throws(() => validateSettingValue("knowledge.articlesPath", `${LEGACY_CONTROL_DIRECTORY}/articles`, workspace), (error) => error?.reasonCode === "SETTINGS_VALUE_INVALID");
+  assert.throws(() => validateSettingValue("knowledge.articlesPath", `${workspace}/${LEGACY_CONTROL_DIRECTORY}/articles`, workspace), (error) => error?.reasonCode === "SETTINGS_VALUE_INVALID");
 });
 
 test("INC-321 S3: a retired settings.updated event replays from genesis and stays out of current settings", async (t) => {

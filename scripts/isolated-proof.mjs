@@ -9,6 +9,7 @@ import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 
 import { readJson, repositoryRoot } from "./lib/files.mjs";
+import { ENGINE_REPOSITORY_NAMES } from "./lib/names.mjs";
 import { compareCanonicalText } from "./lib/canonical-order.mjs";
 import {
   readBoundRegularFile,
@@ -63,7 +64,7 @@ if (run("pnpm", ["--version"], repositoryRoot, { env: pinnedEnvironment }) !== "
 const commit = git(["rev-parse", "HEAD"]);
 const tree = git(["rev-parse", "HEAD^{tree}"]);
 const origin = git(["remote", "get-url", "origin"]);
-if (!/^https:\/\/github\.com\/[^/]+\/tcrn-workflow\.git$/u.test(origin)) {
+if (!ENGINE_REPOSITORY_NAMES.some((name) => new RegExp(`^https://github\\.com/[^/]+/${name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}\\.git$`, "u").test(origin))) {
   throw new Error(`ISOLATED_ORIGIN_INVALID:${origin}`);
 }
 

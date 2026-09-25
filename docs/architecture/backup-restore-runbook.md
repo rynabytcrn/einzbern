@@ -8,7 +8,7 @@ its verification are made. The companion `backup-git-tier.md` covers the optiona
 git tier-2 integrity witness; both restore stories route through this runbook.
 
 All paths below are workspace-relative placeholders. `<root>` is the Workspace
-authority root (the directory that contains `.tcrn-workflow/`). Paths with spaces
+authority root (the directory that contains the old-layout control directory, written `<control>/` below (its name is in [the alias table](../wiki/Glossary.md); from EPIC-141 on the engine only reads it)). Paths with spaces
 are first-class here — always double-quote them.
 
 ## Two doctrines the operator must accept before starting
@@ -49,8 +49,8 @@ removed.
 2. **Settle and prove green.** Run `recover` then `validate`:
 
    ```
-   pnpm --silent exec tcrn-workflow recover --workspace "<root>" --at "<instant>"
-   pnpm --silent exec tcrn-workflow validate --workspace "<root>"
+   pnpm --silent exec einzbern recover --workspace "<root>" --at "<instant>"
+   pnpm --silent exec einzbern validate --workspace "<root>"
    ```
 
    `recover` clears `.tmp-` residue under `events/` and `views/`. `validate` must
@@ -59,7 +59,7 @@ removed.
    receipt file:
 
    ```
-   pnpm --silent exec tcrn-workflow snapshot-manifest --workspace "<root>" --at "<instant>" > "<receipt>"
+   pnpm --silent exec einzbern snapshot-manifest --workspace "<root>" --at "<instant>" > "<receipt>"
    ```
 
    The manifest is a deterministic canonical JSON document: sorted per-file
@@ -67,12 +67,12 @@ removed.
    validate result for both stores. It excludes the held `lease/` subtree and the
    in-flight claim residue classes (SDC-9), so it matches the copy byte-for-byte
    only after the lease is released.
-4. **Copy the tree.** Copy `.tcrn-workflow` with OS tools to a destination
+4. **Copy the tree.** Copy `<control>` with OS tools to a destination
    **outside** `<root>`:
 
    ```
-   cp -R "<root>/.tcrn-workflow" "<destinationParent>/.tcrn-workflow"      # macOS/Linux
-   robocopy "<root>\.tcrn-workflow" "<destinationParent>\.tcrn-workflow" /E   # Windows
+   cp -R "<root>/<control>" "<destinationParent>/<control>"      # macOS/Linux
+   robocopy "<root>\<control>" "<destinationParent>\<control>" /E   # Windows
    ```
 
    The manifest was taken under a held lease and the lease is released before this
@@ -80,7 +80,7 @@ removed.
 5. **Prove the copy.** Verify the copy against the saved receipt:
 
    ```
-   pnpm --silent exec tcrn-workflow snapshot-verify --root "<destinationParent>" --manifest "<receipt>"
+   pnpm --silent exec einzbern snapshot-verify --root "<destinationParent>" --manifest "<receipt>"
    ```
 
    `SNAPSHOT_VERIFIED` means the copy is byte-identical to the snapshotted tree.
@@ -94,8 +94,8 @@ removed.
    destination is the exact `<root>` the snapshot came from:
 
    ```
-   cp -R "<destinationParent>/.tcrn-workflow" "<root>/.tcrn-workflow"      # macOS/Linux
-   robocopy "<destinationParent>\.tcrn-workflow" "<root>\.tcrn-workflow" /E   # Windows
+   cp -R "<destinationParent>/<control>" "<root>/<control>"      # macOS/Linux
+   robocopy "<destinationParent>\<control>" "<root>\<control>" /E   # Windows
    ```
 
    Restore the WHOLE control tree, both stores together — never a partial restore.
@@ -103,15 +103,15 @@ removed.
    receipt:
 
    ```
-   pnpm --silent exec tcrn-workflow snapshot-verify --root "<root>" --manifest "<receipt>"
+   pnpm --silent exec einzbern snapshot-verify --root "<root>" --manifest "<receipt>"
    ```
 
    Expect `SNAPSHOT_VERIFIED`.
 4. **Validate both stores.**
 
    ```
-   pnpm --silent exec tcrn-workflow validate --workspace "<root>"
-   pnpm --silent exec tcrn-workflow knowledge-validate --workspace "<root>"
+   pnpm --silent exec einzbern validate --workspace "<root>"
+   pnpm --silent exec einzbern knowledge-validate --workspace "<root>"
    ```
 
    Both must pass before agents resume.
@@ -123,13 +123,13 @@ above needs no recreation step. A git-based restore (see `backup-git-tier.md`)
 does: git does not track empty directories, and these control-tree directories are
 required by the engine even when empty. Recreate them before step 4's `validate`:
 
-- `.tcrn-workflow/backups/` — always empty in V1, required as a directory by
+- `<control>/backups/` — always empty in V1, required as a directory by
   `resolveWorkspace` (`WORKSPACE_PATH_INVALID` when missing). It is
   migration-reserved and is never a user backup destination.
-- `.tcrn-workflow/knowledge/bodies/` — empty until the first knowledge unit;
+- `<control>/knowledge/bodies/` — empty until the first knowledge unit;
   required by `scanKnowledgeStore` (`KNOWLEDGE_PARTIAL_STATE` when the store root
   entries are not exact).
-- `.tcrn-workflow/knowledge/metadata/` — empty until the first knowledge unit;
+- `<control>/knowledge/metadata/` — empty until the first knowledge unit;
   required by `scanKnowledgeStore` (same rule).
 
 The `.gitkeep` workaround is inadmissible inside `knowledge/`: the store's exact
@@ -156,7 +156,7 @@ of these, stop and follow the action — do not force past it.
 - **Archives are not restorable.** `tcrn.workspace-archive.v1` checkpoint anchors
   are integrity anchors, not backups: V1 has no import path for them. Do not treat
   an archive as a restore source.
-- **`.tcrn-workflow/backups/` is migration-reserved.** It is created empty at init
+- **`<control>/backups/` is migration-reserved.** It is created empty at init
   and is never a user backup destination. Copy snapshots to a destination outside
   `<root>`, never into `backups/`.
 - **No live-sync.** Never place a live workspace under a cloud/network sync client

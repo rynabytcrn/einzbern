@@ -53,6 +53,7 @@ import {
   transitionWork,
   updateProject,
   validateWorkspace,
+  LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import * as publicCore from "../dist/build/packages/core/src/index.js";
 import {
@@ -128,7 +129,7 @@ function expectedEventId(streamId, sequence) {
 }
 
 async function rewriteEventChain(workspace, transform, identity = {}) {
-  const control = join(workspace, ".tcrn-workflow");
+  const control = join(workspace, LEGACY_CONTROL_DIRECTORY);
   const metadata = JSON.parse(await readFile(join(control, "workspace.json"), "utf8"));
   const eventsRoot = join(control, "events");
   const names = (await readdir(eventsRoot)).filter((name) => /^\d{6}\.json$/u.test(name)).sort();
@@ -195,7 +196,7 @@ test("Workspace metadata schema, five-root initialization, CLI readback, and sta
   const fixture = await workspaceFixture();
   try {
     const schema = JSON.parse(await readFile(new URL("../packages/core/schema/workspace-v1.schema.json", import.meta.url), "utf8"));
-    const metadata = JSON.parse(await readFile(join(fixture.workspace, ".tcrn-workflow", "workspace.json"), "utf8"));
+    const metadata = JSON.parse(await readFile(join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "workspace.json"), "utf8"));
     const ajv = new Ajv2020({ strict: true, validateFormats: false });
     assert.equal(ajv.validate(schema, metadata), true, JSON.stringify(ajv.errors));
     assert.equal(fixture.state.version, 0);
@@ -244,7 +245,7 @@ test("Workspace root entries have exact Ajv/runtime field and type parity", asyn
   for (const mutate of mutations) {
     const fixture = await workspaceFixture();
     try {
-      const metadataPath = join(fixture.workspace, ".tcrn-workflow", "workspace.json");
+      const metadataPath = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "workspace.json");
       const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
       mutate(metadata);
       assert.equal(ajv.validate(schema, metadata), false);
@@ -303,7 +304,7 @@ test("project CRUD and Initiative-Epic-Story-Subtask operations materialize dete
       await expectReasonAsync("GRAPH_PARENT_KIND_INVALID", () => createWork(fixture.workspace, lease, {
         expectedVersion: 10, occurredAt: instant(11), projectId, externalKey: "BAD-EPIC", kind: "Epic", parentId: storyId,
       }));
-      const status = await readFile(join(fixture.workspace, ".tcrn-workflow", "views", "STATUS.md"), "utf8");
+      const status = await readFile(join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "views", "STATUS.md"), "utf8");
       assert.match(status, /Work records: 3/u);
       assert.equal(await exportWorkspace(fixture.workspace), await exportWorkspace(fixture.workspace));
       assert.deepEqual(await createWorkspaceArchive(fixture.workspace), await createWorkspaceArchive(fixture.workspace));
@@ -351,7 +352,7 @@ test("WSA-4: lease-inspect reports state and lease-break clears the pid-reuse we
 test("WSA-7: lease-inspect surfaces the recovery claim and lease-recovery-break clears the pid-reuse residue", async () => {
   const fixture = await workspaceFixture();
   try {
-    const control = join(fixture.workspace, ".tcrn-workflow");
+    const control = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY);
     const claimPath = join(control, "lease-recovery.claim");
     // A claim whose pid is this live process: automatic reclaim refuses it (that is the
     // pid-reuse residue), so it is exactly what the operator verb exists for.
@@ -388,7 +389,7 @@ test("WSA-7: lease-inspect surfaces the recovery claim and lease-recovery-break 
   const active = await workspaceFixture();
   try {
     const token = "d".repeat(48);
-    await writeFile(join(active.workspace, ".tcrn-workflow", "lease-recovery.claim"), canonicalJson({
+    await writeFile(join(active.workspace, LEGACY_CONTROL_DIRECTORY, "lease-recovery.claim"), canonicalJson({
       schemaVersion: "tcrn.workspace-lease-recovery.v1",
       token,
       pid: process.pid,
@@ -909,7 +910,7 @@ test("single-writer lease, CAS, stale-lock recovery, and atomic crash points fai
     }));
     await active.release();
 
-    const leaseRoot = join(fixture.workspace, ".tcrn-workflow", "lease");
+    const leaseRoot = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "lease");
     await mkdir(leaseRoot);
     await writeFile(join(leaseRoot, "owner.json"), canonicalJson({
       schemaVersion: "tcrn.workspace-lease.v1",
@@ -1035,7 +1036,7 @@ test("segment rotation and replay, truncation, reordering, corruption, gap, and 
     } finally {
       await lease.release();
     }
-    const eventsRoot = join(fixture.workspace, ".tcrn-workflow", "events");
+    const eventsRoot = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "events");
     const firstPath = join(eventsRoot, "000001.json");
     const secondPath = join(eventsRoot, "000002.json");
     const firstText = await readFile(firstPath, "utf8");
@@ -1237,8 +1238,8 @@ test("event stream and event IDs are bound to canonical Workspace metadata", asy
   const target = await workspaceFixture({ externalKey: "WORKSPACE-TARGET" });
   try {
     await createProjectHistory(source, false, false);
-    const sourceSegment = join(source.workspace, ".tcrn-workflow", "events", "000001.json");
-    const targetSegment = join(target.workspace, ".tcrn-workflow", "events", "000001.json");
+    const sourceSegment = join(source.workspace, LEGACY_CONTROL_DIRECTORY, "events", "000001.json");
+    const targetSegment = join(target.workspace, LEGACY_CONTROL_DIRECTORY, "events", "000001.json");
     await writeFile(targetSegment, await readFile(sourceSegment));
     await expectReasonAsync("WORKSPACE_EVENT_CORRUPT", () => materializeWorkspace(target.workspace));
   } finally {
@@ -1268,7 +1269,7 @@ test("a crashed dir-only lease is reclaimable once ttl of real time elapses, eve
       now: instant(1),
       crashAfterLeaseDirectoryForTest: true,
     }));
-    const incompleteLease = join(crashFixture.workspace, ".tcrn-workflow", "lease");
+    const incompleteLease = join(crashFixture.workspace, LEGACY_CONTROL_DIRECTORY, "lease");
     assert.deepEqual(await readdir(incompleteLease), []);
     // Backdate the lease directory to a real-recent time well beyond the 30s ttl,
     // WITHOUT year-2000 backdating. The injected event time (2026-07-11) predates
@@ -1291,7 +1292,7 @@ test("lease creation crash and recovery-claim contention are recoverable and sin
       now: instant(1),
       crashAfterLeaseDirectoryForTest: true,
     }));
-    const incompleteLease = join(crashFixture.workspace, ".tcrn-workflow", "lease");
+    const incompleteLease = join(crashFixture.workspace, LEGACY_CONTROL_DIRECTORY, "lease");
     const incompleteIdentity = await lstat(incompleteLease);
     await utimes(incompleteLease, new Date("2000-01-01T00:00:00Z"), new Date("2000-01-01T00:00:00Z"));
     let quarantined = false;
@@ -1328,9 +1329,9 @@ test("lease creation crash and recovery-claim contention are recoverable and sin
 
   const contenderFixture = await workspaceFixture();
   try {
-    await mkdir(join(contenderFixture.workspace, ".tcrn-workflow", "lease"));
+    await mkdir(join(contenderFixture.workspace, LEGACY_CONTROL_DIRECTORY, "lease"));
     await utimes(
-      join(contenderFixture.workspace, ".tcrn-workflow", "lease"),
+      join(contenderFixture.workspace, LEGACY_CONTROL_DIRECTORY, "lease"),
       new Date("2000-01-01T00:00:00Z"),
       new Date("2000-01-01T00:00:00Z"),
     );
@@ -1384,7 +1385,7 @@ test("lease creation crash and recovery-claim contention are recoverable and sin
       },
     });
     await entered;
-    const leasePath = join(delayedFixture.workspace, ".tcrn-workflow", "lease");
+    const leasePath = join(delayedFixture.workspace, LEGACY_CONTROL_DIRECTORY, "lease");
     await utimes(leasePath, new Date("2000-01-01T00:00:00Z"), new Date("2000-01-01T00:00:00Z"));
     let winnerEntered;
     const winnerAtOwner = new Promise((resolve) => { winnerEntered = resolve; });
@@ -1416,7 +1417,7 @@ test("ownerless stale generations are quarantined without carrying unexpected en
   for (const kind of ["file", "symlink", "directory"]) {
     const fixture = await workspaceFixture({ externalKey: `WORKSPACE-STALE-${kind.toUpperCase()}` });
     try {
-      const control = join(fixture.workspace, ".tcrn-workflow");
+      const control = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY);
       const leasePath = join(control, "lease");
       const unexpected = join(leasePath, "unexpected");
       await mkdir(leasePath);
@@ -1457,7 +1458,7 @@ test("quarantine replacement is preserved and fails closed before recursive clea
     assert.equal(packageIndex.includes("workspace-test-instrumentation"), false);
     assert.equal(publicSignature.includes("quarantineReplacementForTest"), false);
     assert.equal(Object.keys(publicCore).some((name) => name.toLowerCase().includes("instrumentation")), false);
-    const control = join(fixture.workspace, ".tcrn-workflow");
+    const control = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY);
     const leasePath = join(control, "lease");
     const attemptOwned = join(control, "attempt-owned-quarantine-for-test");
     await mkdir(leasePath);
@@ -1488,7 +1489,7 @@ test("quarantine replacement is preserved and fails closed before recursive clea
 
 test("quarantine replacement instrumentation is operation-local, one-shot, and cleaned after overlap", async () => {
   async function prepareStale(fixture, entry) {
-    const control = join(fixture.workspace, ".tcrn-workflow");
+    const control = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY);
     const leasePath = join(control, "lease");
     await mkdir(leasePath);
     await writeFile(join(leasePath, entry), "attempt-owned");
@@ -1617,7 +1618,7 @@ test("detached instrumentation descendants cannot consume closed operation capab
 test("unsafe or active recovery claims fail closed", async () => {
   const fixture = await workspaceFixture();
   try {
-    const claimPath = join(fixture.workspace, ".tcrn-workflow", "lease-recovery.claim");
+    const claimPath = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "lease-recovery.claim");
     await writeFile(claimPath, canonicalJson({
       schemaVersion: "tcrn.workspace-lease-recovery.v1",
       token: "a".repeat(48),
@@ -1636,7 +1637,7 @@ test("unsafe or active recovery claims fail closed", async () => {
   // directory is backdated past the creation grace so recovery actually engages.
   const staleClaim = await workspaceFixture();
   try {
-    const control = join(staleClaim.workspace, ".tcrn-workflow");
+    const control = join(staleClaim.workspace, LEGACY_CONTROL_DIRECTORY);
     const leasePath = join(control, "lease");
     await mkdir(leasePath, { mode: 0o700 });
     const backdated = new Date(Date.now() - 600_000);
@@ -1657,7 +1658,7 @@ test("unsafe or active recovery claims fail closed", async () => {
 
   const malformedOwner = await workspaceFixture();
   try {
-    const leasePath = join(malformedOwner.workspace, ".tcrn-workflow", "lease");
+    const leasePath = join(malformedOwner.workspace, LEGACY_CONTROL_DIRECTORY, "lease");
     await mkdir(leasePath);
     await writeFile(join(leasePath, "owner.json"), canonicalJson({ invalid: true }));
     await expectReasonAsync("WORKSPACE_LEASE_INVALID", () => acquireWorkspaceLease(malformedOwner.workspace, { now: instant(2) }));
@@ -1668,7 +1669,7 @@ test("unsafe or active recovery claims fail closed", async () => {
   for (const kind of ["symlink", "hardlink"]) {
     const unsafeOwner = await workspaceFixture();
     try {
-      const leasePath = join(unsafeOwner.workspace, ".tcrn-workflow", "lease");
+      const leasePath = join(unsafeOwner.workspace, LEGACY_CONTROL_DIRECTORY, "lease");
       await mkdir(leasePath);
       const ownerPath = join(leasePath, "owner.json");
       const backing = join(leasePath, `owner-${kind}.json`);
@@ -1693,7 +1694,7 @@ test("unsafe or active recovery claims fail closed", async () => {
   for (const kind of ["symlink", "hardlink", "directory"]) {
     const unsafe = await workspaceFixture();
     try {
-      const control = join(unsafe.workspace, ".tcrn-workflow");
+      const control = join(unsafe.workspace, LEGACY_CONTROL_DIRECTORY);
       const claimPath = join(control, "lease-recovery.claim");
       const backing = join(control, `claim-${kind}.json`);
       await writeFile(backing, canonicalJson({ invalid: true }));
@@ -1714,7 +1715,7 @@ test("unsafe or active recovery claims fail closed", async () => {
     const unsafe = await workspaceFixture();
     const lease = await acquireWorkspaceLease(unsafe.workspace, { now: instant(1) });
     try {
-      const leasePath = join(unsafe.workspace, ".tcrn-workflow", "lease");
+      const leasePath = join(unsafe.workspace, LEGACY_CONTROL_DIRECTORY, "lease");
       const claimPath = join(leasePath, "mutation.claim");
       const backing = join(leasePath, `mutation-${kind}.json`);
       await writeFile(backing, canonicalJson({ invalid: true }));
@@ -1741,7 +1742,7 @@ test("unsafe or active recovery claims fail closed", async () => {
     const unsafe = await workspaceFixture();
     const lease = await acquireWorkspaceLease(unsafe.workspace, { now: instant(1) });
     try {
-      const claimPath = join(unsafe.workspace, ".tcrn-workflow", "lease", "mutation.claim");
+      const claimPath = join(unsafe.workspace, LEGACY_CONTROL_DIRECTORY, "lease", "mutation.claim");
       await writeFile(claimPath, canonicalJson(kind === "malformed" ? { invalid: true } : {
         schemaVersion: "tcrn.workspace-mutation-claim.v1",
         leaseToken: "f".repeat(48),
@@ -1762,7 +1763,7 @@ test("unsafe or active recovery claims fail closed", async () => {
 
   const staleMutation = await workspaceFixture();
   try {
-    const leasePath = join(staleMutation.workspace, ".tcrn-workflow", "lease");
+    const leasePath = join(staleMutation.workspace, LEGACY_CONTROL_DIRECTORY, "lease");
     const leaseToken = "d".repeat(48);
     await mkdir(leasePath);
     await writeFile(join(leasePath, "owner.json"), canonicalJson({
@@ -1836,8 +1837,8 @@ test("path, link, Unicode, size, record, filesystem, and migration boundaries ha
   for (const linkKind of ["symlink", "hardlink"]) {
     const fixture = await workspaceFixture();
     try {
-      const metadata = join(fixture.workspace, ".tcrn-workflow", "workspace.json");
-      const backup = join(fixture.workspace, ".tcrn-workflow", `workspace-${linkKind}.json`);
+      const metadata = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "workspace.json");
+      const backup = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, `workspace-${linkKind}.json`);
       await rename(metadata, backup);
       if (linkKind === "symlink") {
         await symlink(backup, metadata);
@@ -1852,7 +1853,7 @@ test("path, link, Unicode, size, record, filesystem, and migration boundaries ha
 
   const future = await workspaceFixture();
   try {
-    const metadataPath = join(future.workspace, ".tcrn-workflow", "workspace.json");
+    const metadataPath = join(future.workspace, LEGACY_CONTROL_DIRECTORY, "workspace.json");
     const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
     await writeFile(metadataPath, canonicalJson({ ...metadata, storageVersion: 3, minimumStorageVersion: 1, maximumStorageVersion: 3 }));
     await expectReasonAsync("WORKSPACE_MIGRATION_FUTURE", () => materializeWorkspace(future.workspace));
@@ -1889,7 +1890,7 @@ test("derived ordering, readback hashes, and export bytes remain deterministic a
       shuffled.sort((left, right) => Buffer.compare(Buffer.from(left.id), Buffer.from(right.id)));
       assert.equal(canonicalSha256(shuffled), expected);
     }
-    const readback = JSON.parse(await readFile(join(fixture.workspace, ".tcrn-workflow", "views", "readback.json"), "utf8"));
+    const readback = JSON.parse(await readFile(join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "views", "readback.json"), "utf8"));
     assert.equal(readback.authority, "derived-rebuildable");
     assert.equal(typeof readback.graphDigest, "string");
   } finally {
@@ -1898,7 +1899,7 @@ test("derived ordering, readback hashes, and export bytes remain deterministic a
 });
 
 async function readEventPayloads(workspace) {
-  const eventsRoot = join(workspace, ".tcrn-workflow", "events");
+  const eventsRoot = join(workspace, LEGACY_CONTROL_DIRECTORY, "events");
   const names = (await readdir(eventsRoot)).filter((name) => /^\d{6}\.json$/u.test(name)).sort();
   const events = [];
   for (const name of names) {

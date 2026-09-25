@@ -41,7 +41,7 @@ All compatibility verbs are binary-invocable. Their authority requirements still
 form a fail-closed security boundary.
 
 - `compatibility-validate` and `compatibility-unavailable` are binary-invocable:
-  the shipped binary `tcrn-workflow` can run them directly. They read no host
+  the shipped binary `einzbern` can run them directly. They read no host
   authority and change no state.
 - `compatibility-plan` and `compatibility-dry-run` require a Compatibility
   Admission Authority. A programmatic embedder may still deliver it through typed
@@ -53,7 +53,7 @@ The two global values are public trust pins, not credentials. They bind a
 canonical pins document whose digest, generation floor and revocation set bind a
 separate authority bundle. A command-local `--authority` token remains unknown.
 No receipt body, secret or ambient authority is accepted from argv, prompt text
-or environment variables. The structured `tcrn-workflow-mcp` stdio surface that once
+or environment variables. The structured MCP stdio surface that once
 offered an alternative to shell history was retired in `v0.11.18`; the CLI is the
 only transport, so an operator who wants paths and public digests kept out of
 shell history handles that in how the CLI is invoked.

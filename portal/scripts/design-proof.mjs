@@ -330,7 +330,7 @@ if (baselineReadError !== undefined) {
   baselineFindings.push({ name: "baseline file", reason: "public v4 baseline is unreadable", error: String(baselineReadError?.message ?? baselineReadError) });
 } else {
   if (!baselineText.startsWith("<!-- PUBLIC BASELINE:")) baselineFindings.push({ name: "baseline declaration", reason: "public baseline must begin with its sanitization statement" });
-  if (!baselineText.includes("TCRN Workflow 门户")) baselineFindings.push({ name: "baseline provenance", reason: "v4 portal preview marker is absent" });
+  if (!baselineText.includes("Atelier 门户")) baselineFindings.push({ name: "baseline provenance", reason: "v4 portal preview marker is absent" });
   if (![".stepper", ".switch", ".seg"].every((marker) => baselineText.includes(marker))) baselineFindings.push({ name: "baseline control families", reason: "v4 stepper/switch/segmented control markers are absent" });
   const normalizedBaseline = baselineText.toLocaleLowerCase();
   if (publicPrivacyMarkers.some((marker) => normalizedBaseline.includes(marker.toLocaleLowerCase()))) baselineFindings.push({ name: "baseline privacy", reason: "local path or host identity remains in the public baseline" });

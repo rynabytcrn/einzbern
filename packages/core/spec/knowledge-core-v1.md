@@ -10,7 +10,7 @@ infers, or consults any predecessor knowledge or workflow source.
 
 ## Storage and authority
 
-The store is `.tcrn-workflow/knowledge/` with closed `store.json`, `metadata/`,
+The store is `knowledge/` inside the workspace control directory with closed `store.json`, `metadata/`,
 `bodies/`, and `views/index.json` entries. Metadata is the index authority.
 Bodies are separate single-link regular files and never appear in metadata
 views, default selection, or checkpoints. Metadata listing, snippet, freshness,

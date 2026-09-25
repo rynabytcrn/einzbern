@@ -7,7 +7,7 @@
 // relationship, not a runtime dependency. The portal used to read that package's
 // TypeScript source at request time and scrape it with regular expressions, which
 // meant a distributed portal could not render a page unless the design-system
-// repository happened to be checked out beside it. TCRN Workflow is an independent
+// repository happened to be checked out beside it. Einzbern is an independent
 // product: a person who clones the engine and the helper has no reason to hold the
 // design system, and asking them to would be asking them to install a company's
 // internal monorepo to open a settings page.

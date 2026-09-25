@@ -9,6 +9,7 @@ import test from "node:test";
 
 import { LocalCommandError, runLocalCommand } from "../scripts/lib/local-command.mjs";
 import { normalizePrivacyText, parseGitObjectBatch, parseHistoricalTreePaths, scanPrivacyEntries } from "../scripts/lib/privacy.mjs";
+import { ENGINE_REPOSITORY_NAMES, LEGACY_REPOSITORY_NAMES } from "../dist/build/packages/core/src/index.js";
 
 const batchCheckFormat = "--batch-check=%(objectname) %(objecttype) %(objectsize)";
 const batchArguments = ["cat-file", "--batch-all-objects", "--batch"];
@@ -205,15 +206,26 @@ test("public Git hosting identity is allowed only in commit metadata", () => {
   assert.deepEqual(
     scanPrivacyEntries([
       { label: "commit", kind: "commit", content: commit },
-      {
-        label: "origin",
+      // The engine's origin is public under either of its GitHub names: the new one, and
+      // the old one until the Owner renames the remote (TCRN-CROSS-STORY-466).
+      ...ENGINE_REPOSITORY_NAMES.map((name) => ({
+        label: `origin:${name}`,
         kind: "remote",
-        content: `https://github.com/${publicIdentity.login}/tcrn-workflow.git`,
-      },
+        content: `https://github.com/${publicIdentity.login}/${name}.git`,
+      })),
     ], {
       owner: publicIdentity.login,
+      repositories: ENGINE_REPOSITORY_NAMES,
     }),
     [],
+  );
+  assert.equal(
+    scanPrivacyEntries([{ label: "origin", kind: "remote", content: `https://github.com/${publicIdentity.login}/other.git` }], {
+      owner: publicIdentity.login,
+      repositories: ENGINE_REPOSITORY_NAMES,
+    }).length > 0,
+    true,
+    "a repository outside the engine's names is not public metadata",
   );
   assert.match(
     scanPrivacyEntries([{ label: "source", kind: "source", content: publicIdentity.email }], {
@@ -390,7 +402,7 @@ test("regex literal projection preserves literal colons while removing group syn
 test("staged privacy command scans index bytes before a commit and leaves history scope intact", async (context) => {
   const root = await emptyFixtureRepository(context, "tcrn-privacy-staged-");
   const checker = resolve(import.meta.dirname, "../scripts/verify-staged-privacy.mjs");
-  fixtureGit(root, ["remote", "add", "origin", "https://github.com/public-contributor/tcrn-workflow.git"]);
+  fixtureGit(root, ["remote", "add", "origin", `https://github.com/public-contributor/${LEGACY_REPOSITORY_NAMES.engine}.git`]);
   await writeFile(join(root, "fixture.txt"), "safe baseline\n");
   fixtureGit(root, ["add", "fixture.txt"]);
   fixtureGit(root, ["commit", "-q", "-m", "baseline"]);

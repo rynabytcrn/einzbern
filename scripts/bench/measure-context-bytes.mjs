@@ -8,7 +8,7 @@
 // explicitly and never pretends these are tokens: byte counts are cheap, stable and
 // machine-free, while token counts depend on model, tokenizer and content.
 //
-// Where a repo genuinely has no file (tcrn-workflow-helper has no CLAUDE.md, and the
+// Where a repo genuinely has no file (the helper repository has no CLAUDE.md, and the
 // repos carry no per-repo .mcp.json — the platform .mcp.json at the root is the only
 // one), the table says "absent" rather than reporting 0 bytes.
 //

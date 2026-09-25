@@ -173,7 +173,7 @@ alone, not every `packages/*/src` directory `scripts/task.mjs`'s `reportBudget`
 verification-map claim — adding either would be the self-referential move this
 Story exists to close off. It is a `platform-doctor.mjs` leg (`proofBudget`),
 read from `scripts/policy/proof-budget.json`'s `surfaceCaps` field against a live
-`TCRN Platform/tcrn-workflow` checkout. A container that only consumes this
+engine checkout. A container that only consumes this
 engine, without a checkout, has nothing to measure; the leg reports
 `comparable: false` rather than a quiet pass.
 

@@ -3,6 +3,7 @@
 - Status: Accepted per program authorization (recommended defaults, OD-28/OD-29/OD-30)
 - Date: 2026-07-17
 - Governs: WSF-2 (snapshot witness), WSF-3 (restore proof), WSF-4 (git tier), WSF-5/WSF-6 (skill + settings)
+- Names: `<control>` is the old-layout workspace control directory and `<device>` the per-machine directory; both names are in [the alias table](../wiki/Glossary.md).
 
 ## Decision
 
@@ -21,7 +22,7 @@ workspace tree with OS tools → `workspace validate` to prove integrity. Git is
 recommended tier-2 (the workspace is canonical JSON; `.gitignore` `lease/` and
 `lease-recovery.claim`), used as an **integrity witness only** — its hash tree is
 an independent completeness check — with all restores routed through the copy
-runbook (empty directories such as `.tcrn-workflow/backups/` are not tracked by
+runbook (empty directories such as `<control>/backups/` are not tracked by
 git and must be recreated). Export archives are canonical checkpoint anchors, but
 there is **no governed re-import** in this line (exchange is plan/dry-run only), so
 archive-based restore is never promised.
@@ -35,7 +36,7 @@ OS tools. Rejected alternatives:
 1. **A destination-writing `snapshot` verb** that streams the workspace to an
    arbitrary `--destination` — rejected as the largest new outward-write surface
    for the least benefit; `cp`/`tar`/`rsync` already copy correctly.
-2. **Repurposing `.tcrn-workflow/backups/`** as the snapshot target — rejected:
+2. **Repurposing `<control>/backups/`** as the snapshot target — rejected:
    that control directory is reserved for migration rollback
    (`restore-exact-pre-migration-backup-then-validate`, `workspace.ts:138,:1531`),
    and migration apply currently fails closed
@@ -64,7 +65,7 @@ inventing a new one, and the witness never mutates the workspace it inspects
 > read-only-witness verdict below is not reopened. Git tag `attic-2026-09`
 > retains the retired file for reference.
 
-**Manifest scope**: the `.tcrn-workflow` control tree only (not the whole
+**Manifest scope**: the `<control>` control tree only (not the whole
 workspace root). **Manifest classification**: an engine output schema (the
 `migration-plan` precedent), not an extension-registration subject.
 
@@ -116,7 +117,7 @@ bytes — and that failure is now DETECTED rather than prevented by prohibition:
 
 `workspace.generatedArtifactsPath` therefore accepts an absolute root, subject to the
 conditions in `specs/settings-catalog-v1.md`: outside the workspace, outside its
-control tree, outside `<HOME>/.tcrn-workflow`, an existing directory, and not a
+control tree, outside `<HOME>/<device>`, an existing directory, and not a
 symbolic link. Using a cloud-synced folder for it is a supported configuration, not a
 tolerated one. Putting a workspace there remains contraindicated, for every reason
 this ADR gave in the first place.

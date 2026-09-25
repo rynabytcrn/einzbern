@@ -15,6 +15,7 @@ import {
   BRAND,
   DIRECTORY,
   INSTALL_MANIFEST,
+  LEGACY_BRAND_NAME,
   LEGACY_CONTROL_DIRECTORY,
   LEGACY_ENGINE_NAME,
   LOCAL_DIRECTORY_NAMES,
@@ -73,6 +74,8 @@ function manifestPath(manifest, id, platformRoot, homeRoot) {
 const CHAIN_CONTAINER_REPOSITORY = "chain container";
 const CHAIN_CONTAINER_DIRECTORY = [".tcrn", "workspace"].join("-");
 const WORKFLOW_DIRECTORY = LEGACY_CONTROL_DIRECTORY;
+// An installed Helper names the engine it was pinned to, under the old or the new product name.
+const HELPER_PIN_PATTERN = new RegExp(`\\b(?:Supports|Targets|Targets the) (?:${LEGACY_BRAND_NAME}|${BRAND.engine.name}) \`v([^\`\\s]+)\``, "gu");
 const ACCEPTANCE_BINDING_SCHEMA = "tcrn.acceptance-binding.v1";
 const CHAIN_VALIDATE_GROUP_ID = "chain-validate";
 
@@ -1865,7 +1868,7 @@ function versionFromSkill(text) {
   // the truthful article-bearing wording, but no other subject/article form is
   // an Engine pin.  Versions are non-empty, whitespace-free backtick payloads;
   // every accepted occurrence must agree exactly.
-  const versions = [...text.matchAll(/\b(?:Supports TCRN Workflow|Targets TCRN Workflow|Targets the TCRN Workflow) `v([^`\s]+)`/gu)].map((match) => match[1]);
+  const versions = [...text.matchAll(HELPER_PIN_PATTERN)].map((match) => match[1]);
   if (versions.length === 0 || new Set(versions).size !== 1) return null;
   return versions[0];
 }

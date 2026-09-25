@@ -1,6 +1,6 @@
 # Privacy
 
-TCRN Workflow contains no telemetry client. P1 project commands run with a Node
+Einzbern contains no telemetry client. P1 project commands run with a Node
 process network guard, an exact child-process allowlist, offline package-manager
 defaults, and static checks for network-capable imports and tools. This is not a
 kernel or operating-system network sandbox. CI action startup and the explicitly

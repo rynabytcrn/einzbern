@@ -16,7 +16,8 @@ try {
   const reasonCode = typeof error?.reasonCode === "string" ? error.reasonCode : "CLI_INTERNAL_ERROR";
   // TCRN-CROSS-INC-378: committed, version and headEventHash tell a caller that the event
   // landed although its time-attestation receipt was not written.
-  const stringDetails = ["required", "actual", "committed", "version", "headEventHash"];
+  // TCRN-CROSS-STORY-467 R4: a chain break names its stream, sequence, event and kind.
+  const stringDetails = ["required", "actual", "committed", "version", "headEventHash", "layout", "streamId", "sequence", "eventId", "break", "segment", "line"];
   const details = error?.details !== null && typeof error?.details === "object"
     ? Object.fromEntries(Object.entries(error.details).filter(([key, value]) =>
       (stringDetails.includes(key) && typeof value === "string") ||

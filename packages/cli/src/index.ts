@@ -131,6 +131,9 @@ import {
   validateTemplateDocument,
   LEGACY_CONTROL_DIRECTORY,
   LEGACY_KNOWLEDGE_DIRECTORY,
+  materializeFromGenesis,
+  openLegacyWorkspace,
+  validateLegacyChain,
 } from "../../core/src/index.js";
 import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider } from "../../core/src/index.js";
 import type {
@@ -1339,6 +1342,9 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "attestation-enable", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "expected-version", required: true, valueKind: "integer", headSentinel: true }, { name: "at", required: true, valueKind: "instant" }, { name: "actor", required: true, valueKind: "string" }, { name: "attest-dir", required: false, valueKind: "string" }] },
   { name: "attestation-migrate", availability: "cli", mutates: true, flags: [{ name: "root", required: true, valueKind: "string" }, { name: "mode", required: true, valueKind: "string" }, { name: "baseline", required: false, valueKind: "string" }, { name: "baseline-out", required: false, valueKind: "string" }, { name: "workspace", required: false, valueKind: "string" }, { name: "expect-extra", required: false, valueKind: "list" }, { name: "backup-dir", required: false, valueKind: "string" }] },
   { name: "attestation-verify", availability: "cli", mutates: false, flags: [{ name: "attest-dir", required: true, valueKind: "string" }, { name: "workspace", required: true, valueKind: "string" }] },
+  // TCRN-CROSS-STORY-467 R4: replay a chain from genesis without trusting any view, and
+  // name the stream, sequence and event where it stops being provable. Zero writes.
+  { name: "chain-validate", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }] },
   { name: "commands", availability: "cli", mutates: false, flags: [] },
   { name: "conference-append-position", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "expected-version", required: true, valueKind: "integer", headSentinel: true }, { name: "at", required: true, valueKind: "instant" }, { name: "conference-id", required: true, valueKind: "string" }, { name: "external-key", required: true, valueKind: "string" }, { name: "actor-id", required: true, valueKind: "string" }, { name: "position", required: true, valueKind: "string" }, { name: "stance", required: false, valueKind: "string" }, { name: "risks", required: true, valueKind: "list" }, { name: "recommendations", required: true, valueKind: "list" }, { name: "evidence-ids", required: true, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }, { name: "attest-dir", required: false, valueKind: "string" }] },
   { name: "conference-cancel", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "expected-version", required: true, valueKind: "integer", headSentinel: true }, { name: "at", required: true, valueKind: "instant" }, { name: "conference-id", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "attest-dir", required: false, valueKind: "string" }] },
@@ -1753,6 +1759,23 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       ...(values["segment-events"] !== undefined ? { segmentEventLimit: integerValue(values, "segment-events") } : {}),
     });
     writeState(io, state);
+    return;
+  }
+  if (command === "chain-validate") {
+    const values = parseArguments(rest, ["workspace"]);
+    required(values, ["workspace"]);
+    const legacy = await openLegacyWorkspace(values.workspace ?? "");
+    const report = validateLegacyChain(legacy);
+    const state = materializeFromGenesis(legacy.metadata, legacy.events);
+    io.write(canonicalJson({
+      reasonCode: "CHAIN_VALIDATED",
+      layout: "legacy",
+      workspaceId: legacy.metadata.workspaceId,
+      events: report.events,
+      version: state.version,
+      headEventHash: state.headEventHash,
+      streams: report.streams,
+    }));
     return;
   }
   if (command === "validate") {

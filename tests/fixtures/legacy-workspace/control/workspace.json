@@ -1,0 +1,42 @@
+{
+  "createdAt": "2026-01-01T00:00:00Z",
+  "externalKey": "LEGACY-FIXTURE-WORKSPACE",
+  "maximumStorageVersion": 2,
+  "minimumStorageVersion": 1,
+  "roots": [
+    {
+      "canonicalPath": "<fixture>/framework",
+      "kind": "framework",
+      "path": "<fixture>/framework",
+      "portableIdentity": "<fixture>/framework"
+    },
+    {
+      "canonicalPath": "<fixture>/workspace",
+      "kind": "workspace",
+      "path": "<fixture>/workspace",
+      "portableIdentity": "<fixture>/workspace"
+    },
+    {
+      "canonicalPath": "<fixture>/transient",
+      "kind": "transient",
+      "path": "<fixture>/transient",
+      "portableIdentity": "<fixture>/transient"
+    },
+    {
+      "canonicalPath": "<fixture>/evidence-locator",
+      "kind": "evidence-locator",
+      "path": "<fixture>/evidence-locator",
+      "portableIdentity": "<fixture>/evidence-locator"
+    },
+    {
+      "canonicalPath": "<fixture>/release-trust",
+      "kind": "release-trust",
+      "path": "<fixture>/release-trust",
+      "portableIdentity": "<fixture>/release-trust"
+    }
+  ],
+  "schemaVersion": "tcrn.workspace.v1",
+  "segmentEventLimit": 4096,
+  "storageVersion": 2,
+  "workspaceId": "workspace:1ea2b62c3e4e067c3c6d186c"
+}

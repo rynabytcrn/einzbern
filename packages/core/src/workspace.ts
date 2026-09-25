@@ -3966,6 +3966,37 @@ export async function materializeWorkspaceFromGenesis(workspaceRootInput: string
   return materialize(workspace.metadata, await readSegmentEvents(workspace.root, workspace.metadata));
 }
 
+// TCRN-CROSS-STORY-466 R2 / STORY-467 R4: the read-only faces the old-layout reader
+// (legacy-workspace.ts) needs. Each wraps the same function the engine itself uses, so
+// the reader parses metadata, binds event identities and replays exactly as a write
+// path would; none of them takes a lease, reads a view or touches the filesystem.
+
+/** Parse `workspace.json` bytes against the closed metadata shape, without any address admission. */
+export function parseLegacyWorkspaceMetadata(text: string): WorkspaceMetadata {
+  try {
+    return validateMetadata(assertCanonicalJson(text));
+  } catch (error) {
+    if (error instanceof WorkspaceError) throw error;
+    if (error instanceof ProtocolError) fail("WORKSPACE_SCHEMA_INVALID", error.message);
+    fail("WORKSPACE_SCHEMA_INVALID", String(error));
+  }
+}
+
+/** The stream id an old-layout workspace binds every event to. */
+export function legacyWorkspaceStreamId(metadata: WorkspaceMetadata): string {
+  return workspaceStreamId(metadata);
+}
+
+/** The event id an old-layout workspace binds to a sequence of its stream. */
+export function legacyWorkspaceEventId(streamId: string, sequence: number): string {
+  return workspaceEventId(streamId, sequence);
+}
+
+/** Replay already-read events from genesis through the engine's own reducer. Pure. */
+export function materializeFromGenesis(metadata: WorkspaceMetadata, events: readonly EventRecord[]): WorkspaceState {
+  return materialize(metadata, events);
+}
+
 async function materializeResolvedWorkspace(workspace: { readonly root: string; readonly metadata: WorkspaceMetadata }): Promise<WorkspaceState> {
   const snapshot = await readReplaySnapshot(workspace.root, workspace.metadata);
   if (snapshot === null) {

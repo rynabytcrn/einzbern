@@ -773,3 +773,16 @@ export {
   renderLegacyAliasTable,
 } from "./names.js";
 export type { BrandEntry, DirectoryGlossaryEntry, LegacyNameEntry } from "./names.js";
+// TCRN-CROSS-STORY-466 R2 / STORY-467 R4: the old workspace layout, opened read-only for
+// chain-validate and for the later import into a library.
+export {
+  LEGACY_WORKSPACE_REASON_CODES,
+  LegacyWorkspaceError,
+  findLegacyChainBreak,
+  legacyControlDirectory,
+  openLegacyWorkspace,
+  replayLegacyWorkspace,
+  validateLegacyChain,
+} from "./legacy-workspace.js";
+export type { ChainBreak, ChainBreakKind, ChainReport, LegacySegment, LegacyWorkspace, LegacyWorkspaceReasonCode } from "./legacy-workspace.js";
+export { materializeFromGenesis, parseLegacyWorkspaceMetadata } from "./workspace.js";

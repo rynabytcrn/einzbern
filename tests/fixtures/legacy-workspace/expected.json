@@ -1,0 +1,39 @@
+{
+  "workspaceId": "workspace:1ea2b62c3e4e067c3c6d186c",
+  "externalKey": "LEGACY-FIXTURE-WORKSPACE",
+  "events": 36,
+  "version": 36,
+  "headEventHash": "1d114dd2fd2424bb7ba2c25daba18eb008bae05d96837fe261c9ee1ffba3e9ad",
+  "segments": 10,
+  "schemaVersions": [
+    "tcrn.event.v1"
+  ],
+  "operations": {
+    "attestation.actor.enabled": 1,
+    "conference.closed": 1,
+    "conference.created": 2,
+    "conference.position.appended": 1,
+    "conference.updated": 1,
+    "gate.created": 2,
+    "gate.deleted": 1,
+    "project.created": 2,
+    "project.deleted": 1,
+    "project.updated": 1,
+    "settings.removed": 1,
+    "settings.updated": 5,
+    "template.admitted": 1,
+    "work.annotated": 1,
+    "work.created": 8,
+    "work.deleted": 1,
+    "work.updated": 6
+  },
+  "projects": 1,
+  "work": 7,
+  "records": {
+    "story": {
+      "externalKey": "LEGACY-STORY",
+      "id": "work:8679ce5b8da74bcb29229aaa",
+      "status": "active"
+    }
+  }
+}

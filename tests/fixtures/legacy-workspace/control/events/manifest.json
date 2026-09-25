@@ -1,0 +1,88 @@
+{
+  "activeSegment": "000010.ndjson",
+  "labelsDigest": "488d347586aa49173159b5b77925f8bc10cf41e16ba6b25a404a86def543907a",
+  "schemaVersion": "tcrn.segment-manifest.v1",
+  "segments": [
+    {
+      "bytes": 3468,
+      "firstSequence": 1,
+      "lastSequence": 5,
+      "name": "000001.ndjson",
+      "records": 5,
+      "sha256": "3c17e866810393a77bd08bcd4ea547cdeaf3899621385c1038db7ea040f35ad4"
+    },
+    {
+      "bytes": 3698,
+      "firstSequence": 6,
+      "lastSequence": 8,
+      "name": "000002.ndjson",
+      "records": 3,
+      "sha256": "88d0344a1f39bd9ed3a3156d25fe07b57cf1fdcd59bd0555cc350b9a54bb5987"
+    },
+    {
+      "bytes": 3182,
+      "firstSequence": 9,
+      "lastSequence": 11,
+      "name": "000003.ndjson",
+      "records": 3,
+      "sha256": "532f5da3a81a733e63916ed9865dc7342e2fd5b33dced0c78c28b3175b69cfbe"
+    },
+    {
+      "bytes": 2798,
+      "firstSequence": 12,
+      "lastSequence": 14,
+      "name": "000004.ndjson",
+      "records": 3,
+      "sha256": "11bd70fe84ed82c713e07f1a1ba55a4ed72258a95886b5f0214c1ce61470910a"
+    },
+    {
+      "bytes": 3717,
+      "firstSequence": 15,
+      "lastSequence": 17,
+      "name": "000005.ndjson",
+      "records": 3,
+      "sha256": "637f59c301b59bffa67b0eb1b15bcf2d4d5b676dc43c0780a05d82e93d64c5c2"
+    },
+    {
+      "bytes": 3398,
+      "firstSequence": 18,
+      "lastSequence": 21,
+      "name": "000006.ndjson",
+      "records": 4,
+      "sha256": "57f5916c9d58a7505ec074d530cbad3aa0f0c61bbe53c210e79f0e5a1e0de3f6"
+    },
+    {
+      "bytes": 3858,
+      "firstSequence": 22,
+      "lastSequence": 25,
+      "name": "000007.ndjson",
+      "records": 4,
+      "sha256": "fa7bb8b0453183fff546a56ea912007572c43efe1aefa3bdbec5d87648b51240"
+    },
+    {
+      "bytes": 3552,
+      "firstSequence": 26,
+      "lastSequence": 30,
+      "name": "000008.ndjson",
+      "records": 5,
+      "sha256": "1768dd80387e111245fc0fc6e13843277ccf1bae814106fb5df1466ffcfe7c18"
+    },
+    {
+      "bytes": 3247,
+      "firstSequence": 31,
+      "lastSequence": 33,
+      "name": "000009.ndjson",
+      "records": 3,
+      "sha256": "f940cde9870127228940eea6a56fed79b159fd588200265d24976667ff9eb1b9"
+    },
+    {
+      "bytes": 2764,
+      "firstSequence": 34,
+      "lastSequence": 36,
+      "name": "000010.ndjson",
+      "records": 3,
+      "sha256": "28861e6ad4abff4b7c39b6b608ef44a570218ff6c2e606670c027758dde24495"
+    }
+  ],
+  "timeDigest": "21408b7960f4b11a747888b50ba085fcbcc6c7396b20bda2b8831f1c1f57283c"
+}

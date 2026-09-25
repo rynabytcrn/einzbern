@@ -242,22 +242,16 @@ const describedKeys = allKeys.filter((key) => key.startsWith("setting.") && key.
 let settingLeg;
 try {
   const { execFileSync } = await import("node:child_process");
-  const { mkdtempSync, mkdirSync, rmSync, realpathSync } = await import("node:fs");
+  const { mkdtempSync, rmSync, realpathSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const cli = process.env.TCRN_WORKFLOW_CLI ?? join(portalRoot, "..", "scripts", "einzbern.mjs");
   const base = realpathSync(mkdtempSync(join(tmpdir(), "i18n-proof-")));
   try {
-    const roots = {};
-    for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-      const path = join(base, kind);
-      mkdirSync(path);
-      roots[kind] = realpathSync(path);
-    }
-    const run = (args) => JSON.parse(execFileSync(process.execPath, [cli, ...args], { encoding: "utf8" }));
-    run(["init", "--workspace", roots.workspace, "--framework", roots.framework, "--transient", roots.transient,
-      "--evidence-locator", roots["evidence-locator"], "--release-trust", roots["release-trust"],
-      "--external-key", "TCRN-I18N-PROOF", "--at", "2026-01-01T00:00:00Z"]);
-    const catalog = run(["settings-catalog", "--workspace", roots.workspace]).settings;
+    // TCRN-CROSS-STORY-469: a disposable library, with a disposable device directory beside it.
+    const library = join(base, "library");
+    const run = (args) => JSON.parse(execFileSync(process.execPath, [cli, ...args], { encoding: "utf8", env: { ...process.env, EINZBERN_HOME: join(base, "device") } }));
+    run(["init", "--workspace", library, "--at", "2026-01-01T00:00:00Z"]);
+    const catalog = run(["settings-catalog", "--workspace", library]).settings;
     // STORY-281: the portal has two settings layers and this leg has to know both, or
     // the machine keys read as descriptions for settings that do not exist. The machine
     // roster comes from the engine's own verb, not from a list repeated here.

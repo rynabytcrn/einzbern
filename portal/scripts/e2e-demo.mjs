@@ -26,21 +26,12 @@ function reconcile(declared, observed) {
 
 const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-portal-e2e-")));
 try {
-  const roots = {};
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots[kind] = await realpath(path);
-  }
-  const workspace = roots.workspace;
+  // TCRN-CROSS-STORY-469: the demo writes a disposable library from a disposable device directory.
+  process.env.EINZBERN_HOME = join(base, "device");
+  const workspace = join(base, "library");
   const init = runCli([
     "init",
-    "--workspace", roots.workspace,
-    "--framework", roots.framework,
-    "--transient", roots.transient,
-    "--evidence-locator", roots["evidence-locator"],
-    "--release-trust", roots["release-trust"],
-    "--external-key", "TCRN-PORTAL-E2E",
+    "--workspace", workspace,
     "--at", now,
   ]);
 

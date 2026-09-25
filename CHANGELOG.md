@@ -104,6 +104,19 @@ digest over the stream heads. An event that does not apply to the merged state i
 event, listed and skipped; a create whose key another device took first is renamed to the
 next free key with an alias, and its stream's later events follow. Each file read times out
 with `AKASHA_READ_TIMEOUT` instead of hanging on a sync placeholder (TCRN-CROSS-STORY-470 R4).
+The engine writes libraries only (TCRN-CROSS-STORY-469). `init --workspace <library> --at
+[--project-name] [--git-remote]` creates one (the five explicit roots, the workspace external
+key and `--segment-events` are gone); every write takes this machine's lock of the library,
+reads the merged state and appends to this device's stream; every read replays the merged
+streams. `status` reports the version vector, the streams and the rejected-event count;
+`work-show` also takes `--external-key` and shows a record's aliases, the records renamed
+away from its key and the events rejected against it; `validate` is `chain-validate`, which
+checks a library stream by stream and names the device, stream and sequence of any break.
+An old-layout workspace opens read-only: reads replay it from genesis without writing, and
+every write refuses with `LEGACY_WORKSPACE_READ_ONLY`. The old layout's writer is gone with
+`migration-plan`, `migration-execute`, `storage-home-status` and `snapshot-replay-rebuild`:
+its storage backends, segment indexes, views, replay snapshots, storage-home sentinel,
+storage migration, relocation admission and filesystem-type pin.
 
 ## 1.2.1 — patch candidate
 

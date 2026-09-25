@@ -46,29 +46,11 @@ export function admitDevelopment(): DevelopmentAdmission {
 
 export { assertDistinctRoots, RootIdentityError } from "./root-identity.js";
 export type { CanonicalRoot } from "./root-identity.js";
-// STORY-174: the storage abstraction is part of the public core surface so the
-// PG backend (packages/pg-backend) can implement it. StorageError is the
-// fail-closed refusal shape; StorageBackend/FileBackend are the interface and
-// the converged file implementation.
-export { StorageError, FileBackend, WORKSPACE_CONTROL_DIRECTORY } from "./storage-backend.js";
-export type { StorageBackend, StorageBackendKind, StorageDirectoryEntry, WorkspaceCrashPoint } from "./storage-backend.js";
-export { SegmentedBackend, SEGMENTED_BACKEND_PROFILE } from "./segmented-backend.js";
-export type { SegmentIndexDocument, SegmentIndexEntry, SegmentManifest, SegmentManifestEntry, SegmentedBackendProfile } from "./segmented-backend.js";
-// INC-074: the storage-home sentinel declares where a workspace's chain lives
-// after a file→pg migration. The file backend refuses mutating verbs on a
-// sentinel workspace (WORKSPACE_STORAGE_RELOCATED), and a PG-facing path must
-// name the schema the sentinel declares. Part of the public core surface so the
-// CLI/facade can check it.
-export {
-  STORAGE_HOME_VERSION,
-  STORAGE_HOME_FILE_NAME,
-  StorageHomeError,
-  readStorageHomeDeclaration,
-  removeStorageHomeDeclaration,
-  sealStorageHomeDeclaration,
-  writeStorageHomeDeclaration,
-} from "./storage-home.js";
-export type { StorageHomeDeclaration } from "./storage-home.js";
+// TCRN-CROSS-STORY-469: the old layout's control directory, which the engine reads and never
+// writes. The storage backends, the segment index and the storage-home sentinel of the old
+// layout's writer are gone with it.
+export { WORKSPACE_CONTROL_DIRECTORY } from "./workspace.js";
+export type { WorkspaceCrashPoint } from "./workspace.js";
 // STORY-281: machine-level portal preferences. Deliberately not chain-backed — see
 // the module header for why a laptop's default theme is not governed workspace state.
 export {
@@ -151,12 +133,8 @@ export {
   WorkspaceError,
   activeBinding,
   activeWorkspaceRoot,
-  deriveRelocationId,
-  relocationStateAt,
   appendConferencePositionInWorkspace,
   admitTemplateInWorkspace,
-  applyWorkspaceMigration,
-  assertSupportedWorkspaceFilesystem,
   cancelConferenceInWorkspace,
   closeConferenceInWorkspace,
   assertWorkspaceRecordCount,
@@ -168,21 +146,13 @@ export {
   annotateWork,
   annotateWorkDelta,
   appendEvents,
-  consumeViewWriteFailure,
   deleteProject,
   deleteWork,
   exportWorkspace,
-  initializeWorkspace,
+  initializeLibrary,
   materializeWorkspace,
   materializeWorkspaceFromGenesis,
   openConferenceInWorkspace,
-  planWorkspaceMigration,
-  hasWorkspaceStorageMigration,
-  migrateWorkspaceStorage,
-  rollbackWorkspaceStorageMigration,
-  verifyWorkspaceStorageMigration,
-  rebuildWorkspaceViews,
-  rebuildReplaySnapshot,
   recoverWorkspace,
   removeHostConfigurationInWorkspace,
   removeCustomPersonaInWorkspace,
@@ -200,19 +170,17 @@ export {
   transitionWorkDelta,
   updateProject,
   validateWorkspace,
-  withStorageBackendFactory,
   withWorkspaceWriteLock,
   writtenRecordIds,
   workspaceBudgets,
   WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES,
 } from "./workspace.js";
 export type {
+  InitializeLibraryOptions,
   ProjectRecord,
   SprintReference,
   WorkspaceAdmission,
-  WorkspaceWriteLockOptions,
   WorkspaceMetadata,
-  WorkspaceMigrationPlan,
   WorkspaceMutationOptions,
   WorkspaceReasonCode,
   WorkspaceRelocationAuthorityRecord,

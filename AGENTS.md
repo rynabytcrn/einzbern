@@ -59,7 +59,7 @@ actually invoking, and `commands` must be asked of *that* one. Which partition i
 with a runnable recheck command per partition, is stated in the platform root's `AGENTS.md`
 section 三 — do not infer it from this repository's working tree.
 
-### 3b. There are no relocation verbs — but the ledger reader is still live
+### 3b. There are no relocation verbs, and old-layout workspaces open read-only
 
 `relocation-plan`, `relocation-inspect`, `relocation-vacate`, `relocation-adopt` and
 `relocation-abort` were retired by `TCRN-CROSS-STORY-358` along with
@@ -68,23 +68,14 @@ Do not look for them in the catalog and do not describe a governed way to move a
 between machines: there is none in this engine today. `git tag attic-2026-09` holds the
 retired code and its 47-case test block.
 
-What did **not** go with them is the ledger reader inside `packages/core/src/workspace.ts`,
-and it is load-bearing right now. A workspace whose `workspace.json` carries a `relocations`
-array is read through `activeBinding` (the binding in force is the `to` of the last
-`adopted` hop, **not** the `roots` field, which is never rewritten), `relocationStateAt`
-(live / vacated / adoption-required / foreign-address, computed from the file plus the
-address the caller is standing at) and `admitRelocationState`, which `readMetadata` calls on
-every such read. Five of the eight partitions on the platform container are in exactly that
-state: their `roots` still name the address the chain was admitted from, and they open only
-because `activeBinding` rewrites the binding. Break that loop and those five stop opening,
-with `pnpm test` still green unless the cases named below stay green with it.
-
-Two consequences worth keeping when you touch that code:
-
-- the mechanism never prevented a fork, only made one legible — a single-sided test cannot
-  go red on a deleted ledger, and detection was always the counterparty's capability;
-- `tests/backup-snapshot.test.mjs`'s `WSR-1 L1`–`L6` are the only proof this reader has.
-  They write the ledger by hand, because no verb can write one any more.
+Since TCRN-CROSS-STORY-469 this engine writes libraries (`.ether`) only. An old-layout
+workspace (the old control directory, named in `docs/wiki/Glossary.md`) opens read-only
+through `packages/core/src/legacy-workspace.ts`: its reads replay the old chain from genesis
+without writing a byte, whatever address it now sits at, and every write refuses with
+`LEGACY_WORKSPACE_READ_ONLY`. The relocation admission that used to gate those reads is gone
+with the old writer; a `relocations` array in `workspace.json` is still parsed and checked,
+and `activeBinding` still names the root the knowledge store is bound to. Moving a library is
+the job of `workspace-relocate` (TCRN-CROSS-STORY-470), not of a ledger.
 
 ### 4. Verify "did it reach elsewhere" against the authority, and compare full values
 

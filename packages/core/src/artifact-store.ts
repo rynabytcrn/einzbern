@@ -46,8 +46,7 @@ import type { JsonValue } from "../../protocol/src/index.js";
 import { deviceHome } from "./device-home.js";
 import { MACHINE_SETTINGS_DIRECTORY } from "./machine-settings.js";
 import { SETTINGS_CATALOG } from "./settings.js";
-import { WORKSPACE_CONTROL_DIRECTORY } from "./storage-backend.js";
-import { materializeWorkspace, withWorkspaceWriteLock } from "./workspace.js";
+import { WORKSPACE_CONTROL_DIRECTORY, materializeWorkspace, withWorkspaceWriteLock } from "./workspace.js";
 
 export const ARTIFACT_MANIFEST_SCHEMA_VERSION = "tcrn.artifact-manifest.v1" as const;
 export const ARTIFACT_PUT_SCHEMA_VERSION = "tcrn.artifact-put.v1" as const;

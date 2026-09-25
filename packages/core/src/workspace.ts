@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { createHash } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { deflateSync, inflateSync } from "node:zlib";
-import { lstat, realpath, statfs } from "node:fs/promises";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { lstat, realpath } from "node:fs/promises";
+import { isAbsolute, relative, sep } from "node:path";
 
 import {
   PROTOCOL_LIMITS,
@@ -23,9 +21,7 @@ import {
   deriveLegacyEventId,
   deriveStableId,
   EVENT_SCHEMA_VERSION,
-  eventInputOf,
   isWorkSummary,
-  validateEventChain,
   validateWorkGraph,
 } from "../../protocol/src/index.js";
 import type {
@@ -36,17 +32,15 @@ import type {
   WorkRecord,
   WorkStatus,
 } from "../../protocol/src/index.js";
-import { assertDistinctRootShape, assertDistinctRoots, rootPortableIdentity } from "./root-identity.js";
-import { FileBackend, StorageError } from "./storage-backend.js";
-import type { StorageBackend, StorageDirectoryEntry } from "./storage-backend.js";
-import { SegmentedBackend } from "./segmented-backend.js";
-import { readStorageHomeDeclaration } from "./storage-home.js";
-import { FileLockError, acquireFileLock, withFileLock } from "./file-lock.js";
-import { readAllStreams } from "./akasha.js";
+import { assertDistinctRootShape, rootPortableIdentity } from "./root-identity.js";
+import { FileLockError } from "./file-lock.js";
+import { AKASHA_SEGMENT_BYTES_DEFAULT, appendStreamEvents, emptyStreamManifest, readAllStreams, streamEventId, withLibraryWriteLock } from "./akasha.js";
 import type { LibraryReadOptions, MergedEvent, StreamManifest } from "./akasha.js";
-import { openLibrary } from "./ether-library.js";
+import { createLibrary, hasLibraryManifest, openLibrary } from "./ether-library.js";
 import type { Library } from "./ether-library.js";
-import { LEGACY_CONTROL_DIRECTORY, WORKSPACE_WRITE_LOCK_FILE } from "./names.js";
+import { readOrCreateDevice } from "./device-identity.js";
+import { legacyControlDirectory, openLegacyWorkspace, replayLegacyWorkspace } from "./legacy-workspace.js";
+import { LEGACY_CONTROL_DIRECTORY } from "./names.js";
 import { recordClosureValidation, recordCollectionScan, recordExtensionClosureValidation, recordFullMaterialize, recordSnapshotMaterialize, recordTerminalGraphValidation } from "./workspace-perf-instrumentation.js";
 import {
   ACTOR_ATTESTATION_ENABLE_OPERATION,
@@ -99,7 +93,6 @@ import { GateIdentityError, validateGateIdentityDecision } from "./gate-identity
 import type { GateIdentityDecision } from "./gate-identity.js";
 import type { CanonicalRoot } from "./root-identity.js";
 import { FRAMEWORK_VERSION } from "./index.js";
-import type { ExplicitRoot } from "./index.js";
 import { describeStoryScopeProblems, deriveWorkSummary, storyScopeFromRecord, storyScopeNamesOwnerDecider, validateStoryRecord } from "./story-scope-compliance.js";
 import {
   TemplateAdmissionError,
@@ -143,6 +136,10 @@ export const WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES = 4_194_304 as const;
 // The old-layout control directory, named by the names module (read-only from EPIC-141 on).
 export const WORKSPACE_CONTROL_DIRECTORY = LEGACY_CONTROL_DIRECTORY;
 export const WORKSPACE_REASON_CODES = Object.freeze([
+  // TCRN-CROSS-STORY-469: a path that names neither a library nor an old-layout workspace, and a
+  // write aimed at an old-layout workspace, which opens read-only.
+  "LEGACY_WORKSPACE_READ_ONLY",
+  "LIBRARY_NOT_FOUND",
   "WORKSPACE_ACTOR_INVALID",
   "WORKSPACE_ACTOR_REQUIRED",
   "WORKSPACE_ALREADY_EXISTS",
@@ -408,11 +405,6 @@ export interface WorkspaceState {
 // WorkspaceState is assembled, so callers keep the existing state shape.
 const WORKSPACE_REPLAY_SNAPSHOT_VERSION = "tcrn.workspace-replay-snapshot.v1" as const;
 const WORKSPACE_REPLAY_SNAPSHOT_MANIFEST_VERSION = "tcrn.workspace-replay-snapshot-manifest.v1" as const;
-const WORKSPACE_REPLAY_SNAPSHOT_DIRECTORY = "snapshots" as const;
-const WORKSPACE_REPLAY_SNAPSHOT_MANIFEST = "manifest.json" as const;
-const WORKSPACE_REPLAY_SNAPSHOT_INTERVAL_DEFAULT = 512 as const;
-const WORKSPACE_REPLAY_SNAPSHOT_INTERVAL_MIN = 1 as const;
-const WORKSPACE_REPLAY_SNAPSHOT_INTERVAL_MAX = 20_000 as const;
 
 interface ReplaySnapshotState {
   readonly schemaVersion: typeof WORKSPACE_REPLAY_SNAPSHOT_VERSION;
@@ -474,57 +466,6 @@ export interface WorkspaceMutationOptions {
   readonly viewBudgetBytes?: number;
 }
 
-export interface WorkspaceMigrationPlan {
-  readonly schemaVersion: "tcrn.workspace-migration-plan.v1";
-  readonly dryRun: true;
-  readonly fromVersion: number;
-  readonly toVersion: number;
-  readonly steps: readonly string[];
-  readonly backupRequired: true;
-  readonly rollback: "restore-exact-pre-migration-backup-then-validate";
-  readonly postValidation: "validate-exact-target-schema-and-full-event-chain";
-  readonly applyAvailable: boolean;
-  readonly basisDigest: string;
-}
-
-export interface WorkspaceStorageMigrationResult {
-  readonly schemaVersion: "tcrn.workspace-storage-migration.v1";
-  readonly reasonCode: "WORKSPACE_STORAGE_MIGRATION_VERIFIED";
-  readonly ok: true;
-  readonly fromVersion: 1;
-  readonly toVersion: 2;
-  readonly workspaceId: string;
-  readonly eventCount: number;
-  readonly headEventHash: string | null;
-  readonly segmentBytes: number;
-  readonly segmentCount: number;
-  readonly stateDigest: string;
-}
-
-export interface WorkspaceStorageMigrationVerification {
-  readonly schemaVersion: "tcrn.workspace-storage-migration-verify.v1";
-  readonly ok: boolean;
-  readonly reasonCode: string;
-  readonly fromVersion: 1;
-  readonly toVersion: 2;
-  readonly workspaceId: string;
-  readonly eventCount: number;
-  readonly headEventHash: string | null;
-  readonly segmentBytes: number | null;
-  readonly segmentCount: number;
-  readonly stateDigest: string | null;
-}
-
-const supportedFilesystemTypes = new Set([
-  0x1a,
-  0x482b,
-  0xef53,
-  0x58465342,
-  0x01021994,
-  0x794c7630,
-  0x9123683e,
-  0x2fc12fc1,
-]);
 const projectFields = ["schemaVersion", "id", "externalKey", "name", "revision", "updatedAt", "tombstone"];
 const rootFields = ["kind", "path", "canonicalPath", "portableIdentity"];
 const projectOperations = new Set(["project.created", "project.updated", "project.deleted"]);
@@ -581,59 +522,6 @@ const relocationStages = new Set<string>(["vacated", "adopted", "aborted"]);
 // f8: the metadata root order. resolveWorkspace compares INDEX-WISE, so every
 // relocation `from`/`to` array must preserve it exactly.
 const relocationRootKindOrder = ["framework", "workspace", "transient", "evidence-locator", "release-trust"];
-
-// STORY-174: the data-plane IO rides through a StorageBackend. The file backend
-// is the converged implementation of the four former private helpers
-// (boundDirectory/boundFile/ensureDirectory/atomicWrite); its temporary-sequence
-// counter must persist across consecutive atomicWrites in one process, so one
-// instance is cached per workspace root.
-const fileBackends = new Map<string, FileBackend>();
-const segmentedBackends = new Map<string, SegmentedBackend>();
-
-// STORY-176: a package-private backend-factory override so the equivalence gate
-// can run the SAME engine verbs against the PG backend and compare byte output
-// to the file backend. Scope is one async operation (AsyncLocalStorage), and
-// production callers never arm it.
-const backendFactoryOverride = new AsyncLocalStorage<() => StorageBackend>();
-
-export function withStorageBackendFactory<T>(factory: () => StorageBackend, operation: () => Promise<T>): Promise<T> {
-  if (backendFactoryOverride.getStore() !== undefined) {
-    throw new Error("storage backend factory nesting is unsupported");
-  }
-  return backendFactoryOverride.run(factory, operation);
-}
-
-function backendFor(workspaceRoot: string): StorageBackend {
-  const factory = backendFactoryOverride.getStore();
-  if (factory !== undefined) {
-    return factory();
-  }
-  let backend = fileBackends.get(workspaceRoot);
-  if (backend === undefined) {
-    backend = new FileBackend(workspaceRoot);
-    fileBackends.set(workspaceRoot, backend);
-  }
-  return backend;
-}
-
-function backendForStorage(workspaceRoot: string, storageVersion: WorkspaceMetadata["storageVersion"], requestedKind?: "file" | "file-segmented"): StorageBackend {
-  const factory = backendFactoryOverride.getStore();
-  if (factory !== undefined) return factory();
-  if (storageVersion === WORKSPACE_STORAGE_VERSION && requestedKind !== "file") {
-    let backend = segmentedBackends.get(workspaceRoot);
-    if (backend === undefined) {
-      backend = new SegmentedBackend(workspaceRoot);
-      segmentedBackends.set(workspaceRoot, backend);
-    }
-    return backend;
-  }
-  return backendFor(workspaceRoot);
-}
-
-function activeOverrideBackendKind(): StorageBackend["backendKind"] | undefined {
-  const factory = backendFactoryOverride.getStore();
-  return factory?.().backendKind;
-}
 
 function fail(reasonCode: WorkspaceReasonCode, message: string): never {
   throw new WorkspaceError(reasonCode, message);
@@ -706,14 +594,6 @@ export function assertWorkspaceRelativePath(value: unknown): asserts value is st
   }
 }
 
-export async function assertSupportedWorkspaceFilesystem(root: string, detectedTypeForTest?: number): Promise<number> {
-  const detected = detectedTypeForTest ?? Number((await statfs(root)).type);
-  if (!Number.isSafeInteger(detected) || !supportedFilesystemTypes.has(detected)) {
-    fail("WORKSPACE_FILESYSTEM_UNSUPPORTED", `filesystem type ${String(detected)} is not in the pinned local-filesystem set`);
-  }
-  return detected;
-}
-
 // TCRN-CROSS-INC-224: this is the chain's LIFETIME event bound. validateEventChain and
 // workspaceBudgets answer to the same maxChainEvents (TCRN-CROSS-STORY-451); every other
 // use of the old shared constant bounds the shape of one document or call; conflating
@@ -782,11 +662,7 @@ function validateProject(record: unknown, reasonCode: WorkspaceReasonCode = "WOR
   return record as unknown as ProjectRecord;
 }
 
-// WSR-1: the relocation identity. Derived, never random (determinism constraint 6),
-// and derived from the VACATED entry's own position so the same hop always names
-// itself the same way on both hosts. The adopted/aborted counterpart restates it
-// rather than re-deriving from its own sequence.
-export function deriveRelocationId(input: {
+function deriveRelocationId(input: {
   readonly workspaceId: string;
   readonly sequence: number;
   readonly from: readonly CanonicalRoot[];
@@ -944,59 +820,6 @@ export function activeWorkspaceRoot(metadata: WorkspaceMetadata): string | undef
   return activeBinding(metadata).find((root) => root.kind === "workspace")?.canonicalPath;
 }
 
-function relocationWorkspaceRoot(roots: readonly CanonicalRoot[]): string | undefined {
-  return roots.find((root) => root.kind === "workspace")?.canonicalPath;
-}
-
-// WSR-1: the three-state discriminator. Computed from the file alone plus the
-// address the caller is standing at.
-export function relocationStateAt(metadata: WorkspaceMetadata, address: string): WorkspaceRelocationState {
-  const entries = metadata.relocations ?? [];
-  const trailing = entries[entries.length - 1];
-  if (trailing === undefined) {
-    // The address is compared even here. Returning "live" for ANY address whenever
-    // the ledger is absent made relocation-inspect answer `live` at a stale
-    // pre-vacate copy, a restored backup and a tree whose `relocations` field had
-    // been stripped — all of which every other verb refuses to open at all
-    // (WORKSPACE_SCHEMA_INVALID, "stored roots do not match their current
-    // filesystem identities"). The inspection is the mandated close-out's verdict
-    // word, so a detector that reads "this file's ledger does not say otherwise"
-    // while printing itself as "this address is the live authority" produces a
-    // false fork alarm on every stale copy left on disk.
-    return address === relocationWorkspaceRoot(metadata.roots) ? "live" : "foreign-address";
-  }
-  const vacatedAddresses = new Set<string>();
-  for (const entry of entries) {
-    if (entry.stage === "adopted") {
-      const previous = relocationWorkspaceRoot(entry.from);
-      if (previous !== undefined) vacatedAddresses.add(previous);
-    }
-  }
-  if (trailing.stage === "vacated") {
-    if (address === relocationWorkspaceRoot(trailing.from)) return "vacated";
-    if (address === relocationWorkspaceRoot(trailing.to)) return "adoption-required";
-    return "foreign-address";
-  }
-  if (address === relocationWorkspaceRoot(activeBinding(metadata))) {
-    return "live";
-  }
-  return vacatedAddresses.has(address) ? "vacated" : "foreign-address";
-}
-
-function admitRelocationState(state: WorkspaceRelocationState, admit: WorkspaceAdmission, address: string): void {
-  if (admit === "any") return;
-  if (state === "live") return;
-  if (admit === "adoption" && state === "adoption-required") return;
-  if (admit === "abort" && state === "vacated") return;
-  if (state === "vacated") {
-    fail("WORKSPACE_RELOCATION_VACATED", `${address} was vacated by a governed relocation and is no longer a live workspace`);
-  }
-  if (state === "adoption-required") {
-    fail("WORKSPACE_RELOCATION_ADOPTION_REQUIRED", `${address} is a relocated copy whose relocation ledger has not been adopted at this address`);
-  }
-  fail("WORKSPACE_RELOCATION_FOREIGN_ADDRESS", `${address} is not an address this relocation ledger names`);
-}
-
 function validateMetadata(value: unknown): WorkspaceMetadata {
   // WSR-1: the ten-field form is admitted only when the field is actually present.
   // A workspace without it is checked against the identical nine-field closed list
@@ -1063,392 +886,6 @@ function workspaceStreamId(metadata: WorkspaceMetadata): string {
 
 function workspaceEventId(streamId: string, sequence: number): string {
   return deriveLegacyEventId(streamId, sequence);
-}
-
-// TCRN-CROSS-STORY-468 R3 (TCRN-CROSS-SUB-280): every einzbern.event.v1 carries a clock and a
-// device id. Until the engine writes libraries, an old-layout workspace still takes writes; it is
-// one stream with one writer, so its clock is its sequence and its device id is derived from the
-// workspace itself. The device file is not consulted, so a write to an old layout touches nothing
-// outside the workspace.
-function oldLayoutDeviceId(metadata: WorkspaceMetadata): string {
-  return canonicalSha256({ schemaVersion: "einzbern.old-layout-device.v1", workspaceId: metadata.workspaceId }).slice(0, 32);
-}
-
-function controlPath(workspaceRoot: string, relativePath = ""): string {
-  assertWorkspaceRelativePath(relativePath === "" ? WORKSPACE_CONTROL_DIRECTORY : `${WORKSPACE_CONTROL_DIRECTORY}/${relativePath}`);
-  const candidate = resolve(workspaceRoot, WORKSPACE_CONTROL_DIRECTORY, relativePath);
-  if (!inside(workspaceRoot, candidate)) {
-    fail("WORKSPACE_PATH_ESCAPE", relativePath);
-  }
-  return candidate;
-}
-
-function replaySnapshotStateValue(state: WorkspaceState): Omit<ReplaySnapshotState, "stateDigest"> {
-  return {
-    schemaVersion: WORKSPACE_REPLAY_SNAPSHOT_VERSION,
-    metadata: state.metadata,
-    version: state.version,
-    headEventHash: state.headEventHash,
-    projects: state.projects,
-    work: state.work,
-    conferences: state.conferences,
-    conferencePositions: state.conferencePositions,
-    conferenceMinutes: state.conferenceMinutes,
-    gates: state.gates,
-    settings: state.settings,
-    executionConfig: state.executionConfig,
-    templates: state.templates,
-    attestationEnabledAtSequence: state.attestationEnabledAtSequence,
-  };
-}
-
-function snapshotIntervalForState(state: WorkspaceState): number {
-  const configured = state.settings.find((entry) => entry.key === "storage.snapshotEveryEvents")?.value;
-  const value = configured === undefined ? WORKSPACE_REPLAY_SNAPSHOT_INTERVAL_DEFAULT : Number(configured);
-  if (!Number.isSafeInteger(value) || value < WORKSPACE_REPLAY_SNAPSHOT_INTERVAL_MIN || value > WORKSPACE_REPLAY_SNAPSHOT_INTERVAL_MAX) {
-    fail("WORKSPACE_SCHEMA_INVALID", "storage.snapshotEveryEvents is outside its declared bounds");
-  }
-  return value;
-}
-
-function isMissingStoragePath(error: unknown): boolean {
-  return error instanceof StorageError && /\bENOENT\b/u.test(error.message);
-}
-
-function replaySnapshotFail(message: string): never {
-  fail("WORKSPACE_SNAPSHOT_INVALID", message);
-}
-
-function sha256Bytes(content: Buffer): string {
-  return createHash("sha256").update(content).digest("hex");
-}
-
-function unboundedCanonicalValue(value: unknown): string {
-  if (value === null) return "null";
-  if (typeof value === "string" || typeof value === "boolean" || typeof value === "number") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map((entry) => unboundedCanonicalValue(entry)).join(",")}]`;
-  if (typeof value === "object") {
-    const object = value as Record<string, unknown>;
-    return `{${Object.keys(object).sort(compareCanonicalText).map((key) => `${JSON.stringify(key)}:${unboundedCanonicalValue(object[key])}`).join(",")}}`;
-  }
-  throw new Error("WORKSPACE_SNAPSHOT_INVALID: non-JSON snapshot value");
-}
-
-function unboundedCanonicalJson(value: unknown): string {
-  return `${unboundedCanonicalValue(value)}\n`;
-}
-
-function replaySnapshotDigest(value: unknown): string {
-  return sha256Bytes(Buffer.from(unboundedCanonicalJson(value), "utf8"));
-}
-
-function validateLegacyReplaySnapshotPrefix(events: readonly EventRecord[], manifest: ReplaySnapshotManifest): void {
-  if (manifest.eventPrefixDigest !== undefined && replaySnapshotDigest(events.slice(0, manifest.version)) !== manifest.eventPrefixDigest) {
-    replaySnapshotFail("snapshot event prefix digest mismatch");
-  }
-}
-
-function assertReplaySnapshotManifest(value: unknown): asserts value is ReplaySnapshotManifest {
-  const manifest = value as Record<string, unknown>;
-  const legacySnapshot = manifest !== null && typeof manifest === "object" && Object.hasOwn(manifest, "snapshot");
-  const legacyPrefixDigest = manifest !== null && typeof manifest === "object" && Object.hasOwn(manifest, "eventPrefixDigest");
-  const fields = ["headEventHash", "schemaVersion", "segments", legacySnapshot ? "snapshot" : "snapshotParts", "stateDigest", "version", "workspaceId"];
-  if (legacyPrefixDigest) fields.push("eventPrefixDigest");
-  exactFields(value, fields, "WORKSPACE_SNAPSHOT_INVALID", "replay snapshot manifest");
-  if (manifest.schemaVersion !== WORKSPACE_REPLAY_SNAPSHOT_MANIFEST_VERSION || typeof manifest.workspaceId !== "string" ||
-    !Number.isSafeInteger(manifest.version) || Number(manifest.version) < 1 ||
-    (legacySnapshot ? (typeof manifest.snapshot !== "string" || !/^\d{12}\.json$/u.test(manifest.snapshot)) :
-      (!Array.isArray(manifest.snapshotParts) || manifest.snapshotParts.length === 0 || manifest.snapshotParts.some((part) => typeof part !== "string" || !/^\d{12}\.part\d{4}$/u.test(part)))) ||
-    typeof manifest.stateDigest !== "string" ||
-    !/^[a-f0-9]{64}$/u.test(manifest.stateDigest) ||
-    (legacyPrefixDigest && (typeof manifest.eventPrefixDigest !== "string" || !/^[a-f0-9]{64}$/u.test(manifest.eventPrefixDigest))) ||
-    (manifest.headEventHash !== null && (typeof manifest.headEventHash !== "string" || !/^[a-f0-9]{64}$/u.test(manifest.headEventHash))) ||
-    !Array.isArray(manifest.segments)) {
-    replaySnapshotFail("replay snapshot manifest fields are invalid");
-  }
-  let previousName: string | null = null;
-  for (const entry of manifest.segments) {
-    exactFields(entry, ["bytes", "name", "sha256"], "WORKSPACE_SNAPSHOT_INVALID", "replay snapshot segment digest");
-    const digest = entry as Record<string, unknown>;
-    if (typeof digest.name !== "string" || !/^\d{6}\.(?:json|ndjson)$/u.test(digest.name) ||
-      (previousName !== null && compareCanonicalText(previousName, digest.name) >= 0) ||
-      !Number.isSafeInteger(digest.bytes) || Number(digest.bytes) < 0 || typeof digest.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(digest.sha256)) {
-      replaySnapshotFail("replay snapshot segment digest is invalid");
-    }
-    previousName = digest.name;
-  }
-}
-
-function assertReplaySnapshotState(value: unknown, metadata: WorkspaceMetadata, manifest: ReplaySnapshotManifest): asserts value is ReplaySnapshotState {
-  exactFields(value, ["attestationEnabledAtSequence", "conferences", "conferenceMinutes", "conferencePositions", "executionConfig", "gates", "headEventHash", "metadata", "projects", "schemaVersion", "settings", "stateDigest", "templates", "version", "work"], "WORKSPACE_SNAPSHOT_INVALID", "replay snapshot state");
-  const snapshot = value as Record<string, unknown>;
-  if (snapshot.schemaVersion !== WORKSPACE_REPLAY_SNAPSHOT_VERSION || canonicalJson(snapshot.metadata) !== canonicalJson(metadata) ||
-    snapshot.version !== manifest.version || snapshot.headEventHash !== manifest.headEventHash ||
-    !Array.isArray(snapshot.projects) || !Array.isArray(snapshot.work) || !Array.isArray(snapshot.conferences) ||
-    !Array.isArray(snapshot.conferencePositions) || !Array.isArray(snapshot.conferenceMinutes) || !Array.isArray(snapshot.gates) ||
-    !Array.isArray(snapshot.settings) || !Array.isArray(snapshot.templates) ||
-    !isJsonObject(snapshot.executionConfig as JsonValue | undefined) ||
-    (snapshot.attestationEnabledAtSequence !== null && !Number.isSafeInteger(snapshot.attestationEnabledAtSequence)) ||
-    typeof snapshot.stateDigest !== "string" || !/^[a-f0-9]{64}$/u.test(snapshot.stateDigest)) {
-    replaySnapshotFail("replay snapshot state fields are invalid");
-  }
-  const stateWithoutDigest = { ...snapshot };
-  delete stateWithoutDigest.stateDigest;
-  if (replaySnapshotDigest(stateWithoutDigest) !== snapshot.stateDigest || snapshot.stateDigest !== manifest.stateDigest) {
-    replaySnapshotFail("replay snapshot state digest mismatch");
-  }
-  try {
-    for (const project of snapshot.projects) validateProject(project, "WORKSPACE_SNAPSHOT_INVALID");
-    validateWorkGraph(snapshot.work as unknown as readonly WorkRecord[], templateRegistry(snapshot.templates as unknown as readonly TemplateAdmissionRecord[]));
-  } catch (error) {
-    if (error instanceof WorkspaceError && error.reasonCode === "WORKSPACE_SNAPSHOT_INVALID") throw error;
-    if (error instanceof ProtocolError) replaySnapshotFail(`${error.reasonCode}:${error.message}`);
-    throw error;
-  }
-}
-
-async function readReplaySnapshot(workspaceRoot: string, metadata: WorkspaceMetadata): Promise<ReplaySnapshotSeed | null> {
-  const backend = backendForStorage(workspaceRoot, metadata.storageVersion);
-  let entries: readonly StorageDirectoryEntry[];
-  try {
-    entries = await backend.listControlEntries(WORKSPACE_REPLAY_SNAPSHOT_DIRECTORY);
-  } catch (error) {
-    if (isMissingStoragePath(error)) return null;
-    replaySnapshotFail(`snapshot directory is unreadable: ${String(error)}`);
-  }
-  const names = entries.filter((entry) => entry.isFile && !entry.isSymbolicLink && !entry.name.startsWith(".tmp-")).map((entry) => entry.name);
-  if (names.length === 0) return null;
-  if (!names.includes(WORKSPACE_REPLAY_SNAPSHOT_MANIFEST)) {
-    replaySnapshotFail("snapshot manifest is missing");
-  }
-  let manifestValue: JsonValue;
-  try {
-    manifestValue = assertCanonicalJson((await backend.readControlFile(`${WORKSPACE_REPLAY_SNAPSHOT_DIRECTORY}/${WORKSPACE_REPLAY_SNAPSHOT_MANIFEST}`, 65_536)).toString("utf8"));
-  } catch (error) {
-    replaySnapshotFail(`snapshot manifest cannot be parsed: ${String(error)}`);
-  }
-  assertReplaySnapshotManifest(manifestValue);
-  if (manifestValue.workspaceId !== metadata.workspaceId || manifestValue.version > PROTOCOL_LIMITS.maxChainEvents) {
-    replaySnapshotFail("snapshot manifest is not bound to this workspace");
-  }
-  let stateValue: JsonValue;
-  if (manifestValue.snapshotParts !== undefined) {
-    try {
-      const compressed = Buffer.concat(await Promise.all(manifestValue.snapshotParts.map((part) => backend.readControlFile(`${WORKSPACE_REPLAY_SNAPSHOT_DIRECTORY}/${part}`, 1_048_576))));
-      const decompressed = inflateSync(compressed).toString("utf8");
-      const decoded = JSON.parse(decompressed) as unknown;
-      if (unboundedCanonicalJson(decoded) !== decompressed) replaySnapshotFail("replay snapshot payload is not canonical");
-      stateValue = decoded as JsonValue;
-    } catch (error) {
-      if (error instanceof WorkspaceError) throw error;
-      replaySnapshotFail(`replay snapshot payload cannot be decoded: ${String(error)}`);
-    }
-  } else {
-    let snapshotBytes: Buffer;
-    try {
-      snapshotBytes = await backend.readControlFile(`${WORKSPACE_REPLAY_SNAPSHOT_DIRECTORY}/${manifestValue.snapshot ?? ""}`, 67_108_864);
-    } catch (error) {
-      replaySnapshotFail(`snapshot envelope cannot be read: ${String(error)}`);
-    }
-    const snapshotValue = assertCanonicalJson(snapshotBytes.toString("utf8"));
-    // A short-lived pre-compression checkpoint may exist on disk from the
-    // migration window. It is still verified against its digest.
-    if (isJsonObject(snapshotValue) && snapshotValue.schemaVersion === WORKSPACE_REPLAY_SNAPSHOT_VERSION) {
-      assertReplaySnapshotState(snapshotValue, metadata, manifestValue);
-      return { ...(snapshotValue as ReplaySnapshotState), manifest: manifestValue, prefixEvents: [] };
-    }
-    exactFields(snapshotValue, ["encoding", "payload", "schemaVersion", "stateDigest"], "WORKSPACE_SNAPSHOT_INVALID", "replay snapshot envelope");
-    const envelope = snapshotValue as Readonly<Record<string, unknown>>;
-    if (envelope.schemaVersion !== "tcrn.workspace-replay-snapshot-envelope.v1" || envelope.encoding !== "deflate-base64" ||
-      typeof envelope.stateDigest !== "string" || envelope.stateDigest !== manifestValue.stateDigest || !/^[a-f0-9]{64}$/u.test(envelope.stateDigest) ||
-      !Array.isArray(envelope.payload) || envelope.payload.some((chunk) => typeof chunk !== "string" || chunk.length > 8_192 || !/^[A-Za-z0-9+/]*={0,2}$/u.test(chunk))) {
-      replaySnapshotFail("replay snapshot envelope fields are invalid");
-    }
-    try {
-      const encodedPayload = (envelope.payload as readonly unknown[]).join("");
-      const decompressed = inflateSync(Buffer.from(encodedPayload, "base64")).toString("utf8");
-      const decoded = JSON.parse(decompressed) as unknown;
-      if (unboundedCanonicalJson(decoded) !== decompressed) replaySnapshotFail("replay snapshot payload is not canonical");
-      stateValue = decoded as JsonValue;
-    } catch (error) {
-      if (error instanceof WorkspaceError) throw error;
-      replaySnapshotFail(`replay snapshot payload cannot be decoded: ${String(error)}`);
-    }
-  }
-  stateValue = { ...(stateValue as Readonly<Record<string, JsonValue>>), stateDigest: manifestValue.stateDigest };
-  assertReplaySnapshotState(stateValue, metadata, manifestValue);
-  return { ...(stateValue as ReplaySnapshotState), manifest: manifestValue, prefixEvents: [] };
-}
-
-function validateReplaySnapshotTail(events: readonly EventRecord[], snapshot: ReplaySnapshotManifest): void {
-  const tail = events.slice(snapshot.version);
-  let priorHash = snapshot.headEventHash;
-  for (const event of tail) {
-    try {
-      const expected = createEvent(eventInputOf(event), event.schemaVersion);
-      if (event.payloadHash !== expected.payloadHash || event.eventHash !== expected.eventHash || event.priorHash !== priorHash) {
-        replaySnapshotFail(`tail event ${event.id} is not bound to the snapshot`);
-      }
-    } catch (error) {
-      if (error instanceof WorkspaceError) throw error;
-      if (error instanceof ProtocolError) replaySnapshotFail(`${error.reasonCode}:${error.message}`);
-      throw error;
-    }
-    priorHash = event.eventHash;
-  }
-  const actualHead = events.at(-1)?.eventHash ?? null;
-  if (actualHead !== (tail.at(-1)?.eventHash ?? snapshot.headEventHash)) {
-    replaySnapshotFail("snapshot tail head does not match the event log");
-  }
-}
-
-// WSR-1: readMetadata is the universal choke point — resolveWorkspace is NOT. Six
-// callers reach it, and the write-lock gate is one of them, so EVERY mutation
-// passes through here too. That is why the relocation admission check lives here
-// and not in resolveWorkspace.
-//
-// `admit` DEFAULTS TO THE STRICT VALUE. A permissive default would break nothing
-// visible and would silently disable the entire mechanism; guard G1 mutates it and
-// T4 is the test that must go red.
-async function readMetadata(workspaceRoot: string, admit: WorkspaceAdmission = "live"): Promise<WorkspaceMetadata> {
-  const content = await backendFor(workspaceRoot).readMetadataBytes();
-  let metadata: WorkspaceMetadata;
-  try {
-    metadata = validateMetadata(assertCanonicalJson(content.toString("utf8")));
-  } catch (error) {
-    if (error instanceof WorkspaceError) {
-      throw error;
-    }
-    if (error instanceof ProtocolError) {
-      fail("WORKSPACE_SCHEMA_INVALID", error.message);
-    }
-    fail("WORKSPACE_SCHEMA_INVALID", String(error));
-  }
-  if (metadata.relocations !== undefined) {
-    admitRelocationState(relocationStateAt(metadata, workspaceRoot), admit, workspaceRoot);
-  }
-  return metadata;
-}
-
-async function readSegmentEvents(workspaceRoot: string, metadata: WorkspaceMetadata, options: { readonly snapshot?: ReplaySnapshotSeed } = {}): Promise<readonly EventRecord[]> {
-  // STORY-174: enumeration and byte reads ride through the storage backend; the
-  // shape/gap validation stays at the engine layer so both backends enforce the
-  // same segment contract. A non-conforming entry (e.g. `special-entry`) fails
-  // WORKSPACE_EVENT_CORRUPT exactly as before.
-  const backend = backendForStorage(workspaceRoot, metadata.storageVersion);
-  const entries = await backend.listSegmentNames();
-  const segmentedStorage = metadata.storageVersion === WORKSPACE_STORAGE_VERSION;
-  const suffix = segmentedStorage ? "ndjson" : "json";
-  const segmentNames: string[] = [];
-  for (const name of entries) {
-    if (!(new RegExp(`^\\d{6}\\.${suffix}$`, "u")).test(name)) {
-      fail("WORKSPACE_EVENT_CORRUPT", `unexpected event entry ${name}`);
-    }
-    segmentNames.push(name);
-  }
-  const events: EventRecord[] = [];
-  const segmentBytes = new Map<string, Buffer>();
-  const segmentLastSequence = new Map<string, number>();
-  for (const [index, name] of segmentNames.entries()) {
-    if (name !== `${String(index + 1).padStart(6, "0")}.${suffix}`) {
-      fail("WORKSPACE_EVENT_CORRUPT", `event segment gap at ${name}`);
-    }
-    const content = await backend.readSegment(name);
-    segmentBytes.set(name, content);
-    if (segmentedStorage) {
-      const text = content.toString("utf8");
-      if (!text.endsWith("\n") || text.endsWith("\n\n")) {
-        fail("WORKSPACE_EVENT_CORRUPT", `${name} is not canonical NDJSON`);
-      }
-      for (const line of text.split("\n").slice(0, -1)) {
-        try {
-          const parsed = assertCanonicalJson(`${line}\n`);
-          if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-            fail("WORKSPACE_EVENT_CORRUPT", `${name} contains a non-event record`);
-          }
-          const event = parsed as unknown as EventRecord;
-          events.push(event);
-          segmentLastSequence.set(name, event.sequence);
-        } catch (error) {
-          if (error instanceof WorkspaceError) throw error;
-          fail("WORKSPACE_EVENT_CORRUPT", String((error as { message?: string }).message ?? error));
-        }
-      }
-      if (text.length === 1) {
-        fail("WORKSPACE_EVENT_CORRUPT", `${name} is empty`);
-      }
-    } else {
-      let parsed: JsonValue;
-      try {
-        parsed = assertCanonicalJson(content.toString("utf8"));
-      } catch (error) {
-        fail("WORKSPACE_EVENT_CORRUPT", String((error as { message?: string }).message ?? error));
-      }
-      if (!Array.isArray(parsed) || parsed.length === 0 || parsed.length > metadata.segmentEventLimit ||
-        (index < segmentNames.length - 1 && parsed.length !== metadata.segmentEventLimit)) {
-        fail("WORKSPACE_EVENT_CORRUPT", `${name} has an invalid segment length`);
-      }
-      for (const event of parsed) {
-        const storedEvent = event as unknown as EventRecord;
-        events.push(storedEvent);
-        segmentLastSequence.set(name, storedEvent.sequence);
-      }
-    }
-  }
-  assertWorkspaceRecordCount(events.length);
-  for (const [index, event] of events.entries()) {
-    if (event.sequence !== index + 1) {
-      fail("WORKSPACE_EVENT_CORRUPT", "on-disk event ordering is not canonical");
-    }
-  }
-  const expectedStreamId = workspaceStreamId(metadata);
-  for (const event of events) {
-    if (event.streamId !== expectedStreamId || event.id !== workspaceEventId(expectedStreamId, event.sequence)) {
-      fail("WORKSPACE_EVENT_CORRUPT", `event ${event.id} is not bound to Workspace ${metadata.workspaceId}`);
-    }
-  }
-  const snapshot = options.snapshot;
-  if (snapshot !== undefined) {
-    if (snapshot.version > events.length || snapshot.version < 1) {
-      replaySnapshotFail("snapshot version is outside the event log");
-    }
-    const expectedSegments = new Map(snapshot.manifest.segments.map((entry) => [entry.name, entry]));
-    for (const expected of snapshot.manifest.segments) {
-      const content = segmentBytes.get(expected.name);
-      if (content === undefined) replaySnapshotFail(`snapshot segment ${expected.name} is missing`);
-      const lastSequence = segmentLastSequence.get(expected.name) ?? 0;
-      // NDJSON appends preserve the exact bytes that were present at the
-      // checkpoint. Hashing only the recorded segment prefix covers an active
-      // segment after it receives post-snapshot events without parsing the
-      // checkpoint prefix a second time. Legacy JSON snapshots retain their
-      // event-prefix digest as a compatibility path until they are rebuilt.
-      const checkpointBytes = expected.name.endsWith(".ndjson") && content.length >= expected.bytes
-        ? content.subarray(0, expected.bytes)
-        : content;
-      if (lastSequence <= snapshot.version || expected.name.endsWith(".ndjson")) {
-        if (checkpointBytes.length !== expected.bytes || sha256Bytes(checkpointBytes) !== expected.sha256) {
-          replaySnapshotFail(`snapshot segment ${expected.name} changed before the checkpoint`);
-        }
-      }
-    }
-    for (const [name, content] of segmentBytes) {
-      if (expectedSegments.has(name)) continue;
-      const firstSequence = events.find((event) => event.sequence === (segmentLastSequence.get(name) ?? 0))?.sequence ?? 0;
-      if (firstSequence <= snapshot.version) replaySnapshotFail(`unexpected pre-snapshot segment ${name}`);
-      void content;
-    }
-    validateLegacyReplaySnapshotPrefix(events, snapshot.manifest);
-    validateReplaySnapshotTail(events, snapshot.manifest);
-    return events;
-  }
-  try {
-    return validateEventChain(events);
-  } catch (error) {
-    if (error instanceof ProtocolError) {
-      fail("WORKSPACE_EVENT_CORRUPT", `${error.reasonCode}:${error.message}`);
-    }
-    throw error;
-  }
 }
 
 function payloadRecord(payload: JsonValue, operation: string, actorRequired: boolean): Readonly<Record<string, JsonValue>> {
@@ -3145,109 +2582,38 @@ export function workspaceBudgets(state: WorkspaceState): WorkspaceBudgetReport {
   };
 }
 
-// STORY-299. The projection is a pure function of state and is now evaluated
-// before anything is written; persistence is the half below. Splitting them is
-// what lets a projection that cannot fit be refused with the chain untouched,
-// while leaving the write loop -- and the crash point that four fault-injection
-// cases and three crash tests are anchored on -- exactly where it was.
-async function writeViewDocuments(
-  workspaceRoot: string,
-  documents: Readonly<Record<string, string>>,
-  crashAt?: WorkspaceCrashPoint,
-): Promise<void> {
-  crash("before-view-commit", crashAt);
-  const backend = backendFor(workspaceRoot);
-  for (const name of Object.keys(documents).sort(compareCanonicalText)) {
-    await backend.writeView(name, documents[name] ?? "");
-  }
-}
-
-async function writeViews(workspaceRoot: string, state: WorkspaceState, crashAt?: WorkspaceCrashPoint): Promise<void> {
-  await writeViewDocuments(workspaceRoot, viewDocuments(state), crashAt);
-}
-
-// STORY-299. A view that could not be persisted after the event was committed is
-// news for the caller, not a failure of the call: the fact is durable, and saying
-// otherwise is the defect INC-198 recorded, where a command reported rejection
-// while its event sat in the chain and the agent's retry appended a second one.
-//
-// The signal travels out of band because the mutation path returns WorkspaceState
-// and that type is the byte-equality contract with a fresh materialize -- widening
-// it to carry an operational note would put a non-state field inside the thing the
-// engine proves is pure state. The sink is cleared on entry to every append, and
-// consumed exactly once by whichever receipt writer runs next.
-interface ViewWriteFailure {
-  readonly reasonCode: "WORKSPACE_VIEW_UNWRITTEN";
-  readonly cause: string;
-}
-
-let pendingViewWriteFailure: ViewWriteFailure | null = null;
-
-export function consumeViewWriteFailure(): ViewWriteFailure | null {
-  const failure = pendingViewWriteFailure;
-  pendingViewWriteFailure = null;
-  return failure;
-}
-
-// TCRN-CROSS-STORY-467 R1 (MIN-227 D3): one writer at a time, through an engine-held file
-// lock inside the control directory. It replaces the lease, the recovery claim, the
-// mutation claim and the caller-supplied expected version: a writer takes the lock, reads
-// the latest state under it, builds its delta against that state and appends. A second
-// writer waits for the first instead of failing a version comparison, so two concurrent
-// writes both land, in order. A holder that died leaves a lock the next writer breaks
-// (same host and process gone, or older than the stale bound). From SUB-284 on the lock
-// is the device-local one of the library. The file name is WORKSPACE_WRITE_LOCK_FILE in names.ts.
-
-export interface WorkspaceWriteLockOptions {
-  // INC-074: migration-execute is the one path allowed to write the archive side of a
-  // workspace whose storage-home sentinel says the chain lives elsewhere.
-  readonly storageHomeAdmission?: "migration";
-  // WSR-1: a write at an address whose relocation ledger is not `live`.
-  readonly relocationAdmission?: WorkspaceAdmission;
-}
-
-async function assertWritableWorkspace(workspaceRoot: string, options: WorkspaceWriteLockOptions): Promise<void> {
-  // INC-074 storage-home gate: a workspace whose chain has migrated to Postgres carries a
-  // sentinel declaring where the truth lives, and the file-side write door stays closed.
-  // Read-only verbs are unaffected (archive forensics keep working, INC-083).
-  if (activeOverrideBackendKind() !== "pg" && options.storageHomeAdmission !== "migration") {
-    const home = await readStorageHomeDeclaration(workspaceRoot);
-    if (home !== null && home.storage === "pg") {
-      // TCRN-CROSS-INC-275: PostgreSQL support removed. A workspace previously migrated
-      // to PG cannot be operated on.
-      fail(
-        "WORKSPACE_STORAGE_RELOCATED",
-        `${workspaceRoot} was migrated to Postgres (storage-home: pg:${home.schema ?? "?"}); ` +
-        "PostgreSQL storage is no longer supported. This workspace cannot be operated on.",
-      );
-    }
-  }
-  await readMetadata(workspaceRoot, options.relocationAdmission ?? "live");
-}
+// TCRN-CROSS-STORY-467 R1 (MIN-227 D3): one writer at a time on this machine, through the
+// engine-held lock of the library in the device directory. A writer takes the lock, reads the
+// latest merged state under it, builds its delta against that state and appends to its own
+// stream; a second writer waits instead of failing a version comparison, so two concurrent
+// writes both land, in order. A holder that died leaves a lock the next writer breaks. Writers
+// on different devices never share a file, so they need no lock between them.
 
 // The lock is re-entrant within one async flow: a verb that holds it for a whole
 // read-append-follow-up sequence (the CLI does, so its before/after reads and the knowledge
 // rebind cannot interleave with another writer) calls write functions that take it again.
 const heldWriteLocks = new AsyncLocalStorage<ReadonlySet<string>>();
 
-/** Run `operation` as the only writer of the workspace, holding its write lock. */
+/**
+ * Run `operation` as this machine's only writer of the library, holding the library's lock in
+ * the device directory (TCRN-CROSS-STORY-467 R1, 469 R3). An old-layout workspace refuses.
+ */
 export async function withWorkspaceWriteLock<T>(
   workspaceRootInput: string,
   operation: (workspaceRoot: string) => Promise<T>,
-  options: WorkspaceWriteLockOptions = {},
 ): Promise<T> {
-  const workspaceRoot = await boundDirectory(workspaceRootInput);
-  await assertWritableWorkspace(workspaceRoot, options);
+  const layout = await resolveLayout(workspaceRootInput);
+  if (layout.kind === "legacy") refuseLegacyWrite(layout.root);
   const held = heldWriteLocks.getStore() ?? new Set<string>();
-  if (held.has(workspaceRoot)) return operation(workspaceRoot);
+  if (held.has(layout.root)) return operation(layout.root);
   try {
-    return await withFileLock(
-      controlPath(workspaceRoot, WORKSPACE_WRITE_LOCK_FILE),
-      () => heldWriteLocks.run(new Set([...held, workspaceRoot]), () => operation(workspaceRoot)),
+    return await withLibraryWriteLock(
+      layout.library,
+      () => heldWriteLocks.run(new Set([...held, layout.root]), () => operation(layout.root)),
     );
   } catch (error) {
     if (error instanceof FileLockError && error.reasonCode === "FILE_LOCK_TIMEOUT") {
-      fail("WORKSPACE_LOCKED", "another writer holds the workspace write lock");
+      fail("WORKSPACE_LOCKED", "another writer on this machine holds the library write lock");
     }
     throw error;
   }
@@ -3259,157 +2625,64 @@ export async function withWorkspaceWriteLock<T>(
 // workspace-relocation.ts — would put the platform's single most load-bearing
 // read/write pair in two places, and the drift would be silent.
 
-/** Read metadata at an explicit admission level, returning the bound root with it. */
-export async function readWorkspaceMetadataAt(
-  workspaceRootInput: string,
-  admit: WorkspaceAdmission,
-): Promise<{ readonly root: string; readonly metadata: WorkspaceMetadata }> {
+// TCRN-CROSS-STORY-469 (MIN-227 D19, D21): the engine writes libraries only. A path names either
+// a library (it holds manifest.json) or an old-layout workspace (it holds the old control
+// directory). An old-layout workspace opens read-only: its reads replay the old chain from
+// genesis without writing anything, and every write refuses with LEGACY_WORKSPACE_READ_ONLY,
+// pointing at library-import-legacy. The five explicit roots are no longer part of opening.
+type WorkspaceLayout =
+  | { readonly kind: "library"; readonly root: string; readonly library: Library }
+  | { readonly kind: "legacy"; readonly root: string };
+
+async function resolveLayout(workspaceRootInput: string): Promise<WorkspaceLayout> {
   const root = await boundDirectory(workspaceRootInput);
-  return { root, metadata: await readMetadata(root, admit) };
+  if (await hasLibraryManifest(root)) return { kind: "library", root, library: await openLibrary(root) };
+  if (await legacyControlDirectory(root) !== null) return { kind: "legacy", root };
+  throw new WorkspaceError("LIBRARY_NOT_FOUND", `${root} holds neither a library nor an old-layout workspace`, { workspace: root });
 }
 
-/**
- * The relocation commit point. Re-validates the metadata it is handed BEFORE
- * writing, so a malformed ledger can never reach disk, then goes through the same
- * atomicWrite (fsync → rename → identity verify → parent-dir sync) every other
- * control-tree write uses. A crash leaves the previous bytes untouched: the ledger
- * is never partially written, so no torn ledger is reachable (T19).
- */
-export async function writeWorkspaceMetadataAt(
-  workspaceRoot: string,
-  metadata: WorkspaceMetadata,
-  crashAt?: WorkspaceCrashPoint,
-): Promise<string> {
-  const text = canonicalJson(metadata);
-  validateMetadata(assertCanonicalJson(text));
-  await backendForStorage(workspaceRoot, metadata.storageVersion).writeMetadataBytes(Buffer.from(text, "utf8"), crashAt);
-  return text;
+function refuseLegacyWrite(root: string): never {
+  throw new WorkspaceError(
+    "LEGACY_WORKSPACE_READ_ONLY",
+    `${root} is an old-layout workspace and opens read-only; import it into a library with library-import-legacy`,
+    { workspace: root, layout: "legacy", remedy: "library-import-legacy" },
+  );
 }
 
-/**
- * MEASURE, do not quote. Replays the whole chain at an address whose `roots` still
- * name another host — resolveWorkspace cannot be used there — and reports what the
- * tree itself says its version and head are.
- */
-export async function measureWorkspaceChainAt(
-  workspaceRoot: string,
-  metadata: WorkspaceMetadata,
-): Promise<{ readonly version: number; readonly headEventHash: string | null }> {
-  const state = materialize(metadata, await readSegmentEvents(workspaceRoot, metadata));
-  return { version: state.version, headEventHash: state.headEventHash };
+async function materializeLayout(layout: WorkspaceLayout, options: LibraryReadOptions = {}): Promise<WorkspaceState> {
+  return layout.kind === "library"
+    ? materializeLibrary(layout.library, options)
+    : replayLegacyWorkspace(await openLegacyWorkspace(layout.root));
 }
 
-/** The control-tree paths the relocation verbs assert on. */
-export function workspaceControlPath(workspaceRoot: string, relativePath = ""): string {
-  return controlPath(workspaceRoot, relativePath);
-}
-
-export async function initializeWorkspace(options: {
-  readonly roots: readonly ExplicitRoot[];
-  readonly externalKey: string;
-  readonly createdAt: string;
-  readonly segmentEventLimit?: number;
-  readonly segmentBytes?: number;
-  readonly storageVersion?: 1 | 2;
-  readonly detectedFilesystemTypeForTest?: number;
-}): Promise<WorkspaceState> {
-  const roots = await assertDistinctRoots(options.roots);
-  const workspace = roots.find((root) => root.kind === "workspace");
-  if (!workspace) {
-    fail("WORKSPACE_SCHEMA_INVALID", "workspace root is missing");
-  }
-  await assertSupportedWorkspaceFilesystem(workspace.canonicalPath, options.detectedFilesystemTypeForTest);
-  const externalKey = canonicalExternalKey(options.externalKey);
-  assertStrictInstant(options.createdAt);
-  const storageVersion = options.storageVersion ?? (options.segmentEventLimit === undefined ? WORKSPACE_STORAGE_VERSION : WORKSPACE_LEGACY_STORAGE_VERSION);
-  const segmentEventLimit = storageVersion === WORKSPACE_LEGACY_STORAGE_VERSION
-    ? options.segmentEventLimit ?? 64
-    : options.segmentBytes ?? options.segmentEventLimit ?? WORKSPACE_SEGMENT_BYTES_DEFAULT;
-  const segmentValid = storageVersion === WORKSPACE_LEGACY_STORAGE_VERSION
-    ? Number.isSafeInteger(segmentEventLimit) && segmentEventLimit >= 2 && segmentEventLimit <= 1024
-    : Number.isSafeInteger(segmentEventLimit) && segmentEventLimit >= WORKSPACE_SEGMENT_BYTES_MIN && segmentEventLimit <= WORKSPACE_SEGMENT_BYTES_MAX;
-  if (!segmentValid) {
-    fail("WORKSPACE_SCHEMA_INVALID", storageVersion === WORKSPACE_LEGACY_STORAGE_VERSION
-      ? "segment event limit must be 2-1024"
-      : `segment byte limit must be ${WORKSPACE_SEGMENT_BYTES_MIN}-${WORKSPACE_SEGMENT_BYTES_MAX}`);
-  }
-  const backend = backendForStorage(workspace.canonicalPath, storageVersion);
-  try {
-    await backend.createControlDirectory();
-  } catch (error) {
-    if (error instanceof StorageError && error.reasonCode === "WORKSPACE_ALREADY_EXISTS") {
-      fail("WORKSPACE_ALREADY_EXISTS", controlPath(workspace.canonicalPath));
-    }
-    throw error;
-  }
-  await backend.ensureControlDirectory("events");
-  await backend.ensureControlDirectory("views");
-  await backend.ensureControlDirectory("backups");
-  await backend.ensureControlDirectory(WORKSPACE_REPLAY_SNAPSHOT_DIRECTORY);
-  const metadata: WorkspaceMetadata = {
-    schemaVersion: WORKSPACE_SCHEMA_VERSION,
-    storageVersion,
-    minimumStorageVersion: 1,
-    maximumStorageVersion: storageVersion,
-    workspaceId: deriveStableId("workspace", externalKey),
-    externalKey,
-    createdAt: options.createdAt,
-    segmentEventLimit,
-    roots,
-  };
-  await backend.writeMetadataBytes(Buffer.from(canonicalJson(metadata), "utf8"));
-  const state = materialize(metadata, []);
-  await writeViews(workspace.canonicalPath, state);
-  return state;
-}
-
-async function resolveWorkspace(workspaceRootInput: string): Promise<{ readonly root: string; readonly metadata: WorkspaceMetadata }> {
-  const root = await boundDirectory(workspaceRootInput);
-  await assertSupportedWorkspaceFilesystem(root);
-  await boundDirectory(controlPath(root), root);
-  // INC-088: a PG-homed workspace keeps only its control metadata/sentinel on
-  // the file side. Events, views, and backups are data-plane tables in the
-  // injected PG backend; requiring their archived directories here made a
-  // perfectly valid PG read fail with ENOENT and obscured the actual source of
-  // truth. The ordinary file backend retains the original strict filesystem
-  // checks. `withStorageBackendFactory` is the same seam used by the facade and
-  // the equivalence suite; concrete backend kind, rather than merely an
-  // override's presence, decides whether the PG data-plane directories are omitted.
-  if (activeOverrideBackendKind() !== "pg") {
-    await boundDirectory(controlPath(root, "events"), root);
-    await boundDirectory(controlPath(root, "views"), root);
-    await boundDirectory(controlPath(root, "backups"), root);
-  }
-  const metadata = await readMetadata(root);
-  // WSR-1: the binding under test is the ACTIVE one, not the raw `roots` field.
-  // After an adopt they differ: `roots` still names the host the tree came from,
-  // and only the ledger says where it lives now.
-  const binding = activeBinding(metadata);
-  let canonicalRoots: readonly CanonicalRoot[];
-  try {
-    canonicalRoots = await assertDistinctRoots(binding.map((entry) => ({ kind: entry.kind, path: entry.path })));
-  } catch (error) {
-    fail("WORKSPACE_SCHEMA_INVALID", String((error as { message?: string }).message ?? error));
-  }
-  const storedRootsMatch = canonicalRoots.every((entry, index) => {
-    const stored = binding[index];
-    return stored?.kind === entry.kind && stored.path === entry.path && stored.canonicalPath === entry.canonicalPath &&
-      stored.portableIdentity === entry.portableIdentity;
-  });
-  if (!storedRootsMatch || canonicalRoots.find((entry) => entry.kind === "workspace")?.canonicalPath !== root) {
-    fail("WORKSPACE_SCHEMA_INVALID", "stored roots do not match their current filesystem identities");
-  }
-  return { root, metadata };
-}
-
+/** The current state of a library, merged from every stream, or of an old-layout workspace, read-only. */
 export async function materializeWorkspace(workspaceRootInput: string): Promise<WorkspaceState> {
-  const workspace = await resolveWorkspace(workspaceRootInput);
-  return materializeResolvedWorkspace(workspace);
+  return materializeLayout(await resolveLayout(workspaceRootInput));
 }
 
+/** Every read replays from genesis now (derived state belongs to the device cache). */
 export async function materializeWorkspaceFromGenesis(workspaceRootInput: string): Promise<WorkspaceState> {
-  const workspace = await resolveWorkspace(workspaceRootInput);
-  return materialize(workspace.metadata, await readSegmentEvents(workspace.root, workspace.metadata));
+  return materializeWorkspace(workspaceRootInput);
+}
+
+export interface InitializeLibraryOptions {
+  readonly root: string;
+  readonly createdAt: string;
+  readonly projectName?: string | null;
+  readonly gitRemote?: string | null;
+  readonly libraryId?: string;
+}
+
+/** Create a library (TCRN-CROSS-STORY-469 R1) and return its empty state. */
+export async function initializeLibrary(options: InitializeLibraryOptions): Promise<WorkspaceState> {
+  assertStrictInstant(options.createdAt);
+  const library = await createLibrary(options.root, {
+    createdAt: options.createdAt,
+    ...(options.projectName === undefined ? {} : { projectName: options.projectName }),
+    ...(options.gitRemote === undefined ? {} : { gitRemote: options.gitRemote }),
+    ...(options.libraryId === undefined ? {} : { libraryId: options.libraryId }),
+  });
+  return materializeLibrary(library);
 }
 
 // TCRN-CROSS-STORY-468 R4, STORY-469: a library's metadata in the shape the reducer reads. A
@@ -3427,7 +2700,7 @@ export function libraryWorkspaceMetadata(library: Library): WorkspaceMetadata {
     workspaceId: library.manifest.libraryId,
     externalKey: `LIBRARY-${identity.toUpperCase()}`,
     createdAt: library.manifest.createdAt,
-    segmentEventLimit: WORKSPACE_SEGMENT_BYTES_DEFAULT,
+    segmentEventLimit: AKASHA_SEGMENT_BYTES_DEFAULT,
     roots: [{ kind: "workspace", path: library.root, canonicalPath: library.root, portableIdentity: rootPortableIdentity(library.root) }],
   };
 }
@@ -3526,33 +2799,12 @@ export function materializeFromGenesis(metadata: WorkspaceMetadata, events: read
   return materialize(metadata, events);
 }
 
-async function materializeResolvedWorkspace(workspace: { readonly root: string; readonly metadata: WorkspaceMetadata }): Promise<WorkspaceState> {
-  const snapshot = await readReplaySnapshot(workspace.root, workspace.metadata);
-  if (snapshot === null) {
-    return materialize(workspace.metadata, await readSegmentEvents(workspace.root, workspace.metadata));
-  }
-  const events = await readSegmentEvents(workspace.root, workspace.metadata, { snapshot });
-  return materialize(workspace.metadata, events.slice(snapshot.version), { ...snapshot, prefixEvents: events.slice(0, snapshot.version) });
-}
-
-export async function validateWorkspace(workspaceRootInput: string, checkViews = true): Promise<WorkspaceState> {
-  const state = await materializeWorkspace(workspaceRootInput);
-  if (checkViews) {
-    const expected = viewDocuments(state);
-    const backend = backendForStorage(activeWorkspaceRoot(state.metadata) ?? "", state.metadata.storageVersion);
-    for (const name of Object.keys(expected).sort(compareCanonicalText)) {
-      let actual: Buffer;
-      try {
-        actual = await backend.readView(name);
-      } catch {
-        fail("WORKSPACE_VIEW_STALE", `${name} is missing or unsafe`);
-      }
-      if (actual.toString("utf8") !== expected[name]) {
-        fail("WORKSPACE_VIEW_STALE", `${name} is stale`);
-      }
-    }
-  }
-  return state;
+/**
+ * Validate by replaying: every stream (or the old chain) is checked structurally and replayed.
+ * Views are derived and no longer an authority to compare against.
+ */
+export async function validateWorkspace(workspaceRootInput: string): Promise<WorkspaceState> {
+  return materializeWorkspace(workspaceRootInput);
 }
 
 // WSA-1: a mutation builder validates its input against the claim-fresh state and
@@ -3585,62 +2837,6 @@ function segmentBytesForState(state: WorkspaceState): number {
     fail("WORKSPACE_SCHEMA_INVALID", "storage.segmentBytes is outside its declared bounds");
   }
   return value;
-}
-
-function backendKindForState(state: WorkspaceState): "file" | "file-segmented" {
-  const configured = state.settings.find((entry) => entry.key === "storage.backend")?.value;
-  if (configured === undefined || configured === "file-segmented") return "file-segmented";
-  if (configured === "file") return "file";
-  fail("WORKSPACE_SCHEMA_INVALID", `storage.backend has an unsupported value ${configured}`);
-}
-
-// TCRN-CROSS-STORY-451 R3: an append checks once, at its end, so the checkpoint is due when
-// the append crossed an interval multiple, not only when it stopped on one; a single-event
-// append (priorVersion = version - 1) behaves exactly as the old modulo rule.
-async function writeReplaySnapshot(state: WorkspaceState, backend: StorageBackend, force = false, priorVersion = state.version - 1): Promise<void> {
-  if ((!force && (state.version < 1 || Math.floor(priorVersion / snapshotIntervalForState(state)) >= Math.floor(state.version / snapshotIntervalForState(state)))) || backend.backendKind === "pg") return;
-  await backend.ensureControlDirectory(WORKSPACE_REPLAY_SNAPSHOT_DIRECTORY);
-  const segmentEntries: ReplaySnapshotSegmentDigest[] = [];
-  for (const name of await backend.listSegmentNames()) {
-    const content = await backend.readSegment(name);
-    segmentEntries.push({ name, bytes: content.length, sha256: sha256Bytes(content) });
-  }
-  const stateValue = replaySnapshotStateValue(state);
-  const stateDigest = replaySnapshotDigest(stateValue);
-  const compressed = deflateSync(Buffer.from(unboundedCanonicalJson(stateValue), "utf8"));
-  const snapshotParts: string[] = [];
-  for (let offset = 0; offset < compressed.length; offset += 900_000) {
-    const partName = `${String(state.version).padStart(12, "0")}.part${String(snapshotParts.length + 1).padStart(4, "0")}`;
-    snapshotParts.push(partName);
-    await backend.writeControlFile(`${WORKSPACE_REPLAY_SNAPSHOT_DIRECTORY}/${partName}`, compressed.subarray(offset, offset + 900_000));
-  }
-  const manifest: ReplaySnapshotManifest = {
-    schemaVersion: WORKSPACE_REPLAY_SNAPSHOT_MANIFEST_VERSION,
-    workspaceId: state.metadata.workspaceId,
-    version: state.version,
-    headEventHash: state.headEventHash,
-    snapshotParts,
-    stateDigest,
-    segments: segmentEntries,
-  };
-  // The state is committed first. A crash before the manifest write leaves the
-  // old manifest authoritative; the manifest is replaced last and atomically,
-  // so it can only name a complete snapshot file.
-  await backend.writeControlFile(`${WORKSPACE_REPLAY_SNAPSHOT_DIRECTORY}/${WORKSPACE_REPLAY_SNAPSHOT_MANIFEST}`, canonicalJson(manifest as unknown as JsonValue));
-}
-
-export async function rebuildReplaySnapshot(workspaceRootInput: string): Promise<Readonly<Record<string, JsonValue>>> {
-  const workspace = await resolveWorkspace(workspaceRootInput);
-  const state = await materializeResolvedWorkspace(workspace);
-  const backend = backendForStorage(workspace.root, workspace.metadata.storageVersion, backendKindForState(state));
-  await writeReplaySnapshot(state, backend, true);
-  const checkpoint = await readReplaySnapshot(workspace.root, workspace.metadata);
-  return {
-    schemaVersion: "tcrn.workspace-replay-snapshot-rebuild.v1",
-    version: state.version,
-    headEventHash: state.headEventHash,
-    ...(checkpoint?.manifest.snapshotParts === undefined ? { snapshot: checkpoint?.manifest.snapshot ?? null } : { snapshotParts: checkpoint.manifest.snapshotParts }),
-  };
 }
 
 // STORY-300. One append and many appends are the same operation with a different
@@ -3676,56 +2872,44 @@ function committedFrom(
   };
 }
 
+// TCRN-CROSS-STORY-469 (MIN-227 D20): a write in a library, under this machine's lock of it.
+// The merged state is read under the lock, every delta is built against it, and the events go
+// to this device's own stream with the next sequences and clocks one above the largest clock
+// this machine has seen, so they sort after everything the writer saw. An old-layout workspace
+// refuses in withWorkspaceWriteLock.
 export async function appendEvents(
   workspaceRootInput: string,
   buildDeltas: readonly ((state: WorkspaceState) => MutationDelta)[],
   options: WorkspaceMutationOptions,
 ): Promise<WorkspaceState> {
-  // STORY-299: clear before the attempt, so a note left by an earlier command can
-  // never be reported against this one.
-  pendingViewWriteFailure = null;
   assertStrictInstant(options.occurredAt);
   if (buildDeltas.length === 0) {
     fail("WORKSPACE_INPUT_INVALID", "an append carries at least one event");
   }
-  const resolved = await resolveWorkspace(workspaceRootInput);
-  return withWorkspaceWriteLock(resolved.root, async () => {
+  return withWorkspaceWriteLock(workspaceRootInput, async (root) => {
     await options.insideWriteLockForTest?.();
-    // WSA-1: the single full replay per mutation, read under the write lock, so the
-    // state every delta is built against is the latest one and nothing can land between
-    // this read and the append. A batch replays once too -- it is one mutation, so it
-    // takes one lock, one replay and one clock reading.
-    const workspace = await resolveWorkspace(resolved.root);
-    const state = await materializeResolvedWorkspace(workspace);
-    const streamId = workspaceStreamId(workspace.metadata);
+    const library = await openLibrary(root);
+    const { device } = await readOrCreateDevice();
+    // WSA-1: the single full replay per mutation, read under the lock, so the state every
+    // delta is built against is the latest one this machine has, and a batch is one mutation:
+    // one lock, one replay.
+    const read = await readAllStreams(library.root);
+    const state = materializeLibraryRead(library, read);
+    const own = read.streams.find((stream) => stream.deviceId === device.deviceId)?.manifest ?? emptyStreamManifest(library, device);
+    const clockBase = Math.max(own.clockHighWater, ...read.streams.map((stream) => stream.manifest?.clockHighWater ?? 0));
     const appended: EventRecord[] = [];
     let current = state;
     for (const [memberIndex, buildDelta] of buildDeltas.entries()) {
-      // STORY-300 slice 3: appendEvents owns the member index because it is the only
-      // thing that knows it. A caller counting completed members from outside cannot:
-      // its counter advances when the closure returns, while actor injection and
-      // createEvent below run afterwards and throw too, so a failure there would be
-      // blamed on the member after the one that caused it. `phase` separates those,
-      // because "the closure refused this member" and "the event this member produced
-      // could not be built" are different facts about the same index.
+      // STORY-300 slice 3: the member index and phase ride on a refusal, attached rather than
+      // substituted, so a batch caller learns which member failed and at which step.
       let phase: "delta" | "actor" | "event" = "delta";
       try {
-      // Each member sees the state the members before it produced, which is what
-      // makes an ordered batch express a dependency -- a parent created by member
-      // one is there for member two.
+      // Each member sees the state the members before it produced, which is what makes an
+      // ordered batch express a dependency.
       const delta = buildDelta(current);
-      const sequence = current.version + 1;
-      // WSE-2: actor injection is single-sourced here so every mutation verb only
-      // forwards options.actorId (like occurredAt — no clock, no randomness). Once
-      // attestation is enabled, or on the enabling event itself, a valid actor is
-      // mandatory (WORKSPACE_ACTOR_REQUIRED) and validated (WORKSPACE_ACTOR_INVALID),
-      // and it joins the hashed payload. Before enablement no actor is written even
-      // when one is supplied — the default stays actor-optional and byte-identical
-      // to rc.4 — so the enable event is the boundary. The reducer re-derives that
-      // boundary and re-enforces the identical rule, so this write path cannot
-      // outrun replay. In a batch the boundary is re-evaluated per member, so a
-      // batch whose first member enables attestation requires an actor from its
-      // second member onward -- the same rule replay will apply.
+      // WSE-2: once attestation is enabled (or on the enabling event itself) a valid actor is
+      // mandatory and joins the hashed payload; before it, no actor is written. The reducer
+      // re-derives the boundary and enforces the same rule on replay.
       phase = "actor";
       const deltaPayload = delta.payload;
       const isEnableEvent = isJsonObject(deltaPayload) && deltaPayload.operation === ACTOR_ATTESTATION_ENABLE_OPERATION;
@@ -3746,137 +2930,55 @@ export async function appendEvents(
         payload = { ...(deltaPayload as Readonly<Record<string, JsonValue>>), actor: options.actorId };
       }
       phase = "event";
-      // TCRN-CROSS-STORY-466 R2: every event written from now on is in the einzbern namespace,
-      // and its priorHash links straight onto a legacy tcrn.event.v1 head.
+      const sequence = own.sequence + memberIndex + 1;
       const event = createEvent({
-        id: workspaceEventId(streamId, sequence),
-        streamId,
+        id: streamEventId(own, sequence),
+        streamId: own.streamId,
         sequence,
-        clock: sequence,
-        deviceId: oldLayoutDeviceId(workspace.metadata),
+        clock: clockBase + memberIndex + 1,
+        deviceId: own.deviceId,
         occurredAt: options.occurredAt,
-        priorHash: current.headEventHash,
+        priorHash: appended.at(-1)?.eventHash ?? own.headEventHash,
         payload,
       }, EVENT_SCHEMA_VERSION);
       appended.push(event);
       current = committedFrom(current, delta, event, isEnableEvent, [...state.events, ...appended]);
       } catch (error) {
-        // Attribution is attached, never substituted: the member's own reason code and
-        // message are what a caller needs, and a wrapper that replaced them would be the
-        // batch reporting its own opinion of a refusal it did not make.
         Object.assign(error as object, { memberIndex, memberPhase: phase });
         throw error;
       }
     }
     assertWorkspaceRecordCount(state.version + buildDeltas.length);
-    // STORY-299. The committed state is pure computation over state, delta and the
-    // new event, so it can be built -- and its views projected -- before a single
-    // byte reaches the disk. Projecting here is what makes an over-budget view a
-    // clean refusal: version has not moved, no segment exists, and the caller may
-    // fix the cause and retry. Doing it after writeSegment is precisely how
-    // INC-198's event seq 3842 came to exist under a command that reported failure.
-    // A batch projects once, at its end: an intermediate state can be momentarily
-    // over budget while the final one is not, so judging each member would refuse
-    // batches that are perfectly legal.
-    const documents = viewDocuments(current, options.viewBudgetBytes ?? PROTOCOL_LIMITS.maxCanonicalBytes);
-    // Every segment's bytes are canonicalised before any of them is written. The
-    // canonical form fails closed at one MiB, so computing them lazily would let
-    // the first segment land and the second refuse -- the shape INC-198 recorded,
-    // rebuilt one layer down.
-    const backend = backendForStorage(workspace.root, workspace.metadata.storageVersion, backendKindForState(current));
-    const writes = workspace.metadata.storageVersion === WORKSPACE_LEGACY_STORAGE_VERSION
-      ? (() => {
-        const limit = workspace.metadata.segmentEventLimit;
-        const grouped = new Map<number, EventRecord[]>();
-        for (const event of appended) {
-          const index = Math.floor((event.sequence - 1) / limit) + 1;
-          const list = grouped.get(index) ?? [];
-          list.push(event);
-          grouped.set(index, list);
-        }
-        // Ascending segment order is a hard invariant, not a preference: a non-final
-        // segment left under-full reads as chain corruption, and that refusal lives
-        // inside materialize, so writing a later segment first would take `status` and
-        // `recover` down together.
-        return [...grouped.keys()].sort((left, right) => left - right).map((index) => ({
-          index,
-          name: `${String(index).padStart(6, "0")}.json`,
-          bytes: canonicalJson([...state.events.slice((index - 1) * limit, index * limit), ...(grouped.get(index) ?? [])]),
-        }));
-      })()
-      : await (async () => {
-        const limit = segmentBytesForState(current);
-        const existingSegments = await backend.listSegmentNames();
-        const lastExistingName = existingSegments.at(-1);
-        let nextIndex = lastExistingName === undefined ? 0 : Number(lastExistingName.slice(0, 6));
-        let currentName = lastExistingName ?? `${String(nextIndex + 1).padStart(6, "0")}.ndjson`;
-        let currentBytes = lastExistingName === undefined ? 0 : (await backend.readSegment(lastExistingName)).length;
-        const originalBytes = new Map<string, string>();
-        const pending = new Map<string, string>();
-        if (lastExistingName !== undefined) {
-          originalBytes.set(lastExistingName, (await backend.readSegment(lastExistingName)).toString("utf8"));
-        }
-        for (const event of appended) {
-          const eventBytes = Buffer.byteLength(canonicalJson(event), "utf8");
-          if (currentBytes > 0 && currentBytes + eventBytes > limit) {
-            nextIndex += 1;
-            currentName = `${String(nextIndex).padStart(6, "0")}.ndjson`;
-            currentBytes = 0;
-          }
-          const line = canonicalJson(event);
-          pending.set(currentName, `${pending.get(currentName) ?? originalBytes.get(currentName) ?? ""}${line}`);
-          currentBytes += eventBytes;
-        }
-        return [...pending.entries()].sort(([left], [right]) => compareCanonicalText(left, right)).map(([name, bytes]) => ({
-          index: Number(name.slice(0, 6)),
-          name,
-          bytes,
-        }));
-      })();
-    for (const write of writes) {
-      await backend.writeSegment(write.name, Buffer.from(write.bytes, "utf8"), options.crashAt);
-    }
+    // STORY-299: the view projection is measured before a byte is written, so a projection
+    // over budget is a clean refusal with nothing appended.
+    viewDocuments(current, options.viewBudgetBytes ?? PROTOCOL_LIMITS.maxCanonicalBytes);
+    crash("before-write", options.crashAt);
+    const committed = await appendStreamEvents(library, own, appended, { segmentBytes: segmentBytesForState(current) });
     crash("after-event-commit", options.crashAt);
-    // WSA-1: durability readback bounded to the just-committed segment replaces the
-    // full-chain re-materialize; atomicWrite already fsync+rename+identity-verified,
-    // and the chain was validated under this claim, so re-reading it wholesale was
-    // redundant. The committed state is applied from the validated delta, and equals
-    // a fresh materialize by construction.
-    for (const write of writes) {
-      const readback = await backend.readSegment(write.name);
-      if (readback.toString("utf8") !== write.bytes) {
-        fail("WORKSPACE_EVENT_CORRUPT", `segment ${write.index} readback mismatch`);
-      }
-    }
-    await writeReplaySnapshot(current, backend, false, state.version);
-    try {
-      await writeViewDocuments(workspace.root, documents, options.crashAt);
-    } catch (error) {
-      // The projection already succeeded above, so a ProtocolError here is a bug in
-      // this module rather than a capacity fact, and must stay loud. A fault
-      // injection is a simulated process death: a dead process returns no receipt,
-      // so swallowing it would make the crash tests assert the opposite of what
-      // they were written to assert. Everything else -- including the Postgres
-      // backend's own write errors, which are not StorageError and would slip
-      // through a type-narrowed catch -- is a durable fact with an unwritten view.
-      if (error instanceof ProtocolError) throw error;
-      if (error instanceof WorkspaceError && error.reasonCode === "WORKSPACE_FAULT_INJECTED") throw error;
-      pendingViewWriteFailure = {
-        reasonCode: "WORKSPACE_VIEW_UNWRITTEN",
-        cause: error instanceof WorkspaceError ? error.reasonCode : "WORKSPACE_VIEW_WRITE_FAILED",
-      };
-    }
-    return current;
+    const streams = [...(state.library?.streams ?? []).filter((stream) => stream.deviceId !== device.deviceId), streamHead(committed)]
+      .sort((left, right) => compareCanonicalText(left.deviceId, right.deviceId));
+    return {
+      ...current,
+      version: state.version + appended.length,
+      headEventHash: libraryHeadDigest(streams),
+      library: {
+        libraryRoot: library.root,
+        versionVector: { ...(state.library?.versionVector ?? {}), [device.deviceId]: committed.sequence },
+        streams,
+        rejectedEvents: state.library?.rejectedEvents ?? [],
+        aliases: state.library?.aliases ?? [],
+      },
+    };
   });
 }
 
 // TCRN-CROSS-STORY-467 R1: the records a write touched, for the receipt every mutating
-// verb returns: each event after `sinceVersion` contributes its record id (and a closed
-// conference its minutes id), in append order, without repeats.
+// verb returns: each event after the first `sinceVersion` events of the state contributes its
+// record id (and a closed conference its minutes id), in append order, without repeats.
 export function writtenRecordIds(state: WorkspaceState, sinceVersion: number): readonly string[] {
   const ids: string[] = [];
-  for (const event of state.events) {
-    if (event.sequence <= sinceVersion || !isJsonObject(event.payload)) continue;
+  for (const event of state.events.slice(sinceVersion)) {
+    if (!isJsonObject(event.payload)) continue;
     for (const key of ["record", "minutes"]) {
       const value = event.payload[key];
       if (!isJsonObject(value)) continue;
@@ -4794,37 +3896,9 @@ export async function removeWorkspaceSetting(workspaceRoot: string, input: {
   }, input);
 }
 
-async function rebuildViewsHoldingLock(resolved: string): Promise<WorkspaceState> {
-  const state = await materializeWorkspace(resolved);
-  await writeViews(resolved, state);
-  return state;
-}
-
-export async function rebuildWorkspaceViews(workspaceRoot: string): Promise<WorkspaceState> {
-  return withWorkspaceWriteLock(workspaceRoot, (resolved) => rebuildViewsHoldingLock(resolved));
-}
-
+/** Re-read and re-validate a library under its lock. An old-layout workspace refuses. */
 export async function recoverWorkspace(workspaceRoot: string): Promise<WorkspaceState> {
-  return withWorkspaceWriteLock(workspaceRoot, (resolved) => recoverHoldingLock(resolved));
-}
-
-async function recoverHoldingLock(resolved: string): Promise<WorkspaceState> {
-  const backend = backendFor(resolved);
-  for (const directoryName of ["events", "views", WORKSPACE_REPLAY_SNAPSHOT_DIRECTORY]) {
-    let entries: readonly StorageDirectoryEntry[];
-    try {
-      entries = await backend.listControlEntries(directoryName);
-    } catch (error) {
-      if (isMissingStoragePath(error)) continue;
-      throw error;
-    }
-    for (const entry of entries) {
-      if (entry.name.startsWith(".tmp-") && entry.isFile && !entry.isSymbolicLink) {
-        await backend.removeControlFile(`${directoryName}/${entry.name}`);
-      }
-    }
-  }
-  return rebuildViewsHoldingLock(resolved);
+  return withWorkspaceWriteLock(workspaceRoot, (resolved) => materializeWorkspace(resolved));
 }
 
 export async function exportWorkspace(workspaceRoot: string): Promise<string> {
@@ -4863,479 +3937,4 @@ export async function createWorkspaceArchive(workspaceRoot: string): Promise<Buf
     contentSha256: canonicalSha256(assertCanonicalJson(exported)),
     content: assertCanonicalJson(exported),
   }), "utf8");
-}
-
-export async function planWorkspaceMigration(workspaceRoot: string, targetVersion: number): Promise<WorkspaceMigrationPlan> {
-  const metadata = await readMetadata(await boundDirectory(workspaceRoot));
-  if (!Number.isSafeInteger(targetVersion) || targetVersion < WORKSPACE_LEGACY_STORAGE_VERSION) {
-    fail("WORKSPACE_MIGRATION_DOWNGRADE", String(targetVersion));
-  }
-  if (targetVersion > WORKSPACE_STORAGE_VERSION) {
-    fail("WORKSPACE_MIGRATION_FUTURE", String(targetVersion));
-  }
-  if (targetVersion < metadata.storageVersion) {
-    fail("WORKSPACE_MIGRATION_DOWNGRADE", String(targetVersion));
-  }
-  const state = await materializeWorkspace(workspaceRoot);
-  if (targetVersion === WORKSPACE_STORAGE_VERSION && metadata.storageVersion === WORKSPACE_LEGACY_STORAGE_VERSION) {
-    const segments = storageMigrationSegments(state.events, WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES);
-    return {
-      schemaVersion: "tcrn.workspace-migration-plan.v1",
-      dryRun: true,
-      fromVersion: metadata.storageVersion,
-      toVersion: targetVersion,
-      steps: [
-        "write an exact pre-migration backup of metadata, legacy event segments, and replay snapshots",
-        `rewrite ${String(state.events.length)} event(s) as ${String(segments.length)} byte-bounded NDJSON segment(s)`,
-        `set the segmented storage limit to ${String(WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES)} bytes and rebuild sidecar indexes`,
-        "validate full event values, views, and the rebuilt replay snapshot",
-      ],
-      backupRequired: true,
-      rollback: "restore-exact-pre-migration-backup-then-validate",
-      postValidation: "validate-exact-target-schema-and-full-event-chain",
-      applyAvailable: true,
-      basisDigest: canonicalSha256({ metadata, headEventHash: state.headEventHash, version: state.version }),
-    };
-  }
-  return {
-    schemaVersion: "tcrn.workspace-migration-plan.v1",
-    dryRun: true,
-    fromVersion: metadata.storageVersion,
-    toVersion: targetVersion,
-    steps: [],
-    backupRequired: true,
-    rollback: "restore-exact-pre-migration-backup-then-validate",
-    postValidation: "validate-exact-target-schema-and-full-event-chain",
-    applyAvailable: false,
-    basisDigest: canonicalSha256({ metadata, headEventHash: state.headEventHash, version: state.version }),
-  };
-}
-
-const STORAGE_MIGRATION_BACKUP_ROOT = "migration/storage-v1" as const;
-const STORAGE_MIGRATION_BACKUP_EVENTS = "migration/storage-v1/events" as const;
-const STORAGE_MIGRATION_BACKUP_SNAPSHOTS = "migration/storage-v1/snapshots" as const;
-const STORAGE_MIGRATION_MARKER = "migration/storage-v1/marker.json" as const;
-
-interface StorageMigrationMarker {
-  readonly schemaVersion: "tcrn.workspace-storage-migration-marker.v1";
-  readonly status: "prepared";
-  readonly workspaceId: string;
-  readonly eventCount: number;
-  readonly headEventHash: string | null;
-  readonly eventNames: readonly string[];
-  readonly snapshotNames: readonly string[];
-  readonly stateDigest: string;
-  readonly segmentBytes: number;
-}
-
-interface StorageMigrationSegment {
-  readonly name: string;
-  readonly bytes: Buffer;
-}
-
-function storageMigrationStateDigest(state: WorkspaceState): string {
-  const digest = createHash("sha256");
-  const update = (name: string, value: unknown): void => {
-    const bytes = Buffer.from(unboundedCanonicalJson(value), "utf8");
-    digest.update(Buffer.from(`${name}:${bytes.length}:`, "utf8"));
-    digest.update(bytes);
-  };
-  update("workspaceId", state.metadata.workspaceId);
-  update("version", state.version);
-  update("headEventHash", state.headEventHash);
-  update("projects", state.projects);
-  update("work", state.work);
-  update("conferences", state.conferences);
-  update("conferencePositions", state.conferencePositions);
-  update("conferenceMinutes", state.conferenceMinutes);
-  update("gates", state.gates);
-  update("settings", state.settings);
-  update("executionConfig", state.executionConfig);
-  update("templates", state.templates);
-  update("attestationEnabledAtSequence", state.attestationEnabledAtSequence);
-  for (const event of state.events) update("event", event);
-  return digest.digest("hex");
-}
-
-function storageMigrationLegacyStateDigest(state: WorkspaceState): string | null {
-  try {
-    return canonicalSha256({
-      workspaceId: state.metadata.workspaceId,
-      version: state.version,
-      headEventHash: state.headEventHash,
-      projects: state.projects,
-      work: state.work,
-      conferences: state.conferences,
-      conferencePositions: state.conferencePositions,
-      conferenceMinutes: state.conferenceMinutes,
-      gates: state.gates,
-      settings: state.settings,
-      executionConfig: state.executionConfig,
-      templates: state.templates,
-      attestationEnabledAtSequence: state.attestationEnabledAtSequence,
-      events: state.events,
-    });
-  } catch {
-    return null;
-  }
-}
-
-function storageMigrationSegments(events: readonly EventRecord[], limit: number): readonly StorageMigrationSegment[] {
-  if (!Number.isSafeInteger(limit) || limit < WORKSPACE_SEGMENT_BYTES_MIN || limit > WORKSPACE_SEGMENT_BYTES_MAX) {
-    fail("WORKSPACE_STORAGE_MIGRATION_LIMIT_INVALID", String(limit));
-  }
-  const segments: StorageMigrationSegment[] = [];
-  let index = 1;
-  let current = "";
-  let currentBytes = 0;
-  const flush = (): void => {
-    if (currentBytes === 0) return;
-    segments.push({ name: `${String(index).padStart(6, "0")}.ndjson`, bytes: Buffer.from(current, "utf8") });
-    index += 1;
-    current = "";
-    currentBytes = 0;
-  };
-  for (const event of events) {
-    const line = canonicalJson(event);
-    const bytes = Buffer.byteLength(line, "utf8");
-    if (bytes > limit) {
-      fail("WORKSPACE_STORAGE_MIGRATION_LIMIT_INVALID", `event ${event.id} exceeds ${String(limit)} bytes`);
-    }
-    if (currentBytes > 0 && currentBytes + bytes > limit) flush();
-    current += line;
-    currentBytes += bytes;
-  }
-  flush();
-  return segments;
-}
-
-async function ensureStorageMigrationBackupTree(backend: StorageBackend): Promise<void> {
-  for (const directory of ["migration", STORAGE_MIGRATION_BACKUP_ROOT, STORAGE_MIGRATION_BACKUP_EVENTS, STORAGE_MIGRATION_BACKUP_SNAPSHOTS]) {
-    await backend.ensureControlDirectory(directory);
-  }
-}
-
-async function readStorageMigrationMarker(workspaceRoot: string): Promise<StorageMigrationMarker | null> {
-  const backend = new FileBackend(workspaceRoot);
-  let bytes: Buffer;
-  try {
-    bytes = await backend.readControlFile(STORAGE_MIGRATION_MARKER, 1_048_576);
-  } catch (error) {
-    if (isMissingStoragePath(error)) return null;
-    throw error;
-  }
-  let value: unknown;
-  try {
-    value = assertCanonicalJson(bytes.toString("utf8"));
-  } catch (error) {
-    fail("WORKSPACE_STORAGE_MIGRATION_IN_PROGRESS", String((error as { message?: string }).message ?? error));
-  }
-  if (value === null || typeof value !== "object" || Array.isArray(value)) {
-    fail("WORKSPACE_STORAGE_MIGRATION_IN_PROGRESS", "migration marker is not an object");
-  }
-  const marker = value as Partial<StorageMigrationMarker>;
-  if (marker.schemaVersion !== "tcrn.workspace-storage-migration-marker.v1" || marker.status !== "prepared" ||
-    typeof marker.workspaceId !== "string" || !Number.isSafeInteger(marker.eventCount) ||
-    (marker.headEventHash !== null && typeof marker.headEventHash !== "string") ||
-    !Array.isArray(marker.eventNames) || !Array.isArray(marker.snapshotNames) ||
-    typeof marker.stateDigest !== "string" || !/^[a-f0-9]{64}$/u.test(marker.stateDigest) ||
-    !Number.isSafeInteger(marker.segmentBytes)) {
-    fail("WORKSPACE_STORAGE_MIGRATION_IN_PROGRESS", "migration marker is invalid");
-  }
-  return marker as StorageMigrationMarker;
-}
-
-async function removeControlFiles(backend: StorageBackend, directory: string, names: readonly string[]): Promise<void> {
-  for (const name of names) {
-    await backend.removeControlFile(`${directory}/${name}`);
-  }
-}
-
-async function cleanupStorageMigrationBackup(workspaceRoot: string): Promise<void> {
-  const marker = await readStorageMigrationMarker(workspaceRoot);
-  if (marker === null) return;
-  const backend = new FileBackend(workspaceRoot);
-  const paths = [STORAGE_MIGRATION_MARKER, `${STORAGE_MIGRATION_BACKUP_ROOT}/metadata.json`,
-    ...marker.eventNames.map((name) => `${STORAGE_MIGRATION_BACKUP_EVENTS}/${name}`),
-    ...marker.snapshotNames.map((name) => `${STORAGE_MIGRATION_BACKUP_SNAPSHOTS}/${name}`)];
-  for (const path of paths) {
-    try {
-      await backend.removeControlFile(path);
-    } catch (error) {
-      if (!isMissingStoragePath(error)) throw error;
-    }
-  }
-}
-
-function storageMigrationReport(state: WorkspaceState, segments: readonly StorageMigrationSegment[], segmentBytes: number): WorkspaceStorageMigrationResult {
-  return {
-    schemaVersion: "tcrn.workspace-storage-migration.v1",
-    reasonCode: "WORKSPACE_STORAGE_MIGRATION_VERIFIED",
-    ok: true,
-    fromVersion: 1,
-    toVersion: 2,
-    workspaceId: state.metadata.workspaceId,
-    eventCount: state.version,
-    headEventHash: state.headEventHash,
-    segmentBytes,
-    segmentCount: segments.length,
-    stateDigest: storageMigrationStateDigest(state),
-  };
-}
-
-export async function verifyWorkspaceStorageMigration(workspaceRootInput: string): Promise<WorkspaceStorageMigrationVerification> {
-  const root = await boundDirectory(workspaceRootInput);
-  const metadata = await readMetadata(root);
-  if (metadata.storageVersion !== WORKSPACE_STORAGE_VERSION) {
-    return {
-      schemaVersion: "tcrn.workspace-storage-migration-verify.v1",
-      ok: false,
-      reasonCode: "WORKSPACE_STORAGE_MIGRATION_NOT_APPLIED",
-      fromVersion: 1,
-      toVersion: 2,
-      workspaceId: metadata.workspaceId,
-      eventCount: 0,
-      headEventHash: null,
-      segmentBytes: null,
-      segmentCount: 0,
-      stateDigest: null,
-    };
-  }
-  const marker = await readStorageMigrationMarker(root);
-  if (metadata.segmentEventLimit !== WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES) {
-    return {
-      schemaVersion: "tcrn.workspace-storage-migration-verify.v1",
-      ok: false,
-      reasonCode: "WORKSPACE_STORAGE_MIGRATION_LIMIT_INVALID",
-      fromVersion: 1,
-      toVersion: 2,
-      workspaceId: metadata.workspaceId,
-      eventCount: marker?.eventCount ?? 0,
-      headEventHash: marker?.headEventHash ?? null,
-      segmentBytes: metadata.segmentEventLimit,
-      segmentCount: 0,
-      stateDigest: marker?.stateDigest ?? null,
-    };
-  }
-  const state = await materializeWorkspace(root);
-  const segmentBytes = segmentBytesForState(state);
-  const segments = storageMigrationSegments(state.events, segmentBytes);
-  const segmented = new SegmentedBackend(root);
-  const names = await segmented.listSegmentNames();
-  if (segmentBytes !== WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES) {
-    return {
-      schemaVersion: "tcrn.workspace-storage-migration-verify.v1",
-      ok: false,
-      reasonCode: "WORKSPACE_STORAGE_MIGRATION_LIMIT_INVALID",
-      fromVersion: 1,
-      toVersion: 2,
-      workspaceId: state.metadata.workspaceId,
-      eventCount: state.version,
-      headEventHash: state.headEventHash,
-      segmentBytes,
-      segmentCount: names.length,
-      stateDigest: storageMigrationStateDigest(state),
-    };
-  }
-  const manifest = await segmented.readManifest();
-  if (manifest.segments.length !== names.length || manifest.segments.length !== segments.length) {
-    return {
-      schemaVersion: "tcrn.workspace-storage-migration-verify.v1",
-      ok: false,
-      reasonCode: "WORKSPACE_STORAGE_MIGRATION_MISMATCH",
-      fromVersion: 1,
-      toVersion: 2,
-      workspaceId: state.metadata.workspaceId,
-      eventCount: state.version,
-      headEventHash: state.headEventHash,
-      segmentBytes,
-      segmentCount: names.length,
-      stateDigest: storageMigrationStateDigest(state),
-    };
-  }
-  for (const [index, expected] of segments.entries()) {
-    const actual = await segmented.readSegment(expected.name);
-    const manifestEntry = manifest.segments[index];
-    if (manifestEntry?.name !== expected.name || actual.length !== expected.bytes.length || actual.length > segmentBytes ||
-      sha256Bytes(actual) !== manifestEntry.sha256 || !actual.equals(expected.bytes)) {
-      return {
-        schemaVersion: "tcrn.workspace-storage-migration-verify.v1",
-        ok: false,
-        reasonCode: "WORKSPACE_STORAGE_MIGRATION_MISMATCH",
-        fromVersion: 1,
-        toVersion: 2,
-        workspaceId: state.metadata.workspaceId,
-        eventCount: state.version,
-        headEventHash: state.headEventHash,
-        segmentBytes,
-        segmentCount: names.length,
-        stateDigest: storageMigrationStateDigest(state),
-      };
-    }
-  }
-  const stateDigest = storageMigrationStateDigest(state);
-  const legacyStateDigest = marker === null || marker.stateDigest === stateDigest ? null : storageMigrationLegacyStateDigest(state);
-  if (marker !== null && (marker.workspaceId !== state.metadata.workspaceId || marker.eventCount !== state.version || marker.headEventHash !== state.headEventHash ||
-    (marker.stateDigest !== stateDigest && marker.stateDigest !== legacyStateDigest))) {
-    return {
-      schemaVersion: "tcrn.workspace-storage-migration-verify.v1",
-      ok: false,
-      reasonCode: "WORKSPACE_STORAGE_MIGRATION_MISMATCH",
-      fromVersion: 1,
-      toVersion: 2,
-      workspaceId: state.metadata.workspaceId,
-      eventCount: state.version,
-      headEventHash: state.headEventHash,
-      segmentBytes,
-      segmentCount: names.length,
-      stateDigest,
-    };
-  }
-  return {
-    schemaVersion: "tcrn.workspace-storage-migration-verify.v1",
-    ok: true,
-    reasonCode: "WORKSPACE_STORAGE_MIGRATION_VERIFIED",
-    fromVersion: 1,
-    toVersion: 2,
-    workspaceId: state.metadata.workspaceId,
-    eventCount: state.version,
-    headEventHash: state.headEventHash,
-    segmentBytes,
-    segmentCount: names.length,
-    stateDigest,
-  };
-}
-
-export async function migrateWorkspaceStorage(workspaceRootInput: string): Promise<WorkspaceStorageMigrationResult> {
-  const root = await boundDirectory(workspaceRootInput);
-  const metadata = await readMetadata(root);
-  if (metadata.storageVersion === WORKSPACE_STORAGE_VERSION) {
-    const verified = await verifyWorkspaceStorageMigration(root);
-    if (!verified.ok || verified.segmentBytes !== WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES) {
-      fail("WORKSPACE_STORAGE_MIGRATION_LIMIT_INVALID", verified.reasonCode);
-    }
-    const state = await materializeWorkspace(root);
-    await cleanupStorageMigrationBackup(root);
-    return storageMigrationReport(state, storageMigrationSegments(state.events, verified.segmentBytes), verified.segmentBytes);
-  }
-  if (metadata.storageVersion !== WORKSPACE_LEGACY_STORAGE_VERSION) {
-    fail("WORKSPACE_STORAGE_MIGRATION_NOT_APPLIED", String(metadata.storageVersion));
-  }
-  const existingMarker = await readStorageMigrationMarker(root);
-  if (existingMarker !== null) {
-    fail("WORKSPACE_STORAGE_MIGRATION_IN_PROGRESS", existingMarker.workspaceId);
-  }
-  const lease = await acquireFileLock(controlPath(root, WORKSPACE_WRITE_LOCK_FILE));
-  try {
-    const workspace = await resolveWorkspace(root);
-    const before = await materializeResolvedWorkspace(workspace);
-    const beforeDigest = storageMigrationStateDigest(before);
-    const legacy = new FileBackend(root);
-    const eventNames = (await legacy.listSegmentNames()).sort(compareCanonicalText);
-    if (eventNames.some((name) => !/^\d{6}\.json$/u.test(name))) {
-      fail("WORKSPACE_EVENT_CORRUPT", "legacy migration source contains a non-JSON event entry");
-    }
-    const eventBytes = new Map<string, Buffer>();
-    for (const name of eventNames) eventBytes.set(name, await legacy.readSegment(name));
-    const snapshotEntries = (await legacy.listControlEntries(WORKSPACE_REPLAY_SNAPSHOT_DIRECTORY))
-      .filter((entry) => entry.isFile && !entry.isSymbolicLink)
-      .map((entry) => entry.name)
-      .sort(compareCanonicalText);
-    await ensureStorageMigrationBackupTree(legacy);
-    await legacy.writeControlFile(`${STORAGE_MIGRATION_BACKUP_ROOT}/metadata.json`, await legacy.readMetadataBytes());
-    for (const name of eventNames) {
-      await legacy.writeControlFile(`${STORAGE_MIGRATION_BACKUP_EVENTS}/${name}`, eventBytes.get(name) as Buffer);
-    }
-    for (const name of snapshotEntries) {
-      await legacy.writeControlFile(`${STORAGE_MIGRATION_BACKUP_SNAPSHOTS}/${name}`, await legacy.readControlFile(`${WORKSPACE_REPLAY_SNAPSHOT_DIRECTORY}/${name}`, 67_108_864));
-    }
-    const marker: StorageMigrationMarker = {
-      schemaVersion: "tcrn.workspace-storage-migration-marker.v1",
-      status: "prepared",
-      workspaceId: before.metadata.workspaceId,
-      eventCount: before.version,
-      headEventHash: before.headEventHash,
-      eventNames,
-      snapshotNames: snapshotEntries,
-      stateDigest: beforeDigest,
-      segmentBytes: WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES,
-    };
-    await legacy.writeControlFile(STORAGE_MIGRATION_MARKER, canonicalJson(marker as unknown as JsonValue));
-    const segments = storageMigrationSegments(before.events, WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES);
-    for (const segment of segments) {
-      await legacy.writeControlFile(`events/${segment.name}`, segment.bytes);
-    }
-    await removeControlFiles(legacy, "events", eventNames);
-    await removeControlFiles(legacy, WORKSPACE_REPLAY_SNAPSHOT_DIRECTORY, snapshotEntries);
-    const targetMetadata: WorkspaceMetadata = {
-      ...before.metadata,
-      storageVersion: WORKSPACE_STORAGE_VERSION,
-      maximumStorageVersion: WORKSPACE_STORAGE_VERSION,
-      segmentEventLimit: WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES,
-    };
-    await legacy.writeMetadataBytes(Buffer.from(canonicalJson(targetMetadata), "utf8"));
-    const segmented = new SegmentedBackend(root);
-    await segmented.rebuildIndexes();
-    const after = await materializeWorkspace(root);
-    if (storageMigrationStateDigest(before) !== storageMigrationStateDigest(after)) {
-      fail("WORKSPACE_STORAGE_MIGRATION_MISMATCH", "migration changed materialized values");
-    }
-    await validateWorkspace(root);
-    await writeReplaySnapshot(after, segmented, true);
-    await validateWorkspace(root);
-    await cleanupStorageMigrationBackup(root);
-    return storageMigrationReport(after, segments, WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES);
-  } finally {
-    await lease.release();
-  }
-}
-
-export async function hasWorkspaceStorageMigration(workspaceRoot: string): Promise<boolean> {
-  return (await readStorageMigrationMarker(workspaceRoot)) !== null;
-}
-
-export async function rollbackWorkspaceStorageMigration(workspaceRootInput: string): Promise<Readonly<Record<string, JsonValue>>> {
-  const root = await boundDirectory(workspaceRootInput);
-  const marker = await readStorageMigrationMarker(root);
-  if (marker === null) fail("WORKSPACE_STORAGE_MIGRATION_NOT_APPLIED", "no storage migration backup is present");
-  const lease = await acquireFileLock(controlPath(root, WORKSPACE_WRITE_LOCK_FILE));
-  try {
-    const backend = new FileBackend(root);
-    const eventEntries = await backend.listControlEntries("events");
-    for (const entry of eventEntries) {
-      if (entry.isFile && !entry.isSymbolicLink && (/^\d{6}\.ndjson$/u.test(entry.name) || /^\d{6}\.idx$/u.test(entry.name) || ["labels.idx", "time.idx", "manifest.json"].includes(entry.name))) {
-        await backend.removeControlFile(`events/${entry.name}`);
-      }
-    }
-    const snapshots = await backend.listControlEntries(WORKSPACE_REPLAY_SNAPSHOT_DIRECTORY);
-    for (const entry of snapshots) {
-      if (entry.isFile && !entry.isSymbolicLink) await backend.removeControlFile(`${WORKSPACE_REPLAY_SNAPSHOT_DIRECTORY}/${entry.name}`);
-    }
-    for (const name of marker.eventNames) {
-      await backend.writeControlFile(`events/${name}`, await backend.readControlFile(`${STORAGE_MIGRATION_BACKUP_EVENTS}/${name}`, 67_108_864));
-    }
-    for (const name of marker.snapshotNames) {
-      await backend.writeControlFile(`${WORKSPACE_REPLAY_SNAPSHOT_DIRECTORY}/${name}`, await backend.readControlFile(`${STORAGE_MIGRATION_BACKUP_SNAPSHOTS}/${name}`, 67_108_864));
-    }
-    await backend.writeMetadataBytes(await backend.readControlFile(`${STORAGE_MIGRATION_BACKUP_ROOT}/metadata.json`, 1_048_576));
-    const restored = await validateWorkspace(root);
-    const markerFiles = [STORAGE_MIGRATION_MARKER, `${STORAGE_MIGRATION_BACKUP_ROOT}/metadata.json`,
-      ...marker.eventNames.map((name) => `${STORAGE_MIGRATION_BACKUP_EVENTS}/${name}`),
-      ...marker.snapshotNames.map((name) => `${STORAGE_MIGRATION_BACKUP_SNAPSHOTS}/${name}`)];
-    for (const path of markerFiles) await backend.removeControlFile(path);
-    return {
-      schemaVersion: "tcrn.workspace-storage-migration-rollback.v1",
-      reasonCode: "WORKSPACE_STORAGE_MIGRATION_ROLLED_BACK",
-      ok: true,
-      workspaceId: restored.metadata.workspaceId,
-      eventCount: restored.version,
-      headEventHash: restored.headEventHash,
-    } as unknown as Readonly<Record<string, JsonValue>>;
-  } finally {
-    await lease.release();
-  }
-}
-
-export async function applyWorkspaceMigration(): Promise<never> {
-  fail("WORKSPACE_MIGRATION_APPLY_UNAVAILABLE", "V1 has no real-data migration apply path");
 }

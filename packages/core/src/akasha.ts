@@ -261,7 +261,7 @@ function parseSegment(manifest: StreamManifest, segment: StreamSegment, bytes: B
 }
 
 /** Read one segment's committed bytes: exactly the recorded length, which must hash as recorded. */
-async function readSegmentBytes(libraryRoot: string, manifest: StreamManifest, segment: StreamSegment, readFile: ReadBytes): Promise<Buffer> {
+async function readSegmentBytes(libraryRoot: string, manifest: StreamManifest, segment: StreamSegment, readFile: ReadBytes): Promise<{ readonly bytes: Buffer; readonly digestMatches: boolean }> {
   const where = { deviceId: manifest.deviceId, streamId: manifest.streamId, segment: segment.name };
   let content: Buffer;
   try {
@@ -272,8 +272,7 @@ async function readSegmentBytes(libraryRoot: string, manifest: StreamManifest, s
   }
   if (content.length < segment.bytes) fail("AKASHA_SEGMENT_CORRUPT", `${segment.name} is shorter than its manifest records`, where);
   const committed = content.subarray(0, segment.bytes);
-  if (sha256(committed) !== segment.sha256) fail("AKASHA_SEGMENT_CORRUPT", `${segment.name} does not hash as its manifest records`, where);
-  return committed;
+  return { bytes: committed, digestMatches: sha256(committed) === segment.sha256 };
 }
 
 /**
@@ -284,22 +283,33 @@ async function readSegmentBytes(libraryRoot: string, manifest: StreamManifest, s
 export async function readStreamEvents(libraryRoot: string, manifest: StreamManifest, options: StreamReadOptions = {}): Promise<readonly EventRecord[]> {
   const readFile = options.readFile ?? readFileBytes;
   const events: EventRecord[] = [];
+  let mismatched: StreamSegment | null = null;
   for (const segment of manifest.segments) {
-    events.push(...parseSegment(manifest, segment, await readSegmentBytes(libraryRoot, manifest, segment, readFile)));
+    const { bytes, digestMatches } = await readSegmentBytes(libraryRoot, manifest, segment, readFile);
+    if (!digestMatches && mismatched === null) mismatched = segment;
+    events.push(...parseSegment(manifest, segment, bytes));
   }
+  // A segment that no longer hashes as recorded is still read, so a change made in place is
+  // reported where the stream stops being provable (TCRN-CROSS-STORY-467 AC3); a digest that
+  // is wrong while every event checks out is reported against the segment.
   const found = findStreamChainBreak(events, {
     streamId: manifest.streamId,
     eventId: (sequence) => streamEventId(manifest, sequence),
     ...(manifest.identityScheme === "einzbern" ? { deviceId: manifest.deviceId } : {}),
   });
   if (found !== null) {
+    const holding = manifest.segments.find((segment) => segment.firstSequence <= found.sequence && found.sequence <= segment.lastSequence);
     fail("AKASHA_EVENT_CORRUPT", `stream ${manifest.streamId} of device ${manifest.deviceId} breaks at sequence ${found.sequence} (${found.kind})`, {
       deviceId: manifest.deviceId,
       streamId: manifest.streamId,
       sequence: String(found.sequence),
       eventId: found.eventId,
       break: found.kind,
+      ...(holding === undefined ? {} : { segment: holding.name }),
     });
+  }
+  if (mismatched !== null) {
+    fail("AKASHA_SEGMENT_CORRUPT", `${mismatched.name} does not hash as its manifest records`, { deviceId: manifest.deviceId, streamId: manifest.streamId, segment: mismatched.name });
   }
   const head = events.at(-1);
   if ((head?.eventHash ?? null) !== manifest.headEventHash || (head !== undefined && eventClock(head) !== manifest.clockHighWater)) {

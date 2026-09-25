@@ -160,15 +160,20 @@ for (let index = 0; index < 20; index += 1) {
   }
 });
 
-test("469-R5: a damaged stream manifest or segment fails closed with the device and segment named", async (t) => {
+test("469-R5, 467-AC3: a damaged stream manifest or segment fails closed with the device, segment and sequence named", async (t) => {
   const { home, library } = await fixture(t);
   const { manifest } = await appendToOwnStream(library, DEVICE_A, drafts(3), { home });
   const directory = streamDirectory(library.root, DEVICE_A.deviceId);
   const segmentPath = join(directory, "00000001.ndjson");
   const original = await readFile(segmentPath, "utf8");
+  // A byte changed in place is reported where the stream stops being provable.
   await writeFile(segmentPath, original.replace("\"index\":1", "\"index\":7"));
-  await assert.rejects(readStreamEvents(library.root, manifest), (error) => error?.reasonCode === "AKASHA_SEGMENT_CORRUPT" && error.details.deviceId === DEVICE_A.deviceId && error.details.segment === "00000001.ndjson");
+  await assert.rejects(readStreamEvents(library.root, manifest), (error) => error?.reasonCode === "AKASHA_EVENT_CORRUPT" &&
+    error.details.deviceId === DEVICE_A.deviceId && error.details.sequence === "2" && error.details.break === "payloadHash" && error.details.segment === "00000001.ndjson");
+  // A recorded digest that is wrong while every event checks out is reported against the segment.
   await writeFile(segmentPath, original);
+  await assert.rejects(readStreamEvents(library.root, { ...manifest, segments: [{ ...manifest.segments[0], sha256: "0".repeat(64) }] }),
+    (error) => error?.reasonCode === "AKASHA_SEGMENT_CORRUPT" && error.details.deviceId === DEVICE_A.deviceId && error.details.segment === "00000001.ndjson");
   const manifestPath = join(directory, "manifest.json");
   const manifestText = await readFile(manifestPath, "utf8");
   await writeFile(manifestPath, manifestText.replace("\"sequence\":3", "\"sequence\":4"));

@@ -25,16 +25,13 @@ import {
   exportKnowledgeCheckpoint,
   exportWorkspace,
   initializeKnowledgeStore,
-  initializeWorkspace,
+  initializeLibrary,
   captureKnowledgeUnit,
   listKnowledgeMetadata,
-  consumeViewWriteFailure,
   materializeWorkspace,
   migrateKnowledgeBodies,
   workBatchReceipt,
   workspaceBudgets,
-  planWorkspaceMigration,
-  migrateWorkspaceStorage,
   readKnowledgeBody,
   readKnowledgeStoreMarker,
   readKnowledgeSnippet,
@@ -47,7 +44,6 @@ import {
   recoverWorkspace,
   createSnapshotManifest,
   readSnapshotManifestFile,
-  rebuildReplaySnapshot,
   verifySnapshotManifest,
   transitionKnowledgePromotion,
   transitionWork,
@@ -60,7 +56,6 @@ import {
   listArtifacts,
   putArtifact,
   verifyArtifacts,
-  readStorageHomeDeclaration,
   readSettingsCatalog,
   readInstallManifest,
   readMachineSettingsCatalog,
@@ -91,12 +86,16 @@ import {
   materializeFromGenesis,
   openLegacyWorkspace,
   validateLegacyChain,
+  hasLibraryManifest,
+  openLibrary,
+  readAllStreams,
+  materializeLibraryRead,
+  recordAliases,
 } from "../../core/src/index.js";
 import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider } from "../../core/src/index.js";
 import type {
   ConferenceRequest,
   ConferenceMinutes,
-  ExplicitRoot,
   KnowledgeCategory,
   KnowledgeFitnessRecord,
   KnowledgeFitnessResult,
@@ -228,15 +227,10 @@ function assertMintableOutcomeClass(verb: keyof typeof RETIRED_OUTCOME_CLASSES, 
 }
 
 // CQ-05(c): the single arbiter for integer-valued flags. A syntactically malformed value
-// now fails at the CLI boundary with CLI_ARGUMENT_MALFORMED naming the offending flag,
-// instead of reaching core as NaN and being reported under a semantic reason code —
-// `migration-plan --target-version abc` used to answer WORKSPACE_MIGRATION_DOWNGRADE with
-// the message "NaN", i.e. a syntax error reported as a semantic downgrade refusal.
-// The minimum is deliberately optional and defaults to Number.MIN_SAFE_INTEGER: 0 and
-// negative target-versions are LEGITIMATE downgrade requests that planWorkspaceMigration
-// must still judge (workspace.ts compares against WORKSPACE_STORAGE_VERSION), so passing
-// a positive minimum here would pre-empt the very judgement this patch protects. Only
-// non-integers are rejected at the CLI; every integer still reaches core.
+// fails at the CLI boundary with CLI_ARGUMENT_MALFORMED naming the offending flag, instead
+// of reaching core as NaN and being reported under a semantic reason code. The minimum is
+// optional; only non-integers and values below it are rejected here, and every other
+// integer reaches core for its own judgement.
 function integerValue(values: Readonly<Record<string, string>>, name: string, minimum: number = Number.MIN_SAFE_INTEGER): number {
   const value = Number(values[name]);
   if (!Number.isSafeInteger(value) || value < minimum) {
@@ -628,22 +622,6 @@ function eventPage(state: Awaited<ReturnType<typeof validateWorkspace>>, values:
   }
 }
 
-// STORY-299. A committed fact whose derived view could not be written is still a
-// committed fact. The receipt says so in additional fields and keeps its success
-// reason code: five checks across the platform compare that string for equality,
-// so minting a second success code would read as failure to every one of them.
-// The fields appear only on the degraded path; an ordinary receipt is unchanged
-// byte for byte.
-function viewProjectionFields(): Readonly<Record<string, unknown>> {
-  const failure = consumeViewWriteFailure();
-  return failure === null ? {} : {
-    viewProjection: "unwritten",
-    viewFailureReasonCode: failure.reasonCode,
-    viewFailureCause: failure.cause,
-    remedy: "recover",
-  };
-}
-
 function writeState(io: CliIo, state: Awaited<ReturnType<typeof validateWorkspace>>, record?: Readonly<Record<string, unknown>>, warning?: Readonly<Record<string, string>> | null): void {
   io.write(canonicalJson({
     reasonCode: "WORKSPACE_COMMAND_COMPLETED",
@@ -653,7 +631,6 @@ function writeState(io: CliIo, state: Awaited<ReturnType<typeof validateWorkspac
     ...writtenIdsField(),
     projects: state.projects.filter((entry) => !entry.tombstone).length,
     work: state.work.filter((entry) => !entry.tombstone).length,
-    ...viewProjectionFields(),
     ...(record ? { record } : {}),
     ...(warning === undefined || warning === null ? {} : { warning }),
   }));
@@ -680,7 +657,6 @@ function writeExtensionState(io: CliIo, state: Awaited<ReturnType<typeof materia
     headEventHash: state.headEventHash,
     ...writtenIdsField(),
     recordId,
-    ...viewProjectionFields(),
   }));
 }
 
@@ -752,7 +728,7 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "event-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "export", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }] },
   { name: "host-probe", availability: "cli", mutates: false, flags: [{ name: "host", required: true, valueKind: "string" }, { name: "model", required: true, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
-  { name: "init", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "framework", required: true, valueKind: "string" }, { name: "transient", required: true, valueKind: "string" }, { name: "evidence-locator", required: true, valueKind: "string" }, { name: "release-trust", required: true, valueKind: "string" }, { name: "external-key", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "segment-events", required: false, valueKind: "integer" }] },
+  { name: "init", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-name", required: false, valueKind: "string" }, { name: "git-remote", required: false, valueKind: "string" }] },
   { name: "install-manifest", availability: "cli", mutates: false, flags: [] },
   { name: "knowledge-article-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "path", required: true, valueKind: "string" }, { name: "category", required: true, valueKind: "string" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "content", required: true, valueKind: "string" }, { name: "accountable-owner-id", required: true, valueKind: "string" }, { name: "evidence-ids", required: true, valueKind: "list" }, { name: "language-bundle", required: false, valueKind: "string" }] },
   { name: "knowledge-article-refresh", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "expected-revision", required: true, valueKind: "integer" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "path", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "language-bundle", required: false, valueKind: "string" }] },
@@ -781,11 +757,6 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "machine-settings-catalog", availability: "cli", mutates: false, flags: [{ name: "home", required: false, valueKind: "string" }] },
   { name: "machine-settings-remove", availability: "cli", mutates: true, flags: [{ name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "home", required: false, valueKind: "string" }] },
   { name: "machine-settings-set", availability: "cli", mutates: true, flags: [{ name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "value", required: true, valueKind: "string" }, { name: "home", required: false, valueKind: "string" }] },
-  // TCRN-CROSS-INC-275: PostgreSQL support removed. migration-verify and
-  // migration-rollback removed (pg family verbs). migration-execute retains only
-  // the storage-version migration (v1→v2) via migrateWorkspaceStorage.
-  { name: "migration-execute", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }] },
-  { name: "migration-plan", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "target-version", required: true, valueKind: "integer" }, { name: "dry-run", required: true, valueKind: "boolean" }] },
   { name: "project-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "external-key", required: true, valueKind: "string" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "project-delete", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "project-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
@@ -798,13 +769,11 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "settings-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "settings-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "value", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "snapshot-manifest", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
-  { name: "snapshot-replay-rebuild", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }] },
   { name: "snapshot-verify", availability: "cli", mutates: false, flags: [{ name: "root", required: true, valueKind: "string" }, { name: "manifest", required: true, valueKind: "string" }] },
   { name: "status", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }] },
   // INC-074/INC-081: seal a retained file archive to an already authoritative
   // TCRN-CROSS-INC-275: PostgreSQL support removed. storage-home-seal was
   // PG-specific; it is removed.
-  { name: "storage-home-status", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }] },
   { name: "template-admit", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "template", required: true, valueKind: "string" }, { name: "owner", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "template-validate", availability: "cli", mutates: false, flags: [{ name: "template", required: true, valueKind: "string" }] },
   { name: "validate", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }] },
@@ -815,7 +784,7 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "work-delete", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-draft", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string" }] },
   { name: "work-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string" }, { name: "sprint", required: false, valueKind: "string" }, { name: "search", required: false, valueKind: "string" }, { name: "scope-bytes", required: false, valueKind: "integer" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
-  { name: "work-show", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }] },
+  { name: "work-show", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "id", required: false, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }] },
   { name: "work-transition", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "status", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
 ] as const);
 
@@ -1026,34 +995,60 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     io.write(canonicalJson(result));
     return;
   }
+  // TCRN-CROSS-STORY-469 R1: init creates a library at --workspace (a missing or empty
+  // directory). The five explicit roots, the workspace external key and the segment limit of
+  // the old layout are gone; the project name and Git remote are a hint in the manifest.
   if (command === "init") {
-    const names = ["workspace", "framework", "transient", "evidence-locator", "release-trust", "external-key", "at", "segment-events"];
-    const values = parseArguments(rest, names);
-    required(values, names.slice(0, 7));
-    const roots: ExplicitRoot[] = [
-      { kind: "framework", path: values.framework ?? "" },
-      { kind: "workspace", path: values.workspace ?? "" },
-      { kind: "transient", path: values.transient ?? "" },
-      { kind: "evidence-locator", path: values["evidence-locator"] ?? "" },
-      { kind: "release-trust", path: values["release-trust"] ?? "" },
-    ];
-    const state = await initializeWorkspace({
-      roots,
-      externalKey: values["external-key"] ?? "",
+    const values = parseArguments(rest, ["workspace", "at", "project-name", "git-remote"]);
+    required(values, ["workspace", "at"]);
+    const state = await initializeLibrary({
+      root: values.workspace ?? "",
       createdAt: values.at ?? "",
-      // WSB-2: the truthy guard dropped `--segment-events=` on the floor and initialized
-      // the workspace as if no limit had been asked for; `!== undefined` makes the empty
-      // string behave like the 0 it parses to, and integerValue names the flag when the
-      // value is not an integer at all. The 2-1024 window stays core's call
-      // (WORKSPACE_SCHEMA_INVALID), which is why no minimum is passed here.
-      ...(values["segment-events"] !== undefined ? { segmentEventLimit: integerValue(values, "segment-events") } : {}),
+      ...(values["project-name"] === undefined ? {} : { projectName: values["project-name"] }),
+      ...(values["git-remote"] === undefined ? {} : { gitRemote: values["git-remote"] }),
     });
-    writeState(io, state);
+    io.write(canonicalJson({
+      reasonCode: "LIBRARY_CREATED",
+      workspaceId: state.metadata.workspaceId,
+      libraryId: state.metadata.workspaceId,
+      version: state.version,
+      headEventHash: state.headEventHash,
+      versionVector: state.library?.versionVector ?? {},
+      projects: 0,
+      work: 0,
+    }));
     return;
   }
-  if (command === "chain-validate") {
+  // TCRN-CROSS-STORY-466 R3 / 467 R4 / 469: validate a chain from genesis. A library is read stream
+  // by stream (each structural break names its device, stream and sequence) and replayed merged;
+  // an old-layout workspace is read without a single write. `validate` is the same check: views
+  // are derived and no longer an authority.
+  if (command === "chain-validate" || command === "validate") {
     const values = parseArguments(rest, ["workspace"]);
     required(values, ["workspace"]);
+    if (await hasLibraryManifest(values.workspace ?? "")) {
+      const library = await openLibrary(values.workspace ?? "");
+      const read = await readAllStreams(library.root);
+      const state = materializeLibraryRead(library, read);
+      io.write(canonicalJson({
+        reasonCode: "CHAIN_VALIDATED",
+        layout: "library",
+        workspaceId: state.metadata.workspaceId,
+        events: state.version,
+        version: state.version,
+        headEventHash: state.headEventHash,
+        versionVector: state.library?.versionVector ?? {},
+        rejectedEventCount: state.library?.rejectedEvents.length ?? 0,
+        streams: read.streams.flatMap((stream) => stream.manifest === null ? [] : [{
+          deviceId: stream.deviceId,
+          streamId: stream.manifest.streamId,
+          identityScheme: stream.manifest.identityScheme,
+          events: stream.events.length,
+          headEventHash: stream.manifest.headEventHash,
+        }]),
+      }));
+      return;
+    }
     const legacy = await openLegacyWorkspace(values.workspace ?? "");
     const report = validateLegacyChain(legacy);
     const state = materializeFromGenesis(legacy.metadata, legacy.events);
@@ -1068,12 +1063,6 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     }));
     return;
   }
-  if (command === "validate") {
-    const values = parseArguments(rest, ["workspace"]);
-    required(values, ["workspace"]);
-    writeState(io, await validateWorkspace(values.workspace ?? ""));
-    return;
-  }
   if (command === "status") {
     // WSA-3 / SDC-10: status reads authority only and never staleness-fails, so an
     // agent can always observe the head; `validate` and the read verbs remain
@@ -1082,25 +1071,28 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     required(values, ["workspace"]);
     const workspace = values.workspace ?? "";
     const state = await materializeWorkspace(workspace);
-    const storageHome = await readStorageHomeDeclaration(workspace);
     io.write(canonicalJson({
       reasonCode: "WORKSPACE_COMMAND_COMPLETED",
       engineVersion: FRAMEWORK_VERSION,
       workspaceId: state.metadata.workspaceId,
+      // TCRN-CROSS-STORY-468 R4: a library's version is a vector of each device's stream
+      // sequence; `version` is the merged event count and `headEventHash` one digest over the
+      // stream heads. An old-layout workspace (read-only) reports its one chain's length and head.
+      layout: state.library === undefined ? "legacy" : "library",
       version: state.version,
       headEventHash: state.headEventHash,
+      versionVector: state.library?.versionVector ?? {},
+      streams: (state.library?.streams ?? []).map((stream) => ({
+        deviceId: stream.deviceId,
+        displayName: stream.displayName,
+        streamId: stream.streamId,
+        sequence: stream.sequence,
+        headEventHash: stream.headEventHash,
+        engineVersion: stream.engineVersion,
+      })),
+      rejectedEventCount: state.library?.rejectedEvents.length ?? 0,
       projects: state.projects.filter((entry) => !entry.tombstone).length,
       work: state.work.filter((entry) => !entry.tombstone).length,
-      // Identity is metadata-only: no local path is exposed. A sealed archive
-      // must tell a reader that its authority is PG and which workspace binding
-      // it carries, rather than looking like an ordinary file-backed status.
-      storageHome: storageHome === null ? null : {
-        schemaVersion: storageHome.schemaVersion,
-        storage: storageHome.storage,
-        ...(storageHome.schema === undefined ? {} : { schema: storageHome.schema }),
-        ...(storageHome.workspaceId === undefined ? {} : { workspaceId: storageHome.workspaceId }),
-        migratedAt: storageHome.migratedAt,
-      },
       // STORY-299: headroom belongs on the one verb that still answers past a
       // ceiling. The view-verifying verbs fail closed when a view is over budget,
       // so a gauge hung on any of them would be readable only while it had nothing
@@ -1115,33 +1107,6 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const values = parseArguments(rest, ["workspace"]);
     required(values, ["workspace"]);
     io.write(await exportWorkspace(values.workspace ?? ""));
-    return;
-  }
-  if (command === "migration-plan") {
-    const values = parseArguments(rest, ["workspace", "target-version", "dry-run"]);
-    required(values, ["workspace", "target-version", "dry-run"]);
-    if (values["dry-run"] !== "true") {
-      fail("CLI_MIGRATION_DRY_RUN_REQUIRED", "P3 migration planning is dry-run only");
-    }
-    io.write(canonicalJson(await planWorkspaceMigration(values.workspace ?? "", integerValue(values, "target-version"))));
-    return;
-  }
-  if (command === "migration-execute") {
-    // TCRN-CROSS-INC-275: PostgreSQL support removed. Only the storage-version
-    // migration (v1→v2) remains.
-    const values = parseArguments(rest, ["workspace"]);
-    required(values, ["workspace"]);
-    io.write(canonicalJson(await migrateWorkspaceStorage(values.workspace ?? "")));
-    return;
-  }
-  if (command === "storage-home-status") {
-    const values = parseArguments(rest, ["workspace"]);
-    required(values, ["workspace"]);
-    const declaration = await readStorageHomeDeclaration(values.workspace ?? "");
-    if (declaration === null) {
-      fail("STORAGE_HOME_NOT_DECLARED", "workspace has no storage-home declaration");
-    }
-    io.write(canonicalJson({ reasonCode: "STORAGE_HOME_READY", declaration }));
     return;
   }
   if (command === "template-validate") {
@@ -1288,12 +1253,6 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const workspace = values.workspace ?? "";
     const manifest = await createSnapshotManifest(workspace);
     io.write(manifest);
-    return;
-  }
-  if (command === "snapshot-replay-rebuild") {
-    const values = parseArguments(rest, ["workspace"]);
-    required(values, ["workspace"]);
-    io.write(canonicalJson(await rebuildReplaySnapshot(values.workspace ?? "")));
     return;
   }
   if (command === "snapshot-verify") {
@@ -1974,13 +1933,23 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     io.write(canonicalJson(workDraft(state, values.kind, values["project-id"] ?? "")));
     return;
   }
+  // TCRN-CROSS-STORY-468 R5, AC2, AC3: a record is found by id or by external key. It carries
+  // the keys it was renamed from (aliases), the records renamed away from its key (aliasedBy),
+  // and the events that were rejected against it, so neither a collision nor a lost race is
+  // invisible.
   if (command === "work-show") {
-    const values = parseArguments(rest, ["workspace", "id"]);
-    required(values, ["workspace", "id"]);
+    const values = parseArguments(rest, ["workspace", "id", "external-key"]);
+    required(values, ["workspace"]);
+    if ((values.id === undefined) === (values["external-key"] === undefined)) {
+      fail("CLI_ARGUMENT_MALFORMED", "work-show takes exactly one of --id and --external-key");
+    }
     const state = await validateWorkspace(values.workspace ?? "");
-    const record = state.work.find((entry) => entry.id === values.id && !entry.tombstone);
-    if (!record) fail("WORKSPACE_INPUT_INVALID", `work ${values.id ?? ""} is unavailable`);
+    const externalKey = values["external-key"]?.toUpperCase();
+    const record = state.work.find((entry) => !entry.tombstone && (externalKey === undefined ? entry.id === values.id : entry.externalKey === externalKey));
+    if (!record) fail("WORKSPACE_INPUT_INVALID", `work ${values.id ?? values["external-key"] ?? ""} is unavailable`);
     const advisory = workAdvisory(record);
+    const aliases = recordAliases(state, record.id);
+    const rejectedEvents = (state.library?.rejectedEvents ?? []).filter((entry) => entry.recordId === record.id);
     io.write(canonicalJson({
       reasonCode: "WORKSPACE_RECORD_READY",
       workspaceId: state.metadata.workspaceId,
@@ -1989,6 +1958,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       kind: "work",
       record: workSummary(record),
       ...(advisory !== null ? { advisory } : {}),
+      ...(aliases.aliases.length === 0 ? {} : { aliases: aliases.aliases.map((entry) => ({ externalKey: entry.externalKey, id: entry.id, deviceId: entry.deviceId })) }),
+      ...(aliases.aliasedBy.length === 0 ? {} : { aliasedBy: aliases.aliasedBy.map((entry) => ({ externalKey: entry.aliasExternalKey, id: entry.aliasId, deviceId: entry.deviceId })) }),
+      ...(rejectedEvents.length === 0 ? {} : { rejectedEvents }),
     }));
     return;
   }

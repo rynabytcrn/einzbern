@@ -60,7 +60,7 @@ function run(argv) {
   const result = spawnSync(process.execPath, [CLI, ...argv], { encoding: "utf8" });
   let json = null;
   try { json = JSON.parse(result.stdout); } catch { json = null; }
-  if (result.status !== 0 || json === null || json.reasonCode !== "WORKSPACE_COMMAND_COMPLETED") {
+  if (result.status !== 0 || json === null || !["WORKSPACE_COMMAND_COMPLETED", "LIBRARY_CREATED"].includes(json.reasonCode)) {
     process.stderr.write(`engine ${argv[0]} refused: ${JSON.stringify({ status: result.status, stdout: result.stdout.slice(0, 300), stderr: result.stderr.slice(0, 300) })}\n`);
     process.exit(1);
   }
@@ -69,16 +69,14 @@ function run(argv) {
 
 const workspaceName = `ws-${eventsTarget}`;
 const wsDir = join(baseDir, workspaceName);
-for (const root of ["workspace", "transient", "evidence-locator", "release-trust"]) {
-  mkdirSync(join(wsDir, root), { recursive: true });
-}
-const workspace = join(wsDir, "workspace");
+mkdirSync(wsDir, { recursive: true });
+// TCRN-CROSS-STORY-469: a library, written from a device directory of its own.
+const workspace = join(wsDir, "library");
+process.env.EINZBERN_HOME = join(wsDir, "device");
 
 const startedAt = Date.now();
 
-const init = run(["init", "--workspace", workspace, "--framework", REPO_ROOT,
-  "--transient", join(wsDir, "transient"), "--evidence-locator", join(wsDir, "evidence-locator"),
-  "--release-trust", join(wsDir, "release-trust"), "--external-key", `S12-SYNTH-${eventsTarget}`, "--at", at()]);
+const init = run(["init", "--workspace", workspace, "--project-name", `S12 synthetic ${eventsTarget}`, "--at", at()]);
 let version = init.version;
 
 const project = run(["project-create", "--workspace", workspace,

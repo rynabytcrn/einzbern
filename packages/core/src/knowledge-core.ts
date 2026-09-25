@@ -918,7 +918,7 @@ function parseCanonicalObject(bytes: Buffer, label: string, reasonCode: Knowledg
 function validateMarker(value: Readonly<Record<string, JsonValue>>): KnowledgeStoreMarker {
   exactFields(value, Object.hasOwn(value, "lastSweepAt") ? [...markerFields, "lastSweepAt"] : markerFields, "knowledge marker", "KNOWLEDGE_RECORD_INVALID");
   if (value.schemaVersion !== KNOWLEDGE_STORE_SCHEMA_VERSION || typeof value.workspaceId !== "string" ||
-    !/^workspace:[a-f0-9]{24}$/u.test(value.workspaceId) || typeof value.eventHighWaterDigest !== "string" ||
+    !/^(?:workspace|library):[a-f0-9]{24}$/u.test(value.workspaceId) || typeof value.eventHighWaterDigest !== "string" ||
     !/^[a-f0-9]{64}$/u.test(value.eventHighWaterDigest) || !Number.isSafeInteger(value.version) || Number(value.version) < 0 ||
     value.disposable !== true || value.authority !== "metadata-index-authority-body-separate") {
     fail("KNOWLEDGE_RECORD_INVALID", "knowledge marker fields are invalid");

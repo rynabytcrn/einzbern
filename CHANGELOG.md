@@ -37,6 +37,10 @@ workspace write receipt carries the ids it wrote beside `version` and `headEvent
 The time-attestation store, `--attest-dir` and the `attestation-enable`,
 `attestation-migrate` and `attestation-verify` verbs are gone; a chain that already
 carries `attestation.actor.enabled` still replays and still requires an actor.
+The authority family is gone too: the `gate-*`, `profile-*` and `context-*` verbs,
+`knowledge-candidates`, the operator-pins channel (`--authority-pins`) and the authority
+files they read. Gate records already on a chain still replay, and a pending one still
+holds its work item back from `done`.
 
 ## 1.2.1 — patch candidate
 

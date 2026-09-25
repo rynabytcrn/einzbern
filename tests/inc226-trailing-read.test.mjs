@@ -24,7 +24,6 @@ import {
   evaluateKnowledgeFreshness,
   initializeKnowledgeStore,
   initializeWorkspace,
-  knowledgeContextCandidates,
   listKnowledgeMetadata,
   validateKnowledgeStore,
 } from "../dist/build/packages/core/src/index.js";
@@ -112,7 +111,6 @@ test("INC-226: a trailing answer carries both heads, so staleness is answerable 
   try {
     for (const read of [
       () => listKnowledgeMetadata(workspace, { at: instant(19, 6), allowTrailing: true }),
-      () => knowledgeContextCandidates(workspace, { at: instant(19, 6), allowTrailing: true }),
       () => evaluateKnowledgeFreshness(workspace, instant(19, 6), { allowTrailing: true }),
     ]) {
       const result = await read();

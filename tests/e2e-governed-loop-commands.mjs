@@ -101,11 +101,6 @@ export const governedLoopStoryline = [
     command: ["work-transition", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:06Z", "--id", "<story-id>", "--status", "active"],
   },
   {
-    key: "gate-create",
-    reasonCode: "WORKSPACE_COMMAND_COMPLETED",
-    command: ["gate-create", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:07Z", "--external-key", "FLAGSHIP-GATE", "--project-id", "<project-id>", "--work-id", "<story-id>", "--title", "Decision-gate", "--outcome-class", "role_decision"],
-  },
-  {
     key: "conference-open",
     reasonCode: "WORKSPACE_COMMAND_COMPLETED",
     command: ["conference-open", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:08Z", "--external-key", "FLAGSHIP-CONFERENCE", "--project-id", "<project-id>", "--type", "architecture", "--title", "Decide-the-story", "--work-ids", "<story-id>", "--desired-outcome", "ratify-the-approach", "--participant-ids", "profile:architect-01"],
@@ -141,11 +136,6 @@ export const governedLoopStoryline = [
     command: ["knowledge-promote", "--workspace", WORKSPACE_PATH, "--expected-revision", "<knowledge-revision>", "--at", "2026-07-11T00:00:12Z", "--id", "<knowledge-id>", "--state", "promoted"],
   },
   {
-    key: "gate-transition-satisfied",
-    reasonCode: "WORKSPACE_COMMAND_COMPLETED",
-    command: ["gate-transition", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:13Z", "--id", "<gate-id>", "--status", "satisfied", "--minutes-locator", "<minutes-locator>"],
-  },
-  {
     key: "work-annotate-story-owner-acceptance",
     reasonCode: "WORKSPACE_COMMAND_COMPLETED",
     command: ["work-annotate", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:14Z", "--id", "<story-id>", "--decided-by", "<minutes-id>"],
@@ -159,11 +149,6 @@ export const governedLoopStoryline = [
     key: "work-show-story",
     reasonCode: "WORKSPACE_RECORD_READY",
     command: ["work-show", "--workspace", WORKSPACE_PATH, "--id", "<story-id>"],
-  },
-  {
-    key: "gate-list",
-    reasonCode: null,
-    command: ["gate-list", "--workspace", WORKSPACE_PATH, "--work-id", "<story-id>"],
   },
 ];
 

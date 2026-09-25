@@ -43,15 +43,11 @@ form a fail-closed security boundary.
 - `compatibility-validate` and `compatibility-unavailable` are binary-invocable:
   the shipped binary `einzbern` can run them directly. They read no host
   authority and change no state.
-- `compatibility-plan` and `compatibility-dry-run` require a Compatibility
-  Admission Authority. A programmatic embedder may still deliver it through typed
-  `CliIo`. The shipped binary delivers it through the host-neutral operator-pins
-  bundle, supplied before the command as `--authority-pins <absolute-path>` and
-  `--authority-pins-digest <sha256>`. Without a valid pair both verbs fail closed.
+- `compatibility-plan` and `compatibility-dry-run` required a Compatibility
+  Admission Authority delivered through the operator-pins bundle
+  (`--authority-pins`). That channel is retired with the rest of the authority
+  family (TCRN-CROSS-STORY-467 R2).
 
-The two global values are public trust pins, not credentials. They bind a
-canonical pins document whose digest, generation floor and revocation set bind a
-separate authority bundle. A command-local `--authority` token remains unknown.
 No receipt body, secret or ambient authority is accepted from argv, prompt text
 or environment variables. The structured MCP stdio surface that once
 offered an alternative to shell history was retired in `v0.11.18`; the CLI is the

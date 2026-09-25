@@ -8,6 +8,12 @@ registers through extension-registration-v1 with `appliesTo: ["work"]` and
 work-model-v1. This is a skeleton: schema plus minimal read and write validation.
 There is no full gate lifecycle, approval routing, or automation.
 
+The gate write and read verbs (`gate-create`, `gate-transition`, `gate-delete`,
+`gate-list`, `gate-list-all`) and the identity roster are retired
+(TCRN-CROSS-STORY-467 R2). This document stays normative for replay: gate events
+already on a chain are validated exactly as below, and a pending gate still holds
+its work item back from `done`.
+
 ## Record
 
 A gate carries `id`, `projectId`, an optional `workId` (nullable — a gate may be
@@ -106,7 +112,7 @@ verification summary; workspaces without extension records keep their views,
 export, and archive bytes unchanged. The summary carries a count and a digest
 per collection rather than the gate records themselves, so its size is fixed
 rather than proportional to the number of gates, while any byte inside any gate
-record still moves it. Gate records are read through `gate-list-by-work-item`. `storageVersion` stays 1: an old binary reading a
+record still moves it. Since the gate verbs are retired, gate records are read from the event log (`export`, `event-list`). `storageVersion` stays 1: an old binary reading a
 workspace that contains these events fails closed with
 `WORKSPACE_EVENT_CORRUPT` (unknown operation).
 

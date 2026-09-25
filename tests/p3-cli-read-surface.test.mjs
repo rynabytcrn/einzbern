@@ -312,7 +312,7 @@ test("CQ-05(c2): the null sentinel round-trips through work-create and work-list
 test("CQ-05(c2): every nullableValue flag declares its sentinel and its deprecated alias", () => {
   const flagOf = (verb, flag) => COMMAND_CATALOG.find((entry) => entry.name === verb)?.flags.find((f) => f.name === flag);
   for (const [verb, flag] of [["knowledge-create", "project-id"], ["knowledge-create", "last-verified"],
-    ["work-create", "parent-id"], ["gate-create", "work-id"]]) {
+    ["work-create", "parent-id"]]) {
     const declared = flagOf(verb, flag);
     assert.ok(declared, `${verb} must declare the flag ${flag}`);
     assert.equal(declared.nullSentinel, "-", `${verb}.${flag} must declare the canonical null sentinel`);
@@ -362,7 +362,7 @@ test("CQ-05(c): malformed integer flags fail at the CLI boundary naming the flag
 test("R2-NEW-7: empty-string integer flags are rejected, not silently dropped", async (context) => {
   const fx = await fixture(context);
   const ws = ["--workspace", fx.workspace, "--at", instant(32)];
-  for (const verb of ["knowledge-list", "knowledge-candidates"]) {
+  for (const verb of ["knowledge-list"]) {
     // Baseline: with the flag omitted the verb gets past pagination entirely and fails
     // later, on the absent knowledge store. "Silently dropped" means indistinguishable
     // from this, which is precisely what the truthy guard did to --limit=.
@@ -395,7 +395,7 @@ test("R2-NEW-7: empty-string integer flags are rejected, not silently dropped", 
 test("CQ-05: malformed knowledge pagination flags are syntax errors, not range refusals", async (context) => {
   const fx = await fixture(context);
   const ws = ["--workspace", fx.workspace, "--at", instant(33)];
-  for (const verb of ["knowledge-list", "knowledge-candidates"]) {
+  for (const verb of ["knowledge-list"]) {
     for (const flag of ["limit", "offset"]) {
       for (const value of ["abc", "2.5", "1e400"]) {
         const reason = await reasonOf([verb, ...ws, `--${flag}`, value]);

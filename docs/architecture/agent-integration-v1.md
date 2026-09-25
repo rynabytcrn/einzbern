@@ -9,15 +9,11 @@ divergent semantics.
 
 ## 1. Surfaces
 
-The shipped binary runs every `availability: "cli"` verb. Verbs that need an
-out-of-band authority use one host-neutral operator channel: before the command,
-pass `--authority-pins <absolute-canonical-path>` and
-`--authority-pins-digest <sha256>`. The pins document binds the actual authority
-bundle; see `packages/core/spec/operator-authority-v1.md`. Omitting either
-value fails closed, and the binary never consults prompt text, environment
-variables or ambient configuration. A programmatic embedder may still construct
-`CliIo` directly, but mixing that authority with operator pins is ambiguous and
-rejected.
+The shipped binary runs every `availability: "cli"` verb. No verb takes an
+out-of-band authority: the operator-pins channel (`--authority-pins`), the profile,
+context-route and gate verbs that needed it, and their authority files are retired
+(TCRN-CROSS-STORY-467 R2). The binary never consults prompt text, environment
+variables or ambient configuration for authority.
 
 There are currently no programmatic-only commands:
 
@@ -73,8 +69,7 @@ Flag-value sentinels carry a fixed meaning across verbs.
 
 - `-` is the canonical null sentinel for a nullable flag; an omitted flag is also
   null. It applies to: `knowledge-create` `--project-id` and `--last-verified`;
-  `work-create` `--parent-id`; `gate-create` `--work-id`; and `profile-authorize`
-  `--workspace-id`, `--project-id`, and `--command`.
+  and `work-create` `--parent-id`.
 - `null` is a deprecated alias for `-`, accepted this release for external
   compatibility on `knowledge-create` `--project-id` and `--last-verified` only.
   Prefer `-`; the alias may be withdrawn in a later release.
@@ -167,15 +162,17 @@ The corollary is the one that costs something: if the restriction genuinely cann
 expressed as a check, say so where the residual is recorded, and do not let the surrounding
 fix read as though it closed.
 
-## 9. What gate identity does and does not deliver
+## 9. What gate identity did and did not deliver
 
-A gate whose `outcomeClass` is `owner_intent_required` cannot reach `satisfied` without an
-out-of-band roster naming which actors may close which classes, supplied to
-`gate-transition` as a path plus the digest the caller already holds, and a named actor
-that roster permits. The class is the opt-in, chosen per gate at creation: the other four
-classes are unaffected, and a roster supplied against one of them is honoured there too.
+The gate verbs and the identity roster are retired (TCRN-CROSS-STORY-467 R2): no new gate
+is created, transitioned or deleted. Gates already on a chain still replay, and a pending
+one still holds its work item back from `done`. What follows is kept because replay still
+judges the decisions those gates recorded.
 
-Three statements bound what that buys, and they are load-bearing rather than cautious.
+A gate whose `outcomeClass` was `owner_intent_required` could not reach `satisfied`
+without an out-of-band roster naming which actors may close which classes, and a named
+actor that roster permitted. Three statements bound what that bought, and they stay
+load-bearing for every chain that carries such a gate.
 
 **It delivers authorization, not authentication.** The roster says which identities are
 permitted. Nothing here establishes who ran the command. `--actor` is an assertion by the

@@ -14,8 +14,10 @@ import {
   ACTOR_ATTESTATION_ENABLE_OPERATION,
   appendEvents,
   buildActorAttestationEnableRecord,
+  buildEventPayload,
   initializeWorkspace,
 } from "../../dist/build/packages/core/src/index.js";
+import { canonicalExternalKey, compareCanonicalText, deriveStableId } from "../../dist/build/packages/protocol/src/index.js";
 
 export const repositoryRoot = resolve(import.meta.dirname, "../..");
 export const cliPath = join(repositoryRoot, "scripts/einzbern.mjs");
@@ -78,4 +80,67 @@ export async function appendHistoricalAttestationEnable(workspace, { occurredAt,
     projects: state.projects,
     work: state.work,
   })], { occurredAt, actorId });
+}
+
+// The gate write verbs are retired (TCRN-CROSS-STORY-467 R2). Gate records already on a
+// chain still replay -- lifecycle, evidence re-resolution, the identity-decision shape -- and
+// a pending gate still holds its work item back from done. Tests of that build the history
+// through the engine's own append path, exactly as the retired verbs did, and leave every
+// judgement to replay: nothing here validates.
+const GATE_EVIDENCE_KEY = "gate-evidence:conference-minutes";
+const GATE_IDENTITY_KEY = "gate-identity:decision";
+
+async function appendGateEvent(workspace, operation, buildRecord, { occurredAt, actorId }) {
+  return appendEvents(workspace, [(state) => {
+    const record = buildRecord(state);
+    return {
+      payload: buildEventPayload(operation, record),
+      projects: state.projects,
+      work: state.work,
+      gates: [...state.gates.filter((entry) => entry.id !== record.id), record]
+        .sort((left, right) => compareCanonicalText(left.projectId, right.projectId) || compareCanonicalText(left.id, right.id)),
+    };
+  }], { occurredAt, ...(actorId === undefined ? {} : { actorId }) });
+}
+
+function currentGate(state, id) {
+  const gate = state.gates.find((entry) => entry.id === id);
+  if (gate === undefined) throw new Error(`no gate ${id} on the chain`);
+  return gate;
+}
+
+/** A historical gate.created, as gate-create wrote it. */
+export async function appendHistoricalGateCreate(workspace, { externalKey, projectId, workId, title, outcomeClass, occurredAt, actorId }) {
+  return appendGateEvent(workspace, "gate.created", () => ({
+    schemaVersion: "tcrn.gate.v1",
+    id: deriveStableId("gate", canonicalExternalKey(externalKey)),
+    projectId,
+    workId,
+    title,
+    outcomeClass,
+    status: "pending",
+    revision: 1,
+    updatedAt: occurredAt,
+    tombstone: false,
+    extensions: {},
+  }), { occurredAt, actorId });
+}
+
+/** A historical gate.updated, as gate-transition wrote it (evidence and identity entries included). */
+export async function appendHistoricalGateTransition(workspace, { id, status, minutesLocator, identity, occurredAt, actorId }) {
+  return appendGateEvent(workspace, "gate.updated", (state) => {
+    const current = currentGate(state, id);
+    let extensions = current.extensions;
+    if (minutesLocator !== undefined) extensions = { ...extensions, [GATE_EVIDENCE_KEY]: { required: false, value: minutesLocator } };
+    if (identity !== undefined) extensions = { ...extensions, [GATE_IDENTITY_KEY]: { required: false, value: identity } };
+    return { ...current, status, revision: current.revision + 1, updatedAt: occurredAt, extensions };
+  }, { occurredAt, actorId });
+}
+
+/** A historical gate.deleted, as gate-delete wrote it. */
+export async function appendHistoricalGateDelete(workspace, { id, occurredAt, actorId }) {
+  return appendGateEvent(workspace, "gate.deleted", (state) => {
+    const current = currentGate(state, id);
+    return { ...current, revision: current.revision + 1, updatedAt: occurredAt, tombstone: true };
+  }, { occurredAt, actorId });
 }

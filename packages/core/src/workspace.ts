@@ -63,7 +63,7 @@ import {
   validateConferencePosition,
   validateConferenceRequest,
 } from "./conference.js";
-import { AssignmentGateError, GATE_VERSION, validateGateRecord } from "./assignment-gate.js";
+import { AssignmentGateError, validateGateRecord } from "./assignment-gate.js";
 import type { ConferenceMinutes, ConferencePosition, ConferenceRequest } from "./conference.js";
 import {
   EMPTY_EXECUTION_CONFIG,
@@ -89,8 +89,8 @@ import {
 } from "./execution-config.js";
 import type { ExecutionConfigState, ExecutionHost } from "./execution-config.js";
 import type { GateRecord } from "./assignment-gate.js";
-import { GateIdentityError, gateIdentityDecision, permitsGateOutcome, validateGateIdentityDecision } from "./gate-identity.js";
-import type { GateIdentityAuthorityContext, GateIdentityDecision } from "./gate-identity.js";
+import { GateIdentityError, validateGateIdentityDecision } from "./gate-identity.js";
+import type { GateIdentityDecision } from "./gate-identity.js";
 import type { CanonicalRoot } from "./root-identity.js";
 import { FRAMEWORK_VERSION } from "./index.js";
 import type { ExplicitRoot } from "./index.js";
@@ -4018,17 +4018,9 @@ function openConferenceById(state: WorkspaceState, id: string): ConferenceReques
   return record;
 }
 
-function gateById(state: WorkspaceState, id: string): GateRecord {
-  const record = state.gates.find((entry) => entry.id === id);
-  if (!record || record.tombstone) {
-    fail("WORKSPACE_INPUT_INVALID", `gate ${id} is unavailable`);
-  }
-  return record;
-}
-
-// WSD-1: the seven extension mutation verbs. Each derives its stable id from an
-// external key, validates its record through the unchanged conference/gate
-// validators (validator failures propagate verbatim for the CLI to surface),
+// WSD-1: the extension mutation verbs (the four conference ones since the gate verbs
+// retired). Each derives its stable id from an external key, validates its record
+// through the unchanged conference validators (validator failures propagate verbatim for the CLI to surface),
 // and appends exactly one event through appendEvent and the shared SDC-2
 // payload constructor.
 export async function openConferenceInWorkspace(workspaceRoot: string, input: {
@@ -4154,7 +4146,7 @@ export async function closeConferenceInWorkspace(workspaceRoot: string, input: {
     // conference's type, the close must declare an independent execution form.
     // The declaration is a self-report, validated for presence and value and
     // never for truth — the same authorization-not-authentication ceiling
-    // gate-identity states about itself; see CONFERENCE_EXECUTION_FORMS.
+    // the retired gate identity roster stated about itself; see CONFERENCE_EXECUTION_FORMS.
     if (input.executionForm !== undefined && !(CONFERENCE_EXECUTION_FORMS as readonly string[]).includes(input.executionForm)) {
       fail("WORKSPACE_INPUT_INVALID", `execution-form must be one of ${CONFERENCE_EXECUTION_FORMS.join(", ")}`);
     }
@@ -4413,133 +4405,10 @@ export async function cancelConferenceInWorkspace(workspaceRoot: string, input: 
   }, input);
 }
 
-export async function createGateInWorkspace(workspaceRoot: string, input: {
-  readonly externalKey: string;
-  readonly projectId: string;
-  readonly workId: string | null;
-  readonly title: string;
-  readonly outcomeClass: GateRecord["outcomeClass"];
-} & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  const id = deriveStableId("gate", canonicalExternalKey(input.externalKey));
-  return appendEvent(workspaceRoot, (state) => {
-    projectById(state, input.projectId);
-    if (input.workId !== null && workById(state, input.workId).projectId !== input.projectId) {
-      fail("WORKSPACE_INPUT_INVALID", `work ${input.workId} is outside project ${input.projectId}`);
-    }
-    if (state.gates.some((entry) => entry.id === id)) {
-      fail("WORKSPACE_INPUT_INVALID", `gate ${id} already exists`);
-    }
-    const record = validateGateRecord({
-      schemaVersion: GATE_VERSION,
-      id,
-      projectId: input.projectId,
-      workId: input.workId,
-      title: input.title,
-      outcomeClass: input.outcomeClass,
-      status: "pending",
-      revision: 1,
-      updatedAt: input.occurredAt,
-      tombstone: false,
-      extensions: {},
-    });
-    return {
-      payload: buildEventPayload("gate.created", record as unknown as JsonValue),
-      projects: state.projects,
-      work: state.work,
-      gates: sortExtensionRecords([...state.gates, record]),
-    };
-  }, input);
-}
-
-export async function transitionGateInWorkspace(workspaceRoot: string, input: {
-  readonly id: string;
-  readonly status: GateRecord["status"];
-  readonly minutesLocator?: string;
-  readonly identityAuthority?: GateIdentityAuthorityContext;
-} & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, (state) => {
-    const current = gateById(state, input.id);
-    // WSD-4: walk the gate lifecycle graph (satisfied is terminal), and require a
-    // resolving conference-minutes locator to reach satisfied — persisting it in
-    // the gate's extensions so replay re-resolves the identical evidence.
-    if (!GATE_TRANSITIONS[current.status].includes(input.status)) {
-      fail("WORKSPACE_INPUT_INVALID", `gate ${current.id} cannot transition ${current.status} to ${input.status}`);
-    }
-    let extensions = current.extensions;
-    if (input.status === "satisfied") {
-      // gate-v1: a gate created as owner_intent_required declares that closing it takes
-      // owner intent. Until now that declaration was inert -- whichever actor ran the
-      // command could satisfy it. The class is the opt-in: a deployment that does not
-      // want identity checked creates the gate as role_decision instead, and the choice
-      // is made per gate by whoever creates it, so no chain-wide switch is needed.
-      // (This used to say "four other classes". Since TCRN-CROSS-MIN-102 裁定三 the write
-      // path mints two, so the opt-out is one named alternative rather than a set. The
-      // mechanism is unchanged; the count in the sentence was not.)
-      //
-      // Enforcement lives here, at the verb, and deliberately not on replay. Replay must
-      // rebuild a chain on a machine that has never seen the roster -- a clone, a restore
-      // years later, an auditor's laptop -- and a chain whose readability depended on an
-      // external file still being present would brick on ordinary key rotation.
-      //
-      // What that costs is stated rather than implied: this is a decision-point control,
-      // not a chain-integrity invariant. Event hashes are unkeyed, so whoever can write
-      // the log can append a satisfied gate that replays clean, and no check that reads
-      // only the log can tell that from a genuine one.
-      if (current.outcomeClass === "owner_intent_required") {
-        if (input.identityAuthority === undefined) {
-          fail("WORKSPACE_GATE_IDENTITY_REQUIRED", `gate ${current.id} is ${current.outcomeClass} and requires an out-of-band identity authority`);
-        }
-        if (input.actorId === undefined) {
-          // Refusing an unnamed actor is not pedantry: permitting is a statement about
-          // who, and there is no who to check.
-          fail("WORKSPACE_GATE_IDENTITY_REQUIRED", `gate ${current.id} is ${current.outcomeClass} and requires a named actor`);
-        }
-      }
-      if (input.identityAuthority !== undefined) {
-        // Supplied for any class means checked for that class -- asking for the check and
-        // then having it skipped would be the worst of both.
-        if (input.actorId === undefined) {
-          fail("WORKSPACE_GATE_IDENTITY_REQUIRED", `gate ${current.id} identity authority supplied without a named actor`);
-        }
-        if (!permitsGateOutcome(input.identityAuthority, input.actorId, current.outcomeClass)) {
-          fail("WORKSPACE_GATE_IDENTITY_REFUSED", `${input.actorId} may not satisfy ${current.outcomeClass} gate ${current.id}`);
-        }
-      }
-      const locator = input.minutesLocator;
-      if (locator === undefined || !resolveGateEvidence(locator, current, state.conferenceMinutes, state.conferences)) {
-        fail("WORKSPACE_GATE_EVIDENCE_UNRESOLVED", `gate ${current.id} evidence ${String(locator)} does not resolve to anchoring conference minutes`);
-      }
-      extensions = gateEvidenceExtensions(current.extensions, locator);
-      if (input.identityAuthority !== undefined && input.actorId !== undefined) {
-        extensions = gateIdentityExtensions(extensions, gateIdentityDecision(input.identityAuthority, input.actorId));
-      }
-    } else if (input.minutesLocator !== undefined) {
-      fail("WORKSPACE_INPUT_INVALID", `gate ${current.id} minutes locator applies only to a satisfied transition`);
-    }
-    const record = validateGateRecord({ ...current, status: input.status, revision: current.revision + 1, updatedAt: input.occurredAt, extensions });
-    return {
-      payload: buildEventPayload("gate.updated", record as unknown as JsonValue),
-      projects: state.projects,
-      work: state.work,
-      gates: sortExtensionRecords(state.gates.map((entry) => entry.id === record.id ? record : entry)),
-    };
-  }, input);
-}
-
-export async function deleteGateInWorkspace(workspaceRoot: string, input: {
-  readonly id: string;
-} & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, (state) => {
-    const current = gateById(state, input.id);
-    const record = validateGateRecord({ ...current, revision: current.revision + 1, updatedAt: input.occurredAt, tombstone: true });
-    return {
-      payload: buildEventPayload("gate.deleted", record as unknown as JsonValue),
-      projects: state.projects,
-      work: state.work,
-      gates: sortExtensionRecords(state.gates.map((entry) => entry.id === record.id ? record : entry)),
-    };
-  }, input);
-}
+// gate-v1: the gate write verbs (create, transition, delete) are retired with the rest of
+// the authority family (TCRN-CROSS-STORY-467 R2). Gate records already on a chain still
+// replay -- lifecycle, evidence re-resolution and the identity-decision shape are checked by
+// the reducer above -- and a pending one still holds its work item back from done.
 
 // INIT-022 S212: a template file is inert until this governed admission event
 // records its digest, version, owner, and schema in the workspace chain. The

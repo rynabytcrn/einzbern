@@ -68,8 +68,8 @@ WSE-2 engine rules; the CLI adds no actor vocabulary of its own.
   that event are unaffected.
 - `--actor <stableId>` is an optional flag on every workspace-event mutation verb
   — `project-create`/`-update`/`-delete`, `work-create`/`-transition`/`-delete`,
-  and the conference/gate verbs `conference-open`/`-append-position`/`-close`/
-  `-cancel`, `gate-create`/`-transition`/`-delete`. It is declared
+  and the conference verbs `conference-open`/`-append-position`/`-close`/
+  `-cancel`. It is declared
   catalog-optional (`required: false`) because before enablement it is genuinely
   optional and after enablement the engine — not the CLI — makes it mandatory. The
   static command catalog cannot express "required only after the enable event", so

@@ -14,12 +14,7 @@ import {
   cancelConferenceInWorkspace,
   distillConferenceKnowledge,
   listConferencesByWorkItem,
-  createGateInWorkspace,
   createKnowledgeArticle,
-  transitionGateInWorkspace,
-  readGateIdentityAuthority,
-  deleteGateInWorkspace,
-  listGatesByWorkItem,
   createKnowledgeUnit,
   checkKnowledgeSources,
   createProject,
@@ -32,12 +27,9 @@ import {
   evaluateKnowledgeFitness,
   exportKnowledgeCheckpoint,
   exportWorkspace,
-  authorizeGenericProfileOperation,
-  generateGenericStarterBundle,
   initializeKnowledgeStore,
   initializeWorkspace,
   captureKnowledgeUnit,
-  knowledgeContextCandidates,
   listKnowledgeMetadata,
   consumeViewWriteFailure,
   materializeWorkspace,
@@ -46,8 +38,6 @@ import {
   workspaceBudgets,
   planWorkspaceMigration,
   migrateWorkspaceStorage,
-  readGenericProfileAdmissionReceipt,
-  readContextRouteAuthorityReceipt,
   readKnowledgeBody,
   readKnowledgeStoreMarker,
   readKnowledgeSnippet,
@@ -62,17 +52,12 @@ import {
   readSnapshotManifestFile,
   rebuildReplaySnapshot,
   verifySnapshotManifest,
-  resolveGenericProfile,
-  routeContext,
   transitionKnowledgePromotion,
   transitionWork,
   annotateWork,
   updateProject,
   validateKnowledgeStore,
-  validateContextRouteResult,
-  validateGenericStarterBundle,
   validateWorkspace,
-  readOperatorAuthority,
   assertGeneratedArtifactsRoot,
   validateSettingValue,
   listArtifacts,
@@ -107,8 +92,6 @@ import {
   templateBindingFromWorkRecord,
   readTelemetryRecordById,
   readTelemetryRecords,
-  appendTelemetryRecord,
-  createTelemetryRecord,
   readTelemetryStats,
   probeHost,
   validateTemplateDocument,
@@ -122,11 +105,7 @@ import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider } from "../../c
 import type {
   ConferenceRequest,
   ConferenceMinutes,
-  GateRecord,
-  GateIdentityAuthorityFileIdentity,
   ExplicitRoot,
-  ContextRouteAuthorityFileIdentity,
-  GenericProfileAdmissionAuthority,
   KnowledgeCategory,
   KnowledgeFitnessRecord,
   KnowledgeFitnessResult,
@@ -183,45 +162,10 @@ export class WorkflowCliError extends Error {
 
 export interface CliIo {
   write(value: string): void;
-  // An injectable wall-clock reader, supplied only by the production bin at the outermost
-  // layer. Since the time receipts went (TCRN-CROSS-STORY-467 R1) its one reader is the
-  // operator-authority path of runOperatorCli, which bounds the authority bundle window
-  // with it; library code never falls through to an implicit Date.
-  readonly clock?: () => string;
-  readonly profileAdmissionAuthority?: GenericProfileAdmissionAuthority;
-  readonly contextRouteAuthority?: ContextRouteAuthorityFileIdentity;
 }
-
-const AUTHORITY_IO_FIELDS = Object.freeze([
-  "profileAdmissionAuthority",
-  "contextRouteAuthority",
-] as const);
 
 function fail(reasonCode: string, message: string): never {
   throw new WorkflowCliError(reasonCode, message);
-}
-
-// A pins-track authority is an out-of-band constant the caller already holds, so the
-// caller states it at the call site and the reader verifies it against the bytes on
-// disk -- the shape --expected-plan-digest already uses. That is what terminates the
-// trust regress: no registry and no trusted config to bootstrap, because the chain
-// ends at whoever read the published digest.
-//
-// Injected and flag-supplied authority are mutually exclusive. Two sources for one
-// authority is ambiguity, and picking a winner would silently ignore the other.
-//
-// Under flag supply the reader's path cross-check is vacuous by construction (both
-// strings come from the same caller); the digest comparison is what binds, and the
-// reader still enforces absoluteness and canonicality on the path it is handed.
-function suppliedAuthority<T extends { readonly expectedCanonicalPath: string; readonly expectedFileSha256: string }>(
-  injected: T | undefined,
-  path: string | undefined,
-  digest: string | undefined,
-): T | undefined {
-  if (digest === undefined) return injected;
-  if (injected !== undefined) fail("CLI_AUTHORITY_AMBIGUOUS", "authority supplied by both host and flag");
-  if (!/^[a-f0-9]{64}$/u.test(digest)) fail("CLI_ARGUMENT_MALFORMED", "authority digest");
-  return { expectedCanonicalPath: path ?? "", expectedFileSha256: digest } as unknown as T;
 }
 
 function parseArguments(arguments_: readonly string[], allowed: readonly string[]): Readonly<Record<string, string>> {
@@ -284,7 +228,6 @@ function required(values: Readonly<Record<string, string>>, names: readonly stri
  * been used on either surface.
  */
 const RETIRED_OUTCOME_CLASSES: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  "gate-create": Object.freeze(["blocked", "discussion_only", "recommendation"]),
   "conference-close": Object.freeze(["blocked"]),
 });
 
@@ -751,23 +694,6 @@ function writeExtensionState(io: CliIo, state: Awaited<ReturnType<typeof materia
   }));
 }
 
-async function appendCliTelemetry(state: Awaited<ReturnType<typeof materializeWorkspace>>, kind: string, payload: Readonly<Record<string, unknown>>): Promise<void> {
-  const transient = activeBinding(state.metadata).find((root) => root.kind === "transient");
-  if (transient === undefined) return;
-  try {
-    const record = createTelemetryRecord({
-      at: new Date().toISOString(),
-      kind,
-      session: process.env.TCRN_SESSION_ID ?? "unknown-cli-session",
-      payload: { source: `cli:${kind}`, availability: "available", ...payload },
-    });
-    await appendTelemetryRecord(transient.path, record);
-  } catch {
-    // Telemetry is disposable observation data; a missing sink never changes the
-    // governed command's result or turns an unavailable observation into zero.
-  }
-}
-
 function writeSettingsState(io: CliIo, state: Awaited<ReturnType<typeof materializeWorkspace>>, key: string): void {
   const setting = state.settings.find((entry) => entry.key === key);
   const catalogEntry = SETTINGS_CATALOG.find((entry) => entry.key === key);
@@ -833,8 +759,6 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "conference-minutes-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "conference-id", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "conference-open", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "external-key", required: true, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string" }, { name: "type", required: true, valueKind: "string" }, { name: "title", required: true, valueKind: "string" }, { name: "work-ids", required: true, valueKind: "list" }, { name: "desired-outcome", required: true, valueKind: "string" }, { name: "participant-ids", required: true, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "conference-position-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "conference-id", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
-  { name: "context-route", availability: "cli", mutates: false, flags: [{ name: "request", required: true, valueKind: "json" }, { name: "profile-receipt", required: true, valueKind: "string" }, { name: "authority", required: true, valueKind: "string" }, { name: "profile-receipt-digest", required: false, valueKind: "string" }, { name: "authority-digest", required: false, valueKind: "string" }] },
-  { name: "context-validate", availability: "cli", mutates: false, flags: [{ name: "result", required: true, valueKind: "string" }] },
   { name: "dispatch-classes-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }] },
   { name: "dispatch-classes-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "classes", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "dispatch-mode-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "class", required: false, valueKind: "string" }, { name: "mode", required: false, valueKind: "string" }] },
@@ -842,11 +766,6 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "dispatch-tiers-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "host", required: true, valueKind: "string" }, { name: "tiers", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "event-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "export", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }] },
-  { name: "gate-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "external-key", required: true, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string" }, { name: "work-id", required: true, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "title", required: true, valueKind: "string" }, { name: "outcome-class", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "gate-delete", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "gate-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "work-id", required: true, valueKind: "string" }] },
-  { name: "gate-list-all", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }] },
-  { name: "gate-transition", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "status", required: true, valueKind: "string" }, { name: "minutes-locator", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "identity-authority", required: false, valueKind: "string" }, { name: "identity-authority-digest", required: false, valueKind: "string" }] },
   { name: "host-probe", availability: "cli", mutates: false, flags: [{ name: "host", required: true, valueKind: "string" }, { name: "model", required: true, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "init", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "framework", required: true, valueKind: "string" }, { name: "transient", required: true, valueKind: "string" }, { name: "evidence-locator", required: true, valueKind: "string" }, { name: "release-trust", required: true, valueKind: "string" }, { name: "external-key", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "segment-events", required: false, valueKind: "integer" }] },
   { name: "install-manifest", availability: "cli", mutates: false, flags: [] },
@@ -855,7 +774,6 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "knowledge-batch", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "from-file", required: true, valueKind: "string" }, { name: "align-first", required: false, valueKind: "boolean" }, { name: "language-bundle", required: false, valueKind: "string" }] },
   { name: "knowledge-bodies-migrate", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "segment-bytes", required: false, valueKind: "integer" }] },
   { name: "knowledge-body", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "allow-unpromoted", required: false, valueKind: "boolean" }, { name: "allow-stale", required: false, valueKind: "boolean" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
-  { name: "knowledge-candidates", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "selection", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "role-scope", required: false, valueKind: "string" }, { name: "category", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "tag", required: false, valueKind: "string" }, { name: "freshness", required: false, valueKind: "string" }, { name: "promotion", required: false, valueKind: "string" }, { name: "search", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
   { name: "knowledge-capture", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "subject", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "snippet", required: true, valueKind: "string" }, { name: "tags", required: true, valueKind: "list" }, { name: "accountable-owner-id", required: true, valueKind: "string" }, { name: "body", required: true, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }, { name: "role-scopes", required: false, valueKind: "list" }, { name: "category", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "source-references", required: false, valueKind: "list" }, { name: "evidence-ids", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "string" }, { name: "coexist", required: false, valueKind: "boolean" }, { name: "allow-trailing", required: false, valueKind: "boolean" }, { name: "language-bundle", required: false, valueKind: "string" }] },
   { name: "knowledge-checkpoint", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
   { name: "knowledge-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "external-key", required: true, valueKind: "string" }, { name: "scope", required: true, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "role-scopes", required: true, valueKind: "list" }, { name: "category", required: true, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "tags", required: true, valueKind: "list" }, { name: "subject", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "snippet", required: true, valueKind: "string" }, { name: "accountable-owner-id", required: true, valueKind: "string" }, { name: "source-references", required: true, valueKind: "list" }, { name: "source-digest", required: false, valueKind: "string" }, { name: "supersedes", required: false, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "work-ids", required: false, valueKind: "list" }, { name: "decision-ids", required: false, valueKind: "list" }, { name: "gate-ids", required: false, valueKind: "list" }, { name: "evidence-ids", required: false, valueKind: "list" }, { name: "coexist", required: false, valueKind: "boolean" }, { name: "lifecycle", required: true, valueKind: "string" }, { name: "retrieval", required: true, valueKind: "string" }, { name: "freshness", required: true, valueKind: "string" }, { name: "last-verified", required: true, valueKind: "instant", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "stale-days", required: true, valueKind: "integer", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "export", required: true, valueKind: "string" }, { name: "body", required: true, valueKind: "string" }, { name: "language-bundle", required: false, valueKind: "string" }] },
@@ -883,10 +801,6 @@ export const COMMAND_CATALOG = Object.freeze([
   // the storage-version migration (v1→v2) via migrateWorkspaceStorage.
   { name: "migration-execute", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }] },
   { name: "migration-plan", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "target-version", required: true, valueKind: "integer" }, { name: "dry-run", required: true, valueKind: "boolean" }] },
-  { name: "profile-authorize", availability: "cli", mutates: false, flags: [{ name: "request", required: true, valueKind: "json" }, { name: "receipt", required: true, valueKind: "string" }, { name: "operation", required: true, valueKind: "string" }, { name: "workspace-id", required: true, valueKind: "string", nullSentinel: "-" }, { name: "project-id", required: true, valueKind: "string", nullSentinel: "-" }, { name: "command", required: true, valueKind: "string", nullSentinel: "-" }, { name: "receipt-digest", required: false, valueKind: "string" }] },
-  { name: "profile-generate", availability: "cli", mutates: false, flags: [{ name: "mode", required: true, valueKind: "string" }] },
-  { name: "profile-resolve", availability: "cli", mutates: false, flags: [{ name: "request", required: true, valueKind: "json" }, { name: "receipt", required: true, valueKind: "string" }, { name: "receipt-digest", required: false, valueKind: "string" }] },
-  { name: "profile-validate", availability: "cli", mutates: false, flags: [{ name: "bundle", required: true, valueKind: "json" }] },
   { name: "project-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "external-key", required: true, valueKind: "string" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "project-delete", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "project-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
@@ -924,12 +838,10 @@ export const COMMAND_CATALOG = Object.freeze([
 ] as const);
 
 // INC-016: `mutates` and `authorityBearing` name two DIFFERENT authorization
-// categories, and the operator bundle keeps their grant lists disjoint
-// (validateOperatorAuthorityBundle refuses a command present in both). Nothing
-// refused the FLAG pair, and the MCP dispatcher tests `mutates` first -- so an entry
-// declaring both would be satisfied by a writeCommands grant alone: a write grant
-// carrying authority-bearing output, which operator-authority-v1 forbids
-// outright ("A write grant never authorizes it").
+// categories. The operator bundle that kept their grant lists disjoint is retired
+// (TCRN-CROSS-STORY-467 R2), but the catalog still must not declare a verb as both: a
+// write grant carrying authority-bearing output is what the operator authority contract forbade
+// outright, and the `commands` verb publishes this catalog to third parties.
 //
 // The exclusion lives at the declaration, not in a consumer. Three sites read the
 // pair independently (tool description, tool annotations, grant gate), mcp.ts
@@ -1119,69 +1031,6 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   if (command === "commands") {
     parseArguments(rest, []);
     io.write(canonicalJson({ reasonCode: "CLI_CATALOG_READY", schemaVersion: "tcrn.cli-catalog.v1", commands: COMMAND_CATALOG }));
-    return;
-  }
-  if (command === "profile-generate") {
-    const values = parseArguments(rest, ["mode"]);
-    required(values, ["mode"]);
-    if (values.mode !== "generic") fail("PROFILE_INPUT_INVALID", "mode");
-    io.write(canonicalJson({ reasonCode: "PROFILE_BUNDLE_GENERATED", bundle: generateGenericStarterBundle() }));
-    return;
-  }
-  if (command === "profile-validate") {
-    const values = parseArguments(rest, ["bundle"]);
-    required(values, ["bundle"]);
-    const bundle = validateGenericStarterBundle(jsonValue(values.bundle, "bundle"));
-    io.write(canonicalJson({
-      reasonCode: "PROFILE_VALIDATED",
-      bundleDigest: bundle.bundleDigest,
-      layers: bundle.layers.length,
-    }));
-    return;
-  }
-  if (command === "profile-resolve") {
-    const values = parseArguments(rest, ["request", "receipt", "receipt-digest"]);
-    required(values, ["request", "receipt"]);
-    const profileAuthority = suppliedAuthority(io.profileAdmissionAuthority, values.receipt, values["receipt-digest"]);
-    const admission = await readGenericProfileAdmissionReceipt(values.receipt ?? "",
-      profileAuthority ? { authority: profileAuthority } : {});
-    io.write(canonicalJson(resolveGenericProfile(jsonValue(values.request, "request"), admission)));
-    return;
-  }
-  if (command === "profile-authorize") {
-    const values = parseArguments(rest, ["request", "receipt", "operation", "workspace-id", "project-id", "command", "receipt-digest"]);
-    required(values, ["request", "receipt", "operation", "workspace-id", "project-id", "command"]);
-    const profileAuthority = suppliedAuthority(io.profileAdmissionAuthority, values.receipt, values["receipt-digest"]);
-    const admission = await readGenericProfileAdmissionReceipt(values.receipt ?? "",
-      profileAuthority ? { authority: profileAuthority } : {});
-    io.write(canonicalJson(authorizeGenericProfileOperation(
-      jsonValue(values.request, "request"),
-      admission,
-      values.operation,
-      {
-        workspaceId: values["workspace-id"] === "-" ? null : values["workspace-id"],
-        projectId: values["project-id"] === "-" ? null : values["project-id"],
-        command: values.command === "-" ? null : values.command,
-      },
-    )));
-    return;
-  }
-  if (command === "context-route") {
-    const values = parseArguments(rest, ["request", "profile-receipt", "authority", "profile-receipt-digest", "authority-digest"]);
-    required(values, ["request", "profile-receipt", "authority"]);
-    const profileAuthority = suppliedAuthority(io.profileAdmissionAuthority, values["profile-receipt"], values["profile-receipt-digest"]);
-    const routeAuthority = suppliedAuthority(io.contextRouteAuthority, values.authority, values["authority-digest"]);
-    const profileAdmission = await readGenericProfileAdmissionReceipt(values["profile-receipt"] ?? "",
-      profileAuthority ? { authority: profileAuthority } : {});
-    const contextAuthority = await readContextRouteAuthorityReceipt(values.authority ?? "", routeAuthority);
-    io.write(canonicalJson(routeContext(jsonValue(values.request, "request"), profileAdmission, contextAuthority)));
-    return;
-  }
-  if (command === "context-validate") {
-    const values = parseArguments(rest, ["result"]);
-    required(values, ["result"]);
-    const result = validateContextRouteResult(jsonValue(values.result, "result"));
-    io.write(canonicalJson({ reasonCode: "CONTEXT_VALIDATED", contextDigest: result.contextDigest }));
     return;
   }
   if (command === "host-probe") {
@@ -1752,30 +1601,6 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       // judgement. The minimum stays unbounded on purpose: core holds the real window
       // rule (>= 1, <= the canonical view-byte budget, offset >= 0), and a CLI-side
       // floor would pre-empt half of it while silently keeping the ceiling.
-      ...(values.limit !== undefined ? { limit: integerValue(values, "limit") } : {}),
-      ...(values.offset !== undefined ? { offset: integerValue(values, "offset") } : {}),
-    })));
-    return;
-  }
-  if (command === "knowledge-candidates") {
-    // WSC-7: emit the selected knowledge metadata already shaped as
-    // tcrn.context-metadata-candidate.v1 records — the output candidates array is
-    // consumable directly as a context-route request metadataCandidates entry.
-    const values = parseArguments(rest, ["workspace", "at", "selection", "project-id", "role-scope", "category", "kind", "tag", "freshness", "promotion", "search", "limit", "offset", "allow-trailing"]);
-    required(values, ["workspace", "at"]);
-    io.write(canonicalJson(await knowledgeContextCandidates(values.workspace ?? "", {
-      at: values.at ?? "",
-      allowTrailing: booleanValue(values["allow-trailing"], "allow-trailing"),
-      ...(values.selection ? { selection: values.selection as "default" | "all" } : {}),
-      ...(values["project-id"] ? { projectId: values["project-id"] } : {}),
-      ...(values["role-scope"] ? { roleScope: values["role-scope"] } : {}),
-      ...(values.category ? { category: values.category as KnowledgeCategory } : {}),
-      ...(values.kind ? { kind: values.kind as KnowledgeKind } : {}),
-      ...(values.tag ? { tag: values.tag } : {}),
-      ...(values.freshness ? { freshness: values.freshness as KnowledgeFreshnessState } : {}),
-      ...(values.promotion ? { promotionState: values.promotion as KnowledgePromotionState } : {}),
-      ...(values.search ? { search: values.search } : {}),
-      // WSB-2: same arbiter, same reasoning as knowledge-list above.
       ...(values.limit !== undefined ? { limit: integerValue(values, "limit") } : {}),
       ...(values.offset !== undefined ? { offset: integerValue(values, "offset") } : {}),
     })));
@@ -2576,201 +2401,5 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     io.write(canonicalJson(listConferencesByWorkItem(values["work-id"] ?? "", state.conferences)));
     return;
   }
-  if (command === "gate-create") {
-    const values = parseArguments(rest, [...shared, "external-key", "project-id", "work-id", "title", "outcome-class", "actor"]);
-    required(values, [...requiredShared, "external-key", "project-id", "work-id", "title", "outcome-class"]);
-    assertMintableOutcomeClass("gate-create", values["outcome-class"]);
-    const workspace = values.workspace ?? "";
-    const at = values.at ?? "";
-    const state = await withWriteLock(workspace, at, async () => createGateInWorkspace(workspace, {
-      occurredAt: at,
-      externalKey: values["external-key"] ?? "",
-      projectId: values["project-id"] ?? "",
-      workId: nullableValue(values["work-id"]),
-      title: values.title ?? "",
-      outcomeClass: values["outcome-class"] as GateRecord["outcomeClass"],
-      ...(values.actor ? { actorId: values.actor } : {}),
-    }));
-    writeExtensionState(io, state, deriveStableId("gate", canonicalExternalKey(values["external-key"] ?? "")));
-    return;
-  }
-  if (command === "gate-transition") {
-    // WSD-4: --minutes-locator is required by the engine only when --status is
-    // satisfied (a conference-minutes:<suffix> id resolving to anchoring minutes);
-    // it is an optional flag here and the engine fails closed on absence/mismatch.
-    const values = parseArguments(rest, [...shared, "id", "status", "minutes-locator", "actor", "identity-authority", "identity-authority-digest"]);
-    required(values, [...requiredShared, "id", "status"]);
-    const workspace = values.workspace ?? "";
-    const at = values.at ?? "";
-    // gate-v1: the roster is a pins-track authority like every other, so the caller
-    // states the digest it already holds and the reader checks it against the bytes.
-    // Read before the lease is taken -- a filesystem refusal should not have held a
-    // workspace lock while it happened.
-    const identityIdentity = suppliedAuthority<GateIdentityAuthorityFileIdentity>(
-      undefined, values["identity-authority"], values["identity-authority-digest"],
-    );
-    if (values["identity-authority"] !== undefined && identityIdentity === undefined) {
-      fail("CLI_ARGUMENT_MISSING", "identity-authority-digest");
-    }
-    const identityAuthority = identityIdentity === undefined
-      ? undefined
-      : await readGateIdentityAuthority(values["identity-authority"] ?? "", identityIdentity);
-    const state = await withWriteLock(workspace, at, async () => transitionGateInWorkspace(workspace, {
-      occurredAt: at,
-      id: values.id ?? "",
-      status: values.status as GateRecord["status"],
-      // The flag is optional; the engine reads minutesLocator as `!== undefined`, so
-      // omitting the key when unset is byte-equivalent to passing undefined.
-      ...(values["minutes-locator"] === undefined ? {} : { minutesLocator: values["minutes-locator"] }),
-      ...(identityAuthority === undefined ? {} : { identityAuthority }),
-      ...(values.actor ? { actorId: values.actor } : {}),
-    }));
-    const gate = state.gates.find((entry) => entry.id === (values.id ?? ""));
-    await appendCliTelemetry(state, "gate-result", {
-      gateId: values.id ?? "",
-      status: values.status ?? "",
-      outcomeClass: gate?.outcomeClass ?? null,
-    });
-    writeExtensionState(io, state, values.id ?? "");
-    return;
-  }
-  if (command === "gate-delete") {
-    // GAP-10: the documented deadlock escape — the only route to tombstone a pending
-    // gate whose conference was cancelled, so a work item wedged by WSD-4 enforcement
-    // can reach done. Deletion is a revision-advancing tombstone, never a hard delete.
-    const values = parseArguments(rest, [...shared, "id", "actor"]);
-    required(values, [...requiredShared, "id"]);
-    const workspace = values.workspace ?? "";
-    const at = values.at ?? "";
-    const state = await withWriteLock(workspace, at, async () => deleteGateInWorkspace(workspace, {
-      occurredAt: at,
-      id: values.id ?? "",
-      ...(values.actor ? { actorId: values.actor } : {}),
-    }));
-    writeExtensionState(io, state, values.id ?? "");
-    return;
-  }
-  if (command === "gate-list") {
-    const values = parseArguments(rest, ["workspace", "work-id"]);
-    required(values, ["workspace", "work-id"]);
-    const state = await materializeWorkspace(values.workspace ?? "");
-    // INC-086: a nonexistent work-id must be distinguishable from "no gates". An
-    // empty [] answers "this work item has no gates"; a work item that does not
-    // exist refuses named instead of being read as "no gates".
-    const workId = values["work-id"] ?? "";
-    if (!state.work.some((record) => record.id === workId)) {
-      fail("WORKSPACE_WORK_NOT_FOUND", `work ${workId} does not exist in this workspace`);
-    }
-    io.write(canonicalJson(listGatesByWorkItem(workId, state.gates)));
-    return;
-  }
-  if (command === "gate-list-all") {
-    const values = parseArguments(rest, ["workspace"]);
-    required(values, ["workspace"]);
-    const state = await materializeWorkspace(values.workspace ?? "");
-    io.write(canonicalJson({
-      reasonCode: "WORKSPACE_LIST_READY",
-      workspaceId: state.metadata.workspaceId,
-      version: state.version,
-      headEventHash: state.headEventHash,
-      kind: "gate",
-      total: state.gates.filter((entry) => !entry.tombstone).length,
-      records: state.gates.filter((entry) => !entry.tombstone),
-    }));
-    return;
-  }
   fail("CLI_COMMAND_UNKNOWN", command);
-}
-
-/**
- * Shipped operator entry point.
- *
- * Global authority flags precede the command:
- *
- *   --authority-pins /absolute/pins.json
- *   --authority-pins-digest <sha256>
- *   <command> ...
- *
- * Both are mandatory together. The digest is the only trust anchor accepted by
- * this function; no environment lookup, prompt field, workspace discovery or
- * default file is consulted. Directly injected programmatic authority remains a
- * separate API and is rejected as ambiguous when pins are also present.
- */
-export async function runOperatorCli(
-  arguments_: readonly string[],
-  io: CliIo,
-): Promise<void> {
-  if (arguments_[0] !== "--authority-pins" &&
-    !arguments_[0]?.startsWith("--authority-pins=") &&
-    arguments_[0] !== "--authority-pins-digest" &&
-    !arguments_[0]?.startsWith("--authority-pins-digest=")) {
-    await runCli(arguments_, io);
-    return;
-  }
-
-  const global: Record<string, string> = {};
-  let index = 0;
-  while (index < arguments_.length) {
-    const token = arguments_[index];
-    if (token === undefined || !token.startsWith("--")) break;
-    let name: string;
-    let value: string;
-    if (token.includes("=")) {
-      const equalsAt = token.indexOf("=");
-      name = token.slice(2, equalsAt);
-      value = token.slice(equalsAt + 1);
-      index += 1;
-    } else {
-      const next = arguments_[index + 1];
-      if (next === undefined || next.startsWith("--")) {
-        fail("CLI_ARGUMENT_MALFORMED", token);
-      }
-      name = token.slice(2);
-      value = next;
-      index += 2;
-    }
-    if (name !== "authority-pins" && name !== "authority-pins-digest") {
-      fail("CLI_ARGUMENT_UNKNOWN", name);
-    }
-    if (Object.hasOwn(global, name)) {
-      fail("CLI_ARGUMENT_DUPLICATE", name);
-    }
-    global[name] = value;
-  }
-  const missing = ["authority-pins", "authority-pins-digest"].filter(
-    (name) => !global[name],
-  );
-  if (missing.length > 0) {
-    fail("CLI_ARGUMENT_MISSING", missing.join(","));
-  }
-  if (AUTHORITY_IO_FIELDS.some((field) => io[field] !== undefined)) {
-    fail(
-      "CLI_AUTHORITY_AMBIGUOUS",
-      "authority supplied by both host and operator pins",
-    );
-  }
-  if (!io.clock) {
-    fail("CLI_ARGUMENT_MISSING", "clock");
-  }
-  // INC-017: read the clock ONCE. The same instant has to bound the bundle window and
-  // the pinned observation's observedAt; two reads are two different instants, and a
-  // receipt could be minted against a moment the bundle was never checked at.
-  const verificationTime = io.clock();
-  const context = await readOperatorAuthority(
-    global["authority-pins"] as string,
-    {
-      expectedCanonicalPath: global["authority-pins"] as string,
-      expectedFileSha256: global["authority-pins-digest"] as string,
-    },
-    verificationTime,
-  );
-  await runCli(arguments_.slice(index), {
-    ...io,
-    ...(context.profileAdmissionAuthority === undefined
-      ? {}
-      : { profileAdmissionAuthority: context.profileAdmissionAuthority }),
-    ...(context.contextRouteAuthority === undefined
-      ? {}
-      : { contextRouteAuthority: context.contextRouteAuthority }),
-  });
 }

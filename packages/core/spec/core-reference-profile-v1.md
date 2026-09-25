@@ -13,9 +13,10 @@ no current state, routes, thread/session identifiers, model settings, private
 facts, paths, credentials, runtime/release state, executable tags, hooks,
 Skills, network/database/AOS authority, or incident history.
 
-Generated release-profile layers are display-only and remain unbound and
-non-authorizing. The generic-profile external path/file-digest admission anchor
-and explicit owner rebind remain mandatory. No live profile store is created.
+The generic-profile release layers built from these records, and the admission
+anchor and owner rebind they needed, are retired with the authority family
+(TCRN-CROSS-STORY-467 R2); the bundle stays library data that historical persona
+replay reads. No live profile store is created.
 Core Reference personas are used only to attribute positions argued inside a
 conference. They are not admissible as Codex or Claude main-session profiles,
 are never injected by SessionStart, and cannot make a main thread read-only or

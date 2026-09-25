@@ -15,8 +15,8 @@ export const CONFERENCE_STATUSES = Object.freeze(["open", "closed", "cancelled"]
 // execution.independenceFloor covers a conference's type, conference-close now
 // demands the declaration at write time. The declaration is still a self-report —
 // the engine cannot verify that positions were in fact argued in separate
-// contexts, the same authorization-not-authentication ceiling gate-identity
-// states about itself — so what is enforced is that the claim is PRESENT and
+// contexts, the same authorization-not-authentication ceiling the retired gate
+// identity roster stated about itself — so what is enforced is that the claim is PRESENT and
 // says "independent", never that it is true.
 export const CONFERENCE_EXECUTION_FORMS = Object.freeze(["independent", "single-context"] as const);
 export type ConferenceExecutionForm = typeof CONFERENCE_EXECUTION_FORMS[number];

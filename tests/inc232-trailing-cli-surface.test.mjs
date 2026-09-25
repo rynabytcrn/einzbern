@@ -106,7 +106,6 @@ test("INC-232: every read verb the catalog says takes --allow-trailing actually 
   try {
     const invocations = [
       ["knowledge-list", "--workspace", workspace, "--at", instant(7), "--selection", "all"],
-      ["knowledge-candidates", "--workspace", workspace, "--at", instant(7), "--selection", "all"],
       ["knowledge-freshness", "--workspace", workspace, "--at", instant(7)],
       ["knowledge-snippet", "--workspace", workspace, "--id", id],
       ["knowledge-body", "--workspace", workspace, "--id", id, "--at", instant(7), "--allow-unpromoted", "true"],

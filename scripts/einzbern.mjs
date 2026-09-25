@@ -1,14 +1,11 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: Apache-2.0
 
-import { runOperatorCli } from "../dist/build/packages/cli/src/index.js";
+import { runCli } from "../dist/build/packages/cli/src/index.js";
 
 try {
-  await runOperatorCli(process.argv.slice(2), {
+  await runCli(process.argv.slice(2), {
     write: (value) => process.stdout.write(value),
-    // The outermost layer supplies the wall-clock reader; it exists only here, never inside
-    // library code. Its one reader is the operator-authority path (--authority-pins).
-    clock: () => new Date().toISOString(),
   });
 } catch (error) {
   const reasonCode = typeof error?.reasonCode === "string" ? error.reasonCode : "CLI_INTERNAL_ERROR";

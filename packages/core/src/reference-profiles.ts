@@ -1,11 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { canonicalJson, canonicalSha256, compareCanonicalText } from "../../protocol/src/index.js";
-import {
-  GENERIC_PROFILE_VERSION,
-  validateGenericProfileLayer,
-  type GenericProfileLayer,
-} from "./generic-profile.js";
 
 export const CORE_PERSONA_SOURCE_MANIFEST_SHA256 = "9fa68e8f06e73e1d1b4bffb59a059814e683619b1d80234aef82e44f76de7c13";
 export const CORE_PERSONA_BUNDLE_VERSION = "tcrn.core-reference-profile-bundle.v1" as const;
@@ -122,7 +117,4 @@ export function validateCorePersonaBundle(value: unknown): CorePersonaBundle {
   const profiles = v.profiles.map(validateCorePersonaProfile); if (new Set(profiles.map((p) => p.profileId)).size !== 8 || new Set(profiles.map((p) => p.displayName)).size !== 8) fail("PERSONA_DUPLICATE", "roster");
   const normalized = [...profiles].sort((a, b) => compareCanonicalText(a.profileId, b.profileId));
   const basis = { schemaVersion: CORE_PERSONA_BUNDLE_VERSION, sourceManifestSha256: CORE_PERSONA_SOURCE_MANIFEST_SHA256, profiles: normalized }; if (v.bundleDigest !== canonicalSha256(basis)) fail("PERSONA_BUNDLE_INVALID", "digest"); return { ...basis, bundleDigest: v.bundleDigest as string };
-}
-export function generateCorePersonaReleaseLayers(): readonly GenericProfileLayer[] {
-  return generateCorePersonaBundle().profiles.map((profile) => validateGenericProfileLayer({ schemaVersion: GENERIC_PROFILE_VERSION, layerId: `profile-layer:${profile.displayName.toLowerCase()}-reference`, layerKind: "release_verified_framework_profile", trustLevel: "framework_profile", releaseVerificationDigest: profile.profileDigest, fields: { displayOnly: { label: profile.displayName, description: profile.mission, examples: [profile.jobTitle], presentation: { category: "core-reference", audience: "workspace-owner" } } } }));
 }

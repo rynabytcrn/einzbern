@@ -52,7 +52,6 @@ test("unknown verbs fail closed and every cataloged verb dispatches", async () =
   for (const entry of COMMAND_CATALOG) {
     const outcome = await invoke([entry.name]);
     // `commands` and the read-only vocabulary surface are zero-argument verbs.
-    // requires an explicit closed-roster --profile-id and must fail without it.
     if (entry.name === "commands" || entry.name === "install-manifest" || entry.name === "machine-settings-catalog" || entry.name === "vocabulary") {
       assert.equal(outcome.ok, true, `${entry.name} resolves with no flags`);
       continue;
@@ -89,24 +88,20 @@ test("WSB-4: exactly the nullable flags carry the '-' sentinel, and only knowled
   for (const record of [sentinelFlags, aliasFlags]) {
     for (const name of Object.keys(record)) record[name] = record[name].sort();
   }
+  // gate-create's --work-id and profile-authorize's three sentinel flags went with those
+  // verbs (TCRN-CROSS-STORY-467 R2).
   assert.deepEqual(sentinelFlags, {
-    // WSD-2: gate-create's --work-id is nullable ("-" for a workspace-level gate with
-    // no work anchor).
-    "gate-create": ["work-id"],
     "knowledge-create": ["last-verified", "project-id", "stale-days", "supersedes"],
-    "profile-authorize": ["command", "project-id", "workspace-id"],
     "work-create": ["parent-id"],
   });
   // CQ-05(c2) / OD-5 option 1: the alias inventory is exactly the set of flags whose
   // dispatcher routes through nullableValue, which accepts BOTH "-" and "null". This
-  // previously listed only knowledge-create, so gate-create --work-id and work-create
-  // --parent-id accepted "null" without declaring it — the catalog is the machine-readable
-  // discovery surface, so an accepted-but-undeclared spelling is a catalog that lies.
-  // profile-authorize's three sentinel flags are NOT here: they do not use nullableValue.
+  // previously listed only knowledge-create, so work-create --parent-id accepted "null"
+  // without declaring it — the catalog is the machine-readable discovery surface, so an
+  // accepted-but-undeclared spelling is a catalog that lies.
   // tests/p3-cli-read-surface.test.mjs binds this inventory to the dispatcher's actual
   // behaviour, so the two can no longer drift apart silently.
   assert.deepEqual(aliasFlags, {
-    "gate-create": ["work-id"],
     "knowledge-create": ["last-verified", "project-id", "stale-days", "supersedes"],
     "work-create": ["parent-id"],
   });
@@ -188,7 +183,7 @@ test("INC-016: no catalog entry is both a governed write and authority-bearing o
   }
   // The negative case: mcp.ts tests `mutates` FIRST, so a both-flags entry would be
   // satisfied by a writeCommands grant alone -- a write grant carrying
-  // authority-bearing output, which operator-authority-v1 forbids outright.
+  // authority-bearing output, which the retired operator authority contract forbade.
   const both = { name: "adapter-activation-record", availability: "cli", mutates: true, authorityBearing: true, flags: [] };
   assert.throws(
     () => assertCatalogCategoriesExclusive([both]),

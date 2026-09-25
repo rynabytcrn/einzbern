@@ -179,7 +179,7 @@ export function evaluateCoverage({ baselineByPath = {}, baselineMetricsByPath, c
 //
 // A static sweep -- "does some surviving test still name this module" -- is not enough,
 // and this is measured rather than argued: such a sweep passed over
-// packages/core/src/authority-file-reader.ts while the foreign-error branch inside it
+// the (since retired) authority file reader module while the foreign-error branch inside it
 // went from covered to zero, because four other modules import that file and one of them
 // is exercised on every run. Import-level presence and execution are different facts.
 //

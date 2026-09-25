@@ -269,7 +269,7 @@ function p8Receipt(sourceFiles) {
     p8BasisCommit: "a".repeat(40),
     tests: "P8_WORKFLOW_RC_TESTS_VERIFIED",
     trust: "TRUST_NEGATIVE_MATRIX_VERIFIED",
-    sourceArchive: { reasonCode: "ARCHIVE_VERIFIED", path: "dist/source/tcrn-workflow-source.tar", sha256: sourceDigest, files: sourceFiles.length },
+    sourceArchive: { reasonCode: "ARCHIVE_VERIFIED", path: "dist/source/einzbern-source.tar", sha256: sourceDigest, files: sourceFiles.length },
     sbom: { reasonCode: "SBOM_VERIFIED", path: "dist/sbom/sbom.cdx.json", components: 1, directComponents: 1, transitiveComponents: 0, dependencyGraphClosure: "complete", basis: "c".repeat(64) },
     artifacts: P8_RELEASE_ARTIFACTS.map((path) => ({ path: `dist/release/${path}`, size: 1, sha256: "d".repeat(64) })).sort((left, right) => left.path.localeCompare(right.path)),
     staleReleaseArtifacts: [],

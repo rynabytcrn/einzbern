@@ -4,9 +4,11 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
 import { COMMAND_CATALOG, runCli } from "../dist/build/packages/cli/src/index.js";
-import { CORE_PERSONA_SOURCE_MANIFEST_SHA256, generateCorePersonaBundle, generateCorePersonaReleaseLayers, resolveGenericProfile, validateCorePersonaBundle, validateCorePersonaProfile, validateCorePersonaProfileShape } from "../dist/build/packages/core/src/index.js";
+import { CORE_PERSONA_SOURCE_MANIFEST_SHA256, generateCorePersonaBundle, validateCorePersonaBundle, validateCorePersonaProfile, validateCorePersonaProfileShape } from "../dist/build/packages/core/src/index.js";
 import { canonicalJson, canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
-const fixture = JSON.parse(await readFile(new URL("../packages/core/fixtures/p5-generic-profile-cases.json", import.meta.url), "utf8"));
+// The persona corpus sizes lived in the generic-profile fixture until that module went with
+// the authority family (TCRN-CROSS-STORY-467 R2); they are the persona's own now.
+const fixture = JSON.parse(await readFile(new URL("../packages/core/fixtures/core-reference-persona-cases.json", import.meta.url), "utf8"));
 
 const reason = (code, operation) => assert.throws(operation, (error) => error?.reasonCode === code, code);
 const joinParts = (parts, separator) => parts.join(separator);
@@ -15,8 +17,6 @@ test("exact eight-profile bundle is closed, schema-valid, source-bound, and dete
   assert.deepEqual(bundle.profiles.map((p) => p.displayName).sort(), ["Arturo", "Ilya", "Janus", "Mara", "Minerva", "Mneme", "Sable", "Verity"]);
   assert.equal(new Set(bundle.profiles.map((p) => p.profileId)).size, 8); assert.deepEqual(validateCorePersonaBundle(bundle), bundle);
   const schema = JSON.parse(await readFile(new URL("../packages/core/schema/core-reference-profile-v1.schema.json", import.meta.url), "utf8")); const ajv = new Ajv2020({ strict: true }); const validate = ajv.compile(schema); assert.equal(validate(bundle), true, JSON.stringify(validate.errors));
-  const layers = generateCorePersonaReleaseLayers(); assert.equal(layers.length, 8); for (const layer of layers) assert.equal(layer.fields.displayOnly.presentation.category, "core-reference");
-  reason("PROFILE_ADMISSION_REQUIRED", () => resolveGenericProfile({ schemaVersion: "tcrn.generic-profile-resolution-request.v1", layers: [generateCorePersonaReleaseLayers()[0]], ownerRebind: null }, null));
 });
 
 test("decision-owning personas advise convening a conference and name the stable gate/conference reason codes (WSD-5 stopgap trigger prose)", () => {

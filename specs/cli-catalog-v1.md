@@ -41,11 +41,10 @@ Each entry is `{name, availability, mutates, flags}`, optionally plus
   accepts an explicit null carries two optional descriptive fields:
   - `nullSentinel` — always `"-"`, the canonical spelling that means null (an
     omitted optional flag is also null). Present on `knowledge-create`
-    `project-id`/`last-verified`, `work-create` `parent-id`, `gate-create`
-    `work-id`, and `profile-authorize` `workspace-id`/`project-id`/`command`.
+    `project-id`/`last-verified` and `work-create` `parent-id`.
   - `deprecatedAliases` — additional spellings still accepted this release but
     slated for removal. Carried by `knowledge-create` `project-id`/`last-verified`,
-    `work-create` `parent-id`, and `gate-create` `work-id`, each `["null"]`,
+    and `work-create` `parent-id`, each `["null"]`,
     preserving the pre-unification `"null"` spelling for external callers. These
     are exactly the flags whose dispatcher accepts the `"null"` alias, so a caller
     can decide from the catalog alone which spellings a flag admits, and `work-list`

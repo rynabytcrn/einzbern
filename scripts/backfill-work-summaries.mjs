@@ -24,7 +24,7 @@ import { resolve } from "node:path";
 
 import { deriveWorkSummary, materializeWorkspaceFromGenesis, validateWorkspace } from "../dist/build/packages/core/src/index.js";
 import { WORK_SUMMARY_MAX_BYTES } from "../dist/build/packages/protocol/src/index.js";
-import { runOperatorCli } from "../dist/build/packages/cli/src/index.js";
+import { runCli } from "../dist/build/packages/cli/src/index.js";
 
 const ADVISORY_SCOPE_KEY = "advisory:scope";
 
@@ -49,7 +49,7 @@ function scopeOf(record) {
 
 async function annotate(tokens) {
   let output = "";
-  await runOperatorCli(tokens, { write: (value) => { output += value; } });
+  await runCli(tokens, { write: (value) => { output += value; } });
   return JSON.parse(output);
 }
 

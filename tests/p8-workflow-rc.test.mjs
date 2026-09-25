@@ -8,24 +8,14 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  authorizeGenericProfileOperation,
-  calculateContextRouteRequestDigest,
-  calculateGenericProfileAdmissionClaims,
   createKnowledgeUnit,
   createProject,
   createWork,
   exportWorkspace,
-  GENERIC_PROFILE_ADMISSION_RECEIPT_VERSION,
-  GENERIC_PROFILE_BASE_DIGEST,
-  GENERIC_PROFILE_OPERATIONS,
-  generateGenericStarterBundle,
   generateCorePersonaBundle,
   initializeKnowledgeStore,
   initializeWorkspace,
   listKnowledgeMetadata,
-  readContextRouteAuthorityReceipt,
-  readGenericProfileAdmissionReceipt,
-  routeContext,
   transitionWork,
   LEGACY_ENGINE_NAME,
 } from "../dist/build/packages/core/src/index.js";
@@ -46,94 +36,6 @@ import {
   staleReleaseArtifactMoves,
 } from "../scripts/lib/p8-workflow-rc.mjs";
 import { withExclusiveOutputSession } from "../scripts/lib/safe-io.mjs";
-
-function fileAuthority(path, bytes) {
-  return { expectedCanonicalPath: path, expectedFileSha256: createHash("sha256").update(bytes).digest("hex") };
-}
-
-function p8ProfileResolution(workspaceId, projectId) {
-  const base = generateGenericStarterBundle().layers[0];
-  const replacement = {
-    activeBinding: { mode: "project", workspaceId, projectId, command: null },
-    roleReplacement: null,
-    projectAuthority: projectId,
-    escalationOwner: "owner:fixture-p8",
-  };
-  const workspaceLayer = {
-    schemaVersion: "tcrn.generic-profile.v1",
-    layerId: "profile-layer:p8-disposable-project",
-    layerKind: "workspace_configuration",
-    trustLevel: "user_owned_overlay",
-    releaseVerificationDigest: null,
-    fields: {
-      ownerRebindOnly: replacement,
-      displayOnly: {
-        label: "P8 Disposable Profile",
-        description: "Inert project-bound profile for disposable P8 dogfood.",
-        examples: ["p8-disposable-project"],
-        presentation: { category: "workflow", audience: "workspace-owner" },
-      },
-    },
-  };
-  return {
-    schemaVersion: "tcrn.generic-profile-resolution-request.v1",
-    layers: [base, workspaceLayer],
-    ownerRebind: {
-      schemaVersion: "tcrn.generic-profile-owner-rebind.v1",
-      approved: true,
-      ownerId: "owner:fixture-p8",
-      targetLayerId: workspaceLayer.layerId,
-      replacement,
-    },
-  };
-}
-
-function p8AdmissionReceipt(profileResolution) {
-  const claims = calculateGenericProfileAdmissionClaims(profileResolution);
-  const layer = profileResolution.layers.find((entry) => entry.layerKind === "workspace_configuration");
-  const layerAdmissions = [{
-    layerDigest: canonicalSha256(layer),
-    layerKind: layer.layerKind,
-    trustLevel: layer.trustLevel,
-    releaseVerificationDigest: layer.releaseVerificationDigest,
-  }];
-  const ownerRebindAdmission = {
-    ownerRebindDigest: canonicalSha256(profileResolution.ownerRebind),
-    targetLayerDigest: canonicalSha256(layer),
-    targetBindingDigest: canonicalSha256(profileResolution.ownerRebind.replacement.activeBinding),
-    ownerId: profileResolution.ownerRebind.ownerId,
-  };
-  const basis = {
-    schemaVersion: GENERIC_PROFILE_ADMISSION_RECEIPT_VERSION,
-    frameworkBaseDigest: GENERIC_PROFILE_BASE_DIGEST,
-    layerAdmissions,
-    ownerRebindAdmission,
-    governedActions: [...GENERIC_PROFILE_OPERATIONS].sort(compareCanonicalText),
-    resolutionDisposition: "normal",
-    requestDigest: claims.requestDigest,
-    effectiveDigest: claims.effectiveDigest,
-  };
-  return { claims, receipt: { ...basis, receiptDigest: canonicalSha256(basis) } };
-}
-
-function metadataCandidate(metadata, workspaceId, projectId) {
-  const basis = {
-    schemaVersion: "tcrn.context-metadata-candidate.v1",
-    id: metadata.id,
-    kind: "summary",
-    scope: "project",
-    workspaceId,
-    projectId,
-    workId: null,
-    freshness: "fresh",
-    title: metadata.subject,
-    summary: metadata.summary,
-    retentionClass: "metadata_only",
-  };
-  return { ...basis, candidateDigest: canonicalSha256(basis) };
-}
-
-const p8ContextBudgets = Object.freeze({ fixedInjectionBytes: 1024, authorityBytes: 4096, summaryCount: 16, summaryBytes: 65536, bodyCount: 4, bodyBytes: 65536, receiptBytes: 65536, referenceCount: 16, referenceBytes: 65536 });
 
 test("P8 rebuilds the exact full allowlisted USTAR archive in two independent disposable roots", async () => {
   const policy = JSON.parse(await readFile("scripts/policy/source-allowlist.json", "utf8"));
@@ -274,29 +176,13 @@ test("P8 dogfood completes one disposable local_primary initiative with Knowledg
   await initializeWorkspace({ roots, externalKey: "FIXTURE-P8-LOCAL-PRIMARY", createdAt: "2026-07-14T00:00:00Z", segmentEventLimit: 64 });
   let state = await createProject(workspace, { occurredAt: "2026-07-14T00:00:01Z", externalKey: "FIXTURE-P8-PROJECT", name: "P8 local_primary" });
   state = await createWork(workspace, { occurredAt: "2026-07-14T00:00:02Z", projectId: state.projects[0].id, externalKey: "FIXTURE-P8-INITIATIVE", kind: "Initiative", parentId: null, status: "planned" });
-  for (const [expectedVersion, status, occurredAt] of [[2, "ready", "2026-07-14T00:00:03Z"], [3, "active", "2026-07-14T00:00:04Z"], [4, "done", "2026-07-14T00:00:05Z"]]) {
-    state = await transitionWork(workspace, { expectedVersion, occurredAt, id: state.work[0].id, status });
+  for (const [status, occurredAt] of [["ready", "2026-07-14T00:00:03Z"], ["active", "2026-07-14T00:00:04Z"], ["done", "2026-07-14T00:00:05Z"]]) {
+    state = await transitionWork(workspace, { occurredAt, id: state.work[0].id, status });
   }
   assert.equal(state.work[0].status, "done");
   const exportOne = await exportWorkspace(workspace);
   const exportTwo = await exportWorkspace(workspace);
   assert.equal(exportOne, exportTwo);
-  const profileResolution = p8ProfileResolution(state.metadata.workspaceId, state.projects[0].id);
-  const admission = p8AdmissionReceipt(profileResolution);
-  const admissionPath = join(base, "release-trust", "generic-profile-admission.json");
-  const admissionBytes = canonicalJson(admission.receipt);
-  await writeFile(admissionPath, admissionBytes, { mode: 0o600 });
-  const admittedProfile = await readGenericProfileAdmissionReceipt(admissionPath, { authority: fileAuthority(admissionPath, admissionBytes) });
-  const authorization = authorizeGenericProfileOperation(profileResolution, admittedProfile, "work.transition", {
-    workspaceId: state.metadata.workspaceId,
-    projectId: state.projects[0].id,
-    command: null,
-  });
-  assert.equal(authorization.reasonCode, "PROFILE_OPERATION_AUTHORIZED");
-  assert.equal(authorization.admissionReceiptDigest, admission.receipt.receiptDigest);
-  assert.throws(() => authorizeGenericProfileOperation(profileResolution, admittedProfile, "work.transition", {
-    workspaceId: "workspace:wrong", projectId: state.projects[0].id, command: null,
-  }), (error) => error.reasonCode === "PROFILE_BINDING_MISMATCH");
   await initializeKnowledgeStore(workspace);
   const knowledge = await createKnowledgeUnit(workspace, {
     occurredAt: "2026-07-14T00:00:06Z",
@@ -330,50 +216,8 @@ test("P8 dogfood completes one disposable local_primary initiative with Knowledg
   const selected = await listKnowledgeMetadata(workspace, { at: "2026-07-14T00:00:07Z", projectId: state.projects[0].id, selection: "all" });
   assert.equal(selected.records.length, 1);
   assert.equal(selected.records[0].id, knowledge.id);
-  const routedMetadata = metadataCandidate(selected.records[0], state.metadata.workspaceId, state.projects[0].id);
-  const routeRequest = {
-    schemaVersion: "tcrn.context-route-request.v1",
-    verificationTime: "2026-07-14T00:00:07Z",
-    workspaceId: state.metadata.workspaceId,
-    projectId: state.projects[0].id,
-    workId: null,
-    taskKind: "implementation",
-    riskTier: "high",
-    profileResolution,
-    expectedEffectiveDigest: admission.claims.effectiveDigest,
-    budgets: { ...p8ContextBudgets },
-    query: "Route created P8 Knowledge metadata only.",
-    metadataCandidates: [routedMetadata],
-    explicitReadCandidates: [],
-    explicitReadRequests: [],
-  };
-  const authorityBasis = {
-    schemaVersion: "tcrn.context-route-authority.v1",
-    requestDigest: calculateContextRouteRequestDigest(routeRequest),
-    profileAdmissionReceiptDigest: admission.receipt.receiptDigest,
-    effectiveDigest: admission.claims.effectiveDigest,
-    workspaceId: state.metadata.workspaceId,
-    projectId: state.projects[0].id,
-    workId: null,
-    taskKind: "implementation",
-    minimumRiskTier: "high",
-    maximumBudgets: { ...p8ContextBudgets },
-    allowedExplicitReadIds: [],
-    issuedAt: "2026-07-14T00:00:00Z",
-    expiresAt: "2026-07-14T01:00:00Z",
-  };
-  const contextAuthority = { ...authorityBasis, authorityDigest: canonicalSha256(authorityBasis) };
-  const contextAuthorityPath = join(base, "release-trust", "context-route-authority.json");
-  const contextAuthorityBytes = canonicalJson(contextAuthority);
-  await writeFile(contextAuthorityPath, contextAuthorityBytes, { mode: 0o600 });
-  const admittedContextAuthority = await readContextRouteAuthorityReceipt(contextAuthorityPath, fileAuthority(contextAuthorityPath, contextAuthorityBytes));
-  const routed = routeContext(routeRequest, admittedProfile, admittedContextAuthority);
-  assert.equal(routed.reasonCode, "CONTEXT_ROUTED");
-  assert.deepEqual(routed.context.metadata.map((entry) => entry.id), [knowledge.id]);
-  assert.deepEqual(routed.context.references, []);
-  assert.deepEqual(routed.context.explicitReads, []);
-  assert.equal(routed.receipt.profileAdmissionReceiptDigest, admission.receipt.receiptDigest);
-  assert.equal(routed.receipt.contextAuthorityDigest, contextAuthority.authorityDigest);
-  assert.equal(canonicalJson(routed).includes("Disposable P8 body"), false);
-  assert.throws(() => routeContext({ ...routeRequest, query: "tampered" }, admittedProfile, admittedContextAuthority), (error) => error.reasonCode === "CONTEXT_AUTHORITY_MISMATCH");
+  // The profile authorization and context-route legs of this loop went with the authority
+  // family (TCRN-CROSS-STORY-467 R2). What the loop still proves: the metadata read never
+  // carries the body.
+  assert.equal(canonicalJson(selected).includes("Disposable P8 body"), false);
 });

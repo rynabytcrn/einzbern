@@ -3,7 +3,7 @@
 // WSG-6: the flagship end-to-end governed-loop proof.
 //
 // One hermetic replay of the whole product loop —
-// initiative -> epic -> story -> gate -> conference -> distill -> promote -> trace
+// initiative -> epic -> story -> conference -> distill -> promote -> decide -> trace
 // — on a REAL (non-fixture) workspace created under mkdtemp, driven entirely
 // through the governed CLI surface (runCli + a CliIo write-capture stub, never a
 // direct core-library call), with every timestamp supplied explicitly (no
@@ -14,8 +14,8 @@
 // reproduced verbatim by docs/tutorial/governed-loop.md; this proof replays that
 // single source of truth and additionally re-derives the doc/proof equality, so
 // the tutorial cannot rot (acceptance criterion 2). The trace step asserts an
-// unbroken digest chain binding the work record, the gate card, the conference
-// minutes, the distilled knowledge candidate, and the promotion receipt
+// unbroken digest chain binding the work record, the conference minutes that
+// decided it, the distilled knowledge candidate, and the promotion receipt
 // (acceptance criterion 3).
 
 import assert from "node:assert/strict";
@@ -43,7 +43,6 @@ import {
 } from "./e2e-governed-loop-commands.mjs";
 
 const MINUTES_PREFIX = "minutes:";
-const MINUTES_LOCATOR_PREFIX = "conference-minutes:";
 const CONFERENCE_TAGS = ["conference-decision", "distilled", "type-architecture"];
 
 // Drive one governed command through runCli with a write-capture stub and return
@@ -91,13 +90,7 @@ test("the flagship governed loop replays end-to-end through the CLI with an unbr
   const captured = {};
   for (const step of governedLoopStoryline) {
     const output = await invoke(render(step.command, substitutions));
-    if (step.reasonCode === null) {
-      // The two list verbs emit a bare canonical record array with no envelope;
-      // their shape is asserted where the array is consumed below.
-      assert.equal(Array.isArray(output), true, `${step.key} returns a record array`);
-    } else {
-      assert.equal(output.reasonCode, step.reasonCode, step.key);
-    }
+    assert.equal(output.reasonCode, step.reasonCode, step.key);
     switch (step.key) {
       case "project-create":
         substitutions["<project-id>"] = output.record.id;
@@ -111,9 +104,6 @@ test("the flagship governed loop replays end-to-end through the CLI with an unbr
       case "work-create-story":
         substitutions["<story-id>"] = output.record.id;
         break;
-      case "gate-create":
-        substitutions["<gate-id>"] = output.recordId;
-        break;
       case "conference-open":
         substitutions["<conference-id>"] = output.recordId;
         break;
@@ -121,7 +111,6 @@ test("the flagship governed loop replays end-to-end through the CLI with an unbr
         captured.minutesId = output.recordId;
         captured.knowledgeUnitIds = output.knowledgeUnitIds;
         substitutions["<minutes-id>"] = output.recordId;
-        substitutions["<minutes-locator>"] = `${MINUTES_LOCATOR_PREFIX}${output.recordId.slice(MINUTES_PREFIX.length)}`;
         break;
       case "knowledge-validate":
         substitutions["<knowledge-version>"] = String(output.version);
@@ -136,9 +125,7 @@ test("the flagship governed loop replays end-to-end through the CLI with an unbr
         break;
       case "work-show-story":
         captured.story = output.record;
-        break;
-      case "gate-list":
-        captured.gate = output.find((entry) => entry.id === substitutions["<gate-id>"]);
+        captured.storyAdvisory = output.advisory;
         break;
       default:
         break;
@@ -146,20 +133,15 @@ test("the flagship governed loop replays end-to-end through the CLI with an unbr
   }
 
   // --- Trace: the unbroken digest chain (acceptance criterion 3) --------------
-  // Node 1 -> 2: the work record is the gate's anchor.
+  // Node 1 -> 2: the story's recorded decision is the conference minutes. The gate that
+  // used to stand between the two went with the gate verbs (TCRN-CROSS-STORY-467 R2); the
+  // decided-by annotation is the edge now, and a Story reaches done only once it is there.
   assert.equal(captured.story.id, substitutions["<story-id>"]);
-  assert.equal(captured.story.status, "done", "the story reached done only past a satisfied gate");
-  assert.ok(captured.gate, "the gate card is present for the story");
-  assert.equal(captured.gate.workId, captured.story.id, "gate card binds the work record");
-  assert.equal(captured.gate.status, "satisfied");
+  assert.equal(captured.story.status, "done", "the story reached done with its decision recorded");
+  assert.deepEqual(captured.storyAdvisory.decidedBy, [captured.minutesId], "the story names the minutes that decided it");
+  assert.ok(captured.minutesId.startsWith(MINUTES_PREFIX));
 
-  // Node 2 -> 3: the gate's persisted evidence locator resolves to the conference
-  // minutes produced by the distilling close.
-  const locator = captured.gate.extensions["gate-evidence:conference-minutes"].value;
-  assert.equal(locator, substitutions["<minutes-locator>"], "gate card binds the conference minutes");
-  assert.equal(locator, `${MINUTES_LOCATOR_PREFIX}${captured.minutesId.slice(MINUTES_PREFIX.length)}`);
-
-  // Node 3 -> 4: the knowledge candidate's sourceDigest is bound to the full
+  // Node 2 -> 3: the knowledge candidate's sourceDigest is bound to the full
   // minutes basis (title + decision + minutes id), recomputed independently here.
   assert.equal(captured.listing.total, 1, "exactly one decision was distilled");
   const candidate = captured.listing.records[0];
@@ -169,16 +151,15 @@ test("the flagship governed loop replays end-to-end through the CLI with an unbr
   assert.deepEqual(candidate.linkedEvidenceIds, ["evidence:close-01", "evidence:position-01"], "the distilled provenance dedupes the close and position evidence");
   assert.equal(candidate.id, captured.knowledgeUnitIds[0], "the close receipt names the distilled candidate");
 
-  // Node 4 -> 5: the promotion receipt is the same candidate, promoted.
+  // Node 3 -> 4: the promotion receipt is the same candidate, promoted.
   assert.equal(captured.promotion.id, candidate.id, "promotion receipt binds the knowledge candidate");
   assert.equal(captured.promotion.promotionState, "promoted");
 
-  // The five node digests, ordered, hash to a single stable chain digest — the
+  // The four node digests, ordered, hash to a single stable chain digest — the
   // whole loop's evidence collapses to one 64-hex value that changes if a single
   // node or edge changes.
   const chainDigest = canonicalSha256([
-    canonicalSha256(captured.story),
-    canonicalSha256(captured.gate),
+    canonicalSha256({ story: captured.story, decidedBy: captured.storyAdvisory.decidedBy }),
     canonicalSha256({ minutesId: captured.minutesId, sourceBasis: expectedSourceDigest }),
     canonicalSha256(candidate),
     canonicalSha256({ id: captured.promotion.id, promotionState: captured.promotion.promotionState }),

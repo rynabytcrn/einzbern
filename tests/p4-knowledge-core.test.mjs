@@ -35,7 +35,6 @@ import {
   exportKnowledgeCheckpoint,
   initializeKnowledgeStore,
   initializeWorkspace,
-  knowledgeContextCandidates,
   listKnowledgeMetadata,
   readKnowledgeBody,
   readKnowledgeSnippet,
@@ -1164,93 +1163,6 @@ test("Knowledge implementation has no predecessor, network, database, or AOS rea
   assert.ok(KnowledgeCoreError.prototype instanceof Error);
 });
 
-test("WSC-7: knowledge metadata maps to digest-valid context-metadata candidates with lossy role scope", async () => {
-  const fixture = await workspaceFixture({ externalKey: "FIXTURE-WSC7-BRIDGE" });
-  try {
-    const workspaceUnit = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "WSC7-WORKSPACE", {
-      occurredAt: instant(11, 3), scope: "workspace", projectId: null, roleScopes: [],
-      linkedWorkIds: [], subject: "Workspace scope subject", summary: "Workspace scope summary",
-    }));
-    const projectUnit = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "WSC7-PROJECT", {
-      occurredAt: instant(11, 4), subject: "Project scope subject", summary: "Project scope summary",
-    }));
-    // Role-scoped record carrying a LIVE project reference (knowledge admits this).
-    const roleUnit = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "WSC7-ROLE", {
-      occurredAt: instant(11, 5), scope: "role", roleScopes: ["reviewer"],
-      subject: "Role scope subject", summary: "Role scope summary",
-    }));
-    const staleUnit = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "WSC7-STALE", {
-      occurredAt: instant(11, 6), freshnessState: "stale", lastVerified: instant(11),
-      subject: "Stale scope subject", summary: "Stale scope summary",
-    }));
-
-    const workspaceId = deriveStableId("workspace", "FIXTURE-WSC7-BRIDGE");
-    const result = await knowledgeContextCandidates(fixture.workspace, { at: instant(12), selection: "all" });
-    assert.equal(result.reasonCode, "KNOWLEDGE_LIST_READY");
-    assert.equal(result.schemaVersion, "tcrn.knowledge-context-candidates.v1");
-    const byId = new Map(result.candidates.map((candidate) => [candidate.id, candidate]));
-
-    const ws = byId.get(workspaceUnit.id);
-    assert.equal(ws.schemaVersion, "tcrn.context-metadata-candidate.v1");
-    assert.equal(ws.kind, "metadata");
-    assert.equal(ws.scope, "workspace");
-    assert.equal(ws.workspaceId, workspaceId);
-    assert.equal(ws.projectId, null);
-    assert.equal(ws.workId, null);
-    assert.equal(ws.freshness, "fresh");
-    assert.equal(ws.title, "Workspace scope subject");
-    assert.equal(ws.summary, "Workspace scope summary");
-    assert.equal(ws.retentionClass, "metadata_only");
-
-    const project = byId.get(projectUnit.id);
-    assert.equal(project.scope, "project");
-    assert.equal(project.projectId, fixture.projectId);
-    assert.equal(project.workId, null);
-
-    // Lossy mapping (VERIFIER CORRECTION): role -> "workspace" and projectId nulled,
-    // even though the knowledge record itself carries a live project reference. This is
-    // what checkScope (context-router.ts) requires of workspace-scope candidates.
-    const role = byId.get(roleUnit.id);
-    assert.equal(role.scope, "workspace");
-    assert.equal(role.projectId, null);
-    assert.equal(role.workId, null);
-
-    // Freshness carried through from knowledge computeFreshness.
-    assert.equal(byId.get(staleUnit.id).freshness, "stale");
-
-    // Digest parity: candidateDigest byte-matches canonicalSha256 over the exact
-    // 11-field router basis (candidateDigest excluded).
-    for (const candidate of result.candidates) {
-      const { candidateDigest, ...basis } = candidate;
-      assert.equal(candidateDigest, canonicalSha256(basis));
-    }
-
-    // Byte-determinism: a second scan produces an identical serialization and digest.
-    const again = await knowledgeContextCandidates(fixture.workspace, { at: instant(12), selection: "all" });
-    assert.equal(canonicalJson(again), canonicalJson(result));
-    assert.equal(again.resultDigest, result.resultDigest);
-
-    // Default selection returns the active+default+fresh corpus. TCRN-CROSS-INC-282 took
-    // "promoted" out of that list, so the bridge now carries three of the four -- the
-    // stale one is the only exclusion, and it is excluded for being stale.
-    const defaultResult = await knowledgeContextCandidates(fixture.workspace, { at: instant(12) });
-    assert.equal(defaultResult.selection, "default");
-    assert.equal(defaultResult.candidates.length, 3);
-    assert.equal(defaultResult.candidates.some((candidate) => candidate.id === staleUnit.id), false, "the stale card is the one the default bridge drops");
-    assert.equal(result.candidates.length, 4);
-
-    // CLI surface emits the same candidates array consumable as a context-route request.
-    let output = "";
-    await runCli(["knowledge-candidates", "--workspace", fixture.workspace, "--at", instant(12), "--selection", "all"],
-      { write: (value) => { output += value; } });
-    const cli = JSON.parse(output);
-    assert.equal(cli.reasonCode, "KNOWLEDGE_LIST_READY");
-    assert.deepEqual(cli.candidates, JSON.parse(canonicalJson(result.candidates)));
-  } finally {
-    await fixture.close();
-  }
-});
-
 // CQ-02c. `scope` was the one enum in this header still admitted through a coercing
 // membership test, two lines above `category`, which was already written correctly. A
 // caller of the programmatic createKnowledgeUnit API passes `scope` straight through to
@@ -1517,7 +1429,6 @@ test("INIT-047 article index cards stay explicit-only for default context", asyn
     assert.equal(article.promotionState, "promoted", "TCRN-CROSS-INC-282: written promoted, and still not a default answer");
     assert.equal((await listKnowledgeMetadata(fx.workspace, { at: instant(12) })).records.length, 0);
     assert.equal((await listKnowledgeMetadata(fx.workspace, { at: instant(12), search: "article-index" })).records.length, 1);
-    assert.equal((await knowledgeContextCandidates(fx.workspace, { at: instant(12), search: "article-index" })).candidates.length, 0);
   } finally { await fx.close(); }
 });
 
@@ -1620,7 +1531,6 @@ test("INIT-047: supersedes is validated, source digests are computed and source 
     await rm(join(fx.workspace, "source.md"));
     assert.equal((await checkKnowledgeSources(fx.workspace)).records.find((record) => record.id === sourced.id).status, "missing");
     assert.equal((await listKnowledgeMetadata(fx.workspace, { at: instant(12), search: "INIT047-SOURCE" })).records.length, 1);
-    assert.equal((await knowledgeContextCandidates(fx.workspace, { at: instant(12), search: "INIT047-SOURCE" })).candidates.length, 0);
   } finally { await fx.close(); }
 });
 

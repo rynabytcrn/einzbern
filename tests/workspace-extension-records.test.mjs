@@ -19,18 +19,14 @@ import {
   CONFERENCE_POSITION_CEILING_BYTES,
   cancelConferenceInWorkspace,
   closeConferenceInWorkspace,
-  createGateInWorkspace,
-  readGateIdentityAuthority,
   createProject,
   createWork,
-  deleteGateInWorkspace,
   exportWorkspace,
   initializeWorkspace,
   materializeWorkspace,
   openConferenceInWorkspace,
   recoverWorkspace,
   setWorkspaceSetting,
-  transitionGateInWorkspace,
   transitionWork,
   validateWorkspace,
   workspaceBudgets,
@@ -49,7 +45,12 @@ import {
   validateEventChain,
 } from "../dist/build/packages/protocol/src/index.js";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { appendHistoricalAttestationEnable } from "./helpers/workspace-fixture.mjs";
+import {
+  appendHistoricalAttestationEnable,
+  appendHistoricalGateCreate,
+  appendHistoricalGateDelete,
+  appendHistoricalGateTransition,
+} from "./helpers/workspace-fixture.mjs";
 
 const instant = (second) => `2026-07-11T00:${String(Math.floor(second / 60)).padStart(2, "0")}:${String(second % 60).padStart(2, "0")}Z`;
 
@@ -246,23 +247,23 @@ test("conference and gate mutations round-trip through the event log with chaine
   state = await cancelConferenceInWorkspace(fx.workspace, {
     occurredAt: instant(7), conferenceId: cancelledId,
   });
-  state = await createGateInWorkspace(fx.workspace, {
+  state = await appendHistoricalGateCreate(fx.workspace, {
     occurredAt: instant(8), externalKey: "GATE-ALPHA", projectId: fx.projectId, workId: fx.workId,
     title: "Decision gate", outcomeClass: "role_decision",
   });
   const gateId = state.gates[0].id;
-  state = await transitionGateInWorkspace(fx.workspace, {
+  state = await appendHistoricalGateTransition(fx.workspace, {
     occurredAt: instant(9), id: gateId, status: "blocked",
   });
-  state = await transitionGateInWorkspace(fx.workspace, {
+  state = await appendHistoricalGateTransition(fx.workspace, {
     occurredAt: instant(10), id: gateId, status: "satisfied", minutesLocator: minutesLocator("MINUTES-ALPHA"),
   });
-  state = await createGateInWorkspace(fx.workspace, {
+  state = await appendHistoricalGateCreate(fx.workspace, {
     occurredAt: instant(11), externalKey: "GATE-BETA", projectId: fx.projectId, workId: null,
     title: "Project-scoped gate", outcomeClass: "recommendation",
   });
   const deletedGateId = state.gates.find((entry) => entry.id !== gateId).id;
-  state = await deleteGateInWorkspace(fx.workspace, {
+  state = await appendHistoricalGateDelete(fx.workspace, {
     occurredAt: instant(12), id: deletedGateId,
   });
 
@@ -366,21 +367,10 @@ test("mutation-time rules fail closed without appending an event", async (contex
     occurredAt: instant(5), externalKey: "CONF-DEAD-WORK", projectId: fx.projectId, type: "risk",
     title: "Dead anchor", linkedWorkIds: ["work:000000000000000000000000"], desiredOutcome: "anchor", participantIds: [],
   }));
-  await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => createGateInWorkspace(fx.workspace, {
-    occurredAt: instant(5), externalKey: "GATE-DEAD-WORK", projectId: fx.projectId,
-    workId: "work:000000000000000000000000", title: "Dead anchor", outcomeClass: "recommendation",
-  }));
-  await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => transitionGateInWorkspace(fx.workspace, {
-    occurredAt: instant(5), id: "gate:000000000000000000000000", status: "blocked",
-  }));
   // Validator failures surface verbatim for the CLI layer to pass through.
   await expectReasonAsync("CONFERENCE_SCHEMA_INVALID", () => openConferenceInWorkspace(fx.workspace, {
     occurredAt: instant(5), externalKey: "CONF-BAD-TYPE", projectId: fx.projectId, type: "committee",
     title: "Bad type", linkedWorkIds: [fx.workId], desiredOutcome: "reject", participantIds: [],
-  }));
-  await expectReasonAsync("GATE_SCHEMA_INVALID", () => createGateInWorkspace(fx.workspace, {
-    occurredAt: instant(5), externalKey: "GATE-BAD-CLASS", projectId: fx.projectId, workId: fx.workId,
-    title: "Bad class", outcomeClass: "committee_decision",
   }));
   assert.equal((await materializeWorkspace(fx.workspace)).version, version, "no failed mutation appended an event");
 });
@@ -686,7 +676,7 @@ test("a crash across conference.closed leaves the event durable and recover() re
   }
 });
 
-test("WSD-2: the eight governed verbs plus gate-delete mutate and read under lease and CAS with canonical receipts and deterministic list ordering", async (context) => {
+test("WSD-2: the conference verbs mutate and read under the write lock with canonical receipts and deterministic list ordering", async (context) => {
   const fx = await cliSeededFixture(context);
   const ws = fx.ws;
 
@@ -708,7 +698,7 @@ test("WSD-2: the eight governed verbs plus gate-delete mutate and read under lea
   assert.equal(positionReceipt.version, 4);
   assert.equal(positionReceipt.recordId, deriveStableId("position", "POSITION-CLI-1"));
 
-  // conference-close via the head sentinel — resolves to 4 under the lease, appends to 5.
+  // conference-close appends to 5.
   const closeReceipt = assertCanonicalJson((await invokeCli(["conference-close", "--workspace", ws,
     "--at", instant(5), "--conference-id", conferenceId, "--minutes-external-key", "MINUTES-CLI",
     "--summary", "event-log persistence ratified", "--outcome-class", "role_decision",
@@ -736,42 +726,6 @@ test("WSD-2: the eight governed verbs plus gate-delete mutate and read under lea
   const conferences = JSON.parse(listConfA);
   assert.deepEqual(conferences.map((entry) => entry.id), [...conferences.map((entry) => entry.id)]
     .sort((left, right) => compareCanonicalText(left, right)));
-
-  // gate-create with a work anchor, then a second workspace-level gate ("-").
-  const gateReceipt = assertCanonicalJson((await invokeCli(["gate-create", "--workspace", ws, "--at", instant(8), "--external-key", "GATE-CLI", "--project-id", fx.projectId, "--work-id", fx.workId,
-    "--title", "Decision gate", "--outcome-class", "role_decision"])).output);
-  assert.equal(gateReceipt.version, 8);
-  assert.equal(gateReceipt.recordId, deriveStableId("gate", "GATE-CLI"));
-  // MIN-102 裁定三: a gate is minted as role_decision or owner_intent_required now;
-  // the other three classes reached no engine behaviour and were never used on any
-  // gate here. The record vocabulary is unchanged, so this fixture's second gate just
-  // uses a class the write path still mints.
-  await invokeCli(["gate-create", "--workspace", ws, "--at", instant(9),
-    "--external-key", "GATE-CLI-2", "--project-id", fx.projectId, "--work-id", fx.workId,
-    "--title", "Second gate", "--outcome-class", "role_decision"]);
-
-  // gate-transition pending -> satisfied, carrying the resolving minutes locator.
-  const transitionReceipt = assertCanonicalJson((await invokeCli(["gate-transition", "--workspace", ws,
-    "--at", instant(10), "--id", deriveStableId("gate", "GATE-CLI"), "--status", "satisfied",
-    "--minutes-locator", minutesLocator("MINUTES-CLI")])).output);
-  assert.equal(transitionReceipt.version, 10);
-  assert.equal(transitionReceipt.recordId, deriveStableId("gate", "GATE-CLI"));
-
-  // gate-list — byte-identical across invocations, sorted by projectId then id.
-  const listGateA = (await invokeCli(["gate-list", "--workspace", ws, "--work-id", fx.workId])).output;
-  const listGateB = (await invokeCli(["gate-list", "--workspace", ws, "--work-id", fx.workId])).output;
-  assert.equal(listGateA, listGateB, "gate-list is byte-identical across invocations");
-  const gates = JSON.parse(listGateA);
-  assert.equal(gates.length, 2);
-  assert.deepEqual(gates.map((entry) => entry.id), [...gates.map((entry) => entry.id)]
-    .sort((left, right) => compareCanonicalText(left, right)));
-
-  // gate-delete (GAP-10) tombstones the gate; it then drops out of gate-list.
-  const deleteReceipt = assertCanonicalJson((await invokeCli(["gate-delete", "--workspace", ws, "--at", instant(11), "--id", deriveStableId("gate", "GATE-CLI")])).output);
-  assert.equal(deleteReceipt.version, 11);
-  assert.equal(deleteReceipt.recordId, deriveStableId("gate", "GATE-CLI"));
-  const gatesAfterDelete = JSON.parse((await invokeCli(["gate-list", "--workspace", ws, "--work-id", fx.workId])).output);
-  assert.deepEqual(gatesAfterDelete.map((entry) => entry.id), [deriveStableId("gate", "GATE-CLI-2")]);
 });
 
 test("STORY-370: conference positions accept actor attribution and an optional stance without a profile roster", async (context) => {
@@ -795,18 +749,6 @@ test("STORY-370: conference positions accept actor attribution and an optional s
   assert.equal(listed.records.find((entry) => entry.actorId === "agent:claude-sonnet-5")?.stance, "反对");
 });
 
-test("INC-086: gate-list distinguishes a nonexistent work-id from 'no gates'", async (context) => {
-  const fx = await cliSeededFixture(context);
-  const ws = fx.ws;
-  // A nonexistent work-id refuses named instead of answering [].
-  const { ok, reasonCode } = await invokeCli(["gate-list", "--workspace", ws, "--work-id", "work:000000000000000000000000"]);
-  assert.equal(ok, false);
-  assert.equal(reasonCode, "WORKSPACE_WORK_NOT_FOUND");
-  // A real work-id with no gates still answers [].
-  const gates = JSON.parse((await invokeCli(["gate-list", "--workspace", ws, "--work-id", fx.workId])).output);
-  assert.deepEqual(gates, []);
-});
-
 test("WSD-2: malformed enums pass through to the engine verbatim", async (context) => {
   const fx = await cliSeededFixture(context);
   const ws = fx.ws;
@@ -817,12 +759,6 @@ test("WSD-2: malformed enums pass through to the engine verbatim", async (contex
     "--work-ids", fx.workId, "--desired-outcome", "fail closed", "--participant-ids", "-"]);
   assert.equal(badType.ok, false);
   assert.equal(badType.reasonCode, "CONFERENCE_SCHEMA_INVALID");
-
-  const badGate = await invokeCli(["gate-create", "--workspace", ws, "--at", instant(6),
-    "--external-key", "GATE-BAD", "--project-id", fx.projectId, "--work-id", fx.workId, "--title", "Bad gate",
-    "--outcome-class", "not-a-class"]);
-  assert.equal(badGate.ok, false);
-  assert.equal(badGate.reasonCode, "GATE_SCHEMA_INVALID");
 
   // Contention is no longer a refusal: a second writer waits for the engine write lock
   // (TCRN-CROSS-STORY-467 R1, proved in tests/file-lock-concurrency.test.mjs).
@@ -910,7 +846,7 @@ async function activeGatedFixture(context) {
 
 test("WSD-4: a pending gate fails a work transition to done closed at the verb and appends no event", async (context) => {
   const fx = await activeGatedFixture(context);
-  const seeded = await createGateInWorkspace(fx.workspace, {
+  const seeded = await appendHistoricalGateCreate(fx.workspace, {
     occurredAt: instant(5), externalKey: "GATE-BLOCK", projectId: fx.projectId, workId: fx.workId,
     title: "Decision gate", outcomeClass: "role_decision",
   });
@@ -928,12 +864,12 @@ test("WSD-4: a pending gate fails a work transition to done closed at the verb a
 // resolving minutes, so it is the only one that may clear.
 test("MIN-102 flipping a gate to blocked does not release the work item", async (context) => {
   const fx = await activeGatedFixture(context);
-  const seeded = await createGateInWorkspace(fx.workspace, {
+  const seeded = await appendHistoricalGateCreate(fx.workspace, {
     occurredAt: instant(5), externalKey: "GATE-DISARM", projectId: fx.projectId, workId: fx.workId,
     title: "Decision gate", outcomeClass: "role_decision",
   });
   const gateId = seeded.gates[0].id;
-  const blocked = await transitionGateInWorkspace(fx.workspace, {
+  const blocked = await appendHistoricalGateTransition(fx.workspace, {
     occurredAt: instant(6), id: gateId, status: "blocked",
   });
   assert.equal(blocked.gates[0].status, "blocked", "the move itself stays legal — cleanup must never wedge");
@@ -943,7 +879,7 @@ test("MIN-102 flipping a gate to blocked does not release the work item", async 
   assert.equal((await materializeWorkspace(fx.workspace)).version, blocked.version, "the refused transition appended no event");
 
   // The escape is unchanged and is still the tombstone, not the blocked state.
-  const removed = await deleteGateInWorkspace(fx.workspace, {
+  const removed = await appendHistoricalGateDelete(fx.workspace, {
     occurredAt: instant(8), id: gateId,
   });
   const done = await transitionWork(fx.workspace, {
@@ -964,7 +900,7 @@ test("WSD-4: minutes-backed satisfaction unblocks the transition to done and the
     occurredAt: instant(6), conferenceId, minutesExternalKey: "MINUTES-SAT",
     summary: "ratified", outcomeClass: "role_decision", decisions: ["proceed"], unresolvedIssues: [],
   });
-  state = await createGateInWorkspace(fx.workspace, {
+  state = await appendHistoricalGateCreate(fx.workspace, {
     occurredAt: instant(7), externalKey: "GATE-SAT", projectId: fx.projectId, workId: fx.workId,
     title: "Decision gate", outcomeClass: "role_decision",
   });
@@ -973,7 +909,7 @@ test("WSD-4: minutes-backed satisfaction unblocks the transition to done and the
   await expectReasonAsync("WORKSPACE_GATE_PENDING", () => transitionWork(fx.workspace, {
     occurredAt: instant(8), id: fx.workId, status: "done",
   }));
-  state = await transitionGateInWorkspace(fx.workspace, {
+  state = await appendHistoricalGateTransition(fx.workspace, {
     occurredAt: instant(8), id: gateId, status: "satisfied", minutesLocator: minutesLocator("MINUTES-SAT"),
   });
   state = await transitionWork(fx.workspace, {
@@ -987,12 +923,12 @@ test("WSD-4: minutes-backed satisfaction unblocks the transition to done and the
 
 test("WSD-4: the gate.deleted tombstone is the deadlock escape that lets a wedged work item reach done", async (context) => {
   const fx = await activeGatedFixture(context);
-  let state = await createGateInWorkspace(fx.workspace, {
+  let state = await appendHistoricalGateCreate(fx.workspace, {
     occurredAt: instant(5), externalKey: "GATE-DEL", projectId: fx.projectId, workId: fx.workId,
     title: "Decision gate", outcomeClass: "role_decision",
   });
   const gateId = state.gates[0].id;
-  state = await deleteGateInWorkspace(fx.workspace, { occurredAt: instant(6), id: gateId });
+  state = await appendHistoricalGateDelete(fx.workspace, { occurredAt: instant(6), id: gateId });
   state = await transitionWork(fx.workspace, { occurredAt: instant(7), id: fx.workId, status: "done" });
   assert.equal(state.work.find((entry) => entry.id === fx.workId).status, "done");
 });
@@ -1001,7 +937,7 @@ test("WSD-4: the designated set is exactly done — a pending gate leaves other 
   for (const target of ["blocked", "cancelled"]) {
     await context.test(`active to ${target}`, async (caseContext) => {
       const fx = await activeGatedFixture(caseContext);
-      await createGateInWorkspace(fx.workspace, {
+      await appendHistoricalGateCreate(fx.workspace, {
         occurredAt: instant(5), externalKey: `GATE-${target}`, projectId: fx.projectId, workId: fx.workId,
         title: "Decision gate", outcomeClass: "role_decision",
       });
@@ -1011,200 +947,13 @@ test("WSD-4: the designated set is exactly done — a pending gate leaves other 
   }
   await context.test("planned to ready", async (caseContext) => {
     const fx = await seededFixture(caseContext);
-    await createGateInWorkspace(fx.workspace, {
+    await appendHistoricalGateCreate(fx.workspace, {
       occurredAt: instant(3), externalKey: "GATE-READY", projectId: fx.projectId, workId: fx.workId,
       title: "Decision gate", outcomeClass: "role_decision",
     });
     const state = await transitionWork(fx.workspace, { occurredAt: instant(4), id: fx.workId, status: "ready" });
     assert.equal(state.work.find((entry) => entry.id === fx.workId).status, "ready");
   });
-});
-
-test("WSD-4: satisfaction fails closed when the locator resolves to no or non-anchoring minutes, appending no event", async (context) => {
-  const fx = await seededFixture(context);
-  // A second work item plus a conference anchored only to it, closed with minutes.
-  let state = await createWork(fx.workspace, {
-    occurredAt: instant(3), projectId: fx.projectId, externalKey: "INITIATIVE-OTHER", kind: "Initiative", parentId: null,
-  });
-  const otherWorkId = state.work.find((entry) => entry.id !== fx.workId).id;
-  state = await openConferenceInWorkspace(fx.workspace, {
-    occurredAt: instant(4), externalKey: "CONF-OTHER", projectId: fx.projectId, type: "architecture",
-    title: "Other", linkedWorkIds: [otherWorkId], desiredOutcome: "decide elsewhere", participantIds: [],
-  });
-  const conferenceId = state.conferences[0].id;
-  state = await closeConferenceInWorkspace(fx.workspace, {
-    occurredAt: instant(5), conferenceId, minutesExternalKey: "MINUTES-OTHER",
-    summary: "closed", outcomeClass: "role_decision", decisions: ["done"], unresolvedIssues: [],
-  });
-  // The gate anchors the FIRST work item, which those minutes do not cover.
-  state = await createGateInWorkspace(fx.workspace, {
-    occurredAt: instant(6), externalKey: "GATE-EV", projectId: fx.projectId, workId: fx.workId,
-    title: "Decision gate", outcomeClass: "role_decision",
-  });
-  const gateId = state.gates[0].id;
-  const version = state.version;
-  const unresolvable = [
-    minutesLocator("MINUTES-NONE"),              // no stored minutes share this suffix
-    minutesLocator("MINUTES-OTHER"),             // stored, but the conference anchors the other work item
-    "minutes:000000000000000000000000",          // wrong locator namespace
-    "conference-minutes:BAD SUFFIX",              // not a protocol id
-  ];
-  for (const locator of unresolvable) {
-    await expectReasonAsync("WORKSPACE_GATE_EVIDENCE_UNRESOLVED", () => transitionGateInWorkspace(fx.workspace, {
-      occurredAt: instant(7), id: gateId, status: "satisfied", minutesLocator: locator,
-    }));
-  }
-  // An absent locator fails closed too.
-  await expectReasonAsync("WORKSPACE_GATE_EVIDENCE_UNRESOLVED", () => transitionGateInWorkspace(fx.workspace, {
-    occurredAt: instant(7), id: gateId, status: "satisfied",
-  }));
-  assert.equal((await materializeWorkspace(fx.workspace)).version, version, "no failed satisfaction appended an event");
-});
-
-test("WSD-4: the gate lifecycle graph is enforced at the verb — satisfied is terminal and a locator is rejected off the satisfied path", async (context) => {
-  const fx = await seededFixture(context);
-  let state = await openConferenceInWorkspace(fx.workspace, {
-    occurredAt: instant(3), externalKey: "CONF-GRAPH", projectId: fx.projectId, type: "architecture",
-    title: "Graph", linkedWorkIds: [fx.workId], desiredOutcome: "decide", participantIds: [],
-  });
-  const conferenceId = state.conferences[0].id;
-  state = await closeConferenceInWorkspace(fx.workspace, {
-    occurredAt: instant(4), conferenceId, minutesExternalKey: "MINUTES-GRAPH",
-    summary: "closed", outcomeClass: "role_decision", decisions: ["go"], unresolvedIssues: [],
-  });
-  state = await createGateInWorkspace(fx.workspace, {
-    occurredAt: instant(5), externalKey: "GATE-GRAPH", projectId: fx.projectId, workId: fx.workId,
-    title: "Decision gate", outcomeClass: "role_decision",
-  });
-  const gateId = state.gates[0].id;
-  // A minutes locator on a non-satisfied transition is rejected.
-  await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => transitionGateInWorkspace(fx.workspace, {
-    occurredAt: instant(6), id: gateId, status: "blocked", minutesLocator: minutesLocator("MINUTES-GRAPH"),
-  }));
-  state = await transitionGateInWorkspace(fx.workspace, {
-    occurredAt: instant(6), id: gateId, status: "satisfied", minutesLocator: minutesLocator("MINUTES-GRAPH"),
-  });
-  // satisfied is terminal: no further status move is admissible.
-  const version = state.version;
-  await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => transitionGateInWorkspace(fx.workspace, {
-    occurredAt: instant(7), id: gateId, status: "blocked",
-  }));
-  assert.equal((await materializeWorkspace(fx.workspace)).version, version, "the off-graph transition appended no event");
-});
-
-test("gate-v1: an owner_intent_required gate cannot be satisfied without a roster that names the actor", async (context) => {
-  // The class is the opt-in. A gate created as owner_intent_required declares that
-  // closing it takes owner intent, and until gate-v1 that declaration was inert. What
-  // these cases pin is that it now costs something to close one, and that the cost is
-  // paid in the right currency: a roster read from disk under a stated digest, plus a
-  // named actor the roster actually permits.
-  const fx = await seededFixture(context);
-  const roster = {
-    schemaVersion: "tcrn.gate-identity-authority.v1",
-    permits: [{ actorId: "owner:governance", outcomeClasses: ["owner_intent_required"] }],
-  };
-  const rosterPath = join(fx.base, "gate-identity-authority.json");
-  const rosterBytes = canonicalJson(roster);
-  await writeFile(rosterPath, rosterBytes, { encoding: "utf8", mode: 0o600 });
-  const admitted = await readGateIdentityAuthority(rosterPath, {
-    expectedCanonicalPath: rosterPath,
-    expectedFileSha256: canonicalSha256(roster),
-  });
-
-  let state = await openConferenceInWorkspace(fx.workspace, {
-    occurredAt: instant(3), externalKey: "CONF-OWNER", projectId: fx.projectId, type: "architecture",
-    title: "Owner ruling", linkedWorkIds: [fx.workId], desiredOutcome: "rule", participantIds: [],
-  });
-  const conferenceId = state.conferences[0].id;
-  state = await closeConferenceInWorkspace(fx.workspace, {
-    occurredAt: instant(4), conferenceId, minutesExternalKey: "MINUTES-OWNER",
-    summary: "Ruled.", outcomeClass: "owner_intent_required", decisions: ["ruled"], unresolvedIssues: [],
-  });
-  state = await createGateInWorkspace(fx.workspace, {
-    occurredAt: instant(5), externalKey: "GATE-OWNER", projectId: fx.projectId, workId: fx.workId,
-    title: "Owner gate", outcomeClass: "owner_intent_required",
-  });
-  const gateId = state.gates[0].id;
-  const satisfy = (extra) => transitionGateInWorkspace(fx.workspace, {
-    occurredAt: instant(6), id: gateId, status: "satisfied",
-    minutesLocator: minutesLocator("MINUTES-OWNER"), ...extra,
-  });
-  const refused = async (code, extra) => {
-    await assert.rejects(satisfy(extra), (error) => {
-      assert.equal(error?.reasonCode, code, `expected ${code}, got ${error?.reasonCode}`);
-      return true;
-    }, code);
-    // A refused transition must not have advanced the chain -- otherwise the gate is
-    // closed to the reader and merely undocumented.
-    assert.equal((await materializeWorkspace(fx.workspace)).version, 5, `${code} appended an event`);
-  };
-
-  // Evidence alone used to be enough. It is not any more.
-  await refused("WORKSPACE_GATE_IDENTITY_REQUIRED", {});
-  // A roster without a named actor cannot answer "who", so it is not an answer.
-  await refused("WORKSPACE_GATE_IDENTITY_REQUIRED", { identityAuthority: admitted });
-  // A named actor with no roster is a claim, which is what gate-v1 exists to stop.
-  await refused("WORKSPACE_GATE_IDENTITY_REQUIRED", { actorId: "owner:governance" });
-  // An actor the roster does not name is refused by name, not ignored.
-  await refused("WORKSPACE_GATE_IDENTITY_REFUSED", { identityAuthority: admitted, actorId: "agent:opus" });
-
-  state = await satisfy({ identityAuthority: admitted, actorId: "owner:governance" });
-  assert.equal(state.gates[0].status, "satisfied");
-  assert.equal(state.version, 6);
-});
-
-test("gate-v1: a supplied roster is honoured for every class, and no class but owner_intent_required demands one", async (context) => {
-  // Two halves of the same rule. Asking for the check and having it skipped would be
-  // the worst outcome, so a roster supplied against a role_decision gate still binds;
-  // and a deployment that wants none of this keeps working by choosing another class.
-  const fx = await seededFixture(context);
-  const roster = {
-    schemaVersion: "tcrn.gate-identity-authority.v1",
-    permits: [{ actorId: "owner:governance", outcomeClasses: ["owner_intent_required"] }],
-  };
-  const rosterPath = join(fx.base, "roster.json");
-  const rosterBytes = canonicalJson(roster);
-  await writeFile(rosterPath, rosterBytes, { encoding: "utf8", mode: 0o600 });
-  const admitted = await readGateIdentityAuthority(rosterPath, {
-    expectedCanonicalPath: rosterPath,
-    expectedFileSha256: canonicalSha256(roster),
-  });
-
-  let state = await openConferenceInWorkspace(fx.workspace, {
-    occurredAt: instant(3), externalKey: "CONF-ROLE", projectId: fx.projectId, type: "risk",
-    title: "Role call", linkedWorkIds: [fx.workId], desiredOutcome: "decide", participantIds: [],
-  });
-  const conferenceId = state.conferences[0].id;
-  state = await closeConferenceInWorkspace(fx.workspace, {
-    occurredAt: instant(4), conferenceId, minutesExternalKey: "MINUTES-ROLE",
-    summary: "Decided.", outcomeClass: "role_decision", decisions: ["decided"], unresolvedIssues: [],
-  });
-  state = await createGateInWorkspace(fx.workspace, {
-    occurredAt: instant(5), externalKey: "GATE-ROLE", projectId: fx.projectId, workId: fx.workId,
-    title: "Role gate", outcomeClass: "role_decision",
-  });
-  const gateId = state.gates[0].id;
-
-  // Supplied against a class the roster does not grant: still refused.
-  await assert.rejects(transitionGateInWorkspace(fx.workspace, {
-    occurredAt: instant(6), id: gateId, status: "satisfied",
-    minutesLocator: minutesLocator("MINUTES-ROLE"), identityAuthority: admitted, actorId: "owner:governance",
-  }), (error) => error?.reasonCode === "WORKSPACE_GATE_IDENTITY_REFUSED");
-
-  // Supplied without an actor, on a class that does not itself demand one. The
-  // roster still cannot answer "who", and answering anyway would be the skip.
-  await assert.rejects(transitionGateInWorkspace(fx.workspace, {
-    occurredAt: instant(6), id: gateId, status: "satisfied",
-    minutesLocator: minutesLocator("MINUTES-ROLE"), identityAuthority: admitted,
-  }), (error) => error?.reasonCode === "WORKSPACE_GATE_IDENTITY_REQUIRED");
-  assert.equal((await materializeWorkspace(fx.workspace)).version, 5, "the refusal appended no event");
-
-  // Not supplied against a non-owner class: unchanged from before gate-v1.
-  state = await transitionGateInWorkspace(fx.workspace, {
-    occurredAt: instant(6), id: gateId, status: "satisfied",
-    minutesLocator: minutesLocator("MINUTES-ROLE"),
-  });
-  assert.equal(state.gates[0].status, "satisfied");
 });
 
 test("gate-v1: the identity decision is written down, and replay judges it without the roster", async (context) => {
@@ -1217,11 +966,10 @@ test("gate-v1: the identity decision is written down, and replay judges it witho
     schemaVersion: "tcrn.gate-identity-authority.v1",
     permits: [{ actorId: "owner:governance", outcomeClasses: ["owner_intent_required"] }],
   };
-  const rosterPath = join(fx.base, "decision-roster.json");
-  await writeFile(rosterPath, canonicalJson(roster), { encoding: "utf8", mode: 0o600 });
-  const admitted = await readGateIdentityAuthority(rosterPath, {
-    expectedCanonicalPath: rosterPath, expectedFileSha256: canonicalSha256(roster),
-  });
+  // The roster reader and the permission check are retired (TCRN-CROSS-STORY-467 R2); the
+  // decision is written the way the retired transition wrote it: the actor and the digest
+  // of the roster that was in force.
+  const decision = { actorId: "owner:governance", authorityFileSha256: canonicalSha256(roster) };
 
   // Identity gating only means something on a chain that records who acted, so this
   // is the configuration the feature is for.
@@ -1235,14 +983,14 @@ test("gate-v1: the identity decision is written down, and replay judges it witho
     occurredAt: instant(5), conferenceId, minutesExternalKey: "MINUTES-DEC",
     summary: "Ruled.", outcomeClass: "owner_intent_required", decisions: ["ruled"], unresolvedIssues: [], actorId: "owner:governance",
   });
-  state = await createGateInWorkspace(fx.workspace, {
+  state = await appendHistoricalGateCreate(fx.workspace, {
     occurredAt: instant(6), externalKey: "GATE-DEC", projectId: fx.projectId, workId: fx.workId,
     title: "Decision gate", outcomeClass: "owner_intent_required", actorId: "owner:governance",
   });
   const gateId = state.gates[0].id;
-  state = await transitionGateInWorkspace(fx.workspace, {
+  state = await appendHistoricalGateTransition(fx.workspace, {
     occurredAt: instant(7), id: gateId, status: "satisfied",
-    minutesLocator: minutesLocator("MINUTES-DEC"), identityAuthority: admitted, actorId: "owner:governance",
+    minutesLocator: minutesLocator("MINUTES-DEC"), identity: decision, actorId: "owner:governance",
   });
 
   assert.deepEqual(state.gates[0].extensions["gate-identity:decision"], {
@@ -1250,8 +998,8 @@ test("gate-v1: the identity decision is written down, and replay judges it witho
     value: { actorId: "owner:governance", authorityFileSha256: canonicalSha256(roster) },
   });
 
-  // The roster goes away, the way a rotated key or a fresh machine would take it.
-  await rm(rosterPath);
+  // No roster exists anywhere: replay reads the decision from the log alone, the way a
+  // rotated key or a fresh machine would leave it.
   const replayed = await materializeWorkspace(fx.workspace);
   assert.equal(replayed.version, 7, "replay does not need the roster it recorded");
   assert.deepEqual(replayed.gates[0].extensions, state.gates[0].extensions);
@@ -1270,11 +1018,10 @@ test("gate-v1: a decision that disagrees with its own event is corrupt", async (
     schemaVersion: "tcrn.gate-identity-authority.v1",
     permits: [{ actorId: "owner:governance", outcomeClasses: ["owner_intent_required"] }],
   };
-  const rosterPath = join(fx.base, "mismatch-roster.json");
-  await writeFile(rosterPath, canonicalJson(roster), { encoding: "utf8", mode: 0o600 });
-  const admitted = await readGateIdentityAuthority(rosterPath, {
-    expectedCanonicalPath: rosterPath, expectedFileSha256: canonicalSha256(roster),
-  });
+  // The roster reader and the permission check are retired (TCRN-CROSS-STORY-467 R2); the
+  // decision is written the way the retired transition wrote it: the actor and the digest
+  // of the roster that was in force.
+  const decision = { actorId: "owner:governance", authorityFileSha256: canonicalSha256(roster) };
 
   // Identity gating only means something on a chain that records who acted, so this
   // is the configuration the feature is for.
@@ -1288,14 +1035,14 @@ test("gate-v1: a decision that disagrees with its own event is corrupt", async (
     occurredAt: instant(5), conferenceId, minutesExternalKey: "MINUTES-MIS",
     summary: "Ruled.", outcomeClass: "owner_intent_required", decisions: ["ruled"], unresolvedIssues: [], actorId: "owner:governance",
   });
-  state = await createGateInWorkspace(fx.workspace, {
+  state = await appendHistoricalGateCreate(fx.workspace, {
     occurredAt: instant(6), externalKey: "GATE-MIS", projectId: fx.projectId, workId: fx.workId,
     title: "Mismatch gate", outcomeClass: "owner_intent_required", actorId: "owner:governance",
   });
   const gateId = state.gates[0].id;
-  await transitionGateInWorkspace(fx.workspace, {
+  await appendHistoricalGateTransition(fx.workspace, {
     occurredAt: instant(7), id: gateId, status: "satisfied",
-    minutesLocator: minutesLocator("MINUTES-MIS"), identityAuthority: admitted, actorId: "owner:governance",
+    minutesLocator: minutesLocator("MINUTES-MIS"), identity: decision, actorId: "owner:governance",
   });
 
   // Rewrite the tail event so the decision names someone else. The hashes are
@@ -1348,74 +1095,6 @@ test("gate-v1: a decision that disagrees with its own event is corrupt", async (
   }, "a self-contradicting decision must not replay");
 });
 
-test("gate-v1: the roster reaches gate-transition through the CLI, and every refusal leaves the chain alone", async (context) => {
-  // STORY-009 proved the engine; this proves the path an operator actually takes.
-  // A flag that reached the wrong place, or reached nowhere, would pass every engine
-  // test ever written, so the refusals are exercised through argv and each one is
-  // checked to have appended nothing.
-  // cliSeededFixture, not seededFixture: the engine-level one holds a lease, and the
-  // CLI acquires its own.
-  const fx = await cliSeededFixture(context);
-  const ws = fx.ws;
-  const roster = {
-    schemaVersion: "tcrn.gate-identity-authority.v1",
-    permits: [{ actorId: "owner:governance", outcomeClasses: ["owner_intent_required"] }],
-  };
-  const rosterPath = join(fx.base, "cli-roster.json");
-  await writeFile(rosterPath, canonicalJson(roster), { encoding: "utf8", mode: 0o600 });
-  const rosterDigest = canonicalSha256(roster);
-
-  // invokeCli swallows failures, so a silent setup miss would surface as a confusing
-  // assertion three steps later. Each step is checked where it happens.
-  const step = async (label, args) => {
-    const outcome = await invokeCli(args);
-    assert.equal(outcome.ok, true, `${label} failed: ${outcome.reasonCode}`);
-    return outcome;
-  };
-  // The attestation.actor.enabled event is history (TCRN-CROSS-STORY-467 R2); the chain
-  // carries it, so every write below supplies an actor.
-  await appendHistoricalAttestationEnable(ws, { occurredAt: instant(3), actorId: "owner:governance" });
-  await invokeCli(["conference-open", "--workspace", ws, "--at", instant(4),
-    "--external-key", "CONF-CLI-ID", "--project-id", fx.projectId, "--type", "architecture", "--title", "Ruling",
-    "--work-ids", fx.workId, "--desired-outcome", "rule", "--participant-ids", "-", "--actor", "owner:governance"]);
-  await step("conference-close", ["conference-close", "--workspace", ws, "--at", instant(5),
-    "--conference-id", deriveStableId("conference", "CONF-CLI-ID"), "--minutes-external-key", "MINUTES-CLI-ID",
-    "--summary", "Ruled.", "--outcome-class", "owner_intent_required", "--decisions", "ruled",
-    "--unresolved-issues", "-", "--actor", "owner:governance"]);
-  await invokeCli(["gate-create", "--workspace", ws, "--at", instant(6),
-    "--external-key", "GATE-CLI-ID", "--project-id", fx.projectId, "--work-id", fx.workId,
-    "--title", "Owner gate", "--outcome-class", "owner_intent_required", "--actor", "owner:governance"]);
-
-  const gateId = deriveStableId("gate", "GATE-CLI-ID");
-  const satisfy = (extra) => invokeCli(["gate-transition", "--workspace", ws, "--at", instant(7), "--id", gateId, "--status", "satisfied",
-    "--minutes-locator", minutesLocator("MINUTES-CLI-ID"), ...extra]);
-  const refused = async (code, extra) => {
-    const outcome = await satisfy(extra);
-    assert.equal(outcome.ok, false, `expected ${code}`);
-    assert.equal(outcome.reasonCode, code);
-    assert.equal((await materializeWorkspace(fx.workspace)).version, 6, `${code} appended an event`);
-  };
-
-  // No roster: the class demands one and argv did not carry it.
-  await refused("WORKSPACE_GATE_IDENTITY_REQUIRED", ["--actor", "owner:governance"]);
-  // A path with no digest is not a stated pin, and guessing one would defeat the point.
-  await refused("CLI_ARGUMENT_MISSING", ["--actor", "owner:governance", "--identity-authority", rosterPath]);
-  // A wrong digest stops at the digest, so the flag is verified rather than accepted.
-  await refused("GATE_IDENTITY_AUTHORITY_DIGEST", ["--actor", "owner:governance",
-    "--identity-authority", rosterPath, "--identity-authority-digest", "b".repeat(64)]);
-  // A roster that does not name this actor refuses it by name.
-  await refused("WORKSPACE_GATE_IDENTITY_REFUSED", ["--actor", "agent:opus",
-    "--identity-authority", rosterPath, "--identity-authority-digest", rosterDigest]);
-
-  const receipt = assertCanonicalJson((await satisfy(["--actor", "owner:governance",
-    "--identity-authority", rosterPath, "--identity-authority-digest", rosterDigest])).output);
-  assert.equal(receipt.version, 7);
-  const state = await materializeWorkspace(fx.workspace);
-  assert.deepEqual(state.gates.find((entry) => entry.id === gateId).extensions["gate-identity:decision"], {
-    required: false, value: { actorId: "owner:governance", authorityFileSha256: rosterDigest },
-  });
-});
-
 test("gate-v1: a chain written before gate-v1 still replays, owner gates and all", async (context) => {
   // The state under test can no longer be produced by the verb -- that is the point of
   // gate-v1 -- so it is written onto the log directly, which is exactly how it got
@@ -1432,17 +1111,11 @@ test("gate-v1: a chain written before gate-v1 still replays, owner gates and all
     occurredAt: instant(4), conferenceId, minutesExternalKey: "MINUTES-LEGACY",
     summary: "Ruled.", outcomeClass: "owner_intent_required", decisions: ["ruled"], unresolvedIssues: [],
   });
-  state = await createGateInWorkspace(fx.workspace, {
+  state = await appendHistoricalGateCreate(fx.workspace, {
     occurredAt: instant(5), externalKey: "GATE-LEGACY", projectId: fx.projectId, workId: fx.workId,
     title: "Legacy owner gate", outcomeClass: "owner_intent_required",
   });
   const gate = state.gates[0];
-
-  // The verb refuses this now, which is why the event is written by hand.
-  await assert.rejects(transitionGateInWorkspace(fx.workspace, {
-    occurredAt: instant(6), id: gate.id, status: "satisfied",
-    minutesLocator: minutesLocator("MINUTES-LEGACY"),
-  }), (error) => error?.reasonCode === "WORKSPACE_GATE_IDENTITY_REQUIRED");
 
   const eventsDirectory = join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "events");
   const segments = (await readdir(eventsDirectory)).sort();
@@ -1489,7 +1162,7 @@ test("gate-v1: replay accepts a forged tail-append, and this is proved rather th
     occurredAt: instant(4), conferenceId, minutesExternalKey: "MINUTES-FORGE",
     summary: "Ruled.", outcomeClass: "owner_intent_required", decisions: ["ruled"], unresolvedIssues: [],
   });
-  state = await createGateInWorkspace(fx.workspace, {
+  state = await appendHistoricalGateCreate(fx.workspace, {
     occurredAt: instant(5), externalKey: "GATE-FORGE", projectId: fx.projectId, workId: fx.workId,
     title: "Forge gate", outcomeClass: "owner_intent_required",
   });
@@ -1670,30 +1343,30 @@ test("INIT-004: the CLI opens Incident for creation and it materializes outside 
 // anything unrecognised still travels uncast so the engine answers with its own code
 // (the WSD-2 pass-through contract, which is what makes a typo diagnosable).
 test("MIN-102 the write path stops minting the retired outcome classes, and still passes garbage through", async (context) => {
+  // The gate half of this rule went with gate-create (TCRN-CROSS-STORY-467 R2); the
+  // conference half stands: minutes may close as discussion_only, never as blocked.
   const fx = await cliSeededFixture(context);
   const ws = fx.ws;
+  const close = async (key, outcomeClass) => {
+    const conferenceKey = `CONF-${key}`;
+    await invokeCli(["conference-open", "--workspace", ws, "--at", instant(20), "--external-key", conferenceKey,
+      "--project-id", fx.projectId, "--type", "risk", "--title", key, "--work-ids", fx.workId,
+      "--desired-outcome", "close", "--participant-ids", "-"]);
+    return invokeCli(["conference-close", "--workspace", ws, "--at", instant(21), "--conference-id", deriveStableId("conference", conferenceKey),
+      "--minutes-external-key", `MINUTES-${key}`, "--summary", "s", "--outcome-class", outcomeClass,
+      "--decisions", "-", "--unresolved-issues", "-"]);
+  };
 
-  for (const [index, retired] of ["blocked", "discussion_only", "recommendation"].entries()) {
-    const r = await invokeCli(["gate-create", "--workspace", ws, "--at", instant(20), "--external-key", `GATE-RETIRED-${index + 1}`, "--project-id", fx.projectId,
-      "--work-id", fx.workId, "--title", "retired", "--outcome-class", retired]);
-    assert.equal(r.ok, false, retired);
-    assert.equal(r.reasonCode, "CLI_ARGUMENT_MALFORMED", `gate ${retired} must not be mintable`);
-  }
+  const retired = await close("RETIRED", "blocked");
+  assert.equal(retired.ok, false);
+  assert.equal(retired.reasonCode, "CLI_ARGUMENT_MALFORMED", "blocked must not be mintable on minutes");
 
-  // The two that carry meaning stay mintable. External keys are indexed rather than
-  // built from the class name: the key grammar admits no underscore, so
-  // `owner_intent_required` cannot appear in one.
-  for (const [index, kept] of ["role_decision", "owner_intent_required"].entries()) {
-    const r = await invokeCli(["gate-create", "--workspace", ws, "--at", instant(21 + index),
-      "--external-key", `GATE-KEPT-${index + 1}`, "--project-id", fx.projectId, "--work-id", fx.workId,
-      "--title", "kept", "--outcome-class", kept]);
-    assert.equal(r.ok, true, `${kept} must still be mintable: ${r.reasonCode}`);
-  }
+  const kept = await close("KEPT", "discussion_only");
+  assert.equal(kept.ok, true, `discussion_only must still be mintable: ${kept.reasonCode}`);
 
-  const garbage = await invokeCli(["gate-create", "--workspace", ws, "--at", instant(22), "--external-key", "GATE-GARBAGE", "--project-id", fx.projectId,
-    "--work-id", fx.workId, "--title", "garbage", "--outcome-class", "not-a-class"]);
+  const garbage = await close("GARBAGE", "not-a-class");
   assert.equal(garbage.ok, false);
-  assert.equal(garbage.reasonCode, "GATE_SCHEMA_INVALID", "an unrecognised value must still reach the engine");
+  assert.equal(garbage.reasonCode, "CONFERENCE_SCHEMA_INVALID", "an unrecognised value must still reach the engine");
 });
 
 // INIT-008: the sprint / release-train mechanism — a Release is a top-level batch
@@ -1937,7 +1610,7 @@ test("STORY-299: any single byte inside any extension record still moves the vie
     title: "Detect", linkedWorkIds: [fx.workId], desiredOutcome: "detect", participantIds: [],
   });
   const conferenceId = state.conferences[0].id;
-  state = await createGateInWorkspace(fx.workspace, {
+  state = await appendHistoricalGateCreate(fx.workspace, {
     occurredAt: instant(4), externalKey: "GATE-DETECT", projectId: fx.projectId,
     workId: fx.workId, title: "Gate detect", outcomeClass: "role_decision",
   });
@@ -1968,7 +1641,7 @@ test("STORY-299: any single byte inside any extension record still moves the vie
     "reordering two records must change the collection digest",
   );
 
-  state = await transitionGateInWorkspace(fx.workspace, {
+  state = await appendHistoricalGateTransition(fx.workspace, {
     occurredAt: instant(7), id: state.gates[0].id, status: "blocked",
   });
   const afterGate = await readView();

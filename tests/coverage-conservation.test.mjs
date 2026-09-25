@@ -162,7 +162,7 @@ test("STORY-359 retired test paths are the waived paths the tree no longer has",
 
 test("STORY-359 an imported build artifact resolves back to the TypeScript source that survives", () => {
   const from = "tests/p7-compatibility-modes.test.mjs";
-  assert.equal(resolveImportedModule("../dist/build/packages/core/src/authority-file-reader.js", from), "packages/core/src/authority-file-reader.ts");
+  assert.equal(resolveImportedModule("../dist/build/packages/core/src/workspace.js", from), "packages/core/src/workspace.ts");
   assert.equal(resolveImportedModule("../scripts/lib/safe-io.mjs", from), "scripts/lib/safe-io.mjs");
   // Not judged: node builtins, packages, and a sibling test helper are not modules whose
   // coverage this leg is about.
@@ -201,7 +201,9 @@ test("STORY-359 the gate reds when a surviving module the retired test imported 
   assert.equal(red.ok, false);
   assert.equal(red.reasonCode, "SURVIVING_MODULE_COVERAGE_ZERO");
   assert.deepEqual(red.retiredTestFiles, ["tests/p7-compatibility-modes.test.mjs"]);
-  assert.ok(red.problems.some((problem) => problem.startsWith("packages/core/src/authority-file-reader.ts:")));
+  // The module this case named (the authority file reader) went with the authority family
+  // (TCRN-CROSS-STORY-467 R2); any surviving core module the retired test imported proves it.
+  assert.ok(red.problems.some((problem) => /^packages\/core\/src\/[a-z-]+\.ts:/u.test(problem)), JSON.stringify(red.problems));
 });
 
 test("STORY-359 the gate reds when the retired test source cannot be recovered from Git", async (context) => {

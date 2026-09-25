@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "einzbern.core-reference-persona-cases.v1",
+  "corePersonaAstralParityCases": 20,
+  "corePersonaDistinctPermutations": 64,
+  "corePersonaPermutationCorpusDigest": "7f3eb9bb85d7a9674dfc77a24ef3de5a24b27a24578c4d9e9ac8ded2772e8991"
+}

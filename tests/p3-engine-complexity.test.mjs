@@ -9,19 +9,20 @@ import test from "node:test";
 import {
   appendConferencePositionInWorkspace,
   closeConferenceInWorkspace,
-  createGateInWorkspace,
   createProject,
   createWork,
   deleteWork,
   initializeWorkspace,
   materializeWorkspace,
   openConferenceInWorkspace,
-  transitionGateInWorkspace,
   transitionWork,
 } from "../dist/build/packages/core/src/index.js";
 import * as publicCore from "../dist/build/packages/core/src/index.js";
 import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 import { withWorkspacePerfInstrumentation } from "../dist/build/packages/core/src/workspace-perf-instrumentation.js";
+// The gate verbs are retired (TCRN-CROSS-STORY-467 R2); gate history is appended the way
+// they wrote it, and replay is what these cases count.
+import { appendHistoricalGateCreate, appendHistoricalGateTransition } from "./helpers/workspace-fixture.mjs";
 
 const minutesLocator = (minutesExternalKey) => `conference-minutes:${deriveStableId("minutes", minutesExternalKey).slice("minutes:".length)}`;
 
@@ -120,11 +121,11 @@ test("WSD-1: extension reducer arms are O(delta) with exact per-operation counts
     occurredAt: at(), conferenceId, minutesExternalKey: "MINUTES-COMPLEXITY",
     summary: "Counted.", outcomeClass: "role_decision", decisions: ["count"], unresolvedIssues: [],
   }); version += 1;
-  state = await createGateInWorkspace(fx.workspace, {
+  state = await appendHistoricalGateCreate(fx.workspace, {
     occurredAt: at(), externalKey: "GATE-COMPLEXITY", projectId: fx.projectId, workId: anchorId,
     title: "Counter gate", outcomeClass: "role_decision",
   }); version += 1;
-  await transitionGateInWorkspace(fx.workspace, {
+  await appendHistoricalGateTransition(fx.workspace, {
     occurredAt: at(), id: state.gates[0].id, status: "blocked",
   }); version += 1;
   const { metrics } = await withWorkspacePerfInstrumentation(() => materializeWorkspace(fx.workspace));
@@ -182,7 +183,7 @@ test("CQ-10b: gate clearance scans the gate collection only on a transition whos
   const anchorId = (await materializeWorkspace(fx.workspace)).work.find((r) => r.externalKey === "INITIATIVE-0").id;
   const gates = 3;
   for (let i = 0; i < gates; i += 1) {
-    await createGateInWorkspace(fx.workspace, {
+    await appendHistoricalGateCreate(fx.workspace, {
       occurredAt: at(), externalKey: `GATE-SCAN-${i}`, projectId: fx.projectId, workId: anchorId,
       title: `Scan gate ${i}`, outcomeClass: "role_decision",
     }); version += 1;
@@ -224,11 +225,11 @@ test("CQ-10b: a gate-satisfied transition copies the whole conference and minute
       summary: "Counted.", outcomeClass: "role_decision", decisions: ["count"], unresolvedIssues: [],
     }); version += 1;
   }
-  await createGateInWorkspace(fx.workspace, {
+  await appendHistoricalGateCreate(fx.workspace, {
     occurredAt: at(), externalKey: "GATE-SAT", projectId: fx.projectId, workId: anchorId,
     title: "Satisfy gate", outcomeClass: "role_decision",
   }); version += 1;
-  await transitionGateInWorkspace(fx.workspace, {
+  await appendHistoricalGateTransition(fx.workspace, {
     occurredAt: at(), id: deriveStableId("gate", "GATE-SAT"),
     status: "satisfied", minutesLocator: minutesLocator("MINUTES-SAT-0"),
   }); version += 1;

@@ -11,7 +11,7 @@ that one file retired in TCRN-CROSS-STORY-359; the proof did not.
 
 The loop is:
 
-**initiative → epic → story → gate → conference → distill → promote → trace.**
+**initiative → epic → story → conference → distill → promote → decide → trace.**
 
 ## Conventions
 
@@ -59,30 +59,18 @@ is validated on every append.
 
 ## 2. Move the story into flight
 
-A story is planned when created. Walk it through the lifecycle to `active`, the
-state from which a governing gate will stand between it and `done`.
+A story is planned when created. Walk it through the lifecycle to `active`; it
+reaches `done` only once its deciding minutes are recorded (section 6).
 
 ```console
 $ einzbern work-transition --workspace ./flagship/workspace --at 2026-07-11T00:00:05Z --id <story-id> --status ready
 $ einzbern work-transition --workspace ./flagship/workspace --at 2026-07-11T00:00:06Z --id <story-id> --status active
 ```
 
-## 3. Raise the gate
-
-A work-item gate anchored to the story is born `pending`. While it is pending, the
-engine refuses to move the story to `done` (`WORKSPACE_GATE_PENDING`) — the gate is
-the governed decision point the rest of the loop resolves.
-
-```console
-$ einzbern gate-create --workspace ./flagship/workspace --at 2026-07-11T00:00:07Z --external-key FLAGSHIP-GATE --project-id <project-id> --work-id <story-id> --title Decision-gate --outcome-class role_decision
-```
-
-Capture the gate id from `recordId`.
-
-## 4. Hold the conference
+## 3. Hold the conference
 
 Open a conference anchored to the story, record a position, then close it into
-minutes. The close is the anchoring evidence the gate will require.
+minutes. The minutes become the story's recorded decision.
 
 ```console
 $ einzbern conference-open --workspace ./flagship/workspace --at 2026-07-11T00:00:08Z --external-key FLAGSHIP-CONFERENCE --project-id <project-id> --type architecture --title Decide-the-story --work-ids <story-id> --desired-outcome ratify-the-approach --participant-ids profile:architect-01
@@ -91,7 +79,7 @@ $ einzbern conference-append-position --workspace ./flagship/workspace --at 2026
 
 Capture the conference id from the open receipt's `recordId`.
 
-## 5. Distill the decision into knowledge
+## 4. Distill the decision into knowledge
 
 Before closing with distillation, initialize the disposable knowledge store — a
 real (non-fixture) workspace requires explicit acknowledgment that the store is
@@ -115,7 +103,7 @@ The candidate carries the fixed conference tag set
 union of the position and the close, and a `sourceDigest` bound to the full minutes
 basis — everything the promotion gate demands.
 
-## 6. Promote the candidate
+## 5. Promote the candidate
 
 Read the knowledge marker version, list the candidate, then promote it. Promotion
 happens now, while the knowledge marker's high-water still equals the workspace
@@ -132,43 +120,38 @@ $ einzbern knowledge-promote --workspace ./flagship/workspace --expected-revisio
 `revision`). Promotion returns `KNOWLEDGE_PROMOTION_UPDATED` with `promotionState`
 `promoted`.
 
-## 7. Satisfy the gate and finish the story
+## 6. Record the decision and finish the story
 
-The same minutes that produced the knowledge candidate satisfy the gate. The
-satisfaction locator is `conference-minutes:` followed by the minutes id's suffix.
-Once the gate is `satisfied`, the story is free to reach `done`.
+The same minutes that produced the knowledge candidate are the story's decision.
+`work-annotate --decided-by` records them on the story, and a Story reaches `done`
+only once that decision is on the record.
 
 ```console
-$ einzbern gate-transition --workspace ./flagship/workspace --at 2026-07-11T00:00:13Z --id <gate-id> --status satisfied --minutes-locator <minutes-locator>
 $ einzbern work-annotate --workspace ./flagship/workspace --at 2026-07-11T00:00:14Z --id <story-id> --decided-by <minutes-id>
 $ einzbern work-transition --workspace ./flagship/workspace --at 2026-07-11T00:00:15Z --id <story-id> --status done
 ```
 
-## 8. Trace the chain
+## 7. Trace the chain
 
-Finally, read the two governed records the chain hangs from and confirm the loop
-binds end to end.
+Finally, read the governed record the chain hangs from and confirm the loop binds
+end to end.
 
 ```console
 $ einzbern work-show --workspace ./flagship/workspace --id <story-id>
-$ einzbern gate-list --workspace ./flagship/workspace --work-id <story-id>
 ```
 
 The trace is a chain of digests, each link a field of one record that names the
 next:
 
-1. **Work record → gate card.** `gate.workId` equals the story id: the gate governs
-   this exact work item, and the story reached `done` only because the gate is
-   `satisfied`.
-2. **Gate card → conference minutes.** The gate's persisted
-   `gate-evidence:conference-minutes` locator resolves to the minutes id from the
-   distilling close.
-3. **Conference minutes → knowledge candidate.** The candidate's `sourceDigest` is
+1. **Work record → conference minutes.** The story's `decidedBy` names the minutes
+   id from the distilling close, and the story reached `done` only with that decision
+   on the record.
+2. **Conference minutes → knowledge candidate.** The candidate's `sourceDigest` is
    the canonical hash of the minutes basis (title, decision, minutes id) — recompute
    it and it matches, so the candidate provably came from these minutes.
-4. **Knowledge candidate → promotion receipt.** The promotion receipt names the same
+3. **Knowledge candidate → promotion receipt.** The promotion receipt names the same
    candidate id, now `promoted`.
 
 No link reads a host path or a hostname — the chain is carried entirely by content
 digests and governed record ids, so it is reproducible on every machine. That is the
-whole governed loop: planned, gated, deliberated, distilled, promoted, and proven.
+whole governed loop: planned, deliberated, distilled, promoted, decided, and proven.

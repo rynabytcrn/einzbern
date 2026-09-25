@@ -339,7 +339,7 @@ test("CQ-05(c): malformed integer flags fail at the CLI boundary naming the flag
   await malformed(["knowledge-promote", ...ws, "--expected-revision", "abc",
     "--at", instant(31), "--id", "knowledge:0000000000000000000000000000000000000000", "--state", "promoted"], "expected-revision");
   // STORY-366: the article refresh verb is a fourth site sharing this arbiter
-  // (CQ-05-expected-revision-arbiter, guard-registry.json expectedMatches: 4). The
+  // (CQ-05-expected-revision-arbiter, the retired guard entry's expectedMatches: 4). The
   // malformed value must still fail at argument parsing, before core is ever called,
   // so the id/path below need not resolve to a real article.
   await malformed(["knowledge-article-refresh", ...ws, "--expected-revision", "abc",

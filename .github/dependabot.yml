@@ -6,8 +6,8 @@ version: 2
 # A dependency here is pinned in three places that must agree: package.json, the lockfile,
 # and scripts/policy/dependency-policy.json -- which keys on the exact version, carries the
 # integrity hash, and requires a written `purpose` for every entry. Dependabot edits the
-# first two. It cannot write the third, cannot regenerate the materialization store, the
-# SBOM, or the verification-map digests. So every npm version-update pull request it opens
+# first two. It cannot write the third, and cannot regenerate the materialization store or
+# the SBOM. So every npm version-update pull request it opens
 # is red before anyone reads it, not because the bump is wrong but because a bump here is a
 # decision someone has to make and document.
 #

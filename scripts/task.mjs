@@ -339,23 +339,16 @@ async function readText(path) {
   return (await readSourceFile(path)).toString("utf8");
 }
 
-async function sourcePolicy() {
-  return readJson(resolve(repositoryRoot, "scripts/policy/source-allowlist.json"));
-}
-
-function allowedByPolicy(path, policy) {
-  return policy.allowedFiles.includes(path);
+// TCRN-CROSS-STORY-467 R2: the source set is what git tracks. The hand-kept allowlist that
+// mirrored it, and the P1 leg that held the two in step, are retired; an untracked file (a
+// host's local settings, say) never enters the archive, and a tracked file that is missing
+// on disk fails the bound read instead of being skipped.
+function trackedSourcePaths() {
+  return run("git", ["ls-files", "-z"]).split("\0").filter((path) => path.length > 0).sort(compareCanonicalText);
 }
 
 async function sourceRecords() {
-  // Host-local observer settings carry runtime-only target values. They must not
-  // become part of the public source allowlist or release source inventory.
-  // TCRN-CROSS-STORY-359 retired verify:observe-channel, which used to fingerprint
-  // this file independently; the exclusion now stands on the ignore rule alone.
-  const files = (await walkFiles()).filter(
-    (path) => toPosixPath(relative(repositoryRoot, path)) !== ".claude/settings.local.json",
-  );
-  return Promise.all(files.map((path) => fileRecord(path)));
+  return Promise.all(trackedSourcePaths().map((path) => fileRecord(resolve(repositoryRoot, path))));
 }
 
 async function verifyRuntime() {
@@ -659,10 +652,9 @@ async function verifyP8() {
   const sbomResult = await sbom();
   const sourceBytes = await readSourceFile(resolve(repositoryRoot, sourceArchive.path));
   const sbomBytes = await readSourceFile(resolve(repositoryRoot, sbomResult.path));
-  const policy = await sourcePolicy();
   const independentlyRebuilt = await rebuildP8SourceArchiveInIndependentRoots({
     repositoryRoot,
-    allowedFiles: policy.allowedFiles,
+    allowedFiles: trackedSourcePaths(),
   });
   assertion(sourceBytes.equals(independentlyRebuilt.archive), "P8_ARCHIVE_REPRODUCIBILITY_MISMATCH");
   const artifacts = buildP8ReleaseArtifacts({ sourceArchive: sourceBytes, sbom: sbomBytes });
@@ -762,7 +754,6 @@ function tarEntry(name, content, mode) {
 }
 
 async function archive() {
-  await verifySource();
   const records = await sourceRecords();
   records.sort((left, right) => compareCanonicalText(left.path, right.path));
   const entries = [];
@@ -1049,7 +1040,6 @@ async function verifyPrivacy({ requireP8Surfaces = false, historyScope = "head" 
     : [];
   const findings = scanPrivacyEntries(entries, { owner, privateTokens, repositories: await engineRepositoryNames() });
   assertion(findings.length === 0, "PRIVACY_FINDINGS", findings.join(","));
-  const source = await verifySource();
   return success("PRIVACY_SOURCE_CLEAN", {
     privacyScope: historyScope === "head" ? "HEAD-reachable" : "all-local-objects",
     scannedEntries: entries.length,
@@ -1059,20 +1049,9 @@ async function verifyPrivacy({ requireP8Surfaces = false, historyScope = "head" 
     archiveScanned: entries.some((entry) => entry.kind === "archive"),
     allowedPublicMetadata: "strict-github-noreply-commit-or-tag-lines-only",
     allowedPublicControlMetadata: "exact-p3-marker-contract-only",
-    sourceFiles: source.files,
+    sourceFiles: trackedSourcePaths().length,
     p8Surfaces: requireP8Surfaces ? p8Surfaces : null,
   });
-}
-
-async function verifySource() {
-  const policy = await sourcePolicy();
-  assertion(!Object.hasOwn(policy, "allowedPrefixes"), "SOURCE_PREFIX_ALLOWLIST_FORBIDDEN");
-  const records = await sourceRecords();
-  const denied = records.map((record) => record.path).filter((path) => !allowedByPolicy(path, policy));
-  assertion(denied.length === 0, "SOURCE_NOT_ALLOWLISTED", denied.join(","));
-  const missing = policy.allowedFiles.filter((path) => !records.some((record) => record.path === path));
-  assertion(missing.length === 0, "SOURCE_ALLOWLIST_ENTRY_MISSING", missing.join(","));
-  return success("SOURCE_ALLOWLIST_VERIFIED", { files: records.length, exactEntries: policy.allowedFiles.length });
 }
 
 async function verifyNoSiblingDependency() {
@@ -1165,226 +1144,6 @@ async function verifyOfflineBoundary() {
     osNetworkSandbox: "not-provided",
     freshAdvisoryScan: "not-performed",
     ciDependencyAcquisition: "explicit-external-boundary",
-  });
-}
-
-async function aggregateDigest(paths) {
-  const records = await Promise.all(paths.map((path) => fileRecord(resolve(repositoryRoot, path))));
-  records.sort((left, right) => compareCanonicalText(left.path, right.path));
-  return createHash("sha256").update(JSON.stringify(records)).digest("hex");
-}
-
-const commandContracts = {
-  privacy: { exit: 0, reasonCode: "PRIVACY_SOURCE_CLEAN" },
-  "verify-p1": { exit: 0, reasonCode: "P1_VERIFIED" },
-  governance: { exit: 0, reasonCode: "GOVERNANCE_TOOLCHAIN_VERIFIED" },
-  isolated: { exit: 0, reasonCode: "ISOLATED_P1_VERIFIED" },
-  p8: { exit: 0, reasonCode: "P8_WORKFLOW_RC_VERIFIED" },
-  "retrieval-eval": { exit: 0, reasonCode: "RETRIEVAL_EVAL_VERIFIED" },
-};
-
-async function verifyMap() {
-  const map = JSON.parse(await readText(resolve(repositoryRoot, "verification-map.yaml")));
-  const packageJson = await readJson(resolve(repositoryRoot, "package.json"));
-  const { verifyRedLegCoverage } = await import("./verification-red-legs.mjs");
-  const { validateVerificationMapLinks } = await import("./verification-links.mjs");
-  assertion(map.schemaVersion === "tcrn.verification-map.v1", "VERIFICATION_MAP_SCHEMA");
-  assertion(Array.isArray(map.claims) && map.claims.length > 0, "VERIFICATION_MAP_EMPTY");
-  const ids = new Set();
-  const required = [
-    "id",
-    "phase",
-    "category",
-    "status",
-    "subject",
-    "command",
-    "fixturePaths",
-    "fixtureDigest",
-    "environment",
-    "expectedExit",
-    "expectedReasonCode",
-    "evidencePath",
-    "invalidationTriggers",
-  ];
-  const claimCategories = ["framework-hygiene", "inertness-proof", "runtime-capability"];
-  for (const claim of map.claims) {
-    assertion(required.every((field) => Object.hasOwn(claim, field)), "VERIFICATION_MAP_FIELDS", claim.id ?? "unknown");
-    assertion(!ids.has(claim.id), "VERIFICATION_MAP_DUPLICATE", claim.id);
-    ids.add(claim.id);
-    // TCRN-CROSS-STORY-359. The allowlist used to admit thirteen phases and the loop
-    // below required eleven of them to be non-empty. Both lists now name the two phases
-    // that still have a gate to hang on: every other phase's claims measured a verify:*
-    // script this Story retired, and a phase kept in an allowlist with no claim under it
-    // is the same unread roster this repository keeps paying for.
-    assertion(["P1", "P8"].includes(claim.phase), "VERIFICATION_MAP_PHASE", claim.id);
-    assertion(claimCategories.includes(claim.category), "VERIFICATION_MAP_CATEGORY", claim.id);
-    assertion(["implemented", "candidate", "planned"].includes(claim.status), "VERIFICATION_MAP_STATUS", claim.id);
-    assertion(Array.isArray(claim.fixturePaths), "VERIFICATION_MAP_FIXTURES", claim.id);
-    assertion(Array.isArray(claim.invalidationTriggers) && claim.invalidationTriggers.length > 0, "VERIFICATION_MAP_INVALIDATION", claim.id);
-    // TCRN-CROSS-STORY-359. Every claim now says what it is here for, and says it in a
-    // form that can be checked: `requirement` is the ordinal of one of the eleven gate
-    // categories this repository keeps (1 format, 2 lint, 3 typecheck, 4 build, 5 test,
-    // 6 offline, 7 privacy, 8 chain-validate, 9 hooks-live, 10 retrieval-eval,
-    // 11 release), `incident` is the chain id of the incident that put the claim here.
-    // Exactly one, never both: a claim that can name neither has no reason to exist and
-    // retires instead. This is the field the ledger lacked while it grew to 122 entries
-    // named after whichever ticket was open the week each was written.
-    const hasRequirement = Object.hasOwn(claim, "requirement");
-    const hasIncident = Object.hasOwn(claim, "incident");
-    assertion(hasRequirement !== hasIncident, "VERIFICATION_MAP_ANCHOR_MISSING", claim.id);
-    if (hasRequirement) {
-      assertion(Number.isSafeInteger(claim.requirement) && claim.requirement >= 1 && claim.requirement <= 11, "VERIFICATION_MAP_REQUIREMENT_RANGE", claim.id);
-    } else {
-      assertion(/^TCRN-[A-Z]+-INC-\d+$/u.test(String(claim.incident)), "VERIFICATION_MAP_INCIDENT_SHAPE", claim.id);
-    }
-    const commandMatch = claim.command.match(/^pnpm ([a-z0-9:.-]+)$/u);
-    assertion(commandMatch, "VERIFICATION_MAP_COMMAND_SURFACE", claim.id);
-    const scriptName = commandMatch[1];
-    const script = packageJson.scripts?.[scriptName];
-    const handlerMatch = script?.match(/^node scripts\/task\.mjs ([a-z0-9-]+)$/u);
-    const isolatedMatch = script === "node scripts/isolated-proof.mjs";
-    assertion(handlerMatch || isolatedMatch, "VERIFICATION_MAP_COMMAND_SCRIPT", `${claim.id}:${scriptName}`);
-    const contractName = isolatedMatch ? "isolated" : handlerMatch[1];
-    const contract = commandContracts[contractName];
-    assertion(contract, "VERIFICATION_MAP_COMMAND_CONTRACT", `${claim.id}:${contractName}`);
-    assertion(contract.exit === claim.expectedExit, "VERIFICATION_MAP_EXIT_UNOBSERVABLE", claim.id);
-    assertion(contract.reasonCode === claim.expectedReasonCode, "VERIFICATION_MAP_REASON_UNOBSERVABLE", claim.id);
-    if (claim.status === "implemented" || claim.status === "candidate") {
-      assertion(/^[a-f0-9]{64}$/u.test(claim.fixtureDigest), "VERIFICATION_MAP_DIGEST", claim.id);
-      assertion(claim.fixtureDigest === await aggregateDigest(claim.fixturePaths), "VERIFICATION_MAP_DIGEST_MISMATCH", claim.id);
-    } else {
-      assertion(claim.fixtureDigest === null, "VERIFICATION_MAP_PLANNED_DIGEST", claim.id);
-      assertion(claim.expectedReasonCode.endsWith("_OUT_OF_SCOPE"), "VERIFICATION_MAP_PLANNED_REASON", claim.id);
-    }
-  }
-  const redLegCoverage = verifyRedLegCoverage(map);
-  assertion(redLegCoverage.ok, "VERIFICATION_MAP_RED_LEG_COVERAGE", redLegCoverage.problems.join("; "));
-  const verificationLinks = validateVerificationMapLinks(map);
-  assertion(verificationLinks.ok, "VERIFICATION_MAP_LINKS_INVALID", verificationLinks.problems.join("; "));
-  // The completeness loop: a phase named in the allowlist above must actually carry a
-  // claim. It read eleven phases before TCRN-CROSS-STORY-359; the nine that carried only
-  // ticket-numbered claims left with the scripts those claims measured.
-  for (const phase of ["P1", "P8"]) {
-    assertion(map.claims.some((claim) => claim.phase === phase), "VERIFICATION_MAP_PHASE_MISSING", phase);
-  }
-  // TCRN-CROSS-INIT-020 INC-078 — ADR acceptance criteria ↔ machine gate
-  // reconciliation. Each ADR acceptance criterion NAMES the executable gate/test
-  // that machine-checks it (scripts/policy/adr-criteria.json); a criterion with no
-  // named gate, a gate file that does not exist, or a gate that no pipeline runs
-  // ("not wired", per INC-079) is red. This is the machine form of "a criterion
-  // with no red leg is not a criterion" (ADR-0004 §9) — the view and reason-code
-  // criteria went silently unenforced during INIT-020 precisely because nothing
-  // forced them to name a gate.
-  {
-    let adrCriteria;
-    try {
-      adrCriteria = JSON.parse(await readText(resolve(repositoryRoot, "scripts/policy/adr-criteria.json")));
-    } catch (error) {
-      assertion(false, "VERIFICATION_MAP_ADR_CRITERIA_UNREADABLE", String(error?.message ?? error));
-    }
-    if (adrCriteria !== undefined) {
-      assertion(adrCriteria.schemaVersion === "tcrn.adr-criteria.v1", "VERIFICATION_MAP_ADR_CRITERIA_SCHEMA");
-      assertion(Array.isArray(adrCriteria.criteria) && adrCriteria.criteria.length > 0, "VERIFICATION_MAP_ADR_CRITERIA_EMPTY");
-      const criterionIds = new Set();
-      const adrSectionHeadings = new Map();
-      const adrDocuments = new Map();
-      for (const criterion of adrCriteria.criteria) {
-        const adrNumber = String(criterion.adr ?? "").padStart(4, "0");
-        if (!adrDocuments.has(adrNumber)) {
-          const adrPath = resolve(repositoryRoot, `docs/adr/${adrNumber}-postgres-storage-backend.md`);
-          let document;
-          try {
-            document = await readText(adrPath);
-          } catch (error) {
-            assertion(false, "VERIFICATION_MAP_ADR_SOURCE_UNREADABLE", `${criterion.id}:${String(error?.message ?? error)}`);
-          }
-          const section = document?.match(/### 9\. Equivalence criteria[\s\S]*?(?=\n##\s|$)/u)?.[0] ?? "";
-          assertion(section.length > 0, "VERIFICATION_MAP_ADR_SECTION_MISSING", criterion.id);
-          const headings = new Map();
-          for (const match of section.matchAll(/^\s*(\d+)\.\s+\*\*(.+?)\*\*/gmu)) {
-            headings.set(Number(match[1]), match[2].replace(/[.。]+$/u, "").trim());
-          }
-          adrDocuments.set(adrNumber, document ?? "");
-          adrSectionHeadings.set(adrNumber, headings);
-        }
-      }
-      const wiring = (await import("./lib/test-wiring.mjs")).judgeTestWiring({ repoRoot: repositoryRoot, registryPath: resolve(repositoryRoot, "scripts/policy/test-wiring.json") });
-      for (const criterion of adrCriteria.criteria) {
-        assertion(typeof criterion.id === "string" && criterion.id.length > 0, "VERIFICATION_MAP_ADR_CRITERION_ID");
-        assertion(!criterionIds.has(criterion.id), "VERIFICATION_MAP_ADR_CRITERION_DUPLICATE", criterion.id);
-        criterionIds.add(criterion.id);
-        const adrNumber = String(criterion.adr ?? "").padStart(4, "0");
-        const headings = adrSectionHeadings.get(adrNumber);
-        assertion(Number.isSafeInteger(criterion.ordinal) && criterion.ordinal > 0, "VERIFICATION_MAP_ADR_CRITERION_ORDINAL", criterion.id);
-        const heading = headings?.get(criterion.ordinal);
-        assertion(typeof heading === "string", "VERIFICATION_MAP_ADR_CRITERION_NOT_IN_SOURCE", criterion.id);
-        assertion(heading.toLocaleLowerCase() === String(criterion.title ?? "").toLocaleLowerCase(), "VERIFICATION_MAP_ADR_CRITERION_TITLE_DRIFT", criterion.id);
-        assertion(typeof criterion.gate === "string" && criterion.gate.length > 0, "VERIFICATION_MAP_ADR_CRITERION_UNNAMED", criterion.id);
-        assertion(["implemented", "candidate", "planned", "retired"].includes(criterion.status), "VERIFICATION_MAP_ADR_CRITERION_STATUS", criterion.id);
-        if (criterion.status === "retired") {
-          assertion(typeof criterion.ruling === "string" && criterion.ruling.trim().length > 0, "VERIFICATION_MAP_ADR_CRITERION_RULING", criterion.id);
-        }
-        if (criterion.status === "implemented") {
-          // The named gate must be real AND pipeline-wired. A gate that no pipeline
-          // executes is not a gate (INC-079's rule applied to ADR criteria).
-          const gateIsScript = typeof packageJson.scripts?.[criterion.gate] === "string";
-          if (!gateIsScript) {
-            let exists = false;
-            try { await lstat(resolve(repositoryRoot, criterion.gate)); exists = true; } catch { exists = false; }
-            assertion(exists, "VERIFICATION_MAP_ADR_CRITERION_GATE_MISSING", criterion.id);
-          }
-          if (criterion.gate.endsWith(".test.mjs") && (wiring.orphaned ?? []).includes(criterion.gate)) {
-            assertion(false, "VERIFICATION_MAP_ADR_CRITERION_GATE_UNWIRED", `${criterion.id}:${criterion.gate}`);
-          }
-          let gateSource = "";
-          try {
-            gateSource = await readText(resolve(repositoryRoot, criterion.gate));
-          } catch (error) {
-            assertion(false, "VERIFICATION_MAP_ADR_CRITERION_GATE_UNREADABLE", `${criterion.id}:${String(error?.message ?? error)}`);
-          }
-          assertion(gateSource.includes(`§9.${String(criterion.ordinal)}`), "VERIFICATION_MAP_ADR_CRITERION_GATE_LABEL", criterion.id);
-          const redLeg = criterion.redLeg;
-          assertion(redLeg !== null && typeof redLeg === "object" && !Array.isArray(redLeg), "VERIFICATION_MAP_ADR_RED_LEG_STRUCTURED", criterion.id);
-          assertion(redLeg?.schemaVersion === "tcrn.adr-red-leg.v1", "VERIFICATION_MAP_ADR_RED_LEG_SCHEMA", criterion.id);
-          assertion(typeof redLeg?.marker === "string" && redLeg.marker.length > 0, "VERIFICATION_MAP_ADR_RED_LEG_MARKER", criterion.id);
-          assertion(redLeg?.mutation !== null && typeof redLeg?.mutation === "object" && !Array.isArray(redLeg.mutation), "VERIFICATION_MAP_ADR_RED_LEG_MUTATION", criterion.id);
-          assertion(typeof redLeg?.mutation?.kind === "string" && redLeg.mutation.kind.length > 0, "VERIFICATION_MAP_ADR_RED_LEG_MUTATION_KIND", criterion.id);
-          assertion(typeof redLeg?.mutation?.target === "string" && redLeg.mutation.target.length > 0, "VERIFICATION_MAP_ADR_RED_LEG_MUTATION_TARGET", criterion.id);
-          assertion(redLeg?.expected !== null && typeof redLeg?.expected === "object" && !Array.isArray(redLeg.expected), "VERIFICATION_MAP_ADR_RED_LEG_EXPECTED", criterion.id);
-          assertion(typeof redLeg?.expected?.outcome === "string" && redLeg.expected.outcome.length > 0, "VERIFICATION_MAP_ADR_RED_LEG_OUTCOME", criterion.id);
-          assertion(Array.isArray(redLeg?.expected?.reasonCodes) && redLeg.expected.reasonCodes.length > 0 && redLeg.expected.reasonCodes.every((code) => typeof code === "string" && code.length > 0), "VERIFICATION_MAP_ADR_RED_LEG_REASON_CODES", criterion.id);
-          assertion(gateSource.includes(redLeg.marker), "VERIFICATION_MAP_ADR_CRITERION_RED_LEG_MARKER", criterion.id);
-        }
-      }
-      for (const [adrNumber, headings] of adrSectionHeadings) {
-        const expected = adrCriteria.criteria.filter((criterion) => String(criterion.adr).padStart(4, "0") === adrNumber);
-        assertion(headings.size === expected.length, "VERIFICATION_MAP_ADR_CRITERION_COUNT_DRIFT", adrNumber);
-      }
-    }
-  }
-  const categoryCounts = {
-    frameworkHygiene: map.claims.filter((claim) => claim.category === "framework-hygiene").length,
-    inertnessProof: map.claims.filter((claim) => claim.category === "inertness-proof").length,
-    runtimeCapability: map.claims.filter((claim) => claim.category === "runtime-capability").length,
-  };
-  // README drift is a build failure: the public claims badge must state the same
-  // partition the ledger computes (WSG-5 honest-counts charter).
-  const readme = await readText(resolve(repositoryRoot, "README.md"));
-  const badge = readme.match(/Verified claims: (\d+) \(hygiene (\d+) · inertness (\d+) · runtime (\d+)\)/u);
-  assertion(badge, "VERIFICATION_MAP_README_COUNTS", "badge absent");
-  assertion(Number(badge[1]) === map.claims.length, "VERIFICATION_MAP_README_COUNTS", "total");
-  assertion(Number(badge[2]) === categoryCounts.frameworkHygiene, "VERIFICATION_MAP_README_COUNTS", "hygiene");
-  assertion(Number(badge[3]) === categoryCounts.inertnessProof, "VERIFICATION_MAP_README_COUNTS", "inertness");
-  assertion(Number(badge[4]) === categoryCounts.runtimeCapability, "VERIFICATION_MAP_README_COUNTS", "runtime");
-  return success("VERIFICATION_MAP_VERIFIED", {
-    claims: map.claims.length,
-    implemented: map.claims.filter((claim) => claim.status === "implemented").length,
-    candidate: map.claims.filter((claim) => claim.status === "candidate").length,
-    observableReasonCodes: map.claims.length,
-    ...categoryCounts,
-    redLegCount: redLegCoverage.redLegCount,
-    redLegExemptions: redLegCoverage.exemptionCount,
-    linkedClaimCount: verificationLinks.linkedClaimCount,
   });
 }
 
@@ -1574,11 +1333,9 @@ const handlers = {
   "release-preflight": verifyReleaseTagPreflight,
   privacy: verifyPrivacy,
   sbom,
-  source: verifySource,
   "no-sibling-dependency": verifyNoSiblingDependency,
   test: verifyTestSuite,
   typecheck,
-  "verification-map": verifyMap,
   "retrieval-eval": async () => {
     const result = JSON.parse(run(process.execPath, [resolve(repositoryRoot, "scripts/retrieval-eval.mjs")]));
     if (!result.ok) fail(result.reasonCode, result.message);

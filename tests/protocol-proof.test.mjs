@@ -2,7 +2,6 @@
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { canonicalJson as protocolCanonicalJson } from "../dist/build/packages/protocol/src/index.js";
@@ -11,7 +10,6 @@ import {
   ProtocolProofError,
   canonicalProofBytes,
   validateP2SchemasAndFixtures,
-  validateRc1ManifestShape,
 } from "../scripts/lib/protocol-proof.mjs";
 
 test("Draft 2020-12 schemas are meta-validated with local refs and executable cases", async () => {
@@ -81,47 +79,6 @@ test("canonical proof serialization preserves every own key in exact UTF-8 byte 
     }
     assert.equal(canonicalJson(value), expected);
     assert.equal(canonicalJson({ nested: value }), `{"nested":${expected}}`);
-  }
-});
-
-test("RC1 candidate and verdict slots enforce exact field sets", async () => {
-  const manifest = JSON.parse(await readFile(
-    new URL("../fixtures/rc1/rc1-candidate-proof-manifest.json", import.meta.url),
-    "utf8",
-  ));
-  assert.doesNotThrow(() => validateRc1ManifestShape(manifest));
-  for (const mutation of [
-    (value) => { value.unexpected = true; },
-    (value) => { delete value.accepted; },
-  ]) {
-    const candidate = structuredClone(manifest);
-    mutation(candidate);
-    assert.throws(
-      () => validateRc1ManifestShape(candidate),
-      (error) => error instanceof ProtocolProofError && error.reasonCode === "RC1_MANIFEST_FIELDS",
-    );
-  }
-  for (const mutation of [
-    (slots) => { slots["unexpected-reviewer"] = { status: "unresolved", verdict: null, basisDigest: null }; },
-    (slots) => { delete slots["workflow-verification-engineer"]; },
-  ]) {
-    const candidate = structuredClone(manifest);
-    mutation(candidate.roleVerdictSlots);
-    assert.throws(
-      () => validateRc1ManifestShape(candidate),
-      (error) => error instanceof ProtocolProofError && error.reasonCode === "RC1_VERDICT_SLOTS",
-    );
-  }
-  for (const mutation of [
-    (slot) => { slot.unexpected = true; },
-    (slot) => { delete slot.verdict; },
-  ]) {
-    const candidate = structuredClone(manifest);
-    mutation(candidate.roleVerdictSlots["security-risk-reviewer"]);
-    assert.throws(
-      () => validateRc1ManifestShape(candidate),
-      (error) => error instanceof ProtocolProofError && error.reasonCode === "RC1_VERDICT_SLOT_FIELDS",
-    );
   }
 });
 

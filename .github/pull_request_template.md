@@ -13,4 +13,3 @@ Describe the bounded change and its public contract impact.
 ## Verification
 
 - [ ] `pnpm verify:p1`
-- [ ] Any invalidation trigger in `verification-map.yaml` was addressed.

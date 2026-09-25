@@ -39,7 +39,6 @@ export const P1_SEQUENCE = Object.freeze([
   // verb and `verify:portal` run scripts/verify-portal.mjs directly. Declared here rather
   // than special-cased in the test, so the exception is visible where the roster is read.
   { task: "portal", script: "verify:portal", dispatchesThroughTask: false },
-  { task: "source", script: "verify:source" },
   // `archive` stays on the roster because `privacy` below scans the source archive when
   // one is present and silently scans less when it is not. Dropping the producer would
   // have narrowed the privacy surface without any gate saying so.
@@ -52,7 +51,6 @@ export const P1_SEQUENCE = Object.freeze([
   // was retired is three more `verify:*` names for them, not the assertions.
   { task: "governance", script: "verify:governance" },
   { task: "privacy", script: "verify:privacy" },
-  { task: "verification-map", script: "verify:map" },
   // STORY-301: last, because it measures the tree the gates above just proved, and
   // because a budget that runs first would judge a build nobody had checked yet.
   { task: "budget", script: "verify:budget" },

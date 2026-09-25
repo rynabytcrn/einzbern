@@ -186,10 +186,10 @@ test("EPIC135: push-gate budget exemption requires one terminal receipt and no o
   const reasonCodes = Object.fromEntries([
     ["format-check", "FORMAT_VERIFIED"], ["lint", "LINT_VERIFIED"], ["typecheck", "TYPECHECK_VERIFIED"],
     ["build", "BUILD_VERIFIED"], ["test", "TESTS_VERIFIED"], ["portal", "PORTAL_VERIFY_TRAIN_GREEN"],
-    ["source", "SOURCE_ALLOWLIST_VERIFIED"], ["archive", "ARCHIVE_VERIFIED"],
+    ["archive", "ARCHIVE_VERIFIED"],
     ["no-sibling-dependency", "NO_SIBLING_DEPENDENCY"], ["offline", "OFFLINE_BOUNDARY_VERIFIED"],
     ["governance", "GOVERNANCE_TOOLCHAIN_VERIFIED"], ["privacy", "PRIVACY_SOURCE_CLEAN"],
-    ["verification-map", "VERIFICATION_MAP_VERIFIED"], ["budget", "PROOF_BUDGET_WARNING"],
+    ["budget", "PROOF_BUDGET_WARNING"],
     ["links", "MARKDOWN_LINKS_RESOLVED"], ["retrieval-eval", "RETRIEVAL_EVAL_VERIFIED"],
   ]);
   const receipt = (notices, overrides = {}) => JSON.stringify({
@@ -230,9 +230,9 @@ test("TCRN-CROSS-STORY-430: scoped exceeded notice is shared by P1/push and neve
   const budgetNotice = { command: "budget", ...result.warning };
   const reasonCodeByTask = {
     "format-check": "FORMAT_VERIFIED", lint: "LINT_VERIFIED", typecheck: "TYPECHECK_VERIFIED", build: "BUILD_VERIFIED",
-    test: "TESTS_VERIFIED", portal: "PORTAL_VERIFY_TRAIN_GREEN", source: "SOURCE_ALLOWLIST_VERIFIED", archive: "ARCHIVE_VERIFIED",
+    test: "TESTS_VERIFIED", portal: "PORTAL_VERIFY_TRAIN_GREEN", archive: "ARCHIVE_VERIFIED",
     "no-sibling-dependency": "NO_SIBLING_DEPENDENCY", offline: "OFFLINE_BOUNDARY_VERIFIED", governance: "GOVERNANCE_TOOLCHAIN_VERIFIED",
-    privacy: "PRIVACY_SOURCE_CLEAN", "verification-map": "VERIFICATION_MAP_VERIFIED", links: "MARKDOWN_LINKS_RESOLVED",
+    privacy: "PRIVACY_SOURCE_CLEAN", links: "MARKDOWN_LINKS_RESOLVED",
     "retrieval-eval": "RETRIEVAL_EVAL_VERIFIED",
   };
   const receipt = (notices) => JSON.stringify({
@@ -291,14 +291,16 @@ function p8Receipt(sourceFiles) {
   };
 }
 
-test("INC-320/433: P8 and guard schema expectations must be complete before those children can start", () => {
-  const valid = validateStructuredChildExpectations({ sourceFiles: ["scripts/task.mjs"], guardIds: ["BR-01"], p8BasisCommit: "a".repeat(40) });
+// The guard child and its registry expectation retired (TCRN-CROSS-STORY-467 R2); the P8
+// source expectation is the tracked file list and is held to the same completeness.
+test("INC-320/433: P8 schema expectations must be complete before that child can start", () => {
+  const valid = validateStructuredChildExpectations({ sourceFiles: ["scripts/task.mjs"], p8BasisCommit: "a".repeat(40) });
   assert.equal(valid.ok, true, JSON.stringify(valid));
   for (const inputs of [
-    { sourceFiles: [], guardIds: ["BR-01"] },
-    { sourceFiles: ["scripts/task.mjs", "scripts/task.mjs"], guardIds: ["BR-01"] },
-    { sourceFiles: ["scripts/task.mjs"], guardIds: ["BR-01", "BR-01"] },
-    { sourceFiles: ["scripts/task.mjs"], guardIds: [null] },
+    { sourceFiles: [], p8BasisCommit: "a".repeat(40) },
+    { sourceFiles: ["scripts/task.mjs", "scripts/task.mjs"], p8BasisCommit: "a".repeat(40) },
+    { sourceFiles: [null], p8BasisCommit: "a".repeat(40) },
+    { sourceFiles: ["scripts/task.mjs"], p8BasisCommit: "HEAD" },
   ]) {
     const result = validateStructuredChildExpectations(inputs);
     assert.equal(result.ok, false, JSON.stringify(inputs));
@@ -354,32 +356,17 @@ test("STORY-461 SUB-240: stale release moves are typed P8 receipt data", () => {
   }
 });
 
-test("EPIC135: exact guard ids are typed data only after count and registry identity match", () => {
-  const guardIds = ["guard-ordinary", "INC-027-event-page-ceiling-refused"];
-  const result = inspectStructuredChildOutput({
-    stdout: `${JSON.stringify({ ok: true, reasonCode: "GUARD_CHECK_VERIFIED", guards: guardIds.length, killed: guardIds })}\n`,
-    stderr: "",
-    exitCode: 0,
-    signal: null,
-  }, "guard-check", { guardIds });
-  assert.equal(result.ok, true, JSON.stringify(result));
-  assert.equal(result.reasonCode, "CHILD_TERMINAL_RECEIPT_VALID");
-  assert.equal(hasWarningOrError({ stdout: JSON.stringify({ ok: true, reasonCode: "GUARD_CHECK_VERIFIED", guards: guardIds.length, killed: guardIds }), stderr: "", exitCode: 0 }, "guard-check", { guardIds }), false);
-});
-
-test("EPIC135: P8 and guard diagnostics remain red outside validated typed data", () => {
+test("EPIC135: P8 diagnostics remain red outside validated typed data", () => {
   const sourceFiles = ["docs/activation/enforce-failure-policy-agenda-v1.md", "scripts/policy/failure-pattern-register.json", "src/ordinary-module.mjs"].sort();
   const p8 = p8Receipt(sourceFiles);
   const p8Line = JSON.stringify(p8);
-  const guardIds = ["guard-ordinary", "INC-027-event-page-ceiling-refused"];
-  const guardLine = JSON.stringify({ ok: true, reasonCode: "GUARD_CHECK_VERIFIED", guards: guardIds.length, killed: guardIds });
   const cases = [
     ["free text before P8 terminal", { stdout: `warning emitted\n${p8Line}\n`, stderr: "", exitCode: 0, signal: null }, "verify:p8", { sourceFiles }, "CHILD_TERMINAL_DUPLICATE_OR_EXTRA_OUTPUT"],
-    ["free text after guard terminal", { stdout: `${guardLine}\ncompiler warning\n`, stderr: "", exitCode: 0, signal: null }, "guard-check", { guardIds }, "CHILD_TERMINAL_DUPLICATE_OR_EXTRA_OUTPUT"],
+    ["free text after P8 terminal", { stdout: `${p8Line}\ncompiler warning\n`, stderr: "", exitCode: 0, signal: null }, "verify:p8", { sourceFiles }, "CHILD_TERMINAL_DUPLICATE_OR_EXTRA_OUTPUT"],
     ["stderr remains rejecting", { stdout: `${p8Line}\n`, stderr: "warning: hidden channel", exitCode: 0, signal: null }, "verify:p8", { sourceFiles }, "CHILD_STDERR_NOT_EMPTY"],
-    ["nonzero child exit remains rejecting", { stdout: `${guardLine}\n`, stderr: "", exitCode: 1, signal: null }, "guard-check", { guardIds }, "CHILD_EXIT_NOT_SUCCESS"],
-    ["inner failed receipt remains rejecting when the shell exits zero", { stdout: `${JSON.stringify({ ok: false, reasonCode: "GUARD_CHECK_BLOCKED", guards: 0, killed: [] })}\n`, stderr: "", exitCode: 0, signal: null }, "guard-check", { guardIds }, "CHILD_TERMINAL_REASON_INVALID"],
-    ["duplicate terminals remain rejecting", { stdout: `${guardLine}\n${guardLine}\n`, stderr: "", exitCode: 0, signal: null }, "guard-check", { guardIds }, "CHILD_TERMINAL_DUPLICATE_OR_EXTRA_OUTPUT"],
+    ["nonzero child exit remains rejecting", { stdout: `${p8Line}\n`, stderr: "", exitCode: 1, signal: null }, "verify:p8", { sourceFiles }, "CHILD_EXIT_NOT_SUCCESS"],
+    ["inner failed receipt remains rejecting when the shell exits zero", { stdout: `${JSON.stringify({ ...p8, ok: false, reasonCode: "P8_WORKFLOW_RC_BLOCKED" })}\n`, stderr: "", exitCode: 0, signal: null }, "verify:p8", { sourceFiles }, "CHILD_TERMINAL_REASON_INVALID"],
+    ["duplicate terminals remain rejecting", { stdout: `${p8Line}\n${p8Line}\n`, stderr: "", exitCode: 0, signal: null }, "verify:p8", { sourceFiles }, "CHILD_TERMINAL_DUPLICATE_OR_EXTRA_OUTPUT"],
     ["malformed JSON remains rejecting", { stdout: "{not-json}\n", stderr: "", exitCode: 0, signal: null }, "verify:p8", { sourceFiles }, "CHILD_TERMINAL_JSON_INVALID"],
     ["invalid UTF-8 bytes remain rejecting", { stdout: Buffer.from([0xc3, 0x28]), stderr: Buffer.alloc(0), exitCode: 0, signal: null }, "verify:p8", { sourceFiles }, "CHILD_OUTPUT_UTF8_INVALID"],
     ["fake success receipt remains rejecting", { stdout: '{"reasonCode":"P8_WORKFLOW_RC_VERIFIED"}\n', stderr: "", exitCode: 0, signal: null }, "verify:p8", { sourceFiles }, "CHILD_TERMINAL_FIELDS_INVALID"],
@@ -389,9 +376,7 @@ test("EPIC135: P8 and guard diagnostics remain red outside validated typed data"
     ["P8 terminal ok must be true", { stdout: `${JSON.stringify({ ...p8, ok: false })}\n`, stderr: "", exitCode: 0, signal: null }, "verify:p8", { sourceFiles }, "P8_OK_INVALID"],
     ["nested diagnostics remain rejecting", { stdout: `${JSON.stringify({ ...p8, sbom: { ...p8.sbom, path: "warning-and-failure.json" } })}\n`, stderr: "", exitCode: 0, signal: null }, "verify:p8", { sourceFiles }, "CHILD_DIAGNOSTIC_TEXT"],
     ["unknown archive member is not typed data", { stdout: `${JSON.stringify(p8Receipt([...sourceFiles, "docs/new-warning.txt"].sort()))}\n`, stderr: "", exitCode: 0, signal: null }, "verify:p8", { sourceFiles }, "P8_SOURCE_ARCHIVE_COUNT_MISMATCH"],
-    ["wrong successful child schema remains rejecting", { stdout: `${p8Line}\n`, stderr: "", exitCode: 0, signal: null }, "guard-check", { guardIds }, "CHILD_TERMINAL_REASON_INVALID"],
-    ["unknown child command remains rejecting", { stdout: `${guardLine}\n`, stderr: "", exitCode: 0, signal: null }, "verify:other", { guardIds }, "CHILD_SCRIPT_UNEXPECTED"],
-    ["wrong guard identity remains rejecting", { stdout: `${JSON.stringify({ ok: true, reasonCode: "GUARD_CHECK_VERIFIED", guards: guardIds.length, killed: [...guardIds].reverse() })}\n`, stderr: "", exitCode: 0, signal: null }, "guard-check", { guardIds }, "GUARD_SUCCESS_IDENTITY_INVALID"],
+    ["unknown child command remains rejecting", { stdout: `${p8Line}\n`, stderr: "", exitCode: 0, signal: null }, "verify:other", { sourceFiles }, "CHILD_SCRIPT_UNEXPECTED"],
   ];
   for (const [label, streams, script, expected, code] of cases) {
     const result = inspectStructuredChildOutput(streams, script, expected);
@@ -592,7 +577,8 @@ test("STORY-462 SUB-242: the committed responsibility view is valid and leaves t
   assert.ok(view.classes["runtime-function"].includes("scripts/knowledge-inject.mjs"), "runtime code under scripts/ is not called proof by directory");
   const documentText = await readFile(resolve(repositoryRoot, view.document), "utf8");
   assert.match(documentText, /responsibilityView/u);
-  assert.deepEqual(Object.keys(policy.surfaceCaps).filter((key) => key.endsWith("Cap")).sort(), ["claimCap", "coreSourceLineCap", "verifyScriptCap"]);
+  // The claim cap left with the claim map (TCRN-CROSS-STORY-467 R2).
+  assert.deepEqual(Object.keys(policy.surfaceCaps).filter((key) => key.endsWith("Cap")).sort(), ["coreSourceLineCap", "verifyScriptCap"]);
   const withoutView = { ...policy };
   delete withoutView.responsibilityView;
   assert.deepEqual(

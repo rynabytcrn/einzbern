@@ -32,23 +32,19 @@ test("INC-093 red leg: a red P8 result or a different basis refuses tag prefligh
   );
 });
 
-test("INC-093: release commits admit metadata and regenerated proof surfaces", () => {
+// The regenerated proof surfaces a release commit also used to carry (the source allowlist,
+// the claim map and the RC1 manifest) are retired (TCRN-CROSS-STORY-467 R2).
+test("INC-093: release commits admit release metadata", () => {
   assert.deepEqual(
     assertReleaseCommitShape({ changedPaths: [
       "packages/core/package.json",
       "CHANGELOG.md",
       "docs/releases/0.11.8.md",
-      "scripts/policy/source-allowlist.json",
-      "verification-map.yaml",
-      "fixtures/rc1/rc1-candidate-proof-manifest.json",
     ] }),
     { changedPaths: [
       "CHANGELOG.md",
       "docs/releases/0.11.8.md",
-      "fixtures/rc1/rc1-candidate-proof-manifest.json",
       "packages/core/package.json",
-      "scripts/policy/source-allowlist.json",
-      "verification-map.yaml",
     ] },
   );
   assert.throws(

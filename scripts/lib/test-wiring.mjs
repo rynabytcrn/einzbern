@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-INIT-020 INC-079 — test wiring. A test that no pipeline ever executes
-// is a gate whose lifetime equals the day it was written. Shared by:
-//   - scripts/test-wiring-proof.mjs (the standalone gate, wired into CI);
-//   - scripts/task.mjs verify:map (INC-078: an ADR criterion whose named gate test
-//     is orphaned is a criterion with no machine red leg).
+// is a gate whose lifetime equals the day it was written. Used by
+// scripts/test-wiring-proof.mjs (the standalone gate, wired into CI); the claim map's ADR
+// reconciliation (INC-078) that also read it is retired (TCRN-CROSS-STORY-467 R2).
 //
 // A test file is "wired" when a pipeline glob covers it (the root tests/ glob) or
 // the wiring registry names its owner with a dated reason (the parity allowlist shape —

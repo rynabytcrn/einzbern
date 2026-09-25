@@ -360,39 +360,35 @@ await timedStage("tag-ancestry", async () => {
 //      and the zero-warning rule, p8 carries the release identity and the reproducible
 //      source archive. Both require a clean basis, which check 1 established.
 //
-//      guard-check is here rather than inside verify:p1 on purpose. Each registry entry
-//      costs a build plus a test run, and ten entries measure ~107s; folded into P1 that
-//      would push the wall clock at the 180s escalation trigger which exists to protect
-//      the "run it on every change" discipline. Before a push is the right frequency for
-//      a check that asks whether the proofs still bite.
-let childExpectations = { sourceFiles: undefined, guardIds: undefined };
+//      The third child, the guard mutation check, is retired with its registry
+//      (TCRN-CROSS-STORY-467 R2), and the P8 archive's expected entries are the tracked
+//      file list rather than a hand-kept allowlist.
+let childExpectations = { sourceFiles: undefined };
 let childExpectationsFailure = null;
 try {
-  const sourcePolicy = JSON.parse(await read("scripts/policy/source-allowlist.json"));
-  const guardRegistry = JSON.parse(await read("scripts/policy/guard-registry.json"));
+  const tracked = run("git", ["ls-files", "-z"]);
   const currentHead = run("git", ["rev-parse", "HEAD"]);
   const validated = validateStructuredChildExpectations({
-    sourceFiles: sourcePolicy?.allowedFiles,
-    guardIds: Array.isArray(guardRegistry?.guards) ? guardRegistry.guards.map((guard) => guard?.id) : undefined,
+    sourceFiles: tracked.ok && tracked.stderr === "" ? tracked.stdout.split("\0").filter((path) => path.length > 0) : undefined,
     p8BasisCommit: normalizedCommitOutput(currentHead),
   });
   if (!validated.ok) {
     childExpectationsFailure = { reasonCode: validated.reasonCode, findings: validated.findings };
-    fail("PUSH_GATE_CHILD_SCHEMA_EXPECTATIONS_INVALID", "current source/guard schema cannot authorize P8/guard terminal parsing", {
+    fail("PUSH_GATE_CHILD_SCHEMA_EXPECTATIONS_INVALID", "the tracked source list cannot authorize P8 terminal parsing", {
       code: validated.reasonCode,
-      location: "scripts/policy/source-allowlist.json|scripts/policy/guard-registry.json|git rev-parse HEAD",
+      location: "git ls-files|git rev-parse HEAD",
       findings: validated.findings,
     });
   } else {
-    childExpectations = { sourceFiles: validated.sourceFiles, guardIds: validated.guardIds, p8BasisCommit: validated.p8BasisCommit };
+    childExpectations = { sourceFiles: validated.sourceFiles, p8BasisCommit: validated.p8BasisCommit };
   }
 } catch (error) {
   childExpectationsFailure = {
     reasonCode: error?.reasonCode ?? "CHILD_SCHEMA_EXPECTATIONS_UNREADABLE",
-    location: "scripts/policy/source-allowlist.json|scripts/policy/guard-registry.json",
+    location: "git ls-files|git rev-parse HEAD",
     message: String(error?.message ?? error),
   };
-  fail("PUSH_GATE_CHILD_SCHEMA_EXPECTATIONS_UNREADABLE", "source/guard schema preflight failed before P8/guard children", childExpectationsFailure);
+  fail("PUSH_GATE_CHILD_SCHEMA_EXPECTATIONS_UNREADABLE", "source preflight failed before the P8 child", childExpectationsFailure);
 }
 
 for (const { reasonCode, script } of ENGINE_PUSH_GATE_CHILDREN) {

@@ -18,7 +18,7 @@
       "layer": "universal",
       "audience": "developer",
       "disposition": "gated",
-      "gate": "pnpm guard-check + G-4 push-gate full-suite rule",
+      "gate": "G-4 push-gate full-suite rule",
       "occurrenceCount": 2,
       "occurrences": [
         {
@@ -36,8 +36,8 @@
       "statement": "A guard is landed and its proof is described rather than written, so reverting the guard reddens nothing.",
       "layer": "universal",
       "audience": "developer",
-      "disposition": "gated",
-      "gate": "pnpm guard-check",
+      "disposition": "open",
+      "gate": null,
       "occurrenceCount": 2,
       "occurrences": [
         {
@@ -100,7 +100,7 @@
       "layer": "universal",
       "audience": "developer",
       "disposition": "gated",
-      "gate": "guard registry entries CI-hardlink-scope-of-source-reader, CI-dependency-manifest-scope",
+      "gate": "tests/io-boundaries.test.mjs (the hardlink scope of the source reader and of the dependency-manifest read)",
       "occurrenceCount": 1,
       "occurrences": [
         {

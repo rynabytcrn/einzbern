@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -37,13 +38,14 @@ import {
 } from "../scripts/lib/p8-workflow-rc.mjs";
 import { withExclusiveOutputSession } from "../scripts/lib/safe-io.mjs";
 
-test("P8 rebuilds the exact full allowlisted USTAR archive in two independent disposable roots", async () => {
-  const policy = JSON.parse(await readFile("scripts/policy/source-allowlist.json", "utf8"));
-  const rebuilt = await rebuildP8SourceArchiveInIndependentRoots({ repositoryRoot: process.cwd(), allowedFiles: policy.allowedFiles });
+test("P8 rebuilds the exact tracked-file USTAR archive in two independent disposable roots", async () => {
+  // The source set is the tracked file list since the allowlist retired (TCRN-CROSS-STORY-467 R2).
+  const tracked = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" }).split("\0").filter((path) => path.length > 0);
+  const rebuilt = await rebuildP8SourceArchiveInIndependentRoots({ repositoryRoot: process.cwd(), allowedFiles: tracked });
   assert.equal(rebuilt.rootsIndependent, true);
-  assert.equal(rebuilt.sourceFiles, policy.allowedFiles.length);
+  assert.equal(rebuilt.sourceFiles, tracked.length);
   assert.ok(rebuilt.sourceFiles > 3);
-  assert.deepEqual(rebuilt.orderedEntries, [...policy.allowedFiles].sort(compareCanonicalText));
+  assert.deepEqual(rebuilt.orderedEntries, [...tracked].sort(compareCanonicalText));
   assert.equal(rebuilt.archive.subarray(257, 263).toString("utf8"), "ustar\0");
   assert.match(rebuilt.sha256, /^[a-f0-9]{64}$/u);
 });

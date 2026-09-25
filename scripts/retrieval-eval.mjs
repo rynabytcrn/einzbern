@@ -25,8 +25,8 @@
 // This file reports; the gate is scripts/task.mjs's retrieval-eval verb, which is what
 // package.json and scripts/p1-sequence.mjs dispatch. So a failed floor is printed with
 // its own reason code and a zero exit, and the verb turns it into the refusal. Exiting
-// non-zero here instead would reach the verb as a spawn failure and the reason code the
-// verification-map claim names would be replaced by COMMAND_FAILED.
+// non-zero here instead would reach the verb as a spawn failure and the reason code it
+// reports would be replaced by COMMAND_FAILED.
 
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";

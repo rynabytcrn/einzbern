@@ -49,8 +49,8 @@ test("433 does not blindly rerun the same failed batch, but an explicit rerun ma
 });
 
 // TCRN-CROSS-STORY-460 (SUB-237). B1: a change under specs/ had no gate mapping, so the
-// dynamic plan reported unknown impact and ran nothing. Specs are an engine-release face and
-// rc1 inputs, as are schemas/ and extensions/. Red leg: drop the mapping.
+// dynamic plan reported unknown impact and ran nothing. Specs are an engine-release face, as
+// are schemas/ and extensions/. Red leg: drop the mapping.
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CONTAINMENT = JSON.parse(readFileSync(resolve(REPOSITORY_ROOT, "scripts/policy/gate-containment.json"), "utf8"));
 

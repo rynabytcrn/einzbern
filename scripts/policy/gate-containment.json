@@ -1,6 +1,6 @@
 {
   "schemaVersion": "tcrn.gate-containment.v1",
-  "note": "The groups this roster lists remain the semantic roster. A top-level run invokes only the roots; each root's declared children are already judged by its command. TCRN-CROSS-MIN-149 removed helper-release and helper-suite when TCRN-CROSS-STORY-382 shrank the helper repository to its Skill payload and deleted the two scripts those groups ran.",
+  "note": "The groups this roster lists remain the semantic roster. A top-level run invokes only the roots; each root's declared children are already judged by its command. TCRN-CROSS-MIN-149 removed helper-release and helper-suite when TCRN-CROSS-STORY-382 shrank the helper repository to its Skill payload and deleted the two scripts those groups ran. TCRN-CROSS-STORY-467 R2 (TCRN-CROSS-MIN-227 D3) removed engine-guards with the guard mutation check it ran.",
   "topLevel": [
     "engine-release",
     "platform-layout",
@@ -17,8 +17,7 @@
       "command": "node scripts/push-gate.mjs",
       "contains": [
         "engine-p1",
-        "engine-p8",
-        "engine-guards"
+        "engine-p8"
       ]
     },
     {
@@ -32,18 +31,6 @@
       "id": "engine-p8",
       "command": "pnpm verify:p8",
       "contains": []
-    },
-    {
-      "id": "engine-guards",
-      "command": "pnpm guard-check",
-      "contains": [],
-      "cwd": ".",
-      "executable": "pnpm",
-      "argv": [
-        "run",
-        "--silent",
-        "guard-check"
-      ]
     },
     {
       "id": "engine-suite",

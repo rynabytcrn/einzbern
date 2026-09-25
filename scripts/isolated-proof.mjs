@@ -8,9 +8,10 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
 
-import { readJson, repositoryRoot } from "./lib/files.mjs";
+import { repositoryRoot } from "./lib/files.mjs";
 import { ENGINE_REPOSITORY_NAMES } from "./lib/names.mjs";
 import { compareCanonicalText } from "./lib/canonical-order.mjs";
+import { P1_TASKS } from "./p1-sequence.mjs";
 import {
   readBoundRegularFile,
   safeWriteOutput,
@@ -125,12 +126,11 @@ try {
     }
   }
 
-  const map = await readJson(resolve(checkout, "verification-map.yaml"));
-  const evidencePaths = [...new Set(
-    map.claims
-      .filter((claim) => claim.phase === "P1" && claim.expectedReasonCode !== "ISOLATED_P1_VERIFIED")
-      .map((claim) => claim.evidencePath),
-  )].sort(compareCanonicalText);
+  // The evidence the isolated P1 run wrote: its own receipt and one per rostered leg. The
+  // claim ledger that used to select these paths is retired (TCRN-CROSS-STORY-467 R2).
+  const evidencePaths = ["verify-p1", ...P1_TASKS]
+    .map((task) => `dist/evidence/p1/${task}.json`)
+    .sort(compareCanonicalText);
   const evidence = [];
   for (const path of evidencePaths) {
     const input = await readBoundRegularFile(resolve(checkout, path), {

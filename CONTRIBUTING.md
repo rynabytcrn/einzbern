@@ -40,13 +40,11 @@ purpose so it is deterministic and not open to reformatting debate. The
 proof-to-product ratio is `proofMass / productMass`.
 
 **Rule.** While the ratio is at or above `1.0`, no pull request may introduce a
-NEW verification gate — that is, a new `scripts/task.mjs` handler, a new
-`verify:*` script, or a new verification-map claim whose category is
-`framework-hygiene` — unless the same pull request retires at least the
-equivalent proof mass, or the Owner records a written exception. Claims whose
-category is `runtime-capability` are exempt: they are the product doing its job,
-not proof scaffolding. The effective repository-wide hard ceiling is the
-Owner-authorised `hardRatio` in `scripts/policy/proof-budget.json` (`2.50` in
+NEW verification gate — that is, a new `scripts/task.mjs` handler or a new
+`verify:*` script — unless the same pull request retires at least the
+equivalent proof mass, or the Owner records a written exception. The effective
+repository-wide hard ceiling is the Owner-authorised `hardRatio` in
+`scripts/policy/proof-budget.json` (`2.50` in
 the current policy). The structured `warningRatio` (`2.40`) reports growth
 above the warning line without blocking; a ratio above the hard ceiling refuses
 the corresponding candidate's formal release.
@@ -106,30 +104,9 @@ cannot be installed without growing some. The allowance is recorded rather than
 absorbed by editing the frozen line, because a mechanism whose first act is to
 quietly raise its own limit teaches the habit it was built to stop.
 
-**Recorded exception — OD-21, 2026-07-19, `pnpm guard-check`.** The Owner grants
-one written exception for the guard registry and its mutation checker
-(`scripts/guard-check.mjs`, `scripts/policy/guard-registry.json`).
-
-The exception is recorded here rather than avoided, and the distinction matters.
-The checker could have been shipped as a standalone npm script — the shape
-`push-gate` already uses — and then argued to fall outside the rule's three named
-forms. That argument holds for `push-gate`, which checks release consistency and
-adds no proof surface. It does not hold here: a mutation checker is proof
-scaffolding by any reading, and routing around the rule on a narrow textual
-reading would be the governance form of the exact substitution this repository's
-own audit caught in its code.
-
-What the exception buys: the rc.6 program twice landed a guard whose proof was
-never written, and the consequence was that reverting the guard reddened nothing.
-The correction was a discipline recorded in commit messages — revert each guard,
-observe red, restore. This makes that discipline a machine judgement. It declares
-no new capability; it tests whether existing proof still bites.
-
-Scope: `guard-check` stays a standalone script wired into `push-gate`. It is
-deliberately **not** folded into `verify:p1`, because each entry costs a build
-plus a test run (~4-5s measured) and the registry's eighteen entries would push
-the P1 wall clock past the 180s escalation trigger that protects the "run it on
-every change" discipline.
+**Retired exception — OD-21, 2026-07-19.** The guard registry and the mutation checker
+this exception admitted are retired by TCRN-CROSS-STORY-467 R2 (TCRN-CROSS-MIN-227 D3);
+`git log` on this file keeps the text of the grant.
 
 **Current.** `{proofLines: 26631, productLines: 16011, ratio: 1.6633}`, measured
 2026-07-20. **Re-measure rather than quote this number.** It is a snapshot, not a
@@ -155,33 +132,32 @@ exit `0`; above `2.50` it is `PROOF_BUDGET_EXCEEDED` and exits `1`. The command
 is already the budget member of P1; its warning is exempted only when the exact
 structured budget notice is present. No generic warning is downgraded.
 
-## Surface caps — three raw counts, not a ratio (2026-09-05, TCRN-CROSS-STORY-356)
+## Surface caps — raw counts, not a ratio (2026-09-05, TCRN-CROSS-STORY-356)
 
 **Definition.** The ratio above bounds proof mass against product mass; it says
 nothing about the absolute size of either one, so both can grow together,
-forever, in step, without the ratio ever moving. Three raw counts are pinned
+forever, in step, without the ratio ever moving. Two raw counts are pinned
 instead, each against its own recorded cap rather than against each other: how
-many `verify:*` scripts `package.json` declares (`verifyScriptCount`), how many
-claims `verification-map.yaml` carries (`claimCount`), and how many lines
-`packages/core/src/**/*.ts` holds (`coreSourceLines`) — counted the same
+many `verify:*` scripts `package.json` declares (`verifyScriptCount`) and how
+many lines `packages/core/src/**/*.ts` holds (`coreSourceLines`) — counted the same
 deliberately crude way as the ratio's own product mass, a raw `0x0a` byte count
 with blank lines and comments included, but over a narrower file set: `core`
 alone, not every `packages/*/src` directory `scripts/task.mjs`'s `reportBudget`
 (WSG-7) spans. The two line counts are not expected to agree.
 
-**Where it runs.** Unlike the ratio above, this is not a `verify:*` script or a
-verification-map claim — adding either would be the self-referential move this
-Story exists to close off. It is a `platform-doctor.mjs` leg (`proofBudget`),
-read from `scripts/policy/proof-budget.json`'s `surfaceCaps` field against a live
+**Where it runs.** Unlike the ratio above, this is not a `verify:*` script —
+adding one would be the self-referential move this Story exists to close off. It
+is a `platform-doctor.mjs` leg (`proofBudget`), read from
+`scripts/policy/proof-budget.json`'s `surfaceCaps` field against a live
 engine checkout. A container that only consumes this
 engine, without a checkout, has nothing to measure; the leg reports
 `comparable: false` rather than a quiet pass.
 
 **Caps, zero margin.** `scripts/policy/proof-budget.json`'s `surfaceCaps` field carries
-the current `verifyScriptCap`, `claimCap`, and `coreSourceLineCap` — read it directly;
+the current `verifyScriptCap` and `coreSourceLineCap` — read it directly;
 this document does not mirror the numbers, since each is the value measured the day it
 was last written, not a value with headroom already spent. `verifyScriptCount`
-and `claimCount` move only on a deliberate act (a new script, a new claim);
+moves only on a deliberate act (a new script);
 `coreSourceLines` moves on any change to `packages/core/src`, including an
 ordinary defect fix, so a red result there does not by itself mean new proof
 surface was added — the remedy is the same either way: retire an equivalent

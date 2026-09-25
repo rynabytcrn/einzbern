@@ -595,9 +595,9 @@ function defaultGateForEntry(entry) {
     return null;
   }
   if (entry.category === "dependency") return "engine-release";
-  // TCRN-CROSS-STORY-460 R1 (#240 B1): specs/, schemas/ and extensions/ are rc1 inputs and part
-  // of the engine-release face; unmapped, one changed spec made the whole plan unknown impact.
-  const knownEnginePath = path.startsWith("packages/") || path.startsWith("scripts/") || path.startsWith("tests/") || path.startsWith("tools/") || path.startsWith("portal/") || path.startsWith("docs/") || path.startsWith("specs/") || path.startsWith("schemas/") || path.startsWith("extensions/") || path.startsWith(".github/") || path.startsWith("fixtures/") || path === "verification-map.yaml" || ["README.md", "CHANGELOG.md", "CONTRIBUTING.md", "LICENSE", "package.json", "pnpm-lock.yaml", "tsconfig.json"].includes(path);
+  // TCRN-CROSS-STORY-460 R1 (#240 B1): specs/, schemas/ and extensions/ are part of the
+  // engine-release face; unmapped, one changed spec made the whole plan unknown impact.
+  const knownEnginePath = path.startsWith("packages/") || path.startsWith("scripts/") || path.startsWith("tests/") || path.startsWith("tools/") || path.startsWith("portal/") || path.startsWith("docs/") || path.startsWith("specs/") || path.startsWith("schemas/") || path.startsWith("extensions/") || path.startsWith(".github/") || path.startsWith("fixtures/") || ["README.md", "CHANGELOG.md", "CONTRIBUTING.md", "LICENSE", "package.json", "pnpm-lock.yaml", "tsconfig.json"].includes(path);
   return knownEnginePath ? "engine-release" : null;
 }
 

@@ -130,13 +130,14 @@ test("STORY-349 top-level gate containment selects roots and preserves the seman
     "engine-release", "platform-layout", "product-gates",
   ]);
   const groups = new Map(declaration.groups.map((group) => [group.id, group]));
-  assert.deepEqual(groups.get("engine-release").contains, ["engine-p1", "engine-p8", "engine-guards"]);
+  // TCRN-CROSS-STORY-467 R2 removed engine-guards with the guard mutation check it ran.
+  assert.deepEqual(groups.get("engine-release").contains, ["engine-p1", "engine-p8"]);
   assert.deepEqual(groups.get("engine-p1").contains, ["engine-suite"]);
   assert.equal(groups.get("engine-p8").command, "pnpm verify:p8");
   assert.equal(groups.has("helper-release"), false);
   assert.equal(groups.has("helper-suite"), false);
   assert.deepEqual(groups.get("platform-layout").contains, ["chain-validate"]);
-  assert.deepEqual(ENGINE_PUSH_GATE_CHILDREN.map(({ script }) => script), ["verify:p1", "verify:p8", "guard-check"]);
+  assert.deepEqual(ENGINE_PUSH_GATE_CHILDREN.map(({ script }) => script), ["verify:p1", "verify:p8"]);
 });
 
 test("STORY-413 final gate planning selects each top-level root once and records containment", () => {
@@ -147,14 +148,12 @@ test("STORY-413 final gate planning selects each top-level root once and records
     { id: "engine-p1", coveredBy: "engine-release" },
     { id: "engine-suite", coveredBy: "engine-release" },
     { id: "engine-p8", coveredBy: "engine-release" },
-    { id: "engine-guards", coveredBy: "engine-release" },
     { id: "chain-validate", coveredBy: "platform-layout" },
   ]);
   const pushPlan = pushGateExecutionPlan(declaration);
   assert.deepEqual(pushPlan.pushGateChildren.map(({ id, script }) => ({ id, script })), [
     { id: "engine-p1", script: "verify:p1" },
     { id: "engine-p8", script: "verify:p8" },
-    { id: "engine-guards", script: "guard-check" },
   ]);
   const wrongOrder = { ...declaration, executionOrder: ["engine-p1", "engine-release", "platform-layout"] };
   assert.throws(() => buildContainedExecutionPlan(wrongOrder), (error) => error.reasonCode === "GATE_CONTAINMENT_ROOT_ORDER_INVALID");
@@ -187,7 +186,6 @@ test("STORY-350 red locator runs every contained child separately and returns ea
     { id: "engine-p1", ok: false },
     { id: "engine-suite", ok: true },
     { id: "engine-p8", ok: true },
-    { id: "engine-guards", ok: true },
   ]);
   for (const [value, code] of [[null, "PUSH_GATE_HOST_EVIDENCE_INVALID"], [{ observedAt: "bad" }, "PUSH_GATE_HOST_EVIDENCE_INVALID"], [{ observedAt: "2026-09-19", supersededBy: "x", currentClaim: "active" }, "PUSH_GATE_HOST_EVIDENCE_PROVENANCE_INVALID"]]) assert.equal(validateHostEvidenceProvenance(value).reasonCode, code);
   assert.equal(validateHostEvidenceProvenance({ observedAt: "2026-09-19", supersededBy: "x", currentClaim: "none" }).ok, true);
@@ -214,8 +212,8 @@ function deriveExpectedTimingStages() {
   const stagesBeforeFinal = allExplicitStages.slice(0, -1);
 
   // The ENGINE_PUSH_GATE_CHILDREN loop generates child:<script> stages.
-  // Scripts are ["verify:p1", "verify:p8", "guard-check"] per lib/push-gate-children.mjs.
-  const childStages = ["child:verify:p1", "child:verify:p8", "child:guard-check"];
+  // Scripts are ["verify:p1", "verify:p8"] per lib/push-gate-children.mjs.
+  const childStages = ["child:verify:p1", "child:verify:p8"];
 
   // git-status-after is the final stage, added explicitly after the loop.
   return [...stagesBeforeFinal, ...childStages, "git-status-after"];
@@ -287,7 +285,7 @@ test("INC-266 push-gate timing accounts for every phase and keeps the success ou
   if (!strict) return;
 
   // The real gate is intentionally expensive. Its test-only probe executes the same
-  // timing wrappers and final stdout writer, but does not launch the three child gates.
+  // timing wrappers and final stdout writer, but does not launch the child gates.
   // The parent test captures that process's actual stdout and compares it with the
   // evidence written after stdout has been emitted; no second producer reconstructs it.
   await rm(probeTimingPath, { force: true });

@@ -7,6 +7,8 @@ const localGitCommands = new Set([
   "diff",
   "for-each-ref",
   "fsck",
+  // Read-only: the archive and P8 source set is the tracked file list (TCRN-CROSS-STORY-467 R2).
+  "ls-files",
   "ls-tree",
   "reflog",
   "remote",

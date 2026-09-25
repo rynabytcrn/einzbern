@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { createHash } from "node:crypto";
 import { lstat } from "node:fs/promises";
 import { relative, resolve } from "node:path";
 
@@ -8,7 +7,7 @@ import Ajv2020 from "ajv/dist/2020.js";
 
 import { CanonicalJsonError, canonicalDocumentBytes, canonicalJson } from "./canonical-json.mjs";
 import { compareCanonicalText } from "./canonical-order.mjs";
-import { fileRecord, readJson, readSourceFile, repositoryRoot, toPosixPath, walkFiles } from "./files.mjs";
+import { readJson, readSourceFile, repositoryRoot, toPosixPath, walkFiles } from "./files.mjs";
 
 export const p3MarkerPath = ".context/platform/workflow-v3-capabilities/p3-local-work-graph.accepted.json";
 
@@ -42,10 +41,6 @@ function assertion(condition, reasonCode, message) {
   if (!condition) {
     fail(reasonCode, message);
   }
-}
-
-function sha256(content) {
-  return createHash("sha256").update(content).digest("hex");
 }
 
 export function canonicalProofBytes(value) {
@@ -255,76 +250,5 @@ export async function validateP2SchemasAndFixtures() {
     resolvedLocalRefs,
     evaluator: "ajv@8.17.1-draft-2020-12",
     p3Marker: "absent",
-  };
-}
-
-export async function normativeInputPaths() {
-  const policy = await readJson(resolve(repositoryRoot, "scripts/policy/rc1-inputs.json"));
-  assertion(Array.isArray(policy.normativeInputs), "RC1_INPUT_POLICY", "normativeInputs must be an array");
-  const discovered = (await walkFiles())
-    .map((path) => toPosixPath(relative(repositoryRoot, path)))
-    .filter((path) => path === "extensions/aos-requirements-v1.json" || path.startsWith("schemas/") || path.startsWith("specs/") ||
-      (path.startsWith("fixtures/") && !path.startsWith("fixtures/rc1/")) || path === "verification-map.yaml")
-    .sort(compareCanonicalText);
-  const declared = [...policy.normativeInputs].sort(compareCanonicalText);
-  assertion(JSON.stringify(discovered) === JSON.stringify(declared), "RC1_INPUT_SET_MISMATCH", "Normative input policy is stale");
-  return declared;
-}
-
-export async function calculateRc1InputRecords() {
-  const paths = await normativeInputPaths();
-  const records = await Promise.all(paths.map((path) => fileRecord(resolve(repositoryRoot, path))));
-  records.sort((left, right) => compareCanonicalText(left.path, right.path));
-  return records;
-}
-
-export function validateRc1ManifestShape(manifest) {
-  canonicalProofBytes(manifest);
-  assertExactObjectFields(
-    manifest,
-    ["schemaVersion", "status", "accepted", "basisDigest", "inputs", "roleVerdictSlots"],
-    "RC1_MANIFEST_FIELDS",
-    "RC1 candidate manifest",
-  );
-  const requiredRoles = [
-    "platform-workflow-architect",
-    "workflow-verification-engineer",
-    "security-risk-reviewer",
-    "reality-checker",
-  ];
-  assertExactObjectFields(manifest.roleVerdictSlots, requiredRoles, "RC1_VERDICT_SLOTS", "RC1 role verdict slots");
-  for (const role of requiredRoles) {
-    assertExactObjectFields(
-      manifest.roleVerdictSlots[role],
-      ["status", "verdict", "basisDigest"],
-      "RC1_VERDICT_SLOT_FIELDS",
-      role,
-    );
-  }
-  return requiredRoles;
-}
-
-export async function validateRc1Candidate() {
-  const manifestPath = resolve(repositoryRoot, "fixtures/rc1/rc1-candidate-proof-manifest.json");
-  const manifest = await readJson(manifestPath);
-  const requiredRoles = validateRc1ManifestShape(manifest);
-  assertion(manifest.schemaVersion === "tcrn.rc1-candidate-proof-manifest.v1", "RC1_MANIFEST_SCHEMA", manifest.schemaVersion);
-  assertion(manifest.status === "candidate_unreviewed" && manifest.accepted === false, "RC1_ACCEPTANCE_OVERCLAIM", manifest.status);
-  const records = await calculateRc1InputRecords();
-  const recordBytes = canonicalProofBytes(records);
-  assertion(JSON.stringify(manifest.inputs) === JSON.stringify(records), "RC1_MANIFEST_INPUT_MISMATCH", "Input hashes changed");
-  const basisDigest = sha256(recordBytes);
-  assertion(manifest.basisDigest === basisDigest, "RC1_MANIFEST_BASIS_DIGEST", basisDigest);
-  for (const role of requiredRoles) {
-    const slot = manifest.roleVerdictSlots[role];
-    assertion(slot.status === "unresolved" && slot.verdict === null && slot.basisDigest === null, "RC1_VERDICT_FABRICATED", role);
-  }
-  const manifestDigest = sha256(canonicalProofBytes(manifest));
-  return {
-    basisDigest,
-    manifestDigest,
-    inputs: records.length,
-    unresolvedVerdictSlots: requiredRoles,
-    accepted: false,
   };
 }

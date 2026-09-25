@@ -53,10 +53,7 @@ export function assertP8TagPreconditions({ p8Result, expectedTag, tagCommit, p8B
 function isReleaseMetadataPath(path) {
   return path === "CHANGELOG.md"
     || /^docs\/releases\/\d+\.\d+\.\d+\.md$/u.test(path)
-    || /(?:^|\/)package\.json$/u.test(path)
-    || path === "scripts/policy/source-allowlist.json"
-    || path === "verification-map.yaml"
-    || path === "fixtures/rc1/rc1-candidate-proof-manifest.json";
+    || /(?:^|\/)package\.json$/u.test(path);
 }
 
 export function assertReleaseCommitShape({ changedPaths } = {}) {

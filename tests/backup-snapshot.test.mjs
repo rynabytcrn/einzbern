@@ -382,7 +382,7 @@ test("WSF-4 case 11: backup-git-tier.md prescribes the exact SDC-9 residue .giti
 // a JSON document on disk, so it is written here by hand and read back through the
 // surviving surface (status, work-list, the write-lock gate, materializeWorkspace)
 // plus the two accessors the barrel still exports. No relocation verb is involved,
-// and the seven guard-registry entries whose `file` is workspace.ts point here.
+// and the seven retired guard entries whose `file` was workspace.ts pointed here.
 // ---------------------------------------------------------------------------
 
 const LEDGER_ROOT_KINDS = ["framework", "workspace", "transient", "evidence-locator", "release-trust"];

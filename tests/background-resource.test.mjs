@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //
 // INIT-007 / S040 detector + S041 registration protocol. The load-bearing test is
-// "the injected orphan is detected" — the red-proof behind guard-registry entry
+// "the injected orphan is detected" — the red-proof behind the retired guard entry
 // BR-01-orphan-pattern-detection. Verity's decomposition position made red-proof a
 // hard acceptance condition precisely because a detector that never fires reads as
 // green forever ("我自己的检测器也曾假绿"). The incident fixture below is the real

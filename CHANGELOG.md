@@ -52,6 +52,11 @@ response-style checks (`tools/stop-pact`), `scripts/chain-write-guard.mjs`,
 adapter bundles with their install receipts, and this repository's own
 `.claude/settings.json` observer fixture. The harness renders governed context injection
 only, and the `knowledge-capture` verb stays.
+The guard mutation check and its registry, the verification map with its link and red-leg
+checks, the proof-artifact generator, the RC1 candidate manifest and its input policy, and
+the source allowlist are gone, with `guard-check`, `verify:map`, `verify:source`,
+`generate:proof-artifacts`, `regen:map-digests` and `regen:rc1-inputs`. The source
+archive and the P8 source set are the tracked file list, and the push gate runs P1 and P8.
 
 ## 1.2.1 — patch candidate
 

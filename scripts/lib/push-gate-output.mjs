@@ -23,7 +23,6 @@ const P8_PRIVACY_SURFACE_FIELDS = Object.freeze([
   "aggregateAlgorithm", "buildOutput", "fullHistory", "releaseArtifacts", "sourceArchive", "trackedSource",
 ]);
 const P8_PRIVACY_SURFACE_ROW_FIELDS = Object.freeze(["bytes", "entries", "sha256"]);
-const GUARD_SUCCESS_FIELDS = Object.freeze(["guards", "killed", "ok", "reasonCode"]);
 const P1_REASON_CODES = Object.freeze({
   "format-check": ["FORMAT_VERIFIED"],
   lint: ["LINT_VERIFIED"],
@@ -31,13 +30,11 @@ const P1_REASON_CODES = Object.freeze({
   build: ["BUILD_VERIFIED"],
   test: ["TESTS_VERIFIED"],
   portal: ["PORTAL_VERIFY_TRAIN_GREEN"],
-  source: ["SOURCE_ALLOWLIST_VERIFIED"],
   archive: ["ARCHIVE_VERIFIED"],
   "no-sibling-dependency": ["NO_SIBLING_DEPENDENCY"],
   offline: ["OFFLINE_BOUNDARY_VERIFIED"],
   governance: ["GOVERNANCE_TOOLCHAIN_VERIFIED"],
   privacy: ["PRIVACY_SOURCE_CLEAN"],
-  "verification-map": ["VERIFICATION_MAP_VERIFIED"],
   budget: ["PROOF_BUDGET_VERIFIED", "PROOF_BUDGET_WARNING", "PROOF_BUDGET_EXCEEDED_SCOPED_NONBLOCKING"],
   links: ["MARKDOWN_LINKS_RESOLVED"],
   "retrieval-eval": ["RETRIEVAL_EVAL_VERIFIED"],
@@ -47,10 +44,6 @@ const SUCCESS_RULES = Object.freeze({
   "verify:p8": {
     reasonCode: "P8_WORKFLOW_RC_VERIFIED",
     fields: P8_SUCCESS_FIELDS,
-  },
-  "guard-check": {
-    reasonCode: "GUARD_CHECK_VERIFIED",
-    fields: GUARD_SUCCESS_FIELDS,
   },
 });
 
@@ -62,7 +55,7 @@ export function validateHostEvidenceProvenance(value) {
 }
 
 /** Validate the real policy inputs needed before non-P1 children may start. */
-export function validateStructuredChildExpectations({ sourceFiles, guardIds, p8BasisCommit } = {}) {
+export function validateStructuredChildExpectations({ sourceFiles, p8BasisCommit } = {}) {
   const findings = [];
   const listProblems = (value, name) => {
     if (!Array.isArray(value) || value.length === 0 || value.some((entry) => typeof entry !== "string" || entry.trim().length === 0)) {
@@ -72,14 +65,12 @@ export function validateStructuredChildExpectations({ sourceFiles, guardIds, p8B
     if (new Set(value).size !== value.length) findings.push({ code: "CHILD_EXPECTATION_LIST_DUPLICATE", location: `$.${name}` });
   };
   listProblems(sourceFiles, "sourceFiles");
-  listProblems(guardIds, "guardIds");
   if (typeof p8BasisCommit !== "string" || !/^[a-f0-9]{40}$/u.test(p8BasisCommit)) findings.push({ code: "CHILD_EXPECTATION_COMMIT_INVALID", location: "$.p8BasisCommit" });
   return {
     ok: findings.length === 0,
     reasonCode: findings.length === 0 ? "CHILD_EXPECTATIONS_VALID" : "CHILD_EXPECTATIONS_INVALID",
     findings,
     sourceFiles: Array.isArray(sourceFiles) ? [...sourceFiles] : null,
-    guardIds: Array.isArray(guardIds) ? [...guardIds] : null,
     p8BasisCommit: typeof p8BasisCommit === "string" ? p8BasisCommit : null,
   };
 }
@@ -184,7 +175,7 @@ export function onlyBudgetWarning(output, script, options = {}) {
 
 /** Generic diagnostic detection used by the push gate's warning branch. */
 export function hasWarningOrError(output, script, expected = {}) {
-  if (script === "verify:p8" || script === "guard-check" || output !== null && typeof output === "object" && !Buffer.isBuffer(output)) {
+  if (script === "verify:p8" || output !== null && typeof output === "object" && !Buffer.isBuffer(output)) {
     const streams = output !== null && typeof output === "object" && !Buffer.isBuffer(output)
       ? output
       : { stdout: output ?? "", stderr: "", exitCode: 0, signal: null };
@@ -330,17 +321,6 @@ function inspectP8Receipt(receipt, expectedSourceFiles, expectedBasisCommit, fin
   }
 }
 
-function inspectGuardReceipt(receipt, expectedGuardIds, findings) {
-  exactKeys(receipt, GUARD_SUCCESS_FIELDS, "$", findings);
-  if (receipt.reasonCode !== "GUARD_CHECK_VERIFIED" || receipt.ok !== true) findings.push({ code: "GUARD_SUCCESS_RECEIPT_INVALID", location: "$" });
-  if (!Array.isArray(expectedGuardIds) || expectedGuardIds.length === 0 || expectedGuardIds.some((id) => typeof id !== "string" || id.length === 0) || new Set(expectedGuardIds).size !== expectedGuardIds.length) {
-    findings.push({ code: "GUARD_REGISTRY_EXPECTATION_INVALID", location: "$.expectedGuardIds" });
-  }
-  if (!Array.isArray(receipt.killed) || !Number.isSafeInteger(receipt.guards) || receipt.guards !== receipt.killed.length || JSON.stringify(receipt.killed) !== JSON.stringify(expectedGuardIds)) {
-    findings.push({ code: "GUARD_SUCCESS_IDENTITY_INVALID", location: "$.killed", expectedCount: Array.isArray(expectedGuardIds) ? expectedGuardIds.length : null, actualCount: Array.isArray(receipt.killed) ? receipt.killed.length : null, actualGuards: receipt.guards ?? null });
-  }
-}
-
 function residualDiagnostic(value, location, findings, skippedLocation = null) {
   if (skippedLocation !== null && location === skippedLocation) return;
   if (typeof value === "string") {
@@ -359,8 +339,9 @@ function residualDiagnostic(value, location, findings, skippedLocation = null) {
 }
 
 /**
- * Validate the two successful non-P1 child receipts without scanning their
- * explicitly typed machine-data fields as diagnostics. Every other byte of a
+ * Validate the successful non-P1 child receipt (P8 since the guard mutation child retired,
+ * TCRN-CROSS-STORY-467 R2) without scanning its explicitly typed machine-data fields as
+ * diagnostics. Every other byte of a
  * non-P1 stream remains fail-closed: exactly one JSON terminal on stdout,
  * empty stderr, exit 0, exact receipt shape, and no residual diagnostics.
  */
@@ -385,9 +366,8 @@ export function inspectStructuredChildOutput({ stdout = "", stderr = "", exitCod
   }
   if (receipt !== null) {
     if (receipt.reasonCode !== rule.reasonCode) findings.push({ code: "CHILD_TERMINAL_REASON_INVALID", location: "$.reasonCode", expected: rule.reasonCode, actual: receipt.reasonCode ?? null });
-    if (script === "verify:p8") inspectP8Receipt(receipt, expected.sourceFiles, expected.p8BasisCommit, findings);
-    else inspectGuardReceipt(receipt, expected.guardIds, findings);
-    residualDiagnostic(receipt, "$", findings, script === "verify:p8" ? "$.reproducibility.orderedEntries" : "$.killed");
+    inspectP8Receipt(receipt, expected.sourceFiles, expected.p8BasisCommit, findings);
+    residualDiagnostic(receipt, "$", findings, "$.reproducibility.orderedEntries");
   }
   return {
     ok: findings.length === 0,

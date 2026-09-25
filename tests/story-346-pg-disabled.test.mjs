@@ -5,7 +5,7 @@
 // Reference: TCRN-CROSS-INC-275 removed backend, scripts, CLI paths, and CI job.
 
 import assert from "node:assert/strict";
-import { access, mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { constants } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -43,11 +43,7 @@ test("STORY-346 PostgreSQL implementation and migration scripts are absent", asy
   await fileNotFound(new URL("../scripts/apply-pg-schema.mjs", import.meta.url));
   await fileNotFound(new URL("../scripts/apply-pg-test-schema.mjs", import.meta.url));
   await fileNotFound(new URL("../scripts/pg-test-runner.mjs", import.meta.url));
-
-  // Verification map must not claim any pg fixtures
-  const map = JSON.parse(await readFile(new URL("../verification-map.yaml", import.meta.url), "utf8"));
-  const pgFixtures = map.claims.flatMap((claim) => claim.fixturePaths).filter((path) => /pg/i.test(path) && !path.endsWith("story-346-pg-disabled.test.mjs"));
-  assert.deepEqual(pgFixtures, []);
+  // The claim map this case also searched for pg fixtures is retired (TCRN-CROSS-STORY-467 R2).
 });
 
 test("STORY-346 production backend selection rejects PostgreSQL", async () => {

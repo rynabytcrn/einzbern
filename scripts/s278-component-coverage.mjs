@@ -30,7 +30,7 @@ function usageCount(source, className) {
 // committed yet: the same working tree measured 51 roots before the commit that
 // carried the portal rewrite into HEAD and 64 after, so the frozen `=== 51` went
 // red on a change that added nothing unregistered. The roster fails closed in both
-// directions the way source-allowlist.json does — see the file's own `discipline`.
+// directions — see the file's own `discipline`.
 const currentText = await readFile(PORTAL, "utf8");
 const snapshotText = await readFile(SNAPSHOT, "utf8");
 const rosterText = await readFile(ROSTER, "utf8");

@@ -7,7 +7,7 @@
 The reader arrives not knowing whether this is worth their afternoon. The document's job is to make that decision fast and honestly, in that order.
 
 - **Lead with the reader's situation, not the framework's architecture.** The opening states the problem the reader already has — an Agent reported green and there is nothing to check it against — before naming a single component.
-- **Sell on the proof, not on the promise.** The strongest thing this project has is that it applies its own standard to itself. `guard-check` breaking every registered guard and requiring the same number of red tests is the argument; put it near the top, state what it proves, and state what it does not.
+- **Sell on the proof, not on the promise.** The strongest thing this project has is that it applies its own standard to itself. `verify:p1` running every gate on a clean checkout of the bytes it judges is the argument; put it near the top, state what it proves, and state what it does not.
 - **No-overclaim still governs.** Never assert a capability without pointing at the command that demonstrates it. The bar is stated outright: overclaiming is a build failure, not a style issue.
 - **Numbers are measured, never remembered.** Every figure in these documents is re-measured against the tree before it ships. The measurements and their sources are listed under [Numbers](#numbers).
 - **No metaphor, analogy, or aphorism.** Say the thing itself. Not "the door did not lie" but "the check compared attribute values and never compared whether the element existed."
@@ -24,11 +24,10 @@ The reader arrives not knowing whether this is worth their afternoon. The docume
    - a bold positioning line
    - the environment badge row
    - a section navigation row
-   - the inline `Verified claims: …` count line
-2. **The statistics strip** — an HTML `<table>` of four centered cells, each an `###` figure over a one-line label and a `<sub>` gloss. The four are the P1 gate count, the criterion count, the guard count, and the runtime dependency count.
+2. **The statistics strip** — an HTML `<table>` of two centered cells, each an `###` figure over a one-line label and a `<sub>` gloss. The two are the P1 gate count and the runtime dependency count; the criterion and guard counts left with the claim map and the guard mutation check (TCRN-CROSS-STORY-467 R2).
 3. **A `> [!TIP]` alert** stating that the reader does not have to trust the document, because the framework proves itself offline.
 4. `##` the reader's situation — prose, then the four-row comparison table (`what you want to confirm` / `what you have now` / `what you have after`).
-5. `##` why trust it — the `guard-check` proof, the criterion standard measured from `verification-map.yaml`, a `<details>` block breaking the criteria into their three categories, and a `> [!IMPORTANT]` alert on re-proof being enforced.
+5. `##` why trust it — what `verify:p1` runs on a clean checkout, and what that proves.
 6. `##` who it is for — a two-column table with real headers.
 7. `##` what you get — a two-column table.
 8. `##` the three-minute start — the pinned toolchain, a `sh` block of three steps, a `<details>` block of the governed commands most used, and a `> [!NOTE]` alert that `commands` is the authority over any document.
@@ -48,7 +47,7 @@ One line of `shields.io` badges carrying `?style=flat-square` so the row reads a
 
 The subject line that stood above it — `status` (release version), `gates` (`verify:p1` gate count), `claims` (proven-criterion count), `deps` (runtime dependency count) — retired in TCRN-CROSS-STORY-360. A shields.io URL is a literal: it restates a measured number without being able to read it, so each of the four had to be dragged by hand and each needed its own check in `scripts/push-gate.mjs` to catch the drag being forgotten. Three of the four had drifted anyway before those checks existed.
 
-What survives is the `Verified claims:` line, which restates the criterion total and its three-way split as inline code and is machine-parsed against `verification-map.yaml` by `scripts/task.mjs`. Its exact text is part of the contract. It is the one restated number in the document that a gate reads back.
+The `Verified claims:` line that survived that retirement left with the claim map (TCRN-CROSS-STORY-467 R2). The P1 gate count is the one restated number a test reads back: `tests/p1-roster.test.mjs` holds it to `scripts/p1-sequence.mjs`.
 
 ## Terminology
 
@@ -97,8 +96,6 @@ Every figure is re-measured before it ships. The commands that produce them:
 | Figure | Source of truth |
 | :--- | :--- |
 | P1 gate count | `P1_TASKS.length` in `scripts/p1-sequence.mjs` |
-| criterion count and split | `claims` in `verification-map.yaml`, grouped by `category` |
-| guard count | `scripts/policy/guard-registry.json` |
 | test file count | `git ls-files 'tests/*.test.mjs'` |
 | CLI verb count | `node scripts/einzbern.mjs commands` |
 | runtime dependency count | `dependencies` and `optionalDependencies` in `package.json` |

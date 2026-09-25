@@ -5,7 +5,6 @@
 export const ENGINE_PUSH_GATE_CHILDREN = Object.freeze([
   Object.freeze({ reasonCode: "PUSH_GATE_P1_FAILED", script: "verify:p1" }),
   Object.freeze({ reasonCode: "PUSH_GATE_P8_FAILED", script: "verify:p8" }),
-  Object.freeze({ reasonCode: "PUSH_GATE_GUARDS_UNPROVEN", script: "guard-check" }),
 ]);
 
 function containmentError(reasonCode, detail) {
@@ -71,7 +70,7 @@ export function buildContainedExecutionPlan(declaration) {
   }
   const pushGate = groups.get("engine-release");
   const declaredPushChildren = pushGate?.contains ?? [];
-  const expectedPushChildren = ENGINE_PUSH_GATE_CHILDREN.map(({ script }) => script).map((script) => script === "verify:p1" ? "engine-p1" : script === "verify:p8" ? "engine-p8" : "engine-guards");
+  const expectedPushChildren = ENGINE_PUSH_GATE_CHILDREN.map(({ script }) => script).map((script) => script === "verify:p1" ? "engine-p1" : "engine-p8");
   if (JSON.stringify(declaredPushChildren) !== JSON.stringify(expectedPushChildren)) {
     throw containmentError("GATE_CONTAINMENT_PUSH_CHILDREN_DRIFT", `${declaredPushChildren.join(",")} != ${expectedPushChildren.join(",")}`);
   }

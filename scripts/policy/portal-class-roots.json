@@ -1,7 +1,7 @@
 {
   "schemaVersion": "tcrn.portal-class-roots.v1",
   "origin": "The S253 portal class-root roster. INC-197 moved it here from `git show HEAD:portal/index.html`, whose verdict depended on whether the portal change happened to be committed yet.",
-  "discipline": "Fails closed in both directions, like source-allowlist.json: a root in the portal that is not listed is red, and a listed root that the portal no longer defines is red. Adding a class root means listing it in the same change.",
+  "discipline": "Fails closed in both directions: a root in the portal that is not listed is red, and a listed root that the portal no longer defines is red. Adding a class root means listing it in the same change.",
   "notWaiver": "This is a declaration of the sanctioned set, not a roster that passes a predicate known to be false. Owner ruled against the latter in MIN-099.",
   "roots": [
     "tcrn-action-row",

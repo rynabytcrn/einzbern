@@ -443,14 +443,14 @@ function helperReleaseVerdict(published, trusted, source) {
 
 // TCRN-CROSS-STORY-356: the proof-to-product ratio STORY-301 pinned bounds a relationship,
 // not a size -- proof mass and product mass can grow together forever, in step, without
-// the ratio ever moving. This leg pins three raw counts beside it instead: how many
-// verify:* scripts package.json declares, how many claims verification-map.yaml carries,
-// and how many lines packages/core/src holds. All three are recorded in
-// scripts/policy/proof-budget.json's surfaceCaps field at zero margin, the same posture
-// frozenRatio itself was frozen at.
+// the ratio ever moving. This leg pins two raw counts beside it instead: how many
+// verify:* scripts package.json declares and how many lines packages/core/src holds. Both
+// are recorded in scripts/policy/proof-budget.json's surfaceCaps field at zero margin, the
+// same posture frozenRatio itself was frozen at. The third, the claim count, left with the
+// claim map (TCRN-CROSS-STORY-467 R2).
 //
 // A container that only consumes this engine, rather than checking it out, has no
-// verify:* roster, no claims, and no packages/core/src to count -- so an absent policy or
+// verify:* roster and no packages/core/src to count -- so an absent policy or
 // an absent surfaceCaps field is reported uncomparable rather than passed quietly, the
 // same distinction inspectHelperReleaseAlignment draws above.
 //
@@ -481,8 +481,6 @@ async function inspectProofBudget(platformRoot, homeRoot, options) {
   }
   const packageValue = JSON.parse(await readFile(join(checkoutRoot, "package.json"), "utf8"));
   const verifyScriptCount = Object.keys(packageValue.scripts ?? {}).filter((name) => name.startsWith("verify:")).length;
-  const verificationMap = JSON.parse(await readFile(join(checkoutRoot, "verification-map.yaml"), "utf8"));
-  const claimCount = (verificationMap.claims ?? []).length;
   // Same deliberately crude counting method as scripts/task.mjs's reportBudget (WSG-7):
   // a raw 0x0a byte count, blank lines and comments included, over a fixed file set --
   // packages/core/src alone here, rather than every packages/*/src reportBudget spans.
@@ -497,8 +495,6 @@ async function inspectProofBudget(platformRoot, homeRoot, options) {
   return proofBudgetVerdict({
     verifyScriptCount,
     verifyScriptCap: caps.verifyScriptCap,
-    claimCount,
-    claimCap: caps.claimCap,
     coreSourceLines,
     coreSourceLineCap: caps.coreSourceLineCap,
   }, "live-engine-checkout", caps);
@@ -509,7 +505,6 @@ function proofBudgetVerdict(values, source, surfaceCaps = values) {
   // must have a valid measurement; adding an unknown cap must never pass silently.
   const metrics = {
     verifyScriptCap: "verifyScriptCount",
-    claimCap: "claimCount",
     coreSourceLineCap: "coreSourceLines",
   };
   const capFields = Object.keys(surfaceCaps).filter((name) => name.endsWith("Cap"));

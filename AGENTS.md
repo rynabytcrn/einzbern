@@ -84,8 +84,7 @@ Two consequences worth keeping when you touch that code:
 - the mechanism never prevented a fork, only made one legible — a single-sided test cannot
   go red on a deleted ledger, and detection was always the counterparty's capability;
 - `tests/backup-snapshot.test.mjs`'s `WSR-1 L1`–`L6` are the only proof this reader has.
-  They write the ledger by hand, because no verb can write one any more, and the seven
-  `WSR-1-` prefixed `guard-registry.json` entries whose `file` is `workspace.ts` name them.
+  They write the ledger by hand, because no verb can write one any more.
 
 ### 4. Verify "did it reach elsewhere" against the authority, and compare full values
 
@@ -116,16 +115,12 @@ a leak; the test is whether anything owns the record of it.
   is. **A remote tree is not an exception**: `cat >`, `sed -i` or `rsync` over SSH is the
   same act with the same outcome, and a write to a chain that lives on another host must be
   performed by the engine *on that host*.
-- **Root files are allowlisted in both directions.** `scripts/policy/source-allowlist.json`
-  fails closed on a tracked file that is not listed *and* on a listed file that does not
-  exist. Adding a root document means adding its entry in the same change.
 
 ## The proof-surface caps, and what they cannot decide
 
 `platform-doctor.mjs`'s `proofBudget` leg (TCRN-CROSS-STORY-356) reads raw counts
-from a live engine checkout — how many `verify:*` scripts
-`package.json` declares, how many claims `verification-map.yaml` carries, and how many
-lines `packages/core/src/**/*.ts` holds, counted the same deliberately crude way
+from a live engine checkout — how many `verify:*` scripts `package.json` declares and
+how many lines `packages/core/src/**/*.ts` holds, counted the same deliberately crude way
 `scripts/task.mjs`'s `reportBudget` (WSG-7) counts `productLines`: a raw `0x0a` byte
 count, blank lines and comments included, over a different file set — `core` alone here,
 not every `packages/*/src` directory reportBudget spans, so the two counts are not

@@ -1386,11 +1386,11 @@ test("proofBudget is neutral when the platform root carries no proof-budget poli
   assert.equal(leg.source, "live-engine-checkout");
 });
 
-// Each of the three counts is compared to its own cap independently, so a change that
-// trips only one of them names that one and leaves the other two legible. Red leg: fold
-// the three comparisons into a single verdict and the metric that actually moved stops
-// being visible in the result.
-test("proofBudget compares each of the three counts to its own cap independently", async (context) => {
+// Each count is compared to its own cap independently, so a change that trips only one of
+// them names that one and leaves the other legible. Red leg: fold the comparisons into a
+// single verdict and the metric that actually moved stops being visible in the result. The
+// third count, claims in the claim map, left with the map (TCRN-CROSS-STORY-467 R2).
+test("proofBudget compares each count to its own cap independently", async (context) => {
   const fixture = await completeInstallFixture(context);
   const leg = (result) => result.checks.find((entry) => entry.name === "proofBudget");
   const run = (proofBudget) => inspectInstallFixture(fixture, { proofBudget });
@@ -1400,37 +1400,32 @@ test("proofBudget compares each of the three counts to its own cap independently
   // exactly on a zero-margin cap goes red on the day it was recorded.
   const atCap = leg(await run({
     verifyScriptCount: 135, verifyScriptCap: 135,
-    claimCount: 122, claimCap: 122,
     coreSourceLines: 32086, coreSourceLineCap: 32086,
   }));
   assert.equal(atCap.ok, true);
   assert.equal(atCap.exceeded, undefined);
 
-  // One metric over: exceeded names only that metric, not the other two that remain
+  // One metric over: exceeded names only that metric, not the other that remains
   // within cap. Red leg: report every metric once any one of them is over.
   const oneOver = leg(await run({
     verifyScriptCount: 136, verifyScriptCap: 135,
-    claimCount: 122, claimCap: 122,
     coreSourceLines: 32086, coreSourceLineCap: 32086,
   }));
   assert.equal(oneOver.ok, false);
   assert.equal(oneOver.reasonCode, "PLATFORM_PROOF_BUDGET_EXCEEDED");
   assert.deepEqual(oneOver.exceeded, [{ metric: "verifyScriptCount", observed: 136, cap: 135, over: 1 }]);
-  // The six raw fields stay at the top level regardless of which one tripped, so a
-  // reader is never left reconstructing the untripped counts from elsewhere.
-  assert.equal(oneOver.claimCount, 122);
+  // The raw fields stay at the top level regardless of which one tripped, so a
+  // reader is never left reconstructing the untripped count from elsewhere.
   assert.equal(oneOver.coreSourceLines, 32086);
 
-  // All three over: each gets its own entry with its own observed/cap/over.
+  // Both over: each gets its own entry with its own observed/cap/over.
   const allOver = leg(await run({
     verifyScriptCount: 140, verifyScriptCap: 135,
-    claimCount: 130, claimCap: 122,
     coreSourceLines: 32100, coreSourceLineCap: 32086,
   }));
   assert.equal(allOver.ok, false);
   assert.deepEqual(allOver.exceeded, [
     { metric: "verifyScriptCount", observed: 140, cap: 135, over: 5 },
-    { metric: "claimCount", observed: 130, cap: 122, over: 8 },
     { metric: "coreSourceLines", observed: 32100, cap: 32086, over: 14 },
   ]);
 
@@ -1443,17 +1438,14 @@ test("proofBudget compares each of the three counts to its own cap independently
   await mkdir(policyDirectory, { recursive: true });
   await mkdir(coreDirectory, { recursive: true });
   const packageValue = { scripts: { "verify:fixture": "node fixture.mjs" } };
-  const mapValue = { claims: [{ id: "fixture" }] };
   const coreText = "// fixture\n";
   await writeFile(join(checkout, "package.json"), JSON.stringify(packageValue));
-  await writeFile(join(checkout, "verification-map.yaml"), JSON.stringify(mapValue));
   await writeFile(join(coreDirectory, "fixture.ts"), coreText);
   const surfaceCaps = {
     schemaVersion: "tcrn.proof-budget.surface-caps.v1",
     note: "Metadata does not declare a cap.",
     recordedAt: "2026-09-09",
     verifyScriptCap: Object.keys(packageValue.scripts).length,
-    claimCap: mapValue.claims.length,
     coreSourceLineCap: Buffer.from(coreText).filter((byte) => byte === 0x0a).length,
     coreSourceLineMetric: { method: "raw 0x0a byte count" },
     permissions: { raisingRequiresOwnerRuling: true },
@@ -1473,7 +1465,7 @@ test("proofBudget compares each of the three counts to its own cap independently
   );
 
   // An unimplemented measurement cannot be silently omitted from the verdict.
-  // Repeat with different names so a fourth hard-coded branch cannot satisfy it.
+  // Repeat with different names so a further hard-coded branch cannot satisfy it.
   for (const name of ["additionalProofCap", "anotherProofCap", "futureProofCap"]) {
     const red = await runFiles({ ...surfaceCaps, [name]: 0 });
     assert.equal(red.ok, false);
@@ -1508,7 +1500,7 @@ test("proofBudget compares each of the three counts to its own cap independently
 // written into the comparison itself -- so recording an Owner-authorised increase in
 // scripts/policy/proof-budget.json is what actually turns a genuine red case green, and
 // this leg has to read the new cap rather than an old one. Red leg: hardcode
-// 135/122/32086 inside proofBudgetVerdict, and a raised cap on the same red metric stays
+// 135/32086 inside proofBudgetVerdict, and a raised cap on the same red metric stays
 // red because nothing downstream of the fixture ever sees the new number.
 // TCRN-CROSS-STORY-356, GWT3: "remove a verify script AND lower the cap, then the
 // doctor is green". That is the retirement motion the whole leg exists to make
@@ -1525,7 +1517,6 @@ test("retiring surface and lowering its cap together turns a red case green", as
   // Lowering the cap while the surface stays put is exactly the case that must not pass.
   const red = leg(await run({
     verifyScriptCount: 135, verifyScriptCap: 134,
-    claimCount: 122, claimCap: 122,
     coreSourceLines: 32086, coreSourceLineCap: 32086,
   }));
   assert.equal(red.ok, false);
@@ -1534,7 +1525,6 @@ test("retiring surface and lowering its cap together turns a red case green", as
   // GWT3 proper: the script is gone and the cap came down with it.
   const retired = leg(await run({
     verifyScriptCount: 134, verifyScriptCap: 134,
-    claimCount: 122, claimCap: 122,
     coreSourceLines: 32086, coreSourceLineCap: 32086,
   }));
   assert.equal(retired.ok, true);
@@ -1544,7 +1534,6 @@ test("retiring surface and lowering its cap together turns a red case green", as
   // The escape hatch, recorded separately: an Owner-authorised cap increase also clears it.
   const raised = leg(await run({
     verifyScriptCount: 136, verifyScriptCap: 136,
-    claimCount: 122, claimCap: 122,
     coreSourceLines: 32086, coreSourceLineCap: 32086,
   }));
   assert.equal(raised.ok, true);

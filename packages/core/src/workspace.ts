@@ -22,6 +22,7 @@ import {
   createEvent,
   deriveStableId,
   EVENT_SCHEMA_VERSION,
+  eventInputOf,
   isWorkSummary,
   validateEventChain,
   validateWorkGraph,
@@ -1012,6 +1013,15 @@ function workspaceEventId(streamId: string, sequence: number): string {
   }).slice(0, 24)}`;
 }
 
+// TCRN-CROSS-STORY-468 R3 (TCRN-CROSS-SUB-280): every einzbern.event.v1 carries a clock and a
+// device id. Until the engine writes libraries, an old-layout workspace still takes writes; it is
+// one stream with one writer, so its clock is its sequence and its device id is derived from the
+// workspace itself. The device file is not consulted, so a write to an old layout touches nothing
+// outside the workspace.
+function oldLayoutDeviceId(metadata: WorkspaceMetadata): string {
+  return canonicalSha256({ schemaVersion: "einzbern.old-layout-device.v1", workspaceId: metadata.workspaceId }).slice(0, 32);
+}
+
 function controlPath(workspaceRoot: string, relativePath = ""): string {
   assertWorkspaceRelativePath(relativePath === "" ? WORKSPACE_CONTROL_DIRECTORY : `${WORKSPACE_CONTROL_DIRECTORY}/${relativePath}`);
   const candidate = resolve(workspaceRoot, WORKSPACE_CONTROL_DIRECTORY, relativePath);
@@ -1223,14 +1233,7 @@ function validateReplaySnapshotTail(events: readonly EventRecord[], snapshot: Re
   let priorHash = snapshot.headEventHash;
   for (const event of tail) {
     try {
-      const expected = createEvent({
-        id: event.id,
-        streamId: event.streamId,
-        sequence: event.sequence,
-        occurredAt: event.occurredAt,
-        priorHash: event.priorHash,
-        payload: event.payload,
-      }, event.schemaVersion);
+      const expected = createEvent(eventInputOf(event), event.schemaVersion);
       if (event.payloadHash !== expected.payloadHash || event.eventHash !== expected.eventHash || event.priorHash !== priorHash) {
         replaySnapshotFail(`tail event ${event.id} is not bound to the snapshot`);
       }
@@ -3420,6 +3423,8 @@ export async function appendEvents(
         id: workspaceEventId(streamId, sequence),
         streamId,
         sequence,
+        clock: sequence,
+        deviceId: oldLayoutDeviceId(workspace.metadata),
         occurredAt: options.occurredAt,
         priorHash: current.headEventHash,
         payload,

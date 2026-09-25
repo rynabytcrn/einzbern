@@ -25,7 +25,7 @@ import {
   validateWorkspace,
   LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
-import { canonicalJson, createEvent } from "../dist/build/packages/protocol/src/index.js";
+import { LEGACY_EVENT_SCHEMA_VERSION, canonicalJson, createEvent } from "../dist/build/packages/protocol/src/index.js";
 
 const instant = (second) => `2026-07-11T00:00:${String(second).padStart(2, "0")}Z`;
 
@@ -107,7 +107,7 @@ async function criterion3Fork(workspace, phase) {
     occurredAt: instant(5),
     priorHash: null,
     payload: { operation: "project.created", record: { ...before.events[0].payload.record, name: "Forged" } },
-  });
+  }, LEGACY_EVENT_SCHEMA_VERSION);
   await writeControlFile(workspace, `events/000001.json`, canonicalJson([forged]));
   let thrown = null;
   try {

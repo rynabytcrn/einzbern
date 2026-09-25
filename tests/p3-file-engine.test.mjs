@@ -53,6 +53,7 @@ import {
   canonicalSha256,
   createEvent,
   deriveStableId,
+  LEGACY_EVENT_SCHEMA_VERSION,
   PROTOCOL_LIMITS,
   ProtocolError,
 } from "../dist/build/packages/protocol/src/index.js";
@@ -136,7 +137,7 @@ async function rewriteEventChain(workspace, transform, identity = {}) {
       occurredAt: specification.occurredAt,
       priorHash: rebuilt.at(-1)?.eventHash ?? null,
       payload: specification.payload,
-    }));
+    }, LEGACY_EVENT_SCHEMA_VERSION));
   }
   for (const name of names) {
     await rm(join(eventsRoot, name));

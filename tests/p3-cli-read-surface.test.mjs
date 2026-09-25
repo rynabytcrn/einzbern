@@ -498,10 +498,11 @@ test("INC-027: event-list pages the chain and the concatenation IS the chain", a
 
   // Records are verbatim EventRecords, not a summary. A consumer that re-derives the
   // chain must hash exactly the bytes the engine hashed, so all three hashes and the
-  // payload have to travel; a projection would break re-derivation by definition.
+  // payload have to travel; a projection would break re-derivation by definition. An
+  // einzbern.event.v1 also carries its clock and device id (TCRN-CROSS-STORY-468 R3).
   assert.deepEqual(
     Object.keys(first.records[0]).sort(),
-    ["eventHash", "id", "occurredAt", "payload", "payloadHash", "priorHash", "schemaVersion", "sequence", "streamId"],
+    ["clock", "deviceId", "eventHash", "id", "occurredAt", "payload", "payloadHash", "priorHash", "schemaVersion", "sequence", "streamId"],
   );
 
   const status = await run(["status", ...ws]);

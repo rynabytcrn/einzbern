@@ -36,6 +36,15 @@
       "minimum": 1,
       "maximum": 9007199254740991
     },
+    "clock": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "deviceId": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{32}$"
+    },
     "occurredAt": {
       "$ref": "./protocol-common-v1.schema.json#/$defs/strictInstant"
     },
@@ -58,5 +67,32 @@
     "eventHash": {
       "$ref": "./protocol-common-v1.schema.json#/$defs/sha256"
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "schemaVersion": {
+            "const": "einzbern.event.v1"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "clock": true,
+          "deviceId": true
+        },
+        "required": [
+          "clock",
+          "deviceId"
+        ]
+      },
+      "else": {
+        "properties": {
+          "clock": false,
+          "deviceId": false
+        }
+      }
+    }
+  ]
 }

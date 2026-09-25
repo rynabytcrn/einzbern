@@ -42,6 +42,8 @@ import {
   compareCanonicalText,
   createEvent,
   deriveStableId,
+  eventInputOf,
+  LEGACY_EVENT_SCHEMA_VERSION,
   validateEventChain,
 } from "../dist/build/packages/protocol/src/index.js";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
@@ -131,7 +133,7 @@ async function rewriteEventChain(workspace, transform) {
       occurredAt: specification.occurredAt,
       priorHash: rebuilt.at(-1)?.eventHash ?? null,
       payload: specification.payload,
-    }));
+    }, LEGACY_EVENT_SCHEMA_VERSION));
   }
   for (const name of names) {
     await rm(join(eventsRoot, name));
@@ -584,6 +586,8 @@ test("a workspace with zero conference/gate events keeps pre-change golden view 
   // again when WorkRecord gained `summary`. TCRN-CROSS-STORY-466 R2 moved the head event
   // hash and the export digest once more: every event this writer creates is now in the
   // einzbern.event.v1 namespace, and the namespace is part of each event hash basis.
+  // TCRN-CROSS-STORY-468 R3 moved both once more: an einzbern.event.v1 also hashes its clock
+  // and its device id.
   //
   // That re-derivation is the point of this fixture, not damage to it. The record
   // below is CREATED here, by the current writer, so it carries the new field and
@@ -625,13 +629,13 @@ test("a workspace with zero conference/gate events keeps pre-change golden view 
   );
   assert.equal(
     await readFile(join(viewsRoot, "readback.json"), "utf8"),
-    "{\"authority\":\"derived-rebuildable\",\"graphDigest\":\"29725f3ff695a77cea76f68bfc7244a0a56d1c7d07312d58633d56822c268ba7\",\"headEventHash\":\"d14937f5be636f34317377432ca56a5c48519ddcea3978f12e8a941bcf5389a6\",\"projectCount\":1,\"schemaVersion\":\"tcrn.workspace-readback.v1\",\"version\":3,\"workCount\":1,\"workspaceId\":\"workspace:fefacf6fbd4eba98d40fdf99\"}\n",
+    "{\"authority\":\"derived-rebuildable\",\"graphDigest\":\"29725f3ff695a77cea76f68bfc7244a0a56d1c7d07312d58633d56822c268ba7\",\"headEventHash\":\"f760406ea0d8ea2832746ac7abad47d63ac336b7c94c68ea947076c175f52fa6\",\"projectCount\":1,\"schemaVersion\":\"tcrn.workspace-readback.v1\",\"version\":3,\"workCount\":1,\"workspaceId\":\"workspace:fefacf6fbd4eba98d40fdf99\"}\n",
   );
   const exported = await exportWorkspace(fixture.workspace);
   assert.equal(canonicalSha256(assertCanonicalJson(exported)).length, 64);
   assert.equal(
     (await import("node:crypto")).createHash("sha256").update(exported, "utf8").digest("hex"),
-    "7424d524f9d1d74cfa37231168c700187c29a23d0c722f02150e7b09fc9bc474",
+    "3310063122955aeac88725817abb25913dafa03a99aa8cf3739c12e2a563d5e9",
     "export bytes match the recorded build",
   );
   assert.equal(exported.includes("conferences"), false, "no extension keys leak into legacy exports");
@@ -1062,11 +1066,7 @@ test("gate-v1: a decision that disagrees with its own event is corrupt", async (
   // Rehashed exactly the way the engine would, because a forger with write access has
   // the same formula. If this were wrong the event would fail on its hash and the test
   // would pass for the wrong reason -- so the refusal is asserted by message too.
-  tail.payloadHash = canonicalSha256(tail.payload);
-  tail.eventHash = canonicalSha256({
-    schemaVersion: tail.schemaVersion, id: tail.id, streamId: tail.streamId, sequence: tail.sequence,
-    occurredAt: tail.occurredAt, priorHash: tail.priorHash, payload: tail.payload, payloadHash: tail.payloadHash,
-  });
+  Object.assign(tail, createEvent(eventInputOf(tail), tail.schemaVersion));
   await writeFile(segment, canonicalJson(events), "utf8");
 
   // A decision that is not even shaped like one must go the same way. Without this the
@@ -1074,12 +1074,7 @@ test("gate-v1: a decision that disagrees with its own event is corrupt", async (
   const malformed = JSON.parse(JSON.stringify(events));
   const malformedTail = malformed.find((entry) => entry.payload?.record?.extensions?.["gate-identity:decision"] !== undefined);
   malformedTail.payload.record.extensions["gate-identity:decision"].value = { actorId: "owner:governance", authorityFileSha256: "not-a-digest" };
-  malformedTail.payloadHash = canonicalSha256(malformedTail.payload);
-  malformedTail.eventHash = canonicalSha256({
-    schemaVersion: malformedTail.schemaVersion, id: malformedTail.id, streamId: malformedTail.streamId,
-    sequence: malformedTail.sequence, occurredAt: malformedTail.occurredAt, priorHash: malformedTail.priorHash,
-    payload: malformedTail.payload, payloadHash: malformedTail.payloadHash,
-  });
+  Object.assign(malformedTail, createEvent(eventInputOf(malformedTail), malformedTail.schemaVersion));
   await writeFile(segment, canonicalJson(malformed), "utf8");
   await assert.rejects(materializeWorkspace(fx.workspace), (error) => {
     assert.equal(error?.reasonCode, "WORKSPACE_EVENT_CORRUPT");

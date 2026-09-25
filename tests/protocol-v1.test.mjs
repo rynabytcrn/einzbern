@@ -18,8 +18,13 @@ import {
   canonicalSha256,
   compareCanonicalText,
   createEvent,
+  deriveEventId,
   deriveStableId,
+  deriveStreamId,
   EVENT_SCHEMA_VERSION,
+  eventClock,
+  eventInputOf,
+  findStreamChainBreak,
   LEGACY_EVENT_SCHEMA_VERSION,
   parseStrictInstant,
   validateCompatibility,
@@ -30,6 +35,7 @@ import {
   validateKnowledgeRecord,
   validateProfileTrust,
   validateReceipt,
+  validateStreamChain,
   validateWorkGraph,
 } from "../dist/build/packages/protocol/src/index.js";
 
@@ -121,8 +127,12 @@ test("466-R2: new events are written in the einzbern namespace and a chain may r
   assert.deepEqual([first.payloadHash, second.payloadHash], vector.expectedPayloadHashes);
   assert.deepEqual([first.eventHash, second.eventHash], vector.expectedEventHashes);
   assert.deepEqual(validateEventChain([second, first]).map((event) => event.schemaVersion), ["einzbern.event.v1", "einzbern.event.v1"]);
-  // The namespace is part of the hash basis: a relabelled event no longer verifies.
-  expectReason("EVENT_CHAIN_CORRUPT", () => validateEventChain([{ ...first, schemaVersion: LEGACY_EVENT_SCHEMA_VERSION }, second]));
+  // The namespace is part of the hash basis: an event relabelled into the legacy namespace, with
+  // the two fields that namespace does not carry dropped, no longer verifies; relabelled with them
+  // it is not even an event of that namespace.
+  const { clock: _clock, deviceId: _deviceId, ...unclocked } = first;
+  expectReason("EVENT_CHAIN_CORRUPT", () => validateEventChain([{ ...unclocked, schemaVersion: LEGACY_EVENT_SCHEMA_VERSION }, second]));
+  expectReason("RECORD_MALFORMED", () => validateEventChain([{ ...first, schemaVersion: LEGACY_EVENT_SCHEMA_VERSION }, second]));
 
   const [legacyFirst, newSecond] = vector.mixed.inputs.map((input, index) => createEvent(input, vector.mixed.schemaVersions[index]));
   assert.deepEqual([legacyFirst.eventHash, newSecond.eventHash], vector.mixed.expectedEventHashes);
@@ -130,6 +140,86 @@ test("466-R2: new events are written in the einzbern namespace and a chain may r
   assert.deepEqual(validateEventChain([legacyFirst, newSecond]).map((event) => event.schemaVersion), vector.mixed.schemaVersions);
   expectReason("RECORD_MALFORMED", () => createEvent(vector.inputs[0], "other.event.v1"));
   expectReason("RECORD_MALFORMED", () => validateEventChain([{ ...legacyFirst, schemaVersion: "other.event.v1" }]));
+});
+
+test("468-R3: an einzbern event carries a clock and a device id, both hashed; a legacy event carries neither", async () => {
+  const vector = await fixture("positive/event-chain-einzbern.json");
+  const [firstInput, secondInput] = vector.inputs;
+  const first = createEvent(firstInput);
+  const second = createEvent(secondInput);
+  assert.deepEqual([first.clock, second.clock], [1, 3], "a clock may jump past the sequence");
+  assert.equal(first.deviceId, firstInput.deviceId);
+  assert.deepEqual(eventInputOf(second), secondInput);
+  assert.deepEqual([eventClock(first), eventClock(second)], [1, 3]);
+  const { clock, deviceId, ...legacyInput } = firstInput;
+  assert.equal(clock, 1);
+  expectReason("RECORD_MALFORMED", () => createEvent(legacyInput));
+  expectReason("RECORD_MALFORMED", () => createEvent({ ...legacyInput, deviceId }));
+  expectReason("RECORD_MALFORMED", () => createEvent(firstInput, LEGACY_EVENT_SCHEMA_VERSION));
+  for (const bad of [0, -1, 1.5, "1", null]) expectReason("RECORD_MALFORMED", () => createEvent({ ...firstInput, clock: bad }));
+  for (const bad of ["0123", "0123456789ABCDEF0123456789ABCDEF", 7, null]) expectReason("RECORD_MALFORMED", () => createEvent({ ...firstInput, deviceId: bad }));
+  // A legacy event's clock is its sequence, and its input has no clock or device.
+  const legacy = createEvent(legacyInput, LEGACY_EVENT_SCHEMA_VERSION);
+  assert.equal(eventClock(legacy), 1);
+  assert.deepEqual(eventInputOf(legacy), legacyInput);
+  // Changing either field after the fact is a hash mismatch, not a quiet reinterpretation.
+  expectReason("EVENT_CHAIN_CORRUPT", () => validateEventChain([{ ...first, clock: 2 }, second]));
+  expectReason("EVENT_CHAIN_CORRUPT", () => validateEventChain([{ ...first, deviceId: "f".repeat(32) }, second]));
+  expectReason("RECORD_MALFORMED", () => validateEventChain([{ ...legacy, clock: 1 }]));
+});
+
+test("468-R1/R2: a library stream and its events have identities of their own, and one stream validates link by link", () => {
+  const library = "library:0123456789abcdef01234567";
+  const device = "0123456789abcdef0123456789abcdef";
+  const streamId = deriveStreamId(library, device);
+  assert.match(streamId, /^stream:[a-f0-9]{24}$/u);
+  assert.equal(streamId, deriveStreamId(library, device), "the identity is derived, not drawn");
+  assert.notEqual(streamId, deriveStreamId(library, "f".repeat(32)), "each device has its own stream");
+  assert.notEqual(streamId, deriveStreamId(`library:${"1".repeat(24)}`, device), "and each library");
+  assert.match(deriveEventId(streamId, 1), /^event:[a-f0-9]{24}$/u);
+  assert.notEqual(deriveEventId(streamId, 1), deriveEventId(streamId, 2));
+  expectReason("ID_INVALID", () => deriveStreamId(library, "not-a-device"));
+  expectReason("ID_INVALID", () => deriveStreamId("not an id", device));
+  expectReason("RECORD_MALFORMED", () => deriveEventId(streamId, 0));
+
+  const build = (sequence, overrides = {}, priorHash) => createEvent({
+    id: deriveEventId(streamId, sequence),
+    streamId,
+    sequence,
+    clock: sequence * 2,
+    deviceId: device,
+    occurredAt: `2026-01-01T00:00:0${sequence}Z`,
+    priorHash,
+    payload: { sequence },
+    ...overrides,
+  });
+  const events = [];
+  for (let sequence = 1; sequence <= 4; sequence += 1) events.push(build(sequence, {}, events.at(-1)?.eventHash ?? null));
+  const expected = { streamId, eventId: (sequence) => deriveEventId(streamId, sequence), deviceId: device };
+  assert.equal(findStreamChainBreak(events, expected), null);
+  assert.equal(validateStreamChain(events, expected), events);
+  const withAt = (index, replacement) => events.map((event, position) => (position === index ? replacement : event));
+  const breakAt = (list) => findStreamChainBreak(list, expected);
+  assert.deepEqual(breakAt(withAt(2, { ...events[2], payload: { sequence: 99 } })), { kind: "payloadHash", sequence: 3, eventId: events[2].id });
+  assert.equal(breakAt(withAt(2, { ...events[2], occurredAt: "2026-01-01T00:00:09Z" })).kind, "eventHash");
+  assert.equal(breakAt(withAt(1, build(2, {}, "0".repeat(64)))).kind, "priorHash");
+  assert.equal(breakAt(withAt(2, build(3, { clock: 4 }, events[1].eventHash))).kind, "clock", "a clock that does not rise");
+  assert.equal(breakAt(withAt(1, build(2, { deviceId: "f".repeat(32) }, events[0].eventHash))).kind, "device");
+  assert.equal(breakAt(withAt(1, build(2, { id: "event:elsewhere" }, events[0].eventHash))).kind, "identity");
+  assert.equal(breakAt([events[0], events[2]]).kind, "sequence");
+  assert.equal(breakAt([{ ...events[0], unexpected: true }]).kind, "fields");
+  expectReason("EVENT_CHAIN_CORRUPT", () => validateStreamChain(withAt(3, { ...events[3], payload: {} }), expected));
+  expectReason("RECORD_MALFORMED", () => validateStreamChain([events[1]], expected));
+  // A stream read from its middle continues from the sequence, head and clock it was given.
+  assert.equal(findStreamChainBreak(events.slice(2), { ...expected, firstSequence: 3, priorHash: events[1].eventHash, priorClock: 4 }), null);
+
+  // A stream may start in the legacy namespace (clock = sequence) and continue in the new one.
+  const mixed = [];
+  for (let sequence = 1; sequence <= 3; sequence += 1) {
+    const input = { id: deriveEventId(streamId, sequence), streamId, sequence, occurredAt: `2026-01-01T00:00:0${sequence}Z`, priorHash: mixed.at(-1)?.eventHash ?? null, payload: { sequence } };
+    mixed.push(sequence < 3 ? createEvent(input, LEGACY_EVENT_SCHEMA_VERSION) : createEvent({ ...input, clock: 7, deviceId: device }));
+  }
+  assert.equal(findStreamChainBreak(mixed, expected), null);
 });
 
 test("knowledge, context, exchange, compatibility, profile trust, receipt, and registration fixtures validate", async () => {
@@ -166,7 +256,7 @@ test("runtime validators match closed schema types, limits, and shared extension
   expectReason("RECORD_MALFORMED", () => validateWorkGraph([work({ tombstone: "false" })]));
   expectReason("ID_INVALID", () => validateWorkGraph([work({ id: 7 })]));
   expectReason("RECORD_MALFORMED", () => createEvent({ ...events.inputs[0], unexpected: true }));
-  const firstEvent = createEvent(events.inputs[0]);
+  const firstEvent = createEvent(events.inputs[0], LEGACY_EVENT_SCHEMA_VERSION);
   expectReason("RECORD_MALFORMED", () => validateEventChain([{ ...firstEvent, unexpected: true }]));
   expectReason("RECORD_MALFORMED", () => validateEventChain([{ ...firstEvent, sequence: "1" }]));
 
@@ -256,7 +346,7 @@ test("work graph and protocol negatives return exact frozen reason codes", async
     occurredAt: "2026-07-11T02:00:00Z",
     priorHash: null,
     payload: { revision: 1 },
-  });
+  }, LEGACY_EVENT_SCHEMA_VERSION);
   const executors = new Map([
     ["canonical-value-invalid", () => canonicalJson(1.5)],
     ["malformed-record", () => validateWorkGraph([work({ unexpected: true })])],
@@ -533,6 +623,8 @@ test("malformed Unicode fails closed across canonical values, keys, arrays, and 
       id: "event:unicode",
       streamId: "stream:unicode",
       sequence: 1,
+      clock: 1,
+      deviceId: "0".repeat(32),
       occurredAt: "2026-07-11T00:00:00Z",
       priorHash: null,
       payload: { nested: { [`key-${surrogate}`]: 1 } },

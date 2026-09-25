@@ -78,6 +78,14 @@ The device directory is `EINZBERN_HOME` when that variable is set, otherwise `~/
 registry, each library's cache and write lock, backups and engine versions will. Manifest and
 settings files are replaced atomically (temporary file, flush, rename); a rename refused with
 `EPERM`, `EACCES` or `EBUSY` is retried with backoff before `ATOMIC_WRITE_RENAME_FAILED`.
+`einzbern.event.v1` is final (TCRN-CROSS-STORY-468 R3): beside the legacy fields every new
+event carries `clock`, one more than the largest clock its device had seen, and `deviceId`,
+the 32-hex-digit id of the device that wrote it, both in the hash basis; `tcrn.event.v1`
+events are unchanged and read with their sequence as their clock. The device id and its
+display name live in `device.json` in the device directory, created on first use; a
+reinstall that loses the directory gets a new id. Library streams and their events take
+identities derived from the library and device (`einzbern.stream-identity.v1`,
+`einzbern.event-identity.v1`), and `validateStreamChain` checks one stream link by link.
 
 ## 1.2.1 — patch candidate
 

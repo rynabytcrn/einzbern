@@ -16,7 +16,7 @@ import { lstat, readdir, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 
-import { assertCanonicalJson, canonicalSha256, createEvent, isEventSchemaVersion } from "../../protocol/src/index.js";
+import { assertCanonicalJson, canonicalSha256, createEvent, eventInputOf, eventRecordFields, isEventSchemaVersion } from "../../protocol/src/index.js";
 import type { EventRecord, JsonValue } from "../../protocol/src/index.js";
 import { LEGACY_CONTROL_DIRECTORY, LEGACY_EVENTS_DIRECTORY } from "./names.js";
 import {
@@ -77,7 +77,6 @@ export interface ChainReport {
   readonly streams: readonly { readonly streamId: string; readonly events: number; readonly headEventHash: string | null }[];
 }
 
-const EVENT_FIELDS = ["eventHash", "id", "occurredAt", "payload", "payloadHash", "priorHash", "schemaVersion", "sequence", "streamId"];
 // The engine that wrote these trees kept one segment up to 64 MiB; nothing larger is read.
 const SEGMENT_MAXIMUM_BYTES = 67_108_864;
 const METADATA_MAXIMUM_BYTES = 1_048_576;
@@ -177,27 +176,22 @@ export function findLegacyChainBreak(workspace: LegacyWorkspace): ChainBreak | n
     const sequence = index + 1;
     const eventId = typeof event.id === "string" ? event.id : "unknown";
     const broken = (reasonCode: ChainBreak["reasonCode"], detail: string): ChainBreak => ({ reasonCode, streamId: workspace.streamId, sequence, eventId, detail });
+    // An old-layout chain written before EPIC-141 holds tcrn.event.v1 only; one the engine kept
+    // writing until the switch to libraries may continue in einzbern.event.v1, which also carries
+    // a clock and a device id (TCRN-CROSS-STORY-468 R3).
+    if (!isEventSchemaVersion(event.schemaVersion)) return broken("CHAIN_EVENT_CORRUPT", "schemaVersion");
     const fields = Object.keys(event).sort();
-    if (fields.length !== EVENT_FIELDS.length || fields.some((field, position) => field !== EVENT_FIELDS[position])) {
+    const expectedFields = [...eventRecordFields(event.schemaVersion)].sort();
+    if (fields.length !== expectedFields.length || fields.some((field, position) => field !== expectedFields[position])) {
       return broken("CHAIN_EVENT_CORRUPT", "event fields");
     }
-    // An old-layout chain written before EPIC-141 holds tcrn.event.v1 only; one the engine kept
-    // writing until the switch to libraries may continue in einzbern.event.v1.
-    if (!isEventSchemaVersion(event.schemaVersion)) return broken("CHAIN_EVENT_CORRUPT", "schemaVersion");
     if (event.sequence !== sequence) return broken("CHAIN_EVENT_CORRUPT", "sequence");
     if (event.streamId !== workspace.streamId || event.id !== legacyWorkspaceEventId(workspace.streamId, sequence)) {
       return broken("CHAIN_EVENT_CORRUPT", "identity");
     }
     let rebuilt: EventRecord;
     try {
-      rebuilt = createEvent({
-        id: event.id,
-        streamId: event.streamId,
-        sequence: event.sequence,
-        occurredAt: event.occurredAt,
-        priorHash: event.priorHash,
-        payload: event.payload,
-      }, event.schemaVersion);
+      rebuilt = createEvent(eventInputOf(event), event.schemaVersion);
     } catch {
       return broken("CHAIN_EVENT_CORRUPT", "envelope");
     }

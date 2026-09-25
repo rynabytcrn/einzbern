@@ -143,6 +143,12 @@ export interface WorkRecord {
 // byte and are read as the legacy namespace; every event written from now on carries
 // `einzbern.event.v1`. The hash basis of each event is built with the event's own
 // schemaVersion, so one chain may hold both and its priorHash links run straight through.
+//
+// TCRN-CROSS-STORY-468 R3 (MIN-227 D20): an einzbern.event.v1 also carries `clock`, the
+// writer's logical clock (one more than the largest clock its device had seen), and
+// `deviceId`, the device whose stream it belongs to; both are in the hash basis. A
+// tcrn.event.v1 has neither: its clock is its sequence, and its device is the one its stream
+// is recorded under.
 export const EVENT_SCHEMA_VERSION = "einzbern.event.v1" as const;
 export const LEGACY_EVENT_SCHEMA_VERSION = "tcrn.event.v1" as const;
 export type EventSchemaVersion = typeof EVENT_SCHEMA_VERSION | typeof LEGACY_EVENT_SCHEMA_VERSION;
@@ -157,6 +163,9 @@ export interface EventRecord {
   readonly id: string;
   readonly streamId: string;
   readonly sequence: number;
+  // einzbern.event.v1 only, and required there.
+  readonly clock?: number;
+  readonly deviceId?: string;
   readonly occurredAt: string;
   readonly priorHash: string | null;
   readonly payload: JsonValue;
@@ -891,14 +900,58 @@ export function assertWorkTransition(from: unknown, to: unknown): void {
   }
 }
 
+export type EventInput = Omit<EventRecord, "eventHash" | "payloadHash" | "schemaVersion">;
+
+const LEGACY_EVENT_INPUT_FIELDS: readonly string[] = Object.freeze(["id", "streamId", "sequence", "occurredAt", "priorHash", "payload"]);
+const EVENT_INPUT_FIELDS: readonly string[] = Object.freeze(["id", "streamId", "sequence", "clock", "deviceId", "occurredAt", "priorHash", "payload"]);
+
+/** The input fields an event of this schemaVersion is built from. */
+export function eventInputFields(schemaVersion: EventSchemaVersion): readonly string[] {
+  return schemaVersion === EVENT_SCHEMA_VERSION ? EVENT_INPUT_FIELDS : LEGACY_EVENT_INPUT_FIELDS;
+}
+
+/** Every field a stored event of this schemaVersion carries. */
+export function eventRecordFields(schemaVersion: EventSchemaVersion): readonly string[] {
+  return [...eventInputFields(schemaVersion), "schemaVersion", "payloadHash", "eventHash"];
+}
+
+export const DEVICE_ID_PATTERN = /^[a-f0-9]{32}$/u;
+
+export function isDeviceId(value: unknown): value is string {
+  return typeof value === "string" && DEVICE_ID_PATTERN.test(value);
+}
+
+/** The input an event was built from, in the shape createEvent takes for its schemaVersion. */
+export function eventInputOf(event: EventRecord): EventInput {
+  const base = {
+    id: event.id,
+    streamId: event.streamId,
+    sequence: event.sequence,
+    occurredAt: event.occurredAt,
+    priorHash: event.priorHash,
+    payload: event.payload,
+  };
+  if (event.schemaVersion !== EVENT_SCHEMA_VERSION) return base;
+  return {
+    ...base,
+    ...(event.clock === undefined ? {} : { clock: event.clock }),
+    ...(event.deviceId === undefined ? {} : { deviceId: event.deviceId }),
+  };
+}
+
+/** The clock an event is ordered by: its own for einzbern.event.v1, its sequence for tcrn.event.v1. */
+export function eventClock(event: EventRecord): number {
+  return event.schemaVersion === EVENT_SCHEMA_VERSION && typeof event.clock === "number" ? event.clock : event.sequence;
+}
+
 export function createEvent(
-  input: Omit<EventRecord, "eventHash" | "payloadHash" | "schemaVersion">,
+  input: EventInput,
   schemaVersion: EventSchemaVersion = EVENT_SCHEMA_VERSION,
 ): EventRecord {
-  assertExactFields(input, ["id", "streamId", "sequence", "occurredAt", "priorHash", "payload"], "Event inputs");
   if (!isEventSchemaVersion(schemaVersion)) {
     fail("RECORD_MALFORMED", "Event schemaVersion");
   }
+  assertExactFields(input, eventInputFields(schemaVersion), "Event inputs");
   assertProtocolId(input.id);
   assertProtocolId(input.streamId);
   assertStrictInstant(input.occurredAt);
@@ -912,7 +965,7 @@ export function createEvent(
     assertSha256(input.priorHash);
   }
   const payloadHash = canonicalSha256(input.payload);
-  const basis = {
+  const common = {
     schemaVersion,
     id: input.id,
     streamId: input.streamId,
@@ -922,7 +975,121 @@ export function createEvent(
     payload: input.payload,
     payloadHash,
   };
+  if (schemaVersion !== EVENT_SCHEMA_VERSION) {
+    return { ...common, eventHash: canonicalSha256(common) };
+  }
+  if (!Number.isSafeInteger(input.clock) || Number(input.clock) < 1) {
+    fail("RECORD_MALFORMED", `${input.id} clock`);
+  }
+  if (!isDeviceId(input.deviceId)) {
+    fail("RECORD_MALFORMED", `${input.id} deviceId`);
+  }
+  const basis = { ...common, clock: Number(input.clock), deviceId: input.deviceId };
   return { ...basis, eventHash: canonicalSha256(basis) };
+}
+
+// TCRN-CROSS-STORY-468 R1, R2: the identities of a library stream and of its events. A stream is
+// one device's in one library; an event is a position in its stream. A stream imported from an
+// old workspace keeps that workspace's identities instead (its manifest says which).
+export const STREAM_IDENTITY_SCHEMA_VERSION = "einzbern.stream-identity.v1" as const;
+export const EVENT_IDENTITY_SCHEMA_VERSION = "einzbern.event-identity.v1" as const;
+
+export function deriveStreamId(libraryId: string, deviceId: string): string {
+  assertProtocolId(libraryId);
+  if (!isDeviceId(deviceId)) fail("ID_INVALID", deviceId);
+  return `stream:${canonicalSha256({ schemaVersion: STREAM_IDENTITY_SCHEMA_VERSION, libraryId, deviceId }).slice(0, 24)}`;
+}
+
+export function deriveEventId(streamId: string, sequence: number): string {
+  assertProtocolId(streamId);
+  if (!Number.isSafeInteger(sequence) || sequence < 1) fail("RECORD_MALFORMED", `${streamId} sequence`);
+  return `event:${canonicalSha256({ schemaVersion: EVENT_IDENTITY_SCHEMA_VERSION, streamId, sequence }).slice(0, 24)}`;
+}
+
+export type StreamChainBreakKind =
+  | "fields"
+  | "schemaVersion"
+  | "sequence"
+  | "identity"
+  | "device"
+  | "clock"
+  | "envelope"
+  | "payloadHash"
+  | "eventHash"
+  | "priorHash";
+
+export interface StreamChainBreak {
+  readonly kind: StreamChainBreakKind;
+  // The position in the stream where the chain stops being provable (1-based).
+  readonly sequence: number;
+  readonly eventId: string;
+}
+
+export interface StreamChainExpectation {
+  readonly streamId: string;
+  // The id the event at `sequence` must carry in this stream.
+  readonly eventId: (sequence: number) => string;
+  // When given, every einzbern.event.v1 in the stream must carry this device id.
+  readonly deviceId?: string;
+  // The sequence and head the stream continues from (a stream read from its middle).
+  readonly firstSequence?: number;
+  readonly priorHash?: string | null;
+  readonly priorClock?: number;
+}
+
+/**
+ * The first place one stream's events stop being provable, or null. The events are in stream
+ * order; each must carry the expected identity, the next sequence, a clock above the one before
+ * it, hashes that rebuild, and a priorHash naming the event before it.
+ */
+export function findStreamChainBreak(events: readonly EventRecord[], expected: StreamChainExpectation): StreamChainBreak | null {
+  let sequence = expected.firstSequence ?? 1;
+  let prior = expected.priorHash ?? null;
+  let priorClock = expected.priorClock ?? 0;
+  for (const event of events) {
+    const eventId = isPlainObject(event) && typeof event.id === "string" ? event.id : "unknown";
+    const broken = (kind: StreamChainBreakKind): StreamChainBreak => ({ kind, sequence, eventId });
+    if (!isPlainObject(event)) return broken("fields");
+    if (!isEventSchemaVersion(event.schemaVersion)) return broken("schemaVersion");
+    const fields = Object.keys(event).sort(compareCanonicalText).join("\0");
+    if (fields !== [...eventRecordFields(event.schemaVersion)].sort(compareCanonicalText).join("\0")) return broken("fields");
+    if (event.sequence !== sequence) return broken("sequence");
+    if (event.streamId !== expected.streamId || event.id !== expected.eventId(sequence)) return broken("identity");
+    if (event.schemaVersion === EVENT_SCHEMA_VERSION && expected.deviceId !== undefined && event.deviceId !== expected.deviceId) {
+      return broken("device");
+    }
+    const clock = eventClock(event);
+    if (!Number.isSafeInteger(clock) || clock <= priorClock) return broken("clock");
+    let rebuilt: EventRecord;
+    try {
+      rebuilt = createEvent(eventInputOf(event), event.schemaVersion);
+    } catch {
+      return broken("envelope");
+    }
+    if (event.payloadHash !== rebuilt.payloadHash) return broken("payloadHash");
+    if (event.eventHash !== rebuilt.eventHash) return broken("eventHash");
+    if (event.priorHash !== prior) return broken("priorHash");
+    prior = event.eventHash;
+    priorClock = clock;
+    sequence += 1;
+  }
+  return null;
+}
+
+/** Validate one stream's events in stream order; a break fails closed with its position. */
+export function validateStreamChain(events: readonly EventRecord[], expected: StreamChainExpectation): readonly EventRecord[] {
+  if (!Array.isArray(events)) {
+    fail("RECORD_MALFORMED", "Event stream");
+  }
+  if (events.length > PROTOCOL_LIMITS.maxChainEvents) {
+    fail("INPUT_OVERSIZED", "Event stream");
+  }
+  const found = findStreamChainBreak(events, expected);
+  if (found !== null) {
+    fail(found.kind === "payloadHash" || found.kind === "eventHash" || found.kind === "priorHash" ? "EVENT_CHAIN_CORRUPT" : "RECORD_MALFORMED",
+      `${expected.streamId} sequence ${found.sequence} (${found.kind})`);
+  }
+  return events;
 }
 
 export function validateEventChain(events: readonly EventRecord[]): readonly EventRecord[] {
@@ -941,24 +1108,17 @@ export function validateEventChain(events: readonly EventRecord[]): readonly Eve
   // is still reported before the ordering checks below see it.
   const rebuilt = new Map<EventRecord, EventRecord>();
   for (const event of events) {
-    assertExactFields(
-      event,
-      ["schemaVersion", "id", "streamId", "sequence", "occurredAt", "priorHash", "payload", "payloadHash", "eventHash"],
-      "Event records",
-    );
-    if (!isEventSchemaVersion(event.schemaVersion) || typeof event.payloadHash !== "string" || typeof event.eventHash !== "string") {
+    const candidate: unknown = event;
+    if (!isPlainObject(candidate) || !isEventSchemaVersion(candidate.schemaVersion)) {
+      fail("RECORD_MALFORMED", String((isPlainObject(candidate) ? candidate.id : undefined) ?? "unknown"));
+    }
+    assertExactFields(event, eventRecordFields(event.schemaVersion), "Event records");
+    if (typeof event.payloadHash !== "string" || typeof event.eventHash !== "string") {
       fail("RECORD_MALFORMED", String(event.id ?? "unknown"));
     }
     assertSha256(event.payloadHash);
     assertSha256(event.eventHash);
-    rebuilt.set(event, createEvent({
-      id: event.id,
-      streamId: event.streamId,
-      sequence: event.sequence,
-      occurredAt: event.occurredAt,
-      priorHash: event.priorHash,
-      payload: event.payload,
-    }, event.schemaVersion));
+    rebuilt.set(event, createEvent(eventInputOf(event), event.schemaVersion));
   }
   const ordered = [...events].sort((left, right) => left.sequence - right.sequence || compareCanonicalText(left.id, right.id));
   const headStreamId = ordered[0]?.streamId;

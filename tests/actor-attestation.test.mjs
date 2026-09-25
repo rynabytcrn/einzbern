@@ -27,7 +27,7 @@ import {
   LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { appendHistoricalAttestationEnable } from "./helpers/workspace-fixture.mjs";
-import { canonicalJson, createEvent, validateExtensionRegistration } from "../dist/build/packages/protocol/src/index.js";
+import { LEGACY_EVENT_SCHEMA_VERSION, canonicalJson, createEvent, validateExtensionRegistration } from "../dist/build/packages/protocol/src/index.js";
 
 const instant = (second) => `2026-07-11T00:00:${String(second).padStart(2, "0")}Z`;
 
@@ -67,7 +67,7 @@ async function rehashLastEvent(workspace, buildPayload) {
     occurredAt: last.occurredAt,
     priorHash: last.priorHash,
     payload: buildPayload(last.payload),
-  });
+  }, LEGACY_EVENT_SCHEMA_VERSION);
   await writeFile(segment, canonicalJson(events));
 }
 

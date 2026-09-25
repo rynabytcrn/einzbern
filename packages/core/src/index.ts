@@ -680,3 +680,16 @@ export {
 } from "./device-home.js";
 export { ATOMIC_FILE_REASON_CODES, ATOMIC_TEMPORARY_PREFIX, AtomicFileError, isAtomicTemporaryName, writeFileAtomic } from "./atomic-file.js";
 export type { AtomicFileReasonCode, AtomicWriteOptions } from "./atomic-file.js";
+// TCRN-CROSS-STORY-468 R1: this device's identity in the device directory.
+export {
+  DEVICE_DISPLAY_NAME_MAX_LENGTH,
+  DEVICE_IDENTITY_REASON_CODES,
+  DEVICE_SCHEMA_VERSION,
+  DeviceIdentityError,
+  displayNameFromHostname,
+  readDevice,
+  readOrCreateDevice,
+  setDeviceDisplayName,
+  validateDeviceIdentity,
+} from "./device-identity.js";
+export type { DeviceIdentity, DeviceIdentityReasonCode, ReadOrCreateDeviceOptions } from "./device-identity.js";

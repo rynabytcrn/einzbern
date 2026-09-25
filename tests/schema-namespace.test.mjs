@@ -36,14 +36,16 @@ test("466-R2 (protocol): legacy events followed by new ones validate, each keepi
   let priorHash = null;
   for (let sequence = 1; sequence <= 6; sequence += 1) {
     const schemaVersion = sequence <= 3 ? LEGACY_EVENT_SCHEMA_VERSION : EVENT_SCHEMA_VERSION;
-    const event = createEvent({
+    const input = {
       id: `event:mixed-${sequence}`,
       streamId: "stream:mixed",
       sequence,
       occurredAt: `2026-01-01T00:00:0${sequence}Z`,
       priorHash,
       payload: { sequence },
-    }, schemaVersion);
+    };
+    // TCRN-CROSS-STORY-468 R3: a new event also carries its clock and device.
+    const event = createEvent(schemaVersion === EVENT_SCHEMA_VERSION ? { ...input, clock: sequence, deviceId: "0".repeat(32) } : input, schemaVersion);
     events.push(event);
     priorHash = event.eventHash;
   }
@@ -71,6 +73,10 @@ test("466-AC3 (engine): a new workspace writes every event as einzbern.event.v1"
   const state = await materializeWorkspace(workspace);
   assert.equal(state.events.length, 2);
   assert.deepEqual(state.events.map((event) => event.schemaVersion), ["einzbern.event.v1", "einzbern.event.v1"]);
+  // TCRN-CROSS-STORY-468 R3: each carries a clock and a device id; an old-layout workspace is one
+  // stream with one writer, so its clock is its sequence.
+  assert.deepEqual(state.events.map((event) => event.clock), [1, 2]);
+  assert.ok(state.events.every((event) => /^[a-f0-9]{32}$/u.test(event.deviceId) && event.deviceId === state.events[0].deviceId));
   assert.doesNotThrow(() => validateEventChain(state.events));
 });
 

@@ -3,7 +3,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -112,6 +112,27 @@ test("S281: a corrupt file is an error, not an empty answer", async () => {
     // read, so the store cannot become a way to smuggle a value past validation.
     await reason(readMachineSettings(path), "MACHINE_SETTING_VALUE_INVALID");
   } finally { await rm(join(path, "..", ".."), { recursive: true, force: true }); }
+});
+
+// TCRN-CROSS-STORY-469 R3, R5: the layer lives in the device directory (EINZBERN_HOME) when no
+// path is named, and every write replaces the file atomically.
+test("S281 / 469-R3: without a path the layer lives in the device directory, and a write leaves no temporary", async () => {
+  const home = await mkdtemp(join(tmpdir(), "einzbern-s281-device-"));
+  const previous = process.env.EINZBERN_HOME;
+  process.env.EINZBERN_HOME = home;
+  try {
+    assert.equal(machineSettingsPath(), join(home, "machine-settings.json"));
+    await applyMachineSettingSet({ key: "portal.defaultTheme", value: "dark", occurredAt: at });
+    await applyMachineSettingSet({ key: "portal.port", value: "4321", occurredAt: at });
+    assert.deepEqual((await readMachineSettings()).values, { "portal.defaultTheme": "dark", "portal.port": "4321" });
+    assert.deepEqual(await readdir(home), ["machine-settings.json"], "no temporary file is left beside it");
+    await applyMachineSettingRemove({ key: "portal.port", occurredAt: at });
+    assert.deepEqual((await readMachineSettingsCatalog()).path, join(home, "machine-settings.json"));
+  } finally {
+    if (previous === undefined) delete process.env.EINZBERN_HOME;
+    else process.env.EINZBERN_HOME = previous;
+    await rm(home, { recursive: true, force: true });
+  }
 });
 
 test("S281: the layer states where its values come from and when they take effect", async () => {

@@ -73,6 +73,12 @@ The portal follows: the gate view, the dispatch configuration surface with its
 panel are gone. Its writes carry workspace, time and actor only, and it no longer reads
 `--attest-dir` or `TCRN_PORTAL_ATTEST_DIR`.
 
+The device directory is `EINZBERN_HOME` when that variable is set, otherwise `~/.einzbern`
+(TCRN-CROSS-STORY-469 R3): machine settings live there, and the device file, the library
+registry, each library's cache and write lock, backups and engine versions will. Manifest and
+settings files are replaced atomically (temporary file, flush, rename); a rename refused with
+`EPERM`, `EACCES` or `EBUSY` is retried with backoff before `ATOMIC_WRITE_RENAME_FAILED`.
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

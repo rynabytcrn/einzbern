@@ -1,7 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { homedir } from "node:os";
-
 import {
   applyMachineSettingRemove,
   applyMachineSettingSet,
@@ -1181,20 +1179,20 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   }
   if (command === "machine-settings-catalog") {
     const values = parseArguments(rest, ["home"]);
-    io.write(canonicalJson({ reasonCode: "MACHINE_SETTINGS_CATALOG_READY", ...await readMachineSettingsCatalog(machineSettingsPath(values.home ?? homedir())) }));
+    io.write(canonicalJson({ reasonCode: "MACHINE_SETTINGS_CATALOG_READY", ...await readMachineSettingsCatalog(machineSettingsPath(values.home)) }));
     return;
   }
   if (command === "machine-settings-set") {
     const values = parseArguments(rest, ["at", "key", "value", "home"]);
     required(values, ["at", "key", "value"]);
-    const file = await applyMachineSettingSet({ key: values.key ?? "", value: values.value ?? "", occurredAt: values.at ?? "", path: machineSettingsPath(values.home ?? homedir()) });
+    const file = await applyMachineSettingSet({ key: values.key ?? "", value: values.value ?? "", occurredAt: values.at ?? "", path: machineSettingsPath(values.home) });
     io.write(canonicalJson({ reasonCode: "MACHINE_SETTINGS_WRITE_COMMITTED", ...file }));
     return;
   }
   if (command === "machine-settings-remove") {
     const values = parseArguments(rest, ["at", "key", "home"]);
     required(values, ["at", "key"]);
-    const file = await applyMachineSettingRemove({ key: values.key ?? "", occurredAt: values.at ?? "", path: machineSettingsPath(values.home ?? homedir()) });
+    const file = await applyMachineSettingRemove({ key: values.key ?? "", occurredAt: values.at ?? "", path: machineSettingsPath(values.home) });
     io.write(canonicalJson({ reasonCode: "MACHINE_SETTINGS_WRITE_COMMITTED", ...file }));
     return;
   }

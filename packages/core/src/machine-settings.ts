@@ -8,26 +8,28 @@
 // on a chain would mean every laptop preference became a governed event on a shared
 // ledger, and choosing a partition to open in would take the chain write lock.
 //
-// So this layer is deliberately NOT chain-backed. It is a single canonical JSON file
-// under the machine-level engine home the install manifest already declares
-// (`machine.workflow-engine`, the device directory `<HOME>/.einzbern`). Two properties are kept from
-// the governed layer because they are not about governance: only the engine writes the
-// file, and every value is validated against a closed catalogue before it is stored.
+// So this layer is deliberately NOT chain-backed. It is a single canonical JSON file in the
+// device directory (TCRN-CROSS-STORY-469 R3: EINZBERN_HOME, or `<HOME>/.einzbern`, the
+// directory the install manifest declares as `machine.workflow-engine`). Two properties are
+// kept from the governed layer because they are not about governance: only the engine writes
+// the file, and every value is validated against a closed catalogue before it is stored. The
+// file is replaced atomically, so a reader never sees half of it.
 //
 // Resolution order for a value that exists in both places is stated by the consumer,
 // not here: the portal reads browser-local preference first, this layer second, its
 // built-in fallback last. This module answers only "what does this machine say".
 
-import { homedir } from "node:os";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { canonicalJson } from "../../protocol/src/index.js";
+import { writeFileAtomic } from "./atomic-file.js";
+import { DEVICE_HOME_ENTRIES, deviceHome } from "./device-home.js";
 import { DIRECTORY } from "./names.js";
 
 export const MACHINE_SETTINGS_VERSION = "tcrn.machine-settings.v1" as const;
 export const MACHINE_SETTINGS_LAYER_KIND = "machine_configuration" as const;
-export const MACHINE_SETTINGS_FILE_NAME = "machine-settings.json" as const;
+export const MACHINE_SETTINGS_FILE_NAME = DEVICE_HOME_ENTRIES.machineSettings;
 /** The machine-level engine home, as declared by install-manifest item machine.workflow-engine. */
 export const MACHINE_SETTINGS_DIRECTORY = DIRECTORY.device;
 
@@ -128,8 +130,14 @@ export const MACHINE_SETTINGS_CATALOG: readonly MachineSettingsCatalogEntry[] = 
 
 const BY_KEY = new Map<string, MachineSettingsCatalogEntry>(MACHINE_SETTINGS_CATALOG.map((entry) => [entry.key, entry]));
 
-export function machineSettingsPath(home: string = homedir()): string {
-  return join(home, MACHINE_SETTINGS_DIRECTORY, MACHINE_SETTINGS_FILE_NAME);
+/**
+ * The machine settings file. Without an argument it is in the device directory (EINZBERN_HOME
+ * or `<HOME>/.einzbern`); `home` keeps the meaning the `--home` flag has always had, the
+ * user's home, whose device directory is `<home>/.einzbern`.
+ */
+export function machineSettingsPath(home?: string): string {
+  const device = home === undefined ? deviceHome() : join(home, MACHINE_SETTINGS_DIRECTORY);
+  return join(device, MACHINE_SETTINGS_FILE_NAME);
 }
 
 export function assertMachineSettingKey(value: unknown): asserts value is MachineSettingKey {
@@ -229,7 +237,7 @@ export async function readMachineSettings(path: string = machineSettingsPath()):
 
 async function write(path: string, file: MachineSettingsFile): Promise<MachineSettingsFile> {
   await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${canonicalJson(file)}\n`, "utf8");
+  await writeFileAtomic(path, `${canonicalJson(file)}\n`);
   return file;
 }
 

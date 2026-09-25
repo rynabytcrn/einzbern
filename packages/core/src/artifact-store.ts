@@ -38,12 +38,12 @@
 
 import { createHash } from "node:crypto";
 import { lstat, mkdir, open, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
 import { basename, isAbsolute, relative, resolve, sep } from "node:path";
 import { deflateSync, inflateSync } from "node:zlib";
 
 import { assertCanonicalJson, assertStrictInstant, canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
 import type { JsonValue } from "../../protocol/src/index.js";
+import { deviceHome } from "./device-home.js";
 import { MACHINE_SETTINGS_DIRECTORY } from "./machine-settings.js";
 import { SETTINGS_CATALOG } from "./settings.js";
 import { WORKSPACE_CONTROL_DIRECTORY } from "./storage-backend.js";
@@ -209,7 +209,7 @@ export function resolveGeneratedArtifactsRoot(workspaceRoot: string, value: stri
 export async function assertGeneratedArtifactsRoot(
   workspaceRoot: string,
   value: string,
-  home: string = homedir(),
+  home?: string,
 ): Promise<string> {
   if (typeof workspaceRoot !== "string" || workspaceRoot.length === 0) {
     fail("ARTIFACT_INPUT_INVALID", "workspace root");
@@ -223,7 +223,10 @@ export async function assertGeneratedArtifactsRoot(
     await mkdir(root, { recursive: true });
     return boundDirectory(root);
   }
-  if (isInside(resolve(home, MACHINE_SETTINGS_DIRECTORY), root)) {
+  // The device directory (TCRN-CROSS-STORY-469 R3): EINZBERN_HOME, or <home>/.einzbern when a
+  // user home is named.
+  const device = home === undefined ? deviceHome() : resolve(home, MACHINE_SETTINGS_DIRECTORY);
+  if (isInside(device, root)) {
     fail("ARTIFACT_PATH_INVALID", `${ARTIFACT_ROOT_SETTING_KEY} must be outside the machine control home`);
   }
   return boundDirectory(root);

@@ -662,3 +662,21 @@ export {
   verifyInstallTree,
 } from "./install-tree-digest.js";
 export type { InstallTreeDigest, InstallTreeEntry, InstallTreeReasonCode, InstallTreeVerification } from "./install-tree-digest.js";
+// TCRN-CROSS-STORY-469 R3, R5: the device directory and the atomic file replacement every
+// manifest write goes through.
+export {
+  DEVICE_HOME_ENTRIES,
+  DEVICE_HOME_ENVIRONMENT_VARIABLE,
+  DeviceHomeError,
+  backupsPath,
+  cachePath,
+  deviceFilePath,
+  deviceHome,
+  engineRoot,
+  ensureDeviceDirectory,
+  libraryDirectoryName,
+  lockPath,
+  registryPath,
+} from "./device-home.js";
+export { ATOMIC_FILE_REASON_CODES, ATOMIC_TEMPORARY_PREFIX, AtomicFileError, isAtomicTemporaryName, writeFileAtomic } from "./atomic-file.js";
+export type { AtomicFileReasonCode, AtomicWriteOptions } from "./atomic-file.js";

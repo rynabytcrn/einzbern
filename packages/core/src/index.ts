@@ -711,3 +711,37 @@ export {
   validateLibraryManifest,
 } from "./ether-library.js";
 export type { CreateLibraryOptions, Library, LibraryManifest, LibraryProjectHint, LibraryReasonCode } from "./ether-library.js";
+// TCRN-CROSS-STORY-468 R2, R3: each device's stream in a library, appended under this
+// machine's lock of the library and committed by its stream manifest.
+export {
+  AKASHA_REASON_CODES,
+  AKASHA_SEGMENT_BYTES_DEFAULT,
+  AKASHA_SEGMENT_BYTES_MAXIMUM,
+  AkashaError,
+  STREAM_MANIFEST_FILE,
+  STREAM_MANIFEST_SCHEMA_VERSION,
+  appendStreamEvents,
+  appendToOwnStream,
+  buildStreamEvents,
+  clockHighWater,
+  emptyStreamManifest,
+  listStreamDevices,
+  readStreamEvents,
+  readStreamManifest,
+  segmentName,
+  streamDirectory,
+  streamEventId,
+  validateStreamManifest,
+  withLibraryWriteLock,
+} from "./akasha.js";
+export type {
+  AkashaReasonCode,
+  AppendOptions,
+  EventDraft,
+  ReadBytes,
+  StreamIdentityScheme,
+  StreamManifest,
+  StreamOwner,
+  StreamReadOptions,
+  StreamSegment,
+} from "./akasha.js";

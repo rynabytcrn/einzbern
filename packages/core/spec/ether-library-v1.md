@@ -41,6 +41,33 @@ library, so a creation that stops half-way leaves nothing that opens. Streams ar
 listing `akasha/`, not from the root manifest, so the root manifest keeps a single writer
 and changes only on the three occasions above.
 
+## Streams (akasha)
+
+Every device writes only `akasha/<device id>/` (TCRN-CROSS-STORY-468 R2), so no file in a
+library has two writers and a sync client can never produce a conflicted copy of one. A
+stream directory holds its segments and one stream manifest.
+
+A segment is canonical NDJSON, one event per line, named by an eight-digit lowercase hex
+ordinal starting at `00000001.ndjson`; a new one begins when the active one would grow
+past `storage.segmentBytes`. A stream imported from an old-layout workspace may also hold
+`.json` segments, the JSON arrays its old engine wrote, byte for byte.
+
+The stream manifest (`manifest.json`, `einzbern.stream-manifest.v1`) records the stream id,
+the device id and its display name, the identity scheme (`einzbern`, or `legacy` for an
+imported stream, which keeps its old stream and event identities), the sequence, the head
+event hash, the clock high-water mark, every committed segment with its sequence range,
+byte length and SHA-256, and the engine and format versions of its writer.
+
+An append runs under this machine's lock of the library (`locks/<library>.lock` in the
+device directory): it cuts off any bytes a crashed writer left past the committed length,
+appends the new lines, makes them durable, and then replaces the stream manifest
+atomically. The manifest is the commit point. A reader trusts only the manifest: it reads
+each named segment up to the recorded length and checks its digest, so bytes appended after
+the last manifest are never read, and a segment the manifest does not name is ignored. A
+directory without a manifest has no committed events. Each new event takes the next sequence
+of its stream and a clock one above the largest clock any stream manifest on the machine
+records.
+
 ## Writes that readers never see half-done
 
 Every manifest, and every other small file a reader must see whole, is replaced atomically:

@@ -20,6 +20,7 @@ import {
   canonicalSha256,
   compareCanonicalText,
   createEvent,
+  deriveLegacyEventId,
   deriveStableId,
   EVENT_SCHEMA_VERSION,
   eventInputOf,
@@ -1006,11 +1007,7 @@ function workspaceStreamId(metadata: WorkspaceMetadata): string {
 }
 
 function workspaceEventId(streamId: string, sequence: number): string {
-  return `event:${canonicalSha256({
-    schemaVersion: "tcrn.workspace-event-identity.v1",
-    streamId,
-    sequence,
-  }).slice(0, 24)}`;
+  return deriveLegacyEventId(streamId, sequence);
 }
 
 // TCRN-CROSS-STORY-468 R3 (TCRN-CROSS-SUB-280): every einzbern.event.v1 carries a clock and a

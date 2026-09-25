@@ -1006,6 +1006,14 @@ export function deriveEventId(streamId: string, sequence: number): string {
   return `event:${canonicalSha256({ schemaVersion: EVENT_IDENTITY_SCHEMA_VERSION, streamId, sequence }).slice(0, 24)}`;
 }
 
+// The event identity an old-layout workspace gave the event at a sequence of its one stream. A
+// stream imported from such a workspace keeps it.
+export const LEGACY_EVENT_IDENTITY_SCHEMA_VERSION = "tcrn.workspace-event-identity.v1" as const;
+
+export function deriveLegacyEventId(streamId: string, sequence: number): string {
+  return `event:${canonicalSha256({ schemaVersion: LEGACY_EVENT_IDENTITY_SCHEMA_VERSION, streamId, sequence }).slice(0, 24)}`;
+}
+
 export type StreamChainBreakKind =
   | "fields"
   | "schemaVersion"

@@ -91,6 +91,13 @@ version, minimum engine version, project hint), `akasha/`, `crest/`, `config/`,
 `artifacts/`, a `README.md` that explains every name and carries the alias table, and a
 `.gitignore` of `*`, so a library inside a Git working tree never shows in `git status`
 (TCRN-CROSS-STORY-469 R1, R6; `packages/core/spec/ether-library-v1.md`).
+Each device writes only its own stream, `akasha/<device id>/` (TCRN-CROSS-STORY-468 R2, R3):
+NDJSON segments named by eight-digit lowercase hex ordinals and a stream manifest that
+records the sequence, head, clock high-water mark and every committed segment with its
+length and SHA-256. An append takes this machine's lock of the library, cuts off any tail a
+crashed writer left, appends, and commits by replacing the stream manifest atomically;
+readers trust only the manifest. A new event's clock is one above the largest clock any
+stream manifest on the machine records.
 
 ## 1.2.1 — patch candidate
 

@@ -14,7 +14,7 @@ const skippedDirectories = new Set([".git", "node_modules", "dist"]);
 const sourceExtensions = new Set([".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".html"]);
 const importPattern = /(?:from\s+|import\s*\(\s*|require\s*\(\s*)["']([^"']+)["']/gu;
 // Engine internals are package paths. The CLI entry point is deliberately not
-// matched: shelling out to `scripts/tcrn-workflow.mjs` is the sanctioned route.
+// matched: shelling out to `scripts/einzbern.mjs` is the sanctioned route.
 const forbiddenPattern = /(?:^|[\\/])(?:tcrn-workflow[\\/]packages|packages[\\/](?:core|cli|protocol|mcp|pg-backend))(?:[\\/]|$)/u;
 
 async function sourceFiles(directory) {

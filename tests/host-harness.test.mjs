@@ -295,7 +295,7 @@ test("INC-220 the guard does NOT touch Bash, or the engine could not read its ow
   // would refuse the engine itself, which is why Bash belongs to the SSH write observer.
   const decision = guardDecision({
     tool_name: "Bash",
-    tool_input: { command: "node scripts/tcrn-workflow.mjs status --workspace .tcrn-workspace/cross-project/workspace" },
+    tool_input: { command: "node scripts/einzbern.mjs status --workspace .tcrn-workspace/cross-project/workspace" },
   });
   assert.equal(decision.deny, false);
 });

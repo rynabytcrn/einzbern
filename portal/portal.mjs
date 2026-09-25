@@ -18,7 +18,7 @@ import { LOCALE_CONTRACT } from "./locale-contract.mjs";
 const execFileAsync = promisify(execFile);
 const portalRoot = dirname(fileURLToPath(import.meta.url));
 const ACTOR = (process.env.TCRN_PORTAL_ACTOR ?? "agent:portal").trim();
-const BUNDLED_CLI = join(portalRoot, "..", "scripts", "tcrn-workflow.mjs");
+const BUNDLED_CLI = join(portalRoot, "..", "scripts", "einzbern.mjs");
 const HOST_RENDER = join(portalRoot, "..", "scripts", "host-render.mjs");
 const CLI = process.env.TCRN_WORKFLOW_CLI ?? BUNDLED_CLI;
 const PROSE_FILES = Object.freeze(["AGENTS.md"]);

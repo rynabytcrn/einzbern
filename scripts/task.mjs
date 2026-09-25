@@ -766,7 +766,7 @@ async function archive() {
   }
   entries.push(Buffer.alloc(1024, 0));
   const output = Buffer.concat(entries);
-  const relativePath = "dist/source/tcrn-workflow-source.tar";
+  const relativePath = "dist/source/einzbern-source.tar";
   await safeWriteOutput(repositoryRoot, relativePath, output);
   return success("ARCHIVE_VERIFIED", {
     path: relativePath,
@@ -862,7 +862,7 @@ async function remoteOwner() {
 }
 
 async function archiveEntryIfPresent() {
-  const archivePath = resolve(repositoryRoot, "dist/source/tcrn-workflow-source.tar");
+  const archivePath = resolve(repositoryRoot, "dist/source/einzbern-source.tar");
   try {
     await lstat(archivePath);
   } catch (error) {
@@ -877,7 +877,7 @@ async function archiveEntryIfPresent() {
     pathChangedReasonCode: "PRIVACY_ARCHIVE_CHANGED",
   });
   return [{
-    label: "dist/source/tcrn-workflow-source.tar",
+    label: "dist/source/einzbern-source.tar",
     kind: "archive",
     content: archiveInput.content.toString("utf8"),
   }];
@@ -975,7 +975,7 @@ async function verifyPrivacy({ requireP8Surfaces = false, historyScope = "head" 
     });
   }
   const buildRoot = resolve(repositoryRoot, "dist/build");
-  const sourceArchivePath = resolve(repositoryRoot, "dist/source/tcrn-workflow-source.tar");
+  const sourceArchivePath = resolve(repositoryRoot, "dist/source/einzbern-source.tar");
   const releaseRoot = resolve(repositoryRoot, "dist/release");
   const p8Surfaces = {};
   if (requireP8Surfaces) {
@@ -992,13 +992,13 @@ async function verifyPrivacy({ requireP8Surfaces = false, historyScope = "head" 
     const releaseRecords = await filesForPrivacySurface(releaseRoot, "dist/release/");
     assertion(p8ReleaseArtifactSetMatches(releaseRecords.map((record) => record.path.slice("dist/release/".length))), "P8_PRIVACY_RELEASE_ARTIFACT_SET");
     entries.push(...buildRecords.map((record) => ({ label: record.path, kind: "build", content: record.content.toString("utf8") })));
-    entries.push({ label: "dist/source/tcrn-workflow-source.tar", kind: "archive", content: sourceArchive.content.toString("utf8") });
+    entries.push({ label: "dist/source/einzbern-source.tar", kind: "archive", content: sourceArchive.content.toString("utf8") });
     entries.push(...releaseRecords.map((record) => ({ label: record.path, kind: "release", content: record.content.toString("utf8") })));
     p8Surfaces.aggregateAlgorithm = "sha256(path-NUL-byteLength-NUL-bytes over canonical path order)";
     p8Surfaces.trackedSource = aggregatePrivacySurface(trackedSourceRecords);
     p8Surfaces.fullHistory = aggregatePrivacySurface(historyRecords);
     p8Surfaces.buildOutput = aggregatePrivacySurface(buildRecords);
-    p8Surfaces.sourceArchive = aggregatePrivacySurface([{ path: "dist/source/tcrn-workflow-source.tar", content: sourceArchive.content }]);
+    p8Surfaces.sourceArchive = aggregatePrivacySurface([{ path: "dist/source/einzbern-source.tar", content: sourceArchive.content }]);
     p8Surfaces.releaseArtifacts = aggregatePrivacySurface(releaseRecords);
   }
   const commits = run("git", historyScope === "all" ? ["rev-list", "--all"] : ["rev-list", "HEAD"]).split("\n").filter(Boolean);

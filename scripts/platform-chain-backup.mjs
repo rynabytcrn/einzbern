@@ -8,6 +8,8 @@ import { tmpdir } from "node:os";
 import { basename, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
+import { legacyInstalledEnginePath } from "../dist/build/packages/core/src/index.js";
+
 export const SNAPSHOT_INTERVAL_HOURS = 6;
 export const SNAPSHOT_RETENTION = 14;
 export const SNAPSHOT_SCHEMA = "tcrn.platform-chain-snapshot.v1";
@@ -120,7 +122,7 @@ async function readChainVersions(platformRoot, options = {}) {
   const workspaceRoot = join(platformRoot, ".tcrn-workspace");
   const engineCli = options.engineCli
     ?? process.env.TCRN_WORKFLOW_ENGINE_CLI
-    ?? join(process.env.HOME ?? "", ".tcrn-workflow", "tcrn-workflow", "scripts", "tcrn-workflow.mjs");
+    ?? legacyInstalledEnginePath(process.env.HOME ?? "");
   if (!engineCli) throw failure("BACKUP_ENGINE_CLI_UNAVAILABLE", "an engine CLI is required to record chain versions");
   const entries = await readdir(workspaceRoot, { withFileTypes: true });
   const versions = [];

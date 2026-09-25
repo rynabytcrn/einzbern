@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const portalRoot = fileURLToPath(new URL("..", import.meta.url));
-const cli = process.env.TCRN_WORKFLOW_CLI ?? join(portalRoot, "..", "scripts", "tcrn-workflow.mjs");
+const cli = process.env.TCRN_WORKFLOW_CLI ?? join(portalRoot, "..", "scripts", "einzbern.mjs");
 const now = "2026-08-11T04:15:00Z";
 
 function runCli(args) {

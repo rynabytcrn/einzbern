@@ -1,8 +1,8 @@
 {
-  "name": "tcrn-workflow",
+  "name": "einzbern",
   "version": "1.2.1",
   "private": true,
-  "description": "Offline-first, verifiable workflow framework bootstrap.",
+  "description": "Einzbern: an offline-first workflow engine that keeps work items, minutes and knowledge as hash-chained events.",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {
@@ -11,8 +11,8 @@
   },
   "packageManager": "pnpm@11.3.0",
   "bin": {
-    "tcrn-workflow": "scripts/tcrn-workflow.mjs",
-    "tcrn-workflow-release-verify": "scripts/verify-release-trust.mjs"
+    "einzbern": "scripts/einzbern.mjs",
+    "einzbern-release-verify": "scripts/verify-release-trust.mjs"
   },
   "scripts": {
     "archive": "node scripts/task.mjs archive",

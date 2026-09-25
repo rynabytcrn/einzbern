@@ -68,7 +68,7 @@ export function workspaceForPartition(partition, containerRoot = PLATFORM_ROOT) 
   return resolve(containerRoot, ".tcrn-workspace", String(partition), "workspace");
 }
 
-export const ENGINE_CLI = resolve(SCRIPT_DIRECTORY, "tcrn-workflow.mjs");
+export const ENGINE_CLI = resolve(SCRIPT_DIRECTORY, "einzbern.mjs");
 const DISPATCH_HOST_ALIASES = Object.freeze({ claude: "claude-code", codex: "codex" });
 
 const CHILD_AGENT_MARKER_FIELDS = Object.freeze(["agent_id", "agentId", "child_agent_id", "childAgentId"]);

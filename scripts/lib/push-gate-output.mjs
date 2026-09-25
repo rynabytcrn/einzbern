@@ -259,7 +259,7 @@ function inspectP8Receipt(receipt, expectedSourceFiles, expectedBasisCommit, fin
 
   const source = receipt.sourceArchive;
   exactKeys(source, P8_ARCHIVE_FIELDS, "$.sourceArchive", findings);
-  if (source?.reasonCode !== "ARCHIVE_VERIFIED" || source?.path !== "dist/source/tcrn-workflow-source.tar" || !digestText(source?.sha256) || !nonNegativeInteger(source?.files)) {
+  if (source?.reasonCode !== "ARCHIVE_VERIFIED" || source?.path !== "dist/source/einzbern-source.tar" || !digestText(source?.sha256) || !nonNegativeInteger(source?.files)) {
     findings.push({ code: "P8_SOURCE_ARCHIVE_RECEIPT_INVALID", location: "$.sourceArchive" });
   }
 

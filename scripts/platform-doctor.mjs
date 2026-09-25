@@ -13,6 +13,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 // read surface and by this host probe; there is no second path table here.
 import {
   INSTALL_MANIFEST,
+  LEGACY_ENGINE_NAME,
   assertInstallManifestComplete,
   compareEngineVersions,
   WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES,
@@ -215,7 +216,7 @@ export async function inspectChainValidation(root, options = {}) {
       source: "live engine validate",
     });
   }
-  const cli = options.engineCli ?? join(dirname(fileURLToPath(import.meta.url)), "tcrn-workflow.mjs");
+  const cli = options.engineCli ?? join(dirname(fileURLToPath(import.meta.url)), "einzbern.mjs");
   const started = process.hrtime.bigint();
   const results = await Promise.all(discovered.partitions.map(async ({ partition, workspacePath }) => {
     try {
@@ -766,7 +767,7 @@ async function inspectChainHeadroom(root, options) {
 
 async function chainEventCounts(root, options) {
   const containerPath = join(root, ".tcrn-workspace");
-  const cli = options.engineCli ?? join(dirname(fileURLToPath(import.meta.url)), "tcrn-workflow.mjs");
+  const cli = options.engineCli ?? join(dirname(fileURLToPath(import.meta.url)), "einzbern.mjs");
   let entries;
   try {
     entries = await readdir(containerPath, { withFileTypes: true });
@@ -1338,7 +1339,7 @@ export async function inspectHostRenderDrift(root, options) {
     const candidates = entries.filter((entry) => entry.isDirectory()).map((entry) => join(container, entry.name, "workspace"));
     workspace = workspace ?? candidates.find((candidate) => candidate.endsWith(`${sep}cross-project${sep}workspace`)) ?? candidates[0];
     if (workspace) {
-      const cli = options.engineCli ?? join(dirname(fileURLToPath(import.meta.url)), "tcrn-workflow.mjs");
+      const cli = options.engineCli ?? join(dirname(fileURLToPath(import.meta.url)), "einzbern.mjs");
       try {
         const result = await execFileAsync(process.execPath, [cli, "settings-catalog", "--workspace", workspace], { timeout: 30_000, maxBuffer: 8 * 1024 * 1024 });
         const catalog = JSON.parse(result.stdout);
@@ -1955,7 +1956,7 @@ async function declaredEngineRequirements(root, options) {
   const containerPath = join(root, ".tcrn-workspace");
   // Same resolution as declaredBackupCadences: fileURLToPath rather than pathname,
   // because this repository lives under a directory whose name contains a space.
-  const cli = options.engineCli ?? join(dirname(fileURLToPath(import.meta.url)), "tcrn-workflow.mjs");
+  const cli = options.engineCli ?? join(dirname(fileURLToPath(import.meta.url)), "einzbern.mjs");
   let entries;
   try {
     entries = await readdir(containerPath, { withFileTypes: true });
@@ -2081,8 +2082,8 @@ async function inspectEngineCapabilitySurface(root, homeRoot, manifest, options)
     : null;
 
   const scriptPaths = {
-    installed: installedRoot === null ? null : join(installedRoot, "tcrn-workflow", "scripts", "tcrn-workflow.mjs"),
-    worktree: worktreeRoot === null ? null : join(worktreeRoot, "scripts", "tcrn-workflow.mjs"),
+    installed: installedRoot === null ? null : join(installedRoot, LEGACY_ENGINE_NAME, "scripts", `${LEGACY_ENGINE_NAME}.mjs`),
+    worktree: worktreeRoot === null ? null : join(worktreeRoot, "scripts", "einzbern.mjs"),
   };
 
   // TCRN-CROSS-INC-233: "nothing to compare" and "compared and equal" must stay apart.
@@ -2388,7 +2389,7 @@ function checkHelperSettingsCoverage(catalogKeys, taught, source) {
 }
 
 async function engineSettingKeys(root, options) {
-  const cli = options.engineCli ?? join(dirname(fileURLToPath(import.meta.url)), "tcrn-workflow.mjs");
+  const cli = options.engineCli ?? join(dirname(fileURLToPath(import.meta.url)), "einzbern.mjs");
   const containerPath = join(root, ".tcrn-workspace");
   let entries;
   try {
@@ -2690,7 +2691,7 @@ async function declaredBackupCadences(options, platformRoot) {
   }
   // fileURLToPath, not URL.pathname: this repository lives under a directory whose
   // name contains a space, and pathname hands back the percent-encoded form.
-  const cli = options.engineCli ?? join(dirname(fileURLToPath(import.meta.url)), "tcrn-workflow.mjs");
+  const cli = options.engineCli ?? join(dirname(fileURLToPath(import.meta.url)), "einzbern.mjs");
   const containerPath = join(platformRoot, ".tcrn-workspace");
   let entries;
   try {

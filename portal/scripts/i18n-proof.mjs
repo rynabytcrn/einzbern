@@ -245,7 +245,7 @@ try {
   const { execFileSync } = await import("node:child_process");
   const { mkdtempSync, mkdirSync, rmSync, realpathSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
-  const cli = process.env.TCRN_WORKFLOW_CLI ?? join(portalRoot, "..", "scripts", "tcrn-workflow.mjs");
+  const cli = process.env.TCRN_WORKFLOW_CLI ?? join(portalRoot, "..", "scripts", "einzbern.mjs");
   const base = realpathSync(mkdtempSync(join(tmpdir(), "i18n-proof-")));
   try {
     const roots = {};

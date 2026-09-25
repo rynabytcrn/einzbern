@@ -17,7 +17,7 @@
 // Rework: WSB-5 below is not a golden-snapshot case -- it is a plain CLI smoke test
 // relocated here from tests/p7-compatibility-modes.test.mjs, which retires whole-file
 // in this same change. It had no adapter or compatibility-mode dependency, so losing it
-// with that file would have dropped the only coverage of scripts/tcrn-workflow.mjs's
+// with that file would have dropped the only coverage of scripts/einzbern.mjs's
 // "status" read verb over the real shipped binary. See
 // scripts/policy/coverage-waivers.json for the pointer from its old path.
 import test from "node:test";
@@ -46,7 +46,7 @@ test("WSB-5: the shipped binary completes the status read verb with exit 0 and W
   const fixture = await initializedWrapperWorkspace();
   try {
     const result = spawnSync(process.execPath,
-      [join(REPO_ROOT, "scripts/tcrn-workflow.mjs"), "status", "--workspace", fixture.workspace],
+      [join(REPO_ROOT, "scripts/einzbern.mjs"), "status", "--workspace", fixture.workspace],
       { encoding: "utf8", cwd: REPO_ROOT });
     assert.equal(result.status, 0, result.stderr);
     assert.equal(result.stderr, "", "a successful read emits nothing on stderr");

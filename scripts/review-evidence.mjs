@@ -23,7 +23,7 @@ export const REVIEW_OUTPUT_BYTES = 4 * 1024 * 1024;
 export const REVIEW_COMMAND_TIMEOUT_MS = 600_000;
 
 const REPOSITORY_ROOT = resolve(fileURLToPath(new URL("..", import.meta.url)));
-const DEFAULT_ENGINE = resolve(REPOSITORY_ROOT, "scripts/tcrn-workflow.mjs");
+const DEFAULT_ENGINE = resolve(REPOSITORY_ROOT, "scripts/einzbern.mjs");
 const WORK_ID_PATTERN = /^work:[a-z0-9][a-z0-9._-]{0,127}$/u;
 
 function text(value) {

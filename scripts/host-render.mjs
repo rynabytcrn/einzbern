@@ -549,7 +549,7 @@ export async function applyHostRender(plan, { backupDir = undefined } = {}) {
 }
 
 async function workspaceSettings(workspace) {
-  const cli = join(REPO_ROOT, "scripts", "tcrn-workflow.mjs");
+  const cli = join(REPO_ROOT, "scripts", "einzbern.mjs");
   const result = await execFileAsync(process.execPath, [cli, "settings-catalog", "--workspace", workspace], { encoding: "utf8", maxBuffer: 8 * 1024 * 1024 });
   const body = JSON.parse(result.stdout);
   if (!Array.isArray(body.settings)) failure("HOST_RENDER_SETTINGS_INVALID", "settings-catalog did not return settings");

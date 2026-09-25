@@ -13,7 +13,7 @@ import test from "node:test";
 
 const execFileAsync = promisify(execFile);
 const portalRoot = fileURLToPath(new URL("..", import.meta.url));
-const CLI = process.env.TCRN_WORKFLOW_CLI ?? join(portalRoot, "..", "scripts", "tcrn-workflow.mjs");
+const CLI = process.env.TCRN_WORKFLOW_CLI ?? join(portalRoot, "..", "scripts", "einzbern.mjs");
 const RETIRED_PERSONA_ACTIONS = Object.freeze({
   override: ["persona", "-preset-override"].join(""),
   restore: ["persona", "-preset-restore"].join(""),

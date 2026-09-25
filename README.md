@@ -135,7 +135,7 @@ pnpm verify:p1
 
 # 3. 构建，然后用受治理的 CLI
 pnpm build
-node scripts/tcrn-workflow.mjs commands
+node scripts/einzbern.mjs commands
 ```
 
 <details>
@@ -147,13 +147,13 @@ node scripts/tcrn-workflow.mjs commands
 
 ```sh
 # 校验工作区并生成确定性视图
-node scripts/tcrn-workflow.mjs validate --workspace <路径>
+node scripts/einzbern.mjs validate --workspace <路径>
 
 # 新建工作记录，写入带版本校验
-node scripts/tcrn-workflow.mjs work-create --workspace <路径> --expected-version <版本> ...
+node scripts/einzbern.mjs work-create --workspace <路径> --expected-version <版本> ...
 
 # 按主题检索工作记录
-node scripts/tcrn-workflow.mjs work-list --workspace <路径> --search "<关键词>"
+node scripts/einzbern.mjs work-list --workspace <路径> --search "<关键词>"
 ```
 
 </details>

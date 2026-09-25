@@ -1642,7 +1642,7 @@ export async function readNativeBatchState({ workspace, engineCli, workIds = [],
   }
   if (typeof workspace !== "string" || !workspace.startsWith("/") || workspace.includes("\u0000")) return { ok: false, reasonCode: "BATCH_NATIVE_READ_NOT_VERIFIABLE", error: "absolute workspace is required" };
   if (!(typeof series === "string" && series.length > 0) && workIds.length === 0) return { ok: false, reasonCode: "BATCH_NATIVE_SCOPE_NOT_VERIFIABLE", error: "series or bound work ids are required for a scoped native read" };
-  const cli = typeof engineCli === "string" && engineCli.length > 0 ? engineCli : resolve(repositoryRoot, "scripts/tcrn-workflow.mjs");
+  const cli = typeof engineCli === "string" && engineCli.length > 0 ? engineCli : resolve(repositoryRoot, "scripts/einzbern.mjs");
   const invoke = (verb, args) => {
     const result = spawnSync(process.execPath, [cli, verb, "--workspace", workspace, ...args], { cwd: repositoryRoot, encoding: "utf8", timeout: 5_000, maxBuffer: 4 * 1024 * 1024, shell: false });
     if (result.error || result.status !== 0) return { ok: false, reasonCode: "BATCH_NATIVE_READ_NOT_VERIFIABLE", error: String(result.error?.message ?? result.stderr ?? "native read failed").trim() };

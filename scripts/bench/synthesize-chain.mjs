@@ -29,7 +29,7 @@ import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const CLI = resolve(REPO_ROOT, "scripts/tcrn-workflow.mjs");
+const CLI = resolve(REPO_ROOT, "scripts/einzbern.mjs");
 
 function argument(name) {
   const index = process.argv.indexOf(`--${name}`);

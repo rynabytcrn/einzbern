@@ -90,7 +90,7 @@ evidence, where reproducing them verbatim is the point.
 | `--port` | `4319` | Loopback port (`0` picks a free one) |
 | `TCRN_PORTAL_ACTOR` | `agent:portal` | Actor recorded on governed writes |
 | `--attest-dir` | *(unset)* | Attestation directory passed through to writes |
-| `TCRN_WORKFLOW_CLI` | `~/.tcrn-workflow/tcrn-workflow/scripts/tcrn-workflow.mjs` | CLI entry point |
+| `TCRN_WORKFLOW_CLI` | `scripts/einzbern.mjs` beside the portal | CLI entry point |
 
 ## Launchers
 

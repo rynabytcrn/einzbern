@@ -661,7 +661,7 @@ test("INC-378 a receipt that fails after the commit reports committed, the versi
     await chmod(fixture.attestDir, 0o500);
     let run;
     try {
-      run = spawnSync(process.execPath, [fileURLToPath(new URL("../scripts/tcrn-workflow.mjs", import.meta.url)), ...create(4, "PROJECT-D2")], { encoding: "utf8" });
+      run = spawnSync(process.execPath, [fileURLToPath(new URL("../scripts/einzbern.mjs", import.meta.url)), ...create(4, "PROJECT-D2")], { encoding: "utf8" });
     } finally {
       await chmod(fixture.attestDir, 0o700);
     }

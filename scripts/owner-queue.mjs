@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-INIT-019 STORY-167 — 待 Owner 队列:从链与仓取数渲染,不写成散文.
 //
-//   node tcrn-workflow/scripts/owner-queue.mjs [--partition cross-project]
+//   node scripts/owner-queue.mjs [--partition cross-project]
 //
 // The queue is NOT prose — every row comes from a governed source or a committed
 // declaration:
@@ -27,7 +27,8 @@ export function workspaceForPartition(partition, containerRoot = resolve(PLATFOR
   return resolve(containerRoot, ".tcrn-workspace", String(partition), "workspace");
 }
 
-export const ENGINE_CLI = resolve(PLATFORM_ROOT, "tcrn-workflow/scripts/tcrn-workflow.mjs");
+// This repository's own CLI, found beside this script rather than by a checkout folder name.
+export const ENGINE_CLI = resolve(dirname(fileURLToPath(import.meta.url)), "einzbern.mjs");
 
 /**
  * One read against this repository's own engine.

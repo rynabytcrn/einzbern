@@ -100,7 +100,7 @@ Every figure is re-measured before it ships. The commands that produce them:
 | criterion count and split | `claims` in `verification-map.yaml`, grouped by `category` |
 | guard count | `scripts/policy/guard-registry.json` |
 | test file count | `git ls-files 'tests/*.test.mjs'` |
-| CLI verb count | `node scripts/tcrn-workflow.mjs commands` |
+| CLI verb count | `node scripts/einzbern.mjs commands` |
 | runtime dependency count | `dependencies` and `optionalDependencies` in `package.json` |
 
 A figure that cannot be produced by one of these does not go in the document.

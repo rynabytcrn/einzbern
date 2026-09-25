@@ -402,7 +402,7 @@ test("EPIC135 R1: private plan registration rejects public discriminator and res
 });
 
 test("EPIC135 closeout: runtime scope keeps unknown writes visible without blocking on unknown system processes", () => {
-  const relativeWrite = classifyProcess({ pid: 101, state: "S", command: "node scripts/tcrn-workflow.mjs work-create --workspace /tmp/workspace" }, { selfPid: 1 });
+  const relativeWrite = classifyProcess({ pid: 101, state: "S", command: "node scripts/einzbern.mjs work-create --workspace /tmp/workspace" }, { selfPid: 1 });
   assert.equal(relativeWrite.scope, "unknown");
   assert.equal(relativeWrite.likelyGovernedWrite, true);
   assert.equal(relativeWrite.scopeBasis, "relative-command-without-cwd");
@@ -488,7 +488,7 @@ test("STORY-460 AC4: running hook processes are host hooks, not running agents, 
   const hookSummary = summarize(hooks, { selfPid: 1, selfPgid: null });
   assert.deepEqual(hookSummary.agents.records, [], "no hook process is a running agent");
   for (const row of hooks) assert.equal(classifyProcess(row, { selfPid: 1 }).role, "host-hook", row.command);
-  const agent = { pid: 300, ppid: 1, pgid: 300, state: "S", command: `node ${REPOSITORY_ROOT}/scripts/tcrn-workflow.mjs work-create --workspace /tmp/workspace` };
+  const agent = { pid: 300, ppid: 1, pgid: 300, state: "S", command: `node ${REPOSITORY_ROOT}/scripts/einzbern.mjs work-create --workspace /tmp/workspace` };
   const task = { pid: 301, ppid: 1, pgid: 301, state: "S", command: `codex exec luna implement TCRN-CROSS-STORY-460 in ${REPOSITORY_ROOT}` };
   const withAgents = summarize([...hooks, agent, task], { selfPid: 1, selfPgid: null });
   assert.deepEqual(withAgents.agents.records.map((row) => row.pid).sort(), [300, 301], "a real agent is still seen");
@@ -500,7 +500,7 @@ test("STORY-460 AC4: running hook processes are host hooks, not running agents, 
 // of the hook; a governed write under a hook stays in writes, and an engine CLI read with no
 // hook ancestor is still orchestration. Red leg: drop the ancestry.
 function hookedSnapshot() {
-  const cli = `${process.execPath} ${REPOSITORY_ROOT}/scripts/tcrn-workflow.mjs`;
+  const cli = `${process.execPath} ${REPOSITORY_ROOT}/scripts/einzbern.mjs`;
   const workspace = "/container/.tcrn-workspace/cross-project/workspace";
   return [
     { pid: 500, ppid: 1, pgid: 500, state: "S", command: "claude" },
@@ -524,7 +524,7 @@ test("INC-384: engine CLI reads started under a host hook are part of the hook, 
 });
 
 test("INC-384: a governed write under a hook stays in writes and a read with no hook ancestor is still orchestration", () => {
-  const cli = `${process.execPath} ${REPOSITORY_ROOT}/scripts/tcrn-workflow.mjs`;
+  const cli = `${process.execPath} ${REPOSITORY_ROOT}/scripts/einzbern.mjs`;
   const workspace = "/container/.tcrn-workspace/cross-project/workspace";
   const capture = [
     { pid: 510, ppid: 500, pgid: 510, state: "S", command: `node ${REPOSITORY_ROOT}/scripts/knowledge-capture-hook.mjs --container-root /container --host claude` },

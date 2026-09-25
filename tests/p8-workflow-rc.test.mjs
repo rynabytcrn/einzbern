@@ -219,7 +219,7 @@ test("STORY-461 SUB-240: a previous-version source archive moves to dist/stale-r
 test("STORY-461 SUB-240: with no stale archive nothing moves and an unknown file is left for the set assertion", async (context) => {
   const root = await staleReleaseFixture(context, [...P8_RELEASE_ARTIFACTS, "notes.txt"]);
   const before = await treeBytes(root, "dist");
-  assert.deepEqual(staleReleaseArtifactMoves([...P8_RELEASE_ARTIFACTS, "notes.txt", "tcrn-workflow-source.tar"]), []);
+  assert.deepEqual(staleReleaseArtifactMoves([...P8_RELEASE_ARTIFACTS, "notes.txt", "einzbern-source.tar"]), []);
 
   assert.deepEqual(await withExclusiveOutputSession(root, () => moveStaleReleaseArtifacts(root)), []);
 

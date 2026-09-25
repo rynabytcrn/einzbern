@@ -7,15 +7,17 @@ import { tmpdir } from "node:os";
 
 import { canonicalJson } from "./canonical-json.mjs";
 import { compareCanonicalText } from "./canonical-order.mjs";
+import { BRAND, LEGACY_ENGINE_NAME, LEGACY_REPOSITORY_NAMES } from "./names.mjs";
 import { readBoundRegularFile, safeWriteOutput } from "./safe-io.mjs";
 
 export const P8_VERSION = "1.2.1";
 export const P8_TAG = "v1.2.1";
-export const P8_REPOSITORY = "tcrn-workflow";
+// The GitHub repository keeps its old name until the Owner renames it (a separate stop).
+export const P8_REPOSITORY = LEGACY_REPOSITORY_NAMES.engine;
 export const P8_WORKFLOW = "release";
 export const P8_SUPPORTED_AOS_RELEASES = Object.freeze([]);
 export const P8_RELEASE_ARTIFACTS = Object.freeze([
-  `tcrn-workflow-${P8_VERSION}-source.tar`,
+  `${BRAND.engine.id}-${P8_VERSION}-source.tar`,
   "sbom.cdx.json",
   "release-manifest.json",
   "provenance.json",
@@ -28,7 +30,8 @@ export const P8_RELEASE_ARTIFACTS = Object.freeze([
 // artifact set (P8_PRIVACY_RELEASE_ARTIFACT_SET) then fails. Stale artifacts go to an
 // ignored directory beside the release directory, never into dist/evidence.
 export const P8_STALE_RELEASE_DIRECTORY = "dist/stale-release";
-const P8_VERSIONED_SOURCE_ARCHIVE = new RegExp(`^${P8_REPOSITORY}-(\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?)-source\\.tar$`, "u");
+// A previous release archive may carry the old engine name; both prefixes are stale.
+const P8_VERSIONED_SOURCE_ARCHIVE = new RegExp(`^(?:${BRAND.engine.id}|${LEGACY_ENGINE_NAME})-(\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?)-source\\.tar$`, "u");
 
 /**
  * Name the stale release artifacts in a dist/release listing and where each one goes.

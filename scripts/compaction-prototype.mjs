@@ -17,7 +17,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const cliPath = join(repositoryRoot, "scripts", "tcrn-workflow.mjs");
+const cliPath = join(repositoryRoot, "scripts", "einzbern.mjs");
 const schemaVersion = "tcrn.compaction-research-prototype.v1";
 
 class PrototypeError extends Error {

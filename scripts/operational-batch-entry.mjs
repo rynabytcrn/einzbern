@@ -32,7 +32,7 @@ const chainContainer = [".tcrn", "workspace"].join("-");
 const workspaceDefault = resolve(platformRoot, chainContainer, "cross-project/workspace");
 const rosterPath = resolve(platformRoot, "platform-docs/acceptance-gate-groups.json");
 const containmentPath = resolve(repositoryRoot, "scripts/policy/gate-containment.json");
-const sourceArchivePath = resolve(repositoryRoot, "dist/source/tcrn-workflow-source.tar");
+const sourceArchivePath = resolve(repositoryRoot, "dist/source/einzbern-source.tar");
 const node = process.execPath;
 // The implementation Pack's fixed comparison base.  This is an immutable
 // commit, never a moving ref or the current HEAD; changing it silently would
@@ -153,7 +153,7 @@ function currentSourceDigest(files, { baselineCommit = PACK_SOURCE_BASELINE_COMM
   return { digest: digestValue(basis), files: rows, baselineCommit: basis.baselineCommit, headCommit: basis.headCommit, headTree: basis.headTree, deltaMeasured: true };
 }
 
-const GOVERNED_WRITE_COMMAND = /(?:tcrn-workflow\.mjs|tcrn-workflow\/scripts\/[^\s]+\.mjs).*\b(?:artifact-put|conference-(?:append-position|cancel|close|open)|dispatch-(?:classes-set|mode-set|tiers-set)|gate-(?:create|delete|transition)|knowledge-(?:article-create|article-refresh|batch|bodies-migrate|capture|checkpoint|create|init|promote|rebase|recover|retire|reverify)|lease-(?:break|recovery-break)|machine-settings-(?:remove|set)|migration-execute|project-(?:create|delete|update)|recover|retire-sweep|settings-(?:remove|set)|snapshot-replay-rebuild|template-admit|work-(?:annotate|batch|create|delete|transition))\b/iu;
+const GOVERNED_WRITE_COMMAND = /(?:einzbern\.mjs|tcrn-workflow\.mjs|tcrn-workflow\/scripts\/[^\s]+\.mjs).*\b(?:artifact-put|conference-(?:append-position|cancel|close|open)|dispatch-(?:classes-set|mode-set|tiers-set)|gate-(?:create|delete|transition)|knowledge-(?:article-create|article-refresh|batch|bodies-migrate|capture|checkpoint|create|init|promote|rebase|recover|retire|reverify)|lease-(?:break|recovery-break)|machine-settings-(?:remove|set)|migration-execute|project-(?:create|delete|update)|recover|retire-sweep|settings-(?:remove|set)|snapshot-replay-rebuild|template-admit|work-(?:annotate|batch|create|delete|transition))\b/iu;
 const RELATIVE_REPOSITORY_COMMAND = /(?:^|\s)(?:node|pnpm)(?:\s+[^\s]+)*\s+(?:scripts\/|tools\/|packages\/|tests\/)/u;
 
 // TCRN-CROSS-STORY-460 R3 (#240): user-level hooks run this working tree's own scripts, so a
@@ -473,7 +473,7 @@ export async function executeProductionBatch(request = {}) {
   const effectiveWorkspace = boundRequest.workspace ?? workspaceDefault;
   const input = {
     workspace: effectiveWorkspace,
-    engineCli: boundRequest.engineCli ?? resolve(repositoryRoot, "scripts/tcrn-workflow.mjs"),
+    engineCli: boundRequest.engineCli ?? resolve(repositoryRoot, "scripts/einzbern.mjs"),
     workIds: Array.isArray(boundRequest.workIds) ? boundRequest.workIds : [],
     series: boundRequest.series,
     pack: boundRequest.pack,

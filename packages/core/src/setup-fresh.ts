@@ -83,6 +83,7 @@ import type {
   SetupBackup,
   SetupBlocker,
   SetupColumns,
+  SetupEngineSwitched,
   SetupModeInput,
   SetupModePlan,
   SetupPlan,
@@ -442,7 +443,9 @@ export interface WiringPlanInput {
   readonly projectRoot: string;
   readonly home: string;
   readonly deviceHome: string;
-  readonly library: { readonly path: string; readonly libraryId: string | null; readonly state: LibraryState };
+  // The library the project is wired to; the steps that need one (registry, writable-roots,
+  // managed-sections) are left out without it.
+  readonly library: { readonly path: string; readonly libraryId: string | null; readonly state: LibraryState } | null;
   readonly cloud: boolean;
   readonly navigation: AgentsNavigationChoice;
   // What this device holds for agents.navigation now.
@@ -457,14 +460,14 @@ function runs(steps: ReadonlySet<SetupStep> | undefined, step: SetupStep): boole
   return steps === undefined || steps.has(step);
 }
 
-async function planRegistry(recorder: SetupRecorder, input: WiringPlanInput): Promise<void> {
+async function planRegistry(recorder: SetupRecorder, input: WiringPlanInput, library: NonNullable<WiringPlanInput["library"]>): Promise<void> {
   const registryFile = registryPath(input.deviceHome);
   const registry: Registry | null = await recorder.attempt("registry", registryFile, () => readRegistry(input.deviceHome));
   if (registry === null) return;
   const remote = normalizedRemote(input.projectRoot).normalized;
   const entry = registry.entries.find((candidate) => candidate.projectPath === input.projectRoot) ?? null;
-  const current = entry !== null && entry.libraryPath === input.library.path && entry.cloudHosted === input.cloud && entry.gitRemote === remote &&
-    (input.library.libraryId === null || entry.libraryId === input.library.libraryId);
+  const current = entry !== null && entry.libraryPath === library.path && entry.cloudHosted === input.cloud && entry.gitRemote === remote &&
+    (library.libraryId === null || entry.libraryId === library.libraryId);
   if (!current) recorder.write("registry", registryFile, await entryKind(registryFile) === null ? "create" : "update");
 }
 
@@ -574,17 +577,17 @@ async function planSections(recorder: SetupRecorder, projectRoot: string, state:
  */
 export async function planWiring(recorder: SetupRecorder, input: WiringPlanInput): Promise<readonly { readonly file: string; readonly id: string }[]> {
   const { projectRoot, home, deviceHome, library, navigation, steps } = input;
-  if (runs(steps, "registry")) await planRegistry(recorder, input);
+  if (library !== null && runs(steps, "registry")) await planRegistry(recorder, input, library);
   const skillDigest = input.engine?.skillDigest ?? null;
   if (skillDigest !== null && runs(steps, "skill-copies")) await planSkillCopies(recorder, skillDigest, home, deviceHome);
   if (input.engine !== null && runs(steps, "launchers")) await planLaunchers(recorder, input.engine.launchers, deviceHome);
   if (runs(steps, "host-hooks")) await planHooks(recorder, home, deviceHome, navigation);
-  if (runs(steps, "writable-roots")) await planRoots(recorder, projectRoot, library.path);
+  if (library !== null && runs(steps, "writable-roots")) await planRoots(recorder, projectRoot, library.path);
   const settingsFile = join(deviceHome, MACHINE_SETTINGS_FILE_NAME);
   if (runs(steps, "machine-settings") && input.deviceNavigation !== navigation && recorder.blockers.every((blocker) => blocker.step !== "machine-settings")) {
     recorder.write("machine-settings", settingsFile, await entryKind(settingsFile) === null ? "create" : "update");
   }
-  if (!runs(steps, "managed-sections")) return [];
+  if (library === null || !runs(steps, "managed-sections")) return [];
   const sections = await planSections(recorder, projectRoot, library.state, navigation);
   if (sections.recordsChange) recorder.write("library", library.path, "update");
   return sections.pending;
@@ -598,15 +601,16 @@ export interface WiringApplyInput {
   readonly home: string;
   readonly deviceHome: string;
   readonly at: string;
-  readonly library: { readonly path: string; readonly libraryId: string };
+  // The library the project is wired to; the steps that need one are left out without it.
+  readonly library: { readonly path: string; readonly libraryId: string } | null;
   readonly cloud: boolean;
   readonly navigation: AgentsNavigationChoice;
   readonly engineDirectory: string;
   readonly steps?: ReadonlySet<SetupStep>;
 }
 
-async function applyRegistry(recorder: SetupRecorder, input: WiringApplyInput): Promise<void> {
-  const { projectRoot, deviceHome, at, library } = input;
+async function applyRegistry(recorder: SetupRecorder, input: WiringApplyInput, library: NonNullable<WiringApplyInput["library"]>): Promise<void> {
+  const { projectRoot, deviceHome, at } = input;
   const remote = normalizedRemote(projectRoot);
   const registryFile = registryPath(deviceHome);
   const entry = (await readRegistry(deviceHome)).entries.find((candidate) => candidate.projectPath === projectRoot) ?? null;
@@ -672,8 +676,8 @@ export async function applyHooks(recorder: SetupRecorder, input: {
   }
 }
 
-async function applyRoots(recorder: SetupRecorder, input: WiringApplyInput): Promise<void> {
-  const { projectRoot, deviceHome, at, library } = input;
+async function applyRoots(recorder: SetupRecorder, input: WiringApplyInput, library: NonNullable<WiringApplyInput["library"]>): Promise<void> {
+  const { projectRoot, deviceHome, at } = input;
   if (inside(projectRoot, library.path)) return;
   const roots = await planWritableRoots({ projectRoot, libraryPath: library.path });
   await applyWritableRoots(roots, { at, home: deviceHome });
@@ -693,8 +697,8 @@ async function applyNavigationSetting(recorder: SetupRecorder, input: WiringAppl
   recorder.write("machine-settings", settingsFile, action);
 }
 
-async function applySections(recorder: SetupRecorder, input: WiringApplyInput): Promise<readonly { readonly file: string; readonly id: string }[]> {
-  const { projectRoot, deviceHome, at, library } = input;
+async function applySections(recorder: SetupRecorder, input: WiringApplyInput, library: NonNullable<WiringApplyInput["library"]>): Promise<readonly { readonly file: string; readonly id: string }[]> {
+  const { projectRoot, deviceHome, at } = input;
   const existed = new Map<string, boolean>();
   for (const file of [AGENTS_FILE, CLAUDE_FILE]) existed.set(file, await entryKind(join(projectRoot, file)) !== null);
   const rendered = await renderAgentsSections(library.path, { projectRoot, navigation: input.navigation, occurredAt: at, backupRoot: backupsPath(deviceHome) });
@@ -713,14 +717,14 @@ async function applySections(recorder: SetupRecorder, input: WiringApplyInput): 
  * it writes. Answers the managed sections that stay pending.
  */
 export async function applyWiring(recorder: SetupRecorder, input: WiringApplyInput): Promise<readonly { readonly file: string; readonly id: string }[]> {
-  const { steps } = input;
-  if (runs(steps, "registry")) await applyRegistry(recorder, input);
+  const { steps, library } = input;
+  if (library !== null && runs(steps, "registry")) await applyRegistry(recorder, input, library);
   if (runs(steps, "skill-copies")) await applySkillCopies(recorder, input);
   if (runs(steps, "launchers")) await applyLaunchers(recorder, input);
   if (runs(steps, "host-hooks")) await applyHooks(recorder, input);
-  if (runs(steps, "writable-roots")) await applyRoots(recorder, input);
+  if (library !== null && runs(steps, "writable-roots")) await applyRoots(recorder, input, library);
   if (runs(steps, "machine-settings")) await applyNavigationSetting(recorder, input);
-  return runs(steps, "managed-sections") ? applySections(recorder, input) : [];
+  return library !== null && runs(steps, "managed-sections") ? applySections(recorder, input, library) : [];
 }
 
 /** SETUP_APPLIED for a plan, with what the recorder kept and doctor's eight checks right after. */
@@ -729,6 +733,7 @@ export async function setupApplied(plan: SetupPlan, recorder: SetupRecorder, res
   readonly library: SetupApplied["library"];
   readonly pending: readonly { readonly file: string; readonly id: string }[];
   readonly columns?: SetupColumns;
+  readonly engineSwitch?: SetupEngineSwitched;
 }): Promise<SetupApplied> {
   const { at, projectRoot, home, deviceHome } = plan;
   const selfCheck = await runDoctor({ projectRoot, home, deviceHome });
@@ -749,6 +754,7 @@ export async function setupApplied(plan: SetupPlan, recorder: SetupRecorder, res
     backupDir: recorder.backups.length > 0 ? recorder.backupRoot : null,
     pendingSections: result.pending,
     ...(result.columns === undefined ? {} : { columns: result.columns }),
+    ...(result.engineSwitch === undefined ? {} : { engineSwitch: result.engineSwitch }),
     selfCheck,
   };
 }

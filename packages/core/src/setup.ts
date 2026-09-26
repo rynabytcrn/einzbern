@@ -17,12 +17,13 @@
 // current and the project registered, an installation from before the rename (the old control
 // directory in the project or the old device directory), or neither.
 //
-// Each mode is one row of the mode table. fresh is the first (setup-fresh.ts) and restore the second
-// (setup-restore.ts: eight checks of the library before anything is written); update, repair and
-// uninstall answer SETUP_MODE_UNAVAILABLE until their rows are filled (TCRN-CROSS-SUB-325), and
-// migrate answers SETUP_MIGRATE_PENDING when it finds an old installation, whose migration is the
-// second batch's (SUB-364 to SUB-366). Whatever the mode, the wizard never commits, pushes, edits
-// .gitignore or deletes anything.
+// Each mode is one row of the mode table: fresh (setup-fresh.ts), restore (setup-restore.ts: eight
+// checks of the library before anything is written), and update, repair and uninstall
+// (setup-maintain.ts: a newer engine or the previous one with --rollback true, the wiring put back,
+// the wiring taken out with the library left as it is). migrate answers SETUP_MIGRATE_PENDING when it
+// finds an old installation, whose migration is the second batch's (SUB-364 to SUB-366). Whatever the
+// mode, the wizard never commits, pushes, edits .gitignore or deletes anything: what it takes out is
+// moved into the device directory's backups.
 
 import { lstat, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -40,6 +41,14 @@ import { LEGACY_DEVICE_DIRECTORY } from "./names.js";
 import { readRegistry } from "./registry.js";
 import type { RegistryEntry } from "./registry.js";
 import { applyFreshSetup, planFreshSetup } from "./setup-fresh.js";
+import {
+  applyRepairSetup,
+  applyUninstallSetup,
+  applyUpdateSetup,
+  planRepairSetup,
+  planUninstallSetup,
+  planUpdateSetup,
+} from "./setup-maintain.js";
 import { applyRestoreSetup, planRestoreSetup } from "./setup-restore.js";
 import type { RestoreCheck } from "./setup-restore.js";
 
@@ -52,7 +61,8 @@ export const SETUP_APPLIED_SCHEMA_VERSION = "einzbern.setup-applied.v1" as const
 export const SETUP_REASON_CODES = Object.freeze([
   // A given answer is not one the question takes (details: question).
   "SETUP_ANSWER_INVALID",
-  // The mode needs an answer that has no default (restore's library); the plan names the question.
+  // The mode needs an answer that has no default (restore's library, update's release); the plan
+  // names the question.
   "SETUP_ANSWER_REQUIRED",
   // The plan names something that stops the apply; its blockers say what.
   "SETUP_BLOCKED",
@@ -159,10 +169,12 @@ export interface SetupOptions extends SetupModeOptions {
   readonly answers?: SetupAnswers;
 }
 
-// What one write does to a file or directory: it is created, or what is there is changed.
-export type SetupWriteAction = "create" | "update";
+// What one write does to a file or directory: it is created, what is there is changed, or it is
+// moved whole into the backups of this run (uninstall; nothing is deleted).
+export type SetupWriteAction = "create" | "update" | "move";
 
 export type SetupStep =
+  | "engine"
   | "device"
   | "library"
   | "registry"
@@ -316,6 +328,8 @@ export interface SetupPlan {
   readonly library: { readonly path: string; readonly action: "create" | "reuse"; readonly libraryId: string | null } | null;
   // restore: the eight checks of the library, all passed (setup-restore.ts).
   readonly verification?: readonly RestoreCheck[];
+  // update: the engine version current now and the one the apply makes current.
+  readonly engineSwitch?: SetupEngineSwitch;
   // Every file and directory the apply writes, in the order it writes them, and every original it
   // copies first; backupDir holds the copies of this run.
   readonly writes: readonly SetupWrite[];
@@ -325,6 +339,23 @@ export interface SetupPlan {
   readonly pendingSections: readonly { readonly file: string; readonly id: string }[];
   // What stops the apply. A plan with any is still a plan: it is shown, not applied.
   readonly blockers: readonly SetupBlocker[];
+}
+
+/** update and rollback: the version current before and after, and for an update the release it installs from. */
+export interface SetupEngineSwitch {
+  // The release archive or unpacked release directory; null for a rollback.
+  readonly source: string | null;
+  readonly from: string | null;
+  readonly to: string;
+  // The install-tree digest the release states; null for a rollback.
+  readonly installTreeDigest: string | null;
+}
+
+/** The switch as it was made (engine-home.ts): copied or already there, and how many registered libraries the engine now current cannot open. */
+export interface SetupEngineSwitched extends SetupEngineSwitch {
+  readonly reasonCode: "ENGINE_UPDATED" | "ENGINE_ROLLED_BACK";
+  readonly installed: "copied" | "reused" | null;
+  readonly incompatible: number;
 }
 
 /**
@@ -352,7 +383,8 @@ export interface SetupApplied {
   // This device's id; null when it has none (a mode that writes no device file).
   readonly deviceId: string | null;
   readonly answers: ResolvedSetupAnswers;
-  readonly library: { readonly path: string; readonly libraryId: string; readonly created: boolean };
+  // The project's library; null when the mode ran for a project this device has not registered.
+  readonly library: { readonly path: string; readonly libraryId: string; readonly created: boolean } | null;
   // Each file and directory written, and each original copied before it was replaced.
   readonly written: readonly SetupWrite[];
   readonly backups: readonly SetupBackup[];
@@ -361,6 +393,8 @@ export interface SetupApplied {
   // restore: the project-level settings that came back with the library, and the device-level ones
   // to set again here.
   readonly columns?: SetupColumns;
+  // update: the engine switch it made.
+  readonly engineSwitch?: SetupEngineSwitched;
   // doctor's eight checks right after the apply.
   readonly selfCheck: readonly DoctorCheck[];
 }
@@ -375,7 +409,7 @@ export interface SetupModeInput {
 }
 
 /** What a mode's planner answers; planSetup puts it into the plan. */
-export type SetupModePlan = Pick<SetupPlan, "questions" | "resolved" | "engine" | "library" | "writes" | "backups" | "backupDir" | "pendingSections" | "blockers" | "verification">;
+export type SetupModePlan = Pick<SetupPlan, "questions" | "resolved" | "engine" | "library" | "writes" | "backups" | "backupDir" | "pendingSections" | "blockers" | "verification" | "engineSwitch">;
 
 interface SetupModeEntry {
   readonly options: readonly SetupOptionName[];
@@ -412,10 +446,22 @@ const MODE_TABLE: Readonly<Record<SetupMode, SetupModeEntry>> = Object.freeze({
     plan: (input: SetupModeInput): Promise<SetupModePlan> => planRestoreSetup(input),
     apply: (plan: SetupPlan): Promise<SetupApplied> => applyRestoreSetup(plan),
   },
-  update: { options: ["archive", "rollback"], plan: async (): Promise<SetupModePlan> => unavailable("update"), apply: async (): Promise<SetupApplied> => unavailable("update") },
-  repair: { options: [], plan: async (): Promise<SetupModePlan> => unavailable("repair"), apply: async (): Promise<SetupApplied> => unavailable("repair") },
+  update: {
+    options: ["archive", "rollback"],
+    plan: (input: SetupModeInput): Promise<SetupModePlan> => planUpdateSetup(input),
+    apply: (plan: SetupPlan): Promise<SetupApplied> => applyUpdateSetup(plan),
+  },
+  repair: {
+    options: ["cloud", "navigation"],
+    plan: (input: SetupModeInput): Promise<SetupModePlan> => planRepairSetup(input),
+    apply: (plan: SetupPlan): Promise<SetupApplied> => applyRepairSetup(plan),
+  },
   migrate: { options: ["mapping"], plan: async (input: SetupModeInput): Promise<SetupModePlan> => migratePlan(input), apply: async (): Promise<SetupApplied> => unavailable("migrate") },
-  uninstall: { options: ["managedSections"], plan: async (): Promise<SetupModePlan> => unavailable("uninstall"), apply: async (): Promise<SetupApplied> => unavailable("uninstall") },
+  uninstall: {
+    options: ["managedSections"],
+    plan: (input: SetupModeInput): Promise<SetupModePlan> => planUninstallSetup(input),
+    apply: (plan: SetupPlan): Promise<SetupApplied> => applyUninstallSetup(plan),
+  },
 });
 
 function isSetupMode(value: unknown): value is SetupMode {

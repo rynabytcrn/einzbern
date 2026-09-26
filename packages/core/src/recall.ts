@@ -41,6 +41,12 @@ export interface RecallDocument {
   readonly tags: string;
   readonly expansions: string;
   readonly summary: string;
+  // TCRN-CROSS-STORY-474 R2: what a hit line shows beside the ranked fields, never ranked itself:
+  // the record's own kind (Story, Epic, minutes, card), the titles above it (the Epic, then the
+  // Initiative), and a lead (a minutes record's first decision).
+  readonly recordKind: string;
+  readonly parentChain: readonly string[];
+  readonly lead: string;
 }
 
 export interface RecallHit {
@@ -51,6 +57,9 @@ export interface RecallHit {
   readonly title: string;
   readonly summary: string;
   readonly score: number;
+  readonly recordKind: string;
+  readonly parentChain: readonly string[];
+  readonly lead: string;
 }
 
 export interface RecallSelectionOptions {
@@ -186,9 +195,12 @@ function externalKeyExpression(query: string): string {
     .join(" OR ");
 }
 
+// The display fields are in the digest too: they are not ranked, but a hit must not show a status,
+// a parent title or a lead the record no longer has.
 function documentDigest(document: RecallDocument): string {
   return createHash("sha256")
-    .update(`${document.key}\u0000${document.title}\u0000${document.body}\u0000${document.tags}\u0000${document.expansions}`, "utf8")
+    .update(`${document.key}\u0000${document.title}\u0000${document.body}\u0000${document.tags}\u0000${document.expansions}`
+      + `\u0000${document.status}\u0000${document.summary}\u0000${document.recordKind}\u0000${document.parentChain.join("\u0001")}\u0000${document.lead}`, "utf8")
     .digest("hex");
 }
 
@@ -211,6 +223,9 @@ function hitOf(document: RecallDocument, score: number): RecallHit {
     title: document.title,
     summary: document.summary,
     score,
+    recordKind: document.recordKind,
+    parentChain: document.parentChain,
+    lead: document.lead,
   };
 }
 
@@ -408,6 +423,9 @@ export interface RecallMinutesInput {
   readonly summary: string;
   readonly decisions: readonly string[];
   readonly outcomeClass: string;
+  // TCRN-CROSS-STORY-475: a minutes record keeps its external key (a conference's minutes never had
+  // one), and it is what an exact-key prompt names.
+  readonly externalKey?: string | null;
 }
 
 export interface RecallWorkInput {
@@ -419,7 +437,22 @@ export interface RecallWorkInput {
   readonly summary: string | null;
   readonly scope: string;
   readonly labels: readonly string[];
+  // TCRN-CROSS-STORY-474 R1, R2 (recall-inputs.ts): the goal and the free body (story-fields.ts), and
+  // the titles above the record, nearest first. A caller that has none leaves them out.
+  readonly goal?: string | null;
+  readonly body?: string | null;
+  readonly parentChain?: readonly string[];
 }
+
+/**
+ * TCRN-CROSS-STORY-474 R1 (MIN-227 D5, D7): which work records recall indexes, and on what. A Story
+ * -- and a historical Incident, a Story's predecessor for a defect -- is indexed on its title, goal
+ * and body; an Initiative and an Epic on their title and goal (their summary when they have no
+ * goal); a Subtask, a Release, a Review and a Knowledge record are not indexed. Status does not
+ * matter: a done Story is still the record of what was intended.
+ */
+export const RECALL_INDEXED_WORK_KINDS = Object.freeze(["Story", "Incident", "Initiative", "Epic"] as const);
+const RECALL_FULL_TEXT_KINDS: readonly string[] = ["Story", "Incident"];
 
 export interface RecallInputs {
   readonly knowledge?: readonly RecallKnowledgeInput[];
@@ -470,13 +503,18 @@ export function recallDocuments(inputs: RecallInputs): readonly RecallDocument[]
       tags: card.tags.join(" "),
       expansions: card.expansions ?? "",
       summary: card.summary,
+      recordKind: "card",
+      parentChain: [],
+      lead: "",
     });
   }
   for (const minutes of inputs.minutes ?? []) {
+    const key = minutes.externalKey ?? null;
+    const first = minutes.decisions[0];
     documents.push({
       id: minutes.id,
       kind: "minutes",
-      key: minutes.id,
+      key: key === null || key.length === 0 ? minutes.id : key,
       status: minutes.outcomeClass,
       title: minutes.conferenceTitle,
       // Decision references are hyphen-joined identifiers; splitting them lets a prompt
@@ -485,24 +523,39 @@ export function recallDocuments(inputs: RecallInputs): readonly RecallDocument[]
       tags: `minutes ${minutes.conferenceType}`.trim(),
       expansions: "",
       summary: minutes.summary,
+      recordKind: "minutes",
+      parentChain: [],
+      lead: first === undefined ? "" : `D1 ${first}${minutes.decisions.length > 1 ? " …" : ""}`,
     });
   }
   for (const record of inputs.work ?? []) {
+    if (!(RECALL_INDEXED_WORK_KINDS as readonly string[]).includes(record.kind)) continue;
     const title = record.title ?? "";
     const summary = record.summary !== null && record.summary.length > 0
       ? record.summary
       : excerpt(record.scope, scopeExcerptBytes);
-    if (title.length === 0 && summary.length === 0) continue;
+    const goal = record.goal ?? "";
+    const fullText = RECALL_FULL_TEXT_KINDS.includes(record.kind);
+    // With no goal or body (a caller that did not read the fields), the summary line stands in,
+    // as it always did; an Initiative or an Epic falls back to its summary alone.
+    const text = fullText
+      ? [goal, record.body ?? ""].filter((part) => part.length > 0).join("\n\n")
+      : goal;
+    const body = text.length > 0 ? text : fullText ? summary : (record.summary ?? "");
+    if (title.length === 0 && body.length === 0) continue;
     documents.push({
       id: record.id,
       kind: "work",
       key: record.externalKey,
       status: record.status,
       title,
-      body: summary,
+      body,
       tags: `${record.kind} ${record.status} ${record.labels.join(" ")}`.trim(),
       expansions: "",
-      summary,
+      summary: summary.length > 0 ? summary : goal,
+      recordKind: record.kind,
+      parentChain: record.parentChain ?? [],
+      lead: "",
     });
   }
   return documents;

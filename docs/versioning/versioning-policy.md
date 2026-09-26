@@ -12,4 +12,6 @@ versioned identifiers independent of package versions.
 Compatibility or trust semantics may not change under an existing schema
 identifier. Release trust is the install-tree digest a publisher states for each
 release (`specs/release-trust-v1.md`); the signed sequence and trust-root version it
-replaced are retired.
+replaced are retired. The release gates check that every place a release names its
+version agrees, and carry no signing, provenance or trust-archive step
+(TCRN-CROSS-STORY-488 R3).

@@ -285,8 +285,9 @@ export function buildP8ReleaseArtifacts({ sourceArchive, sbom }) {
     artifacts: [documentRecord(sourcePath, sourceArchive), documentRecord("sbom.cdx.json", sbom), documentRecord("release-notes.md", notes)],
   };
   const manifest = Buffer.from(`${canonicalJson({ ...manifestBasis, manifestDigest: sha256(Buffer.from(canonicalJson(manifestBasis), "utf8")) })}\n`, "utf8");
-  // The in-toto build statement this train also produced is retired with the trust
-  // root it was checked against (TCRN-CROSS-STORY-467 R2); release trust is the
+  // The manifest and the checksums are P8's local record of the candidate's own bytes, kept
+  // for the version and digest checks in validateP8ReleaseDocuments; nothing signs them and
+  // P8 emits no provenance statement (TCRN-CROSS-STORY-488 R3). Release trust is the
   // install-tree digest (packages/core/src/install-tree-digest.ts).
   const checksums = Buffer.from([
     documentRecord(sourcePath, sourceArchive), documentRecord("sbom.cdx.json", sbom), documentRecord("release-manifest.json", manifest), documentRecord("release-notes.md", notes),

@@ -36,6 +36,7 @@ import {
   rebuildP8SourceArchiveInIndependentRoots,
   sanitizedCoreReferenceProjection,
   staleReleaseArtifactMoves,
+  validateP8ReleaseDocuments,
 } from "../scripts/lib/p8-workflow-rc.mjs";
 import { withExclusiveOutputSession } from "../scripts/lib/safe-io.mjs";
 
@@ -64,10 +65,29 @@ test("P8 creates a closed unpublished release candidate without supported AOS re
   assert.deepEqual(manifest.supportedAosReleases, []);
   // Five since the in-toto build statement retired with the trust root (TCRN-CROSS-STORY-467 R2).
   assert.equal(p8ArtifactRecords(artifacts).length, 5);
+  // TCRN-CROSS-STORY-488 R3: the manifest and the checksums stay as P8's local record of the
+  // candidate's bytes. Nothing in the set is a signature, a key or a provenance statement, and
+  // the manifest names no signer.
+  assert.ok(P8_RELEASE_ARTIFACTS.includes("release-manifest.json") && P8_RELEASE_ARTIFACTS.includes("checksums.txt"));
+  assert.deepEqual(P8_RELEASE_ARTIFACTS.filter((name) => /\.(?:sig|asc|pem|pub|intoto\.jsonl?)$|provenance|trust/u.test(name)), []);
+  assert.deepEqual(Object.keys(manifest).filter((field) => /sign|key|provenance|trust/iu.test(field)), []);
   assert.throws(
     () => assertClosedReleaseArtifactAllowlist(new Map([["unexpected.txt", Buffer.from("")]])),
     (error) => error.reasonCode === "P8_RELEASE_ALLOWLIST_MISMATCH",
   );
+});
+
+// TCRN-CROSS-STORY-488 R3: the version check P8 keeps. A manifest that names another version
+// or another tag than the one P8 judges is refused, however intact the rest of it is.
+test("P8 refuses a release manifest that names another version or tag", () => {
+  const artifacts = buildP8ReleaseArtifacts({ sourceArchive: Buffer.from("P8 source fixture\n", "utf8"), sbom: Buffer.from('{"bomFormat":"CycloneDX"}\n', "utf8") });
+  const manifest = JSON.parse(artifacts.get("release-manifest.json").toString("utf8"));
+  assert.equal(validateP8ReleaseDocuments(artifacts).releaseStatus, "accepted_release");
+  for (const drift of [{ version: "0.0.0" }, { tag: "v0.0.0" }]) {
+    const documents = new Map(artifacts);
+    documents.set("release-manifest.json", Buffer.from(`${JSON.stringify({ ...manifest, ...drift })}\n`, "utf8"));
+    assert.throws(() => validateP8ReleaseDocuments(documents), (error) => error.reasonCode === "P8_RELEASE_MANIFEST_INVALID", JSON.stringify(drift));
+  }
 });
 
 // TCRN-CROSS-STORY-461 R1 (SUB-240, #232). A temporary repository with an ignored dist tree:

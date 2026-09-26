@@ -150,6 +150,15 @@ device-level (`layer: "device"`) and stay in the device directory: `settings-set
 `machine-settings-set`. Each project-level write rewrites `config/project.json`
 (`einzbern.project-config.v1`: version vector and merged values), a projection no read
 trusts; `status` reports it as `configProjection` (`current`, `stale`, `absent`, `invalid`).
+The knowledge store in a library is `crest/` with `store.json`, `metadata/` and `bodies/` only
+(TCRN-CROSS-STORY-469 R1, R4; 466 R1; `packages/core/spec/knowledge-core-v1.md`): its index view
+is this device's cache, `cache/<library>/crest-views/index.json`, projected again by any read that
+finds it missing or out of date rather than read as a partial store, so another device reads the
+same store and projects its own. The marker binds the library id and the library head, one digest
+over every stream's head. Every crest write (and a whole knowledge batch) runs under this
+machine's lock of the library, the lock every chain write takes; the mutation claim stays the
+crash journal `knowledge-recover` reads, and two devices' concurrent crest writes are not made
+safe against each other.
 
 ## 1.2.1 — patch candidate
 

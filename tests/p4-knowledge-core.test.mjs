@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import "./helpers/device-home.mjs";
+import { testDeviceHome } from "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
@@ -44,6 +44,9 @@ import {
   reverifyKnowledgeUnit,
   transitionKnowledgePromotion,
   validateKnowledgeStore,
+  acquireFileLock,
+  cachePath,
+  lockPath,
   DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalJson, canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
@@ -87,6 +90,8 @@ async function workspaceFixture({ externalKey = "FIXTURE-KNOWLEDGE-CORE", initia
     base,
     workspace,
     store: join(workspace, DIRECTORY.knowledge),
+    // TCRN-CROSS-STORY-469 R4: the knowledge index view is this device's cache, not a file in crest/.
+    indexView: join(cachePath(deriveStableId("library", externalKey), testDeviceHome), "crest-views", "index.json"),
     projectId: state.projects[0].id,
     workId: state.work[0].id,
     async close() {
@@ -255,6 +260,54 @@ test("WSC-2: knowledge-rebase fails closed at fault points leaving the store loc
   }
 });
 
+// TCRN-CROSS-STORY-469 R4: the index view is this device's cache. Deleted or damaged, it is projected
+// again by the next read instead of reading as a partial store, and another device, whose cache has
+// never held it, reads the same store and projects its own.
+test("469-R4: a library's knowledge index view is the device cache, rebuilt when missing or stale", async (t) => {
+  const fixture = await workspaceFixture({ externalKey: "FIXTURE-KNOWLEDGE-CACHE-VIEW" });
+  t.after(() => fixture.close());
+  await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "KNOWLEDGE-CACHE-VIEW"));
+  const expected = await readFile(fixture.indexView, "utf8");
+  assert.equal(JSON.parse(expected).records.length, 1);
+
+  await rm(fixture.indexView);
+  assert.equal((await validateKnowledgeStore(fixture.workspace)).reasonCode, "KNOWLEDGE_STORE_VALID");
+  assert.equal(await readFile(fixture.indexView, "utf8"), expected, "a missing view is projected again");
+  await writeFile(fixture.indexView, "{not an index");
+  assert.equal((await listKnowledgeMetadata(fixture.workspace, { at: instant(12) })).total, 1);
+  assert.equal(await readFile(fixture.indexView, "utf8"), expected, "a damaged view is projected again");
+
+  const otherDevice = await realpath(await mkdtemp(join(tmpdir(), "tcrn-p4-other-device-")));
+  const previous = process.env.EINZBERN_HOME;
+  t.after(() => rm(otherDevice, { recursive: true, force: true }));
+  try {
+    process.env.EINZBERN_HOME = otherDevice;
+    assert.equal((await validateKnowledgeStore(fixture.workspace)).reasonCode, "KNOWLEDGE_STORE_VALID");
+    const libraryId = deriveStableId("library", "FIXTURE-KNOWLEDGE-CACHE-VIEW");
+    assert.equal(await readFile(join(cachePath(libraryId, otherDevice), "crest-views", "index.json"), "utf8"), expected, "the other device projects the same view");
+  } finally {
+    process.env.EINZBERN_HOME = previous;
+  }
+  assert.deepEqual((await readdir(fixture.store)).sort(), ["bodies", "metadata", "store.json"], "no view was written into crest/");
+});
+
+// TCRN-CROSS-STORY-469 R3: a crest write takes this machine's lock of the library, the lock every
+// chain write takes, and it lives in the device directory. While another writer holds it, the
+// knowledge write waits, then lands.
+test("469-R3: a crest write waits for this machine's lock of the library", async (t) => {
+  const fixture = await workspaceFixture({ externalKey: "FIXTURE-KNOWLEDGE-LOCK" });
+  t.after(() => fixture.close());
+  const holder = await acquireFileLock(lockPath(deriveStableId("library", "FIXTURE-KNOWLEDGE-LOCK"), testDeviceHome));
+  let landed = false;
+  const pending = createKnowledgeUnit(fixture.workspace, unitInput(fixture, "KNOWLEDGE-AFTER-LOCK")).then((result) => { landed = true; return result; });
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, 200));
+  assert.equal(landed, false, "the write waits while another writer holds the lock");
+  await holder.release();
+  const created = await pending;
+  assert.equal(created.reasonCode, "KNOWLEDGE_UNIT_CREATED");
+  assert.equal((await validateKnowledgeStore(fixture.workspace)).records, 1);
+});
+
 test("empty Knowledge bootstrap is closed, schema-valid, deterministic, and body-free", async () => {
   const fixture = await workspaceFixture();
   try {
@@ -262,11 +315,14 @@ test("empty Knowledge bootstrap is closed, schema-valid, deterministic, and body
     assert.equal(validation.reasonCode, "KNOWLEDGE_STORE_VALID");
     assert.equal(validation.version, 0);
     assert.equal(validation.records, 0);
-    assert.deepEqual((await readdir(fixture.store)).sort(), ["bodies", "metadata", "store.json", "views"]);
+    // crest/ holds the store's own files; the library root keeps its seven entries; the derived
+    // index view is in the device cache (TCRN-CROSS-STORY-469 R1, R4).
+    assert.deepEqual((await readdir(fixture.store)).sort(), ["bodies", "metadata", "store.json"]);
+    assert.deepEqual((await readdir(fixture.workspace)).sort(), [".gitignore", "README.md", "akasha", "artifacts", "config", "crest", "manifest.json"]);
     assert.deepEqual(await readdir(join(fixture.store, "metadata")), []);
     assert.deepEqual(await readdir(join(fixture.store, "bodies")), []);
-    const index1 = await readFile(join(fixture.store, "views", "index.json"), "utf8");
-    const index2 = await readFile(join(fixture.store, "views", "index.json"), "utf8");
+    const index1 = await readFile(fixture.indexView, "utf8");
+    const index2 = await readFile(fixture.indexView, "utf8");
     assert.equal(index1, index2);
     assert.deepEqual(JSON.parse(index1).records, []);
     const schema = JSON.parse(await readFile(new URL("../packages/core/schema/knowledge-core-v1.schema.json", import.meta.url), "utf8"));
@@ -504,7 +560,7 @@ test("WSB-4: knowledge-create null sentinel '-' round-trips to null and the depr
     ];
   };
   const storedRecord = async (fixture, created) => {
-    const view = JSON.parse(await readFile(join(fixture.store, "views", "index.json"), "utf8"));
+    const view = JSON.parse(await readFile(fixture.indexView, "utf8"));
     return view.records.find((entry) => entry.id === created.id);
   };
   const createViaCli = async (projectSpelling, lastVerifiedSpelling) => {
@@ -848,7 +904,7 @@ test("64 real insertion orders produce exact index, list, and checkpoint parity"
       }
       // TCRN-CROSS-INC-282: no promote pass -- every card is written promoted, so the
       // corpus under comparison is the written one.
-      const indexBytes = await readFile(join(fixture.store, "views", "index.json"), "utf8");
+      const indexBytes = await readFile(fixture.indexView, "utf8");
       const listBytes = canonicalJson(await listKnowledgeMetadata(fixture.workspace, { at: instant(12) }));
       const checkpointBytes = await exportKnowledgeCheckpoint(fixture.workspace, instant(12));
       const observation = {
@@ -1304,7 +1360,7 @@ test("TCRN-CROSS-STORY-023: the aggregate cap counts marker+metadata+body but no
     for (const n of await readdir(join(storeRoot, "metadata"))) sumMeta += (await readFile(join(storeRoot, "metadata", n))).length;
     for (const n of await readdir(join(storeRoot, "bodies"))) sumBody += (await readFile(join(storeRoot, "bodies", n))).length;
     const marker = (await readFile(join(storeRoot, "store.json"))).length;
-    const index = (await readFile(join(storeRoot, "views/index.json"))).length;
+    const index = (await readFile(fx.indexView)).length;
     const cap = 131_072;
     const current = marker + sumMeta + sumBody;
     assert.ok(current <= cap, `admitted records must fit the new cap: ${current} <= ${cap}`);

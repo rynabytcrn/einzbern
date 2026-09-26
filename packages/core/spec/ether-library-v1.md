@@ -104,6 +104,9 @@ device directory (TCRN-CROSS-STORY-469 R4); a library never holds it.
   version, the largest clock among the covered events and, for each stream, the sequence and
   event hash where the prefix ends. A replay writes a new one once it has gone
   `storage.snapshotEveryEvents` merged events past the snapshot it resumed from.
+- `crest-views/index.json` is the knowledge store's index view
+  (`packages/core/spec/knowledge-core-v1.md`), projected again by any read that finds it
+  missing or out of date.
 
 A read resumes from the snapshot only while it describes a prefix of what the streams hold:
 the same engine version wrote it, every stream it covers still holds the recorded event at

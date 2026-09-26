@@ -12,7 +12,7 @@ import {
   rename,
   rm,
 } from "node:fs/promises";
-import { dirname, isAbsolute, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { resolveStoreBackend, SegmentedKnowledgeStoreBackend } from "./store-backend.js";
 import type { FileStoreBackendProfile, StoreBackend } from "./store-backend.js";
@@ -39,10 +39,11 @@ import {
   readKnowledgeLanguagePolicy,
 } from "./knowledge-language.js";
 import type { KnowledgeExpansions, KnowledgeLanguageProvider } from "./knowledge-language.js";
-import { activeWorkspaceRoot, materializeWorkspace } from "./workspace.js";
+import { activeWorkspaceRoot, materializeWorkspace, withWorkspaceWriteLock } from "./workspace.js";
 import type { ProjectRecord, WorkspaceState } from "./workspace.js";
 import { SETTINGS_CATALOG, resolveKnowledgeArticlesPath } from "./settings.js";
-import { hasLibraryManifest } from "./ether-library.js";
+import { hasLibraryManifest, openLibrary } from "./ether-library.js";
+import { cachePath } from "./device-home.js";
 import { DIRECTORY, LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY } from "./names.js";
 
 export const KNOWLEDGE_CORE_VERSION = "tcrn.knowledge-core.v1" as const;
@@ -356,6 +357,10 @@ export interface KnowledgeBodyReadOptions extends KnowledgeReadOptions {
   readonly allowStale?: boolean;
 }
 
+// In a library (TCRN-CROSS-STORY-469) the marker binds the store to the library id (workspaceId)
+// and to the library head (eventHighWaterDigest): one digest over every stream's head, so it moves
+// with any entry of the version vector, whichever device wrote it. An old-layout store binds its
+// workspace id and its one chain's head.
 interface KnowledgeStoreMarker {
   readonly schemaVersion: typeof KNOWLEDGE_STORE_SCHEMA_VERSION;
   readonly workspaceId: string;
@@ -395,7 +400,8 @@ interface KnowledgeStoreScan {
   readonly storeRoot: string;
   readonly metadataRoot: string;
   readonly bodiesRoot: string;
-  readonly viewsRoot: string;
+  // The old layout's views/ directory; null for a library, whose index view is this device's cache.
+  readonly viewsRoot: string | null;
   readonly marker: KnowledgeStoreMarker;
   readonly workspace: WorkspaceState;
   readonly units: readonly ScannedKnowledgeUnit[];
@@ -823,13 +829,41 @@ const knowledgeBackendProfile: FileStoreBackendProfile = Object.freeze({
 });
 
 function storeBackendFor(storeRoot: string, options: KnowledgeReadOptions = {}): StoreBackend {
+  let located: Promise<string | null> | undefined;
   return resolveStoreBackend(storeRoot, knowledgeBackendProfile, {
     beforeDescriptorReadForTest: options.beforeDescriptorReadForTest,
     afterDescriptorOpenForTest: options.afterDescriptorOpenForTest,
-  });
+  }, { knowledgeViewFile: () => (located ??= libraryKnowledgeViewFile(storeRoot)) });
+}
+
+// TCRN-CROSS-STORY-469 R4: a library's knowledge index view is derived state, so it is this
+// device's cache, cache/<library>/crest-views/index.json, never a file in crest/. An old-layout
+// store (read-only) keeps its views/ directory.
+export const KNOWLEDGE_CACHE_VIEWS_DIRECTORY = "crest-views" as const;
+
+async function libraryKnowledgeViewFile(storeRoot: string): Promise<string | null> {
+  const libraryRoot = dirname(storeRoot);
+  if (!(await hasLibraryManifest(libraryRoot))) return null;
+  return join(cachePath((await openLibrary(libraryRoot)).manifest.libraryId), KNOWLEDGE_CACHE_VIEWS_DIRECTORY, "index.json");
+}
+
+/**
+ * Run a crest write under this machine's lock of the library (TCRN-CROSS-STORY-469 R3): the lock
+ * file lives in the device directory, never in the library, and it is the one every chain write
+ * takes, so the writers on one machine never interleave. The mutation claim inside crest/ stays
+ * the crash journal a recovery reads. Nothing here makes two devices' crest writes safe against
+ * each other. An old-layout store is read-only: its writers refuse on their own.
+ */
+export async function withCrestWriteLock<T>(workspaceRoot: string, operation: () => Promise<T>): Promise<T> {
+  if (!(await hasLibraryManifest(resolve(workspaceRoot)))) return operation();
+  return withWorkspaceWriteLock(workspaceRoot, () => operation());
 }
 
 export async function migrateKnowledgeBodies(workspaceRootInput: string, segmentBytes = 1_048_576): Promise<Readonly<Record<string, JsonValue>>> {
+  return withCrestWriteLock(workspaceRootInput, () => migrateKnowledgeBodiesUnlocked(workspaceRootInput, segmentBytes));
+}
+
+async function migrateKnowledgeBodiesUnlocked(workspaceRootInput: string, segmentBytes = 1_048_576): Promise<Readonly<Record<string, JsonValue>>> {
   // Body migration is a disposable-store rewrite. It may run while the chain
   // head has advanced past store.json; the ordinary metadata-only trailing read
   // is the established way to locate the store without pretending its marker
@@ -1372,12 +1406,13 @@ async function scanKnowledgeStore(
   const storeRoot = await boundDirectory(await knowledgeStorePath(workspaceRoot), workspaceRoot);
   const metadataRoot = await boundDirectory(resolve(storeRoot, "metadata"), storeRoot);
   const bodiesRoot = await boundDirectory(resolve(storeRoot, "bodies"), storeRoot);
-  const viewsRoot = await boundDirectory(resolve(storeRoot, "views"), storeRoot);
+  const inLibrary = await hasLibraryManifest(workspaceRoot);
+  const viewsRoot = inLibrary ? null : await boundDirectory(resolve(storeRoot, "views"), storeRoot);
   // STORY-177: marker, metadata/body/view and their enumeration ride through the
   // StoreBackend; directory-structure validation stays file-native below.
   const backend = storeBackendFor(storeRoot, options);
   const rootEntries = (await readdir(storeRoot)).sort(compareCanonicalText);
-  const expectedRootEntries = ["bodies", "metadata", "store.json", "views", ...(allowClaim ? ["mutation.claim"] : [])].sort(compareCanonicalText);
+  const expectedRootEntries = ["bodies", "metadata", "store.json", ...(inLibrary ? [] : ["views"]), ...(allowClaim ? ["mutation.claim"] : [])].sort(compareCanonicalText);
   if (JSON.stringify(rootEntries) !== JSON.stringify(expectedRootEntries)) {
     fail("KNOWLEDGE_PARTIAL_STATE", "knowledge store root entries are not exact");
   }
@@ -1476,9 +1511,11 @@ async function scanKnowledgeStore(
   const metadataById = new Map(units.map((unit) => [unit.metadata.id, unit.metadata]));
   for (const unit of units) validateSupersedesLink(unit.metadata, metadataById);
   const index = knowledgeIndex(marker, units.map((unit) => unit.metadata));
-  const viewEntries = await readdir(viewsRoot);
-  if (JSON.stringify(viewEntries.sort(compareCanonicalText)) !== JSON.stringify(["index.json"])) {
-    fail("KNOWLEDGE_PARTIAL_STATE", "knowledge views are not exact");
+  if (viewsRoot !== null) {
+    const viewEntries = await readdir(viewsRoot);
+    if (JSON.stringify(viewEntries.sort(compareCanonicalText)) !== JSON.stringify(["index.json"])) {
+      fail("KNOWLEDGE_PARTIAL_STATE", "knowledge views are not exact");
+    }
   }
   // TCRN-CROSS-STORY-023: the index is a derived rebuildable view whose `records`
   // array is a re-serialization of the very metadata already counted above, so
@@ -1490,10 +1527,17 @@ async function scanKnowledgeStore(
   // worth of envelope headroom, since a legitimate index equals Σ metadata (≤ cap)
   // plus its small fixed envelope, so the old cap-tight bound could reject a valid
   // near-full store on the read alone.
-  const viewBytes = await backend.readKnowledgeView();
-  const view = viewBytes.toString("utf8");
-  if (!allowStaleIndex && view !== canonicalJson(index)) {
-    fail("KNOWLEDGE_PARTIAL_STATE", "knowledge index is stale");
+  if (inLibrary) {
+    // A library's view is this device's cache: another device's crest writes never reach it, so a
+    // missing or out-of-date copy is projected again rather than read as a partial store.
+    const cached = await backend.readKnowledgeView().then((bytes) => bytes.toString("utf8"), () => null);
+    if (cached !== canonicalJson(index)) await backend.writeKnowledgeView(canonicalJson(index));
+  } else {
+    const viewBytes = await backend.readKnowledgeView();
+    const view = viewBytes.toString("utf8");
+    if (!allowStaleIndex && view !== canonicalJson(index)) {
+      fail("KNOWLEDGE_PARTIAL_STATE", "knowledge index is stale");
+    }
   }
   return { workspaceRoot, storeRoot, metadataRoot, bodiesRoot, viewsRoot, marker, workspace, units, index, linkInvalid: linkInvalid.sort(compareCanonicalText) };
 }
@@ -1562,6 +1606,10 @@ export function processIsAlive(pid: number): boolean {
  * malformed claim remains blocked instead of being guessed away.
  */
 export async function recoverKnowledgeStore(workspaceRoot: string, options: KnowledgeReadOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
+  return withCrestWriteLock(workspaceRoot, () => recoverKnowledgeStoreUnlocked(workspaceRoot, options));
+}
+
+async function recoverKnowledgeStoreUnlocked(workspaceRoot: string, options: KnowledgeReadOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
   const claimedRoot = await knowledgeStorePath(workspaceRoot);
   const claim = await readMutationClaim(claimedRoot);
   if (claim !== null) await assertKnowledgeWritable(workspaceRoot);
@@ -1576,15 +1624,22 @@ export async function recoverKnowledgeStore(workspaceRoot: string, options: Know
     fail("KNOWLEDGE_SOURCE_CHANGED", "knowledge mutation claim changed during recovery");
   }
   const backend = storeBackendFor(scan.storeRoot, options);
-  const viewValue = parseCanonicalObject(await backend.readKnowledgeView(), "knowledge index", "KNOWLEDGE_RECORD_INVALID");
-  if (viewValue.schemaVersion !== "tcrn.knowledge-index.v1" || viewValue.authority !== "derived-rebuildable" ||
-    viewValue.workspaceId !== scan.marker.workspaceId || viewValue.eventHighWaterDigest !== scan.marker.eventHighWaterDigest ||
-    !Number.isSafeInteger(viewValue.version) || Number(viewValue.version) < 0 || !Array.isArray(viewValue.records) ||
-    typeof viewValue.indexDigest !== "string" || !/^[a-f0-9]{64}$/u.test(viewValue.indexDigest)) {
-    fail("KNOWLEDGE_RECORD_INVALID", "knowledge index fields");
-  }
-  const indexNeedsVersionAdvance = scan.marker.version === Number(viewValue.version) &&
-    canonicalJson(viewValue) !== canonicalJson(scan.index);
+  const readView = async (): Promise<Readonly<Record<string, JsonValue>>> => {
+    const viewValue = parseCanonicalObject(await backend.readKnowledgeView(), "knowledge index", "KNOWLEDGE_RECORD_INVALID");
+    if (viewValue.schemaVersion !== "tcrn.knowledge-index.v1" || viewValue.authority !== "derived-rebuildable" ||
+      viewValue.workspaceId !== scan.marker.workspaceId || viewValue.eventHighWaterDigest !== scan.marker.eventHighWaterDigest ||
+      !Number.isSafeInteger(viewValue.version) || Number(viewValue.version) < 0 || !Array.isArray(viewValue.records) ||
+      typeof viewValue.indexDigest !== "string" || !/^[a-f0-9]{64}$/u.test(viewValue.indexDigest)) {
+      fail("KNOWLEDGE_RECORD_INVALID", "knowledge index fields");
+    }
+    return viewValue;
+  };
+  // A library's view is this device's cache (the scan above has just projected it again), so it
+  // cannot tell whether the interrupted mutation wrote records the marker does not count yet;
+  // the version then advances, which is safe whenever it is not needed.
+  const viewValue = scan.viewsRoot === null ? null : await readView();
+  const indexNeedsVersionAdvance = viewValue === null || (scan.marker.version === Number(viewValue.version) &&
+    canonicalJson(viewValue) !== canonicalJson(scan.index));
   const marker: KnowledgeStoreMarker = indexNeedsVersionAdvance
     ? { ...scan.marker, version: scan.marker.version + 1 }
     : scan.marker;
@@ -1791,6 +1846,10 @@ async function writeIndex(backend: StoreBackend, marker: KnowledgeStoreMarker, m
 }
 
 export async function initializeKnowledgeStore(workspaceRootInput: string, options: { readonly disposableAcknowledged?: boolean } = {}): Promise<Readonly<Record<string, JsonValue>>> {
+  return withCrestWriteLock(workspaceRootInput, () => initializeKnowledgeStoreUnlocked(workspaceRootInput, options));
+}
+
+async function initializeKnowledgeStoreUnlocked(workspaceRootInput: string, options: { readonly disposableAcknowledged?: boolean } = {}): Promise<Readonly<Record<string, JsonValue>>> {
   const workspace = await materializeWorkspace(workspaceRootInput);
   // WSC-1: the store is a disposable derived index that is never the system of record, and
   // every initialization acknowledges that explicitly. Old-layout FIXTURE- workspaces used to be
@@ -1807,10 +1866,10 @@ export async function initializeKnowledgeStore(workspaceRootInput: string, optio
   const storeRoot = await ensureEmptyStoreRoot(await knowledgeStorePath(workspaceRoot), workspaceRoot);
   const metadataRoot = await ensureNewDirectory(resolve(storeRoot, "metadata"), storeRoot);
   const bodiesRoot = await ensureNewDirectory(resolve(storeRoot, "bodies"), storeRoot);
-  const viewsRoot = await ensureNewDirectory(resolve(storeRoot, "views"), storeRoot);
   void metadataRoot;
   void bodiesRoot;
-  void viewsRoot;
+  // A library's index view goes to the device cache (libraryKnowledgeViewFile); only an old-layout
+  // store, which this engine no longer creates, had a views/ directory in its root.
   const marker: KnowledgeStoreMarker = {
     schemaVersion: KNOWLEDGE_STORE_SCHEMA_VERSION,
     workspaceId: workspace.metadata.workspaceId,
@@ -1867,6 +1926,10 @@ export async function validateKnowledgeStore(workspaceRoot: string, options: Kno
 }
 
 export async function createKnowledgeUnit(workspaceRoot: string, input: CreateKnowledgeUnitInput, options: KnowledgeMutationOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
+  return withCrestWriteLock(workspaceRoot, () => createKnowledgeUnitUnlocked(workspaceRoot, input, options));
+}
+
+async function createKnowledgeUnitUnlocked(workspaceRoot: string, input: CreateKnowledgeUnitInput, options: KnowledgeMutationOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
   assertBoundedString(input.body, KNOWLEDGE_LIMITS.maximumBodyBytes, "body");
   const body = Buffer.from(input.body, "utf8");
   const workspace = await materializeWorkspace(workspaceRoot);
@@ -2131,7 +2194,11 @@ export async function captureKnowledgeUnit(
 // re-validation. Live records whose links no longer resolve block the rebase
 // unless retireInvalid retires them as tombstoned audit records (their dangling
 // backlinks are then durably tolerated). Single version step under a mutation claim.
-export async function rebaseKnowledgeStore(workspaceRoot: string, input: {
+export async function rebaseKnowledgeStore(...args: Parameters<typeof rebaseKnowledgeStoreUnlocked>): Promise<Readonly<Record<string, JsonValue>>> {
+  return withCrestWriteLock(args[0], () => rebaseKnowledgeStoreUnlocked(...args));
+}
+
+async function rebaseKnowledgeStoreUnlocked(workspaceRoot: string, input: {
   readonly at: string;
   readonly retireInvalid?: boolean;
 }, options: KnowledgeMutationOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
@@ -2502,7 +2569,11 @@ export async function checkKnowledgeSources(workspaceRoot: string, options: Know
   };
 }
 
-export async function transitionKnowledgePromotion(workspaceRoot: string, input: {
+export async function transitionKnowledgePromotion(...args: Parameters<typeof transitionKnowledgePromotionUnlocked>): Promise<Readonly<Record<string, JsonValue>>> {
+  return withCrestWriteLock(args[0], () => transitionKnowledgePromotionUnlocked(...args));
+}
+
+async function transitionKnowledgePromotionUnlocked(workspaceRoot: string, input: {
   readonly expectedRevision: number;
   readonly occurredAt: string;
   readonly id: string;
@@ -2670,7 +2741,11 @@ export async function retireKnowledgeSweep(workspaceRoot: string, input: { reado
 // WSC-5: retire a record — it becomes a tombstoned audit entry (lifecycle
 // "retired") that no longer occupies a live-record slot, and its dangling
 // backlinks are durably tolerated (WSC-2). One version step under the claim.
-export async function retireKnowledgeUnit(workspaceRoot: string, input: {
+export async function retireKnowledgeUnit(...args: Parameters<typeof retireKnowledgeUnitUnlocked>): Promise<Readonly<Record<string, JsonValue>>> {
+  return withCrestWriteLock(args[0], () => retireKnowledgeUnitUnlocked(...args));
+}
+
+async function retireKnowledgeUnitUnlocked(workspaceRoot: string, input: {
   readonly expectedRevision: number;
   readonly occurredAt: string;
   readonly id: string;
@@ -2746,7 +2821,11 @@ export async function retireKnowledgeUnit(workspaceRoot: string, input: {
 // WSC-5: re-verify a promoted record — touch lastVerified to the given instant and
 // restore a fresh posture, so promoted knowledge does not decay irreversibly out
 // of default selection. Admitted for promoted records only (OD-17).
-export async function reverifyKnowledgeUnit(workspaceRoot: string, input: {
+export async function reverifyKnowledgeUnit(...args: Parameters<typeof reverifyKnowledgeUnitUnlocked>): Promise<Readonly<Record<string, JsonValue>>> {
+  return withCrestWriteLock(args[0], () => reverifyKnowledgeUnitUnlocked(...args));
+}
+
+async function reverifyKnowledgeUnitUnlocked(workspaceRoot: string, input: {
   readonly expectedRevision: number;
   readonly occurredAt: string;
   readonly id: string;
@@ -2806,7 +2885,11 @@ export async function reverifyKnowledgeUnit(workspaceRoot: string, input: {
   }
 }
 
-export async function refreshKnowledgeArticle(
+export async function refreshKnowledgeArticle(...args: Parameters<typeof refreshKnowledgeArticleUnlocked>): Promise<Readonly<Record<string, JsonValue>>> {
+  return withCrestWriteLock(args[0], () => refreshKnowledgeArticleUnlocked(...args));
+}
+
+async function refreshKnowledgeArticleUnlocked(
   workspaceRoot: string,
   input: KnowledgeArticleRefreshInput,
   options: KnowledgeMutationOptions = {},
@@ -2917,7 +3000,11 @@ export async function refreshKnowledgeArticle(
 // A null maximum age also clears a stale state that was produced by the old
 // calendar policy; a later explicit source check or re-verification can mark the
 // record stale again when a current source actually warrants it.
-export async function updateKnowledgeStalenessPolicy(workspaceRoot: string, input: {
+export async function updateKnowledgeStalenessPolicy(...args: Parameters<typeof updateKnowledgeStalenessPolicyUnlocked>): Promise<Readonly<Record<string, JsonValue>>> {
+  return withCrestWriteLock(args[0], () => updateKnowledgeStalenessPolicyUnlocked(...args));
+}
+
+async function updateKnowledgeStalenessPolicyUnlocked(workspaceRoot: string, input: {
   readonly expectedRevision: number;
   readonly occurredAt: string;
   readonly id: string;

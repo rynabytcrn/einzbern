@@ -36,6 +36,7 @@ import {
   reverifyKnowledgeUnit,
   updateKnowledgeStalenessPolicy,
   transitionKnowledgePromotion,
+  withCrestWriteLock,
 } from "./knowledge-core.js";
 import type {
   CreateKnowledgeUnitInput,
@@ -136,7 +137,17 @@ function shapeProblems(members: readonly unknown[]): readonly KnowledgeBatchProb
   return problems;
 }
 
+// TCRN-CROSS-STORY-469 R3: the whole batch holds this machine's lock of the library, so no other
+// writer on the machine lands between its members (each member takes the same lock again).
 export async function applyKnowledgeBatch(
+  workspaceRoot: string,
+  document: unknown,
+  options: KnowledgeBatchOptions,
+): Promise<Readonly<Record<string, JsonValue>>> {
+  return withCrestWriteLock(workspaceRoot, () => applyKnowledgeBatchUnlocked(workspaceRoot, document, options));
+}
+
+async function applyKnowledgeBatchUnlocked(
   workspaceRoot: string,
   document: unknown,
   options: KnowledgeBatchOptions,

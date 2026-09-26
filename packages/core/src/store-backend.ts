@@ -22,6 +22,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import {
   lstat,
+  mkdir,
   open,
   readdir,
   realpath,
@@ -45,7 +46,7 @@ export interface StoreBackend {
   listKnowledgeBodies(): Promise<string[]>;
   readKnowledgeBody(id: string): Promise<Buffer>;
   writeKnowledgeBody(id: string, bytes: Buffer | string): Promise<void>;
-  // knowledge views (views/index.json)
+  // knowledge views (views/index.json, or the device cache's copy for a library)
   readKnowledgeView(): Promise<Buffer>;
   writeKnowledgeView(bytes: Buffer | string): Promise<void>;
   // artifact marker (store.json)
@@ -75,6 +76,15 @@ export interface StoreBackendObservationHooks {
   readonly beforeDescriptorReadForTest?: ((path: string) => Promise<void>) | undefined;
   readonly afterDescriptorOpenForTest?: ((path: string) => Promise<void>) | undefined;
   readonly afterDescriptorReadForTest?: ((path: string) => Promise<void>) | undefined;
+}
+
+/**
+ * TCRN-CROSS-STORY-469 R4: where a store keeps what it derives. A library's knowledge index
+ * view is this device's cache (the locator names the file, outside the store root); a store
+ * without a locator, or whose locator answers null, keeps views/index.json under its root.
+ */
+export interface StoreBackendPlacement {
+  readonly knowledgeViewFile?: () => Promise<string | null>;
 }
 
 export interface FileStoreBackendProfile {
@@ -115,10 +125,11 @@ export function resolveStoreBackend(
   storeRoot: string,
   profile: FileStoreBackendProfile,
   hooks: StoreBackendObservationHooks = {},
+  placement: StoreBackendPlacement = {},
 ): StoreBackend {
   const factory = storeBackendFactoryOverride.getStore();
   if (factory !== undefined) return factory();
-  return new SegmentedKnowledgeStoreBackend(new FileStoreBackend(storeRoot, profile, hooks));
+  return new SegmentedKnowledgeStoreBackend(new FileStoreBackend(storeRoot, profile, hooks, placement));
 }
 
 interface FileIdentity {
@@ -153,12 +164,14 @@ export class FileStoreBackend implements StoreBackend {
   private readonly codes: FileStoreBackendProfile["reasonCodes"];
   private readonly limits: FileStoreBackendProfile["limits"];
   private readonly hooks: StoreBackendObservationHooks;
+  private readonly placement: StoreBackendPlacement;
 
-  constructor(storeRoot: string, profile: FileStoreBackendProfile, hooks: StoreBackendObservationHooks = {}) {
+  constructor(storeRoot: string, profile: FileStoreBackendProfile, hooks: StoreBackendObservationHooks = {}, placement: StoreBackendPlacement = {}) {
     this.storeRoot = storeRoot;
     this.codes = profile.reasonCodes;
     this.limits = profile.limits;
     this.hooks = hooks;
+    this.placement = placement;
   }
 
   // ---- knowledge ----
@@ -230,11 +243,24 @@ export class FileStoreBackend implements StoreBackend {
   }
 
   async readKnowledgeView(): Promise<Buffer> {
-    return (await this.readBoundRegularFile(this.path("views/index.json"), this.limits.viewBytes)).bytes;
+    const cached = await this.placement.knowledgeViewFile?.() ?? null;
+    return (await this.readBoundRegularFile(cached ?? this.path("views/index.json"), this.limits.viewBytes)).bytes;
   }
 
   async writeKnowledgeView(bytes: Buffer | string): Promise<void> {
-    await this.writeAtomic(this.path("views/index.json"), bytes);
+    const cached = await this.placement.knowledgeViewFile?.() ?? null;
+    if (cached === null) {
+      await this.writeAtomic(this.path("views/index.json"), bytes);
+      return;
+    }
+    // The device cache's copy is derived state: a write that fails leaves it to the next read,
+    // which projects it again, and never fails the store write that produced it.
+    try {
+      await mkdir(dirname(cached), { recursive: true });
+      await this.writeAtomic(cached, bytes);
+    } catch {
+      // Left for the next read to rebuild.
+    }
   }
 
   // ---- artifact ----

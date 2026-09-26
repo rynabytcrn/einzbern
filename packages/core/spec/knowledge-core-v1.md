@@ -1,17 +1,24 @@
 # File-Native Knowledge Core V1
 
 P4 Knowledge Core is an offline, metadata-first store layered beside the P3
-Workspace authority. Initialization is clean and empty. It admits fixture
-Workspaces (external key prefixed `FIXTURE-`) implicitly, and any other Workspace
-only under an explicit per-invocation disposability acknowledgment; without it
-initialization fails closed. The store remains a disposable derived index that is
+Workspace authority. Initialization is clean and empty, and it always takes an
+explicit per-invocation disposability acknowledgment; without it initialization
+fails closed (a library has no workspace key to carry the `FIXTURE-` prefix that
+old-layout fixtures were once admitted by). The store remains a disposable derived index that is
 never the system of record. Initialization never searches, imports, migrates,
 infers, or consults any predecessor knowledge or workflow source.
 
 ## Storage and authority
 
-The store is `knowledge/` inside the workspace control directory with closed `store.json`, `metadata/`,
-`bodies/`, and `views/index.json` entries. Metadata is the index authority.
+The store is a library's `crest/` directory (TCRN-CROSS-STORY-469 R1, 466 R1) with closed
+`store.json`, `metadata/` and `bodies/` entries; initializing it adds nothing to the library
+root, which keeps its seven entries. Metadata is the index authority. The index view,
+`index.json`, is derived, so it is this device's cache, `cache/<library>/crest-views/` in the
+device directory (469 R4): a read that finds it missing or out of date projects it again
+instead of failing, and another device reading the same store projects its own. An
+old-layout workspace's store (`knowledge/` in its control directory, with a
+`views/index.json` entry) opens read-only; every write refuses with
+`LEGACY_WORKSPACE_READ_ONLY`.
 Bodies are separate single-link regular files and never appear in metadata
 views, default selection, or checkpoints. Metadata listing, snippet, freshness,
 and checkpoint surfaces enumerate the closed body-name set but never open or
@@ -19,8 +26,13 @@ read body files. Full validation and mutations validate all body bindings;
 explicit body read validates only the requested body through its bound
 descriptor.
 
-The store marker binds the exact Workspace ID and event high-water digest. All
-mutations require an exclusive no-follow claim and exact store-version CAS.
+The store marker binds the exact Workspace ID and event high-water digest. In a library they
+are the library id and the library head, one digest over every stream's head, so the binding
+moves with any entry of the version vector, whichever device wrote it. Every write runs under
+this machine's lock of the library (`locks/<library>.lock` in the device directory, the lock
+every chain write takes), and inside it all mutations require an exclusive no-follow claim and
+exact store-version CAS. The lock serialises one machine's writers; nothing makes two devices'
+concurrent crest writes safe against each other.
 Promotion additionally requires record-revision CAS. Descriptor-bound reads
 bind device, inode, size, mode, and nanosecond change metadata. Atomic
 replacement uses exclusive no-follow temporary files. Link, special-file,

@@ -7,14 +7,14 @@
 
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { readFile, realpath, writeFile } from "node:fs/promises";
 import { createHash, randomBytes } from "node:crypto";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { LOCALE_CONTRACT } from "./locale-contract.mjs";
-import { LEGACY_CONTROL_DIRECTORY } from "../scripts/lib/names.mjs";
+import { LEGACY_CONTAINER_DIRECTORY } from "../scripts/lib/names.mjs";
 
 const execFileAsync = promisify(execFile);
 const portalRoot = dirname(fileURLToPath(import.meta.url));
@@ -45,107 +45,15 @@ function failStartup(error) {
   process.exit(2);
 }
 
-const workspaceArgument = argument("workspace", process.env.TCRN_PORTAL_WORKSPACE ?? "");
-const containerArgument = argument("container", process.env.TCRN_PORTAL_CONTAINER ?? "");
-const workspace = workspaceArgument ? resolve(workspaceArgument) : "";
-const containerRoot = containerArgument ? resolve(containerArgument) : "";
-const proseRootArgument = argument("prose-root", process.env.TCRN_PORTAL_PROSE_ROOT ?? "");
+// TCRN-CROSS-STORY-482 R3, AC1: Atelier opens the libraries this device has registered, read
+// through library-list (the device directory's registry.json), and switches among them. It
+// starts on the library --library names (its path or id, or its registered project); without
+// one, on the library library-resolve finds from the directory the portal was started in; then
+// on the portal.defaultPartition machine preference when it names a registered library; and
+// otherwise on the first registered library. There is no container or partition any more: a
+// library outside the registry is not something Atelier opens.
+const libraryArgument = argument("library", process.env.TCRN_PORTAL_LIBRARY ?? "");
 const portArgument = argument("port", process.env.TCRN_PORTAL_PORT ?? "");
-const requestedPartition = argument("partition", process.env.TCRN_PORTAL_PARTITION ?? "");
-
-if (workspace && containerRoot) failStartup(startupError("PORTAL_TARGET_AMBIGUOUS", {}, "choose exactly one target"));
-if (!workspace && !containerRoot) {
-  failStartup(startupError("PORTAL_TARGET_REQUIRED", {}, "use --workspace or --container"));
-}
-
-async function discoverPartitions(root) {
-  let rootInfo;
-  try { rootInfo = await stat(root); } catch {
-    throw startupError("PORTAL_CONTAINER_UNAVAILABLE", { container: root }, `container does not exist: ${root}`);
-  }
-  if (!rootInfo.isDirectory()) throw startupError("PORTAL_CONTAINER_UNAVAILABLE", { container: root }, "container is not a directory");
-  const partitions = [];
-  for (const entry of await readdir(root, { withFileTypes: true })) {
-    if (!entry.isDirectory() || entry.name.startsWith(".")) continue;
-    const partitionRoot = join(root, entry.name);
-    const partitionWorkspace = join(partitionRoot, "workspace");
-    try {
-      if (!(await stat(partitionWorkspace)).isDirectory()) continue;
-      partitions.push({ id: entry.name, workspace: partitionWorkspace });
-    } catch { /* non-partition directories are ignored */ }
-  }
-  if (partitions.length === 0) throw startupError("PORTAL_CONTAINER_EMPTY", { container: root });
-  return partitions.sort((left, right) => left.id.localeCompare(right.id));
-}
-
-let partitionCatalog;
-try {
-  partitionCatalog = containerRoot
-    ? await discoverPartitions(containerRoot)
-    : [{ id: "workspace", workspace }];
-} catch (error) { failStartup(error); }
-
-if (requestedPartition && !partitionCatalog.some((entry) => entry.id === requestedPartition)) {
-  failStartup(startupError("PORTAL_PARTITION_UNKNOWN", {
-    requestedPartition,
-    partitions: partitionCatalog.map(({ id }) => id),
-  }));
-}
-
-const partitionMode = Boolean(containerRoot);
-let selectedPartitionId = requestedPartition || partitionCatalog[0].id;
-const currentPartition = () => partitionCatalog.find((entry) => entry.id === selectedPartitionId) ?? partitionCatalog[0];
-
-// INC-203: the catalog above is a snapshot of the container at boot. A partition
-// admitted afterwards stayed invisible here until someone happened to restart the
-// portal, with nothing on screen to suggest the list was stale — the switcher is the
-// portal's whole answer to "which partitions exist", so it has to answer from the
-// container rather than from a memory of it. A readdir per read is nothing on a
-// loopback tool. A failed rescan keeps the last good catalog: a transient filesystem
-// error should not empty the switcher.
-async function refreshPartitionCatalog() {
-  if (!containerRoot) return partitionCatalog;
-  try {
-    partitionCatalog = await discoverPartitions(containerRoot);
-  } catch { /* keep the last good catalog */ }
-  return partitionCatalog;
-}
-// STORY-355: the old default resolved into the selected partition's own directory
-// inside the chain container, so every partition's Rules page silently read an
-// empty file instead of the real AGENTS.md. Prose is not partitioned: it is one
-// document living above the chain container. The default is therefore derived to
-// land outside the container by construction -- walking up past the
-// .tcrn-workspace segment when the target sits inside one -- and the refusal below
-// only ever fires on a --prose-root someone chose explicitly. Refusing the derived
-// default instead would make --workspace mode unbootable against every governed
-// partition, which is worse than the bug being fixed.
-const CHAIN_CONTAINER_DIRECTORY = [".tcrn", "workspace"].join("-");
-
-function defaultProseRoot() {
-  const base = containerRoot ? containerRoot : currentPartition().workspace;
-  const segments = resolve(base).split(sep);
-  const index = segments.indexOf(CHAIN_CONTAINER_DIRECTORY);
-  // Above the container when the target is inside one; the target's parent otherwise.
-  return index === -1 ? dirname(resolve(base)) : segments.slice(0, index).join(sep) || sep;
-}
-
-const currentProseRoot = () => {
-  if (!proseRootArgument) return defaultProseRoot();
-  const root = resolve(proseRootArgument);
-  if (root.split(sep).includes(CHAIN_CONTAINER_DIRECTORY)) {
-    throw startupError("PORTAL_PROSE_ROOT_UNSAFE", { proseRoot: root }, "prose root must not resolve inside a chain container");
-  }
-  return root;
-};
-// Fail at boot rather than on the first Rules read.
-try { currentProseRoot(); } catch (error) { failStartup(error); }
-async function currentWorkspaceName() {
-  try {
-    const metadata = JSON.parse(await readFile(join(currentPartition().workspace, LEGACY_CONTROL_DIRECTORY, "workspace.json"), "utf8"));
-    if (typeof metadata.externalKey === "string" && metadata.externalKey.length > 0) return metadata.externalKey;
-  } catch { /* legacy or incomplete workspace metadata falls back to the partition id */ }
-  return currentPartition().id;
-}
 const TOKEN = randomBytes(24).toString("hex");
 let lastWriteAt = 0;
 
@@ -180,7 +88,96 @@ async function cliResult(args) {
   }
 }
 
-const settingsCatalog = () => cli(["settings-catalog", "--workspace", currentPartition().workspace]);
+const publicLibrary = ({ projectPath, libraryId, libraryPath }) => ({ projectPath, libraryId, libraryPath });
+
+// The registry's own order (by project path). A registry entry is keyed by its project: two
+// projects may share one library, and the Rules page belongs to the project.
+async function readLibraryCatalog() {
+  const result = await cliResult(["library-list"]);
+  if (!result.ok || !Array.isArray(result.body?.entries)) {
+    throw startupError(result.body?.reasonCode ?? "PORTAL_LIBRARY_LIST_FAILED", {}, result.body?.error ?? "library-list failed");
+  }
+  return result.body.entries
+    .filter((entry) => typeof entry?.projectPath === "string" && typeof entry?.libraryPath === "string" && typeof entry?.libraryId === "string")
+    .map(publicLibrary);
+}
+
+let libraryCatalog;
+try { libraryCatalog = await readLibraryCatalog(); } catch (error) { failStartup(error); }
+if (libraryCatalog.length === 0) {
+  failStartup(startupError("PORTAL_LIBRARY_REGISTRY_EMPTY", { remedy: "library-register" }, "this device has no registered library; register one with library-register"));
+}
+
+// INC-203: the switcher is the portal's whole answer to "which libraries exist", so it asks the
+// registry on every read rather than remembering the one it saw at boot. A read that fails, or
+// that lists nothing, keeps the last good catalog: a transient error must not empty the switcher
+// of the library the page is showing.
+async function refreshLibraryCatalog() {
+  try {
+    const next = await readLibraryCatalog();
+    if (next.length > 0) libraryCatalog = next;
+  } catch { /* keep the last good catalog */ }
+  return libraryCatalog;
+}
+
+// A library's id, its path, or its registered project's path. Paths are compared as the registry
+// stores them, real; an id shared by two projects names the first of them.
+async function matchLibrary(catalog, value) {
+  const text = String(value ?? "");
+  if (text === "") return null;
+  const byId = catalog.find((entry) => entry.libraryId === text);
+  if (byId) return byId;
+  let path = resolve(text);
+  try { path = await realpath(path); } catch { /* an absent path matches nothing below */ }
+  return catalog.find((entry) => entry.libraryPath === path) ?? catalog.find((entry) => entry.projectPath === path) ?? null;
+}
+
+// STORY-355 carried over: AGENTS.md is the project's prose and never a file inside a library or
+// an old chain container, which only the engine writes. A registry entry whose project sits
+// inside its own library (or inside an old container) is refused rather than edited.
+function proseRootFor(library) {
+  const root = resolve(library.projectPath);
+  const inside = relative(resolve(library.libraryPath), root);
+  if (inside === "" || (!inside.startsWith("..") && !isAbsolute(inside)) || root.split(sep).includes(LEGACY_CONTAINER_DIRECTORY)) {
+    throw startupError("PORTAL_PROSE_ROOT_UNSAFE", { proseRoot: root, library: library.libraryPath }, "the project's AGENTS.md must not resolve inside a library or an old chain container");
+  }
+  return root;
+}
+
+async function initialLibrary() {
+  if (libraryArgument) {
+    const named = await matchLibrary(libraryCatalog, libraryArgument);
+    if (!named) {
+      throw startupError("PORTAL_LIBRARY_UNKNOWN", {
+        requestedLibrary: libraryArgument,
+        libraries: libraryCatalog.map(({ libraryPath }) => libraryPath),
+      }, "--library names no library this device has registered");
+    }
+    return { library: named, selectedBy: "argument" };
+  }
+  const resolved = await cliResult(["library-resolve", "--cwd", process.cwd()]);
+  const found = resolved.ok ? libraryCatalog.find((entry) => entry.projectPath === resolved.body?.projectPath) : undefined;
+  if (found) return { library: found, selectedBy: "working-directory" };
+  const preferred = await matchLibrary(libraryCatalog, await machineValue("portal.defaultPartition"));
+  if (preferred) return { library: preferred, selectedBy: "machine-default" };
+  return { library: libraryCatalog[0], selectedBy: "first-registered" };
+}
+
+let selectedLibrary;
+let selectedBy;
+try {
+  ({ library: selectedLibrary, selectedBy } = await initialLibrary());
+  // Fail at boot rather than on the first Rules read.
+  proseRootFor(selectedLibrary);
+} catch (error) { failStartup(error); }
+
+const currentLibrary = () => selectedLibrary;
+const currentProseRoot = () => proseRootFor(currentLibrary());
+// The rail's name for a library is its project's folder name; the id and the path are shown
+// beside it.
+const libraryName = (library) => basename(library.projectPath) || library.libraryId;
+
+const settingsCatalog = () => cli(["settings-catalog", "--workspace", currentLibrary().libraryPath]);
 const vocabulary = () => cli(["vocabulary"]);
 const commands = () => cli(["commands"]);
 
@@ -189,18 +186,18 @@ function readInstant() {
 }
 
 async function workProjection() {
-  const selected = currentPartition();
-  const result = await cliResult(["work-list", "--workspace", selected.workspace, "--limit", "4096"]);
+  const selected = currentLibrary();
+  const result = await cliResult(["work-list", "--workspace", selected.libraryPath, "--limit", "4096"]);
   if (!result.ok) return { ok: false, reasonCode: "PORTAL_WORK_READ_FAILED", source: result.body, records: [], total: 0 };
   return { ok: true, reasonCode: "PORTAL_WORK_READY", workspaceId: result.body.workspaceId ?? null, version: result.body.version ?? null, headEventHash: result.body.headEventHash ?? null, total: result.body.total ?? result.body.records?.length ?? 0, records: result.body.records ?? [] };
 }
 
 async function knowledgeProjection() {
-  const selected = currentPartition();
+  const selected = currentLibrary();
   const at = readInstant();
   // TCRN-CROSS-MIN-225 (TCRN-CROSS-SUB-259): the knowledge view never read the retire-proposals
   // answer fetched beside the list, so that call, a full telemetry read on every load, is gone.
-  const listing = await cliResult(["knowledge-list", "--workspace", selected.workspace, "--at", at, "--selection", "all", "--allow-trailing", "true"]);
+  const listing = await cliResult(["knowledge-list", "--workspace", selected.libraryPath, "--at", at, "--selection", "all", "--allow-trailing", "true"]);
   return {
     ok: listing.ok,
     reasonCode: listing.ok ? "PORTAL_KNOWLEDGE_READY" : "PORTAL_KNOWLEDGE_PARTIAL",
@@ -212,10 +209,10 @@ async function knowledgeProjection() {
 }
 
 async function knowledgeBody(id) {
-  const selected = currentPartition();
+  const selected = currentLibrary();
   const result = await cliResult([
     "knowledge-body",
-    "--workspace", selected.workspace,
+    "--workspace", selected.libraryPath,
     "--id", String(id ?? ""),
     "--at", readInstant(),
   ]);
@@ -235,11 +232,11 @@ function nextOccurredAt() {
 }
 
 async function governedWrite(build) {
-  const selected = currentPartition();
+  const selected = currentLibrary();
   const occurredAt = nextOccurredAt();
   try {
     if (!ACTOR) throw new Error("TCRN_PORTAL_ACTOR must be a non-empty actor id");
-    const common = ["--workspace", selected.workspace, "--at", occurredAt, "--actor", ACTOR];
+    const common = ["--workspace", selected.libraryPath, "--at", occurredAt, "--actor", ACTOR];
     return await cliResult(build(common));
   } catch (error) {
     return { ok: false, body: { ok: false, reasonCode: "PORTAL_CLI_UNAVAILABLE", error: String(error?.message ?? error) } };
@@ -357,21 +354,19 @@ const server = createServer(async (request, response) => {
   try {
     if (request.method === "GET" && (pathname === "/" || pathname === "/index.html")) {
       const html = await readFile(join(portalRoot, "index.html"), "utf8");
+      const library = currentLibrary();
       const boot = JSON.stringify({
         token: TOKEN,
-        workspace: currentPartition().workspace,
-        workspaceName: await currentWorkspaceName(),
-        container: containerRoot || null,
-        partitionMode,
-        partitions: (await refreshPartitionCatalog()).map(({ id }) => ({ id })),
-        selectedPartition: selectedPartitionId,
+        workspace: library.libraryPath,
+        library: publicLibrary(library),
+        libraryName: libraryName(library),
+        libraries: (await refreshLibraryCatalog()).map(publicLibrary),
         proseRoot: currentProseRoot(),
         actor: ACTOR,
         proseFiles: PROSE_FILES,
         machineDefaults: {
           locale: await machineValue("portal.defaultLocale"),
           theme: await machineValue("portal.defaultTheme"),
-          partition: await machineValue("portal.defaultPartition"),
         },
         ...LOCALE_CONTRACT,
       });
@@ -434,11 +429,11 @@ const server = createServer(async (request, response) => {
       return;
     }
     if (request.method === "GET" && pathname === "/api/status") {
-      const selected = currentPartition();
+      const selected = currentLibrary();
       const [status, validation, catalog] = await Promise.all([
-        cliResult(["status", "--workspace", selected.workspace]),
-        cliResult(["validate", "--workspace", selected.workspace]),
-        cliResult(["settings-catalog", "--workspace", selected.workspace]),
+        cliResult(["status", "--workspace", selected.libraryPath]),
+        cliResult(["validate", "--workspace", selected.libraryPath]),
+        cliResult(["settings-catalog", "--workspace", selected.libraryPath]),
       ]);
       const checks = [
         { key: "validate", ok: validation.ok, reasonCode: validation.body?.reasonCode ?? "PORTAL_VALIDATE_FAILED" },
@@ -446,7 +441,7 @@ const server = createServer(async (request, response) => {
         { key: "actor", ok: ACTOR.length > 0, reasonCode: ACTOR.length > 0 ? "PORTAL_ACTOR_CONFIGURED" : "PORTAL_ACTOR_MISSING" },
       ];
       let events = null;
-      try { events = await cli(["event-list", "--workspace", selected.workspace, "--limit", "1"]); } catch { /* health remains legible */ }
+      try { events = await cli(["event-list", "--workspace", selected.libraryPath, "--limit", "1"]); } catch { /* health remains legible */ }
       const body = status.body ?? {};
       send(response, 200, {
         ok: checks.every((check) => check.ok) && status.ok,
@@ -460,17 +455,25 @@ const server = createServer(async (request, response) => {
       });
       return;
     }
-    if (request.method === "GET" && pathname === "/api/partitions") {
-      send(response, 200, { ok: true, reasonCode: "PORTAL_PARTITIONS_READY", mode: partitionMode ? "container" : "workspace", partitions: (await refreshPartitionCatalog()).map(({ id }) => ({ id })), selectedPartition: selectedPartitionId });
+    if (request.method === "GET" && pathname === "/api/libraries") {
+      const libraries = await refreshLibraryCatalog();
+      send(response, 200, { ok: true, reasonCode: "PORTAL_LIBRARIES_READY", libraries: libraries.map(publicLibrary), selected: publicLibrary(currentLibrary()) });
       return;
     }
-    if (request.method === "POST" && pathname === "/api/partition") {
+    // The switch reads the registry afresh, so a library registered after boot can be chosen and
+    // one no longer registered cannot. Every later read and write goes to the chosen library.
+    if (request.method === "POST" && pathname === "/api/library") {
       const body = await readJsonBody(request);
-      const next = String(body.partition ?? body.id ?? "");
-      const selected = partitionCatalog.find((entry) => entry.id === next);
-      if (!selected) { send(response, 404, { ok: false, reasonCode: "PORTAL_PARTITION_UNKNOWN", requestedPartition: next }); return; }
-      selectedPartitionId = selected.id;
-      send(response, 200, { ok: true, reasonCode: "PORTAL_PARTITION_SELECTED", selectedPartition: selected.id, workspace: selected.workspace, workspaceName: await currentWorkspaceName(), proseRoot: currentProseRoot() });
+      const requested = String(body.library ?? body.projectPath ?? "");
+      const next = await matchLibrary(await refreshLibraryCatalog(), requested);
+      if (!next) { send(response, 404, { ok: false, reasonCode: "PORTAL_LIBRARY_UNKNOWN", requestedLibrary: requested }); return; }
+      let proseRoot;
+      try { proseRoot = proseRootFor(next); } catch (error) {
+        send(response, 409, { ok: false, reasonCode: error.reasonCode, ...error.detail });
+        return;
+      }
+      selectedLibrary = next;
+      send(response, 200, { ok: true, reasonCode: "PORTAL_LIBRARY_SELECTED", library: publicLibrary(next), workspace: next.libraryPath, libraryName: libraryName(next), proseRoot });
       return;
     }
     if (request.method === "POST" && pathname === "/api/settings") {
@@ -521,10 +524,10 @@ server.listen(port, "127.0.0.1", () => {
   process.stdout.write(`${JSON.stringify({
     reasonCode: "PORTAL_LISTENING",
     url: `http://127.0.0.1:${bound}/`,
-    workspace: currentPartition().workspace,
-    container: containerRoot || null,
-    partitionMode,
-    selectedPartition: selectedPartitionId,
+    workspace: currentLibrary().libraryPath,
+    library: publicLibrary(currentLibrary()),
+    selectedBy,
+    libraries: libraryCatalog.length,
     proseRoot: currentProseRoot(),
     actor: ACTOR,
     cli: CLI,

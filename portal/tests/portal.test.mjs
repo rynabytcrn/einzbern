@@ -7,7 +7,7 @@ import { execFile, spawn } from "node:child_process";
 import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import assert from "node:assert/strict";
@@ -30,8 +30,8 @@ const RETIRED_ROUTES = Object.freeze({
   hostProbe: ["", "api", ["host", "probe"].join("-")].join("/"),
 });
 
-async function cli(args) {
-  const { stdout } = await execFileAsync(process.execPath, [CLI, ...args], { encoding: "utf8", maxBuffer: 32e6 });
+async function cli(args, env = {}) {
+  const { stdout } = await execFileAsync(process.execPath, [CLI, ...args], { encoding: "utf8", maxBuffer: 32e6, env: { ...process.env, ...env } });
   return JSON.parse(stdout);
 }
 
@@ -43,39 +43,61 @@ async function scratchHome(base) {
   return home;
 }
 
-// TCRN-CROSS-STORY-469: the fixture is a library; its key names the project it holds.
+// TCRN-CROSS-STORY-482 R3: Atelier opens the libraries a device has registered, so a fixture is a
+// device of its own (an EINZBERN_HOME inside it, removed with it; every CLI and portal child of the
+// fixture runs as that device) whose registry holds two libraries: the fixture's library, kept in
+// its project, and a second library kept outside its project. The portal starts on the first.
+async function registeredLibrary(deviceEnv, project, library, externalKey, at) {
+  await mkdir(project, { recursive: true });
+  await cli(["init", "--workspace", library, "--project-name", externalKey, "--at", at], deviceEnv);
+  await cli(["library-register", "--project", project, "--library", library, "--at", at], deviceEnv);
+}
+
 async function scratch(prefix, externalKey) {
   const base = await realpath(await mkdtemp(join(tmpdir(), prefix)));
   const home = await scratchHome(base);
-  const workspace = join(base, "workspace");
-  await cli(["init", "--workspace", workspace, "--project-name", externalKey, "--at", "2026-08-11T15:00:00Z"]);
-  const proseRoot = join(base, "prose");
-  await mkdir(proseRoot);
-  return { base, workspace, proseRoot, home };
+  const deviceEnv = { EINZBERN_HOME: join(base, "device", "einzbern") };
+  const proseRoot = join(base, "project");
+  const workspace = join(proseRoot, ".ether");
+  await registeredLibrary(deviceEnv, proseRoot, workspace, externalKey, "2026-08-11T15:00:00Z");
+  const second = { project: join(base, "second-project"), library: join(base, "second-library") };
+  await registeredLibrary(deviceEnv, second.project, second.library, `${externalKey}-SECOND`, "2026-08-11T15:00:01Z");
+  return { base, workspace, proseRoot, home, deviceEnv, second };
 }
 
-async function startPortal({ workspace, container, proseRoot, home, env = {} }) {
+// `library` names the library to open first; null starts the portal without --library, so it
+// chooses from the registry by its working directory (`cwd`).
+async function startPortal({ workspace, home, deviceEnv = {}, env = {}, library = workspace, cwd }) {
   assert.ok(home, "every portal child needs a scratch HOME inside its fixture (TCRN-CROSS-INC-386)");
   const args = [join(portalRoot, "portal.mjs")];
-  if (container) args.push("--container", container);
-  else args.push("--workspace", workspace);
-  if (proseRoot) args.push("--prose-root", proseRoot);
+  if (library !== null) args.push("--library", library);
   args.push("--port", "0");
   const child = spawn(process.execPath, args, {
-    env: { ...process.env, TCRN_WORKFLOW_CLI: CLI, ...env, HOME: home },
+    env: { ...process.env, TCRN_WORKFLOW_CLI: CLI, ...deviceEnv, ...env, HOME: home },
+    ...(cwd === undefined ? {} : { cwd }),
     stdio: ["ignore", "pipe", "pipe"],
   });
-  const url = await new Promise((resolve, reject) => {
+  const listening = await new Promise((resolve, reject) => {
     let buffer = "";
     const timer = setTimeout(() => reject(new Error(`portal did not start: ${buffer}`)), 15000);
     child.stdout.on("data", (chunk) => {
       buffer += chunk;
       const line = buffer.split("\n").find((entry) => entry.includes("PORTAL_LISTENING"));
-      if (line) { clearTimeout(timer); resolve(JSON.parse(line).url); }
+      if (line) { clearTimeout(timer); resolve(JSON.parse(line)); }
     });
     child.on("exit", (code) => { clearTimeout(timer); reject(new Error(`portal exited ${code}: ${buffer}`)); });
   });
-  return { child, url };
+  return { child, url: listening.url, listening };
+}
+
+// A portal that refuses to start answers on stderr with one JSON line and exits 2.
+async function startupRefusal(args, env, cwd) {
+  return new Promise((resolveSpawn) => {
+    const child = spawn(process.execPath, [join(portalRoot, "portal.mjs"), ...args, "--port", "0"], { env: { ...process.env, TCRN_WORKFLOW_CLI: CLI, ...env }, ...(cwd === undefined ? {} : { cwd }), stdio: ["ignore", "pipe", "pipe"] });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.on("exit", (code) => resolveSpawn({ status: code, report: JSON.parse(stderr.trim().split("\n").at(-1) || "{}") }));
+  });
 }
 
 async function readBoot(url) {
@@ -115,7 +137,10 @@ test("portal boots from the live engine and exposes the new read surfaces", asyn
   const { child, url } = await startPortal(fixture);
   t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
   const { page, boot } = await readBoot(url);
-  assert.equal(boot.partitionMode, false);
+  assert.equal(boot.workspace, fixture.workspace);
+  assert.equal(boot.library.libraryPath, fixture.workspace);
+  assert.equal(boot.libraries.length, 2);
+  for (const retired of ["partitionMode", "partitions", "selectedPartition", "container"]) assert.equal(Object.hasOwn(boot, retired), false, retired);
   assert.match(page, /data-page="dashboard"/u);
   assert.match(page, /data-page="vocabulary"/u);
 
@@ -244,9 +269,9 @@ test("portal writes carry the actor under the engine's write lock, then return t
 // the native CLI/data contract tested by this same integration case.
 test("STORY-366: the article endpoint is refused while the native article stays readable through the knowledge index", async (t) => {
   const fixture = await scratch("tcrn-portal-article-", "TCRN-PORTAL-ARTICLE");
-  await cli(["project-create", "--workspace", fixture.workspace, "--at", "2026-08-11T15:00:01Z", "--external-key", "PORTAL-ARTICLE-PROJECT", "--name", "Articles"]);
-  await cli(["knowledge-init", "--workspace", fixture.workspace, "--acknowledge-disposable", "true"]);
-  const native = await cli(["knowledge-article-create", "--workspace", fixture.workspace, "--at", "2026-08-11T15:00:01Z", "--path", "portal-article.md", "--category", "architecture", "--title", "Agent article", "--summary", "Agent article summary", "--content", "Agent article body", "--accountable-owner-id", "owner:portal", "--evidence-ids", "evidence:portal-article"]);
+  await cli(["project-create", "--workspace", fixture.workspace, "--at", "2026-08-11T15:00:01Z", "--external-key", "PORTAL-ARTICLE-PROJECT", "--name", "Articles"], fixture.deviceEnv);
+  await cli(["knowledge-init", "--workspace", fixture.workspace, "--acknowledge-disposable", "true"], fixture.deviceEnv);
+  const native = await cli(["knowledge-article-create", "--workspace", fixture.workspace, "--at", "2026-08-11T15:00:01Z", "--path", "portal-article.md", "--category", "architecture", "--title", "Agent article", "--summary", "Agent article summary", "--content", "Agent article body", "--accountable-owner-id", "owner:portal", "--evidence-ids", "evidence:portal-article"], fixture.deviceEnv);
   assert.equal(native.reasonCode, "KNOWLEDGE_ARTICLE_CREATED");
   assert.equal(await readFile(native.path, "utf8").then((text) => text.includes("Agent article body")), true);
   const { child, url } = await startPortal(fixture);
@@ -326,26 +351,60 @@ test("AGENTS.md read/write is allow-listed and reconciliation reports line-level
   assert.equal(escapedWrite.body.reasonCode, "PORTAL_PATH_ESCAPE");
 });
 
-test("container mode lists partitions and changes the selected live target", async (t) => {
-  const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-portal-container-")));
-  const container = join(base, ".tcrn-workspace");
-  await mkdir(container);
-  const partitions = [];
-  for (const id of ["alpha", "beta"]) {
-    const root = join(container, id);
-    await mkdir(root);
-    const roots = { workspace: join(root, "workspace") };
-    await cli(["init", "--workspace", roots.workspace, "--project-name", `TCRN-PORTAL-${id}`, "--at", "2026-08-11T15:00:00Z"]);
-    partitions.push({ id, workspace: roots.workspace });
-  }
-  const { child, url } = await startPortal({ container, home: await scratchHome(base) });
-  t.after(async () => { child.kill(); await rm(base, { recursive: true, force: true }); });
+// TCRN-CROSS-STORY-482 R3, AC1: the registry's two libraries are listed and can be switched, and
+// each one answers with its own status. The second library carries one event of its own, so the
+// two statuses differ in more than their ids.
+test("STORY-482 AC1: the registry's two libraries can be switched, and each answers with its own status", async (t) => {
+  const fixture = await scratch("tcrn-portal-libraries-", "TCRN-PORTAL-LIBRARIES");
+  await cli(["settings-set", "--workspace", fixture.second.library, "--at", "2026-08-11T15:01:00Z", "--actor", "agent:test", "--key", "artifact.language", "--value", "zh-CN"], fixture.deviceEnv);
+  const first = await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv);
+  const second = await cli(["status", "--workspace", fixture.second.library], fixture.deviceEnv);
+  const { child, url, listening } = await startPortal(fixture);
+  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
+  assert.equal(listening.selectedBy, "argument");
   const { boot } = await readBoot(url);
-  const partitionRead = await request(url, "/api/partitions", readOptions(boot.token));
-  assert.deepEqual(partitionRead.body.partitions.map((entry) => entry.id), ["alpha", "beta"]);
-  const selected = await request(url, "/api/partition", writeOptions(boot.token, "POST", { partition: "beta" }));
-  assert.equal(selected.body.reasonCode, "PORTAL_PARTITION_SELECTED");
-  assert.equal(selected.body.selectedPartition, "beta");
+  const listed = await request(url, "/api/libraries", readOptions(boot.token));
+  assert.equal(listed.body.reasonCode, "PORTAL_LIBRARIES_READY");
+  assert.deepEqual(listed.body.libraries, [
+    { projectPath: fixture.proseRoot, libraryId: first.workspaceId, libraryPath: fixture.workspace },
+    { projectPath: fixture.second.project, libraryId: second.workspaceId, libraryPath: fixture.second.library },
+  ]);
+  assert.deepEqual(listed.body.selected, listed.body.libraries[0]);
+  assert.deepEqual(boot.libraries, listed.body.libraries);
+
+  const statusNow = async () => (await request(url, "/api/status", readOptions(boot.token))).body;
+  const languageNow = async () => (await request(url, "/api/settings", readOptions(boot.token))).body.settings.find((entry) => entry.key === "artifact.language").currentValue;
+  let status = await statusNow();
+  assert.deepEqual([status.ok, status.workspaceId, status.version], [true, first.workspaceId, 0]);
+  assert.equal(await languageNow(), "en");
+
+  const switched = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: fixture.second.project }));
+  assert.equal(switched.response.status, 200);
+  assert.equal(switched.body.reasonCode, "PORTAL_LIBRARY_SELECTED");
+  assert.deepEqual(switched.body.library, listed.body.libraries[1]);
+  assert.equal(switched.body.workspace, fixture.second.library);
+  assert.equal(switched.body.proseRoot, fixture.second.project);
+  status = await statusNow();
+  assert.deepEqual([status.ok, status.workspaceId, status.version], [true, second.workspaceId, 1]);
+  assert.equal(await languageNow(), "zh-CN");
+  assert.deepEqual((await request(url, "/api/libraries", readOptions(boot.token))).body.selected, listed.body.libraries[1]);
+
+  // A library is named by its id too; the switch back reads the first library again.
+  const back = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: first.workspaceId }));
+  assert.equal(back.body.reasonCode, "PORTAL_LIBRARY_SELECTED");
+  status = await statusNow();
+  assert.deepEqual([status.workspaceId, status.version], [first.workspaceId, 0]);
+
+  const unknown = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: join(fixture.base, "not-a-library") }));
+  assert.equal(unknown.response.status, 404);
+  assert.equal(unknown.body.reasonCode, "PORTAL_LIBRARY_UNKNOWN");
+  assert.equal((await statusNow()).workspaceId, first.workspaceId, "a refused switch leaves the selection alone");
+  // The partition catalog and its switch are gone with the container.
+  for (const path of ["/api/partitions", "/api/partition"]) {
+    const retired = await request(url, path, readOptions(boot.token));
+    assert.equal(retired.response.status, 404, path);
+    assert.equal(retired.body.reasonCode, "PORTAL_ROUTE_UNKNOWN", path);
+  }
 });
 
 test("portal serves live catalog, commits a governed write, and refuses an untokened one", async (t) => {
@@ -356,7 +415,7 @@ test("portal serves live catalog, commits a governed write, and refuses an untok
   assert.ok(!page.includes("__PORTAL_BOOT__"));
   assert.ok(boot.token.length >= 32);
   const catalog = await request(url, "/api/settings", readOptions(boot.token));
-  const engineCatalog = await cli(["settings-catalog", "--workspace", fixture.workspace]);
+  const engineCatalog = await cli(["settings-catalog", "--workspace", fixture.workspace], fixture.deviceEnv);
   assert.deepEqual(catalog.body.settings, engineCatalog.settings);
   assert.ok(!page.includes("gate-close"));
   assert.match(page, /data-setting-control/u);
@@ -439,74 +498,83 @@ test("the page boots with the shipped locale contract and needs nothing outside 
   for (const locale of LOCALE_CONTRACT.supportedLocales) assert.ok(locales.includes(`"${locale}"`) || locales.includes(`${locale}:`));
 });
 
-test("container mode lists every partition and switches the live target", async (t) => {
-  const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-portal-conservation-container-")));
-  const container = join(base, ".tcrn-workspace");
-  await mkdir(container);
-  const partitions = [];
-  for (const id of ["alpha", "beta"]) {
-    const root = join(container, id);
-    await mkdir(root);
-    const roots = { workspace: join(root, "workspace") };
-    await cli(["init", "--workspace", roots.workspace, "--project-name", `TCRN-PORTAL-CONSERVATION-${id}`, "--at", "2026-08-11T15:00:00Z"]);
-    partitions.push({ id, workspace: roots.workspace });
-  }
-  const { child, url } = await startPortal({ container, home: await scratchHome(base) });
-  t.after(async () => { child.kill(); await rm(base, { recursive: true, force: true }); });
+// TCRN-CROSS-STORY-482 R3: the Rules page belongs to the selected library's registered project,
+// so a switch moves it; and the switcher asks the registry on every read (INC-203), so a library
+// registered after the portal started can be chosen without a restart.
+test("switching the library moves the Rules page to its project, and a library registered later can be chosen", async (t) => {
+  const fixture = await scratch("tcrn-portal-conservation-libraries-", "TCRN-PORTAL-CONSERVATION-LIBRARIES");
+  await writeFile(join(fixture.proseRoot, "AGENTS.md"), "# first project\n", "utf8");
+  await writeFile(join(fixture.second.project, "AGENTS.md"), "# second project\n", "utf8");
+  const { child, url } = await startPortal(fixture);
+  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
   const { boot } = await readBoot(url);
-  assert.equal(boot.partitionMode, true);
-  assert.deepEqual(boot.partitions.map((entry) => entry.id), ["alpha", "beta"]);
-  const listed = await request(url, "/api/partitions", readOptions(boot.token));
-  assert.deepEqual(listed.body.partitions.map((entry) => entry.id), ["alpha", "beta"]);
-  const selected = await request(url, "/api/partition", writeOptions(boot.token, "POST", { partition: "beta" }));
-  assert.equal(selected.body.reasonCode, "PORTAL_PARTITION_SELECTED");
-  assert.equal(selected.body.selectedPartition, "beta");
-  assert.equal(selected.body.workspace, partitions[1].workspace);
-  // STORY-355: prose is not partitioned, so switching the selected partition must not
-  // move where the Rules page reads from -- the default stays pinned above the chain
-  // container regardless of which partition is currently selected.
-  assert.equal(selected.body.proseRoot, dirname(container));
+  assert.equal(boot.proseRoot, fixture.proseRoot);
+  assert.equal((await request(url, "/api/agents-md", readOptions(boot.token))).body.text, "# first project\n");
+
+  const selected = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: fixture.second.library }));
+  assert.equal(selected.body.reasonCode, "PORTAL_LIBRARY_SELECTED");
+  assert.equal(selected.body.proseRoot, fixture.second.project);
+  const prose = await request(url, "/api/agents-md", readOptions(boot.token));
+  assert.equal(prose.body.text, "# second project\n");
+  assert.equal(prose.body.path, join(fixture.second.project, "AGENTS.md"));
+  const written = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { file: "AGENTS.md", text: "# second project, edited\n" }));
+  assert.equal(written.body.reasonCode, "PORTAL_AGENTS_MD_WRITTEN");
+  assert.equal(await readFile(join(fixture.second.project, "AGENTS.md"), "utf8"), "# second project, edited\n");
+  assert.equal(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), "# first project\n", "the first project's rules are untouched");
   const catalog = await request(url, "/api/settings", readOptions(boot.token));
-  assert.deepEqual(catalog.body.settings, (await cli(["settings-catalog", "--workspace", partitions[1].workspace])).settings);
+  assert.deepEqual(catalog.body.settings, (await cli(["settings-catalog", "--workspace", fixture.second.library], fixture.deviceEnv)).settings);
+
+  const third = { project: join(fixture.base, "third-project"), library: join(fixture.base, "third-project", ".ether") };
+  await registeredLibrary(fixture.deviceEnv, third.project, third.library, "TCRN-PORTAL-CONSERVATION-THIRD", "2026-08-11T15:02:00Z");
+  const listed = await request(url, "/api/libraries", readOptions(boot.token));
+  assert.deepEqual(listed.body.libraries.map((library) => library.projectPath), [fixture.proseRoot, fixture.second.project, third.project]);
+  const later = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: third.library }));
+  assert.equal(later.body.reasonCode, "PORTAL_LIBRARY_SELECTED");
+  assert.equal(later.body.proseRoot, third.project);
 });
 
-test("launcher generation emits regular files, starts macOS launcher, and names a vanished container", async (t) => {
-  const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-portal-conservation-launchers-")));
-  const container = join(base, ".tcrn-workspace");
-  const proseRoot = join(base, "prose");
-  await mkdir(container);
-  await mkdir(proseRoot);
-  for (const id of ["alpha", "beta"]) {
-    const root = join(container, id);
-    await mkdir(root);
-    const roots = { workspace: join(root, "workspace") };
-    await cli(["init", "--workspace", roots.workspace, "--project-name", `TCRN-PORTAL-LAUNCH-${id}`, "--at", "2026-08-11T15:00:00Z"]);
-  }
-  const outputDir = join(base, "launchers");
+test("launcher generation emits regular files that carry only --library, starts the macOS launcher, and names a library the device has not registered", async (t) => {
+  const fixture = await scratch("tcrn-portal-conservation-launchers-", "TCRN-PORTAL-LAUNCH");
+  const outputDir = join(fixture.base, "launchers");
   await mkdir(outputDir);
-  t.after(() => rm(base, { recursive: true, force: true }));
+  t.after(() => rm(fixture.base, { recursive: true, force: true }));
   const generator = join(portalRoot, "scripts", "generate-launchers.mjs");
-  const report = JSON.parse((await execFileAsync(process.execPath, [generator, "--container", container, "--output-dir", outputDir, "--prose-root", proseRoot, "--port", "0"], { encoding: "utf8" })).stdout);
+  const report = JSON.parse((await execFileAsync(process.execPath, [generator, "--library", fixture.workspace, "--output-dir", outputDir, "--port", "0"], { encoding: "utf8" })).stdout);
   assert.equal(report.reasonCode, "PORTAL_LAUNCHERS_GENERATED");
+  assert.equal(report.library, fixture.workspace);
   assert.equal(report.symlinks, false);
   assert.equal(report.files.length, 3);
-  for (const file of report.files) { assert.equal((await lstat(file)).isFile(), true); assert.equal((await lstat(file)).isSymbolicLink(), false); assert.match(await readFile(file, "utf8"), /--container/u); }
+  for (const file of report.files) {
+    assert.equal((await lstat(file)).isFile(), true);
+    assert.equal((await lstat(file)).isSymbolicLink(), false);
+    const text = await readFile(file, "utf8");
+    assert.match(text, /--library/u);
+    assert.doesNotMatch(text, /--container|--prose-root|--workspace|--partition/u);
+  }
   const command = report.files.find((file) => file.endsWith(".command"));
   assert.match(await readFile(command, "utf8"), /^#!\/bin\/sh/u);
-  const home = await scratchHome(base);
-  const launcher = spawn(command, [], { env: { ...process.env, TCRN_WORKFLOW_CLI: CLI, HOME: home }, stdio: ["ignore", "pipe", "pipe"] });
+  const launcher = spawn(command, [], { env: { ...process.env, TCRN_WORKFLOW_CLI: CLI, ...fixture.deviceEnv, HOME: fixture.home }, stdio: ["ignore", "pipe", "pipe"] });
   t.after(() => launcher.kill());
   const url = await new Promise((resolve, reject) => { let buffer = ""; const timer = setTimeout(() => reject(new Error(`launcher timeout: ${buffer}`)), 15000); launcher.stdout.on("data", (chunk) => { buffer += chunk; const line = buffer.split("\n").find((entry) => entry.includes("PORTAL_LISTENING")); if (line) { clearTimeout(timer); resolve(JSON.parse(line).url); } }); launcher.on("exit", (code) => { clearTimeout(timer); reject(new Error(`launcher exited ${code}: ${buffer}`)); }); });
   const { boot: launcherBoot } = await readBoot(url);
-  assert.equal((await request(url, "/api/partitions", readOptions(launcherBoot.token))).body.partitions.length, 2);
-  const vanished = join(base, "vanished-container");
-  const badOutput = join(base, "bad-launchers");
+  assert.equal(launcherBoot.library.libraryPath, fixture.workspace);
+  assert.equal((await request(url, "/api/libraries", readOptions(launcherBoot.token))).body.libraries.length, 2);
+
+  // --library is optional: without it the launcher names no library and the portal chooses at start.
+  const plainOutput = join(fixture.base, "plain-launchers");
+  await mkdir(plainOutput);
+  const plain = JSON.parse((await execFileAsync(process.execPath, [generator, "--output-dir", plainOutput, "--port", "0"], { encoding: "utf8" })).stdout);
+  assert.equal(plain.library, null);
+  for (const file of plain.files) assert.doesNotMatch(await readFile(file, "utf8"), /--library/u);
+
+  const vanished = join(fixture.base, "vanished-library");
+  const badOutput = join(fixture.base, "bad-launchers");
   await mkdir(badOutput);
-  await execFileAsync(process.execPath, [generator, "--container", vanished, "--output-dir", badOutput, "--prose-root", proseRoot, "--port", "0"], { encoding: "utf8" });
+  await execFileAsync(process.execPath, [generator, "--library", vanished, "--output-dir", badOutput, "--port", "0"], { encoding: "utf8" });
   let failure;
-  try { await execFileAsync(join(badOutput, "atelier.sh"), [], { encoding: "utf8", env: { ...process.env, HOME: home } }); } catch (error) { failure = error; }
+  try { await execFileAsync(join(badOutput, "atelier.sh"), [], { encoding: "utf8", env: { ...process.env, ...fixture.deviceEnv, HOME: fixture.home } }); } catch (error) { failure = error; }
   assert.ok(failure);
-  assert.match(String(failure.stderr), /PORTAL_CONTAINER_UNAVAILABLE/u);
+  assert.match(String(failure.stderr), /PORTAL_LIBRARY_UNKNOWN/u);
 });
 
 test("i18n proof turns red when the engine drops enum allowedValues", async (t) => {
@@ -636,51 +704,69 @@ test("STORY-355 GWT1+GWT2: a forged Host header is refused on every route, and t
   assert.equal(tokenedGet.response.status, 200);
 });
 
-test("STORY-355 GWT4: container mode's default prose root sits above the chain container regardless of partition", async (t) => {
-  const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-portal-prose-default-")));
-  const container = join(base, ".tcrn-workspace");
-  const root = join(container, "alpha");
-  await mkdir(root, { recursive: true });
-  const roots = { workspace: join(root, "workspace") };
-  await cli(["init", "--workspace", roots.workspace, "--project-name", "TCRN-PORTAL-PROSE-DEFAULT", "--at", "2026-08-11T15:00:00Z"]);
-  const { child, url } = await startPortal({ container, home: await scratchHome(base) });
-  t.after(async () => { child.kill(); await rm(base, { recursive: true, force: true }); });
-  const { boot } = await readBoot(url);
-  assert.equal(boot.proseRoot, dirname(container));
-});
-
-test("STORY-355: an explicit --prose-root resolving inside a chain container fails at boot", async (t) => {
-  const fixture = await scratch("tcrn-portal-prose-unsafe-", "TCRN-PORTAL-PROSE-UNSAFE");
+// TCRN-CROSS-STORY-482 R3: without --library the portal chooses from the registry by where it was
+// started: the library of the registered project it runs in (library-resolve), else the machine's
+// default library when that names a registered one, else the first registered library.
+test("STORY-482 R3: without --library the portal opens the working directory's library, then the machine's default library, then the first registered one", async (t) => {
+  const fixture = await scratch("tcrn-portal-default-library-", "TCRN-PORTAL-DEFAULT-LIBRARY");
   t.after(() => rm(fixture.base, { recursive: true, force: true }));
-  const unsafeProseRoot = join(fixture.base, ".tcrn-workspace", "nested");
-  const args = [join(portalRoot, "portal.mjs"), "--workspace", fixture.workspace, "--prose-root", unsafeProseRoot, "--port", "0"];
-  const { status, stderr } = await new Promise((resolveSpawn) => {
-    const child = spawn(process.execPath, args, { env: { ...process.env, TCRN_WORKFLOW_CLI: CLI, HOME: fixture.home }, stdio: ["ignore", "pipe", "pipe"] });
-    let stderr = "";
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.on("exit", (code) => resolveSpawn({ status: code, stderr }));
-  });
-  assert.equal(status, 2);
-  const report = JSON.parse(stderr);
-  assert.equal(report.ok, false);
-  assert.equal(report.reasonCode, "PORTAL_PROSE_ROOT_UNSAFE");
+  const second = await cli(["status", "--workspace", fixture.second.library], fixture.deviceEnv);
+  const open = async (cwd) => {
+    const portal = await startPortal({ ...fixture, library: null, cwd });
+    try {
+      const { boot } = await readBoot(portal.url);
+      return { selectedBy: portal.listening.selectedBy, libraryPath: boot.library.libraryPath, proseRoot: boot.proseRoot };
+    } finally { portal.child.kill(); }
+  };
+  assert.deepEqual(await open(fixture.second.project), { selectedBy: "working-directory", libraryPath: fixture.second.library, proseRoot: fixture.second.project });
+  await cli(["machine-settings-set", "--at", "2026-08-11T15:03:00Z", "--key", "portal.defaultPartition", "--value", second.workspaceId], fixture.deviceEnv);
+  assert.deepEqual(await open(fixture.base), { selectedBy: "machine-default", libraryPath: fixture.second.library, proseRoot: fixture.second.project });
+  // A default that names no registered library (an old partition id, say) is passed over.
+  await cli(["machine-settings-set", "--at", "2026-08-11T15:04:00Z", "--key", "portal.defaultPartition", "--value", "cross-project"], fixture.deviceEnv);
+  assert.deepEqual(await open(fixture.base), { selectedBy: "first-registered", libraryPath: fixture.workspace, proseRoot: fixture.proseRoot });
 });
 
-// STORY-355 dispatch correction (plan section 5): the agent's original design made this
-// refusal fire on the DERIVED default too, which would make --workspace mode unbootable
-// against every governed partition, since a partition's workspace always lives inside
-// the chain container. This test is the red-line evidence that the corrected default --
-// which walks up past the .tcrn-workspace segment before comparing -- keeps that mode
-// bootable, with the prose root landing above the container exactly as in container mode.
-test("STORY-355: --workspace mode's default prose root also lands above the chain container", async (t) => {
-  const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-portal-workspace-default-")));
-  const container = join(base, ".tcrn-workspace");
-  const partitionRoot = join(container, "alpha");
-  await mkdir(partitionRoot, { recursive: true });
-  const roots = { workspace: join(partitionRoot, "workspace") };
-  await cli(["init", "--workspace", roots.workspace, "--project-name", "TCRN-PORTAL-WORKSPACE-DEFAULT", "--at", "2026-08-11T15:00:00Z"]);
-  const { child, url } = await startPortal({ workspace: roots.workspace, home: await scratchHome(base) });
-  t.after(async () => { child.kill(); await rm(base, { recursive: true, force: true }); });
+// STORY-355 carried over to libraries: AGENTS.md is the project's prose and never a file inside a
+// library, which only the engine writes. A project registered inside its own library is refused
+// at boot and on a switch, and the refusal names the path.
+test("STORY-355: a project registered inside its own library is refused at boot and on a switch", async (t) => {
+  const fixture = await scratch("tcrn-portal-prose-unsafe-", "TCRN-PORTAL-PROSE-UNSAFE");
+  const nested = join(fixture.second.library, "nested-project");
+  await mkdir(nested);
+  await cli(["library-register", "--project", nested, "--library", fixture.second.library, "--at", "2026-08-11T15:05:00Z"], fixture.deviceEnv);
+  const refused = await startupRefusal(["--library", nested], { ...fixture.deviceEnv, HOME: fixture.home });
+  assert.equal(refused.status, 2);
+  assert.equal(refused.report.ok, false);
+  assert.equal(refused.report.reasonCode, "PORTAL_PROSE_ROOT_UNSAFE");
+  assert.equal(refused.report.proseRoot, nested);
+  const { child, url } = await startPortal(fixture);
+  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
   const { boot } = await readBoot(url);
-  assert.equal(boot.proseRoot, base);
+  const switched = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: nested }));
+  assert.equal(switched.response.status, 409);
+  assert.equal(switched.body.reasonCode, "PORTAL_PROSE_ROOT_UNSAFE");
+  assert.equal((await request(url, "/api/libraries", readOptions(boot.token))).body.selected.libraryPath, fixture.workspace, "a refused switch leaves the selection alone");
+});
+
+// TCRN-CROSS-STORY-482 R3: a library outside the registry is not something Atelier opens. With no
+// registered library the portal refuses to start and names the remedy; a --library the device has
+// not registered is named back, with the libraries it has.
+test("STORY-482 R3: the portal refuses to start with no registered library, and names a --library the device has not registered", async (t) => {
+  const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-portal-no-library-")));
+  t.after(() => rm(base, { recursive: true, force: true }));
+  const home = await scratchHome(base);
+  const deviceEnv = { EINZBERN_HOME: join(base, "device", "einzbern") };
+  const empty = await startupRefusal([], { ...deviceEnv, HOME: home }, base);
+  assert.equal(empty.status, 2);
+  assert.equal(empty.report.reasonCode, "PORTAL_LIBRARY_REGISTRY_EMPTY");
+  assert.equal(empty.report.remedy, "library-register");
+  const project = join(base, "project");
+  await registeredLibrary(deviceEnv, project, join(project, ".ether"), "TCRN-PORTAL-NO-LIBRARY", "2026-08-11T15:00:00Z");
+  const loose = join(base, "unregistered-library");
+  await cli(["init", "--workspace", loose, "--project-name", "TCRN-PORTAL-UNREGISTERED", "--at", "2026-08-11T15:00:01Z"], deviceEnv);
+  const unknown = await startupRefusal(["--library", loose], { ...deviceEnv, HOME: home }, base);
+  assert.equal(unknown.status, 2);
+  assert.equal(unknown.report.reasonCode, "PORTAL_LIBRARY_UNKNOWN");
+  assert.equal(unknown.report.requestedLibrary, loose);
+  assert.deepEqual(unknown.report.libraries, [join(project, ".ether")]);
 });

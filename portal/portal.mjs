@@ -20,7 +20,6 @@ const execFileAsync = promisify(execFile);
 const portalRoot = dirname(fileURLToPath(import.meta.url));
 const ACTOR = (process.env.TCRN_PORTAL_ACTOR ?? "agent:portal").trim();
 const BUNDLED_CLI = join(portalRoot, "..", "scripts", "einzbern.mjs");
-const HOST_RENDER = join(portalRoot, "..", "scripts", "host-render.mjs");
 const CLI = process.env.TCRN_WORKFLOW_CLI ?? BUNDLED_CLI;
 const PROSE_FILES = Object.freeze(["AGENTS.md"]);
 
@@ -148,8 +147,6 @@ async function currentWorkspaceName() {
   return currentPartition().id;
 }
 const TOKEN = randomBytes(24).toString("hex");
-const sessionWrites = [];
-let writeSequence = 0;
 let lastWriteAt = 0;
 
 async function cli(args) {
@@ -186,7 +183,6 @@ async function cliResult(args) {
 const settingsCatalog = () => cli(["settings-catalog", "--workspace", currentPartition().workspace]);
 const vocabulary = () => cli(["vocabulary"]);
 const commands = () => cli(["commands"]);
-const DISPATCH_SETTING_KEYS = new Set(["execution.dispatchClasses", "execution.dispatchMode", "execution.dispatchModes", "execution.dispatchTiers"]);
 
 function readInstant() {
   return new Date().toISOString();
@@ -226,71 +222,11 @@ async function knowledgeBody(id) {
   return result;
 }
 
-async function hostSettingsProjection(host) {
-  const args = [HOST_RENDER, "--host", host, "--workspace", currentPartition().workspace, "--root", defaultProseRoot(), "--plan-only", "--hooks-only"];
-  try {
-    const { stdout } = await execFileAsync(process.execPath, args, { cwd: portalRoot, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
-    const body = JSON.parse(stdout);
-    return { ok: true, host, ...body };
-  } catch (error) {
-    return { ok: false, host, ...childResult(error, "PORTAL_HOST_SETTINGS_UNAVAILABLE") };
-  }
-}
-
-async function retrievalEvaluation() {
-  try {
-    const { stdout } = await execFileAsync(process.execPath, [join(portalRoot, "..", "scripts", "retrieval-eval.mjs")], { cwd: portalRoot, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
-    const lines = stdout.trim().split("\n").filter((line) => line.length > 0);
-    return JSON.parse(lines.at(-1) ?? "{}");
-  } catch (error) {
-    return childResult(error, "PORTAL_RETRIEVAL_EVAL_UNAVAILABLE");
-  }
-}
-
-// TCRN-CROSS-MIN-225 D3 (TCRN-CROSS-SUB-259): the only automatic retirement left is a --supersedes
-// write, so the evolution panel lists the cards such writes replaced: id, subject, replacement and
-// time, newest first. They come from knowledge-list, read page by page until it is no longer
-// truncated (its default page holds eight). retire-proposals is not read: it proposes nothing now.
-// A page that fails leaves the list partial and the count unknown, never zero.
-const KNOWLEDGE_LIST_PAGE = 100;
-
-async function conflictRetirements(workspace, at) {
-  const records = [];
-  for (let offset = 0; ;) {
-    const page = await cliResult(["knowledge-list", "--workspace", workspace, "--at", at, "--selection", "all", "--allow-trailing", "true", "--limit", String(KNOWLEDGE_LIST_PAGE), "--offset", String(offset)]);
-    const rows = page.ok && Array.isArray(page.body?.records) ? page.body.records : null;
-    if (rows === null) return { ok: false, records };
-    for (const row of rows) {
-      const supersededBy = row?.extensions?.supersededBy;
-      if (typeof supersededBy === "string") records.push({ id: row.id, subject: row.subject ?? null, supersededBy, updatedAt: row.updatedAt ?? null });
-    }
-    if (page.body.truncated !== true || rows.length === 0) break;
-    offset += rows.length;
-  }
-  records.sort((left, right) => String(right.updatedAt ?? "").localeCompare(String(left.updatedAt ?? "")) || String(left.id).localeCompare(String(right.id)));
-  return { ok: true, records };
-}
-
-async function evolutionProjection() {
-  const selected = currentPartition();
-  const at = readInstant();
-  const [conflicts, retrieval, claude, codex] = await Promise.all([
-    conflictRetirements(selected.workspace, at),
-    retrievalEvaluation(),
-    hostSettingsProjection("claude-code"),
-    hostSettingsProjection("codex"),
-  ]);
-  return {
-    ok: true,
-    reasonCode: "PORTAL_EVOLUTION_READY",
-    at,
-    partial: !conflicts.ok || retrieval.ok === false,
-    conflictRetirements: conflicts.records,
-    conflictRetirementCount: conflicts.ok ? conflicts.records.length : null,
-    retrievalEval: retrieval,
-    hosts: [claude, codex],
-  };
-}
+// TCRN-CROSS-STORY-482 R4: the evolution panel (conflict retirements through knowledge-list, the
+// retrieval evaluation through scripts/retrieval-eval.mjs), the host projection (plans and writes
+// through scripts/host-render.mjs, the execution surface's last piece) and the session audit left
+// with the mechanisms they showed. A settings write is answered by the engine's own receipt and
+// nothing else; the portal starts no script beside the CLI.
 
 function nextOccurredAt() {
   const now = Date.now();
@@ -298,63 +234,16 @@ function nextOccurredAt() {
   return new Date(lastWriteAt).toISOString().replace(/\.\d{3}Z$/u, "Z");
 }
 
-function childResult(error, fallback = "PORTAL_HOST_RENDER_FAILED") {
-  const raw = String(error?.stderr ?? error?.stdout ?? "").trim();
-  const lines = raw.split("\n").filter((line) => line.length > 0);
-  try { return JSON.parse(lines.at(-1) ?? ""); } catch { return { ok: false, reasonCode: fallback, error: raw || String(error?.message ?? error) }; }
-}
-
-async function hostRenderOne(host, hooksOnly = false) {
-  const args = [HOST_RENDER, "--host", host, "--workspace", currentPartition().workspace, "--root", defaultProseRoot()];
-  if (hooksOnly) args.push("--hooks-only");
-  try {
-    const { stdout } = await execFileAsync(process.execPath, args, { cwd: portalRoot, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 });
-    return JSON.parse(stdout);
-  } catch (error) {
-    return childResult(error);
-  }
-}
-
-async function renderHostProjection() {
-  const hosts = [];
-  for (const host of ["claude-code", "codex"]) {
-    let result = await hostRenderOne(host);
-    if (result.reasonCode === "HOST_RENDER_MODEL_UNSET") result = await hostRenderOne(host, true);
-    hosts.push({ host, ...result });
-  }
-  const ok = hosts.every((result) => ["HOST_RENDER_COMMITTED", "HOST_RENDER_ALREADY_CURRENT"].includes(result.reasonCode));
-  return { ok, reasonCode: ok ? "HOST_RENDER_PROJECTION_READY" : "HOST_RENDER_PROJECTION_FAILED", root: defaultProseRoot(), hosts };
-}
-
-function recordSessionWrite(action, result, summary, occurredAt) {
-  const body = result.body ?? {};
-  sessionWrites.unshift({
-    sequence: ++writeSequence,
-    action,
-    summary,
-    occurredAt,
-    ok: result.ok,
-    reasonCode: body.reasonCode ?? "PORTAL_WRITE_UNRECORDED",
-    version: body.version ?? null,
-    headEventHash: body.headEventHash ?? null,
-    receiptDigest: body.receiptDigest ?? null,
-  });
-  if (sessionWrites.length > 100) sessionWrites.length = 100;
-}
-
-async function governedWrite(build, action, summary) {
+async function governedWrite(build) {
   const selected = currentPartition();
   const occurredAt = nextOccurredAt();
-  let result;
   try {
     if (!ACTOR) throw new Error("TCRN_PORTAL_ACTOR must be a non-empty actor id");
     const common = ["--workspace", selected.workspace, "--at", occurredAt, "--actor", ACTOR];
-    result = await cliResult(build(common));
+    return await cliResult(build(common));
   } catch (error) {
-    result = { ok: false, body: { ok: false, reasonCode: "PORTAL_CLI_UNAVAILABLE", error: String(error?.message ?? error) } };
+    return { ok: false, body: { ok: false, reasonCode: "PORTAL_CLI_UNAVAILABLE", error: String(error?.message ?? error) } };
   }
-  recordSessionWrite(action, result, summary, occurredAt);
-  return result;
 }
 
 function stableId(namespace, externalKey) {
@@ -362,29 +251,8 @@ function stableId(namespace, externalKey) {
   return `${namespace}:${createHash("sha256").update(`${namespace}\u0000${key}`, "utf8").digest("hex").slice(0, 24)}`;
 }
 
-async function writeSetting(key, value) {
-  const result = await governedWrite(
-    (common) => ["settings-set", ...common, "--key", String(key), "--value", String(value)],
-    "settings-set",
-    `${key} → ${value}`,
-  );
-  if (result.ok && DISPATCH_SETTING_KEYS.has(key)) {
-    return { ...result, body: { ...result.body, hostRender: await renderHostProjection() } };
-  }
-  return result;
-}
-
-async function removeSetting(key) {
-  const result = await governedWrite(
-    (common) => ["settings-remove", ...common, "--key", String(key)],
-    "settings-remove",
-    `${key} reset`,
-  );
-  if (result.ok && DISPATCH_SETTING_KEYS.has(key)) {
-    return { ...result, body: { ...result.body, hostRender: await renderHostProjection() } };
-  }
-  return result;
-}
+const writeSetting = (key, value) => governedWrite((common) => ["settings-set", ...common, "--key", String(key), "--value", String(value)]);
+const removeSetting = (key) => governedWrite((common) => ["settings-remove", ...common, "--key", String(key)]);
 
 function proseTarget(name = PROSE_FILES[0]) {
   if (!PROSE_FILES.includes(name)) return null;
@@ -521,9 +389,10 @@ const server = createServer(async (request, response) => {
       response.end(await readFile(join(portalRoot, "tokens.css"), "utf8"));
       return;
     }
-    if (request.method === "GET" && pathname === "/tcrn-brand-mark.svg") {
+    // The file is Atelier's; its bytes are the design system's mother-brand asset, unchanged.
+    if (request.method === "GET" && pathname === "/atelier-brand-mark.svg") {
       response.writeHead(200, { "content-type": "image/svg+xml; charset=utf-8", "cache-control": "no-store" });
-      response.end(await readFile(join(portalRoot, "tcrn-brand-mark.svg"), "utf8"));
+      response.end(await readFile(join(portalRoot, "atelier-brand-mark.svg"), "utf8"));
       return;
     }
     if (!pathname.startsWith("/api/")) {
@@ -553,18 +422,6 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === "GET" && pathname === "/api/knowledge/body") {
       const result = await knowledgeBody(url.searchParams.get("id") ?? "");
-      send(response, result.ok ? 200 : 409, result.body);
-      return;
-    }
-    if (request.method === "GET" && pathname === "/api/evolution") {
-      send(response, 200, await evolutionProjection());
-      return;
-    }
-    if (request.method === "POST" && pathname === "/api/host-probe") {
-      const body = await readJsonBody(request);
-      const args = ["host-probe", "--host", String(body.host ?? ""), "--model", String(body.model ?? "")];
-      if (body.timeoutMs !== undefined) args.push("--timeout-ms", String(body.timeoutMs));
-      const result = await cliResult(args);
       send(response, result.ok ? 200 : 409, result.body);
       return;
     }
@@ -601,10 +458,6 @@ const server = createServer(async (request, response) => {
         engineVersion: body.engineVersion ?? null,
         checks,
       });
-      return;
-    }
-    if (request.method === "GET" && pathname === "/api/session-audit") {
-      send(response, 200, { ok: true, reasonCode: "PORTAL_SESSION_AUDIT_READY", selectedPartition: selectedPartitionId, writes: sessionWrites });
       return;
     }
     if (request.method === "GET" && pathname === "/api/partitions") {
@@ -653,6 +506,9 @@ const server = createServer(async (request, response) => {
       send(response, 200, await reconcile());
       return;
     }
+    // TCRN-CROSS-STORY-482 R4, AC3: every other API path is unknown, the retired ones included:
+    // execution, gates, evolution, the session audit and the host probe. The host-probe verb
+    // stays in the CLI; only its page route is gone.
     send(response, 404, { ok: false, reasonCode: "PORTAL_ROUTE_UNKNOWN" });
   } catch (error) {
     send(response, 500, { ok: false, reasonCode: error?.reasonCode ?? "PORTAL_INTERNAL_ERROR", error: String(error?.message ?? error) });

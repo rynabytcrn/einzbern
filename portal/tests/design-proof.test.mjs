@@ -101,7 +101,7 @@ test("INIT-036 S276 design-proof legs turn red for injected violations and green
   const restoredLayout = await runProof(baseline);
   assert.equal(restoredLayout.status, 0);
 
-  const sourceAsset = await readFile(new URL("../tcrn-brand-mark.svg", import.meta.url));
+  const sourceAsset = await readFile(new URL("../atelier-brand-mark.svg", import.meta.url));
   const mutatedAsset = Buffer.from(sourceAsset);
   mutatedAsset[mutatedAsset.length - 1] = mutatedAsset[mutatedAsset.length - 1] === 0x0a ? 0x20 : 0x0a;
   const mutatedAssetPath = join(directory, "brand-mark-mutated.svg");

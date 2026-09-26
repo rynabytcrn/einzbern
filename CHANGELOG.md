@@ -211,6 +211,24 @@ newer than the newest format this engine reads (1) is `LIBRARY_FORMAT_UNSUPPORTE
 version is `ENGINE_TOO_OLD` with `required` and `actual`. Versions compare by semantic-version
 precedence, pre-releases included. The two fields are read before the rest of the manifest is
 judged, so a newer format that changed the manifest's shape is still named as a newer format.
+Engine versions live in the device directory (TCRN-CROSS-STORY-471 R2, R3, AC2, AC3; STORY-469
+R3; MIN-227 D22, D23; `packages/core/src/engine-home.ts`): `engine/<version>/` holds one whole
+engine per version, `engine/current` (`einzbern.engine-current.v1`: `version`, `previous`,
+`switchedAt`) names the one in use, and `engine/einzbern.mjs`, the stable entry an installer
+copies from `scripts/einzbern-launcher.mjs`, runs the current version's `scripts/einzbern.mjs`
+with the same arguments and exit code, so a hook names that file and never a version directory.
+`engine-update --from <unpacked tree> --sha256 <install-tree digest> --version <x.y.z> --at`
+checks the tree against the digest, copies it to `engine/<version>/` (or reuses the same bytes
+already there; other bytes under that version are `ENGINE_VERSION_CONFLICT`), runs it once with
+`engine-list` to prove it starts as that version and to learn the library format it reads
+(`ENGINE_PROBE_FAILED`, `ENGINE_VERSION_MISMATCH`), and only then rewrites `engine/current`,
+keeping the version it replaces as `previous`; it reports every library in this device's
+registry the new version would refuse (`ENGINE_TOO_OLD`, `LIBRARY_FORMAT_UNSUPPORTED`).
+`engine-rollback --at` makes the previous version current again, so a second rollback undoes the
+first (`ENGINE_ROLLBACK_UNAVAILABLE` when there is none or it is no longer installed), and
+`engine-list` shows the versions, the pointer and whether the stable entry is in place. A switch
+rewrites `engine/current` alone, so `settings.json` and `hooks.json` never change. Fetching a
+release is the installer's job; the engine never reaches the network.
 
 ## 1.2.1 — patch candidate
 

@@ -661,6 +661,9 @@ export { suggestCloudHosted } from "./cloud-roots.js";
 // TCRN-CROSS-STORY-470 R3: moving a library, and the tombstone its old place keeps.
 export { relocateLibrary } from "./relocate.js";
 export { readLibraryTombstone } from "./workspace.js";
+// TCRN-CROSS-STORY-471 R2, R3: the engine versions installed on this device, the pointer to the one
+// in use, and switching between them.
+export { listEngines, rollbackEngine, updateEngine } from "./engine-home.js";
 export type { AtomicFileReasonCode, AtomicWriteOptions } from "./atomic-file.js";
 // TCRN-CROSS-STORY-468 R1: this device's identity in the device directory.
 export {

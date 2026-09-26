@@ -100,6 +100,9 @@ import {
   suggestCloudHosted,
   readLibraryTombstone,
   relocateLibrary,
+  listEngines,
+  rollbackEngine,
+  updateEngine,
 } from "../../core/src/index.js";
 import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider } from "../../core/src/index.js";
 import type {
@@ -735,6 +738,12 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "conference-minutes-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "conference-id", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "conference-open", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "external-key", required: true, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string" }, { name: "type", required: true, valueKind: "string" }, { name: "title", required: true, valueKind: "string" }, { name: "work-ids", required: true, valueKind: "list" }, { name: "desired-outcome", required: true, valueKind: "string" }, { name: "participant-ids", required: true, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "conference-position-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "conference-id", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
+  // TCRN-CROSS-STORY-471 R2, R3: the engine versions in this device's engine/ directory. engine-update
+  // installs an unpacked, digest-checked version and makes it current; engine-rollback makes the
+  // previous one current again. Both rewrite engine/current alone, never a host file.
+  { name: "engine-list", availability: "cli", mutates: false, flags: [] },
+  { name: "engine-rollback", availability: "cli", mutates: true, flags: [{ name: "at", required: true, valueKind: "instant" }] },
+  { name: "engine-update", availability: "cli", mutates: true, flags: [{ name: "from", required: true, valueKind: "string" }, { name: "sha256", required: true, valueKind: "string" }, { name: "version", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
   { name: "event-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "export", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   { name: "host-probe", availability: "cli", mutates: false, flags: [{ name: "host", required: true, valueKind: "string" }, { name: "model", required: true, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
@@ -1113,6 +1122,30 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       ...(values["cloud-hosted"] === undefined ? {} : { cloudHosted: booleanValue(values["cloud-hosted"], "cloud-hosted") }),
     });
     io.write(canonicalJson(report as unknown as JsonValue));
+    return;
+  }
+  // TCRN-CROSS-STORY-471 R2, R3 (engine-home.ts): the device's engine versions. engine-list is also
+  // what engine-update runs in a new version before it becomes current.
+  if (command === "engine-list") {
+    parseArguments(rest, []);
+    io.write(canonicalJson({ reasonCode: "ENGINE_LIST_READY", ...await listEngines() } as unknown as JsonValue));
+    return;
+  }
+  if (command === "engine-update") {
+    const values = parseArguments(rest, ["from", "sha256", "version", "at"]);
+    required(values, ["from", "sha256", "version", "at"]);
+    io.write(canonicalJson(await updateEngine({
+      from: values.from ?? "",
+      sha256: values.sha256 ?? "",
+      version: values.version ?? "",
+      at: values.at ?? "",
+    }) as unknown as JsonValue));
+    return;
+  }
+  if (command === "engine-rollback") {
+    const values = parseArguments(rest, ["at"]);
+    required(values, ["at"]);
+    io.write(canonicalJson(await rollbackEngine({ at: values.at ?? "" }) as unknown as JsonValue));
     return;
   }
   if (command === "library-list") {

@@ -130,7 +130,7 @@ export function librarySupportRefusal(fields: LibraryVersionFields, options: Eng
     return new FormatVersionError(
       "LIBRARY_FORMAT_UNSUPPORTED",
       `${where} is in library format ${format}; engine ${options.engineVersion} reads formats up to ${supported}: upgrade the engine to open it`,
-      { ...options.details, required: String(format), supported: String(supported) },
+      { ...options.details, required: String(format), supported: String(supported), remedy: "engine-update" },
     );
   }
   const minimum = fields.minEngineVersion;
@@ -138,7 +138,7 @@ export function librarySupportRefusal(fields: LibraryVersionFields, options: Eng
     return new FormatVersionError(
       "ENGINE_TOO_OLD",
       `${where} needs engine ${minimum} or later; this engine is ${options.engineVersion}: upgrade the engine to open it`,
-      { ...options.details, required: minimum, actual: options.engineVersion },
+      { ...options.details, required: minimum, actual: options.engineVersion, remedy: "engine-update" },
     );
   }
   return null;

@@ -52,8 +52,9 @@ test("unknown verbs fail closed and every cataloged verb dispatches", async () =
   for (const entry of COMMAND_CATALOG) {
     const outcome = await invoke([entry.name]);
     // `commands` and the read-only vocabulary surface are zero-argument verbs.
-    // library-list lists this device's registry, empty or not (TCRN-CROSS-STORY-470 R1).
-    if (entry.name === "commands" || entry.name === "install-manifest" || entry.name === "library-list" || entry.name === "machine-settings-catalog" || entry.name === "vocabulary") {
+    // library-list lists this device's registry, empty or not (TCRN-CROSS-STORY-470 R1), and
+    // engine-list its engine versions, none or some (TCRN-CROSS-STORY-471 R2).
+    if (entry.name === "commands" || entry.name === "engine-list" || entry.name === "install-manifest" || entry.name === "library-list" || entry.name === "machine-settings-catalog" || entry.name === "vocabulary") {
       assert.equal(outcome.ok, true, `${entry.name} resolves with no flags`);
       continue;
     }

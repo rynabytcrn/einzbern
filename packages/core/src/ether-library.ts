@@ -23,11 +23,15 @@ import { join, resolve } from "node:path";
 
 import { assertStrictInstant, canonicalJson } from "../../protocol/src/index.js";
 import { writeFileAtomic } from "./atomic-file.js";
+import { ENGINE_FORMAT_VERSION, assertLibrarySupported } from "./format-version.js";
+import type { LibraryVersionFields } from "./format-version.js";
 import { DIRECTORY, renderLibraryReadme } from "./names.js";
 import { FRAMEWORK_VERSION } from "./index.js";
 
 export const LIBRARY_MANIFEST_SCHEMA_VERSION = "einzbern.library-manifest.v1" as const;
-export const LIBRARY_FORMAT_VERSION = 1 as const;
+// The format a new library and every stream manifest is written in: the newest this engine reads
+// (TCRN-CROSS-STORY-471 R1). format-version.ts imports nothing, so this is safe at load.
+export const LIBRARY_FORMAT_VERSION = ENGINE_FORMAT_VERSION;
 export const LIBRARY_FILES = Object.freeze({
   manifest: "manifest.json",
   readme: "README.md",
@@ -155,8 +159,14 @@ export async function realLibraryPath(rootInput: string): Promise<string> {
   }
 }
 
-/** Read and validate a library's root manifest. Nothing is created or written. */
-export async function openLibrary(rootInput: string): Promise<Library> {
+interface ManifestRead {
+  readonly root: string;
+  readonly path: string;
+  readonly text: string;
+  readonly parsed: unknown;
+}
+
+async function readManifest(rootInput: string): Promise<ManifestRead> {
   const root = await realLibraryPath(rootInput);
   const path = join(root, LIBRARY_FILES.manifest);
   let text: string;
@@ -173,9 +183,40 @@ export async function openLibrary(rootInput: string): Promise<Library> {
   } catch {
     fail("LIBRARY_MANIFEST_INVALID", `${path} is not JSON`, { manifest: path });
   }
+  return { root, path, text, parsed };
+}
+
+function versionFields(parsed: unknown): LibraryVersionFields | null {
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+  const record = parsed as Readonly<Record<string, unknown>>;
+  return { formatVersion: record.formatVersion, minEngineVersion: record.minEngineVersion };
+}
+
+/**
+ * Read and validate a library's root manifest. Nothing is created or written. A library in a
+ * newer format than this engine reads, or one that needs a newer engine, is refused first
+ * (TCRN-CROSS-STORY-471 R1): every read, lock and write of a library begins here, so the refusal
+ * comes before any of them, and before the rest of the manifest is judged.
+ */
+export async function openLibrary(rootInput: string): Promise<Library> {
+  const { root, path, text, parsed } = await readManifest(rootInput);
+  const fields = versionFields(parsed);
+  if (fields !== null) assertLibrarySupported(fields, { engineVersion: FRAMEWORK_VERSION, where: `library ${root}` });
   const manifest = validateLibraryManifest(parsed, path);
   if (canonicalJson(manifest) !== text) fail("LIBRARY_MANIFEST_INVALID", `${path} is not in canonical form`, { manifest: path });
   return { root, manifest };
+}
+
+/**
+ * The two fields another engine version is judged by, read as they stand and nothing else judged
+ * (TCRN-CROSS-STORY-471 R3): whether an engine opens a library is a question about that engine,
+ * which may read a newer manifest than this one does.
+ */
+export async function readLibraryVersionFields(rootInput: string): Promise<LibraryVersionFields & { readonly root: string }> {
+  const { root, path, parsed } = await readManifest(rootInput);
+  const fields = versionFields(parsed);
+  if (fields === null) fail("LIBRARY_MANIFEST_INVALID", `${path} is not an object`, { manifest: path });
+  return { root, ...fields };
 }
 
 export interface CreateLibraryOptions {

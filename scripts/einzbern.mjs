@@ -11,7 +11,9 @@ try {
   const reasonCode = typeof error?.reasonCode === "string" ? error.reasonCode : "CLI_INTERNAL_ERROR";
   // TCRN-CROSS-STORY-467 R4: a chain break names its stream, sequence, event and kind; a library
   // read also names the device and file (TCRN-CROSS-STORY-468, 470 R4), and a refused write its remedy.
-  const stringDetails = ["required", "actual", "layout", "streamId", "sequence", "eventId", "break", "segment", "line", "deviceId", "file", "timeoutMs", "remedy", "movedTo", "target"];
+  // A library this engine may not open names the format or engine version it needs and what this
+  // engine has (TCRN-CROSS-STORY-471 R1).
+  const stringDetails = ["required", "actual", "supported", "layout", "streamId", "sequence", "eventId", "break", "segment", "line", "deviceId", "file", "timeoutMs", "remedy", "movedTo", "target"];
   const details = error?.details !== null && typeof error?.details === "object"
     ? Object.fromEntries(Object.entries(error.details).filter(([key, value]) =>
       (stringDetails.includes(key) && typeof value === "string") ||

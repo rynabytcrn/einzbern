@@ -28,3 +28,8 @@ retired (TCRN-CROSS-STORY-467 R2, TCRN-CROSS-MIN-227 D3).
 The executable reference is `einzbern-release-verify --tree <directory> --sha256
 <digest>` (`scripts/verify-release-trust.mjs`), which reads the one definition in
 `packages/core/src/install-tree-digest.ts`.
+
+`engine-update --from <directory> --sha256 <digest> --version <version> --at <instant>`
+(TCRN-CROSS-STORY-471 R3, `packages/core/src/engine-home.ts`) applies the same check before
+it installs a version into the device directory's `engine/<version>/`, and checks the copy
+it made against the same digest before that version can become current.

@@ -218,6 +218,40 @@ directory before it is replaced. A host file Git tracks is still wired and repor
 file, or not JSON or TOML the wiring can edit without risking the rest, is refused with
 `HOST_WRITABLE_ROOTS_FILE_UNSUPPORTED`, and one that changed after it was planned with
 `HOST_WRITABLE_ROOTS_CONCURRENT_MODIFICATION`.
+A library this engine may not open is refused when it is opened, before any lock is taken,
+the device cache is read or anything is written (TCRN-CROSS-STORY-471 R1, AC1; MIN-227 D22;
+`packages/core/src/format-version.ts`): a library or stream manifest whose `formatVersion` is
+newer than the newest format this engine reads (1) is `LIBRARY_FORMAT_UNSUPPORTED` with
+`required` and `supported`, and a library whose `minEngineVersion` is above this engine's
+version is `ENGINE_TOO_OLD` with `required` and `actual`. Versions compare by semantic-version
+precedence, pre-releases included. The two fields are read before the rest of the manifest is
+judged, so a newer format that changed the manifest's shape is still named as a newer format.
+Engine versions live in the device directory (TCRN-CROSS-STORY-471 R2, R3, AC2, AC3; STORY-469
+R3; MIN-227 D22, D23; `packages/core/src/engine-home.ts`): `engine/<version>/` holds one whole
+engine per version, `engine/current` (`einzbern.engine-current.v1`: `version`, `previous`,
+`switchedAt`) names the one in use, and `engine/einzbern.mjs`, the stable entry an installer
+copies from `scripts/einzbern-launcher.mjs`, runs the current version's `scripts/einzbern.mjs`
+with the same arguments and exit code, so a hook names that file and never a version directory.
+`engine-update --from <unpacked tree> --sha256 <install-tree digest> --version <x.y.z> --at`
+checks the tree against the digest, copies it to `engine/<version>/` (or reuses the same bytes
+already there; other bytes under that version are `ENGINE_VERSION_CONFLICT`), runs it once with
+`engine-list` to prove it starts as that version and to learn the library format it reads
+(`ENGINE_PROBE_FAILED`, `ENGINE_VERSION_MISMATCH`), and only then rewrites `engine/current`,
+keeping the version it replaces as `previous`; it reports every library in this device's
+registry the new version would refuse (`ENGINE_TOO_OLD`, `LIBRARY_FORMAT_UNSUPPORTED`).
+`engine-rollback --at` makes the previous version current again, so a second rollback undoes the
+first (`ENGINE_ROLLBACK_UNAVAILABLE` when there is none or it is no longer installed), and
+`engine-list` shows the versions, the pointer and whether the stable entry is in place. A switch
+rewrites `engine/current` alone, so `settings.json` and `hooks.json` never change. Fetching a
+release is the installer's job; the engine never reaches the network.
+`status` reports `multiDevice` (TCRN-CROSS-STORY-471 R4; MIN-227 D22): every device the library
+knows (its `akasha/` directories), the engine version its stream manifest records (null for a
+device with no committed manifest yet), whether it is this device and whether it is ready, and a
+plain hint naming the devices to upgrade first (`先把以下设备升级到 ≥<version> 再写入新格式：…`)
+while a device's version is unknown or below the one required: the library's `minEngineVersion`
+while the format stays, the writing engine's version for a newer format. A write that raises a
+library's format must check the same readiness first and refuse with `LIBRARY_UPGRADE_NOT_READY`
+(`packages/core/spec/ether-library-v1.md`); this engine has no such write yet.
 
 ## 1.2.1 — patch candidate
 

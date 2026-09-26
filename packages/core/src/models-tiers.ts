@@ -51,8 +51,8 @@ function fail(message: string, path: string): never {
 }
 
 // A host, a tier and a runner are names: a lowercase letter first, then lowercase letters, digits,
-// dot, underscore or hyphen, at most 64 characters. The same shape a custom variable's name has, so a
-// rendered table never has to escape one.
+// dot, underscore or hyphen, at most 64 characters, so the system variables section of AGENTS.md
+// (variables-sections.ts) never has to escape one.
 const NAME = /^[a-z][a-z0-9._-]{0,63}$/u;
 const CONTROL = /[\u0000-\u001f\u007f]/u;
 const MODEL_MAX_LENGTH = 256;

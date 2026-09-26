@@ -16,6 +16,7 @@ import type { JsonValue } from "../../protocol/src/index.js";
 import { buildEventPayload } from "./actor-attestation.js";
 import { checkGateRecordValue } from "./gates-config.js";
 import { checkManagedSectionRecordValue } from "./managed-sections.js";
+import { checkVariableRecordValue } from "./variables.js";
 import { appendEvents, projectConfiguration, withWorkspaceWriteLock } from "./workspace.js";
 import type { MutationDelta, WorkspaceMutationOptions, WorkspaceState } from "./workspace.js";
 
@@ -77,8 +78,9 @@ const CONFIG_RECORD_VALUE_CHECKS: Readonly<Record<ConfigRecordCollection, Config
   // TCRN-CROSS-STORY-483: a Command Spell rule's state (SUB-336).
   rule: commonShapeOnly,
 
-  // TCRN-CROSS-STORY-484: a custom variable (SUB-340).
-  variable: commonShapeOnly,
+  // TCRN-CROSS-STORY-484: a custom variable's type, value and description, keyed by its name
+  // (SUB-340, variables.ts).
+  variable: checkVariableRecordValue,
 
   // TCRN-CROSS-STORY-485: a gate declaration, keyed by the gate's name (SUB-343, gates-config.ts).
   gate: checkGateRecordValue,

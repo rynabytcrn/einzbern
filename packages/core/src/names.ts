@@ -106,6 +106,12 @@ export const LEGACY_HOOK_SCRIPTS: readonly string[] = Object.freeze([
   "tools/stop-pact/hook.mjs",
   "tools/stop-pact/response-style-hook.mjs",
 ]);
+// TCRN-CROSS-STORY-477 R3 and STORY-474 R4: the child the old knowledge hook started to run the
+// injection chain. It is not a hook of its own, but a machine that has not migrated still runs it
+// under that hook, so it is still told apart from an agent (scripts/operational-batch-entry.mjs).
+export const LEGACY_HOOK_CHILD_SCRIPTS: readonly string[] = Object.freeze([
+  "scripts/knowledge-inject.mjs",
+]);
 // TCRN-CROSS-STORY-477 R4: the key the old adapter bundles merged into a host's settings to record
 // an inert activation; the host wiring takes it out.
 export const LEGACY_INERT_SETTINGS_KEY = "tcrnWorkflowInert" as const;

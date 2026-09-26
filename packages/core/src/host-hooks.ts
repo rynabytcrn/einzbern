@@ -37,7 +37,7 @@ import { homedir } from "node:os";
 import { dirname, join, posix, resolve, win32 } from "node:path";
 
 import { writeFileAtomic } from "./atomic-file.js";
-import { DEVICE_HOME_ENTRIES, backupsPath } from "./device-home.js";
+import { DEVICE_HOME_ENTRIES, ENGINE_HOOK_LAUNCHER, backupsPath } from "./device-home.js";
 import {
   ARRAY_TABLE_HEADER,
   HostWritableRootsError,
@@ -88,8 +88,8 @@ export const HOST_HOOK_EVENTS: Readonly<Record<string, string>> = Object.freeze(
   UserPromptSubmit: "user-prompt-submit",
 });
 // The stable launcher, in engine/ of the device directory; installed from
-// scripts/einzbern-hook-launcher.mjs.
-export const HOST_HOOK_LAUNCHER = "hook.mjs" as const;
+// scripts/einzbern-hook-launcher.mjs. Its name has one source, device-home.ts.
+export const HOST_HOOK_LAUNCHER = ENGINE_HOOK_LAUNCHER;
 export const HOST_HOOK_TIMEOUT_SECONDS = 30 as const;
 // Where each host keeps its hooks, relative to the scope's root: the user's home or the project.
 export const HOST_HOOK_FILES: Readonly<Record<HostHookHost, string>> = Object.freeze({

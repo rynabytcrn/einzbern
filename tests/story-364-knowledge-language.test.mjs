@@ -52,7 +52,6 @@ import {
 import { resetRecallCache } from "../dist/build/packages/core/src/recall.js";
 import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { bundleTranslator, runInjection } from "../scripts/knowledge-inject.mjs";
 import { planCommand, migrateCommand } from "../scripts/knowledge-language.mjs";
 
 const instant = (second) => `2026-09-08T00:00:${String(second).padStart(2, "0")}Z`;
@@ -593,51 +592,6 @@ test("STORY-364 R3: a batch's create members each get their own answers, keyed b
 
 // The fourth card write path, conference-close --distill, retired with the conference write verbs
 // (TCRN-CROSS-STORY-475 R3); knowledge-capture, knowledge-create and knowledge-batch remain.
-
-test("STORY-364 R4: the injection hook translates once and asks again, and adds the two counts", async (context) => {
-  const workspace = await languageWorkspace(context, {
-    "artifact.language": "zh-CN",
-    "execution.dispatchTiers": DISPATCH_TIERS_VALUE,
-    "retrieval.promptLanguages": "zh-CN",
-    // TCRN-CROSS-SUB-303: an eleven-card library lowers the default calibrated on the cross-project chain.
-    "retrieval.tau": "1",
-  });
-  const containerRoot = containerOf(workspace);
-  await captureKnowledgeUnit(workspace, {
-    ...englishCard,
-    subject: "凭据不是实现的前置",
-    summary: "密钥还没批下来并不阻塞要用它的工作",
-    snippet: "对着接口做，不对着密钥做",
-  }, { languageProvider: provider(), host: "claude-code" });
-  await seedDistractors(workspace, provider(), 10);
-  const prompt = "is the key still blocking development";
-  const bundle = await writeBundle(join(containerRoot, "query-bundle.json"), {
-    model: ECONOMY_MODEL,
-    translations: { [prompt]: "密钥还没申请下来是不是整个开发都得先卡住" },
-  });
-
-  const untranslated = await runInjection({ prompt, partition: "cross-project", containerRoot, host: "claude" });
-  assert.equal(untranslated.ok, true);
-  assert.deepEqual(untranslated.queryTranslation, { from: "en", to: "zh-CN", model: ECONOMY_MODEL },
-    "the engine says a translation is owed and names the model that owes it");
-  assert.equal(untranslated.translatedQuery, null, "with no translator the hook keeps the first answer");
-  assert.deepEqual(untranslated.telemetry, { queryTranslations: 1 });
-
-  const translated = await runInjection({ prompt, partition: "cross-project", containerRoot, host: "claude", translate: bundleTranslator(bundle) });
-  assert.equal(translated.translatedQuery, "密钥还没申请下来是不是整个开发都得先卡住");
-  assert.deepEqual(translated.telemetry, { queryTranslations: 1 },
-    "one owed on the first ask plus none owed on the second: the two counts added, not counted twice");
-  assert.ok(String(translated.injection ?? "").includes("凭据不是实现的前置"),
-    "and the second ask is the one whose answer is injected");
-
-  const missing = await runInjection({
-    prompt, partition: "cross-project", containerRoot, host: "claude",
-    translate: bundleTranslator(await writeBundle(join(containerRoot, "empty-bundle.json"), { model: ECONOMY_MODEL, translations: {} })),
-  });
-  assert.equal(missing.ok, true);
-  assert.equal(missing.translatedQuery, null,
-    "read-side is fail-open: a bundle without this prompt keeps the first answer rather than refusing");
-});
 
 test("language migration excludes retired cards before planning or applying policy", async (context) => {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-language-retired-")));

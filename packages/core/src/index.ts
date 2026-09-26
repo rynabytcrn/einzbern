@@ -657,6 +657,11 @@ export { relocateLibrary } from "./relocate.js";
 export { readLibraryTombstone } from "./workspace.js";
 // TCRN-CROSS-STORY-470 R5: a project's own host settings naming a library that sits outside it.
 export { applyWritableRoots, planWritableRoots } from "./host-writable-roots.js";
+// TCRN-CROSS-STORY-477 R1, R3, R4, R5: the one Einzbern hook a host's settings carry, rendered
+// with everything of the old harness taken out.
+export { HOST_HOOK_HOSTS, HOST_HOOK_SCOPES, applyHostHooks, planHostHooks, readHostHooks } from "./host-hooks.js";
+// TCRN-CROSS-STORY-477 R2, AC3: what that hook answers for a prompt in a registered project.
+export { hookEventName, hookHost, promptRecallContext } from "./hook-recall.js";
 // TCRN-CROSS-STORY-471 R2, R3: the engine versions installed on this device, the pointer to the one
 // in use, and switching between them.
 export { listEngines, rollbackEngine, updateEngine } from "./engine-home.js";

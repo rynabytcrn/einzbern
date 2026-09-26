@@ -11,6 +11,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { INSTALL_MANIFEST, INSTALL_MANIFEST_REQUIRED_ITEM_IDS, assertInstallManifestComplete } from "../dist/build/packages/core/src/index.js";
+import { hookLauncherPath } from "../dist/build/packages/core/src/host-hooks.js";
 import { inspectInstallWiring } from "../scripts/platform-doctor.mjs";
 
 const REMOVED_IDS = ["machine.local-snapshot-receipt", "machine.offsite-push-receipt"];
@@ -58,8 +59,8 @@ test("INC-258 install manifest matches the post-removal surface and rejects rest
   assertInstallManifestComplete(INSTALL_MANIFEST);
   // 20 until TCRN-CROSS-STORY-467 R3 retired the two adapter bundles, their two install
   // receipts and the engine repository's own settings fixture; 14 since R2 retired the
-  // helper trust archive.
-  assert.equal(INSTALL_MANIFEST.items.length, 14);
+  // helper trust archive; 15 since TCRN-CROSS-STORY-477 R1 added the stable hook launcher.
+  assert.equal(INSTALL_MANIFEST.items.length, 15);
   assert.deepEqual(REMOVED_IDS.filter((id) => INSTALL_MANIFEST.items.some((entry) => entry.id === id)), []);
   assert.deepEqual(REMOVED_IDS.filter((id) => INSTALL_MANIFEST_REQUIRED_ITEM_IDS.includes(id)), []);
   const restored = {
@@ -73,4 +74,20 @@ test("INC-258 install manifest matches the post-removal surface and rejects rest
   const red = await inspectInstallWiring(fixture.root, fixture.home, restored);
   assert.equal(red.ok, false);
   assert.deepEqual(red.missing.map((entry) => entry.id).sort(), [...REMOVED_IDS].sort());
+});
+
+// TCRN-CROSS-STORY-477 R1: every host hook runs the stable launcher in the device directory, so a
+// device without it is not installed: the manifest names it where the host hooks point, and the
+// install wiring is red when it is missing.
+test("477-R1: the install manifest names the stable hook launcher the host hooks run", async (context) => {
+  const entry = INSTALL_MANIFEST.items.find((item) => item.id === "machine.hook-launcher");
+  assert.deepEqual({ ...entry }, {
+    id: "machine.hook-launcher", layer: "machine", host: "shared", pathTemplate: "<HOME>/.einzbern/engine/hook.mjs", writer: "user-guided", acceptanceProbe: "probe:regular-file",
+  });
+  assert.ok(INSTALL_MANIFEST_REQUIRED_ITEM_IDS.includes("machine.hook-launcher"));
+  assert.equal(entry.pathTemplate.replaceAll("<HOME>", "/opt/ada"), hookLauncherPath("/opt/ada/.einzbern", "linux"), "the path the hook commands name");
+  const fixture = await createInstallFixture(context, { skipItems: [...REMOVED_IDS, "machine.hook-launcher"] });
+  const red = await inspectInstallWiring(fixture.root, fixture.home);
+  assert.equal(red.ok, false);
+  assert.deepEqual(red.missing.map((item) => item.id), ["machine.hook-launcher"]);
 });

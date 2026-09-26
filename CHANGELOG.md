@@ -50,8 +50,8 @@ response-style checks (`tools/stop-pact`), `scripts/chain-write-guard.mjs`,
 `scripts/ssh-write-observer.mjs` with its channel proof and break-glass allowlist,
 `scripts/agents-zero-hook.mjs` and `scripts/knowledge-capture-hook.mjs`, the Claude and Codex
 adapter bundles with their install receipts, and this repository's own
-`.claude/settings.json` observer fixture. The harness renders governed context injection
-only, and the `knowledge-capture` verb stays.
+`.claude/settings.json` observer fixture. The harness then rendered governed context
+injection only (TCRN-CROSS-STORY-477 replaces it, below), and the `knowledge-capture` verb stays.
 The guard mutation check and its registry, the verification map with its link and red-leg
 checks, the proof-artifact generator, the RC1 candidate manifest and its input policy, and
 the source allowlist are gone, with `guard-check`, `verify:map`, `verify:source`,
@@ -314,6 +314,32 @@ re-recorded read-only from the cross-project chain by `scripts/retrieval-eval-re
 paths, addresses and host names redacted, and the gate holds the unrelated group empty at the
 threshold and answered at zero (`RETRIEVAL_EVAL_THRESHOLD_DETACHED` otherwise). The engine package
 has no session-level injection entry: its host hooks render no SessionStart or PostToolUse hook.
+
+One hook replaces the harness (TCRN-CROSS-STORY-477; MIN-227 D4, D5; `packages/core/src/host-hooks.ts`,
+`packages/core/src/hook-recall.ts`). A host's settings carry one Einzbern hook, on UserPromptSubmit
+only: `node "<device directory>/engine/hook.mjs" user-prompt-submit`. The path is absolute and
+double-quoted, written with backslashes on Windows, and no shell wraps the line; no argument names
+a checkout, a container or a host. `scripts/host-render.mjs --host --scope user|project` renders
+it into Claude Code's `settings.json` or Codex's `hooks.json`. Every other tool's hooks and keys
+stay. Taken out are every hook of the old harness, the `permissions.deny` rules that fenced the
+old directories and the `tcrnWorkflowInert` key. For Codex it turns the hooks feature on and drops
+the trust state of a hook that is gone. host-render no longer projects dispatch settings, and
+`--workspace`, `--settings`, `--mode`, `--repo-root`, `--hooks-only` and `--backup-dir` are
+refused with `HOST_RENDER_ARGUMENT_UNKNOWN`; `--library` still renders writable roots.
+The launcher is `scripts/einzbern-hook-launcher.mjs`, installed as `engine/hook.mjs` beside
+`engine/einzbern.mjs` (install manifest item `machine.hook-launcher`). It imports nothing from any
+engine. It reads the registry and at most one Git config and starts no process. Where no project
+is registered it ends with exit 0 and no output, and no library is opened. In a registered
+project, or in another clone of it found through its remote, it imports the current version's
+`scripts/einzbern-hook.mjs`. That entry confirms the library through the registry and answers with
+recall's hit lines as `additionalContext`, cut to `injection.perPromptBytes`. A prompt without a
+strong hit gets nothing, and every failure still ends with exit 0.
+The old injection chain is gone: `scripts/knowledge-inject-hook.mjs`, `scripts/knowledge-inject.mjs`
+and the session ledger `scripts/injection-session.mjs`, with the `~/.tcrn-injection` state it
+kept, the placement manifest and their fixtures (TCRN-CROSS-STORY-474 R4). Its query translation
+and knowledge judge went with it. The `recall` verb still reports a query's language, and
+SessionStart, PostToolUse, PreToolUse, Stop, SubagentStart and SubagentStop carry no hook.
+platform-doctor no longer requires the old knowledge hook to name its container root.
 
 ## 1.2.1 — patch candidate
 

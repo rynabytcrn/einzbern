@@ -28,6 +28,11 @@ export const DEVICE_HOME_ENTRIES = Object.freeze({
   // TCRN-CROSS-STORY-476 R5: the user-level crest, unless crest.userPath names another place.
   crest: "crest",
 } as const);
+// TCRN-CROSS-STORY-477 R1: the stable hook launcher in engine/, beside the stable entry
+// engine/einzbern.mjs; every host hook runs it (host-hooks.ts) and the install manifest lists it.
+// Defined here, in a module that imports no other engine module, so the install manifest can read
+// it while the barrel is still loading.
+export const ENGINE_HOOK_LAUNCHER = "hook.mjs" as const;
 
 /** The device-level key that moves the user-level crest (machine-settings.ts validates and stores it). */
 export const USER_CREST_PATH_SETTING = "crest.userPath" as const;

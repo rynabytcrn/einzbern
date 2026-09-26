@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { compareCanonicalText } from "../../protocol/src/index.js";
+import { DEVICE_HOME_ENTRIES, ENGINE_HOOK_LAUNCHER } from "./device-home.js";
 import { BRAND, DIRECTORY, LOCAL_DIRECTORY_NAMES } from "./names.js";
 
 // This machine's checkout folders keep their names; they are read from the names module.
@@ -104,6 +105,9 @@ export const INSTALL_MANIFEST_ITEMS: readonly InstallManifestItem[] = Object.fre
   // obligation; skills@1.7.0 owns the canonical placement here.
   item("machine.agents-skill", "machine", "codex", `<HOME>/.agents/skills/${BRAND.helper.id}`, "user-guided", "probe:regular-directory"),
   item("machine.workflow-engine", "machine", "shared", `<HOME>/${DIRECTORY.device}`, "user-guided", "probe:engine-version"),
+  // TCRN-CROSS-STORY-477 R1: the stable hook launcher every host hook runs, beside the engine
+  // versions in the device directory; placed by the installer from scripts/einzbern-hook-launcher.mjs.
+  item("machine.hook-launcher", "machine", "shared", `<HOME>/${DIRECTORY.device}/${DEVICE_HOME_ENTRIES.engine}/${ENGINE_HOOK_LAUNCHER}`, "user-guided", "probe:regular-file"),
   item("machine.local-snapshot-artifacts", "machine", "shared", "<PLATFORM_ROOT>/.tcrn-artifacts/chain-snapshots", "user-guided", "probe:regular-directory"),
   item("machine.launchd-local-snapshot", "machine", "shared", "<HOME>/Library/LaunchAgents/com.tcrn.platform.local-snapshot.plist", "user-guided", "probe:launchd-duty;label=com.tcrn.platform.local-snapshot;maxAgeHours=26"),
   item("machine.portal-launcher-command", "machine", "shared", `<PLATFORM_ROOT>/${BRAND.portal.id}.command`, "user-guided", "probe:regular-executable"),
@@ -124,6 +128,7 @@ const REQUIRED_ITEM_ID_CATALOG = [
   "machine.claude-skill",
   "machine.codex-config",
   "machine.agents-skill",
+  "machine.hook-launcher",
   "machine.launchd-local-snapshot",
   "machine.local-snapshot-artifacts",
   "machine.portal-launcher-cmd",

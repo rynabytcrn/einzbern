@@ -78,14 +78,20 @@ export interface RecallSelectionOptions {
 export const RECALL_FIELD_WEIGHTS = { title: 8, body: 3, tags: 5, expansions: 6, externalKey: 1 } as const;
 
 /**
- * The absolute floor, in bm25 units, and the default of the `retrieval.tau` setting.
- * A term carried by most of the corpus scores near zero by construction — FTS5 clamps
- * a non-positive inverse document frequency rather than letting it go negative — so
- * this floor is what turns "every card is tagged lesson" into no answer instead of the
- * whole library. Measured: the query `lesson` over the 36-card corpus tops out at
- * 0.000, where the substring retrieval it replaces returned all 19 tagged cards.
+ * TCRN-CROSS-STORY-474 R3 (MIN-227 D7): the strong-hit threshold, in bm25 units, and the default of
+ * the `retrieval.tau` setting. When the best hit of a prompt scores below it the prompt is about
+ * nothing the library holds, and recall answers with nothing at all (RECALL_NO_STRONG_HIT) rather
+ * than its best weak guesses -- a prompt that has no business in the library must not be handed
+ * a reminder. Above it, the threshold is still the absolute floor of every hit. A term carried by
+ * most of the corpus scores near zero by construction (FTS5 clamps a non-positive inverse
+ * document frequency), which is what turns "every card is tagged lesson" into no answer.
+ * The value is calibrated by retrieval-eval and recorded in its fixtures (TCRN-CROSS-SUB-303);
+ * until then it is the absolute floor the 2026-09-04 evaluation settled on.
  */
-export const RECALL_DEFAULT_TAU = 1;
+export const RECALL_STRONG_TAU = 1;
+
+/** The name the absolute floor had before it became the strong-hit threshold; the same value. */
+export const RECALL_DEFAULT_TAU = RECALL_STRONG_TAU;
 
 /**
  * The relative floor, as a fraction of the best bm25 score in the same answer. The
@@ -576,7 +582,8 @@ export interface RecallRequest {
 }
 
 export interface RecallResult {
-  readonly reasonCode: "RECALL_READY";
+  // RECALL_NO_STRONG_HIT: the best hit scored below tau, so records is empty.
+  readonly reasonCode: "RECALL_READY" | "RECALL_NO_STRONG_HIT";
   readonly checkpoint: string;
   readonly indexed: number;
   readonly rebuilt: boolean;
@@ -600,6 +607,16 @@ export interface RecallResult {
 const CACHE_LIMIT = 4;
 const cachedIndexes = new Map<string, RecallIndex>();
 
+/** A request recall cannot answer as asked. */
+export class RecallError extends Error {
+  readonly reasonCode: "RECALL_TAU_INVALID";
+  constructor(reasonCode: "RECALL_TAU_INVALID", message: string) {
+    super(message);
+    this.name = "RecallError";
+    this.reasonCode = reasonCode;
+  }
+}
+
 export function recall(request: RecallRequest): RecallResult {
   let index = cachedIndexes.get(request.cacheKey);
   let rebuilt = false;
@@ -620,17 +637,25 @@ export function recall(request: RecallRequest): RecallResult {
     cachedIndexes.delete(oldest);
   }
   const ranked = index.search(request.query);
-  const tau = request.tau ?? RECALL_DEFAULT_TAU;
+  const tau = request.tau ?? RECALL_STRONG_TAU;
+  if (!Number.isFinite(tau) || tau < 0) {
+    throw new RecallError("RECALL_TAU_INVALID", `recall tau must be a finite non-negative number, not ${String(tau)}`);
+  }
   const relativeFloor = request.relativeFloor ?? RECALL_RELATIVE_FLOOR;
   const limit = request.limit ?? RECALL_DEFAULT_LIMIT;
-  const records = selectRecallHits(ranked, {
-    tau,
-    relativeFloor,
-    limit,
-    quota: request.quota === undefined ? RECALL_KIND_QUOTA : request.quota,
-  });
+  // TCRN-CROSS-STORY-474 R3: no strong hit, no answer. An exact external-key hit is the strongest
+  // hit there is (RECALL_EXTERNAL_KEY_SCORE), so naming a record is always answered.
+  const strong = ranked.some((hit) => hit.score >= tau);
+  const records = strong
+    ? selectRecallHits(ranked, {
+      tau,
+      relativeFloor,
+      limit,
+      quota: request.quota === undefined ? RECALL_KIND_QUOTA : request.quota,
+    })
+    : [];
   return {
-    reasonCode: "RECALL_READY",
+    reasonCode: strong ? "RECALL_READY" : "RECALL_NO_STRONG_HIT",
     checkpoint: request.checkpoint,
     indexed: index.size,
     rebuilt,

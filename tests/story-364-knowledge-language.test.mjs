@@ -436,7 +436,10 @@ test("STORY-364: the recall verb reports the query language and its telemetry", 
     "--query", "is the key still blocking development", "--allow-trailing", "true"],
   { write(value) { output = value; } });
   const answer = JSON.parse(output);
-  assert.equal(answer.reasonCode, "RECALL_READY");
+  // An English prompt has no strong hit in a zh-CN library until the host translates it and asks
+  // again, so it is answered with nothing (TCRN-CROSS-STORY-474 R3) -- and still says what it owes.
+  assert.equal(answer.reasonCode, "RECALL_NO_STRONG_HIT");
+  assert.deepEqual(answer.records, []);
   assert.equal(answer.queryLanguage, "en");
   assert.deepEqual(answer.telemetry, { queryTranslations: 1 },
     "GWT3: an English prompt against zh-CN prompt languages is one recorded query-side translation");

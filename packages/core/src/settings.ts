@@ -39,12 +39,15 @@ export const SETTINGS_DEVICE_LAYER = "device" as const satisfies SettingLayer;
 // the time-based retirement they configured; their recorded values stay readable history.
 // TCRN-CROSS-STORY-475 R3 (MIN-227 D10): conference.positionBudgetBytes and
 // execution.independenceFloor retire with the conference write verbs they governed.
+// TCRN-CROSS-STORY-474 (MIN-227 D7): injection.budgetBytes retires with the session-wide injection
+// it budgeted; a prompt's own budget is injection.perPromptBytes.
 export const RETIRED_SETTING_KEYS: readonly string[] = Object.freeze([
   "conference.positionBudgetBytes",
   "execution.independenceFloor",
   "execution.personalessDispatch",
   "fitness.minEvents",
   "fitness.windowDays",
+  "injection.budgetBytes",
   "model.economyTier",
 ]);
 
@@ -68,7 +71,6 @@ export type SettingKey =
   | "execution.maxConcurrentSubagents"
   | "execution.maxDispatchDepth"
   | "execution.subagentPolicy"
-  | "injection.budgetBytes"
   | "injection.perPromptBytes"
   | "knowledge.aggregateBytes"
   | "knowledge.articlesPath"
@@ -332,15 +334,6 @@ const catalogEntries: readonly Omit<SettingsCatalogEntry, "layer">[] = [
     allowedValues: ["allowed", "review-only", "forbidden"],
   },
   {
-    key: "injection.budgetBytes",
-    type: "string",
-    controlType: "number",
-    layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: "24576",
-    min: 1,
-    max: 1_048_576,
-  },
-  {
     key: "injection.perPromptBytes",
     type: "string",
     controlType: "number",
@@ -389,8 +382,10 @@ const catalogEntries: readonly Omit<SettingsCatalogEntry, "layer">[] = [
     max: 65_536,
   },
   {
-    // TCRN-CROSS-STORY-362: the recall verb's absolute score floor, in bm25 units.
-    // A string-typed number like every other numeric setting here, so the catalog
+    // TCRN-CROSS-STORY-362, STORY-474 R3: the strong-hit threshold, in bm25 units. A prompt whose
+    // best hit scores below it is answered with nothing (RECALL_NO_STRONG_HIT); above it, it is
+    // also every hit's absolute floor. Its default is RECALL_STRONG_TAU (recall.ts), calibrated by
+    // retrieval-eval. A string-typed number like every other numeric setting here, so the catalog
     // keeps one value shape; the verb parses it and refuses a value it cannot use.
     key: "retrieval.tau",
     type: "string",

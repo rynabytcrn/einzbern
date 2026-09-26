@@ -200,8 +200,10 @@ test("STORY-362: the recall verb answers with kind, key, status, title, summary 
   assert.equal(answer.tau, "1.0000", "the value recorded in the retrieval.tau setting, spoken as a decimal string");
   assert.equal(answer.relativeFloor, "0.2500");
   assert.ok(answer.records.length >= 1);
-  assert.deepEqual(Object.keys(answer.records[0]).sort(), ["id", "key", "kind", "line", "parentChain", "score", "status", "summary", "title"]);
+  // A card hit names its store, the library's crest here (TCRN-CROSS-STORY-476 R5, TCRN-CROSS-SUB-311).
+  assert.deepEqual(Object.keys(answer.records[0]).sort(), ["id", "key", "kind", "line", "parentChain", "scope", "score", "status", "summary", "title"]);
   assert.equal(answer.records[0].kind, "card");
+  assert.equal(answer.records[0].scope, "project");
   assert.equal(answer.records[0].title, "hook 注册必须用项目目录变量形态");
   assert.equal(answer.records[0].line, `[卡片] hook 注册必须用项目目录变量形态 · ${answer.records[0].id}`, "TCRN-CROSS-STORY-474 R2: the hit as one line");
   assert.deepEqual(answer.context, answer.records.map((record) => record.line), "the answer's lines fit the default per-prompt budget");

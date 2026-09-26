@@ -392,6 +392,30 @@ whole to `backups/<UTC>/skill-copies/` first, and installing the same tree again
 The legacy helper's copies and install markers are listed by `legacySkillCleanupPlan` and moved to
 a backup by `applyLegacySkillCleanup`, never deleted.
 
+Knowledge is written once and found at once (TCRN-CROSS-STORY-476; MIN-227 D9, D25;
+`packages/core/src/knowledge-core.ts`, `packages/core/src/knowledge-hint.ts`). A card is active and
+retrievable the moment it is written: the candidate lifecycle and the promotion step are gone with
+`knowledge-promote`, `knowledge-retire`, `retire-proposals` and `retire-sweep`, a card retires only
+when a later card names it with `--supersedes`, and a write that names the candidate or retired
+lifecycle is refused with `KNOWLEDGE_LIFECYCLE_RETIRED` and its remedy.
+`knowledge-create --lifecycle` is optional and takes `active` alone; `knowledge-list --promotion`
+and `knowledge-body --allow-unpromoted` are gone. Records written before keep the lifecycle and
+promotion state they were written with. `knowledge.aggregateBytes` counts the bodies of live cards only, so a superseded
+card gives its body back to the budget, and a refusal for the budget names `bodyBytes` and `limit`.
+`--scope user` on `knowledge-create` and `knowledge-capture` files a card in this user's crest
+(`crest` in the device directory, or the folder the device-level key `crest.userPath` names), which
+every project recalls; `knowledge-capture --scope` also takes `role` (its default) and `workspace`.
+`knowledge-list`, `knowledge-snippet` and `knowledge-body` read the user crest with `--scope user`.
+`recall` reads both stores and reports each under `knowledgeStores`; a card hit carries `scope`
+(`project` or `user`), and a user card's line reads `[卡片 用户]`. Every knowledge verb that writes a
+card (create, capture, article-create, article-refresh, reverify and batch) answers `ids` beside
+the store `version`: the card written, the card it superseded, and in a batch every member's. A
+work record reaching done (`work-transition`, and each done member of `work-batch` under
+`knowledgeHints`) and `minutes-record` answer `knowledgeHint`: the line
+`是否有可提取的知识；可能冲突的卡：…` and `conflictCandidateIds`, the cards the write-time conflict
+scorer finds against the record's title and goal or the minutes' summary, in both stores. A
+possible conflict names the cards under `conflicts` on stderr.
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

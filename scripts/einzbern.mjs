@@ -17,12 +17,17 @@ try {
   // read also names the device and file (TCRN-CROSS-STORY-468, 470 R4), and a refused write its remedy.
   // A library this engine may not open names the format or engine version it needs and what this
   // engine has (TCRN-CROSS-STORY-471 R1). A Story refused for a missing goal or acceptance names
-  // the field (TCRN-CROSS-STORY-473 R2).
+  // the field (TCRN-CROSS-STORY-473 R2). A knowledge write refused for its budget names the body
+  // bytes it would reach and the limit, and one refused as a possible conflict the cards it
+  // conflicts with (TCRN-CROSS-STORY-476, TCRN-CROSS-SUB-311).
   const stringDetails = ["required", "actual", "supported", "layout", "streamId", "sequence", "eventId", "break", "segment", "line", "deviceId", "file", "timeoutMs", "remedy", "movedTo", "target", "field"];
+  const numberDetails = ["bodyBytes", "limit"];
+  const listDetails = ["allowedValues", "conflicts"];
   const details = error?.details !== null && typeof error?.details === "object"
     ? Object.fromEntries(Object.entries(error.details).filter(([key, value]) =>
       (stringDetails.includes(key) && typeof value === "string") ||
-      (key === "allowedValues" && Array.isArray(value) && value.every((entry) => typeof entry === "string"))))
+      (numberDetails.includes(key) && Number.isSafeInteger(value)) ||
+      (listDetails.includes(key) && Array.isArray(value) && value.every((entry) => typeof entry === "string"))))
     : {};
   process.stderr.write(`${JSON.stringify({ ok: false, reasonCode, ...details, error: String(error?.message ?? error) })}\n`);
   process.exitCode = 1;

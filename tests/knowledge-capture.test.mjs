@@ -163,11 +163,20 @@ test("STORY-365 GWT4/GWT5: create needs no backlink lists, and nothing new lands
     assert.equal(created.promotionState, "promoted", "a create with no backlinks is written official");
 
     await captureKnowledgeUnit(fixture.workspace, lessonCard("另一条完全不同的经验条目"), { allowTrailing: true });
-    const candidates = await cliJson([
+    // TCRN-CROSS-STORY-476 R1: --promotion went with the candidate it selected, so every card is
+    // listed and none of them is a candidate.
+    const refusedFlag = await cliJson([
       "knowledge-list", "--workspace", fixture.workspace, "--at", instant(3),
       "--selection", "all", "--promotion", "candidate", "--allow-trailing", "true",
+    ]).then(() => null, (error) => error);
+    assert.equal(refusedFlag?.reasonCode, "CLI_ARGUMENT_UNKNOWN");
+    const listed = await cliJson([
+      "knowledge-list", "--workspace", fixture.workspace, "--at", instant(3),
+      "--selection", "all", "--allow-trailing", "true",
     ]);
-    assert.equal(candidates.total, 0, "no write this Story admits produces a candidate");
+    assert.equal(listed.total, 2);
+    assert.equal(listed.records.some((record) => record.lifecycle === "candidate" || record.promotionState === "candidate"), false,
+      "no write this Story admits produces a candidate");
   } finally {
     await fixture.close();
   }

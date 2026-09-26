@@ -59,8 +59,11 @@ import {
   admitTemplateInWorkspace,
   readTemplateDocumentFile,
   RECALL_CANDIDATE_LIMIT,
-  expansionsText,
   KNOWLEDGE_LANGUAGE_BUNDLE_FALLBACK_KEY,
+  KNOWLEDGE_STORE_SCOPES,
+  knowledgeHintFor,
+  readKnowledgeHintCards,
+  readRecallCards,
   languageProviderFromBundle,
   parseLanguageBundle,
   RECALL_DEFAULT_TAU,
@@ -115,9 +118,9 @@ import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider, StoryFields, W
 import type {
   KnowledgeCategory,
   KnowledgeFreshnessState,
+  KnowledgeHint,
   KnowledgeKind,
-  KnowledgePromotionState,
-  RecallKnowledgeInput,
+  KnowledgeStoreScope,
 } from "../../core/src/index.js";
 import { existsSync, readFileSync } from "node:fs";
 import { cp, lstat, mkdir, readdir, writeFile } from "node:fs/promises";
@@ -699,7 +702,13 @@ function eventPage(state: Awaited<ReturnType<typeof validateWorkspace>>, values:
   }
 }
 
-function writeState(io: CliIo, state: Awaited<ReturnType<typeof validateWorkspace>>, record?: Readonly<Record<string, unknown>>, warning?: Readonly<Record<string, string>> | null): void {
+function writeState(
+  io: CliIo,
+  state: Awaited<ReturnType<typeof validateWorkspace>>,
+  record?: Readonly<Record<string, unknown>>,
+  warning?: Readonly<Record<string, string>> | null,
+  extra: Readonly<Record<string, unknown>> = {},
+): void {
   io.write(canonicalJson({
     reasonCode: "WORKSPACE_COMMAND_COMPLETED",
     workspaceId: state.metadata.workspaceId,
@@ -710,7 +719,74 @@ function writeState(io: CliIo, state: Awaited<ReturnType<typeof validateWorkspac
     work: state.work.filter((entry) => !entry.tombstone).length,
     ...(record ? { record } : {}),
     ...(warning === undefined || warning === null ? {} : { warning }),
+    ...extra,
   }));
+}
+
+// TCRN-CROSS-STORY-476 R4 (TCRN-CROSS-SUB-311): a work record reaching done and minutes being
+// recorded each answer one line asking whether there is knowledge to extract, naming the cards a
+// card about it could conflict with. The cards are read once, after the write, from the library's
+// crest and this user's; a store that cannot be read gives none, and the write stands either way.
+async function knowledgeHints(
+  workspace: string,
+  at: string,
+  state: Awaited<ReturnType<typeof validateWorkspace>>,
+  targets: readonly ({ readonly workId: string } | { readonly minutesId: string })[],
+): Promise<readonly KnowledgeHint[]> {
+  if (targets.length === 0) return [];
+  const cards = await readKnowledgeHintCards(workspace, at);
+  return targets.map((target) => knowledgeHintFor(state, cards, target));
+}
+
+// The records a work-batch document takes to done: its work-transition members with status done,
+// by id or by the id their external key derives, each once, in member order.
+function batchDoneWorkIds(document: unknown): readonly string[] {
+  const members = (document as { readonly members?: unknown } | null)?.members;
+  if (!Array.isArray(members)) return [];
+  const ids: string[] = [];
+  for (const member of members as readonly unknown[]) {
+    if (member === null || typeof member !== "object") continue;
+    const entry = member as Readonly<Record<string, unknown>>;
+    if (entry.verb !== "work-transition" || entry.status !== "done") continue;
+    const id = typeof entry.id === "string" && entry.id.length > 0
+      ? entry.id
+      : typeof entry.externalKey === "string" && entry.externalKey.length > 0
+        ? deriveStableId("work", canonicalExternalKey(entry.externalKey))
+        : null;
+    if (id !== null && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
+// TCRN-CROSS-STORY-476 (problem list #18): every knowledge verb that writes a card answers the ids
+// it wrote beside the store's version, as a library write answers its ids beside its version: the
+// card written, the card it superseded (whose record the write rewrites), and in a batch every card
+// a member wrote or superseded.
+function knowledgeWriteReceipt(result: Readonly<Record<string, JsonValue>>): string {
+  const ids: string[] = [];
+  const add = (value: JsonValue | undefined): void => {
+    if (typeof value === "string" && !ids.includes(value)) ids.push(value);
+  };
+  add(result["id"]);
+  add(result["superseded"]);
+  const applied = result["applied"];
+  if (Array.isArray(applied)) {
+    for (const entry of applied) {
+      if (entry === null || typeof entry !== "object" || Array.isArray(entry)) continue;
+      const member = entry as Readonly<Record<string, JsonValue>>;
+      add(member["id"]);
+      add(member["superseded"]);
+    }
+  }
+  return canonicalJson({ ...result, ids });
+}
+
+// TCRN-CROSS-STORY-476 R5: the store a knowledge read goes to -- the library's crest ("project",
+// the default) or this user's crest ("user").
+function storeScopeOption(value: string | undefined): { readonly scope?: KnowledgeStoreScope } {
+  if (value === undefined) return {};
+  if (!(KNOWLEDGE_STORE_SCOPES as readonly string[]).includes(value)) fail("CLI_ARGUMENT_MALFORMED", `scope=${value}`);
+  return { scope: value as KnowledgeStoreScope };
 }
 
 // TCRN-CROSS-STORY-467 R1: every write receipt echoes the ids it wrote beside the version
@@ -793,17 +869,20 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "knowledge-article-refresh", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "expected-revision", required: true, valueKind: "integer" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "path", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "language-bundle", required: false, valueKind: "string" }] },
   { name: "knowledge-batch", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "from-file", required: true, valueKind: "string" }, { name: "align-first", required: false, valueKind: "boolean" }, { name: "language-bundle", required: false, valueKind: "string" }] },
   { name: "knowledge-bodies-migrate", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "segment-bytes", required: false, valueKind: "integer" }] },
-  { name: "knowledge-body", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "allow-unpromoted", required: false, valueKind: "boolean" }, { name: "allow-stale", required: false, valueKind: "boolean" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
-  { name: "knowledge-capture", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "subject", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "snippet", required: true, valueKind: "string" }, { name: "tags", required: true, valueKind: "list" }, { name: "accountable-owner-id", required: true, valueKind: "string" }, { name: "body", required: true, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }, { name: "role-scopes", required: false, valueKind: "list" }, { name: "category", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "source-references", required: false, valueKind: "list" }, { name: "evidence-ids", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "string" }, { name: "coexist", required: false, valueKind: "boolean" }, { name: "allow-trailing", required: false, valueKind: "boolean" }, { name: "language-bundle", required: false, valueKind: "string" }] },
+  // TCRN-CROSS-STORY-476 R1, R5: knowledge-create's --lifecycle is optional (active is all it takes),
+  // --promotion and --allow-unpromoted are gone with the candidate, knowledge-create and
+  // knowledge-capture take scope user, and list, snippet and body read the user crest with --scope user.
+  { name: "knowledge-body", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "scope", required: false, valueKind: "string" }, { name: "allow-stale", required: false, valueKind: "boolean" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
+  { name: "knowledge-capture", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "subject", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "snippet", required: true, valueKind: "string" }, { name: "tags", required: true, valueKind: "list" }, { name: "accountable-owner-id", required: true, valueKind: "string" }, { name: "body", required: true, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "role-scopes", required: false, valueKind: "list" }, { name: "category", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "source-references", required: false, valueKind: "list" }, { name: "evidence-ids", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "string" }, { name: "coexist", required: false, valueKind: "boolean" }, { name: "allow-trailing", required: false, valueKind: "boolean" }, { name: "language-bundle", required: false, valueKind: "string" }] },
   { name: "knowledge-checkpoint", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
-  { name: "knowledge-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "external-key", required: true, valueKind: "string" }, { name: "scope", required: true, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "role-scopes", required: true, valueKind: "list" }, { name: "category", required: true, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "tags", required: true, valueKind: "list" }, { name: "subject", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "snippet", required: true, valueKind: "string" }, { name: "accountable-owner-id", required: true, valueKind: "string" }, { name: "source-references", required: true, valueKind: "list" }, { name: "source-digest", required: false, valueKind: "string" }, { name: "supersedes", required: false, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "work-ids", required: false, valueKind: "list" }, { name: "decision-ids", required: false, valueKind: "list" }, { name: "gate-ids", required: false, valueKind: "list" }, { name: "evidence-ids", required: false, valueKind: "list" }, { name: "coexist", required: false, valueKind: "boolean" }, { name: "lifecycle", required: true, valueKind: "string" }, { name: "retrieval", required: true, valueKind: "string" }, { name: "freshness", required: true, valueKind: "string" }, { name: "last-verified", required: true, valueKind: "instant", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "stale-days", required: true, valueKind: "integer", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "export", required: true, valueKind: "string" }, { name: "body", required: true, valueKind: "string" }, { name: "language-bundle", required: false, valueKind: "string" }] },
+  { name: "knowledge-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "external-key", required: true, valueKind: "string" }, { name: "scope", required: true, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "role-scopes", required: true, valueKind: "list" }, { name: "category", required: true, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "tags", required: true, valueKind: "list" }, { name: "subject", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "snippet", required: true, valueKind: "string" }, { name: "accountable-owner-id", required: true, valueKind: "string" }, { name: "source-references", required: true, valueKind: "list" }, { name: "source-digest", required: false, valueKind: "string" }, { name: "supersedes", required: false, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "work-ids", required: false, valueKind: "list" }, { name: "decision-ids", required: false, valueKind: "list" }, { name: "gate-ids", required: false, valueKind: "list" }, { name: "evidence-ids", required: false, valueKind: "list" }, { name: "coexist", required: false, valueKind: "boolean" }, { name: "lifecycle", required: false, valueKind: "string" }, { name: "retrieval", required: true, valueKind: "string" }, { name: "freshness", required: true, valueKind: "string" }, { name: "last-verified", required: true, valueKind: "instant", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "stale-days", required: true, valueKind: "integer", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "export", required: true, valueKind: "string" }, { name: "body", required: true, valueKind: "string" }, { name: "language-bundle", required: false, valueKind: "string" }] },
   { name: "knowledge-freshness", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
   { name: "knowledge-init", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "acknowledge-disposable", required: false, valueKind: "boolean" }] },
-  { name: "knowledge-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "selection", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "role-scope", required: false, valueKind: "string" }, { name: "category", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "tag", required: false, valueKind: "string" }, { name: "freshness", required: false, valueKind: "string" }, { name: "promotion", required: false, valueKind: "string" }, { name: "search", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
+  { name: "knowledge-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "scope", required: false, valueKind: "string" }, { name: "selection", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "role-scope", required: false, valueKind: "string" }, { name: "category", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "tag", required: false, valueKind: "string" }, { name: "freshness", required: false, valueKind: "string" }, { name: "search", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
   { name: "knowledge-rebase", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
   { name: "knowledge-recover", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   { name: "knowledge-reverify", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "expected-revision", required: true, valueKind: "integer" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }] },
-  { name: "knowledge-snippet", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
+  { name: "knowledge-snippet", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
   { name: "knowledge-source-check", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
   { name: "knowledge-validate", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   { name: "library-import-legacy", availability: "cli", mutates: true, flags: [{ name: "legacy", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "target", required: false, valueKind: "string" }, { name: "dry-run", required: false, valueKind: "boolean" }, { name: "project-name", required: false, valueKind: "string" }, { name: "git-remote", required: false, valueKind: "string" }] },
@@ -1597,7 +1676,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     required(values, names.filter((name) => !["host", "language-bundle"].includes(name)));
     const categories = ["architecture", "domain", "implementation", "standards", "testing", "workflow", "decision", "evidence"];
     if (!categories.includes(values.category ?? "")) fail("CLI_ARGUMENT_MALFORMED", `category=${values.category ?? ""}`);
-    io.write(canonicalJson(await createKnowledgeArticle(values.workspace ?? "", {
+    io.write(knowledgeWriteReceipt(await createKnowledgeArticle(values.workspace ?? "", {
       occurredAt: values.at ?? "",
       path: values.path ?? "",
       category: values.category as KnowledgeCategory,
@@ -1613,7 +1692,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const names = ["workspace", "host", "expected-revision", "at", "id", "path", "summary", "language-bundle"];
     const values = parseArguments(rest, names);
     required(values, names.filter((name) => !["host", "language-bundle"].includes(name)));
-    io.write(canonicalJson(await refreshKnowledgeArticle(values.workspace ?? "", {
+    io.write(knowledgeWriteReceipt(await refreshKnowledgeArticle(values.workspace ?? "", {
       expectedRevision: integerValue(values, "expected-revision"),
       occurredAt: values.at ?? "",
       id: values.id ?? "",
@@ -1648,16 +1727,20 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // TCRN-CROSS-STORY-365: the four backlink lists are optional. They were required with
     // a "-" spelling for "none", which made every card pay four flags to say nothing, and
     // 26 of 28 flags required is what made this verb unusable from a hook.
-    const optional = ["host", "source-digest", "supersedes", "work-ids", "decision-ids", "gate-ids", "evidence-ids", "coexist", "language-bundle"];
+    // TCRN-CROSS-STORY-476 R1 (TCRN-CROSS-SUB-311): so is --lifecycle. Every card is written
+    // active, so the flag takes "active" alone; the two lifecycles a card is no longer written
+    // with reach the engine, which refuses them with KNOWLEDGE_LIFECYCLE_RETIRED and its remedy.
+    const optional = ["host", "source-digest", "supersedes", "work-ids", "decision-ids", "gate-ids", "evidence-ids", "coexist", "lifecycle", "language-bundle"];
     const values = parseArguments(rest, names);
     required(values, names.filter((name) => !optional.includes(name)));
     // Pre-validate enum-valued flags against their literal unions so an invalid
     // value fails closed here naming the flag, rather than casting uncast into core.
     const enumFlags: readonly (readonly [string, readonly string[]])[] = [
-      ["scope", ["workspace", "project", "role"]],
+      // TCRN-CROSS-STORY-476 R5: "user" writes the card to this user's crest, recalled in every project.
+      ["scope", ["workspace", "project", "role", "user"]],
       ["category", ["architecture", "domain", "implementation", "standards", "testing", "workflow", "decision", "evidence"]],
       ["kind", ["fact", "guide", "decision", "reference", "summary"]],
-      ["lifecycle", ["candidate", "active", "retired"]],
+      ["lifecycle", ["active", "candidate", "retired"]],
       ["retrieval", ["default", "explicit-only", "excluded"]],
       ["freshness", ["fresh", "stale", "unknown"]],
       ["export", ["metadata-only", "excluded"]],
@@ -1666,10 +1749,10 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       const provided = values[flag];
       if (provided !== undefined && !admitted.includes(provided)) fail("CLI_ARGUMENT_MALFORMED", `${flag}=${provided}`);
     }
-    io.write(canonicalJson(await createKnowledgeUnit(values.workspace ?? "", {
+    io.write(knowledgeWriteReceipt(await createKnowledgeUnit(values.workspace ?? "", {
       occurredAt: values.at ?? "",
       externalKey: values["external-key"] ?? "",
-      scope: values.scope as "workspace" | "project" | "role",
+      scope: values.scope as "workspace" | "project" | "role" | "user",
       projectId: nullableValue(values["project-id"]),
       roleScopes: listValue(values["role-scopes"]),
       category: values.category as KnowledgeCategory,
@@ -1686,7 +1769,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       linkedDecisionIds: listValue(values["decision-ids"]),
       linkedGateIds: listValue(values["gate-ids"]),
       linkedEvidenceIds: listValue(values["evidence-ids"]),
-      lifecycle: values.lifecycle as "candidate" | "active" | "retired",
+      ...(values.lifecycle === undefined ? {} : { lifecycle: values.lifecycle as "candidate" | "active" | "retired" }),
       retrievalDisposition: values.retrieval as "default" | "explicit-only" | "excluded",
       freshnessState: values.freshness as KnowledgeFreshnessState,
       lastVerified: nullableValue(values["last-verified"]),
@@ -1701,21 +1784,28 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // TCRN-CROSS-STORY-365: the thin write. Eight required flags -- the store, the
     // instant, the four card fields, the accountable owner, and the body -- and every
     // other shape defaulted in core. Written is retrievable; there is no promotion step.
+    // TCRN-CROSS-STORY-476 R5 (TCRN-CROSS-SUB-311): --scope role (the default), workspace or user;
+    // a user card goes to this user's crest and is recalled in every project. A project card names
+    // its project, which is knowledge-create's to take, and only a role card names roles.
     const names = [
       "workspace", "at", "subject", "summary", "snippet", "tags", "accountable-owner-id", "body",
-      "external-key", "role-scopes", "category", "kind", "source-references", "evidence-ids",
+      "external-key", "scope", "role-scopes", "category", "kind", "source-references", "evidence-ids",
       "supersedes", "coexist", "allow-trailing", "language-bundle",
     ];
     const values = parseArguments(rest, names);
     required(values, ["workspace", "at", "subject", "summary", "snippet", "tags", "accountable-owner-id", "body"]);
     for (const [flag, admitted] of [
+      ["scope", ["role", "workspace", "user"]],
       ["category", ["architecture", "domain", "implementation", "standards", "testing", "workflow", "decision", "evidence"]],
       ["kind", ["fact", "guide", "decision", "reference", "summary"]],
     ] as readonly (readonly [string, readonly string[]])[]) {
       const provided = values[flag];
       if (provided !== undefined && !admitted.includes(provided)) fail("CLI_ARGUMENT_MALFORMED", `${flag}=${provided}`);
     }
-    io.write(canonicalJson(await captureKnowledgeUnit(values.workspace ?? "", {
+    if (values.scope !== undefined && values.scope !== "role" && values["role-scopes"] !== undefined) {
+      fail("CLI_ARGUMENT_MALFORMED", `role-scopes names roles of a role card, not of scope=${values.scope}`);
+    }
+    io.write(knowledgeWriteReceipt(await captureKnowledgeUnit(values.workspace ?? "", {
       occurredAt: values.at ?? "",
       subject: values.subject ?? "",
       summary: values.summary ?? "",
@@ -1725,6 +1815,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       body: values.body ?? "",
       coexist: booleanValue(values.coexist, "coexist"),
       ...(values["external-key"] ? { externalKey: values["external-key"] } : {}),
+      ...(values.scope ? { scope: values.scope as "role" | "workspace" | "user" } : {}),
       ...(values["role-scopes"] ? { roleScopes: listValue(values["role-scopes"]) } : {}),
       ...(values.category ? { category: values.category as KnowledgeCategory } : {}),
       ...(values.kind ? { kind: values.kind as KnowledgeKind } : {}),
@@ -1735,11 +1826,14 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   if (command === "knowledge-list") {
-    const values = parseArguments(rest, ["workspace", "at", "selection", "project-id", "role-scope", "category", "kind", "tag", "freshness", "promotion", "search", "limit", "offset", "allow-trailing"]);
+    // TCRN-CROSS-STORY-476 R1, R5 (TCRN-CROSS-SUB-311): --promotion is gone with the candidate it
+    // selected, and --scope user lists this user's crest instead of the library's.
+    const values = parseArguments(rest, ["workspace", "at", "scope", "selection", "project-id", "role-scope", "category", "kind", "tag", "freshness", "search", "limit", "offset", "allow-trailing"]);
     required(values, ["workspace", "at"]);
     io.write(canonicalJson(await listKnowledgeMetadata(values.workspace ?? "", {
       at: values.at ?? "",
       allowTrailing: booleanValue(values["allow-trailing"], "allow-trailing"),
+      ...storeScopeOption(values.scope),
       ...(values.selection ? { selection: values.selection as "default" | "all" } : {}),
       ...(values["project-id"] ? { projectId: values["project-id"] } : {}),
       ...(values["role-scope"] ? { roleScope: values["role-scope"] } : {}),
@@ -1747,7 +1841,6 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       ...(values.kind ? { kind: values.kind as KnowledgeKind } : {}),
       ...(values.tag ? { tag: values.tag } : {}),
       ...(values.freshness ? { freshness: values.freshness as KnowledgeFreshnessState } : {}),
-      ...(values.promotion ? { promotionState: values.promotion as KnowledgePromotionState } : {}),
       ...(values.search ? { search: values.search } : {}),
       // WSB-2: integerValue is the single arbiter of INTEGER-ness here, exactly as it is
       // for target-version. Bare Number() sent NaN into core, which then reported a
@@ -1761,21 +1854,23 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   if (command === "knowledge-snippet") {
-    const values = parseArguments(rest, ["workspace", "id", "allow-trailing"]);
+    const values = parseArguments(rest, ["workspace", "id", "scope", "allow-trailing"]);
     required(values, ["workspace", "id"]);
     io.write(canonicalJson(await readKnowledgeSnippet(values.workspace ?? "", values.id ?? "", {
       allowTrailing: booleanValue(values["allow-trailing"], "allow-trailing"),
+      ...storeScopeOption(values.scope),
     })));
     return;
   }
   if (command === "knowledge-body") {
-    const values = parseArguments(rest, ["workspace", "id", "at", "allow-unpromoted", "allow-stale", "allow-trailing"]);
+    // TCRN-CROSS-STORY-476 R1 (TCRN-CROSS-SUB-311): --allow-unpromoted is gone with the promotion step.
+    const values = parseArguments(rest, ["workspace", "id", "at", "scope", "allow-stale", "allow-trailing"]);
     required(values, ["workspace", "id", "at"]);
     io.write(canonicalJson(await readKnowledgeBody(values.workspace ?? "", values.id ?? "", {
       at: values.at ?? "",
       allowTrailing: booleanValue(values["allow-trailing"], "allow-trailing"),
-      allowUnpromoted: booleanValue(values["allow-unpromoted"], "allow-unpromoted"),
       allowStale: booleanValue(values["allow-stale"], "allow-stale"),
+      ...storeScopeOption(values.scope),
     })));
     return;
   }
@@ -1794,7 +1889,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   if (command === "knowledge-reverify") {
     const values = parseArguments(rest, ["workspace", "expected-revision", "at", "id"]);
     required(values, ["workspace", "expected-revision", "at", "id"]);
-    io.write(canonicalJson(await reverifyKnowledgeUnit(values.workspace ?? "", {
+    io.write(knowledgeWriteReceipt(await reverifyKnowledgeUnit(values.workspace ?? "", {
       expectedRevision: integerValue(values, "expected-revision"),
       occurredAt: values.at ?? "",
       id: values.id ?? "",
@@ -1815,7 +1910,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       fail("WORK_BATCH_MALFORMED", `${values["from-file"] ?? ""}: ${(error as { message?: string }).message ?? "unreadable"}`);
     }
     const batchProviders = languageProvidersFor(values["language-bundle"]);
-    io.write(canonicalJson(await applyKnowledgeBatch(values.workspace ?? "", document, {
+    io.write(knowledgeWriteReceipt(await applyKnowledgeBatch(values.workspace ?? "", document, {
       occurredAt: values.at ?? "",
       alignFirst: booleanValue(values["align-first"], "align-first"),
       ...(batchProviders === undefined ? {} : { languageProviders: batchProviders }),
@@ -1861,56 +1956,31 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // at whole lines, which is what a host puts in front of the prompt.
     const promptBytes = Number(settingValue("injection.perPromptBytes") ?? "1600");
     const perPromptBytes = Number.isSafeInteger(promptBytes) && promptBytes > 0 ? promptBytes : 1600;
-    // A workspace with no knowledge store, or one trailing the chain while the caller did
-    // not admit a trailing read, still has work records and minutes to recall. The reason
-    // code the read produced is reported rather than swallowed, so "no cards" is never
-    // indistinguishable from "no card matched".
-    let knowledge: readonly RecallKnowledgeInput[] = [];
-    let knowledgeReasonCode = "KNOWLEDGE_STORE_UNREAD";
-    let knowledgeDigest = "absent";
-    try {
-      const answer = await listKnowledgeMetadata(workspace, {
-        at: values.at ?? "",
-        allowTrailing: booleanValue(values["allow-trailing"], "allow-trailing"),
-        // Recall is an explicit search surface, so it admits explicit-only article
-        // index cards while the context/default selection remains unchanged. The
-        // complete corpus is read before FTS scoring so BM25 keeps its baseline.
-        includeExplicitOnly: true,
-        limit: 1_048_576,
-      });
-      knowledgeReasonCode = String(answer["reasonCode"] ?? "");
-      knowledgeDigest = String(answer["resultDigest"] ?? "");
-      knowledge = ((answer["records"] ?? []) as readonly Readonly<Record<string, unknown>>[]).map((record) => ({
-        id: String(record["id"] ?? ""),
-        externalKey: String(record["externalKey"] ?? ""),
-        subject: String(record["subject"] ?? ""),
-        summary: String(record["summary"] ?? ""),
-        snippet: String(record["snippet"] ?? ""),
-        tags: ((record["tags"] ?? []) as readonly unknown[]).map((tag) => String(tag)),
-        // The weight-6 column is fed by an author's own restatements of the question a card
-        // answers. TCRN-CROSS-STORY-364 writes them: the metadata field is a map from prompt
-        // language to phrasings, flattened here by the one helper both sides share. The
-        // 2026-09-04 evaluation measured them lifting cards-only recall from 21 of 36 to 36.
-        expansions: expansionsText(record["expansions"]),
-      }));
-    } catch (error) {
-      const reasonCode = (error as { readonly reasonCode?: unknown }).reasonCode;
-      if (typeof reasonCode !== "string") throw error;
-      knowledgeReasonCode = reasonCode;
-    }
+    // TCRN-CROSS-STORY-476 R5 (TCRN-CROSS-SUB-311): the cards come from two stores, the library's
+    // crest and this user's crest, each read whole as an explicit search corpus (explicit-only
+    // article index cards admitted, the complete corpus before scoring so bm25 keeps its baseline)
+    // and each card labelled with its store. A store with no cards to give -- none initialized, or
+    // one trailing the chain while the caller did not admit a trailing read -- still leaves the
+    // work records and minutes to recall, and its reason code is reported rather than swallowed,
+    // so "no cards" is never indistinguishable from "no card matched". knowledgeReasonCode stays
+    // the library store's, as it always was.
+    const cards = await readRecallCards(workspace, {
+      at: values.at ?? "",
+      allowTrailing: booleanValue(values["allow-trailing"], "allow-trailing"),
+    });
     // TCRN-CROSS-STORY-474 R1: what the index holds is decided in one place (recall-inputs.ts), so
     // the verb and the prompt hook cannot index differently: the Stories, Incidents, Initiatives and
     // Epics with their goal, body and parent titles, every minutes record, and the cards.
-    const inputs = recallInputsFromState(state, knowledge, { scopeExcerptBytes });
+    const inputs = recallInputsFromState(state, cards.cards, { scopeExcerptBytes });
     const result = recall({
       // One index per library, whatever path it is read at (TCRN-CROSS-STORY-469).
       cacheKey: state.metadata.workspaceId,
       // The storage checkpoint: the chain head the records were replayed from, and the
-      // digest of the knowledge answer they were read with. Either one moving is a
+      // digests of the two knowledge answers they were read with. Any one moving is a
       // different corpus, and the index is rebuilt from the rows that actually changed.
       // A library's head is one digest over every stream's head, so it moves with any
       // entry of the version vector.
-      checkpoint: `${state.headEventHash}:${knowledgeDigest}`,
+      checkpoint: `${state.headEventHash}:${cards.digest}`,
       documents: () => recallDocuments(inputs),
       query,
       tau,
@@ -1923,7 +1993,12 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       version: state.version,
       headEventHash: state.headEventHash,
       at: values.at ?? "",
-      knowledgeReasonCode,
+      knowledgeReasonCode: cards.stores.project.reasonCode,
+      // Both stores' reads: each one's reason code and how many cards it gave.
+      knowledgeStores: {
+        project: { reasonCode: cards.stores.project.reasonCode, cards: cards.stores.project.cards },
+        user: { reasonCode: cards.stores.user.reasonCode, cards: cards.stores.user.cards },
+      },
       query,
       queryTokens: [...result.tokens],
       // The canonical protocol carries only safe integers, and a bm25 score is not one.
@@ -1944,10 +2019,13 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       // title, key, id, the titles above it), and the answer as those lines cut to the prompt's
       // budget. Below the strong-hit threshold the reason code is RECALL_NO_STRONG_HIT and both are
       // empty: a prompt about nothing the library holds gets nothing, not its best weak guesses.
+      // A card hit names its store, "project" or "user" (TCRN-CROSS-STORY-476 R5), and its line
+      // marks a user card 「用户」.
       records: result.records.map((hit) => ({
         kind: hit.kind, key: hit.key, id: hit.id, status: hit.status,
         title: hit.title, summary: hit.summary, score: hit.score.toFixed(4),
         line: formatRecallLine(hit), parentChain: [...hit.parentChain],
+        ...(hit.scope === undefined ? {} : { scope: hit.scope }),
       })),
       perPromptBytes,
       context: [...recallContextLines(result.records, perPromptBytes)],
@@ -2056,13 +2134,17 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       fail("WORK_BATCH_MALFORMED", `${values["from-file"] ?? ""}: ${(error as { message?: string }).message ?? "unreadable"}`);
     }
     const members = Array.isArray((document as { members?: unknown }).members) ? (document as { members: unknown[] }).members.length : 0;
+    const doneIds = batchDoneWorkIds(document);
     const state = await withWriteLock(workspace, at, async () => applyWorkBatch(workspace, document, {
       occurredAt: at,
       ...(values.actor ? { actorId: values.actor } : {}),
     }));
+    // TCRN-CROSS-STORY-476 R4: every member that took a record to done answers its knowledge hint.
+    const hints = await knowledgeHints(workspace, at, state, doneIds.map((workId) => ({ workId })));
     // One attestation for the batch, not one per member: the specification defines the
     // receipt per mutation, and a batch is one mutation.
-    writeState(io, state, workBatchReceipt(state, members));
+    writeState(io, state, workBatchReceipt(state, members), undefined,
+      hints.length === 0 ? {} : { knowledgeHints: doneIds.map((workId, index) => ({ workId, ...hints[index] })) });
     return;
   }
   if (command === "work-transition") {
@@ -2077,7 +2159,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       ...(values.actor ? { actorId: values.actor } : {}),
     }));
     const transitioned = state.work.find((entry) => entry.id === (values.id ?? ""))!;
-    writeState(io, state, workSummary(transitioned));
+    // TCRN-CROSS-STORY-476 R4: a record that reached done asks whether there is knowledge to extract.
+    const [hint] = values.status === "done" ? await knowledgeHints(workspace, at, state, [{ workId: transitioned.id }]) : [];
+    writeState(io, state, workSummary(transitioned), undefined, hint === undefined ? {} : { knowledgeHint: hint });
     return;
   }
   if (command === "work-annotate") {
@@ -2274,6 +2358,8 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     }));
     const written = writtenIdsField();
     const recorded = minutesById(state, (written.ids ?? []).find((id) => id.startsWith("minutes:")) ?? "");
+    // TCRN-CROSS-STORY-476 R4: recorded minutes ask whether there is knowledge to extract.
+    const [hint] = await knowledgeHints(workspace, at, state, [{ minutesId: recorded.id }]);
     io.write(canonicalJson({
       reasonCode: "MINUTES_RECORDED",
       workspaceId: state.metadata.workspaceId,
@@ -2283,6 +2369,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       id: recorded.id,
       externalKey: recorded.externalKey,
       decisions: recorded.decisions,
+      ...(hint === undefined ? {} : { knowledgeHint: hint }),
     }));
     return;
   }

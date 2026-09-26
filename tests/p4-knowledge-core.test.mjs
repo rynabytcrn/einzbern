@@ -485,19 +485,23 @@ test("governed Knowledge CLI exposes init, validate, create, list, snippet, body
       "--source-references", input.sourceReferences.join(","), "--source-digest", input.sourceDigest,
       "--work-ids", input.linkedWorkIds.join(","), "--decision-ids", input.linkedDecisionIds.join(","),
       "--gate-ids", input.linkedGateIds.join(","), "--evidence-ids", input.linkedEvidenceIds.join(","),
-      "--lifecycle", input.lifecycle, "--retrieval", input.retrievalDisposition, "--freshness", input.freshnessState,
+      "--retrieval", input.retrievalDisposition, "--freshness", input.freshnessState,
       "--last-verified", input.lastVerified, "--stale-days", String(input.stalenessPolicy.maximumAgeDays),
       "--export", input.exportDisposition, "--body", input.body,
     ];
     // TCRN-CROSS-SUB-308: the candidate lifecycle is refused at the write, before the store
-    // moves, and the write that follows lands active.
-    const candidateArguments = createArguments.map((value, index) => createArguments[index - 1] === "--lifecycle" ? "candidate" : value);
+    // moves. TCRN-CROSS-SUB-311: --lifecycle is optional, and the write that leaves it out
+    // lands active.
+    const candidateArguments = [...createArguments, "--lifecycle", "candidate"];
     await expectReason("KNOWLEDGE_LIFECYCLE_RETIRED", () => runCli(candidateArguments, { write() {} }));
     assert.equal((await validateKnowledgeStore(fixture.workspace)).version, 0);
     output = "";
     await runCli(createArguments, { write: (value) => { output += value; } });
     const created = JSON.parse(output);
     assert.equal(created.reasonCode, "KNOWLEDGE_UNIT_CREATED");
+    // A knowledge write answers the ids it wrote beside the store version (TCRN-CROSS-SUB-311).
+    assert.deepEqual(created.ids, [created.id]);
+    assert.equal(created.version, 1);
     for (const [command, extra, expected] of [
       ["knowledge-validate", [], "KNOWLEDGE_STORE_VALID"],
       ["knowledge-list", ["--at", instant(12), "--selection", "all"], "KNOWLEDGE_LIST_READY"],

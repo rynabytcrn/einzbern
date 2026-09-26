@@ -31,7 +31,6 @@ import {
   createWork,
   captureKnowledgeUnit,
   detectLanguage,
-  expansionsText,
   initializeKnowledgeStore,
   initializeLibrary,
   listKnowledgeMetadata,
@@ -44,9 +43,12 @@ import {
 // from ./knowledge-language.js, the way this file already reads ./recall.js below: they
 // are core-internal, nothing outside packages/core calls them, and TCRN-CROSS-STORY-364
 // retired their barrel re-exports rather than record nine more isolated public symbols.
+// expansionsText followed when the recall verb began reading cards through core
+// (TCRN-CROSS-SUB-311).
 import {
   ARTIFACT_LANGUAGE_TAGS,
   KNOWLEDGE_EXPANSION_LIMITS,
+  expansionsText,
   parsePromptLanguages,
 } from "../dist/build/packages/core/src/knowledge-language.js";
 import { resetRecallCache } from "../dist/build/packages/core/src/recall.js";

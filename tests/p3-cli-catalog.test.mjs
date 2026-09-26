@@ -230,6 +230,22 @@ test("STORY-475 R1, R2: minutes-record writes and names its required flags; minu
   assert.equal(COMMAND_CATALOG.some((candidate) => candidate.name.startsWith("conference-")), false);
 });
 
+test("STORY-476 R1, R5: knowledge-create's lifecycle is optional, the candidate flags are gone, and the knowledge reads take --scope", () => {
+  const flagsOf = (name) => new Map(COMMAND_CATALOG.find((entry) => entry.name === name).flags.map((flag) => [flag.name, flag]));
+  assert.equal(flagsOf("knowledge-create").get("lifecycle")?.required, false, "every card is written active");
+  assert.equal(flagsOf("knowledge-create").get("scope")?.required, true);
+  assert.equal(flagsOf("knowledge-capture").get("scope")?.required, false, "a capture is a role card unless it says otherwise");
+  assert.equal(flagsOf("knowledge-list").has("promotion"), false);
+  assert.equal(flagsOf("knowledge-body").has("allow-unpromoted"), false);
+  for (const verb of ["knowledge-list", "knowledge-snippet", "knowledge-body"]) {
+    assert.equal(flagsOf(verb).get("scope")?.valueKind, "string", `${verb} --scope`);
+    assert.equal(flagsOf(verb).get("scope")?.required, false, `${verb} reads the library's crest unless told otherwise`);
+  }
+  for (const retired of ["knowledge-promote", "knowledge-retire", "retire-proposals", "retire-sweep"]) {
+    assert.equal(COMMAND_CATALOG.some((entry) => entry.name === retired), false, `${retired} is retired`);
+  }
+});
+
 test("STORY-479 R1: skill-render writes the skill directory into --out, for this engine's version or --version", () => {
   const entry = COMMAND_CATALOG.find((candidate) => candidate.name === "skill-render");
   assert.ok(entry !== undefined, "skill-render is cataloged");

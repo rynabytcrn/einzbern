@@ -95,7 +95,10 @@ The receipt returns `MINUTES_RECORDED` with the minutes `id` (capture it as
 the engine takes the next number after the latest key recorded in the library, so only
 the first minutes of a library need one. `minutes-list` pages every minutes record —
 those a retired conference close wrote included — and `--work-id` keeps the ones that
-bear on one work record.
+bear on one work record. The receipt also carries `knowledgeHint`: one line asking
+whether the decision holds knowledge worth a card (`是否有可提取的知识；可能冲突的卡：…`),
+and under `conflictCandidateIds` the cards a card about the minutes' summary could
+conflict with — here none, since this library holds no card yet.
 
 ## 4. Name the minutes on the story and finish it
 
@@ -107,6 +110,12 @@ there; `work-create` takes the same flag when the minutes already exist.
 $ einzbern work-annotate --workspace ./flagship/.ether --at 2026-07-11T00:00:09Z --id <story-id> --decided-in <minutes-id>
 $ einzbern work-transition --workspace ./flagship/.ether --at 2026-07-11T00:00:10Z --id <story-id> --status done
 ```
+
+The transition to `done` answers the same `knowledgeHint`, scored against the story's
+title and goal. A lesson worth keeping is written with `knowledge-create` (or the thinner
+`knowledge-capture`): the card is active and retrievable the moment it is written, with no
+lifecycle flag and no promotion step, and a card that replaces an older one names it with
+`--supersedes`. `--scope user` files it in your own crest, which every project recalls.
 
 ## 5. Trace the chain
 
@@ -132,4 +141,5 @@ governed loop: planned, decided, recorded, done and traced.
 Earlier versions of this tutorial held a conference, closed it into minutes, distilled
 them into a knowledge candidate and promoted it. The conference verbs retired with
 TCRN-CROSS-STORY-475; the minutes those closes wrote are still read by `minutes-list`
-and `minutes-show`.
+and `minutes-show`. The candidate and its promotion retired with TCRN-CROSS-STORY-476,
+which is why the loop now asks for a lesson at `done` instead.

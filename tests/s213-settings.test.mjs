@@ -72,7 +72,11 @@ test("INIT-022 S213: catalog exposes every engine-consumed workspace setting", a
   assert.equal(readback.reasonCode, "SETTINGS_CATALOG_READY");
   assert.equal(readback.layerKind, SETTINGS_LAYER_KIND);
   assert.deepEqual(readback.settings.map((entry) => entry.key), SETTINGS_CATALOG.map((entry) => entry.key));
-  assert.deepEqual(readback.settings.map((entry) => entry.layer), SETTINGS_CATALOG.map((entry) => entry.layerKind));
+  // TCRN-CROSS-STORY-469 R2: every key of this catalog is project-level; its records keep the
+  // workspace_configuration layer kind.
+  assert.deepEqual(readback.settings.map((entry) => entry.layer), SETTINGS_CATALOG.map((entry) => entry.layer));
+  assert.deepEqual([...new Set(readback.settings.map((entry) => entry.layer))], ["project"]);
+  assert.deepEqual([...new Set(SETTINGS_CATALOG.map((entry) => entry.layerKind))], [SETTINGS_LAYER_KIND]);
   assert.deepEqual(readback.settings.map((entry) => entry.currentValue), SETTINGS_CATALOG.map((entry) => entry.defaultValue));
   assert.deepEqual(readback.settings.map((entry) => entry.type), SETTINGS_CATALOG.map((entry) => entry.type));
 });

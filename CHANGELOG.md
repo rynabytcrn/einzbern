@@ -140,6 +140,16 @@ the cache; a new snapshot is written every `storage.snapshotEveryEvents` merged 
 missing, damaged or foreign cache is rebuilt and never a library error, and deleting it changes
 no read. `recover` rebuilds the cache from genesis; `chain-validate` and
 `materializeWorkspaceFromGenesis` never use it. The recall index is keyed by the library id.
+Configuration has two layers (TCRN-CROSS-STORY-469 R2, R3, AC5; MIN-227 D13;
+`specs/settings-catalog-v1.md`). Every settings-catalog key is project-level (`layer:
+"project"`): its events travel with the library, and when two devices set one key apart the
+later write in merge order wins on every device instead of the second write being a rejected
+event (an old-layout workspace keeps the strict revision sequence). The machine settings are
+device-level (`layer: "device"`) and stay in the device directory: `settings-set` and
+`settings-remove` refuse them with `SETTINGS_KEY_DEVICE_LEVEL` and the remedy
+`machine-settings-set`. Each project-level write rewrites `config/project.json`
+(`einzbern.project-config.v1`: version vector and merged values), a projection no read
+trusts; `status` reports it as `configProjection` (`current`, `stale`, `absent`, `invalid`).
 
 ## 1.2.1 — patch candidate
 

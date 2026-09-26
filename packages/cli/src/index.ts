@@ -91,6 +91,7 @@ import {
   materializeLibraryRead,
   recordAliases,
   LIBRARY_ID_PATTERN,
+  configProjectionStatus,
 } from "../../core/src/index.js";
 import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider } from "../../core/src/index.js";
 import type {
@@ -1065,13 +1066,15 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   if (command === "status") {
-    // WSA-3 / SDC-10: status reads authority only and never staleness-fails, so an
-    // agent can always observe the head; `validate` and the read verbs remain
-    // view-verifying and fail closed with WORKSPACE_VIEW_STALE.
+    // WSA-3 / SDC-10: status reads authority only, so an agent can always observe the head.
+    // Views are this device's cache (TCRN-CROSS-STORY-469 R4) and never verified.
     const values = parseArguments(rest, ["workspace"]);
     required(values, ["workspace"]);
     const workspace = values.workspace ?? "";
     const state = await materializeWorkspace(workspace);
+    // TCRN-CROSS-STORY-469 R2: config/project.json is a projection of the merged project-level
+    // settings that no read trusts; status says when it does not show them.
+    const configProjection = state.library === undefined ? null : await configProjectionStatus(state.library.libraryRoot, state.settings);
     io.write(canonicalJson({
       reasonCode: "WORKSPACE_COMMAND_COMPLETED",
       engineVersion: FRAMEWORK_VERSION,
@@ -1092,6 +1095,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
         engineVersion: stream.engineVersion,
       })),
       rejectedEventCount: state.library?.rejectedEvents.length ?? 0,
+      configProjection,
       projects: state.projects.filter((entry) => !entry.tombstone).length,
       work: state.work.filter((entry) => !entry.tombstone).length,
       // STORY-299: headroom belongs on the one verb that still answers past a

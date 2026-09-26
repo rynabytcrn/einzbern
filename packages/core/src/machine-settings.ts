@@ -66,6 +66,9 @@ export interface MachineSettingsCatalogEntry {
   readonly key: MachineSettingKey;
   readonly type: "enum" | "integer" | "string";
   readonly controlType: "enum" | "number" | "text";
+  // TCRN-CROSS-STORY-469 R3: a device-level key, kept in this device's directory and never
+  // written into a library (settings.ts has the project-level layer).
+  readonly layer: "device";
   readonly layerKind: typeof MACHINE_SETTINGS_LAYER_KIND;
   readonly defaultValue: string | null;
   readonly allowedValues?: readonly string[];
@@ -90,6 +93,7 @@ export const MACHINE_SETTINGS_CATALOG: readonly MachineSettingsCatalogEntry[] = 
     key: "portal.defaultLocale",
     type: "enum",
     controlType: "enum",
+    layer: "device",
     layerKind: MACHINE_SETTINGS_LAYER_KIND,
     defaultValue: null,
     allowedValues: Object.freeze(["zh-CN", "en", "ja", "ko", "fr"]),
@@ -100,6 +104,7 @@ export const MACHINE_SETTINGS_CATALOG: readonly MachineSettingsCatalogEntry[] = 
     key: "portal.defaultPartition",
     type: "string",
     controlType: "enum",
+    layer: "device",
     layerKind: MACHINE_SETTINGS_LAYER_KIND,
     defaultValue: null,
     appliesOn: "next-open",
@@ -109,6 +114,7 @@ export const MACHINE_SETTINGS_CATALOG: readonly MachineSettingsCatalogEntry[] = 
     key: "portal.defaultTheme",
     type: "enum",
     controlType: "enum",
+    layer: "device",
     layerKind: MACHINE_SETTINGS_LAYER_KIND,
     defaultValue: null,
     allowedValues: Object.freeze(["light", "dark", "system"]),
@@ -119,6 +125,7 @@ export const MACHINE_SETTINGS_CATALOG: readonly MachineSettingsCatalogEntry[] = 
     key: "portal.port",
     type: "integer",
     controlType: "number",
+    layer: "device",
     layerKind: MACHINE_SETTINGS_LAYER_KIND,
     defaultValue: null,
     min: 1024,

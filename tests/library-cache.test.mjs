@@ -226,7 +226,9 @@ test("469-R4, 468-R4: nothing derived is written into the library, whatever read
   await cli(home, ["recover", "--workspace", library, "--at", at()]);
   const [deviceId] = await readdir(join(library, "akasha"));
   const found = await files(library);
-  assert.deepEqual(found.filter((path) => !path.startsWith(`akasha/${deviceId}/`)), [".gitignore", "README.md", "manifest.json"], "the library root holds its own files only");
+  // config/project.json is the projection of the project-level settings (the interval is one,
+  // TCRN-CROSS-STORY-469 R2), not derived replay state.
+  assert.deepEqual(found.filter((path) => !path.startsWith(`akasha/${deviceId}/`)), [".gitignore", "README.md", "config/project.json", "manifest.json"], "the library root holds its own files only");
   assert.deepEqual(found.filter((path) => path.startsWith(`akasha/${deviceId}/`)).map((path) => path.slice(`akasha/${deviceId}/`.length)), ["00000001.ndjson", "manifest.json"], "a stream holds its segments and its manifest only");
   assert.equal(found.some((path) => /(STATUS\.md|index\.json|readback\.json|extensions\.json|snapshot|\.idx)$/u.test(path)), false);
   assert.ok(await exists(join(cachePath(libraryId, home), "snapshots", "snapshot.json")), "the derived state is in the device cache");

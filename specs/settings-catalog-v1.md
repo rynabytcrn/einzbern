@@ -10,6 +10,28 @@ The generic-profile layer remains the trust and tier authority, while this file
 documents the finite keys the engine is allowed to consume. A key is not in the
 engine catalog merely because it appears in helper or portal prose.
 
+## Two layers (TCRN-CROSS-STORY-469 R2, R3)
+
+Configuration has two layers, and `settings-catalog` and `machine-settings-catalog`
+name each key's `layer`.
+
+- **project**: every key of this catalog. A project-level setting is an event in the
+  library's `akasha/`, so it travels with the library and every device that merges the
+  library reads the same value. When two devices set one key without seeing each other's
+  write, the later write in merge order (clock, then device id) wins on every device; a
+  stale revision there is not a rejected event. An old-layout workspace, one writer's
+  chain, keeps the strict revision sequence.
+- **device**: the machine settings (`portal.*`), kept in this device's directory
+  (`machine-settings.json`) and never written into a library. `settings-set` and
+  `settings-remove` refuse a device-level key with `SETTINGS_KEY_DEVICE_LEVEL` and the
+  remedy `machine-settings-set`.
+
+Every `settings-set` and `settings-remove` also rewrites `config/project.json`
+(`einzbern.project-config.v1`: the version vector and the merged values), atomically. It
+is a projection for readers outside the engine: no read trusts it, and `status` reports
+`configProjection` as `current`, `stale` (its values differ from the merged ones, for
+example after a sync client kept another device's copy), `absent` or `invalid`.
+
 ## Tier taxonomy
 
 **Tier-0 — frozen protocol limits.** Not settings; never appear in conversational
@@ -190,7 +212,8 @@ mistakenly applied to them.
 - Settings live in the Workspace overlay layer, never in host hook surfaces
   (`.claude/settings.json` or Codex configuration), which are written solely by
   adapter bundles. Replaying a settings event rechecks the registered key,
-  layer, value bounds, timestamp binding, and monotonic revision.
+  layer, value bounds and timestamp binding, and on one writer's chain the monotonic
+  revision.
 - Tier-1 knobs are explain-only; the agent never edits them.
 
 ## Ledger impact

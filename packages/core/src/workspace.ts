@@ -47,6 +47,7 @@ import {
   writeCacheViews,
 } from "./library-cache.js";
 import type { CacheSnapshot, CacheViewStamp } from "./library-cache.js";
+import { writeConfigProjection } from "./library-config.js";
 import { LIBRARY_ID_PATTERN, createLibrary, hasLibraryManifest, openLibrary } from "./ether-library.js";
 import type { Library } from "./ether-library.js";
 import { readOrCreateDevice } from "./device-identity.js";
@@ -123,6 +124,7 @@ import {
   SETTINGS_CATALOG,
   SETTINGS_LAYER_KIND,
   SettingsError,
+  assertProjectSettingKey,
   compareEngineVersions,
   createWorkspaceSettingRecord,
   isRetiredSettingKey,
@@ -2184,9 +2186,14 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
       ));
       requireEventBoundTimestamp(record.updatedAt, event, `setting ${record.key}`);
       const current = settings.get(record.key);
-      if ((current === undefined && record.revision !== 1) ||
-        (current !== undefined && record.revision !== current.revision + 1) ||
-        record.layerKind !== SETTINGS_LAYER_KIND || record.tombstone !== false) {
+      // TCRN-CROSS-STORY-469 R2 (MIN-227 D13): in a library a project-level setting is the last
+      // write in merge order. A device that set a key without having seen another device's write
+      // to it carries a revision that no longer follows, and its write still takes effect, so
+      // every device reads the value the later clock wrote. One writer's chain (an old-layout
+      // workspace) keeps the strict revision sequence.
+      const revisionFollows = merge !== undefined ||
+        (current === undefined ? record.revision === 1 : record.revision === current.revision + 1);
+      if (!revisionFollows || record.layerKind !== SETTINGS_LAYER_KIND || record.tombstone !== false) {
         fail("WORKSPACE_EVENT_CORRUPT", `invalid setting mutation ${record.key}`);
       }
       settings.set(record.key, record);
@@ -4061,56 +4068,78 @@ export async function admitTemplateInWorkspace(workspaceRoot: string, input: {
   }, input);
 }
 
+// TCRN-CROSS-STORY-469 R2: after a project-level setting commits, config/project.json shows the
+// merged values. It is a convenience for readers outside the engine, never read back, so a failure
+// to write it does not undo the committed setting; status reports a projection that is out of date.
+async function projectConfiguration(root: string, state: WorkspaceState): Promise<void> {
+  try {
+    await writeConfigProjection(root, { versionVector: state.library?.versionVector ?? {}, settings: state.settings });
+  } catch {
+    // Left to the next project-level write; status shows it as stale meanwhile.
+  }
+}
+
 // INIT-022 S213: settings are a bounded workspace_configuration overlay, not an
 // ungoverned JSON sidecar. Each write is an append-only event and the replay arm
-// above enforces the same key, layer, revision, and value contract.
+// above enforces the same key, layer, revision, and value contract. They are the
+// project level (TCRN-CROSS-STORY-469 R2): a device-level key is refused here and
+// written by machine-settings-set.
 export async function setWorkspaceSetting(workspaceRoot: string, input: {
   readonly key: string;
   readonly value: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, (state) => {
-    if (input.key === "execution.claudeCodeSubagentPlan" || input.key === "execution.codexSubagentPlan") {
-      const host = input.key === "execution.claudeCodeSubagentPlan" ? "claude-code" : "codex";
-      if (!state.executionConfig.modelPlans.some((plan) => plan.host === host && plan.name === input.value)) {
-        fail("MODEL_PLAN_NOT_FOUND", `${input.value} is not a model plan for ${host}`);
+  assertProjectSettingKey(input.key);
+  return withWorkspaceWriteLock(workspaceRoot, async (root) => {
+    const committed = await appendEvent(root, (state) => {
+      if (input.key === "execution.claudeCodeSubagentPlan" || input.key === "execution.codexSubagentPlan") {
+        const host = input.key === "execution.claudeCodeSubagentPlan" ? "claude-code" : "codex";
+        if (!state.executionConfig.modelPlans.some((plan) => plan.host === host && plan.name === input.value)) {
+          fail("MODEL_PLAN_NOT_FOUND", `${input.value} is not a model plan for ${host}`);
+        }
       }
-    }
-    const current = state.settings.find((record) => record.key === input.key);
-    const record = createWorkspaceSettingRecord(
-      input.key,
-      input.value,
-      (current?.revision ?? 0) + 1,
-      input.occurredAt,
-      workspaceRoot,
-    );
-    return {
-      payload: buildEventPayload("settings.updated", record as unknown as JsonValue),
-      projects: state.projects,
-      work: state.work,
-      settings: sortWorkspaceSettings([
-        ...state.settings.filter((entry) => entry.key !== record.key),
-        record,
-      ]),
-    };
-  }, input);
+      const current = state.settings.find((record) => record.key === input.key);
+      const record = createWorkspaceSettingRecord(
+        input.key,
+        input.value,
+        (current?.revision ?? 0) + 1,
+        input.occurredAt,
+        workspaceRoot,
+      );
+      return {
+        payload: buildEventPayload("settings.updated", record as unknown as JsonValue),
+        projects: state.projects,
+        work: state.work,
+        settings: sortWorkspaceSettings([
+          ...state.settings.filter((entry) => entry.key !== record.key),
+          record,
+        ]),
+      };
+    }, input);
+    await projectConfiguration(root, committed);
+    return committed;
+  });
 }
 
 export async function removeWorkspaceSetting(workspaceRoot: string, input: {
   readonly key: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, (state) => {
-    const current = state.settings.find((record) => record.key === input.key);
-    if (current === undefined) fail("WORKSPACE_INPUT_INVALID", `setting ${input.key} is not set`);
-    return {
-      payload: buildEventPayload("settings.removed", { key: input.key, updatedAt: input.occurredAt } as unknown as JsonValue),
-      projects: state.projects,
-      work: state.work,
-      settings: sortWorkspaceSettings(state.settings.filter((entry) => entry.key !== input.key)),
-    };
-  }, input);
+  assertProjectSettingKey(input.key);
+  return withWorkspaceWriteLock(workspaceRoot, async (root) => {
+    const committed = await appendEvent(root, (state) => {
+      const current = state.settings.find((record) => record.key === input.key);
+      if (current === undefined) fail("WORKSPACE_INPUT_INVALID", `setting ${input.key} is not set`);
+      return {
+        payload: buildEventPayload("settings.removed", { key: input.key, updatedAt: input.occurredAt } as unknown as JsonValue),
+        projects: state.projects,
+        work: state.work,
+        settings: sortWorkspaceSettings(state.settings.filter((entry) => entry.key !== input.key)),
+      };
+    }, input);
+    await projectConfiguration(root, committed);
+    return committed;
+  });
 }
 
-/** Re-read and re-validate a library under its lock. An old-layout workspace refuses. */
 /**
  * Rebuild this device's cache of the library (TCRN-CROSS-STORY-469 R4): drop it, replay the
  * merged streams from genesis, and write the views and a snapshot of the result. The library

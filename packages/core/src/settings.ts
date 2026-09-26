@@ -6,6 +6,7 @@ import { assertStrictInstant, canonicalJson, compareCanonicalText } from "../../
 import { ARTIFACT_LANGUAGE_TAGS, parsePromptLanguages } from "./knowledge-language.js";
 import { dispatchSettingDefault, validateDispatchSetting } from "./dispatch-config.js";
 import { DIRECTORY, LEGACY_CONTROL_DIRECTORY } from "./names.js";
+import { MACHINE_SETTINGS_CATALOG } from "./machine-settings.js";
 
 /**
  * Settings are a deliberately small engine-owned overlay surface. The generic
@@ -17,10 +18,19 @@ export const WORKSPACE_SETTING_VERSION = "tcrn.workspace-setting.v1" as const;
 export const SETTINGS_LAYER_KIND = "workspace_configuration" as const;
 
 export const SETTINGS_REASON_CODES = Object.freeze([
+  "SETTINGS_KEY_DEVICE_LEVEL",
   "SETTINGS_KEY_UNREGISTERED",
   "SETTINGS_RECORD_INVALID",
   "SETTINGS_VALUE_INVALID",
 ] as const);
+
+// TCRN-CROSS-STORY-469 R2, R3 (MIN-227 D13): two layers of configuration. A project-level key is
+// an event in the library, so it travels with the library and every device merges it to the same
+// value (the later writer in merge order wins); a device-level key lives only in this device's
+// directory (machine-settings.ts). Every key of this catalog is project-level.
+export type SettingLayer = "project" | "device";
+export const SETTINGS_PROJECT_LAYER = "project" as const satisfies SettingLayer;
+export const SETTINGS_DEVICE_LAYER = "device" as const satisfies SettingLayer;
 
 // A catalog deletion must leave a replay-compatibility marker behind. Keep this
 // list separate from the live catalog: old events may be read, but the setting
@@ -72,6 +82,7 @@ export interface SettingsCatalogEntry {
   readonly key: SettingKey;
   readonly type: SettingValueType;
   readonly controlType: SettingControlType;
+  readonly layer: typeof SETTINGS_PROJECT_LAYER;
   readonly layerKind: typeof SETTINGS_LAYER_KIND;
   readonly defaultValue: string | null;
   readonly allowedValues?: readonly string[];
@@ -99,7 +110,7 @@ export interface SettingsCatalogReadback {
     readonly key: SettingKey;
     readonly type: SettingValueType;
     readonly controlType: SettingControlType;
-      readonly layer: typeof SETTINGS_LAYER_KIND;
+      readonly layer: typeof SETTINGS_PROJECT_LAYER;
       readonly defaultValue: string | null;
       readonly currentValue: string | null;
       readonly allowedValues?: readonly string[];
@@ -190,7 +201,7 @@ function assertAbsoluteArtifactsSettingPath(value: string, label: string, worksp
 
 // When a key is removed from this catalog, add it to RETIRED_SETTING_KEYS in the
 // same change so historical events remain legible without reopening new writes.
-const catalogEntries: readonly SettingsCatalogEntry[] = [
+const catalogEntries: readonly Omit<SettingsCatalogEntry, "layer">[] = [
   {
     // TCRN-CROSS-STORY-364: the language this workspace writes its knowledge cards in.
     // Its value set is the roster knowledge-language.ts can actually judge, so the two
@@ -457,9 +468,25 @@ const catalogEntries: readonly SettingsCatalogEntry[] = [
 export const SETTINGS_CATALOG: readonly SettingsCatalogEntry[] = Object.freeze(
   catalogEntries.slice().sort((left, right) => compareCanonicalText(left.key, right.key)).map((entry) => Object.freeze({
     ...entry,
+    layer: SETTINGS_PROJECT_LAYER,
     ...(entry.allowedValues === undefined ? {} : { allowedValues: Object.freeze([...entry.allowedValues]) }),
   })),
 );
+
+/**
+ * Refuse a device-level key on a project-level verb (settings-set, settings-remove): it belongs
+ * to this device only, so it is never written into a library. The refusal names the verb that
+ * writes it.
+ */
+export function assertProjectSettingKey(key: unknown): void {
+  if (typeof key === "string" && MACHINE_SETTINGS_CATALOG.some((entry) => entry.key === key)) {
+    fail("SETTINGS_KEY_DEVICE_LEVEL", `${key} is a device-level setting: it stays in this device's directory; set it with machine-settings-set`, {
+      key,
+      layer: SETTINGS_DEVICE_LAYER,
+      remedy: "machine-settings-set",
+    });
+  }
+}
 
 const catalogByKey = new Map<SettingKey, SettingsCatalogEntry>(
   SETTINGS_CATALOG.map((entry) => [entry.key, entry]),
@@ -673,7 +700,7 @@ export function readSettingsCatalog(
       key: entry.key,
       type: entry.type,
       controlType: entry.controlType,
-      layer: entry.layerKind,
+      layer: entry.layer,
       defaultValue: entry.defaultValue,
       currentValue: records.find((record) => record.key === entry.key)?.value ?? effectiveValues[entry.key] ?? entry.defaultValue,
       ...(entry.allowedValues === undefined ? {} : { allowedValues: entry.allowedValues }),

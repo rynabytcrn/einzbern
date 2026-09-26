@@ -143,6 +143,7 @@ test("portal boots from the live engine and exposes the new read surfaces", asyn
   for (const retired of ["partitionMode", "partitions", "selectedPartition", "container"]) assert.equal(Object.hasOwn(boot, retired), false, retired);
   assert.match(page, /data-page="dashboard"/u);
   assert.match(page, /data-page="variables"/u);
+  assert.match(page, /data-page="gates"/u);
   assert.match(page, /data-page="vocabulary"/u);
 
   const settings = await request(url, "/api/settings", readOptions(boot.token));
@@ -170,7 +171,7 @@ test("STORY-379 read views use CLI projections and keep partial data visible", a
   t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
   const { page, boot } = await readBoot(url);
   for (const tab of ["work", "knowledge"]) assert.match(page, new RegExp(`data-workspace-tab="${tab}"`, "u"));
-  // TCRN-CROSS-STORY-467 R3: the gate view read the gate listing and left with the gate-* verbs.
+  // TCRN-CROSS-STORY-485: gate configuration is its own destination, not a workspace tab.
   // TCRN-CROSS-STORY-482 R4: the evolution panel and the session audit left with their mechanisms.
   for (const tab of ["gates", "evolution", "audit"]) assert.doesNotMatch(page, new RegExp(`data-workspace-tab="${tab}"`, "u"));
 
@@ -181,8 +182,9 @@ test("STORY-379 read views use CLI projections and keep partial data visible", a
   assert.match(knowledge.body.reasonCode, /^PORTAL_KNOWLEDGE_/u);
   assert.ok(Array.isArray(knowledge.body.records));
   const gates = await request(url, "/api/gates", readOptions(boot.token));
-  assert.equal(gates.response.status, 404);
-  assert.equal(gates.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
+  assert.equal(gates.response.status, 200);
+  assert.equal(gates.body.reasonCode, "PORTAL_GATES_READY");
+  assert.deepEqual(gates.body.gates, []);
 
   const untokened = await request(url, "/api/work");
   assert.equal(untokened.response.status, 403);
@@ -342,6 +344,65 @@ test("STORY-366: the article endpoint is refused while the native article stays 
   const refused = await request(url, "/api/knowledge/articles", writeOptions(boot.token, "POST", { title: "Manual article", category: "architecture", content: "must not write" }));
   assert.equal(refused.response.status, 404);
   assert.equal(refused.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
+});
+
+test("STORY-485: Atelier edits gate declarations and reads each library's latest cached gate run", async (t) => {
+  const fixture = await scratch("tcrn-portal-gates-", "TCRN-PORTAL-GATES");
+  const { child, url } = await startPortal(fixture);
+  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
+  const { boot } = await readBoot(url);
+  const gatesNow = async () => (await request(url, "/api/gates", readOptions(boot.token))).body;
+  const latestNow = async () => (await request(url, "/api/gates/last-run", readOptions(boot.token))).body;
+  assert.deepEqual((await gatesNow()).gates, []);
+
+  const created = await request(url, "/api/gates", writeOptions(boot.token, "POST", {
+    name: "portal", command: ["pnpm", "verify:links"], root: ".", covers: ["portal/**", "docs/**"],
+    enabled: true, required: true, releaseOnly: false,
+  }));
+  assert.equal(created.response.status, 200);
+  assert.deepEqual(created.body.gate, { name: "portal", command: ["pnpm", "verify:links"], root: ".", covers: ["portal/**", "docs/**"], enabled: true, required: true, releaseOnly: false });
+  assert.deepEqual((await gatesNow()).gates, [created.body.gate]);
+
+  const updated = await request(url, "/api/gates", writeOptions(boot.token, "POST", {
+    name: "portal", command: ["pnpm", "verify:portal"], root: "portal", covers: ["portal/**"],
+    enabled: false, required: false, releaseOnly: true,
+  }));
+  assert.equal(updated.response.status, 200);
+  assert.equal(updated.body.gate.enabled, false);
+  assert.equal(updated.body.gate.required, false);
+  assert.equal(updated.body.gate.releaseOnly, true);
+  assert.deepEqual(updated.body.gate.covers, ["portal/**"]);
+  assert.equal((await latestNow()).run, null);
+
+  const writeRun = async (libraryId, runId, at, gateName, ok) => {
+    const directory = join(fixture.deviceEnv.EINZBERN_HOME, "cache", libraryId.replace(":", "-"), "gate-runs");
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, `${runId}.json`), JSON.stringify({
+      schemaVersion: "einzbern.gate-run.v1", runId, libraryId, at, release: false, base: null,
+      treeDigest: `tree-${runId}`, declarationsDigest: `declarations-${runId}`, trees: [],
+      gates: [{ name: gateName, root: ".", required: true, ok, exitCode: ok ? 0 : 1, signal: null, timedOut: false, outputFile: `${runId}/1-${gateName}.log`, outputBytes: 0, truncated: false }],
+      reds: ok ? [] : [gateName],
+    }));
+  };
+  await writeRun(boot.library.libraryId, "first-run", "2026-08-11T16:00:00Z", "portal", false);
+  await writeRun(boot.library.libraryId, "latest-run", "2026-08-11T17:00:00Z", "portal", true);
+  const latest = await latestNow();
+  assert.equal(latest.reasonCode, "PORTAL_GATE_RUN_READY");
+  assert.equal(latest.run.runId, "latest-run");
+  assert.deepEqual(latest.run.reds, []);
+
+  const second = await cli(["status", "--workspace", fixture.second.library], fixture.deviceEnv);
+  await writeRun(second.workspaceId, "second-library-run", "2026-08-11T18:00:00Z", "second", false);
+  const switched = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: fixture.second.project }));
+  assert.equal(switched.response.status, 200);
+  assert.equal((await latestNow()).run.runId, "second-library-run");
+
+  const back = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: fixture.proseRoot }));
+  assert.equal(back.response.status, 200);
+  const removed = await request(url, "/api/gates", writeOptions(boot.token, "DELETE", { name: "portal" }));
+  assert.equal(removed.response.status, 200);
+  assert.deepEqual(removed.body.gates, []);
+  assert.deepEqual((await gatesNow()).gates, []);
 });
 
 test("state surface follows engine version and turns health red on failed status/actor legs", async (t) => {

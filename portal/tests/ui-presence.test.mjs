@@ -35,6 +35,9 @@ const COMPONENTS = Object.freeze([
   ["DS NumberInput", ".tcrn-number-input"],
   ["model tiers table", '[data-ui="model-tiers-table"]'],
   ["variables view", '[data-ui="variables-view"]'],
+  ["gate configuration table", '[data-ui="gate-config-table"]'],
+  ["gate add form", '[data-ui="gate-add-form"]'],
+  ["latest gate run", '[data-ui="gates-last-run"]'],
   ["returned stat card", ".tcrn-stat-card"],
   ["returned setting row", ".tcrn-setting-row"],
   ["returned line-numbered editor", ".tcrn-line-numbered-editor"],
@@ -227,7 +230,7 @@ function missingComponents(document) {
     .map(([name, selector]) => ({ name, selector }));
 }
 
-const hierarchyPages = Object.freeze(["dashboard", "settings", "variables", "prose", "vocabulary"]);
+const hierarchyPages = Object.freeze(["dashboard", "settings", "variables", "gates", "prose", "vocabulary"]);
 const topbarDesignMap = Object.freeze([
   ["product-shell-header", "header.tcrn-top-bar", "ProductShell/TopBar", "https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html#navigation-shell-spec"],
   ["library-select", "#library-select", "Select", "https://tcrn-design-system-storybook.vercel.app/components-controls-data.html#field-spec-usage"],
@@ -271,6 +274,13 @@ function pageHierarchyFindings(document, source) {
     if (name === "variables") {
       const view = lowerContent?.querySelector(':scope > [data-ui="variables-view"]');
       if (!view || childIndex(lowerContent, view) !== 0) findings.push("variables:tabs-before-content");
+    }
+    if (name === "gates") {
+      const view = lowerContent?.querySelector(':scope > [data-ui="gates-view"]');
+      const table = view?.querySelector('[data-ui="gate-config-table"]');
+      const form = view?.querySelector('[data-ui="gate-add-form"]');
+      const lastRun = view?.querySelector('[data-ui="gates-last-run"]');
+      if (!view || !table || table.querySelectorAll("thead th").length !== 4 || !form || !lastRun || childIndex(lowerContent, view) !== 0) findings.push("gates:four-columns");
     }
     if (name === "prose") {
       const pending = tabsRegion?.querySelector(":scope > #rules-pending");
@@ -426,9 +436,9 @@ function assertDomContract(document) {
   const missing = missingComponents(document);
   assert.deepEqual(missing, [], `rendered DOM components absent: ${JSON.stringify(missing)}`);
   const navigationItems = [...document.querySelectorAll(".tcrn-side-nav .tcrn-nav-item")];
-  // STORY-370 retired Entities, and STORY-403 folds article reading into the
-  // dashboard knowledge view rather than keeping a manual article destination.
-  assert.equal(navigationItems.length, 5, "the portal must render five live platform destinations including custom variables");
+  // STORY-370 retired Entities, STORY-403 folds article reading into knowledge,
+  // and STORY-485 adds the independent gate configuration destination.
+  assert.equal(navigationItems.length, 6, "the portal must render six live platform destinations including custom variables and gate configuration");
   assert.ok(navigationItems.every((button) => button.getAttribute("aria-label")?.trim()), "every destination must expose an accessible name");
   assert.ok(navigationItems.every((button) => button.getAttribute("data-i18n-aria-label")?.trim()), "every destination name must come from the locale table");
   assert.equal(document.querySelector('img.tcrn-brand-mark')?.getAttribute("alt"), "", "the decorative mark must not duplicate the brand accessible name");
@@ -1466,8 +1476,9 @@ if (process.argv[2] === "status" && actual.status === 0) {
     const page = await preparePage();
     try {
       page.document.querySelector('[data-page-target="dashboard"]')?.click();
-      // TCRN-CROSS-STORY-467 R3: the gate view read the gate listing and left with the gate-* verbs.
-      assert.equal(page.document.querySelector('[data-workspace-tab="gates"], [data-workspace-panel="gates"], [data-ui="gates-view"]'), null);
+      // STORY-485 adds a standalone gate page, outside the work dashboard tabs.
+      assert.ok(page.document.querySelector('[data-ui="gates-view"]'));
+      assert.equal(page.document.querySelector('[data-workspace-tab="gates"], [data-workspace-panel="gates"]'), null);
       for (const target of ["work", "knowledge"]) {
         page.document.querySelector(`[data-workspace-tab="${target}"]`)?.click();
         await new Promise((resolve) => setTimeout(resolve, 40));

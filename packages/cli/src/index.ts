@@ -101,6 +101,10 @@ import {
   minutesById,
   minutesView,
   recordMinutes,
+  BRAND,
+  SKILL_COPIES_FILES,
+  computeInstallTreeDigest,
+  renderSkillMarkdown,
 } from "../../core/src/index.js";
 import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider, WorkRelationsInput } from "../../core/src/index.js";
 import type {
@@ -113,7 +117,9 @@ import type {
   RecallWorkInput,
 } from "../../core/src/index.js";
 import { existsSync, readFileSync } from "node:fs";
+import { cp, lstat, mkdir, readdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { canonicalExternalKey, canonicalJson, canonicalSha256, deriveStableId } from "../../protocol/src/index.js";
 import { isWorkStatus } from "../../protocol/src/index.js";
@@ -777,6 +783,9 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "settings-catalog", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   { name: "settings-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "settings-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "value", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
+  // TCRN-CROSS-STORY-479 R1: the skill directory this engine generates for its version, written
+  // into a missing or empty --out; it runs only where the skill template sits beside the engine.
+  { name: "skill-render", availability: "cli", mutates: true, flags: [{ name: "out", required: true, valueKind: "string" }, { name: "version", required: false, valueKind: "string" }] },
   { name: "snapshot-manifest", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
   { name: "snapshot-verify", availability: "cli", mutates: false, flags: [{ name: "root", required: true, valueKind: "string" }, { name: "manifest", required: true, valueKind: "string" }] },
   { name: "status", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
@@ -975,6 +984,91 @@ const REGISTRY_RESOLVED_VERBS: ReadonlyMap<string, readonly string[]> = new Map(
 
 function hasFlag(arguments_: readonly string[], name: string): boolean {
   return arguments_.some((argument) => argument === `--${name}` || argument.startsWith(`--${name}=`));
+}
+
+// TCRN-CROSS-STORY-479 R1 (MIN-227 D28): skill-render writes the skill as this engine generates
+// it. The skill template, skill/<skill id>/ without SKILL.md, sits beside the engine in each of the
+// three layouts the engine runs from, and is looked up there only, in this order: a release (one
+// bundled scripts/einzbern.mjs beside skill/), the source tree (packages/cli/src/index.ts) and its
+// build (dist/build/packages/cli/src/index.js). Anywhere else the verb refuses SKILL_SOURCE_MISSING.
+const SKILL_SOURCE_CANDIDATES: readonly URL[] = Object.freeze([
+  new URL(`../skill/${BRAND.helper.id}/`, import.meta.url),
+  new URL(`../../../skill/${BRAND.helper.id}/`, import.meta.url),
+  new URL(`../../../../../skill/${BRAND.helper.id}/`, import.meta.url),
+]);
+
+// What is copied from the template beside the generated SKILL.md: the wizard references, the Codex
+// metadata and the scripts. A template without scripts/ has nothing to copy there.
+const SKILL_SOURCE_PARTS: readonly { readonly name: string; readonly required: boolean }[] = Object.freeze([
+  { name: "references", required: true },
+  { name: "agents", required: true },
+  { name: "scripts", required: false },
+]);
+
+async function isDirectory(path: string): Promise<boolean> {
+  try {
+    return (await lstat(path)).isDirectory();
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return false;
+    throw error;
+  }
+}
+
+async function skillSourceDirectory(): Promise<string> {
+  for (const candidate of SKILL_SOURCE_CANDIDATES) {
+    const source = fileURLToPath(candidate);
+    if (!(await isDirectory(source))) continue;
+    for (const part of SKILL_SOURCE_PARTS) {
+      if (part.required && !(await isDirectory(join(source, part.name)))) {
+        fail("SKILL_SOURCE_MISSING", `${join(source, part.name)} does not exist: the skill template beside this engine is incomplete`);
+      }
+    }
+    return source;
+  }
+  fail("SKILL_SOURCE_MISSING", `no skill/${BRAND.helper.id}/ beside this engine: skill-render runs only in the engine's source tree or in a release`);
+}
+
+// --out names a directory that does not exist yet or is empty; nothing that is there is replaced.
+async function assertEmptyOutput(out: string): Promise<void> {
+  let names: readonly string[];
+  try {
+    names = await readdir(out);
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === "ENOENT") return;
+    if (code === "ENOTDIR") fail("SKILL_OUT_NOT_EMPTY", `${out} is a file; --out names a missing or empty directory`);
+    throw error;
+  }
+  if (names.length > 0) fail("SKILL_OUT_NOT_EMPTY", `${out} is not empty; --out names a missing or empty directory`);
+}
+
+/**
+ * The skill directory for one engine version (TCRN-CROSS-STORY-479 R1): SKILL.md rendered for that
+ * version against this engine's command catalog, and references/, agents/ and scripts/ copied from
+ * the template beside the engine. The template and the rendering are checked before anything is
+ * written.
+ */
+async function renderSkillDirectory(out: string, version: string): Promise<JsonValue> {
+  const source = await skillSourceDirectory();
+  const markdown = renderSkillMarkdown({ version, catalogNames: COMMAND_CATALOG.map((entry) => entry.name) });
+  const target = resolve(out);
+  await assertEmptyOutput(target);
+  await mkdir(target, { recursive: true });
+  await writeFile(join(target, SKILL_COPIES_FILES.entry), markdown);
+  for (const part of SKILL_SOURCE_PARTS) {
+    const from = join(source, part.name);
+    if (await isDirectory(from)) await cp(from, join(target, part.name), { recursive: true, errorOnExist: true, force: false });
+  }
+  const digest = await computeInstallTreeDigest(target);
+  return {
+    reasonCode: "SKILL_RENDERED",
+    skill: BRAND.helper.id,
+    version,
+    out: target,
+    installTreeDigest: digest.sha256,
+    files: digest.entries.map((entry) => entry.path),
+  };
 }
 
 async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<void> {
@@ -1320,6 +1414,14 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   if (command === "install-manifest") {
     parseArguments(rest, []);
     io.write(canonicalJson({ reasonCode: "INSTALL_MANIFEST_READY", ...readInstallManifest() }));
+    return;
+  }
+  // TCRN-CROSS-STORY-479 R1, AC1, AC3: the skill directory for this engine's version, or for
+  // --version.
+  if (command === "skill-render") {
+    const values = parseArguments(rest, ["out", "version"]);
+    required(values, ["out"]);
+    io.write(canonicalJson(await renderSkillDirectory(values.out ?? "", values.version ?? FRAMEWORK_VERSION)));
     return;
   }
   if (command === "vocabulary") {

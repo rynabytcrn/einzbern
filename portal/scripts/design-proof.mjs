@@ -31,7 +31,9 @@ const upstream = process.env.TCRN_DESIGN_SYSTEM_TOKENS
 const digest = (text) => createHash("sha256").update(text).digest("hex");
 const indexPath = process.env.TCRN_PORTAL_INDEX ?? join(portalRoot, "index.html");
 const baselinePath = process.env.TCRN_PORTAL_BASELINE ?? join(portalRoot, "design-baseline.html");
-const brandAssetPath = process.env.TCRN_PORTAL_BRAND_ASSET ?? join(portalRoot, "tcrn-brand-mark.svg");
+// Atelier ships the design system's mother-brand mark under its own file name; the bytes, and
+// the source file they are compared with, are the design system's (TCRN-CROSS-STORY-482 R1).
+const brandAssetPath = process.env.TCRN_PORTAL_BRAND_ASSET ?? join(portalRoot, "atelier-brand-mark.svg");
 const brandSourcePath = process.env.TCRN_PORTAL_BRAND_SOURCE
   ?? join(portalRoot, "..", "..", "TCRN-Design-System", "apps", "storybook", "assets", "tcrn-brand-mark.svg");
 const EXPECTED_BRAND_MARK_SHA256 = "5f28f17c599c63a05a51c81be03f9ef7845299af1940ebe6aef61f7af47fc25b";
@@ -107,7 +109,7 @@ try {
     leg: "brand-asset-fidelity",
     ok: findings.length === 0,
     reasonCode: findings.length === 0 ? "BRAND_ASSET_MATCHES_DESIGN_SYSTEM" : "BRAND_ASSET_DIGEST_MISMATCH",
-    asset: "portal/tcrn-brand-mark.svg",
+    asset: "portal/atelier-brand-mark.svg",
     expectedSha256: EXPECTED_BRAND_MARK_SHA256,
     assetSha256,
     ...(sourceAvailable ? { sourceSha256 } : { sourceAvailable: false }),
@@ -118,7 +120,7 @@ try {
     leg: "brand-asset-fidelity",
     ok: false,
     reasonCode: "BRAND_ASSET_UNREADABLE",
-    asset: "portal/tcrn-brand-mark.svg",
+    asset: "portal/atelier-brand-mark.svg",
     expectedSha256: EXPECTED_BRAND_MARK_SHA256,
     findings: [{ name: "asset read", reason: String(error?.message ?? error) }],
   };

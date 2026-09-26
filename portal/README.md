@@ -9,21 +9,24 @@ installed engine copy or checkout. There is no package dependency to install and
 to build.
 
 ```bash
-node <engine>/portal/portal.mjs --container <platform>/.tcrn-workspace
+node <engine>/portal/portal.mjs                      # the library of this directory's project
+node <engine>/portal/portal.mjs --library <library>  # or a registered library by path or id
 # → http://127.0.0.1:4319/
 ```
 
-The container contains one directory per partition, each with a governed
-`workspace/` child. The page lists every discovered partition and switches the
-live CLI read/write target from its selector.
+Atelier opens the libraries this device has registered (`library-register`, read back
+through `library-list` from the device directory's `registry.json`). The page lists
+every registered library by its project path and library id and switches the live CLI
+read/write target from its selector. It starts on the library `--library` names;
+without it, on the library `library-resolve` finds from the directory it was started
+in, then on the machine's default library, then on the first registered one.
 
 ## What it is
 
 Two files do the work: `index.html` (a self-contained page — inline CSS and JS,
 no bundler, no framework, no external request) and `portal.mjs` (a Node server
-using only the standard library). In container mode the portal discovers
-partitions from the container layout; it does not import the engine or write a
-control tree itself.
+using only the standard library). The portal reads the registry through the CLI;
+it does not import the engine or write a library itself.
 
 ## The boundary it keeps
 
@@ -37,7 +40,8 @@ those over the whole repository and fails if any source file imports an engine
 internal.
 
 `AGENTS.md` is ordinary repository prose, so the prose surface edits it with
-plain file I/O. It is the one canonical home for custom rules; per the platform
+plain file I/O: the file in the selected library's registered project, never one
+inside a library. It is the one canonical home for custom rules; per the platform
 convention it defines *how work is done*, never *who may decide*.
 
 ## Why a process rather than a bare page
@@ -83,10 +87,7 @@ evidence, where reproducing them verbatim is the point.
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
-| `--workspace` | *(one target required)* | One governed workspace path |
-| `--container` | *(one target required)* | Container whose `<partition>/workspace` children are selectable |
-| `--partition` | first discovered partition | Initial partition in container mode |
-| `--prose-root` | container parent | Directory holding `AGENTS.md` |
+| `--library` | the working directory's library | A registered library (its path or id, or its project's path) to open first |
 | `--port` | `4319` | Loopback port (`0` picks a free one) |
 | `TCRN_PORTAL_ACTOR` | `agent:portal` | Actor recorded on governed writes |
 | `TCRN_WORKFLOW_CLI` | `scripts/einzbern.mjs` beside the portal | CLI entry point |
@@ -98,11 +99,13 @@ root. Paths are absolute and the files are never symlinks:
 
 ```bash
 node <engine>/portal/scripts/generate-launchers.mjs \
-  --container "/path/to/platform/.tcrn-workspace" \
   --output-dir "/path/to/platform" \
-  --prose-root "/path/to/platform" \
+  --library "/path/to/project/.ether" \
   --port 4319
 ```
+
+`--library` is optional: a launcher without it opens the library of the directory
+it runs in, then the machine's default library, then the first registered one.
 
 This generates `atelier.command` for macOS,
 `atelier.sh` for Linux, and `atelier.cmd` for

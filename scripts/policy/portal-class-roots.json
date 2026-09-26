@@ -30,8 +30,6 @@
     "tcrn-form",
     "tcrn-grid",
     "tcrn-highlight",
-    "tcrn-inline-metric",
-    "tcrn-inline-metrics",
     "tcrn-line-numbered-editor",
     "tcrn-list",
     "tcrn-machine-token",
@@ -59,9 +57,7 @@
     "tcrn-subnav",
     "tcrn-surface",
     "tcrn-top-bar",
-    "tcrn-unknown",
     "tcrn-vocabulary",
-    "tcrn-work-activity-feed",
     "tcrn-work-tree"
   ]
 }

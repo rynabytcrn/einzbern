@@ -31,13 +31,12 @@
       ]
     },
     "fr": {
-      "maxEnglishMatches": 5,
+      "maxEnglishMatches": 4,
       "waivers": [
         "app.brand",
         "settings.machine",
         "vocabulary.columnDescription",
-        "vocabulary.columnSource",
-        "dashboard.auditTab"
+        "vocabulary.columnSource"
       ]
     }
   }

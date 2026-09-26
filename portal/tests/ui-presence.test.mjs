@@ -21,14 +21,13 @@ const portalRoot = fileURLToPath(new URL("..", import.meta.url));
 const CLI = process.env.TCRN_WORKFLOW_CLI ?? join(portalRoot, "..", "scripts", "einzbern.mjs");
 const MUTATION = process.env.TCRN_UI_MUTATION ?? "";
 const COMPONENTS = Object.freeze([
-  ["workspace overview/audit tabs", '[data-ui="workspace-tabs"]'],
+  ["workspace tabs", '[data-ui="workspace-tabs"]'],
   ["prose directory", '[data-ui="prose-directory"]'],
   ["prose line-number gutter", '[data-ui="prose-gutter"]'],
   ["prose finding link", '[data-ui="prose-finding-link"]'],
   ["work tree", '[data-ui="work-tree"]'],
   ["knowledge view", '[data-ui="knowledge-view"]'],
-  ["evolution dashboard", '[data-ui="evolution-dashboard"]'],
-  ["partition switcher", '[data-ui="partition-switcher"]'],
+  ["library switcher", '[data-ui="library-switcher"]'],
   ["engine connection", '[data-ui="engine-connection"]'],
   ["setting modified dot", '[data-ui="setting-modified-dot"]'],
   ["setting dictionary link", '[data-ui="setting-dictionary-link"]'],
@@ -45,9 +44,19 @@ const COMPONENTS = Object.freeze([
 let logicalAt = Date.parse("2026-08-13T00:00:00Z");
 const nextAt = () => new Date(logicalAt += 1000).toISOString();
 
-async function cli(args) {
-  const { stdout } = await execFileAsync(process.execPath, [CLI, ...args], { encoding: "utf8", maxBuffer: 32e6 });
+async function cli(args, env = {}) {
+  const { stdout } = await execFileAsync(process.execPath, [CLI, ...args], { encoding: "utf8", maxBuffer: 32e6, env: { ...process.env, ...env } });
   return JSON.parse(stdout);
+}
+
+// TCRN-CROSS-STORY-482 R3: Atelier opens the libraries a device has registered, so a fixture is a
+// device of its own (an EINZBERN_HOME inside it, removed with it; every CLI and portal child of the
+// fixture runs as that device) whose registry holds two libraries: the fixture's library, kept in
+// its project beside the project's AGENTS.md, and a second library kept outside its project.
+async function registeredLibrary(deviceEnv, project, library, externalKey) {
+  await mkdir(project, { recursive: true });
+  await cli(["init", "--workspace", library, "--project-name", externalKey, "--at", nextAt()], deviceEnv);
+  await cli(["library-register", "--project", project, "--library", library, "--at", nextAt()], deviceEnv);
 }
 
 async function scratch(prefix) {
@@ -56,22 +65,31 @@ async function scratch(prefix) {
   // under HOME, so each fixture carries its own scratch HOME, removed with the fixture.
   const home = join(base, "home");
   await mkdir(home);
-  // TCRN-CROSS-STORY-469: the fixture is a library.
-  const workspace = join(base, "workspace");
-  await cli(["init", "--workspace", workspace, "--project-name", "TCRN-INC148-DOM", "--at", nextAt()]);
-  const proseRoot = join(base, "prose");
-  await mkdir(proseRoot);
+  const deviceEnv = { EINZBERN_HOME: join(base, "device", "einzbern") };
+  const proseRoot = join(base, "project");
+  const workspace = join(proseRoot, ".ether");
+  await registeredLibrary(deviceEnv, proseRoot, workspace, "TCRN-INC148-DOM");
   await writeFile(join(proseRoot, "AGENTS.md"), "# Workspace rules\n\nbackup.cadence\nbackup.unknown\n", "utf8");
-  return { base, workspace, proseRoot, home };
+  const second = { project: join(base, "second-project"), library: join(base, "second-library") };
+  await registeredLibrary(deviceEnv, second.project, second.library, "TCRN-INC148-DOM-SECOND");
+  return { base, workspace, proseRoot, home, deviceEnv, second };
 }
 
 async function writeScratch(fixture, command, args) {
   // The engine serialises writers with its own lock (TCRN-CROSS-STORY-467 R1): no version to read first.
-  return cli([command, "--workspace", fixture.workspace, "--at", nextAt(), "--actor", "agent:test", ...args]);
+  return cli([command, "--workspace", fixture.workspace, "--at", nextAt(), "--actor", "agent:test", ...args], fixture.deviceEnv);
+}
+
+// The helper runs as the test process's device; the fixture's device is lent to it for the call,
+// so every event in the fixture's library comes from one device.
+async function asFixtureDevice(fixture, operation) {
+  const previous = process.env.EINZBERN_HOME;
+  process.env.EINZBERN_HOME = fixture.deviceEnv.EINZBERN_HOME;
+  try { return await operation(); } finally { process.env.EINZBERN_HOME = previous; }
 }
 
 async function seed(fixture) {
-  await historicalModelPlan(fixture.workspace, "set", { host: "claude-code", name: "budget", defaultModel: "claude-sonnet-4-5" }, nextAt());
+  await asFixtureDevice(fixture, () => historicalModelPlan(fixture.workspace, "set", { host: "claude-code", name: "budget", defaultModel: "claude-sonnet-4-5" }, nextAt()));
   await writeScratch(fixture, "settings-set", ["--key", "execution.claudeCodeSubagentPlan", "--value", "budget"]);
 }
 
@@ -133,9 +151,8 @@ function installDomShims(window) {
 
 async function startPortal(fixture, env = {}) {
   assert.ok(fixture.home, "every portal child needs the fixture scratch HOME (TCRN-CROSS-INC-386)");
-  const child = spawn(process.execPath, [join(portalRoot, "portal.mjs"), "--workspace", fixture.workspace,
-    "--prose-root", fixture.proseRoot, "--port", "0"], {
-    env: { ...process.env, TCRN_WORKFLOW_CLI: CLI, ...env, HOME: fixture.home },
+  const child = spawn(process.execPath, [join(portalRoot, "portal.mjs"), "--library", fixture.workspace, "--port", "0"], {
+    env: { ...process.env, TCRN_WORKFLOW_CLI: CLI, ...fixture.deviceEnv, ...env, HOME: fixture.home },
     stdio: ["ignore", "pipe", "pipe"],
   });
   const url = await new Promise((resolve, reject) => {
@@ -170,9 +187,12 @@ async function loadExecutedDom(fixture, env = {}) {
   // would turn a genuine regression into a timeout instead of a readable difference.
   let inFlight = 0;
   let lastSettled = Date.now();
+  // Every path the page asks for, in order, so a case can state what the page never requests.
+  const requests = [];
   window.fetch = (path, options = {}) => {
     inFlight += 1;
     lastSettled = Date.now();
+    requests.push(String(path));
     return nativeFetch(new URL(path, url), options).finally(() => {
       inFlight -= 1;
       lastSettled = Date.now();
@@ -194,7 +214,7 @@ async function loadExecutedDom(fixture, env = {}) {
     "the page's initial fetches to settle",
     20_000,
   );
-  return { child, document, source, window };
+  return { child, document, source, window, requests };
 }
 
 function missingComponents(document) {
@@ -205,7 +225,7 @@ function missingComponents(document) {
 const hierarchyPages = Object.freeze(["dashboard", "settings", "prose", "vocabulary"]);
 const topbarDesignMap = Object.freeze([
   ["product-shell-header", "header.tcrn-top-bar", "ProductShell/TopBar", "https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html#navigation-shell-spec"],
-  ["partition-select", "#partition-select", "Select", "https://tcrn-design-system-storybook.vercel.app/components-controls-data.html#field-spec-usage"],
+  ["library-select", "#library-select", "Select", "https://tcrn-design-system-storybook.vercel.app/components-controls-data.html#field-spec-usage"],
   ["engine-status", "#engine-connection", "Badge", "https://tcrn-design-system-storybook.vercel.app/proof-proof-visual-instances.html#owner-quality-product-shell"],
   ["workspace-search", "#global-search", "SearchInput", "https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html#navigation-shell-spec"],
   ["theme-toggle", "#theme-button", "ThemeToggle", "https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html#navigation-shell-spec"],
@@ -278,7 +298,7 @@ function topbarFindings(document) {
     if (node.getAttribute("data-ds-source-url") !== sourceUrl) findings.push(`${name}:source-url`);
   }
   const header = document.querySelector("header.tcrn-top-bar");
-  const actionOrder = ["#partition-select", "#engine-connection", "#global-search", "#theme-button", "#locale-menu", "#receipt-chip"]
+  const actionOrder = ["#library-select", "#engine-connection", "#global-search", "#theme-button", "#locale-menu", "#receipt-chip"]
     .map((selector) => document.querySelector(selector));
   const domOrder = header ? [header, ...header.querySelectorAll("*")] : [];
   if (actionOrder.some((node) => !node || !domOrder.includes(node))) findings.push("topbar:action-ownership");
@@ -324,6 +344,8 @@ async function preparePage(env = {}) {
   await seed(fixture);
   const page = await loadExecutedDom(fixture, env);
   page.workspace = fixture.workspace;
+  page.deviceEnv = fixture.deviceEnv;
+  page.fixture = fixture;
   page.cleanup = async () => { page.child.kill(); await rm(fixture.base, { recursive: true, force: true }); };
   page.document.querySelector('[data-page-target="settings"]')?.click();
   page.document.querySelector('[data-setting-group="execution"]')?.click();
@@ -384,7 +406,6 @@ function assertDomContract(document) {
     ["receipt badge", "#receipt-chip.tcrn-badge"],
     ["detail drawer", "#receipt-drawer.tcrn-detail-drawer"],
     ["readback panel", "#receipt-body.tcrn-readback-panel"],
-    ["activity feed", "#dashboard-audit.tcrn-work-activity-feed"],
   ];
   assert.deepEqual(
     alignedSelectors.filter(([, selector]) => !document.querySelector(selector)),
@@ -793,10 +814,10 @@ if (process.argv[2] === "status" && actual.status === 0) {
       assert.equal(page.document.querySelector('[data-workspace-panel="work"]').hidden, false);
       assert.equal(page.document.querySelector('[data-workspace-panel="overview"]').hidden, true);
       keydown(work, "End");
-      const audit = dashboardList.querySelector('[data-workspace-tab="audit"]');
-      assert.equal(audit.getAttribute("aria-selected"), "true", "dashboard End selects the final panel");
-      assert.equal(page.document.querySelector('[data-workspace-panel="audit"]').hidden, false);
-      keydown(audit, "Home");
+      const knowledge = dashboardList.querySelector('[data-workspace-tab="knowledge"]');
+      assert.equal(knowledge.getAttribute("aria-selected"), "true", "dashboard End selects the final panel");
+      assert.equal(page.document.querySelector('[data-workspace-panel="knowledge"]').hidden, false);
+      keydown(knowledge, "Home");
       assert.equal(overview.getAttribute("aria-selected"), "true");
 
       page.document.querySelector('[data-page-target="vocabulary"]')?.click();
@@ -873,7 +894,7 @@ if (process.argv[2] === "status" && actual.status === 0) {
     try {
       page.document.querySelector('[data-page-target="settings"]')?.click();
       const retiredEconomySettingKey = "model.economyTier";
-      const catalogForGroups = await cli(["settings-catalog", "--workspace", page.workspace]);
+      const catalogForGroups = await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv);
       const settingGroupSource = page.source.match(/const SETTING_GROUPS = Object\.freeze\(\{([\s\S]*?)\n  \}\);/u)?.[1];
       assert.ok(settingGroupSource, "the portal must declare its settings group coverage");
       const settingGroupEntries = [...settingGroupSource.matchAll(/^ {4}"([^"]+)": "([^"]+)",$/gmu)].map(([, key, group]) => [key, group]);
@@ -946,7 +967,7 @@ if (process.argv[2] === "status" && actual.status === 0) {
       assert.equal(prompt.closest("[data-setting-choice-component]")?.getAttribute("data-setting-choice-source"), "artifact.language.allowedValues");
       assert.equal(prompt.closest("[data-setting-choice-component]")?.getAttribute("data-setting-choice-value-format"), "comma-separated");
 
-      const catalog = await cli(["settings-catalog", "--workspace", page.workspace]);
+      const catalog = await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv);
       const languageSetting = catalog.settings.find((entry) => entry.key === "artifact.language");
       const roster = languageSetting.allowedValues;
       assert.ok(Array.isArray(roster) && roster.length > 0);
@@ -962,7 +983,7 @@ if (process.argv[2] === "status" && actual.status === 0) {
       const before = receiptText(page.document);
       prompt.dispatchEvent(new page.window.Event("change", { bubbles: true }));
       await waitFor(receiptAdvanced(page.document, before), "the prompt-language set receipt");
-      const saved = (await cli(["settings-catalog", "--workspace", page.workspace])).settings.find((entry) => entry.key === "retrieval.promptLanguages");
+      const saved = (await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages");
       assert.equal(saved.currentValue, firstOption.value, "duplicate selected language values must be serialized once");
     } finally { await page.cleanup(); }
   });
@@ -1070,7 +1091,7 @@ if (process.argv[2] === "status" && actual.status === 0) {
       await waitForReceiptChange(beforeReset, "the open-field reset receipt");
       await waitFor(() => page.document.querySelector('[data-setting-row="driver.capabilityProfile"]')?.dataset.modified === "false", "the reset field to read back");
       assert.equal(page.document.querySelector('[data-setting-row="driver.capabilityProfile"]')?.dataset.modified, "false", "reset returns the field to the engine default");
-      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace])).settings.find((entry) => entry.key === "driver.capabilityProfile").currentValue, "default");
+      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "driver.capabilityProfile").currentValue, "default");
 
       const prompt = page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]');
       assert.ok(prompt?.hasAttribute("multiple"));
@@ -1080,7 +1101,7 @@ if (process.argv[2] === "status" && actual.status === 0) {
       prompt.dispatchEvent(new page.window.Event("change", { bubbles: true }));
       await waitForReceiptChange(beforeSet, "the prompt-language collection receipt");
       await waitFor(() => page.document.querySelector('[data-setting-row="retrieval.promptLanguages"]')?.dataset.modified === "true", "the prompt-language collection to read back");
-      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace])).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, "en,zh-CN");
+      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, "en,zh-CN");
 
       page.document.querySelector('[data-page-target="dashboard"]')?.click();
       page.document.querySelector('[data-page-target="settings"]')?.click();
@@ -1092,10 +1113,12 @@ if (process.argv[2] === "status" && actual.status === 0) {
       currentPrompt.dispatchEvent(new page.window.Event("change", { bubbles: true }));
       await waitForReceiptChange(beforeCollectionReset, "the prompt-language collection reset receipt");
       await waitFor(() => page.document.querySelector('[data-setting-row="retrieval.promptLanguages"]')?.dataset.modified === "false", "the prompt-language reset to read back");
-      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace])).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, null, "clearing the collection removes the setting rather than writing an empty value");
+      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, null, "clearing the collection removes the setting rather than writing an empty value");
 
       selectGroup("machine");
-      assert.equal(page.document.querySelector("#partition-select")?.disabled, true, "workspace-only mode disables partition switching");
+      // TCRN-CROSS-STORY-482 R3: the fixture registry holds two libraries, so the switcher is live.
+      assert.equal(page.document.querySelector("#library-select")?.disabled, false, "two registered libraries enable the library switcher");
+      assert.equal(page.document.querySelectorAll("#library-select option").length, 2);
       assert.match(page.document.querySelector('[data-machine-row="portal.port"]')?.textContent ?? "", /restart/u, "the machine port exposes its restart lifecycle");
 
       selectGroup("workspace");
@@ -1105,7 +1128,7 @@ if (process.argv[2] === "status" && actual.status === 0) {
       numeric.dispatchEvent(new page.window.Event("change", { bubbles: true }));
       await waitFor(() => receiptText(page.document) !== beforeInvalid && receiptText(page.document).startsWith("✕"), "the invalid-value receipt");
       assert.equal(page.document.querySelector('[data-setting-row="conference.positionBudgetBytes"]')?.dataset.modified, "false", "an engine-rejected value does not change the field");
-      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace])).settings.find((entry) => entry.key === "conference.positionBudgetBytes").currentValue, "4096");
+      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "conference.positionBudgetBytes").currentValue, "4096");
     } finally { await page.cleanup(); }
   });
 
@@ -1116,7 +1139,7 @@ if (process.argv[2] === "status" && actual.status === 0) {
       const allowedValues = ["allowed", "review-only", "forbidden"];
       const controlFor = () => page.document.querySelector(`[data-setting-control="${key}"]`);
       const rowFor = () => page.document.querySelector(`[data-setting-row="${key}"]`);
-      const readback = async () => (await cli(["settings-catalog", "--workspace", page.workspace])).settings.find((entry) => entry.key === key);
+      const readback = async () => (await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === key);
 
       const initial = controlFor();
       assert.equal(initial?.tagName, "SELECT", "execution.subagentPolicy must render as a select");
@@ -1168,7 +1191,7 @@ if (process.argv[2] === "status" && actual.status === 0) {
       const allowedValues = ["none", "verification", "verification-and-risk", "all"];
       const controlFor = () => page.document.querySelector(`[data-setting-control="${key}"]`);
       const rowFor = () => page.document.querySelector(`[data-setting-row="${key}"]`);
-      const readback = async () => (await cli(["settings-catalog", "--workspace", page.workspace])).settings.find((entry) => entry.key === key);
+      const readback = async () => (await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === key);
 
       const initial = controlFor();
       assert.equal(initial?.tagName, "SELECT", "execution.independenceFloor must render as a select");
@@ -1502,85 +1525,90 @@ if (process.argv[2] === "status" && actual.status === 0) {
     } finally { await page.cleanup(); }
   });
 
-  test("STORY-379 GWT2/GWT3: work, knowledge, and evolution views are reachable, read-only, and translated", async () => {
+  test("STORY-379 GWT2/GWT3: work and knowledge views are reachable, read-only, and translated", async () => {
     const page = await preparePage();
     try {
       page.document.querySelector('[data-page-target="dashboard"]')?.click();
       // TCRN-CROSS-STORY-467 R3: the gate view read the gate listing and left with the gate-* verbs.
       assert.equal(page.document.querySelector('[data-workspace-tab="gates"], [data-workspace-panel="gates"], [data-ui="gates-view"]'), null);
-      for (const target of ["work", "knowledge", "evolution"]) {
+      for (const target of ["work", "knowledge"]) {
         page.document.querySelector(`[data-workspace-tab="${target}"]`)?.click();
         await new Promise((resolve) => setTimeout(resolve, 40));
         assert.equal(page.document.querySelector(`[data-workspace-panel="${target}"]`)?.hidden, false, `${target} panel must be reachable`);
       }
-      const evolution = page.document.querySelector('[data-ui="evolution-dashboard"]');
-      assert.equal(evolution?.querySelectorAll("button").length, 0, "evolution retirement is read-only and has no confirmation control");
       for (const locale of ["en", "zh-CN", "ja", "ko", "fr"]) {
         page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
         await new Promise((resolve) => setTimeout(resolve, 40));
         assert.equal(page.document.documentElement.lang, locale);
-        assert.notEqual(page.document.querySelector('[data-i18n="dashboard.evolutionTitle"]')?.textContent, "dashboard.evolutionTitle");
+        for (const key of ["dashboard.workTitle", "dashboard.knowledgeTitle"]) {
+          assert.notEqual(page.document.querySelector(`[data-i18n="${key}"]`)?.textContent, key);
+        }
       }
     } finally { await page.cleanup(); }
   });
 
-  // TCRN-CROSS-MIN-225 D3 (TCRN-CROSS-SUB-259): the only automatic retirement left is a --supersedes
-  // write, so the evolution panel lists the cards such writes replaced and nothing else: no window,
-  // no last sweep, no proposal, no pending count and no button. The wrapper answers knowledge-list
-  // with two replaced cards, a manually retired card and a card carrying a v1.2.0 retirement record,
-  // and still answers retire-proposals with the old window payload, which the panel must not show.
-  test("MIN-225 the evolution panel lists conflict retirements only", async () => {
-    const fixture = await scratch("tcrn-min225-evolution-dom-");
-    const card = (suffix, subject, updatedAt, extra = {}) => ({ id: `knowledge:000000000000000000000${suffix}`, subject, updatedAt, lifecycle: "active", extensions: {}, ...extra });
-    const records = [
-      card("a01", "Older card A", "2026-09-20T10:00:00.000Z", { extensions: { supersededBy: "knowledge:000000000000000000000b01" } }),
-      card("b01", "Newer card A", "2026-09-20T10:00:00.000Z"),
-      card("a02", "Older card B", "2026-09-22T10:00:00.000Z", { extensions: { supersededBy: "knowledge:000000000000000000000b02" } }),
-      card("b02", "Newer card B", "2026-09-22T10:00:00.000Z"),
-      card("c01", "Manually retired card", "2026-09-21T10:00:00.000Z", { lifecycle: "retired" }),
-      card("c02", "Card swept in 1.2.0", "2026-09-21T11:00:00.000Z", { lifecycle: "retired", retirement: { schemaVersion: "tcrn.knowledge-retirement.v1", reason: "zero-retrieval-zero-reference" } }),
-    ];
-    const listing = { schemaVersion: "tcrn.knowledge-list.v1", reasonCode: "KNOWLEDGE_LIST_READY", total: records.length, truncated: false, records };
-    const legacy = {
-      reasonCode: "KNOWLEDGE_RETIRE_PROPOSALS_READY",
-      windowComplete: false,
-      windows: { card: { complete: false, observationDays: 89, missingObservationDays: 1 } },
-      idleDays: ["2026-09-01"],
-      unprovenDays: ["2026-09-12"],
-      proposals: [{ id: "knowledge:000000000000000000000c09", automatic: true, baseDigest: "legacy-digest", retrievalCount: 0, referenceCount: 0 }],
-      retiredRecords: [{ id: "knowledge:000000000000000000000c02", retirement: { reason: "zero-retrieval-zero-reference" } }],
-      lastSweepAt: "2026-09-24T00:47:10.039Z",
-    };
-    const wrapper = join(fixture.base, "evolution-wrapper.mjs");
-    await writeFile(wrapper, `import { spawnSync } from "node:child_process";
-if (process.argv[2] === "knowledge-list") {
-  process.stdout.write(${JSON.stringify(JSON.stringify(listing))});
-} else if (process.argv[2] === "retire-proposals") {
-  process.stdout.write(${JSON.stringify(JSON.stringify(legacy))});
-} else {
-  const actual = spawnSync(process.execPath, [${JSON.stringify(CLI)}, ...process.argv.slice(2)], { encoding: "utf8" });
-  process.stdout.write(actual.stdout || "");
-  process.stderr.write(actual.stderr || "");
-  process.exitCode = actual.status ?? 1;
-}
-`, "utf8");
-    const page = await loadExecutedDom(fixture, { TCRN_WORKFLOW_CLI: wrapper });
+  // TCRN-CROSS-STORY-482 R4: the evolution panel (conflict retirements, retrieval evaluation and the
+  // host render state), the session audit (its tab, its button and its list in the receipt drawer)
+  // and the execution surface left with the mechanisms they showed. The page neither renders them
+  // nor asks the server for them; the receipt drawer keeps the engine's receipt.
+  test("STORY-482 R4: the evolution panel, the session audit and the host projection are gone from the page", async () => {
+    const page = await preparePage();
     try {
-      const dashboard = page.document.querySelector('[data-ui="evolution-dashboard"]');
-      const panel = page.document.querySelector("#evolution-retirement");
-      const rows = [...panel.querySelectorAll(".tcrn-read-list__row")].map((row) => row.textContent.replace(/\s+/gu, " ").trim());
-      assert.equal(rows.length, 2, `only the two replaced cards are listed: ${JSON.stringify(rows)}`);
-      assert.match(rows[0], /^Older card B.*knowledge:000000000000000000000a02.*knowledge:000000000000000000000b02.*2026-09-22T10:00:00\.000Z/u, "newest first, with the card, its replacement and the time");
-      assert.match(rows[1], /^Older card A.*knowledge:000000000000000000000a01.*knowledge:000000000000000000000b01.*2026-09-20T10:00:00\.000Z/u);
-      const text = dashboard.textContent.replace(/\s+/gu, " ");
-      for (const absent of [/observation window/iu, /last sweep/iu, /proposal/iu, /pending retirement/iu, /Manually retired card/u, /Card swept in 1\.2\.0/u, /legacy-digest/u]) {
-        assert.doesNotMatch(text, absent, `the panel shows no ${absent}`);
+      const tabs = [...page.document.querySelectorAll("[data-workspace-tab]")].map((tab) => tab.dataset.workspaceTab);
+      assert.deepEqual(tabs, ["overview", "work", "knowledge"]);
+      assert.deepEqual([...page.document.querySelectorAll("[data-workspace-panel]")].map((panel) => panel.dataset.workspacePanel), tabs);
+      for (const selector of ['[data-ui="evolution-dashboard"]', "#evolution-retirement", "#evolution-eval", "#evolution-hosts", "#audit-button", "#dashboard-audit", "#drawer-audit", '[data-ui="dispatch-config-surface"]']) {
+        assert.equal(page.document.querySelector(selector), null, `${selector} must be absent`);
       }
-      assert.equal(dashboard.querySelectorAll("button").length, 0, "the list is read-only");
-      const cells = [...page.document.querySelectorAll("#evolution-stats .tcrn-inline-metric")].map((cell) => cell.textContent.replace(/\s+/gu, " ").trim());
-      // The telemetry, mode and token cells left with the telemetry store (TCRN-CROSS-STORY-467 R3).
-      assert.equal(cells.length, 1, "the stats block keeps the conflict retirement cell only");
-      assert.match(cells[0], /^Conflict retirements ?2 ?items$/u, "and counts the conflict retirements");
+      const retired = ["evolution", ["session", "audit"].join("-"), ["host", "probe"].join("-"), "execution"].map((name) => `/api/${name}`);
+      assert.ok(page.requests.length > 0, "the harness records the page's requests");
+      assert.deepEqual(page.requests.filter((path) => retired.some((route) => path.startsWith(route))), [], "the page asks for no retired route");
+      for (const route of retired) assert.equal(page.source.includes(`"${route}"`), false, `the page source names no ${route}`);
+      page.document.querySelector('[data-ui="receipt-chip"]').click();
+      page.document.querySelector("#receipt-details-trigger").click();
+      const details = page.document.querySelector("#receipt-details");
+      assert.equal(details.hidden, false);
+      assert.ok(details.querySelector("#receipt-body.tcrn-readback-panel"), "the drawer keeps the engine receipt");
+      assert.equal(details.querySelectorAll("h3").length, 0, "the drawer no longer lists this session's writes");
+      assert.equal(page.document.querySelector("#drawer-button")?.textContent.trim(), "Receipt");
+    } finally { await page.cleanup(); }
+  });
+
+  // TCRN-CROSS-STORY-482 R3, AC1: the top bar's switcher lists the registry's two libraries, each
+  // by its project path and library id; choosing the other one moves the whole page to it (its path,
+  // its name and id in the rail, its status, its Rules file), and choosing back returns. The second
+  // library carries one event of its own, so its status differs from the first's.
+  test("STORY-482 AC1: the page switches between the registry's two libraries and shows each one's status", async () => {
+    const fixture = await scratch("tcrn-482-ac1-dom-");
+    await cli(["settings-set", "--workspace", fixture.second.library, "--at", nextAt(), "--actor", "agent:test", "--key", "artifact.language", "--value", "zh-CN"], fixture.deviceEnv);
+    const page = await loadExecutedDom(fixture);
+    try {
+      const text = (selector) => page.document.querySelector(selector)?.textContent ?? "";
+      const select = page.document.querySelector('[data-ui="library-switcher"]');
+      assert.equal(select?.id, "library-select");
+      const options = [...select.querySelectorAll("option")];
+      assert.deepEqual(options.map((option) => option.getAttribute("value")), [fixture.proseRoot, fixture.second.project]);
+      assert.ok(options.every((option) => option.textContent.includes(option.getAttribute("value")) && / · library:/u.test(option.textContent)), "each option names its project path and library id");
+      assert.equal(options[0].hasAttribute("selected"), true);
+      const firstId = text("#library-label");
+      assert.match(firstId, /^library:/u);
+      assert.equal(text("#rail-workspace-label"), "project");
+      assert.equal(text("#workspace-label"), fixture.workspace);
+      assert.equal(text("#stat-version"), "0");
+
+      select.value = fixture.second.project;
+      select.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+      await waitFor(() => text("#workspace-label") === fixture.second.library && text("#stat-version") === "1" && text("#agents-path") === join(fixture.second.project, "AGENTS.md"), "the page to move to the second library");
+      assert.equal(text("#rail-workspace-label"), "second-project");
+      assert.notEqual(text("#library-label"), firstId);
+      assert.ok(options[1].textContent.includes(text("#library-label")), "the rail names the id the switcher showed");
+      assert.equal(page.document.querySelector("#health-chip")?.className.includes("tcrn-badge--positive"), true);
+      assert.equal(page.requests.filter((path) => path === "/api/library").length, 1);
+
+      page.document.querySelector("#library-select").value = fixture.proseRoot;
+      page.document.querySelector("#library-select").dispatchEvent(new page.window.Event("change", { bubbles: true }));
+      await waitFor(() => text("#workspace-label") === fixture.workspace && text("#stat-version") === "0" && text("#agents-path") === join(fixture.proseRoot, "AGENTS.md"), "the page to return to the first library");
+      assert.equal(text("#library-label"), firstId);
     } finally { page.child.kill(); await rm(fixture.base, { recursive: true, force: true }); }
   });
 
@@ -1597,10 +1625,11 @@ if (process.argv[2] === "knowledge-list") {
         const labels = [...page.document.querySelectorAll("[data-workspace-tab]")].map((tab) => tab.textContent.trim());
         assert.equal(new Set(labels).size, labels.length, `${locale} workspace tab labels must stay distinct: ${JSON.stringify(labels)}`);
       }
+      // The Audit tab the French check pinned left with the session audit (TCRN-CROSS-STORY-482 R4).
       page.document.querySelector('[data-locale-option="fr"]')?.click();
-      assert.equal(page.document.querySelector('[data-workspace-tab="audit"]')?.textContent, "Audit");
+      assert.equal(page.document.querySelector('[data-workspace-tab="knowledge"]')?.textContent, "Connaissances");
       page.document.querySelector('[data-locale-option="en"]')?.click();
-      assert.equal(page.document.querySelector('[data-workspace-tab="audit"]')?.textContent, "Audit");
+      assert.equal(page.document.querySelector('[data-workspace-tab="knowledge"]')?.textContent, "Knowledge");
     } finally { await page.cleanup(); }
   });
 }

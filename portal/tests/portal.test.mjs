@@ -142,6 +142,7 @@ test("portal boots from the live engine and exposes the new read surfaces", asyn
   assert.equal(boot.libraries.length, 2);
   for (const retired of ["partitionMode", "partitions", "selectedPartition", "container"]) assert.equal(Object.hasOwn(boot, retired), false, retired);
   assert.match(page, /data-page="dashboard"/u);
+  assert.match(page, /data-page="variables"/u);
   assert.match(page, /data-page="vocabulary"/u);
 
   const settings = await request(url, "/api/settings", readOptions(boot.token));
@@ -158,6 +159,9 @@ test("portal boots from the live engine and exposes the new read surfaces", asyn
   assert.equal(Object.hasOwn(dictionary.body, "roles"), false);
   assert.equal(Object.hasOwn(dictionary.body, "efforts"), false);
   assert.ok(dictionary.body.hosts.includes("codex"));
+  const variables = await request(url, "/api/variables", readOptions(boot.token));
+  assert.equal(variables.body.reasonCode, "VARIABLE_LIST_READY");
+  assert.deepEqual(variables.body.variables, []);
 });
 
 test("STORY-379 read views use CLI projections and keep partial data visible", async (t) => {
@@ -234,6 +238,9 @@ test("portal writes carry the actor under the engine's write lock, then return t
     value: JSON.stringify({ "claude-code": { main: { runner: "claude-code", model: "opus-5", effort: "xhigh2" } } }),
   }));
   assert.equal(tiers.body.reasonCode, "SETTINGS_WRITE_COMMITTED");
+  assert.equal(tiers.body.render.reasonCode, "AGENTS_RENDERED");
+  assert.equal(tiers.body.render.withheld.length, 0);
+  assert.match(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), /\| claude-code \| main \| claude-code \| opus-5 \| xhigh2 \|/u);
   // TCRN-CROSS-STORY-482 R4: a tiers write renders no host projection.
   assert.equal(Object.hasOwn(tiers.body, "hostRender"), false);
   // The dispatch classes and modes retired with TCRN-CROSS-STORY-484 R3: a write is refused and appends nothing.
@@ -259,13 +266,55 @@ test("portal writes carry the actor under the engine's write lock, then return t
   assert.equal(retiredPersona.response.status, 404);
   assert.equal(retiredPersona.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
 
-  // TCRN-CROSS-STORY-482 R4: the session audit left with its page. Each write is answered by the
-  // engine's own receipt, and the five writes above are the chain's five events.
+  // TCRN-CROSS-STORY-482 R4: the session audit left with its page. Each settings write is answered
+  // by the engine's receipt; models.tiers additionally refreshes its managed system variables.
   for (const receipt of [setting, tiers, parallelOff, wait, active]) assert.ok(receipt.body.receiptDigest && receipt.body.headEventHash && receipt.body.version);
-  assert.deepEqual([setting, tiers, parallelOff, wait, active].map((receipt) => receipt.body.version), [1, 2, 3, 4, 5]);
+  const versions = [setting.body.version, tiers.body.version, parallelOff.body.version, wait.body.version, active.body.version];
+  assert.ok(versions.every((version, index) => Number.isInteger(version) && (index === 0 || version > versions[index - 1])));
+  assert.ok(tiers.body.render.version > tiers.body.version && tiers.body.render.version < parallelOff.body.version, "the managed system-variable render is governed between the tier setting and the next write");
   const audit = await request(url, RETIRED_ROUTES.sessionAudit, readOptions(boot.token));
   assert.equal(audit.response.status, 404);
   assert.equal(audit.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
+});
+
+test("STORY-484 variable routes write, read back and render safe values while withholding secrets", async (t) => {
+  const fixture = await scratch("tcrn-portal-variables-", "TCRN-PORTAL-VARIABLES");
+  const { child, url } = await startPortal(fixture);
+  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
+  const { boot } = await readBoot(url);
+
+  const created = await request(url, "/api/variables", writeOptions(boot.token, "POST", {
+    name: "deploy.host", type: "string", value: "build.example.com", description: "Build endpoint",
+  }));
+  assert.equal(created.response.status, 200);
+  assert.equal(created.body.reasonCode, "VARIABLE_WRITE_COMMITTED");
+  assert.deepEqual(created.body.readback, { name: "deploy.host", type: "string", value: "build.example.com", description: "Build endpoint" });
+  assert.deepEqual(created.body.variables, [created.body.readback]);
+  assert.equal(created.body.render.reasonCode, "AGENTS_RENDERED");
+  assert.match(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.host.*build\.example\.com/u);
+
+  const updated = await request(url, "/api/variables", writeOptions(boot.token, "POST", {
+    name: "deploy.host", type: "string", value: "stage.example.com", description: "Staging endpoint",
+  }));
+  assert.equal(updated.response.status, 200);
+  assert.equal(updated.body.readback.value, "stage.example.com");
+  assert.match(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.host.*stage\.example\.com/u);
+
+  const secret = "sk-proj-0123456789abcdef";
+  const refused = await request(url, "/api/variables", writeOptions(boot.token, "POST", {
+    name: "api.key", type: "string", value: secret,
+  }));
+  assert.equal(refused.response.status, 409);
+  assert.equal(refused.body.reasonCode, "VARIABLE_SECRET_SHAPED");
+  assert.doesNotMatch(JSON.stringify(refused.body), /sk-proj-0123456789abcdef/u, "secret-shaped input must not be echoed in the response");
+  assert.equal((await request(url, "/api/variables", readOptions(boot.token))).body.variables.length, 1);
+
+  const removed = await request(url, "/api/variables", writeOptions(boot.token, "DELETE", { name: "deploy.host" }));
+  assert.equal(removed.response.status, 200);
+  assert.equal(removed.body.reasonCode, "VARIABLE_WRITE_COMMITTED");
+  assert.equal(removed.body.readback, null);
+  assert.deepEqual(removed.body.variables, []);
+  assert.doesNotMatch(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.host/u);
 });
 
 // STORY-403 replaces the old STORY-366 manual-writing interaction while retaining
@@ -562,7 +611,10 @@ test("switching the library moves the Rules page to its project, and a library r
   assert.equal(prose.body.path, join(fixture.second.project, "AGENTS.md"));
   const written = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { file: "AGENTS.md", text: "# second project, edited\n" }));
   assert.equal(written.body.reasonCode, "PORTAL_AGENTS_MD_WRITTEN");
-  assert.equal(await readFile(join(fixture.second.project, "AGENTS.md"), "utf8"), "# second project, edited\n");
+  assert.equal(written.body.text.startsWith("# second project, edited\n"), true);
+  assert.match(written.body.text, /## System variables/u);
+  assert.match(written.body.text, /## Custom variables/u);
+  assert.equal(await readFile(join(fixture.second.project, "AGENTS.md"), "utf8"), written.body.text);
   assert.equal(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), "# first project\n", "the first project's rules are untouched");
   const catalog = await request(url, "/api/settings", readOptions(boot.token));
   assert.deepEqual(catalog.body.settings, (await cli(["settings-catalog", "--workspace", fixture.second.library], fixture.deviceEnv)).settings);

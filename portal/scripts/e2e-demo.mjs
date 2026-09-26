@@ -9,11 +9,11 @@ const portalRoot = fileURLToPath(new URL("..", import.meta.url));
 const cli = process.env.TCRN_WORKFLOW_CLI ?? join(portalRoot, "..", "scripts", "einzbern.mjs");
 const now = "2026-08-11T04:15:00Z";
 
-function runCli(args) {
+function runCli(args, environment = {}) {
   const output = execFileSync(process.execPath, [cli, ...args], {
     cwd: portalRoot,
     encoding: "utf8",
-    env: { ...process.env, NODE_NO_WARNINGS: "1" },
+    env: { ...process.env, ...environment, NODE_NO_WARNINGS: "1" },
   });
   return JSON.parse(output);
 }
@@ -40,15 +40,15 @@ try {
     "settings-set",
     "--workspace", workspace,
     "--at", "2026-08-11T04:15:01Z",
-    "--key", "backup.cadence",
-    "--value", "manual",
+    "--key", "execution.maxConcurrentSubagents",
+    "--value", "7",
     "--actor", "agent:codex",
-  ]);
+  ], { EINZBERN_SURFACE: "atelier" });
   const after = runCli(["settings-catalog", "--workspace", workspace]);
-  const readback = after.settings.find((entry) => entry.key === "backup.cadence");
+  const readback = after.settings.find((entry) => entry.key === "execution.maxConcurrentSubagents");
   const config = {
     initVersion: init.version,
-    catalogBefore: before.settings.find((entry) => entry.key === "backup.cadence")?.currentValue,
+    catalogBefore: before.settings.find((entry) => entry.key === "execution.maxConcurrentSubagents")?.currentValue,
     receipt: {
       reasonCode: write.reasonCode,
       recordId: write.recordId,
@@ -73,8 +73,8 @@ try {
     starterPack: ["AGENTS.md", "docs/decisions/README.md", "docs/reports/README.md"],
   };
 
-  const declared = { "backup.cadence": "manual", "driver.capabilityProfile": "default" };
-  const drifted = { ...declared, "backup.cadence": "gate-close" };
+  const declared = { "execution.maxConcurrentSubagents": "7", "retrieval.tau": "0.11" };
+  const drifted = { ...declared, "execution.maxConcurrentSubagents": "8" };
   const red = reconcile(declared, drifted);
   const repaired = reconcile(declared, declared);
   const reconciliation = {

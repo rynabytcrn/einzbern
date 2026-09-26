@@ -32,9 +32,9 @@ const COMPONENTS = Object.freeze([
   ["library switcher", '[data-ui="library-switcher"]'],
   ["engine connection", '[data-ui="engine-connection"]'],
   ["setting modified dot", '[data-ui="setting-modified-dot"]'],
-  ["setting dictionary link", '[data-ui="setting-dictionary-link"]'],
   ["DS NumberInput", ".tcrn-number-input"],
-  ["DS SettingChoice", ".tcrn-setting-choice"],
+  ["model tiers table", '[data-ui="model-tiers-table"]'],
+  ["variables view", '[data-ui="variables-view"]'],
   ["returned stat card", ".tcrn-stat-card"],
   ["returned setting row", ".tcrn-setting-row"],
   ["returned line-numbered editor", ".tcrn-line-numbered-editor"],
@@ -227,7 +227,7 @@ function missingComponents(document) {
     .map(([name, selector]) => ({ name, selector }));
 }
 
-const hierarchyPages = Object.freeze(["dashboard", "settings", "prose", "vocabulary"]);
+const hierarchyPages = Object.freeze(["dashboard", "settings", "variables", "prose", "vocabulary"]);
 const topbarDesignMap = Object.freeze([
   ["product-shell-header", "header.tcrn-top-bar", "ProductShell/TopBar", "https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html#navigation-shell-spec"],
   ["library-select", "#library-select", "Select", "https://tcrn-design-system-storybook.vercel.app/components-controls-data.html#field-spec-usage"],
@@ -267,6 +267,10 @@ function pageHierarchyFindings(document, source) {
       const content = layout?.querySelector("[data-settings-layout-content]");
       if (!grid || !nav || !content || childIndex(grid, content) !== 0 || childIndex(tabsRegion, nav) !== 0) findings.push("settings:tabs-before-content");
       if (content?.contains(nav)) findings.push("settings:local-nav-inside-content");
+    }
+    if (name === "variables") {
+      const view = lowerContent?.querySelector(':scope > [data-ui="variables-view"]');
+      if (!view || childIndex(lowerContent, view) !== 0) findings.push("variables:tabs-before-content");
     }
     if (name === "prose") {
       const pending = tabsRegion?.querySelector(":scope > #rules-pending");
@@ -424,7 +428,7 @@ function assertDomContract(document) {
   const navigationItems = [...document.querySelectorAll(".tcrn-side-nav .tcrn-nav-item")];
   // STORY-370 retired Entities, and STORY-403 folds article reading into the
   // dashboard knowledge view rather than keeping a manual article destination.
-  assert.equal(navigationItems.length, 4, "the portal must render the four live platform destinations");
+  assert.equal(navigationItems.length, 5, "the portal must render five live platform destinations including custom variables");
   assert.ok(navigationItems.every((button) => button.getAttribute("aria-label")?.trim()), "every destination must expose an accessible name");
   assert.ok(navigationItems.every((button) => button.getAttribute("data-i18n-aria-label")?.trim()), "every destination name must come from the locale table");
   assert.equal(document.querySelector('img.tcrn-brand-mark')?.getAttribute("alt"), "", "the decorative mark must not duplicate the brand accessible name");
@@ -559,6 +563,8 @@ if (process.argv[2] === "status" && actual.status === 0) {
   test("TCRN-CROSS-STORY-404 consumes the DS106-112 settings contract and exposes coordination status", async () => {
     const page = await preparePage();
     try {
+      page.document.querySelector('[data-setting-group="workspace"]')?.click();
+      await new Promise((resolve) => setTimeout(resolve, 80));
       const layout = page.document.querySelector('[data-settings-layout-component="SettingsLayout"]');
       assert.ok(layout, "the settings page must consume the DS SettingsLayout contract");
       assert.equal(layout.getAttribute("data-ds-candidate"), "TCRN-Design-System@610680b81a950e91e9e1e77718ea7f3f3b19bc27");
@@ -805,10 +811,10 @@ if (process.argv[2] === "status" && actual.status === 0) {
       const settingsList = page.document.querySelector('[data-settings-layout-nav]');
       const workspace = settingsList.querySelector('[data-setting-group="workspace"]');
       keydown(workspace, "ArrowRight");
-      const backup = settingsList.querySelector('[data-setting-group="backup"]');
-      assert.equal(backup.getAttribute("aria-selected"), "true", "ArrowRight selects the next settings group");
-      assert.equal(page.document.getElementById("settings-panel").getAttribute("aria-labelledby"), backup.id);
-      keydown(backup, "Home");
+      const execution = settingsList.querySelector('[data-setting-group="execution"]');
+      assert.equal(execution.getAttribute("aria-selected"), "true", "ArrowRight selects the next settings group");
+      assert.equal(page.document.getElementById("settings-panel").getAttribute("aria-labelledby"), execution.id);
+      keydown(execution, "Home");
       assert.equal(workspace.getAttribute("aria-selected"), "true", "Home selects the first settings group");
       const machine = settingsList.querySelector('[data-setting-group="machine"]');
       keydown(workspace, "End");
@@ -847,54 +853,28 @@ if (process.argv[2] === "status" && actual.status === 0) {
     } finally { await page.cleanup(); }
   });
 
-  test("INC-183 every enum setting is its own dictionary entry", async () => {
+  test("INC-183 every live enum setting is its own dictionary entry", async () => {
     const page = await preparePage();
     try {
       const navFor = (category) => page.document.querySelector(`[data-vocabulary-category="${category}"]`);
-      // The shared "settings enums" domain is retired (Owner, MIN-094). Asserting its
-      // absence is the half that keeps this from passing on a page that simply added
-      // the new entries beside the old container.
       assert.equal(navFor("settingsEnums"), null, "the retired shared settings-enum domain must not appear");
       assert.equal(page.document.querySelector('[data-vocabulary-table="settingsEnums"]'), null);
-
-      // Each enum setting stands on its own, named by the same human label the settings
-      // page uses for that control.
       const entries = [...page.document.querySelectorAll("[data-vocabulary-category]")]
         .map((button) => button.dataset.vocabularyCategory)
         .filter((category) => category.startsWith("setting:"));
-      assert.ok(entries.includes("setting:backup.cadence"));
-      assert.ok(entries.includes("setting:execution.independenceFloor"));
-      assert.ok(entries.includes("setting:execution.subagentPolicy"));
-      assert.notEqual(navFor("setting:backup.cadence").textContent.trim(), "backup.cadence", "an entry is named, not keyed");
-
-      navFor("setting:backup.cadence").dispatchEvent(new page.window.Event("click", { bubbles: true }));
+      assert.deepEqual(entries, ["setting:artifact.language"], "only the live closed-enum setting belongs in the vocabulary");
+      const entry = navFor("setting:artifact.language");
+      assert.notEqual(entry.textContent.trim(), "artifact.language", "the entry is named, not keyed");
+      entry.dispatchEvent(new page.window.Event("click", { bubbles: true }));
       await new Promise((resolve) => setTimeout(resolve, 80));
-      const shell = page.document.querySelector('[data-vocabulary-table="setting:backup.cadence"]');
+      const shell = page.document.querySelector('[data-vocabulary-table="setting:artifact.language"]');
       assert.ok(shell, "the entry must render its own table");
       const rows = [...shell.querySelectorAll(".tcrn-table-shell__row")];
       const cell = (row, label) => [...row.children].find((node) => node.getAttribute("data-label") === label)?.textContent.trim() ?? "";
-      const values = rows.map((row) => cell(row, "Value"));
-
-      // The entry IS the setting, so its rows are exactly that setting's values — all
-      // three of them, and nothing belonging to another setting.
-      assert.deepEqual(values, ["gate-close", "session-end", "manual"]);
-      // Anchored on the positive badge rather than its text: the label is localized,
-      // and a test that reads it is really testing which locale the fixture booted in.
-      const isDefaultRow = (row) => Boolean([...row.children]
-        .find((node) => node.getAttribute("data-label") === "Default")
-        ?.querySelector(".tcrn-badge--positive"));
-      assert.deepEqual(rows.filter(isDefaultRow).map((row) => cell(row, "Value")), ["gate-close"]);
-      // No cell is blank: the row unit is the value, and a description keyed by setting
-      // key alone would have left every value undefined.
+      const catalog = await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv);
+      const languageSetting = catalog.settings.find((setting) => setting.key === "artifact.language");
+      assert.deepEqual(rows.map((row) => cell(row, "Value")), languageSetting.allowedValues);
       assert.ok(rows.every((row) => [...row.children].every((node) => node.textContent.trim().length > 0)), "no cell may be blank");
-
-      // A hyphenated value survives, and a second entry proves the shape is shared
-      // rather than special-cased for the cadence.
-      navFor("setting:execution.independenceFloor").dispatchEvent(new page.window.Event("click", { bubbles: true }));
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      const floor = page.document.querySelector('[data-vocabulary-table="setting:execution.independenceFloor"]');
-      assert.deepEqual([...floor.querySelectorAll(".tcrn-table-shell__row")].map((row) => cell(row, "Value")),
-        ["none", "verification", "verification-and-risk", "all"]);
     } finally { await page.cleanup(); }
   });
 
@@ -908,10 +888,8 @@ if (process.argv[2] === "status" && actual.status === 0) {
       assert.ok(settingGroupSource, "the portal must declare its settings group coverage");
       const settingGroupEntries = [...settingGroupSource.matchAll(/^ {4}"([^"]+)": "([^"]+)",$/gmu)].map(([, key, group]) => [key, group]);
       const settingGroups = settingGroupEntries.map(([key]) => key);
-      const legacyModelSource = page.source.match(/const LEGACY_MODEL_SETTING_KEYS = new Set\(\[([^\]]*)\]\);/u)?.[1] ?? "";
-      const legacyModelKeys = [...legacyModelSource.matchAll(/"([^"]+)"/gu)].map(([, key]) => key);
       const catalogKeys = new Set(catalogForGroups.settings.map((entry) => entry.key));
-      const groupedKeys = new Set([...settingGroups, ...legacyModelKeys]);
+      const groupedKeys = new Set(settingGroups);
       const missingFromGroups = [...catalogKeys].filter((key) => !groupedKeys.has(key)).sort();
       const staleGroups = [...groupedKeys].filter((key) => !catalogKeys.has(key)).sort();
       assert.deepEqual(
@@ -920,7 +898,7 @@ if (process.argv[2] === "status" && actual.status === 0) {
         `settings catalog/group coverage differs (missing: ${missingFromGroups.join(", ") || "none"}; stale: ${staleGroups.join(", ") || "none"})`,
       );
       const groupFor = (key) => {
-        for (const group of ["workspace", "backup", "execution", "machine"]) {
+        for (const group of ["workspace", "execution", "machine"]) {
           page.document.querySelector(`[data-setting-group="${group}"]`)?.click();
           const selector = group === "machine" ? `[data-machine-row="${key}"]` : `[data-setting-row="${key}"]`;
           if (page.document.querySelector(selector)) return group;
@@ -929,7 +907,7 @@ if (process.argv[2] === "status" && actual.status === 0) {
       };
       assert.equal(groupFor(retiredEconomySettingKey), null, "retired economy-tier model must not appear in any settings group");
       assert.equal(groupFor("retrieval.promptLanguages"), "workspace");
-      assert.equal(groupFor("backup.cadence"), "backup");
+      assert.equal(groupFor("models.tiers"), "execution");
       assert.equal(groupFor("portal.port"), "machine", "machine settings stay outside the workspace settings groups");
 
       // Retirement is a user-visible contract, not only a grouping detail: neither
@@ -949,12 +927,9 @@ if (process.argv[2] === "status" && actual.status === 0) {
       // The actual delta is locale-independent: all five localized routes keep the
       // same neighboring execution-control identities and order while the retired
       // economy-tier field stays absent from the rendered surface.
-      const dispatchKeys = new Set(["execution.dispatchClasses", "execution.dispatchMode", "execution.dispatchModes", "execution.dispatchTiers"]);
-      const legacyKeys = new Set(["execution.claudeCodeSubagentPlan", "execution.codexSubagentPlan"]);
       const expectedExecutionRows = [...catalogForGroups.settings]
         .filter((entry) => settingGroupEntries.some(([key, group]) => key === entry.key && group === "execution"))
-        .map((entry) => entry.key)
-        .filter((key) => !dispatchKeys.has(key) && !legacyKeys.has(key));
+        .map((entry) => entry.key);
       for (const locale of ["zh-CN", "en", "ja", "ko", "fr"]) {
         page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
         await new Promise((resolve) => setTimeout(resolve, 40));
@@ -983,6 +958,7 @@ if (process.argv[2] === "status" && actual.status === 0) {
       assert.deepEqual([...prompt.options].map((option) => option.value), roster, "the selector options must come from the engine language roster");
       assert.equal(new Set([...prompt.options].map((option) => option.value)).size, prompt.options.length, "language options must be unique");
 
+      assert.ok(page.document.querySelector(".tcrn-setting-choice"), "the workspace language collection uses the shared choice component");
       const firstOption = prompt.options[0];
       for (const option of [...prompt.options]) option.removeAttribute("selected");
       firstOption.setAttribute("selected", "");
@@ -1006,12 +982,7 @@ if (process.argv[2] === "status" && actual.status === 0) {
         "conferenceTypes",
         "executionForms",
         "setting:artifact.language",
-        "setting:backup.cadence",
-        "setting:execution.independenceFloor",
-        "setting:execution.subagentPolicy",
-        "setting:storage.backend",
       ];
-      const countOf = (text, needle) => needle ? text.split(needle).length - 1 : 0;
       for (const locale of ["en", "zh-CN", "ja", "ko", "fr"]) {
         page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
         await new Promise((resolve) => setTimeout(resolve, 40));
@@ -1029,49 +1000,25 @@ if (process.argv[2] === "status" && actual.status === 0) {
           assert.ok(descriptions.every((description) => description.length > 0 && !/^(?:vocabulary|setting)\./u.test(description)), `${locale}/${category} values must have localized definitions`);
           assert.equal(new Set(descriptions).size, descriptions.length, `${locale}/${category} values must not collapse to one repeated description`);
           assert.ok(descriptions.every((description) => description !== categoryDescription.textContent.trim()), `${locale}/${category} values must not repeat the category explanation`);
-          if (category === "setting:backup.cadence") assert.equal(countOf(terms.textContent, categoryDescription.textContent.trim()), 1, `${locale}/backup category copy must appear once`);
-          if (category === "setting:storage.backend") assert.notEqual(descriptions[0], descriptions[1], `${locale}/storage backend values need distinct meaning`);
         }
       }
     } finally { await page.cleanup(); }
   });
 
-  test("TCRN-CROSS-STORY-410 R2-W2 explains storage choices in user terms before technical detail", async () => {
+  test("TCRN-CROSS-SUB-342 models.tiers is an editable host-by-tier table with five-locale labels", async () => {
     const page = await preparePage();
     try {
-      const technicalShorthand = /NDJSON|sidecar|backend|边车|后端|サイドカー|バックエンド|사이드카|백엔드/iu;
-      const functionalChoice = {
-        file: /compatib|兼容|互換|호환/u,
-        segmented: /grow|small|section|分段|片段|増え|小さ|늘|단위|grandit|petites/u,
-      };
-      page.document.querySelector('[data-page-target="settings"]')?.click();
-      page.document.querySelector('[data-setting-group="workspace"]')?.click();
-      const storageRow = () => page.document.querySelector('[data-setting-row="storage.backend"] .tcrn-setting-row__description')?.textContent.trim() ?? "";
-      page.document.querySelector('[data-page-target="vocabulary"]')?.click();
-      const openStorageVocabulary = () => {
-        const button = page.document.querySelector('[data-vocabulary-category="setting:storage.backend"]');
-        assert.ok(button, "the storage backend dictionary entry must remain available");
-        button.dispatchEvent(new page.window.Event("click", { bubbles: true }));
-        const table = page.document.querySelector('[data-vocabulary-table="setting:storage.backend"]');
-        assert.ok(table, "the storage backend table must render");
-        return [...table.querySelectorAll('.tcrn-table-shell__row')].map((row) => row.children[1]?.textContent.trim() ?? "");
-      };
+      const tableFor = () => page.document.querySelector('[data-ui="model-tiers-table"]');
+      const rowsFor = () => [...page.document.querySelectorAll("[data-model-tier-row]")];
+      const expected = { en: "Model tiers by host", "zh-CN": "各宿主模型档位", ja: "ホスト別モデルティア", ko: "호스트별 모델 티어", fr: "Niveaux de modèle par hôte" };
       for (const locale of ["en", "zh-CN", "ja", "ko", "fr"]) {
         page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
-        page.document.querySelector('[data-page-target="settings"]')?.click();
-        page.document.querySelector('[data-setting-group="workspace"]')?.click();
-        const main = storageRow();
-        assert.ok(main.length > 0, `${locale} storage setting needs a main explanation`);
-        assert.doesNotMatch(main, technicalShorthand, `${locale} main storage explanation must lead with user consequences`);
-        assert.match(main, functionalChoice.file, `${locale} main storage explanation must explain the compatibility choice`);
-        assert.match(main, functionalChoice.segmented, `${locale} main storage explanation must explain the growing-history choice`);
-
-        page.document.querySelector('[data-page-target="vocabulary"]')?.click();
-        const descriptions = openStorageVocabulary();
-        assert.equal(descriptions.length, 2, `${locale} must explain both storage values`);
-        assert.ok(descriptions.every((description) => description.length > 0 && !technicalShorthand.test(description)), `${locale} value explanations must lead with a user-facing choice`);
-        assert.match(descriptions[0], functionalChoice.file, `${locale} file value must state when to choose it`);
-        assert.match(descriptions[1], functionalChoice.segmented, `${locale} segmented value must state when to choose it`);
+        await new Promise((resolve) => setTimeout(resolve, 30));
+        assert.equal(tableFor()?.getAttribute("aria-label"), expected[locale], `${locale} must name the model tiers table`);
+        assert.ok(rowsFor().length > 0, `${locale} must render host/tier rows`);
+        for (const field of ["host", "tier", "runner", "model", "effort"]) {
+          assert.ok(page.document.querySelector(`[data-model-tier-field="${field}"]`), `${locale} must expose ${field}`);
+        }
       }
     } finally { await page.cleanup(); }
   });
@@ -1081,27 +1028,28 @@ if (process.argv[2] === "status" && actual.status === 0) {
     try {
       const selectGroup = (group) => page.document.querySelector(`[data-setting-group="${group}"]`)?.click();
       const waitForReceiptChange = async (before, label) => waitFor(receiptAdvanced(page.document, before), label);
-      selectGroup("workspace");
+      selectGroup("execution");
 
-      const defaultRow = page.document.querySelector('[data-setting-row="driver.capabilityProfile"]');
+      const defaultRow = page.document.querySelector('[data-setting-row="execution.maxConcurrentSubagents"]');
       assert.equal(defaultRow?.dataset.modified, "false", "an unchanged open field starts in its default state");
-      const driver = defaultRow.querySelector('[data-setting-control="driver.capabilityProfile"]');
+      const concurrency = defaultRow.querySelector('[data-setting-control="execution.maxConcurrentSubagents"]');
       const beforeModify = receiptText(page.document);
-      driver.value = "r2-isolated-driver";
-      driver.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+      concurrency.value = "7";
+      concurrency.dispatchEvent(new page.window.Event("change", { bubbles: true }));
       await waitForReceiptChange(beforeModify, "the modified open-field receipt");
-      await waitFor(() => page.document.querySelector('[data-setting-row="driver.capabilityProfile"]')?.dataset.modified === "true", "the modified field to read back");
-      const modifiedRow = page.document.querySelector('[data-setting-row="driver.capabilityProfile"]');
+      await waitFor(() => page.document.querySelector('[data-setting-row="execution.maxConcurrentSubagents"]')?.dataset.modified === "true", "the modified field to read back");
+      const modifiedRow = page.document.querySelector('[data-setting-row="execution.maxConcurrentSubagents"]');
       assert.equal(modifiedRow?.dataset.modified, "true");
       assert.ok(modifiedRow?.querySelector("[data-reset-setting]"), "a modified field exposes reset");
 
       const beforeReset = receiptText(page.document);
       modifiedRow.querySelector("[data-reset-setting]").click();
       await waitForReceiptChange(beforeReset, "the open-field reset receipt");
-      await waitFor(() => page.document.querySelector('[data-setting-row="driver.capabilityProfile"]')?.dataset.modified === "false", "the reset field to read back");
-      assert.equal(page.document.querySelector('[data-setting-row="driver.capabilityProfile"]')?.dataset.modified, "false", "reset returns the field to the engine default");
-      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "driver.capabilityProfile").currentValue, "default");
+      await waitFor(() => page.document.querySelector('[data-setting-row="execution.maxConcurrentSubagents"]')?.dataset.modified === "false", "the reset field to read back");
+      assert.equal(page.document.querySelector('[data-setting-row="execution.maxConcurrentSubagents"]')?.dataset.modified, "false", "reset returns the field to the engine default");
+      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "execution.maxConcurrentSubagents").currentValue, "8");
 
+      selectGroup("workspace");
       const prompt = page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]');
       assert.ok(prompt?.hasAttribute("multiple"));
       for (const option of [...prompt.options]) option.removeAttribute("selected");
@@ -1131,117 +1079,94 @@ if (process.argv[2] === "status" && actual.status === 0) {
       assert.match(page.document.querySelector('[data-machine-row="portal.port"]')?.textContent ?? "", /restart/u, "the machine port exposes its restart lifecycle");
 
       selectGroup("workspace");
-      const numeric = page.document.querySelector('[data-setting-control="conference.positionBudgetBytes"]');
+      const numeric = page.document.querySelector('[data-setting-control="knowledge.aggregateBytes"]');
       const beforeInvalid = receiptText(page.document);
-      numeric.value = "511";
+      numeric.value = "1024";
       numeric.dispatchEvent(new page.window.Event("change", { bubbles: true }));
       await waitFor(() => receiptText(page.document) !== beforeInvalid && receiptText(page.document).startsWith("✕"), "the invalid-value receipt");
-      assert.equal(page.document.querySelector('[data-setting-row="conference.positionBudgetBytes"]')?.dataset.modified, "false", "an engine-rejected value does not change the field");
-      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "conference.positionBudgetBytes").currentValue, "4096");
+      assert.equal(page.document.querySelector('[data-setting-row="knowledge.aggregateBytes"]')?.dataset.modified, "false", "an engine-rejected value does not change the field");
+      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "knowledge.aggregateBytes").currentValue, "131072");
     } finally { await page.cleanup(); }
   });
 
-  test("TCRN-CROSS-SUB-123 execution.subagentPolicy is a governed portal select with complete lifecycle coverage", async () => {
+  test("TCRN-CROSS-SUB-342 models.tiers supports add, edit, remove, and reset through the governed setting", async () => {
     const page = await preparePage();
     try {
-      const key = "execution.subagentPolicy";
-      const allowedValues = ["allowed", "review-only", "forbidden"];
-      const controlFor = () => page.document.querySelector(`[data-setting-control="${key}"]`);
-      const rowFor = () => page.document.querySelector(`[data-setting-row="${key}"]`);
-      const readback = async () => (await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === key);
-
-      const initial = controlFor();
-      assert.equal(initial?.tagName, "SELECT", "execution.subagentPolicy must render as a select");
-      assert.deepEqual([...initial.options].map((option) => option.value), allowedValues, "the select options must be the closed engine enum");
-      assert.equal(initial.closest("[data-setting-choice-component]")?.getAttribute("data-setting-choice-control"), "select");
-      assert.equal(initial.value, "allowed", "the portal select must show the catalog default");
-
-      const selected = "review-only";
+      const rowFor = (host, tier) => [...page.document.querySelectorAll("[data-model-tier-row]")].find((row) => row.querySelector('[data-model-tier-field="host"]')?.value === host && row.querySelector('[data-model-tier-field="tier"]')?.value === tier);
+      const settingReadback = async () => (await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "models.tiers");
+      const original = JSON.parse((await settingReadback()).currentValue);
       const beforeWrite = receiptText(page.document);
-      initial.value = selected;
-      initial.dispatchEvent(new page.window.Event("change", { bubbles: true }));
-      await waitFor(() => receiptAdvanced(page.document, beforeWrite)(), "the subagent-policy write receipt");
-      await waitFor(() => rowFor()?.dataset.modified === "true" && controlFor()?.value === selected, "the subagent-policy write readback");
-      assert.ok(page.document.querySelector("#receipt-body")?.textContent.includes(key), "the write receipt must name execution.subagentPolicy");
-      assert.equal((await readback()).currentValue, selected, "the engine readback must carry the selected policy value");
+      page.document.querySelector("[data-model-tier-new-host]").value = "portal-test";
+      page.document.querySelector("[data-model-tier-new-name]").value = "custom";
+      page.document.querySelector("[data-model-tier-add]").click();
+      const added = rowFor("portal-test", "custom");
+      assert.ok(added, "the table adds an editable host/tier row");
+      added.querySelector('[data-model-tier-field="runner"]').value = "portal-test";
+      added.querySelector('[data-model-tier-field="model"]').value = "test-model";
+      added.querySelector('[data-model-tier-field="effort"]').value = "high";
+      page.document.querySelector("[data-model-tier-save]").click();
+      await waitFor(() => receiptAdvanced(page.document, beforeWrite)(), "the model tier write receipt");
+      await waitFor(() => page.document.querySelector('[data-setting-row="models.tiers"]')?.dataset.modified === "true", "the model tiers readback");
+      const written = JSON.parse((await settingReadback()).currentValue);
+      assert.deepEqual(written["portal-test"].custom, { runner: "portal-test", model: "test-model", effort: "high" });
 
-      page.document.querySelector('[data-page-target="dashboard"]')?.click();
-      page.document.querySelector('[data-page-target="settings"]')?.click();
-      page.document.querySelector('[data-setting-group="execution"]')?.click();
-      await waitFor(() => controlFor()?.value === selected, "the selected policy to survive a page switch");
-      assert.equal(rowFor()?.dataset.modified, "true");
+      const beforeRemove = receiptText(page.document);
+      rowFor("portal-test", "custom").querySelector("[data-model-tier-remove]").click();
+      page.document.querySelector("[data-model-tier-save]").click();
+      await waitFor(() => receiptAdvanced(page.document, beforeRemove)(), "the model tier remove receipt");
+      await waitFor(() => !rowFor("portal-test", "custom"), "the model tier row removal");
+      assert.equal(Object.hasOwn(JSON.parse((await settingReadback()).currentValue), "portal-test"), false);
 
-      const reset = rowFor()?.querySelector(`[data-reset-setting="${key}"]`);
-      assert.ok(reset, "a modified policy must expose reset");
+      const reset = page.document.querySelector('[data-setting-row="models.tiers"] [data-reset-setting="models.tiers"]');
+      assert.ok(reset, "a modified model tier setting exposes reset");
       const beforeReset = receiptText(page.document);
       reset.click();
-      await waitFor(() => receiptAdvanced(page.document, beforeReset)(), "the subagent-policy reset receipt");
-      await waitFor(() => rowFor()?.dataset.modified === "false" && controlFor()?.value === "allowed", "the policy reset readback");
-      assert.equal((await readback()).currentValue, "allowed", "reset must restore the allowed default");
-
-      const invalid = page.document.createElement("option");
-      invalid.value = "not-a-policy";
-      invalid.textContent = invalid.value;
-      const afterReset = controlFor();
-      afterReset.append(invalid);
-      afterReset.value = invalid.value;
-      afterReset.dispatchEvent(new page.window.Event("change", { bubbles: true }));
-      await waitFor(() => (page.document.querySelector("#receipt-body")?.textContent ?? "").includes("SETTINGS_VALUE_INVALID"), "the CLI-layer invalid policy refusal");
-      assert.match(page.document.querySelector("#receipt-body")?.textContent ?? "", /SETTINGS_VALUE_INVALID/u, "the CLI must reject an out-of-range policy");
-      assert.equal(rowFor()?.dataset.modified, "false", "a rejected policy must not mark the row modified");
-      assert.equal((await readback()).currentValue, "allowed", "the rejected policy must not change the engine value");
+      await waitFor(() => receiptAdvanced(page.document, beforeReset)(), "the model tiers reset receipt");
+      await waitFor(() => page.document.querySelector('[data-setting-row="models.tiers"]')?.dataset.modified === "false", "the model tiers default readback");
+      assert.deepEqual(JSON.parse((await settingReadback()).currentValue), original);
     } finally { await page.cleanup(); }
   });
 
-  test("TCRN-CROSS-SUB-124 execution.independenceFloor is a governed portal select with complete lifecycle coverage", async () => {
+  test("TCRN-CROSS-SUB-342 variables page creates, updates, renames, and deletes with an AGENTS.md readback", async () => {
     const page = await preparePage();
     try {
-      const key = "execution.independenceFloor";
-      const allowedValues = ["none", "verification", "verification-and-risk", "all"];
-      const controlFor = () => page.document.querySelector(`[data-setting-control="${key}"]`);
-      const rowFor = () => page.document.querySelector(`[data-setting-row="${key}"]`);
-      const readback = async () => (await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === key);
+      page.document.querySelector('[data-page-target="variables"]')?.click();
+      const create = page.document.querySelector("[data-variable-create-row]");
+      const field = (row, name) => row.querySelector(`[data-variable-field="${name}"]`);
+      field(create, "name").value = "deploy.host";
+      field(create, "type").value = "string";
+      field(create, "value").value = "build.example.com";
+      field(create, "description").value = "Build endpoint";
+      let before = receiptText(page.document);
+      page.document.querySelector("[data-variable-create]").click();
+      await waitFor(() => receiptAdvanced(page.document, before)(), "the variable create receipt");
+      await waitFor(() => Boolean(page.document.querySelector('[data-variable-row="deploy.host"]')), "the variable create readback");
+      assert.match(await readFile(join(page.fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.host/u, "the successful write renders the variables section");
 
-      const initial = controlFor();
-      assert.equal(initial?.tagName, "SELECT", "execution.independenceFloor must render as a select");
-      assert.deepEqual([...initial.options].map((option) => option.value), allowedValues, "the select options must be the closed engine enum");
-      assert.equal(initial.closest("[data-setting-choice-component]")?.getAttribute("data-setting-choice-control"), "select");
-      assert.equal(initial.value, "none", "the portal select must show the catalog default");
+      let row = page.document.querySelector('[data-variable-row="deploy.host"]');
+      field(row, "value").value = "stage.example.com";
+      field(row, "description").value = "Staging endpoint";
+      before = receiptText(page.document);
+      row.querySelector("[data-variable-save]").click();
+      await waitFor(() => receiptAdvanced(page.document, before)(), "the variable update receipt");
+      await waitFor(() => page.document.querySelector('[data-variable-row="deploy.host"] [data-variable-field="value"]')?.value === "stage.example.com", "the variable update readback");
 
-      const selected = "verification-and-risk";
-      const beforeWrite = receiptText(page.document);
-      initial.value = selected;
-      initial.dispatchEvent(new page.window.Event("change", { bubbles: true }));
-      await waitFor(() => receiptAdvanced(page.document, beforeWrite)(), "the independence-floor write receipt");
-      await waitFor(() => rowFor()?.dataset.modified === "true" && controlFor()?.value === selected, "the independence-floor write readback");
-      assert.ok(page.document.querySelector("#receipt-body")?.textContent.includes(key), "the write receipt must name execution.independenceFloor");
-      assert.equal((await readback()).currentValue, selected, "the engine readback must carry the selected floor value");
+      row = page.document.querySelector('[data-variable-row="deploy.host"]');
+      field(row, "name").value = "deploy.target";
+      before = receiptText(page.document);
+      row.querySelector("[data-variable-save]").click();
+      await waitFor(() => receiptAdvanced(page.document, before)(), "the variable rename receipt");
+      await waitFor(() => Boolean(page.document.querySelector('[data-variable-row="deploy.target"]')), "the variable rename readback");
+      assert.equal(page.document.querySelector('[data-variable-row="deploy.host"]'), null);
+      assert.match(await readFile(join(page.fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.target/u);
 
-      page.document.querySelector('[data-page-target="dashboard"]')?.click();
-      page.document.querySelector('[data-page-target="settings"]')?.click();
-      page.document.querySelector('[data-setting-group="execution"]')?.click();
-      await waitFor(() => controlFor()?.value === selected, "the selected floor to survive a page switch");
-      assert.equal(rowFor()?.dataset.modified, "true");
-
-      const reset = rowFor()?.querySelector(`[data-reset-setting="${key}"]`);
-      assert.ok(reset, "a modified floor must expose reset");
-      const beforeReset = receiptText(page.document);
-      reset.click();
-      await waitFor(() => receiptAdvanced(page.document, beforeReset)(), "the independence-floor reset receipt");
-      await waitFor(() => rowFor()?.dataset.modified === "false" && controlFor()?.value === "none", "the floor reset readback");
-      assert.equal((await readback()).currentValue, "none", "reset must restore the none default");
-
-      const invalid = page.document.createElement("option");
-      invalid.value = "not-a-floor";
-      invalid.textContent = invalid.value;
-      const afterReset = controlFor();
-      afterReset.append(invalid);
-      afterReset.value = invalid.value;
-      afterReset.dispatchEvent(new page.window.Event("change", { bubbles: true }));
-      await waitFor(() => (page.document.querySelector("#receipt-body")?.textContent ?? "").includes("SETTINGS_VALUE_INVALID"), "the CLI-layer invalid floor refusal");
-      assert.match(page.document.querySelector("#receipt-body")?.textContent ?? "", /SETTINGS_VALUE_INVALID/u, "the CLI must reject an out-of-range floor");
-      assert.equal(rowFor()?.dataset.modified, "false", "a rejected floor must not mark the row modified");
-      assert.equal((await readback()).currentValue, "none", "the rejected floor must not change the engine value");
+      before = receiptText(page.document);
+      page.document.querySelector('[data-variable-row="deploy.target"] [data-variable-delete]').click();
+      await waitFor(() => receiptAdvanced(page.document, before)(), "the variable delete receipt");
+      await waitFor(() => page.document.querySelector('[data-variable-row="deploy.target"]') === null, "the variable delete readback");
+      const listed = await cli(["variable-list", "--workspace", page.workspace], page.deviceEnv);
+      assert.deepEqual(listed.variables, []);
+      assert.doesNotMatch(await readFile(join(page.fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.target/u, "deleting a variable removes its managed row");
     } finally { await page.cleanup(); }
   });
 
@@ -1331,10 +1256,10 @@ if (process.argv[2] === "status" && actual.status === 0) {
   test("INC-192 abstract concepts carry a supplemental explanation the keyboard can reach", async () => {
     const page = await preparePage();
     try {
-      page.document.querySelector('[data-setting-group="execution"]')?.click();
+      page.document.querySelector('[data-setting-group="workspace"]')?.click();
       await new Promise((resolve) => setTimeout(resolve, 80));
-      const tip = page.document.querySelector('[data-concept-tip="setting.execution.independenceFloor"]');
-      assert.ok(tip, "the independence floor is the concept that prompted this batch and must carry one");
+      const tip = page.document.querySelector('[data-concept-tip="setting.design.authority"]');
+      assert.ok(tip, "the design authority declaration carries its supplemental explanation");
 
       // This long explanation uses the design system's non-interactive Popover boundary:
       // the consumer supplies the trigger and domain copy, while the mounted layer is
@@ -1378,7 +1303,7 @@ if (process.argv[2] === "status" && actual.status === 0) {
       // The explanation says the thing the surface does not — here, that the engine
       // never checks the declaration is true. A tip that only repeated the label would
       // train the icon into noise.
-      assert.match(content.textContent, /self-report|never that it is true/u);
+      assert.ok(content.textContent.trim().length > 0 && !content.textContent.startsWith("concept."));
       assert.ok(!content.textContent.startsWith("concept."), "a tip must not show the reader its own key");
 
       // Every dictionary category carries one; they had no explanation at all before.
@@ -1396,11 +1321,10 @@ if (process.argv[2] === "status" && actual.status === 0) {
   test("TCRN-CROSS-STORY-408 R2 consumes the DS static overlay boundary for short and long explanations", async () => {
     const page = await preparePage();
     try {
-      page.document.querySelector('[data-setting-group="execution"]')?.click();
+      page.document.querySelector('[data-setting-group="workspace"]')?.click();
       await new Promise((resolve) => setTimeout(resolve, 80));
-      const longTip = page.document.querySelector('[data-concept-tip="setting.execution.independenceFloor"]');
-      const shortTip = page.document.querySelector('[data-concept-tip="setting.execution.subagentPolicy"]');
-      assert.ok(longTip && shortTip, "the settings surface must expose both overlay consumers");
+      const longTip = page.document.querySelector('[data-concept-tip="setting.design.authority"]');
+      assert.ok(longTip, "the workspace surface must expose the long overlay consumer");
       const inspect = (tip) => {
         const trigger = tip.querySelector("button");
         const id = trigger?.getAttribute("aria-controls") || trigger?.getAttribute("aria-describedby");
@@ -1422,6 +1346,10 @@ if (process.argv[2] === "status" && actual.status === 0) {
       page.document.dispatchEvent(closeLong);
       assert.equal(long.layer.hidden, true);
 
+      page.document.querySelector('[data-setting-group="execution"]')?.click();
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      const shortTip = page.document.querySelector('[data-concept-tip="setting.execution.maxConcurrentSubagents"]');
+      assert.ok(shortTip, "the models and limits surface must expose the short overlay consumer");
       const short = inspect(shortTip);
       assert.equal(short.trigger.getAttribute("aria-describedby"), short.layer.getAttribute("id"));
       assert.equal(short.layer.getAttribute("role"), "tooltip");

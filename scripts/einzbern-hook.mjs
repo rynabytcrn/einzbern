@@ -12,7 +12,7 @@
 
 import { isAbsolute } from "node:path";
 
-import { assertNodeFloor } from "../dist/build/packages/core/src/node-floor.js";
+import { meetsNodeFloor } from "../dist/build/packages/core/src/node-floor.js";
 
 function absolute(value) {
   return typeof value === "string" && value.length > 0 && isAbsolute(value) ? value : null;
@@ -25,8 +25,10 @@ function absolute(value) {
  * process's, when left out). Returns the text for stdout, or null when the hook prints nothing.
  */
 export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
-  // TCRN-CROSS-STORY-481 R4: an older Node.js is refused before the rest of the engine loads.
-  assertNodeFloor(process.versions.node);
+  // TCRN-CROSS-STORY-481 R2, R4: on an older Node.js the hook answers nothing, before the rest of
+  // the engine loads. The launcher then ends with exit code 0 and nothing on stdout or stderr: a
+  // hook never blocks a session, and the CLI is where the floor is reported (ENGINE_NODE_TOO_OLD).
+  if (!meetsNodeFloor(process.versions.node)) return null;
   const { hookEventName, hookHost, navigationPointerAnswer, promptRecallContext } = await import("../dist/build/packages/core/src/hook-recall.js");
   const body = payload !== null && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
   const name = hookEventName(event);

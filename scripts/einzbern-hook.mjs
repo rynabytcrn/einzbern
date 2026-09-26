@@ -7,6 +7,8 @@
 // The hook holds no rule of its own (D5): which event is answered and what the answer carries is
 // decided here, by the engine version that is current. In the development tree it reads the
 // build (dist/build); a release carries it as one file (TCRN-CROSS-STORY-481).
+// TCRN-CROSS-STORY-478 R4: session-start and subagent-start, the pointer hooks of a device that
+// declined the navigation section, are answered with the navigation lines alone; they read nothing.
 
 import { isAbsolute } from "node:path";
 
@@ -25,9 +27,10 @@ function absolute(value) {
 export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
   // TCRN-CROSS-STORY-481 R4: an older Node.js is refused before the rest of the engine loads.
   assertNodeFloor(process.versions.node);
-  const { hookEventName, hookHost, promptRecallContext } = await import("../dist/build/packages/core/src/hook-recall.js");
+  const { hookEventName, hookHost, navigationPointerAnswer, promptRecallContext } = await import("../dist/build/packages/core/src/hook-recall.js");
   const body = payload !== null && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
-  switch (hookEventName(event)) {
+  const name = hookEventName(event);
+  switch (name) {
     case "UserPromptSubmit": {
       if (typeof libraryPath !== "string" || typeof body.prompt !== "string") return null;
       const answer = await promptRecallContext({
@@ -38,6 +41,9 @@ export async function runHookEvent({ event, payload, libraryPath, cwd } = {}) {
       });
       return answer === null ? null : `${answer.output}\n`;
     }
+    case "SessionStart":
+    case "SubagentStart":
+      return `${navigationPointerAnswer(hookHost(process.env), name).output}\n`;
     default:
       return null;
   }

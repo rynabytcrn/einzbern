@@ -477,3 +477,40 @@ test("477: a file this cannot follow is refused before anything is written, and 
   await assert.rejects(applyHostHooks(foreignPlan, { at: AT }), (error) => error?.reasonCode === "HOST_HOOKS_INPUT_INVALID");
   await assert.rejects(readHostHooks(expected, { root: join(home, "absent"), home }), (error) => error?.reasonCode === "HOST_HOOKS_INPUT_INVALID");
 });
+
+test("478-AC5, 477-R5: a device that declined the navigation section gets the two pointer hooks in both hosts' files, and loses them once it chooses written", async (t) => {
+  const { home, device } = await scratch(t);
+  for (const platform of ["darwin", "linux", "win32"]) {
+    const deviceHome = platform === "win32" ? "D:\\Einzbern\\device" : "/srv/einzbern/device";
+    const launcher = hookLauncherPath(deviceHome, platform);
+    for (const host of ["claude-code", "codex"]) {
+      const expected = planHostHooks({ host, scope: "user", deviceHome, platform, navigation: "declined" });
+      const commands = Object.fromEntries(Object.entries(expected.groups).map(([event, groups]) => [event, groups.flatMap((group) => group.hooks.map((hook) => hook.command))]));
+      assert.deepEqual(commands, {
+        UserPromptSubmit: [`node "${launcher}" user-prompt-submit`],
+        SessionStart: [`node "${launcher}" session-start`],
+        SubagentStart: [`node "${launcher}" subagent-start`],
+      }, `${platform}/${host}`);
+      for (const [command] of Object.values(commands)) assert.equal(isEinzbernHookCommand(command), true, command);
+    }
+  }
+
+  const declined = await render("claude-code", "user", home, home, device, { navigation: "declined" });
+  assert.equal(declined.applied.reasonCode, "HOST_HOOKS_WRITTEN");
+  const settings = await readJson(join(home, CLAUDE));
+  assert.deepEqual(Object.keys(settings.hooks).sort(), ["SessionStart", "SubagentStart", "UserPromptSubmit"]);
+  assert.equal(settings.hooks.SessionStart[0].hooks[0].command, `node "${hookLauncherPath(device)}" session-start`);
+  assert.equal((await render("claude-code", "user", home, home, device, { navigation: "declined" })).applied.reasonCode, "HOST_HOOKS_CURRENT", "rendering again writes nothing");
+  const codex = await render("codex", "user", home, home, device, { navigation: "declined" });
+  assert.equal(codex.applied.reasonCode, "HOST_HOOKS_WRITTEN");
+  assert.deepEqual(Object.keys((await readJson(join(home, CODEX))).hooks).sort(), ["SessionStart", "SubagentStart", "UserPromptSubmit"]);
+  assert.match(await readFile(join(home, CODEX_CONFIG_FILE), "utf8"), /^\[features\]\nhooks = true\n/mu);
+
+  // Written: the pointer hooks come out of the file again, and the prompt hook stays where it was.
+  const written = await render("claude-code", "user", home, home, device, { navigation: "written" });
+  assert.equal(written.applied.reasonCode, "HOST_HOOKS_WRITTEN");
+  assert.deepEqual(written.plan.removedHooks.map((hook) => hook.event).sort(), ["SessionStart", "SubagentStart"]);
+  const after = await readJson(join(home, CLAUDE));
+  assert.deepEqual(Object.keys(after.hooks), ["UserPromptSubmit"]);
+  assert.deepEqual(after.hooks.UserPromptSubmit, settings.hooks.UserPromptSubmit);
+});

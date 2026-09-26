@@ -14,6 +14,11 @@
 // bytes do not change when the engine does (engine/current), so a host file written once stays
 // current across engine updates.
 //
+// A device that declined the navigation section in AGENTS.md (agents.navigation, TCRN-CROSS-STORY-478
+// R4) gets two more Einzbern hooks of the same form, pointer hooks on SessionStart and
+// SubagentStart, whose launcher words are session-start and subagent-start: they hand the agent
+// the three navigation lines instead (hook-recall.ts), and nothing else runs on those events.
+//
 // Rendering a file keeps everything that is not Einzbern's: other tools' hook groups, in their
 // order, and every other key. What is Einzbern's is taken out and written again: every hook that
 // runs the launcher, and every hook of the old platform harness (named by its script in names.ts,
@@ -47,6 +52,8 @@ import {
   statementLines,
   utcStamp,
 } from "./host-writable-roots.js";
+import { AGENTS_NAVIGATION_CHOICES } from "./machine-settings.js";
+import type { AgentsNavigationChoice } from "./machine-settings.js";
 import { LEGACY_CONTAINER_DIRECTORY, LEGACY_DEVICE_DIRECTORY, LEGACY_HOOK_SCRIPTS, LEGACY_INERT_SETTINGS_KEY } from "./names.js";
 
 export const HOST_HOOKS_REASON_CODES = Object.freeze([
@@ -83,10 +90,19 @@ export type HostHookScope = "user" | "project";
 export const HOST_HOOK_SCOPES: readonly HostHookScope[] = Object.freeze(["user", "project"]);
 
 // Each event Einzbern hooks, with the word the launcher is given for it (R1). There is one:
-// SessionStart, PostToolUse, PreToolUse, Stop, SubagentStart and SubagentStop carry no hook (R3).
+// SessionStart, PostToolUse, PreToolUse, Stop, SubagentStart and SubagentStop carry no hook (R3),
+// except the two pointer hooks below.
 export const HOST_HOOK_EVENTS: Readonly<Record<string, string>> = Object.freeze({
   UserPromptSubmit: "user-prompt-submit",
 });
+// TCRN-CROSS-STORY-478 R4, AC5: the pointer hooks of a device whose agents.navigation is declined,
+// with their launcher words. They print the navigation lines and retrieve nothing.
+export const HOST_HOOK_POINTER_EVENTS: Readonly<Record<string, string>> = Object.freeze({
+  SessionStart: "session-start",
+  SubagentStart: "subagent-start",
+});
+// Every event a launcher word may name, pointer hooks included.
+const HOOK_EVENT_WORDS: Readonly<Record<string, string>> = Object.freeze({ ...HOST_HOOK_EVENTS, ...HOST_HOOK_POINTER_EVENTS });
 // The stable launcher, in engine/ of the device directory; installed from
 // scripts/einzbern-hook-launcher.mjs. Its name has one source, device-home.ts.
 export const HOST_HOOK_LAUNCHER = ENGINE_HOOK_LAUNCHER;
@@ -120,6 +136,9 @@ export interface HostHooksRequest {
   // false: no Einzbern hook in this file, only what is ours taken out of it (a container's
   // settings once the hook lives in the user's). true when left out.
   readonly install?: boolean;
+  // This device's agents.navigation (machine-settings.ts): declined adds the two pointer hooks;
+  // written, or null while it is unset, adds none. null when left out.
+  readonly navigation?: AgentsNavigationChoice | null;
 }
 
 export interface HostHooksExpectation {
@@ -128,11 +147,13 @@ export interface HostHooksExpectation {
   readonly platform: NodeJS.Platform;
   readonly deviceHome: string;
   readonly install: boolean;
+  readonly navigation: AgentsNavigationChoice | null;
   // The launcher the command runs; the hook file and Codex's config file, relative to their roots.
   readonly launcher: string;
   readonly hooksFile: string;
   readonly configFile: string | null;
-  // Event → the Einzbern hook groups the file must carry: one UserPromptSubmit group, or none.
+  // Event → the Einzbern hook groups the file must carry: one UserPromptSubmit group, and one on
+  // each pointer event when navigation is declined; none when nothing is installed.
   readonly groups: Readonly<Record<string, readonly HostHookGroup[]>>;
 }
 
@@ -176,7 +197,7 @@ export function hookLauncherPath(deviceHome: string, platform: NodeJS.Platform =
 
 /** The one line a host runs for `event`: node, the quoted launcher, and the event's word (R1). */
 export function hostHookCommand(launcher: string, event: string): string {
-  const word = HOST_HOOK_EVENTS[event];
+  const word = Object.hasOwn(HOOK_EVENT_WORDS, event) ? HOOK_EVENT_WORDS[event] : undefined;
   if (word === undefined) fail("HOST_HOOKS_INPUT_INVALID", `${event} is not an event Einzbern hooks`, { event });
   return `node "${launcher}" ${word}`;
 }
@@ -189,12 +210,17 @@ export function planHostHooks(request: HostHooksRequest): HostHooksExpectation {
   if (!HOST_HOOK_SCOPES.includes(request.scope)) {
     fail("HOST_HOOKS_INPUT_INVALID", `scope must be one of ${HOST_HOOK_SCOPES.join(", ")}`, { scope: String(request.scope) });
   }
+  const navigation = request.navigation ?? null;
+  if (navigation !== null && !AGENTS_NAVIGATION_CHOICES.includes(navigation)) {
+    fail("HOST_HOOKS_INPUT_INVALID", `navigation must be one of ${AGENTS_NAVIGATION_CHOICES.join(", ")}`, { navigation: String(navigation) });
+  }
   const platform = request.platform ?? process.platform;
   const install = request.install ?? true;
   const launcher = hookLauncherPath(request.deviceHome, platform);
   const groups: Record<string, readonly HostHookGroup[]> = {};
   if (install) {
-    for (const event of Object.keys(HOST_HOOK_EVENTS)) {
+    const events = [...Object.keys(HOST_HOOK_EVENTS), ...(navigation === "declined" ? Object.keys(HOST_HOOK_POINTER_EVENTS) : [])];
+    for (const event of events) {
       groups[event] = [{ hooks: [{ type: "command", command: hostHookCommand(launcher, event), timeout: HOST_HOOK_TIMEOUT_SECONDS }] }];
     }
   }
@@ -204,6 +230,7 @@ export function planHostHooks(request: HostHooksRequest): HostHooksExpectation {
     platform,
     deviceHome: request.deviceHome,
     install,
+    navigation,
     launcher,
     hooksFile: HOST_HOOK_FILES[request.host],
     configFile: request.host === "codex" ? CODEX_CONFIG_FILE : null,

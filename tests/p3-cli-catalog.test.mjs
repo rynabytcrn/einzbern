@@ -236,3 +236,24 @@ test("STORY-479 R1: skill-render writes the skill directory into --out, for this
   assert.equal(entry.mutates, true, "it writes files");
   assert.deepEqual(entry.flags.map((flag) => [flag.name, flag.required, flag.valueKind]), [["out", true, "string"], ["version", false, "string"]]);
 });
+
+test("STORY-478 R3: agents-render and rule-resolve write, take --at and resolve the project from --project or the current directory", () => {
+  const entry = (name) => COMMAND_CATALOG.find((candidate) => candidate.name === name);
+  const render = entry("agents-render");
+  assert.ok(render !== undefined, "agents-render is cataloged");
+  assert.equal(render.mutates, true, "it writes the project's files and the library's records");
+  assert.deepEqual(render.flags.map((flag) => [flag.name, flag.required, flag.valueKind]), [["project", false, "string"], ["at", true, "instant"], ["actor", false, "string"]]);
+  const resolve = entry("rule-resolve");
+  assert.ok(resolve !== undefined, "rule-resolve is cataloged (STORY-483 R2 reuses it)");
+  assert.equal(resolve.mutates, true);
+  assert.deepEqual(resolve.flags.map((flag) => [flag.name, flag.required, flag.valueKind]), [
+    ["section", true, "string"],
+    ["action", true, "string"],
+    ["force", false, "boolean"],
+    ["at", true, "instant"],
+    ["project", false, "string"],
+    ["actor", false, "string"],
+  ]);
+  // Neither takes --workspace: the library is the one the registry names for the project.
+  assert.equal([render, resolve].some((candidate) => candidate.flags.some((flag) => flag.name === "workspace")), false);
+});

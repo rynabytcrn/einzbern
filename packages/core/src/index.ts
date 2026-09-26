@@ -54,6 +54,7 @@ export type { WorkspaceCrashPoint } from "./workspace.js";
 // STORY-281: machine-level portal preferences. Deliberately not chain-backed — see
 // the module header for why a laptop's default theme is not governed workspace state.
 export {
+  AGENTS_NAVIGATION_SETTING,
   MACHINE_SETTINGS_CATALOG,
   MACHINE_SETTINGS_DIRECTORY,
   MACHINE_SETTINGS_FILE_NAME,
@@ -66,6 +67,7 @@ export {
   applyMachineSettingSet,
   assertMachineSettingKey,
   machineSettingsPath,
+  readAgentsNavigation,
   readMachineSettings,
   readMachineSettingsCatalog,
   validateMachineSettingValue,
@@ -660,8 +662,27 @@ export { applyWritableRoots, planWritableRoots } from "./host-writable-roots.js"
 // TCRN-CROSS-STORY-477 R1, R3, R4, R5: the one Einzbern hook a host's settings carry, rendered
 // with everything of the old harness taken out.
 export { HOST_HOOK_HOSTS, HOST_HOOK_SCOPES, applyHostHooks, planHostHooks, readHostHooks } from "./host-hooks.js";
-// TCRN-CROSS-STORY-477 R2, AC3: what that hook answers for a prompt in a registered project.
-export { hookEventName, hookHost, promptRecallContext } from "./hook-recall.js";
+// TCRN-CROSS-STORY-477 R2, AC3: what that hook answers for a prompt in a registered project, and
+// (TCRN-CROSS-STORY-478 R4) what the two pointer hooks answer.
+export { hookEventName, hookHost, navigationPointerAnswer, promptRecallContext } from "./hook-recall.js";
+// TCRN-CROSS-STORY-478 R1 (TCRN-CROSS-SUB-315): a library's project-level configuration records, set
+// and removed as events and merged like its settings.
+export { configRecord, configRecords, removeConfigRecord, setConfigRecord } from "./config-records.js";
+export type { ConfigRecord } from "./config-records.js";
+// TCRN-CROSS-STORY-478 R1, R2, R6 (TCRN-CROSS-SUB-316): the managed-section writer.
+export { applyManagedWrite, managedSectionRecordsFor, parseManagedFile, planManagedWrite } from "./managed-sections.js";
+export type { ManagedSectionRecord } from "./managed-sections.js";
+// TCRN-CROSS-STORY-478 R3, R4, R5 (TCRN-CROSS-SUB-317): the sections of AGENTS.md and CLAUDE.md, the
+// navigation lines, and the three dispositions of a section the user changed.
+export {
+  NAVIGATION_LINES,
+  disableAgentsSection,
+  ensureClaudeImport,
+  renderAgentsSections,
+  resolveAgentsProject,
+  resolveAgentsSection,
+} from "./agents-sections.js";
+export type { SectionAction } from "./agents-sections.js";
 // TCRN-CROSS-STORY-471 R2, R3: the engine versions installed on this device, the pointer to the one
 // in use, and switching between them.
 export { listEngines, rollbackEngine, updateEngine } from "./engine-home.js";

@@ -129,6 +129,17 @@ library a member lives in (`library:<id>#work:<id>`; an old-layout `workspace:<i
 reads). The backup witness (`snapshot-manifest`, `snapshot-verify`) covers the whole library
 tree, and a library restored to another path verifies and reads the same head. A stream
 segment whose recorded path is a directory fails with `AKASHA_SEGMENT_CORRUPT`.
+A library's derived state is this device's cache, `cache/<library>/` in the device directory
+(TCRN-CROSS-STORY-469 R4, STORY-468 R4; `packages/core/spec/ether-library-v1.md`): the view
+documents, stamped with the engine and head they were projected from, and one replay snapshot
+of the reducer and merge state after a prefix of the merged events. Every read and write
+resumes the merged replay from the snapshot while it is a prefix of what the streams hold (same
+engine, the recorded event still at each covered stream's recorded sequence, every uncovered
+event's clock above the snapshot's largest) and replays from genesis otherwise, then refreshes
+the cache; a new snapshot is written every `storage.snapshotEveryEvents` merged events. A
+missing, damaged or foreign cache is rebuilt and never a library error, and deleting it changes
+no read. `recover` rebuilds the cache from genesis; `chain-validate` and
+`materializeWorkspaceFromGenesis` never use it. The recall index is keyed by the library id.
 
 ## 1.2.1 — patch candidate
 

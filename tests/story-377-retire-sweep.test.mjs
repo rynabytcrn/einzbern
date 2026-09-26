@@ -6,7 +6,7 @@
 // TCRN-CROSS-STORY-467 R3 retired the telemetry store itself: nothing in the engine writes or reads
 // it, so the fixtures lay the records down on disk the way v1.2.0 did and fitness counts nothing.
 
-import "./helpers/device-home.mjs";
+import { testDeviceHome } from "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { appendFile, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import test from "node:test";
@@ -16,6 +16,7 @@ import { join } from "node:path";
 import { COMMAND_CATALOG, runCli } from "../dist/build/packages/cli/src/index.js";
 import {
   appendEvents,
+  cachePath,
   captureKnowledgeUnit,
   createKnowledgeUnit,
   createProject,
@@ -37,6 +38,7 @@ import {
   DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalJson, canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
+import { withWorkspacePerfInstrumentation } from "../dist/build/packages/core/src/workspace-perf-instrumentation.js";
 
 const AT = "2026-09-10T12:00:00.000Z";
 const OWNER = "owner:story-377";
@@ -532,8 +534,8 @@ function settle(read) {
   return read.then((state) => ({ state }), (error) => ({ error }));
 }
 
-// The three ways a chain is read: seeded from its newest replay snapshot (every read verb), replayed from
-// genesis, and with its views compared (validate). Each gives its state or its refusal.
+// The three ways a chain is read: through this device's cache, seeded from its snapshot when there is one
+// (every read verb), replayed from genesis, and validate. Each gives its state or its refusal.
 async function readEveryWay(workspace) {
   return {
     snapshotSeeded: await settle(materializeWorkspace(workspace)),
@@ -568,6 +570,59 @@ test("INC-389: an earlier retired key set then removed replays in every read", a
     assert.equal(state.version, 3, read);
     assert.deepEqual(state.settings, [], `${read}: the value and its removal are history, not a current setting`);
   }
+});
+
+// The device cache's snapshot of the fixture's library (TCRN-CROSS-STORY-469 R4): its version and the setting
+// keys its state holds.
+async function newestSnapshotSettings(fx) {
+  const libraryId = (await materializeWorkspaceFromGenesis(fx.workspace)).metadata.workspaceId;
+  const directory = join(cachePath(libraryId, testDeviceHome), "snapshots");
+  const header = JSON.parse(await readFile(join(directory, "snapshot.json"), "utf8"));
+  const state = JSON.parse(await readFile(join(directory, `${header.stateDigest}.json`), "utf8"));
+  return { version: header.version, keys: state.settings.map((entry) => entry.key) };
+}
+
+// A chain whose cache snapshot was taken after fitness.windowDays was recorded: version 2 sets an interval of
+// two events, and one append records the retired key and a live one, ending on version 4, where the next read
+// writes the snapshot. The snapshot is a replay by this engine, so the retired key in it is history, as in a
+// replay from genesis; a snapshot another engine wrote, which might still list the key as live, is never read.
+async function snapshotWhileRetiredKeyLive(t, externalKey) {
+  const fx = await fixture(t, externalKey);
+  await appendSettingEvents(fx, "2026-01-02T00:00:00Z", [recordedSetting("storage.snapshotEveryEvents", "2", "2026-01-02T00:00:00Z")]);
+  await appendSettingEvents(fx, "2026-01-03T00:00:00Z", [
+    recordedSetting("fitness.windowDays", "30", "2026-01-03T00:00:00Z"),
+    recordedSetting("artifact.language", "zh-CN", "2026-01-03T00:00:00Z"),
+  ]);
+  await materializeWorkspace(fx.workspace);
+  assert.deepEqual(await newestSnapshotSettings(fx), { version: 4, keys: ["artifact.language", "storage.snapshotEveryEvents"] }, "the snapshot holds the retired key as history");
+  return fx;
+}
+
+// INC-389 R2 (#566), TCRN-CROSS-STORY-469 R4: a read seeded from the cache snapshot and a replay from genesis
+// hold the same settings.
+test("INC-389: a cache snapshot taken after a retired key was recorded seeds the same settings as genesis", async (t) => {
+  const fx = await snapshotWhileRetiredKeyLive(t, "FIXTURE-INC-389-SNAPSHOT");
+  const { result: seeded, metrics } = await withWorkspacePerfInstrumentation(() => materializeWorkspace(fx.workspace));
+  assert.equal(metrics.snapshotMaterialize, 1, "the read was seeded from the snapshot");
+  const genesis = await materializeWorkspaceFromGenesis(fx.workspace);
+  assert.deepEqual(seeded.settings, genesis.settings, "the snapshot seed and genesis hold the same settings");
+  assert.deepEqual(seeded.settings.map((entry) => entry.key), ["artifact.language", "storage.snapshotEveryEvents"], "neither holds the retired key");
+  assert.deepEqual(seeded, genesis, "the two reads are the same state");
+});
+
+// INC-389 R1 and R2 (#529, #566): the same chain removes the retired key after the snapshot. Both reads take
+// the removal as history and agree.
+test("INC-389: a retired key removed after a cache snapshot reads the same in both replays", async (t) => {
+  const fx = await snapshotWhileRetiredKeyLive(t, "FIXTURE-INC-389-SNAPSHOT-REMOVED");
+  await appendSettingEvents(fx, "2026-01-04T00:00:00Z", [removedSetting("fitness.windowDays", "2026-01-04T00:00:00Z")]);
+  assert.equal((await newestSnapshotSettings(fx)).version, 4, "the removal comes after the newest snapshot");
+  const reads = { snapshotSeeded: await settle(materializeWorkspace(fx.workspace)), genesis: await settle(materializeWorkspaceFromGenesis(fx.workspace)) };
+  for (const [read, { state, error }] of Object.entries(reads)) {
+    assert.equal(error, undefined, `${read}: ${error?.reasonCode} ${error?.message}`);
+    assert.equal(state.version, 5, read);
+  }
+  assert.deepEqual(reads.snapshotSeeded.state.settings, reads.genesis.state.settings, "both reads hold the same settings");
+  assert.deepEqual(reads.genesis.state.settings.map((entry) => entry.key), ["artifact.language", "storage.snapshotEveryEvents"], "neither holds the retired key");
 });
 
 // INC-389 changes only how replay reads a retired key. A live key removed without ever being set does not

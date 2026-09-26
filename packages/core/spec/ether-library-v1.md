@@ -89,6 +89,31 @@ is a vector of each device's stream sequence, and its head is one digest over ev
 head. Both the order and the renaming are deterministic, so every device merges the same
 streams to the same state.
 
+## The device cache
+
+What a replay derives stays on the device that derived it, in `cache/<library>/` of the
+device directory (TCRN-CROSS-STORY-469 R4); a library never holds it.
+
+- `views/` holds the view documents (`STATUS.md`, `index.json`, `readback.json` and, when
+  the library holds extension records, `extensions.json`) and a stamp naming the engine
+  version, head and version they were projected from. A read whose replay has another stamp
+  projects them again.
+- `snapshots/` holds one replay snapshot: the reducer's state and the merge's own state
+  (rejected events, aliases and renames) after a prefix of the merged events, in a file named
+  by its SHA-256, and a header naming it, the engine version that wrote it, the merged
+  version, the largest clock among the covered events and, for each stream, the sequence and
+  event hash where the prefix ends. A replay writes a new one once it has gone
+  `storage.snapshotEveryEvents` merged events past the snapshot it resumed from.
+
+A read resumes from the snapshot only while it describes a prefix of what the streams hold:
+the same engine version wrote it, every stream it covers still holds the recorded event at
+the recorded sequence, and every event it does not cover carries a clock above its largest
+(another device's late event with a lower clock sorts inside the prefix and sends the read
+back to genesis). A snapshot or view that is missing, damaged, written by another engine or
+no longer a prefix is not used and is written again; a cache fault is never a library fault,
+and deleting the cache changes no read. `recover` drops the cache, replays from genesis and
+writes the views and a snapshot again; `chain-validate` always replays from genesis.
+
 ## Writes that readers never see half-done
 
 Every manifest, and every other small file a reader must see whole, is replaced atomically:

@@ -35,7 +35,18 @@ import type {
 import { assertDistinctRootShape, rootPortableIdentity } from "./root-identity.js";
 import { FileLockError } from "./file-lock.js";
 import { AKASHA_SEGMENT_BYTES_DEFAULT, appendStreamEvents, emptyStreamManifest, readAllStreams, streamEventId, withLibraryWriteLock } from "./akasha.js";
-import type { LibraryReadOptions, MergedEvent, StreamManifest } from "./akasha.js";
+import type { LibraryRead, LibraryReadOptions, MergedEvent, StreamManifest } from "./akasha.js";
+import {
+  CACHE_VIEWS_SCHEMA_VERSION,
+  clearLibraryCache,
+  discardCacheSnapshot,
+  readCacheSnapshot,
+  readCacheViewStamp,
+  sameViewStamp,
+  writeCacheSnapshot,
+  writeCacheViews,
+} from "./library-cache.js";
+import type { CacheSnapshot, CacheViewStamp } from "./library-cache.js";
 import { LIBRARY_ID_PATTERN, createLibrary, hasLibraryManifest, openLibrary } from "./ether-library.js";
 import type { Library } from "./ether-library.js";
 import { readOrCreateDevice } from "./device-identity.js";
@@ -109,6 +120,7 @@ import {
 } from "./template-admission.js";
 import type { TemplateAdmissionRecord } from "./template-admission.js";
 import {
+  SETTINGS_CATALOG,
   SETTINGS_LAYER_KIND,
   SettingsError,
   compareEngineVersions,
@@ -398,19 +410,12 @@ export interface WorkspaceState {
   readonly attestationEnabledAtSequence: number | null;
 }
 
-// STORY-337: this is a read-path replay checkpoint, not the backup snapshot
-// manifest owned by workspace-snapshot.ts. It contains the reducer's derived
-// collections at one event boundary and never replaces the append-only event
-// history. The event prefix is supplied by the event reader when the public
-// WorkspaceState is assembled, so callers keep the existing state shape.
-const WORKSPACE_REPLAY_SNAPSHOT_VERSION = "tcrn.workspace-replay-snapshot.v1" as const;
-const WORKSPACE_REPLAY_SNAPSHOT_MANIFEST_VERSION = "tcrn.workspace-replay-snapshot-manifest.v1" as const;
-
-interface ReplaySnapshotState {
-  readonly schemaVersion: typeof WORKSPACE_REPLAY_SNAPSHOT_VERSION;
-  readonly metadata: WorkspaceMetadata;
+// TCRN-CROSS-STORY-469 R4: a replay seed from this device's cache (library-cache.ts). It holds the
+// reducer's collections after the first `version` merged events, which the reader hands back as
+// `prefixEvents`; the replay continues with the events after them. It is never the backup
+// snapshot manifest (workspace-snapshot.ts) and never replaces a single event.
+interface ReplaySeed {
   readonly version: number;
-  readonly headEventHash: string | null;
   readonly projects: readonly ProjectRecord[];
   readonly work: readonly WorkRecord[];
   readonly conferences: readonly ConferenceRequest[];
@@ -421,29 +426,6 @@ interface ReplaySnapshotState {
   readonly executionConfig: ExecutionConfigState;
   readonly templates: readonly TemplateAdmissionRecord[];
   readonly attestationEnabledAtSequence: number | null;
-  readonly stateDigest: string;
-}
-
-interface ReplaySnapshotSegmentDigest {
-  readonly name: string;
-  readonly bytes: number;
-  readonly sha256: string;
-}
-
-interface ReplaySnapshotManifest {
-  readonly schemaVersion: typeof WORKSPACE_REPLAY_SNAPSHOT_MANIFEST_VERSION;
-  readonly workspaceId: string;
-  readonly version: number;
-  readonly headEventHash: string | null;
-  readonly snapshot?: string;
-  readonly snapshotParts?: readonly string[];
-  readonly stateDigest: string;
-  readonly eventPrefixDigest?: string;
-  readonly segments: readonly ReplaySnapshotSegmentDigest[];
-}
-
-interface ReplaySnapshotSeed extends ReplaySnapshotState {
-  readonly manifest: ReplaySnapshotManifest;
   readonly prefixEvents: readonly EventRecord[];
 }
 
@@ -1715,6 +1697,14 @@ function nextFreeExternalKey(externalKey: string, taken: (candidate: string) => 
   }
 }
 
+// The merge's own state after a prefix of the merged events, as a cache snapshot keeps it.
+interface MergeReplayCheckpoint {
+  readonly rejected: readonly RejectedEvent[];
+  readonly aliases: readonly KeyAlias[];
+  readonly redirects: readonly { readonly streamId: string; readonly entries: readonly { readonly from: string; readonly id: string; readonly externalKey: string }[] }[];
+  readonly reserved: readonly string[];
+}
+
 class MergeReplay {
   readonly rejected: RejectedEvent[] = [];
   readonly aliases: KeyAlias[] = [];
@@ -1725,8 +1715,32 @@ class MergeReplay {
   private readonly reserved = new Set<string>();
   private pending: KeyAlias | null = null;
 
-  constructor(origins: ReadonlyMap<EventRecord, ReplayOrigin>) {
+  constructor(origins: ReadonlyMap<EventRecord, ReplayOrigin>, resume?: MergeReplayCheckpoint) {
     this.origins = origins;
+    if (resume !== undefined) {
+      this.rejected.push(...resume.rejected);
+      this.aliases.push(...resume.aliases);
+      for (const stream of resume.redirects) {
+        this.redirects.set(stream.streamId, new Map(stream.entries.map((entry) => [entry.from, { id: entry.id, externalKey: entry.externalKey }])));
+      }
+      for (const id of resume.reserved) this.reserved.add(id);
+    }
+  }
+
+  /** The merge's state so far, for a snapshot to resume from. */
+  checkpoint(): MergeReplayCheckpoint {
+    return {
+      rejected: [...this.rejected],
+      aliases: [...this.aliases],
+      redirects: [...this.redirects.entries()]
+        .filter(([, entries]) => entries.size > 0)
+        .sort(([left], [right]) => compareCanonicalText(left, right))
+        .map(([streamId, entries]) => ({
+          streamId,
+          entries: [...entries.entries()].sort(([left], [right]) => compareCanonicalText(left, right)).map(([from, target]) => ({ from, ...target })),
+        })),
+      reserved: [...this.reserved].sort(compareCanonicalText),
+    };
   }
 
   origin(event: EventRecord): ReplayOrigin {
@@ -1819,7 +1833,7 @@ function isReplayRejection(error: unknown): boolean {
   return error instanceof WorkspaceError || error instanceof ProtocolError;
 }
 
-function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[], snapshot?: ReplaySnapshotSeed, merge?: MergeReplay): WorkspaceState {
+function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[], snapshot?: ReplaySeed, merge?: MergeReplay): WorkspaceState {
   if (snapshot === undefined) {
     recordFullMaterialize();
   } else {
@@ -1834,8 +1848,8 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
   const conferenceMinutes = collection<string, ConferenceMinutes>((snapshot?.conferenceMinutes ?? []).map((record) => [record.id, record]));
   const gates = collection<string, GateRecord>((snapshot?.gates ?? []).map((record) => [record.id, record]));
   // TCRN-CROSS-INC-389 R2: a replay snapshot taken while a key was live still lists it after the key
-  // retires, as a 1.1.0-1.2.0 snapshot lists fitness.windowDays. The snapshot is verified exactly as
-  // stored (state digest, manifest, segment digests); only the seed drops retired keys, the rule the
+  // retires, as a 1.1.0-1.2.0 snapshot listed fitness.windowDays. The device cache only reads a
+  // snapshot its own engine version wrote, and the seed still drops retired keys, the rule the
   // settings.updated arm below applies on a replay from genesis, so both reads hold the same settings.
   // The convention is the one settings.ts states for RETIRED_SETTING_KEYS: historical events remain
   // legible without reopening new writes.
@@ -2337,7 +2351,7 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
   return {
     metadata,
     version: snapshot === undefined ? events.length : snapshot.version + events.length,
-    headEventHash: events.at(-1)?.eventHash ?? snapshot?.headEventHash ?? null,
+    headEventHash: events.at(-1)?.eventHash ?? snapshot?.prefixEvents.at(-1)?.eventHash ?? null,
     projects: projectRecords,
     work: workRecords,
     conferences: sortExtensionRecords(conferences.values()),
@@ -2671,9 +2685,12 @@ export async function materializeWorkspace(workspaceRootInput: string): Promise<
   return materializeLayout(await resolveLayout(workspaceRootInput));
 }
 
-/** Every read replays from genesis now (derived state belongs to the device cache). */
+/** The state replayed from genesis, without this device's cache: what validation compares against. */
 export async function materializeWorkspaceFromGenesis(workspaceRootInput: string): Promise<WorkspaceState> {
-  return materializeWorkspace(workspaceRootInput);
+  const layout = await resolveLayout(workspaceRootInput);
+  return layout.kind === "library"
+    ? materializeLibraryRead(layout.library, await readAllStreams(layout.library.root))
+    : replayLegacyWorkspace(await openLegacyWorkspace(layout.root));
 }
 
 export interface InitializeLibraryOptions {
@@ -2739,35 +2756,216 @@ function streamHead(manifest: StreamManifest): LibraryStreamHead {
   };
 }
 
+type LibraryReadShape = { readonly streams: readonly { readonly manifest: StreamManifest | null }[]; readonly events: readonly MergedEvent[]; readonly versionVector: Readonly<Record<string, number>> };
+
+// A seed read back from this device's cache, with the merge state it resumes.
+interface LibrarySeed {
+  readonly seed: ReplaySeed;
+  readonly merge: MergeReplayCheckpoint;
+}
+
+interface LibraryReplayResult {
+  readonly state: WorkspaceState;
+  readonly merge: MergeReplay;
+}
+
 /**
- * Replay a library's merged events from genesis (TCRN-CROSS-STORY-468 R3-R5). Streams were
- * validated structurally when they were read; here an event that does not apply to the merged
- * state is rejected, and a create whose key another device held first is renamed with an alias.
- * The result does not depend on which device merges: the order and the renaming are both
- * deterministic.
+ * Replay a library's merged events (TCRN-CROSS-STORY-468 R3-R5): from genesis, or from a seed
+ * that covers a prefix of them. Streams were validated structurally when they were read; here
+ * an event that does not apply to the merged state is rejected, and a create whose key another
+ * device held first is renamed with an alias. The result does not depend on which device
+ * merges: the order and the renaming are both deterministic.
  */
-export function materializeLibraryRead(library: Library, read: { readonly streams: readonly { readonly manifest: StreamManifest | null }[]; readonly events: readonly MergedEvent[]; readonly versionVector: Readonly<Record<string, number>> }): WorkspaceState {
-  const origins = new Map<EventRecord, ReplayOrigin>(read.events.map((entry) => [entry.event, { deviceId: entry.deviceId, streamId: entry.streamId, clock: entry.clock }]));
-  const merge = new MergeReplay(origins);
-  const state = materialize(libraryWorkspaceMetadata(library), read.events.map((entry) => entry.event), undefined, merge);
+function replayLibrary(library: Library, read: LibraryReadShape, cached?: LibrarySeed): LibraryReplayResult {
+  const tail = cached === undefined ? read.events : read.events.slice(cached.seed.version);
+  const origins = new Map<EventRecord, ReplayOrigin>(tail.map((entry) => [entry.event, { deviceId: entry.deviceId, streamId: entry.streamId, clock: entry.clock }]));
+  const merge = new MergeReplay(origins, cached?.merge);
+  const state = materialize(libraryWorkspaceMetadata(library), tail.map((entry) => entry.event), cached?.seed, merge);
   const streams = read.streams.flatMap((stream) => (stream.manifest === null ? [] : [streamHead(stream.manifest)]));
   return {
-    ...state,
-    headEventHash: libraryHeadDigest(streams),
-    library: {
-      libraryRoot: library.root,
-      versionVector: read.versionVector,
-      streams,
-      rejectedEvents: merge.rejected,
-      aliases: merge.aliases,
+    state: {
+      ...state,
+      headEventHash: libraryHeadDigest(streams),
+      library: {
+        libraryRoot: library.root,
+        versionVector: read.versionVector,
+        streams,
+        rejectedEvents: merge.rejected,
+        aliases: merge.aliases,
+      },
     },
+    merge,
   };
 }
 
-/** Read every stream of a library and replay them merged. */
+/** Replay a library's merged events from genesis, without this device's cache. */
+export function materializeLibraryRead(library: Library, read: LibraryReadShape): WorkspaceState {
+  return replayLibrary(library, read).state;
+}
+
+// TCRN-CROSS-STORY-469 R4: the replay state a cache snapshot keeps, serialised as the engine holds
+// it. Only the engine version that wrote it reads it back.
+interface LibrarySnapshotState {
+  readonly projects: readonly ProjectRecord[];
+  readonly work: readonly WorkRecord[];
+  readonly conferences: readonly ConferenceRequest[];
+  readonly conferencePositions: readonly ConferencePosition[];
+  readonly conferenceMinutes: readonly ConferenceMinutes[];
+  readonly gates: readonly GateRecord[];
+  readonly settings: readonly WorkspaceSettingRecord[];
+  readonly executionConfig: ExecutionConfigState;
+  readonly templates: readonly TemplateAdmissionRecord[];
+  readonly attestationEnabledAtSequence: number | null;
+  readonly merge: MergeReplayCheckpoint;
+}
+
+const SNAPSHOT_COLLECTIONS = ["projects", "work", "conferences", "conferencePositions", "conferenceMinutes", "gates", "settings", "templates"] as const;
+
+function snapshotState(value: unknown): LibrarySnapshotState | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Readonly<Record<string, unknown>>;
+  if (SNAPSHOT_COLLECTIONS.some((name) => !Array.isArray(record[name]))) return null;
+  if (record.executionConfig === null || typeof record.executionConfig !== "object" || Array.isArray(record.executionConfig)) return null;
+  if (!(record.attestationEnabledAtSequence === null || Number.isSafeInteger(record.attestationEnabledAtSequence))) return null;
+  const merge = record.merge as Readonly<Record<string, unknown>> | null | undefined;
+  if (merge === null || typeof merge !== "object" || Array.isArray(merge)) return null;
+  if (!["rejected", "aliases", "redirects", "reserved"].every((name) => Array.isArray(merge[name]))) return null;
+  return value as LibrarySnapshotState;
+}
+
+/**
+ * The seed a snapshot gives this read, or null when it does not describe a prefix of it: the
+ * snapshot's engine differs, a stream it covers no longer holds the event it recorded at its
+ * sequence, or an event it does not cover would sort inside it (another device's late event
+ * with a clock at or below the snapshot's largest). Covered events are then exactly the first
+ * `version` merged events, and the replay resumes after them.
+ */
+function seedFromSnapshot(snapshot: CacheSnapshot, read: LibraryRead): LibrarySeed | null {
+  if (snapshot.engineVersion !== FRAMEWORK_VERSION) return null;
+  const streams = new Map(read.streams.map((stream) => [stream.deviceId, stream]));
+  const covered = new Map<string, number>();
+  for (const recorded of snapshot.streams) {
+    const stream = streams.get(recorded.deviceId);
+    const event = stream?.events[recorded.sequence - 1];
+    if (stream?.manifest?.streamId !== recorded.streamId || event === undefined || event.sequence !== recorded.sequence || event.eventHash !== recorded.eventHash) {
+      return null;
+    }
+    covered.set(recorded.deviceId, recorded.sequence);
+  }
+  let prefix = 0;
+  for (const [index, entry] of read.events.entries()) {
+    if (entry.event.sequence <= (covered.get(entry.deviceId) ?? 0)) {
+      if (index !== prefix) return null;
+      prefix += 1;
+    } else if (entry.clock <= snapshot.maxClock) {
+      return null;
+    }
+  }
+  if (prefix !== snapshot.version) return null;
+  const state = snapshotState(snapshot.state);
+  if (state === null) return null;
+  const { merge, ...collections } = state;
+  return { seed: { version: prefix, ...collections, prefixEvents: read.events.slice(0, prefix).map((entry) => entry.event) }, merge };
+}
+
+// The snapshot interval: storage.snapshotEveryEvents, or its catalog default.
+function snapshotInterval(state: WorkspaceState): number {
+  const configured = Number(state.settings.find((entry) => entry.key === "storage.snapshotEveryEvents")?.value ?? SETTINGS_CATALOG.find((entry) => entry.key === "storage.snapshotEveryEvents")?.defaultValue);
+  return Number.isSafeInteger(configured) && configured >= 1 ? configured : 512;
+}
+
+async function cachedSeed(library: Library, read: LibraryRead): Promise<LibrarySeed | null> {
+  try {
+    const snapshot = await readCacheSnapshot(library.manifest.libraryId);
+    if (snapshot === null) return null;
+    const seeded = seedFromSnapshot(snapshot, read);
+    if (seeded === null) await discardCacheSnapshot(library.manifest.libraryId);
+    return seeded;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Bring this device's cache of the library up to a replay: the view documents when they were
+ * projected from another head or engine, and a new snapshot once the replay has gone
+ * storage.snapshotEveryEvents events past the one it resumed from. The cache is derived, so a
+ * failure to write it is left to the next read, except where the caller asked for it (recover).
+ */
+async function refreshLibraryCache(
+  library: Library,
+  read: LibraryRead,
+  replay: LibraryReplayResult,
+  seededVersion: number | null,
+  options: { readonly force?: boolean; readonly strict?: boolean } = {},
+): Promise<void> {
+  const libraryId = library.manifest.libraryId;
+  try {
+    const stamp: CacheViewStamp = {
+      schemaVersion: CACHE_VIEWS_SCHEMA_VERSION,
+      engineVersion: FRAMEWORK_VERSION,
+      headEventHash: replay.state.headEventHash,
+      version: replay.state.version,
+    };
+    if (options.force === true || !sameViewStamp(await readCacheViewStamp(libraryId), stamp)) {
+      await writeCacheViews(libraryId, viewDocuments(replay.state), stamp);
+    }
+    const due = replay.state.version - (seededVersion ?? 0) >= snapshotInterval(replay.state);
+    if (replay.state.version > 0 && (options.force === true || due)) {
+      await writeCacheSnapshot({
+        libraryId,
+        engineVersion: FRAMEWORK_VERSION,
+        version: replay.state.version,
+        maxClock: read.events.reduce((largest, entry) => Math.max(largest, entry.clock), 0),
+        streams: read.streams.flatMap((stream) => (stream.manifest === null || stream.manifest.sequence === 0 || stream.manifest.headEventHash === null
+          ? []
+          : [{ deviceId: stream.deviceId, streamId: stream.manifest.streamId, sequence: stream.manifest.sequence, eventHash: stream.manifest.headEventHash }])),
+        state: {
+          projects: replay.state.projects,
+          work: replay.state.work,
+          conferences: replay.state.conferences,
+          conferencePositions: replay.state.conferencePositions,
+          conferenceMinutes: replay.state.conferenceMinutes,
+          gates: replay.state.gates,
+          settings: replay.state.settings,
+          executionConfig: replay.state.executionConfig,
+          templates: replay.state.templates,
+          attestationEnabledAtSequence: replay.state.attestationEnabledAtSequence,
+          merge: replay.merge.checkpoint(),
+        } satisfies LibrarySnapshotState,
+      });
+    }
+  } catch (error) {
+    if (options.strict === true) throw error;
+  }
+}
+
+/**
+ * Replay a library through this device's cache (TCRN-CROSS-STORY-469 R4): resume from the
+ * snapshot when it describes a prefix of what was read, otherwise from genesis, then refresh the
+ * cache. A seed the rest of the events cannot be replayed onto is a cache fault, and the replay
+ * starts again from genesis; the result is the same state either way.
+ */
+async function replayLibraryThroughCache(library: Library, read: LibraryRead): Promise<WorkspaceState> {
+  const cached = await cachedSeed(library, read);
+  let replay: LibraryReplayResult | null = null;
+  if (cached !== null) {
+    try {
+      replay = replayLibrary(library, read, cached);
+    } catch {
+      replay = null;
+    }
+  }
+  const seededVersion = replay === null ? null : cached?.seed.version ?? null;
+  replay ??= replayLibrary(library, read);
+  await refreshLibraryCache(library, read, replay, seededVersion);
+  return replay.state;
+}
+
+/** Read every stream of a library and replay them merged, through this device's cache. */
 export async function materializeLibrary(libraryOrRoot: Library | string, options: LibraryReadOptions = {}): Promise<WorkspaceState> {
   const library = typeof libraryOrRoot === "string" ? await openLibrary(libraryOrRoot) : libraryOrRoot;
-  return materializeLibraryRead(library, await readAllStreams(library.root, options));
+  return replayLibraryThroughCache(library, await readAllStreams(library.root, options));
 }
 
 /** The keys a record was renamed from, and the records renamed away from its key (TCRN-CROSS-STORY-468 R5). */
@@ -2813,6 +3011,11 @@ export function materializeFromGenesis(metadata: WorkspaceMetadata, events: read
 /**
  * Validate by replaying: every stream (or the old chain) is checked structurally and replayed.
  * Views are derived and no longer an authority to compare against.
+ */
+/**
+ * The state the read verbs validate and answer from: every stream read and checked, merged
+ * through this device's cache (TCRN-CROSS-STORY-469 R4). chain-validate and
+ * materializeWorkspaceFromGenesis replay from genesis instead.
  */
 export async function validateWorkspace(workspaceRootInput: string): Promise<WorkspaceState> {
   return materializeWorkspace(workspaceRootInput);
@@ -2905,7 +3108,7 @@ export async function appendEvents(
     // delta is built against is the latest one this machine has, and a batch is one mutation:
     // one lock, one replay.
     const read = await readAllStreams(library.root);
-    const state = materializeLibraryRead(library, read);
+    const state = await replayLibraryThroughCache(library, read);
     const own = read.streams.find((stream) => stream.deviceId === device.deviceId)?.manifest ?? emptyStreamManifest(library, device);
     const clockBase = Math.max(own.clockHighWater, ...read.streams.map((stream) => stream.manifest?.clockHighWater ?? 0));
     const appended: EventRecord[] = [];
@@ -3908,8 +4111,20 @@ export async function removeWorkspaceSetting(workspaceRoot: string, input: {
 }
 
 /** Re-read and re-validate a library under its lock. An old-layout workspace refuses. */
+/**
+ * Rebuild this device's cache of the library (TCRN-CROSS-STORY-469 R4): drop it, replay the
+ * merged streams from genesis, and write the views and a snapshot of the result. The library
+ * itself is only read.
+ */
 export async function recoverWorkspace(workspaceRoot: string): Promise<WorkspaceState> {
-  return withWorkspaceWriteLock(workspaceRoot, (resolved) => materializeWorkspace(resolved));
+  return withWorkspaceWriteLock(workspaceRoot, async (root) => {
+    const library = await openLibrary(root);
+    await clearLibraryCache(library.manifest.libraryId);
+    const read = await readAllStreams(library.root);
+    const replay = replayLibrary(library, read);
+    await refreshLibraryCache(library, read, replay, null, { force: true, strict: true });
+    return replay.state;
+  });
 }
 
 export async function exportWorkspace(workspaceRoot: string): Promise<string> {

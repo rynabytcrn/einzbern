@@ -1670,10 +1670,13 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
         labels: entry.labels ?? [],
       }));
     const result = recall({
-      cacheKey: resolve(workspace),
+      // One index per library, whatever path it is read at (TCRN-CROSS-STORY-469).
+      cacheKey: state.metadata.workspaceId,
       // The storage checkpoint: the chain head the records were replayed from, and the
       // digest of the knowledge answer they were read with. Either one moving is a
       // different corpus, and the index is rebuilt from the rows that actually changed.
+      // A library's head is one digest over every stream's head, so it moves with any
+      // entry of the version vector.
       checkpoint: `${state.headEventHash}:${knowledgeDigest}`,
       documents: () => recallDocuments({ knowledge, minutes, work, scopeExcerptBytes }),
       query,

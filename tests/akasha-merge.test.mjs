@@ -3,6 +3,8 @@
 // apart and merge to the same state; a transition both made is applied once and rejected once;
 // a key both took is renamed with an alias; a read a sync placeholder blocks times out.
 
+// The merged reads cache their derived state in the test's own device directory.
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";

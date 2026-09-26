@@ -3,6 +3,9 @@
 // R3, AC4 (old layout read-only) and STORY-467 AC3 (a changed akasha segment): every verb goes
 // through a library; an old-layout workspace answers reads and refuses writes.
 
+// Every in-process command runs as an explicit device; between them the process keeps the
+// test's own device directory, never the real one.
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -113,10 +116,11 @@ test("469: init creates a library, and projects, work, transitions, lists and sh
   assert.deepEqual(status.versionVector, { [deviceId]: 5 });
   assert.deepEqual(status.streams.map((stream) => [stream.deviceId, stream.sequence]), [[deviceId, 5]]);
   assert.equal(status.rejectedEventCount, 0);
-  // Nothing but the stream directory was added to the library, and the lock lives on the device.
+  // Nothing but the stream directory was added to the library; the lock and the cache of derived
+  // state live on the device (TCRN-CROSS-STORY-469 R4).
   assert.deepEqual((await readdir(library)).sort(), [".gitignore", "README.md", "akasha", "artifacts", "config", "crest", "manifest.json"]);
   assert.deepEqual(await readdir(join(library, "akasha")), [deviceId]);
-  assert.deepEqual((await readdir(device)).sort(), ["device.json", "locks"]);
+  assert.deepEqual((await readdir(device)).sort(), ["cache", "device.json", "locks"]);
   const validated = await as(device, ["chain-validate", "--workspace", library]);
   assert.deepEqual([validated.reasonCode, validated.layout, validated.headEventHash], ["CHAIN_VALIDATED", "library", status.headEventHash]);
   assert.equal((await as(device, ["validate", "--workspace", library])).headEventHash, status.headEventHash, "validate is chain-validate");

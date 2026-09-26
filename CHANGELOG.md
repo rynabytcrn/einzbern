@@ -171,6 +171,17 @@ sequence and head, replays the library against the old chain's events, head and 
 projects its settings into `config/project.json`. This device's next event continues the stream:
 the next sequence, a priorHash on the old head, `einzbern.event.v1` beside the old
 `tcrn.event.v1` events.
+This device keeps a registry of libraries, `registry.json` in the device directory
+(`einzbern.registry.v1`; TCRN-CROSS-STORY-470 R1, AC1; MIN-227 D19): each entry maps a project
+directory, and the project's Git remote in one normalised spelling, to a library path and id,
+with a cloud-hosted flag. Nothing is written into the project. `library-register --project
+--library --at [--cloud-hosted true] [--git-remote]` records one, `init --project` registers
+the library it creates, `library-list` lists them and `library-resolve [--cwd]` shows which
+library a directory resolves to: the directory or its nearest registered ancestor, else the Git
+working tree's top level, else its remote (origin first, so another clone of the project finds
+the same library), else `LIBRARY_NOT_REGISTERED`; a library that no longer carries the
+registered id is `LIBRARY_REGISTRY_MISMATCH`. `--workspace` is now optional on every verb but
+`init`: left out, the library is the one the current directory resolves to.
 
 ## 1.2.1 — patch candidate
 

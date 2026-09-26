@@ -471,8 +471,10 @@ test("MIN-225: fitness reads no telemetry, and legacy observation records change
   }
   assert.equal((await cliJson(["knowledge-list", "--workspace", fx.workspace, "--at", AT, "--selection", "all", "--allow-trailing", "true"])).records.length, 3);
   for (const name of ["retire-proposals", "retire-sweep"]) {
+    // --workspace became optional on every verb but init (TCRN-CROSS-STORY-470 R1: the registry
+    // resolves the library); the other flags are the v1.2.0 ones.
     assert.deepEqual(COMMAND_CATALOG.find((entry) => entry.name === name)?.flags, [
-      { name: "workspace", required: true, valueKind: "string" },
+      { name: "workspace", required: false, valueKind: "string" },
       { name: "at", required: true, valueKind: "instant" },
       { name: "window-days", required: false, valueKind: "integer" },
       { name: "min-events", required: false, valueKind: "integer" },

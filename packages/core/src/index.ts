@@ -654,6 +654,8 @@ export { ATOMIC_FILE_REASON_CODES, ATOMIC_TEMPORARY_PREFIX, AtomicFileError, isA
 export { configProjectionStatus } from "./library-config.js";
 // TCRN-CROSS-STORY-468 R6: an old-layout workspace imported as a library's first stream.
 export { defaultImportTarget, importLegacyWorkspace } from "./legacy-import.js";
+// TCRN-CROSS-STORY-470 R1: this device's registry of libraries and resolution from a directory.
+export { readRegistry, registerLibrary, resolveLibrary } from "./registry.js";
 export type { AtomicFileReasonCode, AtomicWriteOptions } from "./atomic-file.js";
 // TCRN-CROSS-STORY-468 R1: this device's identity in the device directory.
 export {

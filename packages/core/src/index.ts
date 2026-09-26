@@ -228,6 +228,18 @@ export type {
   SettingsReasonCode,
   WorkspaceSettingRecord,
 } from "./settings.js";
+// TCRN-CROSS-STORY-484 R3: models.tiers, each host's tiers with a runner, a model and an effort;
+// readModelsTiers is the effective table of a settings list, the default table when it is unset.
+export { MODELS_TIERS_SETTING_KEY, readModelsTiers } from "./models-tiers.js";
+export type { ModelsTierEntry, ModelsTiers } from "./models-tiers.js";
+// TCRN-CROSS-STORY-484 R1: the project's custom variables, records of the library's variable
+// collection; a credential-shaped value or description is refused when written.
+export { VARIABLE_TYPES, listVariables, removeVariable, setVariable } from "./variables.js";
+export type { Variable, VariableType } from "./variables.js";
+// TCRN-CROSS-STORY-484 R2: the system and custom variable sections of AGENTS.md, and what each
+// leaves out (an absolute path, a credential shape) with its reason.
+export { renderCustomVariablesSection, renderSystemVariablesSection, writeVariablesSections } from "./variables-sections.js";
+export type { VariablesSectionsResult, WithheldEntry } from "./variables-sections.js";
 export {
   INSTALL_MANIFEST,
   INSTALL_MANIFEST_REQUIRED_ITEM_IDS,

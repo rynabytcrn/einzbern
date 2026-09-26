@@ -23,6 +23,7 @@ import {
   isRetiredSettingKey,
   settingsCatalogEntry,
 } from "../dist/build/packages/core/src/settings.js";
+import { ATELIER_SURFACE, withSurface } from "./helpers/workspace-fixture.mjs";
 
 const instant = (second) => `2026-08-11T00:00:${String(second).padStart(2, "0")}Z`;
 
@@ -84,10 +85,17 @@ test("INIT-022 S213: catalog exposes every engine-consumed workspace setting", a
 test("INIT-022 S213: unknown keys fail closed and registered writes receipt plus replay readback", async (t) => {
   const { workspace } = await fixture(t, "write");
   const baseArgs = ["settings-set", "--workspace", workspace, "--at", instant(1), "--actor", "agent:codex"];
-  assert.equal(await errorReason([...baseArgs, "--key", "settings.not-registered", "--value", "manual"]), "SETTINGS_KEY_UNREGISTERED");
+  assert.equal(await withSurface(undefined, () => errorReason([...baseArgs, "--key", "settings.not-registered", "--value", "manual"])), "SETTINGS_KEY_UNREGISTERED");
   assert.equal((await materializeWorkspace(workspace)).version, 0, "a rejected key must not append an event");
 
-  const receipt = await runRaw([...baseArgs, "--key", "artifact.language", "--value", "zh-CN"]);
+  // TCRN-CROSS-STORY-484 R4: a key that is not modelWritable is written through the CLI for Atelier
+  // only. Run as a model's shell (no EINZBERN_SURFACE) the same write is refused with the remedy, and
+  // appends nothing; an unregistered key above keeps its own refusal either way.
+  const refused = await withSurface(undefined, () => runCli([...baseArgs, "--key", "artifact.language", "--value", "zh-CN"], { write() {} }).then(() => null, (error) => error));
+  assert.deepEqual([refused?.reasonCode, refused?.details?.key, refused?.details?.remedy], ["MODEL_WRITE_REFUSED", "artifact.language", "change it in Atelier"]);
+  assert.equal((await materializeWorkspace(workspace)).version, 0, "a refused model write must not append an event");
+
+  const receipt = await withSurface(ATELIER_SURFACE, () => runRaw([...baseArgs, "--key", "artifact.language", "--value", "zh-CN"]));
   assert.equal(receipt.reasonCode, "SETTINGS_WRITE_COMMITTED");
   assert.equal(receipt.setting.key, "artifact.language");
   assert.equal(receipt.setting.value, "zh-CN");

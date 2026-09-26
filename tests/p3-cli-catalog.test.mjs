@@ -236,3 +236,21 @@ test("STORY-479 R1: skill-render writes the skill directory into --out, for this
   assert.equal(entry.mutates, true, "it writes files");
   assert.deepEqual(entry.flags.map((flag) => [flag.name, flag.required, flag.valueKind]), [["out", true, "string"], ["version", false, "string"]]);
 });
+
+test("STORY-484 R1, R4: variable-list reads; variable-set and variable-remove write and name their required flags", () => {
+  const entry = (name) => COMMAND_CATALOG.find((candidate) => candidate.name === name);
+  const flags = (name) => entry(name).flags.map((flag) => [flag.name, flag.required, flag.valueKind]);
+  assert.equal(entry("variable-list").mutates, false);
+  assert.deepEqual(flags("variable-list"), [["workspace", false, "string"]]);
+  assert.equal(entry("variable-set").mutates, true);
+  assert.deepEqual(flags("variable-set"), [
+    ["workspace", false, "string"], ["at", true, "instant"], ["name", true, "string"], ["type", true, "string"],
+    ["value", true, "string"], ["description", false, "string"], ["actor", false, "string"],
+  ]);
+  assert.equal(entry("variable-remove").mutates, true);
+  assert.deepEqual(flags("variable-remove"), [["workspace", false, "string"], ["at", true, "instant"], ["name", true, "string"], ["actor", false, "string"]]);
+  // The refusal of a model's write (MODEL_WRITE_REFUSED) is the dispatcher's, not a flag: the settings
+  // writes keep their flags.
+  assert.deepEqual(entry("settings-set").flags.map((flag) => flag.name), ["workspace", "at", "key", "value", "actor"]);
+  assert.deepEqual(entry("settings-remove").flags.map((flag) => flag.name), ["workspace", "at", "key", "actor"]);
+});

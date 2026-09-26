@@ -6,6 +6,7 @@
 // hash as its source is abandoned with nothing left behind.
 
 import "./helpers/device-home.mjs";
+import { standInForAtelier } from "./helpers/workspace-fixture.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
@@ -15,6 +16,9 @@ import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { relocateLibrary } from "../dist/build/packages/core/src/index.js";
+
+// TCRN-CROSS-STORY-484 R4: these tests write settings through the CLI, as Atelier does.
+standInForAtelier();
 
 let second = 0;
 const at = () => {

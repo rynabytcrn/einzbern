@@ -6,6 +6,7 @@
 // Every in-process command runs as an explicit device; between them the process keeps the
 // test's own device directory, never the real one.
 import "./helpers/device-home.mjs";
+import { standInForAtelier } from "./helpers/workspace-fixture.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -17,6 +18,9 @@ import test from "node:test";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 import { LEGACY_FIXTURE_EXPECTED, restoreLegacyFixture } from "./helpers/legacy-fixture.mjs";
+
+// TCRN-CROSS-STORY-484 R4: these tests write settings through the CLI, as Atelier does.
+standInForAtelier();
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const cliPath = join(repositoryRoot, "scripts/einzbern.mjs");

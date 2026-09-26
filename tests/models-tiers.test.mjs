@@ -8,6 +8,7 @@
 // are in the catalog with their defaults.
 
 import { testDeviceHome } from "./helpers/device-home.mjs";
+import { standInForAtelier } from "./helpers/workspace-fixture.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -37,6 +38,9 @@ import {
 import { RENAMED_SETTING_KEYS, RETIRED_SETTING_KEYS } from "../dist/build/packages/core/src/settings.js";
 import { withWorkspacePerfInstrumentation } from "../dist/build/packages/core/src/workspace-perf-instrumentation.js";
 import { restoreLegacyFixture } from "./helpers/legacy-fixture.mjs";
+
+// TCRN-CROSS-STORY-484 R4: these tests write settings through the CLI, as Atelier does.
+standInForAtelier();
 
 let second = 0;
 const at = () => {

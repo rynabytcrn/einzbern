@@ -5,11 +5,11 @@
   "sourceFiles": [
     {
       "path": "tests/fixtures/retrieval-eval/work-compact.json",
-      "sha256": "50aaa302464c4568f48702a09816a1aba7ec9e514a29a34663dfee4e45053122"
+      "sha256": "ed68f27f439a4a4983eb6326ae62c74aec44e547c95892efa2c9f395110d17d9"
     },
     {
       "path": "tests/fixtures/retrieval-eval/minutes-compact.json",
-      "sha256": "e6631912e5826932b4417d551d4d2eaf739ffdd76547d860e69aa6ece673a0d5"
+      "sha256": "f209e1d750357a53268a14fc9b112dbd8d0e9df20897935e4760be2a3bb57d36"
     }
   ],
   "labelPolicy": {
@@ -27,7 +27,7 @@
         "kind": "Incident",
         "status": "done",
         "scopeDigest": "4f6e21231047e4a08621d65d5b03b5fb2994326f4c2f957cb5a2fb9f1316a7a6",
-        "sourceRecordDigest": "2b714bb78b477d94c6f9ac60beb5aefa4210fed9c5578d1ab10382d724397756",
+        "sourceRecordDigest": "db1891c134d112596bcbb8be0513380e5fd05263b5a4f33cb7a37eb7ca34ebd6",
         "associatedMinutesDigest": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
       },
       "prompt": "111 条判据里 78 条没有红腿，且没有一道门要求判据必须带红腿。",
@@ -46,7 +46,7 @@
         "kind": "Incident",
         "status": "done",
         "scopeDigest": "35525f36d8d636df58940c3cdc41f466cb4958c51f071822a2dc3b2c56cb27ea",
-        "sourceRecordDigest": "1a6a7c3a8485f496c1b9a1f718bff160a87d7aaa67673c09bda8c0fa674736cc",
+        "sourceRecordDigest": "5bddf4054a51afa108f5c7415aa1019ea4c4c5e098c60d7075c4492f4929e3d9",
         "associatedMinutesDigest": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
       },
       "prompt": "八个活分区全部停留在 storageVersion 1，字节滚动在活分区上从未生效；段上限 16 MiB 大于任一分区的事件总量。",
@@ -63,9 +63,9 @@
         "workId": "work:271d60f37f2045d7656e7b7a",
         "externalKey": "TCRN-CROSS-INC-274",
         "kind": "Incident",
-        "status": "active",
-        "scopeDigest": "3e220ddafdd58e3d17168ccd915ccda0532d6f8db63f7994d238a6d78feb5bbd",
-        "sourceRecordDigest": "0b59161634db2c589ed764afc9c4637c475d97dadc59df7a4d9cb62ebd8db388",
+        "status": "done",
+        "scopeDigest": "b11cedba2d95bf2b349e6cc8e4ff686db307c31e790993891518cbb43c493a5a",
+        "sourceRecordDigest": "3897454bc4f29b228d53787ca8a9897e339d79793946649720d8c47cc7fefb2f",
         "associatedMinutesDigest": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
       },
       "prompt": "【现象与证据】GitHub Actions 的 `P1 verification` 工作流在 main 上已连续红 12 天。最后一次绿是 `43b995d`（2026-08-23）；其后三次推送全红，三次失败签名一致。",
@@ -84,7 +84,7 @@
         "kind": "Incident",
         "status": "done",
         "scopeDigest": "32e7c6000d7ae8a8adc0a106def41dc0af32a6b032b98d468cc7227ff263b09a",
-        "sourceRecordDigest": "2ccbf7f74ae7cf503e699a0817e57f0ce36c34e7e3c9f1487236330912542357",
+        "sourceRecordDigest": "d8c8c9f1e8c34c57f180ee1a54b6bdce2b987fc4e9670ba9b5f2c2f42d715d3d",
         "associatedMinutesDigest": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
       },
       "prompt": "closeout-verify.mjs 存在但未接进任何门；仪式成本没有任何度量。",
@@ -103,7 +103,7 @@
         "kind": "Incident",
         "status": "planned",
         "scopeDigest": "1415984179f8f2e0dbd2a26a8b39e97b0b584f27b4436bb510e89e6a9909a137",
-        "sourceRecordDigest": "04a53782d21b624ca98383454b36b3bba5fefff07d643a13f6baa24445301f79",
+        "sourceRecordDigest": "05bfd8188c957e81637953830350d0131f078055d9e516373d4875e5e1f2d4aa",
         "associatedMinutesDigest": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
       },
       "prompt": "【现象与证据】[workflow-home] 下有四份安装标记，其中两份从不被版本核对。",
@@ -122,7 +122,7 @@
         "kind": "Incident",
         "status": "planned",
         "scopeDigest": "ff097b3532582f44d6778a1047d2703c4e7a26a6489c538ccdd8a405413e799d",
-        "sourceRecordDigest": "156621f7f3cd448549d9957339eb79881b886442ae4b5c42fede920053a7141e",
+        "sourceRecordDigest": "08b55d48f168f15062dd3fe695219044877c8850650ca7fcb7235df7faa54a0a",
         "associatedMinutesDigest": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
       },
       "prompt": "【现象】TCRN-CROSS-INC-275 移除 PostgreSQL 后端后，两处只在 storage=\"pg\" 时才进入的分支变为不可达，仍留在源码中。",
@@ -141,7 +141,7 @@
         "kind": "Incident",
         "status": "done",
         "scopeDigest": "bb360df0ac6304c2ec43799386369555a3d103c626a3f0f85f7fa226b770a5da",
-        "sourceRecordDigest": "2c52dbc993144edc3a991090349f1c4765fd1aae931009cd937bbd23fe8ce8dc",
+        "sourceRecordDigest": "ff1105590f1cf0c012083383f50b9575fc3d343626f0a7d819c286115968fe2e",
         "associatedMinutesDigest": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
       },
       "prompt": "【现象与证据】work-annotate 只改 --title 或 --labels 而不改任何 advisory 字段时，写入返回完整收据 WORKSPACE_COMMAND_COMPLETED，此后工作区读取均为 WORKSPACE_EVENT_CORRUPT。",
@@ -160,7 +160,7 @@
         "kind": "Incident",
         "status": "done",
         "scopeDigest": "b4f3f4240ab6733cc209121e903760f0f0ed58ac5d4a671871d9c6a03d1ea40e",
-        "sourceRecordDigest": "1c2223136b4eb74a5dbbf673a830df62348eaf3306ea83b565dfff1a14500c0a",
+        "sourceRecordDigest": "32eb9edb65e767cc0e5ed49ed23d9d71d5aba47d1fdd1038717e721c5a2ff387",
         "associatedMinutesDigest": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
       },
       "prompt": "AGENTS.md 第零节规则 7 的 400 字上限没有推导依据，与规则 3 职能重叠。",
@@ -179,7 +179,7 @@
         "kind": "Incident",
         "status": "done",
         "scopeDigest": "7dd408ebb4f76e54d144c8a4b1068894aeb91e75e2f65dd90a7e1620dae18f8c",
-        "sourceRecordDigest": "987aa7feae456a7ea497fde80675a62895dcbd47a06b5ae2b0291efa91217334",
+        "sourceRecordDigest": "c5333bd52b44bda78add7ae9764d455a14965d4bf96879eade52babcf86d0cd0",
         "associatedMinutesDigest": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
       },
       "prompt": "INIT049-INC-266 判据在九门里恒绿，GWT3 的 stdout 断言恒真，红腿证明的不是它声称的行为。",
@@ -198,7 +198,7 @@
         "kind": "Incident",
         "status": "done",
         "scopeDigest": "09a703c6a182b56df33c1fa5eb1eb1d38b828d1b21fd1425e277521df2d79b85",
-        "sourceRecordDigest": "24c1818c80a9d7f9074e424a2d447cda705168ba87093f17396d2c1814074b77",
+        "sourceRecordDigest": "2ed17cfc372f93c9f47c19f0340a346ed5d0dad2926b01184bb4e5fc5f1c1022",
         "associatedMinutesDigest": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
       },
       "prompt": "install-manifest 仍要求两份已停用备份机制的收据，归档清理删除它们后 platform-doctor 退出码变为 1。",
@@ -215,9 +215,9 @@
         "workId": "work:880989c4a87338c8294b7697",
         "externalKey": "TCRN-CROSS-INC-275",
         "kind": "Incident",
-        "status": "active",
+        "status": "done",
         "scopeDigest": "b4378cc76866e2541c316fe36c35d53836a22f078bd38182ead6ffd8572cbdea",
-        "sourceRecordDigest": "b43932e700aeabfe51d851a7d369dd06ecb7e0bd84bccf424a8519efc2bec0a9",
+        "sourceRecordDigest": "752cbe0ecf3e48baec8e7c1ffd531066fc20b184b07697f150a57396e1be27f3",
         "associatedMinutesDigest": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
       },
       "prompt": "【本单前提已被 Owner 推翻并重写】PG 后端在本产品中不存在，测试其等价性不具价值。",
@@ -236,7 +236,7 @@
         "kind": "Incident",
         "status": "done",
         "scopeDigest": "b21f9b3e512e23f44fb7834c63c3d0f02fd52646263dceabd099816e26e50606",
-        "sourceRecordDigest": "4ee04b52d850c9aa8db4c474c9c4c2ead936915bf211dfe1e8f6adc7dfb49906",
+        "sourceRecordDigest": "c7f0db26285bd44c85c8fc7ea6622fb42498148eda8d943ec78468ae448a697b",
         "associatedMinutesDigest": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
       },
       "prompt": "Story 的验收判据与 verification-map 之间没有机器链接，九门全绿不证明五条 GWT。",
@@ -255,7 +255,7 @@
         "kind": "Incident",
         "status": "done",
         "scopeDigest": "e2486f020f9aa6b60ecf65c6f09eebbc6a3b45d6d8c875fab1d4e805037d7339",
-        "sourceRecordDigest": "538087c7652c6a57418d41d6bd384e24e709683d2595d7a65d40c1ad8465d6ed",
+        "sourceRecordDigest": "051d00165eaa2a18c9beb6ba7bdc15ef8fa9ddc368dcbe6a1404b8b1b55cd4ff",
         "associatedMinutesDigest": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
       },
       "prompt": "【现象与证据】platform-doctor 的 engineAlignment 腿判绿，installed 与 worktree 版本一致但命令目录不同。",
@@ -274,7 +274,7 @@
         "kind": "Incident",
         "status": "planned",
         "scopeDigest": "adcf4cb415cc711b19e303cc85930e66d95b124a9b7f2ed30cfeb70a7e663da0",
-        "sourceRecordDigest": "567c78f95166b47c71e293650e1c2492938eacafc51f169c00a2500239434aa9",
+        "sourceRecordDigest": "1fc393683acda0993347d5606a361069f41c16f232d307c1e0d55d27413218b6",
         "associatedMinutesDigest": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
       },
       "prompt": "【现象与证据】GitHub 回报 4 vulnerabilities，而本地 vulnerabilities 门判绿。",
@@ -293,7 +293,7 @@
         "kind": "Incident",
         "status": "done",
         "scopeDigest": "43069af1a9b65251bc0dc7d333840a9ebdf114ba3b45320e1463e296ef9c9472",
-        "sourceRecordDigest": "43d2b0d771ae91c4e54c7155a44195c6902c0524c81333d1007e7889b459317e",
+        "sourceRecordDigest": "a0faa642ed80b176a5ff08fb7e9af53138bac9aaf2145385585a2d8193342486",
         "associatedMinutesDigest": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
       },
       "prompt": "push-gate 阶段计时的 13 个行号全部失准，代码与测试各存一份同样错的副本。",
@@ -312,7 +312,7 @@
         "kind": "Incident",
         "status": "done",
         "scopeDigest": "79c8a33b4276c6d6732dbd3f660977f35f0fca8c310b92a6955a457aa2bc8001",
-        "sourceRecordDigest": "bec11a653f4af7750dc1cb30e52138ce1f7acd3b454c0503253a967a2a295eaf",
+        "sourceRecordDigest": "56f3a6351c257496b43d056d2340bcde71a704962b64871e8d8c76d8178b4b2d",
         "associatedMinutesDigest": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
       },
       "prompt": "派工书模板缺两条有效的自主运行与范围克制指令。",
@@ -331,7 +331,7 @@
         "kind": "Incident",
         "status": "planned",
         "scopeDigest": "9cdc067984fae243a1a2a3f340c640d7866f6cc7bb35abf6396574e23154d099",
-        "sourceRecordDigest": "58d5d52c77118b3f6dcbf9ca70755fd19d475638b5debc31cc033ae3034f8363",
+        "sourceRecordDigest": "b34f9b8e7b1abf12c39b8c0d8c1c140e74e67d93dcb48fb8aa5735a39d36b8d5",
         "associatedMinutesDigest": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
       },
       "prompt": "【现象】verification-map.yaml 的 61 条 redLeg.test 命名了树里不存在的测试，56 条是占位串。",
@@ -350,7 +350,7 @@
         "kind": "Incident",
         "status": "done",
         "scopeDigest": "cf77d404d62d1c7f13da72004222d529bffc56f2ea4a98320921437df6387095",
-        "sourceRecordDigest": "47a49eef61b3a7d030f04e513769fe8a4363902a30276db7434df3887a4a559f",
+        "sourceRecordDigest": "fd9667302f6034e580c7c4b89c3945eaccbc5af433593d7b5e269edb1f239af0",
         "associatedMinutesDigest": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
       },
       "prompt": "快照落地后读取耗时仍与事件数线性相关，斜率只减半。",
@@ -369,7 +369,7 @@
         "kind": "Incident",
         "status": "planned",
         "scopeDigest": "5de947997bdca7be84eb13784cb2e7118d248d9a20ca0c49b3b42580c300f73a",
-        "sourceRecordDigest": "19cc3bba610b68d39665d6acf08b201f92cd2977ef79c55daf3154576fa9cf2f",
+        "sourceRecordDigest": "84e43ba657d839a648443c236d0c3b9f39a153618287154d2291457a71337c2a",
         "associatedMinutesDigest": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
       },
       "prompt": "【现象与证据】五份 README 的 proven claims 徽章与正文数字不一致。",
@@ -388,7 +388,7 @@
         "kind": "Incident",
         "status": "done",
         "scopeDigest": "e034090dacd6bf8eac70268b5e564e5ae4c1e29d2188fc128d2792c37b2e7759",
-        "sourceRecordDigest": "7c63fea9b481e5942c9fc25c0e798c2e5cc61fb302762208b761eab07991ce0f",
+        "sourceRecordDigest": "827218a8cd5f8766d15dea81f3581346c24244294c6e5754308e28e7cb648c4d",
         "associatedMinutesDigest": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570"
       },
       "prompt": "engine-release 门在 INIT-049 后由 463 秒涨到 569 秒，其中 101 秒不落在任何一个子门上。",
@@ -399,5 +399,10 @@
         "basis": "manual identity label from frozen Incident source"
       }
     }
-  ]
+  ],
+  "rebound": {
+    "by": "TCRN-CROSS-SUB-303",
+    "corpus": "scripts/retrieval-eval-record.mjs",
+    "note": "The source digests are re-bound to the re-recorded corpus (each record now carries its goal, body and parent titles, and its scope is the excerpt the index reads). Prompts, labels and the twenty source identities are unchanged."
+  }
 }

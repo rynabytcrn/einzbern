@@ -1,381 +1,878 @@
-[
-  {
-    "id": "knowledge:155621a1841c8f3e26996dd7",
-    "subject": "knowledge 写动词的 CAS 用 store marker 版本,不是链版本",
-    "summary": "引擎 knowledge-create/promote/retire/rebase/reverify 全部以 store.json 的 version 做 CAS;仪式按链版本供给会 KNOWLEDGE_CAS_MISMATCH。",
-    "snippet": "knowledge-marker-cas:knowledge 写动词 CAS 用 marker。",
-    "tags": [
-      "knowledge",
-      "lesson"
-    ]
-  },
-  {
-    "id": "knowledge:29695027d5dd0d3d894c1827",
-    "subject": "hook 注册必须用 ${CLAUDE_PROJECT_DIR} 形态,禁止裸相对路径",
-    "summary": "INC-040 死因:注册用裸相对路径致 hook 从未启动;活性门须执行注册字符串本身,不起进程冒充。",
-    "snippet": "hook-cwd-trap:注册用 ${CLAUDE_PROJECT_DIR},活性门执行注册字符串。",
-    "tags": [
-      "hook",
-      "lesson"
-    ]
-  },
-  {
-    "id": "knowledge:2c9f238fa7b0b4eb3788b875",
-    "subject": "远程 argv 经 ssh 重新拼接,必须 shellQuote",
-    "summary": "ssh 把远程 argv 以空格重拼并交给登录 shell,含空格/括号的值会成为远程语法错误;一律 shellQuote。",
-    "snippet": "ssh-shellquote:远程参数一律引号包裹。",
-    "tags": [
-      "lesson",
-      "ssh"
-    ]
-  },
-  {
-    "id": "knowledge:3b1352d143fd545a9e540c96",
-    "subject": "SSH 直驱只两类 break-glass:主机 MCP 不可达 fallback 与按设计绕开服务层的逐字节比对",
-    "summary": "D1/D9 白名单:两类残余适用场景,每条带日期理由;白名单被 doc-topology 与 ssh-write-observer 共同消费。",
-    "snippet": "ssh-breakglass-two-classes:只两类白名单。",
-    "tags": [
-      "breakglass",
-      "lesson",
-      "ssh"
-    ]
-  },
-  {
-    "id": "knowledge:3b271125c5571bff5f1185fd",
-    "subject": "Harness constraints convention index",
-    "summary": "Explicit-only index card for platform-docs/harness-constraint-convention.md; retrieve the source document when this topic is needed.",
-    "snippet": "Read platform-docs/harness-constraint-convention.md on demand.",
-    "tags": [
-      "convention",
-      "knowledge",
-      "reference"
-    ]
-  },
-  {
-    "id": "knowledge:3e5c4618c41ee9da181a2cf3",
-    "subject": "探针身份也是量具:匿名 404≠不存在",
-    "summary": "对存在性/可见性下结论前先问「我用什么身份在问」;有登录态先问认证面。",
-    "snippet": "probe-identity:先问自己用什么身份在问。",
-    "tags": [
-      "lesson",
-      "probe"
-    ]
-  },
-  {
-    "id": "knowledge:454ad6bdab4034a83610c87c",
-    "subject": "The short commit-citation form is ambiguous for two record keys in five",
-    "summary": "Partitions number independently, so INIT-009 names a different record in each. The convention requires the full external key; the short form is four times more common and cannot identify a chain.",
-    "snippet": "Measured 2026-08-19 over 609 completed cross-project records: 11.2 percent cite the full key, 43.5 percent the short form, 56.5 percent nothing. 242 of 609 short forms collide across partitions.",
-    "tags": [
-      "convention",
-      "measurement",
-      "traceability"
-    ]
-  },
-  {
-    "id": "knowledge:4b037630b2ef7dc9774472be",
-    "subject": "上下文将满不是收尾的理由",
-    "summary": "压缩自动发生;停下的正当理由只有实质阻塞(owner_intent_required/对外发布/硬阻断),不是资源余量。",
-    "snippet": "context-limit-is-not-a-reason-to-stop:停只因实质阻塞。",
-    "tags": [
-      "lesson",
-      "run"
-    ]
-  },
-  {
-    "id": "knowledge:552715b36d8a797405918762",
-    "subject": "guard-check writes its injected mutations into the live working tree while it runs",
-    "summary": "Any concurrent gate run or file edit during guard-check reads a deliberately broken tree, and edits made during the run invalidate its verdict.",
-    "snippet": "Running verify-portal alongside guard-check produced six false red portal cases on 2026-08-19. Treat it as exclusive, wait on the pid, and confirm the mutation is restored before continuing.",
-    "tags": [
-      "concurrency",
-      "gates",
-      "trap"
-    ]
-  },
-  {
-    "id": "knowledge:55f3f9876d5b1a73626e9b72",
-    "subject": "门的判定必须宿主无关",
-    "summary": "一个输入若不在所有会运行该门的宿主上在场,就不能进判决;跨仓那半降 observation 或上移到看得见两仓的层",
-    "snippet": "判定按宿主而异即选错参照物;拆问题,不列豁免名册",
-    "tags": [
-      "ci",
-      "gate-reference",
-      "host-independence"
-    ]
-  },
-  {
-    "id": "knowledge:57638fb69914a452120e6299",
-    "subject": "Four wrong readings in two days all came from asking a narrower question than the one being answered",
-    "summary": "Each measurement used an instrument that could only return the answer already expected. The tell is that the probe's scope is narrower than the claim it is used to support.",
-    "snippet": "Empty knowledge store read off a search with no matching card; a dropped scope field read off the wrong receipt path; 11.2 percent traceability measured on one of two citation spellings; a load-sensitive test declared a flake from two isolated runs.",
-    "tags": [
-      "measurement",
-      "method",
-      "trap"
-    ]
-  },
-  {
-    "id": "knowledge:577d39cec3453bb5087bb83d",
-    "subject": "Projection freshness convention index",
-    "summary": "Explicit-only index card for platform-docs/projection-freshness-convention.md; retrieve the source document when this topic is needed.",
-    "snippet": "Read platform-docs/projection-freshness-convention.md on demand.",
-    "tags": [
-      "convention",
-      "knowledge",
-      "reference"
-    ]
-  },
-  {
-    "id": "knowledge:65d088d532ec08c9bd848351",
-    "subject": "文档里的举例就是断言",
-    "summary": "公约点名一个实例等于对它的当下状态下了无人维护的判断;举例用类别,点名实例须写「截至某日实测」并给复核命令。",
-    "snippet": "example-in-convention-is-an-assertion:举例用类别,点名实例带日期与复核命令。",
-    "tags": [
-      "documentation",
-      "lesson"
-    ]
-  },
-  {
-    "id": "knowledge:65df78943c31f83f86316b51",
-    "subject": "Deliberation adoption convention index",
-    "summary": "Explicit-only index card for platform-docs/deliberation-adoption-convention.md; retrieve the source document when this topic is needed.",
-    "snippet": "Read platform-docs/deliberation-adoption-convention.md on demand.",
-    "tags": [
-      "convention",
-      "knowledge",
-      "reference"
-    ]
-  },
-  {
-    "id": "knowledge:6d696a70159180ae8551773e",
-    "subject": "树里对不代表记录对(INC-039)",
-    "summary": "声明块在工作树对、未提交,HEAD 仍错;committed-claims 判据要求已提交声明块与工作树一致。",
-    "snippet": "committed-claims:声明块须已提交,不只在工作树。",
-    "tags": [
-      "gate",
-      "lesson"
-    ]
-  },
-  {
-    "id": "knowledge:74dc3fe4e1e112100b2acc8b",
-    "subject": "A knowledge read refuses after any chain write unless asked to tolerate a trailing store",
-    "summary": "The store's marker must equal the chain head, and every chain event breaks that. Pass allow-trailing true on the five metadata-first read verbs; the answer then carries both heads.",
-    "snippet": "One work-create took all six partitions' knowledge reads dark until a hand-run rebase. Reads accept --allow-trailing true since TCRN-CROSS-INC-226; writes, validate and rebase are not exempt.",
-    "tags": [
-      "knowledge",
-      "retrieval",
-      "trap"
-    ]
-  },
-  {
-    "id": "knowledge:7c22045778b85f5124f5fdc3",
-    "subject": "每次链写都拉开知识 store 标记差距,写路径必须自动 rebase",
-    "summary": "知识 store 是 disposable 物化索引,每次链写使 eventHighWaterDigest 落后;仪式真写后自动 rebase 保持读面可用。",
-    "snippet": "marker-rebase-discipline:每写必 rebase。",
-    "tags": [
-      "knowledge",
-      "lesson",
-      "marker"
-    ]
-  },
-  {
-    "id": "knowledge:7dba2d2b2ba17eee44f25eb5",
-    "subject": "凭据不是实现的前置",
-    "summary": "凭据是运行期配置;需凭据的步骤单列,其余本地可完成可测,不让凭据阻塞实现。",
-    "snippet": "credentials-not-implementation-blocker:凭据单列,其余本地可完成。",
-    "tags": [
-      "delivery",
-      "lesson"
-    ]
-  },
-  {
-    "id": "knowledge:7e06efd0a5c5cf92b6c7840b",
-    "subject": "报缺陷前先怀疑自己的探针",
-    "summary": "平台累计十二次误报的共同根因是探针只看一侧或探针本身有误;报缺陷前先用已知好的输入校准探针。",
-    "snippet": "probe-before-defect:先校准探针,再报缺陷。",
-    "tags": [
-      "lesson",
-      "probe"
-    ]
-  },
-  {
-    "id": "knowledge:7ecc5fd6c5af3f1ee8e0c5b4",
-    "subject": "证据不得携带宿主路径(INC-037/042)",
-    "summary": "仓内证据含本机 home 路径会让公开仓付出 93 提交改写代价;证据落盘必须 scrub,门扫 tracked+evidence 树。",
-    "snippet": "evidence-hygiene:证据 scrub 宿主路径,门扫 tracked+evidence。",
-    "tags": [
-      "hygiene",
-      "lesson"
-    ]
-  },
-  {
-    "id": "knowledge:9869aed6d9ebd4d1f1f0d473",
-    "subject": "多代理并发时每个都对,文件最后是错的",
-    "summary": "并发代理各自局部正确,顺序写文件会互相覆盖;验证须重跑注释里的 MEASURED 连前提。",
-    "snippet": "agents-right-in-sequence-file-wrong:并发验证须重跑全部前提。",
-    "tags": [
-      "lesson",
-      "multi-agent"
-    ]
-  },
-  {
-    "id": "knowledge:9ae8fa0707beb969c5b71f9b",
-    "subject": "Delivery cadence convention index",
-    "summary": "Explicit-only index card for platform-docs/delivery-cadence-convention.md; retrieve the source document when this topic is needed.",
-    "snippet": "Read platform-docs/delivery-cadence-convention.md on demand.",
-    "tags": [
-      "convention",
-      "knowledge",
-      "reference"
-    ]
-  },
-  {
-    "id": "knowledge:9fd99bab02557a7bedaf6639",
-    "subject": "本地全绿不等于 CI 绿",
-    "summary": "本地 455/0 全绿后 CI 仍连红两次(计数式覆盖门与探针名册未同步);push 后须 gh run watch,评审 prompt 点名 CI 脚本。",
-    "snippet": "local-green-not-ci-green:push 后看 CI,不只信本地。",
-    "tags": [
-      "ci",
-      "lesson"
-    ]
-  },
-  {
-    "id": "knowledge:a9f4d10d7d8b6305bd88ec9e",
-    "subject": "Gate reference stability convention index",
-    "summary": "Explicit-only index card for platform-docs/gate-reference-stability-convention.md; retrieve the source document when this topic is needed.",
-    "snippet": "Read platform-docs/gate-reference-stability-convention.md on demand.",
-    "tags": [
-      "convention",
-      "knowledge",
-      "reference"
-    ]
-  },
-  {
-    "id": "knowledge:acee405aaffa9bba408c4e8e",
-    "subject": "Adversarial review convention index",
-    "summary": "Explicit-only index card for platform-docs/adversarial-review-convention.md; retrieve the source document when this topic is needed.",
-    "snippet": "Read platform-docs/adversarial-review-convention.md on demand.",
-    "tags": [
-      "convention",
-      "knowledge",
-      "reference"
-    ]
-  },
-  {
-    "id": "knowledge:ad9a349a830af2d64e235e03",
-    "subject": "On the knowledge verbs, expected-version is the store's own version rather than the chain's",
-    "summary": "Every other verb reads that flag as the chain version. The knowledge verbs read it as the knowledge store's version, and nothing in the catalog distinguishes the two meanings.",
-    "snippet": "Passing chain version 4295 returned KNOWLEDGE_CAS_MISMATCH 4295:160 -- supplied first, expected second. Read the refusal rather than guessing a second time.",
-    "tags": [
-      "cas",
-      "knowledge",
-      "trap"
-    ]
-  },
-  {
-    "id": "knowledge:b303e52d7a90316055033f41",
-    "subject": "门的判据须在每个会被评估的世界可满足",
-    "summary": "联合不可满足的门永不绿;合并后那次 verify 不冗余。",
-    "snippet": "gate-must-be-satisfiable-everywhere:判据在每个评估世界都须可满足。",
-    "tags": [
-      "gate",
-      "lesson"
-    ]
-  },
-  {
-    "id": "knowledge:bf8cb0b8eedd64205e2dc894",
-    "subject": "没人读回来的写不算已证",
-    "summary": "仪式载荷必须至少一条回读,且回读按全值比较,不是「读成功」。",
-    "snippet": "ceremony-readback:写必带回读,按全值比较。",
-    "tags": [
-      "ceremony",
-      "lesson"
-    ]
-  },
-  {
-    "id": "knowledge:c496d068b76a3781e71273b3",
-    "subject": "停顿预算只三类:owner_intent_required/对外发布/无裁定不可逆",
-    "summary": "执行期必停只有三类;其余继续。",
-    "snippet": "stop-budget-three-classes:只三类必停。",
-    "tags": [
-      "lesson",
-      "stop-budget"
-    ]
-  },
-  {
-    "id": "knowledge:c595469a571c39189d1d0b14",
-    "subject": "Sourcing and vetting convention index",
-    "summary": "Explicit-only index card for platform-docs/sourcing-and-vetting-convention.md; retrieve the source document when this topic is needed.",
-    "snippet": "Read platform-docs/sourcing-and-vetting-convention.md on demand.",
-    "tags": [
-      "convention",
-      "knowledge",
-      "reference"
-    ]
-  },
-  {
-    "id": "knowledge:ce1d48584bf43d477a258bb4",
-    "subject": "陈旧索引比 grep 更害:索引必带新鲜度前置",
-    "summary": "索引类工具用前先跑 status 确认晚于末次提交;陈旧索引快且自信地撒谎。",
-    "snippet": "index-freshness:用索引前先验新鲜度。",
-    "tags": [
-      "index",
-      "lesson"
-    ]
-  },
-  {
-    "id": "knowledge:d62793d03ff311dcb59e173b",
-    "subject": "Direction and tracks convention index",
-    "summary": "Explicit-only index card for platform-docs/direction-and-tracks-convention.md; retrieve the source document when this topic is needed.",
-    "snippet": "Read platform-docs/direction-and-tracks-convention.md on demand.",
-    "tags": [
-      "convention",
-      "knowledge",
-      "reference"
-    ]
-  },
-  {
-    "id": "knowledge:d98df0d05a7eaacbeb0d4964",
-    "subject": "work-list 与 work-show 的投影不带 advisory",
-    "summary": "判 Story scope 合规必须读链上事件的 advisory:scope;投影不带 extensions,拿它当权威会把合规单判成红",
-    "snippet": "投影不带 advisory:scope;判合规读链,不读 work-list",
-    "tags": [
-      "advisory-scope",
-      "projection",
-      "story-compliance"
-    ]
-  },
-  {
-    "id": "knowledge:e59f6b3157fe659a36bbeab9",
-    "subject": "Dependency direction and integration convention index",
-    "summary": "Explicit-only index card for platform-docs/dependency-direction-and-integration-convention.md; retrieve the source document when this topic is needed.",
-    "snippet": "Read platform-docs/dependency-direction-and-integration-convention.md on demand.",
-    "tags": [
-      "convention",
-      "knowledge",
-      "reference"
-    ]
-  },
-  {
-    "id": "knowledge:ed4e6fbb70956a32de04042c",
-    "subject": "判据两侧必须能够不同",
-    "summary": "恒真门是平台三度付学费的缺陷形态;写完门先真做一次「什么会让它变红」。",
-    "snippet": "predicate-both-sides:写完门先问什么会让它红,并真做一次。",
-    "tags": [
-      "gate",
-      "lesson"
-    ]
-  },
-  {
-    "id": "knowledge:f1c0ad36c244d04299af8c37",
-    "subject": "Dispatch readiness convention index",
-    "summary": "Explicit-only index card for platform-docs/dispatch-readiness-convention.md; retrieve the source document when this topic is needed.",
-    "snippet": "Read platform-docs/dispatch-readiness-convention.md on demand.",
-    "tags": [
-      "convention",
-      "knowledge",
-      "reference"
-    ]
-  }
-]
+{
+  "schemaVersion": "einzbern.retrieval-eval-cards.v1",
+  "strategy": "recall-inputs",
+  "total": 66,
+  "records": [
+    {
+      "id": "knowledge:03cfea7f88ac8dd798fd6ced",
+      "externalKey": "KB-20260908-FASTLANEREFUSESMISMATCHEDWORKITEM-L",
+      "subject": "快道的资格自检会拒绝已 done 或 scope 不符的工单",
+      "summary": "把新工作挂到一张已完成、内容无关的记录上，落地代理会零落地报 INELIGIBLE；派单前先核对 id 的 scope 覆盖与状态。",
+      "snippet": "派单前核对工单 id 的 scope 是否覆盖这件事、状态是否还可施工；不符会被资格自检零落地拒绝。",
+      "tags": [
+        "dispatch",
+        "init-051",
+        "lesson",
+        "workflow"
+      ],
+      "expansions": "工单已经 done 了还能派新工作吗\n派单前需要核对工单 id 的哪些字段\n落地代理报 INELIGIBLE 是什么原因"
+    },
+    {
+      "id": "knowledge:06b03c05de30bf5db8249e8b",
+      "externalKey": "TCRN-INIT019-C09-L",
+      "subject": "多代理并发时每个都对,文件最后是错的",
+      "summary": "并发代理各自局部正确,顺序写文件会互相覆盖;验证须重跑注释里的 MEASURED 连前提。",
+      "snippet": "agents-right-in-sequence-file-wrong:并发验证须重跑全部前提。",
+      "tags": [
+        "lesson",
+        "multi-agent"
+      ],
+      "expansions": "多个代理同时改状态文件会不会互相覆盖\n并发写完之后要不要重新验证\n验证时要不要重跑注释里提到的前提"
+    },
+    {
+      "id": "knowledge:1178ed4b90edb5a1bb673e2f",
+      "externalKey": "KB-20260908-OWNERSTORYNEEDSDECIDEDBYBACKLINK-L",
+      "subject": "判定人为 Owner 的 Story 转 done 前必须挂 decidedBy 纪要反链",
+      "summary": "引擎强制：Owner 判定的 Story 直接转 done 报 WORKSPACE_OWNER_ACCEPTANCE_REQUIRED，须先 work-annotate --decided-by 挂纪要反链；Epic 记录不受此约束。",
+      "snippet": "Owner 判定的 Story 转 done 前须 work-annotate --decided-by <纪要>，否则 WORKSPACE_OWNER_ACCEPTANCE_REQUIRED。",
+      "tags": [
+        "acceptance",
+        "chain",
+        "engine",
+        "init-051",
+        "lesson"
+      ],
+      "expansions": "Owner 判定的 Story 怎么转 done\nWORKSPACE_OWNER_ACCEPTANCE_REQUIRED 怎么解决\nwork-annotate --decided-by 什么时候必须用"
+    },
+    {
+      "id": "knowledge:1b0a49afb351ba57542b3c1d",
+      "externalKey": "TCRN-INIT019-C19-L",
+      "subject": "SSH 直驱只两类 break-glass:主机 MCP 不可达 fallback 与按设计绕开服务层的逐字节比对",
+      "summary": "D1/D9 白名单:两类残余适用场景,每条带日期理由;白名单被 doc-topology 与 ssh-write-observer 共同消费。",
+      "snippet": "ssh-breakglass-two-classes:只两类白名单。",
+      "tags": [
+        "breakglass",
+        "lesson",
+        "ssh"
+      ],
+      "expansions": "SSH 白名单一共有哪两类场景\nssh-write-observer 消费的白名单在哪\n什么情况下允许直接 ssh 上去改"
+    },
+    {
+      "id": "knowledge:2321f7a36c4301640d1ac705",
+      "externalKey": "KB-20260906-SOURCEALLOWLISTMIRROR-L",
+      "subject": "新增或删除被跟踪文件必须同步 source-allowlist 并重生成证明工件",
+      "summary": "引擎仓增删被跟踪文件后不改 scripts/policy/source-allowlist.json，pnpm test 整体红于 PROOF_ARTIFACT_UNAPPROVED_SOURCE。同一提交改白名单，再 node scripts/generate-proof-artifacts.mjs。",
+      "snippet": "增删文件 → 改 source-allowlist.json → generate-proof-artifacts.mjs，否则 PROOF_ARTIFACT_UNAPPROVED_SOURCE。",
+      "tags": [
+        "engine",
+        "init-051",
+        "lesson",
+        "proof-artifacts"
+      ],
+      "expansions": "删文件要不要同步改 source-allowlist.json\n改完白名单之后还要跑哪个脚本重生成证明工件\n新增文件后 pnpm test 报 PROOF_ARTIFACT_UNAPPROVED_SOURCE 怎么办"
+    },
+    {
+      "id": "knowledge:29fc0c2d7da00d8560439a63",
+      "externalKey": "KB-GUARD-CHECK-EXCLUSIVE-TREE-L",
+      "subject": "guard-check 运行期间会把注入的变异写进真实工作树",
+      "summary": "guard-check 运行期间，任何并发的门或文件编辑读到的都是被故意改坏的工作树；运行期间做的编辑会使它的判定结果失效。",
+      "snippet": "2026-08-19 verify-portal 与 guard-check 同时跑，产生了六个假红的 portal 用例。把它当独占操作：等它的 PID 结束，并确认变异已经还原后再继续。",
+      "tags": [
+        "concurrency",
+        "gates",
+        "trap"
+      ],
+      "expansions": "guard-check 和 verify-portal 同时跑会怎样\nguard-check 期间编辑文件会不会让判定结果作废\nguard-check 跑的时候能不能顺便跑别的门"
+    },
+    {
+      "id": "knowledge:2a98cfa9c91b6eef9b88734d",
+      "externalKey": "TCRN-INIT047-CONVENTION-08-L",
+      "subject": "harness 约束公约索引卡",
+      "summary": "platform-docs/harness-constraint-convention.md 的仅显式索引卡；这个主题需要用到时，去读源文档。",
+      "snippet": "按需读 platform-docs/harness-constraint-convention.md。",
+      "tags": [
+        "convention",
+        "knowledge",
+        "reference"
+      ],
+      "expansions": "harness 约束的公约文档在哪\nplatform-docs 下 harness 相关的公约文件叫什么\n关于 harness 限制有没有单独的公约文档"
+    },
+    {
+      "id": "knowledge:2e724ae5a3c1c7e5013c6c97",
+      "externalKey": "TCRN-INIT019-C07-L",
+      "subject": "上下文将满不是收尾的理由",
+      "summary": "压缩自动发生;停下的正当理由只有实质阻塞(owner_intent_required/对外发布/硬阻断),不是资源余量。",
+      "snippet": "context-limit-is-not-a-reason-to-stop:停只因实质阻塞。",
+      "tags": [
+        "lesson",
+        "run"
+      ],
+      "expansions": "context 压缩会自动发生吗，要不要提前处理\n上下文快满了是不是应该主动收尾\n什么情况下执行期才允许真的停下来"
+    },
+    {
+      "id": "knowledge:314cdacb18e015fb74448690",
+      "externalKey": "TCRN-INIT019-C12-L",
+      "subject": "knowledge 写动词的 CAS 用 store marker 版本,不是链版本",
+      "summary": "引擎 knowledge-create/promote/retire/rebase/reverify 全部以 store.json 的 version 做 CAS;仪式按链版本供给会 KNOWLEDGE_CAS_MISMATCH。",
+      "snippet": "knowledge-marker-cas:knowledge 写动词 CAS 用 marker。",
+      "tags": [
+        "knowledge",
+        "lesson"
+      ],
+      "expansions": "KNOWLEDGE_CAS_MISMATCH 怎么解决\nknowledge-create、promote、retire 用哪个版本号做 CAS\n传链版本给 knowledge 写动词为什么报 CAS 不匹配"
+    },
+    {
+      "id": "knowledge:3493fdef050b1aadf378436b",
+      "externalKey": "TCRN-INIT047-CONVENTION-06-L",
+      "subject": "方向与轨道公约索引卡",
+      "summary": "platform-docs/direction-and-tracks-convention.md 的仅显式索引卡；这个主题需要用到时，去读源文档。",
+      "snippet": "按需读 platform-docs/direction-and-tracks-convention.md。",
+      "tags": [
+        "convention",
+        "knowledge",
+        "reference"
+      ],
+      "expansions": "direction-and-tracks 公约讲的是什么\n多条工作轨道并行时依据哪份公约\n方向与轨道的公约文档在哪"
+    },
+    {
+      "id": "knowledge:37c5216c4f41525077eb3903",
+      "externalKey": "TCRN-INIT019-C03-L",
+      "subject": "门的判据须在每个会被评估的世界可满足",
+      "summary": "联合不可满足的门永不绿;合并后那次 verify 不冗余。",
+      "snippet": "gate-must-be-satisfiable-everywhere:判据在每个评估世界都须可满足。",
+      "tags": [
+        "gate",
+        "lesson"
+      ],
+      "expansions": "合并环境之后要不要再单独跑一次 verify\n多个环境合并评估门，判据会不会自相矛盾\n联合不可满足的门会有什么后果"
+    },
+    {
+      "id": "knowledge:3ed41655366f66fa2681b4bc",
+      "externalKey": "KB-COMMIT-CITATION-AMBIGUITY-L",
+      "subject": "提交引用的简写形式，五个记录键中有两个存在歧义",
+      "summary": "分区各自独立编号，因此 INIT-009 在每个分区里指向不同的记录。公约要求使用完整的 external key；简写形式的出现频率是完整形式的四倍，却认不出具体指的是哪条链。",
+      "snippet": "2026-08-19 对 609 条已完成的跨项目记录实测：11.2% 引用完整键，43.5% 引用简写形式，56.5% 什么都不引用；609 个简写形式中有 242 个跨分区撞号。",
+      "tags": [
+        "convention",
+        "measurement",
+        "traceability"
+      ],
+      "expansions": "为什么要求写完整的 external key 而不是简写\n提交引用只写短哈希会有什么问题\n简写引用跨分区撞号的概率有多大"
+    },
+    {
+      "id": "knowledge:41428d7a58561be6d8e6d21e",
+      "externalKey": "TCRN-CARD-HOST-INDEPENDENT-VERDICT-L",
+      "subject": "门的判定必须宿主无关",
+      "summary": "一个输入若不在所有会运行该门的宿主上在场,就不能进判决;跨仓那半降 observation 或上移到看得见两仓的层",
+      "snippet": "判定按宿主而异即选错参照物;拆问题,不列豁免名册",
+      "tags": [
+        "ci",
+        "gate-reference",
+        "host-independence"
+      ],
+      "expansions": "判定依据能不能只在某一台宿主上才成立\n同一个门在不同机器上结果不一样怎么处理\n跨仓的那部分判据应该降级还是上移"
+    },
+    {
+      "id": "knowledge:4357de1d2fe67632093082b2",
+      "externalKey": "TCRN-INIT019-C17-L",
+      "subject": "探针身份也是量具:匿名 404≠不存在",
+      "summary": "对存在性/可见性下结论前先问「我用什么身份在问」;有登录态先问认证面。",
+      "snippet": "probe-identity:先问自己用什么身份在问。",
+      "tags": [
+        "lesson",
+        "probe"
+      ],
+      "expansions": "判断可见性之前要先确认什么\n已登录状态下要不要先看认证面\n查一个东西存不存在，匿名访问 404 能不能当结论"
+    },
+    {
+      "id": "knowledge:43e1bd878d459370d434f1c5",
+      "externalKey": "KB-INIT051-SANDBOXGITNEEDSADDDIR-L",
+      "subject": "沙箱里 .git 只读要用 --add-dir 补",
+      "summary": "codex exec 的 -s workspace-write 把克隆的 .git 挂成只读，而引擎的任务运行器在 .git 里开输出会话锁，于是每道门在做任何事之前就以 EPERM 失败。加 --add-dir <克隆>/.git 即解决。",
+      "snippet": "codex-sandbox-add-git:workspace-write 下必须 --add-dir 克隆的 .git。",
+      "tags": [
+        "codex",
+        "harness",
+        "lesson"
+      ],
+      "expansions": "codex exec workspace-write 下门一开始就 EPERM 失败怎么办\ncodex exec 要加什么参数让 .git 可写\n沙箱里为什么在 .git 里写锁会失败"
+    },
+    {
+      "id": "knowledge:4d3fd5234d82b6b0b995a1c2",
+      "externalKey": "KB-INIT051-KNOWLEDGEWRITEVERBCONSTRAINTS-L",
+      "subject": "知识写动词的三条 CLI 约束",
+      "summary": "category 是八值闭枚举；kind 是五值且 reference 强制要 source 与 evidence 链接；写动词的 --expected-version 用 store marker 版本而非链版本，且失败也会推进 marker。",
+      "snippet": "knowledge-write-cli:八值 category、五值 kind、marker 版本且失败也推进。",
+      "tags": [
+        "cli",
+        "knowledge",
+        "lesson"
+      ],
+      "expansions": "kind 是 reference 的卡必须带什么\nknowledge 卡的 category 一共有几个可选值\n写动词失败了 marker 版本会不会往前走"
+    },
+    {
+      "id": "knowledge:4fb0d9605037c5999e49e98a",
+      "externalKey": "KB-20260906-COREPACKPNPMPINNED-L",
+      "subject": "引擎仓的测试与构建必须走 corepack pnpm run",
+      "summary": "裸 pnpm 是 11.7.0，scripts/task.mjs:220 钉 pnpm/11.3.0，裸跑报 RUNTIME_PNPM_VERSION。一律 corepack pnpm run <script>。",
+      "snippet": "corepack pnpm run test；裸 pnpm 撞 RUNTIME_PNPM_VERSION。",
+      "tags": [
+        "engine",
+        "init-051",
+        "lesson",
+        "pnpm"
+      ],
+      "expansions": "RUNTIME_PNPM_VERSION 怎么解决\n为什么引擎仓的构建必须用 corepack pnpm 而不是直接用 pnpm\n裸 pnpm 跑测试会报什么错"
+    },
+    {
+      "id": "knowledge:5346176f59417440259cf826",
+      "externalKey": "TCRN-INIT019-C05-L",
+      "subject": "文档里的举例就是断言",
+      "summary": "公约点名一个实例等于对它的当下状态下了无人维护的判断;举例用类别,点名实例须写「截至某日实测」并给复核命令。",
+      "snippet": "example-in-convention-is-an-assertion:举例用类别,点名实例带日期与复核命令。",
+      "tags": [
+        "documentation",
+        "lesson"
+      ],
+      "expansions": "举例子应该用类别还是用具体实例\n公约里写死一个仓库当例子，以后过时了怎么办\n公约里点名一个具体例子算不算下了判断"
+    },
+    {
+      "id": "knowledge:56c40dc7663aef58ad757108",
+      "externalKey": "TCRN-CARD-READ-ADVISORY-FROM-CHAIN-L",
+      "subject": "work-list 与 work-show 的投影不带 advisory",
+      "summary": "判 Story scope 合规必须读链上事件的 advisory:scope;投影不带 extensions,拿它当权威会把合规单判成红",
+      "snippet": "投影不带 advisory:scope;判合规读链,不读 work-list",
+      "tags": [
+        "advisory-scope",
+        "projection",
+        "story-compliance"
+      ],
+      "expansions": "advisory:scope 要去哪里读\n判断 Story 的 scope 合不合规，能不能只看 work-list\n投影缺字段会不会把合规的单误判成红"
+    },
+    {
+      "id": "knowledge:57e416dfde5c28f9064534c5",
+      "externalKey": "KB-20260906-SURVIVORSIDEBREAKAGE-L",
+      "subject": "删模块时断裂在存活文件里：barrel 类型再导出、task.mjs 读 fixture 字段、相位完备、README 徽章",
+      "summary": "删除类改动的失败模式一致：缺口不在被删文件里而在引用它们的存活文件。packages/core/src/index.ts 的 export type 块会再导出被删符号（TS2305）；scripts/task.mjs 的 verify 函数读 fixture 字段并硬编码计数；verifyMap 的相位完备循环要求每个相位至少一条 claim（VERIFICATION_MAP_PHASE_MISSING）；README 判据徽章必须等于 verify:map 实测（VERIFICATION_MAP_README_COUNTS）；退役脚本名在 scripts、.github、docs 的调用方与被退役脚本的唯一被调者也要查。",
+      "snippet": "删东西先 grep 存活文件：barrel type 导出、task.mjs fixture 字段、相位 claim、徽章、脚本调用方。",
+      "tags": [
+        "deletion",
+        "engine",
+        "init-051",
+        "lesson",
+        "refactor"
+      ],
+      "expansions": "VERIFICATION_MAP_PHASE_MISSING 是什么原因\nbarrel 文件的类型再导出会不会因为删了源文件而报错\n删一个模块之后要检查哪些存活文件\n退役一个脚本之后要检查哪些地方还在调用它"
+    },
+    {
+      "id": "knowledge:65330f4d4a4facaa974c4f11",
+      "externalKey": "TCRN-INIT019-C10-L",
+      "subject": "陈旧索引比 grep 更害:索引必带新鲜度前置",
+      "summary": "索引类工具用前先跑 status 确认晚于末次提交;陈旧索引快且自信地撒谎。",
+      "snippet": "index-freshness:用索引前先验新鲜度。",
+      "tags": [
+        "index",
+        "lesson"
+      ],
+      "expansions": "为什么陈旧索引比直接 grep 还危险\n用索引类工具之前要先做什么检查\n索引落后于最新提交会有什么风险"
+    },
+    {
+      "id": "knowledge:6c8e2dbe04098a4752680a9b",
+      "externalKey": "TCRN-INIT047-CONVENTION-05-L",
+      "subject": "交付节奏公约索引卡",
+      "summary": "platform-docs/delivery-cadence-convention.md 的仅显式索引卡；这个主题需要用到时，去读源文档。",
+      "snippet": "按需读 platform-docs/delivery-cadence-convention.md。",
+      "tags": [
+        "convention",
+        "knowledge",
+        "reference"
+      ],
+      "expansions": "delivery-cadence 相关的规则写在哪个文件\nplatform-docs 里讲交付节奏的是哪份公约\n交付节奏的公约文档在哪"
+    },
+    {
+      "id": "knowledge:711828bccc73be67119f2895",
+      "externalKey": "KB-20260906-DRYRUNPLANNING-L",
+      "subject": "删除与大改的方案段用隔离克隆干跑到全绿，方案就是补丁",
+      "summary": "只读推演写逐字代码块的方案在 STORY-358 首日六轮全退零提交（约 221 美元）；改为在隔离克隆里真做、跑门到全绿、以 git diff 补丁加实测计数为方案后，11 小时六族全部落地（MIN-143 D2）。审方案在补丁字节相同且干跑证据齐全时只核范围与哈希，不复跑门（MIN-144 D2）。",
+      "snippet": "方案 = 干跑克隆里的补丁 + 计数；不让方案代理模拟编译器。",
+      "tags": [
+        "dispatch",
+        "dry-run",
+        "init-051",
+        "lesson"
+      ],
+      "expansions": "只写代码块不实测的方案会有什么后果\n审方案什么情况下可以不用复跑门\n方案段应该只读推演还是真的跑一遍"
+    },
+    {
+      "id": "knowledge:72b05b1c17fb45760715e75d",
+      "externalKey": "KB-20260906-PROOFBUDGETCAPSZEROMARGIN-L",
+      "subject": "proof-budget 三上限零余量，只降不升，上调按 Story 记 exception",
+      "summary": "scripts/policy/proof-budget.json 的 surfaceCaps（verifyScriptCap、claimCap、coreSourceLineCap）零余量：多一个 verify:* 或核心多一行，platform-doctor 的 proofBudget 腿红于 PLATFORM_PROOF_BUDGET_EXCEEDED。削减时同一提交把上限下调到实测值；EPIC-127 起按 MIN-144 D8 可随 Story 上调到落地后实测值并在 exceptions 记一条引用该 Story。",
+      "snippet": "改 packages/core/src 或 verify:* 或 claims 数，同一提交同步 surfaceCaps。",
+      "tags": [
+        "engine",
+        "init-051",
+        "lesson",
+        "proof-budget"
+      ],
+      "expansions": "PLATFORM_PROOF_BUDGET_EXCEEDED 怎么解决\nproof-budget 的上限能不能主动调高\n改核心源码行数会不会触发 proof-budget"
+    },
+    {
+      "id": "knowledge:745f6c72a91020e35cd693b1",
+      "externalKey": "KB-20260907-PRIVACYLEGREADSCOMMITMESSAGES-L",
+      "subject": "隐私腿连提交信息一起扫",
+      "summary": "verify:p1 的隐私腿不只扫文件内容与历史 blob，提交信息也在内；提交信息里写本机绝对路径会当场多报一条 LOCAL_ABSOLUTE_PATH。",
+      "snippet": "提交信息也被隐私腿扫：写本机绝对路径会多报 LOCAL_ABSOLUTE_PATH:commit:git-commit:<hash>。",
+      "tags": [
+        "engine",
+        "git",
+        "init-051",
+        "lesson",
+        "privacy"
+      ],
+      "expansions": "LOCAL_ABSOLUTE_PATH:commit 是什么意思\ncommit message 里写本机路径会不会被隐私门抓到\nverify:p1 隐私腿扫的范围包不包括提交信息"
+    },
+    {
+      "id": "knowledge:77d061823741401474703b7d",
+      "externalKey": "TCRN-INIT019-C04-L",
+      "subject": "本地全绿不等于 CI 绿",
+      "summary": "本地 455/0 全绿后 CI 仍连红两次(计数式覆盖门与探针名册未同步);push 后须 gh run watch,评审 prompt 点名 CI 脚本。",
+      "snippet": "local-green-not-ci-green:push 后看 CI,不只信本地。",
+      "tags": [
+        "ci",
+        "lesson"
+      ],
+      "expansions": "push 之后应该做什么确认\n本地测试全过了还需要看 CI 吗\n本地绿 CI 红是什么原因导致的"
+    },
+    {
+      "id": "knowledge:7e15c32fad8b72141e1ce26a",
+      "externalKey": "KB-20260906-CHAINWRITEDISCIPLINE-L",
+      "subject": "写链：先 status 取版本，--at 用 ISO 时刻，--actor 写真正执行者，立场键号带会议号",
+      "summary": "引擎写动词要 --expected-version（写前 status 读）、--at ISO 8601 时刻（字面 now 报 TIMESTAMP_INVALID）、--actor 谁做的写谁、--attest-dir 指向分区 attestations；收据读回且版本必须前进。会议立场的 external-key 带会议号（POS-OWNER-C143-1），键号工作区级唯一；列表旗标逗号分隔，条目内不得有半角逗号；脚本逐步断言收据，错一步停下补录（CONF-141 教训）。",
+      "snippet": "写链脚本：status→version、ISO --at、--actor、收据读回、键号带会议号、条目无半角逗号。",
+      "tags": [
+        "chain",
+        "engine-cli",
+        "init-051",
+        "lesson"
+      ],
+      "expansions": "--actor 应该填谁，能不能固定写一个名字\n会议立场的 external-key 要不要带会议号\n写链的时候 --at 传 now 行不行\n写链脚本半路失败了要怎么补救"
+    },
+    {
+      "id": "knowledge:7ec179fdb0f3f7814d58eea3",
+      "externalKey": "KB-20260906-KNOWLEDGENOCANDIDATE-L",
+      "subject": "小卡片知识没有候选态与提升门：写入即可检索、写前查冲突、按阈值自动退役",
+      "summary": "Owner 2026-09-01 裁定：自动归档的知识不需要 candidate 机制，模型判断需要写就写、写前判断冲突即可；文章类由 Owner 主动发起。2026-09-04 方向稿写成「候选自动、提升需 yes」并落为 MIN-140 D5，2026-09-06 由 MIN-146 作废：capture 与 create 写入即为正式卡；冲突打分由写入方选 --supersedes 或 --coexist；卡按适应度阈值自动 knowledge-retire 并留记录；STORY-365、377 范围据此修订。",
+      "snippet": "知识回路不设候选、不设提升门、不设退役确认门。",
+      "tags": [
+        "init-051",
+        "knowledge",
+        "lesson",
+        "ruling"
+      ],
+      "expansions": "两张卡内容冲突了该选 supersedes 还是 coexist\n写一张知识卡需不需要先进候选态\n写卡前要不要先查会不会跟已有卡冲突\n知识卡会不会自动退役，阈值是谁定的"
+    },
+    {
+      "id": "knowledge:7f95d8278338c6f5bab9de1d",
+      "externalKey": "TCRN-INIT019-C14-L",
+      "subject": "没人读回来的写不算已证",
+      "summary": "仪式载荷必须至少一条回读,且回读按全值比较,不是「读成功」。",
+      "snippet": "ceremony-readback:写必带回读,按全值比较。",
+      "tags": [
+        "ceremony",
+        "lesson"
+      ],
+      "expansions": "仪式载荷的回读要比较到什么程度\n写链之后要不要读回来确认\n只看写命令返回成功算不算已经证明写入了"
+    },
+    {
+      "id": "knowledge:82af37f429aa3e9d4c965a2c",
+      "externalKey": "KB-20260906-TWOPHASEDISPATCHRULES-L",
+      "subject": "两段式派工：先方案后执行，审核用 Opus 子代理，convergent 允许第三轮，阻塞项带逐字改法可交执行段",
+      "summary": "Owner 2026-09-05 裁定先方案后执行；MIN-143 起审方案与审执行都派 Opus 子代理，审核标 convergent 时允许第三轮（含执行段）；correction 带 blocking，全部非阻塞时通过并附改法；阻塞项带逐字改法且 convergent 时可把补丁连改法交执行段落地由审执行复核（MIN-145 D1）；被 Owner 卡住时换文件集不相交的 Story。",
+      "snippet": "先方案后执行；convergent 第三轮；非阻塞改法交执行段；阻塞项带逐字改法亦可交执行段。",
+      "tags": [
+        "dispatch",
+        "init-051",
+        "lesson",
+        "ruling"
+      ],
+      "expansions": "convergent 状态下能不能有第三轮\n方案审核和执行审核是不是都要派 Opus 子代理\n方案被 Owner 卡住迟迟推不动时该怎么办\n派工应该先写方案还是直接执行"
+    },
+    {
+      "id": "knowledge:84d8d6a8782c1579f7a29d7a",
+      "externalKey": "TCRN-INIT047-CONVENTION-04-L",
+      "subject": "审议采纳公约索引卡",
+      "summary": "platform-docs/deliberation-adoption-convention.md 的仅显式索引卡；这个主题需要用到时，去读源文档。",
+      "snippet": "按需读 platform-docs/deliberation-adoption-convention.md。",
+      "tags": [
+        "convention",
+        "knowledge",
+        "reference"
+      ],
+      "expansions": "deliberation-adoption 公约文档在哪\n审议怎么被采纳成为决定，有没有公约\n讨论结论的采纳流程写在哪份公约里"
+    },
+    {
+      "id": "knowledge:8b0ae3c8446458d8b0c23e1a",
+      "externalKey": "KB-20260906-ISOLATEDCLONENOTWORKTREE-L",
+      "subject": "引擎仓的隔离干跑要用 git clone --local，不能用 git worktree add",
+      "summary": "git worktree add 建出的树跑不了本仓任何门：worktree 的 .git 是文件而非目录，packages/core/src/safe-io.mjs 的 withExclusiveOutputSession 断言 isDirectory，每道门以 OUTPUT_SESSION_REPOSITORY_INVALID 失败。用 rm -rf <dir> && git clone --local --no-hardlinks <仓> <dir> && git -C <dir> checkout --detach HEAD；离线装依赖 corepack pnpm install --frozen-lockfile --offline；用完 rm -rf。",
+      "snippet": "隔离树：git clone --local + checkout --detach；worktree 过不了 safe-io。",
+      "tags": [
+        "dry-run",
+        "engine",
+        "git",
+        "init-051",
+        "lesson"
+      ],
+      "expansions": "OUTPUT_SESSION_REPOSITORY_INVALID 是什么原因\n干跑用 worktree 会报什么错\n隔离克隆应该怎么建，依赖怎么装"
+    },
+    {
+      "id": "knowledge:90f54b3f6ddb3194ca323870",
+      "externalKey": "KB-KNOWLEDGE-CAS-IS-STORE-VERSION-L",
+      "subject": "knowledge 动词上的 expected-version，指的是 store 自己的版本，不是链的版本",
+      "summary": "其余动词都把这个旗标读作链版本。knowledge 动词把它读作知识 store 的版本，而目录里没有任何地方区分这两种含义。",
+      "snippet": "传入链版本 4295 时返回了 KNOWLEDGE_CAS_MISMATCH 4295:160——前一个数字是传入值，后一个是期望值。读懂这条拒绝信息，不要再猜第二次。",
+      "tags": [
+        "cas",
+        "knowledge",
+        "trap"
+      ],
+      "expansions": "KNOWLEDGE_CAS_MISMATCH 4295:160 是什么意思\nexpected-version 在别的动词和 knowledge 动词含义一样吗\n错误信息里前一个数字和后一个数字分别代表什么"
+    },
+    {
+      "id": "knowledge:9226850ac26ef929cfc4ec64",
+      "externalKey": "TCRN-INIT019-C02-L",
+      "subject": "判据两侧必须能够不同",
+      "summary": "恒真门是平台三度付学费的缺陷形态;写完门先真做一次「什么会让它变红」。",
+      "snippet": "predicate-both-sides:写完门先问什么会让它红,并真做一次。",
+      "tags": [
+        "gate",
+        "lesson"
+      ],
+      "expansions": "写完门之后要不要真的让它红一次\n怎么判断一个门是不是恒真门\n门永远是绿的说明什么问题"
+    },
+    {
+      "id": "knowledge:939fa8fb8993235cece099e9",
+      "externalKey": "TCRN-INIT019-C18-L",
+      "subject": "远程 argv 经 ssh 重新拼接,必须 shellQuote",
+      "summary": "ssh 把远程 argv 以空格重拼并交给登录 shell,含空格/括号的值会成为远程语法错误;一律 shellQuote。",
+      "snippet": "ssh-shellquote:远程参数一律引号包裹。",
+      "tags": [
+        "lesson",
+        "ssh"
+      ],
+      "expansions": "ssh 传的参数里有空格会出什么问题\nssh 参数拼接出语法错误怎么排查\n远程命令参数要不要加引号"
+    },
+    {
+      "id": "knowledge:9415f3b0bb57bdc6d0d78a81",
+      "externalKey": "KB-INIT051-MUTATIONNEEDSFRESHBUILD-L",
+      "subject": "变异证明前先确认新构建",
+      "summary": "改坏被测物后必须先确认 build 真的产出了新产物再读门结果。STORY-368 实测：字面 return [] 触发 TS6133，build 拒绝，dist/build 停在上一次编译，门读旧产物打印绿——那是假阴性不是变异存活。",
+      "snippet": "mutation-needs-fresh-build:变异后先比 dist 产物哈希或时间戳，再读门。",
+      "tags": [
+        "build",
+        "gate",
+        "lesson"
+      ],
+      "expansions": "TS6133 导致 build 失败会不会让门读到旧产物\n变异测试要怎么确认读到的是新产物\n改坏代码后门还是绿的，是不是构建没跑"
+    },
+    {
+      "id": "knowledge:96c89123d11bf159fb133634",
+      "externalKey": "KB-NARROWER-QUESTION-FAILURE-MODE-L",
+      "subject": "两天里的四次误读，都源于所问的问题比要回答的问题更窄",
+      "summary": "每次测量用的量具都只能给出已经预期的答案。识别标志是：探针的覆盖范围比它要支撑的结论更窄。",
+      "snippet": "「知识库是空的」这个结论来自一次没有卡片匹配的搜索；「scope 字段被丢了」这个结论来自读了错误的收据路径；11.2% 的可追溯率只在两种引用写法里的一种上测过；一个对负载敏感的测试只凭两次孤立运行就被判定为 flaky。",
+      "tags": [
+        "measurement",
+        "method",
+        "trap"
+      ],
+      "expansions": "两天里连续误判的共同原因是什么\n怎么判断一次测量是不是问窄了\n探针覆盖范围比结论窄会有什么后果"
+    },
+    {
+      "id": "knowledge:993672a91c17ec75ca7ee73d",
+      "externalKey": "KB-KNOWLEDGE-TRAILING-READ-L",
+      "subject": "只要有一次链写入，知识读取就会拒绝，除非要求它容忍落后的 store",
+      "summary": "store 的 marker 必须等于链头，而每一次链事件都会打破这个等式。在五个 metadata-first 读动词上传入 allow-trailing true；这样返回结果就会同时带上两个 head。",
+      "snippet": "一次 work-create 就让全部六个分区的知识读取全部失灵，直到手动跑了一次 rebase。自 TCRN-CROSS-INC-226 起，读动词接受 --allow-trailing true；写、validate、rebase 不在豁免之列。",
+      "tags": [
+        "knowledge",
+        "retrieval",
+        "trap"
+      ],
+      "expansions": "allow-trailing 应该加在哪些动词上\n六个分区的知识读取同时失灵是什么原因\n写完链之后知识读取突然读不出来了"
+    },
+    {
+      "id": "knowledge:9aa27db0f841e5f53dd822a6",
+      "externalKey": "TCRN-INIT047-CONVENTION-09-L",
+      "subject": "投影新鲜度公约索引卡",
+      "summary": "platform-docs/projection-freshness-convention.md 的仅显式索引卡；这个主题需要用到时，去读源文档。",
+      "snippet": "按需读 platform-docs/projection-freshness-convention.md。",
+      "tags": [
+        "convention",
+        "knowledge",
+        "reference"
+      ],
+      "expansions": "platform-docs 里讲 projection freshness 的文件叫什么\n关于投影会不会过期有没有专门的公约\n投影新鲜度的公约文档在哪"
+    },
+    {
+      "id": "knowledge:9d4fc79450a2bb704e26f71c",
+      "externalKey": "KB-20260906-FROZENRATIOEXCEPTION-L",
+      "subject": "删产品代码会抬高 frozenRatio，按机制记 exception 而不是放宽线",
+      "summary": "同一 proof-budget.json 的 frozenRatio 1.5888 是证明/产品比率棘轮；删产品代码抬高比率并触发。先例 INC-275：1.6567 → 1.7431 记一条 exception。STORY-358 六族落地各记一条（第 25 至 30 条），frozenRatio 一次未动。",
+      "snippet": "比率触发 → exceptions 加一条引用 MIN-140 D1/D3，不改 frozenRatio。",
+      "tags": [
+        "engine",
+        "init-051",
+        "lesson",
+        "proof-budget"
+      ],
+      "expansions": "frozenRatio 升高了要不要改上限\nproof-budget 里的 exception 应该怎么记\n删代码为什么会让 frozenRatio 变红"
+    },
+    {
+      "id": "knowledge:9f0e0c996385cf167a731df5",
+      "externalKey": "TCRN-INIT019-C06-L",
+      "subject": "凭据不是实现的前置",
+      "summary": "凭据是运行期配置;需凭据的步骤单列,其余本地可完成可测,不让凭据阻塞实现。",
+      "snippet": "credentials-not-implementation-blocker:凭据单列,其余本地可完成。",
+      "tags": [
+        "delivery",
+        "lesson"
+      ],
+      "expansions": "没有凭据能不能先把其余部分做完\n运行期配置缺失算不算实现被阻塞\n需要密钥的步骤要不要卡住整个任务"
+    },
+    {
+      "id": "knowledge:a3254955bbda7e86b8dcaf3f",
+      "externalKey": "TCRN-INIT019-C01-L",
+      "subject": "报缺陷前先怀疑自己的探针",
+      "summary": "平台累计十二次误报的共同根因是探针只看一侧或探针本身有误;报缺陷前先用已知好的输入校准探针。",
+      "snippet": "probe-before-defect:先校准探针,再报缺陷。",
+      "tags": [
+        "lesson",
+        "probe"
+      ],
+      "expansions": "十二次误报的共同根因是什么\n怎么用已知好的输入校准探针\n报缺陷之前应该先做什么"
+    },
+    {
+      "id": "knowledge:a4662b2aa661c2b5b3d9fc39",
+      "externalKey": "TCRN-INIT047-CONVENTION-02-L",
+      "subject": "派工就绪公约索引卡",
+      "summary": "platform-docs/dispatch-readiness-convention.md 的仅显式索引卡；这个主题需要用到时，去读源文档。",
+      "snippet": "按需读 platform-docs/dispatch-readiness-convention.md。",
+      "tags": [
+        "convention",
+        "knowledge",
+        "reference"
+      ],
+      "expansions": "dispatch-readiness 公约讲的是什么条件\n什么状态才算可以派工，依据哪份公约\n派工就绪的公约文档在哪"
+    },
+    {
+      "id": "knowledge:a7c282c6f19252217765d930",
+      "externalKey": "KB-20260906-DELETIONORDERROOTFIRST-L",
+      "subject": "多单删除按依赖根先行；对当前 HEAD 规划、落地一单再规划下一单",
+      "summary": "STORY-358 六个家族共改同一批注册表（source-allowlist、proof-budget、coverage-baseline/waivers、verification-map、README 徽章、package.json），对未落地的树写锚串必然失配；顺序 4→5→6→3→2→1 使家族 5、3、2 只落地部分成员并顺延到家族 1。规则：一次只规划一单，对当前 HEAD 规划，落地提交后才规划下一单；策略 JSON 按键定位；go/no-go 之后直接做最大的一单（MIN-143 D6、MIN-144 D7）。",
+      "snippet": "一次一单、对当前 HEAD、依赖根先行、按键定位。",
+      "tags": [
+        "deletion",
+        "dispatch",
+        "init-051",
+        "lesson"
+      ],
+      "expansions": "STORY-358 的删除顺序教训是什么\n一次要删好几个东西，应该先规划全部还是一单一单来\n为什么删除计划里的锚点总是对不上"
+    },
+    {
+      "id": "knowledge:a8680d4f565866457ecc98dc",
+      "externalKey": "KB-20260907-HOSTFACTSNOABSOLUTEPATHS-L",
+      "subject": "宿主事实文件不得含本机绝对路径：verify:p1 隐私腿扫 HEAD 可达的全部历史 blob",
+      "summary": "引擎仓 verify:p1 的隐私腿（scripts/lib/privacy.mjs 的 LOCAL_ABSOLUTE_PATH 等模式）扫 git rev-list --objects HEAD 列出的全部对象，不只扫工作树。STORY-357 于 7ff2020 提交的 docs/verification/host/codex-0.148.0-facts.json 含 7 处 [path]>/ 路径，改文件只能消掉源文件与 dist/source tar 两条发现，历史 blob 783a4ca4 那条不改写历史消不掉（MIN-152 D1 裁定改写）。做法：docs/verification/host/* 与任何被跟踪文件写入前把本机路径换成占位符；隐私腿没有豁免名单。",
+      "snippet": "被跟踪文件里的 [path] 一旦提交就进历史，隐私腿会一直红到改写历史；写入前换占位符。",
+      "tags": [
+        "engine",
+        "git",
+        "init-051",
+        "lesson",
+        "privacy"
+      ],
+      "expansions": "docs/verification/host 下的文件能不能写 [path] 路径\n改写历史消掉这条隐私红是哪次裁定批准的\n改完文件隐私门还是红，是不是历史里还留着\n隐私腿只扫工作树还是连历史 blob 都扫"
+    },
+    {
+      "id": "knowledge:b50da55f56f199284f76f1dd",
+      "externalKey": "TCRN-INIT047-CONVENTION-10-L",
+      "subject": "取材与核实公约索引卡",
+      "summary": "platform-docs/sourcing-and-vetting-convention.md 的仅显式索引卡；这个主题需要用到时，去读源文档。",
+      "snippet": "按需读 platform-docs/sourcing-and-vetting-convention.md。",
+      "tags": [
+        "convention",
+        "knowledge",
+        "reference"
+      ],
+      "expansions": "sourcing-and-vetting 公约讲的是什么内容\n信息来源该怎么核实，有没有专门公约\n取材与核实的公约文档在哪"
+    },
+    {
+      "id": "knowledge:b57a8838ae15902a8f3cf4d5",
+      "externalKey": "KB-INIT051-OUTPUTLOCKCHECKPIDFIRST-L",
+      "subject": "清输出会话锁前先核持锁 PID",
+      "summary": "克隆的 .git 里残留的 tcrn-workflow-output.lock 只有在持锁进程已死时才可以删。起每个 Codex 阶段前核 PID，活着就拒绝启动。",
+      "snippet": "output-lock-check-pid:核持锁 PID，活着不许删锁。",
+      "tags": [
+        "codex",
+        "harness",
+        "lesson"
+      ],
+      "expansions": "tcrn-workflow-output.lock 能直接删吗\n持锁进程还活着能不能清锁\n起每个 Codex 阶段前要先检查什么"
+    },
+    {
+      "id": "knowledge:b8767c1993260f1bdf5cfef5",
+      "externalKey": "ARTICLE-BE7A379444DAAB941C9C7437",
+      "subject": "验收样例：文章类知识的写入路径（STORY-366）",
+      "summary": "文章类知识的写入路径：正文留在文件、库只存索引卡；编辑后 refresh 重算 sourceDigest（验收时更新的摘要）",
+      "snippet": "文章类知识的写入路径：正文留在文件、库只存索引卡；编辑后 refresh 重算 sourceDigest（验收时更新的摘要）",
+      "tags": [
+        "article",
+        "workflow"
+      ],
+      "expansions": ""
+    },
+    {
+      "id": "knowledge:ba48cf6198f546274ca721b5",
+      "externalKey": "KB-20260906-COMPLETIONNOTIFICATIONSEMANTICS-L",
+      "subject": "子代理的完成通知不等于做完：standing by 视为未完成，先 TaskStop 再派",
+      "summary": "任务通知在代理停下且无存活后台子进程时触发，同一 task-id 可多次通知。STORY-359 的执行代理把 push-gate 基线挂后台后返回 standing by，主线程当作完成另派接手代理，两代理同树约 4 分钟。规则：收到完成通知先看 result 是否结论；执行代理不得把门挂后台后返回；绝不另派一个上同一棵树（MIN-145 D4）。",
+      "snippet": "完成通知先看 result；两个代理不能同时改一棵树。",
+      "tags": [
+        "agents",
+        "dispatch",
+        "init-051",
+        "lesson"
+      ],
+      "expansions": "standing by 状态算完成吗\n接手一个任务前要不要先 TaskStop\n收到子代理完成通知能不能直接认为做完了"
+    },
+    {
+      "id": "knowledge:c4e17c626927018939713011",
+      "externalKey": "TCRN-INIT019-C13-L",
+      "subject": "hook 注册必须用 ${CLAUDE_PROJECT_DIR} 形态,禁止裸相对路径",
+      "summary": "INC-040 死因:注册用裸相对路径致 hook 从未启动;活性门须执行注册字符串本身,不起进程冒充。",
+      "snippet": "hook-cwd-trap:注册用 ${CLAUDE_PROJECT_DIR},活性门执行注册字符串。",
+      "tags": [
+        "hook",
+        "lesson"
+      ],
+      "expansions": "hook 一直没触发是什么原因\nhook 注册路径该写相对路径还是变量\n校验 hook 活性的门能不能自己另起个进程测"
+    },
+    {
+      "id": "knowledge:c58e4a0f8e64fee794fbe856",
+      "externalKey": "TCRN-INIT019-C08-L",
+      "subject": "停顿预算只三类:owner_intent_required/对外发布/无裁定不可逆",
+      "summary": "执行期必停只有三类;其余继续。",
+      "snippet": "stop-budget-three-classes:只三类必停。",
+      "tags": [
+        "lesson",
+        "stop-budget"
+      ],
+      "expansions": "owner_intent_required 具体指哪些场景\n执行期什么情况下才必须停下来问 Owner\n除了这三类，其余情况要不要继续往下做"
+    },
+    {
+      "id": "knowledge:c8bb4250e250c838e406dc86",
+      "externalKey": "KB-20260906-ORCHESTRATORCONTEXTDISCIPLINE-L",
+      "subject": "编排主线程的上下文膨胀来自长提示与替换式编辑，不来自子代理数量",
+      "summary": "EPIC-125 派工线程自己跑 133 条 Bash 并读方案，四张后 424K；改为只编排后仍到 313K 与 412K，来源是每份 4 到 6.5K 字的 Agent 提示、把旧文新文都写进命令的状态文件替换式编辑、一次 15.7K 的树状态输出。规则（MIN-144 D6、MIN-145 D6）：返回值限 600 字加路径；状态文件追加式；Agent 提示写成文件只传路径；树状态先落文件再看摘要；不看 diff。",
+      "snippet": "主线程只装结论：提示传路径、状态文件追加、返回值 600 字。",
+      "tags": [
+        "context",
+        "dispatch",
+        "init-051",
+        "lesson"
+      ],
+      "expansions": "Agent 提示应该直接写内容还是传文件路径\nAgent 返回值应该控制在多长\n主线程上下文涨得快是因为子代理开多了吗\n状态文件应该追加写还是整份替换"
+    },
+    {
+      "id": "knowledge:d070df9daa72ad4bd4beccbf",
+      "externalKey": "KB-20260907-HISTORYREWRITECOSTPERCOMMIT-L",
+      "subject": "改写 git 历史的代价随后续提交数线性增长，未推送时最便宜；改写前 bundle、隔离克隆干跑、改后 gc",
+      "summary": "改写某个提交会重算它之后每个提交的哈希。2026-09-07 实测 7ff2020 之后 12 个提交未推送：链上事件引用其中 12 个哈希 16 处、dispatch-runs 117 个文件、引擎树 policy 文件 65 处（coverage-waivers.json 58、proof-budget.json 6、core-export-consumers.json 1）、tag attic-2026-09 指在 7ff2020。做法：先 git bundle create 全部 refs 到 .tcrn-artifacts 留回退；在隔离克隆（git clone --local）里干跑 filter-branch 并把门跑到绿；真仓用 git filter-branch --index-filter 只换目标路径、带 --tag-name-filter cat 让 tag 跟移；改后 git reflog expire --expire=now --all 与 git gc --prune=now，否则 HISTORY_UNREACHABLE_OBJECTS 红；链是 append-only，旧哈希以新旧对照表反查；树内 policy 文件里的旧哈希在改写后一次提交改新；不推送。git filter-repo 本机未装。",
+      "snippet": "改写历史：先 bundle，克隆里干跑，filter-branch 只换一个路径，tag 跟移，改后 reflog expire 加 gc，对照表反查旧哈希。",
+      "tags": [
+        "engine",
+        "git",
+        "history-rewrite",
+        "init-051",
+        "lesson"
+      ],
+      "expansions": "改写历史之前要先做哪些准备\n改写历史之后，树里 policy 文件里的旧哈希要怎么处理\n改写很久以前的一个提交，后面的提交会怎样\n改完历史为什么还会报 HISTORY_UNREACHABLE_OBJECTS"
+    },
+    {
+      "id": "knowledge:d31956296de6560a8c9602ac",
+      "externalKey": "KB-INIT051-GATEMUSTBEKILLEDBYSUBJECT-L",
+      "subject": "门必须能被被测物杀死",
+      "summary": "新门交付时第一判据是变异证明：改坏被测物，门必须红。STORY-368 第一轮的检索评测门在 bigrams() 改成 return [] 后输出逐字不变，说明它没接上被测物。",
+      "snippet": "gate-mutation-proof:改坏被测物门必须红，否则门测不到东西。",
+      "tags": [
+        "gate",
+        "lesson"
+      ],
+      "expansions": "怎么验证一个门真的接上了被测物\n改坏被测物门还是绿的说明什么问题\n新门交付第一个要过的判据是什么"
+    },
+    {
+      "id": "knowledge:d73ce8f5ca017cb12f95b69f",
+      "externalKey": "KB-20260906-GUARDCHECKAFTERCOMMIT-L",
+      "subject": "guard-check 不在 pnpm test 里，脏树跑不了，须提交后后台单跑",
+      "summary": "guard-check 走 corepack pnpm run guard-check → node scripts/guard-check.mjs，不经 scripts/task.mjs，也不在 pnpm test 里；带未提交改动的树报 GUARD_CHECK_TREE_DIRTY。它运行期间会真改工作树，当独占操作：提交后在后台跑，跑完再开下一单。",
+      "snippet": "每次提交后单独跑 guard-check，前台超时会把真实变异留在树上。",
+      "tags": [
+        "engine",
+        "guard-check",
+        "init-051",
+        "lesson"
+      ],
+      "expansions": "GUARD_CHECK_TREE_DIRTY 怎么解决\nguard-check 用什么命令跑\n带未提交改动跑 guard-check 会怎样"
+    },
+    {
+      "id": "knowledge:d8c2468b2df8df6e8fdce807",
+      "externalKey": "TCRN-INIT019-C15-L",
+      "subject": "证据不得携带宿主路径(INC-037/042)",
+      "summary": "仓内证据含本机 home 路径会让公开仓付出 93 提交改写代价;证据落盘必须 scrub,门扫 tracked+evidence 树。",
+      "snippet": "evidence-hygiene:证据 scrub 宿主路径,门扫 tracked+evidence。",
+      "tags": [
+        "hygiene",
+        "lesson"
+      ],
+      "expansions": "INC-037/042 讲的是什么代价\n仓库里的证据文件写了本机 home 路径要怎么处理\n证据落盘前要 scrub 什么"
+    },
+    {
+      "id": "knowledge:e1c01a6282b6945e94a4ea5b",
+      "externalKey": "TCRN-INIT019-C16-L",
+      "subject": "树里对不代表记录对(INC-039)",
+      "summary": "声明块在工作树对、未提交,HEAD 仍错;committed-claims 判据要求已提交声明块与工作树一致。",
+      "snippet": "committed-claims:声明块须已提交,不只在工作树。",
+      "tags": [
+        "gate",
+        "lesson"
+      ],
+      "expansions": "INC-039 讲的是什么问题\ncommitted-claims 判据要求的是工作树一致还是 HEAD 一致\n声明块在工作树里改对了但没提交算数吗"
+    },
+    {
+      "id": "knowledge:e9eaf53c1844c0beadc9f57f",
+      "externalKey": "KB-20260908-RERECORDVERDICTSATCLOSEOUTNOTEVERYCOMMIT-L",
+      "subject": "验收结论在收口点重录，不在每次提交后重录",
+      "summary": "acceptanceVerdicts 核对「每组门最后一次实测结果 + 测在哪棵树上」，因此每次提交后都会陈旧；能靠重录转绿，但每单重录不划算。",
+      "snippet": "acceptanceVerdicts 每次提交后陈旧、可由重录转绿；在收口点重录，两次收口之间的红是预期陈旧。",
+      "tags": [
+        "acceptance",
+        "engine",
+        "gates",
+        "init-051",
+        "lesson"
+      ],
+      "expansions": "acceptanceVerdicts 每次提交后变红要重录吗\n两次收口之间门是红的算不算问题\n验收结论应该什么时候重新记录"
+    },
+    {
+      "id": "knowledge:eb36ffd7eb2515bfb9ea2b0f",
+      "externalKey": "TCRN-INIT047-CONVENTION-01-L",
+      "subject": "依赖方向与集成公约索引卡",
+      "summary": "platform-docs/dependency-direction-and-integration-convention.md 的仅显式索引卡；这个主题需要用到时，去读源文档。",
+      "snippet": "按需读 platform-docs/dependency-direction-and-integration-convention.md。",
+      "tags": [
+        "convention",
+        "knowledge",
+        "reference"
+      ],
+      "expansions": "dependency-direction-and-integration 公约讲什么\n仓库之间的依赖方向该看哪份公约\n依赖方向与集成的公约文档在哪"
+    },
+    {
+      "id": "knowledge:ec546c014f47c39015f16bc5",
+      "externalKey": "KB-20260907-GUARDCHANGESESCAPEDISPATCHREVIEW-L",
+      "subject": "改 guard 的单绕过两段式审核",
+      "summary": "派工脚本禁止代理在真实树跑 guard-check（它变异工作树、必须独占），后果是改 guard 的单四个环节全看不见 guard 是否还成立；隔离克隆里跑是安全的，且必须跑。",
+      "snippet": "禁 guard-check 让改 guard 的单绕过全部审核；克隆里安全且必须跑。",
+      "tags": [
+        "dispatch",
+        "engine",
+        "guards",
+        "init-051",
+        "lesson"
+      ],
+      "expansions": "为什么改 guard 的单容易漏审\n克隆里能不能跑 guard-check 来验证\n改 guard-check 的改动怎么过审核"
+    },
+    {
+      "id": "knowledge:ef0851130b139763b2f15b2c",
+      "externalKey": "KB-20260906-COVERAGEBASELINEGATESNOTHING-L",
+      "subject": "coverage-baseline 注册表不接任何门，且判不了被测物是否还活着",
+      "summary": "scripts/policy/coverage-baseline.json 不在任何被要求跑的门里，漏登记不红但注册表会烂；它核对的是「删掉的用例有没有登记处置」，不是「它测的东西是否还在」。STORY-358 里删掉存活模块唯一测试的缺陷出现四次，四次该门全绿。每单收口跑 node scripts/coverage-conservation.mjs 要 COVERAGE_CONSERVATION_VERIFIED；STORY-359 加了「被删测试导入的存活模块必须仍有覆盖」检查（SURVIVING_MODULE_COVERAGE_ZERO）。",
+      "snippet": "coverage-conservation 绿不等于覆盖没丢；删测试前查它导入的存活模块还有没有别的测试。",
+      "tags": [
+        "coverage",
+        "engine",
+        "init-051",
+        "lesson",
+        "tests"
+      ],
+      "expansions": "SURVIVING_MODULE_COVERAGE_ZERO 是哪个检查报的\ncoverage-baseline.json 绿是不是代表覆盖没丢\ncoverage-conservation 跑完要看到什么才算通过\n删测试之前要怎么检查存活模块还有没有别的用例覆盖"
+    },
+    {
+      "id": "knowledge:ef086cbdb742070399df24c9",
+      "externalKey": "KB-INIT051-CLONEDOCTORPROVESNOTHING-L",
+      "subject": "克隆里的 platform-doctor 结果不作数",
+      "summary": "platform-doctor 只接 --platform-root，量的永远是容器里的真实引擎检出。方案段在克隆里跑它得到的绿证明不了任何事。STORY-364 实测：克隆报 unusedExports 绿、exportedCount 617，提交后真实树上转红、636。",
+      "snippet": "clone-doctor-proves-nothing:克隆里 doctor 的绿不作数，提交后在真实树上比对。",
+      "tags": [
+        "dispatch",
+        "gate",
+        "lesson"
+      ],
+      "expansions": "unusedExports 在克隆里和真实树上数字不一样怎么办\n在克隆里跑 platform-doctor 得到的绿能信吗\n方案段跑完 doctor 之后还要不要在真实树上再核一次"
+    },
+    {
+      "id": "knowledge:f2c37dd8d87cdbc504d7c718",
+      "externalKey": "TCRN-INIT047-CONVENTION-03-L",
+      "subject": "对抗式审核公约索引卡",
+      "summary": "platform-docs/adversarial-review-convention.md 的仅显式索引卡；这个主题需要用到时，去读源文档。",
+      "snippet": "按需读 platform-docs/adversarial-review-convention.md。",
+      "tags": [
+        "convention",
+        "knowledge",
+        "reference"
+      ],
+      "expansions": "adversarial-review 相关规则写在哪个文件\n对抗式审核的公约文档在哪\n方案审核用的对抗式审核公约在哪能找到"
+    },
+    {
+      "id": "knowledge:f67ac36f7cd072b64df1f90e",
+      "externalKey": "KB-20260906-GATEROSTERFROMFILE-L",
+      "subject": "门清单从 platform-docs/acceptance-gate-groups.json 派生，不手攒",
+      "summary": "手攒的门清单在 EPIC-126 三次有洞：先漏 format:check、lint、typecheck，再漏 push-gate（engine-release 门组），导致 STORY-358 六个提交无人验过 push-gate。MIN-145 D2：执行段与审执行段按该文件的九门组跑全部门组，收口表按门组 id 列结果；既红门组按 reason code 比，不得新增。",
+      "snippet": "门清单 = acceptance-gate-groups.json 的九门组；既红的门按 reason code 比。",
+      "tags": [
+        "dispatch",
+        "gates",
+        "init-051",
+        "lesson"
+      ],
+      "expansions": "push-gate 属于哪个门组，会不会被漏跑\n两次收口之间已经红了的门组要怎么比，能不能新增\n手动攒的门清单容易漏掉哪些门\n跑门应该跑哪些门，清单从哪里来"
+    },
+    {
+      "id": "knowledge:f9ae274387afc1820775b7b3",
+      "externalKey": "TCRN-INIT019-C20-L",
+      "subject": "每次链写都拉开知识 store 标记差距,写路径必须自动 rebase",
+      "summary": "知识 store 是 disposable 物化索引,每次链写使 eventHighWaterDigest 落后;仪式真写后自动 rebase 保持读面可用。",
+      "snippet": "marker-rebase-discipline:每写必 rebase。",
+      "tags": [
+        "knowledge",
+        "lesson",
+        "marker"
+      ],
+      "expansions": "eventHighWaterDigest 落后要怎么修\n仪式写完之后要不要手动 rebase 知识索引\n知识 store 为什么会跟链脱节"
+    },
+    {
+      "id": "knowledge:fbde558acf591752c6283fd7",
+      "externalKey": "TCRN-INIT047-CONVENTION-07-L",
+      "subject": "判据参照物稳定性公约索引卡",
+      "summary": "platform-docs/gate-reference-stability-convention.md 的仅显式索引卡；这个主题需要用到时，去读源文档。",
+      "snippet": "按需读 platform-docs/gate-reference-stability-convention.md。",
+      "tags": [
+        "convention",
+        "knowledge",
+        "reference"
+      ],
+      "expansions": "gate-reference-stability 公约讲的是什么\n判据参照物稳定性的公约文档在哪\n门的参照物应该去哪份公约核对"
+    }
+  ]
+}

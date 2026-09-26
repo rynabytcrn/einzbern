@@ -24,6 +24,7 @@ import {
   runIncidentReplayCli,
 } from "../scripts/incident-replay.mjs";
 import { canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
+import { recallDocuments } from "../dist/build/packages/core/src/recall.js";
 
 const MINUTE_ID = "minutes:0123456789abcdef01234567";
 const WORK_ID = "work:0123456789abcdef01234567";
@@ -60,14 +61,19 @@ function customSource() {
   };
 }
 
-test("STORY-378 GWT1: the frozen 55-work corpus yields source-digested replay pairs", async () => {
+test("STORY-378 GWT1, STORY-474 R1: the recorded work corpus yields source-digested pairs for the records recall indexes", async () => {
   const work = await readJson("tests/fixtures/retrieval-eval/work-compact.json");
   const cards = await readJson("tests/fixtures/retrieval-eval/corpus-snapshot.json");
   const minutes = await readJson("tests/fixtures/retrieval-eval/minutes-compact.json");
   const replay = buildIncidentReplay({ workRecords: work.records, cards: cards.records, minutes: minutes.records, at: AT });
-  assert.equal(replay.counts.input, 55);
-  assert.equal(replay.counts.included, 55);
-  assert.equal(replay.counts.skippedNoSummary, 0);
+  // TCRN-CROSS-SUB-303: the corpus re-recorded under recall-inputs.ts; an Initiative or an Epic that
+  // carries nothing but a scope is not indexed, so it yields no pair.
+  assert.equal(replay.counts.input, 435);
+  assert.equal(replay.counts.included, 277);
+  assert.equal(replay.counts.skippedNoSummary, 19);
+  assert.equal(replay.counts.skippedNotIndexed, 139);
+  const indexed = new Set(recallDocuments({ work: work.records }).map((document) => document.id));
+  assert.ok(replay.pairs.every((pair) => indexed.has(pair.source.workId)), "every pair names a record the index holds");
   assert.ok(replay.pairs.length >= 20);
   for (const pair of replay.pairs) {
     assert.match(pair.sourceDigest, /^[a-f0-9]{64}$/u);
@@ -84,6 +90,15 @@ test("STORY-378: absent summaries are counted and unknown card links cannot labe
   assert.equal(replay.counts.included, 1);
   assert.deepEqual(replay.pairs[0].expectedIds, [WORK_ID]);
   assert.deepEqual(replay.pairs[0].source.linkedCardIds, []);
+});
+
+test("STORY-474 R1: a record recall does not index yields no pair", () => {
+  const subtask = { id: "work:aaaaaaaaaaaaaaaaaaaaaaaa", externalKey: "TCRN-CROSS-SUB-378", kind: "Subtask", status: "done", summary: "a step of a Story, not an intent" };
+  const bareEpic = { id: "work:bbbbbbbbbbbbbbbbbbbbbbbb", externalKey: "TCRN-CROSS-EPIC-378", kind: "Epic", status: "done", scope: "an Epic that carries nothing but a scope" };
+  const replay = buildIncidentReplay({ workRecords: [subtask, bareEpic, customSource()], cards: [], minutes: [] });
+  assert.equal(replay.counts.skippedNotIndexed, 2);
+  assert.deepEqual(replay.skipped.map((entry) => entry.reason), ["not-indexed", "not-indexed"]);
+  assert.deepEqual(replay.pairs.map((pair) => pair.source.workId), [WORK_ID], "the Incident with a summary is indexed as a Story is");
 });
 
 test("STORY-378 GWT2: extraction produces an unapplied rule draft and a directly capturable decision card", async (t) => {

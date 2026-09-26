@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "einzbern.retrieval-negative-queries.v1",
+  "note": "TCRN-CROSS-STORY-474 AC1, AC4 (TCRN-CROSS-SUB-303): everyday prompts that have nothing to do with the library, eight in English and eight in Chinese, written before any score was read. Every one must be answered with nothing at the strong-hit threshold, and at least one must be answered with the threshold at zero. The English ones carry the pronoun I, the article a and the preposition in on purpose (TCRN-CROSS-SUB-302's finding): a one-letter word used to reach the external-key column as a prefix.",
+  "queries": [
+    {
+      "query": "how do I cook the rice and the beans",
+      "language": "en"
+    },
+    {
+      "query": "I want to book a flight to Tokyo in May",
+      "language": "en"
+    },
+    {
+      "query": "can I get a refund for a pair of shoes",
+      "language": "en"
+    },
+    {
+      "query": "what is the weather like in Paris today",
+      "language": "en"
+    },
+    {
+      "query": "write a short poem about the sea and the sky",
+      "language": "en"
+    },
+    {
+      "query": "name the capital of Australia and the capital of Peru",
+      "language": "en"
+    },
+    {
+      "query": "how many calories are in a banana",
+      "language": "en"
+    },
+    {
+      "query": "recommend a good novel for a long train ride",
+      "language": "en"
+    },
+    {
+      "query": "今天的天气怎么样",
+      "language": "zh"
+    },
+    {
+      "query": "推荐一部好看的电影",
+      "language": "zh"
+    },
+    {
+      "query": "红烧肉怎么做才好吃",
+      "language": "zh"
+    },
+    {
+      "query": "周末去爬山要带些什么",
+      "language": "zh"
+    },
+    {
+      "query": "帮我写一首关于春天的诗",
+      "language": "zh"
+    },
+    {
+      "query": "北京到上海的高铁要多久",
+      "language": "zh"
+    },
+    {
+      "query": "猫咪不爱喝水怎么办",
+      "language": "zh"
+    },
+    {
+      "query": "明天早上七点叫我起床",
+      "language": "zh"
+    }
+  ]
+}

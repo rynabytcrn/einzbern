@@ -1,151 +1,151 @@
 {
   "queries": [
     {
-      "id": "knowledge:155621a1841c8f3e26996dd7",
+      "id": "knowledge:314cdacb18e015fb74448690",
       "query": "knowledge-create 传的版本号明明是链上最新的,怎么还报版本冲突?"
     },
     {
-      "id": "knowledge:29695027d5dd0d3d894c1827",
+      "id": "knowledge:c4e17c626927018939713011",
       "query": "settings.json 里配的 hook 一直不触发,单独跑那条命令又是好的,这是为啥?"
     },
     {
-      "id": "knowledge:2c9f238fa7b0b4eb3788b875",
+      "id": "knowledge:939fa8fb8993235cece099e9",
       "query": "SSH 远程跑命令,参数里带空格和括号,到那边就报语法错误"
     },
     {
-      "id": "knowledge:3b1352d143fd545a9e540c96",
+      "id": "knowledge:1b0a49afb351ba57542b3c1d",
       "query": "这次想直接 SSH 上服务器手动操作,不走平时那套流程,这样算是被允许的例外吗?"
     },
     {
-      "id": "knowledge:3b271125c5571bff5f1185fd",
+      "id": "knowledge:2a98cfa9c91b6eef9b88734d",
       "query": "有些操作会被当前工具的权限或沙盒挡住,做不了,这种限制该怎么处理才对?"
     },
     {
-      "id": "knowledge:3e5c4618c41ee9da181a2cf3",
+      "id": "knowledge:4357de1d2fe67632093082b2",
       "query": "没登录状态下调这个接口,返回的是 404,是不是就能说明这功能压根没有?"
     },
     {
-      "id": "knowledge:454ad6bdab4034a83610c87c",
+      "id": "knowledge:3ed41655366f66fa2681b4bc",
       "query": "提交记录里嫌麻烦只写 INIT-012 这种短编号,不写项目前缀,会不会以后指错记录?"
     },
     {
-      "id": "knowledge:4b037630b2ef7dc9774472be",
+      "id": "knowledge:2e724ae5a3c1c7e5013c6c97",
       "query": "当前会话上下文感觉快到上限了,是不是该先停一下,等下一轮再接着做?"
     },
     {
-      "id": "knowledge:552715b36d8a797405918762",
+      "id": "knowledge:29fc0c2d7da00d8560439a63",
       "query": "guard-check 还在跑的时候我顺手改了个文件,另一个门突然报红,是撞车了吗?"
     },
     {
-      "id": "knowledge:55f3f9876d5b1a73626e9b72",
+      "id": "knowledge:41428d7a58561be6d8e6d21e",
       "query": "同一个门本地跑是绿的,CI 上跑却红,是不是判据依赖了两边不一样的东西?"
     },
     {
-      "id": "knowledge:57638fb69914a452120e6299",
+      "id": "knowledge:96c89123d11bf159fb133634",
       "query": "查出来一个数据是空的,后来才发现是查询条件本身写窄了,这种情况以后怎么先自查?"
     },
     {
-      "id": "knowledge:577d39cec3453bb5087bb83d",
+      "id": "knowledge:9aa27db0f841e5f53dd822a6",
       "query": "work-list 里看到的数据感觉不是最新的,这种缓存视图多久该刷新一次?"
     },
     {
-      "id": "knowledge:65d088d532ec08c9bd848351",
+      "id": "knowledge:5346176f59417440259cf826",
       "query": "公约文档里想点名一个具体仓库的现状当依据,这样写会不会有问题?"
     },
     {
-      "id": "knowledge:65df78943c31f83f86316b51",
+      "id": "knowledge:84d8d6a8782c1579f7a29d7a",
       "query": "大家在讨论里口头都点头同意了,这个决定要走什么流程才算正式定下来?"
     },
     {
-      "id": "knowledge:6d696a70159180ae8551773e",
+      "id": "knowledge:e1c01a6282b6945e94a4ea5b",
       "query": "声明的内容我本地已经改对了,还没提交上去,这样算是满足条件了吗?"
     },
     {
-      "id": "knowledge:74dc3fe4e1e112100b2acc8b",
+      "id": "knowledge:993672a91c17ec75ca7ee73d",
       "query": "刚做完一次链上写入,knowledge 搜索突然就查不到东西了,是坏了吗?"
     },
     {
-      "id": "knowledge:7c22045778b85f5124f5fdc3",
+      "id": "knowledge:f9ae274387afc1820775b7b3",
       "query": "写新的链上动词时,要不要在写完后顺手把 knowledge 索引也重新对齐一下?"
     },
     {
-      "id": "knowledge:7dba2d2b2ba17eee44f25eb5",
+      "id": "knowledge:9f0e0c996385cf167a731df5",
       "query": "这功能要用的密钥还没申请下来,是不是整个开发都得先卡在这等着?"
     },
     {
-      "id": "knowledge:7e06efd0a5c5cf92b6c7840b",
+      "id": "knowledge:a3254955bbda7e86b8dcaf3f",
       "query": "我这边测出来一个东西像是坏的,要不要先怀疑是自己测试方法有问题?"
     },
     {
-      "id": "knowledge:7ecc5fd6c5af3f1ee8e0c5b4",
+      "id": "knowledge:d8c2468b2df8df6e8fdce807",
       "query": "这次任务留的记录文件里带了我本机用户目录的路径,能直接提交进公开仓库吗?"
     },
     {
-      "id": "knowledge:9869aed6d9ebd4d1f1f0d473",
+      "id": "knowledge:06b03c05de30bf5db8249e8b",
       "query": "开了好几个代理同时改同一份计划文档,最后合并出来的版本内容对不上,这是咋回事?"
     },
     {
-      "id": "knowledge:9ae8fa0707beb969c5b71f9b",
+      "id": "knowledge:6c8e2dbe04098a4752680a9b",
       "query": "这批改动是攒到下个大版本一起发,还是应该现在就拆小批量交付?"
     },
     {
-      "id": "knowledge:9fd99bab02557a7bedaf6639",
+      "id": "knowledge:77d061823741401474703b7d",
       "query": "本地测试都跑过了,push 上去之后 CI 那边结果不对,这种情况该信哪头?"
     },
     {
-      "id": "knowledge:a9f4d10d7d8b6305bd88ec9e",
+      "id": "knowledge:fbde558acf591752c6283fd7",
       "query": "门里引用的那个路径过一阵就变了,判据也跟着漂移,这个该怎么锚定?"
     },
     {
-      "id": "knowledge:acee405aaffa9bba408c4e8e",
+      "id": "knowledge:f2c37dd8d87cdbc504d7c718",
       "query": "这个方案要不要找人专门唱反调审一遍,这个流程具体怎么走?"
     },
     {
-      "id": "knowledge:ad9a349a830af2d64e235e03",
+      "id": "knowledge:90f54b3f6ddb3194ca323870",
       "query": "跑 knowledge 相关命令时报版本冲突,提示里两个版本号我完全看不懂哪个对,这咋查?"
     },
     {
-      "id": "knowledge:b303e52d7a90316055033f41",
+      "id": "knowledge:37c5216c4f41525077eb3903",
       "query": "两个仓的验收标准合并成一条以后,好像不管改什么都过不了,是不是哪里设计错了?"
     },
     {
-      "id": "knowledge:bf8cb0b8eedd64205e2dc894",
+      "id": "knowledge:7f95d8278338c6f5bab9de1d",
       "query": "写入命令返回成功了,不重新读一遍确认,这样算是已经落地了吗?"
     },
     {
-      "id": "knowledge:c496d068b76a3781e71273b3",
+      "id": "knowledge:c58e4a0f8e64fee794fbe856",
       "query": "任务跑到一半犹豫要不要停下来问一句,到底什么情况才算真的必须停?"
     },
     {
-      "id": "knowledge:c595469a571c39189d1d0b14",
+      "id": "knowledge:b50da55f56f199284f76f1dd",
       "query": "文档里想引用一个外部结论当依据,这种引用要核实到什么程度才能用?"
     },
     {
-      "id": "knowledge:ce1d48584bf43d477a258bb4",
+      "id": "knowledge:65330f4d4a4facaa974c4f11",
       "query": "用索引工具查出来的结果,后来发现早就过时了,以后用之前该先看什么?"
     },
     {
-      "id": "knowledge:d62793d03ff311dcb59e173b",
+      "id": "knowledge:3493fdef050b1aadf378436b",
       "query": "这个新计划该归到哪条线去做,方向到底该由谁来拍板?"
     },
     {
-      "id": "knowledge:d98df0d05a7eaacbeb0d4964",
+      "id": "knowledge:56c40dc7663aef58ad757108",
       "query": "用 work-show 看这个 Story 的 scope 好像没问题,这样就能判合规吗?"
     },
     {
-      "id": "knowledge:e59f6b3157fe659a36bbeab9",
+      "id": "knowledge:eb36ffd7eb2515bfb9ea2b0f",
       "query": "引擎那边的脚本想直接读产品仓的文件,这样算不算方向接反了?"
     },
     {
-      "id": "knowledge:ed4e6fbb70956a32de04042c",
+      "id": "knowledge:9226850ac26ef929cfc4ec64",
       "query": "新写的这个门,不管代码改成什么样好像都一直是绿的,这正常吗?"
     },
     {
-      "id": "knowledge:f1c0ad36c244d04299af8c37",
+      "id": "knowledge:a4662b2aa661c2b5b3d9fc39",
       "query": "这个 Story 现在这个状态能直接派给代理去做了吗,怎么判断?"
     },
     {
-      "id": "knowledge:155621a1841c8f3e26996dd7",
+      "id": "knowledge:314cdacb18e015fb74448690",
       "query": "INIT019-C12"
     }
   ]

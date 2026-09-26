@@ -385,13 +385,14 @@ const catalogEntries: readonly Omit<SettingsCatalogEntry, "layer">[] = [
     // TCRN-CROSS-STORY-362, STORY-474 R3: the strong-hit threshold, in bm25 units. A prompt whose
     // best hit scores below it is answered with nothing (RECALL_NO_STRONG_HIT); above it, it is
     // also every hit's absolute floor. Its default is RECALL_STRONG_TAU (recall.ts), calibrated by
-    // retrieval-eval. A string-typed number like every other numeric setting here, so the catalog
-    // keeps one value shape; the verb parses it and refuses a value it cannot use.
+    // retrieval-eval (tests/fixtures/retrieval-eval/strong-threshold.json, TCRN-CROSS-SUB-303). A
+    // string-typed number like every other numeric setting here, so the catalog keeps one value
+    // shape; the verb parses it and refuses a value it cannot use.
     key: "retrieval.tau",
     type: "string",
     controlType: "number",
     layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: "1",
+    defaultValue: "17",
     min: 0,
     max: 100,
   },

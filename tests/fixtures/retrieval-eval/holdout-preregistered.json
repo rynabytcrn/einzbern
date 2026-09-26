@@ -69,7 +69,7 @@
       "role": "real-prompts"
     }
   ],
-  "priorPromptDigest": "f6dada44631b077df7a52a060004ee77bb8d72c6879bdf1af1d9b72abc564540",
+  "priorPromptDigest": "ae157fbe193d7ff974a2744fc6707e140d1ace5ac823106ad388f3f092508e52",
   "legacyHoldoutPromptDigest": "a29fb34c90b8c36848e858568fa6d5bac5baa10f5ff77c78d8d1b861ddfee4b1",
   "thresholds": {
     "pairsAtLeast": 20,

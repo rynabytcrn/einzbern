@@ -26,6 +26,7 @@ import {
   initializeKnowledgeStore,
   initializeLibrary,
   materializeWorkspace,
+  setWorkspaceSetting,
   DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
@@ -64,6 +65,9 @@ async function createSyntheticWorkspace() {
     externalKey: "KNOWLEDGE-INJECT-PROJ",
     name: "Knowledge Inject Test"
   });
+  // A nine-card library lowers the strong-hit default calibrated on the cross-project chain
+  // (TCRN-CROSS-SUB-303), so "hook" is still a strong hit here.
+  state = await setWorkspaceSetting(workspace, { occurredAt: instant(1), key: "retrieval.tau", value: "1" });
 
   // Initialize the knowledge store before creating knowledge units
   await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });

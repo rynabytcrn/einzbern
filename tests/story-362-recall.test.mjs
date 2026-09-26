@@ -36,6 +36,7 @@ import {
   createWork,
   initializeKnowledgeStore,
   initializeLibrary,
+  setWorkspaceSetting,
 } from "../dist/build/packages/core/src/index.js";
 import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
@@ -72,11 +73,13 @@ test("STORY-362: a term most of the corpus carries scores below the absolute flo
   const flooded = index.search("lesson");
   assert.equal(flooded.length, 3, "the substring answer is still three cards");
   assert.ok(flooded.every((hit) => hit.score < 1), `every score is below the floor, saw ${flooded.map((h) => h.score).join(",")}`);
-  assert.deepEqual(selectRecallHits(flooded), [], "and the threshold turns them into no answer");
+  // A floor of 1, the one this four-card corpus was written against: the shipped default is
+  // calibrated on a library the size of the cross-project chain (TCRN-CROSS-SUB-303).
+  assert.deepEqual(selectRecallHits(flooded, { tau: 1 }), [], "and the threshold turns them into no answer");
   // Discrimination: a term two of four cards do not carry survives the same floor.
   const specific = index.search("hook");
-  assert.ok(selectRecallHits(specific).length >= 1);
-  assert.equal(selectRecallHits(specific)[0].id, "k2");
+  assert.ok(selectRecallHits(specific, { tau: 1 }).length >= 1);
+  assert.equal(selectRecallHits(specific, { tau: 1 })[0].id, "k2");
   index.close();
 });
 
@@ -164,6 +167,9 @@ async function syntheticWorkspace(context) {
     externalKey: "TCRN-CROSS-STORY-362", kind: "Initiative", parentId: null,
     title: "FTS5 检索核心",
   });
+  // TCRN-CROSS-SUB-303: the shipped default (RECALL_STRONG_TAU) is calibrated on a library the size
+  // of the cross-project chain; a five-document library lowers it, which is what the setting is for.
+  await setWorkspaceSetting(workspace, { occurredAt: instant(3), key: "retrieval.tau", value: "1" });
   await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
   let version = 0;
   for (const entry of CARDS) {
@@ -191,7 +197,7 @@ test("STORY-362: the recall verb answers with kind, key, status, title, summary 
   assert.equal(answer.reasonCode, "RECALL_READY");
   assert.equal(answer.schemaVersion, "tcrn.recall.v1");
   assert.equal(answer.partition, "cross-project");
-  assert.equal(answer.tau, "1.0000", "the recorded default of the retrieval.tau setting, spoken as a decimal string");
+  assert.equal(answer.tau, "1.0000", "the value recorded in the retrieval.tau setting, spoken as a decimal string");
   assert.equal(answer.relativeFloor, "0.2500");
   assert.ok(answer.records.length >= 1);
   assert.deepEqual(Object.keys(answer.records[0]).sort(), ["id", "key", "kind", "score", "status", "summary", "title"]);
@@ -294,7 +300,7 @@ test("external key fragments split hyphens and case boundaries and match token p
   try {
     for (const query of ["INIT019-C12", "INIT019-C1", "Gateway-owner", "owner-Rev", "HTTP-Gat"]) {
       assert.equal(index.search(query)[0]?.id, target.id, query);
-      assert.equal(selectRecallHits(index.search(query))[0]?.id, target.id, query);
+      assert.equal(selectRecallHits(index.search(query), { tau: 1 })[0]?.id, target.id, query);
     }
     assert.equal(index.search("019-C12").some((hit) => hit.id === target.id), false,
       "letter-digit boundaries do not split INIT019");

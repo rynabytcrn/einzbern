@@ -22,7 +22,9 @@ const CLI = process.env.TCRN_WORKFLOW_CLI ?? join(portalRoot, "..", "scripts", "
 const MUTATION = process.env.TCRN_UI_MUTATION ?? "";
 const COMPONENTS = Object.freeze([
   ["workspace tabs", '[data-ui="workspace-tabs"]'],
-  ["prose directory", '[data-ui="prose-directory"]'],
+  ["built-in rule list", '[data-ui="rule-list"]'],
+  ["rule switches", '[data-rule-switch]'],
+  ["pending rule actions", '[data-ui="rules-pending"] [data-pending-action]'],
   ["prose line-number gutter", '[data-ui="prose-gutter"]'],
   ["prose finding link", '[data-ui="prose-finding-link"]'],
   ["work tree", '[data-ui="work-tree"]'],
@@ -267,11 +269,13 @@ function pageHierarchyFindings(document, source) {
       if (content?.contains(nav)) findings.push("settings:local-nav-inside-content");
     }
     if (name === "prose") {
-      const directory = tabsRegion?.querySelector(":scope > #prose-directory");
-      const shell = lowerContent?.querySelector(":scope > .tcrn-editor-shell");
+      const pending = tabsRegion?.querySelector(":scope > #rules-pending");
+      const layout = lowerContent?.querySelector(':scope > [data-ui="rules-layout"]');
+      const directory = layout?.querySelector(":scope > #prose-directory");
+      const shell = layout?.querySelector(":scope > .tcrn-editor-shell");
       const bar = shell?.querySelector(":scope > .tcrn-editor__bar");
       const editor = shell?.querySelector(":scope > #prose-editor");
-      if (!directory || !shell || !bar || !editor || childIndex(tabsRegion, directory) !== 0 || childIndex(lowerContent, shell) !== 0 || childIndex(shell, bar) !== 0 || childIndex(shell, editor) !== 1) findings.push("prose:controls-before-editor");
+      if (!pending || !directory || !shell || !bar || !editor || childIndex(tabsRegion, pending) !== 0 || childIndex(lowerContent, layout) !== 0 || childIndex(layout, directory) !== 0 || childIndex(layout, shell) !== 1 || childIndex(shell, bar) !== 0 || childIndex(shell, editor) !== 1) findings.push("prose:rules-before-editor");
     }
     if (name === "vocabulary") {
       const nav = tabsRegion?.querySelector(":scope > #vocabulary-nav");
@@ -405,7 +409,7 @@ function assertDomContract(document) {
     ["search shortcut", "kbd.tcrn-search-input__shortcut"],
     ["workspace section tabs", '[data-ui="workspace-tabs"].tcrn-section-tabs'],
     ["surface", ".tcrn-surface"],
-    ["knowledge TOC rail", "#prose-directory.tcrn-knowledge-toc-rail"],
+    ["built-in rules list", "#prose-directory[data-ui=rule-list]"],
     ["receipt badge", "#receipt-chip.tcrn-badge"],
     ["detail drawer", "#receipt-drawer.tcrn-detail-drawer"],
     ["readback panel", "#receipt-body.tcrn-readback-panel"],
@@ -1585,7 +1589,7 @@ if (process.argv[2] === "status" && actual.status === 0) {
   // library carries one event of its own, so its status differs from the first's.
   test("STORY-482 AC1: the page switches between the registry's two libraries and shows each one's status", async () => {
     const fixture = await scratch("tcrn-482-ac1-dom-");
-    await cli(["settings-set", "--workspace", fixture.second.library, "--at", nextAt(), "--actor", "agent:test", "--key", "artifact.language", "--value", "zh-CN"], fixture.deviceEnv);
+    await cli(["settings-set", "--workspace", fixture.second.library, "--at", nextAt(), "--actor", "agent:test", "--key", "artifact.language", "--value", "zh-CN"], { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" });
     const page = await loadExecutedDom(fixture);
     try {
       const text = (selector) => page.document.querySelector(selector)?.textContent ?? "";

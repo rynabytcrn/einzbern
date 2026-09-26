@@ -3984,6 +3984,18 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .tcrn-page[data-page="vocabulary"] {
   max-width: 1040px;
 }
+[data-ui="rules-pending"] { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tcrn-space-2); padding: var(--tcrn-space-3); border: 1px solid var(--tcrn-color-border-subtle); border-radius: var(--tcrn-radius-surface); background: var(--tcrn-color-surface-panel); }
+[data-ui="rules-pending"] > select { min-width: min(100%, 240px); flex: 1 1 240px; }
+[data-ui="rules-layout"] { display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); gap: var(--tcrn-space-4); align-items: start; }
+[data-ui="rule-list"] { display: grid; gap: var(--tcrn-space-2); min-width: 0; }
+[data-rule-card] { display: grid; gap: var(--tcrn-space-2); padding: var(--tcrn-space-3); border: 1px solid var(--tcrn-color-border-subtle); border-radius: var(--tcrn-radius-surface); background: var(--tcrn-color-surface-panel); }
+[data-rule-card-head] { display: flex; justify-content: space-between; align-items: start; gap: var(--tcrn-space-2); }
+[data-rule-card-title] { margin: 0; font-size: var(--tcrn-type-size-body); }
+[data-rule-card-meta] { color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); }
+[data-rule-card-actions] { display: flex; align-items: center; justify-content: space-between; gap: var(--tcrn-space-2); }
+[data-rule-force-label] { display: flex; align-items: center; gap: var(--tcrn-space-1); color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); }
+#prose-directory [data-rule-force] { width: auto; min-height: auto; padding: 0; accent-color: var(--tcrn-color-brand-primary); }
+@media (max-width: 760px) { [data-ui="rules-layout"] { grid-template-columns: minmax(0, 1fr); } }
 .tcrn-editor-shell {
   grid-template-columns: minmax(184px, 208px) minmax(0, 1fr);
   grid-template-areas:
@@ -4184,13 +4196,13 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
       <section class="tcrn-page tcrn-page--manage" data-page="prose" hidden>
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
-            <div class="tcrn-page__head"><div><h1 data-i18n="page.prose">Rules</h1><p class="tcrn-page__lede" data-i18n="prose.lede">Workspace prose is edited as a plain file and checked against the live engine vocabulary.</p></div><div class="tcrn-page__actions"><span class="tcrn-badge" id="reconcile-chip">—</span><button class="tcrn-button tcrn-button--primary" id="save-agents" data-i18n="prose.save" data-cli-action="agents-write">Save</button></div></div>
+            <div class="tcrn-page__head"><div><h1 data-i18n="page.prose">Rules</h1><p class="tcrn-page__lede" data-i18n="prose.lede">Manage built-in rules and edit AGENTS.md.</p></div><div class="tcrn-page__actions"><button class="tcrn-button tcrn-button--secondary" id="pending-open" data-i18n="rule.pendingTitle">Pending</button><span class="tcrn-badge" id="reconcile-chip">—</span><button class="tcrn-button tcrn-button--primary" id="save-agents" data-i18n="prose.save" data-cli-action="agents-render">Save and check</button></div></div>
           </div>
           <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs">
-            <nav class="tcrn-knowledge-toc-rail tcrn-editor__directory" id="prose-directory" data-ui="prose-directory" data-page-hierarchy-control-kind="document-directory" aria-label="Document directory" role="tree"></nav>
+            <div id="rules-pending" data-ui="rules-pending" aria-label="Pending rule changes"><strong data-i18n="rule.pendingTitle">Pending</strong><label class="tcrn-sr-only" for="pending-section" data-i18n="rule.pendingSelect">Pending section</label><select class="tcrn-select" id="pending-section" data-ui="pending-section"></select><button class="tcrn-button tcrn-button--secondary" type="button" data-pending-action="keep" data-i18n="rule.keep">Keep my text</button><button class="tcrn-button tcrn-button--secondary" type="button" data-pending-action="overwrite" data-i18n="rule.overwrite">Overwrite</button><button class="tcrn-button tcrn-button--quiet" type="button" data-pending-action="unmanage" data-i18n="rule.unmanage">Unmanage</button></div>
           </div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content">
-            <div class="tcrn-editor-shell"><div class="tcrn-editor__bar"><span class="tcrn-meta" id="agents-path"></span><span class="tcrn-editor__status" id="agents-status" data-i18n="prose.fileNote">plain file</span></div><div class="tcrn-line-numbered-editor" id="prose-editor" data-line-numbered-editor="true"><ol class="tcrn-line-numbered-editor__gutter" id="prose-gutter" data-ui="prose-gutter" role="note" aria-label="Line numbers"></ol><div class="tcrn-line-numbered-editor__content"><textarea class="tcrn-input tcrn-textarea tcrn-line-numbered-editor__control" id="agents-md" spellcheck="false" aria-label="AGENTS.md"></textarea><ul class="tcrn-line-numbered-editor__findings" id="reconcile-findings" aria-label="Editor findings"></ul></div></div></div>
+            <div data-ui="rules-layout"><section id="prose-directory" data-ui="rule-list" aria-label="Built-in rules"></section><div class="tcrn-editor-shell"><div class="tcrn-editor__bar"><span class="tcrn-meta" id="agents-path"></span><span class="tcrn-editor__status" id="agents-status" data-i18n="prose.fileNote">AGENTS.md</span></div><div class="tcrn-line-numbered-editor" id="prose-editor" data-line-numbered-editor="true"><ol class="tcrn-line-numbered-editor__gutter" id="prose-gutter" data-ui="prose-gutter" role="note" aria-label="Line numbers"></ol><div class="tcrn-line-numbered-editor__content"><textarea class="tcrn-input tcrn-textarea tcrn-line-numbered-editor__control" id="agents-md" spellcheck="false" aria-label="AGENTS.md"></textarea><ul class="tcrn-line-numbered-editor__findings" id="reconcile-findings" aria-label="Editor findings"></ul></div></div></div></div>
           </div>
         </div>
       </section>
@@ -4231,7 +4243,7 @@ const BOOT = __PORTAL_BOOT__;
   const storedTheme = tcrnReadPreference("theme", ["light", "dark"], null);
   const machineTheme = ["light", "dark"].includes(BOOT.machineDefaults?.theme) ? BOOT.machineDefaults.theme : null;
   if (storedTheme === null && machineTheme !== null) document.documentElement.dataset.tcrnTheme = machineTheme;
-  const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? "en", theme: document.documentElement.dataset.tcrnTheme, page: "dashboard", dashboardTab: "overview", settingGroup: "workspace", settings: null, machineSettings: null, vocabulary: null, status: null, work: null, knowledge: null, knowledgeQuery: "", knowledgeBody: null, commands: [], selectedVocabulary: "conferenceTypes", receipt: null, operationDetailsOpen: false, agentsText: "", reconciliation: null, searchIndex: [], searchResults: [], searchSelection: 0 };
+  const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? "en", theme: document.documentElement.dataset.tcrnTheme, page: "dashboard", dashboardTab: "overview", settingGroup: "workspace", settings: null, machineSettings: null, vocabulary: null, status: null, work: null, knowledge: null, knowledgeQuery: "", knowledgeBody: null, commands: [], selectedVocabulary: "conferenceTypes", receipt: null, operationDetailsOpen: false, agentsText: "", reconciliation: null, rules: null, pendingSection: "", searchIndex: [], searchResults: [], searchSelection: 0 };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   // DS Tabs is a behavior contract, not a role decoration. Every tablist below
@@ -5031,12 +5043,49 @@ const BOOT = __PORTAL_BOOT__;
     mountStaticOverlayMounts();
   };
   const lineFromText = (text) => text.split("\n");
+  const ruleTitle = (id) => ({
+    autonomy: t("rule.title.autonomy"),
+    batch: t("rule.title.batch"),
+    "unattended-commands": t("rule.title.unattended-commands"),
+    "silent-reporting": t("rule.title.silent-reporting"),
+  })[id] || id;
+  const ruleStateLabel = (value) => ({
+    disabled: t("rule.state.disabled"),
+    enabled: t("rule.state.enabled"),
+    "user-modified": t("rule.state.user-modified"),
+    "removed-from-file": t("rule.state.removed-from-file"),
+    "update-available": t("rule.state.update-available"),
+    pending: t("rule.state.pending"),
+  })[value] || value;
+  const ruleIsEnabled = (rule) => ["enabled", "user-modified", "removed-from-file", "update-available", "pending"].includes(rule.state);
+  const renderPending = () => {
+    const pending = state.rules?.pending || [];
+    if (!pending.some((entry) => entry.id === state.pendingSection)) state.pendingSection = pending[0]?.id || "";
+    const select = $("#pending-section");
+    select.innerHTML = pending.length ? pending.map((entry) => `<option value="${esc(entry.id)}" ${entry.id === state.pendingSection ? "selected" : ""}>${esc(entry.id)} · ${esc(entry.file)}</option>`).join("") : `<option value="">${esc(t("rule.pendingEmpty"))}</option>`;
+    select.disabled = pending.length === 0;
+    $$('[data-pending-action]').forEach((button) => { button.disabled = pending.length === 0; });
+    $("#pending-open").textContent = `${t("rule.pendingTitle")} · ${pending.length}`;
+  };
   const renderProseDirectory = () => {
-    const lines = lineFromText(state.agentsText);
-    const headings = lines.map((line, index) => ({ line: index + 1, text: line.replace(/^#+\s*/u, ""), level: (line.match(/^#+/u) || [""])[0].length })).filter((entry) => entry.level > 0);
-    $("#prose-directory").innerHTML = headings.length ? headings.map((entry) => `<button type="button" class="tcrn-directory__item" data-prose-line="${entry.line}" data-level="${entry.level}" data-cli-action="agents-read">↳ ${esc(entry.text)}</button>`).join("") : `<div class="tcrn-state-surface">${esc(t("prose.noHeadings"))}</div>`;
-    $$('[data-prose-line]').forEach((button) => button.addEventListener("click", () => focusLine(Number(button.dataset.proseLine))));
-    attachEcho($("#prose-directory"));
+    const rules = state.rules?.rules || [];
+    $("#prose-directory").innerHTML = rules.length ? rules.map((rule) => {
+      const enabled = ruleIsEnabled(rule);
+      const changed = ["user-modified", "pending"].includes(rule.state);
+      const forceId = `rule-force-${rule.id}`;
+      return `<article data-rule-card="${esc(rule.id)}"><div data-rule-card-head><h2 data-rule-card-title>${esc(ruleTitle(rule.id))}</h2><span class="tcrn-badge" data-rule-state="${esc(rule.state)}">${esc(ruleStateLabel(rule.state))}</span></div><div data-rule-card-meta>${esc(rule.section)} · v${esc(rule.version ?? "—")}</div><div data-rule-card-actions><label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-rule-switch="${esc(rule.id)}" aria-label="${esc(ruleTitle(rule.id))}" ${enabled ? "checked" : ""}><span class="tcrn-switch__label">${esc(enabled ? t("config.enabled") : t("config.disabled"))}</span></label>${changed && enabled ? `<label data-rule-force-label for="${forceId}"><input class="tcrn-input" type="checkbox" id="${forceId}" data-rule-force="${esc(rule.id)}">${esc(t("rule.forceDisable"))}</label>` : ""}</div></article>`;
+    }).join("") : `<div class="tcrn-state-surface">${esc(t("config.loading"))}</div>`;
+    $$('[data-rule-switch]').forEach((input) => input.addEventListener("change", async () => {
+      const id = input.dataset.ruleSwitch;
+      const action = input.checked ? "enable" : "disable";
+      const force = $(`[data-rule-force="${CSS.escape(id)}"]`)?.checked === true;
+      echo(action === "enable" ? "rule-enable" : "rule-disable", ["--id", id, ...(force ? ["--force", "true"] : [])]);
+      const result = await api(`/api/rules/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify({ action, ...(force ? { force: true } : {}) }) });
+      showReceipt(result);
+      if (result.ok && result.rules) state.rules = result;
+      else input.checked = !input.checked;
+      renderProseDirectory(); renderPending();
+    }));
   };
   const renderGutter = () => {
     const lines = lineFromText(state.agentsText);
@@ -5055,7 +5104,7 @@ const BOOT = __PORTAL_BOOT__;
     renderGutter();
     $$('[data-prose-line]', $("#reconcile-findings")).forEach((button) => button.addEventListener("click", () => focusLine(Number(button.dataset.proseLine))));
   };
-  const loadAgents = async () => { const [documentResult, reconciliation] = await Promise.all([api("/api/agents-md"), api("/api/agents-md/reconcile")]); state.agentsText = documentResult.text || ""; $("#agents-md").value = state.agentsText; setText("#agents-path", documentResult.path || "AGENTS.md"); renderProseDirectory(); renderGutter(); renderReconciliation(reconciliation); };
+  const loadAgents = async () => { const [documentResult, reconciliation, rules] = await Promise.all([api("/api/agents-md"), api("/api/agents-md/reconcile"), api("/api/rules")]); state.agentsText = documentResult.text || ""; state.rules = rules; $("#agents-md").value = state.agentsText; setText("#agents-path", documentResult.path || "AGENTS.md"); renderProseDirectory(); renderPending(); renderGutter(); renderReconciliation(reconciliation); };
   // An empty selection means "unset this key": the engine refuses an empty --value as a
   // missing argument, and the honest verb for clearing a setting is settings-remove.
   const saveSetting = async (key, value) => {
@@ -5118,9 +5167,19 @@ const BOOT = __PORTAL_BOOT__;
   const search = (query) => { const normalized = query.trim().toLocaleLowerCase(); state.searchResults = normalized ? state.searchIndex.filter((entry) => entry.text.toLocaleLowerCase().includes(normalized)).slice(0, 12) : []; state.searchSelection = 0; renderSearchResults(); };
   const chooseSearch = (index = 0) => { const result = state.searchResults[index]; if (!result) return; navigate(result.page); state.searchResults = []; renderSearchResults(); if (result.vocabulary) { state.selectedVocabulary = result.vocabulary; renderVocabulary(); } if (result.key) { state.settingGroup = settingGroup(result.key); renderSettings(); const target = $(`[data-setting-row="${CSS.escape(result.key)}"]`); target?.classList.add("tcrn-highlight"); target?.scrollIntoView({ block: "center" }); } };
   $$('[data-page-target]').forEach((button) => button.addEventListener("click", () => navigate(button.dataset.pageTarget)));
-  $("#save-agents").addEventListener("click", async () => { echo("agents-write"); const result = await api("/api/agents-md", { method: "PUT", body: JSON.stringify({ file: "AGENTS.md", text: $("#agents-md").value }) }); showReceipt(result); await loadAgents(); });
-  $("#agents-md").addEventListener("input", (event) => { state.agentsText = event.target.value; renderProseDirectory(); renderGutter(); });
+  $("#save-agents").addEventListener("click", async () => { echo("agents-render"); const result = await api("/api/agents-md", { method: "PUT", body: JSON.stringify({ file: "AGENTS.md", text: $("#agents-md").value }) }); showReceipt(result); await loadAgents(); });
+  $("#agents-md").addEventListener("input", (event) => { state.agentsText = event.target.value; renderGutter(); });
   $("#agents-md").addEventListener("scroll", () => { $("#prose-gutter").scrollTop = $("#agents-md").scrollTop; });
+  $("#pending-open").addEventListener("click", () => { $("#rules-pending").scrollIntoView({ block: "nearest" }); $("#pending-section").focus(); });
+  $("#pending-section").addEventListener("change", (event) => { state.pendingSection = event.target.value; });
+  $$('[data-pending-action]').forEach((button) => button.addEventListener("click", async () => {
+    if (!state.pendingSection) return;
+    const action = button.dataset.pendingAction;
+    echo("rule-resolve", ["--section", state.pendingSection, "--action", action]);
+    const result = await api("/api/rules/resolve", { method: "POST", body: JSON.stringify({ section: state.pendingSection, action }) });
+    showReceipt(result);
+    await loadAgents();
+  }));
   $("#receipt-chip").addEventListener("click", openReceipt); $("#receipt-details-trigger").addEventListener("click", toggleReceiptDetails); $("#drawer-button").addEventListener("click", openReceipt); $("#drawer-close").addEventListener("click", closeReceipt);
   $("#library-select").addEventListener("change", async (event) => { const selected = await api("/api/library", { method: "POST", body: JSON.stringify({ library: event.target.value }) }); if (selected.ok) { BOOT.library = selected.library; BOOT.workspace = selected.workspace; BOOT.libraryName = selected.libraryName; BOOT.proseRoot = selected.proseRoot; const listing = await api("/api/libraries"); loadLibraries(listing.ok ? listing.libraries : BOOT.libraries); setText("#workspace-label", BOOT.workspace); $("#workspace-label").title = BOOT.workspace; applyRailIdentity(); await refresh(); await loadAgents(); } else { loadLibraries(); showReceipt(selected); } });
   $("#theme-button").addEventListener("click", () => {
@@ -5151,7 +5210,7 @@ const BOOT = __PORTAL_BOOT__;
       tcrnWritePreference("locale", state.locale);
       setLocaleMenuOpen(false);
       localeTrigger.focus();
-      applyLocale(); renderDashboard(); renderSettings(); renderVocabulary(); renderReconciliation(state.reconciliation || { ok: true, findings: [] });
+      applyLocale(); renderDashboard(); renderSettings(); renderVocabulary(); renderProseDirectory(); renderPending(); renderReconciliation(state.reconciliation || { ok: true, findings: [] });
     });
   });
   document.addEventListener("pointerdown", (event) => { if (!localeMenu.contains(event.target)) setLocaleMenuOpen(false); });

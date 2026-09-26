@@ -180,6 +180,7 @@ const libraryName = (library) => basename(library.projectPath) || library.librar
 const settingsCatalog = () => cli(["settings-catalog", "--workspace", currentLibrary().libraryPath]);
 const vocabulary = () => cli(["vocabulary"]);
 const commands = () => cli(["commands"]);
+const ruleListing = () => cliResult(["rule-list", "--project", currentLibrary().projectPath]);
 
 function readInstant() {
   return new Date().toISOString();
@@ -243,6 +244,30 @@ async function governedWrite(build) {
   }
 }
 
+async function projectWrite(build) {
+  const occurredAt = nextOccurredAt();
+  try {
+    if (!ACTOR) throw new Error("TCRN_PORTAL_ACTOR must be a non-empty actor id");
+    const common = ["--project", currentLibrary().projectPath, "--at", occurredAt, "--actor", ACTOR];
+    return await cliResult(build(common));
+  } catch (error) {
+    return { ok: false, body: { ok: false, reasonCode: "PORTAL_CLI_UNAVAILABLE", error: String(error?.message ?? error) } };
+  }
+}
+
+const renderManagedAgents = () => projectWrite((common) => ["agents-render", ...common]);
+
+async function rulesProjection() {
+  const result = await ruleListing();
+  if (!result.ok) return { ...result.body, ok: false };
+  const rules = Array.isArray(result.body?.rules) ? result.body.rules : [];
+  return {
+    ...result.body,
+    ok: true,
+    pending: rules.filter((rule) => rule.state === "pending").map((rule) => ({ id: rule.section, file: "AGENTS.md", ruleId: rule.id })),
+  };
+}
+
 function stableId(namespace, externalKey) {
   const key = String(externalKey).toUpperCase();
   return `${namespace}:${createHash("sha256").update(`${namespace}\u0000${key}`, "utf8").digest("hex").slice(0, 24)}`;
@@ -263,8 +288,14 @@ function proseTarget(name = PROSE_FILES[0]) {
 const KEY_PATTERN = /\b([a-z][a-zA-Z0-9]*(?:\.[a-z][a-zA-Z0-9]*)+)\b/gu;
 
 async function reconcile() {
-  const catalog = await settingsCatalog();
-  const registered = new Set(catalog.settings.map((entry) => entry.key));
+  const [catalog, variables] = await Promise.all([
+    settingsCatalog(),
+    cli(["variable-list", "--workspace", currentLibrary().libraryPath]),
+  ]);
+  const registered = new Set([
+    ...catalog.settings.map((entry) => entry.key),
+    ...(Array.isArray(variables.variables) ? variables.variables.map((entry) => entry.name) : []),
+  ]);
   const rows = [];
   for (const name of PROSE_FILES) {
     const path = proseTarget(name);
@@ -322,8 +353,39 @@ async function agentsWrite(body) {
   if (!path) return { status: 404, body: { ok: false, reasonCode: "PORTAL_PATH_ESCAPE", file } };
   const text = String(body.text ?? "");
   await writeFile(path, text, "utf8");
+  const savedText = await readFile(path, "utf8");
+  const rendered = await renderManagedAgents();
   const readback = await readFile(path, "utf8");
-  return { status: 200, body: { ok: true, reasonCode: "PORTAL_AGENTS_MD_WRITTEN", file, path, matches: readback === text, text: readback } };
+  if (!rendered.ok) {
+    return {
+      status: 409,
+      body: {
+        ok: false,
+        reasonCode: rendered.body?.reasonCode ?? "PORTAL_AGENTS_RENDER_FAILED",
+        file,
+        path,
+        saved: true,
+        matches: savedText === text,
+        text: readback,
+        render: rendered.body,
+      },
+    };
+  }
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      reasonCode: "PORTAL_AGENTS_MD_WRITTEN",
+      file,
+      path,
+      saved: true,
+      matches: savedText === text,
+      text: readback,
+      sections: rendered.body.sections ?? [],
+      pending: rendered.body.pending ?? [],
+      render: rendered.body,
+    },
+  };
 }
 
 const apiAlias = (pathname) => pathname === "/api/prose" ? "/api/agents-md" : pathname === "/api/reconcile" ? "/api/agents-md/reconcile" : pathname;
@@ -403,6 +465,11 @@ const server = createServer(async (request, response) => {
       send(response, 200, await settingsCatalog());
       return;
     }
+    if (request.method === "GET" && pathname === "/api/rules") {
+      const result = await rulesProjection();
+      send(response, result.ok ? 200 : 502, result);
+      return;
+    }
     if (request.method === "GET" && pathname === "/api/machine-settings") {
       send(response, 200, (await machineSettings()) ?? { reasonCode: "MACHINE_SETTINGS_UNAVAILABLE", settings: [] });
       return;
@@ -426,6 +493,54 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === "GET" && pathname === "/api/commands") {
       send(response, 200, await commands());
+      return;
+    }
+    if (request.method === "POST" && pathname === "/api/rules/resolve") {
+      const body = await readJsonBody(request);
+      const section = String(body.section ?? "");
+      const action = String(body.action ?? "");
+      if (!["overwrite", "keep", "unmanage"].includes(action)) {
+        send(response, 400, { ok: false, reasonCode: "PORTAL_RULE_RESOLUTION_INVALID", section, action });
+        return;
+      }
+      const result = await projectWrite((common) => [
+        "rule-resolve",
+        "--section", section,
+        "--action", action,
+        ...(body.force === true ? ["--force", "true"] : []),
+        ...common,
+      ]);
+      const payload = { ...result.body, ok: result.ok };
+      if (result.ok) {
+        const latest = await rulesProjection();
+        payload.rules = latest.rules ?? [];
+        payload.pending = latest.pending ?? [];
+      }
+      send(response, result.ok ? 200 : 409, payload);
+      return;
+    }
+    const ruleRoute = /^\/api\/rules\/([^/]+)$/u.exec(pathname);
+    if (request.method === "POST" && ruleRoute !== null) {
+      const body = await readJsonBody(request);
+      const id = decodeURIComponent(ruleRoute[1]);
+      const action = String(body.action ?? "");
+      if (!["enable", "disable"].includes(action)) {
+        send(response, 400, { ok: false, reasonCode: "PORTAL_RULE_ACTION_INVALID", id, action });
+        return;
+      }
+      const result = await projectWrite((common) => [
+        action === "enable" ? "rule-enable" : "rule-disable",
+        "--id", id,
+        ...(action === "disable" && body.force === true ? ["--force", "true"] : []),
+        ...common,
+      ]);
+      const payload = { ...result.body, ok: result.ok };
+      if (result.ok) {
+        const latest = await rulesProjection();
+        payload.rules = latest.rules ?? [];
+        payload.pending = latest.pending ?? [];
+      }
+      send(response, result.ok ? 200 : 409, payload);
       return;
     }
     if (request.method === "GET" && pathname === "/api/status") {

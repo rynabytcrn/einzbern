@@ -186,7 +186,12 @@ async function applyKnowledgeBatchUnlocked(
         }, memberProvider === undefined ? mutation : { ...mutation, languageProvider: memberProvider });
         version = result.version as number;
         revisions.set(result.id as string, result.revision as number);
-        applied.push({ index, verb: "knowledge-create", id: result.id as string, revision: result.revision as number, version });
+        // TCRN-CROSS-SUB-311: a member that superseded a card names it, as the single verb does, so
+        // the batch receipt's ids hold every card record the batch rewrote.
+        applied.push({
+          index, verb: "knowledge-create", id: result.id as string, revision: result.revision as number, version,
+          ...(typeof result.superseded === "string" ? { superseded: result.superseded } : {}),
+        });
         continue;
       }
       const id = referencedId(member) as string;

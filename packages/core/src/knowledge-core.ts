@@ -2461,6 +2461,11 @@ export interface CaptureKnowledgeUnitInput {
   readonly linkedEvidenceIds?: readonly string[];
   readonly supersedes?: string | null;
   readonly coexist?: boolean;
+  // TCRN-CROSS-STORY-476 R5 (TCRN-CROSS-SUB-311): where the card applies, and so where it is
+  // stored. Left out it is a role card in the library's crest, as a capture always was;
+  // "workspace" is a card of the whole library, and "user" a card of this user's crest, recalled
+  // in every project. Neither of those two names a role.
+  readonly scope?: "role" | "workspace" | "user";
 }
 
 /**
@@ -2486,12 +2491,13 @@ export async function captureKnowledgeUnit(
   // twice at the same instant is a duplicate rather than a second card.
   const externalKey = input.externalKey ??
     `CAPTURE-${createHash("sha256").update(`${input.subject}\u0000${input.body}\u0000${input.occurredAt}`, "utf8").digest("hex").slice(0, 24).toUpperCase()}`;
+  const scope = input.scope ?? "role";
   return createKnowledgeUnit(workspaceRoot, {
     occurredAt: input.occurredAt,
     externalKey,
-    scope: "role",
+    scope,
     projectId: null,
-    roleScopes: input.roleScopes ?? ["implementation"],
+    roleScopes: input.roleScopes ?? (scope === "role" ? ["implementation"] : []),
     category: input.category ?? "workflow",
     kind: input.kind ?? "fact",
     tags: input.tags,

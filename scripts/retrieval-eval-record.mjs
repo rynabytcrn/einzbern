@@ -44,8 +44,8 @@ import { basename, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
+import { expansionsText } from "../dist/build/packages/core/src/knowledge-language.js";
 import {
-  expansionsText,
   hasLibraryManifest,
   legacyControlDirectory,
   listKnowledgeMetadata,

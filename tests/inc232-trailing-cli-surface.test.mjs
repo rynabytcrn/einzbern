@@ -103,7 +103,9 @@ test("INC-232: every read verb the catalog says takes --allow-trailing actually 
       ["knowledge-list", "--workspace", workspace, "--at", instant(7), "--selection", "all"],
       ["knowledge-freshness", "--workspace", workspace, "--at", instant(7)],
       ["knowledge-snippet", "--workspace", workspace, "--id", id],
-      ["knowledge-body", "--workspace", workspace, "--id", id, "--at", instant(7), "--allow-unpromoted", "true"],
+      // --allow-unpromoted went with the promotion step (TCRN-CROSS-STORY-476 R1): every card is
+      // written readable, so the body read needs no flag to open it.
+      ["knowledge-body", "--workspace", workspace, "--id", id, "--at", instant(7)],
     ];
     for (const argv of invocations) {
       const refused = await cli(argv);

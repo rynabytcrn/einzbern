@@ -354,6 +354,7 @@ export {
   KNOWLEDGE_PROVENANCE_POLICY,
   KNOWLEDGE_REASON_CODES,
   KNOWLEDGE_STORE_SCHEMA_VERSION,
+  KNOWLEDGE_STORE_SCOPES,
   KnowledgeCoreError,
   captureKnowledgeUnit,
   createKnowledgeArticle,
@@ -393,12 +394,12 @@ export type {
   KnowledgeLifecycle,
   KnowledgeListQuery,
   KnowledgeMutationOptions,
-  KnowledgePromotionState,
   KnowledgeReadOptions,
   KnowledgeReasonCode,
   KnowledgeRetrievalDisposition,
   KnowledgeScope,
   KnowledgeStalenessPolicy,
+  KnowledgeStoreScope,
   KnowledgeUnitExtensions,
   KnowledgeUnitMetadata,
 } from "./knowledge-core.js";
@@ -553,10 +554,12 @@ export type { KnowledgeBatchOptions, KnowledgeBatchProblem } from "./knowledge-b
 // TCRN-CROSS-STORY-364: the artefact-language policy is re-exported because the CLI reads
 // it on the recall path (the prompt-language fallback) and the migration executor reads it
 // on the write path. Both go through the barrel like every other core consumer.
+// TCRN-CROSS-SUB-311: expansionsText left the barrel when the recall verb began reading its
+// cards through readRecallCards, which flattens a card's phrasings inside core; the recorder
+// and the tests that call it read ./knowledge-language.js directly.
 export {
   applyWriteLanguagePolicy,
   detectLanguage,
-  expansionsText,
   KNOWLEDGE_LANGUAGE_BUNDLE_FALLBACK_KEY,
   languageProviderFromBundle,
   parseLanguageBundle,
@@ -565,10 +568,21 @@ export {
 } from "./knowledge-language.js";
 export type { KnowledgeLanguageBundle, KnowledgeLanguageProvider } from "./knowledge-language.js";
 export { RECALL_CANDIDATE_LIMIT, RECALL_DEFAULT_TAU, recall, recallDocuments } from "./recall.js";
-export type { RecallKnowledgeInput } from "./recall.js";
 // TCRN-CROSS-STORY-474 R1, R2: what recall indexes, read from a state, and how a hit reads as one
 // line; the verb builds its input here, as the prompt hook does.
-export { formatRecallLine, recallContextLines, recallInputsFromState } from "./recall-inputs.js";
+export { formatRecallLine, readRecallCards, recallContextLines, recallInputsFromState } from "./recall-inputs.js";
+// TCRN-CROSS-STORY-476 R4: the line a done transition and minutes-record answer, asking whether there
+// is knowledge to extract and naming the cards a card about it could conflict with. R5: recall reads
+// the library's crest and this user's (readRecallCards above), and a read verb names its store.
+export { knowledgeHintFor, readKnowledgeHintCards } from "./knowledge-hint.js";
+export type { KnowledgeHint } from "./knowledge-hint.js";
+// TCRN-CROSS-STORY-485 R1 to R4: gate declarations in the library, the gates a change needs, running
+// them into this device's cache, and the check a Story passes on its way to done.
+export { listGates, removeGate, setGate } from "./gates-config.js";
+export { planGates } from "./gates-plan.js";
+export { runGates } from "./gates-run.js";
+export { assertDoneGates } from "./gates-done.js";
+export type { DoneGatesVerdict } from "./gates-done.js";
 export {
   probeHost,
 } from "./host-probe.js";

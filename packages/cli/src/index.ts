@@ -59,8 +59,17 @@ import {
   admitTemplateInWorkspace,
   readTemplateDocumentFile,
   RECALL_CANDIDATE_LIMIT,
-  expansionsText,
   KNOWLEDGE_LANGUAGE_BUNDLE_FALLBACK_KEY,
+  KNOWLEDGE_STORE_SCOPES,
+  knowledgeHintFor,
+  readKnowledgeHintCards,
+  readRecallCards,
+  assertDoneGates,
+  listGates,
+  planGates,
+  removeGate,
+  runGates,
+  setGate,
   languageProviderFromBundle,
   parseLanguageBundle,
   RECALL_DEFAULT_TAU,
@@ -118,11 +127,12 @@ import {
 } from "../../core/src/index.js";
 import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider, SectionAction, StoryFields, WorkRelationsInput } from "../../core/src/index.js";
 import type {
+  DoneGatesVerdict,
   KnowledgeCategory,
   KnowledgeFreshnessState,
+  KnowledgeHint,
   KnowledgeKind,
-  KnowledgePromotionState,
-  RecallKnowledgeInput,
+  KnowledgeStoreScope,
 } from "../../core/src/index.js";
 import { existsSync, readFileSync } from "node:fs";
 import { cp, lstat, mkdir, readdir, writeFile } from "node:fs/promises";
@@ -704,7 +714,13 @@ function eventPage(state: Awaited<ReturnType<typeof validateWorkspace>>, values:
   }
 }
 
-function writeState(io: CliIo, state: Awaited<ReturnType<typeof validateWorkspace>>, record?: Readonly<Record<string, unknown>>, warning?: Readonly<Record<string, string>> | null): void {
+function writeState(
+  io: CliIo,
+  state: Awaited<ReturnType<typeof validateWorkspace>>,
+  record?: Readonly<Record<string, unknown>>,
+  warning?: Readonly<Record<string, string>> | null,
+  extra: Readonly<Record<string, unknown>> = {},
+): void {
   io.write(canonicalJson({
     reasonCode: "WORKSPACE_COMMAND_COMPLETED",
     workspaceId: state.metadata.workspaceId,
@@ -715,7 +731,151 @@ function writeState(io: CliIo, state: Awaited<ReturnType<typeof validateWorkspac
     work: state.work.filter((entry) => !entry.tombstone).length,
     ...(record ? { record } : {}),
     ...(warning === undefined || warning === null ? {} : { warning }),
+    ...extra,
   }));
+}
+
+// TCRN-CROSS-STORY-476 R4 (TCRN-CROSS-SUB-311): a work record reaching done and minutes being
+// recorded each answer one line asking whether there is knowledge to extract, naming the cards a
+// card about it could conflict with. The cards are read once, after the write, from the library's
+// crest and this user's; a store that cannot be read gives none, and the write stands either way.
+async function knowledgeHints(
+  workspace: string,
+  at: string,
+  state: Awaited<ReturnType<typeof validateWorkspace>>,
+  targets: readonly ({ readonly workId: string } | { readonly minutesId: string })[],
+): Promise<readonly KnowledgeHint[]> {
+  if (targets.length === 0) return [];
+  const cards = await readKnowledgeHintCards(workspace, at);
+  return targets.map((target) => knowledgeHintFor(state, cards, target));
+}
+
+// The records a work-batch document takes to done: its work-transition members with status done,
+// by id or by the id their external key derives, each once, in member order.
+function batchDoneWorkIds(document: unknown): readonly string[] {
+  const members = (document as { readonly members?: unknown } | null)?.members;
+  if (!Array.isArray(members)) return [];
+  const ids: string[] = [];
+  for (const member of members as readonly unknown[]) {
+    if (member === null || typeof member !== "object") continue;
+    const entry = member as Readonly<Record<string, unknown>>;
+    if (entry.verb !== "work-transition" || entry.status !== "done") continue;
+    const id = typeof entry.id === "string" && entry.id.length > 0
+      ? entry.id
+      : typeof entry.externalKey === "string" && entry.externalKey.length > 0
+        ? deriveStableId("work", canonicalExternalKey(entry.externalKey))
+        : null;
+    if (id !== null && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
+// TCRN-CROSS-STORY-476 (problem list #18): every knowledge verb that writes a card answers the ids
+// it wrote beside the store's version, as a library write answers its ids beside its version: the
+// card written, the card it superseded (whose record the write rewrites), and in a batch every card
+// a member wrote or superseded.
+function knowledgeWriteReceipt(result: Readonly<Record<string, JsonValue>>): string {
+  const ids: string[] = [];
+  const add = (value: JsonValue | undefined): void => {
+    if (typeof value === "string" && !ids.includes(value)) ids.push(value);
+  };
+  add(result["id"]);
+  add(result["superseded"]);
+  const applied = result["applied"];
+  if (Array.isArray(applied)) {
+    for (const entry of applied) {
+      if (entry === null || typeof entry !== "object" || Array.isArray(entry)) continue;
+      const member = entry as Readonly<Record<string, JsonValue>>;
+      add(member["id"]);
+      add(member["superseded"]);
+    }
+  }
+  return canonicalJson({ ...result, ids });
+}
+
+// TCRN-CROSS-STORY-476 R5: the store a knowledge read goes to -- the library's crest ("project",
+// the default) or this user's crest ("user").
+function storeScopeOption(value: string | undefined): { readonly scope?: KnowledgeStoreScope } {
+  if (value === undefined) return {};
+  if (!(KNOWLEDGE_STORE_SCOPES as readonly string[]).includes(value)) fail("CLI_ARGUMENT_MALFORMED", `scope=${value}`);
+  return { scope: value as KnowledgeStoreScope };
+}
+
+// TCRN-CROSS-STORY-485 R1 (TCRN-CROSS-SUB-345): a gate's command is its argv, given as one JSON array
+// of strings; the engine checks every argument when the gate is declared.
+function gateCommandValue(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    fail("CLI_ARGUMENT_MALFORMED", "command is a JSON array of strings: the gate's argv, run with no shell");
+  }
+}
+
+// A boolean flag a caller may leave out, so a gate declared again keeps what it said before.
+function optionalBoolean(value: string | undefined, name: string): boolean | undefined {
+  return value === undefined ? undefined : booleanValue(value, name);
+}
+
+// TCRN-CROSS-STORY-485 R2, R4: the project a library's gate roots are relative to. --project names
+// it; left out, it is the project this device's registry holds for the library: the one the current
+// directory resolves to when that is this library, or else the only project registered for it.
+async function gatesProjectRoot(libraryId: string, project: string | undefined): Promise<string> {
+  if (project !== undefined) return resolve(project);
+  let here: Awaited<ReturnType<typeof resolveLibrary>> | null = null;
+  try {
+    here = await resolveLibrary(process.cwd());
+  } catch (error) {
+    if (typeof (error as { readonly reasonCode?: unknown }).reasonCode !== "string") throw error;
+  }
+  if (here !== null && here.libraryId === libraryId) return here.entry.projectPath;
+  const registered = (await readRegistry()).entries.filter((entry) => entry.libraryId === libraryId);
+  if (registered.length === 1) return registered[0]!.projectPath;
+  throw new WorkflowCliError(
+    "GATES_PROJECT_UNKNOWN",
+    registered.length === 0
+      ? `no project is registered for library ${libraryId} on this device, so the gates have no root to run in`
+      : `library ${libraryId} is registered for ${registered.length} projects on this device`,
+    { remedy: "pass --project with the project directory the gate roots are relative to" },
+  );
+}
+
+// TCRN-CROSS-STORY-485 R4 (TCRN-CROSS-SUB-345): before a Story goes to done, the required gates of its
+// change must be green on the tree as it is (gates-done.ts). The records going to done are judged
+// against the library as it stands before the write, and a Story the same batch creates counts as
+// one; a project is looked up only when a Story is among them and the library declares an enabled
+// gate, so a library with no gates never needs one.
+async function doneGates(
+  state: Awaited<ReturnType<typeof materializeWorkspace>>,
+  workIds: readonly string[],
+  created: readonly { readonly id: string; readonly kind: string }[],
+  project: string | undefined,
+): Promise<DoneGatesVerdict> {
+  const known = new Set(state.work.map((record) => record.id));
+  const createdStories = created
+    .filter((entry) => entry.kind === "Story" && !known.has(entry.id))
+    .map((entry) => ({ id: entry.id, kind: "Story" }) as unknown as WorkRecord);
+  const work = [...state.work, ...createdStories];
+  const gated = workIds.some((id) => work.some((record) => record.id === id && record.kind === "Story")) &&
+    listGates(state).some((gate) => gate.enabled);
+  return assertDoneGates({
+    projectRoot: gated ? await gatesProjectRoot(state.metadata.workspaceId, project) : "",
+    library: { configRecords: state.configRecords, metadata: state.metadata, work },
+    workIds,
+  });
+}
+
+// The records a work-batch document creates, with their kinds, by the id their external key derives.
+function batchCreatedKinds(document: unknown): readonly { readonly id: string; readonly kind: string }[] {
+  const members = (document as { readonly members?: unknown } | null)?.members;
+  if (!Array.isArray(members)) return [];
+  const created: { readonly id: string; readonly kind: string }[] = [];
+  for (const member of members as readonly unknown[]) {
+    if (member === null || typeof member !== "object") continue;
+    const entry = member as Readonly<Record<string, unknown>>;
+    if (entry.verb !== "work-create" || typeof entry.externalKey !== "string" || entry.externalKey.length === 0 || typeof entry.kind !== "string") continue;
+    created.push({ id: deriveStableId("work", canonicalExternalKey(entry.externalKey)), kind: entry.kind });
+  }
+  return created;
 }
 
 // TCRN-CROSS-STORY-467 R1: every write receipt echoes the ids it wrote beside the version
@@ -795,6 +955,13 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "engine-update", availability: "cli", mutates: true, flags: [{ name: "from", required: true, valueKind: "string" }, { name: "sha256", required: true, valueKind: "string" }, { name: "version", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
   { name: "event-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "export", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
+  // TCRN-CROSS-STORY-485 R1 to R3: gate declarations (one configuration record per gate), the plan a
+  // change needs, and running it into this device's cache. gates-run starts the gates' processes.
+  { name: "gates-config-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
+  { name: "gates-config-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "gates-config-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "command", required: false, valueKind: "string" }, { name: "root", required: false, valueKind: "string" }, { name: "covers", required: false, valueKind: "list" }, { name: "required", required: false, valueKind: "boolean" }, { name: "enabled", required: false, valueKind: "boolean" }, { name: "release-only", required: false, valueKind: "boolean" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "gates-plan", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "base", required: false, valueKind: "string" }, { name: "release", required: false, valueKind: "boolean" }] },
+  { name: "gates-run", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "base", required: false, valueKind: "string" }, { name: "release", required: false, valueKind: "boolean" }] },
   { name: "host-probe", availability: "cli", mutates: false, flags: [{ name: "host", required: true, valueKind: "string" }, { name: "model", required: true, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "init", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-name", required: false, valueKind: "string" }, { name: "git-remote", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "cloud-hosted", required: false, valueKind: "boolean" }] },
   { name: "install-manifest", availability: "cli", mutates: false, flags: [] },
@@ -802,17 +969,20 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "knowledge-article-refresh", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "expected-revision", required: true, valueKind: "integer" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "path", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "language-bundle", required: false, valueKind: "string" }] },
   { name: "knowledge-batch", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "from-file", required: true, valueKind: "string" }, { name: "align-first", required: false, valueKind: "boolean" }, { name: "language-bundle", required: false, valueKind: "string" }] },
   { name: "knowledge-bodies-migrate", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "segment-bytes", required: false, valueKind: "integer" }] },
-  { name: "knowledge-body", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "allow-unpromoted", required: false, valueKind: "boolean" }, { name: "allow-stale", required: false, valueKind: "boolean" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
-  { name: "knowledge-capture", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "subject", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "snippet", required: true, valueKind: "string" }, { name: "tags", required: true, valueKind: "list" }, { name: "accountable-owner-id", required: true, valueKind: "string" }, { name: "body", required: true, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }, { name: "role-scopes", required: false, valueKind: "list" }, { name: "category", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "source-references", required: false, valueKind: "list" }, { name: "evidence-ids", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "string" }, { name: "coexist", required: false, valueKind: "boolean" }, { name: "allow-trailing", required: false, valueKind: "boolean" }, { name: "language-bundle", required: false, valueKind: "string" }] },
+  // TCRN-CROSS-STORY-476 R1, R5: knowledge-create's --lifecycle is optional (active is all it takes),
+  // --promotion and --allow-unpromoted are gone with the candidate, knowledge-create and
+  // knowledge-capture take scope user, and list, snippet and body read the user crest with --scope user.
+  { name: "knowledge-body", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "scope", required: false, valueKind: "string" }, { name: "allow-stale", required: false, valueKind: "boolean" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
+  { name: "knowledge-capture", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "subject", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "snippet", required: true, valueKind: "string" }, { name: "tags", required: true, valueKind: "list" }, { name: "accountable-owner-id", required: true, valueKind: "string" }, { name: "body", required: true, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "role-scopes", required: false, valueKind: "list" }, { name: "category", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "source-references", required: false, valueKind: "list" }, { name: "evidence-ids", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "string" }, { name: "coexist", required: false, valueKind: "boolean" }, { name: "allow-trailing", required: false, valueKind: "boolean" }, { name: "language-bundle", required: false, valueKind: "string" }] },
   { name: "knowledge-checkpoint", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
-  { name: "knowledge-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "external-key", required: true, valueKind: "string" }, { name: "scope", required: true, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "role-scopes", required: true, valueKind: "list" }, { name: "category", required: true, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "tags", required: true, valueKind: "list" }, { name: "subject", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "snippet", required: true, valueKind: "string" }, { name: "accountable-owner-id", required: true, valueKind: "string" }, { name: "source-references", required: true, valueKind: "list" }, { name: "source-digest", required: false, valueKind: "string" }, { name: "supersedes", required: false, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "work-ids", required: false, valueKind: "list" }, { name: "decision-ids", required: false, valueKind: "list" }, { name: "gate-ids", required: false, valueKind: "list" }, { name: "evidence-ids", required: false, valueKind: "list" }, { name: "coexist", required: false, valueKind: "boolean" }, { name: "lifecycle", required: true, valueKind: "string" }, { name: "retrieval", required: true, valueKind: "string" }, { name: "freshness", required: true, valueKind: "string" }, { name: "last-verified", required: true, valueKind: "instant", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "stale-days", required: true, valueKind: "integer", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "export", required: true, valueKind: "string" }, { name: "body", required: true, valueKind: "string" }, { name: "language-bundle", required: false, valueKind: "string" }] },
+  { name: "knowledge-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "external-key", required: true, valueKind: "string" }, { name: "scope", required: true, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "role-scopes", required: true, valueKind: "list" }, { name: "category", required: true, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "tags", required: true, valueKind: "list" }, { name: "subject", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "snippet", required: true, valueKind: "string" }, { name: "accountable-owner-id", required: true, valueKind: "string" }, { name: "source-references", required: true, valueKind: "list" }, { name: "source-digest", required: false, valueKind: "string" }, { name: "supersedes", required: false, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "work-ids", required: false, valueKind: "list" }, { name: "decision-ids", required: false, valueKind: "list" }, { name: "gate-ids", required: false, valueKind: "list" }, { name: "evidence-ids", required: false, valueKind: "list" }, { name: "coexist", required: false, valueKind: "boolean" }, { name: "lifecycle", required: false, valueKind: "string" }, { name: "retrieval", required: true, valueKind: "string" }, { name: "freshness", required: true, valueKind: "string" }, { name: "last-verified", required: true, valueKind: "instant", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "stale-days", required: true, valueKind: "integer", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "export", required: true, valueKind: "string" }, { name: "body", required: true, valueKind: "string" }, { name: "language-bundle", required: false, valueKind: "string" }] },
   { name: "knowledge-freshness", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
   { name: "knowledge-init", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "acknowledge-disposable", required: false, valueKind: "boolean" }] },
-  { name: "knowledge-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "selection", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "role-scope", required: false, valueKind: "string" }, { name: "category", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "tag", required: false, valueKind: "string" }, { name: "freshness", required: false, valueKind: "string" }, { name: "promotion", required: false, valueKind: "string" }, { name: "search", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
+  { name: "knowledge-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "scope", required: false, valueKind: "string" }, { name: "selection", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "role-scope", required: false, valueKind: "string" }, { name: "category", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "tag", required: false, valueKind: "string" }, { name: "freshness", required: false, valueKind: "string" }, { name: "search", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
   { name: "knowledge-rebase", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
   { name: "knowledge-recover", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   { name: "knowledge-reverify", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "expected-revision", required: true, valueKind: "integer" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }] },
-  { name: "knowledge-snippet", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
+  { name: "knowledge-snippet", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
   { name: "knowledge-source-check", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
   { name: "knowledge-validate", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   { name: "library-import-legacy", availability: "cli", mutates: true, flags: [{ name: "legacy", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "target", required: false, valueKind: "string" }, { name: "dry-run", required: false, valueKind: "boolean" }, { name: "project-name", required: false, valueKind: "string" }, { name: "git-remote", required: false, valueKind: "string" }] },
@@ -861,13 +1031,15 @@ export const COMMAND_CATALOG = Object.freeze([
   // TCRN-CROSS-STORY-472 R2, R4: the four stored relations and decided-in; --decided-by is the older
   // name of --decided-in. TCRN-CROSS-STORY-473 R2: a Story's goal, acceptance and body.
   { name: "work-annotate", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "goal", required: false, valueKind: "string" }, { name: "acceptance", required: false, valueKind: "string" }, { name: "body", required: false, valueKind: "string" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "verify", required: false, valueKind: "string" }, { name: "result", required: false, valueKind: "json" }, { name: "sprint", required: false, valueKind: "string" }, { name: "title", required: false, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "work-batch", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "from-file", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "work-batch", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "from-file", required: true, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-id", required: true, valueKind: "string" }, { name: "external-key", required: true, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "status", required: false, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "goal", required: false, valueKind: "string" }, { name: "acceptance", required: false, valueKind: "string" }, { name: "body", required: false, valueKind: "string" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "template-receipt", required: false, valueKind: "json" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-delete", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-draft", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string" }] },
   { name: "work-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string" }, { name: "sprint", required: false, valueKind: "string" }, { name: "relation", required: false, valueKind: "string" }, { name: "search", required: false, valueKind: "string" }, { name: "scope-bytes", required: false, valueKind: "integer" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "work-show", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: false, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }] },
-  { name: "work-transition", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "status", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
+  // TCRN-CROSS-STORY-485 R4: work-transition and work-batch take --project, the project the gates of a
+  // Story going to done run in.
+  { name: "work-transition", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "status", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-470 R3: move a library; the old place keeps a tombstone and refuses writes.
   { name: "workspace-relocate", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "to", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "cloud-hosted", required: false, valueKind: "boolean" }] },
 ] as const);
@@ -1698,7 +1870,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     required(values, names.filter((name) => !["host", "language-bundle"].includes(name)));
     const categories = ["architecture", "domain", "implementation", "standards", "testing", "workflow", "decision", "evidence"];
     if (!categories.includes(values.category ?? "")) fail("CLI_ARGUMENT_MALFORMED", `category=${values.category ?? ""}`);
-    io.write(canonicalJson(await createKnowledgeArticle(values.workspace ?? "", {
+    io.write(knowledgeWriteReceipt(await createKnowledgeArticle(values.workspace ?? "", {
       occurredAt: values.at ?? "",
       path: values.path ?? "",
       category: values.category as KnowledgeCategory,
@@ -1714,7 +1886,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const names = ["workspace", "host", "expected-revision", "at", "id", "path", "summary", "language-bundle"];
     const values = parseArguments(rest, names);
     required(values, names.filter((name) => !["host", "language-bundle"].includes(name)));
-    io.write(canonicalJson(await refreshKnowledgeArticle(values.workspace ?? "", {
+    io.write(knowledgeWriteReceipt(await refreshKnowledgeArticle(values.workspace ?? "", {
       expectedRevision: integerValue(values, "expected-revision"),
       occurredAt: values.at ?? "",
       id: values.id ?? "",
@@ -1749,16 +1921,20 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // TCRN-CROSS-STORY-365: the four backlink lists are optional. They were required with
     // a "-" spelling for "none", which made every card pay four flags to say nothing, and
     // 26 of 28 flags required is what made this verb unusable from a hook.
-    const optional = ["host", "source-digest", "supersedes", "work-ids", "decision-ids", "gate-ids", "evidence-ids", "coexist", "language-bundle"];
+    // TCRN-CROSS-STORY-476 R1 (TCRN-CROSS-SUB-311): so is --lifecycle. Every card is written
+    // active, so the flag takes "active" alone; the two lifecycles a card is no longer written
+    // with reach the engine, which refuses them with KNOWLEDGE_LIFECYCLE_RETIRED and its remedy.
+    const optional = ["host", "source-digest", "supersedes", "work-ids", "decision-ids", "gate-ids", "evidence-ids", "coexist", "lifecycle", "language-bundle"];
     const values = parseArguments(rest, names);
     required(values, names.filter((name) => !optional.includes(name)));
     // Pre-validate enum-valued flags against their literal unions so an invalid
     // value fails closed here naming the flag, rather than casting uncast into core.
     const enumFlags: readonly (readonly [string, readonly string[]])[] = [
-      ["scope", ["workspace", "project", "role"]],
+      // TCRN-CROSS-STORY-476 R5: "user" writes the card to this user's crest, recalled in every project.
+      ["scope", ["workspace", "project", "role", "user"]],
       ["category", ["architecture", "domain", "implementation", "standards", "testing", "workflow", "decision", "evidence"]],
       ["kind", ["fact", "guide", "decision", "reference", "summary"]],
-      ["lifecycle", ["candidate", "active", "retired"]],
+      ["lifecycle", ["active", "candidate", "retired"]],
       ["retrieval", ["default", "explicit-only", "excluded"]],
       ["freshness", ["fresh", "stale", "unknown"]],
       ["export", ["metadata-only", "excluded"]],
@@ -1767,10 +1943,10 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       const provided = values[flag];
       if (provided !== undefined && !admitted.includes(provided)) fail("CLI_ARGUMENT_MALFORMED", `${flag}=${provided}`);
     }
-    io.write(canonicalJson(await createKnowledgeUnit(values.workspace ?? "", {
+    io.write(knowledgeWriteReceipt(await createKnowledgeUnit(values.workspace ?? "", {
       occurredAt: values.at ?? "",
       externalKey: values["external-key"] ?? "",
-      scope: values.scope as "workspace" | "project" | "role",
+      scope: values.scope as "workspace" | "project" | "role" | "user",
       projectId: nullableValue(values["project-id"]),
       roleScopes: listValue(values["role-scopes"]),
       category: values.category as KnowledgeCategory,
@@ -1787,7 +1963,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       linkedDecisionIds: listValue(values["decision-ids"]),
       linkedGateIds: listValue(values["gate-ids"]),
       linkedEvidenceIds: listValue(values["evidence-ids"]),
-      lifecycle: values.lifecycle as "candidate" | "active" | "retired",
+      ...(values.lifecycle === undefined ? {} : { lifecycle: values.lifecycle as "candidate" | "active" | "retired" }),
       retrievalDisposition: values.retrieval as "default" | "explicit-only" | "excluded",
       freshnessState: values.freshness as KnowledgeFreshnessState,
       lastVerified: nullableValue(values["last-verified"]),
@@ -1802,21 +1978,28 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // TCRN-CROSS-STORY-365: the thin write. Eight required flags -- the store, the
     // instant, the four card fields, the accountable owner, and the body -- and every
     // other shape defaulted in core. Written is retrievable; there is no promotion step.
+    // TCRN-CROSS-STORY-476 R5 (TCRN-CROSS-SUB-311): --scope role (the default), workspace or user;
+    // a user card goes to this user's crest and is recalled in every project. A project card names
+    // its project, which is knowledge-create's to take, and only a role card names roles.
     const names = [
       "workspace", "at", "subject", "summary", "snippet", "tags", "accountable-owner-id", "body",
-      "external-key", "role-scopes", "category", "kind", "source-references", "evidence-ids",
+      "external-key", "scope", "role-scopes", "category", "kind", "source-references", "evidence-ids",
       "supersedes", "coexist", "allow-trailing", "language-bundle",
     ];
     const values = parseArguments(rest, names);
     required(values, ["workspace", "at", "subject", "summary", "snippet", "tags", "accountable-owner-id", "body"]);
     for (const [flag, admitted] of [
+      ["scope", ["role", "workspace", "user"]],
       ["category", ["architecture", "domain", "implementation", "standards", "testing", "workflow", "decision", "evidence"]],
       ["kind", ["fact", "guide", "decision", "reference", "summary"]],
     ] as readonly (readonly [string, readonly string[]])[]) {
       const provided = values[flag];
       if (provided !== undefined && !admitted.includes(provided)) fail("CLI_ARGUMENT_MALFORMED", `${flag}=${provided}`);
     }
-    io.write(canonicalJson(await captureKnowledgeUnit(values.workspace ?? "", {
+    if (values.scope !== undefined && values.scope !== "role" && values["role-scopes"] !== undefined) {
+      fail("CLI_ARGUMENT_MALFORMED", `role-scopes names roles of a role card, not of scope=${values.scope}`);
+    }
+    io.write(knowledgeWriteReceipt(await captureKnowledgeUnit(values.workspace ?? "", {
       occurredAt: values.at ?? "",
       subject: values.subject ?? "",
       summary: values.summary ?? "",
@@ -1826,6 +2009,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       body: values.body ?? "",
       coexist: booleanValue(values.coexist, "coexist"),
       ...(values["external-key"] ? { externalKey: values["external-key"] } : {}),
+      ...(values.scope ? { scope: values.scope as "role" | "workspace" | "user" } : {}),
       ...(values["role-scopes"] ? { roleScopes: listValue(values["role-scopes"]) } : {}),
       ...(values.category ? { category: values.category as KnowledgeCategory } : {}),
       ...(values.kind ? { kind: values.kind as KnowledgeKind } : {}),
@@ -1836,11 +2020,14 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   if (command === "knowledge-list") {
-    const values = parseArguments(rest, ["workspace", "at", "selection", "project-id", "role-scope", "category", "kind", "tag", "freshness", "promotion", "search", "limit", "offset", "allow-trailing"]);
+    // TCRN-CROSS-STORY-476 R1, R5 (TCRN-CROSS-SUB-311): --promotion is gone with the candidate it
+    // selected, and --scope user lists this user's crest instead of the library's.
+    const values = parseArguments(rest, ["workspace", "at", "scope", "selection", "project-id", "role-scope", "category", "kind", "tag", "freshness", "search", "limit", "offset", "allow-trailing"]);
     required(values, ["workspace", "at"]);
     io.write(canonicalJson(await listKnowledgeMetadata(values.workspace ?? "", {
       at: values.at ?? "",
       allowTrailing: booleanValue(values["allow-trailing"], "allow-trailing"),
+      ...storeScopeOption(values.scope),
       ...(values.selection ? { selection: values.selection as "default" | "all" } : {}),
       ...(values["project-id"] ? { projectId: values["project-id"] } : {}),
       ...(values["role-scope"] ? { roleScope: values["role-scope"] } : {}),
@@ -1848,7 +2035,6 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       ...(values.kind ? { kind: values.kind as KnowledgeKind } : {}),
       ...(values.tag ? { tag: values.tag } : {}),
       ...(values.freshness ? { freshness: values.freshness as KnowledgeFreshnessState } : {}),
-      ...(values.promotion ? { promotionState: values.promotion as KnowledgePromotionState } : {}),
       ...(values.search ? { search: values.search } : {}),
       // WSB-2: integerValue is the single arbiter of INTEGER-ness here, exactly as it is
       // for target-version. Bare Number() sent NaN into core, which then reported a
@@ -1862,21 +2048,23 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   if (command === "knowledge-snippet") {
-    const values = parseArguments(rest, ["workspace", "id", "allow-trailing"]);
+    const values = parseArguments(rest, ["workspace", "id", "scope", "allow-trailing"]);
     required(values, ["workspace", "id"]);
     io.write(canonicalJson(await readKnowledgeSnippet(values.workspace ?? "", values.id ?? "", {
       allowTrailing: booleanValue(values["allow-trailing"], "allow-trailing"),
+      ...storeScopeOption(values.scope),
     })));
     return;
   }
   if (command === "knowledge-body") {
-    const values = parseArguments(rest, ["workspace", "id", "at", "allow-unpromoted", "allow-stale", "allow-trailing"]);
+    // TCRN-CROSS-STORY-476 R1 (TCRN-CROSS-SUB-311): --allow-unpromoted is gone with the promotion step.
+    const values = parseArguments(rest, ["workspace", "id", "at", "scope", "allow-stale", "allow-trailing"]);
     required(values, ["workspace", "id", "at"]);
     io.write(canonicalJson(await readKnowledgeBody(values.workspace ?? "", values.id ?? "", {
       at: values.at ?? "",
       allowTrailing: booleanValue(values["allow-trailing"], "allow-trailing"),
-      allowUnpromoted: booleanValue(values["allow-unpromoted"], "allow-unpromoted"),
       allowStale: booleanValue(values["allow-stale"], "allow-stale"),
+      ...storeScopeOption(values.scope),
     })));
     return;
   }
@@ -1895,7 +2083,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   if (command === "knowledge-reverify") {
     const values = parseArguments(rest, ["workspace", "expected-revision", "at", "id"]);
     required(values, ["workspace", "expected-revision", "at", "id"]);
-    io.write(canonicalJson(await reverifyKnowledgeUnit(values.workspace ?? "", {
+    io.write(knowledgeWriteReceipt(await reverifyKnowledgeUnit(values.workspace ?? "", {
       expectedRevision: integerValue(values, "expected-revision"),
       occurredAt: values.at ?? "",
       id: values.id ?? "",
@@ -1916,7 +2104,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       fail("WORK_BATCH_MALFORMED", `${values["from-file"] ?? ""}: ${(error as { message?: string }).message ?? "unreadable"}`);
     }
     const batchProviders = languageProvidersFor(values["language-bundle"]);
-    io.write(canonicalJson(await applyKnowledgeBatch(values.workspace ?? "", document, {
+    io.write(knowledgeWriteReceipt(await applyKnowledgeBatch(values.workspace ?? "", document, {
       occurredAt: values.at ?? "",
       alignFirst: booleanValue(values["align-first"], "align-first"),
       ...(batchProviders === undefined ? {} : { languageProviders: batchProviders }),
@@ -1962,56 +2150,31 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // at whole lines, which is what a host puts in front of the prompt.
     const promptBytes = Number(settingValue("injection.perPromptBytes") ?? "1600");
     const perPromptBytes = Number.isSafeInteger(promptBytes) && promptBytes > 0 ? promptBytes : 1600;
-    // A workspace with no knowledge store, or one trailing the chain while the caller did
-    // not admit a trailing read, still has work records and minutes to recall. The reason
-    // code the read produced is reported rather than swallowed, so "no cards" is never
-    // indistinguishable from "no card matched".
-    let knowledge: readonly RecallKnowledgeInput[] = [];
-    let knowledgeReasonCode = "KNOWLEDGE_STORE_UNREAD";
-    let knowledgeDigest = "absent";
-    try {
-      const answer = await listKnowledgeMetadata(workspace, {
-        at: values.at ?? "",
-        allowTrailing: booleanValue(values["allow-trailing"], "allow-trailing"),
-        // Recall is an explicit search surface, so it admits explicit-only article
-        // index cards while the context/default selection remains unchanged. The
-        // complete corpus is read before FTS scoring so BM25 keeps its baseline.
-        includeExplicitOnly: true,
-        limit: 1_048_576,
-      });
-      knowledgeReasonCode = String(answer["reasonCode"] ?? "");
-      knowledgeDigest = String(answer["resultDigest"] ?? "");
-      knowledge = ((answer["records"] ?? []) as readonly Readonly<Record<string, unknown>>[]).map((record) => ({
-        id: String(record["id"] ?? ""),
-        externalKey: String(record["externalKey"] ?? ""),
-        subject: String(record["subject"] ?? ""),
-        summary: String(record["summary"] ?? ""),
-        snippet: String(record["snippet"] ?? ""),
-        tags: ((record["tags"] ?? []) as readonly unknown[]).map((tag) => String(tag)),
-        // The weight-6 column is fed by an author's own restatements of the question a card
-        // answers. TCRN-CROSS-STORY-364 writes them: the metadata field is a map from prompt
-        // language to phrasings, flattened here by the one helper both sides share. The
-        // 2026-09-04 evaluation measured them lifting cards-only recall from 21 of 36 to 36.
-        expansions: expansionsText(record["expansions"]),
-      }));
-    } catch (error) {
-      const reasonCode = (error as { readonly reasonCode?: unknown }).reasonCode;
-      if (typeof reasonCode !== "string") throw error;
-      knowledgeReasonCode = reasonCode;
-    }
+    // TCRN-CROSS-STORY-476 R5 (TCRN-CROSS-SUB-311): the cards come from two stores, the library's
+    // crest and this user's crest, each read whole as an explicit search corpus (explicit-only
+    // article index cards admitted, the complete corpus before scoring so bm25 keeps its baseline)
+    // and each card labelled with its store. A store with no cards to give -- none initialized, or
+    // one trailing the chain while the caller did not admit a trailing read -- still leaves the
+    // work records and minutes to recall, and its reason code is reported rather than swallowed,
+    // so "no cards" is never indistinguishable from "no card matched". knowledgeReasonCode stays
+    // the library store's, as it always was.
+    const cards = await readRecallCards(workspace, {
+      at: values.at ?? "",
+      allowTrailing: booleanValue(values["allow-trailing"], "allow-trailing"),
+    });
     // TCRN-CROSS-STORY-474 R1: what the index holds is decided in one place (recall-inputs.ts), so
     // the verb and the prompt hook cannot index differently: the Stories, Incidents, Initiatives and
     // Epics with their goal, body and parent titles, every minutes record, and the cards.
-    const inputs = recallInputsFromState(state, knowledge, { scopeExcerptBytes });
+    const inputs = recallInputsFromState(state, cards.cards, { scopeExcerptBytes });
     const result = recall({
       // One index per library, whatever path it is read at (TCRN-CROSS-STORY-469).
       cacheKey: state.metadata.workspaceId,
       // The storage checkpoint: the chain head the records were replayed from, and the
-      // digest of the knowledge answer they were read with. Either one moving is a
+      // digests of the two knowledge answers they were read with. Any one moving is a
       // different corpus, and the index is rebuilt from the rows that actually changed.
       // A library's head is one digest over every stream's head, so it moves with any
       // entry of the version vector.
-      checkpoint: `${state.headEventHash}:${knowledgeDigest}`,
+      checkpoint: `${state.headEventHash}:${cards.digest}`,
       documents: () => recallDocuments(inputs),
       query,
       tau,
@@ -2024,7 +2187,12 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       version: state.version,
       headEventHash: state.headEventHash,
       at: values.at ?? "",
-      knowledgeReasonCode,
+      knowledgeReasonCode: cards.stores.project.reasonCode,
+      // Both stores' reads: each one's reason code and how many cards it gave.
+      knowledgeStores: {
+        project: { reasonCode: cards.stores.project.reasonCode, cards: cards.stores.project.cards },
+        user: { reasonCode: cards.stores.user.reasonCode, cards: cards.stores.user.cards },
+      },
       query,
       queryTokens: [...result.tokens],
       // The canonical protocol carries only safe integers, and a bm25 score is not one.
@@ -2045,10 +2213,13 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       // title, key, id, the titles above it), and the answer as those lines cut to the prompt's
       // budget. Below the strong-hit threshold the reason code is RECALL_NO_STRONG_HIT and both are
       // empty: a prompt about nothing the library holds gets nothing, not its best weak guesses.
+      // A card hit names its store, "project" or "user" (TCRN-CROSS-STORY-476 R5), and its line
+      // marks a user card 「用户」.
       records: result.records.map((hit) => ({
         kind: hit.kind, key: hit.key, id: hit.id, status: hit.status,
         title: hit.title, summary: hit.summary, score: hit.score.toFixed(4),
         line: formatRecallLine(hit), parentChain: [...hit.parentChain],
+        ...(hit.scope === undefined ? {} : { scope: hit.scope }),
       })),
       perPromptBytes,
       context: [...recallContextLines(result.records, perPromptBytes)],
@@ -2145,7 +2316,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   if (command === "work-batch") {
     // STORY-300 slice 3. --from-file rather than an inline argument because a batch is
     // ordinarily generated, and because an argv-sized batch would defeat the point.
-    const values = parseArguments(rest, [...shared, "from-file", "actor"]);
+    // TCRN-CROSS-STORY-485 R4: --project names the project the gates run in, for a Story the batch
+    // takes to done (the registry's project for the library when left out).
+    const values = parseArguments(rest, [...shared, "from-file", "project", "actor"]);
     required(values, [...requiredShared, "from-file"]);
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
@@ -2157,28 +2330,61 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       fail("WORK_BATCH_MALFORMED", `${values["from-file"] ?? ""}: ${(error as { message?: string }).message ?? "unreadable"}`);
     }
     const members = Array.isArray((document as { members?: unknown }).members) ? (document as { members: unknown[] }).members.length : 0;
-    const state = await withWriteLock(workspace, at, async () => applyWorkBatch(workspace, document, {
-      occurredAt: at,
-      ...(values.actor ? { actorId: values.actor } : {}),
-    }));
+    const doneIds = batchDoneWorkIds(document);
+    const { state, gates } = await withWriteLock(workspace, at, async () => {
+      // TCRN-CROSS-STORY-485 R4: a Story the batch takes to done passes the gates first; a refusal
+      // writes no member.
+      const verdict: DoneGatesVerdict | null = doneIds.length === 0
+        ? null
+        : await doneGates(await materializeWorkspace(workspace), doneIds, batchCreatedKinds(document), values.project);
+      return {
+        state: await applyWorkBatch(workspace, document, {
+          occurredAt: at,
+          ...(values.actor ? { actorId: values.actor } : {}),
+        }),
+        gates: verdict,
+      };
+    });
+    // TCRN-CROSS-STORY-476 R4: every member that took a record to done answers its knowledge hint.
+    const hints = await knowledgeHints(workspace, at, state, doneIds.map((workId) => ({ workId })));
     // One attestation for the batch, not one per member: the specification defines the
     // receipt per mutation, and a batch is one mutation.
-    writeState(io, state, workBatchReceipt(state, members));
+    writeState(io, state, workBatchReceipt(state, members), undefined, {
+      ...(hints.length === 0 ? {} : { knowledgeHints: doneIds.map((workId, index) => ({ workId, ...hints[index] })) }),
+      ...(gates === null ? {} : { doneGates: gates }),
+    });
     return;
   }
   if (command === "work-transition") {
-    const values = parseArguments(rest, [...shared, "id", "status", "summary", "actor"]);
+    // TCRN-CROSS-STORY-485 R4: --project names the project the gates run in, for a Story going to
+    // done (the registry's project for the library when left out).
+    const values = parseArguments(rest, [...shared, "id", "status", "summary", "project", "actor"]);
     required(values, [...requiredShared, "id", "status"]);
     if (values.status !== undefined && !isWorkStatus(values.status)) fail("CLI_ARGUMENT_MALFORMED", `status=${values.status}`);
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
-    const state = await withWriteLock(workspace, at, async () => transitionWork(workspace, {
-      occurredAt: at, id: values.id ?? "", status: values.status as WorkStatus,
-      ...(values.summary !== undefined ? { summary: values.summary } : {}),
-      ...(values.actor ? { actorId: values.actor } : {}),
-    }));
+    const { state, gates } = await withWriteLock(workspace, at, async () => {
+      // TCRN-CROSS-STORY-485 R4: a Story goes to done only when the required gates of its change
+      // are green on the tree as it is; the refusal names every red required gate.
+      const verdict: DoneGatesVerdict | null = values.status === "done"
+        ? await doneGates(await materializeWorkspace(workspace), [values.id ?? ""], [], values.project)
+        : null;
+      return {
+        state: await transitionWork(workspace, {
+          occurredAt: at, id: values.id ?? "", status: values.status as WorkStatus,
+          ...(values.summary !== undefined ? { summary: values.summary } : {}),
+          ...(values.actor ? { actorId: values.actor } : {}),
+        }),
+        gates: verdict,
+      };
+    });
     const transitioned = state.work.find((entry) => entry.id === (values.id ?? ""))!;
-    writeState(io, state, workSummary(transitioned));
+    // TCRN-CROSS-STORY-476 R4: a record that reached done asks whether there is knowledge to extract.
+    const [hint] = values.status === "done" ? await knowledgeHints(workspace, at, state, [{ workId: transitioned.id }]) : [];
+    writeState(io, state, workSummary(transitioned), undefined, {
+      ...(hint === undefined ? {} : { knowledgeHint: hint }),
+      ...(gates === null ? {} : { doneGates: gates }),
+    });
     return;
   }
   if (command === "work-annotate") {
@@ -2375,6 +2581,8 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     }));
     const written = writtenIdsField();
     const recorded = minutesById(state, (written.ids ?? []).find((id) => id.startsWith("minutes:")) ?? "");
+    // TCRN-CROSS-STORY-476 R4: recorded minutes ask whether there is knowledge to extract.
+    const [hint] = await knowledgeHints(workspace, at, state, [{ minutesId: recorded.id }]);
     io.write(canonicalJson({
       reasonCode: "MINUTES_RECORDED",
       workspaceId: state.metadata.workspaceId,
@@ -2384,6 +2592,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       id: recorded.id,
       externalKey: recorded.externalKey,
       decisions: recorded.decisions,
+      ...(hint === undefined ? {} : { knowledgeHint: hint }),
     }));
     return;
   }
@@ -2418,6 +2627,109 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       kind: "minutes",
       record,
       decides: workRelations(state, record.id).reverse.decides,
+    }));
+    return;
+  }
+  // TCRN-CROSS-STORY-485 R1 (MIN-227 D4; TCRN-CROSS-SUB-345): the gates a library declares, one
+  // configuration record each, keyed by name: what runs (an argv), in which directory of the project,
+  // which paths under it it covers, and whether it is required, enabled and release-only.
+  if (command === "gates-config-list") {
+    const values = parseArguments(rest, ["workspace"]);
+    required(values, ["workspace"]);
+    const state = await validateWorkspace(values.workspace ?? "");
+    io.write(canonicalJson(paginate(state, "gate", listGates(state), values)));
+    return;
+  }
+  // Declaring a gate that exists keeps whatever the flags leave out; a new gate runs in the project
+  // itself (--root .), covers every path (--covers **), and is required and enabled, not release-only.
+  if (command === "gates-config-set") {
+    const values = parseArguments(rest, [...shared, "name", "command", "root", "covers", "required", "enabled", "release-only", "actor"]);
+    required(values, [...requiredShared, "name"]);
+    const workspace = values.workspace ?? "";
+    const at = values.at ?? "";
+    const name = values.name ?? "";
+    const commandValue = values.command === undefined ? undefined : gateCommandValue(values.command);
+    const requiredValue = optionalBoolean(values.required, "required");
+    const enabledValue = optionalBoolean(values.enabled, "enabled");
+    const releaseOnlyValue = optionalBoolean(values["release-only"], "release-only");
+    const state = await withWriteLock(workspace, at, async () => {
+      const existing = listGates(await materializeWorkspace(workspace)).find((gate) => gate.name === name);
+      if (commandValue === undefined && existing === undefined) fail("CLI_ARGUMENT_MISSING", "command");
+      return setGate(workspace, {
+        occurredAt: at,
+        name,
+        gate: {
+          command: commandValue ?? existing?.command,
+          root: values.root ?? existing?.root ?? ".",
+          covers: values.covers === undefined ? existing?.covers ?? ["**"] : listValue(values.covers),
+          required: requiredValue ?? existing?.required ?? true,
+          enabled: enabledValue ?? existing?.enabled ?? true,
+          releaseOnly: releaseOnlyValue ?? existing?.releaseOnly ?? false,
+        },
+        ...(values.actor ? { actorId: values.actor } : {}),
+      });
+    });
+    writeState(io, state, undefined, undefined, { gate: listGates(state).find((gate) => gate.name === name) ?? null });
+    return;
+  }
+  if (command === "gates-config-remove") {
+    const values = parseArguments(rest, [...shared, "name", "actor"]);
+    required(values, [...requiredShared, "name"]);
+    const workspace = values.workspace ?? "";
+    const at = values.at ?? "";
+    const state = await withWriteLock(workspace, at, async () => removeGate(workspace, {
+      occurredAt: at, name: values.name ?? "",
+      ...(values.actor ? { actorId: values.actor } : {}),
+    }));
+    writeState(io, state, undefined, undefined, { removed: values.name ?? "" });
+    return;
+  }
+  // TCRN-CROSS-STORY-485 R2: the gates a change needs -- every enabled gate whose covers match a file
+  // changed under its root against --base (HEAD when left out), release-only gates left out -- or,
+  // with --release true, every enabled gate. Reading Git is all it does.
+  if (command === "gates-plan") {
+    const values = parseArguments(rest, ["workspace", "project", "base", "release"]);
+    required(values, ["workspace"]);
+    const state = await validateWorkspace(values.workspace ?? "");
+    const plan = await planGates({
+      projectRoot: await gatesProjectRoot(state.metadata.workspaceId, values.project),
+      gates: listGates(state),
+      release: booleanValue(values.release, "release"),
+      ...(values.base === undefined ? {} : { base: values.base }),
+    });
+    io.write(canonicalJson({
+      reasonCode: "GATES_PLAN_READY",
+      workspaceId: state.metadata.workspaceId,
+      version: state.version,
+      headEventHash: state.headEventHash,
+      ...plan,
+    }));
+    return;
+  }
+  // TCRN-CROSS-STORY-485 R3: run the plan's gates, every one of them whatever the ones before it did,
+  // and record the run in this device's cache of the library under the digest of the tree it ran
+  // on. The answer lists every red gate, and the required ones among them apart.
+  if (command === "gates-run") {
+    const values = parseArguments(rest, ["workspace", "at", "project", "base", "release"]);
+    required(values, ["workspace", "at"]);
+    const state = await validateWorkspace(values.workspace ?? "");
+    const plan = await planGates({
+      projectRoot: await gatesProjectRoot(state.metadata.workspaceId, values.project),
+      gates: listGates(state),
+      release: booleanValue(values.release, "release"),
+      ...(values.base === undefined ? {} : { base: values.base }),
+    });
+    const { run, recordPath } = await runGates(plan, { libraryId: state.metadata.workspaceId, at: values.at ?? "" });
+    io.write(canonicalJson({
+      reasonCode: "GATES_RUN_COMPLETED",
+      workspaceId: state.metadata.workspaceId,
+      version: state.version,
+      headEventHash: state.headEventHash,
+      ok: run.reds.length === 0,
+      reds: run.reds,
+      requiredReds: run.gates.filter((gate) => gate.required && !gate.ok).map((gate) => gate.name),
+      run,
+      recordPath,
     }));
     return;
   }

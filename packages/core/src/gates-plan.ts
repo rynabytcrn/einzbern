@@ -13,7 +13,7 @@ import { execFileSync } from "node:child_process";
 import { realpath, stat } from "node:fs/promises";
 import { join, relative, sep } from "node:path";
 
-import { compareCanonicalText } from "../../protocol/src/index.js";
+import { canonicalSha256, compareCanonicalText } from "../../protocol/src/index.js";
 import type { NamedGate } from "./gates-config.js";
 
 export const GATES_PLAN_REASON_CODES = Object.freeze([
@@ -137,6 +137,11 @@ function paths(output: string): readonly string[] {
   return output.split("\0").filter((entry) => entry !== "");
 }
 
+/** The commit HEAD names in the repository at `directory`, or null without Git or without a commit. */
+export function gitHead(directory: string): string | null {
+  return git(directory, ["rev-parse", "--verify", "--quiet", "HEAD"])?.trim() || null;
+}
+
 // A base names a commit; it never starts with - so Git cannot read it as an option.
 const BASE_SHAPE = /^[A-Za-z0-9._/@{}~^][A-Za-z0-9._/@{}~^-]{0,255}$/u;
 
@@ -154,7 +159,7 @@ export function changedFiles(root: string, options: { readonly base?: string } =
   if (base !== undefined && (!BASE_SHAPE.test(base) || git(root, ["rev-parse", "--verify", "--quiet", `${base}^{commit}`]) === null)) {
     fail("GATES_BASE_INVALID", `${base} does not name a commit of the repository at ${root}`, { root, base });
   }
-  const against = base ?? (git(root, ["rev-parse", "--verify", "--quiet", "HEAD"]) === null ? null : "HEAD");
+  const against = base ?? (gitHead(root) === null ? null : "HEAD");
   const tracked = against === null
     ? git(root, ["ls-files", "--cached", "-z"])
     : git(root, ["diff", "--name-only", "--no-renames", "--relative", "-z", against, "--"]);
@@ -185,6 +190,10 @@ export interface GatesPlan {
   // Each root's changed files the covers were matched against; null for a release plan.
   readonly changed: readonly { readonly root: string; readonly files: readonly string[] }[] | null;
   readonly gates: readonly PlannedGate[];
+  // TCRN-CROSS-STORY-485 R3, R4 (SUB-344): the root of every enabled gate, planned or not, and a
+  // digest of every enabled gate's declaration. A run records both; the done check compares them.
+  readonly roots: readonly string[];
+  readonly declarationsDigest: string;
 }
 
 function inside(parent: string, candidate: string): boolean {
@@ -205,6 +214,17 @@ export async function resolveGateRoot(projectRoot: string, root: string): Promis
     fail("GATES_ROOT_INVALID", `the gate root ${root} is not a directory inside the project`, { root });
   }
   return real;
+}
+
+/** The digest of the enabled gates' declarations, by name: a run made under other declarations does not count. */
+export function gateDeclarationsDigest(gates: readonly NamedGate[]): string {
+  return canonicalSha256({
+    schemaVersion: "einzbern.gate-declarations.v1",
+    gates: [...gates]
+      .filter((gate) => gate.enabled)
+      .sort((left, right) => compareCanonicalText(left.name, right.name))
+      .map((gate) => ({ name: gate.name, command: gate.command, root: gate.root, covers: gate.covers, required: gate.required, enabled: gate.enabled, releaseOnly: gate.releaseOnly })),
+  });
 }
 
 function planned(gate: NamedGate, reason: PlannedGate["reason"], matched: readonly string[]): PlannedGate {
@@ -229,17 +249,21 @@ export async function planGates(input: {
     return fail("GATES_ROOT_INVALID", `the project ${input.projectRoot} does not exist`, { root: "." });
   }
   const release = input.release === true;
-  const gates = [...input.gates]
-    .filter((gate) => gate.enabled && (release || !gate.releaseOnly))
+  const enabled = [...input.gates]
+    .filter((gate) => gate.enabled)
     .sort((left, right) => compareCanonicalText(left.name, right.name));
+  const gates = enabled.filter((gate) => release || !gate.releaseOnly);
   const roots = new Map<string, string>();
-  for (const gate of gates) {
+  for (const gate of enabled) {
     if (!roots.has(gate.root)) roots.set(gate.root, await resolveGateRoot(projectRoot, gate.root));
   }
   const base = input.base ?? null;
-  if (release) return { projectRoot, release, base, changed: null, gates: gates.map((gate) => planned(gate, "release", [])) };
+  const declared = { roots: [...roots.keys()].sort(compareCanonicalText), declarationsDigest: gateDeclarationsDigest(enabled) };
+  if (release) return { projectRoot, release, base, changed: null, gates: gates.map((gate) => planned(gate, "release", [])), ...declared };
   const changed = new Map<string, readonly string[]>();
-  for (const [root, directory] of [...roots.entries()].sort(([left], [right]) => compareCanonicalText(left, right))) {
+  for (const root of declared.roots) {
+    const directory = roots.get(root);
+    if (directory === undefined || !gates.some((gate) => gate.root === root)) continue;
     changed.set(root, changedFiles(directory, input.base === undefined ? {} : { base: input.base }));
   }
   const selected: PlannedGate[] = [];
@@ -254,5 +278,6 @@ export async function planGates(input: {
     base,
     changed: [...changed.entries()].map(([root, files]) => ({ root, files })),
     gates: selected,
+    ...declared,
   };
 }

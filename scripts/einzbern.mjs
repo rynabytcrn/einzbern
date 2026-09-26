@@ -22,8 +22,9 @@ try {
   // bytes it would reach and the limit, and one refused as a possible conflict the cards it
   // conflicts with (TCRN-CROSS-STORY-476, TCRN-CROSS-SUB-311). A Story refused at done names every
   // red required gate, the Stories held back and the run and tree it was judged on
-  // (TCRN-CROSS-STORY-485 R4, TCRN-CROSS-SUB-345).
-  const stringDetails = ["required", "actual", "supported", "layout", "streamId", "sequence", "eventId", "break", "segment", "line", "deviceId", "file", "timeoutMs", "remedy", "movedTo", "target", "field", "section", "runId", "treeDigest"];
+  // (TCRN-CROSS-STORY-485 R4, TCRN-CROSS-SUB-345). A restore stopped by one of its eight checks names
+  // the check (TCRN-CROSS-STORY-480 R3, TCRN-CROSS-SUB-327).
+  const stringDetails = ["required", "actual", "supported", "layout", "streamId", "sequence", "eventId", "break", "segment", "line", "deviceId", "file", "timeoutMs", "remedy", "movedTo", "target", "field", "section", "runId", "treeDigest", "check"];
   const numberDetails = ["bodyBytes", "limit"];
   const listDetails = ["allowedValues", "conflicts", "reds", "stories"];
   const details = error?.details !== null && typeof error?.details === "object"

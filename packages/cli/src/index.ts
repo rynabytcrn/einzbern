@@ -131,8 +131,13 @@ import {
   disableRule,
   enableRule,
   listRules,
+  applySetup,
+  hookLauncherPath,
+  planSetup,
+  runDoctor,
 } from "../../core/src/index.js";
 import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider, RuleChange, RuleStatus, SectionAction, StoryFields, Variable, WithheldEntry, WorkRelationsInput } from "../../core/src/index.js";
+import type { DoctorCheck, SetupApplied, SetupOptions, SetupPlan } from "../../core/src/index.js";
 import type {
   DoneGatesVerdict,
   KnowledgeCategory,
@@ -141,9 +146,10 @@ import type {
   KnowledgeKind,
   KnowledgeStoreScope,
 } from "../../core/src/index.js";
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { cp, lstat, mkdir, readdir, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { canonicalExternalKey, canonicalJson, canonicalSha256, deriveStableId } from "../../protocol/src/index.js";
@@ -1045,6 +1051,9 @@ export const COMMAND_CATALOG = Object.freeze([
   // name the stream, sequence and event where it stops being provable. Zero writes.
   { name: "chain-validate", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   { name: "commands", availability: "cli", mutates: false, flags: [] },
+  // TCRN-CROSS-STORY-480 R4, AC5: doctor's eight checks of this device and one project, --project or
+  // the current directory. It changes nothing: device-stream's lock and probe file go again.
+  { name: "doctor", availability: "cli", mutates: false, flags: [{ name: "project", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-471 R2, R3: the engine versions in this device's engine/ directory. engine-update
   // installs an unpacked, digest-checked version and makes it current; engine-rollback makes the
   // previous one current again. Both rewrite engine/current alone, never a host file.
@@ -1119,6 +1128,10 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "settings-catalog", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   { name: "settings-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "settings-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "value", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
+  // TCRN-CROSS-STORY-480 (C7 of INIT-053): the installation wizard in one of six modes. Without
+  // --yes true it answers SETUP_PLAN_READY and writes nothing; with it, SETUP_APPLIED, whose
+  // self-check is doctor's eight checks and the hook run once with the project's name as the prompt.
+  { name: "setup", availability: "cli", mutates: true, flags: [{ name: "mode", required: true, valueKind: "string" }, { name: "project", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "artifacts", required: false, valueKind: "string" }, { name: "cloud", required: false, valueKind: "boolean" }, { name: "restore", required: false, valueKind: "string" }, { name: "language", required: false, valueKind: "string" }, { name: "navigation", required: false, valueKind: "boolean" }, { name: "archive", required: false, valueKind: "string" }, { name: "rollback", required: false, valueKind: "boolean" }, { name: "managed-sections", required: false, valueKind: "string" }, { name: "mapping", required: false, valueKind: "string" }, { name: "yes", required: false, valueKind: "boolean" }] },
   // TCRN-CROSS-STORY-479 R1: the skill directory this engine generates for its version, written
   // into a missing or empty --out; it runs only where the skill template sits beside the engine.
   { name: "skill-render", availability: "cli", mutates: true, flags: [{ name: "out", required: true, valueKind: "string" }, { name: "version", required: false, valueKind: "string" }] },
@@ -1431,6 +1444,83 @@ async function namingSection<T>(operation: () => Promise<T>): Promise<T> {
   }
 }
 
+// TCRN-CROSS-STORY-480 (C7 of INIT-053): the setup flags as planSetup takes them. A relative
+// --artifacts, --restore or --archive is taken from the project; --project from here.
+function setupOptions(values: Readonly<Record<string, string>>): SetupOptions {
+  const managed = values["managed-sections"];
+  if (managed !== undefined && managed !== "keep" && managed !== "remove") fail("CLI_ARGUMENT_MALFORMED", "managed-sections");
+  const cloud = optionalBoolean(values.cloud, "cloud");
+  const navigation = optionalBoolean(values.navigation, "navigation");
+  const rollback = optionalBoolean(values.rollback, "rollback");
+  return {
+    mode: values.mode ?? "",
+    projectRoot: values.project ?? "",
+    at: values.at ?? "",
+    answers: {
+      ...(values.artifacts === undefined ? {} : { artifacts: values.artifacts }),
+      ...(cloud === undefined ? {} : { cloud }),
+      ...(values.language === undefined ? {} : { language: values.language }),
+      ...(navigation === undefined ? {} : { navigation }),
+    },
+    ...(values.restore === undefined ? {} : { restore: values.restore }),
+    ...(values.archive === undefined ? {} : { archive: values.archive }),
+    ...(rollback === undefined ? {} : { rollback }),
+    ...(managed === undefined ? {} : { managedSections: managed }),
+    ...(values.mapping === undefined ? {} : { mapping: values.mapping }),
+  };
+}
+
+// The hook's self-check after an apply (TCRN-CROSS-STORY-480 R5): the launcher a host's hook runs,
+// in a process of its own as a host starts it, from the project's directory, with the project's name
+// as a sample prompt. injected is what it would add to that prompt; a launcher never fails a
+// prompt, so a failure shows as its reason code on stderr (hookReasonCode) and nothing injected.
+const HOOK_SELF_CHECK_TIMEOUT_MS = 60_000;
+
+function hookSelfCheck(applied: SetupApplied): {
+  readonly prompt: string;
+  readonly exitCode: number | null;
+  readonly injected: readonly string[];
+  readonly hookReasonCode: string | null;
+} {
+  const prompt = basename(applied.projectRoot);
+  const launcher = hookLauncherPath(applied.deviceHome);
+  if (!existsSync(launcher)) return { prompt, exitCode: null, injected: [], hookReasonCode: "HOOK_LAUNCHER_MISSING" };
+  const run = spawnSync(process.execPath, [launcher, "user-prompt-submit"], {
+    cwd: applied.projectRoot,
+    input: JSON.stringify({ hook_event_name: "UserPromptSubmit", session_id: "einzbern-setup-self-check", cwd: applied.projectRoot, prompt }),
+    encoding: "utf8",
+    env: { ...process.env, EINZBERN_HOME: applied.deviceHome },
+    maxBuffer: 1_048_576,
+    timeout: HOOK_SELF_CHECK_TIMEOUT_MS,
+    windowsHide: true,
+  });
+  let hookReasonCode: string | null = null;
+  const said = String(run.stderr ?? "").trim().split("\n").at(-1) ?? "";
+  if (said !== "") {
+    try {
+      const refusal: unknown = JSON.parse(said);
+      const code = refusal !== null && typeof refusal === "object" ? (refusal as { readonly reasonCode?: unknown }).reasonCode : undefined;
+      hookReasonCode = typeof code === "string" ? code : "HOOK_SELF_CHECK_STDERR";
+    } catch {
+      hookReasonCode = "HOOK_SELF_CHECK_STDERR";
+    }
+  }
+  if (run.error !== undefined) hookReasonCode = String((run.error as { readonly code?: unknown }).code ?? "HOOK_SELF_CHECK_FAILED");
+  let injected: readonly string[] = [];
+  const stdout = String(run.stdout ?? "");
+  if (run.status === 0 && stdout.trim() !== "") {
+    try {
+      const answer: unknown = JSON.parse(stdout);
+      const output = answer !== null && typeof answer === "object" ? (answer as { readonly hookSpecificOutput?: { readonly additionalContext?: unknown } }).hookSpecificOutput : undefined;
+      const context = output?.additionalContext;
+      injected = typeof context === "string" && context !== "" ? context.split("\n") : [];
+    } catch {
+      hookReasonCode ??= "HOOK_OUTPUT_INVALID";
+    }
+  }
+  return { prompt, exitCode: run.status, injected, hookReasonCode };
+}
+
 async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<void> {
   const command = arguments_[0];
   if (!command || command.startsWith("--")) {
@@ -1708,6 +1798,30 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const values = parseArguments(rest, ["at"]);
     required(values, ["at"]);
     io.write(canonicalJson(await rollbackEngine({ at: values.at ?? "" }) as unknown as JsonValue));
+    return;
+  }
+  // TCRN-CROSS-STORY-480 (setup.ts): plan in the chosen mode; apply the plan only with --yes true. The
+  // device directory is this process's (EINZBERN_HOME), the one the library records go through.
+  if (command === "setup") {
+    const values = parseArguments(rest, ["mode", "project", "at", "artifacts", "cloud", "restore", "language", "navigation", "archive", "rollback", "managed-sections", "mapping", "yes"]);
+    required(values, ["mode", "project", "at"]);
+    const options = setupOptions(values);
+    const confirmed = booleanValue(values.yes, "yes");
+    const plan: SetupPlan = await planSetup(options);
+    if (!confirmed) {
+      io.write(canonicalJson(plan as unknown as JsonValue));
+      return;
+    }
+    const applied = await applySetup(plan);
+    io.write(canonicalJson({ ...applied, selfCheck: { checks: applied.selfCheck, ...hookSelfCheck(applied) } } as unknown as JsonValue));
+    return;
+  }
+  // TCRN-CROSS-STORY-480 R4, AC5 (doctor.ts): the eight checks, each {check, ok, reasonCode, detail}.
+  if (command === "doctor") {
+    const values = parseArguments(rest, ["project"]);
+    const projectPath = resolve(values.project ?? process.cwd());
+    const checks: readonly DoctorCheck[] = await runDoctor({ projectRoot: projectPath });
+    io.write(canonicalJson({ reasonCode: "DOCTOR_READY", ok: checks.every((check) => check.ok), projectPath, checks: checks as unknown as JsonValue }));
     return;
   }
   if (command === "library-list") {

@@ -9,6 +9,17 @@ wizard for `setup --mode migrate`. Run the engine verbs below the way SKILL.md s
 engine. Supply two flags yourself: `--project <dir>`, the root of the project (ask only when it is
 unclear which project), and `--at <UTC>`, the current instant written `YYYY-MM-DDTHH:MM:SSZ`.
 
+## What this engine does
+
+This engine finds an installation from before the rename and says so, and the migration itself
+comes with a later engine. `setup --mode migrate --project <dir> --at <UTC>` answers
+`SETUP_MIGRATE_PENDING` when it finds one, or `SETUP_MIGRATE_NOTHING` when there is none (then
+install with `install.md`); a plan of `setup --mode fresh` without `--yes` shows what it found in
+`context.legacy` (the old workspace and the old device directory). This engine takes only
+`--mapping` with this mode; the other flags below are refused with `SETUP_OPTION_NOT_APPLICABLE`.
+Until the migration is in the engine, report what was found and stop: move nothing by hand. The
+rest of this reference is the wizard as it will run.
+
 ## Questions (one screen)
 
 Ask the whole list at once, in one message. The list is the same on both hosts: Claude Code asks
@@ -23,7 +34,7 @@ and never guess an answer.
 2. Cloud drive. Is a library location synced by a cloud drive? The plan suggests an answer from
    the location. Flag: `--cloud true` or `--cloud false`.
 3. Language. The language of the text Einzbern writes into the project's instruction files, as a
-   language tag such as `en` or `zh`. Flag: `--language <tag>`.
+   language tag such as `en` or `zh-CN`. Flag: `--language <tag>`.
 4. Navigation section. Add a short section that points agents to Einzbern in the project's
    instruction files? Flag: `--navigation true` or `--navigation false`.
 

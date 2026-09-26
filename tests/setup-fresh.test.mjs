@@ -4,7 +4,7 @@
 // library, the registry entry, both skill copies, one hook per host, CLAUDE.md's import section and
 // AGENTS.md's navigation section, lists each file it wrote and passes doctor's eight checks; a
 // second run writes nothing. Originals are backed up before they are replaced, a symbolic link in
-// a host file stops the plan before anything is written, and the modes that are not here yet say so.
+// a host file stops the plan before anything is written, and migrate says what it found.
 // Every home, device directory and project here is a temporary directory.
 
 import "./helpers/device-home.mjs";
@@ -158,12 +158,9 @@ async function planUnderTripwire(f, options) {
   return JSON.parse(run.stdout);
 }
 
-test("480-R1, R6: six modes; the four not here yet say so, and migrate names an installation from before the rename", async (context) => {
+test("480-R1, R6: six modes, and migrate names an installation from before the rename", async (context) => {
   assert.deepEqual([...SETUP_MODES], ["fresh", "restore", "update", "repair", "migrate", "uninstall"]);
   const f = await fixture(context, { engine: false });
-  for (const mode of ["restore", "update", "repair", "uninstall"]) {
-    await assert.rejects(planSetup({ mode, projectRoot: f.project, at: at(), home: f.home, deviceHome: f.deviceHome }), { reasonCode: "SETUP_MODE_UNAVAILABLE" });
-  }
   await assert.rejects(planSetup({ mode: "install", projectRoot: f.project, at: at() }), { reasonCode: "SETUP_MODE_INVALID" });
   await assert.rejects(plan(f, {}, { restore: join(f.base, "library") }), { reasonCode: "SETUP_OPTION_NOT_APPLICABLE" });
   await assert.rejects(plan(f, { language: "fr" }), { reasonCode: "SETUP_ANSWER_INVALID" });

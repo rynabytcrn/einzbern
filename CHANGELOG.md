@@ -563,6 +563,43 @@ the rest of the engine loads, and the hook answers nothing there. CI packs the a
 under the runner's temporary directory and runs `commands`, and `status` on a temporary library, from
 it with Node.js alone.
 
+The installation wizard is one verb, `setup`, and a device is checked with `doctor`
+(TCRN-CROSS-STORY-480; MIN-227 D24; `packages/core/src/setup.ts`, `setup-fresh.ts`,
+`setup-restore.ts`, `setup-maintain.ts`, `doctor.ts`).
+`setup --mode fresh|restore|update|repair|migrate|uninstall --project <dir> --at <UTC>`
+takes the answers `--artifacts`, `--cloud`, `--language` and
+`--navigation` and the options `--restore`, `--archive`, `--rollback`, `--managed-sections` and
+`--mapping`, each in the modes that use it (`SETUP_OPTION_NOT_APPLICABLE` otherwise). Without
+`--yes true` it writes nothing and answers `SETUP_PLAN_READY`: the answers given, the questions
+still open with their defaults, every file the apply would write in the order it writes them, the
+originals it would back up first and whatever stops the apply. With `--yes true` it applies the
+plan and answers `SETUP_APPLIED`: the files written, the backup directory and `selfCheck`, which
+holds doctor's eight checks (`checks`) and the hook run once as a host runs it, from the project's
+directory with the project's name as the prompt (`prompt`, `exitCode`, `injected`,
+`hookReasonCode`). fresh installs the library, the registry entry, both skill copies, the two
+launchers, one hook per host, the project's write permissions for a library outside it and the
+managed sections, and a second run writes nothing. restore first runs eight checks of the library,
+and the first that fails stops it with nothing written and names the check (`check`, which the CLI
+entry now passes on): `RESTORE_UNREADABLE` (a placeholder that does not arrive is
+`AKASHA_READ_TIMEOUT`), `RESTORE_NOT_A_LIBRARY`, `RESTORE_FORMAT_UNSUPPORTED`,
+`RESTORE_STREAM_INVALID` (a broken hash chain or a sync client's conflicted copy),
+`RESTORE_PROJECT_MISMATCH`, `RESTORE_REGISTRY_BOUND_ELSEWHERE`, `RESTORE_DEVICE_STREAM` and
+`RESTORE_SECTIONS_DIVERGED`; then it registers and wires the project without writing the library's
+settings, and `columns` lists those that came back beside this device's own. update installs the
+release `--archive` names, the archive with its `.sha256` or the directory it unpacks to, checked in
+memory and again by `engine-update`, and `--rollback true` goes back to the previous version; either
+lays the skill copies, the launchers and the hooks again from the version now current, writes no
+managed section and reports `engineSwitch`. repair runs the steps from the registry on again for
+the registered library. uninstall takes the Einzbern hooks out of both hosts, moves both skill
+copies and their record into the device directory's backups and removes the registry entry after
+copying the registry there; the library is never read or written, and `--managed-sections remove`
+takes the section markers out of the project's files and leaves their text. migrate finds an
+installation from before the rename (`SETUP_MIGRATE_PENDING`); its migration comes later.
+`doctor [--project <dir>]` answers `DOCTOR_READY` with `ok` and the eight checks
+(`engine-version`, `hooks-present`, `skill-copies`, `registry`, `library-format`, `device-stream`,
+`managed-sections`, `cloud-flag`), each `{check, ok, reasonCode, detail}` with its causes in
+`detail.causes`. The skill's references follow these flags and reason codes.
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

@@ -20,17 +20,20 @@ never guess an answer.
 1. Action. Update to a newer engine, repair this device's wiring, or roll back to the previous
    engine? Flags: `--mode update`, `--mode repair`, or `--mode update --rollback true`.
 2. Source, for an update only. Is there a release archive on this device, a file named
-   `einzbern-<version>.tar.gz` with its `.sha256` file beside it? If so, pass it with
-   `--archive <local archive>`. If not, getting one is a separate step: name the file and where it
-   would come from, and fetch it only after the user agrees.
+   `einzbern-<version>.tar.gz` with its `.sha256` file beside it, or the directory it unpacks to?
+   If so, pass it with `--archive <local archive>`. If not, getting one is a separate step: name
+   the file and where it would come from, and fetch it only after the user agrees.
 
-Repair and rollback ask nothing more unless the plan reports an open question.
+Repair and rollback ask nothing more unless the plan reports an open question: a repair may take
+the cloud-drive and navigation answers again (`--cloud`, `--navigation`).
 
 ## Before you plan
 
 - Repair. Run `doctor --project <dir>` first and show which checks fail. Repair puts back what
-  this device's installation should have, such as the hooks, the skill copies, and the pointer to
-  the current engine; for the other checks, follow `doctor.md`.
+  this device's installation of the project should have: the registry entry, the hooks, the skill
+  copies, the launchers, the project's write permissions and its managed sections. It needs the
+  project registered on this device (`LIBRARY_NOT_REGISTERED` otherwise: install or restore
+  instead); for the other checks, follow `doctor.md`.
 - Rollback. This device keeps the engine versions it installed and switches between them, so a
   rollback fetches nothing. It is refused with `ENGINE_ROLLBACK_UNAVAILABLE` when no earlier
   version is still installed.
@@ -39,14 +42,22 @@ Repair and rollback ask nothing more unless the plan reports an open question.
 
 1. Plan. Run `setup --mode <mode> --project <dir> --at <UTC>` with the flags of the chosen action
    and without `--yes`. It writes nothing and returns `SETUP_PLAN_READY`: the decided answers, the
-   open questions, and the files it would write.
+   open questions, the files it would write, and any blockers. An update or a rollback names the
+   version it moves from and to (`engineSwitch`). An update without `--archive` or
+   `--rollback true` names that question and cannot be applied (`SETUP_ANSWER_REQUIRED`). A
+   release that does not match the sha256 beside it (`INSTALL_ARCHIVE_DIGEST_MISMATCH`), has none
+   (`INSTALL_SHA256_MISSING`), is not a release (`INSTALL_ARCHIVE_INVALID`), or whose files do not
+   hash as its manifest states (`INSTALL_TREE_DIGEST_MISMATCH`) is a blocker: get the release again
+   and never edit it.
 2. Ask any open question on one screen, then plan again with the answers until none is open.
 3. Final confirmation. Show the action, the engine version it moves to as the plan names it, and
    every file the plan would write, as the plan lists them, and ask once whether to apply.
    Continue only on a clear yes.
 4. Apply. Run the same command with `--yes true`. It returns `SETUP_APPLIED`: the files written,
-   the backup directory, and `selfCheck`.
-5. Report the result and the eight checks in `selfCheck`. Handle any check that is not ok with
+   the backup directory, the switch it made (`engineSwitch`, for an update or a rollback), and
+   `selfCheck`.
+5. Report the result, the eight checks in `selfCheck.checks`, and what the hook added for the
+   project's name as a sample prompt (`selfCheck.injected`). Handle any check that is not ok with
    `doctor.md`.
 
 ## What an update leaves alone
@@ -59,6 +70,7 @@ Repair and rollback ask nothing more unless the plan reports an open question.
 - After a rollback, the older engine refuses a library that a newer engine already moved to a
   newer format (`LIBRARY_FORMAT_UNSUPPORTED` or `ENGINE_TOO_OLD`). Tell the user; do not work
   around the refusal.
+- The release it unpacked stays in the device directory's `trash/`; nothing is deleted.
 
 ## Flags
 
@@ -67,7 +79,9 @@ Repair and rollback ask nothing more unless the plan reports an open question.
 | Update | `--mode update` |
 | Repair | `--mode repair` |
 | Roll back | `--mode update --rollback true` |
-| Release archive on this device | `--archive <local archive>` |
+| Release archive on this device, or its unpacked directory | `--archive <local archive>` |
+| Cloud drive, for a repair | `--cloud true` or `--cloud false` |
+| Navigation section, for a repair | `--navigation true` or `--navigation false` |
 | Yes at the final confirmation | `--yes true` |
 
 ## Boundaries

@@ -12,9 +12,8 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { LEGACY_ENGINE_NAME, LOCAL_DIRECTORY_NAMES } from "./lib/names.mjs";
+import { LEGACY_ENGINE_NAME, LEGACY_HOOK_SCRIPTS, LOCAL_DIRECTORY_NAMES } from "./lib/names.mjs";
 import { buildContainedExecutionPlan } from "./lib/push-gate-children.mjs";
-import { HOSTS, hookEntriesFor } from "./host-harness.mjs";
 import {
   buildDynamicGatePlan,
   createGateReceiptAuthority,
@@ -159,12 +158,13 @@ const ENGINE_ENTRY_PATTERN = String.raw`(?:einzbern\.mjs|${LEGACY_ENGINE_NAME}\.
 const GOVERNED_WRITE_COMMAND = new RegExp(`${ENGINE_ENTRY_PATTERN}.*${/\b(?:artifact-put|conference-(?:append-position|cancel|close|open)|dispatch-(?:classes-set|mode-set|tiers-set)|gate-(?:create|delete|transition)|knowledge-(?:article-create|article-refresh|batch|bodies-migrate|capture|checkpoint|create|init|promote|rebase|recover|retire|reverify)|lease-(?:break|recovery-break)|machine-settings-(?:remove|set)|migration-execute|project-(?:create|delete|update)|recover|retire-sweep|settings-(?:remove|set)|snapshot-replay-rebuild|template-admit|work-(?:annotate|batch|create|delete|transition))\b/iu.source}`, "iu");
 const RELATIVE_REPOSITORY_COMMAND = /(?:^|\s)(?:node|pnpm)(?:\s+[^\s]+)*\s+(?:scripts\/|tools\/|packages\/|tests\/)/u;
 
-// TCRN-CROSS-STORY-460 R3 (#240): user-level hooks run this working tree's own scripts, so a
-// hook process's command line holds the engine's absolute path. The script names are derived
-// from the registry the host renderer uses (host-harness hookEntriesFor, both hosts), not
-// copied here; the one addition is the injection child the knowledge hooks start, which
+// TCRN-CROSS-STORY-460 R3 (#240): user-level hooks ran this working tree's own scripts, so a
+// hook process's command line held the engine's absolute path. Einzbern's own hook runs the
+// launcher in the device directory (TCRN-CROSS-STORY-477 R1); the scripts named here are the old
+// platform harness's (LEGACY_HOOK_SCRIPTS in the names module), which a machine that has not
+// migrated still runs. The one addition is the injection child the knowledge hooks start, which
 // carries their own --hook-input or --observation-boundary argument.
-const HOOK_HANDLER_NAMES = new Set(HOSTS.flatMap((host) => hookEntriesFor(host).map((entry) => entry.handler.split("/").at(-1))));
+const HOOK_HANDLER_NAMES = new Set(LEGACY_HOOK_SCRIPTS.map((script) => script.split("/").at(-1)));
 const HOOK_INJECTION_CHILD = /--(?:hook-input|observation-boundary)(?:\s|=|$)/u;
 
 function hostHookProcess(command) {

@@ -22,26 +22,14 @@ function test(name, optionsOrBody, maybeBody) {
   queuedTests.push([name, { ...options, concurrency: true }, body]);
 }
 
-import { coreExportedSymbols, inspectChainValidation, inspectHostRenderDrift, inspectPlatform } from "../scripts/platform-doctor.mjs";
-import { HOSTS, claudeHookSettings, codexHookDocument, hookEntriesFor } from "../scripts/host-harness.mjs";
-import { applyHostHarness } from "../scripts/host-harness-apply.mjs";
+import { coreExportedSymbols, inspectChainValidation, inspectPlatform } from "../scripts/platform-doctor.mjs";
+import { HOST_HOOK_HOSTS, mergeHostHooks, planHostHooks } from "../dist/build/packages/core/src/host-hooks.js";
 import { BRAND, DIRECTORY, INSTALL_MANIFEST, LEGACY_BRAND_NAME, LEGACY_ENGINE_NAME, LOCAL_DIRECTORY_NAMES, initializeLibrary, materializeWorkspace, workspaceBudgets } from "../dist/build/packages/core/src/index.js";
 import { PROTOCOL_LIMITS, canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
 
 const topology = "## 三、分区拓扑\n";
 const FIXTURE_COMMIT = "f".repeat(40);
 const launchdLabel = "com.tcrn.platform.local-snapshot";
-
-function codexDispatchSettings([flagship, main, economy]) {
-  return [
-    { key: "execution.dispatchMode", value: "frontier" },
-    { key: "execution.dispatchTiers", value: JSON.stringify({ codex: {
-      flagship: { model: flagship, effort: "max" },
-      main: { model: main, effort: "high" },
-      economy: { model: economy, effort: "low" },
-    } }) },
-  ];
-}
 
 // STORY-300: a complete container now carries the acceptance-lane roster, so the
 // synthetic one does too. `roster: false` builds a container without it, which is
@@ -164,61 +152,6 @@ test("STORY-371: Claude's bridge is exact and arbitrary prose is red", async (co
   const whitespace = await fixture(context, { claude: " @AGENTS.md \n\n" });
   const green = await inspectPlatform(whitespace, { includeInstallSurface: false });
   assert.equal(green.checks.find((entry) => entry.name === "claudeBridge").ok, true);
-});
-
-test("STORY-371: host-render drift is a named platform check", async (context) => {
-  const root = await fixture(context);
-  const result = await inspectPlatform(root, {
-    hostRenderDrift: { ok: false, reasonCode: "PLATFORM_HOST_RENDER_DRIFTED", drift: [{ path: ".claude/agents/implement.md" }] },
-  });
-  const check = result.checks.find((entry) => entry.name === "hostRenderDrift");
-  assert.equal(check.ok, false);
-  assert.equal(check.reasonCode, "PLATFORM_HOST_RENDER_DRIFTED");
-  assert.deepEqual(check.drift, [{ path: ".claude/agents/implement.md" }]);
-});
-
-test("INC-351: doctor compares host-render against the managed engine root", async (context) => {
-  const fixture = await completeInstallFixture(context, { engineVersion: "1.1.2", helperVersion: "1.1.2" });
-  const hostRenderSettings = codexDispatchSettings(["codex-flagship", "codex-main", "codex-economy"]);
-  const managed = await inspectHostRenderDrift(fixture.root, {
-    homeRoot: fixture.home,
-    manifest: INSTALL_MANIFEST,
-    hostRenderSettings,
-    hostRenderHosts: ["codex"],
-    hostRenderScope: "hooks-only",
-  });
-  assert.equal(managed.ok, true, JSON.stringify(managed));
-
-  const developmentRoot = join(fixture.root, LOCAL_DIRECTORY_NAMES.engine);
-  const development = await inspectHostRenderDrift(fixture.root, {
-    homeRoot: fixture.home,
-    manifest: INSTALL_MANIFEST,
-    hostRenderSettings,
-    hostRenderHosts: ["codex"],
-    hostRenderRepoRoot: developmentRoot,
-    hostRenderScope: "hooks-only",
-  });
-  assert.equal(development.ok, false, "the development checkout must not silently stand in for the managed engine");
-  assert.equal(development.reasonCode, "PLATFORM_HOST_RENDER_DRIFTED");
-});
-
-test("TCRN-CROSS-STORY-429: doctor uses the explicitly selected hooks-only projection", async (context) => {
-  const root = await fixture(context);
-  const repoRoot = join(root, LOCAL_DIRECTORY_NAMES.engine);
-  await mkdir(join(root, ".codex"), { recursive: true });
-  await writeFile(join(root, ".codex", "config.toml"), `model = "user-model"\nmodel_reasoning_effort = "low"\n`);
-  await writeFile(join(root, ".codex", "hooks.json"), `${JSON.stringify(codexHookDocument(repoRoot, root), null, 2)}\n`);
-  const hostRenderSettings = codexDispatchSettings(["approved-flagship", "approved-main", "approved-economy"]);
-  const scoped = await inspectHostRenderDrift(root, { hostRenderSettings, hostRenderHosts: ["codex"], hostRenderRepoRoot: repoRoot, hostRenderScope: "hooks-only" });
-  assert.equal(scoped.ok, true, JSON.stringify(scoped));
-  assert.equal(scoped.scope, "hooks-only");
-  assert.equal(scoped.hosts[0].scope, "hooks-only");
-  assert.deepEqual(scoped.drift, []);
-
-  const full = await inspectHostRenderDrift(root, { hostRenderSettings, hostRenderHosts: ["codex"], hostRenderRepoRoot: repoRoot, hostRenderScope: "full" });
-  assert.equal(full.ok, false, "explicit full doctor scope still detects model configuration drift");
-  assert.equal(full.scope, "full");
-  assert.ok(full.drift.some((entry) => entry.path === ".codex/config.toml"));
 });
 
 test("INC-247: the container-root platform docs location is canonical", async (context) => {
@@ -428,23 +361,19 @@ async function completeInstallFixture(context, { engineVersion = "0.11.15", help
   // Owner ruled a host is under the harness from the moment it installs its adapter. The
   // fixture's idea of "complete" moves with that ruling rather than around it.
   if (harness) {
-    // The handlers the roster names are stubbed INSIDE the fixture, so both renderings
-    // point at files that exist and pass `node --check` here rather than reaching into
-    // the developer's real checkout. A fixture whose hooks name absent targets would red
-    // on executability and teach nothing about coverage.
-    const fixtureRepo = join(root, LOCAL_DIRECTORY_NAMES.engine);
-    for (const host of HOSTS) {
-      for (const entry of hookEntriesFor(host)) {
-        const handler = join(fixtureRepo, entry.handler);
-        await mkdir(join(handler, ".."), { recursive: true });
-        await writeFile(handler, "export {}\n");
-        const managedHandler = join(managedRepoRoot, entry.handler);
-        await mkdir(join(managedHandler, ".."), { recursive: true });
-        await writeFile(managedHandler, "export {}\n");
-      }
+    // TCRN-CROSS-STORY-477 R1: the harness is one hook per host, running the stable launcher in
+    // the fixture's own device directory. The launcher is stubbed there, so both renderings point
+    // at a file that exists and passes `node --check` rather than reaching into the developer's
+    // real device directory. A fixture whose hook names an absent target would red on
+    // executability and teach nothing about coverage.
+    const deviceHome = join(home, DIRECTORY.device);
+    for (const host of HOST_HOOK_HOSTS) {
+      const expected = planHostHooks({ host, scope: "project", deviceHome });
+      await mkdir(join(expected.launcher, ".."), { recursive: true });
+      await writeFile(expected.launcher, "export {}\n");
+      await mkdir(join(root, expected.hooksFile, ".."), { recursive: true });
+      await writeFile(join(root, expected.hooksFile), `${JSON.stringify(mergeHostHooks(null, expected).document, null, 2)}\n`);
     }
-    await writeFile(join(root, ".claude", "settings.json"), `${JSON.stringify({ hooks: claudeHookSettings() }, null, 2)}\n`);
-    applyHostHarness("codex", root, { repoRoot: managedRepoRoot });
   }
   await writeFile(join(root, "AGENTS.md"), `${topology}fixture\n`);
   await writeFile(join(root, "CLAUDE.md"), "@AGENTS.md\n");
@@ -636,10 +565,12 @@ test("S267 hook leg turns red for a missing target independently", async (contex
 
 test("S267 managed knowledge hooks must carry the explicit Claude container root", async (context) => {
   const fixture = await completeInstallFixture(context);
-  const settings = JSON.parse(await readFile(join(fixture.root, ".claude", "settings.json"), "utf8"));
-  settings.hooks.SessionStart[0].hooks[0].command = settings.hooks.SessionStart[0].hooks[0].command
-    .replace(' --container-root "${CLAUDE_PROJECT_DIR}"', "");
-  await writeFile(join(fixture.root, ".claude", "settings.json"), JSON.stringify(settings));
+  // The fixture's harness no longer carries the knowledge-inject hook (TCRN-CROSS-STORY-477 R3), so
+  // the old form, without its --container-root, is written here.
+  const handler = `\${CLAUDE_PROJECT_DIR}/${LOCAL_DIRECTORY_NAMES.engine}/scripts/knowledge-inject-hook.mjs`;
+  await writeFile(join(fixture.root, ".claude", "settings.json"), JSON.stringify({ hooks: {
+    SessionStart: [{ hooks: [{ type: "command", command: `if [ -f "${handler}" ]; then node "${handler}" --host claude; fi`, timeout: 30 }] }],
+  } }));
   const result = await inspectInstallFixture(fixture);
   const hooks = result.checks.find((item) => item.name === "hooks");
   assert.equal(hooks.ok, false);

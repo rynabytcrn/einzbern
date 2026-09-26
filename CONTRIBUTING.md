@@ -63,12 +63,12 @@ verification gate, in one sense that holds and one that no longer does:
   expiring against a tree that had not changed.
 
 Live evidence for the host surface that still exists is `platform-doctor.mjs`'s
-harness leg (`claudeHarnessDrift` and the Codex equivalent), which checks the
-installed container against the current capability roster rather than a dated
-JSON file — see `docs/verification/host/capability-manifest.json` for what is
-and is not claimed today. Nothing in any gate group observes hooks actually
-firing on a real host; that gap is named here rather than implied away by
-either the retired window or the harness leg that replaces it.
+hooks leg, which checks that every hook the installed container registers for
+either host runs a file that parses, rather than a dated JSON file — see
+`docs/verification/host/capability-manifest.json` for what is and is not
+claimed today. Nothing in any gate group observes hooks actually firing on a
+real host; that gap is named here rather than implied away by either the
+retired window or the hooks leg that replaces it.
 
 ## Documentation
 

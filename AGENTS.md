@@ -122,8 +122,9 @@ a leak; the test is whether anything owns the record of it.
 
 The dispatch adapter (`scripts/dispatch-adapter.mjs`), the dispatch-telemetry hook and
 the `dispatch-*` verbs are retired (TCRN-CROSS-STORY-467 R3); the dispatch settings remain
-readable through `settings-catalog` and `scripts/host-render.mjs` until the host wiring
-is redecided. When a caller resolves the host, task class, mode, model, and effort, it
+readable through `settings-catalog`. `scripts/host-render.mjs` no longer projects them: since
+the host wiring was redecided (TCRN-CROSS-STORY-477) it renders the one Einzbern hook into a
+host's settings. When a caller resolves the host, task class, mode, model, and effort, it
 does so from the live workspace immediately before the host call, then passes the
 resolved model and effort to the native tool. Read the bound Story with `work-show` when
 the call carries a work id; a missing or changed work, scope, configuration,

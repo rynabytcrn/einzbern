@@ -35,7 +35,6 @@
     "test": "node scripts/task.mjs test",
     "test-wiring:proof": "node scripts/test-wiring-proof.mjs",
     "typecheck": "node scripts/task.mjs typecheck",
-    "verify:host-harness": "node scripts/host-harness.mjs",
     "verify:isolated": "node scripts/isolated-proof.mjs",
     "report:ceremony-cost": "node scripts/ceremony-cost.mjs --manifest scripts/policy/ceremony-cost-init048.json",
     "batch:formal": "node scripts/operational-batch-entry.mjs",

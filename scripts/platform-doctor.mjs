@@ -26,7 +26,6 @@ import {
 // second implementation of a digest is a second answer waiting to disagree with the first
 // (TCRN-CROSS-INC-219).
 import { PROTOCOL_LIMITS, canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
-import { inspectHostRenderDrift as inspectRenderedHostDrift } from "./host-render.mjs";
 import { toPosixPath, walkFiles } from "./lib/files.mjs";
 
 const execFileAsync = promisify(execFile);
@@ -1137,77 +1136,6 @@ async function inspectClaudeBridge(root) {
   return check("claudeBridge", true, { path: "CLAUDE.md", target: "AGENTS.md" });
 }
 
-// STORY-371/372. Compare renderer-owned host fields and the generated hook roster with
-// current disk state. A workspace without a resolved model still has a meaningful hook
-// projection, so hooks-only drift remains visible without inventing a model.
-export async function inspectHostRenderDrift(root, options) {
-  if (options.hostRenderDrift && typeof options.hostRenderDrift === "object") {
-    const supplied = options.hostRenderDrift;
-    return check("hostRenderDrift", supplied.ok !== false, {
-      reasonCode: supplied.reasonCode ?? (supplied.ok === false ? "PLATFORM_HOST_RENDER_DRIFTED" : "PLATFORM_HOST_RENDER_CURRENT"),
-      ...supplied,
-      source: "synthetic host-render projection",
-    });
-  }
-  let settings = options.hostRenderSettings;
-  let workspace = options.hostRenderWorkspace;
-  if (!Array.isArray(settings)) {
-    const container = join(root, CHAIN_CONTAINER_DIRECTORY);
-    let entries = [];
-    try { entries = await readdir(container, { withFileTypes: true }); } catch { entries = []; }
-    const candidates = entries.filter((entry) => entry.isDirectory()).map((entry) => join(container, entry.name, "workspace"));
-    workspace = workspace ?? candidates.find((candidate) => candidate.endsWith(`${sep}cross-project${sep}workspace`)) ?? candidates[0];
-    if (workspace) {
-      const cli = options.engineCli ?? join(dirname(fileURLToPath(import.meta.url)), "einzbern.mjs");
-      try {
-        const result = await execFileAsync(process.execPath, [cli, "settings-catalog", "--workspace", workspace], { timeout: 30_000, maxBuffer: 8 * 1024 * 1024 });
-        const catalog = JSON.parse(result.stdout);
-        settings = catalog.settings;
-      } catch {
-        settings = null;
-      }
-    }
-  }
-  if (!Array.isArray(settings)) return check("hostRenderDrift", true, { comparable: false, reasonCode: "PLATFORM_HOST_RENDER_UNREADABLE", source: "dispatch settings + host-render projection" });
-  const hosts = Array.isArray(options.hostRenderHosts) && options.hostRenderHosts.length > 0 ? options.hostRenderHosts : ["claude-code", "codex"];
-  // The renderer is installed under the managed engine root.  The development
-  // checkout is a separate project entry in the manifest and must never become an
-  // implicit comparison source: doing so made the doctor disagree with the writer
-  // after a managed replacement.  Tests may still provide an explicit root so a
-  // synthetic platform can exercise the projection without a managed installation.
-  let repoRoot = options.hostRenderRepoRoot ?? null;
-  if (repoRoot === null) {
-    const engineRoot = manifestPath(options.manifest ?? INSTALL_MANIFEST, "machine.workflow-engine", root, options.homeRoot ?? process.env.HOME ?? "");
-    repoRoot = engineRoot === null ? null : join(engineRoot, LEGACY_ENGINE_NAME);
-  }
-  if (repoRoot === null) {
-    return check("hostRenderDrift", false, {
-      reasonCode: "PLATFORM_HOST_RENDER_REPO_UNRESOLVED",
-      source: "install-manifest machine.workflow-engine",
-    });
-  }
-  const scope = options.hostRenderScope ?? "hooks-only";
-  const rows = [];
-  for (const host of hosts) {
-    try {
-      rows.push(await inspectRenderedHostDrift({ host, settings, root, repoRoot, scope }));
-    } catch (error) {
-      rows.push({ name: "hostRenderDrift", host, scope, ok: false, comparable: true, reasonCode: error?.reasonCode ?? "PLATFORM_HOST_RENDER_FAILED", error: String(error?.message ?? error) });
-    }
-  }
-  const comparable = rows.some((row) => row.comparable || row.hooksComparable);
-  const drift = rows.flatMap((row) => row.drift ?? []);
-  return check("hostRenderDrift", drift.length === 0, {
-    reasonCode: !comparable ? "PLATFORM_HOST_RENDER_UNCONFIGURED" : drift.length === 0 ? "PLATFORM_HOST_RENDER_CURRENT" : "PLATFORM_HOST_RENDER_DRIFTED",
-    scope,
-    comparable,
-    workspace: workspace ?? null,
-    hosts: rows,
-    drift,
-    source: "dispatch settings + host-render projection",
-  });
-}
-
 async function inspectBridgeSyntax(root) {
   const candidates = [join(root, "AGENTS.md"), join(root, "CLAUDE.md")];
   const entries = await readdir(root, { withFileTypes: true });
@@ -2316,7 +2244,9 @@ export async function inspectPlatform(platformRootArgument, options = {}) {
       await inspectEngineFloorSatisfied(root, homeRoot, manifest, options),
       await inspectEngineCapabilitySurface(root, homeRoot, manifest, options),
       await inspectHelperSettingsCoverage(root, homeRoot, manifest, options),
-      await inspectHostRenderDrift(root, { ...options, manifest, homeRoot }),
+      // The hostRenderDrift leg compared the dispatch projection host-render used to write with
+      // the host files; host-render renders only the one Einzbern hook since
+      // TCRN-CROSS-STORY-477 R1, so that leg is retired with the projection.
       await inspectLaunchdDuty({ ...options, platformRoot: root, homeRoot }, manifest),
       await inspectHarnessSurface(root, manifest),
       await inspectSnapshotReadPerformance(root, options),
@@ -2333,23 +2263,18 @@ export async function inspectPlatform(platformRootArgument, options = {}) {
 function platformOptionsFromArgv(argv) {
   const rootIndex = argv.indexOf("--platform-root");
   if (rootIndex < 0 || !argv[rootIndex + 1] || argv[rootIndex + 1].startsWith("--")) return null;
-  const scopeIndex = argv.indexOf("--host-render-scope");
-  const scope = scopeIndex < 0 ? "hooks-only" : argv[scopeIndex + 1];
-  if (scopeIndex >= 0 && (!scope || scope.startsWith("--") || !["full", "hooks-only"].includes(scope))) return null;
-  const consumed = new Set([rootIndex, rootIndex + 1]);
-  if (scopeIndex >= 0) { consumed.add(scopeIndex); consumed.add(scopeIndex + 1); }
-  if (argv.some((argument, argumentIndex) => !consumed.has(argumentIndex))) return null;
-  if (argv.filter((argument) => argument === "--platform-root").length !== 1 || argv.filter((argument) => argument === "--host-render-scope").length > 1) return null;
-  return { platformRoot: argv[rootIndex + 1], hostRenderScope: scope };
+  // --host-render-scope chose the retired hostRenderDrift leg's projection (TCRN-CROSS-STORY-477).
+  if (argv.length !== 2) return null;
+  return { platformRoot: argv[rootIndex + 1] };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const args = platformOptionsFromArgv(process.argv.slice(2));
   if (args === null) {
-    process.stdout.write(`${JSON.stringify({ ok: false, reasonCode: "PLATFORM_DOCTOR_ARGUMENTS_INVALID", expected: "--platform-root <path> [--host-render-scope full|hooks-only]" })}\n`);
+    process.stdout.write(`${JSON.stringify({ ok: false, reasonCode: "PLATFORM_DOCTOR_ARGUMENTS_INVALID", expected: "--platform-root <path>" })}\n`);
     process.exitCode = 2;
   } else {
-    const result = await inspectPlatform(args.platformRoot, { hostRenderScope: args.hostRenderScope });
+    const result = await inspectPlatform(args.platformRoot);
     process.stdout.write(`${JSON.stringify(result)}\n`);
     process.exitCode = result.ok ? 0 : 1;
   }

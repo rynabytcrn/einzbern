@@ -145,9 +145,12 @@ const CODEX_TABLE = "sandbox_workspace_write";
 const CODEX_KEY = "writable_roots";
 const KEY_SEGMENT = String.raw`(?:[A-Za-z0-9_-]+|"(?:[^"\\]|\\.)*"|'[^']*')`;
 const KEY_PATH = String.raw`${KEY_SEGMENT}(?:\s*\.\s*${KEY_SEGMENT})*`;
-const TABLE_HEADER = new RegExp(String.raw`^\s*\[\s*(${KEY_PATH})\s*\]\s*(?:#.*)?$`, "u");
-const ARRAY_TABLE_HEADER = new RegExp(String.raw`^\s*\[\[\s*(${KEY_PATH})\s*\]\]\s*(?:#.*)?$`, "u");
-const KEY_ASSIGNMENT = new RegExp(String.raw`^\s*(${KEY_PATH})\s*=`, "u");
+// The line forms below, keySegments, statementLines and utcStamp are also what the host hook
+// wiring edits Codex's config.toml and dates its backups with (TCRN-CROSS-STORY-477,
+// packages/core/src/host-hooks.ts).
+export const TABLE_HEADER = new RegExp(String.raw`^\s*\[\s*(${KEY_PATH})\s*\]\s*(?:#.*)?$`, "u");
+export const ARRAY_TABLE_HEADER = new RegExp(String.raw`^\s*\[\[\s*(${KEY_PATH})\s*\]\]\s*(?:#.*)?$`, "u");
+export const KEY_ASSIGNMENT = new RegExp(String.raw`^\s*(${KEY_PATH})\s*=`, "u");
 const BASIC_ESCAPES: Readonly<Record<string, string>> = Object.freeze({
   b: "\b", t: "\t", n: "\n", f: "\f", r: "\r", e: "\u001b", "\"": "\"", "\\": "\\",
 });
@@ -172,7 +175,7 @@ function tomlBasicString(value: string): string {
   return JSON.stringify(value).replace(/\u007f/gu, "\\u007f");
 }
 
-function keySegments(path: string, file: string): readonly string[] {
+export function keySegments(path: string, file: string): readonly string[] {
   return [...path.matchAll(new RegExp(KEY_SEGMENT, "gu"))].map(([segment]) => (segment.startsWith("\"")
     ? decodeBasicString(segment.slice(1, -1), file)
     : segment.startsWith("'") ? segment.slice(1, -1) : segment));
@@ -189,7 +192,7 @@ type TomlScanState = "normal" | "comment" | "basic" | "literal" | "multiline-bas
 // Which lines of a TOML document begin a statement: not inside a multi-line string, and not inside
 // an array or inline table an earlier line left open. The scan follows strings, comments and
 // brackets and nothing more; a document it cannot follow is refused rather than edited.
-function statementLines(source: string, file: string): readonly boolean[] {
+export function statementLines(source: string, file: string): readonly boolean[] {
   const starts: boolean[] = [true];
   let state: TomlScanState = "normal";
   let depth = 0;
@@ -444,7 +447,7 @@ export async function planWritableRoots(input: WritableRootsInput): Promise<Writ
 }
 
 // The UTC second as a file name that is legal everywhere: 20260926T100000Z.
-function utcStamp(at: string): string {
+export function utcStamp(at: string): string {
   const milliseconds = Number(parseStrictInstant(at) / 1_000_000n);
   return new Date(milliseconds).toISOString().replace(/\.\d{3}Z$/u, "Z").replace(/[-:]/gu, "");
 }

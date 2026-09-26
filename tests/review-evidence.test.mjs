@@ -469,8 +469,9 @@ test("STORY-414: progress waits report cursor deltas, unchanged polls, and termi
 // TCRN-CROSS-STORY-460 R3 (SUB-238): user-level Claude hooks run the engine working tree's
 // own scripts, so in a live session the batch entry saw hook processes whose command line
 // holds the engine's absolute path and counted them as running agents. A process running a
-// registered hook handler (host-harness is the registry) or the injection child it starts
-// is a host hook, not an agent; real agents are still seen. Red leg: drop the distinction.
+// hook script of the old harness (LEGACY_HOOK_SCRIPTS in the names module) or the injection
+// child it starts is a host hook, not an agent; real agents are still seen. Red leg: drop the
+// distinction.
 test("STORY-460 AC4: running hook processes are host hooks, not running agents, and real agents still count", () => {
   const summarize = operationalBatchEntry.summarizeProcesses ?? ((rows) => ({ agents: { records: rows.map((row) => classifyProcess(row, { selfPid: 1 })).filter((row) => row.scope !== "unrelated" && row.scope !== "unknown") } }));
   // The registry now holds the knowledge-inject handler alone; the other handlers this list

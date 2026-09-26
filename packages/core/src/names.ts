@@ -91,6 +91,24 @@ export const PLATFORM_ARCHIVE_DIRECTORY = ".tcrn-artifacts" as const;
 // loads and workspace.ts sits in an import cycle with the barrel. From SUB-284 on writes
 // take the device-local lock of the library instead.
 export const WORKSPACE_WRITE_LOCK_FILE = "write.lock" as const;
+// TCRN-CROSS-STORY-477 R3: every script the old platform harness wired into a host's hook
+// settings, relative to the old engine checkout. The host wiring recognises an old hook by one of
+// these, whichever directory it ran from, to take it out.
+export const LEGACY_HOOK_SCRIPTS: readonly string[] = Object.freeze([
+  "scripts/agents-zero-hook.mjs",
+  "scripts/chain-write-guard.mjs",
+  "scripts/dispatch-telemetry-hook.mjs",
+  "scripts/knowledge-capture-hook.mjs",
+  "scripts/knowledge-inject-hook.mjs",
+  "scripts/ssh-write-observer.mjs",
+  "tools/stop-pact/codex-executor.mjs",
+  "tools/stop-pact/codex-response-style-hook.mjs",
+  "tools/stop-pact/hook.mjs",
+  "tools/stop-pact/response-style-hook.mjs",
+]);
+// TCRN-CROSS-STORY-477 R4: the key the old adapter bundles merged into a host's settings to record
+// an inert activation; the host wiring takes it out.
+export const LEGACY_INERT_SETTINGS_KEY = "tcrnWorkflowInert" as const;
 
 export interface LegacyNameEntry {
   readonly legacy: string;

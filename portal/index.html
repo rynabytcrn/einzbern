@@ -1233,6 +1233,14 @@ html[data-tcrn-theme="dark"] [data-theme-icon="dark"],
 .tcrn-table-shell__empty-row {
   display: block;
 }
+.tcrn-model-tier-table {
+  --tcrn-table-column-count: 6;
+  --tcrn-table-shell-columns: repeat(6, minmax(140px, 1fr));
+}
+.tcrn-variable-table {
+  --tcrn-table-column-count: 5;
+  --tcrn-table-shell-columns: repeat(5, minmax(160px, 1fr));
+}
 @media (max-width: 520px) {
   .tcrn-table-shell {
     overflow-x: visible;
@@ -3980,10 +3988,23 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 }
 .tcrn-page[data-page="dashboard"],
 .tcrn-page[data-page="settings"],
+.tcrn-page[data-page="variables"],
 .tcrn-page[data-page="entities"],
 .tcrn-page[data-page="vocabulary"] {
   max-width: 1040px;
 }
+[data-ui="rules-pending"] { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tcrn-space-2); padding: var(--tcrn-space-3); border: 1px solid var(--tcrn-color-border-subtle); border-radius: var(--tcrn-radius-surface); background: var(--tcrn-color-surface-panel); }
+[data-ui="rules-pending"] > select { min-width: min(100%, 240px); flex: 1 1 240px; }
+[data-ui="rules-layout"] { display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); gap: var(--tcrn-space-4); align-items: start; }
+[data-ui="rule-list"] { display: grid; gap: var(--tcrn-space-2); min-width: 0; }
+[data-rule-card] { display: grid; gap: var(--tcrn-space-2); padding: var(--tcrn-space-3); border: 1px solid var(--tcrn-color-border-subtle); border-radius: var(--tcrn-radius-surface); background: var(--tcrn-color-surface-panel); }
+[data-rule-card-head] { display: flex; justify-content: space-between; align-items: start; gap: var(--tcrn-space-2); }
+[data-rule-card-title] { margin: 0; font-size: var(--tcrn-type-size-body); }
+[data-rule-card-meta] { color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); }
+[data-rule-card-actions] { display: flex; align-items: center; justify-content: space-between; gap: var(--tcrn-space-2); }
+[data-rule-force-label] { display: flex; align-items: center; gap: var(--tcrn-space-1); color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); }
+#prose-directory [data-rule-force] { width: auto; min-height: auto; padding: 0; accent-color: var(--tcrn-color-brand-primary); }
+@media (max-width: 760px) { [data-ui="rules-layout"] { grid-template-columns: minmax(0, 1fr); } }
 .tcrn-editor-shell {
   grid-template-columns: minmax(184px, 208px) minmax(0, 1fr);
   grid-template-areas:
@@ -4111,6 +4132,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
       <nav class="tcrn-side-nav" id="primary-side-nav" aria-label="Portal navigation">
         <button class="tcrn-nav-item" data-nav-item-has-icon="true" data-page-target="dashboard" aria-current="page" aria-label="Dashboard" data-i18n-aria-label="nav.dashboard"><span class="tcrn-nav-item__content" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.8" y="1.8" width="5.2" height="5.2" rx="1"/><rect x="9" y="1.8" width="5.2" height="5.2" rx="1"/><rect x="1.8" y="9" width="5.2" height="5.2" rx="1"/><rect x="9" y="9" width="5.2" height="5.2" rx="1"/></svg></span><span class="tcrn-nav-item__label" data-i18n="nav.dashboard">Dashboard</span></button>
         <button class="tcrn-nav-item" data-nav-item-has-icon="true" data-page-target="settings" aria-label="Settings" data-i18n-aria-label="nav.settings"><span class="tcrn-nav-item__content" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.4"/><path d="M8 1.6v2M8 12.4v2M1.6 8h2M12.4 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M12.5 3.5l-1.4 1.4M4.9 11.1l-1.4 1.4"/></svg></span><span class="tcrn-nav-item__label" data-i18n="nav.settings">Settings</span></button>
+        <button class="tcrn-nav-item" data-nav-item-has-icon="true" data-page-target="variables" aria-label="Variables" data-i18n-aria-label="nav.variables"><span class="tcrn-nav-item__content" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3.2h10M3 8h10M3 12.8h10"/><circle cx="5.2" cy="3.2" r="1.5" fill="currentColor"/><circle cx="10.8" cy="8" r="1.5" fill="currentColor"/><circle cx="7.2" cy="12.8" r="1.5" fill="currentColor"/></svg></span><span class="tcrn-nav-item__label" data-i18n="nav.variables">Variables</span></button>
         <button class="tcrn-nav-item" data-nav-item-has-icon="true" data-page-target="prose" aria-label="Rules" data-i18n-aria-label="nav.prose"><span class="tcrn-nav-item__content" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2.5h10M3 5.5h10M3 8.5h6.5"/><path d="M3 12.5h4"/></svg></span><span class="tcrn-nav-item__label" data-i18n="nav.prose">Rules</span></button>
         <button class="tcrn-nav-item" data-nav-item-has-icon="true" data-page-target="vocabulary" aria-label="Vocabulary" data-i18n-aria-label="nav.vocabulary"><span class="tcrn-nav-item__content" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.8C6.6 1.9 4.4 1.7 2.2 2.2v10.6c2.2-.5 4.4-.3 5.8.6 1.4-.9 3.6-1.1 5.8-.6V2.2C11.6 1.7 9.4 1.9 8 2.8Z"/><path d="M8 2.8v10.6"/></svg></span><span class="tcrn-nav-item__label" data-i18n="nav.vocabulary">Vocabulary</span></button>
       </nav>
@@ -4174,23 +4196,32 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
             <div class="tcrn-page__head"><div><h1 data-i18n="page.settings">Settings</h1><p class="tcrn-page__lede" data-i18n="config.lede">Registered settings, read from the engine and changed through its public CLI.</p></div><div class="tcrn-page__actions"><span class="tcrn-badge" id="settings-count"></span></div></div>
           </div>
           <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs">
-            <nav class="tcrn-subnav tcrn-settings-layout__nav" data-settings-layout-nav data-settings-local-nav="true" aria-label="Settings groups" role="tablist"><button class="tcrn-subnav__item" data-setting-group="workspace" data-i18n="settings.workspace">Workspace</button><button class="tcrn-subnav__item" data-setting-group="backup" data-i18n="settings.backup">Backup</button><button class="tcrn-subnav__item" data-setting-group="execution" data-i18n="settings.execution">Execution</button><button class="tcrn-subnav__item" data-setting-group="machine" data-i18n="settings.machine">Workflow</button></nav>
+            <nav class="tcrn-subnav tcrn-settings-layout__nav" data-settings-layout-nav data-settings-local-nav="true" aria-label="Settings groups" role="tablist"><button class="tcrn-subnav__item" data-setting-group="workspace" data-i18n="settings.workspace">Workspace</button><button class="tcrn-subnav__item" data-setting-group="execution" data-i18n="settings.execution">Models and limits</button><button class="tcrn-subnav__item" data-setting-group="machine" data-i18n="settings.machine">Workflow</button></nav>
           </div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content">
             <div class="tcrn-manage tcrn-settings-layout" data-settings-layout-component="SettingsLayout" data-settings-layout="true" data-settings-layout-navigation-location="page-hierarchy-section-tabs" data-ds-candidate="TCRN-Design-System@610680b81a950e91e9e1e77718ea7f3f3b19bc27" data-ds-contract-status="candidate-consumed-pending-coordination" data-ds-contract-version="ai_consumption_contract_v1" data-ds-contract-digest="a56fcf3427866d4034ede1c59b59b888ac8169ca19fcd1c3af66b0a49cd16138" data-ds-component-css-sha256="025be2c8b3380cfc20c7c1b468243d6e61fe5291f28483a614de469235788877" data-ds-rules="DS-106-R1 DS-106-R2 DS-107-R1 DS-107-R2 DS-108-R1 DS-108-R2 DS-112-R1 DS-112-R2 DS-116-R1 DS-116-R2 DS-117-R1 DS-117-R2 DS-118-R1 DS-118-R2 DS-119-R1 DS-119-R2" data-ds-surface-contracts="overlay-boundary-contract-v1 field-value-selection-contract-v1 dictionary-content-contract-v1 operation-feedback-contract-v1 content-scope-contract-v1 consumer-evidence-contract-v1 verification-cadence-contract-v1" data-ds-static-overlay-bridge="mountStaticOverlayBoundary" data-ds-candidate-status="fixed-candidate-pending-coordination" data-settings-layout-mode="container-driven" data-settings-layout-form-policy="single-host-single-column" data-settings-layout-breakpoint="960px" data-settings-content-breakpoint="720px" data-settings-local-navigation="compact" data-settings-overflow-policy="no-page-overflow" data-settings-long-value-policy="native-inline-scroll-copy"><div class="tcrn-settings-layout__frame"><div class="tcrn-settings-layout__grid" data-settings-layout-grid><div class="tcrn-settings-layout__content" data-settings-layout-content data-settings-content="true" data-settings-complete-form="true"><div id="design-authority" hidden></div><div id="settings-rows" class="tcrn-settings-layout__form"></div><div id="machine-settings" class="tcrn-settings-layout__form" hidden></div></div></div></div></div>
           </div>
         </div>
       </section>
+      <section class="tcrn-page tcrn-page--manage" data-page="variables" hidden>
+        <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
+          <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
+            <div class="tcrn-page__head"><div><h1 data-i18n="page.variables">Variables</h1><p class="tcrn-page__lede" data-i18n="variables.lede">Project variables are managed here, separately from system settings.</p></div><div class="tcrn-page__actions"><span class="tcrn-badge" id="variables-count"></span></div></div>
+          </div>
+          <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs"><p class="tcrn-scope-note" data-i18n="variables.scope">Custom variables are stored with this library and rendered into AGENTS.md.</p></div>
+          <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content"><div id="variables-view" data-ui="variables-view"></div></div>
+        </div>
+      </section>
       <section class="tcrn-page tcrn-page--manage" data-page="prose" hidden>
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
-            <div class="tcrn-page__head"><div><h1 data-i18n="page.prose">Rules</h1><p class="tcrn-page__lede" data-i18n="prose.lede">Workspace prose is edited as a plain file and checked against the live engine vocabulary.</p></div><div class="tcrn-page__actions"><span class="tcrn-badge" id="reconcile-chip">—</span><button class="tcrn-button tcrn-button--primary" id="save-agents" data-i18n="prose.save" data-cli-action="agents-write">Save</button></div></div>
+            <div class="tcrn-page__head"><div><h1 data-i18n="page.prose">Rules</h1><p class="tcrn-page__lede" data-i18n="prose.lede">Manage built-in rules and edit AGENTS.md.</p></div><div class="tcrn-page__actions"><button class="tcrn-button tcrn-button--secondary" id="pending-open" data-i18n="rule.pendingTitle">Pending</button><span class="tcrn-badge" id="reconcile-chip">—</span><button class="tcrn-button tcrn-button--primary" id="save-agents" data-i18n="prose.save" data-cli-action="agents-render">Save and check</button></div></div>
           </div>
           <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs">
-            <nav class="tcrn-knowledge-toc-rail tcrn-editor__directory" id="prose-directory" data-ui="prose-directory" data-page-hierarchy-control-kind="document-directory" aria-label="Document directory" role="tree"></nav>
+            <div id="rules-pending" data-ui="rules-pending" aria-label="Pending rule changes"><strong data-i18n="rule.pendingTitle">Pending</strong><label class="tcrn-sr-only" for="pending-section" data-i18n="rule.pendingSelect">Pending section</label><select class="tcrn-select" id="pending-section" data-ui="pending-section"></select><button class="tcrn-button tcrn-button--secondary" type="button" data-pending-action="keep" data-i18n="rule.keep">Keep my text</button><button class="tcrn-button tcrn-button--secondary" type="button" data-pending-action="overwrite" data-i18n="rule.overwrite">Overwrite</button><button class="tcrn-button tcrn-button--quiet" type="button" data-pending-action="unmanage" data-i18n="rule.unmanage">Unmanage</button></div>
           </div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content">
-            <div class="tcrn-editor-shell"><div class="tcrn-editor__bar"><span class="tcrn-meta" id="agents-path"></span><span class="tcrn-editor__status" id="agents-status" data-i18n="prose.fileNote">plain file</span></div><div class="tcrn-line-numbered-editor" id="prose-editor" data-line-numbered-editor="true"><ol class="tcrn-line-numbered-editor__gutter" id="prose-gutter" data-ui="prose-gutter" role="note" aria-label="Line numbers"></ol><div class="tcrn-line-numbered-editor__content"><textarea class="tcrn-input tcrn-textarea tcrn-line-numbered-editor__control" id="agents-md" spellcheck="false" aria-label="AGENTS.md"></textarea><ul class="tcrn-line-numbered-editor__findings" id="reconcile-findings" aria-label="Editor findings"></ul></div></div></div>
+            <div data-ui="rules-layout"><section id="prose-directory" data-ui="rule-list" aria-label="Built-in rules"></section><div class="tcrn-editor-shell"><div class="tcrn-editor__bar"><span class="tcrn-meta" id="agents-path"></span><span class="tcrn-editor__status" id="agents-status" data-i18n="prose.fileNote">AGENTS.md</span></div><div class="tcrn-line-numbered-editor" id="prose-editor" data-line-numbered-editor="true"><ol class="tcrn-line-numbered-editor__gutter" id="prose-gutter" data-ui="prose-gutter" role="note" aria-label="Line numbers"></ol><div class="tcrn-line-numbered-editor__content"><textarea class="tcrn-input tcrn-textarea tcrn-line-numbered-editor__control" id="agents-md" spellcheck="false" aria-label="AGENTS.md"></textarea><ul class="tcrn-line-numbered-editor__findings" id="reconcile-findings" aria-label="Editor findings"></ul></div></div></div></div>
           </div>
         </div>
       </section>
@@ -4231,7 +4262,7 @@ const BOOT = __PORTAL_BOOT__;
   const storedTheme = tcrnReadPreference("theme", ["light", "dark"], null);
   const machineTheme = ["light", "dark"].includes(BOOT.machineDefaults?.theme) ? BOOT.machineDefaults.theme : null;
   if (storedTheme === null && machineTheme !== null) document.documentElement.dataset.tcrnTheme = machineTheme;
-  const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? "en", theme: document.documentElement.dataset.tcrnTheme, page: "dashboard", dashboardTab: "overview", settingGroup: "workspace", settings: null, machineSettings: null, vocabulary: null, status: null, work: null, knowledge: null, knowledgeQuery: "", knowledgeBody: null, commands: [], selectedVocabulary: "conferenceTypes", receipt: null, operationDetailsOpen: false, agentsText: "", reconciliation: null, searchIndex: [], searchResults: [], searchSelection: 0 };
+  const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? "en", theme: document.documentElement.dataset.tcrnTheme, page: "dashboard", dashboardTab: "overview", settingGroup: "workspace", settings: null, machineSettings: null, variables: null, vocabulary: null, status: null, work: null, knowledge: null, knowledgeQuery: "", knowledgeBody: null, commands: [], selectedVocabulary: "conferenceTypes", receipt: null, operationDetailsOpen: false, agentsText: "", reconciliation: null, rules: null, pendingSection: "", searchIndex: [], searchResults: [], searchSelection: 0 };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   // DS Tabs is a behavior contract, not a role decoration. Every tablist below
@@ -4437,38 +4468,27 @@ const BOOT = __PORTAL_BOOT__;
     setText("#echo-command", page === "dashboard" ? t("echo.idle") : `${page} · ${BOOT.actor}`);
     $("#search-results").hidden = true;
   };
-  const LEGACY_MODEL_SETTING_KEYS = new Set(["execution.claudeCodeSubagentPlan", "execution.codexSubagentPlan"]);
-  const DISPATCH_SETTING_KEYS = new Set(["execution.dispatchClasses", "execution.dispatchMode", "execution.dispatchModes", "execution.dispatchTiers"]);
   const SETTING_GROUPS = Object.freeze({
     "artifact.language": "workspace",
-    "backup.cadence": "backup",
-    "backup.destination": "backup",
-    "conference.positionBudgetBytes": "workspace",
     "design.authority": "workspace",
-    "driver.capabilityProfile": "workspace",
     "engine.requiredVersion": "workspace",
-    "execution.claudeCodeSubagentPlan": "execution",
-    "execution.dispatchClasses": "execution",
-    "execution.dispatchMode": "execution",
-    "execution.dispatchModes": "execution",
-    "execution.dispatchTiers": "execution",
-    "execution.independenceFloor": "execution",
     "execution.maxConcurrentSubagents": "execution",
-    "execution.maxDispatchDepth": "execution",
-    "execution.subagentPolicy": "execution",
-    "injection.budgetBytes": "workspace",
     "injection.perPromptBytes": "workspace",
     "knowledge.aggregateBytes": "workspace",
     "knowledge.articlesPath": "workspace",
+    "models.tiers": "execution",
+    "quota.fiveHourParallelOffPercent": "execution",
+    "quota.fiveHourWaitPercent": "execution",
+    "quota.weeklyParallelOffPercent": "execution",
+    "quota.weeklyWaitPercent": "execution",
     "retrieval.promptLanguages": "workspace",
     "retrieval.scopeExcerptBytes": "workspace",
     "retrieval.tau": "workspace",
-    "storage.backend": "workspace",
     "storage.segmentBytes": "workspace",
     "storage.snapshotEveryEvents": "workspace",
     "workspace.generatedArtifactsPath": "workspace",
   });
-  const settingGroup = (key) => LEGACY_MODEL_SETTING_KEYS.has(key) ? "execution" : SETTING_GROUPS[key] ?? "unassigned";
+  const settingGroup = (key) => SETTING_GROUPS[key] ?? "unassigned";
   const settingLabel = (key) => t(`setting.${key}.label`);
   // A supplemental explanation for a concept whose meaning is not on the surface. Short
   // text uses the DS Tooltip boundary; long text uses its non-interactive Popover boundary
@@ -4677,11 +4697,41 @@ const BOOT = __PORTAL_BOOT__;
     const options = roster.map((language) => `<option value="${esc(language)}" data-setting-option-value="${esc(language)}" ${selected.has(language) ? "selected" : ""}>${esc(promptLanguageLabel(language))} (${esc(language)})</option>`).join("");
     return `<div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(roster, entry.key, "option-count-requires-select")} data-setting-choice-cardinality="set" data-setting-choice-source="artifact.language.allowedValues" data-setting-choice-value-format="comma-separated"><label class="tcrn-setting-choice__select-label" for="${esc(id)}"><span class="tcrn-field__label">${esc(label)}</span><select class="tcrn-select" id="${esc(id)}" multiple size="${Math.max(2, Math.min(5, roster.length))}" data-setting-cardinality="set" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set" aria-label="${esc(label)}">${options}</select></label></div>`;
   };
+  const modelTierEmptyRow = () => `<div class="tcrn-table-shell__row tcrn-table-shell__empty-row" role="row" data-model-tier-empty><span class="tcrn-table-shell__empty" role="cell">${esc(t("models.empty"))}</span></div>`;
+  const modelTierRow = (host, tier, row) => `<div class="tcrn-table-shell__row" role="row" data-model-tier-row>
+    <label class="tcrn-table-shell__cell tcrn-field" role="cell" data-label="${esc(t("models.host"))}"><span class="tcrn-sr-only">${esc(t("models.host"))}</span><input class="tcrn-input" value="${esc(host)}" aria-label="${esc(t("models.host"))}" data-model-tier-field="host"></label>
+    <label class="tcrn-table-shell__cell tcrn-field" role="cell" data-label="${esc(t("models.tier"))}"><span class="tcrn-sr-only">${esc(t("models.tier"))}</span><input class="tcrn-input" value="${esc(tier)}" aria-label="${esc(t("models.tier"))}" data-model-tier-field="tier"></label>
+    <label class="tcrn-table-shell__cell tcrn-field" role="cell" data-label="${esc(t("models.runner"))}"><span class="tcrn-sr-only">${esc(t("models.runner"))}</span><input class="tcrn-input" value="${esc(row.runner ?? "")}" aria-label="${esc(t("models.runner"))}" data-model-tier-field="runner"></label>
+    <label class="tcrn-table-shell__cell tcrn-field" role="cell" data-label="${esc(t("models.model"))}"><span class="tcrn-sr-only">${esc(t("models.model"))}</span><input class="tcrn-input" value="${esc(row.model ?? "")}" aria-label="${esc(t("models.model"))}" data-model-tier-field="model"></label>
+    <label class="tcrn-table-shell__cell tcrn-field" role="cell" data-label="${esc(t("models.effort"))}"><span class="tcrn-sr-only">${esc(t("models.effort"))}</span><input class="tcrn-input" value="${esc(row.effort ?? "")}" aria-label="${esc(t("models.effort"))}" data-model-tier-field="effort"></label>
+    <span class="tcrn-table-shell__cell" role="cell" data-label="${esc(t("models.actions"))}"><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-model-tier-remove aria-label="${esc(t("models.removeTier", { host, tier }))}">${esc(t("config.remove"))}</button></span>
+  </div>`;
+  const modelTierTable = (entry) => {
+    let tiers;
+    try { tiers = JSON.parse(entry.currentValue ?? entry.defaultValue ?? "{}"); } catch { return `<div class="tcrn-state-surface" role="alert">MODELS_TIERS_INVALID</div>`; }
+    const rows = Object.entries(tiers ?? {}).flatMap(([host, rows]) => Object.entries(rows ?? {}).map(([tier, row]) => modelTierRow(host, tier, row)));
+    const headers = ["models.host", "models.tier", "models.runner", "models.model", "models.effort", "models.actions"];
+    const rowContents = rows.length > 0 ? rows.join("") : modelTierEmptyRow();
+    return `<div data-ui="model-tiers-editor"><div class="tcrn-table-shell tcrn-model-tier-table" role="table" aria-label="${esc(t("models.table"))}" data-ui="model-tiers-table" data-model-tier-table="true"><div class="tcrn-table-shell__head" role="row">${headers.map((key) => `<span role="columnheader">${esc(t(key))}</span>`).join("")}</div><div id="model-tier-rows">${rowContents}</div></div><div data-model-tier-add-form><label class="tcrn-field"><span class="tcrn-field__label">${esc(t("models.host"))}</span><input class="tcrn-input" data-model-tier-new-host></label><label class="tcrn-field"><span class="tcrn-field__label">${esc(t("models.tier"))}</span><input class="tcrn-input" data-model-tier-new-name></label><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-model-tier-add data-cli-action="settings-set">${esc(t("models.addTier"))}</button><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-model-tier-save data-cli-action="settings-set">${esc(t("config.save"))}</button></div></div>`;
+  };
+  const modelTierRowValues = (row) => Object.fromEntries([...row.querySelectorAll("[data-model-tier-field]")].map((field) => [field.dataset.modelTierField, field.value]));
+  const readModelTierTable = () => {
+    const tiers = Object.create(null);
+    for (const row of $$("[data-model-tier-row]", $("#model-tier-rows"))) {
+      const values = modelTierRowValues(row);
+      const { host, tier, runner, model, effort } = values;
+      if (!host || !tier || Object.hasOwn(tiers, host) && Object.hasOwn(tiers[host], tier)) return { error: t("models.duplicate", { host, tier }) };
+      if (!Object.hasOwn(tiers, host)) tiers[host] = Object.create(null);
+      tiers[host][tier] = { runner, model, effort };
+    }
+    return { tiers };
+  };
   const controlFor = (entry) => {
     const values = [...(entry.allowedValues || [])];
     const current = entry.currentValue ?? "";
     const id = controlId("setting-control", entry.key);
     const label = settingLabel(entry.key);
+    if (entry.key === "models.tiers") return modelTierTable(entry);
     if (entry.controlType === "boolean") return `<label class="tcrn-switch" data-switch-state="${current === (entry.trueValue || "allowed") ? "on" : "off"}"><input class="tcrn-switch__control" type="checkbox" role="switch" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set" data-setting-value="${esc(entry.trueValue || "allowed")}" ${current === (entry.trueValue || "allowed") ? "checked" : ""}><span class="tcrn-switch__label">${esc(current === (entry.trueValue || "allowed") ? t("config.enabled") : t("config.disabled"))}</span></label>`;
     if (entry.controlType === "number") return `<div class="tcrn-number-input-field"><label class="tcrn-field" for="${esc(id)}"><span class="tcrn-sr-only">${esc(label)}</span><input class="tcrn-input tcrn-number-input" id="${esc(id)}" type="number" min="${esc(entry.min)}" max="${esc(entry.max)}" step="1" value="${esc(current)}" data-number-input-component="NumberInput" data-number-input="true" data-number-input-semantic="numeric-entry" data-number-input-visibility="full-value" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set" aria-label="${esc(label)}"></label><span class="tcrn-setting-choice__hint">${esc(entry.min)}–${esc(entry.max)}</span></div>`;
     if (entry.key === "retrieval.promptLanguages") return promptLanguageChoice(entry, label, id);
@@ -4763,7 +4813,7 @@ const BOOT = __PORTAL_BOOT__;
       onSelect: (tab) => { state.settingGroup = tab.dataset.settingGroup; renderSettings(); },
     });
     const settings = state.settings?.settings || [];
-    const visible = settings.filter((entry) => settingGroup(entry.key) === state.settingGroup && !LEGACY_MODEL_SETTING_KEYS.has(entry.key) && !DISPATCH_SETTING_KEYS.has(entry.key));
+    const visible = settings.filter((entry) => settingGroup(entry.key) === state.settingGroup);
     const machineEntries = Array.isArray(state.machineSettings?.settings) ? state.machineSettings.settings : [];
     const displayedCount = state.settingGroup === "machine" ? machineEntries.length : visible.length;
     setText("#settings-count", `${displayedCount} ${t("config.keyCount")}`);
@@ -4802,9 +4852,112 @@ const BOOT = __PORTAL_BOOT__;
         input.dispatchEvent(new Event("change", { bubbles: true }));
       }
     }));
+    $$('[data-model-tier-add]').forEach((button) => button.addEventListener("click", () => {
+      const host = $("[data-model-tier-new-host]").value.trim();
+      const tier = $("[data-model-tier-new-name]").value.trim();
+      const currentRows = [...$$("[data-model-tier-row]", $("#model-tier-rows"))].map((row) => modelTierRowValues(row));
+      if (!host || !tier || currentRows.some((row) => row.host === host && row.tier === tier)) {
+        showReceipt({ ok: false, reasonCode: "MODELS_TIERS_INVALID", error: t("models.duplicate", { host, tier }) });
+        return;
+      }
+      currentRows.push({ host, tier, runner: host, model: "", effort: "" });
+      $("#model-tier-rows").innerHTML = currentRows.map((row) => modelTierRow(row.host, row.tier, row)).join("");
+      $("[data-model-tier-new-host]").value = "";
+      $("[data-model-tier-new-name]").value = "";
+      echo("settings-set", ["--key", "models.tiers"]);
+    }));
+    $$('[data-model-tier-remove]').forEach((button) => button.addEventListener("click", () => {
+      button.closest("[data-model-tier-row]").remove();
+      if ($$("[data-model-tier-row]", $("#model-tier-rows")).length === 0) $("#model-tier-rows").innerHTML = modelTierEmptyRow();
+    }));
+    $$('[data-model-tier-save]').forEach((button) => button.addEventListener("click", () => {
+      const result = readModelTierTable();
+      if (result.error) { showReceipt({ ok: false, reasonCode: "MODELS_TIERS_INVALID", error: result.error }); return; }
+      saveSetting("models.tiers", JSON.stringify(result.tiers));
+    }));
     $$('[data-vocabulary-link]').forEach((button) => button.addEventListener("click", () => { state.selectedVocabulary = button.dataset.vocabularyLink; navigate("vocabulary"); renderVocabulary(); }));
     attachEcho($("#settings-rows"));
     mountStaticOverlayMounts($("#settings-rows"));
+  };
+  const variableTypes = Object.freeze(["boolean", "number", "string"]);
+  const variableLabel = (field) => {
+    if (field === "name") return t("variables.name");
+    if (field === "type") return t("variables.type");
+    if (field === "value") return t("variables.value");
+    if (field === "description") return t("variables.description");
+    return t("variables.actions");
+  };
+  const variableTypeLabel = (type) => {
+    if (type === "boolean") return t("variables.type.boolean");
+    if (type === "number") return t("variables.type.number");
+    return t("variables.type.string");
+  };
+  const variableField = (field, value, selector = "data-variable-field") => {
+    const label = variableLabel(field);
+    if (field === "type") return `<label class="tcrn-table-shell__cell tcrn-field" role="cell" data-label="${esc(label)}"><span class="tcrn-sr-only">${esc(label)}</span><select class="tcrn-select" aria-label="${esc(label)}" ${selector}="type">${variableTypes.map((type) => `<option value="${type}" ${type === value ? "selected" : ""}>${esc(variableTypeLabel(type))}</option>`).join("")}</select></label>`;
+    return `<label class="tcrn-table-shell__cell tcrn-field" role="cell" data-label="${esc(label)}"><span class="tcrn-sr-only">${esc(label)}</span><input class="tcrn-input" value="${esc(value)}" aria-label="${esc(label)}" ${selector}="${field}"></label>`;
+  };
+  const variableRow = (variable, isNew = false) => `<div class="tcrn-table-shell__row" role="row" ${isNew ? 'data-variable-create-row' : `data-variable-row="${esc(variable.name)}"`}>
+    ${variableField("name", variable.name ?? "")}
+    ${variableField("type", variable.type ?? "string")}
+    ${variableField("value", variable.value ?? "")}
+    ${variableField("description", variable.description ?? "")}
+    <span class="tcrn-table-shell__cell" role="cell" data-label="${esc(t("variables.actions"))}">${isNew
+      ? `<button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-variable-create data-cli-action="variable-set">${esc(t("variables.add"))}</button>`
+      : `<button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-variable-save data-cli-action="variable-set">${esc(t("config.save"))}</button> <button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-variable-delete data-cli-action="variable-remove">${esc(t("config.remove"))}</button>`}</span>
+  </div>`;
+  const variableFieldValues = (row) => Object.fromEntries([...row.querySelectorAll("[data-variable-field]")].map((field) => [field.dataset.variableField, field.value]));
+  const renderVariables = () => {
+    const source = state.variables;
+    const variables = Array.isArray(source?.variables) ? source.variables : [];
+    setText("#variables-count", t("variables.count", { count: variables.length }));
+    const unavailable = source?.ok === false;
+    const rows = variables.length > 0 ? variables.map((variable) => variableRow(variable)).join("") : `<div class="tcrn-table-shell__row tcrn-table-shell__empty-row" role="row" data-variable-empty><span class="tcrn-table-shell__empty" role="cell">${esc(t("variables.empty"))}</span></div>`;
+    const headers = [t("variables.name"), t("variables.type"), t("variables.value"), t("variables.description"), t("variables.actions")];
+    const content = unavailable
+      ? `<div class="tcrn-state-surface" role="alert">${esc(source?.reasonCode ?? t("health.unavailable"))}</div>`
+      : `<section class="tcrn-surface" data-content-scope="custom-variables"><div class="tcrn-surface__head"><div><h2>${esc(t("variables.title"))}</h2><p class="tcrn-surface__note">${esc(t("variables.note"))}</p></div></div><div class="tcrn-table-shell tcrn-variable-table" role="table" aria-label="${esc(t("variables.title"))}" data-variable-table="true"><div class="tcrn-table-shell__head" role="row">${headers.map((label) => `<span role="columnheader">${esc(label)}</span>`).join("")}</div>${variableRow({ name: "", type: "string", value: "", description: "" }, true)}${rows}</div></section>${source?.withheld?.length ? `<p class="tcrn-scope-note">${esc(t("variables.withheld", { count: source.withheld.length }))}</p>` : ""}`;
+    $("#variables-view").innerHTML = content;
+    $$('[data-variable-create]').forEach((button) => button.addEventListener("click", () => saveVariable(variableFieldValues(button.closest("[data-variable-create-row]")))));
+    $$('[data-variable-save]').forEach((button) => button.addEventListener("click", () => {
+      const row = button.closest("[data-variable-row]");
+      saveVariable(variableFieldValues(row), row.dataset.variableRow);
+    }));
+    $$('[data-variable-delete]').forEach((button) => button.addEventListener("click", () => deleteVariable(button.closest("[data-variable-row]").dataset.variableRow)));
+    attachEcho($("#variables-view"));
+  };
+  const refreshVariables = async () => {
+    state.variables = await api("/api/variables");
+    renderVariables();
+  };
+  const saveVariable = async (values, previousName = null) => {
+    const name = String(values.name ?? "");
+    if (previousName !== null && name !== previousName && state.variables?.variables?.some((entry) => entry.name === name)) {
+      showReceipt({ ok: false, reasonCode: "VARIABLE_NAME_INVALID", error: t("variables.nameExists", { name }) });
+      return;
+    }
+    echo("variable-set", ["--name", name, "--type", values.type, "--value", values.value]);
+    let result = await api("/api/variables", { method: "POST", body: JSON.stringify(values) });
+    let committed = result.ok !== false || result.mutation !== undefined;
+    if (committed && previousName !== null && name !== previousName) {
+      const removed = await api("/api/variables", { method: "DELETE", body: JSON.stringify({ name: previousName }) });
+      result = removed.ok === false ? { ...removed, ok: false, rename: { created: result, removed } } : { ...removed, rename: { created: result, removed } };
+      committed = true;
+    }
+    showReceipt(result);
+    if (committed) {
+      await refreshVariables();
+      await loadAgents();
+    }
+  };
+  const deleteVariable = async (name) => {
+    echo("variable-remove", ["--name", name]);
+    const result = await api("/api/variables", { method: "DELETE", body: JSON.stringify({ name }) });
+    showReceipt(result);
+    if (result.ok !== false || result.mutation !== undefined) {
+      await refreshVariables();
+      await loadAgents();
+    }
   };
   const statusBadge = (value, tone = "") => `<span class="tcrn-badge ${tone ? `tcrn-badge--${tone}` : ""}">${esc(value ?? "—")}</span>`;
   const statusTone = (value) => ["done", "satisfied", "active", "ready"].includes(String(value)) ? "positive" : ["blocked", "cancelled", "failed", "retired"].includes(String(value)) ? "danger" : "";
@@ -5031,12 +5184,49 @@ const BOOT = __PORTAL_BOOT__;
     mountStaticOverlayMounts();
   };
   const lineFromText = (text) => text.split("\n");
+  const ruleTitle = (id) => ({
+    autonomy: t("rule.title.autonomy"),
+    batch: t("rule.title.batch"),
+    "unattended-commands": t("rule.title.unattended-commands"),
+    "silent-reporting": t("rule.title.silent-reporting"),
+  })[id] || id;
+  const ruleStateLabel = (value) => ({
+    disabled: t("rule.state.disabled"),
+    enabled: t("rule.state.enabled"),
+    "user-modified": t("rule.state.user-modified"),
+    "removed-from-file": t("rule.state.removed-from-file"),
+    "update-available": t("rule.state.update-available"),
+    pending: t("rule.state.pending"),
+  })[value] || value;
+  const ruleIsEnabled = (rule) => ["enabled", "user-modified", "removed-from-file", "update-available", "pending"].includes(rule.state);
+  const renderPending = () => {
+    const pending = state.rules?.pending || [];
+    if (!pending.some((entry) => entry.id === state.pendingSection)) state.pendingSection = pending[0]?.id || "";
+    const select = $("#pending-section");
+    select.innerHTML = pending.length ? pending.map((entry) => `<option value="${esc(entry.id)}" ${entry.id === state.pendingSection ? "selected" : ""}>${esc(entry.id)} · ${esc(entry.file)}</option>`).join("") : `<option value="">${esc(t("rule.pendingEmpty"))}</option>`;
+    select.disabled = pending.length === 0;
+    $$('[data-pending-action]').forEach((button) => { button.disabled = pending.length === 0; });
+    $("#pending-open").textContent = `${t("rule.pendingTitle")} · ${pending.length}`;
+  };
   const renderProseDirectory = () => {
-    const lines = lineFromText(state.agentsText);
-    const headings = lines.map((line, index) => ({ line: index + 1, text: line.replace(/^#+\s*/u, ""), level: (line.match(/^#+/u) || [""])[0].length })).filter((entry) => entry.level > 0);
-    $("#prose-directory").innerHTML = headings.length ? headings.map((entry) => `<button type="button" class="tcrn-directory__item" data-prose-line="${entry.line}" data-level="${entry.level}" data-cli-action="agents-read">↳ ${esc(entry.text)}</button>`).join("") : `<div class="tcrn-state-surface">${esc(t("prose.noHeadings"))}</div>`;
-    $$('[data-prose-line]').forEach((button) => button.addEventListener("click", () => focusLine(Number(button.dataset.proseLine))));
-    attachEcho($("#prose-directory"));
+    const rules = state.rules?.rules || [];
+    $("#prose-directory").innerHTML = rules.length ? rules.map((rule) => {
+      const enabled = ruleIsEnabled(rule);
+      const changed = ["user-modified", "pending"].includes(rule.state);
+      const forceId = `rule-force-${rule.id}`;
+      return `<article data-rule-card="${esc(rule.id)}"><div data-rule-card-head><h2 data-rule-card-title>${esc(ruleTitle(rule.id))}</h2><span class="tcrn-badge" data-rule-state="${esc(rule.state)}">${esc(ruleStateLabel(rule.state))}</span></div><div data-rule-card-meta>${esc(rule.section)} · v${esc(rule.version ?? "—")}</div><div data-rule-card-actions><label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-rule-switch="${esc(rule.id)}" aria-label="${esc(ruleTitle(rule.id))}" ${enabled ? "checked" : ""}><span class="tcrn-switch__label">${esc(enabled ? t("config.enabled") : t("config.disabled"))}</span></label>${changed && enabled ? `<label data-rule-force-label for="${forceId}"><input class="tcrn-input" type="checkbox" id="${forceId}" data-rule-force="${esc(rule.id)}">${esc(t("rule.forceDisable"))}</label>` : ""}</div></article>`;
+    }).join("") : `<div class="tcrn-state-surface">${esc(t("config.loading"))}</div>`;
+    $$('[data-rule-switch]').forEach((input) => input.addEventListener("change", async () => {
+      const id = input.dataset.ruleSwitch;
+      const action = input.checked ? "enable" : "disable";
+      const force = $(`[data-rule-force="${CSS.escape(id)}"]`)?.checked === true;
+      echo(action === "enable" ? "rule-enable" : "rule-disable", ["--id", id, ...(force ? ["--force", "true"] : [])]);
+      const result = await api(`/api/rules/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify({ action, ...(force ? { force: true } : {}) }) });
+      showReceipt(result);
+      if (result.ok && result.rules) state.rules = result;
+      else input.checked = !input.checked;
+      renderProseDirectory(); renderPending();
+    }));
   };
   const renderGutter = () => {
     const lines = lineFromText(state.agentsText);
@@ -5055,7 +5245,7 @@ const BOOT = __PORTAL_BOOT__;
     renderGutter();
     $$('[data-prose-line]', $("#reconcile-findings")).forEach((button) => button.addEventListener("click", () => focusLine(Number(button.dataset.proseLine))));
   };
-  const loadAgents = async () => { const [documentResult, reconciliation] = await Promise.all([api("/api/agents-md"), api("/api/agents-md/reconcile")]); state.agentsText = documentResult.text || ""; $("#agents-md").value = state.agentsText; setText("#agents-path", documentResult.path || "AGENTS.md"); renderProseDirectory(); renderGutter(); renderReconciliation(reconciliation); };
+  const loadAgents = async () => { const [documentResult, reconciliation, rules] = await Promise.all([api("/api/agents-md"), api("/api/agents-md/reconcile"), api("/api/rules")]); state.agentsText = documentResult.text || ""; state.rules = rules; $("#agents-md").value = state.agentsText; setText("#agents-path", documentResult.path || "AGENTS.md"); renderProseDirectory(); renderPending(); renderGutter(); renderReconciliation(reconciliation); };
   // An empty selection means "unset this key": the engine refuses an empty --value as a
   // missing argument, and the honest verb for clearing a setting is settings-remove.
   const saveSetting = async (key, value) => {
@@ -5104,11 +5294,10 @@ const BOOT = __PORTAL_BOOT__;
     select.disabled = libraries.length < 2;
     select.title = BOOT.library ? libraryLabel(BOOT.library) : "";
   };
-  const refresh = async () => { try { const [settings, vocabularyResult, status, commandsResult, machine, work, knowledge] = await Promise.all([api("/api/settings"), api("/api/vocabulary"), api("/api/status"), api("/api/commands"), api("/api/machine-settings"), api("/api/work"), api("/api/knowledge")]); state.machineSettings = machine; state.settings = settings; state.vocabulary = vocabularyResult; state.status = status; state.work = work; state.knowledge = knowledge; state.commands = commandsResult.commands || []; renderDashboard(); renderSettings(); renderVocabulary(); rebuildSearchIndex(); } catch (error) { state.status = { ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE", checks: [{ key: "validate", ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE" }, { key: "catalog", ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE" }, { key: "actor", ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE" }] }; renderDashboard(); showReceipt({ ok: false, reasonCode: "PORTAL_READ_FAILED", error: String(error?.message ?? error) }); } };
+  const refresh = async () => { try { const [settings, vocabularyResult, status, commandsResult, machine, work, knowledge, variables] = await Promise.all([api("/api/settings"), api("/api/vocabulary"), api("/api/status"), api("/api/commands"), api("/api/machine-settings"), api("/api/work"), api("/api/knowledge"), api("/api/variables")]); state.machineSettings = machine; state.settings = settings; state.vocabulary = vocabularyResult; state.status = status; state.work = work; state.knowledge = knowledge; state.variables = variables; state.commands = commandsResult.commands || []; renderDashboard(); renderSettings(); renderVariables(); renderVocabulary(); rebuildSearchIndex(); } catch (error) { state.status = { ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE", checks: [{ key: "validate", ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE" }, { key: "catalog", ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE" }, { key: "actor", ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE" }] }; renderDashboard(); showReceipt({ ok: false, reasonCode: "PORTAL_READ_FAILED", error: String(error?.message ?? error) }); } };
   const rebuildSearchIndex = () => {
     const rows = [];
     for (const entry of state.settings?.settings || []) {
-      if (LEGACY_MODEL_SETTING_KEYS.has(entry.key) || DISPATCH_SETTING_KEYS.has(entry.key)) continue;
       rows.push({ text: `${entry.key} ${settingLabel(entry.key)} ${settingDescription(entry.key)}`, label: entry.key, meta: t("search.settings"), page: "settings", key: entry.key });
     }
     for (const category of vocabularyCategories()) for (const term of vocabularyRows(category)) rows.push({ text: `${termValue(term)} ${vocabularyDefinition(category, term)}`, label: termValue(term), meta: t("search.vocabulary"), page: "vocabulary", vocabulary: category });
@@ -5118,9 +5307,19 @@ const BOOT = __PORTAL_BOOT__;
   const search = (query) => { const normalized = query.trim().toLocaleLowerCase(); state.searchResults = normalized ? state.searchIndex.filter((entry) => entry.text.toLocaleLowerCase().includes(normalized)).slice(0, 12) : []; state.searchSelection = 0; renderSearchResults(); };
   const chooseSearch = (index = 0) => { const result = state.searchResults[index]; if (!result) return; navigate(result.page); state.searchResults = []; renderSearchResults(); if (result.vocabulary) { state.selectedVocabulary = result.vocabulary; renderVocabulary(); } if (result.key) { state.settingGroup = settingGroup(result.key); renderSettings(); const target = $(`[data-setting-row="${CSS.escape(result.key)}"]`); target?.classList.add("tcrn-highlight"); target?.scrollIntoView({ block: "center" }); } };
   $$('[data-page-target]').forEach((button) => button.addEventListener("click", () => navigate(button.dataset.pageTarget)));
-  $("#save-agents").addEventListener("click", async () => { echo("agents-write"); const result = await api("/api/agents-md", { method: "PUT", body: JSON.stringify({ file: "AGENTS.md", text: $("#agents-md").value }) }); showReceipt(result); await loadAgents(); });
-  $("#agents-md").addEventListener("input", (event) => { state.agentsText = event.target.value; renderProseDirectory(); renderGutter(); });
+  $("#save-agents").addEventListener("click", async () => { echo("agents-render"); const result = await api("/api/agents-md", { method: "PUT", body: JSON.stringify({ file: "AGENTS.md", text: $("#agents-md").value }) }); showReceipt(result); await loadAgents(); });
+  $("#agents-md").addEventListener("input", (event) => { state.agentsText = event.target.value; renderGutter(); });
   $("#agents-md").addEventListener("scroll", () => { $("#prose-gutter").scrollTop = $("#agents-md").scrollTop; });
+  $("#pending-open").addEventListener("click", () => { $("#rules-pending").scrollIntoView({ block: "nearest" }); $("#pending-section").focus(); });
+  $("#pending-section").addEventListener("change", (event) => { state.pendingSection = event.target.value; });
+  $$('[data-pending-action]').forEach((button) => button.addEventListener("click", async () => {
+    if (!state.pendingSection) return;
+    const action = button.dataset.pendingAction;
+    echo("rule-resolve", ["--section", state.pendingSection, "--action", action]);
+    const result = await api("/api/rules/resolve", { method: "POST", body: JSON.stringify({ section: state.pendingSection, action }) });
+    showReceipt(result);
+    await loadAgents();
+  }));
   $("#receipt-chip").addEventListener("click", openReceipt); $("#receipt-details-trigger").addEventListener("click", toggleReceiptDetails); $("#drawer-button").addEventListener("click", openReceipt); $("#drawer-close").addEventListener("click", closeReceipt);
   $("#library-select").addEventListener("change", async (event) => { const selected = await api("/api/library", { method: "POST", body: JSON.stringify({ library: event.target.value }) }); if (selected.ok) { BOOT.library = selected.library; BOOT.workspace = selected.workspace; BOOT.libraryName = selected.libraryName; BOOT.proseRoot = selected.proseRoot; const listing = await api("/api/libraries"); loadLibraries(listing.ok ? listing.libraries : BOOT.libraries); setText("#workspace-label", BOOT.workspace); $("#workspace-label").title = BOOT.workspace; applyRailIdentity(); await refresh(); await loadAgents(); } else { loadLibraries(); showReceipt(selected); } });
   $("#theme-button").addEventListener("click", () => {
@@ -5151,7 +5350,7 @@ const BOOT = __PORTAL_BOOT__;
       tcrnWritePreference("locale", state.locale);
       setLocaleMenuOpen(false);
       localeTrigger.focus();
-      applyLocale(); renderDashboard(); renderSettings(); renderVocabulary(); renderReconciliation(state.reconciliation || { ok: true, findings: [] });
+      applyLocale(); renderDashboard(); renderSettings(); renderVocabulary(); renderProseDirectory(); renderPending(); renderReconciliation(state.reconciliation || { ok: true, findings: [] });
     });
   });
   document.addEventListener("pointerdown", (event) => { if (!localeMenu.contains(event.target)) setLocaleMenuOpen(false); });

@@ -51,6 +51,10 @@ export interface LegacySegment {
   readonly name: string;
   readonly bytes: number;
   readonly sha256: string;
+  // The sequences of the segment's first and last event (TCRN-CROSS-STORY-468 R6: an import
+  // records them in the stream manifest).
+  readonly firstSequence: number;
+  readonly lastSequence: number;
 }
 
 export interface LegacyWorkspace {
@@ -163,8 +167,9 @@ export async function openLegacyWorkspace(rootInput: string): Promise<LegacyWork
       corrupt(`event segment gap at ${name}`, { streamId, segment: name });
     }
     const content = await readRegularFile(join(eventsDirectory, name), SEGMENT_MAXIMUM_BYTES);
-    segments.push({ name, bytes: content.length, sha256: sha256(content) });
-    events.push(...parseSegment(name, content, ndjson, streamId, events.length + 1));
+    const parsed = parseSegment(name, content, ndjson, streamId, events.length + 1);
+    segments.push({ name, bytes: content.length, sha256: sha256(content), firstSequence: events.length + 1, lastSequence: events.length + parsed.length });
+    events.push(...parsed);
   }
   return { root, metadata, streamId, events, segments };
 }

@@ -159,6 +159,18 @@ over every stream's head. Every crest write (and a whole knowledge batch) runs u
 machine's lock of the library, the lock every chain write takes; the mutation claim stays the
 crash journal `knowledge-recover` reads, and two devices' concurrent crest writes are not made
 safe against each other.
+`library-import-legacy --legacy <old workspace> --at <instant> [--target <library>]
+[--dry-run true] [--project-name] [--git-remote]` imports an old-layout workspace into a new
+library whose first stream is the old chain, byte for byte (TCRN-CROSS-STORY-468 R6, AC4; 466
+AC3). The old workspace is only read and its chain is validated from genesis first; a dry run
+stops there, reports the events, head, stream id and segments, and writes nothing. An import
+creates the library (default: `.ether` in the old workspace root) under the old workspace id,
+copies every segment into this device's stream unchanged and checked by SHA-256, commits a
+stream manifest that keeps the old stream id and event identities (`identityScheme: legacy`),
+sequence and head, replays the library against the old chain's events, head and records, and
+projects its settings into `config/project.json`. This device's next event continues the stream:
+the next sequence, a priorHash on the old head, `einzbern.event.v1` beside the old
+`tcrn.event.v1` events.
 
 ## 1.2.1 — patch candidate
 

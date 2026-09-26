@@ -92,6 +92,8 @@ import {
   recordAliases,
   LIBRARY_ID_PATTERN,
   configProjectionStatus,
+  defaultImportTarget,
+  importLegacyWorkspace,
 } from "../../core/src/index.js";
 import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider } from "../../core/src/index.js";
 import type {
@@ -756,6 +758,7 @@ export const COMMAND_CATALOG = Object.freeze([
   // packages/core/src/machine-settings.ts for why a laptop's default theme is not
   // governed workspace state. `home` exists so a test can point the verbs at a
   // scratch directory instead of the real machine home.
+  { name: "library-import-legacy", availability: "cli", mutates: true, flags: [{ name: "legacy", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "target", required: false, valueKind: "string" }, { name: "dry-run", required: false, valueKind: "boolean" }, { name: "project-name", required: false, valueKind: "string" }, { name: "git-remote", required: false, valueKind: "string" }] },
   { name: "machine-settings-catalog", availability: "cli", mutates: false, flags: [{ name: "home", required: false, valueKind: "string" }] },
   { name: "machine-settings-remove", availability: "cli", mutates: true, flags: [{ name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "home", required: false, valueKind: "string" }] },
   { name: "machine-settings-set", availability: "cli", mutates: true, flags: [{ name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "value", required: true, valueKind: "string" }, { name: "home", required: false, valueKind: "string" }] },
@@ -1019,6 +1022,23 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       projects: 0,
       work: 0,
     }));
+    return;
+  }
+  // TCRN-CROSS-STORY-468 R6, AC4: import an old-layout workspace into a new library whose first
+  // stream is the old chain, byte for byte; --dry-run true validates it in memory and writes
+  // nothing. The old workspace is only read. Without --target the library is .ether in the old
+  // workspace root.
+  if (command === "library-import-legacy") {
+    const values = parseArguments(rest, ["legacy", "at", "target", "dry-run", "project-name", "git-remote"]);
+    required(values, ["legacy", "at"]);
+    const legacy = values.legacy ?? "";
+    const dryRun = booleanValue(values["dry-run"], "dry-run");
+    io.write(canonicalJson(await importLegacyWorkspace(legacy, values.target ?? defaultImportTarget(legacy), {
+      createdAt: values.at ?? "",
+      dryRun,
+      ...(values["project-name"] === undefined ? {} : { projectName: values["project-name"] }),
+      ...(values["git-remote"] === undefined ? {} : { gitRemote: values["git-remote"] }),
+    }) as unknown as JsonValue));
     return;
   }
   // TCRN-CROSS-STORY-466 R3 / 467 R4 / 469: validate a chain from genesis. A library is read stream

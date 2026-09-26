@@ -101,47 +101,24 @@ boundary visible to helper authors.
     default — ratify distillation as mandatory-with-opt-out with accountable-owner
     enforcement deferred to promote.
 
-## Engine-consumed keys — backup (`backup.*`)
+## Retired keys (TCRN-CROSS-STORY-484 R3, R5)
 
-- **Key:** `backup.cadence`
-  - **Type:** enum.
-  - **Layer:** `workspace_configuration`.
-  - **Tier:** 2 (conversational preference).
-  - **Default:** `gate-close`.
-  - **Bounds:** the closed enum `{gate-close, session-end, manual}`.
-  - **Mechanism:** `settings-catalog` returns the current value and
-    `settings-set` appends a governed `settings.updated` record. The backup
-    helper may read the catalog before composing an explicit snapshot invocation;
-    this setting does not create an automatic scheduler.
-  - **Decision record:** OD-31 (WSF-5/WSF-6 backup keys), resolved to its
-    recommended default — sign the key with cadence default `gate-close`. Admitted
-    under the new-key rule (default, bounds, tier, and this record).
+A retired key is refused on every new write (`SETTINGS_KEY_UNREGISTERED`), and its recorded
+values stay readable history: a replay checks their envelope and never makes them current.
+`RETIRED_SETTING_KEYS` in `packages/core/src/settings.ts` is the list.
 
-- **Key:** `backup.destination`
-  - **Type:** absolute path.
-  - **Layer:** `workspace_configuration`.
-  - **Tier:** 2 (conversational preference).
-  - **Default:** none — always elicit an explicit path; there is no implicit
-    fallback and no managed default location.
-  - **Bounds:** an absolute filesystem path outside the workspace root and its
-    control directory (`WORKSPACE_CONTROL_DIRECTORY`; its old-layout name is in
-    `docs/wiki/Glossary.md`). The helper
-    elicitation flow may impose additional machine-boundary hygiene for trust-state
-    or skills directories. A destination on a synced or cloud-backed filesystem
-    means workspace data leaves the machine and requires the explicit off-machine
-    approval language from that flow before it is accepted.
-  - **Mechanism:** `settings-catalog` returns the current value and
-    `settings-set` appends a governed `settings.updated` record. The value is an
-    absolute path outside the workspace and its control tree; any off-machine
-    destination still requires the helper's explicit approval language.
-  - **Decision record:** OD-31 (WSF-5/WSF-6 backup keys), resolved to its
-    recommended default — always-elicit a path with a suggested location OUTSIDE
-    both the workspace control dir and the helper trust-state root, rather than a
-    managed default inside the state root (which would collide with the
-    machine-bound anti-rollback state). Admitted under the new-key rule (default,
-    bounds, tier, and this record).
+- `backup.cadence`, `backup.destination`, `execution.claudeCodeSubagentPlan`,
+  `execution.codexSubagentPlan` and `execution.subagentPolicy` retire with the mechanisms
+  MIN-227 D3 switches off.
+- `execution.dispatchModes`, `execution.dispatchMode` and `execution.dispatchClasses` retire
+  with dispatch modes and classes.
+- `driver.capabilityProfile`, `storage.backend` and `execution.maxDispatchDepth` retire because
+  nothing reads them.
+- `execution.dispatchTiers` is renamed `models.tiers`. A recorded value is still the effective
+  `models.tiers` value, each row given the host it sits under as its runner, until a
+  `models.tiers` write supersedes it.
 
-## Engine-consumed keys — workspace and driver
+## Engine-consumed keys — workspace
 
 - **Key:** `workspace.generatedArtifactsPath`
   - **Type:** workspace-relative path, or an absolute path.
@@ -173,16 +150,33 @@ boundary visible to helper authors.
     TCRN-CROSS-STORY-213; the absolute form and its consumer are
     minutes:8bac4584d5bbffa7a96b82b1 D11, implemented by TCRN-CROSS-STORY-380.
 
-- **Key:** `driver.capabilityProfile`
-  - **Type:** bounded string.
+## Engine-consumed keys — models and quota
+
+- **Key:** `models.tiers`
+  - **Type:** JSON text: `{<host>: {<tier>: {runner, model, effort}}}`.
   - **Layer:** `workspace_configuration`.
-  - **Default:** `default`.
-  - **Bounds:** non-empty canonical string, at most 128 characters.
-  - **Mechanism:** `settings-catalog` reads the effective value and
-    `settings-set` records a governed update. Driver consumers must resolve this
-    key from the catalog; arbitrary user-defined keys are rejected.
-  - **Decision record:** TCRN-CROSS-MIN-065 ruling 2/8, implemented by
-    TCRN-CROSS-STORY-213.
+  - **Tier:** 1 (the Owner sets it, in Atelier; a model never edits it).
+  - **Default:** the hosts `claude-code` and `codex`, each with the tiers `flagship`, `main`
+    and `economy`, the host as runner and an empty model and effort (unfilled).
+  - **Bounds:** host, tier and runner are names (a lowercase letter first, then lowercase
+    letters, digits, `.`, `_` or `-`, at most 64); a tier is exactly `runner`, `model`
+    (at most 256 characters) and `effort` (at most 64), without control characters. Tiers are
+    added and removed freely.
+  - **Decision record:** MIN-227 D11, D12 (TCRN-CROSS-STORY-484 R3).
+
+- **Keys:** `quota.fiveHourParallelOffPercent` (default `75`), `quota.fiveHourWaitPercent`
+  (default `90`), `quota.weeklyParallelOffPercent` (default `95`) and
+  `quota.weeklyWaitPercent` (no default: unset, the weekly window never makes it wait).
+  - **Type:** integer percentage, 1 to 100.
+  - **Layer:** `workspace_configuration`.
+  - **Tier:** 1 (the Owner sets them, in Atelier; a model never edits them).
+  - **Meaning:** at or above the parallel-off threshold of a usage window the orchestrating
+    conversation runs one subagent at a time; at or above the wait threshold it dispatches none
+    until the window resets.
+  - **Decision record:** MIN-233 D2 (TCRN-CROSS-STORY-484).
+
+Every entry of `settings-catalog` carries `modelWritable` (TCRN-CROSS-STORY-484 R4): whether a
+model may write the key through the CLI. It is `false` for every key.
 
 ## Non-knob declarations
 

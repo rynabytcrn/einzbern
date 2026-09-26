@@ -230,7 +230,7 @@ test("466-R3, AC4 (tooling): an old-layout workspace answers every read under th
   for (const args of [
     ["project-create", "--workspace", root, "--at", at(), "--external-key", "LEGACY-NEW", "--name", "New"],
     ["work-transition", "--workspace", root, "--at", at(), "--id", expected.records.story.id, "--status", "done"],
-    ["settings-set", "--workspace", root, "--at", at(), "--key", "backup.cadence", "--value", "manual"],
+    ["settings-set", "--workspace", root, "--at", at(), "--key", "retrieval.tau", "--value", "3"],
     ["recover", "--workspace", root, "--at", at()],
   ]) {
     const error = await refusal(device, args);

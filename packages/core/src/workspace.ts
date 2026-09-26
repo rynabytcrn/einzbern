@@ -125,6 +125,8 @@ import {
   compareEngineVersions,
   createWorkspaceSettingRecord,
   isRetiredSettingKey,
+  renamedSettingKey,
+  renamedSettingRecord,
   sortWorkspaceSettings,
   validateWorkspaceSettingRecord,
 } from "./settings.js";
@@ -1965,8 +1967,13 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
   // snapshot its own engine version wrote, and the seed still drops retired keys, the rule the
   // settings.updated arm below applies on a replay from genesis, so both reads hold the same settings.
   // The convention is the one settings.ts states for RETIRED_SETTING_KEYS: historical events remain
-  // legible without reopening new writes.
-  const settings = collection<string, WorkspaceSettingRecord>((snapshot?.settings ?? []).filter((record) => !isRetiredSettingKey(record.key)).map((record) => [record.key, record]));
+  // legible without reopening new writes. TCRN-CROSS-STORY-484 R3: a renamed key's record in such a
+  // snapshot seeds its new name, as the settings.updated arm does on a replay from genesis.
+  const settings = collection<string, WorkspaceSettingRecord>((snapshot?.settings ?? []).flatMap((record) => {
+    if (!isRetiredSettingKey(record.key)) return [record];
+    const successor = renamedSettingRecord(record);
+    return successor === null ? [] : [successor];
+  }).map((record) => [record.key, record]));
   let executionConfig: ExecutionConfigState = snapshot?.executionConfig ?? EMPTY_EXECUTION_CONFIG;
   const templates = collection<string, TemplateAdmissionRecord>((snapshot?.templates ?? []).map((record) => [record.registrationId, record]));
   const configRecords = collection<string, ConfigRecord>((snapshot?.configRecords ?? []).map((record) => [configRecordIdentity(record.collection, record.key), record]));
@@ -2292,7 +2299,12 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
         // fitness.windowDays under 1.1.0-1.2.0 was valid there and stays readable (settings.ts, on
         // RETIRED_SETTING_KEYS: historical events remain legible without reopening new writes). A live
         // key removed while unset is still a corrupt chain.
-        if (isRetiredSettingKey(body.key)) continue;
+        if (isRetiredSettingKey(body.key)) {
+          // TCRN-CROSS-STORY-484 R3: removing a renamed key removed the value its new name carries.
+          const successorKey = renamedSettingKey(body.key);
+          if (successorKey !== undefined) settings.delete(successorKey);
+          continue;
+        }
         const current = settings.get(body.key);
         if (current === undefined) fail("WORKSPACE_EVENT_CORRUPT", `cannot remove unknown setting ${body.key}`);
         settings.delete(body.key);
@@ -2307,6 +2319,10 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
         if (typeof body.updatedAt !== "string") fail("WORKSPACE_EVENT_CORRUPT", "retired setting timestamp is invalid");
         try { assertStrictInstant(body.updatedAt); } catch { fail("WORKSPACE_EVENT_CORRUPT", "retired setting timestamp is invalid"); }
         requireEventBoundTimestamp(body.updatedAt, event, `setting ${body.key}`);
+        // TCRN-CROSS-STORY-484 R3: a renamed key's value is its new name's value, converted
+        // (execution.dispatchTiers carries over as models.tiers), until a write of the new name.
+        const successor = renamedSettingRecord({ key: body.key, value: body.value, revision: body.revision, updatedAt: body.updatedAt });
+        if (successor !== null) settings.set(successor.key, successor);
         continue;
       }
       const record = extensionRecordOrCorrupt(() => validateWorkspaceSettingRecord(
@@ -2431,7 +2447,7 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
         } else if (operation === "execution.model-plan.removed") {
           exactFields(body, ["host", "name", "updatedAt"], "WORKSPACE_EVENT_CORRUPT", "model plan removal record");
           requireEventBoundTimestamp(String(body.updatedAt), event, `model plan ${String(body.name)}`);
-          executionConfig = applyModelPlanRemoveInExecutionConfig(executionConfig, { host: body.host, name: body.name }, [...settings.values()]);
+          executionConfig = applyModelPlanRemoveInExecutionConfig(executionConfig, { host: body.host, name: body.name });
         } else if (operation === `${legacyPresetOperation}.override`) {
           const applied = applyPersonaPresetOverrideInExecutionConfig(executionConfig, {
             name: body.name,
@@ -3988,7 +4004,7 @@ export async function removeModelPlanInWorkspace(workspaceRoot: string, input: {
     payload: buildEventPayload("execution.model-plan.removed", { host: input.host, name: input.name, updatedAt: input.occurredAt } as unknown as JsonValue),
     projects: state.projects,
     work: state.work,
-    executionConfig: applyModelPlanRemoveInExecutionConfig(state.executionConfig, { host: input.host, name: input.name }, state.settings),
+    executionConfig: applyModelPlanRemoveInExecutionConfig(state.executionConfig, { host: input.host, name: input.name }),
   }), input);
 }
 
@@ -4175,12 +4191,6 @@ export async function setWorkspaceSetting(workspaceRoot: string, input: {
   assertProjectSettingKey(input.key);
   return withWorkspaceWriteLock(workspaceRoot, async (root) => {
     const committed = await appendEvent(root, (state) => {
-      if (input.key === "execution.claudeCodeSubagentPlan" || input.key === "execution.codexSubagentPlan") {
-        const host = input.key === "execution.claudeCodeSubagentPlan" ? "claude-code" : "codex";
-        if (!state.executionConfig.modelPlans.some((plan) => plan.host === host && plan.name === input.value)) {
-          fail("MODEL_PLAN_NOT_FOUND", `${input.value} is not a model plan for ${host}`);
-        }
-      }
       const current = state.settings.find((record) => record.key === input.key);
       const record = createWorkspaceSettingRecord(
         input.key,

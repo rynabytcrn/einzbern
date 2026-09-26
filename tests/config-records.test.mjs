@@ -233,21 +233,21 @@ test("478-R1: config/project.json projects the records beside the settings, and 
   const library = join(base, ".ether");
   const path = join(library, "config", "project.json");
   await cli(desk, ["init", "--workspace", library, "--at", at()]);
-  await cli(desk, ["settings-set", "--workspace", library, "--at", at(), "--key", "backup.cadence", "--value", "manual"]);
+  await cli(desk, ["settings-set", "--workspace", library, "--at", at(), "--key", "retrieval.tau", "--value", "3"]);
   const written = await as(desk, () => setConfigRecord(library, { collection: "gate", key: "links", value: gate("docs", ["pnpm", "verify:links"]), occurredAt: at() }));
 
   let projection = JSON.parse(await readFile(path, "utf8"));
   assert.equal(projection.schemaVersion, "einzbern.project-config.v1");
-  assert.deepEqual(projection.values, { "backup.cadence": "manual" });
+  assert.deepEqual(projection.values, { "retrieval.tau": "3" });
   assert.deepEqual(projection.records, { gate: { links: gate("docs", ["pnpm", "verify:links"]) } });
   assert.deepEqual(projection.versionVector, written.library.versionVector);
   assert.equal(await configProjectionStatus(library, written.settings, written.configRecords), "current");
 
   // A settings write projects the records it did not touch as well.
   await as(desk, () => setConfigRecord(library, { collection: "managed-section", key: "AGENTS.md#navigation", value: { file: "AGENTS.md", id: "navigation", rev: 1, digest: "0".repeat(64), state: "managed" }, occurredAt: at() }));
-  await cli(desk, ["settings-set", "--workspace", library, "--at", at(), "--key", "backup.cadence", "--value", "session-end"]);
+  await cli(desk, ["settings-set", "--workspace", library, "--at", at(), "--key", "retrieval.tau", "--value", "4"]);
   projection = JSON.parse(await readFile(path, "utf8"));
-  assert.deepEqual(projection.values, { "backup.cadence": "session-end" });
+  assert.deepEqual(projection.values, { "retrieval.tau": "4" });
   assert.deepEqual(Object.keys(projection.records).sort(), ["gate", "managed-section"]);
 
   // The projection is judged on its records too; the events stay the truth.
@@ -260,7 +260,7 @@ test("478-R1: config/project.json projects the records beside the settings, and 
   state = await as(desk, () => removeConfigRecord(library, { collection: "managed-section", key: "AGENTS.md#navigation", occurredAt: at() }));
   projection = JSON.parse(await readFile(path, "utf8"));
   assert.deepEqual(projection.records, {}, "a removed record leaves the projection");
-  assert.deepEqual(projection.values, { "backup.cadence": "session-end" });
+  assert.deepEqual(projection.values, { "retrieval.tau": "4" });
   assert.equal(await configProjectionStatus(library, state.settings, state.configRecords), "current");
 
   // A projection written before records existed reads as holding none.

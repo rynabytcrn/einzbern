@@ -58,7 +58,8 @@ const instant = (second) => `2026-09-08T00:00:${String(second).padStart(2, "0")}
 const OWNER = deriveStableId("owner", "STORY-364-OWNER");
 const ECONOMY_MODEL = "claude-sonnet-5";
 const RETIRED_ECONOMY_SETTING_KEY = "model.economyTier";
-const DISPATCH_TIERS_VALUE = JSON.stringify({ "claude-code": { economy: { model: ECONOMY_MODEL, effort: "medium" } } });
+// TCRN-CROSS-STORY-484 R3: the economy tier lives in models.tiers, each tier with its runner.
+const MODELS_TIERS_VALUE = JSON.stringify({ "claude-code": { economy: { runner: "claude-code", model: ECONOMY_MODEL, effort: "medium" } } });
 
 // The stand-in for the economy-tier model. The engine never calls a model, so what a test
 // supplies and what the write-path hook supplies are the same kind of thing: answers.
@@ -282,7 +283,7 @@ test("STORY-364: an unconfigured workspace stores exactly the prose it was hande
 test("STORY-364: a card captured in English is stored in the artefact language, with phrasings", async (context) => {
   const workspace = await languageWorkspace(context, {
     "artifact.language": "zh-CN",
-    "execution.dispatchTiers": DISPATCH_TIERS_VALUE,
+    "models.tiers": MODELS_TIERS_VALUE,
   });
   const written = await captureKnowledgeUnit(workspace, englishCard, { languageProvider: provider(), host: "claude-code" });
   assert.equal(written.reasonCode, "KNOWLEDGE_UNIT_CREATED");
@@ -308,7 +309,7 @@ test("STORY-364: a language-configured workspace refuses a write it cannot trans
   );
   const noAnswers = await languageWorkspace(context, {
     "artifact.language": "zh-CN",
-    "execution.dispatchTiers": DISPATCH_TIERS_VALUE,
+    "models.tiers": MODELS_TIERS_VALUE,
   });
   await assert.rejects(
     () => captureKnowledgeUnit(noAnswers, englishCard, { host: "claude-code" }),
@@ -322,7 +323,7 @@ test("STORY-364: a language-configured workspace refuses a write it cannot trans
 test("STORY-364: the answers are checked against the model the workspace actually records", () => {
   const policy = readKnowledgeLanguagePolicy([
     { key: "artifact.language", value: "zh-CN" },
-    { key: "execution.dispatchTiers", value: DISPATCH_TIERS_VALUE },
+    { key: "models.tiers", value: MODELS_TIERS_VALUE },
   ], "claude-code");
   assert.equal(policy.economyModel, ECONOMY_MODEL);
   assert.deepEqual([...policy.promptLanguages], ["zh-CN"], "prompt languages default to the artefact language");
@@ -340,7 +341,7 @@ test("STORY-364: the answers are checked against the model the workspace actuall
 test("STORY-364: phrasings outside the normative bounds are refused", () => {
   const policy = readKnowledgeLanguagePolicy([
     { key: "artifact.language", value: "zh-CN" },
-    { key: "execution.dispatchTiers", value: DISPATCH_TIERS_VALUE },
+    { key: "models.tiers", value: MODELS_TIERS_VALUE },
   ], "claude-code");
   const fields = { subject: "凭据不是前置", summary: "密钥未批不阻塞实现", snippet: "对着接口做" };
   assert.equal(KNOWLEDGE_EXPANSION_LIMITS.maximumBytes, 1_024);
@@ -378,7 +379,7 @@ test("STORY-364: a prompt outside the recorded prompt languages is counted once,
   const policy = readKnowledgeLanguagePolicy([
     { key: "artifact.language", value: "zh-CN" },
     { key: "retrieval.promptLanguages", value: "zh-CN" },
-    { key: "execution.dispatchTiers", value: DISPATCH_TIERS_VALUE },
+    { key: "models.tiers", value: MODELS_TIERS_VALUE },
   ], "claude-code");
   const outside = resolveQueryLanguage("is the key still blocking development", policy);
   assert.equal(outside.queryLanguage, "en");
@@ -400,7 +401,7 @@ test("TCRN-CROSS-INC-369: a query already in the artifact's own language is neve
   const policy = readKnowledgeLanguagePolicy([
     { key: "artifact.language", value: "en" },
     { key: "retrieval.promptLanguages", value: "zh-CN" },
-    { key: "execution.dispatchTiers", value: DISPATCH_TIERS_VALUE },
+    { key: "models.tiers", value: MODELS_TIERS_VALUE },
   ], "claude-code");
   const english = resolveQueryLanguage("is the key still blocking development", policy);
   assert.equal(english.queryLanguage, "en");
@@ -419,7 +420,7 @@ test("TCRN-CROSS-INC-369: a query already in the artifact's own language is neve
 test("STORY-364: the recall verb reports the query language and its telemetry", async (context) => {
   const workspace = await languageWorkspace(context, {
     "artifact.language": "zh-CN",
-    "execution.dispatchTiers": DISPATCH_TIERS_VALUE,
+    "models.tiers": MODELS_TIERS_VALUE,
     "retrieval.promptLanguages": "zh-CN",
     // TCRN-CROSS-SUB-303: an eleven-card library lowers the default calibrated on the cross-project chain.
     "retrieval.tau": "1",
@@ -461,7 +462,7 @@ test("STORY-364: the recall verb reports the query language and its telemetry", 
 test("STORY-364: phrasings feed the weight-6 recall column, so a question worded differently lands", async (context) => {
   const workspace = await languageWorkspace(context, {
     "artifact.language": "zh-CN",
-    "execution.dispatchTiers": DISPATCH_TIERS_VALUE,
+    "models.tiers": MODELS_TIERS_VALUE,
     // TCRN-CROSS-SUB-303: an eleven-card library lowers the default calibrated on the cross-project chain.
     "retrieval.tau": "1",
   });
@@ -518,7 +519,7 @@ function cliJson(argv) {
 test("STORY-364 R3: knowledge-create reaches the write-path hook, and is refused without answers", async (context) => {
   const workspace = await languageWorkspace(context, {
     "artifact.language": "zh-CN",
-    "execution.dispatchTiers": DISPATCH_TIERS_VALUE,
+    "models.tiers": MODELS_TIERS_VALUE,
   });
   const bundle = await writeBundle(join(containerOf(workspace), "create-bundle.json"), {
     model: ECONOMY_MODEL,
@@ -548,7 +549,7 @@ test("STORY-364 R3: knowledge-create reaches the write-path hook, and is refused
 test("STORY-364 R3: a batch's create members each get their own answers, keyed by external key", async (context) => {
   const workspace = await languageWorkspace(context, {
     "artifact.language": "zh-CN",
-    "execution.dispatchTiers": DISPATCH_TIERS_VALUE,
+    "models.tiers": MODELS_TIERS_VALUE,
   });
   const container = containerOf(workspace);
   const member = (externalKey) => ({

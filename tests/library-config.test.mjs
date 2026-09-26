@@ -119,7 +119,7 @@ test("469-R2: two devices set one key apart; after the sync both read the later 
   // The desk writes the key first (clock 1). The laptop, working apart, writes another setting
   // first and then the same key (clock 2), without having seen the desk's write.
   await as(desk, ["settings-set", "--workspace", library, "--at", at(), "--key", "design.authority", "--value", "https://design.example/desk"]);
-  await as(laptop, ["settings-set", "--workspace", apart, "--at", at(), "--key", "backup.cadence", "--value", "manual"]);
+  await as(laptop, ["settings-set", "--workspace", apart, "--at", at(), "--key", "retrieval.tau", "--value", "3"]);
   await as(laptop, ["settings-set", "--workspace", apart, "--at", at(), "--key", "design.authority", "--value", "https://design.example/laptop"]);
 
   const deskId = await deviceIdOf(desk);
@@ -131,7 +131,7 @@ test("469-R2: two devices set one key apart; after the sync both read the later 
   const onLaptop = await read(laptop, apart);
   for (const state of [onDesk, onLaptop]) {
     assert.equal(settingValue(state, "design.authority"), "https://design.example/laptop", "the later clock wins");
-    assert.equal(settingValue(state, "backup.cadence"), "manual");
+    assert.equal(settingValue(state, "retrieval.tau"), "3");
     assert.deepEqual(state.library.rejectedEvents, [], "a stale revision is not a rejected event for a setting");
   }
   assert.deepEqual(onDesk.settings, onLaptop.settings, "both devices read the same configuration");
@@ -173,18 +173,18 @@ test("469-R2: reads trust the events, not config/project.json, and status report
   const library = join(base, ".ether");
   await as(desk, ["init", "--workspace", library, "--at", at()]);
   assert.equal((await as(desk, ["status", "--workspace", library])).configProjection, "current", "nothing set, nothing to project");
-  await as(desk, ["settings-set", "--workspace", library, "--at", at(), "--key", "backup.cadence", "--value", "manual"]);
+  await as(desk, ["settings-set", "--workspace", library, "--at", at(), "--key", "retrieval.tau", "--value", "3"]);
   const path = join(library, "config", "project.json");
   const projection = JSON.parse(await readFile(path, "utf8"));
-  await writeFile(path, `${JSON.stringify({ ...projection, values: { "backup.cadence": "daily" } })}\n`);
+  await writeFile(path, `${JSON.stringify({ ...projection, values: { "retrieval.tau": "5" } })}\n`);
 
-  assert.equal(settingValue(await read(desk, library), "backup.cadence"), "manual", "the event is the truth");
+  assert.equal(settingValue(await read(desk, library), "retrieval.tau"), "3", "the event is the truth");
   assert.equal((await as(desk, ["status", "--workspace", library])).configProjection, "stale");
   await writeFile(path, "{not json");
   assert.equal((await as(desk, ["status", "--workspace", library])).configProjection, "invalid");
 
   // The next project-level write projects the merged values again.
-  await as(desk, ["settings-remove", "--workspace", library, "--at", at(), "--key", "backup.cadence"]);
+  await as(desk, ["settings-remove", "--workspace", library, "--at", at(), "--key", "retrieval.tau"]);
   assert.deepEqual(JSON.parse(await readFile(path, "utf8")).values, {});
   assert.equal((await as(desk, ["status", "--workspace", library])).configProjection, "current");
 });

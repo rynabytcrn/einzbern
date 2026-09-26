@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// INIT-028 INC-145/147: dispatch settings metadata and retirement boundary.
+// INIT-028 INC-145/147: dispatch settings metadata and retirement boundary. TCRN-CROSS-STORY-484 R3
+// retires the dispatch keys and the two subagent-plan keys; the tiers are models.tiers.
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
@@ -32,7 +33,7 @@ async function fixture(context) {
 
 const write = (command, workspace, version, second, args) => [command, "--workspace", workspace, "--at", at(second), ...args, "--actor", "agent:test"];
 
-test("S369: dispatch settings are cataloged, sorted, and vocabulary-linked", async (t) => {
+test("S369, STORY-484 R3: settings are sorted in source, the dispatch keys retired, and the tiers are models.tiers", async (t) => {
   const workspace = await fixture(t);
   const source = await readFile(new URL("../packages/core/src/settings.ts", import.meta.url), "utf8");
   const keyType = source.match(/export type SettingKey =([\s\S]*?);/u)?.[1] ?? "";
@@ -45,43 +46,40 @@ test("S369: dispatch settings are cataloged, sorted, and vocabulary-linked", asy
 
   const catalog = await invoke(["settings-catalog", "--workspace", workspace]);
   assert.deepEqual(catalog.settings.map((entry) => entry.key), [...catalog.settings.map((entry) => entry.key)].sort());
-  for (const key of ["execution.dispatchClasses", "execution.dispatchMode", "execution.dispatchModes", "execution.dispatchTiers"]) {
-    const entry = catalog.settings.find((candidate) => candidate.key === key);
-    assert.equal(entry.type, "string");
-    assert.equal(entry.defaultValue.length > 0, true);
+  for (const key of ["execution.dispatchClasses", "execution.dispatchMode", "execution.dispatchModes", "execution.dispatchTiers", "execution.claudeCodeSubagentPlan", "execution.codexSubagentPlan"]) {
+    assert.equal(catalog.settings.some((candidate) => candidate.key === key), false, key);
   }
-  // The dispatch-* read verbs are retired (TCRN-CROSS-STORY-467 R3); the default classes and
-  // modes are read from the settings catalog they always came from.
-  const defaultOf = (key) => JSON.parse(catalog.settings.find((entry) => entry.key === key).defaultValue);
-  const classes = defaultOf("execution.dispatchClasses");
-  assert.deepEqual(Object.keys(classes).sort(), ["acceptance", "chain-ops", "decision", "dispatch-review", "docs", "implement", "knowledge-expand", "plan", "research", "retrieval-gate"]);
-  assert.ok(Object.values(classes).every((value) => typeof value.dispatch === "boolean" && typeof value.verify === "boolean"));
-  const modes = defaultOf("execution.dispatchModes");
-  assert.deepEqual(Object.keys(modes).sort(), ["eco", "frontier"]);
-  const expectedClasses = Object.keys(classes).sort();
-  for (const mapping of Object.values(modes)) assert.deepEqual(Object.keys(mapping).sort(), expectedClasses);
+  // The default tiers: both hosts, the three default tier names, each host its own runner, unfilled.
+  const tiers = catalog.settings.find((entry) => entry.key === "models.tiers");
+  assert.equal(tiers.type, "string");
+  assert.deepEqual(JSON.parse(tiers.defaultValue), Object.fromEntries(["claude-code", "codex"].map((host) => [host, Object.fromEntries(
+    ["economy", "flagship", "main"].map((tier) => [tier, { effort: "", model: "", runner: host }]),
+  )])));
+  assert.equal(tiers.currentValue, tiers.defaultValue);
 
   const vocabulary = await invoke(["vocabulary"]);
   assert.equal(vocabulary.hostValueKind, "string");
   assert.equal(vocabulary.effortValueKind, "string");
   assert.deepEqual(vocabulary.hosts, ["claude-code", "codex"]);
   assert.equal(Object.hasOwn(vocabulary, "roles"), false);
-  assert.equal(vocabulary.settingsEnums.find((term) => term.key === "execution.dispatchMode").valueSource, "settings-catalog");
-  assert.equal(vocabulary.settingsEnums.find((term) => term.key === "execution.claudeCodeSubagentPlan").valueSource, "legacy-model-plan-history");
-  assert.equal(vocabulary.settingsEnums.find((term) => term.key === "execution.codexSubagentPlan").valueSource, "legacy-model-plan-history");
+  assert.deepEqual(vocabulary.settingsEnums.map((term) => [term.key, term.valueSource]), [["artifact.language", "settings-catalog"]]);
 });
 
 // The dispatch-* verbs that merged custom classes, modes and tiers are retired
-// (TCRN-CROSS-STORY-467 R3). What stands: a dispatch setting written directly is still
-// validated, and the retired model-plan names point at the reads that survive.
-test("S369: a dispatch setting written directly is validated, and the retired model-plan names point at the surviving reads", async (t) => {
+// (TCRN-CROSS-STORY-467 R3), and the dispatch settings with them (TCRN-CROSS-STORY-484 R3). What
+// stands: models.tiers written directly is validated, and the retired model-plan names point at
+// the reads that survive.
+test("S369, STORY-484 R3: models.tiers written directly is validated, and the retired model-plan names point at the surviving reads", async (t) => {
   const workspace = await fixture(t);
   const vocabulary = await invoke(["vocabulary"]);
   assert.equal(vocabulary.hosts.includes("gemini"), false);
   assert.equal(Object.hasOwn(vocabulary, "efforts"), false);
 
-  const bypass = await invoke(write("settings-set", workspace, 0, 1, ["--key", "execution.dispatchClasses", "--value", JSON.stringify({ "bad-class": { dispatch: true } })]));
-  assert.equal(bypass.reasonCode, "DISPATCH_CLASS_BEHAVIOUR_REQUIRED");
+  const retiredClasses = await invoke(write("settings-set", workspace, 0, 1, ["--key", "execution.dispatchClasses", "--value", JSON.stringify({ "bad-class": { dispatch: true } })]));
+  assert.equal(retiredClasses.reasonCode, "SETTINGS_KEY_UNREGISTERED");
+  const noRunner = await invoke(write("settings-set", workspace, 0, 1, ["--key", "models.tiers", "--value", JSON.stringify({ "claude-code": { economy: { model: "m", effort: "low" } } })]));
+  assert.equal(noRunner.reasonCode, "SETTINGS_VALUE_INVALID");
+  assert.equal(noRunner.details.path, "models.tiers.claude-code.economy");
   assert.equal((await invoke(["status", "--workspace", workspace])).version, 0);
   const retired = await invoke(["model-plan-list", "--workspace", workspace]);
   assert.equal(retired.reasonCode, "CLI_COMMAND_UNKNOWN");

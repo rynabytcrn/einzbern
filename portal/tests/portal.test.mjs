@@ -146,7 +146,8 @@ test("portal boots from the live engine and exposes the new read surfaces", asyn
 
   const settings = await request(url, "/api/settings", readOptions(boot.token));
   assert.equal(settings.body.reasonCode, "SETTINGS_CATALOG_READY");
-  assert.deepEqual(settings.body.settings.filter((entry) => entry.key.includes("SubagentPlan")).map((entry) => entry.key), ["execution.claudeCodeSubagentPlan", "execution.codexSubagentPlan"]);
+  // TCRN-CROSS-STORY-484 R3: the two subagent-plan settings are retired with the dispatch keys.
+  assert.deepEqual(settings.body.settings.filter((entry) => entry.key.includes("SubagentPlan") || entry.key.startsWith("execution.dispatch")).map((entry) => entry.key), []);
   // TCRN-CROSS-STORY-467 R3: the execution projection read the dispatch-* verbs and left with
   // them; the route answers as unknown rather than from a retired verb.
   const execution = await request(url, "/api/execution", readOptions(boot.token));
@@ -218,39 +219,41 @@ test("portal writes carry the actor under the engine's write lock, then return t
   t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
   const { boot } = await readBoot(url);
 
-  const untokened = await request(url, "/api/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: "backup.cadence", value: "manual" }) });
+  const untokened = await request(url, "/api/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: "retrieval.tau", value: "3" }) });
   assert.equal(untokened.response.status, 403);
   assert.equal(untokened.body.reasonCode, "PORTAL_TOKEN_REQUIRED");
 
-  const setting = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "backup.cadence", value: "manual" }));
+  const setting = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "retrieval.tau", value: "3" }));
   assert.equal(setting.response.status, 200);
   assert.equal(setting.body.reasonCode, "SETTINGS_WRITE_COMMITTED");
-  assert.equal(setting.body.readback.currentValue, "manual");
+  assert.equal(setting.body.readback.currentValue, "3");
 
+  // TCRN-CROSS-STORY-484 R3: the tiers are models.tiers, each tier with its runner.
   const tiers = await request(url, "/api/settings", writeOptions(boot.token, "POST", {
-    key: "execution.dispatchTiers",
-    value: JSON.stringify({ "claude-code": { flagship: null, main: { model: "opus-5", effort: "xhigh2" }, economy: null } }),
+    key: "models.tiers",
+    value: JSON.stringify({ "claude-code": { main: { runner: "claude-code", model: "opus-5", effort: "xhigh2" } } }),
   }));
   assert.equal(tiers.body.reasonCode, "SETTINGS_WRITE_COMMITTED");
-  // TCRN-CROSS-STORY-482 R4: a dispatch-key write no longer renders a host projection.
+  // TCRN-CROSS-STORY-482 R4: a tiers write renders no host projection.
   assert.equal(Object.hasOwn(tiers.body, "hostRender"), false);
-  const classes = await request(url, "/api/settings", writeOptions(boot.token, "POST", {
+  // The dispatch classes and modes retired with TCRN-CROSS-STORY-484 R3: a write is refused and appends nothing.
+  const retiredClasses = await request(url, "/api/settings", writeOptions(boot.token, "POST", {
     key: "execution.dispatchClasses",
     value: JSON.stringify({ "review-visual": { dispatch: true, verify: false } }),
   }));
-  assert.equal(classes.body.reasonCode, "SETTINGS_WRITE_COMMITTED");
-  const modes = await request(url, "/api/settings", writeOptions(boot.token, "POST", {
-    key: "execution.dispatchModes",
-    value: JSON.stringify({ custom: { "review-visual": "main" } }),
-  }));
-  assert.equal(modes.body.reasonCode, "SETTINGS_WRITE_COMMITTED");
+  assert.equal(retiredClasses.response.status, 409);
+  assert.equal(retiredClasses.body.reasonCode, "SETTINGS_KEY_UNREGISTERED");
+  const parallelOff = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "quota.fiveHourParallelOffPercent", value: "80" }));
+  assert.equal(parallelOff.body.reasonCode, "SETTINGS_WRITE_COMMITTED");
+  const wait = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "quota.fiveHourWaitPercent", value: "95" }));
+  assert.equal(wait.body.reasonCode, "SETTINGS_WRITE_COMMITTED");
   // TCRN-CROSS-STORY-467 R3: the execution write route carried the dispatch-* writes and the
   // retired plan and persona actions. It is gone, so those posts reach no writer and leave
   // nothing in the session audit.
   const retired = await request(url, "/api/execution", writeOptions(boot.token, "POST", { action: "model-plan-set", host: "claude-code", name: "daily", defaultModel: "opus-5" }));
   assert.equal(retired.response.status, 404);
   assert.equal(retired.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
-  const active = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "execution.dispatchMode", value: "custom" }));
+  const active = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "execution.maxConcurrentSubagents", value: "3" }));
   assert.equal(active.body.reasonCode, "SETTINGS_WRITE_COMMITTED");
   const retiredPersona = await request(url, "/api/execution", writeOptions(boot.token, "POST", { action: RETIRED_PERSONA_ACTIONS.override, name: "Verity", fields: { mission: "Review governed evidence", role: "reviewer" } }));
   assert.equal(retiredPersona.response.status, 404);
@@ -258,8 +261,8 @@ test("portal writes carry the actor under the engine's write lock, then return t
 
   // TCRN-CROSS-STORY-482 R4: the session audit left with its page. Each write is answered by the
   // engine's own receipt, and the five writes above are the chain's five events.
-  for (const receipt of [setting, tiers, classes, modes, active]) assert.ok(receipt.body.receiptDigest && receipt.body.headEventHash && receipt.body.version);
-  assert.deepEqual([setting, tiers, classes, modes, active].map((receipt) => receipt.body.version), [1, 2, 3, 4, 5]);
+  for (const receipt of [setting, tiers, parallelOff, wait, active]) assert.ok(receipt.body.receiptDigest && receipt.body.headEventHash && receipt.body.version);
+  assert.deepEqual([setting, tiers, parallelOff, wait, active].map((receipt) => receipt.body.version), [1, 2, 3, 4, 5]);
   const audit = await request(url, RETIRED_ROUTES.sessionAudit, readOptions(boot.token));
   assert.equal(audit.response.status, 404);
   assert.equal(audit.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
@@ -328,7 +331,7 @@ test("AGENTS.md read/write is allow-listed and reconciliation reports line-level
   const { child, url } = await startPortal(fixture);
   t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
   const { boot } = await readBoot(url);
-  const text = "# rules\n\nSet backup.cadence before close.\n";
+  const text = "# rules\n\nSet retrieval.tau before close.\n";
   const written = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { file: "AGENTS.md", text }));
   assert.equal(written.body.reasonCode, "PORTAL_AGENTS_MD_WRITTEN");
   assert.equal(written.body.matches, true);
@@ -337,7 +340,7 @@ test("AGENTS.md read/write is allow-listed and reconciliation reports line-level
   assert.equal(green.body.ok, true);
   assert.equal(green.body.findings.length, 0);
 
-  await writeFile(join(fixture.proseRoot, "AGENTS.md"), `${text}\nAlso set backup.retiredKey.\n`, "utf8");
+  await writeFile(join(fixture.proseRoot, "AGENTS.md"), `${text}\nAlso set retrieval.retiredKey.\n`, "utf8");
   const red = await request(url, "/api/agents-md/reconcile", readOptions(boot.token));
   assert.equal(red.body.ok, false);
   assert.equal(red.body.findings[0].kind, "unregistered");
@@ -420,13 +423,13 @@ test("portal serves live catalog, commits a governed write, and refuses an untok
   assert.ok(!page.includes("gate-close"));
   assert.match(page, /data-setting-control/u);
   assert.ok(catalog.body.settings.every((entry) => entry.controlType));
-  const untokened = await request(url, "/api/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: "backup.cadence", value: "manual" }) });
+  const untokened = await request(url, "/api/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: "retrieval.tau", value: "3" }) });
   assert.equal(untokened.response.status, 403);
   assert.equal(untokened.body.reasonCode, "PORTAL_TOKEN_REQUIRED");
-  const committed = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "backup.cadence", value: "manual" }));
+  const committed = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "retrieval.tau", value: "3" }));
   assert.equal(committed.body.reasonCode, "SETTINGS_WRITE_COMMITTED");
-  assert.equal(committed.body.setting.value, "manual");
-  assert.equal(committed.body.readback.currentValue, "manual");
+  assert.equal(committed.body.setting.value, "3");
+  assert.equal(committed.body.readback.currentValue, "3");
   assert.ok(committed.body.receiptDigest && committed.body.headEventHash);
   const refused = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "bogus.key", value: "x" }));
   assert.equal(refused.response.status, 409);
@@ -443,13 +446,13 @@ test("reconciliation goes red when prose names an unregistered key, and green on
   const { child, url } = await startPortal(fixture);
   t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
   const { boot } = await readBoot(url);
-  const greenText = "# AGENTS.md\n\nSet backup.cadence before close.\n";
+  const greenText = "# AGENTS.md\n\nSet retrieval.tau before close.\n";
   await writeFile(join(fixture.proseRoot, "AGENTS.md"), greenText, "utf8");
   const green = await request(url, "/api/agents-md/reconcile", readOptions(boot.token));
   assert.equal(green.body.ok, true);
   assert.equal(green.body.findings.length, 0);
-  assert.ok(green.body.rows.some((row) => row.key === "backup.cadence" && row.registered));
-  await writeFile(join(fixture.proseRoot, "AGENTS.md"), `${greenText}\nAlso set backup.retiredKey.\n`, "utf8");
+  assert.ok(green.body.rows.some((row) => row.key === "retrieval.tau" && row.registered));
+  await writeFile(join(fixture.proseRoot, "AGENTS.md"), `${greenText}\nAlso set retrieval.retiredKey.\n`, "utf8");
   const red = await request(url, "/api/agents-md/reconcile", readOptions(boot.token));
   assert.equal(red.body.ok, false);
   assert.equal(red.body.findings[0].kind, "unregistered");
@@ -590,8 +593,8 @@ test("i18n proof turns red when the engine drops enum allowedValues", async (t) 
   assert.equal(report.reasonCode, "I18N_CONTRACT_VIOLATION");
   const leg = report.legs.find((entry) => entry.leg === "setting-descriptions");
   assert.equal(leg.reasonCode, "SETTING_ENUM_VALUES_GAP");
-  assert.ok(leg.enumMissingAllowedValues.includes("backup.cadence"));
-  assert.ok(leg.enumMissingAllowedValues.includes("execution.subagentPolicy"));
+  // TCRN-CROSS-STORY-484 R3 retired the other enum settings; artifact.language is the one left.
+  assert.ok(leg.enumMissingAllowedValues.includes("artifact.language"));
 });
 
 test("i18n full-table proof turns red when an existing translation regresses", async (t) => {
@@ -611,8 +614,9 @@ test("i18n full-table proof turns red when an existing translation regresses", a
   assert.ok(leg.problems.some((problem) => problem.locale === "ja" && problem.unexpected.includes("receipt.title")));
 });
 
-// TCRN-CROSS-STORY-467 R3: the execution route and its page left with the dispatch-* verbs. The
-// owner's dispatch mode is still a registered setting, written and read back through settings.
+// TCRN-CROSS-STORY-467 R3: the execution route and its page left with the dispatch-* verbs, and the
+// dispatch mode setting with TCRN-CROSS-STORY-484 R3. The owner's concurrency limit is a registered
+// setting, written and read back through settings.
 test("execution settings: the owner scenario writes through settings while the execution route is gone", async (t) => {
   const fixture = await scratch("tcrn-portal-conservation-execution-", "TCRN-PORTAL-CONSERVATION-EXECUTION");
   const { child, url } = await startPortal(fixture);
@@ -623,21 +627,23 @@ test("execution settings: the owner scenario writes through settings while the e
   assert.equal(refusedWrite.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
   const historical = await request(url, "/api/execution", readOptions(boot.token));
   assert.equal(historical.response.status, 404);
-  const active = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "execution.dispatchMode", value: "eco" }));
+  const retiredMode = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "execution.dispatchMode", value: "eco" }));
+  assert.equal(retiredMode.body.reasonCode, "SETTINGS_KEY_UNREGISTERED");
+  const active = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "execution.maxConcurrentSubagents", value: "3" }));
   assert.equal(active.body.reasonCode, "SETTINGS_WRITE_COMMITTED");
-  assert.equal(active.body.readback.currentValue, "eco");
+  assert.equal(active.body.readback.currentValue, "3");
   // TCRN-CROSS-STORY-482 R4: the execution surface's host projection is gone, so the write is
   // answered by the engine receipt alone and renders nothing into a host file.
   assert.equal(Object.hasOwn(active.body, "hostRender"), false);
   const readback = await request(url, "/api/settings", readOptions(boot.token));
-  assert.equal(readback.body.settings.find((entry) => entry.key === "execution.dispatchMode").currentValue, "eco");
-  const removed = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "execution.dispatchMode", reset: true }));
+  assert.equal(readback.body.settings.find((entry) => entry.key === "execution.maxConcurrentSubagents").currentValue, "3");
+  const removed = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "execution.maxConcurrentSubagents", reset: true }));
   assert.equal(removed.response.status, 200);
   assert.equal(Object.hasOwn(removed.body, "hostRender"), false);
   assert.equal(removed.body.version, active.body.version + 1, "the reset is the chain's next event and the only one");
 });
 
-test("STORY-370 the retired identity surface is absent while execution policy remains writable", async (t) => {
+test("STORY-370 the retired identity surface is absent while execution settings remain writable", async (t) => {
   const fixture = await scratch("tcrn-portal-conservation-cards-", "TCRN-PORTAL-CONSERVATION-CARDS");
   const { child, url } = await startPortal(fixture);
   t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
@@ -654,8 +660,9 @@ test("STORY-370 the retired identity surface is absent while execution policy re
   assert.equal(custom.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
   const refused = await post({ action: RETIRED_PERSONA_ACTIONS.remove, name: "Portal auditor" });
   assert.equal(refused.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
-  const policy = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "execution.subagentPolicy", value: "forbidden" }));
-  assert.equal(policy.body.setting.value, "forbidden");
+  // execution.subagentPolicy retired with TCRN-CROSS-STORY-484 R3; the concurrency limit stays writable.
+  const policy = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "execution.maxConcurrentSubagents", value: "2" }));
+  assert.equal(policy.body.setting.value, "2");
   const settings = await request(url, "/api/settings", readOptions(boot.token));
   assert.equal(settings.body.settings.some((entry) => /persona/iu.test(entry.key)), false);
 });

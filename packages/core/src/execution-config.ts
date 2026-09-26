@@ -362,15 +362,11 @@ export function applyModelPlanUnassignInExecutionConfig(state: ExecutionConfigSt
   return { state: { ...state, modelPlans: applied.records }, record: applied.record };
 }
 
-export function applyModelPlanRemoveInExecutionConfig(state: ExecutionConfigState, input: { readonly host: unknown; readonly name: unknown }, settings: readonly { readonly key: string; readonly value: string }[]): ExecutionConfigState {
-  const records = applyModelPlanRemove(state.modelPlans, input, (plan) => {
-    const setting = settings.find((candidate) =>
-      (plan.host === "claude-code" && candidate.key === "execution.claudeCodeSubagentPlan" && candidate.value === plan.name) ||
-      (plan.host === "codex" && candidate.key === "execution.codexSubagentPlan" && candidate.value === plan.name),
-    );
-    return setting === undefined ? undefined : `setting ${setting.key}`;
-  });
-  return { ...state, modelPlans: records };
+// TCRN-CROSS-STORY-484 R3: the two settings that named a model plan (execution.claudeCodeSubagentPlan
+// and execution.codexSubagentPlan) are retired, and a retired key never becomes a current setting, so
+// no setting can hold a plan in use any more.
+export function applyModelPlanRemoveInExecutionConfig(state: ExecutionConfigState, input: { readonly host: unknown; readonly name: unknown }): ExecutionConfigState {
+  return { ...state, modelPlans: applyModelPlanRemove(state.modelPlans, input, () => undefined) };
 }
 
 export function applyPersonaPresetOverrideInExecutionConfig(state: ExecutionConfigState, input: {

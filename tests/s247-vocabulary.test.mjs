@@ -37,7 +37,10 @@ test("S369: vocabulary preserves catalog metadata and live replacement sources",
     assert.equal(term.controlType, entry.controlType);
     assert.equal(term.defaultValue, entry.defaultValue);
   }
-  assert.equal(vocabulary.settingsEnums.find((term) => term.key === "execution.dispatchMode").valueSource, "settings-catalog");
-  assert.equal(vocabulary.settingsEnums.find((term) => term.key === "execution.claudeCodeSubagentPlan").valueSource, "legacy-model-plan-history");
-  assert.equal(vocabulary.settingsEnums.find((term) => term.key === "execution.codexSubagentPlan").valueSource, "legacy-model-plan-history");
+  // TCRN-CROSS-STORY-484 R3: the two subagent-plan keys, whose values came from model-plan history,
+  // are retired with the dispatch mode, so every enum left reads its values from the catalog.
+  assert.ok(vocabulary.settingsEnums.every((term) => term.valueSource === "settings-catalog"));
+  for (const key of ["execution.dispatchMode", "execution.claudeCodeSubagentPlan", "execution.codexSubagentPlan"]) {
+    assert.equal(vocabulary.settingsEnums.some((term) => term.key === key), false, key);
+  }
 });

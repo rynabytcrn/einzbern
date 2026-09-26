@@ -73,7 +73,7 @@ async function seeded(base) {
   await cli(["init", "--workspace", library, "--at", at(), "--project", project]);
   const created = await cli(["project-create", "--workspace", library, "--at", at(), "--external-key", "RELOCATE-PROJECT", "--name", "Relocate"]);
   await cli(["work-create", "--workspace", library, "--at", at(), "--project-id", created.record.id, "--external-key", "RELOCATE-INIT", "--kind", "Initiative", "--title", "relocate"]);
-  await cli(["settings-set", "--workspace", library, "--at", at(), "--key", "backup.cadence", "--value", "manual"]);
+  await cli(["settings-set", "--workspace", library, "--at", at(), "--key", "retrieval.tau", "--value", "3"]);
   await cli(["knowledge-init", "--workspace", library, "--acknowledge-disposable", "true"]);
   await cli(["knowledge-capture", "--workspace", library, "--at", at(), "--subject", "Relocation", "--summary", "A library moves whole",
     "--snippet", "whole", "--tags", "relocate", "--accountable-owner-id", "owner:relocate", "--body", "The library moves whole."]);
@@ -107,7 +107,7 @@ test("470-AC2: a library relocated to an empty place replays to the same head, t
   assert.deepEqual([old.headEventHash, old.relocatedTo], [before.headEventHash, target]);
   for (const args of [
     ["project-create", "--workspace", library, "--at", at(), "--external-key", "AFTER-MOVE", "--name", "After"],
-    ["settings-set", "--workspace", library, "--at", at(), "--key", "backup.cadence", "--value", "daily"],
+    ["settings-set", "--workspace", library, "--at", at(), "--key", "retrieval.tau", "--value", "5"],
     ["knowledge-capture", "--workspace", library, "--at", at(), "--subject", "Late", "--summary", "late", "--snippet", "late", "--tags", "late",
       "--accountable-owner-id", "owner:relocate", "--body", "late"],
   ]) {

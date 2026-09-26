@@ -71,18 +71,15 @@ export function readVocabulary(): Readonly<{
       value,
       description: EXECUTION_FORM_DESCRIPTIONS[value],
     }))),
-    // Dynamic selectors name a live read surface. Historical plan settings
-    // remain readable, but no model-plan verb is callable.
+    // Every enum's values come from the settings catalog. The two subagent-plan keys, whose values
+    // came from model-plan history, retired with TCRN-CROSS-STORY-484 R3.
     settingsEnums: Object.freeze(SETTINGS_CATALOG.filter((entry) => entry.controlType === "enum").map((entry) => Object.freeze({
       key: entry.key,
       type: entry.type,
       controlType: entry.controlType,
       defaultValue: entry.defaultValue,
       allowedValues: Object.freeze([...(entry.allowedValues ?? [])]),
-      valueSource: entry.key === "execution.claudeCodeSubagentPlan" ||
-            entry.key === "execution.codexSubagentPlan"
-          ? "legacy-model-plan-history"
-          : "settings-catalog",
+      valueSource: "settings-catalog",
       ...(entry.min === undefined ? {} : { min: entry.min }),
       ...(entry.max === undefined ? {} : { max: entry.max }),
     }))),

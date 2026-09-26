@@ -512,6 +512,36 @@ is `atelier`, as it is when Atelier runs the CLI. The CLI cannot tell who runs i
 barrier. A key the engine refuses whoever asks keeps its own refusal (`SETTINGS_KEY_DEVICE_LEVEL`,
 `SETTINGS_KEY_UNREGISTERED`), and reads are never refused.
 
+The engine ships as one release archive that needs nothing but Node.js (TCRN-CROSS-STORY-481;
+MIN-227 D23, D28; `scripts/lib/bundle.mjs`, `scripts/pack-release.mjs`,
+`skill/mana-orchestrate/scripts/install.mjs`, `packages/core/src/node-floor.ts`).
+`pnpm run bundle --entry <file> --out <file>` writes an entry and every module it reaches as one ES
+module with no dependency: only `node:` built-ins stay outside the file, a bare specifier is refused
+with `BUNDLE_EXTERNAL_DEPENDENCY`, and a file a module reads beside itself through
+`new URL("<relative path>", import.meta.url)` is carried inside it. The bundler is the TypeScript
+compiler this repository already pins; nothing is added and nothing is fetched.
+`pnpm run pack:release [--version <version>] [--out <directory>]` packs the build as
+`einzbern-<version>.tar.gz` and its `.sha256` (in `dist/release` by default): one
+`einzbern-<version>/` directory holding the CLI and the hook entry as one file each, the two stable
+launchers as they are, Atelier as one file beside the static files it serves, the skill rendered for
+the version, the READMEs, CHANGELOG.md, LICENSE and NOTICE, and `manifest.json`
+(`einzbern.release-manifest.v1`: `version`, `nodeFloor`, `installTreeDigest` and `files`, the digest
+taken over the directory without the manifest). Two packs of one tree are the same bytes: the tar
+headers carry no time and no owner, and the gzip header names no time and no platform. A
+`--version` the built engine does not answer as is refused with `PACK_VERSION_MISMATCH`. The
+skill's `scripts/install.mjs` is the fetch step that puts an engine on a device before any engine
+is there: `--version <version>` downloads that release, the one network use of the installation,
+and `--archive <file>` takes a local archive and fetches nothing. The archive's sha256 must equal
+`--sha256` or the one its `.sha256` states (`INSTALL_ARCHIVE_DIGEST_MISMATCH`, and nothing is
+written); it is unpacked with `node:` built-ins alone, installed through `engine-update` against the
+manifest's install-tree digest, given both launchers as `engine/einzbern.mjs` and `engine/hook.mjs`,
+and answered with `INSTALL_ENGINE_READY` and the next step, setup. The engine runs on Node.js 24.0.0
+or later (`NODE_FLOOR`, exported by core with `assertNodeFloor` and `meetsNodeFloor`): the CLI
+refuses an older Node.js with `ENGINE_NODE_TOO_OLD` and the `required` and `actual` versions before
+the rest of the engine loads, and the hook answers nothing there. CI packs the archive, unpacks it
+under the runner's temporary directory and runs `commands`, and `status` on a temporary library, from
+it with Node.js alone.
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

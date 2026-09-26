@@ -77,6 +77,48 @@ jobs:
       - name: Verify portal remediation train
         run: pnpm verify:portal
 
+      # TCRN-CROSS-STORY-481 (TCRN-CROSS-SUB-331): a device installs the release archive, not this
+      # checkout. The archive is packed from a fresh build, checked against its .sha256 and unpacked
+      # under the runner's temporary directory, where no node_modules and no dist/build lie on any
+      # parent path, and the engine it carries runs with Node.js alone: its command catalog, then a
+      # temporary library created and read back by status. The commands run from a temporary
+      # directory with a temporary HOME and device directory, so no file of the checkout can stand
+      # in for one the archive must carry. Last in the job, so it hides none of the steps above.
+      - name: Smoke the release archive unpacked without node_modules
+        run: |
+          pnpm build
+          version="$(node -p 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8")).version')"
+          smoke="$RUNNER_TEMP/einzbern-release-smoke"
+          mkdir -p "$smoke/unpacked" "$smoke/home" "$smoke/work"
+          pnpm run pack:release --out "$smoke/release"
+          archive="$smoke/release/einzbern-$version.tar.gz"
+          test "$(cut -d ' ' -f 1 "$archive.sha256")" = "$(sha256sum "$archive" | cut -d ' ' -f 1)"
+          tar -xzf "$archive" -C "$smoke/unpacked"
+          test ! -e "$smoke/unpacked/einzbern-$version/node_modules"
+          engine="$smoke/unpacked/einzbern-$version/scripts/einzbern.mjs"
+          cd "$smoke/work"
+          export HOME="$smoke/home" EINZBERN_HOME="$smoke/home/.einzbern"
+          node "$engine" commands > commands.json
+          node "$engine" init --workspace "$smoke/library" --at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > init.json
+          node "$engine" status --workspace "$smoke/library" > status.json
+          node --input-type=module -e '
+            import assert from "node:assert/strict";
+            import { readFileSync } from "node:fs";
+            const read = (file) => JSON.parse(readFileSync(file, "utf8"));
+            const version = process.argv[1];
+            const catalog = read("commands.json");
+            assert.equal(catalog.reasonCode, "CLI_CATALOG_READY");
+            const verbs = catalog.commands.map((entry) => entry.name);
+            for (const verb of ["init", "status", "engine-update", "skill-render"]) assert.ok(verbs.includes(verb), verb);
+            const created = read("init.json");
+            assert.equal(created.reasonCode, "LIBRARY_CREATED");
+            const status = read("status.json");
+            assert.equal(status.reasonCode, "WORKSPACE_COMMAND_COMPLETED");
+            assert.equal(status.workspaceId, created.libraryId);
+            assert.equal(status.engineVersion, version);
+            console.log(`einzbern-${version} unpacked alone: ${verbs.length} commands, library ${created.libraryId} created and read`);
+          ' "$version"
+
 
   # S6 lesson-marker discrimination (TCRN-CROSS-STORY-147/148, re-shaped under
   # TCRN-CROSS-INC-034/035).

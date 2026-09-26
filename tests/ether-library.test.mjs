@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -38,7 +38,9 @@ test("469-AC1: a new library holds exactly the seven root entries, and .gitignor
   assert.deepEqual([...LIBRARY_ROOT_ENTRIES], [".gitignore", "README.md", "akasha", "artifacts", "config", "crest", "manifest.json"]);
   assert.equal(await readFile(join(root, ".gitignore"), "utf8"), "*\n");
   for (const directory of ["akasha", "artifacts", "config", "crest"]) assert.deepEqual(await readdir(join(root, directory)), [], `${directory} starts empty`);
-  assert.equal(library.root, root);
+  // A library is its real path (TCRN-CROSS-STORY-470 R2): the temporary directory may be reached
+  // through a symbolic link, as /var is on macOS.
+  assert.equal(library.root, await realpath(root));
 });
 
 test("469-R1: the manifest names the library, its format, the engine it needs and the project, in canonical bytes", async (t) => {

@@ -182,6 +182,15 @@ working tree's top level, else its remote (origin first, so another clone of the
 the same library), else `LIBRARY_NOT_REGISTERED`; a library that no longer carries the
 registered id is `LIBRARY_REGISTRY_MISMATCH`. `--workspace` is now optional on every verb but
 `init`: left out, the library is the one the current directory resolves to.
+A library's cloud-hosted flag is the user's (TCRN-CROSS-STORY-470 R2, AC5; MIN-227 D19, D21):
+`library-register` and `init --project` store `--cloud-hosted` when it is given and otherwise
+what the cloud folder table suggests for the library's real path, and both report `realPath`
+and `suggestedCloudHosted`. The table (`packages/core/src/cloud-roots.ts`) knows macOS
+(`~/Library/CloudStorage/*`, iCloud Drive, `~/OneDrive*`, `~/Dropbox`) and Windows (the
+`OneDrive`, `OneDriveConsumer` and `OneDriveCommercial` variables, iCloud Drive and Dropbox under
+the profile) and suggests nothing on Linux; a project's default cloud library is
+`<cloud root>/Ether/<project name>`. A library given through a symbolic link is created,
+registered and opened at its real path instead of being refused.
 
 ## 1.2.1 — patch candidate
 

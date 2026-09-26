@@ -656,6 +656,8 @@ export { configProjectionStatus } from "./library-config.js";
 export { defaultImportTarget, importLegacyWorkspace } from "./legacy-import.js";
 // TCRN-CROSS-STORY-470 R1: this device's registry of libraries and resolution from a directory.
 export { readRegistry, registerLibrary, resolveLibrary } from "./registry.js";
+// TCRN-CROSS-STORY-470 R2: the cloud folders a cloud-hosted flag is suggested for.
+export { suggestCloudHosted } from "./cloud-roots.js";
 export type { AtomicFileReasonCode, AtomicWriteOptions } from "./atomic-file.js";
 // TCRN-CROSS-STORY-468 R1: this device's identity in the device directory.
 export {

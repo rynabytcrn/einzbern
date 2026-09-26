@@ -18,7 +18,7 @@
 // lowercase; text is LF; nothing depends on permission bits.
 
 import { randomBytes } from "node:crypto";
-import { lstat, mkdir, readdir, readFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, realpath } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { assertStrictInstant, canonicalJson } from "../../protocol/src/index.js";
@@ -142,9 +142,22 @@ export async function hasLibraryManifest(root: string): Promise<boolean> {
   }
 }
 
+// TCRN-CROSS-STORY-470 R2, AC5: a library reached through a symbolic link (a cloud folder often
+// is one) is its real path; a path that does not exist yet is kept as given.
+export async function realLibraryPath(rootInput: string): Promise<string> {
+  const given = resolve(rootInput);
+  try {
+    return await realpath(given);
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === "ENOENT" || code === "ENOTDIR") return given;
+    throw error;
+  }
+}
+
 /** Read and validate a library's root manifest. Nothing is created or written. */
 export async function openLibrary(rootInput: string): Promise<Library> {
-  const root = resolve(rootInput);
+  const root = await realLibraryPath(rootInput);
   const path = join(root, LIBRARY_FILES.manifest);
   let text: string;
   try {
@@ -184,7 +197,7 @@ export function newLibraryId(): string {
  * leaves nothing that opens.
  */
 export async function createLibrary(rootInput: string, options: CreateLibraryOptions): Promise<Library> {
-  const root = resolve(rootInput);
+  let root = await realLibraryPath(rootInput);
   assertStrictInstant(options.createdAt);
   const libraryId = options.libraryId ?? newLibraryId();
   if (!LIBRARY_ID_PATTERN.test(libraryId)) fail("LIBRARY_MANIFEST_INVALID", `${libraryId} is not a library id`);
@@ -201,6 +214,8 @@ export async function createLibrary(rootInput: string, options: CreateLibraryOpt
     if ((await readdir(root)).length > 0) fail("LIBRARY_TARGET_NOT_EMPTY", `${root} is not empty`, { target: root });
   } else {
     await mkdir(root, { recursive: true });
+    // Created through a symbolically linked parent, the library is its real path.
+    root = await realpath(root);
   }
   for (const directory of [DIRECTORY.events, DIRECTORY.knowledge, DIRECTORY.projectConfig, DIRECTORY.artifacts]) {
     await mkdir(join(root, directory));

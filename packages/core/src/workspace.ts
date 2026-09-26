@@ -48,7 +48,7 @@ import {
 } from "./library-cache.js";
 import type { CacheSnapshot, CacheViewStamp } from "./library-cache.js";
 import { writeConfigProjection } from "./library-config.js";
-import { LIBRARY_ID_PATTERN, createLibrary, hasLibraryManifest, openLibrary } from "./ether-library.js";
+import { LIBRARY_ID_PATTERN, createLibrary, hasLibraryManifest, openLibrary, realLibraryPath } from "./ether-library.js";
 import type { Library } from "./ether-library.js";
 import { readOrCreateDevice } from "./device-identity.js";
 import { legacyControlDirectory, openLegacyWorkspace, replayLegacyWorkspace } from "./legacy-workspace.js";
@@ -2667,7 +2667,8 @@ type WorkspaceLayout =
   | { readonly kind: "legacy"; readonly root: string };
 
 async function resolveLayout(workspaceRootInput: string): Promise<WorkspaceLayout> {
-  const root = await boundDirectory(workspaceRootInput);
+  // TCRN-CROSS-STORY-470 R2, AC5: a library given through a symbolic link opens at its real path.
+  const root = await boundDirectory(await realLibraryPath(workspaceRootInput));
   if (await hasLibraryManifest(root)) return { kind: "library", root, library: await openLibrary(root) };
   if (await legacyControlDirectory(root) !== null) return { kind: "legacy", root };
   throw new WorkspaceError("LIBRARY_NOT_FOUND", `${root} holds neither a library nor an old-layout workspace`, { workspace: root });

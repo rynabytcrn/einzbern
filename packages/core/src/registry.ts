@@ -22,6 +22,7 @@ import type { JsonValue } from "../../protocol/src/index.js";
 import { writeFileAtomic } from "./atomic-file.js";
 import { ensureDeviceDirectory, registryPath } from "./device-home.js";
 import { openLibrary } from "./ether-library.js";
+import { suggestCloudHosted } from "./cloud-roots.js";
 
 export const REGISTRY_SCHEMA_VERSION = "einzbern.registry.v1" as const;
 export const REGISTRY_REASON_CODES = Object.freeze([
@@ -164,6 +165,7 @@ export interface RegisterLibraryInput {
   readonly projectPath: string;
   readonly libraryPath: string;
   readonly registeredAt: string;
+  // The user's flag (TCRN-CROSS-STORY-470 R2); left out, it is what the cloud folder table suggests.
   readonly cloudHosted?: boolean;
   // The project's remote; when left out it is read from the project's working tree, if any.
   readonly gitRemote?: string | null;
@@ -180,7 +182,7 @@ export async function registerLibrary(input: RegisterLibraryInput, home?: string
     gitRemote: remote === null ? null : normalizeGitRemote(remote),
     libraryPath: library.root,
     libraryId: library.manifest.libraryId,
-    cloudHosted: input.cloudHosted === true,
+    cloudHosted: input.cloudHosted ?? suggestCloudHosted(library.root),
     registeredAt: input.registeredAt,
   };
   const registry = await readRegistry(home);

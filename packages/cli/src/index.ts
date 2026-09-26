@@ -97,6 +97,7 @@ import {
   readRegistry,
   registerLibrary,
   resolveLibrary,
+  suggestCloudHosted,
 } from "../../core/src/index.js";
 import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider } from "../../core/src/index.js";
 import type {
@@ -1040,12 +1041,15 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       ...(values["project-name"] === undefined ? {} : { projectName: values["project-name"] }),
       ...(values["git-remote"] === undefined ? {} : { gitRemote: values["git-remote"] }),
     });
-    // TCRN-CROSS-STORY-470 R1: --project registers the new library for that project on this device.
+    // TCRN-CROSS-STORY-470 R1, R2: --project registers the new library for that project on this
+    // device; the cloud-hosted flag is what --cloud-hosted says, or else what the cloud folder
+    // table suggests for the library's real path.
+    const realPath = state.library?.libraryRoot ?? "";
     const registered = values.project === undefined ? null : await registerLibrary({
       projectPath: values.project,
-      libraryPath: values.workspace ?? "",
+      libraryPath: realPath,
       registeredAt: values.at ?? "",
-      cloudHosted: booleanValue(values["cloud-hosted"], "cloud-hosted"),
+      ...(values["cloud-hosted"] === undefined ? {} : { cloudHosted: booleanValue(values["cloud-hosted"], "cloud-hosted") }),
       ...(values["git-remote"] === undefined ? {} : { gitRemote: values["git-remote"] }),
     });
     io.write(canonicalJson({
@@ -1057,6 +1061,8 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       versionVector: state.library?.versionVector ?? {},
       projects: 0,
       work: 0,
+      realPath,
+      suggestedCloudHosted: suggestCloudHosted(realPath),
       ...(registered === null ? {} : { registered: registered as unknown as JsonValue }),
     }));
     return;
@@ -1069,10 +1075,15 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       projectPath: values.project ?? "",
       libraryPath: values.library ?? "",
       registeredAt: values.at ?? "",
-      cloudHosted: booleanValue(values["cloud-hosted"], "cloud-hosted"),
+      ...(values["cloud-hosted"] === undefined ? {} : { cloudHosted: booleanValue(values["cloud-hosted"], "cloud-hosted") }),
       ...(values["git-remote"] === undefined ? {} : { gitRemote: values["git-remote"] }),
     });
-    io.write(canonicalJson({ reasonCode: "LIBRARY_REGISTERED", entry: entry as unknown as JsonValue }));
+    io.write(canonicalJson({
+      reasonCode: "LIBRARY_REGISTERED",
+      entry: entry as unknown as JsonValue,
+      realPath: entry.libraryPath,
+      suggestedCloudHosted: suggestCloudHosted(entry.libraryPath),
+    }));
     return;
   }
   if (command === "library-resolve") {

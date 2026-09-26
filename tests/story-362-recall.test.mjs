@@ -14,8 +14,9 @@
 // live in this repository. They are not asserted here; this file pins the mechanisms
 // those numbers depend on.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -34,7 +35,7 @@ import {
   createProject,
   createWork,
   initializeKnowledgeStore,
-  initializeWorkspace,
+  initializeLibrary,
 } from "../dist/build/packages/core/src/index.js";
 import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
@@ -153,14 +154,8 @@ async function syntheticWorkspace(context) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-story-362-")));
   context.after(() => rm(base, { recursive: true, force: true }));
   const partitionPath = join(base, ".tcrn-workspace", "cross-project");
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(partitionPath, kind);
-    await mkdir(path, { recursive: true });
-    roots.push({ kind, path });
-  }
-  await initializeWorkspace({ roots, externalKey: "STORY-362-RECALL", createdAt: instant(0) });
   const workspace = join(partitionPath, "workspace");
+  await initializeLibrary({ root: workspace, createdAt: instant(0) });
   let state = await createProject(workspace, {
     occurredAt: instant(1), externalKey: "STORY-362-PROJECT", name: "Recall",
   });

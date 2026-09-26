@@ -14,8 +14,10 @@ import {
 } from "../../protocol/src/index.js";
 import type { JsonValue } from "../../protocol/src/index.js";
 import { WORKSPACE_CONTROL_DIRECTORY, WORKSPACE_SEGMENT_BYTES_MAX, validateWorkspace, withWorkspaceWriteLock } from "./workspace.js";
-import { WORKSPACE_WRITE_LOCK_FILE } from "./names.js";
-import { validateKnowledgeStore } from "./knowledge-core.js";
+import { DIRECTORY, WORKSPACE_WRITE_LOCK_FILE } from "./names.js";
+import { knowledgeStorePath, validateKnowledgeStore } from "./knowledge-core.js";
+import { AKASHA_SEGMENT_BYTES_MAXIMUM } from "./akasha.js";
+import { hasLibraryManifest } from "./ether-library.js";
 
 // WSF-2: the read-only snapshot witness. It computes a deterministic manifest over
 // the workspace control tree so a copy can be proved byte-identical after restore,
@@ -118,10 +120,41 @@ const TEMPORARY_PREFIX = ".tmp-";
 // TCRN-CROSS-STORY-354 (round 2): matches SegmentedBackend.readSegment's own name
 // filter (segmented-backend.ts) so the two places that read events/NNNNNN.ndjson
 // agree on which files are event segments. A segment legitimately grows up to its
-// configured segmentEventLimit (16 MiB by default) before rotating, so it is read
+// configured segmentEventLimit (16 MiB was that engine's default) before rotating, so it is read
 // under WORKSPACE_SEGMENT_BYTES_MAX below rather than the generic per-control-file
 // ceiling every other file in the tree still uses.
 const EVENT_SEGMENT_NAME_PATTERN = /^\d{6}\.ndjson$/u;
+
+// TCRN-CROSS-STORY-469: in a library the witness covers the whole library tree. Its event
+// segments are the files in each akasha/<device>/ directory, and the knowledge mutation claim
+// is the one piece of transport residue that can sit inside it (the write lock lives in the
+// device directory, never in the library).
+//
+// The rules are built when a walk starts, not when this module loads: workspace.js and
+// akasha.js import this module back, so their constants are not yet initialised while it
+// evaluates on that path.
+interface TreeRules {
+  readonly excluded: readonly string[];
+  readonly segment: (relativePath: string) => boolean;
+  readonly segmentBytes: number;
+}
+
+function controlTreeRules(): TreeRules {
+  return {
+    excluded: EXCLUDED_RELATIVE_PATHS,
+    segment: (relativePath) => relativePath.startsWith("events/") && EVENT_SEGMENT_NAME_PATTERN.test(relativePath.slice("events/".length)),
+    segmentBytes: WORKSPACE_SEGMENT_BYTES_MAX,
+  };
+}
+
+function libraryTreeRules(): TreeRules {
+  const segment = new RegExp(`^${DIRECTORY.events}/[a-f0-9]{32}/[0-9a-f]{8}\\.(?:ndjson|json)$`, "u");
+  return {
+    excluded: [`${DIRECTORY.knowledge}/mutation.claim`],
+    segment: (relativePath) => segment.test(relativePath),
+    segmentBytes: AKASHA_SEGMENT_BYTES_MAXIMUM,
+  };
+}
 
 // Minimal bound-read helpers, re-implemented locally per the duplicate-machinery
 // discipline (ADR-precedent: adapters duplicate rather than export workspace
@@ -205,7 +238,7 @@ export async function readGovernedDocumentFile(path: string, label: string): Pro
 // Deterministic walk of the control tree under `controlRoot`, applying the SDC-9
 // exclusions and failing closed on residue. Returns files sorted by posix relative
 // path in utf8-byte order so two runs on an unchanged tree are byte-identical.
-async function walkControlTree(controlRoot: string): Promise<readonly SnapshotFileEntry[]> {
+async function walkControlTree(controlRoot: string, rules: TreeRules = controlTreeRules()): Promise<readonly SnapshotFileEntry[]> {
   const collected: SnapshotFileEntry[] = [];
   const walk = async (directory: string, relativeBase: string): Promise<void> => {
     const entries = await readdir(directory, { withFileTypes: true });
@@ -216,7 +249,7 @@ async function walkControlTree(controlRoot: string): Promise<readonly SnapshotFi
       if (name.startsWith(TEMPORARY_PREFIX)) {
         continue;
       }
-      if (EXCLUDED_RELATIVE_PATHS.includes(relativePath)) {
+      if (rules.excluded.includes(relativePath)) {
         continue;
       }
       if (RESIDUE_PREFIX.test(name)) {
@@ -233,8 +266,7 @@ async function walkControlTree(controlRoot: string): Promise<readonly SnapshotFi
       if (!metadata.isFile() || metadata.nlink !== 1) {
         fail("SNAPSHOT_PATH_INVALID", `${relativePath} must be a single-link regular file`);
       }
-      const isEventSegment = relativeBase === "events" && EVENT_SEGMENT_NAME_PATTERN.test(name);
-      const content = await boundReadFileBytes(full, isEventSegment ? WORKSPACE_SEGMENT_BYTES_MAX : undefined);
+      const content = await boundReadFileBytes(full, rules.segment(relativePath) ? rules.segmentBytes : undefined);
       collected.push({
         path: relativePath,
         sha256: createHash("sha256").update(content).digest("hex"),
@@ -244,6 +276,16 @@ async function walkControlTree(controlRoot: string): Promise<readonly SnapshotFi
   };
   await walk(controlRoot, "");
   return [...collected].sort((left, right) => compareCanonicalText(left.path, right.path));
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    const metadata = await lstat(path);
+    return metadata.isFile() && !metadata.isSymbolicLink();
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return false;
+    throw error;
+  }
 }
 
 async function directoryExists(path: string): Promise<boolean> {
@@ -284,13 +326,13 @@ async function snapshotManifestHoldingLock(root: string): Promise<string> {
   // validateWorkspace pick its own backend via backendForStorage, keyed by
   // the workspace's actual storageVersion, instead of pinning one here.
   const state = await validateWorkspace(root);
-  const controlRoot = resolve(root, WORKSPACE_CONTROL_DIRECTORY);
   let knowledgeStatus: "valid" | "absent" = "absent";
-  if (await directoryExists(resolve(controlRoot, "knowledge"))) {
+  if (await fileExists(resolve(await knowledgeStorePath(root), "store.json"))) {
     await validateKnowledgeStore(root);
     knowledgeStatus = "valid";
   }
-  const files = await walkControlTree(controlRoot);
+  // The write lock is only granted on a library, so this is the library tree.
+  const files = await walkControlTree(root, libraryTreeRules());
   return canonicalJson({
     schemaVersion: SNAPSHOT_MANIFEST_SCHEMA_VERSION,
     workspaceId: state.metadata.workspaceId,
@@ -380,11 +422,17 @@ export async function verifySnapshotManifest(
   }
   expected.sort((left, right) => compareCanonicalText(left.path, right.path));
   const root = await boundReadDirectory(rootDirectoryInput);
-  const controlRoot = resolve(root, WORKSPACE_CONTROL_DIRECTORY);
-  if (!(await directoryExists(controlRoot))) {
-    fail("SNAPSHOT_MISMATCH", WORKSPACE_CONTROL_DIRECTORY);
+  let actualTree: readonly SnapshotFileEntry[];
+  if (await hasLibraryManifest(root)) {
+    actualTree = await walkControlTree(root, libraryTreeRules());
+  } else {
+    const controlRoot = resolve(root, WORKSPACE_CONTROL_DIRECTORY);
+    if (!(await directoryExists(controlRoot))) {
+      fail("SNAPSHOT_MISMATCH", WORKSPACE_CONTROL_DIRECTORY);
+    }
+    actualTree = await walkControlTree(controlRoot);
   }
-  const actual = (await walkControlTree(controlRoot)).filter((entry) => !excluded.has(entry.path));
+  const actual = actualTree.filter((entry) => !excluded.has(entry.path));
   const bound = Math.max(expected.length, actual.length);
   for (let index = 0; index < bound; index += 1) {
     const left = expected[index];

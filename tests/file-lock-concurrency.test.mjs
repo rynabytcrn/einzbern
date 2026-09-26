@@ -1,26 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-467 R1, AC2: writers are serialised by the engine write lock, not by a
-// caller-supplied expected version. Two processes writing the same workspace at once both
-// land, with consecutive sequences and nothing overwritten; a lock left by a dead holder is
-// broken; a live holder makes a waiter time out rather than write beside it.
+// caller-supplied expected version. Two processes of one device writing the same library at
+// once both land in the device's stream, with consecutive sequences and nothing overwritten;
+// the lock is this machine's lock of the library in the device directory (TCRN-CROSS-STORY-469
+// R3); a lock left by a dead holder is broken; a live holder makes a waiter time out rather
+// than write beside it.
 
 import assert from "node:assert/strict";
 import { hostname } from "node:os";
-import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 
 import {
   FILE_LOCK_SCHEMA_VERSION,
-  LEGACY_CONTROL_DIRECTORY,
-  WORKSPACE_WRITE_LOCK_FILE,
   acquireFileLock,
+  lockPath as libraryLockPath,
   materializeWorkspace,
   validateWorkspace,
 } from "../dist/build/packages/core/src/index.js";
 import { COMMAND_CATALOG } from "../dist/build/packages/cli/src/index.js";
-import { cli, cliProcess, instant, workspaceFixture } from "./helpers/workspace-fixture.mjs";
+import { cli, cliProcess, deviceHome, instant, workspaceFixture } from "./helpers/workspace-fixture.mjs";
 
 const PER_WRITER = 5;
 
@@ -51,7 +52,8 @@ test("467-AC2: two processes creating work at once both land, in order, with not
   }
   const versions = [...left, ...right].map((receipt) => receipt.version).sort((a, b) => a - b);
   assert.deepEqual(versions, Array.from({ length: 2 * PER_WRITER }, (_, index) => before.version + index + 1), "each write got its own version");
-  await assert.rejects(readFile(join(workspace, LEGACY_CONTROL_DIRECTORY, WORKSPACE_WRITE_LOCK_FILE)), { code: "ENOENT" }, "the lock is released");
+  assert.deepEqual(Object.keys(after.library.versionVector).length, 1, "both processes are one device writing one stream");
+  await assert.rejects(readFile(libraryLockPath(after.metadata.workspaceId, deviceHome)), { code: "ENOENT" }, "the lock is released");
 });
 
 test("467-R1: a write receipt carries the written ids, the new version and head, and the catalog has no CAS flag", async (context) => {
@@ -67,7 +69,7 @@ test("467-R1: a write receipt carries the written ids, the new version and head,
   assert.deepEqual(transitioned.ids, [created.record.id]);
   const setting = await cli(["settings-set", "--workspace", workspace, "--at", instant(7), "--key", "execution.dispatchMode", "--value", "eco"]);
   assert.deepEqual(setting.ids, ["execution.dispatchMode"]);
-  const batchFile = join(workspace, "..", "transient", "receipt-batch.json");
+  const batchFile = join(workspace, "..", "receipt-batch.json");
   await writeFile(batchFile, JSON.stringify({ schemaVersion: "tcrn.work-batch.v1", members: ["A", "B"].map((suffix) => ({
     verb: "work-create", projectId, externalKey: `RECEIPT-BATCH-${suffix}`, kind: "Initiative", parentId: null, status: "planned", title: `Batch ${suffix}`,
   })) }));
@@ -89,7 +91,8 @@ test("467-R1: a write receipt carries the written ids, the new version and head,
 
 test("a lock left by a dead holder on this host is broken and the write proceeds", async (context) => {
   const { workspace, projectId } = await workspaceFixture(context, { externalKey: "STALE" });
-  const lockPath = join(workspace, LEGACY_CONTROL_DIRECTORY, WORKSPACE_WRITE_LOCK_FILE);
+  const lockPath = libraryLockPath((await materializeWorkspace(workspace)).metadata.workspaceId, deviceHome);
+  await mkdir(dirname(lockPath), { recursive: true });
   // A pid this far above any live process on the test host belongs to nobody.
   await writeFile(lockPath, `${JSON.stringify({ schemaVersion: FILE_LOCK_SCHEMA_VERSION, pid: 2_147_483_000, token: "0".repeat(32), hostname: hostname(), createdAt: instant(0) })}\n`);
   const run = await cliProcess(["work-create", "--workspace", workspace, "--at", instant(6), "--project-id", projectId, "--external-key", "STALE-INITIATIVE", "--kind", "Initiative", "--title", "After a dead holder"]);

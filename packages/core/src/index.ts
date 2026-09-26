@@ -173,6 +173,7 @@ export {
   withWorkspaceWriteLock,
   writtenRecordIds,
   workspaceBudgets,
+  workspaceViewDocuments,
   WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES,
 } from "./workspace.js";
 export type {
@@ -365,6 +366,7 @@ export {
   evaluateKnowledgeFreshness,
   exportKnowledgeCheckpoint,
   initializeKnowledgeStore,
+  knowledgeStorePath,
   migrateKnowledgeBodies,
   knowledgeConflictHits,
   knowledgeLinkIndexCountsForTest,

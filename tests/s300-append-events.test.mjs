@@ -10,21 +10,21 @@
 // byte for byte, against the generalised kernel. What it cannot reach is the fold
 // itself, so these are its criteria.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import {
   appendEvents,
-  createProject,
-  initializeWorkspace,
+  initializeLibrary,
   materializeWorkspace,
+  setWorkspaceSetting,
   validateWorkspace,
-  LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
-import { assertCanonicalJson, compareCanonicalText, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
+import { compareCanonicalText, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
 // The delta a project-create verb builds, rebuilt here so a batch can be made of
 // real operations rather than of shapes replay would refuse. The id derivation and
@@ -54,18 +54,19 @@ function instant(offset) {
   return `2026-01-01T00:00:${String(offset).padStart(2, "0")}Z`;
 }
 
-async function fixture(context, segmentEventLimit = 4) {
+async function fixture(context) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-s300-append-")));
   context.after(() => rm(base, { recursive: true, force: true }));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
-  await initializeWorkspace({ roots, externalKey: "WORKSPACE-S300-APPEND", createdAt: instant(0), segmentEventLimit });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: instant(0) });
   const workspace = join(base, "workspace");
   return { workspace };
+}
+
+// This device's stream directory in the library (TCRN-CROSS-STORY-468 R2).
+async function ownStream(workspace) {
+  const devices = await readdir(join(workspace, "akasha"));
+  assert.equal(devices.length, 1, "one device has written");
+  return join(workspace, "akasha", devices[0]);
 }
 
 // A batch member builds its delta from the state the members before it produced.
@@ -95,38 +96,28 @@ test("STORY-300: each member of a batch sees what the members before it wrote", 
   assert.equal((await validateWorkspace(workspace)).version, 3, "views match the state the batch returned");
 });
 
-// The segment limit here is four, so a batch of three starting at version three
-// straddles a boundary. Red leg: write the segments in descending order and the
-// first segment is left under-full, which materialize reads as corruption -- the
-// one ordering that takes status and recover down together.
+// A library stream rolls to a new segment at storage.segmentBytes (4 KiB here), so a batch of
+// padded projects crosses segments. Segments are named by ascending hex ordinals, each recorded
+// in the stream manifest with its sequence range, and the whole batch replays.
 test("STORY-300: a batch that crosses a segment boundary writes ascending and replays clean", async (context) => {
-  const { workspace } = await fixture(context, 4);
-  let state = await createProject(workspace, {
-    occurredAt: instant(2), externalKey: "PROJECT-ANCHOR", name: "Anchor",
-  });
-  state = await createProject(workspace, {
-    occurredAt: instant(3), externalKey: "PROJECT-ANCHOR-2", name: "Anchor 2",
-  });
-  state = await createProject(workspace, {
-    occurredAt: instant(4), externalKey: "PROJECT-ANCHOR-3", name: "Anchor 3",
-  });
-  assert.equal(state.version, 3);
-
+  const { workspace } = await fixture(context);
+  const segmentBytes = await setWorkspaceSetting(workspace, { key: "storage.segmentBytes", value: "4096", occurredAt: instant(1) });
+  assert.equal(segmentBytes.settings.find((entry) => entry.key === "storage.segmentBytes")?.value, "4096");
+  const padding = "x".repeat(900);
   const committed = await appendEvents(workspace,
-    [0, 1, 2].map((index) => projectCreated(`SPAN-${index}`, `Span ${index}`, instant(5))),
+    Array.from({ length: 12 }, (_, index) => projectCreated(`SPAN-${index}`, `Span ${index} ${padding}`, instant(5))),
     { occurredAt: instant(5) });
-
-  assert.equal(committed.version, 6, "the batch spans versions four through six");
-  const segments = (await readdir(join(workspace, LEGACY_CONTROL_DIRECTORY, "events"))).sort();
-  assert.deepEqual(segments, ["000001.json", "000002.json"], "the batch opened the second segment");
-  // The non-final segment must be exactly full: an under-full one is what replay
-  // reads as a broken chain.
-  const first = assertCanonicalJson(await readFile(join(workspace, LEGACY_CONTROL_DIRECTORY, "events", "000001.json"), "utf8"));
-  assert.equal(first.length, 4, "the earlier segment is written to its limit before the next one opens");
+  assert.equal(committed.version, 13, "one setting and a batch of twelve");
+  const stream = await ownStream(workspace);
+  const manifest = JSON.parse(await readFile(join(stream, "manifest.json"), "utf8"));
+  const names = manifest.segments.map((segment) => segment.name);
+  assert.ok(names.length > 1, "the batch opened further segments");
+  assert.deepEqual(names, names.map((_, index) => `${(index + 1).toString(16).padStart(8, "0")}.ndjson`), "segments are ascending hex ordinals");
+  assert.ok(manifest.segments.every((segment, index) => index === 0 || segment.firstSequence === manifest.segments[index - 1].lastSequence + 1));
   const rematerialized = await materializeWorkspace(workspace);
-  assert.equal(rematerialized.version, 6);
+  assert.equal(rematerialized.version, 13);
   assert.equal(rematerialized.headEventHash, committed.headEventHash);
-  assert.equal((await validateWorkspace(workspace)).version, 6);
+  assert.equal((await validateWorkspace(workspace)).version, 13);
 });
 
 // Refusal is all-or-nothing and unconditional: a member that throws leaves the
@@ -144,7 +135,7 @@ test("STORY-300: a member that refuses leaves the chain untouched", async (conte
   assert.equal(after.version, before.version, "a refused batch does not advance the version");
   assert.equal(after.headEventHash, before.headEventHash, "a refused batch does not move the head");
   assert.equal(after.projects.length, before.projects.length, "not even the member that succeeded is left behind");
-  assert.deepEqual(await readdir(join(workspace, LEGACY_CONTROL_DIRECTORY, "events")), [], "no segment was written");
+  assert.deepEqual(await readdir(join(workspace, "akasha")), [], "no stream was written");
 });
 
 // One batch is one mutation: one write lock and one replay for the whole batch

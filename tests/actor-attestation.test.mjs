@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -21,25 +21,19 @@ import {
   createProject,
   createWork,
   exportWorkspace,
-  initializeWorkspace,
+  initializeLibrary,
   materializeWorkspace,
   validateActorAttestationEnableRecord,
-  LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { appendHistoricalAttestationEnable } from "./helpers/workspace-fixture.mjs";
-import { LEGACY_EVENT_SCHEMA_VERSION, canonicalJson, createEvent, validateExtensionRegistration } from "../dist/build/packages/protocol/src/index.js";
+import { validateExtensionRegistration } from "../dist/build/packages/protocol/src/index.js";
+import { forgeOwnStream } from "./helpers/library-forge.mjs";
 
 const instant = (second) => `2026-07-11T00:00:${String(second).padStart(2, "0")}Z`;
 
 async function workspaceFixture(segmentEventLimit = 64) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-actor-")));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
-  await initializeWorkspace({ roots, externalKey: "WORKSPACE-ACTOR", createdAt: instant(0), segmentEventLimit });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: instant(0) });
   return {
     workspace: join(base, "workspace"),
     async close() {
@@ -52,23 +46,22 @@ async function reasonAsync(code, operation) {
   await assert.rejects(operation, (error) => error?.reasonCode === code, code);
 }
 
-// WSE-2: re-hash the last event of the single control segment with a new payload,
-// keeping id/streamId/sequence/occurredAt/priorHash so the hash chain stays
-// internally valid — this is a hand-crafted log the live path would never write,
-// proving the replay reducer enforces attestation independently of the writer.
+// WSE-2: re-hash the last event of the library's stream with a new payload, keeping its
+// identity, clock and time so the stream stays internally valid — a hand-crafted log the live
+// path would never write, proving the replay reducer enforces attestation independently of the
+// writer. In a library such an event does not apply: it is a rejected event with the rule's
+// reason code (TCRN-CROSS-STORY-468 R5).
 async function rehashLastEvent(workspace, buildPayload) {
-  const segment = join(workspace, LEGACY_CONTROL_DIRECTORY, "events", "000001.json");
-  const events = JSON.parse(await readFile(segment, "utf8"));
-  const last = events.at(-1);
-  events[events.length - 1] = createEvent({
-    id: last.id,
-    streamId: last.streamId,
-    sequence: last.sequence,
-    occurredAt: last.occurredAt,
-    priorHash: last.priorHash,
-    payload: buildPayload(last.payload),
-  }, LEGACY_EVENT_SCHEMA_VERSION);
-  await writeFile(segment, canonicalJson(events));
+  await forgeOwnStream(workspace, (events) => events.map((event, index) => (index === events.length - 1 ? { ...event, payload: buildPayload(event.payload) } : event)));
+}
+
+async function rejectedAs(workspace, reasonCode) {
+  const state = await materializeWorkspace(workspace);
+  const rejected = state.library.rejectedEvents;
+  assert.equal(rejected.length, 1, "the forged event is rejected, not applied");
+  assert.equal(rejected[0].reasonCode, reasonCode);
+  assert.equal(rejected[0].sequence, state.version, "it is the last event of the stream");
+  return state;
 }
 
 function reason(code, operation) {
@@ -238,7 +231,7 @@ test("WSE-2 live: enabling attestation makes a valid actor mandatory on every la
   }
 });
 
-test("WSE-2 replay: a hand-crafted post-enable event with no valid actor fails closed", async () => {
+test("WSE-2 replay: a hand-crafted post-enable event with no valid actor does not apply", async () => {
   const missing = await workspaceFixture();
   try {
     await attestedChain(missing);
@@ -247,7 +240,7 @@ test("WSE-2 replay: a hand-crafted post-enable event with no valid actor fails c
       delete copy.actor;
       return copy;
     });
-    await reasonAsync("WORKSPACE_ACTOR_REQUIRED", () => materializeWorkspace(missing.workspace));
+    await rejectedAs(missing.workspace, "WORKSPACE_ACTOR_REQUIRED");
   } finally {
     await missing.close();
   }
@@ -256,13 +249,13 @@ test("WSE-2 replay: a hand-crafted post-enable event with no valid actor fails c
   try {
     await attestedChain(invalid);
     await rehashLastEvent(invalid.workspace, (payload) => ({ ...payload, actor: "role:forged" }));
-    await reasonAsync("WORKSPACE_ACTOR_INVALID", () => materializeWorkspace(invalid.workspace));
+    await rejectedAs(invalid.workspace, "WORKSPACE_ACTOR_INVALID");
   } finally {
     await invalid.close();
   }
 });
 
-test("WSE-2 replay: a duplicate enable event and a pre-enable actor both corrupt the chain", async () => {
+test("WSE-2 replay: a duplicate enable event and a pre-enable actor are both refused by the reader", async () => {
   const dup = await workspaceFixture();
   try {
     await attestedChain(dup);
@@ -271,7 +264,7 @@ test("WSE-2 replay: a duplicate enable event and a pre-enable actor both corrupt
       record: buildActorAttestationEnableRecord(),
       actor: "owner:release-gate",
     }));
-    await reasonAsync("WORKSPACE_EVENT_CORRUPT", () => materializeWorkspace(dup.workspace));
+    await rejectedAs(dup.workspace, "WORKSPACE_EVENT_CORRUPT");
   } finally {
     await dup.close();
   }
@@ -283,9 +276,10 @@ test("WSE-2 replay: a duplicate enable event and a pre-enable actor both corrupt
     });
     // The live path never writes an actor before enablement; a hand-crafted
     // pre-enable event carrying one violates the exact {operation, record} shape
-    // and the reducer fails it closed as a corrupt event.
+    // and the reducer refuses it as a corrupt event.
     await rehashLastEvent(early.workspace, (payload) => ({ ...payload, actor: "owner:release-gate" }));
-    await reasonAsync("WORKSPACE_EVENT_CORRUPT", () => materializeWorkspace(early.workspace));
+    const state = await rejectedAs(early.workspace, "WORKSPACE_EVENT_CORRUPT");
+    assert.deepEqual(state.projects, [], "the forged create did not apply");
   } finally {
     await early.close();
   }

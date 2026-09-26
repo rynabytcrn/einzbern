@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 
 import { COMMAND_CATALOG, runCli } from "../dist/build/packages/cli/src/index.js";
-import { annotateWork, createProject, createWork, initializeWorkspace, transitionWork } from "../dist/build/packages/core/src/index.js";
+import { annotateWork, createProject, createWork, initializeLibrary, transitionWork } from "../dist/build/packages/core/src/index.js";
 import { storyScopeNamesOwnerDecider, validateStoryScope } from "../dist/build/packages/core/src/story-scope-compliance.js";
 import { storyScopeNamesOwnerDecider as closeoutNamesOwnerDecider, validateStoryScope as validateCloseoutStoryScope } from "../scripts/story-scope-compliance.mjs";
 
@@ -166,14 +167,8 @@ describe("STORY-209 Story scope contract", () => {
     const { join } = await import("node:path");
     const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-story-scope-cli-")));
     try {
-      const roots = [];
-      for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-        const path = join(base, kind);
-        await mkdir(path);
-        roots.push({ kind, path });
-      }
       const workspace = join(base, "workspace");
-      await initializeWorkspace({ roots, externalKey: "FIXTURE-STORY-SCOPE-CLI", createdAt: "2026-08-09T00:00:00Z", segmentEventLimit: 64 });
+      await initializeLibrary({ root: join(base, "workspace"), createdAt: "2026-08-09T00:00:00Z" });
       const seeded = await createProject(workspace, { occurredAt: "2026-08-09T00:00:02Z", externalKey: "PROJECT-STORY-SCOPE", name: "Story scope" });
       const projectId = seeded.projects[0].id;
       const withInitiative = await createWork(workspace, { occurredAt: "2026-08-09T00:00:03Z", projectId, externalKey: "INIT-STORY-SCOPE", kind: "Initiative", parentId: null });

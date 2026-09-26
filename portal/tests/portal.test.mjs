@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Portal integration tests use the real CLI and a real governed scratch tree.
 
+// Every CLI and portal child inherits the test process's device directory, never the real one.
+import "../../tests/helpers/device-home.mjs";
 import { execFile, spawn } from "node:child_process";
 import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
@@ -34,21 +36,15 @@ async function scratchHome(base) {
   return home;
 }
 
+// TCRN-CROSS-STORY-469: the fixture is a library; its key names the project it holds.
 async function scratch(prefix, externalKey) {
   const base = await realpath(await mkdtemp(join(tmpdir(), prefix)));
   const home = await scratchHome(base);
-  const roots = {};
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots[kind] = await realpath(path);
-  }
-  await cli(["init", "--workspace", roots.workspace, "--framework", roots.framework, "--transient", roots.transient,
-    "--evidence-locator", roots["evidence-locator"], "--release-trust", roots["release-trust"],
-    "--external-key", externalKey, "--at", "2026-08-11T15:00:00Z"]);
+  const workspace = join(base, "workspace");
+  await cli(["init", "--workspace", workspace, "--project-name", externalKey, "--at", "2026-08-11T15:00:00Z"]);
   const proseRoot = join(base, "prose");
   await mkdir(proseRoot);
-  return { base, workspace: roots.workspace, proseRoot, home };
+  return { base, workspace, proseRoot, home };
 }
 
 async function startPortal({ workspace, container, proseRoot, home, env = {} }) {
@@ -169,7 +165,7 @@ test("MIN-225 the evolution projection reads every page of the knowledge list an
   const fixture = await scratch("tcrn-portal-min225-", "FIXTURE-TCRN-PORTAL-MIN225");
   t.after(() => rm(fixture.base, { recursive: true, force: true }));
   await cli(["project-create", "--workspace", fixture.workspace, "--at", "2026-09-20T09:00:00Z", "--external-key", "FIXTURE-PORTAL-MIN225-PROJECT", "--name", "MIN-225"]);
-  await cli(["knowledge-init", "--workspace", fixture.workspace]);
+  await cli(["knowledge-init", "--workspace", fixture.workspace, "--acknowledge-disposable", "true"]);
   const capture = (subject, extra = []) => cli(["knowledge-capture", "--workspace", fixture.workspace, "--at", "2026-09-20T10:00:00Z",
     "--subject", subject, "--summary", `${subject} summary`, "--snippet", `${subject} snippet`, "--tags", "min225",
     "--accountable-owner-id", "owner:portal-min225", "--body", `${subject} body`, "--coexist", "true", ...extra]);
@@ -348,9 +344,8 @@ test("container mode lists partitions and changes the selected live target", asy
   for (const id of ["alpha", "beta"]) {
     const root = join(container, id);
     await mkdir(root);
-    const roots = {};
-    for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) { const path = join(root, kind); await mkdir(path); roots[kind] = path; }
-    await cli(["init", "--workspace", roots.workspace, "--framework", roots.framework, "--transient", roots.transient, "--evidence-locator", roots["evidence-locator"], "--release-trust", roots["release-trust"], "--external-key", `TCRN-PORTAL-${id}`, "--at", "2026-08-11T15:00:00Z"]);
+    const roots = { workspace: join(root, "workspace") };
+    await cli(["init", "--workspace", roots.workspace, "--project-name", `TCRN-PORTAL-${id}`, "--at", "2026-08-11T15:00:00Z"]);
     partitions.push({ id, workspace: roots.workspace });
   }
   const { child, url } = await startPortal({ container, home: await scratchHome(base) });
@@ -462,9 +457,8 @@ test("container mode lists every partition and switches the live target", async 
   for (const id of ["alpha", "beta"]) {
     const root = join(container, id);
     await mkdir(root);
-    const roots = {};
-    for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) { const path = join(root, kind); await mkdir(path); roots[kind] = path; }
-    await cli(["init", "--workspace", roots.workspace, "--framework", roots.framework, "--transient", roots.transient, "--evidence-locator", roots["evidence-locator"], "--release-trust", roots["release-trust"], "--external-key", `TCRN-PORTAL-CONSERVATION-${id}`, "--at", "2026-08-11T15:00:00Z"]);
+    const roots = { workspace: join(root, "workspace") };
+    await cli(["init", "--workspace", roots.workspace, "--project-name", `TCRN-PORTAL-CONSERVATION-${id}`, "--at", "2026-08-11T15:00:00Z"]);
     partitions.push({ id, workspace: roots.workspace });
   }
   const { child, url } = await startPortal({ container, home: await scratchHome(base) });
@@ -495,9 +489,8 @@ test("launcher generation emits regular files, starts macOS launcher, and names 
   for (const id of ["alpha", "beta"]) {
     const root = join(container, id);
     await mkdir(root);
-    const roots = {};
-    for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) { const path = join(root, kind); await mkdir(path); roots[kind] = path; }
-    await cli(["init", "--workspace", roots.workspace, "--framework", roots.framework, "--transient", roots.transient, "--evidence-locator", roots["evidence-locator"], "--release-trust", roots["release-trust"], "--external-key", `TCRN-PORTAL-LAUNCH-${id}`, "--at", "2026-08-11T15:00:00Z"]);
+    const roots = { workspace: join(root, "workspace") };
+    await cli(["init", "--workspace", roots.workspace, "--project-name", `TCRN-PORTAL-LAUNCH-${id}`, "--at", "2026-08-11T15:00:00Z"]);
   }
   const outputDir = join(base, "launchers");
   await mkdir(outputDir);
@@ -659,9 +652,8 @@ test("STORY-355 GWT4: container mode's default prose root sits above the chain c
   const container = join(base, ".tcrn-workspace");
   const root = join(container, "alpha");
   await mkdir(root, { recursive: true });
-  const roots = {};
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) { const path = join(root, kind); await mkdir(path); roots[kind] = path; }
-  await cli(["init", "--workspace", roots.workspace, "--framework", roots.framework, "--transient", roots.transient, "--evidence-locator", roots["evidence-locator"], "--release-trust", roots["release-trust"], "--external-key", "TCRN-PORTAL-PROSE-DEFAULT", "--at", "2026-08-11T15:00:00Z"]);
+  const roots = { workspace: join(root, "workspace") };
+  await cli(["init", "--workspace", roots.workspace, "--project-name", "TCRN-PORTAL-PROSE-DEFAULT", "--at", "2026-08-11T15:00:00Z"]);
   const { child, url } = await startPortal({ container, home: await scratchHome(base) });
   t.after(async () => { child.kill(); await rm(base, { recursive: true, force: true }); });
   const { boot } = await readBoot(url);
@@ -696,9 +688,8 @@ test("STORY-355: --workspace mode's default prose root also lands above the chai
   const container = join(base, ".tcrn-workspace");
   const partitionRoot = join(container, "alpha");
   await mkdir(partitionRoot, { recursive: true });
-  const roots = {};
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) { const path = join(partitionRoot, kind); await mkdir(path); roots[kind] = path; }
-  await cli(["init", "--workspace", roots.workspace, "--framework", roots.framework, "--transient", roots.transient, "--evidence-locator", roots["evidence-locator"], "--release-trust", roots["release-trust"], "--external-key", "TCRN-PORTAL-WORKSPACE-DEFAULT", "--at", "2026-08-11T15:00:00Z"]);
+  const roots = { workspace: join(partitionRoot, "workspace") };
+  await cli(["init", "--workspace", roots.workspace, "--project-name", "TCRN-PORTAL-WORKSPACE-DEFAULT", "--at", "2026-08-11T15:00:00Z"]);
   const { child, url } = await startPortal({ workspace: roots.workspace, home: await scratchHome(base) });
   t.after(async () => { child.kill(); await rm(base, { recursive: true, force: true }); });
   const { boot } = await readBoot(url);

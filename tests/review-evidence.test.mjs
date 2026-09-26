@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-375 — review-evidence produces measured, not self-reported, rows.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
@@ -19,7 +20,7 @@ import { classifyProcess } from "../scripts/operational-batch-entry.mjs";
 import * as operationalBatchEntry from "../scripts/operational-batch-entry.mjs";
 import { appendProgressEvent, readProgressDelta, summarizeProgress, waitForProgress } from "../scripts/lib/incremental-output.mjs";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { LOCAL_DIRECTORY_NAMES, initializeWorkspace } from "../dist/build/packages/core/src/index.js";
+import { LOCAL_DIRECTORY_NAMES, initializeLibrary } from "../dist/build/packages/core/src/index.js";
 
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROSTER_PATH = resolve(REPOSITORY_ROOT, "tests/fixtures/acceptance-gate-groups.json");
@@ -54,14 +55,9 @@ async function runCliJson(args) {
 async function reviewWorkspace(t, verifyCommand) {
   const base = realpathSync(mkdtempSync(join(tmpdir(), "tcrn-review-evidence-workspace-")));
   t.after(() => rmSync(base, { recursive: true, force: true }));
-  const roots = ["framework", "workspace", "transient", "evidence-locator", "release-trust"].map((kind) => {
-    const path = join(base, kind);
-    mkdirSync(path, { recursive: true });
-    return { kind, path };
-  });
   const at = (second) => new Date(Date.UTC(2026, 0, 1) + second * 1000).toISOString().replace(/\.\d+Z$/u, "Z");
-  await initializeWorkspace({ roots, externalKey: "STORY-375-REVIEW-EVIDENCE", createdAt: at(0) });
   const workspace = join(base, "workspace");
+  await initializeLibrary({ root: workspace, createdAt: at(0) });
   const project = await runCliJson(["project-create", "--workspace", workspace, "--at", at(1), "--external-key", "FIXTURE-PROJECT", "--name", "Fixture"]);
   const work = await runCliJson(["work-create", "--workspace", workspace, "--at", at(2), "--project-id", project.record.id, "--external-key", "FIXTURE-WORK", "--kind", "Initiative", "--status", "active", "--scope", "fixture scope", "--title", "Fixture work"]);
   await runCliJson(["work-annotate", "--workspace", workspace, "--at", at(3), "--id", work.record.id, "--verify", verifyCommand]);

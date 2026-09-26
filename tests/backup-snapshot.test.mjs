@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import { testDeviceHome } from "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
@@ -13,20 +14,17 @@ import { COMMAND_CATALOG, runCli } from "../dist/build/packages/cli/src/index.js
 import {
   SnapshotError,
   WORKSPACE_RELOCATION_ENTRY_VERSION,
-  WORKSPACE_WRITE_LOCK_FILE,
   acquireFileLock,
-  withWorkspaceWriteLock,
   activeBinding,
   createKnowledgeUnit,
   createProject,
   createSnapshotManifest,
   createWork,
-  deriveRelocationId,
   initializeKnowledgeStore,
-  initializeWorkspace,
+  initializeLibrary,
+  lockPath,
   materializeWorkspace,
   rebaseKnowledgeStore,
-  relocationStateAt,
   validateKnowledgeStore,
   validateWorkspace,
   verifySnapshotManifest,
@@ -34,25 +32,21 @@ import {
 } from "../dist/build/packages/core/src/index.js";
 import { rootPortableIdentity } from "../dist/build/packages/core/src/root-identity.js";
 import { canonicalJson, canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
+import { restoreLegacyFixture } from "./helpers/legacy-fixture.mjs";
 
 const instant = (second) => `2026-07-11T00:00:${String(second).padStart(2, "0")}Z`;
 
+// TCRN-CROSS-STORY-469: the witness covers a library's whole tree.
 async function workspaceFixture() {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-bk-")));
-  const kinds = ["framework", "workspace", "transient", "evidence-locator", "release-trust"];
-  const roots = [];
-  for (const kind of kinds) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
   const workspace = join(base, "workspace");
-  await initializeWorkspace({ roots, externalKey: "WORKSPACE-BK", createdAt: instant(0), segmentEventLimit: 2 });
+  const initialized = await initializeLibrary({ root: workspace, createdAt: instant(0) });
   await createProject(workspace, { externalKey: "PROJ-ALPHA", name: "Alpha", occurredAt: instant(2) });
   await createProject(workspace, { externalKey: "PROJ-BETA", name: "Beta", occurredAt: instant(3) });
   return {
     base,
     workspace,
+    libraryId: initialized.metadata.workspaceId,
     async close() {
       await rm(base, { recursive: true, force: true });
     },
@@ -108,7 +102,8 @@ test("WSF-2 case 1: snapshot-manifest is byte-identical across two runs on an un
 test("WSF-2 case 2: snapshot-manifest waits for a writer holding the lock, then quiesces and completes", async (t) => {
   const fixture = await workspaceFixture();
   t.after(() => fixture.close());
-  const holder = await acquireFileLock(join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, WORKSPACE_WRITE_LOCK_FILE));
+  // The write lock of a library lives in this device's directory.
+  const holder = await acquireFileLock(lockPath(fixture.libraryId, testDeviceHome));
   let released = false;
   const pending = invokeCli(["snapshot-manifest", "--workspace", fixture.workspace, "--at", instant(5)]);
   await new Promise((resolveDelay) => setTimeout(resolveDelay, 150));
@@ -119,31 +114,34 @@ test("WSF-2 case 2: snapshot-manifest waits for a writer holding the lock, then 
   assert.equal(outcome.ok, true, JSON.stringify(outcome));
 });
 
-test("WSF-2 case 3: control-dir quarantine residue fails closed with SNAPSHOT_RESIDUE_PRESENT", async (t) => {
+test("WSF-2 case 3: quarantine residue inside the library fails closed with SNAPSHOT_RESIDUE_PRESENT", async (t) => {
   const fixture = await workspaceFixture();
   t.after(() => fixture.close());
-  await mkdir(join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "stale-lease-deadbeef"));
+  // A knowledge release quarantine left behind in crest/ by a crashed session.
+  await mkdir(join(fixture.workspace, "crest", "released-deadbeef"));
   await manifestUnderLock(fixture.workspace, 4, async () => {
     await assert.rejects(
       createSnapshotManifest(fixture.workspace),
-      (error) => error instanceof SnapshotError && error.reasonCode === "SNAPSHOT_RESIDUE_PRESENT" && error.message.includes("stale-lease-deadbeef"),
+      (error) => error instanceof SnapshotError && error.reasonCode === "SNAPSHOT_RESIDUE_PRESENT" && error.message.includes("crest/released-deadbeef"),
     );
   });
 });
 
-test("WSF-2 case 4: a manifest taken under the write lock excludes the lock, the old lease subtree and claims", async (t) => {
+test("WSF-2 case 4: a manifest covers the library tree and leaves out the knowledge mutation claim", async (t) => {
   const fixture = await workspaceFixture();
   t.after(() => fixture.close());
+  await writeFile(join(fixture.workspace, "crest", "mutation.claim"), "{}\n");
   const manifest = await manifestUnderLock(fixture.workspace, 4, () => createSnapshotManifest(fixture.workspace));
   const parsed = JSON.parse(manifest);
   const paths = parsed.files.map((entry) => entry.path);
-  assert.ok(paths.length > 0, "the manifest lists control-tree files");
-  assert.ok(paths.includes("workspace.json"), "the manifest includes the workspace metadata");
-  assert.ok(paths.some((path) => path.startsWith("events/")), "the manifest includes event segments");
+  assert.ok(paths.length > 0, "the manifest lists library files");
+  assert.ok(paths.includes("manifest.json"), "the manifest includes the library manifest");
+  assert.ok(paths.some((path) => /^akasha\/[a-f0-9]{32}\/manifest\.json$/u.test(path)), "the manifest includes the stream manifest");
+  assert.ok(paths.some((path) => /^akasha\/[a-f0-9]{32}\/[0-9a-f]{8}\.ndjson$/u.test(path)), "the manifest includes event segments");
   for (const path of paths) {
-    assert.notEqual(path, WORKSPACE_WRITE_LOCK_FILE, "the held write lock is not backup content");
-    assert.ok(path !== "lease" && !path.startsWith("lease/"), `lease subtree must be excluded: ${path}`);
-    assert.notEqual(path, "lease-recovery.claim");
+    // The write lock lives in the device directory, never in the library.
+    assert.equal(path.endsWith(".lock"), false, `no lock is library content: ${path}`);
+    assert.notEqual(path, "crest/mutation.claim", "an in-flight claim is not backup content");
   }
   assert.equal(parsed.validate.workspace, "valid");
   assert.equal(parsed.validate.knowledge, "absent");
@@ -175,8 +173,7 @@ test("WSF-2 case 7: snapshot-verify fails SNAPSHOT_MISMATCH naming a tampered se
   t.after(() => fixture.close());
   const manifest = await manifestUnderLock(fixture.workspace, 4, () => createSnapshotManifest(fixture.workspace));
   const target = join(fixture.base, "restore-copy");
-  await mkdir(target);
-  await cp(join(fixture.workspace, LEGACY_CONTROL_DIRECTORY), join(target, LEGACY_CONTROL_DIRECTORY), { recursive: true });
+  await cp(fixture.workspace, target, { recursive: true });
   // A clean copy verifies.
   assert.deepEqual(await verifySnapshotManifest(target, manifest), {
     schemaVersion: "tcrn.workspace-snapshot-verify.v1",
@@ -184,20 +181,22 @@ test("WSF-2 case 7: snapshot-verify fails SNAPSHOT_MISMATCH naming a tampered se
     files: JSON.parse(manifest).files.length,
   });
   // Flip one byte of a copied event segment.
-  const segment = join(target, LEGACY_CONTROL_DIRECTORY, "events", "000001.json");
+  const [deviceId] = await readdir(join(target, "akasha"));
+  const segmentPath = `akasha/${deviceId}/00000001.ndjson`;
+  const segment = join(target, segmentPath);
   const bytes = await readFile(segment);
   bytes[0] = bytes[0] === 0x20 ? 0x21 : 0x20;
   await writeFile(segment, bytes);
   await assert.rejects(
     verifySnapshotManifest(target, manifest),
-    (error) => error instanceof SnapshotError && error.reasonCode === "SNAPSHOT_MISMATCH" && error.message.includes("events/000001.json"),
+    (error) => error instanceof SnapshotError && error.reasonCode === "SNAPSHOT_MISMATCH" && error.message.includes(segmentPath),
   );
 });
 
-// WSF-3: a workspace fixture carrying BOTH stores — a workspace event log advanced
-// past project+work and an initialized knowledge store with one unit bound to the
-// current head. The round-trip and doctrine-failure cases below all restore the
-// whole control tree (or deliberately break lockstep) from this state.
+// WSF-3: a library carrying BOTH stores — its akasha streams advanced past project+work
+// and an initialized knowledge store in crest/ with one unit bound to the current head.
+// The round-trip and doctrine cases below all restore the whole library (or deliberately
+// break lockstep) from this state.
 function knowledgeInput({ projectId, workId }) {
   return {
     occurredAt: instant(5),
@@ -230,14 +229,8 @@ function knowledgeInput({ projectId, workId }) {
 
 async function roundTripFixture() {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-bk-rt-")));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
   const workspace = join(base, "workspace");
-  await initializeWorkspace({ roots, externalKey: "WORKSPACE-BK-RT", createdAt: instant(0), segmentEventLimit: 2 });
+  await initializeLibrary({ root: workspace, createdAt: instant(0) });
   let projectId;
   let workId;
   const withProject = await createProject(workspace, { externalKey: "PROJ-ALPHA", name: "Alpha", occurredAt: instant(2) });
@@ -249,23 +242,22 @@ async function roundTripFixture() {
   return {
     base,
     workspace,
-    control: join(workspace, LEGACY_CONTROL_DIRECTORY),
     async close() {
       await rm(base, { recursive: true, force: true });
     },
   };
 }
 
-test("WSF-3 case 8: snapshot then wipe then restore round-trips the whole control tree byte-identically", async (t) => {
+test("WSF-3 case 8: snapshot then wipe then restore round-trips the whole library byte-identically", async (t) => {
   const fixture = await roundTripFixture();
   t.after(() => fixture.close());
   const manifest = await manifestUnderLock(fixture.workspace, 10, () => createSnapshotManifest(fixture.workspace));
   assert.equal(JSON.parse(manifest).validate.knowledge, "valid", "the manifest embeds a valid knowledge store");
   const copy = join(fixture.base, "snapshot-copy");
-  await cp(fixture.control, join(copy, LEGACY_CONTROL_DIRECTORY), { recursive: true });
-  // Wipe the live control tree entirely, then restore it from the copy in place.
-  await rm(fixture.control, { recursive: true, force: true });
-  await cp(join(copy, LEGACY_CONTROL_DIRECTORY), fixture.control, { recursive: true });
+  await cp(fixture.workspace, copy, { recursive: true });
+  // Wipe the live library entirely, then restore it from the copy in place.
+  await rm(fixture.workspace, { recursive: true, force: true });
+  await cp(copy, fixture.workspace, { recursive: true });
   // The restored copy verifies byte-for-byte against the manifest receipt.
   assert.equal((await verifySnapshotManifest(fixture.workspace, manifest)).reasonCode, "SNAPSHOT_VERIFIED");
   // Both stores validate green after restore, and the workspace head is unchanged.
@@ -281,44 +273,37 @@ test("WSF-3 case 8: snapshot then wipe then restore round-trips the whole contro
 test("WSF-3 case 9: partial restore leaving a newer knowledge store fails KNOWLEDGE_HIGH_WATER_MISMATCH", async (t) => {
   const fixture = await roundTripFixture();
   t.after(() => fixture.close());
-  // Save only the workspace portion (state A): events/, views/, workspace.json.
-  const backup = join(fixture.base, "ws-backup");
-  await mkdir(backup);
-  await cp(join(fixture.control, "events"), join(backup, "events"), { recursive: true });
-  await cp(join(fixture.control, "views"), join(backup, "views"), { recursive: true });
-  await cp(join(fixture.control, "workspace.json"), join(backup, "workspace.json"));
-  // Advance the workspace head, then rebase the knowledge store onto the new head
-  // so the knowledge marker is strictly NEWER than the saved workspace state.
+  // Save only the chain portion (state A): the akasha streams.
+  const backup = join(fixture.base, "akasha-backup");
+  await cp(join(fixture.workspace, "akasha"), backup, { recursive: true });
+  // Advance the head, then rebase the knowledge store onto the new head so the
+  // knowledge marker is strictly NEWER than the saved chain state.
   await createProject(fixture.workspace, { externalKey: "PROJ-GAMMA", name: "Gamma", occurredAt: instant(8) });
-  const marker = JSON.parse(await readFile(join(fixture.control, "knowledge", "store.json"), "utf8"));
   await rebaseKnowledgeStore(fixture.workspace, { at: instant(9), retireInvalid: false });
-  // Partial restore: return only the workspace portion to state A, keep the newer store.
-  for (const relative of ["events", "views"]) {
-    await rm(join(fixture.control, relative), { recursive: true, force: true });
-    await cp(join(backup, relative), join(fixture.control, relative), { recursive: true });
-  }
-  await rm(join(fixture.control, "workspace.json"), { force: true });
-  await cp(join(backup, "workspace.json"), join(fixture.control, "workspace.json"));
+  // Partial restore: return only the streams to state A, keep the newer store.
+  await rm(join(fixture.workspace, "akasha"), { recursive: true, force: true });
+  await cp(backup, join(fixture.workspace, "akasha"), { recursive: true });
   await assert.rejects(
     validateKnowledgeStore(fixture.workspace),
     (error) => error?.reasonCode === "KNOWLEDGE_HIGH_WATER_MISMATCH",
   );
 });
 
-test("WSF-3 case 10: restoring the tree to a different path fails WORKSPACE_SCHEMA_INVALID", async (t) => {
+// The old layout bound its roots, so a control tree restored to another path failed
+// WORKSPACE_SCHEMA_INVALID. A library binds no path (TCRN-CROSS-STORY-469): restored anywhere,
+// it verifies against its receipt and reads to the same head.
+test("WSF-3 case 10: a library restored to a different path verifies and reads the same head", async (t) => {
   const fixture = await roundTripFixture();
   t.after(() => fixture.close());
+  const manifest = await manifestUnderLock(fixture.workspace, 10, () => createSnapshotManifest(fixture.workspace));
   const alternate = await realpath(await mkdtemp(join(tmpdir(), "tcrn-bk-alt-")));
   t.after(() => rm(alternate, { recursive: true, force: true }));
   const relocated = join(alternate, "workspace");
-  await mkdir(relocated);
-  await cp(fixture.control, join(relocated, LEGACY_CONTROL_DIRECTORY), { recursive: true });
-  // The original fixture stays intact so root recanonicalization succeeds and the
-  // only failure is the same-path identity mismatch — proving the doctrine is real.
-  await assert.rejects(
-    validateWorkspace(relocated),
-    (error) => error?.reasonCode === "WORKSPACE_SCHEMA_INVALID",
-  );
+  await cp(fixture.workspace, relocated, { recursive: true });
+  assert.equal((await verifySnapshotManifest(relocated, manifest)).reasonCode, "SNAPSHOT_VERIFIED");
+  const state = await validateWorkspace(relocated);
+  assert.equal(state.headEventHash, JSON.parse(manifest).headEventHash);
+  assert.equal((await validateKnowledgeStore(relocated)).reasonCode, "KNOWLEDGE_STORE_VALID");
 });
 
 // WSF-4: the git tier-2 guidance doc prescribes a .gitignore for a workspace-root
@@ -366,23 +351,17 @@ test("WSF-4 case 11: backup-git-tier.md prescribes the exact SDC-9 residue .giti
 });
 
 // ---------------------------------------------------------------------------
-// WSR-1 L: the relocation LEDGER READER, which is live code with no verbs left.
+// WSR-1 L: the relocation LEDGER PARSE, the part of the ledger reader that outlived its
+// verbs and its admission.
 //
-// TCRN-CROSS-STORY-358 retired packages/core/src/workspace-relocation.ts and the
-// five relocation-* CLI verbs. It did NOT retire the ledger reader inside
-// packages/core/src/workspace.ts: activeBinding, relocationStateAt and
-// admitRelocationState still run on every read of every workspace whose
-// workspace.json carries a `relocations` field, and five of the eight live
-// partitions on this machine carry one — their `roots` still name the address the
-// chain was admitted FROM, and only activeBinding rewrites the binding to the `to`
-// of the last adopted hop. Breaking that loop makes those five unopenable.
-//
-// The retired WSR-1 T1..T43 block proved this reader through the verbs, so it went
-// with them. These six cases prove the same code from the other side: the ledger is
-// a JSON document on disk, so it is written here by hand and read back through the
-// surviving surface (status, work-list, the write-lock gate, materializeWorkspace)
-// plus the two accessors the barrel still exports. No relocation verb is involved,
-// and the seven retired guard entries whose `file` was workspace.ts pointed here.
+// TCRN-CROSS-STORY-358 retired packages/core/src/workspace-relocation.ts and the five
+// relocation-* verbs; the switch to libraries (TCRN-CROSS-STORY-469) retired the admission
+// that refused reads at a vacated, not-yet-adopted or foreign address (the old L1..L5 proved
+// it): an old-layout workspace now reads wherever it sits. What remains in
+// packages/core/src/workspace.ts is the parse inside validateMetadata -- a `relocations`
+// array in workspace.json is still checked entry by entry -- and activeBinding, which still
+// names the root the knowledge store is bound to. The ledger is a JSON document, so it is
+// written here by hand into the frozen old-layout fixture and read back through status.
 // ---------------------------------------------------------------------------
 
 const LEDGER_ROOT_KINDS = ["framework", "workspace", "transient", "evidence-locator", "release-trust"];
@@ -391,7 +370,7 @@ const LEDGER_BASIS = Object.freeze({ controlManifestSha256: "a".repeat(64), head
 
 // The five-root array in the ledger's own shape. `base` is a realpath, so path and
 // canonicalPath are the same string and portableIdentity is derived exactly the way
-// the reader re-derives it (workspace.ts:818).
+// the reader re-derives it.
 function ledgerRoots(sideRoots) {
   return LEDGER_ROOT_KINDS.map((kind) => ({
     kind,
@@ -401,8 +380,18 @@ function ledgerRoots(sideRoots) {
   }));
 }
 
-async function ledgerFixture() {
+// The id a ledger entry names itself by: a digest of its own content, which the parse
+// re-derives. Nothing writes a ledger any more, so the engine keeps the derivation private.
+function relocationIdOf({ workspaceId, sequence, from, to, basis }) {
+  return `relocation:${canonicalSha256({ schemaVersion: "tcrn.workspace-relocation-identity.v1", workspaceId, sequence, from, to, basis }).slice(0, 24)}`;
+}
+
+// The frozen old-layout workspace with real, canonical roots (the fixture's own are
+// placeholders), plus a vacated entry and its adopted completion, both derived rather than
+// transcribed: the completion restates the hop byte for byte.
+async function ledgerFixture(t) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-wsrl-")));
+  t.after(() => rm(base, { recursive: true, force: true }));
   const side = async (name) => {
     const roots = {};
     for (const kind of LEDGER_ROOT_KINDS) {
@@ -414,204 +403,53 @@ async function ledgerFixture() {
   };
   const source = await side("A");
   const target = await side("B");
-  const stray = await side("C");
-  await initializeWorkspace({
-    roots: LEDGER_ROOT_KINDS.map((kind) => ({ kind, path: source[kind] })),
-    externalKey: "WORKSPACE-WSRL",
-    createdAt: instant(0),
-    segmentEventLimit: 4,
-  });
-  await createProject(source.workspace, { externalKey: "PROJ-L", name: "Ledger", occurredAt: instant(2) });
-  const state = await validateWorkspace(source.workspace);
-  return {
-    base,
-    source,
-    target,
-    stray,
-    workspace: source.workspace,
-    targetWorkspace: target.workspace,
-    strayWorkspace: stray.workspace,
-    workspaceId: state.metadata.workspaceId,
-    async close() {
-      await rm(base, { recursive: true, force: true });
-    },
-  };
-}
-
-const metadataPath = (workspaceRoot) => join(workspaceRoot, LEGACY_CONTROL_DIRECTORY, "workspace.json");
-
-async function readLedgerMetadata(workspaceRoot) {
-  return JSON.parse(await readFile(metadataPath(workspaceRoot), "utf8"));
-}
-
-async function writeLedgerMetadata(workspaceRoot, value) {
-  await writeFile(metadataPath(workspaceRoot), canonicalJson(value));
-}
-
-// A vacated entry and its adopted completion, both derived rather than transcribed:
-// the id comes from deriveRelocationId over the entry's own content, which is the
-// rule WSR-1-ledger-self-derivation guards, and the completion restates the hop
-// byte for byte, which is the rule WSR-1-ledger-completion-restatement guards.
-function ledgerHop(fixture, metadata) {
+  const { root, control } = await restoreLegacyFixture(base, "legacy");
+  const metadataPath = join(control, "workspace.json");
+  const metadata = { ...JSON.parse(await readFile(metadataPath, "utf8")), roots: ledgerRoots(source) };
+  const write = (value) => writeFile(metadataPath, canonicalJson(value));
+  await write(metadata);
   const from = metadata.roots;
-  const to = ledgerRoots(fixture.target);
-  const relocationId = deriveRelocationId({ workspaceId: metadata.workspaceId, sequence: 1, from, to, basis: LEDGER_BASIS });
-  const authority = { actorId: LEDGER_ACTOR, authorityFileSha256: "c".repeat(64) };
+  const to = ledgerRoots(target);
   const vacated = {
     schemaVersion: WORKSPACE_RELOCATION_ENTRY_VERSION,
     sequence: 1,
-    relocationId,
+    relocationId: relocationIdOf({ workspaceId: metadata.workspaceId, sequence: 1, from, to, basis: LEDGER_BASIS }),
     stage: "vacated",
     at: instant(9),
     from,
     to,
     basis: LEDGER_BASIS,
-    authority,
+    authority: { actorId: LEDGER_ACTOR, authorityFileSha256: "c".repeat(64) },
   };
   const adopted = { ...vacated, sequence: 2, stage: "adopted", at: instant(11) };
-  return { vacated, adopted };
+  return { base, root, metadata, write, hop: { vacated, adopted } };
 }
-
-// The operator moves the bytes; the engine has never had a destination-writing verb.
-async function copyLedgerControlTree(fromWorkspace, toWorkspace) {
-  await cp(join(fromWorkspace, LEGACY_CONTROL_DIRECTORY), join(toWorkspace, LEGACY_CONTROL_DIRECTORY), { recursive: true });
-}
-
-async function vacatedLedgerFixture(t) {
-  const fixture = await ledgerFixture();
-  t.after(() => fixture.close());
-  const metadata = await readLedgerMetadata(fixture.workspace);
-  const hop = ledgerHop(fixture, metadata);
-  await writeLedgerMetadata(fixture.workspace, { ...metadata, relocations: [hop.vacated] });
-  await copyLedgerControlTree(fixture.workspace, fixture.targetWorkspace);
-  return { fixture, metadata, hop };
-}
-
-test("WSR-1 L1: the readMetadata admission default is strict", async (t) => {
-  const { fixture } = await vacatedLedgerFixture(t);
-  // An ADOPTION_REQUIRED tree read by an ordinary verb that passes no admission
-  // argument at all. If the default were permissive this would succeed and nothing
-  // else in the suite would notice: the write-lock gate is the universal write
-  // door and it passes no admission value of its own.
-  const outcome = await invokeCli(["status", "--workspace", fixture.targetWorkspace]);
-  assert.equal(outcome.ok, false);
-  assert.equal(outcome.reasonCode, "WORKSPACE_RELOCATION_ADOPTION_REQUIRED");
-  await assert.rejects(
-    materializeWorkspace(fixture.targetWorkspace),
-    (error) => error.reasonCode === "WORKSPACE_RELOCATION_ADOPTION_REQUIRED",
-  );
-  await assert.rejects(
-    withWorkspaceWriteLock(fixture.targetWorkspace, async () => undefined),
-    (error) => error.reasonCode === "WORKSPACE_RELOCATION_ADOPTION_REQUIRED",
-  );
-  // Both sides differ: the source address still refuses for the OTHER reason.
-  assert.equal((await invokeCli(["status", "--workspace", fixture.workspace])).reasonCode, "WORKSPACE_RELOCATION_VACATED");
-});
-
-test("WSR-1 L2: the abort admission is narrowed to a vacated address", async (t) => {
-  const { fixture } = await vacatedLedgerFixture(t);
-  // The write-lock gate is the only surviving caller that can pass a non-live
-  // admission (relocationAdmission), and it is the seam the retired abort verb used.
-  // Widened, `abort` becomes admissible at ANY state, including the destination —
-  // the fork-creating move performed at the wrong end of the hop.
-  await assert.rejects(
-    withWorkspaceWriteLock(fixture.targetWorkspace, async () => undefined, { relocationAdmission: "abort" }),
-    (error) => error.reasonCode === "WORKSPACE_RELOCATION_ADOPTION_REQUIRED",
-  );
-  await copyLedgerControlTree(fixture.workspace, fixture.strayWorkspace);
-  await assert.rejects(
-    withWorkspaceWriteLock(fixture.strayWorkspace, async () => undefined, { relocationAdmission: "abort" }),
-    (error) => error.reasonCode === "WORKSPACE_RELOCATION_FOREIGN_ADDRESS",
-  );
-  // Both sides differ: at the vacated source, `abort` is admitted and the lock is taken.
-});
-
-test("WSR-1 L3: the adoption admission is narrowed to an address awaiting adoption", async (t) => {
-  const { fixture } = await vacatedLedgerFixture(t);
-  // The mirror conjunct. Widened, an adopt aimed at the vacated SOURCE stops being
-  // refused by the state machine and falls through to checks that report a
-  // different problem than the one that exists.
-  await assert.rejects(
-    withWorkspaceWriteLock(fixture.workspace, async () => undefined, { relocationAdmission: "adoption" }),
-    (error) => error.reasonCode === "WORKSPACE_RELOCATION_VACATED",
-  );
-  // Both sides differ: at the destination, `adoption` is admitted.
-});
-
-test("WSR-1 L4: a copy of an adopted tree at a third address is a foreign address everywhere", async (t) => {
-  const { fixture, metadata, hop } = await vacatedLedgerFixture(t);
-  // Complete the hop by hand: the adopted entry is what makes activeBinding differ
-  // from `roots`, which is the state all five ledger-carrying live partitions are in.
-  await writeLedgerMetadata(fixture.targetWorkspace, { ...metadata, relocations: [hop.vacated, hop.adopted] });
-  const adoptedMetadata = await readLedgerMetadata(fixture.targetWorkspace);
-  assert.deepEqual(activeBinding(adoptedMetadata), ledgerRoots(fixture.target), "the binding in force is the last adopted `to`, not `roots`");
-  assert.notDeepEqual(activeBinding(adoptedMetadata), adoptedMetadata.roots, "and `roots` is never rewritten");
-  // The adopted address opens normally through the ordinary read surface.
-  assert.equal((await invokeCli(["status", "--workspace", fixture.targetWorkspace])).ok, true);
-  assert.equal((await invokeCli(["work-list", "--workspace", fixture.targetWorkspace])).ok, true);
-  assert.equal(relocationStateAt(adoptedMetadata, fixture.targetWorkspace), "live");
-  // A third copy is not. Changing the fallback to "live" leaves every restored
-  // backup and every rsync-to-staging copy reading as a fully live workspace on the
-  // readMetadata-only paths (the write-lock gate).
-  await copyLedgerControlTree(fixture.targetWorkspace, fixture.strayWorkspace);
-  assert.equal(relocationStateAt(adoptedMetadata, fixture.strayWorkspace), "foreign-address");
-  for (const args of [
-    ["status", "--workspace", fixture.strayWorkspace],
-    ["work-list", "--workspace", fixture.strayWorkspace],
-  ]) {
-    const outcome = await invokeCli(args);
-    assert.equal(outcome.ok, false, `${args[0]} must refuse a foreign address`);
-    assert.equal(outcome.reasonCode, "WORKSPACE_RELOCATION_FOREIGN_ADDRESS");
-  }
-  await assert.rejects(
-    withWorkspaceWriteLock(fixture.strayWorkspace, async () => undefined),
-    (error) => error.reasonCode === "WORKSPACE_RELOCATION_FOREIGN_ADDRESS",
-  );
-  // The vacated source is still reported vacated rather than foreign.
-  assert.equal(relocationStateAt(adoptedMetadata, fixture.workspace), "vacated");
-});
-
-test("WSR-1 L5: a stale copy is not live just because it carries no ledger", async (t) => {
-  const fixture = await ledgerFixture();
-  t.after(() => fixture.close());
-  // The no-ledger branch of relocationStateAt returned "live" for ANY address,
-  // never comparing the address it was handed against the binding in the file. It
-  // is reached only by a direct call now that relocation-inspect is retired, and it
-  // is still the branch every ledger-free workspace on disk takes.
-  const metadata = await readLedgerMetadata(fixture.workspace);
-  assert.equal(metadata.relocations, undefined, "the fixture carries no ledger");
-  assert.equal(relocationStateAt(metadata, fixture.workspace), "live");
-  assert.equal(relocationStateAt(metadata, fixture.strayWorkspace), "foreign-address", "a control tree at an address its own binding does not name is not live");
-  assert.equal(activeBinding(metadata), metadata.roots, "with no ledger the binding IS `roots`");
-  // And every other verb agrees with that verdict at the stray address.
-  await copyLedgerControlTree(fixture.workspace, fixture.strayWorkspace);
-  assert.equal((await invokeCli(["status", "--workspace", fixture.strayWorkspace])).ok, false);
-  assert.equal((await invokeCli(["status", "--workspace", fixture.workspace])).ok, true);
-});
 
 test("WSR-1 L6: a ledger entry must name itself, and a completion must restate its hop", async (t) => {
-  const { fixture, metadata, hop } = await vacatedLedgerFixture(t);
-  const elsewhere = join(fixture.base, "elsewhere-l6");
-  const displaced = (roots) => roots.map((root, index) => (index === 2
-    ? { kind: root.kind, path: elsewhere, canonicalPath: elsewhere, portableIdentity: rootPortableIdentity(elsewhere) }
-    : root));
+  const { base, root, metadata, write, hop } = await ledgerFixture(t);
+  // With no ledger the binding IS `roots`.
+  assert.deepEqual(activeBinding((await materializeWorkspace(root)).metadata), metadata.roots);
+  const elsewhere = join(base, "elsewhere-l6");
+  const displaced = (roots) => roots.map((entry, index) => (index === 2
+    ? { kind: entry.kind, path: elsewhere, canonicalPath: elsewhere, portableIdentity: rootPortableIdentity(elsewhere) }
+    : entry));
   // (a) tamper WITHOUT recomputing the id. This is the cheapest detector of naive
-  // or accidental ledger corruption, and the retired tamper tests all re-stamped
-  // the relocationId in order to reach the chaining rule, which left it unproven.
-  await writeLedgerMetadata(fixture.workspace, { ...metadata, relocations: [{ ...hop.vacated, to: displaced(hop.vacated.to) }] });
-  const naive = await invokeCli(["status", "--workspace", fixture.workspace]);
+  // or accidental ledger corruption.
+  await write({ ...metadata, relocations: [{ ...hop.vacated, to: displaced(hop.vacated.to) }] });
+  const naive = await invokeCli(["status", "--workspace", root]);
   assert.equal(naive.ok, false);
   assert.equal(naive.reasonCode, "WORKSPACE_RELOCATION_LEDGER_INVALID");
   // (b) a completion that does not restate its hop. The id check does not run on a
   // completion entry, so this reaches the restatement rule and nothing else.
-  await writeLedgerMetadata(fixture.targetWorkspace, {
-    ...metadata,
-    relocations: [hop.vacated, { ...hop.adopted, to: displaced(hop.adopted.to) }],
-  });
-  const restated = await invokeCli(["status", "--workspace", fixture.targetWorkspace]);
+  await write({ ...metadata, relocations: [hop.vacated, { ...hop.adopted, to: displaced(hop.adopted.to) }] });
+  const restated = await invokeCli(["status", "--workspace", root]);
   assert.equal(restated.ok, false);
   assert.equal(restated.reasonCode, "WORKSPACE_RELOCATION_LEDGER_INVALID");
-  // Both sides differ: the untampered ledger reads clean at the adopted address.
-  await writeLedgerMetadata(fixture.targetWorkspace, { ...metadata, relocations: [hop.vacated, hop.adopted] });
-  assert.equal((await invokeCli(["status", "--workspace", fixture.targetWorkspace])).ok, true);
+  // Both sides differ: the untampered ledger reads clean, and the binding in force is the
+  // last adopted `to`, while `roots` is never rewritten.
+  await write({ ...metadata, relocations: [hop.vacated, hop.adopted] });
+  assert.equal((await invokeCli(["status", "--workspace", root])).ok, true);
+  const adoptedMetadata = (await materializeWorkspace(root)).metadata;
+  assert.deepEqual(activeBinding(adoptedMetadata), hop.adopted.to);
+  assert.notDeepEqual(activeBinding(adoptedMetadata), adoptedMetadata.roots);
 });

@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // WSD-1: conference and gate records as additive workspace event-log operations.
-// Proves the store round-trip, unknown-operation fail-closed, openness rules at
+// Proves the store round-trip, unknown-operation refusal, openness rules at
 // verb and replay layers, the single-event atomic close payload, tombstone and
 // pinning rules, golden-byte view/export stability for workspaces without
 // extension records, crash recovery of the extension view, and replay determinism.
+// Since TCRN-CROSS-STORY-469 every fixture is a library: views are projections of the
+// state (a library keeps no view files), and a forged event the reducer refuses is a
+// rejected event of the read rather than a failed read (TCRN-CROSS-STORY-468 R5).
 
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -22,7 +25,7 @@ import {
   createProject,
   createWork,
   exportWorkspace,
-  initializeWorkspace,
+  initializeLibrary,
   materializeWorkspace,
   openConferenceInWorkspace,
   recoverWorkspace,
@@ -31,19 +34,14 @@ import {
   validateWorkspace,
   workspaceBudgets,
   materializeWorkspace as materializeWorkspaceForBudgets,
-  FileBackend,
-  withStorageBackendFactory,
-  LEGACY_CONTROL_DIRECTORY,
+  workspaceViewDocuments,
 } from "../dist/build/packages/core/src/index.js";
 import {
   assertCanonicalJson,
   canonicalJson,
   canonicalSha256,
   compareCanonicalText,
-  createEvent,
   deriveStableId,
-  eventInputOf,
-  LEGACY_EVENT_SCHEMA_VERSION,
   validateEventChain,
 } from "../dist/build/packages/protocol/src/index.js";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
@@ -53,6 +51,8 @@ import {
   appendHistoricalGateDelete,
   appendHistoricalGateTransition,
 } from "./helpers/workspace-fixture.mjs";
+import { asPinnedDevice } from "./helpers/device-home.mjs";
+import { forgeOwnStream, readOwnStream } from "./helpers/library-forge.mjs";
 
 const instant = (second) => `2026-07-11T00:${String(Math.floor(second / 60)).padStart(2, "0")}:${String(second % 60).padStart(2, "0")}Z`;
 
@@ -63,20 +63,14 @@ const minutesLocator = (minutesExternalKey) => `conference-minutes:${deriveStabl
 async function workspaceFixture(context, options = {}) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-ext-store-")));
   context.after(() => rm(base, { recursive: true, force: true }));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
   const workspace = join(base, "workspace");
-  await initializeWorkspace({
-    roots,
-    externalKey: options.externalKey ?? "WORKSPACE-EXT-STORE",
+  // The library id follows the fixture key, as the workspace id did.
+  await initializeLibrary({
+    root: workspace,
     createdAt: instant(0),
-    segmentEventLimit: options.segmentEventLimit ?? 2,
+    libraryId: deriveStableId("library", options.externalKey ?? "WORKSPACE-EXT-STORE"),
   });
-  return { base, roots, workspace };
+  return { base, workspace };
 }
 
 // A project plus one Initiative, the anchor surface for conferences and gates.
@@ -93,57 +87,21 @@ async function seededFixture(context, options = {}) {
   return { ...fixture, state, projectId, workId };
 }
 
-function expectedStreamId(metadata) {
-  return `stream:${canonicalSha256({
-    schemaVersion: "tcrn.workspace-stream-identity.v1",
-    workspaceId: metadata.workspaceId,
-    createdAt: metadata.createdAt,
-  }).slice(0, 24)}`;
+// A forged log is written with valid hashes (library-forge.mjs), so what is refused is the
+// reducer rule under test. The refused event is the forged tail, listed with its reason.
+async function rejectedTail(workspace, pattern) {
+  const state = await materializeWorkspace(workspace);
+  const rejected = state.library.rejectedEvents;
+  assert.equal(rejected.length, 1, "exactly the forged event is refused");
+  assert.equal(rejected[0].reasonCode, "WORKSPACE_EVENT_CORRUPT");
+  assert.equal(rejected[0].sequence, state.version, "the refused event is the forged tail");
+  if (pattern !== undefined) assert.match(rejected[0].detail, pattern);
+  return state;
 }
 
-function expectedEventId(streamId, sequence) {
-  return `event:${canonicalSha256({
-    schemaVersion: "tcrn.workspace-event-identity.v1",
-    streamId,
-    sequence,
-  }).slice(0, 24)}`;
-}
-
-// Rebuilds the on-disk event chain from transformed {occurredAt, payload}
-// specifications with correct stream/event identities and hash links, so replay
-// negatives exercise exactly the reducer rules rather than chain integrity.
-async function rewriteEventChain(workspace, transform) {
-  const control = join(workspace, LEGACY_CONTROL_DIRECTORY);
-  const metadata = JSON.parse(await readFile(join(control, "workspace.json"), "utf8"));
-  const eventsRoot = join(control, "events");
-  const names = (await readdir(eventsRoot)).filter((name) => /^\d{6}\.json$/u.test(name)).sort();
-  const original = [];
-  for (const name of names) {
-    original.push(...JSON.parse(await readFile(join(eventsRoot, name), "utf8")));
-  }
-  const specifications = transform(structuredClone(original));
-  const streamId = expectedStreamId(metadata);
-  const rebuilt = [];
-  for (const [index, specification] of specifications.entries()) {
-    const sequence = index + 1;
-    rebuilt.push(createEvent({
-      id: expectedEventId(streamId, sequence),
-      streamId,
-      sequence,
-      occurredAt: specification.occurredAt,
-      priorHash: rebuilt.at(-1)?.eventHash ?? null,
-      payload: specification.payload,
-    }, LEGACY_EVENT_SCHEMA_VERSION));
-  }
-  for (const name of names) {
-    await rm(join(eventsRoot, name));
-  }
-  for (let offset = 0; offset < rebuilt.length; offset += metadata.segmentEventLimit) {
-    const segment = rebuilt.slice(offset, offset + metadata.segmentEventLimit);
-    const index = Math.floor(offset / metadata.segmentEventLimit) + 1;
-    await writeFile(join(eventsRoot, `${String(index).padStart(6, "0")}.json`), canonicalJson(segment));
-  }
-  return rebuilt;
+// The view documents of the library as it reads now.
+async function viewsOf(workspace) {
+  return workspaceViewDocuments(await materializeWorkspace(workspace));
 }
 
 function conferenceRecord(projectId, workId, overrides = {}) {
@@ -272,7 +230,8 @@ test("conference and gate mutations round-trip through the event log with chaine
   assert.equal(state.version, 12, "version equals the event count");
   assert.equal(state.events.length, 12);
   assert.doesNotThrow(() => validateEventChain(state.events), "the persisted chain stays hash-linked");
-  assert.equal(state.headEventHash, state.events.at(-1).eventHash);
+  assert.equal(state.library.streams.length, 1);
+  assert.equal(state.library.streams[0].headEventHash, state.events.at(-1).eventHash, "the stream ends at the last event");
 
   const closed = state.conferences.find((entry) => entry.id === conferenceId);
   assert.equal(closed.status, "closed");
@@ -300,12 +259,12 @@ test("conference and gate mutations round-trip through the event log with chaine
   assert.deepEqual(fresh, state);
   assert.deepEqual(await materializeWorkspace(fx.workspace), fresh);
 
-  // Views are fresh (including the fourth extension view), canonical, and stable.
+  // Views are complete (including the fourth extension view), canonical, and stable.
   const validated = await validateWorkspace(fx.workspace);
   assert.equal(validated.version, 12);
-  const viewsRoot = join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "views");
-  assert.deepEqual((await readdir(viewsRoot)).sort(), ["STATUS.md", "extensions.json", "index.json", "readback.json"]);
-  const extensionsBytes = await readFile(join(viewsRoot, "extensions.json"), "utf8");
+  const documents = workspaceViewDocuments(validated);
+  assert.deepEqual(Object.keys(documents).sort(), ["STATUS.md", "extensions.json", "index.json", "readback.json"]);
+  const extensionsBytes = documents["extensions.json"];
   const extensionsIndex = assertCanonicalJson(extensionsBytes);
   assert.equal(extensionsIndex.schemaVersion, "tcrn.workspace-extension-index.v2");
   assert.deepEqual(Object.keys(extensionsIndex).sort(), ["conferenceMinutes", "conferencePositions", "conferences", "extensionsDigest", "gates", "schemaVersion"]);
@@ -315,8 +274,7 @@ test("conference and gate mutations round-trip through the event log with chaine
   // detection legs below, and what it says is read from the event log.
   assert.equal(extensionsIndex.conferences.count, 2);
   assert.equal(extensionsIndex.gates.count, 2);
-  const firstRead = await readFile(join(viewsRoot, "extensions.json"));
-  assert.deepEqual(await readFile(join(viewsRoot, "extensions.json")), firstRead, "view bytes are stable across reads");
+  assert.equal((await viewsOf(fx.workspace))["extensions.json"], extensionsBytes, "view bytes are stable across reads");
 
   // The export carries the collections and round-trips canonically.
   const exported = assertCanonicalJson(await exportWorkspace(fx.workspace));
@@ -377,7 +335,7 @@ test("mutation-time rules fail closed without appending an event", async (contex
   assert.equal((await materializeWorkspace(fx.workspace)).version, version, "no failed mutation appended an event");
 });
 
-test("hand-crafted event logs fail replay closed: unknown operations, openness, binding, pinning, tombstone, and validator rules", async (context) => {
+test("hand-crafted event logs are refused by replay: unknown operations, openness, binding, pinning, tombstone, and validator rules", async (context) => {
   const record = (payload, second) => ({ occurredAt: instant(second), payload });
   const cases = [
     ["unknown operation conference.reopened", (fx) => [record({ operation: "conference.reopened", record: conferenceRecord(fx.projectId, fx.workId) }, 3)]],
@@ -520,11 +478,11 @@ test("hand-crafted event logs fail replay closed: unknown operations, openness, 
   for (const [name, forge] of cases) {
     await context.test(name, async (caseContext) => {
       const fx = await seededFixture(caseContext);
-      await rewriteEventChain(fx.workspace, (events) => [
+      await forgeOwnStream(fx.workspace, (events) => [
         ...events.map((event) => ({ occurredAt: event.occurredAt, payload: event.payload })),
         ...forge(fx),
       ]);
-      await expectReasonAsync("WORKSPACE_EVENT_CORRUPT", () => materializeWorkspace(fx.workspace));
+      await rejectedTail(fx.workspace);
     });
   }
 });
@@ -537,9 +495,8 @@ test("INC-198 index size follows record count rather than extension prose, and s
   state = await createWork(fixture.workspace, {
     occurredAt: instant(2), projectId: state.projects[0].id, externalKey: "INITIATIVE-BOUNDED", kind: "Initiative", parentId: null,
   });
-  const viewsRoot = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "views");
-  const indexBytes = async () => (await readFile(join(viewsRoot, "index.json"), "utf8")).length;
-  const digest = async () => JSON.parse(await readFile(join(viewsRoot, "readback.json"), "utf8")).graphDigest;
+  const indexBytes = async () => (await viewsOf(fixture.workspace))["index.json"].length;
+  const digest = async () => JSON.parse((await viewsOf(fixture.workspace))["readback.json"]).graphDigest;
 
   const small = await annotateWork(fixture.workspace, {
     occurredAt: instant(3), id: state.work[0].id, scope: "x",
@@ -564,7 +521,7 @@ test("INC-198 index size follows record count rather than extension prose, and s
   assert.notEqual(largeDigest, smallDigest, "a scope change must still move the graph digest");
 });
 
-test("a workspace with zero conference/gate events keeps pre-change golden view bytes, view set, and export digest", async (context) => {
+test("a workspace with zero conference/gate events keeps pre-change golden view bytes, view set, and export digest", (context) => asPinnedDevice(async () => {
   const fixture = await workspaceFixture(context, { externalKey: "WORKSPACE-GOLDEN" });
   let state = await createProject(fixture.workspace, {
     occurredAt: instant(1), externalKey: "PROJECT-GOLDEN", name: "Golden",
@@ -579,15 +536,17 @@ test("a workspace with zero conference/gate events keeps pre-change golden view 
   assert.deepEqual(state.conferencePositions, []);
   assert.deepEqual(state.conferenceMinutes, []);
   assert.deepEqual(state.gates, []);
-  const viewsRoot = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "views");
-  assert.deepEqual((await readdir(viewsRoot)).sort(), ["STATUS.md", "index.json", "readback.json"], "extensions.json is absent");
+  const documents = await viewsOf(fixture.workspace);
+  assert.deepEqual(Object.keys(documents).sort(), ["STATUS.md", "index.json", "readback.json"], "extensions.json is absent");
   // Golden bytes. These were the pre-WSD-1 bytes until INC-198 re-derived both the
   // graph digest and the index payload, and TCRN-CROSS-STORY-363 re-derived them
   // again when WorkRecord gained `summary`. TCRN-CROSS-STORY-466 R2 moved the head event
   // hash and the export digest once more: every event this writer creates is now in the
   // einzbern.event.v1 namespace, and the namespace is part of each event hash basis.
   // TCRN-CROSS-STORY-468 R3 moved both once more: an einzbern.event.v1 also hashes its clock
-  // and its device id.
+  // and its device id. TCRN-CROSS-STORY-469 moved the workspace line, the head and the export
+  // digest once more: the fixture is a library, its id stands where the workspace id stood, its
+  // head is the digest over its stream heads, and its events are written by a pinned device.
   //
   // That re-derivation is the point of this fixture, not damage to it. The record
   // below is CREATED here, by the current writer, so it carries the new field and
@@ -612,10 +571,10 @@ test("a workspace with zero conference/gate events keeps pre-change golden view 
   // Detection power is unchanged: the digest hashes each record and then the vector
   // of hashes, and the index carries each extension's digest, so any byte that
   // changes anywhere in a record still moves these bytes.
-  assert.equal(await readFile(join(viewsRoot, "STATUS.md"), "utf8"), [
+  assert.equal(documents["STATUS.md"], [
     "# Workspace Status",
     "",
-    "- Workspace: `workspace:fefacf6fbd4eba98d40fdf99`",
+    "- Workspace: `library:318d0b61f9e53caf60269802`",
     "- Version: 3",
     "- Projects: 1",
     "- Work records: 1",
@@ -624,26 +583,28 @@ test("a workspace with zero conference/gate events keeps pre-change golden view 
     "",
   ].join("\n"));
   assert.equal(
-    await readFile(join(viewsRoot, "index.json"), "utf8"),
+    documents["index.json"],
     "{\"projects\":[{\"externalKey\":\"PROJECT-GOLDEN\",\"id\":\"project:0bf1a7f60bdb47a6be9f4586\",\"name\":\"Golden\",\"revision\":1,\"schemaVersion\":\"tcrn.project.v1\",\"tombstone\":false,\"updatedAt\":\"2026-07-11T00:00:01Z\"}],\"schemaVersion\":\"tcrn.workspace-index.v2\",\"work\":[{\"createdAt\":\"2026-07-11T00:00:02Z\",\"extensions\":{},\"externalKey\":\"INITIATIVE-GOLDEN\",\"id\":\"work:7370232bfce90e21835d2977\",\"kind\":\"Initiative\",\"labels\":[],\"parentId\":null,\"projectId\":\"project:0bf1a7f60bdb47a6be9f4586\",\"revision\":2,\"schemaVersion\":\"tcrn.work.v1\",\"scopeDigest\":\"ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356\",\"status\":\"ready\",\"summary\":null,\"title\":null,\"tombstone\":false,\"updatedAt\":\"2026-07-11T00:00:03Z\"}]}\n",
   );
   assert.equal(
-    await readFile(join(viewsRoot, "readback.json"), "utf8"),
-    "{\"authority\":\"derived-rebuildable\",\"graphDigest\":\"29725f3ff695a77cea76f68bfc7244a0a56d1c7d07312d58633d56822c268ba7\",\"headEventHash\":\"f760406ea0d8ea2832746ac7abad47d63ac336b7c94c68ea947076c175f52fa6\",\"projectCount\":1,\"schemaVersion\":\"tcrn.workspace-readback.v1\",\"version\":3,\"workCount\":1,\"workspaceId\":\"workspace:fefacf6fbd4eba98d40fdf99\"}\n",
+    documents["readback.json"],
+    "{\"authority\":\"derived-rebuildable\",\"graphDigest\":\"29725f3ff695a77cea76f68bfc7244a0a56d1c7d07312d58633d56822c268ba7\",\"headEventHash\":\"35d782dd4b86be351fd034e028cd5141f1dacebfe451802aa311493ad23f503a\",\"projectCount\":1,\"schemaVersion\":\"tcrn.workspace-readback.v1\",\"version\":3,\"workCount\":1,\"workspaceId\":\"library:318d0b61f9e53caf60269802\"}\n",
   );
   const exported = await exportWorkspace(fixture.workspace);
   assert.equal(canonicalSha256(assertCanonicalJson(exported)).length, 64);
   assert.equal(
     (await import("node:crypto")).createHash("sha256").update(exported, "utf8").digest("hex"),
-    "3310063122955aeac88725817abb25913dafa03a99aa8cf3739c12e2a563d5e9",
+    "a129057479f7906642672fde1c8bfb35a4aa498224b9bce41821688eb8614cd5",
     "export bytes match the recorded build",
   );
   assert.equal(exported.includes("conferences"), false, "no extension keys leak into legacy exports");
   await validateWorkspace(fixture.workspace);
-});
+}));
 
+// A library append has one window after its commit point, and no view to leave stale: the
+// event is durable, and every read projects extensions.json from it.
 test("a crash across conference.closed leaves the event durable and recover() rebuilds extensions.json", async (context) => {
-  for (const crashAt of ["after-event-commit", "before-view-commit"]) {
+  for (const crashAt of ["after-event-commit"]) {
     await context.test(crashAt, async (caseContext) => {
       const fx = await seededFixture(caseContext);
       let state = await openConferenceInWorkspace(fx.workspace, {
@@ -655,15 +616,13 @@ test("a crash across conference.closed leaves the event durable and recover() re
         occurredAt: instant(4), conferenceId, minutesExternalKey: "MINUTES-CRASH",
         summary: "Crashed close.", outcomeClass: "role_decision", decisions: ["recover"], unresolvedIssues: [], crashAt,
       }));
-      // The event committed before the crash, so views are stale until recovery.
-      await expectReasonAsync("WORKSPACE_VIEW_STALE", () => validateWorkspace(fx.workspace));
       const recovered = await recoverWorkspace(fx.workspace);
       assert.equal(recovered.version, 4);
       assert.equal(recovered.conferences.find((entry) => entry.id === conferenceId).status, "closed");
       assert.equal(recovered.conferenceMinutes.length, 1);
       const validated = await validateWorkspace(fx.workspace);
       assert.equal(validated.version, 4);
-      const extensionsIndex = assertCanonicalJson(await readFile(join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "views", "extensions.json"), "utf8"));
+      const extensionsIndex = assertCanonicalJson(workspaceViewDocuments(recovered)["extensions.json"]);
       assert.equal(extensionsIndex.conferenceMinutes.count, 1);
       // STORY-299 replaces v1's single-field check (`conferences[0].status === "closed"`)
       // with a stronger one: every collection digest in the rebuilt view must equal the
@@ -1012,7 +971,7 @@ test("gate-v1: the identity decision is written down, and replay judges it witho
   assert.equal((await validateWorkspace(fx.workspace)).version, 7);
 });
 
-test("gate-v1: a decision that disagrees with its own event is corrupt", async (context) => {
+test("gate-v1: a decision that disagrees with its own event is refused", async (context) => {
   // Replay cannot tell a forged event from a real one -- unkeyed hashes see to that --
   // but it can refuse one that contradicts itself. A decision naming an actor the
   // event was not signed with is exactly that contradiction, and catching it costs
@@ -1049,45 +1008,26 @@ test("gate-v1: a decision that disagrees with its own event is corrupt", async (
     minutesLocator: minutesLocator("MINUTES-MIS"), identity: decision, actorId: "owner:governance",
   });
 
-  // Rewrite the tail event so the decision names someone else. The hashes are
-  // recomputed the way any forger would, so only the self-consistency check can see it.
-  const eventsDirectory = join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "events");
-  let segment;
-  let events;
-  let tail;
-  for (const name of (await readdir(eventsDirectory)).sort()) {
-    const candidatePath = join(eventsDirectory, name);
-    const candidates = JSON.parse(await readFile(candidatePath, "utf8"));
-    const match = candidates.find((entry) => entry.payload?.record?.extensions?.["gate-identity:decision"] !== undefined);
-    if (match) { segment = candidatePath; events = candidates; tail = match; break; }
-  }
-  assert.ok(tail, "the satisfied transition must be on the log for the tamper to mean anything");
-  tail.payload.record.extensions["gate-identity:decision"].value.actorId = "agent:impostor";
-  // Rehashed exactly the way the engine would, because a forger with write access has
-  // the same formula. If this were wrong the event would fail on its hash and the test
-  // would pass for the wrong reason -- so the refusal is asserted by message too.
-  Object.assign(tail, createEvent(eventInputOf(tail), tail.schemaVersion));
-  await writeFile(segment, canonicalJson(events), "utf8");
+  // Rewrite the tail event so the decision says something else. The hashes are recomputed
+  // the way any forger would (library-forge.mjs), because a forger with write access has the
+  // same formula; if this were wrong the event would fail on its hash and the test would pass
+  // for the wrong reason -- so the refusal is asserted by its detail too.
+  const decisionOf = (event) => event.payload?.record?.extensions?.["gate-identity:decision"];
+  assert.ok(decisionOf((await readOwnStream(fx.workspace)).events.at(-1)) !== undefined, "the satisfied transition must be on the log for the tamper to mean anything");
+  const withDecision = (value) => (events) => events.map((event, index) => (index === events.length - 1
+    ? { ...event, payload: { ...event.payload, record: { ...event.payload.record, extensions: { ...event.payload.record.extensions, "gate-identity:decision": { ...decisionOf(event), value } } } } }
+    : event));
 
   // A decision that is not even shaped like one must go the same way. Without this the
   // shape check could be removed and every other case here would still pass.
-  const malformed = JSON.parse(JSON.stringify(events));
-  const malformedTail = malformed.find((entry) => entry.payload?.record?.extensions?.["gate-identity:decision"] !== undefined);
-  malformedTail.payload.record.extensions["gate-identity:decision"].value = { actorId: "owner:governance", authorityFileSha256: "not-a-digest" };
-  Object.assign(malformedTail, createEvent(eventInputOf(malformedTail), malformedTail.schemaVersion));
-  await writeFile(segment, canonicalJson(malformed), "utf8");
-  await assert.rejects(materializeWorkspace(fx.workspace), (error) => {
-    assert.equal(error?.reasonCode, "WORKSPACE_EVENT_CORRUPT");
-    return true;
-  }, "a malformed decision must not replay");
+  await forgeOwnStream(fx.workspace, withDecision({ actorId: "owner:governance", authorityFileSha256: "not-a-digest" }));
+  const malformed = await rejectedTail(fx.workspace);
+  assert.equal(malformed.gates[0].status, "pending", "a malformed decision does not apply");
 
-  await writeFile(segment, canonicalJson(events), "utf8");
-  await assert.rejects(materializeWorkspace(fx.workspace), (error) => {
-    assert.equal(error?.reasonCode, "WORKSPACE_EVENT_CORRUPT");
-    assert.match(String(error?.message), /identity decision names agent:impostor/u,
-      "must be refused for the contradiction, not for a hash the forger would have got right");
-    return true;
-  }, "a self-contradicting decision must not replay");
+  await forgeOwnStream(fx.workspace, withDecision({ ...decision, actorId: "agent:impostor" }));
+  // Refused for the contradiction, not for a hash the forger would have got right.
+  const contradicted = await rejectedTail(fx.workspace, /identity decision names agent:impostor/u);
+  assert.equal(contradicted.gates[0].status, "pending", "a self-contradicting decision does not apply");
 });
 
 test("gate-v1: a chain written before gate-v1 still replays, owner gates and all", async (context) => {
@@ -1112,11 +1052,6 @@ test("gate-v1: a chain written before gate-v1 still replays, owner gates and all
   });
   const gate = state.gates[0];
 
-  const eventsDirectory = join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "events");
-  const segments = (await readdir(eventsDirectory)).sort();
-  const lastPath = join(eventsDirectory, segments[segments.length - 1]);
-  const lastSegment = JSON.parse(await readFile(lastPath, "utf8"));
-  const previous = lastSegment[lastSegment.length - 1];
   const payload = {
     operation: "gate.updated",
     record: {
@@ -1124,14 +1059,7 @@ test("gate-v1: a chain written before gate-v1 still replays, owner gates and all
       extensions: { "gate-evidence:conference-minutes": { required: false, value: minutesLocator("MINUTES-LEGACY") } },
     },
   };
-  const payloadHash = canonicalSha256(payload);
-  const basis = {
-    schemaVersion: "tcrn.event.v1", id: `event:${canonicalSha256({ schemaVersion: "tcrn.workspace-event-identity.v1", streamId: previous.streamId, sequence: previous.sequence + 1 }).slice(0, 24)}`,
-    streamId: previous.streamId,
-    sequence: previous.sequence + 1, occurredAt: instant(6), priorHash: previous.eventHash, payload, payloadHash,
-  };
-  lastSegment.push({ ...basis, eventHash: canonicalSha256(basis) });
-  await writeFile(lastPath, canonicalJson(lastSegment), "utf8");
+  await forgeOwnStream(fx.workspace, (events) => [...events, { occurredAt: instant(6), payload }]);
 
   const replayed = await materializeWorkspace(fx.workspace);
   assert.equal(replayed.version, 6, "a pre-gate-v1 owner gate must not brick the chain");
@@ -1163,12 +1091,8 @@ test("gate-v1: replay accepts a forged tail-append, and this is proved rather th
   });
   const gate = state.gates[0];
 
-  // No roster is consulted, no CLI is run, no permission is held. Only bytes.
-  const eventsDirectory = join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "events");
-  const segments = (await readdir(eventsDirectory)).sort();
-  const lastPath = join(eventsDirectory, segments[segments.length - 1]);
-  const lastSegment = JSON.parse(await readFile(lastPath, "utf8"));
-  const previous = lastSegment[lastSegment.length - 1];
+  // No roster is consulted, no CLI is run, no permission is held. Only bytes: the event is
+  // appended to the device's stream with the hashes and manifest the engine would write.
   const payload = {
     operation: "gate.updated",
     record: {
@@ -1176,22 +1100,14 @@ test("gate-v1: replay accepts a forged tail-append, and this is proved rather th
       extensions: { "gate-evidence:conference-minutes": { required: false, value: minutesLocator("MINUTES-FORGE") } },
     },
   };
-  const payloadHash = canonicalSha256(payload);
-  const basis = {
-    schemaVersion: "tcrn.event.v1",
-    id: `event:${canonicalSha256({ schemaVersion: "tcrn.workspace-event-identity.v1", streamId: previous.streamId, sequence: previous.sequence + 1 }).slice(0, 24)}`,
-    streamId: previous.streamId, sequence: previous.sequence + 1, occurredAt: instant(6),
-    priorHash: previous.eventHash, payload, payloadHash,
-  };
-  lastSegment.push({ ...basis, eventHash: canonicalSha256(basis) });
-  await writeFile(lastPath, canonicalJson(lastSegment), "utf8");
+  await forgeOwnStream(fx.workspace, (events) => [...events, { occurredAt: instant(6), payload }]);
 
   const replayed = await materializeWorkspace(fx.workspace);
   assert.equal(replayed.gates[0].status, "satisfied",
     "replay accepts a forged satisfied gate -- gate-v1 is a decision-point control, not a chain-integrity invariant");
-  // Views are skipped: a hand-append does not refresh them, and view freshness is not
-  // what this case is about. The chain itself validates, which is the whole worry.
-  assert.equal((await validateWorkspace(fx.workspace, false)).version, 6);
+  assert.deepEqual(replayed.library.rejectedEvents, [], "the forged event is applied, not refused");
+  // The chain itself validates, which is the whole worry.
+  assert.equal((await validateWorkspace(fx.workspace)).version, 6);
 });
 
 // E05 (advisory scope-on-record): work.annotated attaches non-binding advisory fields
@@ -1252,7 +1168,7 @@ test("E05: work-annotate fails closed at the verb on empty, malformed, or no-op 
   }));
 });
 
-test("E05: a forged work.annotated event fails replay closed on a status change or a smuggled extension", async (context) => {
+test("E05: a forged work.annotated event is refused by replay on a status change or a smuggled extension", async (context) => {
   const forge = async (context, mutateRecord) => {
     const fx = await seededFixture(context);
     const workId = fx.workId;
@@ -1260,10 +1176,10 @@ test("E05: a forged work.annotated event fails replay closed on a status change 
       occurredAt: instant(3), id: workId, scope: "s", decidedBy: [deriveStableId("minutes", "MINUTES-FORGED")],
     });
     assert.equal((await materializeWorkspace(fx.workspace)).version, 3, "the honest chain replays");
-    await rewriteEventChain(fx.workspace, (events) => events.map((event) => event.payload.operation === "work.annotated"
+    await forgeOwnStream(fx.workspace, (events) => events.map((event) => event.payload.operation === "work.annotated"
       ? { ...event, payload: { ...event.payload, record: mutateRecord(event.payload.record) } }
       : event));
-    await expectReasonAsync("WORKSPACE_EVENT_CORRUPT", () => materializeWorkspace(fx.workspace));
+    await rejectedTail(fx.workspace);
   };
 
   // A status change smuggled through an annotation.
@@ -1420,7 +1336,7 @@ test("sprint: a malformed sprint reference fails closed at the verb", async (con
   assert.equal((await materializeWorkspace(fx.workspace)).version, 2, "no rejected annotation appended an event");
 });
 
-test("sprint: a forged advisory:sprint value fails replay closed", async (context) => {
+test("sprint: a forged advisory:sprint value is refused by replay", async (context) => {
   const fx = await seededFixture(context);
   let state = await createWork(fx.workspace, {
     occurredAt: instant(3), projectId: fx.projectId, externalKey: "SPRINT-W31", kind: "Release", parentId: null,
@@ -1428,26 +1344,26 @@ test("sprint: a forged advisory:sprint value fails replay closed", async (contex
   const ref = { workspaceId: fx.state.metadata.workspaceId, workId: state.work.find((e) => e.externalKey === "SPRINT-W31").id };
   await annotateWork(fx.workspace, { occurredAt: instant(4), id: fx.workId, sprint: ref });
   assert.equal((await materializeWorkspace(fx.workspace)).version, 4, "the honest chain replays");
-  await rewriteEventChain(fx.workspace, (events) => events.map((event) => event.payload.operation === "work.annotated"
+  await forgeOwnStream(fx.workspace, (events) => events.map((event) => event.payload.operation === "work.annotated"
     ? { ...event, payload: { ...event.payload, record: { ...event.payload.record,
         extensions: { ...event.payload.record.extensions, "advisory:sprint": { required: false, value: { workspaceId: "bad", workId: ref.workId } } } } } }
     : event));
-  await expectReasonAsync("WORKSPACE_EVENT_CORRUPT", () => materializeWorkspace(fx.workspace));
+  await rejectedTail(fx.workspace);
 });
 
-test("sprint: a forged work.created carrying a malformed advisory value fails replay closed", async (context) => {
+test("sprint: a forged work.created carrying a malformed advisory value is refused by replay", async (context) => {
   // Red-proof for guard SPRINT-03. The honest createWork writes no advisory extension, so
   // the annotate path's value-shape check used to be the only one — a hand-crafted
   // work.created could plant a bad advisory:sprint that the envelope-only graph validator
   // would admit. The create-path check now closes that door.
   const fx = await seededFixture(context);
-  await rewriteEventChain(fx.workspace, (events) => events.map((event) => event.payload.operation === "work.created" && event.payload.record.kind === "Initiative"
+  await forgeOwnStream(fx.workspace, (events) => events.map((event) => event.payload.operation === "work.created" && event.payload.record.kind === "Initiative"
     ? (() => {
       const extensions = { ...event.payload.record.extensions, "advisory:sprint": { required: false, value: "not-a-qualified-reference" } };
       return { ...event, payload: { ...event.payload, record: { ...event.payload.record, extensions, scopeDigest: canonicalSha256(extensions) } } };
     })()
     : event));
-  await expectReasonAsync("WORKSPACE_EVENT_CORRUPT", () => materializeWorkspace(fx.workspace));
+  await rejectedTail(fx.workspace);
 });
 
 test("sprint: the CLI opens Release create and work-list --sprint filters members", async (context) => {
@@ -1537,7 +1453,11 @@ test("MIN-102 the position ceiling is fixed for replay while the budget is a wri
 // ---------------------------------------------------------------------------
 
 async function extensionIndexBytes(workspace) {
-  return Buffer.byteLength(await readFile(join(workspace, LEGACY_CONTROL_DIRECTORY, "views", "extensions.json"), "utf8"), "utf8");
+  return Buffer.byteLength((await viewsOf(workspace))["extensions.json"], "utf8");
+}
+
+async function extensionView(workspace) {
+  return assertCanonicalJson((await viewsOf(workspace))["extensions.json"]);
 }
 
 // Grow one conference's governed prose by three orders of magnitude and the view
@@ -1550,7 +1470,7 @@ test("STORY-299: extension view size is independent of the prose inside the reco
     title: "Bounded", linkedWorkIds: [fx.workId], desiredOutcome: "short", participantIds: [],
   });
   const smallBytes = await extensionIndexBytes(fx.workspace);
-  const smallDigest = assertCanonicalJson(await readFile(join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "views", "extensions.json"), "utf8")).conferences.digest;
+  const smallDigest = (await extensionView(fx.workspace)).conferences.digest;
 
   state = await appendConferencePositionInWorkspace(fx.workspace, {
     occurredAt: instant(4), conferenceId: state.conferences[0].id,
@@ -1558,13 +1478,13 @@ test("STORY-299: extension view size is independent of the prose inside the reco
     position: "z".repeat(2_000), risks: [], recommendations: [], evidenceIds: [],
   });
   const largeBytes = await extensionIndexBytes(fx.workspace);
-  const largeDigest = assertCanonicalJson(await readFile(join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "views", "extensions.json"), "utf8")).conferences.digest;
+  const largeDigest = (await extensionView(fx.workspace)).conferences.digest;
 
   assert.ok(largeBytes - smallBytes < 200, `view grew by ${largeBytes - smallBytes} bytes; prose must not enter the view`);
   // The bound is only worth having if the view still moves when a record does.
   assert.equal(state.conferencePositions.length, 1);
   assert.notEqual(
-    assertCanonicalJson(await readFile(join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "views", "extensions.json"), "utf8")).conferencePositions.digest,
+    (await extensionView(fx.workspace)).conferencePositions.digest,
     smallDigest,
     "a new position must move its collection digest",
   );
@@ -1609,7 +1529,7 @@ test("STORY-299: any single byte inside any extension record still moves the vie
     occurredAt: instant(4), externalKey: "GATE-DETECT", projectId: fx.projectId,
     workId: fx.workId, title: "Gate detect", outcomeClass: "role_decision",
   });
-  const readView = async () => assertCanonicalJson(await readFile(join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "views", "extensions.json"), "utf8"));
+  const readView = () => extensionView(fx.workspace);
   const before = await readView();
 
   state = await appendConferencePositionInWorkspace(fx.workspace, {
@@ -1665,37 +1585,6 @@ test("STORY-299: an over-budget projection is refused with the chain untouched",
   assert.equal(validated.version, before.version);
 });
 
-// The post-commit half. A view that could not be written is reported as news on a
-// successful receipt, never as a rejected command. Red leg: restore the throw and
-// the command fails while its event sits in the chain.
-test("STORY-299: a view write failure after commit keeps the command successful and the fact durable", async (context) => {
-  const fx = await seededFixture(context);
-  const failingBackend = () => {
-    const backend = new FileBackend(fx.workspace);
-    return new Proxy(backend, {
-      get(target, property, receiver) {
-        if (property === "writeView") return async () => { throw new Error("view sink is unavailable"); };
-        const value = Reflect.get(target, property, receiver);
-        return typeof value === "function" ? value.bind(target) : value;
-      },
-    });
-  };
-  const committed = await withStorageBackendFactory(failingBackend, () => openConferenceInWorkspace(fx.workspace, {
-    occurredAt: instant(3), externalKey: "CONF-UNWRITTEN", projectId: fx.projectId, type: "release",
-    title: "Unwritten", linkedWorkIds: [fx.workId], desiredOutcome: "durable", participantIds: [],
-  }));
-  assert.equal(committed.version, 3, "the fact is committed even though its view could not be written");
-  assert.equal(committed.conferences.length, 1);
-  // The chain agrees on rematerialize, and the stale view is exactly what validate
-  // is for -- the failure is visible, it is simply not reported as a rejected write.
-  const rematerialized = await materializeWorkspaceForBudgets(fx.workspace);
-  assert.equal(rematerialized.version, 3);
-  await expectReasonAsync("WORKSPACE_VIEW_STALE", () => validateWorkspace(fx.workspace));
-  const recovered = await recoverWorkspace(fx.workspace);
-  assert.equal(recovered.version, 3);
-  assert.equal((await validateWorkspace(fx.workspace)).version, 3);
-});
-
 // The budget report is the reason the next ceiling arrives as a scheduled item
 // rather than as an incident. Red leg: report only the extension view and the
 // work index -- the next wall by measurement -- goes unwatched again.
@@ -1718,8 +1607,8 @@ test("STORY-299: the budget report covers every view and the record cap", async 
     // filesystem layout into every receipt that carries it.
     assert.equal(entry.name.includes("/"), false);
   }
-  const onDisk = await extensionIndexBytes(fx.workspace);
-  assert.equal(budgets.views.find((entry) => entry.name === "extensions.json").bytes, onDisk, "the meter reports the bytes actually written");
+  const projected = await extensionIndexBytes(fx.workspace);
+  assert.equal(budgets.views.find((entry) => entry.name === "extensions.json").bytes, projected, "the meter reports the bytes the projection holds");
   assert.equal(budgets.events.count, 3);
   assert.equal(budgets.events.headroomEvents, budgets.events.limit - budgets.events.count);
   assert.ok(budgets.maxSegmentBytes > 0);

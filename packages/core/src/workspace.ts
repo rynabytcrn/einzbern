@@ -36,7 +36,7 @@ import { assertDistinctRootShape, rootPortableIdentity } from "./root-identity.j
 import { FileLockError } from "./file-lock.js";
 import { AKASHA_SEGMENT_BYTES_DEFAULT, appendStreamEvents, emptyStreamManifest, readAllStreams, streamEventId, withLibraryWriteLock } from "./akasha.js";
 import type { LibraryReadOptions, MergedEvent, StreamManifest } from "./akasha.js";
-import { createLibrary, hasLibraryManifest, openLibrary } from "./ether-library.js";
+import { LIBRARY_ID_PATTERN, createLibrary, hasLibraryManifest, openLibrary } from "./ether-library.js";
 import type { Library } from "./ether-library.js";
 import { readOrCreateDevice } from "./device-identity.js";
 import { legacyControlDirectory, openLegacyWorkspace, replayLegacyWorkspace } from "./legacy-workspace.js";
@@ -229,11 +229,11 @@ export const WORKSPACE_REASON_CODES = Object.freeze([
 ] as const);
 
 export type WorkspaceReasonCode = typeof WORKSPACE_REASON_CODES[number];
+// A library append has two windows (TCRN-CROSS-STORY-469): before the stream is written, and
+// after its manifest commits. The old writer's temporary-file and view windows went with it.
 export type WorkspaceCrashPoint =
   | "before-write"
-  | "after-temp-sync"
-  | "after-event-commit"
-  | "before-view-commit";
+  | "after-event-commit";
 
 export class WorkspaceError extends Error {
   readonly reasonCode: WorkspaceReasonCode;
@@ -1203,7 +1203,9 @@ function isSprintReference(value: unknown): value is SprintReference {
   const keys = Object.keys(value as Record<string, unknown>);
   if (keys.length !== 2 || !Object.hasOwn(value as object, "workId") || !Object.hasOwn(value as object, "workspaceId")) return false;
   const { workspaceId, workId } = value as { readonly workspaceId: unknown; readonly workId: unknown };
-  if (typeof workspaceId !== "string" || !/^workspace:[a-f0-9]{24}$/u.test(workspaceId)) return false;
+  // The id of the library the member lives in; an old-layout workspace id is still a valid one
+  // (TCRN-CROSS-STORY-469: a library's id stands where the workspace id stood).
+  if (typeof workspaceId !== "string" || !LIBRARY_ID_PATTERN.test(workspaceId)) return false;
   if (typeof workId !== "string" || workId.slice(0, workId.indexOf(":")) !== "work") return false;
   try {
     assertProtocolId(workId);
@@ -2503,6 +2505,15 @@ function viewSources(state: WorkspaceState): readonly ViewSource[] {
     });
   }
   return sources;
+}
+
+/**
+ * The derived views of a state (STATUS.md, index.json, readback.json, extensions.json), as
+ * canonical text. They are projections, never an authority: a library does not store them, and
+ * the device cache keeps them (TCRN-CROSS-STORY-469 R4).
+ */
+export function workspaceViewDocuments(state: WorkspaceState): Readonly<Record<string, string>> {
+  return viewDocuments(state);
 }
 
 function viewDocuments(state: WorkspaceState, budgetBytes: number = PROTOCOL_LIMITS.maxCanonicalBytes): Readonly<Record<string, string>> {

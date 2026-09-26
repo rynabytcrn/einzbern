@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -12,7 +12,7 @@ import {
   createProject,
   createWork,
   deleteWork,
-  initializeWorkspace,
+  initializeLibrary,
   materializeWorkspace,
   openConferenceInWorkspace,
   transitionWork,
@@ -43,14 +43,8 @@ const STORY_SCOPE = [
 async function fixture(context, chains) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-complexity-")));
   context.after(() => rm(base, { recursive: true, force: true }));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
   const workspace = join(base, "workspace");
-  await initializeWorkspace({ roots, externalKey: "FIXTURE-COMPLEXITY", createdAt: instant(0), segmentEventLimit: 1024 });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: instant(0) });
   let version = 0;
   let workEvents = 0;
   const at = () => instant(version + 2);

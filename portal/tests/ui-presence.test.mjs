@@ -2,6 +2,8 @@
 // INC-148: the portal contract is evaluated against a parsed, executed DOM.
 // linkedom is test-only; portal/index.html remains dependency-free at runtime.
 
+// Every CLI and portal child inherits the test process's device directory, never the real one.
+import "../../tests/helpers/device-home.mjs";
 import { execFile, spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -54,19 +56,13 @@ async function scratch(prefix) {
   // under HOME, so each fixture carries its own scratch HOME, removed with the fixture.
   const home = join(base, "home");
   await mkdir(home);
-  const roots = {};
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots[kind] = await realpath(path);
-  }
-  await cli(["init", "--workspace", roots.workspace, "--framework", roots.framework, "--transient", roots.transient,
-    "--evidence-locator", roots["evidence-locator"], "--release-trust", roots["release-trust"],
-    "--external-key", "TCRN-INC148-DOM", "--at", nextAt()]);
+  // TCRN-CROSS-STORY-469: the fixture is a library.
+  const workspace = join(base, "workspace");
+  await cli(["init", "--workspace", workspace, "--project-name", "TCRN-INC148-DOM", "--at", nextAt()]);
   const proseRoot = join(base, "prose");
   await mkdir(proseRoot);
   await writeFile(join(proseRoot, "AGENTS.md"), "# Workspace rules\n\nbackup.cadence\nbackup.unknown\n", "utf8");
-  return { base, workspace: roots.workspace, proseRoot, home };
+  return { base, workspace, proseRoot, home };
 }
 
 async function writeScratch(fixture, command, args) {

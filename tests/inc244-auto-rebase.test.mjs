@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // INC-244: workspace writes automatically rebind an existing knowledge store.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -12,7 +13,7 @@ import {
   createProject,
   createWork,
   initializeKnowledgeStore,
-  initializeWorkspace,
+  initializeLibrary,
   validateKnowledgeStore,
 } from "../dist/build/packages/core/src/index.js";
 
@@ -20,17 +21,11 @@ const instant = second => `2026-08-21T12:00:${String(second).padStart(2, "0")}Z`
 
 async function fixture() {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-inc244-")));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
   const workspace = join(base, "workspace");
-  await initializeWorkspace({ roots, externalKey: "FIXTURE-INC-244", createdAt: instant(0), segmentEventLimit: 64 });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: instant(0) });
   let state = await createProject(workspace, { occurredAt: instant(1), externalKey: "FIXTURE-INC-244-PROJECT", name: "INC-244" });
   state = await createWork(workspace, { occurredAt: instant(2), projectId: state.projects[0].id, externalKey: "FIXTURE-INC-244-WORK", kind: "Initiative", parentId: null, status: "active" });
-  await initializeKnowledgeStore(workspace);
+  await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
   return { base, workspace, version: state.version };
 }
 

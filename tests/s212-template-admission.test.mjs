@@ -1,27 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { initializeWorkspace } from "../dist/build/packages/core/src/index.js";
+import { initializeLibrary } from "../dist/build/packages/core/src/index.js";
 import { canonicalJson } from "../dist/build/packages/protocol/src/index.js";
 
 const instant = (second) => `2026-08-11T00:00:${String(second).padStart(2, "0")}Z`;
 
 async function fixture() {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-s212-")));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
   const workspace = join(base, "workspace");
-  const state = await initializeWorkspace({ roots, externalKey: "S212-SCRATCH", createdAt: instant(0), segmentEventLimit: 2 });
+  const state = await initializeLibrary({ root: join(base, "workspace"), createdAt: instant(0) });
   return { base, workspace, state, async close() { await rm(base, { recursive: true, force: true }); } };
 }
 

@@ -18,12 +18,9 @@
 // The published binary name each fenced command is prefixed with in the tutorial.
 export const CLI_BINARY = "einzbern";
 
-// Workspace-relative root placeholders (identical literal tokens in the tutorial).
-export const WORKSPACE_PATH = "./flagship/workspace";
-export const FRAMEWORK_PATH = "./flagship/framework";
-export const TRANSIENT_PATH = "./flagship/transient";
-export const EVIDENCE_PATH = "./flagship/evidence-locator";
-export const RELEASE_TRUST_PATH = "./flagship/release-trust";
+// The library placeholder (an identical literal token in the tutorial): a project's library is
+// the .ether directory in its root (TCRN-CROSS-STORY-469).
+export const WORKSPACE_PATH = "./flagship/.ether";
 
 // The Story is created atomically with its complete scope.  The tutorial keeps
 // the value as a placeholder; the replay substitutes this one canonical fixture
@@ -33,7 +30,7 @@ export const STORY_SCOPE = [
   "【Requirements】现象与证据=命令回放；修复项=完成 flagship loop。",
   "【Acceptance Criteria】GIVEN the workspace is ready WHEN the loop runs THEN the Story reaches done。",
   "【Business Background】evidence=the loop is the canonical tutorial path。",
-  "【Preconditions】无——原因：fixture roots are created by init。",
+  "【Preconditions】无——原因：the library is created by init。",
   "【Assumptions】无——原因：the tutorial does not add a runtime setting。",
   "【Use Cases & Examples】无——原因：the command sequence is the example。",
   "【Feature Toggle & Setting】无——原因：no bypass flag is permitted。",
@@ -41,24 +38,16 @@ export const STORY_SCOPE = [
   "【Implementation Notes】决策点及裁定状态=the Story starts planned and transitions through the loop。",
 ].join("\n");
 
-// The init command is narrated and executed but is NOT part of the CAS-versioned
-// mutation storyline (it establishes the workspace at version zero). It is listed
-// separately so the proof can seed the real roots before the loop begins while
-// the lockstep gate still checks it against the tutorial.
+// The init command is narrated and executed but is NOT part of the mutation
+// storyline (it creates the library at version zero). It is listed separately so
+// the proof can create the library before the loop begins while the lockstep gate
+// still checks it against the tutorial.
 export const initCommand = [
   "init",
   "--workspace",
   WORKSPACE_PATH,
-  "--framework",
-  FRAMEWORK_PATH,
-  "--transient",
-  TRANSIENT_PATH,
-  "--evidence-locator",
-  EVIDENCE_PATH,
-  "--release-trust",
-  RELEASE_TRUST_PATH,
-  "--external-key",
-  "FLAGSHIP-WORKSPACE",
+  "--project-name",
+  "Flagship",
   "--at",
   "2026-07-11T00:00:00Z",
 ];

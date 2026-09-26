@@ -12,8 +12,9 @@
 // verbs have always had, so a mid-batch failure leaves the earlier members applied -- and
 // the refusal must say exactly which, or partiality becomes a silent lie.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -23,7 +24,7 @@ import {
   createProject,
   createWork,
   initializeKnowledgeStore,
-  initializeWorkspace,
+  initializeLibrary,
   listKnowledgeMetadata,
   validateKnowledgeStore,
 } from "../dist/build/packages/core/src/index.js";
@@ -33,13 +34,7 @@ const at = (second = 0) => `2026-08-19T22:00:${String(second).padStart(2, "0")}Z
 
 async function workspaceWithStore() {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-kbatch-")));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
-  await initializeWorkspace({ roots, externalKey: "KBATCH", createdAt: at(0), segmentEventLimit: 64 });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: at(0) });
   const root = join(base, "workspace");
   let state = await createProject(root, { occurredAt: at(1), externalKey: "KBATCH-P", name: "KBatch" });
   await initializeKnowledgeStore(root, { disposableAcknowledged: true });

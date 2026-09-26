@@ -4,7 +4,7 @@
 //
 // One hermetic replay of the whole product loop —
 // initiative -> epic -> story -> conference -> distill -> promote -> decide -> trace
-// — on a REAL (non-fixture) workspace created under mkdtemp, driven entirely
+// — on a REAL (non-fixture) library created under mkdtemp, driven entirely
 // through the governed CLI surface (runCli + a CliIo write-capture stub, never a
 // direct core-library call), with every timestamp supplied explicitly (no
 // Date.now, no randomness) and no network access (the offline process guard is
@@ -18,8 +18,9 @@
 // decided it, the distilled knowledge candidate, and the promotion receipt
 // (acceptance criterion 3).
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -29,10 +30,6 @@ import { canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
 import {
   CONFERENCE_TITLE,
   DISTILLED_DECISION,
-  EVIDENCE_PATH,
-  FRAMEWORK_PATH,
-  RELEASE_TRUST_PATH,
-  TRANSIENT_PATH,
   WORKSPACE_PATH,
   canonicalizeCommand,
   expectedTutorialCommands,
@@ -64,25 +61,13 @@ test("the flagship governed loop replays end-to-end through the CLI with an unbr
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-e2e-governed-loop-")));
   context.after(() => rm(base, { recursive: true, force: true }));
 
-  // Real roots for the loop, mapped from the workspace-relative placeholders.
-  const roots = {
-    [FRAMEWORK_PATH]: join(base, "framework"),
-    [WORKSPACE_PATH]: join(base, "workspace"),
-    [TRANSIENT_PATH]: join(base, "transient"),
-    [EVIDENCE_PATH]: join(base, "evidence-locator"),
-    [RELEASE_TRUST_PATH]: join(base, "release-trust"),
-  };
-  for (const path of Object.values(roots)) {
-    await mkdir(path);
-  }
-
-  // The live substitution table: path placeholders first, identifiers as the
+  // The live substitution table: the library placeholder first, identifiers as the
   // storyline captures them from each receipt.
-  const substitutions = { ...roots, "<story-scope>": STORY_SCOPE };
+  const substitutions = { [WORKSPACE_PATH]: join(base, ".ether"), "<story-scope>": STORY_SCOPE };
 
-  // Establish the workspace at version zero.
+  // Create the library at version zero.
   const initReceipt = await invoke(render(initCommand, substitutions));
-  assert.equal(initReceipt.reasonCode, "WORKSPACE_COMMAND_COMPLETED", "init");
+  assert.equal(initReceipt.reasonCode, "LIBRARY_CREATED", "init");
   assert.equal(initReceipt.version, 0);
 
   // Replay the governed loop, asserting each step's observable reason and

@@ -18,7 +18,7 @@
     },
     "workspaceId": {
       "type": "string",
-      "pattern": "^workspace:[a-f0-9]{24}$"
+      "pattern": "^(?:workspace|library):[a-f0-9]{24}$"
     },
     "version": {
       "type": "integer",

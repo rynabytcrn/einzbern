@@ -13,8 +13,9 @@
 // exemption and the disclosure with no criterion on either, so a stale BODY -- the one
 // read that returns content rather than metadata -- could have passed for a current one.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -25,7 +26,7 @@ import {
   createProject,
   createWork,
   initializeKnowledgeStore,
-  initializeWorkspace,
+  initializeLibrary,
   readKnowledgeBody,
   readKnowledgeSnippet,
 } from "../dist/build/packages/core/src/index.js";
@@ -36,13 +37,7 @@ const instant = (second = 0) => `2026-08-19T15:00:${String(second).padStart(2, "
 // A store holding one promoted card, and a chain that has taken one further event since.
 async function trailingFixture() {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-inc232-")));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
-  await initializeWorkspace({ roots, externalKey: "INC232", createdAt: instant(), segmentEventLimit: 64 });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: instant() });
   const workspace = join(base, "workspace");
   let state = await createProject(workspace, {
     occurredAt: instant(1), externalKey: "INC232-PROJECT", name: "Transport",

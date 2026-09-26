@@ -543,11 +543,20 @@ async function runTests({ p8Only = false, extraEnvironment = {} } = {}) {
     .map((path) => toPosixPath(relative(repositoryRoot, path)))
     .filter((path) => path.startsWith("tests/") && path.endsWith(".test.mjs"))
     .filter((path) => !p8Only || ["tests/local-command-byte-fidelity.test.mjs", "tests/p8-workflow-rc.test.mjs"].includes(path));
-  const controller = await runDetachedTestController(["--test", ...tests], {
-    NODE_OPTIONS: `--import=${noNetworkImport}`,
-    TCRN_OFFLINE_PROOF: "1",
-    ...extraEnvironment,
-  });
+  // TCRN-CROSS-STORY-469 R3: the suite never reaches the real device directory. Every test
+  // process inherits a disposable EINZBERN_HOME, removed when the run ends.
+  const deviceDirectory = await mkdtemp(join(tmpdir(), "einzbern-test-device-"));
+  let controller;
+  try {
+    controller = await runDetachedTestController(["--test", ...tests], {
+      NODE_OPTIONS: `--import=${noNetworkImport}`,
+      TCRN_OFFLINE_PROOF: "1",
+      EINZBERN_HOME: join(deviceDirectory, "einzbern"),
+      ...extraEnvironment,
+    });
+  } finally {
+    await rm(deviceDirectory, { recursive: true, force: true });
+  }
   return success(
     p8Only ? "P8_WORKFLOW_RC_TESTS_VERIFIED" : "TESTS_VERIFIED",
     { tests, result: "passed", progress: controller.progress },

@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // INIT-028 INC-145/147: dispatch settings metadata and retirement boundary.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { initializeWorkspace } from "../dist/build/packages/core/src/index.js";
+import { initializeLibrary } from "../dist/build/packages/core/src/index.js";
 
 const at = (second) => new Date(Date.UTC(2026, 0, 1, 0, 0, second)).toISOString().replace(/\.\d+Z$/u, "Z");
 
@@ -25,13 +26,7 @@ async function invoke(args) {
 async function fixture(context) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-inc145-keys-")));
   context.after(() => rm(base, { recursive: true, force: true }));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
-  await initializeWorkspace({ roots, externalKey: "FIXTURE-INC145-KEYS", createdAt: at(0) });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: at(0) });
   return join(base, "workspace");
 }
 

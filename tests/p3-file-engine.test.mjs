@@ -2,33 +2,23 @@
 
 import assert from "node:assert/strict";
 import {
-  chmod,
-  link,
-  lstat,
   mkdir,
   mkdtemp,
   readFile,
-  readdir,
   realpath,
   rename,
   rm,
-  symlink,
-  utimes,
   writeFile,
 } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 
 import Ajv2020 from "ajv/dist/2020.js";
 
-import { COMMAND_CATALOG, runCli } from "../dist/build/packages/cli/src/index.js";
+import { runCli } from "../dist/build/packages/cli/src/index.js";
 import {
   FILE_LOCK_SCHEMA_VERSION,
-  WORKSPACE_WRITE_LOCK_FILE,
-  WorkspaceError,
-  applyWorkspaceMigration,
-  assertSupportedWorkspaceFilesystem,
   assertWorkspaceRecordCount,
   assertWorkspaceRelativePath,
   createProject,
@@ -37,25 +27,26 @@ import {
   deleteProject,
   deleteWork,
   exportWorkspace,
-  initializeWorkspace,
+  initializeLibrary,
+  lockPath,
   materializeWorkspace,
-  planWorkspaceMigration,
   recoverWorkspace,
   transitionWork,
   updateProject,
+  validateLibraryManifest,
   validateWorkspace,
-  LEGACY_CONTROL_DIRECTORY,
+  workspaceViewDocuments,
 } from "../dist/build/packages/core/src/index.js";
-import * as publicCore from "../dist/build/packages/core/src/index.js";
-import { appendHistoricalAttestationEnable } from "./helpers/workspace-fixture.mjs";
+import { appendHistoricalAttestationEnable, deviceHome } from "./helpers/workspace-fixture.mjs";
+import { forgeOwnStream, ownStreamDirectory, readOwnStream } from "./helpers/library-forge.mjs";
+import { LEGACY_FIXTURE_EXPECTED, restoreLegacyFixture } from "./helpers/legacy-fixture.mjs";
 import {
   canonicalJson,
   canonicalSha256,
   createEvent,
   deriveStableId,
-  LEGACY_EVENT_SCHEMA_VERSION,
+  eventInputOf,
   PROTOCOL_LIMITS,
-  ProtocolError,
 } from "../dist/build/packages/protocol/src/index.js";
 
 const STORY_SCOPE = [
@@ -73,25 +64,18 @@ const STORY_SCOPE = [
 
 const instant = (second) => `2026-07-11T00:00:${String(second).padStart(2, "0")}Z`;
 
+// TCRN-CROSS-STORY-469: every fixture is a library. Its id follows the fixture key, so two fixtures
+// with one key hold byte-identical chains; the device is the test process's own (device-home.mjs).
 async function workspaceFixture(options = {}) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-p3-")));
-  const kinds = ["framework", "workspace", "transient", "evidence-locator", "release-trust"];
-  const roots = [];
-  for (const kind of kinds) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
   const workspace = join(base, "workspace");
-  const state = await initializeWorkspace({
-    roots,
-    externalKey: options.externalKey ?? "WORKSPACE-ALPHA",
+  const state = await initializeLibrary({
+    root: workspace,
     createdAt: instant(0),
-    segmentEventLimit: options.segmentEventLimit ?? 2,
+    libraryId: deriveStableId("library", options.externalKey ?? "WORKSPACE-ALPHA"),
   });
   return {
     base,
-    roots,
     workspace,
     state,
     async close() {
@@ -100,54 +84,19 @@ async function workspaceFixture(options = {}) {
   };
 }
 
-function expectedStreamId(metadata) {
-  return `stream:${canonicalSha256({
-    schemaVersion: "tcrn.workspace-stream-identity.v1",
-    workspaceId: metadata.workspaceId,
-    createdAt: metadata.createdAt,
-  }).slice(0, 24)}`;
+// In a library an event the reducer cannot apply is not a corrupt chain: the reader lists it as a
+// rejected event with the rule's reason code and goes on (TCRN-CROSS-STORY-468 R5).
+async function rejectedAt(workspace, sequence) {
+  const state = await materializeWorkspace(workspace);
+  const rejected = state.library.rejectedEvents;
+  assert.equal(rejected.length, 1, "exactly the forged event is rejected");
+  assert.equal(rejected[0].reasonCode, "WORKSPACE_EVENT_CORRUPT");
+  assert.equal(rejected[0].sequence, sequence);
+  return state;
 }
 
-function expectedEventId(streamId, sequence) {
-  return `event:${canonicalSha256({
-    schemaVersion: "tcrn.workspace-event-identity.v1",
-    streamId,
-    sequence,
-  }).slice(0, 24)}`;
-}
-
-async function rewriteEventChain(workspace, transform, identity = {}) {
-  const control = join(workspace, LEGACY_CONTROL_DIRECTORY);
-  const metadata = JSON.parse(await readFile(join(control, "workspace.json"), "utf8"));
-  const eventsRoot = join(control, "events");
-  const names = (await readdir(eventsRoot)).filter((name) => /^\d{6}\.json$/u.test(name)).sort();
-  const original = [];
-  for (const name of names) {
-    original.push(...JSON.parse(await readFile(join(eventsRoot, name), "utf8")));
-  }
-  const specifications = transform(structuredClone(original));
-  const streamId = identity.streamId ?? expectedStreamId(metadata);
-  const rebuilt = [];
-  for (const [index, specification] of specifications.entries()) {
-    const sequence = index + 1;
-    rebuilt.push(createEvent({
-      id: identity.eventIdFor?.(streamId, sequence) ?? expectedEventId(streamId, sequence),
-      streamId,
-      sequence,
-      occurredAt: specification.occurredAt,
-      priorHash: rebuilt.at(-1)?.eventHash ?? null,
-      payload: specification.payload,
-    }, LEGACY_EVENT_SCHEMA_VERSION));
-  }
-  for (const name of names) {
-    await rm(join(eventsRoot, name));
-  }
-  for (let offset = 0; offset < rebuilt.length; offset += metadata.segmentEventLimit) {
-    const segment = rebuilt.slice(offset, offset + metadata.segmentEventLimit);
-    const index = Math.floor(offset / metadata.segmentEventLimit) + 1;
-    await writeFile(join(eventsRoot, `${String(index).padStart(6, "0")}.json`), canonicalJson(segment));
-  }
-  return rebuilt;
+function streamBreak(reasonCode, kind) {
+  return (error) => error?.reasonCode === reasonCode && (kind === undefined || error.details?.break === kind);
 }
 
 async function createProjectHistory(fixture, update = false, remove = false) {
@@ -175,13 +124,17 @@ async function expectReasonAsync(reasonCode, operation) {
   await assert.rejects(operation, (error) => error?.reasonCode === reasonCode, reasonCode);
 }
 
-test("Workspace metadata schema, five-root initialization, CLI readback, and standalone boundary are exact", async () => {
+test("Library manifest, initialization, CLI readback, and standalone boundary are exact", async () => {
   const fixture = await workspaceFixture();
   try {
-    const schema = JSON.parse(await readFile(new URL("../packages/core/schema/workspace-v1.schema.json", import.meta.url), "utf8"));
-    const metadata = JSON.parse(await readFile(join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "workspace.json"), "utf8"));
-    const ajv = new Ajv2020({ strict: true, validateFormats: false });
-    assert.equal(ajv.validate(schema, metadata), true, JSON.stringify(ajv.errors));
+    // The manifest is canonical, validates, and names the library the fixture asked for.
+    const manifestPath = join(fixture.workspace, "manifest.json");
+    const manifestText = await readFile(manifestPath, "utf8");
+    const manifest = JSON.parse(manifestText);
+    assert.deepEqual(validateLibraryManifest(manifest, manifestPath), manifest);
+    assert.equal(canonicalJson(manifest), manifestText);
+    assert.equal(manifest.libraryId, deriveStableId("library", "WORKSPACE-ALPHA"));
+    assert.equal(fixture.state.metadata.workspaceId, manifest.libraryId);
     assert.equal(fixture.state.version, 0);
     assert.equal((await validateWorkspace(fixture.workspace)).metadata.workspaceId, fixture.state.metadata.workspaceId);
 
@@ -215,27 +168,44 @@ test("Workspace metadata schema, five-root initialization, CLI readback, and sta
   }
 });
 
-test("Workspace root entries have exact Ajv/runtime field and type parity", async () => {
+// The old-layout reader still parses workspace.json with the engine's metadata rules
+// (TCRN-CROSS-STORY-466 R2), so the frozen fixture's metadata keeps exact Ajv/runtime parity for
+// its root entries, and a storage version outside what that reader knows is refused, not guessed.
+test("old-layout workspace.json: root entries keep Ajv/runtime parity and storage versions outside the reader are refused", async (context) => {
   const schema = JSON.parse(await readFile(new URL("../packages/core/schema/workspace-v1.schema.json", import.meta.url), "utf8"));
   const ajv = new Ajv2020({ strict: true, validateFormats: false });
+  const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-p3-legacy-")));
+  context.after(() => rm(base, { recursive: true, force: true }));
+  // The schema file pins storage version 1 and the fixture is storage version 2, so Ajv sees the
+  // metadata with its storage fields in their version-1 form; the root entries under test are the
+  // fixture's own.
+  const asVersion1 = (metadata) => ({ ...metadata, storageVersion: 1, maximumStorageVersion: 1, segmentEventLimit: 2 });
+  const pristine = await restoreLegacyFixture(base, "pristine");
+  assert.equal(ajv.validate(schema, asVersion1(JSON.parse(await readFile(join(pristine.control, "workspace.json"), "utf8")))), true, JSON.stringify(ajv.errors));
+  assert.equal((await materializeWorkspace(pristine.root)).version, LEGACY_FIXTURE_EXPECTED.version);
   const mutations = [
     (metadata) => { metadata.roots[0].extraAuthority = true; },
     (metadata) => { delete metadata.roots[0].canonicalPath; },
     (metadata) => { metadata.roots[0].path = 7; },
     (metadata) => { metadata.roots[0] = "framework"; },
   ];
-  for (const mutate of mutations) {
-    const fixture = await workspaceFixture();
-    try {
-      const metadataPath = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "workspace.json");
-      const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
-      mutate(metadata);
-      assert.equal(ajv.validate(schema, metadata), false);
-      await writeFile(metadataPath, canonicalJson(metadata));
-      await expectReasonAsync("WORKSPACE_SCHEMA_INVALID", () => materializeWorkspace(fixture.workspace));
-    } finally {
-      await fixture.close();
-    }
+  for (const [index, mutate] of mutations.entries()) {
+    const { root, control } = await restoreLegacyFixture(base, `roots-${index}`);
+    const metadataPath = join(control, "workspace.json");
+    const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
+    mutate(metadata);
+    assert.equal(ajv.validate(schema, asVersion1(metadata)), false);
+    await writeFile(metadataPath, canonicalJson(metadata));
+    await expectReasonAsync("WORKSPACE_SCHEMA_INVALID", () => materializeWorkspace(root));
+  }
+  for (const [name, versions, reasonCode] of [
+    ["future", { storageVersion: 3, minimumStorageVersion: 1, maximumStorageVersion: 3 }, "WORKSPACE_MIGRATION_FUTURE"],
+    ["downgrade", { storageVersion: 0 }, "WORKSPACE_MIGRATION_DOWNGRADE"],
+  ]) {
+    const { root, control } = await restoreLegacyFixture(base, name);
+    const metadataPath = join(control, "workspace.json");
+    await writeFile(metadataPath, canonicalJson({ ...JSON.parse(await readFile(metadataPath, "utf8")), ...versions }));
+    await expectReasonAsync(reasonCode, () => materializeWorkspace(root));
   }
 });
 
@@ -284,7 +254,8 @@ test("project CRUD and Initiative-Epic-Story-Subtask operations materialize dete
     await expectReasonAsync("GRAPH_PARENT_KIND_INVALID", () => createWork(fixture.workspace, {
       occurredAt: instant(11), projectId, externalKey: "BAD-EPIC", kind: "Epic", parentId: storyId,
     }));
-    const status = await readFile(join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "views", "STATUS.md"), "utf8");
+    // A library keeps no view files; the status view is a projection of the state.
+    const status = workspaceViewDocuments(await materializeWorkspace(fixture.workspace))["STATUS.md"];
     assert.match(status, /Work records: 3/u);
     assert.equal(await exportWorkspace(fixture.workspace), await exportWorkspace(fixture.workspace));
     assert.deepEqual(await createWorkspaceArchive(fixture.workspace), await createWorkspaceArchive(fixture.workspace));
@@ -479,12 +450,14 @@ test("WSA-2: a 400-record deep-hierarchy build completes and exports determinist
 test("single-writer lock, stale-lock recovery, and atomic crash points fail closed", async () => {
   const fixture = await workspaceFixture();
   try {
-    // TCRN-CROSS-STORY-467 R1: a write lock left by a holder that is gone is broken, and the
-    // write proceeds and releases it.
-    const lockPath = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, WORKSPACE_WRITE_LOCK_FILE);
-    await writeFile(lockPath, `${JSON.stringify({ schemaVersion: FILE_LOCK_SCHEMA_VERSION, pid: 2_147_483_000, token: "b".repeat(32), hostname: hostname(), createdAt: "2000-01-01T00:00:00Z" })}\n`);
+    // TCRN-CROSS-STORY-467 R1, STORY-469: the write lock of a library lives in this device's
+    // directory. A lock left by a holder that is gone is broken, and the write proceeds and
+    // releases it.
+    const lock = lockPath(fixture.state.metadata.workspaceId, deviceHome);
+    await mkdir(dirname(lock), { recursive: true });
+    await writeFile(lock, `${JSON.stringify({ schemaVersion: FILE_LOCK_SCHEMA_VERSION, pid: 2_147_483_000, token: "b".repeat(32), hostname: hostname(), createdAt: "2000-01-01T00:00:00Z" })}\n`);
     await createProject(fixture.workspace, { occurredAt: instant(3), externalKey: "PROJECT-AFTER-STALE", name: "After stale" });
-    await assert.rejects(readFile(lockPath), { code: "ENOENT" });
+    await assert.rejects(readFile(lock), { code: "ENOENT" });
   } finally {
     await fixture.close();
   }
@@ -499,13 +472,12 @@ test("single-writer lock, stale-lock recovery, and atomic crash points fail clos
         name: fault.id,
         crashAt: fault.id,
       }));
-      assert.equal((await materializeWorkspace(crashFixture.workspace)).version, fault.committed ? 1 : 0);
-      if (fault.committed) {
-        await expectReasonAsync("WORKSPACE_VIEW_STALE", () => validateWorkspace(crashFixture.workspace));
-        assert.equal((await recoverWorkspace(crashFixture.workspace)).version, 1);
-      } else {
-        assert.equal((await validateWorkspace(crashFixture.workspace)).version, 0);
-      }
+      // A library keeps no view to go stale: a crash before the write leaves nothing, one after
+      // the stream manifest commits leaves the event, and every read and recover agrees.
+      const version = fault.committed ? 1 : 0;
+      assert.equal((await materializeWorkspace(crashFixture.workspace)).version, version);
+      assert.equal((await validateWorkspace(crashFixture.workspace)).version, version);
+      assert.equal((await recoverWorkspace(crashFixture.workspace)).version, version);
     } finally {
       await crashFixture.close();
     }
@@ -552,8 +524,12 @@ test("two concurrent mutations are serialised by the write lock and both land in
   }
 });
 
-test("segment rotation and replay, truncation, reordering, corruption, gap, and special-entry attacks are rejected", async () => {
-  const fixture = await workspaceFixture({ segmentEventLimit: 2 });
+// TCRN-CROSS-STORY-468 R2, STORY-469 R5: a device's stream is read through its manifest, which
+// records every segment's name, length and digest, and every event is checked against its
+// stream. Each attack on a committed segment fails closed with a reason code; an entry the
+// manifest does not name is not part of the stream; restoring the bytes restores the chain.
+test("stream segments: truncation, duplication, reordering, corruption, a forked head, removal and a non-file segment are rejected", async () => {
+  const fixture = await workspaceFixture();
   try {
     let state = await createProject(fixture.workspace, {
       occurredAt: instant(1), externalKey: "PROJECT-SEGMENT", name: "Segment",
@@ -566,43 +542,45 @@ test("segment rotation and replay, truncation, reordering, corruption, gap, and 
     await createWork(fixture.workspace, {
       occurredAt: instant(3), projectId, externalKey: "EPIC-SEGMENT", kind: "Epic", parentId: initiativeId,
     });
-    const eventsRoot = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "events");
-    const firstPath = join(eventsRoot, "000001.json");
-    const secondPath = join(eventsRoot, "000002.json");
-    const firstText = await readFile(firstPath, "utf8");
-    const secondText = await readFile(secondPath, "utf8");
-    const first = JSON.parse(firstText);
+    const stream = await ownStreamDirectory(fixture.workspace);
+    const segmentPath = join(stream, "00000001.ndjson");
+    const segmentText = await readFile(segmentPath, "utf8");
+    const lines = segmentText.split("\n").slice(0, -1);
+    assert.equal(lines.length, 3);
+    const refused = async (content, check) => {
+      await writeFile(segmentPath, content);
+      await assert.rejects(materializeWorkspace(fixture.workspace), check);
+      await writeFile(segmentPath, segmentText);
+    };
 
-    await writeFile(firstPath, "{");
-    await expectReasonAsync("WORKSPACE_EVENT_CORRUPT", () => materializeWorkspace(fixture.workspace));
-    await writeFile(firstPath, firstText);
+    await refused("{", streamBreak("AKASHA_SEGMENT_CORRUPT"));
+    await refused(`${[lines[0], ...lines].join("\n")}\n`, streamBreak("AKASHA_SEGMENT_CORRUPT"));
+    await refused(`${[...lines].reverse().join("\n")}\n`, streamBreak("AKASHA_EVENT_CORRUPT", "sequence"));
+    const second = JSON.parse(lines[1]);
+    await refused(`${[lines[0], canonicalJson({ ...second, eventHash: "0".repeat(64) }).trimEnd(), lines[2]].join("\n")}\n`, streamBreak("AKASHA_EVENT_CORRUPT", "eventHash"));
+    // A forked head (STORY-173 criterion 3): the third event re-hashed onto the first event's
+    // hash, so every hash of its own checks out and only the link does not.
+    const forked = createEvent(eventInputOf({ ...JSON.parse(lines[2]), priorHash: JSON.parse(lines[0]).eventHash }), JSON.parse(lines[2]).schemaVersion);
+    await refused(`${[lines[0], lines[1], canonicalJson(forked).trimEnd()].join("\n")}\n`, (error) => streamBreak("AKASHA_EVENT_CORRUPT", "priorHash")(error) && error.details.sequence === "3");
 
-    await writeFile(firstPath, canonicalJson([first[0], first[0]]));
-    await expectReasonAsync("WORKSPACE_EVENT_CORRUPT", () => materializeWorkspace(fixture.workspace));
-    await writeFile(firstPath, firstText);
+    await rename(segmentPath, join(stream, "00000002.ndjson"));
+    await assert.rejects(materializeWorkspace(fixture.workspace), streamBreak("AKASHA_SEGMENT_CORRUPT"));
+    await rename(join(stream, "00000002.ndjson"), join(stream, "aside.ndjson"));
+    await mkdir(segmentPath);
+    await assert.rejects(materializeWorkspace(fixture.workspace), streamBreak("AKASHA_SEGMENT_CORRUPT"));
+    await rm(segmentPath, { recursive: true });
+    await rename(join(stream, "aside.ndjson"), segmentPath);
 
-    await writeFile(firstPath, canonicalJson([...first].reverse()));
-    await expectReasonAsync("WORKSPACE_EVENT_CORRUPT", () => materializeWorkspace(fixture.workspace));
-    await writeFile(firstPath, firstText);
-
-    await writeFile(firstPath, canonicalJson([first[0], { ...first[1], eventHash: "0".repeat(64) }]));
-    await expectReasonAsync("WORKSPACE_EVENT_CORRUPT", () => materializeWorkspace(fixture.workspace));
-    await writeFile(firstPath, firstText);
-
-    await rename(secondPath, join(eventsRoot, "000003.json"));
-    await expectReasonAsync("WORKSPACE_EVENT_CORRUPT", () => materializeWorkspace(fixture.workspace));
-    await rename(join(eventsRoot, "000003.json"), secondPath);
-
-    await mkdir(join(eventsRoot, "special-entry"));
-    await expectReasonAsync("WORKSPACE_EVENT_CORRUPT", () => materializeWorkspace(fixture.workspace));
-    await rm(join(eventsRoot, "special-entry"), { recursive: true });
-    assert.equal((await validateWorkspace(fixture.workspace)).version, 3);
-    assert.equal(secondText, await readFile(secondPath, "utf8"));
+    await mkdir(join(stream, "special-entry"));
+    await writeFile(join(stream, "00000009.ndjson"), lines[0]);
+    assert.equal((await validateWorkspace(fixture.workspace)).version, 3, "entries the manifest does not name are not read");
+    assert.equal(await readFile(segmentPath, "utf8"), segmentText);
   } finally {
     await fixture.close();
   }
 });
 
+// Forged events are written with valid hashes, so what is refused is the admission rule under test.
 test("event admission rejects unknown operations, lifecycle forgery, resurrection, and invalid relationships", async () => {
   const scenarios = [
     {
@@ -611,6 +589,7 @@ test("event admission rejects unknown operations, lifecycle forgery, resurrectio
         events[1].payload.operation = "project.archived";
         return events;
       },
+      rejected: 2,
     },
     {
       prepare: (fixture) => createProjectHistory(fixture, false, true),
@@ -620,6 +599,7 @@ test("event admission rejects unknown operations, lifecycle forgery, resurrectio
         deleted.payload.record.revision = 3;
         return [...events, deleted];
       },
+      rejected: 3,
     },
     {
       prepare: (fixture) => createProjectHistory(fixture, false, true),
@@ -632,6 +612,7 @@ test("event admission rejects unknown operations, lifecycle forgery, resurrectio
         resurrected.payload.record.updatedAt = instant(3);
         return [...events, resurrected];
       },
+      rejected: 3,
     },
     {
       prepare: (fixture) => createProjectHistory(fixture, true, false),
@@ -639,14 +620,15 @@ test("event admission rejects unknown operations, lifecycle forgery, resurrectio
         events[1].payload.record.revision = 99;
         return events;
       },
+      rejected: 2,
     },
   ];
   for (const scenario of scenarios) {
     const fixture = await workspaceFixture();
     try {
       await scenario.prepare(fixture);
-      await rewriteEventChain(fixture.workspace, scenario.mutate);
-      await expectReasonAsync("WORKSPACE_EVENT_CORRUPT", () => materializeWorkspace(fixture.workspace));
+      await forgeOwnStream(fixture.workspace, scenario.mutate);
+      await rejectedAt(fixture.workspace, scenario.rejected);
     } finally {
       await fixture.close();
     }
@@ -656,7 +638,9 @@ test("event admission rejects unknown operations, lifecycle forgery, resurrectio
     const absentFixture = await workspaceFixture();
     try {
       const externalKey = "PROJECT-ABSENT";
-      await rewriteEventChain(absentFixture.workspace, () => [{
+      // The stream is seeded with one event and then replaced by the forged one.
+      await createProject(absentFixture.workspace, { occurredAt: instant(1), externalKey: "PROJECT-SEED", name: "Seed" });
+      await forgeOwnStream(absentFixture.workspace, () => [{
         occurredAt: instant(1),
         payload: {
           operation,
@@ -671,7 +655,8 @@ test("event admission rejects unknown operations, lifecycle forgery, resurrectio
           },
         },
       }]);
-      await expectReasonAsync("WORKSPACE_EVENT_CORRUPT", () => materializeWorkspace(absentFixture.workspace));
+      const state = await rejectedAt(absentFixture.workspace, 1);
+      assert.deepEqual(state.projects, []);
     } finally {
       await absentFixture.close();
     }
@@ -692,11 +677,11 @@ test("event admission rejects unknown operations, lifecycle forgery, resurrectio
     await transitionWork(workFixture.workspace, {
       occurredAt: instant(3), id: state.work[0].id, status: "ready",
     });
-    await rewriteEventChain(workFixture.workspace, (events) => {
+    await forgeOwnStream(workFixture.workspace, (events) => {
       events[2].payload.operation = "work.archived";
       return events;
     });
-    await expectReasonAsync("WORKSPACE_EVENT_CORRUPT", () => materializeWorkspace(workFixture.workspace));
+    await rejectedAt(workFixture.workspace, 3);
   } finally {
     await workFixture.close();
   }
@@ -713,11 +698,11 @@ test("event admission rejects unknown operations, lifecycle forgery, resurrectio
       kind: "Initiative",
       parentId: null,
     });
-    await rewriteEventChain(relationshipFixture.workspace, (events) => {
+    await forgeOwnStream(relationshipFixture.workspace, (events) => {
       events[1].payload.record.projectId = "project:missing";
       return events;
     });
-    await expectReasonAsync("WORKSPACE_EVENT_CORRUPT", () => materializeWorkspace(relationshipFixture.workspace));
+    await rejectedAt(relationshipFixture.workspace, 2);
   } finally {
     await relationshipFixture.close();
   }
@@ -726,7 +711,7 @@ test("event admission rejects unknown operations, lifecycle forgery, resurrectio
   try {
     const state = await createProjectHistory(absentWorkFixture, false, false);
     const externalKey = "INITIATIVE-ABSENT";
-    await rewriteEventChain(absentWorkFixture.workspace, (events) => [...events, {
+    await forgeOwnStream(absentWorkFixture.workspace, (events) => [...events, {
       occurredAt: instant(2),
       payload: {
         operation: "work.updated",
@@ -745,21 +730,25 @@ test("event admission rejects unknown operations, lifecycle forgery, resurrectio
         },
       },
     }]);
-    await expectReasonAsync("WORKSPACE_EVENT_CORRUPT", () => materializeWorkspace(absentWorkFixture.workspace));
+    await rejectedAt(absentWorkFixture.workspace, 2);
   } finally {
     await absentWorkFixture.close();
   }
 });
 
-test("event stream and event IDs are bound to canonical Workspace metadata", async () => {
+// TCRN-CROSS-STORY-468 R2: every event is bound to its stream: the stream id the stream manifest
+// records, and the event id derived from that stream and the sequence. A segment copied from
+// another library's stream, or an event carrying another stream or event id, breaks the stream
+// at its sequence.
+test("stream and event ids bind every event to its stream", async () => {
   const source = await workspaceFixture({ externalKey: "WORKSPACE-SOURCE" });
   const target = await workspaceFixture({ externalKey: "WORKSPACE-TARGET" });
   try {
     await createProjectHistory(source, false, false);
-    const sourceSegment = join(source.workspace, LEGACY_CONTROL_DIRECTORY, "events", "000001.json");
-    const targetSegment = join(target.workspace, LEGACY_CONTROL_DIRECTORY, "events", "000001.json");
-    await writeFile(targetSegment, await readFile(sourceSegment));
-    await expectReasonAsync("WORKSPACE_EVENT_CORRUPT", () => materializeWorkspace(target.workspace));
+    await createProjectHistory(target, false, false);
+    const segment = async (fixture) => join(await ownStreamDirectory(fixture.workspace), "00000001.ndjson");
+    await writeFile(await segment(target), await readFile(await segment(source)));
+    await assert.rejects(materializeWorkspace(target.workspace), (error) => streamBreak("AKASHA_EVENT_CORRUPT", "identity")(error) && error.details.sequence === "1");
   } finally {
     await source.close();
     await target.close();
@@ -772,15 +761,18 @@ test("event stream and event IDs are bound to canonical Workspace metadata", asy
     const fixture = await workspaceFixture();
     try {
       await createProjectHistory(fixture, false, false);
-      await rewriteEventChain(fixture.workspace, (events) => events, identity);
-      await expectReasonAsync("WORKSPACE_EVENT_CORRUPT", () => materializeWorkspace(fixture.workspace));
+      await forgeOwnStream(fixture.workspace, (events) => events, identity);
+      await assert.rejects(materializeWorkspace(fixture.workspace), streamBreak("AKASHA_EVENT_CORRUPT", "identity"));
     } finally {
       await fixture.close();
     }
   }
 });
 
-test("path, link, Unicode, size, record, filesystem, and migration boundaries have stable failures", async () => {
+// The old layout's link, filesystem and migration boundaries went with its writer at
+// TCRN-CROSS-STORY-469's switch to libraries; its storage-version refusals are asserted on the
+// frozen old-layout fixture above.
+test("path, Unicode, size, and record boundaries have stable failures", async () => {
   expectReason("WORKSPACE_PATH_ESCAPE", () => assertWorkspaceRelativePath("../escape"));
   expectReason("WORKSPACE_PATH_ESCAPE", () => assertWorkspaceRelativePath("a\\b"));
   // TCRN-CROSS-INC-224: derived from the constant rather than typed, because this
@@ -789,7 +781,6 @@ test("path, link, Unicode, size, record, filesystem, and migration boundaries ha
   // sharing a number -- and that behavioural change is asserted beside the refusal.
   assert.doesNotThrow(() => assertWorkspaceRecordCount(PROTOCOL_LIMITS.maxRecords + 1));
   expectReason("WORKSPACE_RECORD_LIMIT", () => assertWorkspaceRecordCount(PROTOCOL_LIMITS.maxChainEvents + 1));
-  await expectReasonAsync("WORKSPACE_FILESYSTEM_UNSUPPORTED", () => assertSupportedWorkspaceFilesystem(tmpdir(), 0x7fffffff));
 
   const malformed = await workspaceFixture();
   try {
@@ -799,45 +790,9 @@ test("path, link, Unicode, size, record, filesystem, and migration boundaries ha
     await expectReasonAsync("WORKSPACE_INPUT_OVERSIZED", () => createProject(malformed.workspace, {
       occurredAt: instant(1), externalKey: "PROJECT-LARGE", name: "x".repeat(513),
     }));
-    const plan = await planWorkspaceMigration(malformed.workspace, 1);
-    assert.equal(plan.dryRun, true);
-    assert.equal(plan.applyAvailable, false);
-    assert.equal(plan.rollback, "restore-exact-pre-migration-backup-then-validate");
-    assert.equal(plan.postValidation, "validate-exact-target-schema-and-full-event-chain");
-    await expectReasonAsync("WORKSPACE_MIGRATION_DOWNGRADE", () => planWorkspaceMigration(malformed.workspace, 0));
-    const upgrade = await planWorkspaceMigration(malformed.workspace, 2);
-    assert.equal(upgrade.fromVersion, 1);
-    assert.equal(upgrade.toVersion, 2);
-    await expectReasonAsync("WORKSPACE_MIGRATION_APPLY_UNAVAILABLE", () => applyWorkspaceMigration());
+    assert.equal((await validateWorkspace(malformed.workspace)).version, 0, "a refused input writes nothing");
   } finally {
     await malformed.close();
-  }
-
-  for (const linkKind of ["symlink", "hardlink"]) {
-    const fixture = await workspaceFixture();
-    try {
-      const metadata = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "workspace.json");
-      const backup = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, `workspace-${linkKind}.json`);
-      await rename(metadata, backup);
-      if (linkKind === "symlink") {
-        await symlink(backup, metadata);
-      } else {
-        await link(backup, metadata);
-      }
-      await expectReasonAsync("WORKSPACE_PATH_INVALID", () => materializeWorkspace(fixture.workspace));
-    } finally {
-      await fixture.close();
-    }
-  }
-
-  const future = await workspaceFixture();
-  try {
-    const metadataPath = join(future.workspace, LEGACY_CONTROL_DIRECTORY, "workspace.json");
-    const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
-    await writeFile(metadataPath, canonicalJson({ ...metadata, storageVersion: 3, minimumStorageVersion: 1, maximumStorageVersion: 3 }));
-    await expectReasonAsync("WORKSPACE_MIGRATION_FUTURE", () => materializeWorkspace(future.workspace));
-  } finally {
-    await future.close();
   }
 });
 
@@ -864,7 +819,7 @@ test("derived ordering, readback hashes, and export bytes remain deterministic a
       shuffled.sort((left, right) => Buffer.compare(Buffer.from(left.id), Buffer.from(right.id)));
       assert.equal(canonicalSha256(shuffled), expected);
     }
-    const readback = JSON.parse(await readFile(join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "views", "readback.json"), "utf8"));
+    const readback = JSON.parse(workspaceViewDocuments(state)["readback.json"]);
     assert.equal(readback.authority, "derived-rebuildable");
     assert.equal(typeof readback.graphDigest, "string");
   } finally {
@@ -872,14 +827,9 @@ test("derived ordering, readback hashes, and export bytes remain deterministic a
   }
 });
 
+// The payloads as stored in this device's stream of the library.
 async function readEventPayloads(workspace) {
-  const eventsRoot = join(workspace, LEGACY_CONTROL_DIRECTORY, "events");
-  const names = (await readdir(eventsRoot)).filter((name) => /^\d{6}\.json$/u.test(name)).sort();
-  const events = [];
-  for (const name of names) {
-    events.push(...JSON.parse(await readFile(join(eventsRoot, name), "utf8")));
-  }
-  return events.map((event) => event.payload);
+  return (await readOwnStream(workspace)).events.map((event) => event.payload);
 }
 
 test("WSE-3: --actor threads through the mutation verbs into the appended event payload, fail-closed after the historical enable event", async () => {
@@ -1014,14 +964,16 @@ test("WSA-3: closing an Initiative to done with live non-terminal descendants is
 // TCRN-CROSS-STORY-359: verifyP3 retired with the rest of the phase verbs and it was the
 // only reader of these six fixture counts. Re-hung here, in the file that drives the
 // corpus, so the fixture cannot silently shrink away from the cases it claims to carry.
+// TCRN-CROSS-STORY-469 shrank it on purpose: a library append has two crash windows, not
+// four, and migration planning is gone, leaving the two storage-version refusals.
 test("STORY-359 the p3 fixture declares the corpus sizes verifyP3 used to pin", async () => {
   const fixture = JSON.parse(await readFile(new URL("../packages/core/fixtures/p3-cases.json", import.meta.url), "utf8"));
   assert.equal(fixture.schemaVersion, "tcrn.p3-file-engine-cases.v1");
-  assert.equal(fixture.faultCases.length, 4);
+  assert.equal(fixture.faultCases.length, 2);
   assert.equal(fixture.leaseFaultCases.length, 1);
   assert.equal(fixture.schemaParityCases.length, 4);
   assert.equal(fixture.concurrencyCases.length, 4);
   assert.ok(fixture.negativeCases.length >= 53, String(fixture.negativeCases.length));
-  assert.equal(fixture.migrationCases.length, 3);
+  assert.equal(fixture.migrationCases.length, 2);
   assert.ok(fixture.propertyPermutations >= 64, String(fixture.propertyPermutations));
 });

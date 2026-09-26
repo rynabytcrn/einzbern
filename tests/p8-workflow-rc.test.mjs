@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -15,7 +16,7 @@ import {
   exportWorkspace,
   generateCorePersonaBundle,
   initializeKnowledgeStore,
-  initializeWorkspace,
+  initializeLibrary,
   listKnowledgeMetadata,
   transitionWork,
   LEGACY_ENGINE_NAME,
@@ -169,14 +170,8 @@ test("P8 dogfood completes one disposable local_primary initiative with Knowledg
     await rm(base, { recursive: true, force: true });
     await assert.rejects(lstat(base));
   });
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
   const workspace = join(base, "workspace");
-  await initializeWorkspace({ roots, externalKey: "FIXTURE-P8-LOCAL-PRIMARY", createdAt: "2026-07-14T00:00:00Z", segmentEventLimit: 64 });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: "2026-07-14T00:00:00Z" });
   let state = await createProject(workspace, { occurredAt: "2026-07-14T00:00:01Z", externalKey: "FIXTURE-P8-PROJECT", name: "P8 local_primary" });
   state = await createWork(workspace, { occurredAt: "2026-07-14T00:00:02Z", projectId: state.projects[0].id, externalKey: "FIXTURE-P8-INITIATIVE", kind: "Initiative", parentId: null, status: "planned" });
   for (const [status, occurredAt] of [["ready", "2026-07-14T00:00:03Z"], ["active", "2026-07-14T00:00:04Z"], ["done", "2026-07-14T00:00:05Z"]]) {
@@ -186,7 +181,7 @@ test("P8 dogfood completes one disposable local_primary initiative with Knowledg
   const exportOne = await exportWorkspace(workspace);
   const exportTwo = await exportWorkspace(workspace);
   assert.equal(exportOne, exportTwo);
-  await initializeKnowledgeStore(workspace);
+  await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
   const knowledge = await createKnowledgeUnit(workspace, {
     occurredAt: "2026-07-14T00:00:06Z",
     externalKey: "FIXTURE-P8-KNOWLEDGE",

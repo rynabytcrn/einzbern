@@ -6,12 +6,12 @@
 // TCRN-CROSS-STORY-467 R3 retired the telemetry store itself: nothing in the engine writes or reads
 // it, so the fixtures lay the records down on disk the way v1.2.0 did and fitness counts nothing.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { appendFile, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import test from "node:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { inflateSync } from "node:zlib";
 
 import { COMMAND_CATALOG, runCli } from "../dist/build/packages/cli/src/index.js";
 import {
@@ -22,7 +22,7 @@ import {
   createWork,
   evaluateKnowledgeFreshness,
   initializeKnowledgeStore,
-  initializeWorkspace,
+  initializeLibrary,
   listKnowledgeMetadata,
   materializeWorkspace,
   materializeWorkspaceFromGenesis,
@@ -34,7 +34,7 @@ import {
   setWorkspaceSetting,
   sortWorkspaceSettings,
   validateWorkspace,
-  LEGACY_CONTROL_DIRECTORY,
+  DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalJson, canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
 
@@ -71,11 +71,8 @@ async function appendLegacyTelemetry(root, { at, kind, session, payload }) {
 async function fixture(t, externalKey, { aggregateBytes, workItem = false } = {}) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-s377-")));
   t.after(() => rm(base, { recursive: true, force: true }));
-  const roots = ["framework", "workspace", "transient", "evidence-locator", "release-trust"]
-    .map((kind) => ({ kind, path: join(base, kind) }));
-  for (const root of roots) await mkdir(root.path);
   const workspace = join(base, "workspace");
-  await initializeWorkspace({ roots, externalKey, createdAt: "2026-01-01T00:00:00Z" });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: "2026-01-01T00:00:00Z" });
   let workId = null;
   const project = await createProject(workspace, {
     occurredAt: "2026-01-01T00:00:01Z",
@@ -91,8 +88,8 @@ async function fixture(t, externalKey, { aggregateBytes, workItem = false } = {}
     const state = await createWork(workspace, { occurredAt: "2026-01-01T00:00:03Z", projectId: project.projects[0].id, externalKey: `${externalKey}-INCIDENT`, kind: "Incident", parentId: null, title: "Story 377 telemetry-only artifact" });
     workId = state.work[0].id;
   }
-  await initializeKnowledgeStore(workspace);
-  return { base, workspace, workId, transient: join(base, "transient"), store: join(workspace, LEGACY_CONTROL_DIRECTORY, "knowledge") };
+  await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
+  return { base, workspace, workId, transient: join(base, "transient"), store: join(workspace, DIRECTORY.knowledge) };
 }
 
 async function card(fx, externalKey, options = {}) {
@@ -545,28 +542,6 @@ async function readEveryWay(workspace) {
   };
 }
 
-// The newest replay snapshot as stored: its version and the keys of the settings it seeds.
-async function newestSnapshotSettings(fx) {
-  const directory = join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "snapshots");
-  const manifest = JSON.parse(await readFile(join(directory, "manifest.json"), "utf8"));
-  const parts = await Promise.all(manifest.snapshotParts.map((part) => readFile(join(directory, part))));
-  return { version: manifest.version, keys: JSON.parse(inflateSync(Buffer.concat(parts)).toString("utf8")).settings.map((entry) => entry.key) };
-}
-
-// A chain that took a replay snapshot while fitness.windowDays was live: version 2 sets an interval of two
-// events, and one append records the retired key and a live one, ending on version 4, where the snapshot
-// is written with both.
-async function snapshotWhileRetiredKeyLive(t, externalKey) {
-  const fx = await fixture(t, externalKey);
-  await appendSettingEvents(fx, "2026-01-02T00:00:00Z", [recordedSetting("storage.snapshotEveryEvents", "2", "2026-01-02T00:00:00Z")]);
-  await appendSettingEvents(fx, "2026-01-03T00:00:00Z", [
-    recordedSetting("fitness.windowDays", "30", "2026-01-03T00:00:00Z"),
-    recordedSetting("artifact.language", "zh-CN", "2026-01-03T00:00:00Z"),
-  ]);
-  assert.deepEqual(await newestSnapshotSettings(fx), { version: 4, keys: ["artifact.language", "fitness.windowDays", "storage.snapshotEveryEvents"] }, "the snapshot holds the retired key as 1.2.0 wrote it");
-  return fx;
-}
-
 // INC-389 R1: a chain that set fitness.windowDays or fitness.minEvents under 1.1.0-1.2.0 and removed it
 // again was valid there. The removal of a retired key is history, like the value it removed, so every read
 // opens the chain and neither record is a current setting.
@@ -595,42 +570,19 @@ test("INC-389: an earlier retired key set then removed replays in every read", a
   }
 });
 
-// INC-389 R2 (#566): the snapshot is verified as stored and only its seed drops the retired key, so the
-// snapshot-seeded read and a replay from genesis hold the same settings. validate is not asked: the views
-// of this chain were projected with the key, so they read WORKSPACE_VIEW_STALE until recover or the next
-// write rebuilds them (problem list #576).
-test("INC-389: a replay snapshot taken while a retired key was live seeds the same settings as genesis", async (t) => {
-  const fx = await snapshotWhileRetiredKeyLive(t, "FIXTURE-INC-389-SNAPSHOT");
-  const seeded = await materializeWorkspace(fx.workspace);
-  const genesis = await materializeWorkspaceFromGenesis(fx.workspace);
-  assert.deepEqual(seeded.settings, genesis.settings, "the snapshot seed and genesis hold the same settings");
-  assert.deepEqual(seeded.settings.map((entry) => entry.key), ["artifact.language", "storage.snapshotEveryEvents"], "neither holds the retired key");
-  assert.deepEqual(seeded, genesis, "the two reads are the same state");
-});
-
-// INC-389 R1 and R2 (#529, #566): the same chain removes the retired key after the snapshot. The seed no
-// longer holds the key and genesis never did; both read the removal as history and agree.
-test("INC-389: a retired key removed after a replay snapshot reads the same in both replays", async (t) => {
-  const fx = await snapshotWhileRetiredKeyLive(t, "FIXTURE-INC-389-SNAPSHOT-REMOVED");
-  await appendSettingEvents(fx, "2026-01-04T00:00:00Z", [removedSetting("fitness.windowDays", "2026-01-04T00:00:00Z")]);
-  assert.equal((await newestSnapshotSettings(fx)).version, 4, "the removal comes after the newest snapshot");
-  const reads = { snapshotSeeded: await settle(materializeWorkspace(fx.workspace)), genesis: await settle(materializeWorkspaceFromGenesis(fx.workspace)) };
-  for (const [read, { state, error }] of Object.entries(reads)) {
-    assert.equal(error, undefined, `${read}: ${error?.reasonCode} ${error?.message}`);
-    assert.equal(state.version, 5, read);
-  }
-  assert.deepEqual(reads.snapshotSeeded.state.settings, reads.genesis.state.settings, "both reads hold the same settings");
-  assert.deepEqual(reads.genesis.state.settings.map((entry) => entry.key), ["artifact.language", "storage.snapshotEveryEvents"], "neither holds the retired key");
-});
-
-// INC-389 changes only how replay reads a retired key. A live key removed without ever being set is still a
-// corrupt chain in every read, and the write verbs still refuse both fitness keys without appending.
+// INC-389 changes only how replay reads a retired key. A live key removed without ever being set does not
+// apply in any read: in a library it is a rejected event (TCRN-CROSS-STORY-468 R5), listed with its reason and
+// skipped. The write verbs still refuse both fitness keys without appending.
 test("INC-389: live key rules and retired key refusals are unchanged", async (t) => {
   const corrupt = await fixture(t, "FIXTURE-INC-389-LIVE-REMOVE");
   await appendSettingEvents(corrupt, "2026-01-02T00:00:00Z", [removedSetting("artifact.language", "2026-01-02T00:00:00Z")]);
-  for (const [read, { error }] of Object.entries(await readEveryWay(corrupt.workspace))) {
-    assert.equal(error?.reasonCode, "WORKSPACE_EVENT_CORRUPT", read);
-    assert.match(error.message, /cannot remove unknown setting artifact\.language/u, read);
+  for (const [read, { state, error }] of Object.entries(await readEveryWay(corrupt.workspace))) {
+    assert.equal(error, undefined, read);
+    assert.deepEqual(state.settings, [], read);
+    const [rejected] = state.library.rejectedEvents;
+    assert.equal(rejected?.reasonCode, "WORKSPACE_EVENT_CORRUPT", read);
+    assert.equal(rejected.operation, "settings.removed", read);
+    assert.match(rejected.detail, /cannot remove unknown setting artifact\.language/u, read);
   }
   const fx = await fixture(t, "FIXTURE-INC-389-REFUSALS");
   for (const key of ["fitness.windowDays", "fitness.minEvents"]) {

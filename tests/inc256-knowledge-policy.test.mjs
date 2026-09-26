@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-INC-256 — migrate existing knowledge policies through one batch.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -14,7 +15,7 @@ import {
   createWork,
   evaluateKnowledgeFreshness,
   initializeKnowledgeStore,
-  initializeWorkspace,
+  initializeLibrary,
   listKnowledgeMetadata,
   retireKnowledgeUnit,
   transitionKnowledgePromotion,
@@ -26,14 +27,8 @@ const instant = (second) => `2026-09-02T00:00:${String(second).padStart(2, "0")}
 
 async function fixture() {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-inc256-")));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
   const workspace = join(base, "workspace");
-  await initializeWorkspace({ roots, externalKey: "FIXTURE-INC-256", createdAt: instant(1), segmentEventLimit: 64 });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: instant(1) });
   let project;
   let work;
   project = await createProject(workspace, {
@@ -43,7 +38,7 @@ async function fixture() {
     occurredAt: instant(4), projectId: project.projects[0].id,
     externalKey: "INC-256-WORK", kind: "Incident", parentId: null, status: "active",
   });
-  await initializeKnowledgeStore(workspace);
+  await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
   return { base, workspace, projectId: project.projects[0].id, workId: work.work.find((record) => record.externalKey === "INC-256-WORK").id };
 }
 

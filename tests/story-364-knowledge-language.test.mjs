@@ -18,8 +18,9 @@
 // evaluation corpus, a read-only export of a live chain that does not live in this
 // repository, exactly as TCRN-CROSS-STORY-362's file records. They are not asserted here.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -32,7 +33,7 @@ import {
   detectLanguage,
   expansionsText,
   initializeKnowledgeStore,
-  initializeWorkspace,
+  initializeLibrary,
   listKnowledgeMetadata,
   readKnowledgeLanguagePolicy,
   resolveQueryLanguage,
@@ -78,14 +79,8 @@ async function languageWorkspace(context, settings) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-story-364-")));
   context.after(() => rm(base, { recursive: true, force: true }));
   const partitionPath = join(base, ".tcrn-workspace", "cross-project");
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(partitionPath, kind);
-    await mkdir(path, { recursive: true });
-    roots.push({ kind, path });
-  }
-  await initializeWorkspace({ roots, externalKey: "STORY-364-LANGUAGE", createdAt: instant(0) });
   const workspace = join(partitionPath, "workspace");
+  await initializeLibrary({ root: workspace, createdAt: instant(0) });
   let state = await createProject(workspace, {
     occurredAt: instant(1), externalKey: "STORY-364-PROJECT", name: "Language",
   });

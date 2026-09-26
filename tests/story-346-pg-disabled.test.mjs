@@ -4,8 +4,9 @@
 // its absence and would fail if it were reintroduced accidentally.
 // Reference: TCRN-CROSS-INC-275 removed backend, scripts, CLI paths, and CI job.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { access, mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { access, mkdtemp, realpath, rm } from "node:fs/promises";
 import { constants } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,7 +14,7 @@ import test from "node:test";
 
 import {
   SETTINGS_CATALOG,
-  initializeWorkspace,
+  initializeLibrary,
   setWorkspaceSetting,
 } from "../dist/build/packages/core/src/index.js";
 
@@ -51,14 +52,8 @@ test("STORY-346 production backend selection rejects PostgreSQL", async () => {
   // This test would fail if pg were added back to allowedValues without removing this test.
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-s346-backend-")));
   try {
-    const roots = [];
-    for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-      const path = join(base, kind);
-      await mkdir(path);
-      roots.push({ kind, path });
-    }
     const workspace = join(base, "workspace");
-    await initializeWorkspace({ roots, externalKey: "STORY-346-RUNTIME", createdAt: "2026-09-02T08:00:00Z" });
+    await initializeLibrary({ root: join(base, "workspace"), createdAt: "2026-09-02T08:00:00Z" });
     await assert.rejects(() => setWorkspaceSetting(workspace, {
       key: "storage.backend", value: "pg", occurredAt: "2026-09-02T08:00:02Z",
     }), (error) => error?.reasonCode === "SETTINGS_VALUE_INVALID");

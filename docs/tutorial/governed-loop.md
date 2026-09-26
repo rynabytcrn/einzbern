@@ -1,6 +1,6 @@
 # The governed loop, end to end
 
-This tutorial walks the whole product in one sitting: from an empty workspace to a
+This tutorial walks the whole product in one sitting: from an empty library to a
 completed story whose closing decision is ratified in a conference, distilled into
 the knowledge store, promoted, and then traced back through an unbroken chain of
 digests. Every command below is a real governed CLI verb, and every one of them is
@@ -17,10 +17,10 @@ The loop is:
 
 - Commands are shown with a `$ ` prompt and the published binary name
   `einzbern`. Substitute your own installed invocation as needed.
-- Paths are workspace-relative placeholders (`./flagship/workspace` and its four
-  sibling roots). Identifiers written as `<project-id>`, `<story-id>`, and so on
-  stand for the id echoed by the previous command's receipt — copy the real value
-  from that output.
+- The library path is a placeholder (`./flagship/.ether`: a project's library is the
+  `.ether` directory in its root). Identifiers written as `<project-id>`, `<story-id>`,
+  and so on stand for the id echoed by the previous command's receipt — copy the real
+  value from that output.
 - Every mutation takes an explicit `--at` instant. The engine serialises writers
   with its own write lock, so no version is passed; each receipt echoes the ids it
   wrote, the new `version` and `headEventHash`. The instants here are illustrative
@@ -28,16 +28,18 @@ The loop is:
 - The loop stays actor-optional: attestation is never enabled, so no `--actor` is
   required. Enable it first if your workspace mandates attested writes.
 
-## 0. Create the workspace
+## 0. Create the library
 
-`init` establishes the five explicit roots and leaves the workspace at version 0.
+`init` creates the library (its manifest, README, `.gitignore` and empty `akasha/`,
+`crest/`, `config/` and `artifacts/` directories) and leaves it at version 0. This
+device's identity and write lock live in the device directory, not in the library.
 
 ```console
-$ einzbern init --workspace ./flagship/workspace --framework ./flagship/framework --transient ./flagship/transient --evidence-locator ./flagship/evidence-locator --release-trust ./flagship/release-trust --external-key FLAGSHIP-WORKSPACE --at 2026-07-11T00:00:00Z
+$ einzbern init --workspace ./flagship/.ether --project-name Flagship --at 2026-07-11T00:00:00Z
 ```
 
-The receipt reports `WORKSPACE_COMMAND_COMPLETED` at `version` 0. Each mutation
-below advances the version by exactly one.
+The receipt reports `LIBRARY_CREATED` at `version` 0. Each mutation below advances
+the version by exactly one.
 
 ## 1. Plan the delivery graph: initiative → epic → story
 
@@ -47,10 +49,10 @@ echoes the new record's id in `record.id`; capture each one for the next parent.
 key and by nothing a reader would think to type.
 
 ```console
-$ einzbern project-create --workspace ./flagship/workspace --at 2026-07-11T00:00:01Z --external-key FLAGSHIP-PROJECT --name Flagship
-$ einzbern work-create --workspace ./flagship/workspace --at 2026-07-11T00:00:02Z --project-id <project-id> --external-key FLAGSHIP-INITIATIVE --kind Initiative --title Flagship-initiative
-$ einzbern work-create --workspace ./flagship/workspace --at 2026-07-11T00:00:03Z --project-id <project-id> --external-key FLAGSHIP-EPIC --kind Epic --parent-id <initiative-id> --title Flagship-epic
-$ einzbern work-create --workspace ./flagship/workspace --at 2026-07-11T00:00:04Z --project-id <project-id> --external-key FLAGSHIP-STORY --kind Story --parent-id <epic-id> --scope <story-scope> --title Flagship-story
+$ einzbern project-create --workspace ./flagship/.ether --at 2026-07-11T00:00:01Z --external-key FLAGSHIP-PROJECT --name Flagship
+$ einzbern work-create --workspace ./flagship/.ether --at 2026-07-11T00:00:02Z --project-id <project-id> --external-key FLAGSHIP-INITIATIVE --kind Initiative --title Flagship-initiative
+$ einzbern work-create --workspace ./flagship/.ether --at 2026-07-11T00:00:03Z --project-id <project-id> --external-key FLAGSHIP-EPIC --kind Epic --parent-id <initiative-id> --title Flagship-epic
+$ einzbern work-create --workspace ./flagship/.ether --at 2026-07-11T00:00:04Z --project-id <project-id> --external-key FLAGSHIP-STORY --kind Story --parent-id <epic-id> --scope <story-scope> --title Flagship-story
 ```
 
 Each verb returns `WORKSPACE_COMMAND_COMPLETED` with the created `record`. The Epic
@@ -63,8 +65,8 @@ A story is planned when created. Walk it through the lifecycle to `active`; it
 reaches `done` only once its deciding minutes are recorded (section 6).
 
 ```console
-$ einzbern work-transition --workspace ./flagship/workspace --at 2026-07-11T00:00:05Z --id <story-id> --status ready
-$ einzbern work-transition --workspace ./flagship/workspace --at 2026-07-11T00:00:06Z --id <story-id> --status active
+$ einzbern work-transition --workspace ./flagship/.ether --at 2026-07-11T00:00:05Z --id <story-id> --status ready
+$ einzbern work-transition --workspace ./flagship/.ether --at 2026-07-11T00:00:06Z --id <story-id> --status active
 ```
 
 ## 3. Hold the conference
@@ -73,20 +75,20 @@ Open a conference anchored to the story, record a position, then close it into
 minutes. The minutes become the story's recorded decision.
 
 ```console
-$ einzbern conference-open --workspace ./flagship/workspace --at 2026-07-11T00:00:08Z --external-key FLAGSHIP-CONFERENCE --project-id <project-id> --type architecture --title Decide-the-story --work-ids <story-id> --desired-outcome ratify-the-approach --participant-ids profile:architect-01
-$ einzbern conference-append-position --workspace ./flagship/workspace --at 2026-07-11T00:00:09Z --conference-id <conference-id> --external-key FLAGSHIP-POSITION --actor-id profile:architect-01 --position persist-via-event-log --risks forward-reads-as-corruption --recommendations document-the-posture --evidence-ids evidence:position-01
+$ einzbern conference-open --workspace ./flagship/.ether --at 2026-07-11T00:00:08Z --external-key FLAGSHIP-CONFERENCE --project-id <project-id> --type architecture --title Decide-the-story --work-ids <story-id> --desired-outcome ratify-the-approach --participant-ids profile:architect-01
+$ einzbern conference-append-position --workspace ./flagship/.ether --at 2026-07-11T00:00:09Z --conference-id <conference-id> --external-key FLAGSHIP-POSITION --actor-id profile:architect-01 --position persist-via-event-log --risks forward-reads-as-corruption --recommendations document-the-posture --evidence-ids evidence:position-01
 ```
 
 Capture the conference id from the open receipt's `recordId`.
 
 ## 4. Distill the decision into knowledge
 
-Before closing with distillation, initialize the disposable knowledge store — a
-real (non-fixture) workspace requires explicit acknowledgment that the store is
-rebuildable and disposable.
+Before closing with distillation, initialize the disposable knowledge store in the
+library's `crest/` directory — every library requires explicit acknowledgment that the
+store is rebuildable and disposable.
 
 ```console
-$ einzbern knowledge-init --workspace ./flagship/workspace --acknowledge-disposable true
+$ einzbern knowledge-init --workspace ./flagship/.ether --acknowledge-disposable true
 ```
 
 Now close the conference with `--distill`. The close event lands first; the
@@ -95,7 +97,7 @@ each minutes decision is captured as a promotable knowledge candidate. The recei
 carries the minutes id in `recordId` and the new candidate id in `knowledgeUnitIds`.
 
 ```console
-$ einzbern conference-close --workspace ./flagship/workspace --at 2026-07-11T00:00:10Z --conference-id <conference-id> --minutes-external-key FLAGSHIP-MINUTES --summary approach-ratified --outcome-class role_decision --decisions persist-conference-and-gate-records --unresolved-issues - --distill true --accountable-owner-id owner:governance --stale-days 90 --evidence-ids evidence:close-01
+$ einzbern conference-close --workspace ./flagship/.ether --at 2026-07-11T00:00:10Z --conference-id <conference-id> --minutes-external-key FLAGSHIP-MINUTES --summary approach-ratified --outcome-class role_decision --decisions persist-conference-and-gate-records --unresolved-issues - --distill true --accountable-owner-id owner:governance --stale-days 90 --evidence-ids evidence:close-01
 ```
 
 The candidate carries the fixed conference tag set
@@ -110,9 +112,9 @@ happens now, while the knowledge marker's high-water still equals the workspace
 head — before the final workspace mutations advance it.
 
 ```console
-$ einzbern knowledge-validate --workspace ./flagship/workspace
-$ einzbern knowledge-list --workspace ./flagship/workspace --at 2026-07-11T00:00:11Z --selection all
-$ einzbern knowledge-promote --workspace ./flagship/workspace --expected-revision <knowledge-revision> --at 2026-07-11T00:00:12Z --id <knowledge-id> --state promoted
+$ einzbern knowledge-validate --workspace ./flagship/.ether
+$ einzbern knowledge-list --workspace ./flagship/.ether --at 2026-07-11T00:00:11Z --selection all
+$ einzbern knowledge-promote --workspace ./flagship/.ether --expected-revision <knowledge-revision> --at 2026-07-11T00:00:12Z --id <knowledge-id> --state promoted
 ```
 
 `knowledge-validate` reports the marker `version` (use it as `<knowledge-version>`);
@@ -127,8 +129,8 @@ The same minutes that produced the knowledge candidate are the story's decision.
 only once that decision is on the record.
 
 ```console
-$ einzbern work-annotate --workspace ./flagship/workspace --at 2026-07-11T00:00:14Z --id <story-id> --decided-by <minutes-id>
-$ einzbern work-transition --workspace ./flagship/workspace --at 2026-07-11T00:00:15Z --id <story-id> --status done
+$ einzbern work-annotate --workspace ./flagship/.ether --at 2026-07-11T00:00:14Z --id <story-id> --decided-by <minutes-id>
+$ einzbern work-transition --workspace ./flagship/.ether --at 2026-07-11T00:00:15Z --id <story-id> --status done
 ```
 
 ## 7. Trace the chain
@@ -137,7 +139,7 @@ Finally, read the governed record the chain hangs from and confirm the loop bind
 end to end.
 
 ```console
-$ einzbern work-show --workspace ./flagship/workspace --id <story-id>
+$ einzbern work-show --workspace ./flagship/.ether --id <story-id>
 ```
 
 The trace is a chain of digests, each link a field of one record that names the

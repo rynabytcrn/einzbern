@@ -20,25 +20,20 @@
 // with that file would have dropped the only coverage of scripts/einzbern.mjs's
 // "status" read verb over the real shipped binary. The coverage waiver that pointed here
 // from its old path retired with coverage conservation (TCRN-CROSS-STORY-467 R2).
+import "./helpers/device-home.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { initializeWorkspace } from "../dist/build/packages/core/src/index.js";
+import { initializeLibrary } from "../dist/build/packages/core/src/index.js";
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 async function initializedWrapperWorkspace() {
   const base = await realpath(await mkdtemp(join(tmpdir(), "workflow-s7-wrapper-")));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
-  await initializeWorkspace({ roots, externalKey: "WORKSPACE-S7-WRAPPER", createdAt: "2026-07-12T00:00:00Z", segmentEventLimit: 2 });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: "2026-07-12T00:00:00Z" });
   return { base, workspace: join(base, "workspace"), close: () => rm(base, { recursive: true, force: true }) };
 }
 

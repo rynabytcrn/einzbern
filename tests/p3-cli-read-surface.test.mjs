@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,10 +14,9 @@ import {
   createProject,
   createWork,
   deleteWork,
-  initializeWorkspace,
+  initializeLibrary,
   STORY_SCOPE_HEADINGS,
   validateWorkspace,
-  LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { PROTOCOL_LIMITS, validateEventChain } from "../dist/build/packages/protocol/src/index.js";
 
@@ -37,14 +37,8 @@ const STORY_SCOPE = [
 async function fixture(context) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-cli-read-")));
   context.after(() => rm(base, { recursive: true, force: true }));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
   const workspace = join(base, "workspace");
-  await initializeWorkspace({ roots, externalKey: "FIXTURE-CLI-READ", createdAt: instant(1), segmentEventLimit: 64 });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: instant(1) });
   const ids = {};
   let v = 0;
   const at = () => instant(v + 3);
@@ -150,16 +144,10 @@ async function runRaw(args) {
   return output;
 }
 
-async function emptyRoots(context, prefix) {
+async function emptyLibrary(context, prefix) {
   const base = await realpath(await mkdtemp(join(tmpdir(), prefix)));
   context.after(() => rm(base, { recursive: true, force: true }));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
-  return { base, roots, workspace: join(base, "workspace") };
+  return { base, workspace: join(base, "workspace") };
 }
 
 // INC-027: instants for a chain longer than one minute of the `instant` helper.
@@ -168,8 +156,8 @@ const chainInstant = (n) => new Date(Date.UTC(2026, 6, 11, 0, 0, n)).toISOString
 // INC-027: a chain LONGER than the default page window. Without one the default is a
 // constant nobody can observe, and an assertion about it could not go red.
 async function longChainFixture(context, count) {
-  const layout = await emptyRoots(context, "tcrn-cli-events-");
-  await initializeWorkspace({ roots: layout.roots, externalKey: "FIXTURE-CLI-EVENTS", createdAt: chainInstant(1), segmentEventLimit: 64 });
+  const layout = await emptyLibrary(context, "tcrn-cli-events-");
+  await initializeLibrary({ root: layout.workspace, createdAt: chainInstant(1) });
   for (let version = 0; version < count; version += 1) {
     await createProject(layout.workspace, {
       occurredAt: chainInstant(version + 3),
@@ -190,15 +178,14 @@ async function longChainFixture(context, count) {
 // past the ceiling while the views it materializes stay small -- which is exactly the
 // shape of a long-lived governed chain, and exactly the shape `export` cannot read.
 async function fatChainFixture(context, annotations) {
-  const layout = await emptyRoots(context, "tcrn-cli-fat-events-");
-  await initializeWorkspace({ roots: layout.roots, externalKey: "FIXTURE-CLI-FAT", createdAt: chainInstant(1), segmentEventLimit: 64 });
+  const layout = await emptyLibrary(context, "tcrn-cli-fat-events-");
+  await initializeLibrary({ root: layout.workspace, createdAt: chainInstant(1) });
   const state = await createProject(layout.workspace, { occurredAt: chainInstant(3), externalKey: "PROJECT-FAT", name: "Fat" });
   const projectId = state.projects[0].id;
   const created = await createWork(layout.workspace, { occurredAt: chainInstant(4), projectId, externalKey: "INIT-FAT", kind: "Initiative", parentId: null });
   const workId = created.work[0].id;
   for (let index = 0; index < annotations; index += 1) {
     await annotateWork(layout.workspace, {
-      expectedVersion: 2 + index,
       occurredAt: chainInstant(5 + index),
       id: workId,
       // Distinct each time: an annotation that changes nothing is refused, and the
@@ -261,20 +248,6 @@ test("work-show returns one record and fails closed on unknown ids and malformed
   assert.equal(await reasonOf(["project-list", ...ws, "--offset", "-1"]), "CLI_ARGUMENT_MALFORMED");
 });
 
-test("read verbs and validate fail closed on stale views, but status reads authority", async (context) => {
-  const fx = await fixture(context);
-  const ws = ["--workspace", fx.workspace];
-  await writeFile(join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "views", "index.json"), "{}\n");
-  assert.equal(await reasonOf(["work-list", ...ws]), "WORKSPACE_VIEW_STALE");
-  assert.equal(await reasonOf(["project-list", ...ws]), "WORKSPACE_VIEW_STALE");
-  assert.equal(await reasonOf(["work-show", ...ws, "--id", fx.ids.epicA]), "WORKSPACE_VIEW_STALE");
-  assert.equal(await reasonOf(["validate", ...ws]), "WORKSPACE_VIEW_STALE");
-  // WSA-3 / SDC-10: status is authority-only and must survive stale views
-  const status = await run(["status", ...ws]);
-  assert.equal(status.reasonCode, "WORKSPACE_COMMAND_COMPLETED");
-  assert.equal(status.version, 7);
-});
-
 // CQ-05(c2) proof. Before this guard the round trip was BROKEN, not merely inconsistent:
 // work-create routed --parent-id through nullableValue (which accepts "-" and the
 // deprecated alias "null"), while the work-list filter compared with a bare === "-" and
@@ -321,9 +294,8 @@ test("CQ-05(c2): every nullableValue flag declares its sentinel and its deprecat
 });
 
 // CQ-05(c) proof for integerValue. Each of these used to reach core as NaN and come back
-// under a SEMANTIC reason code that misdescribed a syntax error — most starkly
-// `migration-plan --target-version abc` answering WORKSPACE_MIGRATION_DOWNGRADE "NaN".
-// Removing integerValue (restoring the bare Number(...) calls) turns these red.
+// under a SEMANTIC reason code that misdescribed a syntax error. Removing integerValue
+// (restoring the bare Number(...) calls) turns these red.
 test("CQ-05(c): malformed integer flags fail at the CLI boundary naming the flag", async (context) => {
   const fx = await fixture(context);
   const ws = ["--workspace", fx.workspace];
@@ -334,8 +306,6 @@ test("CQ-05(c): malformed integer flags fail at the CLI boundary naming the flag
     assert.equal(error.message.includes(flag), true, `the failure must name ${flag}, got ${error.message}`);
     return error;
   };
-  await malformed(["migration-plan", ...ws, "--target-version", "abc", "--dry-run", "true"], "target-version");
-  await malformed(["migration-plan", ...ws, "--target-version", "2.5", "--dry-run", "true"], "target-version");
   await malformed(["knowledge-promote", ...ws, "--expected-revision", "abc",
     "--at", instant(31), "--id", "knowledge:0000000000000000000000000000000000000000", "--state", "promoted"], "expected-revision");
   // STORY-366: the article refresh verb is a fourth site sharing this arbiter
@@ -346,13 +316,6 @@ test("CQ-05(c): malformed integer flags fail at the CLI boundary naming the flag
     "--at", instant(32), "--id", "knowledge:0000000000000000000000000000000000000000",
     "--path", "docs/knowledge/articles/placeholder.md", "--summary", "s"], "expected-revision");
 
-  // The minimum is deliberately unbounded below: 0 and negatives are LEGITIMATE downgrade
-  // requests that core must still judge. A positive minimum here would pre-empt the very
-  // judgement this patch exists to protect, so assert the flag reaches core untouched.
-  for (const target of ["0", "-1"]) {
-    const reason = await reasonOf(["migration-plan", ...ws, "--target-version", target, "--dry-run", "true"]);
-    assert.equal(reason, "WORKSPACE_MIGRATION_DOWNGRADE", `--target-version ${target} must still be judged by core`);
-  }
 });
 
 // R2-NEW-7 proof: within one verb, `limit` used a truthy guard and `offset` used
@@ -412,37 +375,6 @@ test("CQ-05: malformed knowledge pagination flags are syntax errors, not range r
     const reason = await reasonOf(["knowledge-list", ...ws, `--${flag}`, value]);
     assert.equal(reason, "KNOWLEDGE_INPUT_INVALID", `--${flag} ${value} stays core's judgement`);
   }
-});
-
-// The same defect on the init path. The plan dropped --segment-events after probing "abc",
-// "0", "-3", "2.5" and "1e400" and finding core guarded all of them — but it never probed
-// the EMPTY string, and the truthy guard dropped that one on the floor, initializing the
-// workspace as if no segment limit had been supplied at all.
-test("CQ-05: an empty --segment-events is a supplied value, not an omitted flag", async (context) => {
-  const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-cli-init-")));
-  context.after(() => rm(base, { recursive: true, force: true }));
-  // Every init needs its own untouched roots, so each probe gets a numbered set.
-  let generation = 0;
-  const initArguments = async (...extra) => {
-    const home = join(base, `gen-${generation += 1}`);
-    const flags = [];
-    for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-      const path = join(home, kind);
-      await mkdir(path, { recursive: true });
-      flags.push(`--${kind}`, path);
-    }
-    return ["init", ...flags, "--external-key", "SEGMENT-PROBE", "--at", instant(34), ...extra];
-  };
-
-  // Omitted: initialization succeeds under the default segment limit. reasonOf answers
-  // null on success, and that null is the baseline the empty string must NOT match.
-  assert.equal(await reasonOf(await initArguments()), null);
-  // Supplied-but-empty parses to 0, which core refuses exactly as it refuses an explicit 0.
-  const empty = await reasonOf(await initArguments("--segment-events="));
-  assert.equal(empty, await reasonOf(await initArguments("--segment-events", "0")));
-  assert.notEqual(empty, null, "--segment-events= must not initialize as if omitted");
-  // And a value that is not an integer is now named as such instead of reaching core.
-  assert.equal(await reasonOf(await initArguments("--segment-events", "abc")), "CLI_ARGUMENT_MALFORMED");
 });
 
 test("WSB-6: the agent-integration reference stays in drift-guarded agreement with the catalog", async () => {
@@ -524,7 +456,9 @@ test("INC-027: event-list pages the chain and the concatenation IS the chain", a
   assert.equal(events.length, status.version, "one event per version, none dropped and none repeated");
   assert.deepEqual(events.map((entry) => entry.sequence), events.map((_, index) => index + 1));
   assert.equal(validateEventChain(events).length, events.length, "the concatenation revalidates as a chain");
-  assert.equal(events.at(-1).eventHash, status.headEventHash, "the last page ends at the head the authority reports");
+  // A library's head is one digest over its stream heads; with one device, the last page ends at
+  // that stream's head (TCRN-CROSS-STORY-468 R4).
+  assert.equal(events.at(-1).eventHash, status.streams[0].headEventHash, "the last page ends at the head the authority reports");
 });
 
 // The refusal is the whole reason paging exists here. A page silently shortened to fit
@@ -572,7 +506,7 @@ test("INC-027: a page that cannot fit is refused under its own code, never short
   assert.equal(validateEventChain(events).length, events.length);
 });
 
-test("INC-027: the default window never stands in for a supplied one, and event-list obeys the view gate", async (context) => {
+test("INC-027: the default window never stands in for a supplied one", async (context) => {
   const fx = await fixture(context);
   const ws = ["--workspace", fx.workspace];
 
@@ -597,10 +531,6 @@ test("INC-027: the default window never stands in for a supplied one, and event-
 
   // Byte-stable like its siblings.
   assert.equal(await runRaw(["event-list", ...ws]), await runRaw(["event-list", ...ws]));
-
-  // WSA-3: a read verb answers from view-verified state, so a stale view refuses.
-  await writeFile(join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "views", "index.json"), "{}\n");
-  assert.equal(await reasonOf(["event-list", ...ws]), "WORKSPACE_VIEW_STALE");
 });
 
 // TCRN-CROSS-MIN-225 D3 (TCRN-CROSS-SUB-257) retired telemetry-observation's per-channel days, and

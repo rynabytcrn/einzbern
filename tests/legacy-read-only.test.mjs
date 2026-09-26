@@ -20,26 +20,18 @@ import {
   validateLegacyChain,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalJson, canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
+import { LEGACY_FIXTURE_EXPECTED, restoreLegacyFixture } from "./helpers/legacy-fixture.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
-const fixtureRoot = join(repositoryRoot, "tests/fixtures/legacy-workspace");
 const cliPath = join(repositoryRoot, "scripts/einzbern.mjs");
 const tripwirePath = join(repositoryRoot, "tests/helpers/fs-write-tripwire.mjs");
-const expected = JSON.parse(await readFile(join(fixtureRoot, "expected.json"), "utf8"));
+const expected = LEGACY_FIXTURE_EXPECTED;
 
 /** Restore the fixture into a fresh directory in the layout the old engine wrote. */
 async function restoreFixture(context) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-legacy-")));
   context.after(() => rm(base, { recursive: true, force: true }));
-  const root = join(base, "workspace");
-  const events = join(root, LEGACY_CONTROL_DIRECTORY, "events");
-  await mkdir(events, { recursive: true });
-  const canonical = async (relativePath) => canonicalJson(JSON.parse(await readFile(join(fixtureRoot, "control", relativePath), "utf8")));
-  await writeFile(join(root, LEGACY_CONTROL_DIRECTORY, "workspace.json"), await canonical("workspace.json"));
-  await writeFile(join(events, "manifest.json"), await canonical("events/manifest.json"));
-  for (const name of (await readdir(join(fixtureRoot, "control/events"))).filter((entry) => entry.endsWith(".ndjson"))) {
-    await writeFile(join(events, name), await readFile(join(fixtureRoot, "control/events", name)));
-  }
+  const { root, events } = await restoreLegacyFixture(base);
   return { base, root, events };
 }
 

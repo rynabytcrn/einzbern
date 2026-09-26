@@ -47,6 +47,8 @@ import { deviceHome } from "./device-home.js";
 import { MACHINE_SETTINGS_DIRECTORY } from "./machine-settings.js";
 import { SETTINGS_CATALOG } from "./settings.js";
 import { WORKSPACE_CONTROL_DIRECTORY, materializeWorkspace, withWorkspaceWriteLock } from "./workspace.js";
+import { hasLibraryManifest } from "./ether-library.js";
+import { DIRECTORY } from "./names.js";
 
 export const ARTIFACT_MANIFEST_SCHEMA_VERSION = "tcrn.artifact-manifest.v1" as const;
 export const ARTIFACT_PUT_SCHEMA_VERSION = "tcrn.artifact-put.v1" as const;
@@ -242,8 +244,13 @@ async function effectiveArtifactsSetting(workspaceRoot: string): Promise<string>
   return catalogDefault;
 }
 
-function manifestPath(workspaceRoot: string): string {
-  return resolve(workspaceRoot, WORKSPACE_CONTROL_DIRECTORY, ARTIFACT_MANIFEST_FILE_NAME);
+// TCRN-CROSS-STORY-469 R1: a library keeps the artifact manifest in its artifacts/ directory; the
+// blobs go to the configured root, which is that same directory unless the operator names
+// another. An old-layout workspace's manifest stays in its control directory, read-only.
+async function manifestPath(workspaceRoot: string): Promise<string> {
+  return await hasLibraryManifest(workspaceRoot)
+    ? resolve(workspaceRoot, DIRECTORY.artifacts, ARTIFACT_MANIFEST_FILE_NAME)
+    : resolve(workspaceRoot, WORKSPACE_CONTROL_DIRECTORY, ARTIFACT_MANIFEST_FILE_NAME);
 }
 
 function validateManifest(value: JsonValue): ArtifactManifestDocument {
@@ -273,7 +280,7 @@ function validateManifest(value: JsonValue): ArtifactManifestDocument {
 }
 
 async function readManifest(workspaceRoot: string): Promise<ArtifactManifestDocument> {
-  const path = manifestPath(workspaceRoot);
+  const path = await manifestPath(workspaceRoot);
   let stats;
   try {
     stats = await lstat(path);
@@ -326,7 +333,7 @@ async function writeManifest(workspaceRoot: string, document: ArtifactManifestDo
   if (Buffer.byteLength(serialised, "utf8") > ARTIFACT_BYTES_MAX) {
     fail("ARTIFACT_MANIFEST_INVALID", `${ARTIFACT_MANIFEST_FILE_NAME} would exceed the ${String(ARTIFACT_BYTES_MAX)} byte ceiling`);
   }
-  const path = manifestPath(workspaceRoot);
+  const path = await manifestPath(workspaceRoot);
   const staging = `${path}.tmp-${String(process.pid)}`;
   await rm(staging, { force: true });
   await writeFile(staging, serialised, "utf8");

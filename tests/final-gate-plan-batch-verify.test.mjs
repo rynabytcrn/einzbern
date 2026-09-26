@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -11,7 +12,7 @@ import {
   annotateWork,
   createProject,
   createWork,
-  initializeWorkspace,
+  initializeLibrary,
 } from "../dist/build/packages/core/src/index.js";
 import {
   acquireOperationalBatchInput,
@@ -26,13 +27,7 @@ const createdAt = "2026-08-19T18:00:00Z";
 
 async function workspace(key) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-batch-verify-")));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
-  await initializeWorkspace({ roots, externalKey: key, createdAt, segmentEventLimit: 64 });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt });
   return { base, root: join(base, "workspace") };
 }
 

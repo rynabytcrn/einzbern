@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // STORY-335/336: scope references and the four first-class work fields.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -10,26 +11,20 @@ import test from "node:test";
 import {
   createProject,
   createWork,
-  initializeWorkspace,
+  initializeLibrary,
   materializeWorkspace,
+  readAllStreams,
   transitionWork,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalSha256, validateWorkGraph } from "../dist/build/packages/protocol/src/index.js";
 
 const instant = (second) => `2026-09-02T03:00:${String(second).padStart(2, "0")}Z`;
-const controlDirectory = ".tcrn-" + "workflow";
 
 async function fixture(context, suffix) {
   const base = await realpath(await mkdtemp(join(tmpdir(), `tcrn-s335-${suffix}-`)));
   context.after(() => rm(base, { recursive: true, force: true }));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
   const workspace = join(base, "workspace");
-  await initializeWorkspace({ roots, externalKey: `STORY-335-${suffix}`, createdAt: instant(0) });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: instant(0) });
   const project = await createProject(workspace, {
     externalKey: `STORY-335-PROJECT-${suffix}`,
     name: "Storage",
@@ -78,8 +73,8 @@ test("STORY-335 unchanged status updates store a scope reference and replay the 
   assert.equal(record.createdAt, instant(5));
   assert.deepEqual(record.labels, ["dedup", "storage"]);
 
-  const segment = (await readdir(join(fx.workspace, controlDirectory, "events"))).find((name) => name.endsWith(".ndjson"));
-  const events = (await readFile(join(fx.workspace, controlDirectory, "events", segment), "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+  // The event as stored in this device's stream of the library.
+  const events = (await readAllStreams(fx.workspace)).events.map((entry) => entry.event);
   const update = events.find((event) => event.payload.operation === "work.updated");
   const storedScope = update.payload.record.extensions["advisory:scope"].value;
   assert.equal(storedScope.schemaVersion, "tcrn.work-scope-reference.v1");

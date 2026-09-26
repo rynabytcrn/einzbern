@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-378 — incident replay corpus and extraction templates.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import { tmpdir } from "node:os";
@@ -12,7 +13,7 @@ import {
   captureKnowledgeUnit,
   createProject,
   initializeKnowledgeStore,
-  initializeWorkspace,
+  initializeLibrary,
   listKnowledgeMetadata,
 } from "../dist/build/packages/core/src/index.js";
 import {
@@ -35,17 +36,14 @@ async function readJson(path) {
 async function knowledgeFixture(t) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-s378-")));
   t.after(() => rm(base, { recursive: true, force: true }));
-  const roots = ["framework", "workspace", "transient", "evidence-locator", "release-trust"]
-    .map((kind) => ({ kind, path: join(base, kind) }));
-  for (const root of roots) await mkdir(root.path);
   const workspace = join(base, "workspace");
-  await initializeWorkspace({ roots, externalKey: "FIXTURE-STORY-378", createdAt: "2026-01-01T00:00:00Z" });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: "2026-01-01T00:00:00Z" });
   await createProject(workspace, {
     occurredAt: "2026-01-01T00:00:01Z",
     externalKey: "FIXTURE-STORY-378-PROJECT",
     name: "Story 378 fixture",
   });
-  await initializeKnowledgeStore(workspace);
+  await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
   return workspace;
 }
 

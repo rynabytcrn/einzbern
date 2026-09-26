@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { chmod, mkdir, mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { readFile } from "node:fs/promises";
@@ -24,7 +25,7 @@ function test(name, optionsOrBody, maybeBody) {
 import { coreExportedSymbols, inspectChainValidation, inspectHostRenderDrift, inspectPlatform } from "../scripts/platform-doctor.mjs";
 import { HOSTS, claudeHookSettings, codexHookDocument, hookEntriesFor } from "../scripts/host-harness.mjs";
 import { applyHostHarness } from "../scripts/host-harness-apply.mjs";
-import { BRAND, DIRECTORY, INSTALL_MANIFEST, LEGACY_BRAND_NAME, LEGACY_ENGINE_NAME, LOCAL_DIRECTORY_NAMES, initializeWorkspace, materializeWorkspace, workspaceBudgets } from "../dist/build/packages/core/src/index.js";
+import { BRAND, DIRECTORY, INSTALL_MANIFEST, LEGACY_BRAND_NAME, LEGACY_ENGINE_NAME, LOCAL_DIRECTORY_NAMES, initializeLibrary, materializeWorkspace, workspaceBudgets } from "../dist/build/packages/core/src/index.js";
 import { PROTOCOL_LIMITS, canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
 
 const topology = "## 三、分区拓扑\n";
@@ -938,12 +939,7 @@ test("INC-224: every partition over the trigger is named, largest first", async 
 test("STORY-451: the status budget and chainHeadroom report the same chain ceiling", async (context) => {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-s451-budget-")));
   context.after(() => rm(base, { recursive: true, force: true }));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    await mkdir(join(base, kind));
-    roots.push({ kind, path: join(base, kind) });
-  }
-  await initializeWorkspace({ roots, externalKey: "STORY-451-BUDGET", createdAt: "2026-09-23T00:00:00Z" });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: "2026-09-23T00:00:00Z" });
   const budgets = workspaceBudgets(await materializeWorkspace(join(base, "workspace")));
   assert.equal(budgets.events.limit, PROTOCOL_LIMITS.maxChainEvents);
   assert.equal(budgets.events.headroomEvents, PROTOCOL_LIMITS.maxChainEvents - budgets.events.count);

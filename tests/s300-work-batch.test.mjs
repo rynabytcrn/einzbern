@@ -11,8 +11,9 @@
 // get wrong in ways a fast implementation would hide: writing part of itself, and blaming
 // the wrong member.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, realpath, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -20,10 +21,10 @@ import test from "node:test";
 import {
   applyWorkBatch,
   createProject,
-  initializeWorkspace,
+  initializeLibrary,
   materializeWorkspace,
   materializeWorkspaceFromGenesis,
-  LEGACY_CONTROL_DIRECTORY,
+  setWorkspaceSetting,
 } from "../dist/build/packages/core/src/index.js";
 import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
@@ -45,13 +46,7 @@ const STORY_SCOPE = [
 
 async function workspace(key) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-s300b-")));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
-  await initializeWorkspace({ roots, externalKey: key, createdAt: at(0), segmentEventLimit: 64 });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: at(0) });
   const root = join(base, "workspace");
   let state = await createProject(root, { occurredAt: at(1), externalKey: `${key}-P`, name: key });
   return { base, root, projectId: state.projects[0].id, version: state.version };
@@ -210,50 +205,37 @@ test("STORY-300: a batch that is not a batch is refused before anything else hap
   }
 });
 
-// The acceptance criterion nobody had written a test for, and the one hazard batching
-// actually introduces. Before this slice a single append produced one event, so
-// writes.length was always 1 and a crash between segment writes was unreachable. A batch
-// makes it reachable, and the loop at workspace.ts has no unwind.
-//
-// It is not a defect, and the difference matters: segments are written in ascending order
-// and only the final segment may be under-full, so the on-disk state after a crash between
-// writes -- an ascending prefix present, the rest absent -- is a shorter legal chain rather
-// than a damaged one. That is what the Story's criterion asks for in the words "the crash
-// window leaves a legal prefix". It was true and unasserted, which is the same standing as
-// untrue for anything that has to keep being true.
+// The hazard a batch introduces is a crash between its writes. In a library a batch is one append
+// to this device's stream, and the stream manifest is replaced only after every segment byte of
+// the batch is durable, so a crash anywhere before that leaves the manifest of the chain before the
+// batch: a legal prefix, never a torn batch. The next append cuts the dead writer's bytes off.
 test("STORY-300: a batch spanning segments writes ascending, and every crash window is a legal prefix", async () => {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-s300seg-")));
   try {
-    const roots = [];
-    for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-      const path = join(base, kind);
-      await mkdir(path);
-      roots.push({ kind, path });
-    }
-    // Four events a segment, so fourteen members provably span several.
-    await initializeWorkspace({ roots, externalKey: "SEG", createdAt: at(0), segmentEventLimit: 4 });
+    await initializeLibrary({ root: join(base, "workspace"), createdAt: at(0) });
     const root = join(base, "workspace");
-    let seeded = await createProject(root, { occurredAt: at(1), externalKey: "SEG-P", name: "Seg" });
+    await setWorkspaceSetting(root, { key: "storage.segmentBytes", value: "4096", occurredAt: at(1) });
+    const seeded = await createProject(root, { occurredAt: at(1), externalKey: "SEG-P", name: "Seg" });
+    const stream = join(root, "akasha", (await readdir(join(root, "akasha")))[0]);
+    const beforeBatch = await readFile(join(stream, "manifest.json"), "utf8");
     const members = Array.from({ length: 14 }, (_, index) => ({
       verb: "work-create", projectId: seeded.projects[0].id, externalKey: `SEG-${index}`,
-      kind: "Incident", parentId: null, status: "planned", title: `SEG-${index}`,
+      kind: "Incident", parentId: null, status: "planned", title: `SEG-${index} ${"y".repeat(400)}`,
     }));
     const full = await applyWorkBatch(root, { schemaVersion: "tcrn.work-batch.v1", members }, {
       occurredAt: at(2),
     });
-    const events = join(root, LEGACY_CONTROL_DIRECTORY, "events");
-    const segments = (await readdir(events)).sort();
+    const segments = JSON.parse(await readFile(join(stream, "manifest.json"), "utf8")).segments.map((segment) => segment.name);
     assert.ok(segments.length > 1, "the batch must actually span segments or this asserts nothing");
     assert.deepEqual(segments, [...segments].sort(), "segments are named in ascending order");
     assert.equal((await materializeWorkspace(root)).version, full.version, "the whole batch replays");
 
-    // Every truncation point, because a crash can land at any of them. Removing the
-    // trailing segments reproduces exactly the on-disk state a crash between writes leaves.
-    for (let keep = segments.length - 1; keep >= 1; keep -= 1) {
-      await rm(join(events, segments[keep]), { force: true });
-      const replayed = await materializeWorkspace(root);
-      assert.equal(replayed.version, keep * 4, `segments 1..${keep} must replay as a legal chain of ${keep * 4}`);
-    }
+    // Every crash window before the commit point leaves the previous stream manifest in place, with
+    // any number of the batch's bytes on disk after it: the chain reads as it was before the batch.
+    await writeFile(join(stream, "manifest.json"), beforeBatch);
+    const replayed = await materializeWorkspace(root);
+    assert.equal(replayed.version, full.version - members.length, "the batch is absent as a whole, never in part");
+    assert.equal(replayed.work.length, 0);
   } finally {
     await rm(base, { recursive: true, force: true });
   }

@@ -5,7 +5,7 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 import { assertStrictInstant, canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
 import { ARTIFACT_LANGUAGE_TAGS, parsePromptLanguages } from "./knowledge-language.js";
 import { dispatchSettingDefault, validateDispatchSetting } from "./dispatch-config.js";
-import { LEGACY_CONTROL_DIRECTORY } from "./names.js";
+import { DIRECTORY, LEGACY_CONTROL_DIRECTORY } from "./names.js";
 
 /**
  * Settings are a deliberately small engine-owned overlay surface. The generic
@@ -429,7 +429,9 @@ const catalogEntries: readonly SettingsCatalogEntry[] = [
     type: "string",
     controlType: "number",
     layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: "16777216",
+    // TCRN-CROSS-STORY-468/469: the size a library stream segment rolls at. One MiB keeps what a
+    // sync client re-uploads per append small.
+    defaultValue: "1048576",
     min: 4096,
     max: 67108864,
   },
@@ -447,7 +449,8 @@ const catalogEntries: readonly SettingsCatalogEntry[] = [
     type: "path",
     controlType: "text",
     layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: `${LEGACY_CONTROL_DIRECTORY}/artifacts`,
+    // TCRN-CROSS-STORY-469 R1: relative to the library root, its artifacts/ directory.
+    defaultValue: DIRECTORY.artifacts,
   },
 ];
 

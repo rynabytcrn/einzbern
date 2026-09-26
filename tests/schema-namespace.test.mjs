@@ -3,14 +3,15 @@
 // einzbern namespace, the legacy tcrn namespace stays readable, and a chain that runs from
 // legacy events into new ones still validates link by link.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, realpath, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { initializeWorkspace, materializeWorkspace } from "../dist/build/packages/core/src/index.js";
+import { initializeLibrary, materializeWorkspace } from "../dist/build/packages/core/src/index.js";
 import {
   EVENT_SCHEMA_VERSION,
   EVENT_SCHEMA_VERSIONS,
@@ -59,10 +60,8 @@ test("466-R2 (protocol): legacy events followed by new ones validate, each keepi
 test("466-AC3 (engine): a new workspace writes every event as einzbern.event.v1", async (context) => {
   const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-namespace-")));
   context.after(() => rm(base, { recursive: true, force: true }));
-  const roots = ["framework", "workspace", "transient", "evidence-locator", "release-trust"].map((kind) => ({ kind, path: join(base, kind) }));
-  for (const root of roots) await mkdir(root.path);
   const workspace = join(base, "workspace");
-  await initializeWorkspace({ roots, externalKey: "NAMESPACE-WORKSPACE", createdAt: "2026-01-01T00:00:00Z" });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: "2026-01-01T00:00:00Z" });
   const run = async (args) => {
     let output = "";
     await runCli(args, { write: (value) => { output += value; } });

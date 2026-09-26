@@ -2,8 +2,9 @@
 // STORY-347/348: variable values are settings or policy data; protocol values
 // that define validity remain fixed in code.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -15,7 +16,7 @@ import {
   SettingsError,
   createProject,
   createWork,
-  initializeWorkspace,
+  initializeLibrary,
   setWorkspaceSetting,
 } from "../dist/build/packages/core/src/index.js";
 import { PROTOCOL_LIMITS } from "../dist/build/packages/protocol/src/index.js";
@@ -25,15 +26,9 @@ const instant = (second) => `2026-09-02T06:00:${String(second).padStart(2, "0")}
 async function fixture(context, suffix) {
   const base = await realpath(await mkdtemp(join(tmpdir(), `tcrn-s347-${suffix}-`)));
   context.after(() => rm(base, { recursive: true, force: true }));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
   const workspace = join(base, "workspace");
-  await initializeWorkspace({ roots, externalKey: `STORY-347-${suffix}`, createdAt: instant(0) });
-  return { base, workspace, roots };
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: instant(0) });
+  return { base, workspace };
 }
 
 async function cli(arguments_) {
@@ -48,7 +43,9 @@ test("STORY-347 settings catalog exposes all six new keys and numeric bounds", a
   const expected = ["storage.segmentBytes", "storage.snapshotEveryEvents", "storage.backend", "injection.budgetBytes", "injection.perPromptBytes", "retrieval.scopeExcerptBytes", "knowledge.aggregateBytes"];
   const entries = catalog.settings.filter((entry) => expected.includes(entry.key));
   assert.deepEqual(entries.map((entry) => entry.key).sort(), [...expected].sort());
-  assert.equal(entries.find((entry) => entry.key === "storage.segmentBytes").defaultValue, "16777216");
+  // TCRN-CROSS-STORY-469: the key now sizes a library's stream segments, and its default is the
+  // stream default of one MiB.
+  assert.equal(entries.find((entry) => entry.key === "storage.segmentBytes").defaultValue, "1048576");
   assert.equal(entries.find((entry) => entry.key === "storage.snapshotEveryEvents").defaultValue, "512");
   assert.equal(entries.find((entry) => entry.key === "storage.backend").defaultValue, "file-segmented");
   assert.equal(entries.find((entry) => entry.key === "injection.budgetBytes").defaultValue, "24576");

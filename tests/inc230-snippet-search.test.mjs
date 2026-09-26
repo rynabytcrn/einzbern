@@ -12,8 +12,9 @@
 // metadata-first budget discipline the whole retrieval surface is built on. Skipping a
 // field the filter already holds is just a gap.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -22,7 +23,7 @@ import {
   createKnowledgeUnit,
   createProject,
   initializeKnowledgeStore,
-  initializeWorkspace,
+  initializeLibrary,
   listKnowledgeMetadata,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
@@ -31,13 +32,7 @@ const instant = (second = 0) => `2026-08-19T14:00:${String(second).padStart(2, "
 
 async function storeWithOneCard() {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-inc230-")));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
-  await initializeWorkspace({ roots, externalKey: "INC230", createdAt: instant(), segmentEventLimit: 64 });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: instant() });
   const workspace = join(base, "workspace");
   let state = await createProject(workspace, {
     occurredAt: instant(1), externalKey: "INC230-PROJECT", name: "Retrieval",

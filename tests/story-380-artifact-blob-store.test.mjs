@@ -7,6 +7,7 @@
 // `FIXTURE-`, which made the capability real only for its own tests; a suite that reached
 // for a FIXTURE- key here would pass whether or not that restriction had come back.
 
+import { testDeviceHome as deviceHome } from "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
@@ -18,10 +19,9 @@ import { inflateSync } from "node:zlib";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import {
   assertGeneratedArtifactsRoot,
-  initializeWorkspace,
+  initializeLibrary,
   materializeWorkspace,
   validateWorkspace,
-  LEGACY_CONTROL_DIRECTORY,
   DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 
@@ -30,14 +30,8 @@ const instant = (second) => `2026-09-08T04:00:${String(second).padStart(2, "0")}
 async function fixture(context, suffix) {
   const base = await realpath(await mkdtemp(join(tmpdir(), `tcrn-s380-${suffix}-`)));
   context.after(() => rm(base, { recursive: true, force: true }));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
   const workspace = join(base, "workspace");
-  await initializeWorkspace({ roots, externalKey: `STORY-380-${suffix}`, createdAt: instant(0), segmentEventLimit: 64 });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: instant(0) });
   // The shape Owner named: a directory under a cloud provider's mount point, outside the
   // workspace and outside the machine control home.
   const cloud = join(base, "Library", "CloudStorage", "OneDrive-Personal", "tcrn-artifacts");
@@ -83,7 +77,7 @@ test("GWT1: an absolute generatedArtifactsPath under a cloud mount is accepted a
   const catalog = await cli(["settings-catalog", "--workspace", fx.workspace]);
   const entry = catalog.settings.find((candidate) => candidate.key === "workspace.generatedArtifactsPath");
   assert.equal(entry.currentValue, fx.cloud);
-  assert.equal(entry.defaultValue, `${LEGACY_CONTROL_DIRECTORY}/artifacts`, "the relative default is unchanged");
+  assert.equal(entry.defaultValue, DIRECTORY.artifacts, "the relative default is the library's artifacts/ directory");
 });
 
 test("GWT1: the path conditions are enforced, and each refusal names its own rule", async (t) => {
@@ -91,10 +85,10 @@ test("GWT1: the path conditions are enforced, and each refusal names its own rul
   const base = ["settings-set", "--workspace", fx.workspace, "--at", instant(1),
     "--actor", "agent:claude-opus-5", "--key", "workspace.generatedArtifactsPath", "--value"];
 
-  // Inside the workspace, and inside its control tree: shape rules, decided by settings.ts
-  // because they are the two that mean the same thing on every machine.
-  assert.equal(await refusal([...base, join(fx.workspace, "artifacts")]), "SETTINGS_VALUE_INVALID");
-  assert.equal(await refusal([...base, join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "artifacts")]), "SETTINGS_VALUE_INVALID");
+  // Inside the library (its artifacts/ directory included): a shape rule, decided by settings.ts
+  // because it means the same thing on every machine. The in-library root is the relative default.
+  assert.equal(await refusal([...base, join(fx.workspace, DIRECTORY.artifacts)]), "SETTINGS_VALUE_INVALID");
+  assert.equal(await refusal([...base, join(fx.workspace, "nested", "artifacts")]), "SETTINGS_VALUE_INVALID");
   assert.equal(await refusal([...base, `${fx.cloud}/./nested`]), "SETTINGS_VALUE_INVALID", "an unnormalized path is refused rather than normalized");
 
   // Absent, and a symbolic link to a real directory: filesystem rules, decided by
@@ -152,10 +146,10 @@ test("GWT2: artifact-put stores a 2 MB file as <sha256>.bin and records size and
   );
   assert.deepEqual(listing.unindexed, []);
 
-  // The manifest is local. It stays in the workspace control tree even though the blob
-  // did not, and it records no absolute path, so the same manifest reads on another
+  // The manifest is local. It stays in the library's artifacts/ directory even though the
+  // blob did not, and it records no absolute path, so the same manifest reads on another
   // machine whose cloud mount sits somewhere else.
-  const manifest = JSON.parse(await readFile(join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "artifact-manifest.json"), "utf8"));
+  const manifest = JSON.parse(await readFile(join(fx.workspace, DIRECTORY.artifacts, "artifact-manifest.json"), "utf8"));
   assert.equal(manifest.schemaVersion, "tcrn.artifact-manifest.v1");
   assert.deepEqual(Object.keys(manifest.artifacts[0]).sort(), ["bytes", "name", "sha256", "storedAt", "storedBytes"]);
   assert.equal(JSON.stringify(manifest).includes(fx.cloud), false, "the manifest carries no local address");
@@ -267,16 +261,16 @@ test("a blob in the root that no manifest entry names is reported as unindexed, 
   assert.equal(verified.reasonCode, "ARTIFACT_VERIFIED", "verify judges what the manifest claims, not what the directory holds");
 });
 
-test("the default relative root still works and lands inside the control tree", async (t) => {
+test("the default relative root still works and lands in the library's artifacts/ directory", async (t) => {
   const fx = await fixture(t, "default-root");
   const source = join(fx.base, "default.txt");
   await writeFile(source, "default root");
   const receipt = await cli(["artifact-put", "--workspace", fx.workspace, "--file", source, "--at", instant(2)]);
   assert.equal(receipt.reasonCode, "ARTIFACT_PUT_COMMITTED");
-  assert.deepEqual(await readdir(join(fx.workspace, LEGACY_CONTROL_DIRECTORY, "artifacts")), [`${receipt.sha256}.bin`]);
+  assert.deepEqual((await readdir(join(fx.workspace, DIRECTORY.artifacts))).sort(), ["artifact-manifest.json", `${receipt.sha256}.bin`].sort());
 });
 
-test("neither the chain nor the lease follows the blob: artifact-put appends no event", async (t) => {
+test("neither the chain nor the lock follows the blob: artifact-put appends no event", async (t) => {
   const fx = await fixture(t, "chain-still");
   await setArtifactsPath(fx.workspace, 0, 1, fx.cloud);
   const before = await materializeWorkspace(fx.workspace);
@@ -287,7 +281,9 @@ test("neither the chain nor the lease follows the blob: artifact-put appends no 
   const after = await validateWorkspace(fx.workspace);
   assert.equal(after.version, before.version, "the chain did not move");
   assert.equal(after.headEventHash, before.headEventHash);
-  assert.equal((await readdir(join(fx.workspace, LEGACY_CONTROL_DIRECTORY))).includes("lease"), false, "the lease was released");
+  // The write lock lives in the device directory and is released; the library keeps its seven entries.
+  assert.deepEqual((await readdir(join(deviceHome, "locks"))), [], "the lock was released");
+  assert.deepEqual((await readdir(fx.workspace)).sort(), [".gitignore", "README.md", "akasha", "artifacts", "config", "crest", "manifest.json"]);
 });
 
 test("a chain carrying an absolute artifact root replays even where that directory does not exist", async (t) => {

@@ -7,6 +7,7 @@
 // INC-047: this test lives in the repository that OWNS the source (the engine),
 // not as a sibling-repo import — a lone clone of either repo can run its own suite.
 
+import "./helpers/device-home.mjs";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -23,10 +24,10 @@ import {
   createKnowledgeUnit,
   createProject,
   initializeKnowledgeStore,
-  initializeWorkspace,
+  initializeLibrary,
   materializeWorkspace,
   transitionKnowledgePromotion,
-  LEGACY_CONTROL_DIRECTORY,
+  DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
@@ -52,16 +53,10 @@ async function createSyntheticWorkspace() {
 
   // Create the partition structure: base/.tcrn-workspace/cross-project/
   const partitionPath = join(base, ".tcrn-workspace", "cross-project");
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(partitionPath, kind);
-    await mkdir(path, { recursive: true });
-    roots.push({ kind, path });
-  }
 
-  // Initialize a real workspace
-  await initializeWorkspace({ roots, externalKey: "KNOWLEDGE-INJECT-TEST", createdAt: instant(0) });
+  // Initialize a real library
   const workspace = join(partitionPath, "workspace");
+  await initializeLibrary({ root: workspace, createdAt: instant(0) });
 
   // Populate with knowledge content so budget tests discriminate.
   // We need content matching "hook" keyword to exceed 10-byte budget.
@@ -260,13 +255,12 @@ async function isolatedHookContainer(t, externalKey) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-min225-hooks-")));
   t.after(() => rm(base, { recursive: true, force: true }));
   const partition = join(base, ".tcrn-workspace", "cross-project");
-  const roots = ["framework", "workspace", "transient", "evidence-locator", "release-trust"].map((kind) => ({ kind, path: join(partition, kind) }));
-  for (const root of roots) await mkdir(root.path, { recursive: true });
   const workspace = join(partition, "workspace");
-  await initializeWorkspace({ roots, externalKey, createdAt: "2026-09-01T00:00:00Z" });
+  await initializeLibrary({ root: workspace, createdAt: "2026-09-01T00:00:00Z" });
+  await mkdir(join(partition, "transient"), { recursive: true });
   await createProject(workspace, { occurredAt: "2026-09-01T00:00:01Z", externalKey: `${externalKey}-PROJECT`, name: "MIN-225 hooks" });
   await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
-  const storePath = join(workspace, LEGACY_CONTROL_DIRECTORY, "knowledge", "store.json");
+  const storePath = join(workspace, DIRECTORY.knowledge, "store.json");
   return { base, workspace, transient: join(partition, "transient"), storePath, storeBefore: readFileSync(storePath, "utf8") };
 }
 

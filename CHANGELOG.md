@@ -117,6 +117,18 @@ every write refuses with `LEGACY_WORKSPACE_READ_ONLY`. The old layout's writer i
 `migration-plan`, `migration-execute`, `storage-home-status` and `snapshot-replay-rebuild`:
 its storage backends, segment indexes, views, replay snapshots, storage-home sentinel,
 storage migration, relocation admission and filesystem-type pin.
+The test suite runs on libraries (TCRN-CROSS-STORY-469): fixtures create a library in a
+temporary directory and every test process gets its own device directory through
+`EINZBERN_HOME`, so no test reaches the real `~/.einzbern`; the old layout is read only from
+the frozen fixture in `tests/fixtures/legacy-workspace`. A library's knowledge store is its
+`crest/` directory (`knowledgeStorePath`), its artifact manifest and default blob root are its
+`artifacts/` directory, and `storage.segmentBytes` sizes its stream segments with a default of
+1 MiB. Initializing a knowledge store always takes the disposable acknowledgment: a library has
+no workspace key to carry the implicit `FIXTURE-` admission. A sprint reference names the
+library a member lives in (`library:<id>#work:<id>`; an old-layout `workspace:<id>` still
+reads). The backup witness (`snapshot-manifest`, `snapshot-verify`) covers the whole library
+tree, and a library restored to another path verifies and reads the same head. A stream
+segment whose recorded path is a directory fails with `AKASHA_SEGMENT_CORRUPT`.
 
 ## 1.2.1 — patch candidate
 

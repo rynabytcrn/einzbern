@@ -42,7 +42,8 @@ import type { KnowledgeExpansions, KnowledgeLanguageProvider } from "./knowledge
 import { activeWorkspaceRoot, materializeWorkspace } from "./workspace.js";
 import type { ProjectRecord, WorkspaceState } from "./workspace.js";
 import { SETTINGS_CATALOG, resolveKnowledgeArticlesPath } from "./settings.js";
-import { LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY } from "./names.js";
+import { hasLibraryManifest } from "./ether-library.js";
+import { DIRECTORY, LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY } from "./names.js";
 
 export const KNOWLEDGE_CORE_VERSION = "tcrn.knowledge-core.v1" as const;
 export const KNOWLEDGE_STORE_SCHEMA_VERSION = "tcrn.knowledge-store.v1" as const;
@@ -80,6 +81,8 @@ function knowledgeAggregateLimit(workspace: WorkspaceState): number {
 }
 
 export const KNOWLEDGE_REASON_CODES = Object.freeze([
+  // TCRN-CROSS-STORY-469: an old-layout workspace's knowledge store is read, never written.
+  "LEGACY_WORKSPACE_READ_ONLY",
   "KNOWLEDGE_ALREADY_EXISTS",
   "KNOWLEDGE_ARTICLE_CREATED",
   "KNOWLEDGE_ARTICLE_REFRESHED",
@@ -885,6 +888,33 @@ async function writeExclusiveFile(path: string, bytes: Buffer | string): Promise
   }
 }
 
+// TCRN-CROSS-STORY-469 R1: a library keeps its knowledge store in crest/; an old-layout
+// workspace's store stays where its engine wrote it and is only ever read.
+export async function knowledgeStorePath(workspaceRoot: string): Promise<string> {
+  return await hasLibraryManifest(workspaceRoot)
+    ? resolve(workspaceRoot, DIRECTORY.knowledge)
+    : resolve(workspaceRoot, LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY);
+}
+
+async function assertKnowledgeWritable(workspaceRoot: string): Promise<void> {
+  if (!await hasLibraryManifest(workspaceRoot)) {
+    fail("LEGACY_WORKSPACE_READ_ONLY", `${workspaceRoot} is an old-layout workspace; its knowledge store is read-only`);
+  }
+}
+
+// A library's crest/ exists from the start and is empty until the store is initialized there.
+async function ensureEmptyStoreRoot(path: string, parent: string): Promise<string> {
+  let entries: string[];
+  try {
+    entries = await readdir(path);
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return ensureNewDirectory(path, parent);
+    fail("KNOWLEDGE_PATH_INVALID", `${path}:${String(error)}`);
+  }
+  if (entries.length > 0) fail("KNOWLEDGE_ALREADY_EXISTS", path);
+  return boundDirectory(path, parent);
+}
+
 async function ensureNewDirectory(path: string, parent: string): Promise<string> {
   try {
     await mkdir(path, { mode: 0o700 });
@@ -1339,7 +1369,7 @@ async function scanKnowledgeStore(
   if (storedWorkspaceRoot !== workspaceRoot) {
     fail("KNOWLEDGE_PATH_INVALID", "knowledge store is not under the Workspace authority root");
   }
-  const storeRoot = await boundDirectory(resolve(workspaceRoot, LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY), workspaceRoot);
+  const storeRoot = await boundDirectory(await knowledgeStorePath(workspaceRoot), workspaceRoot);
   const metadataRoot = await boundDirectory(resolve(storeRoot, "metadata"), storeRoot);
   const bodiesRoot = await boundDirectory(resolve(storeRoot, "bodies"), storeRoot);
   const viewsRoot = await boundDirectory(resolve(storeRoot, "views"), storeRoot);
@@ -1473,7 +1503,7 @@ async function mutationAdmissionScan(workspaceRoot: string, options: KnowledgeRe
     return await scanKnowledgeStore(workspaceRoot, options, false, "full", rebase);
   } catch (error) {
     if (error instanceof KnowledgeCoreError && error.reasonCode === "KNOWLEDGE_PARTIAL_STATE") {
-      const root = resolve(workspaceRoot, LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY);
+      const root = await knowledgeStorePath(workspaceRoot);
       if (await claimPresence(root) === "present") fail("KNOWLEDGE_LOCKED", "knowledge mutation claim exists");
     }
     throw error;
@@ -1481,6 +1511,7 @@ async function mutationAdmissionScan(workspaceRoot: string, options: KnowledgeRe
 }
 
 async function acquireMutationClaim(scan: KnowledgeStoreScan): Promise<KnowledgeMutationClaim> {
+  await assertKnowledgeWritable(scan.workspaceRoot);
   const token = randomBytes(24).toString("hex");
   const acquiredAt = new Date().toISOString();
   try {
@@ -1531,8 +1562,9 @@ export function processIsAlive(pid: number): boolean {
  * malformed claim remains blocked instead of being guessed away.
  */
 export async function recoverKnowledgeStore(workspaceRoot: string, options: KnowledgeReadOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
-  const claimedRoot = resolve(workspaceRoot, LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY);
+  const claimedRoot = await knowledgeStorePath(workspaceRoot);
   const claim = await readMutationClaim(claimedRoot);
+  if (claim !== null) await assertKnowledgeWritable(workspaceRoot);
   if (claim === null) {
     return { schemaVersion: "tcrn.knowledge-recovery-result.v1", reasonCode: "KNOWLEDGE_RECOVERY_NOT_NEEDED", recovered: false };
   }
@@ -1760,18 +1792,19 @@ async function writeIndex(backend: StoreBackend, marker: KnowledgeStoreMarker, m
 
 export async function initializeKnowledgeStore(workspaceRootInput: string, options: { readonly disposableAcknowledged?: boolean } = {}): Promise<Readonly<Record<string, JsonValue>>> {
   const workspace = await materializeWorkspace(workspaceRootInput);
-  // WSC-1: fixture workspaces are admitted implicitly; every other workspace only
-  // under an explicit per-invocation disposability acknowledgment. The store stays
-  // a disposable derived index that is never the system of record.
-  const fixtureAdmission = workspace.metadata.externalKey.startsWith("FIXTURE-");
-  if (!fixtureAdmission && options.disposableAcknowledged !== true) {
-    fail("KNOWLEDGE_DISPOSABLE_ACK_REQUIRED", workspace.metadata.externalKey);
+  // WSC-1: the store is a disposable derived index that is never the system of record, and
+  // every initialization acknowledges that explicitly. Old-layout FIXTURE- workspaces used to be
+  // admitted implicitly; a library has no workspace key to carry that mark, and an old-layout
+  // workspace is read-only (TCRN-CROSS-STORY-469).
+  if (options.disposableAcknowledged !== true) {
+    fail("KNOWLEDGE_DISPOSABLE_ACK_REQUIRED", workspace.metadata.workspaceId);
   }
   if (!workspace.headEventHash) {
     fail("KNOWLEDGE_HIGH_WATER_MISMATCH", "knowledge store requires a non-empty Workspace authority");
   }
   const workspaceRoot = await boundDirectory(workspaceRootInput);
-  const storeRoot = await ensureNewDirectory(resolve(workspaceRoot, LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY), workspaceRoot);
+  await assertKnowledgeWritable(workspaceRoot);
+  const storeRoot = await ensureEmptyStoreRoot(await knowledgeStorePath(workspaceRoot), workspaceRoot);
   const metadataRoot = await ensureNewDirectory(resolve(storeRoot, "metadata"), storeRoot);
   const bodiesRoot = await ensureNewDirectory(resolve(storeRoot, "bodies"), storeRoot);
   const viewsRoot = await ensureNewDirectory(resolve(storeRoot, "views"), storeRoot);
@@ -1798,7 +1831,7 @@ export async function initializeKnowledgeStore(workspaceRootInput: string, optio
     version: marker.version,
     records: 0,
     bodyStorage: "separate-explicit-read-only",
-    admission: fixtureAdmission ? "fixture" : "acknowledged-disposable",
+    admission: "acknowledged-disposable",
   };
 }
 

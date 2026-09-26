@@ -11,8 +11,9 @@
 // The exemption these criteria pin is deliberately narrow, and it is paid for: a
 // trailing read is admitted, and the answer says that it trails.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -23,7 +24,7 @@ import {
   createWork,
   evaluateKnowledgeFreshness,
   initializeKnowledgeStore,
-  initializeWorkspace,
+  initializeLibrary,
   listKnowledgeMetadata,
   validateKnowledgeStore,
 } from "../dist/build/packages/core/src/index.js";
@@ -33,13 +34,7 @@ const instant = (day, second = 0) => `2026-08-${String(day).padStart(2, "0")}T14
 
 async function emptyWorkspace(externalKey) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-inc226-")));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
-  await initializeWorkspace({ roots, externalKey, createdAt: instant(19), segmentEventLimit: 64 });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: instant(19) });
   return { base, workspace: join(base, "workspace") };
 }
 

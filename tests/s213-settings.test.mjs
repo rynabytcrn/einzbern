@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -11,7 +12,7 @@ import {
   SETTINGS_CATALOG,
   SETTINGS_LAYER_KIND,
   appendEvents,
-  initializeWorkspace,
+  initializeLibrary,
   materializeWorkspace,
   setWorkspaceSetting,
   validateSettingValue,
@@ -28,14 +29,8 @@ const instant = (second) => `2026-08-11T00:00:${String(second).padStart(2, "0")}
 async function fixture(context, suffix) {
   const base = await realpath(await mkdtemp(join(tmpdir(), `tcrn-s213-${suffix}-`)));
   context.after(() => rm(base, { recursive: true, force: true }));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
   const workspace = join(base, "workspace");
-  await initializeWorkspace({ roots, externalKey: `FIXTURE-S213-${suffix}`, createdAt: instant(0), segmentEventLimit: 64 });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: instant(0) });
   return { workspace };
 }
 

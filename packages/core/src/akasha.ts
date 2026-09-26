@@ -267,7 +267,9 @@ async function readSegmentBytes(libraryRoot: string, manifest: StreamManifest, s
   try {
     content = await readFile(join(streamDirectory(libraryRoot, manifest.deviceId), segment.name));
   } catch (error) {
-    if ((error as { code?: string }).code === "ENOENT") fail("AKASHA_SEGMENT_CORRUPT", `${segment.name} is missing`, where);
+    const code = (error as { code?: string }).code;
+    if (code === "ENOENT") fail("AKASHA_SEGMENT_CORRUPT", `${segment.name} is missing`, where);
+    if (code === "EISDIR") fail("AKASHA_SEGMENT_CORRUPT", `${segment.name} is not a file`, where);
     throw error;
   }
   if (content.length < segment.bytes) fail("AKASHA_SEGMENT_CORRUPT", `${segment.name} is shorter than its manifest records`, where);

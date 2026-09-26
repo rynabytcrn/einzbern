@@ -6,20 +6,19 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cp, mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { LEGACY_CONTROL_DIRECTORY } from "../dist/build/packages/core/src/index.js";
-import { canonicalJson, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
+import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
+import { LEGACY_FIXTURE_EXPECTED, restoreLegacyFixture } from "./helpers/legacy-fixture.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const cliPath = join(repositoryRoot, "scripts/einzbern.mjs");
 const tripwirePath = join(repositoryRoot, "tests/helpers/fs-write-tripwire.mjs");
-const fixtureRoot = join(repositoryRoot, "tests/fixtures/legacy-workspace");
-const expected = JSON.parse(await readFile(join(fixtureRoot, "expected.json"), "utf8"));
+const expected = LEGACY_FIXTURE_EXPECTED;
 
 // A Story whose decider is not the Owner, so it may be finished without minutes.
 const STORY_SCOPE = [
@@ -182,16 +181,7 @@ test("468-AC2, AC3 (CLI): a lost race is a rejected event on work-show, and a ta
 
 /** Restore the frozen old-layout fixture into a fresh directory. */
 async function restoreFixture(base) {
-  const root = join(base, "legacy");
-  const events = join(root, LEGACY_CONTROL_DIRECTORY, "events");
-  await mkdir(events, { recursive: true });
-  const canonical = async (relativePath) => canonicalJson(JSON.parse(await readFile(join(fixtureRoot, "control", relativePath), "utf8")));
-  await writeFile(join(root, LEGACY_CONTROL_DIRECTORY, "workspace.json"), await canonical("workspace.json"));
-  await writeFile(join(events, "manifest.json"), await canonical("events/manifest.json"));
-  for (const name of (await readdir(join(fixtureRoot, "control/events"))).filter((entry) => entry.endsWith(".ndjson"))) {
-    await writeFile(join(events, name), await readFile(join(fixtureRoot, "control/events", name)));
-  }
-  return root;
+  return (await restoreLegacyFixture(base, "legacy")).root;
 }
 
 async function treeDigest(root) {

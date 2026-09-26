@@ -14,8 +14,9 @@
 // refused as input and nothing is appended, and --title/--labels keep working when the
 // same annotation also moves an advisory field.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -24,7 +25,7 @@ import {
   annotateWork,
   createProject,
   createWork,
-  initializeWorkspace,
+  initializeLibrary,
   materializeWorkspace,
   validateWorkspace,
 } from "../dist/build/packages/core/src/index.js";
@@ -33,11 +34,8 @@ const instant = (index) => `2026-09-04T00:00:${String(index).padStart(2, "0")}.0
 
 async function incidentFixture(context, externalKey) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-inc269-")));
-  const roots = ["framework", "workspace", "transient", "evidence-locator", "release-trust"]
-    .map((kind) => ({ kind, path: join(base, kind) }));
-  for (const root of roots) await mkdir(root.path);
   const workspace = join(base, "workspace");
-  await initializeWorkspace({ roots, externalKey, createdAt: instant(0), segmentEventLimit: 64 });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: instant(0) });
   context.after(async () => {
     await rm(base, { recursive: true, force: true });
   });

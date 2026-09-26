@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-// TCRN-CROSS-STORY-467 / TCRN-CROSS-SUB-269: one place tests create a disposable workspace
-// and drive the CLI against it. Tests that only need "a workspace I can write to" use this
-// helper, so the storage layout it creates can change in one place (SUB-285 moves it to a
-// library).
+// TCRN-CROSS-STORY-467 / TCRN-CROSS-SUB-269, TCRN-CROSS-STORY-469 / SUB-285: one place tests
+// create a disposable library and drive the CLI against it. Importing it also gives the test
+// process a disposable device directory (EINZBERN_HOME), so nothing reaches the real one.
 
+import { testDeviceHome } from "./device-home.mjs";
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -15,14 +15,12 @@ import {
   appendEvents,
   buildActorAttestationEnableRecord,
   buildEventPayload,
-  initializeWorkspace,
+  initializeLibrary,
 } from "../../dist/build/packages/core/src/index.js";
 import { canonicalExternalKey, compareCanonicalText, deriveStableId } from "../../dist/build/packages/protocol/src/index.js";
 
 export const repositoryRoot = resolve(import.meta.dirname, "../..");
 export const cliPath = join(repositoryRoot, "scripts/einzbern.mjs");
-
-const ROOT_KINDS = ["framework", "workspace", "transient", "evidence-locator", "release-trust"];
 
 /** An instant `seconds` after 2026-01-01T00:00:00Z, in the strict form the engine takes. */
 export function instant(seconds = 0) {
@@ -49,17 +47,19 @@ export function cliProcess(args, { env = {} } = {}) {
   });
 }
 
+/** The device directory this test process writes from. */
+export const deviceHome = testDeviceHome;
+
 /**
- * A disposable workspace with a project, removed when the test ends.
- * Returns the workspace path, the project id and the base directory.
+ * A disposable library with a project, removed when the test ends. `externalKey` names the
+ * project (`<key>-PROJECT`). Returns the library path (as `workspace`, the flag every verb
+ * takes), the project id and the base directory.
  */
 export async function workspaceFixture(context, { externalKey = "FIXTURE-WORKSPACE", project = true } = {}) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-fixture-")));
   context.after(() => rm(base, { recursive: true, force: true }));
-  const roots = ROOT_KINDS.map((kind) => ({ kind, path: join(base, kind) }));
-  for (const root of roots) await mkdir(root.path);
   const workspace = join(base, "workspace");
-  await initializeWorkspace({ roots, externalKey, createdAt: instant(0) });
+  await initializeLibrary({ root: workspace, createdAt: instant(0) });
   let projectId = null;
   if (project) {
     const created = await cli(["project-create", "--workspace", workspace, "--at", instant(1), "--external-key", `${externalKey}-PROJECT`, "--name", "Fixture"]);

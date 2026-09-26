@@ -12,8 +12,9 @@
 // `summary` is therefore ABSENT on a record that predates it, not null, and this file
 // proves both halves -- the legacy shape still validates, and its bytes do not move.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -23,7 +24,7 @@ import {
   createProject,
   createWork,
   deriveWorkSummary,
-  initializeWorkspace,
+  initializeLibrary,
   transitionWork,
   validateWorkspace,
 } from "../dist/build/packages/core/src/index.js";
@@ -47,11 +48,8 @@ const STORY_SCOPE = [
 
 async function fixture(context, externalKey) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-s363-")));
-  const roots = ["framework", "workspace", "transient", "evidence-locator", "release-trust"]
-    .map((kind) => ({ kind, path: join(base, kind) }));
-  for (const root of roots) await mkdir(root.path);
   const workspace = join(base, "workspace");
-  await initializeWorkspace({ roots, externalKey, createdAt: instant(0), segmentEventLimit: 64 });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: instant(0) });
   context.after(async () => {
     await rm(base, { recursive: true, force: true });
   });

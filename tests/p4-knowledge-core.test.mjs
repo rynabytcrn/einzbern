@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
@@ -34,7 +35,7 @@ import {
   evaluateKnowledgeFreshness,
   exportKnowledgeCheckpoint,
   initializeKnowledgeStore,
-  initializeWorkspace,
+  initializeLibrary,
   listKnowledgeMetadata,
   readKnowledgeBody,
   readKnowledgeSnippet,
@@ -43,7 +44,7 @@ import {
   reverifyKnowledgeUnit,
   transitionKnowledgePromotion,
   validateKnowledgeStore,
-  LEGACY_CONTROL_DIRECTORY,
+  DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalJson, canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
@@ -65,14 +66,9 @@ function knowledgeAjv() {
 
 async function workspaceFixture({ externalKey = "FIXTURE-KNOWLEDGE-CORE", initialize = true } = {}) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-p4-knowledge-")));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
   const workspace = join(base, "workspace");
-  await initializeWorkspace({ roots, externalKey, createdAt: instant(11), segmentEventLimit: 64 });
+  // The library id follows the fixture key, so two fixtures with one key hold byte-identical chains.
+  await initializeLibrary({ root: workspace, createdAt: instant(11), libraryId: deriveStableId("library", externalKey) });
   let state = await createProject(workspace, {
     occurredAt: instant(11, 1),
     externalKey: "FIXTURE-KNOWLEDGE-PROJECT",
@@ -86,11 +82,11 @@ async function workspaceFixture({ externalKey = "FIXTURE-KNOWLEDGE-CORE", initia
     parentId: null,
     status: "active",
   });
-  if (initialize) await initializeKnowledgeStore(workspace);
+  if (initialize) await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
   return {
     base,
     workspace,
-    store: join(workspace, LEGACY_CONTROL_DIRECTORY, "knowledge"),
+    store: join(workspace, DIRECTORY.knowledge),
     projectId: state.projects[0].id,
     workId: state.work[0].id,
     async close() {
@@ -181,12 +177,15 @@ test("WSC-1: real workspace knowledge admission requires explicit disposability 
   }
 });
 
-test("WSC-1: fixture workspace admits with no flag and reports fixture admission", async () => {
+// TCRN-CROSS-STORY-469: a library has no workspace key to carry the FIXTURE- mark, so no library is
+// admitted implicitly; every initialization acknowledges that the store is disposable.
+test("WSC-1: a library is never admitted without the acknowledgment", async () => {
   const fixture = await workspaceFixture({ externalKey: "FIXTURE-KNOWLEDGE-ADMISSION", initialize: false });
   try {
-    const result = await initializeKnowledgeStore(fixture.workspace);
+    await expectReason("KNOWLEDGE_DISPOSABLE_ACK_REQUIRED", () => initializeKnowledgeStore(fixture.workspace));
+    const result = await initializeKnowledgeStore(fixture.workspace, { disposableAcknowledged: true });
     assert.equal(result.reasonCode, "KNOWLEDGE_STORE_INITIALIZED");
-    assert.equal(result.admission, "fixture");
+    assert.equal(result.admission, "acknowledged-disposable");
   } finally {
     await fixture.close();
   }
@@ -418,7 +417,7 @@ test("governed Knowledge CLI exposes init, validate, create, list, snippet, body
   const fixture = await workspaceFixture({ initialize: false, externalKey: "FIXTURE-KNOWLEDGE-CLI" });
   try {
     let output = "";
-    await runCli(["knowledge-init", "--workspace", fixture.workspace], { write: (value) => { output += value; } });
+    await runCli(["knowledge-init", "--workspace", fixture.workspace, "--acknowledge-disposable", "true"], { write: (value) => { output += value; } });
     assert.equal(JSON.parse(output).reasonCode, "KNOWLEDGE_STORE_INITIALIZED");
     // TCRN-CROSS-INC-282: written lifecycle "candidate" so the knowledge-promote leg below
     // still has a candidate to move. An active write lands promoted and refuses promotion.
@@ -510,7 +509,7 @@ test("WSB-4: knowledge-create null sentinel '-' round-trips to null and the depr
   };
   const createViaCli = async (projectSpelling, lastVerifiedSpelling) => {
     const fixture = await workspaceFixture({ initialize: false, externalKey: "FIXTURE-KNOWLEDGE-SENTINEL" });
-    await runCli(["knowledge-init", "--workspace", fixture.workspace], { write() {} });
+    await runCli(["knowledge-init", "--workspace", fixture.workspace, "--acknowledge-disposable", "true"], { write() {} });
     let output = "";
     await runCli(createArguments(fixture, projectSpelling, lastVerifiedSpelling), { write: (value) => { output += value; } });
     const created = JSON.parse(output);
@@ -529,7 +528,7 @@ test("WSB-4: knowledge-create null sentinel '-' round-trips to null and the depr
     assert.equal(alias.output, dash.output);
     assert.deepEqual(alias.record, dash.record);
     // The CLI '-' spelling round-trips to the same stored record as programmatic explicit nulls.
-    await initializeKnowledgeStore(programmatic.workspace);
+    await initializeKnowledgeStore(programmatic.workspace, { disposableAcknowledged: true });
     const direct = await createKnowledgeUnit(programmatic.workspace, sentinelInput(programmatic));
     const directRecord = await storedRecord(programmatic, direct);
     assert.deepEqual(directRecord, dash.record);
@@ -1287,7 +1286,7 @@ test("TCRN-CROSS-STORY-023: the aggregate cap counts marker+metadata+body but no
   // failing with KNOWLEDGE_LIMIT_EXCEEDED proves the cap still fires.
   const fx = await workspaceFixture({ externalKey: "FIXTURE-KNOWLEDGE-S023" });
   try {
-    const storeRoot = join(fx.workspace, `${LEGACY_CONTROL_DIRECTORY}/knowledge`);
+    const storeRoot = join(fx.workspace, DIRECTORY.knowledge);
     let admitted = 0, rejected = false;
     for (let i = 0; i < 200; i += 1) {
       try {
@@ -1335,7 +1334,7 @@ test("TCRN-CROSS-STORY-025: search matches the summary, not only subject and tag
 test("TCRN-CROSS-STORY-024: retiring reclaims the body, keeps the store valid, and still requires a live body", async () => {
   const fx = await workspaceFixture({ externalKey: "FIXTURE-KNOWLEDGE-S024" });
   try {
-    const bodiesDir = join(fx.workspace, `${LEGACY_CONTROL_DIRECTORY}/knowledge/bodies`);
+    const bodiesDir = join(fx.workspace, DIRECTORY.knowledge, "bodies");
     const created = await createKnowledgeUnit(fx.workspace, unitInput(fx, "S024-RECLAIM", {
       occurredAt: instant(11, 3), body: "x".repeat(7_500),
     }));

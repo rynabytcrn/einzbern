@@ -81,8 +81,7 @@ import {
   templateBindingFromWorkRecord,
   probeHost,
   validateTemplateDocument,
-  LEGACY_CONTROL_DIRECTORY,
-  LEGACY_KNOWLEDGE_DIRECTORY,
+  knowledgeStorePath,
   materializeFromGenesis,
   openLegacyWorkspace,
   validateLegacyChain,
@@ -91,6 +90,7 @@ import {
   readAllStreams,
   materializeLibraryRead,
   recordAliases,
+  LIBRARY_ID_PATTERN,
 } from "../../core/src/index.js";
 import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider } from "../../core/src/index.js";
 import type {
@@ -281,16 +281,17 @@ function listValue(value: string | undefined): readonly string[] {
 }
 
 // INIT-008: a sprint member reference is a qualified cross-partition pointer. The CLI
-// accepts the ergonomic `workspace:<id>#work:<id>` spelling on one flag and parses it
-// into the {workspaceId, workId} object the core stores (# is only the input delimiter,
-// never the stored form). Both halves are whole protocol ids; the core re-validates them.
+// accepts the ergonomic `library:<id>#work:<id>` spelling on one flag (an old-layout
+// `workspace:<id>` still names its workspace; TCRN-CROSS-STORY-469) and parses it into the
+// {workspaceId, workId} object the core stores (# is only the input delimiter, never the
+// stored form). Both halves are whole protocol ids; the core re-validates them.
 function sprintReference(value: string): { readonly workspaceId: string; readonly workId: string } {
   const hash = value.indexOf("#");
-  if (hash < 0) fail("CLI_ARGUMENT_MALFORMED", "sprint must be workspace:<id>#work:<id>");
+  if (hash < 0) fail("CLI_ARGUMENT_MALFORMED", "sprint must be library:<id>#work:<id>");
   const workspaceId = value.slice(0, hash);
   const workId = value.slice(hash + 1);
-  if (!/^workspace:[a-f0-9]{24}$/u.test(workspaceId) || !/^work:[a-z0-9][a-z0-9._-]{0,127}$/u.test(workId)) {
-    fail("CLI_ARGUMENT_MALFORMED", "sprint must be workspace:<id>#work:<id>");
+  if (!LIBRARY_ID_PATTERN.test(workspaceId) || !/^work:[a-z0-9][a-z0-9._-]{0,127}$/u.test(workId)) {
+    fail("CLI_ARGUMENT_MALFORMED", "sprint must be library:<id>#work:<id>");
   }
   return { workspaceId, workId };
 }
@@ -389,7 +390,7 @@ function workspaceHeadOf(value: unknown): string | null {
 async function autoRebaseKnowledgeAfterWorkspaceWrite(workspace: string, at: string, beforeHead: string | null, result: unknown): Promise<void> {
   const afterHead = workspaceHeadOf(result);
   if (beforeHead === null || afterHead === null || afterHead === beforeHead) return;
-  const storeRoot = join(workspace, LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY);
+  const storeRoot = await knowledgeStorePath(workspace);
   if (!existsSync(join(storeRoot, "store.json"))) return;
   const current = await readKnowledgeStoreMarker(workspace);
   if (current.eventHighWaterDigest === afterHead) return;
@@ -1889,7 +1890,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     if (values.kind !== undefined && !["Initiative", "Epic", "Story", "Subtask", "Incident", "Release"].includes(values.kind)) fail("CLI_ARGUMENT_MALFORMED", `kind=${values.kind}`);
     if (values.status !== undefined && !isWorkStatus(values.status)) fail("CLI_ARGUMENT_MALFORMED", `status=${values.status}`);
     // INIT-008: filter members of a sprint. The flag carries the qualified reference in the
-    // same workspace:<id>#work:<id> spelling used to annotate; we compare the parsed object
+    // same library:<id>#work:<id> spelling used to annotate; we compare the parsed object
     // against the stored advisory:sprint value by canonical bytes so the round trip is closed.
     const sprintFilter = values.sprint === undefined ? undefined : canonicalJson(sprintReference(values.sprint));
     const state = await validateWorkspace(values.workspace ?? "");

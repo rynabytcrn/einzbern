@@ -13,8 +13,9 @@
 // The separation is the whole change, so these criteria are about the separation
 // holding rather than about either number's value.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm, stat } from "node:fs/promises";
+import { mkdtemp, realpath, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -25,7 +26,7 @@ import {
   assertWorkspaceRecordCount,
   buildEventPayload,
   createWorkspaceSettingRecord,
-  initializeWorkspace,
+  initializeLibrary,
   materializeWorkspace,
   materializeWorkspaceFromGenesis,
   sortWorkspaceSettings,
@@ -83,14 +84,9 @@ test("INC-224: a refused count is reported, not just refused", () => {
 test("STORY-451: a chain past the per-document bound replays from genesis without a snapshot", async (context) => {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-s451-replay-")));
   context.after(() => rm(base, { recursive: true, force: true }));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    await mkdir(join(base, kind));
-    roots.push({ kind, path: join(base, kind) });
-  }
   const workspace = join(base, "workspace");
   const occurredAt = "2026-09-23T00:00:01Z";
-  await initializeWorkspace({ roots, externalKey: "STORY-451-REPLAY", createdAt: "2026-09-23T00:00:00Z" });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: "2026-09-23T00:00:00Z" });
   const settingDelta = (key, value) => (state) => {
     const prior = state.settings.find((entry) => entry.key === key);
     const record = createWorkspaceSettingRecord(key, value, (prior?.revision ?? 0) + 1, occurredAt, workspace);

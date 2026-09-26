@@ -10,8 +10,9 @@
 // promotion step — and the last case asserts that nothing this Story writes lands as a
 // candidate, which is the ruling stated as a machine check rather than as prose.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -22,11 +23,11 @@ import {
   captureKnowledgeUnit,
   createProject,
   initializeKnowledgeStore,
-  initializeWorkspace,
+  initializeLibrary,
   knowledgeConflictHits,
   knowledgeRelevanceScore,
   listKnowledgeMetadata,
-  LEGACY_CONTROL_DIRECTORY,
+  DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalJson } from "../dist/build/packages/protocol/src/index.js";
 
@@ -40,18 +41,12 @@ const OWNER = "owner:agent-session";
 async function containerFixture(externalKey = "FIXTURE-CAPTURE") {
   const container = await realpath(await mkdtemp(join(tmpdir(), "tcrn-s365-")));
   const base = join(container, ".tcrn-workspace", "cross-project");
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path, { recursive: true });
-    roots.push({ kind, path });
-  }
   const workspace = join(base, "workspace");
-  await initializeWorkspace({ roots, externalKey, createdAt: instant(1), segmentEventLimit: 64 });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: instant(1) });
   await createProject(workspace, {
     occurredAt: instant(1, 1), externalKey: "FIXTURE-CAPTURE-PROJECT", name: "Capture Fixture",
   });
-  await initializeKnowledgeStore(workspace);
+  await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
   return { container, workspace, close: () => rm(container, { recursive: true, force: true }) };
 }
 
@@ -177,7 +172,7 @@ test("STORY-365 the extension slot stays a closed roster of two knowledge-id key
   try {
     const { readFile, writeFile: write } = await import("node:fs/promises");
     const first = await captureKnowledgeUnit(fixture.workspace, lessonCard("扩展槽是有界的两个键"), { allowTrailing: true });
-    const path = join(fixture.workspace, LEGACY_CONTROL_DIRECTORY, "knowledge", "metadata", `${first.id}.json`);
+    const path = join(fixture.workspace, DIRECTORY.knowledge, "metadata", `${first.id}.json`);
     const stored = JSON.parse(await readFile(path, "utf8"));
     for (const forged of [{ unknownKey: "x" }, { supersededBy: "not-an-id" }, { coexistsWith: [] }, { coexistsWith: ["knowledge:000000000000000000000002", "knowledge:000000000000000000000001"] }]) {
       await write(path, canonicalJson({ ...stored, extensions: forged }));

@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // INIT-027 S239: the three orchestration settings are closed and semantic.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { initializeWorkspace } from "../dist/build/packages/core/src/index.js";
+import { initializeLibrary } from "../dist/build/packages/core/src/index.js";
 
 const instant = (second) => new Date(Date.UTC(2026, 0, 2) + second * 1000).toISOString().replace(/\.\d+Z$/u, "Z");
 
@@ -30,13 +31,7 @@ async function refusal(args) {
 async function fixture(context) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-s239-")));
   context.after(() => rm(base, { recursive: true, force: true }));
-  const roots = [];
-  for (const kind of ["framework", "workspace", "transient", "evidence-locator", "release-trust"]) {
-    const path = join(base, kind);
-    await mkdir(path);
-    roots.push({ kind, path });
-  }
-  await initializeWorkspace({ roots, externalKey: "FIXTURE-S239-SETTINGS", createdAt: instant(0) });
+  await initializeLibrary({ root: join(base, "workspace"), createdAt: instant(0) });
   const workspace = join(base, "workspace");
   const version = async () => (await json(["status", "--workspace", workspace])).version;
   return { workspace, version };

@@ -33,3 +33,12 @@ The executable reference is `einzbern-release-verify --tree <directory> --sha256
 (TCRN-CROSS-STORY-471 R3, `packages/core/src/engine-home.ts`) applies the same check before
 it installs a version into the device directory's `engine/<version>/`, and checks the copy
 it made against the same digest before that version can become current.
+
+The release gates carry no trust ceremony (TCRN-CROSS-STORY-488 R3). The push gate
+(`scripts/push-gate.mjs`), P8 (`scripts/lib/p8-workflow-rc.mjs`) and the release tag
+gate (`scripts/lib/release-tag-gate.mjs`) perform no signing step, emit no provenance
+statement and read no trust archive. What they keep is version consistency: the package
+manifests, `FRAMEWORK_VERSION`, the P8 manifest and tag, the `CHANGELOG.md` heading and
+the release note must name one version, and a push must not contradict a published tag
+of it. P8's `release-manifest.json` and `checksums.txt` stay as the candidate's local
+record of its own bytes; nothing signs them.

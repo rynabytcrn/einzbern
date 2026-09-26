@@ -32,6 +32,15 @@ test("INC-093 red leg: a red P8 result or a different basis refuses tag prefligh
   );
 });
 
+// TCRN-CROSS-STORY-488 R3: the version check the tag gate keeps. A green P8 result for another
+// version refuses the tag even when the commits agree; no signed input is asked for.
+test("INC-093 red leg: a P8 result that names another version refuses tag preflight", () => {
+  assert.throws(
+    () => assertP8TagPreconditions({ p8Result: { ...GREEN, tag: "v0.11.7", p8BasisCommit: COMMIT }, expectedTag: "v0.11.8", tagCommit: COMMIT, p8BasisCommit: COMMIT }),
+    (error) => error.reasonCode === "RELEASE_TAG_P8_TAG_MISMATCH",
+  );
+});
+
 // The regenerated proof surfaces a release commit also used to carry (the source allowlist,
 // the claim map and the RC1 manifest) are retired (TCRN-CROSS-STORY-467 R2).
 test("INC-093: release commits admit release metadata", () => {

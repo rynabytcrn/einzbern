@@ -2,13 +2,14 @@
 // TCRN-CROSS-STORY-467 R2 (TCRN-CROSS-MIN-227 D3): release trust is the install-tree digest.
 // The signed-manifest and trust root cases this file carried retired with that code; what
 // is proved here is the one question left -- are the installed bytes the published bytes --
-// through the core module and the einzbern-release-verify entry.
+// through the core module and the einzbern-release-verify entry, and (TCRN-CROSS-STORY-488
+// R3) that no signing code came back to answer a larger one.
 
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import test from "node:test";
 
 import {
@@ -17,7 +18,7 @@ import {
   computeInstallTreeDigest,
   verifyInstallTree,
 } from "../dist/build/packages/core/src/index.js";
-import { repositoryRoot } from "../scripts/lib/files.mjs";
+import { repositoryRoot, toPosixPath, walkFiles } from "../scripts/lib/files.mjs";
 
 const verifier = resolve(repositoryRoot, "scripts/verify-release-trust.mjs");
 
@@ -113,4 +114,45 @@ test("the verifier rejects missing, duplicate and unknown arguments", () => {
     assert.equal(result.status, 1, argv.join(" "));
     assert.equal(JSON.parse(result.stderr).reasonCode, reasonCode, argv.join(" "));
   }
+});
+
+// TCRN-CROSS-STORY-488 R3 (AC3): the digest is the whole of release trust. What retired with
+// the old contract was code -- a key parsed from a trust root, a signature verified over the
+// manifest, an in-toto statement written beside the release, a trust archive the doctor
+// read -- so this reads the source under scripts and packages for that code, not for prose
+// that remembers it.
+const RETIRED_RELEASE_TRUST_CODE = [
+  ["a signing or key primitive imported from node:crypto", /import\s*(?:type\s+)?\{[^}]*\b(?:sign|verify|createSign|createVerify|createPublicKey|createPrivateKey|generateKeyPair|generateKeyPairSync|KeyObject)\b[^}]*\}\s*from\s*["'](?:node:)?crypto["']/u],
+  ["a signing or key call through a crypto namespace", /\b(?:crypto|subtle)\.(?:sign|verify|createSign|createVerify|createPublicKey|createPrivateKey|generateKey|generateKeyPair|generateKeyPairSync|importKey)\s*\(/u],
+  ["an in-toto or SLSA provenance statement", /in-toto\.io\/Statement|slsa\.dev\/provenance/u],
+  ["a trust archive", /trust-archive/u],
+];
+
+async function retiredReleaseTrustCode(root) {
+  const findings = [];
+  for (const directory of ["scripts", "packages"]) {
+    for (const path of await walkFiles(resolve(root, directory))) {
+      if (!/\.(?:[cm]?js|ts)$/u.test(path)) continue;
+      const source = await readFile(path, "utf8");
+      for (const [label, pattern] of RETIRED_RELEASE_TRUST_CODE) {
+        if (pattern.test(source)) findings.push(`${toPosixPath(relative(root, path))}: ${label}`);
+      }
+    }
+  }
+  return findings;
+}
+
+test("no signing primitive, provenance statement or trust archive is left in scripts or packages", async (context) => {
+  assert.deepEqual(await retiredReleaseTrustCode(repositoryRoot), []);
+
+  // Red leg: the import the retired verifier opened with, and the statement type P8 used to
+  // write, are each found.
+  const planted = await treeFixture(context, {
+    "scripts/lib/release-trust.mjs": "import { createHash, createPublicKey, verify as verifySignature } from \"node:crypto\";\n",
+    "packages/core/src/statement.ts": "export const STATEMENT = \"https://in-toto.io/Statement/v1\";\n",
+  });
+  assert.deepEqual(await retiredReleaseTrustCode(planted), [
+    "scripts/lib/release-trust.mjs: a signing or key primitive imported from node:crypto",
+    "packages/core/src/statement.ts: an in-toto or SLSA provenance statement",
+  ]);
 });

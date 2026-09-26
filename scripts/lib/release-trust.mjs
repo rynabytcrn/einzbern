@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// TCRN-CROSS-STORY-467 R2 (TCRN-CROSS-MIN-227 D3): release verification is the install-tree
-// digest and nothing else. The Ed25519 manifest signature, the external trust root, the
-// in-toto build statement, the transaction log and the test-root restriction this module
-// used to enforce are retired; the digest itself lives in core
+// TCRN-CROSS-STORY-467 R2 (TCRN-CROSS-MIN-227 D3), TCRN-CROSS-STORY-488 R3: release
+// verification is the install-tree digest and nothing else -- this module holds no key,
+// performs no signing step and reads no trust archive. The digest itself lives in core
 // (packages/core/src/install-tree-digest.ts) and is read here from dist/build, so the
 // verifier and the engine agree on one definition.
 

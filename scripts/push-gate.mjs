@@ -29,6 +29,14 @@
 //     re-pinned by hand on every change to an English source -- so this gate no longer
 //     reads a translated document; README.md is the only mirror left, and it is the source.
 //
+// A push is not a release-trust ceremony. Neither this gate nor its P8 child performs a
+// signing step, emits a provenance statement or reads a trust archive (TCRN-CROSS-STORY-467
+// R2, TCRN-CROSS-STORY-488 R3); release trust is the install-tree digest a publisher states
+// (specs/release-trust-v1.md). What stays is version consistency: checks 2b, 2d, 3 and 4
+// here, and the package and FRAMEWORK_VERSION agreement verify:p8 holds. Check 2f keeps its
+// provenance name because it judges the host evidence receipt's supersession record, which
+// is not release provenance.
+//
 // Warnings are failures here. There is no --force.
 
 import { spawnSync } from "node:child_process";

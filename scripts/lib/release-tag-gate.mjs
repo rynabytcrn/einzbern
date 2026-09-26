@@ -3,9 +3,10 @@
 /**
  * INC-093 release invariants. Tag creation is deliberately outside this module:
  * the preflight proves that the candidate tag names the exact commit judged by
- * P8 and that a release commit contains only release metadata plus the
- * deterministic proof surfaces regenerated from that metadata. An Owner still
- * decides whether to create or publish the tag.
+ * P8, that P8 judged the version the tag names, and that a release commit
+ * contains only release metadata. It takes no signed input, provenance statement
+ * or trust archive (TCRN-CROSS-STORY-488 R3). An Owner still decides whether to
+ * create or publish the tag.
  */
 
 const SHA = /^[0-9a-f]{40,64}$/u;

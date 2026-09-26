@@ -20,6 +20,7 @@ import { runCli } from "../dist/build/packages/cli/src/index.js";
 import {
   assertGeneratedArtifactsRoot,
   initializeLibrary,
+  lockPath,
   materializeWorkspace,
   validateWorkspace,
   DIRECTORY,
@@ -281,8 +282,10 @@ test("neither the chain nor the lock follows the blob: artifact-put appends no e
   const after = await validateWorkspace(fx.workspace);
   assert.equal(after.version, before.version, "the chain did not move");
   assert.equal(after.headEventHash, before.headEventHash);
-  // The write lock lives in the device directory and is released; the library keeps its seven entries.
-  assert.deepEqual((await readdir(join(deviceHome, "locks"))), [], "the lock was released");
+  // The write lock lives in the device directory and is released; the library keeps its seven
+  // entries. Only this library's lock is looked at: the device directory is shared by every test
+  // file of a run, and their libraries hold locks of their own.
+  await assert.rejects(readFile(lockPath(after.metadata.workspaceId, deviceHome)), { code: "ENOENT" }, "the lock was released");
   assert.deepEqual((await readdir(fx.workspace)).sort(), [".gitignore", "README.md", "akasha", "artifacts", "config", "crest", "manifest.json"]);
 });
 

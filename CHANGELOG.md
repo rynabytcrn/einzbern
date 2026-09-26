@@ -253,6 +253,46 @@ while the format stays, the writing engine's version for a newer format. A write
 library's format must check the same readiness first and refuse with `LIBRARY_UPGRADE_NOT_READY`
 (`packages/core/spec/ether-library-v1.md`); this engine has no such write yet.
 
+An Incident is a Story now (TCRN-CROSS-STORY-472; MIN-227 D6; `packages/core/src/work-relations.ts`):
+a new record is an Initiative, Epic, Story or Subtask, and `work-create --kind Incident` or
+`Release` (and a batch member of either kind) is refused with `WORK_KIND_RETIRED` and a remedy
+(`details.remedy`: open a Story with a fixes relation). Every Incident and Release already on a
+chain still replays, reads, transitions and can be the target of a relation; `work-list --kind`
+still filters by both. Relations between work records are fields from a closed vocabulary:
+parent (the record's parent), blocked-by, implements, supersedes, fixes and decided-in. A record
+stores its forward relations only, blocked-by, implements, supersedes and fixes in the
+required:false extension `advisory:relations` (each a sorted list of at most 64 work ids) and
+decided-in as its `advisory:decided-by` minutes list, and the engine projects the reverse
+(blocks, implemented-by, superseded-by, fixed-by, decides) when the record is read; the reverse
+is never an event field. `work-create` and `work-annotate` take `--blocked-by`, `--implements`,
+`--supersedes`, `--fixes` and `--decided-in` (`--decided-by` is its older name); a write refuses a
+target that is not a live work record, the record itself or an unknown relation, and an
+annotation replaces each list it names whole (`-` removes one). Replay checks only the shape of a
+stored value, so an old chain or a merge naming a record this device has not seen still reads.
+`work-show` returns `relations {forward, reverse, missing}` (missing: forward targets the library
+no longer holds as live records), `work-list --relation <name>=<id>` filters by a forward or a
+reverse name, and a `work-batch` member carries `relations {blockedBy, implements, supersedes,
+fixes, decidedIn}`.
+
+Minutes replace the conference (TCRN-CROSS-STORY-475; MIN-227 D9, D10; `packages/core/src/minutes.ts`,
+`specs/minutes-v1.md`). `minutes-record --project-id --title --summary` with `--decisions <list>`
+or `--decisions-file <JSON array of strings>`, `--decided-by`, `--work-ids` and an optional
+`--external-key` writes a decision down in one `minutes.recorded` event and answers
+`MINUTES_RECORDED` with the minutes `id`, its `externalKey` and the decisions numbered D1 to Dn
+(`decisions [{number, text}]`); without a key it takes the next number after the latest one
+recorded, and a library's first minutes must name theirs (`MINUTES_EXTERNAL_KEY_REQUIRED`).
+`minutes-list` (`--project-id`, `--work-id`, `--limit`, `--offset`) pages every minutes record,
+the ones a conference close wrote included (kind `conference-minutes`, titled by their
+conference, with no external key), and `minutes-show --id | --external-key` returns one with
+`decides`, the work records that name it as decided-in; both read an old-layout workspace too.
+`work-create` and `work-annotate --decided-in` name a minutes id. Every conference verb is
+retired and answers `CLI_COMMAND_UNKNOWN`: conference-open, conference-append-position,
+conference-close (with `--execution-form` and `--distill`), conference-cancel,
+conference-list-by-work, conference-minutes-list and conference-position-list, and with them the
+settings `execution.independenceFloor` and `conference.positionBudgetBytes`. Every conference
+event already on a chain still replays. The governed-loop tutorial and its proof record minutes
+and name them with decided-in instead of holding, distilling and promoting a conference.
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

@@ -114,6 +114,15 @@ test("GWT2: a Story created with a Goal block carries a derived summary inside t
   assert.equal(story.summary, deriveWorkSummary(STORY_SCOPE, WORK_SUMMARY_MAX_BYTES),
     "the write path derives with the same function the backfill tool calls");
 
+  // TCRN-CROSS-STORY-473: a Story written with a goal field takes its summary from the goal's
+  // first sentence, the same rule the Goal block of a scope follows.
+  state = await createWork(workspace, {
+    occurredAt: instant(5), projectId, externalKey: "S363-GOAL-STORY",
+    kind: "Story", parentId: epicId, title: "Goal story",
+    goal: "为谁=读工单列表的 Owner；其余照旧。", acceptance: "GIVEN a goal WHEN the Story is created THEN the summary is its first sentence",
+  });
+  assert.equal(state.work.find((record) => record.externalKey === "S363-GOAL-STORY").summary, "为谁=读工单列表的 Owner");
+
   // The derivation, not the explicit flag, is the path the bound truncates rather than
   // refuses. A Goal sentence long enough to run past 160 bytes is cut on a code-point
   // boundary, which is the half of the byte bound nothing else here reaches.
@@ -125,7 +134,7 @@ test("GWT2: a Story created with a Goal block carries a derived summary inside t
   // An explicit --summary wins over the derivation, and the bound is enforced on it.
   const explicit = await invoke([
     "work-create", "--workspace", workspace, "--at", instant(6),
-    "--project-id", projectId, "--external-key", "S363-EXPLICIT", "--kind", "Incident", "--title", "Explicit",
+    "--project-id", projectId, "--external-key", "S363-EXPLICIT", "--kind", "Initiative", "--title", "Explicit",
     "--summary", "现象：门未比对元素是否存在；根因：只比对属性值。",
   ]);
   assert.equal(explicit.ok, true, JSON.stringify(explicit));
@@ -133,7 +142,7 @@ test("GWT2: a Story created with a Goal block carries a derived summary inside t
 
   const oversized = await invoke([
     "work-create", "--workspace", workspace, "--at", instant(7),
-    "--project-id", projectId, "--external-key", "S363-OVERSIZED", "--kind", "Incident", "--title", "Oversized",
+    "--project-id", projectId, "--external-key", "S363-OVERSIZED", "--kind", "Initiative", "--title", "Oversized",
     "--summary", "格".repeat(54),
   ]);
   assert.equal(oversized.ok, false);
@@ -175,7 +184,7 @@ test("STORY-363: transition and annotate both write the summary, and annotate is
   const { workspace, projectId, version } = await fixture(context, "S363-WRITE");
   let state = await createWork(workspace, {
     occurredAt: instant(3), projectId, externalKey: "S363-CLOSING",
-    kind: "Incident", parentId: null, status: "active", title: "Closing line",
+    kind: "Initiative", parentId: null, status: "active", title: "Closing line",
   });
   const id = state.work[0].id;
   assert.equal(state.work[0].summary, null);
@@ -206,9 +215,11 @@ test("GWT3: work-list --search matches a keyword that appears only in the title,
     occurredAt: instant(3), projectId, externalKey: "S363-A",
     kind: "Initiative", parentId: null, title: "Retrieval overhaul", labels: ["indexed"],
   });
+  // An Epic under S363-A rather than the parentless Incident it was (a new Incident is refused
+  // since TCRN-CROSS-STORY-472): the kind still sorts after the Initiative in every listing.
   state = await createWork(workspace, {
     occurredAt: instant(4), projectId, externalKey: "S363-B",
-    kind: "Incident", parentId: null, title: "Unrelated", summary: "the closing sentence mentions ratchet",
+    kind: "Epic", parentId: state.work.find((record) => record.externalKey === "S363-A").id, title: "Unrelated", summary: "the closing sentence mentions ratchet",
   });
 
   const hits = async (term) => {

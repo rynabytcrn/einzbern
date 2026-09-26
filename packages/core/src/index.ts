@@ -133,10 +133,7 @@ export {
   WorkspaceError,
   activeBinding,
   activeWorkspaceRoot,
-  appendConferencePositionInWorkspace,
   admitTemplateInWorkspace,
-  cancelConferenceInWorkspace,
-  closeConferenceInWorkspace,
   assertWorkspaceRecordCount,
   assertWorkspaceRelativePath,
   createProject,
@@ -152,7 +149,7 @@ export {
   initializeLibrary,
   materializeWorkspace,
   materializeWorkspaceFromGenesis,
-  openConferenceInWorkspace,
+  recordMinutes,
   recoverWorkspace,
   removeHostConfigurationInWorkspace,
   removeCustomPersonaInWorkspace,
@@ -331,13 +328,12 @@ export type {
   PersonaStoreState,
   ReferencePersonaReadback,
 } from "./profile-store.js";
+// TCRN-CROSS-STORY-473 R1: the Story scope validator, its refusal text and the scope-based
+// Owner-decider probe retired with the ten-block contract; the headings, the summary and the
+// template floor stay. The field reader (story-fields.ts) is exported by the Story's CLI unit.
 export {
   STORY_SCOPE_HEADINGS,
   deriveWorkSummary,
-  storyScopeFromRecord,
-  storyScopeNamesOwnerDecider,
-  validateStoryRecord,
-  validateStoryScope,
   validateTemplateScope,
 } from "./story-scope-compliance.js";
 export type {
@@ -461,8 +457,9 @@ export type {
   DependencyKind,
   DependencyStatus,
 } from "./dependency.js";
+// TCRN-CROSS-STORY-475 R3: the conference write path, its distillation and its position binding
+// are retired; the record validators, the read helper and the historical vocabulary stay.
 export {
-  CONFERENCE_DISTILL_SUMMARY_BYTES,
   CONFERENCE_POSITION_CEILING_BYTES,
   CONFERENCE_REQUEST_VERSION,
   CONFERENCE_POSITION_VERSION,
@@ -477,18 +474,15 @@ export {
   validateConferencePosition,
   validateConferenceMinutes,
   openConference,
-  appendConferencePosition,
-  listConferencesByWorkItem,
-  closeConference,
-  distillConferenceKnowledge,
 } from "./conference.js";
+// TCRN-CROSS-STORY-475 R1, R2: minutes, recorded in one write (recordMinutes above) and read with
+// the minutes a conference close wrote.
+export { minutesById, minutesView } from "./minutes.js";
 export type {
   ConferenceRequest,
   ConferencePosition,
   ConferenceMinutes,
-  ConferenceDecisionCandidate,
   ConferenceReasonCode,
-  DistillConferenceOptions,
 } from "./conference.js";
 export { VOCABULARY_VERSION, readVocabulary } from "./vocabulary.js";
 export {
@@ -552,6 +546,10 @@ export {
 export type { CorePersonaBundle, CorePersonaProfile, CorePersonaReasonCode } from "./reference-profiles.js";
 export { WORK_BATCH_SCHEMA_VERSION, WORK_BATCH_VERBS, applyWorkBatch, workBatchReceipt } from "./work-batch.js";
 export type { WorkBatchOptions, WorkBatchProblem } from "./work-batch.js";
+// TCRN-CROSS-STORY-472 R2, R3: relations between work records; the forward direction is stored,
+// the reverse projected when read.
+export { RELATION_NAMES, REVERSE_RELATION_NAMES, relationFilter, workRelations } from "./work-relations.js";
+export type { WorkRelationsInput } from "./work-relations.js";
 export { KNOWLEDGE_BATCH_SCHEMA_VERSION, KNOWLEDGE_BATCH_VERBS, applyKnowledgeBatch } from "./knowledge-batch.js";
 export type { KnowledgeBatchOptions, KnowledgeBatchProblem } from "./knowledge-batch.js";
 // TCRN-CROSS-STORY-362: the recall core's public face is the verb's face. The index,

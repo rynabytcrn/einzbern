@@ -55,9 +55,7 @@ export const initCommand = [
 // The governed loop, in replay order. Each step carries:
 //   key         — a stable label the proof keys its capture logic on
 //   command     — the exact fenced command tokens (after the binary prefix)
-//   reasonCode  — the observable success reason the proof asserts, or null for
-//                 the two list verbs whose canonical output is a bare record
-//                 array with no envelope (the proof asserts their shape instead)
+//   reasonCode  — the observable success reason the proof asserts
 export const governedLoopStoryline = [
   {
     key: "project-create",
@@ -90,61 +88,37 @@ export const governedLoopStoryline = [
     command: ["work-transition", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:06Z", "--id", "<story-id>", "--status", "active"],
   },
   {
-    key: "conference-open",
+    key: "minutes-record",
+    reasonCode: "MINUTES_RECORDED",
+    command: ["minutes-record", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:08Z", "--project-id", "<project-id>", "--external-key", "FLAGSHIP-MINUTES-1", "--title", "Decide-the-story", "--summary", "approach-ratified", "--decisions", "persist-the-decision-as-minutes", "--decided-by", "owner:governance", "--work-ids", "<story-id>"],
+  },
+  {
+    key: "work-annotate-story-decided-in",
     reasonCode: "WORKSPACE_COMMAND_COMPLETED",
-    command: ["conference-open", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:08Z", "--external-key", "FLAGSHIP-CONFERENCE", "--project-id", "<project-id>", "--type", "architecture", "--title", "Decide-the-story", "--work-ids", "<story-id>", "--desired-outcome", "ratify-the-approach", "--participant-ids", "profile:architect-01"],
-  },
-  {
-    key: "conference-append-position",
-    reasonCode: "WORKSPACE_COMMAND_COMPLETED",
-    command: ["conference-append-position", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:09Z", "--conference-id", "<conference-id>", "--external-key", "FLAGSHIP-POSITION", "--actor-id", "profile:architect-01", "--position", "persist-via-event-log", "--risks", "forward-reads-as-corruption", "--recommendations", "document-the-posture", "--evidence-ids", "evidence:position-01"],
-  },
-  {
-    key: "knowledge-init",
-    reasonCode: "KNOWLEDGE_STORE_INITIALIZED",
-    command: ["knowledge-init", "--workspace", WORKSPACE_PATH, "--acknowledge-disposable", "true"],
-  },
-  {
-    key: "conference-close-distill",
-    reasonCode: "WORKSPACE_COMMAND_COMPLETED",
-    command: ["conference-close", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:10Z", "--conference-id", "<conference-id>", "--minutes-external-key", "FLAGSHIP-MINUTES", "--summary", "approach-ratified", "--outcome-class", "role_decision", "--decisions", "persist-conference-and-gate-records", "--unresolved-issues", "-", "--distill", "true", "--accountable-owner-id", "owner:governance", "--stale-days", "90", "--evidence-ids", "evidence:close-01"],
-  },
-  {
-    key: "knowledge-validate",
-    reasonCode: "KNOWLEDGE_STORE_VALID",
-    command: ["knowledge-validate", "--workspace", WORKSPACE_PATH],
-  },
-  {
-    key: "knowledge-list",
-    reasonCode: "KNOWLEDGE_LIST_READY",
-    command: ["knowledge-list", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:11Z", "--selection", "all"],
-  },
-  {
-    key: "knowledge-promote",
-    reasonCode: "KNOWLEDGE_PROMOTION_UPDATED",
-    command: ["knowledge-promote", "--workspace", WORKSPACE_PATH, "--expected-revision", "<knowledge-revision>", "--at", "2026-07-11T00:00:12Z", "--id", "<knowledge-id>", "--state", "promoted"],
-  },
-  {
-    key: "work-annotate-story-owner-acceptance",
-    reasonCode: "WORKSPACE_COMMAND_COMPLETED",
-    command: ["work-annotate", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:14Z", "--id", "<story-id>", "--decided-by", "<minutes-id>"],
+    command: ["work-annotate", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:09Z", "--id", "<story-id>", "--decided-in", "<minutes-id>"],
   },
   {
     key: "work-transition-story-done",
     reasonCode: "WORKSPACE_COMMAND_COMPLETED",
-    command: ["work-transition", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:15Z", "--id", "<story-id>", "--status", "done"],
+    command: ["work-transition", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:10Z", "--id", "<story-id>", "--status", "done"],
   },
   {
     key: "work-show-story",
     reasonCode: "WORKSPACE_RECORD_READY",
     command: ["work-show", "--workspace", WORKSPACE_PATH, "--id", "<story-id>"],
   },
+  {
+    key: "minutes-show",
+    reasonCode: "WORKSPACE_RECORD_READY",
+    command: ["minutes-show", "--workspace", WORKSPACE_PATH, "--id", "<minutes-id>"],
+  },
 ];
 
-// The fixed conference title and single decision the loop distills, reused by the
-// proof to recompute the knowledge candidate's sourceDigest independently.
-export const CONFERENCE_TITLE = "Decide-the-story";
-export const DISTILLED_DECISION = "persist-conference-and-gate-records";
+// The minutes the loop records: their title and single decision, which the trace reads back as D1.
+// TCRN-CROSS-STORY-475 replaced the conference, its close and the distillation into a knowledge
+// candidate with one minutes-record; the story names the minutes with the decided-in relation.
+export const MINUTES_TITLE = "Decide-the-story";
+export const RECORDED_DECISION = "persist-the-decision-as-minutes";
 
 // Canonical string form of a command's tokens, used only for the lockstep diff.
 // Both sides feed placeholder tokens through this identically, so the comparison

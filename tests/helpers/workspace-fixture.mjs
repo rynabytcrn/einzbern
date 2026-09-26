@@ -12,12 +12,15 @@ import { join, resolve } from "node:path";
 import { runCli } from "../../dist/build/packages/cli/src/index.js";
 import {
   ACTOR_ATTESTATION_ENABLE_OPERATION,
+  CONFERENCE_MINUTES_VERSION,
+  CONFERENCE_POSITION_VERSION,
+  CONFERENCE_REQUEST_VERSION,
   appendEvents,
   buildActorAttestationEnableRecord,
   buildEventPayload,
   initializeLibrary,
 } from "../../dist/build/packages/core/src/index.js";
-import { canonicalExternalKey, compareCanonicalText, deriveStableId } from "../../dist/build/packages/protocol/src/index.js";
+import { canonicalExternalKey, canonicalSha256, compareCanonicalText, deriveStableId } from "../../dist/build/packages/protocol/src/index.js";
 
 export const repositoryRoot = resolve(import.meta.dirname, "../..");
 export const cliPath = join(repositoryRoot, "scripts/einzbern.mjs");
@@ -80,6 +83,156 @@ export async function appendHistoricalAttestationEnable(workspace, { occurredAt,
     projects: state.projects,
     work: state.work,
   })], { occurredAt, actorId });
+}
+
+/**
+ * A historical work.created for a kind the write path no longer creates (an Incident or a
+ * Release, TCRN-CROSS-STORY-472 R1), appended past the write path exactly as work-create wrote it
+ * before, so replay alone judges it. Returns the appended record.
+ */
+export async function appendHistoricalWorkCreate(workspace, { externalKey, projectId, kind, parentId = null, status = "planned", title = null, occurredAt, actorId }) {
+  const record = {
+    schemaVersion: "tcrn.work.v1",
+    id: deriveStableId("work", canonicalExternalKey(externalKey)),
+    externalKey: canonicalExternalKey(externalKey),
+    projectId,
+    kind,
+    parentId,
+    status,
+    revision: 1,
+    updatedAt: occurredAt,
+    tombstone: false,
+    extensions: {},
+    scopeDigest: canonicalSha256({}),
+    title,
+    createdAt: occurredAt,
+    labels: [],
+  };
+  await appendEvents(workspace, [(state) => ({
+    payload: buildEventPayload("work.created", record),
+    projects: state.projects,
+    work: [...state.work, record],
+  })], { occurredAt, ...(actorId === undefined ? {} : { actorId }) });
+  return record;
+}
+
+// The conference write verbs are retired (TCRN-CROSS-STORY-475 R3). Conference events already
+// on a chain still replay -- openness, binding, pinning, the position ceiling, the minutes bound
+// to their close. Tests of that build the history through the engine's own append path, with the
+// records the retired writers built, and leave every judgement to replay: nothing here validates.
+// `options` passes an append option through (crashAt, viewBudgetBytes, actorId).
+const byProjectThenId = (left, right) => compareCanonicalText(left.projectId, right.projectId) || compareCanonicalText(left.id, right.id);
+
+function conferenceOf(state, conferenceId) {
+  const conference = state.conferences.find((entry) => entry.id === conferenceId);
+  if (conference === undefined) throw new Error(`no conference ${conferenceId} on the chain`);
+  return conference;
+}
+
+function appendOptions({ occurredAt, actorId, crashAt, viewBudgetBytes }) {
+  return {
+    occurredAt,
+    ...(actorId === undefined ? {} : { actorId }),
+    ...(crashAt === undefined ? {} : { crashAt }),
+    ...(viewBudgetBytes === undefined ? {} : { viewBudgetBytes }),
+  };
+}
+
+/** A historical conference.created, as conference-open wrote it. */
+export async function appendHistoricalConferenceOpen(workspace, input) {
+  const record = {
+    schemaVersion: CONFERENCE_REQUEST_VERSION,
+    id: deriveStableId("conference", canonicalExternalKey(input.externalKey)),
+    projectId: input.projectId,
+    type: input.type,
+    title: input.title,
+    linkedWorkIds: input.linkedWorkIds,
+    desiredOutcome: input.desiredOutcome,
+    participantIds: input.participantIds,
+    status: "open",
+    revision: 1,
+    updatedAt: input.occurredAt,
+    tombstone: false,
+    extensions: {},
+  };
+  return appendEvents(workspace, [(state) => ({
+    payload: buildEventPayload("conference.created", record),
+    projects: state.projects,
+    work: state.work,
+    conferences: [...state.conferences, record].sort(byProjectThenId),
+  })], appendOptions(input));
+}
+
+/** A historical conference.position.appended, as conference-append-position wrote it. */
+export async function appendHistoricalConferencePosition(workspace, input) {
+  return appendEvents(workspace, [(state) => {
+    const conference = conferenceOf(state, input.conferenceId);
+    const record = {
+      schemaVersion: CONFERENCE_POSITION_VERSION,
+      id: deriveStableId("position", canonicalExternalKey(input.externalKey)),
+      conferenceId: conference.id,
+      projectId: conference.projectId,
+      actorId: input.authorActorId,
+      ...(input.stance === undefined ? {} : { stance: input.stance }),
+      position: input.position,
+      risks: input.risks,
+      recommendations: input.recommendations,
+      evidenceIds: input.evidenceIds,
+      revision: 1,
+      updatedAt: input.occurredAt,
+      tombstone: false,
+      extensions: {},
+    };
+    return {
+      payload: buildEventPayload("conference.position.appended", record),
+      projects: state.projects,
+      work: state.work,
+      conferencePositions: [...state.conferencePositions, record].sort(byProjectThenId),
+    };
+  }], appendOptions(input));
+}
+
+/** A historical conference.closed with its minutes, as conference-close wrote it. */
+export async function appendHistoricalConferenceClose(workspace, input) {
+  return appendEvents(workspace, [(state) => {
+    const conference = conferenceOf(state, input.conferenceId);
+    const record = { ...conference, status: "closed", revision: conference.revision + 1, updatedAt: input.occurredAt };
+    const minutes = {
+      schemaVersion: CONFERENCE_MINUTES_VERSION,
+      id: deriveStableId("minutes", canonicalExternalKey(input.minutesExternalKey)),
+      conferenceId: conference.id,
+      projectId: conference.projectId,
+      summary: input.summary,
+      outcomeClass: input.outcomeClass,
+      decisions: input.decisions,
+      unresolvedIssues: input.unresolvedIssues,
+      revision: 1,
+      updatedAt: input.occurredAt,
+      tombstone: false,
+      extensions: input.executionForm === undefined ? {} : { "conference:execution-form": { required: false, value: input.executionForm } },
+    };
+    return {
+      payload: buildEventPayload("conference.closed", record, undefined, { minutes }),
+      projects: state.projects,
+      work: state.work,
+      conferences: state.conferences.map((entry) => (entry.id === record.id ? record : entry)),
+      conferenceMinutes: [...state.conferenceMinutes, minutes].sort(byProjectThenId),
+    };
+  }], appendOptions(input));
+}
+
+/** A historical conference.updated to cancelled, as conference-cancel wrote it. */
+export async function appendHistoricalConferenceCancel(workspace, input) {
+  return appendEvents(workspace, [(state) => {
+    const conference = conferenceOf(state, input.conferenceId);
+    const record = { ...conference, status: "cancelled", revision: conference.revision + 1, updatedAt: input.occurredAt };
+    return {
+      payload: buildEventPayload("conference.updated", record),
+      projects: state.projects,
+      work: state.work,
+      conferences: state.conferences.map((entry) => (entry.id === record.id ? record : entry)),
+    };
+  }], appendOptions(input));
 }
 
 // The gate write verbs are retired (TCRN-CROSS-STORY-467 R2). Gate records already on a

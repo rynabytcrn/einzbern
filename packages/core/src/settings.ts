@@ -37,10 +37,17 @@ export const SETTINGS_DEVICE_LAYER = "device" as const satisfies SettingLayer;
 // is not a valid target for any new write.
 // TCRN-CROSS-MIN-225 D1/D3 (TCRN-CROSS-SUB-258): fitness.minEvents and fitness.windowDays retire with
 // the time-based retirement they configured; their recorded values stay readable history.
+// TCRN-CROSS-STORY-475 R3 (MIN-227 D10): conference.positionBudgetBytes and
+// execution.independenceFloor retire with the conference write verbs they governed.
+// TCRN-CROSS-STORY-474 (MIN-227 D7): injection.budgetBytes retires with the session-wide injection
+// it budgeted; a prompt's own budget is injection.perPromptBytes.
 export const RETIRED_SETTING_KEYS: readonly string[] = Object.freeze([
+  "conference.positionBudgetBytes",
+  "execution.independenceFloor",
   "execution.personalessDispatch",
   "fitness.minEvents",
   "fitness.windowDays",
+  "injection.budgetBytes",
   "model.economyTier",
 ]);
 
@@ -52,7 +59,6 @@ export type SettingKey =
   | "artifact.language"
   | "backup.cadence"
   | "backup.destination"
-  | "conference.positionBudgetBytes"
   | "design.authority"
   | "driver.capabilityProfile"
   | "engine.requiredVersion"
@@ -62,11 +68,9 @@ export type SettingKey =
   | "execution.dispatchMode"
   | "execution.dispatchModes"
   | "execution.dispatchTiers"
-  | "execution.independenceFloor"
   | "execution.maxConcurrentSubagents"
   | "execution.maxDispatchDepth"
   | "execution.subagentPolicy"
-  | "injection.budgetBytes"
   | "injection.perPromptBytes"
   | "knowledge.aggregateBytes"
   | "knowledge.articlesPath"
@@ -229,23 +233,6 @@ const catalogEntries: readonly Omit<SettingsCatalogEntry, "layer">[] = [
     defaultValue: null,
   },
   {
-    // MIN-102 裁定四: how many bytes one conference position may carry in this
-    // workspace. Enforced on the write path only. The replay reducer knows a single
-    // fixed ceiling (CONFERENCE_POSITION_CEILING_BYTES) and nothing about this key,
-    // because a record whose validity depended on a setting would be legal or illegal
-    // according to where it sits in the chain — which is precisely the store-independence
-    // conference-v1 promises. So this is a deployment's own writing budget, not a
-    // definition of what a valid position is: lowering it never invalidates anything
-    // already written, and raising it can never exceed the ceiling.
-    key: "conference.positionBudgetBytes",
-    type: "string",
-    controlType: "number",
-    layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: "4096",
-    min: 512,
-    max: 8192,
-  },
-  {
     // INC-193: which design system this workspace treats as its authority, named by the
     // URL of that system's own documentation. Optional — a workspace with no design
     // system leaves it unset — and purely declarative: the engine never fetches this
@@ -315,18 +302,6 @@ const catalogEntries: readonly Omit<SettingsCatalogEntry, "layer">[] = [
     defaultValue: dispatchSettingDefault("execution.dispatchTiers"),
   },
   {
-    // INIT-026 S233/S234. Unlike its sibling above, this one IS enforced: when the
-    // floor covers a conference's type, conference-close refuses without an
-    // execution-form declaration of "independent". The deliberation convention's
-    // "undeclared reads as unverified" grows teeth exactly where the floor says so.
-    key: "execution.independenceFloor",
-    type: "enum",
-    controlType: "enum",
-    layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: "none",
-    allowedValues: ["none", "verification", "verification-and-risk", "all"],
-  },
-  {
     // INIT-027 S239. These orchestration controls are strings on the governed
     // surface so they remain compatible with the existing settings/profile
     // transport; their numeric domains are enforced below.
@@ -357,15 +332,6 @@ const catalogEntries: readonly Omit<SettingsCatalogEntry, "layer">[] = [
     layerKind: SETTINGS_LAYER_KIND,
     defaultValue: "allowed",
     allowedValues: ["allowed", "review-only", "forbidden"],
-  },
-  {
-    key: "injection.budgetBytes",
-    type: "string",
-    controlType: "number",
-    layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: "24576",
-    min: 1,
-    max: 1_048_576,
   },
   {
     key: "injection.perPromptBytes",
@@ -416,8 +382,10 @@ const catalogEntries: readonly Omit<SettingsCatalogEntry, "layer">[] = [
     max: 65_536,
   },
   {
-    // TCRN-CROSS-STORY-362: the recall verb's absolute score floor, in bm25 units.
-    // A string-typed number like every other numeric setting here, so the catalog
+    // TCRN-CROSS-STORY-362, STORY-474 R3: the strong-hit threshold, in bm25 units. A prompt whose
+    // best hit scores below it is answered with nothing (RECALL_NO_STRONG_HIT); above it, it is
+    // also every hit's absolute floor. Its default is RECALL_STRONG_TAU (recall.ts), calibrated by
+    // retrieval-eval. A string-typed number like every other numeric setting here, so the catalog
     // keeps one value shape; the verb parses it and refuses a value it cannot use.
     key: "retrieval.tau",
     type: "string",

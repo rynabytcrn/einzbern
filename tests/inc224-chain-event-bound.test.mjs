@@ -102,7 +102,9 @@ test("STORY-451: a chain past the per-document bound replays from genesis withou
   // 1 MiB segment keeps each segment index (two keys an event) under its own bounds.
   const deltas = [settingDelta("storage.snapshotEveryEvents", "20000"), settingDelta("storage.segmentBytes", "1048576")];
   while (deltas.length < events) {
-    deltas.push(settingDelta("injection.budgetBytes", deltas.length % 2 === 0 ? "24576" : "24577"));
+    // Any live numeric key does; injection.budgetBytes, the one used here before, is retired
+    // (TCRN-CROSS-STORY-474).
+    deltas.push(settingDelta("injection.perPromptBytes", deltas.length % 2 === 0 ? "1600" : "1599"));
   }
   const committed = await appendEvents(workspace, deltas, { occurredAt });
   assert.equal(committed.version, events);

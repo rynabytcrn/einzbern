@@ -104,7 +104,7 @@ test("466-AC3 (end to end): after an import, a new event continues the stream in
   await cli(["library-import-legacy", "--legacy", root, "--target", target, "--at", AT]);
   const projectId = (await materializeWorkspace(target)).projects.find((entry) => !entry.tombstone).id;
   const receipt = await cli(["work-create", "--workspace", target, "--at", "2026-09-26T06:00:01Z", "--project-id", projectId,
-    "--external-key", "IMPORTED-INCIDENT", "--kind", "Incident", "--title", "after-import", "--actor", "agent:importer"]);
+    "--external-key", "IMPORTED-INITIATIVE", "--kind", "Initiative", "--title", "after-import", "--actor", "agent:importer"]);
   assert.equal(receipt.version, expected.events + 1);
 
   const { events } = await readAllStreams(target);

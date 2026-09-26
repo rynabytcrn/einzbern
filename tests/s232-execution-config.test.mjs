@@ -11,6 +11,7 @@ import test from "node:test";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { initializeLibrary, validateWorkspace } from "../dist/build/packages/core/src/index.js";
 import { setModelPlanInWorkspace } from "../dist/build/packages/core/src/workspace.js";
+import { appendHistoricalConferenceClose, appendHistoricalConferenceOpen } from "./helpers/workspace-fixture.mjs";
 
 const instant = (second) => new Date(Date.UTC(2026, 0, 1) + second * 1000).toISOString().replace(/\.\d+Z$/u, "Z");
 
@@ -86,51 +87,40 @@ test("S369: selected dispatch mode resets through ordinary settings removal", as
   assert.equal(await dispatchMode(workspace), "frontier");
 });
 
-test("S233: the two policy keys are in the catalog with their closed value sets", async (t) => {
+test("S233, STORY-475 R3: the subagent policy stays in the catalog, and the independence floor retired with the conference close", async (t) => {
   const { workspace } = await fixture(t, "policy-keys-remediation");
   const catalog = await json(["settings-catalog", "--workspace", workspace]);
   const policy = catalog.settings.find((entry) => entry.key === "execution.subagentPolicy");
   assert.deepEqual(policy.allowedValues, ["allowed", "review-only", "forbidden"]);
   assert.equal(policy.defaultValue, "allowed");
   assert.equal(policy.currentValue, "allowed");
-  const floor = catalog.settings.find((entry) => entry.key === "execution.independenceFloor");
-  assert.deepEqual(floor.allowedValues, ["none", "verification", "verification-and-risk", "all"]);
-  assert.equal(floor.defaultValue, "none");
+  assert.equal(catalog.settings.some((entry) => entry.key === "execution.independenceFloor"), false);
   const bad = await refusal(write("settings-set", workspace, 1, ["--key", "execution.subagentPolicy", "--value", "not-a-policy"]));
   assert.equal(bad.reasonCode, "SETTINGS_VALUE_INVALID");
+  const retired = await refusal(write("settings-set", workspace, 1, ["--key", "execution.independenceFloor", "--value", "verification"]));
+  assert.equal(retired.reasonCode, "SETTINGS_KEY_UNREGISTERED");
 });
 
-async function conferenceFixture(context, suffix, floor) {
-  const { workspace } = await fixture(context, suffix);
-  if (floor !== null) await json(write("settings-set", workspace, 1, ["--key", "execution.independenceFloor", "--value", floor]));
-  const project = (await json(write("project-create", workspace, 2, ["--external-key", `S234-REMED-${suffix}`, "--name", "s234-remediation"]))).record.id;
-  const anchor = (await json(write("work-create", workspace, 3, ["--project-id", project, "--external-key", `S234-REMED-INIT-${suffix}`, "--kind", "Initiative", "--title", "s234-remediation-anchor"]))).record.id;
-  const opened = await json(write("conference-open", workspace, 4, ["--external-key", `S234-REMED-CONF-${suffix}`, "--project-id", project, "--type", "verification", "--title", "acceptance", "--work-ids", anchor, "--desired-outcome", "recommendation", "--participant-ids", "agent:test"]));
-  return { workspace, conferenceId: opened.recordId ?? opened.record.id };
-}
-
-const closeArguments = (workspace, conferenceId, extra = []) => [
-  "conference-close", "--workspace", workspace, "--at", instant(9), "--conference-id", conferenceId,
-  "--minutes-external-key", "S234-REMED-MIN", "--summary", "s", "--outcome-class", "recommendation", "--decisions", "d", "--unresolved-issues", "-", "--actor", "agent:test", ...extra,
-];
-
-test("S234: a covered close without the declaration refuses; with it, the minutes carry the form", async (t) => {
-  const { workspace, conferenceId } = await conferenceFixture(t, "floor-remediation", "verification");
-  const missing = await refusal(closeArguments(workspace, conferenceId));
-  assert.equal(missing.reasonCode, "CONFERENCE_INDEPENDENCE_REQUIRED");
-  const wrong = await refusal(closeArguments(workspace, conferenceId, ["--execution-form", "single-context"]));
-  assert.equal(wrong.reasonCode, "CONFERENCE_INDEPENDENCE_REQUIRED");
-  assert.match(wrong.message, /verification/u);
-  const closed = await json(closeArguments(workspace, conferenceId, ["--execution-form", "independent"]));
-  assert.equal(closed.reasonCode, "WORKSPACE_COMMAND_COMPLETED");
-  const minutes = await json(["conference-minutes-list", "--workspace", workspace, "--limit", "5"]);
-  const record = (minutes.records ?? minutes.minutes ?? []).find((entry) => entry.conferenceId === conferenceId);
+// S234 made a close covered by execution.independenceFloor declare an independent execution
+// form. The close verb, the flag and the floor are retired (TCRN-CROSS-STORY-475 R3); a minutes
+// record a close wrote with the declaration keeps it, and replays.
+test("S234 retired: historical minutes keep the execution form their close declared", async (t) => {
+  const { workspace } = await fixture(t, "floor-history");
+  const project = (await json(write("project-create", workspace, 2, ["--external-key", "S234-HISTORY", "--name", "s234-history"]))).record.id;
+  const anchor = (await json(write("work-create", workspace, 3, ["--project-id", project, "--external-key", "S234-HISTORY-INIT", "--kind", "Initiative", "--title", "s234-history-anchor"]))).record.id;
+  const opened = await appendHistoricalConferenceOpen(workspace, {
+    occurredAt: instant(4), externalKey: "S234-HISTORY-CONF", projectId: project, type: "verification", title: "acceptance",
+    linkedWorkIds: [anchor], desiredOutcome: "recommendation", participantIds: ["agent:test"], actorId: "agent:test",
+  });
+  const conferenceId = opened.conferences[0].id;
+  await appendHistoricalConferenceClose(workspace, {
+    occurredAt: instant(5), conferenceId, minutesExternalKey: "S234-HISTORY-MIN", summary: "s", outcomeClass: "recommendation",
+    decisions: ["d"], unresolvedIssues: [], executionForm: "independent", actorId: "agent:test",
+  });
+  const state = await validateWorkspace(workspace);
+  assert.deepEqual(state.library.rejectedEvents, []);
+  const record = state.conferenceMinutes.find((entry) => entry.conferenceId === conferenceId);
   assert.deepEqual(record.extensions["conference:execution-form"], { required: false, value: "independent" });
-});
-
-test("S234: with the floor at its default, a close without the flag behaves exactly as before", async (t) => {
-  const { workspace, conferenceId } = await conferenceFixture(t, "nofloor-remediation", null);
-  const closed = await json(closeArguments(workspace, conferenceId));
-  assert.equal(closed.reasonCode, "WORKSPACE_COMMAND_COMPLETED");
-  assert.equal((await json(["conference-minutes-list", "--workspace", workspace, "--limit", "5"])).records.length > 0, true);
+  const closeRefused = await refusal(["conference-close", "--workspace", workspace, "--at", instant(6), "--conference-id", conferenceId]);
+  assert.equal(closeRefused.reasonCode, "CLI_COMMAND_UNKNOWN");
 });

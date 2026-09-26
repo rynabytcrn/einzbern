@@ -1,5 +1,15 @@
 # Conference V1
 
+> Write path retired (TCRN-CROSS-STORY-475 R3, MIN-227 D10). `conference-open`,
+> `conference-append-position`, `conference-close` (with `--execution-form` and `--distill`) and
+> `conference-cancel` answer `CLI_COMMAND_UNKNOWN`; `execution.independenceFloor` and
+> `conference.positionBudgetBytes` are retired settings; the engine no longer distils a close into
+> knowledge candidates. The reads `conference-list-by-work`, `conference-minutes-list` and
+> `conference-position-list` retired with them. Every `conference.*` event already on a chain still
+> replays under the rules below, and its minutes are read beside new minutes records with
+> `minutes-list` and `minutes-show` (specs/minutes-v1.md). What follows describes the records as
+> they were written and are still read.
+
 ## Status and scope
 
 `tcrn.conference.v1` is an additive extension shape for pre-commitment
@@ -105,8 +115,8 @@ records keep their views, export, and archive bytes unchanged. The summary
 carries a count and a digest per collection rather than the records themselves,
 so its size does not grow with the deliberation prose written into the chain
 while any byte inside any record, and any reordering of two records, still moves
-it. Position and minutes prose is read from the event log through
-`conference-position-list` and `conference-minutes-list`, never from this file. `storageVersion` stays 1: an old
+it. Minutes prose is read through `minutes-list` and `minutes-show`, and position prose from the
+event log (`event-list`), never from this file. `storageVersion` stays 1: an old
 binary reading a workspace that contains these events fails closed with
 `WORKSPACE_EVENT_CORRUPT` (unknown operation), and a workspace that never uses
 them stays fully readable by old binaries.

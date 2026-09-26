@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import type { WorkRecord } from "../../protocol/src/index.js";
-
 /**
- * The Story scope is deliberately a human-readable string rather than a second
- * schema stored in the event record.  This module is the machine boundary around
- * that string: it keeps the required headings ordered and exact, while leaving
- * the meaning of the prose and the acceptance decision to the accountable owner.
+ * The Story scope is a human-readable string rather than a second schema stored in the event
+ * record. TCRN-CROSS-STORY-473 (MIN-227 D8) retired the ten-block contract that used to gate it:
+ * the heading set, its order, non-empty blocks, the four purpose anchors and the evidence and
+ * fix-item token checks, with their reason codes. What stays here is the reader: the headings a
+ * scope may use, a parser that splits a scope into them (story-fields.ts maps the Goal and
+ * Acceptance Criteria blocks of an old scope to the goal and acceptance fields), the one-line
+ * summary drawn from a Goal, and the floor an admitted template holds the records bound to it to.
  */
 export const STORY_SCOPE_HEADINGS = Object.freeze([
   "Goal",
@@ -23,15 +24,16 @@ export const STORY_SCOPE_HEADINGS = Object.freeze([
 
 export type StoryScopeHeading = typeof STORY_SCOPE_HEADINGS[number];
 
+// The refusals of the template floor (validateTemplateScope). Until TCRN-CROSS-STORY-473 the
+// heading, order, empty-block, acceptance and required codes were shared with the Story
+// validator under a STORY_SCOPE_ prefix; they are the template's own now.
 export type StoryScopeProblemCode =
-  | "STORY_SCOPE_REQUIRED"
-  | "STORY_SCOPE_HEADING_MISSING"
-  | "STORY_SCOPE_HEADING_DUPLICATE"
-  | "STORY_SCOPE_HEADING_ORDER"
-  | "STORY_SCOPE_SECTION_EMPTY"
-  | "STORY_SCOPE_ACCEPTANCE_INVALID"
-  | "STORY_SCOPE_PURPOSE_INVALID"
-  | "STORY_SCOPE_LEGACY_ELEMENT_MISSING"
+  | "TEMPLATE_SCOPE_REQUIRED"
+  | "TEMPLATE_SCOPE_HEADING_MISSING"
+  | "TEMPLATE_SCOPE_HEADING_DUPLICATE"
+  | "TEMPLATE_SCOPE_HEADING_ORDER"
+  | "TEMPLATE_SCOPE_SECTION_EMPTY"
+  | "TEMPLATE_SCOPE_ACCEPTANCE_INVALID"
   | "TEMPLATE_SCOPE_HEADING_UNEXPECTED"
   | "TEMPLATE_SCOPE_REFERENCE_INVALID";
 
@@ -42,10 +44,8 @@ export interface StoryScopeProblem {
 }
 
 export interface StoryScopeSection {
-  // Template-bound records may use an admitted heading set outside the historic
-  // Story vocabulary.  The legacy validator still narrows its own values to
-  // StoryScopeHeading at runtime; the public section shape is widened so the
-  // kind-independent template floor can reuse the same readback structure.
+  // A template-bound record may use an admitted heading set outside the Story vocabulary, so the
+  // section shape carries any heading; the Story parser only ever yields StoryScopeHeading values.
   readonly heading: string;
   readonly content: string;
   readonly line: number;
@@ -54,6 +54,12 @@ export interface StoryScopeSection {
 export interface StoryScopeValidation {
   readonly ok: boolean;
   readonly problems: readonly StoryScopeProblem[];
+  readonly sections: readonly StoryScopeSection[];
+}
+
+/** A scope split at its Story headings: the text before the first one, and each block in order. */
+export interface ParsedStoryScope {
+  readonly preamble: string;
   readonly sections: readonly StoryScopeSection[];
 }
 
@@ -78,72 +84,57 @@ function hasOrderedGwt(content: string): boolean {
   return given >= 0 && when > given && then > when;
 }
 
-function hasAny(content: string, expressions: readonly RegExp[]): boolean {
-  return expressions.some((expression) => expression.test(content));
+/**
+ * Split a scope at the lines that open one of the Story headings (`## Goal`, `【Goal】`, `[Goal]`
+ * or a bare `Goal` at the start of a line, the spellings the ten-block validator read). A block
+ * runs to the next heading; its inline remainder and its lines are joined and trimmed. Headings
+ * outside the Story vocabulary are prose, and text before the first heading is the preamble.
+ */
+export function parseStoryScope(scope: string): ParsedStoryScope {
+  const lines = scope.split(/\r?\n/u);
+  const found: Array<{ readonly name: string; readonly inline: string; readonly line: number }> = [];
+  for (const [index, line] of lines.entries()) {
+    const match = line.match(HEADING_LINE);
+    if (match === null) continue;
+    const heading = headingFromMatch(match);
+    if (!HEADING_NAMES.has(heading.name)) continue;
+    found.push({ ...heading, line: index + 1 });
+  }
+  const sections = found.map((entry, index) => {
+    const nextLine = found[index + 1]?.line ?? lines.length + 1;
+    const content = [entry.inline, ...lines.slice(entry.line, nextLine - 1)].filter((value) => value.length > 0).join("\n").trim();
+    return { heading: entry.name, content, line: entry.line };
+  });
+  const preamble = lines.slice(0, (found[0]?.line ?? lines.length + 1) - 1).join("\n").trim();
+  return { preamble, sections };
 }
 
 /**
- * The four purpose anchors, in either working language.
- *
- * The anchors were the last Chinese-only island in this file — the three legacy
- * families beside them have always been bilingual — which made a deployment's
- * working language a property of the validator rather than of the deployment.
- * Accepting both is a widening: every scope that passed before still passes, and
- * the language a deployment writes in is now a setting about generation and
- * display (`portal.defaultLocale`) rather than about what counts as compliant.
- * Per TCRN-CROSS-MIN-102 裁定二.
+ * TCRN-CROSS-STORY-363, STORY-473. The one line a reader gets before deciding whether to open the
+ * record: the first sentence of a goal, cut to a byte budget. The sentence boundary is the union
+ * of the two working languages' terminators; whitespace is collapsed first, so the \n the class
+ * also carries never matches. Null when there is no goal prose: an absent summary is a truthful
+ * state, and inventing one from the external key would put the same string on every record.
  */
-const PURPOSE_ANCHORS: readonly RegExp[] = Object.freeze([
-  /为谁|\bbeneficiary\b/iu,
-  /目的锚|\bpurpose[\s-]?anchor\b/iu,
-  /符合性判据|\bcompliance[\s-]?criteri(?:on|a)\b/iu,
-  /判定人|\bdecider\b/iu,
-]);
-
-/**
- * The label half of the Owner-decider probe, in either language.
- *
- * This one is load-bearing in the fail-open direction and has to move in the same
- * change as the anchors above: it decides when WORKSPACE_OWNER_ACCEPTANCE_REQUIRED
- * fires, so an English scope naming Owner as decider while this stayed
- * Chinese-only would reach `done` with no deciding-minutes backlink at all.
- * The value half deliberately keeps its original character class — adding `.` to
- * it would stop matching Chinese scopes whose decider clause contains a version
- * number, which is the same fail-open by another route.
- */
-const OWNER_DECIDER = /(?:判定人|\bdecider\b)\s*[=:：]\s*[^\n。；;]*(?:\bOwner\b|所有者)/iu;
-
-/**
- * TCRN-CROSS-STORY-363. The one line a reader gets before deciding whether to
- * open the record: the first sentence of the Goal block, cut to a byte budget.
- *
- * It reads the Goal block through the same parser the compliance gate uses, so a
- * scope this returns a summary for is a scope that heading validation already
- * accepts, and a heading spelling the validator learns tomorrow is a spelling
- * this learns with it. The sentence boundary is the union of the two working
- * languages' terminators; whitespace is collapsed to single spaces first, so the
- * \n the class also carries can never match and a labelled run of clauses cuts.
- *
- * Returns null rather than a truncated heading when there is no Goal block or it
- * holds no prose: an absent summary is a truthful state, and inventing one from
- * the external key would put the same string on every record.
- */
-export function deriveWorkSummary(scope: unknown, maximumBytes: number): string | null {
-  if (typeof scope !== "string" || scope.length === 0) {
-    return null;
-  }
-  const goal = validateStoryScope(scope).sections.find((section) => section.heading === "Goal");
-  if (goal === undefined) {
-    return null;
-  }
-  const prose = goal.content.replace(/\s+/gu, " ").trim();
-  if (prose.length === 0) {
-    return null;
-  }
+export function summarizeGoal(goal: unknown, maximumBytes: number): string | null {
+  if (typeof goal !== "string") return null;
+  const prose = goal.replace(/\s+/gu, " ").trim();
+  if (prose.length === 0) return null;
   const boundary = prose.search(/[。．.!?！？；;\n]/u);
   const sentence = (boundary < 0 ? prose : prose.slice(0, boundary)).trim();
   const candidate = sentence.length === 0 ? prose : sentence;
   return truncateUtf8(candidate, maximumBytes);
+}
+
+/**
+ * The summary an old scope yields: the first sentence of its Goal block. The write path and the
+ * one-shot backfill (scripts/backfill-work-summaries.mjs) call the same function, so the two can
+ * never disagree about a record.
+ */
+export function deriveWorkSummary(scope: unknown, maximumBytes: number): string | null {
+  if (typeof scope !== "string" || scope.length === 0) return null;
+  const goal = parseStoryScope(scope).sections.find((section) => section.heading === "Goal");
+  return goal === undefined ? null : summarizeGoal(goal.content, maximumBytes);
 }
 
 /**
@@ -164,157 +155,12 @@ function truncateUtf8(value: string, maximumBytes: number): string {
 }
 
 /**
- * Parse and validate a Story scope.  `无——原因` is valid section content; an
- * absent section is not.  The four historic dispatch elements are checked by
- * explicit semantic anchors so the ten headings cannot become a hollow wrapper.
- */
-export function validateStoryScope(scope: unknown): StoryScopeValidation {
-  const problems: StoryScopeProblem[] = [];
-  if (typeof scope !== "string" || scope.trim().length === 0) {
-    return {
-      ok: false,
-      problems: [{ code: "STORY_SCOPE_REQUIRED", message: "Story requires a non-empty advisory scope" }],
-      sections: [],
-    };
-  }
-
-  const lines = scope.split(/\r?\n/u);
-  const found: Array<{ readonly name: string; readonly inline: string; readonly line: number }> = [];
-  for (const [index, line] of lines.entries()) {
-    const match = line.match(HEADING_LINE);
-    if (match === null) continue;
-    const heading = headingFromMatch(match);
-    if (!HEADING_NAMES.has(heading.name)) continue;
-    found.push({ ...heading, line: index + 1 });
-  }
-
-  const counts = new Map<string, number>();
-  for (const entry of found) counts.set(entry.name, (counts.get(entry.name) ?? 0) + 1);
-  for (const heading of STORY_SCOPE_HEADINGS) {
-    const count = counts.get(heading) ?? 0;
-    if (count === 0) {
-      problems.push({ code: "STORY_SCOPE_HEADING_MISSING", heading, message: `missing Story scope block ${heading}` });
-    } else if (count > 1) {
-      problems.push({ code: "STORY_SCOPE_HEADING_DUPLICATE", heading, message: `duplicate Story scope block ${heading}` });
-    }
-  }
-
-  const orderedNames = found.map((entry) => entry.name);
-  const expectedNames = [...STORY_SCOPE_HEADINGS];
-  if (orderedNames.length === expectedNames.length && orderedNames.some((name, index) => name !== expectedNames[index])) {
-    problems.push({ code: "STORY_SCOPE_HEADING_ORDER", message: "Story scope blocks must use the canonical order" });
-  }
-
-  const sections: StoryScopeSection[] = [];
-  for (const [index, entry] of found.entries()) {
-    const nextLine = found[index + 1]?.line ?? lines.length + 1;
-    const body = [entry.inline, ...lines.slice(entry.line, nextLine - 1)].filter((value) => value.length > 0).join("\n").trim();
-    if (body.length === 0) {
-      problems.push({ code: "STORY_SCOPE_SECTION_EMPTY", heading: entry.name, message: `Story scope block ${entry.name} is empty` });
-    }
-    if (HEADING_NAMES.has(entry.name)) {
-      sections.push({ heading: entry.name as StoryScopeHeading, content: body, line: entry.line });
-    }
-  }
-
-  const byHeading = new Map(sections.map((section) => [section.heading, section.content]));
-  const goal = byHeading.get("Goal") ?? "";
-  const requirements = byHeading.get("Requirements") ?? "";
-  const acceptance = byHeading.get("Acceptance Criteria") ?? "";
-  const all = scope;
-
-  if (!PURPOSE_ANCHORS.every((expression) => expression.test(goal))) {
-    problems.push({ code: "STORY_SCOPE_PURPOSE_INVALID", heading: "Goal", message: "Goal must name beneficiary, purpose anchor, compliance criterion, and decider" });
-  }
-  // One evaluation, one code.  The acceptance shape used to be judged twice and
-  // reported under two codes for the same defect; the ledger's red leg anchors on
-  // STORY_SCOPE_ACCEPTANCE_INVALID, so that is the one that survives.
-  if (!hasOrderedGwt(acceptance) && !isBulletList(acceptance)) {
-    problems.push({ code: "STORY_SCOPE_ACCEPTANCE_INVALID", heading: "Acceptance Criteria", message: "Acceptance Criteria must use ordered GIVEN/WHEN/THEN or bullet points" });
-  }
-
-  // These two are token-shape checks, not semantic ones: they establish that the
-  // scope talks about evidence and about fix items, never that what it says is
-  // true.  Naming that here rather than implying otherwise — the accountable
-  // decider named in Goal is what judges the content.  The old fourth check
-  // (decision/state) is gone: `判定人`/`decider` is required inside Goal, which
-  // strictly implies the token it looked for anywhere in the scope, so it could
-  // never fail on its own.  See story-rule-conservation.json DISPATCH-LEGACY-004.
-  const legacyEvidence = hasAny(all, [/现象|现状|问题|来源|实证|证据|命令|实测|复核|evidence|command|observed/iu]);
-  const legacyFix = hasAny(requirements + "\n" + (byHeading.get("Implementation Notes") ?? ""), [/修复|改造|交付|落点|改什么|实现|新增|移除|调整|fix|implement|deliver/iu]);
-  if (!legacyEvidence) problems.push({ code: "STORY_SCOPE_LEGACY_ELEMENT_MISSING", heading: "Requirements", message: "legacy phenomenon/evidence element is not mapped" });
-  if (!legacyFix) problems.push({ code: "STORY_SCOPE_LEGACY_ELEMENT_MISSING", heading: "Requirements", message: "legacy fix-items element is not mapped" });
-
-  return { ok: problems.length === 0, problems, sections };
-}
-
-/**
- * The refusal, written so the caller can act on it without opening this file.
- *
- * Until STORY-300 the message was the problem list joined by semicolons: it said
- * which block was missing but never what the full set is, never which of the four
- * purpose anchors the Goal lacked, and never that the anchors are matched as
- * literal tokens rather than by meaning. Sessions were measured reading this
- * module's source twice, nine days apart, to learn a contract the module already
- * knew -- and `--help` did not exist yet either, so reading the source was the
- * only route left. Two of the audited ceremonies each spent eight rounds on
- * exactly this class of discovery.
- *
- * The rule is the one the whole engine follows: a refusal names the remedy. What
- * it costs is a longer string on a path that is already failing.
- */
-export function describeStoryScopeProblems(problems: readonly StoryScopeProblem[]): string {
-  const summary = problems.map((problem) => problem.message).join("; ");
-  const lines = [summary, "", `required blocks, in this order: ${STORY_SCOPE_HEADINGS.join(" / ")}`];
-  if (problems.some((problem) => problem.code === "STORY_SCOPE_PURPOSE_INVALID")) {
-    lines.push(
-      "Goal must contain all four purpose anchors, matched as literal tokens in either working language: "
-      + "beneficiary (为谁), purpose anchor (目的锚), compliance criterion (符合性判据), decider (判定人). "
-      + "The match is on the token, not on the meaning, so naming a beneficiary without writing the word does not satisfy it.",
-    );
-  }
-  if (problems.some((problem) => problem.code === "STORY_SCOPE_ACCEPTANCE_INVALID")) {
-    lines.push("Acceptance Criteria must be an ordered GIVEN/WHEN/THEN, or a bullet list.");
-  }
-  if (problems.some((problem) => problem.code === "STORY_SCOPE_LEGACY_ELEMENT_MISSING")) {
-    lines.push(
-      "Two token-shape checks are unmet. Evidence: some block must use one of 现象/现状/问题/来源/实证/证据/命令/实测/复核/evidence/command/observed. "
-      + "Fix items: Requirements or Implementation Notes must use one of 修复/改造/交付/落点/改什么/实现/新增/移除/调整/fix/implement/deliver. "
-      + "These establish that the scope talks about evidence and about what changes; they do not judge whether what it says is true.",
-    );
-  }
-  if (problems.some((problem) => problem.code === "STORY_SCOPE_SECTION_EMPTY")) {
-    lines.push("An empty block is a refusal; `无——原因` (none, with the reason) is valid content.");
-  }
-  return lines.join("\n");
-}
-
-export function storyScopeFromRecord(record: Pick<WorkRecord, "kind" | "tombstone" | "extensions"> | null | undefined): string | null {
-  if (record === null || record === undefined || record.kind !== "Story" || record.tombstone) return null;
-  const extension = record.extensions["advisory:scope"];
-  if (extension === undefined || typeof extension.value !== "string") return null;
-  return extension.value;
-}
-
-export function validateStoryRecord(record: Pick<WorkRecord, "kind" | "tombstone" | "extensions"> | null | undefined): StoryScopeValidation {
-  if (record === null || record === undefined || record.kind !== "Story" || record.tombstone) {
-    return { ok: true, problems: [], sections: [] };
-  }
-  return validateStoryScope(storyScopeFromRecord(record));
-}
-
-/** A Story whose Goal names Owner as decider needs a minutes backlink before done. */
-export function storyScopeNamesOwnerDecider(scope: unknown): boolean {
-  if (typeof scope !== "string") return false;
-  const goal = validateStoryScope(scope).sections.find((section) => section.heading === "Goal")?.content ?? "";
-  return OWNER_DECIDER.test(goal);
-}
-
-/**
- * A template owns its headings; the engine owns only this invariant floor.  The
- * old Story validator above remains byte-compatible for pre-template records,
- * while this contract lets an admitted template choose a different heading set
- * without weakening the four purpose anchors or the legacy closeout elements.
+ * A template owns its headings. An admitted template holds a record bound to it to those
+ * headings, in its order, each non-empty, with an acceptance block and reference-only blocks
+ * where it names them. The engine-wide floor that used to ride on top -- the four purpose anchors
+ * and the evidence and fix-item tokens -- went with the Story ten-block contract
+ * (TCRN-CROSS-STORY-473 R1); a Story bound to a template is no longer held to it at all
+ * (template-admission.ts).
  */
 export interface ScopeTemplateDefinition {
   readonly id: string;
@@ -326,15 +172,6 @@ export interface ScopeTemplateDefinition {
 
 const TEMPLATE_BRACKET_HEADING = /^\s*(?:【([^】]+)】|\[([^\]]+)\])(.*)$/u;
 const TEMPLATE_MARKDOWN_HEADING = /^\s*#{1,6}\s+(.+?)\s*$/u;
-// The template floor reuses the same bilingual anchors as the legacy path rather
-// than keeping a second list: two anchor rosters is exactly the drift the
-// gate-reference inventory calls class F, and nothing here would have compared them.
-const TEMPLATE_BASE_ANCHORS: readonly { readonly name: string; readonly expression: RegExp }[] = Object.freeze([
-  { name: "为谁 / beneficiary", expression: PURPOSE_ANCHORS[0]! },
-  { name: "目的锚 / purpose anchor", expression: PURPOSE_ANCHORS[1]! },
-  { name: "符合性判据 / compliance criterion", expression: PURPOSE_ANCHORS[2]! },
-  { name: "判定人 / decider", expression: PURPOSE_ANCHORS[3]! },
-]);
 const TEMPLATE_REFERENCE_VALUE = /^(?:(?:ref|reference|vault|credential|secret|attachment):[^\s]+|https?:\/\/[^\s]+)$/iu;
 
 interface ParsedTemplateHeading {
@@ -378,7 +215,7 @@ function templateSections(scope: string, found: readonly ParsedTemplateHeading[]
 export function validateTemplateScope(scope: unknown, template: ScopeTemplateDefinition): StoryScopeValidation {
   const problems: StoryScopeProblem[] = [];
   if (typeof scope !== "string" || scope.trim().length === 0) {
-    return { ok: false, problems: [{ code: "STORY_SCOPE_REQUIRED", message: "templated work requires a non-empty scope" }], sections: [] };
+    return { ok: false, problems: [{ code: "TEMPLATE_SCOPE_REQUIRED", message: "templated work requires a non-empty scope" }], sections: [] };
   }
   const expected = [...template.headings];
   const found = parseTemplateHeadings(scope);
@@ -386,8 +223,8 @@ export function validateTemplateScope(scope: unknown, template: ScopeTemplateDef
   for (const entry of found) counts.set(entry.name, (counts.get(entry.name) ?? 0) + 1);
   for (const heading of expected) {
     const count = counts.get(heading) ?? 0;
-    if (count === 0) problems.push({ code: "STORY_SCOPE_HEADING_MISSING", heading, message: `missing template scope block ${heading}` });
-    else if (count > 1) problems.push({ code: "STORY_SCOPE_HEADING_DUPLICATE", heading, message: `duplicate template scope block ${heading}` });
+    if (count === 0) problems.push({ code: "TEMPLATE_SCOPE_HEADING_MISSING", heading, message: `missing template scope block ${heading}` });
+    else if (count > 1) problems.push({ code: "TEMPLATE_SCOPE_HEADING_DUPLICATE", heading, message: `duplicate template scope block ${heading}` });
   }
   for (const entry of found) {
     if (!expected.includes(entry.name)) {
@@ -395,32 +232,21 @@ export function validateTemplateScope(scope: unknown, template: ScopeTemplateDef
     }
   }
   if (found.length === expected.length && found.some((entry, index) => entry.name !== expected[index])) {
-    problems.push({ code: "STORY_SCOPE_HEADING_ORDER", message: "template scope blocks must use the admitted order" });
+    problems.push({ code: "TEMPLATE_SCOPE_HEADING_ORDER", message: "template scope blocks must use the admitted order" });
   }
   const sections = templateSections(scope, found);
   for (const section of sections) {
     if (section.content.length === 0) {
-      problems.push({ code: "STORY_SCOPE_SECTION_EMPTY", heading: section.heading, message: `template scope block ${section.heading} is empty` });
+      problems.push({ code: "TEMPLATE_SCOPE_SECTION_EMPTY", heading: section.heading, message: `template scope block ${section.heading} is empty` });
     }
   }
 
   const byHeading = new Map(sections.map((section) => [section.heading, section.content]));
-  const all = scope;
-  for (const anchor of TEMPLATE_BASE_ANCHORS) {
-    if (!anchor.expression.test(all)) {
-      problems.push({ code: "STORY_SCOPE_PURPOSE_INVALID", heading: "Goal", message: `template scope is missing base anchor ${anchor.name}` });
-    }
-  }
-  const legacyEvidence = /现象|现状|问题|来源|实证|证据|命令|实测|复核|evidence|command|observed/iu.test(all);
-  const legacyFix = /修复|改造|交付|落点|改什么|实现|新增|移除|调整|fix|implement|deliver/iu.test(all);
-  if (!legacyEvidence) problems.push({ code: "STORY_SCOPE_LEGACY_ELEMENT_MISSING", heading: "Requirements", message: "legacy phenomenon/evidence element is not mapped" });
-  if (!legacyFix) problems.push({ code: "STORY_SCOPE_LEGACY_ELEMENT_MISSING", heading: "Requirements", message: "legacy fix-items element is not mapped" });
-
   const acceptanceHeadings = template.acceptanceHeadings ?? ["Acceptance Criteria"];
   const primaryAcceptanceHeading = acceptanceHeadings[0] ?? "Acceptance Criteria";
   const acceptance = acceptanceHeadings.map((heading) => byHeading.get(heading) ?? "").find((content) => content.length > 0) ?? "";
   if (acceptance.length === 0 || (!hasOrderedGwt(acceptance) && !isBulletList(acceptance) && acceptanceHeadings.length === 1 && primaryAcceptanceHeading === "Acceptance Criteria")) {
-    problems.push({ code: "STORY_SCOPE_ACCEPTANCE_INVALID", heading: primaryAcceptanceHeading, message: "template scope lacks an acceptance/expected outcome section" });
+    problems.push({ code: "TEMPLATE_SCOPE_ACCEPTANCE_INVALID", heading: primaryAcceptanceHeading, message: "template scope lacks an acceptance/expected outcome section" });
   }
 
   for (const heading of template.referenceHeadings ?? []) {

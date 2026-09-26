@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { canonicalSha256, assertProtocolId, compareCanonicalText, parseStrictInstant } from "../../protocol/src/index.js";
-import type { CreateKnowledgeUnitInput } from "./knowledge-core.js";
+import { assertProtocolId, compareCanonicalText, parseStrictInstant } from "../../protocol/src/index.js";
 
 export const CONFERENCE_REQUEST_VERSION = "tcrn.conference.v1.request" as const;
 export const CONFERENCE_POSITION_VERSION = "tcrn.conference.v1.position" as const;
@@ -10,14 +9,10 @@ export const CONFERENCE_MINUTES_VERSION = "tcrn.conference.v1.minutes" as const;
 export const CONFERENCE_TYPES = Object.freeze(["strategy", "architecture", "risk", "verification", "release", "incident", "retrospective"] as const);
 export const CONFERENCE_STATUSES = Object.freeze(["open", "closed", "cancelled"] as const);
 
-// INIT-026 S234. The deliberation convention already said an undeclared execution
-// form reads as unverified; a prose rule has no teeth. Where the workspace's
-// execution.independenceFloor covers a conference's type, conference-close now
-// demands the declaration at write time. The declaration is still a self-report —
-// the engine cannot verify that positions were in fact argued in separate
-// contexts, the same authorization-not-authentication ceiling the retired gate
-// identity roster stated about itself — so what is enforced is that the claim is PRESENT and
-// says "independent", never that it is true.
+// INIT-026 S234 wrote an execution form on a conference close ("conference:execution-form") and
+// execution.independenceFloor decided which closes had to declare "independent". TCRN-CROSS-STORY-475
+// R3 retired both with the conference write verbs; the values and the floor names stay here as the
+// read-only vocabulary of the minutes a conference close wrote (vocabulary.ts).
 export const CONFERENCE_EXECUTION_FORMS = Object.freeze(["independent", "single-context"] as const);
 export type ConferenceExecutionForm = typeof CONFERENCE_EXECUTION_FORMS[number];
 
@@ -31,13 +26,13 @@ export function independenceFloorCovers(floor: string, conferenceType: string): 
 }
 export const CONFERENCE_OUTCOME_CLASSES = Object.freeze(["discussion_only", "recommendation", "role_decision", "blocked", "owner_intent_required"] as const);
 
+// The codes replay and the read verbs can still raise. CONFERENCE_DISTILLED,
+// CONFERENCE_MINUTES_UNBOUND and CONFERENCE_POSITION_UNBOUND left with the write path they belonged to
+// (TCRN-CROSS-STORY-475 R3).
 export const CONFERENCE_REASON_CODES = Object.freeze([
   "CONFERENCE_ANCHOR_REQUIRED",
   "CONFERENCE_BUDGET_EXCEEDED",
   "CONFERENCE_DESIRED_OUTCOME_REQUIRED",
-  "CONFERENCE_DISTILLED",
-  "CONFERENCE_MINUTES_UNBOUND",
-  "CONFERENCE_POSITION_UNBOUND",
   "CONFERENCE_SCHEMA_INVALID",
   "CONFERENCE_UNICODE_INVALID",
   "CONFERENCE_UNKNOWN_FIELD",
@@ -48,25 +43,6 @@ export type ConferenceReasonCode = typeof CONFERENCE_REASON_CODES[number];
 
 const maximumTextBytes = 2_048;
 const maximumExtensionProperties = 64;
-
-/**
- * The bound the *knowledge store* puts on a summary, restated here.
- *
- * `--distill` truncates the minutes summary with a conference budget and hands the
- * result to the knowledge store, which applies its own summary bound. That works
- * only while the two numbers happen to be equal: raise the conference budget and
- * the distill starts failing *after* `conference.closed` is already on the chain —
- * a half-completed governed operation rather than a refusal, because the close
- * event cannot be taken back. Truncating to the receiving bound removes the
- * coupling to whatever this module's text budget becomes.
- *
- * Stated as a local constant rather than imported from knowledge-core: that module
- * is reached at runtime through workspace, and a value import here would close an
- * ESM cycle. `tests/conference.test.mjs` pins it to KNOWLEDGE_LIMITS.maximumSummaryBytes,
- * so the restatement cannot drift silently — which is the only reason restating a
- * number is acceptable at all.
- */
-export const CONFERENCE_DISTILL_SUMMARY_BYTES = 2_048;
 
 /**
  * The hard ceiling on a single `position`, and the only budget replay knows about.
@@ -286,154 +262,14 @@ export function validateConferenceMinutes(value: unknown): ConferenceMinutes {
   });
 }
 
-// Operations — minimal skeleton. No orchestration, action-item automation, or search.
+// The conference.created replay arm checks a request with this: a conference is opened open. The
+// write verbs that opened, argued, closed and cancelled conferences, the close's distillation into
+// knowledge candidates and the position-to-conference binding they used were retired by
+// TCRN-CROSS-STORY-475 R3 (MIN-227 D10), and so was conference-list-by-work with the read helper it
+// alone used; decisions are recorded as minutes (minutes.ts), a conference's minutes are read
+// through minutesView, and every conference event already on a chain still replays.
 export function openConference(value: unknown): ConferenceRequest {
   const request = validateConferenceRequest(value);
   if (request.status !== "open") fail("CONFERENCE_SCHEMA_INVALID", "opened conference must be status open");
   return request;
-}
-
-export function appendConferencePosition(positionValue: unknown, requestValue: unknown): ConferencePosition {
-  const request = validateConferenceRequest(requestValue);
-  const position = validateConferencePosition(positionValue);
-  if (position.conferenceId !== request.id || position.projectId !== request.projectId) fail("CONFERENCE_POSITION_UNBOUND", position.id);
-  if (request.status !== "open") fail("CONFERENCE_POSITION_UNBOUND", "conference not open");
-  return position;
-}
-
-export function listConferencesByWorkItem(workId: unknown, requests: readonly unknown[]): readonly ConferenceRequest[] {
-  const target = id(workId, "workId");
-  return requests
-    .map((value) => validateConferenceRequest(value))
-    .filter((request) => !request.tombstone && request.linkedWorkIds.includes(target))
-    .sort((left, right) => compareCanonicalText(left.projectId, right.projectId) || compareCanonicalText(left.id, right.id));
-}
-
-export interface ConferenceDecisionCandidate {
-  readonly kind: "decision";
-  readonly promotionState: "candidate";
-  readonly projectId: string;
-  readonly subject: string;
-  readonly body: string;
-  readonly sourceReferences: readonly string[];
-  readonly linkedWorkIds: readonly string[];
-  readonly candidateDigest: string;
-}
-
-// Close = distill: emit one knowledge decision candidate per minutes decision, each
-// backlinking the conference record via an inert sourceReferences locator. The
-// candidate feeds the existing knowledge-core promotion pipeline; nothing is
-// promoted here. No second knowledge store is created (single knowledge store).
-export function closeConference(minutesValue: unknown, requestValue: unknown, positionsValue: readonly unknown[] = []): Readonly<{ minutes: ConferenceMinutes; request: ConferenceRequest; candidates: readonly ConferenceDecisionCandidate[] }> {
-  const request = validateConferenceRequest(requestValue);
-  const minutes = validateConferenceMinutes(minutesValue);
-  if (minutes.conferenceId !== request.id || minutes.projectId !== request.projectId) fail("CONFERENCE_MINUTES_UNBOUND", minutes.id);
-  for (const positionValue of positionsValue) {
-    const position = validateConferencePosition(positionValue);
-    if (position.conferenceId !== request.id) fail("CONFERENCE_POSITION_UNBOUND", position.id);
-  }
-  const backlink = `conference:${request.id.split(":").slice(1).join(":") || request.id}`;
-  const candidates = minutes.decisions.map((decision, index) => {
-    const basis = {
-      kind: "decision" as const,
-      promotionState: "candidate" as const,
-      projectId: request.projectId,
-      subject: `${request.title} decision ${index + 1}`.slice(0, maximumTextBytes),
-      body: decision,
-      sourceReferences: [backlink, `conference-minutes:${minutes.id.split(":").slice(1).join(":") || minutes.id}`],
-      linkedWorkIds: request.linkedWorkIds,
-    };
-    return deepFreeze({ ...basis, candidateDigest: canonicalSha256(basis) });
-  });
-  return deepFreeze({ minutes, request, candidates });
-}
-
-// WSD-3: truncate on a code-point boundary so the result is valid UTF-8 and its
-// byte length never exceeds the bound (a single code point is at most four bytes,
-// well under every cap here). Used for the subject/summary/snippet knowledge
-// fields, whose knowledge-core bounds are byte-measured while the protocol record
-// bound is code-point measured — a code-point-safe truncation satisfies both.
-function truncateOnCodePoint(value: string, maximumBytes: number): string {
-  if (Buffer.byteLength(value, "utf8") <= maximumBytes) return value;
-  let result = "";
-  for (const codePoint of value) {
-    if (Buffer.byteLength(result + codePoint, "utf8") > maximumBytes) break;
-    result += codePoint;
-  }
-  return result;
-}
-
-const maximumSubjectBytes = 512;
-const maximumSnippetBytes = 512;
-
-export interface DistillConferenceOptions {
-  readonly occurredAt: string;
-  readonly stalenessDays: number;
-  readonly accountableOwnerId?: string;
-  readonly evidenceIds?: readonly string[];
-}
-
-// WSD-3 / SDC-6: transform closed conference minutes into governed knowledge
-// creation inputs — one candidate per minutes decision. Each input is a FULL
-// CreateKnowledgeUnitInput accepted by the unmodified fail-closed knowledge
-// creation contract (WSC-3 capture-cheap): provenance (accountable owner,
-// evidence) is optional at capture and enforced only at promotion, while the
-// vocabulary-conformant tag set and non-empty snippet make the candidate
-// promotable by construction under WSC-6's final promote gates. The external key
-// is hyphen-only (CONFERENCE-DECISION-<hex>-<hex>-<n>) so canonicalExternalKey
-// admits it; sourceDigest binds the FULL untruncated decision basis even when the
-// stored subject is byte-bounded. The transform is pure — no store access — and
-// the CLI performs the governed high-water rebind before feeding these inputs to
-// createKnowledgeUnit, which applies each candidate to the store as it stands.
-export function distillConferenceKnowledge(minutesValue: unknown, requestValue: unknown, positionsValue: readonly unknown[] = [], options: DistillConferenceOptions): readonly CreateKnowledgeUnitInput[] {
-  const request = validateConferenceRequest(requestValue);
-  const minutes = validateConferenceMinutes(minutesValue);
-  if (minutes.conferenceId !== request.id || minutes.projectId !== request.projectId) fail("CONFERENCE_MINUTES_UNBOUND", minutes.id);
-  const positions = positionsValue.map((value) => {
-    const position = validateConferencePosition(value);
-    if (position.conferenceId !== request.id) fail("CONFERENCE_POSITION_UNBOUND", position.id);
-    return position;
-  });
-  const evidence = [...new Set([
-    ...positions.flatMap((position) => position.evidenceIds.filter((reference) => reference.startsWith("evidence:"))),
-    ...(options.evidenceIds ?? []).filter((reference) => reference.startsWith("evidence:")),
-  ])].sort(compareCanonicalText);
-  const requestSuffix = request.id.slice(request.id.indexOf(":") + 1);
-  const minutesSuffix = minutes.id.slice(minutes.id.indexOf(":") + 1);
-  // Fixed conference tag set (no per-store vocabulary.json exists): every tag
-  // matches the knowledge tag grammar and the set is non-empty, so the candidate
-  // clears the WSC-6 promote machine-check (>=1 tag) with no free-form drift.
-  const tags = ["conference-decision", "distilled", `type-${request.type}`].sort(compareCanonicalText);
-  const sourceReferences = [`conference:${requestSuffix}`, `conference-minutes:${minutesSuffix}`];
-  return minutes.decisions.map((decision, index): CreateKnowledgeUnitInput => ({
-    occurredAt: options.occurredAt,
-    externalKey: `conference-decision-${requestSuffix}-${minutesSuffix}-${index + 1}`,
-    scope: "project",
-    projectId: request.projectId,
-    roleScopes: [],
-    category: "decision",
-    kind: "decision",
-    tags,
-    subject: truncateOnCodePoint(`${request.title}: ${decision}`, maximumSubjectBytes),
-    summary: truncateOnCodePoint(minutes.summary, CONFERENCE_DISTILL_SUMMARY_BYTES),
-    snippet: truncateOnCodePoint(decision, maximumSnippetBytes),
-    accountableOwnerId: options.accountableOwnerId ?? "",
-    sourceReferences,
-    sourceDigest: canonicalSha256({ title: request.title, decision, minutesId: minutes.id }),
-    linkedWorkIds: request.linkedWorkIds,
-    linkedDecisionIds: [],
-    linkedGateIds: [],
-    linkedEvidenceIds: evidence,
-    lifecycle: "candidate",
-    retrievalDisposition: "default",
-    freshnessState: "unknown",
-    lastVerified: null,
-    stalenessPolicy: { maximumAgeDays: options.stalenessDays, unknownDisposition: "fail-closed" },
-    exportDisposition: "metadata-only",
-    body: decision,
-    // TCRN-CROSS-STORY-365: the decisions of one conference are authored together and
-    // scored against each other on the way in. They are not surprises to one another, so
-    // the writer's answer is stated here once rather than refused per decision.
-    coexist: true,
-  }));
 }

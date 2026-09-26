@@ -34,7 +34,7 @@ import { PROTOCOL_LIMITS } from "../dist/build/packages/protocol/src/index.js";
 
 const instant = (second) => `2026-09-05T05:00:${String(second).padStart(2, "0")}Z`;
 
-// 1500 minimal work.created ("Incident", parentless, no scope/title/labels) events pad the
+// 1500 minimal work.created ("Initiative", parentless, no scope/title/labels) events pad the
 // device's first segment well past the 1 MiB ceiling this test exists to lift for event
 // segments, while staying under the raised roll size (so the segment never rolls to
 // 00000002.ndjson) and under the unrelated per-view projection budget.
@@ -63,7 +63,7 @@ test("STORY-354 snapshot-manifest reads an event segment past the generic 1 MiB 
     deltas.push(createWorkDelta({
       projectId,
       externalKey: `STORY-354-PAD-${i}`,
-      kind: "Incident",
+      kind: "Initiative",
       parentId: null,
       status: "active",
       occurredAt: instant(2),

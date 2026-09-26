@@ -1,5 +1,10 @@
 # Conference execution provenance (v1)
 
+> Conferences are no longer written (TCRN-CROSS-STORY-475 R3): the execution mode and the host
+> receipts described here are read from the conferences already on a chain, and their
+> classification stays read-only. The execution form a close declared (`conference:execution-form`)
+> stays on the historical minutes.
+
 INIT-010 EPIC-019. Additive to the frozen `tcrn.conference.v1` records. Nothing here
 changes an accepted schema: `executionMode` rides the conference request's
 `extensions` slot, and the host-execution receipt is a new standalone record type.

@@ -187,3 +187,25 @@ test("INC-016: no catalog entry is both a governed write and authority-bearing o
   assert.equal(validate(envelope([both])), false, "the schema must reject authorityBearing with mutates:true");
   assert.equal(validate(envelope([{ ...both, mutates: false }])), true, "authorityBearing with mutates:false stays valid");
 });
+
+test("STORY-472 R3, R4: work-create and work-annotate take the relation flags, and work-list filters by a relation", () => {
+  const flagsOf = (name) => new Map(COMMAND_CATALOG.find((entry) => entry.name === name).flags.map((flag) => [flag.name, flag]));
+  for (const verb of ["work-create", "work-annotate"]) {
+    const flags = flagsOf(verb);
+    for (const name of ["blocked-by", "implements", "supersedes", "fixes", "decided-in", "decided-by"]) {
+      assert.equal(flags.get(name)?.valueKind, "list", `${verb} --${name}`);
+      assert.equal(flags.get(name)?.required, false, `${verb} --${name} is optional`);
+    }
+  }
+  assert.equal(flagsOf("work-list").get("relation")?.valueKind, "string");
+});
+
+test("STORY-475 R1, R2: minutes-record writes and names its required flags; minutes-list and minutes-show read", () => {
+  const entry = (name) => COMMAND_CATALOG.find((candidate) => candidate.name === name);
+  assert.equal(entry("minutes-record").mutates, true);
+  assert.deepEqual(entry("minutes-record").flags.filter((flag) => flag.required).map((flag) => flag.name).sort(), ["at", "project-id", "summary", "title"]);
+  assert.equal(entry("minutes-record").flags.find((flag) => flag.name === "decisions")?.valueKind, "list");
+  assert.equal(entry("minutes-list").mutates, false);
+  assert.equal(entry("minutes-show").mutates, false);
+  assert.equal(COMMAND_CATALOG.some((candidate) => candidate.name.startsWith("conference-")), false);
+});

@@ -41,12 +41,19 @@ import {
   transitionWorkDelta,
 } from "./workspace.js";
 import type { MutationDelta, WorkspaceState } from "./workspace.js";
+import type { WorkRelationsInput } from "./work-relations.js";
 
 export const WORK_BATCH_SCHEMA_VERSION = "tcrn.work-batch.v1" as const;
 export const WORK_BATCH_VERBS = Object.freeze(["work-create", "work-transition", "work-annotate"]);
 
-const WORK_KINDS = Object.freeze(["Initiative", "Epic", "Story", "Subtask", "Incident", "Release"]);
+// TCRN-CROSS-STORY-472 R1: the kinds a batch may create. Incident and Release are refused with the
+// reason code the single verb gives (WORK_KIND_RETIRED) and its remedy, in the shape pass, so a
+// batch hears it for every such member at once.
+const WORK_KINDS = Object.freeze(["Initiative", "Epic", "Story", "Subtask"]);
+const RETIRED_WORK_KINDS = Object.freeze(["Incident", "Release"]);
 const WORK_STATUSES = Object.freeze(["planned", "ready", "active", "done", "cancelled"]);
+// TCRN-CROSS-STORY-472 R4: a member's relations, by field name; each a list of ids.
+const RELATION_FIELDS = Object.freeze(["blockedBy", "implements", "supersedes", "fixes", "decidedIn"]);
 
 export interface WorkBatchProblem {
   readonly index: number;
@@ -69,6 +76,18 @@ function isNonEmptyString(value: unknown): value is string {
 function referencedId(member: Readonly<Record<string, unknown>>): string | null {
   if (isNonEmptyString(member.id)) return member.id;
   if (isNonEmptyString(member.externalKey)) return deriveStableId("work", canonicalExternalKey(member.externalKey));
+  return null;
+}
+
+// The shape of a member's relations: an object of the five known fields, each a list of strings.
+// Whether the targets exist is the delta's question, asked against the accumulated state, so a
+// member may relate to a record an earlier member created.
+function relationsProblem(value: unknown): string | null {
+  if (!isObject(value)) return "relations is an object";
+  for (const [field, list] of Object.entries(value)) {
+    if (!RELATION_FIELDS.includes(field)) return `relation ${field} is not one of ${RELATION_FIELDS.join(", ")}`;
+    if (!Array.isArray(list) || !list.every((entry) => isNonEmptyString(entry))) return `relation ${field} is a list of ids`;
+  }
   return null;
 }
 
@@ -95,16 +114,23 @@ function shapeProblems(members: readonly unknown[]): readonly WorkBatchProblem[]
       for (const field of ["projectId", "externalKey", "kind", "title"]) {
         if (!isNonEmptyString(member[field])) problems.push({ index, verb, rule: "field-required", detail: field });
       }
-      if (member.kind !== undefined && !WORK_KINDS.includes(member.kind as string)) {
+      if (member.kind !== undefined && RETIRED_WORK_KINDS.includes(member.kind as string)) {
+        problems.push({ index, verb, rule: "kind-retired", detail: `WORK_KIND_RETIRED: kind=${String(member.kind)}; open a Story with a fixes relation` });
+      } else if (member.kind !== undefined && !WORK_KINDS.includes(member.kind as string)) {
         problems.push({ index, verb, rule: "kind-known", detail: `kind=${String(member.kind)}` });
+      }
+      if (member.relations !== undefined) {
+        const problem = relationsProblem(member.relations);
+        if (problem !== null) problems.push({ index, verb, rule: "relations-shape", detail: problem });
       }
       if (member.status !== undefined && !WORK_STATUSES.includes(member.status as string)) {
         problems.push({ index, verb, rule: "status-known", detail: `status=${String(member.status)}` });
       }
-      // The engine refuses a scopeless Story at the reducer, but doing it here means the
-      // whole batch is reported at once rather than one member per round trip.
-      if (member.kind === "Story" && member.scope === undefined) {
-        problems.push({ index, verb, rule: "story-scope-required", detail: "a new Story carries its complete scope atomically" });
+      // TCRN-CROSS-STORY-473 R2: a Story needs a goal and an acceptance, as fields or from a
+      // scope. The engine judges the mapping at the reducer; a Story member naming neither is
+      // refused here, so the whole batch is reported at once rather than one member per round trip.
+      if (member.kind === "Story" && member.scope === undefined && (member.goal === undefined || member.acceptance === undefined)) {
+        problems.push({ index, verb, rule: "story-fields-required", detail: "a new Story carries goal and acceptance, or a scope they map from" });
       }
       return;
     }
@@ -117,11 +143,29 @@ function shapeProblems(members: readonly unknown[]): readonly WorkBatchProblem[]
       }
       return;
     }
-    if (member.scope === undefined && member.decidedBy === undefined && member.sprint === undefined && member.summary === undefined) {
-      problems.push({ index, verb, rule: "advisory-required", detail: "an annotation carries at least one of scope, decidedBy, sprint, summary" });
+    if (member.scope === undefined && member.decidedBy === undefined && member.sprint === undefined && member.summary === undefined && member.relations === undefined &&
+      member.goal === undefined && member.acceptance === undefined && member.body === undefined) {
+      problems.push({ index, verb, rule: "advisory-required", detail: "an annotation carries at least one of scope, decidedBy, sprint, summary, relations, goal, acceptance, body" });
+    }
+    if (member.relations !== undefined) {
+      const problem = relationsProblem(member.relations);
+      if (problem !== null) problems.push({ index, verb, rule: "relations-shape", detail: problem });
     }
   });
   return problems;
+}
+
+function relationsOf(member: Readonly<Record<string, unknown>>): { readonly relations?: WorkRelationsInput } {
+  return member.relations === undefined ? {} : { relations: member.relations as WorkRelationsInput };
+}
+
+// TCRN-CROSS-STORY-473 R2: a member's Story fields, passed through for the engine to judge.
+function storyFieldsOf(member: Readonly<Record<string, unknown>>): { readonly goal?: string; readonly acceptance?: string; readonly body?: string } {
+  return {
+    ...(member.goal === undefined ? {} : { goal: member.goal as string }),
+    ...(member.acceptance === undefined ? {} : { acceptance: member.acceptance as string }),
+    ...(member.body === undefined ? {} : { body: member.body as string }),
+  };
 }
 
 function deltaFor(member: Readonly<Record<string, unknown>>, occurredAt: string): (state: WorkspaceState) => MutationDelta {
@@ -138,6 +182,8 @@ function deltaFor(member: Readonly<Record<string, unknown>>, occurredAt: string)
       ...(member.status === undefined ? {} : { status: member.status as never }),
       ...(member.scope === undefined ? {} : { scope: member.scope as string }),
       ...(member.decidedBy === undefined ? {} : { decidedBy: member.decidedBy as readonly string[] }),
+      ...relationsOf(member),
+      ...storyFieldsOf(member),
       title: member.title as string,
       ...(member.summary === undefined ? {} : { summary: member.summary as string }),
       occurredAt,
@@ -157,6 +203,8 @@ function deltaFor(member: Readonly<Record<string, unknown>>, occurredAt: string)
     ...(member.scope === undefined ? {} : { scope: member.scope as string }),
     ...(member.decidedBy === undefined ? {} : { decidedBy: member.decidedBy as readonly string[] }),
     ...(member.sprint === undefined ? {} : { sprint: member.sprint as never }),
+    ...relationsOf(member),
+    ...storyFieldsOf(member),
     ...(member.summary === undefined ? {} : { summary: member.summary as string }),
     occurredAt,
   });

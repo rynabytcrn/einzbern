@@ -40,7 +40,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { storyScopeProblems } from "./story-scope-compliance.mjs";
 
 export const PLATFORM_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
@@ -385,12 +384,9 @@ export function verifyCloseout(manifest, options = {}) {
     problems.push("items must not contain duplicate ids");
   }
   problems.push(...chainCloseoutProblems(manifest, items, dispositions, options));
-  // Closeout is an independent backstop: the live authority must carry every
-  // non-terminal Story's scope, even when the transition path was bypassed by a
-  // legacy engine or an imported authority adapter.
-  if (options.authority !== undefined && options.authority !== null) {
-    problems.push(...storyScopeProblems(options.authority.storyScopes ?? options.authority.items));
-  }
+  // The Story scope backstop that re-ran the ten-block validator over the live authority went
+  // with that contract (TCRN-CROSS-STORY-473 R1): the engine asks a Story for a goal and an
+  // acceptance when it is written and before it moves, and nothing else about its prose.
   // INC-077: the INIT-020 storage/archive/migration batch is windowed by its
   // item set, not by a caller's self-description. An entry that tries to set
   // `windowed:false` cannot evade the negative-leg obligation.

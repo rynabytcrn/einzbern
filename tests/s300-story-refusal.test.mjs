@@ -2,110 +2,73 @@
 //
 // STORY-300, Wave 1.4. A refusal names the remedy.
 //
-// The Story scope validator has always known exactly what it wanted -- ten blocks
-// in one order, four purpose anchors matched as literal tokens, an ordered
-// GIVEN/WHEN/THEN or a bullet list, and two token-shape checks -- and said almost
-// none of it. The message was the problem list joined by semicolons: which block
-// was missing, never what the full set is; that the Goal lacked anchors, never
-// which ones or that they are matched as tokens rather than by meaning.
-//
-// Two audited sessions were measured reading this module's source to learn a
-// contract the module already held, nine days apart, and each of two ceremonies
-// spent eight rounds on that class of discovery. Chain-related refusals over the
-// audited week ran 242 against 132 successful writes.
-//
-// These criteria are what stop the message going quiet again.
+// The ten-block Story validator this file used to hold to that rule is gone
+// (TCRN-CROSS-STORY-473 R1, MIN-227 D8), and with it the block roster, the four purpose anchors
+// and the two token checks a refusal had to spell out. What the engine asks of a Story now is a
+// goal and an acceptance, as fields or mapped from the blocks of a scope. The rule this file
+// exists for is unchanged: a Story refused for what it lacks is told which field that is and how
+// to supply it, structurally (details.field) as well as in the message.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
-import { STORY_SCOPE_HEADINGS, describeStoryScopeProblems, validateStoryScope } from "../dist/build/packages/core/src/story-scope-compliance.js";
+import { createProject, createWork, initializeLibrary, materializeWorkspace } from "../dist/build/packages/core/src/index.js";
+import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
-const COMPLIANT = `## Goal
-为谁:the operator. 目的锚:prove the refusal is actionable. 符合性判据:the message names the remedy. 判定人:machine-checked lane.
+const at = (second) => `2026-09-26T09:00:${String(second).padStart(2, "0")}Z`;
 
-## Requirements
-- 实现 the described behaviour.
+async function epic(context) {
+  const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-story-refusal-")));
+  context.after(() => rm(base, { recursive: true, force: true }));
+  const workspace = join(base, "library");
+  await initializeLibrary({ root: workspace, createdAt: at(0) });
+  const project = (await createProject(workspace, { occurredAt: at(1), externalKey: "REFUSAL-PROJECT", name: "Refusal" })).projects[0].id;
+  await createWork(workspace, { occurredAt: at(2), projectId: project, externalKey: "REFUSAL-INIT", kind: "Initiative", parentId: null, title: "init" });
+  await createWork(workspace, { occurredAt: at(3), projectId: project, externalKey: "REFUSAL-EPIC", kind: "Epic", parentId: deriveStableId("work", "REFUSAL-INIT"), title: "epic" });
+  const story = (key, fields) => createWork(workspace, {
+    occurredAt: at(4), projectId: project, externalKey: key, kind: "Story", parentId: deriveStableId("work", "REFUSAL-EPIC"), title: key, ...fields,
+  });
+  return { workspace, story };
+}
 
-## Acceptance Criteria
-GIVEN a refusal WHEN it is read THEN it names the remedy
-
-## Business Background
-实测 evidence that the message was silent.
-
-## Preconditions
-- None.
-
-## Assumptions
-- None.
-
-## Use Cases & Examples
-- A session reads the refusal and fixes the scope.
-
-## Feature Toggle & Setting
-None.
-
-## Permissions
-None.
-
-## Implementation Notes
-新增 the description helper.`;
-
-// Red leg: restore the semicolon join and the caller is told a block is missing
-// without being told what the set of blocks is.
-test("STORY-300: a refused scope is told the full block roster, in order", () => {
-  const validation = validateStoryScope("## Goal\nsomething\n\n## Requirements\nx\n");
-  assert.equal(validation.ok, false);
-  const message = describeStoryScopeProblems(validation.problems);
-  for (const heading of STORY_SCOPE_HEADINGS) {
-    assert.ok(message.includes(heading), `the refusal must name ${heading}`);
-  }
-  // The order matters and is stated, because the validator refuses on order too.
-  assert.ok(message.includes(STORY_SCOPE_HEADINGS.join(" / ")), "the roster is given in the order the validator requires");
+// Red leg: drop details.field and a caller can only learn the missing field by parsing prose.
+test("STORY-300, STORY-473: a Story without an acceptance is told the field and both ways to supply it", async (context) => {
+  const fixture = await epic(context);
+  const before = (await materializeWorkspace(fixture.workspace)).version;
+  await assert.rejects(
+    () => fixture.story("REFUSAL-NO-ACCEPTANCE", { goal: "Make the refusal actionable." }),
+    (error) => error?.reasonCode === "WORK_STORY_FIELD_REQUIRED" && error.details?.field === "acceptance" &&
+      /--acceptance/u.test(error.message) && /Acceptance Criteria/u.test(error.message) && /--acceptance/u.test(error.details?.remedy ?? ""),
+  );
+  await assert.rejects(
+    () => fixture.story("REFUSAL-SCOPE-NO-ACCEPTANCE", { scope: "## Goal\nMake the refusal actionable.\n\n## Requirements\n- anything" }),
+    (error) => error?.reasonCode === "WORK_STORY_FIELD_REQUIRED" && error.details?.field === "acceptance",
+    "a scope without an Acceptance Criteria block maps to no acceptance",
+  );
+  assert.equal((await materializeWorkspace(fixture.workspace)).version, before, "a refusal writes nothing");
 });
 
-// Red leg: drop the anchor branch and a Goal that reads perfectly to a human is
-// refused with no way to learn that the match is on tokens.
-test("STORY-300: a missing purpose anchor is told which anchors exist and that they are literal", () => {
-  const validation = validateStoryScope(COMPLIANT.replace("判定人:machine-checked lane.", "decided by the machine lane."));
-  assert.equal(validation.ok, false);
-  const message = describeStoryScopeProblems(validation.problems);
-  for (const token of ["beneficiary", "为谁", "目的锚", "符合性判据", "判定人"]) {
-    assert.ok(message.includes(token), `the refusal must name the ${token} anchor`);
-  }
-  assert.ok(/literal token/u.test(message), "and must say the match is on the token rather than the meaning");
+test("STORY-300, STORY-473: a Story without a goal is told the goal field", async (context) => {
+  const fixture = await epic(context);
+  await assert.rejects(
+    () => fixture.story("REFUSAL-NO-GOAL", { acceptance: "GIVEN a Story WHEN it lacks a goal THEN it is refused" }),
+    (error) => error?.reasonCode === "WORK_STORY_FIELD_REQUIRED" && error.details?.field === "goal" && /--goal/u.test(error.message),
+  );
+  await assert.rejects(
+    () => fixture.story("REFUSAL-NOTHING", {}),
+    (error) => error?.reasonCode === "WORK_STORY_FIELD_REQUIRED" && error.details?.field === "goal",
+    "a Story with neither is told the first field it lacks",
+  );
 });
 
-// Red leg: remove the acceptance branch and the caller learns the shape is wrong
-// without learning which two shapes are accepted.
-test("STORY-300: a malformed acceptance block is told both accepted shapes", () => {
-  const validation = validateStoryScope(COMPLIANT.replace("GIVEN a refusal WHEN it is read THEN it names the remedy", "it should work"));
-  assert.equal(validation.ok, false);
-  const message = describeStoryScopeProblems(validation.problems);
-  assert.ok(message.includes("GIVEN/WHEN/THEN"), "the ordered form is named");
-  assert.ok(/bullet list/u.test(message), "and so is the alternative");
-});
-
-// The two token-shape checks are the least guessable thing in the contract: they
-// scan for vocabulary, and nothing in the block headings hints at that. Red leg:
-// drop the branch and the caller is told an element is "not mapped" with no way
-// to discover what would map it.
-test("STORY-300: the legacy token checks name the vocabulary they scan for", () => {
-  const validation = validateStoryScope(COMPLIANT.replace("实测 evidence that the message was silent.", "Background.").replace("- 实现 the described behaviour.", "- Do it.").replace("新增 the description helper.", "Notes."));
-  assert.equal(validation.ok, false);
-  const message = describeStoryScopeProblems(validation.problems);
-  assert.ok(message.includes("evidence"), "the evidence vocabulary is named");
-  assert.ok(message.includes("implement") || message.includes("deliver"), "the fix-item vocabulary is named");
-  // And the honest limit is stated rather than implied.
-  assert.ok(/do not judge whether what it says is true/u.test(message), "the check's own limit is stated");
-});
-
-// A compliant scope must still pass unchanged: the point was a better refusal,
-// not a looser contract. Red leg: relax any heading or anchor rule and this stops
-// being the only thing that passes.
-test("STORY-300: the contract itself is unchanged -- a compliant scope still passes", () => {
-  const validation = validateStoryScope(COMPLIANT);
-  assert.deepEqual(validation.problems, []);
-  assert.equal(validation.ok, true);
-  assert.deepEqual(validation.sections.map((section) => section.heading), [...STORY_SCOPE_HEADINGS]);
+// The contract is smaller, not looser about what it keeps: the ten blocks are not required any
+// more, and a Story with a goal and an acceptance and nothing else is accepted.
+test("STORY-473: neither the ten blocks nor their anchors are asked for any more", async (context) => {
+  const fixture = await epic(context);
+  const state = await fixture.story("REFUSAL-MINIMAL", { scope: "## Goal\nOne line.\n\n## Acceptance Criteria\nit should work" });
+  assert.equal(state.work.find((record) => record.externalKey === "REFUSAL-MINIMAL")?.kind, "Story");
 });

@@ -100,7 +100,7 @@ test("STORY-300: a member failing mid-batch leaves the chain exactly where it wa
   try {
     const before = await materializeWorkspace(fixture.root);
     const result = await refusal(fixture, [
-      { verb: "work-create", projectId: fixture.projectId, externalKey: "B-INC-9", kind: "Incident", parentId: null, status: "planned", title: "B-INC-9" },
+      { verb: "work-create", projectId: fixture.projectId, externalKey: "B-INC-9", kind: "Initiative", parentId: null, status: "planned", title: "B-INC-9" },
       { verb: "work-transition", externalKey: "B-INC-9", status: "done" },
       { verb: "work-annotate", externalKey: "B-INC-9", scope: "never reached" },
     ]);
@@ -121,7 +121,7 @@ test("STORY-300: the member that failed is named with its rule; the rest are une
   const fixture = await workspace("BATCH-BLAME");
   try {
     const result = await refusal(fixture, [
-      { verb: "work-create", projectId: fixture.projectId, externalKey: "B-INC-8", kind: "Incident", parentId: null, status: "planned", title: "B-INC-8" },
+      { verb: "work-create", projectId: fixture.projectId, externalKey: "B-INC-8", kind: "Initiative", parentId: null, status: "planned", title: "B-INC-8" },
       { verb: "work-transition", externalKey: "B-INC-8", status: "done" },
       { verb: "work-annotate", externalKey: "B-INC-8", scope: "never reached" },
       { verb: "work-annotate", externalKey: "B-INC-8", scope: "also never reached" },
@@ -158,7 +158,7 @@ test("STORY-300: every shape problem is reported together, before any state is c
     assert.deepEqual([...new Set(result.payload.problems.map((problem) => problem.index))], [0, 1, 2, 3, 4],
       "all five members are judged, not just the first to fail");
     const rules = new Set(result.payload.problems.map((problem) => problem.rule));
-    for (const rule of ["verb-known", "kind-known", "status-known", "advisory-required", "story-scope-required"]) {
+    for (const rule of ["verb-known", "kind-known", "status-known", "advisory-required", "story-fields-required"]) {
       assert.ok(rules.has(rule), `${rule} is reported`);
     }
     assert.equal(result.payload.notEvaluated, undefined, "nothing is consequential when nothing was applied");
@@ -173,7 +173,7 @@ test("STORY-300: an explicit id wins over a derivable one", async () => {
   const fixture = await workspace("BATCH-REF");
   try {
     const state = await apply(fixture, [
-      { verb: "work-create", projectId: fixture.projectId, externalKey: "B-INC-7", kind: "Incident", parentId: null, status: "planned", title: "B-INC-7" },
+      { verb: "work-create", projectId: fixture.projectId, externalKey: "B-INC-7", kind: "Initiative", parentId: null, status: "planned", title: "B-INC-7" },
       // id names B-INC-7; externalKey names something that does not exist. If the key won,
       // this would fail -- so passing proves the id was used.
       { verb: "work-transition", id: deriveStableId("work", "B-INC-7"), externalKey: "B-ABSENT", status: "ready" },
@@ -220,7 +220,7 @@ test("STORY-300: a batch spanning segments writes ascending, and every crash win
     const beforeBatch = await readFile(join(stream, "manifest.json"), "utf8");
     const members = Array.from({ length: 14 }, (_, index) => ({
       verb: "work-create", projectId: seeded.projects[0].id, externalKey: `SEG-${index}`,
-      kind: "Incident", parentId: null, status: "planned", title: `SEG-${index} ${"y".repeat(400)}`,
+      kind: "Initiative", parentId: null, status: "planned", title: `SEG-${index} ${"y".repeat(400)}`,
     }));
     const full = await applyWorkBatch(root, { schemaVersion: "tcrn.work-batch.v1", members }, {
       occurredAt: at(2),
@@ -251,7 +251,7 @@ test("STORY-300: the last member can fail, and it is attributed like any other",
   const fixture = await workspace("BATCH-LAST");
   try {
     const result = await refusal(fixture, [
-      { verb: "work-create", projectId: fixture.projectId, externalKey: "B-INC-6", kind: "Incident", parentId: null, status: "planned", title: "B-INC-6" },
+      { verb: "work-create", projectId: fixture.projectId, externalKey: "B-INC-6", kind: "Initiative", parentId: null, status: "planned", title: "B-INC-6" },
       { verb: "work-transition", externalKey: "B-INC-6", status: "ready" },
       { verb: "work-transition", externalKey: "B-INC-6", status: "planned" },
     ]);
@@ -274,11 +274,32 @@ test("STORY-300: a failure before any member ran blames no member", async () => 
     await assert.rejects(
       () => applyWorkBatch(fixture.root, {
         schemaVersion: "tcrn.work-batch.v1",
-        members: [{ verb: "work-create", projectId: fixture.projectId, externalKey: "B-INC-5", kind: "Incident", parentId: null, status: "planned", title: "B-INC-5" }],
+        members: [{ verb: "work-create", projectId: fixture.projectId, externalKey: "B-INC-5", kind: "Initiative", parentId: null, status: "planned", title: "B-INC-5" }],
       }, { occurredAt: "2026-08-19 18:00:02" }),
       (error) => error?.reasonCode === "TIMESTAMP_INVALID" && error.memberIndex === undefined,
       "an unreadable instant is the batch's failure, not a member's",
     );
+  } finally {
+    await rm(fixture.base, { recursive: true, force: true });
+  }
+});
+
+// TCRN-CROSS-STORY-472 R4: the batch format carries a member's relations in one object,
+// {blockedBy, implements, supersedes, fixes, decidedIn}, and a member may relate to what an
+// earlier member created. Red leg: drop the relations from deltaFor and the stored extension is
+// absent while the batch still reports success.
+test("STORY-472: a work-create member carries relations, resolved against what earlier members created", async () => {
+  const fixture = await workspace("BATCH-RELATIONS");
+  try {
+    const state = await apply(fixture, [
+      { verb: "work-create", projectId: fixture.projectId, externalKey: "B-REL-1", kind: "Initiative", parentId: null, status: "active", title: "B-REL-1" },
+      { verb: "work-create", projectId: fixture.projectId, externalKey: "B-REL-2", kind: "Initiative", parentId: null, status: "active", title: "B-REL-2",
+        relations: { blockedBy: [deriveStableId("work", "B-REL-1")], decidedIn: ["minutes:c8953141f2d862c26ff3db46"] } },
+    ]);
+    const second = state.work.find((record) => record.id === deriveStableId("work", "B-REL-2"));
+    assert.deepEqual(second.extensions["advisory:relations"], { required: false, value: { blockedBy: [deriveStableId("work", "B-REL-1")] } });
+    assert.deepEqual(second.extensions["advisory:decided-by"], { required: false, value: ["minutes:c8953141f2d862c26ff3db46"] });
+    assert.deepEqual(await materializeWorkspaceFromGenesis(fixture.root), state, "the public genesis replay matches the live materialization");
   } finally {
     await rm(fixture.base, { recursive: true, force: true });
   }

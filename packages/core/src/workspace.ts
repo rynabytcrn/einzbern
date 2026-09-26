@@ -63,19 +63,15 @@ import {
   validateActorAttestationEnableRecord,
 } from "./actor-attestation.js";
 import {
-  CONFERENCE_MINUTES_VERSION,
-  CONFERENCE_POSITION_VERSION,
-  CONFERENCE_REQUEST_VERSION,
   ConferenceError,
-  appendConferencePosition,
   openConference,
-  CONFERENCE_EXECUTION_FORMS,
-  independenceFloorCovers,
   validateConferenceMinutes,
   validateConferencePosition,
   validateConferenceRequest,
 } from "./conference.js";
 import { AssignmentGateError, validateGateRecord } from "./assignment-gate.js";
+import { MINUTES_RECORDED_OPERATION, MINUTES_RECORD_VERSION, MinutesError, nextMinutesExternalKey, validateMinutesRecord } from "./minutes.js";
+import type { MinutesRecord } from "./minutes.js";
 import type { ConferenceMinutes, ConferencePosition, ConferenceRequest } from "./conference.js";
 import {
   EMPTY_EXECUTION_CONFIG,
@@ -105,13 +101,14 @@ import { GateIdentityError, validateGateIdentityDecision } from "./gate-identity
 import type { GateIdentityDecision } from "./gate-identity.js";
 import type { CanonicalRoot } from "./root-identity.js";
 import { FRAMEWORK_VERSION } from "./index.js";
-import { describeStoryScopeProblems, deriveWorkSummary, storyScopeFromRecord, storyScopeNamesOwnerDecider, validateStoryRecord } from "./story-scope-compliance.js";
+import { summarizeGoal } from "./story-scope-compliance.js";
+import { deriveStoryFieldsFromScope, missingStoryField, storyFields, storyOwnerDeciderNamed } from "./story-fields.js";
+import type { StoryRequiredField } from "./story-fields.js";
 import {
   TemplateAdmissionError,
   admitTemplate,
   createTemplateAdmissionRecord,
   templateBindingFromReceipt,
-  templateBindingFromWorkRecord,
   templateRecordMatchesBinding,
   templateRecordForBinding,
   templateRegistry,
@@ -128,7 +125,6 @@ import {
   compareEngineVersions,
   createWorkspaceSettingRecord,
   isRetiredSettingKey,
-  settingsCatalogEntry,
   sortWorkspaceSettings,
   validateWorkspaceSettingRecord,
 } from "./settings.js";
@@ -139,6 +135,10 @@ import {
   validateTelemetryRecord,
 } from "./telemetry.js";
 import type { TelemetryEvidenceSnapshot } from "./telemetry.js";
+// TCRN-CROSS-STORY-472: used only inside functions. work-relations.ts imports WorkspaceError from
+// this module, so nothing here may read one of its bindings while the module is being evaluated.
+import { mergeStoredRelations, relationsShapeProblem, storedRelationsOf, validateRelationsInput } from "./work-relations.js";
+import type { NormalizedWorkRelations, WorkRelationsInput } from "./work-relations.js";
 
 export const WORKSPACE_SCHEMA_VERSION = "tcrn.workspace.v1" as const;
 export const WORKSPACE_STORAGE_VERSION = 2 as const;
@@ -159,7 +159,6 @@ export const WORKSPACE_REASON_CODES = Object.freeze([
   "WORKSPACE_ACTOR_INVALID",
   "WORKSPACE_ACTOR_REQUIRED",
   "WORKSPACE_ALREADY_EXISTS",
-  "CONFERENCE_INDEPENDENCE_REQUIRED",
   "EXECUTION_PERSONA_IN_USE",
   "EXECUTION_PERSONA_UNKNOWN",
   "MODEL_PLAN_ASSIGNMENT_INVALID",
@@ -182,7 +181,6 @@ export const WORKSPACE_REASON_CODES = Object.freeze([
   "PERSONA_PROMPT_INVALID",
   "PERSONA_RECORD_INVALID",
   "PERSONA_ROLE_INVALID",
-  "WORKSPACE_CONFERENCE_NOT_OPEN",
   "WORKSPACE_EVENT_CORRUPT",
   "WORKSPACE_FAULT_INJECTED",
   "WORKSPACE_FILESYSTEM_UNSUPPORTED",
@@ -223,8 +221,10 @@ export const WORKSPACE_REASON_CODES = Object.freeze([
   // forensible archive. Named here because the write-lock gate raises it and
   // fail() is typed to WorkspaceReasonCode.
   "WORKSPACE_STORAGE_RELOCATED",
-  "WORKSPACE_STORY_SCOPE_REQUIRED",
-  "WORKSPACE_STORY_SCOPE_INVALID",
+  // TCRN-CROSS-STORY-473 R2 (MIN-227 D8): a Story needs a goal and an acceptance, as fields or
+  // mapped from an old scope; details.field names the missing one. It replaces the two Story
+  // scope codes (scope required, scope invalid) that retired with the ten-block contract.
+  "WORK_STORY_FIELD_REQUIRED",
   "WORKSPACE_OWNER_ACCEPTANCE_REQUIRED",
   "WORKSPACE_VIEW_STALE",
   // STORY-299. Two codes, two different moments, deliberately not one code.
@@ -242,6 +242,10 @@ export const WORKSPACE_REASON_CODES = Object.freeze([
   // codes because they answer different questions about whose fault it is.
   "WORK_BATCH_MALFORMED",
   "WORK_BATCH_REFUSED",
+  // TCRN-CROSS-STORY-472 R1 (MIN-227 D6): a new record is an Initiative, Epic, Story or Subtask.
+  // An Incident, a Release (and the never-creatable Review and Knowledge) already on a chain still
+  // reads, transitions and can be the target of a relation; a new one is refused with a remedy.
+  "WORK_KIND_RETIRED",
 ] as const);
 
 export type WorkspaceReasonCode = typeof WORKSPACE_REASON_CODES[number];
@@ -401,6 +405,10 @@ export interface WorkspaceState {
   readonly conferences: readonly ConferenceRequest[];
   readonly conferencePositions: readonly ConferencePosition[];
   readonly conferenceMinutes: readonly ConferenceMinutes[];
+  // TCRN-CROSS-STORY-475 R1: minutes recorded in one event (minutes.ts), sorted like the other
+  // extension collections. A conference's historical minutes stay in conferenceMinutes; minutesView
+  // reads both.
+  readonly minutes: readonly MinutesRecord[];
   readonly gates: readonly GateRecord[];
   readonly settings: readonly WorkspaceSettingRecord[];
   readonly executionConfig: ExecutionConfigState;
@@ -425,6 +433,7 @@ interface ReplaySeed {
   readonly conferences: readonly ConferenceRequest[];
   readonly conferencePositions: readonly ConferencePosition[];
   readonly conferenceMinutes: readonly ConferenceMinutes[];
+  readonly minutes: readonly MinutesRecord[];
   readonly gates: readonly GateRecord[];
   readonly settings: readonly WorkspaceSettingRecord[];
   readonly executionConfig: ExecutionConfigState;
@@ -465,6 +474,9 @@ const workOperations = new Set(["work.created", "work.updated", "work.deleted", 
 // binaries (they fail closed at the unknown-operation check below); workspaces
 // that never use them stay fully readable, and storageVersion stays 1.
 const conferenceOperations = new Set(["conference.created", "conference.updated", "conference.position.appended", "conference.closed"]);
+// TCRN-CROSS-STORY-475 R1: a minutes record in one event. A chain that uses it is unreadable by a
+// binary predating it, like every additive operation before it.
+const minutesOperations = new Set<string>([MINUTES_RECORDED_OPERATION]);
 const gateOperations = new Set(["gate.created", "gate.updated", "gate.deleted"]);
 const settingsOperations = new Set(["settings.updated", "settings.removed"]);
 const legacyPresetOperation = "execution." + "persona" + "-preset";
@@ -929,7 +941,7 @@ function extensionRecordOrCorrupt<T>(validate: () => T): T {
   try {
     return validate();
   } catch (error) {
-    if (error instanceof ConferenceError || error instanceof AssignmentGateError || error instanceof GateIdentityError || error instanceof SettingsError || error instanceof TemplateAdmissionError) {
+    if (error instanceof ConferenceError || error instanceof AssignmentGateError || error instanceof GateIdentityError || error instanceof SettingsError || error instanceof TemplateAdmissionError || error instanceof MinutesError) {
       fail("WORKSPACE_EVENT_CORRUPT", `${error.reasonCode}:${error.message}`);
     }
     throw error;
@@ -1144,6 +1156,15 @@ const WORK_SCOPE_REFERENCE_VERSION = "tcrn.work-scope-reference.v1" as const;
 // key fails the closed anti-smuggling replay guard on a chain that USES it, which
 // is why it ships in a minor release (0.5.0) that readers of such chains must pin.
 const ADVISORY_SPRINT_KEY = "advisory:sprint";
+// TCRN-CROSS-STORY-472 R2: the forward relations blocked-by, implements, supersedes and fixes
+// (work-relations.ts). decided-in is advisory:decided-by and parent is parentId, so neither is here.
+// The literal is repeated rather than imported: see the import of work-relations.js above.
+const ADVISORY_RELATIONS_KEY = "advisory:relations";
+// TCRN-CROSS-STORY-473 R2: a Story's goal, acceptance and free body (story-fields.ts). Any kind may
+// carry them; a Story must have a goal and an acceptance.
+const ADVISORY_GOAL_KEY = "advisory:goal";
+const ADVISORY_ACCEPTANCE_KEY = "advisory:acceptance";
+const ADVISORY_BODY_KEY = "advisory:body";
 const ADVISORY_KEYS: readonly string[] = [
   ADVISORY_SCOPE_KEY,
   ADVISORY_DECIDED_BY_KEY,
@@ -1152,7 +1173,16 @@ const ADVISORY_KEYS: readonly string[] = [
   ADVISORY_EVIDENCE_KEY,
   ADVISORY_EVIDENCE_SNAPSHOT_KEY,
   ADVISORY_RESULT_KEY,
+  ADVISORY_RELATIONS_KEY,
+  ADVISORY_GOAL_KEY,
+  ADVISORY_ACCEPTANCE_KEY,
+  ADVISORY_BODY_KEY,
 ];
+
+// TCRN-CROSS-STORY-472 R1: the kinds no write creates any more. Records of these kinds on a chain
+// keep reading and replaying (validateWorkGraph still accepts them).
+const RETIRED_WORK_KINDS: readonly string[] = ["Incident", "Release", "Review", "Knowledge"];
+const WORK_KIND_RETIRED_REMEDY = "open a Story with a fixes relation (work-create --kind Story --fixes <work id>)";
 
 // A sprint reference is a qualified cross-partition pointer: the workspaceId (derived,
 // so `workspace:` + 24 hex) plus the work id of the sprint's Release record. Both halves
@@ -1171,6 +1201,12 @@ type WorkAdvisoryInput = {
   readonly evidence?: string;
   readonly evidenceSnapshot?: TelemetryEvidenceSnapshot;
   readonly result?: JsonValue;
+  // TCRN-CROSS-STORY-472 R2, R4: the forward relations, validated against the state the write is
+  // built on. Stored as advisory:relations; decidedIn is written to advisory:decided-by.
+  readonly relations?: WorkRelationsInput;
+  readonly goal?: string;
+  readonly acceptance?: string;
+  readonly body?: string;
 };
 
 type WorkAnnotationInput = WorkAdvisoryInput & {
@@ -1201,17 +1237,47 @@ function isSprintReference(value: unknown): value is SprintReference {
   return true;
 }
 
-const ADVISORY_FIELD_KEYS = Object.freeze({ scope: ADVISORY_SCOPE_KEY, decidedBy: ADVISORY_DECIDED_BY_KEY, sprint: ADVISORY_SPRINT_KEY, verify: ADVISORY_VERIFY_KEY, evidence: ADVISORY_EVIDENCE_KEY, evidenceSnapshot: ADVISORY_EVIDENCE_SNAPSHOT_KEY, result: ADVISORY_RESULT_KEY });
+const ADVISORY_FIELD_KEYS = Object.freeze({ scope: ADVISORY_SCOPE_KEY, decidedBy: ADVISORY_DECIDED_BY_KEY, sprint: ADVISORY_SPRINT_KEY, verify: ADVISORY_VERIFY_KEY, evidence: ADVISORY_EVIDENCE_KEY, evidenceSnapshot: ADVISORY_EVIDENCE_SNAPSHOT_KEY, result: ADVISORY_RESULT_KEY, relations: ADVISORY_RELATIONS_KEY, goal: ADVISORY_GOAL_KEY, acceptance: ADVISORY_ACCEPTANCE_KEY, body: ADVISORY_BODY_KEY });
 
-function workAdvisoryExtensions(base: Readonly<Record<string, unknown>>, advisory: WorkAdvisoryInput): Readonly<Record<string, unknown>> {
+// `relations` is the validated form of advisory.relations (validateRelationsInput), never the raw
+// input: each stored list it names replaces that list of advisory:relations whole (an empty one
+// removes it, and the extension goes when no list is left), and its decided-in list is written as
+// advisory:decided-by.
+function workAdvisoryExtensions(base: Readonly<Record<string, unknown>>, advisory: WorkAdvisoryInput, relations?: NormalizedWorkRelations): Readonly<Record<string, unknown>> {
   const next: Record<string, unknown> = { ...base };
   for (const field of Object.keys(ADVISORY_FIELD_KEYS) as Array<keyof WorkAdvisoryInput>) {
+    if (field === "relations") continue;
     const value = advisory[field];
     if (value === undefined) continue;
     const copied = field === "decidedBy" ? [...(value as readonly string[])] : field === "sprint" ? { workspaceId: (value as SprintReference).workspaceId, workId: (value as SprintReference).workId } : value;
     next[ADVISORY_FIELD_KEYS[field]] = { required: false, value: copied };
   }
+  if (relations !== undefined) {
+    if (relations.decidedIn !== undefined) next[ADVISORY_DECIDED_BY_KEY] = { required: false, value: [...relations.decidedIn] };
+    if (relations.lists !== undefined) {
+      const current = storedRelationsOf((base[ADVISORY_RELATIONS_KEY] as { readonly value?: unknown } | undefined)?.value);
+      const merged = mergeStoredRelations(current, relations.lists);
+      if (merged === null) {
+        delete next[ADVISORY_RELATIONS_KEY];
+      } else {
+        next[ADVISORY_RELATIONS_KEY] = { required: false, value: { ...merged } };
+      }
+    }
+  }
   return next;
+}
+
+// TCRN-CROSS-STORY-472 R2, R4: a write's relations, checked against the state it is built on.
+// decided-in and the older decided-by name one relation, so a write may give both only when they
+// agree.
+function workRelationsForWrite(state: WorkspaceState, id: string, input: WorkAdvisoryInput): NormalizedWorkRelations | undefined {
+  if (input.relations === undefined) return undefined;
+  const relations = validateRelationsInput(state, id, input.relations);
+  if (relations.decidedIn !== undefined && input.decidedBy !== undefined &&
+    canonicalJson([...input.decidedBy] as JsonValue) !== canonicalJson([...relations.decidedIn] as JsonValue)) {
+    fail("WORKSPACE_INPUT_INVALID", `work ${id} names decided-in and decided-by differently; they are one relation`);
+  }
+  return relations;
 }
 
 function workExtensionsDigest(extensions: Readonly<Record<string, unknown>>): string {
@@ -1351,10 +1417,32 @@ function advisoryHasMinutes(record: Pick<WorkRecord, "extensions">): boolean {
 
 function assertStoryCompletionAdmission(record: WorkRecord, targetStatus: WorkStatus): void {
   if (record.kind !== "Story" || targetStatus !== "done") return;
-  const scope = storyScopeFromRecord(record);
-  if (storyScopeNamesOwnerDecider(scope) && !advisoryHasMinutes(record)) {
+  // TCRN-CROSS-STORY-473: the decider is read from the goal, as a field or mapped from an old scope.
+  if (storyOwnerDeciderNamed(storyFields(record)) && !advisoryHasMinutes(record)) {
     fail("WORKSPACE_OWNER_ACCEPTANCE_REQUIRED", "Owner-decided Story requires a decided-by minutes backlink before done");
   }
+}
+
+const STORY_FIELD_REMEDY: Readonly<Record<StoryRequiredField, string>> = {
+  goal: "give --goal, or a scope whose Goal block holds it",
+  acceptance: "give --acceptance, or a scope whose Acceptance Criteria block holds it",
+};
+
+// TCRN-CROSS-STORY-473 R2: a Story has a goal and an acceptance -- its fields, or the Goal and
+// Acceptance Criteria blocks of its scope. Nothing else about its prose is checked.
+function assertStoryFields(record: Pick<WorkRecord, "id" | "kind" | "extensions">): void {
+  if (record.kind !== "Story") return;
+  const field = missingStoryField(storyFields(record));
+  if (field === null) return;
+  throw new WorkspaceError(
+    "WORK_STORY_FIELD_REQUIRED",
+    `Story ${record.id} has no ${field}: ${STORY_FIELD_REMEDY[field]}`,
+    { field, remedy: STORY_FIELD_REMEDY[field] },
+  );
+}
+
+function isStoryFieldText(value: unknown): boolean {
+  return typeof value === "string" && value.trim().length > 0 && value.isWellFormed() && !value.includes("\u0000");
 }
 
 function validateWorkAdvisoryInput(input: WorkAdvisoryInput, id: string, reasonCode: WorkspaceReasonCode): void {
@@ -1362,6 +1450,9 @@ function validateWorkAdvisoryInput(input: WorkAdvisoryInput, id: string, reasonC
     ["scope", (value) => typeof value === "string" && value.length > 0, "advisory scope must be a non-empty string"],
     ["decidedBy", (value) => Array.isArray(value) && value.length > 0 && value.every((item) => isMinutesId(item)), "advisory decided-by must be a non-empty list of minutes ids"],
     ["sprint", isSprintReference, "advisory sprint must be a {workspaceId, workId} qualified reference"],
+    ["goal", isStoryFieldText, "advisory goal must be non-empty text"],
+    ["acceptance", isStoryFieldText, "advisory acceptance must be non-empty text"],
+    ["body", isStoryFieldText, "advisory body must be non-empty text"],
   ];
   for (const [field, valid, message] of checks) {
     if (input[field] !== undefined && !valid(input[field])) fail(reasonCode, message);
@@ -1392,6 +1483,16 @@ function assertAdvisoryEntryShape(key: string, entry: unknown, id: string, reaso
     if (!isSprintReference(value)) {
       fail(reasonCode, `work ${id} advisory sprint must be a {workspaceId, workId} qualified reference`);
     }
+    return;
+  }
+  if (key === ADVISORY_GOAL_KEY || key === ADVISORY_ACCEPTANCE_KEY || key === ADVISORY_BODY_KEY) {
+    if (!isStoryFieldText(value)) fail(reasonCode, `work ${id} ${key} must be non-empty text`);
+    return;
+  }
+  if (key === ADVISORY_RELATIONS_KEY) {
+    // Shape only: replay never asks whether a target exists (TCRN-CROSS-STORY-472).
+    const problem = relationsShapeProblem(value, id);
+    if (problem !== null) fail(reasonCode, `work ${id} advisory relations ${problem}`);
     return;
   }
   if (key === ADVISORY_VERIFY_KEY) {
@@ -1850,6 +1951,7 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
   const conferences = collection<string, ConferenceRequest>((snapshot?.conferences ?? []).map((record) => [record.id, record]));
   const conferencePositions = collection<string, ConferencePosition>((snapshot?.conferencePositions ?? []).map((record) => [record.id, record]));
   const conferenceMinutes = collection<string, ConferenceMinutes>((snapshot?.conferenceMinutes ?? []).map((record) => [record.id, record]));
+  const minutesRecords = collection<string, MinutesRecord>((snapshot?.minutes ?? []).map((record) => [record.id, record]));
   const gates = collection<string, GateRecord>((snapshot?.gates ?? []).map((record) => [record.id, record]));
   // TCRN-CROSS-INC-389 R2: a replay snapshot taken while a key was live still lists it after the key
   // retires, as a 1.1.0-1.2.0 snapshot listed fitness.windowDays. The device cache only reads a
@@ -2058,13 +2160,30 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
         fail("WORKSPACE_EVENT_CORRUPT", `invalid conference close ${record.id}`);
       }
       assertPinnedExtensionFields(current as unknown as JsonValue, record as unknown as JsonValue, ["status", "revision", "updatedAt"], `conference ${record.id}`);
-      if (conferenceMinutes.has(minutes.id) || minutes.revision !== 1 || minutes.tombstone ||
+      if (conferenceMinutes.has(minutes.id) || minutesRecords.has(minutes.id) || minutes.revision !== 1 || minutes.tombstone ||
         minutes.conferenceId !== record.id || minutes.projectId !== record.projectId) {
         fail("WORKSPACE_EVENT_CORRUPT", `conference minutes ${minutes.id} are not bound to the closing conference`);
       }
       recordExtensionClosureValidation(3);
       conferences.set(record.id, record);
       conferenceMinutes.set(minutes.id, minutes);
+      continue;
+    }
+    if (minutesOperations.has(operation)) {
+      // TCRN-CROSS-STORY-475 R1: one record, written once. Its id (the one its external key derives)
+      // is new to the minutes a conference ever closed too, its project is live, and so is every
+      // work record it links.
+      const record = extensionRecordOrCorrupt(() => validateMinutesRecord(payloadRecord(payload, operation, actorRequired)));
+      requireEventBoundTimestamp(record.recordedAt, event, `minutes ${record.id}`);
+      if (minutesRecords.has(record.id) || conferenceMinutes.has(record.id)) {
+        fail("WORKSPACE_EVENT_CORRUPT", `duplicate minutes ${record.id}`);
+      }
+      requireLiveProject(projects, record.projectId, `minutes ${record.id}`);
+      for (const workId of record.linkedWorkIds) {
+        requireLiveWork(work, record.projectId, workId, `minutes ${record.id}`);
+      }
+      recordExtensionClosureValidation(1 + record.linkedWorkIds.length);
+      minutesRecords.set(record.id, record);
       continue;
     }
     if (gateOperations.has(operation)) {
@@ -2366,6 +2485,7 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
     conferences: sortExtensionRecords(conferences.values()),
     conferencePositions: sortExtensionRecords(conferencePositions.values()),
     conferenceMinutes: sortExtensionRecords(conferenceMinutes.values()),
+    minutes: sortExtensionRecords(minutesRecords.values()),
     gates: sortExtensionRecords(gates.values()),
     settings: settingRecords,
     executionConfig,
@@ -2480,7 +2600,7 @@ function viewSources(state: WorkspaceState): readonly ViewSource[] {
   // stay byte-identical for every workspace without extension records. STORY-299
   // does not touch that condition: the view set stays four, so no view is ever
   // orphaned and no deletion mechanism is owed.
-  if (state.conferences.length + state.gates.length + state.settings.length + state.templates.length > 0) {
+  if (state.conferences.length + state.gates.length + state.settings.length + state.templates.length + state.minutes.length > 0) {
     // STORY-299: v2 is a fixed-length verification summary, not an index. v1 carried
     // every conference, position, minutes and gate record whole, so the file grew with
     // the governed prose written into the chain and crossed the one MiB canonical
@@ -2513,6 +2633,8 @@ function viewSources(state: WorkspaceState): readonly ViewSource[] {
       gates: summarisedCollection(state.gates),
       ...(state.settings.length === 0 ? {} : { settings: summarisedCollection(state.settings) }),
       ...(state.templates.length === 0 ? {} : { templates: summarisedCollection(state.templates) }),
+      // TCRN-CROSS-STORY-475: present only when there are minutes, so every other view stays byte-identical.
+      ...(state.minutes.length === 0 ? {} : { minutes: summarisedCollection(state.minutes) }),
     };
     const digestsOnly: Record<string, string> = {};
     for (const key of Object.keys(collections).sort(compareCanonicalText)) {
@@ -2869,6 +2991,7 @@ interface LibrarySnapshotState {
   readonly conferences: readonly ConferenceRequest[];
   readonly conferencePositions: readonly ConferencePosition[];
   readonly conferenceMinutes: readonly ConferenceMinutes[];
+  readonly minutes: readonly MinutesRecord[];
   readonly gates: readonly GateRecord[];
   readonly settings: readonly WorkspaceSettingRecord[];
   readonly executionConfig: ExecutionConfigState;
@@ -2877,7 +3000,7 @@ interface LibrarySnapshotState {
   readonly merge: MergeReplayCheckpoint;
 }
 
-const SNAPSHOT_COLLECTIONS = ["projects", "work", "conferences", "conferencePositions", "conferenceMinutes", "gates", "settings", "templates"] as const;
+const SNAPSHOT_COLLECTIONS = ["projects", "work", "conferences", "conferencePositions", "conferenceMinutes", "minutes", "gates", "settings", "templates"] as const;
 
 function snapshotState(value: unknown): LibrarySnapshotState | null {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
@@ -2984,6 +3107,7 @@ async function refreshLibraryCache(
           conferences: replay.state.conferences,
           conferencePositions: replay.state.conferencePositions,
           conferenceMinutes: replay.state.conferenceMinutes,
+          minutes: replay.state.minutes,
           gates: replay.state.gates,
           settings: replay.state.settings,
           executionConfig: replay.state.executionConfig,
@@ -3093,6 +3217,7 @@ export interface MutationDelta {
   readonly conferences?: readonly ConferenceRequest[];
   readonly conferencePositions?: readonly ConferencePosition[];
   readonly conferenceMinutes?: readonly ConferenceMinutes[];
+  readonly minutes?: readonly MinutesRecord[];
   readonly gates?: readonly GateRecord[];
   readonly settings?: readonly WorkspaceSettingRecord[];
   readonly executionConfig?: ExecutionConfigState;
@@ -3135,6 +3260,7 @@ function committedFrom(
     conferences: delta.conferences ?? prior.conferences,
     conferencePositions: delta.conferencePositions ?? prior.conferencePositions,
     conferenceMinutes: delta.conferenceMinutes ?? prior.conferenceMinutes,
+    minutes: delta.minutes ?? prior.minutes,
     gates: delta.gates ?? prior.gates,
     settings: delta.settings ?? prior.settings,
     executionConfig: delta.executionConfig ?? prior.executionConfig,
@@ -3348,6 +3474,10 @@ export function createWorkDelta(input: {
   readonly status?: WorkStatus;
   readonly scope?: string;
   readonly decidedBy?: readonly string[];
+  readonly relations?: WorkRelationsInput;
+  readonly goal?: string;
+  readonly acceptance?: string;
+  readonly body?: string;
   readonly title?: string | null;
   readonly summary?: string | null;
   readonly labels?: readonly string[];
@@ -3365,6 +3495,10 @@ export async function createWork(workspaceRoot: string, input: {
   readonly status?: WorkStatus;
   readonly scope?: string;
   readonly decidedBy?: readonly string[];
+  readonly relations?: WorkRelationsInput;
+  readonly goal?: string;
+  readonly acceptance?: string;
+  readonly body?: string;
   readonly title?: string | null;
   readonly summary?: string | null;
   readonly labels?: readonly string[];
@@ -3381,12 +3515,25 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
   readonly status?: WorkStatus;
   readonly scope?: string;
   readonly decidedBy?: readonly string[];
+  readonly relations?: WorkRelationsInput;
+  readonly goal?: string;
+  readonly acceptance?: string;
+  readonly body?: string;
   readonly title?: string | null;
   readonly summary?: string | null;
   readonly labels?: readonly string[];
   readonly templateAdmission?: unknown;
   readonly occurredAt: string;
 }): MutationDelta {
+  // TCRN-CROSS-STORY-472 R1: refused on the write path only. Replay and validateWorkGraph keep
+  // accepting the historical kinds, so every chain that holds one still reads.
+  if (RETIRED_WORK_KINDS.includes(input.kind)) {
+    throw new WorkspaceError(
+      "WORK_KIND_RETIRED",
+      `a new ${input.kind} is no longer created: ${WORK_KIND_RETIRED_REMEDY}`,
+      { kind: input.kind, remedy: WORK_KIND_RETIRED_REMEDY },
+    );
+  }
   const externalKey = canonicalExternalKey(input.externalKey);
   const id = deriveStableId("work", externalKey);
   {
@@ -3412,21 +3559,16 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
           `cannot add live work under Initiative ${parent.id}: it is already done`);
       }
     }
-    if (input.kind === "Story" && input.scope === undefined) {
-      fail("WORKSPACE_STORY_SCOPE_REQUIRED", "a new Story must carry its complete scope atomically");
-    }
-    if (input.scope !== undefined && input.scope.length === 0) {
-      fail("WORKSPACE_STORY_SCOPE_REQUIRED", "Story scope must be a non-empty string");
-    }
     validateWorkAdvisoryInput(input, id, "WORKSPACE_INPUT_INVALID");
+    const relations = workRelationsForWrite(state, id, input);
     const title = normalizeWorkTitle(input.title);
     const labels = normalizeWorkLabels(input.labels ?? []);
-    // TCRN-CROSS-STORY-363. An explicit --summary wins; otherwise the first
-    // sentence of the Goal block, which is where the author already wrote the
-    // one-line answer. A record with neither carries summary: null rather than
-    // no field, so every record born after this change has one shape.
+    // TCRN-CROSS-STORY-363, STORY-473. An explicit --summary wins; otherwise the first
+    // sentence of the goal -- the goal field, or the Goal block of the scope -- which is
+    // where the author already wrote the one-line answer. A record with neither carries
+    // summary: null rather than no field, so every record born after this change has one shape.
     const summary = input.summary === undefined
-      ? deriveWorkSummary(input.scope, WORK_SUMMARY_MAX_BYTES)
+      ? summarizeGoal(input.goal ?? deriveStoryFieldsFromScope(input.scope).goal, WORK_SUMMARY_MAX_BYTES)
       : normalizeWorkSummary(input.summary);
     const templateReceipt = input.templateAdmission === undefined
       ? undefined
@@ -3440,7 +3582,7 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
     if (templateRecord !== undefined && !templateRecord.template.appliesTo.includes(input.kind)) {
       throw new TemplateAdmissionError("TEMPLATE_NOT_APPLICABLE", `${templateRecord.template.id}:${input.kind}`);
     }
-    const extensions: Record<string, unknown> = workAdvisoryExtensions({}, input);
+    const extensions: Record<string, unknown> = workAdvisoryExtensions({}, input, relations);
     if (templateReceipt !== undefined && templateRecord !== undefined) {
       extensions[templateRecord.registrationId] = { required: true, value: templateBindingFromReceipt(templateReceipt) };
     }
@@ -3462,15 +3604,9 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
       labels,
       summary,
     };
-    // A bound Story is governed by the admitted heading data, not by the
-    // pre-template ten-heading parser.  Unbound records retain the legacy
-    // validator so the pre-era exemption stays byte/replay compatible.
-    if (record.kind === "Story" && templateRecord === undefined) {
-      const compliance = validateStoryRecord(record);
-      if (!compliance.ok) {
-        fail("WORKSPACE_STORY_SCOPE_INVALID", describeStoryScopeProblems(compliance.problems));
-      }
-    }
+    // TCRN-CROSS-STORY-473 R1, R2: a Story is checked for its goal and its acceptance and
+    // nothing else, bound to a template or not; the ten-block contract is gone.
+    assertStoryFields(record);
     validateBoundTemplateWork(record, state.templates);
     assertStoryCompletionAdmission(record, record.status);
     const work = validateWorkGraph([...state.work, record], templateRegistry(state.templates));
@@ -3515,22 +3651,13 @@ function hasLiveNonTerminalDescendant(work: readonly WorkRecord[], recordId: str
 // a chain that legitimately closed an Initiative before 0.10.0 while descendants were open.
 // A rule placed here fires on live mutations only, which is what it always did.
 function assertTransitionAdmission(state: WorkspaceState, input: { readonly id: string; readonly status: WorkStatus }): void {
-  // Scope is a live write-path admission rule. Historical chains remain replayable;
-  // unbound Stories use the legacy ten-block contract, while a bound Story is checked
-  // against its admitted template and the same engine floor before it enters an execution
-  // or completion state.
+  // A live write-path admission rule; historical chains remain replayable. Before a Story
+  // enters an execution or completion state it has a goal and an acceptance (TCRN-CROSS-STORY-473:
+  // fields, or the blocks of its scope); a record bound to a template is checked against it.
   if (["ready", "active", "done"].includes(input.status)) {
     const current = workById(state, input.id);
-    const templateBound = templateBindingFromWorkRecord(current) !== null;
     validateBoundTemplateWork(current, state.templates);
-    if (current.kind === "Story" && !templateBound) {
-      const compliance = validateStoryRecord(current);
-      if (!compliance.ok) {
-        const hasScope = storyScopeFromRecord(current) !== null;
-        fail(hasScope ? "WORKSPACE_STORY_SCOPE_INVALID" : "WORKSPACE_STORY_SCOPE_REQUIRED",
-          describeStoryScopeProblems(compliance.problems));
-      }
-    }
+    assertStoryFields(current);
     assertStoryCompletionAdmission(current, input.status);
   }
   // WSA-3 (write-path admission): closing an Initiative to `done` is an act of
@@ -3620,10 +3747,12 @@ function annotateWorkReducerDelta(state: WorkspaceState, input: WorkAnnotationIn
   if (current.tombstone) {
     fail("WORKSPACE_INPUT_INVALID", `work ${input.id} is deleted`);
   }
-  if (input.scope === undefined && input.decidedBy === undefined && input.verify === undefined && input.result === undefined && input.sprint === undefined && input.title === undefined && input.summary === undefined && input.labels === undefined) {
-    fail("WORKSPACE_INPUT_INVALID", "an annotation must set scope, decided-by, verify, result, sprint, title, summary, or labels");
+  if (input.scope === undefined && input.decidedBy === undefined && input.verify === undefined && input.result === undefined && input.sprint === undefined && input.relations === undefined && input.goal === undefined && input.acceptance === undefined && input.body === undefined && input.title === undefined && input.summary === undefined && input.labels === undefined) {
+    fail("WORKSPACE_INPUT_INVALID", "an annotation must set scope, decided-by, verify, result, sprint, relations, goal, acceptance, body, title, summary, or labels");
   }
   validateWorkAdvisoryInput(input, input.id, "WORKSPACE_INPUT_INVALID");
+  // TCRN-CROSS-STORY-472: each relation list an annotation names is replaced whole.
+  const relations = workRelationsForWrite(state, input.id, input);
   const title = input.title === undefined ? current.title ?? null : normalizeWorkTitle(input.title);
   const labels = input.labels === undefined ? current.labels ?? [] : normalizeWorkLabels(input.labels);
   // TCRN-CROSS-STORY-363. This is the door the historical backfill goes through:
@@ -3631,7 +3760,7 @@ function annotateWorkReducerDelta(state: WorkspaceState, input: WorkAnnotationIn
   // that is the only way a pre-363 record acquires one -- by an event that says
   // who wrote it and when, not by a replay-time default.
   const summary = input.summary === undefined ? current.summary : normalizeWorkSummary(input.summary);
-  const extensions = workAdvisoryExtensions(current.extensions, input);
+  const extensions = workAdvisoryExtensions(current.extensions, input, relations);
   // TCRN-CROSS-INC-269: the reducer's own predicate, run before the event exists.
   // title, labels and summary are top-level work fields rather than extensions, so an
   // annotation that moved only them once satisfied a separate no-op check here and
@@ -3657,12 +3786,11 @@ function annotateWorkReducerDelta(state: WorkspaceState, input: WorkAnnotationIn
     revision: current.revision + 1,
     updatedAt: input.occurredAt,
   };
-  const templateBound = templateBindingFromWorkRecord(record) !== null;
-  if (record.kind === "Story" && input.scope !== undefined && !templateBound) {
-    const compliance = validateStoryRecord(record);
-    if (!compliance.ok) {
-      fail("WORKSPACE_STORY_SCOPE_INVALID", describeStoryScopeProblems(compliance.problems));
-    }
+  // TCRN-CROSS-STORY-473 R2: an annotation that rewrites what a Story's goal or acceptance is read
+  // from must leave both in place. One that touches neither -- a title, a summary, a relation --
+  // stays open to every Story, including one written before the fields existed.
+  if (input.goal !== undefined || input.acceptance !== undefined || input.scope !== undefined) {
+    assertStoryFields(record);
   }
   validateBoundTemplateWork(record, state.templates);
   const work = validateWorkGraph(state.work.map((entry) => entry.id === record.id ? record : entry), templateRegistry(state.templates));
@@ -3683,192 +3811,74 @@ export async function deleteWork(workspaceRoot: string, input: {
   }, input);
 }
 
-// WSE-2: the attestation.actor.enabled chain event is history now. Its write verb is
-// retired (TCRN-CROSS-STORY-467 R2); a chain that carries it still replays through the
-// reducer above and still demands an actor from that event on, which appendEvents
-// enforces for every later write.
-
-// WSD-1: verb-side lookups for the extension collections. The referenced record
-// must exist; conference mutations additionally require the referenced
-// conference to be open, failing WORKSPACE_CONFERENCE_NOT_OPEN otherwise — the
-// same rule the reducer replays as WORKSPACE_EVENT_CORRUPT.
-function openConferenceById(state: WorkspaceState, id: string): ConferenceRequest {
-  const record = state.conferences.find((entry) => entry.id === id);
-  if (!record) {
-    fail("WORKSPACE_INPUT_INVALID", `conference ${id} is unavailable`);
-  }
-  if (record.status !== "open") {
-    fail("WORKSPACE_CONFERENCE_NOT_OPEN", `conference ${id} is ${record.status}`);
-  }
-  return record;
+// TCRN-CROSS-STORY-475 R1, R2 (MIN-227 D9, D10): record minutes in one write. The external key is
+// the writer's, or the next free number under the prefix of the minutes recorded last
+// (nextMinutesExternalKey); either way the id it derives must be new, to the minutes a conference
+// ever closed as well. Every linked work record is live and in the minutes' project.
+export interface RecordMinutesInput {
+  readonly externalKey?: string;
+  // Used only when no externalKey is given: the prefix to number under (TCRN-CROSS-MIN- say).
+  readonly externalKeyPrefix?: string;
+  readonly projectId: string;
+  readonly title: string;
+  readonly summary: string;
+  readonly decisions: readonly string[];
+  readonly decidedBy: readonly string[];
+  readonly linkedWorkIds: readonly string[];
 }
 
-// WSD-1: the extension mutation verbs (the four conference ones since the gate verbs
-// retired). Each derives its stable id from an external key, validates its record
-// through the unchanged conference validators (validator failures propagate verbatim for the CLI to surface),
-// and appends exactly one event through appendEvent and the shared SDC-2
-// payload constructor.
-export async function openConferenceInWorkspace(workspaceRoot: string, input: {
-  readonly externalKey: string;
-  readonly projectId: string;
-  readonly type: ConferenceRequest["type"];
-  readonly title: string;
-  readonly linkedWorkIds: readonly string[];
-  readonly desiredOutcome: string;
-  readonly participantIds: readonly string[];
-} & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  const id = deriveStableId("conference", canonicalExternalKey(input.externalKey));
-  return appendEvent(workspaceRoot, (state) => {
+export function recordMinutesDelta(input: RecordMinutesInput & { readonly occurredAt: string }): (state: WorkspaceState) => MutationDelta {
+  return (state) => {
     projectById(state, input.projectId);
     for (const workId of input.linkedWorkIds) {
       if (workById(state, workId).projectId !== input.projectId) {
         fail("WORKSPACE_INPUT_INVALID", `work ${workId} is outside project ${input.projectId}`);
       }
     }
-    if (state.conferences.some((entry) => entry.id === id)) {
-      fail("WORKSPACE_INPUT_INVALID", `conference ${id} already exists`);
+    const externalKey = input.externalKey === undefined
+      ? nextMinutesExternalKey(state, input.externalKeyPrefix)
+      : canonicalExternalKey(input.externalKey);
+    const id = deriveStableId("minutes", externalKey);
+    if (state.minutes.some((entry) => entry.id === id) || state.conferenceMinutes.some((entry) => entry.id === id)) {
+      fail("WORKSPACE_INPUT_INVALID", `minutes ${externalKey} (${id}) already exist`);
     }
-    const record = openConference({
-      schemaVersion: CONFERENCE_REQUEST_VERSION,
+    const record = validateMinutesRecord({
+      schemaVersion: MINUTES_RECORD_VERSION,
       id,
+      externalKey,
       projectId: input.projectId,
-      type: input.type,
       title: input.title,
-      linkedWorkIds: input.linkedWorkIds,
-      desiredOutcome: input.desiredOutcome,
-      participantIds: input.participantIds,
-      status: "open",
-      revision: 1,
-      updatedAt: input.occurredAt,
-      tombstone: false,
-      extensions: {},
-    });
-    return {
-      payload: buildEventPayload("conference.created", record as unknown as JsonValue),
-      projects: state.projects,
-      work: state.work,
-      conferences: sortExtensionRecords([...state.conferences, record]),
-    };
-  }, input);
-}
-
-export async function appendConferencePositionInWorkspace(workspaceRoot: string, input: {
-  readonly conferenceId: string;
-  readonly externalKey: string;
-  // WSE-3 correction: this is the position's author, which is a different thing from the
-  // attestation actor that WorkspaceMutationOptions carries. Both used to be spelled
-  // actorId, and because this type intersects with those options the two collapsed into
-  // one property -- so supplying an attestation actor silently overwrote the author of
-  // the record being written, with no error and no way for a caller to express both.
-  readonly authorActorId: string;
-  readonly stance?: string;
-  readonly position: string;
-  readonly risks: readonly string[];
-  readonly recommendations: readonly string[];
-  readonly evidenceIds: readonly string[];
-} & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  const id = deriveStableId("position", canonicalExternalKey(input.externalKey));
-  return appendEvent(workspaceRoot, (state) => {
-    const conference = openConferenceById(state, input.conferenceId);
-    if (state.conferencePositions.some((entry) => entry.id === id)) {
-      fail("WORKSPACE_INPUT_INVALID", `conference position ${id} already exists`);
-    }
-    // MIN-102 裁定四. The deployment's own writing budget for a position, read the way
-    // execution.independenceFloor is read: on the write path, from the state this
-    // mutation is building on. Replay never consults it — CONFERENCE_POSITION_CEILING_BYTES
-    // is the only bound a record's validity depends on — so lowering this setting can
-    // never invalidate a position already on the chain, and raising it can never admit
-    // one the ceiling would refuse. The reason code is the budget's own, because from
-    // the writer's side this is the same event: the position did not fit.
-    const positionBudget = Number(
-      state.settings.find((entry) => entry.key === "conference.positionBudgetBytes")?.value
-        ?? settingsCatalogEntry("conference.positionBudgetBytes").defaultValue,
-    );
-    if (Buffer.byteLength(input.position, "utf8") > positionBudget) {
-      throw new ConferenceError("CONFERENCE_BUDGET_EXCEEDED", `position exceeds conference.positionBudgetBytes=${positionBudget}`);
-    }
-    const record = appendConferencePosition({
-      schemaVersion: CONFERENCE_POSITION_VERSION,
-      id,
-      conferenceId: conference.id,
-      projectId: conference.projectId,
-      actorId: input.authorActorId,
-      ...(input.stance === undefined ? {} : { stance: input.stance }),
-      position: input.position,
-      risks: input.risks,
-      recommendations: input.recommendations,
-      evidenceIds: input.evidenceIds,
-      revision: 1,
-      updatedAt: input.occurredAt,
-      tombstone: false,
-      extensions: {},
-    }, conference);
-    return {
-      payload: buildEventPayload("conference.position.appended", record as unknown as JsonValue),
-      projects: state.projects,
-      work: state.work,
-      conferencePositions: sortExtensionRecords([...state.conferencePositions, record]),
-    };
-  }, input);
-}
-
-export async function closeConferenceInWorkspace(workspaceRoot: string, input: {
-  readonly conferenceId: string;
-  readonly minutesExternalKey: string;
-  readonly summary: string;
-  readonly outcomeClass: ConferenceMinutes["outcomeClass"];
-  readonly decisions: readonly string[];
-  readonly unresolvedIssues: readonly string[];
-  readonly executionForm?: string | undefined;
-} & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  const minutesId = deriveStableId("minutes", canonicalExternalKey(input.minutesExternalKey));
-  return appendEvent(workspaceRoot, (state) => {
-    const conference = openConferenceById(state, input.conferenceId);
-    if (state.conferenceMinutes.some((entry) => entry.id === minutesId)) {
-      fail("WORKSPACE_INPUT_INVALID", `conference minutes ${minutesId} already exist`);
-    }
-    // INIT-026 S234: where the workspace's independence floor covers this
-    // conference's type, the close must declare an independent execution form.
-    // The declaration is a self-report, validated for presence and value and
-    // never for truth — the same authorization-not-authentication ceiling
-    // the retired gate identity roster stated about itself; see CONFERENCE_EXECUTION_FORMS.
-    if (input.executionForm !== undefined && !(CONFERENCE_EXECUTION_FORMS as readonly string[]).includes(input.executionForm)) {
-      fail("WORKSPACE_INPUT_INVALID", `execution-form must be one of ${CONFERENCE_EXECUTION_FORMS.join(", ")}`);
-    }
-    const independenceFloor = state.settings.find((entry) => entry.key === "execution.independenceFloor")?.value ?? "none";
-    if (independenceFloorCovers(independenceFloor, conference.type) && input.executionForm !== "independent") {
-      fail("CONFERENCE_INDEPENDENCE_REQUIRED",
-        `execution.independenceFloor=${independenceFloor} covers type=${conference.type}; close requires --execution-form independent`);
-    }
-    const record = validateConferenceRequest({ ...conference, status: "closed", revision: conference.revision + 1, updatedAt: input.occurredAt });
-    const minutes = validateConferenceMinutes({
-      schemaVersion: CONFERENCE_MINUTES_VERSION,
-      id: minutesId,
-      conferenceId: conference.id,
-      projectId: conference.projectId,
       summary: input.summary,
-      outcomeClass: input.outcomeClass,
-      decisions: input.decisions,
-      unresolvedIssues: input.unresolvedIssues,
+      decisions: [...input.decisions],
+      decidedBy: [...input.decidedBy],
+      linkedWorkIds: [...input.linkedWorkIds],
+      recordedAt: input.occurredAt,
       revision: 1,
-      updatedAt: input.occurredAt,
       tombstone: false,
-      // The extension mechanism's native shape: a protocol-id key carrying a
-      // {required, value} declaration. required:false so a reader that does not
-      // know this key is never forced to interpret it.
-      extensions: input.executionForm === undefined ? {} : { "conference:execution-form": { required: false, value: input.executionForm } },
     });
-    // The single-event atomic close: the payload carries the closed conference
-    // as its record and the minutes as the registered per-operation extra.
     return {
-      payload: buildEventPayload("conference.closed", record as unknown as JsonValue, undefined, { minutes: minutes as unknown as JsonValue }),
+      payload: buildEventPayload(MINUTES_RECORDED_OPERATION, record as unknown as JsonValue),
       projects: state.projects,
       work: state.work,
-      conferences: sortExtensionRecords(state.conferences.map((entry) => entry.id === record.id ? record : entry)),
-      conferenceMinutes: sortExtensionRecords([...state.conferenceMinutes, minutes]),
+      minutes: sortExtensionRecords([...state.minutes, record]),
     };
-  }, input);
+  };
 }
+
+export async function recordMinutes(workspaceRoot: string, input: RecordMinutesInput & WorkspaceMutationOptions): Promise<WorkspaceState> {
+  return appendEvent(workspaceRoot, recordMinutesDelta(input), input);
+}
+
+// WSE-2: the attestation.actor.enabled chain event is history now. Its write verb is
+// retired (TCRN-CROSS-STORY-467 R2); a chain that carries it still replays through the
+// reducer above and still demands an actor from that event on, which appendEvents
+// enforces for every later write.
+
+// TCRN-CROSS-STORY-475 R3 (MIN-227 D10): the conference write verbs -- open, append a position,
+// close (with its execution-form declaration, the execution.independenceFloor check and the
+// conference.positionBudgetBytes budget) and cancel -- are retired. Decisions are recorded as minutes
+// (recordMinutes above); every conference event already on a chain replays through the reducer
+// arms, which keep every check they made.
 
 // INIT-027 S238. Custom personas are content records on the same governed
 // execution surface. Their ids are derived from names inside profile-store.ts;
@@ -4075,21 +4085,6 @@ export async function removePersonaBindingInWorkspace(workspaceRoot: string, inp
   }), input);
 }
 
-export async function cancelConferenceInWorkspace(workspaceRoot: string, input: {
-  readonly conferenceId: string;
-} & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, (state) => {
-    const conference = openConferenceById(state, input.conferenceId);
-    const record = validateConferenceRequest({ ...conference, status: "cancelled", revision: conference.revision + 1, updatedAt: input.occurredAt });
-    return {
-      payload: buildEventPayload("conference.updated", record as unknown as JsonValue),
-      projects: state.projects,
-      work: state.work,
-      conferences: sortExtensionRecords(state.conferences.map((entry) => entry.id === record.id ? record : entry)),
-    };
-  }, input);
-}
-
 // gate-v1: the gate write verbs (create, transition, delete) are retired with the rest of
 // the authority family (TCRN-CROSS-STORY-467 R2). Gate records already on a chain still
 // replay -- lifecycle, evidence re-resolution and the identity-decision shape are checked by
@@ -4213,7 +4208,7 @@ export async function exportWorkspace(workspaceRoot: string): Promise<string> {
   // bytes (and the archive digest) stay identical for every workspace without
   // conference/gate events. canonicalJson sorts keys, so conditional inclusion
   // is byte-stable.
-  const extensionCollections = state.conferences.length + state.gates.length + state.settings.length + state.templates.length > 0
+  const extensionCollections = state.conferences.length + state.gates.length + state.settings.length + state.templates.length + state.minutes.length > 0
     ? {
       conferences: state.conferences,
       conferencePositions: state.conferencePositions,
@@ -4221,6 +4216,7 @@ export async function exportWorkspace(workspaceRoot: string): Promise<string> {
       gates: state.gates,
       ...(state.settings.length === 0 ? {} : { settings: state.settings }),
       ...(state.templates.length === 0 ? {} : { templates: state.templates }),
+      ...(state.minutes.length === 0 ? {} : { minutes: state.minutes }),
     }
     : {};
   return canonicalJson({

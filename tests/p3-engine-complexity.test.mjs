@@ -7,22 +7,25 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
-  appendConferencePositionInWorkspace,
-  closeConferenceInWorkspace,
   createProject,
   createWork,
   deleteWork,
   initializeLibrary,
   materializeWorkspace,
-  openConferenceInWorkspace,
   transitionWork,
 } from "../dist/build/packages/core/src/index.js";
 import * as publicCore from "../dist/build/packages/core/src/index.js";
 import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 import { withWorkspacePerfInstrumentation } from "../dist/build/packages/core/src/workspace-perf-instrumentation.js";
-// The gate verbs are retired (TCRN-CROSS-STORY-467 R2); gate history is appended the way
-// they wrote it, and replay is what these cases count.
-import { appendHistoricalGateCreate, appendHistoricalGateTransition } from "./helpers/workspace-fixture.mjs";
+// The gate verbs (TCRN-CROSS-STORY-467 R2) and the conference verbs (TCRN-CROSS-STORY-475 R3) are
+// retired; their history is appended the way they wrote it, and replay is what these cases count.
+import {
+  appendHistoricalConferenceClose,
+  appendHistoricalConferenceOpen,
+  appendHistoricalConferencePosition,
+  appendHistoricalGateCreate,
+  appendHistoricalGateTransition,
+} from "./helpers/workspace-fixture.mjs";
 
 const minutesLocator = (minutesExternalKey) => `conference-minutes:${deriveStableId("minutes", minutesExternalKey).slice("minutes:".length)}`;
 
@@ -102,16 +105,16 @@ test("WSD-1: extension reducer arms are O(delta) with exact per-operation counts
   let version = fx.version;
   const at = () => instant(version + 2);
   const anchorId = (await materializeWorkspace(fx.workspace)).work.find((r) => r.externalKey === "INITIATIVE-0").id;
-  let state = await openConferenceInWorkspace(fx.workspace, {
+  let state = await appendHistoricalConferenceOpen(fx.workspace, {
     occurredAt: at(), externalKey: "CONF-COMPLEXITY", projectId: fx.projectId, type: "architecture",
     title: "Complexity", linkedWorkIds: [anchorId], desiredOutcome: "prove O(delta)", participantIds: [],
   }); version += 1;
   const conferenceId = state.conferences[0].id;
-  state = await appendConferencePositionInWorkspace(fx.workspace, {
+  state = await appendHistoricalConferencePosition(fx.workspace, {
     occurredAt: at(), conferenceId, externalKey: "POSITION-COMPLEXITY", authorActorId: "profile:counter-01",
     position: "Count the visits.", risks: [], recommendations: [], evidenceIds: [],
   }); version += 1;
-  state = await closeConferenceInWorkspace(fx.workspace, {
+  state = await appendHistoricalConferenceClose(fx.workspace, {
     occurredAt: at(), conferenceId, minutesExternalKey: "MINUTES-COMPLEXITY",
     summary: "Counted.", outcomeClass: "role_decision", decisions: ["count"], unresolvedIssues: [],
   }); version += 1;
@@ -205,16 +208,16 @@ test("CQ-10b: a gate-satisfied transition copies the whole conference and minute
   const anchorId = (await materializeWorkspace(fx.workspace)).work.find((r) => r.externalKey === "INITIATIVE-0").id;
   const conferences = 2;
   for (let i = 0; i < conferences; i += 1) {
-    await openConferenceInWorkspace(fx.workspace, {
+    await appendHistoricalConferenceOpen(fx.workspace, {
       occurredAt: at(), externalKey: `CONF-SAT-${i}`, projectId: fx.projectId, type: "architecture",
       title: `Satisfy ${i}`, linkedWorkIds: [anchorId], desiredOutcome: "resolve evidence", participantIds: [],
     }); version += 1;
     const conferenceId = deriveStableId("conference", `CONF-SAT-${i}`);
-    await appendConferencePositionInWorkspace(fx.workspace, {
+    await appendHistoricalConferencePosition(fx.workspace, {
       occurredAt: at(), conferenceId, externalKey: `POSITION-SAT-${i}`, authorActorId: "profile:counter-01",
       position: "Counted.", risks: [], recommendations: [], evidenceIds: [],
     }); version += 1;
-    await closeConferenceInWorkspace(fx.workspace, {
+    await appendHistoricalConferenceClose(fx.workspace, {
       occurredAt: at(), conferenceId, minutesExternalKey: `MINUTES-SAT-${i}`,
       summary: "Counted.", outcomeClass: "role_decision", decisions: ["count"], unresolvedIssues: [],
     }); version += 1;

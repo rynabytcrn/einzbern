@@ -7,7 +7,6 @@ import { fileURLToPath } from "node:url";
 export const RULE_REGISTRY_PATH = resolve(dirname(fileURLToPath(import.meta.url)), "policy/story-rule-conservation.json");
 export const REQUIRED_SOURCES = Object.freeze([
   "docs/dispatch-readiness-convention.md",
-  "TCRN-AOS/docs/reports/init-020/HANDOVER-2026-08-08-final-codex.md",
   "chain:cross-project:TCRN-CROSS-INC-108",
   "chain:cross-project:TCRN-CROSS-INC-117",
   ".claude/skills/mana-orchestrate/references/workflow-operations.md",
@@ -16,7 +15,6 @@ export const REQUIRED_SOURCES = Object.freeze([
   "scripts/closeout-verify.mjs",
   "tests/closeout-verify-dispositions.test.mjs",
   "chain:cross-project:TCRN-CROSS-MIN-CHAIN-NATIVE-20260916",
-  "tests/story-scope-compliance.test.mjs",
 ]);
 
 export function readStoryRuleRegistry(path = RULE_REGISTRY_PATH) {

@@ -37,10 +37,12 @@ async function cli(arguments_) {
   return JSON.parse(output);
 }
 
-test("STORY-347 settings catalog exposes all six new keys and numeric bounds", async (context) => {
+test("STORY-347 settings catalog exposes the new keys that remain and numeric bounds", async (context) => {
   const fx = await fixture(context, "CATALOG");
   const catalog = await cli(["settings-catalog", "--workspace", fx.workspace]);
-  const expected = ["storage.segmentBytes", "storage.snapshotEveryEvents", "storage.backend", "injection.budgetBytes", "injection.perPromptBytes", "retrieval.scopeExcerptBytes", "knowledge.aggregateBytes"];
+  // injection.budgetBytes retired with the session-wide injection it budgeted (TCRN-CROSS-STORY-474).
+  assert.equal(catalog.settings.some((entry) => entry.key === "injection.budgetBytes"), false);
+  const expected = ["storage.segmentBytes", "storage.snapshotEveryEvents", "storage.backend", "injection.perPromptBytes", "retrieval.scopeExcerptBytes", "knowledge.aggregateBytes"];
   const entries = catalog.settings.filter((entry) => expected.includes(entry.key));
   assert.deepEqual(entries.map((entry) => entry.key).sort(), [...expected].sort());
   // TCRN-CROSS-STORY-469: the key now sizes a library's stream segments, and its default is the
@@ -48,7 +50,6 @@ test("STORY-347 settings catalog exposes all six new keys and numeric bounds", a
   assert.equal(entries.find((entry) => entry.key === "storage.segmentBytes").defaultValue, "1048576");
   assert.equal(entries.find((entry) => entry.key === "storage.snapshotEveryEvents").defaultValue, "512");
   assert.equal(entries.find((entry) => entry.key === "storage.backend").defaultValue, "file-segmented");
-  assert.equal(entries.find((entry) => entry.key === "injection.budgetBytes").defaultValue, "24576");
   assert.equal(entries.find((entry) => entry.key === "injection.perPromptBytes").defaultValue, "1600");
   assert.equal(entries.find((entry) => entry.key === "retrieval.scopeExcerptBytes").defaultValue, "512");
   assert.equal(entries.find((entry) => entry.key === "knowledge.aggregateBytes").defaultValue, "131072");
@@ -64,8 +65,10 @@ test("STORY-347 settings reject below-minimum values and retrieval setting suppl
     key: "retrieval.scopeExcerptBytes", value: "12", occurredAt: instant(2),
   });
   state = await createProject(fx.workspace, { externalKey: "STORY-347-PROJECT", name: "Settings", occurredAt: instant(3) });
+  // A parentless record the write path still creates (a new Incident is refused since
+  // TCRN-CROSS-STORY-472); the excerpt window is the point, not the kind.
   state = await createWork(fx.workspace, {
-    projectId: state.projects[0].id, externalKey: "STORY-347-INCIDENT", kind: "Incident", parentId: null,
+    projectId: state.projects[0].id, externalKey: "STORY-347-INITIATIVE", kind: "Initiative", parentId: null,
     scope: "【Goal】abcdefghijklmnop", occurredAt: instant(4),
   });
   const defaultWindow = await cli(["work-list", "--workspace", fx.workspace, "--search", "abc"]);

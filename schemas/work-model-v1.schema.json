@@ -2,6 +2,7 @@
   "$id": "https://tcrn.dev/schemas/work-model-v1.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "TCRN Work Model V1",
+  "$comment": "A stored work record of any kind reads, including every Incident, Release, Review and Knowledge record already on a chain. Since TCRN-CROSS-STORY-472 R1 a write creates only Initiative, Epic, Story and Subtask records (WORK_KIND_RETIRED otherwise). Relations are fields (STORY-472 R2): parentId, the advisory:decided-by minutes list (decided-in), and the required:false extension advisory:relations whose value is $defs/relationsExtensionValue; the reverse relations are projected on read and never stored.",
   "type": "object",
   "additionalProperties": false,
   "x-tcrn-aos-requirementIds": [
@@ -35,6 +36,7 @@
       "$ref": "./protocol-common-v1.schema.json#/$defs/stableId"
     },
     "kind": {
+      "$comment": "All eight kinds are valid stored records; new records take only Initiative, Epic, Story or Subtask (TCRN-CROSS-STORY-472 R1).",
       "enum": [
         "Initiative",
         "Epic",
@@ -80,6 +82,37 @@
     },
     "extensions": {
       "$ref": "./protocol-common-v1.schema.json#/$defs/extensionMap"
+    }
+  },
+  "$defs": {
+    "relationsExtensionValue": {
+      "$comment": "The value of the advisory:relations extension (TCRN-CROSS-STORY-472 R2): the forward relations blocked-by, implements, supersedes and fixes. Each list is sorted in utf8-byte-order-v1, holds no repeats and never names the record itself.",
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "blockedBy": {
+          "$ref": "#/$defs/relationTargets"
+        },
+        "implements": {
+          "$ref": "#/$defs/relationTargets"
+        },
+        "supersedes": {
+          "$ref": "#/$defs/relationTargets"
+        },
+        "fixes": {
+          "$ref": "#/$defs/relationTargets"
+        }
+      }
+    },
+    "relationTargets": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "./protocol-common-v1.schema.json#/$defs/stableId"
+      }
     }
   }
 }

@@ -71,7 +71,7 @@ async function storeTrailingByOneWrite() {
   });
   const advanced = await createWork(workspace, {
     occurredAt: instant(19, 5), projectId: state.projects[0].id,
-    externalKey: "INC226-THE-ONE-WRITE", kind: "Incident", parentId: null, status: "active",
+    externalKey: "INC226-THE-ONE-WRITE", kind: "Initiative", parentId: null, status: "active",
   });
   return { base, workspace, headEventHash: advanced.headEventHash, projectId: state.projects[0].id, workId: state.work[0].id };
 }

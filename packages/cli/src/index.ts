@@ -104,8 +104,12 @@ import {
   rollbackEngine,
   updateEngine,
   libraryUpgradeReadiness,
+  RELATION_NAMES,
+  REVERSE_RELATION_NAMES,
+  relationFilter,
+  workRelations,
 } from "../../core/src/index.js";
-import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider } from "../../core/src/index.js";
+import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider, WorkRelationsInput } from "../../core/src/index.js";
 import type {
   ConferenceRequest,
   ConferenceMinutes,
@@ -307,6 +311,47 @@ function sprintReference(value: string): { readonly workspaceId: string; readonl
     fail("CLI_ARGUMENT_MALFORMED", "sprint must be library:<id>#work:<id>");
   }
   return { workspaceId, workId };
+}
+
+// TCRN-CROSS-STORY-472 R1: the kinds a new record may take. Incident and Release stay readable
+// (work-list --kind still filters by them) but are refused as new records, with the remedy the
+// engine gives for the same refusal.
+const CREATABLE_WORK_KINDS: readonly string[] = ["Initiative", "Epic", "Story", "Subtask"];
+const RETIRED_WORK_KINDS: readonly string[] = ["Incident", "Release"];
+const WORK_KIND_RETIRED_REMEDY = "open a Story with a fixes relation (work-create --kind Story --fixes <work id>)";
+
+function assertCreatableKind(kind: string | undefined): void {
+  if (kind === undefined) return;
+  if (RETIRED_WORK_KINDS.includes(kind)) {
+    throw new WorkflowCliError("WORK_KIND_RETIRED", `a new ${kind} is no longer created: ${WORK_KIND_RETIRED_REMEDY}`, { remedy: WORK_KIND_RETIRED_REMEDY });
+  }
+  if (!CREATABLE_WORK_KINDS.includes(kind)) fail("CLI_ARGUMENT_MALFORMED", `kind=${kind}`);
+}
+
+// TCRN-CROSS-STORY-472 R2, R4: the relation flags of work-create and work-annotate. Each names one
+// relation's whole list ("-" is the empty list, which on an annotation removes that relation);
+// --decided-by is the older name of --decided-in and writes the same advisory:decided-by list.
+const RELATION_FLAGS = ["blocked-by", "implements", "supersedes", "fixes", "decided-in"] as const;
+
+function relationsInput(values: Readonly<Record<string, string>>): { readonly relations?: WorkRelationsInput } {
+  const relations: { blockedBy?: readonly string[]; implements?: readonly string[]; supersedes?: readonly string[]; fixes?: readonly string[]; decidedIn?: readonly string[] } = {};
+  if (values["blocked-by"] !== undefined) relations.blockedBy = listValue(values["blocked-by"]);
+  if (values.implements !== undefined) relations.implements = listValue(values.implements);
+  if (values.supersedes !== undefined) relations.supersedes = listValue(values.supersedes);
+  if (values.fixes !== undefined) relations.fixes = listValue(values.fixes);
+  if (values["decided-in"] !== undefined) relations.decidedIn = listValue(values["decided-in"]);
+  return Object.keys(relations).length === 0 ? {} : { relations };
+}
+
+// TCRN-CROSS-STORY-472 R3: work-list --relation <name>=<id>, a forward or a reverse name.
+function relationArgument(value: string): { readonly name: string; readonly id: string } {
+  const separator = value.indexOf("=");
+  const name = separator < 0 ? "" : value.slice(0, separator);
+  const id = separator < 0 ? "" : value.slice(separator + 1);
+  if (!([...RELATION_NAMES, ...REVERSE_RELATION_NAMES] as readonly string[]).includes(name) || id.length === 0) {
+    fail("CLI_ARGUMENT_MALFORMED", `relation must be <name>=<id> with a name among ${[...RELATION_NAMES, ...REVERSE_RELATION_NAMES].join(", ")}`);
+  }
+  return { name, id };
 }
 
 // Unified nullable-flag spelling: "-" is the canonical null sentinel and an omitted
@@ -804,12 +849,14 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "template-validate", availability: "cli", mutates: false, flags: [{ name: "template", required: true, valueKind: "string" }] },
   { name: "validate", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   { name: "vocabulary", availability: "cli", mutates: false, flags: [] },
-  { name: "work-annotate", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "verify", required: false, valueKind: "string" }, { name: "result", required: false, valueKind: "json" }, { name: "sprint", required: false, valueKind: "string" }, { name: "title", required: false, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }] },
+  // TCRN-CROSS-STORY-472 R2, R4: the four stored relations and decided-in; --decided-by is the older
+  // name of --decided-in.
+  { name: "work-annotate", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "verify", required: false, valueKind: "string" }, { name: "result", required: false, valueKind: "json" }, { name: "sprint", required: false, valueKind: "string" }, { name: "title", required: false, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-batch", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "from-file", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "work-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-id", required: true, valueKind: "string" }, { name: "external-key", required: true, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "status", required: false, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "template-receipt", required: false, valueKind: "json" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "work-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-id", required: true, valueKind: "string" }, { name: "external-key", required: true, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "status", required: false, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "template-receipt", required: false, valueKind: "json" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-delete", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-draft", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string" }] },
-  { name: "work-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string" }, { name: "sprint", required: false, valueKind: "string" }, { name: "search", required: false, valueKind: "string" }, { name: "scope-bytes", required: false, valueKind: "integer" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
+  { name: "work-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string" }, { name: "sprint", required: false, valueKind: "string" }, { name: "relation", required: false, valueKind: "string" }, { name: "search", required: false, valueKind: "string" }, { name: "scope-bytes", required: false, valueKind: "integer" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "work-show", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: false, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }] },
   { name: "work-transition", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "status", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-470 R3: move a library; the old place keeps a tombstone and refuses writes.
@@ -1928,7 +1975,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   if (command === "work-create") {
-    const values = parseArguments(rest, [...shared, "project-id", "external-key", "kind", "parent-id", "status", "scope", "decided-by", "title", "summary", "labels", "template-receipt", "actor"]);
+    const values = parseArguments(rest, [...shared, "project-id", "external-key", "kind", "parent-id", "status", "scope", "decided-by", ...RELATION_FLAGS, "title", "summary", "labels", "template-receipt", "actor"]);
     // TCRN-CROSS-STORY-363: --title is required on the create path. Measured on the
     // cross-project chain on 2026-09-07, 50 of its 843 live work records carried a
     // title; the other 793 were addressable only by external key, so a listing could
@@ -1938,7 +1985,8 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     required(values, [...requiredShared, "project-id", "external-key", "kind", "title"]);
     // Fail closed at the CLI boundary naming the offending flag/value, before the
     // uncast enum reaches core and surfaces as an opaque RECORD_MALFORMED on the id.
-    if (values.kind !== undefined && !["Initiative", "Epic", "Story", "Subtask", "Incident", "Release"].includes(values.kind)) fail("CLI_ARGUMENT_MALFORMED", `kind=${values.kind}`);
+    // A retired kind is refused with the engine's own code and remedy (TCRN-CROSS-STORY-472 R1).
+    assertCreatableKind(values.kind);
     if (values.status !== undefined && !isWorkStatus(values.status)) fail("CLI_ARGUMENT_MALFORMED", `status=${values.status}`);
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
@@ -1951,6 +1999,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       ...(values.status ? { status: values.status as WorkStatus } : {}),
       ...(values.scope !== undefined ? { scope: values.scope } : {}),
       ...(values["decided-by"] !== undefined ? { decidedBy: listValue(values["decided-by"]) } : {}),
+      ...relationsInput(values),
       ...(values.title !== undefined ? { title: values.title } : {}),
       ...(values.summary !== undefined ? { summary: values.summary } : {}),
       ...(values.labels !== undefined ? { labels: listValue(values.labels) } : {}),
@@ -2006,15 +2055,17 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // right since TCRN-CROSS-STORY-363, so what the core still refuses is an annotation
     // that moves nothing at all: it is WORKSPACE_INPUT_INVALID here rather than an
     // appended event no later read can replay (TCRN-CROSS-INC-269).
-    const values = parseArguments(rest, [...shared, "id", "scope", "decided-by", "verify", "result", "sprint", "title", "summary", "labels", "actor"]);
+    const values = parseArguments(rest, [...shared, "id", "scope", "decided-by", ...RELATION_FLAGS, "verify", "result", "sprint", "title", "summary", "labels", "actor"]);
     required(values, [...requiredShared, "id"]);
-    if (values.scope === undefined && values["decided-by"] === undefined && values.verify === undefined && values.result === undefined && values.sprint === undefined && values.title === undefined && values.summary === undefined && values.labels === undefined) fail("CLI_ARGUMENT_MALFORMED", "annotation-field");
+    const relations = relationsInput(values);
+    if (values.scope === undefined && values["decided-by"] === undefined && relations.relations === undefined && values.verify === undefined && values.result === undefined && values.sprint === undefined && values.title === undefined && values.summary === undefined && values.labels === undefined) fail("CLI_ARGUMENT_MALFORMED", "annotation-field");
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
     const state = await withWriteLock(workspace, at, async () => annotateWork(workspace, {
       occurredAt: at, id: values.id ?? "",
       ...(values.scope !== undefined ? { scope: values.scope } : {}),
       ...(values["decided-by"] !== undefined ? { decidedBy: listValue(values["decided-by"]) } : {}),
+      ...relations,
       ...(values.verify !== undefined ? { verify: values.verify } : {}),
       ...(values.result !== undefined ? { result: jsonValue(values.result, "result") as JsonValue } : {}),
       ...(values.sprint !== undefined ? { sprint: sprintReference(values.sprint) } : {}),
@@ -2047,13 +2098,15 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   if (command === "work-list") {
-    const values = parseArguments(rest, ["workspace", "project-id", "kind", "status", "parent-id", "sprint", "search", "scope-bytes", "limit", "offset"]);
+    const values = parseArguments(rest, ["workspace", "project-id", "kind", "status", "parent-id", "sprint", "relation", "search", "scope-bytes", "limit", "offset"]);
     required(values, ["workspace"]);
     if (values.search !== undefined && (values.search.length === 0 || values.search.length > 256 || !values.search.isWellFormed())) {
       fail("CLI_ARGUMENT_MALFORMED", "search");
     }
+    // Incident and Release are no longer created, and records of both still read: the filter keeps them.
     if (values.kind !== undefined && !["Initiative", "Epic", "Story", "Subtask", "Incident", "Release"].includes(values.kind)) fail("CLI_ARGUMENT_MALFORMED", `kind=${values.kind}`);
     if (values.status !== undefined && !isWorkStatus(values.status)) fail("CLI_ARGUMENT_MALFORMED", `status=${values.status}`);
+    const relation = values.relation === undefined ? undefined : relationArgument(values.relation);
     // INIT-008: filter members of a sprint. The flag carries the qualified reference in the
     // same library:<id>#work:<id> spelling used to annotate; we compare the parsed object
     // against the stored advisory:sprint value by canonical bytes so the round trip is closed.
@@ -2063,7 +2116,10 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const scopeBytes = values["scope-bytes"] === undefined ? Number(configuredScopeBytes ?? "512") : integerValue(values, "scope-bytes");
     if (scopeBytes < 1 || scopeBytes > 65_536) fail("CLI_ARGUMENT_MALFORMED", "scope-bytes");
     const search = values.search?.toLowerCase();
+    // TCRN-CROSS-STORY-472 R3: the records that stand in the named relation to the given id.
+    const related = relation === undefined ? undefined : relationFilter(state, relation.name, relation.id);
     const records = state.work.filter((entry) => !entry.tombstone &&
+      (related === undefined || related.has(entry.id)) &&
       (values["project-id"] === undefined || entry.projectId === values["project-id"]) &&
       (values.kind === undefined || entry.kind === values.kind) &&
       (values.status === undefined || entry.status === values.status) &&
@@ -2089,14 +2145,12 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   if (command === "work-draft") {
     const values = parseArguments(rest, ["workspace", "kind", "project-id"]);
     required(values, ["workspace", "kind", "project-id"]);
-    if (!(values.kind === "Initiative" || values.kind === "Epic" || values.kind === "Story" || values.kind === "Subtask" || values.kind === "Incident" || values.kind === "Release")) {
-      fail("CLI_ARGUMENT_MALFORMED", `kind=${values.kind}`);
-    }
+    assertCreatableKind(values.kind);
     const state = await validateWorkspace(values.workspace ?? "");
     if (!state.projects.some((project) => !project.tombstone && project.id === values["project-id"])) {
       fail("WORKSPACE_PROJECT_NOT_FOUND", `project ${values["project-id"] ?? ""} does not exist in this workspace`);
     }
-    io.write(canonicalJson(workDraft(state, values.kind, values["project-id"] ?? "")));
+    io.write(canonicalJson(workDraft(state, values.kind ?? "", values["project-id"] ?? "")));
     return;
   }
   // TCRN-CROSS-STORY-468 R5, AC2, AC3: a record is found by id or by external key. It carries
@@ -2116,6 +2170,16 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const advisory = workAdvisory(record);
     const aliases = recordAliases(state, record.id);
     const rejectedEvents = (state.library?.rejectedEvents ?? []).filter((entry) => entry.recordId === record.id);
+    // TCRN-CROSS-STORY-472 R3: both directions of the record's relations. A forward target this
+    // library does not hold as a live record (deleted, or written on a device not merged yet) is
+    // listed under missing.
+    const relations = workRelations(state, record.id);
+    const live = new Set(state.work.filter((entry) => !entry.tombstone).map((entry) => entry.id));
+    const forwardTargets = [
+      ...(relations.forward.parent === null ? [] : [relations.forward.parent]),
+      ...relations.forward.blockedBy, ...relations.forward.implements, ...relations.forward.supersedes, ...relations.forward.fixes,
+    ];
+    const missing = [...new Set(forwardTargets.filter((id) => !live.has(id)))].sort();
     io.write(canonicalJson({
       reasonCode: "WORKSPACE_RECORD_READY",
       workspaceId: state.metadata.workspaceId,
@@ -2124,6 +2188,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       kind: "work",
       record: workSummary(record),
       ...(advisory !== null ? { advisory } : {}),
+      relations: { forward: relations.forward, reverse: relations.reverse, missing },
       ...(aliases.aliases.length === 0 ? {} : { aliases: aliases.aliases.map((entry) => ({ externalKey: entry.externalKey, id: entry.id, deviceId: entry.deviceId })) }),
       ...(aliases.aliasedBy.length === 0 ? {} : { aliasedBy: aliases.aliasedBy.map((entry) => ({ externalKey: entry.aliasExternalKey, id: entry.aliasId, deviceId: entry.deviceId })) }),
       ...(rejectedEvents.length === 0 ? {} : { rejectedEvents }),

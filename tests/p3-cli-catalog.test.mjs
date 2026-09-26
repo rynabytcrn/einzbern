@@ -187,3 +187,15 @@ test("INC-016: no catalog entry is both a governed write and authority-bearing o
   assert.equal(validate(envelope([both])), false, "the schema must reject authorityBearing with mutates:true");
   assert.equal(validate(envelope([{ ...both, mutates: false }])), true, "authorityBearing with mutates:false stays valid");
 });
+
+test("STORY-472 R3, R4: work-create and work-annotate take the relation flags, and work-list filters by a relation", () => {
+  const flagsOf = (name) => new Map(COMMAND_CATALOG.find((entry) => entry.name === name).flags.map((flag) => [flag.name, flag]));
+  for (const verb of ["work-create", "work-annotate"]) {
+    const flags = flagsOf(verb);
+    for (const name of ["blocked-by", "implements", "supersedes", "fixes", "decided-in", "decided-by"]) {
+      assert.equal(flags.get(name)?.valueKind, "list", `${verb} --${name}`);
+      assert.equal(flags.get(name)?.required, false, `${verb} --${name} is optional`);
+    }
+  }
+  assert.equal(flagsOf("work-list").get("relation")?.valueKind, "string");
+});

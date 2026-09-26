@@ -17,7 +17,7 @@ import {
   buildEventPayload,
   initializeLibrary,
 } from "../../dist/build/packages/core/src/index.js";
-import { canonicalExternalKey, compareCanonicalText, deriveStableId } from "../../dist/build/packages/protocol/src/index.js";
+import { canonicalExternalKey, canonicalSha256, compareCanonicalText, deriveStableId } from "../../dist/build/packages/protocol/src/index.js";
 
 export const repositoryRoot = resolve(import.meta.dirname, "../..");
 export const cliPath = join(repositoryRoot, "scripts/einzbern.mjs");
@@ -80,6 +80,37 @@ export async function appendHistoricalAttestationEnable(workspace, { occurredAt,
     projects: state.projects,
     work: state.work,
   })], { occurredAt, actorId });
+}
+
+/**
+ * A historical work.created for a kind the write path no longer creates (an Incident or a
+ * Release, TCRN-CROSS-STORY-472 R1), appended past the write path exactly as work-create wrote it
+ * before, so replay alone judges it. Returns the appended record.
+ */
+export async function appendHistoricalWorkCreate(workspace, { externalKey, projectId, kind, parentId = null, status = "planned", title = null, occurredAt, actorId }) {
+  const record = {
+    schemaVersion: "tcrn.work.v1",
+    id: deriveStableId("work", canonicalExternalKey(externalKey)),
+    externalKey: canonicalExternalKey(externalKey),
+    projectId,
+    kind,
+    parentId,
+    status,
+    revision: 1,
+    updatedAt: occurredAt,
+    tombstone: false,
+    extensions: {},
+    scopeDigest: canonicalSha256({}),
+    title,
+    createdAt: occurredAt,
+    labels: [],
+  };
+  await appendEvents(workspace, [(state) => ({
+    payload: buildEventPayload("work.created", record),
+    projects: state.projects,
+    work: [...state.work, record],
+  })], { occurredAt, ...(actorId === undefined ? {} : { actorId }) });
+  return record;
 }
 
 // The gate write verbs are retired (TCRN-CROSS-STORY-467 R2). Gate records already on a

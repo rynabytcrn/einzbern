@@ -56,10 +56,13 @@ export interface WorkRelationsInput {
 /** The advisory:relations value: only the lists that name at least one target. */
 export type StoredWorkRelations = { readonly [field in StoredRelationField]?: readonly string[] };
 
-/** A write's relations after validation, ready to become extensions. */
+/**
+ * A write's relations after validation, ready to become extensions. Each stored list the write
+ * names replaces that list whole, and an empty one removes it; a list it does not name is kept
+ * (mergeStoredRelations).
+ */
 export interface NormalizedWorkRelations {
-  // The advisory:relations value, or null when no stored list names a target (the extension is then absent).
-  readonly stored: StoredWorkRelations | null;
+  readonly lists?: StoredWorkRelations;
   // The decided-in list for advisory:decided-by, when the write named it.
   readonly decidedIn?: readonly string[];
 }
@@ -107,9 +110,8 @@ function isMinutesId(value: unknown): value is string {
   return isIdOf("minutes", value);
 }
 
-/** The stored forward relations of a record; an absent or unreadable extension reads as none. */
-export function storedRelations(record: Pick<WorkRecord, "extensions">): StoredWorkRelations {
-  const value = record.extensions[RELATIONS_EXTENSION_KEY]?.value;
+/** A stored advisory:relations value read leniently: an absent or unreadable value reads as none. */
+export function storedRelationsOf(value: unknown): StoredWorkRelations {
   if (value === null || value === undefined || typeof value !== "object" || Array.isArray(value)) return {};
   const stored: { [field in StoredRelationField]?: readonly string[] } = {};
   for (const field of STORED_RELATION_FIELDS) {
@@ -117,6 +119,25 @@ export function storedRelations(record: Pick<WorkRecord, "extensions">): StoredW
     if (Array.isArray(list)) stored[field] = list.filter((entry): entry is string => typeof entry === "string");
   }
   return stored;
+}
+
+/** The stored forward relations of a record. */
+export function storedRelations(record: Pick<WorkRecord, "extensions">): StoredWorkRelations {
+  return storedRelationsOf(record.extensions[RELATIONS_EXTENSION_KEY]?.value);
+}
+
+/**
+ * The advisory:relations value after a write: each list the write names replaces the stored one
+ * whole, the others stay, and empty lists drop out. Null when no list is left, which removes the
+ * extension.
+ */
+export function mergeStoredRelations(current: StoredWorkRelations, lists: StoredWorkRelations): StoredWorkRelations | null {
+  const merged: { [field in StoredRelationField]?: readonly string[] } = {};
+  for (const field of STORED_RELATION_FIELDS) {
+    const list = Object.hasOwn(lists, field) ? lists[field] : current[field];
+    if (list !== undefined && list.length > 0) merged[field] = [...list];
+  }
+  return Object.keys(merged).length === 0 ? null : merged;
 }
 
 /** The decided-in list of a record: its advisory:decided-by minutes ids. */
@@ -128,8 +149,9 @@ export function decidedInOf(record: Pick<WorkRecord, "extensions">): readonly st
 /**
  * Validate what a write says about the relations of work record `id` against the state it is
  * built on: only the five known fields; every stored target a live work record other than `id`;
- * each list without repeats, sorted, and at most RELATION_LIST_LIMIT long; decided-in a non-empty
- * list of minutes ids, checked for shape only, like advisory:decided-by.
+ * each list without repeats, sorted, and at most RELATION_LIST_LIMIT long (an empty list is how a
+ * write removes one); decided-in a non-empty list of minutes ids, checked for shape only, like
+ * advisory:decided-by.
  */
 export function validateRelationsInput(state: Pick<WorkspaceState, "work">, id: string, input: WorkRelationsInput): NormalizedWorkRelations {
   if (input === null || typeof input !== "object" || Array.isArray(input)) refuse(`work ${id} relations must be an object`);
@@ -137,7 +159,7 @@ export function validateRelationsInput(state: Pick<WorkspaceState, "work">, id: 
     if (!INPUT_FIELDS.includes(key)) refuse(`work ${id} relation ${key} is not one of ${INPUT_FIELDS.join(", ")}`);
   }
   const live = new Map(state.work.map((record) => [record.id, record]));
-  const stored: { [field in StoredRelationField]?: readonly string[] } = {};
+  const lists: { [field in StoredRelationField]?: readonly string[] } = {};
   for (const { field, name } of STORED_RELATIONS) {
     const list: unknown = input[field];
     if (list === undefined) continue;
@@ -152,7 +174,7 @@ export function validateRelationsInput(state: Pick<WorkspaceState, "work">, id: 
       const record = live.get(target);
       if (record === undefined || record.tombstone) refuse(`work ${id} ${name} target ${target} is not a live work record`);
     }
-    if (unique.length > 0) stored[field] = unique;
+    lists[field] = unique;
   }
   let decidedIn: readonly string[] | undefined;
   if (input.decidedIn !== undefined) {
@@ -163,7 +185,7 @@ export function validateRelationsInput(state: Pick<WorkspaceState, "work">, id: 
     decidedIn = [...(list as readonly string[])];
   }
   return {
-    stored: Object.keys(stored).length === 0 ? null : stored,
+    ...(Object.keys(lists).length === 0 ? {} : { lists }),
     ...(decidedIn === undefined ? {} : { decidedIn }),
   };
 }

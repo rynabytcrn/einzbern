@@ -141,7 +141,7 @@ import {
 import type { TelemetryEvidenceSnapshot } from "./telemetry.js";
 // TCRN-CROSS-STORY-472: used only inside functions. work-relations.ts imports WorkspaceError from
 // this module, so nothing here may read one of its bindings while the module is being evaluated.
-import { relationsShapeProblem, validateRelationsInput } from "./work-relations.js";
+import { mergeStoredRelations, relationsShapeProblem, storedRelationsOf, validateRelationsInput } from "./work-relations.js";
 import type { NormalizedWorkRelations, WorkRelationsInput } from "./work-relations.js";
 
 export const WORKSPACE_SCHEMA_VERSION = "tcrn.workspace.v1" as const;
@@ -1225,8 +1225,9 @@ function isSprintReference(value: unknown): value is SprintReference {
 const ADVISORY_FIELD_KEYS = Object.freeze({ scope: ADVISORY_SCOPE_KEY, decidedBy: ADVISORY_DECIDED_BY_KEY, sprint: ADVISORY_SPRINT_KEY, verify: ADVISORY_VERIFY_KEY, evidence: ADVISORY_EVIDENCE_KEY, evidenceSnapshot: ADVISORY_EVIDENCE_SNAPSHOT_KEY, result: ADVISORY_RESULT_KEY, relations: ADVISORY_RELATIONS_KEY });
 
 // `relations` is the validated form of advisory.relations (validateRelationsInput), never the raw
-// input: its stored lists replace advisory:relations whole (an empty set removes the extension), and
-// its decided-in list is written as advisory:decided-by.
+// input: each stored list it names replaces that list of advisory:relations whole (an empty one
+// removes it, and the extension goes when no list is left), and its decided-in list is written as
+// advisory:decided-by.
 function workAdvisoryExtensions(base: Readonly<Record<string, unknown>>, advisory: WorkAdvisoryInput, relations?: NormalizedWorkRelations): Readonly<Record<string, unknown>> {
   const next: Record<string, unknown> = { ...base };
   for (const field of Object.keys(ADVISORY_FIELD_KEYS) as Array<keyof WorkAdvisoryInput>) {
@@ -1238,10 +1239,14 @@ function workAdvisoryExtensions(base: Readonly<Record<string, unknown>>, advisor
   }
   if (relations !== undefined) {
     if (relations.decidedIn !== undefined) next[ADVISORY_DECIDED_BY_KEY] = { required: false, value: [...relations.decidedIn] };
-    if (relations.stored === null) {
-      delete next[ADVISORY_RELATIONS_KEY];
-    } else {
-      next[ADVISORY_RELATIONS_KEY] = { required: false, value: { ...relations.stored } };
+    if (relations.lists !== undefined) {
+      const current = storedRelationsOf((base[ADVISORY_RELATIONS_KEY] as { readonly value?: unknown } | undefined)?.value);
+      const merged = mergeStoredRelations(current, relations.lists);
+      if (merged === null) {
+        delete next[ADVISORY_RELATIONS_KEY];
+      } else {
+        next[ADVISORY_RELATIONS_KEY] = { required: false, value: { ...merged } };
+      }
     }
   }
   return next;
@@ -3689,7 +3694,7 @@ function annotateWorkReducerDelta(state: WorkspaceState, input: WorkAnnotationIn
     fail("WORKSPACE_INPUT_INVALID", "an annotation must set scope, decided-by, verify, result, sprint, relations, title, summary, or labels");
   }
   validateWorkAdvisoryInput(input, input.id, "WORKSPACE_INPUT_INVALID");
-  // TCRN-CROSS-STORY-472: an annotation replaces the stored relations whole.
+  // TCRN-CROSS-STORY-472: each relation list an annotation names is replaced whole.
   const relations = workRelationsForWrite(state, input.id, input);
   const title = input.title === undefined ? current.title ?? null : normalizeWorkTitle(input.title);
   const labels = input.labels === undefined ? current.labels ?? [] : normalizeWorkLabels(input.labels);

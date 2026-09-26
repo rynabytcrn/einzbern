@@ -283,3 +283,24 @@ test("STORY-300: a failure before any member ran blames no member", async () => 
     await rm(fixture.base, { recursive: true, force: true });
   }
 });
+
+// TCRN-CROSS-STORY-472 R4: the batch format carries a member's relations in one object,
+// {blockedBy, implements, supersedes, fixes, decidedIn}, and a member may relate to what an
+// earlier member created. Red leg: drop the relations from deltaFor and the stored extension is
+// absent while the batch still reports success.
+test("STORY-472: a work-create member carries relations, resolved against what earlier members created", async () => {
+  const fixture = await workspace("BATCH-RELATIONS");
+  try {
+    const state = await apply(fixture, [
+      { verb: "work-create", projectId: fixture.projectId, externalKey: "B-REL-1", kind: "Initiative", parentId: null, status: "active", title: "B-REL-1" },
+      { verb: "work-create", projectId: fixture.projectId, externalKey: "B-REL-2", kind: "Initiative", parentId: null, status: "active", title: "B-REL-2",
+        relations: { blockedBy: [deriveStableId("work", "B-REL-1")], decidedIn: ["minutes:c8953141f2d862c26ff3db46"] } },
+    ]);
+    const second = state.work.find((record) => record.id === deriveStableId("work", "B-REL-2"));
+    assert.deepEqual(second.extensions["advisory:relations"], { required: false, value: { blockedBy: [deriveStableId("work", "B-REL-1")] } });
+    assert.deepEqual(second.extensions["advisory:decided-by"], { required: false, value: ["minutes:c8953141f2d862c26ff3db46"] });
+    assert.deepEqual(await materializeWorkspaceFromGenesis(fixture.root), state, "the public genesis replay matches the live materialization");
+  } finally {
+    await rm(fixture.base, { recursive: true, force: true });
+  }
+});

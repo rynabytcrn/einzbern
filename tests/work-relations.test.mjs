@@ -13,9 +13,7 @@ import test from "node:test";
 
 import {
   annotateWork,
-  appendEvents,
   applyWorkBatch,
-  buildEventPayload,
   createProject,
   createWork,
   deleteWork,
@@ -35,6 +33,7 @@ import {
 import { canonicalJson, canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 import { forgeOwnStream } from "./helpers/library-forge.mjs";
 import { LEGACY_FIXTURE_EXPECTED, restoreLegacyFixture } from "./helpers/legacy-fixture.mjs";
+import { appendHistoricalWorkCreate } from "./helpers/workspace-fixture.mjs";
 
 const at = (second) => `2026-09-26T08:00:${String(second).padStart(2, "0")}Z`;
 const idOf = (externalKey) => deriveStableId("work", externalKey);
@@ -66,32 +65,6 @@ async function initiative(fixture, externalKey, second, extra = {}) {
   return createWork(fixture.workspace, {
     occurredAt: at(second), projectId: fixture.projectId, externalKey, kind: "Initiative", parentId: null, title: externalKey, ...extra,
   });
-}
-
-/** A work.created for a historical Incident, appended as an old chain wrote it: past the write path. */
-async function forgeHistoricalIncident(fixture, externalKey, second) {
-  const record = {
-    schemaVersion: "tcrn.work.v1",
-    id: idOf(externalKey),
-    externalKey,
-    projectId: fixture.projectId,
-    kind: "Incident",
-    parentId: null,
-    status: "done",
-    revision: 1,
-    updatedAt: at(second),
-    tombstone: false,
-    extensions: {},
-    scopeDigest: canonicalSha256({}),
-    title: "a historical incident",
-    createdAt: at(second),
-    labels: [],
-  };
-  return appendEvents(fixture.workspace, [(state) => ({
-    payload: buildEventPayload("work.created", record),
-    projects: state.projects,
-    work: [...state.work, record],
-  })], { occurredAt: at(second) });
 }
 
 test("STORY-472 R2: six relation names and five reverse names, a closed vocabulary", () => {
@@ -134,7 +107,9 @@ test("STORY-472 R1, AC1 (core): a new Incident or Release is refused with a reme
 
 test("STORY-472 AC3 (core): a historical Incident still reads, and a new Story may fix it", async (context) => {
   const fixture = await library(context);
-  await forgeHistoricalIncident(fixture, "REL-INC-389", 2);
+  await appendHistoricalWorkCreate(fixture.workspace, {
+    externalKey: "REL-INC-389", projectId: fixture.projectId, kind: "Incident", status: "done", title: "a historical incident", occurredAt: at(2),
+  });
   const incident = idOf("REL-INC-389");
   const read = await materializeWorkspace(fixture.workspace);
   assert.equal(read.work.find((record) => record.id === incident)?.kind, "Incident", "the old record replays");
@@ -184,22 +159,31 @@ test("STORY-472 R2: a missing or deleted target, the record itself and an unknow
   assert.equal((await materializeWorkspace(fixture.workspace)).version, before.version, "no refusal appended an event");
 });
 
-test("STORY-472 R2: repeats collapse, lists sort, and an annotation replaces the stored relations whole", async (context) => {
+test("STORY-472 R2: repeats collapse, lists sort, and an annotation replaces each list it names whole", async (context) => {
   const fixture = await library(context);
   for (const [index, key] of ["REL-P", "REL-Q", "REL-R"].entries()) await initiative(fixture, key, 2 + index);
   const [p, q, r] = ["REL-P", "REL-Q", "REL-R"].map(idOf);
+  const stored = (state) => state.work.find((record) => record.id === p).extensions["advisory:relations"]?.value;
   let state = await annotateWork(fixture.workspace, { occurredAt: at(6), id: p, relations: { fixes: [r, q, r], blockedBy: [q] } });
-  const sortedFixes = [q, r].sort();
-  assert.deepEqual(state.work.find((record) => record.id === p).extensions["advisory:relations"].value, { blockedBy: [q], fixes: sortedFixes });
+  assert.deepEqual(stored(state), { blockedBy: [q], fixes: [q, r].sort() });
 
   state = await annotateWork(fixture.workspace, { occurredAt: at(7), id: p, relations: { implements: [r] } });
-  assert.deepEqual(state.work.find((record) => record.id === p).extensions["advisory:relations"].value, { implements: [r] }, "blocked-by and fixes are gone");
+  assert.deepEqual(stored(state), { blockedBy: [q], fixes: [q, r].sort(), implements: [r] }, "a list the annotation does not name is kept");
+
+  state = await annotateWork(fixture.workspace, { occurredAt: at(8), id: p, relations: { fixes: [r], blockedBy: [] } });
+  assert.deepEqual(stored(state), { fixes: [r], implements: [r] }, "a named list is replaced whole, and an empty one removed");
   assert.deepEqual(workRelations(state, q).reverse.blocks, []);
+  assert.deepEqual(workRelations(state, q).reverse.fixedBy, []);
   assert.deepEqual(workRelations(state, r).reverse.implementedBy, [p]);
 
-  state = await annotateWork(fixture.workspace, { occurredAt: at(8), id: p, relations: {} });
-  assert.equal(state.work.find((record) => record.id === p).extensions["advisory:relations"], undefined, "an empty set removes the extension");
+  state = await annotateWork(fixture.workspace, { occurredAt: at(9), id: p, relations: { fixes: [], implements: [] } });
+  assert.equal(stored(state), undefined, "the extension goes when no list is left");
   assert.deepEqual(workRelations(state, r).reverse.implementedBy, []);
+  await assert.rejects(
+    () => annotateWork(fixture.workspace, { occurredAt: at(10), id: p, relations: {} }),
+    (error) => error?.reasonCode === "WORKSPACE_INPUT_INVALID" && /changed no annotatable field/u.test(error.message),
+    "relations naming no list move nothing",
+  );
   assert.equal((await materializeWorkspaceFromGenesis(fixture.workspace)).version, state.version, "every annotation replays");
 });
 

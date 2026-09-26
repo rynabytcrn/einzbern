@@ -73,7 +73,7 @@ async function trailingFixture() {
   // The one event that puts the store behind. Nothing about the store changes.
   await createWork(workspace, {
     occurredAt: instant(6), projectId: state.projects[0].id,
-    externalKey: "INC232-THE-ONE-WRITE", kind: "Incident", parentId: null, status: "active",
+    externalKey: "INC232-THE-ONE-WRITE", kind: "Initiative", parentId: null, status: "active",
   });
   return { base, workspace, id };
 }

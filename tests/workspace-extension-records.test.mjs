@@ -50,6 +50,7 @@ import {
   appendHistoricalGateCreate,
   appendHistoricalGateDelete,
   appendHistoricalGateTransition,
+  appendHistoricalWorkCreate,
 } from "./helpers/workspace-fixture.mjs";
 import { asPinnedDevice } from "./helpers/device-home.mjs";
 import { forgeOwnStream, readOwnStream } from "./helpers/library-forge.mjs";
@@ -1195,11 +1196,11 @@ test("E05: a forged work.annotated event is refused by replay on a status change
   }));
 });
 
-test("INIT-004: the CLI opens Incident for creation and it materializes outside the planning tree", async (context) => {
-  // Incident has been a valid record kind since v0.1.0; only the CLI create whitelist
-  // blocked it. This is the operating surface catching up with the protocol. The bug
-  // hangs off the Story it was found in — a resolving parent is safe (a dangling one is
-  // refused by the graph validator, which the protocol suite pins for unmapped kinds).
+test("INIT-004, STORY-472 R1: the CLI refuses a new Incident, and an Incident already on a chain still reads under its Story", async (context) => {
+  // Incident was opened for creation by INIT-004 and closed again by TCRN-CROSS-STORY-472 R1: a
+  // defect is now a Story with a fixes relation. The records already written stay valid, so an
+  // Incident found in a Story -- a resolving parent, or none -- is written here as the retired
+  // verb wrote it, and replay alone judges it.
   const fx = await cliSeededFixture(context);
   const ws = fx.ws;
   const storyScope = [
@@ -1219,27 +1220,35 @@ test("INIT-004: the CLI opens Incident for creation and it materializes outside 
   const st = JSON.parse((await invokeCli(["work-create", "--title", "record-title", "--workspace", ws, "--at", instant(4), "--project-id", fx.projectId, "--external-key", "STORY-X", "--kind", "Story",
     "--parent-id", story.record.id, "--scope", storyScope])).output);
 
-  // Incident, found in that Story, via the CLI.
-  const incident = await invokeCli(["work-create", "--title", "record-title", "--workspace", ws, "--at", instant(5), "--project-id", fx.projectId, "--external-key", "BUG-1", "--kind", "Incident",
+  // A new Incident, found in that Story, is refused at the CLI with the engine's code.
+  const refused = await invokeCli(["work-create", "--title", "record-title", "--workspace", ws, "--at", instant(5), "--project-id", fx.projectId, "--external-key", "BUG-1", "--kind", "Incident",
     "--parent-id", st.record.id]);
-  assert.equal(incident.ok, true, `incident create failed: ${incident.reasonCode}`);
-  const rec = JSON.parse(incident.output).record;
-  assert.equal(rec.kind, "Incident");
+  assert.equal(refused.ok, false);
+  assert.equal(refused.reasonCode, "WORK_KIND_RETIRED");
+  assert.equal((await validateWorkspace(fx.workspace, false)).version, 4, "nothing was appended");
 
-  // It materializes, and list ordering stays deterministic with a non-planning kind present.
+  // The historical Incident materializes under the Story, and list ordering stays deterministic
+  // with a non-planning kind present.
+  const incident = await appendHistoricalWorkCreate(fx.workspace, {
+    externalKey: "BUG-1", projectId: fx.projectId, kind: "Incident", parentId: st.record.id, title: "record-title", occurredAt: instant(5),
+  });
   const state = await materializeWorkspace(fx.workspace);
-  const inc = state.work.find((w) => w.id === rec.id);
+  const inc = state.work.find((w) => w.id === incident.id);
   assert.equal(inc.kind, "Incident");
   assert.equal(inc.parentId, st.record.id);
   assert.equal((await validateWorkspace(fx.workspace, false)).version, 5);
+  const shown = JSON.parse((await invokeCli(["work-show", "--workspace", ws, "--id", incident.id])).output);
+  assert.equal(shown.record.kind, "Incident", "and the CLI reads it");
 
-  // A parentless Incident is equally valid (found nowhere in particular).
-  const orphan = await invokeCli(["work-create", "--title", "record-title", "--workspace", ws, "--at", instant(6), "--project-id", fx.projectId, "--external-key", "BUG-2", "--kind", "Incident",
-    "--parent-id", "-"]);
-  assert.equal(orphan.ok, true, `parentless incident failed: ${orphan.reasonCode}`);
+  // A parentless historical Incident is equally valid (found nowhere in particular).
+  await appendHistoricalWorkCreate(fx.workspace, {
+    externalKey: "BUG-2", projectId: fx.projectId, kind: "Incident", title: "record-title", occurredAt: instant(6),
+  });
+  assert.equal((await materializeWorkspace(fx.workspace)).library.rejectedEvents.length, 0);
 
-  // The two kinds still closed at the CLI stay closed. (Release was opened in 0.5.0 for
-  // sprints / release trains — see the sprint tests below.)
+  // Release is refused the same way; the two kinds never creatable at the CLI stay closed.
+  const release = await invokeCli(["work-create", "--title", "record-title", "--workspace", ws, "--at", instant(7), "--project-id", fx.projectId, "--external-key", "X-Release", "--kind", "Release"]);
+  assert.equal(release.reasonCode, "WORK_KIND_RETIRED");
   for (const closed of ["Review", "Knowledge"]) {
     const r = await invokeCli(["work-create", "--title", "record-title", "--workspace", ws, "--at", instant(7), "--project-id", fx.projectId, "--external-key", `X-${closed}`, "--kind", closed]);
     assert.equal(r.ok, false);
@@ -1283,14 +1292,19 @@ test("MIN-102 the write path stops minting the retired outcome classes, and stil
 // INIT-008: the sprint / release-train mechanism — a Release is a top-level batch
 // container (parentless, like an Initiative) and members attach by the member-side
 // advisory:sprint annotation carrying a qualified {workspaceId, workId} reference.
-test("sprint: a Release is created parentless", async (context) => {
-  // Load-bearing red-proof for guard SPRINT-01. A Release is enforced parentless; if this
-  // ever fails, the parentage rule that keeps the timebox axis from entangling the scope
-  // tree has been dropped.
+// TCRN-CROSS-STORY-472 R1 stops the write path creating Releases; the ones on a chain still
+// read, still anchor sprint annotations, and are written here as the retired verb wrote them.
+async function historicalRelease(fx, externalKey, second, parentId = null) {
+  return appendHistoricalWorkCreate(fx.workspace, { externalKey, projectId: fx.projectId, kind: "Release", parentId, occurredAt: instant(second) });
+}
+
+test("sprint: a new Release is refused, and a historical one reads parentless", async (context) => {
   const fx = await seededFixture(context);
-  const state = await createWork(fx.workspace, {
+  await expectReasonAsync("WORK_KIND_RETIRED", () => createWork(fx.workspace, {
     occurredAt: instant(3), projectId: fx.projectId, externalKey: "SPRINT-W31", kind: "Release", parentId: null,
-  });
+  }));
+  await historicalRelease(fx, "SPRINT-W31", 3);
+  const state = await materializeWorkspace(fx.workspace);
   const sprint = state.work.find((entry) => entry.externalKey === "SPRINT-W31");
   assert.equal(sprint.kind, "Release");
   assert.equal(sprint.parentId, null);
@@ -1298,10 +1312,12 @@ test("sprint: a Release is created parentless", async (context) => {
 });
 
 test("sprint: a Release cannot take a parent", async (context) => {
+  // Load-bearing red-proof for guard SPRINT-01. A Release is enforced parentless, now by replay
+  // alone; if this ever fails, the parentage rule that keeps the timebox axis from entangling
+  // the scope tree has been dropped.
   const fx = await seededFixture(context);
-  await expectReasonAsync("GRAPH_PARENT_KIND_INVALID", () => createWork(fx.workspace, {
-    occurredAt: instant(3), projectId: fx.projectId, externalKey: "SPRINT-BAD", kind: "Release", parentId: fx.workId,
-  }));
+  await historicalRelease(fx, "SPRINT-BAD", 3, fx.workId);
+  await rejectedTail(fx.workspace, /GRAPH_PARENT_KIND_INVALID/u);
 });
 
 test("sprint: a valid sprint annotation is stored and round-trips", async (context) => {
@@ -1309,12 +1325,9 @@ test("sprint: a valid sprint annotation is stored and round-trips", async (conte
   // sprint by a qualified reference to the sprint's Release record.
   const fx = await seededFixture(context);
   const workspaceId = fx.state.metadata.workspaceId;
-  let state = await createWork(fx.workspace, {
-    occurredAt: instant(3), projectId: fx.projectId, externalKey: "SPRINT-W31", kind: "Release", parentId: null,
-  });
-  const sprintId = state.work.find((entry) => entry.externalKey === "SPRINT-W31").id;
+  const sprintId = (await historicalRelease(fx, "SPRINT-W31", 3)).id;
   const ref = { workspaceId, workId: sprintId };
-  state = await annotateWork(fx.workspace, { occurredAt: instant(4), id: fx.workId, sprint: ref });
+  const state = await annotateWork(fx.workspace, { occurredAt: instant(4), id: fx.workId, sprint: ref });
   const member = state.work.find((entry) => entry.id === fx.workId);
   assert.deepEqual(member.extensions["advisory:sprint"], { required: false, value: ref });
   assert.equal(member.status, "planned", "a sprint annotation never changes status");
@@ -1338,10 +1351,7 @@ test("sprint: a malformed sprint reference fails closed at the verb", async (con
 
 test("sprint: a forged advisory:sprint value is refused by replay", async (context) => {
   const fx = await seededFixture(context);
-  let state = await createWork(fx.workspace, {
-    occurredAt: instant(3), projectId: fx.projectId, externalKey: "SPRINT-W31", kind: "Release", parentId: null,
-  });
-  const ref = { workspaceId: fx.state.metadata.workspaceId, workId: state.work.find((e) => e.externalKey === "SPRINT-W31").id };
+  const ref = { workspaceId: fx.state.metadata.workspaceId, workId: (await historicalRelease(fx, "SPRINT-W31", 3)).id };
   await annotateWork(fx.workspace, { occurredAt: instant(4), id: fx.workId, sprint: ref });
   assert.equal((await materializeWorkspace(fx.workspace)).version, 4, "the honest chain replays");
   await forgeOwnStream(fx.workspace, (events) => events.map((event) => event.payload.operation === "work.annotated"
@@ -1366,14 +1376,15 @@ test("sprint: a forged work.created carrying a malformed advisory value is refus
   await rejectedTail(fx.workspace);
 });
 
-test("sprint: the CLI opens Release create and work-list --sprint filters members", async (context) => {
+test("sprint: the CLI refuses a new Release and work-list --sprint filters members of a historical one", async (context) => {
   const fx = await cliSeededFixture(context);
   const ws = fx.ws;
   const workspaceId = (await validateWorkspace(ws)).metadata.workspaceId;
-  // Release is now creatable at the CLI (parentless).
-  const sprint = await invokeCli(["work-create", "--title", "record-title", "--workspace", ws, "--at", instant(3), "--project-id", fx.projectId, "--external-key", "SPRINT-W31", "--kind", "Release", "--parent-id", "-"]);
-  assert.equal(sprint.ok, true, `release create failed: ${sprint.reasonCode}`);
-  const sprintId = JSON.parse(sprint.output).record.id;
+  // Release was creatable at the CLI from 0.5.0 until TCRN-CROSS-STORY-472 R1.
+  const refused = await invokeCli(["work-create", "--title", "record-title", "--workspace", ws, "--at", instant(3), "--project-id", fx.projectId, "--external-key", "SPRINT-W31", "--kind", "Release", "--parent-id", "-"]);
+  assert.equal(refused.ok, false);
+  assert.equal(refused.reasonCode, "WORK_KIND_RETIRED");
+  const sprintId = (await historicalRelease(fx, "SPRINT-W31", 3)).id;
   const qualified = `${workspaceId}#${sprintId}`;
   // Annotate the Initiative into the sprint through the CLI.
   const annotated = await invokeCli(["work-annotate", "--workspace", ws, "--at", instant(4), "--id", fx.workId, "--sprint", qualified]);

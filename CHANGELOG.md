@@ -253,6 +253,27 @@ while the format stays, the writing engine's version for a newer format. A write
 library's format must check the same readiness first and refuse with `LIBRARY_UPGRADE_NOT_READY`
 (`packages/core/spec/ether-library-v1.md`); this engine has no such write yet.
 
+An Incident is a Story now (TCRN-CROSS-STORY-472; MIN-227 D6; `packages/core/src/work-relations.ts`):
+a new record is an Initiative, Epic, Story or Subtask, and `work-create --kind Incident` or
+`Release` (and a batch member of either kind) is refused with `WORK_KIND_RETIRED` and a remedy
+(`details.remedy`: open a Story with a fixes relation). Every Incident and Release already on a
+chain still replays, reads, transitions and can be the target of a relation; `work-list --kind`
+still filters by both. Relations between work records are fields from a closed vocabulary:
+parent (the record's parent), blocked-by, implements, supersedes, fixes and decided-in. A record
+stores its forward relations only, blocked-by, implements, supersedes and fixes in the
+required:false extension `advisory:relations` (each a sorted list of at most 64 work ids) and
+decided-in as its `advisory:decided-by` minutes list, and the engine projects the reverse
+(blocks, implemented-by, superseded-by, fixed-by, decides) when the record is read; the reverse
+is never an event field. `work-create` and `work-annotate` take `--blocked-by`, `--implements`,
+`--supersedes`, `--fixes` and `--decided-in` (`--decided-by` is its older name); a write refuses a
+target that is not a live work record, the record itself or an unknown relation, and an
+annotation replaces each list it names whole (`-` removes one). Replay checks only the shape of a
+stored value, so an old chain or a merge naming a record this device has not seen still reads.
+`work-show` returns `relations {forward, reverse, missing}` (missing: forward targets the library
+no longer holds as live records), `work-list --relation <name>=<id>` filters by a forward or a
+reverse name, and a `work-batch` member carries `relations {blockedBy, implements, supersedes,
+fixes, decidedIn}`.
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

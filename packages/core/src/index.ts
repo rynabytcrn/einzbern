@@ -552,6 +552,10 @@ export {
 export type { CorePersonaBundle, CorePersonaProfile, CorePersonaReasonCode } from "./reference-profiles.js";
 export { WORK_BATCH_SCHEMA_VERSION, WORK_BATCH_VERBS, applyWorkBatch, workBatchReceipt } from "./work-batch.js";
 export type { WorkBatchOptions, WorkBatchProblem } from "./work-batch.js";
+// TCRN-CROSS-STORY-472 R2, R3: relations between work records; the forward direction is stored,
+// the reverse projected when read.
+export { RELATION_NAMES, REVERSE_RELATION_NAMES, relationFilter, workRelations } from "./work-relations.js";
+export type { WorkRelationsInput } from "./work-relations.js";
 export { KNOWLEDGE_BATCH_SCHEMA_VERSION, KNOWLEDGE_BATCH_VERBS, applyKnowledgeBatch } from "./knowledge-batch.js";
 export type { KnowledgeBatchOptions, KnowledgeBatchProblem } from "./knowledge-batch.js";
 // TCRN-CROSS-STORY-362: the recall core's public face is the verb's face. The index,

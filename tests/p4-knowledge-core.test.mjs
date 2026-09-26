@@ -1274,18 +1274,17 @@ test("CQ-10: the link index still refuses links that are absent from the workspa
   }
 });
 
-test("TCRN-CROSS-STORY-023: the aggregate cap counts marker+metadata+body but not the derived index, and still fires", async () => {
-  // Regression guard for the double-count that made ~30 tiny records scan at 97%.
-  // Fill a store with large-body records until the cap rejects one, then prove two
-  // things at the admitted count: (1) the store fits under the new accounting
-  // (marker + Σ metadata + Σ body), and (2) the SAME records would have exceeded
-  // the cap under the old accounting (which also charged the index) — so the fix
-  // genuinely raised headroom rather than removing the bound. The final create
-  // failing with KNOWLEDGE_LIMIT_EXCEEDED proves the cap still fires.
+test("TCRN-CROSS-STORY-023, TCRN-CROSS-SUB-309: the aggregate cap counts card bodies only, and still fires", async () => {
+  // STORY-023 stopped charging the derived index; SUB-309 stopped charging the marker and
+  // the metadata too. Fill a store with large-body records until the cap rejects one, then
+  // prove at the admitted count: (1) the bodies fit the cap and one more would not, which is
+  // where the refusal fell; (2) the SAME records exceed the cap once marker and metadata
+  // are added back -- so the change genuinely raised headroom rather than removing the
+  // bound; (3) the capacity report names exactly the body bytes and the limit.
   const fx = await workspaceFixture({ externalKey: "FIXTURE-KNOWLEDGE-S023" });
   try {
     const storeRoot = join(fx.workspace, DIRECTORY.knowledge);
-    let admitted = 0, rejected = false;
+    let admitted = 0, rejected = null;
     for (let i = 0; i < 200; i += 1) {
       try {
         await createKnowledgeUnit(fx.workspace, unitInput(fx, `S023-${i}`, {
@@ -1294,20 +1293,22 @@ test("TCRN-CROSS-STORY-023: the aggregate cap counts marker+metadata+body but no
         admitted += 1;
       } catch (error) {
         assert.equal(error.reasonCode, "KNOWLEDGE_LIMIT_EXCEEDED"); // the cap still fires
-        rejected = true; break;
+        rejected = error; break;
       }
     }
-    assert.equal(rejected, true, "the cap must still reject once the source-of-truth bytes exceed it");
+    assert.ok(rejected !== null, "the cap must still reject once the body bytes exceed it");
     let sumMeta = 0, sumBody = 0;
     for (const n of await readdir(join(storeRoot, "metadata"))) sumMeta += (await readFile(join(storeRoot, "metadata", n))).length;
     for (const n of await readdir(join(storeRoot, "bodies"))) sumBody += (await readFile(join(storeRoot, "bodies", n))).length;
     const marker = (await readFile(join(storeRoot, "store.json"))).length;
-    const index = (await readFile(fx.indexView)).length;
     const cap = 131_072;
-    const current = marker + sumMeta + sumBody;
-    assert.ok(current <= cap, `admitted records must fit the new cap: ${current} <= ${cap}`);
-    assert.ok(current + index > cap, `the same records would have exceeded the old index-inclusive cap: ${current + index} > ${cap}`);
-    assert.equal((await validateKnowledgeStore(fx.workspace)).reasonCode, "KNOWLEDGE_STORE_VALID");
+    assert.equal(sumBody, admitted * 7_500);
+    assert.ok(sumBody <= cap && sumBody + 7_500 > cap, `the refusal falls where the bodies stop fitting: ${sumBody} + 7500 > ${cap}`);
+    assert.ok(marker + sumMeta + sumBody > cap, `the same records exceed the cap once marker and metadata count: ${marker + sumMeta + sumBody} > ${cap}`);
+    assert.deepEqual(rejected.details, { bodyBytes: sumBody + 7_500, limit: cap }, "the refusal names the projected body bytes and the limit");
+    const validation = await validateKnowledgeStore(fx.workspace);
+    assert.equal(validation.reasonCode, "KNOWLEDGE_STORE_VALID");
+    assert.deepEqual(validation.capacity, { bodyBytes: sumBody, limit: cap });
   } finally { await fx.close(); }
 });
 

@@ -56,12 +56,11 @@ export const KNOWLEDGE_LIMITS = Object.freeze({
   maximumSummaryBytes: 2_048,
   maximumSnippetBytes: 512,
   maximumMetadataBytes: 32_768,
-  // STORY-330: source-of-truth knowledge bytes are bounded by the same canonical
-  // view ceiling as the protocol. The previous 128 KiB value was a historical
-  // record count surrogate: 35 cards measured 63,316 bytes of source data while
-  // their derived index measured 52,851 bytes (5.0% of the 1 MiB view ceiling).
-  // The index remains byte-verified separately; charging it twice made the old
-  // budget reject a store before the protocol view could be full.
+  // STORY-330: the knowledge budget is bounded by the same canonical view ceiling as
+  // the protocol. The previous 128 KiB value was a historical record count surrogate:
+  // 35 cards measured 63,316 bytes of source data while their derived index measured
+  // 52,851 bytes (5.0% of the 1 MiB view ceiling). TCRN-CROSS-SUB-309: what the budget
+  // counts is card bodies alone (see capacityBodyBytes).
   maximumAggregateBytes: PROTOCOL_LIMITS.maxCanonicalBytes,
   maximumQueryResults: 8,
   maximumLocators: 16,
@@ -79,6 +78,26 @@ function knowledgeAggregateLimit(workspace: WorkspaceState): number {
     fail("KNOWLEDGE_LIMIT_EXCEEDED", "knowledge.aggregateBytes is outside its declared bounds");
   }
   return value;
+}
+
+// TCRN-CROSS-SUB-309 (TCRN-CROSS-STORY-476 R3): knowledge.aggregateBytes counts card bodies
+// and nothing else -- not the store marker, not the metadata, not the derived index -- and
+// only the bodies of cards that are still live. A card a later card superseded (the one
+// retirement left, TCRN-CROSS-SUB-308), or one an older engine retired, gives its body back to
+// the budget; a superseded body stays on disk for an explicit read, it is simply not charged.
+// The count reads each record's own bodyBytes, which a full read binds to the body on disk, so
+// a metadata-only read measures the same number, and a store written before this is measured
+// the new way the first time it is read: nothing is migrated or rewritten.
+function countsTowardCapacity(metadata: KnowledgeUnitMetadata): boolean {
+  return metadata.lifecycle !== "retired" && metadata.extensions.supersededBy === undefined;
+}
+
+function capacityBodyBytes(records: readonly KnowledgeUnitMetadata[]): number {
+  return records.reduce((total, metadata) => total + (countsTowardCapacity(metadata) ? metadata.bodyBytes : 0), 0);
+}
+
+function assertWithinCapacity(bodyBytes: number, limit: number, label: string): void {
+  if (bodyBytes > limit) fail("KNOWLEDGE_LIMIT_EXCEEDED", label, { bodyBytes, limit });
 }
 
 export const KNOWLEDGE_REASON_CODES = Object.freeze([
@@ -386,6 +405,9 @@ interface KnowledgeStoreScan {
   // scope/project or linked-work references no longer resolve against the advanced
   // workspace head. Empty (and absent from non-rebase scans) otherwise.
   readonly linkInvalid: readonly string[];
+  // TCRN-CROSS-SUB-309: the budget as this read measured it -- live card body bytes -- and
+  // the knowledge.aggregateBytes limit it is held to.
+  readonly capacity: { readonly bodyBytes: number; readonly limit: number };
 }
 
 const markerFields = ["schemaVersion", "workspaceId", "eventHighWaterDigest", "version", "disposable", "authority"];
@@ -1439,7 +1461,8 @@ async function scanKnowledgeStore(
   const units: ScannedKnowledgeUnit[] = [];
   const linkInvalid: string[] = [];
   const aggregateLimit = knowledgeAggregateLimit(workspace);
-  let aggregateBytes = markerBytes.length;
+  // TCRN-CROSS-SUB-309: live card body bytes only (capacityBodyBytes).
+  let capacityBytes = 0;
   for (const id of metadataIds) {
     const metadataPath = resolve(metadataRoot, `${id}.json`);
     const bodyPath = resolve(bodiesRoot, `${id}.body`);
@@ -1473,10 +1496,8 @@ async function scanKnowledgeStore(
       ? await backend.readKnowledgeBody(id)
       : null;
     if (body !== null) validateMetadataBody(metadata, body, workspace);
-    aggregateBytes += metadataBytes.length + (body?.length ?? 0);
-    if (aggregateBytes > aggregateLimit) {
-      fail("KNOWLEDGE_LIMIT_EXCEEDED", "knowledge aggregate bytes");
-    }
+    if (countsTowardCapacity(metadata)) capacityBytes += metadata.bodyBytes;
+    assertWithinCapacity(capacityBytes, aggregateLimit, "knowledge aggregate bytes");
     if (metadata.id !== id) {
       fail("KNOWLEDGE_PATH_INVALID", id);
     }
@@ -1493,15 +1514,11 @@ async function scanKnowledgeStore(
     }
   }
   // TCRN-CROSS-STORY-023: the index is a derived rebuildable view whose `records`
-  // array is a re-serialization of the very metadata already counted above, so
-  // charging its bytes against the cap taxes every record roughly twice and made a
-  // store of ~30 small records scan at 97% while holding almost no body content.
-  // The aggregate now bounds only the source-of-truth bytes (marker + Σ metadata +
-  // Σ body); the index is still validated byte-for-byte against the canonical
-  // rebuild below, and its read stays bounded — at the cap plus one metadata's
-  // worth of envelope headroom, since a legitimate index equals Σ metadata (≤ cap)
-  // plus its small fixed envelope, so the old cap-tight bound could reject a valid
-  // near-full store on the read alone.
+  // array is a re-serialization of the metadata, so charging its bytes against the cap
+  // taxed every record roughly twice. TCRN-CROSS-SUB-309 went the rest of the way: the
+  // cap now counts live card bodies only (capacityBodyBytes), not the marker and not
+  // the metadata either. The index is still validated byte-for-byte against the
+  // canonical rebuild below.
   if (inLibrary) {
     // A library's view is this device's cache: another device's crest writes never reach it, so a
     // missing or out-of-date copy is projected again rather than read as a partial store.
@@ -1514,7 +1531,11 @@ async function scanKnowledgeStore(
       fail("KNOWLEDGE_PARTIAL_STATE", "knowledge index is stale");
     }
   }
-  return { workspaceRoot, storeRoot, metadataRoot, bodiesRoot, viewsRoot, marker, workspace, units, index, linkInvalid: linkInvalid.sort(compareCanonicalText) };
+  return {
+    workspaceRoot, storeRoot, metadataRoot, bodiesRoot, viewsRoot, marker, workspace, units, index,
+    linkInvalid: linkInvalid.sort(compareCanonicalText),
+    capacity: { bodyBytes: capacityBytes, limit: aggregateLimit },
+  };
 }
 
 async function mutationAdmissionScan(workspaceRoot: string, options: KnowledgeReadOptions, rebase = false): Promise<KnowledgeStoreScan> {
@@ -1907,6 +1928,9 @@ export async function validateKnowledgeStore(workspaceRoot: string, options: Kno
     records: scan.units.length,
     indexDigest: scan.index.indexDigest ?? "",
     eventHighWaterDigest: scan.marker.eventHighWaterDigest,
+    // TCRN-CROSS-SUB-309: the capacity report -- live card body bytes against the
+    // knowledge.aggregateBytes limit.
+    capacity: { bodyBytes: scan.capacity.bodyBytes, limit: scan.capacity.limit },
   };
 }
 
@@ -1976,19 +2000,15 @@ async function createKnowledgeUnitUnlocked(workspaceRoot: string, input: CreateK
     const marker: KnowledgeStoreMarker = { ...scan.marker, version: scan.marker.version + 1 };
     const projectedMetadata = [...scan.units.map((unit) =>
       supersededMetadata !== null && unit.metadata.id === supersededMetadata.id ? supersededMetadata : unit.metadata), written];
-    // TCRN-CROSS-STORY-023: the create projection mirrors the scan's cap — only
-    // marker + Σ metadata + Σ body are charged; the derived index is not, so it no
-    // longer double-taxes every record (see scanKnowledgeStore).
-    const projectedAggregate = Buffer.byteLength(canonicalJson(marker), "utf8") +
-      scan.units.reduce((total, unit) => total + Buffer.byteLength(canonicalJson(unit.metadata), "utf8") + (unit.body?.length ?? 0), 0) +
-      metadataBytes.length + body.length +
-      (supersededMetadata === null || superseded === undefined ? 0
-        : Buffer.byteLength(canonicalJson(supersededMetadata), "utf8") - Buffer.byteLength(canonicalJson(superseded.metadata), "utf8"));
-    // STORY-330: no record-count admission branch remains. The aggregate source
-    // bytes and the canonical metadata/body limits are the capacity checks.
-    if (metadataBytes.length > KNOWLEDGE_LIMITS.maximumMetadataBytes || projectedAggregate > knowledgeAggregateLimit(scan.workspace)) {
+    // TCRN-CROSS-SUB-309: the create projection mirrors the scan's measure -- the live card
+    // bodies once this write lands. The new body joins it, and a card this write supersedes
+    // leaves it, which is how a replacement makes room rather than doubling the store.
+    // STORY-330: no record-count admission branch remains. The body budget and the
+    // canonical metadata/body limits are the capacity checks.
+    if (metadataBytes.length > KNOWLEDGE_LIMITS.maximumMetadataBytes) {
       fail("KNOWLEDGE_LIMIT_EXCEEDED", "knowledge create budget");
     }
+    assertWithinCapacity(capacityBodyBytes(projectedMetadata), knowledgeAggregateLimit(scan.workspace), "knowledge create budget");
     if (scan.units.some((unit) => unit.metadata.id === metadata.id || unit.metadata.externalKey === metadata.externalKey)) {
       fail("KNOWLEDGE_DUPLICATE", metadata.id);
     }
@@ -2682,11 +2702,8 @@ async function refreshKnowledgeArticleUnlocked(
     if (!secondRead.equals(articleBytes)) fail("KNOWLEDGE_SOURCE_CHANGED", workspaceArticle.file);
     const marker: KnowledgeStoreMarker = { ...scan.marker, version: scan.marker.version + 1 };
     const projectedMetadata = scan.units.map((entry) => entry.metadata.id === metadata.id ? metadata : entry.metadata);
-    const projectedAggregate = Buffer.byteLength(canonicalJson(marker), "utf8") +
-      scan.units.reduce((total, entry) => total +
-        Buffer.byteLength(canonicalJson(entry.metadata.id === metadata.id ? metadata : entry.metadata), "utf8") +
-        (entry.metadata.id === metadata.id ? Buffer.byteLength(body, "utf8") : (entry.body?.length ?? 0)), 0);
-    if (projectedAggregate > knowledgeAggregateLimit(scan.workspace)) fail("KNOWLEDGE_LIMIT_EXCEEDED", "article refresh aggregate bytes");
+    // TCRN-CROSS-SUB-309: the refreshed index body replaces the old one in the body budget.
+    assertWithinCapacity(capacityBodyBytes(projectedMetadata), knowledgeAggregateLimit(scan.workspace), "article refresh aggregate bytes");
     const backend = storeBackendFor(scan.storeRoot, options);
     await backend.writeKnowledgeBody(metadata.id, Buffer.from(body, "utf8"));
     crash("after-body-write", options.faultAt);

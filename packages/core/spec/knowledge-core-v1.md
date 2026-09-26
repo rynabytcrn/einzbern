@@ -44,8 +44,9 @@ The legacy body-file wording above describes the compatibility reader. Current
 local migrations may replace the body files with canonical NDJSON segments,
 point indexes, and a manifest; metadata remains one record per id and is still
 the authority. `knowledge.aggregateBytes` is the workspace setting for the
-marker/metadata/body source bytes, with the fixed canonical ceiling as its upper
-bound.
+body bytes of live cards (see "Capacity"), with the fixed canonical ceiling as its
+upper bound; the body layout (one file per card or segments) does not change the
+count.
 
 ## Metadata
 
@@ -110,12 +111,11 @@ poison an otherwise valid store or block a later valid mutation.
 
 V1 limits body bytes to 8192, subject bytes to 512, summary bytes to 2048,
 snippet bytes to 512, each source-reference string to 512,
-metadata bytes to 32768, the default query page to 8 results, aggregate store
-bytes to 1 MiB, source locators to 16, each link class to 64, tags to 32, and
+metadata bytes to 32768, the default query page to 8 results, the aggregate
+body budget to 1 MiB, source locators to 16, each link class to 64, tags to 32, and
 role scopes to 16. The aggregate limit is the protocol canonical-view ceiling:
 35 measured cards occupied 63,316 source-of-truth bytes and their derived index
-occupied 52,851 bytes, or 5.0% of 1,048,576 bytes. The index is verified
-separately and is not charged twice. Listing more matches than one page truncates with a
+occupied 52,851 bytes, or 5.0% of 1,048,576 bytes. Listing more matches than one page truncates with a
 `{total, offset, truncated}` continuation window rather than failing closed, and a
 bounded case-insensitive substring over subject, summary, snippet, and tags narrows
 results without loading bodies. `knowledge-source-check` is the explicit source
@@ -124,6 +124,24 @@ file comparison surface; ordinary reads do not scan every source file.
 The one-MiB value above is the fixed engine ceiling. A workspace may select a
 lower `knowledge.aggregateBytes` value (default 131,072); changing that setting
 changes future store admission without rewriting metadata or bodies.
+
+## Capacity
+
+Capacity counts card bodies and nothing else (TCRN-CROSS-STORY-476 R3,
+TCRN-CROSS-SUB-309): not the store marker, not the metadata, not the derived index.
+Only live cards count: a card that a later card superseded, the one retirement there
+is, gives its body back to the budget, and so does a `retired` record an older engine
+left. A superseded card's body stays on disk for an explicit read; it is simply not
+charged. The count is the sum of each counted record's own `bodyBytes`, which a full
+read binds to the body on disk, so a metadata-only read measures the same number.
+Every read measures a store this way, including one written before the change, so an
+existing store is recounted the first time it is read and nothing is migrated or
+rewritten. A write that would take the count past `knowledge.aggregateBytes` is refused
+with `KNOWLEDGE_LIMIT_EXCEEDED` (unchanged), its details carrying the projected
+`bodyBytes` and the `limit`; a write that supersedes a card is charged its own body
+less the one it retires, which is how a replacement makes room rather than doubling
+the store. A read of a store already over the limit refuses the same way.
+`knowledge-validate` reports the measure as `capacity: {bodyBytes, limit}`.
 
 These text budgets are UTF-8 byte budgets. Draft 2020-12 `maxLength` counts
 Unicode code points and is retained only as a structural bound. P4 schema proof

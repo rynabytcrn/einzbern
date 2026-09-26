@@ -73,6 +73,10 @@ empty and must not contain or sit inside the library; the copy is checked file b
 replayed to the same heads; this device's registry then points at it, and the old place keeps
 `TOMBSTONE.json`, still reads, and refuses every write with `LIBRARY_TOMBSTONED` naming the
 new place. Another device learns the new place from its own registry (`library-register`).
+The move also writes into projects: every project this device has registered for the library
+gets the new place in its own `.claude/settings.local.json` and `.codex/config.toml` when the
+library now sits outside it (TCRN-CROSS-STORY-470 R5, `packages/core/src/host-writable-roots.ts`;
+the originals are backed up in the device directory first, and `hostWiring` reports each project).
 
 Since TCRN-CROSS-STORY-469 this engine writes libraries (`.ether`) only. An old-layout
 workspace (the old control directory, named in `docs/wiki/Glossary.md`) opens read-only

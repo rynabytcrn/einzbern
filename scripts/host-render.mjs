@@ -3,6 +3,8 @@
 // STORY-371: render the governed dispatch configuration into host-owned files.
 // The renderer owns only the fields it declares; all other host configuration is
 // carried forward byte-for-byte where the host format permits it.
+// TCRN-CROSS-STORY-470 R5: --library <path> renders the writable-roots scope instead (see
+// renderWritableRoots).
 
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -12,6 +14,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 
 import {
+  applyWritableRoots,
+  planWritableRoots,
   readDispatchConfig,
   resolveDispatch,
 } from "../dist/build/packages/core/src/index.js";
@@ -21,6 +25,7 @@ const execFileAsync = promisify(execFile);
 export const HOST_RENDER_VERSION = "tcrn.host-render.v1";
 export const HOST_RENDER_HOSTS = Object.freeze(["claude-code", "codex"]);
 export const HOST_RENDER_SCOPES = Object.freeze(["full", "hooks-only"]);
+export const HOST_RENDER_WRITABLE_ROOTS_SCOPE = "writable-roots";
 export const HOST_RENDER_AGENT_DIRECTORY = ".claude/agents";
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const CLAUDE_SETTINGS_PATH = ".claude/settings.json";
@@ -561,26 +566,72 @@ function flag(argv, name) {
   return index < 0 ? undefined : argv[index + 1];
 }
 
+// TCRN-CROSS-STORY-470 R5, AC4: the writable-roots scope. When the library sits outside the project
+// at `root`, the host's own project settings name it (Claude Code permissions.additionalDirectories
+// in .claude/settings.local.json, Codex [sandbox_workspace_write] writable_roots in
+// .codex/config.toml), with everything else in the file kept and the original first backed up in
+// the device directory; a library inside the project needs nothing (packages/core/src/
+// host-writable-roots.ts). An installer runs this per host; workspace-relocate does it itself.
+export async function renderWritableRoots({ host, root, library, at, planOnly = false } = {}) {
+  text(host, "host");
+  if (!HOST_RENDER_HOSTS.includes(host)) failure("HOST_RENDER_HOST_UNKNOWN", `host must be one of ${HOST_RENDER_HOSTS.join(", ")}`);
+  const plan = await planWritableRoots({ projectRoot: text(root, "root"), libraryPath: text(library, "library"), hosts: [host] });
+  const summary = {
+    scope: HOST_RENDER_WRITABLE_ROOTS_SCOPE,
+    host,
+    projectRoot: plan.projectRoot,
+    libraryPath: plan.libraryPath,
+    libraryInsideProject: plan.libraryInsideProject,
+  };
+  if (planOnly) {
+    return {
+      reasonCode: "HOST_RENDER_PLAN_READY",
+      ...summary,
+      files: plan.files.map(({ before, after, ...entry }) => ({ ...entry, beforeSha256: before === null ? null : digest(before), afterSha256: digest(after) })),
+    };
+  }
+  const applied = await applyWritableRoots(plan, { at: text(at, "at") });
+  const wrote = applied.reasonCode === "HOST_WRITABLE_ROOTS_WRITTEN";
+  return { reasonCode: wrote ? "HOST_RENDER_COMMITTED" : "HOST_RENDER_ALREADY_CURRENT", ...summary, wrote, backupDir: applied.backupDir, files: applied.files };
+}
+
+async function writableRootsFromArguments(argv) {
+  const host = flag(argv, "host");
+  const root = flag(argv, "root");
+  const library = flag(argv, "library");
+  const requestedScope = flag(argv, "scope");
+  if (argv.includes("--hooks-only") || (requestedScope !== undefined && requestedScope !== HOST_RENDER_WRITABLE_ROOTS_SCOPE)) {
+    failure("HOST_RENDER_SCOPE_CONFLICT", `--library renders the ${HOST_RENDER_WRITABLE_ROOTS_SCOPE} scope only`);
+  }
+  if (!host || !root || !library) failure("HOST_RENDER_ARGUMENT_MISSING", `--host, --root, and --library are required for the ${HOST_RENDER_WRITABLE_ROOTS_SCOPE} scope`);
+  const at = flag(argv, "at") ?? new Date().toISOString().replace(/\.\d{3}Z$/u, "Z");
+  return renderWritableRoots({ host, root, library, at, planOnly: argv.includes("--plan-only") });
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     const argv = process.argv.slice(2);
-    const host = flag(argv, "host");
-    const root = flag(argv, "root");
-    const workspace = flag(argv, "workspace");
-    const mode = flag(argv, "mode");
-    const settingsJson = flag(argv, "settings");
-    if (!host || !root || (!workspace && !settingsJson)) failure("HOST_RENDER_ARGUMENT_MISSING", "--host, --root, and --workspace (or --settings) are required");
-    const settings = settingsJson === undefined ? await workspaceSettings(resolve(workspace)) : JSON.parse(settingsJson);
-    const renderRoot = resolve(root);
-    const repoRoot = flag(argv, "repo-root") ?? REPO_ROOT;
-    const requestedScope = flag(argv, "scope");
-    const hooksOnlyAlias = argv.includes("--hooks-only");
-    if (requestedScope !== undefined && hooksOnlyAlias && requestedScope !== "hooks-only") failure("HOST_RENDER_SCOPE_CONFLICT", "--hooks-only conflicts with --scope full");
-    const scope = renderScope(requestedScope ?? (hooksOnlyAlias ? "hooks-only" : "full"));
-    const preliminary = renderHostPlan({ host, mode, scope, settings, root: renderRoot, repoRoot, existing: new Map() });
-    const plan = renderHostPlan({ host, mode, scope, settings, root: renderRoot, repoRoot, existing: await readExisting(renderRoot, preliminary.files.map((entry) => entry.path)) });
-    const result = argv.includes("--plan-only") ? { reasonCode: "HOST_RENDER_PLAN_READY", plan: { ...plan, files: plan.files.map(({ content, ...entry }) => ({ ...entry, afterSha256: digest(content) })) } } : await applyHostRender(plan, { backupDir: flag(argv, "backup-dir") });
-    process.stdout.write(`${JSON.stringify(result)}\n`);
+    if (argv.includes("--library") || flag(argv, "scope") === HOST_RENDER_WRITABLE_ROOTS_SCOPE) {
+      process.stdout.write(`${JSON.stringify(await writableRootsFromArguments(argv))}\n`);
+    } else {
+      const host = flag(argv, "host");
+      const root = flag(argv, "root");
+      const workspace = flag(argv, "workspace");
+      const mode = flag(argv, "mode");
+      const settingsJson = flag(argv, "settings");
+      if (!host || !root || (!workspace && !settingsJson)) failure("HOST_RENDER_ARGUMENT_MISSING", "--host, --root, and --workspace (or --settings) are required");
+      const settings = settingsJson === undefined ? await workspaceSettings(resolve(workspace)) : JSON.parse(settingsJson);
+      const renderRoot = resolve(root);
+      const repoRoot = flag(argv, "repo-root") ?? REPO_ROOT;
+      const requestedScope = flag(argv, "scope");
+      const hooksOnlyAlias = argv.includes("--hooks-only");
+      if (requestedScope !== undefined && hooksOnlyAlias && requestedScope !== "hooks-only") failure("HOST_RENDER_SCOPE_CONFLICT", "--hooks-only conflicts with --scope full");
+      const scope = renderScope(requestedScope ?? (hooksOnlyAlias ? "hooks-only" : "full"));
+      const preliminary = renderHostPlan({ host, mode, scope, settings, root: renderRoot, repoRoot, existing: new Map() });
+      const plan = renderHostPlan({ host, mode, scope, settings, root: renderRoot, repoRoot, existing: await readExisting(renderRoot, preliminary.files.map((entry) => entry.path)) });
+      const result = argv.includes("--plan-only") ? { reasonCode: "HOST_RENDER_PLAN_READY", plan: { ...plan, files: plan.files.map(({ content, ...entry }) => ({ ...entry, afterSha256: digest(content) })) } } : await applyHostRender(plan, { backupDir: flag(argv, "backup-dir") });
+      process.stdout.write(`${JSON.stringify(result)}\n`);
+    }
   } catch (error) {
     process.stderr.write(`${JSON.stringify({ ok: false, reasonCode: error?.reasonCode ?? "HOST_RENDER_FAILED", error: String(error?.message ?? error) })}\n`);
     process.exitCode = 1;

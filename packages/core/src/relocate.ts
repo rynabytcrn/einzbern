@@ -9,6 +9,11 @@
 // place gets TOMBSTONE.json (where it went and when): it still reads, and every write there
 // refuses LIBRARY_TOMBSTONED. Nothing is deleted from the old place. A failure before the
 // tombstone removes only what this relocation created in the target; the source is untouched.
+//
+// TCRN-CROSS-STORY-470 R5: the move then wires the hosts itself. Every project this device has
+// registered for the library names the new place in its own host settings when the library now
+// sits outside it (host-writable-roots.ts), and the report says, project by project, what was
+// written or why it could not be; a project whose wiring fails does not undo the move.
 
 import { createHash, randomBytes } from "node:crypto";
 import { lstat, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
@@ -20,6 +25,8 @@ import { isAtomicTemporaryName, writeFileAtomic } from "./atomic-file.js";
 import { readAllStreams } from "./akasha.js";
 import { suggestCloudHosted } from "./cloud-roots.js";
 import { openLibrary } from "./ether-library.js";
+import { applyWritableRoots, planWritableRoots } from "./host-writable-roots.js";
+import type { AppliedWritableRoots } from "./host-writable-roots.js";
 import { DIRECTORY } from "./names.js";
 import { repointLibrary } from "./registry.js";
 import { libraryTreeDigests } from "./workspace-snapshot.js";
@@ -60,6 +67,14 @@ export interface RelocateOptions {
   readonly copyTransformForTest?: (relativePath: string, bytes: Buffer) => Buffer;
 }
 
+// One registered project's host wiring after the move: what was written, or why it could not be.
+export interface RelocationHostWiringFailure {
+  readonly reasonCode: string;
+  readonly projectRoot: string;
+  readonly error: string;
+}
+export type RelocationHostWiring = AppliedWritableRoots | RelocationHostWiringFailure;
+
 export interface RelocationReport {
   readonly reasonCode: "LIBRARY_RELOCATED";
   readonly libraryId: string;
@@ -73,6 +88,7 @@ export interface RelocationReport {
   readonly cloudHosted: boolean;
   readonly suggestedCloudHosted: boolean;
   readonly tombstone: LibraryTombstone;
+  readonly hostWiring: readonly RelocationHostWiring[];
 }
 
 function fail(reasonCode: RelocateReasonCode, message: string, details: Readonly<Record<string, string>> = {}): never {
@@ -172,10 +188,31 @@ async function copyTree(source: string, target: string, options: RelocateOptions
   return { files, bytes };
 }
 
+function reasonCodeOf(error: unknown): string {
+  const reasonCode = (error as { reasonCode?: unknown } | null)?.reasonCode;
+  return typeof reasonCode === "string" ? reasonCode : "HOST_WRITABLE_ROOTS_FAILED";
+}
+
+// Wire every registered project to where the library went, one project at a time.
+async function wireProjects(projectRoots: readonly string[], libraryPath: string, at: string): Promise<readonly RelocationHostWiring[]> {
+  const wiring: RelocationHostWiring[] = [];
+  for (const projectRoot of projectRoots) {
+    try {
+      wiring.push(await applyWritableRoots(await planWritableRoots({ projectRoot, libraryPath }), { at }));
+    } catch (error) {
+      wiring.push({ reasonCode: reasonCodeOf(error), projectRoot, error: String((error as { message?: unknown } | null)?.message ?? error) });
+    }
+  }
+  return wiring;
+}
+
 /** Relocate the library at `sourceInput` to `targetInput` (see the module comment). */
 export async function relocateLibrary(sourceInput: string, targetInput: string, options: RelocateOptions): Promise<RelocationReport> {
   assertStrictInstant(options.at);
-  return withWorkspaceWriteLock(sourceInput, async (sourceRoot) => {
+  const moved = await withWorkspaceWriteLock(sourceInput, async (sourceRoot): Promise<{
+    readonly report: Omit<RelocationReport, "hostWiring">;
+    readonly projectRoots: readonly string[];
+  }> => {
     const source = await openLibrary(sourceRoot);
     const target = await realTarget(targetInput);
     if (inside(source.root, target) || inside(target, source.root)) {
@@ -223,18 +260,23 @@ export async function relocateLibrary(sourceInput: string, targetInput: string, 
     };
     await writeFileAtomic(join(source.root, LIBRARY_TOMBSTONE_FILE), canonicalJson(tombstone as unknown as JsonValue));
     return {
-      reasonCode: "LIBRARY_RELOCATED",
-      libraryId: source.manifest.libraryId,
-      from: source.root,
-      to: target,
-      files: copied.files,
-      bytes: copied.bytes,
-      headEventHash,
-      versionVector,
-      registryEntries: entries.length,
-      cloudHosted,
-      suggestedCloudHosted,
-      tombstone,
+      report: {
+        reasonCode: "LIBRARY_RELOCATED",
+        libraryId: source.manifest.libraryId,
+        from: source.root,
+        to: target,
+        files: copied.files,
+        bytes: copied.bytes,
+        headEventHash,
+        versionVector,
+        registryEntries: entries.length,
+        cloudHosted,
+        suggestedCloudHosted,
+        tombstone,
+      },
+      projectRoots: entries.map((entry) => entry.projectPath),
     };
   });
+  // The move is complete and the library's lock released; the host wiring follows it.
+  return { ...moved.report, hostWiring: await wireProjects(moved.projectRoots, moved.report.to, options.at) };
 }

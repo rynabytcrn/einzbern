@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // STORY-371: host-render is a host-owned projection of governed dispatch settings.
+// TCRN-CROSS-STORY-470 R5: its writable-roots scope names a library outside the project.
 
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
@@ -13,8 +15,10 @@ import {
   applyHostRender,
   inspectHostRenderDrift,
   renderHostPlan,
+  renderWritableRoots,
 } from "../scripts/host-render.mjs";
 import { claudeHookSettings, codexHookDocument } from "../scripts/host-harness.mjs";
+import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { LOCAL_DIRECTORY_NAMES } from "../dist/build/packages/core/src/index.js";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -497,4 +501,74 @@ test("TCRN-CROSS-STORY-429: the authorized per-host hook changes do not alter ot
     assert.deepEqual(actual, expected, `${host}: exactly one in-place replacement and one full task-bound knowledge group addition`);
     assert.deepEqual(actual.hooks.UserPromptSubmit.at(-1), userGroup, `${host}: unowned user group and metadata are retained`);
   }
+});
+
+// TCRN-CROSS-STORY-470 R5, AC4: a library outside the project, rendered into each host's project settings.
+async function writableRootsFixture(t, prefix) {
+  const base = await scratchFor(t, prefix);
+  const previous = process.env.EINZBERN_HOME;
+  process.env.EINZBERN_HOME = join(base, "device");
+  t.after(() => {
+    process.env.EINZBERN_HOME = previous;
+  });
+  const project = join(base, "project");
+  await mkdir(project);
+  const library = join(base, "cloud", "library");
+  await runCli(["init", "--workspace", library, "--at", "2026-09-26T09:00:00Z"], { write: () => undefined });
+  return { base, project, library };
+}
+
+test("TCRN-CROSS-STORY-470 R5, AC4: the writable-roots scope names a library outside the project for each host and keeps the rest of the file", async (t) => {
+  const { base, project, library } = await writableRootsFixture(t, "einzbern-host-render-roots-");
+  await mkdir(join(project, ".claude"), { recursive: true });
+  const claudeBefore = `${JSON.stringify({ permissions: { allow: ["Read(/**)"] }, model: "user-model" }, null, 2)}\n`;
+  await writeFile(join(project, ".claude", "settings.local.json"), claudeBefore);
+
+  const plan = await renderWritableRoots({ host: "codex", root: project, library, planOnly: true });
+  assert.deepEqual([plan.reasonCode, plan.scope, plan.libraryInsideProject], ["HOST_RENDER_PLAN_READY", "writable-roots", false]);
+  assert.deepEqual(plan.files.map((entry) => [entry.path, entry.changed, entry.beforeSha256]), [[".codex/config.toml", true, null]]);
+  assert.equal(await readFile(join(project, ".codex", "config.toml"), "utf8").catch(() => null), null, "a plan writes nothing");
+
+  for (const host of ["claude-code", "codex"]) {
+    const receipt = await renderWritableRoots({ host, root: project, library, at: "2026-09-26T10:00:00Z" });
+    assert.deepEqual([receipt.reasonCode, receipt.scope, receipt.host, receipt.wrote, receipt.libraryPath], ["HOST_RENDER_COMMITTED", "writable-roots", host, true, library]);
+    const again = await renderWritableRoots({ host, root: project, library, at: "2026-09-26T10:00:01Z" });
+    assert.deepEqual([again.reasonCode, again.wrote, again.backupDir], ["HOST_RENDER_ALREADY_CURRENT", false, null], `${host}: rendering again changes nothing`);
+  }
+  assert.deepEqual(JSON.parse(await readFile(join(project, ".claude", "settings.local.json"), "utf8")), {
+    permissions: { allow: ["Read(/**)"], additionalDirectories: [library] },
+    model: "user-model",
+  });
+  assert.equal(await readFile(join(project, ".codex", "config.toml"), "utf8"), `[sandbox_workspace_write]\nwritable_roots = [${JSON.stringify(library)}]\n`);
+  // The Claude file existed and its original went to the device directory first.
+  const backups = join(base, "device", "backups", "20260926T100000Z", "writable-roots");
+  const [projectDigest] = await readdir(backups);
+  assert.equal(await readFile(join(backups, projectDigest, ".claude", "settings.local.json"), "utf8"), claudeBefore);
+});
+
+test("TCRN-CROSS-STORY-470 R5: the native CLI renders the writable-roots scope with --library and refuses a conflicting scope", async (t) => {
+  const { base, project, library } = await writableRootsFixture(t, "einzbern-host-render-roots-cli-");
+  const cli = join(repoRoot, "scripts", "host-render.mjs");
+  const env = { ...process.env, EINZBERN_HOME: join(base, "device") };
+  const refusal = (args) => {
+    const run = spawnSync(process.execPath, [cli, ...args], { encoding: "utf8", env });
+    assert.equal(run.status, 1, args.join(" "));
+    return JSON.parse(run.stderr.trim().split("\n").at(-1)).reasonCode;
+  };
+  assert.equal(refusal(["--host", "codex", "--root", project, "--library", library, "--scope", "full"]), "HOST_RENDER_SCOPE_CONFLICT");
+  assert.equal(refusal(["--host", "codex", "--root", project, "--library", library, "--hooks-only"]), "HOST_RENDER_SCOPE_CONFLICT");
+  assert.equal(refusal(["--host", "codex", "--root", project, "--scope", "writable-roots"]), "HOST_RENDER_ARGUMENT_MISSING");
+  assert.equal(refusal(["--host", "codex", "--root", project, "--library", library, "--at", "yesterday"]), "TIMESTAMP_INVALID");
+  assert.deepEqual(await readdir(project), [], "no refused run wrote anything");
+
+  const receipt = JSON.parse(execFileSync(process.execPath, [cli, "--host", "claude-code", "--root", project, "--library", library], { encoding: "utf8", env }));
+  assert.deepEqual([receipt.reasonCode, receipt.scope, receipt.backupDir], ["HOST_RENDER_COMMITTED", "writable-roots", null]);
+  assert.deepEqual(JSON.parse(await readFile(join(project, ".claude", "settings.local.json"), "utf8")), { permissions: { additionalDirectories: [library] } });
+
+  // A library inside the project needs nothing.
+  const own = join(project, ".ether");
+  await runCli(["init", "--workspace", own, "--at", "2026-09-26T09:30:00Z"], { write: () => undefined });
+  const needless = JSON.parse(execFileSync(process.execPath, [cli, "--host", "codex", "--root", project, "--library", own, "--at", "2026-09-26T10:00:00Z"], { encoding: "utf8", env }));
+  assert.deepEqual([needless.reasonCode, needless.libraryInsideProject, needless.files], ["HOST_RENDER_ALREADY_CURRENT", true, []]);
+  assert.equal(await readFile(join(project, ".codex", "config.toml"), "utf8").catch(() => null), null);
 });

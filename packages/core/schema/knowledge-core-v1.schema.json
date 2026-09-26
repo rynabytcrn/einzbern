@@ -68,11 +68,13 @@
           "const": "metadata-index-authority-body-separate"
         },
         "lastSweepAt": {
+          "description": "Historical: the instant of the last 1.2.0 fitness sweep. Read, never written (TCRN-CROSS-SUB-258, TCRN-CROSS-SUB-308).",
           "$ref": "#/$defs/strictInstant"
         }
       }
     },
     "retirement": {
+      "description": "Historical: the retirement record a 1.2.0 fitness sweep wrote into a card. Read, never written; the only retirement now is a later card naming this one with supersedes (TCRN-CROSS-SUB-308).",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -335,6 +337,7 @@
           ]
         },
         "lifecycle": {
+          "description": "Every card is written active (TCRN-CROSS-SUB-308). candidate and retired are read on records written before, never written.",
           "enum": [
             "candidate",
             "active",
@@ -349,6 +352,7 @@
           ]
         },
         "promotionState": {
+          "description": "Every card is written promoted: there is no promotion step (TCRN-CROSS-SUB-308). candidate and rejected are read on records written before, never written.",
           "enum": [
             "candidate",
             "promoted",

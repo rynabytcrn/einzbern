@@ -129,11 +129,11 @@ test("STORY-365 the threshold is two subject-token hits, not one shared word", (
 test("STORY-365 GWT4/GWT5: create needs no backlink lists, and nothing new lands as a candidate", async () => {
   const fixture = await containerFixture("FIXTURE-CAPTURE-CREATE");
   try {
-    const created = await cliJson([
+    const createArguments = (externalKey, lifecycle) => [
       "knowledge-create",
       "--workspace", fixture.workspace,
       "--at", instant(2),
-      "--external-key", "S365-NO-LINK-LISTS",
+      "--external-key", externalKey,
       "--scope", "role",
       "--project-id", "-",
       "--role-scopes", "implementation",
@@ -145,14 +145,20 @@ test("STORY-365 GWT4/GWT5: create needs no backlink lists, and nothing new lands
       "--snippet", "四个列表可选",
       "--accountable-owner-id", OWNER,
       "--source-references", "-",
-      "--lifecycle", "active",
+      "--lifecycle", lifecycle,
       "--retrieval", "default",
       "--freshness", "fresh",
       "--last-verified", "-",
       "--stale-days", "-",
       "--export", "metadata-only",
       "--body", "四个链接列表都不再必填。",
-    ]);
+    ];
+    // TCRN-CROSS-SUB-308: the lifecycle that was the last way to land a candidate is refused
+    // at the write, with its remedy.
+    const refused = await cliJson(createArguments("S365-CANDIDATE", "candidate")).then(() => null, (error) => error);
+    assert.equal(refused?.reasonCode, "KNOWLEDGE_LIFECYCLE_RETIRED");
+    assert.deepEqual([refused.details.required, refused.details.actual], ["active", "candidate"]);
+    const created = await cliJson(createArguments("S365-NO-LINK-LISTS", "active"));
     assert.equal(created.reasonCode, "KNOWLEDGE_UNIT_CREATED");
     assert.equal(created.promotionState, "promoted", "a create with no backlinks is written official");
 

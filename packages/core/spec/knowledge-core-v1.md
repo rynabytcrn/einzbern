@@ -33,7 +33,8 @@ this machine's lock of the library (`locks/<library>.lock` in the device directo
 every chain write takes), and inside it all mutations require an exclusive no-follow claim and
 exact store-version CAS. The lock serialises one machine's writers; nothing makes two devices'
 concurrent crest writes safe against each other.
-Promotion additionally requires record-revision CAS. Descriptor-bound reads
+Re-verification, policy updates and article refreshes additionally require
+record-revision CAS. Descriptor-bound reads
 bind device, inode, size, mode, and nanosecond change metadata. Atomic
 replacement uses exclusive no-follow temporary files. Link, special-file,
 source-replacement, partial/crash, count, size, and aggregate violations fail
@@ -43,8 +44,9 @@ The legacy body-file wording above describes the compatibility reader. Current
 local migrations may replace the body files with canonical NDJSON segments,
 point indexes, and a manifest; metadata remains one record per id and is still
 the authority. `knowledge.aggregateBytes` is the workspace setting for the
-marker/metadata/body source bytes, with the fixed canonical ceiling as its upper
-bound.
+body bytes of live cards (see "Capacity"), with the fixed canonical ceiling as its
+upper bound; the body layout (one file per card or segments) does not change the
+count.
 
 ## Metadata
 
@@ -61,56 +63,59 @@ The implementation constructs and validates the frozen P2 Knowledge record for
 every accepted metadata/body pair. It does not alter P2 schemas or canonical
 semantics.
 
-## Freshness, promotion, and retrieval
+## Freshness, writing, and retrieval
 
 Freshness is evaluated at an explicit strict instant. A null
 `stalenessPolicy.maximumAgeDays` is change-driven and never expires by the clock;
 cards with no verification instant are still selectable. A finite policy marks
 an expired age window `stale`, but a missing verification instant is not made
 unselectable by an `unknown` result. Default selection and checkpoints exclude
-stale records, rejected or retired records, non-default retrieval, and excluded
-export disposition. Candidates are not excluded: TCRN-CROSS-INC-282 (Owner rulings
+stale records, superseded, rejected or retired records, non-default retrieval,
+and excluded export disposition. TCRN-CROSS-INC-282 (Owner rulings
 TCRN-CROSS-MIN-146 D1 and TCRN-CROSS-MIN-158 D1) made the default selection every
 active card, because a promotion gate on retrieval is what left a written card
 unfindable with nothing in its receipt to say so.
 
-Every card written with lifecycle `active` is written `promoted`, whatever its
-kind and whatever provenance it carries. That moves the provenance floor to write
-time: `validateMetadataShape` runs the promotion assertions on a promoted record,
-so a `guide` or `reference` without a source reference and an evidence link is
-refused at capture rather than stored as a card no reader returns, and a fragment
-kind (`fact`, `decision`, `summary`) is admitted with half-supplied provenance
-rather than parked in a state no verb could repair. The one shape that is still a
-candidate is a record its own author wrote as lifecycle `candidate`, which
-`conference-close --distill` does; promotion remains available to it, and only a
-rejection changes what a reader sees — a candidate's body already opens, and its
-lifecycle, not its promotion state, is what keeps it out of recall. The owner
-reference remains provenance accountability only; it does
-not claim P5 profile admission or identity resolution.
+A card is retrievable the moment it is written (TCRN-CROSS-STORY-476 R1,
+TCRN-CROSS-MIN-227 D9, TCRN-CROSS-SUB-308). Every write lands lifecycle `active`
+and promotion state `promoted`, whatever its kind and whatever provenance it
+carries; there is no candidate state to write and no promotion step. A write may
+leave the lifecycle out; one that names `candidate` or `retired` is refused with
+`KNOWLEDGE_LIFECYCLE_RETIRED` (details `required`, `actual`, `remedy`) before
+anything is written. The provenance floor is therefore write time:
+`validateMetadataShape` runs its assertions on a promoted record, so a `guide` or
+`reference` without a source reference and an evidence link is refused at capture
+rather than stored as a card no reader returns, and a fragment kind (`fact`,
+`decision`, `summary`) is admitted with half-supplied provenance. Records written
+before this keep the lifecycle and promotion state they were written with
+(`candidate`, `rejected`, `retired`) and are read, never rewritten; a `rejected`
+record stays out of default selection and its body opens only with
+`allowUnpromoted`. The owner reference remains provenance accountability only;
+it does not claim P5 profile admission or identity resolution.
 
-`knowledge-batch` accepts `knowledge-policy` members for a bounded metadata
-migration. Each member supplies an id (or external key), an expected revision,
+`knowledge-batch` accepts `knowledge-create`, `knowledge-policy` and
+`knowledge-reverify` members; a promote or retire member is refused by the shape
+pass as an unknown verb. A `knowledge-policy` member is a bounded metadata
+migration: it supplies an id (or external key), an expected revision,
 and the replacement `{maximumAgeDays, unknownDisposition}` policy. The member
 advances the disposable store version and metadata revision without changing the
 body, source digest, or verification instant; setting `maximumAgeDays` to `null`
 also removes a stale posture that came only from the retired calendar policy.
 
-Promotion input is admitted as exactly `promoted|rejected` before the mutation
-claim is acquired. Every non-crash error after claim acquisition releases only
-the identity-bound claim generation before returning its frozen reason code, so
-an invalid request cannot poison an otherwise valid store or block a later
-valid mutation.
+Mutation input is validated before the mutation claim is acquired. Every
+non-crash error after claim acquisition releases only the identity-bound claim
+generation before returning its frozen reason code, so an invalid request cannot
+poison an otherwise valid store or block a later valid mutation.
 
 ## Limits and privacy
 
 V1 limits body bytes to 8192, subject bytes to 512, summary bytes to 2048,
 snippet bytes to 512, each source-reference string to 512,
-metadata bytes to 32768, the default query page to 8 results, aggregate store
-bytes to 1 MiB, source locators to 16, each link class to 64, tags to 32, and
+metadata bytes to 32768, the default query page to 8 results, the aggregate
+body budget to 1 MiB, source locators to 16, each link class to 64, tags to 32, and
 role scopes to 16. The aggregate limit is the protocol canonical-view ceiling:
 35 measured cards occupied 63,316 source-of-truth bytes and their derived index
-occupied 52,851 bytes, or 5.0% of 1,048,576 bytes. The index is verified
-separately and is not charged twice. Listing more matches than one page truncates with a
+occupied 52,851 bytes, or 5.0% of 1,048,576 bytes. Listing more matches than one page truncates with a
 `{total, offset, truncated}` continuation window rather than failing closed, and a
 bounded case-insensitive substring over subject, summary, snippet, and tags narrows
 results without loading bodies. `knowledge-source-check` is the explicit source
@@ -119,6 +124,24 @@ file comparison surface; ordinary reads do not scan every source file.
 The one-MiB value above is the fixed engine ceiling. A workspace may select a
 lower `knowledge.aggregateBytes` value (default 131,072); changing that setting
 changes future store admission without rewriting metadata or bodies.
+
+## Capacity
+
+Capacity counts card bodies and nothing else (TCRN-CROSS-STORY-476 R3,
+TCRN-CROSS-SUB-309): not the store marker, not the metadata, not the derived index.
+Only live cards count: a card that a later card superseded, the one retirement there
+is, gives its body back to the budget, and so does a `retired` record an older engine
+left. A superseded card's body stays on disk for an explicit read; it is simply not
+charged. The count is the sum of each counted record's own `bodyBytes`, which a full
+read binds to the body on disk, so a metadata-only read measures the same number.
+Every read measures a store this way, including one written before the change, so an
+existing store is recounted the first time it is read and nothing is migrated or
+rewritten. A write that would take the count past `knowledge.aggregateBytes` is refused
+with `KNOWLEDGE_LIMIT_EXCEEDED` (unchanged), its details carrying the projected
+`bodyBytes` and the `limit`; a write that supersedes a card is charged its own body
+less the one it retires, which is how a replacement makes room rather than doubling
+the store. A read of a store already over the limit refuses the same way.
+`knowledge-validate` reports the measure as `capacity: {bodyBytes, limit}`.
 
 These text budgets are UTF-8 byte budgets. Draft 2020-12 `maxLength` counts
 Unicode code points and is retained only as a structural bound. P4 schema proof
@@ -140,10 +163,10 @@ store. Rebase re-validates every record's full metadata shape, body binding, and
 scope/project/work links against the new workspace state. A live record whose
 scope/project or linked-work references no longer resolve is an offender: the
 rebase fails closed with `KNOWLEDGE_REBASE_BLOCKED` and a deterministic id-sorted
-offender list, unless `retire-invalid` is given, in which case exactly those
-records are retired (lifecycle `retired`, a tombstoned audit record whose dangling
-backlinks are then durably tolerated) and every retained record is byte-identical.
-Rebase is a single version step under the mutation claim; a fault at either write
+offender list. The `retire-invalid` escape that retired those records is gone
+with every other retirement path but `--supersedes` (TCRN-CROSS-SUB-308); a
+rebase that lands rewrites no record, and its result reports `retired: 0` and
+no offender. Rebase is a single version step under the mutation claim; a fault at either write
 point leaves the claim present so the next admission fails closed
 (`KNOWLEDGE_PARTIAL_STATE`/`KNOWLEDGE_LOCKED`), never accepting a half-rebased
 marker. The store is not event-sourced, so rebase — not re-initialization — is the
@@ -151,41 +174,32 @@ only path that preserves records across workspace events.
 
 ## Lifecycle
 
-A promoted record can be re-verified: `reverify` touches `lastVerified` to the
-supplied instant and restores a fresh posture under CAS, so promoted knowledge
+A written card can be re-verified: `reverify` touches `lastVerified` to the
+supplied instant and restores a fresh posture under CAS, so written knowledge
 does not decay irreversibly out of default selection; only a promoted, non-retired
-record admits it. A record of any lifecycle can be `retire`d — it becomes a
-tombstoned audit entry (lifecycle `retired`) whose dangling backlinks are durably
-tolerated and which leaves default selection. Retiring frees a live create slot:
-there is no independent record-count cap. Retired metadata remains an audit entry
-and its body may be reclaimed, while the aggregate source-byte budget still counts
-the metadata that remains on disk. Capacity is therefore controlled by the
-canonical byte ceiling, not by a historical count or by a retired-record allowance.
+record admits it, which is every card written now. There is no manual retirement:
+the `knowledge-retire` verb and its batch member are gone (TCRN-CROSS-SUB-308).
+There is no independent record-count cap: capacity is controlled by the canonical
+byte ceiling, not by a historical count or by a retired-record allowance. A
+`retired` record an older engine left is a tombstoned audit entry: it stays
+readable, its dangling backlinks are durably tolerated, its body may have been
+reclaimed, and `knowledge-recover` still completes a stopped write that left a
+retired record with its body.
 
-## Fitness and conflict retirement
+## Conflict retirement
 
-Knowledge retires automatically only at write time (TCRN-CROSS-MIN-225 D1). A capture
-or create whose subject scores as a possible conflict with an active card is refused
-with `KNOWLEDGE_POSSIBLE_CONFLICT` unless it names `--supersedes` or `--coexist`;
-`--supersedes` marks the older card with `extensions.supersededBy`, which takes it out
-of default retrieval while its body stays on disk. No clock, observation day or window
-retires a card: `maximumAgeDays` only marks a card `stale`, and a store at its
-aggregate limit refuses the next write with `KNOWLEDGE_LIMIT_EXCEEDED` rather than
-evicting anything. `knowledge-retire`, and `--retire-invalid` during a rebase, remain
-explicit operator actions.
-
-`evaluateKnowledgeFitness` is a read-only statistic (`tcrn.knowledge-fitness.v2`) with
-no window, eligibility or proposal. It counted, per artifact id, the local telemetry
-records up to the evaluation instant; that store is retired (TCRN-CROSS-STORY-467 R3), so
-nothing is read and every card reports zero retrievals, references, triggers,
-verification failures and observed events. Telemetry files left on disk are not read.
-`retire-proposals` returns these rows together with the cards already retired and
-their historical retirement metadata; its `proposals` and `ruleDiffs` are always empty.
-`retire-sweep` (`tcrn.knowledge-retire-sweep.v2`, `KNOWLEDGE_RETIRE_SWEEP_CONFLICT_ONLY`)
-reads the store once, metadata only, and neither retires nor writes anything. The
-retired `--window-days` and `--min-events` flags are still validated and are listed back
-under `retiredInputs`; `fitness.windowDays` and `fitness.minEvents` are retired settings
-whose recorded values replay as history.
+Knowledge retires only at write time (TCRN-CROSS-MIN-225 D1, TCRN-CROSS-MIN-227 D9,
+TCRN-CROSS-STORY-476 R2). A capture or create whose subject scores as a possible
+conflict with an active card is refused with `KNOWLEDGE_POSSIBLE_CONFLICT` (details
+`conflicts`) unless it names `--supersedes` or `--coexist`; `--supersedes` marks the
+older card with `extensions.supersededBy`, which takes it out of default and
+searched retrieval while it stays lifecycle `active` and its body stays readable by
+an explicit body read. No clock, observation day, window or operator act retires a
+card: `maximumAgeDays` only marks a card `stale`, and a store at its aggregate limit
+refuses the next write with `KNOWLEDGE_LIMIT_EXCEEDED` rather than evicting anything.
+The fitness statistic, `retire-proposals`, `retire-sweep`, `knowledge-retire` and the
+rebase's `--retire-invalid` are gone (TCRN-CROSS-SUB-308); `fitness.windowDays` and
+`fitness.minEvents` are retired settings whose recorded values replay as history.
 
 The `tcrn.knowledge-retirement.v1` metadata record (card id, reason, counts, sweep
 instant and window) and the marker's `lastSweepAt` are read-only historical formats:
@@ -197,11 +211,11 @@ metadata/body set can be fully validated; otherwise the store remains blocked.
 
 ## Governed surfaces
 
-Core exports empty initialization/validation, creation, metadata listing and
-filtering, bounded snippet read, explicit body read, freshness evaluation,
-promotion transition, re-verify, retire, high-water rebase, and metadata-only
-checkpoint generation, fitness evaluation, retirement proposals, and dead-claim
-recovery. CLI commands mirror these surfaces.
+Core exports empty initialization/validation, creation (with its conflict
+supersede), metadata listing and filtering, bounded snippet read, explicit body
+read, freshness evaluation, re-verify, staleness-policy update, high-water rebase,
+metadata-only checkpoint generation, and dead-claim recovery. CLI commands mirror
+these surfaces.
 `P4_KNOWLEDGE_CORE_VERIFIED` proves only this bounded file-native capability; it
 does not mark the graph work done or start RC2/P5/P6.
 

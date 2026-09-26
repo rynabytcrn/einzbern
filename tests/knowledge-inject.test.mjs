@@ -26,7 +26,6 @@ import {
   initializeKnowledgeStore,
   initializeLibrary,
   materializeWorkspace,
-  transitionKnowledgePromotion,
   DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
@@ -139,17 +138,9 @@ async function createSyntheticWorkspace() {
       // a possible duplicate of the last.
       coexist: true,
     });
+    // A written card shows up in search results at once: there is no promotion step
+    // (TCRN-CROSS-SUB-308).
     knowledgeVersion = created.version;
-
-    // Promote the knowledge unit so it shows up in search results. STORY-365 writes a
-    // sourced-and-evidenced card promoted already, so this is now a no-op for these three.
-    const promoted = created.promotionState === "promoted" ? created : await transitionKnowledgePromotion(workspace, {
-      expectedRevision: created.revision,
-      occurredAt: instant(knowledgeVersion + 1),
-      id: created.id,
-      promotionState: "promoted"
-    });
-    knowledgeVersion = promoted.version;
   }
 
   return {

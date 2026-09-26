@@ -45,10 +45,8 @@ const card = (fixture, n, overrides = {}) => ({
   verb: "knowledge-create",
   externalKey: `KB-CARD-${n}`,
   scope: "project", projectId: fixture.projectId, roleScopes: [],
-  // TCRN-CROSS-INC-282: kind no longer decides this. Every card written lifecycle "active"
-  // is written promoted, whatever its kind, so a test that needs the batch's
-  // knowledge-promote member to be a real transition passes `lifecycle: "candidate"`
-  // through `overrides` -- the one shape that is still a candidate.
+  // TCRN-CROSS-INC-282, TCRN-CROSS-SUB-308: every card is written active and promoted,
+  // whatever its kind; there is no candidate to write and no promote member to move one.
   category: "workflow", kind: "guide", tags: ["batch"],
   subject: `Card ${n} subject`, summary: `Card ${n} summary.`, snippet: `Card ${n} snippet.`,
   accountableOwnerId: deriveStableId("owner", "KB-OWNER"),
@@ -77,35 +75,35 @@ const refusal = async (operation) => {
 
 // The motivating case, whole: a chain write has invalidated the store (the normal state of
 // a workspace being worked in), and one invocation aligns it, files four cards and
-// promotes one. Red leg: drop the alignFirst rebase and the first create refuses
+// re-verifies one. Red leg: drop the alignFirst rebase and the first create refuses
 // KNOWLEDGE_HIGH_WATER_MISMATCH -- sixteen round trips' worth of ceremony returns.
-test("knowledge-batch: align, four cards and a promote in one act", async () => {
+test("knowledge-batch: align, four cards and a reverify in one act", async () => {
   const fixture = await workspaceWithStore();
   try {
+    // An Initiative: a new Incident is refused once Incident folds into Story (TCRN-CROSS-SUB-297).
     await createWork(fixture.root, {
       occurredAt: at(2), projectId: fixture.projectId,
-      externalKey: "KBATCH-W", kind: "Incident", parentId: null, status: "active",
+      externalKey: "KBATCH-W", kind: "Initiative", parentId: null, status: "active",
     });
     const result = await applyKnowledgeBatch(fixture.root, batch([
-      card(fixture, 1, { lifecycle: "candidate" }), card(fixture, 2), card(fixture, 3), card(fixture, 4),
-      { verb: "knowledge-promote", externalKey: "KB-CARD-1", state: "promoted" },
+      card(fixture, 1), card(fixture, 2), card(fixture, 3), card(fixture, 4),
+      { verb: "knowledge-reverify", externalKey: "KB-CARD-1" },
     ]), { occurredAt: at(3), alignFirst: true });
     assert.equal(result.reasonCode, "KNOWLEDGE_BATCH_APPLIED");
     assert.equal(result.aligned, true);
     assert.equal(result.applied.length, 6, "the rebase and all five members are receipted");
     const all = await listKnowledgeMetadata(fixture.root, { at: at(4), selection: "all", allowTrailing: true });
     assert.equal(all.total, 4);
-    // TCRN-CROSS-INC-282: all four end promoted -- three because an active write is a
-    // promoted write, card 1 because the promote member moved it. What proves the member
-    // touched only the card it named is the revision: card 1 was written and then moved.
+    // TCRN-CROSS-SUB-308: all four are written active and promoted. What proves the reverify
+    // member touched only the card it named is the revision: card 1 was written and then moved.
     const byKey = new Map(all.records.map((record) => [record.externalKey, record]));
-    assert.equal(byKey.get("KB-CARD-1").promotionState, "promoted", "the promote saw the card its predecessor created");
-    assert.equal(byKey.get("KB-CARD-1").revision, 2, "the promote member moved the card it named");
+    assert.deepEqual([...byKey.values()].map((record) => `${record.lifecycle}|${record.promotionState}`),
+      Array(4).fill("active|promoted"), "every written card is active and promoted");
+    assert.equal(byKey.get("KB-CARD-1").revision, 2, "the reverify saw the card its predecessor created and moved it");
     assert.deepEqual(["KB-CARD-2", "KB-CARD-3", "KB-CARD-4"].map((key) => byKey.get(key).revision),
       [1, 1, 1], "and left the three it did not name at their written revision");
-    const promoted = await listKnowledgeMetadata(fixture.root, { at: at(4), allowTrailing: true });
-    assert.equal(promoted.total, 3,
-      "default recall answers for the three written active; card 1 is out on the lifecycle its author chose, not on its promotionState");
+    const answered = await listKnowledgeMetadata(fixture.root, { at: at(4), allowTrailing: true });
+    assert.equal(answered.total, 4, "default recall answers for all four from the write");
   } finally {
     await rm(fixture.base, { recursive: true, force: true });
   }
@@ -163,15 +161,19 @@ test("knowledge-batch: every shape problem is reported at once, before any mutat
     const result = await refusal(() => applyKnowledgeBatch(fixture.root, batch([
       { verb: "knowledge-invent" },
       { verb: "knowledge-create", externalKey: "KB-X" },
-      { verb: "knowledge-promote", externalKey: "KB-X", state: "sideways" },
-      { verb: "knowledge-retire" },
+      { verb: "knowledge-promote", externalKey: "KB-X", state: "promoted" },
+      { verb: "knowledge-reverify" },
+      { verb: "knowledge-retire", externalKey: "KB-X" },
     ]), { occurredAt: at(2) }));
     assert.equal(result.payload.stage, "shape");
-    assert.deepEqual([...new Set(result.payload.problems.map((problem) => problem.index))], [0, 1, 2, 3]);
+    assert.deepEqual([...new Set(result.payload.problems.map((problem) => problem.index))], [0, 1, 2, 3, 4]);
     const rules = new Set(result.payload.problems.map((problem) => problem.rule));
-    for (const rule of ["verb-known", "field-required", "state-known", "reference-required"]) {
+    for (const rule of ["verb-known", "field-required", "reference-required"]) {
       assert.ok(rules.has(rule), `${rule} is reported`);
     }
+    // TCRN-CROSS-SUB-308: the promote and retire members are gone with their verbs.
+    assert.deepEqual(result.payload.problems.filter((problem) => problem.index === 2 || problem.index === 4).map((problem) => problem.rule),
+      ["verb-known", "verb-known"], "promote and retire members are unknown verbs");
     const untouched = await listKnowledgeMetadata(fixture.root, { at: at(3), selection: "all" });
     assert.equal(untouched.total, 0, "no mutation ran");
   } finally {
@@ -185,14 +187,14 @@ test("knowledge-batch: every shape problem is reported at once, before any mutat
 test("knowledge-batch: acting on an untouched card demands an explicit revision", async () => {
   const fixture = await workspaceWithStore();
   try {
-    await applyKnowledgeBatch(fixture.root, batch([card(fixture, 1, { lifecycle: "candidate" })]), { occurredAt: at(2) });
+    await applyKnowledgeBatch(fixture.root, batch([card(fixture, 1)]), { occurredAt: at(2) });
     const result = await refusal(() => applyKnowledgeBatch(fixture.root, batch([
-      { verb: "knowledge-promote", externalKey: "KB-CARD-1", state: "promoted" },
+      { verb: "knowledge-reverify", externalKey: "KB-CARD-1" },
     ]), { occurredAt: at(3) }));
     assert.equal(result.payload.failed.reasonCode, "KNOWLEDGE_CAS_MISMATCH");
     assert.match(result.payload.failed.detail, /expectedRevision is required/u);
     const explicit = await applyKnowledgeBatch(fixture.root, batch([
-      { verb: "knowledge-promote", externalKey: "KB-CARD-1", state: "promoted", expectedRevision: 1 },
+      { verb: "knowledge-reverify", externalKey: "KB-CARD-1", expectedRevision: 1 },
     ]), { occurredAt: at(4) });
     assert.equal(explicit.reasonCode, "KNOWLEDGE_BATCH_APPLIED");
   } finally {

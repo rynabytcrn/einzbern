@@ -15,8 +15,8 @@
 // packages/core/src/knowledge-core.ts's buildMetadata, which is where the policy is
 // applied. Every one of the four takes --language-bundle on the CLI and turns it into the
 // same provider this file builds, so the hook and the operator hand the write path the
-// same shape. knowledge-promote is not a card's write path and is deliberately untouched
-// (Owner ruling TCRN-CROSS-MIN-160 D3).
+// same shape (Owner ruling TCRN-CROSS-MIN-160 D3). There is no promotion step to reach:
+// a card is retrievable the moment it is written (TCRN-CROSS-SUB-308).
 //
 // SUBCOMMANDS
 //   plan     --workspace <path> [--out <file>]

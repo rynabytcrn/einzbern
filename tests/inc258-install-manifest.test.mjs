@@ -12,6 +12,8 @@ import test from "node:test";
 
 import { INSTALL_MANIFEST, INSTALL_MANIFEST_REQUIRED_ITEM_IDS, assertInstallManifestComplete } from "../dist/build/packages/core/src/index.js";
 import { hookLauncherPath } from "../dist/build/packages/core/src/host-hooks.js";
+import { engineCurrentPath, engineLauncherPath } from "../dist/build/packages/core/src/engine-home.js";
+import { skillCopiesRecordPath } from "../dist/build/packages/core/src/skill-copies.js";
 import { inspectInstallWiring } from "../scripts/platform-doctor.mjs";
 
 const REMOVED_IDS = ["machine.local-snapshot-receipt", "machine.offsite-push-receipt"];
@@ -59,8 +61,9 @@ test("INC-258 install manifest matches the post-removal surface and rejects rest
   assertInstallManifestComplete(INSTALL_MANIFEST);
   // 20 until TCRN-CROSS-STORY-467 R3 retired the two adapter bundles, their two install
   // receipts and the engine repository's own settings fixture; 14 since R2 retired the
-  // helper trust archive; 15 since TCRN-CROSS-STORY-477 R1 added the stable hook launcher.
-  assert.equal(INSTALL_MANIFEST.items.length, 15);
+  // helper trust archive; 15 since TCRN-CROSS-STORY-477 R1 added the stable hook launcher; 18 since
+  // TCRN-CROSS-STORY-480 R4 added the engine pointer, the stable entry and the skill copies' record.
+  assert.equal(INSTALL_MANIFEST.items.length, 18);
   assert.deepEqual(REMOVED_IDS.filter((id) => INSTALL_MANIFEST.items.some((entry) => entry.id === id)), []);
   assert.deepEqual(REMOVED_IDS.filter((id) => INSTALL_MANIFEST_REQUIRED_ITEM_IDS.includes(id)), []);
   const restored = {
@@ -90,4 +93,30 @@ test("477-R1: the install manifest names the stable hook launcher the host hooks
   const red = await inspectInstallWiring(fixture.root, fixture.home);
   assert.equal(red.ok, false);
   assert.deepEqual(red.missing.map((item) => item.id), ["machine.hook-launcher"]);
+});
+
+// TCRN-CROSS-STORY-480 R4: the device directory's own install surface, where the engine and the
+// skill installer put it: the engine pointer, the stable entry that runs the current version, and
+// the record of both skill copies. A device missing one of them is not installed.
+test("480-R4: the install manifest names the engine pointer, the stable entry and the skill copies' record", async (context) => {
+  const home = join("/opt", "ada");
+  const device = join(home, ".einzbern");
+  const expected = {
+    "machine.engine-current": engineCurrentPath(device),
+    "machine.engine-entry": engineLauncherPath(device),
+    "machine.skill-copies-record": skillCopiesRecordPath(device),
+  };
+  for (const [id, path] of Object.entries(expected)) {
+    const entry = INSTALL_MANIFEST.items.find((item) => item.id === id);
+    assert.deepEqual({ ...entry, pathTemplate: null }, {
+      id, layer: "machine", host: "shared", pathTemplate: null, writer: "user-guided", acceptanceProbe: "probe:regular-file",
+    });
+    assert.ok(entry.pathTemplate.startsWith("<HOME>/"), id);
+    assert.equal(join(home, ...entry.pathTemplate.slice("<HOME>/".length).split("/")), path, `${id} names where the engine puts it`);
+    assert.ok(INSTALL_MANIFEST_REQUIRED_ITEM_IDS.includes(id), `${id} is required`);
+  }
+  const fixture = await createInstallFixture(context, { skipItems: [...REMOVED_IDS, ...Object.keys(expected)] });
+  const red = await inspectInstallWiring(fixture.root, fixture.home);
+  assert.equal(red.ok, false);
+  assert.deepEqual(red.missing.map((item) => item.id).sort(), Object.keys(expected).sort());
 });

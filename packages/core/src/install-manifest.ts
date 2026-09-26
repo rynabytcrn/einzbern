@@ -7,6 +7,16 @@ import { BRAND, DIRECTORY, LOCAL_DIRECTORY_NAMES } from "./names.js";
 // This machine's checkout folders keep their names; they are read from the names module.
 const PLATFORM_FOLDER = `<PLATFORM_ROOT>/${LOCAL_DIRECTORY_NAMES.classificationFolder}`;
 
+// TCRN-CROSS-STORY-480 R4 (SUB-326): the device directory's own install surface. engine-home.ts
+// names the engine pointer and the stable entry (ENGINE_FILES), and skill-copies.ts the record of
+// both skill copies (SKILL_COPIES_FILES). Neither can be imported here: engine-home.ts imports the
+// barrel that loads this module. tests/inc258-install-manifest.test.mjs holds each path equal to
+// the function that computes it.
+const DEVICE_DIRECTORY = `<HOME>/${DIRECTORY.device}`;
+const ENGINE_POINTER = "current";
+const ENGINE_ENTRY = "einzbern.mjs";
+const SKILL_COPIES_RECORD = "skills.json";
+
 export const INSTALL_MANIFEST_VERSION = "tcrn.install-manifest.v1" as const;
 
 export type InstallManifestLayer = "machine" | "container" | "project";
@@ -97,14 +107,21 @@ export const INSTALL_MANIFEST_ITEMS: readonly InstallManifestItem[] = Object.fre
   // session is opened, which is a stronger guarantee than the per-project copies were.
   item("machine.claude-settings", "machine", "claude", "<HOME>/.claude/settings.json", "user-guided", "probe:regular-file"),
   item("machine.codex-config", "machine", "codex", "<HOME>/.codex/config.toml", "user-guided", "probe:regular-file"),
-  // The helper copies are accepted as directories: the trusted archive and install
-  // markers their digest probe compared against are retired (TCRN-CROSS-STORY-467 R2).
+  // The two copies of the skill, one in each host's user skill root, placed by skill-copies.ts
+  // (TCRN-CROSS-STORY-479 R4). They are accepted here as directories; whether each still holds
+  // the tree whose install-tree digest skills.json records is doctor's skill-copies check.
   item("machine.claude-skill", "machine", "claude", `<HOME>/.claude/skills/${BRAND.helper.id}`, "user-guided", "probe:regular-directory"),
   // Codex's universal user Skill root is ~/.agents/skills.  The older
   // ~/.codex/skills copy is legacy history and is deliberately not an install
-  // obligation; skills@1.7.0 owns the canonical placement here.
+  // obligation: skill-copies.ts never writes it and moves the legacy helper's copy out of it.
   item("machine.agents-skill", "machine", "codex", `<HOME>/.agents/skills/${BRAND.helper.id}`, "user-guided", "probe:regular-directory"),
-  item("machine.workflow-engine", "machine", "shared", `<HOME>/${DIRECTORY.device}`, "user-guided", "probe:engine-version"),
+  item("machine.skill-copies-record", "machine", "shared", `${DEVICE_DIRECTORY}/${SKILL_COPIES_RECORD}`, "user-guided", "probe:regular-file"),
+  // The device directory itself, which holds the engine versions below.
+  item("machine.workflow-engine", "machine", "shared", DEVICE_DIRECTORY, "user-guided", "probe:engine-version"),
+  // TCRN-CROSS-STORY-471 R2: engine/current names the version in use, and engine/einzbern.mjs is the
+  // stable entry that runs it; switching versions rewrites only the pointer.
+  item("machine.engine-current", "machine", "shared", `${DEVICE_DIRECTORY}/${DEVICE_HOME_ENTRIES.engine}/${ENGINE_POINTER}`, "user-guided", "probe:regular-file"),
+  item("machine.engine-entry", "machine", "shared", `${DEVICE_DIRECTORY}/${DEVICE_HOME_ENTRIES.engine}/${ENGINE_ENTRY}`, "user-guided", "probe:regular-file"),
   // TCRN-CROSS-STORY-477 R1: the stable hook launcher every host hook runs, beside the engine
   // versions in the device directory; placed by the installer from scripts/einzbern-hook-launcher.mjs.
   item("machine.hook-launcher", "machine", "shared", `<HOME>/${DIRECTORY.device}/${DEVICE_HOME_ENTRIES.engine}/${ENGINE_HOOK_LAUNCHER}`, "user-guided", "probe:regular-file"),
@@ -128,12 +145,15 @@ const REQUIRED_ITEM_ID_CATALOG = [
   "machine.claude-skill",
   "machine.codex-config",
   "machine.agents-skill",
+  "machine.engine-current",
+  "machine.engine-entry",
   "machine.hook-launcher",
   "machine.launchd-local-snapshot",
   "machine.local-snapshot-artifacts",
   "machine.portal-launcher-cmd",
   "machine.portal-launcher-command",
   "machine.portal-launcher-sh",
+  "machine.skill-copies-record",
   "machine.workflow-engine",
   // This catalog stays written out by hand rather than derived from the item list, so
   // deleting an entry above still fails the completeness test.

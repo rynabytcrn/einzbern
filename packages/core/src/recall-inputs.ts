@@ -12,10 +12,17 @@
 //
 // The CLI (TCRN-CROSS-STORY-474, recall) and the prompt hook (STORY-477) build their input here, so
 // the two cannot index differently.
+//
+// TCRN-CROSS-STORY-476 R5 (MIN-227 D25): the cards come from two stores, the library's crest and
+// this user's crest, and every card says which (scope "project" or "user") on its way to its hit,
+// whose line marks a user card 「用户」. A user card is recalled in every project.
 
 import type { WorkRecord } from "../../protocol/src/index.js";
+import { listKnowledgeMetadata } from "./knowledge-core.js";
+import type { KnowledgeStoreScope } from "./knowledge-core.js";
+import { expansionsText } from "./knowledge-language.js";
 import { minutesView } from "./minutes.js";
-import type { RecallHit, RecallInputs, RecallKnowledgeInput, RecallMinutesInput, RecallWorkInput } from "./recall.js";
+import type { RecallHit, RecallInputs, RecallKnowledgeInput, RecallMinutesInput, RecallScope, RecallWorkInput } from "./recall.js";
 import { RECALL_INDEXED_WORK_KINDS } from "./recall.js";
 import { storyFields } from "./story-fields.js";
 import type { WorkspaceState } from "./workspace.js";
@@ -51,10 +58,92 @@ export function workParentChain(work: ReadonlyMap<string, WorkRecord>, record: W
   return chain;
 }
 
+/** A card read from a store's knowledge-list record, labelled with the store it came from. */
+export function recallCardFromRecord(record: Readonly<Record<string, unknown>>, scope: RecallScope): RecallKnowledgeInput {
+  return {
+    id: String(record["id"] ?? ""),
+    externalKey: String(record["externalKey"] ?? ""),
+    subject: String(record["subject"] ?? ""),
+    summary: String(record["summary"] ?? ""),
+    snippet: String(record["snippet"] ?? ""),
+    tags: ((record["tags"] ?? []) as readonly unknown[]).map((tag) => String(tag)),
+    // The weight-6 column: an author's own restatements of the question a card answers,
+    // flattened by the one helper the CLI's recall shares (TCRN-CROSS-STORY-364).
+    expansions: expansionsText(record["expansions"]),
+    scope,
+  };
+}
+
+/**
+ * The library's cards and the user's, as one input: each labelled with its store, the library's
+ * first. A user card whose id a library card already holds (one external key filed in both) is
+ * left out -- the index keys cards by id, and the library's card is the nearer answer.
+ */
+export function mergeRecallCards(project: readonly RecallKnowledgeInput[], user: readonly RecallKnowledgeInput[]): readonly RecallKnowledgeInput[] {
+  const projectCards = project.map((card): RecallKnowledgeInput => ({ ...card, scope: "project" }));
+  const held = new Set(projectCards.map((card) => card.id));
+  return [...projectCards, ...user.filter((card) => !held.has(card.id)).map((card): RecallKnowledgeInput => ({ ...card, scope: "user" }))];
+}
+
+/** How one store's read went: its reason code (a refusal's, when it refused), its digest and its card count. */
+export interface RecallCardStoreRead {
+  readonly reasonCode: string;
+  readonly digest: string;
+  readonly cards: number;
+}
+
+export interface RecallCardRead {
+  readonly cards: readonly RecallKnowledgeInput[];
+  readonly stores: Readonly<Record<KnowledgeStoreScope, RecallCardStoreRead>>;
+  // Both stores' digests, so a recall checkpoint moves when either store does.
+  readonly digest: string;
+}
+
+export interface RecallCardReadOptions {
+  readonly at: string;
+  readonly allowTrailing?: boolean;
+}
+
+/**
+ * The cards recall indexes for a prompt in the library at `workspaceRoot`: that library's crest and
+ * this user's crest, each read whole as an explicit search corpus (explicit-only cards admitted,
+ * the complete corpus before scoring, so bm25 keeps its baseline) and merged by mergeRecallCards.
+ * A store that cannot be read gives no cards and its reason code rather than failing the recall,
+ * so "no cards" never reads like "no card matched"; a user crest that has never been written is an
+ * empty read, not a failure.
+ */
+export async function readRecallCards(workspaceRoot: string, options: RecallCardReadOptions): Promise<RecallCardRead> {
+  const read = async (scope: KnowledgeStoreScope): Promise<{ readonly cards: readonly RecallKnowledgeInput[]; readonly store: RecallCardStoreRead }> => {
+    try {
+      const answer = await listKnowledgeMetadata(workspaceRoot, {
+        at: options.at,
+        ...(options.allowTrailing === undefined ? {} : { allowTrailing: options.allowTrailing }),
+        includeExplicitOnly: true,
+        limit: 1_048_576,
+        ...(scope === "user" ? { scope } : {}),
+      });
+      const cards = ((answer["records"] ?? []) as readonly Readonly<Record<string, unknown>>[]).map((record) => recallCardFromRecord(record, scope));
+      return { cards, store: { reasonCode: String(answer["reasonCode"] ?? ""), digest: String(answer["resultDigest"] ?? ""), cards: cards.length } };
+    } catch (error) {
+      const reasonCode = (error as { readonly reasonCode?: unknown }).reasonCode;
+      if (typeof reasonCode !== "string") throw error;
+      return { cards: [], store: { reasonCode, digest: "absent", cards: 0 } };
+    }
+  };
+  const project = await read("project");
+  const user = await read("user");
+  return {
+    cards: mergeRecallCards(project.cards, user.cards),
+    stores: { project: project.store, user: user.store },
+    digest: `${project.store.digest}:${user.store.digest}`,
+  };
+}
+
 /**
  * Everything recall indexes, read from a state and the knowledge cards read beside it: the live
  * work records of the indexed kinds with their goal, body and parent titles, every minutes record
- * (new and historical, minutesView) with its title, summary and decisions, and the cards as given.
+ * (new and historical, minutesView) with its title, summary and decisions, and the cards as given
+ * -- a card that does not say which store it came from is the library's (TCRN-CROSS-STORY-476 R5).
  */
 export function recallInputsFromState(
   state: Pick<WorkspaceState, "work" | "minutes" | "conferenceMinutes" | "conferences">,
@@ -97,7 +186,7 @@ export function recallInputsFromState(
     };
   });
   return {
-    knowledge: cards,
+    knowledge: cards.map((card): RecallKnowledgeInput => (card.scope === undefined ? { ...card, scope: "project" } : card)),
     minutes,
     work,
     ...(options.scopeExcerptBytes === undefined ? {} : { scopeExcerptBytes: options.scopeExcerptBytes }),
@@ -115,14 +204,15 @@ function capBytes(text: string, maximumBytes: number): string {
 
 /**
  * One hit as one line: `[Story done] title · externalKey · id · Epic title ‹ Initiative title` for a
- * work record, `[纪要 key] title · D1 first decision …` for minutes, `[卡片] subject · id` for a card.
- * A line is at most RECALL_LINE_MAX_BYTES and never holds a line break.
+ * work record, `[纪要 key] title · D1 first decision …` for minutes, `[卡片] subject · id` for a card,
+ * and `[卡片 用户] subject · id` for a card from the user's crest (TCRN-CROSS-STORY-476 R5). A line is
+ * at most RECALL_LINE_MAX_BYTES and never holds a line break.
  */
 export function formatRecallLine(hit: RecallHit): string {
   const flat = (text: string): string => text.replace(/\s+/gu, " ").trim();
   let line: string;
   if (hit.kind === "card") {
-    line = `[卡片] ${flat(hit.title)} · ${hit.id}`;
+    line = `[卡片${hit.scope === "user" ? " 用户" : ""}] ${flat(hit.title)} · ${hit.id}`;
   } else if (hit.kind === "minutes") {
     line = `[纪要 ${hit.key}] ${flat(hit.title)}${hit.lead.length > 0 ? ` · ${flat(hit.lead)}` : ""}`;
   } else {

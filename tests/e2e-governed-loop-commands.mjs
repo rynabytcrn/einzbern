@@ -22,21 +22,13 @@ export const CLI_BINARY = "einzbern";
 // the .ether directory in its root (TCRN-CROSS-STORY-469).
 export const WORKSPACE_PATH = "./flagship/.ether";
 
-// The Story is created atomically with its complete scope.  The tutorial keeps
-// the value as a placeholder; the replay substitutes this one canonical fixture
-// so the command remains readable without weakening the engine admission rule.
-export const STORY_SCOPE = [
-  "【Goal】为谁改变什么=flagship Story；目的锚=governed-loop；符合性判据=loop reaches done with evidence；判定人=Owner。",
-  "【Requirements】现象与证据=命令回放；修复项=完成 flagship loop。",
-  "【Acceptance Criteria】GIVEN the workspace is ready WHEN the loop runs THEN the Story reaches done。",
-  "【Business Background】evidence=the loop is the canonical tutorial path。",
-  "【Preconditions】无——原因：the library is created by init。",
-  "【Assumptions】无——原因：the tutorial does not add a runtime setting。",
-  "【Use Cases & Examples】无——原因：the command sequence is the example。",
-  "【Feature Toggle & Setting】无——原因：no bypass flag is permitted。",
-  "【Permissions】Owner is the decider; the engine is the write face。",
-  "【Implementation Notes】决策点及裁定状态=the Story starts planned and transitions through the loop。",
-].join("\n");
+// The Story is created with the two things the engine asks of one, its goal and
+// its acceptance (TCRN-CROSS-STORY-473); the rest of a Story is the author's own
+// prose. The tutorial keeps both values as placeholders; the replay substitutes
+// these so the command stays readable. The goal names Owner as the decider, so the
+// Story reaches done only once its deciding minutes are on the record.
+export const STORY_GOAL = "Take the flagship Story from planned to done with the decision that settles it on record. decider: Owner.";
+export const STORY_ACCEPTANCE = "GIVEN the library is ready WHEN the loop runs THEN the Story reaches done and names the minutes that decided it";
 
 // The init command is narrated and executed but is NOT part of the mutation
 // storyline (it creates the library at version zero). It is listed separately so
@@ -75,7 +67,7 @@ export const governedLoopStoryline = [
   {
     key: "work-create-story",
     reasonCode: "WORKSPACE_COMMAND_COMPLETED",
-    command: ["work-create", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:04Z", "--project-id", "<project-id>", "--external-key", "FLAGSHIP-STORY", "--kind", "Story", "--parent-id", "<epic-id>", "--scope", "<story-scope>", "--title", "Flagship-story"],
+    command: ["work-create", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:04Z", "--project-id", "<project-id>", "--external-key", "FLAGSHIP-STORY", "--kind", "Story", "--parent-id", "<epic-id>", "--goal", "<story-goal>", "--acceptance", "<story-acceptance>", "--title", "Flagship-story"],
   },
   {
     key: "work-transition-story-ready",

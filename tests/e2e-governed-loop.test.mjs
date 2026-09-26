@@ -37,7 +37,8 @@ import {
   extractTutorialCommands,
   governedLoopStoryline,
   initCommand,
-  STORY_SCOPE,
+  STORY_ACCEPTANCE,
+  STORY_GOAL,
 } from "./e2e-governed-loop-commands.mjs";
 
 const MINUTES_PREFIX = "minutes:";
@@ -63,7 +64,7 @@ test("the flagship governed loop replays end-to-end through the CLI with an unbr
 
   // The live substitution table: the library placeholder first, identifiers as the
   // storyline captures them from each receipt.
-  const substitutions = { [WORKSPACE_PATH]: join(base, ".ether"), "<story-scope>": STORY_SCOPE };
+  const substitutions = { [WORKSPACE_PATH]: join(base, ".ether"), "<story-goal>": STORY_GOAL, "<story-acceptance>": STORY_ACCEPTANCE };
 
   // Create the library at version zero.
   const initReceipt = await invoke(render(initCommand, substitutions));
@@ -96,6 +97,7 @@ test("the flagship governed loop replays end-to-end through the CLI with an unbr
         break;
       case "work-show-story":
         captured.story = output.record;
+        captured.storyFields = output.fields;
         captured.storyAdvisory = output.advisory;
         captured.storyRelations = output.relations;
         break;
@@ -113,6 +115,8 @@ test("the flagship governed loop replays end-to-end through the CLI with an unbr
   // its decider, so it reaches done only once that relation is on the record.
   assert.equal(captured.story.id, substitutions["<story-id>"]);
   assert.equal(captured.story.status, "done", "the story reached done with its decision recorded");
+  // The Story is the goal and the acceptance it was created with (TCRN-CROSS-STORY-473).
+  assert.deepEqual(captured.storyFields, { goal: STORY_GOAL, acceptance: STORY_ACCEPTANCE, body: null, source: "fields" });
   assert.deepEqual(captured.storyRelations.forward.decidedIn, [captured.minutesId], "the story names the minutes that decided it");
   assert.deepEqual(captured.storyAdvisory.decidedBy, [captured.minutesId], "decided-in is the decided-by list on the record");
   assert.ok(captured.minutesId.startsWith(MINUTES_PREFIX));

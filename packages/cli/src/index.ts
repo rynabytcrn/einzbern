@@ -108,8 +108,10 @@ import {
   SKILL_COPIES_FILES,
   computeInstallTreeDigest,
   renderSkillMarkdown,
+  STORY_REQUIRED_FIELDS,
+  storyFields,
 } from "../../core/src/index.js";
-import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider, WorkRelationsInput } from "../../core/src/index.js";
+import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider, StoryFields, WorkRelationsInput } from "../../core/src/index.js";
 import type {
   KnowledgeCategory,
   KnowledgeFreshnessState,
@@ -305,6 +307,20 @@ function relationArgument(value: string): { readonly name: string; readonly id: 
     fail("CLI_ARGUMENT_MALFORMED", `relation must be <name>=<id> with a name among ${[...RELATION_NAMES, ...REVERSE_RELATION_NAMES].join(", ")}`);
   }
   return { name, id };
+}
+
+// TCRN-CROSS-STORY-473 R2 (MIN-227 D8): a Story's goal, acceptance and free body, as flags of
+// work-create and work-annotate. A Story is created only with a goal and an acceptance -- these
+// flags, or the Goal and Acceptance Criteria blocks of a --scope, which is still taken -- and the
+// engine refuses one without either with WORK_STORY_FIELD_REQUIRED naming the field.
+const STORY_FIELD_FLAGS = ["goal", "acceptance", "body"] as const;
+
+function storyFieldsInput(values: Readonly<Record<string, string>>): { readonly goal?: string; readonly acceptance?: string; readonly body?: string } {
+  return {
+    ...(values.goal === undefined ? {} : { goal: values.goal }),
+    ...(values.acceptance === undefined ? {} : { acceptance: values.acceptance }),
+    ...(values.body === undefined ? {} : { body: values.body }),
+  };
 }
 
 // Unified nullable-flag spelling: "-" is the canonical null sentinel and an omitted
@@ -518,20 +534,48 @@ function truncateUtf8(value: string, maximumBytes: number): string {
 
 // TCRN-CROSS-STORY-363. One lowercased haystack per record, built from the four
 // fields a reader would search by. Labels join on a space so a two-label record
-// cannot produce a match that spans two labels.
+// cannot produce a match that spans two labels. TCRN-CROSS-STORY-473: a Story
+// written with a goal, an acceptance and a body carries no scope, so those three
+// are searched too.
 function workSearchText(record: WorkRecord): string {
+  const fields = storyFields(record);
   return [
     record.externalKey,
     record.title ?? "",
     record.summary ?? "",
     (record.labels ?? []).join(" "),
     workScope(record),
+    fields.goal ?? "",
+    fields.acceptance ?? "",
+    fields.body ?? "",
   ].join("\n").toLowerCase();
 }
 
-function workSearchSummary(record: WorkRecord, scopeBytes: number): Readonly<Record<string, unknown>> {
-  return { ...workSummary(record), scope: truncateUtf8(workScope(record), scopeBytes) };
+// TCRN-CROSS-STORY-473 R2: a record's goal, acceptance and body as a search listing shows them: an
+// excerpt of at most `excerptBytes` bytes each, the bound --scope-bytes already puts on the scope
+// excerpt. A listing carries every record it matches, and whole Story texts across a large library
+// would push the page past the canonical ceiling, which refuses the whole listing; work-show
+// carries them whole.
+function workFieldsExcerpt(record: WorkRecord, excerptBytes: number): StoryFields {
+  const fields = storyFields(record);
+  const excerpt = (value: string | null): string | null => value === null ? null : truncateUtf8(value, excerptBytes);
+  return { goal: excerpt(fields.goal), acceptance: excerpt(fields.acceptance), body: excerpt(fields.body), source: fields.source };
 }
+
+function workSearchSummary(record: WorkRecord, scopeBytes: number): Readonly<Record<string, unknown>> {
+  return { ...workSummary(record), scope: truncateUtf8(workScope(record), scopeBytes), fields: workFieldsExcerpt(record, scopeBytes) };
+}
+
+// TCRN-CROSS-STORY-473 R2: an ordinary listing, like its scope, leaves the Story texts out and says
+// only where they come from (fields, scope or none); --search adds their excerpts, and work-show
+// carries them whole.
+function workListSummary(record: WorkRecord): Readonly<Record<string, unknown>> {
+  return { ...workSummary(record), fields: { source: storyFields(record).source } };
+}
+
+// TCRN-CROSS-STORY-473 R3: the ten-block skeleton is a suggestion. A Story needs its goal and its
+// acceptance and nothing else, so the draft says so beside the skeleton it still prints.
+const WORK_DRAFT_NOTE = "仅供参考，引擎只校验 goal 与 acceptance";
 
 function workDraft(
   state: Awaited<ReturnType<typeof validateWorkspace>>,
@@ -540,11 +584,13 @@ function workDraft(
 ): Readonly<Record<string, unknown>> {
   const headings = kind === "Story" ? [...STORY_SCOPE_HEADINGS] : [];
   const scopeTemplate = headings.map((heading) => `【${heading}】\n<填写 ${heading}>`).join("\n\n");
+  // The latest three records written either way, so a library whose Stories now carry fields does
+  // not keep offering its older ten-block scopes as the model to follow.
   const examples = state.work
-    .filter((record) => !record.tombstone && record.kind === kind && record.projectId === projectId && workScope(record).length > 0)
+    .filter((record) => !record.tombstone && record.kind === kind && record.projectId === projectId && storyFields(record).source !== "none")
     .slice(-3)
     .reverse()
-    .map((record) => ({ id: record.id, externalKey: record.externalKey, kind: record.kind, scope: workScope(record) }));
+    .map((record) => ({ id: record.id, externalKey: record.externalKey, kind: record.kind, scope: workScope(record), fields: storyFields(record) }));
   return {
     schemaVersion: "tcrn.work-draft.v1",
     reasonCode: "WORKSPACE_WORK_DRAFT_READY",
@@ -557,6 +603,9 @@ function workDraft(
     scopeTemplate,
     skeleton: scopeTemplate,
     template: scopeTemplate,
+    optional: true,
+    note: WORK_DRAFT_NOTE,
+    requiredFields: kind === "Story" ? [...STORY_REQUIRED_FIELDS] : [],
     examples,
   };
 }
@@ -798,10 +847,10 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "validate", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   { name: "vocabulary", availability: "cli", mutates: false, flags: [] },
   // TCRN-CROSS-STORY-472 R2, R4: the four stored relations and decided-in; --decided-by is the older
-  // name of --decided-in.
-  { name: "work-annotate", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "verify", required: false, valueKind: "string" }, { name: "result", required: false, valueKind: "json" }, { name: "sprint", required: false, valueKind: "string" }, { name: "title", required: false, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }] },
+  // name of --decided-in. TCRN-CROSS-STORY-473 R2: a Story's goal, acceptance and body.
+  { name: "work-annotate", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "goal", required: false, valueKind: "string" }, { name: "acceptance", required: false, valueKind: "string" }, { name: "body", required: false, valueKind: "string" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "verify", required: false, valueKind: "string" }, { name: "result", required: false, valueKind: "json" }, { name: "sprint", required: false, valueKind: "string" }, { name: "title", required: false, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-batch", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "from-file", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "work-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-id", required: true, valueKind: "string" }, { name: "external-key", required: true, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "status", required: false, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "template-receipt", required: false, valueKind: "json" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "work-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-id", required: true, valueKind: "string" }, { name: "external-key", required: true, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "status", required: false, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "goal", required: false, valueKind: "string" }, { name: "acceptance", required: false, valueKind: "string" }, { name: "body", required: false, valueKind: "string" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "template-receipt", required: false, valueKind: "json" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-delete", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-draft", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string" }] },
   { name: "work-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string" }, { name: "sprint", required: false, valueKind: "string" }, { name: "relation", required: false, valueKind: "string" }, { name: "search", required: false, valueKind: "string" }, { name: "scope-bytes", required: false, valueKind: "integer" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
@@ -1956,7 +2005,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   if (command === "work-create") {
-    const values = parseArguments(rest, [...shared, "project-id", "external-key", "kind", "parent-id", "status", "scope", "decided-by", ...RELATION_FLAGS, "title", "summary", "labels", "template-receipt", "actor"]);
+    const values = parseArguments(rest, [...shared, "project-id", "external-key", "kind", "parent-id", "status", "scope", ...STORY_FIELD_FLAGS, "decided-by", ...RELATION_FLAGS, "title", "summary", "labels", "template-receipt", "actor"]);
     // TCRN-CROSS-STORY-363: --title is required on the create path. Measured on the
     // cross-project chain on 2026-09-07, 50 of its 843 live work records carried a
     // title; the other 793 were addressable only by external key, so a listing could
@@ -1979,6 +2028,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       parentId: nullableValue(values["parent-id"]),
       ...(values.status ? { status: values.status as WorkStatus } : {}),
       ...(values.scope !== undefined ? { scope: values.scope } : {}),
+      ...storyFieldsInput(values),
       ...(values["decided-by"] !== undefined ? { decidedBy: listValue(values["decided-by"]) } : {}),
       ...relationsInput(values),
       ...(values.title !== undefined ? { title: values.title } : {}),
@@ -2036,15 +2086,17 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // right since TCRN-CROSS-STORY-363, so what the core still refuses is an annotation
     // that moves nothing at all: it is WORKSPACE_INPUT_INVALID here rather than an
     // appended event no later read can replay (TCRN-CROSS-INC-269).
-    const values = parseArguments(rest, [...shared, "id", "scope", "decided-by", ...RELATION_FLAGS, "verify", "result", "sprint", "title", "summary", "labels", "actor"]);
+    const values = parseArguments(rest, [...shared, "id", "scope", ...STORY_FIELD_FLAGS, "decided-by", ...RELATION_FLAGS, "verify", "result", "sprint", "title", "summary", "labels", "actor"]);
     required(values, [...requiredShared, "id"]);
     const relations = relationsInput(values);
-    if (values.scope === undefined && values["decided-by"] === undefined && relations.relations === undefined && values.verify === undefined && values.result === undefined && values.sprint === undefined && values.title === undefined && values.summary === undefined && values.labels === undefined) fail("CLI_ARGUMENT_MALFORMED", "annotation-field");
+    const fields = storyFieldsInput(values);
+    if (values.scope === undefined && Object.keys(fields).length === 0 && values["decided-by"] === undefined && relations.relations === undefined && values.verify === undefined && values.result === undefined && values.sprint === undefined && values.title === undefined && values.summary === undefined && values.labels === undefined) fail("CLI_ARGUMENT_MALFORMED", "annotation-field");
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
     const state = await withWriteLock(workspace, at, async () => annotateWork(workspace, {
       occurredAt: at, id: values.id ?? "",
       ...(values.scope !== undefined ? { scope: values.scope } : {}),
+      ...fields,
       ...(values["decided-by"] !== undefined ? { decidedBy: listValue(values["decided-by"]) } : {}),
       ...relations,
       ...(values.verify !== undefined ? { verify: values.verify } : {}),
@@ -2119,7 +2171,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       // silent wrong answer (total=0), not a cosmetic inconsistency. Sharing nullableValue
       // makes the round trip closed for every spelling the writer accepts, by construction.
       (values["parent-id"] === undefined || (nullableValue(values["parent-id"]) === null ? entry.parentId === null : entry.parentId === values["parent-id"])))
-      .map((entry) => search === undefined ? workSummary(entry) : workSearchSummary(entry, scopeBytes));
+      .map((entry) => search === undefined ? workListSummary(entry) : workSearchSummary(entry, scopeBytes));
     io.write(canonicalJson(paginate(state, "work", records, values)));
     return;
   }
@@ -2168,6 +2220,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       headEventHash: state.headEventHash,
       kind: "work",
       record: workSummary(record),
+      // TCRN-CROSS-STORY-473 R2, AC3: the goal, acceptance and body whole, with where they come
+      // from -- the record's own fields, or the blocks of an old scope mapped on this read.
+      fields: storyFields(record),
       ...(advisory !== null ? { advisory } : {}),
       relations: { forward: relations.forward, reverse: relations.reverse, missing },
       ...(aliases.aliases.length === 0 ? {} : { aliases: aliases.aliases.map((entry) => ({ externalKey: entry.externalKey, id: entry.id, deviceId: entry.deviceId })) }),

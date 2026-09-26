@@ -47,11 +47,20 @@ echoes the new record's id in `record.id`; capture each one for the next parent.
 `--title` is required: a record that carries only an external key is findable by that
 key and by nothing a reader would think to type.
 
+A Story needs two things, its goal (`--goal`) and its acceptance (`--acceptance`); a free
+`--body` is optional, and the engine checks nothing else about how you write it. A Story
+missing either is refused with `WORK_STORY_FIELD_REQUIRED`, which names the field.
+`<story-goal>` and `<story-acceptance>` stand for your own text (quote it in a shell);
+this Story's goal ends `decider: Owner.`, which section 4 relies on. `work-draft` still
+prints the old ten-block skeleton if you want a shape to follow, marked optional, and a
+`--scope` in that shape still works: its Goal and Acceptance Criteria blocks are read as
+the two fields.
+
 ```console
 $ einzbern project-create --workspace ./flagship/.ether --at 2026-07-11T00:00:01Z --external-key FLAGSHIP-PROJECT --name Flagship
 $ einzbern work-create --workspace ./flagship/.ether --at 2026-07-11T00:00:02Z --project-id <project-id> --external-key FLAGSHIP-INITIATIVE --kind Initiative --title Flagship-initiative
 $ einzbern work-create --workspace ./flagship/.ether --at 2026-07-11T00:00:03Z --project-id <project-id> --external-key FLAGSHIP-EPIC --kind Epic --parent-id <initiative-id> --title Flagship-epic
-$ einzbern work-create --workspace ./flagship/.ether --at 2026-07-11T00:00:04Z --project-id <project-id> --external-key FLAGSHIP-STORY --kind Story --parent-id <epic-id> --scope <story-scope> --title Flagship-story
+$ einzbern work-create --workspace ./flagship/.ether --at 2026-07-11T00:00:04Z --project-id <project-id> --external-key FLAGSHIP-STORY --kind Story --parent-id <epic-id> --goal <story-goal> --acceptance <story-acceptance> --title Flagship-story
 ```
 
 Each verb returns `WORKSPACE_COMMAND_COMPLETED` with the created `record`. The Epic
@@ -109,7 +118,8 @@ $ einzbern minutes-show --workspace ./flagship/.ether --id <minutes-id>
 ```
 
 1. **Work record → minutes.** `work-show` reports the story `done`, with the minutes
-   id under `relations.forward.decidedIn` (the same list is the record's `decidedBy`).
+   id under `relations.forward.decidedIn` (the same list is the record's `decidedBy`)
+   and its goal and acceptance under `fields`.
 2. **Minutes → work record.** `minutes-show` returns the minutes with D1, the story id
    in `linkedWorkIds`, and the story again under `decides`: the reverse of
    `decided-in`, read from the work records rather than stored twice.

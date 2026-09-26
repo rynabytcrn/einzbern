@@ -16,8 +16,9 @@ try {
   // TCRN-CROSS-STORY-467 R4: a chain break names its stream, sequence, event and kind; a library
   // read also names the device and file (TCRN-CROSS-STORY-468, 470 R4), and a refused write its remedy.
   // A library this engine may not open names the format or engine version it needs and what this
-  // engine has (TCRN-CROSS-STORY-471 R1).
-  const stringDetails = ["required", "actual", "supported", "layout", "streamId", "sequence", "eventId", "break", "segment", "line", "deviceId", "file", "timeoutMs", "remedy", "movedTo", "target"];
+  // engine has (TCRN-CROSS-STORY-471 R1). A Story refused for a missing goal or acceptance names
+  // the field (TCRN-CROSS-STORY-473 R2).
+  const stringDetails = ["required", "actual", "supported", "layout", "streamId", "sequence", "eventId", "break", "segment", "line", "deviceId", "file", "timeoutMs", "remedy", "movedTo", "target", "field"];
   const details = error?.details !== null && typeof error?.details === "object"
     ? Object.fromEntries(Object.entries(error.details).filter(([key, value]) =>
       (stringDetails.includes(key) && typeof value === "string") ||

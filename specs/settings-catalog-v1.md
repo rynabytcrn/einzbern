@@ -21,16 +21,18 @@ name each key's `layer`.
   write, the later write in merge order (clock, then device id) wins on every device; a
   stale revision there is not a rejected event. An old-layout workspace, one writer's
   chain, keeps the strict revision sequence.
-- **device**: the machine settings (`portal.*`), kept in this device's directory
-  (`machine-settings.json`) and never written into a library. `settings-set` and
+- **device**: the machine settings (`portal.*`, `crest.userPath` and `agents.navigation`), kept
+  in this device's directory (`machine-settings.json`) and never written into a library. `settings-set` and
   `settings-remove` refuse a device-level key with `SETTINGS_KEY_DEVICE_LEVEL` and the
   remedy `machine-settings-set`.
 
 Every `settings-set` and `settings-remove` also rewrites `config/project.json`
-(`einzbern.project-config.v1`: the version vector and the merged values), atomically. It
-is a projection for readers outside the engine: no read trusts it, and `status` reports
-`configProjection` as `current`, `stale` (its values differ from the merged ones, for
-example after a sync client kept another device's copy), `absent` or `invalid`.
+(`einzbern.project-config.v1`: the version vector, the merged values and, grouped by
+collection, the merged configuration records of `specs/config-records-v1.md`), atomically,
+and so does every configuration record write. It is a projection for readers outside the
+engine: no read trusts it, and `status` reports `configProjection` as `current`, `stale`
+(its values or its records differ from the merged ones, for example after a sync client
+kept another device's copy), `absent` or `invalid`.
 
 ## Tier taxonomy
 

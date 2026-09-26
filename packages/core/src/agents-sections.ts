@@ -24,9 +24,9 @@
 // and the file is replaced through a temporary file and a rename. Nothing here runs unless it is
 // called, so an engine upgrade writes no file.
 
-import { lstat, readFile } from "node:fs/promises";
+import { lstat, readFile, realpath } from "node:fs/promises";
 import { isUtf8 } from "node:buffer";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import { removeConfigRecordDelta, setConfigRecordDelta } from "./config-records.js";
 import {
@@ -52,6 +52,8 @@ import type {
 } from "./managed-sections.js";
 import type { AgentsNavigationChoice } from "./machine-settings.js";
 import { BRAND } from "./names.js";
+import { gitTopLevel, resolveLibrary } from "./registry.js";
+import type { ResolutionPath } from "./registry.js";
 import { builtInRule, ruleBody } from "./rules-catalog.js";
 import {
   VARIABLES_CUSTOM_SECTION_ID,
@@ -411,6 +413,28 @@ export async function disableSection(input: DisableSectionInput): Promise<Sectio
 }
 
 // ---- The engine's sections and a library's records of them ----
+
+/** A project whose sections are rendered: its root, and the library this device keeps its records in. */
+export interface AgentsProject {
+  readonly projectRoot: string;
+  readonly libraryPath: string;
+  readonly via: ResolutionPath;
+}
+
+/**
+ * The project a directory belongs to, as this device's registry resolves it (TCRN-CROSS-STORY-470
+ * R1): the registered project that holds the directory, or, for another clone of it found through
+ * its remote, that clone's working tree. LIBRARY_NOT_REGISTERED when the registry names none.
+ */
+export async function resolveAgentsProject(directory: string): Promise<AgentsProject> {
+  const resolved = await resolveLibrary(directory);
+  let projectRoot = resolved.entry.projectPath;
+  if (resolved.via === "git-remote") {
+    const top = gitTopLevel(await realpath(resolve(directory)));
+    if (top !== null) projectRoot = await realpath(top);
+  }
+  return { projectRoot, libraryPath: resolved.libraryPath, via: resolved.via };
+}
 
 // The language a project writes its artifacts in, which picks a rule's text (rules-catalog.ts).
 function artifactLanguage(state: Pick<WorkspaceState, "settings">): string | null {

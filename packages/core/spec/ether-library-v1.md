@@ -14,7 +14,7 @@ A library's root holds exactly seven entries:
 | `manifest.json` | the library manifest (below) | the engine, when the library is created, when its format changes and when it moves |
 | `akasha/` | the event truth: one directory per device | each device writes only its own directory |
 | `crest/` | the knowledge store | the engine |
-| `config/` | a readable projection of the project-level settings | the engine, when a project-level setting is written |
+| `config/` | a readable projection of the project-level settings and configuration records | the engine, when a project-level setting or configuration record is written |
 | `artifacts/` | content-addressed files | the engine |
 | `README.md` | what each name here means, and the old names beside the new ones | the engine, when the library is created |
 | `.gitignore` | exactly `*` and a line feed | the engine, when the library is created |

@@ -110,8 +110,13 @@ import {
   renderSkillMarkdown,
   STORY_REQUIRED_FIELDS,
   storyFields,
+  AGENTS_NAVIGATION_SETTING,
+  readAgentsNavigation,
+  renderAgentsSections,
+  resolveAgentsProject,
+  resolveAgentsSection,
 } from "../../core/src/index.js";
-import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider, StoryFields, WorkRelationsInput } from "../../core/src/index.js";
+import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider, SectionAction, StoryFields, WorkRelationsInput } from "../../core/src/index.js";
 import type {
   KnowledgeCategory,
   KnowledgeFreshnessState,
@@ -121,7 +126,7 @@ import type {
 } from "../../core/src/index.js";
 import { existsSync, readFileSync } from "node:fs";
 import { cp, lstat, mkdir, readdir, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { canonicalExternalKey, canonicalJson, canonicalSha256, deriveStableId } from "../../protocol/src/index.js";
@@ -771,6 +776,10 @@ export const COMMAND_CATALOG = Object.freeze([
   // TCRN-CROSS-STORY-380: the three verbs that make workspace.generatedArtifactsPath a
   // real address. artifact-put mutates the workspace (a blob and a manifest line); the
   // other two only read, which is why neither takes --at.
+  // TCRN-CROSS-STORY-478 R2 to R5: the engine's managed sections in a project's AGENTS.md and
+  // CLAUDE.md, rendered against the library's records. --project names a directory of the project
+  // (the current one when left out), and this device's registry gives the project and its library.
+  { name: "agents-render", availability: "cli", mutates: true, flags: [{ name: "project", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "artifact-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   { name: "artifact-put", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "file", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
   { name: "artifact-verify", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
@@ -830,6 +839,9 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "project-update", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "recall", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "query", required: true, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "tau", required: false, valueKind: "string" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
   { name: "recover", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
+  // TCRN-CROSS-STORY-478 R3 (STORY-483 R2 reuses it): settle a managed section the user changed:
+  // overwrite, keep or unmanage; --force overwrites a section the user kept.
+  { name: "rule-resolve", availability: "cli", mutates: true, flags: [{ name: "section", required: true, valueKind: "string" }, { name: "action", required: true, valueKind: "string" }, { name: "force", required: false, valueKind: "boolean" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "settings-catalog", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   { name: "settings-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "settings-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "value", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
@@ -1121,6 +1133,22 @@ async function renderSkillDirectory(out: string, version: string): Promise<JsonV
   };
 }
 
+// TCRN-CROSS-STORY-478: a managed-section refusal names its section as details.section, whichever
+// module raised it, so the shipped entry prints it beside details.line and details.file.
+async function namingSection<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation();
+  } catch (error) {
+    const reasonCode = (error as { readonly reasonCode?: unknown }).reasonCode;
+    const details = (error as { readonly details?: unknown }).details;
+    if (typeof reasonCode !== "string" || !reasonCode.startsWith("MANAGED_SECTION_") || details === null || typeof details !== "object") throw error;
+    const fields = details as Readonly<Record<string, unknown>>;
+    if (typeof fields.section === "string" || typeof fields.id !== "string") throw error;
+    const strings = Object.fromEntries(Object.entries(fields).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+    throw new WorkflowCliError(reasonCode, error instanceof Error ? error.message : String(error), { ...strings, section: fields.id });
+  }
+}
+
 async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<void> {
   const command = arguments_[0];
   if (!command || command.startsWith("--")) {
@@ -1226,6 +1254,78 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       entry: entry as unknown as JsonValue,
       realPath: entry.libraryPath,
       suggestedCloudHosted: suggestCloudHosted(entry.libraryPath),
+    }));
+    return;
+  }
+  // TCRN-CROSS-STORY-478 R2, R4, R5 (MIN-227 D14, D17): render the engine's sections into the
+  // project's AGENTS.md and CLAUDE.md: the variable sections and, when this device's
+  // agents.navigation is written, the navigation section; CLAUDE.md's import section unless it
+  // imports AGENTS.md already. Each section's outcome and state, the sections waiting for the
+  // user, and the directory the originals were backed up to are in the receipt.
+  if (command === "agents-render") {
+    const values = parseArguments(rest, ["project", "at", "actor"]);
+    required(values, ["at"]);
+    const at = values.at ?? "";
+    const project = await resolveAgentsProject(values.project ?? process.cwd());
+    const navigation = await readAgentsNavigation();
+    const rendered = await namingSection(() => withWriteLock(project.libraryPath, at, async () => renderAgentsSections(project.libraryPath, {
+      projectRoot: project.projectRoot,
+      navigation,
+      occurredAt: at,
+      ...(values.actor ? { actorId: values.actor } : {}),
+    })));
+    io.write(canonicalJson({
+      reasonCode: "AGENTS_RENDERED",
+      workspaceId: rendered.state.metadata.workspaceId,
+      version: rendered.state.version,
+      headEventHash: rendered.state.headEventHash,
+      ...writtenIdsField(),
+      projectPath: project.projectRoot,
+      libraryPath: project.libraryPath,
+      navigation: { key: AGENTS_NAVIGATION_SETTING, value: navigation },
+      sections: rendered.sections.map((section) => ({ id: section.id, file: section.file, result: section.result, state: section.state })),
+      pending: rendered.pending.map((section) => ({ id: section.id, file: section.file })),
+      files: rendered.files.map((file) => ({ file: file.file, written: file.written, backupPath: file.backupPath })),
+      backupDir: rendered.backupDir,
+      withheld: rendered.withheld.map((entry) => ({ name: entry.name, reason: entry.reason })),
+      recorded: rendered.recorded,
+    }));
+    return;
+  }
+  // TCRN-CROSS-STORY-478 R3: settle one managed section of the project. overwrite puts the engine's
+  // text back as the new baseline, keep records the user's text as theirs (never written again),
+  // unmanage takes the markers out and leaves the text; --force true overwrites a section the user
+  // kept. A file it replaces is backed up first and the receipt names the backup directory.
+  if (command === "rule-resolve") {
+    const values = parseArguments(rest, ["section", "action", "force", "at", "project", "actor"]);
+    required(values, ["section", "action", "at"]);
+    const at = values.at ?? "";
+    const force = booleanValue(values.force, "force");
+    const project = await resolveAgentsProject(values.project ?? process.cwd());
+    const { change, state } = await namingSection(() => withWriteLock(project.libraryPath, at, async () => resolveAgentsSection(project.libraryPath, {
+      projectRoot: project.projectRoot,
+      id: values.section ?? "",
+      action: (values.action ?? "") as SectionAction,
+      force,
+      occurredAt: at,
+      ...(values.actor ? { actorId: values.actor } : {}),
+    })));
+    io.write(canonicalJson({
+      reasonCode: "MANAGED_SECTION_RESOLVED",
+      workspaceId: state.metadata.workspaceId,
+      version: state.version,
+      headEventHash: state.headEventHash,
+      ...writtenIdsField(),
+      projectPath: project.projectRoot,
+      libraryPath: project.libraryPath,
+      section: change.id,
+      file: change.file,
+      action: change.action,
+      result: change.result,
+      state: change.record?.state ?? null,
+      written: change.written,
+      backupDir: change.backupPath === null ? null : dirname(change.backupPath),
+      backupPath: change.backupPath,
     }));
     return;
   }
@@ -1354,7 +1454,8 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const state = await materializeWorkspace(workspace);
     // TCRN-CROSS-STORY-469 R2: config/project.json is a projection of the merged project-level
     // settings that no read trusts; status says when it does not show them.
-    const configProjection = state.library === undefined ? null : await configProjectionStatus(state.library.libraryRoot, state.settings);
+    // TCRN-CROSS-STORY-478 R1: and the merged configuration records beside them.
+    const configProjection = state.library === undefined ? null : await configProjectionStatus(state.library.libraryRoot, state.settings, state.configRecords);
     // TCRN-CROSS-STORY-470 R3: a relocated library still reads; status says where it went.
     const tombstone = state.library === undefined ? null : await readLibraryTombstone(state.library.libraryRoot);
     // TCRN-CROSS-STORY-471 R4: every device the library knows, the engine version it last wrote with,

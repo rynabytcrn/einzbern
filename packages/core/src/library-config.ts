@@ -7,22 +7,37 @@
 // setting rewrites it, atomically, and no read ever trusts it. Two devices can rewrite it apart,
 // and a sync client may then keep a conflicted copy; that costs nothing, because the events are
 // the truth and status says when the projection does not match them.
+// TCRN-CROSS-STORY-478 R1 (SUB-315): the project-level configuration records (config-records.ts)
+// are projected beside the settings, grouped by collection, by the same writes and on the same terms.
 
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { canonicalJson } from "../../protocol/src/index.js";
+import type { JsonValue } from "../../protocol/src/index.js";
 import { writeFileAtomic } from "./atomic-file.js";
 import { DIRECTORY } from "./names.js";
 
 export const PROJECT_CONFIG_SCHEMA_VERSION = "einzbern.project-config.v1" as const;
 export const PROJECT_CONFIG_FILE = "project.json" as const;
 
+/** The configuration records of a projection: collection, then key, then the record's value. */
+export type ProjectConfigRecords = Readonly<Record<string, Readonly<Record<string, JsonValue>>>>;
+
 export interface ProjectConfigProjection {
   readonly schemaVersion: typeof PROJECT_CONFIG_SCHEMA_VERSION;
   // The stream sequences of the merged state the values were read from.
   readonly versionVector: Readonly<Record<string, number>>;
   readonly values: Readonly<Record<string, string>>;
+  // A projection written before records existed carries none and reads as holding none.
+  readonly records: ProjectConfigRecords;
+}
+
+/** A configuration record in the shape a projection needs (config-records.ts holds the full one). */
+export interface ProjectedConfigRecord {
+  readonly collection: string;
+  readonly key: string;
+  readonly value: JsonValue;
 }
 
 /** How config/project.json stands against the merged settings: matching, differing, missing or unreadable. */
@@ -41,18 +56,36 @@ export function projectConfigValues(settings: readonly { readonly key: string; r
   return values;
 }
 
+/** The configuration records of a merged state, grouped by collection and keyed by record key. */
+export function projectConfigRecords(records: readonly ProjectedConfigRecord[]): ProjectConfigRecords {
+  const grouped: Record<string, Record<string, JsonValue>> = {};
+  for (const record of records) {
+    (grouped[record.collection] ??= {})[record.key] = record.value;
+  }
+  return grouped;
+}
+
 /** Rewrite config/project.json from a merged state, atomically. */
 export async function writeConfigProjection(
   libraryRoot: string,
-  state: { readonly versionVector: Readonly<Record<string, number>>; readonly settings: readonly { readonly key: string; readonly value: string }[] },
+  state: {
+    readonly versionVector: Readonly<Record<string, number>>;
+    readonly settings: readonly { readonly key: string; readonly value: string }[];
+    readonly configRecords?: readonly ProjectedConfigRecord[];
+  },
 ): Promise<ProjectConfigProjection> {
   const projection: ProjectConfigProjection = {
     schemaVersion: PROJECT_CONFIG_SCHEMA_VERSION,
     versionVector: state.versionVector,
     values: projectConfigValues(state.settings),
+    records: projectConfigRecords(state.configRecords ?? []),
   };
   await writeFileAtomic(projectConfigPath(libraryRoot), canonicalJson(projection));
   return projection;
+}
+
+function isObject(value: unknown): value is Readonly<Record<string, unknown>> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 /** The projection as stored, "absent" when there is none, or "invalid" when it does not parse as one. */
@@ -66,31 +99,43 @@ export async function readConfigProjection(libraryRoot: string): Promise<Project
   }
   try {
     const value: unknown = JSON.parse(text);
-    if (value === null || typeof value !== "object" || Array.isArray(value)) return "invalid";
-    const record = value as Readonly<Record<string, unknown>>;
-    const values = record.values;
-    const versionVector = record.versionVector;
-    if (record.schemaVersion !== PROJECT_CONFIG_SCHEMA_VERSION || values === null || typeof values !== "object" || Array.isArray(values) ||
-      versionVector === null || typeof versionVector !== "object" || Array.isArray(versionVector) ||
+    if (!isObject(value)) return "invalid";
+    const values = value.values;
+    const versionVector = value.versionVector;
+    const records = value.records;
+    if (value.schemaVersion !== PROJECT_CONFIG_SCHEMA_VERSION || !isObject(values) || !isObject(versionVector) ||
       Object.values(values).some((entry) => typeof entry !== "string") ||
-      Object.values(versionVector).some((entry) => !Number.isSafeInteger(entry))) {
+      Object.values(versionVector).some((entry) => !Number.isSafeInteger(entry)) ||
+      (records !== undefined && (!isObject(records) || Object.values(records).some((collection) => !isObject(collection))))) {
       return "invalid";
     }
-    return value as ProjectConfigProjection;
+    return {
+      schemaVersion: PROJECT_CONFIG_SCHEMA_VERSION,
+      versionVector: versionVector as Readonly<Record<string, number>>,
+      values: values as Readonly<Record<string, string>>,
+      records: (records ?? {}) as ProjectConfigRecords,
+    };
   } catch {
     return "invalid";
   }
 }
 
 /**
- * Whether config/project.json shows the merged settings. Only the values are compared: a
- * projection written before another device's unrelated events still shows the right values.
+ * Whether config/project.json shows the merged settings, and the merged configuration records
+ * when the caller passes them (a caller that passes the settings alone has the values judged).
+ * Only values are compared: a projection written before another device's unrelated events still
+ * shows the right values.
  */
-export async function configProjectionStatus(libraryRoot: string, settings: readonly { readonly key: string; readonly value: string }[]): Promise<ProjectConfigStatus> {
+export async function configProjectionStatus(
+  libraryRoot: string,
+  settings: readonly { readonly key: string; readonly value: string }[],
+  records?: readonly ProjectedConfigRecord[],
+): Promise<ProjectConfigStatus> {
   const stored = await readConfigProjection(libraryRoot);
   if (stored === "absent" || stored === "invalid") {
-    // A library that never set a project-level key has nothing to project.
-    return stored === "absent" && settings.length === 0 ? "current" : stored;
+    // A library that never set a project-level key or record has nothing to project.
+    return stored === "absent" && settings.length === 0 && (records?.length ?? 0) === 0 ? "current" : stored;
   }
-  return canonicalJson(stored.values) === canonicalJson(projectConfigValues(settings)) ? "current" : "stale";
+  if (canonicalJson(stored.values) !== canonicalJson(projectConfigValues(settings))) return "stale";
+  return records === undefined || canonicalJson(stored.records) === canonicalJson(projectConfigRecords(records)) ? "current" : "stale";
 }

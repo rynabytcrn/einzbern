@@ -139,6 +139,8 @@ import {
   validateTelemetryRecord,
 } from "./telemetry.js";
 import type { TelemetryEvidenceSnapshot } from "./telemetry.js";
+import { ConfigRecordError, configRecordIdentity, isConfigRecordOperation, readConfigRecordEvent, sortConfigRecords } from "./config-records.js";
+import type { ConfigRecord } from "./config-records.js";
 
 export const WORKSPACE_SCHEMA_VERSION = "tcrn.workspace.v1" as const;
 export const WORKSPACE_STORAGE_VERSION = 2 as const;
@@ -405,6 +407,10 @@ export interface WorkspaceState {
   readonly settings: readonly WorkspaceSettingRecord[];
   readonly executionConfig: ExecutionConfigState;
   readonly templates: readonly TemplateAdmissionRecord[];
+  // TCRN-CROSS-STORY-478 R1 (SUB-315): the project-level configuration records a library's
+  // config.record.* events leave (config-records.ts), sorted by collection then key. An
+  // old-layout workspace has none.
+  readonly configRecords: readonly ConfigRecord[];
   readonly events: readonly EventRecord[];
   // WSE-2: the sequence of the attestation.actor.enabled event once one has been
   // replayed, else null. From this sequence onward (the enabling event itself
@@ -429,6 +435,7 @@ interface ReplaySeed {
   readonly settings: readonly WorkspaceSettingRecord[];
   readonly executionConfig: ExecutionConfigState;
   readonly templates: readonly TemplateAdmissionRecord[];
+  readonly configRecords: readonly ConfigRecord[];
   readonly attestationEnabledAtSequence: number | null;
   readonly prefixEvents: readonly EventRecord[];
 }
@@ -1860,6 +1867,7 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
   const settings = collection<string, WorkspaceSettingRecord>((snapshot?.settings ?? []).filter((record) => !isRetiredSettingKey(record.key)).map((record) => [record.key, record]));
   let executionConfig: ExecutionConfigState = snapshot?.executionConfig ?? EMPTY_EXECUTION_CONFIG;
   const templates = collection<string, TemplateAdmissionRecord>((snapshot?.templates ?? []).map((record) => [record.registrationId, record]));
+  const configRecords = collection<string, ConfigRecord>((snapshot?.configRecords ?? []).map((record) => [configRecordIdentity(record.collection, record.key), record]));
   const workspaceRoot = metadata.roots.find((root) => root.kind === "workspace")?.path;
   let attestationEnabledAtSequence: number | null = snapshot?.attestationEnabledAtSequence ?? null;
   for (const sourceEvent of events) {
@@ -2201,6 +2209,28 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
       settings.set(record.key, record);
       continue;
     }
+    if (isConfigRecordOperation(operation)) {
+      // TCRN-CROSS-STORY-478 R1 (SUB-315): a project-level configuration record. Merge order is
+      // clock, then device id, so the set applied last is the later writer's, on every device.
+      // Removing a key the merged state does not hold (another device removed it first) is
+      // rejected like any event that no longer applies. Only a library carries these events.
+      if (merge === undefined) fail("WORKSPACE_EVENT_CORRUPT", `${operation} is a library operation; an old-layout workspace has none`);
+      const body = payloadRecord(payload, operation, actorRequired);
+      try {
+        const change = readConfigRecordEvent(operation, body);
+        const identity = configRecordIdentity(change.collection, change.key);
+        if (change.value === undefined) {
+          if (!configRecords.has(identity)) throw new ConfigRecordError("CONFIG_RECORD_NOT_FOUND", `${change.collection} ${change.key} is not set`);
+          configRecords.delete(identity);
+        } else {
+          configRecords.set(identity, { collection: change.collection, key: change.key, value: change.value });
+        }
+      } catch (error) {
+        if (error instanceof ConfigRecordError) fail("WORKSPACE_EVENT_CORRUPT", `${error.reasonCode}:${error.message}`);
+        throw error;
+      }
+      continue;
+    }
     if (executionOperations.has(operation)) {
       // INIT-026 S232: replay reuses the same apply functions the write path
       // used, so referential integrity is re-proved on every materialize; an
@@ -2370,6 +2400,7 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
     settings: settingRecords,
     executionConfig,
     templates: templateRecords,
+    configRecords: sortConfigRecords(configRecords.values()),
     events: snapshot === undefined ? events : [...snapshot.prefixEvents, ...events],
     attestationEnabledAtSequence,
   };
@@ -2873,11 +2904,13 @@ interface LibrarySnapshotState {
   readonly settings: readonly WorkspaceSettingRecord[];
   readonly executionConfig: ExecutionConfigState;
   readonly templates: readonly TemplateAdmissionRecord[];
+  readonly configRecords: readonly ConfigRecord[];
   readonly attestationEnabledAtSequence: number | null;
   readonly merge: MergeReplayCheckpoint;
 }
 
-const SNAPSHOT_COLLECTIONS = ["projects", "work", "conferences", "conferencePositions", "conferenceMinutes", "gates", "settings", "templates"] as const;
+// A snapshot without one of these collections (one written before it existed) is not a seed.
+const SNAPSHOT_COLLECTIONS = ["projects", "work", "conferences", "conferencePositions", "conferenceMinutes", "gates", "settings", "templates", "configRecords"] as const;
 
 function snapshotState(value: unknown): LibrarySnapshotState | null {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
@@ -2988,6 +3021,7 @@ async function refreshLibraryCache(
           settings: replay.state.settings,
           executionConfig: replay.state.executionConfig,
           templates: replay.state.templates,
+          configRecords: replay.state.configRecords,
           attestationEnabledAtSequence: replay.state.attestationEnabledAtSequence,
           merge: replay.merge.checkpoint(),
         } satisfies LibrarySnapshotState,
@@ -3097,6 +3131,7 @@ export interface MutationDelta {
   readonly settings?: readonly WorkspaceSettingRecord[];
   readonly executionConfig?: ExecutionConfigState;
   readonly templates?: readonly TemplateAdmissionRecord[];
+  readonly configRecords?: readonly ConfigRecord[];
 }
 
 function segmentBytesForState(state: WorkspaceState): number {
@@ -3139,6 +3174,7 @@ function committedFrom(
     settings: delta.settings ?? prior.settings,
     executionConfig: delta.executionConfig ?? prior.executionConfig,
     templates: delta.templates ?? prior.templates,
+    configRecords: delta.configRecords ?? prior.configRecords,
     events,
     attestationEnabledAtSequence: isEnableEvent ? event.sequence : prior.attestationEnabledAtSequence,
   };
@@ -4122,9 +4158,11 @@ export async function admitTemplateInWorkspace(workspaceRoot: string, input: {
 // TCRN-CROSS-STORY-469 R2: after a project-level setting commits, config/project.json shows the
 // merged values. It is a convenience for readers outside the engine, never read back, so a failure
 // to write it does not undo the committed setting; status reports a projection that is out of date.
-async function projectConfiguration(root: string, state: WorkspaceState): Promise<void> {
+// TCRN-CROSS-STORY-478 R1 (SUB-315): it shows the configuration records too, and a record write
+// (config-records.ts) projects through here as well.
+export async function projectConfiguration(root: string, state: WorkspaceState): Promise<void> {
   try {
-    await writeConfigProjection(root, { versionVector: state.library?.versionVector ?? {}, settings: state.settings });
+    await writeConfigProjection(root, { versionVector: state.library?.versionVector ?? {}, settings: state.settings, configRecords: state.configRecords });
   } catch {
     // Left to the next project-level write; status shows it as stale meanwhile.
   }

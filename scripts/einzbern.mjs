@@ -1,9 +1,13 @@
 #!/usr/bin/env node
 // SPDX-License-Identifier: Apache-2.0
 
-import { runCli } from "../dist/build/packages/cli/src/index.js";
+import { assertNodeFloor } from "../dist/build/packages/core/src/node-floor.js";
 
 try {
+  // TCRN-CROSS-STORY-481 R4: an older Node.js is refused with ENGINE_NODE_TOO_OLD {required,
+  // actual} first; the rest of the engine loads only after it passes.
+  assertNodeFloor(process.versions.node);
+  const { runCli } = await import("../dist/build/packages/cli/src/index.js");
   await runCli(process.argv.slice(2), {
     write: (value) => process.stdout.write(value),
   });

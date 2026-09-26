@@ -1,114 +1,111 @@
 # Release Policy
 
-A release is an event this repository responds to, not a rhythm it keeps. Nothing
-here schedules one, and no amount of merged work causes one.
+Einzbern and Mana Orchestrate ship as one lockstep release. A release is started
+by an explicit release decision; merged work, green gates, or elapsed time do not
+start one.
 
-## When a release happens
+## Release triggers
 
-Exactly three events trigger a release. Each is something outside this repository's
-own convenience, and each is observable by someone other than the person cutting it.
+The release triggers remain:
 
 | Trigger | What counts | What does not |
 | :--- | :--- | :--- |
-| **Protocol change** | A schema identifier, trust contract, event-record shape, or CLI contract that a consumer compiles against changes | An internal refactor, a new verb that no consumer pins, a comment |
-| **Host format break** | A supported host changes a format this repository must produce or parse -- a hook payload, a settings shape, a session-start contract | A host version bump this repository parses unchanged |
-| **Security fix** | A defect with a security consequence in the shipped bytes | A hardening improvement with no defect behind it |
+| Protocol change | A schema identifier, trust contract, event-record shape, or CLI contract that a consumer compiles against changes | An internal refactor, a new verb that no consumer pins, a comment |
+| Host format break | A supported host changes a format this repository must produce or parse, such as a hook payload, settings shape, or session-start contract | A host version bump this repository parses unchanged |
+| Security fix | A defect with a security consequence in the shipped bytes | A hardening improvement with no defect behind it |
 
-**No event, no release.** A merged fix, a green gate train, a passing suite, and a
-quiet week are each a reason to keep working and none of them is a reason to cut a
-version. The default state between two releases is "no release is pending".
+The shared package version advances only on a protocol change. A host format break
+or security fix may ship without changing protocol identity. Both package manifests
+still carry the same version for every release.
 
-## What the version number tracks
+There is a remaining policy conflict for those same-version releases: this script
+requires a new versioned CHANGELOG section and a fresh `v<version>` tag, while the
+prior release at that protocol version already owns both. `prepare` refuses an
+existing CHANGELOG section, and tag execution refuses an existing local or remote
+tag. This subtask does not choose a replacement versioning rule; see the package
+problem record before cutting a host-format or security-only release.
 
-The version number advances **only on a protocol change**. It names what a consumer
-compiles against, so it moves when that thing moves and stays still otherwise.
+## Prepare the local release
 
-The other two triggers ship without advancing it in their own right: a host format
-break and a security fix are released against the version the protocol is already
-at, unless the fix itself changes the protocol, in which case the first rule applies.
+Run the release script from the Einzbern repository and name the helper working
+tree explicitly:
 
-## Consequences that used to be per-version work
+```sh
+node scripts/release.mjs check --version <version> --helper <helper-working-tree>
+node scripts/release.mjs prepare --version <version> --helper <helper-working-tree> --workspace <library>
+```
 
-| Practice before | Practice now |
-| :--- | :--- |
-| A file per version under `docs/releases` | `docs/releases` stops gaining a file per change. A note is written for a release that actually happened, and the directory's existing files stay as the record of releases that did |
-| Badges restating the version and three derived counts, in five README files | The badge block retired in TCRN-CROSS-STORY-360. `scripts/push-gate.mjs` holds the version in prose in `README.md` and nowhere else |
-| Four locale mirrors of each human-facing root document, re-pinned to their English source on every edit | Root documents are single-language. `README.md` is Simplified Chinese and authoritative; the other root documents are English |
-| The helper repository re-pinned to each engine version as it was cut | Re-pinning follows a release, and releases follow the table above. The helper-side mechanism is TCRN-CROSS-STORY-382's to retire |
+`prepare` updates the engine and package versions, cuts the current `Unreleased`
+notes into a versioned CHANGELOG section, records the Einzbern and Mana Orchestrate
+renames and retired surfaces, and renders both repositories' versioned documents.
+It builds the engine, runs every enabled release gate, then writes the deterministic
+`einzbern-<version>.tar.gz` and its `.sha256` file. Any failed build, renderer,
+release gate, pack, or digest check stops preparation. The command makes local
+working tree changes only and creates no commit.
 
-## Checks a release run makes
+`--workspace` names the Einzbern library whose release gate configuration should
+run. Pass an existing library path; preparation does not infer one from the engine
+or helper working tree.
 
-The version commit, `release:preflight`, the push gate, the tag, publication,
-reinstallation and the host smoke each stay separate stops. Three of them needed
-improvising during the 1.1.3 run (TCRN-CROSS-STORY-461), and each is now a step with
-a named check.
+Run `check` after preparation and again after committing both repositories. It
+checks the engine manifest, every `packages/*/package.json`, the helper manifest,
+the CHANGELOG section, the engine README set, the helper README set, and the helper
+`SKILL.md` all carry the requested version.
 
-### Before the tag: stale artifacts in `dist/release`
+## Publish stops
 
-`verify:p8` is run by both `release:preflight` and the push gate. Before it writes the
-six release artifacts and asserts the closed artifact set, it moves every
-`einzbern-<version>-source.tar` (or, from a release made before the rename, the archive under the old engine name in [the alias table](../wiki/Glossary.md)) whose version is not the `package.json` version
-to `dist/stale-release/<version>/`. Its result lists each move under
-`staleReleaseArtifacts`, and an empty list means nothing was stale. Any other
-unexpected file in `dist/release` is not moved and still fails
-`P8_PRIVACY_RELEASE_ARTIFACT_SET`.
+Commit the prepared changes in both repositories before creating a plan. The plan
+requires the Wiki working tree so it can print the exact Wiki command:
 
-The step never touches `dist/evidence`. Do not clear `dist/release` with `pnpm clean`:
-it also deletes `dist/evidence/push-gate-children`, which earlier gate readings cite.
+```sh
+node scripts/release.mjs publish-plan --version <version> --helper <helper-working-tree> --wiki-dir <wiki-working-tree>
+```
 
-### After publication: read the assets by release id
+Planning prints the two local tag commands, the two pushes, the GitHub release
+command with the archive and checksum attached, and the Wiki push command. Planning
+does not create tags, push commits, create a GitHub release, or push the Wiki. Each
+action remains a separate stop and runs only when explicitly named:
 
-For a few minutes after a release leaves draft, `GET /repos/{owner}/{repo}/releases/tags/{tag}`
-can answer with an empty asset list. On 1.1.3 it flickered between 0 and 9 assets for
-about three minutes under `Cache-Control: max-age=60`, and `gh release download {tag}`
-reported that there were no assets. Read by tag only to learn the release id:
+```sh
+node scripts/release.mjs --version <version> --helper <helper-working-tree> --execute tag
+node scripts/release.mjs --version <version> --helper <helper-working-tree> --execute push
+node scripts/release.mjs --version <version> --helper <helper-working-tree> --execute release
+node scripts/release.mjs --version <version> --helper <helper-working-tree> --wiki-dir <wiki-working-tree> --execute wiki
+```
 
-1. `gh api repos/{owner}/{repo}/releases/tags/{tag} --jq .id`. An empty asset list
-   in this response is not a failure.
-2. `gh api repos/{owner}/{repo}/releases/{id}`. The asset names must equal the release
-   candidate's asset manifest exactly, count included. Every asset must be in state
-   `uploaded`, with a `digest` of `sha256:<hex>` equal to its manifest entry.
-3. Download every asset from its public link
-   (`https://github.com/{owner}/{repo}/releases/download/{tag}/{name}`, the asset's
-   `browser_download_url`). Compare each file's SHA-256 and size with the manifest and
-   with the by-id listing.
+The release action requires the matching version tag at both repositories' origins.
+The Wiki action delegates to `scripts/push-wiki.mjs`, which rehearses and commits
+the local Wiki sync before pushing it.
 
-The check passes only when all three agree.
+## Version identity
 
-### Host smoke and other local `claude` calls: the host's own CLI
+The release tag is `v<version>` in both repositories. The archive is named
+`einzbern-<version>.tar.gz`; the adjacent `.sha256` file records the archive's
+SHA-256 digest. The versioned CHANGELOG section preserves the rename and retirement
+details, including the historical compatibility of previously written `tcrn.*`
+records. The release trust check is the install-tree digest verified by the
+installer; a local release result does not prove a remote publication succeeded.
 
-The `claude` first on `PATH` can be a standalone install older than the host running
-the session. On 1.1.3 it was 2.1.266 against the host's 2.1.280, and it did not
-recognise the host's model. So a smoke run, and anything else that starts `claude` on
-this machine, uses the executable named by `CLAUDE_CODE_EXECPATH` when that is an
-executable file. This is the choice `host-probe` makes (`packages/core/src/host-probe.ts`,
-TCRN-CROSS-INC-387), and the INIT-033 residence probe makes it too.
+## Existing artifact and post-release checks
 
-When no host executable is named, compare `claude --version` with the host's version
-before the call. If it is lower, stop and say the version is insufficient; never fall
-back silently to the older CLI. Upgrading the standalone CLI is a local installation.
-That is an Owner stop and not part of a release run.
+The existing P8 check moves stale versioned source archives from `dist/release/`
+to `dist/stale-release/<version>/` before asserting the closed artifact set. It
+does not touch `dist/evidence/`. Do not use `pnpm clean` to clear release artifacts:
+it also deletes gate evidence that later readings may cite.
 
-The same investigation found a separate limit: `claude -p --bare` authenticates only
-through `ANTHROPIC_API_KEY` or an `apiKeyHelper`, never through the host login. A smoke
-that relies on the login must not add `--bare`.
+After GitHub creates a release, verify its assets by release id because the
+by-tag endpoint can briefly return an empty asset list. Read the id with
+`gh api repos/{owner}/{repo}/releases/tags/{tag} --jq .id`, then read the release
+by id. Confirm the names and count match the candidate manifest, each asset is
+`uploaded`, and each `sha256:<hex>` digest matches. Download each public asset and
+compare its SHA-256 and size with the manifest and by-id listing.
 
-### Smoke evidence: the full argv and the environment names
+For a Claude host smoke or another local `claude` call, use the executable named
+by `CLAUDE_CODE_EXECPATH` when it is executable. Otherwise compare
+`claude --version` with the host version before calling it; stop if the standalone
+CLI is older. A smoke using the host login must not add `--bare`, which only
+authenticates with `ANTHROPIC_API_KEY` or an `apiKeyHelper`.
 
-Smoke evidence records the complete launch argv exactly as it was passed to the
-process: the executable path first, then every flag and value, prompt included, not
-a summary. It also records the names of the environment variables the child started
-with. Names only: values, tokens and keys never go into evidence.
-
-## What this does not change
-
-Push, tag, publication and third-party account claims remain separate stops that are
-never inferred from a local gate result. A green `pnpm verify:p1` says the tree is
-judged; it does not say a release is due. `scripts/push-gate.mjs` still refuses a push
-whose declared version has no `CHANGELOG.md` heading, no note under `docs/releases`,
-and no tag ancestry -- those checks judge a release that is happening, and this
-document decides whether one is.
-
-`docs/versioning/versioning-policy.md` states what the number means once it moves.
-This document states when it is allowed to, and which checks a release run makes
-when it does.
+Smoke evidence records the complete argv passed to the process, including the
+executable path, flags, values, and prompt, along with environment variable names.
+It never records environment values, tokens, or keys.

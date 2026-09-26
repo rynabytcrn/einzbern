@@ -124,8 +124,12 @@ import {
   renderAgentsSections,
   resolveAgentsProject,
   resolveAgentsSection,
+  listVariables,
+  removeVariable,
+  renderCustomVariablesSection,
+  setVariable,
 } from "../../core/src/index.js";
-import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider, SectionAction, StoryFields, WorkRelationsInput } from "../../core/src/index.js";
+import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider, SectionAction, StoryFields, Variable, WithheldEntry, WorkRelationsInput } from "../../core/src/index.js";
 import type {
   DoneGatesVerdict,
   KnowledgeCategory,
@@ -906,6 +910,62 @@ function writeSettingsState(io: CliIo, state: Awaited<ReturnType<typeof material
   }));
 }
 
+// TCRN-CROSS-STORY-484 R4 (MIN-227 D12; TCRN-CROSS-SUB-341): a model reaches the configuration
+// through the CLI, so the CLI refuses it a write of a variable, or of a setting whose catalog entry
+// is not modelWritable, with MODEL_WRITE_REFUSED and the remedy of changing it in Atelier. Atelier
+// runs the same verbs with EINZBERN_SURFACE=atelier and is let through. The CLI cannot tell who runs
+// it, so this is a soft barrier: it stops a model changing a decision in passing, not a model that
+// sets EINZBERN_SURFACE itself. Reads are never refused, and a key the engine refuses whoever asks
+// (a device-level or unregistered key) keeps its own refusal.
+export const SURFACE_ENVIRONMENT_VARIABLE = "EINZBERN_SURFACE" as const;
+export const ATELIER_SURFACE = "atelier" as const;
+export const MODEL_WRITE_REMEDY = "change it in Atelier" as const;
+
+/**
+ * Refuse a write a model makes through the CLI unless `modelWritable` says it may (TCRN-CROSS-STORY-484
+ * R4): only a run for Atelier (EINZBERN_SURFACE=atelier) writes the rest. `subject` names the setting
+ * key or the variable name for the refusal's details.
+ */
+export function assertModelWriteAllowed(
+  subject: { readonly key: string } | { readonly name: string },
+  modelWritable: boolean,
+  environment: Readonly<Record<string, string | undefined>> = process.env,
+): void {
+  if (modelWritable || environment[SURFACE_ENVIRONMENT_VARIABLE] === ATELIER_SURFACE) return;
+  const target = "key" in subject ? `setting ${subject.key}` : `variable ${subject.name}`;
+  throw new WorkflowCliError("MODEL_WRITE_REFUSED", `${target} is changed in Atelier; a model does not write it through the CLI`, {
+    ...subject,
+    remedy: MODEL_WRITE_REMEDY,
+  });
+}
+
+// A setting outside the catalog is refused by the engine whoever asks: a device-level key with
+// SETTINGS_KEY_DEVICE_LEVEL, an unregistered or retired key with SETTINGS_KEY_UNREGISTERED on a write
+// (TCRN-CROSS-STORY-484 AC4) and, never being set, as nothing to remove. It keeps that refusal; only
+// a catalog key is left to the barrier.
+function assertSettingWriteAllowed(key: string): void {
+  const entry = SETTINGS_CATALOG.find((candidate) => candidate.key === key);
+  if (entry !== undefined) assertModelWriteAllowed({ key }, entry.modelWritable);
+}
+
+function writeVariableState(io: CliIo, state: Awaited<ReturnType<typeof materializeWorkspace>>, name: string): void {
+  const variable: Variable | null = listVariables(state).find((entry) => entry.name === name) ?? null;
+  const receipt = {
+    schemaVersion: "einzbern.variable-write-receipt.v1",
+    workspaceId: state.metadata.workspaceId,
+    version: state.version,
+    headEventHash: state.headEventHash,
+    recordId: name,
+    variable,
+  } as const;
+  io.write(canonicalJson({
+    reasonCode: "VARIABLE_WRITE_COMMITTED",
+    ...receipt,
+    ...writtenIdsField(),
+    receiptDigest: canonicalSha256(receipt),
+  }));
+}
+
 function writeTemplateAdmissionState(
   io: CliIo,
   state: Awaited<ReturnType<typeof materializeWorkspace>>,
@@ -1027,6 +1087,12 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "template-admit", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "template", required: true, valueKind: "string" }, { name: "owner", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "template-validate", availability: "cli", mutates: false, flags: [{ name: "template", required: true, valueKind: "string" }] },
   { name: "validate", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
+  // TCRN-CROSS-STORY-484 R1: the project's custom variables, records of the library's variable
+  // collection. R4: variable-set and variable-remove, like settings-set and settings-remove on a key
+  // that is not modelWritable, are refused with MODEL_WRITE_REFUSED unless they run for Atelier.
+  { name: "variable-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
+  { name: "variable-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "variable-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "type", required: true, valueKind: "string" }, { name: "value", required: true, valueKind: "string" }, { name: "description", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "vocabulary", availability: "cli", mutates: false, flags: [] },
   // TCRN-CROSS-STORY-472 R2, R4: the four stored relations and decided-in; --decided-by is the older
   // name of --decided-in. TCRN-CROSS-STORY-473 R2: a Story's goal, acceptance and body.
@@ -1757,6 +1823,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     required(values, [...requiredShared, "key"]);
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
+    assertSettingWriteAllowed(values.key ?? "");
     const state = await withWriteLock(workspace, at, async () => removeWorkspaceSetting(workspace, {
       occurredAt: at, key: values.key ?? "", ...(values.actor ? { actorId: values.actor } : {}),
     }));
@@ -1768,6 +1835,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     required(values, [...requiredShared, "key", "value"]);
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
+    assertSettingWriteAllowed(values.key ?? "");
     // TCRN-CROSS-STORY-380: the half of the artifact-root rule a live filesystem has to
     // answer. It cannot live in validateSettingValue, which also runs on the replay path
     // (settings.ts says why), so it runs here, at the moment an operator declares the
@@ -1789,6 +1857,60 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       ...(values.actor ? { actorId: values.actor } : {}),
     }));
     writeSettingsState(io, state, values.key ?? "");
+    return;
+  }
+  // TCRN-CROSS-STORY-484 R1 (TCRN-CROSS-SUB-341): the custom variables. variable-list reads them with
+  // what the custom section of AGENTS.md leaves out and why (R2); variable-set and variable-remove
+  // write them for Atelier only (R4). Neither write renders AGENTS.md; core's section writer does.
+  if (command === "variable-list") {
+    const values = parseArguments(rest, ["workspace"]);
+    required(values, ["workspace"]);
+    const state = await materializeWorkspace(values.workspace ?? "");
+    const withheld: readonly WithheldEntry[] = renderCustomVariablesSection(state).withheld;
+    io.write(canonicalJson({
+      reasonCode: "VARIABLE_LIST_READY",
+      schemaVersion: "einzbern.variable-list.v1",
+      workspaceId: state.metadata.workspaceId,
+      variables: listVariables(state),
+      withheld,
+    }));
+    return;
+  }
+  if (command === "variable-set") {
+    const values = parseArguments(rest, [...shared, "name", "type", "value", "description", "actor"]);
+    // An empty value is a value (a string variable may be empty), so --value is checked for
+    // presence rather than for content.
+    const missing = [...requiredShared, "name", "type"].filter((flag) => !values[flag]);
+    if (!Object.hasOwn(values, "value")) missing.push("value");
+    if (missing.length > 0) fail("CLI_ARGUMENT_MISSING", missing.join(","));
+    const workspace = values.workspace ?? "";
+    const at = values.at ?? "";
+    const name = values.name ?? "";
+    assertModelWriteAllowed({ name }, false);
+    const state = await withWriteLock(workspace, at, async () => setVariable(workspace, {
+      occurredAt: at,
+      name,
+      type: values.type ?? "",
+      value: values.value ?? "",
+      ...(values.description === undefined ? {} : { description: values.description }),
+      ...(values.actor ? { actorId: values.actor } : {}),
+    }));
+    writeVariableState(io, state, name);
+    return;
+  }
+  if (command === "variable-remove") {
+    const values = parseArguments(rest, [...shared, "name", "actor"]);
+    required(values, [...requiredShared, "name"]);
+    const workspace = values.workspace ?? "";
+    const at = values.at ?? "";
+    const name = values.name ?? "";
+    assertModelWriteAllowed({ name }, false);
+    const state = await withWriteLock(workspace, at, async () => removeVariable(workspace, {
+      occurredAt: at,
+      name,
+      ...(values.actor ? { actorId: values.actor } : {}),
+    }));
+    writeVariableState(io, state, name);
     return;
   }
   if (command === "artifact-put") {

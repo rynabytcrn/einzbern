@@ -8,6 +8,7 @@
 // for a FIXTURE- key here would pass whether or not that restriction had come back.
 
 import { testDeviceHome as deviceHome } from "./helpers/device-home.mjs";
+import { standInForAtelier } from "./helpers/workspace-fixture.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
@@ -25,6 +26,9 @@ import {
   validateWorkspace,
   DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
+
+// TCRN-CROSS-STORY-484 R4: these tests write settings through the CLI, as Atelier does.
+standInForAtelier();
 
 const instant = (second) => `2026-09-08T04:00:${String(second).padStart(2, "0")}Z`;
 

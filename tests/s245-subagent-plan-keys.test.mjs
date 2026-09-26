@@ -3,6 +3,7 @@
 // retires the dispatch keys and the two subagent-plan keys; the tiers are models.tiers.
 
 import "./helpers/device-home.mjs";
+import { standInForAtelier } from "./helpers/workspace-fixture.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -11,6 +12,9 @@ import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { initializeLibrary } from "../dist/build/packages/core/src/index.js";
+
+// TCRN-CROSS-STORY-484 R4: these tests write settings through the CLI, as Atelier does.
+standInForAtelier();
 
 const at = (second) => new Date(Date.UTC(2026, 0, 1, 0, 0, second)).toISOString().replace(/\.\d+Z$/u, "Z");
 

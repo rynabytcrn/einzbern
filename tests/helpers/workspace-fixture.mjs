@@ -9,7 +9,7 @@ import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-import { runCli } from "../../dist/build/packages/cli/src/index.js";
+import { ATELIER_SURFACE, SURFACE_ENVIRONMENT_VARIABLE, runCli } from "../../dist/build/packages/cli/src/index.js";
 import {
   ACTOR_ATTESTATION_ENABLE_OPERATION,
   CONFERENCE_MINUTES_VERSION,
@@ -52,6 +52,33 @@ export function cliProcess(args, { env = {} } = {}) {
 
 /** The device directory this test process writes from. */
 export const deviceHome = testDeviceHome;
+
+// TCRN-CROSS-STORY-484 R4 (TCRN-CROSS-SUB-341): the CLI refuses a model's write of a variable, or of
+// a setting that is not modelWritable, unless it runs for Atelier (EINZBERN_SURFACE=atelier). A test
+// that writes through those verbs stands in for Atelier: standInForAtelier() sets the surface for the
+// rest of the test process, in-process runs and spawned ones alike, and withSurface runs one
+// operation as another surface (undefined for a model's shell) and puts the previous one back.
+export { ATELIER_SURFACE };
+
+/** Make this test process run the CLI as Atelier does, for every command that follows. */
+export function standInForAtelier() {
+  process.env[SURFACE_ENVIRONMENT_VARIABLE] = ATELIER_SURFACE;
+}
+
+/** Run `operation` with EINZBERN_SURFACE set to `surface`, or unset when it is undefined. */
+export async function withSurface(surface, operation) {
+  const previous = process.env[SURFACE_ENVIRONMENT_VARIABLE];
+  const put = (value) => {
+    if (value === undefined) delete process.env[SURFACE_ENVIRONMENT_VARIABLE];
+    else process.env[SURFACE_ENVIRONMENT_VARIABLE] = value;
+  };
+  put(surface);
+  try {
+    return await operation();
+  } finally {
+    put(previous);
+  }
+}
 
 /**
  * A disposable library with a project, removed when the test ends. `externalKey` names the

@@ -7,6 +7,7 @@
 // workspace neither holds nor accepts them.
 
 import "./helpers/device-home.mjs";
+import { standInForAtelier } from "./helpers/workspace-fixture.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { cp, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
@@ -26,6 +27,9 @@ import {
 import { readCacheSnapshot } from "../dist/build/packages/core/src/library-cache.js";
 import { LEGACY_FIXTURE_EXPECTED, restoreLegacyFixture } from "./helpers/legacy-fixture.mjs";
 import { forgeOwnStream } from "./helpers/library-forge.mjs";
+
+// TCRN-CROSS-STORY-484 R4: these tests write settings through the CLI, as Atelier does.
+standInForAtelier();
 
 let second = 0;
 const at = () => {

@@ -476,6 +476,42 @@ need a project and none is registered the verb refuses with `GATES_PROJECT_UNKNO
 change already committed is planned and run against its fork point with `--base`, since against
 HEAD it has nothing to run.
 
+The settings shrink and each model tier names its runner (TCRN-CROSS-STORY-484 R3, R5, AC3, AC4;
+MIN-227 D3, D11, D12; MIN-230 D1; MIN-233 D2; `packages/core/src/models-tiers.ts`,
+`specs/settings-catalog-v1.md`). `execution.dispatchTiers` is renamed `models.tiers`: per host, each
+tier (flagship, main and economy by default; tiers may be added and removed) is
+`{runner, model, effort}`, so an economy tier can run on `codex-cli`. A recorded
+`execution.dispatchTiers` value reads as `models.tiers`, each row taking its host as its runner,
+until a `models.tiers` write supersedes it. The dispatch keys (`execution.dispatchModes`, `dispatchMode`, `dispatchClasses`), the keys of the
+switched-off mechanisms (`backup.cadence`, `backup.destination`, the two subagent-plan keys and
+`execution.subagentPolicy`) and the keys nothing reads (`driver.capabilityProfile`, `storage.backend`,
+`execution.maxDispatchDepth`) retire: `settings-set` refuses them with `SETTINGS_KEY_UNREGISTERED`
+and their history replays. `execution.maxConcurrentSubagents` stays (MIN-229 D2), and four quota
+keys join the catalog: `quota.fiveHourParallelOffPercent` (75), `quota.fiveHourWaitPercent` (90),
+`quota.weeklyParallelOffPercent` (95) and `quota.weeklyWaitPercent` (unset), integers from 1 to 100.
+A project has custom variables (TCRN-CROSS-STORY-484 R1, R2, AC1, AC2; `packages/core/src/variables.ts`,
+`packages/core/src/variables-sections.ts`). A variable is a record of the library's `variable`
+collection: a name (a lowercase letter, then letters, digits, dots, underscores or hyphens, and never
+a settings key), a type (`string`, `number` or `boolean`), a value and a description. A value or a
+description shaped like a credential (a key prefix such as `sk-`, `AKIA` or `ghp_`, a private-key
+header, a JSON web token, a long random-looking token) is refused with `VARIABLE_SECRET_SHAPED`, and
+nothing is recorded. AGENTS.md carries two managed sections: `variables-system` renders `models.tiers`
+(host, tier, runner, model, effort) and `design.authority` and no other setting, and
+`variables-custom` renders every variable; a row that would name an absolute path or a credential is
+left out and reported with its reason, and the rest is written.
+`variable-list [--workspace]` answers `VARIABLE_LIST_READY` with the variables sorted by name and
+what the custom section leaves out (`withheld`, each `{name, reason}`).
+`variable-set --at --name --type --value [--description] [--actor]` and
+`variable-remove --at --name [--actor]` answer `VARIABLE_WRITE_COMMITTED`
+(`einzbern.variable-write-receipt.v1`); a second removal is refused with `CONFIG_RECORD_NOT_FOUND`,
+and neither write renders AGENTS.md. Every `settings-catalog` row carries `modelWritable`, false for
+every key so far (R4). A model does not change the configuration in passing: `settings-set` and
+`settings-remove` on a key that is not `modelWritable`, and `variable-set` and `variable-remove`, are
+refused with `MODEL_WRITE_REFUSED` and the remedy `change it in Atelier` unless `EINZBERN_SURFACE`
+is `atelier`, as it is when Atelier runs the CLI. The CLI cannot tell who runs it, so this is a soft
+barrier. A key the engine refuses whoever asks keeps its own refusal (`SETTINGS_KEY_DEVICE_LEVEL`,
+`SETTINGS_KEY_UNREGISTERED`), and reads are never refused.
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

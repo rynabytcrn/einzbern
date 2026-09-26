@@ -21,7 +21,10 @@ import {
   validateWorkspace,
 } from "../dist/build/packages/core/src/index.js";
 import { COMMAND_CATALOG } from "../dist/build/packages/cli/src/index.js";
-import { cli, cliProcess, deviceHome, instant, workspaceFixture } from "./helpers/workspace-fixture.mjs";
+import { cli, cliProcess, deviceHome, instant, standInForAtelier, workspaceFixture } from "./helpers/workspace-fixture.mjs";
+
+// TCRN-CROSS-STORY-484 R4: these tests write settings through the CLI, as Atelier does.
+standInForAtelier();
 
 const PER_WRITER = 5;
 

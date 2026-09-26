@@ -4,8 +4,9 @@
 // Workspace settings are governed state: they live on the chain, every write is an
 // event, and CAS orders them. These are not that. They are per-machine preferences
 // about how this machine's portal opens — which partition, which language, which
-// theme, which port — and where this user's crest lives (TCRN-CROSS-STORY-476 R5); none
-// of them is a claim anyone needs to audit. Putting them
+// theme, which port — where this user's crest lives (TCRN-CROSS-STORY-476 R5), and whether
+// this device's agents read the navigation lines from AGENTS.md or from two pointer hooks
+// (TCRN-CROSS-STORY-478 R4); none of them is a claim anyone needs to audit. Putting them
 // on a chain would mean every laptop preference became a governed event on a shared
 // ledger, and choosing a partition to open in would take the chain write lock.
 //
@@ -34,7 +35,16 @@ export const MACHINE_SETTINGS_FILE_NAME = DEVICE_HOME_ENTRIES.machineSettings;
 /** The machine-level engine home, as declared by install-manifest item machine.workflow-engine. */
 export const MACHINE_SETTINGS_DIRECTORY = DIRECTORY.device;
 
+// TCRN-CROSS-STORY-478 R4 (MIN-227 D17): whether the three navigation lines are written into a
+// project's AGENTS.md (written) or reach the agent through the SessionStart and SubagentStart
+// pointer hooks instead (declined). The installer asks once and stores the answer here; unset,
+// neither is rendered.
+export const AGENTS_NAVIGATION_SETTING = "agents.navigation" as const;
+export const AGENTS_NAVIGATION_CHOICES = Object.freeze(["written", "declined"] as const);
+export type AgentsNavigationChoice = typeof AGENTS_NAVIGATION_CHOICES[number];
+
 export const MACHINE_SETTING_KEYS = Object.freeze([
+  AGENTS_NAVIGATION_SETTING,
   USER_CREST_PATH_SETTING,
   "portal.defaultLocale",
   "portal.defaultPartition",
@@ -92,6 +102,20 @@ export interface MachineSettingsCatalogEntry {
 }
 
 export const MACHINE_SETTINGS_CATALOG: readonly MachineSettingsCatalogEntry[] = Object.freeze([
+  // TCRN-CROSS-STORY-478 R4: written puts the navigation section into AGENTS.md when the managed
+  // sections are rendered (agents-sections.ts); declined leaves it out and has the host hooks carry
+  // the two pointer hooks (host-hooks.ts). Either takes effect the next time they are rendered.
+  Object.freeze({
+    key: AGENTS_NAVIGATION_SETTING,
+    type: "enum",
+    controlType: "enum",
+    layer: "device",
+    layerKind: MACHINE_SETTINGS_LAYER_KIND,
+    defaultValue: null,
+    allowedValues: Object.freeze([...AGENTS_NAVIGATION_CHOICES]),
+    appliesOn: "next-open",
+    valueSource: "settings-catalog",
+  }),
   // TCRN-CROSS-STORY-476 R5: where this user's crest lives (device-home.ts userCrestPath). Unset,
   // it is `crest` in the device directory. A value is an absolute path and is stored as its real
   // path (applyMachineSettingSet), because the crest refuses a symbolic link on its way in and a
@@ -294,6 +318,15 @@ export async function readMachineSettings(path: string = machineSettingsPath()):
 export async function readUserCrestPath(device: string = deviceHome()): Promise<string> {
   const file = await readMachineSettings(join(device, MACHINE_SETTINGS_FILE_NAME));
   return userCrestPath(file.values, device);
+}
+
+/**
+ * TCRN-CROSS-STORY-478 R4: this device's navigation choice as its settings in `device` (the device
+ * directory) state it: written, declined, or null while the installer has not asked.
+ */
+export async function readAgentsNavigation(device: string = deviceHome()): Promise<AgentsNavigationChoice | null> {
+  const value = (await readMachineSettings(join(device, MACHINE_SETTINGS_FILE_NAME))).values[AGENTS_NAVIGATION_SETTING];
+  return AGENTS_NAVIGATION_CHOICES.find((choice) => choice === value) ?? null;
 }
 
 async function write(path: string, file: MachineSettingsFile): Promise<MachineSettingsFile> {

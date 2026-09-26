@@ -18,8 +18,14 @@
 // that the registry names the library the launcher matched and that the library still carries
 // the recorded id; when it does not, the hook stays silent rather than answer from another
 // project's library.
+//
+// TCRN-CROSS-STORY-478 R4, AC5 (TCRN-CROSS-SUB-317): on a device that declined the navigation
+// section in AGENTS.md, the host also runs the launcher on SessionStart and SubagentStart. Those
+// pointer events are answered with the three navigation lines alone (navigationPointerAnswer):
+// nothing is retrieved and no library is read.
 
-import { HOST_HOOK_EVENTS, HOST_HOOK_HOSTS } from "./host-hooks.js";
+import { NAVIGATION_LINES } from "./agents-sections.js";
+import { HOST_HOOK_EVENTS, HOST_HOOK_HOSTS, HOST_HOOK_POINTER_EVENTS } from "./host-hooks.js";
 import type { HostHookHost } from "./host-hooks.js";
 import { listKnowledgeMetadata } from "./knowledge-core.js";
 import { expansionsText } from "./knowledge-language.js";
@@ -56,10 +62,17 @@ function fail(reasonCode: HookRecallReasonCode, message: string, details: Readon
 // its statistics.
 const KNOWLEDGE_CORPUS_LIMIT = 1_048_576;
 
-/** The host event a launcher word names (user-prompt-submit → UserPromptSubmit), or null. */
+// Every event the launcher may be run for, with its word: the prompt hook and the pointer hooks.
+// Read when it is asked for, not when this module loads: host-hooks.ts can still be loading then.
+function hookEventWords(): Readonly<Record<string, string>> {
+  return { ...HOST_HOOK_EVENTS, ...HOST_HOOK_POINTER_EVENTS };
+}
+
+/** The host event a launcher word names (user-prompt-submit → UserPromptSubmit, session-start → SessionStart), or null. */
 export function hookEventName(word: unknown): string | null {
   if (typeof word !== "string") return null;
-  return Object.keys(HOST_HOOK_EVENTS).find((event) => HOST_HOOK_EVENTS[event] === word) ?? null;
+  const words = hookEventWords();
+  return Object.keys(words).find((event) => words[event] === word) ?? null;
 }
 
 /**
@@ -80,9 +93,19 @@ export function hookHost(env: NodeJS.ProcessEnv = process.env): HostHookHost {
  */
 export function hookProtocolOutput(host: HostHookHost, event: string, lines: readonly string[]): string {
   if (!HOST_HOOK_HOSTS.includes(host)) fail("HOOK_INPUT_INVALID", `host must be one of ${HOST_HOOK_HOSTS.join(", ")}`, { host: String(host) });
-  if (!Object.hasOwn(HOST_HOOK_EVENTS, event)) fail("HOOK_INPUT_INVALID", `${String(event)} is not an event Einzbern hooks`, { event: String(event) });
+  if (!Object.hasOwn(hookEventWords(), event)) fail("HOOK_INPUT_INVALID", `${String(event)} is not an event Einzbern hooks`, { event: String(event) });
   if (!Array.isArray(lines) || lines.some((line) => typeof line !== "string")) fail("HOOK_INPUT_INVALID", "lines must be strings");
   return JSON.stringify({ hookSpecificOutput: { hookEventName: event, additionalContext: lines.join("\n") } });
+}
+
+/**
+ * A pointer hook's answer (TCRN-CROSS-STORY-478 R4): the three navigation lines as the
+ * additionalContext of `event`, SessionStart or SubagentStart. Nothing is retrieved and nothing is
+ * read, so it is the same for every registered project.
+ */
+export function navigationPointerAnswer(host: HostHookHost, event: string): PromptRecallAnswer {
+  if (!Object.hasOwn(HOST_HOOK_POINTER_EVENTS, event)) fail("HOOK_INPUT_INVALID", `${String(event)} is not a pointer hook event`, { event: String(event) });
+  return { lines: NAVIGATION_LINES, output: hookProtocolOutput(host, event, NAVIGATION_LINES) };
 }
 
 export interface PromptRecallRequest {

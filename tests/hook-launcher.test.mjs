@@ -19,7 +19,8 @@ import { pathToFileURL } from "node:url";
 
 import { FRAMEWORK_VERSION, createProject, createWork, initializeLibrary, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
 import { deviceHome } from "../dist/build/packages/core/src/device-home.js";
-import { hookProtocolOutput } from "../dist/build/packages/core/src/hook-recall.js";
+import { NAVIGATION_LINES } from "../dist/build/packages/core/src/agents-sections.js";
+import { hookProtocolOutput, navigationPointerAnswer } from "../dist/build/packages/core/src/hook-recall.js";
 import { HOST_HOOK_LAUNCHER } from "../dist/build/packages/core/src/host-hooks.js";
 import { gitRemoteOf, normalizeGitRemote, registerLibrary } from "../dist/build/packages/core/src/registry.js";
 import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
@@ -178,8 +179,34 @@ test("477-AC3: a registered project's prompt with a strong hit gets the hit's ti
   const quiet = runHook(launcherPath, { home, cwd: directory, prompt: "rename parser module, rerun compiler" });
   assert.deepEqual([quiet.status, quiet.stdout, quiet.stderr], [0, "", ""]);
   // An event this engine does not answer prints nothing either.
-  const other = runHook(launcherPath, { home, cwd: directory, event: "session-start" });
+  const other = runHook(launcherPath, { home, cwd: directory, event: "stop" });
   assert.deepEqual([other.status, other.stdout, other.stderr], [0, "", ""]);
+});
+
+test("478-AC5: the pointer hooks answer with the three navigation lines on both hosts, reading no library file", async (context) => {
+  const { base, home } = await scratch(context);
+  const launcherPath = await installEngine(home);
+  const { directory, library } = await registeredProject(base);
+  const record = join(base, "reads.tsv");
+  const env = { EINZBERN_READ_RECORD_ROOT: library, EINZBERN_READ_RECORD_FILE: record };
+  for (const [word, event] of [["session-start", "SessionStart"], ["subagent-start", "SubagentStart"]]) {
+    const run = runHook(launcherPath, { home, cwd: join(directory, "src"), event: word, env, preload: recorderPath });
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.stderr, "");
+    assert.deepEqual(JSON.parse(run.stdout), { hookSpecificOutput: { hookEventName: event, additionalContext: NAVIGATION_LINES.join("\n") } }, word);
+    assert.equal(run.stdout, `${navigationPointerAnswer("claude-code", event).output}\n`);
+    const codex = runHook(launcherPath, { home, cwd: directory, event: word, env: { ...env, CLAUDE_PROJECT_DIR: undefined }, preload: recorderPath });
+    assert.deepEqual([codex.status, codex.stdout, codex.stderr], [0, run.stdout, ""], `${word}: Codex reads the same answer`);
+  }
+  await assert.rejects(readFile(record, "utf8"), { code: "ENOENT" }, "a pointer hook reads nothing in the library");
+  assert.deepEqual(navigationPointerAnswer("codex", "SessionStart").lines, NAVIGATION_LINES);
+  assert.throws(() => navigationPointerAnswer("codex", "UserPromptSubmit"), (error) => error?.reasonCode === "HOOK_INPUT_INVALID");
+
+  // Where no project is registered, a pointer hook ends like any other: exit 0 and nothing printed.
+  const elsewhere = join(base, "elsewhere");
+  await mkdir(elsewhere);
+  const miss = runHook(launcherPath, { home, cwd: elsewhere, event: "session-start" });
+  assert.deepEqual([miss.status, miss.stdout, miss.stderr], [0, "", ""]);
 });
 
 test("477-AC3: the answer is cut to injection.perPromptBytes at whole lines", async (context) => {

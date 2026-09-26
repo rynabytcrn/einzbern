@@ -1,5 +1,13 @@
 # Conference V1
 
+> Write path retired (TCRN-CROSS-STORY-475 R3, MIN-227 D10). `conference-open`,
+> `conference-append-position`, `conference-close` (with `--execution-form` and `--distill`) and
+> `conference-cancel` answer `CLI_COMMAND_UNKNOWN`; `execution.independenceFloor` and
+> `conference.positionBudgetBytes` are retired settings; the engine no longer distils a close into
+> knowledge candidates. Every `conference.*` event already on a chain still replays under the rules
+> below, and its minutes are read beside new minutes records (specs/minutes-v1.md). What follows
+> describes the records as they were written and are still read.
+
 ## Status and scope
 
 `tcrn.conference.v1` is an additive extension shape for pre-commitment

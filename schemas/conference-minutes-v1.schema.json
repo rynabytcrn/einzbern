@@ -2,6 +2,7 @@
   "$id": "https://tcrn.dev/schemas/conference-minutes-v1.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "TCRN Conference Minutes V1",
+  "$comment": "Historical and read-only since TCRN-CROSS-STORY-475 R3: no verb writes this record any more; the ones already on a chain replay and read unchanged. New decisions are minutes-v1 records.",
   "type": "object",
   "additionalProperties": false,
   "required": [

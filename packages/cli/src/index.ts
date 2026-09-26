@@ -5,11 +5,6 @@ import {
   applyMachineSettingSet,
   withWorkspaceWriteLock,
   writtenRecordIds,
-  openConferenceInWorkspace,
-  appendConferencePositionInWorkspace,
-  closeConferenceInWorkspace,
-  cancelConferenceInWorkspace,
-  distillConferenceKnowledge,
   listConferencesByWorkItem,
   createKnowledgeArticle,
   createKnowledgeUnit,
@@ -111,8 +106,6 @@ import {
 } from "../../core/src/index.js";
 import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider, WorkRelationsInput } from "../../core/src/index.js";
 import type {
-  ConferenceRequest,
-  ConferenceMinutes,
   KnowledgeCategory,
   KnowledgeFitnessRecord,
   KnowledgeFitnessResult,
@@ -217,29 +210,6 @@ function required(values: Readonly<Record<string, string>>, names: readonly stri
   const missing = names.filter((name) => !values[name]);
   if (missing.length > 0) {
     fail("CLI_ARGUMENT_MISSING", missing.join(","));
-  }
-}
-
-/**
- * Outcome classes this write path will no longer mint (TCRN-CROSS-MIN-102 裁定三).
- *
- * The five-class vocabulary stays in the schema and in replay, so every record ever
- * written still validates and every chain still reads. What changes is what a new
- * record may be born as. On a gate, three of the five were pure labels — only
- * `owner_intent_required` reaches any engine behaviour, and across this platform's
- * 35 gates none was ever created with the other three. On a conference,
- * `discussion_only` is kept: minutes are the record of a deliberation, and a
- * deliberation that reached no ruling has to have a truthful class to close under.
- * `blocked` is retired on both — it names a state, not an outcome, and it has never
- * been used on either surface.
- */
-const RETIRED_OUTCOME_CLASSES: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  "conference-close": Object.freeze(["blocked"]),
-});
-
-function assertMintableOutcomeClass(verb: keyof typeof RETIRED_OUTCOME_CLASSES, value: string | undefined): void {
-  if (value !== undefined && RETIRED_OUTCOME_CLASSES[verb]?.includes(value)) {
-    fail("CLI_ARGUMENT_MALFORMED", `outcome-class=${value}`);
   }
 }
 
@@ -374,8 +344,9 @@ function booleanValue(value: string | undefined, name: string): boolean {
 }
 
 
-// TCRN-CROSS-STORY-364 requirement 3: the four card write paths -- knowledge-capture,
-// knowledge-create, conference-close --distill and knowledge-batch's create members --
+// TCRN-CROSS-STORY-364 requirement 3: the card write paths -- knowledge-capture,
+// knowledge-create and knowledge-batch's create members (conference-close --distill retired
+// with the conference write verbs, TCRN-CROSS-STORY-475 R3) --
 // all reach buildMetadata, which refuses fail-closed on a language-configured workspace
 // unless it is handed the economy-tier model's answers. The CLI is where those answers
 // enter: --language-bundle names a file the Agent wrote after asking the economy-tier model
@@ -702,23 +673,6 @@ function writtenIdsField(): { readonly ids?: readonly string[] } {
   return ids === null ? {} : { ids };
 }
 
-// WSD-2: sibling receipt for the conference/gate event-log mutation verbs. It is
-// deliberately NOT writeState: those verbs mutate extension collections, not the
-// project/work counts writeState projects (whose shape existing tests pin), so the
-// receipt carries the mutated extension record's id as recordId instead. Every
-// mutation runs under the engine write lock, so version and headEventHash here are the
-// post-append head.
-function writeExtensionState(io: CliIo, state: Awaited<ReturnType<typeof materializeWorkspace>>, recordId: string): void {
-  io.write(canonicalJson({
-    reasonCode: "WORKSPACE_COMMAND_COMPLETED",
-    workspaceId: state.metadata.workspaceId,
-    version: state.version,
-    headEventHash: state.headEventHash,
-    ...writtenIdsField(),
-    recordId,
-  }));
-}
-
 function writeSettingsState(io: CliIo, state: Awaited<ReturnType<typeof materializeWorkspace>>, key: string): void {
   const setting = state.settings.find((entry) => entry.key === key);
   const catalogEntry = SETTINGS_CATALOG.find((entry) => entry.key === key);
@@ -777,12 +731,8 @@ export const COMMAND_CATALOG = Object.freeze([
   // name the stream, sequence and event where it stops being provable. Zero writes.
   { name: "chain-validate", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   { name: "commands", availability: "cli", mutates: false, flags: [] },
-  { name: "conference-append-position", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "conference-id", required: true, valueKind: "string" }, { name: "external-key", required: true, valueKind: "string" }, { name: "actor-id", required: true, valueKind: "string" }, { name: "position", required: true, valueKind: "string" }, { name: "stance", required: false, valueKind: "string" }, { name: "risks", required: true, valueKind: "list" }, { name: "recommendations", required: true, valueKind: "list" }, { name: "evidence-ids", required: true, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "conference-cancel", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "conference-id", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "conference-close", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "conference-id", required: true, valueKind: "string" }, { name: "minutes-external-key", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "outcome-class", required: true, valueKind: "string" }, { name: "decisions", required: true, valueKind: "list" }, { name: "unresolved-issues", required: true, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }, { name: "distill", required: false, valueKind: "boolean" }, { name: "accountable-owner-id", required: false, valueKind: "string" }, { name: "stale-days", required: false, valueKind: "integer" }, { name: "evidence-ids", required: false, valueKind: "list" }, { name: "execution-form", required: false, valueKind: "string" }, { name: "language-bundle", required: false, valueKind: "string" }] },
   { name: "conference-list-by-work", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "work-id", required: true, valueKind: "string" }] },
   { name: "conference-minutes-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "conference-id", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
-  { name: "conference-open", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "external-key", required: true, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string" }, { name: "type", required: true, valueKind: "string" }, { name: "title", required: true, valueKind: "string" }, { name: "work-ids", required: true, valueKind: "list" }, { name: "desired-outcome", required: true, valueKind: "string" }, { name: "participant-ids", required: true, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "conference-position-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "conference-id", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   // TCRN-CROSS-STORY-471 R2, R3: the engine versions in this device's engine/ directory. engine-update
   // installs an unpacked, digest-checked version and makes it current; engine-rollback makes the
@@ -2212,161 +2162,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     io.write(eventPage(state, values));
     return;
   }
-  // WSD-2: governed conference/gate verbs. Every mutating verb wraps its WSD-1
-  // engine call in withWriteLock and, per SDC-1/SDC-2, appends a workspace event through
-  // the shared payload builder under the engine write lock, exactly as the project/work
-  // verbs do. Enum-valued
-  // flags (type/outcome-class/status) are passed through uncast so the engine's
-  // schema validators fail closed with their verbatim reason code (e.g.
-  // CONFERENCE_SCHEMA_INVALID / GATE_SCHEMA_INVALID). The two list verbs take no
-  // lock and read the materialized head, emitting the utf8-byte-ordered record array.
-  //
-  // TCRN-CROSS-MIN-102 裁定三 narrows what this path will *mint* without narrowing
-  // what the records may *contain*: `assertMintableOutcomeClass` refuses the retired
-  // classes here, and everything else — including a garbage value — still travels
-  // uncast so the engine keeps answering with its own code. That asymmetry is
-  // deliberate: the pass-through contract above is what makes a malformed value
-  // diagnosable, and a full CLI whitelist would have taken that away to buy nothing.
-  if (command === "conference-open") {
-    const values = parseArguments(rest, [...shared, "external-key", "project-id", "type", "title", "work-ids", "desired-outcome", "participant-ids", "actor"]);
-    required(values, [...requiredShared, "external-key", "project-id", "type", "title", "work-ids", "desired-outcome", "participant-ids"]);
-    const workspace = values.workspace ?? "";
-    const at = values.at ?? "";
-    const state = await withWriteLock(workspace, at, async () => openConferenceInWorkspace(workspace, {
-      occurredAt: at,
-      externalKey: values["external-key"] ?? "",
-      projectId: values["project-id"] ?? "",
-      type: values.type as ConferenceRequest["type"],
-      title: values.title ?? "",
-      linkedWorkIds: listValue(values["work-ids"]),
-      desiredOutcome: values["desired-outcome"] ?? "",
-      participantIds: listValue(values["participant-ids"]),
-      ...(values.actor ? { actorId: values.actor } : {}),
-    }));
-    writeExtensionState(io, state, deriveStableId("conference", canonicalExternalKey(values["external-key"] ?? "")));
-    return;
-  }
-  if (command === "conference-append-position") {
-    // WSE-3: --actor-id is the position author (a conference-position record field);
-    // --actor is the attestation acting identity. These are now separate core fields.
-    // They previously shared one actorId slot, so --actor overwrote the author of the
-    // record -- a required flag's value discarded in silence. The default path (no
-    // --actor) still lets the author stand in as the attestation actor, which keeps
-    // existing invocations byte-identical.
-    const values = parseArguments(rest, [...shared, "conference-id", "external-key", "actor-id", "position", "stance", "risks", "recommendations", "evidence-ids", "actor"]);
-    required(values, [...requiredShared, "conference-id", "external-key", "actor-id", "position", "risks", "recommendations", "evidence-ids"]);
-    const workspace = values.workspace ?? "";
-    const at = values.at ?? "";
-    const state = await withWriteLock(workspace, at, async () => appendConferencePositionInWorkspace(workspace, {
-      occurredAt: at,
-      conferenceId: values["conference-id"] ?? "",
-      externalKey: values["external-key"] ?? "",
-      authorActorId: values["actor-id"] ?? "",
-      ...(values.stance === undefined ? {} : { stance: values.stance }),
-      position: values.position ?? "",
-      risks: listValue(values.risks),
-      recommendations: listValue(values.recommendations),
-      evidenceIds: listValue(values["evidence-ids"]),
-      actorId: values.actor ?? values["actor-id"] ?? "",
-    }));
-    writeExtensionState(io, state, deriveStableId("position", canonicalExternalKey(values["external-key"] ?? "")));
-    return;
-  }
-  if (command === "conference-close") {
-    // WSD-3 (Stage 5) adds the four knowledge-wiring flags to WSD-2's core surface,
-    // preserving --actor and every core flag. --distill is opt-in: absent/false is
-    // byte-identical to the WSD-2 close (no knowledge access), so a close on a
-    // workspace without an initialized knowledge store is never bricked. When set,
-    // the close event is appended FIRST, then the governed high-water rebind
-    // (rebaseKnowledgeStore) re-binds the disposable knowledge store to the advanced
-    // headEventHash — without it every subsequent knowledge call would fail
-    // KNOWLEDGE_HIGH_WATER_MISMATCH — then each minutes decision is captured as a
-    // knowledge candidate. Provenance stays optional at capture (WSC-3 capture-cheap);
-    // the whole flow runs under the held workspace lease so no concurrent append can
-    // desync the rebind before capture.
-    const values = parseArguments(rest, [...shared, "host", "conference-id", "minutes-external-key", "summary", "outcome-class", "decisions", "unresolved-issues", "execution-form", "actor", "distill", "accountable-owner-id", "stale-days", "evidence-ids", "language-bundle"]);
-    required(values, [...requiredShared, "conference-id", "minutes-external-key", "summary", "outcome-class", "decisions", "unresolved-issues"]);
-    assertMintableOutcomeClass("conference-close", values["outcome-class"]);
-    const workspace = values.workspace ?? "";
-    const at = values.at ?? "";
-    const conferenceId = values["conference-id"] ?? "";
-    const minutesId = deriveStableId("minutes", canonicalExternalKey(values["minutes-external-key"] ?? ""));
-    const distill = booleanValue(values.distill, "distill");
-    const distillProviders = languageProvidersFor(values["language-bundle"]);
-    const outcome = await withWriteLock(workspace, at, async () => {
-      // Validate the knowledge store BEFORE the close, while its high-water still equals
-      // the workspace head — a missing/invalid store then fails closed BEFORE the close
-      // event is appended (version unchanged). The whole sequence holds the write lock.
-      if (distill) await validateKnowledgeStore(workspace);
-      const state = await closeConferenceInWorkspace(workspace, {
-        occurredAt: at,
-        conferenceId,
-        minutesExternalKey: values["minutes-external-key"] ?? "",
-        summary: values.summary ?? "",
-        outcomeClass: values["outcome-class"] as ConferenceMinutes["outcomeClass"],
-        decisions: listValue(values.decisions),
-        unresolvedIssues: listValue(values["unresolved-issues"]),
-        executionForm: values["execution-form"],
-        ...(values.actor ? { actorId: values.actor } : {}),
-      });
-      if (!distill) return { state, knowledgeUnitIds: undefined };
-      await rebaseKnowledgeStore(workspace, { at });
-      const candidates = distillConferenceKnowledge(
-        state.conferenceMinutes.find((entry) => entry.id === minutesId),
-        state.conferences.find((entry) => entry.id === conferenceId),
-        state.conferencePositions.filter((entry) => entry.conferenceId === conferenceId),
-        {
-          occurredAt: at,
-          stalenessDays: boundedInteger(values, "stale-days") ?? 365,
-          ...(values["accountable-owner-id"] ? { accountableOwnerId: values["accountable-owner-id"] } : {}),
-          evidenceIds: listValue(values["evidence-ids"]),
-        },
-      );
-      const knowledgeUnitIds: string[] = [];
-      for (const candidate of candidates) {
-        // TCRN-CROSS-STORY-364 requirement 3: a distilled decision is a card write, so it
-        // carries the same answers every other card write carries. The bundle is keyed by
-        // the candidate's external key -- the Agent knows those before the close, because
-        // distillConferenceKnowledge derives them from the minutes it is about to write.
-        const candidateProvider = distillProviders?.get(candidate.externalKey) ?? distillProviders?.get(KNOWLEDGE_LANGUAGE_BUNDLE_FALLBACK_KEY);
-        knowledgeUnitIds.push(String((await createKnowledgeUnit(
-          workspace,
-          candidate,
-          {
-            ...(candidateProvider === undefined ? {} : { languageProvider: candidateProvider }),
-            ...(values.host === undefined ? {} : { host: values.host }),
-          },
-        )).id));
-      }
-      return { state, knowledgeUnitIds };
-    });
-    if (outcome.knowledgeUnitIds === undefined) {
-      writeExtensionState(io, outcome.state, minutesId);
-      return;
-    }
-    io.write(canonicalJson({
-      reasonCode: "WORKSPACE_COMMAND_COMPLETED",
-      workspaceId: outcome.state.metadata.workspaceId,
-      version: outcome.state.version,
-      headEventHash: outcome.state.headEventHash,
-      recordId: minutesId,
-      knowledgeUnitIds: outcome.knowledgeUnitIds,
-    }));
-    return;
-  }
-  if (command === "conference-cancel") {
-    const values = parseArguments(rest, [...shared, "conference-id", "actor"]);
-    required(values, [...requiredShared, "conference-id"]);
-    const workspace = values.workspace ?? "";
-    const at = values.at ?? "";
-    const state = await withWriteLock(workspace, at, async () => cancelConferenceInWorkspace(workspace, {
-      occurredAt: at,
-      conferenceId: values["conference-id"] ?? "",
-      ...(values.actor ? { actorId: values.actor } : {}),
-    }));
-    writeExtensionState(io, state, values["conference-id"] ?? "");
-    return;
-  }
+  // TCRN-CROSS-STORY-475 R3 (MIN-227 D10): conference-open, conference-append-position,
+  // conference-close (with --execution-form and --distill) and conference-cancel are retired and
+  // answer CLI_COMMAND_UNKNOWN. Every conference event already on a chain still replays.
   // INIT-014 (TCRN-AOS-INC-005): workspace-scoped reads for the deliberation
   // record families.
   //

@@ -6,22 +6,17 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
 
+import * as core from "../dist/build/packages/core/src/index.js";
 import {
-  CONFERENCE_DISTILL_SUMMARY_BYTES,
   CONFERENCE_MINUTES_VERSION,
   CONFERENCE_POSITION_VERSION,
   CONFERENCE_REQUEST_VERSION,
-  KNOWLEDGE_LIMITS,
-  appendConferencePosition,
-  closeConference,
-  distillConferenceKnowledge,
   listConferencesByWorkItem,
   openConference,
   validateConferenceMinutes,
   validateConferencePosition,
   validateConferenceRequest,
 } from "../dist/build/packages/core/src/index.js";
-import { canonicalExternalKey, canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
 
 const fixture = JSON.parse(await readFile(new URL("../packages/core/fixtures/conference-cases.json", import.meta.url), "utf8"));
 
@@ -64,87 +59,19 @@ test("valid conference request, position, and minutes validate", () => {
   assert.equal(validateConferenceMinutes(minutes()).schemaVersion, CONFERENCE_MINUTES_VERSION);
 });
 
-test("operations bind positions and minutes to an open conference", () => {
+// TCRN-CROSS-STORY-475 R3: the write path is gone -- the position binding, the close and its
+// distillation into knowledge candidates -- and what stays is what replay and the read verbs use.
+test("replay opens a conference only as open, and the read helper lists a work item's conferences", () => {
   const cases = [
     () => assert.equal(openConference(request()).status, "open"),
     () => reason("CONFERENCE_SCHEMA_INVALID", () => openConference(request({ status: "closed" }))),
-    () => assert.equal(appendConferencePosition(position(), request()).id, "position:one"),
-    () => reason("CONFERENCE_POSITION_UNBOUND", () => appendConferencePosition(position({ conferenceId: "conference:other" }), request())),
-    () => reason("CONFERENCE_POSITION_UNBOUND", () => appendConferencePosition(position(), request({ status: "closed" }))),
     () => assert.equal(listConferencesByWorkItem("work:a", [request(), request({ id: "conference:2", linkedWorkIds: ["work:z"] })]).length, 1),
   ];
   assert.equal(cases.length, fixture.operationCases);
   for (const operation of cases) operation();
-});
-
-test("close distils each decision into a knowledge candidate backlinking the conference", () => {
-  const closed = closeConference(minutes(), request(), [position()]);
-  assert.equal(closed.candidates.length, minutes().decisions.length);
-  const checks = [
-    () => assert.equal(closed.candidates.every((candidate) => candidate.kind === "decision" && candidate.promotionState === "candidate"), true),
-    () => assert.equal(closed.candidates.every((candidate) => candidate.sourceReferences.some((reference) => reference.startsWith("conference:"))), true),
-    () => assert.equal(closed.candidates.every((candidate) => /^[a-f0-9]{64}$/u.test(candidate.candidateDigest)), true),
-  ];
-  assert.equal(checks.length, fixture.distillCases);
-  for (const check of checks) check();
-  reason("CONFERENCE_MINUTES_UNBOUND", () => closeConference(minutes({ conferenceId: "conference:other" }), request()));
-});
-
-test("WSD-3: distillConferenceKnowledge emits one governed knowledge input per decision", () => {
-  const options = {
-    occurredAt: "2026-07-16T02:00:00Z",
-    stalenessDays: 90,
-    accountableOwnerId: "owner:governance",
-    evidenceIds: ["evidence:extra", "work:notevidence"],
-  };
-  const inputs = distillConferenceKnowledge(minutes(), request(), [position()], options);
-  const checks = [
-    // One input per minutes decision, each a candidate. No store-version CAS rides along any
-    // more: the knowledge write takes the engine lock itself (TCRN-CROSS-STORY-467 R1).
-    () => assert.equal(inputs.length, minutes().decisions.length),
-    () => assert.equal(inputs.every((input) => !Object.hasOwn(input, "expectedVersion")), true),
-    () => assert.equal(inputs.every((input) => input.lifecycle === "candidate" && input.category === "decision" && input.kind === "decision"), true),
-    // Hyphen-only external keys the canonicalizer admits (uppercased), unique per decision.
-    () => assert.deepEqual(inputs.map((input) => input.externalKey), ["conference-decision-one-one-1", "conference-decision-one-one-2"]),
-    () => assert.equal(inputs.every((input) => canonicalExternalKey(input.externalKey) === input.externalKey.toUpperCase()), true),
-    // Fixed conference tag set: non-empty and sorted so the WSC-6 promote check passes.
-    () => assert.deepEqual(inputs[0].tags, ["conference-decision", "distilled", "type-architecture"]),
-    () => assert.equal(inputs.every((input) => input.tags.length >= 1 && input.snippet.length > 0), true),
-    // sourceReferences backlink both records; buildMetadata sorts them server-side.
-    () => assert.deepEqual([...inputs[0].sourceReferences].sort(), ["conference-minutes:one", "conference:one"].sort()),
-    // sourceDigest binds the FULL untruncated basis, recomputed here.
-    () => assert.equal(inputs[0].sourceDigest, canonicalSha256({ title: request().title, decision: minutes().decisions[0], minutesId: "minutes:one" })),
-    // Evidence union: only evidence:-prefixed ids, deduped and sorted (position + supplement).
-    () => assert.deepEqual(inputs[0].linkedEvidenceIds, ["evidence:extra", "evidence:p6b"]),
-    // Provenance stays optional at capture, but supplying it here flows through.
-    () => assert.equal(inputs[0].accountableOwnerId, "owner:governance"),
-    () => assert.equal(inputs[0].stalenessPolicy.maximumAgeDays, 90),
-    () => assert.equal(inputs[0].scope === "project" && inputs[0].projectId === "project:alpha", true),
-  ];
-  assert.equal(checks.length, fixture.distillKnowledgeCases);
-  for (const check of checks) check();
-  reason("CONFERENCE_MINUTES_UNBOUND", () => distillConferenceKnowledge(minutes({ conferenceId: "conference:other" }), request(), [], options));
-});
-
-test("WSD-3: knowledge fields truncate on a code-point boundary without splitting a multi-byte code point", () => {
-  // A 4-byte code point straddling the 512-byte snippet bound: truncation must stop
-  // before it, leaving a well-formed string at or under the byte cap (no partial unit).
-  const decision = `${"a".repeat(510)}\u{1f600}tail`;
-  const inputs = distillConferenceKnowledge(minutes({ decisions: [decision] }), request(), [], {
-    occurredAt: "2026-07-16T02:00:00Z", stalenessDays: 30,
-  });
-  const [input] = inputs;
-  assert.equal(Buffer.byteLength(input.snippet, "utf8") <= 512, true);
-  assert.equal(input.snippet.isWellFormed(), true);
-  assert.equal(input.snippet, "a".repeat(510));
-  assert.equal(Buffer.byteLength(input.subject, "utf8") <= 512, true);
-  assert.equal(input.subject.isWellFormed(), true);
-  // summary passes through the 2048-byte cap unchanged and stays well-formed.
-  assert.equal(Buffer.byteLength(input.summary, "utf8") <= 2048, true);
-  assert.equal(input.summary.isWellFormed(), true);
-  // Provenance omitted stays empty (capture-cheap); evidence union is empty.
-  assert.equal(input.accountableOwnerId, "");
-  assert.deepEqual(input.linkedEvidenceIds, []);
+  for (const retired of ["appendConferencePosition", "closeConference", "distillConferenceKnowledge", "CONFERENCE_DISTILL_SUMMARY_BYTES"]) {
+    assert.equal(core[retired], undefined, `${retired} retired with the conference write path`);
+  }
 });
 
 test("hostile records fail closed", () => {
@@ -232,17 +159,6 @@ test("extension registration binds appliesTo work and the conference schema dige
     schemaDigest: createHash("sha256").update(schemaBytes).digest("hex"),
   };
   assert.equal(validate(registration), true);
-});
-
-// MIN-102 批1. `--distill` truncates the minutes summary and hands it to the
-// knowledge store, whose own summary bound then decides whether the candidate is
-// admissible. Truncating with the conference text budget worked only because the
-// two numbers were equal; the moment the conference budget rises (批4 does exactly
-// that) a distill would start failing *after* conference.closed is on the chain,
-// leaving a half-completed governed operation that append-only history cannot undo.
-// This pins the restated constant to the bound it is restating.
-test("MIN-102 the distilled summary is bounded by the knowledge store's limit, not the conference budget", () => {
-  assert.equal(CONFERENCE_DISTILL_SUMMARY_BYTES, KNOWLEDGE_LIMITS.maximumSummaryBytes);
 });
 
 // TCRN-CROSS-STORY-359: verifyConference retired with the rest of the phase verbs and it

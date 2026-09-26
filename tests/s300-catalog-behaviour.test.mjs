@@ -32,7 +32,8 @@ async function capture(argv) {
 // Red leg: remove the `--help` branch and this returns the verb's ordinary refusal
 // (or, for a verb with no required flags, runs it) instead of its catalog entry.
 test("STORY-300: --help returns the verb's own argument surface without reading engine source", async () => {
-  for (const name of ["work-create", "conference-open", "status"]) {
+  // conference-open was the third verb here until TCRN-CROSS-STORY-475 R3 retired it.
+  for (const name of ["work-create", "work-annotate", "status"]) {
     const result = await capture([name, "--help"]);
     assert.equal(result.ok, true, `${name} --help must not refuse: ${result.reasonCode ?? ""} ${result.message ?? ""}`);
     const payload = JSON.parse(result.output);

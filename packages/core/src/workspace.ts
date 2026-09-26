@@ -63,14 +63,8 @@ import {
   validateActorAttestationEnableRecord,
 } from "./actor-attestation.js";
 import {
-  CONFERENCE_MINUTES_VERSION,
-  CONFERENCE_POSITION_VERSION,
-  CONFERENCE_REQUEST_VERSION,
   ConferenceError,
-  appendConferencePosition,
   openConference,
-  CONFERENCE_EXECUTION_FORMS,
-  independenceFloorCovers,
   validateConferenceMinutes,
   validateConferencePosition,
   validateConferenceRequest,
@@ -131,7 +125,6 @@ import {
   compareEngineVersions,
   createWorkspaceSettingRecord,
   isRetiredSettingKey,
-  settingsCatalogEntry,
   sortWorkspaceSettings,
   validateWorkspaceSettingRecord,
 } from "./settings.js";
@@ -166,7 +159,6 @@ export const WORKSPACE_REASON_CODES = Object.freeze([
   "WORKSPACE_ACTOR_INVALID",
   "WORKSPACE_ACTOR_REQUIRED",
   "WORKSPACE_ALREADY_EXISTS",
-  "CONFERENCE_INDEPENDENCE_REQUIRED",
   "EXECUTION_PERSONA_IN_USE",
   "EXECUTION_PERSONA_UNKNOWN",
   "MODEL_PLAN_ASSIGNMENT_INVALID",
@@ -189,7 +181,6 @@ export const WORKSPACE_REASON_CODES = Object.freeze([
   "PERSONA_PROMPT_INVALID",
   "PERSONA_RECORD_INVALID",
   "PERSONA_ROLE_INVALID",
-  "WORKSPACE_CONFERENCE_NOT_OPEN",
   "WORKSPACE_EVENT_CORRUPT",
   "WORKSPACE_FAULT_INJECTED",
   "WORKSPACE_FILESYSTEM_UNSUPPORTED",
@@ -3883,187 +3874,11 @@ export async function recordMinutes(workspaceRoot: string, input: RecordMinutesI
 // reducer above and still demands an actor from that event on, which appendEvents
 // enforces for every later write.
 
-// WSD-1: verb-side lookups for the extension collections. The referenced record
-// must exist; conference mutations additionally require the referenced
-// conference to be open, failing WORKSPACE_CONFERENCE_NOT_OPEN otherwise — the
-// same rule the reducer replays as WORKSPACE_EVENT_CORRUPT.
-function openConferenceById(state: WorkspaceState, id: string): ConferenceRequest {
-  const record = state.conferences.find((entry) => entry.id === id);
-  if (!record) {
-    fail("WORKSPACE_INPUT_INVALID", `conference ${id} is unavailable`);
-  }
-  if (record.status !== "open") {
-    fail("WORKSPACE_CONFERENCE_NOT_OPEN", `conference ${id} is ${record.status}`);
-  }
-  return record;
-}
-
-// WSD-1: the extension mutation verbs (the four conference ones since the gate verbs
-// retired). Each derives its stable id from an external key, validates its record
-// through the unchanged conference validators (validator failures propagate verbatim for the CLI to surface),
-// and appends exactly one event through appendEvent and the shared SDC-2
-// payload constructor.
-export async function openConferenceInWorkspace(workspaceRoot: string, input: {
-  readonly externalKey: string;
-  readonly projectId: string;
-  readonly type: ConferenceRequest["type"];
-  readonly title: string;
-  readonly linkedWorkIds: readonly string[];
-  readonly desiredOutcome: string;
-  readonly participantIds: readonly string[];
-} & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  const id = deriveStableId("conference", canonicalExternalKey(input.externalKey));
-  return appendEvent(workspaceRoot, (state) => {
-    projectById(state, input.projectId);
-    for (const workId of input.linkedWorkIds) {
-      if (workById(state, workId).projectId !== input.projectId) {
-        fail("WORKSPACE_INPUT_INVALID", `work ${workId} is outside project ${input.projectId}`);
-      }
-    }
-    if (state.conferences.some((entry) => entry.id === id)) {
-      fail("WORKSPACE_INPUT_INVALID", `conference ${id} already exists`);
-    }
-    const record = openConference({
-      schemaVersion: CONFERENCE_REQUEST_VERSION,
-      id,
-      projectId: input.projectId,
-      type: input.type,
-      title: input.title,
-      linkedWorkIds: input.linkedWorkIds,
-      desiredOutcome: input.desiredOutcome,
-      participantIds: input.participantIds,
-      status: "open",
-      revision: 1,
-      updatedAt: input.occurredAt,
-      tombstone: false,
-      extensions: {},
-    });
-    return {
-      payload: buildEventPayload("conference.created", record as unknown as JsonValue),
-      projects: state.projects,
-      work: state.work,
-      conferences: sortExtensionRecords([...state.conferences, record]),
-    };
-  }, input);
-}
-
-export async function appendConferencePositionInWorkspace(workspaceRoot: string, input: {
-  readonly conferenceId: string;
-  readonly externalKey: string;
-  // WSE-3 correction: this is the position's author, which is a different thing from the
-  // attestation actor that WorkspaceMutationOptions carries. Both used to be spelled
-  // actorId, and because this type intersects with those options the two collapsed into
-  // one property -- so supplying an attestation actor silently overwrote the author of
-  // the record being written, with no error and no way for a caller to express both.
-  readonly authorActorId: string;
-  readonly stance?: string;
-  readonly position: string;
-  readonly risks: readonly string[];
-  readonly recommendations: readonly string[];
-  readonly evidenceIds: readonly string[];
-} & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  const id = deriveStableId("position", canonicalExternalKey(input.externalKey));
-  return appendEvent(workspaceRoot, (state) => {
-    const conference = openConferenceById(state, input.conferenceId);
-    if (state.conferencePositions.some((entry) => entry.id === id)) {
-      fail("WORKSPACE_INPUT_INVALID", `conference position ${id} already exists`);
-    }
-    // MIN-102 裁定四. The deployment's own writing budget for a position, read the way
-    // execution.independenceFloor is read: on the write path, from the state this
-    // mutation is building on. Replay never consults it — CONFERENCE_POSITION_CEILING_BYTES
-    // is the only bound a record's validity depends on — so lowering this setting can
-    // never invalidate a position already on the chain, and raising it can never admit
-    // one the ceiling would refuse. The reason code is the budget's own, because from
-    // the writer's side this is the same event: the position did not fit.
-    const positionBudget = Number(
-      state.settings.find((entry) => entry.key === "conference.positionBudgetBytes")?.value
-        ?? settingsCatalogEntry("conference.positionBudgetBytes").defaultValue,
-    );
-    if (Buffer.byteLength(input.position, "utf8") > positionBudget) {
-      throw new ConferenceError("CONFERENCE_BUDGET_EXCEEDED", `position exceeds conference.positionBudgetBytes=${positionBudget}`);
-    }
-    const record = appendConferencePosition({
-      schemaVersion: CONFERENCE_POSITION_VERSION,
-      id,
-      conferenceId: conference.id,
-      projectId: conference.projectId,
-      actorId: input.authorActorId,
-      ...(input.stance === undefined ? {} : { stance: input.stance }),
-      position: input.position,
-      risks: input.risks,
-      recommendations: input.recommendations,
-      evidenceIds: input.evidenceIds,
-      revision: 1,
-      updatedAt: input.occurredAt,
-      tombstone: false,
-      extensions: {},
-    }, conference);
-    return {
-      payload: buildEventPayload("conference.position.appended", record as unknown as JsonValue),
-      projects: state.projects,
-      work: state.work,
-      conferencePositions: sortExtensionRecords([...state.conferencePositions, record]),
-    };
-  }, input);
-}
-
-export async function closeConferenceInWorkspace(workspaceRoot: string, input: {
-  readonly conferenceId: string;
-  readonly minutesExternalKey: string;
-  readonly summary: string;
-  readonly outcomeClass: ConferenceMinutes["outcomeClass"];
-  readonly decisions: readonly string[];
-  readonly unresolvedIssues: readonly string[];
-  readonly executionForm?: string | undefined;
-} & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  const minutesId = deriveStableId("minutes", canonicalExternalKey(input.minutesExternalKey));
-  return appendEvent(workspaceRoot, (state) => {
-    const conference = openConferenceById(state, input.conferenceId);
-    if (state.conferenceMinutes.some((entry) => entry.id === minutesId)) {
-      fail("WORKSPACE_INPUT_INVALID", `conference minutes ${minutesId} already exist`);
-    }
-    // INIT-026 S234: where the workspace's independence floor covers this
-    // conference's type, the close must declare an independent execution form.
-    // The declaration is a self-report, validated for presence and value and
-    // never for truth — the same authorization-not-authentication ceiling
-    // the retired gate identity roster stated about itself; see CONFERENCE_EXECUTION_FORMS.
-    if (input.executionForm !== undefined && !(CONFERENCE_EXECUTION_FORMS as readonly string[]).includes(input.executionForm)) {
-      fail("WORKSPACE_INPUT_INVALID", `execution-form must be one of ${CONFERENCE_EXECUTION_FORMS.join(", ")}`);
-    }
-    const independenceFloor = state.settings.find((entry) => entry.key === "execution.independenceFloor")?.value ?? "none";
-    if (independenceFloorCovers(independenceFloor, conference.type) && input.executionForm !== "independent") {
-      fail("CONFERENCE_INDEPENDENCE_REQUIRED",
-        `execution.independenceFloor=${independenceFloor} covers type=${conference.type}; close requires --execution-form independent`);
-    }
-    const record = validateConferenceRequest({ ...conference, status: "closed", revision: conference.revision + 1, updatedAt: input.occurredAt });
-    const minutes = validateConferenceMinutes({
-      schemaVersion: CONFERENCE_MINUTES_VERSION,
-      id: minutesId,
-      conferenceId: conference.id,
-      projectId: conference.projectId,
-      summary: input.summary,
-      outcomeClass: input.outcomeClass,
-      decisions: input.decisions,
-      unresolvedIssues: input.unresolvedIssues,
-      revision: 1,
-      updatedAt: input.occurredAt,
-      tombstone: false,
-      // The extension mechanism's native shape: a protocol-id key carrying a
-      // {required, value} declaration. required:false so a reader that does not
-      // know this key is never forced to interpret it.
-      extensions: input.executionForm === undefined ? {} : { "conference:execution-form": { required: false, value: input.executionForm } },
-    });
-    // The single-event atomic close: the payload carries the closed conference
-    // as its record and the minutes as the registered per-operation extra.
-    return {
-      payload: buildEventPayload("conference.closed", record as unknown as JsonValue, undefined, { minutes: minutes as unknown as JsonValue }),
-      projects: state.projects,
-      work: state.work,
-      conferences: sortExtensionRecords(state.conferences.map((entry) => entry.id === record.id ? record : entry)),
-      conferenceMinutes: sortExtensionRecords([...state.conferenceMinutes, minutes]),
-    };
-  }, input);
-}
+// TCRN-CROSS-STORY-475 R3 (MIN-227 D10): the conference write verbs -- open, append a position,
+// close (with its execution-form declaration, the execution.independenceFloor check and the
+// conference.positionBudgetBytes budget) and cancel -- are retired. Decisions are recorded as minutes
+// (recordMinutes above); every conference event already on a chain replays through the reducer
+// arms, which keep every check they made.
 
 // INIT-027 S238. Custom personas are content records on the same governed
 // execution surface. Their ids are derived from names inside profile-store.ts;
@@ -4268,21 +4083,6 @@ export async function removePersonaBindingInWorkspace(workspaceRoot: string, inp
     projects: state.projects, work: state.work,
     executionConfig: applyPersonaBindingRemove(state.executionConfig, { profileId: input.profileId, host: input.host as ExecutionHost }),
   }), input);
-}
-
-export async function cancelConferenceInWorkspace(workspaceRoot: string, input: {
-  readonly conferenceId: string;
-} & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return appendEvent(workspaceRoot, (state) => {
-    const conference = openConferenceById(state, input.conferenceId);
-    const record = validateConferenceRequest({ ...conference, status: "cancelled", revision: conference.revision + 1, updatedAt: input.occurredAt });
-    return {
-      payload: buildEventPayload("conference.updated", record as unknown as JsonValue),
-      projects: state.projects,
-      work: state.work,
-      conferences: sortExtensionRecords(state.conferences.map((entry) => entry.id === record.id ? record : entry)),
-    };
-  }, input);
 }
 
 // gate-v1: the gate write verbs (create, transition, delete) are retired with the rest of

@@ -584,46 +584,8 @@ test("STORY-364 R3: a batch's create members each get their own answers, keyed b
     "each member is served its own key's phrasings, not the first member's");
 });
 
-test("STORY-364 R3: conference-close --distill reaches the write-path hook", async (context) => {
-  const workspace = await languageWorkspace(context, {
-    "artifact.language": "en",
-    "execution.dispatchTiers": DISPATCH_TIERS_VALUE,
-  });
-  const bundle = await writeBundle(join(containerOf(workspace), "distill-bundle.json"), {
-    model: ECONOMY_MODEL,
-    translations: {},
-    expansions: { NEW: { en: ["what did the conference decide", "which approach was ratified", "was the decision recorded"] } },
-  });
-  // The close event is appended BEFORE the distill, so a close refused by the write path
-  // has already closed its conference. The refusal and the success therefore need one
-  // conference each; that ordering is WSD-3's, not this change's.
-  const open = async (suffix, second) => {
-    const opened = await cliJson(["conference-open", "--workspace", workspace, "--at", instant(second), "--external-key", `STORY-364-CONFERENCE-${suffix}`, "--project-id", deriveStableId("project", "STORY-364-PROJECT"),
-      "--type", "architecture", "--title", "Decide the artefact language",
-      "--work-ids", deriveStableId("work", "TCRN-CROSS-STORY-364"),
-      "--desired-outcome", "ratify the approach", "--participant-ids", "profile:architect-01"]);
-    assert.equal(opened.reasonCode, "WORKSPACE_COMMAND_COMPLETED");
-  };
-  await open("A", 10);
-  await open("B", 11);
-  const argv = (suffix, second, ...extra) => ["conference-close", "--workspace", workspace, "--at", instant(second), "--conference-id", deriveStableId("conference", `STORY-364-CONFERENCE-${suffix}`),
-    "--minutes-external-key", `STORY-364-MINUTES-${suffix}`, "--summary", "the approach was ratified",
-    "--outcome-class", "role_decision", "--decisions", "record the artefact language as a setting",
-    "--unresolved-issues", "-", "--distill", "true", "--accountable-owner-id", OWNER, "--host", "claude-code",
-    "--stale-days", "90", "--evidence-ids", deriveStableId("evidence", "STORY-364-CLOSE"), ...extra];
-
-  await assert.rejects(() => cliJson(argv("A", 12)),
-    (error) => error.reasonCode === "KNOWLEDGE_LANGUAGE_MODEL_UNAVAILABLE",
-    "distilling a decision into a card is a card write, and it is refused like every other one");
-
-  const closed = await cliJson(argv("B", 13, "--language-bundle", bundle));
-  assert.equal(closed.reasonCode, "WORKSPACE_COMMAND_COMPLETED");
-  assert.equal(closed.knowledgeUnitIds.length, 1);
-  const records = (await listKnowledgeMetadata(workspace, { at: instant(13), selection: "all", allowTrailing: true })).records;
-  assert.equal(records.length, 1);
-  assert.equal(records[0].expansions.en.length, 3,
-    "the distilled card carries the phrasings the bundle's NEW key holds");
-});
+// The fourth card write path, conference-close --distill, retired with the conference write verbs
+// (TCRN-CROSS-STORY-475 R3); knowledge-capture, knowledge-create and knowledge-batch remain.
 
 test("STORY-364 R4: the injection hook translates once and asks again, and adds the two counts", async (context) => {
   const workspace = await languageWorkspace(context, {

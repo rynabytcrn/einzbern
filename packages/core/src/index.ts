@@ -133,10 +133,7 @@ export {
   WorkspaceError,
   activeBinding,
   activeWorkspaceRoot,
-  appendConferencePositionInWorkspace,
   admitTemplateInWorkspace,
-  cancelConferenceInWorkspace,
-  closeConferenceInWorkspace,
   assertWorkspaceRecordCount,
   assertWorkspaceRelativePath,
   createProject,
@@ -152,7 +149,6 @@ export {
   initializeLibrary,
   materializeWorkspace,
   materializeWorkspaceFromGenesis,
-  openConferenceInWorkspace,
   recoverWorkspace,
   removeHostConfigurationInWorkspace,
   removeCustomPersonaInWorkspace,
@@ -460,8 +456,9 @@ export type {
   DependencyKind,
   DependencyStatus,
 } from "./dependency.js";
+// TCRN-CROSS-STORY-475 R3: the conference write path, its distillation and its position binding
+// are retired; the record validators, the read helper and the historical vocabulary stay.
 export {
-  CONFERENCE_DISTILL_SUMMARY_BYTES,
   CONFERENCE_POSITION_CEILING_BYTES,
   CONFERENCE_REQUEST_VERSION,
   CONFERENCE_POSITION_VERSION,
@@ -476,18 +473,13 @@ export {
   validateConferencePosition,
   validateConferenceMinutes,
   openConference,
-  appendConferencePosition,
   listConferencesByWorkItem,
-  closeConference,
-  distillConferenceKnowledge,
 } from "./conference.js";
 export type {
   ConferenceRequest,
   ConferencePosition,
   ConferenceMinutes,
-  ConferenceDecisionCandidate,
   ConferenceReasonCode,
-  DistillConferenceOptions,
 } from "./conference.js";
 export { VOCABULARY_VERSION, readVocabulary } from "./vocabulary.js";
 export {

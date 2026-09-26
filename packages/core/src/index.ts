@@ -331,13 +331,12 @@ export type {
   PersonaStoreState,
   ReferencePersonaReadback,
 } from "./profile-store.js";
+// TCRN-CROSS-STORY-473 R1: the Story scope validator, its refusal text and the scope-based
+// Owner-decider probe retired with the ten-block contract; the headings, the summary and the
+// template floor stay. The field reader (story-fields.ts) is exported by the Story's CLI unit.
 export {
   STORY_SCOPE_HEADINGS,
   deriveWorkSummary,
-  storyScopeFromRecord,
-  storyScopeNamesOwnerDecider,
-  validateStoryRecord,
-  validateStoryScope,
   validateTemplateScope,
 } from "./story-scope-compliance.js";
 export type {

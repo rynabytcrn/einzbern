@@ -33,7 +33,7 @@ async function invoke(args) {
 const defectScope = (credentials = "ref:vault/s212-credentials") => [
   `【URI】为谁=模板作者与读链者;目的锚=S212;符合性判据=实例可复跑;判定人=Owner。`,
   "【Preconditions】证据=测试工作区已初始化。",
-  "【Steps to Reproduce】命令=template-admit 后创建 Incident。",
+  "【Steps to Reproduce】命令=template-admit 后创建 Subtask。",
   "【Actual】现象与证据=模板绑定可回读;实现=引擎校验。",
   "【Expected】GIVEN 模板已准入 WHEN 创建绑定记录 THEN 通过。",
   `【Credentials 引用】${credentials}`,
@@ -53,6 +53,9 @@ const legacyStoryScope = [
   "【Implementation Notes】决策与状态=planned。",
 ].join("\n");
 
+// TCRN-CROSS-STORY-472 retired new Incidents, so the defect template binds Subtasks here; and since
+// TCRN-CROSS-STORY-473 a template bound to a Story records its binding without judging the Story's
+// prose, which is checked for a goal and an acceptance alone.
 test("S212: admitted template binds work, red legs stay fail-closed, and pre-era Story remains valid", async () => {
   const fx = await fixture();
   try {
@@ -65,7 +68,7 @@ test("S212: admitted template binds work, red legs stay fail-closed, and pre-era
       schemaVersion: "tcrn.template.v1",
       id: "inc.defect.v1",
       version: 1,
-      appliesTo: ["Incident"],
+      appliesTo: ["Story", "Subtask"],
       headings: ["URI", "Preconditions", "Steps to Reproduce", "Actual", "Expected", "Credentials 引用", "Attachments 引用"],
       acceptanceHeadings: ["Expected"],
       referenceHeadings: ["Attachments 引用", "Credentials 引用"],
@@ -97,9 +100,16 @@ test("S212: admitted template binds work, red legs stay fail-closed, and pre-era
     ]);
     assert.equal(epic.ok, true, JSON.stringify(epic));
 
+    const legacy = await invoke([
+      "work-create", "--title", "record-title", "--workspace", fx.workspace, "--at", instant(5),
+      "--project-id", project.value.record.id, "--external-key", "STORY-105", "--kind", "Story", "--parent-id", epic.value.record.id, "--scope", legacyStoryScope,
+    ]);
+    assert.equal(legacy.ok, true, JSON.stringify(legacy));
+    assert.equal(legacy.value.record.templateBinding, undefined);
+
     const bound = await invoke([
       "work-create", "--title", "record-title", "--workspace", fx.workspace, "--at", instant(5),
-      "--project-id", project.value.record.id, "--external-key", "S212-BOUND-INCIDENT", "--kind", "Incident",
+      "--project-id", project.value.record.id, "--external-key", "S212-BOUND-SUBTASK", "--kind", "Subtask", "--parent-id", legacy.value.record.id,
       "--scope", defectScope(), "--template-receipt", receiptJson,
     ]);
     assert.equal(bound.ok, true, JSON.stringify(bound));
@@ -118,7 +128,7 @@ test("S212: admitted template binds work, red legs stay fail-closed, and pre-era
 
     const missingSteps = await invoke([
       "work-create", "--title", "record-title", "--workspace", fx.workspace, "--at", instant(4),
-      "--project-id", project.value.record.id, "--external-key", "S212-MISSING-STEPS", "--kind", "Incident",
+      "--project-id", project.value.record.id, "--external-key", "S212-MISSING-STEPS", "--kind", "Subtask", "--parent-id", legacy.value.record.id,
       "--scope", defectScope().split("\n").filter((line) => !line.startsWith("【Steps to Reproduce】")).join("\n"),
       "--template-receipt", receiptJson,
     ]);
@@ -127,18 +137,22 @@ test("S212: admitted template binds work, red legs stay fail-closed, and pre-era
 
     const plaintextCredentials = await invoke([
       "work-create", "--title", "record-title", "--workspace", fx.workspace, "--at", instant(5),
-      "--project-id", project.value.record.id, "--external-key", "S212-PLAINTEXT-CREDENTIALS", "--kind", "Incident",
+      "--project-id", project.value.record.id, "--external-key", "S212-PLAINTEXT-CREDENTIALS", "--kind", "Subtask", "--parent-id", legacy.value.record.id,
       "--scope", defectScope("password=not-a-reference"), "--template-receipt", receiptJson,
     ]);
     assert.equal(plaintextCredentials.ok, false);
     assert.equal(plaintextCredentials.reasonCode, "TEMPLATE_SCOPE_INVALID", JSON.stringify(plaintextCredentials));
 
-    const legacy = await invoke([
+    // A Story bound to the same template keeps the binding, while its prose -- no template
+    // heading in it -- is not judged by the template (TCRN-CROSS-STORY-473 R1).
+    const boundStory = await invoke([
       "work-create", "--title", "record-title", "--workspace", fx.workspace, "--at", instant(6),
-      "--project-id", project.value.record.id, "--external-key", "STORY-105", "--kind", "Story", "--parent-id", epic.value.record.id, "--scope", legacyStoryScope,
+      "--project-id", project.value.record.id, "--external-key", "S212-BOUND-STORY", "--kind", "Story", "--parent-id", epic.value.record.id,
+      "--scope", "## Goal\nA bound Story in free prose.\n\n## Acceptance Criteria\nGIVEN a binding WHEN the Story is written THEN only goal and acceptance are checked",
+      "--template-receipt", receiptJson,
     ]);
-    assert.equal(legacy.ok, true, JSON.stringify(legacy));
-    assert.equal(legacy.value.record.templateBinding, undefined);
+    assert.equal(boundStory.ok, true, JSON.stringify(boundStory));
+    assert.equal(boundStory.value.record.templateBinding.registrationId, "template:inc.defect.v1-1");
 
     const validatedWorkspace = await invoke(["validate", "--workspace", fx.workspace]);
     assert.equal(validatedWorkspace.ok, true, JSON.stringify(validatedWorkspace));

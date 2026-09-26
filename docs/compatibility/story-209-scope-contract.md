@@ -1,7 +1,15 @@
 # STORY-209 compatibility plan
 
-Status: planned for the next Workflow release candidate; no tag or publication is
-created by this document.
+Status: superseded by TCRN-CROSS-STORY-473 (MIN-227 D8). The ten-block contract this plan
+describes is gone: a Story is written with `goal` and `acceptance` (required) and an optional
+free `body`, or with a scope whose Goal and Acceptance Criteria blocks are mapped to those
+fields when it is read; a Story missing either is refused with `WORK_STORY_FIELD_REQUIRED`
+naming the field. The ten blocks, their order, the non-empty rule, the four purpose anchors and
+the evidence and fix-item token checks, with their reason codes, the runtime twin
+`scripts/story-scope-compliance.mjs`, the closeout scope backstop and
+`tests/story-scope-compliance.test.mjs` were removed, and a template bound to a Story no longer
+judges its prose. Historical scopes are read, never migrated. The text below is kept as the
+record of the plan it was.
 
 ## Surface change
 

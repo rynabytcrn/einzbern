@@ -126,10 +126,11 @@ function shapeProblems(members: readonly unknown[]): readonly WorkBatchProblem[]
       if (member.status !== undefined && !WORK_STATUSES.includes(member.status as string)) {
         problems.push({ index, verb, rule: "status-known", detail: `status=${String(member.status)}` });
       }
-      // The engine refuses a scopeless Story at the reducer, but doing it here means the
-      // whole batch is reported at once rather than one member per round trip.
-      if (member.kind === "Story" && member.scope === undefined) {
-        problems.push({ index, verb, rule: "story-scope-required", detail: "a new Story carries its complete scope atomically" });
+      // TCRN-CROSS-STORY-473 R2: a Story needs a goal and an acceptance, as fields or from a
+      // scope. The engine judges the mapping at the reducer; a Story member naming neither is
+      // refused here, so the whole batch is reported at once rather than one member per round trip.
+      if (member.kind === "Story" && member.scope === undefined && (member.goal === undefined || member.acceptance === undefined)) {
+        problems.push({ index, verb, rule: "story-fields-required", detail: "a new Story carries goal and acceptance, or a scope they map from" });
       }
       return;
     }
@@ -142,8 +143,9 @@ function shapeProblems(members: readonly unknown[]): readonly WorkBatchProblem[]
       }
       return;
     }
-    if (member.scope === undefined && member.decidedBy === undefined && member.sprint === undefined && member.summary === undefined && member.relations === undefined) {
-      problems.push({ index, verb, rule: "advisory-required", detail: "an annotation carries at least one of scope, decidedBy, sprint, summary, relations" });
+    if (member.scope === undefined && member.decidedBy === undefined && member.sprint === undefined && member.summary === undefined && member.relations === undefined &&
+      member.goal === undefined && member.acceptance === undefined && member.body === undefined) {
+      problems.push({ index, verb, rule: "advisory-required", detail: "an annotation carries at least one of scope, decidedBy, sprint, summary, relations, goal, acceptance, body" });
     }
     if (member.relations !== undefined) {
       const problem = relationsProblem(member.relations);
@@ -155,6 +157,15 @@ function shapeProblems(members: readonly unknown[]): readonly WorkBatchProblem[]
 
 function relationsOf(member: Readonly<Record<string, unknown>>): { readonly relations?: WorkRelationsInput } {
   return member.relations === undefined ? {} : { relations: member.relations as WorkRelationsInput };
+}
+
+// TCRN-CROSS-STORY-473 R2: a member's Story fields, passed through for the engine to judge.
+function storyFieldsOf(member: Readonly<Record<string, unknown>>): { readonly goal?: string; readonly acceptance?: string; readonly body?: string } {
+  return {
+    ...(member.goal === undefined ? {} : { goal: member.goal as string }),
+    ...(member.acceptance === undefined ? {} : { acceptance: member.acceptance as string }),
+    ...(member.body === undefined ? {} : { body: member.body as string }),
+  };
 }
 
 function deltaFor(member: Readonly<Record<string, unknown>>, occurredAt: string): (state: WorkspaceState) => MutationDelta {
@@ -172,6 +183,7 @@ function deltaFor(member: Readonly<Record<string, unknown>>, occurredAt: string)
       ...(member.scope === undefined ? {} : { scope: member.scope as string }),
       ...(member.decidedBy === undefined ? {} : { decidedBy: member.decidedBy as readonly string[] }),
       ...relationsOf(member),
+      ...storyFieldsOf(member),
       title: member.title as string,
       ...(member.summary === undefined ? {} : { summary: member.summary as string }),
       occurredAt,
@@ -192,6 +204,7 @@ function deltaFor(member: Readonly<Record<string, unknown>>, occurredAt: string)
     ...(member.decidedBy === undefined ? {} : { decidedBy: member.decidedBy as readonly string[] }),
     ...(member.sprint === undefined ? {} : { sprint: member.sprint as never }),
     ...relationsOf(member),
+    ...storyFieldsOf(member),
     ...(member.summary === undefined ? {} : { summary: member.summary as string }),
     occurredAt,
   });

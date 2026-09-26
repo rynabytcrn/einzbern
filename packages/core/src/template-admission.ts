@@ -372,6 +372,10 @@ export function validateBoundTemplateWork(
   const admission = templateRecordForBinding(admissions, bound.binding);
   if (admission === undefined || bound.registrationId !== admission.registrationId) fail("TEMPLATE_UNKNOWN", `${bound.binding.templateId}@${bound.binding.templateVersion}`);
   if (!admission.template.appliesTo.includes(record.kind)) fail("TEMPLATE_NOT_APPLICABLE", `${admission.template.id}:${record.kind}`);
+  // TCRN-CROSS-STORY-473 R1 (problems-decompose #2): a Story is checked for its goal and its
+  // acceptance only. Its binding is still recorded and must still name an admitted template that
+  // applies to Stories, but the template's headings no longer judge its prose.
+  if (record.kind === "Story") return;
   const scopeEntry = record.extensions["advisory:scope"];
   const scope = scopeEntry?.value;
   const validation = validateTemplateScope(scope, admission.template);

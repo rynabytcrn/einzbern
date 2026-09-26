@@ -105,13 +105,14 @@ import { GateIdentityError, validateGateIdentityDecision } from "./gate-identity
 import type { GateIdentityDecision } from "./gate-identity.js";
 import type { CanonicalRoot } from "./root-identity.js";
 import { FRAMEWORK_VERSION } from "./index.js";
-import { describeStoryScopeProblems, deriveWorkSummary, storyScopeFromRecord, storyScopeNamesOwnerDecider, validateStoryRecord } from "./story-scope-compliance.js";
+import { summarizeGoal } from "./story-scope-compliance.js";
+import { deriveStoryFieldsFromScope, missingStoryField, storyFields, storyOwnerDeciderNamed } from "./story-fields.js";
+import type { StoryRequiredField } from "./story-fields.js";
 import {
   TemplateAdmissionError,
   admitTemplate,
   createTemplateAdmissionRecord,
   templateBindingFromReceipt,
-  templateBindingFromWorkRecord,
   templateRecordMatchesBinding,
   templateRecordForBinding,
   templateRegistry,
@@ -227,8 +228,10 @@ export const WORKSPACE_REASON_CODES = Object.freeze([
   // forensible archive. Named here because the write-lock gate raises it and
   // fail() is typed to WorkspaceReasonCode.
   "WORKSPACE_STORAGE_RELOCATED",
-  "WORKSPACE_STORY_SCOPE_REQUIRED",
-  "WORKSPACE_STORY_SCOPE_INVALID",
+  // TCRN-CROSS-STORY-473 R2 (MIN-227 D8): a Story needs a goal and an acceptance, as fields or
+  // mapped from an old scope; details.field names the missing one. It replaces the two Story
+  // scope codes (scope required, scope invalid) that retired with the ten-block contract.
+  "WORK_STORY_FIELD_REQUIRED",
   "WORKSPACE_OWNER_ACCEPTANCE_REQUIRED",
   "WORKSPACE_VIEW_STALE",
   // STORY-299. Two codes, two different moments, deliberately not one code.
@@ -1156,6 +1159,11 @@ const ADVISORY_SPRINT_KEY = "advisory:sprint";
 // (work-relations.ts). decided-in is advisory:decided-by and parent is parentId, so neither is here.
 // The literal is repeated rather than imported: see the import of work-relations.js above.
 const ADVISORY_RELATIONS_KEY = "advisory:relations";
+// TCRN-CROSS-STORY-473 R2: a Story's goal, acceptance and free body (story-fields.ts). Any kind may
+// carry them; a Story must have a goal and an acceptance.
+const ADVISORY_GOAL_KEY = "advisory:goal";
+const ADVISORY_ACCEPTANCE_KEY = "advisory:acceptance";
+const ADVISORY_BODY_KEY = "advisory:body";
 const ADVISORY_KEYS: readonly string[] = [
   ADVISORY_SCOPE_KEY,
   ADVISORY_DECIDED_BY_KEY,
@@ -1165,6 +1173,9 @@ const ADVISORY_KEYS: readonly string[] = [
   ADVISORY_EVIDENCE_SNAPSHOT_KEY,
   ADVISORY_RESULT_KEY,
   ADVISORY_RELATIONS_KEY,
+  ADVISORY_GOAL_KEY,
+  ADVISORY_ACCEPTANCE_KEY,
+  ADVISORY_BODY_KEY,
 ];
 
 // TCRN-CROSS-STORY-472 R1: the kinds no write creates any more. Records of these kinds on a chain
@@ -1192,6 +1203,9 @@ type WorkAdvisoryInput = {
   // TCRN-CROSS-STORY-472 R2, R4: the forward relations, validated against the state the write is
   // built on. Stored as advisory:relations; decidedIn is written to advisory:decided-by.
   readonly relations?: WorkRelationsInput;
+  readonly goal?: string;
+  readonly acceptance?: string;
+  readonly body?: string;
 };
 
 type WorkAnnotationInput = WorkAdvisoryInput & {
@@ -1222,7 +1236,7 @@ function isSprintReference(value: unknown): value is SprintReference {
   return true;
 }
 
-const ADVISORY_FIELD_KEYS = Object.freeze({ scope: ADVISORY_SCOPE_KEY, decidedBy: ADVISORY_DECIDED_BY_KEY, sprint: ADVISORY_SPRINT_KEY, verify: ADVISORY_VERIFY_KEY, evidence: ADVISORY_EVIDENCE_KEY, evidenceSnapshot: ADVISORY_EVIDENCE_SNAPSHOT_KEY, result: ADVISORY_RESULT_KEY, relations: ADVISORY_RELATIONS_KEY });
+const ADVISORY_FIELD_KEYS = Object.freeze({ scope: ADVISORY_SCOPE_KEY, decidedBy: ADVISORY_DECIDED_BY_KEY, sprint: ADVISORY_SPRINT_KEY, verify: ADVISORY_VERIFY_KEY, evidence: ADVISORY_EVIDENCE_KEY, evidenceSnapshot: ADVISORY_EVIDENCE_SNAPSHOT_KEY, result: ADVISORY_RESULT_KEY, relations: ADVISORY_RELATIONS_KEY, goal: ADVISORY_GOAL_KEY, acceptance: ADVISORY_ACCEPTANCE_KEY, body: ADVISORY_BODY_KEY });
 
 // `relations` is the validated form of advisory.relations (validateRelationsInput), never the raw
 // input: each stored list it names replaces that list of advisory:relations whole (an empty one
@@ -1402,10 +1416,32 @@ function advisoryHasMinutes(record: Pick<WorkRecord, "extensions">): boolean {
 
 function assertStoryCompletionAdmission(record: WorkRecord, targetStatus: WorkStatus): void {
   if (record.kind !== "Story" || targetStatus !== "done") return;
-  const scope = storyScopeFromRecord(record);
-  if (storyScopeNamesOwnerDecider(scope) && !advisoryHasMinutes(record)) {
+  // TCRN-CROSS-STORY-473: the decider is read from the goal, as a field or mapped from an old scope.
+  if (storyOwnerDeciderNamed(storyFields(record)) && !advisoryHasMinutes(record)) {
     fail("WORKSPACE_OWNER_ACCEPTANCE_REQUIRED", "Owner-decided Story requires a decided-by minutes backlink before done");
   }
+}
+
+const STORY_FIELD_REMEDY: Readonly<Record<StoryRequiredField, string>> = {
+  goal: "give --goal, or a scope whose Goal block holds it",
+  acceptance: "give --acceptance, or a scope whose Acceptance Criteria block holds it",
+};
+
+// TCRN-CROSS-STORY-473 R2: a Story has a goal and an acceptance -- its fields, or the Goal and
+// Acceptance Criteria blocks of its scope. Nothing else about its prose is checked.
+function assertStoryFields(record: Pick<WorkRecord, "id" | "kind" | "extensions">): void {
+  if (record.kind !== "Story") return;
+  const field = missingStoryField(storyFields(record));
+  if (field === null) return;
+  throw new WorkspaceError(
+    "WORK_STORY_FIELD_REQUIRED",
+    `Story ${record.id} has no ${field}: ${STORY_FIELD_REMEDY[field]}`,
+    { field, remedy: STORY_FIELD_REMEDY[field] },
+  );
+}
+
+function isStoryFieldText(value: unknown): boolean {
+  return typeof value === "string" && value.trim().length > 0 && value.isWellFormed() && !value.includes("\u0000");
 }
 
 function validateWorkAdvisoryInput(input: WorkAdvisoryInput, id: string, reasonCode: WorkspaceReasonCode): void {
@@ -1413,6 +1449,9 @@ function validateWorkAdvisoryInput(input: WorkAdvisoryInput, id: string, reasonC
     ["scope", (value) => typeof value === "string" && value.length > 0, "advisory scope must be a non-empty string"],
     ["decidedBy", (value) => Array.isArray(value) && value.length > 0 && value.every((item) => isMinutesId(item)), "advisory decided-by must be a non-empty list of minutes ids"],
     ["sprint", isSprintReference, "advisory sprint must be a {workspaceId, workId} qualified reference"],
+    ["goal", isStoryFieldText, "advisory goal must be non-empty text"],
+    ["acceptance", isStoryFieldText, "advisory acceptance must be non-empty text"],
+    ["body", isStoryFieldText, "advisory body must be non-empty text"],
   ];
   for (const [field, valid, message] of checks) {
     if (input[field] !== undefined && !valid(input[field])) fail(reasonCode, message);
@@ -1443,6 +1482,10 @@ function assertAdvisoryEntryShape(key: string, entry: unknown, id: string, reaso
     if (!isSprintReference(value)) {
       fail(reasonCode, `work ${id} advisory sprint must be a {workspaceId, workId} qualified reference`);
     }
+    return;
+  }
+  if (key === ADVISORY_GOAL_KEY || key === ADVISORY_ACCEPTANCE_KEY || key === ADVISORY_BODY_KEY) {
+    if (!isStoryFieldText(value)) fail(reasonCode, `work ${id} ${key} must be non-empty text`);
     return;
   }
   if (key === ADVISORY_RELATIONS_KEY) {
@@ -3406,6 +3449,9 @@ export function createWorkDelta(input: {
   readonly scope?: string;
   readonly decidedBy?: readonly string[];
   readonly relations?: WorkRelationsInput;
+  readonly goal?: string;
+  readonly acceptance?: string;
+  readonly body?: string;
   readonly title?: string | null;
   readonly summary?: string | null;
   readonly labels?: readonly string[];
@@ -3424,6 +3470,9 @@ export async function createWork(workspaceRoot: string, input: {
   readonly scope?: string;
   readonly decidedBy?: readonly string[];
   readonly relations?: WorkRelationsInput;
+  readonly goal?: string;
+  readonly acceptance?: string;
+  readonly body?: string;
   readonly title?: string | null;
   readonly summary?: string | null;
   readonly labels?: readonly string[];
@@ -3441,6 +3490,9 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
   readonly scope?: string;
   readonly decidedBy?: readonly string[];
   readonly relations?: WorkRelationsInput;
+  readonly goal?: string;
+  readonly acceptance?: string;
+  readonly body?: string;
   readonly title?: string | null;
   readonly summary?: string | null;
   readonly labels?: readonly string[];
@@ -3481,22 +3533,16 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
           `cannot add live work under Initiative ${parent.id}: it is already done`);
       }
     }
-    if (input.kind === "Story" && input.scope === undefined) {
-      fail("WORKSPACE_STORY_SCOPE_REQUIRED", "a new Story must carry its complete scope atomically");
-    }
-    if (input.scope !== undefined && input.scope.length === 0) {
-      fail("WORKSPACE_STORY_SCOPE_REQUIRED", "Story scope must be a non-empty string");
-    }
     validateWorkAdvisoryInput(input, id, "WORKSPACE_INPUT_INVALID");
     const relations = workRelationsForWrite(state, id, input);
     const title = normalizeWorkTitle(input.title);
     const labels = normalizeWorkLabels(input.labels ?? []);
-    // TCRN-CROSS-STORY-363. An explicit --summary wins; otherwise the first
-    // sentence of the Goal block, which is where the author already wrote the
-    // one-line answer. A record with neither carries summary: null rather than
-    // no field, so every record born after this change has one shape.
+    // TCRN-CROSS-STORY-363, STORY-473. An explicit --summary wins; otherwise the first
+    // sentence of the goal -- the goal field, or the Goal block of the scope -- which is
+    // where the author already wrote the one-line answer. A record with neither carries
+    // summary: null rather than no field, so every record born after this change has one shape.
     const summary = input.summary === undefined
-      ? deriveWorkSummary(input.scope, WORK_SUMMARY_MAX_BYTES)
+      ? summarizeGoal(input.goal ?? deriveStoryFieldsFromScope(input.scope).goal, WORK_SUMMARY_MAX_BYTES)
       : normalizeWorkSummary(input.summary);
     const templateReceipt = input.templateAdmission === undefined
       ? undefined
@@ -3532,15 +3578,9 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
       labels,
       summary,
     };
-    // A bound Story is governed by the admitted heading data, not by the
-    // pre-template ten-heading parser.  Unbound records retain the legacy
-    // validator so the pre-era exemption stays byte/replay compatible.
-    if (record.kind === "Story" && templateRecord === undefined) {
-      const compliance = validateStoryRecord(record);
-      if (!compliance.ok) {
-        fail("WORKSPACE_STORY_SCOPE_INVALID", describeStoryScopeProblems(compliance.problems));
-      }
-    }
+    // TCRN-CROSS-STORY-473 R1, R2: a Story is checked for its goal and its acceptance and
+    // nothing else, bound to a template or not; the ten-block contract is gone.
+    assertStoryFields(record);
     validateBoundTemplateWork(record, state.templates);
     assertStoryCompletionAdmission(record, record.status);
     const work = validateWorkGraph([...state.work, record], templateRegistry(state.templates));
@@ -3585,22 +3625,13 @@ function hasLiveNonTerminalDescendant(work: readonly WorkRecord[], recordId: str
 // a chain that legitimately closed an Initiative before 0.10.0 while descendants were open.
 // A rule placed here fires on live mutations only, which is what it always did.
 function assertTransitionAdmission(state: WorkspaceState, input: { readonly id: string; readonly status: WorkStatus }): void {
-  // Scope is a live write-path admission rule. Historical chains remain replayable;
-  // unbound Stories use the legacy ten-block contract, while a bound Story is checked
-  // against its admitted template and the same engine floor before it enters an execution
-  // or completion state.
+  // A live write-path admission rule; historical chains remain replayable. Before a Story
+  // enters an execution or completion state it has a goal and an acceptance (TCRN-CROSS-STORY-473:
+  // fields, or the blocks of its scope); a record bound to a template is checked against it.
   if (["ready", "active", "done"].includes(input.status)) {
     const current = workById(state, input.id);
-    const templateBound = templateBindingFromWorkRecord(current) !== null;
     validateBoundTemplateWork(current, state.templates);
-    if (current.kind === "Story" && !templateBound) {
-      const compliance = validateStoryRecord(current);
-      if (!compliance.ok) {
-        const hasScope = storyScopeFromRecord(current) !== null;
-        fail(hasScope ? "WORKSPACE_STORY_SCOPE_INVALID" : "WORKSPACE_STORY_SCOPE_REQUIRED",
-          describeStoryScopeProblems(compliance.problems));
-      }
-    }
+    assertStoryFields(current);
     assertStoryCompletionAdmission(current, input.status);
   }
   // WSA-3 (write-path admission): closing an Initiative to `done` is an act of
@@ -3690,8 +3721,8 @@ function annotateWorkReducerDelta(state: WorkspaceState, input: WorkAnnotationIn
   if (current.tombstone) {
     fail("WORKSPACE_INPUT_INVALID", `work ${input.id} is deleted`);
   }
-  if (input.scope === undefined && input.decidedBy === undefined && input.verify === undefined && input.result === undefined && input.sprint === undefined && input.relations === undefined && input.title === undefined && input.summary === undefined && input.labels === undefined) {
-    fail("WORKSPACE_INPUT_INVALID", "an annotation must set scope, decided-by, verify, result, sprint, relations, title, summary, or labels");
+  if (input.scope === undefined && input.decidedBy === undefined && input.verify === undefined && input.result === undefined && input.sprint === undefined && input.relations === undefined && input.goal === undefined && input.acceptance === undefined && input.body === undefined && input.title === undefined && input.summary === undefined && input.labels === undefined) {
+    fail("WORKSPACE_INPUT_INVALID", "an annotation must set scope, decided-by, verify, result, sprint, relations, goal, acceptance, body, title, summary, or labels");
   }
   validateWorkAdvisoryInput(input, input.id, "WORKSPACE_INPUT_INVALID");
   // TCRN-CROSS-STORY-472: each relation list an annotation names is replaced whole.
@@ -3729,12 +3760,11 @@ function annotateWorkReducerDelta(state: WorkspaceState, input: WorkAnnotationIn
     revision: current.revision + 1,
     updatedAt: input.occurredAt,
   };
-  const templateBound = templateBindingFromWorkRecord(record) !== null;
-  if (record.kind === "Story" && input.scope !== undefined && !templateBound) {
-    const compliance = validateStoryRecord(record);
-    if (!compliance.ok) {
-      fail("WORKSPACE_STORY_SCOPE_INVALID", describeStoryScopeProblems(compliance.problems));
-    }
+  // TCRN-CROSS-STORY-473 R2: an annotation that rewrites what a Story's goal or acceptance is read
+  // from must leave both in place. One that touches neither -- a title, a summary, a relation --
+  // stays open to every Story, including one written before the fields existed.
+  if (input.goal !== undefined || input.acceptance !== undefined || input.scope !== undefined) {
+    assertStoryFields(record);
   }
   validateBoundTemplateWork(record, state.templates);
   const work = validateWorkGraph(state.work.map((entry) => entry.id === record.id ? record : entry), templateRegistry(state.templates));

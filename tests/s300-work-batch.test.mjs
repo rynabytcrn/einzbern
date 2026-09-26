@@ -158,7 +158,7 @@ test("STORY-300: every shape problem is reported together, before any state is c
     assert.deepEqual([...new Set(result.payload.problems.map((problem) => problem.index))], [0, 1, 2, 3, 4],
       "all five members are judged, not just the first to fail");
     const rules = new Set(result.payload.problems.map((problem) => problem.rule));
-    for (const rule of ["verb-known", "kind-known", "status-known", "advisory-required", "story-scope-required"]) {
+    for (const rule of ["verb-known", "kind-known", "status-known", "advisory-required", "story-fields-required"]) {
       assert.ok(rules.has(rule), `${rule} is reported`);
     }
     assert.equal(result.payload.notEvaluated, undefined, "nothing is consequential when nothing was applied");

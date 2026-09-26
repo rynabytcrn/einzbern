@@ -200,6 +200,19 @@ test("STORY-472 R3, R4: work-create and work-annotate take the relation flags, a
   assert.equal(flagsOf("work-list").get("relation")?.valueKind, "string");
 });
 
+test("STORY-473 R2: work-create and work-annotate take --goal, --acceptance and --body, and --scope stays", () => {
+  const flagsOf = (name) => new Map(COMMAND_CATALOG.find((entry) => entry.name === name).flags.map((flag) => [flag.name, flag]));
+  for (const verb of ["work-create", "work-annotate"]) {
+    const flags = flagsOf(verb);
+    for (const name of ["goal", "acceptance", "body", "scope"]) {
+      assert.equal(flags.get(name)?.valueKind, "string", `${verb} --${name}`);
+      // Optional at the catalog: a Story takes its goal and acceptance from the fields or from a
+      // scope, and the engine names whichever one is missing (WORK_STORY_FIELD_REQUIRED).
+      assert.equal(flags.get(name)?.required, false, `${verb} --${name} is optional`);
+    }
+  }
+});
+
 test("STORY-475 R1, R2: minutes-record writes and names its required flags; minutes-list and minutes-show read", () => {
   const entry = (name) => COMMAND_CATALOG.find((candidate) => candidate.name === name);
   assert.equal(entry("minutes-record").mutates, true);

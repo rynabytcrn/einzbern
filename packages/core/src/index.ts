@@ -330,12 +330,16 @@ export type {
 } from "./profile-store.js";
 // TCRN-CROSS-STORY-473 R1: the Story scope validator, its refusal text and the scope-based
 // Owner-decider probe retired with the ten-block contract; the headings, the summary and the
-// template floor stay. The field reader (story-fields.ts) is exported by the Story's CLI unit.
+// template floor stay.
 export {
   STORY_SCOPE_HEADINGS,
   deriveWorkSummary,
   validateTemplateScope,
 } from "./story-scope-compliance.js";
+// TCRN-CROSS-STORY-473 R2, R3: the field reader, which work-show and work-list project, and the two
+// fields a Story must have, which work-draft names.
+export { STORY_REQUIRED_FIELDS, storyFields } from "./story-fields.js";
+export type { StoryFields } from "./story-fields.js";
 export type {
   ScopeTemplateDefinition,
   StoryScopeHeading,

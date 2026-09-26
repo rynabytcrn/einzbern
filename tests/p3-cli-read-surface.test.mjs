@@ -136,6 +136,45 @@ test("INIT-047 work-draft has an independent canonical heading and example proje
   assert.ok(draft.scopeTemplate.includes("【Goal】"));
 });
 
+// TCRN-CROSS-STORY-473 R3: the ten blocks are still printed, as a suggestion. The draft marks them
+// optional, says the engine checks only goal and acceptance, and names those two.
+test("STORY-473 R3: work-draft prints the ten-block skeleton marked optional, with the two required fields", async (context) => {
+  const fx = await fixture(context);
+  const story = await run(["work-draft", "--workspace", fx.workspace, "--kind", "Story", "--project-id", fx.ids.projectA]);
+  assert.deepEqual(story.headings, [...STORY_SCOPE_HEADINGS], "all ten blocks are still offered");
+  assert.equal(story.optional, true);
+  assert.equal(story.note, "仅供参考，引擎只校验 goal 与 acceptance");
+  assert.deepEqual(story.requiredFields, ["goal", "acceptance"]);
+  for (const heading of STORY_SCOPE_HEADINGS) assert.ok(story.skeleton.includes(`【${heading}】`), heading);
+  const epic = await run(["work-draft", "--workspace", fx.workspace, "--kind", "Epic", "--project-id", fx.ids.projectA]);
+  assert.deepEqual(epic.headings, []);
+  assert.equal(epic.optional, true);
+  assert.deepEqual(epic.requiredFields, [], "only a Story has required fields");
+});
+
+test("STORY-473 R3: work-draft examples include Stories written with fields, and carry their fields", async (context) => {
+  const fx = await fixture(context);
+  await createWork(fx.workspace, {
+    occurredAt: instant(26), projectId: fx.ids.projectA, externalKey: "DRAFT-SCOPE", kind: "Story", parentId: fx.ids.epicA, scope: STORY_SCOPE,
+  });
+  await createWork(fx.workspace, {
+    occurredAt: instant(27), projectId: fx.ids.projectA, externalKey: "DRAFT-FIELDS", kind: "Story", parentId: fx.ids.epicA,
+    goal: "Draft from the latest Story.", acceptance: "GIVEN a Story with fields WHEN work-draft runs THEN it is an example",
+  });
+  const draft = await run(["work-draft", "--workspace", fx.workspace, "--kind", "Story", "--project-id", fx.ids.projectA]);
+  const example = (key) => draft.examples.find((entry) => entry.externalKey === key);
+  assert.deepEqual(draft.examples.map((entry) => entry.externalKey).sort(), ["DRAFT-FIELDS", "DRAFT-SCOPE"], "either form is an example");
+  assert.equal(example("DRAFT-FIELDS").scope, "");
+  assert.deepEqual(example("DRAFT-FIELDS").fields, {
+    goal: "Draft from the latest Story.",
+    acceptance: "GIVEN a Story with fields WHEN work-draft runs THEN it is an example",
+    body: null,
+    source: "fields",
+  });
+  assert.equal(example("DRAFT-SCOPE").fields.source, "scope");
+  assert.ok(example("DRAFT-SCOPE").fields.goal.includes("CLI fixture"), "an old scope's example is mapped too");
+});
+
 // INC-027: the page-ceiling assertions are about BYTES, so they need the receipt as it
 // was written, not as it survives a JSON round trip.
 async function runRaw(args) {

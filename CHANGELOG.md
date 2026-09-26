@@ -274,6 +274,32 @@ no longer holds as live records), `work-list --relation <name>=<id>` filters by 
 reverse name, and a `work-batch` member carries `relations {blockedBy, implements, supersedes,
 fixes, decidedIn}`.
 
+A Story is its goal, its acceptance and a free body (TCRN-CROSS-STORY-473; MIN-227 D8;
+`packages/core/src/story-fields.ts`): the engine checks that a Story has a goal and an acceptance
+and nothing else about its prose. They are the required:false extensions `advisory:goal`,
+`advisory:acceptance` and `advisory:body`, written with `work-create` and `work-annotate --goal`,
+`--acceptance` and `--body`, or as the `goal`, `acceptance` and `body` of a `work-batch` member. A
+Story created with `--scope` alone still works: its goal and acceptance come from the scope's Goal
+and Acceptance Criteria blocks, and the other blocks are its body. Every Story already on a chain
+keeps its scope byte for byte and is mapped the same way whenever it is read; nothing is migrated.
+A Story with no goal or no acceptance is refused with `WORK_STORY_FIELD_REQUIRED` (`details.field`
+names which, `details.remedy` how to give it; the shipped entry prints both), on creation and on
+an annotation that rewrites its goal, acceptance or scope, while an annotation that touches none
+of them (a title, a summary, a relation) stays open to every Story; a batch member without either
+fails the shape rule `story-fields-required`. The summary defaults to the first sentence of the
+goal, and the rule that an Owner-decided Story needs its deciding minutes before done reads the
+goal. The ten-block contract is gone with its reason codes (`WORKSPACE_STORY_SCOPE_REQUIRED`,
+`WORKSPACE_STORY_SCOPE_INVALID`, `STORY_SCOPE_PURPOSE_INVALID`,
+`STORY_SCOPE_LEGACY_ELEMENT_MISSING`) and `scripts/story-scope-compliance.mjs`; the template floor,
+which alone still checks headings, reports `TEMPLATE_SCOPE_*`, and a Story bound to a template is
+no longer judged by the template's headings. `work-show` returns `fields {goal, acceptance, body,
+source}` (source: `fields`, `scope` or `none`); `work-list` gives each record `fields.source`, and
+with `--search` it also matches the three texts and returns each as an excerpt bounded by
+`--scope-bytes`, as it does the scope. `work-draft` still prints the ten-block skeleton, now marked
+`optional: true` with the note `仅供参考，引擎只校验 goal 与 acceptance` and `requiredFields`, and its
+examples include Stories written with fields. The governed-loop tutorial creates its Story with
+`--goal` and `--acceptance`.
+
 Minutes replace the conference (TCRN-CROSS-STORY-475; MIN-227 D9, D10; `packages/core/src/minutes.ts`,
 `specs/minutes-v1.md`). `minutes-record --project-id --title --summary` with `--decisions <list>`
 or `--decisions-file <JSON array of strings>`, `--decided-by`, `--work-ids` and an optional

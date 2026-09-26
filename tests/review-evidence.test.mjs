@@ -311,7 +311,7 @@ test("STORY-420: dynamic impact selects affected roots, reuses only bound termin
 test("STORY-439: gate selection is derivable from containment", () => {
   const containment = JSON.parse(readFileSync(CONTAINMENT_PATH, "utf8"));
 
-  const engine = buildGateImpactMap({ containment, changedFiles: ["scripts/knowledge-inject-hook.mjs"] });
+  const engine = buildGateImpactMap({ containment, changedFiles: ["scripts/einzbern-hook-launcher.mjs"] });
   assert.deepEqual(engine.affected, ["engine-release"]);
 
   assert.deepEqual(containment.topLevel, ["engine-release", "platform-layout", "product-gates"]);
@@ -474,8 +474,9 @@ test("STORY-414: progress waits report cursor deltas, unchanged polls, and termi
 // distinction.
 test("STORY-460 AC4: running hook processes are host hooks, not running agents, and real agents still count", () => {
   const summarize = operationalBatchEntry.summarizeProcesses ?? ((rows) => ({ agents: { records: rows.map((row) => classifyProcess(row, { selfPid: 1 })).filter((row) => row.scope !== "unrelated" && row.scope !== "unknown") } }));
-  // The registry now holds the knowledge-inject handler alone; the other handlers this list
-  // carried are retired with their scripts (TCRN-CROSS-STORY-467 R3).
+  // The old harness's knowledge hook and the injection child it starts, as a machine that has not
+  // migrated still runs them from its old engine copy; their scripts are retired from this
+  // repository (TCRN-CROSS-STORY-467 R3, STORY-477 R3) and named in the names module.
   const hooks = [
     `node ${REPOSITORY_ROOT}/scripts/knowledge-inject-hook.mjs --container-root /container --host claude`,
     `node ${REPOSITORY_ROOT}/scripts/knowledge-inject-hook.mjs --container-root /container --host codex`,
@@ -490,7 +491,7 @@ test("STORY-460 AC4: running hook processes are host hooks, not running agents, 
   assert.deepEqual(withAgents.agents.records.map((row) => row.pid).sort(), [300, 301], "a real agent is still seen");
 });
 
-// TCRN-CROSS-INC-384 (SUB-250): the knowledge-inject child reads the chain through the engine
+// TCRN-CROSS-INC-384 (SUB-250): the old injection child reads the chain through the engine
 // CLI, and in a live session that CLI process (its command line holds the engine path) still
 // read as a running agent. Within one snapshot, a process under a host-hook ancestor is part
 // of the hook; a governed write under a hook stays in writes, and an engine CLI read with no

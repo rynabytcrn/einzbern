@@ -7,17 +7,28 @@
 // never opens a model session or touches a real project configuration.
 
 import { execFile } from "node:child_process";
+import { accessSync, constants as fsConstants, statSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { resolveModelCli } from "./injection-session.mjs";
 
 const execFileAsync = promisify(execFile);
-// TCRN-CROSS-INC-387 (STORY-461 R3): the Claude CLI is the one resolveModelCli picks -- the
-// host's own executable (CLAUDE_CODE_EXECPATH) first, `claude` from PATH only as the named
-// fallback -- and every Claude result carries cliSource (host or path). Codex runs as before.
-const claudeCli = resolveModelCli("claude");
+// TCRN-CROSS-INC-387 (STORY-461 R3): the Claude CLI is the host's own executable
+// (CLAUDE_CODE_EXECPATH naming an executable regular file) first, `claude` from PATH only as the
+// named fallback -- the rule host-probe applies (packages/core/src/host-probe.ts) -- and every
+// Claude result carries cliSource (host or path). Codex runs as before.
+function hostClaudeCli(env = process.env) {
+  const host = typeof env.CLAUDE_CODE_EXECPATH === "string" ? env.CLAUDE_CODE_EXECPATH : "";
+  if (host.length > 0) {
+    try {
+      accessSync(host, fsConstants.X_OK);
+      if (statSync(host).isFile()) return { executable: host, source: "host" };
+    } catch { /* not executable here: fall back to PATH */ }
+  }
+  return { executable: "claude", source: "path" };
+}
+const claudeCli = hostClaudeCli();
 
 async function run(label, executable, args, cwd, environment = {}) {
   try {

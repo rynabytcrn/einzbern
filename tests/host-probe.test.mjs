@@ -2,7 +2,7 @@
 // STORY-373 — host-probe runs a bounded no-shell host command and exposes its result.
 
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { once } from "node:events";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -126,4 +126,20 @@ test("TCRN-CROSS-INC-387: a usable host CLI wins over a claude on PATH and an un
     const fallback = await probeWithEnv(t, { PATH: path, CLAUDE_CODE_EXECPATH: unusable });
     assert.deepEqual([fallback.command[0], fallback.stdout, fallback.reasonCode], ["claude", "path", "HOST_PROBE_SUCCEEDED"], `unusable host CLI ${JSON.stringify(unusable)}`);
   }
+});
+
+// TCRN-CROSS-INC-387 (STORY-461 R3): the INIT-033 residence probe was the last script that ran
+// `claude` from PATH by name. It takes its Claude CLI by the rule host-probe applies, the host's
+// own first, and names the source on every Claude result. Checked statically: running the probe
+// builds its fixture in the system temporary directory, outside the repository. The check moved
+// here when the knowledge judge that shared the rule was retired with the old prompt injection
+// chain (TCRN-CROSS-STORY-477 R3, STORY-474 R4).
+test("TCRN-CROSS-INC-387: the INIT-033 residence probe takes the host Claude CLI first and names the source", async () => {
+  const source = await readFile(new URL("../scripts/init033-residence-probe.mjs", import.meta.url), "utf8");
+  assert.match(source, /accessSync\(host, fsConstants\.X_OK\);\n\s+if \(statSync\(host\)\.isFile\(\)\) return \{ executable: host, source: "host" \};/u);
+  assert.match(source, /env\.CLAUDE_CODE_EXECPATH/u);
+  assert.match(source, /^const claudeCli = hostClaudeCli\(\);$/mu);
+  assert.doesNotMatch(source, /\brun\("[^"]*", "claude",/u, "no probe step names the literal claude as its executable");
+  assert.doesNotMatch(source, /execFile(?:Async)?\(\s*"claude"/u);
+  assert.match(source, /cliSource/u, "each Claude result says whether the host CLI or PATH ran");
 });

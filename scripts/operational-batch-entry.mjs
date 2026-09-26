@@ -12,7 +12,7 @@ import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { LEGACY_ENGINE_NAME, LEGACY_HOOK_SCRIPTS, LOCAL_DIRECTORY_NAMES } from "./lib/names.mjs";
+import { LEGACY_ENGINE_NAME, LEGACY_HOOK_CHILD_SCRIPTS, LEGACY_HOOK_SCRIPTS, LOCAL_DIRECTORY_NAMES } from "./lib/names.mjs";
 import { buildContainedExecutionPlan } from "./lib/push-gate-children.mjs";
 import {
   buildDynamicGatePlan,
@@ -162,14 +162,16 @@ const RELATIVE_REPOSITORY_COMMAND = /(?:^|\s)(?:node|pnpm)(?:\s+[^\s]+)*\s+(?:sc
 // hook process's command line held the engine's absolute path. Einzbern's own hook runs the
 // launcher in the device directory (TCRN-CROSS-STORY-477 R1); the scripts named here are the old
 // platform harness's (LEGACY_HOOK_SCRIPTS in the names module), which a machine that has not
-// migrated still runs. The one addition is the injection child the knowledge hooks start, which
-// carries their own --hook-input or --observation-boundary argument.
+// migrated still runs. The one addition is the injection child the old knowledge hook starts
+// (LEGACY_HOOK_CHILD_SCRIPTS), which carries its own --hook-input or --observation-boundary
+// argument.
 const HOOK_HANDLER_NAMES = new Set(LEGACY_HOOK_SCRIPTS.map((script) => script.split("/").at(-1)));
+const HOOK_CHILD_NAMES = new Set(LEGACY_HOOK_CHILD_SCRIPTS.map((script) => script.split("/").at(-1)));
 const HOOK_INJECTION_CHILD = /--(?:hook-input|observation-boundary)(?:\s|=|$)/u;
 
 function hostHookProcess(command) {
   const script = /(?:^|[/\s"'])([A-Za-z0-9._-]+\.mjs)(?=[\s"']|$)/u.exec(command)?.[1];
-  return script !== undefined && (HOOK_HANDLER_NAMES.has(script) || script === "knowledge-inject.mjs" && HOOK_INJECTION_CHILD.test(command));
+  return script !== undefined && (HOOK_HANDLER_NAMES.has(script) || HOOK_CHILD_NAMES.has(script) && HOOK_INJECTION_CHILD.test(command));
 }
 
 function classifyProcess(row, { selfPid = process.pid, selfPgid = null } = {}) {
@@ -242,8 +244,8 @@ function processSnapshot() {
   return { ok: true, ...summarizeProcesses(rows, { selfPid: process.pid, selfPgid }) };
 }
 
-// TCRN-CROSS-INC-384 (STORY-460 AC4): a hook's own children are part of the hook. The
-// knowledge-inject child reads the chain through the engine CLI, whose command line holds the
+// TCRN-CROSS-INC-384 (STORY-460 AC4): a hook's own children are part of the hook. The old
+// injection child reads the chain through the engine CLI, whose command line holds the
 // engine path and so read as orchestration. Within one ps snapshot, a process with a host-hook
 // ancestor on its ppid chain (bounded, cycle-safe) is a hook descendant, unless its command is
 // or may be a governed write: that one keeps its own rule and stays in agents and writes, so

@@ -563,20 +563,6 @@ test("S267 hook leg turns red for a missing target independently", async (contex
   assert.equal(result.checks.find((item) => item.name === "hooks").failures[0].event, "Stop");
 });
 
-test("S267 managed knowledge hooks must carry the explicit Claude container root", async (context) => {
-  const fixture = await completeInstallFixture(context);
-  // The fixture's harness no longer carries the knowledge-inject hook (TCRN-CROSS-STORY-477 R3), so
-  // the old form, without its --container-root, is written here.
-  const handler = `\${CLAUDE_PROJECT_DIR}/${LOCAL_DIRECTORY_NAMES.engine}/scripts/knowledge-inject-hook.mjs`;
-  await writeFile(join(fixture.root, ".claude", "settings.json"), JSON.stringify({ hooks: {
-    SessionStart: [{ hooks: [{ type: "command", command: `if [ -f "${handler}" ]; then node "${handler}" --host claude; fi`, timeout: 30 }] }],
-  } }));
-  const result = await inspectInstallFixture(fixture);
-  const hooks = result.checks.find((item) => item.name === "hooks");
-  assert.equal(hooks.ok, false);
-  assert.equal(hooks.reasonCode, "PLATFORM_HOOK_CONTAINER_ROOT_INVALID");
-});
-
 test("S267 missing settings stays a wiring red leg and does not become a hook false green", async (context) => {
   const fixture = await completeInstallFixture(context);
   await rm(join(fixture.root, ".claude", "settings.json"));

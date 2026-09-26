@@ -76,7 +76,7 @@ export function hookHost(env: NodeJS.ProcessEnv = process.env): HostHookHost {
 /**
  * The JSON a host reads from the hook's standard output for `event`: `lines` joined by newlines as
  * the hookSpecificOutput's additionalContext. Claude Code and Codex read one shape, the one the
- * retired knowledge-inject hook wrote for both.
+ * retired prompt-injection hook wrote for both.
  */
 export function hookProtocolOutput(host: HostHookHost, event: string, lines: readonly string[]): string {
   if (!HOST_HOOK_HOSTS.includes(host)) fail("HOOK_INPUT_INVALID", `host must be one of ${HOST_HOOK_HOSTS.join(", ")}`, { host: String(host) });

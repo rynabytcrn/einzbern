@@ -81,8 +81,8 @@ The `claude` first on `PATH` can be a standalone install older than the host run
 the session. On 1.1.3 it was 2.1.266 against the host's 2.1.280, and it did not
 recognise the host's model. So a smoke run, and anything else that starts `claude` on
 this machine, uses the executable named by `CLAUDE_CODE_EXECPATH` when that is an
-executable file. This is the choice `resolveModelCli` in `scripts/injection-session.mjs`
-makes for the knowledge judge (TCRN-CROSS-STORY-459).
+executable file. This is the choice `host-probe` makes (`packages/core/src/host-probe.ts`,
+TCRN-CROSS-INC-387), and the INIT-033 residence probe makes it too.
 
 When no host executable is named, compare `claude --version` with the host's version
 before the call. If it is lower, stop and say the version is insufficient; never fall

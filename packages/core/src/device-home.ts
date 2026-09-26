@@ -26,6 +26,11 @@ export const DEVICE_HOME_ENTRIES = Object.freeze({
   backups: "backups",
   engine: "engine",
 } as const);
+// TCRN-CROSS-STORY-477 R1: the stable hook launcher in engine/, beside the stable entry
+// engine/einzbern.mjs; every host hook runs it (host-hooks.ts) and the install manifest lists it.
+// Defined here, in a module that imports no other engine module, so the install manifest can read
+// it while the barrel is still loading.
+export const ENGINE_HOOK_LAUNCHER = "hook.mjs" as const;
 
 export class DeviceHomeError extends Error {
   readonly reasonCode: "DEVICE_LIBRARY_ID_INVALID";

@@ -62,9 +62,10 @@ function argumentsFor(selectedHost: HostProbeHost, model: string): readonly stri
 }
 
 /**
- * TCRN-CROSS-INC-387 (STORY-461 R3): the host CLI a probe runs, by the rule resolveModelCli in
- * scripts/injection-session.mjs uses. For Claude Code the host's own executable wins when
- * CLAUDE_CODE_EXECPATH names an executable regular file; otherwise `claude` runs from PATH, which
+ * TCRN-CROSS-INC-387 (STORY-461 R3): the host CLI a probe runs, by the rule the INIT-033
+ * residence probe (scripts/init033-residence-probe.mjs) applies too. For Claude Code the host's
+ * own executable wins when CLAUDE_CODE_EXECPATH names an executable regular file; otherwise
+ * `claude` runs from PATH, which
  * can be an older standalone install that does not know the host's models (problem #235). No
  * variable names a Codex host's executable, so Codex runs `codex` from PATH. The result adds no
  * field: command[0] names what ran, an absolute path for the host CLI, the bare name for PATH.

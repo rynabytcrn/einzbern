@@ -1,0 +1,57 @@
+# 常见问题
+
+## 我在 AGENTS.md 里改了 Einzbern 写的一段，会被覆盖吗？
+
+不会。引擎只在三处摘要一致时才替换一段；你改过的段原样保留，记录转为待处理。之后用 `rule-resolve` 决定：`overwrite` 写回引擎的正文，`keep` 把你的版本留下（引擎再也不写这一段），`unmanage` 去掉标记、把文字交给你。细节见「受管段与 Command Spell」页。
+
+## 编辑器把换行存成了 CRLF，或者在行尾留了空格，算修改吗？
+
+不算。摘要按归一化之后的正文计算：CRLF 换成 LF，行尾空白去掉，末尾恰好一个换行。
+
+## 我删掉了一整段（连同标记），下次渲染会补回来吗？
+
+不会。标记不在了，引擎就当你移除了这一段，记录转为 `removed`。如果那是一条 Command Spell 原则的段，它的状态变为 `removed-from-file`；想重新写入，先 `rule-disable` 再 `rule-enable`。
+
+## 引擎改写文件之前会备份吗？备份在哪里？
+
+会。替换之前先把原文件复制到设备目录下的 `backups/<UTC 时间>/managed-sections/`（设备目录缺省是 `~/.einzbern/`）。`agents-render`、`rule-resolve`、`rule-enable` 与 `rule-disable` 的回执都给出备份目录。
+
+## AGENTS.md 的受管段标记写坏了怎么办？
+
+引擎拒绝写这个文件，报 `MANAGED_SECTION_MALFORMED` 并指出行号。`agents-render` 先规划 AGENTS.md 与 CLAUDE.md 两个文件再动笔，所以另一个文件也不会写。修好那一行（或删掉残缺的标记）之后重新运行即可。
+
+## 为什么 Command Spell 的原则默认全部关闭？
+
+原则改变的是 Agent 在这个项目里的工作方式，是否采用由项目自己决定。用 `rule-enable --id <规则 id>` 逐条打开，`rule-list` 查看每条的状态。
+
+## 引擎升级带来了原则的新版本，我的 AGENTS.md 会自动更新吗？
+
+不会。引擎升级不写任何文件。`rule-list` 会把这条原则标为 `update-available`，`agents-render` 也保持文件原样；运行 `rule-enable --id <规则 id>` 才会换成新版本的正文。
+
+## 原则写成中文还是英文？
+
+按项目的 `artifact.language`：`zh-CN` 写中文，其他取值或未设置时写英文。改了这个设置之后运行一次 `agents-render`，已启用原则的段就换成对应的语言。
+
+## 为什么 settings-set 或 variable-set 报 MODEL_WRITE_REFUSED？
+
+项目配置由人在 Atelier 里改。环境变量 `EINZBERN_SURFACE` 不为 `atelier` 时，这些写入一律拒绝，补救提示是 `change it in Atelier`。这是一道软屏障，挡的是模型在工作途中顺手改配置。读取从不拒绝。
+
+## 变量里能放 API 密钥吗？
+
+不能。AGENTS.md 会随项目提交，形如凭据的值或说明在写入时就被拒绝（`VARIABLE_SECRET_SHAPED`），库里不留记录。密钥放在宿主或系统自己的密钥存储里。
+
+## Story 转为完成时报 WORK_DONE_GATES_NOT_RUN，该怎么办？
+
+项目声明了启用的门，但本设备在当前这棵树上还没有跑过它们。先运行 `gates-run --at <时刻>`，全部必需门为绿之后再转换。之后又改了文件，要重新跑。
+
+## gates-run 的结果存在哪里？
+
+设备目录的 `cache/<库 id>/gate-runs/` 下，每次运行一个 JSON 文件，连同运行时那棵树的摘要。它属于本设备，不随库同步。
+
+## 一次已经提交的改动，gates-plan 为什么什么都没选？
+
+`gates-plan` 缺省相对 `HEAD` 找改动，已经提交的改动相对 `HEAD` 没有差别。用 `--base` 指向这次改动的分叉点，例如 `--base main`。
+
+## Wiki 怎么更新？
+
+Wiki 的每一页都在引擎仓库的 `docs/wiki/` 里编辑，不在网页上改。`scripts/push-wiki.mjs --wiki-dir <Wiki 仓库的本地工作树>` 把 `docs/wiki/` 同步进那个工作树并在本地提交，然后列出将要推送的提交；这是缺省的演练，不会推送。确认无误后加 `--execute push` 才真正推送。

@@ -30,6 +30,13 @@ import { DatabaseSync } from "node:sqlite";
 
 export type RecallKind = "card" | "minutes" | "work";
 
+/**
+ * TCRN-CROSS-STORY-476 R5: which store a card came from -- the library's crest ("project") or the
+ * user's crest ("user"), which every project recalls from. A card input that does not say is left
+ * unlabelled here; recall-inputs.ts labels what it reads.
+ */
+export type RecallScope = "project" | "user";
+
 /** One indexed record, reduced to the four ranked fields plus what a caller reads back. */
 export interface RecallDocument {
   readonly id: string;
@@ -47,6 +54,8 @@ export interface RecallDocument {
   readonly recordKind: string;
   readonly parentChain: readonly string[];
   readonly lead: string;
+  // A card's store (TCRN-CROSS-STORY-476 R5), shown beside the hit and never ranked.
+  readonly scope?: RecallScope;
 }
 
 export interface RecallHit {
@@ -60,6 +69,7 @@ export interface RecallHit {
   readonly recordKind: string;
   readonly parentChain: readonly string[];
   readonly lead: string;
+  readonly scope?: RecallScope;
 }
 
 export interface RecallSelectionOptions {
@@ -250,7 +260,8 @@ function containsRun(haystack: readonly string[], needle: readonly string[]): bo
 function documentDigest(document: RecallDocument): string {
   return createHash("sha256")
     .update(`${document.key}\u0000${document.title}\u0000${document.body}\u0000${document.tags}\u0000${document.expansions}`
-      + `\u0000${document.status}\u0000${document.summary}\u0000${document.recordKind}\u0000${document.parentChain.join("\u0001")}\u0000${document.lead}`, "utf8")
+      + `\u0000${document.status}\u0000${document.summary}\u0000${document.recordKind}\u0000${document.parentChain.join("\u0001")}\u0000${document.lead}`
+      + `\u0000${document.scope ?? ""}`, "utf8")
     .digest("hex");
 }
 
@@ -276,6 +287,7 @@ function hitOf(document: RecallDocument, score: number): RecallHit {
     recordKind: document.recordKind,
     parentChain: document.parentChain,
     lead: document.lead,
+    ...(document.scope === undefined ? {} : { scope: document.scope }),
   };
 }
 
@@ -487,6 +499,8 @@ export interface RecallKnowledgeInput {
   readonly body?: string;
   readonly tags: readonly string[];
   readonly expansions?: string;
+  // TCRN-CROSS-STORY-476 R5: the store the card was read from; carried to its hit.
+  readonly scope?: RecallScope;
 }
 
 export interface RecallMinutesInput {
@@ -579,6 +593,7 @@ export function recallDocuments(inputs: RecallInputs): readonly RecallDocument[]
       recordKind: "card",
       parentChain: [],
       lead: "",
+      ...(card.scope === undefined ? {} : { scope: card.scope }),
     });
   }
   for (const minutes of inputs.minutes ?? []) {

@@ -25,7 +25,16 @@ export const DEVICE_HOME_ENTRIES = Object.freeze({
   locks: "locks",
   backups: "backups",
   engine: "engine",
+  // TCRN-CROSS-STORY-476 R5: the user-level crest, unless crest.userPath names another place.
+  crest: "crest",
 } as const);
+
+/** The device-level key that moves the user-level crest (machine-settings.ts validates and stores it). */
+export const USER_CREST_PATH_SETTING = "crest.userPath" as const;
+
+// The name the user crest's lock and cache directory carry in locks/ and cache/. A library's are
+// named by its id (libraryDirectoryName), which never has this shape.
+const USER_CREST_DEVICE_NAME = "user-crest";
 
 export class DeviceHomeError extends Error {
   readonly reasonCode: "DEVICE_LIBRARY_ID_INVALID";
@@ -74,6 +83,28 @@ export function cachePath(libraryId: string, home: string = deviceHome()): strin
 /** The one write lock every process on this machine takes before writing this library. */
 export function lockPath(libraryId: string, home: string = deviceHome()): string {
   return join(home, DEVICE_HOME_ENTRIES.locks, `${libraryDirectoryName(libraryId)}.lock`);
+}
+
+/**
+ * TCRN-CROSS-STORY-476 R5: the user-level crest, the knowledge store of one user across every
+ * project. It is the device-level key crest.userPath when this device set one -- an absolute, real
+ * path, which may sit in a cloud folder -- and `crest` in the device directory otherwise. `settings`
+ * are this device's machine-setting values; readUserCrestPath (machine-settings.ts) reads them from
+ * the file and asks here, so this module stays below the settings layer that imports it.
+ */
+export function userCrestPath(settings: Readonly<Record<string, string>> = {}, home: string = deviceHome()): string {
+  const configured = settings[USER_CREST_PATH_SETTING];
+  return typeof configured === "string" && configured.length > 0 ? configured : join(home, DEVICE_HOME_ENTRIES.crest);
+}
+
+/** The one lock every process on this machine takes before reading or writing the user crest. */
+export function userCrestLockPath(home: string = deviceHome()): string {
+  return join(home, DEVICE_HOME_ENTRIES.locks, `${USER_CREST_DEVICE_NAME}.lock`);
+}
+
+/** The user crest's derived state on this machine (its index view); never a file in the crest. */
+export function userCrestCachePath(home: string = deviceHome()): string {
+  return join(home, DEVICE_HOME_ENTRIES.cache, USER_CREST_DEVICE_NAME);
 }
 
 export function backupsPath(home: string = deviceHome()): string {

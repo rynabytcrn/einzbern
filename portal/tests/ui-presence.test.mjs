@@ -693,6 +693,7 @@ if (process.argv[2] === "status" && actual.status === 0) {
       await new Promise((resolve) => setTimeout(resolve, 80));
       const scope = page.document.querySelector('[data-content-scope="machine-settings"]');
       assert.ok(scope, "machine settings must consume the independent ContentScope contract");
+      // Five device-level keys: the four portal preferences and crest.userPath (TCRN-CROSS-STORY-476 R5).
       assert.deepEqual({
         source: scope.getAttribute("data-content-source"),
         phase: scope.getAttribute("data-content-phase"),
@@ -701,8 +702,8 @@ if (process.argv[2] === "status" && actual.status === 0) {
         total: scope.getAttribute("data-content-total-count"),
         countKind: scope.getAttribute("data-content-count-kind"),
         stale: scope.getAttribute("data-content-stale"),
-      }, { source: "engine.machine-settings", phase: "content", valid: "true", shown: "4", total: "4", countKind: "total", stale: "false" });
-      assert.equal(scope.querySelectorAll("[data-machine-row]").length, 4);
+      }, { source: "engine.machine-settings", phase: "content", valid: "true", shown: "5", total: "5", countKind: "total", stale: "false" });
+      assert.equal(scope.querySelectorAll("[data-machine-row]").length, 5);
       assert.equal(scope.querySelectorAll(".tcrn-content-scope__content").length, 1);
       assert.equal(page.document.querySelector("#settings-rows .tcrn-state-surface"), null, "a sibling scope must not supply the machine empty state");
 

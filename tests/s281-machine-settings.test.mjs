@@ -3,9 +3,9 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import {
   MACHINE_SETTINGS_CATALOG,
@@ -18,6 +18,8 @@ import {
   readMachineSettingsCatalog,
   validateMachineSettingsFile,
 } from "../dist/build/packages/core/src/index.js";
+import { userCrestPath } from "../dist/build/packages/core/src/device-home.js";
+import { readUserCrestPath } from "../dist/build/packages/core/src/machine-settings.js";
 
 const at = "2026-01-01T00:00:00Z";
 const scratch = async () => machineSettingsPath(await mkdtemp(join(tmpdir(), "tcrn-s281-")));
@@ -148,4 +150,39 @@ test("S281: the layer states where its values come from and when they take effec
   // leave the reader watching an unchanged page and concluding the write failed.
   assert.equal(MACHINE_SETTINGS_CATALOG.find((entry) => entry.key === "portal.port")?.appliesOn, "restart");
   assert.ok(MACHINE_SETTINGS_CATALOG.filter((entry) => entry.key !== "portal.port").every((entry) => entry.appliesOn === "next-open"));
+});
+
+// TCRN-CROSS-STORY-476 R5: where this user's crest lives is a device-level key. It is an absolute
+// path, stored as its real path (the crest refuses a link on its way in, and a cloud folder is
+// often reached through one), and the folder that holds it must exist.
+test("S281 / 476-R5: crest.userPath is a device-level absolute path, stored as its real path", async () => {
+  const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-s281-crest-")));
+  const path = machineSettingsPath(base);
+  const device = dirname(path);
+  try {
+    const entry = MACHINE_SETTINGS_CATALOG.find((candidate) => candidate.key === "crest.userPath");
+    assert.deepEqual([entry?.layer, entry?.type, entry?.controlType, entry?.defaultValue], ["device", "path", "text", null]);
+    // Unset, the user crest is `crest` in the device directory.
+    assert.equal(await readUserCrestPath(device), join(device, "crest"));
+    assert.equal(userCrestPath({}, device), join(device, "crest"));
+
+    await reason(applyMachineSettingSet({ key: "crest.userPath", value: "relative/crest", occurredAt: at, path }), "MACHINE_SETTING_VALUE_INVALID");
+    await reason(applyMachineSettingSet({ key: "crest.userPath", value: join(base, "unmounted", "crest"), occurredAt: at, path }), "MACHINE_SETTING_VALUE_INVALID");
+    await writeFile(join(base, "file"), "not a folder\n", "utf8");
+    await reason(applyMachineSettingSet({ key: "crest.userPath", value: join(base, "file"), occurredAt: at, path }), "MACHINE_SETTING_VALUE_INVALID");
+    await assert.rejects(stat(path), { code: "ENOENT" }, "a refused value writes nothing");
+
+    await mkdir(join(base, "cloud"));
+    await symlink(join(base, "cloud"), join(base, "Cloud Drive"));
+    const place = await applyMachineSettingSet({ key: "crest.userPath", value: join(base, "Cloud Drive", "crest"), occurredAt: at, path });
+    assert.equal(place.values["crest.userPath"], join(base, "cloud", "crest"), "a place not made yet is stored under its folder's real path");
+    const folder = await applyMachineSettingSet({ key: "crest.userPath", value: join(base, "Cloud Drive"), occurredAt: at, path });
+    assert.equal(folder.values["crest.userPath"], join(base, "cloud"), "an existing folder is stored as its own real path");
+    assert.equal(await readUserCrestPath(device), join(base, "cloud"));
+    assert.equal((await readMachineSettingsCatalog(path)).settings.find((setting) => setting.key === "crest.userPath")?.currentValue, join(base, "cloud"));
+
+    // A relative value is caught on read too, so the file cannot carry one past the set path.
+    await writeFile(path, JSON.stringify({ schemaVersion: "tcrn.machine-settings.v1", layerKind: MACHINE_SETTINGS_LAYER_KIND, values: { "crest.userPath": "crest" }, updatedAt: at }), "utf8");
+    await reason(readMachineSettings(path), "MACHINE_SETTING_VALUE_INVALID");
+  } finally { await rm(base, { recursive: true, force: true }); }
 });

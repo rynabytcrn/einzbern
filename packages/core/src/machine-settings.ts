@@ -4,7 +4,8 @@
 // Workspace settings are governed state: they live on the chain, every write is an
 // event, and CAS orders them. These are not that. They are per-machine preferences
 // about how this machine's portal opens — which partition, which language, which
-// theme, which port — and none of them is a claim anyone needs to audit. Putting them
+// theme, which port — and where this user's crest lives (TCRN-CROSS-STORY-476 R5); none
+// of them is a claim anyone needs to audit. Putting them
 // on a chain would mean every laptop preference became a governed event on a shared
 // ledger, and choosing a partition to open in would take the chain write lock.
 //
@@ -19,12 +20,12 @@
 // not here: the portal reads browser-local preference first, this layer second, its
 // built-in fallback last. This module answers only "what does this machine say".
 
-import { mkdir, readFile, rm } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, readFile, realpath, rm, stat } from "node:fs/promises";
+import { basename, dirname, isAbsolute, join } from "node:path";
 
 import { canonicalJson } from "../../protocol/src/index.js";
 import { writeFileAtomic } from "./atomic-file.js";
-import { DEVICE_HOME_ENTRIES, deviceHome } from "./device-home.js";
+import { DEVICE_HOME_ENTRIES, USER_CREST_PATH_SETTING, deviceHome, userCrestPath } from "./device-home.js";
 import { DIRECTORY } from "./names.js";
 
 export const MACHINE_SETTINGS_VERSION = "tcrn.machine-settings.v1" as const;
@@ -34,6 +35,7 @@ export const MACHINE_SETTINGS_FILE_NAME = DEVICE_HOME_ENTRIES.machineSettings;
 export const MACHINE_SETTINGS_DIRECTORY = DIRECTORY.device;
 
 export const MACHINE_SETTING_KEYS = Object.freeze([
+  USER_CREST_PATH_SETTING,
   "portal.defaultLocale",
   "portal.defaultPartition",
   "portal.defaultTheme",
@@ -64,7 +66,7 @@ function fail(reasonCode: MachineSettingsReasonCode, message: string): never {
 
 export interface MachineSettingsCatalogEntry {
   readonly key: MachineSettingKey;
-  readonly type: "enum" | "integer" | "string";
+  readonly type: "enum" | "integer" | "path" | "string";
   readonly controlType: "enum" | "number" | "text";
   // TCRN-CROSS-STORY-469 R3: a device-level key, kept in this device's directory and never
   // written into a library (settings.ts has the project-level layer).
@@ -81,14 +83,29 @@ export interface MachineSettingsCatalogEntry {
    */
   readonly appliesOn: "next-open" | "restart";
   /**
-   * Where the legal values come from. `settings-catalog` means the closed list below;
-   * `workspace-discovery` means the value set is whatever partitions this machine has,
-   * so it is not vocabulary and does not belong in the dictionary (INC-186).
+   * Where the legal values come from. `settings-catalog` means the catalogue below decides:
+   * its closed list, or for a path its shape rule; `workspace-discovery` means the value set
+   * is whatever partitions this machine has, so it is not vocabulary and does not belong in
+   * the dictionary (INC-186).
    */
   readonly valueSource: "settings-catalog" | "workspace-discovery";
 }
 
 export const MACHINE_SETTINGS_CATALOG: readonly MachineSettingsCatalogEntry[] = Object.freeze([
+  // TCRN-CROSS-STORY-476 R5: where this user's crest lives (device-home.ts userCrestPath). Unset,
+  // it is `crest` in the device directory. A value is an absolute path and is stored as its real
+  // path (applyMachineSettingSet), because the crest refuses a symbolic link on its way in and a
+  // cloud folder is often reached through one; the folder that holds it must exist.
+  Object.freeze({
+    key: USER_CREST_PATH_SETTING,
+    type: "path",
+    controlType: "text",
+    layer: "device",
+    layerKind: MACHINE_SETTINGS_LAYER_KIND,
+    defaultValue: null,
+    appliesOn: "next-open",
+    valueSource: "settings-catalog",
+  }),
   Object.freeze({
     key: "portal.defaultLocale",
     type: "enum",
@@ -177,7 +194,35 @@ export function validateMachineSettingValue(key: MachineSettingKey, value: unkno
   if (entry.valueSource === "workspace-discovery" && value.trim() !== value) {
     fail("MACHINE_SETTING_VALUE_INVALID", `${key} must not carry surrounding whitespace`);
   }
+  if (entry.type === "path" && (!isAbsolute(value) || value.trim() !== value || /[\0\r\n]/u.test(value))) {
+    fail("MACHINE_SETTING_VALUE_INVALID", `${key} needs an absolute path`);
+  }
   return value;
+}
+
+/**
+ * A path value as it is stored: its real path, symbolic links resolved. A place that does not
+ * exist yet is stored under the real path of the folder that holds it, and that folder must
+ * exist -- an unmounted cloud folder is refused here rather than quietly created as a local one
+ * on first use. A place that exists must be a directory.
+ */
+async function realSettingPath(key: MachineSettingKey, value: string): Promise<string> {
+  try {
+    const real = await realpath(value);
+    if (!(await stat(real)).isDirectory()) fail("MACHINE_SETTING_VALUE_INVALID", `${key} must name a directory`);
+    return real;
+  } catch (error) {
+    if (error instanceof MachineSettingsError) throw error;
+    if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
+  }
+  let parent: string;
+  try {
+    parent = await realpath(dirname(value));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") throw error;
+    fail("MACHINE_SETTING_VALUE_INVALID", `${key}: the folder that holds ${value} does not exist`);
+  }
+  return join(parent, basename(value));
 }
 
 export interface MachineSettingsFile {
@@ -242,6 +287,15 @@ export async function readMachineSettings(path: string = machineSettingsPath()):
   return validateMachineSettingsFile(parsed);
 }
 
+/**
+ * TCRN-CROSS-STORY-476 R5: where this device keeps the user-level crest -- crest.userPath as this
+ * device's settings in `device` (the device directory) state it, `<device>/crest` otherwise.
+ */
+export async function readUserCrestPath(device: string = deviceHome()): Promise<string> {
+  const file = await readMachineSettings(join(device, MACHINE_SETTINGS_FILE_NAME));
+  return userCrestPath(file.values, device);
+}
+
 async function write(path: string, file: MachineSettingsFile): Promise<MachineSettingsFile> {
   await mkdir(dirname(path), { recursive: true });
   await writeFileAtomic(path, `${canonicalJson(file)}\n`);
@@ -255,7 +309,8 @@ export async function applyMachineSettingSet(input: {
   readonly path?: string;
 }): Promise<MachineSettingsFile> {
   assertMachineSettingKey(input.key);
-  const value = validateMachineSettingValue(input.key, input.value);
+  const validated = validateMachineSettingValue(input.key, input.value);
+  const value = BY_KEY.get(input.key)?.type === "path" ? await realSettingPath(input.key, validated) : validated;
   const path = input.path ?? machineSettingsPath();
   const current = await readMachineSettings(path);
   return write(path, Object.freeze({

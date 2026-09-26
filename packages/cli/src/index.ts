@@ -66,7 +66,10 @@ import {
   RECALL_DEFAULT_TAU,
   recall,
   readKnowledgeLanguagePolicy,
+  recallContextLines,
   recallDocuments,
+  recallInputsFromState,
+  formatRecallLine,
   resolveQueryLanguage,
   templateBindingFromWorkRecord,
   probeHost,
@@ -109,11 +112,9 @@ import type {
   KnowledgeKind,
   KnowledgePromotionState,
   RecallKnowledgeInput,
-  RecallMinutesInput,
-  RecallWorkInput,
 } from "../../core/src/index.js";
 import { existsSync, readFileSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { join } from "node:path";
 
 import { canonicalExternalKey, canonicalJson, canonicalSha256, deriveStableId } from "../../protocol/src/index.js";
 import { isWorkStatus } from "../../protocol/src/index.js";
@@ -772,7 +773,7 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "project-delete", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "project-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "project-update", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "recall", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "query", required: true, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "tau", required: false, valueKind: "string" }, { name: "partition", required: false, valueKind: "string" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
+  { name: "recall", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "query", required: true, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "tau", required: false, valueKind: "string" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
   { name: "recover", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
   { name: "settings-catalog", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   { name: "settings-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
@@ -1678,17 +1679,16 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // the path the caller resolved rather than used to resolve one -- a hook whose path
   // resolution drifts gets a refusal instead of an answer from the wrong chain.
   if (command === "recall") {
-    const values = parseArguments(rest, ["workspace", "host", "at", "query", "limit", "tau", "partition", "allow-trailing"]);
+    // TCRN-CROSS-STORY-474: recall answers from one library, whatever directory it sits in; the
+    // partition flag went with the partition registry. --host stays: it names the prompt-language
+    // policy the answer is negotiated against.
+    const values = parseArguments(rest, ["workspace", "host", "at", "query", "limit", "tau", "allow-trailing"]);
     required(values, ["workspace", "at", "query"]);
     const workspace = values.workspace ?? "";
     const query = values.query ?? "";
     if (query.length === 0 || query.length > 4096 || !query.isWellFormed()) fail("CLI_ARGUMENT_MALFORMED", "query");
     const limit = values.limit === undefined ? undefined : integerValue(values, "limit");
     if (limit !== undefined && (limit < 1 || limit > RECALL_CANDIDATE_LIMIT)) fail("CLI_ARGUMENT_MALFORMED", "limit");
-    const partition = basename(dirname(resolve(workspace)));
-    if (values.partition !== undefined && values.partition !== partition) {
-      fail("CLI_ARGUMENT_MALFORMED", `partition=${values.partition}`);
-    }
     const state = await validateWorkspace(workspace);
     const settingValue = (key: string): string | undefined => state.settings.find((entry) => entry.key === key)?.value;
     // The flag wins over the setting, the setting over the recorded default: the same
@@ -1706,6 +1706,10 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const languageAnswer = resolveQueryLanguage(query, readKnowledgeLanguagePolicy(state.settings, values.host));
     const scopeBytes = Number(settingValue("retrieval.scopeExcerptBytes") ?? "512");
     const scopeExcerptBytes = Number.isSafeInteger(scopeBytes) && scopeBytes > 0 ? scopeBytes : 512;
+    // The byte budget of one prompt's answer (TCRN-CROSS-STORY-474 R2): the hit lines are cut to it
+    // at whole lines, which is what a host puts in front of the prompt.
+    const promptBytes = Number(settingValue("injection.perPromptBytes") ?? "1600");
+    const perPromptBytes = Number.isSafeInteger(promptBytes) && promptBytes > 0 ? promptBytes : 1600;
     // A workspace with no knowledge store, or one trailing the chain while the caller did
     // not admit a trailing read, still has work records and minutes to recall. The reason
     // code the read produced is reported rather than swallowed, so "no cards" is never
@@ -1743,29 +1747,10 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       if (typeof reasonCode !== "string") throw error;
       knowledgeReasonCode = reasonCode;
     }
-    const conferenceTitles = new Map(state.conferences.map((entry) => [entry.id, entry]));
-    const minutes: readonly RecallMinutesInput[] = state.conferenceMinutes
-      .filter((entry) => !entry.tombstone)
-      .map((entry) => ({
-        id: entry.id,
-        conferenceTitle: conferenceTitles.get(entry.conferenceId)?.title ?? "",
-        conferenceType: conferenceTitles.get(entry.conferenceId)?.type ?? "",
-        summary: entry.summary,
-        decisions: entry.decisions,
-        outcomeClass: entry.outcomeClass,
-      }));
-    const work: readonly RecallWorkInput[] = state.work
-      .filter((entry) => !entry.tombstone)
-      .map((entry) => ({
-        id: entry.id,
-        externalKey: entry.externalKey,
-        kind: entry.kind,
-        status: entry.status,
-        title: entry.title ?? null,
-        summary: entry.summary ?? null,
-        scope: workScope(entry),
-        labels: entry.labels ?? [],
-      }));
+    // TCRN-CROSS-STORY-474 R1: what the index holds is decided in one place (recall-inputs.ts), so
+    // the verb and the prompt hook cannot index differently: the Stories, Incidents, Initiatives and
+    // Epics with their goal, body and parent titles, every minutes record, and the cards.
+    const inputs = recallInputsFromState(state, knowledge, { scopeExcerptBytes });
     const result = recall({
       // One index per library, whatever path it is read at (TCRN-CROSS-STORY-469).
       cacheKey: state.metadata.workspaceId,
@@ -1775,7 +1760,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       // A library's head is one digest over every stream's head, so it moves with any
       // entry of the version vector.
       checkpoint: `${state.headEventHash}:${knowledgeDigest}`,
-      documents: () => recallDocuments({ knowledge, minutes, work, scopeExcerptBytes }),
+      documents: () => recallDocuments(inputs),
       query,
       tau,
       ...(limit === undefined ? {} : { limit }),
@@ -1786,7 +1771,6 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       workspaceId: state.metadata.workspaceId,
       version: state.version,
       headEventHash: state.headEventHash,
-      partition,
       at: values.at ?? "",
       knowledgeReasonCode,
       query,
@@ -1805,10 +1789,17 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       indexed: result.indexed,
       rebuilt: result.rebuilt,
       total: result.total,
+      // TCRN-CROSS-STORY-474 R2, R3: each hit also as the one line a host shows (kind and status,
+      // title, key, id, the titles above it), and the answer as those lines cut to the prompt's
+      // budget. Below the strong-hit threshold the reason code is RECALL_NO_STRONG_HIT and both are
+      // empty: a prompt about nothing the library holds gets nothing, not its best weak guesses.
       records: result.records.map((hit) => ({
         kind: hit.kind, key: hit.key, id: hit.id, status: hit.status,
         title: hit.title, summary: hit.summary, score: hit.score.toFixed(4),
+        line: formatRecallLine(hit), parentChain: [...hit.parentChain],
       })),
+      perPromptBytes,
+      context: [...recallContextLines(result.records, perPromptBytes)],
     }));
     return;
   }

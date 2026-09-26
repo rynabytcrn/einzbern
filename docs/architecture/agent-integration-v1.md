@@ -191,3 +191,33 @@ gap left for later within gate identity; closing it is the external-anchor progr
 is a different design with a different trust story. The property is pinned by a test that
 appends a forged satisfied gate and asserts replay accepts it, so the day the boundary
 moves, this section fails with it.
+
+## 10. Recall: what an answer holds, and what an empty one means
+
+`recall --workspace <library> --at <instant> --query <prompt>` answers from one library,
+whatever directory it sits in; there is no `--partition` (TCRN-CROSS-STORY-474). `--host`
+names the prompt-language policy the answer is negotiated against, `--tau` overrides the
+`retrieval.tau` setting for one call and `--limit` caps the records.
+
+- **What is searched.** The Stories and the Incidents on their title, goal and body, the
+  Initiatives and Epics on their title and goal, every minutes record, and the cards with the
+  phrasings they carry. A Subtask, a Release or a Review is not searched, and status does not
+  matter: a done Story is still the record of what was intended. A key or a key fragment that
+  names one record by whole tokens and carries a digit (`TCRN-CROSS-STORY-474`, `STORY-474`)
+  puts that record first.
+- **What an answer holds.** `reasonCode` `RECALL_READY`; `records`, each with `kind`, `key`,
+  `id`, `status`, `title`, `summary`, `score` (a decimal string), `parentChain` (the titles
+  above the record, nearest first) and `line`, the record as one line a host can put in front
+  of a prompt: `[Story done] title · key · id · Epic title ‹ Initiative title` for a work
+  record, `[纪要 key] title · D1 first decision` for minutes, `[卡片] subject · id` for a card;
+  and `context`, those lines in rank order cut at whole lines to `injection.perPromptBytes`
+  (reported as `perPromptBytes`, 1600 by default). The first line that does not fit ends the
+  context; `records` is never cut by it.
+- **What an empty answer means.** When the best hit scores below the strong-hit threshold,
+  `reasonCode` is `RECALL_NO_STRONG_HIT` and both `records` and `context` are empty: the prompt
+  is about nothing the library holds, and a caller injects nothing. It is not an error and not
+  a partial answer; `total` still says how many records matched at all. A named key is always
+  answered. The threshold's default (`RECALL_STRONG_TAU`, 17) is calibrated on a library the
+  size of the cross-project chain (`tests/fixtures/retrieval-eval/strong-threshold.json`); bm25
+  grows with a library, so a library of a few dozen records answers mostly title matches and
+  named keys at that value and lowers `retrieval.tau`.

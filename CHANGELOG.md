@@ -293,6 +293,28 @@ settings `execution.independenceFloor` and `conference.positionBudgetBytes`. Eve
 event already on a chain still replays. The governed-loop tutorial and its proof record minutes
 and name them with decided-in instead of holding, distilling and promoting a conference.
 
+Recall answers by intent, and only on a strong hit (TCRN-CROSS-STORY-474; MIN-227 D5, D7;
+`packages/core/src/recall-inputs.ts`). The index holds the Stories and the Incidents on their title,
+goal and body, the Initiatives and Epics on their title and goal, every minutes record and the
+cards; a Subtask, a Release or a Review is not indexed, and status does not matter. When the best
+hit scores below the strong-hit threshold, `recall` answers `RECALL_NO_STRONG_HIT` with no records
+and an empty `context`. The threshold is the `retrieval.tau` setting, whose default
+`RECALL_STRONG_TAU` is 17: the smallest multiple of 0.25 above the best score sixteen everyday
+prompts reach on the recorded cross-project corpus
+(`tests/fixtures/retrieval-eval/strong-threshold.json`; `node scripts/retrieval-eval.mjs --calibrate`
+recomputes it). bm25 grows
+with a library, so a library of a few dozen records answers mostly title matches and named keys at
+that value and lowers `retrieval.tau`. English function words leave the query, and a key fragment
+that names one record by whole tokens and carries a digit (`STORY-474`) is answered as its key is.
+Each record of an answer carries `line` (`[Story done] title · key · id · Epic title ‹ Initiative
+title`) and `parentChain`, and the answer carries `context`, those lines cut at whole lines to
+`injection.perPromptBytes`, reported as `perPromptBytes`. `--partition` and the `partition` field
+are gone with the partition registry; `--host` stays. The retrieval evaluation corpus is
+re-recorded read-only from the cross-project chain by `scripts/retrieval-eval-record.mjs`, with
+paths, addresses and host names redacted, and the gate holds the unrelated group empty at the
+threshold and answered at zero (`RETRIEVAL_EVAL_THRESHOLD_DETACHED` otherwise). The engine package
+has no session-level injection entry: its host hooks render no SessionStart or PostToolUse hook.
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

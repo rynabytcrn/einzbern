@@ -142,7 +142,7 @@ test("476-AC1: a card is retrieved the moment it is written, and nothing about i
   const recalled = await cliJson(["recall", "--workspace", fx.workspace, "--at", AT, "--query", "zsh grep include quotes", "--tau", "1"]);
   assert.equal(recalled.knowledgeReasonCode, "KNOWLEDGE_LIST_READY");
   assert.equal(recalled.records[0]?.id, created.id, "recall answers with the card it was asked about");
-  assert.deepEqual(Object.keys(recalled.records[0]).sort(), ["id", "key", "kind", "score", "status", "summary", "title"]);
+  assert.deepEqual(Object.keys(recalled.records[0]).sort(), ["id", "key", "kind", "line", "parentChain", "score", "status", "summary", "title"]);
   assert.equal(recalled.records[0].status, "active");
 
   // A capture naming a source, and a create that leaves the lifecycle out, land the same way.

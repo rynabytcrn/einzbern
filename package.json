@@ -17,10 +17,12 @@
   "scripts": {
     "archive": "node scripts/task.mjs archive",
     "build": "node scripts/task.mjs build",
+    "bundle": "node scripts/bundle.mjs",
     "clean": "node scripts/task.mjs clean",
     "format": "node scripts/task.mjs format-write",
     "format:check": "node scripts/task.mjs format-check",
     "lint": "node scripts/task.mjs lint",
+    "pack:release": "node scripts/pack-release.mjs",
     "pg:schema": "node scripts/apply-pg-schema.mjs",
     "pg:test": "node scripts/pg-test-runner.mjs",
     "platform:doctor": "node scripts/platform-doctor.mjs",

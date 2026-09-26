@@ -658,6 +658,9 @@ export { defaultImportTarget, importLegacyWorkspace } from "./legacy-import.js";
 export { readRegistry, registerLibrary, resolveLibrary } from "./registry.js";
 // TCRN-CROSS-STORY-470 R2: the cloud folders a cloud-hosted flag is suggested for.
 export { suggestCloudHosted } from "./cloud-roots.js";
+// TCRN-CROSS-STORY-470 R3: moving a library, and the tombstone its old place keeps.
+export { relocateLibrary } from "./relocate.js";
+export { readLibraryTombstone } from "./workspace.js";
 export type { AtomicFileReasonCode, AtomicWriteOptions } from "./atomic-file.js";
 // TCRN-CROSS-STORY-468 R1: this device's identity in the device directory.
 export {

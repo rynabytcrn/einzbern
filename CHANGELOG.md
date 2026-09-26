@@ -191,6 +191,18 @@ and `suggestedCloudHosted`. The table (`packages/core/src/cloud-roots.ts`) knows
 the profile) and suggests nothing on Linux; a project's default cloud library is
 `<cloud root>/Ether/<project name>`. A library given through a symbolic link is created,
 registered and opened at its real path instead of being refused.
+`workspace-relocate --workspace <library> --to <place> --at <instant> [--cloud-hosted]` moves a
+library (TCRN-CROSS-STORY-470 R3, AC2, AC3; `packages/core/src/relocate.ts`). The target must
+not exist or be an empty directory (`RELOCATE_TARGET_NOT_EMPTY`), must not sit inside the
+library or contain it (`RELOCATE_TARGET_INSIDE_SOURCE`) and must take a write
+(`RELOCATE_TARGET_NOT_WRITABLE`). Under this machine's lock of the library every directory and
+file is copied, each file checked by SHA-256 as it lands, the copy compared with the source by
+the backup witness's digests (`RELOCATE_COPY_MISMATCH`) and replayed from genesis to the same
+stream heads and version vector (`RELOCATE_REPLAY_MISMATCH`); a failure removes only what the
+relocation created. Then this device's registry points at the new place and the old place gets
+`TOMBSTONE.json` (`einzbern.tombstone.v1`: library id, where it went and when): it keeps its
+files and still reads, `status` reports `relocatedTo`, and every write there refuses with
+`LIBRARY_TOMBSTONED` naming the new place. Nothing is deleted.
 
 ## 1.2.1 — patch candidate
 

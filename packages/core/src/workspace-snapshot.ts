@@ -50,7 +50,7 @@ export class SnapshotError extends Error {
   }
 }
 
-interface SnapshotFileEntry {
+export interface SnapshotFileEntry {
   readonly path: string;
   readonly sha256: string;
   readonly bytes: number;
@@ -276,6 +276,15 @@ async function walkControlTree(controlRoot: string, rules: TreeRules = controlTr
   };
   await walk(controlRoot, "");
   return [...collected].sort((left, right) => compareCanonicalText(left.path, right.path));
+}
+
+/**
+ * Every file of a library tree with its SHA-256 and size, under the witness's rules: temporaries
+ * skipped, an in-flight knowledge claim left out, residue failing closed. A relocation compares
+ * the source and the copy by it (TCRN-CROSS-STORY-470 R3).
+ */
+export async function libraryTreeDigests(root: string): Promise<readonly SnapshotFileEntry[]> {
+  return walkControlTree(root, libraryTreeRules());
 }
 
 async function fileExists(path: string): Promise<boolean> {

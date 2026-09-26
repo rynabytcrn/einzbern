@@ -98,6 +98,8 @@ import {
   registerLibrary,
   resolveLibrary,
   suggestCloudHosted,
+  readLibraryTombstone,
+  relocateLibrary,
 } from "../../core/src/index.js";
 import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider } from "../../core/src/index.js";
 import type {
@@ -800,6 +802,8 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "work-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string" }, { name: "sprint", required: false, valueKind: "string" }, { name: "search", required: false, valueKind: "string" }, { name: "scope-bytes", required: false, valueKind: "integer" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "work-show", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: false, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }] },
   { name: "work-transition", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "status", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
+  // TCRN-CROSS-STORY-470 R3: move a library; the old place keeps a tombstone and refuses writes.
+  { name: "workspace-relocate", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "to", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "cloud-hosted", required: false, valueKind: "boolean" }] },
 ] as const);
 
 // INC-016: `mutates` and `authorityBearing` name two DIFFERENT authorization
@@ -1099,6 +1103,18 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     }));
     return;
   }
+  // TCRN-CROSS-STORY-470 R3, AC2, AC3: relocate a library (relocate.ts). The host write-root
+  // wiring for a library outside its project follows the move (TCRN-CROSS-STORY-470 R5).
+  if (command === "workspace-relocate") {
+    const values = parseArguments(rest, ["workspace", "to", "at", "cloud-hosted"]);
+    required(values, ["workspace", "to", "at"]);
+    const report = await relocateLibrary(values.workspace ?? "", values.to ?? "", {
+      at: values.at ?? "",
+      ...(values["cloud-hosted"] === undefined ? {} : { cloudHosted: booleanValue(values["cloud-hosted"], "cloud-hosted") }),
+    });
+    io.write(canonicalJson(report as unknown as JsonValue));
+    return;
+  }
   if (command === "library-list") {
     parseArguments(rest, []);
     const registry = await readRegistry();
@@ -1176,6 +1192,8 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // TCRN-CROSS-STORY-469 R2: config/project.json is a projection of the merged project-level
     // settings that no read trusts; status says when it does not show them.
     const configProjection = state.library === undefined ? null : await configProjectionStatus(state.library.libraryRoot, state.settings);
+    // TCRN-CROSS-STORY-470 R3: a relocated library still reads; status says where it went.
+    const tombstone = state.library === undefined ? null : await readLibraryTombstone(state.library.libraryRoot);
     io.write(canonicalJson({
       reasonCode: "WORKSPACE_COMMAND_COMPLETED",
       engineVersion: FRAMEWORK_VERSION,
@@ -1197,6 +1215,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       })),
       rejectedEventCount: state.library?.rejectedEvents.length ?? 0,
       configProjection,
+      ...(tombstone === null ? {} : { relocatedTo: tombstone.movedTo, relocatedAt: tombstone.movedAt }),
       projects: state.projects.filter((entry) => !entry.tombstone).length,
       work: state.work.filter((entry) => !entry.tombstone).length,
       // STORY-299: headroom belongs on the one verb that still answers past a

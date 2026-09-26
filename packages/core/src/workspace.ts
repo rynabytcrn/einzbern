@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import { lstat, realpath } from "node:fs/promises";
-import { isAbsolute, relative, sep } from "node:path";
+import { lstat, readFile, realpath } from "node:fs/promises";
+import { isAbsolute, join, relative, sep } from "node:path";
 
 import {
   PROTOCOL_LIMITS,
@@ -154,6 +154,8 @@ export const WORKSPACE_REASON_CODES = Object.freeze([
   // write aimed at an old-layout workspace, which opens read-only.
   "LEGACY_WORKSPACE_READ_ONLY",
   "LIBRARY_NOT_FOUND",
+  // TCRN-CROSS-STORY-470 R3: a write aimed at a library that was relocated; it names the new place.
+  "LIBRARY_TOMBSTONED",
   "WORKSPACE_ACTOR_INVALID",
   "WORKSPACE_ACTOR_REQUIRED",
   "WORKSPACE_ALREADY_EXISTS",
@@ -2636,6 +2638,7 @@ export async function withWorkspaceWriteLock<T>(
 ): Promise<T> {
   const layout = await resolveLayout(workspaceRootInput);
   if (layout.kind === "legacy") refuseLegacyWrite(layout.root);
+  await refuseTombstonedWrite(layout.root);
   const held = heldWriteLocks.getStore() ?? new Set<string>();
   if (held.has(layout.root)) return operation(layout.root);
   try {
@@ -2672,6 +2675,53 @@ async function resolveLayout(workspaceRootInput: string): Promise<WorkspaceLayou
   if (await hasLibraryManifest(root)) return { kind: "library", root, library: await openLibrary(root) };
   if (await legacyControlDirectory(root) !== null) return { kind: "legacy", root };
   throw new WorkspaceError("LIBRARY_NOT_FOUND", `${root} holds neither a library nor an old-layout workspace`, { workspace: root });
+}
+
+// TCRN-CROSS-STORY-470 R3: a relocated library leaves TOMBSTONE.json in its old place. It still
+// reads, and every write there refuses and names where the library went.
+export const LIBRARY_TOMBSTONE_FILE = "TOMBSTONE.json" as const;
+export const LIBRARY_TOMBSTONE_SCHEMA_VERSION = "einzbern.tombstone.v1" as const;
+
+export interface LibraryTombstone {
+  readonly schemaVersion: typeof LIBRARY_TOMBSTONE_SCHEMA_VERSION;
+  readonly libraryId: string;
+  readonly movedTo: string;
+  readonly movedAt: string;
+}
+
+/** The tombstone a relocation left at a library root, or null when there is none. */
+export async function readLibraryTombstone(root: string): Promise<LibraryTombstone | null> {
+  let text: string;
+  try {
+    text = await readFile(join(root, LIBRARY_TOMBSTONE_FILE), "utf8");
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return null;
+    throw error;
+  }
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    value = null;
+  }
+  const record = value !== null && typeof value === "object" && !Array.isArray(value) ? value as Readonly<Record<string, unknown>> : {};
+  // A tombstone that does not parse still marks the place as vacated; it just cannot say where to.
+  return {
+    schemaVersion: LIBRARY_TOMBSTONE_SCHEMA_VERSION,
+    libraryId: typeof record.libraryId === "string" ? record.libraryId : "",
+    movedTo: typeof record.movedTo === "string" ? record.movedTo : "",
+    movedAt: typeof record.movedAt === "string" ? record.movedAt : "",
+  };
+}
+
+async function refuseTombstonedWrite(root: string): Promise<void> {
+  const tombstone = await readLibraryTombstone(root);
+  if (tombstone === null) return;
+  throw new WorkspaceError(
+    "LIBRARY_TOMBSTONED",
+    `${root} was relocated to ${tombstone.movedTo || "an unrecorded place"} at ${tombstone.movedAt || "an unrecorded time"}; it opens read-only`,
+    { workspace: root, movedTo: tombstone.movedTo, remedy: `--workspace ${tombstone.movedTo}` },
+  );
 }
 
 function refuseLegacyWrite(root: string): never {

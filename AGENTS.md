@@ -59,14 +59,20 @@ actually invoking, and `commands` must be asked of *that* one. Which partition i
 with a runnable recheck command per partition, is stated in the platform root's `AGENTS.md`
 section 三 — do not infer it from this repository's working tree.
 
-### 3b. There are no relocation verbs, and old-layout workspaces open read-only
+### 3b. The old relocation verbs are gone, a library moves with `workspace-relocate`, and old-layout workspaces open read-only
 
 `relocation-plan`, `relocation-inspect`, `relocation-vacate`, `relocation-adopt` and
 `relocation-abort` were retired by `TCRN-CROSS-STORY-358` along with
 `packages/core/src/workspace-relocation.ts` and `docs/adr/0003-workspace-relocation.md`.
-Do not look for them in the catalog and do not describe a governed way to move a workspace
-between machines: there is none in this engine today. `git tag attic-2026-09` holds the
-retired code and its 47-case test block.
+Do not look for them in the catalog. `git tag attic-2026-09` holds the retired code and its
+47-case test block.
+
+A library moves with `workspace-relocate --workspace <library> --to <place> --at <instant>`
+(TCRN-CROSS-STORY-470 R3, `packages/core/src/relocate.ts`): the target must not exist or be
+empty and must not contain or sit inside the library; the copy is checked file by file and
+replayed to the same heads; this device's registry then points at it, and the old place keeps
+`TOMBSTONE.json`, still reads, and refuses every write with `LIBRARY_TOMBSTONED` naming the
+new place. Another device learns the new place from its own registry (`library-register`).
 
 Since TCRN-CROSS-STORY-469 this engine writes libraries (`.ether`) only. An old-layout
 workspace (the old control directory, named in `docs/wiki/Glossary.md`) opens read-only
@@ -75,7 +81,8 @@ without writing a byte, whatever address it now sits at, and every write refuses
 `LEGACY_WORKSPACE_READ_ONLY`. The relocation admission that used to gate those reads is gone
 with the old writer; a `relocations` array in `workspace.json` is still parsed and checked,
 and `activeBinding` still names the root the knowledge store is bound to. Moving a library is
-the job of `workspace-relocate` (TCRN-CROSS-STORY-470), not of a ledger.
+the job of `workspace-relocate`, not of a ledger; an old-layout workspace is imported into a
+library with `library-import-legacy` (TCRN-CROSS-STORY-468 R6), never relocated.
 
 ### 4. Verify "did it reach elsewhere" against the authority, and compare full values
 

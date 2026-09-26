@@ -2,14 +2,17 @@
 
 本页解释 Einzbern 的每个名字，并列出旧名到新名的别名表。世界观名只用于品牌与目录；命令、旗标、原因码与字段名保持直白。
 
-## 品牌名
+## README 词汇
 
-| 名字 | 标识 | 直白解释 |
+| 名字 | 标识或所在位置 | 含义与名字来源 |
 | --- | --- | --- |
-| Einzbern | `einzbern` | 工作流引擎：把工单、纪要与知识记成带哈希链的事件，读取时校验并重放。 |
-| Mana Orchestrate | `mana-orchestrate` | 给宿主 Agent 用的 Skill 载荷：告诉 Agent 何时、怎样调用 Einzbern。 |
-| Atelier | `atelier` | 本机网页门户：在浏览器里查看库里的工单、纪要与知识。 |
-| Command Spell | `command-spell` | 内置原则集：随引擎提供、可按项目启用的执行规则。 |
+| Einzbern | `einzbern` | 工作流引擎：把工单、纪要与知识记成带哈希链的事件，读取时校验并重放。名字取自圣杯的本体。 |
+| Mana Orchestrate | `mana-orchestrate` | 给宿主 Agent 用的 Skill 载荷：告诉 Agent 何时、怎样调用 Einzbern。Mana 是大源魔力，在这里指流转的记忆。 |
+| Ether | `.ether/` | 项目的生成物目录。以太是魔力在现实中固定下来的介质。 |
+| Akasha | `.ether/akasha/` | 只追加的事件记录，全部派生态都能从记录重建。名字指根源、一切记录所在之处。 |
+| Crest | `.ether/crest/` | 知识库。名字取自世代继承的魔术刻印。 |
+| Command Spell | `command-spell` | 内置原则集：随引擎提供、可按项目启用的执行规则。令咒是对从者绝对有效的命令。 |
+| Atelier | `atelier` | 本机网页门户：在浏览器里查看库里的工单、纪要与知识。名字取自魔术师的工房。 |
 
 ## 目录名
 
@@ -45,3 +48,14 @@
 <!-- einzbern:alias-table:end -->
 
 工单前缀 `TCRN-CROSS-*` 与全部历史 `externalKey` 不改。
+
+## Command Spell 四原则
+
+Command Spell 默认全部关闭，可按项目逐条启用。完整正文与启用方式见[受管段与 Command Spell](Managed-Sections-and-Command-Spell.md)。
+
+| id | 版本 | 名称 | 大意 |
+| --- | --- | --- | --- |
+| `autonomy` | 1 | 自主运行原则 | 可逆且在请求范围内的工作直接完成；只有破坏性动作或范围变化才停下来确认。 |
+| `batch` | 2 | 批量处理原则 | 一批工作按依赖分包；见红先记录，集中在批末处置，并在全部完成后汇报。 |
+| `unattended-commands` | 1 | 无人值守指令原则 | 用不会弹权限确认的命令；删除改为移到暂存目录，命令从不切换目录。 |
+| `silent-reporting` | 1 | 静默汇报原则 | 工作期间不发进度汇报；全部完成或剩余工作都阻塞时再汇报。 |

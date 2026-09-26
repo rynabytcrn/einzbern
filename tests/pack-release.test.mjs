@@ -1,0 +1,318 @@
+// SPDX-License-Identifier: Apache-2.0
+// TCRN-CROSS-STORY-481 R2, AC1: scripts/pack-release.mjs writes einzbern-<version>.tar.gz and its
+// .sha256. Two packs of one tree are the same bytes. Unpacked into a directory that holds nothing
+// but the archive's files, the engine lists its commands and creates and reads a library with
+// Node.js alone, Atelier reaches the engine beside it, and the hook entry answers nothing on an
+// older Node.js. The manifest states the install-tree digest of the unpacked directory (without
+// manifest.json itself), the skill directory holds SKILL.md and the six references, and the
+// launchers are the templates as they are. scripts/lib/tar.mjs writes the bytes P8's independent
+// rebuild writes, reads them back, and refuses the entries an unpacker must not follow.
+
+import "./helpers/device-home.mjs";
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { gunzipSync } from "node:zlib";
+import test, { after } from "node:test";
+
+import { FRAMEWORK_VERSION, computeInstallTreeDigest } from "../dist/build/packages/core/src/index.js";
+import { NODE_FLOOR } from "../dist/build/packages/core/src/node-floor.js";
+import { buildCanonicalUstar } from "../scripts/lib/p8-workflow-rc.mjs";
+import { TAR_REASON_CODES, readUstar, tarMode, writeUstar } from "../scripts/lib/tar.mjs";
+
+const repositoryRoot = resolve(import.meta.dirname, "..");
+const packScript = join(repositoryRoot, "scripts/pack-release.mjs");
+const RELEASE = `einzbern-${FRAMEWORK_VERSION}`;
+const ARCHIVE = `${RELEASE}.tar.gz`;
+const REFERENCES = Object.freeze(["doctor.md", "install.md", "migrate.md", "restore.md", "uninstall.md", "update.md"]);
+
+const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-pack-release-")));
+after(() => rm(base, { recursive: true, force: true }));
+
+function node(args, options = {}) {
+  return spawnSync(process.execPath, args, { encoding: "utf8", ...options });
+}
+
+function sha256(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function pack(out, extra = []) {
+  return node([packScript, "--out", out, ...extra]);
+}
+
+/** Packs once into <base>/out and unpacks the archive, on its own, into <base>/alone. */
+async function packAndUnpack() {
+  const out = join(base, "out");
+  const run = pack(out);
+  assert.equal(run.status, 0, run.stderr);
+  const report = JSON.parse(run.stdout);
+  const archive = await readFile(join(out, ARCHIVE));
+  const entries = readUstar(gunzipSync(archive));
+  const alone = join(base, "alone");
+  for (const entry of entries) {
+    const target = join(alone, ...entry.path.split("/"));
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, entry.bytes, { mode: entry.mode });
+  }
+  return { out, report, archive, entries, alone, tree: join(alone, RELEASE) };
+}
+
+let packed = null;
+function packedRelease() {
+  packed ??= packAndUnpack();
+  return packed;
+}
+
+/** A clean device, home and working directory under `name`, for a process run from the unpacked release. */
+async function environment(name) {
+  const root = join(base, name);
+  await mkdir(join(root, "home"), { recursive: true });
+  await mkdir(join(root, "work"), { recursive: true });
+  const env = { ...process.env, HOME: join(root, "home"), EINZBERN_HOME: join(root, "home", "einzbern") };
+  for (const key of ["TCRN_WORKFLOW_CLI", "TCRN_PORTAL_LIBRARY", "TCRN_PORTAL_PORT"]) delete env[key];
+  return { root, env, cwd: join(root, "work") };
+}
+
+function lastLine(text) {
+  return text.trim().split("\n").at(-1);
+}
+
+async function filesUnder(root, relativePath = "") {
+  const found = [];
+  for (const entry of await readdir(join(root, relativePath), { withFileTypes: true })) {
+    const path = relativePath === "" ? entry.name : `${relativePath}/${entry.name}`;
+    if (entry.isDirectory()) found.push(...await filesUnder(root, path));
+    else found.push(path);
+  }
+  return found.sort();
+}
+
+test("481-R2: two packs of one tree are the same archive, and its .sha256 states it", async () => {
+  const first = await packedRelease();
+  const second = pack(join(base, "again"));
+  assert.equal(second.status, 0, second.stderr);
+  const again = await readFile(join(base, "again", ARCHIVE));
+  assert.ok(first.archive.equals(again), "the second pack wrote other bytes");
+  assert.equal(first.report.reasonCode, "RELEASE_PACKED");
+  assert.equal(first.report.version, FRAMEWORK_VERSION);
+  assert.equal(first.report.sha256, sha256(first.archive));
+  assert.equal(JSON.parse(second.stdout).sha256, first.report.sha256);
+  for (const out of [first.out, join(base, "again")]) {
+    assert.equal(await readFile(join(out, `${ARCHIVE}.sha256`), "utf8"), `${first.report.sha256}  ${ARCHIVE}\n`);
+  }
+  // The gzip header names no time and no platform.
+  assert.deepEqual([...first.archive.subarray(0, 4)], [0x1f, 0x8b, 8, 0]);
+  assert.deepEqual([...first.archive.subarray(4, 8)], [0, 0, 0, 0]);
+  assert.equal(first.archive[9], 0xff);
+});
+
+test("481-R2: the archive is one einzbern-<version>/ directory in the release layout, with modes by content", async () => {
+  const { entries, archive } = await packedRelease();
+  assert.ok(entries.every((entry) => entry.path.startsWith(`${RELEASE}/`)), "every entry lies in the version directory");
+  const paths = entries.map((entry) => entry.path.slice(RELEASE.length + 1));
+  const readmes = (await readdir(repositoryRoot)).filter((name) => /^README(?:\.[A-Za-z-]+)?\.md$/u.test(name));
+  const template = await filesUnder(join(repositoryRoot, "skill/mana-orchestrate"));
+  const expected = [
+    "scripts/einzbern.mjs", "scripts/einzbern-hook.mjs", "launchers/einzbern.mjs", "launchers/hook.mjs",
+    "atelier/portal.mjs", "atelier/atelier-brand-mark.svg", "atelier/index.html", "atelier/locales.js", "atelier/tokens.css",
+    "skill/mana-orchestrate/SKILL.md", ...template.map((path) => `skill/mana-orchestrate/${path}`),
+    ...readmes, "CHANGELOG.md", "LICENSE", "NOTICE", "manifest.json",
+  ];
+  assert.deepEqual([...paths].sort(), [...new Set(expected)].sort());
+  const byPath = new Map(entries.map((entry) => [entry.path.slice(RELEASE.length + 1), entry]));
+  assert.ok(byPath.get("launchers/einzbern.mjs").bytes.equals(await readFile(join(repositoryRoot, "scripts/einzbern-launcher.mjs"))));
+  assert.ok(byPath.get("launchers/hook.mjs").bytes.equals(await readFile(join(repositoryRoot, "scripts/einzbern-hook-launcher.mjs"))));
+  for (const path of template) {
+    assert.ok(byPath.get(`skill/mana-orchestrate/${path}`).bytes.equals(await readFile(join(repositoryRoot, "skill/mana-orchestrate", path))), path);
+  }
+  for (const entry of entries) {
+    assert.equal(entry.mode, entry.bytes.subarray(0, 2).toString("latin1") === "#!" ? 0o755 : 0o644, entry.path);
+    const text = entry.bytes.toString("utf8");
+    assert.equal(text.includes(repositoryRoot), false, `${entry.path} names the repository's path`);
+    assert.equal(text.includes(homedir()), false, `${entry.path} names the home directory`);
+  }
+  // The headers are the deterministic ones: mtime 0, owner and group 0.
+  const header = gunzipSync(archive).subarray(0, 512);
+  assert.equal(header.subarray(136, 148).toString("latin1"), "00000000000\0");
+  assert.equal(header.subarray(108, 124).toString("latin1"), "0000000\0".repeat(2));
+});
+
+test("481-AC1: unpacked where there is only Node.js, the engine lists its commands, creates a library and reads it", async () => {
+  const { alone, tree } = await packedRelease();
+  assert.equal(existsSync(join(tree, "node_modules")), false);
+  assert.equal(existsSync(join(tree, "dist")), false);
+  const { root, env, cwd } = await environment("ac1");
+  const cli = join(tree, "scripts/einzbern.mjs");
+  const commands = node([cli, "commands"], { cwd, env });
+  assert.equal(commands.status, 0, commands.stderr);
+  const catalog = JSON.parse(commands.stdout);
+  assert.equal(catalog.reasonCode, "CLI_CATALOG_READY");
+  const names = catalog.commands.map((entry) => entry.name);
+  for (const verb of ["init", "status", "engine-update", "skill-render"]) assert.ok(names.includes(verb), verb);
+
+  const library = join(root, "library");
+  const init = node([cli, "init", "--workspace", library, "--at", "2026-09-27T00:00:00Z"], { cwd, env });
+  assert.equal(init.status, 0, init.stderr);
+  const created = JSON.parse(init.stdout);
+  assert.equal(created.reasonCode, "LIBRARY_CREATED");
+  const status = node([cli, "status", "--workspace", library], { cwd, env });
+  assert.equal(status.status, 0, status.stderr);
+  const read = JSON.parse(status.stdout);
+  assert.equal(read.reasonCode, "WORKSPACE_COMMAND_COMPLETED");
+  assert.equal(read.workspaceId, created.libraryId);
+  assert.equal(read.engineVersion, FRAMEWORK_VERSION);
+  // The unpacked directory holds the archive's files and nothing the runs added.
+  assert.deepEqual(await readdir(alone), [RELEASE]);
+});
+
+test("481-R2: the manifest states the install-tree digest of the unpacked directory without itself", async () => {
+  const { tree } = await packedRelease();
+  const manifest = JSON.parse(await readFile(join(tree, "manifest.json"), "utf8"));
+  assert.deepEqual(Object.keys(manifest), ["schemaVersion", "version", "nodeFloor", "installTreeDigest", "files"]);
+  assert.equal(manifest.schemaVersion, "einzbern.release-manifest.v1");
+  assert.equal(manifest.version, FRAMEWORK_VERSION);
+  assert.equal(manifest.nodeFloor, NODE_FLOOR);
+  const aside = join(base, "manifest-aside");
+  await mkdir(aside, { recursive: true });
+  await rename(join(tree, "manifest.json"), join(aside, "manifest.json"));
+  try {
+    const digest = await computeInstallTreeDigest(tree);
+    assert.equal(manifest.installTreeDigest, digest.sha256);
+    assert.deepEqual(manifest.files, JSON.parse(JSON.stringify(digest.entries)));
+  } finally {
+    await rename(join(aside, "manifest.json"), join(tree, "manifest.json"));
+  }
+});
+
+test("481-R2: the skill directory holds SKILL.md for this version and the six references", async () => {
+  const { tree } = await packedRelease();
+  const skill = join(tree, "skill/mana-orchestrate");
+  const markdown = await readFile(join(skill, "SKILL.md"), "utf8");
+  assert.ok(markdown.startsWith("---\nname: mana-orchestrate\n"), "SKILL.md opens with its frontmatter");
+  assert.ok(markdown.includes(`Einzbern ${FRAMEWORK_VERSION}`), "SKILL.md is rendered for this version");
+  assert.deepEqual((await readdir(join(skill, "references"))).sort(), REFERENCES);
+  assert.ok(existsSync(join(skill, "agents/openai.yaml")));
+});
+
+test("481-R2: Atelier runs from the release, serves its static files and reaches the engine beside it", async () => {
+  const { tree } = await packedRelease();
+  const source = await readFile(join(repositoryRoot, "portal/portal.mjs"), "utf8");
+  const served = [...source.matchAll(/join\(portalRoot, "([^"]+)"\)/gu)].map((match) => match[1]);
+  assert.ok(served.length > 0);
+  for (const file of served) assert.ok(existsSync(join(tree, "atelier", file)), `atelier/${file} is missing`);
+  // With no library registered the portal stops at startup, after library-list answered through
+  // ../scripts/einzbern.mjs; an unreachable engine would stop it with PORTAL_CLI_UNAVAILABLE.
+  const { env, cwd } = await environment("atelier");
+  const run = node([join(tree, "atelier/portal.mjs")], { cwd, env, timeout: 60_000 });
+  assert.equal(run.status, 2, run.stderr);
+  assert.equal(run.stdout, "");
+  assert.equal(JSON.parse(lastLine(run.stderr)).reasonCode, "PORTAL_LIBRARY_REGISTRY_EMPTY");
+});
+
+test("481-R2, R4: the hook entry is one file whose runHookEvent answers nothing on an older Node.js", async () => {
+  const { tree } = await packedRelease();
+  const { root, env, cwd } = await environment("hook");
+  const driver = join(root, "drive-hook.mjs");
+  await writeFile(driver, [
+    "const hook = await import(process.argv[2]);",
+    "const answer = await hook.runHookEvent({ event: \"user-prompt-submit\", payload: { prompt: \"heron\" }, libraryPath: process.argv[3] });",
+    "process.stdout.write(JSON.stringify(answer));",
+    "",
+  ].join("\n"));
+  const preload = join(root, "older-node.mjs");
+  await writeFile(preload, "Object.defineProperty(process.versions, \"node\", { value: \"22.12.0\" });\n");
+  const entry = pathToFileURL(join(tree, "scripts/einzbern-hook.mjs")).href;
+  const older = node(["--import", pathToFileURL(preload).href, driver, entry, join(root, "no-library")], { cwd, env });
+  assert.deepEqual([older.status, older.stdout, older.stderr], [0, "null", ""]);
+  // On this Node.js an event the hook does not answer is still nothing.
+  const current = node(["--input-type=module", "-e", `const hook = await import(${JSON.stringify(entry)}); process.stdout.write(JSON.stringify(await hook.runHookEvent({ event: "session-end" })));`], { cwd, env });
+  assert.deepEqual([current.status, current.stdout], [0, "null"], current.stderr);
+});
+
+test("481-R2: a version the built engine does not answer as, and an unknown flag, are refused", async () => {
+  const out = join(base, "refused");
+  const mismatch = pack(out, ["--version", "9.9.9"]);
+  assert.equal(mismatch.status, 1);
+  const refusal = JSON.parse(lastLine(mismatch.stderr));
+  assert.deepEqual([refusal.reasonCode, refusal.required, refusal.actual], ["PACK_VERSION_MISMATCH", FRAMEWORK_VERSION, "9.9.9"]);
+  const usage = node([packScript, "--output", out]);
+  assert.equal(usage.status, 1);
+  assert.equal(JSON.parse(lastLine(usage.stderr)).reasonCode, "PACK_USAGE");
+  assert.equal(existsSync(out), false, "a refused pack writes nothing");
+});
+
+// Rewrites one header of `archive` and its checksum, the way another writer could have made it.
+function rewriteHeader(archive, offset, change) {
+  const copy = Buffer.from(archive);
+  const header = copy.subarray(offset, offset + 512);
+  change(header);
+  header.fill(0x20, 148, 156);
+  const sum = header.reduce((total, byte) => total + byte, 0);
+  Buffer.from(`${sum.toString(8).padStart(6, "0")}\0 `, "latin1").copy(header, 148);
+  return copy;
+}
+
+function refusedWith(operation, reasonCode) {
+  assert.throws(operation, (error) => {
+    assert.equal(error.reasonCode, reasonCode, error.message);
+    assert.ok(TAR_REASON_CODES.includes(error.reasonCode));
+    return true;
+  });
+}
+
+test("481-R2: tar.mjs writes the bytes P8's independent rebuild writes, reads them back, and refuses what must not be unpacked", () => {
+  const records = [
+    { path: "scripts/run.mjs", bytes: Buffer.from("#!/usr/bin/env node\nconsole.log(1);\n") },
+    { path: "README.md", bytes: Buffer.from("# Read me\n") },
+    { path: "docs/é.md", bytes: Buffer.from("accent\n") },
+    { path: "empty.txt", bytes: Buffer.alloc(0) },
+    { path: "docs/block.bin", bytes: Buffer.alloc(512, 7) },
+  ];
+  const archive = writeUstar(records);
+  assert.ok(archive.equals(buildCanonicalUstar(records.map((record) => ({ ...record, mode: tarMode(record.bytes) })))));
+  assert.ok(archive.equals(writeUstar([...records].reverse())), "the order records are passed in does not matter");
+  const read = readUstar(archive);
+  assert.deepEqual(read.map((entry) => entry.path), ["README.md", "docs/block.bin", "docs/é.md", "empty.txt", "scripts/run.mjs"]);
+  for (const entry of read) {
+    const record = records.find((candidate) => candidate.path === entry.path);
+    assert.ok(entry.bytes.equals(record.bytes), entry.path);
+    assert.equal(entry.mode, record.path.endsWith(".mjs") ? 0o755 : 0o644);
+  }
+
+  refusedWith(() => writeUstar([{ path: `${"d/".repeat(50)}x`, bytes: Buffer.alloc(1) }]), "TAR_PATH_TOO_LONG");
+  for (const path of ["../escape", "/absolute", "a//b", "a/./b", "C:/drive", "back\\slash", ""]) {
+    refusedWith(() => writeUstar([{ path, bytes: Buffer.alloc(1) }]), "TAR_PATH_INVALID");
+  }
+  refusedWith(() => writeUstar([{ path: "twice", bytes: Buffer.alloc(1) }, { path: "twice", bytes: Buffer.alloc(2) }]), "TAR_PATH_DUPLICATE");
+  refusedWith(() => writeUstar([{ path: "odd", bytes: Buffer.alloc(1), mode: 0o600 }]), "TAR_RECORD_INVALID");
+
+  // README.md is the first entry: its header is at offset 0.
+  refusedWith(() => readUstar(rewriteHeader(archive, 0, (header) => { header[156] = "2".charCodeAt(0); })), "TAR_ENTRY_UNSUPPORTED");
+  refusedWith(() => readUstar(rewriteHeader(archive, 0, (header) => { header[156] = "x".charCodeAt(0); })), "TAR_ENTRY_UNSUPPORTED");
+  refusedWith(() => readUstar(rewriteHeader(archive, 0, (header) => {
+    header.fill(0, 0, 100);
+    Buffer.from("../README.md").copy(header, 0);
+  })), "TAR_PATH_INVALID");
+  const flipped = Buffer.from(archive);
+  flipped[10] ^= 1;
+  refusedWith(() => readUstar(flipped), "TAR_ARCHIVE_INVALID");
+  refusedWith(() => readUstar(archive.subarray(0, archive.length - 1024)), "TAR_ARCHIVE_INVALID");
+  refusedWith(() => readUstar(archive.subarray(0, archive.length - 512)), "TAR_ARCHIVE_INVALID");
+  // A directory entry, which other writers add, is read past.
+  const withDirectory = Buffer.concat([
+    rewriteHeader(archive.subarray(0, 512), 0, (header) => {
+      header.fill(0, 0, 100);
+      Buffer.from("docs/").copy(header, 0);
+      Buffer.from("00000000000\0").copy(header, 124);
+      header[156] = "5".charCodeAt(0);
+    }),
+    archive,
+  ]);
+  assert.deepEqual(readUstar(withDirectory).map((entry) => entry.path), read.map((entry) => entry.path));
+});

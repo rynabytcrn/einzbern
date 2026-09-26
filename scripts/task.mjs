@@ -46,6 +46,7 @@ import {
 import { delay, PROGRESS_WAIT_MAX_MS, readProgressDelta, summarizeProgress, waitForProgress } from "./lib/incremental-output.mjs";
 import { installNoNetworkGuard } from "./no-network.mjs";
 import { ScopedStripTypesError, stripTypesWithScopedExperimentalWarning } from "./lib/scoped-strip-types.mjs";
+import { TarError, writeUstar } from "./lib/tar.mjs";
 
 installNoNetworkGuard();
 
@@ -663,46 +664,22 @@ async function verifyReleaseTagPreflight() {
 }
 
 
-function octal(value, length) {
-  return `${value.toString(8).padStart(length - 1, "0")}\0`;
-}
-
-function writeTarField(header, offset, length, value) {
-  Buffer.from(value, "utf8").copy(header, offset, 0, length);
-}
-
-function tarEntry(name, content, mode) {
-  assertion(Buffer.byteLength(name) <= 100, "ARCHIVE_PATH_TOO_LONG", name);
-  const header = Buffer.alloc(512, 0);
-  writeTarField(header, 0, 100, name);
-  writeTarField(header, 100, 8, octal(mode, 8));
-  writeTarField(header, 108, 8, octal(0, 8));
-  writeTarField(header, 116, 8, octal(0, 8));
-  writeTarField(header, 124, 12, octal(content.length, 12));
-  writeTarField(header, 136, 12, octal(0, 12));
-  header.fill(0x20, 148, 156);
-  header[156] = "0".charCodeAt(0);
-  writeTarField(header, 257, 6, "ustar\0");
-  writeTarField(header, 263, 2, "00");
-  writeTarField(header, 265, 32, "root");
-  writeTarField(header, 297, 32, "root");
-  const checksum = header.reduce((sum, byte) => sum + byte, 0);
-  writeTarField(header, 148, 8, `${checksum.toString(8).padStart(6, "0")}\0 `);
-  const padding = Buffer.alloc((512 - (content.length % 512)) % 512, 0);
-  return Buffer.concat([header, content, padding]);
-}
-
+// TCRN-CROSS-STORY-481 R2: the source archive is written by scripts/lib/tar.mjs, the writer the
+// release archive uses too: paths in canonical order, mtime 0, owner 0, mode 0755 for a file that
+// starts with "#!" and 0644 otherwise.
 async function archive() {
-  const records = await sourceRecords();
-  records.sort((left, right) => compareCanonicalText(left.path, right.path));
-  const entries = [];
-  for (const record of records) {
-    const content = await readSourceFile(resolve(repositoryRoot, record.path));
-    const executable = content.subarray(0, 2).toString("utf8") === "#!";
-    entries.push(tarEntry(record.path, content, executable ? 0o755 : 0o644));
+  const records = [];
+  for (const record of await sourceRecords()) {
+    records.push({ path: record.path, bytes: await readSourceFile(resolve(repositoryRoot, record.path)) });
   }
-  entries.push(Buffer.alloc(1024, 0));
-  const output = Buffer.concat(entries);
+  let output;
+  try {
+    output = writeUstar(records);
+  } catch (error) {
+    // The reason code this task has always given a path the ustar name field cannot hold.
+    if (error instanceof TarError && error.reasonCode === "TAR_PATH_TOO_LONG") fail("ARCHIVE_PATH_TOO_LONG", error.details.path);
+    throw error;
+  }
   const relativePath = "dist/source/einzbern-source.tar";
   await safeWriteOutput(repositoryRoot, relativePath, output);
   return success("ARCHIVE_VERIFIED", {
@@ -1125,7 +1102,7 @@ const handlers = {
 };
 
 function errorReason(error) {
-  if (error instanceof TaskError || error instanceof LocalCommandError || error instanceof BoundaryError || error instanceof ProtocolProofError || error instanceof DependencyGraphError || error instanceof ScopedStripTypesError) {
+  if (error instanceof TaskError || error instanceof LocalCommandError || error instanceof BoundaryError || error instanceof ProtocolProofError || error instanceof DependencyGraphError || error instanceof ScopedStripTypesError || error instanceof TarError) {
     return error.reasonCode;
   }
   return "TASK_INTERNAL_ERROR";

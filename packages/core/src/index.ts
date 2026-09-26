@@ -855,3 +855,22 @@ export {
   recordAliases,
 } from "./workspace.js";
 export type { KeyAlias, LibraryReplay, LibraryStreamHead, RejectedEvent } from "./workspace.js";
+// TCRN-CROSS-STORY-480 R4, AC5 (TCRN-CROSS-SUB-326, SUB-327): doctor, the eight checks of this device
+// and one project, each green or naming its red; the doctor verb reads it, and every setup apply
+// reports it as its self-check.
+export { DOCTOR_CHECKS, DOCTOR_CHECK_REASON_CODES, DOCTOR_LOCK_TIMEOUT_MS, DOCTOR_REASON_CODES, runDoctor } from "./doctor.js";
+export type { DoctorCheck, DoctorCheckName, DoctorInput, DoctorReasonCode } from "./doctor.js";
+// TCRN-CROSS-STORY-480 R1 to R6 (TCRN-CROSS-SUB-323 to SUB-327): setup, the installation wizard: a
+// plan that writes nothing and the apply of a confirmed plan, in six modes. fresh installs
+// (setup-fresh.ts); restore passes eight checks of the library first (setup-restore.ts); update,
+// rollback, repair and uninstall keep an installation that is there (setup-maintain.ts); migrate
+// names what it found from before the rename.
+export { SETUP_MODES, SETUP_REASON_CODES, SetupError, applySetup, detectSetupContext, planSetup } from "./setup.js";
+export type { SetupApplied, SetupContext, SetupMode, SetupOptions, SetupPlan, SetupReasonCode } from "./setup.js";
+export { FRESH_ENGINE_TREE } from "./setup-fresh.js";
+export { RESTORE_CHECKS, RESTORE_REASON_CODES, RestoreError, verifyRestore } from "./setup-restore.js";
+export type { RestoreCheck, RestoreReasonCode, RestoreVerification } from "./setup-restore.js";
+export { RELEASE_REASON_CODES, ReleaseSourceError } from "./setup-maintain.js";
+export type { ReleaseReasonCode } from "./setup-maintain.js";
+// The launcher a host's hook runs, which the setup self-check runs the way a host does.
+export { hookLauncherPath } from "./host-hooks.js";

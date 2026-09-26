@@ -1,11 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 
+// Every verb runs here with no flags, so this process never reaches the real device directory or
+// home: doctor, which reads both, runs against temporary ones (TCRN-CROSS-STORY-480).
+import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import Ajv2020 from "ajv/dist/2020.js";
 
 import { COMMAND_CATALOG, assertCatalogCategoriesExclusive, runCli } from "../dist/build/packages/cli/src/index.js";
+
+const guardHome = mkdtempSync(join(tmpdir(), "einzbern-catalog-guard-home-"));
+process.env.HOME = guardHome;
+process.env.USERPROFILE = guardHome;
+process.once("exit", () => rmSync(guardHome, { recursive: true, force: true }));
 
 async function invoke(args) {
   let output = "";
@@ -53,8 +64,9 @@ test("unknown verbs fail closed and every cataloged verb dispatches", async () =
     const outcome = await invoke([entry.name]);
     // `commands` and the read-only vocabulary surface are zero-argument verbs.
     // library-list lists this device's registry, empty or not (TCRN-CROSS-STORY-470 R1), and
-    // engine-list its engine versions, none or some (TCRN-CROSS-STORY-471 R2).
-    if (entry.name === "commands" || entry.name === "engine-list" || entry.name === "install-manifest" || entry.name === "library-list" || entry.name === "machine-settings-catalog" || entry.name === "vocabulary") {
+    // engine-list its engine versions, none or some (TCRN-CROSS-STORY-471 R2). doctor checks this
+    // device with the current directory as the project (TCRN-CROSS-STORY-480 R4).
+    if (entry.name === "commands" || entry.name === "doctor" || entry.name === "engine-list" || entry.name === "install-manifest" || entry.name === "library-list" || entry.name === "machine-settings-catalog" || entry.name === "vocabulary") {
       assert.equal(outcome.ok, true, `${entry.name} resolves with no flags`);
       continue;
     }
@@ -327,4 +339,20 @@ test("STORY-483 R2: rule-list reads; rule-enable and rule-disable write, take --
   const verbs = ["agents-render", "rule-disable", "rule-enable", "rule-list", "rule-resolve"];
   assert.equal(verbs.every((name) => entry(name) !== undefined), true);
   assert.equal(verbs.some((name) => entry(name).flags.some((flag) => flag.name === "workspace")), false);
+});
+
+test("STORY-480: setup writes and takes the wizard's flags; doctor reads and takes --project alone", () => {
+  const entry = (name) => COMMAND_CATALOG.find((candidate) => candidate.name === name);
+  const flags = (name) => entry(name).flags.map((flag) => [flag.name, flag.required, flag.valueKind]);
+  assert.equal(entry("setup").mutates, true);
+  assert.deepEqual(flags("setup"), [
+    ["mode", true, "string"], ["project", true, "string"], ["at", true, "instant"], ["artifacts", false, "string"],
+    ["cloud", false, "boolean"], ["restore", false, "string"], ["language", false, "string"], ["navigation", false, "boolean"],
+    ["archive", false, "string"], ["rollback", false, "boolean"], ["managed-sections", false, "string"], ["mapping", false, "string"],
+    ["yes", false, "boolean"],
+  ]);
+  assert.equal(entry("doctor").mutates, false);
+  assert.deepEqual(flags("doctor"), [["project", false, "string"]]);
+  // Neither takes --workspace: the project's library is the one this device's registry names.
+  assert.equal(["setup", "doctor"].some((name) => entry(name).flags.some((flag) => flag.name === "workspace")), false);
 });

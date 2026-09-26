@@ -16,6 +16,16 @@ only when it is unclear which project), and `--at <UTC>`, the current instant wr
 - Einzbern already runs here and the user wants a newer engine, a repair, or a rollback:
   `update.md`.
 
+## Before the plan: an engine on this device
+
+The wizard installs from the engine that is current on this device. When
+`<device directory>/engine/einzbern.mjs` does not exist, or a plan reports the blocker
+`SETUP_ENGINE_NOT_INSTALLED`, put an engine there first with this skill's fetch step:
+`node <skill directory>/scripts/install.mjs --archive <local archive>` installs a release archive
+the user already has and fetches nothing, and `--version <version>` downloads that release. The
+download is the only network use of the whole installation, so ask the user before it. The step
+answers `INSTALL_ENGINE_READY`; then plan as below.
+
 ## Questions (one screen)
 
 Ask the whole list at once, in one message. The list is the same on both hosts: Claude Code asks
@@ -30,24 +40,30 @@ never ask again for an answer the user already gave, and never guess an answer.
 2. Cloud drive. Is the library's folder synced by a cloud drive? The plan suggests an answer from
    the location. Flag: `--cloud true` or `--cloud false`.
 3. Language. The language of the text Einzbern writes into the project's instruction files, as a
-   language tag such as `en` or `zh`. Flag: `--language <tag>`.
+   language tag the plan lists among the question's choices, such as `en` or `zh-CN`.
+   Flag: `--language <tag>`.
 4. Navigation section. Add a short section that points agents to Einzbern in the project's
-   instruction files? If not, the section is left out; the skill and the hooks are installed
-   either way. Flag: `--navigation true` or `--navigation false`.
+   instruction files? If not, the section is left out and the hooks point agents to Einzbern
+   instead; the skill and the hooks are installed either way. Flag: `--navigation true` or
+   `--navigation false`.
 
 ## Plan, final confirmation, apply
 
 1. Plan. Run `setup --mode fresh --project <dir> --at <UTC>`, with a flag for each answer already
    known and without `--yes`. It writes nothing and returns `SETUP_PLAN_READY`: the decided
-   answers, the open questions, and the files it would write.
+   answers, the open questions, the files it would write, the originals it would back up first,
+   and any blockers. A plan with blockers is refused on apply (`SETUP_BLOCKED`): show each blocker
+   and resolve it before going on.
 2. Ask the open questions on one screen, then plan again with the answers until none is open.
 3. Final confirmation. Show the decided answers and every file the plan would write, as the plan
    lists them, and ask once whether to apply. Continue only on a clear yes; a changed answer goes
    back to step 2.
 4. Apply. Run the same command with `--yes true`. It returns `SETUP_APPLIED`: the files written,
    the backup directory, and `selfCheck`.
-5. Report the files written, the backup directory, and the eight checks in `selfCheck`. Handle
-   any check that is not ok with `doctor.md`.
+5. Report the files written, the backup directory, and the self-check: the eight checks in
+   `selfCheck.checks`, and what the hook added when it ran once with the project's name as the
+   prompt (`selfCheck.injected`; nothing is added until the library holds something that matches).
+   Handle any check that is not ok with `doctor.md`.
 
 ## Flags
 

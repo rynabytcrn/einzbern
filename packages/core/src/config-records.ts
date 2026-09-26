@@ -14,6 +14,7 @@
 import { ProtocolError, canonicalByteLength, canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
 import type { JsonValue } from "../../protocol/src/index.js";
 import { buildEventPayload } from "./actor-attestation.js";
+import { checkGateRecordValue } from "./gates-config.js";
 import { checkManagedSectionRecordValue } from "./managed-sections.js";
 import { appendEvents, projectConfiguration, withWorkspaceWriteLock } from "./workspace.js";
 import type { MutationDelta, WorkspaceMutationOptions, WorkspaceState } from "./workspace.js";
@@ -79,8 +80,8 @@ const CONFIG_RECORD_VALUE_CHECKS: Readonly<Record<ConfigRecordCollection, Config
   // TCRN-CROSS-STORY-484: a custom variable (SUB-340).
   variable: commonShapeOnly,
 
-  // TCRN-CROSS-STORY-485: a gate declaration (SUB-343).
-  gate: commonShapeOnly,
+  // TCRN-CROSS-STORY-485: a gate declaration, keyed by the gate's name (SUB-343, gates-config.ts).
+  gate: checkGateRecordValue,
 });
 
 /** The collections of the closed table, sorted. */

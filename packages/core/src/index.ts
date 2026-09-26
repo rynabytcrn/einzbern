@@ -574,6 +574,13 @@ export { formatRecallLine, readRecallCards, recallContextLines, recallInputsFrom
 // the library's crest and this user's (readRecallCards above), and a read verb names its store.
 export { knowledgeHintFor, readKnowledgeHintCards } from "./knowledge-hint.js";
 export type { KnowledgeHint } from "./knowledge-hint.js";
+// TCRN-CROSS-STORY-485 R1 to R4: gate declarations in the library, the gates a change needs, running
+// them into this device's cache, and the check a Story passes on its way to done.
+export { listGates, removeGate, setGate } from "./gates-config.js";
+export { planGates } from "./gates-plan.js";
+export { runGates } from "./gates-run.js";
+export { assertDoneGates } from "./gates-done.js";
+export type { DoneGatesVerdict } from "./gates-done.js";
 export {
   probeHost,
 } from "./host-probe.js";

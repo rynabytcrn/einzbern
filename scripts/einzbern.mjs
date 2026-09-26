@@ -19,10 +19,12 @@ try {
   // engine has (TCRN-CROSS-STORY-471 R1). A Story refused for a missing goal or acceptance names
   // the field (TCRN-CROSS-STORY-473 R2). A knowledge write refused for its budget names the body
   // bytes it would reach and the limit, and one refused as a possible conflict the cards it
-  // conflicts with (TCRN-CROSS-STORY-476, TCRN-CROSS-SUB-311).
-  const stringDetails = ["required", "actual", "supported", "layout", "streamId", "sequence", "eventId", "break", "segment", "line", "deviceId", "file", "timeoutMs", "remedy", "movedTo", "target", "field"];
+  // conflicts with (TCRN-CROSS-STORY-476, TCRN-CROSS-SUB-311). A Story refused at done names every
+  // red required gate, the Stories held back and the run and tree it was judged on
+  // (TCRN-CROSS-STORY-485 R4, TCRN-CROSS-SUB-345).
+  const stringDetails = ["required", "actual", "supported", "layout", "streamId", "sequence", "eventId", "break", "segment", "line", "deviceId", "file", "timeoutMs", "remedy", "movedTo", "target", "field", "runId", "treeDigest"];
   const numberDetails = ["bodyBytes", "limit"];
-  const listDetails = ["allowedValues", "conflicts"];
+  const listDetails = ["allowedValues", "conflicts", "reds", "stories"];
   const details = error?.details !== null && typeof error?.details === "object"
     ? Object.fromEntries(Object.entries(error.details).filter(([key, value]) =>
       (stringDetails.includes(key) && typeof value === "string") ||

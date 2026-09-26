@@ -246,6 +246,25 @@ test("STORY-476 R1, R5: knowledge-create's lifecycle is optional, the candidate 
   }
 });
 
+test("STORY-485 R1 to R4: the gates verbs are cataloged, and work-transition and work-batch take --project", () => {
+  const entry = (name) => COMMAND_CATALOG.find((candidate) => candidate.name === name);
+  const shape = (name) => [entry(name).mutates, entry(name).flags.filter((flag) => flag.required).map((flag) => flag.name).sort()];
+  assert.deepEqual(shape("gates-config-list"), [false, []]);
+  assert.deepEqual(shape("gates-config-set"), [true, ["at", "name"]]);
+  assert.deepEqual(shape("gates-config-remove"), [true, ["at", "name"]]);
+  assert.deepEqual(shape("gates-plan"), [false, []]);
+  assert.deepEqual(shape("gates-run"), [true, ["at"]], "gates-run starts the gates' processes and records the run");
+  const flagsOf = (name) => new Map(entry(name).flags.map((flag) => [flag.name, flag]));
+  assert.deepEqual(["command", "root", "covers", "required", "enabled", "release-only"].map((name) => flagsOf("gates-config-set").get(name)?.valueKind),
+    ["string", "string", "list", "boolean", "boolean", "boolean"]);
+  for (const verb of ["gates-plan", "gates-run"]) {
+    assert.deepEqual(["project", "base", "release"].map((name) => flagsOf(verb).get(name)?.valueKind), ["string", "string", "boolean"], verb);
+  }
+  for (const verb of ["work-transition", "work-batch"]) {
+    assert.equal(flagsOf(verb).get("project")?.required, false, `${verb} --project`);
+  }
+});
+
 test("STORY-479 R1: skill-render writes the skill directory into --out, for this engine's version or --version", () => {
   const entry = COMMAND_CATALOG.find((candidate) => candidate.name === "skill-render");
   assert.ok(entry !== undefined, "skill-render is cataloged");

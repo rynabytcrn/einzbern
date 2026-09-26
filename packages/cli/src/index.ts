@@ -64,6 +64,12 @@ import {
   knowledgeHintFor,
   readKnowledgeHintCards,
   readRecallCards,
+  assertDoneGates,
+  listGates,
+  planGates,
+  removeGate,
+  runGates,
+  setGate,
   languageProviderFromBundle,
   parseLanguageBundle,
   RECALL_DEFAULT_TAU,
@@ -116,6 +122,7 @@ import {
 } from "../../core/src/index.js";
 import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider, StoryFields, WorkRelationsInput } from "../../core/src/index.js";
 import type {
+  DoneGatesVerdict,
   KnowledgeCategory,
   KnowledgeFreshnessState,
   KnowledgeHint,
@@ -789,6 +796,83 @@ function storeScopeOption(value: string | undefined): { readonly scope?: Knowled
   return { scope: value as KnowledgeStoreScope };
 }
 
+// TCRN-CROSS-STORY-485 R1 (TCRN-CROSS-SUB-345): a gate's command is its argv, given as one JSON array
+// of strings; the engine checks every argument when the gate is declared.
+function gateCommandValue(value: string): unknown {
+  try {
+    return JSON.parse(value);
+  } catch {
+    fail("CLI_ARGUMENT_MALFORMED", "command is a JSON array of strings: the gate's argv, run with no shell");
+  }
+}
+
+// A boolean flag a caller may leave out, so a gate declared again keeps what it said before.
+function optionalBoolean(value: string | undefined, name: string): boolean | undefined {
+  return value === undefined ? undefined : booleanValue(value, name);
+}
+
+// TCRN-CROSS-STORY-485 R2, R4: the project a library's gate roots are relative to. --project names
+// it; left out, it is the project this device's registry holds for the library: the one the current
+// directory resolves to when that is this library, or else the only project registered for it.
+async function gatesProjectRoot(libraryId: string, project: string | undefined): Promise<string> {
+  if (project !== undefined) return resolve(project);
+  let here: Awaited<ReturnType<typeof resolveLibrary>> | null = null;
+  try {
+    here = await resolveLibrary(process.cwd());
+  } catch (error) {
+    if (typeof (error as { readonly reasonCode?: unknown }).reasonCode !== "string") throw error;
+  }
+  if (here !== null && here.libraryId === libraryId) return here.entry.projectPath;
+  const registered = (await readRegistry()).entries.filter((entry) => entry.libraryId === libraryId);
+  if (registered.length === 1) return registered[0]!.projectPath;
+  throw new WorkflowCliError(
+    "GATES_PROJECT_UNKNOWN",
+    registered.length === 0
+      ? `no project is registered for library ${libraryId} on this device, so the gates have no root to run in`
+      : `library ${libraryId} is registered for ${registered.length} projects on this device`,
+    { remedy: "pass --project with the project directory the gate roots are relative to" },
+  );
+}
+
+// TCRN-CROSS-STORY-485 R4 (TCRN-CROSS-SUB-345): before a Story goes to done, the required gates of its
+// change must be green on the tree as it is (gates-done.ts). The records going to done are judged
+// against the library as it stands before the write, and a Story the same batch creates counts as
+// one; a project is looked up only when a Story is among them and the library declares an enabled
+// gate, so a library with no gates never needs one.
+async function doneGates(
+  state: Awaited<ReturnType<typeof materializeWorkspace>>,
+  workIds: readonly string[],
+  created: readonly { readonly id: string; readonly kind: string }[],
+  project: string | undefined,
+): Promise<DoneGatesVerdict> {
+  const known = new Set(state.work.map((record) => record.id));
+  const createdStories = created
+    .filter((entry) => entry.kind === "Story" && !known.has(entry.id))
+    .map((entry) => ({ id: entry.id, kind: "Story" }) as unknown as WorkRecord);
+  const work = [...state.work, ...createdStories];
+  const gated = workIds.some((id) => work.some((record) => record.id === id && record.kind === "Story")) &&
+    listGates(state).some((gate) => gate.enabled);
+  return assertDoneGates({
+    projectRoot: gated ? await gatesProjectRoot(state.metadata.workspaceId, project) : "",
+    library: { configRecords: state.configRecords, metadata: state.metadata, work },
+    workIds,
+  });
+}
+
+// The records a work-batch document creates, with their kinds, by the id their external key derives.
+function batchCreatedKinds(document: unknown): readonly { readonly id: string; readonly kind: string }[] {
+  const members = (document as { readonly members?: unknown } | null)?.members;
+  if (!Array.isArray(members)) return [];
+  const created: { readonly id: string; readonly kind: string }[] = [];
+  for (const member of members as readonly unknown[]) {
+    if (member === null || typeof member !== "object") continue;
+    const entry = member as Readonly<Record<string, unknown>>;
+    if (entry.verb !== "work-create" || typeof entry.externalKey !== "string" || entry.externalKey.length === 0 || typeof entry.kind !== "string") continue;
+    created.push({ id: deriveStableId("work", canonicalExternalKey(entry.externalKey)), kind: entry.kind });
+  }
+  return created;
+}
+
 // TCRN-CROSS-STORY-467 R1: every write receipt echoes the ids it wrote beside the version
 // and head, so no separate read-back ceremony is needed. Read verbs carry no ids.
 function writtenIdsField(): { readonly ids?: readonly string[] } {
@@ -862,6 +946,13 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "engine-update", availability: "cli", mutates: true, flags: [{ name: "from", required: true, valueKind: "string" }, { name: "sha256", required: true, valueKind: "string" }, { name: "version", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
   { name: "event-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "export", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
+  // TCRN-CROSS-STORY-485 R1 to R3: gate declarations (one configuration record per gate), the plan a
+  // change needs, and running it into this device's cache. gates-run starts the gates' processes.
+  { name: "gates-config-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
+  { name: "gates-config-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "gates-config-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "command", required: false, valueKind: "string" }, { name: "root", required: false, valueKind: "string" }, { name: "covers", required: false, valueKind: "list" }, { name: "required", required: false, valueKind: "boolean" }, { name: "enabled", required: false, valueKind: "boolean" }, { name: "release-only", required: false, valueKind: "boolean" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "gates-plan", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "base", required: false, valueKind: "string" }, { name: "release", required: false, valueKind: "boolean" }] },
+  { name: "gates-run", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "base", required: false, valueKind: "string" }, { name: "release", required: false, valueKind: "boolean" }] },
   { name: "host-probe", availability: "cli", mutates: false, flags: [{ name: "host", required: true, valueKind: "string" }, { name: "model", required: true, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "init", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-name", required: false, valueKind: "string" }, { name: "git-remote", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "cloud-hosted", required: false, valueKind: "boolean" }] },
   { name: "install-manifest", availability: "cli", mutates: false, flags: [] },
@@ -928,13 +1019,15 @@ export const COMMAND_CATALOG = Object.freeze([
   // TCRN-CROSS-STORY-472 R2, R4: the four stored relations and decided-in; --decided-by is the older
   // name of --decided-in. TCRN-CROSS-STORY-473 R2: a Story's goal, acceptance and body.
   { name: "work-annotate", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "goal", required: false, valueKind: "string" }, { name: "acceptance", required: false, valueKind: "string" }, { name: "body", required: false, valueKind: "string" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "verify", required: false, valueKind: "string" }, { name: "result", required: false, valueKind: "json" }, { name: "sprint", required: false, valueKind: "string" }, { name: "title", required: false, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "work-batch", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "from-file", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "work-batch", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "from-file", required: true, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-id", required: true, valueKind: "string" }, { name: "external-key", required: true, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "status", required: false, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "goal", required: false, valueKind: "string" }, { name: "acceptance", required: false, valueKind: "string" }, { name: "body", required: false, valueKind: "string" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "template-receipt", required: false, valueKind: "json" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-delete", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-draft", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string" }] },
   { name: "work-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string" }, { name: "sprint", required: false, valueKind: "string" }, { name: "relation", required: false, valueKind: "string" }, { name: "search", required: false, valueKind: "string" }, { name: "scope-bytes", required: false, valueKind: "integer" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "work-show", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: false, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }] },
-  { name: "work-transition", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "status", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
+  // TCRN-CROSS-STORY-485 R4: work-transition and work-batch take --project, the project the gates of a
+  // Story going to done run in.
+  { name: "work-transition", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "status", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-470 R3: move a library; the old place keeps a tombstone and refuses writes.
   { name: "workspace-relocate", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "to", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "cloud-hosted", required: false, valueKind: "boolean" }] },
 ] as const);
@@ -2122,7 +2215,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   if (command === "work-batch") {
     // STORY-300 slice 3. --from-file rather than an inline argument because a batch is
     // ordinarily generated, and because an argv-sized batch would defeat the point.
-    const values = parseArguments(rest, [...shared, "from-file", "actor"]);
+    // TCRN-CROSS-STORY-485 R4: --project names the project the gates run in, for a Story the batch
+    // takes to done (the registry's project for the library when left out).
+    const values = parseArguments(rest, [...shared, "from-file", "project", "actor"]);
     required(values, [...requiredShared, "from-file"]);
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
@@ -2135,33 +2230,60 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     }
     const members = Array.isArray((document as { members?: unknown }).members) ? (document as { members: unknown[] }).members.length : 0;
     const doneIds = batchDoneWorkIds(document);
-    const state = await withWriteLock(workspace, at, async () => applyWorkBatch(workspace, document, {
-      occurredAt: at,
-      ...(values.actor ? { actorId: values.actor } : {}),
-    }));
+    const { state, gates } = await withWriteLock(workspace, at, async () => {
+      // TCRN-CROSS-STORY-485 R4: a Story the batch takes to done passes the gates first; a refusal
+      // writes no member.
+      const verdict: DoneGatesVerdict | null = doneIds.length === 0
+        ? null
+        : await doneGates(await materializeWorkspace(workspace), doneIds, batchCreatedKinds(document), values.project);
+      return {
+        state: await applyWorkBatch(workspace, document, {
+          occurredAt: at,
+          ...(values.actor ? { actorId: values.actor } : {}),
+        }),
+        gates: verdict,
+      };
+    });
     // TCRN-CROSS-STORY-476 R4: every member that took a record to done answers its knowledge hint.
     const hints = await knowledgeHints(workspace, at, state, doneIds.map((workId) => ({ workId })));
     // One attestation for the batch, not one per member: the specification defines the
     // receipt per mutation, and a batch is one mutation.
-    writeState(io, state, workBatchReceipt(state, members), undefined,
-      hints.length === 0 ? {} : { knowledgeHints: doneIds.map((workId, index) => ({ workId, ...hints[index] })) });
+    writeState(io, state, workBatchReceipt(state, members), undefined, {
+      ...(hints.length === 0 ? {} : { knowledgeHints: doneIds.map((workId, index) => ({ workId, ...hints[index] })) }),
+      ...(gates === null ? {} : { doneGates: gates }),
+    });
     return;
   }
   if (command === "work-transition") {
-    const values = parseArguments(rest, [...shared, "id", "status", "summary", "actor"]);
+    // TCRN-CROSS-STORY-485 R4: --project names the project the gates run in, for a Story going to
+    // done (the registry's project for the library when left out).
+    const values = parseArguments(rest, [...shared, "id", "status", "summary", "project", "actor"]);
     required(values, [...requiredShared, "id", "status"]);
     if (values.status !== undefined && !isWorkStatus(values.status)) fail("CLI_ARGUMENT_MALFORMED", `status=${values.status}`);
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
-    const state = await withWriteLock(workspace, at, async () => transitionWork(workspace, {
-      occurredAt: at, id: values.id ?? "", status: values.status as WorkStatus,
-      ...(values.summary !== undefined ? { summary: values.summary } : {}),
-      ...(values.actor ? { actorId: values.actor } : {}),
-    }));
+    const { state, gates } = await withWriteLock(workspace, at, async () => {
+      // TCRN-CROSS-STORY-485 R4: a Story goes to done only when the required gates of its change
+      // are green on the tree as it is; the refusal names every red required gate.
+      const verdict: DoneGatesVerdict | null = values.status === "done"
+        ? await doneGates(await materializeWorkspace(workspace), [values.id ?? ""], [], values.project)
+        : null;
+      return {
+        state: await transitionWork(workspace, {
+          occurredAt: at, id: values.id ?? "", status: values.status as WorkStatus,
+          ...(values.summary !== undefined ? { summary: values.summary } : {}),
+          ...(values.actor ? { actorId: values.actor } : {}),
+        }),
+        gates: verdict,
+      };
+    });
     const transitioned = state.work.find((entry) => entry.id === (values.id ?? ""))!;
     // TCRN-CROSS-STORY-476 R4: a record that reached done asks whether there is knowledge to extract.
     const [hint] = values.status === "done" ? await knowledgeHints(workspace, at, state, [{ workId: transitioned.id }]) : [];
-    writeState(io, state, workSummary(transitioned), undefined, hint === undefined ? {} : { knowledgeHint: hint });
+    writeState(io, state, workSummary(transitioned), undefined, {
+      ...(hint === undefined ? {} : { knowledgeHint: hint }),
+      ...(gates === null ? {} : { doneGates: gates }),
+    });
     return;
   }
   if (command === "work-annotate") {
@@ -2404,6 +2526,109 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       kind: "minutes",
       record,
       decides: workRelations(state, record.id).reverse.decides,
+    }));
+    return;
+  }
+  // TCRN-CROSS-STORY-485 R1 (MIN-227 D4; TCRN-CROSS-SUB-345): the gates a library declares, one
+  // configuration record each, keyed by name: what runs (an argv), in which directory of the project,
+  // which paths under it it covers, and whether it is required, enabled and release-only.
+  if (command === "gates-config-list") {
+    const values = parseArguments(rest, ["workspace"]);
+    required(values, ["workspace"]);
+    const state = await validateWorkspace(values.workspace ?? "");
+    io.write(canonicalJson(paginate(state, "gate", listGates(state), values)));
+    return;
+  }
+  // Declaring a gate that exists keeps whatever the flags leave out; a new gate runs in the project
+  // itself (--root .), covers every path (--covers **), and is required and enabled, not release-only.
+  if (command === "gates-config-set") {
+    const values = parseArguments(rest, [...shared, "name", "command", "root", "covers", "required", "enabled", "release-only", "actor"]);
+    required(values, [...requiredShared, "name"]);
+    const workspace = values.workspace ?? "";
+    const at = values.at ?? "";
+    const name = values.name ?? "";
+    const commandValue = values.command === undefined ? undefined : gateCommandValue(values.command);
+    const requiredValue = optionalBoolean(values.required, "required");
+    const enabledValue = optionalBoolean(values.enabled, "enabled");
+    const releaseOnlyValue = optionalBoolean(values["release-only"], "release-only");
+    const state = await withWriteLock(workspace, at, async () => {
+      const existing = listGates(await materializeWorkspace(workspace)).find((gate) => gate.name === name);
+      if (commandValue === undefined && existing === undefined) fail("CLI_ARGUMENT_MISSING", "command");
+      return setGate(workspace, {
+        occurredAt: at,
+        name,
+        gate: {
+          command: commandValue ?? existing?.command,
+          root: values.root ?? existing?.root ?? ".",
+          covers: values.covers === undefined ? existing?.covers ?? ["**"] : listValue(values.covers),
+          required: requiredValue ?? existing?.required ?? true,
+          enabled: enabledValue ?? existing?.enabled ?? true,
+          releaseOnly: releaseOnlyValue ?? existing?.releaseOnly ?? false,
+        },
+        ...(values.actor ? { actorId: values.actor } : {}),
+      });
+    });
+    writeState(io, state, undefined, undefined, { gate: listGates(state).find((gate) => gate.name === name) ?? null });
+    return;
+  }
+  if (command === "gates-config-remove") {
+    const values = parseArguments(rest, [...shared, "name", "actor"]);
+    required(values, [...requiredShared, "name"]);
+    const workspace = values.workspace ?? "";
+    const at = values.at ?? "";
+    const state = await withWriteLock(workspace, at, async () => removeGate(workspace, {
+      occurredAt: at, name: values.name ?? "",
+      ...(values.actor ? { actorId: values.actor } : {}),
+    }));
+    writeState(io, state, undefined, undefined, { removed: values.name ?? "" });
+    return;
+  }
+  // TCRN-CROSS-STORY-485 R2: the gates a change needs -- every enabled gate whose covers match a file
+  // changed under its root against --base (HEAD when left out), release-only gates left out -- or,
+  // with --release true, every enabled gate. Reading Git is all it does.
+  if (command === "gates-plan") {
+    const values = parseArguments(rest, ["workspace", "project", "base", "release"]);
+    required(values, ["workspace"]);
+    const state = await validateWorkspace(values.workspace ?? "");
+    const plan = await planGates({
+      projectRoot: await gatesProjectRoot(state.metadata.workspaceId, values.project),
+      gates: listGates(state),
+      release: booleanValue(values.release, "release"),
+      ...(values.base === undefined ? {} : { base: values.base }),
+    });
+    io.write(canonicalJson({
+      reasonCode: "GATES_PLAN_READY",
+      workspaceId: state.metadata.workspaceId,
+      version: state.version,
+      headEventHash: state.headEventHash,
+      ...plan,
+    }));
+    return;
+  }
+  // TCRN-CROSS-STORY-485 R3: run the plan's gates, every one of them whatever the ones before it did,
+  // and record the run in this device's cache of the library under the digest of the tree it ran
+  // on. The answer lists every red gate, and the required ones among them apart.
+  if (command === "gates-run") {
+    const values = parseArguments(rest, ["workspace", "at", "project", "base", "release"]);
+    required(values, ["workspace", "at"]);
+    const state = await validateWorkspace(values.workspace ?? "");
+    const plan = await planGates({
+      projectRoot: await gatesProjectRoot(state.metadata.workspaceId, values.project),
+      gates: listGates(state),
+      release: booleanValue(values.release, "release"),
+      ...(values.base === undefined ? {} : { base: values.base }),
+    });
+    const { run, recordPath } = await runGates(plan, { libraryId: state.metadata.workspaceId, at: values.at ?? "" });
+    io.write(canonicalJson({
+      reasonCode: "GATES_RUN_COMPLETED",
+      workspaceId: state.metadata.workspaceId,
+      version: state.version,
+      headEventHash: state.headEventHash,
+      ok: run.reds.length === 0,
+      reds: run.reds,
+      requiredReds: run.gates.filter((gate) => gate.required && !gate.ok).map((gate) => gate.name),
+      run,
+      recordPath,
     }));
     return;
   }

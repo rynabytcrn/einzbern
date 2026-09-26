@@ -416,6 +416,32 @@ work record reaching done (`work-transition`, and each done member of `work-batc
 scorer finds against the record's title and goal or the minutes' summary, in both stores. A
 possible conflict names the cards under `conflicts` on stderr.
 
+Gates are declared per project and chosen by the change (TCRN-CROSS-STORY-485; MIN-227 D4;
+`packages/core/src/gates-config.ts`, `gates-plan.ts`, `gates-run.ts`, `gates-done.ts`). A gate is a
+project-level configuration record of the gate collection, keyed by its name: its command is an
+argv run with no shell, its root the directory of the project it runs in, its covers globs over the
+paths under that root, and it is required, enabled or release-only.
+`gates-config-set --name <name> --command '<JSON argv>'` declares one (`--root`, `--covers`,
+`--required`, `--enabled` and `--release-only` default to `.`, `**`, true, true and false for a new
+gate, and a gate declared again keeps what the flags leave out); `gates-config-list` lists the
+gates and `gates-config-remove` removes one. `gates-plan` names the gates a change needs: every enabled gate
+whose covers match a file changed under its root against `--base` (HEAD by default; staged,
+unstaged, deleted, renamed and untracked files count), release-only gates left out, or with
+`--release true` every enabled gate. `gates-run` takes the same flags and `--at`, runs every
+planned gate one after another whatever the ones before it did, records the run in the device
+directory's `cache/<library>/gate-runs/` with the digest of the tree it ran on, and answers every
+red gate (`reds`, and the required ones as `requiredReds`). Before `work-transition` or
+`work-batch` takes a Story to done, this device's latest run on the tree as it is, under the
+declarations as they are, decides: a project with no enabled gate is not held back, a red
+required gate refuses the transition with `WORK_DONE_GATES_RED` naming every one (`reds`,
+`stories` and `runId` on stderr), and no such run refuses it with `WORK_DONE_GATES_NOT_RUN`
+(remedy `gates-run`); a transition that passes answers `doneGates`, the run that passed it.
+`--project` names the project for `gates-plan`, `gates-run`, `work-transition` and `work-batch`;
+left out, it is the project this device's registry holds for the library, and when the gates
+need a project and none is registered the verb refuses with `GATES_PROJECT_UNKNOWN`. A
+change already committed is planned and run against its fork point with `--base`, since against
+HEAD it has nothing to run.
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

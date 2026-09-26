@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mana Orchestrate"
+  short_description: "Einzbern project memory for Codex and Claude Code"
+  default_prompt: "Use $mana-orchestrate to install Einzbern in this project, or to recall and record its memory."

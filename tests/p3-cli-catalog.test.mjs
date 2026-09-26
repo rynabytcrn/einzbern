@@ -216,3 +216,10 @@ test("STORY-475 R1, R2: minutes-record writes and names its required flags; minu
   assert.equal(entry("minutes-show").mutates, false);
   assert.equal(COMMAND_CATALOG.some((candidate) => candidate.name.startsWith("conference-")), false);
 });
+
+test("STORY-479 R1: skill-render writes the skill directory into --out, for this engine's version or --version", () => {
+  const entry = COMMAND_CATALOG.find((candidate) => candidate.name === "skill-render");
+  assert.ok(entry !== undefined, "skill-render is cataloged");
+  assert.equal(entry.mutates, true, "it writes files");
+  assert.deepEqual(entry.flags.map((flag) => [flag.name, flag.required, flag.valueKind]), [["out", true, "string"], ["version", false, "string"]]);
+});

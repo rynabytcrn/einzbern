@@ -229,6 +229,14 @@ first (`ENGINE_ROLLBACK_UNAVAILABLE` when there is none or it is no longer insta
 `engine-list` shows the versions, the pointer and whether the stable entry is in place. A switch
 rewrites `engine/current` alone, so `settings.json` and `hooks.json` never change. Fetching a
 release is the installer's job; the engine never reaches the network.
+`status` reports `multiDevice` (TCRN-CROSS-STORY-471 R4; MIN-227 D22): every device the library
+knows (its `akasha/` directories), the engine version its stream manifest records (null for a
+device with no committed manifest yet), whether it is this device and whether it is ready, and a
+plain hint naming the devices to upgrade first (`先把以下设备升级到 ≥<version> 再写入新格式：…`)
+while a device's version is unknown or below the one required: the library's `minEngineVersion`
+while the format stays, the writing engine's version for a newer format. A write that raises a
+library's format must check the same readiness first and refuse with `LIBRARY_UPGRADE_NOT_READY`
+(`packages/core/spec/ether-library-v1.md`); this engine has no such write yet.
 
 ## 1.2.1 — patch candidate
 

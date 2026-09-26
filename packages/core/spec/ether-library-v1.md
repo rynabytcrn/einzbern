@@ -61,6 +61,27 @@ and leaves it byte for byte as it was:
 A stream manifest whose `formatVersion` is newer than the engine reads is refused the same
 way and names its device (`deviceId`).
 
+## Upgrading every device first
+
+A library changes format only after every device that writes it can read the new one
+(TCRN-CROSS-STORY-471 R4). The devices a library knows are its `akasha/` directories; each
+stream manifest records the engine version that last wrote it, and a directory without a
+committed manifest is a device whose version is unknown. `libraryUpgradeReadiness(library,
+{targetFormat})` (`packages/core/src/akasha.ts`, judged by `upgradeReadiness` in
+`packages/core/src/format-version.ts`) calls a device ready when its version is known and at
+least the one required: the library's `minEngineVersion` while the format stays, and the
+writing engine's own version when the target format is newer than the library's. This device
+is always ready, since it runs the writing engine. While a device is not ready the answer
+carries a plain hint: `先把以下设备升级到 ≥<version> 再写入新格式：<device>（<version>）`, with
+`版本未知` for a device whose version is unknown and the device id for one without a name.
+
+Every write that raises a library's `formatVersion` MUST first call it with the new format and
+pass the answer to `assertUpgradeReady`, which refuses with `LIBRARY_UPGRADE_NOT_READY` (the
+hint as its message, `required`) while another device is behind; a write that keeps the format
+is never refused this way. This engine has no such write yet. `status` reports the same
+judgement for the newest format this engine writes as `multiDevice`: `devices` (each with its
+`engineVersion`, `self` and `ready`), `ready` and `hint`.
+
 ## Streams (akasha)
 
 Every device writes only `akasha/<device id>/` (TCRN-CROSS-STORY-468 R2), so no file in a

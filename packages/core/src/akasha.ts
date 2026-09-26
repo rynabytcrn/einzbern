@@ -38,12 +38,14 @@ import {
 import type { EventRecord, JsonValue } from "../../protocol/src/index.js";
 import { writeFileAtomic, isAtomicTemporaryName } from "./atomic-file.js";
 import { ensureDeviceDirectory, lockPath } from "./device-home.js";
+import { readDevice } from "./device-identity.js";
 import type { DeviceIdentity } from "./device-identity.js";
 import type { Library } from "./ether-library.js";
 import { LIBRARY_FORMAT_VERSION } from "./ether-library.js";
 import { withFileLock } from "./file-lock.js";
 import type { FileLockOptions } from "./file-lock.js";
-import { assertLibrarySupported } from "./format-version.js";
+import { assertLibrarySupported, upgradeReadiness } from "./format-version.js";
+import type { DeviceEngine, UpgradeReadiness } from "./format-version.js";
 import { DIRECTORY } from "./names.js";
 import { FRAMEWORK_VERSION } from "./index.js";
 
@@ -332,6 +334,38 @@ export async function readStreamEvents(libraryRoot: string, manifest: StreamMani
     });
   }
   return events;
+}
+
+/**
+ * Every device a library knows, from its akasha/ directories, with the engine version its stream
+ * manifest records; a directory without a committed manifest is a device whose version is unknown
+ * (TCRN-CROSS-STORY-471 R4). Nothing is written.
+ */
+export async function readStreamDevices(libraryRoot: string, options: StreamReadOptions = {}): Promise<readonly DeviceEngine[]> {
+  const devices: DeviceEngine[] = [];
+  for (const deviceId of await listStreamDevices(libraryRoot)) {
+    const manifest = await readStreamManifest(libraryRoot, deviceId, options);
+    devices.push({ deviceId, displayName: manifest?.displayName ?? null, engineVersion: manifest?.engineVersion ?? null });
+  }
+  return devices;
+}
+
+/**
+ * Whether every device of the library runs an engine that may meet the target format, judged for
+ * this engine as the writer (format-version.ts upgradeReadiness). A write that would raise the
+ * library's format calls this and assertUpgradeReady before it writes (TCRN-CROSS-STORY-471 R4).
+ */
+export async function libraryUpgradeReadiness(library: Library, options: { readonly targetFormat?: number; readonly home?: string } = {}): Promise<UpgradeReadiness> {
+  const self = options.home === undefined ? await readDevice() : await readDevice(options.home);
+  return upgradeReadiness({
+    formatVersion: library.manifest.formatVersion,
+    minEngineVersion: library.manifest.minEngineVersion,
+    devices: await readStreamDevices(library.root),
+  }, {
+    engineVersion: FRAMEWORK_VERSION,
+    selfDeviceId: self?.deviceId ?? null,
+    ...(options.targetFormat === undefined ? {} : { targetFormat: options.targetFormat }),
+  });
 }
 
 /** The largest clock any stream manifest on this machine records: the next event's clock is one above it. */

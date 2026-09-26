@@ -103,6 +103,7 @@ import {
   listEngines,
   rollbackEngine,
   updateEngine,
+  libraryUpgradeReadiness,
 } from "../../core/src/index.js";
 import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider } from "../../core/src/index.js";
 import type {
@@ -1227,6 +1228,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const configProjection = state.library === undefined ? null : await configProjectionStatus(state.library.libraryRoot, state.settings);
     // TCRN-CROSS-STORY-470 R3: a relocated library still reads; status says where it went.
     const tombstone = state.library === undefined ? null : await readLibraryTombstone(state.library.libraryRoot);
+    // TCRN-CROSS-STORY-471 R4: every device the library knows, the engine version it last wrote with,
+    // and a hint when one is unknown or too old to meet a new format.
+    const multiDevice = state.library === undefined ? null : await libraryUpgradeReadiness(await openLibrary(state.library.libraryRoot));
     io.write(canonicalJson({
       reasonCode: "WORKSPACE_COMMAND_COMPLETED",
       engineVersion: FRAMEWORK_VERSION,
@@ -1248,6 +1252,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       })),
       rejectedEventCount: state.library?.rejectedEvents.length ?? 0,
       configProjection,
+      multiDevice: multiDevice as unknown as JsonValue,
       ...(tombstone === null ? {} : { relocatedTo: tombstone.movedTo, relocatedAt: tombstone.movedAt }),
       projects: state.projects.filter((entry) => !entry.tombstone).length,
       work: state.work.filter((entry) => !entry.tombstone).length,

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// TCRN-CROSS-STORY-471 R1 (MIN-227 D22): which libraries this engine may open. A library's manifest
+// TCRN-CROSS-STORY-471 R1, R4 (MIN-227 D22): which libraries this engine may open, and when every
+// device is ready for a library to move to a newer format (below). A library's manifest
 // names its format and the lowest engine version that may open it; each stream manifest names the
 // format its writer wrote. An engine refuses a library whose format is newer than the newest it
 // reads (LIBRARY_FORMAT_UNSUPPORTED) or whose minimum engine version is above its own
@@ -25,6 +26,7 @@ export const ENGINE_FORMAT_VERSION = 1 as const;
 export const FORMAT_VERSION_REASON_CODES = Object.freeze([
   "ENGINE_TOO_OLD",
   "LIBRARY_FORMAT_UNSUPPORTED",
+  "LIBRARY_UPGRADE_NOT_READY",
 ] as const);
 export type FormatVersionReasonCode = typeof FORMAT_VERSION_REASON_CODES[number];
 
@@ -148,4 +150,89 @@ export function librarySupportRefusal(fields: LibraryVersionFields, options: Eng
 export function assertLibrarySupported(fields: LibraryVersionFields, options: EngineSupportOptions): void {
   const refusal = librarySupportRefusal(fields, options);
   if (refusal !== null) throw refusal;
+}
+
+// TCRN-CROSS-STORY-471 R4 (MIN-227 D22): every device upgrades before a new format is written. The
+// devices a library knows are the directories under its akasha/, and each stream manifest records
+// the engine version that last wrote it; a directory without a committed manifest is a device whose
+// version is unknown. A device is ready when its version is known and at least the one required:
+// the library's minEngineVersion while the format stays, and the writing engine's own version when
+// the write would raise the format. This device runs the writing engine whatever its stream last
+// recorded, so it is always ready.
+
+export interface DeviceEngine {
+  readonly deviceId: string;
+  readonly displayName: string | null;
+  // The engine version its stream manifest records, or null when it has no committed manifest.
+  readonly engineVersion: string | null;
+}
+
+export interface DeviceReadiness extends DeviceEngine {
+  readonly self: boolean;
+  readonly ready: boolean;
+}
+
+export interface UpgradeReadinessInput {
+  readonly formatVersion: number;
+  readonly minEngineVersion: string;
+  readonly devices: readonly DeviceEngine[];
+}
+
+export interface UpgradeReadinessOptions {
+  // The version of the engine that would write.
+  readonly engineVersion: string;
+  // The format it would write; the newest this engine writes by default.
+  readonly targetFormat?: number;
+  // This device, when it has an identity yet.
+  readonly selfDeviceId?: string | null;
+}
+
+export interface UpgradeReadiness {
+  readonly formatVersion: number;
+  readonly targetFormat: number;
+  // Whether writing the target format raises the library's format.
+  readonly upgradeNeeded: boolean;
+  readonly requiredEngineVersion: string;
+  readonly devices: readonly DeviceReadiness[];
+  readonly ready: boolean;
+  // Plain words naming the devices to upgrade first, or null when every device is ready.
+  readonly hint: string | null;
+}
+
+/** Whether every device a library knows runs an engine that may meet the target format. Pure. */
+export function upgradeReadiness(library: UpgradeReadinessInput, options: UpgradeReadinessOptions): UpgradeReadiness {
+  const targetFormat = options.targetFormat ?? ENGINE_FORMAT_VERSION;
+  const upgradeNeeded = targetFormat > library.formatVersion;
+  const required = upgradeNeeded ? options.engineVersion : library.minEngineVersion;
+  const devices = library.devices.map((device): DeviceReadiness => {
+    const self = options.selfDeviceId !== undefined && options.selfDeviceId !== null && device.deviceId === options.selfDeviceId;
+    const known = device.engineVersion !== null && isEngineVersion(device.engineVersion) && isEngineVersion(required);
+    const ready = self || (known && compareSemver(device.engineVersion as string, required) >= 0);
+    return Object.freeze({ ...device, self, ready });
+  });
+  const behind = devices.filter((device) => !device.ready);
+  const hint = behind.length === 0
+    ? null
+    : `先把以下设备升级到 ≥${required} 再写入新格式：${behind.map((device) => `${device.displayName ?? device.deviceId}（${device.engineVersion ?? "版本未知"}）`).join("、")}`;
+  return Object.freeze({
+    formatVersion: library.formatVersion,
+    targetFormat,
+    upgradeNeeded,
+    requiredEngineVersion: required,
+    devices: Object.freeze(devices),
+    ready: behind.length === 0,
+    hint,
+  });
+}
+
+/**
+ * The refusal every write that raises a library's format makes first: while another device is
+ * behind, LIBRARY_UPGRADE_NOT_READY with the hint. A write that keeps the format is never refused.
+ */
+export function assertUpgradeReady(readiness: UpgradeReadiness): void {
+  if (!readiness.upgradeNeeded || readiness.ready) return;
+  throw new FormatVersionError("LIBRARY_UPGRADE_NOT_READY", readiness.hint ?? "another device is not ready for the new format", {
+    required: readiness.requiredEngineVersion,
+    remedy: "engine-update",
+  });
 }

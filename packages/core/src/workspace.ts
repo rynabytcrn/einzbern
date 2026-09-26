@@ -76,6 +76,8 @@ import {
   validateConferenceRequest,
 } from "./conference.js";
 import { AssignmentGateError, validateGateRecord } from "./assignment-gate.js";
+import { MINUTES_RECORDED_OPERATION, MINUTES_RECORD_VERSION, MinutesError, nextMinutesExternalKey, validateMinutesRecord } from "./minutes.js";
+import type { MinutesRecord } from "./minutes.js";
 import type { ConferenceMinutes, ConferencePosition, ConferenceRequest } from "./conference.js";
 import {
   EMPTY_EXECUTION_CONFIG,
@@ -412,6 +414,10 @@ export interface WorkspaceState {
   readonly conferences: readonly ConferenceRequest[];
   readonly conferencePositions: readonly ConferencePosition[];
   readonly conferenceMinutes: readonly ConferenceMinutes[];
+  // TCRN-CROSS-STORY-475 R1: minutes recorded in one event (minutes.ts), sorted like the other
+  // extension collections. A conference's historical minutes stay in conferenceMinutes; minutesView
+  // reads both.
+  readonly minutes: readonly MinutesRecord[];
   readonly gates: readonly GateRecord[];
   readonly settings: readonly WorkspaceSettingRecord[];
   readonly executionConfig: ExecutionConfigState;
@@ -436,6 +442,7 @@ interface ReplaySeed {
   readonly conferences: readonly ConferenceRequest[];
   readonly conferencePositions: readonly ConferencePosition[];
   readonly conferenceMinutes: readonly ConferenceMinutes[];
+  readonly minutes: readonly MinutesRecord[];
   readonly gates: readonly GateRecord[];
   readonly settings: readonly WorkspaceSettingRecord[];
   readonly executionConfig: ExecutionConfigState;
@@ -476,6 +483,9 @@ const workOperations = new Set(["work.created", "work.updated", "work.deleted", 
 // binaries (they fail closed at the unknown-operation check below); workspaces
 // that never use them stay fully readable, and storageVersion stays 1.
 const conferenceOperations = new Set(["conference.created", "conference.updated", "conference.position.appended", "conference.closed"]);
+// TCRN-CROSS-STORY-475 R1: a minutes record in one event. A chain that uses it is unreadable by a
+// binary predating it, like every additive operation before it.
+const minutesOperations = new Set<string>([MINUTES_RECORDED_OPERATION]);
 const gateOperations = new Set(["gate.created", "gate.updated", "gate.deleted"]);
 const settingsOperations = new Set(["settings.updated", "settings.removed"]);
 const legacyPresetOperation = "execution." + "persona" + "-preset";
@@ -940,7 +950,7 @@ function extensionRecordOrCorrupt<T>(validate: () => T): T {
   try {
     return validate();
   } catch (error) {
-    if (error instanceof ConferenceError || error instanceof AssignmentGateError || error instanceof GateIdentityError || error instanceof SettingsError || error instanceof TemplateAdmissionError) {
+    if (error instanceof ConferenceError || error instanceof AssignmentGateError || error instanceof GateIdentityError || error instanceof SettingsError || error instanceof TemplateAdmissionError || error instanceof MinutesError) {
       fail("WORKSPACE_EVENT_CORRUPT", `${error.reasonCode}:${error.message}`);
     }
     throw error;
@@ -1950,6 +1960,7 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
   const conferences = collection<string, ConferenceRequest>((snapshot?.conferences ?? []).map((record) => [record.id, record]));
   const conferencePositions = collection<string, ConferencePosition>((snapshot?.conferencePositions ?? []).map((record) => [record.id, record]));
   const conferenceMinutes = collection<string, ConferenceMinutes>((snapshot?.conferenceMinutes ?? []).map((record) => [record.id, record]));
+  const minutesRecords = collection<string, MinutesRecord>((snapshot?.minutes ?? []).map((record) => [record.id, record]));
   const gates = collection<string, GateRecord>((snapshot?.gates ?? []).map((record) => [record.id, record]));
   // TCRN-CROSS-INC-389 R2: a replay snapshot taken while a key was live still lists it after the key
   // retires, as a 1.1.0-1.2.0 snapshot listed fitness.windowDays. The device cache only reads a
@@ -2158,13 +2169,30 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
         fail("WORKSPACE_EVENT_CORRUPT", `invalid conference close ${record.id}`);
       }
       assertPinnedExtensionFields(current as unknown as JsonValue, record as unknown as JsonValue, ["status", "revision", "updatedAt"], `conference ${record.id}`);
-      if (conferenceMinutes.has(minutes.id) || minutes.revision !== 1 || minutes.tombstone ||
+      if (conferenceMinutes.has(minutes.id) || minutesRecords.has(minutes.id) || minutes.revision !== 1 || minutes.tombstone ||
         minutes.conferenceId !== record.id || minutes.projectId !== record.projectId) {
         fail("WORKSPACE_EVENT_CORRUPT", `conference minutes ${minutes.id} are not bound to the closing conference`);
       }
       recordExtensionClosureValidation(3);
       conferences.set(record.id, record);
       conferenceMinutes.set(minutes.id, minutes);
+      continue;
+    }
+    if (minutesOperations.has(operation)) {
+      // TCRN-CROSS-STORY-475 R1: one record, written once. Its id (the one its external key derives)
+      // is new to the minutes a conference ever closed too, its project is live, and so is every
+      // work record it links.
+      const record = extensionRecordOrCorrupt(() => validateMinutesRecord(payloadRecord(payload, operation, actorRequired)));
+      requireEventBoundTimestamp(record.recordedAt, event, `minutes ${record.id}`);
+      if (minutesRecords.has(record.id) || conferenceMinutes.has(record.id)) {
+        fail("WORKSPACE_EVENT_CORRUPT", `duplicate minutes ${record.id}`);
+      }
+      requireLiveProject(projects, record.projectId, `minutes ${record.id}`);
+      for (const workId of record.linkedWorkIds) {
+        requireLiveWork(work, record.projectId, workId, `minutes ${record.id}`);
+      }
+      recordExtensionClosureValidation(1 + record.linkedWorkIds.length);
+      minutesRecords.set(record.id, record);
       continue;
     }
     if (gateOperations.has(operation)) {
@@ -2466,6 +2494,7 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
     conferences: sortExtensionRecords(conferences.values()),
     conferencePositions: sortExtensionRecords(conferencePositions.values()),
     conferenceMinutes: sortExtensionRecords(conferenceMinutes.values()),
+    minutes: sortExtensionRecords(minutesRecords.values()),
     gates: sortExtensionRecords(gates.values()),
     settings: settingRecords,
     executionConfig,
@@ -2580,7 +2609,7 @@ function viewSources(state: WorkspaceState): readonly ViewSource[] {
   // stay byte-identical for every workspace without extension records. STORY-299
   // does not touch that condition: the view set stays four, so no view is ever
   // orphaned and no deletion mechanism is owed.
-  if (state.conferences.length + state.gates.length + state.settings.length + state.templates.length > 0) {
+  if (state.conferences.length + state.gates.length + state.settings.length + state.templates.length + state.minutes.length > 0) {
     // STORY-299: v2 is a fixed-length verification summary, not an index. v1 carried
     // every conference, position, minutes and gate record whole, so the file grew with
     // the governed prose written into the chain and crossed the one MiB canonical
@@ -2613,6 +2642,8 @@ function viewSources(state: WorkspaceState): readonly ViewSource[] {
       gates: summarisedCollection(state.gates),
       ...(state.settings.length === 0 ? {} : { settings: summarisedCollection(state.settings) }),
       ...(state.templates.length === 0 ? {} : { templates: summarisedCollection(state.templates) }),
+      // TCRN-CROSS-STORY-475: present only when there are minutes, so every other view stays byte-identical.
+      ...(state.minutes.length === 0 ? {} : { minutes: summarisedCollection(state.minutes) }),
     };
     const digestsOnly: Record<string, string> = {};
     for (const key of Object.keys(collections).sort(compareCanonicalText)) {
@@ -2969,6 +3000,7 @@ interface LibrarySnapshotState {
   readonly conferences: readonly ConferenceRequest[];
   readonly conferencePositions: readonly ConferencePosition[];
   readonly conferenceMinutes: readonly ConferenceMinutes[];
+  readonly minutes: readonly MinutesRecord[];
   readonly gates: readonly GateRecord[];
   readonly settings: readonly WorkspaceSettingRecord[];
   readonly executionConfig: ExecutionConfigState;
@@ -2977,7 +3009,7 @@ interface LibrarySnapshotState {
   readonly merge: MergeReplayCheckpoint;
 }
 
-const SNAPSHOT_COLLECTIONS = ["projects", "work", "conferences", "conferencePositions", "conferenceMinutes", "gates", "settings", "templates"] as const;
+const SNAPSHOT_COLLECTIONS = ["projects", "work", "conferences", "conferencePositions", "conferenceMinutes", "minutes", "gates", "settings", "templates"] as const;
 
 function snapshotState(value: unknown): LibrarySnapshotState | null {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
@@ -3084,6 +3116,7 @@ async function refreshLibraryCache(
           conferences: replay.state.conferences,
           conferencePositions: replay.state.conferencePositions,
           conferenceMinutes: replay.state.conferenceMinutes,
+          minutes: replay.state.minutes,
           gates: replay.state.gates,
           settings: replay.state.settings,
           executionConfig: replay.state.executionConfig,
@@ -3193,6 +3226,7 @@ export interface MutationDelta {
   readonly conferences?: readonly ConferenceRequest[];
   readonly conferencePositions?: readonly ConferencePosition[];
   readonly conferenceMinutes?: readonly ConferenceMinutes[];
+  readonly minutes?: readonly MinutesRecord[];
   readonly gates?: readonly GateRecord[];
   readonly settings?: readonly WorkspaceSettingRecord[];
   readonly executionConfig?: ExecutionConfigState;
@@ -3235,6 +3269,7 @@ function committedFrom(
     conferences: delta.conferences ?? prior.conferences,
     conferencePositions: delta.conferencePositions ?? prior.conferencePositions,
     conferenceMinutes: delta.conferenceMinutes ?? prior.conferenceMinutes,
+    minutes: delta.minutes ?? prior.minutes,
     gates: delta.gates ?? prior.gates,
     settings: delta.settings ?? prior.settings,
     executionConfig: delta.executionConfig ?? prior.executionConfig,
@@ -3785,6 +3820,64 @@ export async function deleteWork(workspaceRoot: string, input: {
   }, input);
 }
 
+// TCRN-CROSS-STORY-475 R1, R2 (MIN-227 D9, D10): record minutes in one write. The external key is
+// the writer's, or the next free number under the prefix of the minutes recorded last
+// (nextMinutesExternalKey); either way the id it derives must be new, to the minutes a conference
+// ever closed as well. Every linked work record is live and in the minutes' project.
+export interface RecordMinutesInput {
+  readonly externalKey?: string;
+  // Used only when no externalKey is given: the prefix to number under (TCRN-CROSS-MIN- say).
+  readonly externalKeyPrefix?: string;
+  readonly projectId: string;
+  readonly title: string;
+  readonly summary: string;
+  readonly decisions: readonly string[];
+  readonly decidedBy: readonly string[];
+  readonly linkedWorkIds: readonly string[];
+}
+
+export function recordMinutesDelta(input: RecordMinutesInput & { readonly occurredAt: string }): (state: WorkspaceState) => MutationDelta {
+  return (state) => {
+    projectById(state, input.projectId);
+    for (const workId of input.linkedWorkIds) {
+      if (workById(state, workId).projectId !== input.projectId) {
+        fail("WORKSPACE_INPUT_INVALID", `work ${workId} is outside project ${input.projectId}`);
+      }
+    }
+    const externalKey = input.externalKey === undefined
+      ? nextMinutesExternalKey(state, input.externalKeyPrefix)
+      : canonicalExternalKey(input.externalKey);
+    const id = deriveStableId("minutes", externalKey);
+    if (state.minutes.some((entry) => entry.id === id) || state.conferenceMinutes.some((entry) => entry.id === id)) {
+      fail("WORKSPACE_INPUT_INVALID", `minutes ${externalKey} (${id}) already exist`);
+    }
+    const record = validateMinutesRecord({
+      schemaVersion: MINUTES_RECORD_VERSION,
+      id,
+      externalKey,
+      projectId: input.projectId,
+      title: input.title,
+      summary: input.summary,
+      decisions: [...input.decisions],
+      decidedBy: [...input.decidedBy],
+      linkedWorkIds: [...input.linkedWorkIds],
+      recordedAt: input.occurredAt,
+      revision: 1,
+      tombstone: false,
+    });
+    return {
+      payload: buildEventPayload(MINUTES_RECORDED_OPERATION, record as unknown as JsonValue),
+      projects: state.projects,
+      work: state.work,
+      minutes: sortExtensionRecords([...state.minutes, record]),
+    };
+  };
+}
+
+export async function recordMinutes(workspaceRoot: string, input: RecordMinutesInput & WorkspaceMutationOptions): Promise<WorkspaceState> {
+  return appendEvent(workspaceRoot, recordMinutesDelta(input), input);
+}
+
 // WSE-2: the attestation.actor.enabled chain event is history now. Its write verb is
 // retired (TCRN-CROSS-STORY-467 R2); a chain that carries it still replays through the
 // reducer above and still demands an actor from that event on, which appendEvents
@@ -4315,7 +4408,7 @@ export async function exportWorkspace(workspaceRoot: string): Promise<string> {
   // bytes (and the archive digest) stay identical for every workspace without
   // conference/gate events. canonicalJson sorts keys, so conditional inclusion
   // is byte-stable.
-  const extensionCollections = state.conferences.length + state.gates.length + state.settings.length + state.templates.length > 0
+  const extensionCollections = state.conferences.length + state.gates.length + state.settings.length + state.templates.length + state.minutes.length > 0
     ? {
       conferences: state.conferences,
       conferencePositions: state.conferencePositions,
@@ -4323,6 +4416,7 @@ export async function exportWorkspace(workspaceRoot: string): Promise<string> {
       gates: state.gates,
       ...(state.settings.length === 0 ? {} : { settings: state.settings }),
       ...(state.templates.length === 0 ? {} : { templates: state.templates }),
+      ...(state.minutes.length === 0 ? {} : { minutes: state.minutes }),
     }
     : {};
   return canonicalJson({

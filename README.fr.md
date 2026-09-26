@@ -1,0 +1,217 @@
+<div align="center">
+
+# Einzbern
+
+Le Graal exauce les vœux. Einzbern se souvient des vœux que vous avez formulés, des décisions que vous avez prises et des pièges dans lesquels vous êtes tombé,<br>et les place devant le modèle juste avant le prompt qui en a besoin.
+
+[简体中文](README.md) · [English](README.en.md) · [日本語](README.ja.md) · [한국어](README.ko.md) · **Français**
+
+![release](https://img.shields.io/badge/release-1.2.1-blue?style=flat-square) ![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square) ![hosts](https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex-informational?style=flat-square) ![platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-informational?style=flat-square) ![deps](https://img.shields.io/badge/runtime%20deps-0-success?style=flat-square)
+
+[Ce qui s'est passé mercredi après-midi](#ce-qui-sest-passé-mercredi-après-midi) · [Ce qu'il retient](#ce-quil-retient) · [Quand vous en aurez envie](#quand-vous-en-aurez-envie) · [Pourquoi lui, et pas un plugin de mémoire](#pourquoi-lui-et-pas-un-plugin-de-mémoire) · [Installation](#installation) · [Au quotidien](#au-quotidien) · [Plusieurs appareils et dossiers cloud](#plusieurs-appareils-et-dossiers-cloud) · [Comment nous l'utilisons nous-mêmes](#comment-nous-lutilisons-nous-mêmes) · [Pourquoi cette conception](#pourquoi-cette-conception) · [Glossaire](#glossaire)
+
+</div>
+
+<table>
+<tr>
+<td align="center" width="33%">
+
+### 1
+hook<br><sub>une recherche avant chaque prompt, silence sans lien fort</sub>
+
+</td>
+<td align="center" width="33%">
+
+### 0
+dépendance à l'exécution<br><sub>un seul fichier sans dépendance, ni base de données, ni réseau</sub>
+
+</td>
+<td align="center" width="33%">
+
+### 2
+hôtes, une mémoire<br><sub>Claude Code et Codex lisent le même .ether</sub>
+
+</td>
+</tr>
+</table>
+
+> [!TIP]
+> Inutile de tout lire d'abord. Ajoutez Mana Orchestrate, dites à votre hôte « installe Einzbern » dans le projet, et l'assistant pose ses questions sur un seul écran.
+
+---
+
+## Ce qui s'est passé mercredi après-midi
+
+Lundi, dans Claude Code, vous avez tranché : le bouton de la page de connexion passe au nouveau composant du design system, et l'ancien style reste jusqu'à la 1.4.
+
+Mercredi, dans Codex, vous dites « fais aussi la page d'inscription tant que tu y es ». Avant qu'il touche à quoi que ce soit, trois lignes sont déjà dans son contexte : la Story de lundi avec ses critères d'acceptation, la décision « l'ancien style reste jusqu'à la 1.4 », et une carte laissée la semaine dernière : ce composant a besoin d'une propriété supplémentaire sous Safari.
+
+Vous n'avez rien collé, et vous ne lui avez pas rappelé d'aller vérifier. C'est tout ce que fait Einzbern : noter, et ressortir au bon moment.
+
+## Une machine à vœux
+
+Le Graal est une machine à vœux : on formule un vœu, on obtient un résultat. Les machines à vœux ont un point commun : un vœu formulé vaguement a de fortes chances de se réaliser autrement que vous ne le vouliez.
+
+Einzbern suit ce principe. Il n'impose que deux choses : un élément de travail doit énoncer son objectif, et ce qui compte comme terminé. Comment l'écrire, le découper, le mener, c'est au modèle d'en décider selon sa propre logique. Einzbern ne s'en mêle pas.
+
+Éléments de travail, connaissances, comptes rendus et variables sont le mana qui circule dans cette machine. Ils sont fixés dans un dossier de votre projet nommé `.ether`, d'après l'éther, le milieu qui permet au mana de prendre forme dans le monde réel. Le modèle y puise avant chaque prompt et y dépose ce qu'il a fait.
+
+## Ce qu'il retient
+
+**Les vœux : les éléments de travail.** Quatre niveaux : Initiative, Epic, Story, Subtask. La Story est la plus petite intention complète, et c'est le seul niveau indexé. Les relations entre éléments sont des champs, pas de la prose : qui bloque qui, qui réalise quoi, qui remplace quoi, quel compte rendu l'a décidé.
+
+> Story : passer le bouton de connexion au composant du DS. Acceptation : les états normal, survol et désactivé correspondent au Storybook.
+
+**Les décisions : les comptes rendus.** Vos décisions, et les décisions techniques prises par le modèle. Chaque décision porte un numéro ; les éléments de travail et les cartes la citent par ce numéro. On ne demande pas au modèle de tenir des réunions, seulement de noter.
+
+> Compte rendu D3 : conserver l'ancien style de bouton jusqu'à la 1.4, le retirer en 1.5.
+
+**Les pièges : les connaissances.** Une carte contient un fait sur l'environnement ou une leçon : le genre de chose qu'aucun élément de travail ni compte rendu ne porte comme champ. Le modèle décide de ce qui mérite d'être gardé, et une carte est consultable dès qu'elle est écrite. Une ancienne carte n'est retirée que lorsqu'une nouvelle la contredit. L'ancienneté n'est pas une raison, la capacité non plus.
+
+> Carte : le bouton du DS a besoin de appearance: none sous Safari, sinon les coins arrondis disparaissent.
+
+**Les variables.** Le tableau des paliers de modèles par hôte, l'adresse du design system du projet, et les paires clé-valeur que vous définissez vous-même. Elles sont rendues dans AGENTS.md : si vous y écrivez « l'implémentation utilise le palier principal », Claude Code et Codex traduisent chacun vers leur propre modèle.
+
+## Comment cela arrive devant le modèle
+
+Avant l'envoi de chaque prompt, l'hôte le confie au moteur pour une recherche. S'il existe quelque chose de fortement lié, son titre entre dans le contexte :
+
+```
+[Story terminée] Bouton de connexion passé au composant DS · Acceptation : trois états conformes au Storybook
+[Compte rendu D3] Ancien style de bouton conservé jusqu'à la 1.4, retiré en 1.5
+[Carte] Le bouton DS a besoin de appearance: none sous Safari
+```
+
+S'il n'y a rien de fortement lié, il ne se passe rien. Le modèle va chercher lui-même le texte complet quand il en a besoin. Une fois une tâche terminée, le modèle reporte le résultat dans l'élément de travail, note la décision s'il y en a une, et écrit une carte s'il y a une leçon.
+
+## Quand vous en aurez envie
+
+- Une tâche s'étale sur trois jours et cinq sessions, et le modèle du quatrième jour sait encore ce qui a été décidé le premier.
+- Vous alternez entre Claude Code et Codex et voulez que les deux lisent la même mémoire.
+- Un lot tourne sans surveillance pendant la nuit, et le matin vous pouvez retracer ce que chaque étape a fait et sur quelle décision elle s'appuyait.
+- Le poste fixe continue de travailler pendant que vous sortez avec le portable et reprenez là où vous en étiez.
+
+Conçu pour une personne et plusieurs appareils. Le partage d'une mémoire entre plusieurs personnes n'est pas réalisé.
+
+## Pourquoi lui, et pas un plugin de mémoire
+
+La plupart des solutions de mémoire sont un magasin de vecteurs ou une pile de notes : elles enregistrent des fragments de conversation et les repêchent par similarité. Elles retiennent ce qui a été dit. Einzbern retient ce qui a été décidé, ce qui est à faire et ce qui a été appris, trois sortes d'enregistrements qui ont chacune leur structure et se citent par numéro.
+
+| Ce dont vous avez besoin | Un plugin de mémoire | Einzbern |
+|---|---|---|
+| Une décision et son origine | Un fragment de conversation similaire | Des comptes rendus numérotés ; éléments de travail et cartes pointent vers eux par numéro |
+| Où en est un travail | Rien | Quatre niveaux d'éléments ; les relations sont des champs : qui bloque quoi, qui remplace quoi, quel compte rendu l'a décidé |
+| Changer d'hôte | Chacun garde sa mémoire | Claude Code et Codex lisent le même .ether |
+| Changer d'appareil | Synchronisation manuelle, ou aucune | Dans un dossier cloud ; un flux par appareil ; écrire en même temps ne crée aucun conflit |
+| Voir et changer | Ouvrir des fichiers | Atelier : variables, règles, configuration des portes et état du dépôt sur une seule page ; un changement est rendu aussitôt dans AGENTS.md |
+| La façon de travailler du modèle | Pas l'affaire du plugin | Non policée ; quatre principes, désactivés par défaut, choisis projet par projet |
+| L'enregistrement peut-il être falsifié | Oui | Une chaîne de hachage en ajout seul ; modifiez une entrée et tout ce qui suit cesse de correspondre |
+
+Les variables sont l'autre moitié qui le distingue : le tableau des paliers de modèles par hôte, l'adresse du design system, vos propres paires clé-valeur, tous édités dans Atelier et rendus dans AGENTS.md, si bien qu'un même texte de règle se traduit sur chaque hôte vers ses propres modèles.
+
+## Installation
+
+Einzbern arrive par un skill : Mana Orchestrate. Le mana est la mémoire en circulation ; orchestrer, c'est décider quand elle coule et vers où. Ce skill apprend au modèle quand appeler quelle fonction du moteur, et embarque l'assistant d'installation.
+
+Installez-le avec la commande skills :
+
+```
+npx skills add einzbern/mana-orchestrate
+```
+
+Ou dites à votre hôte : trouve un skill nommé Mana Orchestrate et installe-le.
+
+Puis, dans le répertoire du projet, dites : installe Einzbern. L'assistant pose ses questions sur un seul écran : installation neuve ou restauration depuis un `.ether` existant, où placer les artefacts, si ce dossier est synchronisé dans le cloud, quelle langue, et s'il faut écrire une section de navigation dans AGENTS.md. Il liste ensuite chaque fichier qu'il s'apprête à écrire, et vous confirmez une seule fois. Mise à jour, réparation, migration depuis la version précédente, désinstallation et bilan de santé sont des modes du même assistant.
+
+Il ne commite pas, ne pousse pas, ne modifie pas votre .gitignore, ne supprime rien, et ne touche au réseau que pour télécharger le moteur.
+
+## Au quotidien
+
+Vous travaillez comme d'habitude. La mémoire apparaît d'elle-même.
+
+Quand vous voulez voir ou changer quelque chose, ouvrez Atelier. L'atelier d'un mage ; ici, une page web sur votre machine : quels principes sont activés, quelles sont les variables, comment les portes sont configurées, dans quel état est le dépôt de mémoire. Il n'est pas résident ; ouvrez-le quand vous en avez besoin.
+
+AGENTS.md vous appartient. Einzbern n'y écrit que des sections balisées : les principes que vous avez activés et les variables rendues pour le modèle. Dès que vous modifiez une section, il cesse de la réécrire, et vous choisissez dans Atelier la suite à donner.
+
+Il y a quatre principes intégrés, appelés Command Spells, les sceaux de commandement auxquels un Servant ne peut se soustraire. Ils ne sont pas obligatoires : tous sont désactivés par défaut, vous les activez projet par projet dans Atelier, et la mémoire fonctionne de la même façon sans eux.
+
+- Fonctionnement autonome : pas de « je continue ? » en cours de tâche ; les actions réversibles se font simplement ; seules les actions destructrices et les changements de périmètre arrêtent.
+- Traitement par lots : les éléments issus d'un même découpage forment un lot ; les rouges sont notés, pas corrigés sur-le-champ ; la fin du lot les traite en une fois ; un rapport par lot.
+- Commandes sans surveillance : aucune forme de commande qui déclenche une boîte de confirmation ; supprimer en déplaçant, pas de cd dans les commandes, n'écrire que dans le répertoire de travail.
+- Rapport silencieux : aucun rapport tant que le travail est en cours ; on rend compte seulement quand tout est terminé ou que tout ce qui reste est bloqué.
+
+## Plusieurs appareils et dossiers cloud
+
+`.ether` peut vivre dans un dossier synchronisé comme OneDrive ou iCloud. Chaque appareil n'écrit que dans son propre flux d'enregistrements, et la lecture fusionne tous les flux. Deux appareils peuvent écrire en même temps : pas de verrou, personne n'attend personne. Si les deux modifient le même élément de travail, la modification arrivée en second est enregistrée comme rejetée : ni perdue, ni écrasée en silence. Index et instantanés restent sur la machine locale ; le cloud ne contient que les enregistrements eux-mêmes. Le moteur ne chiffre pas ; la sécurité de votre compte cloud est de votre côté.
+
+## Comment nous l'utilisons nous-mêmes
+
+C'est ainsi qu'Einzbern se développe lui-même, et c'est l'usage que nous suggérons. Vous pouvez n'en adopter qu'une couche.
+
+**Deux conversations.** Une conversation de conception, sur le palier phare, discute la direction avec vous, enregistre les décisions en comptes rendus et découpe le travail en Initiative, Epic et Story dans .ether. Une conversation d'implémentation, sur le palier principal, lit les Stories dans .ether et n'écrit aucun code : elle délègue, enregistre, exécute les portes et rend compte.
+
+**Un lot à la fois.** La conversation d'implémentation envoie un sous-agent du palier économique découper d'un coup toutes les Stories de l'Initiative en Subtasks, chacune nommant les fichiers touchés et ses dépendances. Puis elle forme des paquets par dépendance et chevauchement de fichiers : les Subtasks liées vont dans un même paquet, dans l'ordre ; les indépendantes forment chacune leur paquet. Chaque paquet reçoit un sous-agent du palier économique qui travaille dans son propre worktree git, en parallèle, et se retire une fois le paquet fini. Quand tous les paquets sont finis, un sous-agent d'intégration les fusionne dans l'ordre des dépendances ; les portes tournent une fois et l'acceptation a lieu une fois en fin de lot, et les défauts sont repris par lot.
+
+**Les quatre principes activés.** Fonctionnement autonome : les actions réversibles se font simplement. Traitement par lots : les rouges sont notés, pas corrigés sur-le-champ, et traités une fois en fin de lot. Commandes sans surveillance : aucune forme de commande qui déclenche une boîte de confirmation. Rapport silencieux : on rend compte seulement quand tout est terminé ou que tout ce qui reste est bloqué.
+
+**Vous n'apparaissez qu'à deux moments.** Pour décider dans la conversation de conception, et pour lire un rapport quand la conversation d'implémentation clôt un lot, avec chaque point en attente de votre décision listé d'un coup, accompagné d'une recommandation.
+
+### Abonnements et paliers de modèles (au 2026-09-26)
+
+Abonnements suggérés : Claude Max 5x ou ChatGPT Pro 5x. Réglez le plafond de sous-agents parallèles selon l'abonnement ; au-delà de la valeur suggérée, le quota hebdomadaire fond trop vite. Le plafond est execution.maxConcurrentSubagents dans Atelier.
+
+| Abonnement | Plafond de sous-agents parallèles |
+|---|---|
+| Claude Pro ou ChatGPT Plus | 1 ou 2 |
+| Claude Max 5x ou ChatGPT Pro 5x | 3 |
+| Plans 20x | 8 ou plus |
+
+Plus de parallélisme n'est pas toujours mieux ; quand le quota s'épuise, il doit se réduire de lui-même. Quatre variables système décident du moment, toutes modifiables dans Atelier :
+
+| Variable | Défaut | Signification |
+|---|---|---|
+| quota.fiveHourParallelOffPercent | 75 | À ce pourcentage du quota de 5 heures, le plafond de sous-agents parallèles tombe à 1 |
+| quota.fiveHourWaitPercent | 90 | À ce pourcentage du quota de 5 heures, plus aucun sous-agent n'est délégué jusqu'à la réinitialisation de la fenêtre |
+| quota.weeklyParallelOffPercent | 95 | À ce pourcentage du quota hebdomadaire, le plafond de sous-agents parallèles tombe à 1 |
+| quota.weeklyWaitPercent | non défini | Pas de seuil d'attente sur le quota hebdomadaire ; il ne s'applique que si vous le définissez |
+
+Le tableau ci-dessous est celui que nous utilisons en ce moment ; les noms de modèles vieillissent au rythme des éditeurs, alors le models.tiers que vous maintenez dans Atelier fait foi.
+
+| Hôte | Phare | Principal | Économique |
+|---|---|---|---|
+| Claude Code | claude-fable-5-1, max, conversation de conception seulement, jamais délégué | claude-opus-5-5, max, orchestration des sous-agents et acceptation | claude-opus-5-5, low, découpage et implémentation des paquets |
+| Codex | gpt-6-astra, max | gpt-6-sol, max | gpt-6-luna, max |
+
+## Pourquoi cette conception
+
+**Fournir la mémoire, ne pas policer la méthode.** La version précédente a tenté d'enfermer le modèle avec des portes, des preuves et des hooks Stop : plus d'une centaine de verbes, seize portes. Nous l'avons utilisée nous-mêmes pendant deux mois. Le coût dépassait de loin le bénéfice, et le modèle oubliait quand même ce qu'il allait oublier. Cette version retire tout cela et garde les enregistrements et la recherche.
+
+**Un seul hook.** Un modèle ne sait pas ce qu'il ne sait pas ; la recherche doit donc être déclenchée par l'hôte avant chaque prompt, sans attendre que le modèle y pense. Mais le hook ne contient aucune règle. Quoi chercher et combien en donner, c'est le moteur qui décide.
+
+**AGENTS.md est votre fichier.** Des règles qui doivent valoir sur les deux hôtes ne peuvent vivre que là où les deux lisent. Einzbern y écrit donc, mais seulement des sections balisées, seulement ce que vous avez activé, et jamais par-dessus vos modifications.
+
+**N'indexer que les Stories.** Les Initiatives et les Epics sont trop grossières, les Subtasks trop fines. Ce qu'il faut savoir, une Story le dit.
+
+**Des enregistrements en ajout seul.** Tout état dérivé peut être reconstruit à partir des enregistrements. C'est pour cela que les index peuvent rester locaux et que les appareils peuvent fusionner.
+
+**Une configuration à deux niveaux.** La configuration du projet voyage avec les enregistrements ; celle de l'appareil reste sur la machine. Installer un nouvel appareil, c'est configurer l'appareil, pas le projet.
+
+## Glossaire
+
+| Nom | Ce que c'est | D'où vient le nom |
+|---|---|---|
+| Einzbern | Le moteur : le programme qui détient les enregistrements et exécute recherche et enregistrement | Le corps du Graal |
+| Mana Orchestrate | Le skill qui amène Einzbern dans l'hôte : indique au modèle quand appeler quelle fonction du moteur, et embarque l'assistant d'installation | Le mana, la grande source d'énergie magique ; ici, la mémoire en circulation |
+| Ether | Le répertoire des artefacts `.ether` | L'éther, le milieu qui permet au mana de prendre forme dans le monde réel |
+| Akasha | `.ether/akasha/`, l'enregistrement d'événements en ajout seul dont tout état dérivé est reconstruit | Akasha, la Racine, où résident tous les enregistrements |
+| Crest | `.ether/crest/`, le dépôt de connaissances ; les dépôts de projet et d'utilisateur portent le même nom | L'emblème magique, l'art hérité de génération en génération |
+| Command Spell | Les quatre principes intégrés, désactivés par défaut, activés au choix | Les sceaux de commandement auxquels un Servant ne peut se soustraire |
+| Atelier | La page de gestion locale | L'atelier d'un mage |
+
+## Documentation complète
+
+Wiki : concepts et glossaire, assistant d'installation, structure de `.ether`, plusieurs appareils et dossiers cloud, texte intégral des principes, migration depuis TCRN Workflow, référence CLI.
+
+## Licence
+
+Apache-2.0

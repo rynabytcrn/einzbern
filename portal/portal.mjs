@@ -660,28 +660,29 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === "GET" && pathname === "/api/status") {
       const selected = currentLibrary();
-      const [status, validation, catalog] = await Promise.all([
-        cliResult(["status", "--workspace", selected.libraryPath]),
-        cliResult(["validate", "--workspace", selected.libraryPath]),
-        cliResult(["settings-catalog", "--workspace", selected.libraryPath]),
-      ]);
-      const checks = [
-        { key: "validate", ok: validation.ok, reasonCode: validation.body?.reasonCode ?? "PORTAL_VALIDATE_FAILED" },
-        { key: "catalog", ok: catalog.ok, reasonCode: catalog.body?.reasonCode ?? "PORTAL_CATALOG_FAILED" },
-        { key: "actor", ok: ACTOR.length > 0, reasonCode: ACTOR.length > 0 ? "PORTAL_ACTOR_CONFIGURED" : "PORTAL_ACTOR_MISSING" },
-      ];
-      let events = null;
-      try { events = await cli(["event-list", "--workspace", selected.libraryPath, "--limit", "1"]); } catch { /* health remains legible */ }
+      // Doctor's device-stream check briefly probes the selected library, so let it finish before status reads that library.
+      const doctor = await cliResult(["doctor", "--project", selected.projectPath]);
+      const status = await cliResult(["status", "--workspace", selected.libraryPath]);
       const body = status.body ?? {};
+      const doctorBody = doctor.body ?? {};
+      const checks = Array.isArray(doctorBody.checks) ? doctorBody.checks : [];
+      const ready = doctor.ok && doctorBody.ok === true && checks.length === 8 && checks.every((check) => check.ok === true) && status.ok;
       send(response, 200, {
-        ok: checks.every((check) => check.ok) && status.ok,
-        reasonCode: checks.every((check) => check.ok) && status.ok ? "PORTAL_STATUS_READY" : "PORTAL_STATUS_DEGRADED",
+        ok: ready,
+        reasonCode: ready ? "PORTAL_STATUS_READY" : "PORTAL_STATUS_DEGRADED",
+        doctorReasonCode: doctorBody.reasonCode ?? "PORTAL_DOCTOR_FAILED",
         workspaceId: body.workspaceId ?? null,
         version: body.version ?? null,
         headEventHash: body.headEventHash ?? null,
-        eventCount: events?.total ?? null,
+        eventCount: body.version ?? null,
         engineVersion: body.engineVersion ?? null,
         checks,
+        library: {
+          versionVector: body.versionVector ?? null,
+          streams: Array.isArray(body.streams) ? body.streams : null,
+          rejectedEventCount: body.rejectedEventCount ?? null,
+          configProjection: body.configProjection ?? null,
+        },
       });
       return;
     }
@@ -790,7 +791,7 @@ const server = createServer(async (request, response) => {
       return;
     }
     // TCRN-CROSS-STORY-482 R4, AC3: every other API path is unknown, the retired ones included:
-    // execution, the retired gates projection, evolution, the session audit and the host probe.
+    // execution, evolution, the session audit and the host probe.
     // The host-probe verb stays in the CLI; only its page route is gone.
     send(response, 404, { ok: false, reasonCode: "PORTAL_ROUTE_UNKNOWN" });
   } catch (error) {

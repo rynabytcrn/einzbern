@@ -405,7 +405,7 @@ test("STORY-485: Atelier edits gate declarations and reads each library's latest
   assert.deepEqual((await gatesNow()).gates, []);
 });
 
-test("state surface follows engine version and turns health red on failed status/actor legs", async (t) => {
+test("state surface uses the doctor's eight checks and selected library projection", async (t) => {
   const fixture = await scratch("tcrn-portal-state-", "TCRN-PORTAL-STATE");
   const wrapper = join(fixture.base, "status-wrapper.mjs");
   await writeFile(wrapper, `import { spawnSync } from "node:child_process";
@@ -413,6 +413,11 @@ const actual = spawnSync(process.execPath, [${JSON.stringify(CLI)}, ...process.a
 if (process.argv[2] === "status" && actual.status === 0) {
   const body = JSON.parse(actual.stdout);
   body.engineVersion = "0.11.99";
+  process.stdout.write(JSON.stringify(body));
+} else if (process.argv[2] === "doctor" && actual.status === 0 && process.env.TCRN_TEST_DOCTOR_RED === "registry") {
+  const body = JSON.parse(actual.stdout);
+  body.checks = body.checks.map((check) => check.check === "registry" ? { ...check, ok: false, reasonCode: "PORTAL_TEST_REGISTRY_RED", detail: { causes: ["PORTAL_TEST_REGISTRY_RED"] } } : check);
+  body.ok = false;
   process.stdout.write(JSON.stringify(body));
 } else {
   process.stdout.write(actual.stdout || "");
@@ -425,15 +430,30 @@ if (process.argv[2] === "status" && actual.status === 0) {
   const { boot } = await readBoot(url);
   const status = await request(url, "/api/status", readOptions(boot.token));
   assert.equal(status.body.engineVersion, "0.11.99");
-  assert.equal(status.body.ok, true);
+  const doctor = await cli(["doctor", "--project", fixture.proseRoot], { ...fixture.deviceEnv, HOME: fixture.home });
+  assert.equal(status.body.checks.length, 8);
+  assert.deepEqual(status.body.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })), doctor.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })));
+  assert.equal(status.body.ok, doctor.ok);
+  const libraryStatus = await cli(["status", "--workspace", fixture.workspace], { ...fixture.deviceEnv, HOME: fixture.home });
+  assert.deepEqual(status.body.library, {
+    versionVector: libraryStatus.versionVector,
+    streams: libraryStatus.streams,
+    rejectedEventCount: libraryStatus.rejectedEventCount,
+    configProjection: libraryStatus.configProjection,
+  });
 
   child.kill();
-  const actorPortal = await startPortal({ ...fixture, env: { TCRN_PORTAL_ACTOR: "   " } });
-  t.after(() => actorPortal.child.kill());
-  const { boot: actorBoot } = await readBoot(actorPortal.url);
-  const actorStatus = await request(actorPortal.url, "/api/status", readOptions(actorBoot.token));
-  assert.equal(actorStatus.body.ok, false);
-  assert.deepEqual(actorStatus.body.checks.find((check) => check.key === "actor"), { key: "actor", ok: false, reasonCode: "PORTAL_ACTOR_MISSING" });
+  const redPortal = await startPortal({ ...fixture, env: { TCRN_WORKFLOW_CLI: wrapper, TCRN_TEST_DOCTOR_RED: "registry" } });
+  t.after(() => redPortal.child.kill());
+  const { boot: redBoot } = await readBoot(redPortal.url);
+  const redStatus = await request(redPortal.url, "/api/status", readOptions(redBoot.token));
+  const { stdout: redDoctorOutput } = await execFileAsync(process.execPath, [wrapper, "doctor", "--project", fixture.proseRoot], {
+    encoding: "utf8", env: { ...process.env, ...fixture.deviceEnv, HOME: fixture.home, TCRN_TEST_DOCTOR_RED: "registry" },
+  });
+  const redDoctor = JSON.parse(redDoctorOutput);
+  assert.equal(redStatus.body.ok, false);
+  assert.deepEqual(redStatus.body.checks, redDoctor.checks);
+  assert.equal(redStatus.body.checks.find((check) => check.check === "registry").reasonCode, "PORTAL_TEST_REGISTRY_RED");
 });
 
 test("AGENTS.md read/write is allow-listed and reconciliation reports line-level findings", async (t) => {
@@ -474,6 +494,8 @@ test("STORY-482 AC1: the registry's two libraries can be switched, and each answ
   await cli(["settings-set", "--workspace", fixture.second.library, "--at", "2026-08-11T15:01:00Z", "--actor", "agent:test", "--key", "artifact.language", "--value", "zh-CN"], { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" });
   const first = await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv);
   const second = await cli(["status", "--workspace", fixture.second.library], fixture.deviceEnv);
+  const firstDoctor = await cli(["doctor", "--project", fixture.proseRoot], { ...fixture.deviceEnv, HOME: fixture.home });
+  const secondDoctor = await cli(["doctor", "--project", fixture.second.project], { ...fixture.deviceEnv, HOME: fixture.home });
   const { child, url, listening } = await startPortal(fixture);
   t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
   assert.equal(listening.selectedBy, "argument");
@@ -490,7 +512,12 @@ test("STORY-482 AC1: the registry's two libraries can be switched, and each answ
   const statusNow = async () => (await request(url, "/api/status", readOptions(boot.token))).body;
   const languageNow = async () => (await request(url, "/api/settings", readOptions(boot.token))).body.settings.find((entry) => entry.key === "artifact.language").currentValue;
   let status = await statusNow();
-  assert.deepEqual([status.ok, status.workspaceId, status.version], [true, first.workspaceId, 0]);
+  assert.deepEqual([status.workspaceId, status.version], [first.workspaceId, 0]);
+  assert.equal(status.ok, firstDoctor.ok);
+  assert.deepEqual(status.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })), firstDoctor.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })));
+  assert.deepEqual(status.library.versionVector, first.versionVector);
+  assert.equal(status.library.rejectedEventCount, first.rejectedEventCount);
+  assert.deepEqual(status.library.configProjection, first.configProjection);
   assert.equal(await languageNow(), "en");
 
   const switched = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: fixture.second.project }));
@@ -500,7 +527,12 @@ test("STORY-482 AC1: the registry's two libraries can be switched, and each answ
   assert.equal(switched.body.workspace, fixture.second.library);
   assert.equal(switched.body.proseRoot, fixture.second.project);
   status = await statusNow();
-  assert.deepEqual([status.ok, status.workspaceId, status.version], [true, second.workspaceId, 1]);
+  assert.deepEqual([status.workspaceId, status.version], [second.workspaceId, 1]);
+  assert.equal(status.ok, secondDoctor.ok);
+  assert.deepEqual(status.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })), secondDoctor.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })));
+  assert.deepEqual(status.library.versionVector, second.versionVector);
+  assert.equal(status.library.rejectedEventCount, second.rejectedEventCount);
+  assert.deepEqual(status.library.configProjection, second.configProjection);
   assert.equal(await languageNow(), "zh-CN");
   assert.deepEqual((await request(url, "/api/libraries", readOptions(boot.token))).body.selected, listed.body.libraries[1]);
 
@@ -509,6 +541,9 @@ test("STORY-482 AC1: the registry's two libraries can be switched, and each answ
   assert.equal(back.body.reasonCode, "PORTAL_LIBRARY_SELECTED");
   status = await statusNow();
   assert.deepEqual([status.workspaceId, status.version], [first.workspaceId, 0]);
+  assert.equal(status.ok, firstDoctor.ok);
+  assert.deepEqual(status.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })), firstDoctor.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })));
+  assert.deepEqual(status.library.versionVector, first.versionVector);
 
   const unknown = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: join(fixture.base, "not-a-library") }));
   assert.equal(unknown.response.status, 404);
@@ -547,8 +582,9 @@ test("portal serves live catalog, commits a governed write, and refuses an untok
   assert.equal(refused.response.status, 409);
   assert.equal(refused.body.reasonCode, "SETTINGS_KEY_UNREGISTERED");
   const status = await request(url, "/api/status", readOptions(boot.token));
-  assert.equal(status.body.checks.length, 3);
-  assert.ok(status.body.checks.every((check) => check.ok));
+  assert.equal(status.body.checks.length, 8);
+  assert.ok(status.body.checks.every((check) => Object.hasOwn(check, "check") && Object.hasOwn(check, "reasonCode") && Object.hasOwn(check, "detail")));
+  assert.deepEqual(Object.keys(status.body.library).sort(), ["configProjection", "rejectedEventCount", "streams", "versionVector"]);
   const commands = await request(url, "/api/commands", readOptions(boot.token));
   assert.ok(commands.body.commands.some((entry) => entry.name === "settings-set" && entry.mutates));
 });

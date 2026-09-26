@@ -107,7 +107,7 @@ function mutateSource(source, mutation) {
   if (mutation === "receipt-stale") return source.replace(/setText\("#receipt-chip-text", state\.receipt\.version \? [\s\S]*?\);\n    renderReceipt\(\);/u, 'setText("#receipt-chip-text", "idle");\n    renderReceipt();');
   if (mutation === "s253-old-class") return source.replace('class="tcrn-top-bar"', 'class="tcrn-topbar"');
   if (mutation === "s255-missing-component-css") return source.replace(".tcrn-switch {", ".tcrn-switch-mutated {");
-  if (mutation === "s275-missing-nav-name") return source.replace('aria-label="Dashboard" data-i18n-aria-label="nav.dashboard"', "");
+  if (mutation === "s275-missing-nav-name") return source.replace('aria-label="Status" data-i18n-aria-label="nav.dashboard"', "");
   if (mutation === "s275-missing-brand-mark") return source.replace('data-brand-asset="tcrn-brand-mark"', 'data-brand-asset="tcrn-brand-mark-mutated"');
   return source;
 }
@@ -222,7 +222,12 @@ async function loadExecutedDom(fixture, env = {}) {
     "the page's initial fetches to settle",
     20_000,
   );
-  return { child, document, source, window, requests };
+  const waitForSettled = () => waitFor(
+    () => inFlight === 0 && Date.now() - lastSettled >= 150,
+    "the page's requests to settle",
+    20_000,
+  );
+  return { child, document, source, window, requests, waitForSettled };
 }
 
 function missingComponents(document) {
@@ -367,7 +372,16 @@ async function preparePage(env = {}) {
   page.workspace = fixture.workspace;
   page.deviceEnv = fixture.deviceEnv;
   page.fixture = fixture;
-  page.cleanup = async () => { page.child.kill(); await rm(fixture.base, { recursive: true, force: true }); };
+  page.cleanup = async () => {
+    await page.waitForSettled();
+    const exited = new Promise((resolveExit) => {
+      if (page.child.exitCode !== null || page.child.signalCode !== null) resolveExit();
+      else page.child.once("exit", resolveExit);
+    });
+    if (page.child.exitCode === null && page.child.signalCode === null) page.child.kill();
+    await exited;
+    await rm(fixture.base, { recursive: true, force: true });
+  };
   page.document.querySelector('[data-page-target="settings"]')?.click();
   page.document.querySelector('[data-setting-group="execution"]')?.click();
   await new Promise((resolve) => setTimeout(resolve, 80));
@@ -525,13 +539,31 @@ if (process.argv[2] === "status" && actual.status === 0) {
     try { assert.equal(page.document.querySelector("#stat-engine").textContent, "0.11.99"); } finally { page.child.kill(); await rm(fixture.base, { recursive: true, force: true }); }
   });
 
-  test("INC-151 rendered health card turns red when actor configuration is absent", async () => {
+  test("STORY-482 rendered status card preserves a red doctor reason code", async () => {
     const fixture = await scratch("tcrn-inc151-health-dom-");
-    const page = await loadExecutedDom(fixture, { TCRN_PORTAL_ACTOR: "   " });
+    const wrapper = join(fixture.base, "doctor-red-wrapper.mjs");
+    await writeFile(wrapper, `import { spawnSync } from "node:child_process";
+const actual = spawnSync(process.execPath, [${JSON.stringify(CLI)}, ...process.argv.slice(2)], { encoding: "utf8" });
+if (process.argv[2] === "doctor" && actual.status === 0) {
+  const body = JSON.parse(actual.stdout);
+  body.checks = body.checks.map((check) => check.check === "hooks-present"
+    ? { ...check, ok: false, reasonCode: "PORTAL_TEST_HOOKS_RED", detail: { causes: ["PORTAL_TEST_HOOKS_RED"] } }
+    : { ...check, ok: true, reasonCode: null, detail: {} });
+  body.ok = false;
+  process.stdout.write(JSON.stringify(body));
+} else {
+  process.stdout.write(actual.stdout || "");
+  process.stderr.write(actual.stderr || "");
+  process.exitCode = actual.status ?? 1;
+}
+`, "utf8");
+    const page = await loadExecutedDom(fixture, { TCRN_WORKFLOW_CLI: wrapper });
     try {
       assert.match(page.document.querySelector("#health-chip").className, /tcrn-badge--danger/u);
-      assert.equal(page.document.querySelector("#stat-health").textContent, "2/3");
-      assert.match(page.document.querySelector("#health-list").textContent, /actor.*failed/iu);
+      assert.equal(page.document.querySelector("#stat-health").textContent, "7/8");
+      const failedCheck = page.document.querySelector('[data-doctor-check="hooks-present"]');
+      assert.match(failedCheck.textContent, /failed/u);
+      assert.match(failedCheck.textContent, /PORTAL_TEST_HOOKS_RED/u);
     } finally { page.child.kill(); await rm(fixture.base, { recursive: true, force: true }); }
   });
 
@@ -548,7 +580,7 @@ if (process.argv[2] === "status" && actual.status === 0) {
       const definition = [...page.document.querySelectorAll('[data-vocabulary-table] .tcrn-table-shell__cell')].find((cell) => cell.getAttribute("data-label") === "描述")?.textContent || "";
       assert.match(definition, /确定方向与预期成果|审视结构与技术选择|揭示威胁、缓解措施与暴露面/u);
       assert.doesNotMatch(definition, /Sets direction and intended outcomes|Examines structural and technical choices|Surfaces threats, mitigations, and exposure/u);
-      assert.equal(page.document.querySelector('[data-i18n="dashboard.chain"]')?.textContent, "链版本");
+      assert.equal(page.document.querySelector('[data-i18n="dashboard.chain"]')?.textContent, "合并版本");
       assert.ok([...page.document.querySelectorAll("[data-i18n]")].every((node) => node.textContent.trim().length > 0), "every static i18n binding must render text in the executed DOM");
     } finally { await page.cleanup(); }
   });
@@ -1495,6 +1527,33 @@ if (process.argv[2] === "status" && actual.status === 0) {
     } finally { await page.cleanup(); }
   });
 
+  test("STORY-482 R3: work view renders the initiatives in the selected library", async () => {
+    const fixture = await scratch("tcrn-482-work-view-");
+    const project = await cli([
+      "project-create", "--workspace", fixture.workspace, "--at", nextAt(),
+      "--external-key", "PORTAL-STATUS-PROJECT", "--name", "Portal status project",
+    ], fixture.deviceEnv);
+    const initiative = await cli([
+      "work-create", "--workspace", fixture.workspace, "--at", nextAt(), "--project-id", project.record.id,
+      "--external-key", "PORTAL-STATUS-INIT", "--kind", "Initiative", "--title", "Portal status work",
+    ], fixture.deviceEnv);
+    const epic = await cli([
+      "work-create", "--workspace", fixture.workspace, "--at", nextAt(), "--project-id", project.record.id,
+      "--external-key", "PORTAL-STATUS-EPIC", "--kind", "Epic", "--parent-id", initiative.record.id, "--title", "Portal status epic",
+    ], fixture.deviceEnv);
+    const page = await loadExecutedDom(fixture);
+    try {
+      page.document.querySelector('[data-page-target="dashboard"]')?.click();
+      page.document.querySelector('[data-workspace-tab="work"]')?.click();
+      const initiativeRow = page.document.querySelector(`[data-work-id="${initiative.record.id}"]`);
+      const epicRow = page.document.querySelector(`[data-work-id="${epic.record.id}"]`);
+      assert.ok(initiativeRow);
+      assert.ok(epicRow);
+      assert.match(page.document.querySelector("#work-tree-content").textContent, /Portal status work[\s\S]*Portal status epic/u);
+      assert.doesNotMatch(page.source, /TCRN-CROSS-INIT-051/u);
+    } finally { page.child.kill(); await rm(fixture.base, { recursive: true, force: true }); }
+  });
+
   // TCRN-CROSS-STORY-482 R4: the evolution panel (conflict retirements, retrieval evaluation and the
   // host render state), the session audit (its tab, its button and its list in the receipt drawer)
   // and the execution surface left with the mechanisms they showed. The page neither renders them
@@ -1550,13 +1609,17 @@ if (process.argv[2] === "status" && actual.status === 0) {
       assert.equal(text("#rail-workspace-label"), "second-project");
       assert.notEqual(text("#library-label"), firstId);
       assert.ok(options[1].textContent.includes(text("#library-label")), "the rail names the id the switcher showed");
-      assert.equal(page.document.querySelector("#health-chip")?.className.includes("tcrn-badge--positive"), true);
+      const secondDoctor = await cli(["doctor", "--project", fixture.second.project], { ...fixture.deviceEnv, HOME: fixture.home });
+      assert.equal(page.document.querySelector("#health-chip")?.className.includes("tcrn-badge--positive"), secondDoctor.ok);
+      assert.equal(text('#library-state [data-library-field="versionVector"]'), JSON.stringify((await cli(["status", "--workspace", fixture.second.library], fixture.deviceEnv)).versionVector));
       assert.equal(page.requests.filter((path) => path === "/api/library").length, 1);
 
       page.document.querySelector("#library-select").value = fixture.proseRoot;
       page.document.querySelector("#library-select").dispatchEvent(new page.window.Event("change", { bubbles: true }));
       await waitFor(() => text("#workspace-label") === fixture.workspace && text("#stat-version") === "0" && text("#agents-path") === join(fixture.proseRoot, "AGENTS.md"), "the page to return to the first library");
       assert.equal(text("#library-label"), firstId);
+      const firstDoctor = await cli(["doctor", "--project", fixture.proseRoot], { ...fixture.deviceEnv, HOME: fixture.home });
+      assert.equal(page.document.querySelector("#health-chip")?.className.includes("tcrn-badge--positive"), firstDoctor.ok);
     } finally { page.child.kill(); await rm(fixture.base, { recursive: true, force: true }); }
   });
 

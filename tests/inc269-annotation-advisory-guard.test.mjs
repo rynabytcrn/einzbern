@@ -42,9 +42,11 @@ async function incidentFixture(context, externalKey) {
   let state = await createProject(workspace, {
     occurredAt: instant(2), externalKey: `${externalKey}-PROJECT`, name: "INC269",
   });
+  // A parentless record the write path still creates: a new Incident is refused since
+  // TCRN-CROSS-STORY-472 R1, and the guard under test does not depend on the kind.
   state = await createWork(workspace, {
     occurredAt: instant(3), projectId: state.projects[0].id,
-    externalKey: `${externalKey}-INCIDENT`, kind: "Incident", parentId: null, status: "active",
+    externalKey: `${externalKey}-INITIATIVE`, kind: "Initiative", parentId: null, status: "active",
   });
   return { workspace, id: state.work[0].id, version: state.version };
 }
@@ -122,4 +124,24 @@ test("INC-269 title and labels land, with or without an advisory field beside th
   const replayed = await validateWorkspace(workspace);
   assert.equal(replayed.version, version + 2);
   assert.equal(replayed.work.find((entry) => entry.id === id).title, "T2");
+});
+
+// TCRN-CROSS-STORY-472: advisory:relations joins the advisory keys the guard lets an annotation
+// move. Moving it alone lands and replays; restating the stored relations moves nothing and is
+// refused like any other empty delta; replay still pins every non-advisory extension.
+test("INC-269 the relations extension is advisory: it moves on its own, and restating it moves nothing", async (context) => {
+  const { workspace, id, version } = await incidentFixture(context, "INC269-RELATIONS");
+  const other = await createWork(workspace, {
+    occurredAt: instant(4), projectId: (await materializeWorkspace(workspace)).projects[0].id,
+    externalKey: "INC269-RELATIONS-OTHER", kind: "Initiative", parentId: null,
+  });
+  const target = other.work.find((entry) => entry.externalKey === "INC269-RELATIONS-OTHER").id;
+  const annotated = await annotateWork(workspace, { occurredAt: instant(5), id, relations: { blockedBy: [target] } });
+  assert.deepEqual(annotated.work.find((entry) => entry.id === id).extensions["advisory:relations"].value, { blockedBy: [target] });
+  await assert.rejects(
+    () => annotateWork(workspace, { occurredAt: instant(6), id, relations: { blockedBy: [target] } }),
+    (error) => error?.reasonCode === "WORKSPACE_INPUT_INVALID"
+      && error.message === `work ${id} annotation changed no annotatable field`,
+  );
+  assert.equal((await validateWorkspace(workspace)).version, version + 2);
 });

@@ -139,6 +139,10 @@ import {
   validateTelemetryRecord,
 } from "./telemetry.js";
 import type { TelemetryEvidenceSnapshot } from "./telemetry.js";
+// TCRN-CROSS-STORY-472: used only inside functions. work-relations.ts imports WorkspaceError from
+// this module, so nothing here may read one of its bindings while the module is being evaluated.
+import { relationsShapeProblem, validateRelationsInput } from "./work-relations.js";
+import type { NormalizedWorkRelations, WorkRelationsInput } from "./work-relations.js";
 
 export const WORKSPACE_SCHEMA_VERSION = "tcrn.workspace.v1" as const;
 export const WORKSPACE_STORAGE_VERSION = 2 as const;
@@ -242,6 +246,10 @@ export const WORKSPACE_REASON_CODES = Object.freeze([
   // codes because they answer different questions about whose fault it is.
   "WORK_BATCH_MALFORMED",
   "WORK_BATCH_REFUSED",
+  // TCRN-CROSS-STORY-472 R1 (MIN-227 D6): a new record is an Initiative, Epic, Story or Subtask.
+  // An Incident, a Release (and the never-creatable Review and Knowledge) already on a chain still
+  // reads, transitions and can be the target of a relation; a new one is refused with a remedy.
+  "WORK_KIND_RETIRED",
 ] as const);
 
 export type WorkspaceReasonCode = typeof WORKSPACE_REASON_CODES[number];
@@ -1144,6 +1152,10 @@ const WORK_SCOPE_REFERENCE_VERSION = "tcrn.work-scope-reference.v1" as const;
 // key fails the closed anti-smuggling replay guard on a chain that USES it, which
 // is why it ships in a minor release (0.5.0) that readers of such chains must pin.
 const ADVISORY_SPRINT_KEY = "advisory:sprint";
+// TCRN-CROSS-STORY-472 R2: the forward relations blocked-by, implements, supersedes and fixes
+// (work-relations.ts). decided-in is advisory:decided-by and parent is parentId, so neither is here.
+// The literal is repeated rather than imported: see the import of work-relations.js above.
+const ADVISORY_RELATIONS_KEY = "advisory:relations";
 const ADVISORY_KEYS: readonly string[] = [
   ADVISORY_SCOPE_KEY,
   ADVISORY_DECIDED_BY_KEY,
@@ -1152,7 +1164,13 @@ const ADVISORY_KEYS: readonly string[] = [
   ADVISORY_EVIDENCE_KEY,
   ADVISORY_EVIDENCE_SNAPSHOT_KEY,
   ADVISORY_RESULT_KEY,
+  ADVISORY_RELATIONS_KEY,
 ];
+
+// TCRN-CROSS-STORY-472 R1: the kinds no write creates any more. Records of these kinds on a chain
+// keep reading and replaying (validateWorkGraph still accepts them).
+const RETIRED_WORK_KINDS: readonly string[] = ["Incident", "Release", "Review", "Knowledge"];
+const WORK_KIND_RETIRED_REMEDY = "open a Story with a fixes relation (work-create --kind Story --fixes <work id>)";
 
 // A sprint reference is a qualified cross-partition pointer: the workspaceId (derived,
 // so `workspace:` + 24 hex) plus the work id of the sprint's Release record. Both halves
@@ -1171,6 +1189,9 @@ type WorkAdvisoryInput = {
   readonly evidence?: string;
   readonly evidenceSnapshot?: TelemetryEvidenceSnapshot;
   readonly result?: JsonValue;
+  // TCRN-CROSS-STORY-472 R2, R4: the forward relations, validated against the state the write is
+  // built on. Stored as advisory:relations; decidedIn is written to advisory:decided-by.
+  readonly relations?: WorkRelationsInput;
 };
 
 type WorkAnnotationInput = WorkAdvisoryInput & {
@@ -1201,17 +1222,42 @@ function isSprintReference(value: unknown): value is SprintReference {
   return true;
 }
 
-const ADVISORY_FIELD_KEYS = Object.freeze({ scope: ADVISORY_SCOPE_KEY, decidedBy: ADVISORY_DECIDED_BY_KEY, sprint: ADVISORY_SPRINT_KEY, verify: ADVISORY_VERIFY_KEY, evidence: ADVISORY_EVIDENCE_KEY, evidenceSnapshot: ADVISORY_EVIDENCE_SNAPSHOT_KEY, result: ADVISORY_RESULT_KEY });
+const ADVISORY_FIELD_KEYS = Object.freeze({ scope: ADVISORY_SCOPE_KEY, decidedBy: ADVISORY_DECIDED_BY_KEY, sprint: ADVISORY_SPRINT_KEY, verify: ADVISORY_VERIFY_KEY, evidence: ADVISORY_EVIDENCE_KEY, evidenceSnapshot: ADVISORY_EVIDENCE_SNAPSHOT_KEY, result: ADVISORY_RESULT_KEY, relations: ADVISORY_RELATIONS_KEY });
 
-function workAdvisoryExtensions(base: Readonly<Record<string, unknown>>, advisory: WorkAdvisoryInput): Readonly<Record<string, unknown>> {
+// `relations` is the validated form of advisory.relations (validateRelationsInput), never the raw
+// input: its stored lists replace advisory:relations whole (an empty set removes the extension), and
+// its decided-in list is written as advisory:decided-by.
+function workAdvisoryExtensions(base: Readonly<Record<string, unknown>>, advisory: WorkAdvisoryInput, relations?: NormalizedWorkRelations): Readonly<Record<string, unknown>> {
   const next: Record<string, unknown> = { ...base };
   for (const field of Object.keys(ADVISORY_FIELD_KEYS) as Array<keyof WorkAdvisoryInput>) {
+    if (field === "relations") continue;
     const value = advisory[field];
     if (value === undefined) continue;
     const copied = field === "decidedBy" ? [...(value as readonly string[])] : field === "sprint" ? { workspaceId: (value as SprintReference).workspaceId, workId: (value as SprintReference).workId } : value;
     next[ADVISORY_FIELD_KEYS[field]] = { required: false, value: copied };
   }
+  if (relations !== undefined) {
+    if (relations.decidedIn !== undefined) next[ADVISORY_DECIDED_BY_KEY] = { required: false, value: [...relations.decidedIn] };
+    if (relations.stored === null) {
+      delete next[ADVISORY_RELATIONS_KEY];
+    } else {
+      next[ADVISORY_RELATIONS_KEY] = { required: false, value: { ...relations.stored } };
+    }
+  }
   return next;
+}
+
+// TCRN-CROSS-STORY-472 R2, R4: a write's relations, checked against the state it is built on.
+// decided-in and the older decided-by name one relation, so a write may give both only when they
+// agree.
+function workRelationsForWrite(state: WorkspaceState, id: string, input: WorkAdvisoryInput): NormalizedWorkRelations | undefined {
+  if (input.relations === undefined) return undefined;
+  const relations = validateRelationsInput(state, id, input.relations);
+  if (relations.decidedIn !== undefined && input.decidedBy !== undefined &&
+    canonicalJson([...input.decidedBy] as JsonValue) !== canonicalJson([...relations.decidedIn] as JsonValue)) {
+    fail("WORKSPACE_INPUT_INVALID", `work ${id} names decided-in and decided-by differently; they are one relation`);
+  }
+  return relations;
 }
 
 function workExtensionsDigest(extensions: Readonly<Record<string, unknown>>): string {
@@ -1392,6 +1438,12 @@ function assertAdvisoryEntryShape(key: string, entry: unknown, id: string, reaso
     if (!isSprintReference(value)) {
       fail(reasonCode, `work ${id} advisory sprint must be a {workspaceId, workId} qualified reference`);
     }
+    return;
+  }
+  if (key === ADVISORY_RELATIONS_KEY) {
+    // Shape only: replay never asks whether a target exists (TCRN-CROSS-STORY-472).
+    const problem = relationsShapeProblem(value, id);
+    if (problem !== null) fail(reasonCode, `work ${id} advisory relations ${problem}`);
     return;
   }
   if (key === ADVISORY_VERIFY_KEY) {
@@ -3348,6 +3400,7 @@ export function createWorkDelta(input: {
   readonly status?: WorkStatus;
   readonly scope?: string;
   readonly decidedBy?: readonly string[];
+  readonly relations?: WorkRelationsInput;
   readonly title?: string | null;
   readonly summary?: string | null;
   readonly labels?: readonly string[];
@@ -3365,6 +3418,7 @@ export async function createWork(workspaceRoot: string, input: {
   readonly status?: WorkStatus;
   readonly scope?: string;
   readonly decidedBy?: readonly string[];
+  readonly relations?: WorkRelationsInput;
   readonly title?: string | null;
   readonly summary?: string | null;
   readonly labels?: readonly string[];
@@ -3381,12 +3435,22 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
   readonly status?: WorkStatus;
   readonly scope?: string;
   readonly decidedBy?: readonly string[];
+  readonly relations?: WorkRelationsInput;
   readonly title?: string | null;
   readonly summary?: string | null;
   readonly labels?: readonly string[];
   readonly templateAdmission?: unknown;
   readonly occurredAt: string;
 }): MutationDelta {
+  // TCRN-CROSS-STORY-472 R1: refused on the write path only. Replay and validateWorkGraph keep
+  // accepting the historical kinds, so every chain that holds one still reads.
+  if (RETIRED_WORK_KINDS.includes(input.kind)) {
+    throw new WorkspaceError(
+      "WORK_KIND_RETIRED",
+      `a new ${input.kind} is no longer created: ${WORK_KIND_RETIRED_REMEDY}`,
+      { kind: input.kind, remedy: WORK_KIND_RETIRED_REMEDY },
+    );
+  }
   const externalKey = canonicalExternalKey(input.externalKey);
   const id = deriveStableId("work", externalKey);
   {
@@ -3419,6 +3483,7 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
       fail("WORKSPACE_STORY_SCOPE_REQUIRED", "Story scope must be a non-empty string");
     }
     validateWorkAdvisoryInput(input, id, "WORKSPACE_INPUT_INVALID");
+    const relations = workRelationsForWrite(state, id, input);
     const title = normalizeWorkTitle(input.title);
     const labels = normalizeWorkLabels(input.labels ?? []);
     // TCRN-CROSS-STORY-363. An explicit --summary wins; otherwise the first
@@ -3440,7 +3505,7 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
     if (templateRecord !== undefined && !templateRecord.template.appliesTo.includes(input.kind)) {
       throw new TemplateAdmissionError("TEMPLATE_NOT_APPLICABLE", `${templateRecord.template.id}:${input.kind}`);
     }
-    const extensions: Record<string, unknown> = workAdvisoryExtensions({}, input);
+    const extensions: Record<string, unknown> = workAdvisoryExtensions({}, input, relations);
     if (templateReceipt !== undefined && templateRecord !== undefined) {
       extensions[templateRecord.registrationId] = { required: true, value: templateBindingFromReceipt(templateReceipt) };
     }
@@ -3620,10 +3685,12 @@ function annotateWorkReducerDelta(state: WorkspaceState, input: WorkAnnotationIn
   if (current.tombstone) {
     fail("WORKSPACE_INPUT_INVALID", `work ${input.id} is deleted`);
   }
-  if (input.scope === undefined && input.decidedBy === undefined && input.verify === undefined && input.result === undefined && input.sprint === undefined && input.title === undefined && input.summary === undefined && input.labels === undefined) {
-    fail("WORKSPACE_INPUT_INVALID", "an annotation must set scope, decided-by, verify, result, sprint, title, summary, or labels");
+  if (input.scope === undefined && input.decidedBy === undefined && input.verify === undefined && input.result === undefined && input.sprint === undefined && input.relations === undefined && input.title === undefined && input.summary === undefined && input.labels === undefined) {
+    fail("WORKSPACE_INPUT_INVALID", "an annotation must set scope, decided-by, verify, result, sprint, relations, title, summary, or labels");
   }
   validateWorkAdvisoryInput(input, input.id, "WORKSPACE_INPUT_INVALID");
+  // TCRN-CROSS-STORY-472: an annotation replaces the stored relations whole.
+  const relations = workRelationsForWrite(state, input.id, input);
   const title = input.title === undefined ? current.title ?? null : normalizeWorkTitle(input.title);
   const labels = input.labels === undefined ? current.labels ?? [] : normalizeWorkLabels(input.labels);
   // TCRN-CROSS-STORY-363. This is the door the historical backfill goes through:
@@ -3631,7 +3698,7 @@ function annotateWorkReducerDelta(state: WorkspaceState, input: WorkAnnotationIn
   // that is the only way a pre-363 record acquires one -- by an event that says
   // who wrote it and when, not by a replay-time default.
   const summary = input.summary === undefined ? current.summary : normalizeWorkSummary(input.summary);
-  const extensions = workAdvisoryExtensions(current.extensions, input);
+  const extensions = workAdvisoryExtensions(current.extensions, input, relations);
   // TCRN-CROSS-INC-269: the reducer's own predicate, run before the event exists.
   // title, labels and summary are top-level work fields rather than extensions, so an
   // annotation that moved only them once satisfied a separate no-op check here and

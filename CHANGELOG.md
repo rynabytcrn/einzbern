@@ -512,6 +512,27 @@ is `atelier`, as it is when Atelier runs the CLI. The CLI cannot tell who runs i
 barrier. A key the engine refuses whoever asks keeps its own refusal (`SETTINGS_KEY_DEVICE_LEVEL`,
 `SETTINGS_KEY_UNREGISTERED`), and reads are never refused.
 
+A project can switch on Command Spell rules (TCRN-CROSS-STORY-483; MIN-228 D3, MIN-229 D6;
+`packages/core/src/rules-catalog.ts`, `packages/core/src/rules.ts`). The engine ships four, each with
+a version and a Chinese and an English text: `autonomy` v1, `batch` v2, `unattended-commands` v1 and
+`silent-reporting` v1; the English texts of the first three await the Owner's correction. Every rule
+is off until it is enabled. `rule-enable --id <rule> [--project <dir>] --at` records the rule in the
+library's `rule` collection as `{enabled: true, version}` at the version this engine ships and writes
+its text, in the project's `artifact.language` (Chinese for `zh-CN`, English otherwise), into
+AGENTS.md as the managed section `rule:<id>`. `rule-disable --id <rule> [--force true] --at` takes the
+section out with its markers and records `{enabled: false, version}`; a section the user changed goes
+only with `--force true` (`MANAGED_SECTION_FORCE_REQUIRED`). Both answer with the rule's state, what
+became of its section and the backup directory (`RULE_ENABLED`, `RULE_DISABLED`).
+`rule-list [--project <dir>]` answers `RULE_LIST_READY` with each rule's `{id, version,
+recordedVersion, fileVersion, section, state}` and writes nothing. A rule is `disabled`, `enabled`,
+`user-modified` (its text is not what the engine wrote, or the user kept it with `rule-resolve
+keep`), `removed-from-file` (its markers are gone, and they are not put back), `update-available`
+(the engine ships a higher version than the rule was enabled at; the file is left as it is until
+`rule-enable` takes the new version) or `pending` (a write was refused over the user's change and
+waits for `rule-resolve`). `agents-render` renders the enabled rules' sections with the others and
+leaves a rule enabled at another version as the file holds it, and an engine that ships an older
+version than the library records refuses to enable the rule (`RULE_VERSION_NEWER`).
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

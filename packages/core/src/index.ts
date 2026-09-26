@@ -709,6 +709,14 @@ export {
   resolveAgentsSection,
 } from "./agents-sections.js";
 export type { SectionAction } from "./agents-sections.js";
+// TCRN-CROSS-STORY-483 R1 (TCRN-CROSS-SUB-335): the four Command Spell rules this engine ships, each
+// with its version and its Chinese and English text.
+export { BUILT_IN_RULES, builtInRule, ruleBody } from "./rules-catalog.js";
+export type { BuiltInRule, BuiltInRuleId } from "./rules-catalog.js";
+// TCRN-CROSS-STORY-483 R2, R3 (TCRN-CROSS-SUB-336): the rules a project has enabled, the state each
+// of them is in, and enabling and disabling one.
+export { RULE_STATES, disableRule, enableRule, listRules } from "./rules.js";
+export type { RuleChange, RuleState, RuleStatus } from "./rules.js";
 // TCRN-CROSS-STORY-471 R2, R3: the engine versions installed on this device, the pointer to the one
 // in use, and switching between them.
 export { listEngines, rollbackEngine, updateEngine } from "./engine-home.js";

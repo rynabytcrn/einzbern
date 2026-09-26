@@ -661,6 +661,8 @@ export { suggestCloudHosted } from "./cloud-roots.js";
 // TCRN-CROSS-STORY-470 R3: moving a library, and the tombstone its old place keeps.
 export { relocateLibrary } from "./relocate.js";
 export { readLibraryTombstone } from "./workspace.js";
+// TCRN-CROSS-STORY-470 R5: a project's own host settings naming a library that sits outside it.
+export { applyWritableRoots, planWritableRoots } from "./host-writable-roots.js";
 export type { AtomicFileReasonCode, AtomicWriteOptions } from "./atomic-file.js";
 // TCRN-CROSS-STORY-468 R1: this device's identity in the device directory.
 export {

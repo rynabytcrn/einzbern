@@ -203,6 +203,21 @@ relocation created. Then this device's registry points at the new place and the 
 `TOMBSTONE.json` (`einzbern.tombstone.v1`: library id, where it went and when): it keeps its
 files and still reads, `status` reports `relocatedTo`, and every write there refuses with
 `LIBRARY_TOMBSTONED` naming the new place. Nothing is deleted.
+A library outside its project is one both hosts may write (TCRN-CROSS-STORY-470 R5, AC4;
+`packages/core/src/host-writable-roots.ts`): the project's own host settings name its real path,
+Claude Code's `permissions.additionalDirectories` in `.claude/settings.local.json` and Codex's
+`[sandbox_workspace_write] writable_roots` in `.codex/config.toml`, and everything else in both
+files is kept (the TOML is edited in place, comments and layout included). `scripts/host-render.mjs
+--host <host> --root <project> --library <library> [--at] [--plan-only]` renders this
+writable-roots scope, and `workspace-relocate` does it for every project this device has
+registered for the library, reporting each as `hostWiring`; a project whose wiring fails keeps the
+move. A library inside its project needs nothing, wiring the same library twice changes nothing,
+and each file is copied to `backups/<UTC instant>/writable-roots/<project digest>/` in the device
+directory before it is replaced. A host file Git tracks is still wired and reported
+`trackedByGit`, because committing it would publish the path. A host file that is not a regular
+file, or not JSON or TOML the wiring can edit without risking the rest, is refused with
+`HOST_WRITABLE_ROOTS_FILE_UNSUPPORTED`, and one that changed after it was planned with
+`HOST_WRITABLE_ROOTS_CONCURRENT_MODIFICATION`.
 
 ## 1.2.1 — patch candidate
 

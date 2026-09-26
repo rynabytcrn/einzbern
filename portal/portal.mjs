@@ -7,14 +7,15 @@
 
 import { createServer } from "node:http";
 import { execFile } from "node:child_process";
-import { readFile, realpath, writeFile } from "node:fs/promises";
+import { readdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { createHash, randomBytes } from "node:crypto";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { LOCALE_CONTRACT } from "./locale-contract.mjs";
-import { LEGACY_CONTAINER_DIRECTORY } from "../scripts/lib/names.mjs";
+import { DIRECTORY, LEGACY_CONTAINER_DIRECTORY } from "../scripts/lib/names.mjs";
 
 const execFileAsync = promisify(execFile);
 const portalRoot = dirname(fileURLToPath(import.meta.url));
@@ -285,6 +286,78 @@ const writeVariable = (body) => governedWrite((common) => [
 ], ATELIER_SURFACE);
 const removeVariable = (name) => governedWrite((common) => ["variable-remove", ...common, "--name", String(name)], ATELIER_SURFACE);
 const variablesCatalog = () => cliResult(["variable-list", "--workspace", currentLibrary().libraryPath]);
+
+async function gatesProjection() {
+  const result = await cliResult(["gates-config-list", "--workspace", currentLibrary().libraryPath]);
+  if (!result.ok) return { ...result.body, ok: false, gates: [] };
+  return { ...result.body, ok: true, reasonCode: "PORTAL_GATES_READY", gates: Array.isArray(result.body?.records) ? result.body.records : [] };
+}
+
+function deviceHomePath() {
+  const configured = process.env.EINZBERN_HOME;
+  return typeof configured === "string" && configured.length > 0 ? resolve(configured) : join(homedir(), DIRECTORY.device);
+}
+
+function isGateRun(value, libraryId) {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
+  const run = value;
+  return run.schemaVersion === "einzbern.gate-run.v1" && run.libraryId === libraryId &&
+    typeof run.runId === "string" && typeof run.at === "string" && Number.isFinite(Date.parse(run.at)) &&
+    typeof run.treeDigest === "string" && typeof run.declarationsDigest === "string" && Array.isArray(run.gates) &&
+    run.gates.every((gate) => gate !== null && typeof gate === "object" && typeof gate.name === "string" && typeof gate.ok === "boolean" && typeof gate.required === "boolean") &&
+    Array.isArray(run.reds);
+}
+
+async function latestGateRunProjection() {
+  const libraryId = currentLibrary().libraryId;
+  const match = /^(library|workspace):([a-f0-9]{24})$/u.exec(libraryId);
+  if (match === null) return { ok: false, reasonCode: "PORTAL_GATE_RUN_READ_FAILED", error: "library id is invalid" };
+  const directory = join(deviceHomePath(), "cache", `${match[1]}-${match[2]}`, "gate-runs");
+  let entries;
+  try { entries = await readdir(directory, { withFileTypes: true }); } catch (error) {
+    if (error?.code === "ENOENT") return { ok: true, reasonCode: "PORTAL_GATE_RUN_READY", run: null };
+    return { ok: false, reasonCode: "PORTAL_GATE_RUN_READ_FAILED", error: String(error?.message ?? error) };
+  }
+  let latest = null;
+  for (const entry of entries.filter((candidate) => candidate.isFile() && candidate.name.endsWith(".json")).sort((left, right) => left.name.localeCompare(right.name))) {
+    let run;
+    try { run = JSON.parse(await readFile(join(directory, entry.name), "utf8")); } catch { continue; }
+    if (!isGateRun(run, libraryId)) continue;
+    if (latest === null || Date.parse(run.at) > Date.parse(latest.at) || (Date.parse(run.at) === Date.parse(latest.at) && run.runId.localeCompare(latest.runId) > 0)) latest = run;
+  }
+  return { ok: true, reasonCode: "PORTAL_GATE_RUN_READY", run: latest };
+}
+
+function gateInput(body) {
+  if (body === null || typeof body !== "object" || Array.isArray(body)) return null;
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  const command = body.command;
+  const root = typeof body.root === "string" ? body.root : ".";
+  const covers = body.covers;
+  if (name === "" || !Array.isArray(command) || command.length === 0 || command.some((part) => typeof part !== "string" || part === "") ||
+    typeof root !== "string" || !Array.isArray(covers) || covers.some((cover) => typeof cover !== "string") ||
+    typeof body.required !== "boolean" || typeof body.enabled !== "boolean" || typeof body.releaseOnly !== "boolean") return null;
+  return { name, command, root, covers, required: body.required, enabled: body.enabled, releaseOnly: body.releaseOnly };
+}
+
+const writeGate = (gate) => governedWrite((common) => [
+  "gates-config-set", ...common,
+  "--name", gate.name,
+  "--command", JSON.stringify(gate.command),
+  "--root", gate.root,
+  "--covers", gate.covers.length === 0 ? "-" : gate.covers.join(","),
+  "--required", String(gate.required),
+  "--enabled", String(gate.enabled),
+  "--release-only", String(gate.releaseOnly),
+], ATELIER_SURFACE);
+const deleteGate = (name) => governedWrite((common) => ["gates-config-remove", ...common, "--name", name], ATELIER_SURFACE);
+
+async function completeGateWrite(name, mutation) {
+  if (!mutation.ok) return { ...mutation.body, ok: false };
+  const latest = await gatesProjection();
+  if (!latest.ok) return { ...mutation.body, ok: false, reasonCode: latest.reasonCode ?? "PORTAL_GATES_READBACK_FAILED", mutation: mutation.body, gates: latest.gates };
+  return { ...mutation.body, ok: true, gates: latest.gates, gate: latest.gates.find((entry) => entry.name === name) ?? null };
+}
 
 async function completeVariableWrite(name, result) {
   if (!result.ok) return { ok: false, body: { ...result.body, ok: false } };
@@ -587,28 +660,29 @@ const server = createServer(async (request, response) => {
     }
     if (request.method === "GET" && pathname === "/api/status") {
       const selected = currentLibrary();
-      const [status, validation, catalog] = await Promise.all([
-        cliResult(["status", "--workspace", selected.libraryPath]),
-        cliResult(["validate", "--workspace", selected.libraryPath]),
-        cliResult(["settings-catalog", "--workspace", selected.libraryPath]),
-      ]);
-      const checks = [
-        { key: "validate", ok: validation.ok, reasonCode: validation.body?.reasonCode ?? "PORTAL_VALIDATE_FAILED" },
-        { key: "catalog", ok: catalog.ok, reasonCode: catalog.body?.reasonCode ?? "PORTAL_CATALOG_FAILED" },
-        { key: "actor", ok: ACTOR.length > 0, reasonCode: ACTOR.length > 0 ? "PORTAL_ACTOR_CONFIGURED" : "PORTAL_ACTOR_MISSING" },
-      ];
-      let events = null;
-      try { events = await cli(["event-list", "--workspace", selected.libraryPath, "--limit", "1"]); } catch { /* health remains legible */ }
+      // Doctor's device-stream check briefly probes the selected library, so let it finish before status reads that library.
+      const doctor = await cliResult(["doctor", "--project", selected.projectPath]);
+      const status = await cliResult(["status", "--workspace", selected.libraryPath]);
       const body = status.body ?? {};
+      const doctorBody = doctor.body ?? {};
+      const checks = Array.isArray(doctorBody.checks) ? doctorBody.checks : [];
+      const ready = doctor.ok && doctorBody.ok === true && checks.length === 8 && checks.every((check) => check.ok === true) && status.ok;
       send(response, 200, {
-        ok: checks.every((check) => check.ok) && status.ok,
-        reasonCode: checks.every((check) => check.ok) && status.ok ? "PORTAL_STATUS_READY" : "PORTAL_STATUS_DEGRADED",
+        ok: ready,
+        reasonCode: ready ? "PORTAL_STATUS_READY" : "PORTAL_STATUS_DEGRADED",
+        doctorReasonCode: doctorBody.reasonCode ?? "PORTAL_DOCTOR_FAILED",
         workspaceId: body.workspaceId ?? null,
         version: body.version ?? null,
         headEventHash: body.headEventHash ?? null,
-        eventCount: events?.total ?? null,
+        eventCount: body.version ?? null,
         engineVersion: body.engineVersion ?? null,
         checks,
+        library: {
+          versionVector: body.versionVector ?? null,
+          streams: Array.isArray(body.streams) ? body.streams : null,
+          rejectedEventCount: body.rejectedEventCount ?? null,
+          configProjection: body.configProjection ?? null,
+        },
       });
       return;
     }
@@ -662,6 +736,35 @@ const server = createServer(async (request, response) => {
       send(response, result.ok ? 200 : 409, result.body);
       return;
     }
+    if (request.method === "GET" && pathname === "/api/gates") {
+      const result = await gatesProjection();
+      send(response, result.ok ? 200 : 502, result);
+      return;
+    }
+    if ((request.method === "POST" || request.method === "DELETE") && pathname === "/api/gates") {
+      const body = await readJsonBody(request);
+      if (request.method === "POST") {
+        const gate = gateInput(body);
+        if (gate === null) { send(response, 400, { ok: false, reasonCode: "PORTAL_GATE_INPUT_INVALID" }); return; }
+        const result = await completeGateWrite(gate.name, await writeGate(gate));
+        send(response, result.ok ? 200 : 409, result);
+        return;
+      }
+      const name = typeof body?.name === "string" ? body.name.trim() : "";
+      if (name === "") { send(response, 400, { ok: false, reasonCode: "PORTAL_GATE_INPUT_INVALID" }); return; }
+      const mutation = await deleteGate(name);
+      const result = mutation.ok ? await gatesProjection() : null;
+      const payload = mutation.ok && result?.ok
+        ? { ...mutation.body, ok: true, removed: name, gates: result.gates }
+        : { ...mutation.body, ok: false, ...(mutation.ok ? { reasonCode: result?.reasonCode ?? "PORTAL_GATES_READBACK_FAILED", mutation: mutation.body, gates: result?.gates ?? [] } : {}) };
+      send(response, payload.ok ? 200 : 409, payload);
+      return;
+    }
+    if (request.method === "GET" && pathname === "/api/gates/last-run") {
+      const result = await latestGateRunProjection();
+      send(response, result.ok ? 200 : 502, result);
+      return;
+    }
     if (request.method === "POST" && pathname === "/api/machine-settings") {
       const body = await readJsonBody(request);
       const key = String(body.key ?? "");
@@ -688,8 +791,8 @@ const server = createServer(async (request, response) => {
       return;
     }
     // TCRN-CROSS-STORY-482 R4, AC3: every other API path is unknown, the retired ones included:
-    // execution, gates, evolution, the session audit and the host probe. The host-probe verb
-    // stays in the CLI; only its page route is gone.
+    // execution, evolution, the session audit and the host probe.
+    // The host-probe verb stays in the CLI; only its page route is gone.
     send(response, 404, { ok: false, reasonCode: "PORTAL_ROUTE_UNKNOWN" });
   } catch (error) {
     send(response, 500, { ok: false, reasonCode: error?.reasonCode ?? "PORTAL_INTERNAL_ERROR", error: String(error?.message ?? error) });

@@ -4111,6 +4111,21 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 [data-page-hierarchy="true"][data-page-hierarchy-depth="two"] .tcrn-editor-shell { display: block; }
 [data-page-hierarchy="true"][data-page-hierarchy-depth="two"] .tcrn-editor__bar { margin-bottom: var(--tcrn-space-3); }
 [data-page-hierarchy="true"][data-page-hierarchy-depth="two"] .tcrn-editor__directory { margin-bottom: var(--tcrn-space-3); }
+#gates-view { display: grid; gap: var(--tcrn-space-4); }
+#gate-add-form { display: grid; gap: var(--tcrn-space-3); }
+[data-gate-options] { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tcrn-space-3); }
+[data-ui="gate-config-table"] { width: 100%; border-collapse: collapse; }
+[data-ui="gate-config-table"] th, [data-ui="gate-config-table"] td { padding: var(--tcrn-space-3); border-bottom: 1px solid var(--tcrn-color-border-subtle); text-align: start; vertical-align: top; }
+[data-ui="gate-config-table"] th { color: var(--tcrn-color-text-secondary); font-size: var(--tcrn-type-size-caption); font-weight: var(--tcrn-type-weight-semibold); }
+[data-ui="gate-config-table"] td:first-child { min-width: 15rem; }
+[data-ui="gate-config-table"] td:last-child { min-width: 13rem; }
+[data-gate-cell] { display: grid; gap: var(--tcrn-space-2); }
+[data-gate-cell-actions] { display: flex; flex-wrap: wrap; gap: var(--tcrn-space-2); }
+[data-gate-covers] { display: grid; gap: var(--tcrn-space-2); }
+[data-gate-cover-row] { display: flex; align-items: center; gap: var(--tcrn-space-2); }
+[data-gate-cover-row] [data-gate-cover] { min-width: 0; }
+#gates-last-run { display: grid; gap: var(--tcrn-space-2); }
+[data-gate-run-row] { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tcrn-space-2); }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: var(--tcrn-motion-reduced-duration) !important; animation-duration: var(--tcrn-motion-reduced-duration) !important; } }
 </style>
 </head>
@@ -4130,11 +4145,12 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
       </div>
       <div class="tcrn-rail__mark"><strong class="tcrn-rail__workspace" id="rail-workspace-label"></strong><span class="tcrn-meta tcrn-rail__library" id="library-label"></span></div>
       <nav class="tcrn-side-nav" id="primary-side-nav" aria-label="Portal navigation">
-        <button class="tcrn-nav-item" data-nav-item-has-icon="true" data-page-target="dashboard" aria-current="page" aria-label="Dashboard" data-i18n-aria-label="nav.dashboard"><span class="tcrn-nav-item__content" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.8" y="1.8" width="5.2" height="5.2" rx="1"/><rect x="9" y="1.8" width="5.2" height="5.2" rx="1"/><rect x="1.8" y="9" width="5.2" height="5.2" rx="1"/><rect x="9" y="9" width="5.2" height="5.2" rx="1"/></svg></span><span class="tcrn-nav-item__label" data-i18n="nav.dashboard">Dashboard</span></button>
+        <button class="tcrn-nav-item" data-nav-item-has-icon="true" data-page-target="dashboard" aria-current="page" aria-label="Status" data-i18n-aria-label="nav.dashboard"><span class="tcrn-nav-item__content" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.8" y="1.8" width="5.2" height="5.2" rx="1"/><rect x="9" y="1.8" width="5.2" height="5.2" rx="1"/><rect x="1.8" y="9" width="5.2" height="5.2" rx="1"/><rect x="9" y="9" width="5.2" height="5.2" rx="1"/></svg></span><span class="tcrn-nav-item__label" data-i18n="nav.dashboard">Status</span></button>
         <button class="tcrn-nav-item" data-nav-item-has-icon="true" data-page-target="settings" aria-label="Settings" data-i18n-aria-label="nav.settings"><span class="tcrn-nav-item__content" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.4"/><path d="M8 1.6v2M8 12.4v2M1.6 8h2M12.4 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M12.5 3.5l-1.4 1.4M4.9 11.1l-1.4 1.4"/></svg></span><span class="tcrn-nav-item__label" data-i18n="nav.settings">Settings</span></button>
         <button class="tcrn-nav-item" data-nav-item-has-icon="true" data-page-target="variables" aria-label="Variables" data-i18n-aria-label="nav.variables"><span class="tcrn-nav-item__content" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3.2h10M3 8h10M3 12.8h10"/><circle cx="5.2" cy="3.2" r="1.5" fill="currentColor"/><circle cx="10.8" cy="8" r="1.5" fill="currentColor"/><circle cx="7.2" cy="12.8" r="1.5" fill="currentColor"/></svg></span><span class="tcrn-nav-item__label" data-i18n="nav.variables">Variables</span></button>
         <button class="tcrn-nav-item" data-nav-item-has-icon="true" data-page-target="prose" aria-label="Rules" data-i18n-aria-label="nav.prose"><span class="tcrn-nav-item__content" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2.5h10M3 5.5h10M3 8.5h6.5"/><path d="M3 12.5h4"/></svg></span><span class="tcrn-nav-item__label" data-i18n="nav.prose">Rules</span></button>
         <button class="tcrn-nav-item" data-nav-item-has-icon="true" data-page-target="vocabulary" aria-label="Vocabulary" data-i18n-aria-label="nav.vocabulary"><span class="tcrn-nav-item__content" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.8C6.6 1.9 4.4 1.7 2.2 2.2v10.6c2.2-.5 4.4-.3 5.8.6 1.4-.9 3.6-1.1 5.8-.6V2.2C11.6 1.7 9.4 1.9 8 2.8Z"/><path d="M8 2.8v10.6"/></svg></span><span class="tcrn-nav-item__label" data-i18n="nav.vocabulary">Vocabulary</span></button>
+        <button class="tcrn-nav-item" data-nav-item-has-icon="true" data-page-target="gates" aria-label="Gates" data-i18n-aria-label="nav.gates"><span class="tcrn-nav-item__content" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h10v10H3z"/><path d="m5 8 2 2 4-4"/></svg></span><span class="tcrn-nav-item__label" data-i18n="nav.gates">Gates</span></button>
       </nav>
       <div class="tcrn-rail__footer"><span data-i18n="app.boundaryBody">Writes use the public CLI and return the engine receipt.</span></div>
     </aside>
@@ -4175,15 +4191,18 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
       <section class="tcrn-page" data-page="dashboard">
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
-            <div class="tcrn-page__head"><div><h1 data-i18n="page.dashboard">Workspace overview</h1><p class="tcrn-page__lede" data-i18n="dashboard.lede">A readable status surface for the live governed workspace.</p></div><div class="tcrn-page__actions"><span class="tcrn-badge tcrn-badge--positive" id="health-chip"><span id="health-chip-text" data-i18n="health.healthy">healthy</span></span></div></div>
+            <div class="tcrn-page__head"><div><h1 data-i18n="page.dashboard">Workspace status</h1><p class="tcrn-page__lede" data-i18n="dashboard.lede">Doctor's eight checks and the selected library state.</p></div><div class="tcrn-page__actions"><span class="tcrn-badge tcrn-badge--positive" id="health-chip"><span id="health-chip-text" data-i18n="health.healthy">healthy</span></span></div></div>
           </div>
           <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs">
-            <div class="tcrn-section-tabs" role="tablist" data-ui="workspace-tabs" aria-label="Workspace views"><button class="tcrn-button" role="tab" aria-selected="true" data-selected="true" data-workspace-tab="overview" data-i18n="dashboard.overview">Overview</button><button class="tcrn-button" role="tab" aria-selected="false" data-selected="false" data-workspace-tab="work" data-i18n="dashboard.work">Work</button><button class="tcrn-button" role="tab" aria-selected="false" data-selected="false" data-workspace-tab="knowledge" data-i18n="dashboard.knowledge">Knowledge</button></div>
+            <div class="tcrn-section-tabs" role="tablist" data-ui="workspace-tabs" aria-label="Workspace views"><button class="tcrn-button" role="tab" aria-selected="true" data-selected="true" data-workspace-tab="overview" data-i18n="dashboard.overview">Status</button><button class="tcrn-button" role="tab" aria-selected="false" data-selected="false" data-workspace-tab="work" data-i18n="dashboard.work">Work</button><button class="tcrn-button" role="tab" aria-selected="false" data-selected="false" data-workspace-tab="knowledge" data-i18n="dashboard.knowledge">Knowledge</button></div>
           </div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content">
         <div data-workspace-panel="overview">
           <div class="tcrn-grid tcrn-grid--4"><article class="tcrn-stat-card" data-stat-card="true" data-stat-tone="neutral"><span class="tcrn-stat-card__label" data-i18n="dashboard.chain">Chain version</span><strong class="tcrn-stat-card__value" id="stat-version">—</strong><span class="tcrn-stat-card__note" id="stat-head"></span></article><article class="tcrn-stat-card" data-stat-card="true" data-stat-tone="neutral"><span class="tcrn-stat-card__label" data-i18n="dashboard.events">Events</span><strong class="tcrn-stat-card__value" id="stat-events">—</strong><span class="tcrn-stat-card__note" data-i18n="dashboard.eventsNote">materialized chain</span></article><article class="tcrn-stat-card" data-stat-card="true" data-stat-tone="neutral"><span class="tcrn-stat-card__label" data-i18n="dashboard.engine">Engine</span><strong class="tcrn-stat-card__value" id="stat-engine">—</strong><span class="tcrn-stat-card__note" data-i18n="dashboard.engineNote">local loopback</span></article><article class="tcrn-stat-card" data-stat-card="true" data-stat-tone="neutral"><span class="tcrn-stat-card__label" data-i18n="dashboard.healthCard">Health</span><strong class="tcrn-stat-card__value" id="stat-health">—</strong><span class="tcrn-stat-card__note" data-i18n="dashboard.healthCardNote">read-only checks</span></article></div>
-          <div class="tcrn-grid tcrn-grid--2 tcrn-dashboard-grid"><article class="tcrn-surface"><div class="tcrn-surface__head"><div><h2 data-i18n="dashboard.healthTitle">Health</h2><p class="tcrn-surface__note" data-i18n="dashboard.healthNote">Read-only checks from the workspace and engine.</p></div><span class="tcrn-badge tcrn-badge--positive" id="validate-chip">validate</span></div><div class="tcrn-list" id="health-list"></div></article></div>
+          <div class="tcrn-grid tcrn-grid--2 tcrn-dashboard-grid">
+            <article class="tcrn-surface"><div class="tcrn-surface__head"><div><h2 data-i18n="dashboard.healthTitle">Doctor checks</h2><p class="tcrn-surface__note" data-i18n="dashboard.healthNote">The eight checks returned by doctor for the selected project.</p></div><span class="tcrn-badge tcrn-badge--positive" id="validate-chip">doctor</span></div><div class="tcrn-list" id="health-list"></div></article>
+            <article class="tcrn-surface"><div class="tcrn-surface__head"><div><h2 data-i18n="dashboard.libraryTitle">Selected library</h2><p class="tcrn-surface__note" data-i18n="dashboard.libraryNote">Read from the selected library's status.</p></div></div><dl class="tcrn-definition-list" id="library-state"></dl></article>
+          </div>
         </div>
         <div data-workspace-panel="work" hidden><div class="tcrn-surface" data-ui="work-tree"><div class="tcrn-surface__head"><div><h2 data-i18n="dashboard.workTitle">Work tree</h2><p class="tcrn-surface__note" data-i18n="dashboard.workNote">Initiatives, Epics, and Stories read from the engine.</p></div><span class="tcrn-badge" id="work-count">—</span></div><div id="work-tree-content"></div></div></div>
         <div data-workspace-panel="knowledge" hidden><div class="tcrn-surface" data-ui="knowledge-view"><div class="tcrn-surface__head"><div><h2 data-i18n="dashboard.knowledgeTitle">Knowledge inventory</h2><p class="tcrn-surface__note" data-i18n="dashboard.knowledgeNote">Cards and article indexes, metadata only.</p></div><span class="tcrn-badge" id="knowledge-count">—</span></div><div id="knowledge-view-content"></div></div></div>
@@ -4210,6 +4229,39 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
           </div>
           <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs"><p class="tcrn-scope-note" data-i18n="variables.scope">Custom variables are stored with this library and rendered into AGENTS.md.</p></div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content"><div id="variables-view" data-ui="variables-view"></div></div>
+        </div>
+      </section>
+      <section class="tcrn-page tcrn-page--manage" data-page="gates" hidden>
+        <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
+          <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
+            <div class="tcrn-page__head"><div><h1 data-i18n="page.gates">Gate configuration</h1><p class="tcrn-page__lede" data-i18n="gates.lede">Project gates are selected from changed paths and stored with this library.</p></div><div class="tcrn-page__actions"><span class="tcrn-badge" id="gates-count">—</span></div></div>
+          </div>
+          <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs"><p class="tcrn-scope-note" data-i18n="gates.scope">Enabled gates run when their covered paths change. Required gates are checked before work is marked done.</p></div>
+          <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content">
+            <div id="gates-view" data-ui="gates-view">
+              <article class="tcrn-surface" aria-labelledby="gates-last-run-title"><div class="tcrn-surface__head"><div><h2 id="gates-last-run-title" data-i18n="gates.lastRunTitle">Most recent gate run</h2></div></div><div id="gates-last-run" data-ui="gates-last-run" aria-live="polite"></div></article>
+              <article class="tcrn-surface" aria-labelledby="gates-add-title"><div class="tcrn-surface__head"><div><h2 id="gates-add-title" data-i18n="gates.addTitle">Add a gate</h2></div></div>
+                <form id="gate-add-form" data-ui="gate-add-form">
+                  <div class="tcrn-grid tcrn-grid--2">
+                    <label class="tcrn-field"><span class="tcrn-field__label" data-i18n="gates.name">Gate name</span><input class="tcrn-input" name="name" required maxlength="64" autocomplete="off"></label>
+                    <label class="tcrn-field"><span class="tcrn-field__label" data-i18n="gates.root">Project-relative root</span><input class="tcrn-input" name="root" value="." required autocomplete="off"></label>
+                    <label class="tcrn-field"><span class="tcrn-field__label" data-i18n="gates.command">Command as JSON argv</span><textarea class="tcrn-input tcrn-textarea" name="command" required rows="2" placeholder='["pnpm","verify:links"]'></textarea></label>
+                    <label class="tcrn-field"><span class="tcrn-field__label" data-i18n="gates.coversInput">Covered paths, one glob per line</span><textarea class="tcrn-input tcrn-textarea" name="covers" rows="2" placeholder="src/**"></textarea></label>
+                  </div>
+                  <div data-gate-options>
+                    <label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" name="enabled" checked><span class="tcrn-switch__label" data-i18n="gates.enabled">Enabled</span></label>
+                    <label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" name="required" checked><span class="tcrn-switch__label" data-i18n="gates.required">Required</span></label>
+                    <label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" name="releaseOnly"><span class="tcrn-switch__label" data-i18n="gates.releaseOnly">Release only</span></label>
+                    <button class="tcrn-button tcrn-button--primary" type="submit" data-cli-action="gates-config-set" data-i18n="gates.addButton">Add gate</button>
+                  </div>
+                </form>
+              </article>
+              <article class="tcrn-surface" aria-labelledby="gates-list-title"><div class="tcrn-surface__head"><div><h2 id="gates-list-title" data-i18n="gates.listTitle">Configured gates</h2></div></div>
+                <div class="tcrn-table-scroll"><table data-ui="gate-config-table"><thead><tr><th scope="col" data-i18n="gates.columnGate">Gate</th><th scope="col" data-i18n="gates.columnEnabled">Enabled</th><th scope="col" data-i18n="gates.columnRequired">Required</th><th scope="col" data-i18n="gates.columnCovers">Covered paths</th></tr></thead><tbody id="gates-rows"></tbody></table></div>
+                <div id="gates-empty" class="tcrn-state-surface" data-ui="gates-empty" hidden></div>
+              </article>
+            </div>
+          </div>
         </div>
       </section>
       <section class="tcrn-page tcrn-page--manage" data-page="prose" hidden>
@@ -4262,7 +4314,7 @@ const BOOT = __PORTAL_BOOT__;
   const storedTheme = tcrnReadPreference("theme", ["light", "dark"], null);
   const machineTheme = ["light", "dark"].includes(BOOT.machineDefaults?.theme) ? BOOT.machineDefaults.theme : null;
   if (storedTheme === null && machineTheme !== null) document.documentElement.dataset.tcrnTheme = machineTheme;
-  const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? "en", theme: document.documentElement.dataset.tcrnTheme, page: "dashboard", dashboardTab: "overview", settingGroup: "workspace", settings: null, machineSettings: null, variables: null, vocabulary: null, status: null, work: null, knowledge: null, knowledgeQuery: "", knowledgeBody: null, commands: [], selectedVocabulary: "conferenceTypes", receipt: null, operationDetailsOpen: false, agentsText: "", reconciliation: null, rules: null, pendingSection: "", searchIndex: [], searchResults: [], searchSelection: 0 };
+  const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? "en", theme: document.documentElement.dataset.tcrnTheme, page: "dashboard", dashboardTab: "overview", settingGroup: "workspace", settings: null, machineSettings: null, variables: null, vocabulary: null, status: null, work: null, knowledge: null, knowledgeQuery: "", knowledgeBody: null, gates: [], gateResponse: null, lastGateRun: null, commands: [], selectedVocabulary: "conferenceTypes", receipt: null, operationDetailsOpen: false, agentsText: "", reconciliation: null, rules: null, pendingSection: "", searchIndex: [], searchResults: [], searchSelection: 0 };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   // DS Tabs is a behavior contract, not a role decoration. Every tablist below
@@ -4964,16 +5016,19 @@ const BOOT = __PORTAL_BOOT__;
   const renderWorkView = () => {
     const data = state.work;
     const records = Array.isArray(data?.records) ? data.records : [];
-    const initiative = records.find((entry) => entry.externalKey === "TCRN-CROSS-INIT-051");
-    const epics = initiative === undefined ? [] : records.filter((entry) => entry.parentId === initiative.id && entry.kind === "Epic").sort((left, right) => String(left.externalKey).localeCompare(String(right.externalKey)));
-    setText("#work-count", `${epics.length} ${t("dashboard.epics")}`);
-    if (initiative === undefined) {
-      $("#work-tree-content").innerHTML = `<div class="tcrn-state-surface">${esc(data?.reasonCode ?? t("dashboard.noWork"))}</div>`;
+    const initiatives = records.filter((entry) => entry.kind === "Initiative").sort((left, right) => String(left.externalKey).localeCompare(String(right.externalKey)));
+    const epicsFor = (initiative) => records.filter((entry) => entry.parentId === initiative.id && entry.kind === "Epic").sort((left, right) => String(left.externalKey).localeCompare(String(right.externalKey)));
+    const epicCount = initiatives.reduce((count, initiative) => count + epicsFor(initiative).length, 0);
+    setText("#work-count", `${epicCount} ${t("dashboard.epics")}`);
+    if (initiatives.length === 0) {
+      const emptyMessage = data?.ok === false ? data.reasonCode ?? t("dashboard.noWork") : t("dashboard.noWorkRecords");
+      $("#work-tree-content").innerHTML = `<div class="tcrn-state-surface">${esc(emptyMessage)}</div>`;
       return;
     }
     const summaryFor = (entry) => entry.summary || entry.title || t("dashboard.missingSummary");
     const storyRows = (epic) => records.filter((entry) => entry.parentId === epic.id && entry.kind === "Story").sort((left, right) => String(left.externalKey).localeCompare(String(right.externalKey))).map((entry) => `<div class="tcrn-work-tree__story" role="treeitem" data-work-id="${esc(entry.id)}"><div class="tcrn-work-tree__text"><code class="tcrn-work-tree__key">${esc(entry.externalKey)}</code><span class="tcrn-work-tree__title ${entry.summary || entry.title ? "" : "tcrn-work-tree__missing"}">${esc(summaryFor(entry))}</span></div>${statusBadge(entry.status, statusTone(entry.status))}</div>`).join("") || `<div class="tcrn-meta">${esc(t("dashboard.noStories"))}</div>`;
-    $("#work-tree-content").innerHTML = `<div class="tcrn-work-tree" role="tree" aria-label="${esc(t("dashboard.workTreeLabel"))}">${epics.map((epic) => `<details class="tcrn-work-tree__epic" open role="treeitem" data-work-id="${esc(epic.id)}"><summary class="tcrn-work-tree__summary"><span><code class="tcrn-work-tree__key">${esc(epic.externalKey)}</code><strong>${esc(summaryFor(epic))}</strong></span>${statusBadge(epic.status, statusTone(epic.status))}</summary><div class="tcrn-work-tree__children" role="group">${storyRows(epic)}</div></details>`).join("")}</div>`;
+    const epicRows = (initiative) => epicsFor(initiative).map((epic) => `<details class="tcrn-work-tree__epic" open role="treeitem" data-work-id="${esc(epic.id)}"><summary class="tcrn-work-tree__summary"><span><code class="tcrn-work-tree__key">${esc(epic.externalKey)}</code><strong>${esc(summaryFor(epic))}</strong></span>${statusBadge(epic.status, statusTone(epic.status))}</summary><div class="tcrn-work-tree__children" role="group">${storyRows(epic)}</div></details>`).join("") || `<div class="tcrn-meta">${esc(t("dashboard.noEpics"))}</div>`;
+    $("#work-tree-content").innerHTML = `<div class="tcrn-work-tree" role="tree" aria-label="${esc(t("dashboard.workTreeLabel"))}">${initiatives.map((initiative) => `<details class="tcrn-work-tree__epic" open role="treeitem" data-work-id="${esc(initiative.id)}"><summary class="tcrn-work-tree__summary"><span><code class="tcrn-work-tree__key">${esc(initiative.externalKey)}</code><strong>${esc(summaryFor(initiative))}</strong></span>${statusBadge(initiative.status, statusTone(initiative.status))}</summary><div class="tcrn-work-tree__children" role="group">${epicRows(initiative)}</div></details>`).join("")}</div>`;
   };
   const renderKnowledgeView = () => {
     const data = state.knowledge;
@@ -5020,23 +5075,60 @@ const BOOT = __PORTAL_BOOT__;
     }));
     attachEcho($("#knowledge-view-content"));
   };
+  const renderGates = () => {
+    const gates = Array.isArray(state.gates) ? state.gates : [];
+    setText("#gates-count", String(gates.length));
+    const empty = $("#gates-empty");
+    empty.hidden = gates.length > 0;
+    empty.textContent = state.gateResponse?.ok === false ? state.gateResponse.reasonCode || t("gates.listEmpty") : t("gates.listEmpty");
+    $("#gates-rows").innerHTML = gates.map((gate) => `<tr data-gate-row="${esc(gate.name)}">
+      <td><div data-gate-cell><strong><code>${esc(gate.name)}</code></strong>
+        <label class="tcrn-field"><span class="tcrn-field__label">${esc(t("gates.command"))}</span><textarea class="tcrn-input tcrn-textarea" data-gate-command rows="2">${esc(JSON.stringify(gate.command ?? []))}</textarea></label>
+        <label class="tcrn-field"><span class="tcrn-field__label">${esc(t("gates.root"))}</span><input class="tcrn-input" data-gate-root value="${esc(gate.root ?? ".")}"></label>
+        <label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-gate-release-only ${gate.releaseOnly ? "checked" : ""}><span class="tcrn-switch__label">${esc(t("gates.releaseOnly"))}</span></label>
+        <div data-gate-cell-actions><button type="button" class="tcrn-button tcrn-button--secondary" data-gate-save="${esc(gate.name)}" data-cli-action="gates-config-set">${esc(t("gates.save"))}</button><button type="button" class="tcrn-button tcrn-button--quiet" data-gate-remove="${esc(gate.name)}" data-cli-action="gates-config-remove">${esc(t("gates.remove"))}</button></div>
+      </div></td>
+      <td><label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-gate-enabled ${gate.enabled ? "checked" : ""}><span class="tcrn-switch__label">${esc(t("gates.enabled"))}</span></label></td>
+      <td><label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-gate-required ${gate.required ? "checked" : ""}><span class="tcrn-switch__label">${esc(t("gates.required"))}</span></label></td>
+      <td><div data-gate-covers>${(Array.isArray(gate.covers) ? gate.covers : []).map((cover) => `<div data-gate-cover-row><input class="tcrn-input" data-gate-cover value="${esc(cover)}" aria-label="${esc(t("gates.columnCovers"))}"><button type="button" class="tcrn-button tcrn-button--quiet" data-gate-remove-cover aria-label="${esc(t("gates.removeCover"))}">×</button></div>`).join("")}<button type="button" class="tcrn-button tcrn-button--quiet" data-gate-add-cover>${esc(t("gates.addCover"))}</button></div></td>
+    </tr>`).join("");
+    const lastRun = state.lastGateRun;
+    const run = lastRun?.run ?? null;
+    const runHost = $("#gates-last-run");
+    if (!run) {
+      runHost.innerHTML = `<div class="tcrn-state-surface">${esc(lastRun?.ok === false ? lastRun.reasonCode || t("gates.lastRunEmpty") : t("gates.lastRunEmpty"))}</div>`;
+      return;
+    }
+    const outcomes = Array.isArray(run.gates) ? run.gates : [];
+    const passed = outcomes.filter((gate) => gate.ok).length;
+    runHost.innerHTML = `<div><div data-gate-run-row><span>${esc(t("gates.runAt"))}: <time datetime="${esc(run.at)}">${esc(new Date(run.at).toLocaleString(state.locale))}</time></span><span class="tcrn-meta">${esc(t("gates.runId"))}: <code>${esc(run.runId)}</code></span><span class="tcrn-badge ${run.reds?.length ? "tcrn-badge--danger" : "tcrn-badge--positive"}">${passed}/${outcomes.length} · ${esc(run.reds?.length ? t("gates.runFailed") : t("gates.runOk"))}</span></div><div class="tcrn-list">${outcomes.map((gate) => `<div class="tcrn-list__row"><span>${esc(gate.name)}${gate.required ? ` · ${esc(t("gates.required"))}` : ""}</span><span class="tcrn-badge ${gate.ok ? "tcrn-badge--positive" : "tcrn-badge--danger"}">${esc(gate.ok ? t("gates.runOk") : t("gates.runFailed"))}</span></div>`).join("") || `<div class="tcrn-state-surface">${esc(t("gates.lastRunEmpty"))}</div>`}</div></div>`;
+  };
   const renderDashboard = () => {
     const status = state.status || {};
     setText("#stat-version", status.version ?? "—");
     setText("#stat-head", String(status.headEventHash || "—").slice(0, 16));
     setText("#stat-events", status.eventCount ?? "—");
     setText("#stat-engine", status.engineVersion ?? "—");
-    const checks = status.checks || [];
-    const displayChecks = status.ok === false && checks.length > 0 && checks.every((check) => check.ok)
-      ? checks.map((check) => ({ ...check, ok: false, reasonCode: status.reasonCode || "PORTAL_STATUS_FAILED" }))
-      : checks;
-    const healthy = status.ok !== false && displayChecks.length > 0 && displayChecks.every((check) => check.ok);
-    setText("#stat-health", displayChecks.length ? `${displayChecks.filter((check) => check.ok).length}/${displayChecks.length}` : "—");
+    const checks = Array.isArray(status.checks) ? status.checks : [];
+    const healthy = status.ok === true && checks.length === 8 && checks.every((check) => check.ok === true);
+    setText("#stat-health", checks.length ? `${checks.filter((check) => check.ok).length}/${checks.length}` : "—");
     const healthChip = $("#health-chip"); healthChip.className = `tcrn-badge ${healthy ? "tcrn-badge--positive" : "tcrn-badge--danger"}`; setText("#health-chip-text", healthy ? t("health.healthy") : t("health.degraded"));
-    const healthLabel = (key) => ({ validate: t("health.validate"), catalog: t("health.catalog"), actor: t("health.actor") }[key] || t(`health.${key}`));
-    $("#health-list").innerHTML = displayChecks.map((check) => `<div class="tcrn-list__row"><span>${esc(healthLabel(check.key))}</span><span class="tcrn-badge ${check.ok ? "tcrn-badge--positive" : "tcrn-badge--danger"}">${esc(check.ok ? t("health.ok") : t("health.failed"))}</span></div>`).join("") || `<div class="tcrn-state-surface">${esc(t("health.unavailable"))}</div>`;
+    const healthLabel = (name) => ({
+      "engine-version": t("health.engineVersion"), "hooks-present": t("health.hooksPresent"), "skill-copies": t("health.skillCopies"),
+      registry: t("health.registry"), "library-format": t("health.libraryFormat"), "device-stream": t("health.deviceStream"),
+      "managed-sections": t("health.managedSections"), "cloud-flag": t("health.cloudFlag"),
+    }[name] || name);
+    $("#health-list").innerHTML = checks.map((check) => `<div class="tcrn-list__row" data-doctor-check="${esc(check.check)}"><div><strong>${esc(healthLabel(check.check))}</strong><div class="tcrn-meta">${esc(t("health.detail"))}: ${esc(JSON.stringify(check.detail ?? {}))}</div></div><div><span class="tcrn-badge ${check.ok ? "tcrn-badge--positive" : "tcrn-badge--danger"}">${esc(check.ok ? t("health.ok") : t("health.failed"))}</span><div class="tcrn-meta">${esc(t("health.reasonCode"))}: <code>${esc(check.reasonCode ?? "—")}</code></div></div></div>`).join("") || `<div class="tcrn-state-surface">${esc(t("health.unavailable"))}</div>`;
     setText("#validate-chip", healthy ? t("health.healthy") : t("health.degraded"));
     $("#validate-chip").className = `tcrn-badge ${healthy ? "tcrn-badge--positive" : "tcrn-badge--danger"}`;
+    const library = status.library ?? {};
+    const libraryFields = [
+      ["versionVector", "dashboard.versionVector", library.versionVector],
+      ["streams", "dashboard.streams", library.streams],
+      ["rejectedEventCount", "dashboard.rejectedEvents", library.rejectedEventCount],
+      ["configProjection", "dashboard.configProjection", library.configProjection],
+    ];
+    $("#library-state").innerHTML = libraryFields.map(([field, label, value]) => `<div class="tcrn-definition-list__item"><dt class="tcrn-definition-list__term" data-i18n="${esc(label)}">${esc(t(label))}</dt><dd class="tcrn-definition-list__definition" data-library-field="${esc(field)}"><code>${esc(JSON.stringify(value ?? null))}</code></dd></div>`).join("");
     renderWorkView();
     renderKnowledgeView();
     bindTabList($('[data-ui="workspace-tabs"]'), {
@@ -5294,7 +5386,7 @@ const BOOT = __PORTAL_BOOT__;
     select.disabled = libraries.length < 2;
     select.title = BOOT.library ? libraryLabel(BOOT.library) : "";
   };
-  const refresh = async () => { try { const [settings, vocabularyResult, status, commandsResult, machine, work, knowledge, variables] = await Promise.all([api("/api/settings"), api("/api/vocabulary"), api("/api/status"), api("/api/commands"), api("/api/machine-settings"), api("/api/work"), api("/api/knowledge"), api("/api/variables")]); state.machineSettings = machine; state.settings = settings; state.vocabulary = vocabularyResult; state.status = status; state.work = work; state.knowledge = knowledge; state.variables = variables; state.commands = commandsResult.commands || []; renderDashboard(); renderSettings(); renderVariables(); renderVocabulary(); rebuildSearchIndex(); } catch (error) { state.status = { ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE", checks: [{ key: "validate", ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE" }, { key: "catalog", ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE" }, { key: "actor", ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE" }] }; renderDashboard(); showReceipt({ ok: false, reasonCode: "PORTAL_READ_FAILED", error: String(error?.message ?? error) }); } };
+  const refresh = async () => { try { const [settings, vocabularyResult, status, commandsResult, machine, work, knowledge, variables] = await Promise.all([api("/api/settings"), api("/api/vocabulary"), api("/api/status"), api("/api/commands"), api("/api/machine-settings"), api("/api/work"), api("/api/knowledge"), api("/api/variables")]); state.machineSettings = machine; state.settings = settings; state.vocabulary = vocabularyResult; state.status = status; state.work = work; state.knowledge = knowledge; state.variables = variables; state.commands = commandsResult.commands || []; renderDashboard(); renderSettings(); renderVariables(); renderVocabulary(); rebuildSearchIndex(); } catch (error) { state.status = { ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE", checks: [], library: null }; renderDashboard(); showReceipt({ ok: false, reasonCode: "PORTAL_READ_FAILED", error: String(error?.message ?? error) }); } };
   const rebuildSearchIndex = () => {
     const rows = [];
     for (const entry of state.settings?.settings || []) {
@@ -5303,10 +5395,64 @@ const BOOT = __PORTAL_BOOT__;
     for (const category of vocabularyCategories()) for (const term of vocabularyRows(category)) rows.push({ text: `${termValue(term)} ${vocabularyDefinition(category, term)}`, label: termValue(term), meta: t("search.vocabulary"), page: "vocabulary", vocabulary: category });
     state.searchIndex = rows;
   };
+  const refreshGates = async () => { const [response, lastRun] = await Promise.all([api("/api/gates"), api("/api/gates/last-run")]); state.gateResponse = response; state.gates = Array.isArray(response.gates) ? response.gates : []; state.lastGateRun = lastRun; renderGates(); };
   const renderSearchResults = () => { const target = $("#search-results"); target.hidden = state.searchResults.length === 0; target.innerHTML = state.searchResults.map((result, index) => `<button type="button" class="tcrn-search-result" aria-current="${index === state.searchSelection ? "true" : "false"}" data-search-index="${index}"><strong>${esc(result.label)}</strong><span class="tcrn-search-result__meta">${esc(result.meta)} · ${esc(result.page)}</span></button>`).join(""); $$('[data-search-index]').forEach((button) => button.addEventListener("click", () => chooseSearch(Number(button.dataset.searchIndex)))); };
   const search = (query) => { const normalized = query.trim().toLocaleLowerCase(); state.searchResults = normalized ? state.searchIndex.filter((entry) => entry.text.toLocaleLowerCase().includes(normalized)).slice(0, 12) : []; state.searchSelection = 0; renderSearchResults(); };
   const chooseSearch = (index = 0) => { const result = state.searchResults[index]; if (!result) return; navigate(result.page); state.searchResults = []; renderSearchResults(); if (result.vocabulary) { state.selectedVocabulary = result.vocabulary; renderVocabulary(); } if (result.key) { state.settingGroup = settingGroup(result.key); renderSettings(); const target = $(`[data-setting-row="${CSS.escape(result.key)}"]`); target?.classList.add("tcrn-highlight"); target?.scrollIntoView({ block: "center" }); } };
   $$('[data-page-target]').forEach((button) => button.addEventListener("click", () => navigate(button.dataset.pageTarget)));
+  const parseGateArgv = (value) => { try { const command = JSON.parse(value); return Array.isArray(command) && command.length > 0 && command.every((part) => typeof part === "string" && part.length > 0) ? command : null; } catch { return null; } };
+  const gateCoversFrom = (container) => [...container.querySelectorAll("[data-gate-cover]")].map((input) => input.value.trim()).filter((cover) => cover.length > 0);
+  $("#gate-add-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const values = new FormData(form);
+    const command = parseGateArgv(String(values.get("command") ?? ""));
+    if (command === null) { showReceipt({ ok: false, reasonCode: "PORTAL_GATE_COMMAND_INVALID" }); return; }
+    const gate = {
+      name: String(values.get("name") ?? "").trim(), command, root: String(values.get("root") ?? "."),
+      covers: String(values.get("covers") ?? "").split(/\r?\n/u).map((cover) => cover.trim()).filter((cover) => cover.length > 0),
+      enabled: values.has("enabled"), required: values.has("required"), releaseOnly: values.has("releaseOnly"),
+    };
+    if (state.gates.some((entry) => entry.name === gate.name)) { showReceipt({ ok: false, reasonCode: "PORTAL_GATE_NAME_EXISTS" }); return; }
+    echo("gates-config-set", ["--name", gate.name, "--command", JSON.stringify(gate.command)]);
+    const result = await api("/api/gates", { method: "POST", body: JSON.stringify(gate) });
+    showReceipt(result);
+    if (result.ok) { form.reset(); await refreshGates(); }
+  });
+  $("#gates-rows").addEventListener("click", async (event) => {
+    const button = event.target.closest("button");
+    if (!button) return;
+    if (button.hasAttribute("data-gate-add-cover")) {
+      const container = button.closest("[data-gate-covers]");
+      const row = document.createElement("div"); row.dataset.gateCoverRow = "";
+      const input = document.createElement("input"); input.className = "tcrn-input"; input.dataset.gateCover = ""; input.setAttribute("aria-label", t("gates.columnCovers"));
+      const remove = document.createElement("button"); remove.type = "button"; remove.className = "tcrn-button tcrn-button--quiet"; remove.dataset.gateRemoveCover = ""; remove.setAttribute("aria-label", t("gates.removeCover")); remove.textContent = "×";
+      row.append(input, remove); container.insertBefore(row, button); input.focus(); return;
+    }
+    if (button.hasAttribute("data-gate-remove-cover")) { button.closest("[data-gate-cover-row]")?.remove(); return; }
+    const row = button.closest("[data-gate-row]");
+    if (button.hasAttribute("data-gate-save")) {
+      const command = parseGateArgv(row.querySelector("[data-gate-command]").value);
+      if (command === null) { showReceipt({ ok: false, reasonCode: "PORTAL_GATE_COMMAND_INVALID" }); return; }
+      const gate = {
+        name: button.dataset.gateSave, command, root: row.querySelector("[data-gate-root]").value,
+        covers: gateCoversFrom(row), required: row.querySelector("[data-gate-required]").checked,
+        enabled: row.querySelector("[data-gate-enabled]").checked, releaseOnly: row.querySelector("[data-gate-release-only]").checked,
+      };
+      echo("gates-config-set", ["--name", gate.name, "--command", JSON.stringify(gate.command)]);
+      const result = await api("/api/gates", { method: "POST", body: JSON.stringify(gate) });
+      showReceipt(result);
+      if (result.ok) await refreshGates();
+      return;
+    }
+    if (button.hasAttribute("data-gate-remove")) {
+      const name = button.dataset.gateRemove;
+      echo("gates-config-remove", ["--name", name]);
+      const result = await api("/api/gates", { method: "DELETE", body: JSON.stringify({ name }) });
+      showReceipt(result);
+      if (result.ok) await refreshGates();
+    }
+  });
   $("#save-agents").addEventListener("click", async () => { echo("agents-render"); const result = await api("/api/agents-md", { method: "PUT", body: JSON.stringify({ file: "AGENTS.md", text: $("#agents-md").value }) }); showReceipt(result); await loadAgents(); });
   $("#agents-md").addEventListener("input", (event) => { state.agentsText = event.target.value; renderGutter(); });
   $("#agents-md").addEventListener("scroll", () => { $("#prose-gutter").scrollTop = $("#agents-md").scrollTop; });
@@ -5321,7 +5467,7 @@ const BOOT = __PORTAL_BOOT__;
     await loadAgents();
   }));
   $("#receipt-chip").addEventListener("click", openReceipt); $("#receipt-details-trigger").addEventListener("click", toggleReceiptDetails); $("#drawer-button").addEventListener("click", openReceipt); $("#drawer-close").addEventListener("click", closeReceipt);
-  $("#library-select").addEventListener("change", async (event) => { const selected = await api("/api/library", { method: "POST", body: JSON.stringify({ library: event.target.value }) }); if (selected.ok) { BOOT.library = selected.library; BOOT.workspace = selected.workspace; BOOT.libraryName = selected.libraryName; BOOT.proseRoot = selected.proseRoot; const listing = await api("/api/libraries"); loadLibraries(listing.ok ? listing.libraries : BOOT.libraries); setText("#workspace-label", BOOT.workspace); $("#workspace-label").title = BOOT.workspace; applyRailIdentity(); await refresh(); await loadAgents(); } else { loadLibraries(); showReceipt(selected); } });
+  $("#library-select").addEventListener("change", async (event) => { const selected = await api("/api/library", { method: "POST", body: JSON.stringify({ library: event.target.value }) }); if (selected.ok) { BOOT.library = selected.library; BOOT.workspace = selected.workspace; BOOT.libraryName = selected.libraryName; BOOT.proseRoot = selected.proseRoot; const listing = await api("/api/libraries"); loadLibraries(listing.ok ? listing.libraries : BOOT.libraries); setText("#workspace-label", BOOT.workspace); $("#workspace-label").title = BOOT.workspace; applyRailIdentity(); await refresh(); await refreshGates(); await loadAgents(); } else { loadLibraries(); showReceipt(selected); } });
   $("#theme-button").addEventListener("click", () => {
     state.theme = state.theme === "light" ? "dark" : "light";
     document.documentElement.dataset.tcrnTheme = state.theme;
@@ -5350,7 +5496,7 @@ const BOOT = __PORTAL_BOOT__;
       tcrnWritePreference("locale", state.locale);
       setLocaleMenuOpen(false);
       localeTrigger.focus();
-      applyLocale(); renderDashboard(); renderSettings(); renderVocabulary(); renderProseDirectory(); renderPending(); renderReconciliation(state.reconciliation || { ok: true, findings: [] });
+      applyLocale(); renderDashboard(); renderSettings(); renderVocabulary(); renderGates(); renderProseDirectory(); renderPending(); renderReconciliation(state.reconciliation || { ok: true, findings: [] });
     });
   });
   document.addEventListener("pointerdown", (event) => { if (!localeMenu.contains(event.target)) setLocaleMenuOpen(false); });
@@ -5379,7 +5525,7 @@ const BOOT = __PORTAL_BOOT__;
     productShell.setAttribute("data-mobile-nav-expanded", String(!expanded));
     mobileNavToggle.setAttribute("aria-expanded", String(!expanded));
   });
-  loadLibraries(); applyLocale(); setText("#workspace-label", BOOT.workspace); $("#workspace-label").title = BOOT.workspace; applyRailIdentity(); renderReceipt(); refresh(); loadAgents();
+  loadLibraries(); applyLocale(); setText("#workspace-label", BOOT.workspace); $("#workspace-label").title = BOOT.workspace; applyRailIdentity(); renderReceipt(); refresh(); refreshGates(); loadAgents();
 })();
 </script>
 </body>

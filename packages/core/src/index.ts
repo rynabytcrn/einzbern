@@ -149,6 +149,7 @@ export {
   initializeLibrary,
   materializeWorkspace,
   materializeWorkspaceFromGenesis,
+  recordMinutes,
   recoverWorkspace,
   removeHostConfigurationInWorkspace,
   removeCustomPersonaInWorkspace,
@@ -473,8 +474,10 @@ export {
   validateConferencePosition,
   validateConferenceMinutes,
   openConference,
-  listConferencesByWorkItem,
 } from "./conference.js";
+// TCRN-CROSS-STORY-475 R1, R2: minutes, recorded in one write (recordMinutes above) and read with
+// the minutes a conference close wrote.
+export { minutesById, minutesView } from "./minutes.js";
 export type {
   ConferenceRequest,
   ConferencePosition,

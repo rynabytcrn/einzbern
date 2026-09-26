@@ -274,6 +274,25 @@ no longer holds as live records), `work-list --relation <name>=<id>` filters by 
 reverse name, and a `work-batch` member carries `relations {blockedBy, implements, supersedes,
 fixes, decidedIn}`.
 
+Minutes replace the conference (TCRN-CROSS-STORY-475; MIN-227 D9, D10; `packages/core/src/minutes.ts`,
+`specs/minutes-v1.md`). `minutes-record --project-id --title --summary` with `--decisions <list>`
+or `--decisions-file <JSON array of strings>`, `--decided-by`, `--work-ids` and an optional
+`--external-key` writes a decision down in one `minutes.recorded` event and answers
+`MINUTES_RECORDED` with the minutes `id`, its `externalKey` and the decisions numbered D1 to Dn
+(`decisions [{number, text}]`); without a key it takes the next number after the latest one
+recorded, and a library's first minutes must name theirs (`MINUTES_EXTERNAL_KEY_REQUIRED`).
+`minutes-list` (`--project-id`, `--work-id`, `--limit`, `--offset`) pages every minutes record,
+the ones a conference close wrote included (kind `conference-minutes`, titled by their
+conference, with no external key), and `minutes-show --id | --external-key` returns one with
+`decides`, the work records that name it as decided-in; both read an old-layout workspace too.
+`work-create` and `work-annotate --decided-in` name a minutes id. Every conference verb is
+retired and answers `CLI_COMMAND_UNKNOWN`: conference-open, conference-append-position,
+conference-close (with `--execution-form` and `--distill`), conference-cancel,
+conference-list-by-work, conference-minutes-list and conference-position-list, and with them the
+settings `execution.independenceFloor` and `conference.positionBudgetBytes`. Every conference
+event already on a chain still replays. The governed-loop tutorial and its proof record minutes
+and name them with decided-in instead of holding, distilling and promoting a conference.
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

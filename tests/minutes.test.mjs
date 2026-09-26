@@ -17,13 +17,16 @@ import {
   initializeLibrary,
   materializeWorkspace,
   materializeWorkspaceFromGenesis,
+  minutesById,
+  minutesView,
   openLegacyWorkspace,
+  recordMinutes,
   replayLegacyWorkspace,
   workspaceViewDocuments,
 } from "../dist/build/packages/core/src/index.js";
-// The minutes module and its writer join the barrel with the CLI unit (TCRN-CROSS-SUB-307).
-import { minutesById, minutesView, nextMinutesExternalKey, validateMinutesRecord } from "../dist/build/packages/core/src/minutes.js";
-import { recordMinutes } from "../dist/build/packages/core/src/workspace.js";
+// The reads and the writer are in the barrel since the CLI unit (TCRN-CROSS-SUB-307); the key
+// numbering and the record check stay inside the module.
+import { nextMinutesExternalKey, validateMinutesRecord } from "../dist/build/packages/core/src/minutes.js";
 import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 import { forgeOwnStream } from "./helpers/library-forge.mjs";
 import { restoreLegacyFixture } from "./helpers/legacy-fixture.mjs";

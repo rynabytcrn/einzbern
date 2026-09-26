@@ -623,34 +623,32 @@ test("a crash across conference.closed leaves the event durable and recover() re
   }
 });
 
-test("STORY-475 R3: the four conference write verbs answer CLI_COMMAND_UNKNOWN and are gone from the catalog", async (context) => {
+test("STORY-475 R3: every conference verb answers CLI_COMMAND_UNKNOWN and is gone from the catalog; historical minutes read through minutes-list", async (context) => {
   const fx = await cliSeededFixture(context);
   const ws = fx.ws;
   const catalog = JSON.parse((await invokeCli(["commands"])).output).commands.map((entry) => entry.name);
-  for (const verb of ["conference-open", "conference-append-position", "conference-close", "conference-cancel"]) {
-    assert.equal(catalog.includes(verb), false, `${verb} is not in the catalog`);
+  assert.deepEqual(catalog.filter((name) => name.startsWith("conference-")), []);
+  for (const verb of ["conference-open", "conference-append-position", "conference-close", "conference-cancel", "conference-list-by-work", "conference-minutes-list", "conference-position-list"]) {
     const refused = await invokeCli([verb, "--workspace", ws, "--at", instant(3)]);
     assert.equal(refused.ok, false);
     assert.equal(refused.reasonCode, "CLI_COMMAND_UNKNOWN", verb);
   }
   assert.equal((await materializeWorkspace(ws)).version, 2, "nothing was written");
 
-  // Historical conferences still read: conference-list-by-work orders them deterministically.
-  await appendHistoricalConferenceOpen(fx.workspace, {
+  // A conference closed on the chain is read with the minutes it wrote, byte-identically each time.
+  const opened = await appendHistoricalConferenceOpen(fx.workspace, {
     occurredAt: instant(3), externalKey: "CONF-CLI", projectId: fx.projectId, type: "architecture", title: "Store design",
     linkedWorkIds: [fx.workId], desiredOutcome: "pick the persistence route", participantIds: ["profile:architect-01"],
   });
-  await appendHistoricalConferenceOpen(fx.workspace, {
-    occurredAt: instant(4), externalKey: "CONF-CLI-2", projectId: fx.projectId, type: "risk", title: "Risk review",
-    linkedWorkIds: [fx.workId], desiredOutcome: "accept residual risk", participantIds: [],
+  await appendHistoricalConferenceClose(fx.workspace, {
+    occurredAt: instant(4), conferenceId: opened.conferences[0].id, minutesExternalKey: "MINUTES-CLI",
+    summary: "event-log persistence ratified", outcomeClass: "role_decision", decisions: ["persist conference records as events"], unresolvedIssues: [],
   });
-  const listConfA = (await invokeCli(["conference-list-by-work", "--workspace", ws, "--work-id", fx.workId])).output;
-  const listConfB = (await invokeCli(["conference-list-by-work", "--workspace", ws, "--work-id", fx.workId])).output;
-  assert.equal(listConfA, listConfB, "conference-list-by-work is byte-identical across invocations");
-  const conferences = JSON.parse(listConfA);
-  assert.equal(conferences.length, 2);
-  assert.deepEqual(conferences.map((entry) => entry.id), [...conferences.map((entry) => entry.id)]
-    .sort((left, right) => compareCanonicalText(left, right)));
+  const listA = (await invokeCli(["minutes-list", "--workspace", ws, "--work-id", fx.workId])).output;
+  const listB = (await invokeCli(["minutes-list", "--workspace", ws, "--work-id", fx.workId])).output;
+  assert.equal(listA, listB, "minutes-list is byte-identical across invocations");
+  const minutes = JSON.parse(listA).records;
+  assert.deepEqual(minutes.map((entry) => [entry.id, entry.kind, entry.title]), [[deriveStableId("minutes", "MINUTES-CLI"), "conference-minutes", "Store design"]]);
 });
 
 test("STORY-370: historical conference positions carry actor attribution and an optional stance without a profile roster", async (context) => {

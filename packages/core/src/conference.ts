@@ -265,18 +265,11 @@ export function validateConferenceMinutes(value: unknown): ConferenceMinutes {
 // The conference.created replay arm checks a request with this: a conference is opened open. The
 // write verbs that opened, argued, closed and cancelled conferences, the close's distillation into
 // knowledge candidates and the position-to-conference binding they used were retired by
-// TCRN-CROSS-STORY-475 R3 (MIN-227 D10); decisions are recorded as minutes (minutes.ts) and every
-// conference event already on a chain still replays.
+// TCRN-CROSS-STORY-475 R3 (MIN-227 D10), and so was conference-list-by-work with the read helper it
+// alone used; decisions are recorded as minutes (minutes.ts), a conference's minutes are read
+// through minutesView, and every conference event already on a chain still replays.
 export function openConference(value: unknown): ConferenceRequest {
   const request = validateConferenceRequest(value);
   if (request.status !== "open") fail("CONFERENCE_SCHEMA_INVALID", "opened conference must be status open");
   return request;
-}
-
-export function listConferencesByWorkItem(workId: unknown, requests: readonly unknown[]): readonly ConferenceRequest[] {
-  const target = id(workId, "workId");
-  return requests
-    .map((value) => validateConferenceRequest(value))
-    .filter((request) => !request.tombstone && request.linkedWorkIds.includes(target))
-    .sort((left, right) => compareCanonicalText(left.projectId, right.projectId) || compareCanonicalText(left.id, right.id));
 }

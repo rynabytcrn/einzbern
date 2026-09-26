@@ -11,7 +11,6 @@ import {
   CONFERENCE_MINUTES_VERSION,
   CONFERENCE_POSITION_VERSION,
   CONFERENCE_REQUEST_VERSION,
-  listConferencesByWorkItem,
   openConference,
   validateConferenceMinutes,
   validateConferencePosition,
@@ -60,16 +59,16 @@ test("valid conference request, position, and minutes validate", () => {
 });
 
 // TCRN-CROSS-STORY-475 R3: the write path is gone -- the position binding, the close and its
-// distillation into knowledge candidates -- and what stays is what replay and the read verbs use.
-test("replay opens a conference only as open, and the read helper lists a work item's conferences", () => {
+// distillation into knowledge candidates -- and so is the read helper conference-list-by-work used;
+// what stays is what replay uses.
+test("replay opens a conference only as open", () => {
   const cases = [
     () => assert.equal(openConference(request()).status, "open"),
     () => reason("CONFERENCE_SCHEMA_INVALID", () => openConference(request({ status: "closed" }))),
-    () => assert.equal(listConferencesByWorkItem("work:a", [request(), request({ id: "conference:2", linkedWorkIds: ["work:z"] })]).length, 1),
   ];
   assert.equal(cases.length, fixture.operationCases);
   for (const operation of cases) operation();
-  for (const retired of ["appendConferencePosition", "closeConference", "distillConferenceKnowledge", "CONFERENCE_DISTILL_SUMMARY_BYTES"]) {
+  for (const retired of ["appendConferencePosition", "closeConference", "distillConferenceKnowledge", "CONFERENCE_DISTILL_SUMMARY_BYTES", "listConferencesByWorkItem"]) {
     assert.equal(core[retired], undefined, `${retired} retired with the conference write path`);
   }
 });

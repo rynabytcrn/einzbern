@@ -1,9 +1,8 @@
 # The governed loop, end to end
 
 This tutorial walks the whole product in one sitting: from an empty library to a
-completed story whose closing decision is ratified in a conference, distilled into
-the knowledge store, promoted, and then traced back through an unbroken chain of
-digests. Every command below is a real governed CLI verb, and every one of them is
+completed story whose deciding minutes are recorded in one command, named on the story
+with the `decided-in` relation, and then traced back from both ends. Every command below is a real governed CLI verb, and every one of them is
 replayed verbatim by the hermetic proof `tests/e2e-governed-loop.test.mjs`, which
 `pnpm test` runs — the tutorial and the proof are diffed against each other, so a
 command that drifts here fails the build. The `verify:e2e` name that used to select
@@ -11,7 +10,7 @@ that one file retired in TCRN-CROSS-STORY-359; the proof did not.
 
 The loop is:
 
-**initiative → epic → story → conference → distill → promote → decide → trace.**
+**initiative → epic → story → minutes → decided-in → done → trace.**
 
 ## Conventions
 
@@ -62,98 +61,65 @@ is validated on every append.
 ## 2. Move the story into flight
 
 A story is planned when created. Walk it through the lifecycle to `active`; it
-reaches `done` only once its deciding minutes are recorded (section 6).
+reaches `done` only once its deciding minutes are on the record (section 4).
 
 ```console
 $ einzbern work-transition --workspace ./flagship/.ether --at 2026-07-11T00:00:05Z --id <story-id> --status ready
 $ einzbern work-transition --workspace ./flagship/.ether --at 2026-07-11T00:00:06Z --id <story-id> --status active
 ```
 
-## 3. Hold the conference
+## 3. Record the decision as minutes
 
-Open a conference anchored to the story, record a position, then close it into
-minutes. The minutes become the story's recorded decision.
-
-```console
-$ einzbern conference-open --workspace ./flagship/.ether --at 2026-07-11T00:00:08Z --external-key FLAGSHIP-CONFERENCE --project-id <project-id> --type architecture --title Decide-the-story --work-ids <story-id> --desired-outcome ratify-the-approach --participant-ids profile:architect-01
-$ einzbern conference-append-position --workspace ./flagship/.ether --at 2026-07-11T00:00:09Z --conference-id <conference-id> --external-key FLAGSHIP-POSITION --actor-id profile:architect-01 --position persist-via-event-log --risks forward-reads-as-corruption --recommendations document-the-posture --evidence-ids evidence:position-01
-```
-
-Capture the conference id from the open receipt's `recordId`.
-
-## 4. Distill the decision into knowledge
-
-Before closing with distillation, initialize the disposable knowledge store in the
-library's `crest/` directory — every library requires explicit acknowledgment that the
-store is rebuildable and disposable.
+A decision is written down in one command. `minutes-record` takes a title, a summary,
+the decisions, who decided them (`--decided-by`) and the work records they bear on
+(`--work-ids`), and numbers the decisions D1 to Dn in the order given. `--decisions`
+is a comma-separated list; when a decision's text holds a comma, pass
+`--decisions-file` with a JSON array of strings instead.
 
 ```console
-$ einzbern knowledge-init --workspace ./flagship/.ether --acknowledge-disposable true
+$ einzbern minutes-record --workspace ./flagship/.ether --at 2026-07-11T00:00:08Z --project-id <project-id> --external-key FLAGSHIP-MINUTES-1 --title Decide-the-story --summary approach-ratified --decisions persist-the-decision-as-minutes --decided-by owner:governance --work-ids <story-id>
 ```
 
-Now close the conference with `--distill`. The close event lands first; the
-governed high-water rebind re-binds the knowledge store to the advanced head, then
-each minutes decision is captured as a promotable knowledge candidate. The receipt
-carries the minutes id in `recordId` and the new candidate id in `knowledgeUnitIds`.
+The receipt returns `MINUTES_RECORDED` with the minutes `id` (capture it as
+`<minutes-id>`), its `externalKey` and the numbered `decisions`
+(`[{"number":1,"text":"persist-the-decision-as-minutes"}]`). Without `--external-key`
+the engine takes the next number after the latest key recorded in the library, so only
+the first minutes of a library need one. `minutes-list` pages every minutes record —
+those a retired conference close wrote included — and `--work-id` keeps the ones that
+bear on one work record.
+
+## 4. Name the minutes on the story and finish it
+
+The story's goal names Owner as its decider, so it reaches `done` only once the
+minutes that decided it are on its record. `work-annotate --decided-in` puts them
+there; `work-create` takes the same flag when the minutes already exist.
 
 ```console
-$ einzbern conference-close --workspace ./flagship/.ether --at 2026-07-11T00:00:10Z --conference-id <conference-id> --minutes-external-key FLAGSHIP-MINUTES --summary approach-ratified --outcome-class role_decision --decisions persist-conference-and-gate-records --unresolved-issues - --distill true --accountable-owner-id owner:governance --stale-days 90 --evidence-ids evidence:close-01
+$ einzbern work-annotate --workspace ./flagship/.ether --at 2026-07-11T00:00:09Z --id <story-id> --decided-in <minutes-id>
+$ einzbern work-transition --workspace ./flagship/.ether --at 2026-07-11T00:00:10Z --id <story-id> --status done
 ```
 
-The candidate carries the fixed conference tag set
-(`conference-decision`, `distilled`, `type-architecture`), the deduplicated evidence
-union of the position and the close, and a `sourceDigest` bound to the full minutes
-basis — everything the promotion gate demands.
+## 5. Trace the chain
 
-## 5. Promote the candidate
-
-Read the knowledge marker version, list the candidate, then promote it. Promotion
-happens now, while the knowledge marker's high-water still equals the workspace
-head — before the final workspace mutations advance it.
-
-```console
-$ einzbern knowledge-validate --workspace ./flagship/.ether
-$ einzbern knowledge-list --workspace ./flagship/.ether --at 2026-07-11T00:00:11Z --selection all
-$ einzbern knowledge-promote --workspace ./flagship/.ether --expected-revision <knowledge-revision> --at 2026-07-11T00:00:12Z --id <knowledge-id> --state promoted
-```
-
-`knowledge-validate` reports the marker `version` (use it as `<knowledge-version>`);
-`knowledge-list --selection all` returns the candidate record (use its `id` and
-`revision`). Promotion returns `KNOWLEDGE_PROMOTION_UPDATED` with `promotionState`
-`promoted`.
-
-## 6. Record the decision and finish the story
-
-The same minutes that produced the knowledge candidate are the story's decision.
-`work-annotate --decided-by` records them on the story, and a Story reaches `done`
-only once that decision is on the record.
-
-```console
-$ einzbern work-annotate --workspace ./flagship/.ether --at 2026-07-11T00:00:14Z --id <story-id> --decided-by <minutes-id>
-$ einzbern work-transition --workspace ./flagship/.ether --at 2026-07-11T00:00:15Z --id <story-id> --status done
-```
-
-## 7. Trace the chain
-
-Finally, read the governed record the chain hangs from and confirm the loop binds
-end to end.
+Finally, read both records and confirm that each names the other.
 
 ```console
 $ einzbern work-show --workspace ./flagship/.ether --id <story-id>
+$ einzbern minutes-show --workspace ./flagship/.ether --id <minutes-id>
 ```
 
-The trace is a chain of digests, each link a field of one record that names the
-next:
+1. **Work record → minutes.** `work-show` reports the story `done`, with the minutes
+   id under `relations.forward.decidedIn` (the same list is the record's `decidedBy`).
+2. **Minutes → work record.** `minutes-show` returns the minutes with D1, the story id
+   in `linkedWorkIds`, and the story again under `decides`: the reverse of
+   `decided-in`, read from the work records rather than stored twice.
 
-1. **Work record → conference minutes.** The story's `decidedBy` names the minutes
-   id from the distilling close, and the story reached `done` only with that decision
-   on the record.
-2. **Conference minutes → knowledge candidate.** The candidate's `sourceDigest` is
-   the canonical hash of the minutes basis (title, decision, minutes id) — recompute
-   it and it matches, so the candidate provably came from these minutes.
-3. **Knowledge candidate → promotion receipt.** The promotion receipt names the same
-   candidate id, now `promoted`.
+The proof hashes the two records into one digest, which changes if a single field or
+edge changes. No link reads a host path or a hostname — the chain is carried entirely
+by governed record ids, so it is reproducible on every machine. That is the whole
+governed loop: planned, decided, recorded, done and traced.
 
-No link reads a host path or a hostname — the chain is carried entirely by content
-digests and governed record ids, so it is reproducible on every machine. That is the
-whole governed loop: planned, deliberated, distilled, promoted, decided, and proven.
+Earlier versions of this tutorial held a conference, closed it into minutes, distilled
+them into a knowledge candidate and promoted it. The conference verbs retired with
+TCRN-CROSS-STORY-475; the minutes those closes wrote are still read by `minutes-list`
+and `minutes-show`.

@@ -5,7 +5,6 @@ import {
   applyMachineSettingSet,
   withWorkspaceWriteLock,
   writtenRecordIds,
-  listConferencesByWorkItem,
   createKnowledgeArticle,
   createKnowledgeUnit,
   checkKnowledgeSources,
@@ -103,6 +102,9 @@ import {
   REVERSE_RELATION_NAMES,
   relationFilter,
   workRelations,
+  minutesById,
+  minutesView,
+  recordMinutes,
 } from "../../core/src/index.js";
 import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider, WorkRelationsInput } from "../../core/src/index.js";
 import type {
@@ -402,6 +404,21 @@ function jsonValue(value: string | undefined, name: string): unknown {
   } catch {
     fail("PROFILE_INPUT_INVALID", name);
   }
+}
+
+// TCRN-CROSS-STORY-475 R1: the decisions of minutes-record from a JSON file (an array of strings),
+// for decisions whose text holds a comma, which a list flag would split.
+function decisionsFromFile(path: string): readonly string[] {
+  let document: unknown;
+  try {
+    document = JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    fail("CLI_ARGUMENT_MALFORMED", `decisions-file ${path}: ${(error as { message?: string }).message ?? "unreadable"}`);
+  }
+  if (!Array.isArray(document) || !document.every((entry) => typeof entry === "string")) {
+    fail("CLI_ARGUMENT_MALFORMED", "decisions-file holds a JSON array of decision texts");
+  }
+  return document as readonly string[];
 }
 
 function workspaceHeadOf(value: unknown): string | null {
@@ -731,9 +748,6 @@ export const COMMAND_CATALOG = Object.freeze([
   // name the stream, sequence and event where it stops being provable. Zero writes.
   { name: "chain-validate", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   { name: "commands", availability: "cli", mutates: false, flags: [] },
-  { name: "conference-list-by-work", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "work-id", required: true, valueKind: "string" }] },
-  { name: "conference-minutes-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "conference-id", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
-  { name: "conference-position-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "conference-id", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   // TCRN-CROSS-STORY-471 R2, R3: the engine versions in this device's engine/ directory. engine-update
   // installs an unpacked, digest-checked version and makes it current; engine-rollback makes the
   // previous one current again. Both rewrite engine/current alone, never a host file.
@@ -778,6 +792,10 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "machine-settings-catalog", availability: "cli", mutates: false, flags: [{ name: "home", required: false, valueKind: "string" }] },
   { name: "machine-settings-remove", availability: "cli", mutates: true, flags: [{ name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "home", required: false, valueKind: "string" }] },
   { name: "machine-settings-set", availability: "cli", mutates: true, flags: [{ name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "value", required: true, valueKind: "string" }, { name: "home", required: false, valueKind: "string" }] },
+  // TCRN-CROSS-STORY-475 R1, R2: minutes in one write, and their reads.
+  { name: "minutes-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "work-id", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
+  { name: "minutes-record", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-id", required: true, valueKind: "string" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "decisions", required: false, valueKind: "list" }, { name: "decisions-file", required: false, valueKind: "string" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "work-ids", required: false, valueKind: "list" }, { name: "external-key", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "minutes-show", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: false, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }] },
   { name: "project-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "external-key", required: true, valueKind: "string" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "project-delete", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "project-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
@@ -2162,42 +2180,76 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     io.write(eventPage(state, values));
     return;
   }
-  // TCRN-CROSS-STORY-475 R3 (MIN-227 D10): conference-open, conference-append-position,
-  // conference-close (with --execution-form and --distill) and conference-cancel are retired and
-  // answer CLI_COMMAND_UNKNOWN. Every conference event already on a chain still replays.
-  // INIT-014 (TCRN-AOS-INC-005): workspace-scoped reads for the deliberation
-  // record families.
-  //
-  // Before these, positions and minutes could be reached only through `export`,
-  // which is all-or-nothing and refuses an oversized workspace outright. The
-  // consequence was not slow reading but absent reading: a consumer over a large
-  // chain could list its conferences and never see a single position, so a
-  // deliberation with fifteen arguments in it and one with none rendered
-  // identically. Both verbs page like every other list, so a large chain is read
-  // in windows rather than refused whole.
-  if (command === "conference-position-list") {
-    const values = parseArguments(rest, ["workspace", "conference-id", "limit", "offset"]);
-    required(values, ["workspace"]);
-    const state = await validateWorkspace(values.workspace ?? "");
-    const records = state.conferencePositions.filter((entry) => !entry.tombstone &&
-      (values["conference-id"] === undefined || entry.conferenceId === values["conference-id"]));
-    io.write(canonicalJson(paginate(state, "conference-position", records, values)));
+  // TCRN-CROSS-STORY-475 (MIN-227 D9, D10): a decision is written down in one command. Every
+  // conference verb -- open, append-position, close, cancel and the three conference reads -- is
+  // retired and answers CLI_COMMAND_UNKNOWN; every conference event already on a chain still
+  // replays, and the minutes its closes wrote are read with minutes-list and minutes-show.
+  if (command === "minutes-record") {
+    const values = parseArguments(rest, [...shared, "project-id", "external-key", "title", "summary", "decisions", "decisions-file", "decided-by", "work-ids", "actor"]);
+    required(values, [...requiredShared, "project-id", "title", "summary"]);
+    if ((values.decisions === undefined) === (values["decisions-file"] === undefined)) {
+      fail("CLI_ARGUMENT_MALFORMED", "minutes-record takes exactly one of --decisions and --decisions-file");
+    }
+    const decisions = values["decisions-file"] === undefined ? listValue(values.decisions) : decisionsFromFile(values["decisions-file"]);
+    const workspace = values.workspace ?? "";
+    const at = values.at ?? "";
+    const state = await withWriteLock(workspace, at, async () => recordMinutes(workspace, {
+      occurredAt: at,
+      projectId: values["project-id"] ?? "",
+      title: values.title ?? "",
+      summary: values.summary ?? "",
+      decisions,
+      decidedBy: listValue(values["decided-by"]),
+      linkedWorkIds: listValue(values["work-ids"]),
+      ...(values["external-key"] === undefined ? {} : { externalKey: values["external-key"] }),
+      ...(values.actor ? { actorId: values.actor } : {}),
+    }));
+    const written = writtenIdsField();
+    const recorded = minutesById(state, (written.ids ?? []).find((id) => id.startsWith("minutes:")) ?? "");
+    io.write(canonicalJson({
+      reasonCode: "MINUTES_RECORDED",
+      workspaceId: state.metadata.workspaceId,
+      version: state.version,
+      headEventHash: state.headEventHash,
+      ...written,
+      id: recorded.id,
+      externalKey: recorded.externalKey,
+      decisions: recorded.decisions,
+    }));
     return;
   }
-  if (command === "conference-minutes-list") {
-    const values = parseArguments(rest, ["workspace", "conference-id", "limit", "offset"]);
+  // Every live minutes record, new and historical, in the order recorded; --work-id keeps the ones
+  // that link the work record or that the work record names as decided-in.
+  if (command === "minutes-list") {
+    const values = parseArguments(rest, ["workspace", "project-id", "work-id", "limit", "offset"]);
     required(values, ["workspace"]);
     const state = await validateWorkspace(values.workspace ?? "");
-    const records = state.conferenceMinutes.filter((entry) => !entry.tombstone &&
-      (values["conference-id"] === undefined || entry.conferenceId === values["conference-id"]));
-    io.write(canonicalJson(paginate(state, "conference-minutes", records, values)));
+    const workId = values["work-id"];
+    const decidedIn = workId === undefined ? [] : workRelations(state, workId).forward.decidedIn;
+    const records = minutesView(state).filter((entry) =>
+      (values["project-id"] === undefined || entry.projectId === values["project-id"]) &&
+      (workId === undefined || entry.linkedWorkIds.includes(workId) || decidedIn.includes(entry.id)));
+    io.write(canonicalJson(paginate(state, "minutes", records, values)));
     return;
   }
-  if (command === "conference-list-by-work") {
-    const values = parseArguments(rest, ["workspace", "work-id"]);
-    required(values, ["workspace", "work-id"]);
-    const state = await materializeWorkspace(values.workspace ?? "");
-    io.write(canonicalJson(listConferencesByWorkItem(values["work-id"] ?? "", state.conferences)));
+  // One minutes record by id or by external key, with the work records that name it as decided-in.
+  if (command === "minutes-show") {
+    const values = parseArguments(rest, ["workspace", "id", "external-key"]);
+    required(values, ["workspace"]);
+    if ((values.id === undefined) === (values["external-key"] === undefined)) {
+      fail("CLI_ARGUMENT_MALFORMED", "minutes-show takes exactly one of --id and --external-key");
+    }
+    const state = await validateWorkspace(values.workspace ?? "");
+    const record = minutesById(state, values.id ?? values["external-key"] ?? "");
+    io.write(canonicalJson({
+      reasonCode: "WORKSPACE_RECORD_READY",
+      workspaceId: state.metadata.workspaceId,
+      version: state.version,
+      headEventHash: state.headEventHash,
+      kind: "minutes",
+      record,
+      decides: workRelations(state, record.id).reverse.decides,
+    }));
     return;
   }
   fail("CLI_COMMAND_UNKNOWN", command);

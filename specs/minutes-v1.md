@@ -65,3 +65,16 @@ linkedWorkIds, recordedAt}`. `kind` is `minutes` for a record of this shape and
 `tcrn.conference.v1.minutes` records unchanged, read with the conference's title,
 participants and linked work, `externalKey` null and `recordedAt` the instant of
 the close. `minutesById` finds one entry by id or by external key.
+
+## Commands
+
+`minutes-record` writes one record (`--project-id`, `--title`, `--summary`, the decisions as
+`--decisions <list>` or `--decisions-file <JSON array of strings>`, `--decided-by`,
+`--work-ids`, an optional `--external-key`, `--at`, `--actor`) and answers `MINUTES_RECORDED`
+with `id`, `externalKey`, `decisions` and the written `ids`, `version` and `headEventHash`.
+`minutes-list` pages `minutesView` (`--project-id`; `--work-id` keeps the minutes that link the
+work record or that it names as decided-in; `--limit`, `--offset`). `minutes-show` answers one
+entry, found with `--id` or `--external-key`, with `decides`: the live work records that name it
+as decided-in. Both reads work on an old-layout workspace, which takes no new minutes
+(`LEGACY_WORKSPACE_READ_ONLY`). A work record names its deciding minutes with `--decided-in` on
+`work-create` and `work-annotate` (specs/work-model-v1.md).

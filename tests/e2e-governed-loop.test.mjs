@@ -2,9 +2,9 @@
 
 // WSG-6: the flagship end-to-end governed-loop proof.
 //
-// One hermetic replay of the whole product loop —
-// initiative -> epic -> story -> conference -> distill -> promote -> decide -> trace
-// — on a REAL (non-fixture) library created under mkdtemp, driven entirely
+// One hermetic replay of the whole product loop --
+// initiative -> epic -> story -> minutes -> decided-in -> done -> trace
+// -- on a REAL (non-fixture) library created under mkdtemp, driven entirely
 // through the governed CLI surface (runCli + a CliIo write-capture stub, never a
 // direct core-library call), with every timestamp supplied explicitly (no
 // Date.now, no randomness) and no network access (the offline process guard is
@@ -14,9 +14,10 @@
 // reproduced verbatim by docs/tutorial/governed-loop.md; this proof replays that
 // single source of truth and additionally re-derives the doc/proof equality, so
 // the tutorial cannot rot (acceptance criterion 2). The trace step asserts an
-// unbroken digest chain binding the work record, the conference minutes that
-// decided it, the distilled knowledge candidate, and the promotion receipt
-// (acceptance criterion 3).
+// unbroken digest chain binding the work record and the minutes that decided it,
+// from both ends (acceptance criterion 3). TCRN-CROSS-STORY-475 replaced the
+// conference, its close and the distillation into a promoted knowledge candidate
+// with one minutes-record and the decided-in relation.
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
@@ -28,8 +29,8 @@ import test from "node:test";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
 import {
-  CONFERENCE_TITLE,
-  DISTILLED_DECISION,
+  MINUTES_TITLE,
+  RECORDED_DECISION,
   WORKSPACE_PATH,
   canonicalizeCommand,
   expectedTutorialCommands,
@@ -40,7 +41,6 @@ import {
 } from "./e2e-governed-loop-commands.mjs";
 
 const MINUTES_PREFIX = "minutes:";
-const CONFERENCE_TAGS = ["conference-decision", "distilled", "type-architecture"];
 
 // Drive one governed command through runCli with a write-capture stub and return
 // the parsed canonical output. No clock is injected, so the CLI never reaches for a
@@ -89,28 +89,19 @@ test("the flagship governed loop replays end-to-end through the CLI with an unbr
       case "work-create-story":
         substitutions["<story-id>"] = output.record.id;
         break;
-      case "conference-open":
-        substitutions["<conference-id>"] = output.recordId;
-        break;
-      case "conference-close-distill":
-        captured.minutesId = output.recordId;
-        captured.knowledgeUnitIds = output.knowledgeUnitIds;
-        substitutions["<minutes-id>"] = output.recordId;
-        break;
-      case "knowledge-validate":
-        substitutions["<knowledge-version>"] = String(output.version);
-        break;
-      case "knowledge-list":
-        captured.listing = output;
-        substitutions["<knowledge-id>"] = output.records[0].id;
-        substitutions["<knowledge-revision>"] = String(output.records[0].revision);
-        break;
-      case "knowledge-promote":
-        captured.promotion = output;
+      case "minutes-record":
+        captured.minutesId = output.id;
+        captured.recorded = output;
+        substitutions["<minutes-id>"] = output.id;
         break;
       case "work-show-story":
         captured.story = output.record;
         captured.storyAdvisory = output.advisory;
+        captured.storyRelations = output.relations;
+        break;
+      case "minutes-show":
+        captured.minutes = output.record;
+        captured.decides = output.decides;
         break;
       default:
         break;
@@ -118,36 +109,28 @@ test("the flagship governed loop replays end-to-end through the CLI with an unbr
   }
 
   // --- Trace: the unbroken digest chain (acceptance criterion 3) --------------
-  // Node 1 -> 2: the story's recorded decision is the conference minutes. The gate that
-  // used to stand between the two went with the gate verbs (TCRN-CROSS-STORY-467 R2); the
-  // decided-by annotation is the edge now, and a Story reaches done only once it is there.
+  // Node 1 -> 2: the story names the minutes it was decided in. The Story's goal names Owner as
+  // its decider, so it reaches done only once that relation is on the record.
   assert.equal(captured.story.id, substitutions["<story-id>"]);
   assert.equal(captured.story.status, "done", "the story reached done with its decision recorded");
-  assert.deepEqual(captured.storyAdvisory.decidedBy, [captured.minutesId], "the story names the minutes that decided it");
+  assert.deepEqual(captured.storyRelations.forward.decidedIn, [captured.minutesId], "the story names the minutes that decided it");
+  assert.deepEqual(captured.storyAdvisory.decidedBy, [captured.minutesId], "decided-in is the decided-by list on the record");
   assert.ok(captured.minutesId.startsWith(MINUTES_PREFIX));
 
-  // Node 2 -> 3: the knowledge candidate's sourceDigest is bound to the full
-  // minutes basis (title + decision + minutes id), recomputed independently here.
-  assert.equal(captured.listing.total, 1, "exactly one decision was distilled");
-  const candidate = captured.listing.records[0];
-  const expectedSourceDigest = canonicalSha256({ title: CONFERENCE_TITLE, decision: DISTILLED_DECISION, minutesId: captured.minutesId });
-  assert.equal(candidate.sourceDigest, expectedSourceDigest, "knowledge candidate binds the conference minutes");
-  assert.deepEqual(candidate.tags, CONFERENCE_TAGS);
-  assert.deepEqual(candidate.linkedEvidenceIds, ["evidence:close-01", "evidence:position-01"], "the distilled provenance dedupes the close and position evidence");
-  assert.equal(candidate.id, captured.knowledgeUnitIds[0], "the close receipt names the distilled candidate");
+  // Node 2 -> 1: the minutes name the story they bear on, and the reverse relation reads back.
+  assert.deepEqual(captured.recorded.decisions, [{ number: 1, text: RECORDED_DECISION }], "the record command echoes D1");
+  assert.equal(captured.minutes.id, captured.minutesId);
+  assert.equal(captured.minutes.externalKey, "FLAGSHIP-MINUTES-1");
+  assert.equal(captured.minutes.title, MINUTES_TITLE);
+  assert.deepEqual(captured.minutes.decisions, [{ number: 1, text: RECORDED_DECISION }]);
+  assert.deepEqual(captured.minutes.linkedWorkIds, [captured.story.id], "the minutes link the story");
+  assert.deepEqual(captured.decides, [captured.story.id], "and the story is what the minutes decide");
 
-  // Node 3 -> 4: the promotion receipt is the same candidate, promoted.
-  assert.equal(captured.promotion.id, candidate.id, "promotion receipt binds the knowledge candidate");
-  assert.equal(captured.promotion.promotionState, "promoted");
-
-  // The four node digests, ordered, hash to a single stable chain digest — the
-  // whole loop's evidence collapses to one 64-hex value that changes if a single
-  // node or edge changes.
+  // The node digests, ordered, hash to a single stable chain digest -- the whole loop's
+  // evidence collapses to one 64-hex value that changes if a single node or edge changes.
   const chainDigest = canonicalSha256([
-    canonicalSha256({ story: captured.story, decidedBy: captured.storyAdvisory.decidedBy }),
-    canonicalSha256({ minutesId: captured.minutesId, sourceBasis: expectedSourceDigest }),
-    canonicalSha256(candidate),
-    canonicalSha256({ id: captured.promotion.id, promotionState: captured.promotion.promotionState }),
+    canonicalSha256({ story: captured.story, decidedIn: captured.storyRelations.forward.decidedIn }),
+    canonicalSha256({ minutes: captured.minutes, decides: captured.decides }),
   ]);
   assert.match(chainDigest, /^[a-f0-9]{64}$/u);
 

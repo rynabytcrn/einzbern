@@ -21,11 +21,11 @@ async function catalogNames() {
 
 test("467-AC1: the command catalog lists no retired verb family", async () => {
   const names = await catalogNames();
-  for (const prefix of ["attestation-", "gate-", "dispatch-", "profile-", "telemetry-", "lease-"]) {
+  // TCRN-CROSS-STORY-475 R3 retires conference-* with the minutes that replace it (problem list #2).
+  for (const prefix of ["attestation-", "gate-", "dispatch-", "profile-", "telemetry-", "lease-", "conference-"]) {
     assert.deepEqual(names.filter((name) => name.startsWith(prefix)), [], `${prefix}* is retired`);
   }
-  // conference-* stays until STORY-475 replaces the minutes discipline (problem list #2).
-  assert.ok(names.some((name) => name.startsWith("conference-")));
+  assert.deepEqual(names.filter((name) => name.startsWith("minutes-")), ["minutes-list", "minutes-record", "minutes-show"]);
 });
 
 test("467-AC5: the guard registry, the proof budget and the verification map do not exist", () => {

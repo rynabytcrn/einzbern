@@ -1,0 +1,80 @@
+# 受管段与 Command Spell
+
+AGENTS.md 与 CLAUDE.md 是你的文件。Einzbern 只写它自己标记出来的几段，叫受管段；段外的文字一个字节都不改。Command Spell 是随引擎提供的四条原则，按项目逐条启用，启用的原则以受管段写进 AGENTS.md。
+
+## 段的格式
+
+一段由两行标记围住，每行标记独占一行：
+
+```text
+<!-- einzbern:section id=<段 id> rev=<修订号> digest=<sha256> -->
+正文
+<!-- einzbern:section-end id=<段 id> -->
+```
+
+- `digest` 是正文归一化之后的 sha256。归一化把 CRLF 换成 LF，去掉每行行尾的空白，末尾恰好留一个换行。所以编辑器把换行存成 CRLF，或在行尾留下空格，都不算修改。
+- 库里为每一段记一条记录（`managed-section` 集合，键为 `<文件名>#<段 id>`），记下修订号、摘要和状态。
+- 只有三处摘要一致时，引擎才替换这一段：起始标记里的、库记录里的、按正文现算的。不一致说明你改过它，这一段原样保留，记录转为待处理（pending）。
+- 标记被删掉的段，视为你移除了它，不再补回。
+- 标记解析不了时（缺结束标记、段套段、同一 id 出现两次、属性写错），整个文件拒写，报 `MANAGED_SECTION_MALFORMED` 并给出行号。
+- 文件不存在时，只有在确实有段要写的情况下才创建。
+- 替换之前，先把原文件复制到设备目录的 `backups/<UTC 时间>/managed-sections/` 下，再经临时文件加改名替换。
+- 段里从不写绝对路径。引擎升级不会自动改写任何文件。
+
+| 段 id | 所在文件 | 内容 |
+| --- | --- | --- |
+| `claude-import` | CLAUDE.md | 一行 `@AGENTS.md`；只在 CLAUDE.md 还没有导入 AGENTS.md 时写。没有 CLAUDE.md 的项目会得到只含这一段的 CLAUDE.md。 |
+| `navigation` | AGENTS.md | 三行导航：本项目由 Einzbern 管理、开工前加载 Mana Orchestrate、先检索再动手。只在本机的 `agents.navigation` 为 `written` 时写；选了 `declined` 的设备改由 SessionStart 与 SubagentStart 两个指针钩子给出同样三行。 |
+| `variables-system` | AGENTS.md | 系统变量：`models.tiers` 与 `design.authority`，见「变量」页。 |
+| `variables-custom` | AGENTS.md | 自定义变量，见「变量」页。 |
+| `rule:<规则 id>` | AGENTS.md | 一条已启用的 Command Spell 原则的正文。 |
+
+`agents-render [--project <目录>] --at <时刻>` 按库里的记录把上表各段渲染进本机注册表解析出的项目。`--project` 可以是项目里的任何目录，省略时取当前目录。回执 `AGENTS_RENDERED` 列出每一段的 `{id, file, result, state}`、等待你处置的段和备份目录。
+
+## 你改过的段：三种处置
+
+被你改过的段会停在待处理状态，直到你决定怎么办：
+
+```text
+rule-resolve --section <段 id> --action overwrite|keep|unmanage [--force true] [--project <目录>] --at <时刻>
+```
+
+| 处置 | 做什么 | 之后 |
+| --- | --- | --- |
+| `overwrite` | 把引擎的正文写回去，作为新的基线 | 这一段重新受管。覆盖一段你保留过（keep）或接管过（unmanage）的段，要加 `--force true`。 |
+| `keep` | 把文件里现在的正文记为你的版本，不写文件 | 引擎再也不写这一段。 |
+| `unmanage` | 去掉两行标记，留下正文 | 这段文字从此只归你，引擎不再管理。 |
+
+把一段从文件里拿掉（禁用）时，改过的段同样要加 `--force true`，否则报 `MANAGED_SECTION_FORCE_REQUIRED`，拒绝信息里带 `file` 与 `section`。
+
+## Command Spell：四条原则
+
+| id | 版本 | 名称 | 大意 |
+| --- | --- | --- | --- |
+| `autonomy` | 1 | 自主运行原则 | 使用者不在实时观看，中途问「要不要继续」只会让工作停摆。原始请求涵盖的可逆动作直接做，只有破坏性动作与真正的范围变更才停下来交给使用者。 |
+| `batch` | 2 | 批量处理原则 | 一个 INIT 下的全部待办 Story 是一批：拆分一次做完，实施分包并行，见红只记不修，生成物批末再生，一批一次链写、一次汇报，派工按批段。 |
+| `unattended-commands` | 1 | 无人值守指令原则 | 无人值守时弹出确认框等于停摆：删除改为移到 scratch 的 trash 子目录，命令里不 cd，只写工作目录与 scratch 目录，不碰权限规则列出的路径与命令，弹过框的写法不重试。 |
+| `silent-reporting` | 1 | 静默汇报原则 | 工作进行期间主对话不输出进度汇报；只在全部完成或剩余任务全部阻塞时汇报一次。 |
+
+每条原则有中文与英文两份正文，按项目的 `artifact.language` 选择：`zh-CN` 写中文，其他取值或未设置时写英文。中文正文是定稿；`autonomy`、`batch`、`unattended-commands` 三条的英文待 Owner 事后更正。四条原则默认全部关闭。
+
+### 启用与禁用
+
+- `rule-list [--project <目录>]`：列出每条原则的 `{id, version, recordedVersion, fileVersion, section, state}`，只读，不写任何文件。`version` 是本机引擎带的版本，`recordedVersion` 是库里记录的版本，`fileVersion` 是段起始标记里的修订号。
+- `rule-enable --id <规则 id> [--project <目录>] --at <时刻>`：在库的 `rule` 集合里记下 `{enabled: true, version}`（版本取本机引擎带的版本），并把正文作为 `rule:<规则 id>` 段写进 AGENTS.md。回执 `RULE_ENABLED` 给出原则的新状态、这一段的处理结果和备份目录。
+- `rule-disable --id <规则 id> [--force true] [--project <目录>] --at <时刻>`：连同标记把这一段从 AGENTS.md 拿掉，并记下 `{enabled: false, version}`。你改过的段要加 `--force true`。回执 `RULE_DISABLED`。
+
+`agents-render` 也渲染已启用原则的段：项目换了 `artifact.language`，下一次渲染就换成对应语言的正文。
+
+### 六种状态
+
+| 状态 | 含义 | 怎么办 |
+| --- | --- | --- |
+| `disabled` | 没有启用：库里没有这条原则的记录，或记录为关闭。 | `rule-enable` |
+| `enabled` | 已启用，段里是引擎写的正文。 | 无需处理 |
+| `user-modified` | 已启用，但段里不是引擎写的正文：你改过它，或者用 `keep` 把你的版本留了下来。 | 用 `rule-resolve` 处置；保留下来的段引擎不再写。 |
+| `removed-from-file` | 已启用，但 AGENTS.md 里没有这一段的标记。 | 引擎不会补回。要重新写入，先 `rule-disable` 再 `rule-enable`。 |
+| `update-available` | 本机引擎带来了更高的版本，库里记的仍是旧版本；文件保持原样。 | `rule-enable` 取新版本。 |
+| `pending` | 一次写入因为你的修改被拒绝，正等待处置。 | `rule-resolve` |
+
+版本与本机引擎不一致的原则，`agents-render` 原样保留：旧版本等你用 `rule-enable` 更新，由更新的引擎启用的新版本也不会被旧正文覆盖。库里记录的版本比本机引擎带的更新时，`rule-enable` 报 `RULE_VERSION_NEWER`，提示先升级引擎。

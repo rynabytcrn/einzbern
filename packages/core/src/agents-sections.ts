@@ -12,7 +12,8 @@
 // installed, and kept on the device (agents.navigation, machine-settings.ts). A device that
 // declined it gets two pointer hooks instead, on SessionStart and SubagentStart, which hand the
 // agent the same three lines (host-hooks.ts, hook-recall.ts). The variable sections of
-// variables-sections.ts are AGENTS.md's too.
+// variables-sections.ts are AGENTS.md's too, and so are the sections of the Command Spell rules a
+// project enabled (rules.ts).
 //
 // A section the user changed waits (pending) until the user decides what becomes of it:
 // overwrite puts the engine's text back and records it as the new baseline; keep records the text
@@ -54,7 +55,7 @@ import type { AgentsNavigationChoice } from "./machine-settings.js";
 import { BRAND } from "./names.js";
 import { gitTopLevel, resolveLibrary } from "./registry.js";
 import type { ResolutionPath } from "./registry.js";
-import { builtInRule, ruleBody } from "./rules-catalog.js";
+import { BUILT_IN_RULES, builtInRule, ruleBody } from "./rules-catalog.js";
 import {
   VARIABLES_CUSTOM_SECTION_ID,
   VARIABLES_SYSTEM_SECTION_ID,
@@ -504,7 +505,24 @@ export interface AgentsRenderResult {
   readonly state: WorkspaceState;
 }
 
-/** The sections the engine writes into AGENTS.md for a device whose navigation choice is `navigation`. */
+// The sections of the Command Spell rules the library has enabled (TCRN-CROSS-STORY-483, rules.ts),
+// in catalog order and in the project's artifact language. A rule enabled at a version other than
+// the one this engine ships is left as the file holds it: an older engine does not write its text
+// over a newer one, and a newer version waits for rule-enable (update-available).
+function enabledRuleSections(state: Pick<WorkspaceState, "settings" | "configRecords">): readonly AgentsSection[] {
+  const language = artifactLanguage(state);
+  return BUILT_IN_RULES.flatMap((rule) => {
+    const record = state.configRecords.find((entry) => entry.collection === "rule" && entry.key === rule.id)?.value;
+    if (record?.enabled !== true || record.version !== rule.version) return [];
+    return [{ id: `${RULE_SECTION_PREFIX}${rule.id}`, file: AGENTS_FILE, body: ruleBody(rule.id, language) }];
+  });
+}
+
+/**
+ * The sections the engine writes into AGENTS.md for a device whose navigation choice is
+ * `navigation`: the navigation section on a device that chose written, the two variable sections,
+ * and the section of every rule the library has enabled at the version this engine ships.
+ */
 export function agentsFileSections(state: Pick<WorkspaceState, "settings" | "configRecords">, navigation: AgentsNavigationChoice | null): {
   readonly sections: readonly AgentsSection[];
   readonly withheld: readonly WithheldEntry[];
@@ -516,6 +534,7 @@ export function agentsFileSections(state: Pick<WorkspaceState, "settings" | "con
       ...(navigation === "written" ? [NAVIGATION_SECTION] : []),
       { id: system.id, file: AGENTS_FILE, body: system.body },
       { id: custom.id, file: AGENTS_FILE, body: custom.body },
+      ...enabledRuleSections(state),
     ],
     withheld: [...system.withheld, ...custom.withheld],
   };
@@ -524,7 +543,8 @@ export function agentsFileSections(state: Pick<WorkspaceState, "settings" | "con
 /**
  * Render the engine's sections into a project's AGENTS.md and CLAUDE.md against the library's
  * records, and record each section record the render changed (R2, R4, R5). AGENTS.md gets the
- * variable sections, and the navigation section when this device's choice is written; CLAUDE.md
+ * variable sections, the sections of the rules the library has enabled, and the navigation
+ * section when this device's choice is written; CLAUDE.md
  * gets its import section unless it imports AGENTS.md already. Both files are planned before
  * either is written, so a file whose markers do not parse refuses the whole render. A section the
  * user changed is left as it is and goes pending; one the user removed is not put back; a section

@@ -310,3 +310,21 @@ test("STORY-484 R1, R4: variable-list reads; variable-set and variable-remove wr
   assert.deepEqual(entry("settings-set").flags.map((flag) => flag.name), ["workspace", "at", "key", "value", "actor"]);
   assert.deepEqual(entry("settings-remove").flags.map((flag) => flag.name), ["workspace", "at", "key", "actor"]);
 });
+
+test("STORY-483 R2: rule-list reads; rule-enable and rule-disable write, take --id and --at, and resolve the project from --project or the current directory", () => {
+  const entry = (name) => COMMAND_CATALOG.find((candidate) => candidate.name === name);
+  const flags = (name) => entry(name).flags.map((flag) => [flag.name, flag.required, flag.valueKind]);
+  assert.equal(entry("rule-list").mutates, false);
+  assert.deepEqual(flags("rule-list"), [["project", false, "string"]]);
+  assert.equal(entry("rule-enable").mutates, true);
+  assert.deepEqual(flags("rule-enable"), [["id", true, "string"], ["at", true, "instant"], ["project", false, "string"], ["actor", false, "string"]]);
+  assert.equal(entry("rule-disable").mutates, true);
+  assert.deepEqual(flags("rule-disable"), [
+    ["id", true, "string"], ["force", false, "boolean"], ["at", true, "instant"], ["project", false, "string"], ["actor", false, "string"],
+  ]);
+  // With agents-render and rule-resolve (STORY-478 R3) they are the five rule verbs, and none takes
+  // --workspace: the library is the one the registry names for the project.
+  const verbs = ["agents-render", "rule-disable", "rule-enable", "rule-list", "rule-resolve"];
+  assert.equal(verbs.every((name) => entry(name) !== undefined), true);
+  assert.equal(verbs.some((name) => entry(name).flags.some((flag) => flag.name === "workspace")), false);
+});

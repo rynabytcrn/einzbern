@@ -16,6 +16,7 @@ import type { JsonValue } from "../../protocol/src/index.js";
 import { buildEventPayload } from "./actor-attestation.js";
 import { checkGateRecordValue } from "./gates-config.js";
 import { checkManagedSectionRecordValue } from "./managed-sections.js";
+import { checkRuleRecordValue } from "./rules.js";
 import { checkVariableRecordValue } from "./variables.js";
 import { appendEvents, projectConfiguration, withWorkspaceWriteLock } from "./workspace.js";
 import type { MutationDelta, WorkspaceMutationOptions, WorkspaceState } from "./workspace.js";
@@ -61,12 +62,6 @@ export const CONFIG_RECORD_KEY_MAX_BYTES = 512 as const;
 // Every value is a JSON object that canonicalises to at most this many bytes.
 export const CONFIG_RECORD_VALUE_MAX_BYTES = 65_536 as const;
 
-// A collection whose own check has not landed yet accepts any value of the common shape.
-function commonShapeOnly(): void {
-  // The common shape (a canonical JSON object within CONFIG_RECORD_VALUE_MAX_BYTES) is checked for
-  // every collection before this row's check runs.
-}
-
 // The closed table: one row per collection. A collection outside it is refused on write and its
 // events are rejected on replay. Each Story replaces its own row's check with the one for its
 // values; the rows are kept apart so those changes do not touch one another.
@@ -75,8 +70,9 @@ const CONFIG_RECORD_VALUE_CHECKS: Readonly<Record<ConfigRecordCollection, Config
   // <file>#<id> (SUB-316, managed-sections.ts).
   "managed-section": checkManagedSectionRecordValue,
 
-  // TCRN-CROSS-STORY-483: a Command Spell rule's state (SUB-336).
-  rule: commonShapeOnly,
+  // TCRN-CROSS-STORY-483: whether a Command Spell rule is enabled and the version it was enabled
+  // at, keyed by the rule's id (SUB-336, rules.ts).
+  rule: checkRuleRecordValue,
 
   // TCRN-CROSS-STORY-484: a custom variable's type, value and description, keyed by its name
   // (SUB-340, variables.ts).

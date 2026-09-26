@@ -128,8 +128,11 @@ import {
   removeVariable,
   renderCustomVariablesSection,
   setVariable,
+  disableRule,
+  enableRule,
+  listRules,
 } from "../../core/src/index.js";
-import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider, SectionAction, StoryFields, Variable, WithheldEntry, WorkRelationsInput } from "../../core/src/index.js";
+import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider, RuleChange, RuleStatus, SectionAction, StoryFields, Variable, WithheldEntry, WorkRelationsInput } from "../../core/src/index.js";
 import type {
   DoneGatesVerdict,
   KnowledgeCategory,
@@ -966,6 +969,41 @@ function writeVariableState(io: CliIo, state: Awaited<ReturnType<typeof material
   }));
 }
 
+// TCRN-CROSS-STORY-483 R2: one rule as the rule verbs print it.
+function ruleStatusJson(status: RuleStatus): JsonValue {
+  return {
+    id: status.id,
+    version: status.version,
+    recordedVersion: status.recordedVersion,
+    fileVersion: status.fileVersion,
+    section: status.section,
+    state: status.state,
+  };
+}
+
+// The receipt of rule-enable and rule-disable: the rule's state afterwards, what became of its
+// section, and where AGENTS.md was backed up before it was replaced.
+function writeRuleChange(io: CliIo, project: { readonly projectRoot: string; readonly libraryPath: string }, change: RuleChange): void {
+  io.write(canonicalJson({
+    reasonCode: change.action === "enable" ? "RULE_ENABLED" : "RULE_DISABLED",
+    workspaceId: change.state.metadata.workspaceId,
+    version: change.state.version,
+    headEventHash: change.state.headEventHash,
+    ...writtenIdsField(),
+    projectPath: project.projectRoot,
+    libraryPath: project.libraryPath,
+    rule: ruleStatusJson(change.status),
+    section: change.section,
+    file: change.file,
+    action: change.action,
+    result: change.result,
+    written: change.written,
+    backupDir: change.backupPath === null ? null : dirname(change.backupPath),
+    backupPath: change.backupPath,
+    recorded: change.recorded,
+  }));
+}
+
 function writeTemplateAdmissionState(
   io: CliIo,
   state: Awaited<ReturnType<typeof materializeWorkspace>>,
@@ -1069,6 +1107,12 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "project-update", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "recall", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "query", required: true, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "tau", required: false, valueKind: "string" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
   { name: "recover", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
+  // TCRN-CROSS-STORY-483 R2 (with agents-render and rule-resolve): the Command Spell rules of the
+  // project the registry resolves from --project (the current directory when left out).
+  // rule-disable takes out a section the user changed only with --force.
+  { name: "rule-disable", availability: "cli", mutates: true, flags: [{ name: "id", required: true, valueKind: "string" }, { name: "force", required: false, valueKind: "boolean" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "rule-enable", availability: "cli", mutates: true, flags: [{ name: "id", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "rule-list", availability: "cli", mutates: false, flags: [{ name: "project", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-478 R3 (STORY-483 R2 reuses it): settle a managed section the user changed:
   // overwrite, keep or unmanage; --force overwrites a section the user kept.
   { name: "rule-resolve", availability: "cli", mutates: true, flags: [{ name: "section", required: true, valueKind: "string" }, { name: "action", required: true, valueKind: "string" }, { name: "force", required: false, valueKind: "boolean" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
@@ -1565,6 +1609,56 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       backupDir: change.backupPath === null ? null : dirname(change.backupPath),
       backupPath: change.backupPath,
     }));
+    return;
+  }
+  // TCRN-CROSS-STORY-483 R2, R3 (MIN-228 D3, MIN-229 D6): the Command Spell rules of the project
+  // this device's registry resolves. rule-list reads every rule's state and writes nothing.
+  // rule-enable records a rule at the version this engine ships and writes its text into AGENTS.md;
+  // rule-disable takes the section out and records the rule as disabled, and a section the user
+  // changed goes only with --force true. A file they replace is backed up first.
+  if (command === "rule-list") {
+    const values = parseArguments(rest, ["project"]);
+    const project = await resolveAgentsProject(values.project ?? process.cwd());
+    const rules = await namingSection(() => listRules({ libraryRoot: project.libraryPath, projectRoot: project.projectRoot }));
+    io.write(canonicalJson({
+      reasonCode: "RULE_LIST_READY",
+      schemaVersion: "einzbern.rule-list.v1",
+      projectPath: project.projectRoot,
+      libraryPath: project.libraryPath,
+      rules: rules.map(ruleStatusJson),
+    }));
+    return;
+  }
+  if (command === "rule-enable") {
+    const values = parseArguments(rest, ["id", "at", "project", "actor"]);
+    required(values, ["id", "at"]);
+    const at = values.at ?? "";
+    const project = await resolveAgentsProject(values.project ?? process.cwd());
+    const change = await namingSection(() => withWriteLock(project.libraryPath, at, async () => enableRule({
+      libraryRoot: project.libraryPath,
+      projectRoot: project.projectRoot,
+      id: values.id ?? "",
+      occurredAt: at,
+      ...(values.actor ? { actorId: values.actor } : {}),
+    })));
+    writeRuleChange(io, project, change);
+    return;
+  }
+  if (command === "rule-disable") {
+    const values = parseArguments(rest, ["id", "force", "at", "project", "actor"]);
+    required(values, ["id", "at"]);
+    const at = values.at ?? "";
+    const force = booleanValue(values.force, "force");
+    const project = await resolveAgentsProject(values.project ?? process.cwd());
+    const change = await namingSection(() => withWriteLock(project.libraryPath, at, async () => disableRule({
+      libraryRoot: project.libraryPath,
+      projectRoot: project.projectRoot,
+      id: values.id ?? "",
+      force,
+      occurredAt: at,
+      ...(values.actor ? { actorId: values.actor } : {}),
+    })));
+    writeRuleChange(io, project, change);
     return;
   }
   if (command === "library-resolve") {

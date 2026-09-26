@@ -136,13 +136,13 @@ test("478-R1: two devices write one key apart; after the sync both read the writ
 
   // On one clock the device id decides, not the wall clock: the laptop writes first, the desk
   // second, and the laptop's write still merges last because its id sorts after the desk's.
-  await as(laptop, () => setConfigRecord(apart, { collection: "rule", key: "autonomy", value: { state: "disabled" }, occurredAt: at() }));
-  await as(desk, () => setConfigRecord(library, { collection: "rule", key: "autonomy", value: { state: "enabled" }, occurredAt: at() }));
+  await as(laptop, () => setConfigRecord(apart, { collection: "rule", key: "autonomy", value: { enabled: false, version: 1 }, occurredAt: at() }));
+  await as(desk, () => setConfigRecord(library, { collection: "rule", key: "autonomy", value: { enabled: true, version: 1 }, occurredAt: at() }));
   await syncStream(apart, library, LAPTOP_ID);
   await syncStream(library, apart, DESK_ID);
   for (const [home, copy] of [[desk, library], [laptop, apart]]) {
     const state = await as(home, () => materializeWorkspace(copy));
-    assert.deepEqual(configRecords(state, "rule").map((record) => record.value.state), ["disabled"], "the larger device id wins a tie on the clock");
+    assert.deepEqual(configRecords(state, "rule").map((record) => record.value.enabled), [false], "the larger device id wins a tie on the clock");
     const clocks = state.events.filter((event) => event.payload.record?.key === "autonomy").map((event) => event.clock);
     assert.equal(new Set(clocks).size, 1, "both writes carry the same clock");
   }

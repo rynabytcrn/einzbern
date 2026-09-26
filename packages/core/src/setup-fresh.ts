@@ -31,6 +31,11 @@
 // answers writes nothing. Nothing is committed, pushed or deleted, and .gitignore is not touched.
 // Where the generated artifacts go is the library's place; workspace.generatedArtifactsPath is not
 // written.
+//
+// TCRN-CROSS-SUB-324, SUB-325: the other modes run these same steps, so each is also exported as a
+// building block: SetupRecorder keeps the writes, backups and blockers of a plan or an apply;
+// planWiring and applyWiring run the steps from registry on (restore and repair all of them, update
+// only the copies, the launchers and the hooks), against a library the mode found itself.
 
 import { isUtf8 } from "node:buffer";
 import type { Stats } from "node:fs";
@@ -45,6 +50,7 @@ import { writeFileAtomic } from "./atomic-file.js";
 import { suggestCloudHosted } from "./cloud-roots.js";
 import { ENGINE_HOOK_LAUNCHER, backupsPath, deviceFilePath, engineRoot, ensureDeviceDirectory, registryPath } from "./device-home.js";
 import { readDevice, readOrCreateDevice } from "./device-identity.js";
+import type { DeviceIdentity } from "./device-identity.js";
 import { runDoctor } from "./doctor.js";
 import { ENGINE_FILES, engineCurrentPath, engineVersionDirectory, readEngineCurrent } from "./engine-home.js";
 import type { EngineCurrent } from "./engine-home.js";
@@ -76,6 +82,7 @@ import type {
   SetupApplied,
   SetupBackup,
   SetupBlocker,
+  SetupColumns,
   SetupModeInput,
   SetupModePlan,
   SetupPlan,
@@ -99,7 +106,7 @@ export const FRESH_ENGINE_TREE = Object.freeze({
   ]),
 });
 
-const LANGUAGE_SETTING = "artifact.language";
+export const LANGUAGE_SETTING = "artifact.language";
 // Under backups/<UTC second>/ of the device directory: where each step copies the originals it
 // replaces (the modules that write them name the first four).
 const BACKUP_DIRECTORIES: Readonly<Partial<Record<SetupStep, string>>> = Object.freeze({
@@ -108,17 +115,30 @@ const BACKUP_DIRECTORIES: Readonly<Partial<Record<SetupStep, string>>> = Object.
   "writable-roots": "writable-roots",
   "managed-sections": "managed-sections",
   launchers: "launchers",
+  registry: "registry",
 });
 const HINT_MAX_LENGTH = 512;
 
-type EmptyState = Pick<WorkspaceState, "settings" | "configRecords">;
-const NEW_LIBRARY_STATE: EmptyState = Object.freeze({ settings: [], configRecords: [] });
+/** What the steps read of a library: its settings and its configuration records. */
+export type LibraryState = Pick<WorkspaceState, "settings" | "configRecords">;
+const NEW_LIBRARY_STATE: LibraryState = Object.freeze({ settings: [], configRecords: [] });
+
+// The steps from registry on, in the order a plan lists them and an apply runs them.
+export const WIRING_STEPS: readonly SetupStep[] = Object.freeze([
+  "registry",
+  "skill-copies",
+  "launchers",
+  "host-hooks",
+  "writable-roots",
+  "machine-settings",
+  "managed-sections",
+]);
 
 // ---- Small readers ----
 
 type EntryKind = "file" | "directory" | "other";
 
-async function entryKind(path: string): Promise<EntryKind | null> {
+export async function entryKind(path: string): Promise<EntryKind | null> {
   let stats: Stats;
   try {
     stats = await lstat(path);
@@ -132,19 +152,19 @@ async function entryKind(path: string): Promise<EntryKind | null> {
   return stats.isDirectory() ? "directory" : "other";
 }
 
-function reasonOf(error: unknown): string | null {
+export function reasonOf(error: unknown): string | null {
   if (error === null || typeof error !== "object") return null;
   const reasonCode = (error as { reasonCode?: unknown }).reasonCode;
   return typeof reasonCode === "string" ? reasonCode : null;
 }
 
-function messageOf(error: unknown): string {
+export function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
 // A path that may not exist yet, as it will be once created: the real path of its deepest
 // existing ancestor with the rest appended (a cloud folder is often reached through a link).
-async function realTarget(path: string): Promise<string> {
+export async function realTarget(path: string): Promise<string> {
   const absolute = resolve(path);
   const rest: string[] = [];
   let current = absolute;
@@ -212,18 +232,25 @@ export function freshLanguageTag(value: string): string {
   });
 }
 
-function defaultLanguage(): string {
+/** The language a library writes in when it records none. */
+export function defaultLanguage(): string {
   const configured = SETTINGS_CATALOG.find((entry) => entry.key === LANGUAGE_SETTING)?.defaultValue;
   return typeof configured === "string" ? configured : ARTIFACT_LANGUAGE_TAGS[0];
 }
 
-function navigationChoice(navigation: boolean): AgentsNavigationChoice {
+/** The language a library records, or null when it records none. */
+export function libraryLanguage(state: LibraryState): string | null {
+  return state.settings.find((setting) => setting.key === LANGUAGE_SETTING)?.value ?? null;
+}
+
+export function navigationChoice(navigation: boolean): AgentsNavigationChoice {
   return navigation ? "written" : "declined";
 }
 
-// ---- The plan ----
+// ---- The recorder ----
 
-class PlanRecorder {
+/** The writes, backups and blockers of one plan or apply, each path listed once, in step order. */
+export class SetupRecorder {
   readonly writes: SetupWrite[] = [];
   readonly backups: SetupBackup[] = [];
   readonly blockers: SetupBlocker[] = [];
@@ -243,6 +270,11 @@ class PlanRecorder {
     if (directory !== undefined && !this.backups.some((entry) => entry.path === path)) this.backups.push({ path, into: join(this.backupRoot, directory) });
   }
 
+  // Where this run copies the originals of `step`.
+  backupDirectory(step: SetupStep): string {
+    return join(this.backupRoot, BACKUP_DIRECTORIES[step] ?? step);
+  }
+
   block(step: SetupBlocker["step"], path: string, reasonCode: string, message: string): void {
     this.blockers.push({ step, path, reasonCode, message });
   }
@@ -260,12 +292,15 @@ class PlanRecorder {
   }
 }
 
-interface EngineSource {
+// ---- The engine setup installs from ----
+
+export interface EngineSource {
   readonly version: string | null;
   readonly directory: string | null;
 }
 
-async function planEngine(recorder: PlanRecorder, deviceHome: string): Promise<EngineSource> {
+/** The engine version engine/current names, when it holds every file setup installs from; its absence is a blocker. */
+export async function planEngineSource(recorder: SetupRecorder, deviceHome: string): Promise<EngineSource> {
   let current: EngineCurrent | null = null;
   try {
     current = await readEngineCurrent(deviceHome);
@@ -280,27 +315,84 @@ async function planEngine(recorder: PlanRecorder, deviceHome: string): Promise<E
       "no engine version is current on this device: install one first with the skill's scripts/install.mjs");
     return { version: null, directory: null };
   }
-  const directory = engineVersionDirectory(current.version, deviceHome);
+  return engineVersionSource(recorder, current.version, engineVersionDirectory(current.version, deviceHome));
+}
+
+/** An engine version directory as a source: complete, or a blocker for each file it lacks. */
+export async function engineVersionSource(recorder: SetupRecorder, version: string, directory: string): Promise<EngineSource> {
   const required = [ENGINE_FILES.entry, ...FRESH_ENGINE_TREE.launchers.map((launcher) => launcher.from), `${FRESH_ENGINE_TREE.skill}/${FRESH_ENGINE_TREE.skillEntry}`];
   let complete = true;
   for (const file of required) {
     const path = join(directory, ...file.split("/"));
     if (await entryKind(path) !== "file") {
       complete = false;
-      recorder.block("engine", path, "SETUP_ENGINE_INCOMPLETE", `the current engine ${current.version} holds no ${file} to install from`);
+      recorder.block("engine", path, "SETUP_ENGINE_INCOMPLETE", `the engine ${version} holds no ${file} to install from`);
     }
   }
-  return { version: current.version, directory: complete ? directory : null };
+  return { version, directory: complete ? directory : null };
 }
+
+/** What the skill copies and the launchers are installed from: the skill tree's digest (null when it does not digest) and each launcher's bytes. */
+export interface EngineFiles {
+  readonly skillDigest: string | null;
+  readonly launchers: readonly { readonly name: string; readonly bytes: Buffer }[];
+}
+
+/** The files of an engine version directory setup installs from; a skill tree that does not digest is a blocker. */
+export async function readEngineFiles(recorder: SetupRecorder, directory: string): Promise<EngineFiles> {
+  const source = join(directory, ...FRESH_ENGINE_TREE.skill.split("/"));
+  const digest = await recorder.attempt("skill-copies", source, () => computeInstallTreeDigest(source));
+  const launchers: { readonly name: string; readonly bytes: Buffer }[] = [];
+  for (const launcher of FRESH_ENGINE_TREE.launchers) launchers.push({ name: launcher.name, bytes: await readFile(join(directory, ...launcher.from.split("/"))) });
+  return { skillDigest: digest?.sha256 ?? null, launchers };
+}
+
+// ---- The answers a device and a library hold ----
+
+/** This device's agents.navigation; a settings file that does not read is a blocker of machine-settings. */
+export async function readDeviceNavigation(recorder: SetupRecorder, deviceHome: string): Promise<AgentsNavigationChoice | null> {
+  try {
+    return await readAgentsNavigation(deviceHome);
+  } catch (error) {
+    const reasonCode = reasonOf(error);
+    if (reasonCode === null) throw error;
+    recorder.block("machine-settings", join(deviceHome, MACHINE_SETTINGS_FILE_NAME), reasonCode, messageOf(error));
+    return null;
+  }
+}
+
+/** The device step: device.json is created when it is absent; one that is there must read. */
+export async function planDevice(recorder: SetupRecorder, deviceHome: string): Promise<void> {
+  const deviceFile = deviceFilePath(deviceHome);
+  const deviceKind = await entryKind(deviceFile);
+  if (deviceKind === null) recorder.write("device", deviceFile, "create");
+  else if (deviceKind !== "file") recorder.block("device", deviceFile, "SETUP_TARGET_UNSUPPORTED", `${deviceFile} is not a regular file`);
+  else await recorder.attempt("device", deviceFile, () => readDevice(deviceHome));
+}
+
+export async function applyDevice(recorder: SetupRecorder, deviceHome: string, at: string): Promise<DeviceIdentity> {
+  const { device, created } = await readOrCreateDevice({ home: deviceHome, now: at });
+  if (created) recorder.write("device", deviceFilePath(deviceHome), "create");
+  return device;
+}
+
+/** The cloud flag a library takes by default: what the registry holds for this project and library, else the cloud folder table's suggestion. */
+export function defaultCloud(context: SetupModeInput["context"], libraryPath: string): boolean {
+  const registered = context.registered;
+  if (registered !== null && registered.libraryPath === libraryPath) return registered.cloudHosted;
+  return suggestCloudHosted(libraryPath, { platform: process.platform, env: process.env, home: context.home });
+}
+
+// ---- The fresh library ----
 
 interface PlannedLibrary {
   readonly path: string;
   readonly action: "create" | "reuse";
   readonly libraryId: string | null;
-  readonly state: EmptyState;
+  readonly state: LibraryState;
 }
 
-async function planLibrary(recorder: PlanRecorder, input: SetupModeInput, artifacts: string): Promise<PlannedLibrary> {
+async function planLibrary(recorder: SetupRecorder, input: SetupModeInput, artifacts: string): Promise<PlannedLibrary> {
   const registered = input.context.registered;
   if (registered !== null && registered.libraryPath === artifacts) {
     const opened = await recorder.attempt("library", artifacts, () => openLibrary(artifacts));
@@ -343,9 +435,40 @@ function questionsFor(input: SetupModeInput, defaults: ResolvedSetupAnswers): re
   }));
 }
 
-async function planSkillCopies(recorder: PlanRecorder, source: string, home: string, deviceHome: string): Promise<void> {
-  const digest = await recorder.attempt("skill-copies", source, () => computeInstallTreeDigest(source));
-  if (digest === null) return;
+// ---- The steps from registry on: the plan ----
+
+/** What planWiring needs: the project, the library it is wired to and the answers the steps take. */
+export interface WiringPlanInput {
+  readonly projectRoot: string;
+  readonly home: string;
+  readonly deviceHome: string;
+  readonly library: { readonly path: string; readonly libraryId: string | null; readonly state: LibraryState };
+  readonly cloud: boolean;
+  readonly navigation: AgentsNavigationChoice;
+  // What this device holds for agents.navigation now.
+  readonly deviceNavigation: AgentsNavigationChoice | null;
+  // What the skill copies and the launchers come from; null when there is nothing to install from.
+  readonly engine: EngineFiles | null;
+  // The steps planned; every step from registry on when left out.
+  readonly steps?: ReadonlySet<SetupStep>;
+}
+
+function runs(steps: ReadonlySet<SetupStep> | undefined, step: SetupStep): boolean {
+  return steps === undefined || steps.has(step);
+}
+
+async function planRegistry(recorder: SetupRecorder, input: WiringPlanInput): Promise<void> {
+  const registryFile = registryPath(input.deviceHome);
+  const registry: Registry | null = await recorder.attempt("registry", registryFile, () => readRegistry(input.deviceHome));
+  if (registry === null) return;
+  const remote = normalizedRemote(input.projectRoot).normalized;
+  const entry = registry.entries.find((candidate) => candidate.projectPath === input.projectRoot) ?? null;
+  const current = entry !== null && entry.libraryPath === input.library.path && entry.cloudHosted === input.cloud && entry.gitRemote === remote &&
+    (input.library.libraryId === null || entry.libraryId === input.library.libraryId);
+  if (!current) recorder.write("registry", registryFile, await entryKind(registryFile) === null ? "create" : "update");
+}
+
+async function planSkillCopies(recorder: SetupRecorder, digest: string, home: string, deviceHome: string): Promise<void> {
   for (const root of SKILL_COPY_ROOTS) {
     const path = skillCopyPath(home, root);
     const kind = await entryKind(path);
@@ -354,7 +477,7 @@ async function planSkillCopies(recorder: PlanRecorder, source: string, home: str
       continue;
     }
     const held = kind === "directory" ? await treeDigestOrNull(path) : null;
-    if (held !== digest.sha256) {
+    if (held !== digest) {
       recorder.write("skill-copies", path, "update");
       recorder.backup("skill-copies", path);
     }
@@ -363,12 +486,12 @@ async function planSkillCopies(recorder: PlanRecorder, source: string, home: str
   const verification = await recorder.attempt("skill-copies", record, () => verifySkillCopies({ home, deviceHome }));
   if (verification === null) return;
   const recorded = verification.reasonCode !== "SKILL_COPIES_NOT_RECORDED" && verification.reasonCode !== "SKILL_COPIES_RECORD_INVALID" &&
-    verification.copies.every((copy) => copy.recorded === digest.sha256 && copy.actual === digest.sha256);
+    verification.copies.every((copy) => copy.recorded === digest && copy.actual === digest);
   if (!recorded) recorder.write("skill-copies", record, await entryKind(record) === null ? "create" : "update");
 }
 
-async function planLaunchers(recorder: PlanRecorder, directory: string, deviceHome: string): Promise<void> {
-  for (const launcher of FRESH_ENGINE_TREE.launchers) {
+async function planLaunchers(recorder: SetupRecorder, launchers: EngineFiles["launchers"], deviceHome: string): Promise<void> {
+  for (const launcher of launchers) {
     const target = join(engineRoot(deviceHome), launcher.name);
     const kind = await entryKind(target);
     if (kind === null) {
@@ -379,18 +502,18 @@ async function planLaunchers(recorder: PlanRecorder, directory: string, deviceHo
       recorder.block("launchers", target, "SETUP_TARGET_UNSUPPORTED", `${target} is not a regular file`);
       continue;
     }
-    const [wanted, held] = await Promise.all([readFile(join(directory, ...launcher.from.split("/"))), readFile(target)]);
-    if (!wanted.equals(held)) {
+    if (!launcher.bytes.equals(await readFile(target))) {
       recorder.write("launchers", target, "update");
       recorder.backup("launchers", target);
     }
   }
 }
 
-async function planHooks(recorder: PlanRecorder, home: string, deviceHome: string, navigation: AgentsNavigationChoice): Promise<void> {
+/** The host-hooks step of a plan: each host's user files, rendered with (or, install false, without) the Einzbern hooks. */
+export async function planHooks(recorder: SetupRecorder, home: string, deviceHome: string, navigation: AgentsNavigationChoice | null, install = true): Promise<void> {
   for (const host of HOST_HOOK_HOSTS) {
     const plan = await recorder.attempt("host-hooks", join(home, ...HOST_HOOK_FILES[host].split("/")),
-      async () => readHostHooks(planHostHooks({ host, scope: "user", deviceHome, navigation }), { root: home, home }));
+      async () => readHostHooks(planHostHooks({ host, scope: "user", deviceHome, navigation, install }), { root: home, home }));
     if (plan === null) continue;
     for (const file of plan.files) {
       if (!file.changed || file.after === null) continue;
@@ -400,7 +523,7 @@ async function planHooks(recorder: PlanRecorder, home: string, deviceHome: strin
   }
 }
 
-async function planRoots(recorder: PlanRecorder, projectRoot: string, libraryPath: string): Promise<void> {
+async function planRoots(recorder: SetupRecorder, projectRoot: string, libraryPath: string): Promise<void> {
   if (inside(projectRoot, libraryPath)) return;
   for (const host of WRITABLE_ROOTS_HOSTS) {
     const name = WRITABLE_ROOTS_FILES[host];
@@ -416,11 +539,10 @@ async function planRoots(recorder: PlanRecorder, projectRoot: string, libraryPat
   }
 }
 
-async function planSections(recorder: PlanRecorder, projectRoot: string, library: PlannedLibrary, navigation: AgentsNavigationChoice): Promise<{
+async function planSections(recorder: SetupRecorder, projectRoot: string, state: LibraryState, navigation: AgentsNavigationChoice): Promise<{
   readonly pending: readonly { readonly file: string; readonly id: string }[];
   readonly recordsChange: boolean;
 }> {
-  const state = library.state;
   const agentsPath = join(projectRoot, AGENTS_FILE);
   const plans: (ManagedWritePlan | null)[] = [
     await recorder.attempt("managed-sections", agentsPath, () => planManagedWrite({
@@ -446,6 +568,194 @@ async function planSections(recorder: PlanRecorder, projectRoot: string, library
 }
 
 /**
+ * Plan the steps from registry on (or those `steps` names), in their order, for a project wired to
+ * `library`. Nothing is written; what would stop the apply is a blocker. Answers the managed
+ * sections that stay pending.
+ */
+export async function planWiring(recorder: SetupRecorder, input: WiringPlanInput): Promise<readonly { readonly file: string; readonly id: string }[]> {
+  const { projectRoot, home, deviceHome, library, navigation, steps } = input;
+  if (runs(steps, "registry")) await planRegistry(recorder, input);
+  const skillDigest = input.engine?.skillDigest ?? null;
+  if (skillDigest !== null && runs(steps, "skill-copies")) await planSkillCopies(recorder, skillDigest, home, deviceHome);
+  if (input.engine !== null && runs(steps, "launchers")) await planLaunchers(recorder, input.engine.launchers, deviceHome);
+  if (runs(steps, "host-hooks")) await planHooks(recorder, home, deviceHome, navigation);
+  if (runs(steps, "writable-roots")) await planRoots(recorder, projectRoot, library.path);
+  const settingsFile = join(deviceHome, MACHINE_SETTINGS_FILE_NAME);
+  if (runs(steps, "machine-settings") && input.deviceNavigation !== navigation && recorder.blockers.every((blocker) => blocker.step !== "machine-settings")) {
+    recorder.write("machine-settings", settingsFile, await entryKind(settingsFile) === null ? "create" : "update");
+  }
+  if (!runs(steps, "managed-sections")) return [];
+  const sections = await planSections(recorder, projectRoot, library.state, navigation);
+  if (sections.recordsChange) recorder.write("library", library.path, "update");
+  return sections.pending;
+}
+
+// ---- The steps from registry on: the apply ----
+
+/** What applyWiring needs: the project, the library it is wired to, the answers and the engine version installed from. */
+export interface WiringApplyInput {
+  readonly projectRoot: string;
+  readonly home: string;
+  readonly deviceHome: string;
+  readonly at: string;
+  readonly library: { readonly path: string; readonly libraryId: string };
+  readonly cloud: boolean;
+  readonly navigation: AgentsNavigationChoice;
+  readonly engineDirectory: string;
+  readonly steps?: ReadonlySet<SetupStep>;
+}
+
+async function applyRegistry(recorder: SetupRecorder, input: WiringApplyInput): Promise<void> {
+  const { projectRoot, deviceHome, at, library } = input;
+  const remote = normalizedRemote(projectRoot);
+  const registryFile = registryPath(deviceHome);
+  const entry = (await readRegistry(deviceHome)).entries.find((candidate) => candidate.projectPath === projectRoot) ?? null;
+  if (entry !== null && entry.libraryPath === library.path && entry.libraryId === library.libraryId && entry.cloudHosted === input.cloud && entry.gitRemote === remote.normalized) return;
+  const kind = await entryKind(registryFile);
+  await registerLibrary({ projectPath: projectRoot, libraryPath: library.path, registeredAt: at, cloudHosted: input.cloud, gitRemote: remote.raw }, deviceHome);
+  recorder.write("registry", registryFile, kind === null ? "create" : "update");
+}
+
+async function applySkillCopies(recorder: SetupRecorder, input: WiringApplyInput): Promise<void> {
+  const { home, deviceHome, at } = input;
+  const record = skillCopiesRecordPath(deviceHome);
+  const recordAction: SetupWriteAction = await entryKind(record) === null ? "create" : "update";
+  const copies = await installSkillCopies({ source: join(input.engineDirectory, ...FRESH_ENGINE_TREE.skill.split("/")), now: at, home, deviceHome });
+  for (const copy of copies.copies) {
+    if (copy.action === "reused") continue;
+    recorder.write("skill-copies", copy.path, copy.action === "created" ? "create" : "update");
+    if (copy.backup !== null) recorder.backup("skill-copies", copy.path);
+  }
+  if (copies.reasonCode === "SKILL_COPIES_INSTALLED") recorder.write("skill-copies", record, recordAction);
+}
+
+async function applyLaunchers(recorder: SetupRecorder, input: WiringApplyInput): Promise<void> {
+  const { deviceHome } = input;
+  for (const launcher of FRESH_ENGINE_TREE.launchers) {
+    const target = join(engineRoot(deviceHome), launcher.name);
+    const bytes = await readFile(join(input.engineDirectory, ...launcher.from.split("/")));
+    const kind = await entryKind(target);
+    if (kind !== null && kind !== "file") setupFail("SETUP_TARGET_UNSUPPORTED", `${target} is not a regular file`, { path: target });
+    const before = kind === "file" ? await readFile(target) : null;
+    if (before !== null && before.equals(bytes)) continue;
+    if (before !== null) {
+      const copy = join(recorder.backupDirectory("launchers"), launcher.name);
+      if (await entryKind(copy) === null) {
+        await ensureDeviceDirectory(dirname(copy));
+        await writeFileAtomic(copy, before);
+      }
+      recorder.backup("launchers", target);
+    }
+    await ensureDeviceDirectory(engineRoot(deviceHome));
+    await writeFileAtomic(target, bytes);
+    recorder.write("launchers", target, before === null ? "create" : "update");
+  }
+}
+
+/** The host-hooks step of an apply: the user scope of both hosts, with (or, install false, without) the Einzbern hooks. */
+export async function applyHooks(recorder: SetupRecorder, input: {
+  readonly home: string;
+  readonly deviceHome: string;
+  readonly at: string;
+  readonly navigation: AgentsNavigationChoice | null;
+  readonly install?: boolean;
+}): Promise<void> {
+  const { home, deviceHome, at, navigation } = input;
+  for (const host of HOST_HOOK_HOSTS) {
+    const hooks = await readHostHooks(planHostHooks({ host, scope: "user", deviceHome, navigation, install: input.install ?? true }), { root: home, home });
+    await applyHostHooks(hooks, { at, backupRoot: backupsPath(deviceHome) });
+    for (const file of hooks.files) {
+      if (!file.changed || file.after === null) continue;
+      recorder.write("host-hooks", file.path, file.before === null ? "create" : "update");
+      if (file.before !== null) recorder.backup("host-hooks", file.path);
+    }
+  }
+}
+
+async function applyRoots(recorder: SetupRecorder, input: WiringApplyInput): Promise<void> {
+  const { projectRoot, deviceHome, at, library } = input;
+  if (inside(projectRoot, library.path)) return;
+  const roots = await planWritableRoots({ projectRoot, libraryPath: library.path });
+  await applyWritableRoots(roots, { at, home: deviceHome });
+  for (const file of roots.files) {
+    if (!file.changed) continue;
+    const path = join(roots.projectRoot, ...file.path.split("/"));
+    recorder.write("writable-roots", path, file.before === null ? "create" : "update");
+    if (file.before !== null) recorder.backup("writable-roots", path);
+  }
+}
+
+async function applyNavigationSetting(recorder: SetupRecorder, input: WiringApplyInput): Promise<void> {
+  const settingsFile = join(input.deviceHome, MACHINE_SETTINGS_FILE_NAME);
+  if (await readAgentsNavigation(input.deviceHome) === input.navigation) return;
+  const action: SetupWriteAction = await entryKind(settingsFile) === null ? "create" : "update";
+  await applyMachineSettingSet({ key: AGENTS_NAVIGATION_SETTING, value: input.navigation, occurredAt: input.at, path: settingsFile });
+  recorder.write("machine-settings", settingsFile, action);
+}
+
+async function applySections(recorder: SetupRecorder, input: WiringApplyInput): Promise<readonly { readonly file: string; readonly id: string }[]> {
+  const { projectRoot, deviceHome, at, library } = input;
+  const existed = new Map<string, boolean>();
+  for (const file of [AGENTS_FILE, CLAUDE_FILE]) existed.set(file, await entryKind(join(projectRoot, file)) !== null);
+  const rendered = await renderAgentsSections(library.path, { projectRoot, navigation: input.navigation, occurredAt: at, backupRoot: backupsPath(deviceHome) });
+  for (const file of rendered.files) {
+    if (!file.written) continue;
+    const path = join(projectRoot, file.file);
+    recorder.write("managed-sections", path, existed.get(file.file) === true ? "update" : "create");
+    if (file.backupPath !== null) recorder.backup("managed-sections", path);
+  }
+  if (rendered.recorded > 0) recorder.write("library", library.path, "update");
+  return rendered.pending.map((section) => ({ file: section.file, id: section.id }));
+}
+
+/**
+ * Apply the steps from registry on (or those `steps` names), in their order, each comparing before
+ * it writes. Answers the managed sections that stay pending.
+ */
+export async function applyWiring(recorder: SetupRecorder, input: WiringApplyInput): Promise<readonly { readonly file: string; readonly id: string }[]> {
+  const { steps } = input;
+  if (runs(steps, "registry")) await applyRegistry(recorder, input);
+  if (runs(steps, "skill-copies")) await applySkillCopies(recorder, input);
+  if (runs(steps, "launchers")) await applyLaunchers(recorder, input);
+  if (runs(steps, "host-hooks")) await applyHooks(recorder, input);
+  if (runs(steps, "writable-roots")) await applyRoots(recorder, input);
+  if (runs(steps, "machine-settings")) await applyNavigationSetting(recorder, input);
+  return runs(steps, "managed-sections") ? applySections(recorder, input) : [];
+}
+
+/** SETUP_APPLIED for a plan, with what the recorder kept and doctor's eight checks right after. */
+export async function setupApplied(plan: SetupPlan, recorder: SetupRecorder, result: {
+  readonly deviceId: string | null;
+  readonly library: SetupApplied["library"];
+  readonly pending: readonly { readonly file: string; readonly id: string }[];
+  readonly columns?: SetupColumns;
+}): Promise<SetupApplied> {
+  const { at, projectRoot, home, deviceHome } = plan;
+  const selfCheck = await runDoctor({ projectRoot, home, deviceHome });
+  return {
+    schemaVersion: SETUP_APPLIED_SCHEMA_VERSION,
+    reasonCode: "SETUP_APPLIED",
+    mode: plan.mode,
+    at,
+    engineVersion: FRAMEWORK_VERSION,
+    projectRoot,
+    home,
+    deviceHome,
+    deviceId: result.deviceId,
+    answers: plan.resolved,
+    library: result.library,
+    written: recorder.writes,
+    backups: recorder.backups,
+    backupDir: recorder.backups.length > 0 ? recorder.backupRoot : null,
+    pendingSections: result.pending,
+    ...(result.columns === undefined ? {} : { columns: result.columns }),
+    selfCheck,
+  };
+}
+
+// ---- The fresh plan and apply ----
+
+/**
  * Plan a first installation (R2, R5): the answers, each open question's default, and every write
  * and backup in the order the apply makes them. Nothing is written; whatever would stop the apply is
  * a blocker of the plan.
@@ -453,39 +763,26 @@ async function planSections(recorder: PlanRecorder, projectRoot: string, library
 export async function planFreshSetup(input: SetupModeInput): Promise<SetupModePlan> {
   const { context, answers } = input;
   const { projectRoot, home, deviceHome } = context;
-  const recorder = new PlanRecorder(deviceHome, input.at);
+  const recorder = new SetupRecorder(deviceHome, input.at);
 
-  const engine = await planEngine(recorder, deviceHome);
+  const engine = await planEngineSource(recorder, deviceHome);
 
   // The answers: what was given, else the default, which on a device and project already set up is
   // what they hold now.
   const artifacts = await realTarget(answers.artifacts === undefined
     ? context.registered?.libraryPath ?? join(projectRoot, DIRECTORY.library)
     : resolve(projectRoot, answers.artifacts));
-  let deviceNavigation: AgentsNavigationChoice | null = null;
-  const settingsFile = join(deviceHome, MACHINE_SETTINGS_FILE_NAME);
-  try {
-    deviceNavigation = await readAgentsNavigation(deviceHome);
-  } catch (error) {
-    const reasonCode = reasonOf(error);
-    if (reasonCode === null) throw error;
-    recorder.block("machine-settings", settingsFile, reasonCode, messageOf(error));
-  }
+  const deviceNavigation = await readDeviceNavigation(recorder, deviceHome);
 
   // device
-  const deviceFile = deviceFilePath(deviceHome);
-  const deviceKind = await entryKind(deviceFile);
-  if (deviceKind === null) recorder.write("device", deviceFile, "create");
-  else if (deviceKind !== "file") recorder.block("device", deviceFile, "SETUP_TARGET_UNSUPPORTED", `${deviceFile} is not a regular file`);
-  else await recorder.attempt("device", deviceFile, () => readDevice(deviceHome));
+  await planDevice(recorder, deviceHome);
 
   // library
   const library = await planLibrary(recorder, input, artifacts);
-  const currentLanguage = library.state.settings.find((setting) => setting.key === LANGUAGE_SETTING)?.value ?? null;
-  const reusedCloud = context.registered !== null && context.registered.libraryPath === artifacts ? context.registered.cloudHosted : null;
+  const currentLanguage = libraryLanguage(library.state);
   const defaults: ResolvedSetupAnswers = {
     artifacts,
-    cloud: reusedCloud ?? suggestCloudHosted(artifacts, { platform: process.platform, env: process.env, home }),
+    cloud: defaultCloud(context, artifacts),
     language: currentLanguage ?? defaultLanguage(),
     navigation: deviceNavigation !== "declined",
   };
@@ -495,37 +792,21 @@ export async function planFreshSetup(input: SetupModeInput): Promise<SetupModePl
     language: answers.language === undefined ? defaults.language : freshLanguageTag(answers.language),
     navigation: answers.navigation ?? defaults.navigation,
   };
-  const navigation = navigationChoice(resolved.navigation);
   if (library.action === "create") recorder.write("library", library.path, "create");
   else if (currentLanguage !== resolved.language) recorder.write("library", library.path, "update");
 
-  // registry
-  const registryFile = registryPath(deviceHome);
-  const registry: Registry | null = await recorder.attempt("registry", registryFile, () => readRegistry(deviceHome));
-  if (registry !== null) {
-    const remote = normalizedRemote(projectRoot).normalized;
-    const entry = registry.entries.find((candidate) => candidate.projectPath === projectRoot) ?? null;
-    const current = entry !== null && entry.libraryPath === library.path && entry.cloudHosted === resolved.cloud && entry.gitRemote === remote &&
-      (library.libraryId === null || entry.libraryId === library.libraryId);
-    if (!current) recorder.write("registry", registryFile, await entryKind(registryFile) === null ? "create" : "update");
-  }
-
-  // skill-copies and launchers, from the engine version directory
-  if (engine.directory !== null) {
-    await planSkillCopies(recorder, join(engine.directory, ...FRESH_ENGINE_TREE.skill.split("/")), home, deviceHome);
-    await planLaunchers(recorder, engine.directory, deviceHome);
-  }
-
-  // host-hooks, writable-roots
-  await planHooks(recorder, home, deviceHome, navigation);
-  await planRoots(recorder, projectRoot, library.path);
-
-  // machine-settings, managed-sections
-  if (deviceNavigation !== navigation && recorder.blockers.every((blocker) => blocker.step !== "machine-settings")) {
-    recorder.write("machine-settings", settingsFile, await entryKind(settingsFile) === null ? "create" : "update");
-  }
-  const sections = await planSections(recorder, projectRoot, library, navigation);
-  if (sections.recordsChange) recorder.write("library", library.path, "update");
+  // registry, skill-copies, launchers, host-hooks, writable-roots, machine-settings, managed-sections
+  const files = engine.directory === null ? null : await readEngineFiles(recorder, engine.directory);
+  const pending = await planWiring(recorder, {
+    projectRoot,
+    home,
+    deviceHome,
+    library,
+    cloud: resolved.cloud,
+    navigation: navigationChoice(resolved.navigation),
+    deviceNavigation,
+    engine: files,
+  });
 
   return {
     questions: questionsFor(input, defaults),
@@ -535,12 +816,10 @@ export async function planFreshSetup(input: SetupModeInput): Promise<SetupModePl
     writes: recorder.writes,
     backups: recorder.backups,
     backupDir: recorder.backups.length > 0 ? recorder.backupRoot : null,
-    pendingSections: sections.pending,
+    pendingSections: pending,
     blockers: recorder.blockers,
   };
 }
-
-// ---- The apply ----
 
 /**
  * Apply a confirmed first installation (R2, R5): the steps in their order, each comparing before it
@@ -553,136 +832,51 @@ export async function applyFreshSetup(plan: SetupPlan): Promise<SetupApplied> {
   if (directory === null) {
     return setupFail("SETUP_ENGINE_NOT_INSTALLED", "the plan names no engine version directory to install from", { deviceHome });
   }
-  const recorder = new PlanRecorder(deviceHome, at);
-  const backupRoot = backupsPath(deviceHome);
-  const navigation = navigationChoice(resolved.navigation);
+  const planned = plan.library;
+  if (planned === null) return setupFail("SETUP_INPUT_INVALID", "the plan names no library", { field: "plan" });
+  const recorder = new SetupRecorder(deviceHome, at);
 
   // device
-  const { device, created } = await readOrCreateDevice({ home: deviceHome, now: at });
-  if (created) recorder.write("device", deviceFilePath(deviceHome), "create");
+  const device = await applyDevice(recorder, deviceHome, at);
 
   // library, and its language
   const remote = normalizedRemote(projectRoot);
-  if (plan.library.action === "create") {
+  if (planned.action === "create") {
     await initializeLibrary({
-      root: plan.library.path,
+      root: planned.path,
       createdAt: at,
       projectName: projectHint(basename(projectRoot)),
       gitRemote: projectHint(remote.normalized),
     });
   }
-  const library = await openLibrary(plan.library.path);
-  if (plan.library.libraryId !== null && library.manifest.libraryId !== plan.library.libraryId) {
-    setupFail("SETUP_LIBRARY_CONFLICT", `${library.root} holds ${library.manifest.libraryId}, not the planned ${plan.library.libraryId}`, { library: library.root });
+  const library = await openLibrary(planned.path);
+  if (planned.libraryId !== null && library.manifest.libraryId !== planned.libraryId) {
+    setupFail("SETUP_LIBRARY_CONFLICT", `${library.root} holds ${library.manifest.libraryId}, not the planned ${planned.libraryId}`, { library: library.root });
   }
   const libraryPath = library.root;
   const libraryId = library.manifest.libraryId;
-  if (plan.library.action === "create") recorder.write("library", libraryPath, "create");
+  if (planned.action === "create") recorder.write("library", libraryPath, "create");
   const state = await materializeWorkspace(libraryPath);
-  if (state.settings.find((setting) => setting.key === LANGUAGE_SETTING)?.value !== resolved.language) {
+  if (libraryLanguage(state) !== resolved.language) {
     await setWorkspaceSetting(libraryPath, { key: LANGUAGE_SETTING, value: resolved.language, occurredAt: at });
     recorder.write("library", libraryPath, "update");
   }
 
-  // registry
-  const registryFile = registryPath(deviceHome);
-  const entry = (await readRegistry(deviceHome)).entries.find((candidate) => candidate.projectPath === projectRoot) ?? null;
-  if (entry === null || entry.libraryPath !== libraryPath || entry.libraryId !== libraryId || entry.cloudHosted !== resolved.cloud || entry.gitRemote !== remote.normalized) {
-    const action: SetupWriteAction = await entryKind(registryFile) === null ? "create" : "update";
-    await registerLibrary({ projectPath: projectRoot, libraryPath, registeredAt: at, cloudHosted: resolved.cloud, gitRemote: remote.raw }, deviceHome);
-    recorder.write("registry", registryFile, action);
-  }
-
-  // skill-copies
-  const record = skillCopiesRecordPath(deviceHome);
-  const recordAction: SetupWriteAction = await entryKind(record) === null ? "create" : "update";
-  const copies = await installSkillCopies({ source: join(directory, ...FRESH_ENGINE_TREE.skill.split("/")), now: at, home, deviceHome });
-  for (const copy of copies.copies) {
-    if (copy.action === "reused") continue;
-    recorder.write("skill-copies", copy.path, copy.action === "created" ? "create" : "update");
-    if (copy.backup !== null) recorder.backup("skill-copies", copy.path);
-  }
-  if (copies.reasonCode === "SKILL_COPIES_INSTALLED") recorder.write("skill-copies", record, recordAction);
-
-  // launchers
-  for (const launcher of FRESH_ENGINE_TREE.launchers) {
-    const target = join(engineRoot(deviceHome), launcher.name);
-    const bytes = await readFile(join(directory, ...launcher.from.split("/")));
-    const kind = await entryKind(target);
-    if (kind !== null && kind !== "file") setupFail("SETUP_TARGET_UNSUPPORTED", `${target} is not a regular file`, { path: target });
-    const before = kind === "file" ? await readFile(target) : null;
-    if (before !== null && before.equals(bytes)) continue;
-    if (before !== null) {
-      const copy = join(recorder.backupRoot, BACKUP_DIRECTORIES.launchers ?? "launchers", launcher.name);
-      if (await entryKind(copy) === null) {
-        await ensureDeviceDirectory(dirname(copy));
-        await writeFileAtomic(copy, before);
-      }
-      recorder.backup("launchers", target);
-    }
-    await ensureDeviceDirectory(engineRoot(deviceHome));
-    await writeFileAtomic(target, bytes);
-    recorder.write("launchers", target, before === null ? "create" : "update");
-  }
-
-  // host-hooks: the user scope of both hosts
-  for (const host of HOST_HOOK_HOSTS) {
-    const hooks = await readHostHooks(planHostHooks({ host, scope: "user", deviceHome, navigation }), { root: home, home });
-    await applyHostHooks(hooks, { at, backupRoot });
-    for (const file of hooks.files) {
-      if (!file.changed || file.after === null) continue;
-      recorder.write("host-hooks", file.path, file.before === null ? "create" : "update");
-      if (file.before !== null) recorder.backup("host-hooks", file.path);
-    }
-  }
-
-  // writable-roots, for a library outside the project
-  if (!inside(projectRoot, libraryPath)) {
-    const roots = await planWritableRoots({ projectRoot, libraryPath });
-    await applyWritableRoots(roots, { at, home: deviceHome });
-    for (const file of roots.files) {
-      if (!file.changed) continue;
-      const path = join(roots.projectRoot, ...file.path.split("/"));
-      recorder.write("writable-roots", path, file.before === null ? "create" : "update");
-      if (file.before !== null) recorder.backup("writable-roots", path);
-    }
-  }
-
-  // machine-settings, then managed-sections
-  const settingsFile = join(deviceHome, MACHINE_SETTINGS_FILE_NAME);
-  if (await readAgentsNavigation(deviceHome) !== navigation) {
-    const action: SetupWriteAction = await entryKind(settingsFile) === null ? "create" : "update";
-    await applyMachineSettingSet({ key: AGENTS_NAVIGATION_SETTING, value: navigation, occurredAt: at, path: settingsFile });
-    recorder.write("machine-settings", settingsFile, action);
-  }
-  const existed = new Map<string, boolean>();
-  for (const file of [AGENTS_FILE, CLAUDE_FILE]) existed.set(file, await entryKind(join(projectRoot, file)) !== null);
-  const rendered = await renderAgentsSections(libraryPath, { projectRoot, navigation, occurredAt: at, backupRoot });
-  for (const file of rendered.files) {
-    if (!file.written) continue;
-    const path = join(projectRoot, file.file);
-    recorder.write("managed-sections", path, existed.get(file.file) === true ? "update" : "create");
-    if (file.backupPath !== null) recorder.backup("managed-sections", path);
-  }
-  if (rendered.recorded > 0) recorder.write("library", libraryPath, "update");
-
-  const selfCheck = await runDoctor({ projectRoot, home, deviceHome });
-  return {
-    schemaVersion: SETUP_APPLIED_SCHEMA_VERSION,
-    reasonCode: "SETUP_APPLIED",
-    mode: plan.mode,
-    at,
-    engineVersion: FRAMEWORK_VERSION,
+  // registry, skill-copies, launchers, host-hooks, writable-roots, machine-settings, managed-sections
+  const pending = await applyWiring(recorder, {
     projectRoot,
     home,
     deviceHome,
+    at,
+    library: { path: libraryPath, libraryId },
+    cloud: resolved.cloud,
+    navigation: navigationChoice(resolved.navigation),
+    engineDirectory: directory,
+  });
+
+  return setupApplied(plan, recorder, {
     deviceId: device.deviceId,
-    answers: resolved,
-    library: { path: libraryPath, libraryId, created: plan.library.action === "create" },
-    written: recorder.writes,
-    backups: recorder.backups,
-    backupDir: recorder.backups.length > 0 ? recorder.backupRoot : null,
-    pendingSections: rendered.pending.map((section) => ({ file: section.file, id: section.id })),
-    selfCheck,
-  };
+    library: { path: libraryPath, libraryId, created: planned.action === "create" },
+    pending,
+  });
 }

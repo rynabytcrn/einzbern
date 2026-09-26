@@ -158,10 +158,10 @@ async function planUnderTripwire(f, options) {
   return JSON.parse(run.stdout);
 }
 
-test("480-R1, R6: six modes; the four not here yet say so, and migrate names an installation from before the rename", async (context) => {
+test("480-R1, R6: six modes; those not here yet say so, and migrate names an installation from before the rename", async (context) => {
   assert.deepEqual([...SETUP_MODES], ["fresh", "restore", "update", "repair", "migrate", "uninstall"]);
   const f = await fixture(context, { engine: false });
-  for (const mode of ["restore", "update", "repair", "uninstall"]) {
+  for (const mode of ["update", "repair", "uninstall"]) {
     await assert.rejects(planSetup({ mode, projectRoot: f.project, at: at(), home: f.home, deviceHome: f.deviceHome }), { reasonCode: "SETUP_MODE_UNAVAILABLE" });
   }
   await assert.rejects(planSetup({ mode: "install", projectRoot: f.project, at: at() }), { reasonCode: "SETUP_MODE_INVALID" });

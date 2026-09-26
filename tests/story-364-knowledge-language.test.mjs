@@ -422,6 +422,8 @@ test("STORY-364: the recall verb reports the query language and its telemetry", 
     "artifact.language": "zh-CN",
     "execution.dispatchTiers": DISPATCH_TIERS_VALUE,
     "retrieval.promptLanguages": "zh-CN",
+    // TCRN-CROSS-SUB-303: an eleven-card library lowers the default calibrated on the cross-project chain.
+    "retrieval.tau": "1",
   });
   await captureKnowledgeUnit(workspace, {
     ...englishCard,
@@ -461,6 +463,8 @@ test("STORY-364: phrasings feed the weight-6 recall column, so a question worded
   const workspace = await languageWorkspace(context, {
     "artifact.language": "zh-CN",
     "execution.dispatchTiers": DISPATCH_TIERS_VALUE,
+    // TCRN-CROSS-SUB-303: an eleven-card library lowers the default calibrated on the cross-project chain.
+    "retrieval.tau": "1",
   });
   await captureKnowledgeUnit(workspace, {
     ...englishCard,
@@ -595,6 +599,8 @@ test("STORY-364 R4: the injection hook translates once and asks again, and adds 
     "artifact.language": "zh-CN",
     "execution.dispatchTiers": DISPATCH_TIERS_VALUE,
     "retrieval.promptLanguages": "zh-CN",
+    // TCRN-CROSS-SUB-303: an eleven-card library lowers the default calibrated on the cross-project chain.
+    "retrieval.tau": "1",
   });
   const containerRoot = containerOf(workspace);
   await captureKnowledgeUnit(workspace, {

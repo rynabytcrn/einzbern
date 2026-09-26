@@ -563,7 +563,10 @@ export {
 } from "./knowledge-language.js";
 export type { KnowledgeLanguageBundle, KnowledgeLanguageProvider } from "./knowledge-language.js";
 export { RECALL_CANDIDATE_LIMIT, RECALL_DEFAULT_TAU, recall, recallDocuments } from "./recall.js";
-export type { RecallKnowledgeInput, RecallMinutesInput, RecallWorkInput } from "./recall.js";
+export type { RecallKnowledgeInput } from "./recall.js";
+// TCRN-CROSS-STORY-474 R1, R2: what recall indexes, read from a state, and how a hit reads as one
+// line; the verb builds its input here, as the prompt hook does.
+export { formatRecallLine, recallContextLines, recallInputsFromState } from "./recall-inputs.js";
 export {
   probeHost,
 } from "./host-probe.js";

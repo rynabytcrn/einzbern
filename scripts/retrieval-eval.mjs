@@ -13,10 +13,21 @@
 // and applied to another states nothing, so a fixture byte that moves is refused by
 // name rather than absorbed into the score.
 //
+// TCRN-CROSS-STORY-474 R3, R4 (TCRN-CROSS-SUB-303): the corpus is what recall-inputs.ts hands
+// the index -- Stories and Incidents with their goal and body, Initiatives and Epics, every
+// minutes record, the cards with the expansions they carry -- recorded read-only from the
+// cross-project chain by scripts/retrieval-eval-record.mjs (tests/fixtures/retrieval-eval/
+// README.md). The strong-hit threshold is calibrated here and held in strong-threshold.json:
+// every prompt of the unrelated group (negative-queries.json) must be answered with nothing
+// at it, the threshold must be the value the calibration rule gives on this corpus, it must be
+// the value the engine ships (RECALL_STRONG_TAU), and with the threshold at zero the same group
+// must be answered -- otherwise the emptiness does not hang on the threshold, and the gate says
+// RETRIEVAL_EVAL_THRESHOLD_DETACHED. `--calibrate` prints the calibration instead of the gate.
+//
 // Two indexes are built on purpose. The cards-only index is the knowledge surface
-// alone; the mixed index adds conference minutes and work records, which is what the
-// recall verb answers from. Their numbers differ -- 36 against 30 at @8 on the same 37
-// questions -- so neither can stand in for the other, and both are held.
+// alone; the mixed index adds minutes and work records, which is what the recall verb
+// answers from. Their numbers differ, so neither can stand in for the other, and both
+// are held.
 //
 // Thresholds are the values measured on this corpus with no margin, per Owner ruling
 // TCRN-CROSS-MIN-164 D4: any later drift shows up here first, which is the reason the
@@ -34,14 +45,16 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import {
-  RECALL_DEFAULT_TAU,
   RECALL_KIND_QUOTA,
   RECALL_RELATIVE_FLOOR,
+  RECALL_STRONG_TAU,
   RecallIndex,
+  recall,
   recallDocuments,
+  resetRecallCache,
   selectRecallHits,
 } from "../dist/build/packages/core/src/recall.js";
-import { canonicalJson, canonicalSha256, parseStrictInstant } from "../dist/build/packages/protocol/src/index.js";
+import { canonicalSha256, parseStrictInstant } from "../dist/build/packages/protocol/src/index.js";
 import { buildIncidentReplay } from "./incident-replay.mjs";
 
 const SCOPE_EXCERPT_BYTES = 512;
@@ -50,59 +63,101 @@ const PRECISION_K = 3;
 const INDEPENDENT_INCIDENT_FILE = "incident-replay-frozen.json";
 const PRE_REGISTERED_HOLDOUT_FILE = "holdout-preregistered.json";
 const PRE_REGISTERED_HOLDOUT_SOURCE_FILE = "holdout-source.json";
+const STRONG_THRESHOLD_SCHEMA_VERSION = "einzbern.retrieval-strong-threshold.v1";
+const NEGATIVE_QUERIES_SCHEMA_VERSION = "einzbern.retrieval-negative-queries.v1";
+const NEGATIVE_QUERIES_AT_LEAST = 10;
+// The calibration rule: the threshold is the smallest multiple of this step strictly above the
+// best score any unrelated prompt reaches on the mixed index.
+const CALIBRATION_STEP = 0.25;
 
 // Every file the score depends on. Order is fixed and the name is hashed with the
 // bytes so a rename cannot pass for an edit.
 const CORPUS_FILES = [
-  "card-expansions.json",
   "cards-compact.json",
   "corpus-snapshot.json",
   "gold-labels.json",
   "judge-sheet.json",
   "minutes-compact.json",
+  "negative-queries.json",
+  "strong-threshold.json",
   "synthetic-queries.json",
   "translations-sonnet.json",
   "work-compact.json",
 ];
+// The files the strong-hit threshold was calibrated on: the mixed index and the unrelated group.
+// strong-threshold.json names their digest, so it cannot be carried to another corpus.
+const CALIBRATION_FILES = ["cards-compact.json", "minutes-compact.json", "negative-queries.json", "work-compact.json"];
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const fixture = (name) => resolve(root, "tests/fixtures/retrieval-eval", name);
 const readJson = (path) => JSON.parse(readFileSync(path, "utf8"));
 const fileSha256 = (path) => createHash("sha256").update(readFileSync(path)).digest("hex");
 
+function filesDigest(names) {
+  const digest = createHash("sha256");
+  for (const name of names) digest.update(name).update(readFileSync(fixture(name)));
+  return digest.digest("hex");
+}
+
+/** The calibration rule: the smallest multiple of CALIBRATION_STEP strictly above the best unrelated score. */
+function calibratedTau(maximumUnrelatedScore) {
+  return (Math.floor(maximumUnrelatedScore / CALIBRATION_STEP) + 1) * CALIBRATION_STEP;
+}
+
+function readCorpus() {
+  const work = readJson(fixture("work-compact.json")).records;
+  const minutes = readJson(fixture("minutes-compact.json")).records;
+  const knowledge = readJson(fixture("cards-compact.json")).records;
+  const snapshot = readJson(fixture("corpus-snapshot.json"));
+  const negatives = readJson(fixture("negative-queries.json"));
+  // The migrated cards supersede the ones an older fixture names; a label follows the chain to
+  // the card the corpus holds now.
+  const successor = new Map();
+  for (const card of snapshot.records) for (const previous of card.supersedes) successor.set(previous, card.id);
+  const liveCardId = (id) => {
+    let current = id;
+    for (let step = 0; step < 8 && successor.has(current); step += 1) current = successor.get(current);
+    return current;
+  };
+  return { work, minutes, knowledge, snapshot, negatives, liveCardId };
+}
+
+/** Every unrelated prompt put to the recall core at `tau`: how many are answered, and the best score each reaches. */
+function unrelatedGroup(documents, queries, tau, cacheKey) {
+  const answers = queries.map((entry) => recall({ cacheKey, checkpoint: "retrieval-eval", documents: () => documents, query: entry.query, tau }));
+  return {
+    answered: answers.filter((answer) => answer.records.length > 0).length,
+    answeredQueries: queries.filter((_, index) => answers[index].records.length > 0).map((entry) => entry.query),
+  };
+}
+
+function calibration(documents, queries) {
+  const index = new RecallIndex(documents, "calibration");
+  const best = queries.map((entry) => ({ query: entry.query, best: index.search(entry.query)[0]?.score ?? 0 }));
+  index.close();
+  const maximum = Math.max(0, ...best.map((entry) => entry.best));
+  return { maximumUnrelatedScore: Number(maximum.toFixed(4)), tau: calibratedTau(maximum), scores: best.map((entry) => ({ query: entry.query, best: Number(entry.best.toFixed(4)) })) };
+}
+
 const policy = readJson(resolve(root, "scripts/policy/retrieval-eval-thresholds.json"));
 
-const digest = createHash("sha256");
-for (const name of CORPUS_FILES) digest.update(name).update(readFileSync(fixture(name)));
-const corpusDigest = digest.digest("hex");
-if (corpusDigest !== policy.corpusDigest) {
-  console.log(JSON.stringify({ ok: false, reasonCode: "RETRIEVAL_EVAL_CORPUS_CHANGED", corpusDigest, expected: policy.corpusDigest, message: `corpus digest ${corpusDigest} does not match the frozen ${policy.corpusDigest}` }));
+if (process.argv.includes("--calibrate")) {
+  const corpus = readCorpus();
+  const documents = recallDocuments({ knowledge: corpus.knowledge, minutes: corpus.minutes, work: corpus.work, scopeExcerptBytes: SCOPE_EXCERPT_BYTES });
+  console.log(JSON.stringify({ reasonCode: "RETRIEVAL_EVAL_CALIBRATION", calibrationDigest: filesDigest(CALIBRATION_FILES), step: CALIBRATION_STEP, documents: documents.length, ...calibration(documents, corpus.negatives.queries) }));
 } else {
-  console.log(JSON.stringify(evaluate(corpusDigest, policy)));
+  const corpusDigest = filesDigest(CORPUS_FILES);
+  if (corpusDigest !== policy.corpusDigest) {
+    console.log(JSON.stringify({ ok: false, reasonCode: "RETRIEVAL_EVAL_CORPUS_CHANGED", corpusDigest, expected: policy.corpusDigest, message: `corpus digest ${corpusDigest} does not match the frozen ${policy.corpusDigest}` }));
+  } else {
+    console.log(JSON.stringify(evaluate(corpusDigest, policy)));
+  }
 }
 
 function evaluate(corpusDigest, policy) {
-  // The snapshot is the knowledge-list reply as it was taken; the compact file is the
-  // same cards reduced to the fields recallDocuments reads. The snapshot supplies the
-  // lifecycle filter and the external key, which the compact projection drops.
-  const snapshot = readJson(fixture("corpus-snapshot.json")).records;
-  const liveCards = snapshot.filter((card) => card.lifecycle !== "retired" && card.promotionState === "promoted");
-  const externalKeyById = new Map(liveCards.map((card) => [card.id, card.externalKey]));
-  const phrasingsById = new Map(readJson(fixture("card-expansions.json")).expansions.map((entry) => [entry.id, entry.phrasings]));
-  const knowledge = Object.values(readJson(fixture("cards-compact.json")))
-    .filter((card) => externalKeyById.has(card.id))
-    .map((card) => ({
-      id: card.id,
-      externalKey: externalKeyById.get(card.id),
-      subject: card.subject,
-      summary: card.summary,
-      snippet: card.snippet ?? "",
-      tags: card.tags ?? [],
-      expansions: (phrasingsById.get(card.id) ?? []).join(" "),
-    }));
-  const minutes = readJson(fixture("minutes-compact.json")).records;
-  const work = readJson(fixture("work-compact.json")).records;
-  const incidentReplay = buildIncidentReplay({ workRecords: work, cards: snapshot, minutes, at: "2026-09-04T15:08:34Z" });
+  const { work, minutes, knowledge, snapshot, negatives, liveCardId } = readCorpus();
+  const externalKeyById = new Map(knowledge.map((card) => [card.id, card.externalKey]));
+  const incidentReplay = buildIncidentReplay({ workRecords: work, cards: snapshot.records, minutes, at: snapshot.recordedAt });
   const developmentIncidentReplay = readDevelopmentIncidentReplay(policy.incidentReplayIndependent, work, minutes);
 
   const queries = readJson(fixture("synthetic-queries.json")).queries;
@@ -117,11 +172,24 @@ function evaluate(corpusDigest, policy) {
   ]);
   const preRegisteredHoldout = readPreRegisteredHoldout(policy.preRegisteredHoldout, work, priorPrompts);
 
+  const failures = [];
+  const detached = [];
+  const strong = readJson(fixture("strong-threshold.json"));
+  const tau = strong.tau;
+  if (strong.schemaVersion !== STRONG_THRESHOLD_SCHEMA_VERSION || typeof tau !== "number" || !Number.isFinite(tau) || tau < 0) {
+    failures.push("strong-threshold.json is not a strong-hit threshold");
+  }
+  if (tau !== RECALL_STRONG_TAU) detached.push(`strong-threshold.json holds ${String(tau)} and the engine ships RECALL_STRONG_TAU ${String(RECALL_STRONG_TAU)}`);
+  const calibrationDigest = filesDigest(CALIBRATION_FILES);
+  if (strong.calibration?.corpusDigest !== calibrationDigest) failures.push(`strong-threshold.json was calibrated on ${String(strong.calibration?.corpusDigest)}, not on this corpus ${calibrationDigest}`);
+  if (negatives.schemaVersion !== NEGATIVE_QUERIES_SCHEMA_VERSION || !Array.isArray(negatives.queries) || negatives.queries.length < NEGATIVE_QUERIES_AT_LEAST) {
+    failures.push(`negative-queries.json must hold at least ${String(NEGATIVE_QUERIES_AT_LEAST)} unrelated prompts`);
+  }
+
   const cardDocuments = recallDocuments({ knowledge });
   const mixedDocuments = recallDocuments({ knowledge, minutes, work, scopeExcerptBytes: SCOPE_EXCERPT_BYTES });
-  // Keep the historical mixed-index score on its original 55-work corpus. The new
-  // holdout gets a separate derived index containing its independently frozen source
-  // records, so adding holdout rows cannot silently move the old thresholds.
+  // The holdout gets a separate derived index containing its independently frozen source
+  // records, so adding holdout rows cannot silently move the mixed-index thresholds.
   const holdoutDocuments = preRegisteredHoldout.ok
     ? recallDocuments({ knowledge, minutes, work: [...work, ...preRegisteredHoldout.sourceRecords], scopeExcerptBytes: SCOPE_EXCERPT_BYTES })
     : [];
@@ -129,15 +197,27 @@ function evaluate(corpusDigest, policy) {
   const mixedIndex = new RecallIndex(mixedDocuments, "mixed");
   const holdoutIndex = new RecallIndex(holdoutDocuments, "mixed-holdout");
 
+  // The unrelated group, through the recall core itself: at the threshold every prompt is
+  // answered with nothing (RECALL_NO_STRONG_HIT), and at zero at least one is answered.
+  const negativeQueries = Array.isArray(negatives.queries) ? negatives.queries : [];
+  const atTau = unrelatedGroup(mixedDocuments, negativeQueries, tau, "retrieval-eval-negative");
+  const atZero = unrelatedGroup(mixedDocuments, negativeQueries, 0, "retrieval-eval-negative");
+  resetRecallCache();
+  if (atTau.answered > 0) failures.push(`negative.answered ${String(atTau.answered)} > 0: ${atTau.answeredQueries.join(" | ")}`);
+  if (atZero.answered === 0) detached.push("with the threshold at 0 no unrelated prompt is answered, so their emptiness does not hang on the threshold");
+  const calibrated = calibration(mixedDocuments, negativeQueries);
+  if (calibrated.tau !== tau) failures.push(`strong-threshold.json holds ${String(tau)}, and the calibration rule gives ${String(calibrated.tau)} on this corpus`);
+
   // The cards-only index is read raw: it is one kind, so the per-kind quota has nothing
-  // to arbitrate. The mixed index goes through the selector the recall verb uses, floors
-  // and quota included, because that is the list a caller actually receives.
+  // to arbitrate. The mixed index goes through the selector the recall verb uses, the
+  // strong-hit threshold, floors and quota included, because that is the list a caller
+  // actually receives.
   const rankCards = (query, id) => {
     const index = cardIndex.search(query).slice(0, TOP_K).findIndex((hit) => hit.id === id);
     return index < 0 ? null : index + 1;
   };
   const selectMixed = (query) => selectRecallHits(mixedIndex.search(query), {
-    tau: RECALL_DEFAULT_TAU,
+    tau,
     relativeFloor: RECALL_RELATIVE_FLOOR,
     limit: TOP_K,
     quota: RECALL_KIND_QUOTA,
@@ -169,8 +249,10 @@ function evaluate(corpusDigest, policy) {
   const precisionAt3 = Number((relevantInTop3 / (judged.length * PRECISION_K)).toFixed(4));
 
   // The language corpus is a regression set, not decoration: each English rendering is
-  // put to the cards index and has to find the card it was translated from.
-  const language = scoreOf(translated.map((query) => rankCards(String(query.en), query.id)));
+  // put to the cards index and has to find the card it was translated from. The file is a
+  // historical model product and is not re-recorded; the cards it names were superseded by
+  // the migrated ones, and each label follows that link (liveCardId).
+  const language = scoreOf(translated.map((query) => rankCards(String(query.en), liveCardId(query.id))));
 
   // STORY-378: a separate metric group scores prompts generated from the frozen work
   // summaries against the mixed index. Expected ids come from the source linkage, never
@@ -191,7 +273,7 @@ function evaluate(corpusDigest, policy) {
   const preRegisteredHoldoutRanks = preRegisteredHoldout.ok
     ? preRegisteredHoldout.records.map((pair) => {
       const rank = selectRecallHits(holdoutIndex.search(pair.prompt), {
-        tau: RECALL_DEFAULT_TAU,
+        tau,
         relativeFloor: RECALL_RELATIVE_FLOOR,
         limit: TOP_K,
         quota: RECALL_KIND_QUOTA,
@@ -201,8 +283,9 @@ function evaluate(corpusDigest, policy) {
     : [];
   const preRegisteredHoldoutScore = scoreOf(preRegisteredHoldoutRanks);
 
-  // Exact keys retain the map's rank-1 path; key fragments use the low-weight
-  // prefix column. Measure both indexes in this run and enforce both contracts.
+  // Exact keys retain the map's rank-1 path, and so does a fragment that names one record
+  // by whole key tokens; a fragment that names none uses the low-weight prefix column.
+  // Measure both indexes in this run and enforce both contracts.
   const fragmentQuery = queries.find((query) => query.query === "INIT019-C12");
   const exactKey = externalKeyById.get(fragmentQuery.id);
   const externalKey = {
@@ -215,7 +298,6 @@ function evaluate(corpusDigest, policy) {
     exactMixedRank: rankMixed(exactKey, fragmentQuery.id),
   };
 
-  const failures = [];
   const historical = policy.historicalProvenance;
   if (historical?.fixture !== INDEPENDENT_INCIDENT_FILE || historical.role !== "development-seen-after-scoring" || historical.freezeClaimDisposition !== "retained-as-historical-metadata-not-a-real-freeze-time" || !Array.isArray(historical.evidence) || historical.evidence.length !== 2 || historical.evidence.some((entry) => typeof entry?.path !== "string" || !/^[a-f0-9]{64}$/u.test(String(entry.sha256)))) {
     failures.push("historical development-set provenance is missing or malformed");
@@ -255,16 +337,19 @@ function evaluate(corpusDigest, policy) {
     }
   }
 
+  const problems = [...detached, ...failures];
   const result = {
-    ok: failures.length === 0,
-    reasonCode: failures.length === 0 ? "RETRIEVAL_EVAL_VERIFIED" : "RETRIEVAL_EVAL_THRESHOLD_FAILED",
+    ok: problems.length === 0,
+    reasonCode: detached.length > 0 ? "RETRIEVAL_EVAL_THRESHOLD_DETACHED" : failures.length > 0 ? "RETRIEVAL_EVAL_THRESHOLD_FAILED" : "RETRIEVAL_EVAL_VERIFIED",
     corpusDigest,
     documents: { card: cardDocuments.length, mixed: mixedDocuments.length, minutes: minutes.length, work: work.length },
+    strongThreshold: { tau, engine: RECALL_STRONG_TAU, calibrated: calibrated.tau, maximumUnrelatedScore: calibrated.maximumUnrelatedScore, calibrationDigest },
+    negative: { queries: negativeQueries.length, answeredAtTau: atTau.answered, answeredAtZero: atZero.answered },
     cardsOnly,
     mixed,
     language,
     real: { prompts: judged.length, relevantLabelled, relevantInTop3, precisionAt3 },
-    incidentReplay: { ...incidentReplayScore, pairs: incidentReplay.counts.included, skipped: incidentReplay.counts.skipped, skippedNoSummary: incidentReplay.counts.skippedNoSummary },
+    incidentReplay: { ...incidentReplayScore, pairs: incidentReplay.counts.included, skipped: incidentReplay.counts.skipped, skippedNoSummary: incidentReplay.counts.skippedNoSummary, skippedNotIndexed: incidentReplay.counts.skippedNotIndexed },
     incidentReplayDevelopment: developmentIncidentReplay.ok
       ? { ...developmentIncidentReplayScore, pairs: developmentIncidentReplay.records.length, skipped: 0, sourceDigest: developmentIncidentReplay.fixtureDigest, sourceFiles: developmentIncidentReplay.sourceFiles, role: "development-seen-after-scoring" }
       : { pairs: 0, skipped: null, reasonCode: "RETRIEVAL_EVAL_DEVELOPMENT_INCIDENT_FREEZE_INVALID" },
@@ -275,7 +360,7 @@ function evaluate(corpusDigest, policy) {
     externalKey,
     metrics: ["@1", "@3", "@8", "precision@3"],
   };
-  if (failures.length > 0) result.message = failures.join("; ");
+  if (problems.length > 0) result.message = problems.join("; ");
   cardIndex.close();
   mixedIndex.close();
   holdoutIndex.close();

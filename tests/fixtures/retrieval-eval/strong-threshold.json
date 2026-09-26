@@ -1,0 +1,94 @@
+{
+  "schemaVersion": "einzbern.retrieval-strong-threshold.v1",
+  "tau": 17,
+  "method": "The smallest multiple of 0.25 strictly above the best bm25 score any prompt of negative-queries.json reaches on the mixed index of this corpus (cards, minutes and work records, built as recall-inputs.ts builds it), with the recall core's own tokenizer. No margin beyond the step (TCRN-CROSS-MIN-164 D4). Recompute with node scripts/retrieval-eval.mjs --calibrate; the gate refuses a threshold the rule does not give on the corpus it names.",
+  "calibration": {
+    "corpusDigest": "38966f6be8462427c46b10521f306eb719690fe2638bb458ad9395e02a4ee55a",
+    "files": [
+      "cards-compact.json",
+      "minutes-compact.json",
+      "negative-queries.json",
+      "work-compact.json"
+    ],
+    "index": "mixed",
+    "documents": 600,
+    "step": 0.25,
+    "maximumUnrelatedScore": 16.9767,
+    "unrelatedScores": [
+      {
+        "query": "how do I cook the rice and the beans",
+        "best": 0
+      },
+      {
+        "query": "I want to book a flight to Tokyo in May",
+        "best": 0
+      },
+      {
+        "query": "can I get a refund for a pair of shoes",
+        "best": 9.5002
+      },
+      {
+        "query": "what is the weather like in Paris today",
+        "best": 9.069
+      },
+      {
+        "query": "write a short poem about the sea and the sky",
+        "best": 10.6612
+      },
+      {
+        "query": "name the capital of Australia and the capital of Peru",
+        "best": 5.9929
+      },
+      {
+        "query": "how many calories are in a banana",
+        "best": 0
+      },
+      {
+        "query": "recommend a good novel for a long train ride",
+        "best": 16.9767
+      },
+      {
+        "query": "今天的天气怎么样",
+        "best": 15.0682
+      },
+      {
+        "query": "推荐一部好看的电影",
+        "best": 10.8381
+      },
+      {
+        "query": "红烧肉怎么做才好吃",
+        "best": 7.0476
+      },
+      {
+        "query": "周末去爬山要带些什么",
+        "best": 10.7263
+      },
+      {
+        "query": "帮我写一首关于春天的诗",
+        "best": 8.9226
+      },
+      {
+        "query": "北京到上海的高铁要多久",
+        "best": 8.3769
+      },
+      {
+        "query": "猫咪不爱喝水怎么办",
+        "best": 9.4241
+      },
+      {
+        "query": "明天早上七点叫我起床",
+        "best": 11.437
+      }
+    ]
+  },
+  "corpus": {
+    "recordedAt": "2026-09-26T13:00:00Z",
+    "source": {
+      "layout": "legacy",
+      "workspaceId": "workspace:7732a51de4c38afb83bb77cf",
+      "chainVersion": 9124,
+      "headEventHash": "c0ca7416385150e2eb1a00e35c15dac0b0c433884c3f7770e32ed3100e9d9366"
+    },
+    "recordingDigest": "8c4fe40692a836635c90083dfff6815b968f2a44987e6638ab90a63095551942"
+  }
+}

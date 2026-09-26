@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-// TCRN-CROSS-STORY-474 R3, AC1, AC4 at the core (TCRN-CROSS-SUB-302): a prompt whose best hit
-// scores below the strong-hit threshold is answered with nothing. Ten prompts that have nothing to
-// do with the library are all answered empty; with the threshold at zero the same ten are not --
-// the proof that the emptiness hangs on the threshold and not on the corpus -- and a prompt about
-// the library is still answered.
+// TCRN-CROSS-STORY-474 R3, AC1, AC4 at the core (TCRN-CROSS-SUB-302, SUB-303): a prompt whose best
+// hit scores below the strong-hit threshold is answered with nothing. The threshold the engine ships
+// is the one scripts/retrieval-eval.mjs calibrated on the recorded cross-project corpus and holds in
+// tests/fixtures/retrieval-eval/strong-threshold.json. On that corpus every prompt of the unrelated
+// group is answered with nothing; with the threshold at zero the same group is answered -- the proof
+// that the emptiness hangs on the threshold and not on the corpus -- and a prompt about the library
+// is still answered.
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -20,10 +22,11 @@ import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
 const at = (second) => `2026-09-26T13:00:${String(second).padStart(2, "0")}Z`;
 const idOf = (key) => deriveStableId("work", key);
+const FIXTURES = new URL("./fixtures/retrieval-eval/", import.meta.url);
+const readFixture = async (name) => JSON.parse(await readFile(new URL(name, FIXTURES), "utf8"));
 
 // Every record of the fixture library carries "the" and "and", and no other word the prompts use,
-// so a prompt made of those and of words the library never uses matches every record weakly and
-// none strongly.
+// so a prompt made of those and of words the library never uses matches nothing that counts.
 const CARDS = [
   { id: "knowledge:000000000000000000000011", externalKey: "SH-CARD-1", subject: "The zebrafish tank and the heater", summary: "the heater and the thermostat", snippet: "keep the zebrafish warm and fed", tags: ["reference"], expansions: "" },
   { id: "knowledge:000000000000000000000012", externalKey: "SH-CARD-2", subject: "The otter pond and the filter", summary: "the filter and the pump", snippet: "clean the pond and the filter", tags: ["lesson"], expansions: "" },
@@ -69,6 +72,27 @@ function ask(state, query, tau) {
   return recall({ cacheKey: "strong-hit", checkpoint: String(state.headEventHash), documents: () => documents, query, ...(tau === undefined ? {} : { tau }) });
 }
 
+// The recorded corpus as the recall verb would index it: the fixtures are recall-inputs.ts's output.
+async function recordedCorpus() {
+  const [work, minutes, cards] = await Promise.all(["work-compact.json", "minutes-compact.json", "cards-compact.json"].map(readFixture));
+  return recallDocuments({ knowledge: cards.records, minutes: minutes.records, work: work.records, scopeExcerptBytes: 512 });
+}
+
+function askCorpus(documents, query, tau) {
+  return recall({ cacheKey: "strong-hit-corpus", checkpoint: "recorded", documents: () => documents, query, ...(tau === undefined ? {} : { tau }) });
+}
+
+test("SUB-303: the engine ships the strong-hit threshold retrieval-eval calibrated, as the fixture holds it", async () => {
+  const strong = await readFixture("strong-threshold.json");
+  assert.equal(strong.schemaVersion, "einzbern.retrieval-strong-threshold.v1");
+  assert.equal(RECALL_STRONG_TAU, strong.tau, "recall.ts and strong-threshold.json hold one value");
+  const { step, maximumUnrelatedScore } = strong.calibration;
+  assert.ok(strong.tau > maximumUnrelatedScore && strong.tau - step <= maximumUnrelatedScore,
+    "the calibration rule: the smallest step above the best score an unrelated prompt reached");
+  const tau = SETTINGS_CATALOG.find((entry) => entry.key === "retrieval.tau");
+  assert.equal(tau.defaultValue, String(strong.tau), "and retrieval.tau defaults to it");
+});
+
 test("STORY-474 AC1 (core): ten prompts unrelated to the library are all answered with nothing", async (context) => {
   const state = await library(context);
   assert.equal(UNRELATED.length, 10);
@@ -80,18 +104,38 @@ test("STORY-474 AC1 (core): ten prompts unrelated to the library are all answere
   }
 });
 
-test("STORY-474 AC4 (core): with the threshold at zero the same prompts are answered, so the emptiness hangs on the threshold", async (context) => {
-  const state = await library(context);
-  const leaked = UNRELATED.filter((prompt) => ask(state, prompt, 0).records.length > 0);
-  assert.ok(leaked.length > 0, "tau 0 turns the all-empty case red: at least one unrelated prompt gets an answer");
-  assert.ok(UNRELATED.filter((prompt) => ask(state, prompt, 0).reasonCode === "RECALL_READY").length > 0);
+test("STORY-474 AC1, AC4 on the recorded corpus: the unrelated group is answered with nothing, and at threshold zero it is answered", async () => {
+  const documents = await recordedCorpus();
+  const negatives = (await readFixture("negative-queries.json")).queries;
+  assert.ok(negatives.length >= 10);
+  assert.deepEqual([...new Set(negatives.map((entry) => entry.language))].sort(), ["en", "zh"]);
+  assert.ok(negatives.some((entry) => /\bI\b/u.test(entry.query)), "the group carries the one-letter I that used to reach the key column");
+  try {
+    for (const { query } of negatives) {
+      const answer = askCorpus(documents, query);
+      assert.equal(answer.reasonCode, "RECALL_NO_STRONG_HIT", query);
+      assert.deepEqual(answer.records, [], query);
+    }
+    const answeredAtZero = negatives.filter(({ query }) => askCorpus(documents, query, 0).records.length > 0);
+    assert.ok(answeredAtZero.length > 0, "threshold 0 turns the all-empty group red: the emptiness hangs on the threshold");
+  } finally {
+    resetRecallCache();
+  }
 });
 
-test("STORY-474 R3: a prompt about the library is still answered, and an exact key is always a strong hit", async (context) => {
+test("STORY-474 R3: a prompt about the library is still answered, and a named key is always a strong hit", async (context) => {
+  const documents = await recordedCorpus();
+  try {
+    const answer = askCorpus(documents, "SSH 远程跑命令,参数里带空格和括号,到那边就报语法错误");
+    assert.equal(answer.reasonCode, "RECALL_READY");
+    assert.equal(answer.records[0]?.id, "knowledge:939fa8fb8993235cece099e9", "the card the question was written for");
+    const fragment = askCorpus(documents, "what did INIT019-C12 say");
+    assert.equal(fragment.reasonCode, "RECALL_READY", "a key fragment naming one record is as deliberate as its key");
+    assert.equal(fragment.records[0]?.key, "TCRN-INIT019-C12-L");
+  } finally {
+    resetRecallCache();
+  }
   const state = await library(context);
-  const answer = ask(state, "zebrafish heater");
-  assert.equal(answer.reasonCode, "RECALL_READY");
-  assert.ok(answer.records.some((hit) => hit.id === idOf("SH-STORY")));
   const byKey = ask(state, "what about SH-STORY-2 and the weather");
   assert.equal(byKey.reasonCode, "RECALL_READY");
   assert.equal(byKey.records[0]?.id, idOf("SH-STORY-2"));

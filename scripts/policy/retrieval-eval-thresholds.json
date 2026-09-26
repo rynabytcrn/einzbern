@@ -1,32 +1,32 @@
 {
   "schemaVersion": "tcrn.retrieval-eval-thresholds.v1",
-  "note": "Measured on the corpus this digest names, with no margin, per Owner ruling TCRN-CROSS-MIN-164 D4. Every floor here is the value scripts/retrieval-eval.mjs produced on this corpus at TCRN-CROSS-STORY-368; none was rounded, and none carries headroom. A number that moves in either direction is a fact about the scorer or the corpus, which is what this gate exists to surface.",
-  "corpusDigest": "1df0a8a6746d1b66bd5ddb2c16c3a1ced6200f124857016afed5026d0fa3e7ee",
+  "note": "Measured on the corpus this digest names, with no margin, per Owner ruling TCRN-CROSS-MIN-164 D4. Every floor here is the value scripts/retrieval-eval.mjs produced on this corpus when TCRN-CROSS-SUB-303 re-recorded it under recall-inputs.ts, at the strong-hit threshold strong-threshold.json holds; none was rounded, and none carries headroom. The historical development set keeps the floors it was frozen with, and the pre-registered holdout keeps its pre-registered floors. A number that moves in either direction is a fact about the scorer or the corpus, which is what this gate exists to surface.",
+  "corpusDigest": "4ee8b3a24c08018519c78cd81679aba9ea8db6711b5b894e2873b000bead302d",
   "cardsOnly": {
-    "hitAt1": 29,
-    "hitAt3": 32,
-    "hitAt8": 36
+    "hitAt1": 21,
+    "hitAt3": 28,
+    "hitAt8": 32
   },
   "mixed": {
-    "hitAt1": 27,
-    "hitAt3": 29,
-    "hitAt8": 30
+    "hitAt1": 18,
+    "hitAt3": 22,
+    "hitAt8": 22
   },
   "language": {
-    "hitAt8": 25
+    "hitAt8": 24
   },
   "real": {
-    "precisionAt3": 0.1889
+    "precisionAt3": 0.1
   },
   "incidentReplay": {
     "pairsAtLeast": 20,
-    "hitAt1": 47,
-    "hitAt3": 48,
-    "hitAt8": 48
+    "hitAt1": 203,
+    "hitAt3": 233,
+    "hitAt8": 235
   },
   "incidentReplayIndependent": {
     "fixture": "incident-replay-frozen.json",
-    "fixtureDigest": "19f1c061d6055a698b27c9a774b84df5659bdc363bcfab11dca17ee6d4f84e0f",
+    "fixtureDigest": "07c4b499c4eafe6183bee92478231f8b17403e35119675e9677e967fae5039a3",
     "role": "development-seen-after-scoring",
     "pairsAtLeast": 20,
     "hitAt1": 19,
@@ -36,7 +36,7 @@
   },
   "preRegisteredHoldout": {
     "fixture": "holdout-preregistered.json",
-    "fixtureDigest": "ae6dc2868e331b2f6cdd009565111ee36e24c9711755a1e888ac9ae01a016401",
+    "fixtureDigest": "0b74102cde0dea40c1c1fd4cdb25177e43d36331d2cd6457e3325a1aff6d1e74",
     "role": "unseen-disjoint-holdout",
     "sourceFile": "holdout-source.json",
     "sourceFileDigest": "9f5d06013b49147d717fa1417fe6bdd379af1ce7aa80b1c10c96cc50a5ef11f2",

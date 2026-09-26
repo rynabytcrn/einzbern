@@ -200,6 +200,13 @@ test("STORY-472 R3, R4: work-create and work-annotate take the relation flags, a
   assert.equal(flagsOf("work-list").get("relation")?.valueKind, "string");
 });
 
+test("STORY-474 R2, R4: recall reads, keeps --host and --tau, and no longer takes --partition", () => {
+  const entry = COMMAND_CATALOG.find((candidate) => candidate.name === "recall");
+  assert.equal(entry.mutates, false);
+  assert.deepEqual(entry.flags.map((flag) => flag.name).sort(), ["allow-trailing", "at", "host", "limit", "query", "tau", "workspace"]);
+  assert.deepEqual(entry.flags.filter((flag) => flag.required).map((flag) => flag.name).sort(), ["at", "query"]);
+});
+
 test("STORY-475 R1, R2: minutes-record writes and names its required flags; minutes-list and minutes-show read", () => {
   const entry = (name) => COMMAND_CATALOG.find((candidate) => candidate.name === name);
   assert.equal(entry("minutes-record").mutates, true);

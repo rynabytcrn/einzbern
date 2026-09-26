@@ -138,10 +138,11 @@ test("476-AC1: a card is retrieved the moment it is written, and nothing about i
   const listed = await listKnowledgeMetadata(fx.workspace, { at: AT });
   assert.equal(listed.records.some((record) => record.id === created.id), true, "the default selection answers with it");
   assert.equal((await readKnowledgeBody(fx.workspace, created.id, { at: AT })).body, sourcedGuide(fx, "X").body);
-  const recalled = await cliJson(["recall", "--workspace", fx.workspace, "--at", AT, "--query", "zsh grep include quotes"]);
+  // A three-card library lowers the strong-hit default calibrated on the cross-project chain (TCRN-CROSS-SUB-303).
+  const recalled = await cliJson(["recall", "--workspace", fx.workspace, "--at", AT, "--query", "zsh grep include quotes", "--tau", "1"]);
   assert.equal(recalled.knowledgeReasonCode, "KNOWLEDGE_LIST_READY");
   assert.equal(recalled.records[0]?.id, created.id, "recall answers with the card it was asked about");
-  assert.deepEqual(Object.keys(recalled.records[0]).sort(), ["id", "key", "kind", "score", "status", "summary", "title"]);
+  assert.deepEqual(Object.keys(recalled.records[0]).sort(), ["id", "key", "kind", "line", "parentChain", "score", "status", "summary", "title"]);
   assert.equal(recalled.records[0].status, "active");
 
   // A capture naming a source, and a create that leaves the lifecycle out, land the same way.

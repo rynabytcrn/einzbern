@@ -7,6 +7,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { canonicalJson, canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
+import { recallDocuments } from "../dist/build/packages/core/src/recall.js";
 
 export const INCIDENT_REPLAY_SCHEMA_VERSION = "tcrn.incident-replay.v1";
 export const INCIDENT_RULE_DRAFT_SCHEMA_VERSION = "tcrn.incident-rule-draft.v1";
@@ -104,6 +105,27 @@ function sourceDigest(source) {
   return canonicalSha256(source);
 }
 
+// TCRN-CROSS-STORY-474 R1 (TCRN-CROSS-SUB-303): a pair is made only for a record the recall index
+// holds -- a Story or an Incident on its title, goal and body, an Initiative or an Epic on its title
+// and goal -- decided by recallDocuments itself, so the replay and the index cannot disagree. A
+// Subtask, or an Epic that carries nothing but a scope, is never returned by recall, and a pair
+// whose expected record cannot be returned measures nothing.
+function indexedWorkIds(works, scopeMap) {
+  const inputs = works.map((work) => ({
+    id: text(work.id, 256),
+    externalKey: text(work.externalKey, 256),
+    kind: text(work.kind, 128),
+    status: text(work.status, 64),
+    title: typeof work.title === "string" ? work.title : null,
+    summary: typeof work.summary === "string" ? work.summary : null,
+    scope: scopeFor(work, scopeMap),
+    labels: Array.isArray(work.labels) ? work.labels.filter((label) => typeof label === "string") : [],
+    goal: typeof work.goal === "string" ? work.goal : null,
+    body: typeof work.body === "string" ? work.body : null,
+  }));
+  return new Set(recallDocuments({ work: inputs }).map((document) => document.id));
+}
+
 /** Build replay pairs without using current retrieval results as labels. */
 export function buildIncidentReplay({ workRecords = [], scopeRecords = {}, cards = [], minutes = [], at = new Date().toISOString() } = {}) {
   const works = recordsOf(workRecords);
@@ -111,6 +133,7 @@ export function buildIncidentReplay({ workRecords = [], scopeRecords = {}, cards
   const minuteRecords = recordsOf(minutes);
   const scopeMap = new Map(Object.entries(scopeRecords ?? {}));
   const minuteMap = minuteMapOf(minuteRecords);
+  const indexed = indexedWorkIds(works, scopeMap);
   const pairs = [];
   const skipped = [];
   for (const work of works) {
@@ -120,6 +143,10 @@ export function buildIncidentReplay({ workRecords = [], scopeRecords = {}, cards
     const summary = summaryFor(work, scope);
     if (!id || !externalKey || !summary.value) {
       skipped.push({ id: id || null, externalKey: externalKey || null, reason: "missing-summary" });
+      continue;
+    }
+    if (!indexed.has(id)) {
+      skipped.push({ id, externalKey, reason: "not-indexed" });
       continue;
     }
     const decidedBy = decidedByFor(work, scope);
@@ -162,6 +189,7 @@ export function buildIncidentReplay({ workRecords = [], scopeRecords = {}, cards
       included: pairs.length,
       skipped: skipped.length,
       skippedNoSummary: skipped.filter((entry) => entry.reason === "missing-summary").length,
+      skippedNotIndexed: skipped.filter((entry) => entry.reason === "not-indexed").length,
     },
     pairs,
     skipped,

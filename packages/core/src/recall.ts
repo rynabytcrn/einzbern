@@ -85,10 +85,14 @@ export const RECALL_FIELD_WEIGHTS = { title: 8, body: 3, tags: 5, expansions: 6,
  * a reminder. Above it, the threshold is still the absolute floor of every hit. A term carried by
  * most of the corpus scores near zero by construction (FTS5 clamps a non-positive inverse
  * document frequency), which is what turns "every card is tagged lesson" into no answer.
- * The value is calibrated by retrieval-eval and recorded in its fixtures (TCRN-CROSS-SUB-303);
- * until then it is the absolute floor the 2026-09-04 evaluation settled on.
+ * The value is calibrated by retrieval-eval and held in tests/fixtures/retrieval-eval/
+ * strong-threshold.json (TCRN-CROSS-SUB-303): the smallest multiple of 0.25 above the best score
+ * any prompt of the unrelated group reaches on the recorded cross-project corpus (16.98, a
+ * two-word coincidence with a record written in English). bm25 grows with the size of the
+ * library, so in a library of a few dozen records only a title match or a named key clears it;
+ * such a library lowers `retrieval.tau` (settings) or passes `--tau`.
  */
-export const RECALL_STRONG_TAU = 1;
+export const RECALL_STRONG_TAU = 17;
 
 /** The name the absolute floor had before it became the strong-hit threshold; the same value. */
 export const RECALL_DEFAULT_TAU = RECALL_STRONG_TAU;
@@ -146,6 +150,28 @@ const STOP_BIGRAMS: ReadonlySet<string> = new Set([
   "上次", "下次", "这种", "情况", "为啥",
 ]);
 
+/**
+ * TCRN-CROSS-SUB-303 (the strong-hit calibration): the English counterpart of the stop bigrams.
+ * In a library written mostly in Chinese, "the", "is" or "what" are rare, so each carries a high
+ * inverse document frequency; measured on the recorded cross-project corpus, "what is in it"
+ * scored 25.9 on the few records written in English and "what is the weather like in Paris today"
+ * 30.1 -- a strong hit made of nothing but grammar. They leave the query, and a one-word query part
+ * that is one of them (or a single character, the "I" of TCRN-CROSS-SUB-302's finding) no longer
+ * asks the external-key column for a prefix.
+ */
+const STOP_WORDS: ReadonlySet<string> = new Set([
+  "a", "about", "am", "an", "and", "are", "as", "at", "be", "been",
+  "being", "but", "by", "can", "could", "did", "do", "does", "for", "from",
+  "get", "got", "had", "has", "have", "he", "her", "here", "him", "his",
+  "how", "i", "if", "in", "into", "is", "it", "its", "just", "let",
+  "like", "may", "me", "might", "must", "my", "no", "nor", "not", "of",
+  "off", "on", "onto", "or", "our", "ours", "out", "over", "please", "shall",
+  "she", "should", "so", "than", "that", "the", "their", "them", "then", "there",
+  "these", "they", "this", "those", "to", "too", "up", "us", "very", "was",
+  "we", "were", "what", "when", "where", "which", "while", "who", "whom", "whose",
+  "why", "will", "with", "would", "you", "your", "yours",
+]);
+
 function bigrams(run: string): readonly string[] {
   const out: string[] = [];
   for (let index = 0; index < run.length - 1; index += 1) out.push(run.slice(index, index + 2));
@@ -161,11 +187,12 @@ export function segmentForIndex(text: string): string {
   return String(text ?? "").replace(CJK_RUN, (run) => bigrams(run).join(" ") || run);
 }
 
-/** Query-side tokens: lowercased ASCII words and CJK bigrams, stop bigrams removed. */
+/** Query-side tokens: lowercased ASCII words and CJK bigrams, stop words and stop bigrams removed. */
 export function recallQueryTokens(text: string): readonly string[] {
   const tokens = new Set<string>();
   for (const match of String(text ?? "").toLowerCase().matchAll(ASCII_TOKEN)) {
-    tokens.add(match[0].replace(/[.-]+$/u, ""));
+    const token = match[0].replace(/[.-]+$/u, "");
+    if (!STOP_WORDS.has(token)) tokens.add(token);
   }
   for (const run of String(text ?? "").match(CJK_RUN) ?? []) {
     for (const gram of bigrams(run)) if (!STOP_BIGRAMS.has(gram)) tokens.add(gram);
@@ -195,10 +222,27 @@ function externalKeyTokens(text: string): readonly string[] {
 function externalKeyExpression(query: string): string {
   return (query.match(/[A-Za-z0-9][A-Za-z0-9-]*/gu) ?? [])
     .slice(0, MAXIMUM_QUERY_TOKENS)
-    .map((part) => externalKeyTokens(part).map((token) => `"${token}"*`).join(" AND "))
-    .filter((part) => part.length > 0)
-    .map((part) => `(${part})`)
+    .map((part) => externalKeyTokens(part))
+    // A lone word asks for a key prefix only when it could be one: not a stop word, not one letter.
+    .filter((tokens) => tokens.length > 1 || (tokens.length === 1 && tokens[0]!.length > 1 && !STOP_WORDS.has(tokens[0]!)))
+    .map((tokens) => `(${tokens.map((token) => `"${token}"*`).join(" AND ")})`)
     .join(" OR ");
+}
+
+/**
+ * A key as the ordered run of its tokens, repeats kept, for matching a fragment inside it. Case is
+ * folded before splitting on both sides, because a prompt's candidate arrives upper-cased
+ * (externalKeyCandidates) and a case boundary it no longer has cannot be matched.
+ */
+function keyTokenRun(text: string): readonly string[] {
+  return text.toLowerCase().match(/[a-z0-9]+/gu) ?? [];
+}
+
+function containsRun(haystack: readonly string[], needle: readonly string[]): boolean {
+  for (let start = 0; start + needle.length <= haystack.length; start += 1) {
+    if (needle.every((token, offset) => haystack[start + offset] === token)) return true;
+  }
+  return false;
 }
 
 // The display fields are in the digest too: they are not ranked, but a hit must not show a status,
@@ -244,6 +288,7 @@ export class RecallIndex {
   #database: DatabaseSync;
   #rows = new Map<string, IndexedRow>();
   #byExternalKey = new Map<string, RecallDocument>();
+  #keyRuns = new Map<string, readonly string[]>();
   #nextRowId = 1;
   #checkpoint: string;
 
@@ -314,18 +359,40 @@ export class RecallIndex {
       inserted += 1;
     }
     this.#byExternalKey = new Map();
+    this.#keyRuns = new Map();
     for (const row of this.#rows.values()) {
-      if (row.document.key.length > 0) this.#byExternalKey.set(row.document.key.toUpperCase(), row.document);
+      if (row.document.key.length === 0) continue;
+      this.#byExternalKey.set(row.document.key.toUpperCase(), row.document);
+      this.#keyRuns.set(row.document.id, keyTokenRun(row.document.key));
     }
     return { inserted, removed };
   }
 
-  /** The ranked answer, before any threshold. Exact external-key hits lead. */
+  /**
+   * The record a key fragment names, if exactly one: "STORY-474" or "INIT019-C12" spelled inside a
+   * prompt names the one record whose key holds those whole tokens in that order. TCRN-CROSS-SUB-303:
+   * a fragment is as deliberate as a full key, and at the calibrated strong-hit threshold its prefix
+   * score alone (the weight-1 key column) would no longer be answered. A fragment needs two tokens and
+   * a digit, so a hyphenated word ("tcrn-workflow", "e-mail") names nothing.
+   */
+  #namedByFragment(candidate: string): RecallDocument | undefined {
+    const run = keyTokenRun(candidate);
+    if (run.length < 2 || !run.some((token) => /[0-9]/u.test(token))) return undefined;
+    let named: RecallDocument | undefined;
+    for (const [id, keyRun] of this.#keyRuns) {
+      if (!containsRun(keyRun, run)) continue;
+      if (named !== undefined) return undefined;
+      named = this.#rows.get(id)?.document;
+    }
+    return named;
+  }
+
+  /** The ranked answer, before any threshold. The records the prompt names, by key or fragment, lead. */
   search(query: string, limit: number = RECALL_CANDIDATE_LIMIT): readonly RecallHit[] {
     const hits: RecallHit[] = [];
     const seen = new Set<string>();
     for (const key of externalKeyCandidates(query)) {
-      const document = this.#byExternalKey.get(key);
+      const document = this.#byExternalKey.get(key) ?? this.#namedByFragment(key);
       if (document === undefined || seen.has(document.id)) continue;
       seen.add(document.id);
       hits.push(hitOf(document, RECALL_EXTERNAL_KEY_SCORE));

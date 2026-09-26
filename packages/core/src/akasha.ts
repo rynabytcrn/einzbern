@@ -43,6 +43,7 @@ import type { Library } from "./ether-library.js";
 import { LIBRARY_FORMAT_VERSION } from "./ether-library.js";
 import { withFileLock } from "./file-lock.js";
 import type { FileLockOptions } from "./file-lock.js";
+import { assertLibrarySupported } from "./format-version.js";
 import { DIRECTORY } from "./names.js";
 import { FRAMEWORK_VERSION } from "./index.js";
 
@@ -227,6 +228,14 @@ export async function readStreamManifest(libraryRoot: string, deviceId: string, 
     parsed = assertCanonicalJson(bytes.toString("utf8"));
   } catch {
     fail("AKASHA_STREAM_MANIFEST_INVALID", `${DIRECTORY.events}/${deviceId}/${STREAM_MANIFEST_FILE} is not canonical JSON`, { deviceId });
+  }
+  // TCRN-CROSS-STORY-471 R1: a stream a newer format wrote is refused before its shape is judged.
+  if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+    assertLibrarySupported({ formatVersion: (parsed as Readonly<Record<string, unknown>>).formatVersion }, {
+      engineVersion: FRAMEWORK_VERSION,
+      where: `stream ${DIRECTORY.events}/${deviceId}`,
+      details: { deviceId },
+    });
   }
   return validateStreamManifest(parsed, deviceId);
 }

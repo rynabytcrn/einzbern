@@ -203,6 +203,14 @@ relocation created. Then this device's registry points at the new place and the 
 `TOMBSTONE.json` (`einzbern.tombstone.v1`: library id, where it went and when): it keeps its
 files and still reads, `status` reports `relocatedTo`, and every write there refuses with
 `LIBRARY_TOMBSTONED` naming the new place. Nothing is deleted.
+A library this engine may not open is refused when it is opened, before any lock is taken,
+the device cache is read or anything is written (TCRN-CROSS-STORY-471 R1, AC1; MIN-227 D22;
+`packages/core/src/format-version.ts`): a library or stream manifest whose `formatVersion` is
+newer than the newest format this engine reads (1) is `LIBRARY_FORMAT_UNSUPPORTED` with
+`required` and `supported`, and a library whose `minEngineVersion` is above this engine's
+version is `ENGINE_TOO_OLD` with `required` and `actual`. Versions compare by semantic-version
+precedence, pre-releases included. The two fields are read before the rest of the manifest is
+judged, so a newer format that changed the manifest's shape is still named as a newer format.
 
 ## 1.2.1 — patch candidate
 

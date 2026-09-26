@@ -41,6 +41,26 @@ library, so a creation that stops half-way leaves nothing that opens. Streams ar
 listing `akasha/`, not from the root manifest, so the root manifest keeps a single writer
 and changes only on the three occasions above.
 
+## Format and engine version
+
+An engine opens a library only when the library's `formatVersion` is at most the newest
+format the engine reads and its `minEngineVersion` is at most the engine's own version
+(TCRN-CROSS-STORY-471 R1). Versions compare by semantic-version precedence: major, minor
+and patch as whole numbers, a pre-release below its release, pre-release identifiers
+numerically when both are digits and otherwise in ASCII order. The check reads only those
+two fields, before the rest of the manifest is judged, because a newer format may change
+the rest; and it runs when the library is opened, before any lock is taken, any cache is
+read or anything is written, so an older engine meets a newer library with a reason code
+and leaves it byte for byte as it was:
+
+| Reason code | When | Details |
+| --- | --- | --- |
+| `LIBRARY_FORMAT_UNSUPPORTED` | `formatVersion` is newer than the engine reads | `required` (the library's format), `supported` (the newest the engine reads) |
+| `ENGINE_TOO_OLD` | `minEngineVersion` is above the engine's version | `required`, `actual` |
+
+A stream manifest whose `formatVersion` is newer than the engine reads is refused the same
+way and names its device (`deviceId`).
+
 ## Streams (akasha)
 
 Every device writes only `akasha/<device id>/` (TCRN-CROSS-STORY-468 R2), so no file in a

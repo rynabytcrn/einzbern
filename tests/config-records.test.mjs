@@ -244,7 +244,7 @@ test("478-R1: config/project.json projects the records beside the settings, and 
   assert.equal(await configProjectionStatus(library, written.settings, written.configRecords), "current");
 
   // A settings write projects the records it did not touch as well.
-  await as(desk, () => setConfigRecord(library, { collection: "managed-section", key: "AGENTS.md#navigation", value: { rev: 1, digest: "0".repeat(64), state: "managed" }, occurredAt: at() }));
+  await as(desk, () => setConfigRecord(library, { collection: "managed-section", key: "AGENTS.md#navigation", value: { file: "AGENTS.md", id: "navigation", rev: 1, digest: "0".repeat(64), state: "managed" }, occurredAt: at() }));
   await cli(desk, ["settings-set", "--workspace", library, "--at", at(), "--key", "backup.cadence", "--value", "session-end"]);
   projection = JSON.parse(await readFile(path, "utf8"));
   assert.deepEqual(projection.values, { "backup.cadence": "session-end" });

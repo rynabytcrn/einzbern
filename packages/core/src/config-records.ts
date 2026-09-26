@@ -14,6 +14,7 @@
 import { ProtocolError, canonicalByteLength, canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
 import type { JsonValue } from "../../protocol/src/index.js";
 import { buildEventPayload } from "./actor-attestation.js";
+import { checkManagedSectionRecordValue } from "./managed-sections.js";
 import { appendEvents, projectConfiguration, withWorkspaceWriteLock } from "./workspace.js";
 import type { MutationDelta, WorkspaceMutationOptions, WorkspaceState } from "./workspace.js";
 
@@ -68,8 +69,9 @@ function commonShapeOnly(): void {
 // events are rejected on replay. Each Story replaces its own row's check with the one for its
 // values; the rows are kept apart so those changes do not touch one another.
 const CONFIG_RECORD_VALUE_CHECKS: Readonly<Record<ConfigRecordCollection, ConfigRecordValueCheck>> = Object.freeze({
-  // TCRN-CROSS-STORY-478: a managed section's recorded revision, digest and state (SUB-316).
-  "managed-section": commonShapeOnly,
+  // TCRN-CROSS-STORY-478: a managed section's file, id, revision, digest and state, keyed
+  // <file>#<id> (SUB-316, managed-sections.ts).
+  "managed-section": checkManagedSectionRecordValue,
 
   // TCRN-CROSS-STORY-483: a Command Spell rule's state (SUB-336).
   rule: commonShapeOnly,

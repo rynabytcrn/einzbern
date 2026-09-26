@@ -40,7 +40,7 @@ export const InjectionPlacementManifest = Object.freeze({
     codex: 'node "${CODEX_PROJECT_DIR}/scripts/knowledge-inject-hook.mjs" --container-root "<PLATFORM_ROOT>" --host codex',
   }),
   modelMapping: Object.freeze({
-    setting: "execution.dispatchTiers",
+    setting: "models.tiers",
     translator: "independent-uninjected-call-before-recall",
     judge: "independent-uninjected-call-after-recall",
     maxCallsPerPrompt: 1,
@@ -71,7 +71,7 @@ export function validateInjectionPlacementManifest(value) {
     if (!Array.isArray(manifest.events?.[host]) || JSON.stringify(manifest.events[host]) !== JSON.stringify(InjectionPlacementManifest.events[host])) return false;
     if (typeof manifest.commands?.[host] !== "string" || !manifest.commands[host].includes("knowledge-inject-hook.mjs")) return false;
   }
-  if (manifest.modelMapping?.setting !== "execution.dispatchTiers" || manifest.modelMapping?.maxCallsPerPrompt !== 1 || manifest.modelMapping?.timeoutMs !== 10_000 || manifest.modelMapping?.subagentAuxiliaryModels !== false || JSON.stringify(manifest.modelMapping?.contextBinding) !== JSON.stringify(["role", "workId", "pack"])) return false;
+  if (manifest.modelMapping?.setting !== "models.tiers" || manifest.modelMapping?.maxCallsPerPrompt !== 1 || manifest.modelMapping?.timeoutMs !== 10_000 || manifest.modelMapping?.subagentAuxiliaryModels !== false || JSON.stringify(manifest.modelMapping?.contextBinding) !== JSON.stringify(["role", "workId", "pack"])) return false;
   if (manifest.protocol?.version !== INJECTION_PROTOCOL_VERSION || manifest.protocol?.maxBytes !== MAX_INJECTION_PROTOCOL_BYTES || manifest.protocol?.acknowledgement !== "wrapper-after-parse" || manifest.protocol?.retryLimit !== 1) return false;
   // Runtime state never lives inside a library or a legacy control tree or container.
   if ([DIRECTORY.library, LEGACY_CONTROL_DIRECTORY, LEGACY_CONTAINER_DIRECTORY].some((name) => manifest.runtimeState?.path?.includes(name))) return false;

@@ -73,32 +73,28 @@ test("S369: retired model-plan CLI names refuse while historical records remain 
   });
 });
 
-// The dispatch-* verbs are retired (TCRN-CROSS-STORY-467 R3); the selected mode is an
-// ordinary setting, read back through the settings catalog.
-const dispatchMode = async (workspace) => (await json(["settings-catalog", "--workspace", workspace])).settings.find((entry) => entry.key === "execution.dispatchMode").currentValue;
-
-test("S369: selected dispatch mode resets through ordinary settings removal", async (t) => {
-  const { workspace } = await fixture(t, "mode-clear");
-  const changed = await json(write("settings-set", workspace, 1, ["--key", "execution.dispatchMode", "--value", "eco"]));
-  assert.equal(changed.version, 1);
-  assert.equal(await dispatchMode(workspace), "eco");
-  const cleared = await json(write("settings-remove", workspace, 2, ["--key", "execution.dispatchMode"]));
-  assert.equal(cleared.version, 2);
-  assert.equal(await dispatchMode(workspace), "frontier");
+// The dispatch-* verbs are retired (TCRN-CROSS-STORY-467 R3), and the dispatch mode setting with
+// dispatch modes (TCRN-CROSS-STORY-484 R3): the catalog no longer lists it, and a write is refused.
+test("484-AC4: the selected dispatch mode is a retired setting", async (t) => {
+  const { workspace, version } = await fixture(t, "mode-clear");
+  const catalog = await json(["settings-catalog", "--workspace", workspace]);
+  assert.equal(catalog.settings.some((entry) => entry.key === "execution.dispatchMode"), false);
+  const refused = await refusal(write("settings-set", workspace, 1, ["--key", "execution.dispatchMode", "--value", "eco"]));
+  assert.equal(refused.reasonCode, "SETTINGS_KEY_UNREGISTERED");
+  assert.equal(await version(), 0);
 });
 
-test("S233, STORY-475 R3: the subagent policy stays in the catalog, and the independence floor retired with the conference close", async (t) => {
-  const { workspace } = await fixture(t, "policy-keys-remediation");
+test("S233, STORY-475 R3, STORY-484 R3: the subagent policy and the independence floor are retired settings", async (t) => {
+  const { workspace, version } = await fixture(t, "policy-keys-remediation");
   const catalog = await json(["settings-catalog", "--workspace", workspace]);
-  const policy = catalog.settings.find((entry) => entry.key === "execution.subagentPolicy");
-  assert.deepEqual(policy.allowedValues, ["allowed", "review-only", "forbidden"]);
-  assert.equal(policy.defaultValue, "allowed");
-  assert.equal(policy.currentValue, "allowed");
-  assert.equal(catalog.settings.some((entry) => entry.key === "execution.independenceFloor"), false);
-  const bad = await refusal(write("settings-set", workspace, 1, ["--key", "execution.subagentPolicy", "--value", "not-a-policy"]));
-  assert.equal(bad.reasonCode, "SETTINGS_VALUE_INVALID");
+  for (const key of ["execution.subagentPolicy", "execution.independenceFloor"]) {
+    assert.equal(catalog.settings.some((entry) => entry.key === key), false, key);
+  }
+  const policy = await refusal(write("settings-set", workspace, 1, ["--key", "execution.subagentPolicy", "--value", "forbidden"]));
+  assert.equal(policy.reasonCode, "SETTINGS_KEY_UNREGISTERED");
   const retired = await refusal(write("settings-set", workspace, 1, ["--key", "execution.independenceFloor", "--value", "verification"]));
   assert.equal(retired.reasonCode, "SETTINGS_KEY_UNREGISTERED");
+  assert.equal(await version(), 0);
 });
 
 // S234 made a close covered by execution.independenceFloor declare an independent execution

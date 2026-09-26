@@ -41,10 +41,12 @@ async function runError(args) {
 test("S223: settings-catalog exposes the engine-owned enum values", async (t) => {
   const { workspace } = await fixture(t, "catalog");
   const readback = await runRaw(["settings-catalog", "--workspace", workspace]);
-  const cadence = readback.settings.find((entry) => entry.key === "backup.cadence");
-  assert.deepEqual(cadence.allowedValues, ["gate-close", "session-end", "manual"]);
-  assert.deepEqual(cadence.allowedValues, SETTINGS_CATALOG.find((entry) => entry.key === "backup.cadence").allowedValues);
-  assert.equal(Object.hasOwn(readback.settings.find((entry) => entry.key === "driver.capabilityProfile"), "allowedValues"), false);
+  // TCRN-CROSS-STORY-484 R3 retired backup.cadence, the enum this test read first; artifact.language
+  // is the enum left.
+  const language = readback.settings.find((entry) => entry.key === "artifact.language");
+  assert.deepEqual(language.allowedValues, ["en", "zh-CN"]);
+  assert.deepEqual(language.allowedValues, SETTINGS_CATALOG.find((entry) => entry.key === "artifact.language").allowedValues);
+  assert.equal(Object.hasOwn(readback.settings.find((entry) => entry.key === "design.authority"), "allowedValues"), false);
 });
 
 test("S223: an enum refusal carries its allowed values and appends no event", async (t) => {
@@ -53,13 +55,13 @@ test("S223: an enum refusal carries its allowed values and appends no event", as
     "settings-set",
     "--workspace", workspace,
     "--at", instant(1),
-    "--key", "backup.cadence",
-    "--value", "hourly",
+    "--key", "artifact.language",
+    "--value", "fr",
     "--actor", "agent:codex",
   ]);
   assert.equal(error.reasonCode, "SETTINGS_VALUE_INVALID");
-  assert.deepEqual(error.details, { allowedValues: ["gate-close", "session-end", "manual"] });
-  assert.match(error.message, /gate-close, session-end, manual/u);
+  assert.deepEqual(error.details, { allowedValues: ["en", "zh-CN"] });
+  assert.match(error.message, /en, zh-CN/u);
   const status = await runRaw(["status", "--workspace", workspace]);
   assert.equal(status.version, 0);
 });

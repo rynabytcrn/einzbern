@@ -21,7 +21,7 @@
     "codex": "node \"${CODEX_PROJECT_DIR}/scripts/knowledge-inject-hook.mjs\" --container-root \"<PLATFORM_ROOT>\" --host codex"
   },
   "modelMapping": {
-    "setting": "execution.dispatchTiers",
+    "setting": "models.tiers",
     "translator": "independent-uninjected-call-before-recall",
     "judge": "independent-uninjected-call-after-recall",
     "maxCallsPerPrompt": 1,

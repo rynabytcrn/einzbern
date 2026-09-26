@@ -69,7 +69,9 @@ async function scratch(prefix) {
   const proseRoot = join(base, "project");
   const workspace = join(proseRoot, ".ether");
   await registeredLibrary(deviceEnv, proseRoot, workspace, "TCRN-INC148-DOM");
-  await writeFile(join(proseRoot, "AGENTS.md"), "# Workspace rules\n\nbackup.cadence\nbackup.unknown\n", "utf8");
+  // A registered key and an unregistered one in a registered namespace (the backup namespace
+  // retired with TCRN-CROSS-STORY-484 R3, and reconciliation reads only registered namespaces).
+  await writeFile(join(proseRoot, "AGENTS.md"), "# Workspace rules\n\nretrieval.tau\nretrieval.unknown\n", "utf8");
   const second = { project: join(base, "second-project"), library: join(base, "second-library") };
   await registeredLibrary(deviceEnv, second.project, second.library, "TCRN-INC148-DOM-SECOND");
   return { base, workspace, proseRoot, home, deviceEnv, second };
@@ -90,7 +92,8 @@ async function asFixtureDevice(fixture, operation) {
 
 async function seed(fixture) {
   await asFixtureDevice(fixture, () => historicalModelPlan(fixture.workspace, "set", { host: "claude-code", name: "budget", defaultModel: "claude-sonnet-4-5" }, nextAt()));
-  await writeScratch(fixture, "settings-set", ["--key", "execution.claudeCodeSubagentPlan", "--value", "budget"]);
+  // The setting that pointed at the plan, execution.claudeCodeSubagentPlan, is retired
+  // (TCRN-CROSS-STORY-484 R3): a write of it is refused, so the fixture records the plan only.
 }
 
 function mutateSource(source, mutation) {
@@ -1428,16 +1431,16 @@ if (process.argv[2] === "status" && actual.status === 0) {
   test("INC-186 the dictionary carries no workspace data", async () => {
     const page = await preparePage();
     try {
-      // The fixture creates a plan named "budget" and binds it to a setting, so if the
-      // dictionary drew its values from the plan list this sweep would find that name.
+      // The fixture creates a plan named "budget" (the setting that bound it retired with
+      // TCRN-CROSS-STORY-484 R3), so if the dictionary drew its values from the plan list this
+      // sweep would find that name.
       // That is the whole defect: the dictionary grew a row because the reader created
       // a plan, which is the portal inventing vocabulary rather than publishing it.
       const names = [...page.document.querySelectorAll("[data-vocabulary-category]")].map((button) => button.dataset.vocabularyCategory);
       assert.ok(!names.includes("setting:execution.claudeCodeSubagentPlan"), "a setting whose values are plan names has no closed set to define");
       assert.ok(!names.includes("setting:execution.codexSubagentPlan"));
       // Both sides: settings the engine does publish a closed set for keep their entries.
-      assert.ok(names.includes("setting:backup.cadence"));
-      assert.ok(names.includes("setting:execution.subagentPolicy"));
+      assert.ok(names.includes("setting:artifact.language"));
 
       for (const name of names) {
         page.document.querySelector(`[data-vocabulary-category="${name}"]`).dispatchEvent(new page.window.Event("click", { bubbles: true }));
@@ -1448,10 +1451,10 @@ if (process.argv[2] === "status" && actual.status === 0) {
 
       // The 📖 link and the dictionary answer the same question, so the link is present
       // exactly where an entry exists to reach and absent where none does.
-      page.document.querySelector('[data-setting-group="backup"]')?.click();
+      page.document.querySelector('[data-setting-group="workspace"]')?.click();
       await new Promise((resolve) => setTimeout(resolve, 60));
-      const cadenceRow = page.document.querySelector('[data-setting-row="backup.cadence"]');
-      assert.ok(cadenceRow?.querySelector("[data-vocabulary-link]"), "a closed-enum setting keeps its dictionary link");
+      const languageRow = page.document.querySelector('[data-setting-row="artifact.language"]');
+      assert.ok(languageRow?.querySelector("[data-vocabulary-link]"), "a closed-enum setting keeps its dictionary link");
       page.document.querySelector('[data-setting-group="execution"]')?.click();
       await new Promise((resolve) => setTimeout(resolve, 60));
       const planRow = page.document.querySelector('[data-setting-row="execution.claudeCodeSubagentPlan"]');

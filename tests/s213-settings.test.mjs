@@ -87,25 +87,25 @@ test("INIT-022 S213: unknown keys fail closed and registered writes receipt plus
   assert.equal(await errorReason([...baseArgs, "--key", "settings.not-registered", "--value", "manual"]), "SETTINGS_KEY_UNREGISTERED");
   assert.equal((await materializeWorkspace(workspace)).version, 0, "a rejected key must not append an event");
 
-  const receipt = await runRaw([...baseArgs, "--key", "backup.cadence", "--value", "manual"]);
+  const receipt = await runRaw([...baseArgs, "--key", "artifact.language", "--value", "zh-CN"]);
   assert.equal(receipt.reasonCode, "SETTINGS_WRITE_COMMITTED");
-  assert.equal(receipt.setting.key, "backup.cadence");
-  assert.equal(receipt.setting.value, "manual");
+  assert.equal(receipt.setting.key, "artifact.language");
+  assert.equal(receipt.setting.value, "zh-CN");
   assert.equal(receipt.setting.layerKind, SETTINGS_LAYER_KIND);
   assert.equal(receipt.setting.revision, 1);
   assert.equal(receipt.version, 1);
 
   const state = await validateWorkspace(workspace);
   assert.equal(state.settings.length, 1);
-  assert.equal(state.settings[0].value, "manual");
+  assert.equal(state.settings[0].value, "zh-CN");
   assert.equal(state.events[0].payload.operation, "settings.updated");
   const catalog = await runRaw(["settings-catalog", "--workspace", workspace]);
-  assert.equal(catalog.settings.find((entry) => entry.key === "backup.cadence").currentValue, "manual");
+  assert.equal(catalog.settings.find((entry) => entry.key === "artifact.language").currentValue, "zh-CN");
 
   await assert.rejects(
     setWorkspaceSetting(workspace, {
       occurredAt: instant(3),
-      key: "backup.destination",
+      key: "workspace.generatedArtifactsPath",
       value: workspace,
       actorId: "agent:codex",
     }),
@@ -135,7 +135,8 @@ test("INC-321 S3: a retired settings.updated event replays from genesis and stay
   assert.equal(state.events.length, 1);
   assert.equal(state.settings.length, 0, "retired values are not materialized as current settings");
   assert.equal(isRetiredSettingKey("execution.personalessDispatch"), true);
-  assert.equal(isRetiredSettingKey("backup.cadence"), false);
+  assert.equal(isRetiredSettingKey("backup.cadence"), true, "TCRN-CROSS-STORY-484 R3 retires the backup keys");
+  assert.equal(isRetiredSettingKey("artifact.language"), false);
   assert.equal(isRetiredSettingKey("settings.random"), false);
 });
 

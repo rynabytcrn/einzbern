@@ -18,11 +18,12 @@ import {
   setWorkspaceSetting,
 } from "../dist/build/packages/core/src/index.js";
 
-test("STORY-346 storage.backend catalog contains only file backends, PostgreSQL absent", async () => {
-  // TCRN-CROSS-INC-275: Product constraint — only local file backends are selectable.
-  // This test would fail if PostgreSQL were re-added to allowedValues.
-  const backend = SETTINGS_CATALOG.find((entry) => entry.key === "storage.backend");
-  assert.deepEqual(backend?.allowedValues, ["file", "file-segmented"]);
+test("STORY-346 no storage backend is selectable, so PostgreSQL is absent", async () => {
+  // TCRN-CROSS-INC-275: Product constraint — only local file storage. TCRN-CROSS-STORY-484 R3
+  // retired storage.backend, which nothing read: a library is file storage, with nothing to select.
+  // This test would fail if a backend setting, or a PostgreSQL value in any setting, came back.
+  assert.equal(SETTINGS_CATALOG.some((entry) => entry.key === "storage.backend"), false);
+  assert.equal(SETTINGS_CATALOG.some((entry) => (entry.allowedValues ?? []).some((value) => /^(pg|postgres)/iu.test(value))), false);
 });
 
 test("STORY-346 PostgreSQL implementation and migration scripts are absent", async () => {
@@ -49,18 +50,16 @@ test("STORY-346 PostgreSQL implementation and migration scripts are absent", asy
 
 test("STORY-346 production backend selection rejects PostgreSQL", async () => {
   // TCRN-CROSS-INC-275: Verify the absence is enforced at runtime, not just in catalog.
-  // This test would fail if pg were added back to allowedValues without removing this test.
+  // TCRN-CROSS-STORY-484 R3: the retired key refuses every value, file included.
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-s346-backend-")));
   try {
     const workspace = join(base, "workspace");
     await initializeLibrary({ root: join(base, "workspace"), createdAt: "2026-09-02T08:00:00Z" });
-    await assert.rejects(() => setWorkspaceSetting(workspace, {
-      key: "storage.backend", value: "pg", occurredAt: "2026-09-02T08:00:02Z",
-    }), (error) => error?.reasonCode === "SETTINGS_VALUE_INVALID");
-    const accepted = await setWorkspaceSetting(workspace, {
-      key: "storage.backend", value: "file", occurredAt: "2026-09-02T08:00:03Z",
-    });
-    assert.equal(accepted.settings.find((entry) => entry.key === "storage.backend")?.value, "file");
+    for (const value of ["pg", "file"]) {
+      await assert.rejects(() => setWorkspaceSetting(workspace, {
+        key: "storage.backend", value, occurredAt: "2026-09-02T08:00:02Z",
+      }), (error) => error?.reasonCode === "SETTINGS_KEY_UNREGISTERED", value);
+    }
   } finally {
     await rm(base, { recursive: true, force: true });
   }

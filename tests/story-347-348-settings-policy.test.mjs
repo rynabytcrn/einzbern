@@ -42,14 +42,15 @@ test("STORY-347 settings catalog exposes the new keys that remain and numeric bo
   const catalog = await cli(["settings-catalog", "--workspace", fx.workspace]);
   // injection.budgetBytes retired with the session-wide injection it budgeted (TCRN-CROSS-STORY-474).
   assert.equal(catalog.settings.some((entry) => entry.key === "injection.budgetBytes"), false);
-  const expected = ["storage.segmentBytes", "storage.snapshotEveryEvents", "storage.backend", "injection.perPromptBytes", "retrieval.scopeExcerptBytes", "knowledge.aggregateBytes"];
+  // storage.backend retired because nothing reads it (TCRN-CROSS-STORY-484 R3).
+  assert.equal(catalog.settings.some((entry) => entry.key === "storage.backend"), false);
+  const expected = ["storage.segmentBytes", "storage.snapshotEveryEvents", "injection.perPromptBytes", "retrieval.scopeExcerptBytes", "knowledge.aggregateBytes"];
   const entries = catalog.settings.filter((entry) => expected.includes(entry.key));
   assert.deepEqual(entries.map((entry) => entry.key).sort(), [...expected].sort());
   // TCRN-CROSS-STORY-469: the key now sizes a library's stream segments, and its default is the
   // stream default of one MiB.
   assert.equal(entries.find((entry) => entry.key === "storage.segmentBytes").defaultValue, "1048576");
   assert.equal(entries.find((entry) => entry.key === "storage.snapshotEveryEvents").defaultValue, "512");
-  assert.equal(entries.find((entry) => entry.key === "storage.backend").defaultValue, "file-segmented");
   assert.equal(entries.find((entry) => entry.key === "injection.perPromptBytes").defaultValue, "1600");
   assert.equal(entries.find((entry) => entry.key === "retrieval.scopeExcerptBytes").defaultValue, "512");
   assert.equal(entries.find((entry) => entry.key === "knowledge.aggregateBytes").defaultValue, "131072");

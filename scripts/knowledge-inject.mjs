@@ -515,15 +515,14 @@ async function workspaceStateForInjection(partition, containerRoot) {
   return null;
 }
 
+// TCRN-CROSS-STORY-484 R3: the economy tier of this host in models.tiers, as settings-catalog reads it
+// (a recorded execution.dispatchTiers value already reads there as models.tiers).
 async function economyModelForHost(settings, host) {
-  const core = await languageModule();
-  if (typeof core?.readDispatchConfig !== "function") return null;
   try {
-    const views = (settings ?? []).map((entry) => ({
-      key: entry.key,
-      value: entry.currentValue ?? entry.value ?? entry.defaultValue ?? "",
-    }));
-    const model = core.readDispatchConfig(views).tiers[dispatchHostName(host)]?.economy?.model;
+    const entry = (settings ?? []).find((candidate) => candidate.key === "models.tiers");
+    const value = entry?.currentValue ?? entry?.value ?? entry?.defaultValue;
+    if (typeof value !== "string") return null;
+    const model = JSON.parse(value)?.[dispatchHostName(host)]?.economy?.model;
     return typeof model === "string" && model.length > 0 ? model : null;
   } catch {
     return null;

@@ -263,10 +263,6 @@ export {
   validateNote,
 } from "./execution-config.js";
 export {
-  readDispatchConfig,
-  resolveDispatch,
-} from "./dispatch-config.js";
-export {
   MODEL_PLAN_REASON_CODES,
   MODEL_PLAN_VERSION,
   ModelPlanError,

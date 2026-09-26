@@ -67,8 +67,8 @@ test("467-R1: a write receipt carries the written ids, the new version and head,
   // it moved, a setting names its key, and a batch names every record it wrote.
   const transitioned = await cli(["work-transition", "--workspace", workspace, "--at", instant(6), "--id", created.record.id, "--status", "ready"]);
   assert.deepEqual(transitioned.ids, [created.record.id]);
-  const setting = await cli(["settings-set", "--workspace", workspace, "--at", instant(7), "--key", "execution.dispatchMode", "--value", "eco"]);
-  assert.deepEqual(setting.ids, ["execution.dispatchMode"]);
+  const setting = await cli(["settings-set", "--workspace", workspace, "--at", instant(7), "--key", "retrieval.tau", "--value", "2"]);
+  assert.deepEqual(setting.ids, ["retrieval.tau"]);
   const batchFile = join(workspace, "..", "receipt-batch.json");
   await writeFile(batchFile, JSON.stringify({ schemaVersion: "tcrn.work-batch.v1", members: ["A", "B"].map((suffix) => ({
     verb: "work-create", projectId, externalKey: `RECEIPT-BATCH-${suffix}`, kind: "Initiative", parentId: null, status: "planned", title: `Batch ${suffix}`,

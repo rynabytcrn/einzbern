@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
-import { readDispatchConfig } from "./dispatch-config.js";
+import { readModelsTiers } from "./models-tiers.js";
 
 /**
  * TCRN-CROSS-STORY-364: the artefact language of a knowledge card, and the question
@@ -118,7 +118,8 @@ export function readKnowledgeLanguagePolicy(settings: readonly SettingsView[], h
   let economyModel: string | null = null;
   if (host !== undefined) {
     try {
-      const configured = readDispatchConfig(settings).tiers[host]?.economy?.model;
+      // TCRN-CROSS-STORY-484 R3: the economy tier of this host in models.tiers.
+      const configured = readModelsTiers(settings)[host]?.economy?.model;
       economyModel = configured === undefined || configured.length === 0 ? null : configured;
     } catch {
       economyModel = null;

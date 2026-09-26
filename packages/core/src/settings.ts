@@ -4,9 +4,16 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 
 import { assertStrictInstant, canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
 import { ARTIFACT_LANGUAGE_TAGS, parsePromptLanguages } from "./knowledge-language.js";
-import { dispatchSettingDefault, validateDispatchSetting } from "./dispatch-config.js";
 import { DIRECTORY, LEGACY_CONTROL_DIRECTORY } from "./names.js";
 import { MACHINE_SETTINGS_CATALOG } from "./machine-settings.js";
+import {
+  LEGACY_DISPATCH_TIERS_SETTING_KEY,
+  MODELS_TIERS_DEFAULT_VALUE,
+  MODELS_TIERS_SETTING_KEY,
+  ModelsTiersError,
+  legacyTiersValueToModelsTiersValue,
+  parseModelsTiers,
+} from "./models-tiers.js";
 
 /**
  * Settings are a deliberately small engine-owned overlay surface. The generic
@@ -41,14 +48,33 @@ export const SETTINGS_DEVICE_LAYER = "device" as const satisfies SettingLayer;
 // execution.independenceFloor retire with the conference write verbs they governed.
 // TCRN-CROSS-STORY-474 (MIN-227 D7): injection.budgetBytes retires with the session-wide injection
 // it budgeted; a prompt's own budget is injection.perPromptBytes.
+// TCRN-CROSS-STORY-484 R3, R5 (MIN-227 D3, D11): the dispatch keys retire with dispatch modes and
+// classes (execution.dispatchModes, dispatchMode, dispatchClasses); the keys of the mechanisms D3
+// switches off retire with them (backup.*, the two subagent-plan keys, execution.subagentPolicy);
+// driver.capabilityProfile and storage.backend retire because nothing reads them; and
+// execution.maxDispatchDepth retires because nothing reads it either (R5: the consumer search found
+// only the catalog, the Atelier copy and its own test). execution.dispatchTiers is renamed
+// models.tiers: see RENAMED_SETTING_KEYS.
 export const RETIRED_SETTING_KEYS: readonly string[] = Object.freeze([
+  "backup.cadence",
+  "backup.destination",
   "conference.positionBudgetBytes",
+  "driver.capabilityProfile",
+  "execution.claudeCodeSubagentPlan",
+  "execution.codexSubagentPlan",
+  "execution.dispatchClasses",
+  "execution.dispatchMode",
+  "execution.dispatchModes",
+  "execution.dispatchTiers",
   "execution.independenceFloor",
+  "execution.maxDispatchDepth",
   "execution.personalessDispatch",
+  "execution.subagentPolicy",
   "fitness.minEvents",
   "fitness.windowDays",
   "injection.budgetBytes",
   "model.economyTier",
+  "storage.backend",
 ]);
 
 export type SettingsReasonCode = typeof SETTINGS_REASON_CODES[number];
@@ -57,30 +83,36 @@ export type SettingControlType = "enum" | "boolean" | "number" | "text";
 
 export type SettingKey =
   | "artifact.language"
-  | "backup.cadence"
-  | "backup.destination"
   | "design.authority"
-  | "driver.capabilityProfile"
   | "engine.requiredVersion"
-  | "execution.claudeCodeSubagentPlan"
-  | "execution.codexSubagentPlan"
-  | "execution.dispatchClasses"
-  | "execution.dispatchMode"
-  | "execution.dispatchModes"
-  | "execution.dispatchTiers"
   | "execution.maxConcurrentSubagents"
-  | "execution.maxDispatchDepth"
-  | "execution.subagentPolicy"
   | "injection.perPromptBytes"
   | "knowledge.aggregateBytes"
   | "knowledge.articlesPath"
+  | "models.tiers"
+  | "quota.fiveHourParallelOffPercent"
+  | "quota.fiveHourWaitPercent"
+  | "quota.weeklyParallelOffPercent"
+  | "quota.weeklyWaitPercent"
   | "retrieval.promptLanguages"
   | "retrieval.scopeExcerptBytes"
   | "retrieval.tau"
-  | "storage.backend"
   | "storage.segmentBytes"
   | "storage.snapshotEveryEvents"
   | "workspace.generatedArtifactsPath";
+
+// TCRN-CROSS-STORY-484 R3: a retired key whose value lives on under a new name. New writes use the
+// new name only (the old one is unregistered); replay reads a recorded value of the old name as the
+// new name's value, converted, so it stays the effective value until a write of the new name, the
+// later event in merge order, supersedes it. No engine from this change on writes the old name, so
+// every old-name event a chain holds comes before its first new-name event.
+export const RENAMED_SETTING_KEYS: Readonly<Record<string, SettingKey>> = Object.freeze({
+  [LEGACY_DISPATCH_TIERS_SETTING_KEY]: MODELS_TIERS_SETTING_KEY,
+});
+
+const renamedValueConverters: Readonly<Record<string, (value: string) => string>> = Object.freeze({
+  [LEGACY_DISPATCH_TIERS_SETTING_KEY]: legacyTiersValueToModelsTiersValue,
+});
 
 export interface SettingsCatalogEntry {
   readonly key: SettingKey;
@@ -89,6 +121,9 @@ export interface SettingsCatalogEntry {
   readonly layer: typeof SETTINGS_PROJECT_LAYER;
   readonly layerKind: typeof SETTINGS_LAYER_KIND;
   readonly defaultValue: string | null;
+  // TCRN-CROSS-STORY-484 R4: whether a model may write this key through the CLI. False unless the
+  // entry says otherwise; the CLI refusal that reads it is TCRN-CROSS-SUB-341's.
+  readonly modelWritable: boolean;
   readonly allowedValues?: readonly string[];
   readonly min?: number;
   readonly max?: number;
@@ -117,6 +152,7 @@ export interface SettingsCatalogReadback {
       readonly layer: typeof SETTINGS_PROJECT_LAYER;
       readonly defaultValue: string | null;
       readonly currentValue: string | null;
+      readonly modelWritable: boolean;
       readonly allowedValues?: readonly string[];
       readonly min?: number;
       readonly max?: number;
@@ -205,7 +241,12 @@ function assertAbsoluteArtifactsSettingPath(value: string, label: string, worksp
 
 // When a key is removed from this catalog, add it to RETIRED_SETTING_KEYS in the
 // same change so historical events remain legible without reopening new writes.
-const catalogEntries: readonly Omit<SettingsCatalogEntry, "layer">[] = [
+// TCRN-CROSS-STORY-484 R4: an entry is model-writable only when it says so. No entry says so: every
+// key here is an Owner decision (models.tiers, the quota thresholds, the concurrency limit) or is
+// written at setup rather than during work, so a model changing one through the CLI is the
+// unapproved change R4 refuses. A key that turns out to be routine model work gets
+// `modelWritable: true` here, with its reason.
+const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWritable"> & { readonly modelWritable?: boolean })[] = [
   {
     // TCRN-CROSS-STORY-364: the language this workspace writes its knowledge cards in.
     // Its value set is the roster knowledge-language.ts can actually judge, so the two
@@ -216,21 +257,6 @@ const catalogEntries: readonly Omit<SettingsCatalogEntry, "layer">[] = [
     layerKind: SETTINGS_LAYER_KIND,
     defaultValue: "en",
     allowedValues: [...ARTIFACT_LANGUAGE_TAGS],
-  },
-  {
-    key: "backup.cadence",
-    type: "enum",
-    controlType: "enum",
-    layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: "gate-close",
-    allowedValues: ["gate-close", "session-end", "manual"],
-  },
-  {
-    key: "backup.destination",
-    type: "path",
-    controlType: "text",
-    layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: null,
   },
   {
     // INC-193: which design system this workspace treats as its authority, named by the
@@ -246,13 +272,6 @@ const catalogEntries: readonly Omit<SettingsCatalogEntry, "layer">[] = [
     defaultValue: null,
   },
   {
-    key: "driver.capabilityProfile",
-    type: "string",
-    controlType: "text",
-    layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: "default",
-  },
-  {
     key: "engine.requiredVersion",
     type: "string",
     controlType: "text",
@@ -260,51 +279,9 @@ const catalogEntries: readonly Omit<SettingsCatalogEntry, "layer">[] = [
     defaultValue: null,
   },
   {
-    key: "execution.claudeCodeSubagentPlan",
-    type: "string",
-    controlType: "enum",
-    layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: null,
-  },
-  {
-    key: "execution.codexSubagentPlan",
-    type: "string",
-    controlType: "enum",
-    layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: null,
-  },
-  {
-    key: "execution.dispatchClasses",
-    type: "string",
-    controlType: "text",
-    layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: dispatchSettingDefault("execution.dispatchClasses"),
-  },
-  {
-    key: "execution.dispatchMode",
-    type: "string",
-    controlType: "enum",
-    layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: dispatchSettingDefault("execution.dispatchMode"),
-  },
-  {
-    key: "execution.dispatchModes",
-    type: "string",
-    controlType: "text",
-    layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: dispatchSettingDefault("execution.dispatchModes"),
-  },
-  {
-    key: "execution.dispatchTiers",
-    type: "string",
-    controlType: "text",
-    layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: dispatchSettingDefault("execution.dispatchTiers"),
-  },
-  {
-    // INIT-027 S239. These orchestration controls are strings on the governed
-    // surface so they remain compatible with the existing settings/profile
-    // transport; their numeric domains are enforced below.
+    // INIT-027 S239. An orchestration control, a string on the governed surface so it stays
+    // compatible with the settings transport; its numeric domain is enforced below.
+    // TCRN-CROSS-STORY-484 R5: kept (MIN-229 D2); the orchestrating conversation reads it.
     key: "execution.maxConcurrentSubagents",
     type: "string",
     controlType: "number",
@@ -312,26 +289,6 @@ const catalogEntries: readonly Omit<SettingsCatalogEntry, "layer">[] = [
     defaultValue: "8",
     min: 1,
     max: 32,
-  },
-  {
-    key: "execution.maxDispatchDepth",
-    type: "string",
-    controlType: "number",
-    layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: "1",
-    min: 1,
-    max: 4,
-  },
-  {
-    // INIT-026 S233. Declarative, like backup.cadence: the engine never sees a
-    // subagent, so this states the workspace's policy for hosts to honour rather
-    // than something the engine can enforce.
-    key: "execution.subagentPolicy",
-    type: "enum",
-    controlType: "enum",
-    layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: "allowed",
-    allowedValues: ["allowed", "review-only", "forbidden"],
   },
   {
     key: "injection.perPromptBytes",
@@ -361,6 +318,57 @@ const catalogEntries: readonly Omit<SettingsCatalogEntry, "layer">[] = [
     controlType: "text",
     layerKind: SETTINGS_LAYER_KIND,
     defaultValue: "docs/knowledge/articles",
+  },
+  {
+    // TCRN-CROSS-STORY-484 R3 (MIN-227 D11, D12): the model tiers per host, each tier a runner, a
+    // model and an effort; models-tiers.ts owns the shape and the default table. It replaces
+    // execution.dispatchTiers (RENAMED_SETTING_KEYS).
+    key: "models.tiers",
+    type: "string",
+    controlType: "text",
+    layerKind: SETTINGS_LAYER_KIND,
+    defaultValue: MODELS_TIERS_DEFAULT_VALUE,
+  },
+  {
+    // TCRN-CROSS-STORY-484 (MIN-233 D2): when the orchestrating conversation shrinks its parallel
+    // subagents. Each is a percentage of a usage window: at or above fiveHourParallelOffPercent of
+    // the five-hour window it runs one subagent at a time, at or above fiveHourWaitPercent it
+    // dispatches none until the window resets; the weekly pair reads the weekly window the same
+    // way. weeklyWaitPercent has no default: unset, the weekly window never makes it wait.
+    key: "quota.fiveHourParallelOffPercent",
+    type: "string",
+    controlType: "number",
+    layerKind: SETTINGS_LAYER_KIND,
+    defaultValue: "75",
+    min: 1,
+    max: 100,
+  },
+  {
+    key: "quota.fiveHourWaitPercent",
+    type: "string",
+    controlType: "number",
+    layerKind: SETTINGS_LAYER_KIND,
+    defaultValue: "90",
+    min: 1,
+    max: 100,
+  },
+  {
+    key: "quota.weeklyParallelOffPercent",
+    type: "string",
+    controlType: "number",
+    layerKind: SETTINGS_LAYER_KIND,
+    defaultValue: "95",
+    min: 1,
+    max: 100,
+  },
+  {
+    key: "quota.weeklyWaitPercent",
+    type: "string",
+    controlType: "number",
+    layerKind: SETTINGS_LAYER_KIND,
+    defaultValue: null,
+    min: 1,
+    max: 100,
   },
   {
     // TCRN-CROSS-STORY-364: which prompt languages this workspace expects questions in. A
@@ -396,14 +404,6 @@ const catalogEntries: readonly Omit<SettingsCatalogEntry, "layer">[] = [
     max: 100,
   },
   {
-    key: "storage.backend",
-    type: "enum",
-    controlType: "enum",
-    layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: "file-segmented",
-    allowedValues: ["file", "file-segmented"],
-  },
-  {
     key: "storage.segmentBytes",
     type: "string",
     controlType: "number",
@@ -437,6 +437,7 @@ export const SETTINGS_CATALOG: readonly SettingsCatalogEntry[] = Object.freeze(
   catalogEntries.slice().sort((left, right) => compareCanonicalText(left.key, right.key)).map((entry) => Object.freeze({
     ...entry,
     layer: SETTINGS_PROJECT_LAYER,
+    modelWritable: entry.modelWritable ?? false,
     ...(entry.allowedValues === undefined ? {} : { allowedValues: Object.freeze([...entry.allowedValues]) }),
   })),
 );
@@ -462,6 +463,40 @@ const catalogByKey = new Map<SettingKey, SettingsCatalogEntry>(
 
 export function isRetiredSettingKey(key: unknown): boolean {
   return typeof key === "string" && RETIRED_SETTING_KEYS.some((retiredKey) => retiredKey === key);
+}
+
+/** The key a retired key was renamed to (RENAMED_SETTING_KEYS), or undefined when it was not renamed. */
+export function renamedSettingKey(key: unknown): SettingKey | undefined {
+  return typeof key === "string" && Object.hasOwn(RENAMED_SETTING_KEYS, key) ? RENAMED_SETTING_KEYS[key] : undefined;
+}
+
+/**
+ * The record a recorded value of a renamed key stands for under its new name: the same revision and
+ * instant, the value converted. Null when the key was not renamed, or when the recorded value cannot
+ * be carried over; that record then stays history only, like any other retired key's.
+ */
+export function renamedSettingRecord(record: {
+  readonly key: unknown;
+  readonly value: unknown;
+  readonly revision: unknown;
+  readonly updatedAt: unknown;
+}): WorkspaceSettingRecord | null {
+  const successor = renamedSettingKey(record.key);
+  const convert = typeof record.key === "string" && Object.hasOwn(renamedValueConverters, record.key) ? renamedValueConverters[record.key] : undefined;
+  if (successor === undefined || convert === undefined || typeof record.value !== "string") return null;
+  try {
+    return validateWorkspaceSettingRecord({
+      schemaVersion: WORKSPACE_SETTING_VERSION,
+      key: successor,
+      layerKind: SETTINGS_LAYER_KIND,
+      value: convert(record.value),
+      revision: record.revision,
+      updatedAt: record.updatedAt,
+      tombstone: false,
+    });
+  } catch {
+    return null;
+  }
 }
 
 const engineVersionPattern = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/u;
@@ -511,14 +546,14 @@ export function settingsCatalogEntry(key: unknown): SettingsCatalogEntry {
 
 export function validateSettingValue(key: unknown, value: unknown, workspaceRoot?: string): string {
   const entry = settingsCatalogEntry(key);
-  assertCanonicalString(value, String(key), entry.key === "driver.capabilityProfile" ? 128 : 4096);
-  if (
-    entry.key === "execution.dispatchClasses" ||
-    entry.key === "execution.dispatchMode" ||
-    entry.key === "execution.dispatchModes" ||
-    entry.key === "execution.dispatchTiers"
-  ) {
-    validateDispatchSetting(entry.key, value);
+  assertCanonicalString(value, String(key), 4096);
+  if (entry.key === MODELS_TIERS_SETTING_KEY) {
+    try {
+      parseModelsTiers(value);
+    } catch (error) {
+      if (error instanceof ModelsTiersError) fail("SETTINGS_VALUE_INVALID", error.message, error.details);
+      throw error;
+    }
   }
   if (entry.type === "enum" && !entry.allowedValues?.includes(value)) {
     fail(
@@ -576,18 +611,6 @@ export function validateSettingValue(key: unknown, value: unknown, workspaceRoot
       assertWorkspaceRelativeSettingPath(value, entry.key);
       if (workspaceRoot !== undefined && isInside(resolve(workspaceRoot, LEGACY_CONTROL_DIRECTORY), resolve(workspaceRoot, value))) {
         fail("SETTINGS_VALUE_INVALID", `${entry.key} must not target the workspace control tree`);
-      }
-    }
-  }
-  if (entry.key === "backup.destination") {
-    if (!isAbsolute(value)) {
-      fail("SETTINGS_VALUE_INVALID", `${entry.key} must be an absolute path`);
-    }
-    if (workspaceRoot !== undefined) {
-      const workspace = resolve(workspaceRoot);
-      const destination = resolve(value);
-      if (isInside(workspace, destination) || isInside(resolve(workspace, LEGACY_CONTROL_DIRECTORY), destination)) {
-        fail("SETTINGS_VALUE_INVALID", `${entry.key} must be outside the workspace and its control tree`);
       }
     }
   }
@@ -671,6 +694,7 @@ export function readSettingsCatalog(
       layer: entry.layer,
       defaultValue: entry.defaultValue,
       currentValue: records.find((record) => record.key === entry.key)?.value ?? effectiveValues[entry.key] ?? entry.defaultValue,
+      modelWritable: entry.modelWritable,
       ...(entry.allowedValues === undefined ? {} : { allowedValues: entry.allowedValues }),
       ...(entry.min === undefined ? {} : { min: entry.min }),
       ...(entry.max === undefined ? {} : { max: entry.max }),

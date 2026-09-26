@@ -33,7 +33,8 @@ import {
 } from "../scripts/knowledge-inject-hook.mjs";
 
 const emptyWorkspace = { work: [], events: [], conferences: [], conferenceMinutes: [] };
-const dispatchTiers = (model) => JSON.stringify({ "claude-code": { economy: { model, effort: "medium" } } });
+// TCRN-CROSS-STORY-484 R3: the economy tier lives in models.tiers, each tier with its runner.
+const modelsTiers = (model) => JSON.stringify({ "claude-code": { economy: { runner: "claude-code", model, effort: "medium" } } });
 const sessionDefaults = Object.freeze({ budget: 24_576, perPromptBytes: 1_600, judgeEnabled: false, settings: Object.freeze([]), workspaceState: emptyWorkspace });
 const bareRegressionChild = process.env.TCRN_INJECTION_BARE_REGRESSION_CHILD === "1";
 function sessionOptions(overrides = {}) {
@@ -48,7 +49,7 @@ function workspaceState(work, events = []) {
 const languageSettings = (model = "test-economy") => [
   { key: "artifact.language", currentValue: "zh-CN" },
   { key: "retrieval.promptLanguages", currentValue: "zh-CN" },
-  { key: "execution.dispatchTiers", currentValue: dispatchTiers(model) },
+  { key: "models.tiers", currentValue: modelsTiers(model) },
 ];
 
 // TCRN-CROSS-INC-369: the live cross-project configuration -- artifact.language=en,
@@ -58,7 +59,7 @@ const languageSettings = (model = "test-economy") => [
 const englishArtifactLanguageSettings = (model = "test-economy") => [
   { key: "artifact.language", currentValue: "en" },
   { key: "retrieval.promptLanguages", currentValue: "zh-CN" },
-  { key: "execution.dispatchTiers", currentValue: dispatchTiers(model) },
+  { key: "models.tiers", currentValue: modelsTiers(model) },
 ];
 
 function mockChild({ output = "reply", onInput = () => {}, close = true, onKill = null } = {}) {
@@ -168,7 +169,7 @@ test("418 rejects an unbound subagent without reading global L0 or calling auxil
     hookInput: { hook_event_name: "UserPromptSubmit", session_id: "unbound-subagent", agent_id: "child-1" },
     stateDirectory: directory,
     workspaceState: state,
-    settings: [{ key: "execution.dispatchTiers", currentValue: dispatchTiers("not-used") }],
+    settings: [{ key: "models.tiers", currentValue: modelsTiers("not-used") }],
     recall: async () => { recalls += 1; return { ok: true, result: { records: [] } }; },
     translate: async () => { translates += 1; return { text: "translated" }; },
     judge: async () => { judgments += 1; return { judgment: true }; },
@@ -203,7 +204,7 @@ test("418 binds a subagent to one workId and Pack, keeping unrelated active work
     hookInput: { hook_event_name: "SubagentStart", session_id: "bound-subagent", agent_id: "child-1", role: "subagent", workId: "work:target", pack: "EPIC135/HC1" },
     stateDirectory: directory,
     workspaceState: state,
-    settings: [{ key: "execution.dispatchTiers", currentValue: dispatchTiers("not-used") }],
+    settings: [{ key: "models.tiers", currentValue: modelsTiers("not-used") }],
     recall: async () => { recalls += 1; return { ok: true, result: { records: [] } }; },
     translate: async () => { auxiliary += 1; return { text: "translated" }; },
     judge: async () => { auxiliary += 1; return { judgment: true }; },

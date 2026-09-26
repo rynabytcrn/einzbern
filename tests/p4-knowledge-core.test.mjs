@@ -40,9 +40,7 @@ import {
   readKnowledgeBody,
   readKnowledgeSnippet,
   rebaseKnowledgeStore,
-  retireKnowledgeUnit,
   reverifyKnowledgeUnit,
-  transitionKnowledgePromotion,
   validateKnowledgeStore,
   acquireFileLock,
   cachePath,
@@ -154,6 +152,17 @@ async function cliJson(args) {
   return JSON.parse(output);
 }
 
+// TCRN-CROSS-SUB-308: nothing writes lifecycle "retired" any more, but a store an older engine
+// wrote may hold such a record. This lays one down the way that engine's knowledge-retire left
+// it -- the metadata at the next revision, lifecycle "retired", the body reclaimed -- so the read
+// and write paths that still meet one keep their proof.
+async function retireByHand(fixture, id) {
+  const path = join(fixture.store, "metadata", `${id}.json`);
+  const metadata = JSON.parse(await readFile(path, "utf8"));
+  await writeFile(path, canonicalJson({ ...metadata, lifecycle: "retired", revision: metadata.revision + 1 }));
+  await rm(join(fixture.store, "bodies", `${id}.body`));
+}
+
 function deterministicPermutations(values) {
   const result = [];
   const visit = (prefix, remaining) => {
@@ -214,7 +223,7 @@ test("WSC-2: knowledge-rebase re-binds the store to an advanced workspace head",
   try {
     await createProject(fixture.workspace, { occurredAt: instant(20, 2), externalKey: "FIXTURE-KNOWLEDGE-PROJECT-TWO", name: "Two" });
     await expectReason("KNOWLEDGE_HIGH_WATER_MISMATCH", () => validateKnowledgeStore(fixture.workspace));
-    const result = await rebaseKnowledgeStore(fixture.workspace, { at: instant(20, 3), retireInvalid: false });
+    const result = await rebaseKnowledgeStore(fixture.workspace, { at: instant(20, 3) });
     assert.equal(result.reasonCode, "KNOWLEDGE_STORE_REBASED");
     assert.equal(result.retired, 0);
     assert.deepEqual(result.offenders, []);
@@ -224,17 +233,20 @@ test("WSC-2: knowledge-rebase re-binds the store to an advanced workspace head",
   }
 });
 
-test("WSC-2: knowledge-rebase blocks on a link-invalid record and retires it under retire-invalid", async () => {
+// TCRN-CROSS-SUB-308: the retire-invalid escape is gone with every retirement path but
+// --supersedes, so the offender blocks the rebase however it is asked, and nothing retires it.
+test("WSC-2: knowledge-rebase blocks on a link-invalid record and retires nothing", async () => {
   const fixture = await workspaceFixture();
   try {
     const created = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "REBASE-OFFENDER", {}));
     await deleteWork(fixture.workspace, { occurredAt: instant(21, 2), id: fixture.workId });
-    await expectReason("KNOWLEDGE_REBASE_BLOCKED", () => rebaseKnowledgeStore(fixture.workspace, { at: instant(21, 3), retireInvalid: false }));
-    const result = await rebaseKnowledgeStore(fixture.workspace, { at: instant(21, 3), retireInvalid: true });
-    assert.equal(result.reasonCode, "KNOWLEDGE_STORE_REBASED");
-    assert.equal(result.retired, 1);
-    assert.deepEqual(result.offenders, [created.id]);
-    assert.equal((await validateKnowledgeStore(fixture.workspace)).reasonCode, "KNOWLEDGE_STORE_VALID");
+    const blocked = await rebaseKnowledgeStore(fixture.workspace, { at: instant(21, 3) }).then(() => null, (error) => error);
+    assert.equal(blocked?.reasonCode, "KNOWLEDGE_REBASE_BLOCKED");
+    assert.equal(blocked.message, created.id, "the refusal names the offender");
+    await expectReason("KNOWLEDGE_REBASE_BLOCKED", () => rebaseKnowledgeStore(fixture.workspace, { at: instant(21, 4), retireInvalid: true }));
+    const record = JSON.parse(await readFile(join(fixture.store, "metadata", `${created.id}.json`), "utf8"));
+    assert.deepEqual([record.lifecycle, record.revision], ["active", 1], "the offender is left as it was written");
+    assert.equal((await readdir(fixture.store)).includes("mutation.claim"), false, "the refusal gives the claim back");
   } finally {
     await fixture.close();
   }
@@ -252,9 +264,9 @@ test("WSC-2: knowledge-rebase fails closed at fault points leaving the store loc
     // finally block and the retained claim is what marks the store as mid-write. Removing
     // the KNOWLEDGE_FAULT_INJECTED exemption from the mutation finallys flips the second.
     assert.equal((await readdir(fixture.store)).includes("mutation.claim"), false);
-    await expectReason("KNOWLEDGE_FAULT_INJECTED", () => rebaseKnowledgeStore(fixture.workspace, { at: instant(22, 4), retireInvalid: false }, { faultAt: "after-marker-write" }));
+    await expectReason("KNOWLEDGE_FAULT_INJECTED", () => rebaseKnowledgeStore(fixture.workspace, { at: instant(22, 4) }, { faultAt: "after-marker-write" }));
     assert.equal((await readdir(fixture.store)).includes("mutation.claim"), true);
-    await expectReason("KNOWLEDGE_LOCKED", () => rebaseKnowledgeStore(fixture.workspace, { at: instant(22, 5), retireInvalid: false }));
+    await expectReason("KNOWLEDGE_LOCKED", () => rebaseKnowledgeStore(fixture.workspace, { at: instant(22, 5) }));
   } finally {
     await fixture.close();
   }
@@ -333,7 +345,7 @@ test("empty Knowledge bootstrap is closed, schema-valid, deterministic, and body
   }
 });
 
-test("metadata/body separation, default omission, explicit reads, promotion, freshness, and checkpoint policy are exact", async () => {
+test("metadata/body separation, default omission, explicit reads, freshness, and checkpoint policy are exact", async () => {
   const fixture = await workspaceFixture();
   try {
     const input = unitInput(fixture, "KNOWLEDGE-ALPHA");
@@ -360,16 +372,10 @@ test("metadata/body separation, default omission, explicit reads, promotion, fre
     const writtenCheckpoint = await exportKnowledgeCheckpoint(fixture.workspace, instant(12));
     assert.equal(writtenCheckpoint.includes(input.body), false);
     assert.equal(JSON.parse(writtenCheckpoint).records.length, 1, "the checkpoint corpus is the default selection, which a written card joins at once");
-    // TCRN-CROSS-INC-282: an active write is already promoted, so the promote verb has
-    // nothing to move here and refuses rather than repeating itself. The candidate-to-
-    // promoted transition is proved on the lifecycle-"candidate" path, which is the only
-    // writer that still produces a candidate.
-    await expectReason("KNOWLEDGE_PROMOTION_INVALID", () => transitionKnowledgePromotion(fixture.workspace, {
-      expectedRevision: 1,
-      occurredAt: instant(12, 1),
-      id,
-      promotionState: "promoted",
-    }));
+    // TCRN-CROSS-SUB-308: there is no promotion step to take; the written record is the
+    // active, promoted one.
+    const stored = JSON.parse(metadataText);
+    assert.deepEqual([stored.lifecycle, stored.promotionState], ["active", "promoted"]);
     assert.equal((await listKnowledgeMetadata(fixture.workspace, { at: instant(12) })).records.length, 1);
     const checkpoint = await exportKnowledgeCheckpoint(fixture.workspace, instant(12));
     assert.equal(checkpoint.includes(input.body), false);
@@ -380,12 +386,6 @@ test("metadata/body separation, default omission, explicit reads, promotion, fre
     assert.equal((await listKnowledgeMetadata(fixture.workspace, { at: "2026-08-20T14:00:00Z" })).records.length, 0);
     await expectReason("KNOWLEDGE_BODY_ACCESS_DENIED", () => readKnowledgeBody(fixture.workspace, id, { at: "2026-08-20T14:00:00Z" }));
     assert.equal((await readKnowledgeBody(fixture.workspace, id, { at: "2026-08-20T14:00:00Z", allowStale: true })).body, input.body);
-    await expectReason("KNOWLEDGE_PROMOTION_INVALID", () => transitionKnowledgePromotion(fixture.workspace, {
-      expectedRevision: 1,
-      occurredAt: instant(12, 2),
-      id,
-      promotionState: "rejected",
-    }));
   } finally {
     await fixture.close();
   }
@@ -469,15 +469,13 @@ test("unknown freshness fails closed and metadata filters remain deterministic",
   }
 });
 
-test("governed Knowledge CLI exposes init, validate, create, list, snippet, body, freshness, promotion, and checkpoint", async () => {
+test("governed Knowledge CLI exposes init, validate, create, list, snippet, body, freshness, and checkpoint", async () => {
   const fixture = await workspaceFixture({ initialize: false, externalKey: "FIXTURE-KNOWLEDGE-CLI" });
   try {
     let output = "";
     await runCli(["knowledge-init", "--workspace", fixture.workspace, "--acknowledge-disposable", "true"], { write: (value) => { output += value; } });
     assert.equal(JSON.parse(output).reasonCode, "KNOWLEDGE_STORE_INITIALIZED");
-    // TCRN-CROSS-INC-282: written lifecycle "candidate" so the knowledge-promote leg below
-    // still has a candidate to move. An active write lands promoted and refuses promotion.
-    const input = unitInput(fixture, "KNOWLEDGE-CLI", { lifecycle: "candidate" });
+    const input = unitInput(fixture, "KNOWLEDGE-CLI");
     const createArguments = [
       "knowledge-create", "--workspace", fixture.workspace, "--at", input.occurredAt,
       "--external-key", input.externalKey, "--scope", input.scope, "--project-id", input.projectId,
@@ -491,6 +489,11 @@ test("governed Knowledge CLI exposes init, validate, create, list, snippet, body
       "--last-verified", input.lastVerified, "--stale-days", String(input.stalenessPolicy.maximumAgeDays),
       "--export", input.exportDisposition, "--body", input.body,
     ];
+    // TCRN-CROSS-SUB-308: the candidate lifecycle is refused at the write, before the store
+    // moves, and the write that follows lands active.
+    const candidateArguments = createArguments.map((value, index) => createArguments[index - 1] === "--lifecycle" ? "candidate" : value);
+    await expectReason("KNOWLEDGE_LIFECYCLE_RETIRED", () => runCli(candidateArguments, { write() {} }));
+    assert.equal((await validateKnowledgeStore(fixture.workspace)).version, 0);
     output = "";
     await runCli(createArguments, { write: (value) => { output += value; } });
     const created = JSON.parse(output);
@@ -508,20 +511,16 @@ test("governed Knowledge CLI exposes init, validate, create, list, snippet, body
     await runCli(["knowledge-snippet", "--workspace", fixture.workspace, "--id", created.id], { write: (value) => { output += value; } });
     assert.equal(JSON.parse(output).snippet, input.snippet);
     output = "";
-    await runCli(["knowledge-body", "--workspace", fixture.workspace, "--id", created.id, "--at", instant(12), "--allow-unpromoted", "true"],
+    await runCli(["knowledge-body", "--workspace", fixture.workspace, "--id", created.id, "--at", instant(12)],
       { write: (value) => { output += value; } });
     assert.equal(JSON.parse(output).body, input.body);
-    output = "";
-    await expectReason("KNOWLEDGE_PROMOTION_INVALID", () => runCli([
+    // The promotion verb is gone: the card was retrievable from the write.
+    await expectReason("CLI_COMMAND_UNKNOWN", () => runCli([
       "knowledge-promote", "--workspace", fixture.workspace, "--expected-revision", "1",
-      "--at", instant(12, 1), "--id", created.id, "--state", "approved",
+      "--at", instant(12, 1), "--id", created.id, "--state", "promoted",
     ], { write() {} }));
     assert.equal((await readdir(fixture.store)).includes("mutation.claim"), false);
     assert.equal((await validateKnowledgeStore(fixture.workspace)).reasonCode, "KNOWLEDGE_STORE_VALID");
-    output = "";
-    await runCli(["knowledge-promote", "--workspace", fixture.workspace, "--expected-revision", "1",
-      "--at", instant(12, 1), "--id", created.id, "--state", "promoted"], { write: (value) => { output += value; } });
-    assert.equal(JSON.parse(output).reasonCode, "KNOWLEDGE_PROMOTION_UPDATED");
     output = "";
     await runCli(["knowledge-checkpoint", "--workspace", fixture.workspace, "--at", instant(12)], { write: (value) => { output += value; } });
     assert.equal(JSON.parse(output).reasonCode, "KNOWLEDGE_CHECKPOINT_READY");
@@ -621,12 +620,11 @@ test("selection and strict evaluation instants fail before Knowledge-store scann
   }
 });
 
-test("WSC-3: provenance is enforced at capture for an active card and at promotion for a candidate", async () => {
+test("WSC-3: provenance is enforced at the write, and the candidate path around it is closed", async () => {
   // TCRN-CROSS-INC-282: an active write is a promoted write, so a missing owner, source or
   // evidence is refused where the writer can see it instead of being parked in a state no
-  // reader returns. A record its own author wrote as lifecycle "candidate" keeps the cheap
-  // path: written without full provenance, rejectable without it, unpromotable until it
-  // carries it.
+  // reader returns. TCRN-CROSS-SUB-308: the lifecycle "candidate" write that used to take the
+  // cheap path around that floor is refused before provenance is judged, and writes nothing.
   const incompleteProvenance = [
     ["source", { sourceReferences: [] }],
     ["evidence", { linkedEvidenceIds: [] }],
@@ -647,62 +645,22 @@ test("WSC-3: provenance is enforced at capture for an active card and at promoti
   for (const [label, override] of incompleteProvenance) {
     const fixture = await workspaceFixture({ externalKey: `FIXTURE-PROVENANCE-${label.toUpperCase()}` });
     try {
-      const created = await createKnowledgeUnit(
+      await expectReason("KNOWLEDGE_LIFECYCLE_RETIRED", () => createKnowledgeUnit(
         fixture.workspace,
         unitInput(fixture, `KNOWLEDGE-PROVENANCE-${label.toUpperCase()}`, { ...override, lifecycle: "candidate" }),
-      );
-      assert.equal(created.reasonCode, "KNOWLEDGE_UNIT_CREATED");
-      assert.equal(created.promotionState, "candidate");
-      // rejecting a candidate never needs provenance
-      const rejected = await transitionKnowledgePromotion(fixture.workspace, {
-        expectedRevision: 1, occurredAt: instant(12), id: created.id, promotionState: "rejected",
-      });
-      assert.equal(rejected.reasonCode, "KNOWLEDGE_PROMOTION_UPDATED");
-    } finally {
-      await fixture.close();
-    }
-  }
-  for (const [label, override] of [
-    ["source", { sourceReferences: [] }],
-    ["evidence", { linkedEvidenceIds: [] }],
-    ["owner-empty", { accountableOwnerId: "" }],
-  ]) {
-    const fixture = await workspaceFixture({ externalKey: `FIXTURE-PROMOTE-BLOCK-${label.toUpperCase()}` });
-    try {
-      const created = await createKnowledgeUnit(fixture.workspace,
-        unitInput(fixture, `KNOWLEDGE-PROMOTE-BLOCK-${label.toUpperCase()}`, { ...override, lifecycle: "candidate" }));
-      await expectReason("KNOWLEDGE_PROVENANCE_INVALID", () => transitionKnowledgePromotion(fixture.workspace, {
-        expectedRevision: 1, occurredAt: instant(12), id: created.id, promotionState: "promoted",
-      }));
+      ));
+      const validation = await validateKnowledgeStore(fixture.workspace);
+      assert.deepEqual([validation.version, validation.records], [0, 0], `${label}: the refused candidate wrote nothing`);
     } finally {
       await fixture.close();
     }
   }
 });
 
-test("WSC-6: promotion enforces machine checks for tags and snippet", async () => {
-  for (const [label, override] of [
-    ["no-tags", { tags: [] }],
-    ["empty-snippet", { snippet: "" }],
-  ]) {
-    const fixture = await workspaceFixture({ externalKey: `FIXTURE-PROMOTE-CHECK-${label.toUpperCase()}` });
-    try {
-      const created = await createKnowledgeUnit(fixture.workspace,
-        unitInput(fixture, `KNOWLEDGE-CHECK-${label.toUpperCase()}`, { ...override, lifecycle: "candidate" }));
-      await expectReason("KNOWLEDGE_PROMOTION_INVALID", () => transitionKnowledgePromotion(fixture.workspace, {
-        expectedRevision: 1, occurredAt: instant(11, 5), id: created.id, promotionState: "promoted",
-      }));
-      // rejecting never needs the promotion checks
-      const rejected = await transitionKnowledgePromotion(fixture.workspace, {
-        expectedRevision: 1, occurredAt: instant(11, 6), id: created.id, promotionState: "rejected",
-      });
-      assert.equal(rejected.reasonCode, "KNOWLEDGE_PROMOTION_UPDATED");
-    } finally {
-      await fixture.close();
-    }
-  }
-  // TCRN-CROSS-INC-282: the same two checks now also refuse the write itself, because an
-  // active card is written promoted and validateMetadataShape runs them there.
+test("WSC-6: the write enforces machine checks for tags and snippet", async () => {
+  // TCRN-CROSS-INC-282: the two checks refuse the write itself, because every card is
+  // written promoted and validateMetadataShape runs them there. TCRN-CROSS-SUB-308 removed
+  // the promotion step they also guarded.
   for (const [label, override] of [
     ["no-tags", { tags: [] }],
     ["empty-snippet", { snippet: "" }],
@@ -715,14 +673,11 @@ test("WSC-6: promotion enforces machine checks for tags and snippet", async () =
       await fixture.close();
     }
   }
-  // a fully-governed candidate promotes
+  // a fully-governed card is written promoted
   const ok = await workspaceFixture({ externalKey: "FIXTURE-PROMOTE-CHECK-OK" });
   try {
-    const created = await createKnowledgeUnit(ok.workspace, unitInput(ok, "KNOWLEDGE-CHECK-OK", { lifecycle: "candidate" }));
-    const promoted = await transitionKnowledgePromotion(ok.workspace, {
-      expectedRevision: 1, occurredAt: instant(11, 5), id: created.id, promotionState: "promoted",
-    });
-    assert.equal(promoted.promotionState, "promoted");
+    const created = await createKnowledgeUnit(ok.workspace, unitInput(ok, "KNOWLEDGE-CHECK-OK"));
+    assert.equal(created.promotionState, "promoted");
   } finally {
     await ok.close();
   }
@@ -752,14 +707,9 @@ test("WSE-5: a work-log candidate carrying an event reference and chain-matching
       assert.equal(created.reasonCode, "KNOWLEDGE_UNIT_CREATED");
       // creation itself proves the event reference survives storage: a reference the
       // source-reference grammar rejected or redaction rewrote would fail closed here.
-      // TCRN-CROSS-STORY-365: source and evidence supplied together are written
-      // official, so this candidate is promoted at creation rather than one step later.
-      // The promotion path stays exercised for the records that still reach it.
+      // TCRN-CROSS-STORY-365, TCRN-CROSS-SUB-308: every card is written official, so the
+      // record is promoted at creation; there is no later step.
       assert.equal(created.promotionState, "promoted");
-      const promoted = created.promotionState === "promoted" ? created : await transitionKnowledgePromotion(fixture.workspace, {
-        expectedRevision: 1, occurredAt: instant(12), id: created.id, promotionState: "promoted",
-      });
-      assert.equal(promoted.promotionState, "promoted");
     } finally {
       await fixture.close();
     }
@@ -785,26 +735,25 @@ test("WSE-5: a work-log candidate carrying an event reference and chain-matching
   }
 });
 
-test("WSC-5: retire and reverify lifecycle transitions fail closed", async () => {
+test("WSC-5: reverify admits a written card and refuses a retired record, and nothing retires by hand", async () => {
   const fixture = await workspaceFixture({ externalKey: "FIXTURE-LIFECYCLE" });
   try {
-    // retire: a candidate is retired and drops out of default selection; re-retire fails
-    const candidate = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "KNOWLEDGE-RETIRE-ME", { occurredAt: instant(11, 3) }));
-    const retired = await retireKnowledgeUnit(fixture.workspace, { expectedRevision: 1, occurredAt: instant(11, 4), id: candidate.id });
-    assert.equal(retired.reasonCode, "KNOWLEDGE_RETIRED");
-    const listed = await listKnowledgeMetadata(fixture.workspace, { at: instant(12), selection: "default" });
-    assert.equal(listed.records.some((r) => r.id === candidate.id), false);
-    await expectReason("KNOWLEDGE_LIFECYCLE_INVALID", () => retireKnowledgeUnit(fixture.workspace, { expectedRevision: 2, occurredAt: instant(11, 5), id: candidate.id }));
+    // TCRN-CROSS-SUB-308: manual retirement is gone -- the verb answers as unknown.
+    const kept = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "KNOWLEDGE-RETIRE-ME", { occurredAt: instant(11, 3) }));
+    await expectReason("CLI_COMMAND_UNKNOWN", () => runCli(["knowledge-retire", "--workspace", fixture.workspace,
+      "--expected-revision", "1", "--at", instant(11, 4), "--id", kept.id], { write() {} }));
+    assert.equal((await listKnowledgeMetadata(fixture.workspace, { at: instant(12), selection: "default" })).records.some((r) => r.id === kept.id), true);
 
-    // reverify: promoted record can be re-verified; a candidate cannot
-    // TCRN-CROSS-INC-282: written lifecycle "candidate", the one shape that is still a
-    // candidate, so "a candidate cannot be re-verified" is still a reachable refusal.
-    const promotable = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "KNOWLEDGE-REVERIFY-ME", { occurredAt: instant(11, 6), lifecycle: "candidate" }));
-    await expectReason("KNOWLEDGE_LIFECYCLE_INVALID", () => reverifyKnowledgeUnit(fixture.workspace, { expectedRevision: 1, occurredAt: instant(11, 7), id: promotable.id }));
-    await transitionKnowledgePromotion(fixture.workspace, { expectedRevision: 1, occurredAt: instant(11, 8), id: promotable.id, promotionState: "promoted" });
-    const reverified = await reverifyKnowledgeUnit(fixture.workspace, { expectedRevision: 2, occurredAt: instant(13, 9), id: promotable.id });
+    // reverify: a written card is promoted and re-verifies under CAS
+    const written = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "KNOWLEDGE-REVERIFY-ME", { occurredAt: instant(11, 6) }));
+    await expectReason("KNOWLEDGE_CAS_MISMATCH", () => reverifyKnowledgeUnit(fixture.workspace, { expectedRevision: 2, occurredAt: instant(11, 7), id: written.id }));
+    const reverified = await reverifyKnowledgeUnit(fixture.workspace, { expectedRevision: 1, occurredAt: instant(13, 9), id: written.id });
     assert.equal(reverified.reasonCode, "KNOWLEDGE_REVERIFIED");
     assert.equal(reverified.lastVerified, instant(13, 9));
+
+    // a retired record an older engine left is not re-verified
+    await retireByHand(fixture, kept.id);
+    await expectReason("KNOWLEDGE_LIFECYCLE_INVALID", () => reverifyKnowledgeUnit(fixture.workspace, { expectedRevision: 2, occurredAt: instant(13, 10), id: kept.id }));
   } finally {
     await fixture.close();
   }
@@ -995,26 +944,25 @@ test("custom schema proof enforces the normative UTF-8 byte budgets", async () =
   }
 });
 
-test("duplicate, revision CAS, promotion, and concurrent writer integrity fail closed", async () => {
+test("duplicate, revision CAS, lifecycle, and concurrent writer integrity fail closed", async () => {
   const fixture = await workspaceFixture();
   try {
-    // TCRN-CROSS-INC-282: lifecycle "candidate" keeps a promotable target, so the CAS and
-    // input refusals below are still measured against a transition that could succeed.
-    const input = unitInput(fixture, "KNOWLEDGE-CAS", { lifecycle: "candidate" });
+    const input = unitInput(fixture, "KNOWLEDGE-CAS");
     const created = await createKnowledgeUnit(fixture.workspace, input);
-    await expectReason("KNOWLEDGE_PROMOTION_INVALID", () => transitionKnowledgePromotion(fixture.workspace, {
-      expectedRevision: 1, occurredAt: instant(12), id: created.id, promotionState: "approved",
-    }));
+    // TCRN-CROSS-SUB-308: a refused lifecycle is judged before the claim is taken, so it
+    // leaves no claim and no version step behind.
+    await expectReason("KNOWLEDGE_LIFECYCLE_RETIRED", () => createKnowledgeUnit(fixture.workspace,
+      unitInput(fixture, "KNOWLEDGE-CAS-CANDIDATE", { lifecycle: "candidate" })));
     assert.equal((await readdir(fixture.store)).includes("mutation.claim"), false);
     assert.equal((await validateKnowledgeStore(fixture.workspace)).version, 1);
     await expectReason("KNOWLEDGE_DUPLICATE", () => createKnowledgeUnit(fixture.workspace, { ...input }));
     // The record revision is still compared; the store-version CAS beside it is gone
     // (TCRN-CROSS-STORY-467 R1).
-    await expectReason("KNOWLEDGE_CAS_MISMATCH", () => transitionKnowledgePromotion(fixture.workspace, {
-      expectedRevision: 2, occurredAt: instant(12), id: created.id, promotionState: "promoted",
+    await expectReason("KNOWLEDGE_CAS_MISMATCH", () => reverifyKnowledgeUnit(fixture.workspace, {
+      expectedRevision: 2, occurredAt: instant(12), id: created.id,
     }));
-    assert.equal((await transitionKnowledgePromotion(fixture.workspace, {
-      expectedRevision: 1, occurredAt: instant(12), id: created.id, promotionState: "promoted",
+    assert.equal((await reverifyKnowledgeUnit(fixture.workspace, {
+      expectedRevision: 1, occurredAt: instant(12), id: created.id,
     })).version, 2);
   } finally {
     await fixture.close();
@@ -1115,23 +1063,17 @@ test("link, special-file, source-replacement, unknown-field, and partial-state a
     }
   }
 
-  // WSC-6: promote, retire, and reverify carry the same crash points, and until now no
-  // test ever triggered one -- their crash(...) calls were unreachable proof. A simulated
-  // crash must retain the claim exactly as create and rebase do, because a real SIGKILL
-  // never runs the finally that would release it.
-  for (const verb of ["promote", "retire", "reverify"]) {
+  // WSC-6: the record mutations carry the same crash points as create and rebase. A simulated
+  // crash must retain the claim exactly as those do, because a real SIGKILL never runs the
+  // finally that would release it. (The promote and retire siblings went with their verbs,
+  // TCRN-CROSS-SUB-308.)
+  for (const verb of ["reverify"]) {
     const fixture = await workspaceFixture({ externalKey: `FIXTURE-KNOWLEDGE-SIBLING-${verb.toUpperCase()}` });
     try {
-      // TCRN-CROSS-INC-282: promote needs a candidate, so that verb writes lifecycle
-      // "candidate"; reverify needs a promoted record and now gets one from the write.
-      const unit = await createKnowledgeUnit(fixture.workspace,
-        unitInput(fixture, `KNOWLEDGE-SIBLING-${verb.toUpperCase()}`, verb === "promote" ? { lifecycle: "candidate" } : {}));
-      const version = 1;
+      const unit = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, `KNOWLEDGE-SIBLING-${verb.toUpperCase()}`));
       const revision = 1;
       const run = () => {
         const common = { expectedRevision: revision, occurredAt: instant(12, 5), id: unit.id };
-        if (verb === "promote") return transitionKnowledgePromotion(fixture.workspace, { ...common, promotionState: "promoted" }, { faultAt: "after-metadata-write" });
-        if (verb === "retire") return retireKnowledgeUnit(fixture.workspace, common, { faultAt: "after-metadata-write" });
         return reverifyKnowledgeUnit(fixture.workspace, common, { faultAt: "after-metadata-write" });
       };
       await expectReason("KNOWLEDGE_FAULT_INJECTED", run);
@@ -1387,7 +1329,7 @@ test("TCRN-CROSS-STORY-025: search matches the summary, not only subject and tag
   } finally { await fx.close(); }
 });
 
-test("TCRN-CROSS-STORY-024: retiring reclaims the body, keeps the store valid, and still requires a live body", async () => {
+test("TCRN-CROSS-STORY-024: a retired record without its body keeps the store valid, and a live record still requires one", async () => {
   const fx = await workspaceFixture({ externalKey: "FIXTURE-KNOWLEDGE-S024" });
   try {
     const bodiesDir = join(fx.workspace, DIRECTORY.knowledge, "bodies");
@@ -1396,8 +1338,9 @@ test("TCRN-CROSS-STORY-024: retiring reclaims the body, keeps the store valid, a
     }));
     const bodyFile = join(bodiesDir, `${created.id}.body`);
     assert.equal((await readFile(bodyFile)).length, 7_500, "body present before retire");
-    // Retire reclaims the body file, and the store is still valid without it.
-    await retireKnowledgeUnit(fx.workspace, { expectedRevision: 1, occurredAt: instant(11, 4), id: created.id });
+    // A retirement an older engine made reclaimed the body file (TCRN-CROSS-SUB-308: nothing
+    // retires by hand now), and the store is still valid without it.
+    await retireByHand(fx, created.id);
     await assert.rejects(readFile(bodyFile), "retired body must be deleted");
     assert.equal((await validateKnowledgeStore(fx.workspace)).reasonCode, "KNOWLEDGE_STORE_VALID");
     // The retired record survives as a metadata-only audit entry.
@@ -1566,9 +1509,10 @@ test("INIT-047: supersedes is validated, source digests are computed and source 
     const replacement = await createKnowledgeUnit(fx.workspace, fragment("INIT047-NEW", 1, { supersedes: old.id }));
     const listed = await listKnowledgeMetadata(fx.workspace, { at: instant(12), selection: "all" });
     assert.equal(listed.records.find((record) => record.id === replacement.id).supersedes, old.id);
-    // TCRN-CROSS-STORY-365: the supersede marked `old` with extensions.supersededBy, so
-    // it is at revision 2 by the time this retire compares.
-    await retireKnowledgeUnit(fx.workspace, { expectedRevision: 2, occurredAt: instant(11, 4), id: old.id });
+    // TCRN-CROSS-STORY-365: the supersede marked `old` with extensions.supersededBy, so it
+    // is at revision 2. A retired target is still refused; nothing retires a card by hand now
+    // (TCRN-CROSS-SUB-308), so the retired record is the one an older engine would have left.
+    await retireByHand(fx, old.id);
     await expectReason("KNOWLEDGE_LINK_INVALID", () => createKnowledgeUnit(fx.workspace, fragment("INIT047-AFTER-RETIRE", 3, { supersedes: old.id })));
 
     await writeFile(join(fx.workspace, "source.md"), "source-v1");

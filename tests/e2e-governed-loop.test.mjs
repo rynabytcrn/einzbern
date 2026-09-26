@@ -3,7 +3,7 @@
 // WSG-6: the flagship end-to-end governed-loop proof.
 //
 // One hermetic replay of the whole product loop —
-// initiative -> epic -> story -> conference -> distill -> promote -> decide -> trace
+// initiative -> epic -> story -> conference -> distill -> decide -> trace
 // — on a REAL (non-fixture) library created under mkdtemp, driven entirely
 // through the governed CLI surface (runCli + a CliIo write-capture stub, never a
 // direct core-library call), with every timestamp supplied explicitly (no
@@ -15,8 +15,9 @@
 // single source of truth and additionally re-derives the doc/proof equality, so
 // the tutorial cannot rot (acceptance criterion 2). The trace step asserts an
 // unbroken digest chain binding the work record, the conference minutes that
-// decided it, the distilled knowledge candidate, and the promotion receipt
-// (acceptance criterion 3).
+// decided it, and the distilled knowledge card, which is retrievable from the write
+// (acceptance criterion 3; the promotion receipt left the chain with the promotion
+// step, TCRN-CROSS-SUB-308).
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
@@ -102,11 +103,6 @@ test("the flagship governed loop replays end-to-end through the CLI with an unbr
         break;
       case "knowledge-list":
         captured.listing = output;
-        substitutions["<knowledge-id>"] = output.records[0].id;
-        substitutions["<knowledge-revision>"] = String(output.records[0].revision);
-        break;
-      case "knowledge-promote":
-        captured.promotion = output;
         break;
       case "work-show-story":
         captured.story = output.record;
@@ -126,28 +122,25 @@ test("the flagship governed loop replays end-to-end through the CLI with an unbr
   assert.deepEqual(captured.storyAdvisory.decidedBy, [captured.minutesId], "the story names the minutes that decided it");
   assert.ok(captured.minutesId.startsWith(MINUTES_PREFIX));
 
-  // Node 2 -> 3: the knowledge candidate's sourceDigest is bound to the full
+  // Node 2 -> 3: the knowledge card's sourceDigest is bound to the full
   // minutes basis (title + decision + minutes id), recomputed independently here.
   assert.equal(captured.listing.total, 1, "exactly one decision was distilled");
-  const candidate = captured.listing.records[0];
+  const card = captured.listing.records[0];
   const expectedSourceDigest = canonicalSha256({ title: CONFERENCE_TITLE, decision: DISTILLED_DECISION, minutesId: captured.minutesId });
-  assert.equal(candidate.sourceDigest, expectedSourceDigest, "knowledge candidate binds the conference minutes");
-  assert.deepEqual(candidate.tags, CONFERENCE_TAGS);
-  assert.deepEqual(candidate.linkedEvidenceIds, ["evidence:close-01", "evidence:position-01"], "the distilled provenance dedupes the close and position evidence");
-  assert.equal(candidate.id, captured.knowledgeUnitIds[0], "the close receipt names the distilled candidate");
+  assert.equal(card.sourceDigest, expectedSourceDigest, "the knowledge card binds the conference minutes");
+  assert.deepEqual(card.tags, CONFERENCE_TAGS);
+  assert.deepEqual(card.linkedEvidenceIds, ["evidence:close-01", "evidence:position-01"], "the distilled provenance dedupes the close and position evidence");
+  assert.equal(card.id, captured.knowledgeUnitIds[0], "the close receipt names the distilled card");
+  // TCRN-CROSS-SUB-308: the card is written active and promoted -- there is no promotion step.
+  assert.deepEqual([card.lifecycle, card.promotionState], ["active", "promoted"]);
 
-  // Node 3 -> 4: the promotion receipt is the same candidate, promoted.
-  assert.equal(captured.promotion.id, candidate.id, "promotion receipt binds the knowledge candidate");
-  assert.equal(captured.promotion.promotionState, "promoted");
-
-  // The four node digests, ordered, hash to a single stable chain digest — the
+  // The three node digests, ordered, hash to a single stable chain digest — the
   // whole loop's evidence collapses to one 64-hex value that changes if a single
   // node or edge changes.
   const chainDigest = canonicalSha256([
     canonicalSha256({ story: captured.story, decidedBy: captured.storyAdvisory.decidedBy }),
     canonicalSha256({ minutesId: captured.minutesId, sourceBasis: expectedSourceDigest }),
-    canonicalSha256(candidate),
-    canonicalSha256({ id: captured.promotion.id, promotionState: captured.promotion.promotionState }),
+    canonicalSha256(card),
   ]);
   assert.match(chainDigest, /^[a-f0-9]{64}$/u);
 

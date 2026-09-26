@@ -114,15 +114,12 @@ export const governedLoopStoryline = [
     reasonCode: "KNOWLEDGE_STORE_VALID",
     command: ["knowledge-validate", "--workspace", WORKSPACE_PATH],
   },
+  // TCRN-CROSS-SUB-308: the distilled card is retrievable from the write; the promote step
+  // that used to follow the listing is gone with its verb.
   {
     key: "knowledge-list",
     reasonCode: "KNOWLEDGE_LIST_READY",
     command: ["knowledge-list", "--workspace", WORKSPACE_PATH, "--at", "2026-07-11T00:00:11Z", "--selection", "all"],
-  },
-  {
-    key: "knowledge-promote",
-    reasonCode: "KNOWLEDGE_PROMOTION_UPDATED",
-    command: ["knowledge-promote", "--workspace", WORKSPACE_PATH, "--expected-revision", "<knowledge-revision>", "--at", "2026-07-11T00:00:12Z", "--id", "<knowledge-id>", "--state", "promoted"],
   },
   {
     key: "work-annotate-story-owner-acceptance",
@@ -142,7 +139,7 @@ export const governedLoopStoryline = [
 ];
 
 // The fixed conference title and single decision the loop distills, reused by the
-// proof to recompute the knowledge candidate's sourceDigest independently.
+// proof to recompute the knowledge card's sourceDigest independently.
 export const CONFERENCE_TITLE = "Decide-the-story";
 export const DISTILLED_DECISION = "persist-conference-and-gate-records";
 

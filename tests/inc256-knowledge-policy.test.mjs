@@ -3,7 +3,7 @@
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -17,11 +17,10 @@ import {
   initializeKnowledgeStore,
   initializeLibrary,
   listKnowledgeMetadata,
-  retireKnowledgeUnit,
-  transitionKnowledgePromotion,
   validateKnowledgeStore,
+  DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
-import { canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
+import { canonicalJson, canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
 const instant = (second) => `2026-09-02T00:00:${String(second).padStart(2, "0")}Z`;
 
@@ -34,9 +33,10 @@ async function fixture() {
   project = await createProject(workspace, {
     occurredAt: instant(3), externalKey: "INC-256-PROJECT", name: "INC-256",
   });
+  // An Initiative: a new Incident is refused once Incident folds into Story (TCRN-CROSS-SUB-297).
   work = await createWork(workspace, {
     occurredAt: instant(4), projectId: project.projects[0].id,
-    externalKey: "INC-256-WORK", kind: "Incident", parentId: null, status: "active",
+    externalKey: "INC-256-WORK", kind: "Initiative", parentId: null, status: "active",
   });
   await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
   return { base, workspace, projectId: project.projects[0].id, workId: work.work.find((record) => record.externalKey === "INC-256-WORK").id };
@@ -85,13 +85,10 @@ test("INC-256 knowledge-batch migrates all existing cards to no expiry and prese
     for (const kind of ["fact", "guide", "decision", "reference"]) {
       const result = await createKnowledgeUnit(fx.workspace, card(fx, `CARD-${kind}`, kind, version));
       version = result.version;
-      // TCRN-CROSS-STORY-365: a relaxed-kind card with source and evidence is written
-      // promoted; the strict kinds (guide, reference) still reach promotion this way.
-      const promoted = result.promotionState === "promoted" ? result : await transitionKnowledgePromotion(fx.workspace, {
-        expectedRevision: result.revision, occurredAt: instant(6), id: result.id, promotionState: "promoted",
-      });
-      version = promoted.version;
-      created.push({ id: result.id, revision: promoted.revision, kind });
+      // TCRN-CROSS-STORY-365, TCRN-CROSS-SUB-308: every kind is written promoted; there is no
+      // promotion step.
+      assert.equal(result.promotionState, "promoted", kind);
+      created.push({ id: result.id, revision: result.revision, kind });
     }
     const before = await listKnowledgeMetadata(fx.workspace, { at: instant(6), selection: "all" });
     assert.equal(before.total, 4);
@@ -142,12 +139,15 @@ test("INC-256 malformed policy red leg refuses the batch before any migration", 
 test("INC-256 policy migration also updates retired metadata without requiring a body", async () => {
   const fx = await fixture();
   try {
-    // TCRN-CROSS-INC-282: no promote step -- the card is written promoted, so retire acts
-    // on the write's own version and revision.
+    // TCRN-CROSS-SUB-308: nothing retires a card by hand now, so the retired record is laid
+    // down the way an older engine's knowledge-retire left it: the next revision, lifecycle
+    // "retired", and the body reclaimed.
     const created = await createKnowledgeUnit(fx.workspace, card(fx, "CARD-RETIRED", "guide", 0));
-    await retireKnowledgeUnit(fx.workspace, {
-      expectedRevision: created.revision, occurredAt: instant(7), id: created.id,
-    });
+    const store = join(fx.workspace, DIRECTORY.knowledge);
+    const metadataPath = join(store, "metadata", `${created.id}.json`);
+    const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
+    await writeFile(metadataPath, canonicalJson({ ...metadata, lifecycle: "retired", revision: created.revision + 1, updatedAt: instant(7) }));
+    await rm(join(store, "bodies", `${created.id}.body`));
     const result = await applyKnowledgeBatch(fx.workspace, policyBatch([{
       verb: "knowledge-policy", id: created.id, expectedRevision: 2,
       stalenessPolicy: { maximumAgeDays: null, unknownDisposition: "fail-closed" },

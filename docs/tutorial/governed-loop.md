@@ -2,7 +2,7 @@
 
 This tutorial walks the whole product in one sitting: from an empty library to a
 completed story whose closing decision is ratified in a conference, distilled into
-the knowledge store, promoted, and then traced back through an unbroken chain of
+the knowledge store, and then traced back through an unbroken chain of
 digests. Every command below is a real governed CLI verb, and every one of them is
 replayed verbatim by the hermetic proof `tests/e2e-governed-loop.test.mjs`, which
 `pnpm test` runs — the tutorial and the proof are diffed against each other, so a
@@ -11,7 +11,7 @@ that one file retired in TCRN-CROSS-STORY-359; the proof did not.
 
 The loop is:
 
-**initiative → epic → story → conference → distill → promote → decide → trace.**
+**initiative → epic → story → conference → distill → decide → trace.**
 
 ## Conventions
 
@@ -93,38 +93,36 @@ $ einzbern knowledge-init --workspace ./flagship/.ether --acknowledge-disposable
 
 Now close the conference with `--distill`. The close event lands first; the
 governed high-water rebind re-binds the knowledge store to the advanced head, then
-each minutes decision is captured as a promotable knowledge candidate. The receipt
-carries the minutes id in `recordId` and the new candidate id in `knowledgeUnitIds`.
+each minutes decision is written as a knowledge card, retrievable from the write. The
+receipt carries the minutes id in `recordId` and the new card id in `knowledgeUnitIds`.
 
 ```console
 $ einzbern conference-close --workspace ./flagship/.ether --at 2026-07-11T00:00:10Z --conference-id <conference-id> --minutes-external-key FLAGSHIP-MINUTES --summary approach-ratified --outcome-class role_decision --decisions persist-conference-and-gate-records --unresolved-issues - --distill true --accountable-owner-id owner:governance --stale-days 90 --evidence-ids evidence:close-01
 ```
 
-The candidate carries the fixed conference tag set
+The card carries the fixed conference tag set
 (`conference-decision`, `distilled`, `type-architecture`), the deduplicated evidence
 union of the position and the close, and a `sourceDigest` bound to the full minutes
-basis — everything the promotion gate demands.
+basis. It is written with lifecycle `active`: there is no candidate state and no
+promotion step, so the card answers recall from the moment it is written.
 
-## 5. Promote the candidate
+## 5. Read the card
 
-Read the knowledge marker version, list the candidate, then promote it. Promotion
-happens now, while the knowledge marker's high-water still equals the workspace
-head — before the final workspace mutations advance it.
+Validate the knowledge store and list the card, while the knowledge marker's
+high-water still equals the workspace head — before the final workspace mutations
+advance it.
 
 ```console
 $ einzbern knowledge-validate --workspace ./flagship/.ether
 $ einzbern knowledge-list --workspace ./flagship/.ether --at 2026-07-11T00:00:11Z --selection all
-$ einzbern knowledge-promote --workspace ./flagship/.ether --expected-revision <knowledge-revision> --at 2026-07-11T00:00:12Z --id <knowledge-id> --state promoted
 ```
 
-`knowledge-validate` reports the marker `version` (use it as `<knowledge-version>`);
-`knowledge-list --selection all` returns the candidate record (use its `id` and
-`revision`). Promotion returns `KNOWLEDGE_PROMOTION_UPDATED` with `promotionState`
-`promoted`.
+`knowledge-validate` reports the marker `version`; `knowledge-list --selection all`
+returns the card record, `lifecycle` `active` and `promotionState` `promoted`.
 
 ## 6. Record the decision and finish the story
 
-The same minutes that produced the knowledge candidate are the story's decision.
+The same minutes that produced the knowledge card are the story's decision.
 `work-annotate --decided-by` records them on the story, and a Story reaches `done`
 only once that decision is on the record.
 
@@ -148,12 +146,11 @@ next:
 1. **Work record → conference minutes.** The story's `decidedBy` names the minutes
    id from the distilling close, and the story reached `done` only with that decision
    on the record.
-2. **Conference minutes → knowledge candidate.** The candidate's `sourceDigest` is
+2. **Conference minutes → knowledge card.** The card's `sourceDigest` is
    the canonical hash of the minutes basis (title, decision, minutes id) — recompute
-   it and it matches, so the candidate provably came from these minutes.
-3. **Knowledge candidate → promotion receipt.** The promotion receipt names the same
-   candidate id, now `promoted`.
+   it and it matches, so the card provably came from these minutes, and the close
+   receipt's `knowledgeUnitIds` names the same card.
 
 No link reads a host path or a hostname — the chain is carried entirely by content
 digests and governed record ids, so it is reproducible on every machine. That is the
-whole governed loop: planned, deliberated, distilled, promoted, decided, and proven.
+whole governed loop: planned, deliberated, distilled, decided, and proven.

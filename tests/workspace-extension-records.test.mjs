@@ -727,7 +727,7 @@ test("WSD-2: malformed enums pass through to the engine verbatim", async (contex
   // (TCRN-CROSS-STORY-467 R1, proved in tests/file-lock-concurrency.test.mjs).
 });
 
-test("WSD-3: conference-close --distill governs each decision into a promotable knowledge candidate under one lease", async (context) => {
+test("WSD-3: conference-close --distill writes each decision as an active knowledge card under one lease", async (context) => {
   const fx = await cliSeededFixture(context);
   const ws = fx.ws;
 
@@ -755,27 +755,26 @@ test("WSD-3: conference-close --distill governs each decision into a promotable 
   assert.equal(closeReceipt.recordId, deriveStableId("minutes", "MINUTES-DISTILL"));
   assert.equal(closeReceipt.knowledgeUnitIds.length, decisions.length);
 
-  // Each candidate validates through the store, is unpromoted, carries the fixed
-  // conference tag set, the deduped evidence union, and a sourceDigest bound to the
-  // FULL untruncated basis (recomputed here).
+  // Each card validates through the store, is written active and promoted (the candidate
+  // lifecycle is retired, TCRN-CROSS-SUB-308), carries the fixed conference tag set, the
+  // deduped evidence union, and a sourceDigest bound to the FULL untruncated basis
+  // (recomputed here).
   const minutesId = deriveStableId("minutes", "MINUTES-DISTILL");
   const expectedDigests = decisions.map((decision) => canonicalSha256({ title: "Distill design", decision, minutesId }));
   const listing = assertCanonicalJson((await invokeCli(["knowledge-list", "--workspace", ws, "--at", instant(6), "--selection", "all"])).output);
   assert.equal(listing.total, decisions.length);
   for (const record of listing.records) {
-    assert.equal(record.promotionState, "candidate");
+    assert.deepEqual([record.lifecycle, record.promotionState], ["active", "promoted"]);
     assert.deepEqual(record.tags, ["conference-decision", "distilled", "type-architecture"]);
     assert.deepEqual(record.linkedEvidenceIds, ["evidence:close-01", "evidence:position-01"]);
     assert.equal(Buffer.byteLength(record.subject, "utf8") <= 512, true);
     assert.equal(expectedDigests.includes(record.sourceDigest), true);
   }
 
-  // Promotable by construction: owner + evidence + tag + snippet clear the WSC-6 gates.
-  const first = listing.records[0];
-  const knowledgeVersion = assertCanonicalJson((await invokeCli(["knowledge-validate", "--workspace", ws])).output).version;
-  const promote = await invokeCli(["knowledge-promote", "--workspace", ws, "--expected-revision", String(first.revision), "--at", instant(7), "--id", first.id, "--state", "promoted"]);
-  assert.equal(promote.ok, true);
-  assert.equal(assertCanonicalJson(promote.output).promotionState, "promoted");
+  // Retrievable from the write: owner + evidence + tag + snippet cleared the WSC-6 checks at
+  // the write, and the default selection answers with every distilled decision.
+  const answered = assertCanonicalJson((await invokeCli(["knowledge-list", "--workspace", ws, "--at", instant(6)])).output);
+  assert.deepEqual(answered.records.map((record) => record.id).sort(), closeReceipt.knowledgeUnitIds.slice().sort());
 });
 
 test("WSD-3: --distill with no knowledge store fails closed BEFORE the close event is appended", async (context) => {

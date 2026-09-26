@@ -376,10 +376,10 @@ export interface DistillConferenceOptions {
 // WSD-3 / SDC-6: transform closed conference minutes into governed knowledge
 // creation inputs — one candidate per minutes decision. Each input is a FULL
 // CreateKnowledgeUnitInput accepted by the unmodified fail-closed knowledge
-// creation contract (WSC-3 capture-cheap): provenance (accountable owner,
-// evidence) is optional at capture and enforced only at promotion, while the
-// vocabulary-conformant tag set and non-empty snippet make the candidate
-// promotable by construction under WSC-6's final promote gates. The external key
+// creation contract: every card is written active and promoted (TCRN-CROSS-SUB-308),
+// so the accountable owner is checked at the write, while the
+// vocabulary-conformant tag set and non-empty snippet clear WSC-6's machine
+// checks by construction. The external key
 // is hyphen-only (CONFERENCE-DECISION-<hex>-<hex>-<n>) so canonicalExternalKey
 // admits it; sourceDigest binds the FULL untruncated decision basis even when the
 // stored subject is byte-bounded. The transform is pure — no store access — and
@@ -424,7 +424,10 @@ export function distillConferenceKnowledge(minutesValue: unknown, requestValue: 
     linkedDecisionIds: [],
     linkedGateIds: [],
     linkedEvidenceIds: evidence,
-    lifecycle: "candidate",
+    // TCRN-CROSS-SUB-308: the candidate lifecycle is retired and the knowledge write refuses
+    // it, so a distilled decision is written active like every other card: retrievable at
+    // once, and held to the write-time provenance floor (an owner: accountable owner).
+    lifecycle: "active",
     retrievalDisposition: "default",
     freshnessState: "unknown",
     lastVerified: null,

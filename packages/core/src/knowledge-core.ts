@@ -95,12 +95,14 @@ export const KNOWLEDGE_REASON_CODES = Object.freeze([
   "KNOWLEDGE_DUPLICATE",
   "KNOWLEDGE_FAULT_INJECTED",
   "KNOWLEDGE_FRESHNESS_EVALUATED",
-  "KNOWLEDGE_FITNESS_READY",
   "KNOWLEDGE_HIGH_WATER_MISMATCH",
   "KNOWLEDGE_INPUT_INVALID",
   "KNOWLEDGE_LANGUAGE_INVALID",
   "KNOWLEDGE_LANGUAGE_MODEL_UNAVAILABLE",
   "KNOWLEDGE_LIFECYCLE_INVALID",
+  // TCRN-CROSS-SUB-308 (TCRN-CROSS-STORY-476 R1): a write that names the candidate (or the
+  // retired) lifecycle. Every card is written active; see buildMetadata.
+  "KNOWLEDGE_LIFECYCLE_RETIRED",
   "KNOWLEDGE_LIMIT_EXCEEDED",
   "KNOWLEDGE_LINK_INVALID",
   "KNOWLEDGE_LINK_UNSAFE",
@@ -112,14 +114,10 @@ export const KNOWLEDGE_REASON_CODES = Object.freeze([
   "KNOWLEDGE_POLICY_UPDATED",
   "KNOWLEDGE_POSSIBLE_CONFLICT",
   "KNOWLEDGE_PROMOTION_INVALID",
-  "KNOWLEDGE_PROMOTION_UPDATED",
   "KNOWLEDGE_PROVENANCE_INVALID",
   "KNOWLEDGE_REBASE_BLOCKED",
   "KNOWLEDGE_RECORD_INVALID",
   "KNOWLEDGE_REDACTION_REQUIRED",
-  "KNOWLEDGE_RETIRED",
-  "KNOWLEDGE_RETIRE_PROPOSALS_READY",
-  "KNOWLEDGE_RETIRE_SWEEP_READY",
   "KNOWLEDGE_RECOVERY_NOT_NEEDED",
   "KNOWLEDGE_RECOVERED",
   "KNOWLEDGE_REVERIFIED",
@@ -146,6 +144,9 @@ export type KnowledgeFreshnessState = "fresh" | "stale" | "unknown";
 export type KnowledgeExportDisposition = "metadata-only" | "excluded";
 export type KnowledgeFaultPoint = "after-body-write" | "after-metadata-write" | "after-marker-write";
 
+// The retirement record a 1.2.0 fitness sweep wrote into a card's metadata. It is a read-only
+// historical format: readers and the schema admit it, and nothing writes it (TCRN-CROSS-SUB-258;
+// the sweep, the manual retire and the fitness statistic are gone, TCRN-CROSS-SUB-308).
 export interface KnowledgeRetirementRecord {
   readonly schemaVersion: "tcrn.knowledge-retirement.v1";
   readonly id: string;
@@ -157,33 +158,6 @@ export interface KnowledgeRetirementRecord {
   readonly windowStart: string;
   readonly windowEnd: string;
   readonly sweptAt: string;
-}
-
-export interface KnowledgeFitnessRecord {
-  readonly id: string;
-  readonly artifactKind: KnowledgeKind | "telemetry-only" | null;
-  readonly lifecycle: KnowledgeLifecycle | null;
-  readonly baseDigest: string | null;
-  readonly retrievalCount: number;
-  readonly referenceCount: number;
-  readonly triggerCount: number;
-  readonly verifyFailureCount: number;
-  readonly observedEvents: number;
-  readonly firstObservedAt: string | null;
-  readonly lastActiveAt: string | null;
-  readonly retirement: KnowledgeRetirementRecord | undefined;
-}
-
-// TCRN-CROSS-MIN-225 D1 (TCRN-CROSS-SUB-258): fitness is a read-only statistic. The v1 window,
-// eligibility and proposal fields are gone, so the output is v2: a compatible meaning may not
-// change under the same identifier (docs/versioning/versioning-policy.md). `lastSweepAt` is the
-// store marker's historical value, listed read-only; nothing writes it any more.
-export interface KnowledgeFitnessResult {
-  readonly schemaVersion: "tcrn.knowledge-fitness.v2";
-  readonly reasonCode: "KNOWLEDGE_FITNESS_READY";
-  readonly at: string;
-  readonly lastSweepAt: string | null;
-  readonly records: readonly KnowledgeFitnessRecord[];
 }
 
 export class KnowledgeCoreError extends Error {
@@ -280,7 +254,9 @@ export interface CreateKnowledgeUnitInput {
   readonly linkedDecisionIds: readonly string[];
   readonly linkedGateIds: readonly string[];
   readonly linkedEvidenceIds: readonly string[];
-  readonly lifecycle: KnowledgeLifecycle;
+  // TCRN-CROSS-SUB-308: every card is written active, so this may be left out. A caller that
+  // still names "candidate" or "retired" is refused with KNOWLEDGE_LIFECYCLE_RETIRED.
+  readonly lifecycle?: KnowledgeLifecycle;
   readonly retrievalDisposition: KnowledgeRetrievalDisposition;
   readonly freshnessState: KnowledgeFreshnessState;
   readonly lastVerified: string | null;
@@ -1013,11 +989,10 @@ function assertPromotableProvenance(metadata: KnowledgeUnitMetadata): void {
   // unpromotable by anyone -- written, unretrievable, and unrepairable in one step. The
   // rule is gone rather than moved: for a relaxed kind, provenance is what the writer
   // chose to attach, and half of it is more than none.
-  // WSC-6 / OD-18: unconditional promote-time machine checks — a promoted record
-  // must carry at least one retrieval tag, a non-empty snippet, and at least one
-  // backlink (the evidence requirement above already guarantees a backlink). These
-  // are the machine-checkable half of the promotion checklist; the judgment half
-  // (cross-work-item reuse, standalone-within-budget) stays in the skill prose.
+  // WSC-6 / OD-18: unconditional machine checks on a promoted record -- at least one
+  // retrieval tag, a non-empty snippet, and at least one backlink (the evidence requirement
+  // above already guarantees a backlink). Every card is written promoted
+  // (TCRN-CROSS-SUB-308), so these run at write time, where the writer can see them.
   if (metadata.tags.length === 0 || metadata.snippet.length === 0) {
     fail("KNOWLEDGE_PROMOTION_INVALID", `${metadata.id}:promotion requires at least one tag and a non-empty snippet`);
   }
@@ -1176,9 +1151,9 @@ function validateMetadataShape(value: Readonly<Record<string, JsonValue>>, works
   assertLinkIds(metadata.linkedGateIds, "gate", "linked gate IDs");
   assertLinkIds(metadata.linkedEvidenceIds, "evidence", "linked evidence IDs");
   // WSC-3 / SDC-6: provenance (owner:-prefixed accountable owner, non-empty source
-  // and evidence links) is enforced wherever a record is promoted. TCRN-CROSS-INC-282
-  // made that write time for every card written lifecycle "active", and promotion
-  // time for the lifecycle-"candidate" records conference-close --distill writes.
+  // and evidence links) is enforced on every promoted record. Every card is written
+  // promoted (TCRN-CROSS-INC-282, TCRN-CROSS-SUB-308), so that is write time; a
+  // historical candidate or rejected record is read as it was written.
   if (metadata.promotionState === "promoted") {
     assertPromotableProvenance(metadata);
   }
@@ -1293,9 +1268,9 @@ function validateSupersedesLink(
 ): void {
   if (metadata.supersedes === null) return;
   const target = records.get(metadata.supersedes);
-  // The write path rejects a retired target. Once a valid replacement exists,
-  // retiring the superseded record must remain a valid inventory operation, so
-  // replay checks existence rather than reapplying the historical admission rule.
+  // The write path rejects a retired target. A store may hold a superseded record that an
+  // older engine retired afterwards, so the read checks existence rather than reapplying the
+  // historical admission rule.
   if (target === undefined) {
     fail("KNOWLEDGE_LINK_INVALID", `${metadata.id}:supersedes:${metadata.supersedes}`);
   }
@@ -1730,6 +1705,27 @@ function isDefaultSelectable(metadata: KnowledgeUnitMetadata, at: string): boole
     computeFreshness(metadata, at) === "fresh";
 }
 
+// TCRN-CROSS-SUB-308 (TCRN-CROSS-STORY-476 R1, TCRN-CROSS-MIN-227 D9): the candidate lifecycle
+// and the promotion step that moved a card out of it are retired, and a card retires only when
+// a later card names it with --supersedes. A write therefore lands lifecycle "active" whatever
+// it asked for: left out or "active" is written, "candidate" and "retired" are refused with the
+// remedy, and anything else is not a lifecycle at all. Records written before this keep the
+// lifecycle and promotion state they were written with; they are read, never rewritten.
+function assertWritableLifecycle(lifecycle: unknown): void {
+  if (lifecycle === undefined || lifecycle === "active") return;
+  if (lifecycle === "candidate") {
+    fail("KNOWLEDGE_LIFECYCLE_RETIRED", "the candidate lifecycle is retired: a card is retrievable the moment it is written", {
+      required: "active", actual: "candidate", remedy: "write the card with lifecycle active, or leave the lifecycle out",
+    });
+  }
+  if (lifecycle === "retired") {
+    fail("KNOWLEDGE_LIFECYCLE_RETIRED", "a card is not written retired: it retires when a later card supersedes it", {
+      required: "active", actual: "retired", remedy: "write the replacement card with --supersedes naming the card it retires",
+    });
+  }
+  fail("KNOWLEDGE_INPUT_INVALID", `lifecycle=${String(lifecycle)}`);
+}
+
 function buildMetadata(
   input: CreateKnowledgeUnitInput,
   body: Buffer,
@@ -1737,6 +1733,7 @@ function buildMetadata(
   languageProvider?: KnowledgeLanguageProvider,
   host?: string,
 ): KnowledgeUnitMetadata {
+  assertWritableLifecycle(input.lifecycle);
   let externalKey: string;
   try {
     externalKey = canonicalExternalKey(input.externalKey);
@@ -1748,8 +1745,7 @@ function buildMetadata(
   // Reference cards are rejected at capture when their source/evidence contract
   // is absent (the explicit write-time boundary in STORY-327). TCRN-CROSS-INC-282
   // extends that boundary to `guide` through the promoted write below; this check
-  // stays because it names the kind rather than a stored record id, and because it
-  // still reaches a reference written as lifecycle "candidate".
+  // stays because it names the kind rather than a stored record id.
   if (input.kind === "reference" && (input.sourceReferences.length === 0 || input.linkedEvidenceIds.length === 0)) {
     fail("KNOWLEDGE_PROVENANCE_INVALID", `${input.kind} knowledge requires source and evidence links`);
   }
@@ -1757,26 +1753,17 @@ function buildMetadata(
   // moment it is written.
   //
   // TCRN-CROSS-INC-282 (Owner rulings TCRN-CROSS-MIN-146 D1, TCRN-CROSS-MIN-158 D1):
-  // create and capture write "promoted", full stop. STORY-365 reached both verbs -- they
-  // share this function -- but left two conjuncts standing, and each one still landed a
-  // candidate the default selection did not return: a relaxed card with a source and no
-  // evidence id, and every strict-kind card. Both are gone. For a strict kind that moves
-  // the provenance contract from promotion time to write time: validateMetadataShape runs
-  // assertPromotableProvenance on a promoted record, so a `guide` with no source or no
-  // evidence is refused where its writer can see it, instead of being stored as a card
-  // nothing could retrieve and nothing could repair.
+  // every write is "promoted", full stop. For a strict kind that puts the provenance
+  // contract at write time: validateMetadataShape runs assertPromotableProvenance on a
+  // promoted record, so a `guide` with no source or no evidence is refused where its writer
+  // can see it, instead of being stored as a card nothing could retrieve and nothing could
+  // repair. TCRN-CROSS-SUB-308 closed the last way round it, the lifecycle "candidate" write
+  // (see assertWritableLifecycle).
   //
-  // `lifecycle` is the one question left: a record its own author wrote as lifecycle
-  // "candidate" is not claiming to be a live answer, and calling it promoted would be a
-  // promotionState no reader can act on -- default selection requires lifecycle "active"
-  // either way. conference-close --distill is the one writer that does this, and it keeps
-  // the shape it has always had.
-  const directCapture = input.lifecycle === "active";
   // TCRN-CROSS-STORY-364 (Owner ruling TCRN-CROSS-MIN-160 D3): the write-path hook, on the
   // one function every write path reaches. knowledge-create calls it directly,
   // knowledge-capture calls it through captureKnowledgeUnit, and conference-close --distill
-  // calls it once per distilled decision. knowledge-promote is not a card write path and
-  // is deliberately not reached: it moves a promotion state and touches no prose.
+  // calls it once per distilled decision.
   //
   // Fail-closed: a workspace that records artifact.language and cannot produce the
   // translation refuses here, with the reason code the caller can act on, rather than
@@ -1816,12 +1803,10 @@ function buildMetadata(
     linkedDecisionIds: [...input.linkedDecisionIds].sort(compareCanonicalText),
     linkedGateIds: [...input.linkedGateIds].sort(compareCanonicalText),
     linkedEvidenceIds: [...input.linkedEvidenceIds].sort(compareCanonicalText),
-    lifecycle: input.lifecycle,
+    // TCRN-CROSS-SUB-308: written is active and retrievable; nothing new is a candidate.
+    lifecycle: "active",
     retrievalDisposition: input.retrievalDisposition,
-    // STORY-365: written is retrievable. INC-282: the candidate state now survives only
-    // for a record whose own author declared lifecycle "candidate", and for records
-    // written before these rulings.
-    promotionState: directCapture ? "promoted" : "candidate",
+    promotionState: "promoted",
     freshnessState: input.freshnessState,
     lastVerified: input.lastVerified,
     stalenessPolicy: input.stalenessPolicy,
@@ -1949,7 +1934,7 @@ async function createKnowledgeUnitUnlocked(workspaceRoot: string, input: CreateK
   // is the signal that the store is mid-write. crash() is the only executable proxy for
   // that scenario; releasing on it would turn the fault-injection tests into a weaker
   // duplicate of the ordinary-error path and leave "a crash leaves the store claim-held"
-  // with no executable expression anywhere. This is why the promote/retire/reverify
+  // with no executable expression anywhere. This is why the reverify/policy/article
   // finallys below are NOT the model to copy here.
   let released = false;
   try {
@@ -2192,47 +2177,37 @@ export async function captureKnowledgeUnit(
 
 // WSC-2: re-bind the store to the advanced workspace head after full per-record
 // re-validation. Live records whose links no longer resolve block the rebase
-// unless retireInvalid retires them as tombstoned audit records (their dangling
-// backlinks are then durably tolerated). Single version step under a mutation claim.
+// (TCRN-CROSS-SUB-308: there is no retire-invalid escape any more). Single version step
+// under a mutation claim.
 export async function rebaseKnowledgeStore(...args: Parameters<typeof rebaseKnowledgeStoreUnlocked>): Promise<Readonly<Record<string, JsonValue>>> {
   return withCrestWriteLock(args[0], () => rebaseKnowledgeStoreUnlocked(...args));
 }
 
 async function rebaseKnowledgeStoreUnlocked(workspaceRoot: string, input: {
   readonly at: string;
-  readonly retireInvalid?: boolean;
 }, options: KnowledgeMutationOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
   assertStrictInstant(input.at);
   const workspace = await materializeWorkspace(workspaceRoot);
   const initial = await mutationAdmissionScan(workspaceRoot, options, true);
   const claim = await acquireMutationClaim(initial);
   // WSC-6: see createKnowledgeUnit for the full rationale, including why
-  // KNOWLEDGE_FAULT_INJECTED is exempt. The sharpest leak on this path was
-  // deterministic rather than racy: retire() runs validateMetadataShape, which throws
-  // KNOWLEDGE_RECORD_INVALID on each offender the shape validator rejects, escaping the
-  // claim-held region with no release.
+  // KNOWLEDGE_FAULT_INJECTED is exempt.
   let released = false;
   try {
     const scan = await scanKnowledgeStore(workspaceRoot, options, true, "full", true);
+    // TCRN-CROSS-SUB-308: the retire-invalid branch is gone with every retirement path but
+    // --supersedes, so a live record whose links no longer resolve blocks the rebase, and the
+    // refusal names the offenders; nothing here rewrites them.
     const offenders = scan.linkInvalid;
-    if (offenders.length > 0 && input.retireInvalid !== true) {
+    if (offenders.length > 0) {
       fail("KNOWLEDGE_REBASE_BLOCKED", offenders.join(","));
     }
-    const offenderSet = new Set(offenders);
     const marker: KnowledgeStoreMarker = { ...scan.marker, eventHighWaterDigest: workspace.headEventHash ?? scan.marker.eventHighWaterDigest, version: scan.marker.version + 1 };
-    const retire = (metadata: KnowledgeUnitMetadata): KnowledgeUnitMetadata =>
-      validateMetadataShape({ ...metadata, lifecycle: "retired", revision: metadata.revision + 1, updatedAt: input.at } as unknown as Readonly<Record<string, JsonValue>>, workspace);
-    const projectedMetadata = scan.units.map((unit) => offenderSet.has(unit.metadata.id) ? retire(unit.metadata) : unit.metadata);
     const backend = storeBackendFor(scan.storeRoot, options);
-    for (const unit of scan.units) {
-      if (offenderSet.has(unit.metadata.id)) {
-        await backend.writeKnowledgeMetadata(unit.metadata.id, canonicalJson(retire(unit.metadata)));
-      }
-    }
     crash("after-metadata-write", options.faultAt);
     await backend.writeKnowledgeMarker(canonicalJson(marker));
     crash("after-marker-write", options.faultAt);
-    await writeIndex(backend, marker, projectedMetadata);
+    await writeIndex(backend, marker, scan.units.map((unit) => unit.metadata));
     await releaseMutationClaim(scan.storeRoot, claim);
     released = true;
     const final = await scanKnowledgeStore(workspaceRoot, options);
@@ -2241,8 +2216,10 @@ async function rebaseKnowledgeStoreUnlocked(workspaceRoot: string, input: {
       reasonCode: "KNOWLEDGE_STORE_REBASED",
       version: final.marker.version,
       eventHighWaterDigest: final.marker.eventHighWaterDigest,
-      retired: offenders.length,
-      offenders,
+      // The v1 result keeps its two fields: a rebase that lands retired nothing and had no
+      // offender, since an offender now refuses it.
+      retired: 0,
+      offenders: [],
     };
   } catch (error) {
     if (error instanceof KnowledgeCoreError && error.reasonCode === "KNOWLEDGE_FAULT_INJECTED") released = true;
@@ -2567,255 +2544,6 @@ export async function checkKnowledgeSources(workspaceRoot: string, options: Know
     uncheckable: uncheckable.length,
     resultDigest: canonicalSha256(reports),
   };
-}
-
-export async function transitionKnowledgePromotion(...args: Parameters<typeof transitionKnowledgePromotionUnlocked>): Promise<Readonly<Record<string, JsonValue>>> {
-  return withCrestWriteLock(args[0], () => transitionKnowledgePromotionUnlocked(...args));
-}
-
-async function transitionKnowledgePromotionUnlocked(workspaceRoot: string, input: {
-  readonly expectedRevision: number;
-  readonly occurredAt: string;
-  readonly id: string;
-  readonly promotionState: "promoted" | "rejected";
-}, options: KnowledgeMutationOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
-  try {
-    assertProtocolId(input.id);
-    assertStrictInstant(input.occurredAt);
-  } catch (error) {
-    fail("KNOWLEDGE_INPUT_INVALID", String(error));
-  }
-  if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) {
-    fail("KNOWLEDGE_INPUT_INVALID", "promotion versions");
-  }
-  if (input.promotionState !== "promoted" && input.promotionState !== "rejected") {
-    fail("KNOWLEDGE_PROMOTION_INVALID", String(input.promotionState));
-  }
-  const initial = await mutationAdmissionScan(workspaceRoot, options);
-  const claim = await acquireMutationClaim(initial);
-  let released = false;
-  try {
-    const scan = await scanKnowledgeStore(workspaceRoot, options, true);
-    const unit = scan.units.find((entry) => entry.metadata.id === input.id);
-    if (!unit) fail("KNOWLEDGE_NOT_FOUND", input.id);
-    if (unit.metadata.revision !== input.expectedRevision) {
-      fail("KNOWLEDGE_CAS_MISMATCH", `${input.expectedRevision}:${unit.metadata.revision}`);
-    }
-    if (unit.metadata.promotionState !== "candidate") {
-      fail("KNOWLEDGE_PROMOTION_INVALID", unit.metadata.promotionState);
-    }
-    // TCRN-CROSS-STORY-024: a retired record has no body to promote against; block
-    // it explicitly rather than let requireBody fail with an opaque reason.
-    if (unit.metadata.lifecycle === "retired") {
-      fail("KNOWLEDGE_LIFECYCLE_INVALID", "a retired record cannot be promoted");
-    }
-    const metadata: KnowledgeUnitMetadata = {
-      ...unit.metadata,
-      promotionState: input.promotionState,
-      revision: unit.metadata.revision + 1,
-      updatedAt: input.occurredAt,
-    };
-    // WSC-3 / SDC-6: INC-282 moved this floor to write time for an active card;
-    // here it guards a candidate's promote, and rejecting one never requires it.
-    if (input.promotionState === "promoted") {
-      assertPromotableProvenance(metadata);
-    }
-    const unitBody = requireBody(unit);
-    const validated = validateMetadataShape(metadata as unknown as Readonly<Record<string, JsonValue>>, scan.workspace);
-    validateMetadataBody(validated, unitBody, scan.workspace);
-    const marker: KnowledgeStoreMarker = { ...scan.marker, version: scan.marker.version + 1 };
-    const projectedMetadata = scan.units.map((entry) => entry.metadata.id === metadata.id ? metadata : entry.metadata);
-    // TCRN-CROSS-STORY-023: same cap as scan/create — index bytes are not charged.
-    const projectedAggregate = Buffer.byteLength(canonicalJson(marker), "utf8") +
-      scan.units.reduce((total, entry) => total +
-        Buffer.byteLength(canonicalJson(entry.metadata.id === metadata.id ? metadata : entry.metadata), "utf8") + (entry.body?.length ?? 0), 0);
-    if (projectedAggregate > knowledgeAggregateLimit(scan.workspace)) {
-      fail("KNOWLEDGE_LIMIT_EXCEEDED", "knowledge promotion aggregate bytes");
-    }
-    const backend = storeBackendFor(scan.storeRoot, options);
-    await backend.writeKnowledgeMetadata(unit.metadata.id, canonicalJson(metadata));
-    crash("after-metadata-write", options.faultAt);
-    await backend.writeKnowledgeMarker(canonicalJson(marker));
-    crash("after-marker-write", options.faultAt);
-    await writeIndex(backend, marker, projectedMetadata);
-    await releaseMutationClaim(scan.storeRoot, claim);
-    released = true;
-    await scanKnowledgeStore(workspaceRoot, options);
-    return {
-      schemaVersion: "tcrn.knowledge-promotion-result.v1",
-      reasonCode: "KNOWLEDGE_PROMOTION_UPDATED",
-      id: metadata.id,
-      promotionState: metadata.promotionState,
-      revision: metadata.revision,
-      version: marker.version,
-    };
-  } catch (error) {
-    // WSC-6: same crash exemption as createKnowledgeUnit -- a simulated crash must leave
-    // the claim exactly where a real SIGKILL would, since finally never runs for one.
-    if (error instanceof KnowledgeCoreError && error.reasonCode === "KNOWLEDGE_FAULT_INJECTED") released = true;
-    throw error;
-  } finally {
-    if (!released) await releaseMutationClaim(initial.storeRoot, claim);
-  }
-}
-
-function workspaceArtifactDigest(id: string, workspace: WorkspaceState): string | null {
-  const artifact = [...workspace.work, ...workspace.gates, ...workspace.conferences, ...workspace.conferenceMinutes]
-    .find((entry) => entry.id === id);
-  return artifact === undefined ? null : canonicalSha256(artifact as unknown as JsonValue);
-}
-
-interface FitnessCounts { retrievalCount: number; referenceCount: number; triggerCount: number; verifyFailureCount: number; observedEvents: number; firstObservedAt: string | null; lastActiveAt: string | null }
-
-function emptyFitnessCounts(): FitnessCounts {
-  return { retrievalCount: 0, referenceCount: 0, triggerCount: 0, verifyFailureCount: 0, observedEvents: 0, firstObservedAt: null, lastActiveAt: null };
-}
-
-function addFitnessCounts(into: Map<string, FitnessCounts>, id: string, counts: FitnessCounts): void {
-  const current = into.get(id) ?? emptyFitnessCounts();
-  current.retrievalCount += counts.retrievalCount;
-  current.referenceCount += counts.referenceCount;
-  current.triggerCount += counts.triggerCount;
-  current.verifyFailureCount += counts.verifyFailureCount;
-  current.observedEvents += counts.observedEvents;
-  if (counts.firstObservedAt !== null && (current.firstObservedAt === null || counts.firstObservedAt < current.firstObservedAt)) current.firstObservedAt = counts.firstObservedAt;
-  if (counts.lastActiveAt !== null && (current.lastActiveAt === null || counts.lastActiveAt > current.lastActiveAt)) current.lastActiveAt = counts.lastActiveAt;
-  into.set(id, current);
-}
-
-function fitnessRows(rawCounts: ReadonlyMap<string, FitnessCounts>, metadata: readonly KnowledgeUnitMetadata[], workspace: WorkspaceState): readonly KnowledgeFitnessRecord[] {
-  const linkedIds = new Map<string, string[]>();
-  for (const entry of metadata) {
-    for (const linkedId of [entry.id, ...entry.linkedWorkIds, ...entry.linkedDecisionIds, ...entry.linkedGateIds, ...entry.linkedEvidenceIds]) {
-      const owners = linkedIds.get(linkedId) ?? [];
-      owners.push(entry.id);
-      linkedIds.set(linkedId, owners);
-    }
-  }
-  const byId = new Map<string, FitnessCounts>();
-  for (const [id, counts] of rawCounts) {
-    for (const target of new Set([id, ...(linkedIds.get(id) ?? [])])) addFitnessCounts(byId, target, counts);
-  }
-  const metadataById = new Map(metadata.map((entry) => [entry.id, entry]));
-  const ids = new Set([...metadataById.keys(), ...byId.keys()]);
-  return [...ids].sort(compareCanonicalText).map((id) => {
-    const counts = byId.get(id) ?? emptyFitnessCounts();
-    const entry = metadataById.get(id);
-    return {
-      id,
-      artifactKind: entry?.kind ?? "telemetry-only",
-      lifecycle: entry?.lifecycle ?? null,
-      baseDigest: entry?.bodySha256 ?? workspaceArtifactDigest(id, workspace) ?? (byId.has(id) ? canonicalSha256({ id, counts }) : null),
-      ...counts,
-      ...(entry?.retirement === undefined ? {} : { retirement: entry.retirement }),
-    } as KnowledgeFitnessRecord;
-  });
-}
-
-// TCRN-CROSS-MIN-225 D1/D4 (TCRN-CROSS-SUB-258): fitness is a read-only statistic per artifact,
-// with no window, no observation day, no eligibility and no proposal. It was counted from local
-// telemetry records; that store is retired (TCRN-CROSS-STORY-467 R3), so nothing is counted any
-// more and every card reports zero observations. The shape is unchanged for its readers.
-export async function evaluateKnowledgeFitness(workspaceRoot: string, input: { readonly at: string }): Promise<KnowledgeFitnessResult> {
-  assertEvaluationInstant(input.at);
-  const scan = await scanKnowledgeStore(workspaceRoot, { allowTrailing: true }, false, "metadata-only");
-  return {
-    schemaVersion: "tcrn.knowledge-fitness.v2",
-    reasonCode: "KNOWLEDGE_FITNESS_READY",
-    at: input.at,
-    lastSweepAt: scan.marker.lastSweepAt ?? null,
-    records: fitnessRows(new Map(), scan.units.map((unit) => unit.metadata), scan.workspace),
-  };
-}
-
-// TCRN-CROSS-MIN-225 D1 (TCRN-CROSS-SUB-258): knowledge retires only through write-time conflict
-// detection and --supersedes. The sweep reads the store once, metadata only, to confirm it is
-// readable; it reads no telemetry, writes nothing (the marker's lastSweepAt included) and retires
-// nothing, whatever instant it is given.
-export async function retireKnowledgeSweep(workspaceRoot: string, input: { readonly at: string }, options: KnowledgeMutationOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
-  assertEvaluationInstant(input.at);
-  await scanKnowledgeStore(workspaceRoot, options, false, "metadata-only");
-  return { schemaVersion: "tcrn.knowledge-retire-sweep.v2", reasonCode: "KNOWLEDGE_RETIRE_SWEEP_CONFLICT_ONLY", at: input.at, retired: [] };
-}
-
-// WSC-5: retire a record — it becomes a tombstoned audit entry (lifecycle
-// "retired") that no longer occupies a live-record slot, and its dangling
-// backlinks are durably tolerated (WSC-2). One version step under the claim.
-export async function retireKnowledgeUnit(...args: Parameters<typeof retireKnowledgeUnitUnlocked>): Promise<Readonly<Record<string, JsonValue>>> {
-  return withCrestWriteLock(args[0], () => retireKnowledgeUnitUnlocked(...args));
-}
-
-async function retireKnowledgeUnitUnlocked(workspaceRoot: string, input: {
-  readonly expectedRevision: number;
-  readonly occurredAt: string;
-  readonly id: string;
-  readonly retirement?: KnowledgeRetirementRecord;
-}, options: KnowledgeMutationOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
-  try {
-    assertProtocolId(input.id);
-    assertStrictInstant(input.occurredAt);
-  } catch (error) {
-    fail("KNOWLEDGE_INPUT_INVALID", String(error));
-  }
-  if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) {
-    fail("KNOWLEDGE_INPUT_INVALID", "retire versions");
-  }
-  if (input.retirement !== undefined) validateRetirementRecord(input.retirement, input.id);
-  const initial = await mutationAdmissionScan(workspaceRoot, options);
-  const claim = await acquireMutationClaim(initial);
-  let released = false;
-  try {
-    const scan = await scanKnowledgeStore(workspaceRoot, options, true);
-    const unit = scan.units.find((entry) => entry.metadata.id === input.id);
-    if (!unit) fail("KNOWLEDGE_NOT_FOUND", input.id);
-    if (unit.metadata.revision !== input.expectedRevision) {
-      fail("KNOWLEDGE_CAS_MISMATCH", `${input.expectedRevision}:${unit.metadata.revision}`);
-    }
-    if (unit.metadata.lifecycle === "retired") {
-      fail("KNOWLEDGE_LIFECYCLE_INVALID", "record is already retired");
-    }
-    const metadata: KnowledgeUnitMetadata = {
-      ...unit.metadata,
-      lifecycle: "retired",
-      revision: unit.metadata.revision + 1,
-      updatedAt: input.occurredAt,
-      ...(input.retirement === undefined ? {} : { retirement: input.retirement }),
-    };
-    const unitBody = requireBody(unit);
-    const validated = validateMetadataShape(metadata as unknown as Readonly<Record<string, JsonValue>>, scan.workspace);
-    validateMetadataBody(validated, unitBody, scan.workspace);
-    const marker: KnowledgeStoreMarker = { ...scan.marker, version: scan.marker.version + 1 };
-    const projectedMetadata = scan.units.map((entry) => entry.metadata.id === metadata.id ? metadata : entry.metadata);
-    const backend = storeBackendFor(scan.storeRoot, options);
-    await backend.writeKnowledgeMetadata(unit.metadata.id, canonicalJson(metadata));
-    crash("after-metadata-write", options.faultAt);
-    await backend.writeKnowledgeMarker(canonicalJson(marker));
-    crash("after-marker-write", options.faultAt);
-    await writeIndex(backend, marker, projectedMetadata);
-    // TCRN-CROSS-STORY-024: reclaim the retired record's body as the final step,
-    // after the retire is durably committed. A crash before this leaves a valid
-    // retired-with-body record (tolerated by the scan); after it, a valid
-    // retired-without-body one — either way the store stays consistent.
-    if (backend instanceof SegmentedKnowledgeStoreBackend) await backend.removeKnowledgeBody(unit.metadata.id);
-    else await rm(unit.bodyPath, { force: true });
-    await releaseMutationClaim(scan.storeRoot, claim);
-    released = true;
-    await scanKnowledgeStore(workspaceRoot, options);
-    return {
-      schemaVersion: "tcrn.knowledge-retire-result.v1",
-      reasonCode: "KNOWLEDGE_RETIRED",
-      id: metadata.id,
-      revision: metadata.revision,
-      version: marker.version,
-    };
-  } catch (error) {
-    // WSC-6: same crash exemption as createKnowledgeUnit -- a simulated crash must leave
-    // the claim exactly where a real SIGKILL would, since finally never runs for one.
-    if (error instanceof KnowledgeCoreError && error.reasonCode === "KNOWLEDGE_FAULT_INJECTED") released = true;
-    throw error;
-  } finally {
-    if (!released) await releaseMutationClaim(initial.storeRoot, claim);
-  }
 }
 
 // WSC-5: re-verify a promoted record — touch lastVerified to the given instant and

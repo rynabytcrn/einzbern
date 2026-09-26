@@ -21,7 +21,6 @@ import {
   deleteProject,
   deleteWork,
   evaluateKnowledgeFreshness,
-  evaluateKnowledgeFitness,
   exportKnowledgeCheckpoint,
   exportWorkspace,
   initializeKnowledgeStore,
@@ -37,15 +36,12 @@ import {
   readKnowledgeSnippet,
   recoverKnowledgeStore,
   rebaseKnowledgeStore,
-  retireKnowledgeUnit,
-  retireKnowledgeSweep,
   refreshKnowledgeArticle,
   reverifyKnowledgeUnit,
   recoverWorkspace,
   createSnapshotManifest,
   readSnapshotManifestFile,
   verifySnapshotManifest,
-  transitionKnowledgePromotion,
   transitionWork,
   annotateWork,
   updateProject,
@@ -110,11 +106,8 @@ import type {
   ConferenceRequest,
   ConferenceMinutes,
   KnowledgeCategory,
-  KnowledgeFitnessRecord,
-  KnowledgeFitnessResult,
   KnowledgeFreshnessState,
   KnowledgeKind,
-  KnowledgeRetirementRecord,
   KnowledgePromotionState,
   RecallKnowledgeInput,
   RecallMinutesInput,
@@ -250,25 +243,6 @@ function integerValue(values: Readonly<Record<string, string>>, name: string, mi
     fail("CLI_ARGUMENT_MALFORMED", name);
   }
   return value;
-}
-
-// TCRN-CROSS-MIN-225 D1 (TCRN-CROSS-SUB-258): --window-days and --min-events configured the retired
-// fitness window. They stay in the catalog, which must not change before a release installs this
-// one, so they keep the checks that window gave them (window-days 1..3650, min-events at least 1),
-// are listed back under retiredInputs, and reach nothing.
-function retiredFitnessInputs(values: Readonly<Record<string, string>>): Readonly<Record<string, JsonValue>> {
-  const inputs: Record<string, JsonValue> = {};
-  if (values["window-days"] !== undefined) {
-    const windowDays = integerValue(values, "window-days");
-    if (windowDays < 1 || windowDays > 3_650) fail("KNOWLEDGE_INPUT_INVALID", "fitness window");
-    inputs["window-days"] = windowDays;
-  }
-  if (values["min-events"] !== undefined) {
-    const minEvents = integerValue(values, "min-events");
-    if (minEvents < 1) fail("KNOWLEDGE_INPUT_INVALID", "fitness window");
-    inputs["min-events"] = minEvents;
-  }
-  return inputs;
 }
 
 // STORY-178: the file↔pg migration target. Only `file` and `pg` are legal; the
@@ -407,7 +381,7 @@ async function autoRebaseKnowledgeAfterWorkspaceWrite(workspace: string, at: str
   if (!existsSync(join(storeRoot, "store.json"))) return;
   const current = await readKnowledgeStoreMarker(workspace);
   if (current.eventHighWaterDigest === afterHead) return;
-  await rebaseKnowledgeStore(workspace, { at, retireInvalid: false });
+  await rebaseKnowledgeStore(workspace, { at });
 }
 
 // TCRN-CROSS-STORY-467 R1: the record ids the last write touched, for the receipt. Set by
@@ -761,10 +735,8 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "knowledge-freshness", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
   { name: "knowledge-init", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "acknowledge-disposable", required: false, valueKind: "boolean" }] },
   { name: "knowledge-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "selection", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "role-scope", required: false, valueKind: "string" }, { name: "category", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "tag", required: false, valueKind: "string" }, { name: "freshness", required: false, valueKind: "string" }, { name: "promotion", required: false, valueKind: "string" }, { name: "search", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
-  { name: "knowledge-promote", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "expected-revision", required: true, valueKind: "integer" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "state", required: true, valueKind: "string" }] },
-  { name: "knowledge-rebase", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "retire-invalid", required: false, valueKind: "boolean" }] },
+  { name: "knowledge-rebase", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
   { name: "knowledge-recover", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
-  { name: "knowledge-retire", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "expected-revision", required: true, valueKind: "integer" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }] },
   { name: "knowledge-reverify", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "expected-revision", required: true, valueKind: "integer" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }] },
   { name: "knowledge-snippet", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
   { name: "knowledge-source-check", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
@@ -789,8 +761,6 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "project-update", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "recall", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "query", required: true, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "tau", required: false, valueKind: "string" }, { name: "partition", required: false, valueKind: "string" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
   { name: "recover", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
-  { name: "retire-proposals", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "window-days", required: false, valueKind: "integer" }, { name: "min-events", required: false, valueKind: "integer" }] },
-  { name: "retire-sweep", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "window-days", required: false, valueKind: "integer" }, { name: "min-events", required: false, valueKind: "integer" }] },
   { name: "settings-catalog", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   { name: "settings-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "settings-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "value", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
@@ -1494,11 +1464,11 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   if (command === "knowledge-rebase") {
-    const values = parseArguments(rest, ["workspace", "at", "retire-invalid"]);
+    // TCRN-CROSS-SUB-308: --retire-invalid is gone with every retirement path but --supersedes.
+    const values = parseArguments(rest, ["workspace", "at"]);
     required(values, ["workspace", "at"]);
     io.write(canonicalJson(await rebaseKnowledgeStore(values.workspace ?? "", {
       at: values.at ?? "",
-      retireInvalid: booleanValue(values["retire-invalid"], "retire-invalid"),
     })));
     return;
   }
@@ -1650,60 +1620,10 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     })));
     return;
   }
-  // TCRN-CROSS-MIN-225 D1 (TCRN-CROSS-SUB-258): retire-proposals is the read-only fitness statistic
-  // plus the cards already retired (manually, or by a sweep before the change) with their historical
-  // retirement records; it proposes nothing, so proposals and ruleDiffs are always empty.
-  // retire-sweep retires nothing. Both keep their catalog entries and the retired flags.
-  if (command === "retire-proposals") {
-    const values = parseArguments(rest, ["workspace", "at", "window-days", "min-events"]);
-    required(values, ["workspace", "at"]);
-    const retiredInputs = retiredFitnessInputs(values);
-    const fitness: KnowledgeFitnessResult = await evaluateKnowledgeFitness(values.workspace ?? "", { at: values.at ?? "" });
-    io.write(canonicalJson({
-      ...fitness,
-      reasonCode: "KNOWLEDGE_RETIRE_PROPOSALS_READY",
-      proposals: [],
-      retiredRecords: fitness.records.filter((record) => record.lifecycle === "retired").map((record: KnowledgeFitnessRecord) => {
-        const retirement: KnowledgeRetirementRecord | undefined = record.retirement;
-        return {
-          id: record.id,
-          baseDigest: record.baseDigest,
-          ...(retirement === undefined ? {} : { retirement }),
-        };
-      }),
-      retiredInputs,
-      ruleDiffs: [],
-    }));
-    return;
-  }
-  if (command === "retire-sweep") {
-    const values = parseArguments(rest, ["workspace", "at", "window-days", "min-events"]);
-    required(values, ["workspace", "at"]);
-    const retiredInputs = retiredFitnessInputs(values);
-    io.write(canonicalJson({ ...await retireKnowledgeSweep(values.workspace ?? "", { at: values.at ?? "" }), retiredInputs }));
-    return;
-  }
-  if (command === "knowledge-promote") {
-    const values = parseArguments(rest, ["workspace", "expected-revision", "at", "id", "state"]);
-    required(values, ["workspace", "expected-revision", "at", "id", "state"]);
-    io.write(canonicalJson(await transitionKnowledgePromotion(values.workspace ?? "", {
-      expectedRevision: integerValue(values, "expected-revision"),
-      occurredAt: values.at ?? "",
-      id: values.id ?? "",
-      promotionState: values.state as "promoted" | "rejected",
-    })));
-    return;
-  }
-  if (command === "knowledge-retire") {
-    const values = parseArguments(rest, ["workspace", "expected-revision", "at", "id"]);
-    required(values, ["workspace", "expected-revision", "at", "id"]);
-    io.write(canonicalJson(await retireKnowledgeUnit(values.workspace ?? "", {
-      expectedRevision: integerValue(values, "expected-revision"),
-      occurredAt: values.at ?? "",
-      id: values.id ?? "",
-    })));
-    return;
-  }
+  // TCRN-CROSS-SUB-308 (TCRN-CROSS-STORY-476 R1, R2): knowledge-promote, knowledge-retire,
+  // retire-proposals and retire-sweep are gone. A card is retrievable the moment it is written
+  // and retires only when a later card names it with --supersedes, so the four verbs answer
+  // CLI_COMMAND_UNKNOWN like any name the catalog does not hold.
   if (command === "knowledge-reverify") {
     const values = parseArguments(rest, ["workspace", "expected-revision", "at", "id"]);
     required(values, ["workspace", "expected-revision", "at", "id"]);

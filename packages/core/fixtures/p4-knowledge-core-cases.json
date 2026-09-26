@@ -8,7 +8,7 @@
     "snippet-read",
     "explicit-body-read",
     "freshness-evaluate",
-    "promotion-transition",
+    "conflict-supersede",
     "metadata-checkpoint"
   ],
   "freshnessCases": [
@@ -32,9 +32,10 @@
     "duplicate-external-key",
     "store-cas",
     "record-revision-cas",
-    "promotion-terminal",
-    "promotion-invalid-state-preclaim",
-    "promotion-error-claim-cleanup",
+    "candidate-lifecycle-write",
+    "retired-lifecycle-write",
+    "conflict-without-supersedes",
+    "lifecycle-error-claim-absence",
     "default-candidate-omission",
     "candidate-body-denial",
     "stale-default-omission",

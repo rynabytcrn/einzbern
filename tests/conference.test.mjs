@@ -99,11 +99,12 @@ test("WSD-3: distillConferenceKnowledge emits one governed knowledge input per d
   };
   const inputs = distillConferenceKnowledge(minutes(), request(), [position()], options);
   const checks = [
-    // One input per minutes decision, each a candidate. No store-version CAS rides along any
-    // more: the knowledge write takes the engine lock itself (TCRN-CROSS-STORY-467 R1).
+    // One input per minutes decision, each written active: the candidate lifecycle is retired
+    // (TCRN-CROSS-SUB-308). No store-version CAS rides along any more: the knowledge write
+    // takes the engine lock itself (TCRN-CROSS-STORY-467 R1).
     () => assert.equal(inputs.length, minutes().decisions.length),
     () => assert.equal(inputs.every((input) => !Object.hasOwn(input, "expectedVersion")), true),
-    () => assert.equal(inputs.every((input) => input.lifecycle === "candidate" && input.category === "decision" && input.kind === "decision"), true),
+    () => assert.equal(inputs.every((input) => input.lifecycle === "active" && input.category === "decision" && input.kind === "decision"), true),
     // Hyphen-only external keys the canonicalizer admits (uppercased), unique per decision.
     () => assert.deepEqual(inputs.map((input) => input.externalKey), ["conference-decision-one-one-1", "conference-decision-one-one-2"]),
     () => assert.equal(inputs.every((input) => canonicalExternalKey(input.externalKey) === input.externalKey.toUpperCase()), true),

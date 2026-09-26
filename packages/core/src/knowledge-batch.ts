@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// Knowledge-batch: file, promote, reverify or retire N knowledge cards in one CLI act.
+// Knowledge-batch: file, reverify or re-policy N knowledge cards in one CLI act.
 //
 // The measured ceremony this removes: filing four cards on 2026-08-19 took sixteen CLI
 // round trips, because every card needs the store's version read, the write made, and the
@@ -24,18 +24,21 @@
 //
 // Members may name externalKey instead of id, and a member acting on a card an earlier
 // member created inherits the revision the batch just observed -- so "create it, then
-// promote it" needs no revision arithmetic from the caller. `knowledge-policy` updates
+// reverify it" needs no revision arithmetic from the caller. `knowledge-policy` updates
 // only staleness metadata and is the migration member for existing cards.
+//
+// TCRN-CROSS-SUB-308 (TCRN-CROSS-STORY-476 R1, R2): the promote and retire members are gone
+// with their verbs. A card is retrievable the moment it is written, and it retires only when a
+// later create member names it in `supersedes`; a promote or retire member is refused by the
+// shape pass as an unknown verb.
 
 import { canonicalExternalKey, deriveStableId } from "../../protocol/src/index.js";
 import type { JsonValue } from "../../protocol/src/index.js";
 import {
   createKnowledgeUnit,
   rebaseKnowledgeStore,
-  retireKnowledgeUnit,
   reverifyKnowledgeUnit,
   updateKnowledgeStalenessPolicy,
-  transitionKnowledgePromotion,
   withCrestWriteLock,
 } from "./knowledge-core.js";
 import type {
@@ -48,7 +51,7 @@ import { WorkspaceError } from "./workspace.js";
 
 export const KNOWLEDGE_BATCH_SCHEMA_VERSION = "tcrn.knowledge-batch.v1" as const;
 export const KNOWLEDGE_BATCH_VERBS = Object.freeze([
-  "knowledge-create", "knowledge-policy", "knowledge-promote", "knowledge-retire", "knowledge-reverify",
+  "knowledge-create", "knowledge-policy", "knowledge-reverify",
 ]);
 
 // The store's own ceiling on live records bounds any sensible batch; a larger one is a
@@ -130,9 +133,6 @@ function shapeProblems(members: readonly unknown[]): readonly KnowledgeBatchProb
     if (referencedId(member) === null) {
       problems.push({ index, verb, rule: "reference-required", detail: "id or externalKey names the card to act on" });
     }
-    if (verb === "knowledge-promote" && member.state !== "promoted" && member.state !== "rejected") {
-      problems.push({ index, verb, rule: "state-known", detail: `state=${String(member.state)}` });
-    }
   });
   return problems;
 }
@@ -212,11 +212,7 @@ async function applyKnowledgeBatchUnlocked(
           ...shared,
           stalenessPolicy: member.stalenessPolicy as KnowledgeStalenessPolicy,
         }, mutation)
-        : member.verb === "knowledge-promote"
-        ? await transitionKnowledgePromotion(workspaceRoot, { ...shared, promotionState: member.state as "promoted" | "rejected" }, mutation)
-        : member.verb === "knowledge-retire"
-          ? await retireKnowledgeUnit(workspaceRoot, shared, mutation)
-          : await reverifyKnowledgeUnit(workspaceRoot, shared, mutation);
+        : await reverifyKnowledgeUnit(workspaceRoot, shared, mutation);
       version = result.version as number;
       if (typeof result.revision === "number") revisions.set(id, result.revision);
       applied.push({ index, verb: member.verb as string, id, version });

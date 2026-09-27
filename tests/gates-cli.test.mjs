@@ -8,6 +8,7 @@
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -24,7 +25,21 @@ const at = () => {
 };
 const node = process.execPath;
 const workId = (key) => deriveStableId("work", key);
-const gateDiagnostic = (run) => `gate outcomes: ${JSON.stringify(run.gates.map(({ name, ok, exitCode, signal, timedOut }) => ({ name, ok, exitCode, signal, timedOut })))}`;
+function gateDiagnostic(run, recordPath) {
+  const outputDirectory = dirname(recordPath);
+  const gates = run.gates.map(({ name, ok, exitCode, signal, timedOut, outputFile }) => {
+    if (exitCode !== null || signal !== null || timedOut) return { name, ok, exitCode, signal, timedOut };
+    let processError = "unknown";
+    try {
+      const output = readFileSync(join(outputDirectory, outputFile), "utf8");
+      processError = /einzbern: the gate could not run: ([A-Z][A-Z0-9_]*)(?:\r?\n|$)/u.exec(output)?.[1] ?? processError;
+    } catch {
+      // The gate result remains useful when its output is unavailable; never echo raw output.
+    }
+    return { name, ok, exitCode, signal, timedOut, processError };
+  });
+  return `gate outcomes: ${JSON.stringify(gates)}`;
+}
 
 function restoreEnv(name, value) {
   if (value === undefined) delete process.env[name];
@@ -162,10 +177,10 @@ test("485-AC3 (CLI): two gates red at once give two reds, and a red gate does no
   await put(project, "src/a.ts", "export const a = 2;\n");
   const ran = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project]);
   assert.equal(ran.reasonCode, "GATES_RUN_COMPLETED");
-  assert.equal(ran.ok, false, gateDiagnostic(ran.run));
-  assert.deepEqual(ran.reds, ["fail-a", "fail-b"], gateDiagnostic(ran.run));
-  assert.deepEqual(ran.requiredReds, ["fail-a", "fail-b"], gateDiagnostic(ran.run));
-  assert.deepEqual(ran.run.gates.map((gate) => [gate.name, gate.exitCode, gate.ok]), [["fail-a", 3, false], ["fail-b", 4, false], ["pass", 0, true]], `every gate ran; ${gateDiagnostic(ran.run)}`);
+  assert.equal(ran.ok, false, gateDiagnostic(ran.run, ran.recordPath));
+  assert.deepEqual(ran.reds, ["fail-a", "fail-b"], gateDiagnostic(ran.run, ran.recordPath));
+  assert.deepEqual(ran.requiredReds, ["fail-a", "fail-b"], gateDiagnostic(ran.run, ran.recordPath));
+  assert.deepEqual(ran.run.gates.map((gate) => [gate.name, gate.exitCode, gate.ok]), [["fail-a", 3, false], ["fail-b", 4, false], ["pass", 0, true]], `every gate ran; ${gateDiagnostic(ran.run, ran.recordPath)}`);
   assert.ok(ran.recordPath.endsWith(`${ran.run.runId}.json`));
 });
 
@@ -190,7 +205,7 @@ test("485-AC4 (CLI): a required gate red refuses the Story's done and names it; 
   assert.deepEqual(notRun.details.stories, [storyId]);
 
   const red = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project]);
-  assert.deepEqual([red.reds, red.requiredReds], [["lint", "unit"], ["unit"]], gateDiagnostic(red.run));
+  assert.deepEqual([red.reds, red.requiredReds], [["lint", "unit"], ["unit"]], gateDiagnostic(red.run, red.recordPath));
   const refused = await refusal(done());
   assert.equal(refused?.reasonCode, "WORK_DONE_GATES_RED");
   assert.deepEqual(refused.details.reds, ["unit"], "only the required red gate holds the Story back");
@@ -226,7 +241,7 @@ test("485-AC4 (CLI): a required gate red refuses the Story's done and names it; 
   // Green on the tree as it is now: the Story is done, and the receipt says which run passed it.
   await put(project, "src/ok", "");
   const green = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project]);
-  assert.deepEqual([green.reds, green.requiredReds], [["lint"], []], gateDiagnostic(green.run));
+  assert.deepEqual([green.reds, green.requiredReds], [["lint"], []], gateDiagnostic(green.run, green.recordPath));
   const passed = await cli(done());
   assert.equal(passed.record.status, "done");
   assert.deepEqual(passed.doneGates, { checked: true, reason: "green", runId: green.run.runId, treeDigest: green.run.treeDigest });

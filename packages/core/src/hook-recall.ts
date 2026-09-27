@@ -7,7 +7,8 @@
 // only then, through the current engine version's hook entry (scripts/einzbern-hook.mjs).
 //
 // The answer is recall's, read the way the recall verb reads it: the library replayed through
-// this device's cache (nothing is written into the library), the project's crest cards beside it,
+// this device's cache (nothing is written into the library), the project's and user's crest cards
+// beside it,
 // every indexed record reduced by recallInputsFromState, the strong-hit threshold and the
 // prompt's byte budget (injection.perPromptBytes) from the library's settings. What the host gets
 // is the hit lines as additionalContext and nothing else: no header, no session ledger, no model
@@ -27,11 +28,8 @@
 import { NAVIGATION_LINES } from "./agents-sections.js";
 import { HOST_HOOK_EVENTS, HOST_HOOK_HOSTS, HOST_HOOK_POINTER_EVENTS } from "./host-hooks.js";
 import type { HostHookHost } from "./host-hooks.js";
-import { listKnowledgeMetadata } from "./knowledge-core.js";
-import { expansionsText } from "./knowledge-language.js";
 import { recall, recallDocuments } from "./recall.js";
-import type { RecallKnowledgeInput } from "./recall.js";
-import { recallContextLines, recallInputsFromState } from "./recall-inputs.js";
+import { readRecallCards, recallContextLines, recallInputsFromState } from "./recall-inputs.js";
 import { resolveLibrary } from "./registry.js";
 import type { ResolvedLibrary } from "./registry.js";
 import { SETTINGS_CATALOG } from "./settings.js";
@@ -57,10 +55,6 @@ export class HookRecallError extends Error {
 function fail(reasonCode: HookRecallReasonCode, message: string, details: Readonly<Record<string, string>> = {}): never {
   throw new HookRecallError(reasonCode, message, details);
 }
-
-// The whole knowledge corpus is read before scoring, as the recall verb reads it, so bm25 keeps
-// its statistics.
-const KNOWLEDGE_CORPUS_LIMIT = 1_048_576;
 
 // Every event the launcher may be run for, with its word: the prompt hook and the pointer hooks.
 // Read when it is asked for, not when this module loads: host-hooks.ts can still be loading then.
@@ -140,30 +134,6 @@ function numericSetting(state: WorkspaceState, key: SettingKey, usable: (value: 
   return fallback;
 }
 
-// The project's crest cards, metadata only. A library whose crest cannot be read (not initialized,
-// or refused) still has work records and minutes to recall.
-async function crestCards(libraryPath: string, at: string): Promise<{ readonly cards: readonly RecallKnowledgeInput[]; readonly digest: string }> {
-  try {
-    const answer = await listKnowledgeMetadata(libraryPath, { at, allowTrailing: true, includeExplicitOnly: true, limit: KNOWLEDGE_CORPUS_LIMIT });
-    const records = (answer["records"] ?? []) as readonly Readonly<Record<string, unknown>>[];
-    return {
-      cards: records.map((record) => ({
-        id: String(record["id"] ?? ""),
-        externalKey: String(record["externalKey"] ?? ""),
-        subject: String(record["subject"] ?? ""),
-        summary: String(record["summary"] ?? ""),
-        snippet: String(record["snippet"] ?? ""),
-        tags: ((record["tags"] ?? []) as readonly unknown[]).map((tag) => String(tag)),
-        expansions: expansionsText(record["expansions"]),
-      })),
-      digest: String(answer["resultDigest"] ?? ""),
-    };
-  } catch (error) {
-    if (typeof (error as { readonly reasonCode?: unknown }).reasonCode !== "string") throw error;
-    return { cards: [], digest: "absent" };
-  }
-}
-
 // The registry's own answer for the directory, when it names the library the launcher matched.
 async function confirmedLibrary(cwd: string, libraryPath: string): Promise<ResolvedLibrary | null> {
   try {
@@ -178,7 +148,7 @@ async function confirmedLibrary(cwd: string, libraryPath: string): Promise<Resol
  * The UserPromptSubmit answer for one prompt in a registered project: the hit lines recall gives
  * for it, cut to injection.perPromptBytes, and the host protocol JSON carrying them; null when the
  * prompt is empty, when the registry does not confirm the launcher's library from `cwd`, or when
- * recall has no line to give. Reads the library and its crest; writes only this device's cache.
+ * recall has no line to give. Reads the library and both knowledge crests; writes only this device's cache.
  */
 export async function promptRecallContext(request: PromptRecallRequest): Promise<PromptRecallAnswer | null> {
   if (!HOST_HOOK_HOSTS.includes(request.host)) fail("HOOK_INPUT_INVALID", `host must be one of ${HOST_HOOK_HOSTS.join(", ")}`, { host: String(request.host) });
@@ -190,7 +160,7 @@ export async function promptRecallContext(request: PromptRecallRequest): Promise
   if (library === null) return null;
   const at = request.at ?? currentInstant();
   const state = await materializeLibrary(library.libraryPath);
-  const { cards, digest } = await crestCards(library.libraryPath, at);
+  const { cards, digest } = await readRecallCards(library.libraryPath, { at, allowTrailing: true });
   const tau = numericSetting(state, "retrieval.tau", (value) => Number.isFinite(value) && value >= 0);
   const scopeExcerptBytes = numericSetting(state, "retrieval.scopeExcerptBytes", (value) => Number.isSafeInteger(value) && value > 0);
   const perPromptBytes = numericSetting(state, "injection.perPromptBytes", (value) => Number.isSafeInteger(value) && value > 0);

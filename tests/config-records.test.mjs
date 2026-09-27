@@ -310,3 +310,20 @@ test("478-R1: an old-layout workspace holds no configuration records and refuses
   assert.equal(error.reasonCode, "LEGACY_WORKSPACE_READ_ONLY");
   assert.deepEqual(await treeDigest(root), before, "the old-layout workspace is not written");
 });
+
+test("SUB-388: configuration CLI receipts identify the records set or removed", async (context) => {
+  const base = await scratch(context);
+  const desk = await device(base, "desk", DESK_ID);
+  const library = join(base, ".ether");
+  await cli(desk, ["init", "--workspace", library, "--at", at()]);
+
+  const gateSet = await cli(desk, ["gates-config-set", "--workspace", library, "--at", at(), "--name", "links", "--command", '["pnpm","verify:links"]']);
+  assert.deepEqual(gateSet.ids, ["gate:links"]);
+  const gateRemoved = await cli(desk, ["gates-config-remove", "--workspace", library, "--at", at(), "--name", "links"]);
+  assert.deepEqual(gateRemoved.ids, ["gate:links"]);
+
+  const variableSet = await cli(desk, ["variable-set", "--workspace", library, "--at", at(), "--name", "links", "--type", "string", "--value", "tokens"]);
+  assert.deepEqual(variableSet.ids, ["variable:links"], "the collection is part of the record id");
+  const variableRemoved = await cli(desk, ["variable-remove", "--workspace", library, "--at", at(), "--name", "links"]);
+  assert.deepEqual(variableRemoved.ids, ["variable:links"]);
+});

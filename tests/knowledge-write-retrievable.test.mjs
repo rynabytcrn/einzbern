@@ -129,9 +129,10 @@ test("476-AC1: a card is retrieved the moment it is written, and nothing about i
   const created = await createKnowledgeUnit(fx.workspace, sourcedGuide(fx, "SUB-308-SOURCED-GUIDE"));
   assert.equal(created.reasonCode, "KNOWLEDGE_UNIT_CREATED");
 
-  // Stored: active and promoted, and no field of the record holds the value "candidate".
+  // Stored: active, with no retired promotion marker or candidate state.
   const stored = JSON.parse(await readFile(join(fx.store, "metadata", `${created.id}.json`), "utf8"));
-  assert.deepEqual([stored.lifecycle, stored.promotionState], ["active", "promoted"]);
+  assert.equal(stored.lifecycle, "active");
+  assert.equal(Object.hasOwn(stored, "promotionState"), false);
   assert.equal(Object.values(stored).includes("candidate"), false, "no candidate state on the written record");
 
   // Retrieved at once, with no step between the write and the reads.
@@ -153,7 +154,8 @@ test("476-AC1: a card is retrieved the moment it is written, and nothing about i
   delete withoutLifecycle.lifecycle;
   const omitted = await createKnowledgeUnit(fx.workspace, withoutLifecycle);
   const all = await listKnowledgeMetadata(fx.workspace, { at: AT, selection: "all" });
-  assert.deepEqual(all.records.map((record) => `${record.lifecycle}|${record.promotionState}`), Array(all.total).fill("active|promoted"));
+  assert.deepEqual(all.records.map((record) => record.lifecycle), Array(all.total).fill("active"));
+  assert.equal(all.records.some((record) => Object.hasOwn(record, "promotionState")), false);
   const defaults = (await listKnowledgeMetadata(fx.workspace, { at: AT })).records.map((record) => record.id);
   for (const id of [captured.id, omitted.id]) assert.equal(defaults.includes(id), true, id);
 });
@@ -208,6 +210,17 @@ test("476-AC2: a conflicting write is refused without --supersedes, and with it 
   assert.deepEqual((await listKnowledgeMetadata(fx.workspace, { at: AT, search: "conflicting" })).records.map((record) => record.id), [replacement.id], "and so does a search");
   const recalled = await cliJson(["recall", "--workspace", fx.workspace, "--at", AT, "--query", subject, "--tau", "0"]);
   assert.deepEqual(recalled.records.filter((record) => record.kind === "card").map((record) => record.id), [replacement.id], "recall never answers with the superseded card");
+});
+
+test("SUB-386: a superseded card is not a default conflict candidate", async (t) => {
+  const fx = await fixture(t, "FIXTURE-SUB-386-SUPERSEDED-CONFLICT");
+  const oldSubject = "Bison range mapping in alpine valleys";
+  const old = await captureKnowledgeUnit(fx.workspace, lesson("SUB-386-OLD-BISON", oldSubject));
+  await captureKnowledgeUnit(fx.workspace, lesson("SUB-386-REPLACEMENT-ELEPHANT", "Elephant watering schedule", { supersedes: old.id }));
+
+  const recreated = await captureKnowledgeUnit(fx.workspace, lesson("SUB-386-RECREATED-BISON", oldSubject));
+  assert.equal(recreated.reasonCode, "KNOWLEDGE_UNIT_CREATED", "the superseded Bison card is excluded from default conflict candidates");
+  assert.equal((await listKnowledgeMetadata(fx.workspace, { at: AT })).records.some((record) => record.id === old.id), false);
 });
 
 // MIN-225 AC3, kept: time and capacity retire nothing. A card past its maximumAgeDays turns stale

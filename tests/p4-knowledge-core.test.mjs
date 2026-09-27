@@ -233,20 +233,23 @@ test("WSC-2: knowledge-rebase re-binds the store to an advanced workspace head",
   }
 });
 
-// TCRN-CROSS-SUB-308: the retire-invalid escape is gone with every retirement path but
-// --supersedes, so the offender blocks the rebase however it is asked, and nothing retires it.
-test("WSC-2: knowledge-rebase blocks on a link-invalid record and retires nothing", async () => {
+// SUB-386: a dangling work link is reported through rebase and remains attached to the card;
+// rebase does not become another retirement path.
+test("WSC-2: knowledge-rebase reports dangling work without retiring the record", async () => {
   const fixture = await workspaceFixture();
   try {
     const created = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "REBASE-OFFENDER", {}));
     await deleteWork(fixture.workspace, { occurredAt: instant(21, 2), id: fixture.workId });
-    const blocked = await rebaseKnowledgeStore(fixture.workspace, { at: instant(21, 3) }).then(() => null, (error) => error);
-    assert.equal(blocked?.reasonCode, "KNOWLEDGE_REBASE_BLOCKED");
-    assert.equal(blocked.message, created.id, "the refusal names the offender");
-    await expectReason("KNOWLEDGE_REBASE_BLOCKED", () => rebaseKnowledgeStore(fixture.workspace, { at: instant(21, 4), retireInvalid: true }));
+    const rebased = await rebaseKnowledgeStore(fixture.workspace, { at: instant(21, 3), retireInvalid: true });
+    assert.equal(rebased.reasonCode, "KNOWLEDGE_STORE_REBASED");
+    assert.deepEqual(rebased.danglingWorkLinks, [{ knowledgeId: created.id, workIds: [fixture.workId] }]);
+    assert.deepEqual((await validateKnowledgeStore(fixture.workspace)).danglingWorkLinks,
+      [{ knowledgeId: created.id, workIds: [fixture.workId] }]);
     const record = JSON.parse(await readFile(join(fixture.store, "metadata", `${created.id}.json`), "utf8"));
-    assert.deepEqual([record.lifecycle, record.revision], ["active", 1], "the offender is left as it was written");
-    assert.equal((await readdir(fixture.store)).includes("mutation.claim"), false, "the refusal gives the claim back");
+    assert.deepEqual([record.lifecycle, record.revision], ["active", 1], "the record remains active and unmodified");
+    assert.deepEqual(record.linkedWorkIds, [fixture.workId], "the dangling link stays attached");
+    assert.equal((await readKnowledgeBody(fixture.workspace, created.id, { at: instant(21, 4) })).body, "Body REBASE-OFFENDER");
+    assert.equal((await readdir(fixture.store)).includes("mutation.claim"), false, "the rebase releases its mutation claim");
   } finally {
     await fixture.close();
   }
@@ -372,10 +375,10 @@ test("metadata/body separation, default omission, explicit reads, freshness, and
     const writtenCheckpoint = await exportKnowledgeCheckpoint(fixture.workspace, instant(12));
     assert.equal(writtenCheckpoint.includes(input.body), false);
     assert.equal(JSON.parse(writtenCheckpoint).records.length, 1, "the checkpoint corpus is the default selection, which a written card joins at once");
-    // TCRN-CROSS-SUB-308: there is no promotion step to take; the written record is the
-    // active, promoted one.
+    // TCRN-CROSS-SUB-308: there is no promotion step to take; the written record is active.
     const stored = JSON.parse(metadataText);
-    assert.deepEqual([stored.lifecycle, stored.promotionState], ["active", "promoted"]);
+    assert.equal(stored.lifecycle, "active");
+    assert.equal(Object.hasOwn(stored, "promotionState"), false);
     assert.equal((await listKnowledgeMetadata(fixture.workspace, { at: instant(12) })).records.length, 1);
     const checkpoint = await exportKnowledgeCheckpoint(fixture.workspace, instant(12));
     assert.equal(checkpoint.includes(input.body), false);
@@ -394,7 +397,7 @@ test("metadata/body separation, default omission, explicit reads, freshness, and
 test("metadata-only surfaces never open bodies while explicit/full integrity paths do", async () => {
   const fixture = await workspaceFixture({ externalKey: "FIXTURE-KNOWLEDGE-METADATA-ONLY" });
   try {
-    // TCRN-CROSS-INC-282: no promote step -- an active write is already promoted.
+    // TCRN-CROSS-INC-282: no promotion step remains; an active write is immediately eligible.
     const created = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "KNOWLEDGE-METADATA-ONLY"));
     const bodyPath = join(fixture.store, "bodies", `${created.id}.body`);
     const observed = [];
@@ -625,7 +628,7 @@ test("selection and strict evaluation instants fail before Knowledge-store scann
 });
 
 test("WSC-3: provenance is enforced at the write, and the candidate path around it is closed", async () => {
-  // TCRN-CROSS-INC-282: an active write is a promoted write, so a missing owner, source or
+  // TCRN-CROSS-INC-282: an active write is immediately eligible, so a missing owner, source or
   // evidence is refused where the writer can see it instead of being parked in a state no
   // reader returns. TCRN-CROSS-SUB-308: the lifecycle "candidate" write that used to take the
   // cheap path around that floor is refused before provenance is judged, and writes nothing.
@@ -662,9 +665,8 @@ test("WSC-3: provenance is enforced at the write, and the candidate path around 
 });
 
 test("WSC-6: the write enforces machine checks for tags and snippet", async () => {
-  // TCRN-CROSS-INC-282: the two checks refuse the write itself, because every card is
-  // written promoted and validateMetadataShape runs them there. TCRN-CROSS-SUB-308 removed
-  // the promotion step they also guarded.
+  // TCRN-CROSS-INC-282: the two checks refuse the write itself. TCRN-CROSS-SUB-308 removed
+  // the promotion step they also guarded; buildMetadata now enforces them at write time.
   for (const [label, override] of [
     ["no-tags", { tags: [] }],
     ["empty-snippet", { snippet: "" }],
@@ -677,11 +679,11 @@ test("WSC-6: the write enforces machine checks for tags and snippet", async () =
       await fixture.close();
     }
   }
-  // a fully-governed card is written promoted
+  // a fully-governed card is written active without a promotion marker
   const ok = await workspaceFixture({ externalKey: "FIXTURE-PROMOTE-CHECK-OK" });
   try {
     const created = await createKnowledgeUnit(ok.workspace, unitInput(ok, "KNOWLEDGE-CHECK-OK"));
-    assert.equal(created.promotionState, "promoted");
+    assert.equal(Object.hasOwn(created, "promotionState"), false);
   } finally {
     await ok.close();
   }
@@ -711,9 +713,9 @@ test("WSE-5: a work-log candidate carrying an event reference and chain-matching
       assert.equal(created.reasonCode, "KNOWLEDGE_UNIT_CREATED");
       // creation itself proves the event reference survives storage: a reference the
       // source-reference grammar rejected or redaction rewrote would fail closed here.
-      // TCRN-CROSS-STORY-365, TCRN-CROSS-SUB-308: every card is written official, so the
-      // record is promoted at creation; there is no later step.
-      assert.equal(created.promotionState, "promoted");
+      // TCRN-CROSS-STORY-365, TCRN-CROSS-SUB-308: every card is immediately eligible;
+      // there is no later promotion step or metadata marker.
+      assert.equal(Object.hasOwn(created, "promotionState"), false);
     } finally {
       await fixture.close();
     }
@@ -722,7 +724,7 @@ test("WSE-5: a work-log candidate carrying an event reference and chain-matching
   // TCRN-CROSS-INC-282: half-supplied provenance on a relaxed kind used to be the one
   // shape that landed a candidate and then refused promotion -- a card written,
   // unretrievable, and unrepairable by any verb. This case was that refusal's proof; it is
-  // now the proof of what replaced it. A source with no evidence id is written promoted and
+  // now the proof of what replaced it. A source with no evidence id is written active and
   // answers the default selection immediately.
   const halfSupplied = await workspaceFixture({ externalKey: "FIXTURE-WORK-LOG-NO-EVIDENCE" });
   try {
@@ -731,7 +733,7 @@ test("WSE-5: a work-log candidate carrying an event reference and chain-matching
       sourceReferences: [eventReference(halfSupplied, "no-evidence")],
       linkedEvidenceIds: [],
     }));
-    assert.equal(created.promotionState, "promoted", "a source without an evidence id is still a written card");
+    assert.equal(Object.hasOwn(created, "promotionState"), false, "a source without an evidence id is still a written card");
     const listed = await listKnowledgeMetadata(halfSupplied.workspace, { at: instant(12) });
     assert.equal(listed.records.some((record) => record.id === created.id), true, "default recall answers for it at once");
   } finally {
@@ -748,7 +750,7 @@ test("WSC-5: reverify admits a written card and refuses a retired record, and no
       "--expected-revision", "1", "--at", instant(11, 4), "--id", kept.id], { write() {} }));
     assert.equal((await listKnowledgeMetadata(fixture.workspace, { at: instant(12), selection: "default" })).records.some((r) => r.id === kept.id), true);
 
-    // reverify: a written card is promoted and re-verifies under CAS
+    // reverify: a written card re-verifies under CAS
     const written = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "KNOWLEDGE-REVERIFY-ME", { occurredAt: instant(11, 6) }));
     await expectReason("KNOWLEDGE_CAS_MISMATCH", () => reverifyKnowledgeUnit(fixture.workspace, { expectedRevision: 2, occurredAt: instant(11, 7), id: written.id }));
     const reverified = await reverifyKnowledgeUnit(fixture.workspace, { expectedRevision: 1, occurredAt: instant(13, 9), id: written.id });
@@ -855,8 +857,7 @@ test("64 real insertion orders produce exact index, list, and checkpoint parity"
           occurredAt: instant(11, 3 + logicalKeys.indexOf(key)),
         }));
       }
-      // TCRN-CROSS-INC-282: no promote pass -- every card is written promoted, so the
-      // corpus under comparison is the written one.
+      // TCRN-CROSS-INC-282: no promote pass remains; the corpus under comparison is the written one.
       const indexBytes = await readFile(fixture.indexView, "utf8");
       const listBytes = canonicalJson(await listKnowledgeMetadata(fixture.workspace, { at: instant(12) }));
       const checkpointBytes = await exportKnowledgeCheckpoint(fixture.workspace, instant(12));
@@ -1278,6 +1279,52 @@ test("CQ-10: the link index still refuses links that are absent from the workspa
   }
 });
 
+test("SUB-386: dangling linked work is diagnosed without blocking reads or writes", async () => {
+  const fixture = await workspaceFixture({ externalKey: "FIXTURE-KNOWLEDGE-DANGLING-WORK" });
+  try {
+    const created = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "DANGLING-WORK-CARD"));
+    const danglingId = deriveStableId("work", "SUB386-DANGLING-WORK");
+    const metadataPath = join(fixture.store, "metadata", `${created.id}.json`);
+    const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
+    await writeFile(metadataPath, canonicalJson({ ...metadata, linkedWorkIds: [danglingId] }));
+
+    const validation = await validateKnowledgeStore(fixture.workspace);
+    assert.deepEqual(validation.danglingWorkLinks, [{ knowledgeId: created.id, workIds: [danglingId] }]);
+    assert.equal((await listKnowledgeMetadata(fixture.workspace, { at: instant(12) })).records[0].id, created.id);
+    assert.equal((await readKnowledgeBody(fixture.workspace, created.id, { at: instant(12) })).body, "Body DANGLING-WORK-CARD");
+
+    const reverified = await reverifyKnowledgeUnit(fixture.workspace, {
+      id: created.id, expectedRevision: 1, occurredAt: instant(12),
+    });
+    assert.equal(reverified.reasonCode, "KNOWLEDGE_REVERIFIED");
+    const second = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "WRITE-WITH-DANGLING-WORK", {
+      expectedVersion: 2, occurredAt: instant(12, 1),
+    }));
+    assert.equal(second.reasonCode, "KNOWLEDGE_UNIT_CREATED");
+    assert.deepEqual((await validateKnowledgeStore(fixture.workspace)).danglingWorkLinks,
+      [{ knowledgeId: created.id, workIds: [danglingId] }]);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test("SUB-386: historical promotion metadata and candidate records remain readable", async () => {
+  const fixture = await workspaceFixture({ externalKey: "FIXTURE-KNOWLEDGE-HISTORICAL-PROMOTION" });
+  try {
+    const created = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "HISTORICAL-CANDIDATE"));
+    const metadataPath = join(fixture.store, "metadata", `${created.id}.json`);
+    const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
+    await writeFile(metadataPath, canonicalJson({ ...metadata, lifecycle: "candidate", promotionState: "candidate" }));
+
+    assert.equal((await validateKnowledgeStore(fixture.workspace)).records, 1);
+    const historical = (await listKnowledgeMetadata(fixture.workspace, { at: instant(12), selection: "all" })).records[0];
+    assert.equal(historical.promotionState, "candidate");
+    assert.equal((await readKnowledgeBody(fixture.workspace, created.id, { at: instant(12) })).body, "Body HISTORICAL-CANDIDATE");
+  } finally {
+    await fixture.close();
+  }
+});
+
 test("TCRN-CROSS-STORY-023, TCRN-CROSS-SUB-309: the aggregate cap counts card bodies only, and still fires", async () => {
   // STORY-023 stopped charging the derived index; SUB-309 stopped charging the marker and
   // the metadata too. Fill a store with large-body records until the cap rejects one, then
@@ -1376,7 +1423,7 @@ test("INIT-047: relevance ordering changes with the query and source-free fragme
     });
     const alpha = await createKnowledgeUnit(fx.workspace, fragment("INIT047-ALPHA", "shared alpha", "shared beta", 0));
     await createKnowledgeUnit(fx.workspace, fragment("INIT047-BETA", "shared beta", "shared alpha", 1));
-    assert.equal(alpha.promotionState, "promoted");
+    assert.equal(Object.hasOwn(alpha, "promotionState"), false);
     const alphaOrder = (await listKnowledgeMetadata(fx.workspace, { at: instant(12), search: "alpha" })).records.map((record) => record.externalKey);
     const betaOrder = (await listKnowledgeMetadata(fx.workspace, { at: instant(12), search: "beta" })).records.map((record) => record.externalKey);
     assert.deepEqual(alphaOrder, ["INIT047-ALPHA", "INIT047-BETA"]);
@@ -1408,7 +1455,7 @@ test("INIT-047 source digest check reports changes without hiding metadata", asy
       lastVerified: instant(11, 3),
       freshnessState: "fresh",
     }));
-    assert.equal(sourced.promotionState, "promoted", "TCRN-CROSS-INC-282: a reference carrying source and evidence is written promoted");
+    assert.equal(Object.hasOwn(sourced, "promotionState"), false, "the receipt omits the retired promotion marker");
     assert.equal((await checkKnowledgeSources(fx.workspace)).records.find((record) => record.id === sourced.id).status, "unchanged");
     await writeFile(join(fx.workspace, "source.md"), "source-v2");
     assert.equal((await checkKnowledgeSources(fx.workspace)).records.find((record) => record.id === sourced.id).status, "changed");
@@ -1429,7 +1476,7 @@ test("INIT-047 article index cards stay explicit-only for default context", asyn
       lastVerified: instant(11, 3),
       freshnessState: "fresh",
     }));
-    assert.equal(article.promotionState, "promoted", "TCRN-CROSS-INC-282: written promoted, and still not a default answer");
+    assert.equal(Object.hasOwn(article, "promotionState"), false, "the receipt omits the retired promotion marker");
     assert.equal((await listKnowledgeMetadata(fx.workspace, { at: instant(12) })).records.length, 0);
     assert.equal((await listKnowledgeMetadata(fx.workspace, { at: instant(12), search: "article-index" })).records.length, 1);
   } finally { await fx.close(); }
@@ -1528,7 +1575,7 @@ test("INIT-047: supersedes is validated, source digests are computed and source 
     }));
     const metadata = JSON.parse(await readFile(join(fx.store, "metadata", `${sourced.id}.json`), "utf8"));
     assert.equal(metadata.sourceDigest, createHash("sha256").update("source-v1").digest("hex"));
-    assert.equal(sourced.promotionState, "promoted", "TCRN-CROSS-INC-282: written promoted, no separate promotion act");
+    assert.equal(Object.hasOwn(sourced, "promotionState"), false, "the receipt omits the retired promotion marker");
     assert.equal((await checkKnowledgeSources(fx.workspace)).records.find((record) => record.id === sourced.id).status, "unchanged");
     await writeFile(join(fx.workspace, "source.md"), "source-v2");
     assert.equal((await checkKnowledgeSources(fx.workspace)).records.find((record) => record.id === sourced.id).status, "changed");

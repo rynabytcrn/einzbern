@@ -250,7 +250,9 @@ export interface KnowledgeUnitMetadata {
   readonly linkedEvidenceIds: readonly string[];
   readonly lifecycle: KnowledgeLifecycle;
   readonly retrievalDisposition: KnowledgeRetrievalDisposition;
-  readonly promotionState: KnowledgePromotionState;
+  // Historical records may carry this field. New records use lifecycle and
+  // retrievalDisposition directly and omit the retired promotion marker.
+  readonly promotionState?: KnowledgePromotionState;
   readonly freshnessState: KnowledgeFreshnessState;
   readonly lastVerified: string | null;
   readonly stalenessPolicy: KnowledgeStalenessPolicy;
@@ -441,9 +443,12 @@ interface KnowledgeStoreScan {
   readonly units: readonly ScannedKnowledgeUnit[];
   readonly index: Readonly<Record<string, JsonValue>>;
   // WSC-2: in rebase mode, the id-sorted set of live (non-retired) records whose
-  // scope/project or linked-work references no longer resolve against the advanced
-  // workspace head. Empty (and absent from non-rebase scans) otherwise.
+  // scope/project no longer resolves against the advanced workspace head. Empty
+  // otherwise; dangling work references have their own non-blocking diagnostic.
   readonly linkInvalid: readonly string[];
+  // Live records may retain links to work items removed from the current chain.
+  // They remain readable and writable, while validation reports these links.
+  readonly danglingWorkLinks: readonly { readonly knowledgeId: string; readonly workIds: readonly string[] }[];
   // TCRN-CROSS-SUB-309: the budget as this read measured it -- live card body bytes -- and
   // the knowledge.aggregateBytes limit it is held to.
   readonly capacity: { readonly bodyBytes: number; readonly limit: number };
@@ -453,7 +458,7 @@ const markerFields = ["schemaVersion", "workspaceId", "eventHighWaterDigest", "v
 const metadataFields = [
   "schemaVersion", "id", "externalKey", "scope", "projectId", "roleScopes", "category", "kind", "tags", "subject",
   "summary", "snippet", "accountableOwnerId", "sourceReferences", "sourceDigest", "supersedes", "linkedWorkIds", "linkedDecisionIds", "linkedGateIds",
-  "linkedEvidenceIds", "lifecycle", "retrievalDisposition", "promotionState", "freshnessState", "lastVerified",
+  "linkedEvidenceIds", "lifecycle", "retrievalDisposition", "freshnessState", "lastVerified",
   "stalenessPolicy", "redactionDisposition", "exportDisposition", "authority", "sourceProvenance", "bodySha256",
   "bodyBytes", "revision", "updatedAt", "extensions", "expansions",
 ];
@@ -1050,10 +1055,9 @@ function assertPromotableProvenance(metadata: KnowledgeUnitMetadata): void {
   // unpromotable by anyone -- written, unretrievable, and unrepairable in one step. The
   // rule is gone rather than moved: for a relaxed kind, provenance is what the writer
   // chose to attach, and half of it is more than none.
-  // WSC-6 / OD-18: unconditional machine checks on a promoted record -- at least one
-  // retrieval tag, a non-empty snippet, and at least one backlink (the evidence requirement
-  // above already guarantees a backlink). Every card is written promoted
-  // (TCRN-CROSS-SUB-308), so these run at write time, where the writer can see them.
+  // WSC-6 / OD-18: current records require at least one retrieval tag and a non-empty
+  // snippet. buildMetadata applies these checks before writing, where the writer can see them;
+  // historical promoted records remain subject to them when read.
   if (metadata.tags.length === 0 || metadata.snippet.length === 0) {
     fail("KNOWLEDGE_PROMOTION_INVALID", `${metadata.id}:promotion requires at least one tag and a non-empty snippet`);
   }
@@ -1152,7 +1156,11 @@ function redactArtifactReference(input: unknown): string {
 // cards are checked against themselves (validateUserCrestLinks).
 function validateMetadataShape(value: Readonly<Record<string, JsonValue>>, workspace: WorkspaceState | null, deferLinks = false): KnowledgeUnitMetadata {
   const normalizedValue = normalizeMetadataRecord(value);
-  exactFields(normalizedValue, Object.hasOwn(normalizedValue, "retirement") ? [...metadataFields, "retirement"] : metadataFields, "knowledge metadata", "KNOWLEDGE_RECORD_INVALID");
+  exactFields(normalizedValue, [
+    ...metadataFields,
+    ...(Object.hasOwn(normalizedValue, "promotionState") ? ["promotionState"] : []),
+    ...(Object.hasOwn(normalizedValue, "retirement") ? ["retirement"] : []),
+  ], "knowledge metadata", "KNOWLEDGE_RECORD_INVALID");
   exactFields(normalizedValue.stalenessPolicy, stalenessFields, "knowledge staleness policy", "KNOWLEDGE_RECORD_INVALID");
   if (normalizedValue.schemaVersion !== KNOWLEDGE_METADATA_SCHEMA_VERSION || typeof normalizedValue.id !== "string" ||
     typeof normalizedValue.externalKey !== "string" || typeof normalizedValue.scope !== "string" ||
@@ -1166,7 +1174,7 @@ function validateMetadataShape(value: Readonly<Record<string, JsonValue>>, works
     (normalizedValue.supersedes !== null && typeof normalizedValue.supersedes !== "string") ||
     typeof normalizedValue.lifecycle !== "string" || !["candidate", "active", "retired"].includes(normalizedValue.lifecycle) ||
     typeof normalizedValue.retrievalDisposition !== "string" || !["default", "explicit-only", "excluded"].includes(normalizedValue.retrievalDisposition) ||
-    typeof normalizedValue.promotionState !== "string" || !["candidate", "promoted", "rejected"].includes(normalizedValue.promotionState) ||
+    (Object.hasOwn(normalizedValue, "promotionState") && (typeof normalizedValue.promotionState !== "string" || !["candidate", "promoted", "rejected"].includes(normalizedValue.promotionState))) ||
     typeof normalizedValue.freshnessState !== "string" || !["fresh", "stale", "unknown"].includes(normalizedValue.freshnessState) ||
     (normalizedValue.lastVerified !== null && typeof normalizedValue.lastVerified !== "string") ||
     normalizedValue.redactionDisposition !== "focused-reference-redaction-v1" ||
@@ -1214,10 +1222,9 @@ function validateMetadataShape(value: Readonly<Record<string, JsonValue>>, works
   assertLinkIds(metadata.linkedGateIds, "gate", "linked gate IDs");
   assertLinkIds(metadata.linkedEvidenceIds, "evidence", "linked evidence IDs");
   // WSC-3 / SDC-6: provenance (owner:-prefixed accountable owner, non-empty source
-  // and evidence links) is enforced on every promoted record. Every card is written
-  // promoted (TCRN-CROSS-INC-282, TCRN-CROSS-SUB-308), so that is write time; a
-  // historical candidate or rejected record is read as it was written.
-  if (metadata.promotionState === "promoted") {
+  // and evidence links) is enforced for current records and historical promoted ones.
+  // Historical candidate or rejected records retain the shape they were written with.
+  if (metadata.promotionState === undefined || metadata.promotionState === "promoted") {
     assertPromotableProvenance(metadata);
   }
   for (const reference of metadata.sourceReferences) {
@@ -1309,7 +1316,7 @@ export function knowledgeLinkIndexCountsForTest(): { readonly builds: number; re
 // WSC-2: scope/project liveness (KNOWLEDGE_LINK_INVALID:scope) and linked-work
 // liveness (KNOWLEDGE_LINK_INVALID:<workId>) — the two checks a rebase tolerates
 // (collecting offenders) and a retired record is durably exempt from.
-function validateMetadataLinks(metadata: KnowledgeUnitMetadata, workspace: WorkspaceState): void {
+function validateMetadataScope(metadata: KnowledgeUnitMetadata, workspace: WorkspaceState): void {
   const index = knowledgeLinkIndexFor(workspace);
   const project = metadata.projectId === null ? undefined : index.liveProject(metadata.projectId);
   // TCRN-CROSS-STORY-476 R5: a user card lives in the user crest and never in a library's.
@@ -1320,12 +1327,29 @@ function validateMetadataLinks(metadata: KnowledgeUnitMetadata, workspace: Works
     (metadata.projectId !== null && !project)) {
     fail("KNOWLEDGE_LINK_INVALID", `${metadata.id}:scope`);
   }
-  for (const workId of metadata.linkedWorkIds) {
+}
+
+function danglingLinkedWorkIds(metadata: KnowledgeUnitMetadata, workspace: WorkspaceState): readonly string[] {
+  const index = knowledgeLinkIndexFor(workspace);
+  return metadata.linkedWorkIds.filter((workId) => {
     const work = index.liveWork(workId);
-    if (!work || metadata.projectId === null || work.projectId !== metadata.projectId) {
-      fail("KNOWLEDGE_LINK_INVALID", `${metadata.id}:${workId}`);
-    }
+    return !work || metadata.projectId === null || work.projectId !== metadata.projectId;
+  });
+}
+
+function validateMetadataLinks(metadata: KnowledgeUnitMetadata, workspace: WorkspaceState): void {
+  validateMetadataScope(metadata, workspace);
+  const dangling = danglingLinkedWorkIds(metadata, workspace);
+  if (dangling.length > 0) fail("KNOWLEDGE_LINK_INVALID", `${metadata.id}:${dangling[0]}`);
+}
+
+function validateExistingMetadataShape(metadata: KnowledgeUnitMetadata, workspace: WorkspaceState | null): KnowledgeUnitMetadata {
+  const validated = validateMetadataShape(metadata as unknown as Readonly<Record<string, JsonValue>>, workspace, true);
+  if (validated.lifecycle !== "retired") {
+    if (workspace === null) validateUserCrestLinks(validated);
+    else validateMetadataScope(validated, workspace);
   }
+  return validated;
 }
 
 // TCRN-CROSS-STORY-476 R5: a card in the user crest is a user card, and a user card belongs to
@@ -1456,14 +1480,16 @@ async function assertStoreRootEntries(storeRoot: string, viewsInRoot: boolean, a
 interface ScannedRecords {
   readonly units: readonly ScannedKnowledgeUnit[];
   readonly linkInvalid: readonly string[];
+  readonly danglingWorkLinks: readonly { readonly knowledgeId: string; readonly workIds: readonly string[] }[];
   readonly capacityBytes: number;
   readonly aggregateLimit: number;
 }
 
 interface RecordChecks {
   readonly shape: (value: Readonly<Record<string, JsonValue>>) => KnowledgeUnitMetadata;
-  // WSC-2, rebase only: link liveness, whose KNOWLEDGE_LINK_INVALID is collected, not thrown.
+  // WSC-2, rebase only: scope/project liveness, whose KNOWLEDGE_LINK_INVALID is collected.
   readonly links: ((metadata: KnowledgeUnitMetadata) => void) | null;
+  readonly danglingWorkLinks: ((metadata: KnowledgeUnitMetadata) => readonly string[]) | null;
   readonly body: (metadata: KnowledgeUnitMetadata, body: Buffer) => void;
 }
 
@@ -1495,6 +1521,7 @@ async function scanStoreRecords(
   }
   const units: ScannedKnowledgeUnit[] = [];
   const linkInvalid: string[] = [];
+  const danglingWorkLinks: { knowledgeId: string; workIds: readonly string[] }[] = [];
   const aggregateLimit = aggregateLimitOf();
   // TCRN-CROSS-SUB-309: live card body bytes only (capacityBodyBytes).
   let capacityBytes = 0;
@@ -1503,6 +1530,10 @@ async function scanStoreRecords(
     const bodyPath = resolve(roots.bodiesRoot, `${id}.body`);
     const metadataBytes = await backend.readKnowledgeMetadata(id);
     const metadata = checks.shape(parseCanonicalObject(metadataBytes, "knowledge metadata", "KNOWLEDGE_RECORD_INVALID"));
+    if (checks.danglingWorkLinks !== null && metadata.lifecycle !== "retired") {
+      const workIds = checks.danglingWorkLinks(metadata);
+      if (workIds.length > 0) danglingWorkLinks.push({ knowledgeId: metadata.id, workIds });
+    }
     if (checks.links !== null && metadata.lifecycle !== "retired") {
       try {
         checks.links(metadata);
@@ -1534,7 +1565,8 @@ async function scanStoreRecords(
   units.sort((left, right) => compareCanonicalText(left.metadata.id, right.metadata.id));
   const metadataById = new Map(units.map((unit) => [unit.metadata.id, unit.metadata]));
   for (const unit of units) validateSupersedesLink(unit.metadata, metadataById);
-  return { units, linkInvalid: linkInvalid.sort(compareCanonicalText), capacityBytes, aggregateLimit };
+  danglingWorkLinks.sort((left, right) => compareCanonicalText(left.knowledgeId, right.knowledgeId));
+  return { units, linkInvalid: linkInvalid.sort(compareCanonicalText), danglingWorkLinks, capacityBytes, aggregateLimit };
 }
 
 // A view kept in this device's cache (a library's crest, the user crest): another device's crest
@@ -1596,12 +1628,16 @@ async function scanKnowledgeStore(
   if (marker.workspaceId !== workspace.metadata.workspaceId || (!rebase && !trailingAdmitted && marker.eventHighWaterDigest !== workspace.headEventHash)) {
     fail("KNOWLEDGE_HIGH_WATER_MISMATCH", marker.workspaceId);
   }
-  // WSC-2: in rebase mode, shape is still fully validated but link liveness is deferred so a
-  // live record pointing at now-tombstoned work is recorded as an offender rather than failing
-  // the whole scan; retired records stay exempt.
-  const { units, linkInvalid, capacityBytes, aggregateLimit } = await scanStoreRecords(backend, { metadataRoot, bodiesRoot }, bodyMode, () => knowledgeAggregateLimit(workspace), {
-    shape: (value) => validateMetadataShape(value, workspace, rebase),
-    links: rebase ? (metadata) => validateMetadataLinks(metadata, workspace) : null,
+  // WSC-2: shape remains fully validated. Rebase defers scope/project liveness into the
+  // offender list; dangling work references are collected separately as non-blocking diagnostics.
+  const { units, linkInvalid, danglingWorkLinks, capacityBytes, aggregateLimit } = await scanStoreRecords(backend, { metadataRoot, bodiesRoot }, bodyMode, () => knowledgeAggregateLimit(workspace), {
+    shape: (value) => {
+      const metadata = validateMetadataShape(value, workspace, true);
+      if (!rebase && metadata.lifecycle !== "retired") validateMetadataScope(metadata, workspace);
+      return metadata;
+    },
+    links: rebase ? (metadata) => validateMetadataScope(metadata, workspace) : null,
+    danglingWorkLinks: (metadata) => danglingLinkedWorkIds(metadata, workspace),
     body: (metadata, body) => validateMetadataBody(metadata, body, workspace),
   });
   const index = knowledgeIndex(marker, units.map((unit) => unit.metadata));
@@ -1629,6 +1665,7 @@ async function scanKnowledgeStore(
   return {
     workspaceRoot, storeRoot, metadataRoot, bodiesRoot, viewsRoot, marker, workspace, units, index,
     linkInvalid,
+    danglingWorkLinks,
     capacity: { bodyBytes: capacityBytes, limit: aggregateLimit },
   };
 }
@@ -1735,6 +1772,7 @@ async function scanUserCrest(
   const { units, capacityBytes, aggregateLimit } = await scanStoreRecords(backend, { metadataRoot, bodiesRoot }, bodyMode, () => KNOWLEDGE_AGGREGATE_DEFAULT, {
     shape: (value) => validateMetadataShape(value, null),
     links: null,
+    danglingWorkLinks: null,
     body: (metadata, body) => validateMetadataBody(metadata, body, null),
   });
   const index = knowledgeIndex(marker, units.map((unit) => unit.metadata));
@@ -1862,8 +1900,47 @@ export function processIsAlive(pid: number): boolean {
  * Recovery only admits a source-consistent metadata/body set; an orphan body or a
  * malformed claim remains blocked instead of being guessed away.
  */
-export async function recoverKnowledgeStore(workspaceRoot: string, options: KnowledgeReadOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
+export async function recoverKnowledgeStore(workspaceRoot: string, options: KnowledgeScopedReadOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
+  assertStoreScope(options.scope);
+  if (options.scope === "user") {
+    const location = await locateUserCrest();
+    if (!(await userCrestInitialized(location.root))) {
+      return { schemaVersion: "tcrn.knowledge-recovery-result.v1", reasonCode: "KNOWLEDGE_RECOVERY_NOT_NEEDED", recovered: false, scope: "user" };
+    }
+    return withUserCrestLock(location, () => recoverUserCrestUnlocked(location, options));
+  }
   return withCrestWriteLock(workspaceRoot, () => recoverKnowledgeStoreUnlocked(workspaceRoot, options));
+}
+
+async function recoverUserCrestUnlocked(location: UserCrestLocation, options: KnowledgeReadOptions): Promise<Readonly<Record<string, JsonValue>>> {
+  const claimedRoot = join(await userCrestParent(location, false), basename(location.root));
+  const claim = await readMutationClaim(claimedRoot);
+  if (claim === null) {
+    return { schemaVersion: "tcrn.knowledge-recovery-result.v1", reasonCode: "KNOWLEDGE_RECOVERY_NOT_NEEDED", recovered: false, scope: "user" };
+  }
+  if (processIsAlive(claim.pid)) fail("KNOWLEDGE_LOCKED", "knowledge mutation claim belongs to a live process");
+  const scan = await scanUserCrest(location, options, true, "full");
+  const boundClaim = await readMutationClaim(scan.storeRoot);
+  if (boundClaim === null || boundClaim.token !== claim.token || boundClaim.pid !== claim.pid ||
+    boundClaim.workspaceId !== USER_CREST_ID || !sameIdentity(boundClaim.identity, claim.identity)) {
+    fail("KNOWLEDGE_SOURCE_CHANGED", "knowledge user-crest claim changed during recovery");
+  }
+  const marker: KnowledgeStoreMarker = { ...scan.marker, version: scan.marker.version + 1 };
+  const backend = userCrestBackend(scan.storeRoot, location.device, options);
+  await backend.writeKnowledgeMarker(canonicalJson(marker));
+  await writeIndex(backend, marker, scan.units.map((unit) => unit.metadata));
+  // O6 remains pending: user-crest recovery repairs the interrupted index and marker but
+  // does not physically delete any retained body.
+  await releaseMutationClaim(scan.storeRoot, boundClaim);
+  await scanUserCrest(location, options);
+  return {
+    schemaVersion: "tcrn.knowledge-recovery-result.v1",
+    reasonCode: "KNOWLEDGE_RECOVERED",
+    recovered: true,
+    scope: "user",
+    version: marker.version,
+    reclaimedRetiredBodies: 0,
+  };
 }
 
 async function recoverKnowledgeStoreUnlocked(workspaceRoot: string, options: KnowledgeReadOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
@@ -2026,7 +2103,7 @@ function buildMetadata(
   }
   // Reference cards are rejected at capture when their source/evidence contract
   // is absent (the explicit write-time boundary in STORY-327). TCRN-CROSS-INC-282
-  // extends that boundary to `guide` through the promoted write below; this check
+  // extends that boundary to `guide` through the write-time check below; this check
   // stays because it names the kind rather than a stored record id.
   if (input.kind === "reference" && (input.sourceReferences.length === 0 || input.linkedEvidenceIds.length === 0)) {
     fail("KNOWLEDGE_PROVENANCE_INVALID", `${input.kind} knowledge requires source and evidence links`);
@@ -2035,12 +2112,9 @@ function buildMetadata(
   // moment it is written.
   //
   // TCRN-CROSS-INC-282 (Owner rulings TCRN-CROSS-MIN-146 D1, TCRN-CROSS-MIN-158 D1):
-  // every write is "promoted", full stop. For a strict kind that puts the provenance
-  // contract at write time: validateMetadataShape runs assertPromotableProvenance on a
-  // promoted record, so a `guide` with no source or no evidence is refused where its writer
-  // can see it, instead of being stored as a card nothing could retrieve and nothing could
-  // repair. TCRN-CROSS-SUB-308 closed the last way round it, the lifecycle "candidate" write
-  // (see assertWritableLifecycle).
+  // strict kinds enforce their provenance contract at write time, so a `guide` with no
+  // source or evidence is refused where its writer can see it. TCRN-CROSS-SUB-308 closed
+  // the last way round it, the lifecycle "candidate" write (see assertWritableLifecycle).
   //
   // TCRN-CROSS-STORY-364 (Owner ruling TCRN-CROSS-MIN-160 D3): the write-path hook, on the
   // one function every write path reaches. knowledge-create calls it directly,
@@ -2088,7 +2162,6 @@ function buildMetadata(
     // TCRN-CROSS-SUB-308: written is active and retrievable; nothing new is a candidate.
     lifecycle: "active",
     retrievalDisposition: input.retrievalDisposition,
-    promotionState: "promoted",
     freshnessState: input.freshnessState,
     lastVerified: input.lastVerified,
     stalenessPolicy: input.stalenessPolicy,
@@ -2103,6 +2176,7 @@ function buildMetadata(
     extensions: {},
     expansions: language.expansions,
   };
+  assertPromotableProvenance(metadata);
   // TCRN-CROSS-STORY-476 R5: the writer's library supplies the language policy above either way;
   // a user card's links are checked for the user crest it is bound for, not against the library.
   const linkState = input.scope === "user" ? null : workspace;
@@ -2195,6 +2269,7 @@ export async function validateKnowledgeStore(workspaceRoot: string, options: Kno
     // TCRN-CROSS-SUB-309: the capacity report -- live card body bytes against the
     // knowledge.aggregateBytes limit.
     capacity: { bodyBytes: scan.capacity.bodyBytes, limit: scan.capacity.limit },
+    ...(scan.danglingWorkLinks.length === 0 ? {} : { danglingWorkLinks: scan.danglingWorkLinks }),
   };
 }
 
@@ -2312,7 +2387,7 @@ async function createKnowledgeUnitUnlocked<S extends CrestScan>(
     };
     if (written !== metadata) validateMetadataBody(validateMetadataShape(written as unknown as Readonly<Record<string, JsonValue>>, linkState), body, linkState);
     if (supersededMetadata !== null && superseded !== undefined) {
-      validateMetadataBody(validateMetadataShape(supersededMetadata as unknown as Readonly<Record<string, JsonValue>>, linkState), requireBody(superseded), linkState);
+      validateMetadataBody(validateExistingMetadataShape(supersededMetadata, linkState), requireBody(superseded), linkState);
     }
     const metadataBytes = Buffer.from(canonicalJson(written), "utf8");
     const marker: KnowledgeStoreMarker = { ...scan.marker, version: scan.marker.version + 1 };
@@ -2351,7 +2426,6 @@ async function createKnowledgeUnitUnlocked<S extends CrestScan>(
       externalKey: written.externalKey,
       revision: written.revision,
       version: final.marker.version,
-      promotionState: written.promotionState,
       // A card in the user crest says so; a library's answer keeps the shape it always had.
       ...(target.scope === "user" ? { scope: "user" } : {}),
       ...(conflicts.length > 0 ? { conflicts: [...conflicts] } : {}),
@@ -2524,8 +2598,8 @@ export async function captureKnowledgeUnit(
 }
 
 // WSC-2: re-bind the store to the advanced workspace head after full per-record
-// re-validation. Live records whose links no longer resolve block the rebase
-// (TCRN-CROSS-SUB-308: there is no retire-invalid escape any more). Single version step
+// re-validation. Invalid scope/project links still block the rebase; dangling work
+// links remain attached and are reported without blocking access. Single version step
 // under a mutation claim.
 export async function rebaseKnowledgeStore(...args: Parameters<typeof rebaseKnowledgeStoreUnlocked>): Promise<Readonly<Record<string, JsonValue>>> {
   return withCrestWriteLock(args[0], () => rebaseKnowledgeStoreUnlocked(...args));
@@ -2543,9 +2617,8 @@ async function rebaseKnowledgeStoreUnlocked(workspaceRoot: string, input: {
   let released = false;
   try {
     const scan = await scanKnowledgeStore(workspaceRoot, options, true, "full", true);
-    // TCRN-CROSS-SUB-308: the retire-invalid branch is gone with every retirement path but
-    // --supersedes, so a live record whose links no longer resolve blocks the rebase, and the
-    // refusal names the offenders; nothing here rewrites them.
+    // Scope/project offenders still block rebase. Dangling linked work is diagnostic only;
+    // neither this write nor its receipt retires or rewrites those records.
     const offenders = scan.linkInvalid;
     if (offenders.length > 0) {
       fail("KNOWLEDGE_REBASE_BLOCKED", offenders.join(","));
@@ -2565,9 +2638,10 @@ async function rebaseKnowledgeStoreUnlocked(workspaceRoot: string, input: {
       version: final.marker.version,
       eventHighWaterDigest: final.marker.eventHighWaterDigest,
       // The v1 result keeps its two fields: a rebase that lands retired nothing and had no
-      // offender, since an offender now refuses it.
+      // scope/project offender, since such an offender still refuses it.
       retired: 0,
       offenders: [],
+      ...(final.danglingWorkLinks.length === 0 ? {} : { danglingWorkLinks: final.danglingWorkLinks }),
     };
   } catch (error) {
     if (error instanceof KnowledgeCoreError && error.reasonCode === "KNOWLEDGE_FAULT_INJECTED") released = true;
@@ -2667,7 +2741,7 @@ export function knowledgeConflictHits(
   excluded: readonly string[] = [],
 ): readonly string[] {
   return existing
-    .filter((metadata) => metadata.lifecycle !== "retired" && !excluded.includes(metadata.id) &&
+    .filter((metadata) => metadata.lifecycle !== "retired" && metadata.extensions.supersededBy === undefined && !excluded.includes(metadata.id) &&
       knowledgeRelevanceScore(metadata, subject) >= KNOWLEDGE_CONFLICT_SCORE_THRESHOLD)
     .map((metadata) => metadata.id)
     .sort(compareCanonicalText);
@@ -2942,9 +3016,9 @@ export async function checkKnowledgeSources(workspaceRoot: string, options: Know
   };
 }
 
-// WSC-5: re-verify a promoted record — touch lastVerified to the given instant and
-// restore a fresh posture, so promoted knowledge does not decay irreversibly out
-// of default selection. Admitted for promoted records only (OD-17).
+// WSC-5: re-verify an eligible record — touch lastVerified to the given instant and
+// restore a fresh posture, so knowledge does not decay irreversibly out of default
+// selection. Historical candidate and rejected records remain ineligible (OD-17).
 export async function reverifyKnowledgeUnit(...args: Parameters<typeof reverifyKnowledgeUnitUnlocked>): Promise<Readonly<Record<string, JsonValue>>> {
   return withCrestWriteLock(args[0], () => reverifyKnowledgeUnitUnlocked(...args));
 }
@@ -2973,12 +3047,12 @@ async function reverifyKnowledgeUnitUnlocked(workspaceRoot: string, input: {
     if (unit.metadata.revision !== input.expectedRevision) {
       fail("KNOWLEDGE_CAS_MISMATCH", `${input.expectedRevision}:${unit.metadata.revision}`);
     }
-    if (unit.metadata.promotionState !== "promoted" || unit.metadata.lifecycle === "retired") {
-      fail("KNOWLEDGE_LIFECYCLE_INVALID", "only a promoted, non-retired record can be re-verified");
+    if ((unit.metadata.promotionState !== undefined && unit.metadata.promotionState !== "promoted") || unit.metadata.lifecycle === "retired") {
+      fail("KNOWLEDGE_LIFECYCLE_INVALID", "only an eligible, non-retired record can be re-verified");
     }
     const metadata: KnowledgeUnitMetadata = { ...unit.metadata, lastVerified: input.occurredAt, freshnessState: "fresh", revision: unit.metadata.revision + 1, updatedAt: input.occurredAt };
     const unitBody = requireBody(unit);
-    const validated = validateMetadataShape(metadata as unknown as Readonly<Record<string, JsonValue>>, scan.workspace);
+    const validated = validateExistingMetadataShape(metadata, scan.workspace);
     validateMetadataBody(validated, unitBody, scan.workspace);
     const marker: KnowledgeStoreMarker = { ...scan.marker, version: scan.marker.version + 1 };
     const projectedMetadata = scan.units.map((entry) => entry.metadata.id === metadata.id ? metadata : entry.metadata);
@@ -3072,7 +3146,7 @@ async function refreshKnowledgeArticleUnlocked(
       updatedAt: input.occurredAt,
       expansions: language.expansions,
     };
-    const validated = validateMetadataShape(metadata as unknown as Readonly<Record<string, JsonValue>>, scan.workspace);
+    const validated = validateExistingMetadataShape(metadata, scan.workspace);
     validateMetadataBody(validated, Buffer.from(body, "utf8"), scan.workspace);
     const secondRead = await readArticleBytes(workspaceArticle.file);
     if (!secondRead.equals(articleBytes)) fail("KNOWLEDGE_SOURCE_CHANGED", workspaceArticle.file);
@@ -3163,7 +3237,7 @@ async function updateKnowledgeStalenessPolicyUnlocked(workspaceRoot: string, inp
       revision: unit.metadata.revision + 1,
       updatedAt: input.occurredAt,
     };
-    const validated = validateMetadataShape(metadata as unknown as Readonly<Record<string, JsonValue>>, scan.workspace);
+    const validated = validateExistingMetadataShape(metadata, scan.workspace);
     if (unit.metadata.lifecycle !== "retired") validateMetadataBody(validated, requireBody(unit), scan.workspace);
     const marker: KnowledgeStoreMarker = { ...scan.marker, version: scan.marker.version + 1 };
     const projectedMetadata = scan.units.map((entry) => entry.metadata.id === metadata.id ? metadata : entry.metadata);

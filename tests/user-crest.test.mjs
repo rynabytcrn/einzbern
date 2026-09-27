@@ -7,7 +7,7 @@
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -19,13 +19,14 @@ import {
   createKnowledgeUnit,
   initializeKnowledgeStore,
   listKnowledgeMetadata,
+  recoverKnowledgeStore,
   readKnowledgeBody,
   readKnowledgeSnippet,
 } from "../dist/build/packages/core/src/knowledge-core.js";
 import { applyMachineSettingSet, readUserCrestPath } from "../dist/build/packages/core/src/machine-settings.js";
 import { recall, recallDocuments, resetRecallCache } from "../dist/build/packages/core/src/recall.js";
 import { formatRecallLine, readRecallCards, recallInputsFromState } from "../dist/build/packages/core/src/recall-inputs.js";
-import { canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
+import { canonicalJson, canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
 const at = "2026-09-26T12:00:00Z";
 const instant = (second) => `2026-09-26T11:00:${String(second).padStart(2, "0")}Z`;
@@ -93,6 +94,19 @@ async function expectReason(reasonCode, operation) {
   await assert.rejects(operation, (error) => error?.reasonCode === reasonCode, reasonCode);
 }
 
+async function treeSnapshot(root) {
+  const files = {};
+  const walk = async (directory, prefix) => {
+    for (const entry of (await readdir(directory, { withFileTypes: true })).sort((left, right) => left.name.localeCompare(right.name))) {
+      const relative = `${prefix}${entry.name}`;
+      if (entry.isDirectory()) await walk(join(directory, entry.name), `${relative}/`);
+      else files[relative] = (await readFile(join(directory, entry.name))).toString("base64");
+    }
+  };
+  await walk(root, "");
+  return files;
+}
+
 test("476-R5 / AC3: a user card lands in <device>/crest, not in its library, and another library recalls it as scope user", async (context) => {
   const { base, home } = await device(context);
   const first = await library(base, "first");
@@ -143,6 +157,36 @@ test("476-R5 / AC3: a user card lands in <device>/crest, not in its library, and
   // And in the library it was written from.
   const firstRead = await readRecallCards(first.workspace, { at });
   assert.deepEqual(firstRead.cards.map((entry) => [entry.id, entry.scope]), [[created.id, "user"]]);
+});
+
+test("SUB-387: user-crest recovery rebuilds in order without changing either library", async (context) => {
+  const { base, home } = await device(context);
+  const first = await library(base, "first");
+  const second = await library(base, "second");
+  const firstBefore = await treeSnapshot(first.workspace);
+  const secondBefore = await treeSnapshot(second.workspace);
+  const interrupted = createKnowledgeUnit(first.workspace, card("UC-RECOVERY", {
+    subject: "Koala eucalyptus rotation", summary: "Move koalas between eucalyptus groves", snippet: "rotate koala groves",
+  }), { faultAt: "after-metadata-write" });
+  await expectReason("KNOWLEDGE_FAULT_INJECTED", interrupted);
+  const crest = join(home, "crest");
+  assert.ok((await readdir(crest)).includes("mutation.claim"), "the simulated crash leaves a claim to recover");
+  const claimPath = join(crest, "mutation.claim");
+  const claim = JSON.parse(await readFile(claimPath, "utf8"));
+  await writeFile(claimPath, canonicalJson({ ...claim, pid: process.pid + 1_000_000 }));
+
+  const recovered = await recoverKnowledgeStore(first.workspace, { scope: "user" });
+  assert.deepEqual([recovered.reasonCode, recovered.recovered, recovered.scope, recovered.version],
+    ["KNOWLEDGE_RECOVERED", true, "user", 1]);
+  assert.equal((await readdir(crest)).includes("mutation.claim"), false);
+  assert.deepEqual(await treeSnapshot(first.workspace), firstBefore, "the caller library keeps every byte");
+  assert.deepEqual(await treeSnapshot(second.workspace), secondBefore, "the other project library keeps every byte");
+
+  const id = deriveStableId("knowledge", "UC-RECOVERY");
+  const listed = await listKnowledgeMetadata(second.workspace, { at, scope: "user" });
+  assert.deepEqual(listed.records.map((record) => [record.id, record.scope]), [[id, "user"]]);
+  assert.equal((await readKnowledgeBody(second.workspace, id, { at, scope: "user" })).body, "Body UC-RECOVERY");
+  assert.deepEqual(JSON.parse(await readFile(join(userCrestCachePath(home), "crest-views", "index.json"), "utf8")).records.map((record) => record.id), [id]);
 });
 
 test("476-R5: crest.userPath puts the user crest in a cloud folder, stored as its real path, and reads and writes go there", async (context) => {

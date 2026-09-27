@@ -17,13 +17,13 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 
-import { FRAMEWORK_VERSION, createProject, createWork, initializeLibrary, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
+import { FRAMEWORK_VERSION, createKnowledgeUnit, createProject, createWork, initializeLibrary, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
 import { deviceHome } from "../dist/build/packages/core/src/device-home.js";
 import { NAVIGATION_LINES } from "../dist/build/packages/core/src/agents-sections.js";
 import { hookProtocolOutput, navigationPointerAnswer } from "../dist/build/packages/core/src/hook-recall.js";
 import { HOST_HOOK_LAUNCHER } from "../dist/build/packages/core/src/host-hooks.js";
 import { gitRemoteOf, normalizeGitRemote, registerLibrary } from "../dist/build/packages/core/src/registry.js";
-import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
+import { canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 import * as launcher from "../scripts/einzbern-hook-launcher.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
@@ -103,14 +103,14 @@ async function zooLibrary(library) {
 }
 
 /** A Git working tree with a library in .ether, registered on this device with its remote. */
-async function registeredProject(base) {
-  const directory = join(base, "project");
+async function registeredProject(base, projectName = "project", remote = REMOTE) {
+  const directory = join(base, projectName);
   await mkdir(join(directory, "src"), { recursive: true });
-  gitRepository(directory, REMOTE);
+  gitRepository(directory, remote);
   const library = join(directory, ".ether");
   await zooLibrary(library);
   const entry = await registerLibrary({ projectPath: directory, libraryPath: library, registeredAt: at(9) });
-  assert.equal(entry.gitRemote, "zoo-host/owner/zoo");
+  assert.equal(entry.gitRemote, normalizeGitRemote(remote));
   return { directory, library };
 }
 
@@ -181,6 +181,32 @@ test("477-AC3: a registered project's prompt with a strong hit gets the hit's ti
   // An event this engine does not answer prints nothing either.
   const other = runHook(launcherPath, { home, cwd: directory, event: "stop" });
   assert.deepEqual([other.status, other.stdout, other.stderr], [0, "", ""]);
+});
+
+test("SUB-387: both registered projects recall the same user-crest card through the hook", async (context) => {
+  const { base, home } = await scratch(context);
+  const launcherPath = await installEngine(home);
+  const first = await registeredProject(base, "first", REMOTE);
+  const second = await registeredProject(base, "second", "https://zoo-host/owner/quoll.git");
+  const created = await createKnowledgeUnit(first.library, {
+    occurredAt: at(10), externalKey: "HOOK-USER-QUOLL", scope: "user", projectId: null, roleScopes: [],
+    category: "workflow", kind: "guide", tags: ["lesson"], subject: "Quoll den cleaning schedule",
+    summary: "Clean the quoll den before dusk", snippet: "clean quoll den before dusk",
+    accountableOwnerId: deriveStableId("owner", "HOOK-USER-QUOLL-OWNER"),
+    sourceReferences: ["evidence://hook/quoll"], sourceDigest: canonicalSha256({ source: "hook-quoll" }), supersedes: null,
+    linkedWorkIds: [], linkedDecisionIds: [], linkedGateIds: [], linkedEvidenceIds: [deriveStableId("evidence", "HOOK-USER-QUOLL")],
+    retrievalDisposition: "default", freshnessState: "fresh", lastVerified: null,
+    stalenessPolicy: { maximumAgeDays: null, unknownDisposition: "fail-closed" }, exportDisposition: "metadata-only",
+    body: "Clean the den before dusk.",
+  });
+  const line = `[卡片 用户] Quoll den cleaning schedule · ${created.id}`;
+  for (const project of [first, second]) {
+    const run = runHook(launcherPath, { home, cwd: join(project.directory, "src"), prompt: "What is the quoll den cleaning schedule?" });
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(run.stderr, "");
+    assert.deepEqual(JSON.parse(run.stdout), { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: line } });
+    assert.equal(run.stdout, `${hookProtocolOutput("claude-code", "UserPromptSubmit", [line])}\n`);
+  }
 });
 
 test("478-AC5: the pointer hooks answer with the three navigation lines on both hosts, reading no library file", async (context) => {

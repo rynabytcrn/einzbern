@@ -177,6 +177,11 @@ export function configRecordIdentity(collection: string, key: string): string {
   return JSON.stringify([collection, key]);
 }
 
+/** The receipt id of a configuration record: its closed collection and key. */
+export function configRecordId(collection: ConfigRecordCollection, key: string): string {
+  return `${collection}:${key}`;
+}
+
 export function sortConfigRecords(records: Iterable<ConfigRecord>): readonly ConfigRecord[] {
   return [...records].sort((left, right) => compareCanonicalText(left.collection, right.collection) || compareCanonicalText(left.key, right.key));
 }

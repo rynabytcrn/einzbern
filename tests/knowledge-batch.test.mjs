@@ -45,8 +45,8 @@ const card = (fixture, n, overrides = {}) => ({
   verb: "knowledge-create",
   externalKey: `KB-CARD-${n}`,
   scope: "project", projectId: fixture.projectId, roleScopes: [],
-  // TCRN-CROSS-INC-282, TCRN-CROSS-SUB-308: every card is written active and promoted,
-  // whatever its kind; there is no candidate to write and no promote member to move one.
+  // TCRN-CROSS-INC-282, TCRN-CROSS-SUB-308: every card is written active,
+  // whatever its kind; there is no candidate to write or promote member to move one.
   category: "workflow", kind: "guide", tags: ["batch"],
   subject: `Card ${n} subject`, summary: `Card ${n} summary.`, snippet: `Card ${n} snippet.`,
   accountableOwnerId: deriveStableId("owner", "KB-OWNER"),
@@ -94,11 +94,11 @@ test("knowledge-batch: align, four cards and a reverify in one act", async () =>
     assert.equal(result.applied.length, 6, "the rebase and all five members are receipted");
     const all = await listKnowledgeMetadata(fixture.root, { at: at(4), selection: "all", allowTrailing: true });
     assert.equal(all.total, 4);
-    // TCRN-CROSS-SUB-308: all four are written active and promoted. What proves the reverify
-    // member touched only the card it named is the revision: card 1 was written and then moved.
+    // All four are written active without the retired promotion marker. What proves the
+    // reverify member touched only the card it named is the revision: card 1 was written and then moved.
     const byKey = new Map(all.records.map((record) => [record.externalKey, record]));
-    assert.deepEqual([...byKey.values()].map((record) => `${record.lifecycle}|${record.promotionState}`),
-      Array(4).fill("active|promoted"), "every written card is active and promoted");
+    assert.deepEqual([...byKey.values()].map((record) => record.lifecycle), Array(4).fill("active"));
+    assert.equal([...byKey.values()].some((record) => Object.hasOwn(record, "promotionState")), false);
     assert.equal(byKey.get("KB-CARD-1").revision, 2, "the reverify saw the card its predecessor created and moved it");
     assert.deepEqual(["KB-CARD-2", "KB-CARD-3", "KB-CARD-4"].map((key) => byKey.get(key).revision),
       [1, 1, 1], "and left the three it did not name at their written revision");

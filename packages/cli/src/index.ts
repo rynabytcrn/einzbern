@@ -1087,7 +1087,7 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "knowledge-init", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "acknowledge-disposable", required: false, valueKind: "boolean" }] },
   { name: "knowledge-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "scope", required: false, valueKind: "string" }, { name: "selection", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "role-scope", required: false, valueKind: "string" }, { name: "category", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "tag", required: false, valueKind: "string" }, { name: "freshness", required: false, valueKind: "string" }, { name: "search", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
   { name: "knowledge-rebase", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
-  { name: "knowledge-recover", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
+  { name: "knowledge-recover", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }] },
   { name: "knowledge-reverify", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "expected-revision", required: true, valueKind: "integer" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }] },
   { name: "knowledge-snippet", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
   { name: "knowledge-source-check", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
@@ -2176,9 +2176,11 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   if (command === "knowledge-recover") {
-    const values = parseArguments(rest, ["workspace"]);
+    const values = parseArguments(rest, ["workspace", "scope"]);
     required(values, ["workspace"]);
-    io.write(canonicalJson(await recoverKnowledgeStore(values.workspace ?? "")));
+    io.write(canonicalJson(await recoverKnowledgeStore(values.workspace ?? "", values.scope === undefined ? {} : {
+      scope: values.scope as "project" | "user",
+    })));
     return;
   }
   if (command === "knowledge-bodies-migrate") {

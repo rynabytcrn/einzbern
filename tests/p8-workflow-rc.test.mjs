@@ -32,6 +32,7 @@ import {
   buildP8ReleaseArtifacts,
   moveStaleReleaseArtifacts,
   p8ArtifactRecords,
+  p8FailureTerminal,
   p8ReleaseArtifactSetMatches,
   rebuildP8SourceArchiveInIndependentRoots,
   sanitizedCoreReferenceProjection,
@@ -74,6 +75,21 @@ test("P8 creates a closed unpublished release candidate without supported AOS re
   assert.throws(
     () => assertClosedReleaseArtifactAllowlist(new Map([["unexpected.txt", Buffer.from("")]])),
     (error) => error.reasonCode === "P8_RELEASE_ALLOWLIST_MISMATCH",
+  );
+});
+
+test("a failed P8 command has a structured failure terminal and cannot claim success", () => {
+  const terminal = p8FailureTerminal({ reasonCode: "PRIVACY_FINDINGS", error: "privacy finding in the build surface" });
+  assert.deepEqual(terminal, {
+    schemaVersion: "tcrn.p8-child-failure.v1",
+    command: "p8",
+    ok: false,
+    reasonCode: "PRIVACY_FINDINGS",
+    error: "privacy finding in the build surface",
+  });
+  assert.throws(
+    () => p8FailureTerminal({ reasonCode: "P8_WORKFLOW_RC_VERIFIED", error: "must remain a failure" }),
+    (error) => error.reasonCode === "P8_FAILURE_TERMINAL_REASON_INVALID",
   );
 });
 

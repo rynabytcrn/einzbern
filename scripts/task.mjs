@@ -1366,6 +1366,11 @@ try {
   process.stdout.write(`${JSON.stringify({ ok: true, command, ...result })}\n`);
 } catch (error) {
   const details = error?.details && typeof error.details === "object" && !Array.isArray(error.details) ? error.details : {};
-  process.stderr.write(`${JSON.stringify({ ...details, ok: false, command, reasonCode: errorReason(error), error: error.message })}\n`);
+  if (command === "p8") {
+    const { p8FailureTerminal } = await p8Release();
+    process.stdout.write(`${JSON.stringify(p8FailureTerminal({ reasonCode: errorReason(error), error: error.message || errorReason(error) }))}\n`);
+  } else {
+    process.stderr.write(`${JSON.stringify({ ...details, ok: false, command, reasonCode: errorReason(error), error: error.message })}\n`);
+  }
   process.exitCode = 1;
 }

@@ -2,6 +2,12 @@
 // The engine push-gate child list is data so the acceptance containment declaration
 // can be checked against the executable wiring without importing a side-effectful gate.
 
+import { TextDecoder } from "node:util";
+
+const strictUtf8 = new TextDecoder("utf-8", { fatal: true });
+const P8_FAILURE_TERMINAL_FIELDS = Object.freeze(["command", "error", "ok", "reasonCode", "schemaVersion"]);
+const P8_FAILURE_TERMINAL_SCHEMA = "tcrn.p8-child-failure.v1";
+
 export const ENGINE_PUSH_GATE_CHILDREN = Object.freeze([
   Object.freeze({ reasonCode: "PUSH_GATE_P1_FAILED", script: "verify:p1" }),
   Object.freeze({ reasonCode: "PUSH_GATE_P8_FAILED", script: "verify:p8" }),
@@ -19,6 +25,60 @@ export function pushGateChildConclusion(result) {
     return "not-verifiable";
   }
   return result.exitCode === 0 ? "verified" : "blocked";
+}
+
+/** Recognize a failed P8 terminal without changing the child conclusion to green. */
+export function inspectP8FailureTerminal({ stdout = Buffer.alloc(0), stderr = Buffer.alloc(0), exitCode = null, signal = null, error = null } = {}) {
+  const findings = [];
+  if (!Number.isSafeInteger(exitCode) || exitCode === 0 || signal !== null || error !== null) {
+    findings.push({ code: "P8_FAILURE_TERMINAL_EXIT_INVALID", location: "$.exit" });
+  }
+  let stdoutText = "";
+  let stderrText = "";
+  try {
+    stdoutText = typeof stdout === "string" ? stdout : strictUtf8.decode(stdout);
+  } catch {
+    findings.push({ code: "CHILD_STDOUT_UTF8_INVALID", location: "$.stdout" });
+  }
+  try {
+    stderrText = typeof stderr === "string" ? stderr : strictUtf8.decode(stderr);
+  } catch {
+    findings.push({ code: "CHILD_STDERR_UTF8_INVALID", location: "$.stderr" });
+  }
+  if (stderrText.length > 0) findings.push({ code: "CHILD_STDERR_NOT_EMPTY", location: "$.stderr", bytes: Buffer.byteLength(stderrText) });
+  const lines = stdoutText.split(/\r?\n/u).filter((line) => line.trim().length > 0);
+  if (lines.length !== 1) {
+    findings.push({ code: lines.length > 1 ? "CHILD_TERMINAL_DUPLICATE_OR_EXTRA_OUTPUT" : "CHILD_TERMINAL_MISSING", location: "$.stdout", lineCount: lines.length });
+  }
+  let receipt = null;
+  if (lines.length === 1) {
+    try {
+      receipt = JSON.parse(lines[0]);
+      if (receipt === null || typeof receipt !== "object" || Array.isArray(receipt)) throw new Error("terminal must be a JSON object");
+    } catch {
+      findings.push({ code: "CHILD_TERMINAL_JSON_INVALID", location: "$.stdout[0]" });
+    }
+  }
+  if (receipt !== null) {
+    if (JSON.stringify(Object.keys(receipt).sort()) !== JSON.stringify([...P8_FAILURE_TERMINAL_FIELDS].sort())) {
+      findings.push({ code: "P8_FAILURE_TERMINAL_FIELDS_INVALID", location: "$" });
+    }
+    if (receipt.schemaVersion !== P8_FAILURE_TERMINAL_SCHEMA || receipt.command !== "p8" || receipt.ok !== false) {
+      findings.push({ code: "P8_FAILURE_TERMINAL_SHAPE_INVALID", location: "$" });
+    }
+    if (typeof receipt.reasonCode !== "string" || !/^[A-Z][A-Z0-9_]*$/u.test(receipt.reasonCode) || receipt.reasonCode === "P8_WORKFLOW_RC_VERIFIED") {
+      findings.push({ code: "P8_FAILURE_TERMINAL_REASON_INVALID", location: "$.reasonCode" });
+    }
+    if (typeof receipt.error !== "string" || receipt.error.length === 0) {
+      findings.push({ code: "P8_FAILURE_TERMINAL_MESSAGE_INVALID", location: "$.error" });
+    }
+  }
+  return {
+    ok: findings.length === 0,
+    reasonCode: findings.length === 0 ? "P8_FAILURE_TERMINAL_VALID" : "P8_FAILURE_TERMINAL_INVALID",
+    terminalReasonCode: receipt?.reasonCode ?? null,
+    findings,
+  };
 }
 
 function containmentError(reasonCode, detail) {

@@ -47,7 +47,7 @@ import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { P8_VERSION } from "./lib/p8-workflow-rc.mjs";
-import { pushGateChildConclusion, pushGateExecutionPlan, ENGINE_PUSH_GATE_CHILDREN } from "./lib/push-gate-children.mjs";
+import { inspectP8FailureTerminal, pushGateChildConclusion, pushGateExecutionPlan, ENGINE_PUSH_GATE_CHILDREN } from "./lib/push-gate-children.mjs";
 import { requiredFailurePatternProblems } from "./preflight.mjs";
 import { hasWarningOrError, inspectStructuredChildOutput, validateHostEvidenceProvenance, validateStructuredChildExpectations } from "./lib/push-gate-output.mjs";
 
@@ -456,6 +456,8 @@ for (const { reasonCode, script } of ENGINE_PUSH_GATE_CHILDREN) {
     ? { ok: true, reasonCode: "TIMING_PROBE_SYNTHETIC_OUTPUT", findings: [] }
     : script === "verify:p1"
       ? { ok: !p1Diagnostic, reasonCode: p1Diagnostic ? "P1_DIAGNOSTIC_PRESENT" : "P1_WARNING_RULE_CLEAR", findings: p1Diagnostic ? [{ code: "P1_DIAGNOSTIC_PRESENT", location: "$.stdout|$.stderr" }] : [] }
+      : script === "verify:p8" && result.exitCode !== 0 && result.signal === null && result.error === null
+        ? inspectP8FailureTerminal({ stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode, signal: result.signal, error: result.error })
       : inspectStructuredChildOutput({ stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode, signal: result.signal }, script, childExpectations);
   const retained = await retainChildOutput(script, result, assessment);
   childResults.push(retained);

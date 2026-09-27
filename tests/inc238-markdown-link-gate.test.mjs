@@ -97,6 +97,25 @@ test("INC-238: ordinary in-repo links still resolve, absolute and relative", asy
   }
 });
 
+test("INC-238: Wiki page slugs without a file path remain broken local links", async () => {
+  const root = await tree();
+  try {
+    await mkdir(join(root, "docs", "wiki"), { recursive: true });
+    await writeFile(join(root, "docs", "wiki", "Glossary.md"), "# Glossary\n");
+    await writeFile(join(root, "docs", "wiki", "Home.md"), "[bare slug](Glossary) [file path](Glossary.md)\n");
+
+    assert.equal(resolveLinkTarget("Glossary", "docs/wiki/Home.md", root).resolves, false);
+    assert.equal(resolveLinkTarget("Glossary.md", "docs/wiki/Home.md", root).resolves, true);
+    const result = await inspectMarkdownLinks(root, ["docs/wiki/Home.md"]);
+    assert.equal(result.ok, false);
+    assert.deepEqual(result.broken.map(({ file, target }) => ({ file, target })), [
+      { file: "docs/wiki/Home.md", target: "Glossary" },
+    ]);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
 // Red leg: report only the first broken link and a document with several looks like a
 // document with one.
 test("INC-238: every broken link is reported, with the escaping ones marked", async () => {

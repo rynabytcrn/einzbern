@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-487 R3, AC3 (TCRN-CROSS-SUB-352): scripts/push-wiki.mjs publishes docs/wiki to
 // the Wiki repository. A temporary bare repository stands in for the Wiki's remote, seeded with the
-// Home page GitHub creates. The default run is a rehearsal: it mirrors docs/wiki into a local
-// working tree of the Wiki, commits there and lists what a push would send, and the remote does not
-// move. With --execute push the remote's latest commit holds exactly docs/wiki. Everything here is
-// temporary; git reads a configuration file of the test's own.
+// Home page GitHub creates. The default run is a rehearsal: it mirrors docs/wiki, including its
+// Home.md, into a local working tree of the Wiki, commits there and lists what a push would send,
+// and the remote does not move. With --execute push the remote's latest commit holds exactly
+// docs/wiki. Everything here is temporary; git reads a configuration file of the test's own.
 
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
@@ -79,12 +79,17 @@ test("487-AC3: the rehearsal commits docs/wiki in the Wiki's working tree and pu
   const seeded = head(remote);
   const pages = await filesOf(SOURCE);
   assert.equal(pages.length > 0, true);
+  assert.ok(pages.includes("Home.md"), "Home is a member of docs/wiki");
 
   const rehearsal = run(["--wiki-dir", wiki, "--source", SOURCE]);
   assert.equal(rehearsal.status, 0, JSON.stringify(rehearsal.refusal));
   const receipt = rehearsal.receipt;
   assert.deepEqual([receipt.reasonCode, receipt.pushed, receipt.upstream], ["WIKI_PUSH_REHEARSED", false, "origin/master"]);
-  assert.deepEqual([receipt.added, receipt.updated, receipt.removed], [pages, [], ["Home.md"]], "docs/wiki is the whole Wiki: the web page goes");
+  assert.deepEqual(
+    [receipt.added, receipt.updated, receipt.removed],
+    [pages.filter((page) => page !== "Home.md"), ["Home.md"], []],
+    "docs/wiki is the whole Wiki, including the Home page",
+  );
   assert.match(receipt.commit, /^[0-9a-f]{40}$/u);
   assert.deepEqual(receipt.pending.map((entry) => entry.commit), [receipt.commit]);
   assert.match(receipt.pending[0].subject, /^Sync the Wiki from docs\/wiki/u);

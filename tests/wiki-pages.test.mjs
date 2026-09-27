@@ -41,7 +41,7 @@ function pageNameForTarget(target) {
   assert.ok(withoutFragment.length > 0, `empty wiki target: ${target}`);
   assert.ok(!withoutFragment.startsWith("/"), `absolute wiki target: ${target}`);
   assert.ok(!withoutFragment.split("/").includes(".."), `escaping wiki target: ${target}`);
-  return withoutFragment.endsWith(".md") ? withoutFragment : `${withoutFragment}.md`;
+  return withoutFragment;
 }
 
 test("487-AC1: all eleven topic pages, Home, and the single History archive are present", async () => {

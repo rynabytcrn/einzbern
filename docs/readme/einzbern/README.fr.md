@@ -8,7 +8,7 @@ Le Graal exauce les vœux. Einzbern se souvient des vœux que vous avez formulé
 
 ![release](https://img.shields.io/badge/release-{{version}}-blue?style=flat-square) ![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square) ![hosts](https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex-informational?style=flat-square) ![platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-informational?style=flat-square) ![deps](https://img.shields.io/badge/runtime%20deps-0-success?style=flat-square)
 
-[Ce qui s'est passé mercredi après-midi](#ce-qui-sest-passé-mercredi-après-midi) · [Ce qu'il retient](#ce-quil-retient) · [Quand vous en aurez envie](#quand-vous-en-aurez-envie) · [Pourquoi lui, et pas un plugin de mémoire](#pourquoi-lui-et-pas-un-plugin-de-mémoire) · [Installation](#installation) · [Au quotidien](#au-quotidien) · [Plusieurs appareils et dossiers cloud](#plusieurs-appareils-et-dossiers-cloud) · [Comment nous l'utilisons nous-mêmes](#comment-nous-lutilisons-nous-mêmes) · [Pourquoi cette conception](#pourquoi-cette-conception) · [Glossaire](#glossaire)
+[Ce qui s'est passé mercredi après-midi](#ce-qui-sest-passé-mercredi-après-midi) · [Ce qu'il retient](#ce-quil-retient) · [Quand vous en aurez envie](#quand-vous-en-aurez-envie) · [Pourquoi lui, et pas un plugin de mémoire](#pourquoi-lui-et-pas-un-plugin-de-mémoire) · [Installation](#installation) · [Au quotidien](#au-quotidien) · [Plusieurs appareils et dossiers cloud](#plusieurs-appareils-et-dossiers-cloud) · [Comment nous l'utilisons nous-mêmes](#comment-nous-lutilisons-nous-mêmes) · [Comment les principes intégrés font durer vos tokens](#comment-les-principes-intégrés-font-durer-vos-tokens) · [Pourquoi cette conception](#pourquoi-cette-conception) · [Glossaire](#glossaire)
 
 </div>
 
@@ -181,6 +181,23 @@ Le tableau ci-dessous est celui que nous utilisons en ce moment ; les noms de mo
 |---|---|---|---|
 | Claude Code | claude-fable-5-1, max, conversation de conception seulement, jamais délégué | claude-opus-5-5, max, orchestration des sous-agents et acceptation | claude-opus-5-5, low, découpage et implémentation des paquets |
 | Codex | gpt-6-astra, max | gpt-6-sol, max | gpt-6-luna, max |
+
+## Comment les principes intégrés font durer vos tokens
+
+Les quatre principes ne sont pas seulement une discipline ; chacun bouche une fuite mesurée. Les chiffres viennent du journal de développement d'Einzbern lui-même, 2026-09-26, même lot de travail, même modèle.
+
+| Où ça fuit | Mesuré | Le principe qui bouche |
+|---|---|---|
+| Un sous-agent tourne sans fin, son contexte grossit et il le relit entièrement à chaque tour | Un sous-agent pour 30 Subtasks : contexte moyen 526k, 3 740 tours, 221M de tokens pondérés, 7,4M par Subtask | Traitement par lots : des paquets en parallèle, un sous-agent neuf par paquet, retiré une fois fini. Un sous-agent de paquet neuf coûte 2,9M par Subtask, 39 % de cela |
+| Corriger un rouge dès qu'il apparaît, puis un autre, et relancer les portes sans fin | Dans la version précédente, neuf tickets de défaut ont tourné autour d'une porte de budget, et un défaut de hook a pris quatre commits | Traitement par lots : les rouges sont notés, pas corrigés sur-le-champ ; traités une fois en fin de lot ; une cause racine compte une fois |
+| Lancer une vague juste à la fin d'une fenêtre de quota, et tout perdre | Huit sous-agents parallèles ont rempli le quota de 5 heures en 12 minutes, zéro commit, environ 15M perdus | Garde de quota : lire le quota avant de déléguer ; le parallélisme baisse à 75 %, l'attente commence à 90 % |
+| Une boîte de confirmation s'ouvre et la session attend un humain indéfiniment | Une attente a duré 2 heures 12 minutes | Commandes sans surveillance : aucune forme de commande qui ouvre une boîte |
+| La conversation principale écrit un rapport après chaque délégation | Quelques milliers de tokens à chaque fois, tous gardés dans le contexte principal et relus à chaque tour ensuite | Rapport silencieux : rendre compte seulement quand tout est terminé ou tout est bloqué |
+| Demander « je continue ? » et attendre la réponse | Sans personne présent, l'attente dure toute la nuit | Fonctionnement autonome : les actions réversibles se font simplement |
+
+Quatre-vingts à quatre-vingt-dix pour cent du coût, ce sont les lectures de cache, c'est-à-dire la relecture du contexte à chaque tour. Le prompt système et les règles injectés au démarrage d'un sous-agent ne font que 52k, moins de 1 % du coût d'un sous-agent. Économiser des tokens ne consiste donc pas à injecter moins, mais à garder le contexte de chaque sous-agent court et ses tours peu nombreux : un fichier d'extrait par paquet plutôt que tout le découpage, la sortie des commandes écrite dans des fichiers dont on ne relit que la fin, les gros fichiers lus par plages, les commandes voisines fusionnées. Tout cela est écrit dans le principe de traitement par lots et dans le fichier de démarrage de la conversation d'implémentation.
+
+Le parallélisme en lui-même n'économise aucun token ; il change seulement la vitesse à laquelle ils partent. Ce qui économise, c'est un contexte neuf. C'est pourquoi le plafond parallèle suit votre abonnement et la garde de quota le réduit d'elle-même quand le quota s'épuise.
 
 ## Pourquoi cette conception
 

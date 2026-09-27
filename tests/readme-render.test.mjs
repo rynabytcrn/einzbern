@@ -7,6 +7,7 @@
 // switch pointing at a file that is not there, or a machine path in what a reader sees, is red.
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { access, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -22,6 +23,14 @@ const TEMPLATES = join(REPO_ROOT, "docs", "readme", "einzbern");
 const NAMES = ["README.md", "README.en.md", "README.ja.md", "README.ko.md", "README.fr.md"];
 const PLACEHOLDER = "{{version}}";
 const LOCAL_PATH_REASONS = new Set(["LOCAL_ABSOLUTE_PATH", "LINUX_HOME_PATH", "WINDOWS_USER_PATH"]);
+// Digests pin docs/dispatch/2026-09-25-einzbern/readme/einzbern/ as the independent final text.
+const FINAL_README_TEMPLATE_SHA256 = Object.freeze({
+  "README.md": "d52fdf42ff3a4f46661652be21bff5feccbfbb4237a29d1212d9452d439815a2",
+  "README.en.md": "ae7d5f70ed4f0266274b205169038e24b9a2e51ce1eb82441b679126bad5f4a6",
+  "README.ja.md": "ca83f119f17ecadec80b1dc7dc6cb11324c015a82ce2e0cdeceb025ac3e2f145",
+  "README.ko.md": "f225c619491f3d78a524923b45cdd32986628db06b9d391feb0c00f2efe8d08e",
+  "README.fr.md": "07e38b8cf1648a2a0425ab9e586f2df58822862855aed32df0664e00409cbb2c",
+});
 
 async function packageVersion() {
   return JSON.parse(await readFile(join(REPO_ROOT, "package.json"), "utf8")).version;
@@ -32,10 +41,12 @@ function render(root, arguments_) {
   return { status: result.status, output: JSON.parse(result.stdout.trim()) };
 }
 
-test("486-R1, R4: every template carries the version slot", async () => {
+test("495-T4: templates match the finalized five-language READMEs", async () => {
   for (const name of NAMES) {
     const template = await readFile(join(TEMPLATES, name), "utf8");
-    assert.ok(template.includes(PLACEHOLDER), `${name} carries ${PLACEHOLDER}`);
+    const digest = createHash("sha256").update(template).digest("hex");
+    assert.equal(digest, FINAL_README_TEMPLATE_SHA256[name], `${name} matches the finalized external README`);
+    assert.equal(template.split(PLACEHOLDER).length - 1, 1, `${name} carries one ${PLACEHOLDER} slot`);
   }
 });
 

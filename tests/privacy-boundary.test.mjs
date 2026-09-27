@@ -9,7 +9,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 
 import { LocalCommandError, runLocalCommand } from "../scripts/lib/local-command.mjs";
-import { decodeGitMetadataBytes, normalizePrivacyText, parseGitObjectBatch, parseHistoricalTreePaths, scanPrivacyEntries, walkHistoricalCommitPaths } from "../scripts/lib/privacy.mjs";
+import { aggregatePrivacySurface, decodeGitMetadataBytes, normalizePrivacyText, parseGitObjectBatch, parseHistoricalTreePaths, scanPrivacyEntries, walkHistoricalCommitPaths } from "../scripts/lib/privacy.mjs";
 import { ENGINE_REPOSITORY_NAMES, LEGACY_REPOSITORY_NAMES } from "../dist/build/packages/core/src/index.js";
 
 const batchCheckFormat = "--batch-check=%(objectname) %(objecttype) %(objectsize)";
@@ -300,6 +300,47 @@ test("private values reconstructed by common obfuscation forms are normalized be
     });
     assert.ok(findings.some((finding) => finding.startsWith("PRIVATE_RUNTIME_VALUE:")), content);
   }
+});
+
+test("joined, reversed and unmatched arrays preserve the privacy scan summary and findings", () => {
+  const entries = [
+    {
+      path: "normalization/joined.mjs",
+      label: "normalization/joined.mjs",
+      kind: "source",
+      content: 'const path = ["/Users/", "fixture-user/private.txt"].join("");',
+    },
+    {
+      path: "normalization/reversed.mjs",
+      label: "normalization/reversed.mjs",
+      kind: "source",
+      content: 'const remote = ["fixture.internal/repo", "ssh://"].reverse().join("");',
+    },
+    {
+      path: "normalization/unmatched.mjs",
+      label: "normalization/unmatched.mjs",
+      kind: "source",
+      content: String.raw`const examples = ["C:\\Users\\fixture-user", "safe"];`,
+    },
+  ];
+  const progress = [];
+  const findings = scanPrivacyEntries(entries, {
+    owner: publicIdentity.login,
+    onProgress: (value) => progress.push(value),
+  });
+
+  assert.deepEqual(progress, [{ entriesScanned: entries.length, totalEntries: entries.length }]);
+  assert.deepEqual(findings, [
+    "LOCAL_ABSOLUTE_PATH:source:normalization/joined.mjs",
+    "PRIVATE_HOSTNAME:source:normalization/reversed.mjs",
+    "PRIVATE_SSH_URL:source:normalization/reversed.mjs",
+    "WINDOWS_USER_PATH:source:normalization/unmatched.mjs",
+  ]);
+  assert.deepEqual(aggregatePrivacySurface(entries), {
+    entries: entries.length,
+    bytes: entries.reduce((total, entry) => total + Buffer.byteLength(entry.content, "utf8"), 0),
+    sha256: "a04984a5487e4bffaf726c1c56eafc39e72577f3d9b1b93db2a45f2593d9333d",
+  });
 });
 
 test("filenames are scanned as privacy-bearing metadata", () => {

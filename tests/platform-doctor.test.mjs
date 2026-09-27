@@ -23,6 +23,7 @@ function test(name, optionsOrBody, maybeBody) {
 }
 
 import { coreExportedSymbols, inspectChainValidation, inspectPlatform } from "../scripts/platform-doctor.mjs";
+import { P1_SEQUENCE } from "../scripts/p1-sequence.mjs";
 import { HOST_HOOK_HOSTS, mergeHostHooks, planHostHooks } from "../dist/build/packages/core/src/host-hooks.js";
 import { BRAND, DIRECTORY, INSTALL_MANIFEST, LEGACY_BRAND_NAME, LEGACY_ENGINE_NAME, LOCAL_DIRECTORY_NAMES, initializeLibrary, materializeWorkspace, workspaceBudgets } from "../dist/build/packages/core/src/index.js";
 import { PROTOCOL_LIMITS, canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
@@ -30,38 +31,29 @@ import { PROTOCOL_LIMITS, canonicalSha256 } from "../dist/build/packages/protoco
 const topology = "## 三、分区拓扑\n";
 const FIXTURE_COMMIT = "f".repeat(40);
 const launchdLabel = "com.tcrn.platform.local-snapshot";
+const acceptanceRosterFixture = JSON.parse(await readFile(new URL("./fixtures/acceptance-gate-groups.json", import.meta.url), "utf8"));
 
-// STORY-300: a complete container now carries the acceptance-lane roster, so the
-// synthetic one does too. `roster: false` builds a container without it, which is
-// what the roster leg's red case looks like -- and what every container looked like
-// until 2026-08-19, while forty-four records were landing done against it.
-function syntheticRoster(count = 7) {
-  return {
-    schemaVersion: "tcrn.acceptance-gate-groups.v1",
-    groups: Array.from({ length: count }, (_, index) => ({
-      id: `group-${index}`,
-      title: `Group ${index}`,
-      repository: "fixture",
-      command: "pnpm fixture",
-      proves: "fixture",
-    })),
-  };
+// STORY-300: a complete container carries the canonical acceptance roster. Keep the
+// synthetic repositories unresolved except for the explicit test binding override.
+// A count smaller than the current roster is used only by the missing-group red leg.
+function syntheticRoster(count = acceptanceRosterFixture.groups.length) {
+  const roster = structuredClone(acceptanceRosterFixture);
+  roster.groups = roster.groups.slice(0, count).map((group) => ({ ...group, repository: "fixture" }));
+  return roster;
 }
 
 function inc250Roster() {
-  const repositories = [
-    ["engine-suite", LOCAL_DIRECTORY_NAMES.engine],
-    ["engine-p1", LOCAL_DIRECTORY_NAMES.engine],
-    ["engine-guards", LOCAL_DIRECTORY_NAMES.engine],
-    ["engine-release", LOCAL_DIRECTORY_NAMES.engine],
-    ["platform-layout", LOCAL_DIRECTORY_NAMES.engine],
-    ["chain-validate", "chain container"],
-    ["product-gates", "TCRN Platform/TCRN-Design-System"],
-  ];
-  return {
-    schemaVersion: "tcrn.acceptance-gate-groups.v1",
-    groups: repositories.map(([id, repository]) => ({ id, title: id, repository, command: "fixture", proves: "fixture" })),
+  const repositories = {
+    "engine-suite": LOCAL_DIRECTORY_NAMES.engine,
+    "engine-p1": LOCAL_DIRECTORY_NAMES.engine,
+    "engine-release": LOCAL_DIRECTORY_NAMES.engine,
+    "platform-layout": LOCAL_DIRECTORY_NAMES.engine,
+    "chain-validate": "chain container",
+    "product-gates": "TCRN Platform/TCRN-Design-System",
   };
+  const roster = structuredClone(acceptanceRosterFixture);
+  roster.groups = roster.groups.map((group) => ({ ...group, repository: repositories[group.id] }));
+  return roster;
 }
 
 function gitAcceptanceBinding(repository, commit) {
@@ -122,7 +114,7 @@ async function fixture(context, { agents = `${topology}fixture\n`, chain = true,
     const recordedAt = new Date((await stat(join(root, docsDirectory, "acceptance-gate-groups.json"))).mtimeMs).toISOString();
     await writeFile(join(root, docsDirectory, "acceptance-verdicts.json"), `${JSON.stringify({
       schemaVersion: "tcrn.acceptance-verdicts.v1",
-      verdicts: Object.fromEntries(roster.groups.map((group) => [group.id, { verdict: "green", recordedAt, commit: FIXTURE_COMMIT }])),
+      verdicts: Object.fromEntries(roster.groups.filter((group) => group.id !== "chain-validate").map((group) => [group.id, { verdict: "green", recordedAt, commit: FIXTURE_COMMIT }])),
     }, null, 2)}\n`);
   }
   // STORY-300 Wave 2.2: the identity file's tracked copy, byte-identical unless a
@@ -158,7 +150,7 @@ test("INC-247: the container-root platform docs location is canonical", async (c
   const root = await fixture(context, { docsDirectory: "platform-docs" });
   const result = await inspectPlatform(root, { includeInstallSurface: false });
   assert.equal(result.ok, true, JSON.stringify(result));
-  assert.equal(result.checks.find((entry) => entry.name === "acceptanceGateGroups").acceptedExceptionCount, 0);
+  assert.equal(result.checks.find((entry) => entry.name === "acceptanceGateGroups").acceptedExceptionCount, 1);
 });
 
 test("INC-247: the former classification-folder docs location is rejected", async (context) => {
@@ -168,11 +160,9 @@ test("INC-247: the former classification-folder docs location is rejected", asyn
   assert.equal(result.checks.find((entry) => entry.name === "acceptanceGateGroups").reasonCode, "PLATFORM_ACCEPTANCE_ROSTER_MISSING");
 });
 
-// Red legs for the roster, both observed before this landed: an absent roster is
-// named as absent rather than tolerated, and a roster that has quietly lost a group
-// is refused with the count reported. The count the acceptance ruling names is seven
-// since MIN-149, so a different count is a change to the criterion and belongs in a
-// ruling rather than in a file edit.
+// Red legs for the roster: an absent roster is named as absent rather than tolerated,
+// a roster that has quietly lost a group is refused, and D3 batch applicability cannot
+// be omitted or changed into a blanket doctor exception.
 test("STORY-300: an absent acceptance roster is a red leg, not a tolerated gap", async (context) => {
   const root = await fixture(context, { roster: null });
   const result = await inspectPlatform(root, { includeInstallSurface: false });
@@ -181,12 +171,80 @@ test("STORY-300: an absent acceptance roster is a red leg, not a tolerated gap",
 });
 
 test("STORY-300: an acceptance roster that lost a group is refused with the count", async (context) => {
-  const root = await fixture(context, { roster: syntheticRoster(6) });
+  const root = await fixture(context, { roster: syntheticRoster(5) });
   const result = await inspectPlatform(root, { includeInstallSurface: false });
   assert.equal(result.ok, false);
   const leg = result.checks.find((item) => item.name === "acceptanceGateGroups");
   assert.equal(leg.reasonCode, "PLATFORM_ACCEPTANCE_ROSTER_INVALID");
+  assert.equal(leg.declaredGroups, 5);
+  assert.deepEqual(leg.missingGroups, ["product-gates"]);
+});
+
+test("MIN-235 D3: the current roster records each existing group's batch applicability", async (context) => {
+  const root = await fixture(context, { roster: structuredClone(acceptanceRosterFixture) });
+  const result = await inspectPlatform(root, { includeInstallSurface: false });
+  const leg = result.checks.find((item) => item.name === "acceptanceGateGroups");
+  assert.equal(leg.ok, true, JSON.stringify(leg));
   assert.equal(leg.declaredGroups, 6);
+  assert.deepEqual(acceptanceRosterFixture.groups.map((group) => group.id), [
+    "engine-suite", "engine-p1", "engine-release", "platform-layout", "chain-validate", "product-gates",
+  ]);
+  assert.equal(
+    acceptanceRosterFixture.groups.find((group) => group.id === "engine-p1").proves,
+    `The ordered P1 gate train from scripts/p1-sequence.mjs: ${P1_SEQUENCE.map(({ task }) => task).join(", ")}.`,
+  );
+  assert.deepEqual(acceptanceRosterFixture.groups.find((group) => group.id === "engine-release").contains, ["engine-p1"]);
+  assert.deepEqual(leg.batchApplicability["chain-validate"], { firstBatch: "baseline-only", secondBatch: "required" });
+  assert.deepEqual(leg.batchApplicability["product-gates"], { firstBatch: "conditional", secondBatch: "conditional" });
+  const platformLayout = acceptanceRosterFixture.groups.find((group) => group.id === "platform-layout").batchApplicability.firstBatch;
+  assert.deepEqual(platformLayout.subchecks.map(({ id }) => id), [
+    "helperCopies", "acceptanceVerdicts", "installWiring", "hooks", "deploymentFreshness", "launchd", "harnessSurface",
+  ]);
+  assert.deepEqual(platformLayout.subchecks.find(({ id }) => id === "launchd"), {
+    id: "launchd",
+    firstBatch: "accepted-existing-exception-only",
+    secondBatch: "accepted-existing-exception-only",
+    criteria: "Keep exactly the existing PLATFORM_LAUNCHD_NOT_ON_DUTY exception; it does not accept any other doctor finding.",
+  });
+  assert.equal(platformLayout.subchecks.find(({ id }) => id === "harnessSurface").secondBatch, "unresolved-host-specific-reconciliation");
+  assert.deepEqual(acceptanceRosterFixture.groups.find((group) => group.id === "platform-layout").acceptedExceptions, [{
+    acceptedAt: "2026-08-15",
+    reasonCode: "PLATFORM_LAUNCHD_NOT_ON_DUTY",
+    reason: "OWNER_RULING_BACKUP_LAYERS_STOPPED",
+  }]);
+});
+
+test("MIN-235 D3: missing batch applicability is red rather than silently omitted", async (context) => {
+  const roster = syntheticRoster();
+  delete roster.groups.find((group) => group.id === "engine-release").batchApplicability;
+  const root = await fixture(context, { roster });
+  const result = await inspectPlatform(root, { includeInstallSurface: false });
+  const leg = result.checks.find((item) => item.name === "acceptanceGateGroups");
+  assert.equal(leg.ok, false);
+  assert.ok(leg.invalidBatchApplicability.includes("engine-release"));
+});
+
+test("MIN-235 D3: applicability cannot add a third batch", async (context) => {
+  const roster = syntheticRoster();
+  roster.groups[0].batchApplicability.thirdBatch = { status: "required", criteria: ["out of scope"] };
+  const root = await fixture(context, { roster });
+  const result = await inspectPlatform(root, { includeInstallSurface: false });
+  const leg = result.checks.find((item) => item.name === "acceptanceGateGroups");
+  assert.equal(leg.ok, false);
+  assert.ok(leg.invalidBatchApplicability.includes("engine-suite.phaseKeys"));
+});
+
+test("MIN-235 D3: doctor subchecks cannot be blanket-waived or promoted to a universal host requirement", async (context) => {
+  const roster = syntheticRoster();
+  const subchecks = roster.groups.find((group) => group.id === "platform-layout").batchApplicability.firstBatch.subchecks;
+  subchecks.find((item) => item.id === "hooks").secondBatch = "accepted-existing-exception-only";
+  subchecks.find((item) => item.id === "harnessSurface").secondBatch = "required-on-every-host";
+  const root = await fixture(context, { roster });
+  const result = await inspectPlatform(root, { includeInstallSurface: false });
+  const leg = result.checks.find((item) => item.name === "acceptanceGateGroups");
+  assert.equal(leg.ok, false);
+  assert.ok(leg.invalidBatchApplicability.includes("platform-layout.subchecks.hooks"));
+  assert.ok(leg.invalidBatchApplicability.includes("platform-layout.subchecks.harnessSurface"));
 });
 
 // Red legs for the identity file's history, both observed before this landed. Two
@@ -213,7 +271,7 @@ test("STORY-300: an acceptance roster entry missing a field is named by id", asy
   const root = await fixture(context, { roster });
   const result = await inspectPlatform(root, { includeInstallSurface: false });
   assert.equal(result.ok, false);
-  assert.deepEqual(result.checks.find((item) => item.name === "acceptanceGateGroups").incomplete, ["group-3"]);
+  assert.deepEqual(result.checks.find((item) => item.name === "acceptanceGateGroups").incomplete, ["platform-layout"]);
 });
 
 test("an empty platform AGENTS.md is a load-bearing red leg", async (context) => {
@@ -345,7 +403,7 @@ async function completeInstallFixture(context, { engineVersion = "0.11.15", help
   const rosterRecordedAt = new Date((await stat(rosterPath)).mtimeMs).toISOString();
   await writeFile(join(root, docsDirectory, "acceptance-verdicts.json"), `${JSON.stringify({
     schemaVersion: "tcrn.acceptance-verdicts.v1",
-    verdicts: Object.fromEntries(completeRoster.groups.map((group) => [group.id, { verdict: "green", recordedAt: rosterRecordedAt, commit: FIXTURE_COMMIT }])),
+    verdicts: Object.fromEntries(completeRoster.groups.filter((group) => group.id !== "chain-validate").map((group) => [group.id, { verdict: "green", recordedAt: rosterRecordedAt, commit: FIXTURE_COMMIT }])),
   }, null, 2)}\n`);
   await writeFile(join(root, docsDirectory, "platform-root-agents.md"), `${topology}fixture\n`);
   for (const entry of INSTALL_MANIFEST.items) {
@@ -884,13 +942,12 @@ test("INC-234: missing, stale and red verdicts are each refused, and named", asy
   const none = leg(await run({ verdicts: {} }));
   assert.equal(none.ok, false);
   assert.equal(none.reasonCode, "PLATFORM_ACCEPTANCE_LANE_UNPROVEN");
-  assert.equal(none.missing.length, 7, "every roster group is named as unrecorded");
+  assert.equal(none.missing.length, 5, "every non-live roster group is named as unrecorded");
 
   // A red verdict stays visible rather than being absorbed. Red leg: treat any recorded
   // entry as satisfaction and a group that ran and failed reads the same as one that passed.
   const withRed = { verdicts: Object.fromEntries(none.missing.map((id) => [id, { verdict: "green", recordedAt: fresh, commit: FIXTURE_COMMIT }])) };
-  // The synthetic roster names its groups group-0..group-8; using a real group id here
-  // would silently add an entry the roster does not contain and assert nothing.
+  // Use a real roster identity so the red verdict is checked against the current group.
   const [firstGroup] = none.missing;
   withRed.verdicts[firstGroup] = { verdict: "red", recordedAt: fresh, commit: FIXTURE_COMMIT, detail: "AOS verify" };
   const red = leg(await run(withRed));
@@ -914,26 +971,26 @@ test("INC-234: missing, stale and red verdicts are each refused, and named", asy
   // leg stops distinguishing anything at all.
   const green = leg(await run({ verdicts: Object.fromEntries(none.missing.map((id) => [id, { verdict: "green", recordedAt: fresh, commit: FIXTURE_COMMIT }])) }));
   assert.equal(green.ok, true);
-  assert.equal(green.groups, 7);
+  assert.equal(green.groups, 5);
 });
 
 test("INC-246: an accepted red names its exact reason and does not exempt the group", async (context) => {
   const fixture = await completeInstallFixture(context);
   const rosterPath = join(fixture.root, "platform-docs", "acceptance-gate-groups.json");
   const roster = JSON.parse(await readFile(rosterPath, "utf8"));
-  roster.groups[0].acceptedExceptions = [{
+  roster.groups.find((group) => group.id === "platform-layout").acceptedExceptions = [{
     acceptedAt: "2026-08-15",
     reasonCode: "PLATFORM_LAUNCHD_NOT_ON_DUTY",
     reason: "OWNER_RULING_BACKUP_LAYERS_STOPPED",
   }];
   await writeFile(rosterPath, `${JSON.stringify(roster, null, 2)}\n`);
   const fresh = new Date(Date.now()).toISOString();
-  const verdicts = Object.fromEntries(roster.groups.map((group) => [group.id, {
+  const verdicts = Object.fromEntries(roster.groups.filter((group) => group.id !== "chain-validate").map((group) => [group.id, {
     verdict: "green",
     recordedAt: fresh,
     commit: FIXTURE_COMMIT,
   }]));
-  verdicts["group-0"] = {
+  verdicts["platform-layout"] = {
     verdict: "red",
     recordedAt: fresh,
     commit: FIXTURE_COMMIT,
@@ -943,17 +1000,17 @@ test("INC-246: an accepted red names its exact reason and does not exempt the gr
   const acceptedLeg = acceptedResult.checks.find((entry) => entry.name === "acceptanceVerdicts");
   assert.equal(acceptedLeg.ok, true, JSON.stringify(acceptedLeg));
   assert.deepEqual(acceptedLeg.acceptedExceptions, [{
-    group: "group-0",
+    group: "platform-layout",
     acceptedAt: "2026-08-15",
     reasonCode: "PLATFORM_LAUNCHD_NOT_ON_DUTY",
     reason: "OWNER_RULING_BACKUP_LAYERS_STOPPED",
   }]);
 
-  verdicts["group-0"].detail = "node scripts/platform-doctor.mjs -> reasonCode=PLATFORM_LAUNCHD_LAST_RUN_FAILED; requiredLabel=com.tcrn.platform.local-snapshot";
+  verdicts["platform-layout"].detail = "node scripts/platform-doctor.mjs -> reasonCode=PLATFORM_LAUNCHD_LAST_RUN_FAILED; requiredLabel=com.tcrn.platform.local-snapshot";
   const unacceptedResult = await inspectInstallFixture(fixture, { acceptanceVerdicts: { verdicts } });
   const unacceptedLeg = unacceptedResult.checks.find((entry) => entry.name === "acceptanceVerdicts");
   assert.equal(unacceptedLeg.ok, false);
-  assert.deepEqual(unacceptedLeg.failing.map((entry) => entry.group), ["group-0"]);
+  assert.deepEqual(unacceptedLeg.failing.map((entry) => entry.group), ["platform-layout"]);
 });
 
 test("INC-250: each verdict binds to the repository named by its roster entry", async (context) => {
@@ -970,7 +1027,7 @@ test("INC-250: each verdict binds to the repository named by its roster entry", 
   const green = await run(bindings);
   const greenLeg = green.checks.find((item) => item.name === "acceptanceVerdicts");
   assert.equal(green.ok, true, JSON.stringify(greenLeg));
-  assert.equal(greenLeg.bindings.length, 6);
+  assert.equal(greenLeg.bindings.length, 5);
   assert.deepEqual(greenLeg.liveGroups, ["chain-validate"]);
   const withLiveRecord = {
     ...verdictDocumentForBindings(roster, bindings),
@@ -985,12 +1042,12 @@ test("INC-250: each verdict binds to the repository named by its roster entry", 
   assert.equal(liveRecordLeg.liveGroupRecorded, "chain-validate");
 
   const engineMoved = { ...bindings };
-  for (const id of ["engine-suite", "engine-p1", "engine-guards", "engine-release", "platform-layout"]) {
+  for (const id of ["engine-suite", "engine-p1", "engine-release", "platform-layout"]) {
     engineMoved[id] = gitAcceptanceBinding(LOCAL_DIRECTORY_NAMES.engine, "f".repeat(40));
   }
   const engineRed = await run(engineMoved);
   const engineLeg = engineRed.checks.find((item) => item.name === "acceptanceVerdicts");
-  assert.deepEqual(engineLeg.stale.map((entry) => entry.group), ["engine-suite", "engine-p1", "engine-guards", "engine-release", "platform-layout"]);
+  assert.deepEqual(engineLeg.stale.map((entry) => entry.group), ["engine-suite", "engine-p1", "engine-release", "platform-layout"]);
   assert.equal(engineLeg.stale.some((entry) => entry.group === "product-gates"), false, "engine movement must not stale the product tree");
 
   const designSystemMoved = { ...bindings, "product-gates": gitAcceptanceBinding("TCRN Platform/TCRN-Design-System", "e".repeat(40)) };
@@ -1092,7 +1149,7 @@ test("INC-234: the refusal says a record of a run is not proof the run passed", 
 // being inspected. A git object id is a content hash, so the question has one answer on
 // every host.
 const boundVerdicts = (commit) => ({
-  verdicts: Object.fromEntries(syntheticRoster().groups.map((group) => [
+  verdicts: Object.fromEntries(syntheticRoster().groups.filter((group) => group.id !== "chain-validate").map((group) => [
     group.id, { verdict: "green", recordedAt: "2026-08-20T02:30:00.000Z", commit },
   ])),
 });
@@ -1106,7 +1163,7 @@ test("STORY-304: a verdict recorded against another commit is stale, and names b
   const leg = result.checks.find((entry) => entry.name === "acceptanceVerdicts");
   assert.equal(leg.ok, false);
   assert.equal(leg.reasonCode, "PLATFORM_ACCEPTANCE_LANE_UNPROVEN");
-  assert.equal(leg.stale.length, 7, "every verdict recorded against another tree is stale");
+  assert.equal(leg.stale.length, 5, "every non-live current roster verdict recorded against another tree is stale");
   assert.equal(leg.stale[0].recordedAgainst, "b".repeat(12));
   assert.equal(leg.stale[0].head, "a".repeat(12), "and the commit it should have named is reported");
 });
@@ -1152,7 +1209,7 @@ test("INC-250: an unresolved declared repository is red rather than an engine-HE
   const leg = result.checks.find((entry) => entry.name === "acceptanceVerdicts");
   assert.equal(leg.ok, false);
   assert.equal(leg.reasonCode, "PLATFORM_ACCEPTANCE_LANE_UNPROVEN");
-  assert.equal(leg.unresolved.length, 7);
+  assert.equal(leg.unresolved.length, 5);
   assert.equal(leg.unresolved[0].reasonCode, "PLATFORM_ACCEPTANCE_REPOSITORY_UNRESOLVED");
 });
 

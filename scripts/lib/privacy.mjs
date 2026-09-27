@@ -49,10 +49,12 @@ function escaped(value) {
 }
 
 // MIN-235 D6: hash-only rules for individually reviewed public metadata and manual test samples.
-// Both the matched text and its full normalized source line must match; unknown values, changed
-// lines, and other source paths remain findings. Digests keep sample正文 out of code and reports.
+// Both the matched text and its full normalized line must match; unknown values, changed lines,
+// and other paths remain findings. The P8 build projection has its own path and line digest.
+// Digests keep sample正文 out of code and reports.
 const CLASSIFIED_PRIVACY_MATCHES = new Set([
   "packages/core/src/names.ts\u0000OWNER_PRIVATE_IDENTIFIER\u00001b58b39b82f7665f411664797bcc897a75d9a6222ee4a8c97234493324aab74f\u0000acbbf0306043799672e383fe5bdfc98bfe0a2b1675085c911fce83869dc4a4be",
+  "dist/build/packages/core/src/names.js\u0000OWNER_PRIVATE_IDENTIFIER\u00001b58b39b82f7665f411664797bcc897a75d9a6222ee4a8c97234493324aab74f\u00003861c5826071f54b9b552ac3ff993b91181bf9d91d54dcdfd7f0790fc671bd56",
   "tests/agents-sections.test.mjs\u0000EMAIL_IDENTIFIER\u0000732c098147f75109ac67eec4b33383fe9495028b44dd9b5c69540f080fa7efd8\u0000ef939f026250ca3b0dbf0951c7928e94cda9948a533bbc7c62d9938429cb85d1",
   "tests/agents-sections.test.mjs\u0000EMAIL_IDENTIFIER\u0000740ad4796e4e6c6060892b0c6776b532663dbf1ad24d624c30539ad9a2242a1d\u00001d61adc8379f3685b9f7e2b47fa9e833b03402b68459b4c142f774a2358a5d89",
   "tests/agents-sections.test.mjs\u0000EMAIL_IDENTIFIER\u0000740ad4796e4e6c6060892b0c6776b532663dbf1ad24d624c30539ad9a2242a1d\u00002f483715784d5afb94936391f64c9d70b217c0385cc84e98c038e72dbe7e820e",
@@ -118,7 +120,7 @@ function lineAt(value, offset) {
 }
 
 function classifiedOrigins(entry) {
-  if (entry.kind === "source") return [entry.label];
+  if (entry.kind === "source" || entry.kind === "build") return [entry.label];
   if (!Array.isArray(entry.sourcePaths)) return [];
   return [...new Set(entry.sourcePaths)];
 }

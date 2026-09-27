@@ -302,6 +302,25 @@ test("classified privacy samples stay path-and-line exact across source, history
   assert.ok(archiveFindings.some((finding) => finding.startsWith("EMAIL_IDENTIFIER:release:") && finding.includes("#header:fixtures/")));
 });
 
+test("P8 classifies only the exact compiled public-owner metadata line", async () => {
+  const repositoryRoot = resolve(import.meta.dirname, "..");
+  const names = await readFile(join(repositoryRoot, "packages/core/src/names.ts"), "utf8");
+  const owner = names.match(/owner:\s*"([^"]+)"/u)?.[1];
+  assert.ok(owner, "the owner value comes from the reviewed source metadata");
+
+  const buildPath = "dist/build/packages/core/src/names.js";
+  const buildContent = await readFile(join(repositoryRoot, buildPath), "utf8");
+  const ownerLine = buildContent.split("\n").find((line) => line.includes(owner) && /\bowner\s*:/u.test(line));
+  assert.ok(ownerLine, "the compiler output carries the reviewed owner field");
+  assert.deepEqual(scanPrivacyEntries([{ label: buildPath, kind: "build", content: buildContent }], { owner }), []);
+
+  const changedLine = buildContent.replace(ownerLine, `${ownerLine} // changed`);
+  assert.ok(scanPrivacyEntries([{ label: buildPath, kind: "build", content: changedLine }], { owner })
+    .includes(`OWNER_PRIVATE_IDENTIFIER:build:${buildPath}`));
+  assert.ok(scanPrivacyEntries([{ label: "dist/build/packages/core/src/other.js", kind: "build", content: buildContent }], { owner })
+    .includes("OWNER_PRIVATE_IDENTIFIER:build:dist/build/packages/core/src/other.js"));
+});
+
 test("private/raw identifiers and common secret families fail closed", () => {
   const cases = [
     ["raw email", joinParts(["person", "@", "example.invalid"], ""), "EMAIL_IDENTIFIER"],

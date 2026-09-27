@@ -420,6 +420,7 @@
 | 旗标 | 必填 | 取值类型 |
 | --- | --- | --- |
 | `--workspace` | 可选 | `string` |
+| `--scope` | 可选 | `string` |
 
 ## `knowledge-reverify`
 

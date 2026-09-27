@@ -19,6 +19,7 @@ import { pathToFileURL } from "node:url";
 
 import { FRAMEWORK_VERSION, createKnowledgeUnit, createProject, createWork, initializeLibrary, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
 import { deviceHome } from "../dist/build/packages/core/src/device-home.js";
+import { NODE_FLOOR } from "../dist/build/packages/core/src/node-floor.js";
 import { NAVIGATION_LINES } from "../dist/build/packages/core/src/agents-sections.js";
 import { hookProtocolOutput, navigationPointerAnswer } from "../dist/build/packages/core/src/hook-recall.js";
 import { HOST_HOOK_LAUNCHER } from "../dist/build/packages/core/src/host-hooks.js";
@@ -131,6 +132,28 @@ function refusal(run) {
   assert.equal(lines.length, 1, run.stderr);
   return JSON.parse(lines[0]).reasonCode;
 }
+
+test("481-R2, R4: a below-floor Node.js silently skips importing the versioned hook entry", async (context) => {
+  assert.equal(launcher.HOOK_NODE_FLOOR, NODE_FLOOR, "the stable launcher and engine floor stay aligned");
+  const { base, home } = await scratch(context);
+  const oldNodeFailure = [
+    'if (process.versions.node === "22.12.0") throw new SyntaxError("simulated old-Node parse failure");',
+    'export async function runHookEvent() { throw new Error("unexpected engine hook call"); }',
+    "",
+  ].join("\n");
+  const launcherPath = await installEngine(home, oldNodeFailure);
+  const { directory } = await registeredProject(base);
+  const preload = join(base, "older-node.mjs");
+  await writeFile(preload, 'Object.defineProperty(process.versions, "node", { value: "22.12.0" });\n');
+  const userHome = join(base, "user-home");
+  await mkdir(userHome);
+
+  const oldNode = runHook(launcherPath, { home, cwd: directory, preload, env: { HOME: userHome, USERPROFILE: userHome } });
+  assert.deepEqual([oldNode.status, oldNode.stdout, oldNode.stderr], [0, "", ""]);
+
+  const supportedNode = runHook(launcherPath, { home, cwd: directory, env: { HOME: userHome, USERPROFILE: userHome } });
+  assert.equal(refusal(supportedNode), "HOOK_LAUNCH_FAILED", "supported-runtime hook failures remain diagnosable");
+});
 
 test("477-AC2: a prompt where no project is registered ends the hook with exit 0, no output and no library file read", async (context) => {
   const { base, home } = await scratch(context);

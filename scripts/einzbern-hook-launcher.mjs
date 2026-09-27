@@ -7,21 +7,23 @@
 //
 //   node "<device directory>/engine/hook.mjs" user-prompt-submit
 //
-// Most prompts are typed where no library is, so one question is answered before anything else
-// loads: does this device's registry hold the prompt's directory? The launcher reads the registry
-// and, at most, one repository's Git configuration; it starts no process (no git: problem list #6)
-// and opens no library, and a directory no entry matches ends the hook with exit code 0 and
-// nothing written (R2). The match is a fast subset of the engine's resolveLibrary
-// (packages/core/src/registry.ts): the nearest registered project the directory lies in, otherwise
+// The supported Node.js line is checked before stdin or an engine version is read: an old Node can
+// silently skip a hook entry whose syntax it cannot load. Most prompts are typed where no library
+// is, so the next question is whether this device's registry holds the prompt's directory. The
+// launcher reads the registry and, at most, one repository's Git configuration; it starts no
+// process (no git: problem list #6) and opens no library, and a directory no entry matches ends
+// the hook with exit code 0 and nothing written (R2). The match is a fast subset of the engine's
+// resolveLibrary (packages/core/src/registry.ts): the nearest registered project the directory lies in, otherwise
 // the remote of the Git working tree the directory is in (origin, else the first remote by name),
 // in the registry's one spelling (normalizeGitRemote, kept identical). A match reads
 // engine/current and imports that version's hook entry (scripts/einzbern-hook.mjs), whose
 // runHookEvent confirms the library through resolveLibrary and decides what is printed (D5).
 //
 // It imports nothing but node: built-ins, so no engine update changes it, and a host file naming it
-// stays current across updates and rollbacks. Every failure ends the hook with exit code 0 and one
-// line on stderr: a hook never blocks a session. The same file runs on macOS, Linux and Windows
-// (R5): paths are the platform's own, and the engine's entry is imported through the file URL
+// stays current across updates and rollbacks. Within the supported Node.js line, every failure
+// ends the hook with exit code 0 and one line on stderr: a hook never blocks a session. A
+// below-floor runtime ends quietly before engine loading. The same file runs on macOS, Linux and
+// Windows (R5): paths are the platform's own, and the engine's entry is imported through the file URL
 // pathToFileURL builds, never a string joined by hand.
 
 import { readFileSync, realpathSync, statSync } from "node:fs";
@@ -39,6 +41,10 @@ const CURRENT_FILE = "current";
 const CURRENT_SCHEMA_VERSION = "einzbern.engine-current.v1";
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u;
 const HOOK_ENTRY = Object.freeze(["scripts", "einzbern-hook.mjs"]);
+// Keep in sync with packages/core/src/node-floor.ts. This launcher must check before importing a
+// versioned hook, so it cannot use that version's compiled helper here.
+export const HOOK_NODE_FLOOR = "24.0.0";
+const NODE_VERSION = /^v?(\d+)\.(\d+)\.(\d+)(?:[-+].*)?$/u;
 
 class HookLaunchError extends Error {
   constructor(reasonCode, message) {
@@ -46,6 +52,24 @@ class HookLaunchError extends Error {
     this.name = "HookLaunchError";
     this.reasonCode = reasonCode;
   }
+}
+
+function versionNumbers(version) {
+  if (typeof version !== "string") return null;
+  const match = NODE_VERSION.exec(version);
+  if (match === null) return null;
+  return [Number(match[1]), Number(match[2]), Number(match[3])];
+}
+
+function meetsNodeFloor(actual) {
+  const found = versionNumbers(actual);
+  const required = versionNumbers(HOOK_NODE_FLOOR);
+  if (found === null || required === null) return false;
+  for (let index = 0; index < required.length; index += 1) {
+    const value = found[index] ?? 0;
+    if (value !== required[index]) return value > required[index];
+  }
+  return true;
 }
 
 /** The device directory: EINZBERN_HOME when it is set and non-empty, otherwise .einzbern in the user's home (device-home.ts). */
@@ -351,6 +375,7 @@ async function readInput() {
 }
 
 async function launch(argv, env) {
+  if (!meetsNodeFloor(process.versions.node)) return null;
   const event = argv[0];
   if (typeof event !== "string" || event.length === 0) throw new HookLaunchError("HOOK_EVENT_MISSING", "the hook command names no event");
   const payload = await readInput();

@@ -11,9 +11,10 @@
 
 import { randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, link, mkdir, open, rm } from "node:fs/promises";
+import { lstat, link, mkdir, open, readdir, rm } from "node:fs/promises";
 import { hostname as systemHostname } from "node:os";
-import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
+import { dirname, join } from "node:path";
 
 import { assertCanonicalJson, assertStrictInstant, canonicalJson, isDeviceId } from "../../protocol/src/index.js";
 import { writeFileAtomic } from "./atomic-file.js";
@@ -92,6 +93,46 @@ function parseDevice(text: string, where: string): DeviceIdentity {
   return validateDeviceIdentity(parsed, where);
 }
 
+const DEVICE_TEMP_NAME = /^\.tmp-device-[a-f0-9]{12}$/u;
+const DEVICE_PUBLISH_WAIT_MS = 1_000;
+
+function sameFile(left: { readonly dev: number; readonly ino: number }, right: { readonly dev: number; readonly ino: number }): boolean {
+  return left.dev === right.dev && left.ino === right.ino;
+}
+
+async function hasTemporaryDeviceLink(directory: string, expected: { readonly dev: number; readonly ino: number }): Promise<boolean> {
+  const entries = await readdir(directory);
+  for (const entry of entries) {
+    if (!DEVICE_TEMP_NAME.test(entry)) continue;
+    try {
+      const candidate = await lstat(join(directory, entry));
+      if (candidate.isFile() && sameFile(candidate, expected)) return true;
+    } catch (error) {
+      if ((error as { code?: string }).code !== "ENOENT") throw error;
+    }
+  }
+  return false;
+}
+
+/** A just-published device file briefly has its staging hard link as a second link. */
+async function waitForDevicePublication(path: string, observed: { readonly dev: number; readonly ino: number }): Promise<boolean> {
+  const deadline = Date.now() + DEVICE_PUBLISH_WAIT_MS;
+  while (Date.now() < deadline) {
+    let current;
+    try {
+      current = await lstat(path);
+    } catch (error) {
+      if ((error as { code?: string }).code === "ENOENT") return false;
+      throw error;
+    }
+    if (!current.isFile() || current.isSymbolicLink() || !sameFile(current, observed)) return false;
+    if (current.nlink === 1) return true;
+    if (current.nlink !== 2 || !(await hasTemporaryDeviceLink(dirname(path), current))) return false;
+    await delay(5);
+  }
+  return false;
+}
+
 /** This device's identity, or null when the device directory has none yet. A damaged file fails closed. */
 export async function readDevice(home: string = deviceHome()): Promise<DeviceIdentity | null> {
   const path = deviceFilePath(home);
@@ -102,15 +143,36 @@ export async function readDevice(home: string = deviceHome()): Promise<DeviceIde
     if ((error as { code?: string }).code === "ENOENT") return null;
     throw error;
   }
-  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1) {
+  if (!info.isFile() || info.isSymbolicLink()) {
     fail("DEVICE_FILE_INVALID", `${path} must be a single-link regular file`);
+  }
+  if (info.nlink !== 1) {
+    if (info.nlink !== 2 || !(await waitForDevicePublication(path, info))) {
+      fail("DEVICE_FILE_INVALID", `${path} must be a single-link regular file`);
+    }
+    try {
+      info = await lstat(path);
+    } catch (error) {
+      if ((error as { code?: string }).code === "ENOENT") return null;
+      throw error;
+    }
+    if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1) {
+      fail("DEVICE_FILE_INVALID", `${path} must be a single-link regular file`);
+    }
   }
   let handle;
   let text: string;
   try {
     handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
     const opened = await handle.stat();
-    if (!opened.isFile() || opened.nlink !== 1) fail("DEVICE_FILE_INVALID", `${path} must be a single-link regular file`);
+    if (!opened.isFile()) fail("DEVICE_FILE_INVALID", `${path} must be a single-link regular file`);
+    if (opened.nlink !== 1) {
+      if (opened.nlink !== 2 || !(await waitForDevicePublication(path, opened))) {
+        fail("DEVICE_FILE_INVALID", `${path} must be a single-link regular file`);
+      }
+      const settled = await handle.stat();
+      if (!settled.isFile() || settled.nlink !== 1) fail("DEVICE_FILE_INVALID", `${path} must be a single-link regular file`);
+    }
     text = await handle.readFile("utf8");
   } catch (error) {
     if ((error as { code?: string }).code === "ENOENT") return null;

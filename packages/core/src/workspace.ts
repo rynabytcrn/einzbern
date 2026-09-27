@@ -141,7 +141,7 @@ import type { TelemetryEvidenceSnapshot } from "./telemetry.js";
 // this module, so nothing here may read one of its bindings while the module is being evaluated.
 import { mergeStoredRelations, relationsShapeProblem, storedRelationsOf, validateRelationsInput } from "./work-relations.js";
 import type { NormalizedWorkRelations, WorkRelationsInput } from "./work-relations.js";
-import { ConfigRecordError, configRecordIdentity, isConfigRecordOperation, readConfigRecordEvent, sortConfigRecords } from "./config-records.js";
+import { ConfigRecordError, configRecordId, configRecordIdentity, isConfigRecordCollection, isConfigRecordOperation, readConfigRecordEvent, sortConfigRecords } from "./config-records.js";
 import type { ConfigRecord } from "./config-records.js";
 
 export const WORKSPACE_SCHEMA_VERSION = "tcrn.workspace.v1" as const;
@@ -3429,6 +3429,17 @@ export function writtenRecordIds(state: WorkspaceState, sinceVersion: number): r
   const ids: string[] = [];
   for (const event of state.events.slice(sinceVersion)) {
     if (!isJsonObject(event.payload)) continue;
+    const operation = event.payload.operation;
+    if (typeof operation === "string" && isConfigRecordOperation(operation)) {
+      if (isJsonObject(event.payload.record)) {
+        const { collection, key } = event.payload.record;
+        if (typeof collection === "string" && isConfigRecordCollection(collection) && typeof key === "string") {
+          const id = configRecordId(collection, key);
+          if (!ids.includes(id)) ids.push(id);
+        }
+      }
+      continue;
+    }
     for (const key of ["record", "minutes"]) {
       const value = event.payload[key];
       if (!isJsonObject(value)) continue;

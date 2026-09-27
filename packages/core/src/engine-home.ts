@@ -21,11 +21,11 @@
 // switching and rolling back hold the device's engine lock, so two of them never interleave.
 
 import { execFile } from "node:child_process";
+import type { ExecFileOptionsWithStringEncoding } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import type { Stats } from "node:fs";
 import { cp, lstat, readdir, readFile, rename, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { promisify } from "node:util";
 
 import { assertStrictInstant, canonicalJson } from "../../protocol/src/index.js";
 import type { JsonValue } from "../../protocol/src/index.js";
@@ -38,7 +38,22 @@ import { computeInstallTreeDigest, verifyInstallTree } from "./install-tree-dige
 import { readRegistry } from "./registry.js";
 import { FRAMEWORK_VERSION } from "./index.js";
 
-const runFile = promisify(execFile);
+// Keep callback output explicit: the test-controller wrapper does not preserve execFile's custom promisifier.
+function runFile(
+  file: string,
+  args: readonly string[],
+  options: ExecFileOptionsWithStringEncoding,
+): Promise<{ readonly stdout: string; readonly stderr: string }> {
+  return new Promise((resolveRun, rejectRun) => {
+    execFile(file, [...args], options, (error, stdout, stderr) => {
+      if (error !== null) {
+        rejectRun(error);
+        return;
+      }
+      resolveRun({ stdout, stderr });
+    });
+  });
+}
 
 export const ENGINE_CURRENT_SCHEMA_VERSION = "einzbern.engine-current.v1" as const;
 export const ENGINE_FILES = Object.freeze({

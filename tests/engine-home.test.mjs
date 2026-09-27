@@ -224,6 +224,12 @@ test("471-R3: a tree that does not hash as stated, runs as another version or do
   await writeFile(join(broken, "scripts", "einzbern.mjs"), "process.exitCode = 3;\n");
   const brokenRefusal = await refusal(["engine-update", "--from", broken, "--sha256", (await computeInstallTreeDigest(broken)).sha256, "--version", NEWER, "--at", at()]);
   assert.equal(brokenRefusal.reasonCode, "ENGINE_PROBE_FAILED");
+  const malformed = join(base, "trees", "malformed");
+  await mkdir(join(malformed, "scripts"), { recursive: true });
+  const malformedAnswer = JSON.stringify({ reasonCode: "ENGINE_LIST_READY", engineVersion: NEWER, formatVersion: "1" });
+  await writeFile(join(malformed, "scripts", "einzbern.mjs"), `process.stdout.write(${JSON.stringify(malformedAnswer)});\n`);
+  const malformedRefusal = await refusal(["engine-update", "--from", malformed, "--sha256", (await computeInstallTreeDigest(malformed)).sha256, "--version", NEWER, "--at", at()]);
+  assert.equal(malformedRefusal.reasonCode, "ENGINE_PROBE_FAILED");
   assert.equal((await refusal(["engine-update", "--from", newer.tree, "--sha256", newer.sha256, "--version", "latest", "--at", at()])).reasonCode, "ENGINE_VERSION_INVALID");
   assert.deepEqual(await readFile(join(home, "engine", "current")), pointer, "engine/current is where it was");
   assert.deepEqual((await readdir(join(home, "engine"))).sort(), [FRAMEWORK_VERSION, "current"].sort(), "nothing refused is left installed");

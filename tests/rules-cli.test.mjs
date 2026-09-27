@@ -95,7 +95,8 @@ test("483-AC1 via rule-enable: batch processing's v2 text goes into AGENTS.md, t
   assert.equal(enabled.reasonCode, "RULE_ENABLED");
   assert.deepEqual(enabled.rule, { id: "batch", version: 2, recordedVersion: 2, fileVersion: 1, section: "rule:batch", state: "enabled" });
   assert.deepEqual([enabled.section, enabled.file, enabled.action, enabled.result, enabled.written, enabled.recorded], ["rule:batch", "AGENTS.md", "enable", "create", true, 2]);
-  assert.deepEqual([...enabled.ids].sort(), ["AGENTS.md#rule:batch", "batch"]);
+  // STORY-467 receipts name global records; `section` above remains the local section id.
+  assert.deepEqual([...enabled.ids].sort(), ["managed-section:AGENTS.md#rule:batch", "rule:batch"]);
   assert.equal(enabled.backupDir.startsWith(join(device, "backups")), true, "the backup is in the device directory");
   assert.equal(enabled.backupPath, join(enabled.backupDir, "AGENTS.md"));
   assert.equal(await readFile(enabled.backupPath, "utf8"), USER_TEXT, "AGENTS.md was backed up before it was replaced");
@@ -145,7 +146,7 @@ test("483-AC4 via rule-enable and rule-resolve: a refused write reads pending; a
 
   const refused = await enable(project, "batch");
   assert.deepEqual([refused.reasonCode, refused.result, refused.written, refused.backupDir, refused.rule.state], ["RULE_ENABLED", "refused-user-modified", false, null, "pending"]);
-  assert.deepEqual(refused.ids, ["AGENTS.md#rule:batch"]);
+  assert.deepEqual(refused.ids, ["managed-section:AGENTS.md#rule:batch"]);
   assert.equal((await ruleOf(project, "batch")).state, "pending");
   assert.deepEqual((await render(project)).pending, [{ id: "rule:batch", file: "AGENTS.md" }]);
   const afterRender = await readFile(agents, "utf8");

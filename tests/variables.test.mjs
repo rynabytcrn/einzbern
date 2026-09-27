@@ -118,8 +118,11 @@ test("484-R2/T15: CLI writes render safely, pending sections are readable, and a
   assert.doesNotMatch((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /deploy\.path/u, "an absolute path stays out of the committed section");
   const withheld = await cli(["variable-list", "--workspace", fx.library]);
   assert.deepEqual(withheld.withheld, [{ name: "deploy.path", reason: "absolute-path" }]);
+  assert.deepEqual(withheld.pendingSections, [VARIABLES_CUSTOM_SECTION_ID], "the withheld variable remains a persistent pending item");
+  assert.equal(configRecord(await materializeWorkspace(fx.library), "managed-section", `AGENTS.md#${VARIABLES_CUSTOM_SECTION_ID}`).value.state, "pending");
   await asAtelier(() => cli(["variable-set", "--workspace", fx.library, "--at", at(), "--name", "deploy.path", "--type", "string", "--value", "build/config"]));
   assert.match((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /^\| deploy\.path \| string \| build\/config \|  \|$/mu);
+  assert.deepEqual((await cli(["variable-list", "--workspace", fx.library])).pendingSections, [], "making the variable safe settles the pending state");
 
   const beforeEdit = await readFile(fx.agents, "utf8");
   const edited = beforeEdit.replace("build.example.com", "hand.example.com");
@@ -281,6 +284,8 @@ test("484-R2: a variable whose row would name an absolute path is withheld with 
     { name: "build.root", reason: "absolute-path" },
     { name: "build.share", reason: "absolute-path" },
   ]);
+  assert.deepEqual(result.pendingSections, [VARIABLES_CUSTOM_SECTION_ID]);
+  assert.equal(configRecord(await materializeWorkspace(fx.library), "managed-section", `AGENTS.md#${VARIABLES_CUSTOM_SECTION_ID}`).value.state, "pending");
   const text = await readFile(fx.agents, "utf8");
   for (const path of ["/srv/build", "C:\\builds", "/var/cache", "/opt/models"]) assert.equal(text.includes(path), false, path);
   const bodies = await sections(fx);

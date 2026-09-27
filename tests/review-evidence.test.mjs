@@ -19,12 +19,51 @@ import { assessEvidenceReuse, assessDynamicEvidenceReuse, buildDevelopmentPlan, 
 import { classifyProcess } from "../scripts/operational-batch-entry.mjs";
 import * as operationalBatchEntry from "../scripts/operational-batch-entry.mjs";
 import { appendProgressEvent, readProgressDelta, summarizeProgress, waitForProgress } from "../scripts/lib/incremental-output.mjs";
+import { runHistoricalCommand } from "../scripts/verbatim-evidence-proof.mjs";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { LOCAL_DIRECTORY_NAMES, initializeLibrary } from "../dist/build/packages/core/src/index.js";
 
 const REPOSITORY_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const ROSTER_PATH = resolve(REPOSITORY_ROOT, "tests/fixtures/acceptance-gate-groups.json");
 const CONTAINMENT_PATH = resolve(REPOSITORY_ROOT, "scripts/policy/gate-containment.json");
+
+test("INC-391 preserves historical child exit, signal, and buffer diagnostics without output text", async () => {
+  const run = (source, maxBufferBytes) => runHistoricalCommand(["-e", source], {
+    cwd: REPOSITORY_ROOT,
+    env: { ...process.env, npm_config_offline: "true" },
+    maxBufferBytes,
+  });
+
+  const privateMarker = "INC391_PRIVATE_CHILD_OUTPUT";
+  const exited = await run(`process.stdout.write(${JSON.stringify(privateMarker)}); process.exitCode = 23;`, 1024);
+  assert.equal(exited.ok, false);
+  assert.deepEqual(exited.failure, {
+    stage: "historical-command",
+    failureKind: "child-exit",
+    exitCode: 23,
+    errorCode: null,
+    errorName: "Error",
+    signal: null,
+    killed: false,
+    stdoutBytes: Buffer.byteLength(privateMarker),
+    stderrBytes: 0,
+  });
+  assert.equal(JSON.stringify(exited).includes(privateMarker), false);
+
+  const signaled = await run('process.kill(process.pid, "SIGTERM");', 1024);
+  assert.equal(signaled.ok, false);
+  assert.equal(signaled.failure.failureKind, "signal");
+  assert.equal(signaled.failure.exitCode, null);
+  assert.equal(signaled.failure.signal, "SIGTERM");
+
+  const overflowed = await run('process.stdout.write("x".repeat(4096));', 1024);
+  assert.equal(overflowed.ok, false);
+  assert.equal(overflowed.failure.failureKind, "max-buffer");
+  assert.equal(overflowed.failure.errorCode, "ERR_CHILD_PROCESS_STDIO_MAXBUFFER");
+  assert.equal(overflowed.failure.exitCode, null);
+  assert.equal(overflowed.failure.maxBufferBytes, 1024);
+  assert.equal(overflowed.failure.stdoutBytes, 1024);
+});
 
 function gitFixture(t) {
   const root = mkdtempSync(join(tmpdir(), "tcrn-review-evidence-repo-"));

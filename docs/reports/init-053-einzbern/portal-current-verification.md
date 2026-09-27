@@ -85,8 +85,8 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
     },
     {
       "path": "scripts/verbatim-evidence-proof.mjs",
-      "bytes": 17868,
-      "sha256": "b82f71d3b6a6a82c21dcbca290c6fb61117a7ad1957b1960696915f46e073a20"
+      "bytes": 20118,
+      "sha256": "89d4a3503c2826adbc8db2de34889d7dacdeb63b7d7b0973b350103806eb5f17"
     }
   ],
   "hostRoleScan": {

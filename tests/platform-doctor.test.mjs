@@ -1205,6 +1205,25 @@ test("unusedExports names the export that is not already recorded as isolated", 
   assert.equal(added.unconsumedCount, 2);
 });
 
+test("T7: the core barrel keeps only consumed skill entrypoints and removes stale allowances", async () => {
+  const skillExports = new Set([
+    "InstallSkillCopiesInput", "InstalledSkillCopy", "LEGACY_SKILL_MARKER_FILES", "LEGACY_SKILL_ROOTS",
+    "LegacySkillCleanupItem", "LegacySkillCleanupKind", "LegacySkillCleanupPlan", "LegacySkillCleanupResult",
+    "RenderSkillMarkdownInput", "SKILL_COPIES_FILES", "SKILL_COPIES_REASON_CODES", "SKILL_COPIES_SCHEMA_VERSION",
+    "SKILL_COPY_ROOTS", "SKILL_DESCRIPTION", "SKILL_MARKDOWN_BYTE_LIMIT", "SKILL_NAVIGATION", "SKILL_RENDER_REASON_CODES",
+    "SkillCopiesError", "SkillCopiesInstallReport", "SkillCopiesReasonCode", "SkillCopiesRecord", "SkillCopiesVerification",
+    "SkillCopyAction", "SkillCopyHost", "SkillCopyRecord", "SkillCopyRoot", "SkillCopyVerification", "SkillCopyVerificationCode",
+    "SkillNavigationEntry", "SkillRenderError", "SkillRenderReasonCode", "applyLegacySkillCleanup", "installSkillCopies",
+    "isLegacySkillMarker", "legacySkillCleanupPlan", "renderSkillMarkdown", "skillCopiesRecordPath", "skillCopyPath",
+    "skillNamedVerbs", "verifySkillCopies",
+  ]);
+  const barrel = await readFile(join(import.meta.dirname, "../packages/core/src/index.ts"), "utf8");
+  assert.deepEqual(coreExportedSymbols(barrel).filter((symbol) => skillExports.has(symbol)), ["SKILL_COPIES_FILES", "renderSkillMarkdown"]);
+
+  const policy = JSON.parse(await readFile(join(import.meta.dirname, "../scripts/policy/core-export-consumers.json"), "utf8"));
+  assert.deepEqual(policy.allowedUnconsumed.filter((symbol) => ["computeInstallTreeDigest", "managedSectionRecordsFor", "writeVariablesSections"].includes(symbol)), []);
+});
+
 // The half that keeps the file a register rather than an amnesty. An entry may only
 // leave allowedUnconsumed, and it must leave the moment the debt is paid -- otherwise
 // the list outlives the symbols it names and the next reader inherits 484 lines of

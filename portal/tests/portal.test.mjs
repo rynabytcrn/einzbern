@@ -434,6 +434,7 @@ if (process.argv[2] === "status" && actual.status === 0) {
   assert.equal(status.body.checks.length, 8);
   assert.deepEqual(status.body.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })), doctor.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })));
   assert.equal(status.body.ok, doctor.ok);
+  assert.equal(status.body.doctorReasonCode, doctor.checks.find((check) => !check.ok)?.reasonCode ?? doctor.reasonCode);
   const libraryStatus = await cli(["status", "--workspace", fixture.workspace], { ...fixture.deviceEnv, HOME: fixture.home });
   assert.deepEqual(status.body.library, {
     versionVector: libraryStatus.versionVector,
@@ -453,6 +454,7 @@ if (process.argv[2] === "status" && actual.status === 0) {
   const redDoctor = JSON.parse(redDoctorOutput);
   assert.equal(redStatus.body.ok, false);
   assert.deepEqual(redStatus.body.checks, redDoctor.checks);
+  assert.equal(redStatus.body.doctorReasonCode, redDoctor.checks.find((check) => !check.ok)?.reasonCode ?? redDoctor.reasonCode);
   assert.equal(redStatus.body.checks.find((check) => check.check === "registry").reasonCode, "PORTAL_TEST_REGISTRY_RED");
 });
 

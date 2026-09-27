@@ -21,6 +21,7 @@ import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { FRAMEWORK_VERSION, computeInstallTreeDigest } from "../dist/build/packages/core/src/index.js";
 import { DOCTOR_CHECKS } from "../dist/build/packages/core/src/doctor.js";
 import { parseEngineVersion } from "../dist/build/packages/core/src/format-version.js";
+import { MACHINE_SETTINGS_FILE_NAME } from "../dist/build/packages/core/src/machine-settings.js";
 import { applySetup, planSetup } from "../dist/build/packages/core/src/setup.js";
 import { SKILL_COPY_ROOTS, skillCopyPath } from "../dist/build/packages/core/src/skill-copies.js";
 import { writeUstar } from "../scripts/lib/tar.mjs";
@@ -297,6 +298,43 @@ test("480-R4: repair puts back what is missing, and a second repair changes noth
   await mkdir(stranger);
   const refused = await planSetup({ mode: "repair", projectRoot: stranger, at: at(), home: f.home, deviceHome: f.deviceHome });
   assert.deepEqual(refused.blockers.map((blocker) => blocker.reasonCode), ["LIBRARY_NOT_REGISTERED"]);
+});
+
+test("478-AC5: repair removes this device's old navigation section when the answer changes to declined", async (context) => {
+  const f = await installed(context);
+  const agents = join(f.project, "AGENTS.md");
+  assert.match(await readFile(agents, "utf8"), /id=navigation/u);
+
+  const planned = await plan(f, "repair", { answers: { navigation: false } });
+  assert.deepEqual(planned.blockers, []);
+  assert.equal(planned.resolved.navigation, false);
+  assert.ok(planned.writes.some((entry) => entry.step === "managed-sections" && entry.path === agents && entry.action === "update"));
+  assert.ok(planned.writes.some((entry) => entry.step === "library" && entry.path === f.library && entry.action === "update"));
+
+  const applied = await applySetup(planned);
+  assert.doesNotMatch(await readFile(agents, "utf8"), /id=navigation/u);
+  assert.equal(JSON.parse(await readFile(join(f.deviceHome, MACHINE_SETTINGS_FILE_NAME), "utf8")).values["agents.navigation"], "declined");
+  assert.deepEqual(applied.pendingSections, []);
+  assertSelfCheckGreen(applied);
+
+  const again = await plan(f, "repair", { answers: { navigation: false } });
+  assert.ok(!again.writes.some((entry) => entry.step === "managed-sections" && entry.path === agents), "the removed section does not return on rerun");
+  assert.doesNotMatch(await readFile(agents, "utf8"), /id=navigation/u);
+});
+
+test("478-AC1: the model-write refusal stays active, while a controlled Atelier setup write succeeds", async (context) => {
+  const f = await installed(context);
+  const previous = process.env.EINZBERN_SURFACE;
+  delete process.env.EINZBERN_SURFACE;
+  const args = ["settings-set", "--workspace", f.library, "--at", at(), "--actor", "agent:test", "--key", "design.authority", "--value", "https://design.example/system"];
+  try {
+    await assert.rejects(cli(args), (error) => error.reasonCode === "MODEL_WRITE_REFUSED");
+    // This covers the existing UI-surface convention only; it makes no human-identity claim.
+    process.env.EINZBERN_SURFACE = "atelier";
+    assert.equal((await cli(args)).reasonCode, "SETTINGS_WRITE_COMMITTED");
+  } finally {
+    restoreEnv("EINZBERN_SURFACE", previous);
+  }
 });
 
 test("480-AC4: uninstall takes the hooks, both skill copies and the registry entry away into the backups, and the library's tree stays as it was", async (context) => {

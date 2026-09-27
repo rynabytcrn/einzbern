@@ -124,10 +124,12 @@ import {
   renderAgentsSections,
   resolveAgentsProject,
   resolveAgentsSection,
+  managedSectionRecordsFor,
   listVariables,
   removeVariable,
   renderCustomVariablesSection,
   setVariable,
+  writeVariablesSections,
   disableRule,
   enableRule,
   listRules,
@@ -148,7 +150,7 @@ import type {
 } from "../../core/src/index.js";
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
-import { cp, lstat, mkdir, readdir, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, readdir, realpath, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -975,6 +977,28 @@ function writeVariableState(io: CliIo, state: Awaited<ReturnType<typeof material
   }));
 }
 
+// A variable write has a project destination only when its library is registered to a project.
+// Explicit workspaces without a registry remain usable as library-only operations.
+async function registeredProjectRootForWorkspace(workspace: string): Promise<string | null> {
+  try {
+    const project = await resolveAgentsProject(workspace);
+    return await realpath(workspace) === project.libraryPath ? project.projectRoot : null;
+  } catch (error) {
+    if (error !== null && typeof error === "object" && "reasonCode" in error && error.reasonCode === "LIBRARY_NOT_REGISTERED") return null;
+    throw error;
+  }
+}
+
+async function renderVariableSectionsAfterWrite(workspace: string, projectRoot: string | null, at: string, actor: string | undefined): Promise<Awaited<ReturnType<typeof materializeWorkspace>>> {
+  if (projectRoot === null) return materializeWorkspace(workspace);
+  await writeVariablesSections(workspace, {
+    projectRoot,
+    occurredAt: at,
+    ...(actor === undefined ? {} : { actorId: actor }),
+  });
+  return materializeWorkspace(workspace);
+}
+
 // TCRN-CROSS-STORY-483 R2: one rule as the rule verbs print it.
 function ruleStatusJson(status: RuleStatus): JsonValue {
   return {
@@ -1667,21 +1691,50 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // TCRN-CROSS-STORY-478 R3: settle one managed section of the project. overwrite puts the engine's
   // text back as the new baseline, keep records the user's text as theirs (never written again),
   // unmanage takes the markers out and leaves the text; --force true overwrites a section the user
-  // kept. A file it replaces is backed up first and the receipt names the backup directory.
+  // kept. An enabled rule's version follows an explicit overwrite, and an older engine cannot
+  // overwrite a version recorded by a newer one. A file it replaces is backed up first.
   if (command === "rule-resolve") {
     const values = parseArguments(rest, ["section", "action", "force", "at", "project", "actor"]);
     required(values, ["section", "action", "at"]);
     const at = values.at ?? "";
     const force = booleanValue(values.force, "force");
     const project = await resolveAgentsProject(values.project ?? process.cwd());
-    const { change, state } = await namingSection(() => withWriteLock(project.libraryPath, at, async () => resolveAgentsSection(project.libraryPath, {
-      projectRoot: project.projectRoot,
-      id: values.section ?? "",
-      action: (values.action ?? "") as SectionAction,
-      force,
-      occurredAt: at,
-      ...(values.actor ? { actorId: values.actor } : {}),
-    })));
+    const section = values.section ?? "";
+    const ruleId = (values.action ?? "") === "overwrite" && section.startsWith("rule:") ? section.slice("rule:".length) : null;
+    const { change, state } = await namingSection(() => withWriteLock(project.libraryPath, at, async () => {
+      if (ruleId !== null) {
+        const status = (await listRules({ libraryRoot: project.libraryPath, projectRoot: project.projectRoot })).find((rule) => rule.id === ruleId);
+        if (status !== undefined && status.version !== null && status.recordedVersion !== null && status.recordedVersion > status.version) {
+          throw new WorkflowCliError("RULE_VERSION_NEWER", `the library records rule ${ruleId} at version ${status.recordedVersion}; this engine ships version ${status.version}`, {
+            id: ruleId,
+            recordedVersion: String(status.recordedVersion),
+            version: String(status.version),
+          });
+        }
+      }
+      const resolved = await resolveAgentsSection(project.libraryPath, {
+        projectRoot: project.projectRoot,
+        id: section,
+        action: (values.action ?? "") as SectionAction,
+        force,
+        occurredAt: at,
+        ...(values.actor ? { actorId: values.actor } : {}),
+      });
+      let state = resolved.state;
+      if (ruleId !== null) {
+        const status = (await listRules({ libraryRoot: project.libraryPath, projectRoot: project.projectRoot })).find((rule) => rule.id === ruleId);
+        if (status !== undefined && status.recordedVersion !== null && status.state !== "disabled") {
+          state = (await enableRule({
+            libraryRoot: project.libraryPath,
+            projectRoot: project.projectRoot,
+            id: ruleId,
+            occurredAt: at,
+            ...(values.actor ? { actorId: values.actor } : {}),
+          })).state;
+        }
+      }
+      return { change: resolved.change, state };
+    }));
     io.write(canonicalJson({
       reasonCode: "MANAGED_SECTION_RESOLVED",
       workspaceId: state.metadata.workspaceId,
@@ -2068,19 +2121,24 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   // TCRN-CROSS-STORY-484 R1 (TCRN-CROSS-SUB-341): the custom variables. variable-list reads them with
-  // what the custom section of AGENTS.md leaves out and why (R2); variable-set and variable-remove
-  // write them for Atelier only (R4). Neither write renders AGENTS.md; core's section writer does.
+  // what the custom section of AGENTS.md leaves out and why (R2), and any pending variable sections;
+  // variable-set and variable-remove write them for Atelier only (R4). When the workspace is
+  // registered to a project, each write renders its variable sections through the managed writer.
   if (command === "variable-list") {
     const values = parseArguments(rest, ["workspace"]);
     required(values, ["workspace"]);
     const state = await materializeWorkspace(values.workspace ?? "");
     const withheld: readonly WithheldEntry[] = renderCustomVariablesSection(state).withheld;
+    const pendingSections = managedSectionRecordsFor(state, "AGENTS.md")
+      .filter((record) => record.state === "pending" && (record.id === "variables-system" || record.id === "variables-custom"))
+      .map((record) => record.id);
     io.write(canonicalJson({
       reasonCode: "VARIABLE_LIST_READY",
       schemaVersion: "einzbern.variable-list.v1",
       workspaceId: state.metadata.workspaceId,
       variables: listVariables(state),
       withheld,
+      pendingSections,
     }));
     return;
   }
@@ -2095,14 +2153,18 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const at = values.at ?? "";
     const name = values.name ?? "";
     assertModelWriteAllowed({ name }, false);
-    const state = await withWriteLock(workspace, at, async () => setVariable(workspace, {
-      occurredAt: at,
-      name,
-      type: values.type ?? "",
-      value: values.value ?? "",
-      ...(values.description === undefined ? {} : { description: values.description }),
-      ...(values.actor ? { actorId: values.actor } : {}),
-    }));
+    const projectRoot = await registeredProjectRootForWorkspace(workspace);
+    const state = await withWriteLock(workspace, at, async () => {
+      await setVariable(workspace, {
+        occurredAt: at,
+        name,
+        type: values.type ?? "",
+        value: values.value ?? "",
+        ...(values.description === undefined ? {} : { description: values.description }),
+        ...(values.actor ? { actorId: values.actor } : {}),
+      });
+      return renderVariableSectionsAfterWrite(workspace, projectRoot, at, values.actor);
+    });
     writeVariableState(io, state, name);
     return;
   }
@@ -2113,11 +2175,15 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const at = values.at ?? "";
     const name = values.name ?? "";
     assertModelWriteAllowed({ name }, false);
-    const state = await withWriteLock(workspace, at, async () => removeVariable(workspace, {
-      occurredAt: at,
-      name,
-      ...(values.actor ? { actorId: values.actor } : {}),
-    }));
+    const projectRoot = await registeredProjectRootForWorkspace(workspace);
+    const state = await withWriteLock(workspace, at, async () => {
+      await removeVariable(workspace, {
+        occurredAt: at,
+        name,
+        ...(values.actor ? { actorId: values.actor } : {}),
+      });
+      return renderVariableSectionsAfterWrite(workspace, projectRoot, at, values.actor);
+    });
     writeVariableState(io, state, name);
     return;
   }

@@ -666,11 +666,12 @@ const server = createServer(async (request, response) => {
       const body = status.body ?? {};
       const doctorBody = doctor.body ?? {};
       const checks = Array.isArray(doctorBody.checks) ? doctorBody.checks : [];
+      const failedCheck = checks.find((check) => check?.ok === false && typeof check?.reasonCode === "string");
       const ready = doctor.ok && doctorBody.ok === true && checks.length === 8 && checks.every((check) => check.ok === true) && status.ok;
       send(response, 200, {
         ok: ready,
         reasonCode: ready ? "PORTAL_STATUS_READY" : "PORTAL_STATUS_DEGRADED",
-        doctorReasonCode: doctorBody.reasonCode ?? "PORTAL_DOCTOR_FAILED",
+        doctorReasonCode: failedCheck?.reasonCode ?? doctorBody.reasonCode ?? "PORTAL_DOCTOR_FAILED",
         workspaceId: body.workspaceId ?? null,
         version: body.version ?? null,
         headEventHash: body.headEventHash ?? null,

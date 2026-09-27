@@ -19,6 +19,7 @@ import { pathToFileURL } from "node:url";
 
 import { applyWritableRoots, deviceHome, planWritableRoots } from "../dist/build/packages/core/src/index.js";
 import { HOST_HOOK_HOSTS, HOST_HOOK_SCOPES, applyHostHooks, planHostHooks, readHostHooks } from "../dist/build/packages/core/src/host-hooks.js";
+import { readAgentsNavigation } from "../dist/build/packages/core/src/machine-settings.js";
 
 export const HOST_RENDER_HOSTS = HOST_HOOK_HOSTS;
 export const HOST_RENDER_SCOPES = HOST_HOOK_SCOPES;
@@ -56,7 +57,8 @@ export async function renderHostHooks({ host, scope, root = undefined, home = ho
   if (!HOST_RENDER_SCOPES.includes(scope)) failure("HOST_RENDER_SCOPE_INVALID", `scope must be one of ${HOST_RENDER_SCOPES.join(", ")}`);
   if (scope === "project") text(root, "root");
   else if (root !== undefined) failure("HOST_RENDER_SCOPE_CONFLICT", "--root names a project; the user scope renders into the home directory");
-  const expectation = planHostHooks({ host, scope, deviceHome: device, platform });
+  const navigation = scope === "user" ? await readAgentsNavigation(device) : null;
+  const expectation = planHostHooks({ host, scope, deviceHome: device, platform, navigation });
   const plan = await readHostHooks(expectation, { root: scope === "user" ? home : root, home });
   const summary = {
     scope,
@@ -97,12 +99,18 @@ export async function renderHostHooks({ host, scope, root = undefined, home = ho
 export async function renderWritableRoots({ host, root, library, at, planOnly = false } = {}) {
   hostName(host);
   const plan = await planWritableRoots({ projectRoot: text(root, "root"), libraryPath: text(library, "library"), hosts: [host] });
+  const warnings = plan.files.filter((file) => file.trackedByGit).map((file) => ({
+    reasonCode: "HOST_WRITABLE_ROOTS_TRACKED_BY_GIT",
+    file: file.path,
+    message: `${file.path} is tracked by Git and may publish this device's library path if committed`,
+  }));
   const summary = {
     scope: HOST_RENDER_WRITABLE_ROOTS_SCOPE,
     host,
     projectRoot: plan.projectRoot,
     libraryPath: plan.libraryPath,
     libraryInsideProject: plan.libraryInsideProject,
+    warnings,
   };
   if (planOnly) {
     return {

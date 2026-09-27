@@ -16,6 +16,7 @@ import {
   HOST_HOOK_HOSTS,
   acquireFileLock,
   applyHostHooks,
+  applyMachineSettingSet,
   initializeLibrary,
   installSkillCopies,
   lockPath,
@@ -23,6 +24,7 @@ import {
   readHostHooks,
   registerLibrary,
 } from "../dist/build/packages/core/src/index.js";
+import { MACHINE_SETTINGS_FILE_NAME } from "../dist/build/packages/core/src/machine-settings.js";
 import { setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
 import { DOCTOR_CHECKS, DOCTOR_CHECK_REASON_CODES, DOCTOR_REASON_CODES, runDoctor } from "../dist/build/packages/core/src/doctor.js";
 import { renderSection, sectionDigest } from "../dist/build/packages/core/src/managed-sections.js";
@@ -161,6 +163,30 @@ test("480-AC5: hooks-present is red for a host whose hook is in both scopes", as
   const plan = await readHostHooks(planHostHooks({ host: "codex", scope: "project", deviceHome: fixture.deviceHome }), { root: fixture.project, home: fixture.home });
   await applyHostHooks(plan, { at: AT });
   assertOnlyRed(await doctor(fixture), "hooks-present", "HOOK_DUPLICATED");
+});
+
+test("478-AC5: hooks-present accepts declined-navigation pointers and reports a missing pointer hook", async (context) => {
+  const fixture = await healthy(context);
+  await applyMachineSettingSet({
+    key: "agents.navigation",
+    value: "declined",
+    occurredAt: AT,
+    path: join(fixture.deviceHome, MACHINE_SETTINGS_FILE_NAME),
+  });
+  for (const host of HOST_HOOK_HOSTS) {
+    const plan = await readHostHooks(planHostHooks({ host, scope: "user", deviceHome: fixture.deviceHome, navigation: "declined" }), { root: fixture.home, home: fixture.home });
+    await applyHostHooks(plan, { at: AT });
+  }
+
+  const results = await doctor(fixture);
+  assert.ok(results.every((entry) => entry.ok), JSON.stringify(results));
+  assert.deepEqual(byCheck(results, "hooks-present").detail.hosts.map((host) => [host.host, host.hooks]), HOST_HOOK_HOSTS.map((host) => [host, 1]));
+
+  const settings = join(fixture.home, ".claude", "settings.json");
+  const document = JSON.parse(await readFile(settings, "utf8"));
+  delete document.hooks.SessionStart;
+  await writeFile(settings, `${JSON.stringify(document, null, 2)}\n`);
+  assertOnlyRed(await doctor(fixture), "hooks-present", "HOOK_NOT_AS_EXPECTED");
 });
 
 // problems-w1-host-hooks.md #7: a settings file linked into a dotfiles repository is refused by the

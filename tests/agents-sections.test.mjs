@@ -34,6 +34,7 @@ import {
 import { HOST_HOOK_POINTER_EVENTS, mergeHostHooks, planHostHooks } from "../dist/build/packages/core/src/host-hooks.js";
 import { AGENTS_NAVIGATION_SETTING, MACHINE_SETTINGS_CATALOG, applyMachineSettingSet, readAgentsNavigation } from "../dist/build/packages/core/src/machine-settings.js";
 import { managedSectionRecordsFor, parseManagedFile, renderSection, sectionDigest } from "../dist/build/packages/core/src/managed-sections.js";
+import { setVariable } from "../dist/build/packages/core/src/variables.js";
 
 let second = 0;
 const at = () => {
@@ -239,6 +240,29 @@ test("478-R3: overwrite puts the engine's text back and records it as the new ba
 
   const again = await renderAgentsSections(root, { projectRoot: project, navigation: "written", backupRoot: backups, occurredAt: at() });
   assert.deepEqual([again.pending, again.recorded, again.files.some((file) => file.written)], [[], 0, false]);
+});
+
+test("T15: a changed variable section stays pending until explicitly overwritten", async (context) => {
+  const paths = await scratch(context);
+  await writeFile(join(paths.project, AGENTS_FILE), USER_TEXT);
+  const root = await library(paths.base);
+  await setVariable(root, { name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
+  const first = await renderAgentsSections(root, { projectRoot: paths.project, navigation: null, backupRoot: paths.backups, occurredAt: at() });
+  assert.equal(first.pending.length, 0);
+
+  const original = await readFile(join(paths.project, AGENTS_FILE), "utf8");
+  const edited = original.replace("build.example.com", "hand.example.com");
+  await writeFile(join(paths.project, AGENTS_FILE), edited);
+  await setVariable(root, { name: "deploy.port", type: "number", value: "8443", occurredAt: at() });
+  const blocked = await renderAgentsSections(root, { projectRoot: paths.project, navigation: null, backupRoot: paths.backups, occurredAt: at() });
+  assert.deepEqual(blocked.pending, [{ id: "variables-custom", file: AGENTS_FILE }]);
+  assert.equal(await readFile(join(paths.project, AGENTS_FILE), "utf8"), edited, "automatic rendering preserves the user's edit");
+
+  const settled = await resolveAgentsSection(root, { projectRoot: paths.project, id: "variables-custom", action: "overwrite", backupRoot: paths.backups, occurredAt: at() });
+  assert.deepEqual([settled.change.result, settled.change.record?.state], ["overwritten", "managed"]);
+  const custom = sectionOf(await readFile(join(paths.project, AGENTS_FILE), "utf8"), "variables-custom");
+  assert.match(custom.body, /^\| deploy\.host \| string \| build\.example\.com \|  \|$/mu);
+  assert.match(custom.body, /^\| deploy\.port \| number \| 8443 \|  \|$/mu);
 });
 
 test("478-R3: keep records the user's text as theirs, and the engine never writes that section again", async (context) => {

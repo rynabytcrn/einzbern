@@ -1162,6 +1162,56 @@ async function verifyNoSiblingDependency() {
   return success("NO_SIBLING_DEPENDENCY", { siblings: result.siblings, scannedRoots: result.scannedRoots });
 }
 
+// R8 D12: allow the sole fetch site only while the CLI rejects missing or
+// malformed versions and the local archive branch returns before release retrieval.
+// Returning null grants no exception; the normal scan flags every fetch site.
+const versionedInstallerPath = "skill/mana-orchestrate/scripts/install.mjs";
+
+function versionScopedInstallerFetchOffset(label, content) {
+  if (label !== versionedInstallerPath) return null;
+  const fetchCalls = [...content.matchAll(/\bfetch\s*\(/gu)];
+  if (fetchCalls.length !== 1) return null;
+
+  const parseStart = content.indexOf("function parseArguments(argv) {");
+  const releaseUrlStart = content.indexOf("\nfunction releaseUrl(", parseStart);
+  if (parseStart < 0 || releaseUrlStart < 0) return null;
+  const parseSource = content.slice(parseStart, releaseUrlStart);
+  if (!parseSource.includes('const version = values.get("--version") ?? null;') ||
+    !parseSource.includes('const archive = values.has("--archive") ? resolve(values.get("--archive")) : null;') ||
+    !parseSource.includes('if (version === null && archive === null) fail("INSTALL_USAGE"') ||
+    !parseSource.includes('if (version !== null && !VERSION_PATTERN.test(version)) fail("INSTALL_VERSION_INVALID"')) return null;
+
+  const downloadStart = content.indexOf("async function download(url) {");
+  const downloadEnd = content.indexOf("\n// The first word of a .sha256 file", downloadStart);
+  const obtainStart = content.indexOf("async function obtainArchive({ version, archive, sha256 }) {");
+  const obtainEnd = content.indexOf("\nfunction text(", obtainStart);
+  if (downloadStart < 0 || downloadEnd < 0 || obtainStart < 0 || obtainEnd < 0) return null;
+
+  const fetchOffset = fetchCalls[0].index;
+  const downloadSource = content.slice(downloadStart, downloadEnd);
+  if (fetchOffset < downloadStart || fetchOffset >= downloadEnd ||
+    !downloadSource.includes("response = await fetch(url);")) return null;
+
+  const obtainSource = content.slice(obtainStart, obtainEnd);
+  const localStart = obtainSource.indexOf("if (archive !== null) {");
+  const versionStart = obtainSource.indexOf("const url = releaseUrl(version,");
+  if (localStart < 0 || versionStart <= localStart) return null;
+  const localArchiveSource = obtainSource.slice(localStart, versionStart);
+  if (/\b(?:fetch|download)\s*\(/u.test(localArchiveSource) ||
+    !localArchiveSource.includes("if (sha256 !== null) return { bytes, expected: sha256, source: archive };") ||
+    !localArchiveSource.includes("return { bytes, expected: statedDigest(stated,")) return null;
+
+  const versionRetrievalSource = obtainSource.slice(versionStart);
+  const downloadSites = [...content.matchAll(/\bdownload\s*\(/gu)];
+  if (downloadSites.length !== 3 ||
+    !versionRetrievalSource.includes("const bytes = await download(url);") ||
+    !versionRetrievalSource.includes("const expected = sha256 ?? statedDigest(") ||
+    !/await download\(\x60\$\{url\}\.sha256\x60\)/u.test(versionRetrievalSource) ||
+    [...versionRetrievalSource.matchAll(/\bdownload\s*\(/gu)].length !== 2) return null;
+
+  return fetchOffset;
+}
+
 async function verifyOfflineBoundary() {
   const guardFiles = new Set(["scripts/no-network.mjs", "tests/offline-boundary.test.mjs"]);
   const localUnixSocketTest = "tests/output-session-lifecycle.test.mjs";
@@ -1185,13 +1235,18 @@ async function verifyOfflineBoundary() {
     const label = toPosixPath(relative(repositoryRoot, path));
     const content = await readText(path);
     if (!guardFiles.has(label) && !loopbackServerFiles.has(label)) {
+      // Only the version-checked retrieval branch may contain this one fetch call.
+      const permittedFetchOffset = versionScopedInstallerFetchOffset(label, content);
       for (const moduleName of modules) {
         const localUnixSocketImport = label === localUnixSocketTest && moduleName === modules[2];
         if (!localUnixSocketImport && (content.includes(`\"${moduleName}\"`) || content.includes(`'${moduleName}'`))) {
           findings.push(`NETWORK_MODULE:${label}:${moduleName}`);
         }
       }
-      if (/\bfetch\s*\(/u.test(content) || /\bWebSocket\s*\(/u.test(content)) {
+      for (const match of content.matchAll(/\bfetch\s*\(/gu)) {
+        if (match.index !== permittedFetchOffset) findings.push("NETWORK_API:" + label);
+      }
+      if (/\bWebSocket\s*\(/u.test(content)) {
         findings.push(`NETWORK_API:${label}`);
       }
     }

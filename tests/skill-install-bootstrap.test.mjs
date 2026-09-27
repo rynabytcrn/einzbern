@@ -114,6 +114,7 @@ test("481-AC2: an archive with one byte changed is refused and the device direct
   assert.equal(refusal(install(["--archive", lone], { home: elsewhere })).reasonCode, "INSTALL_SHA256_MISSING");
   const mismatch = refusal(install(["--archive", join(release, ARCHIVE), "--version", "9.9.9"], { home: elsewhere }));
   assert.deepEqual([mismatch.reasonCode, mismatch.required, mismatch.actual], ["INSTALL_VERSION_MISMATCH", "9.9.9", FRAMEWORK_VERSION]);
+  assert.equal(refusal(install(["--version", "latest"], { home: elsewhere })).reasonCode, "INSTALL_VERSION_INVALID");
   const offline = refusal(install(["--version", FRAMEWORK_VERSION], { home: elsewhere }));
   assert.equal(offline.reasonCode, "INSTALL_DOWNLOAD_FAILED");
   assert.equal(refusal(install(["--sha256", releaseSha256], { home: elsewhere })).reasonCode, "INSTALL_USAGE");
@@ -147,7 +148,7 @@ test("481-AC3, R3: a local archive installs while every fetch throws, and instal
   assert.deepEqual((await readdir(device)).filter((name) => name.startsWith("tmp-")), []);
 
   const engineBefore = await listing(engine);
-  const second = install(["--archive", join(release, ARCHIVE), "--sha256", releaseSha256], { home });
+  const second = install(["--archive", join(release, ARCHIVE), "--sha256", releaseSha256, "--version", FRAMEWORK_VERSION], { home });
   assert.equal(second.status, 0, second.stderr);
   const again = JSON.parse(second.stdout);
   assert.deepEqual([again.version, again.installed], [FRAMEWORK_VERSION, "reused"]);

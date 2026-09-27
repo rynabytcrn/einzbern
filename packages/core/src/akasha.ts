@@ -20,7 +20,8 @@
 // manifest on this machine records (R3).
 
 import { createHash } from "node:crypto";
-import { mkdir, open, readdir, readFile as readFileBytes } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, mkdir, open, readdir, readFile as readFileBytes } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import {
@@ -32,7 +33,10 @@ import {
   deriveLegacyEventId,
   deriveStreamId,
   eventClock,
+  eventInputOf,
+  eventRecordFields,
   findStreamChainBreak,
+  isEventSchemaVersion,
   isDeviceId,
 } from "../../protocol/src/index.js";
 import type { EventRecord, JsonValue } from "../../protocol/src/index.js";
@@ -41,7 +45,7 @@ import { ensureDeviceDirectory, lockPath } from "./device-home.js";
 import { readDevice } from "./device-identity.js";
 import type { DeviceIdentity } from "./device-identity.js";
 import type { Library } from "./ether-library.js";
-import { LIBRARY_FORMAT_VERSION } from "./ether-library.js";
+import { LIBRARY_FORMAT_VERSION, openLibrary } from "./ether-library.js";
 import { withFileLock } from "./file-lock.js";
 import type { FileLockOptions } from "./file-lock.js";
 import { assertLibrarySupported, upgradeReadiness } from "./format-version.js";
@@ -191,6 +195,46 @@ export function validateStreamManifest(value: unknown, deviceId: string): Stream
 
 export type ReadBytes = (path: string) => Promise<Buffer>;
 
+class AkashaFileShapeError extends Error {}
+
+function isSingleLinkFile(info: Awaited<ReturnType<typeof lstat>>): boolean {
+  return info.isFile() && !info.isSymbolicLink() && info.nlink === 1;
+}
+
+async function readWithoutFollowingLink(path: string): Promise<Buffer> {
+  let handle;
+  try {
+    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const info = await handle.stat();
+    if (!isSingleLinkFile(info)) throw new AkashaFileShapeError();
+    return await handle.readFile();
+  } catch (error) {
+    if ((error as { code?: string }).code === "ELOOP") throw new AkashaFileShapeError();
+    throw error;
+  } finally {
+    await handle?.close();
+  }
+}
+
+async function readInternalFile(
+  path: string,
+  readFile: ReadBytes,
+  rejectShape: (message: string) => never,
+): Promise<Buffer> {
+  const info = await lstat(path);
+  if (!isSingleLinkFile(info)) rejectShape("must be a single-link regular file");
+  try {
+    return await readFile(path);
+  } catch (error) {
+    if (error instanceof AkashaFileShapeError || (error as { code?: string }).code === "ELOOP") {
+      rejectShape("must be a single-link regular file");
+    }
+    throw error;
+  }
+}
+
+const defaultReadBytes: ReadBytes = readWithoutFollowingLink;
+
 export interface StreamReadOptions {
   // Test seam: how file bytes are read (a sync client's placeholder can block this).
   readonly readFile?: ReadBytes;
@@ -217,10 +261,12 @@ export async function listStreamDevices(libraryRoot: string): Promise<readonly s
  * does not validate fails closed.
  */
 export async function readStreamManifest(libraryRoot: string, deviceId: string, options: StreamReadOptions = {}): Promise<StreamManifest | null> {
+  const file = `${DIRECTORY.events}/${deviceId}/${STREAM_MANIFEST_FILE}`;
   const path = join(streamDirectory(libraryRoot, deviceId), STREAM_MANIFEST_FILE);
+  const invalid = (message: string): never => fail("AKASHA_STREAM_MANIFEST_INVALID", `${file}: ${message}`, { deviceId, file });
   let bytes: Buffer;
   try {
-    bytes = await (options.readFile ?? readFileBytes)(path);
+    bytes = await readInternalFile(path, options.readFile ?? defaultReadBytes, invalid);
   } catch (error) {
     if ((error as { code?: string }).code === "ENOENT") return null;
     throw error;
@@ -229,7 +275,7 @@ export async function readStreamManifest(libraryRoot: string, deviceId: string, 
   try {
     parsed = assertCanonicalJson(bytes.toString("utf8"));
   } catch {
-    fail("AKASHA_STREAM_MANIFEST_INVALID", `${DIRECTORY.events}/${deviceId}/${STREAM_MANIFEST_FILE} is not canonical JSON`, { deviceId });
+    return invalid("is not canonical JSON");
   }
   // TCRN-CROSS-STORY-471 R1: a stream a newer format wrote is refused before its shape is judged.
   if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
@@ -239,7 +285,44 @@ export async function readStreamManifest(libraryRoot: string, deviceId: string, 
       details: { deviceId },
     });
   }
-  return validateStreamManifest(parsed, deviceId);
+  const manifest = validateStreamManifest(parsed, deviceId);
+  await assertDerivedStreamIdentity(libraryRoot, manifest);
+  return manifest;
+}
+
+async function assertDerivedStreamIdentity(libraryRoot: string, manifest: StreamManifest): Promise<void> {
+  if (manifest.identityScheme === "legacy") return;
+  const library = await openLibrary(libraryRoot);
+  const expected = deriveStreamId(library.manifest.libraryId, manifest.deviceId);
+  if (manifest.streamId !== expected) {
+    const file = `${DIRECTORY.events}/${manifest.deviceId}/${STREAM_MANIFEST_FILE}`;
+    fail("AKASHA_STREAM_MANIFEST_INVALID", `${file}: streamId does not match its library and device identity`, {
+      deviceId: manifest.deviceId,
+      file,
+      streamId: manifest.streamId,
+    });
+  }
+}
+
+function validateSegmentEvent(value: unknown, manifest: StreamManifest, segment: StreamSegment, index: number): EventRecord {
+  const sequence = segment.firstSequence + index;
+  const where = { deviceId: manifest.deviceId, streamId: manifest.streamId, segment: segment.name, sequence: String(sequence) };
+  const invalid = (message: string): never => fail("AKASHA_SEGMENT_CORRUPT", `${segment.name} event ${sequence} ${message}`, where);
+  if (value === null || typeof value !== "object" || Array.isArray(value)) invalid("is not a record");
+  const record = value as Readonly<Record<string, unknown>>;
+  const schemaVersion = record.schemaVersion;
+  if (!isEventSchemaVersion(schemaVersion)) invalid("has an unknown schemaVersion");
+  const eventSchemaVersion = schemaVersion as EventRecord["schemaVersion"];
+  const fields = [...eventRecordFields(eventSchemaVersion)].sort().join("\u0000");
+  if (Object.keys(record).sort().join("\u0000") !== fields) invalid("does not have the exact event fields");
+  if (typeof record.payloadHash !== "string" || !/^[a-f0-9]{64}$/u.test(record.payloadHash) ||
+    typeof record.eventHash !== "string" || !/^[a-f0-9]{64}$/u.test(record.eventHash)) invalid("has malformed hashes");
+  try {
+    createEvent(eventInputOf(record as unknown as EventRecord), eventSchemaVersion);
+  } catch (error) {
+    if ((error as { reasonCode?: string }).reasonCode !== "EVENT_CHAIN_CORRUPT") invalid("has a malformed event shape");
+  }
+  return value as EventRecord;
 }
 
 function parseSegment(manifest: StreamManifest, segment: StreamSegment, bytes: Buffer): EventRecord[] {
@@ -249,11 +332,13 @@ function parseSegment(manifest: StreamManifest, segment: StreamSegment, bytes: B
   if (segment.name.endsWith(".ndjson")) {
     if (!text.endsWith("\n") || text.endsWith("\n\n")) fail("AKASHA_SEGMENT_CORRUPT", `${segment.name} is not canonical NDJSON`, where);
     values = text.split("\n").slice(0, -1).map((line, index) => {
+      let value: JsonValue;
       try {
-        return assertCanonicalJson(`${line}\n`);
+        value = assertCanonicalJson(`${line}\n`);
       } catch {
         return fail("AKASHA_SEGMENT_CORRUPT", `${segment.name} line ${index + 1} is not canonical JSON`, { ...where, sequence: String(segment.firstSequence + index) });
       }
+      return validateSegmentEvent(value, manifest, segment, index);
     });
   } else {
     let parsed: JsonValue;
@@ -263,7 +348,7 @@ function parseSegment(manifest: StreamManifest, segment: StreamSegment, bytes: B
       fail("AKASHA_SEGMENT_CORRUPT", `${segment.name} is not a canonical JSON array`, where);
     }
     if (!Array.isArray(parsed)) fail("AKASHA_SEGMENT_CORRUPT", `${segment.name} is not an event array`, where);
-    values = [...parsed];
+    values = parsed.map((value, index) => validateSegmentEvent(value, manifest, segment, index));
   }
   if (values.length !== segment.lastSequence - segment.firstSequence + 1) {
     fail("AKASHA_SEGMENT_CORRUPT", `${segment.name} holds ${values.length} events, its manifest says ${segment.lastSequence - segment.firstSequence + 1}`, where);
@@ -276,7 +361,12 @@ async function readSegmentBytes(libraryRoot: string, manifest: StreamManifest, s
   const where = { deviceId: manifest.deviceId, streamId: manifest.streamId, segment: segment.name };
   let content: Buffer;
   try {
-    content = await readFile(join(streamDirectory(libraryRoot, manifest.deviceId), segment.name));
+    const file = `${DIRECTORY.events}/${manifest.deviceId}/${segment.name}`;
+    content = await readInternalFile(
+      join(streamDirectory(libraryRoot, manifest.deviceId), segment.name),
+      readFile,
+      (message) => fail("AKASHA_SEGMENT_CORRUPT", `${segment.name} ${message}`, { deviceId: manifest.deviceId, streamId: manifest.streamId, segment: segment.name, file }),
+    );
   } catch (error) {
     const code = (error as { code?: string }).code;
     if (code === "ENOENT") fail("AKASHA_SEGMENT_CORRUPT", `${segment.name} is missing`, where);
@@ -294,7 +384,8 @@ async function readSegmentBytes(libraryRoot: string, manifest: StreamManifest, s
  * device, stream and sequence where the stream stops being provable.
  */
 export async function readStreamEvents(libraryRoot: string, manifest: StreamManifest, options: StreamReadOptions = {}): Promise<readonly EventRecord[]> {
-  const readFile = options.readFile ?? readFileBytes;
+  await assertDerivedStreamIdentity(libraryRoot, manifest);
+  const readFile = options.readFile ?? defaultReadBytes;
   const events: EventRecord[] = [];
   let mismatched: StreamSegment | null = null;
   for (const segment of manifest.segments) {
@@ -624,7 +715,7 @@ export function compareMergedEvents(left: MergedEvent, right: MergedEvent): numb
  * the reducer's question, not this one.
  */
 export async function readAllStreams(libraryRoot: string, options: LibraryReadOptions = {}): Promise<LibraryRead> {
-  const readFile = options.readFile ?? readFileBytes;
+  const readFile = options.readFile ?? defaultReadBytes;
   const timeoutMs = options.timeoutMs ?? AKASHA_READ_TIMEOUT_DEFAULT_MS;
   const streams: StreamRead[] = [];
   const merged: MergedEvent[] = [];

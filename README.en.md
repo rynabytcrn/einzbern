@@ -8,7 +8,7 @@ The Grail grants wishes. Einzbern remembers the wishes you made, the decisions y
 
 ![release](https://img.shields.io/badge/release-1.2.1-blue?style=flat-square) ![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey?style=flat-square) ![hosts](https://img.shields.io/badge/hosts-Claude%20Code%20%C2%B7%20Codex-informational?style=flat-square) ![platforms](https://img.shields.io/badge/platforms-macOS%20%C2%B7%20Linux%20%C2%B7%20Windows-informational?style=flat-square) ![deps](https://img.shields.io/badge/runtime%20deps-0-success?style=flat-square)
 
-[What happened on Wednesday afternoon](#what-happened-on-wednesday-afternoon) · [What it remembers](#what-it-remembers) · [When you will want it](#when-you-will-want-it) · [Why this and not a memory plugin](#why-this-and-not-a-memory-plugin) · [Install](#install) · [Day to day](#day-to-day) · [Several devices and cloud folders](#several-devices-and-cloud-folders) · [How we use it ourselves](#how-we-use-it-ourselves) · [Why it is designed this way](#why-it-is-designed-this-way) · [Glossary](#glossary)
+[What happened on Wednesday afternoon](#what-happened-on-wednesday-afternoon) · [What it remembers](#what-it-remembers) · [When you will want it](#when-you-will-want-it) · [Why this and not a memory plugin](#why-this-and-not-a-memory-plugin) · [Install](#install) · [Day to day](#day-to-day) · [Several devices and cloud folders](#several-devices-and-cloud-folders) · [How we use it ourselves](#how-we-use-it-ourselves) · [How the preset rules make your tokens go further](#how-the-preset-rules-make-your-tokens-go-further) · [Why it is designed this way](#why-it-is-designed-this-way) · [Glossary](#glossary)
 
 </div>
 
@@ -181,6 +181,23 @@ The tier table below is what we run right now; model names go stale as vendors u
 |---|---|---|---|
 | Claude Code | claude-fable-5-1, max, design conversation only, never dispatched | claude-opus-5-5, max, subagent orchestration and acceptance | claude-opus-5-5, low, splitting and package implementation |
 | Codex | gpt-6-astra, max | gpt-6-sol, max | gpt-6-luna, max |
+
+## How the preset rules make your tokens go further
+
+The four principles are not only discipline; each one plugs a measured leak. The numbers come from Einzbern's own development record, 2026-09-26, same batch of work, same model.
+
+| Where it leaks | Measured | The rule that plugs it |
+|---|---|---|
+| One subagent runs on and on, its context keeps growing, and it re-reads all of it every turn | One subagent doing 30 Subtasks: average context 526k, 3,740 turns, 221M weighted tokens, 7.4M per Subtask | Batch processing: packages in parallel, one fresh subagent per package, retired when done. A fresh package subagent costs 2.9M per Subtask, 39% of that |
+| Fixing a red as soon as it appears, then another red, and gates rerun again and again | In the previous version, nine defect tickets circled one budget gate, and one hook defect took four commits | Batch processing: reds are recorded, not fixed on the spot; handled once at the batch end; one root cause counts once |
+| Dispatching a wave right at the end of a quota window, and losing all of it | Eight parallel subagents filled the 5-hour quota in 12 minutes, zero commits, about 15M wasted | Quota gating: read the quota before dispatching; parallelism drops at 75%, waiting starts at 90% |
+| A confirmation dialog pops up and the session waits for a human forever | One wait lasted 2 hours 12 minutes | Unattended commands: no command forms that raise dialogs |
+| The main conversation writes a report after every dispatch | A few thousand tokens each, all kept in the main context and re-read every turn afterwards | Silent reporting: report only when everything is done or everything is blocked |
+| Asking "shall I continue?" and waiting for an answer | With nobody present, the wait lasts all night | Autonomous operation: reversible actions are simply done |
+
+Eighty to ninety percent of the cost is cache reads, that is, re-reading the context every turn. The system prompt and rules injected when a subagent starts are only 52k, under 1% of a subagent's cost. So saving tokens is not about injecting less; it is about keeping each subagent's context short and its turns few: one excerpt file per package instead of the whole split, command output written to files with only the tail read back, large files read in ranges, adjacent commands merged. All of this is written into the batch processing principle and the implementation conversation's start file.
+
+Parallelism by itself saves no tokens; it only changes how fast they are spent. What saves tokens is a fresh context. That is why the parallel cap follows your subscription and quota gating shrinks it automatically when the quota runs low.
 
 ## Why it is designed this way
 

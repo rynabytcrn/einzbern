@@ -238,6 +238,22 @@ function hasLocalRoot(code) {
 }
 
 /**
+ * The engine ships the Helper Skill template inside its own repository. Its local
+ * `skill/<id>` directory shares a name with the Helper sibling, so a read rooted at
+ * this repository's root is not a cross-repository reach.
+ */
+function readsRepositoryHelperSkill(code, sibling) {
+  if (sibling !== BRAND.helper.id) return false;
+
+  const quote = String.raw`["'\x60]`;
+  const helper = BRAND.helper.id.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  const directSkillPath = String.raw`${quote}skill/${helper}(?:/[^"'\x60]*)?${quote}`;
+  const splitSkillPath = String.raw`${quote}skill${quote}\s*,\s*${quote}${helper}${quote}`;
+  const rootedPath = String.raw`(?:join|resolve)\s*\(\s*(?:repositoryRoot|repoRoot|REPO_ROOT)\s*,\s*(?:${directSkillPath}|${splitSkillPath})`;
+  return new RegExp(rootedPath, "u").test(code);
+}
+
+/**
  * Every line that both names a sibling and performs a reaching operation,
  * or references paths outside the repository with a reaching operation.
  *
@@ -276,7 +292,7 @@ export function findReachingLines({
           // Check if this path is rooted at a fixture or temp directory — TCRN-CROSS-INC-274.
           // Paths rooted at test fixtures do not reach actual sibling repositories even when
           // they contain sibling names in their directory structure, so they must not be flagged.
-          if (hasLocalRoot(code)) {
+          if (hasLocalRoot(code) || readsRepositoryHelperSkill(code, named)) {
             return;
           }
 

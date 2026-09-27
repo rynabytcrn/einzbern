@@ -81,6 +81,17 @@ test("canonical roster findings remain comparable for a synthetic sibling violat
   const byId = judgeSource(`spawn(process.execPath, [join(root, "${BRAND.helper.id}/scripts/check.mjs")]);`, roster.siblings);
   assert.equal(byId.length, 1);
   assert.equal(byId[0].sibling, BRAND.helper.id);
+  const byIdRead = judgeSource(`readFileSync(join(REPO_ROOT, "../${BRAND.helper.id}/SKILL.md"), "utf8");`, roster.siblings);
+  assert.equal(byIdRead.length, 1);
+  assert.equal(byIdRead[0].sibling, BRAND.helper.id);
+});
+
+test("GREENS on a read of the Helper Skill template inside the repository", () => {
+  const findings = judgeSource(
+    `await readFile(join(repositoryRoot, "skill/${BRAND.helper.id}", path), "utf8");`,
+    [BRAND.helper.id]
+  );
+  assert.deepEqual(findings, []);
 });
 
 test("invalid, incomplete, and ambiguous manifest inputs are not-verifiable", () => {

@@ -214,15 +214,28 @@ test("481-R2: Atelier runs from the release, serves its static files and reaches
   const served = [...source.matchAll(/join\(portalRoot, "([^"]+)"\)/gu)].map((match) => match[1]);
   assert.ok(served.length > 0);
   for (const file of served) assert.ok(existsSync(join(tree, "atelier", file)), `atelier/${file} is missing`);
+  const packedPortal = await readFile(join(tree, "atelier/portal.mjs"), "utf8");
+  assert.match(packedPortal, /BUNDLED_CLI[^;]*["']\.\.\/scripts\/einzbern\.mjs["']/u, "the release Atelier must target its colocated CLI");
   // With no library registered the portal stops at startup, after library-list answered through
   // ../scripts/einzbern.mjs; an unreachable engine would stop it with PORTAL_CLI_UNAVAILABLE.
   const { env, cwd } = await environment("atelier");
+  const innerCli = node([join(tree, "scripts/einzbern.mjs"), "library-list"], { cwd: join(tree, "atelier"), env });
+  const bridge = "atelier/portal.mjs -> ../scripts/einzbern.mjs (library-list)";
+  const diagnostic = (portal) => safeDiagnostic(JSON.stringify({
+    bridge,
+    innerCli: { status: innerCli.status, signal: innerCli.signal, stdout: innerCli.stdout, stderr: innerCli.stderr },
+    portal: { status: portal.status, signal: portal.signal, stdout: portal.stdout, stderr: portal.stderr },
+  }));
+  assert.equal(innerCli.status, 0, diagnostic({ status: null, signal: null, stdout: "", stderr: "" }));
+  let registry;
+  try { registry = JSON.parse(innerCli.stdout); } catch { assert.fail(`Packaged library-list did not return JSON: ${diagnostic({ status: null, signal: null, stdout: "", stderr: "" })}`); }
+  assert.deepEqual(registry.entries, [], `The clean device should have an empty registry: ${diagnostic({ status: null, signal: null, stdout: "", stderr: "" })}`);
   const run = node([join(tree, "atelier/portal.mjs")], { cwd, env, timeout: 60_000 });
-  assert.equal(run.status, 2, run.stderr);
-  assert.equal(run.stdout, "");
-  const startup = JSON.parse(lastLine(run.stderr));
-  const diagnostic = JSON.stringify({ reasonCode: startup.reasonCode, error: safeDiagnostic(startup.error) });
-  assert.equal(startup.reasonCode, "PORTAL_LIBRARY_REGISTRY_EMPTY", `Atelier packaged CLI startup diagnostic: ${diagnostic}`);
+  assert.equal(run.status, 2, diagnostic(run));
+  assert.equal(run.stdout, "", diagnostic(run));
+  let startup;
+  try { startup = JSON.parse(lastLine(run.stderr)); } catch { assert.fail(`Atelier startup did not return a JSON diagnostic: ${diagnostic(run)}`); }
+  assert.equal(startup.reasonCode, "PORTAL_LIBRARY_REGISTRY_EMPTY", `Atelier packaged CLI startup diagnostic (${bridge}): ${diagnostic(run)}; startup=${safeDiagnostic(JSON.stringify({ reasonCode: startup.reasonCode, error: startup.error }))}`);
 });
 
 test("481-R2, R4: the hook entry is one file whose runHookEvent answers nothing on an older Node.js", async () => {

@@ -18,7 +18,6 @@ import {
   applyHostHooks,
   applyMachineSettingSet,
   initializeLibrary,
-  installSkillCopies,
   lockPath,
   planHostHooks,
   readHostHooks,
@@ -26,6 +25,7 @@ import {
 } from "../dist/build/packages/core/src/index.js";
 import { MACHINE_SETTINGS_FILE_NAME } from "../dist/build/packages/core/src/machine-settings.js";
 import { setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
+import { installSkillCopies } from "../dist/build/packages/core/src/skill-copies.js";
 import { DOCTOR_CHECKS, DOCTOR_CHECK_REASON_CODES, DOCTOR_REASON_CODES, runDoctor } from "../dist/build/packages/core/src/doctor.js";
 import { renderSection, sectionDigest } from "../dist/build/packages/core/src/managed-sections.js";
 import { canonicalJson } from "../dist/build/packages/protocol/src/index.js";

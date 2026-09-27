@@ -655,7 +655,11 @@ async function verifyP8() {
   for (const [name, content] of artifacts) await safeWriteOutput(repositoryRoot, `dist/release/${name}`, content);
   const owner = await remoteOwner();
   const privacyFindings = scanPrivacyEntries(
-    [...artifacts.entries()].map(([path, content]) => ({ label: `dist/release/${path}`, kind: "release", content: content.toString("utf8") })),
+    [...artifacts.entries()].map(([path, content]) => ({
+      label: `dist/release/${path}`,
+      kind: "release",
+      content: path.endsWith("-source.tar") ? content : content.toString("utf8"),
+    })),
     { owner, repositories: await engineRepositoryNames() },
   );
   assertion(privacyFindings.length === 0, "P8_RELEASE_PRIVACY_FINDINGS", privacyFindings.join(","));
@@ -814,7 +818,7 @@ async function archiveEntryIfPresent() {
   return [{
     label: "dist/source/einzbern-source.tar",
     kind: "archive",
-    content: archiveInput.content.toString("utf8"),
+    content: archiveInput.content,
   }];
 }
 
@@ -980,8 +984,12 @@ async function verifyPrivacyScan(options = {}, writePrivacyProgress) {
     const { p8ReleaseArtifactSetMatches } = await p8Release();
     assertion(p8ReleaseArtifactSetMatches(releaseRecords.map((record) => record.path.slice("dist/release/".length))), "P8_PRIVACY_RELEASE_ARTIFACT_SET");
     entries.push(...buildRecords.map((record) => ({ label: record.path, kind: "build", content: record.content.toString("utf8") })));
-    entries.push({ label: "dist/source/einzbern-source.tar", kind: "archive", content: sourceArchive.content.toString("utf8") });
-    entries.push(...releaseRecords.map((record) => ({ label: record.path, kind: "release", content: record.content.toString("utf8") })));
+    entries.push({ label: "dist/source/einzbern-source.tar", kind: "archive", content: sourceArchive.content });
+    entries.push(...releaseRecords.map((record) => ({
+      label: record.path,
+      kind: "release",
+      content: record.path.endsWith("-source.tar") ? record.content : record.content.toString("utf8"),
+    })));
     p8Surfaces.aggregateAlgorithm = "sha256(path-NUL-byteLength-NUL-bytes over canonical path order)";
     p8Surfaces.trackedSource = aggregatePrivacySurface(trackedSourceRecords);
     p8Surfaces.fullHistory = aggregatePrivacySurface(historyRecords);
@@ -1001,11 +1009,15 @@ async function verifyPrivacyScan(options = {}, writePrivacyProgress) {
   let completedHistoryCommits = 0;
   let lastCompletedCommit = null;
   let lastHistoryProgressAt = Date.now();
+  const historyBlobPaths = new Map(historyRecords
+    .filter((record) => record.path.startsWith("blob:"))
+    .map((record) => [record.path.slice("blob:".length), new Set()]));
   try {
     const historyProgress = await walkHistoricalCommitPaths(
       commits,
       historyRecords,
-      (commit, path) => {
+      (commit, path, object) => {
+        historyBlobPaths.get(object)?.add(path);
         entries.push({ label: `git-commit-tree:${commit}:${path}`, kind: "filename", content: path });
         historicalPaths += 1;
         const now = Date.now();
@@ -1050,6 +1062,11 @@ async function verifyPrivacyScan(options = {}, writePrivacyProgress) {
       historicalPaths,
     });
     throw error;
+  }
+  for (const entry of entries) {
+    if (entry.kind === "blob") {
+      entry.sourcePaths = [...(historyBlobPaths.get(entry.label.slice("git-blob:".length)) ?? [])];
+    }
   }
   const refs = run("git", ["for-each-ref", "--format=%(refname)%00%(objectname)%00%(upstream)"], { raw: true });
   entries.push({ label: "git-refs", kind: "ref", content: decodeGitMetadataBytes(refs, "PRIVACY_REFS_UTF8_INVALID") });

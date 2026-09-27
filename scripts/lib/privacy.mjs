@@ -5,6 +5,7 @@ import { TextDecoder } from "node:util";
 
 import { compareCanonicalText } from "./canonical-order.mjs";
 import { PRIVATE_TOKEN_NAMES } from "./private-token-roster.mjs";
+import { TAR_BLOCK_BYTES, readUstar } from "./tar.mjs";
 
 const strictUtf8 = new TextDecoder("utf-8", { fatal: true });
 const joinParts = (parts, separator) => parts.join(separator);
@@ -45,6 +46,152 @@ export function aggregatePrivacySurface(records) {
 
 function escaped(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+// MIN-235 D6: hash-only rules for individually reviewed public metadata and manual test samples.
+// Both the matched text and its full normalized source line must match; unknown values, changed
+// lines, and other source paths remain findings. Digests keep sample正文 out of code and reports.
+const CLASSIFIED_PRIVACY_MATCHES = new Set([
+  "packages/core/src/names.ts\u0000OWNER_PRIVATE_IDENTIFIER\u00001b58b39b82f7665f411664797bcc897a75d9a6222ee4a8c97234493324aab74f\u0000acbbf0306043799672e383fe5bdfc98bfe0a2b1675085c911fce83869dc4a4be",
+  "tests/agents-sections.test.mjs\u0000EMAIL_IDENTIFIER\u0000732c098147f75109ac67eec4b33383fe9495028b44dd9b5c69540f080fa7efd8\u0000ef939f026250ca3b0dbf0951c7928e94cda9948a533bbc7c62d9938429cb85d1",
+  "tests/agents-sections.test.mjs\u0000EMAIL_IDENTIFIER\u0000740ad4796e4e6c6060892b0c6776b532663dbf1ad24d624c30539ad9a2242a1d\u00001d61adc8379f3685b9f7e2b47fa9e833b03402b68459b4c142f774a2358a5d89",
+  "tests/agents-sections.test.mjs\u0000EMAIL_IDENTIFIER\u0000740ad4796e4e6c6060892b0c6776b532663dbf1ad24d624c30539ad9a2242a1d\u00002f483715784d5afb94936391f64c9d70b217c0385cc84e98c038e72dbe7e820e",
+  "tests/agents-sections.test.mjs\u0000EMAIL_IDENTIFIER\u0000740ad4796e4e6c6060892b0c6776b532663dbf1ad24d624c30539ad9a2242a1d\u0000f0805cb68cdc61469a0b4453288f6068ba7af8051ae68308bdeadfff20864076",
+  "tests/cloud-roots.test.mjs\u0000EMAIL_IDENTIFIER\u0000bc2f60d2e7b8555806e04afa4091a614f5d0650f0d8a809a4f9a10476c864c42\u0000b7e4cf676ce6938f8c77e773935d01ba5b2136b2756362fe63b21ddd904fd8bf",
+  "tests/cloud-roots.test.mjs\u0000LINUX_HOME_PATH\u00005d1bf737f3d16abdd308d0c68b33a83d6119bce7b2d196439a2a78c62da0e5b6\u000050f3803332b6dda8f0418a5684ff9d9fab32027490f230c6360d30d7f912c34a",
+  "tests/cloud-roots.test.mjs\u0000LOCAL_ABSOLUTE_PATH\u00002284482be1cfd3e1432e6aad418a654fba6eb59866520ef14d30572661e5e2ae\u000004c7156bfebee48e0a74f42b67c2c61a94c1fc0f9295c2aca37575cd2ef6fc90",
+  "tests/cloud-roots.test.mjs\u0000LOCAL_ABSOLUTE_PATH\u00002284482be1cfd3e1432e6aad418a654fba6eb59866520ef14d30572661e5e2ae\u000052f8405611ee39dbe54097caaa2f1da42d2d0d9a549e47e5ab29b49f35ad2f21",
+  "tests/cloud-roots.test.mjs\u0000LOCAL_ABSOLUTE_PATH\u00002284482be1cfd3e1432e6aad418a654fba6eb59866520ef14d30572661e5e2ae\u00005b33f3c75a858cd605d1626cfb27e6f6e629f43e461bdcf7f4b4bad7ee106c25",
+  "tests/cloud-roots.test.mjs\u0000LOCAL_ABSOLUTE_PATH\u00002284482be1cfd3e1432e6aad418a654fba6eb59866520ef14d30572661e5e2ae\u0000607e7d272f5f9d87918d90cf1baf81bcd23475c1f6dd0af9926d39a66568d234",
+  "tests/cloud-roots.test.mjs\u0000LOCAL_ABSOLUTE_PATH\u00002284482be1cfd3e1432e6aad418a654fba6eb59866520ef14d30572661e5e2ae\u00007f38ed0c7de84daf5deed359a017cba142a6d62f0951e89b29ebc911686a324c",
+  "tests/cloud-roots.test.mjs\u0000LOCAL_ABSOLUTE_PATH\u00002284482be1cfd3e1432e6aad418a654fba6eb59866520ef14d30572661e5e2ae\u000086b7c08b8a5b5df9bc6150d335af0ac52a068f8c31d37a5424953cd9613cf308",
+  "tests/cloud-roots.test.mjs\u0000LOCAL_ABSOLUTE_PATH\u00002284482be1cfd3e1432e6aad418a654fba6eb59866520ef14d30572661e5e2ae\u00008832abeb464b52c9888254814846d912276261d8c75cca305f7685f3ad542604",
+  "tests/cloud-roots.test.mjs\u0000LOCAL_ABSOLUTE_PATH\u00002284482be1cfd3e1432e6aad418a654fba6eb59866520ef14d30572661e5e2ae\u0000b7e4cf676ce6938f8c77e773935d01ba5b2136b2756362fe63b21ddd904fd8bf",
+  "tests/cloud-roots.test.mjs\u0000LOCAL_ABSOLUTE_PATH\u00002284482be1cfd3e1432e6aad418a654fba6eb59866520ef14d30572661e5e2ae\u0000cd9925ae2a5c86ab91d09d2d58b6e5f75d3ee2261995979e096bbfa69355aece",
+  "tests/cloud-roots.test.mjs\u0000LOCAL_ABSOLUTE_PATH\u00009ed5c01c23acc6ce608ce47f914e13c2a3a5a4c9c959c1baf67f06b2b2f60756\u000052f8405611ee39dbe54097caaa2f1da42d2d0d9a549e47e5ab29b49f35ad2f21",
+  "tests/cloud-roots.test.mjs\u0000WINDOWS_USER_PATH\u0000309e5fa0afe8051d225a3d1a6dafe7b2d65d23b6d224cc39077ce5090efdfecd\u0000390150488f06f28c47cd6c51a94da8a81bfa5cc8019f1f1884ea7897bbfbe95b",
+  "tests/cloud-roots.test.mjs\u0000WINDOWS_USER_PATH\u0000309e5fa0afe8051d225a3d1a6dafe7b2d65d23b6d224cc39077ce5090efdfecd\u00008c8c1d049b55cc70f46780d1449065dc8c2d332a306c928829b681fea290cc47",
+  "tests/cloud-roots.test.mjs\u0000WINDOWS_USER_PATH\u0000309e5fa0afe8051d225a3d1a6dafe7b2d65d23b6d224cc39077ce5090efdfecd\u0000a6ec4a0bd26486f3ee4eab7ca8b83ea1bc00a0c44462699a326ab4033cddf038",
+  "tests/cloud-roots.test.mjs\u0000WINDOWS_USER_PATH\u0000309e5fa0afe8051d225a3d1a6dafe7b2d65d23b6d224cc39077ce5090efdfecd\u0000aed6e1f5fe7dedd7cd4e3ef51f31a08397a3a3c557b6ad1d7010302680aaf1fe",
+  "tests/cloud-roots.test.mjs\u0000WINDOWS_USER_PATH\u0000309e5fa0afe8051d225a3d1a6dafe7b2d65d23b6d224cc39077ce5090efdfecd\u0000b2cb61709c04038c8b2b42da8f7a9ef30a5d709db8b051fc5bf199b9651c35a6",
+  "tests/cloud-roots.test.mjs\u0000WINDOWS_USER_PATH\u0000309e5fa0afe8051d225a3d1a6dafe7b2d65d23b6d224cc39077ce5090efdfecd\u0000bc0e429f554acf140b5fcf539afdc39834cf854097068b6ec8eb4b0b37ee9123",
+  "tests/cloud-roots.test.mjs\u0000WINDOWS_USER_PATH\u0000309e5fa0afe8051d225a3d1a6dafe7b2d65d23b6d224cc39077ce5090efdfecd\u0000eb689c00d1b64d0647c241f6542fe02c0e0f49f85d872aa0234446fa9b27ed76",
+  "tests/cloud-roots.test.mjs\u0000WINDOWS_USER_PATH\u0000309e5fa0afe8051d225a3d1a6dafe7b2d65d23b6d224cc39077ce5090efdfecd\u0000eca03ee52df2fd81a781f8a7d044fcaa57e119decb0a69edc12b446235a52b87",
+  "tests/p1-all-legs.test.mjs\u0000EMAIL_IDENTIFIER\u0000cc6d96611cffa9f02c3626f0b9ee897dc171e2d540a5cae349d4ec316104997b\u00009abe66319db9dec4df7e3e269f03d416653b8291e4dfc9817e019e8713af9fba",
+  "tests/privacy-boundary.test.mjs\u0000CUSTOMER_SOURCE_MARKER\u00007ab496d61c555b4eb7809cd416c7a07fccc4afe995c041bf3a2347affa3a22ea\u00000bb6f8ae650d1259bed27a6044ebaadfd6c9fceb40245f9bd9566bd4dbfc3ed9",
+  "tests/privacy-boundary.test.mjs\u0000CUSTOMER_SOURCE_MARKER\u00007ab496d61c555b4eb7809cd416c7a07fccc4afe995c041bf3a2347affa3a22ea\u000039c789e4a03f687e901326d1016037713b1e2325518be4547c66fa19a8a3dc70",
+  "tests/privacy-boundary.test.mjs\u0000CUSTOMER_SOURCE_MARKER\u00007ab496d61c555b4eb7809cd416c7a07fccc4afe995c041bf3a2347affa3a22ea\u0000570457b113cf34586fa686091c0ef935b736fedf49e021f839746764ecde7649",
+  "tests/privacy-boundary.test.mjs\u0000CUSTOMER_SOURCE_MARKER\u00007ab496d61c555b4eb7809cd416c7a07fccc4afe995c041bf3a2347affa3a22ea\u00008608880edaabeb015456db7b3ceb9c6fcad4e7e1e569d130164ef0e6e8bd763e",
+  "tests/privacy-boundary.test.mjs\u0000CUSTOMER_SOURCE_MARKER\u00007ab496d61c555b4eb7809cd416c7a07fccc4afe995c041bf3a2347affa3a22ea\u0000beb4effc77d647337f52d6158e82166606ee07606058e6591601e4fa45ee4abf",
+  "tests/privacy-boundary.test.mjs\u0000CUSTOMER_SOURCE_MARKER\u00007ab496d61c555b4eb7809cd416c7a07fccc4afe995c041bf3a2347affa3a22ea\u0000deca1173558847313cca09c962f689b4e2af7ec8db5510a67d234ce1b2858970",
+  "tests/privacy-boundary.test.mjs\u0000CUSTOMER_SOURCE_MARKER\u00007ab496d61c555b4eb7809cd416c7a07fccc4afe995c041bf3a2347affa3a22ea\u0000f101ee68b73507966fe6914b52e8b1adbc1760820ee613ceaf94ab578b42fc13",
+  "tests/privacy-boundary.test.mjs\u0000CUSTOMER_SOURCE_MARKER\u00007ab496d61c555b4eb7809cd416c7a07fccc4afe995c041bf3a2347affa3a22ea\u0000fba656531fc518a16aa604b89079899aa113bd75cb6b6d479066efd5752f76c7",
+  "tests/privacy-boundary.test.mjs\u0000LOCAL_ABSOLUTE_PATH\u0000f5e4c2aea38c42f32e930c142639e2eadd105dfacf02e751d035fad6ff1b984a\u0000c3574365dbfbeb8b069b6815c9f062cffc7fcb2b7601397068ed5f93a4e1567b",
+  "tests/privacy-boundary.test.mjs\u0000PRIVATE_HOSTNAME\u0000e2402e844e5bdc4aad6390029485ba98222703f7d35813a629726fc97d5d7aff\u00003c74b04fd50c11ec6e00cba5da96f2df9157770cb5d7648f6d8b017bbaefbfd8",
+  "tests/privacy-boundary.test.mjs\u0000PRIVATE_HOSTNAME\u0000e2402e844e5bdc4aad6390029485ba98222703f7d35813a629726fc97d5d7aff\u0000d8d4ff841ea7863775bdf39c881db922d950f4fa325f93dcd75fd6c3f9f22568",
+  "tests/privacy-boundary.test.mjs\u0000PRIVATE_SSH_URL\u00000bdddfe24b8f9a16e6704fd7725c1fc2a93b0d34b761b3db57f1d9f3be2e5699\u00003c74b04fd50c11ec6e00cba5da96f2df9157770cb5d7648f6d8b017bbaefbfd8",
+  "tests/privacy-boundary.test.mjs\u0000PRIVATE_SSH_URL\u00000bdddfe24b8f9a16e6704fd7725c1fc2a93b0d34b761b3db57f1d9f3be2e5699\u0000d8d4ff841ea7863775bdf39c881db922d950f4fa325f93dcd75fd6c3f9f22568",
+  "tests/privacy-boundary.test.mjs\u0000WINDOWS_USER_PATH\u0000309e5fa0afe8051d225a3d1a6dafe7b2d65d23b6d224cc39077ce5090efdfecd\u00000d6459ee2e8c78688741d64ffb9f209303dce1d799089de7644184605698a7d4",
+  "tests/push-wiki.test.mjs\u0000EMAIL_IDENTIFIER\u0000234fa22132f49355b994008468e4d0fcb9eb9afcda4455c8fb86a668b8955332\u0000eed76a14a72a32588bf324a736cee420a33438354875cebea5e6ac6bd49f40bb",
+  "tests/registry-resolve.test.mjs\u0000EMAIL_IDENTIFIER\u0000f55654d4fa1594e4dc4c831f3634ca91f5d9e00c3b7e51f6f092c8a6c6a6ca77\u0000f8f672b13fdc19bdb2bd6c10d3626f1cb21d69af146f7096047ae868b1bf0be3",
+  "tests/release-lockstep.test.mjs\u0000EMAIL_IDENTIFIER\u0000c4e15b25a1b3499cb3b1aab100a19d1042c96e10e59ab0835ae208d60ab7d7a6\u000041fdd1befbe3d94e088ac111e3209803f94fd1e97e27960af8259cc548cc689b",
+  "tests/setup-fresh.test.mjs\u0000EMAIL_IDENTIFIER\u0000d525ba4089c339942bd5a42b69c3613d313cb77841a6bb197f23f6dd1fd913aa\u00001c4586aaa5ba8e71329f3e95ee8eb59292e8026ce346f4edf6849117fffab7c2",
+  "tests/variables-cli.test.mjs\u0000AWS_ACCESS_KEY\u00001a5d44a2dca19669d72edf4c4f1c27c4c1ca4b4408fbb17f6ce4ad452d78ddb3\u0000f991ae3f654d9d6873a23aed1046e8870c255cfe991d0b465adebd8fe1bde9ad",
+  "tests/variables-cli.test.mjs\u0000GITHUB_CLASSIC_TOKEN\u0000dec6a48dd5610e7f4a00f2e4d35d2dfb29a720b9cb491360d9a137e366a3adae\u00004fb20e2489318568c1801627944eec2f6f9157c32998b210ffcd1b0f9dcef2a3",
+  "tests/variables.test.mjs\u0000AWS_ACCESS_KEY\u00001a5d44a2dca19669d72edf4c4f1c27c4c1ca4b4408fbb17f6ce4ad452d78ddb3\u00001e70e593710103d2d171f785d43cd22ca05fa1651c77beb1726df05393c229c8",
+  "tests/variables.test.mjs\u0000AWS_ACCESS_KEY\u0000e1de2469408636f0ce20ad2b1b33e1be3f903261377ea0189615b936fe397df6\u00006b0d695a5c64e946b939171dc5455a23196142e66429dfb18914d53790824974",
+  "tests/variables.test.mjs\u0000GITHUB_CLASSIC_TOKEN\u00003543c50b0cb9cea8e55eb1f529b79f043cb250d485fde7b66cabbb5183add7da\u000020bf79aab432fdf2f8a921eef3284130c515208a98a09bff8a1381c980e1f1c5",
+  "tests/variables.test.mjs\u0000GITHUB_CLASSIC_TOKEN\u0000bc3ae723f57c6b9e3fd80b699fcc420f6074b0b1718039669d22631d508ac0a7\u000017c8bf163b2c2af9146c993d48f738bfba9c3244b9fd6d385d197689c8b0975f",
+  "tests/variables.test.mjs\u0000GITHUB_CLASSIC_TOKEN\u0000dec6a48dd5610e7f4a00f2e4d35d2dfb29a720b9cb491360d9a137e366a3adae\u0000ceaa7e71f920b390511956dc7523cf98b26ac76e367c8da7fceb0e42283a7dcf",
+  "tests/variables.test.mjs\u0000PRIVATE_KEY\u00003021d90eb9437b2d8f30e8363695c4418b5e5f1870801b5c317e9398ee0f572d\u000056fdf99f9a1bb9c9d439ab956e301ffaea7cc41388f4639f76aa21dc39c5b496",
+  "tests/variables.test.mjs\u0000PRIVATE_KEY\u00008bcac7908eb950419537b91e19adc83ce2c9cbfdacf4f81157fdadfec11f7017\u0000a77bca7ce9555b3bde511730134d511cf811229f140f55f40747e1b85462c217",
+]);
+
+function privacyDigest(value) {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function lineAt(value, offset) {
+  const start = value.lastIndexOf("\n", Math.max(0, offset - 1)) + 1;
+  const end = value.indexOf("\n", offset);
+  return value.slice(start, end === -1 ? value.length : end);
+}
+
+function classifiedOrigins(entry) {
+  if (entry.kind === "source") return [entry.label];
+  if (!Array.isArray(entry.sourcePaths)) return [];
+  return [...new Set(entry.sourcePaths)];
+}
+
+function hasUnclassifiedPrivacyMatch(entry, reasonCode, pattern, inputs) {
+  const origins = classifiedOrigins(entry);
+  for (const input of inputs) {
+    pattern.lastIndex = 0;
+    if (!pattern.test(input)) continue;
+    const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
+    const matcher = new RegExp(pattern.source, flags);
+    for (const match of input.matchAll(matcher)) {
+      const digest = privacyDigest(match[0]);
+      const lineDigest = privacyDigest(lineAt(input, match.index));
+      if (origins.length === 0 || origins.some((origin) => !CLASSIFIED_PRIVACY_MATCHES.has([origin, reasonCode, digest, lineDigest].join("\0")))) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function tarHeaderText(header, offset, length) {
+  const field = header.subarray(offset, offset + length);
+  const end = field.indexOf(0);
+  return field.subarray(0, end === -1 ? length : end).toString("utf8");
+}
+
+function tarHeaderSize(header) {
+  const text = tarHeaderText(header, 124, 12).trim();
+  if (!/^[0-7]+$/u.test(text)) throw new Error("PRIVACY_ARCHIVE_LAYOUT_INVALID");
+  const size = Number.parseInt(text, 8);
+  if (!Number.isSafeInteger(size) || size < 0) throw new Error("PRIVACY_ARCHIVE_LAYOUT_INVALID");
+  return size;
+}
+
+function isSourceArchiveEntry(entry) {
+  return (entry.kind === "archive" && entry.label === "dist/source/einzbern-source.tar") ||
+    (entry.kind === "release" && /^dist\/release\/[^/]+-source\.tar$/u.test(entry.label));
+}
+
+function expandSourceArchiveEntry(entry) {
+  const bytes = Buffer.isBuffer(entry.content) ? entry.content : Buffer.from(entry.content, "utf8");
+  const files = readUstar(bytes);
+  const expanded = [];
+  let offset = 0;
+  let fileIndex = 0;
+  while (offset + TAR_BLOCK_BYTES <= bytes.length && !bytes.subarray(offset, offset + TAR_BLOCK_BYTES).every((byte) => byte === 0)) {
+    const header = bytes.subarray(offset, offset + TAR_BLOCK_BYTES);
+    const type = String.fromCharCode(header[156]);
+    if (type !== "0" && type !== "\0") throw new Error("PRIVACY_ARCHIVE_LAYOUT_INVALID");
+    const file = files[fileIndex++];
+    const path = tarHeaderText(header, 0, 100);
+    const prefix = tarHeaderText(header, 345, 155);
+    const joinedPath = prefix === "" ? path : `${prefix}/${path}`;
+    const size = tarHeaderSize(header);
+    if (file === undefined || file.path !== joinedPath || file.bytes.length !== size) {
+      throw new Error("PRIVACY_ARCHIVE_LAYOUT_INVALID");
+    }
+    const dataStart = offset + TAR_BLOCK_BYTES;
+    const dataEnd = dataStart + size;
+    const paddedEnd = dataStart + Math.ceil(size / TAR_BLOCK_BYTES) * TAR_BLOCK_BYTES;
+    if (paddedEnd > bytes.length) throw new Error("PRIVACY_ARCHIVE_LAYOUT_INVALID");
+    expanded.push({ label: `${entry.label}#header:${joinedPath}`, kind: entry.kind, content: header.toString("utf8") });
+    expanded.push({ label: `${entry.label}#body:${joinedPath}`, kind: entry.kind, sourcePaths: [joinedPath], content: decodePrivacyScanBytes(file.bytes) });
+    const padding = bytes.subarray(dataEnd, paddedEnd);
+    if (padding.length > 0) expanded.push({ label: `${entry.label}#padding:${joinedPath}`, kind: entry.kind, content: padding.toString("utf8") });
+    offset = paddedEnd;
+  }
+  if (fileIndex !== files.length) throw new Error("PRIVACY_ARCHIVE_LAYOUT_INVALID");
+  const trailer = bytes.subarray(offset);
+  if (trailer.length > 0) expanded.push({ label: `${entry.label}#trailer`, kind: entry.kind, content: trailer.toString("utf8") });
+  return expanded;
 }
 
 function privacyPatterns(owner, privateTokens = []) {
@@ -487,42 +634,55 @@ export function scanPrivacyEntries(entries, { owner, privateTokens = [], reposit
   if (typeof owner !== "string" || owner.length === 0) {
     throw new Error("PRIVACY_OWNER_REQUIRED");
   }
+  if (!Array.isArray(entries)) throw new Error("PRIVACY_ENTRY_INVALID");
   const patterns = privacyPatterns(owner, privateTokens);
   const findings = [];
   const filenameMatches = new Map();
-  let entriesScanned = 0;
-  const totalEntries = Array.isArray(entries) ? entries.length : null;
-  let lastProgressCount = 0;
+  const archiveExpansions = new Map();
+  let totalEntries = 0;
   for (const entry of entries) {
-    if (typeof entry.label !== "string" || typeof entry.kind !== "string" || typeof entry.content !== "string") {
+    if (typeof entry?.label !== "string" || typeof entry?.kind !== "string") {
       throw new Error("PRIVACY_ENTRY_INVALID");
     }
-
-    // Historical paths repeat in every commit that retains them. Cache only filename
-    // predicates: blobs and source strings are high-cardinality, while paths are small
-    // and recur heavily. Reusing the predicate result preserves every commit/path
-    // finding and its order without re-normalizing the same path thousands of times.
-    let matchedReasons = entry.kind === "filename" ? filenameMatches.get(entry.content) : undefined;
-    if (matchedReasons === undefined) {
-      const content = sanitizeAllowedPublicMetadata(entry, owner, repositories);
-      const normalized = normalizePrivacyText(content);
-      matchedReasons = [];
-      for (const [reasonCode, pattern] of patterns) {
-        pattern.lastIndex = 0;
-        if (pattern.test(content) || pattern.test(normalized)) {
-          matchedReasons.push(reasonCode);
+    if (isSourceArchiveEntry(entry)) {
+      if (typeof entry.content !== "string" && !Buffer.isBuffer(entry.content)) throw new Error("PRIVACY_ENTRY_INVALID");
+      const expanded = expandSourceArchiveEntry(entry);
+      archiveExpansions.set(entry, expanded);
+      totalEntries += expanded.length;
+    } else {
+      if (typeof entry.content !== "string") throw new Error("PRIVACY_ENTRY_INVALID");
+      totalEntries += 1;
+    }
+  }
+  let entriesScanned = 0;
+  let lastProgressCount = 0;
+  for (const originalEntry of entries) {
+    for (const entry of archiveExpansions.get(originalEntry) ?? [originalEntry]) {
+      // Historical paths repeat in every commit that retains them. Cache only filename
+      // predicates: blobs and source strings are high-cardinality, while paths are small
+      // and recur heavily. Reusing the predicate result preserves every commit/path
+      // finding and its order without re-normalizing the same path thousands of times.
+      let matchedReasons = entry.kind === "filename" ? filenameMatches.get(entry.content) : undefined;
+      if (matchedReasons === undefined) {
+        const content = sanitizeAllowedPublicMetadata(entry, owner, repositories);
+        const normalized = normalizePrivacyText(content);
+        matchedReasons = [];
+        for (const [reasonCode, pattern] of patterns) {
+          if (hasUnclassifiedPrivacyMatch(entry, reasonCode, pattern, [content, normalized])) {
+            matchedReasons.push(reasonCode);
+          }
         }
+        if (entry.kind === "filename") filenameMatches.set(entry.content, matchedReasons);
       }
-      if (entry.kind === "filename") filenameMatches.set(entry.content, matchedReasons);
-    }
-    for (const reasonCode of matchedReasons) {
-      findings.push(`${reasonCode}:${entry.kind}:${entry.label}`);
-    }
+      for (const reasonCode of matchedReasons) {
+        findings.push(`${reasonCode}:${entry.kind}:${entry.label}`);
+      }
 
-    entriesScanned += 1;
-    if (typeof onProgress === "function" && entriesScanned % 5_000 === 0) {
-      onProgress({ entriesScanned, totalEntries });
-      lastProgressCount = entriesScanned;
+      entriesScanned += 1;
+      if (typeof onProgress === "function" && entriesScanned % 5_000 === 0) {
+        onProgress({ entriesScanned, totalEntries });
+        lastProgressCount = entriesScanned;
+      }
     }
   }
   if (typeof onProgress === "function" && lastProgressCount !== entriesScanned) {
@@ -689,7 +849,7 @@ export async function walkHistoricalCommitPaths(commits, historyRecords, visitPa
         if (children === undefined) throw new Error("PRIVACY_GIT_OBJECT_TYPE");
         stack.push({ tree: entry.object, prefix: path, entries: children, nextIndex: 0 });
       } else {
-        visitPath(commit, path);
+        visitPath(commit, path, entry.object);
         pathsInCommit += 1;
         historicalPaths += 1;
       }

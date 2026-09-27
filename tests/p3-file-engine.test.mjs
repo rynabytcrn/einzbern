@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import {
+  link,
   mkdir,
   mkdtemp,
   readFile,
   realpath,
   rename,
   rm,
+  symlink,
   writeFile,
 } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
@@ -27,9 +30,12 @@ import {
   deleteProject,
   deleteWork,
   exportWorkspace,
+  importLegacyWorkspace,
   initializeLibrary,
   lockPath,
   materializeWorkspace,
+  readDevice,
+  readOrCreateDevice,
   recoverWorkspace,
   transitionWork,
   updateProject,
@@ -578,6 +584,108 @@ test("stream segments: truncation, duplication, reordering, corruption, a forked
   } finally {
     await fixture.close();
   }
+});
+
+test("Akasha refuses a non-derived stream identity and linked or malformed internal files", async (t) => {
+  const wrongIdentity = await workspaceFixture();
+  try {
+    await createProjectHistory(wrongIdentity);
+    await forgeOwnStream(wrongIdentity.workspace, (events) => events, { streamId: "stream:wrong" });
+    const { directory, manifest } = await readOwnStream(wrongIdentity.workspace);
+    manifest.streamId = "stream:wrong";
+    await writeFile(join(directory, "manifest.json"), canonicalJson(manifest));
+    await assert.rejects(materializeWorkspace(wrongIdentity.workspace), (error) =>
+      error?.reasonCode === "AKASHA_STREAM_MANIFEST_INVALID" &&
+      error.details?.deviceId === manifest.deviceId && error.details?.streamId === "stream:wrong");
+  } finally {
+    await wrongIdentity.close();
+  }
+
+  for (const [file, kind] of [["manifest.json", "symlink"], ["manifest.json", "hardlink"], ["00000001.ndjson", "symlink"], ["00000001.ndjson", "hardlink"]]) {
+    const fixture = await workspaceFixture();
+    try {
+      await createProjectHistory(fixture);
+      const { directory, manifest } = await readOwnStream(fixture.workspace);
+      const path = join(directory, file);
+      const outside = join(fixture.base, `${kind}-${file}`);
+      if (kind === "symlink") {
+        await writeFile(outside, file === "manifest.json" ? canonicalJson(manifest) : await readFile(path));
+        await rename(path, join(directory, `saved-${file}`));
+        await symlink(outside, path);
+      } else {
+        await link(path, outside);
+      }
+      const reasonCode = file === "manifest.json" ? "AKASHA_STREAM_MANIFEST_INVALID" : "AKASHA_SEGMENT_CORRUPT";
+      await assert.rejects(materializeWorkspace(fixture.workspace), (error) =>
+        error?.reasonCode === reasonCode && error.details?.deviceId === manifest.deviceId);
+    } finally {
+      await fixture.close();
+    }
+  }
+
+  const malformedManifest = await workspaceFixture();
+  try {
+    await createProjectHistory(malformedManifest);
+    const { directory, manifest } = await readOwnStream(malformedManifest.workspace);
+    manifest.segments[0].unexpected = true;
+    await writeFile(join(directory, "manifest.json"), canonicalJson(manifest));
+    await assert.rejects(materializeWorkspace(malformedManifest.workspace), (error) =>
+      error?.reasonCode === "AKASHA_STREAM_MANIFEST_INVALID" &&
+      error.details?.deviceId === manifest.deviceId && error.details?.file?.endsWith("manifest.json"));
+  } finally {
+    await malformedManifest.close();
+  }
+
+  const malformedSegment = await workspaceFixture();
+  try {
+    await createProjectHistory(malformedSegment);
+    const { directory, manifest } = await readOwnStream(malformedSegment.workspace);
+    const malformed = canonicalJson(null);
+    manifest.segments[0].bytes = Buffer.byteLength(malformed);
+    manifest.segments[0].sha256 = createHash("sha256").update(malformed).digest("hex");
+    await writeFile(join(directory, manifest.segments[0].name), malformed);
+    await writeFile(join(directory, "manifest.json"), canonicalJson(manifest));
+    await assert.rejects(materializeWorkspace(malformedSegment.workspace), (error) =>
+      error?.reasonCode === "AKASHA_SEGMENT_CORRUPT" &&
+      error.details?.deviceId === manifest.deviceId && error.details?.sequence === "1");
+  } finally {
+    await malformedSegment.close();
+  }
+});
+
+test("device identity refuses non-canonical, symbolic-link and hard-link files", async (t) => {
+  const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-device-shape-")));
+  t.after(() => rm(base, { recursive: true, force: true }));
+
+  const linkedHome = join(base, "hardlink-home");
+  const { device } = await readOrCreateDevice({ home: linkedHome, now: instant(0), hostname: "fixture" });
+  await link(join(linkedHome, "device.json"), join(base, "device-hardlink.json"));
+  await assert.rejects(readDevice(linkedHome), (error) => error?.reasonCode === "DEVICE_FILE_INVALID");
+
+  const symbolicHome = join(base, "symlink-home");
+  await mkdir(symbolicHome);
+  const symbolicTarget = join(base, "device-target.json");
+  await writeFile(symbolicTarget, canonicalJson(device));
+  await symlink(symbolicTarget, join(symbolicHome, "device.json"));
+  await assert.rejects(readDevice(symbolicHome), (error) => error?.reasonCode === "DEVICE_FILE_INVALID");
+
+  const noncanonicalHome = join(base, "noncanonical-home");
+  await mkdir(noncanonicalHome);
+  await writeFile(join(noncanonicalHome, "device.json"), `${JSON.stringify(device)}\n`);
+  await assert.rejects(readDevice(noncanonicalHome), (error) => error?.reasonCode === "DEVICE_FILE_INVALID");
+});
+
+test("a library root symlink and an imported legacy stream still read", async (t) => {
+  const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-akasha-paths-")));
+  t.after(() => rm(base, { recursive: true, force: true }));
+  const { root } = await restoreLegacyFixture(base, "legacy-stream");
+  const libraryRoot = join(base, "legacy-stream.ether");
+  await importLegacyWorkspace(root, libraryRoot, { createdAt: instant(0) });
+  const alias = join(base, "legacy-stream-alias");
+  await symlink(libraryRoot, alias);
+  const state = await materializeWorkspace(alias);
+  assert.equal(state.version, LEGACY_FIXTURE_EXPECTED.version);
+  assert.equal(state.library.streams[0].identityScheme, "legacy");
 });
 
 // Forged events are written with valid hashes, so what is refused is the admission rule under test.

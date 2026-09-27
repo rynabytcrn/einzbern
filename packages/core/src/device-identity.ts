@@ -10,11 +10,12 @@
 // find no device file agree on one id rather than each using its own.
 
 import { randomBytes } from "node:crypto";
-import { link, mkdir, open, readFile, rm } from "node:fs/promises";
+import { constants } from "node:fs";
+import { lstat, link, mkdir, open, rm } from "node:fs/promises";
 import { hostname as systemHostname } from "node:os";
 import { join } from "node:path";
 
-import { assertStrictInstant, canonicalJson, isDeviceId } from "../../protocol/src/index.js";
+import { assertCanonicalJson, assertStrictInstant, canonicalJson, isDeviceId } from "../../protocol/src/index.js";
 import { writeFileAtomic } from "./atomic-file.js";
 import { deviceFilePath, deviceHome } from "./device-home.js";
 
@@ -84,9 +85,9 @@ export function validateDeviceIdentity(value: unknown, where = "device.json"): D
 function parseDevice(text: string, where: string): DeviceIdentity {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = assertCanonicalJson(text);
   } catch {
-    fail("DEVICE_FILE_INVALID", `${where} is not JSON`);
+    fail("DEVICE_FILE_INVALID", `${where} is not canonical JSON`);
   }
   return validateDeviceIdentity(parsed, where);
 }
@@ -94,12 +95,29 @@ function parseDevice(text: string, where: string): DeviceIdentity {
 /** This device's identity, or null when the device directory has none yet. A damaged file fails closed. */
 export async function readDevice(home: string = deviceHome()): Promise<DeviceIdentity | null> {
   const path = deviceFilePath(home);
-  let text: string;
+  let info;
   try {
-    text = await readFile(path, "utf8");
+    info = await lstat(path);
   } catch (error) {
     if ((error as { code?: string }).code === "ENOENT") return null;
     throw error;
+  }
+  if (!info.isFile() || info.isSymbolicLink() || info.nlink !== 1) {
+    fail("DEVICE_FILE_INVALID", `${path} must be a single-link regular file`);
+  }
+  let handle;
+  let text: string;
+  try {
+    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const opened = await handle.stat();
+    if (!opened.isFile() || opened.nlink !== 1) fail("DEVICE_FILE_INVALID", `${path} must be a single-link regular file`);
+    text = await handle.readFile("utf8");
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return null;
+    if ((error as { code?: string }).code === "ELOOP") fail("DEVICE_FILE_INVALID", `${path} must be a single-link regular file`);
+    throw error;
+  } finally {
+    await handle?.close();
   }
   return parseDevice(text, path);
 }

@@ -45,7 +45,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 // The barrel is loaded first, so every module below is evaluated in the order the engine's own entry
 // evaluates it, whichever module a caller imports first.
 import { FRAMEWORK_VERSION } from "./index.js";
-import { AGENTS_FILE, CLAUDE_FILE, agentsFileSections, planClaudeImport, renderAgentsSections } from "./agents-sections.js";
+import { AGENTS_FILE, CLAUDE_FILE, agentsFileSections, disableAgentsSection, planClaudeImport, renderAgentsSections } from "./agents-sections.js";
 import { writeFileAtomic } from "./atomic-file.js";
 import { suggestCloudHosted } from "./cloud-roots.js";
 import { ENGINE_HOOK_LAUNCHER, backupsPath, deviceFilePath, engineRoot, ensureDeviceDirectory, registryPath } from "./device-home.js";
@@ -70,7 +70,7 @@ import { computeInstallTreeDigest } from "./install-tree-digest.js";
 import { ARTIFACT_LANGUAGE_TAGS } from "./knowledge-language.js";
 import { AGENTS_NAVIGATION_SETTING, MACHINE_SETTINGS_FILE_NAME, applyMachineSettingSet, readAgentsNavigation } from "./machine-settings.js";
 import type { AgentsNavigationChoice } from "./machine-settings.js";
-import { managedSectionRecordsFor, planManagedWrite } from "./managed-sections.js";
+import { managedSectionRecordsFor, parseManagedFile, planManagedWrite } from "./managed-sections.js";
 import type { ManagedWritePlan } from "./managed-sections.js";
 import { BRAND, DIRECTORY } from "./names.js";
 import { gitRemoteOf, normalizeGitRemote, readRegistry, registerLibrary } from "./registry.js";
@@ -567,6 +567,27 @@ async function planSections(recorder: SetupRecorder, projectRoot: string, state:
     for (const id of plan.pending) pending.push({ file: plan.file, id });
     if (plan.sections.some((decision) => decision.recordChanged)) recordsChange = true;
   }
+  if (navigation === "declined") {
+    const agentsPlan = plans[0];
+    const navigationDecision = agentsPlan?.sections.find((decision) => decision.id === "navigation");
+    const navigationSection = agentsPlan?.before === null || agentsPlan?.before === undefined
+      ? undefined
+      : parseManagedFile(agentsPlan.before, AGENTS_FILE).sections.find((section) => section.id === "navigation");
+    if (navigationDecision?.record.state === "pending") {
+      if (!pending.some((section) => section.file === AGENTS_FILE && section.id === "navigation")) {
+        pending.push({ file: AGENTS_FILE, id: "navigation" });
+      }
+    } else if (agentsPlan !== null
+      && agentsPlan !== undefined
+      && navigationDecision?.record.state === "managed"
+      && navigationSection !== undefined
+      && navigationSection.digest === navigationSection.bodyDigest
+      && navigationSection.digest === navigationDecision.record.digest) {
+      recorder.write("managed-sections", agentsPlan.filePath, "update");
+      recorder.backup("managed-sections", agentsPlan.filePath);
+      recordsChange = true;
+    }
+  }
   return { pending, recordsChange };
 }
 
@@ -709,7 +730,28 @@ async function applySections(recorder: SetupRecorder, input: WiringApplyInput, l
     if (file.backupPath !== null) recorder.backup("managed-sections", path);
   }
   if (rendered.recorded > 0) recorder.write("library", library.path, "update");
-  return rendered.pending.map((section) => ({ file: section.file, id: section.id }));
+  const pending = rendered.pending.map((section) => ({ file: section.file, id: section.id }));
+  if (input.navigation === "declined" && rendered.sections.some((section) => section.file === AGENTS_FILE && section.id === "navigation" && section.state === "managed")) {
+    try {
+      const { change } = await disableAgentsSection(library.path, {
+        projectRoot,
+        id: "navigation",
+        occurredAt: at,
+        backupRoot: backupsPath(deviceHome),
+      });
+      if (change.written) {
+        recorder.write("managed-sections", join(projectRoot, AGENTS_FILE), "update");
+        recorder.backup("managed-sections", join(projectRoot, AGENTS_FILE));
+      }
+      if (change.recordChanged) recorder.write("library", library.path, "update");
+    } catch (error) {
+      if (reasonOf(error) !== "MANAGED_SECTION_FORCE_REQUIRED") throw error;
+      if (!pending.some((section) => section.file === AGENTS_FILE && section.id === "navigation")) {
+        pending.push({ file: AGENTS_FILE, id: "navigation" });
+      }
+    }
+  }
+  return pending;
 }
 
 /**

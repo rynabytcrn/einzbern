@@ -195,22 +195,171 @@ async function writeFixtureTest(root, testSource) {
   await writeFile(resolve(root, "tests/entrypoint.test.mjs"), testSource, { mode: 0o600 });
 }
 
-async function taskEntrypointFixture(context, testSource) {
+async function taskEntrypointFixture(context, testSource, { includeEngineSources = false } = {}) {
   const root = await mkdtemp(join(tmpdir(), "tcrn-task-entrypoint-"));
   context.after(() => rm(root, { recursive: true, force: true }));
   await cp(resolve(productRoot, "scripts"), resolve(root, "scripts"), { recursive: true });
   await cp(resolve(productRoot, "node_modules"), resolve(root, "node_modules"), { recursive: true });
   await mkdir(resolve(root, "tests"));
-  await writeFile(resolve(root, "package.json"), "{\"name\":\"tcrn-task-entrypoint-fixture\",\"type\":\"module\"}\n", { mode: 0o600 });
+  if (includeEngineSources) {
+    await cp(resolve(productRoot, "packages"), resolve(root, "packages"), { recursive: true });
+    await cp(resolve(productRoot, "tsconfig.json"), resolve(root, "tsconfig.json"));
+    await cp(resolve(productRoot, "package.json"), resolve(root, "package.json"));
+  } else {
+    await writeFile(resolve(root, "package.json"), "{\"name\":\"tcrn-task-entrypoint-fixture\",\"type\":\"module\"}\n", { mode: 0o600 });
+  }
   await writeFile(resolve(root, ".gitignore"), "dist/\nnode_modules/\n", { mode: 0o600 });
   await writeFixtureTest(root, testSource);
   runGit(root, ["init", "--quiet"]);
   runGit(root, ["config", "user.email", "tcrn-fixture"]);
   runGit(root, ["config", "user.name", "TCRN Fixture"]);
-  runGit(root, ["add", "package.json", ".gitignore", "scripts", "tests"]);
+  runGit(root, ["add", "package.json", ".gitignore", "scripts", "tests", ...(includeEngineSources ? ["packages", "tsconfig.json"] : [])]);
   runGit(root, ["commit", "--quiet", "-m", "fixture"]);
   assert.equal(spawnSync("git", ["status", "--porcelain=v1"], { cwd: root, encoding: "utf8" }).stdout, "");
   return root;
+}
+
+function controllerManagedGateTestSource() {
+  return String.raw`import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { readdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import test from "node:test";
+import { runGates } from "../dist/build/packages/core/src/gates-run.js";
+
+const mode = process.env.TCRN_MANAGED_GATE_MODE;
+const deviceHome = process.env.TCRN_MANAGED_GATE_DEVICE_HOME;
+const registry = process.env.TCRN_TEST_CONTROLLER_CHILD_REGISTRY;
+const raceProbePath = process.env.TCRN_TEST_CONTROLLER_CHILD_RACE_PROBE_PATH;
+const projectRoot = process.cwd();
+let second = 0;
+
+function nextAt() {
+  second += 1;
+  return new Date(Date.UTC(2026, 8, 28, 12, 0, second)).toISOString().replace(".000Z", "Z");
+}
+
+function plan(name, command) {
+  return {
+    projectRoot,
+    release: true,
+    base: null,
+    changed: null,
+    roots: ["."],
+    declarationsDigest: "1".repeat(64),
+    gates: [{ name, root: ".", command, required: true, releaseOnly: false, reason: "release", matched: [] }],
+  };
+}
+
+function runOne(name, command, timeoutMs) {
+  return runGates(plan(name, command), {
+    libraryId: "library:aaaaaaaaaaaaaaaaaaaaaaaa",
+    at: nextAt(),
+    deviceHome,
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+  });
+}
+
+async function waitUntil(predicate) {
+  for (let attempt = 0; attempt < 1_000; attempt += 1) {
+    if (await predicate()) return;
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 10));
+  }
+  throw new Error("CONTROLLER_MANAGED_GATE_FIXTURE_TIMEOUT");
+}
+
+async function waitForGroupGone(processGroup) {
+  await waitUntil(() => {
+    try {
+      process.kill(-processGroup, 0);
+      return false;
+    } catch (error) {
+      if (error.code === "ESRCH") return true;
+      throw error;
+    }
+  });
+}
+
+async function slotGroups() {
+  const names = await readdir(registry);
+  const states = await Promise.all(names.map(async (name) => {
+    const events = (await readFile(join(registry, name), "utf8")).trim().split("\n").map((line) => JSON.parse(line));
+    return events.at(-1);
+  }));
+  return states.filter((state) => state?.state === "bound").map((state) => state.processGroup);
+}
+
+test("the controller registers, bounds, captures, and reaps gate groups", async () => {
+  if (mode === "registration-race") {
+    const command = [process.execPath, "-e", "require('node:fs').writeFileSync(process.env.TCRN_GATE_STARTED_PATH, 'started\\n'); setInterval(() => {}, 1000);"];
+    await runOne("registration-race", command);
+    return;
+  }
+  if (mode === "controller-timeout") {
+    const command = [process.execPath, "-e", "require('node:fs').writeFileSync(process.env.TCRN_GATE_STARTED_PATH, 'started\\n'); setInterval(() => {}, 1000);"];
+    await runOne("controller-timeout", command);
+    return;
+  }
+
+  const strayPidPath = process.env.TCRN_GATE_STRAY_PID_PATH;
+  const outputSource = [
+    'const { spawn } = require("node:child_process");',
+    'const { writeFileSync } = require("node:fs");',
+    'const stray = spawn(process.execPath, ["--eval", "setInterval(() => {}, 1000);"] , { stdio: "ignore" }); stray.unref();',
+    'writeFileSync(' + JSON.stringify(strayPidPath) + ', String(stray.pid) + "\\n");',
+    'process.stdout.write("PRIVATE_GATE_STDOUT");',
+    'process.stderr.write("PRIVATE_GATE_STDERR");',
+  ].join("\n");
+  const captured = await runOne("private-output", [process.execPath, "-e", outputSource]);
+  const capturedOutput = await readFile(join(dirname(captured.recordPath), captured.run.gates[0].outputFile), "utf8");
+  assert.deepEqual(captured.run.reds, [], capturedOutput);
+  assert.equal(captured.run.gates[0].ok, true, capturedOutput);
+  assert.match(capturedOutput, /PRIVATE_GATE_STDOUT/u);
+  assert.match(capturedOutput, /PRIVATE_GATE_STDERR/u);
+  const capturedGroup = JSON.parse(readFileSync(raceProbePath, "utf8")).processGroup;
+  await waitForGroupGone(capturedGroup);
+  await waitUntil(async () => (await readdir(registry)).length === 0);
+
+  const timedSource = [
+    'const { spawn } = require("node:child_process");',
+    'const { writeFileSync } = require("node:fs");',
+    'const stray = spawn(process.execPath, ["--eval", "setInterval(() => {}, 1000);"] , { stdio: "ignore" }); stray.unref();',
+    'writeFileSync(' + JSON.stringify(strayPidPath) + ', String(stray.pid) + "\\n");',
+    'setInterval(() => {}, 1000);',
+  ].join("\n");
+  const timed = await runOne("gate-timeout", [process.execPath, "-e", timedSource], 100);
+  assert.equal(timed.run.gates[0].timedOut, true);
+  const timedGroup = JSON.parse(readFileSync(raceProbePath, "utf8")).processGroup;
+  await waitForGroupGone(timedGroup);
+  await waitUntil(async () => (await readdir(registry)).length === 0);
+
+  const reachedPath = process.env.TCRN_GATE_LIMIT_REACHED_PATH;
+  const releasePath = process.env.TCRN_GATE_LIMIT_RELEASE_PATH;
+  const held = Array.from({ length: 8 }, (_, index) => {
+    const source = [
+      'const { appendFileSync, existsSync } = require("node:fs");',
+    'require("node:fs").appendFileSync(' + JSON.stringify(reachedPath) + ', String(' + String(index) + '));',
+      'const timer = setInterval(() => { if (existsSync(' + JSON.stringify(releasePath) + ')) { clearInterval(timer); process.stdout.write("LIMIT_GATE_' + String(index) + '"); } }, 10);',
+    ].join("\n");
+    return runOne("limited-" + String(index), [process.execPath, "-e", source]);
+  });
+  await waitUntil(async () => {
+    try { return (await readFile(process.env.TCRN_GATE_LIMIT_REACHED_PATH, "utf8")).length === 8; }
+    catch (error) { if (error.code === "ENOENT") return false; throw error; }
+  });
+  const activeGroups = await slotGroups();
+  assert.equal(activeGroups.length, 8);
+  const overflow = await runOne("limited-overflow", [process.execPath, "-e", "process.stdout.write('should-not-run')"]);
+  assert.equal(overflow.run.gates[0].ok, false);
+  const overflowOutput = await readFile(join(dirname(overflow.recordPath), overflow.run.gates[0].outputFile), "utf8");
+  assert.match(overflowOutput, /TEST_CONTROLLER_MANAGED_CHILD_LIMIT/u);
+  await writeFile(releasePath, "release\\n", { mode: 0o600, flag: "wx" });
+  const completed = await Promise.all(held);
+  assert.ok(completed.every(({ run }) => run.gates[0].ok));
+  for (const processGroup of activeGroups) await waitForGroupGone(processGroup);
+  await waitUntil(async () => (await readdir(registry)).length === 0);
+});
+`;
 }
 
 async function importGuardTaskFixture(context, testLine) {
@@ -457,6 +606,17 @@ async function loadPostMkdirBarrierHarness(root) {
     assert.equal(instrumented.replace(barrier, ""), source);
     return instrumented;
   });
+}
+
+async function waitForDeadProcessGroup(processGroup) {
+  return pollUntil(() => {
+    try {
+      process.kill(-processGroup, 0);
+    } catch (error) {
+      if (error?.code === "ESRCH") return true;
+      throw error;
+    }
+  }, () => assert.fail(`timed out waiting for process group ${processGroup} to exit`));
 }
 
 async function loadLegacyRmdirBarrierHarness(root) {
@@ -2415,9 +2575,8 @@ test("an unbound detached test controller exits before discovery after its task 
   await assert.rejects(lstat(importPath), { code: "ENOENT" });
 
   // This SIGKILL lands after detached spawn but before the task is allowed to
-  // bind owner.processGroup.  The bootstrap remains alive briefly only to
-  // make the no-wait contender observation deterministic; it terminates
-  // before spawning Node's test controller, so no test worker can start.
+  // bind owner.processGroup. The bootstrap remains inert briefly for the
+  // no-wait contender observation; it exits before test discovery.
   interrupted.child.kill("SIGKILL");
   const interruptedResult = await interrupted.result;
   assert.equal(interruptedResult.code, null, JSON.stringify(interruptedResult));
@@ -2470,8 +2629,9 @@ test("a bound bootstrap blocks recovery before it starts the test controller", a
   await waitForPath(boundPath, interrupted.result);
   const bound = await readJsonWhenReady(boundPath, interrupted.result);
   assert.ok(Number.isSafeInteger(bound.processGroup) && bound.processGroup > 0);
+  assert.ok(Number.isSafeInteger(bound.ownerProcessGroup) && bound.ownerProcessGroup > 0);
   const owner = JSON.parse(await readFile(resolve(lockPath(root), "owner.json"), "utf8"));
-  assert.equal(owner.processGroup, bound.processGroup);
+  assert.equal(owner.processGroup, bound.ownerProcessGroup);
   await assert.rejects(lstat(importPath), { code: "ENOENT" });
 
   // The outer task is gone, but the durably bound bootstrap group is still
@@ -2494,6 +2654,7 @@ test("a bound bootstrap blocks recovery before it starts the test controller", a
   await writeFile(runPath, "run\\n", { mode: 0o600, flag: "wx" });
   await waitForPath(importPath);
   await waitForDeadPid(bound.processGroup);
+  await waitForDeadPid(bound.ownerProcessGroup);
   const recovered = await startTaskEntrypoint(root).result;
   assert.equal(recovered.code, 0, recovered.stderr);
   assert.equal(recovered.signal, null);
@@ -2506,7 +2667,7 @@ test("a fresh real task entrypoint fails closed while a killed predecessor group
   const crashSource = [
     'import { writeFileSync } from "node:fs";',
     'import test from "node:test";',
-    'writeFileSync(process.env.TCRN_TASK_DESCENDANT_PID_PATH, `${JSON.stringify({ testPid: process.pid, controllerPid: process.ppid, processGroup: Number(process.env.TCRN_TEST_CONTROLLER_PROCESS_GROUP) })}\\n`);',
+    'writeFileSync(process.env.TCRN_TASK_DESCENDANT_PID_PATH, `${JSON.stringify({ testPid: process.pid, controllerPid: process.ppid, processGroup: Number(process.env.TCRN_TEST_CONTROLLER_PROCESS_GROUP), ownerProcessGroup: Number(process.env.TCRN_TEST_CONTROLLER_REAPER_PID) })}\\n`);',
     'test("remain alive while the outer lifecycle probe kills the actual task entrypoint", async () => { await new Promise((resolve) => setTimeout(resolve, 500)); });',
     "",
   ].join("\n");
@@ -2518,6 +2679,7 @@ test("a fresh real task entrypoint fails closed while a killed predecessor group
   assert.ok(Number.isSafeInteger(descendants.testPid) && descendants.testPid > 0);
   assert.ok(Number.isSafeInteger(descendants.controllerPid) && descendants.controllerPid > 0);
   assert.ok(Number.isSafeInteger(descendants.processGroup) && descendants.processGroup > 0);
+  assert.ok(Number.isSafeInteger(descendants.ownerProcessGroup) && descendants.ownerProcessGroup > 0);
   // The bootstrap launches a Node test controller plus a test-file process.
   // The recovery run starts only after both recorded descendants are gone, so
   // it cannot overlap a surviving importer of dist/build.
@@ -2528,7 +2690,7 @@ test("a fresh real task entrypoint fails closed while a killed predecessor group
   assert.equal(interruptedResult.stdout, "");
   assert.equal(interruptedResult.stderr, "");
   const owner = JSON.parse(await readFile(resolve(lockPath(root), "owner.json"), "utf8"));
-  assert.equal(owner.processGroup, descendants.processGroup);
+  assert.equal(owner.processGroup, descendants.ownerProcessGroup);
   const noWait = await startTaskEntrypoint(root).result;
   assert.equal(noWait.code, 1);
   assert.equal(noWait.signal, null);
@@ -2541,6 +2703,7 @@ test("a fresh real task entrypoint fails closed while a killed predecessor group
   await waitForDeadPid(descendants.testPid);
   await waitForDeadPid(descendants.controllerPid);
   await waitForDeadPid(descendants.processGroup);
+  await waitForDeadPid(descendants.ownerProcessGroup);
   await rm(resolve(root, "descendant.pid"));
 
   await writeFixtureTest(root, [
@@ -2629,9 +2792,9 @@ test("the real command-five test path rejects detached inherited-pipe descendant
   const rejected = await taskEntrypointFixture(context, holderSource);
   const rejectedBootstrapPath = resolve(rejected, "scripts/test-controller-bootstrap.mjs");
   const fixedBootstrap = await readFile(rejectedBootstrapPath, "utf8");
-  const rejectedMarker = "// Test-controller output goes to private regular files, never inherited pipes.\n";
-  assert.equal(fixedBootstrap.includes(rejectedMarker), true, "controller topology fixture boundary");
-  const rejectedBootstrap = `${fixedBootstrap.slice(0, fixedBootstrap.indexOf(rejectedMarker))}await appendProgressIfConfigured(progressPath, "bound-before-controller", { processGroup: process.pid, outerPid });\nconst testController = spawn(process.execPath, testArguments, {\n  stdio: "inherit",\n  env: { ...process.env, TCRN_TEST_CONTROLLER_PROCESS_GROUP: String(process.pid) },\n});\nawait appendProgressIfConfigured(progressPath, "controller-started", { pid: testController.pid, processGroup: process.pid });\nconst result = await new Promise((resolveResult, rejectResult) => {\n  testController.once("error", rejectResult);\n  testController.once("close", (code, signal) => resolveResult({ code, signal }));\n});\nawait appendProgressIfConfigured(progressPath, "controller-exited", { pid: testController.pid, code: result.code, signal: result.signal, ok: result.code === 0 && result.signal === null });\nawait appendProgressIfConfigured(progressPath, "reaper-clean", { processGroup: process.pid });\nawait appendProgressIfConfigured(progressPath, "completed", { ok: result.code === 0 && result.signal === null, code: result.code, signal: result.signal });\nprocess.exitCode = result.code ?? (result.signal ? 1 : 1);\n`;
+  const rejectedSpawn = `testController = spawn(process.execPath, ["--import", childPolicyImport, ...testArguments], {\n    stdio: ["ignore", stdoutFile.fd, stderrFile.fd],\n    env: controllerEnvironment,\n  });`;
+  assert.equal(fixedBootstrap.split(rejectedSpawn).length, 2, "controller spawn fixture boundary");
+  const rejectedBootstrap = fixedBootstrap.replace(rejectedSpawn, `testController = spawn(process.execPath, testArguments, {\n    stdio: "inherit",\n    env: { ...controllerEnvironment, NODE_OPTIONS: "" },\n  });`);
   await writeFile(rejectedBootstrapPath, rejectedBootstrap, { mode: 0o600 });
   runGit(rejected, ["add", "scripts/test-controller-bootstrap.mjs"]);
   runGit(rejected, ["commit", "--quiet", "-m", "rejected inherited-stream bootstrap"]);
@@ -2652,9 +2815,10 @@ test("the real command-five test path rejects detached inherited-pipe descendant
   // removed manually. A later real task invocation performs governed stale
   // owner recovery after the cycle has been demonstrated.
   rejectedRun.child.kill("SIGKILL");
-  await rejectedRun.result;
   process.kill(rejectedHolder, "SIGKILL");
-  process.kill(-rejectedOwner.processGroup, "SIGKILL");
+  try { process.kill(-rejectedOwner.processGroup, "SIGKILL"); }
+  catch (error) { if (error.code !== "ESRCH") throw error; }
+  await rejectedRun.result;
   await waitForDeadPid(rejectedHolder);
   await waitForDeadPid(rejectedOwner.processGroup);
   await writeFixtureTest(rejected, [
@@ -2819,6 +2983,61 @@ test("a real task entrypoint reports a bounded controller timeout without false 
   assert.equal(result.signal, null);
   assert.equal(result.stdout, "");
   assert.equal(JSON.parse(result.stderr).reasonCode, "TEST_CONTROLLER_TIMEOUT");
+  await assertTaskResidueClean(root);
+});
+
+test("the real gates-run child policy privately manages groups, registration races, and controller timeouts", async (context) => {
+  const root = await taskEntrypointFixture(context, controllerManagedGateTestSource(), { includeEngineSources: true });
+  const common = {
+    TCRN_MANAGED_GATE_DEVICE_HOME: resolve(root, "managed-gate-device"),
+    TCRN_TEST_CONTROLLER_CHILD_RACE_PROBE_PATH: resolve(root, "managed-gate-race.json"),
+    TCRN_GATE_LIMIT_REACHED_PATH: resolve(root, "managed-gate-limit-reached.txt"),
+    TCRN_GATE_LIMIT_RELEASE_PATH: resolve(root, "managed-gate-limit-release.txt"),
+    TCRN_GATE_STARTED_PATH: resolve(root, "managed-gate-started.txt"),
+    TCRN_GATE_STRAY_PID_PATH: resolve(root, "managed-gate-stray.pid"),
+  };
+
+  const managed = await startTaskEntrypoint(root, { ...common, TCRN_MANAGED_GATE_MODE: "managed" }).result;
+  assert.equal(managed.code, 0, managed.stderr);
+  assert.equal(managed.signal, null);
+  assert.equal(managed.stderr, "");
+  assert.equal(managed.stdout.includes("PRIVATE_GATE_STDOUT"), false);
+  assert.equal(managed.stdout.includes("PRIVATE_GATE_STDERR"), false);
+  assert.equal(managed.stdout.includes("LIMIT_GATE_"), false);
+  assertTaskSuccess(JSON.parse(managed.stdout));
+  await assertTaskResidueClean(root);
+
+  const race = await startTaskEntrypoint(root, {
+    ...common,
+    TCRN_MANAGED_GATE_MODE: "registration-race",
+    TCRN_TEST_CONTROLLER_CHILD_CRASH_AT: "after-spawn-before-bind",
+  }).result;
+  assert.equal(race.code, 1, race.stderr);
+  assert.equal(race.signal, null);
+  assert.equal(race.stdout, "");
+  assert.equal(JSON.parse(race.stderr).reasonCode, "COMMAND_FAILED");
+  const raceProbe = await readJsonWhenReady(common.TCRN_TEST_CONTROLLER_CHILD_RACE_PROBE_PATH);
+  assert.equal(raceProbe.stage, "spawned-before-bind");
+  assert.ok(Number.isSafeInteger(raceProbe.processGroup) && raceProbe.processGroup > 0);
+  await waitForDeadProcessGroup(raceProbe.processGroup);
+  await assert.rejects(lstat(common.TCRN_GATE_STARTED_PATH), { code: "ENOENT" });
+  await assertTaskResidueClean(root);
+
+  const timeoutTask = startTaskEntrypoint(root, {
+    ...common,
+    TCRN_MANAGED_GATE_MODE: "controller-timeout",
+    TCRN_TEST_CONTROLLER_TIMEOUT_MS: "3000",
+  });
+  await waitForPath(common.TCRN_GATE_STARTED_PATH, timeoutTask.result);
+  const timeout = await timeoutTask.result;
+  assert.equal(timeout.code, 1, timeout.stderr);
+  assert.equal(timeout.signal, null);
+  assert.equal(timeout.stdout, "");
+  assert.equal(JSON.parse(timeout.stderr).reasonCode, "TEST_CONTROLLER_TIMEOUT");
+  const timeoutProbe = await readJsonWhenReady(common.TCRN_TEST_CONTROLLER_CHILD_RACE_PROBE_PATH);
+  assert.equal(timeoutProbe.stage, "spawned-before-bind");
+  assert.ok(Number.isSafeInteger(timeoutProbe.processGroup) && timeoutProbe.processGroup > 0);
+  await waitForDeadProcessGroup(timeoutProbe.processGroup);
   await assertTaskResidueClean(root);
 });
 

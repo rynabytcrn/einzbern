@@ -3,7 +3,7 @@
 
 import { createHash } from "node:crypto";
 import { renameSync, writeFileSync } from "node:fs";
-import { lstat, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, extname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -115,6 +115,7 @@ function terminateTestControllerGroup(processGroup) {
 async function runDetachedTestController(arguments_, extraEnvironment) {
   const progressDirectory = await mkdtemp(join(tmpdir(), "tcrn-test-progress-"));
   const progressPath = join(progressDirectory, "events.ndjson");
+  const reaperReadyPath = join(progressDirectory, "reaper.json");
   const coverageDirectory = typeof extraEnvironment?.NODE_V8_COVERAGE === "string" ? extraEnvironment.NODE_V8_COVERAGE : null;
   let child;
   try {
@@ -129,6 +130,7 @@ async function runDetachedTestController(arguments_, extraEnvironment) {
       TCRN_TEST_CONTROLLER_LOCK_PATH: resolve(repositoryRoot, ".git/einzbern-output.lock"),
       TCRN_TEST_CONTROLLER_OUTER_PID: String(process.pid),
       TCRN_TEST_CONTROLLER_PROGRESS_PATH: progressPath,
+      TCRN_TEST_CONTROLLER_REAPER_READY_PATH: reaperReadyPath,
     };
     // The supervisor and reaper are lifecycle owners, not coverage writers.
     // Remove the inherited collector only from this child environment; the
@@ -161,16 +163,19 @@ async function runDetachedTestController(arguments_, extraEnvironment) {
     if (process.env.TCRN_TEST_BIND_PROCESS_GROUP_FAILURE === "1") {
       // This test-only injection exercises the failure branch before owner
       // metadata can authorize the controller to discover a test file.
+      const reaperProcessGroup = await waitForTestControllerReaper(reaperReadyPath, child.pid, result);
       child.kill("SIGTERM");
       await result;
       await waitForProcessGroupExit(child.pid);
+      await waitForProcessGroupExit(reaperProcessGroup);
       fail("TEST_CONTROLLER_BIND_INJECTED_FAILURE", "test-only pre-bind injection");
     }
+    const reaperProcessGroup = await waitForTestControllerReaper(reaperReadyPath, child.pid, result);
     await waitForTestControllerBindWindow();
-    // `detached` makes this controller the leader of a dedicated POSIX process
-    // group.  Recovery subsequently treats every live group member as a live
-    // command descendant, rather than trusting only this outer task PID.
-    await bindOutputSessionProcessGroup(child.pid);
+    // The reaper owns the lock's group so stale-owner recovery waits for it to
+    // finish cleaning both the controller group and every registered gate
+    // group. The bootstrap remains a separate process group it can terminate.
+    await bindOutputSessionProcessGroup(reaperProcessGroup);
 
     const timeoutMs = controllerTimeoutMs();
     const startedAt = Date.now();
@@ -187,6 +192,8 @@ async function runDetachedTestController(arguments_, extraEnvironment) {
         let groupJoinError = null;
         try { await waitForProcessGroupExit(child.pid); }
         catch (error) { groupJoinError = {reasonCode: error.reasonCode ?? "TEST_CONTROLLER_GROUP_JOIN_FAILED", message: error.message}; }
+        try { await waitForProcessGroupExit(reaperProcessGroup); }
+        catch (error) { groupJoinError ??= {reasonCode: error.reasonCode ?? "TEST_CONTROLLER_REAPER_JOIN_FAILED", message: error.message}; }
         fail("TEST_CONTROLLER_TIMEOUT", JSON.stringify({
           primaryError: "controller timeout",
           cleanupErrors: groupJoinError === null ? [] : [groupJoinError],
@@ -249,6 +256,8 @@ async function runDetachedTestController(arguments_, extraEnvironment) {
           let groupJoinError = null;
           try { await waitForProcessGroupExit(child.pid); }
           catch (error) { groupJoinError = {reasonCode: error.reasonCode ?? "TEST_CONTROLLER_GROUP_JOIN_FAILED", message: error.message}; }
+          try { await waitForProcessGroupExit(reaperProcessGroup); }
+          catch (error) { groupJoinError ??= {reasonCode: error.reasonCode ?? "TEST_CONTROLLER_REAPER_JOIN_FAILED", message: error.message}; }
           fail("TEST_CONTROLLER_TIMEOUT", JSON.stringify({
             primaryError: "controller did not close after " + outcome.value.status,
             cleanupErrors: groupJoinError === null ? [] : [groupJoinError],
@@ -262,6 +271,7 @@ async function runDetachedTestController(arguments_, extraEnvironment) {
       }
     }
     await waitForProcessGroupExit(child.pid);
+    await waitForProcessGroupExit(reaperProcessGroup);
     const progress = { ...summarizeProgress(events), cursor, ...counters, lastProgress: events.at(-1) ?? null };
     if (completed.code === 0 && progress.status !== "completed") {
       fail("TEST_CONTROLLER_PROGRESS_MISSING", JSON.stringify(progress));
@@ -294,6 +304,45 @@ async function runDetachedTestController(arguments_, extraEnvironment) {
   } finally {
     await rm(progressDirectory, { recursive: true, force: true });
   }
+}
+
+async function waitForTestControllerReaper(path, bootstrapPid, controllerResult = null) {
+  assertion(path === resolve(path), "TEST_CONTROLLER_REAPER_READY_PATH_INVALID", path);
+  for (let elapsed = 0; elapsed < 10_000; elapsed += 10) {
+    try {
+      const metadata = await lstat(path);
+      assertion(!metadata.isSymbolicLink() && metadata.isFile() && metadata.nlink === 1 && (metadata.mode & 0o777) === 0o600 &&
+        (typeof process.getuid !== "function" || metadata.uid === process.getuid()),
+        "TEST_CONTROLLER_REAPER_READY_INVALID", path);
+      const bytes = await readFile(path, "utf8");
+      const ready = JSON.parse(bytes);
+      assertion(JSON.stringify(Object.keys(ready)) === JSON.stringify(["bootstrapPid", "reaperPid"]) &&
+        bytes === `${JSON.stringify(ready)}\n` && ready.bootstrapPid === bootstrapPid &&
+        Number.isSafeInteger(ready.reaperPid) && ready.reaperPid > 0 && ready.reaperPid !== bootstrapPid,
+      "TEST_CONTROLLER_REAPER_READY_INVALID", path);
+      try { process.kill(ready.reaperPid, 0); }
+      catch (error) {
+        if (error?.code === "ESRCH") fail("TEST_CONTROLLER_REAPER_NOT_LIVE", String(ready.reaperPid));
+        throw error;
+      }
+      if (process.platform !== "win32") {
+        try { process.kill(-ready.reaperPid, 0); }
+        catch (error) {
+          if (error?.code === "ESRCH") fail("TEST_CONTROLLER_REAPER_GROUP_NOT_LIVE", String(ready.reaperPid));
+          throw error;
+        }
+      }
+      return ready.reaperPid;
+    } catch (error) {
+      if (error?.code !== "ENOENT" && !(error instanceof SyntaxError)) throw error;
+      if (controllerResult) {
+        const outcome = await Promise.race([controllerResult.then(() => "closed", () => "closed"), delay(10).then(() => "waiting")]);
+        if (outcome === "closed") fail("TEST_CONTROLLER_REAPER_READY_MISSING", path);
+      }
+      await delay(10);
+    }
+  }
+  fail("TEST_CONTROLLER_REAPER_READY_TIMEOUT", path);
 }
 
 async function waitForTestControllerBindWindow() {

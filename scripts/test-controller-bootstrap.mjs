@@ -6,7 +6,7 @@
 // it exits before any test controller or worker can be created.
 
 import { spawn } from "node:child_process";
-import { lstat, mkdtemp, open, readFile, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, open, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
@@ -20,6 +20,7 @@ const orphanPath = process.env.TCRN_TEST_BIND_WINDOW_ORPHAN_PATH;
 const boundPath = process.env.TCRN_TEST_BIND_WINDOW_BOUND_PATH;
 const runPath = process.env.TCRN_TEST_BIND_WINDOW_RUN_PATH;
 const progressPath = process.env.TCRN_TEST_CONTROLLER_PROGRESS_PATH;
+const reaperReadyPath = process.env.TCRN_TEST_CONTROLLER_REAPER_READY_PATH;
 const coverageDirectory = process.env.TCRN_TEST_CONTROLLER_COVERAGE_DIRECTORY ?? process.env.NODE_V8_COVERAGE;
 const orphanDelay = Number(process.env.TCRN_TEST_BIND_WINDOW_ORPHAN_DELAY_MS ?? "0");
 const testArguments = process.argv.slice(2);
@@ -55,8 +56,8 @@ function abort(reasonCode = "TEST_CONTROLLER_INPUT_INVALID") {
   process.exit(1);
 }
 
-async function waitForDurableGroupBinding() {
-  await testWindowRecord(readyPath, { processGroup: process.pid, outerPid, state: "unbound" });
+async function waitForDurableGroupBinding(reaperProcessGroup) {
+  await testWindowRecord(readyPath, { processGroup: process.pid, ownerProcessGroup: reaperProcessGroup, outerPid, state: "unbound" });
   for (let elapsed = 0; elapsed < 10_000; elapsed += 10) {
     let owner;
     try {
@@ -71,7 +72,7 @@ async function waitForDurableGroupBinding() {
       if (parentIsGone()) return false;
       throw new Error("TEST_CONTROLLER_OWNER_CHANGED");
     }
-    if (owner.processGroup === process.pid) return true;
+    if (owner.processGroup === reaperProcessGroup) return true;
     if (owner.processGroup !== null) throw new Error("TEST_CONTROLLER_GROUP_MISMATCH");
     if (parentIsGone()) return false;
     await delay(10);
@@ -79,10 +80,10 @@ async function waitForDurableGroupBinding() {
   throw new Error("TEST_CONTROLLER_GROUP_BIND_TIMEOUT");
 }
 
-async function waitForTestControllerRunGate() {
+async function waitForTestControllerRunGate(reaperProcessGroup) {
   if (!boundPath && !runPath) return;
   if (!validAbsolutePath(boundPath) || !validAbsolutePath(runPath)) throw new Error("TEST_CONTROLLER_BIND_WINDOW_PATH_INVALID");
-  await testWindowRecord(boundPath, { processGroup: process.pid, outerPid, state: "bound-before-controller" });
+  await testWindowRecord(boundPath, { processGroup: process.pid, ownerProcessGroup: reaperProcessGroup, outerPid, state: "bound-before-controller" });
   for (let elapsed = 0; elapsed < 10_000; elapsed += 10) {
     try {
       await lstat(runPath);
@@ -123,32 +124,18 @@ if (!validAbsolutePath(lockPath) || !Number.isSafeInteger(outerPid) || outerPid 
   abort("TEST_CONTROLLER_REQUIRED");
 }
 
-if (!await waitForDurableGroupBinding()) {
-  await testWindowRecord(orphanPath, { processGroup: process.pid, outerPid, state: "orphaned-before-bind" });
-  await appendProgressIfConfigured(progressPath, "orphaned-before-bind", { processGroup: process.pid, outerPid });
-  if (Number.isSafeInteger(orphanDelay) && orphanDelay > 0 && orphanDelay <= 10_000) await delay(orphanDelay);
-  // No `node --test` process has been spawned in this branch.
-  process.exit(0);
-}
-
-// This test-only gate exposes the post-bind/pre-controller interval.  Once
-// binding succeeded, the bootstrap itself is a recorded group member, so a
-// dead outer task must remain unrecoverable until this group exits.
-await waitForTestControllerRunGate();
-
-// Test-controller output goes to private regular files, never inherited pipes.
-// The policy preload refuses a detached child that would escape the recorded
-// group. The detached reaper terminates any remaining same-group descendants
-// before output is read and the command-wide session may be released.
 const outputDirectory = await mkdtemp(join(tmpdir(), "tcrn-test-controller-"));
 const stdoutPath = join(outputDirectory, "stdout");
 const stderrPath = join(outputDirectory, "stderr");
-const stdoutFile = await open(stdoutPath, "w", 0o600);
-const stderrFile = await open(stderrPath, "w", 0o600);
+const childRegistryDirectory = join(outputDirectory, "managed-child-groups");
+await mkdir(childRegistryDirectory, { mode: 0o700 });
+let stdoutFile;
+let stderrFile;
 // INVARIANT: this file MUST NOT be preloaded with test-controller-child-policy.mjs.
-// This detached spawn is the proof -- that policy refuses `detached: true`
-// unconditionally, so preloading it here would refuse the reaper before it starts.
-const reaper = spawn(process.execPath, [reaperPath, String(process.pid), String(process.pid), outputDirectory], {
+// The reaper owns the output-session process group while it supervises the
+// bootstrap and registered child groups. It is deliberately outside the
+// controller preload so it can start its own detached process group.
+const reaper = spawn(process.execPath, [reaperPath, String(process.pid), String(process.pid), outputDirectory, childRegistryDirectory], {
   detached: true,
   stdio: ["ignore", "ignore", "ignore", "ipc"],
 });
@@ -189,8 +176,8 @@ function waitForChildExit(child) {
 
 async function closeOutputFiles() {
   if (outputFilesClosed) return;
-  await stdoutFile.close().catch((error) => cleanupErrors.push({operation: "stdout-close", ...describeError(error)}));
-  await stderrFile.close().catch((error) => cleanupErrors.push({operation: "stderr-close", ...describeError(error)}));
+  await stdoutFile?.close().catch((error) => cleanupErrors.push({operation: "stdout-close", ...describeError(error)}));
+  await stderrFile?.close().catch((error) => cleanupErrors.push({operation: "stderr-close", ...describeError(error)}));
   outputFilesClosed = true;
 }
 
@@ -217,13 +204,16 @@ async function joinReaper() {
     reaperCleaned = true;
   } catch (error) {
     cleanupErrors.push({operation: "reaper-clean", ...describeError(error)});
-    try { reaper.kill("SIGTERM"); } catch (killError) { cleanupErrors.push({operation: "reaper-signal", ...describeError(killError)}); }
   }
   return {code: null, signal: null};
 }
 
 async function disposeReaper() {
   if (!reaper || reaperDisposed) return {code: null, signal: null};
+  if (!reaperCleaned) {
+    cleanupErrors.push({operation: "reaper-dispose", code: "TEST_CONTROLLER_REAPER_CLEANUP_UNCONFIRMED", message: "reaper remains responsible for registered groups"});
+    return {code: reaper.exitCode ?? null, signal: reaper.signalCode ?? null};
+  }
   if (reaper.connected) {
     try { reaper.send({type: "dispose"}); }
     catch (error) { cleanupErrors.push({operation: "reaper-dispose-send", ...describeError(error)}); }
@@ -240,13 +230,38 @@ async function disposeReaper() {
 }
 try {
   await waitForReaperMessage(reaper, "ready");
+  if (!validAbsolutePath(reaperReadyPath) || !Number.isSafeInteger(reaper.pid) || reaper.pid <= 0) {
+    throw new Error("TEST_CONTROLLER_REAPER_READY_INVALID");
+  }
+  await writeFile(reaperReadyPath, `${JSON.stringify({ bootstrapPid: process.pid, reaperPid: reaper.pid })}\n`, { mode: 0o600, flag: "wx" });
+  if (!await waitForDurableGroupBinding(reaper.pid)) {
+    await testWindowRecord(orphanPath, { processGroup: process.pid, ownerProcessGroup: reaper.pid, outerPid, state: "orphaned-before-bind" });
+    await appendProgressIfConfigured(progressPath, "orphaned-before-bind", { processGroup: process.pid, reaperPid: reaper.pid, outerPid });
+    if (Number.isSafeInteger(orphanDelay) && orphanDelay > 0 && orphanDelay <= 10_000) await delay(orphanDelay);
+    await joinReaper();
+    await disposeReaper();
+    // No `node --test` process has been spawned in this branch.
+    process.exit(0);
+  }
+
+  // This test-only gate exposes the post-bind/pre-controller interval. The
+  // output-session owner is the reaper group, which remains live until every
+  // registered child group and the bootstrap group have been cleaned.
+  await waitForTestControllerRunGate(reaper.pid);
+  stdoutFile = await open(stdoutPath, "w", 0o600);
+  stderrFile = await open(stderrPath, "w", 0o600);
   // INVARIANT: this file MUST NOT be preloaded with test-controller-child-policy.mjs.
   // These are private regular-file descriptors, not inherited controller output, but
   // the policy's stdio allowlist cannot tell the difference without an fstat on a hot
   // path, so it would refuse this spawn. The allowlist stays fail-closed deliberately;
   // the detached reaper spawn above proves this file runs unpreloaded.
-  await appendProgressIfConfigured(progressPath, "bound-before-controller", { processGroup: process.pid, outerPid, reaperPid: reaper.pid, coverageDirectory: coverageDirectory ?? null });
-  const controllerEnvironment = { ...process.env, TCRN_TEST_CONTROLLER_PROCESS_GROUP: String(process.pid) };
+  await appendProgressIfConfigured(progressPath, "bound-before-controller", { processGroup: process.pid, ownerProcessGroup: reaper.pid, outerPid, reaperPid: reaper.pid, coverageDirectory: coverageDirectory ?? null });
+  const controllerEnvironment = {
+    ...process.env,
+    TCRN_TEST_CONTROLLER_CHILD_REGISTRY: childRegistryDirectory,
+    TCRN_TEST_CONTROLLER_PROCESS_GROUP: String(process.pid),
+    TCRN_TEST_CONTROLLER_REAPER_PID: String(reaper.pid),
+  };
   if (coverageDirectory) controllerEnvironment.NODE_V8_COVERAGE = coverageDirectory;
   testController = spawn(process.execPath, ["--import", childPolicyImport, ...testArguments], {
     stdio: ["ignore", stdoutFile.fd, stderrFile.fd],
@@ -267,6 +282,7 @@ try {
   });
   await closeOutputFiles();
   await joinReaper();
+  if (!reaperCleaned) throw new Error("TEST_CONTROLLER_REAPER_CLEANUP_UNCONFIRMED");
   const {stdout, stderr} = await readControllerOutput();
   process.stdout.write(stdout);
   process.stderr.write(stderr);
@@ -317,8 +333,8 @@ try {
     await waitForChildExit(testController).catch((waitError) => cleanupErrors.push({operation: "controller-join", ...describeError(waitError)}));
   }
   await closeOutputFiles();
-  const output = await readControllerOutput();
   if (!reaperCleaned && reaper?.exitCode === null && reaper?.signalCode === null) await joinReaper();
+  const output = reaperCleaned ? await readControllerOutput() : {stdout: Buffer.alloc(0), stderr: Buffer.alloc(0)};
   const reaperTerminal = reaperDisposed ? null : await disposeReaper();
   const evidence = {
     primaryError,

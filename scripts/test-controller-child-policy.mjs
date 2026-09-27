@@ -1,24 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// A governed test command owns its output session as one process group.  A
-// detached child would escape that group while retaining inherited output
-// descriptors or a write-capable checkout. Refuse the escape unconditionally
-// before it is spawned; test code cannot mint an exception through its
-// caller-supplied environment.
+// A governed test command owns its output session as one process group. A
+// detached child normally escapes that group and is refused. The single
+// exception is the product gate runner: its private stdout/stderr pipes are
+// routed through a registered bootstrap, and the controller reaper owns that
+// process group until it is gone.
 
 import childProcess from "node:child_process";
+import { randomBytes } from "node:crypto";
+import { closeSync, fsyncSync, lstatSync, openSync, readFileSync, readdirSync, unlinkSync, writeSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-// Node does not inherit command-line --import arguments when a test spawns a
-// new Node process.  Preserve the controller policy across that boundary with
-// NODE_OPTIONS, then also seal an explicit env override in the direct Node
-// spawning APIs below.  This keeps a permitted relay from becoming an
-// unpreloaded escape hatch for a detached grandchild.
 const policyNodeOption = `--import=${import.meta.url}`;
+const childBootstrapPath = fileURLToPath(new URL("./test-controller-child-bootstrap.mjs", import.meta.url));
+const registryDirectory = process.env.TCRN_TEST_CONTROLLER_CHILD_REGISTRY ?? "";
+const outerProcessGroup = Number(process.env.TCRN_TEST_CONTROLLER_PROCESS_GROUP);
+const childOwnerPid = Number(process.env.TCRN_TEST_CONTROLLER_CHILD_OWNER_PID);
+const childToken = process.env.TCRN_TEST_CONTROLLER_CHILD_TOKEN ?? "";
+const raceCrashAt = process.env.TCRN_TEST_CONTROLLER_CHILD_CRASH_AT ?? "";
+const raceProbePath = process.env.TCRN_TEST_CONTROLLER_CHILD_RACE_PROBE_PATH ?? "";
+const managedChildGroupLimit = 8;
+const childGroupSchema = "tcrn.test-controller-child-group.v1";
 
 function nodeOptionsWithPolicy(nodeOptions) {
   const current = typeof nodeOptions === "string" ? nodeOptions.trim() : "";
-  if (current.includes(policyNodeOption)) return current;
+  if (current.split(/\s+/u).includes(policyNodeOption)) return current;
   return current === "" ? policyNodeOption : `${current} ${policyNodeOption}`;
 }
 
@@ -35,20 +43,12 @@ function object(value) {
 }
 
 function optionsIndex(name, arguments_) {
-  // The sync exec pair takes the same positions as its async twin minus the callback,
-  // so options are always in the optional slot and never a function.
   if (name === "execSync") return 1;
   if (name === "execFileSync") return Array.isArray(arguments_[1]) ? 2 : 1;
   if (name === "spawn" || name === "spawnSync" || name === "execFile" || name === "fork") {
-    // Node accepts an explicitly undefined optional arguments array, with the
-    // options object still supplied in the third position. Normalize that
-    // signature before both policy enforcement and environment propagation.
     if (name !== "execFile") {
       return Array.isArray(arguments_[1]) || (arguments_.length >= 3 && arguments_[1] === undefined) ? 2 : 1;
     }
-    // execFile has a trailing callback.  A callback in either optional slot is
-    // not an options object and must never be overwritten while injecting the
-    // controller policy.
     if (Array.isArray(arguments_[1]) || (arguments_.length >= 3 && arguments_[1] === undefined)) {
       return typeof arguments_[2] === "function" ? undefined : 2;
     }
@@ -66,10 +66,6 @@ function optionsFor(name, arguments_) {
 function isNodeExecutable(command) {
   if (typeof command !== "string") return false;
   if (command === process.execPath || command === "node" || command === "nodejs") return true;
-  // exec and its sync twin take a whole command line rather than an argv[0], so an
-  // exact match never fired for them and `exec("node child.js", { env })` started an
-  // unpreloaded child whenever the caller supplied an env of their own. Match the
-  // leading word, optionally quoted or path-qualified.
   const leading = command.trimStart().match(/^"([^"]+)"|^'([^']+)'|^(\S+)/u);
   const executable = leading?.[1] ?? leading?.[2] ?? leading?.[3];
   if (executable === undefined) return false;
@@ -78,16 +74,9 @@ function isNodeExecutable(command) {
     base === "node.exe" || base === "nodejs.exe";
 }
 
-// Anchor on the path segment boundary, not a literal leading slash. `endsWith` missed
-// the bare relative form (`node scripts/task.mjs`), so the governed entrypoint was
-// handed the controller preload; its bootstrap then spawns a recorded detached group,
-// which this very policy refuses. Absolute, `./`-prefixed and bare relative must all
-// match, while a lookalike such as `other-scripts/task.mjs` must not.
 const taskEntrypointPattern = /(?:^|[\s/])scripts\/task\.mjs(?:\s|$)/u;
 
 function taskEntrypointArguments(name, arguments_) {
-  // exec receives a whole command line in the first position; the direct APIs receive
-  // an argv array whose first entry is the script path.
   if (name === "exec" || name === "execSync") {
     return typeof arguments_[0] === "string" && taskEntrypointPattern.test(arguments_[0]);
   }
@@ -104,16 +93,6 @@ function environmentWithoutPolicy(environment) {
 }
 
 function propagatePolicyToNodeChild(name, arguments_) {
-  // fork always creates Node. The exec pair takes a shell command line rather than an
-  // executable, and its leading token can be quoted, wrapped (`env node`, `FOO=1 node`)
-  // or reached through `sh -c`, so no parse of it is trustworthy -- each of those three
-  // forms was measured starting an unpreloaded child that then spawned a detached
-  // grandchild. Propagate unconditionally for them. A child that is not Node ignores
-  // NODE_OPTIONS, which makes the fail-closed choice the cheap one here.
-  // For the remaining direct APIs, argv[0] is a real executable path, so only rewrite a
-  // known Node executable; those ordinary child processes retain their exact
-  // caller-supplied options and environment. That guarantee no longer holds for exec
-  // and execSync, which now always receive a NODE_OPTIONS entry.
   const takesCommandLine = name === "exec" || name === "execSync";
   if (name !== "fork" && !takesCommandLine && !isNodeExecutable(arguments_[0])) return arguments_;
   const index = optionsIndex(name, arguments_);
@@ -121,10 +100,6 @@ function propagatePolicyToNodeChild(name, arguments_) {
   const environment = object(options.env) ?? process.env;
   const updatedOptions = {
     ...options,
-    // `task.mjs` is the separately governed command entrypoint, whose own
-    // bootstrap creates the recorded detached process group. It must start
-    // without this test-controller preload; every Node child it later owns is
-    // governed by that fresh controller boundary instead.
     env: taskEntrypointArguments(name, arguments_)
       ? environmentWithoutPolicy(environment)
       : { ...environment, NODE_OPTIONS: nodeOptionsWithPolicy(environment.NODE_OPTIONS) },
@@ -134,8 +109,6 @@ function propagatePolicyToNodeChild(name, arguments_) {
     updated[index] = updatedOptions;
     return updated;
   }
-  // The two callback APIs admit omitted options. Insert options before their
-  // callback rather than replacing that callback with an object.
   if (name === "exec") {
     if (typeof updated[1] === "function") updated.splice(1, 0, updatedOptions);
     else updated[1] = updatedOptions;
@@ -151,25 +124,230 @@ function propagatePolicyToNodeChild(name, arguments_) {
   return updated;
 }
 
-function rejectDetached(name, arguments_) {
-  const options = optionsFor(name, arguments_);
-  if (options?.detached) {
-    const error = new Error("TEST_CONTROLLER_DETACHED_DESCENDANT_FORBIDDEN");
-    error.code = "TEST_CONTROLLER_DETACHED_DESCENDANT_FORBIDDEN";
-    throw error;
-  }
-  if (inheritsStdioForCall(name, options)) {
-    const error = new Error("TEST_CONTROLLER_INHERITED_STDIO_FORBIDDEN");
-    error.code = "TEST_CONTROLLER_INHERITED_STDIO_FORBIDDEN";
-    throw error;
+function policyError(code) {
+  const error = new Error(code);
+  error.code = code;
+  return error;
+}
+
+function detachedForbidden() {
+  throw policyError("TEST_CONTROLLER_DETACHED_DESCENDANT_FORBIDDEN");
+}
+
+// The only product spawn permitted to detach is gates-run's bounded process
+// group. Its exact stdio contract gives the test controller private pipes; the
+// wrapper receives those pipes and never inherits the controller's output.
+function isGateRunnerSpawn(name, arguments_, options) {
+  if (name !== "spawn" || options?.detached !== true || options?.shell !== false) return false;
+  if (!Array.isArray(arguments_[1]) || arguments_[1].some((argument) => typeof argument !== "string")) return false;
+  if (!Array.isArray(options.stdio) || options.stdio.length !== 3 ||
+      options.stdio[0] !== "ignore" || options.stdio[1] !== "pipe" || options.stdio[2] !== "pipe") return false;
+  return /(?:^|[\\/])packages[\\/]core[\\/]src[\\/]gates-run\.(?:js|ts):\d+:\d+/u.test(new Error().stack ?? "");
+}
+
+function slotPaths(directory = registryDirectory) {
+  return Array.from({ length: managedChildGroupLimit }, (_, index) => resolve(directory, `slot-${index}.ndjson`));
+}
+
+function validateRegistryDirectory(directory) {
+  if (!directory.startsWith("/") || directory.includes("\0")) throw policyError("TEST_CONTROLLER_CHILD_REGISTRY_INVALID");
+  let metadata;
+  try { metadata = lstatSync(directory); }
+  catch { throw policyError("TEST_CONTROLLER_CHILD_REGISTRY_INVALID"); }
+  if (metadata.isSymbolicLink() || !metadata.isDirectory() || (metadata.mode & 0o777) !== 0o700 ||
+      (typeof process.getuid === "function" && metadata.uid !== process.getuid())) {
+    throw policyError("TEST_CONTROLLER_CHILD_REGISTRY_INVALID");
   }
 }
 
-// An allowlist, not a denylist. Enumerating the inheriting spellings is unbounded:
-// besides "inherit", [0,1,2] and the parent's own stream objects, any descriptor number
-// above 2 can be a dup of the controller's output (measured: ["ignore", fd, "ignore"]
-// with fd from openSync was admitted). Only these entries are known not to hand the
-// child a descriptor of ours; everything else is refused.
+function appendSlotEvent(path, event) {
+  const line = Buffer.from(`${JSON.stringify({ schemaVersion: childGroupSchema, ...event })}\n`, "utf8");
+  const descriptor = openSync(path, "a");
+  try {
+    let offset = 0;
+    while (offset < line.length) offset += writeSync(descriptor, line, offset, line.length - offset);
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+function reserveChildSlot(token) {
+  if (!Number.isSafeInteger(outerProcessGroup) || outerProcessGroup <= 0 ||
+      !Number.isSafeInteger(process.pid) || process.pid <= 0 || registryDirectory === "") {
+    detachedForbidden();
+  }
+  validateRegistryDirectory(registryDirectory);
+  for (const path of slotPaths()) {
+    let descriptor;
+    try { descriptor = openSync(path, "wx", 0o600); }
+    catch (error) {
+      if (error?.code === "EEXIST") continue;
+      throw error;
+    }
+    try {
+      const line = Buffer.from(`${JSON.stringify({ schemaVersion: childGroupSchema, state: "reserved", token, ownerPid: process.pid })}\n`, "utf8");
+      let offset = 0;
+      while (offset < line.length) offset += writeSync(descriptor, line, offset, line.length - offset);
+      fsyncSync(descriptor);
+      return path;
+    } catch (error) {
+      try { unlinkSync(path); } catch { /* keep the original registration failure */ }
+      throw error;
+    } finally {
+      closeSync(descriptor);
+    }
+  }
+  throw policyError("TEST_CONTROLLER_MANAGED_CHILD_LIMIT");
+}
+
+function writeRaceProbe(stage, token, processGroup = null) {
+  if (raceProbePath === "") return;
+  if (!raceProbePath.startsWith("/") || raceProbePath.includes("\0")) throw policyError("TEST_CONTROLLER_CHILD_RACE_PROBE_PATH_INVALID");
+  const value = { stage, token, processGroup };
+  const descriptor = openSync(raceProbePath, "w", 0o600);
+  try {
+    const line = Buffer.from(`${JSON.stringify(value)}\n`, "utf8");
+    let offset = 0;
+    while (offset < line.length) offset += writeSync(descriptor, line, offset, line.length - offset);
+    fsyncSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+function readSlotState(path, token, ownerPid) {
+  let source;
+  try { source = readFileSync(path, "utf8"); }
+  catch (error) { if (error?.code === "ENOENT") return null; throw error; }
+  const completeLines = source.split("\n");
+  if (completeLines.at(-1) === "") completeLines.pop();
+  let state = null;
+  for (const line of completeLines) {
+    if (line === "") continue;
+    let event;
+    try { event = JSON.parse(line); }
+    catch { return null; }
+    if (event?.schemaVersion !== childGroupSchema || event.token !== token || event.ownerPid !== ownerPid) return null;
+    if (state === null && event.state !== "reserved") return null;
+    if (state !== null && !["bound", "finished", "cancelled"].includes(event.state)) return null;
+    if (event.state === "bound" && (!Number.isSafeInteger(event.processGroup) || event.processGroup <= 0)) return null;
+    state = event;
+  }
+  return state;
+}
+
+function matchingSlot(token, ownerPid, wantedState = undefined) {
+  if (registryDirectory === "") return null;
+  try {
+    validateRegistryDirectory(registryDirectory);
+    for (const path of slotPaths()) {
+      const state = readSlotState(path, token, ownerPid);
+      if (state && (wantedState === undefined || state.state === wantedState)) return { path, state };
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function isBootstrapRelay(name, arguments_, options) {
+  if (name !== "spawn" || options?.detached === true ||
+      resolve(process.argv[1] ?? "") !== childBootstrapPath ||
+      !/^--tcrn-controller-child=[0-9a-f]{32}$/u.test(childToken) ||
+      !Number.isSafeInteger(childOwnerPid) || childOwnerPid <= 0 || process.ppid !== childOwnerPid) return false;
+  if (!Array.isArray(options?.stdio) || options.stdio.length !== 3 ||
+      options.stdio[0] !== "ignore" || options.stdio[1] !== 1 || options.stdio[2] !== 2) return false;
+  const reservation = matchingSlot(childToken.slice("--tcrn-controller-child=".length), childOwnerPid, "bound");
+  return reservation?.state.processGroup === process.pid;
+}
+
+function spawnManagedGate(name, arguments_, options, original, receiver) {
+  const token = randomBytes(16).toString("hex");
+  const slotPath = reserveChildSlot(token);
+  const executable = arguments_[0];
+  const commandArguments = arguments_[1];
+  const environment = { ...(object(options.env) ?? process.env) };
+  environment.NODE_OPTIONS = nodeOptionsWithPolicy(environment.NODE_OPTIONS);
+  environment.TCRN_TEST_CONTROLLER_CHILD_REGISTRY = registryDirectory;
+  environment.TCRN_TEST_CONTROLLER_CHILD_OWNER_PID = String(process.pid);
+  environment.TCRN_TEST_CONTROLLER_CHILD_TOKEN = `--tcrn-controller-child=${token}`;
+  let child;
+  try {
+    writeRaceProbe("reserved", token);
+    if (raceCrashAt === "after-reserve") process.kill(process.pid, "SIGKILL");
+    const wrapperOptions = {
+      ...options,
+      detached: true,
+      env: environment,
+      shell: false,
+      stdio: [...options.stdio, "ipc"],
+    };
+    child = original.call(receiver, process.execPath, [childBootstrapPath, environment.TCRN_TEST_CONTROLLER_CHILD_TOKEN, executable, ...commandArguments], wrapperOptions);
+    if (!Number.isSafeInteger(child.pid) || child.pid <= 0) throw policyError("TEST_CONTROLLER_CHILD_PID_INVALID");
+    writeRaceProbe("spawned-before-bind", token, child.pid);
+    if (raceCrashAt === "after-spawn-before-bind") process.kill(process.pid, "SIGKILL");
+    appendSlotEvent(slotPath, { state: "bound", token, ownerPid: process.pid, processGroup: child.pid });
+  } catch (error) {
+    if (!child?.pid) {
+      try { appendSlotEvent(slotPath, { state: "cancelled", token, ownerPid: process.pid, processGroup: null }); } catch { /* preserve the spawn failure */ }
+      try { unlinkSync(slotPath); } catch { /* reservation recovery is fail-closed */ }
+    }
+    throw error;
+  }
+  child.on("message", (message) => {
+    if (message?.type !== "managed-child-launch-error" || typeof message.code !== "string") return;
+    const error = policyError(message.code);
+    error.message = typeof message.message === "string" ? message.message : message.code;
+    child.emit("error", error);
+  });
+  child.once("close", () => {
+    void finishChildSlot(slotPath, token, process.pid, child.pid).catch((error) => {
+      process.stderr.write(`${JSON.stringify({ reasonCode: "TEST_CONTROLLER_MANAGED_CHILD_CLEANUP_FAILED", processGroup: child.pid, error: String(error?.message ?? error) })}\n`);
+    });
+  });
+  return child;
+}
+
+async function waitForGroupGone(processGroup, timeoutMs) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    try { process.kill(-processGroup, 0); }
+    catch (error) { if (error?.code === "ESRCH") return true; throw error; }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 20));
+  }
+  return false;
+}
+
+async function finishChildSlot(path, token, ownerPid, processGroup) {
+  if (!Number.isSafeInteger(processGroup) || processGroup <= 0) {
+    appendSlotEvent(path, { state: "cancelled", token, ownerPid, processGroup: null });
+    unlinkSync(path);
+    return;
+  }
+  if (!await waitForGroupGone(processGroup, 2_000)) {
+    try { process.kill(-processGroup, "SIGTERM"); } catch (error) { if (error?.code !== "ESRCH") throw error; }
+    if (!await waitForGroupGone(processGroup, 1_000)) {
+      try { process.kill(-processGroup, "SIGKILL"); } catch (error) { if (error?.code !== "ESRCH") throw error; }
+      if (!await waitForGroupGone(processGroup, 2_000)) throw policyError("TEST_CONTROLLER_MANAGED_CHILD_GROUP_LIVE");
+    }
+  }
+  appendSlotEvent(path, { state: "finished", token, ownerPid, processGroup });
+  unlinkSync(path);
+}
+
+function rejectInheritedStdio(name, options) {
+  if (inheritsStdioForCall(name, options)) throw policyError("TEST_CONTROLLER_INHERITED_STDIO_FORBIDDEN");
+}
+
+function rejectDetached(name, arguments_, options) {
+  if (!options?.detached) return;
+  if (isGateRunnerSpawn(name, arguments_, options)) return;
+  detachedForbidden();
+}
+
+// An allowlist, not a denylist. Besides "inherit", [0,1,2] and parent stream
+// objects can carry a test controller's output descriptor.
 const nonInheritingStdio = new Set(["pipe", "ignore", "overlapped", "ipc", null, undefined]);
 
 function inheritsStdio(stdio) {
@@ -178,25 +356,23 @@ function inheritsStdio(stdio) {
   return !nonInheritingStdio.has(stdio);
 }
 
-// fork resolves a missing stdio to ['inherit','inherit','inherit','ipc'] *inside* Node,
-// after this policy has inspected the caller's options, so an absent stdio reads as
-// non-inheriting while the child actually writes to the controller's stderr (measured:
-// bare `fork(path)` was admitted and its output appeared on our stderr). `silent: true`
-// is the documented way to ask for pipes, so only a falsy silent inherits.
 function inheritsStdioForCall(name, options) {
   if (name === "fork" && options?.stdio === undefined && !options?.silent) return true;
   return inheritsStdio(options?.stdio);
 }
 
-// execSync and execFileSync were absent from this list, so they spawned children under
-// no policy at all -- neither the detached/stdio refusals nor the preload propagation
-// reached them. They take the same (command, options) shape as their async twins.
 for (const name of ["spawn", "spawnSync", "exec", "execFile", "execSync", "execFileSync", "fork"]) {
   const original = childProcess[name];
   childProcess[name] = function guardedChildProcess(...arguments_) {
-    rejectDetached(name, arguments_);
-    const child = original.apply(this, propagatePolicyToNodeChild(name, arguments_));
-    return child;
+    const options = optionsFor(name, arguments_);
+    const gateRunnerSpawn = isGateRunnerSpawn(name, arguments_, options);
+    const bootstrapRelay = isBootstrapRelay(name, arguments_, options);
+    if (options?.detached) {
+      rejectDetached(name, arguments_, options);
+      if (gateRunnerSpawn) return spawnManagedGate(name, arguments_, options, original, this);
+    }
+    if (!bootstrapRelay) rejectInheritedStdio(name, options);
+    return original.apply(this, propagatePolicyToNodeChild(name, arguments_));
   };
 }
 

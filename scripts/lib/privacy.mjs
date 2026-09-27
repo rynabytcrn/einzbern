@@ -431,16 +431,16 @@ export function normalizePrivacyText(content) {
       .replace(/(?:atob|Buffer\.from)\(\s*(["'])([A-Za-z0-9+/=]+)\1(?:\s*,\s*["']base64["'])?\s*\)(?:\.toString\(\s*["']utf8["']\s*\))?/gu,
         (_, __, value) => decodeBase64(value));
 
-    normalized = normalized.replace(/\[\s*((?:["'](?:\\.|[^"'])*["']\s*,\s*)+["'](?:\\.|[^"'])*["'])\s*\]\s*\.join\(\s*(["'])(.*?)\2\s*\)/gu,
+    normalized = normalized.replace(/\[\s*((?:(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')\s*,\s*)+(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'))\s*\]\s*\.join\(\s*(["'])(.*?)\2\s*\)/gu,
       (_, values, __, separator) => {
-        const parts = [...values.matchAll(/(["'])(?:\\.|[^"'])*\1/gu)]
+        const parts = [...values.matchAll(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/gu)]
           .map((match) => evaluateStringLiteral(match[0]))
           .filter((value) => value !== null);
         return parts.length > 0 ? parts.join(separator) : _;
       });
-    normalized = normalized.replace(/\[\s*((?:["'](?:\\.|[^"'])*["']\s*,\s*)+["'](?:\\.|[^"'])*["'])\s*\]\s*\.reverse\(\)\.join\(\s*(["'])(.*?)\2\s*\)/gu,
+    normalized = normalized.replace(/\[\s*((?:(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')\s*,\s*)+(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'))\s*\]\s*\.reverse\(\)\.join\(\s*(["'])(.*?)\2\s*\)/gu,
       (_, values, __, separator) => {
-        const parts = [...values.matchAll(/(["'])(?:\\.|[^"'])*\1/gu)]
+        const parts = [...values.matchAll(/"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'/gu)]
           .map((match) => evaluateStringLiteral(match[0]))
           .filter((value) => value !== null)
           .reverse();

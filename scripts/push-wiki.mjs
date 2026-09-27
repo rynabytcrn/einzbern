@@ -3,8 +3,9 @@
 // TCRN-CROSS-STORY-487 R3 (TCRN-CROSS-SUB-352): publish docs/wiki to the project's Wiki. A GitHub
 // Wiki is a Git repository of its own. Its pages are edited in this repository, under docs/wiki,
 // and never on the web, so the source directory is the whole of the Wiki: this script mirrors it
-// into a local working tree of the Wiki repository (--wiki-dir), copying every file of the source
-// and removing every tracked file the source no longer has, and commits the result there.
+// into a local working tree of the Wiki repository (--wiki-dir), copying every file of the source,
+// including Home.md when present, and removing every tracked file the source no longer has. It
+// commits the result there.
 //
 // That is all it does unless it is told otherwise. By default it is a rehearsal: it syncs, commits
 // in the local working tree and prints the commits a push would send, and it pushes nothing. Only

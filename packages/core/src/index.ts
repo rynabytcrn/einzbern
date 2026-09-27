@@ -728,55 +728,9 @@ export type { NodeFloorReasonCode } from "./node-floor.js";
 // TCRN-CROSS-STORY-471 R4: whether every device of a library runs an engine that may meet the next
 // format, and the hint naming the ones to upgrade first.
 export { libraryUpgradeReadiness } from "./akasha.js";
-// TCRN-CROSS-STORY-479 R1: the skill's SKILL.md as the engine generates it for its own version.
-export {
-  SKILL_DESCRIPTION,
-  SKILL_MARKDOWN_BYTE_LIMIT,
-  SKILL_NAVIGATION,
-  SKILL_RENDER_REASON_CODES,
-  SkillRenderError,
-  renderSkillMarkdown,
-  skillNamedVerbs,
-} from "./skill-render.js";
-export type { RenderSkillMarkdownInput, SkillNavigationEntry, SkillRenderReasonCode } from "./skill-render.js";
-// TCRN-CROSS-STORY-479 R4, R5: the skill's copies in both hosts' skill roots with their record in
-// the device directory, and the legacy helper's copies and markers moved to a backup.
-export {
-  LEGACY_SKILL_MARKER_FILES,
-  LEGACY_SKILL_ROOTS,
-  SKILL_COPIES_FILES,
-  SKILL_COPIES_REASON_CODES,
-  SKILL_COPIES_SCHEMA_VERSION,
-  SKILL_COPY_ROOTS,
-  SkillCopiesError,
-  applyLegacySkillCleanup,
-  installSkillCopies,
-  isLegacySkillMarker,
-  legacySkillCleanupPlan,
-  skillCopiesRecordPath,
-  skillCopyPath,
-  verifySkillCopies,
-} from "./skill-copies.js";
-export type {
-  InstallSkillCopiesInput,
-  InstalledSkillCopy,
-  LegacyEntryType,
-  LegacySkillCleanupItem,
-  LegacySkillCleanupKind,
-  LegacySkillCleanupPlan,
-  LegacySkillCleanupResult,
-  MovedLegacyEntry,
-  SkillCopiesInstallReport,
-  SkillCopiesReasonCode,
-  SkillCopiesRecord,
-  SkillCopiesVerification,
-  SkillCopyAction,
-  SkillCopyHost,
-  SkillCopyRecord,
-  SkillCopyRoot,
-  SkillCopyVerification,
-  SkillCopyVerificationCode,
-} from "./skill-copies.js";
+// TCRN-CROSS-STORY-479: only the skill renderer and its install file map have consumers outside core.
+export { renderSkillMarkdown } from "./skill-render.js";
+export { SKILL_COPIES_FILES } from "./skill-copies.js";
 export type { AtomicFileReasonCode, AtomicWriteOptions } from "./atomic-file.js";
 // TCRN-CROSS-STORY-468 R1: this device's identity in the device directory.
 export {

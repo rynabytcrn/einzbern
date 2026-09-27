@@ -68,7 +68,7 @@ test("STORY-365 GWT2/GWT3: the same subject twice is scored, refused, and releas
   try {
     const subject = "guard-check 运行期间不要并发编辑";
     const first = await captureKnowledgeUnit(fixture.workspace, lessonCard(subject), { allowTrailing: true });
-    assert.equal(first.promotionState, "promoted");
+    assert.equal(Object.hasOwn(first, "promotionState"), false);
 
     const refusal = await captureKnowledgeUnit(fixture.workspace, lessonCard(subject, { body: "第二次写入" }), { allowTrailing: true })
       .then(() => null, (error) => error);
@@ -160,7 +160,7 @@ test("STORY-365 GWT4/GWT5: create needs no backlink lists, and nothing new lands
     assert.deepEqual([refused.details.required, refused.details.actual], ["active", "candidate"]);
     const created = await cliJson(createArguments("S365-NO-LINK-LISTS", "active"));
     assert.equal(created.reasonCode, "KNOWLEDGE_UNIT_CREATED");
-    assert.equal(created.promotionState, "promoted", "a create with no backlinks is written official");
+    assert.equal(Object.hasOwn(created, "promotionState"), false, "the create receipt omits the retired promotion marker");
 
     await captureKnowledgeUnit(fixture.workspace, lessonCard("另一条完全不同的经验条目"), { allowTrailing: true });
     // TCRN-CROSS-STORY-476 R1: --promotion went with the candidate it selected, so every card is
@@ -207,21 +207,21 @@ test("STORY-365 the extension slot stays a closed roster of two knowledge-id key
 // reference and no evidence id is in the default selection at once. STORY-365 reached both
 // verbs (they share buildMetadata) but left the half-supplied provenance branch standing,
 // and the branch it left was the one the Stop hook and every hand-written card take.
-test("INC-282: a captured card naming a source is promoted and in default recall at once", async () => {
+test("INC-282: a captured card naming a source is active and in default recall at once", async () => {
   const fixture = await containerFixture("FIXTURE-CAPTURE-SOURCED");
   try {
     const sourced = await captureKnowledgeUnit(fixture.workspace, lessonCard("带来源的经验卡", {
       sourceReferences: ["docs/tutorial/governed-loop.md"],
     }), { allowTrailing: true });
     assert.equal(sourced.reasonCode, "KNOWLEDGE_UNIT_CREATED");
-    assert.equal(sourced.promotionState, "promoted", "a source reference is not a reason to withhold a card");
+    assert.equal(Object.hasOwn(sourced, "promotionState"), false, "a source reference is not a reason to withhold a card");
     const listed = await listKnowledgeMetadata(fixture.workspace, { at: instant(3), allowTrailing: true });
     assert.equal(listed.records.some((record) => record.id === sourced.id), true,
       `default recall must return the sourced card: ${JSON.stringify(listed.records.map((record) => record.subject))}`);
     // The contrast that made the defect invisible: the same card without a source was
     // always returned, so the writer had no way to tell the two apart from the receipt.
     const bare = await captureKnowledgeUnit(fixture.workspace, lessonCard("无来源的经验卡"), { allowTrailing: true });
-    assert.equal(bare.promotionState, sourced.promotionState, "both shapes land in the same state");
+    assert.equal(Object.hasOwn(bare, "promotionState"), false, "the no-source receipt also omits the retired marker");
   } finally {
     await fixture.close();
   }

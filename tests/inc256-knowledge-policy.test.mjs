@@ -85,9 +85,8 @@ test("INC-256 knowledge-batch migrates all existing cards to no expiry and prese
     for (const kind of ["fact", "guide", "decision", "reference"]) {
       const result = await createKnowledgeUnit(fx.workspace, card(fx, `CARD-${kind}`, kind, version));
       version = result.version;
-      // TCRN-CROSS-STORY-365, TCRN-CROSS-SUB-308: every kind is written promoted; there is no
-      // promotion step.
-      assert.equal(result.promotionState, "promoted", kind);
+      // Every kind is written active; the receipt omits the retired promotion marker.
+      assert.equal(Object.hasOwn(result, "promotionState"), false, kind);
       created.push({ id: result.id, revision: result.revision, kind });
     }
     const before = await listKnowledgeMetadata(fx.workspace, { at: instant(6), selection: "all" });

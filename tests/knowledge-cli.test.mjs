@@ -96,6 +96,7 @@ test("476-AC1 (CLI): a card written without a lifecycle flag is recalled at once
   assert.equal(created.reasonCode, "KNOWLEDGE_UNIT_CREATED");
   assert.deepEqual(created.ids, [created.id], "the receipt names the card it wrote");
   assert.equal(created.version, 1, "beside the store version");
+  assert.equal(Object.hasOwn(created, "promotionState"), false, "the create receipt omits the retired promotion marker");
 
   const answer = await recallCli(workspace, 11, "pangolin scale inventory");
   const hit = answer.records.find((record) => record.id === created.id);
@@ -106,6 +107,7 @@ test("476-AC1 (CLI): a card written without a lifecycle flag is recalled at once
 
   const listed = await cli(["knowledge-list", "--workspace", workspace, "--at", at(12), "--selection", "all"]);
   assert.deepEqual(listed.records.map((record) => [record.id, record.lifecycle]), [[created.id, "active"]]);
+  assert.equal(Object.hasOwn(listed.records[0], "promotionState"), false, "new metadata omits the retired promotion marker");
   assert.equal(listed.records.some((record) => Object.values(record).includes("candidate")), false, "no field holds the candidate");
 
   // The two lifecycles a card is no longer written with are refused with the remedy; anything

@@ -156,7 +156,6 @@
         "linkedEvidenceIds",
         "lifecycle",
         "retrievalDisposition",
-        "promotionState",
         "freshnessState",
         "lastVerified",
         "stalenessPolicy",
@@ -352,7 +351,7 @@
           ]
         },
         "promotionState": {
-          "description": "Every card is written promoted: there is no promotion step (TCRN-CROSS-SUB-308). candidate and rejected are read on records written before, never written.",
+          "description": "Retained on historical records. New records omit this retired promotion marker.",
           "enum": [
             "candidate",
             "promoted",

@@ -51,6 +51,7 @@ import { ENGINE_FORMAT_VERSION, librarySupportRefusal } from "./format-version.j
 import { HOST_HOOK_FILES, HOST_HOOK_HOSTS, hookLauncherPath, isEinzbernHookCommand, planHostHooks, readHostHooks } from "./host-hooks.js";
 import type { HostHookHost, HostHookScope, HostHooksPlan } from "./host-hooks.js";
 import { managedSectionRecordKey, managedSectionRecordsFor, planManagedWrite } from "./managed-sections.js";
+import { readAgentsNavigation } from "./machine-settings.js";
 import { DIRECTORY } from "./names.js";
 import { NODE_FLOOR, meetsNodeFloor } from "./node-floor.js";
 import { gitRemoteOf, gitTopLevel, normalizeGitRemote, readRegistry } from "./registry.js";
@@ -249,7 +250,8 @@ interface ScopeEntry {
   readonly error: string | null;
 }
 
-// How many hooks of a host's hook document run the Einzbern launcher, in every event.
+// How many Einzbern hooks run on UserPromptSubmit. Declined navigation adds two pointer hooks on
+// separate events; those are checked against the expected document below, not counted as copies.
 function einzbernHookCount(text: string | null): number {
   if (text === null || text.trim() === "") return 0;
   // readHostHooks has already refused a file that is not a JSON object.
@@ -257,16 +259,15 @@ function einzbernHookCount(text: string | null): number {
   const hooks = isObject(document) ? document.hooks : null;
   if (!isObject(hooks)) return 0;
   let count = 0;
-  for (const groups of Object.values(hooks)) {
-    if (!Array.isArray(groups)) continue;
-    const list: readonly unknown[] = groups;
-    for (const group of list) {
-      const entries = isObject(group) ? group.hooks : null;
-      if (!Array.isArray(entries)) continue;
-      const hookList: readonly unknown[] = entries;
-      for (const hook of hookList) {
-        if (isObject(hook) && typeof hook.command === "string" && isEinzbernHookCommand(hook.command)) count += 1;
-      }
+  const groups = hooks.UserPromptSubmit;
+  if (!Array.isArray(groups)) return 0;
+  const list: readonly unknown[] = groups;
+  for (const group of list) {
+    const entries = isObject(group) ? group.hooks : null;
+    if (!Array.isArray(entries)) continue;
+    const hookList: readonly unknown[] = entries;
+    for (const hook of hookList) {
+      if (isObject(hook) && typeof hook.command === "string" && isEinzbernHookCommand(hook.command)) count += 1;
     }
   }
   return count;
@@ -274,7 +275,8 @@ function einzbernHookCount(text: string | null): number {
 
 async function readScope(host: HostHookHost, scope: HostHookScope, root: string, context: DoctorContext): Promise<ScopeRead> {
   const location = { root, home: context.home };
-  const request = { host, scope, deviceHome: context.deviceHome, platform: context.platform };
+  const navigation = scope === "user" ? await readAgentsNavigation(context.deviceHome) : null;
+  const request = { host, scope, deviceHome: context.deviceHome, platform: context.platform, navigation };
   const installed = await readHostHooks(planHostHooks(request), location);
   const bare = await readHostHooks(planHostHooks({ ...request, install: false }), location);
   return { count: einzbernHookCount(installed.files[0]?.before ?? null), installed, bare };

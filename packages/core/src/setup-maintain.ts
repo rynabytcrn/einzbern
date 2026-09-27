@@ -32,7 +32,7 @@ import { dirname, join, resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
 
 import { canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
-import { AGENTS_FILE, CLAUDE_FILE, resolveSection } from "./agents-sections.js";
+import { AGENTS_FILE, CLAUDE_FILE, disableAgentsSection, resolveSection } from "./agents-sections.js";
 import { writeFileAtomic } from "./atomic-file.js";
 import { DEVICE_HOME_ENTRIES, backupsPath, ensureDeviceDirectory, registryPath } from "./device-home.js";
 import { readDevice } from "./device-identity.js";
@@ -44,7 +44,7 @@ import { utcStamp } from "./host-writable-roots.js";
 import { INSTALL_TREE_DIGEST_VERSION, computeInstallTreeDigest, normalizedInstallBytes } from "./install-tree-digest.js";
 import { readAgentsNavigation } from "./machine-settings.js";
 import type { AgentsNavigationChoice } from "./machine-settings.js";
-import { parseManagedFile } from "./managed-sections.js";
+import { managedSectionRecordsFor, parseManagedFile } from "./managed-sections.js";
 import { BRAND, DIRECTORY } from "./names.js";
 import { readRegistry, unregisterLibrary } from "./registry.js";
 import type { RegistryEntry } from "./registry.js";
@@ -69,8 +69,8 @@ import {
   applyWiring,
   defaultCloud,
   defaultLanguage,
-  engineVersionSource,
   entryKind,
+  engineVersionSource,
   libraryLanguage,
   navigationChoice,
   planDevice,
@@ -583,6 +583,86 @@ function answerQuestions(input: SetupModeInput, resolved: ResolvedSetupAnswers):
   return questions;
 }
 
+async function planChangedNavigationRemoval(
+  recorder: SetupRecorder,
+  projectRoot: string,
+  library: { readonly path: string; readonly state: LibraryState } | null,
+  deviceNavigation: AgentsNavigationChoice | null,
+  navigation: boolean,
+  pending: readonly { readonly file: string; readonly id: string }[],
+): Promise<readonly { readonly file: string; readonly id: string }[]> {
+  const navigationSection = { file: AGENTS_FILE, id: "navigation" };
+  if (deviceNavigation !== "written" || navigation || library === null) return pending;
+  const records = managedSectionRecordsFor(library.state, AGENTS_FILE);
+  const record = records.find((entry) => entry.id === navigationSection.id);
+  if (record?.state === "pending") {
+    return pending.some((section) => section.file === AGENTS_FILE && section.id === "navigation") ? pending : [...pending, navigationSection];
+  }
+  if (record?.state !== "managed") return pending;
+  const filePath = join(projectRoot, AGENTS_FILE);
+  if (await entryKind(filePath) !== "file") return pending;
+  const source = await recorder.attempt("managed-sections", filePath, () => readFile(filePath, "utf8"));
+  if (source === null) return pending;
+  const parsed = await recorder.attempt("managed-sections", filePath, async () => parseManagedFile(source, AGENTS_FILE));
+  if (parsed === null) return pending;
+  const section = parsed.sections.find((entry) => entry.id === navigationSection.id);
+  if (section === undefined) return pending;
+  if (section.digest !== section.bodyDigest || section.digest !== record.digest) {
+    return pending.some((entry) => entry.file === AGENTS_FILE && entry.id === "navigation") ? pending : [...pending, navigationSection];
+  }
+  recorder.write("managed-sections", filePath, "update");
+  recorder.backup("managed-sections", filePath);
+  recorder.write("library", library.path, "update");
+  return pending;
+}
+
+async function applyChangedNavigationRemoval(
+  plan: SetupPlan,
+  recorder: SetupRecorder,
+  libraryPath: string,
+  pending: readonly { readonly file: string; readonly id: string }[],
+  removeNavigation: boolean,
+): Promise<readonly { readonly file: string; readonly id: string }[]> {
+  if (!removeNavigation) return pending;
+  const state = await materializeWorkspaceFromGenesis(libraryPath);
+  const record = managedSectionRecordsFor(state, AGENTS_FILE).find((entry) => entry.id === "navigation");
+  if (record?.state === "pending") {
+    return pending.some((section) => section.file === AGENTS_FILE && section.id === "navigation")
+      ? pending
+      : [...pending, { file: AGENTS_FILE, id: "navigation" }];
+  }
+  if (record?.state !== "managed") return pending;
+  const filePath = join(plan.projectRoot, AGENTS_FILE);
+  if (await entryKind(filePath) !== "file") return pending;
+  const parsed = parseManagedFile(await readFile(filePath, "utf8"), AGENTS_FILE);
+  const section = parsed.sections.find((entry) => entry.id === "navigation");
+  if (section === undefined) return pending;
+  if (section.digest !== section.bodyDigest || section.digest !== record.digest) {
+    return pending.some((entry) => entry.file === AGENTS_FILE && entry.id === "navigation")
+      ? pending
+      : [...pending, { file: AGENTS_FILE, id: "navigation" }];
+  }
+  try {
+    const { change } = await disableAgentsSection(libraryPath, {
+      projectRoot: plan.projectRoot,
+      id: "navigation",
+      occurredAt: plan.at,
+      backupRoot: backupsPath(plan.deviceHome),
+    });
+    if (change.written) {
+      recorder.write("managed-sections", join(plan.projectRoot, AGENTS_FILE), "update");
+      recorder.backup("managed-sections", join(plan.projectRoot, AGENTS_FILE));
+    }
+    if (change.recordChanged) recorder.write("library", libraryPath, "update");
+    return pending;
+  } catch (error) {
+    if (reasonOf(error) !== "MANAGED_SECTION_FORCE_REQUIRED") throw error;
+    return pending.some((section) => section.file === AGENTS_FILE && section.id === "navigation")
+      ? pending
+      : [...pending, { file: AGENTS_FILE, id: "navigation" }];
+  }
+}
+
 /**
  * Plan a repair (R4): the steps of a first installation from the registry on, for the project's
  * registered library, with this device's identity first when it has none. Nothing is written; a
@@ -597,7 +677,7 @@ export async function planRepairSetup(input: SetupModeInput): Promise<SetupModeP
   const library = await repairLibrary(recorder, context);
   await planDevice(recorder, deviceHome);
   const resolved = maintainedAnswers(context, answers, library?.state ?? null, deviceNavigation);
-  const pending = library === null ? [] : await planWiring(recorder, {
+  let pending = library === null ? [] : await planWiring(recorder, {
     projectRoot,
     home,
     deviceHome,
@@ -607,6 +687,7 @@ export async function planRepairSetup(input: SetupModeInput): Promise<SetupModeP
     deviceNavigation,
     engine: engine.directory === null ? null : await readEngineFiles(recorder, engine.directory),
   });
+  pending = await planChangedNavigationRemoval(recorder, projectRoot, library, deviceNavigation, resolved.navigation, pending);
   return planResult(recorder, {
     questions: answerQuestions(input, resolved),
     resolved,
@@ -629,7 +710,8 @@ export async function applyRepairSetup(plan: SetupPlan): Promise<SetupApplied> {
   }
   const recorder = new SetupRecorder(deviceHome, at);
   const device = await applyDevice(recorder, deviceHome, at);
-  const pending = await applyWiring(recorder, {
+  const removeNavigation = plan.answers.navigation === false && await readAgentsNavigation(deviceHome) === "written";
+  let pending = await applyWiring(recorder, {
     projectRoot,
     home,
     deviceHome,
@@ -639,6 +721,7 @@ export async function applyRepairSetup(plan: SetupPlan): Promise<SetupApplied> {
     navigation: navigationChoice(resolved.navigation),
     engineDirectory: directory,
   });
+  pending = await applyChangedNavigationRemoval(plan, recorder, planned.path, pending, removeNavigation);
   return setupApplied(plan, recorder, { deviceId: device.deviceId, library: appliedLibrary(plan), pending });
 }
 

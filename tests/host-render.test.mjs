@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 
 import { renderHostHooks, renderWritableRoots } from "../scripts/host-render.mjs";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
+import { MACHINE_SETTINGS_FILE_NAME, applyMachineSettingSet } from "../dist/build/packages/core/src/machine-settings.js";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const cli = join(repoRoot, "scripts", "host-render.mjs");
@@ -73,6 +74,23 @@ test("477-R1: --scope user renders one UserPromptSubmit hook for each host into 
     const again = run(["--host", host, "--scope", "user", "--at", AT], env);
     assert.deepEqual([again.reasonCode, again.wrote], ["HOST_RENDER_ALREADY_CURRENT", false], `${host}: rendering again changes nothing`);
   }
+});
+
+test("478-AC5: --scope user renders pointer hooks when this device declined the navigation section", async (t) => {
+  const { home, device, env } = await machine(t, "einzbern-host-render-declined-navigation-");
+  await applyMachineSettingSet({
+    key: "agents.navigation",
+    value: "declined",
+    occurredAt: AT,
+    path: join(device, MACHINE_SETTINGS_FILE_NAME),
+  });
+
+  const receipt = run(["--host", "claude-code", "--scope", "user", "--at", AT], env);
+  assert.equal(receipt.reasonCode, "HOST_RENDER_COMMITTED");
+  const hooks = JSON.parse(await readFile(join(home, ".claude", "settings.json"), "utf8")).hooks;
+  assert.deepEqual(Object.keys(hooks).sort(), ["SessionStart", "SubagentStart", "UserPromptSubmit"]);
+  assert.match(hooks.SessionStart[0].hooks[0].command, / session-start$/u);
+  assert.match(hooks.SubagentStart[0].hooks[0].command, / subagent-start$/u);
 });
 
 test("477-R1, R3: --scope project renders the hook into the project and leaves the model, the effort and every other setting alone", async (t) => {
@@ -168,6 +186,20 @@ test("TCRN-CROSS-STORY-470 R5, AC4: the writable-roots scope names a library out
   const backups = join(base, "device", "backups", "20260926T100000Z", "writable-roots");
   const [projectDigest] = await readdir(backups);
   assert.equal(await readFile(join(backups, projectDigest, ".claude", "settings.local.json"), "utf8"), claudeBefore);
+});
+
+test("TCRN-CROSS-STORY-470 R5, AC4: the writable-roots plan warns when its host config is tracked by Git", async (t) => {
+  const { project, library } = await writableRootsFixture(t, "einzbern-host-render-roots-tracked-");
+  await mkdir(join(project, ".codex"), { recursive: true });
+  const config = join(project, ".codex", "config.toml");
+  await writeFile(config, "[features]\nhooks = true\n");
+  execFileSync("git", ["-C", project, "init"], { stdio: "ignore" });
+  execFileSync("git", ["-C", project, "add", ".codex/config.toml"], { stdio: "ignore" });
+
+  const plan = await renderWritableRoots({ host: "codex", root: project, library, planOnly: true });
+  assert.deepEqual(plan.warnings.map((warning) => [warning.reasonCode, warning.file]), [["HOST_WRITABLE_ROOTS_TRACKED_BY_GIT", ".codex/config.toml"]]);
+  assert.match(plan.warnings[0].message, /tracked by Git/u);
+  assert.deepEqual(await readdir(join(project, ".codex")), ["config.toml"], "planning does not write the tracked file");
 });
 
 test("TCRN-CROSS-STORY-470 R5: the native CLI renders the writable-roots scope with --library and refuses a conflicting scope", async (t) => {

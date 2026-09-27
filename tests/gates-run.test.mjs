@@ -29,6 +29,12 @@ const at = () => {
 const node = process.execPath;
 const STORY = `work:${"1".repeat(24)}`;
 const EPIC = `work:${"2".repeat(24)}`;
+const gateDiagnostic = (run) => `gate outcomes: ${JSON.stringify(run.gates.map(({ name, ok, exitCode, signal, timedOut }) => ({ name, ok, exitCode, signal, timedOut })))}`;
+
+function restoreEnv(name, value) {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}
 
 function git(root, args) {
   return execFileSync("git", ["-C", root, "-c", "user.name=gates-test", "-c", "user.email=gates-test-at-example.invalid", "-c", "commit.gpgsign=false", ...args], {
@@ -46,9 +52,13 @@ async function put(root, path, text = `${path}\n`) {
 /** A Git project, a library and a device directory, all temporary. */
 async function setup(context) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-gates-run-")));
-  const previous = process.env.EINZBERN_HOME;
+  const previousHome = process.env.HOME;
+  const previousDeviceHome = process.env.EINZBERN_HOME;
+  const home = join(base, "home");
+  await mkdir(home);
   context.after(async () => {
-    process.env.EINZBERN_HOME = previous;
+    restoreEnv("HOME", previousHome);
+    restoreEnv("EINZBERN_HOME", previousDeviceHome);
     await rm(base, { recursive: true, force: true });
   });
   const project = join(base, "project");
@@ -59,6 +69,7 @@ async function setup(context) {
   git(project, ["commit", "-q", "-m", "initial"]);
   const desk = join(base, "desk");
   const library = join(base, ".ether");
+  process.env.HOME = home;
   process.env.EINZBERN_HOME = desk;
   await runCli(["init", "--workspace", library, "--at", at()], { write: () => {} });
   return { base, project, desk, library };
@@ -94,8 +105,8 @@ test("485-AC3: two gates red at once give two reds, and a red gate does not stop
   const libraryId = state.metadata.workspaceId;
   const { run, recordPath } = await runGates(plan, { libraryId, at: at(), deviceHome: desk });
 
-  assert.deepEqual(run.reds, ["fail-a", "fail-b"], "both reds are reported");
-  assert.deepEqual(run.gates.map((gate) => [gate.name, gate.ok, gate.exitCode]), [["fail-a", false, 3], ["fail-b", false, 4], ["pass", true, 0]], "every gate ran");
+  assert.deepEqual(run.reds, ["fail-a", "fail-b"], `both reds are reported; ${gateDiagnostic(run)}`);
+  assert.deepEqual(run.gates.map((gate) => [gate.name, gate.ok, gate.exitCode]), [["fail-a", false, 3], ["fail-b", false, 4], ["pass", true, 0]], `every gate ran; ${gateDiagnostic(run)}`);
   const directory = gateRunsDirectory(libraryId, desk);
   assert.deepEqual(await Promise.all(run.gates.map(async (gate) => readFile(join(directory, gate.outputFile), "utf8"))), ["a", "b", "ok"]);
   assert.equal(recordPath, join(directory, `${run.runId}.json`));
@@ -123,8 +134,8 @@ test("485-AC3: a timed-out gate does not leave a delayed kill armed after it exi
   };
   try {
     const { run } = await runGates(plan, { libraryId: state.metadata.workspaceId, at: at(), deviceHome: desk, timeoutMs: 100 });
-    assert.equal(run.gates.find((gate) => gate.name === "stop")?.timedOut, true);
-    assert.deepEqual(run.gates.map((gate) => [gate.name, gate.ok]), [["pass", true], ["stop", false]]);
+    assert.equal(run.gates.find((gate) => gate.name === "stop")?.timedOut, true, gateDiagnostic(run));
+    assert.deepEqual(run.gates.map((gate) => [gate.name, gate.ok]), [["pass", true], ["stop", false]], gateDiagnostic(run));
     await new Promise((resolve) => setTimeout(resolve, 1_100));
   } finally {
     process.kill = originalKill;
@@ -144,15 +155,15 @@ test("485-R3: a gate past its timeout is stopped and red; output is cut at its b
   const plan = await planGates({ projectRoot: project, gates: listGates(state), release: true });
   const { run } = await runGates(plan, { libraryId: state.metadata.workspaceId, at: at(), deviceHome: desk, timeoutMs: 500, outputBytes: 1_024 });
   const byName = Object.fromEntries(run.gates.map((gate) => [gate.name, gate]));
-  assert.equal(byName.chatty.ok, true);
-  assert.equal(byName.chatty.truncated, true);
-  assert.equal(byName.chatty.outputBytes, 1_024);
-  assert.equal(byName.missing.ok, false);
-  assert.equal(byName.missing.exitCode, null);
+  assert.equal(byName.chatty.ok, true, gateDiagnostic(run));
+  assert.equal(byName.chatty.truncated, true, gateDiagnostic(run));
+  assert.equal(byName.chatty.outputBytes, 1_024, gateDiagnostic(run));
+  assert.equal(byName.missing.ok, false, gateDiagnostic(run));
+  assert.equal(byName.missing.exitCode, null, gateDiagnostic(run));
   assert.match(await readFile(join(gateRunsDirectory(state.metadata.workspaceId, desk), byName.missing.outputFile), "utf8"), /could not run: ENOENT/u);
-  assert.equal(byName.slow.ok, false);
-  assert.equal(byName.slow.timedOut, true);
-  assert.deepEqual(run.reds, ["missing", "slow"]);
+  assert.equal(byName.slow.ok, false, gateDiagnostic(run));
+  assert.equal(byName.slow.timedOut, true, gateDiagnostic(run));
+  assert.deepEqual(run.reds, ["missing", "slow"], gateDiagnostic(run));
   await assert.rejects(runGates(plan, { libraryId: state.metadata.workspaceId, at: at(), deviceHome: desk, timeoutMs: 10 }), { reasonCode: "GATES_RUN_INPUT_INVALID" });
 
   if (process.platform !== "win32") {
@@ -189,7 +200,7 @@ test("485-AC4 core: a red required gate refuses a Story's done and names it; a r
   let plan = await planGates({ projectRoot: project, gates: listGates(state) });
   assert.deepEqual(plan.gates.map((gate) => gate.name), ["lint", "unit"], "the change's own gates");
   let { run } = await runGates(plan, { libraryId: state.metadata.workspaceId, at: at(), deviceHome: desk });
-  assert.deepEqual(run.reds, ["lint", "unit"]);
+  assert.deepEqual(run.reds, ["lint", "unit"], gateDiagnostic(run));
   const red = await refusal(() => done());
   assert.equal(red.reasonCode, "WORK_DONE_GATES_RED");
   assert.deepEqual(red.details.reds, ["unit"], "only the required red gate holds the Story back");
@@ -202,7 +213,7 @@ test("485-AC4 core: a red required gate refuses a Story's done and names it; a r
   assert.equal((await refusal(() => done())).reasonCode, "WORK_DONE_GATES_NOT_RUN", "a run made on another tree does not count");
   plan = await planGates({ projectRoot: project, gates: listGates(state) });
   ({ run } = await runGates(plan, { libraryId: state.metadata.workspaceId, at: at(), deviceHome: desk }));
-  assert.deepEqual(run.reds, ["lint"]);
+  assert.deepEqual(run.reds, ["lint"], gateDiagnostic(run));
   const verdict = await done();
   assert.equal(verdict.checked, true);
   assert.equal(verdict.reason, "green");
@@ -232,10 +243,14 @@ test("485-R4: a run counts only for the tree and declarations it was made on, an
   // Two runs on one tree: the one with the later instant decides, whichever was made last.
   const early = at();
   const late = at();
-  await runGates(plan, { libraryId, at: late, deviceHome: desk, env: redEnvironment });
-  await runGates(plan, { libraryId, at: early, deviceHome: desk, env: green });
+  const lateRun = await runGates(plan, { libraryId, at: late, deviceHome: desk, env: redEnvironment });
+  assert.deepEqual(lateRun.run.reds, ["unit"], gateDiagnostic(lateRun.run));
+  const earlyRun = await runGates(plan, { libraryId, at: early, deviceHome: desk, env: green });
+  assert.deepEqual(earlyRun.run.reds, [], gateDiagnostic(earlyRun.run));
   assert.equal((await refusal(() => done())).reasonCode, "WORK_DONE_GATES_RED");
-  const { run } = await runGates(plan, { libraryId, at: at(), deviceHome: desk, env: green });
+  const latestGreen = await runGates(plan, { libraryId, at: at(), deviceHome: desk, env: green });
+  const { run } = latestGreen;
+  assert.deepEqual(run.reds, [], gateDiagnostic(run));
   assert.equal((await done()).runId, run.runId);
   assert.equal((await latestGateRun({ libraryId, deviceHome: desk })).runId, run.runId);
 

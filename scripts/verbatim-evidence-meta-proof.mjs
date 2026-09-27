@@ -11,13 +11,14 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const evidencePath = "docs/reports/init-028-design/evidence/INC-140-ci-portal-train.md";
+const historicalEvidencePath = "docs/reports/init-028-design/evidence/INC-153-restore-and-docs.md";
 const label = evidencePath;
 
-async function runChecker(file) {
+async function runChecker(file, fileLabel = label) {
   const env = { ...process.env, npm_config_offline: "true" };
   if (file) {
     env.TCRN_VERBATIM_EVIDENCE_FILE = file;
-    env.TCRN_VERBATIM_EVIDENCE_LABEL = label;
+    env.TCRN_VERBATIM_EVIDENCE_LABEL = fileLabel;
   } else {
     delete env.TCRN_VERBATIM_EVIDENCE_FILE;
     delete env.TCRN_VERBATIM_EVIDENCE_LABEL;
@@ -50,6 +51,18 @@ try {
   const mutatedPath = join(directory, "INC-140-mutated.md");
   await writeFile(mutatedPath, mutated, "utf8");
   const red = await runChecker(mutatedPath);
+
+  const historicalSource = await readFile(historicalEvidencePath, "utf8");
+  const historicalAnchor = historicalSource.match(/"matchCount": (\d+)/u);
+  if (historicalAnchor === null) throw new Error("INC391_HISTORY_MUTATION_ANCHOR_MISSING");
+  const historicalChanged = `matchCount ${historicalAnchor[1]} → ${Number(historicalAnchor[1]) + 1}`;
+  const historicalMutation = historicalSource.replace(historicalAnchor[0], `"matchCount": ${Number(historicalAnchor[1]) + 1}`);
+  if (historicalMutation === historicalSource) throw new Error("INC391_HISTORY_MUTATION_NO_CHANGE");
+  const historicalMutatedPath = join(directory, "INC-153-mutated.md");
+  await writeFile(historicalMutatedPath, historicalMutation, "utf8");
+  const historicalRed = await runChecker(historicalMutatedPath, historicalEvidencePath);
+  const historicalProblem = historicalRed.report.problems?.[0] ?? null;
+
   const restored = await runChecker();
   const result = {
     schemaVersion: "tcrn.inc156-verbatim-meta-proof.v1",
@@ -58,6 +71,13 @@ try {
       exitCode: red.exitCode,
       reasonCode: red.report.reasonCode,
       problem: red.report.problems?.[0] ?? null,
+    },
+    historicalMutation: {
+      changed: historicalChanged,
+      exitCode: historicalRed.exitCode,
+      reasonCode: historicalRed.report.reasonCode,
+      problemPath: historicalProblem?.path ?? null,
+      problemReasonCode: historicalProblem?.reasonCode ?? null,
     },
     restored: {
       exitCode: restored.exitCode,
@@ -73,6 +93,10 @@ try {
     && problem?.path === evidencePath
     && Number.isSafeInteger(problem?.line)
     && problem?.difference?.offset > 0
+    && result.historicalMutation.exitCode !== 0
+    && result.historicalMutation.reasonCode === "EVIDENCE_VERBATIM_MISMATCH"
+    && result.historicalMutation.problemPath === historicalEvidencePath
+    && result.historicalMutation.problemReasonCode === "EVIDENCE_HISTORY_BYTES_CHANGED"
     && result.restored.exitCode === 0
     && result.restored.ok === true
     && result.restored.blockCount >= 4;

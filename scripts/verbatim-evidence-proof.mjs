@@ -5,10 +5,12 @@
 // script, never an arbitrary shell pipeline.  The captured stdout is compared
 // byte-for-byte (including the final newline) with the fenced block.
 
-import { execFile } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { execFile, execFileSync } from "node:child_process";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { promisify } from "node:util";
-import { relative, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { compareCanonicalText } from "./lib/canonical-order.mjs";
@@ -18,6 +20,42 @@ const execFileAsync = promisify(execFile);
 const EVIDENCE_ROOTS = [
   "docs/reports/init-028-design/evidence/",
   "docs/reports/init-029-component-loop/evidence/",
+  "docs/reports/init-053-einzbern/",
+];
+const HISTORICAL_EVIDENCE = new Map([
+  ["docs/reports/init-028-design/evidence/INC-153-restore-and-docs.md", {
+    commit: "390eb5a1578dcd1086bde6b7c717ab1553d054b9",
+    committedAt: "2026-09-12T09:46:08+08:00",
+    bytes: 2758,
+    sha256: "e05b14591927af0df67dacf3eaabf4f7c12b4892111e8d350bc69b393aafe139",
+    command: "node scripts/verbatim-evidence-proof.mjs inc153-host-role-scan",
+    outputBytes: 560,
+    outputSha256: "89f414561a0f1d2f13e0431252f9801fc628f677efdc49e5060c3495fc004c9f",
+  }],
+  ["docs/reports/init-028-design/evidence/INC-155-coverage-integrity.md", {
+    commit: "4058d96e83c696c7faf319b1c1d94face4219554",
+    committedAt: "2026-09-24T09:51:27+08:00",
+    bytes: 12416,
+    sha256: "438921486a1154e958a5adefdda3f80c9a80a4bdfb1ec53c637d67f55e58d97a",
+    command: "node scripts/coverage-conservation-proof.mjs",
+    outputBytes: 2048,
+    outputSha256: "6d5b7fe9a7e8b44981e84ea2e544b7ed104697faf2a631bf62a6642933e168ec",
+    typescriptVersion: "5.9.3",
+  }],
+]);
+const CURRENT_PORTAL_PROOF_FILES = [
+  "portal/index.html",
+  "portal/locales.js",
+  "portal/portal.mjs",
+  "portal/scripts/i18n-proof.mjs",
+  "portal/scripts/proof.mjs",
+  "portal/tests/portal.test.mjs",
+  "portal/tests/ui-presence.test.mjs",
+  "packages/core/src/doctor.ts",
+  "tests/doctor.test.mjs",
+  "scripts/verify-portal.mjs",
+  "scripts/verbatim-evidence-meta-proof.mjs",
+  "scripts/verbatim-evidence-proof.mjs",
 ];
 const DESIGN_PROOF = "portal/scripts/design-proof.mjs";
 // STORY-300. The scan used to carry `-n`, so every match arrived with its line
@@ -102,10 +140,45 @@ async function i18nCurrentSummary() {
   return { sourceCommand: "node portal/scripts/i18n-proof.mjs", ok: report.ok, reasonCode: report.reasonCode, legs };
 }
 
+function sha256(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+
+function historicalEvidenceSummary() {
+  return [...HISTORICAL_EVIDENCE.entries()].map(([path, evidence]) => ({
+    path,
+    commit: evidence.commit,
+    committedAt: evidence.committedAt,
+    bytes: evidence.bytes,
+    sha256: evidence.sha256,
+    command: evidence.command,
+    outputBytes: evidence.outputBytes,
+    outputSha256: evidence.outputSha256,
+  }));
+}
+
+async function currentPortalProof() {
+  const sources = [];
+  for (const path of CURRENT_PORTAL_PROOF_FILES) {
+    const bytes = await readFile(resolve(repositoryRoot, path));
+    sources.push({ path, bytes: bytes.length, sha256: sha256(bytes) });
+  }
+  const [scan, i18n] = await Promise.all([hostRoleScan(), i18nCurrentSummary()]);
+  if (i18n.ok !== true) throw new Error(`CURRENT_PORTAL_I18N_NOT_GREEN:${i18n.reasonCode}`);
+  return {
+    schemaVersion: "tcrn.init053-current-portal-proof.v1",
+    historicalEvidence: historicalEvidenceSummary(),
+    currentSources: sources,
+    hostRoleScan: scan,
+    i18n,
+  };
+}
+
 async function runMode(mode) {
   if (mode === "inc140-design-proof") return designProofLegNames();
   if (mode === "inc153-host-role-scan") return hostRoleScan();
   if (mode === "inc149-i18n-current") return i18nCurrentSummary();
+  if (mode === "init053-current-portal-proof") return currentPortalProof();
   throw new Error(`EVIDENCE_VERBATIM_MODE_UNKNOWN:${mode}`);
 }
 
@@ -129,13 +202,14 @@ function firstDifference(expected, actual) {
   };
 }
 
-function parseVerbatimBlocks(source, path) {
+function parseVerbatimBlocks(source, path, sourcePath = resolve(repositoryRoot, path)) {
   const blocks = [];
   const pattern = /```verbatim:([^\n]+)\n([\s\S]*?)\n```/gu;
   for (const match of source.matchAll(pattern)) {
     const offset = match.index ?? 0;
     blocks.push({
       path,
+      sourcePath,
       line: source.slice(0, offset).split("\n").length,
       command: match[1].trim(),
       expected: `${match[2]}\n`,
@@ -147,8 +221,9 @@ function parseVerbatimBlocks(source, path) {
 async function evidenceBlocks() {
   const overrideFile = process.env.TCRN_VERBATIM_EVIDENCE_FILE;
   if (overrideFile) {
-    const path = process.env.TCRN_VERBATIM_EVIDENCE_LABEL ?? toPosixPath(relative(repositoryRoot, resolve(overrideFile)));
-    return parseVerbatimBlocks(await readFile(resolve(overrideFile), "utf8"), path);
+    const sourcePath = resolve(overrideFile);
+    const path = process.env.TCRN_VERBATIM_EVIDENCE_LABEL ?? toPosixPath(relative(repositoryRoot, sourcePath));
+    return parseVerbatimBlocks(await readFile(sourcePath, "utf8"), path, sourcePath);
   }
   const files = (await walkFiles())
     .map((path) => toPosixPath(relative(repositoryRoot, path)))
@@ -159,10 +234,122 @@ async function evidenceBlocks() {
   return blocks;
 }
 
+function runGit(args, options = {}) {
+  const env = { ...process.env };
+  for (const key of ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES"]) delete env[key];
+  return execFileSync("git", args, { cwd: repositoryRoot, env, ...options });
+}
+
+async function replayHistoricalBlock(block, evidence) {
+  if (block.command !== evidence.command) {
+    return { ok: false, reasonCode: "EVIDENCE_HISTORY_COMMAND_MISMATCH" };
+  }
+  const sourceBytes = await readFile(block.sourcePath);
+  const sourceDigest = sha256(sourceBytes);
+  if (sourceBytes.length !== evidence.bytes || sourceDigest !== evidence.sha256) {
+    return { ok: false, reasonCode: "EVIDENCE_HISTORY_BYTES_CHANGED", expectedSha256: evidence.sha256, actualSha256: sourceDigest };
+  }
+
+  let committedBytes;
+  try {
+    committedBytes = runGit(["show", `${evidence.commit}:${block.path}`], { encoding: "buffer", maxBuffer: 8 * 1024 * 1024 });
+  } catch {
+    return { ok: false, reasonCode: "EVIDENCE_HISTORY_COMMIT_UNAVAILABLE" };
+  }
+  if (sha256(committedBytes) !== evidence.sha256 || !committedBytes.equals(sourceBytes)) {
+    return { ok: false, reasonCode: "EVIDENCE_HISTORY_COMMIT_MISMATCH" };
+  }
+  const recorded = parseVerbatimBlocks(committedBytes.toString("utf8"), block.path).find((candidate) => candidate.command === evidence.command);
+  if (recorded?.expected !== block.expected) {
+    return { ok: false, reasonCode: "EVIDENCE_HISTORY_BLOCK_MISMATCH" };
+  }
+
+  const scratchRoot = process.env.TMPDIR ?? tmpdir();
+  await mkdir(scratchRoot, { recursive: true });
+  const scratch = await mkdtemp(join(scratchRoot, "tcrn-inc391-history-"));
+  try {
+    const historicalRoot = join(scratch, "repo");
+    const gitDirectory = join(scratch, "git");
+    await mkdir(historicalRoot);
+    runGit(["init", "--bare", "-q", gitDirectory]);
+    const archive = runGit(["archive", "--format=tar", evidence.commit], { encoding: "buffer", maxBuffer: 256 * 1024 * 1024 });
+    execFileSync("tar", ["-xf", "-", "-C", historicalRoot], { cwd: repositoryRoot, input: archive, encoding: "utf8", maxBuffer: 8 * 1024 * 1024 });
+
+    const commonDirectory = resolve(repositoryRoot, String(runGit(["rev-parse", "--git-common-dir"], { encoding: "utf8" })).trim());
+    await writeFile(join(gitDirectory, "HEAD"), `${evidence.commit}\n`, "utf8");
+    await writeFile(join(gitDirectory, "objects/info/alternates"), `${join(commonDirectory, "objects")}\n`, "utf8");
+
+    if (evidence.typescriptVersion) {
+      const historicalManifest = JSON.parse(runGit(["show", `${evidence.commit}:package.json`], { encoding: "utf8" }));
+      const currentManifest = JSON.parse(await readFile(resolve(repositoryRoot, "package.json"), "utf8"));
+      const historicalLock = runGit(["show", `${evidence.commit}:pnpm-lock.yaml`], { encoding: "buffer", maxBuffer: 8 * 1024 * 1024 });
+      const currentLock = await readFile(resolve(repositoryRoot, "pnpm-lock.yaml"));
+      const installedManifest = JSON.parse(await readFile(resolve(repositoryRoot, "node_modules/typescript/package.json"), "utf8"));
+      if (historicalManifest.devDependencies?.typescript !== evidence.typescriptVersion
+        || currentManifest.devDependencies?.typescript !== evidence.typescriptVersion
+        || installedManifest.version !== evidence.typescriptVersion
+        || !historicalLock.equals(currentLock)) {
+        return { ok: false, reasonCode: "EVIDENCE_HISTORY_DEPENDENCY_MISMATCH" };
+      }
+      await mkdir(join(historicalRoot, "node_modules"), { recursive: true });
+      await cp(resolve(repositoryRoot, "node_modules/typescript"), join(historicalRoot, "node_modules/typescript"), { recursive: true, dereference: true });
+    }
+
+    const home = join(scratch, "home");
+    const einzbernHome = join(scratch, "einzbern");
+    const temp = join(scratch, "tmp");
+    await Promise.all([mkdir(home), mkdir(einzbernHome), mkdir(temp)]);
+    const env = {
+      ...process.env,
+      HOME: home,
+      EINZBERN_HOME: einzbernHome,
+      TMPDIR: temp,
+      npm_config_offline: "true",
+      GIT_DIR: gitDirectory,
+    };
+    delete env.GIT_WORK_TREE;
+    const args = parseNodeCommand(block.command);
+    const result = await execFileAsync(process.execPath, args, {
+      cwd: historicalRoot,
+      encoding: "utf8",
+      env,
+      maxBuffer: 16 * 1024 * 1024,
+    });
+    const outputDigest = sha256(Buffer.from(result.stdout, "utf8"));
+    const difference = firstDifference(block.expected, result.stdout);
+    const ok = difference === null && result.stderr === ""
+      && Buffer.byteLength(result.stdout, "utf8") === evidence.outputBytes
+      && outputDigest === evidence.outputSha256;
+    return {
+      ok,
+      mode: "historical-version-replay",
+      commit: evidence.commit,
+      evidenceSha256: sourceDigest,
+      outputBytes: Buffer.byteLength(result.stdout, "utf8"),
+      outputSha256: outputDigest,
+      ...(!ok ? { reasonCode: difference ? "EVIDENCE_VERBATIM_MISMATCH" : "EVIDENCE_HISTORY_OUTPUT_MISMATCH" } : {}),
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      reasonCode: "EVIDENCE_HISTORY_REPLAY_FAILED",
+      exitCode: Number.isInteger(error?.status) ? error.status : null,
+    };
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+}
+
 async function verifyBlocks() {
   const blocks = await evidenceBlocks();
   const results = [];
   for (const block of blocks) {
+    const history = HISTORICAL_EVIDENCE.get(block.path);
+    if (history) {
+      const replay = await replayHistoricalBlock(block, history);
+      results.push({ path: block.path, line: block.line, command: block.command, ...replay });
+      continue;
+    }
     let args;
     try {
       args = parseNodeCommand(block.command);

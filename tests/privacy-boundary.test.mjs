@@ -3,13 +3,14 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { chmod, mkdir, mkdtemp, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
 import { LocalCommandError, runLocalCommand } from "../scripts/lib/local-command.mjs";
 import { aggregatePrivacySurface, decodeGitMetadataBytes, normalizePrivacyText, parseGitObjectBatch, parseHistoricalTreePaths, scanPrivacyEntries, walkHistoricalCommitPaths } from "../scripts/lib/privacy.mjs";
+import { writeUstar } from "../scripts/lib/tar.mjs";
 import { ENGINE_REPOSITORY_NAMES, LEGACY_REPOSITORY_NAMES } from "../dist/build/packages/core/src/index.js";
 
 const batchCheckFormat = "--batch-check=%(objectname) %(objecttype) %(objectsize)";
@@ -236,6 +237,71 @@ test("public Git hosting identity is allowed only in commit metadata", () => {
   );
 });
 
+test("classified privacy samples stay path-and-line exact across source, history and source archives", async () => {
+  const repositoryRoot = resolve(import.meta.dirname, "..");
+  const sourcePaths = [
+    "packages/core/src/names.ts",
+    "tests/agents-sections.test.mjs",
+    "tests/cloud-roots.test.mjs",
+    "tests/p1-all-legs.test.mjs",
+    "tests/privacy-boundary.test.mjs",
+    "tests/push-wiki.test.mjs",
+    "tests/registry-resolve.test.mjs",
+    "tests/release-lockstep.test.mjs",
+    "tests/setup-fresh.test.mjs",
+    "tests/variables-cli.test.mjs",
+    "tests/variables.test.mjs",
+  ];
+  const names = await readFile(join(repositoryRoot, "packages/core/src/names.ts"), "utf8");
+  const owner = names.match(/owner:\s*"([^"]+)"/u)?.[1];
+  assert.ok(owner, "the public owner metadata is present in the reviewed names file");
+  const sourceEntries = await Promise.all(sourcePaths.map(async (path) => ({
+    label: path,
+    kind: "source",
+    content: await readFile(join(repositoryRoot, path), "utf8"),
+  })));
+  assert.deepEqual(scanPrivacyEntries(sourceEntries, { owner }), []);
+
+  const variableFixture = await readFile(join(repositoryRoot, "tests/variables.test.mjs"), "utf8");
+  assert.deepEqual(scanPrivacyEntries([{
+    label: `git-blob:${"a".repeat(40)}`,
+    kind: "blob",
+    sourcePaths: ["tests/variables.test.mjs"],
+    content: variableFixture,
+  }], { owner }), []);
+
+  const unreviewedToken = ["ghp_", "Q".repeat(24)].join("");
+  const unreviewedContent = `const candidate = ${JSON.stringify(unreviewedToken)};\n`;
+  assert.ok(scanPrivacyEntries([{
+    label: "tests/variables.test.mjs",
+    kind: "source",
+    content: unreviewedContent,
+  }], { owner }).includes("GITHUB_CLASSIC_TOKEN:source:tests/variables.test.mjs"));
+  assert.ok(scanPrivacyEntries([{
+    label: `git-blob:${"b".repeat(40)}`,
+    kind: "blob",
+    sourcePaths: ["tests/variables.test.mjs", "src/runtime-config.mjs"],
+    content: variableFixture,
+  }], { owner }).some((finding) => finding.startsWith("GITHUB_CLASSIC_TOKEN:blob:")));
+
+  const cloudRoots = await readFile(join(repositoryRoot, "tests/cloud-roots.test.mjs"));
+  const privateFilename = `fixtures/${"member"}@${"example.invalid"}.txt`;
+  const archive = writeUstar([
+    { path: "tests/cloud-roots.test.mjs", bytes: cloudRoots },
+    { path: "src/new-secret.mjs", bytes: Buffer.from(unreviewedContent, "utf8") },
+    { path: privateFilename, bytes: Buffer.from("safe\n", "utf8") },
+  ]);
+  const originalArchive = Buffer.from(archive);
+  const archiveFindings = scanPrivacyEntries([{
+    label: "dist/release/einzbern-1.2.1-source.tar",
+    kind: "release",
+    content: archive,
+  }], { owner });
+  assert.deepEqual(archive, originalArchive, "scanning leaves the archive bytes unchanged");
+  assert.ok(archiveFindings.some((finding) => finding.startsWith("GITHUB_CLASSIC_TOKEN:release:") && finding.endsWith("#body:src/new-secret.mjs")));
+  assert.ok(archiveFindings.some((finding) => finding.startsWith("EMAIL_IDENTIFIER:release:") && finding.includes("#header:fixtures/")));
+});
+
 test("private/raw identifiers and common secret families fail closed", () => {
   const cases = [
     ["raw email", joinParts(["person", "@", "example.invalid"], ""), "EMAIL_IDENTIFIER"],
@@ -431,16 +497,24 @@ test("batched tree-object walking preserves every historical commit path and ord
   const summary = await walkHistoricalCommitPaths(
     commits,
     objectRecords,
-    (commit, path) => actual.push({ commit, path }),
+    (commit, path, object) => actual.push({ commit, path, object }),
     (snapshot) => progress.push(snapshot),
   );
   const expected = [];
+  const expectedObjects = [];
   for (const commit of commits) {
     const listing = fixtureGit(root, ["ls-tree", "-rz", "--full-tree", commit], { raw: true });
-    const paths = parseHistoricalTreePaths(decodeGitMetadataBytes(listing, "PRIVACY_TREE_UTF8_INVALID"));
+    const text = decodeGitMetadataBytes(listing, "PRIVACY_TREE_UTF8_INVALID");
+    const paths = parseHistoricalTreePaths(text);
     expected.push(...paths.map((path) => ({ commit, path })));
+    expectedObjects.push(...text.split("\0").filter(Boolean).map((record) => {
+      const separator = record.indexOf("\t");
+      const [mode, type, object] = record.slice(0, separator).split(" ");
+      return { commit, path: record.slice(separator + 1), object, mode, type };
+    }).map(({ commit, path, object }) => ({ commit, path, object })));
   }
-  assert.deepEqual(actual, expected);
+  assert.deepEqual(actual, expectedObjects);
+  assert.deepEqual(actual.map(({ commit, path }) => ({ commit, path })), expected);
   assert.equal(summary.commits, commits.length);
   assert.equal(summary.historicalPaths, expected.length);
   const pathSummaryDigest = (records) => {

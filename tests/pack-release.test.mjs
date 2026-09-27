@@ -83,6 +83,14 @@ function lastLine(text) {
   return text.trim().split("\n").at(-1);
 }
 
+function safeDiagnostic(value) {
+  let text = String(value ?? "");
+  for (const [path, label] of [[repositoryRoot, "<repository>"], [base, "<fixture>"], [homedir(), "<home>"]]) {
+    if (path) text = text.replaceAll(path, label);
+  }
+  return text.slice(0, 1200);
+}
+
 async function filesUnder(root, relativePath = "") {
   const found = [];
   for (const entry of await readdir(join(root, relativePath), { withFileTypes: true })) {
@@ -212,7 +220,9 @@ test("481-R2: Atelier runs from the release, serves its static files and reaches
   const run = node([join(tree, "atelier/portal.mjs")], { cwd, env, timeout: 60_000 });
   assert.equal(run.status, 2, run.stderr);
   assert.equal(run.stdout, "");
-  assert.equal(JSON.parse(lastLine(run.stderr)).reasonCode, "PORTAL_LIBRARY_REGISTRY_EMPTY");
+  const startup = JSON.parse(lastLine(run.stderr));
+  const diagnostic = JSON.stringify({ reasonCode: startup.reasonCode, error: safeDiagnostic(startup.error) });
+  assert.equal(startup.reasonCode, "PORTAL_LIBRARY_REGISTRY_EMPTY", `Atelier packaged CLI startup diagnostic: ${diagnostic}`);
 });
 
 test("481-R2, R4: the hook entry is one file whose runHookEvent answers nothing on an older Node.js", async () => {

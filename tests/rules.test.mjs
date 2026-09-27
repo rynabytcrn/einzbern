@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
+import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { initializeLibrary, materializeWorkspace } from "../dist/build/packages/core/src/index.js";
 import { resolveAgentsSection } from "../dist/build/packages/core/src/agents-sections.js";
 import { configRecord, setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
@@ -22,6 +23,7 @@ import { managedSectionRecordsFor, parseManagedFile, sectionDigest } from "../di
 import { BUILT_IN_RULES, builtInRule } from "../dist/build/packages/core/src/rules-catalog.js";
 import { RULE_STATES, checkRuleRecordValue, disableRule, enableRule, listRules, ruleSectionId } from "../dist/build/packages/core/src/rules.js";
 import { setWorkspaceSetting } from "../dist/build/packages/core/src/workspace.js";
+import { registerLibrary } from "../dist/build/packages/core/src/registry.js";
 
 const fixtures = resolve(import.meta.dirname, "fixtures", "rules");
 const USER_TEXT = "# My project\n\nMy own notes, which the engine never rewrites.\n";
@@ -73,6 +75,12 @@ async function refusal(operation) {
     return error;
   }
   throw new Error("the operation was expected to refuse");
+}
+
+async function cli(argv) {
+  let output = "";
+  await runCli(argv, { write: (value) => { output += value; } });
+  return JSON.parse(output);
 }
 
 /** The built-in catalog with batch processing at its first version, as the engine shipped it before MIN-229 D6. */
@@ -194,6 +202,44 @@ test("483-AC3: a newer version of a rule reads update-available and leaves the f
   const older = await refusal(() => enable(paths, "batch", { catalog }));
   assert.deepEqual([older.reasonCode, older.details.id, older.details.recordedVersion, older.details.version], ["RULE_VERSION_NEWER", "batch", "2", "1"]);
   assert.equal(await readFile(paths.agents, "utf8"), after);
+});
+
+test("T15: rule-resolve overwrite records the version of the body it writes", async (context) => {
+  const paths = await scratch(context);
+  const catalog = await catalogWithBatchV1();
+  await enable(paths, "batch", { catalog });
+  const changed = (await readFile(paths.agents, "utf8")).replace("批的单位", "批的单元");
+  await writeFile(paths.agents, changed);
+  assert.equal((await ruleOf(paths, "batch")).state, "user-modified");
+  await registerLibrary({ projectPath: paths.project, libraryPath: paths.library, registeredAt: at() });
+
+  const receipt = await cli(["rule-resolve", "--project", paths.project, "--section", "rule:batch", "--action", "overwrite", "--at", at()]);
+  assert.deepEqual([receipt.reasonCode, receipt.result, receipt.state], ["MANAGED_SECTION_RESOLVED", "overwritten", "managed"]);
+  const section = sectionOf(await readFile(paths.agents, "utf8"), "rule:batch");
+  const v2 = await readFile(join(fixtures, "batch.zh.md"), "utf8");
+  assert.equal(section.body, v2, "the explicit overwrite writes the current engine text");
+  assert.deepEqual(await sectionRecord(paths, "batch"), {
+    file: "AGENTS.md", id: "rule:batch", rev: 2, digest: sectionDigest(v2), state: "managed",
+  });
+  assert.deepEqual(await ruleRecord(paths, "batch"), { enabled: true, version: 2 });
+  assert.deepEqual(await ruleOf(paths, "batch"), {
+    id: "batch", version: 2, recordedVersion: 2, fileVersion: 2, section: "rule:batch", state: "enabled",
+  });
+});
+
+test("T15: rule-resolve overwrite refuses to replace a newer recorded rule with older engine text", async (context) => {
+  const paths = await scratch(context);
+  const futureCatalog = BUILT_IN_RULES.map((rule) => rule.id === "batch"
+    ? { ...rule, version: 3, body: { zh: "## 批量规则 v3\n", en: "## Batch rule v3\n" } }
+    : rule);
+  await enable(paths, "batch", { catalog: futureCatalog });
+  await registerLibrary({ projectPath: paths.project, libraryPath: paths.library, registeredAt: at() });
+  const before = await readFile(paths.agents, "utf8");
+
+  const error = await refusal(() => runCli(["rule-resolve", "--project", paths.project, "--section", "rule:batch", "--action", "overwrite", "--at", at()], { write() {} }));
+  assert.deepEqual([error.reasonCode, error.details.recordedVersion, error.details.version], ["RULE_VERSION_NEWER", "3", "2"]);
+  assert.equal(await readFile(paths.agents, "utf8"), before, "the older engine leaves the newer section byte for byte");
+  assert.deepEqual(await ruleRecord(paths, "batch"), { enabled: true, version: 3 });
 });
 
 test("483-AC4: a write refused over the user's change waits; after keep the section is the user's and enabling never writes it again", async (context) => {

@@ -156,34 +156,33 @@ export async function writeVariablesSections(workspaceRoot: string, input: {
   readonly projectRoot: string;
   readonly backupRoot?: string;
 } & WorkspaceMutationOptions): Promise<VariablesSectionsResult> {
-  const state = await materializeWorkspace(workspaceRoot);
-  const system = renderSystemVariablesSection(state);
-  const custom = renderCustomVariablesSection(state);
-  const plan = await planManagedWrite({
-    filePath: join(input.projectRoot, VARIABLES_SECTIONS_FILE),
-    file: VARIABLES_SECTIONS_FILE,
-    desired: [system, custom].map((section) => ({ id: section.id, body: section.body })),
-    records: managedSectionRecordsFor(state, VARIABLES_SECTIONS_FILE),
-  });
-  const applied = await applyManagedWrite(plan, { now: input.occurredAt, ...(input.backupRoot === undefined ? {} : { backupRoot: input.backupRoot }) });
-  const deltas = plan.sections.filter((decision) => decision.recordChanged).map((decision) => setConfigRecordDelta({
-    collection: "managed-section",
-    key: managedSectionRecordKey(VARIABLES_SECTIONS_FILE, decision.id),
-    value: decision.record,
-  }));
-  if (deltas.length > 0) {
-    await withWorkspaceWriteLock(workspaceRoot, async (root) => {
+  return withWorkspaceWriteLock(workspaceRoot, async (root) => {
+    const state = await materializeWorkspace(root);
+    const system = renderSystemVariablesSection(state);
+    const custom = renderCustomVariablesSection(state);
+    const plan = await planManagedWrite({
+      filePath: join(input.projectRoot, VARIABLES_SECTIONS_FILE),
+      file: VARIABLES_SECTIONS_FILE,
+      desired: [system, custom].map((section) => ({ id: section.id, body: section.body })),
+      records: managedSectionRecordsFor(state, VARIABLES_SECTIONS_FILE),
+    });
+    const applied = await applyManagedWrite(plan, { now: input.occurredAt, ...(input.backupRoot === undefined ? {} : { backupRoot: input.backupRoot }) });
+    const deltas = plan.sections.filter((decision) => decision.recordChanged).map((decision) => setConfigRecordDelta({
+      collection: "managed-section",
+      key: managedSectionRecordKey(VARIABLES_SECTIONS_FILE, decision.id),
+      value: decision.record,
+    }));
+    if (deltas.length > 0) {
       const committed = await appendEvents(root, deltas, input);
       await projectConfiguration(root, committed);
-      return committed;
-    });
-  }
-  return {
-    file: VARIABLES_SECTIONS_FILE,
-    written: applied.written,
-    backupPath: applied.backupPath,
-    sections: plan.sections,
-    pendingSections: plan.pending,
-    withheld: [...system.withheld, ...custom.withheld],
-  };
+    }
+    return {
+      file: VARIABLES_SECTIONS_FILE,
+      written: applied.written,
+      backupPath: applied.backupPath,
+      sections: plan.sections,
+      pendingSections: plan.pending,
+      withheld: [...system.withheld, ...custom.withheld],
+    };
+  });
 }

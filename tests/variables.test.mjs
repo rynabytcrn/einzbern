@@ -14,7 +14,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { SETTINGS_CATALOG, initializeLibrary, materializeWorkspace, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
+import { SETTINGS_CATALOG, initializeLibrary, materializeWorkspace, registerLibrary, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
 import { configRecord, setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
 import { managedSectionRecordsFor, parseManagedFile } from "../dist/build/packages/core/src/managed-sections.js";
 import {
@@ -49,6 +49,17 @@ async function cli(argv) {
   let output = "";
   await runCli(argv, { write: (value) => { output += value; } });
   return JSON.parse(output);
+}
+
+async function asAtelier(operation) {
+  const previous = process.env.EINZBERN_SURFACE;
+  process.env.EINZBERN_SURFACE = "atelier";
+  try {
+    return await operation();
+  } finally {
+    if (previous === undefined) delete process.env.EINZBERN_SURFACE;
+    else process.env.EINZBERN_SURFACE = previous;
+  }
 }
 
 async function refusal(operation) {
@@ -92,6 +103,45 @@ test("484-AC1: a new variable deploy.host is a row of the custom section and not
   const again = await write(fx);
   assert.equal(again.written, false, "a second render with nothing changed writes nothing");
   assert.equal((await materializeWorkspace(fx.library)).version, version, "and records nothing");
+});
+
+test("484-R2/T15: CLI writes render safely, pending sections are readable, and an explicit resolve can settle them", async (context) => {
+  const fx = await project(context);
+  await writeFile(fx.agents, OWNER_TEXT);
+  await registerLibrary({ projectPath: fx.root, libraryPath: fx.library, registeredAt: at() });
+
+  const first = await asAtelier(() => cli(["variable-set", "--workspace", fx.library, "--at", at(), "--name", "deploy.host", "--type", "string", "--value", "build.example.com"]));
+  assert.equal(first.variable.value, "build.example.com");
+  assert.match((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /^\| deploy\.host \| string \| build\.example\.com \|  \|$/mu);
+
+  await asAtelier(() => cli(["variable-set", "--workspace", fx.library, "--at", at(), "--name", "deploy.path", "--type", "string", "--value", "/srv/build"]));
+  assert.doesNotMatch((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /deploy\.path/u, "an absolute path stays out of the committed section");
+  const withheld = await cli(["variable-list", "--workspace", fx.library]);
+  assert.deepEqual(withheld.withheld, [{ name: "deploy.path", reason: "absolute-path" }]);
+  await asAtelier(() => cli(["variable-set", "--workspace", fx.library, "--at", at(), "--name", "deploy.path", "--type", "string", "--value", "build/config"]));
+  assert.match((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /^\| deploy\.path \| string \| build\/config \|  \|$/mu);
+
+  const beforeEdit = await readFile(fx.agents, "utf8");
+  const edited = beforeEdit.replace("build.example.com", "hand.example.com");
+  await writeFile(fx.agents, edited);
+  await asAtelier(() => cli(["variable-set", "--workspace", fx.library, "--at", at(), "--name", "deploy.port", "--type", "number", "--value", "8443"]));
+  assert.equal(await readFile(fx.agents, "utf8"), edited, "a variable write does not overwrite the user's changed managed section");
+
+  const pending = await cli(["variable-list", "--workspace", fx.library]);
+  assert.deepEqual(pending.pendingSections, [VARIABLES_CUSTOM_SECTION_ID]);
+  assert.deepEqual(pending.withheld, []);
+  assert.deepEqual(pending.variables.map((variable) => variable.name), ["deploy.host", "deploy.path", "deploy.port"]);
+
+  const resolved = await cli(["rule-resolve", "--project", fx.root, "--section", VARIABLES_CUSTOM_SECTION_ID, "--action", "overwrite", "--at", at()]);
+  assert.deepEqual([resolved.reasonCode, resolved.action, resolved.state], ["MANAGED_SECTION_RESOLVED", "overwrite", "managed"]);
+  const settled = await cli(["variable-list", "--workspace", fx.library]);
+  assert.deepEqual(settled.pendingSections, []);
+  const body = (await sections(fx))[VARIABLES_CUSTOM_SECTION_ID];
+  assert.match(body, /^\| deploy\.host \| string \| build\.example\.com \|  \|$/mu);
+  assert.match(body, /^\| deploy\.port \| number \| 8443 \|  \|$/mu);
+
+  await asAtelier(() => cli(["variable-remove", "--workspace", fx.library, "--at", at(), "--name", "deploy.host"]));
+  assert.doesNotMatch((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /deploy\.host/u);
 });
 
 test("484-AC2: a value shaped like a credential is refused, and nothing is recorded", async (context) => {

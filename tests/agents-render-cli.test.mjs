@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
+import { ATELIER_SURFACE, withSurface } from "./helpers/workspace-fixture.mjs";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { NAVIGATION_LINES } from "../dist/build/packages/core/src/agents-sections.js";
 import { parseManagedFile, renderSection } from "../dist/build/packages/core/src/managed-sections.js";
@@ -101,7 +102,13 @@ test("478-AC1 via agents-render: a section changed by one character stays as it 
   const edited = written.replace("Recall first:", "Recall frst:");
   assert.equal(edited.length, written.length - 1);
   await writeFile(agents, edited);
-  await cli(["settings-set", "--workspace", library, "--key", "design.authority", "--value", "https://design.example.com/system", "--at", at()]);
+  const settingsArgs = ["settings-set", "--workspace", library, "--key", "design.authority", "--value", "https://design.example.com/system", "--at", at()];
+  await assert.rejects(
+    withSurface(undefined, () => cli(settingsArgs)),
+    (error) => error.reasonCode === "MODEL_WRITE_REFUSED",
+  );
+  const settings = await withSurface(ATELIER_SURFACE, () => cli(settingsArgs));
+  assert.equal(settings.reasonCode, "SETTINGS_WRITE_COMMITTED");
   const next = await render(project);
   assert.deepEqual(next.sections, [
     { id: "navigation", file: "AGENTS.md", result: "refused-user-modified", state: "pending" },

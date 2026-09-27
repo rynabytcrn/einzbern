@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { createHash } from "node:crypto";
-import { lstat, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { renameSync, writeFileSync } from "node:fs";
+import { lstat, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { extname, join, relative, resolve } from "node:path";
+import { dirname, extname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
 
@@ -27,8 +28,8 @@ import {
   decodeGitMetadataBytes,
   decodePrivacyScanBytes,
   parseGitObjectBatch,
-  parseHistoricalTreePaths,
   scanPrivacyEntries,
+  walkHistoricalCommitPaths,
 } from "./lib/privacy.mjs";
 import { privateRuntimeConfig } from "./lib/private-token-roster.mjs";
 import { assertP8TagPreconditions, assertReleaseCommitShape } from "./lib/release-tag-gate.mjs";
@@ -783,8 +784,53 @@ async function filesForPrivacySurface(root, labelPrefix = "") {
   })));
 }
 
-async function verifyPrivacy({ requireP8Surfaces = false, historyScope = "head" } = {}) {
+async function verifyPrivacy(options = {}) {
+  const requireP8Surfaces = Boolean(options.requireP8Surfaces);
+  const historyScope = options.historyScope === undefined ? "head" : options.historyScope;
   assertion(historyScope === "head" || historyScope === "all", "PRIVACY_SCOPE_INVALID", historyScope);
+  const privacyProgressPath = resolve(repositoryRoot, "dist/evidence/p1/privacy-progress.json");
+  await mkdir(dirname(privacyProgressPath), { recursive: true });
+  const privacyProgressStartedAt = new Date().toISOString();
+  const privacyProgressTemporaryPath = `${privacyProgressPath}.${process.pid}.tmp`;
+  let privacyProgressTerminal = false;
+  const writePrivacyProgress = (fields) => {
+    const terminal = fields.status === "completed";
+    const document = {
+      schemaVersion: "tcrn.privacy-scan-progress.v1",
+      command: requireP8Surfaces ? "p8" : "privacy",
+      status: "running",
+      conclusion: "unknown",
+      startedAt: privacyProgressStartedAt,
+      updatedAt: new Date().toISOString(),
+      ...fields,
+    };
+    writeFileSync(privacyProgressTemporaryPath, `${JSON.stringify(document, null, 2)}\n`, { mode: 0o600 });
+    renameSync(privacyProgressTemporaryPath, privacyProgressPath);
+    privacyProgressTerminal = terminal;
+  };
+  try {
+    writePrivacyProgress({ phase: "initializing", historicalPaths: 0 });
+    return await verifyPrivacyScan(options, writePrivacyProgress);
+  } catch (error) {
+    if (!privacyProgressTerminal) {
+      try {
+        writePrivacyProgress({
+          status: "completed",
+          conclusion: "not-verifiable",
+          reasonCode: error?.reasonCode ?? "TASK_INTERNAL_ERROR",
+          phase: "interrupted",
+        });
+      } catch {
+        // Preserve the scan's original failure if evidence storage is also unavailable.
+      }
+    }
+    throw error;
+  }
+}
+
+async function verifyPrivacyScan(options = {}, writePrivacyProgress) {
+  const { requireP8Surfaces = false, historyScope = "head" } = options;
+  writePrivacyProgress({ phase: "source-surface-scan", historicalPaths: 0 });
   const owner = await remoteOwner();
   const entries = [];
   entries.push({
@@ -824,6 +870,7 @@ async function verifyPrivacy({ requireP8Surfaces = false, historyScope = "head" 
   // in exactly the header form the batch pass emits, so the total stream length is known
   // before the capture. Both drift directions fail closed rather than yielding a short
   // stream whose unscanned tail would leave the privacy gate green.
+  writePrivacyProgress({ phase: "git-object-index", objectCount: objectIds?.length ?? null, historicalPaths: 0 });
   const batchCheck = run(
     "git",
     objectIds === null
@@ -843,6 +890,12 @@ async function verifyPrivacy({ requireP8Surfaces = false, historyScope = "head" 
     assertion(Number.isSafeInteger(declaredSize) && declaredSize >= 0, "PRIVACY_GIT_OBJECT_TYPE", line);
     expectedStreamBytes += declaredSize + 1;
   }
+  writePrivacyProgress({
+    phase: "git-object-read",
+    objectCount: batchCheckLines.length,
+    expectedStreamBytes,
+    historicalPaths: 0,
+  });
   const batch = run(
     "git",
     objectIds === null ? ["cat-file", "--batch-all-objects", "--batch"] : ["cat-file", "--batch"],
@@ -888,14 +941,66 @@ async function verifyPrivacy({ requireP8Surfaces = false, historyScope = "head" 
     p8Surfaces.releaseArtifacts = aggregatePrivacySurface(releaseRecords);
   }
   const commits = run("git", historyScope === "all" ? ["rev-list", "--all"] : ["rev-list", "HEAD"]).split("\n").filter(Boolean);
+  writePrivacyProgress({
+    phase: "historical-tree-scan",
+    completedCommits: 0,
+    totalCommits: commits.length,
+    historicalPaths: 0,
+    lastCompletedCommit: null,
+  });
   let historicalPaths = 0;
-  for (const commit of commits) {
-    const tree = run("git", ["ls-tree", "-rz", "--full-tree", commit], { raw: true });
-    const treeText = decodeGitMetadataBytes(tree, "PRIVACY_TREE_UTF8_INVALID");
-    for (const path of parseHistoricalTreePaths(treeText)) {
-      entries.push({ label: `git-commit-tree:${commit}:${path}`, kind: "filename", content: path });
-      historicalPaths += 1;
-    }
+  let completedHistoryCommits = 0;
+  let lastCompletedCommit = null;
+  let lastHistoryProgressAt = Date.now();
+  try {
+    const historyProgress = await walkHistoricalCommitPaths(
+      commits,
+      historyRecords,
+      (commit, path) => {
+        entries.push({ label: `git-commit-tree:${commit}:${path}`, kind: "filename", content: path });
+        historicalPaths += 1;
+        const now = Date.now();
+        if (historicalPaths % 10_000 === 0 && now - lastHistoryProgressAt >= 1_000) {
+          writePrivacyProgress({
+            phase: "historical-tree-scan",
+            completedCommits: completedHistoryCommits,
+            totalCommits: commits.length,
+            currentCommit: commit,
+            historicalPaths,
+            lastCompletedCommit,
+          });
+          lastHistoryProgressAt = now;
+        }
+      },
+      async ({ commit, completedCommits, totalCommits, historicalPaths: scannedPaths }) => {
+        completedHistoryCommits = completedCommits;
+        lastCompletedCommit = commit;
+        const now = Date.now();
+        if (completedCommits === totalCommits || completedCommits % 25 === 0 || now - lastHistoryProgressAt >= 1_000) {
+          writePrivacyProgress({
+            phase: "historical-tree-scan",
+            completedCommits,
+            totalCommits,
+            currentCommit: null,
+            historicalPaths: scannedPaths,
+            lastCompletedCommit: commit,
+          });
+          lastHistoryProgressAt = now;
+        }
+      },
+    );
+    historicalPaths = historyProgress.historicalPaths;
+  } catch (error) {
+    writePrivacyProgress({
+      status: "completed",
+      conclusion: "not-verifiable",
+      reasonCode: error?.reasonCode ?? "TASK_INTERNAL_ERROR",
+      phase: "historical-tree-scan",
+      completedCommits: null,
+      totalCommits: commits.length,
+      historicalPaths,
+    });
+    throw error;
   }
   const refs = run("git", ["for-each-ref", "--format=%(refname)%00%(objectname)%00%(upstream)"], { raw: true });
   entries.push({ label: "git-refs", kind: "ref", content: decodeGitMetadataBytes(refs, "PRIVACY_REFS_UTF8_INVALID") });
@@ -915,8 +1020,59 @@ async function verifyPrivacy({ requireP8Surfaces = false, historyScope = "head" 
   const privateTokens = runtime.configured
     ? [runtime.host, runtime.runtimeRoot, `${runtime.runtimeRoot}/governance`]
     : [];
-  const findings = scanPrivacyEntries(entries, { owner, privateTokens, repositories: await engineRepositoryNames() });
-  assertion(findings.length === 0, "PRIVACY_FINDINGS", findings.join(","));
+  writePrivacyProgress({
+    phase: "privacy-matching",
+    completedCommits: commits.length,
+    totalCommits: commits.length,
+    historicalPaths,
+    entriesScanned: 0,
+    totalEntries: entries.length,
+  });
+  let lastMatchProgressAt = Date.now();
+  const findings = scanPrivacyEntries(entries, {
+    owner,
+    privateTokens,
+    repositories: await engineRepositoryNames(),
+    onProgress: ({ entriesScanned, totalEntries }) => {
+      const now = Date.now();
+      if (entriesScanned === totalEntries || now - lastMatchProgressAt >= 1_000) {
+        writePrivacyProgress({
+          phase: "privacy-matching",
+          completedCommits: commits.length,
+          totalCommits: commits.length,
+          historicalPaths,
+          entriesScanned,
+          totalEntries,
+        });
+        lastMatchProgressAt = now;
+      }
+    },
+  });
+  if (findings.length > 0) {
+    writePrivacyProgress({
+      status: "completed",
+      conclusion: "blocked",
+      reasonCode: "PRIVACY_FINDINGS",
+      phase: "privacy-matching",
+      completedCommits: commits.length,
+      totalCommits: commits.length,
+      historicalPaths,
+      entriesScanned: entries.length,
+      totalEntries: entries.length,
+    });
+    assertion(false, "PRIVACY_FINDINGS", findings.join(","));
+  }
+  writePrivacyProgress({
+    status: "completed",
+    conclusion: "verified",
+    reasonCode: "PRIVACY_SOURCE_CLEAN",
+    phase: "complete",
+    completedCommits: commits.length,
+    totalCommits: commits.length,
+    historicalPaths,
+    entriesScanned: entries.length,
+    totalEntries: entries.length,
+  });
   return success("PRIVACY_SOURCE_CLEAN", {
     privacyScope: historyScope === "head" ? "HEAD-reachable" : "all-local-objects",
     scannedEntries: entries.length,

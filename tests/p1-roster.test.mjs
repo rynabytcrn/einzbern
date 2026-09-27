@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { P1_SEQUENCE, P1_TASKS, P1_GATE_SPECS } from "../scripts/p1-sequence.mjs";
 import { P1_GATE_SPECS as PREFLIGHT_SPECS } from "../scripts/preflight.mjs";
 import { buildRedLocatorPlan, containedGroupIds, locateContainedGates } from "../scripts/gate-red-locator.mjs";
-import { buildContainedExecutionPlan, ENGINE_PUSH_GATE_CHILDREN, pushGateExecutionPlan } from "../scripts/lib/push-gate-children.mjs";
+import { buildContainedExecutionPlan, ENGINE_PUSH_GATE_CHILDREN, pushGateChildConclusion, pushGateExecutionPlan } from "../scripts/lib/push-gate-children.mjs";
 import { validateHostEvidenceProvenance } from "../scripts/lib/push-gate-output.mjs";
 import { P8_VERSION } from "../scripts/lib/p8-workflow-rc.mjs";
 
@@ -126,6 +126,13 @@ test("STORY-413 final gate planning selects each top-level root once and records
   assertDirectCycle([{ id: "root", contains: ["child"] }, { id: "child", contains: ["root"] }], "root");
 });
 
+test("interrupted push-gate children are not-verifiable", () => {
+  assert.equal(pushGateChildConclusion({ exitCode: 0, signal: null, error: null }), "verified");
+  assert.equal(pushGateChildConclusion({ exitCode: 1, signal: null, error: null }), "blocked");
+  assert.equal(pushGateChildConclusion({ exitCode: 1, signal: "SIGTERM", error: null }), "not-verifiable");
+  assert.equal(pushGateChildConclusion({ exitCode: 1, signal: null, error: { code: "ETIMEDOUT" } }), "not-verifiable");
+});
+
 test("STORY-350 red locator runs every contained child separately and returns each conclusion", async () => {
   const declaration = JSON.parse(readFileSync(join(REPO_ROOT, "scripts/policy/gate-containment.json"), "utf8"));
   const plan = buildRedLocatorPlan(declaration, "engine-release");
@@ -148,8 +155,8 @@ test("STORY-350 red locator runs every contained child separately and returns ea
   assert.equal(validateHostEvidenceProvenance({ observedAt: "2026-09-19", supersededBy: "x", currentClaim: "none" }).ok, true);
 });
 
-const timingPath = resolve(REPO_ROOT, "dist/evidence/p1/push-gate-timing.json");
 const probeTimingPath = resolve(REPO_ROOT, "dist/evidence/p1/push-gate-timing-probe.json");
+const probeProgressPath = resolve(REPO_ROOT, "dist/evidence/p1/push-gate-progress-probe.json");
 const pushGatePath = resolve(REPO_ROOT, "scripts/push-gate.mjs");
 
 // TCRN-CROSS-INC-271: derive stage roster from source rather than restating it.
@@ -179,8 +186,6 @@ function deriveExpectedTimingStages() {
 const expectedTimingStages = deriveExpectedTimingStages();
 
 test("INC-266 push-gate timing accounts for every phase and keeps the success output contract", async () => {
-  const strict = process.env.TCRN_INC266_STRICT === "1";
-
   const pushGateSource = readFileSync(pushGatePath, "utf8");
 
   // Assert 1: The derived roster is non-empty and contains no duplicate stage names.
@@ -238,14 +243,14 @@ test("INC-266 push-gate timing accounts for every phase and keeps the success ou
     pushGateSource.includes("stages: stageTimings"),
     "push-gate.mjs must write stages from the stageTimings array",
   );
-
-  if (!strict) return;
+  assert.ok(pushGateSource.includes('schemaVersion: "tcrn.push-gate-progress.v1"'));
 
   // The real gate is intentionally expensive. Its test-only probe executes the same
   // timing wrappers and final stdout writer, but does not launch the child gates.
   // The parent test captures that process's actual stdout and compares it with the
   // evidence written after stdout has been emitted; no second producer reconstructs it.
   await rm(probeTimingPath, { force: true });
+  await rm(probeProgressPath, { force: true });
   const probe = spawnSync(process.execPath, [pushGatePath], {
     cwd: REPO_ROOT,
     encoding: "utf8",
@@ -253,16 +258,28 @@ test("INC-266 push-gate timing accounts for every phase and keeps the success ou
       ...process.env,
       TCRN_PUSH_GATE_TIMING_PROBE: "1",
       TCRN_PUSH_GATE_TIMING_EVIDENCE_PATH: probeTimingPath,
+      TCRN_PUSH_GATE_PROGRESS_EVIDENCE_PATH: probeProgressPath,
     },
   });
   assert.equal(probe.status, 0, `${probe.stdout ?? ""}${probe.stderr ?? ""}`);
   assert.equal(probe.stderr, "");
   const observedStdout = probe.stdout.trimEnd();
   const observedContract = JSON.parse(observedStdout);
-  assert.deepEqual(observedContract, { ok: true, reasonCode: "PUSH_GATE_VERIFIED", version: P8_VERSION });
+  assert.deepEqual(Object.keys(observedContract), ["ok", "reasonCode", "version", "childResults"]);
+  assert.deepEqual(
+    { ok: observedContract.ok, reasonCode: observedContract.reasonCode, version: observedContract.version },
+    { ok: true, reasonCode: "PUSH_GATE_VERIFIED", version: P8_VERSION },
+  );
+  assert.deepEqual(observedContract.childResults.map(({ script }) => script), ENGINE_PUSH_GATE_CHILDREN.map(({ script }) => script));
+  assert.ok(observedContract.childResults.every(({ exit }) => exit.status === 0 && exit.signal === null && exit.error === null));
   const probeEvidence = JSON.parse(await readFile(probeTimingPath, "utf8"));
+  const progressEvidence = JSON.parse(await readFile(probeProgressPath, "utf8"));
   assert.equal(probeEvidence.stdoutObserved, observedStdout);
   assert.equal(probeEvidence.sourceDigest, createHash("sha256").update(await readFile(pushGatePath)).digest("hex"));
   assert.ok(probeEvidence.stages.every((stage) => !Object.hasOwn(stage, "line")));
   assert.deepEqual(probeEvidence.stages.map(({ name }) => name), expectedTimingStages);
+  assert.equal(progressEvidence.conclusion, "verified");
+  assert.equal(progressEvidence.reasonCode, "PUSH_GATE_VERIFIED");
+  assert.equal(progressEvidence.activeStage, null);
+  assert.deepEqual(progressEvidence.completedStages.map(({ name }) => name), expectedTimingStages);
 });

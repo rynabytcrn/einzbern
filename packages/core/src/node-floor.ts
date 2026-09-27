@@ -7,6 +7,8 @@
 // required and the version found, rather than failing somewhere inside the engine.
 //
 // This module imports nothing, so an entry can load it on its own before everything else.
+// The stable hook launcher mirrors this floor because it must refuse an old runtime before it can
+// import the versioned engine entry; its launcher test checks that the two values stay in sync.
 
 export const NODE_FLOOR = "24.0.0" as const;
 

@@ -24,7 +24,7 @@ import {
   managedSectionRecordsFor,
   planManagedWrite,
 } from "./managed-sections.js";
-import type { ManagedSectionDecision } from "./managed-sections.js";
+import type { ManagedSectionDecision, ManagedSectionRecord, ManagedWritePlan } from "./managed-sections.js";
 import { MODELS_TIERS_DEFAULT_TIER_NAMES, MODELS_TIERS_SETTING_KEY, readModelsTiers } from "./models-tiers.js";
 import { listVariables, looksSecretShaped } from "./variables.js";
 import { appendEvents, materializeWorkspace, projectConfiguration, withWorkspaceWriteLock } from "./workspace.js";
@@ -141,16 +141,40 @@ export interface VariablesSectionsResult {
   // Where the file was copied before it was replaced; null when nothing was replaced.
   readonly backupPath: string | null;
   readonly sections: readonly ManagedSectionDecision[];
-  // The sections the user changed, left as they are: their records are now pending.
+  // Sections awaiting attention: user-edited sections left intact, or a custom section with a withheld value.
   readonly pendingSections: readonly string[];
   // What the sections left out: a variable's name, or models.tiers.<host>.<tier>, and why.
   readonly withheld: readonly WithheldEntry[];
 }
 
+// A withheld custom variable remains stored in the library but cannot appear in the committed
+// section. Keep that outstanding decision visible as the section's existing pending state; a
+// variable-set/remove that makes the row safe or removes it will settle the state on the next
+// render. Respect user-owned, unmanaged, removed, and user-edited sections.
+function recordWithheldCustomVariablesAsPending(plan: ManagedWritePlan, state: Pick<WorkspaceState, "configRecords">, withheld: readonly WithheldEntry[]): ManagedWritePlan {
+  if (withheld.length === 0) return plan;
+  const decision = plan.sections.find((section) => section.id === VARIABLES_CUSTOM_SECTION_ID);
+  if (decision === undefined || decision.record.state !== "managed" || decision.result === "removed") return plan;
+
+  const record: ManagedSectionRecord = { ...decision.record, state: "pending" };
+  const previous = managedSectionRecordsFor(state, VARIABLES_SECTIONS_FILE).find((entry) => entry.id === VARIABLES_CUSTOM_SECTION_ID);
+  const recordChanged = previous === undefined || previous.rev !== record.rev || previous.digest !== record.digest || previous.state !== record.state;
+  return {
+    ...plan,
+    sections: plan.sections.map((section) => section.id === VARIABLES_CUSTOM_SECTION_ID
+      ? { ...section, record, recordChanged }
+      : section),
+    pending: plan.pending.includes(VARIABLES_CUSTOM_SECTION_ID)
+      ? plan.pending
+      : [...plan.pending, VARIABLES_CUSTOM_SECTION_ID],
+  };
+}
+
 /**
  * Render both variable sections into the project's AGENTS.md through the managed-section writer,
  * then record in the library each section record the write changed. A section the user changed is
- * left as it is (pending); a section whose markers the user removed is not put back.
+ * left as it is (pending); a custom section with a withheld variable is also recorded pending while
+ * its safe rows are written. A section whose markers the user removed is not put back.
  */
 export async function writeVariablesSections(workspaceRoot: string, input: {
   readonly projectRoot: string;
@@ -160,12 +184,13 @@ export async function writeVariablesSections(workspaceRoot: string, input: {
     const state = await materializeWorkspace(root);
     const system = renderSystemVariablesSection(state);
     const custom = renderCustomVariablesSection(state);
-    const plan = await planManagedWrite({
+    const planned = await planManagedWrite({
       filePath: join(input.projectRoot, VARIABLES_SECTIONS_FILE),
       file: VARIABLES_SECTIONS_FILE,
       desired: [system, custom].map((section) => ({ id: section.id, body: section.body })),
       records: managedSectionRecordsFor(state, VARIABLES_SECTIONS_FILE),
     });
+    const plan = recordWithheldCustomVariablesAsPending(planned, state, custom.withheld);
     const applied = await applyManagedWrite(plan, { now: input.occurredAt, ...(input.backupRoot === undefined ? {} : { backupRoot: input.backupRoot }) });
     const deltas = plan.sections.filter((decision) => decision.recordChanged).map((decision) => setConfigRecordDelta({
       collection: "managed-section",

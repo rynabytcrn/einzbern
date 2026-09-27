@@ -172,11 +172,13 @@ function runGateProcess(command: readonly string[], cwd: string, timeoutMs: numb
     let timedOut = false;
     let settled = false;
     let timer: NodeJS.Timeout | undefined;
+    let killTimer: NodeJS.Timeout | undefined;
     let child: ChildProcess | undefined;
     const finish = (exitCode: number | null, signal: string | null, failure: string | null): void => {
       if (settled) return;
       settled = true;
       if (timer !== undefined) clearTimeout(timer);
+      if (killTimer !== undefined) clearTimeout(killTimer);
       // Whatever the gate left running in its process group ends with it.
       if (child !== undefined) terminate(child, "SIGTERM");
       if (failure !== null) append(Buffer.from(`einzbern: the gate could not run: ${failure}\n`, "utf8"));
@@ -204,7 +206,10 @@ function runGateProcess(command: readonly string[], cwd: string, timeoutMs: numb
     timer = setTimeout(() => {
       timedOut = true;
       terminate(started, "SIGTERM");
-      setTimeout(() => terminate(started, "SIGKILL"), 1_000).unref();
+      killTimer = setTimeout(() => {
+        if (!settled) terminate(started, "SIGKILL");
+      }, 1_000);
+      killTimer.unref();
     }, timeoutMs);
   });
 }

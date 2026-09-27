@@ -108,6 +108,30 @@ test("485-AC3: two gates red at once give two reds, and a red gate does not stop
   assert.deepEqual(record, run);
 });
 
+test("485-AC3: a timed-out gate does not leave a delayed kill armed after it exits", async (context) => {
+  const { project, desk, library } = await setup(context);
+  const state = await declareAll(library, {
+    stop: declare([node, "-e", "setTimeout(() => process.exit(0), 250)"], ["**"]),
+    pass: declare([node, "-e", "process.exit(0)"], ["**"]),
+  });
+  const plan = await planGates({ projectRoot: project, gates: listGates(state), release: true });
+  const signals = [];
+  const originalKill = process.kill;
+  process.kill = (pid, signal) => {
+    signals.push(signal);
+    return originalKill.call(process, pid, signal);
+  };
+  try {
+    const { run } = await runGates(plan, { libraryId: state.metadata.workspaceId, at: at(), deviceHome: desk, timeoutMs: 100 });
+    assert.equal(run.gates.find((gate) => gate.name === "stop")?.timedOut, true);
+    assert.deepEqual(run.gates.map((gate) => [gate.name, gate.ok]), [["pass", true], ["stop", false]]);
+    await new Promise((resolve) => setTimeout(resolve, 1_100));
+  } finally {
+    process.kill = originalKill;
+  }
+  assert.equal(signals.includes("SIGKILL"), false, `a settled gate has no pending process-group kill: ${signals.join(",")}`);
+});
+
 test("485-R3: a gate past its timeout is stopped and red; output is cut at its bound; a missing command is red", async (context) => {
   const { base, project, desk, library } = await setup(context);
   const pidFile = join(base, "stray.pid");

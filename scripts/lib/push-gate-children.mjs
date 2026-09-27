@@ -7,6 +7,20 @@ export const ENGINE_PUSH_GATE_CHILDREN = Object.freeze([
   Object.freeze({ reasonCode: "PUSH_GATE_P8_FAILED", script: "verify:p8" }),
 ]);
 
+export function pushGateChildConclusion(result) {
+  if (
+    result === null ||
+    typeof result !== "object" ||
+    result.signal !== null ||
+    result.exitCode === null ||
+    result.error !== null ||
+    !Number.isSafeInteger(result.exitCode)
+  ) {
+    return "not-verifiable";
+  }
+  return result.exitCode === 0 ? "verified" : "blocked";
+}
+
 function containmentError(reasonCode, detail) {
   const error = new Error(detail);
   error.reasonCode = reasonCode;

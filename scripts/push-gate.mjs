@@ -41,34 +41,67 @@
 
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { P8_VERSION } from "./lib/p8-workflow-rc.mjs";
-import { pushGateExecutionPlan, ENGINE_PUSH_GATE_CHILDREN } from "./lib/push-gate-children.mjs";
+import { pushGateChildConclusion, pushGateExecutionPlan, ENGINE_PUSH_GATE_CHILDREN } from "./lib/push-gate-children.mjs";
 import { requiredFailurePatternProblems } from "./preflight.mjs";
 import { hasWarningOrError, inspectStructuredChildOutput, validateHostEvidenceProvenance, validateStructuredChildExpectations } from "./lib/push-gate-output.mjs";
 
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const failures = [];
 const childResults = [];
+let childNotVerifiable = false;
 const timingProbe = process.env.TCRN_PUSH_GATE_TIMING_PROBE === "1";
 const timingEvidencePath = resolve(
   repositoryRoot,
   process.env.TCRN_PUSH_GATE_TIMING_EVIDENCE_PATH ?? "dist/evidence/p1/push-gate-timing.json",
 );
+const progressEvidencePath = resolve(
+  repositoryRoot,
+  process.env.TCRN_PUSH_GATE_PROGRESS_EVIDENCE_PATH ?? "dist/evidence/p1/push-gate-progress.json",
+);
 const timingStartedAt = performance.now();
+const progressStartedAt = new Date().toISOString();
 const timingSourceDigest = createHash("sha256").update(await readFile(fileURLToPath(import.meta.url))).digest("hex");
 const stageTimings = [];
+const completedStages = [];
+const progressTemporaryPath = `${progressEvidencePath}.${process.pid}.tmp`;
+let activeStage = null;
+
+async function writeProgressEvidence({ terminal = false, conclusion = "unknown", reasonCode = undefined } = {}) {
+  const evidence = {
+    schemaVersion: "tcrn.push-gate-progress.v1",
+    command: "node scripts/push-gate.mjs",
+    status: terminal ? "completed" : "running",
+    conclusion,
+    reasonCode,
+    startedAt: progressStartedAt,
+    updatedAt: new Date().toISOString(),
+    elapsedMs: Number((performance.now() - timingStartedAt).toFixed(3)),
+    activeStage,
+    completedStages: [...completedStages],
+  };
+  await mkdir(dirname(progressEvidencePath), { recursive: true });
+  await writeFile(progressTemporaryPath, `${JSON.stringify(evidence, null, 2)}\n`, { mode: 0o600 });
+  await rename(progressTemporaryPath, progressEvidencePath);
+}
 
 async function timedStage(name, operation) {
   const startedAt = performance.now();
+  activeStage = name;
+  await writeProgressEvidence();
   try {
     return await operation();
   } finally {
-    stageTimings.push({ name, elapsedMs: Number((performance.now() - startedAt).toFixed(3)) });
+    const elapsedMs = Number((performance.now() - startedAt).toFixed(3));
+    stageTimings.push({ name, elapsedMs });
+    completedStages.push({ name, elapsedMs });
+    activeStage = null;
+    await writeProgressEvidence();
   }
 }
 
@@ -426,9 +459,12 @@ for (const { reasonCode, script } of ENGINE_PUSH_GATE_CHILDREN) {
       : inspectStructuredChildOutput({ stdout: result.stdout, stderr: result.stderr, exitCode: result.exitCode, signal: result.signal }, script, childExpectations);
   const retained = await retainChildOutput(script, result, assessment);
   childResults.push(retained);
+  const childConclusion = pushGateChildConclusion(result);
+  if (childConclusion === "not-verifiable") childNotVerifiable = true;
   if (!result.ok) fail(reasonCode, `child exit ${result.exitCode}${result.signal ? ` signal ${result.signal}` : ""}`, {
     code: "PUSH_GATE_CHILD_EXIT_NONZERO",
     location: "$.exit",
+    ...(childConclusion === "not-verifiable" ? { verification: "not-verifiable" } : {}),
     rawOutput: retained,
   });
   // G-2: a warning is an unfinished error. The reason-code vocabulary never uses the word,
@@ -469,7 +505,13 @@ const output = failures.length > 0
   ? JSON.stringify({ ok: false, reasonCode: "PUSH_GATE_BLOCKED", failures, childResults }, null, 2)
   : JSON.stringify({ ok: true, reasonCode: "PUSH_GATE_VERIFIED", version: P8_VERSION, childResults });
 process.stdout.write(`${output}\n`);
+const conclusion = failures.length === 0 ? "verified" : childNotVerifiable ? "not-verifiable" : "blocked";
 await writeTimingEvidence(failures.length === 0, stdoutObserved.replace(/\n$/u, ""));
+await writeProgressEvidence({
+  terminal: true,
+  conclusion,
+  reasonCode: failures.length === 0 ? "PUSH_GATE_VERIFIED" : "PUSH_GATE_BLOCKED",
+});
 if (failures.length > 0) {
   process.exit(1);
 }

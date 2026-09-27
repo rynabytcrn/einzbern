@@ -483,24 +483,50 @@ function sanitizeAllowedPublicMetadata(entry, owner, repositories) {
 
 // `repositories` names the public GitHub repositories whose origin URL under `owner` is
 // public metadata rather than a private identifier; callers pass the engine's names.
-export function scanPrivacyEntries(entries, { owner, privateTokens = [], repositories = [] } = {}) {
+export function scanPrivacyEntries(entries, { owner, privateTokens = [], repositories = [], onProgress = undefined } = {}) {
   if (typeof owner !== "string" || owner.length === 0) {
     throw new Error("PRIVACY_OWNER_REQUIRED");
   }
   const patterns = privacyPatterns(owner, privateTokens);
   const findings = [];
+  const filenameMatches = new Map();
+  let entriesScanned = 0;
+  const totalEntries = Array.isArray(entries) ? entries.length : null;
+  let lastProgressCount = 0;
   for (const entry of entries) {
     if (typeof entry.label !== "string" || typeof entry.kind !== "string" || typeof entry.content !== "string") {
       throw new Error("PRIVACY_ENTRY_INVALID");
     }
-    const content = sanitizeAllowedPublicMetadata(entry, owner, repositories);
-    const normalized = normalizePrivacyText(content);
-    for (const [reasonCode, pattern] of patterns) {
-      pattern.lastIndex = 0;
-      if (pattern.test(content) || pattern.test(normalized)) {
-        findings.push(`${reasonCode}:${entry.kind}:${entry.label}`);
+
+    // Historical paths repeat in every commit that retains them. Cache only filename
+    // predicates: blobs and source strings are high-cardinality, while paths are small
+    // and recur heavily. Reusing the predicate result preserves every commit/path
+    // finding and its order without re-normalizing the same path thousands of times.
+    let matchedReasons = entry.kind === "filename" ? filenameMatches.get(entry.content) : undefined;
+    if (matchedReasons === undefined) {
+      const content = sanitizeAllowedPublicMetadata(entry, owner, repositories);
+      const normalized = normalizePrivacyText(content);
+      matchedReasons = [];
+      for (const [reasonCode, pattern] of patterns) {
+        pattern.lastIndex = 0;
+        if (pattern.test(content) || pattern.test(normalized)) {
+          matchedReasons.push(reasonCode);
+        }
       }
+      if (entry.kind === "filename") filenameMatches.set(entry.content, matchedReasons);
     }
+    for (const reasonCode of matchedReasons) {
+      findings.push(`${reasonCode}:${entry.kind}:${entry.label}`);
+    }
+
+    entriesScanned += 1;
+    if (typeof onProgress === "function" && entriesScanned % 5_000 === 0) {
+      onProgress({ entriesScanned, totalEntries });
+      lastProgressCount = entriesScanned;
+    }
+  }
+  if (typeof onProgress === "function" && lastProgressCount !== entriesScanned) {
+    onProgress({ entriesScanned, totalEntries });
   }
   return findings;
 }
@@ -571,4 +597,112 @@ export function parseHistoricalTreePaths(content) {
       }
       return match[1];
     });
+}
+
+export function parseGitTreeObject(content, objectIdLength) {
+  if (!Buffer.isBuffer(content) || ![40, 64].includes(objectIdLength)) {
+    throw new Error("PRIVACY_GIT_OBJECT_TYPE");
+  }
+  const objectIdBytes = objectIdLength / 2;
+  const entries = [];
+  let cursor = 0;
+  while (cursor < content.length) {
+    const modeEnd = content.indexOf(0x20, cursor);
+    if (modeEnd === -1) throw new Error("PRIVACY_TREE_RECORD_INVALID");
+    const nameEnd = content.indexOf(0x00, modeEnd + 1);
+    if (nameEnd === -1) throw new Error("PRIVACY_TREE_RECORD_INVALID");
+    const objectStart = nameEnd + 1;
+    const objectEnd = objectStart + objectIdBytes;
+    if (objectEnd > content.length) throw new Error("PRIVACY_TREE_RECORD_INVALID");
+
+    const mode = content.subarray(cursor, modeEnd).toString("ascii");
+    if (!/^(?:100644|100755|120000|040000|40000|160000)$/u.test(mode)) {
+      throw new Error("PRIVACY_TREE_RECORD_INVALID");
+    }
+    const nameBytes = content.subarray(modeEnd + 1, nameEnd);
+    if (nameBytes.length === 0 || nameBytes.includes(0x2f)) throw new Error("PRIVACY_TREE_RECORD_INVALID");
+    const name = decodeGitMetadataBytes(nameBytes, "PRIVACY_TREE_UTF8_INVALID");
+    const type = mode === "40000" || mode === "040000" ? "tree" : mode === "160000" ? "commit" : "blob";
+    entries.push({ name, object: content.subarray(objectStart, objectEnd).toString("hex"), type });
+    cursor = objectEnd;
+  }
+  return entries;
+}
+
+function parseCommitTreeId(content, objectIdLength) {
+  if (!Buffer.isBuffer(content)) throw new Error("PRIVACY_GIT_OBJECT_TYPE");
+  const lineEnd = content.indexOf(0x0a);
+  if (lineEnd === -1) throw new Error("PRIVACY_GIT_OBJECT_TYPE");
+  const firstLine = content.subarray(0, lineEnd).toString("ascii");
+  const match = firstLine.match(/^tree ([a-f0-9]{40}|[a-f0-9]{64})$/u);
+  if (!match || match[1].length !== objectIdLength) throw new Error("PRIVACY_GIT_OBJECT_TYPE");
+  return match[1];
+}
+
+export async function walkHistoricalCommitPaths(commits, historyRecords, visitPath, onCommitProgress = undefined) {
+  if (!Array.isArray(commits) || !Array.isArray(historyRecords) || typeof visitPath !== "function") {
+    throw new Error("PRIVACY_TREE_RECORD_INVALID");
+  }
+  if (onCommitProgress !== undefined && typeof onCommitProgress !== "function") {
+    throw new Error("PRIVACY_TREE_RECORD_INVALID");
+  }
+  if (commits.length === 0) return { commits: 0, historicalPaths: 0 };
+  const commitTrees = new Map();
+  const trees = new Map();
+  const objectIdLength = commits[0]?.length;
+  if (commits.some((commit) => typeof commit !== "string" || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(commit) || commit.length !== objectIdLength)) {
+    throw new Error("PRIVACY_GIT_OBJECT_TYPE");
+  }
+
+  for (const record of historyRecords) {
+    const match = typeof record?.path === "string" ? record.path.match(/^(commit|tree):([a-f0-9]{40}|[a-f0-9]{64})$/u) : null;
+    if (!match) continue;
+    const [, type, object] = match;
+    if (object.length !== objectIdLength || !Buffer.isBuffer(record.content)) {
+      throw new Error("PRIVACY_GIT_OBJECT_TYPE");
+    }
+    if (type === "commit") {
+      commitTrees.set(object, parseCommitTreeId(record.content, objectIdLength));
+    } else {
+      trees.set(object, parseGitTreeObject(record.content, objectIdLength));
+    }
+  }
+
+  let historicalPaths = 0;
+  for (let commitIndex = 0; commitIndex < commits.length; commitIndex += 1) {
+    const commit = commits[commitIndex];
+    const rootTree = commitTrees.get(commit);
+    if (rootTree === undefined || !trees.has(rootTree)) throw new Error("PRIVACY_GIT_OBJECT_TYPE");
+    let pathsInCommit = 0;
+    const stack = [{ tree: rootTree, prefix: "", entries: trees.get(rootTree), nextIndex: 0 }];
+    while (stack.length > 0) {
+      const frame = stack.at(-1);
+      if (frame.nextIndex >= frame.entries.length) {
+        stack.pop();
+        continue;
+      }
+      const entry = frame.entries[frame.nextIndex];
+      frame.nextIndex += 1;
+      const path = frame.prefix === "" ? entry.name : `${frame.prefix}/${entry.name}`;
+      if (entry.type === "tree") {
+        const children = trees.get(entry.object);
+        if (children === undefined) throw new Error("PRIVACY_GIT_OBJECT_TYPE");
+        stack.push({ tree: entry.object, prefix: path, entries: children, nextIndex: 0 });
+      } else {
+        visitPath(commit, path);
+        pathsInCommit += 1;
+        historicalPaths += 1;
+      }
+    }
+    if (onCommitProgress !== undefined) {
+      await onCommitProgress({
+        commit,
+        completedCommits: commitIndex + 1,
+        totalCommits: commits.length,
+        pathsInCommit,
+        historicalPaths,
+      });
+    }
+  }
+  return { commits: commits.length, historicalPaths };
 }

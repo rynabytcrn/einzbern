@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { chmod, mkdtemp, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readdir, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
 import { LocalCommandError, runLocalCommand } from "../scripts/lib/local-command.mjs";
-import { normalizePrivacyText, parseGitObjectBatch, parseHistoricalTreePaths, scanPrivacyEntries } from "../scripts/lib/privacy.mjs";
+import { decodeGitMetadataBytes, normalizePrivacyText, parseGitObjectBatch, parseHistoricalTreePaths, scanPrivacyEntries, walkHistoricalCommitPaths } from "../scripts/lib/privacy.mjs";
 import { ENGINE_REPOSITORY_NAMES, LEGACY_REPOSITORY_NAMES } from "../dist/build/packages/core/src/index.js";
 
 const batchCheckFormat = "--batch-check=%(objectname) %(objecttype) %(objectsize)";
@@ -313,6 +314,25 @@ test("filenames are scanned as privacy-bearing metadata", () => {
   assert.ok(findings.some((finding) => finding.startsWith("CUSTOMER_SOURCE_MARKER:")));
 });
 
+test("repeated historical filename findings retain every commit label and progress count", () => {
+  const path = joinParts(["/", "Users", "/", "fixture-user", "/", "customer-export.csv"], "");
+  const entries = [
+    { label: "commit-one:customer-export.csv", kind: "filename", content: path },
+    { label: "commit-two:customer-export.csv", kind: "filename", content: path },
+  ];
+  const progress = [];
+  assert.deepEqual(scanPrivacyEntries(entries, {
+    owner: publicIdentity.login,
+    onProgress: (snapshot) => progress.push(snapshot),
+  }), [
+    "LOCAL_ABSOLUTE_PATH:filename:commit-one:customer-export.csv",
+    "CUSTOMER_SOURCE_MARKER:filename:commit-one:customer-export.csv",
+    "LOCAL_ABSOLUTE_PATH:filename:commit-two:customer-export.csv",
+    "CUSTOMER_SOURCE_MARKER:filename:commit-two:customer-export.csv",
+  ]);
+  assert.deepEqual(progress, [{ entriesScanned: 2, totalEntries: 2 }]);
+});
+
 test("only the exact public P3 marker contract bypasses control-path rejection", () => {
   const marker = joinParts([".", "context/platform/workflow-v3-capabilities/p3-local-work-graph.accepted.json"], "");
   assert.deepEqual(
@@ -344,6 +364,70 @@ test("recursive historical tree records preserve privacy-bearing full paths", ()
   );
   assert.ok(findings.some((finding) => finding.startsWith("CONTROL_PLANE_PATH:")));
   assert.ok(findings.some((finding) => finding.startsWith("LOCAL_ABSOLUTE_PATH:")));
+});
+
+test("batched tree-object walking preserves every historical commit path and order", async (context) => {
+  const root = await emptyFixtureRepository(context, "tcrn-privacy-tree-walk-");
+  await mkdir(join(root, "src", "nested"), { recursive: true });
+  await writeFile(join(root, "alpha.txt"), "first revision\n");
+  await writeFile(join(root, "src", "nested", "line\nbreak.txt"), "nested path\n");
+  await writeFile(join(root, "src-alpha.txt"), "tree ordering\n");
+  fixtureGit(root, ["add", "-A"]);
+  fixtureGit(root, ["commit", "-q", "-m", "first tree"]);
+
+  await rm(join(root, "alpha.txt"));
+  await writeFile(join(root, "customer-export.csv"), "second revision\n");
+  const gitlink = "b".repeat(40);
+  fixtureGit(root, ["add", "-A"]);
+  fixtureGit(root, ["update-index", "--add", "--cacheinfo", `160000,${gitlink},submodule`]);
+  fixtureGit(root, ["commit", "-q", "-m", "second tree"]);
+
+  const commits = fixtureGit(root, ["rev-list", "HEAD"]).split("\n").filter(Boolean);
+  const objectRecords = parseGitObjectBatch(fixtureGit(root, batchArguments, { raw: true }), declaredBatchBytes(root))
+    .map(({ object, type, content }) => ({ path: `${type}:${object}`, content }));
+  const actual = [];
+  const progress = [];
+  const summary = await walkHistoricalCommitPaths(
+    commits,
+    objectRecords,
+    (commit, path) => actual.push({ commit, path }),
+    (snapshot) => progress.push(snapshot),
+  );
+  const expected = [];
+  for (const commit of commits) {
+    const listing = fixtureGit(root, ["ls-tree", "-rz", "--full-tree", commit], { raw: true });
+    const paths = parseHistoricalTreePaths(decodeGitMetadataBytes(listing, "PRIVACY_TREE_UTF8_INVALID"));
+    expected.push(...paths.map((path) => ({ commit, path })));
+  }
+  assert.deepEqual(actual, expected);
+  assert.equal(summary.commits, commits.length);
+  assert.equal(summary.historicalPaths, expected.length);
+  const pathSummaryDigest = (records) => {
+    const digest = createHash("sha256");
+    for (const { commit, path } of records) {
+      digest.update(commit, "utf8");
+      digest.update("\0", "utf8");
+      digest.update(String(Buffer.byteLength(path, "utf8")), "utf8");
+      digest.update("\0", "utf8");
+      digest.update(path, "utf8");
+    }
+    return digest.digest("hex");
+  };
+  assert.equal(pathSummaryDigest(actual), pathSummaryDigest(expected));
+  assert.deepEqual(progress.map(({ completedCommits }) => completedCommits), commits.map((_, index) => index + 1));
+  assert.ok(actual.some(({ path }) => path === "src/nested/line\nbreak.txt"));
+  assert.ok(actual.some(({ path }) => path === "submodule"));
+  const asEntries = (records) => records.map(({ commit, path }) => ({
+    label: `git-commit-tree:${commit}:${path}`,
+    kind: "filename",
+    content: path,
+  }));
+  assert.deepEqual(
+    scanPrivacyEntries(asEntries(actual), { owner: publicIdentity.login }),
+    scanPrivacyEntries(asEntries(expected), { owner: publicIdentity.login }),
+  );
+  assert.ok(scanPrivacyEntries(asEntries(actual), { owner: publicIdentity.login })
+    .some((finding) => finding.startsWith("CUSTOMER_SOURCE_MARKER:")));
 });
 
 test("regex syntax in both historical blobs is not a fake username, while real paths remain red", () => {

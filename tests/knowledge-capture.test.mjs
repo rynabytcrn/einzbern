@@ -117,7 +117,10 @@ test("STORY-365 the threshold is two subject-token hits, not one shared word", (
     id: "knowledge:000000000000000000000001", lifecycle: "active",
   };
   assert.equal(knowledgeRelevanceScore(metadata, metadata.subject), KNOWLEDGE_CONFLICT_SCORE_THRESHOLD);
-  assert.deepEqual(knowledgeConflictHits([metadata], metadata.subject), [metadata.id]);
+  const legacyHits = knowledgeConflictHits([metadata], metadata.subject);
+  assert.deepEqual(legacyHits, [metadata.id]);
+  assert.deepEqual(legacyHits, knowledgeConflictHits([{ ...metadata, extensions: {} }], metadata.subject),
+    "missing extensions has the same conflict result as explicit empty extensions");
   assert.deepEqual(knowledgeConflictHits([metadata], "guard-check 另一件完全不同的事"), [],
     "one shared token scores 8 and stays under the line");
   assert.deepEqual(knowledgeConflictHits([{ ...metadata, lifecycle: "retired" }], metadata.subject), [],

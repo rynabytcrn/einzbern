@@ -2741,7 +2741,7 @@ export function knowledgeConflictHits(
   excluded: readonly string[] = [],
 ): readonly string[] {
   return existing
-    .filter((metadata) => metadata.lifecycle !== "retired" && metadata.extensions.supersededBy === undefined && !excluded.includes(metadata.id) &&
+    .filter((metadata) => metadata.lifecycle !== "retired" && metadata.extensions?.supersededBy === undefined && !excluded.includes(metadata.id) &&
       knowledgeRelevanceScore(metadata, subject) >= KNOWLEDGE_CONFLICT_SCORE_THRESHOLD)
     .map((metadata) => metadata.id)
     .sort(compareCanonicalText);

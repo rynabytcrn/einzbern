@@ -79,7 +79,8 @@ test("484-AC1 through the CLI: variable-set deploy.host is a variable, a row of 
   assert.equal(receipt.reasonCode, "VARIABLE_WRITE_COMMITTED");
   assert.equal(receipt.schemaVersion, "einzbern.variable-write-receipt.v1");
   assert.deepEqual(receipt.variable, { name: "deploy.host", type: "string", value: "build.example.com", description: "Where a release deploys" });
-  assert.deepEqual([receipt.recordId, receipt.ids, receipt.version], ["deploy.host", ["deploy.host"], 1]);
+  // recordId is the CLI's variable name; ids uses STORY-467's global collection identity.
+  assert.deepEqual([receipt.recordId, receipt.ids, receipt.version], ["deploy.host", ["variable:deploy.host"], 1]);
   assert.equal(typeof receipt.receiptDigest, "string");
 
   // A read is never refused: a model lists the variable and does not find it among the settings.
@@ -227,7 +228,7 @@ test("484-R1 through the CLI: variables are set, changed, listed by name with wh
 
   const before = await versionOf(fx.workspace);
   const removed = await asAtelier(() => cli(["variable-remove", "--workspace", fx.workspace, "--at", at(), "--name", "deploy.host"]));
-  assert.deepEqual([removed.reasonCode, removed.variable, removed.ids, removed.version], ["VARIABLE_WRITE_COMMITTED", null, ["deploy.host"], before + 1]);
+  assert.deepEqual([removed.reasonCode, removed.variable, removed.ids, removed.version], ["VARIABLE_WRITE_COMMITTED", null, ["variable:deploy.host"], before + 1]);
   assert.deepEqual((await cli(["variable-list", "--workspace", fx.workspace])).variables.map((variable) => variable.name), ["build.root", "deploy.enabled", "deploy.sshHost"]);
   const again = await asAtelier(() => refusal(["variable-remove", "--workspace", fx.workspace, "--at", at(), "--name", "deploy.host"]));
   assert.equal(again.reasonCode, "CONFIG_RECORD_NOT_FOUND");

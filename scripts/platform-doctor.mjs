@@ -31,9 +31,43 @@ import { toPosixPath, walkFiles } from "./lib/files.mjs";
 const execFileAsync = promisify(execFile);
 const TOPOLOGY_SECTION_MARKER = "## 三、分区拓扑";
 const PLATFORM_DOCS_RELATIVE = "platform-docs";
+const ACCEPTANCE_GROUP_IDS = [
+  "engine-suite",
+  "engine-p1",
+  "engine-release",
+  "platform-layout",
+  "chain-validate",
+  "product-gates",
+];
+const ACCEPTANCE_TOP_LEVEL_GROUP_IDS = ["engine-release", "platform-layout", "product-gates"];
+const ACCEPTANCE_BATCH_STATUS = Object.freeze({
+  "engine-suite": { firstBatch: "required", secondBatch: "required" },
+  "engine-p1": { firstBatch: "required", secondBatch: "required" },
+  "engine-release": { firstBatch: "required", secondBatch: "required" },
+  "platform-layout": { firstBatch: "required", secondBatch: "required" },
+  "chain-validate": { firstBatch: "baseline-only", secondBatch: "required" },
+  "product-gates": { firstBatch: "conditional", secondBatch: "conditional" },
+});
+const PLATFORM_LAYOUT_SUBCHECKS = Object.freeze({
+  helperCopies: ["record-raw", "required-after-real-migration-and-installation"],
+  acceptanceVerdicts: ["preserve-stale-red", "require-candidate-bound-verdicts"],
+  installWiring: ["record-raw", "required-after-real-installation"],
+  hooks: ["record-raw", "required-after-real-host-wiring"],
+  deploymentFreshness: ["record-raw", "required-after-real-installation"],
+  launchd: ["accepted-existing-exception-only", "accepted-existing-exception-only"],
+  harnessSurface: ["record-host-specific-raw-state", "unresolved-host-specific-reconciliation"],
+});
 
 function check(name, ok, details = {}) {
   return { name, ok, ...details };
+}
+
+function hasExactKeys(value, expected) {
+  return value !== null
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && Object.keys(value).length === expected.length
+    && expected.every((key) => Object.hasOwn(value, key));
 }
 
 async function existingPath(path) {
@@ -776,6 +810,54 @@ async function inspectAcceptanceGateGroups(root) {
     .map((group, index) => (typeof group?.id === "string" ? group.id : `#${index}`));
   const ids = roster.groups.map((group) => group?.id);
   const duplicated = ids.filter((id, index) => ids.indexOf(id) !== index);
+  const unexpectedGroups = ids.filter((id) => !ACCEPTANCE_GROUP_IDS.includes(id));
+  const missingGroups = ACCEPTANCE_GROUP_IDS.filter((id) => !ids.includes(id));
+  const orderedGroupMismatch = ids.length === ACCEPTANCE_GROUP_IDS.length && ids.some((id, index) => id !== ACCEPTANCE_GROUP_IDS[index]);
+  const invalidBatchApplicability = [];
+  for (const group of roster.groups) {
+    const expected = ACCEPTANCE_BATCH_STATUS[group?.id];
+    const applicability = group?.batchApplicability;
+    if (!expected || !applicability || typeof applicability !== "object" || Array.isArray(applicability)) {
+      invalidBatchApplicability.push(group?.id ?? "#unknown");
+      continue;
+    }
+    if (!hasExactKeys(applicability, ["firstBatch", "secondBatch"])) {
+      invalidBatchApplicability.push(`${group.id}.phaseKeys`);
+    }
+    for (const batch of ["firstBatch", "secondBatch"]) {
+      const entry = applicability[batch];
+      const expectedPhaseKeys = group.id === "platform-layout" && batch === "firstBatch"
+        ? ["status", "criteria", "subchecks"]
+        : ["status", "criteria"];
+      if (!hasExactKeys(entry, expectedPhaseKeys)
+        || entry?.status !== expected[batch]
+        || !Array.isArray(entry?.criteria)
+        || entry.criteria.length === 0
+        || entry.criteria.some((criterion) => typeof criterion !== "string" || criterion.trim().length === 0)) {
+        invalidBatchApplicability.push(`${group.id}.${batch}`);
+      }
+    }
+    if (group.id === "platform-layout") {
+      const subchecks = applicability.firstBatch?.subchecks;
+      const subcheckIds = Array.isArray(subchecks) ? subchecks.map((subcheck) => subcheck?.id) : [];
+      const expectedSubcheckIds = Object.keys(PLATFORM_LAYOUT_SUBCHECKS);
+      if (subcheckIds.length !== expectedSubcheckIds.length
+        || subcheckIds.some((id, index) => id !== expectedSubcheckIds[index])) {
+        invalidBatchApplicability.push("platform-layout.subchecks");
+      } else {
+        for (const subcheck of subchecks) {
+          const [firstBatch, secondBatch] = PLATFORM_LAYOUT_SUBCHECKS[subcheck.id];
+          if (!hasExactKeys(subcheck, ["id", "firstBatch", "secondBatch", "criteria"])
+            || subcheck.firstBatch !== firstBatch || subcheck.secondBatch !== secondBatch
+            || typeof subcheck.criteria !== "string" || subcheck.criteria.trim().length === 0) {
+            invalidBatchApplicability.push(`platform-layout.subchecks.${subcheck.id}`);
+          }
+        }
+      }
+    } else if (Object.hasOwn(applicability, "subchecks") || Object.hasOwn(applicability.firstBatch ?? {}, "subchecks")) {
+      invalidBatchApplicability.push(`${group.id}.subchecks`);
+    }
+  }
   const containmentProblems = [];
   let topLevel = null;
   if (roster.topLevel !== undefined) {
@@ -798,6 +880,10 @@ async function inspectAcceptanceGateGroups(root) {
       }
     }
     if (Array.isArray(topLevel)) {
+      if (topLevel.length !== ACCEPTANCE_TOP_LEVEL_GROUP_IDS.length
+        || topLevel.some((id, index) => id !== ACCEPTANCE_TOP_LEVEL_GROUP_IDS[index])) {
+        containmentProblems.push("topLevel must retain engine-release, platform-layout, product-gates in order");
+      }
       for (const id of topLevel) {
         if (!known.has(id)) containmentProblems.push(`topLevel contains unknown ${String(id)}`);
         if (parents.has(id)) containmentProblems.push(`topLevel group ${String(id)} is also contained`);
@@ -806,6 +892,8 @@ async function inspectAcceptanceGateGroups(root) {
         if (known.has(id) && !topLevel.includes(id) && !parents.has(id)) containmentProblems.push(`non-top-level group ${String(id)} has no parent`);
       }
     }
+  } else {
+    containmentProblems.push("topLevel is required");
   }
   const invalidAcceptedExceptions = [];
   const acceptedExceptionKeys = new Set();
@@ -828,18 +916,39 @@ async function inspectAcceptanceGateGroups(root) {
       acceptedExceptionKeys.add(key);
     }
   }
-  // The count is pinned so a roster that quietly loses a group is refused rather than
-  // accommodated: a change to the acceptance criterion belongs in a ruling, not in a
-  // file edit. The number the ruling names is nine no longer -- TCRN-CROSS-MIN-149
-  // (2026-09-06) removed helper-release and helper-suite when TCRN-CROSS-STORY-382
-  // shrank the helper repository to its Skill payload and deleted the two scripts
-  // those groups ran. Seven is what that ruling leaves. Move this only with another.
-  if (roster.groups.length !== 7 || incomplete.length > 0 || duplicated.length > 0 || invalidAcceptedExceptions.length > 0 || containmentProblems.length > 0) {
+  const actualAcceptedExceptions = roster.groups.flatMap((group) => (Array.isArray(group?.acceptedExceptions)
+    ? group.acceptedExceptions.map((exception) => ({ group: group?.id, exception }))
+    : []));
+  const launchdException = actualAcceptedExceptions[0];
+  if (actualAcceptedExceptions.length !== 1
+    || launchdException?.group !== "platform-layout"
+    || launchdException.exception?.acceptedAt !== "2026-08-15"
+    || launchdException.exception?.reasonCode !== "PLATFORM_LAUNCHD_NOT_ON_DUTY"
+    || launchdException.exception?.reason !== "OWNER_RULING_BACKUP_LAYERS_STOPPED") {
+    invalidAcceptedExceptions.push("only the existing platform-layout launchd exception is accepted");
+  }
+  // TCRN-CROSS-MIN-149 removed the two helper groups; MIN-235 D3 now removes the
+  // retired engine-guards call and records the existing two-batch applicability. Pin
+  // the resulting identities and applicability so a phase note cannot drop a live
+  // obligation or silently turn a doctor finding green.
+  if (ids.length !== ACCEPTANCE_GROUP_IDS.length
+    || missingGroups.length > 0
+    || unexpectedGroups.length > 0
+    || orderedGroupMismatch
+    || incomplete.length > 0
+    || duplicated.length > 0
+    || invalidBatchApplicability.length > 0
+    || invalidAcceptedExceptions.length > 0
+    || containmentProblems.length > 0) {
     return check("acceptanceGateGroups", false, {
       reasonCode: "PLATFORM_ACCEPTANCE_ROSTER_INVALID",
       declaredGroups: roster.groups.length,
       incomplete,
       duplicated,
+      missingGroups,
+      unexpectedGroups,
+      orderedGroupMismatch,
+      invalidBatchApplicability,
       invalidAcceptedExceptions,
       containmentProblems,
     });
@@ -847,6 +956,7 @@ async function inspectAcceptanceGateGroups(root) {
   return check("acceptanceGateGroups", true, {
     declaredGroups: roster.groups.length,
     acceptedExceptionCount: acceptedExceptionKeys.size,
+    batchApplicability: Object.fromEntries(Object.entries(ACCEPTANCE_BATCH_STATUS).map(([id, phases]) => [id, phases])),
     ...(topLevel === null ? {} : { topLevel, containedGroups: roster.groups.length - topLevel.length }),
   });
 }

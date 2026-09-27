@@ -5,9 +5,9 @@
     "platform-layout",
     "product-gates"
   ],
-  "note": "Synthetic fixture manually synchronized from the platform acceptance-gate roster for the self-contained STORY-413, STORY-420, and EPIC135 tests; platform-level consistency remains owned by platform-doctor. TCRN-CROSS-STORY-467 R2 removed engine-guards with the guard mutation check it ran.",
+  "note": "Synthetic fixture synchronized from the platform acceptance-gate roster for self-contained platform-doctor tests. MIN-235 D3 records the existing two-batch applicability while retaining every raw doctor finding and the actual second-batch migration, installation, host-wiring, and release obligations.",
   "recordedAt": "2026-08-19",
-  "recoveredFrom": "The nine groups were reconstructed from the 2026-08-17 closeout session's own green table, then each was re-run on 2026-08-19 and kept only if it still executes. Where a group's command had moved, the entry carries what runs today rather than what ran then.",
+  "recoveredFrom": "Synthetic fixture synchronized from the current platform acceptance roster. Historical membership changes are described by the platform roster; the fixture carries its six current groups, existing containment, launchd exception, and two-batch applicability.",
   "groups": [
     {
       "id": "engine-suite",
@@ -15,17 +15,45 @@
       "repository": "TCRN Platform/tcrn-workflow",
       "command": "pnpm test",
       "proves": "Every engine behaviour with a test, including the protocol and workspace kernels.",
-      "contains": []
+      "contains": [],
+      "batchApplicability": {
+        "firstBatch": {
+          "status": "required",
+          "criteria": [
+            "Run pnpm test on the first-batch engine candidate and retain the exact result as engineering evidence."
+          ]
+        },
+        "secondBatch": {
+          "status": "required",
+          "criteria": [
+            "Run pnpm test on the integrated final candidate after the real second-batch actions; an earlier run does not prove the final tree."
+          ]
+        }
+      }
     },
     {
       "id": "engine-p1",
       "title": "Engine P1 gate train",
       "repository": "TCRN Platform/tcrn-workflow",
       "command": "pnpm verify:p1",
-      "proves": "The full ordered gate roster: format, lint, typecheck, build, suite, portal, trust, archive, sbom, licences, vulnerabilities, source, sibling independence, lifecycle, offline, governance, workspace, privacy, roots, ci, verification map, history, and the proof budget.",
+      "proves": "The ordered P1 gate train from scripts/p1-sequence.mjs: format-check, lint, typecheck, build, test, portal, archive, no-sibling-dependency, offline, privacy, links, retrieval-eval.",
       "contains": [
         "engine-suite"
-      ]
+      ],
+      "batchApplicability": {
+        "firstBatch": {
+          "status": "required",
+          "criteria": [
+            "Run pnpm verify:p1 and retain each engineering/offline subgate result and every raw failure."
+          ]
+        },
+        "secondBatch": {
+          "status": "required",
+          "criteria": [
+            "Run pnpm verify:p1 on the integrated candidate after real migration, installation, and host wiring; only the current candidate result counts."
+          ]
+        }
+      }
     },
     {
       "id": "engine-release",
@@ -35,14 +63,28 @@
       "proves": "Version, badges, release note, translation pins and tag reachability agree across the committed tree. Judges the committed tree, so it runs after the commit.",
       "contains": [
         "engine-p1"
-      ]
+      ],
+      "batchApplicability": {
+        "firstBatch": {
+          "status": "required",
+          "criteria": [
+            "Run node scripts/push-gate.mjs after the candidate commit and retain its raw result. The retired engine-guards/guard-check invocation is removed; R7 ERR_PNPM_NO_SCRIPT remains historical failure evidence, not a pass or a new gate."
+          ]
+        },
+        "secondBatch": {
+          "status": "required",
+          "criteria": [
+            "Run release consistency on the final candidate after real migration, installation, and host wiring; do not record unperformed release validation as green."
+          ]
+        }
+      }
     },
     {
       "id": "platform-layout",
       "title": "Platform layout and deployment freshness",
       "repository": "TCRN Platform/tcrn-workflow",
       "command": "node scripts/platform-doctor.mjs --platform-root <container>",
-      "proves": "Partition topology, engine copy alignment, installed adapter markers, trust archive and consumer roots.",
+      "proves": "The full platform-doctor result: partition topology, helper copies, acceptance verdict freshness, install wiring, hooks, deployment freshness, launchd status, harness surface, trust archive and consumer roots. Raw findings remain visible by subcheck.",
       "contains": [
         "chain-validate"
       ],
@@ -52,7 +94,65 @@
           "reasonCode": "PLATFORM_LAUNCHD_NOT_ON_DUTY",
           "reason": "OWNER_RULING_BACKUP_LAYERS_STOPPED"
         }
-      ]
+      ],
+      "batchApplicability": {
+        "firstBatch": {
+          "status": "required",
+          "criteria": [
+            "Run platform-doctor and preserve every subcheck's raw state; first-batch code/offline evidence does not make a live doctor finding green. The existing launchd exception is the only accepted exception."
+          ],
+          "subchecks": [
+            {
+              "id": "helperCopies",
+              "firstBatch": "record-raw",
+              "secondBatch": "required-after-real-migration-and-installation",
+              "criteria": "Preserve the current copy finding; verify the actual candidate copies after real migration and installation."
+            },
+            {
+              "id": "acceptanceVerdicts",
+              "firstBatch": "preserve-stale-red",
+              "secondBatch": "require-candidate-bound-verdicts",
+              "criteria": "The R7 old-engine SHA remains stale evidence; never rewrite it as a current verdict."
+            },
+            {
+              "id": "installWiring",
+              "firstBatch": "record-raw",
+              "secondBatch": "required-after-real-installation",
+              "criteria": "Preserve the current wiring state; verify after an actual candidate installation."
+            },
+            {
+              "id": "hooks",
+              "firstBatch": "record-raw",
+              "secondBatch": "required-after-real-host-wiring",
+              "criteria": "Preserve the current hook state; verify real host wiring in the second batch."
+            },
+            {
+              "id": "deploymentFreshness",
+              "firstBatch": "record-raw",
+              "secondBatch": "required-after-real-installation",
+              "criteria": "Preserve the current freshness state; verify against the actually installed candidate."
+            },
+            {
+              "id": "launchd",
+              "firstBatch": "accepted-existing-exception-only",
+              "secondBatch": "accepted-existing-exception-only",
+              "criteria": "Keep exactly the existing PLATFORM_LAUNCHD_NOT_ON_DUTY exception; it does not accept any other doctor finding."
+            },
+            {
+              "id": "harnessSurface",
+              "firstBatch": "record-host-specific-raw-state",
+              "secondBatch": "unresolved-host-specific-reconciliation",
+              "criteria": "Keep the observed red raw. An ignored per-host .claude/settings.local.json is not a universal project requirement; do not move or delete it or declare it required on every host."
+            }
+          ]
+        },
+        "secondBatch": {
+          "status": "required",
+          "criteria": [
+            "Re-run platform-doctor on the final candidate after actual migration, installation, and host wiring; close only findings supported by evidence, retain unresolved findings as red, and keep the launchd exception narrow."
+          ]
+        }
+      }
     },
     {
       "id": "chain-validate",
@@ -60,7 +160,21 @@
       "repository": "chain container",
       "command": "for each partition: einzbern validate --workspace <partition>/workspace",
       "proves": "Each chain replays, and its derived views match what the current engine projects. This is the group a view-shape change makes red until every chain is recovered.",
-      "contains": []
+      "contains": [],
+      "batchApplicability": {
+        "firstBatch": {
+          "status": "baseline-only",
+          "criteria": [
+            "Record existing validations from the installed old engine as baseline only; they do not prove candidate-engine migration or validation."
+          ]
+        },
+        "secondBatch": {
+          "status": "required",
+          "criteria": [
+            "After real migration to the candidate engine, validate every partition and retain the actual result; no old-engine run substitutes."
+          ]
+        }
+      }
     },
     {
       "id": "product-gates",
@@ -68,7 +182,21 @@
       "repository": "TCRN Platform/TCRN-Design-System",
       "command": "pnpm verify",
       "proves": "The product repository that carries gates and is in MVP scope. Narrowed from DS+AOS to DS alone by Owner ruling on 2026-08-19: the MVP is the workflow and helper repositories, AOS integration is explicitly out of scope, and the AOS red (TCRN-CROSS-INC-234 -- three imports of the engine's MCP facade retired in v0.11.18) is a known exception to be repaired after MVP. Restoring AOS to this group is part of closing INC-234, not a separate decision. The pairing rationale this group originally carried -- a cross-repo change left one repository red for a day because only the author's gate got run -- is precisely what INC-234 caught again, and is why AOS returns here rather than leaving quietly.",
-      "contains": []
+      "contains": [],
+      "batchApplicability": {
+        "firstBatch": {
+          "status": "conditional",
+          "criteria": [
+            "Run pnpm verify only if TCRN-Design-System changes in this batch; when unchanged, the group is unselected and is not green."
+          ]
+        },
+        "secondBatch": {
+          "status": "conditional",
+          "criteria": [
+            "Run pnpm verify only if TCRN-Design-System changes in this batch; when unchanged, the group is unselected and is not green."
+          ]
+        }
+      }
     }
   ],
   "narrowedBy": {

@@ -3,7 +3,7 @@
 // work-annotate and work-batch take a Story's goal, acceptance and body; a Story without either of
 // the two is refused naming the field, in process and through the shipped entry; work-show returns
 // the three texts and where they come from, mapping an old ten-block scope on the read; and
-// work-list says where each record's fields come from and, with --search, matches and excerpts them.
+// work-list returns all four Story fields and, with --search, matches and excerpts them.
 
 import assert from "node:assert/strict";
 import { mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
@@ -159,10 +159,29 @@ test("STORY-473 R2: work-list says where each record's fields come from, and --s
   const withScope = (await tree.story("SF-LIST-SCOPE", 5, "--scope", TEN_BLOCK_SCOPE)).record.id;
   const ordinary = await cli(["work-list", "--workspace", tree.workspace]);
   const byId = new Map(ordinary.records.map((record) => [record.id, record]));
-  assert.deepEqual(byId.get(withFields).fields, { source: "fields" });
-  assert.deepEqual(byId.get(withScope).fields, { source: "scope" });
-  assert.deepEqual(byId.get(tree.epicId).fields, { source: "none" });
-  assert.equal(Object.hasOwn(byId.get(withFields), "scope"), false, "an ordinary listing carries no Story text");
+  assert.deepEqual(byId.get(withFields).fields, {
+    goal: GOAL,
+    acceptance: ACCEPTANCE,
+    body: "The quokka paragraph.",
+    source: "fields",
+  });
+  assert.deepEqual(byId.get(withScope).fields, {
+    goal: "Keep the old ten blocks readable.",
+    acceptance: "GIVEN a ten-block scope WHEN work-show reads it THEN the goal and acceptance are mapped",
+    body: [
+      "## Requirements\n- Map the Goal and Acceptance Criteria blocks.",
+      "## Business Background\nStories written before the fields.",
+      "## Preconditions\n- None.",
+      "## Assumptions\n- None.",
+      "## Use Cases & Examples\n- An old Story read by a new engine.",
+      "## Feature Toggle & Setting\nNone.",
+      "## Permissions\nNone.",
+      "## Implementation Notes\nNothing is migrated.",
+    ].join("\n\n"),
+    source: "scope",
+  });
+  assert.deepEqual(byId.get(tree.epicId).fields, { goal: null, acceptance: null, body: null, source: "none" });
+  assert.equal(Object.hasOwn(byId.get(withFields), "scope"), false, "the scope field itself stays out of the listing");
   // The body's word is in no title, summary, key or scope: only the fields can match it.
   const searched = await cli(["work-list", "--workspace", tree.workspace, "--search", "QUOKKA", "--scope-bytes", "8"]);
   assert.equal(searched.total, 1);
@@ -176,6 +195,39 @@ test("STORY-473 R2: work-list says where each record's fields come from, and --s
   const scoped = await cli(["work-list", "--workspace", tree.workspace, "--search", "ten blocks readable", "--scope-bytes", "4096"]);
   assert.equal(scoped.total, 1);
   assert.equal(scoped.records[0].fields.goal, "Keep the old ten blocks readable.", "a scope's fields are mapped in a search listing too");
+});
+
+test("STORY-473 R2: work-list refuses a page over the canonical budget instead of returning an incomplete summary", async (context) => {
+  const tree = await storyTree(context, "SF-LIST-BUDGET");
+  const body = "x".repeat(6_500);
+  const members = Array.from({ length: 150 }, (_, index) => {
+    const key = `SF-LIST-BUDGET-${String(index).padStart(3, "0")}`;
+    return {
+      verb: "work-create",
+      projectId: tree.projectId,
+      externalKey: key,
+      kind: "Story",
+      parentId: tree.epicId,
+      status: "planned",
+      title: key,
+      goal: "A listed goal.",
+      acceptance: "GIVEN a full listing WHEN it exceeds budget THEN it is refused.",
+      body,
+    };
+  });
+  const batchFile = join(tree.base, "oversized-work-list-batch.json");
+  await writeFile(batchFile, `${JSON.stringify({ schemaVersion: "tcrn.work-batch.v1", members })}\n`);
+  await cli(["work-batch", "--workspace", tree.workspace, "--at", instant(4), "--from-file", batchFile]);
+
+  await assert.rejects(
+    cli(["work-list", "--workspace", tree.workspace, "--kind", "Story"]),
+    (error) => error?.reasonCode === "CLI_WORK_LIST_OVERSIZED" && /--limit/u.test(error.message),
+  );
+  const page = await cli(["work-list", "--workspace", tree.workspace, "--kind", "Story", "--limit", "1"]);
+  assert.equal(page.total, members.length);
+  assert.equal(page.truncated, true);
+  assert.equal(page.records.length, 1);
+  assert.equal(page.records[0].fields.body, body, "a smaller page returns the complete body, not an excerpt");
 });
 
 test("STORY-473 R2: work-create --help names each of --goal, --acceptance and --body once", async () => {

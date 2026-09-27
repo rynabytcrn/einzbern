@@ -596,11 +596,27 @@ function workSearchSummary(record: WorkRecord, scopeBytes: number): Readonly<Rec
   return { ...workSummary(record), scope: truncateUtf8(workScope(record), scopeBytes), fields: workFieldsExcerpt(record, scopeBytes) };
 }
 
-// TCRN-CROSS-STORY-473 R2: an ordinary listing, like its scope, leaves the Story texts out and says
-// only where they come from (fields, scope or none); --search adds their excerpts, and work-show
-// carries them whole.
+// TCRN-CROSS-STORY-473 R2: ordinary and searched listings have one four-field shape. The ordinary
+// page carries the goal, acceptance and body in full; --search keeps the bounded excerpts below.
 function workListSummary(record: WorkRecord): Readonly<Record<string, unknown>> {
-  return { ...workSummary(record), fields: { source: storyFields(record).source } };
+  return { ...workSummary(record), fields: storyFields(record) };
+}
+
+function workListPageJson(
+  state: Awaited<ReturnType<typeof validateWorkspace>>,
+  records: readonly unknown[],
+  values: Readonly<Record<string, string>>,
+): string {
+  const page = paginate(state, "work", records, values);
+  try {
+    return canonicalJson(page);
+  } catch (error) {
+    if ((error as { readonly reasonCode?: string }).reasonCode === "INPUT_OVERSIZED") {
+      const remedy = values.search === undefined ? "lower --limit" : "lower --limit or --scope-bytes";
+      fail("CLI_WORK_LIST_OVERSIZED", `work-list page exceeds the canonical byte budget; ${remedy}`);
+    }
+    throw error;
+  }
 }
 
 // TCRN-CROSS-STORY-473 R3: the ten-block skeleton is a suggestion. A Story needs its goal and its
@@ -2877,7 +2893,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       // makes the round trip closed for every spelling the writer accepts, by construction.
       (values["parent-id"] === undefined || (nullableValue(values["parent-id"]) === null ? entry.parentId === null : entry.parentId === values["parent-id"])))
       .map((entry) => search === undefined ? workListSummary(entry) : workSearchSummary(entry, scopeBytes));
-    io.write(canonicalJson(paginate(state, "work", records, values)));
+    io.write(workListPageJson(state, records, values));
     return;
   }
   if (command === "work-draft") {

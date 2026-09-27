@@ -24,6 +24,12 @@ const at = () => {
 };
 const node = process.execPath;
 const workId = (key) => deriveStableId("work", key);
+const gateDiagnostic = (run) => `gate outcomes: ${JSON.stringify(run.gates.map(({ name, ok, exitCode, signal, timedOut }) => ({ name, ok, exitCode, signal, timedOut })))}`;
+
+function restoreEnv(name, value) {
+  if (value === undefined) delete process.env[name];
+  else process.env[name] = value;
+}
 
 function git(root, args) {
   return execFileSync("git", ["-C", root, "-c", "user.name=gates-cli-test", "-c", "user.email=gates-cli-test-at-example.invalid", "-c", "commit.gpgsign=false", ...args], {
@@ -51,10 +57,15 @@ async function refusal(args) {
 /** A Git project with one commit, a library beside it and a device directory, all temporary. */
 async function setup(context) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-gates-cli-")));
-  const previous = process.env.EINZBERN_HOME;
+  const previousHome = process.env.HOME;
+  const previousDeviceHome = process.env.EINZBERN_HOME;
+  const home = join(base, "home");
+  await mkdir(home);
+  process.env.HOME = home;
   process.env.EINZBERN_HOME = join(base, "desk");
   context.after(async () => {
-    process.env.EINZBERN_HOME = previous;
+    restoreEnv("HOME", previousHome);
+    restoreEnv("EINZBERN_HOME", previousDeviceHome);
     await rm(base, { recursive: true, force: true });
   });
   const project = join(base, "project");
@@ -151,10 +162,10 @@ test("485-AC3 (CLI): two gates red at once give two reds, and a red gate does no
   await put(project, "src/a.ts", "export const a = 2;\n");
   const ran = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project]);
   assert.equal(ran.reasonCode, "GATES_RUN_COMPLETED");
-  assert.equal(ran.ok, false);
-  assert.deepEqual(ran.reds, ["fail-a", "fail-b"]);
-  assert.deepEqual(ran.requiredReds, ["fail-a", "fail-b"]);
-  assert.deepEqual(ran.run.gates.map((gate) => [gate.name, gate.exitCode, gate.ok]), [["fail-a", 3, false], ["fail-b", 4, false], ["pass", 0, true]], "every gate ran");
+  assert.equal(ran.ok, false, gateDiagnostic(ran.run));
+  assert.deepEqual(ran.reds, ["fail-a", "fail-b"], gateDiagnostic(ran.run));
+  assert.deepEqual(ran.requiredReds, ["fail-a", "fail-b"], gateDiagnostic(ran.run));
+  assert.deepEqual(ran.run.gates.map((gate) => [gate.name, gate.exitCode, gate.ok]), [["fail-a", 3, false], ["fail-b", 4, false], ["pass", 0, true]], `every gate ran; ${gateDiagnostic(ran.run)}`);
   assert.ok(ran.recordPath.endsWith(`${ran.run.runId}.json`));
 });
 
@@ -179,7 +190,7 @@ test("485-AC4 (CLI): a required gate red refuses the Story's done and names it; 
   assert.deepEqual(notRun.details.stories, [storyId]);
 
   const red = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project]);
-  assert.deepEqual([red.reds, red.requiredReds], [["lint", "unit"], ["unit"]]);
+  assert.deepEqual([red.reds, red.requiredReds], [["lint", "unit"], ["unit"]], gateDiagnostic(red.run));
   const refused = await refusal(done());
   assert.equal(refused?.reasonCode, "WORK_DONE_GATES_RED");
   assert.deepEqual(refused.details.reds, ["unit"], "only the required red gate holds the Story back");
@@ -215,7 +226,7 @@ test("485-AC4 (CLI): a required gate red refuses the Story's done and names it; 
   // Green on the tree as it is now: the Story is done, and the receipt says which run passed it.
   await put(project, "src/ok", "");
   const green = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project]);
-  assert.deepEqual([green.reds, green.requiredReds], [["lint"], []]);
+  assert.deepEqual([green.reds, green.requiredReds], [["lint"], []], gateDiagnostic(green.run));
   const passed = await cli(done());
   assert.equal(passed.record.status, "done");
   assert.deepEqual(passed.doneGates, { checked: true, reason: "green", runId: green.run.runId, treeDigest: green.run.treeDigest });

@@ -17,6 +17,7 @@ import { compareCanonicalText } from "./lib/canonical-order.mjs";
 import { repositoryRoot, toPosixPath, walkFiles } from "./lib/files.mjs";
 
 const execFileAsync = promisify(execFile);
+const HISTORICAL_COMMAND_MAX_BUFFER_BYTES = 16 * 1024 * 1024;
 const EVIDENCE_ROOTS = [
   "docs/reports/init-028-design/evidence/",
   "docs/reports/init-029-component-loop/evidence/",
@@ -144,6 +145,53 @@ function sha256(bytes) {
   return createHash("sha256").update(bytes).digest("hex");
 }
 
+function byteLength(value) {
+  if (Buffer.isBuffer(value)) return value.length;
+  if (typeof value === "string") return Buffer.byteLength(value, "utf8");
+  return 0;
+}
+
+export function summarizeHistoricalReplayFailure(error, { stage, maxBufferBytes = HISTORICAL_COMMAND_MAX_BUFFER_BYTES } = {}) {
+  const errorCode = typeof error?.code === "string" ? error.code : null;
+  const exitCode = Number.isInteger(error?.status)
+    ? error.status
+    : Number.isInteger(error?.code) ? error.code : null;
+  const signal = typeof error?.signal === "string" ? error.signal : null;
+  const failureKind = errorCode === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER"
+    ? "max-buffer"
+    : signal !== null
+      ? "signal"
+      : exitCode !== null
+        ? "child-exit"
+        : errorCode !== null ? "system-error" : "exception";
+  return {
+    stage,
+    failureKind,
+    exitCode,
+    errorCode,
+    errorName: typeof error?.name === "string" ? error.name : null,
+    signal,
+    killed: typeof error?.killed === "boolean" ? error.killed : null,
+    stdoutBytes: byteLength(error?.stdout),
+    stderrBytes: byteLength(error?.stderr),
+    ...(failureKind === "max-buffer" ? { maxBufferBytes } : {}),
+  };
+}
+
+export async function runHistoricalCommand(args, { cwd, env, maxBufferBytes = HISTORICAL_COMMAND_MAX_BUFFER_BYTES }) {
+  try {
+    const result = await execFileAsync(process.execPath, args, {
+      cwd,
+      encoding: "utf8",
+      env,
+      maxBuffer: maxBufferBytes,
+    });
+    return { ok: true, result };
+  } catch (error) {
+    return { ok: false, failure: summarizeHistoricalReplayFailure(error, { stage: "historical-command", maxBufferBytes }) };
+  }
+}
+
 function historicalEvidenceSummary() {
   return [...HISTORICAL_EVIDENCE.entries()].map(([path, evidence]) => ({
     path,
@@ -267,19 +315,25 @@ async function replayHistoricalBlock(block, evidence) {
   const scratchRoot = process.env.TMPDIR ?? tmpdir();
   await mkdir(scratchRoot, { recursive: true });
   const scratch = await mkdtemp(join(scratchRoot, "tcrn-inc391-history-"));
+  let stage = "historical-replay-setup";
   try {
     const historicalRoot = join(scratch, "repo");
     const gitDirectory = join(scratch, "git");
     await mkdir(historicalRoot);
+    stage = "historical-git-init";
     runGit(["init", "--bare", "-q", gitDirectory]);
+    stage = "historical-archive-create";
     const archive = runGit(["archive", "--format=tar", evidence.commit], { encoding: "buffer", maxBuffer: 256 * 1024 * 1024 });
+    stage = "historical-archive-extract";
     execFileSync("tar", ["-xf", "-", "-C", historicalRoot], { cwd: repositoryRoot, input: archive, encoding: "utf8", maxBuffer: 8 * 1024 * 1024 });
 
+    stage = "historical-git-alternates";
     const commonDirectory = resolve(repositoryRoot, String(runGit(["rev-parse", "--git-common-dir"], { encoding: "utf8" })).trim());
     await writeFile(join(gitDirectory, "HEAD"), `${evidence.commit}\n`, "utf8");
     await writeFile(join(gitDirectory, "objects/info/alternates"), `${join(commonDirectory, "objects")}\n`, "utf8");
 
     if (evidence.typescriptVersion) {
+      stage = "historical-dependency-check";
       const historicalManifest = JSON.parse(runGit(["show", `${evidence.commit}:package.json`], { encoding: "utf8" }));
       const currentManifest = JSON.parse(await readFile(resolve(repositoryRoot, "package.json"), "utf8"));
       const historicalLock = runGit(["show", `${evidence.commit}:pnpm-lock.yaml`], { encoding: "buffer", maxBuffer: 8 * 1024 * 1024 });
@@ -291,6 +345,7 @@ async function replayHistoricalBlock(block, evidence) {
         || !historicalLock.equals(currentLock)) {
         return { ok: false, reasonCode: "EVIDENCE_HISTORY_DEPENDENCY_MISMATCH" };
       }
+      stage = "historical-dependency-copy";
       await mkdir(join(historicalRoot, "node_modules"), { recursive: true });
       await cp(resolve(repositoryRoot, "node_modules/typescript"), join(historicalRoot, "node_modules/typescript"), { recursive: true, dereference: true });
     }
@@ -298,6 +353,7 @@ async function replayHistoricalBlock(block, evidence) {
     const home = join(scratch, "home");
     const einzbernHome = join(scratch, "einzbern");
     const temp = join(scratch, "tmp");
+    stage = "historical-command-environment";
     await Promise.all([mkdir(home), mkdir(einzbernHome), mkdir(temp)]);
     const env = {
       ...process.env,
@@ -308,13 +364,16 @@ async function replayHistoricalBlock(block, evidence) {
       GIT_DIR: gitDirectory,
     };
     delete env.GIT_WORK_TREE;
+    stage = "historical-command-parse";
     const args = parseNodeCommand(block.command);
-    const result = await execFileAsync(process.execPath, args, {
+    stage = "historical-command";
+    const captured = await runHistoricalCommand(args, {
       cwd: historicalRoot,
-      encoding: "utf8",
       env,
-      maxBuffer: 16 * 1024 * 1024,
+      maxBufferBytes: HISTORICAL_COMMAND_MAX_BUFFER_BYTES,
     });
+    if (!captured.ok) return { ok: false, reasonCode: "EVIDENCE_HISTORY_REPLAY_FAILED", ...captured.failure };
+    const { result } = captured;
     const outputDigest = sha256(Buffer.from(result.stdout, "utf8"));
     const difference = firstDifference(block.expected, result.stdout);
     const ok = difference === null && result.stderr === ""
@@ -333,7 +392,7 @@ async function replayHistoricalBlock(block, evidence) {
     return {
       ok: false,
       reasonCode: "EVIDENCE_HISTORY_REPLAY_FAILED",
-      exitCode: Number.isInteger(error?.status) ? error.status : null,
+      ...summarizeHistoricalReplayFailure(error, { stage }),
     };
   } finally {
     await rm(scratch, { recursive: true, force: true });

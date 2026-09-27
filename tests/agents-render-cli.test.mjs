@@ -88,7 +88,7 @@ test("478-AC1 via agents-render: a section changed by one character stays as it 
   ]);
   assert.deepEqual([first.pending, first.recorded, first.projectPath, first.libraryPath], [[], 4, project, library]);
   assert.deepEqual(first.navigation, { key: "agents.navigation", value: "written" });
-  assert.deepEqual([...first.ids].sort(), ["AGENTS.md#navigation", "AGENTS.md#variables-custom", "AGENTS.md#variables-system", "CLAUDE.md#claude-import"]);
+  assert.deepEqual([...first.ids].sort(), ["managed-section:AGENTS.md#navigation", "managed-section:AGENTS.md#variables-custom", "managed-section:AGENTS.md#variables-system", "managed-section:CLAUDE.md#claude-import"]);
   assert.deepEqual(first.files.map((file) => [file.file, file.written, file.backupPath === null]), [["AGENTS.md", true, false], ["CLAUDE.md", true, true]]);
   assert.equal(first.backupDir.startsWith(join(device, "backups")), true, "the backup is in the device directory");
   assert.equal(await readFile(join(first.backupDir, "AGENTS.md"), "utf8"), USER_TEXT, "AGENTS.md was backed up before it was replaced");
@@ -129,7 +129,7 @@ test("478-AC2 via agents-render: a section deleted with its markers is not put b
   await writeFile(agents, written.replace(sectionOf(written, "variables-custom").raw, ""));
   const next = await render(project);
   assert.deepEqual(next.sections.find((section) => section.id === "variables-custom"), { id: "variables-custom", file: "AGENTS.md", result: "removed", state: "removed" });
-  assert.deepEqual([next.recorded, next.ids, next.files.some((file) => file.written)], [1, ["AGENTS.md#variables-custom"], false]);
+  assert.deepEqual([next.recorded, next.ids, next.files.some((file) => file.written)], [1, ["managed-section:AGENTS.md#variables-custom"], false]);
   assert.equal((await readFile(agents, "utf8")).includes("id=variables-custom"), false, "the removed section is not put back");
   const third = await render(project);
   assert.deepEqual(third.sections.find((section) => section.id === "variables-custom"), { id: "variables-custom", file: "AGENTS.md", result: "removed", state: "removed" });
@@ -165,7 +165,7 @@ test("478-R3 via rule-resolve: after keep, agents-render never writes that secti
   const kept = await cli(["rule-resolve", "--project", project, "--section", "navigation", "--action", "keep", "--at", at()]);
   assert.deepEqual(
     [kept.reasonCode, kept.section, kept.file, kept.action, kept.result, kept.state, kept.written, kept.backupDir, kept.ids],
-    ["MANAGED_SECTION_RESOLVED", "navigation", "AGENTS.md", "keep", "kept", "user-owned", false, null, ["AGENTS.md#navigation"]],
+    ["MANAGED_SECTION_RESOLVED", "navigation", "AGENTS.md", "keep", "kept", "user-owned", false, null, ["managed-section:AGENTS.md#navigation"]],
   );
   const again = await render(project);
   assert.deepEqual(again.sections.find((section) => section.id === "navigation"), { id: "navigation", file: "AGENTS.md", result: "unchanged", state: "user-owned" });

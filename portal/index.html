@@ -5123,12 +5123,12 @@ const BOOT = __PORTAL_BOOT__;
     $("#validate-chip").className = `tcrn-badge ${healthy ? "tcrn-badge--positive" : "tcrn-badge--danger"}`;
     const library = status.library ?? {};
     const libraryFields = [
-      ["versionVector", "dashboard.versionVector", library.versionVector],
-      ["streams", "dashboard.streams", library.streams],
-      ["rejectedEventCount", "dashboard.rejectedEvents", library.rejectedEventCount],
-      ["configProjection", "dashboard.configProjection", library.configProjection],
+      ["versionVector", "dashboard.versionVector", t("dashboard.versionVector"), library.versionVector],
+      ["streams", "dashboard.streams", t("dashboard.streams"), library.streams],
+      ["rejectedEventCount", "dashboard.rejectedEvents", t("dashboard.rejectedEvents"), library.rejectedEventCount],
+      ["configProjection", "dashboard.configProjection", t("dashboard.configProjection"), library.configProjection],
     ];
-    $("#library-state").innerHTML = libraryFields.map(([field, label, value]) => `<div class="tcrn-definition-list__item"><dt class="tcrn-definition-list__term" data-i18n="${esc(label)}">${esc(t(label))}</dt><dd class="tcrn-definition-list__definition" data-library-field="${esc(field)}"><code>${esc(JSON.stringify(value ?? null))}</code></dd></div>`).join("");
+    $("#library-state").innerHTML = libraryFields.map(([field, key, label, value]) => `<div class="tcrn-definition-list__item"><dt class="tcrn-definition-list__term" data-i18n="${esc(key)}">${esc(label)}</dt><dd class="tcrn-definition-list__definition" data-library-field="${esc(field)}"><code>${esc(JSON.stringify(value ?? null))}</code></dd></div>`).join("");
     renderWorkView();
     renderKnowledgeView();
     bindTabList($('[data-ui="workspace-tabs"]'), {

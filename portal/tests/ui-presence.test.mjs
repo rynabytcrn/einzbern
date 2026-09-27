@@ -1602,6 +1602,9 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       assert.equal(text("#rail-workspace-label"), "project");
       assert.equal(text("#workspace-label"), fixture.workspace);
       assert.equal(text("#stat-version"), "0");
+      const healthReasons = () => [...page.document.querySelectorAll("[data-doctor-check]")].map((row) => [row.dataset.doctorCheck, row.querySelector("code")?.textContent ?? ""]);
+      const initialDoctor = await cli(["doctor", "--project", fixture.proseRoot], { ...fixture.deviceEnv, HOME: fixture.home });
+      assert.deepEqual(healthReasons(), initialDoctor.checks.map((check) => [check.check, check.reasonCode ?? "—"]));
 
       select.value = fixture.second.project;
       select.dispatchEvent(new page.window.Event("change", { bubbles: true }));
@@ -1611,8 +1614,23 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       assert.ok(options[1].textContent.includes(text("#library-label")), "the rail names the id the switcher showed");
       const secondDoctor = await cli(["doctor", "--project", fixture.second.project], { ...fixture.deviceEnv, HOME: fixture.home });
       assert.equal(page.document.querySelector("#health-chip")?.className.includes("tcrn-badge--positive"), secondDoctor.ok);
+      assert.deepEqual(healthReasons(), secondDoctor.checks.map((check) => [check.check, check.reasonCode ?? "—"]));
       assert.equal(text('#library-state [data-library-field="versionVector"]'), JSON.stringify((await cli(["status", "--workspace", fixture.second.library], fixture.deviceEnv)).versionVector));
       assert.equal(page.requests.filter((path) => path === "/api/library").length, 1);
+
+      const stateLabels = {
+        en: ["Version vector", "Streams", "Rejected events", "Configuration projection"],
+        "zh-CN": ["版本向量", "流", "被拒事件数", "配置投影"],
+        ja: ["バージョンベクトル", "ストリーム", "拒否されたイベント数", "設定投影"],
+        ko: ["버전 벡터", "스트림", "거부된 이벤트 수", "구성 투영"],
+        fr: ["Vecteur de versions", "Flux", "Événements rejetés", "Projection de configuration"],
+      };
+      const stateKeys = ["dashboard.versionVector", "dashboard.streams", "dashboard.rejectedEvents", "dashboard.configProjection"];
+      for (const [locale, labels] of Object.entries(stateLabels)) {
+        page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
+        await waitFor(() => page.document.documentElement.lang === locale, `the ${locale} locale`);
+        assert.deepEqual(stateKeys.map((key) => page.document.querySelector(`#library-state [data-i18n="${key}"]`)?.textContent), labels);
+      }
 
       page.document.querySelector("#library-select").value = fixture.proseRoot;
       page.document.querySelector("#library-select").dispatchEvent(new page.window.Event("change", { bubbles: true }));
@@ -1620,6 +1638,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       assert.equal(text("#library-label"), firstId);
       const firstDoctor = await cli(["doctor", "--project", fixture.proseRoot], { ...fixture.deviceEnv, HOME: fixture.home });
       assert.equal(page.document.querySelector("#health-chip")?.className.includes("tcrn-badge--positive"), firstDoctor.ok);
+      assert.deepEqual(healthReasons(), firstDoctor.checks.map((check) => [check.check, check.reasonCode ?? "—"]));
     } finally { page.child.kill(); await rm(fixture.base, { recursive: true, force: true }); }
   });
 

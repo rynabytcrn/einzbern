@@ -238,6 +238,35 @@ test("481-R2: Atelier runs from the release, serves its static files and reaches
   assert.equal(startup.reasonCode, "PORTAL_LIBRARY_REGISTRY_EMPTY", `Atelier packaged CLI startup diagnostic (${bridge}): ${diagnostic(run)}; startup=${safeDiagnostic(JSON.stringify({ reasonCode: startup.reasonCode, error: startup.error }))}`);
 });
 
+test("481-R2, SUB-399: Atelier decodes a failed library-list from CLI stderr", async () => {
+  const { tree } = await packedRelease();
+  const { root, env, cwd } = await environment("atelier-failure");
+  const failedCli = join(root, "failed-cli.mjs");
+  const failure = { ok: false, reasonCode: "LIBRARY_LIST_FIXTURE_FAILURE", error: "The registry could not be read." };
+  await writeFile(failedCli, [
+    `process.stderr.write(${JSON.stringify(JSON.stringify(failure))});`,
+    "process.exitCode = 7;",
+    "",
+  ].join("\n"));
+  env.TCRN_WORKFLOW_CLI = failedCli;
+
+  const bridge = "atelier/portal.mjs -> TCRN_WORKFLOW_CLI (library-list)";
+  const run = node([join(tree, "atelier/portal.mjs")], { cwd, env, timeout: 60_000 });
+  const diagnostic = safeDiagnostic(JSON.stringify({
+    bridge,
+    portal: { status: run.status, signal: run.signal, stdout: run.stdout, stderr: run.stderr },
+  }));
+  assert.equal(run.status, 2, diagnostic);
+  assert.equal(run.stdout, "", diagnostic);
+  let startup;
+  try { startup = JSON.parse(lastLine(run.stderr)); } catch { assert.fail(`Atelier failure did not return a JSON diagnostic (${bridge}): ${diagnostic}`); }
+  assert.equal(startup.reasonCode, failure.reasonCode, `Atelier must decode the failing CLI's stderr (${bridge}): ${diagnostic}`);
+  assert.equal(startup.error, failure.error, `Atelier must preserve the CLI's sanitized error (${bridge}): ${diagnostic}`);
+  for (const privatePath of [base, root, repositoryRoot, homedir()]) {
+    if (privatePath) assert.ok(!run.stderr.includes(privatePath), `Atelier leaked a private path (${bridge})`);
+  }
+});
+
 test("481-R2, R4: the hook entry is one file whose runHookEvent answers nothing on an older Node.js", async () => {
   const { tree } = await packedRelease();
   const { root, env, cwd } = await environment("hook");

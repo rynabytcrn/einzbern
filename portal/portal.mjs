@@ -12,12 +12,24 @@ import { homedir } from "node:os";
 import { createHash, randomBytes } from "node:crypto";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 
 import { LOCALE_CONTRACT } from "./locale-contract.mjs";
 import { DIRECTORY, LEGACY_CONTAINER_DIRECTORY } from "../scripts/lib/names.mjs";
 
-const execFileAsync = promisify(execFile);
+function execFileAsync(file, args, options) {
+  return new Promise((resolve, reject) => {
+    execFile(file, args, options, (error, stdout, stderr) => {
+      if (error) {
+        error.stdout = stdout;
+        error.stderr = stderr;
+        reject(error);
+        return;
+      }
+      resolve({ stdout, stderr });
+    });
+  });
+}
+
 const portalRoot = dirname(fileURLToPath(import.meta.url));
 const ACTOR = (process.env.TCRN_PORTAL_ACTOR ?? "agent:portal").trim();
 const BUNDLED_CLI = join(portalRoot, "..", "scripts", "einzbern.mjs");

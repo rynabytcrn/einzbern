@@ -10,7 +10,7 @@
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -18,9 +18,10 @@ import { fileURLToPath } from "node:url";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { createProject, initializeKnowledgeStore, initializeLibrary, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
+import { USER_CREST_ID } from "../dist/build/packages/core/src/knowledge-core.js";
 import { KNOWLEDGE_HINT_QUESTION } from "../dist/build/packages/core/src/knowledge-hint.js";
 import { resetRecallCache } from "../dist/build/packages/core/src/recall.js";
-import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
+import { canonicalJson, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
 const at = (second) => `2026-09-27T09:${String(Math.floor(second / 60)).padStart(2, "0")}:${String(second % 60).padStart(2, "0")}Z`;
 const OWNER = deriveStableId("owner", "KNOWLEDGE-CLI-OWNER");
@@ -181,6 +182,8 @@ test("476-AC3 (CLI): --scope user writes this user's crest, and another project 
   const base = await device(context);
   const first = await library(base, "first");
   const second = await library(base, "second");
+  await cli(["library-register", "--project", join(base, "first"), "--library", first.workspace, "--at", at(28)]);
+  await cli(["library-register", "--project", join(base, "second"), "--library", second.workspace, "--at", at(29)]);
   const created = await cli(createArgs(first.workspace, 30, {
     key: "KC-QUOLL", scope: "user", subject: "Quoll den survey", summary: "Count the quoll dens at dawn", snippet: "quoll dens at dawn",
   }));
@@ -188,6 +191,15 @@ test("476-AC3 (CLI): --scope user writes this user's crest, and another project 
   assert.equal(created.scope, "user");
   assert.deepEqual(created.ids, [created.id]);
   assert.equal(created.version, 1, "the user crest's own version");
+
+  const crest = join(base, "device", "crest");
+  const marker = JSON.parse(await readFile(join(crest, "store.json"), "utf8"));
+  await writeFile(join(crest, "mutation.claim"), canonicalJson({
+    schemaVersion: "tcrn.knowledge-mutation-claim.v1", workspaceId: USER_CREST_ID, version: marker.version,
+    token: "c".repeat(48), pid: process.pid + 1_000_000, acquiredAt: at(30),
+  }));
+  const recovered = await cli(["knowledge-recover", "--workspace", first.workspace, "--scope", "user"]);
+  assert.deepEqual([recovered.reasonCode, recovered.recovered, recovered.scope], ["KNOWLEDGE_RECOVERED", true, "user"]);
 
   // Not in the library it was written from; in the user crest, whichever library asks.
   assert.equal((await cli(["knowledge-list", "--workspace", first.workspace, "--at", at(31), "--selection", "all"])).total, 0);

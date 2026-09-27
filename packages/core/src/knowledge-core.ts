@@ -1900,8 +1900,47 @@ export function processIsAlive(pid: number): boolean {
  * Recovery only admits a source-consistent metadata/body set; an orphan body or a
  * malformed claim remains blocked instead of being guessed away.
  */
-export async function recoverKnowledgeStore(workspaceRoot: string, options: KnowledgeReadOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
+export async function recoverKnowledgeStore(workspaceRoot: string, options: KnowledgeScopedReadOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
+  assertStoreScope(options.scope);
+  if (options.scope === "user") {
+    const location = await locateUserCrest();
+    if (!(await userCrestInitialized(location.root))) {
+      return { schemaVersion: "tcrn.knowledge-recovery-result.v1", reasonCode: "KNOWLEDGE_RECOVERY_NOT_NEEDED", recovered: false, scope: "user" };
+    }
+    return withUserCrestLock(location, () => recoverUserCrestUnlocked(location, options));
+  }
   return withCrestWriteLock(workspaceRoot, () => recoverKnowledgeStoreUnlocked(workspaceRoot, options));
+}
+
+async function recoverUserCrestUnlocked(location: UserCrestLocation, options: KnowledgeReadOptions): Promise<Readonly<Record<string, JsonValue>>> {
+  const claimedRoot = join(await userCrestParent(location, false), basename(location.root));
+  const claim = await readMutationClaim(claimedRoot);
+  if (claim === null) {
+    return { schemaVersion: "tcrn.knowledge-recovery-result.v1", reasonCode: "KNOWLEDGE_RECOVERY_NOT_NEEDED", recovered: false, scope: "user" };
+  }
+  if (processIsAlive(claim.pid)) fail("KNOWLEDGE_LOCKED", "knowledge mutation claim belongs to a live process");
+  const scan = await scanUserCrest(location, options, true, "full");
+  const boundClaim = await readMutationClaim(scan.storeRoot);
+  if (boundClaim === null || boundClaim.token !== claim.token || boundClaim.pid !== claim.pid ||
+    boundClaim.workspaceId !== USER_CREST_ID || !sameIdentity(boundClaim.identity, claim.identity)) {
+    fail("KNOWLEDGE_SOURCE_CHANGED", "knowledge user-crest claim changed during recovery");
+  }
+  const marker: KnowledgeStoreMarker = { ...scan.marker, version: scan.marker.version + 1 };
+  const backend = userCrestBackend(scan.storeRoot, location.device, options);
+  await backend.writeKnowledgeMarker(canonicalJson(marker));
+  await writeIndex(backend, marker, scan.units.map((unit) => unit.metadata));
+  // O6 remains pending: user-crest recovery repairs the interrupted index and marker but
+  // does not physically delete any retained body.
+  await releaseMutationClaim(scan.storeRoot, boundClaim);
+  await scanUserCrest(location, options);
+  return {
+    schemaVersion: "tcrn.knowledge-recovery-result.v1",
+    reasonCode: "KNOWLEDGE_RECOVERED",
+    recovered: true,
+    scope: "user",
+    version: marker.version,
+    reclaimedRetiredBodies: 0,
+  };
 }
 
 async function recoverKnowledgeStoreUnlocked(workspaceRoot: string, options: KnowledgeReadOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {

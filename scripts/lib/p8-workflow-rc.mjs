@@ -12,6 +12,7 @@ import { readBoundRegularFile, safeWriteOutput } from "./safe-io.mjs";
 
 export const P8_VERSION = "1.2.1";
 export const P8_TAG = "v1.2.1";
+export const P8_FAILURE_TERMINAL_SCHEMA = "tcrn.p8-child-failure.v1";
 // The GitHub repository keeps its old name until the Owner renames it (a separate stop).
 export const P8_REPOSITORY = LEGACY_REPOSITORY_NAMES.engine;
 export const P8_WORKFLOW = "release";
@@ -23,6 +24,22 @@ export const P8_RELEASE_ARTIFACTS = Object.freeze([
   "checksums.txt",
   "release-notes.md",
 ]);
+
+/** A failed P8 run still emits one machine-readable terminal while retaining a nonzero exit. */
+export function p8FailureTerminal({ reasonCode, error } = {}) {
+  assertion(
+    typeof reasonCode === "string" && /^[A-Z][A-Z0-9_]*$/u.test(reasonCode) && reasonCode !== "P8_WORKFLOW_RC_VERIFIED",
+    "P8_FAILURE_TERMINAL_REASON_INVALID",
+  );
+  assertion(typeof error === "string" && error.length > 0, "P8_FAILURE_TERMINAL_MESSAGE_INVALID");
+  return {
+    schemaVersion: P8_FAILURE_TERMINAL_SCHEMA,
+    command: "p8",
+    ok: false,
+    reasonCode,
+    error,
+  };
+}
 
 // TCRN-CROSS-STORY-461 R1 (#232). After a version bump dist/release can still hold the
 // previous release's source archive beside the new artifacts, and the closed

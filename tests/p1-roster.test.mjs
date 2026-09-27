@@ -18,9 +18,9 @@ import { fileURLToPath } from "node:url";
 import { P1_SEQUENCE, P1_TASKS, P1_GATE_SPECS } from "../scripts/p1-sequence.mjs";
 import { P1_GATE_SPECS as PREFLIGHT_SPECS } from "../scripts/preflight.mjs";
 import { buildRedLocatorPlan, containedGroupIds, locateContainedGates } from "../scripts/gate-red-locator.mjs";
-import { buildContainedExecutionPlan, ENGINE_PUSH_GATE_CHILDREN, pushGateChildConclusion, pushGateExecutionPlan } from "../scripts/lib/push-gate-children.mjs";
+import { buildContainedExecutionPlan, ENGINE_PUSH_GATE_CHILDREN, inspectP8FailureTerminal, pushGateChildConclusion, pushGateExecutionPlan } from "../scripts/lib/push-gate-children.mjs";
 import { validateHostEvidenceProvenance } from "../scripts/lib/push-gate-output.mjs";
-import { P8_VERSION } from "../scripts/lib/p8-workflow-rc.mjs";
+import { P8_VERSION, p8FailureTerminal } from "../scripts/lib/p8-workflow-rc.mjs";
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const scripts = JSON.parse(readFileSync(join(REPO_ROOT, "package.json"), "utf8")).scripts;
@@ -131,6 +131,27 @@ test("interrupted push-gate children are not-verifiable", () => {
   assert.equal(pushGateChildConclusion({ exitCode: 1, signal: null, error: null }), "blocked");
   assert.equal(pushGateChildConclusion({ exitCode: 1, signal: "SIGTERM", error: null }), "not-verifiable");
   assert.equal(pushGateChildConclusion({ exitCode: 1, signal: null, error: { code: "ETIMEDOUT" } }), "not-verifiable");
+});
+
+test("a P8 failure terminal is observable while the child remains blocked", () => {
+  const receipt = p8FailureTerminal({ reasonCode: "PRIVACY_FINDINGS", error: "OWNER_PRIVATE_IDENTIFIER:build" });
+  const result = { exitCode: 1, signal: null, error: null };
+  const assessment = inspectP8FailureTerminal({
+    stdout: Buffer.from(`${JSON.stringify(receipt)}\n`, "utf8"),
+    stderr: Buffer.alloc(0),
+    ...result,
+  });
+  assert.equal(assessment.ok, true);
+  assert.equal(assessment.reasonCode, "P8_FAILURE_TERMINAL_VALID");
+  assert.equal(assessment.terminalReasonCode, "PRIVACY_FINDINGS");
+  assert.equal(pushGateChildConclusion(result), "blocked");
+
+  const missing = inspectP8FailureTerminal({ stdout: Buffer.alloc(0), stderr: Buffer.alloc(0), ...result });
+  assert.equal(missing.ok, false);
+  assert.ok(missing.findings.some((finding) => finding.code === "CHILD_TERMINAL_MISSING"));
+  const successExit = inspectP8FailureTerminal({ stdout: Buffer.from(`${JSON.stringify(receipt)}\n`), stderr: "", exitCode: 0, signal: null, error: null });
+  assert.equal(successExit.ok, false);
+  assert.ok(successExit.findings.some((finding) => finding.code === "P8_FAILURE_TERMINAL_EXIT_INVALID"));
 });
 
 test("STORY-350 red locator runs every contained child separately and returns each conclusion", async () => {

@@ -110,6 +110,31 @@ const CLASSIFIED_PRIVACY_MATCHES = new Set([
   "tests/variables.test.mjs\u0000PRIVATE_KEY\u00008bcac7908eb950419537b91e19adc83ce2c9cbfdacf4f81157fdadfec11f7017\u0000a77bca7ce9555b3bde511730134d511cf811229f140f55f40747e1b85462c217",
 ]);
 
+// R12: these three P8 tar members are the only packaged copies of the reviewed
+// public owner metadata line. The exact member label and build origin are part
+// of the rule; changing the archive, version, member path, origin, value, or line
+// falls back to a finding. The line and value digests were verified against the
+// tracked names.ts object and its compiled output before adding these entries.
+const CLASSIFIED_P8_RELEASE_ENTRY_SOURCES = new Map([
+  ["dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/scripts/einzbern.mjs", "dist/build/packages/core/src/names.js"],
+]);
+const CLASSIFIED_P8_RELEASE_MATCHES = new Set(
+  [...CLASSIFIED_P8_RELEASE_ENTRY_SOURCES.entries()].map(([label, sourcePath]) => [
+    label,
+    sourcePath,
+    "OWNER_PRIVATE_IDENTIFIER",
+    "1b58b39b82f7665f411664797bcc897a75d9a6222ee4a8c97234493324aab74f",
+    "3861c5826071f54b9b552ac3ff993b91181bf9d91d54dcdfd7f0790fc671bd56",
+  ].join("\0")),
+);
+
+export function p8ReleasePrivacySourcePaths(label) {
+  const sourcePath = CLASSIFIED_P8_RELEASE_ENTRY_SOURCES.get(label);
+  return sourcePath === undefined ? [] : [sourcePath];
+}
+
 function privacyDigest(value) {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
@@ -128,6 +153,17 @@ function classifiedOrigins(entry) {
 
 function hasUnclassifiedPrivacyMatch(entry, reasonCode, pattern, inputs) {
   const origins = classifiedOrigins(entry);
+  const isClassified = (origin, digest, lineDigest) => {
+    if (entry.kind === "release") {
+      if (entry.releaseArchiveMember === true) {
+        return CLASSIFIED_P8_RELEASE_MATCHES.has([entry.label, origin, reasonCode, digest, lineDigest].join("\0"));
+      }
+      // Source tar members carry their original tracked path on `#body:` labels;
+      // other release entries need the exact P8 package rule above.
+      if (!entry.label.includes("#body:")) return false;
+    }
+    return CLASSIFIED_PRIVACY_MATCHES.has([origin, reasonCode, digest, lineDigest].join("\0"));
+  };
   for (const input of inputs) {
     pattern.lastIndex = 0;
     if (!pattern.test(input)) continue;
@@ -136,7 +172,7 @@ function hasUnclassifiedPrivacyMatch(entry, reasonCode, pattern, inputs) {
     for (const match of input.matchAll(matcher)) {
       const digest = privacyDigest(match[0]);
       const lineDigest = privacyDigest(lineAt(input, match.index));
-      if (origins.length === 0 || origins.some((origin) => !CLASSIFIED_PRIVACY_MATCHES.has([origin, reasonCode, digest, lineDigest].join("\0")))) {
+      if (origins.length === 0 || origins.some((origin) => !isClassified(origin, digest, lineDigest))) {
         return true;
       }
     }
@@ -645,6 +681,9 @@ export function scanPrivacyEntries(entries, { owner, privateTokens = [], reposit
   let totalEntries = 0;
   for (const entry of entries) {
     if (typeof entry?.label !== "string" || typeof entry?.kind !== "string") {
+      throw new Error("PRIVACY_ENTRY_INVALID");
+    }
+    if (entry.releaseArchiveMember !== undefined && typeof entry.releaseArchiveMember !== "boolean") {
       throw new Error("PRIVACY_ENTRY_INVALID");
     }
     if (isSourceArchiveEntry(entry)) {

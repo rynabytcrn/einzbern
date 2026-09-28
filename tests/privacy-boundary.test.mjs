@@ -9,7 +9,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 
 import { LocalCommandError, runLocalCommand } from "../scripts/lib/local-command.mjs";
-import { aggregatePrivacySurface, decodeGitMetadataBytes, normalizePrivacyText, parseGitObjectBatch, parseHistoricalTreePaths, scanPrivacyEntries, walkHistoricalCommitPaths } from "../scripts/lib/privacy.mjs";
+import { aggregatePrivacySurface, decodeGitMetadataBytes, normalizePrivacyText, p8ReleasePrivacySourcePaths, parseGitObjectBatch, parseHistoricalTreePaths, scanPrivacyEntries, walkHistoricalCommitPaths } from "../scripts/lib/privacy.mjs";
 import { writeUstar } from "../scripts/lib/tar.mjs";
 import { ENGINE_REPOSITORY_NAMES, LEGACY_REPOSITORY_NAMES } from "../dist/build/packages/core/src/index.js";
 
@@ -349,11 +349,16 @@ test("P8 classifies only the exact compiled public-owner metadata line", async (
   const names = await readFile(join(repositoryRoot, "packages/core/src/names.ts"), "utf8");
   const owner = names.match(/owner:\s*"([^"]+)"/u)?.[1];
   assert.ok(owner, "the owner value comes from the reviewed source metadata");
+  const sourceOwnerLine = names.split("\n").find((line) => line.includes(owner) && /\bowner\s*:/u.test(line));
+  assert.ok(sourceOwnerLine, "the value is the owner field of the public metadata object");
+  assert.equal(createHash("sha256").update(owner, "utf8").digest("hex"), "1b58b39b82f7665f411664797bcc897a75d9a6222ee4a8c97234493324aab74f");
+  assert.equal(createHash("sha256").update(sourceOwnerLine, "utf8").digest("hex"), "acbbf0306043799672e383fe5bdfc98bfe0a2b1675085c911fce83869dc4a4be");
 
   const buildPath = "dist/build/packages/core/src/names.js";
   const buildContent = await readFile(join(repositoryRoot, buildPath), "utf8");
   const ownerLine = buildContent.split("\n").find((line) => line.includes(owner) && /\bowner\s*:/u.test(line));
   assert.ok(ownerLine, "the compiler output carries the reviewed owner field");
+  assert.equal(createHash("sha256").update(ownerLine, "utf8").digest("hex"), "3861c5826071f54b9b552ac3ff993b91181bf9d91d54dcdfd7f0790fc671bd56");
   assert.deepEqual(scanPrivacyEntries([{ label: buildPath, kind: "build", content: buildContent }], { owner }), []);
 
   const changedLine = buildContent.replace(ownerLine, `${ownerLine} // changed`);
@@ -361,6 +366,44 @@ test("P8 classifies only the exact compiled public-owner metadata line", async (
     .includes(`OWNER_PRIVATE_IDENTIFIER:build:${buildPath}`));
   assert.ok(scanPrivacyEntries([{ label: "dist/build/packages/core/src/other.js", kind: "build", content: buildContent }], { owner })
     .includes("OWNER_PRIVATE_IDENTIFIER:build:dist/build/packages/core/src/other.js"));
+
+  const releaseLabels = [
+    "dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/atelier/portal.mjs",
+    "dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/scripts/einzbern-hook.mjs",
+    "dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/scripts/einzbern.mjs",
+  ];
+  const releaseEntries = releaseLabels.map((label) => ({
+    label,
+    kind: "release",
+    releaseArchiveMember: true,
+    sourcePaths: p8ReleasePrivacySourcePaths(label),
+    content: ownerLine,
+  }));
+  assert.deepEqual(releaseEntries.map((entry) => entry.sourcePaths), releaseLabels.map(() => [buildPath]));
+  assert.deepEqual(scanPrivacyEntries(releaseEntries, { owner }), []);
+
+  const target = releaseEntries[0];
+  const ownerFinding = (entry, scanOwner = owner) => scanPrivacyEntries([entry], { owner: scanOwner })
+    .includes(`OWNER_PRIVATE_IDENTIFIER:release:${entry.label}`);
+  assert.ok(ownerFinding({ ...target, releaseArchiveMember: undefined }), "a source path alone does not exempt a release entry");
+  assert.ok(ownerFinding({ ...target, sourcePaths: ["dist/build/packages/core/src/other.js"] }), "another source path remains unclassified");
+
+  const changedLabel = target.label.replace("/atelier/portal.mjs", "/atelier/other.mjs");
+  assert.deepEqual(p8ReleasePrivacySourcePaths(changedLabel), [], "a nearby archive path has no trusted source mapping");
+  assert.ok(ownerFinding({ ...target, label: changedLabel, sourcePaths: p8ReleasePrivacySourcePaths(changedLabel) }));
+  assert.deepEqual(p8ReleasePrivacySourcePaths(target.label.replace("1.2.1", "1.2.2")), [], "another package version is not covered");
+
+  assert.ok(ownerFinding({ ...target, content: `${ownerLine} // changed` }), "a changed whole line remains a finding");
+  const changedOwner = publicIdentity.login;
+  const changedValueLine = ownerLine.replaceAll(owner, changedOwner);
+  assert.ok(ownerFinding({ ...target, content: changedValueLine }, changedOwner), "a changed metadata value remains a finding");
+
+  const credential = `ghp_${"Q".repeat(24)}`;
+  const credentialFindings = scanPrivacyEntries([{
+    ...target,
+    content: `${ownerLine}\nconst credential = ${JSON.stringify(credential)};\n`,
+  }], { owner });
+  assert.ok(credentialFindings.includes(`GITHUB_CLASSIC_TOKEN:release:${target.label}`), "an unrelated real-credential pattern remains a finding");
 });
 
 test("private/raw identifiers and common secret families fail closed", () => {

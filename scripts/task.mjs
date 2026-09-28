@@ -28,6 +28,7 @@ import {
   decodeGitMetadataBytes,
   decodePrivacyScanBytes,
   parseGitObjectBatch,
+  p8ReleasePrivacySourcePaths,
   scanPrivacyEntries,
   walkHistoricalCommitPaths,
 } from "./lib/privacy.mjs";
@@ -672,7 +673,13 @@ async function verifyP8() {
     const label = `dist/release/${P8_RELEASE_ARCHIVE}/${path}`;
     return [
       { label, kind: "filename", content: path },
-      { label, kind: "release", content: decodePrivacyScanBytes(bytes) },
+      {
+        label,
+        kind: "release",
+        releaseArchiveMember: true,
+        sourcePaths: p8ReleasePrivacySourcePaths(label),
+        content: decodePrivacyScanBytes(bytes),
+      },
     ];
   });
   const owner = await remoteOwner();

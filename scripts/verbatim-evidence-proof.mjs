@@ -7,7 +7,7 @@
 
 import { createHash } from "node:crypto";
 import { execFile, execFileSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { join, relative, resolve } from "node:path";
@@ -192,6 +192,22 @@ export async function runHistoricalCommand(args, { cwd, env, maxBufferBytes = HI
   }
 }
 
+export async function copyHistoricalTypeScriptRuntime(sourcePackagePath, destinationPackagePath) {
+  const packageRoot = await realpath(sourcePackagePath);
+  const packageManifest = await readFile(join(packageRoot, "package.json"));
+  const manifest = JSON.parse(packageManifest.toString("utf8"));
+  if (manifest.main !== "./lib/typescript.js") {
+    throw new Error("EVIDENCE_HISTORY_TYPESCRIPT_ENTRY_UNSUPPORTED");
+  }
+  const runtime = await readFile(join(packageRoot, "lib", "typescript.js"));
+  const destinationLibrary = join(destinationPackagePath, "lib");
+  await mkdir(destinationLibrary, { recursive: true });
+  await Promise.all([
+    writeFile(join(destinationPackagePath, "package.json"), packageManifest),
+    writeFile(join(destinationLibrary, "typescript.js"), runtime),
+  ]);
+}
+
 function historicalEvidenceSummary() {
   return [...HISTORICAL_EVIDENCE.entries()].map(([path, evidence]) => ({
     path,
@@ -346,8 +362,10 @@ async function replayHistoricalBlock(block, evidence) {
         return { ok: false, reasonCode: "EVIDENCE_HISTORY_DEPENDENCY_MISMATCH" };
       }
       stage = "historical-dependency-copy";
-      await mkdir(join(historicalRoot, "node_modules"), { recursive: true });
-      await cp(resolve(repositoryRoot, "node_modules/typescript"), join(historicalRoot, "node_modules/typescript"), { recursive: true, dereference: true });
+      await copyHistoricalTypeScriptRuntime(
+        resolve(repositoryRoot, "node_modules/typescript"),
+        join(historicalRoot, "node_modules/typescript"),
+      );
     }
 
     const home = join(scratch, "home");

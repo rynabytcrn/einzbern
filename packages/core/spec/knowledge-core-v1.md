@@ -55,12 +55,16 @@ event hash and each event binds its metadata to a body file in that stream.
 Device-local locks serialize that device's writes; independent devices append
 without replacing one another's events. The root manifest is not rewritten for
 card appends. Reads derive the combined event heads, version and local cache
-projection from the streams; those projections are not authority. A forked
-stream, or a duplicate key/id with differing metadata, is returned as an explicit
-refusal. A write interrupted before its event commit can leave an unreferenced
-body, which is ignored; a committed event is complete because its body is written
-first. Older metadata and body user crests remain readable, and new events can be
-appended without rewriting their existing records.
+projection from the streams; those projections are not authority. A forked,
+broken or altered stream is returned as an explicit refusal naming its device and
+the sequence or file, and so is one stream that holds two different records for
+one knowledge id, which no writer of this engine leaves: it scans before it
+writes. One external key that two writers wrote with differing metadata is not a
+refusal of the crest (see the same-key rule below). A write interrupted before
+its event commit can leave an unreferenced body, which is ignored; a committed
+event is complete because its body is written first. Older metadata and body user
+crests remain readable, and new events can be appended without rewriting their
+existing records.
 
 The user crest's root manifest, `store.json`, is written by exactly one operation
 of this engine (TCRN-CROSS-SUB-310, MIN-235 D7):
@@ -108,6 +112,39 @@ and the next read reports any pair it forms. A merge whose live bodies exceed
 disposition is pending); `recall` names it, or withheld conflicts, under
 `userCrestDegraded` (see "Freshness, writing, and retrieval").
 
+The same-key rule (TCRN-CROSS-SUB-413, STORY-476 D7): a knowledge id is derived
+from its external key, so two writers that each write one external key before
+either sees the other's write one id. The same record written by both, or
+delivered twice, is one card. Records that differ are an unresolved duplicate,
+not a refusal of the crest, and none of its versions is the card: each stays in
+its writer's stream, and while the duplicate is unresolved default selection and
+`recall` leave out every version. `knowledge-list --scope user` names it at its
+top as `unresolvedDuplicates`, one entry per id in canonical id order, each with
+`id`, `externalKey` and `versions`: one version per writer in canonical order of
+its device id (a version the metadata/body layout holds comes after them), each
+naming `deviceId`, `sequence` and `eventHash` -- the device stream and the event
+that hold it, all three `null` for the metadata/body layout -- with its
+`updatedAt`, `subject` and `bodySha256`. `--selection all` lists every version
+as its own record. `knowledge-snippet` and `knowledge-body` for the id answer
+`versions` in the same order, in place of one card's fields: each version's
+`deviceId`, `sequence` and `eventHash` with its `subject`, `summary`, `snippet`
+and `revision`, or with its `revision`, `freshness`, `bodySha256` and `body`
+(a body read opens only when every version passes the check one card's body
+does); while the duplicate is unresolved they carry its `unresolvedDuplicates`
+entry at their top. Every other card reads, recalls and is written as before. A
+write sees every version: it may not reuse the id or external key
+(`KNOWLEDGE_DUPLICATE`), a version on its subject is a conflict it names by the
+id, and each live version counts toward `knowledge.aggregateBytes`. A version's
+own `supersedes` still replaces the card it names. The duplicate is resolved by
+the existing write path: a write whose `--supersedes` names the id replaces every
+version at once, whichever of them its writer saw. Each version's projected
+`supersededBy` then names the replacement, so every version leaves the budget,
+default selection and `recall`, its event and body stay in their stream and read
+by the id, and the diagnostic is gone; a duplicate is unresolved while one of its
+versions is neither replaced nor retired. To keep one version, write its content
+again under a new external key with `--supersedes` naming the id. `recall` names
+an unresolved duplicate under `userCrestDegraded`.
+
 ## Metadata
 
 `KnowledgeUnitMetadata` is closed and binds its stable ID/external key, scope,
@@ -137,14 +174,19 @@ active card, because a promotion gate on retrieval is what left a written card
 unfindable with nothing in its receipt to say so.
 
 In the user crest, default selection also leaves out the cards of an unresolved
-conflict (see "Storage and authority"). Recall reads the library's crest and the
+conflict and every version of an unresolved duplicate (see "Storage and
+authority"). Recall reads the library's crest and the
 user crest; a store it cannot read gives no cards and its reason code under
 `knowledgeStores`. When the user crest gave recall fewer cards than it holds, the
 answer says so at its top as `userCrestDegraded` (TCRN-CROSS-SUB-310): the read's
 refusal code alone (for example `KNOWLEDGE_LIMIT_EXCEEDED`, no user card
 recalled), or `KNOWLEDGE_POSSIBLE_CONFLICT` with `unresolvedConflicts` and
-`withheldCards` (every other user card recalled). It is absent when the user crest
-gave every card it holds, or holds none.
+`withheldCards` (every other user card recalled). TCRN-CROSS-SUB-413 adds
+`unresolvedDuplicates`, the entries `knowledge-list` names, when versions of an
+unresolved duplicate are withheld; the reason code is then `KNOWLEDGE_DUPLICATE`
+unless a pair is withheld as well, and `withheldCards` counts the pairs' cards
+and every withheld version. It is absent when the user crest gave every card it
+holds, or holds none.
 
 A card is retrievable the moment it is written (TCRN-CROSS-STORY-476 R1,
 TCRN-CROSS-MIN-227 D9, TCRN-CROSS-SUB-308). Every write lands lifecycle `active`

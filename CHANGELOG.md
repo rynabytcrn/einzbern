@@ -484,6 +484,24 @@ scan (`version` is that scan's plus one) and never reads the crest again, so not
 meanwhile turns it into a refusal. `knowledge-recover --scope user` never writes the crest's
 `store.json`: initialization by the first card is the one operation that does.
 
+Two devices that write one external key before either sees the other's no longer stop the user
+crest either (TCRN-CROSS-SUB-413; STORY-476 D7; `packages/core/src/knowledge-core.ts`,
+`packages/core/src/recall-inputs.ts`). The key's differing records are an unresolved duplicate, not
+`KNOWLEDGE_PARTIAL_STATE`: `knowledge-list --scope user` names it at its top as
+`unresolvedDuplicates` (`id`, `externalKey` and `versions`, each version's `deviceId`, `sequence`
+and `eventHash` with its `updatedAt`, `subject` and `bodySha256`), its default selection and
+`recall` leave every version out (`--selection all` lists each), and `knowledge-snippet` and
+`knowledge-body` for the id answer every version under `versions` with the same entry at their
+top. `recall` names it under `userCrestDegraded` as `unresolvedDuplicates`, with reason code
+`KNOWLEDGE_DUPLICATE` when no pair is withheld as well; `withheldCards` counts every withheld card
+and version. Every other card reads, recalls and is written as before, and each live version holds
+budget. A write whose `--supersedes` names the id resolves it: every version is replaced at once,
+leaves the budget and default recall, and stays readable by the id. A write of a key the crest
+already holds is still refused as `KNOWLEDGE_DUPLICATE`, the same record delivered twice is one card,
+and a forked or altered stream, or one stream holding two different records for one id, is still
+refused naming its device. A user-crest write that supersedes a card of the metadata/body layout
+reads that card's body as an explicit read does, rather than refusing it as not admitted.
+
 Gates are declared per project and chosen by the change (TCRN-CROSS-STORY-485; MIN-227 D4;
 `packages/core/src/gates-config.ts`, `gates-plan.ts`, `gates-run.ts`, `gates-done.ts`). A gate is a
 project-level configuration record of the gate collection, keyed by its name: its command is an

@@ -2624,6 +2624,8 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       // the top of the answer -- its read refused (the refusal's reasonCode), or cards withheld in
       // unresolved conflict (KNOWLEDGE_POSSIBLE_CONFLICT with unresolvedConflicts and withheldCards)
       // -- so "no user card matched" never stands in for "the user crest was not read".
+      // TCRN-CROSS-SUB-413: every version of an id two devices wrote is withheld too, named under
+      // unresolvedDuplicates (KNOWLEDGE_DUPLICATE when no pair is withheld as well).
       ...(cards.userCrestDegraded === null ? {} : { userCrestDegraded: cards.userCrestDegraded as unknown as JsonValue }),
       query,
       queryTokens: [...result.tokens],

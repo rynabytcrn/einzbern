@@ -464,6 +464,9 @@ interface UserCrestScan extends CrestScan {
   // canonical id order and so is the list. Both cards stay readable; default selection leaves
   // them out until a write resolves the pair (projectUserCrestUnits).
   readonly unresolvedConflicts: readonly (readonly string[])[];
+  // TCRN-CROSS-SUB-413 (STORY-476 D7): every id more than one writer wrote with differing metadata,
+  // in canonical id order, resolved or not. Their versions are not in `units`.
+  readonly duplicates: readonly UserCrestDuplicate[];
 }
 
 // TCRN-CROSS-SUB-310: the one writer a user-crest card came from -- a device's event stream, named
@@ -473,6 +476,21 @@ const USER_CREST_LEGACY_LINEAGE = "legacy" as const;
 
 interface UserCrestUnit extends ScannedKnowledgeUnit {
   readonly lineage: string;
+  // TCRN-CROSS-SUB-413: the event that holds the card in its device's stream; null for a card the
+  // metadata/body layout holds.
+  readonly event: { readonly sequence: number; readonly eventHash: string } | null;
+}
+
+// TCRN-CROSS-SUB-413 (STORY-476 D7): one knowledge id -- one external key, since the id is derived
+// from the key -- that more than one writer wrote with differing metadata, each before it saw the
+// other's. None of its versions is the card: every one stays in its writer's stream and is read
+// explicitly, none is selected by default or recalled while the id is unresolved, and a card whose
+// supersedes names the id replaces every version at once (projectUserCrestUnits).
+interface UserCrestDuplicate {
+  readonly id: string;
+  readonly externalKey: string;
+  // One version per writer, in canonical order of the writer (its device id, or `legacy`).
+  readonly versions: readonly UserCrestUnit[];
 }
 
 interface KnowledgeStoreScan {
@@ -1936,6 +1954,7 @@ async function readUserCrestEventStreams(
         body,
         readBody: async () => readUserCrestFile(bodyPath, KNOWLEDGE_LIMITS.maximumBodyBytes),
         lineage: deviceId,
+        event: { sequence: event.sequence, eventHash: event.eventHash },
       });
       priorHash = event.eventHash;
       eventCount += 1;
@@ -1952,6 +1971,7 @@ async function readUserCrestEventStreams(
 interface UserCrestProjection {
   readonly units: readonly UserCrestUnit[];
   readonly unresolvedConflicts: readonly (readonly string[])[];
+  readonly duplicates: readonly UserCrestDuplicate[];
 }
 
 // Of the cards that replace one card, the one its projected supersededBy names: the latest
@@ -1975,31 +1995,41 @@ function latestReplacement(replacements: readonly UserCrestUnit[]): UserCrestUni
 // card resolves the pair. A card replaced by more than one card -- two devices that replaced it
 // before either saw the other's replacement -- is replaced either way; every replacement stays
 // live, and replacements that collide form an unresolved pair like any other.
+//
+// TCRN-CROSS-SUB-413 (STORY-476 D7): two writers can also write one external key, and so one id,
+// before either sees the other's. That is not a reason to refuse the crest either. The records are
+// grouped by id: one record delivered twice, or written the same by two writers, is one card; a
+// writer holding two different records for one id is refused, since one writer scans before it
+// writes and a stream like that is not one this engine writes; and differing records from different
+// writers are the versions of a duplicate, held apart from the cards (UserCrestDuplicate). Each
+// version's own supersedes still replaces the card it names, and a card whose supersedes names the
+// duplicate's id replaces every version. Versions are not paired: they are withheld already.
 function projectUserCrestUnits(units: readonly UserCrestUnit[]): UserCrestProjection {
+  const written = new Map<string, UserCrestUnit[]>();
+  for (const unit of units) written.set(unit.metadata.id, [...(written.get(unit.metadata.id) ?? []), unit]);
   const byId = new Map<string, UserCrestUnit>();
-  const idByExternalKey = new Map<string, string>();
-  for (const unit of units) {
-    const previous = byId.get(unit.metadata.id);
-    if (previous !== undefined) {
-      if (canonicalJson(previous.metadata) !== canonicalJson(unit.metadata)) {
-        fail("KNOWLEDGE_PARTIAL_STATE", `${unit.metadata.id}: conflicting events share a knowledge id`);
+  const divergent = new Map<string, readonly UserCrestUnit[]>();
+  for (const [id, records] of written) {
+    const versions: UserCrestUnit[] = [];
+    for (const unit of [...records].sort((left, right) => compareCanonicalText(left.lineage, right.lineage))) {
+      if (versions.some((version) => canonicalJson(version.metadata) === canonicalJson(unit.metadata))) continue;
+      if (versions.some((version) => version.lineage === unit.lineage)) {
+        fail("KNOWLEDGE_PARTIAL_STATE", `${id}: writer ${unit.lineage} holds conflicting events for one knowledge id`);
       }
-      continue;
+      versions.push(unit);
     }
-    const previousId = idByExternalKey.get(unit.metadata.externalKey);
-    if (previousId !== undefined && previousId !== unit.metadata.id) {
-      fail("KNOWLEDGE_PARTIAL_STATE", `${unit.metadata.externalKey}: conflicting events share an external key`);
-    }
-    byId.set(unit.metadata.id, unit);
-    idByExternalKey.set(unit.metadata.externalKey, unit.metadata.id);
+    if (versions.length === 1) byId.set(id, versions[0] as UserCrestUnit);
+    else divergent.set(id, versions);
   }
   const replacements = new Map<string, UserCrestUnit[]>();
-  for (const unit of byId.values()) {
+  for (const unit of [...byId.values(), ...[...divergent.values()].flat()]) {
     if (unit.metadata.supersedes === null) continue;
-    if (!byId.has(unit.metadata.supersedes)) fail("KNOWLEDGE_LINK_INVALID", `${unit.metadata.id}:supersedes:${unit.metadata.supersedes}`);
+    if (!byId.has(unit.metadata.supersedes) && !divergent.has(unit.metadata.supersedes)) {
+      fail("KNOWLEDGE_LINK_INVALID", `${unit.metadata.id}:supersedes:${unit.metadata.supersedes}`);
+    }
     replacements.set(unit.metadata.supersedes, [...(replacements.get(unit.metadata.supersedes) ?? []), unit]);
   }
-  const projected = [...byId.values()].map((unit): UserCrestUnit => {
+  const projectReplaced = (unit: UserCrestUnit): UserCrestUnit => {
     const successors = replacements.get(unit.metadata.id);
     // A card the metadata/body layout already marked replaced keeps the mark it was written with.
     if (successors === undefined || unit.metadata.extensions.supersededBy !== undefined) return unit;
@@ -2011,9 +2041,17 @@ function projectUserCrestUnits(units: readonly UserCrestUnit[]): UserCrestProjec
       updatedAt: successor.metadata.updatedAt,
     }, null);
     return { ...unit, metadata };
-  }).sort((left, right) => compareCanonicalText(left.metadata.id, right.metadata.id));
+  };
+  const projected = [...byId.values()].map(projectReplaced)
+    .sort((left, right) => compareCanonicalText(left.metadata.id, right.metadata.id));
+  const duplicates = [...divergent].map(([id, versions]): UserCrestDuplicate => ({
+    id,
+    externalKey: (versions[0] as UserCrestUnit).metadata.externalKey,
+    versions: versions.map(projectReplaced),
+  })).sort((left, right) => compareCanonicalText(left.id, right.id));
   const byProjectedId = new Map(projected.map((unit) => [unit.metadata.id, unit.metadata]));
-  for (const unit of projected) validateSupersedesLink(unit.metadata, byProjectedId);
+  for (const duplicate of duplicates) byProjectedId.set(duplicate.id, (duplicate.versions[0] as UserCrestUnit).metadata);
+  for (const unit of [...projected, ...duplicates.flatMap((duplicate) => duplicate.versions)]) validateSupersedesLink(unit.metadata, byProjectedId);
   const unresolvedConflicts: (readonly string[])[] = [];
   for (let leftIndex = 0; leftIndex < projected.length; leftIndex += 1) {
     const left = projected[leftIndex] as UserCrestUnit;
@@ -2028,12 +2066,49 @@ function projectUserCrestUnits(units: readonly UserCrestUnit[]): UserCrestProjec
       if (conflicts && !acknowledged) unresolvedConflicts.push([left.metadata.id, right.metadata.id]);
     }
   }
-  return { units: projected, unresolvedConflicts };
+  return { units: projected, unresolvedConflicts, duplicates };
 }
 
 // The ids of the cards an unresolved conflict holds out of default selection.
 function unresolvedConflictIds(scan: Pick<UserCrestScan, "unresolvedConflicts">): ReadonlySet<string> {
   return new Set(scan.unresolvedConflicts.flat());
+}
+
+// TCRN-CROSS-SUB-413: a duplicate is unresolved while one of its versions is still live -- not
+// replaced and not retired. A card whose supersedes names its id resolves it.
+function unresolvedDuplicates(scan: Pick<UserCrestScan, "duplicates">): readonly UserCrestDuplicate[] {
+  return scan.duplicates.filter((duplicate) => duplicate.versions.some((version) => countsTowardCapacity(version.metadata)));
+}
+
+// Every record the user crest holds -- its cards and every version of every duplicate -- in
+// canonical id order, the versions of one id in their canonical writer order: what its index view,
+// its budget and a `--selection all` list read.
+function userCrestRecords(scan: Pick<UserCrestScan, "units" | "duplicates">): readonly ScannedKnowledgeUnit[] {
+  return [...scan.units, ...scan.duplicates.flatMap((duplicate) => duplicate.versions)]
+    .sort((left, right) => compareCanonicalText(left.metadata.id, right.metadata.id));
+}
+
+// Which writer holds a version, and where: the device whose event stream holds it, with the event's
+// sequence and hash; all three null for a version the metadata/body layout holds.
+function duplicateVersionIdentity(version: UserCrestUnit): Readonly<Record<string, JsonValue>> {
+  return version.event === null
+    ? { deviceId: null, sequence: null, eventHash: null }
+    : { deviceId: version.lineage, sequence: version.event.sequence, eventHash: version.event.eventHash };
+}
+
+// The diagnostic entry of one duplicate, as knowledge-list, a read of its id and recall name it
+// (knowledge-core-v1.md, "Storage and authority").
+function duplicateDiagnostic(duplicate: UserCrestDuplicate): Readonly<Record<string, JsonValue>> {
+  return {
+    id: duplicate.id,
+    externalKey: duplicate.externalKey,
+    versions: duplicate.versions.map((version) => ({
+      ...duplicateVersionIdentity(version),
+      updatedAt: version.metadata.updatedAt,
+      subject: version.metadata.subject,
+      bodySha256: version.metadata.bodySha256,
+    })),
+  };
 }
 
 async function assertUserCrestRootEntries(storeRoot: string, legacyLayout: boolean, hasEvents: boolean, allowClaim: boolean): Promise<void> {
@@ -2080,13 +2155,16 @@ async function scanUserCrest(
       danglingWorkLinks: null,
       body: (metadata, body) => validateMetadataBody(metadata, body, null),
     });
-    legacyUnits = legacy.units.map((unit): UserCrestUnit => ({ ...unit, lineage: USER_CREST_LEGACY_LINEAGE }));
+    legacyUnits = legacy.units.map((unit): UserCrestUnit => ({ ...unit, lineage: USER_CREST_LEGACY_LINEAGE, event: null }));
   }
   const streams = hasEvents ? await readUserCrestEventStreams(storeRoot, bodyMode) : { units: [], eventCount: 0, heads: [] };
-  const { units, unresolvedConflicts } = projectUserCrestUnits([...legacyUnits, ...streams.units]);
+  const { units, unresolvedConflicts, duplicates } = projectUserCrestUnits([...legacyUnits, ...streams.units]);
+  // TCRN-CROSS-SUB-413: every live version of a duplicate is live body bytes until a card
+  // supersedes its id; the index view lists every version beside the cards.
+  const records = userCrestRecords({ units, duplicates }).map((unit) => unit.metadata);
   // O-1 is pending (R14 (b)): a merge whose live bodies exceed the budget is refused whole here,
   // unchanged; recall reports the refusal as a degraded user crest (readRecallCards).
-  const capacityBytes = capacityBodyBytes(units.map((unit) => unit.metadata));
+  const capacityBytes = capacityBodyBytes(records);
   const aggregateLimit = KNOWLEDGE_AGGREGATE_DEFAULT;
   assertWithinCapacity(capacityBytes, aggregateLimit, "knowledge aggregate bytes");
   const eventHighWaterDigest = streams.eventCount === 0
@@ -2097,11 +2175,11 @@ async function scanUserCrest(
     version: marker.version + streams.eventCount,
     eventHighWaterDigest,
   };
-  const index = knowledgeIndex(projectedMarker, units.map((unit) => unit.metadata));
+  const index = knowledgeIndex(projectedMarker, records);
   await projectCachedView(backend, index);
   return {
     storeRoot, device: location.device, eventOnly: !legacyLayout, eventHeads: streams.heads, marker: projectedMarker, units, index,
-    capacity: { bodyBytes: capacityBytes, limit: aggregateLimit }, unresolvedConflicts,
+    capacity: { bodyBytes: capacityBytes, limit: aggregateLimit }, unresolvedConflicts, duplicates,
   };
 }
 
@@ -2309,7 +2387,7 @@ async function recoverUserCrestUnlocked(location: UserCrestLocation, options: Kn
   // the streams and refuse every later read. What recovery repairs is this device's derived index
   // and the claim an interrupted writer of the metadata/body layout left; it deletes no body.
   const backend = userCrestBackend(scan.storeRoot, location.device, options);
-  await writeIndex(backend, scan.marker, scan.units.map((unit) => unit.metadata));
+  await writeIndex(backend, scan.marker, userCrestRecords(scan).map((unit) => unit.metadata));
   await releaseMutationClaim(scan.storeRoot, boundClaim);
   await scanUserCrest(location, options);
   return {
@@ -2718,18 +2796,20 @@ async function createUserCrestEvent(
   const sequence = (prior?.sequence ?? 0) + 1;
   if (!Number.isSafeInteger(sequence)) fail("KNOWLEDGE_LIMIT_EXCEEDED", "user crest event sequence");
 
-  let superseded: ScannedKnowledgeUnit | undefined;
-  if (metadata.supersedes !== null) {
-    superseded = scan.units.find((unit) => unit.metadata.id === metadata.supersedes);
-    if (superseded === undefined || superseded.metadata.lifecycle === "retired") {
-      fail("KNOWLEDGE_LINK_INVALID", `${metadata.id}:supersedes:${metadata.supersedes}`);
-    }
+  // TCRN-CROSS-SUB-413: a write sees every record the crest holds, each version of a duplicate as
+  // much as a card: a conflict it scores against (named once per id), an id and external key it may
+  // not reuse, and live body bytes of the budget. A write whose supersedes names a duplicate's id
+  // replaces every version of it at once; it is refused only when every version is retired.
+  const records = userCrestRecords(scan);
+  const replacedRecords = metadata.supersedes === null ? [] : records.filter((unit) => unit.metadata.id === metadata.supersedes);
+  if (metadata.supersedes !== null && replacedRecords.every((unit) => unit.metadata.lifecycle === "retired")) {
+    fail("KNOWLEDGE_LINK_INVALID", `${metadata.id}:supersedes:${metadata.supersedes}`);
   }
-  const conflicts = knowledgeConflictHits(
-    scan.units.map((unit) => unit.metadata),
+  const conflicts = [...new Set(knowledgeConflictHits(
+    records.map((unit) => unit.metadata),
     metadata.subject,
     metadata.supersedes === null ? [metadata.id] : [metadata.id, metadata.supersedes],
-  );
+  ))];
   if (conflicts.length > 0 && metadata.supersedes === null && input.coexist !== true) {
     fail("KNOWLEDGE_POSSIBLE_CONFLICT", conflicts.join(","), { conflicts: [...conflicts] });
   }
@@ -2742,23 +2822,29 @@ async function createUserCrestEvent(
   if (written !== metadata) validateMetadataBody(validateMetadataShape(written as unknown as Readonly<Record<string, JsonValue>>, null), body, null);
   const metadataBytes = Buffer.from(canonicalJson(written), "utf8");
   if (metadataBytes.length > KNOWLEDGE_LIMITS.maximumMetadataBytes) fail("KNOWLEDGE_LIMIT_EXCEEDED", "knowledge create budget");
-  if (scan.units.some((unit) => unit.metadata.id === metadata.id || unit.metadata.externalKey === metadata.externalKey)) {
+  if (records.some((unit) => unit.metadata.id === metadata.id || unit.metadata.externalKey === metadata.externalKey)) {
     fail("KNOWLEDGE_DUPLICATE", metadata.id);
   }
 
-  const supersededMetadata: KnowledgeUnitMetadata | null = superseded === undefined ? null : {
-    ...superseded.metadata,
-    extensions: { ...superseded.metadata.extensions, supersededBy: written.id },
-    revision: superseded.metadata.revision + 1,
-    updatedAt: input.occurredAt,
-  };
-  if (supersededMetadata !== null && superseded !== undefined) {
-    const oldBody = superseded.body ?? (superseded.readBody === undefined ? null : await superseded.readBody());
-    if (oldBody === null) fail("KNOWLEDGE_RECORD_INVALID", `${superseded.metadata.id}:body was not admitted`);
+  // The records this write replaces, as the next read projects them. A retired one gives no bytes
+  // back and is left as it is. A record of the metadata/body layout carries no body reader of its
+  // own (a version of a duplicate can be one), so its body is read as an explicit read reads it.
+  const replaced = new Map<ScannedKnowledgeUnit, KnowledgeUnitMetadata>();
+  for (const unit of replacedRecords) {
+    if (unit.metadata.lifecycle === "retired") continue;
+    const supersededMetadata: KnowledgeUnitMetadata = {
+      ...unit.metadata,
+      extensions: { ...unit.metadata.extensions, supersededBy: written.id },
+      revision: unit.metadata.revision + 1,
+      updatedAt: input.occurredAt,
+    };
+    const oldBody = unit.body ?? (unit.readBody === undefined
+      ? await userCrestBackend(scan.storeRoot, location.device, options).readKnowledgeBody(unit.metadata.id)
+      : await unit.readBody());
     validateMetadataBody(validateExistingMetadataShape(supersededMetadata, null), oldBody, null);
+    replaced.set(unit, supersededMetadata);
   }
-  const projectedMetadata = scan.units.map((unit) =>
-    supersededMetadata !== null && unit.metadata.id === supersededMetadata.id ? supersededMetadata : unit.metadata).concat(written);
+  const projectedMetadata = records.map((unit) => replaced.get(unit) ?? unit.metadata).concat(written);
   assertWithinCapacity(capacityBodyBytes(projectedMetadata), scan.capacity.limit, "knowledge create budget");
 
   const sequenceText = String(sequence).padStart(8, "0");
@@ -2796,7 +2882,7 @@ async function createUserCrestEvent(
     version: scan.marker.version + 1,
     scope: "user",
     ...(conflicts.length > 0 ? { conflicts: [...conflicts] } : {}),
-    ...(supersededMetadata === null ? {} : { superseded: supersededMetadata.id }),
+    ...(metadata.supersedes === null ? {} : { superseded: metadata.supersedes }),
   };
 }
 
@@ -3304,7 +3390,9 @@ const USER_CREST_DISCLOSURE: Readonly<Record<string, JsonValue>> = Object.freeze
  * R5), whichever library `workspaceRoot` names, and lists nothing before the crest's first card;
  * left out, the library's crest, exactly as before. TCRN-CROSS-SUB-310: a user crest holding
  * unresolved conflicts answers them as `unresolvedConflicts` (pairs of card ids), and its default
- * selection leaves their cards out; selection "all" lists them.
+ * selection leaves their cards out; selection "all" lists them. TCRN-CROSS-SUB-413: likewise an id
+ * more than one writer wrote, answered as `unresolvedDuplicates` (duplicateDiagnostic) while it is
+ * unresolved: default selection leaves out every version, and selection "all" lists each one.
  */
 export async function listKnowledgeMetadata(workspaceRoot: string, query: KnowledgeListQuery): Promise<Readonly<Record<string, JsonValue>>> {
   const normalized = normalizeListQuery(query);
@@ -3312,12 +3400,15 @@ export async function listKnowledgeMetadata(workspaceRoot: string, query: Knowle
   if (query.scope === "user") {
     return readUserCrest(query, async (scan) => {
       if (scan === null) return knowledgeListAnswer([], query, normalized, USER_CREST_DISCLOSURE);
-      const withheld = unresolvedConflictIds(scan);
-      const matched = selectKnowledgeMetadata(scan, query, normalized, true)
+      const duplicates = unresolvedDuplicates(scan);
+      const withheld = new Set([...unresolvedConflictIds(scan), ...duplicates.map((duplicate) => duplicate.id)]);
+      const matched = selectKnowledgeMetadata({ units: userCrestRecords(scan) }, query, normalized, true)
         .filter((metadata) => normalized.selection !== "default" || !withheld.has(metadata.id));
-      return knowledgeListAnswer(matched, query, normalized, scan.unresolvedConflicts.length === 0
-        ? USER_CREST_DISCLOSURE
-        : { ...USER_CREST_DISCLOSURE, unresolvedConflicts: scan.unresolvedConflicts as unknown as JsonValue });
+      return knowledgeListAnswer(matched, query, normalized, {
+        ...USER_CREST_DISCLOSURE,
+        ...(scan.unresolvedConflicts.length === 0 ? {} : { unresolvedConflicts: scan.unresolvedConflicts as unknown as JsonValue }),
+        ...(duplicates.length === 0 ? {} : { unresolvedDuplicates: duplicates.map(duplicateDiagnostic) }),
+      });
     });
   }
   const scan = await scanKnowledgeStore(workspaceRoot, query, false, "metadata-only");
@@ -3357,12 +3448,39 @@ function assertKnowledgeReadId(id: string): void {
   }
 }
 
-/** One card's snippet; `options.scope` "user" reads it from this user's crest (TCRN-CROSS-STORY-476 R5). */
+// TCRN-CROSS-SUB-413: a read of a duplicate's id carries at its top the entry knowledge-list names
+// while the duplicate is unresolved, and nothing more once a card has superseded it.
+function duplicateReadDisclosure(duplicate: UserCrestDuplicate): Readonly<Record<string, JsonValue>> {
+  return unresolvedDuplicates({ duplicates: [duplicate] }).length === 0
+    ? USER_CREST_DISCLOSURE
+    : { ...USER_CREST_DISCLOSURE, unresolvedDuplicates: [duplicateDiagnostic(duplicate)] };
+}
+
+/**
+ * One card's snippet; `options.scope` "user" reads it from this user's crest (TCRN-CROSS-STORY-476 R5).
+ * TCRN-CROSS-SUB-413: the id of a user-crest duplicate answers every version's snippet under
+ * `versions`, each named by its writer, in place of one card's fields.
+ */
 export async function readKnowledgeSnippet(workspaceRoot: string, id: string, options: KnowledgeScopedReadOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
   assertKnowledgeReadId(id);
   assertStoreScope(options.scope);
   if (options.scope === "user") {
-    return readUserCrest(options, async (scan) => knowledgeSnippetAnswer(id, scan === null ? [] : scan.units, USER_CREST_DISCLOSURE));
+    return readUserCrest(options, async (scan) => {
+      const duplicate = scan?.duplicates.find((entry) => entry.id === id);
+      if (duplicate === undefined) return knowledgeSnippetAnswer(id, scan === null ? [] : scan.units, USER_CREST_DISCLOSURE);
+      return {
+        schemaVersion: "tcrn.knowledge-snippet.v1",
+        ...duplicateReadDisclosure(duplicate),
+        id,
+        versions: duplicate.versions.map((version) => ({
+          ...duplicateVersionIdentity(version),
+          subject: version.metadata.subject,
+          summary: version.metadata.summary,
+          snippet: version.metadata.snippet,
+          revision: version.metadata.revision,
+        })),
+      };
+    });
   }
   const scan = await scanKnowledgeStore(workspaceRoot, options, false, "metadata-only");
   return knowledgeSnippetAnswer(id, scan.units, trailingDisclosure(scan));
@@ -3382,7 +3500,11 @@ function knowledgeSnippetAnswer(id: string, units: readonly ScannedKnowledgeUnit
   };
 }
 
-/** One card's body, read explicitly; `options.scope` "user" reads it from this user's crest (TCRN-CROSS-STORY-476 R5). */
+/**
+ * One card's body, read explicitly; `options.scope` "user" reads it from this user's crest (TCRN-CROSS-STORY-476 R5).
+ * TCRN-CROSS-SUB-413: the id of a user-crest duplicate answers every version's body under
+ * `versions`, each named by its writer, once every version passes the check one card's body does.
+ */
 export async function readKnowledgeBody(workspaceRoot: string, id: string, options: KnowledgeBodyReadOptions): Promise<Readonly<Record<string, JsonValue>>> {
   assertKnowledgeReadId(id);
   assertEvaluationInstant(options.at);
@@ -3390,11 +3512,41 @@ export async function readKnowledgeBody(workspaceRoot: string, id: string, optio
   if (options.scope === "user") {
     return readUserCrest(options, async (scan) => {
       if (scan === null) fail("KNOWLEDGE_NOT_FOUND", id);
-      return knowledgeBodyAnswer(id, scan.units, options, userCrestBackend(scan.storeRoot, scan.device, options), null, USER_CREST_DISCLOSURE);
+      const backend = userCrestBackend(scan.storeRoot, scan.device, options);
+      const duplicate = scan.duplicates.find((entry) => entry.id === id);
+      if (duplicate === undefined) return knowledgeBodyAnswer(id, scan.units, options, backend, null, USER_CREST_DISCLOSURE);
+      const freshness = duplicate.versions.map((version) => readableBodyFreshness(version.metadata, options));
+      const versions: Readonly<Record<string, JsonValue>>[] = [];
+      for (const [index, version] of duplicate.versions.entries()) {
+        const body = version.readBody === undefined ? await backend.readKnowledgeBody(id) : await version.readBody();
+        validateMetadataBody(version.metadata, body, null);
+        versions.push({
+          ...duplicateVersionIdentity(version),
+          revision: version.metadata.revision,
+          freshness: freshness[index] as KnowledgeFreshnessState,
+          bodySha256: version.metadata.bodySha256,
+          body: body.toString("utf8"),
+        });
+      }
+      return { schemaVersion: "tcrn.knowledge-body-read.v1", ...duplicateReadDisclosure(duplicate), id, versions, explicit: true };
     });
   }
   const scan = await scanKnowledgeStore(workspaceRoot, options, false, "metadata-only");
   return knowledgeBodyAnswer(id, scan.units, options, storeBackendFor(scan.storeRoot, options), scan.workspace, trailingDisclosure(scan));
+}
+
+// The freshness of a card whose body an explicit read may open; a card it may not open is refused.
+function readableBodyFreshness(metadata: KnowledgeUnitMetadata, options: KnowledgeBodyReadOptions): KnowledgeFreshnessState {
+  const freshness = computeFreshness(metadata, options.at);
+  // TCRN-CROSS-INC-282: body access answers the same question the selection does. While
+  // this leg still demanded "promoted", a card the default list now returns had a body the
+  // CLI refused to read without --allow-unpromoted, which is the reported defect one layer
+  // down. "rejected" is what --allow-unpromoted still opens.
+  if ((!options.allowUnpromoted && metadata.promotionState === "rejected") ||
+    (!options.allowStale && freshness !== "fresh") || metadata.retrievalDisposition === "excluded" || metadata.lifecycle === "retired") {
+    fail("KNOWLEDGE_BODY_ACCESS_DENIED", metadata.id);
+  }
+  return freshness;
 }
 
 async function knowledgeBodyAnswer(
@@ -3407,15 +3559,7 @@ async function knowledgeBodyAnswer(
 ): Promise<Readonly<Record<string, JsonValue>>> {
   const unit = units.find((entry) => entry.metadata.id === id);
   if (!unit) fail("KNOWLEDGE_NOT_FOUND", id);
-  const freshness = computeFreshness(unit.metadata, options.at);
-  // TCRN-CROSS-INC-282: body access answers the same question the selection does. While
-  // this leg still demanded "promoted", a card the default list now returns had a body the
-  // CLI refused to read without --allow-unpromoted, which is the reported defect one layer
-  // down. "rejected" is what --allow-unpromoted still opens.
-  if ((!options.allowUnpromoted && unit.metadata.promotionState === "rejected") ||
-    (!options.allowStale && freshness !== "fresh") || unit.metadata.retrievalDisposition === "excluded" || unit.metadata.lifecycle === "retired") {
-    fail("KNOWLEDGE_BODY_ACCESS_DENIED", id);
-  }
+  const freshness = readableBodyFreshness(unit.metadata, options);
   const body = unit.readBody === undefined ? await backend.readKnowledgeBody(id) : await unit.readBody();
   validateMetadataBody(unit.metadata, body, linkState);
   return {

@@ -13,6 +13,15 @@ import {
   normalizeModelsCategoryValue,
 } from "./models-category.js";
 import {
+  MODELS_ESCALATION_CEILING_DEFAULT_VALUE,
+  MODELS_ESCALATION_CEILING_SETTING_KEY,
+  MODELS_ESCALATION_ENABLED_DEFAULT_VALUE,
+  MODELS_ESCALATION_THRESHOLD_DEFAULT_VALUE,
+  MODELS_ESCALATION_THRESHOLD_MAX,
+  assertModelsEscalationWrite,
+  validateModelsEscalationCeiling,
+} from "./models-escalation.js";
+import {
   LEGACY_DISPATCH_TIERS_SETTING_KEY,
   MODELS_TIERS_DEFAULT_VALUE,
   MODELS_TIERS_SETTING_KEY,
@@ -34,7 +43,9 @@ export const SETTINGS_LAYER_KIND = "workspace_configuration" as const;
 
 // TCRN-CROSS-STORY-508 R1, R2: the four MODELS_* codes are the refusals of a models.category or
 // models.tiers write that the two tables' shapes and their cross-check name (models-category.ts,
-// models-tiers.ts); every other malformed field of either table is SETTINGS_VALUE_INVALID.
+// models-tiers.ts); every other malformed field of either table is SETTINGS_VALUE_INVALID. R3:
+// MODELS_CATEGORY_UNKNOWN also refuses a models.escalation.ceiling write naming a category
+// models.category does not hold (models-escalation.ts).
 export const SETTINGS_REASON_CODES = Object.freeze([
   "MODELS_CATEGORY_DUPLICATE",
   "MODELS_CATEGORY_IN_USE",
@@ -117,6 +128,9 @@ export type SettingKey =
   | "knowledge.aggregateBytes"
   | "knowledge.articlesPath"
   | "models.category"
+  | "models.escalation.ceiling"
+  | "models.escalation.enabled"
+  | "models.escalation.threshold"
   | "models.tiers"
   | "quota.fiveHourParallelOffPercent"
   | "quota.fiveHourWaitPercent"
@@ -403,6 +417,45 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     order: 2,
   },
   {
+    // TCRN-CROSS-STORY-508 R3 (MIN-236 D5): whether a rule's record escalates along the order of
+    // models.tiers as the attempts it serves are sent back; models-escalation.ts reads the three
+    // models.escalation keys and resolves the escalation (resolveModelsTier). Scalars of the models
+    // group after the two tables (R5); like every key here, a model does not write them (R4).
+    key: "models.escalation.enabled",
+    type: "enum",
+    controlType: "boolean",
+    layerKind: SETTINGS_LAYER_KIND,
+    defaultValue: MODELS_ESCALATION_ENABLED_DEFAULT_VALUE,
+    allowedValues: ["false", "true"],
+    trueValue: "true",
+    falseValue: "false",
+    group: "models",
+    order: 3,
+  },
+  {
+    // How many rejections escalate a rule's record one step.
+    key: "models.escalation.threshold",
+    type: "string",
+    controlType: "number",
+    layerKind: SETTINGS_LAYER_KIND,
+    defaultValue: MODELS_ESCALATION_THRESHOLD_DEFAULT_VALUE,
+    min: 1,
+    max: MODELS_ESCALATION_THRESHOLD_MAX,
+    group: "models",
+    order: 4,
+  },
+  {
+    // The category an escalation stops in, at its record with the smallest order: a category id,
+    // which a write may only set to a category models.category holds (assertSettingWriteConsistent).
+    key: "models.escalation.ceiling",
+    type: "string",
+    controlType: "text",
+    layerKind: SETTINGS_LAYER_KIND,
+    defaultValue: MODELS_ESCALATION_CEILING_DEFAULT_VALUE,
+    group: "models",
+    order: 5,
+  },
+  {
     // TCRN-CROSS-STORY-484 (MIN-233 D2): when the orchestrating conversation shrinks its parallel
     // subagents. Each is a percentage of a usage window: at or above fiveHourParallelOffPercent of
     // the five-hour window it runs one subagent at a time, at or above fiveHourWaitPercent it
@@ -652,10 +705,15 @@ export function currentSettingRecord(record: WorkspaceSettingRecord): WorkspaceS
  * settings-remove (`value` null) runs against the settings as they stand before it appends: a
  * models.tiers record may not name a category models.category lacks (MODELS_CATEGORY_UNKNOWN), and a
  * category records still name may not leave models.category (MODELS_CATEGORY_IN_USE, the records in
- * `details.references`). Replay does not run it. Every other key passes.
+ * `details.references`). R3: models.escalation.ceiling may only name a category models.category holds
+ * (MODELS_CATEGORY_UNKNOWN), and a settings-remove puts back a default that must too. Replay does not
+ * run it. Every other key passes.
  */
 export function assertSettingWriteConsistent(settings: readonly WorkspaceSettingRecord[], key: string, value: string | null): void {
-  withSettingsErrors(() => assertModelsTablesWrite(settings, key, value));
+  withSettingsErrors(() => {
+    assertModelsTablesWrite(settings, key, value);
+    assertModelsEscalationWrite(settings, key, value);
+  });
 }
 
 const engineVersionPattern = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/u;
@@ -733,6 +791,11 @@ export function validateSettingValue(key: unknown, value: unknown, workspaceRoot
       `${entry.key} is outside its closed enum; allowed values: ${entry.allowedValues?.join(", ") ?? "none"}`,
       { allowedValues: entry.allowedValues ?? [] },
     );
+  }
+  if (entry.key === MODELS_ESCALATION_CEILING_SETTING_KEY) {
+    // TCRN-CROSS-STORY-508 R3: a category id; whether the category exists is the write's question
+    // (assertSettingWriteConsistent), not the shape's, so replay asks only this one.
+    withSettingsErrors(() => validateModelsEscalationCeiling(value));
   }
   if (entry.key === "retrieval.promptLanguages" && parsePromptLanguages(value).length === 0) {
     fail(

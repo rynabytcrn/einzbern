@@ -59,9 +59,10 @@ The layout fields describe how a key is shown, nothing more: they are not part o
 record or of the machine settings file, nothing writes them, and they change no key's default,
 bounds, validation or `modelWritable`. A key added to either catalog names its group and order
 in the same change, and its row joins the table below; `tests/settings-catalog-shape.test.mjs`
-compares the table with both catalogs. A row marked *planned* is a key TCRN-CROSS-STORY-508
-adds later (the `models.escalation.*` keys, by R3): its layout is fixed here, and the change
-that catalogues the key uses it.
+compares the table with both catalogs. A row marked *planned* names a key a later change adds:
+its layout is fixed here, and the change that catalogues the key uses it and drops the mark in
+the same change. No row is planned now; the last ones, the three `models.escalation.*` keys of
+TCRN-CROSS-STORY-508 R3, are catalogued.
 
 | Group | Key | Layer | Shape | Order |
 | --- | --- | --- | --- | --- |
@@ -70,9 +71,9 @@ that catalogues the key uses it.
 | `general` | `agents.navigation` | device | scalar | 3 |
 | `models` | `models.category` | project | collection | 1 |
 | `models` | `models.tiers` | project | collection | 2 |
-| `models` | `models.escalation.enabled` (*planned*) | project | scalar | 3 |
-| `models` | `models.escalation.threshold` (*planned*) | project | scalar | 4 |
-| `models` | `models.escalation.ceiling` (*planned*) | project | scalar | 5 |
+| `models` | `models.escalation.enabled` | project | scalar | 3 |
+| `models` | `models.escalation.threshold` | project | scalar | 4 |
+| `models` | `models.escalation.ceiling` | project | scalar | 5 |
 | `execution` | `execution.maxConcurrentSubagents` | project | scalar | 1 |
 | `execution` | `quota.fiveHourParallelOffPercent` | project | scalar | 2 |
 | `execution` | `quota.fiveHourWaitPercent` | project | scalar | 3 |
@@ -273,6 +274,76 @@ those records as `models.tiers.<order>`. Nothing is recorded on a refusal. Repla
 value's shape and no reference, the rule every recorded value follows: a merge may bring the
 two tables apart, and the next write of either names what is missing. Every other malformed
 field of either table is `SETTINGS_VALUE_INVALID` with its `details.path`.
+
+The three escalation keys say how a rule's record escalates along the order of `models.tiers`
+(TCRN-CROSS-STORY-508 R3, R4; MIN-236 D5, D6). They are scalars of the `models` group.
+
+- **Key:** `models.escalation.enabled`
+  - **Type:** `true` or `false` (`controlType` `boolean`, `trueValue` `true`, `falseValue` `false`).
+  - **Layer:** `workspace_configuration`.
+  - **Tier:** 1 (the Owner sets it, in Atelier; a model never edits it).
+  - **Default:** `true`.
+  - **Bounds:** the two values; any other is `SETTINGS_VALUE_INVALID`.
+  - **Meaning:** whether a rule's record escalates at all; `false` keeps every rule on its
+    category's base record.
+  - **Decision record:** MIN-236 D5 (TCRN-CROSS-STORY-508 R3).
+
+- **Key:** `models.escalation.threshold`
+  - **Type:** integer, 1 to 100.
+  - **Layer:** `workspace_configuration`.
+  - **Tier:** 1 (the Owner sets it, in Atelier; a model never edits it).
+  - **Default:** `1`.
+  - **Bounds:** a decimal integer from 1 to 100; any other value is `SETTINGS_VALUE_INVALID`.
+  - **Meaning:** how many rejections escalate a record one step: after `n` rejections the record
+    has escalated `floor(n / threshold)` steps, as far as the ceiling lets it.
+  - **Decision record:** MIN-236 D5 (TCRN-CROSS-STORY-508 R3).
+
+- **Key:** `models.escalation.ceiling`
+  - **Type:** a category id of `models.category`.
+  - **Layer:** `workspace_configuration`.
+  - **Tier:** 1 (the Owner sets it, in Atelier; a model never edits it).
+  - **Default:** `main`.
+  - **Bounds:** a name (`SETTINGS_VALUE_INVALID` otherwise) of a category `models.category` holds
+    when it is written. A `settings-set` naming a category the table does not hold, and a
+    `settings-remove` while the table does not hold `main`, are refused with
+    `MODELS_CATEGORY_UNKNOWN` (`details.path` `models.escalation.ceiling` and `details.category`),
+    and nothing is recorded. Replay checks the name only. A `models.category` write is not checked
+    against the ceiling: a ceiling whose category the table no longer holds is refused where it is
+    used (below).
+  - **Meaning:** the category an escalation stops in, at its record with the smallest order.
+  - **Decision record:** MIN-236 D5 (TCRN-CROSS-STORY-508 R3).
+
+**Escalation** (R4, second half; AC5). `resolveModelsTier` (`packages/core/src/models-escalation.ts`,
+exported by core) is a pure function of the two tables, the three keys' effective values
+(`readModelsEscalation`), the category a rule names and the number of rejections of the attempts
+that rule serves. It returns the selected `record`, the `steps` it escalated and whether it
+stopped at the ceiling (`atCeiling`).
+
+- It starts at the category's base record, the one with the largest order.
+- For every `threshold` rejections it escalates one record: to the record with the next smaller
+  order in the whole table, whatever its category and whatever its runner.
+- It goes no further than the ceiling's stop, the record of the ceiling category with the
+  smallest order; there `atCeiling` is true and a further rejection escalates it no further. A
+  base record at or above the stop stays where it is (no step, `atCeiling` true).
+- With `models.escalation.enabled` `false` it is the base record, `steps` 0 and `atCeiling` false,
+  and the ceiling is not read.
+- Refusals: a category, or an enabled ceiling, that `models.category` does not hold is
+  `MODELS_CATEGORY_UNKNOWN`; a category, or an enabled ceiling, without a record is
+  `MODELS_CATEGORY_EMPTY` (for the ceiling with `details.path` `models.escalation.ceiling`); a
+  table of the wrong shape keeps its own reason codes; an escalation value or a rejection count of
+  the wrong kind is `MODELS_ESCALATION_INVALID` with its `details.path`.
+
+The count of rejections is the caller's: an argument, read from wherever the caller keeps it (the
+orchestrating conversation's escalation ledger, for one). The engine records no count and has no
+command that resolves a tier. What follows a rejection at the ceiling (MIN-236 D5: the next one
+stops and goes to the Owner) is the caller's process, not a rule of the function.
+
+There is no runner filter (MIN-236 D6), so a step may land on a record of another runner. The
+default table interleaves the two hosts within each category (see `models.tiers`): from the
+`economy` base record, `claude-code` at 60, the first step is `codex` at 50, the second
+`claude-code` at 40 in `main`, and the third `codex` at 30, the default ceiling's stop. The walk
+stays as it is; the Owner adds and removes records for the hosts the library dispatches through,
+so a library that runs one host keeps only that host's records.
 
 - **Keys:** `quota.fiveHourParallelOffPercent` (default `75`), `quota.fiveHourWaitPercent`
   (default `90`), `quota.weeklyParallelOffPercent` (default `95`) and

@@ -591,6 +591,27 @@ types beside `readModelsTiers`. The `variables-system` section renders `models.t
 columns Order, Category, Runner, Model, Effort and Note, and names a withheld record
 `models.tiers.<order>`.
 
+A rule's record escalates along the order of `models.tiers` (TCRN-CROSS-STORY-508 R3, R4, AC1, AC5;
+MIN-236 D5, D6; `packages/core/src/models-escalation.ts`, `settings.ts`,
+`specs/settings-catalog-v1.md`). Three scalars join the catalog in the `models` group, after the two
+tables: `models.escalation.enabled` (`true` or `false`, a boolean control, default `true`),
+`models.escalation.threshold` (an integer from 1 to 100, default `1`) and `models.escalation.ceiling`
+(a category id, default `main`). Like every key, a model does not write them through the CLI
+(`MODEL_WRITE_REFUSED`). A `settings-set` of the ceiling naming a category `models.category` does not
+hold, and a `settings-remove` of it while the table does not hold `main`, are refused with
+`MODELS_CATEGORY_UNKNOWN` (`details.path` `models.escalation.ceiling`); replay checks the name only.
+Core exports `resolveModelsTier`, a pure function of the two tables, the three keys' effective values
+(`readModelsEscalation`), the category a rule names and the number of rejections its caller counts: it
+starts at the category's base record and, for every `threshold` rejections, escalates to the record
+with the next smaller order in the whole table, across categories and runners, no further than the
+ceiling category's record with the smallest order; it returns the `record`, the `steps` and
+`atCeiling`. A base record at or above the ceiling stays, and with escalation disabled the base record
+is the answer. An unknown or empty category or ceiling is `MODELS_CATEGORY_UNKNOWN` or
+`MODELS_CATEGORY_EMPTY`, and an escalation value or rejection count of the wrong kind is the new
+`MODELS_ESCALATION_INVALID`. The engine keeps no count of rejections and adds no command. There is no
+runner filter, so from the default `economy` base record (`claude-code`, 60) the first step is
+`codex` (50).
+
 The engine ships as one release archive that needs nothing but Node.js (TCRN-CROSS-STORY-481;
 MIN-227 D23, D28; `scripts/lib/bundle.mjs`, `scripts/pack-release.mjs`,
 `skill/mana-orchestrate/scripts/install.mjs`, `packages/core/src/node-floor.ts`).

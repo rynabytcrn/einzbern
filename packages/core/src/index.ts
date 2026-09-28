@@ -237,6 +237,12 @@ export { MODELS_CATEGORY_SETTING_KEY } from "./models-category.js";
 export type { ModelsCategories, ModelsCategoryRecord } from "./models-category.js";
 export { MODELS_TIERS_SETTING_KEY, baseModelsTier, readModelsCategory, readModelsTiers } from "./models-tiers.js";
 export type { ModelsTierRecord, ModelsTiers } from "./models-tiers.js";
+// TCRN-CROSS-STORY-508 R3, R4 (MIN-236 D5): the three models.escalation settings and the escalation
+// along the order of models.tiers. readModelsEscalation is their effective values; resolveModelsTier,
+// a pure function, is the record a rule naming a category gets after the rejections its caller counts
+// and passes in, the engine keeping no count.
+export { readModelsEscalation, resolveModelsTier } from "./models-escalation.js";
+export type { ModelsEscalation, ModelsTierResolution, ModelsTierResolutionInput } from "./models-escalation.js";
 // TCRN-CROSS-STORY-484 R1: the project's custom variables, records of the library's variable
 // collection; a credential-shaped value or description is refused when written.
 export { VARIABLE_TYPES, listVariables, removeVariable, setVariable } from "./variables.js";

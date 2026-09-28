@@ -200,11 +200,83 @@ function readInstant() {
   return new Date().toISOString();
 }
 
+// TCRN-CROSS-SUB-403 (TCRN-CROSS-STORY-482 Goal, R3): Atelier opens any library in the registry,
+// the large ones too. One work-list read of a library of some fifteen hundred records runs past
+// the CLI's one-MiB page budget and is refused (CLI_WORK_LIST_OVERSIZED), so the work view reads
+// in pages of at most WORK_PAGE_LIMIT records by --offset. Every page must answer for the library
+// the first page answered for: the same workspace, version, head and total. A page that does not
+// means the library moved during the read, and the read starts over rather than join two versions
+// of it; after WORK_READ_ATTEMPTS reads that never held still, the view is refused. A page the
+// budget refuses is asked for again at half the size, and a page of one record that the budget
+// still refuses is the refusal. The /api/work result is the one it always was.
+const WORK_PAGE_LIMIT = 100;
+const WORK_READ_ATTEMPTS = 3;
+const WORK_PAGE_OVERSIZED = "CLI_WORK_LIST_OVERSIZED";
+
+function workPageIdentity(page) {
+  return {
+    workspaceId: page?.workspaceId ?? null,
+    version: page?.version ?? null,
+    headEventHash: page?.headEventHash ?? null,
+    total: Number.isSafeInteger(page?.total) && page.total >= 0 ? page.total : null,
+  };
+}
+
+const sameWorkPage = (left, right) => left.workspaceId === right.workspaceId && left.version === right.version &&
+  left.headEventHash === right.headEventHash && left.total === right.total;
+
+// One pass over the library, page by page. It answers read (every record of one version), failed
+// (a refusal of the CLI's, passed on as it came) or unsettled (the pages did not add up to one
+// version of the library: it moved, or a page repeated or skipped a record).
+async function readWorkPages(libraryPath) {
+  let limit = WORK_PAGE_LIMIT;
+  let first = null;
+  const records = [];
+  const seen = new Set();
+  while (first === null || records.length < first.total) {
+    const read = await cliResult(["work-list", "--workspace", libraryPath, "--limit", String(limit), "--offset", String(records.length)]);
+    if (!read.ok) {
+      if (read.body?.reasonCode === WORK_PAGE_OVERSIZED && limit > 1) {
+        limit = Math.max(1, Math.floor(limit / 2));
+        continue;
+      }
+      return { state: "failed", source: read.body };
+    }
+    const identity = workPageIdentity(read.body);
+    if (identity.total === null) return { state: "failed", source: { ok: false, reasonCode: "PORTAL_WORK_PAGE_MALFORMED", offset: records.length } };
+    if (first === null) first = identity;
+    else if (!sameWorkPage(first, identity)) return { state: "unsettled", cause: "moved" };
+    const page = Array.isArray(read.body.records) ? read.body.records : [];
+    if (page.length === 0 && records.length < first.total) return { state: "unsettled", cause: "short-page" };
+    for (const record of page) {
+      const id = record?.id;
+      if (typeof id !== "string" || seen.has(id)) return { state: "unsettled", cause: "repeated-record" };
+      seen.add(id);
+      records.push(record);
+    }
+  }
+  if (records.length !== first.total) return { state: "unsettled", cause: "short-page" };
+  return { state: "read", identity: first, records };
+}
+
 async function workProjection() {
   const selected = currentLibrary();
-  const result = await cliResult(["work-list", "--workspace", selected.libraryPath, "--limit", "4096"]);
-  if (!result.ok) return { ok: false, reasonCode: "PORTAL_WORK_READ_FAILED", source: result.body, records: [], total: 0 };
-  return { ok: true, reasonCode: "PORTAL_WORK_READY", workspaceId: result.body.workspaceId ?? null, version: result.body.version ?? null, headEventHash: result.body.headEventHash ?? null, total: result.body.total ?? result.body.records?.length ?? 0, records: result.body.records ?? [] };
+  let outcome = { state: "unsettled", cause: "moved" };
+  for (let attempt = 1; attempt <= WORK_READ_ATTEMPTS && outcome.state === "unsettled"; attempt += 1) {
+    outcome = await readWorkPages(selected.libraryPath);
+  }
+  if (outcome.state === "failed") return { ok: false, reasonCode: "PORTAL_WORK_READ_FAILED", source: outcome.source, records: [], total: 0 };
+  if (outcome.state === "unsettled") {
+    return {
+      ok: false,
+      reasonCode: "PORTAL_WORK_READ_FAILED",
+      source: { ok: false, reasonCode: "PORTAL_WORK_READ_UNSTABLE", attempts: WORK_READ_ATTEMPTS, cause: outcome.cause, error: "no attempt read work-list pages that add up to one version of the library; nothing mixed is shown" },
+      records: [],
+      total: 0,
+    };
+  }
+  const { identity, records } = outcome;
+  return { ok: true, reasonCode: "PORTAL_WORK_READY", workspaceId: identity.workspaceId, version: identity.version, headEventHash: identity.headEventHash, total: identity.total, records };
 }
 
 async function knowledgeProjection() {
@@ -289,12 +361,115 @@ function stableId(namespace, externalKey) {
 
 const writeSetting = (key, value) => governedWrite((common) => ["settings-set", ...common, "--key", String(key), "--value", String(value)], ATELIER_SURFACE);
 const removeSetting = (key) => governedWrite((common) => ["settings-remove", ...common, "--key", String(key)], ATELIER_SURFACE);
+
+// TCRN-CROSS-STORY-508 R8 (TCRN-CROSS-SUB-409, contract C-R14-6): the keys the system variables
+// section of AGENTS.md shows. A write of one, or its removal, renders the managed sections again, so
+// AGENTS.md follows the value; the escalation keys join the section under their prefix.
+const SYSTEM_VARIABLE_KEYS = Object.freeze(["design.authority", "models.category", "models.tiers"]);
+const rendersSystemVariables = (key) => SYSTEM_VARIABLE_KEYS.includes(key) || key.startsWith("models.escalation.");
+
+// TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R5, R6; contracts C-R14-2, C-R14-6): a collection key is
+// a table of records, written whole, so the engine judges the whole table and refuses it with one
+// reason code. The rows that code is about are found here, from the table as it was sent and the two
+// tables as they stand, so the page can show the code on each of them: a repeated order on every row
+// that shares it, a repeated category id on every row that shares it, and an unknown category on
+// every tier that names one. A dropped category that tiers or the escalation ceiling still name is no
+// row of the table sent, so it comes with what names it: the tier records, and
+// models.escalation.ceiling (TCRN-CROSS-SUB-406); a restore of the default category table is refused
+// only for such a category, and says which. After a write that renders the system variables section,
+// every record the render withheld (secret-shaped or absolute-path) is reported on its row.
+// A finding's `index` is the row's place in the table the page shows next: the table it sent when the
+// write was refused, the stored table when the write landed. Any other refusal names no row, and the
+// page shows it above the table with the engine's own words.
+const COLLECTION_KEYS = Object.freeze(["models.category", "models.tiers"]);
+const COLLECTION_IDENTITY = Object.freeze({ "models.category": "id", "models.tiers": "order" });
+const ESCALATION_CEILING_KEY = "models.escalation.ceiling";
+
+function tableOf(text) {
+  try {
+    const value = JSON.parse(String(text ?? ""));
+    return Array.isArray(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+const recordOf = (value) => value !== null && typeof value === "object" && !Array.isArray(value) ? value : {};
+const storedTable = (catalog, key) => tableOf(catalog?.settings?.find((entry) => entry.key === key)?.currentValue) ?? [];
+
+function rowsSharing(rows, field) {
+  const counts = new Map();
+  const valueOf = (row) => JSON.stringify(recordOf(row)[field] ?? null);
+  for (const row of rows) counts.set(valueOf(row), (counts.get(valueOf(row)) ?? 0) + 1);
+  return rows.flatMap((row, index) => (counts.get(valueOf(row)) ?? 0) > 1 ? [index] : []);
+}
+
+function refusedCollectionFindings(key, sent, refusal, catalog) {
+  const rows = tableOf(sent);
+  const reasonCode = refusal?.reasonCode;
+  if (rows === null || typeof reasonCode !== "string") return [];
+  const on = (indices, field) => indices.map((index) => ({ index, field, reasonCode }));
+  if (reasonCode === "MODELS_ORDER_DUPLICATE") return on(rowsSharing(rows, "order"), "order");
+  if (reasonCode === "MODELS_CATEGORY_DUPLICATE" && key === "models.category") return on(rowsSharing(rows, "id"), "id");
+  if (reasonCode === "MODELS_CATEGORY_UNKNOWN" && key === "models.tiers") {
+    const known = new Set(storedTable(catalog, "models.category").map((category) => recordOf(category).id));
+    return on(rows.flatMap((row, index) => known.has(recordOf(row).category) ? [] : [index]), "category");
+  }
+  if (reasonCode === "MODELS_CATEGORY_IN_USE" && key === "models.category") {
+    const kept = new Set(rows.map((row) => recordOf(row).id));
+    const tiers = storedTable(catalog, "models.tiers").map(recordOf);
+    // TCRN-CROSS-SUB-406 (TCRN-CROSS-STORY-508 R3): the escalation ceiling names a category too, and a
+    // write may not drop it either, so it is listed beside the tier records as models.escalation.ceiling.
+    const ceiling = catalog?.settings?.find((entry) => entry.key === ESCALATION_CEILING_KEY)?.currentValue;
+    return storedTable(catalog, "models.category").map((category) => recordOf(category).id).filter((id) => !kept.has(id)).flatMap((category) => {
+      const references = [
+        ...tiers.filter((tier) => tier.category === category).map((tier) => `models.tiers.${tier.order}`),
+        ...(category === ceiling ? [ESCALATION_CEILING_KEY] : []),
+      ];
+      return references.length === 0 ? [] : [{ index: null, field: "id", reasonCode, category, references }];
+    });
+  }
+  return [];
+}
+
+// A settings-remove of models.category puts back the default categories and every other category the
+// stored tiers name (specs/settings-catalog-v1.md), so a restore drops only categories no tier names;
+// when one of them is the ceiling's, the refusal is named against that table, above the page's table.
+function restoredCategoryTable(catalog) {
+  const defaults = tableOf(catalog?.settings?.find((entry) => entry.key === "models.category")?.defaultValue) ?? [];
+  const ids = new Set(defaults.map((category) => recordOf(category).id));
+  const named = storedTable(catalog, "models.tiers").map((tier) => recordOf(tier).category).filter((id) => typeof id === "string" && !ids.has(id));
+  return [...defaults, ...[...new Set(named)].map((id) => ({ id }))];
+}
+
+function refusedRestoreFindings(key, refusal, catalog) {
+  if (key !== "models.category") return [];
+  return refusedCollectionFindings(key, JSON.stringify(restoredCategoryTable(catalog)), refusal, catalog).filter((finding) => finding.index === null);
+}
+
+function withheldCollectionFindings(key, render, stored) {
+  const rows = tableOf(stored?.currentValue) ?? [];
+  const identity = COLLECTION_IDENTITY[key];
+  const withheld = Array.isArray(render?.withheld) ? render.withheld : [];
+  return withheld.flatMap((entry) => {
+    const index = rows.findIndex((row) => entry?.name === `${key}.${recordOf(row)[identity]}`);
+    return index < 0 ? [] : [{ index, field: null, reasonCode: String(entry.reason ?? "withheld") }];
+  });
+}
+
+// TCRN-CROSS-SUB-410 (TCRN-CROSS-STORY-508 R7; contract C-R14-5): a variable, a rule and a gate each
+// take an optional order, passed to the engine as it was typed so the engine, not the portal, says what
+// is wrong with it. An empty order is no --order: variable-set then writes a variable without one,
+// and rule-enable and gates-config-set keep the order the record holds.
+const orderArguments = (order) => order === undefined || order === null || String(order).trim() === "" ? [] : ["--order", String(order).trim()];
+
 const writeVariable = (body) => governedWrite((common) => [
   "variable-set", ...common,
   "--name", String(body.name ?? ""),
   "--type", String(body.type ?? ""),
   "--value", String(body.value ?? ""),
   ...(body.description === undefined ? [] : ["--description", String(body.description)]),
+  ...orderArguments(body.order),
 ], ATELIER_SURFACE);
 const removeVariable = (name) => governedWrite((common) => ["variable-remove", ...common, "--name", String(name)], ATELIER_SURFACE);
 const variablesCatalog = () => cliResult(["variable-list", "--workspace", currentLibrary().libraryPath]);
@@ -348,8 +523,9 @@ function gateInput(body) {
   const covers = body.covers;
   if (name === "" || !Array.isArray(command) || command.length === 0 || command.some((part) => typeof part !== "string" || part === "") ||
     typeof root !== "string" || !Array.isArray(covers) || covers.some((cover) => typeof cover !== "string") ||
-    typeof body.required !== "boolean" || typeof body.enabled !== "boolean" || typeof body.releaseOnly !== "boolean") return null;
-  return { name, command, root, covers, required: body.required, enabled: body.enabled, releaseOnly: body.releaseOnly };
+    typeof body.required !== "boolean" || typeof body.enabled !== "boolean" || typeof body.releaseOnly !== "boolean" ||
+    !(body.order === undefined || body.order === null || typeof body.order === "number" || typeof body.order === "string")) return null;
+  return { name, command, root, covers, required: body.required, enabled: body.enabled, releaseOnly: body.releaseOnly, order: body.order };
 }
 
 const writeGate = (gate) => governedWrite((common) => [
@@ -361,6 +537,7 @@ const writeGate = (gate) => governedWrite((common) => [
   "--required", String(gate.required),
   "--enabled", String(gate.enabled),
   "--release-only", String(gate.releaseOnly),
+  ...orderArguments(gate.order),
 ], ATELIER_SURFACE);
 const deleteGate = (name) => governedWrite((common) => ["gates-config-remove", ...common, "--name", name], ATELIER_SURFACE);
 
@@ -434,7 +611,9 @@ async function reconcile() {
         const key = match[1];
         const namespace = key.slice(0, key.indexOf("."));
         if (![...registered].some((entry) => entry.startsWith(`${namespace}.`))) continue;
-        const known = registered.has(key);
+        // TCRN-CROSS-SUB-410: a token naming a family of registered keys claims no key of its own, such
+        // as the heading models.escalation the system variables section gives the three escalation keys.
+        const known = registered.has(key) || [...registered].some((entry) => entry.startsWith(`${key}.`));
         rows.push({ file: name, line: lineIndex + 1, token: key, key, registered: known, kind: known ? "registered" : "unregistered" });
       }
     }
@@ -474,45 +653,24 @@ async function agentsRead(name) {
   return { status: 200, body: { ok: true, reasonCode: "PORTAL_AGENTS_MD_READY", file: name, path, text } };
 }
 
+// TCRN-CROSS-SUB-338 (TCRN-CROSS-STORY-483 R3, AC2; MIN-235 D4, judgment 1.5 (a)): a save writes
+// the file the user edited and judges it; it renders nothing. The judgment is rule-list, which
+// writes nothing, so a rule section changed by one character reads user-modified, AGENTS.md is
+// the bytes that were saved, and no section goes pending. The managed sections are rendered by
+// the engine writes that change what they show (a setting, a variable, a rule), never by a save.
 async function agentsWrite(body) {
   const file = String(body.file ?? PROSE_FILES[0]);
   const path = proseTarget(file);
   if (!path) return { status: 404, body: { ok: false, reasonCode: "PORTAL_PATH_ESCAPE", file } };
   const text = String(body.text ?? "");
   await writeFile(path, text, "utf8");
-  const savedText = await readFile(path, "utf8");
-  const rendered = await renderManagedAgents();
   const readback = await readFile(path, "utf8");
-  if (!rendered.ok) {
-    return {
-      status: 409,
-      body: {
-        ok: false,
-        reasonCode: rendered.body?.reasonCode ?? "PORTAL_AGENTS_RENDER_FAILED",
-        file,
-        path,
-        saved: true,
-        matches: savedText === text,
-        text: readback,
-        render: rendered.body,
-      },
-    };
+  const saved = { file, path, saved: true, matches: readback === text, text: readback };
+  const judged = await rulesProjection();
+  if (!judged.ok) {
+    return { status: 409, body: { ...saved, ok: false, reasonCode: judged.reasonCode ?? "PORTAL_RULES_READ_FAILED", rules: [], pending: [], source: judged } };
   }
-  return {
-    status: 200,
-    body: {
-      ok: true,
-      reasonCode: "PORTAL_AGENTS_MD_WRITTEN",
-      file,
-      path,
-      saved: true,
-      matches: savedText === text,
-      text: readback,
-      sections: rendered.body.sections ?? [],
-      pending: rendered.body.pending ?? [],
-      render: rendered.body,
-    },
-  };
+  return { status: 200, body: { ...saved, ok: true, reasonCode: "PORTAL_AGENTS_MD_WRITTEN", rules: judged.rules ?? [], pending: judged.pending } };
 }
 
 const apiAlias = (pathname) => pathname === "/api/prose" ? "/api/agents-md" : pathname === "/api/reconcile" ? "/api/agents-md/reconcile" : pathname;
@@ -588,6 +746,9 @@ const server = createServer(async (request, response) => {
       send(response, 403, { ok: false, reasonCode: "PORTAL_TOKEN_REQUIRED" });
       return;
     }
+    // TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R5, contract C-R14-1): both catalogs are passed on as
+    // the engine wrote them, so every row keeps its shape, group and order; the page lays the settings
+    // out from those three and keeps no grouping of its own.
     if (request.method === "GET" && pathname === "/api/settings") {
       send(response, 200, await settingsCatalog());
       return;
@@ -655,10 +816,13 @@ const server = createServer(async (request, response) => {
         send(response, 400, { ok: false, reasonCode: "PORTAL_RULE_ACTION_INVALID", id, action });
         return;
       }
+      // TCRN-CROSS-SUB-410 (STORY-508 R7): an enable carries the rule's order when one is given; the
+      // engine places the rule's section by it and keeps it through a later disable.
       const result = await projectWrite((common) => [
         action === "enable" ? "rule-enable" : "rule-disable",
         "--id", id,
         ...(action === "disable" && body.force === true ? ["--force", "true"] : []),
+        ...(action === "enable" ? orderArguments(body.order) : []),
         ...common,
       ]);
       const payload = { ...result.body, ok: result.ok };
@@ -723,16 +887,24 @@ const server = createServer(async (request, response) => {
     if (request.method === "POST" && pathname === "/api/settings") {
       const body = await readJsonBody(request);
       const key = String(body.key ?? "");
-      const result = body.reset === true ? await removeSetting(key) : await writeSetting(key, String(body.value ?? ""));
-      const render = result.ok && ["models.tiers", "design.authority"].includes(key) ? await renderManagedAgents() : null;
-      const readback = result.ok ? await settingsCatalog() : null;
+      const reset = body.reset === true;
+      const value = String(body.value ?? "");
+      const result = reset ? await removeSetting(key) : await writeSetting(key, value);
+      const render = result.ok && rendersSystemVariables(key) ? await renderManagedAgents() : null;
+      const collection = COLLECTION_KEYS.includes(key);
+      const catalog = result.ok || collection ? await settingsCatalog() : null;
+      const readback = result.ok ? catalog?.settings.find((entry) => entry.key === key) ?? null : null;
       const ok = result.ok && (render?.ok ?? true);
+      const findings = !collection ? null
+        : result.ok ? withheldCollectionFindings(key, render?.body, readback)
+        : reset ? refusedRestoreFindings(key, result.body, catalog) : refusedCollectionFindings(key, value, result.body, catalog);
       send(response, ok ? 200 : 409, {
         ...result.body,
         ok,
         ...(render === null ? {} : { render: render.body }),
         ...(!ok && result.ok && render !== null ? { mutation: result.body, reasonCode: render.body?.reasonCode ?? "PORTAL_SETTINGS_WRITE_PARTIAL" } : {}),
-        readback: readback?.settings.find((entry) => entry.key === key) ?? null,
+        readback,
+        ...(findings === null ? {} : { findings }),
       });
       return;
     }

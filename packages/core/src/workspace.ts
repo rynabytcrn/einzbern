@@ -122,13 +122,15 @@ import {
   SETTINGS_LAYER_KIND,
   SettingsError,
   assertProjectSettingKey,
+  assertSettingWriteConsistent,
   compareEngineVersions,
   createWorkspaceSettingRecord,
+  currentSettingRecord,
   isRetiredSettingKey,
+  readRecordedSettingRecord,
   renamedSettingKey,
   renamedSettingRecord,
   sortWorkspaceSettings,
-  validateWorkspaceSettingRecord,
 } from "./settings.js";
 import type { WorkspaceSettingRecord } from "./settings.js";
 import {
@@ -1969,8 +1971,9 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
   // The convention is the one settings.ts states for RETIRED_SETTING_KEYS: historical events remain
   // legible without reopening new writes. TCRN-CROSS-STORY-484 R3: a renamed key's record in such a
   // snapshot seeds its new name, as the settings.updated arm does on a replay from genesis.
+  // TCRN-CROSS-STORY-508 R2: and a models.tiers value from before the record table seeds as records.
   const settings = collection<string, WorkspaceSettingRecord>((snapshot?.settings ?? []).flatMap((record) => {
-    if (!isRetiredSettingKey(record.key)) return [record];
+    if (!isRetiredSettingKey(record.key)) return [currentSettingRecord(record)];
     const successor = renamedSettingRecord(record);
     return successor === null ? [] : [successor];
   }).map((record) => [record.key, record]));
@@ -2325,7 +2328,10 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
         if (successor !== null) settings.set(successor.key, successor);
         continue;
       }
-      const record = extensionRecordOrCorrupt(() => validateWorkspaceSettingRecord(
+      // TCRN-CROSS-STORY-508 R2: a value whose shape has since changed is read in the current shape
+      // (a per-host models.tiers value as records), and the event keeps its bytes. Replay checks each
+      // value's shape and no reference between models.category and models.tiers: that is the write's.
+      const record = extensionRecordOrCorrupt(() => readRecordedSettingRecord(
         body,
         workspaceRoot,
       ));
@@ -4194,7 +4200,10 @@ export async function projectConfiguration(root: string, state: WorkspaceState):
 // ungoverned JSON sidecar. Each write is an append-only event and the replay arm
 // above enforces the same key, layer, revision, and value contract. They are the
 // project level (TCRN-CROSS-STORY-469 R2): a device-level key is refused here and
-// written by machine-settings-set.
+// written by machine-settings-set. TCRN-CROSS-STORY-508 R1, R2: a write of models.category or
+// models.tiers is also checked against the other table as it stands (assertSettingWriteConsistent);
+// R3: so is a write of models.escalation.ceiling, which may only name a category models.category
+// holds. A settings-remove runs the same check on the default it puts back.
 export async function setWorkspaceSetting(workspaceRoot: string, input: {
   readonly key: string;
   readonly value: string;
@@ -4210,6 +4219,7 @@ export async function setWorkspaceSetting(workspaceRoot: string, input: {
         input.occurredAt,
         workspaceRoot,
       );
+      assertSettingWriteConsistent(state.settings, record.key, record.value);
       return {
         payload: buildEventPayload("settings.updated", record as unknown as JsonValue),
         projects: state.projects,
@@ -4233,6 +4243,7 @@ export async function removeWorkspaceSetting(workspaceRoot: string, input: {
     const committed = await appendEvent(root, (state) => {
       const current = state.settings.find((record) => record.key === input.key);
       if (current === undefined) fail("WORKSPACE_INPUT_INVALID", `setting ${input.key} is not set`);
+      assertSettingWriteConsistent(state.settings, input.key, null);
       return {
         payload: buildEventPayload("settings.removed", { key: input.key, updatedAt: input.occurredAt } as unknown as JsonValue),
         projects: state.projects,

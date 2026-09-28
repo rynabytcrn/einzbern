@@ -223,7 +223,11 @@ export async function resolveGateRoot(projectRoot: string, root: string): Promis
   return real;
 }
 
-/** The digest of the enabled gates' declarations, by name: a run made under other declarations does not count. */
+/**
+ * The digest of the enabled gates' declarations, by name: a run made under other declarations does
+ * not count. A gate's order (TCRN-CROSS-STORY-508 R7) is not part of it: it changes when a gate runs,
+ * not what the run proves, so a run stays valid when only the orders change.
+ */
 export function gateDeclarationsDigest(gates: readonly NamedGate[]): string {
   return canonicalSha256({
     schemaVersion: "einzbern.gate-declarations.v1",
@@ -232,6 +236,17 @@ export function gateDeclarationsDigest(gates: readonly NamedGate[]): string {
       .sort((left, right) => compareCanonicalText(left.name, right.name))
       .map((gate) => ({ name: gate.name, command: gate.command, root: gate.root, covers: gate.covers, required: gate.required, enabled: gate.enabled, releaseOnly: gate.releaseOnly })),
   });
+}
+
+// TCRN-CROSS-STORY-508 R7: the order a plan lists, runs and shows its gates in: the gates with an
+// order first, by order, then the others; gates of one order, and those without one, by name.
+function planningOrder(left: NamedGate, right: NamedGate): number {
+  if (left.order !== right.order) {
+    if (left.order === undefined) return 1;
+    if (right.order === undefined) return -1;
+    return left.order - right.order;
+  }
+  return compareCanonicalText(left.name, right.name);
 }
 
 function planned(gate: NamedGate, reason: PlannedGate["reason"], matched: readonly string[], matchedWorkIds: readonly string[]): PlannedGate {
@@ -253,7 +268,8 @@ function normalizedWorkIds(workIds: readonly string[] | undefined): readonly str
  * The gates a change or Story needs: every enabled, non-release-only gate whose path covers match
  * changed files under its root or whose exact work-id cover matches a target id; or, for a release,
  * every enabled gate. Non-release plans require an explicit valid Git base. Disabled gates are
- * never listed.
+ * never listed. The gates are listed in their planning order (planningOrder): by name while no gate
+ * holds an order.
  */
 export async function planGates(input: {
   readonly projectRoot: string;
@@ -275,7 +291,7 @@ export async function planGates(input: {
   }
   const enabled = [...input.gates]
     .filter((gate) => gate.enabled)
-    .sort((left, right) => compareCanonicalText(left.name, right.name));
+    .sort(planningOrder);
   const gates = enabled.filter((gate) => release || !gate.releaseOnly);
   const roots = new Map<string, string>();
   for (const gate of enabled) {

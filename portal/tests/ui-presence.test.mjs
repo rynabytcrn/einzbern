@@ -34,6 +34,8 @@ const COMPONENTS = Object.freeze([
   ["setting modified dot", '[data-ui="setting-modified-dot"]'],
   ["DS NumberInput", ".tcrn-number-input"],
   ["model tiers table", '[data-ui="model-tiers-table"]'],
+  ["model categories table", '[data-ui="model-categories-table"]'],
+  ["collection table component", '[data-collection-component="CollectionTable"]'],
   ["variables view", '[data-ui="variables-view"]'],
   ["gate configuration table", '[data-ui="gate-config-table"]'],
   ["gate add form", '[data-ui="gate-add-form"]'],
@@ -93,6 +95,19 @@ async function asFixtureDevice(fixture, operation) {
   const previous = process.env.EINZBERN_HOME;
   process.env.EINZBERN_HOME = fixture.deviceEnv.EINZBERN_HOME;
   try { return await operation(); } finally { process.env.EINZBERN_HOME = previous; }
+}
+
+// TCRN-CROSS-SUB-406 (TCRN-CROSS-STORY-508 R3): a setting recorded as replay reads a merged value, through
+// the engine's own append and without the checks a settings-set runs, since a merge may bring the two
+// model tables apart. The fixture's device is lent to it, as to the historical records above.
+async function mergedSetting(fixture, key, value) {
+  const moduleUrl = new URL("../../dist/build/packages/core/src/index.js", import.meta.url).href;
+  const script = `const m = await import(${JSON.stringify(moduleUrl)}); const [workspace, key, value, at] = process.argv.slice(1);
+await m.appendEvents(workspace, [(state) => {
+  const record = { schemaVersion: "tcrn.workspace-setting.v1", key, layerKind: "workspace_configuration", value, revision: (state.settings.find((entry) => entry.key === key)?.revision ?? 0) + 1, updatedAt: at, tombstone: false };
+  return { payload: { operation: "settings.updated", record }, projects: state.projects, work: state.work, settings: m.sortWorkspaceSettings([...state.settings.filter((entry) => entry.key !== key), record]) };
+}], { occurredAt: at });`;
+  await asFixtureDevice(fixture, () => execFileAsync(process.execPath, ["--input-type=module", "-e", script, fixture.workspace, key, value, nextAt()], { encoding: "utf8" }));
 }
 
 async function seed(fixture) {
@@ -235,7 +250,7 @@ function missingComponents(document) {
     .map(([name, selector]) => ({ name, selector }));
 }
 
-const hierarchyPages = Object.freeze(["dashboard", "settings", "variables", "gates", "prose", "vocabulary"]);
+const hierarchyPages = Object.freeze(["dashboard", "settings", "model-categories", "model-tiers", "variables", "gates", "prose", "vocabulary"]);
 const topbarDesignMap = Object.freeze([
   ["product-shell-header", "header.tcrn-top-bar", "ProductShell/TopBar", "https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html#navigation-shell-spec"],
   ["library-select", "#library-select", "Select", "https://tcrn-design-system-storybook.vercel.app/components-controls-data.html#field-spec-usage"],
@@ -280,13 +295,25 @@ function pageHierarchyFindings(document, source) {
       const view = lowerContent?.querySelector(':scope > [data-ui="variables-view"]');
       if (!view || childIndex(lowerContent, view) !== 0) findings.push("variables:tabs-before-content");
     }
+    // TCRN-CROSS-SUB-409: each collection page states what its order means in its header, and its
+    // table view is the first thing under the section notes.
+    if (name === "model-categories" || name === "model-tiers") {
+      const view = lowerContent?.querySelector(`:scope > [data-ui="${name}-view"]`);
+      const purpose = head?.querySelector(".tcrn-page__lede[data-collection-purpose]");
+      if (!view || childIndex(lowerContent, view) !== 0 || !purpose) findings.push(`${name}:collection-view`);
+    }
     if (name === "gates") {
       const view = lowerContent?.querySelector(':scope > [data-ui="gates-view"]');
       const table = view?.querySelector('[data-ui="gate-config-table"]');
       const form = view?.querySelector('[data-ui="gate-add-form"]');
       const lastRun = view?.querySelector('[data-ui="gates-last-run"]');
-      if (!view || !table || table.querySelectorAll("thead th").length !== 4 || !form || !lastRun || childIndex(lowerContent, view) !== 0) findings.push("gates:four-columns");
+      // TCRN-CROSS-SUB-410: the order column leads the gate table, so it has five columns.
+      if (!view || !table || table.querySelectorAll("thead th").length !== 5 || !form || !lastRun || childIndex(lowerContent, view) !== 0) findings.push("gates:five-columns");
     }
+    // TCRN-CROSS-SUB-410 (STORY-508 R7): the variables, rules and gates pages each say in their header
+    // what their order column is for.
+    const orderPurpose = { variables: "variables", prose: "rules", gates: "gates" }[name];
+    if (orderPurpose !== undefined && !head?.querySelector(`.tcrn-page__lede[data-order-purpose="${orderPurpose}"]`)) findings.push(`${name}:order-purpose`);
     if (name === "prose") {
       const pending = tabsRegion?.querySelector(":scope > #rules-pending");
       const layout = lowerContent?.querySelector(':scope > [data-ui="rules-layout"]');
@@ -451,8 +478,10 @@ function assertDomContract(document) {
   assert.deepEqual(missing, [], `rendered DOM components absent: ${JSON.stringify(missing)}`);
   const navigationItems = [...document.querySelectorAll(".tcrn-side-nav .tcrn-nav-item")];
   // STORY-370 retired Entities, STORY-403 folds article reading into knowledge,
-  // and STORY-485 adds the independent gate configuration destination.
-  assert.equal(navigationItems.length, 6, "the portal must render six live platform destinations including custom variables and gate configuration");
+  // STORY-485 adds the independent gate configuration destination, and TCRN-CROSS-SUB-409
+  // (STORY-508 R5) gives model categories and model tiers a page each.
+  assert.equal(navigationItems.length, 8, "the portal must render eight live platform destinations including model categories, model tiers, custom variables and gate configuration");
+  assert.deepEqual(navigationItems.map((button) => button.getAttribute("data-page-target")), ["dashboard", "settings", "model-categories", "model-tiers", "variables", "prose", "vocabulary", "gates"]);
   assert.ok(navigationItems.every((button) => button.getAttribute("aria-label")?.trim()), "every destination must expose an accessible name");
   assert.ok(navigationItems.every((button) => button.getAttribute("data-i18n-aria-label")?.trim()), "every destination name must come from the locale table");
   assert.equal(document.querySelector('img.tcrn-brand-mark')?.getAttribute("alt"), "", "the decorative mark must not duplicate the brand accessible name");
@@ -605,7 +634,8 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
   test("TCRN-CROSS-STORY-404 consumes the DS106-112 settings contract and exposes coordination status", async () => {
     const page = await preparePage();
     try {
-      page.document.querySelector('[data-setting-group="workspace"]')?.click();
+      // TCRN-CROSS-SUB-409: the retrieval group holds both a NumberInput and a SettingChoice.
+      page.document.querySelector('[data-setting-group="retrieval"]')?.click();
       await new Promise((resolve) => setTimeout(resolve, 80));
       const layout = page.document.querySelector('[data-settings-layout-component="SettingsLayout"]');
       assert.ok(layout, "the settings page must consume the DS SettingsLayout contract");
@@ -633,7 +663,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       const dsStyle = page.document.querySelector('style#tcrn-ds-component-css[data-source="snapshot"]');
       assert.ok(dsStyle?.textContent.includes(".tcrn-setting-choice") && dsStyle.textContent.includes(".tcrn-number-input") && dsStyle.textContent.includes(".tcrn-settings-layout"));
       const numberInputs = [...layout.querySelectorAll('[data-number-input-component="NumberInput"]')];
-      assert.ok(numberInputs.length > 0, "workspace settings must render DS NumberInput controls");
+      assert.ok(numberInputs.length > 0, "the retrieval settings must render DS NumberInput controls");
       assert.ok(numberInputs.every((input) => input.classList.contains("tcrn-number-input")
         && input.classList.contains("tcrn-input")
         && input.type === "number"
@@ -644,7 +674,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
         && input.getAttribute("value") !== null
         && input.getAttribute("data-number-input-visibility") === "full-value"));
       const settingChoices = [...layout.querySelectorAll('[data-setting-choice="true"]')];
-      assert.ok(settingChoices.length > 0, "workspace settings must render DS SettingChoice markers");
+      assert.ok(settingChoices.length > 0, "the retrieval settings must render DS SettingChoice markers");
       assert.ok(settingChoices.every((choice) => choice.getAttribute("data-setting-choice-semantic") === "value-selection"
         && choice.getAttribute("data-setting-choice-control") === "select"
         && Number.isInteger(Number(choice.getAttribute("data-setting-choice-option-count")))
@@ -744,13 +774,15 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       detailsTrigger.click();
       assert.equal(details.hidden, true);
 
-      page.document.querySelector('[data-setting-group="machine"]')?.click();
+      // TCRN-CROSS-SUB-409 (STORY-508 R5): a settings group is one ContentScope over the rows of both
+      // catalogs. The atelier group holds the four portal preferences, every one of them this device's.
+      page.document.querySelector('[data-setting-group="atelier"]')?.click();
       await new Promise((resolve) => setTimeout(resolve, 80));
-      const scope = page.document.querySelector('[data-content-scope="machine-settings"]');
-      assert.ok(scope, "machine settings must consume the independent ContentScope contract");
-      // Six device-level keys: the four portal preferences, crest.userPath (TCRN-CROSS-STORY-476 R5)
-      // and agents.navigation (TCRN-CROSS-STORY-478 R4).
+      const scope = page.document.querySelector('[data-content-scope="settings-group"]');
+      assert.ok(scope, "a settings group must consume the ContentScope contract");
+      assert.equal(page.document.querySelectorAll('[data-content-scope="settings-group"]').length, 1, "one group is shown at a time");
       assert.deepEqual({
+        group: scope.getAttribute("data-content-group"),
         source: scope.getAttribute("data-content-source"),
         phase: scope.getAttribute("data-content-phase"),
         valid: scope.getAttribute("data-content-valid"),
@@ -758,10 +790,11 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
         total: scope.getAttribute("data-content-total-count"),
         countKind: scope.getAttribute("data-content-count-kind"),
         stale: scope.getAttribute("data-content-stale"),
-      }, { source: "engine.machine-settings", phase: "content", valid: "true", shown: "6", total: "6", countKind: "total", stale: "false" });
-      assert.equal(scope.querySelectorAll("[data-machine-row]").length, 6);
+      }, { group: "atelier", source: "engine.settings-catalog engine.machine-settings", phase: "content", valid: "true", shown: "4", total: "4", countKind: "total", stale: "false" });
+      assert.equal(scope.querySelectorAll("[data-machine-row]").length, 4);
+      assert.equal(scope.querySelectorAll("[data-setting-row]").length, 0);
       assert.equal(scope.querySelectorAll(".tcrn-content-scope__content").length, 1);
-      assert.equal(page.document.querySelector("#settings-rows .tcrn-state-surface"), null, "a sibling scope must not supply the machine empty state");
+      assert.equal(page.document.querySelector("#settings-rows .tcrn-state-surface"), null, "a group with rows supplies no empty state");
 
       const chip = page.document.querySelector("#receipt-chip");
       const control = page.document.querySelector('[data-machine-control="portal.defaultTheme"]');
@@ -850,18 +883,19 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
         assert.equal(panel?.getAttribute("aria-labelledby"), selected.id, "the selected tab labels its panel");
       }
 
+      // TCRN-CROSS-SUB-409: the groups come from the catalogs, general first and atelier last.
       const settingsList = page.document.querySelector('[data-settings-layout-nav]');
-      const workspace = settingsList.querySelector('[data-setting-group="workspace"]');
-      keydown(workspace, "ArrowRight");
-      const execution = settingsList.querySelector('[data-setting-group="execution"]');
-      assert.equal(execution.getAttribute("aria-selected"), "true", "ArrowRight selects the next settings group");
-      assert.equal(page.document.getElementById("settings-panel").getAttribute("aria-labelledby"), execution.id);
-      keydown(execution, "Home");
-      assert.equal(workspace.getAttribute("aria-selected"), "true", "Home selects the first settings group");
-      const machine = settingsList.querySelector('[data-setting-group="machine"]');
-      keydown(workspace, "End");
-      assert.equal(machine.getAttribute("aria-selected"), "true", "End selects the last settings group");
-      assert.equal(page.document.getElementById("settings-panel").getAttribute("aria-labelledby"), machine.id);
+      const general = settingsList.querySelector('[data-setting-group="general"]');
+      keydown(general, "ArrowRight");
+      const models = settingsList.querySelector('[data-setting-group="models"]');
+      assert.equal(models.getAttribute("aria-selected"), "true", "ArrowRight selects the next settings group");
+      assert.equal(page.document.getElementById("settings-panel").getAttribute("aria-labelledby"), models.id);
+      keydown(models, "Home");
+      assert.equal(general.getAttribute("aria-selected"), "true", "Home selects the first settings group");
+      const atelier = settingsList.querySelector('[data-setting-group="atelier"]');
+      keydown(general, "End");
+      assert.equal(atelier.getAttribute("aria-selected"), "true", "End selects the last settings group");
+      assert.equal(page.document.getElementById("settings-panel").getAttribute("aria-labelledby"), atelier.id);
 
       const dashboardList = page.document.querySelector('[data-ui="workspace-tabs"]');
       const overview = dashboardList.querySelector('[data-workspace-tab="overview"]');
@@ -920,41 +954,72 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
     } finally { await page.cleanup(); }
   });
 
-  test("TCRN-CROSS-STORY-409 keeps every visible field in its declared group and models prompt languages as a deduplicated set", async () => {
+  // TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R5; MIN-236 D7; contract C-R14-1): the settings page lays
+  // every key out by its own catalog row (its group, its order in the group, its layer) and keeps no
+  // grouping of its own; SETTING_GROUPS is gone from the page. The retired keys and the prompt-language
+  // set of TCRN-CROSS-STORY-409 keep their legs.
+  test("SUB-409 (STORY-508 R5): the settings page groups every key by its catalog row, marks its layer, and keeps no grouping of its own", async () => {
     const page = await preparePage();
     try {
       page.document.querySelector('[data-page-target="settings"]')?.click();
       const retiredEconomySettingKey = "model.economyTier";
-      const catalogForGroups = await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv);
-      const settingGroupSource = page.source.match(/const SETTING_GROUPS = Object\.freeze\(\{([\s\S]*?)\n  \}\);/u)?.[1];
-      assert.ok(settingGroupSource, "the portal must declare its settings group coverage");
-      const settingGroupEntries = [...settingGroupSource.matchAll(/^ {4}"([^"]+)": "([^"]+)",$/gmu)].map(([, key, group]) => [key, group]);
-      const settingGroups = settingGroupEntries.map(([key]) => key);
-      const catalogKeys = new Set(catalogForGroups.settings.map((entry) => entry.key));
-      const groupedKeys = new Set(settingGroups);
-      const missingFromGroups = [...catalogKeys].filter((key) => !groupedKeys.has(key)).sort();
-      const staleGroups = [...groupedKeys].filter((key) => !catalogKeys.has(key)).sort();
-      assert.deepEqual(
-        { missingFromGroups, staleGroups },
-        { missingFromGroups: [], staleGroups: [] },
-        `settings catalog/group coverage differs (missing: ${missingFromGroups.join(", ") || "none"}; stale: ${staleGroups.join(", ") || "none"})`,
-      );
-      const groupFor = (key) => {
-        for (const group of ["workspace", "execution", "machine"]) {
-          page.document.querySelector(`[data-setting-group="${group}"]`)?.click();
-          const selector = group === "machine" ? `[data-machine-row="${key}"]` : `[data-setting-row="${key}"]`;
-          if (page.document.querySelector(selector)) return group;
+      assert.doesNotMatch(page.source, /\bSETTING_GROUPS\b/u, "the page's hard-coded key-to-group table is gone");
+      const project = (await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings;
+      const device = (await cli(["machine-settings-catalog"], { ...page.deviceEnv, HOME: page.fixture.home })).settings;
+      const rows = [...project.map((entry) => ({ ...entry, layer: "project" })), ...device.map((entry) => ({ ...entry, layer: "device" }))];
+      for (const row of rows) {
+        assert.equal(page.source.includes(`"${row.key}": "${row.group}"`), false, `${row.key} has no group written into the page`);
+        assert.ok(["scalar", "collection"].includes(row.shape) && typeof row.group === "string" && Number.isSafeInteger(row.order), `${row.key} carries its layout`);
+      }
+      const specificationOrder = ["general", "models", "execution", "knowledge", "retrieval", "storage", "atelier"];
+      const groups = [...page.document.querySelectorAll("[data-settings-layout-nav] [data-setting-group]")].map((button) => button.dataset.settingGroup);
+      assert.deepEqual(groups, specificationOrder.filter((group) => rows.some((row) => row.group === group)), "the groups are the catalogs' own, in the specification's order");
+      const rowKey = (row) => row.dataset.settingRow ?? row.dataset.machineRow;
+      const shownRows = () => [...page.document.querySelectorAll("#settings-rows [data-setting-row], #settings-rows [data-machine-row]")];
+      for (const group of groups) {
+        page.document.querySelector(`[data-setting-group="${group}"]`)?.click();
+        const expected = rows.filter((row) => row.group === group).sort((left, right) => left.order - right.order);
+        const shown = shownRows();
+        assert.deepEqual(shown.map(rowKey), expected.map((row) => row.key), `${group} shows its keys in their catalog order`);
+        for (const [index, row] of shown.entries()) {
+          assert.equal(row.querySelector("[data-setting-layer]")?.dataset.settingLayer, expected[index].layer, `${expected[index].key} names its layer`);
+          assert.equal(row.dataset.settingShape, expected[index].shape, `${expected[index].key} keeps its shape`);
+          assert.equal(row.hasAttribute("data-machine-row"), expected[index].layer === "device", `${expected[index].key} is written through its own layer`);
         }
-        return null;
-      };
-      assert.equal(groupFor(retiredEconomySettingKey), null, "retired economy-tier model must not appear in any settings group");
-      assert.equal(groupFor("retrieval.promptLanguages"), "workspace");
-      assert.equal(groupFor("models.tiers"), "execution");
-      assert.equal(groupFor("portal.port"), "machine", "machine settings stay outside the workspace settings groups");
+        assert.ok(page.document.querySelector("#settings-count")?.textContent.startsWith(`${expected.length} `), `${group} counts its keys`);
+        assert.equal(rows.some((row) => row.key === retiredEconomySettingKey), false);
+        assert.equal(page.document.querySelector(`[data-setting-row="${retiredEconomySettingKey}"]`), null, `the retired economy-tier model stays out of ${group}`);
+      }
+
+      // The models group lists its two collections as links to their pages, never as editors.
+      page.document.querySelector('[data-setting-group="models"]')?.click();
+      for (const [key, target] of [["models.category", "model-categories"], ["models.tiers", "model-tiers"]]) {
+        const row = page.document.querySelector(`[data-setting-row="${key}"]`);
+        assert.equal(row?.dataset.settingShape, "collection");
+        assert.equal(row.querySelector("[data-setting-control], [data-collection-field]"), null, `${key} has no editor on the settings page`);
+        row.querySelector(`[data-collection-link="${target}"]`).click();
+        assert.equal(page.document.querySelector(`[data-page="${target}"]`)?.hidden, false, `${key} opens its own page`);
+        page.document.querySelector('[data-page-target="settings"]')?.click();
+      }
+
+      // Every row names where it lives, in five languages; in Chinese 项目级（随库同步） or 本机.
+      page.document.querySelector('[data-setting-group="knowledge"]')?.click();
+      const layerNames = { en: ["Project level (synced with the library)", "This device"], "zh-CN": ["项目级（随库同步）", "本机"] };
+      for (const locale of ["zh-CN", "en", "ja", "ko", "fr"]) {
+        page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
+        const names = [...page.document.querySelectorAll("[data-settings-layout-nav] [data-setting-group]")].map((button) => button.textContent.trim());
+        assert.ok(names.every((name) => name.length > 0 && !name.startsWith("settings.group.") && !specificationOrder.includes(name)), `${locale} names every group`);
+        assert.equal(new Set(names).size, names.length, `${locale} group names are distinct`);
+        const projectName = page.document.querySelector('#settings-rows [data-setting-layer="project"]')?.textContent;
+        const deviceName = page.document.querySelector('#settings-rows [data-setting-layer="device"]')?.textContent;
+        assert.ok(projectName && deviceName && projectName !== deviceName && !projectName.startsWith("settings.layer."), `${locale} names both layers`);
+        if (layerNames[locale]) assert.deepEqual([projectName, deviceName], layerNames[locale]);
+      }
+      page.document.querySelector('[data-locale-option="en"]')?.click();
 
       // Retirement is a user-visible contract, not only a grouping detail: neither
-      // legacy subagent-plan key may produce a settings row in the rendered execution
-      // surface, and neither may be discoverable through the global search index.
+      // legacy subagent-plan key may produce a settings row, and neither may be
+      // discoverable through the global search index.
       page.document.querySelector('[data-setting-group="execution"]')?.click();
       await new Promise((resolve) => setTimeout(resolve, 80));
       for (const key of ["execution.claudeCodeSubagentPlan", "execution.codexSubagentPlan"]) {
@@ -966,25 +1031,16 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
         assert.equal(page.document.querySelectorAll("#search-results [data-search-index]").length, 0, `${key} must stay absent from global search`);
       }
 
-      // The actual delta is locale-independent: all five localized routes keep the
-      // same neighboring execution-control identities and order while the retired
-      // economy-tier field stays absent from the rendered surface.
-      const expectedExecutionRows = [...catalogForGroups.settings]
-        .filter((entry) => settingGroupEntries.some(([key, group]) => key === entry.key && group === "execution"))
-        .map((entry) => entry.key);
+      // All five localized routes keep the same execution controls in their catalog order.
+      const expectedExecutionRows = rows.filter((row) => row.group === "execution").sort((left, right) => left.order - right.order).map((row) => row.key);
       for (const locale of ["zh-CN", "en", "ja", "ko", "fr"]) {
         page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
         await new Promise((resolve) => setTimeout(resolve, 40));
-        assert.deepEqual(
-          [...page.document.querySelectorAll("[data-setting-row]")].map((row) => row.dataset.settingRow),
-          expectedExecutionRows,
-          `${locale} must keep the neighboring execution controls in order`,
-        );
-        assert.equal(page.document.querySelector(`[data-setting-row="${retiredEconomySettingKey}"]`), null, `${locale} must omit retired economy-tier`);
+        assert.deepEqual(shownRows().map(rowKey), expectedExecutionRows, `${locale} must keep the execution controls in order`);
       }
+      page.document.querySelector('[data-locale-option="en"]')?.click();
 
-      page.document.querySelector('[data-setting-group="workspace"]')?.click();
-      assert.equal(page.document.querySelector(`[data-setting-row="${retiredEconomySettingKey}"]`), null, "the retired model field must not leak into workspace");
+      page.document.querySelector('[data-setting-group="retrieval"]')?.click();
       const prompt = page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]');
       assert.ok(prompt, "prompt languages must have a live control");
       assert.equal(prompt.tagName, "SELECT");
@@ -993,14 +1049,13 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       assert.equal(prompt.closest("[data-setting-choice-component]")?.getAttribute("data-setting-choice-source"), "artifact.language.allowedValues");
       assert.equal(prompt.closest("[data-setting-choice-component]")?.getAttribute("data-setting-choice-value-format"), "comma-separated");
 
-      const catalog = await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv);
-      const languageSetting = catalog.settings.find((entry) => entry.key === "artifact.language");
+      const languageSetting = project.find((entry) => entry.key === "artifact.language");
       const roster = languageSetting.allowedValues;
       assert.ok(Array.isArray(roster) && roster.length > 0);
       assert.deepEqual([...prompt.options].map((option) => option.value), roster, "the selector options must come from the engine language roster");
       assert.equal(new Set([...prompt.options].map((option) => option.value)).size, prompt.options.length, "language options must be unique");
 
-      assert.ok(page.document.querySelector(".tcrn-setting-choice"), "the workspace language collection uses the shared choice component");
+      assert.ok(page.document.querySelector(".tcrn-setting-choice"), "the language collection uses the shared choice component");
       const firstOption = prompt.options[0];
       for (const option of [...prompt.options]) option.removeAttribute("selected");
       firstOption.setAttribute("selected", "");
@@ -1047,21 +1102,87 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
     } finally { await page.cleanup(); }
   });
 
-  test("TCRN-CROSS-SUB-342 models.tiers is an editable host-by-tier table with five-locale labels", async () => {
+  // TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R6; contract C-R14-6): model categories and model tiers are
+  // pages of their own, each one table component led by its order column under a header that says what
+  // the order is for. The tier table's category column chooses from the category table and links to
+  // it; each category counts its tiers and links to them. This replaces SUB-342's host-by-tier table.
+  test("SUB-409 (STORY-508 R6): model categories and model tiers are two linked pages, each a table led by its order column", async () => {
     const page = await preparePage();
     try {
-      const tableFor = () => page.document.querySelector('[data-ui="model-tiers-table"]');
-      const rowsFor = () => [...page.document.querySelectorAll("[data-model-tier-row]")];
-      const expected = { en: "Model tiers by host", "zh-CN": "各宿主模型档位", ja: "ホスト別モデルティア", ko: "호스트별 모델 티어", fr: "Niveaux de modèle par hôte" };
-      for (const locale of ["en", "zh-CN", "ja", "ko", "fr"]) {
+      const catalog = (await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings;
+      const stored = (key) => JSON.parse(catalog.find((entry) => entry.key === key).currentValue);
+      const categories = stored("models.category");
+      const tiers = stored("models.tiers");
+      const table = (key) => page.document.querySelector(`[data-collection-table="${key}"]`);
+      const columns = (key) => [...table(key).querySelectorAll("[data-collection-column]")].map((column) => column.dataset.collectionColumn);
+      assert.deepEqual(columns("models.category"), ["order", "id", "name", "description", "tiers", "actions"]);
+      assert.deepEqual(columns("models.tiers"), ["order", "category", "runner", "model", "effort", "note", "actions"]);
+      for (const key of ["models.category", "models.tiers"]) {
+        assert.equal(table(key).getAttribute("data-collection-component"), "CollectionTable", `${key} uses the one table component`);
+        assert.equal(table(key).getAttribute("data-collection-columns"), String(columns(key).length));
+        assert.ok(page.document.querySelector(`[data-collection-save="${key}"][data-cli-action="settings-set"]`), `${key} is written whole through settings-set`);
+      }
+      // The rows are the stored records in order, each order in a NumberInput.
+      const orders = (key) => [...table(key).querySelectorAll('[data-collection-row] [data-collection-field="order"]')].map((input) => Number(input.value));
+      assert.deepEqual(orders("models.category"), categories.map((category) => category.order));
+      assert.deepEqual(orders("models.tiers"), tiers.map((tier) => tier.order));
+      assert.ok([...page.document.querySelectorAll('[data-collection-table] [data-collection-field="order"]')].every((input) => input.getAttribute("data-number-input-component") === "NumberInput" && input.type === "number" && input.getAttribute("min") === "1"));
+      // The category column is a choice of the category ids, set to each tier's category.
+      const choices = [...table("models.tiers").querySelectorAll('select[data-collection-field="category"]')];
+      assert.equal(choices.length, tiers.length);
+      for (const [index, select] of choices.entries()) {
+        assert.deepEqual([...select.querySelectorAll("option")].map((option) => option.getAttribute("value")), categories.map((category) => category.id));
+        assert.equal(select.value, tiers[index].category);
+      }
+      // Each category counts the tiers filed under it, and the count opens them on the tier page.
+      for (const category of categories) {
+        const count = tiers.filter((tier) => tier.category === category.id).length;
+        assert.equal(table("models.category").querySelector(`[data-model-category-tiers="${category.id}"]`)?.dataset.modelCategoryTierCount, String(count), `${category.id} counts its tiers`);
+      }
+      table("models.category").querySelector('[data-model-category-tiers="economy"]').click();
+      assert.equal(page.document.querySelector('[data-page="model-tiers"]').hidden, false, "a tier count opens the tier page");
+      const marked = (key, field) => [...table(key).querySelectorAll("[data-collection-row].tcrn-highlight")].map((row) => row.querySelector(`[data-collection-field="${field}"]`).value);
+      assert.deepEqual(marked("models.tiers", "category"), tiers.filter((tier) => tier.category === "economy").map((tier) => tier.category), "and marks that category's tiers");
+      // A tier's category links to its category on the category page.
+      table("models.tiers").querySelector('[data-collection-row="0"] [data-model-category-link]').click();
+      assert.equal(page.document.querySelector('[data-page="model-categories"]').hidden, false, "a tier's category link opens the category page");
+      assert.deepEqual(marked("models.category", "id"), [tiers[0].category]);
+      page.document.querySelector('[data-page-target="model-categories"]').click();
+      assert.equal(page.document.querySelectorAll("[data-collection-table] .tcrn-highlight").length, 0, "a destination chosen from the navigation opens unmarked");
+      // Each page also links to the other from its head.
+      page.document.querySelector('[data-collection-view="models.category"] [data-collection-links] [data-collection-link="model-tiers"]').click();
+      assert.equal(page.document.querySelector('[data-page="model-tiers"]').hidden, false);
+      page.document.querySelector('[data-collection-view="models.tiers"] [data-collection-links] [data-collection-link="model-categories"]').click();
+      assert.equal(page.document.querySelector('[data-page="model-categories"]').hidden, false);
+      // Both pages are project level, and say so.
+      for (const key of ["models.category", "models.tiers"]) assert.equal(page.document.querySelector(`[data-collection-view="${key}"] [data-setting-layer]`)?.dataset.settingLayer, "project");
+
+      // Five languages: each page is named, its header says what the order is for, and its table
+      // and its order column carry their names.
+      const expected = {
+        en: ["Model categories", "Model tiers", "Order"],
+        "zh-CN": ["模型分类", "模型档位", "顺序"],
+        ja: ["モデル分類", "モデルティア", "順序"],
+        ko: ["모델 분류", "모델 티어", "순서"],
+        fr: ["Catégories de modèles", "Niveaux de modèle", "Ordre"],
+      };
+      for (const [locale, [categoriesName, tiersName, orderName]] of Object.entries(expected)) {
         page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
-        await new Promise((resolve) => setTimeout(resolve, 30));
-        assert.equal(tableFor()?.getAttribute("aria-label"), expected[locale], `${locale} must name the model tiers table`);
-        assert.ok(rowsFor().length > 0, `${locale} must render host/tier rows`);
-        for (const field of ["host", "tier", "runner", "model", "effort"]) {
-          assert.ok(page.document.querySelector(`[data-model-tier-field="${field}"]`), `${locale} must expose ${field}`);
+        assert.equal(page.document.querySelector('[data-page-target="model-categories"] .tcrn-nav-item__label').textContent, categoriesName);
+        assert.equal(page.document.querySelector('[data-page-target="model-tiers"] .tcrn-nav-item__label').textContent, tiersName);
+        assert.equal(page.document.querySelector('[data-page="model-categories"] h1').textContent, categoriesName);
+        assert.equal(page.document.querySelector('[data-page="model-tiers"] h1').textContent, tiersName);
+        for (const [key, lede] of [["models.category", "modelCategories.lede"], ["models.tiers", "modelTiers.lede"]]) {
+          const purpose = page.document.querySelector(`[data-collection-purpose="${key}"]`).textContent;
+          assert.ok(purpose !== lede && purpose.toLocaleLowerCase().includes(orderName.toLocaleLowerCase()), `${locale} ${key}: the header says what the order is for`);
+          assert.equal(table(key).querySelector('[data-collection-column="order"]').textContent, orderName);
+          assert.ok(!table(key).getAttribute("aria-label").includes("."), `${locale} ${key}: the table is named`);
         }
       }
+      page.document.querySelector('[data-locale-option="en"]')?.click();
+      // The Rules page's save names the verb it calls since TCRN-CROSS-SUB-338: rule-list, not agents-render.
+      assert.equal(page.document.querySelector("#save-agents").getAttribute("data-cli-action"), "rule-list");
+      assert.doesNotMatch(page.source, /agents-render/u);
     } finally { await page.cleanup(); }
   });
 
@@ -1091,7 +1212,9 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       assert.equal(page.document.querySelector('[data-setting-row="execution.maxConcurrentSubagents"]')?.dataset.modified, "false", "reset returns the field to the engine default");
       assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "execution.maxConcurrentSubagents").currentValue, "8");
 
-      selectGroup("workspace");
+      // TCRN-CROSS-SUB-409: prompt languages sit in the retrieval group, the port in atelier, the
+      // knowledge budget in knowledge (their catalog rows say so).
+      selectGroup("retrieval");
       const prompt = page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]');
       assert.ok(prompt?.hasAttribute("multiple"));
       for (const option of [...prompt.options]) option.removeAttribute("selected");
@@ -1114,13 +1237,13 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       await waitFor(() => page.document.querySelector('[data-setting-row="retrieval.promptLanguages"]')?.dataset.modified === "false", "the prompt-language reset to read back");
       assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, null, "clearing the collection removes the setting rather than writing an empty value");
 
-      selectGroup("machine");
+      selectGroup("atelier");
       // TCRN-CROSS-STORY-482 R3: the fixture registry holds two libraries, so the switcher is live.
       assert.equal(page.document.querySelector("#library-select")?.disabled, false, "two registered libraries enable the library switcher");
       assert.equal(page.document.querySelectorAll("#library-select option").length, 2);
       assert.match(page.document.querySelector('[data-machine-row="portal.port"]')?.textContent ?? "", /restart/u, "the machine port exposes its restart lifecycle");
 
-      selectGroup("workspace");
+      selectGroup("knowledge");
       const numeric = page.document.querySelector('[data-setting-control="knowledge.aggregateBytes"]');
       const beforeInvalid = receiptText(page.document);
       numeric.value = "1024";
@@ -1131,42 +1254,214 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
     } finally { await page.cleanup(); }
   });
 
-  test("TCRN-CROSS-SUB-342 models.tiers supports add, edit, remove, and reset through the governed setting", async () => {
+  // TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R6; contracts C-R14-2, C-R14-6): the tier table is written
+  // whole and read back. A refused table stays on the page as it was sent, with the engine's reason code
+  // on each row it names (a repeated order, a category the category table lacks), and a record the
+  // system variables render withholds says so on its row. This replaces SUB-342's host-by-tier editor.
+  test("SUB-409 (STORY-508 R6): the tier table is saved whole, and each refused or withheld row shows its reason code", async () => {
     const page = await preparePage();
     try {
-      const rowFor = (host, tier) => [...page.document.querySelectorAll("[data-model-tier-row]")].find((row) => row.querySelector('[data-model-tier-field="host"]')?.value === host && row.querySelector('[data-model-tier-field="tier"]')?.value === tier);
-      const settingReadback = async () => (await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "models.tiers");
-      const original = JSON.parse((await settingReadback()).currentValue);
-      const beforeWrite = receiptText(page.document);
-      page.document.querySelector("[data-model-tier-new-host]").value = "portal-test";
-      page.document.querySelector("[data-model-tier-new-name]").value = "custom";
-      page.document.querySelector("[data-model-tier-add]").click();
-      const added = rowFor("portal-test", "custom");
-      assert.ok(added, "the table adds an editable host/tier row");
-      added.querySelector('[data-model-tier-field="runner"]').value = "portal-test";
-      added.querySelector('[data-model-tier-field="model"]').value = "test-model";
-      added.querySelector('[data-model-tier-field="effort"]').value = "high";
-      page.document.querySelector("[data-model-tier-save]").click();
-      await waitFor(() => receiptAdvanced(page.document, beforeWrite)(), "the model tier write receipt");
-      await waitFor(() => page.document.querySelector('[data-setting-row="models.tiers"]')?.dataset.modified === "true", "the model tiers readback");
-      const written = JSON.parse((await settingReadback()).currentValue);
-      assert.deepEqual(written["portal-test"].custom, { runner: "portal-test", model: "test-model", effort: "high" });
+      const stored = async (key) => JSON.parse((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === key).currentValue);
+      const agents = () => readFile(join(page.fixture.proseRoot, "AGENTS.md"), "utf8");
+      const original = await stored("models.tiers");
+      const table = () => page.document.querySelector('[data-collection-table="models.tiers"]');
+      const field = (index, name) => table().querySelector(`[data-collection-row="${index}"] [data-collection-field="${name}"]`);
+      const findings = () => [...table().querySelectorAll("[data-collection-finding]")].map((node) => [node.closest("[data-collection-finding-row]").dataset.collectionFindingRow, node.dataset.collectionFinding]);
+      // A save is one request and, when it lands, the reads that follow it; the page settles after all of them.
+      const save = async () => {
+        page.document.querySelector('[data-collection-save="models.tiers"]').click();
+        await page.waitForSettled();
+        return receiptText(page.document);
+      };
+      page.document.querySelector('[data-page-target="model-tiers"]').click();
 
-      const beforeRemove = receiptText(page.document);
-      rowFor("portal-test", "custom").querySelector("[data-model-tier-remove]").click();
-      page.document.querySelector("[data-model-tier-save]").click();
-      await waitFor(() => receiptAdvanced(page.document, beforeRemove)(), "the model tier remove receipt");
-      await waitFor(() => !rowFor("portal-test", "custom"), "the model tier row removal");
-      assert.equal(Object.hasOwn(JSON.parse((await settingReadback()).currentValue), "portal-test"), false);
+      // A new row takes the next order in steps of ten; filled in and saved, it reads back and renders.
+      page.document.querySelector('[data-collection-add="models.tiers"]').click();
+      const added = original.length;
+      const order = original.at(-1).order + 10;
+      assert.equal(field(added, "order").value, String(order));
+      field(added, "category").value = "economy";
+      field(added, "runner").value = "claude-code";
+      field(added, "model").value = "test-model";
+      field(added, "effort").value = "high";
+      field(added, "note").value = "portal";
+      assert.match(await save(), /^✓v\d+$/u);
+      const written = await stored("models.tiers");
+      assert.deepEqual(written.at(-1), { order, category: "economy", runner: "claude-code", model: "test-model", effort: "high", note: "portal" });
+      assert.match(await agents(), new RegExp(`\\| ${order} \\| economy \\| claude-code \\| test-model \\| high \\| portal \\|`, "u"));
+      assert.equal(table().querySelectorAll("[data-collection-row]").length, written.length);
 
-      const reset = page.document.querySelector('[data-setting-row="models.tiers"] [data-reset-setting="models.tiers"]');
-      assert.ok(reset, "a modified model tier setting exposes reset");
-      const beforeReset = receiptText(page.document);
+      // A repeated order is refused: both rows that share it carry the code, the table stays as sent,
+      // and nothing is written.
+      field(1, "order").value = field(0, "order").value;
+      assert.match(await save(), /^✕/u);
+      assert.deepEqual(findings(), [["0", "MODELS_ORDER_DUPLICATE"], ["1", "MODELS_ORDER_DUPLICATE"]]);
+      for (const index of [0, 1]) assert.equal(field(index, "order").getAttribute("aria-invalid"), "true");
+      assert.equal(field(1, "order").value, String(written[0].order), "the refused table stays on the page as it was sent");
+      assert.deepEqual(await stored("models.tiers"), written, "a refused table writes nothing");
+
+      // A tier naming a category the category table lacks is refused on its row.
+      field(1, "order").value = String(written[1].order);
+      const category = field(2, "category");
+      const ghost = page.document.createElement("option");
+      ghost.setAttribute("value", "ghost");
+      category.append(ghost);
+      category.value = "ghost";
+      assert.match(await save(), /^✕/u);
+      assert.deepEqual(findings(), [["2", "MODELS_CATEGORY_UNKNOWN"]]);
+      assert.equal(field(2, "category").getAttribute("aria-invalid"), "true");
+      assert.equal(field(2, "category").value, "ghost", "the row keeps the category it was sent with");
+      assert.deepEqual(await stored("models.tiers"), written);
+
+      // A note shaped like a credential is stored but withheld from AGENTS.md, and its row says so.
+      field(2, "category").value = written[2].category;
+      field(3, "note").value = "sk-proj-0123456789abcdef";
+      assert.match(await save(), /^✓v\d+$/u);
+      assert.deepEqual(findings(), [["3", "secret-shaped"]]);
+      assert.equal(table().querySelector('[data-collection-finding="secret-shaped"]').className.includes("tcrn-inline-alert--warning"), true, "a withheld record is a warning, not a refusal");
+      const rendered = await agents();
+      assert.match(rendered, new RegExp(`\\| ${written[3].order} \\| ${written[3].category} \\| ${written[3].runner} \\| \\(withheld\\) \\| \\(withheld\\) \\| \\(withheld\\) \\|`, "u"));
+      assert.doesNotMatch(rendered, /sk-proj-0123456789abcdef/u);
+
+      // Removing a row and saving drops its record.
+      table().querySelector(`[data-collection-remove="${added}"]`).click();
+      assert.equal(table().querySelectorAll("[data-collection-row]").length, original.length);
+      assert.match(await save(), /^✓v\d+$/u);
+      assert.equal((await stored("models.tiers")).some((tier) => tier.order === order), false);
+
+      // Restoring the default table puts the default records back, and the withheld note with them goes.
+      const reset = page.document.querySelector('[data-collection-reset="models.tiers"]');
+      assert.ok(reset, "a table that differs from the default can be restored");
       reset.click();
-      await waitFor(() => receiptAdvanced(page.document, beforeReset)(), "the model tiers reset receipt");
-      await waitFor(() => page.document.querySelector('[data-setting-row="models.tiers"]')?.dataset.modified === "false", "the model tiers default readback");
-      assert.deepEqual(JSON.parse((await settingReadback()).currentValue), original);
+      await page.waitForSettled();
+      assert.match(receiptText(page.document), /^✓v\d+$/u);
+      assert.deepEqual(await stored("models.tiers"), original);
+      assert.deepEqual([...table().querySelectorAll('[data-collection-row] [data-collection-field="order"]')].map((input) => Number(input.value)), original.map((tier) => tier.order));
+      assert.deepEqual(findings(), []);
+      assert.equal(page.document.querySelector('[data-collection-reset="models.tiers"]'), null, "the default table offers no restore");
+      assert.doesNotMatch(await agents(), /\(withheld\)/u);
     } finally { await page.cleanup(); }
+  });
+
+  // TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R1, R6): a category is added on its page and offered to the
+  // tiers at once; a repeated id is refused on both rows, and a category that tiers are still filed under
+  // cannot be dropped: the refusal names the tier records that keep it.
+  test("SUB-409 (STORY-508 R1, R6): the category table is saved whole; a repeated id and a category still in use are refused on the page", async () => {
+    const page = await preparePage();
+    try {
+      const stored = async (key) => JSON.parse((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === key).currentValue);
+      const table = (key) => page.document.querySelector(`[data-collection-table="${key}"]`);
+      const field = (key, index, name) => table(key).querySelector(`[data-collection-row="${index}"] [data-collection-field="${name}"]`);
+      // Typing sends the input event a reader's typing would, so the page's draft keeps the edit.
+      const type = (input, value) => { input.value = value; input.dispatchEvent(new page.window.Event("input", { bubbles: true })); };
+      const save = async (key) => {
+        page.document.querySelector(`[data-collection-save="${key}"]`).click();
+        await page.waitForSettled();
+        return receiptText(page.document);
+      };
+      const original = await stored("models.category");
+      page.document.querySelector('[data-page-target="model-categories"]').click();
+
+      page.document.querySelector('[data-collection-add="models.category"]').click();
+      assert.equal(field("models.category", original.length, "order").value, String(original.at(-1).order + 10));
+      type(field("models.category", original.length, "order"), "25");
+      type(field("models.category", original.length, "id"), "review");
+      type(field("models.category", original.length, "name"), "Review");
+      type(field("models.category", original.length, "description"), "A second look");
+      assert.match(await save("models.category"), /^✓v\d+$/u);
+      const categories = await stored("models.category");
+      assert.deepEqual(categories.map((entry) => [entry.order, entry.id]), [[10, "flagship"], [20, "main"], [25, "review"], [30, "economy"]]);
+      assert.deepEqual(categories[2], { order: 25, id: "review", name: "Review", description: "A second look" });
+      assert.equal(field("models.category", 2, "id").value, "review", "the page reads the table back in its order");
+      assert.equal(table("models.category").querySelector('[data-collection-row="2"] [data-model-category-tier-count]')?.dataset.modelCategoryTierCount, "0");
+      const offered = [...table("models.tiers").querySelector('[data-collection-row="0"] select[data-collection-field="category"]').querySelectorAll("option")].map((option) => option.getAttribute("value"));
+      assert.deepEqual(offered, ["flagship", "main", "review", "economy"], "the tier page offers the new category at once");
+
+      // A repeated id is refused on both rows that carry it.
+      type(field("models.category", 2, "id"), "main");
+      assert.match(await save("models.category"), /^✕/u);
+      assert.deepEqual([...table("models.category").querySelectorAll("[data-collection-finding]")].map((node) => [node.closest("[data-collection-finding-row]").dataset.collectionFindingRow, node.dataset.collectionFinding, node.dataset.collectionFindingField]), [["1", "MODELS_CATEGORY_DUPLICATE", "id"], ["2", "MODELS_CATEGORY_DUPLICATE", "id"]]);
+      assert.deepEqual(await stored("models.category"), categories);
+      type(field("models.category", 2, "id"), "review");
+
+      // File a tier under the new category, then try to drop it: the refusal names the tier.
+      page.document.querySelector('[data-page-target="model-tiers"]').click();
+      const tierCategory = field("models.tiers", 0, "category");
+      tierCategory.value = "review";
+      tierCategory.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+      const tierOrder = Number(field("models.tiers", 0, "order").value);
+      assert.match(await save("models.tiers"), /^✓v\d+$/u);
+      assert.equal((await stored("models.tiers")).find((tier) => tier.order === tierOrder)?.category, "review");
+      page.document.querySelector('[data-page-target="model-categories"]').click();
+      assert.equal(field("models.category", 2, "id").value, "review", "the category page kept its unsaved edit across the tier write");
+      assert.equal(table("models.category").querySelector('[data-model-category-tiers="review"]')?.dataset.modelCategoryTierCount, "1");
+      table("models.category").querySelector('[data-collection-remove="2"]').click();
+      assert.match(await save("models.category"), /^✕/u);
+      const inUse = page.document.querySelector('[data-collection-alerts="models.category"] [data-collection-finding="MODELS_CATEGORY_IN_USE"]');
+      assert.ok(inUse, "a category still in use is refused above the table, since its row is the one removed");
+      assert.match(inUse.textContent, new RegExp(`review: models\\.tiers\\.${tierOrder}`, "u"));
+      assert.deepEqual(await stored("models.category"), categories, "the refused table writes nothing");
+    } finally { await page.cleanup(); }
+  });
+
+  // TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R6): an empty table says what to do first, with the control
+  // that does it, and keeps its order column; a tier table with no category to file under sends the
+  // reader to the category page. TCRN-CROSS-SUB-406 (R3): a write may not drop the category the
+  // escalation ceiling names, so only a merge leaves the category table empty (the fixture records it as
+  // replay reads a merged value), and emptying it on the page is refused with the ceiling named.
+  test("SUB-409 (STORY-508 R6): an empty table guides the reader to its first record", async () => {
+    const fixture = await scratch("tcrn-409-empty-");
+    const atelier = { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" };
+    // The tiers go first: a category that tiers are filed under cannot be dropped.
+    await cli(["settings-set", "--workspace", fixture.workspace, "--at", nextAt(), "--actor", "agent:test", "--key", "models.tiers", "--value", "[]"], atelier);
+    await mergedSetting(fixture, "models.category", "[]");
+    const page = await loadExecutedDom(fixture);
+    try {
+      for (const key of ["models.category", "models.tiers"]) {
+        assert.equal(page.document.querySelectorAll(`[data-collection-table="${key}"] [data-collection-row]`).length, 0);
+        assert.ok(page.document.querySelector(`[data-collection-table="${key}"] [data-collection-column="order"]`), `${key} keeps its order column when empty`);
+        assert.ok(page.document.querySelector(`[data-collection-empty="${key}"] .tcrn-state-surface__title`)?.textContent.trim(), `${key} says it is empty`);
+      }
+      const categoriesGuide = page.document.querySelector('[data-collection-empty="models.category"]');
+      assert.ok(categoriesGuide.querySelector('[data-collection-add="models.category"]'), "an empty category table offers to add one");
+      const tiersGuide = page.document.querySelector('[data-collection-empty="models.tiers"]');
+      assert.equal(tiersGuide.querySelector("[data-collection-add]"), null, "a tier cannot be added before a category exists");
+      tiersGuide.querySelector('[data-collection-link="model-categories"]').click();
+      assert.equal(page.document.querySelector('[data-page="model-categories"]').hidden, false, "the tier table's guide opens the category page");
+      page.document.querySelector('[data-collection-empty="models.category"] [data-collection-add="models.category"]').click();
+      const first = page.document.querySelector('[data-collection-table="models.category"] [data-collection-row="0"] [data-collection-field="order"]');
+      assert.equal(first?.value, "10", "the first category takes the first order");
+      page.document.querySelector('[data-page-target="settings"]').click();
+      page.document.querySelector('[data-setting-group="models"]').click();
+      for (const key of ["models.category", "models.tiers"]) assert.equal(page.document.querySelector(`[data-setting-row="${key}"] [data-collection-count]`)?.textContent, "0 records");
+      for (const locale of ["en", "zh-CN", "ja", "ko", "fr"]) {
+        page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
+        const guide = page.document.querySelector('[data-collection-empty="models.tiers"]');
+        assert.ok([...guide.querySelectorAll(".tcrn-state-surface__title, .tcrn-state-surface__description")].every((node) => node.textContent.trim() && !node.textContent.startsWith("modelTiers.")), `${locale} guides the reader`);
+      }
+      // The first category is main, so the ceiling (main while unset) names a category again; emptying
+      // the table on the page shows its guide, and saving it is refused with the ceiling named above it.
+      page.document.querySelector('[data-locale-option="en"]')?.click();
+      page.document.querySelector('[data-page-target="model-categories"]').click();
+      for (const [name, value] of [["id", "main"], ["name", "Main"]]) {
+        const input = page.document.querySelector(`[data-collection-table="models.category"] [data-collection-row="0"] [data-collection-field="${name}"]`);
+        input.value = value;
+        input.dispatchEvent(new page.window.Event("input", { bubbles: true }));
+      }
+      const saveCategories = async () => {
+        page.document.querySelector('[data-collection-save="models.category"]').click();
+        await page.waitForSettled();
+        return receiptText(page.document);
+      };
+      assert.match(await saveCategories(), /^✓v\d+$/u);
+      page.document.querySelector('[data-collection-table="models.category"] [data-collection-remove="0"]').click();
+      assert.ok(page.document.querySelector('[data-collection-empty="models.category"]'), "the emptied table shows its guide before it is saved");
+      assert.match(await saveCategories(), /^✕/u);
+      const inUse = page.document.querySelector('[data-collection-alerts="models.category"] [data-collection-finding="MODELS_CATEGORY_IN_USE"]');
+      assert.match(inUse?.textContent ?? "", /main: models\.escalation\.ceiling/u, "the refusal names the ceiling that keeps the category");
+      const stored = JSON.parse((await cli(["settings-catalog", "--workspace", fixture.workspace], fixture.deviceEnv)).settings.find((entry) => entry.key === "models.category").currentValue);
+      assert.deepEqual(stored.map((entry) => entry.id), ["main"], "the refused table writes nothing");
+    } finally { page.child.kill(); await rm(fixture.base, { recursive: true, force: true }); }
   });
 
   test("TCRN-CROSS-SUB-342 variables page creates, updates, renames, and deletes with an AGENTS.md readback", async () => {
@@ -1212,13 +1507,154 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
     } finally { await page.cleanup(); }
   });
 
+  // TCRN-CROSS-SUB-410 (TCRN-CROSS-STORY-508 R7; contract C-R14-5): the variables, rules and gates pages
+  // each carry an order in the same NumberInput, under a header that says what it orders: the render
+  // order of AGENTS.md for variables and rules, the plan and display order for gates. Each lists its
+  // records in that order, and an order changed on the page is written by the engine and read back.
+  test("SUB-410 (STORY-508 R7): variables, rules and gates each show their order, say what it orders, and write it through the engine", async () => {
+    const fixture = await scratch("tcrn-410-orders-");
+    const atelier = { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" };
+    const write = (command, args) => cli([command, "--workspace", fixture.workspace, "--at", nextAt(), "--actor", "agent:test", ...args], atelier);
+    await write("variable-set", ["--name", "alpha", "--type", "string", "--value", "a"]);
+    await write("variable-set", ["--name", "beta", "--type", "string", "--value", "b", "--order", "5"]);
+    await write("gates-config-set", ["--name", "lint", "--command", JSON.stringify(["node", "--version"])]);
+    await write("gates-config-set", ["--name", "unit", "--command", JSON.stringify(["node", "--version"]), "--order", "4"]);
+    for (const [id, order] of [["batch", ["--order", "3"]], ["autonomy", []]]) {
+      await cli(["rule-enable", "--project", fixture.proseRoot, "--id", id, ...order, "--at", nextAt(), "--actor", "agent:test"], fixture.deviceEnv);
+    }
+    const page = await loadExecutedDom(fixture);
+    const document = page.document;
+    const agents = () => readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8");
+    const type = (input, value) => { input.value = value; input.dispatchEvent(new page.window.Event("input", { bubbles: true })); };
+    const act = async (element) => { element.click(); await page.waitForSettled(); return receiptText(document); };
+    const variableRows = () => [...document.querySelectorAll("[data-variable-row]")].map((row) => [row.dataset.variableRow, row.querySelector('[data-variable-field="order"]').value]);
+    const gateRows = () => [...document.querySelectorAll("[data-gate-row]")].map((row) => [row.dataset.gateRow, row.querySelector("[data-gate-order]").value]);
+    const ruleCards = () => [...document.querySelectorAll("[data-rule-card]")].map((card) => [card.dataset.ruleCard, card.querySelector("[data-rule-order]").value]);
+    try {
+      // Each page lists its records as the engine renders or plans them, each order in a NumberInput.
+      assert.deepEqual(variableRows(), [["beta", "5"], ["alpha", ""]]);
+      assert.deepEqual(gateRows(), [["unit", "4"], ["lint", ""]]);
+      assert.deepEqual(ruleCards(), [["batch", "3"], ["autonomy", ""], ["unattended-commands", ""], ["silent-reporting", ""]]);
+      const orderInputs = [...document.querySelectorAll('[data-variable-field="order"], [data-gate-order], [data-rule-order]')];
+      assert.ok(orderInputs.length === 9 && orderInputs.every((input) => input.getAttribute("data-number-input-component") === "NumberInput" && input.type === "number" && input.getAttribute("min") === "1"));
+      // An enabled rule saves its order; a disabled one takes it when it is switched on.
+      assert.ok(document.querySelector('[data-rule-card="batch"] [data-rule-order-save][data-cli-action="rule-enable"]'));
+      assert.equal(document.querySelector('[data-rule-card="silent-reporting"] [data-rule-order-save]'), null);
+      assert.equal(document.querySelector('[data-rule-card="silent-reporting"] [data-rule-order]').disabled, false);
+
+      // Five languages: each page's header says what its order is for, and the order column is named.
+      const orderNames = { en: "Order", "zh-CN": "顺序", ja: "順序", ko: "순서", fr: "Ordre" };
+      for (const [locale, orderName] of Object.entries(orderNames)) {
+        document.querySelector(`[data-locale-option="${locale}"]`)?.click();
+        for (const purpose of ["variables", "rules", "gates"]) {
+          const text = document.querySelector(`.tcrn-page__lede[data-order-purpose="${purpose}"]`).textContent;
+          assert.ok(text.toLocaleLowerCase().includes(orderName.toLocaleLowerCase()) && text.includes(purpose === "gates" ? "" : "AGENTS.md"), `${locale} ${purpose}: the header says what the order is for`);
+        }
+        assert.equal(document.querySelector("[data-variable-table] [role=columnheader]").textContent, orderName);
+        assert.equal(document.querySelector('[data-ui="gate-config-table"] thead th').textContent, orderName);
+        assert.equal(document.querySelector('[data-rule-card="batch"] [data-rule-card-order] .tcrn-field__label').textContent, orderName);
+      }
+      document.querySelector('[data-locale-option="en"]')?.click();
+
+      // Variables: an order moves the variable in the table and in the custom section; an empty one clears it.
+      document.querySelector('[data-page-target="variables"]').click();
+      type(document.querySelector('[data-variable-row="alpha"] [data-variable-field="order"]'), "2");
+      assert.match(await act(document.querySelector('[data-variable-row="alpha"] [data-variable-save]')), /^✓v\d+$/u);
+      assert.deepEqual(variableRows(), [["alpha", "2"], ["beta", "5"]]);
+      assert.ok((await agents()).indexOf("| alpha |") < (await agents()).indexOf("| beta |"), "the custom section follows the order");
+      type(document.querySelector('[data-variable-row="beta"] [data-variable-field="order"]'), "");
+      assert.match(await act(document.querySelector('[data-variable-row="beta"] [data-variable-save]')), /^✓v\d+$/u);
+      const variables = (await cli(["variable-list", "--workspace", fixture.workspace], fixture.deviceEnv)).variables;
+      assert.deepEqual(variables.map((variable) => [variable.name, variable.order ?? null]), [["alpha", 2], ["beta", null]]);
+      assert.deepEqual(variableRows(), [["alpha", "2"], ["beta", ""]]);
+
+      // Gates: the engine judges the order; a refused one records nothing, an accepted one reorders the plan.
+      document.querySelector('[data-page-target="gates"]').click();
+      // The DOM harness reads a parsed textarea's text still escaped and a parsed checkbox as neither
+      // checked nor unchecked, so the row is given its command and switches as a reader's browser holds them.
+      const command = () => {
+        const row = document.querySelector('[data-gate-row="lint"]');
+        row.querySelector("[data-gate-command]").value = JSON.stringify(["node", "--version"]);
+        for (const [field, checked] of [["required", true], ["enabled", true], ["release-only", false]]) row.querySelector(`[data-gate-${field}]`).checked = checked;
+      };
+      command();
+      type(document.querySelector('[data-gate-row="lint"] [data-gate-order]'), "0");
+      assert.match(await act(document.querySelector('[data-gate-save="lint"]')), /^✕/u);
+      assert.match(document.querySelector("#receipt-body")?.textContent ?? "", /CLI_ARGUMENT_MALFORMED/u);
+      command();
+      type(document.querySelector('[data-gate-row="lint"] [data-gate-order]'), "2");
+      assert.match(await act(document.querySelector('[data-gate-save="lint"]')), /^✓v\d+$/u);
+      assert.deepEqual(gateRows(), [["lint", "2"], ["unit", "4"]]);
+      const gates = (await cli(["gates-config-list", "--workspace", fixture.workspace], fixture.deviceEnv)).records;
+      assert.deepEqual(gates.map((gate) => [gate.name, gate.order ?? null]), [["lint", 2], ["unit", 4]]);
+
+      // Rules: an enabled rule's saved order moves its section; a disabled rule switched on takes its order.
+      document.querySelector('[data-page-target="prose"]').click();
+      type(document.querySelector('[data-rule-order="autonomy"]'), "1");
+      assert.match(await act(document.querySelector('[data-rule-order-save="autonomy"]')), /^✓v\d+$/u);
+      assert.deepEqual(ruleCards().slice(0, 2), [["autonomy", "1"], ["batch", "3"]]);
+      const moved = await agents();
+      assert.ok(moved.indexOf("rule:autonomy") < moved.indexOf("rule:batch"), "the rule sections follow the order");
+      assert.equal(document.querySelector("#agents-md").value, moved, "the editor reads AGENTS.md back");
+      type(document.querySelector('[data-rule-order="silent-reporting"]'), "2");
+      const toggle = document.querySelector('[data-rule-switch="silent-reporting"]');
+      toggle.checked = true;
+      toggle.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+      await page.waitForSettled();
+      assert.deepEqual(ruleCards(), [["autonomy", "1"], ["silent-reporting", "2"], ["batch", "3"], ["unattended-commands", ""]]);
+      const listed = (await cli(["rule-list", "--project", fixture.proseRoot], fixture.deviceEnv)).rules;
+      assert.deepEqual(listed.filter((rule) => rule.order !== undefined).map((rule) => [rule.id, rule.state, rule.order]), [["autonomy", "enabled", 1], ["batch", "enabled", 3], ["silent-reporting", "enabled", 2]]);
+      const text = await agents();
+      assert.ok(text.indexOf("rule:autonomy") < text.indexOf("rule:silent-reporting") && text.indexOf("rule:silent-reporting") < text.indexOf("rule:batch"), "a rule switched on with an order takes its place");
+    } finally { page.child.kill(); await rm(fixture.base, { recursive: true, force: true }); }
+  });
+
+  // TCRN-CROSS-SUB-410 (TCRN-CROSS-STORY-508 R6; contract C-R14-3): the top of the tier page shows the
+  // three escalation settings as they stand, read only, and links to the settings group where they are
+  // changed; a change made there shows on the tier page.
+  test("SUB-410 (STORY-508 R6): the tier page shows the escalation settings read only and links to their settings group", async () => {
+    const page = await preparePage();
+    try {
+      const document = page.document;
+      document.querySelector('[data-page-target="model-tiers"]').click();
+      const view = document.querySelector('[data-collection-view="models.tiers"]');
+      const summary = () => view.querySelector(":scope > [data-escalation-summary]");
+      assert.equal(view.firstElementChild, summary(), "the summary heads the tier page");
+      const shown = () => Object.fromEntries([...summary().querySelectorAll("[data-escalation-value]")].map((node) => [node.dataset.escalationValue, node.textContent]));
+      assert.deepEqual(shown(), { "models.escalation.enabled": "enabled", "models.escalation.threshold": "1", "models.escalation.ceiling": "main" });
+      assert.equal(summary().querySelectorAll("input, select, textarea").length, 0, "the summary is read only");
+      const keys = ["models.escalation.enabled", "models.escalation.threshold", "models.escalation.ceiling"];
+      for (const locale of ["en", "zh-CN", "ja", "ko", "fr"]) {
+        document.querySelector(`[data-locale-option="${locale}"]`)?.click();
+        const labels = [...summary().querySelectorAll("[data-escalation-key] > span:first-child")].map((node) => node.textContent.trim());
+        assert.ok(labels.length === 3 && labels.every((label) => label !== "" && !label.startsWith("setting.")), `${locale} names the three settings`);
+        assert.ok(!summary().querySelector("h2").textContent.startsWith("modelTiers."), `${locale} names the summary`);
+      }
+      document.querySelector('[data-locale-option="en"]')?.click();
+
+      // The link opens the settings group that holds the three keys, and a change there shows here.
+      summary().querySelector("[data-escalation-settings-link]").click();
+      assert.equal(document.querySelector('[data-page="settings"]').hidden, false);
+      assert.equal(document.querySelector('[data-settings-layout-nav] [data-setting-group="models"]').getAttribute("aria-selected"), "true");
+      for (const key of keys) assert.ok(document.querySelector(`[data-setting-row="${key}"]`), `${key} is in the group`);
+      const before = receiptText(document);
+      const threshold = document.querySelector('[data-setting-control="models.escalation.threshold"]');
+      threshold.value = "3";
+      threshold.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+      await waitFor(() => receiptAdvanced(document, before)(), "the threshold write receipt");
+      await page.waitForSettled();
+      document.querySelector('[data-page-target="model-tiers"]').click();
+      assert.equal(shown()["models.escalation.threshold"], "3");
+    } finally { await page.cleanup(); }
+  });
+
   test("INC-193 the design authority is declared, and what cannot be checked here is yellow", async () => {
     const page = await preparePage();
     try {
-      page.document.querySelector('[data-setting-group="workspace"]')?.click();
+      page.document.querySelector('[data-setting-group="general"]')?.click();
       await new Promise((resolve) => setTimeout(resolve, 80));
       const row = page.document.querySelector('[data-setting-row="design.authority"]');
-      assert.ok(row, "the design authority is a workspace setting");
+      assert.ok(row, "the design authority is a setting of the general group");
       assert.ok(row.querySelector('[data-concept-tip="setting.design.authority"]'), "its ceiling is explained where it is set");
 
       // Unset is the ordinary case for a workspace with no design system, and it is
@@ -1298,7 +1734,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
   test("INC-192 abstract concepts carry a supplemental explanation the keyboard can reach", async () => {
     const page = await preparePage();
     try {
-      page.document.querySelector('[data-setting-group="workspace"]')?.click();
+      page.document.querySelector('[data-setting-group="general"]')?.click();
       await new Promise((resolve) => setTimeout(resolve, 80));
       const tip = page.document.querySelector('[data-concept-tip="setting.design.authority"]');
       assert.ok(tip, "the design authority declaration carries its supplemental explanation");
@@ -1363,10 +1799,10 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
   test("TCRN-CROSS-STORY-408 R2 consumes the DS static overlay boundary for short and long explanations", async () => {
     const page = await preparePage();
     try {
-      page.document.querySelector('[data-setting-group="workspace"]')?.click();
+      page.document.querySelector('[data-setting-group="general"]')?.click();
       await new Promise((resolve) => setTimeout(resolve, 80));
       const longTip = page.document.querySelector('[data-concept-tip="setting.design.authority"]');
-      assert.ok(longTip, "the workspace surface must expose the long overlay consumer");
+      assert.ok(longTip, "the general group must expose the long overlay consumer");
       const inspect = (tip) => {
         const trigger = tip.querySelector("button");
         const id = trigger?.getAttribute("aria-controls") || trigger?.getAttribute("aria-describedby");
@@ -1391,7 +1827,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       page.document.querySelector('[data-setting-group="execution"]')?.click();
       await new Promise((resolve) => setTimeout(resolve, 80));
       const shortTip = page.document.querySelector('[data-concept-tip="setting.execution.maxConcurrentSubagents"]');
-      assert.ok(shortTip, "the models and limits surface must expose the short overlay consumer");
+      assert.ok(shortTip, "the execution group must expose the short overlay consumer");
       const short = inspect(shortTip);
       assert.equal(short.trigger.getAttribute("aria-describedby"), short.layer.getAttribute("id"));
       assert.equal(short.layer.getAttribute("role"), "tooltip");
@@ -1427,7 +1863,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
 
       // The 📖 link and the dictionary answer the same question, so the link is present
       // exactly where an entry exists to reach and absent where none does.
-      page.document.querySelector('[data-setting-group="workspace"]')?.click();
+      page.document.querySelector('[data-setting-group="knowledge"]')?.click();
       await new Promise((resolve) => setTimeout(resolve, 60));
       const languageRow = page.document.querySelector('[data-setting-row="artifact.language"]');
       assert.ok(languageRow?.querySelector("[data-vocabulary-link]"), "a closed-enum setting keeps its dictionary link");
@@ -1443,7 +1879,11 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
   test("STORY-373/467 the model page, its directory and the dispatch surface are all absent", async () => {
     const page = await preparePage();
     try {
-      assert.equal(page.document.querySelector('[data-setting-group="models"]'), null);
+      // TCRN-CROSS-SUB-409 (STORY-508 R5): "models" is the catalog's models and escalation group now. It
+      // lists the catalog's models keys and nothing of the retired model plans.
+      page.document.querySelector('[data-setting-group="models"]')?.click();
+      const modelsKeys = (await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.filter((entry) => entry.group === "models").map((entry) => entry.key).sort();
+      assert.deepEqual([...page.document.querySelectorAll("#settings-rows [data-setting-row], #settings-rows [data-machine-row]")].map((row) => row.dataset.settingRow ?? row.dataset.machineRow).sort(), modelsKeys);
       assert.equal(page.document.querySelector("#model-plans"), null);
       assert.equal(page.document.querySelector('[data-ui="vendor-directory-toggle"]'), null);
       assert.equal(page.document.querySelector('[data-ui="vendor-directory-drawer"]'), null);
@@ -1480,7 +1920,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
 
       // The live destinations the CSS puts behind this toggle at narrow widths still
       // drive the same section router the always-visible desktop nav always used.
-      const destinations = ["dashboard", "settings", "prose", "vocabulary"];
+      const destinations = ["dashboard", "settings", "model-categories", "model-tiers", "prose", "vocabulary"];
       for (const target of destinations) {
         const navItem = nav.querySelector(`[data-page-target="${target}"]`);
         assert.ok(navItem, `the expanded nav must still carry the ${target} destination`);

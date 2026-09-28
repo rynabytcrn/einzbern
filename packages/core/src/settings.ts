@@ -2,17 +2,34 @@
 
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
-import { assertStrictInstant, canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
+import { PROTOCOL_LIMITS, assertStrictInstant, canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
 import { ARTIFACT_LANGUAGE_TAGS, parsePromptLanguages } from "./knowledge-language.js";
 import { DIRECTORY, LEGACY_CONTROL_DIRECTORY } from "./names.js";
 import { MACHINE_SETTINGS_CATALOG } from "./machine-settings.js";
 import {
+  MODELS_CATEGORY_DEFAULT_VALUE,
+  MODELS_CATEGORY_SETTING_KEY,
+  ModelsSettingError,
+  normalizeModelsCategoryValue,
+} from "./models-category.js";
+import {
+  MODELS_ESCALATION_CEILING_DEFAULT_VALUE,
+  MODELS_ESCALATION_CEILING_SETTING_KEY,
+  MODELS_ESCALATION_ENABLED_DEFAULT_VALUE,
+  MODELS_ESCALATION_THRESHOLD_DEFAULT_VALUE,
+  MODELS_ESCALATION_THRESHOLD_MAX,
+  assertModelsEscalationWrite,
+  validateModelsEscalationCeiling,
+} from "./models-escalation.js";
+import {
   LEGACY_DISPATCH_TIERS_SETTING_KEY,
   MODELS_TIERS_DEFAULT_VALUE,
   MODELS_TIERS_SETTING_KEY,
-  ModelsTiersError,
+  assertModelsTablesWrite,
+  currentModelsTiersValue,
   legacyTiersValueToModelsTiersValue,
-  parseModelsTiers,
+  normalizeModelsTiersValue,
+  readModelsCategory,
 } from "./models-tiers.js";
 
 /**
@@ -24,7 +41,16 @@ export const SETTINGS_CATALOG_VERSION = "tcrn.settings-catalog.v1" as const;
 export const WORKSPACE_SETTING_VERSION = "tcrn.workspace-setting.v1" as const;
 export const SETTINGS_LAYER_KIND = "workspace_configuration" as const;
 
+// TCRN-CROSS-STORY-508 R1, R2: the four MODELS_* codes are the refusals of a models.category or
+// models.tiers write that the two tables' shapes and their cross-check name (models-category.ts,
+// models-tiers.ts); every other malformed field of either table is SETTINGS_VALUE_INVALID. R3:
+// MODELS_CATEGORY_UNKNOWN also refuses a models.escalation.ceiling write naming a category
+// models.category does not hold (models-escalation.ts).
 export const SETTINGS_REASON_CODES = Object.freeze([
+  "MODELS_CATEGORY_DUPLICATE",
+  "MODELS_CATEGORY_IN_USE",
+  "MODELS_CATEGORY_UNKNOWN",
+  "MODELS_ORDER_DUPLICATE",
   "SETTINGS_KEY_DEVICE_LEVEL",
   "SETTINGS_KEY_UNREGISTERED",
   "SETTINGS_RECORD_INVALID",
@@ -38,6 +64,18 @@ export const SETTINGS_REASON_CODES = Object.freeze([
 export type SettingLayer = "project" | "device";
 export const SETTINGS_PROJECT_LAYER = "project" as const satisfies SettingLayer;
 export const SETTINGS_DEVICE_LAYER = "device" as const satisfies SettingLayer;
+
+// TCRN-CROSS-STORY-508 R5 (MIN-236 D7): every row of settings-catalog and machine-settings-catalog
+// says how a configuration surface lays its key out. `shape` is `collection` for a key whose value
+// is a table of records, which Atelier edits on a page of its own, and `scalar` for every other key,
+// which the settings page files under its `group`. `order` is the key's place in that group: a
+// positive integer, unique within the group across both layers, so a group that holds keys of both
+// layers still has one display order. specs/settings-catalog-v1.md lists every key's group and order.
+export type SettingShape = "collection" | "scalar";
+// The groups in the order the settings page shows them; a group's name is the text key
+// `settings.group.<id>`. `models` is the models and escalation group.
+export const SETTING_GROUPS = Object.freeze(["general", "models", "execution", "knowledge", "retrieval", "storage", "atelier"] as const);
+export type SettingGroup = typeof SETTING_GROUPS[number];
 
 // A catalog deletion must leave a replay-compatibility marker behind. Keep this
 // list separate from the live catalog: old events may be read, but the setting
@@ -89,6 +127,10 @@ export type SettingKey =
   | "injection.perPromptBytes"
   | "knowledge.aggregateBytes"
   | "knowledge.articlesPath"
+  | "models.category"
+  | "models.escalation.ceiling"
+  | "models.escalation.enabled"
+  | "models.escalation.threshold"
   | "models.tiers"
   | "quota.fiveHourParallelOffPercent"
   | "quota.fiveHourWaitPercent"
@@ -124,6 +166,11 @@ export interface SettingsCatalogEntry {
   // TCRN-CROSS-STORY-484 R4: whether a model may write this key through the CLI. False unless the
   // entry says otherwise; the CLI refusal that reads it is TCRN-CROSS-SUB-341's.
   readonly modelWritable: boolean;
+  // TCRN-CROSS-STORY-508 R5: the layout of the key (SettingShape, SETTING_GROUPS). `scalar` unless
+  // the entry says otherwise.
+  readonly shape: SettingShape;
+  readonly group: SettingGroup;
+  readonly order: number;
   readonly allowedValues?: readonly string[];
   readonly min?: number;
   readonly max?: number;
@@ -153,6 +200,9 @@ export interface SettingsCatalogReadback {
       readonly defaultValue: string | null;
       readonly currentValue: string | null;
       readonly modelWritable: boolean;
+      readonly shape: SettingShape;
+      readonly group: SettingGroup;
+      readonly order: number;
       readonly allowedValues?: readonly string[];
       readonly min?: number;
       readonly max?: number;
@@ -246,7 +296,12 @@ function assertAbsoluteArtifactsSettingPath(value: string, label: string, worksp
 // written at setup rather than during work, so a model changing one through the CLI is the
 // unapproved change R4 refuses. A key that turns out to be routine model work gets
 // `modelWritable: true` here, with its reason.
-const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWritable"> & { readonly modelWritable?: boolean })[] = [
+// TCRN-CROSS-STORY-508 R5: every entry names its group and its order in that group
+// (specs/settings-catalog-v1.md); an entry is a collection only when it says so.
+const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWritable" | "shape"> & {
+  readonly modelWritable?: boolean;
+  readonly shape?: SettingShape;
+})[] = [
   {
     // TCRN-CROSS-STORY-364: the language this workspace writes its knowledge cards in.
     // Its value set is the roster knowledge-language.ts can actually judge, so the two
@@ -257,6 +312,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     layerKind: SETTINGS_LAYER_KIND,
     defaultValue: "en",
     allowedValues: [...ARTIFACT_LANGUAGE_TAGS],
+    group: "knowledge",
+    order: 1,
   },
   {
     // INC-193: which design system this workspace treats as its authority, named by the
@@ -270,6 +327,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     controlType: "text",
     layerKind: SETTINGS_LAYER_KIND,
     defaultValue: null,
+    group: "general",
+    order: 2,
   },
   {
     key: "engine.requiredVersion",
@@ -277,6 +336,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     controlType: "text",
     layerKind: SETTINGS_LAYER_KIND,
     defaultValue: null,
+    group: "general",
+    order: 1,
   },
   {
     // INIT-027 S239. An orchestration control, a string on the governed surface so it stays
@@ -289,6 +350,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     defaultValue: "8",
     min: 1,
     max: 32,
+    group: "execution",
+    order: 1,
   },
   {
     key: "injection.perPromptBytes",
@@ -298,6 +361,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     defaultValue: "1600",
     min: 1,
     max: 1600,
+    group: "retrieval",
+    order: 4,
   },
   {
     key: "knowledge.aggregateBytes",
@@ -307,6 +372,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     defaultValue: "131072",
     min: 4096,
     max: 1_048_576,
+    group: "knowledge",
+    order: 3,
   },
   {
     // Article files are repository material, not knowledge-store control bytes. A
@@ -318,16 +385,75 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     controlType: "text",
     layerKind: SETTINGS_LAYER_KIND,
     defaultValue: "docs/knowledge/articles",
+    group: "knowledge",
+    order: 2,
   },
   {
-    // TCRN-CROSS-STORY-484 R3 (MIN-227 D11, D12): the model tiers per host, each tier a runner, a
-    // model and an effort; models-tiers.ts owns the shape and the default table. It replaces
-    // execution.dispatchTiers (RENAMED_SETTING_KEYS).
+    // TCRN-CROSS-STORY-508 R1 (MIN-236 D6): the model categories, records {id, name, description,
+    // order}; models-category.ts owns the shape and the default table. A table of records, first in
+    // the models group (R5).
+    key: "models.category",
+    type: "string",
+    controlType: "text",
+    layerKind: SETTINGS_LAYER_KIND,
+    defaultValue: MODELS_CATEGORY_DEFAULT_VALUE,
+    shape: "collection",
+    group: "models",
+    order: 1,
+  },
+  {
+    // TCRN-CROSS-STORY-484 R3 (MIN-227 D11, D12): the model tiers; models-tiers.ts owns the shape and
+    // the default table. It replaces execution.dispatchTiers (RENAMED_SETTING_KEYS).
+    // TCRN-CROSS-STORY-508 R2 (MIN-236 D6): one table of records {order, category, runner, model,
+    // effort, note}, each filed under a category of models.category, and second in the models group
+    // after the categories it refers to (R5).
     key: "models.tiers",
     type: "string",
     controlType: "text",
     layerKind: SETTINGS_LAYER_KIND,
     defaultValue: MODELS_TIERS_DEFAULT_VALUE,
+    shape: "collection",
+    group: "models",
+    order: 2,
+  },
+  {
+    // TCRN-CROSS-STORY-508 R3 (MIN-236 D5): whether a rule's record escalates along the order of
+    // models.tiers as the attempts it serves are sent back; models-escalation.ts reads the three
+    // models.escalation keys and resolves the escalation (resolveModelsTier). Scalars of the models
+    // group after the two tables (R5); like every key here, a model does not write them (R4).
+    key: "models.escalation.enabled",
+    type: "enum",
+    controlType: "boolean",
+    layerKind: SETTINGS_LAYER_KIND,
+    defaultValue: MODELS_ESCALATION_ENABLED_DEFAULT_VALUE,
+    allowedValues: ["false", "true"],
+    trueValue: "true",
+    falseValue: "false",
+    group: "models",
+    order: 3,
+  },
+  {
+    // How many rejections escalate a rule's record one step.
+    key: "models.escalation.threshold",
+    type: "string",
+    controlType: "number",
+    layerKind: SETTINGS_LAYER_KIND,
+    defaultValue: MODELS_ESCALATION_THRESHOLD_DEFAULT_VALUE,
+    min: 1,
+    max: MODELS_ESCALATION_THRESHOLD_MAX,
+    group: "models",
+    order: 4,
+  },
+  {
+    // The category an escalation stops in, at its record with the smallest order: a category id,
+    // which a write may only set to a category models.category holds (assertSettingWriteConsistent).
+    key: "models.escalation.ceiling",
+    type: "string",
+    controlType: "text",
+    layerKind: SETTINGS_LAYER_KIND,
+    defaultValue: MODELS_ESCALATION_CEILING_DEFAULT_VALUE,
+    group: "models",
+    order: 5,
   },
   {
     // TCRN-CROSS-STORY-484 (MIN-233 D2): when the orchestrating conversation shrinks its parallel
@@ -342,6 +468,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     defaultValue: "75",
     min: 1,
     max: 100,
+    group: "execution",
+    order: 2,
   },
   {
     key: "quota.fiveHourWaitPercent",
@@ -351,6 +479,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     defaultValue: "90",
     min: 1,
     max: 100,
+    group: "execution",
+    order: 3,
   },
   {
     key: "quota.weeklyParallelOffPercent",
@@ -360,6 +490,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     defaultValue: "95",
     min: 1,
     max: 100,
+    group: "execution",
+    order: 4,
   },
   {
     key: "quota.weeklyWaitPercent",
@@ -369,6 +501,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     defaultValue: null,
     min: 1,
     max: 100,
+    group: "execution",
+    order: 5,
   },
   {
     // TCRN-CROSS-STORY-364: which prompt languages this workspace expects questions in. A
@@ -379,6 +513,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     controlType: "text",
     layerKind: SETTINGS_LAYER_KIND,
     defaultValue: null,
+    group: "retrieval",
+    order: 1,
   },
   {
     key: "retrieval.scopeExcerptBytes",
@@ -388,6 +524,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     defaultValue: "512",
     min: 1,
     max: 65_536,
+    group: "retrieval",
+    order: 3,
   },
   {
     // TCRN-CROSS-STORY-362, STORY-474 R3: the strong-hit threshold. A prompt whose best hit scores
@@ -406,6 +544,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     defaultValue: "3",
     min: 0,
     max: 100,
+    group: "retrieval",
+    order: 2,
   },
   {
     key: "storage.segmentBytes",
@@ -417,6 +557,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     defaultValue: "1048576",
     min: 4096,
     max: 67108864,
+    group: "storage",
+    order: 2,
   },
   {
     key: "storage.snapshotEveryEvents",
@@ -426,6 +568,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     defaultValue: "512",
     min: 1,
     max: 20_000,
+    group: "storage",
+    order: 3,
   },
   {
     key: "workspace.generatedArtifactsPath",
@@ -434,6 +578,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     layerKind: SETTINGS_LAYER_KIND,
     // TCRN-CROSS-STORY-469 R1: relative to the library root, its artifacts/ directory.
     defaultValue: DIRECTORY.artifacts,
+    group: "storage",
+    order: 1,
   },
 ];
 
@@ -442,6 +588,7 @@ export const SETTINGS_CATALOG: readonly SettingsCatalogEntry[] = Object.freeze(
     ...entry,
     layer: SETTINGS_PROJECT_LAYER,
     modelWritable: entry.modelWritable ?? false,
+    shape: entry.shape ?? "scalar",
     ...(entry.allowedValues === undefined ? {} : { allowedValues: Object.freeze([...entry.allowedValues]) }),
   })),
 );
@@ -503,6 +650,75 @@ export function renamedSettingRecord(record: {
   }
 }
 
+// TCRN-CROSS-STORY-508 R1, R2: a refusal of either models table as the settings verbs report it: its
+// own code when that code is one of SETTINGS_REASON_CODES, SETTINGS_VALUE_INVALID otherwise, with its
+// details either way.
+function settingsErrorOf(error: ModelsSettingError): SettingsError {
+  const reasonCode = SETTINGS_REASON_CODES.find((code) => code === error.reasonCode) ?? "SETTINGS_VALUE_INVALID";
+  return new SettingsError(reasonCode, error.message, error.details);
+}
+
+function withSettingsErrors<T>(operation: () => T): T {
+  try {
+    return operation();
+  } catch (error) {
+    if (error instanceof ModelsSettingError) throw settingsErrorOf(error);
+    throw error;
+  }
+}
+
+/**
+ * TCRN-CROSS-STORY-508 R2: a recorded value of a key whose value shape has since changed, in the
+ * current shape. A models.tiers value TCRN-CROSS-STORY-484 wrote, one table per host, reads as
+ * records (models-tiers.ts, currentModelsTiersValue); every other value is returned as it is. The
+ * event keeps its bytes; replay keeps the converted value as the setting's current one.
+ */
+function currentSettingValue(key: unknown, value: unknown): unknown {
+  return key === MODELS_TIERS_SETTING_KEY && typeof value === "string" ? withSettingsErrors(() => currentModelsTiersValue(value)) : value;
+}
+
+/**
+ * A recorded settings.updated record as replay keeps it: its value in the current shape
+ * (currentSettingValue), then validated as validateWorkspaceSettingRecord validates a record.
+ */
+export function readRecordedSettingRecord(value: unknown, workspaceRoot?: string): WorkspaceSettingRecord {
+  if (value === null || typeof value !== "object" || Array.isArray(value) || !Object.hasOwn(value, "value")) {
+    return validateWorkspaceSettingRecord(value, workspaceRoot);
+  }
+  const record = value as Readonly<Record<string, unknown>>;
+  return validateWorkspaceSettingRecord({ ...record, value: currentSettingValue(record.key, record.value) }, workspaceRoot);
+}
+
+/**
+ * A setting record a replay snapshot holds, its value in the current shape: a snapshot another build
+ * of this version wrote may hold a models.tiers value from before TCRN-CROSS-STORY-508, and the read
+ * it seeds holds what a replay from genesis holds.
+ */
+export function currentSettingRecord(record: WorkspaceSettingRecord): WorkspaceSettingRecord {
+  try {
+    const value = currentSettingValue(record.key, record.value);
+    return value === record.value || typeof value !== "string" ? record : { ...record, value };
+  } catch {
+    return record;
+  }
+}
+
+/**
+ * TCRN-CROSS-STORY-508 R1, R2: the check a settings-set (`value`, the value it records) or a
+ * settings-remove (`value` null) runs against the settings as they stand before it appends: a
+ * models.tiers record may not name a category models.category lacks (MODELS_CATEGORY_UNKNOWN), and a
+ * category records still name may not leave models.category (MODELS_CATEGORY_IN_USE, the records in
+ * `details.references`). R3: models.escalation.ceiling may only name a category models.category holds
+ * (MODELS_CATEGORY_UNKNOWN), and a settings-remove puts back a default that must too. Replay does not
+ * run it. Every other key passes.
+ */
+export function assertSettingWriteConsistent(settings: readonly WorkspaceSettingRecord[], key: string, value: string | null): void {
+  withSettingsErrors(() => {
+    assertModelsTablesWrite(settings, key, value);
+    assertModelsEscalationWrite(settings, key, value);
+  });
+}
+
 const engineVersionPattern = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/u;
 
 function engineVersionParts(value: string): readonly [number, number, number] {
@@ -548,16 +764,29 @@ export function settingsCatalogEntry(key: unknown): SettingsCatalogEntry {
   return entry;
 }
 
+// TCRN-CROSS-STORY-508 R1, R2: a collection's value is a whole table of records, so it may be as long
+// as a protocol string may be; every other value keeps the bound of one value.
+const SCALAR_VALUE_MAX_LENGTH = 4096;
+const COLLECTION_VALUE_MAX_LENGTH = PROTOCOL_LIMITS.maxStringLength;
+
+// TCRN-CROSS-STORY-508 R1, R2: the value a write of either models table records, the table as
+// canonical JSON in ascending order; a per-host models.tiers value from before is refused here, and
+// read only by replay (readRecordedSettingRecord).
+const collectionValueNormalizers: Readonly<Record<string, (value: string) => string>> = Object.freeze({
+  [MODELS_CATEGORY_SETTING_KEY]: normalizeModelsCategoryValue,
+  [MODELS_TIERS_SETTING_KEY]: normalizeModelsTiersValue,
+});
+
+/**
+ * The value a setting records, or the refusal naming what is wrong with it. Every value is returned as
+ * it was given except the two models tables', which are returned as canonical JSON in ascending order.
+ */
 export function validateSettingValue(key: unknown, value: unknown, workspaceRoot?: string): string {
   const entry = settingsCatalogEntry(key);
-  assertCanonicalString(value, String(key), 4096);
-  if (entry.key === MODELS_TIERS_SETTING_KEY) {
-    try {
-      parseModelsTiers(value);
-    } catch (error) {
-      if (error instanceof ModelsTiersError) fail("SETTINGS_VALUE_INVALID", error.message, error.details);
-      throw error;
-    }
+  assertCanonicalString(value, String(key), entry.shape === "collection" ? COLLECTION_VALUE_MAX_LENGTH : SCALAR_VALUE_MAX_LENGTH);
+  const normalize = Object.hasOwn(collectionValueNormalizers, entry.key) ? collectionValueNormalizers[entry.key] : undefined;
+  if (normalize !== undefined) {
+    return withSettingsErrors(() => normalize(value));
   }
   if (entry.type === "enum" && !entry.allowedValues?.includes(value)) {
     fail(
@@ -565,6 +794,11 @@ export function validateSettingValue(key: unknown, value: unknown, workspaceRoot
       `${entry.key} is outside its closed enum; allowed values: ${entry.allowedValues?.join(", ") ?? "none"}`,
       { allowedValues: entry.allowedValues ?? [] },
     );
+  }
+  if (entry.key === MODELS_ESCALATION_CEILING_SETTING_KEY) {
+    // TCRN-CROSS-STORY-508 R3: a category id; whether the category exists is the write's question
+    // (assertSettingWriteConsistent), not the shape's, so replay asks only this one.
+    withSettingsErrors(() => validateModelsEscalationCeiling(value));
   }
   if (entry.key === "retrieval.promptLanguages" && parsePromptLanguages(value).length === 0) {
     fail(
@@ -682,6 +916,19 @@ export function sortWorkspaceSettings(records: Iterable<WorkspaceSettingRecord>)
   return [...records].sort((left, right) => compareCanonicalText(left.key, right.key));
 }
 
+// TCRN-CROSS-STORY-508 R1: the current value of an unset key. An unset models.category is the default
+// categories and every other category the tiers name (models-tiers.ts, readModelsCategory), so a
+// tiers table read from a legacy value shows the categories it names; every other unset key is its
+// default.
+function unsetValue(entry: SettingsCatalogEntry, records: readonly WorkspaceSettingRecord[]): string | null {
+  if (entry.key !== MODELS_CATEGORY_SETTING_KEY) return entry.defaultValue;
+  try {
+    return canonicalJson(readModelsCategory(records));
+  } catch {
+    return entry.defaultValue;
+  }
+}
+
 export function readSettingsCatalog(
   workspaceId: string,
   records: readonly WorkspaceSettingRecord[],
@@ -697,8 +944,11 @@ export function readSettingsCatalog(
       controlType: entry.controlType,
       layer: entry.layer,
       defaultValue: entry.defaultValue,
-      currentValue: records.find((record) => record.key === entry.key)?.value ?? effectiveValues[entry.key] ?? entry.defaultValue,
+      currentValue: records.find((record) => record.key === entry.key)?.value ?? effectiveValues[entry.key] ?? unsetValue(entry, records),
       modelWritable: entry.modelWritable,
+      shape: entry.shape,
+      group: entry.group,
+      order: entry.order,
       ...(entry.allowedValues === undefined ? {} : { allowedValues: entry.allowedValues }),
       ...(entry.min === undefined ? {} : { min: entry.min }),
       ...(entry.max === undefined ? {} : { max: entry.max }),

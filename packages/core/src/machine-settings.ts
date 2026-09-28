@@ -28,6 +28,7 @@ import { canonicalJson } from "../../protocol/src/index.js";
 import { writeFileAtomic } from "./atomic-file.js";
 import { DEVICE_HOME_ENTRIES, USER_CREST_PATH_SETTING, deviceHome, userCrestPath } from "./device-home.js";
 import { DIRECTORY } from "./names.js";
+import type { SettingGroup, SettingShape } from "./settings.js";
 
 export const MACHINE_SETTINGS_VERSION = "tcrn.machine-settings.v1" as const;
 export const MACHINE_SETTINGS_LAYER_KIND = "machine_configuration" as const;
@@ -83,6 +84,12 @@ export interface MachineSettingsCatalogEntry {
   readonly layer: "device";
   readonly layerKind: typeof MACHINE_SETTINGS_LAYER_KIND;
   readonly defaultValue: string | null;
+  // TCRN-CROSS-STORY-508 R5: how the settings page lays the key out, as for a project-level key
+  // (settings.ts SETTING_GROUPS). Every device-level key is one value, so its shape is `scalar`; a
+  // group may hold keys of both layers, and `order` is unique within the group across both.
+  readonly shape: SettingShape;
+  readonly group: SettingGroup;
+  readonly order: number;
   readonly allowedValues?: readonly string[];
   readonly min?: number;
   readonly max?: number;
@@ -112,6 +119,9 @@ export const MACHINE_SETTINGS_CATALOG: readonly MachineSettingsCatalogEntry[] = 
     layer: "device",
     layerKind: MACHINE_SETTINGS_LAYER_KIND,
     defaultValue: null,
+    shape: "scalar",
+    group: "general",
+    order: 3,
     allowedValues: Object.freeze([...AGENTS_NAVIGATION_CHOICES]),
     appliesOn: "next-open",
     valueSource: "settings-catalog",
@@ -127,6 +137,9 @@ export const MACHINE_SETTINGS_CATALOG: readonly MachineSettingsCatalogEntry[] = 
     layer: "device",
     layerKind: MACHINE_SETTINGS_LAYER_KIND,
     defaultValue: null,
+    shape: "scalar",
+    group: "knowledge",
+    order: 4,
     appliesOn: "next-open",
     valueSource: "settings-catalog",
   }),
@@ -137,6 +150,9 @@ export const MACHINE_SETTINGS_CATALOG: readonly MachineSettingsCatalogEntry[] = 
     layer: "device",
     layerKind: MACHINE_SETTINGS_LAYER_KIND,
     defaultValue: null,
+    shape: "scalar",
+    group: "atelier",
+    order: 1,
     allowedValues: Object.freeze(["zh-CN", "en", "ja", "ko", "fr"]),
     appliesOn: "next-open",
     valueSource: "settings-catalog",
@@ -148,6 +164,9 @@ export const MACHINE_SETTINGS_CATALOG: readonly MachineSettingsCatalogEntry[] = 
     layer: "device",
     layerKind: MACHINE_SETTINGS_LAYER_KIND,
     defaultValue: null,
+    shape: "scalar",
+    group: "atelier",
+    order: 3,
     appliesOn: "next-open",
     valueSource: "workspace-discovery",
   }),
@@ -158,6 +177,9 @@ export const MACHINE_SETTINGS_CATALOG: readonly MachineSettingsCatalogEntry[] = 
     layer: "device",
     layerKind: MACHINE_SETTINGS_LAYER_KIND,
     defaultValue: null,
+    shape: "scalar",
+    group: "atelier",
+    order: 2,
     allowedValues: Object.freeze(["light", "dark", "system"]),
     appliesOn: "next-open",
     valueSource: "settings-catalog",
@@ -169,6 +191,9 @@ export const MACHINE_SETTINGS_CATALOG: readonly MachineSettingsCatalogEntry[] = 
     layer: "device",
     layerKind: MACHINE_SETTINGS_LAYER_KIND,
     defaultValue: null,
+    shape: "scalar",
+    group: "atelier",
+    order: 4,
     min: 1024,
     max: 65535,
     appliesOn: "restart",

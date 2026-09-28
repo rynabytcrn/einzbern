@@ -16,7 +16,7 @@ import test from "node:test";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { materializeWorkspace } from "../dist/build/packages/core/src/index.js";
 import { checkGateDeclaration, listGates, removeGate, setGate } from "../dist/build/packages/core/src/gates-config.js";
-import { changedFiles, compileGlob, matchesGlob, planGates } from "../dist/build/packages/core/src/gates-plan.js";
+import { changedFiles, compileGlob, gateDeclarationsDigest, matchesGlob, planGates } from "../dist/build/packages/core/src/gates-plan.js";
 
 let second = 0;
 const at = () => {
@@ -273,4 +273,63 @@ test("485-R1: a gate is declared in the library, checked field by field, listed 
   state = await materializeWorkspace(library);
   assert.deepEqual(listGates(state).map((entry) => entry.name), ["portal"]);
   await assert.rejects(removeGate(library, { name: "links", occurredAt: at() }), { reasonCode: "CONFIG_RECORD_NOT_FOUND" });
+});
+
+// TCRN-CROSS-STORY-508 R7 (MIN-236 D7; TCRN-CROSS-SUB-408): a gate may hold an order, which is the
+// order a plan lists, runs and shows its gates in; it is not part of what a run proves.
+test("508-R7: GIVEN gates with an order WHEN gates-plan THEN they are planned first, by order, and the rest by name", async (context) => {
+  const root = await project(await scratch(context));
+  const ordered = [
+    { name: "portal", ...gate(["portal/**"], { order: 2 }) },
+    { name: "engine", ...gate(["packages/**", "scripts/**"], { order: 3 }) },
+    { name: "links", ...gate(["**/*.md"], { required: false }) },
+    { name: "release-pack", ...gate(["**"], { releaseOnly: true, order: 1 }) },
+    { name: "docs", ...gate(["**/*.md"], { required: false, order: 2 }) },
+    { name: "off", ...gate(["**"], { enabled: false, order: 1 }) },
+  ];
+  const release = await planGates({ projectRoot: root, gates: ordered, release: true });
+  assert.deepEqual(names(release), ["release-pack", "docs", "portal", "engine", "links"], "one order keeps name order; a gate without one comes after");
+  const base = head(root);
+  await put(root, "portal/index.html", "<p>changed</p>\n");
+  await put(root, "README.md", "# Changed\n");
+  assert.deepEqual(names(await planGates({ projectRoot: root, gates: ordered, base })), ["docs", "portal", "links"]);
+  // Without an order the plan is by name, as before.
+  assert.deepEqual(names(await planGates({ projectRoot: root, gates: GATES, release: true })), ["engine", "links", "portal", "release-pack"]);
+});
+
+test("508-R7, D8: the declarations digest leaves the order out, and still changes with a command, a cover or required", async (context) => {
+  const root = await project(await scratch(context));
+  const plain = GATES.filter((entry) => entry.name !== "release-pack");
+  const ordered = plain.map((entry, index) => ({ ...entry, order: plain.length - index }));
+  assert.equal(gateDeclarationsDigest(ordered), gateDeclarationsDigest(plain), "only the orders differ");
+  const reversed = plain.map((entry, index) => ({ ...entry, order: index + 1 }));
+  assert.equal(gateDeclarationsDigest(reversed), gateDeclarationsDigest(plain));
+  const [release, releaseOrdered] = [await planGates({ projectRoot: root, gates: plain, release: true }), await planGates({ projectRoot: root, gates: ordered, release: true })];
+  assert.deepEqual([releaseOrdered.declarationsDigest, releaseOrdered.roots], [release.declarationsDigest, release.roots]);
+  assert.notDeepEqual(names(releaseOrdered), names(release), "while the plan's order follows the orders");
+  const portal = ordered.find((entry) => entry.name === "portal");
+  for (const [label, changed] of [
+    ["command", { command: ["node", "-e", "process.exit(0)"] }],
+    ["covers", { covers: ["portal/**", "docs/**"] }],
+    ["required", { required: false }],
+  ]) {
+    const redeclared = ordered.map((entry) => entry === portal ? { ...entry, ...changed } : entry);
+    assert.notEqual(gateDeclarationsDigest(redeclared), gateDeclarationsDigest(ordered), label);
+  }
+});
+
+test("508-R7: a declaration's order is a positive integer, checked on every write, and kept by the record", async (context) => {
+  const base = await scratch(context);
+  const library = join(base, ".ether");
+  process.env.EINZBERN_HOME = join(base, "desk");
+  await runCli(["init", "--workspace", library, "--at", at()], { write: () => {} });
+  assert.deepEqual(checkGateDeclaration(gate(["**"], { order: 4 })), gate(["**"], { order: 4 }));
+  assert.equal(Object.hasOwn(checkGateDeclaration(gate(["**"])), "order"), false, "a declaration without an order has none");
+  for (const order of [0, -1, 2.5, "3", null]) {
+    assert.throws(() => checkGateDeclaration(gate(["**"], { order })), (error) => error?.reasonCode === "GATES_CONFIG_INVALID" && error.details.field === "order", JSON.stringify(order));
+  }
+  await setGate(library, { name: "portal", gate: gate(["portal/**"], { order: 2 }), occurredAt: at() });
+  await setGate(library, { name: "links", gate: gate(["**/*.md"]), occurredAt: at() });
+  const gates = listGates(await materializeWorkspace(library));
+  assert.deepEqual(gates.map((entry) => [entry.name, entry.order]), [["links", undefined], ["portal", 2]], "listed by name, each with its order");
 });

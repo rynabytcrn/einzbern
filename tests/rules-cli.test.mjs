@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
-import { runCli } from "../dist/build/packages/cli/src/index.js";
+import { COMMAND_CATALOG, runCli } from "../dist/build/packages/cli/src/index.js";
 import { setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
 import { parseManagedFile } from "../dist/build/packages/core/src/managed-sections.js";
 import { BUILT_IN_RULES, builtInRule } from "../dist/build/packages/core/src/rules-catalog.js";
@@ -226,4 +226,32 @@ test("483-R2, R3: the rule verbs' refusals, and a rule recorded at another versi
   assert.equal((await refusal(["rule-enable", "--project", project, "--id", "batch", "--at", at()])).reasonCode, "RULE_VERSION_NEWER");
   assert.deepEqual((await render(project)).sections.find((section) => section.id === "rule:batch"), { id: "rule:batch", file: "AGENTS.md", result: "unchanged", state: "managed" });
   assert.equal(await readFile(agents, "utf8"), current);
+});
+
+// TCRN-CROSS-STORY-508 R7 (MIN-236 D7; TCRN-CROSS-SUB-408): rule-enable --order.
+test("508-R7 via rule-enable --order: the rule's section takes its place, rule-list shows the order, and a malformed order is refused", async (context) => {
+  const { project, agents } = await scratch(context);
+  assert.deepEqual(COMMAND_CATALOG.find((entry) => entry.name === "rule-enable").flags.find((flag) => flag.name === "order"), { name: "order", required: false, valueKind: "integer" });
+  const ruleSections = async () => parseManagedFile(await readFile(agents, "utf8")).sections.map((section) => section.id).filter((id) => id.startsWith("rule:"));
+  await enable(project, "batch");
+  await enable(project, "autonomy");
+  assert.deepEqual(await ruleSections(), ["rule:batch", "rule:autonomy"]);
+
+  const ordered = await cli(["rule-enable", "--project", project, "--id", "autonomy", "--order", "1", "--at", at()]);
+  assert.deepEqual(ordered.rule, { id: "autonomy", version: 1, recordedVersion: 1, fileVersion: 1, section: "rule:autonomy", state: "enabled", order: 1 });
+  assert.deepEqual([ordered.result, ordered.written, ordered.recorded], ["unchanged", true, 1]);
+  assert.deepEqual(await ruleSections(), ["rule:autonomy", "rule:batch"]);
+  const listed = await list(project);
+  assert.deepEqual(listed.rules.map((rule) => [rule.id, rule.order ?? null]), [["autonomy", 1], ["batch", null], ["unattended-commands", null], ["silent-reporting", null]]);
+
+  // agents-render keeps the arrangement.
+  await render(project);
+  assert.deepEqual(await ruleSections(), ["rule:autonomy", "rule:batch"]);
+
+  const before = await readFile(agents, "utf8");
+  for (const order of ["0", "1.5", "first"]) {
+    const refused = await refusal(["rule-enable", "--project", project, "--id", "batch", "--order", order, "--at", at()]);
+    assert.deepEqual([refused.reasonCode, refused.message], ["CLI_ARGUMENT_MALFORMED", "order"], order);
+  }
+  assert.equal(await readFile(agents, "utf8"), before, "a malformed order writes nothing");
 });

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
-import { readModelsTiers } from "./models-tiers.js";
+import { MODELS_ECONOMY_CATEGORY } from "./models-category.js";
+import { baseModelsTier, readModelsTiers } from "./models-tiers.js";
 
 /**
  * TCRN-CROSS-STORY-364: the artefact language of a knowledge card, and the question
@@ -107,7 +108,14 @@ export interface SettingsView {
   readonly value: string;
 }
 
-export function readKnowledgeLanguagePolicy(settings: readonly SettingsView[], host?: string): KnowledgeLanguagePolicy {
+/**
+ * The workspace's language policy. TCRN-CROSS-STORY-508 R4: the economy model is the model of the
+ * economy category's base record in models.tiers (baseModelsTier: the record with the largest order,
+ * whatever its runner), the record a rule naming the economy category gets. It no longer depends on a
+ * host, so `_host`, which chose a host's table under TCRN-CROSS-STORY-484, decides nothing; it stays
+ * for the callers that pass it.
+ */
+export function readKnowledgeLanguagePolicy(settings: readonly SettingsView[], _host?: string): KnowledgeLanguagePolicy {
   const valueOf = (key: string): string | null => settings.find((entry) => entry.key === key)?.value ?? null;
   const artifactValue = valueOf("artifact.language");
   const artifactLanguage = isArtifactLanguageTag(artifactValue) ? artifactValue : null;
@@ -116,14 +124,12 @@ export function readKnowledgeLanguagePolicy(settings: readonly SettingsView[], h
     ? declared
     : (artifactLanguage === null ? Object.freeze([]) as readonly ArtifactLanguageTag[] : Object.freeze([artifactLanguage]));
   let economyModel: string | null = null;
-  if (host !== undefined) {
-    try {
-      // TCRN-CROSS-STORY-484 R3: the economy tier of this host in models.tiers.
-      const configured = readModelsTiers(settings)[host]?.economy?.model;
-      economyModel = configured === undefined || configured.length === 0 ? null : configured;
-    } catch {
-      economyModel = null;
-    }
+  try {
+    const configured = baseModelsTier(readModelsTiers(settings), MODELS_ECONOMY_CATEGORY).model;
+    economyModel = configured.length === 0 ? null : configured;
+  } catch {
+    // No economy record, or a table that does not read: no model is available.
+    economyModel = null;
   }
   return Object.freeze({
     artifactLanguage,

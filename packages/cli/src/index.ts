@@ -1017,7 +1017,8 @@ async function renderVariableSectionsAfterWrite(workspace: string, projectRoot: 
   return materializeWorkspace(workspace);
 }
 
-// TCRN-CROSS-STORY-483 R2: one rule as the rule verbs print it.
+// TCRN-CROSS-STORY-483 R2: one rule as the rule verbs print it, with its order when its record holds
+// one (TCRN-CROSS-STORY-508 R7).
 function ruleStatusJson(status: RuleStatus): JsonValue {
   return {
     id: status.id,
@@ -1026,6 +1027,7 @@ function ruleStatusJson(status: RuleStatus): JsonValue {
     fileVersion: status.fileVersion,
     section: status.section,
     state: status.state,
+    ...(status.order === undefined ? {} : { order: status.order }),
   };
 }
 
@@ -1108,7 +1110,7 @@ export const COMMAND_CATALOG = Object.freeze([
   // change and optional Story need, and running it into this device's cache.
   { name: "gates-config-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   { name: "gates-config-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "gates-config-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "command", required: false, valueKind: "string" }, { name: "root", required: false, valueKind: "string" }, { name: "covers", required: false, valueKind: "list" }, { name: "required", required: false, valueKind: "boolean" }, { name: "enabled", required: false, valueKind: "boolean" }, { name: "release-only", required: false, valueKind: "boolean" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "gates-config-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "command", required: false, valueKind: "string" }, { name: "root", required: false, valueKind: "string" }, { name: "covers", required: false, valueKind: "list" }, { name: "required", required: false, valueKind: "boolean" }, { name: "enabled", required: false, valueKind: "boolean" }, { name: "release-only", required: false, valueKind: "boolean" }, { name: "order", required: false, valueKind: "integer" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "gates-plan", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "base", required: false, valueKind: "string" }, { name: "release", required: false, valueKind: "boolean" }, { name: "work-id", required: false, valueKind: "list" }] },
   { name: "gates-run", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "base", required: false, valueKind: "string" }, { name: "release", required: false, valueKind: "boolean" }, { name: "work-id", required: false, valueKind: "list" }] },
   { name: "host-probe", availability: "cli", mutates: false, flags: [{ name: "host", required: true, valueKind: "string" }, { name: "model", required: true, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
@@ -1162,7 +1164,7 @@ export const COMMAND_CATALOG = Object.freeze([
   // project the registry resolves from --project (the current directory when left out).
   // rule-disable takes out a section the user changed only with --force.
   { name: "rule-disable", availability: "cli", mutates: true, flags: [{ name: "id", required: true, valueKind: "string" }, { name: "force", required: false, valueKind: "boolean" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "rule-enable", availability: "cli", mutates: true, flags: [{ name: "id", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "rule-enable", availability: "cli", mutates: true, flags: [{ name: "id", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "order", required: false, valueKind: "integer" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "rule-list", availability: "cli", mutates: false, flags: [{ name: "project", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-478 R3 (STORY-483 R2 reuses it): settle a managed section the user changed:
   // overwrite, keep or unmanage; --force overwrites a section the user kept.
@@ -1191,7 +1193,7 @@ export const COMMAND_CATALOG = Object.freeze([
   // that is not modelWritable, are refused with MODEL_WRITE_REFUSED unless they run for Atelier.
   { name: "variable-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   { name: "variable-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "variable-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "type", required: true, valueKind: "string" }, { name: "value", required: true, valueKind: "string" }, { name: "description", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "variable-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "type", required: true, valueKind: "string" }, { name: "value", required: true, valueKind: "string" }, { name: "description", required: false, valueKind: "string" }, { name: "order", required: false, valueKind: "integer" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "vocabulary", availability: "cli", mutates: false, flags: [] },
   // TCRN-CROSS-STORY-472 R2, R4: the four stored relations and decided-in; --decided-by is the older
   // name of --decided-in. TCRN-CROSS-STORY-473 R2: a Story's goal, acceptance and body.
@@ -1791,15 +1793,19 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   if (command === "rule-enable") {
-    const values = parseArguments(rest, ["id", "at", "project", "actor"]);
+    const values = parseArguments(rest, ["id", "at", "project", "order", "actor"]);
     required(values, ["id", "at"]);
     const at = values.at ?? "";
+    // TCRN-CROSS-STORY-508 R7: --order places the rule's section among the rule sections; left out,
+    // the rule keeps the order its record holds.
+    const order = boundedInteger(values, "order");
     const project = await resolveAgentsProject(values.project ?? process.cwd());
     const change = await namingSection(() => withWriteLock(project.libraryPath, at, async () => enableRule({
       libraryRoot: project.libraryPath,
       projectRoot: project.projectRoot,
       id: values.id ?? "",
       occurredAt: at,
+      ...(order === undefined ? {} : { order }),
       ...(values.actor ? { actorId: values.actor } : {}),
     })));
     writeRuleChange(io, project, change);
@@ -2161,7 +2167,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   if (command === "variable-set") {
-    const values = parseArguments(rest, [...shared, "name", "type", "value", "description", "actor"]);
+    const values = parseArguments(rest, [...shared, "name", "type", "value", "description", "order", "actor"]);
     // An empty value is a value (a string variable may be empty), so --value is checked for
     // presence rather than for content.
     const missing = [...requiredShared, "name", "type"].filter((flag) => !values[flag]);
@@ -2170,6 +2176,10 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
     const name = values.name ?? "";
+    // TCRN-CROSS-STORY-508 R7: --order places the variable in the custom section. variable-set
+    // writes the whole record, so a variable set without --order has none, as one set without
+    // --description has an empty description.
+    const order = boundedInteger(values, "order");
     assertModelWriteAllowed({ name }, false);
     const projectRoot = await registeredProjectRootForWorkspace(workspace);
     const state = await withWriteLock(workspace, at, async () => {
@@ -2179,6 +2189,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
         type: values.type ?? "",
         value: values.value ?? "",
         ...(values.description === undefined ? {} : { description: values.description }),
+        ...(order === undefined ? {} : { order }),
         ...(values.actor ? { actorId: values.actor } : {}),
       });
       return renderVariableSectionsAfterWrite(workspace, projectRoot, at, values.actor);
@@ -3066,8 +3077,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   }
   // Declaring a gate that exists keeps whatever the flags leave out; a new gate runs in the project
   // itself (--root .), covers every path (--covers **), and is required and enabled, not release-only.
+  // TCRN-CROSS-STORY-508 R7: --order places the gate in a plan; a new gate without it has none.
   if (command === "gates-config-set") {
-    const values = parseArguments(rest, [...shared, "name", "command", "root", "covers", "required", "enabled", "release-only", "actor"]);
+    const values = parseArguments(rest, [...shared, "name", "command", "root", "covers", "required", "enabled", "release-only", "order", "actor"]);
     required(values, [...requiredShared, "name"]);
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
@@ -3076,9 +3088,11 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const requiredValue = optionalBoolean(values.required, "required");
     const enabledValue = optionalBoolean(values.enabled, "enabled");
     const releaseOnlyValue = optionalBoolean(values["release-only"], "release-only");
+    const orderValue = boundedInteger(values, "order");
     const state = await withWriteLock(workspace, at, async () => {
       const existing = listGates(await materializeWorkspace(workspace)).find((gate) => gate.name === name);
       if (commandValue === undefined && existing === undefined) fail("CLI_ARGUMENT_MISSING", "command");
+      const order = orderValue ?? existing?.order;
       return setGate(workspace, {
         occurredAt: at,
         name,
@@ -3089,6 +3103,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
           required: requiredValue ?? existing?.required ?? true,
           enabled: enabledValue ?? existing?.enabled ?? true,
           releaseOnly: releaseOnlyValue ?? existing?.releaseOnly ?? false,
+          ...(order === undefined ? {} : { order }),
         },
         ...(values.actor ? { actorId: values.actor } : {}),
       });

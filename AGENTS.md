@@ -123,8 +123,10 @@ a leak; the test is whether anything owns the record of it.
 The dispatch adapter (`scripts/dispatch-adapter.mjs`), the dispatch-telemetry hook and
 the `dispatch-*` verbs are retired (TCRN-CROSS-STORY-467 R3); the dispatch settings retire
 with dispatch modes and classes (TCRN-CROSS-STORY-484 R3), and the tiers they held are
-`models.tiers` in `settings-catalog` (per host, each tier a runner, a model and an effort).
-`scripts/host-render.mjs` no longer projects them: since
+`models.tiers` in `settings-catalog`: a table of records (order, category, runner, model,
+effort and note) filed under the categories of `models.category`, beside the three
+`models.escalation.*` keys (TCRN-CROSS-STORY-508). `scripts/host-render.mjs` no longer
+projects them: since
 the host wiring was redecided (TCRN-CROSS-STORY-477) it renders the one Einzbern hook into a
 host's settings. When a caller resolves the host, task class, mode, model, and effort, it
 does so from the live workspace immediately before the host call, then passes the

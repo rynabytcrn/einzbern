@@ -25,7 +25,7 @@ AGENTS.md 与 CLAUDE.md 是你的文件。Einzbern 只写它自己标记出来�
 | --- | --- | --- |
 | `claude-import` | CLAUDE.md | 一行 `@AGENTS.md`；只在 CLAUDE.md 还没有导入 AGENTS.md 时写。没有 CLAUDE.md 的项目会得到只含这一段的 CLAUDE.md。 |
 | `navigation` | AGENTS.md | 三行导航：本项目由 Einzbern 管理、开工前加载 Mana Orchestrate、先检索再动手。只在本机的 `agents.navigation` 为 `written` 时写；选了 `declined` 的设备改由 SessionStart 与 SubagentStart 两个指针钩子给出同样三行。 |
-| `variables-system` | AGENTS.md | 系统变量：`models.tiers` 与 `design.authority`，见「变量」页。 |
+| `variables-system` | AGENTS.md | 系统变量：模型分类 `models.category` 与模型档位 `models.tiers`（都按顺序排列）、三个升档键 `models.escalation.*`，以及 `design.authority`，见「变量」页。 |
 | `variables-custom` | AGENTS.md | 自定义变量，见「变量」页。 |
 | `rule:<规则 id>` | AGENTS.md | 一条已启用的 Command Spell 原则的正文。 |
 
@@ -60,11 +60,26 @@ rule-resolve --section <段 id> --action overwrite|keep|unmanage [--force true] 
 
 ### 启用与禁用
 
-- `rule-list [--project <目录>]`：列出每条原则的 `{id, version, recordedVersion, fileVersion, section, state}`，只读，不写任何文件。`version` 是本机引擎带的版本，`recordedVersion` 是库里记录的版本，`fileVersion` 是段起始标记里的修订号。
-- `rule-enable --id <规则 id> [--project <目录>] --at <时刻>`：在库的 `rule` 集合里记下 `{enabled: true, version}`（版本取本机引擎带的版本），并把正文作为 `rule:<规则 id>` 段写进 AGENTS.md。回执 `RULE_ENABLED` 给出原则的新状态、这一段的处理结果和备份目录。
-- `rule-disable --id <规则 id> [--force true] [--project <目录>] --at <时刻>`：连同标记把这一段从 AGENTS.md 拿掉，并记下 `{enabled: false, version}`。你改过的段要加 `--force true`。回执 `RULE_DISABLED`。
+- `rule-list [--project <目录>]`：列出每条原则的 `{id, version, recordedVersion, fileVersion, section, state}`，库里记有顺序的原则还带 `order`；只读，不写任何文件。`version` 是本机引擎带的版本，`recordedVersion` 是库里记录的版本，`fileVersion` 是段起始标记里的修订号。
+- `rule-enable --id <规则 id> [--order <正整数>] [--project <目录>] --at <时刻>`：在库的 `rule` 集合里记下 `{enabled: true, version}`（版本取本机引擎带的版本），并把正文作为 `rule:<规则 id>` 段写进 AGENTS.md。回执 `RULE_ENABLED` 给出原则的新状态、这一段的处理结果和备份目录。
+  - 带 `--order` 时同时记下这条原则的顺序；不带时保留库里已记的顺序。
+  - 对已经启用的原则只改顺序时，这一段的结果是 `unchanged`，文件按新顺序重排。
+  - `--order` 不是正整数时报 `CLI_ARGUMENT_MALFORMED`，什么也不写。
+- `rule-disable --id <规则 id> [--force true] [--project <目录>] --at <时刻>`：连同标记把这一段从 AGENTS.md 拿掉，并记下 `{enabled: false, version}`，已记的顺序保留，重新启用时回到原来的位置。你改过的段要加 `--force true`。回执 `RULE_DISABLED`。
 
 `agents-render` 也渲染已启用原则的段：项目换了 `artifact.language`，下一次渲染就换成对应语言的正文。
+
+### 原则段的顺序
+
+库里有原则记着顺序（TCRN-CROSS-STORY-508 R7）时，AGENTS.md 里的原则段按顺序排列：
+
+- 有顺序的在前，按从小到大。
+- 没有顺序的在后，按引擎目录的次序：`autonomy`、`batch`、`unattended-commands`、`silent-reporting`。
+- 本机引擎不带的原则排最后，按 id。
+
+排列只在原则段已经占着的位置之间进行，所以这些位置不动，段外文字一个字节都不动；每一段整段移动，正文与标记都不变。你改过、正等待处置、保留过或接管过的段留在原位，其余的段按顺序填满剩下的位置。
+
+`rule-enable` 与 `agents-render` 都会这样排列。库里没有任何原则记着顺序时，不做任何排列：段仍按写入的先后排着，与从前一样。
 
 ### 六种状态
 

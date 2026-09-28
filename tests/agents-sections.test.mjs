@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { initializeLibrary, materializeWorkspace } from "../dist/build/packages/core/src/index.js";
+import { initializeLibrary, materializeWorkspace, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
 import {
   AGENTS_FILE,
   CLAUDE_FILE,
@@ -27,13 +27,15 @@ import {
   ensureClaudeImport,
   importsAgents,
   managedSectionFile,
+  orderRuleSections,
   renderAgentsSections,
   resolveAgentsSection,
   resolveSection,
 } from "../dist/build/packages/core/src/agents-sections.js";
+import { setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
 import { HOST_HOOK_POINTER_EVENTS, mergeHostHooks, planHostHooks } from "../dist/build/packages/core/src/host-hooks.js";
 import { AGENTS_NAVIGATION_SETTING, MACHINE_SETTINGS_CATALOG, applyMachineSettingSet, readAgentsNavigation } from "../dist/build/packages/core/src/machine-settings.js";
-import { managedSectionRecordsFor, parseManagedFile, renderSection, sectionDigest } from "../dist/build/packages/core/src/managed-sections.js";
+import { absolutePathLine, managedSectionRecordsFor, parseManagedFile, renderSection, sectionDigest } from "../dist/build/packages/core/src/managed-sections.js";
 import { setVariable } from "../dist/build/packages/core/src/variables.js";
 
 let second = 0;
@@ -372,4 +374,82 @@ test("478-R3: a disposition names its action and needs the engine's text to over
   // Overwriting a section that still reads as the engine wrote it changes nothing.
   const same = await resolveAgentsSection(root, { projectRoot: project, id: "navigation", action: "overwrite", backupRoot: backups, occurredAt: at() });
   assert.deepEqual([same.change.result, same.change.written, same.change.recordChanged], ["unchanged", false, false]);
+});
+
+// TCRN-CROSS-STORY-508 R7 (MIN-236 D7; TCRN-CROSS-SUB-408): the rule sections of AGENTS.md stand in
+// the rules' order. They are arranged across the places rule sections already hold, so the text
+// around them never moves.
+const ruleSectionIds = (text) => parseManagedFile(text).sections.map((section) => section.id).filter((id) => id.startsWith("rule:"));
+
+test("508-R7: agents-render arranges the rule sections by order across the places they hold, and moves no byte around them", async (context) => {
+  const paths = await scratch(context);
+  const agents = join(paths.project, AGENTS_FILE);
+  await writeFile(agents, USER_TEXT);
+  const root = await library(paths.base);
+  const record = (key, value) => setConfigRecord(root, { collection: "rule", key, value, occurredAt: at() });
+  const render = () => renderAgentsSections(root, { projectRoot: paths.project, navigation: null, backupRoot: paths.backups, occurredAt: at() });
+  await record("autonomy", { enabled: true, version: 1, order: 3 });
+  await record("batch", { enabled: true, version: 2, order: 1 });
+  await record("unattended-commands", { enabled: true, version: 1 });
+  await render();
+  const created = await readFile(agents, "utf8");
+  assert.deepEqual(ruleSectionIds(created), ["rule:batch", "rule:autonomy", "rule:unattended-commands"], "by order, then the rule without one");
+
+  // The user writes between two rule sections, and the orders change.
+  const endOfBatch = "<!-- einzbern:section-end id=rule:batch -->\n";
+  const withNotes = created.replace(endOfBatch, `${endOfBatch}\n## Between\n\nNotes the engine never moves.\n`);
+  assert.notEqual(withNotes, created);
+  await writeFile(agents, withNotes);
+  await record("autonomy", { enabled: true, version: 1, order: 1 });
+  await record("batch", { enabled: true, version: 2, order: 2 });
+  const result = await render();
+  assert.equal(result.files.find((file) => file.file === AGENTS_FILE).written, true);
+  assert.deepEqual(result.sections.filter((section) => section.id.startsWith("rule:")).map((section) => section.result), ["unchanged", "unchanged", "unchanged"], "no section's text is rewritten");
+  const arranged = await readFile(agents, "utf8");
+  assert.deepEqual(ruleSectionIds(arranged), ["rule:autonomy", "rule:batch", "rule:unattended-commands"]);
+  assert.deepEqual(parseManagedFile(arranged).outside, parseManagedFile(withNotes).outside, "the text around the sections is where it was, byte for byte");
+  for (const id of ruleSectionIds(created)) assert.equal(sectionOf(arranged, id).raw, sectionOf(withNotes, id).raw, `${id} moved whole`);
+  assert.equal((await render()).files.find((file) => file.file === AGENTS_FILE).written, false, "a second render finds them in order");
+});
+
+test("508-R7: orderRuleSections leaves a plan alone while no rule holds an order, and gives a section moved off the last line its line ending", () => {
+  const autonomy = renderSection({ id: "rule:autonomy", rev: 1, body: "Autonomy.\n" });
+  const batch = renderSection({ id: "rule:batch", rev: 1, body: "Batch.\n" });
+  const text = `${USER_TEXT}\n${batch}\n${autonomy.slice(0, -1)}`;
+  const plan = { filePath: AGENTS_FILE, file: AGENTS_FILE, exists: true, before: text, after: null, write: false, sections: [], pending: [] };
+  assert.equal(orderRuleSections(plan, new Map()), plan, "without an order the plan is as it was");
+  assert.equal(orderRuleSections(plan, new Map([["batch", 1]])), plan, "a file already in order is not written");
+  const ordered = orderRuleSections(plan, new Map([["autonomy", 1]]));
+  assert.deepEqual([ordered.write, ordered.before, ordered.after], [true, text, `${USER_TEXT}\n${autonomy}\n${batch}`]);
+});
+
+// TCRN-CROSS-STORY-508 R8, AC7 (MIN-236 D8; TCRN-CROSS-SUB-407): the system section a render writes into
+// AGENTS.md is the engine's text for it, with the categories, the tiers in order, the three escalation
+// settings and design.authority, and it names no absolute path, not even the project's or the library's.
+test("508-AC7 via the render: the system section in AGENTS.md holds the categories, the tiers in order, the escalation settings and design.authority, and no absolute path", async (context) => {
+  const { base, project, backups } = await scratch(context);
+  const root = await library(base);
+  await setWorkspaceSetting(root, { key: "models.escalation.threshold", value: "2", occurredAt: at() });
+  await setWorkspaceSetting(root, { key: "models.escalation.ceiling", value: "flagship", occurredAt: at() });
+  const rendered = await renderAgentsSections(root, { projectRoot: project, navigation: "declined", backupRoot: backups, occurredAt: at() });
+  assert.deepEqual(rendered.withheld, []);
+  const text = await readFile(join(project, AGENTS_FILE), "utf8");
+  const system = sectionOf(text, "variables-system");
+  assert.equal(system.body, engineSectionBody(rendered.state, "variables-system"), "the file holds the engine's text");
+  assert.deepEqual(system.body.match(/^### .+$/gmu), ["### models.category", "### models.tiers", "### models.escalation", "### design.authority"]);
+  const lines = system.body.split("\n");
+  for (const line of [
+    "| 10 | flagship | flagship |  |",
+    "| 30 | economy | economy |  |",
+    "| 60 | economy | claude-code | (unset) | (unset) |  |",
+    "| models.escalation.enabled | true |",
+    "| models.escalation.threshold | 2 |",
+    "| models.escalation.ceiling | flagship |",
+  ]) assert.ok(lines.includes(line), line);
+  const tiers = lines.slice(lines.indexOf("### models.tiers"), lines.indexOf("### models.escalation"));
+  const tierOrders = tiers.filter((line) => /^\| [0-9]+ \| /u.test(line)).map((line) => Number(line.split(" | ")[0].slice(2)));
+  assert.deepEqual(tierOrders, [10, 20, 30, 40, 50, 60], "the tiers in ascending order");
+  assert.match(system.body, /^### design\.authority\n\n\(unset\)$/mu);
+  assert.equal(absolutePathLine(system.body), null);
+  assert.equal(text.includes(base), false, "no path of this machine appears in AGENTS.md");
 });

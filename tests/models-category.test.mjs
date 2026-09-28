@@ -4,6 +4,8 @@
 // default is flagship, main and economy; a write that drops a category tier records still name is
 // refused with the records that name it, and settings-remove puts a default table back only when the
 // other table still agrees with it. Replay checks shapes, never the references between the tables.
+// TCRN-CROSS-STORY-510 R2 (TCRN-CROSS-SUB-417): a settings write receipt's effectiveValue is the key's
+// currentValue in settings-catalog, so an unset models.category receipts the categories the tiers name.
 
 import "./helpers/device-home.mjs";
 import { standInForAtelier } from "./helpers/workspace-fixture.mjs";
@@ -24,7 +26,7 @@ import {
   sortWorkspaceSettings,
   validateWorkspace,
 } from "../dist/build/packages/core/src/index.js";
-import { canonicalJson } from "../dist/build/packages/protocol/src/index.js";
+import { canonicalJson, canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
 import {
   MODELS_CATEGORY_DEFAULT_VALUE,
   defaultModelsCategory,
@@ -68,7 +70,18 @@ function refusalOf(argv) {
 const set = (workspace, key, value) => ["settings-set", "--workspace", workspace, "--at", at(), "--key", key, "--value", JSON.stringify(value)];
 const remove = (workspace, key) => ["settings-remove", "--workspace", workspace, "--at", at(), "--key", key];
 const versionOf = async (workspace) => (await validateWorkspace(workspace)).version;
-const currentValueOf = async (workspace, key) => (await cli(["settings-catalog", "--workspace", workspace])).settings.find((entry) => entry.key === key).currentValue;
+const catalogRowOf = async (workspace, key) => (await cli(["settings-catalog", "--workspace", workspace])).settings.find((entry) => entry.key === key);
+const currentValueOf = async (workspace, key) => (await catalogRowOf(workspace, key)).currentValue;
+
+// The settings write receipt as it stands (SUB-417 changes where effectiveValue comes from, nothing
+// else): these fields, and receiptDigest taken over all of them but reasonCode, ids and itself.
+const RECEIPT_FIELDS = ["effectiveValue", "headEventHash", "ids", "reasonCode", "receiptDigest", "recordId", "schemaVersion", "setting", "version", "workspaceId"];
+function assertReceiptShape(receipt) {
+  assert.deepEqual(Object.keys(receipt).sort(), RECEIPT_FIELDS);
+  assert.deepEqual([receipt.reasonCode, receipt.schemaVersion, receipt.ids], ["SETTINGS_WRITE_COMMITTED", "tcrn.settings-write-receipt.v1", [receipt.recordId]]);
+  const { schemaVersion, workspaceId, version, headEventHash, recordId, setting, effectiveValue } = receipt;
+  assert.equal(receipt.receiptDigest, canonicalSha256({ schemaVersion, workspaceId, version, headEventHash, recordId, setting, effectiveValue }));
+}
 
 // A settings event appended raw, as a device whose write the other never saw would leave it.
 function recordedSetting(key, value, updatedAt) {
@@ -204,4 +217,49 @@ test("508-R1: an unset table is derived: the default categories, then every othe
   assert.deepEqual(readModelsCategory([tiers]), [...DEFAULT_CATEGORIES, category("review", 40)]);
   const recorded = { key: "models.category", value: canonicalJson([category("review", 5)]) };
   assert.deepEqual(readModelsCategory([tiers, recorded]), [category("review", 5)], "a recorded table is the table");
+});
+
+test("510-R2 (SUB-417): GIVEN models.tiers names a category outside the default table WHEN settings-remove models.category THEN the receipt's effectiveValue is settings-catalog's currentValue, that category included", async (context) => {
+  const workspace = await library(context);
+  // Recorded under another order, name and description than the unset table derives for it, so the
+  // receipt cannot pass by echoing the value it removed.
+  await cli(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("cheap", 45, "Cheap", "the low-cost tier")]));
+  await cli(set(workspace, "models.tiers", [record(10, "flagship", "claude-code"), record(20, "cheap", "codex-cli")]));
+  const removed = await cli(remove(workspace, "models.category"));
+  assert.deepEqual([removed.recordId, removed.setting], ["models.category", null]);
+  assert.equal(removed.effectiveValue, await currentValueOf(workspace, "models.category"), "the receipt and settings-catalog agree");
+  assert.deepEqual(JSON.parse(removed.effectiveValue), [...DEFAULT_CATEGORIES, category("cheap", 40)], "the default categories, then cheap");
+  assert.notEqual(removed.effectiveValue, MODELS_CATEGORY_DEFAULT_VALUE, "not the default table, which the receipt used to echo and which lacks cheap");
+  assertReceiptShape(removed);
+});
+
+test("510-R2 (SUB-417): GIVEN a set key and an unset ordinary key WHEN settings-set or settings-remove THEN the receipt's effectiveValue is what it was, the value or the default, and settings-catalog's currentValue", async (context) => {
+  const workspace = await library(context);
+  const writes = [
+    ["models.category", JSON.stringify([...DEFAULT_CATEGORIES, category("cheap", 40, "Cheap")])],
+    // With the tiers naming the default categories only, the unset table is the default table.
+    ["models.category", null],
+    ["models.tiers", JSON.stringify([record(10, "flagship", "claude-code"), record(20, "main", "claude-code")])],
+    ["models.tiers", null],
+    ["retrieval.tau", "5"],
+    ["retrieval.tau", null],
+    ["quota.weeklyWaitPercent", "80"],
+    ["quota.weeklyWaitPercent", null],
+    ["storage.segmentBytes", "2097152"],
+    ["storage.segmentBytes", null],
+  ];
+  const expected = { "retrieval.tau": ["5", "3"], "quota.weeklyWaitPercent": ["80", null], "storage.segmentBytes": ["2097152", "1048576"] };
+  for (const [key, value] of writes) {
+    const receipt = await cli(value === null
+      ? remove(workspace, key)
+      : ["settings-set", "--workspace", workspace, "--at", at(), "--key", key, "--value", value]);
+    const row = await catalogRowOf(workspace, key);
+    const verb = value === null ? "settings-remove" : "settings-set";
+    assert.equal(receipt.setting === null, value === null, `${verb} ${key}`);
+    assert.equal(receipt.effectiveValue, receipt.setting?.value ?? row.defaultValue, `${verb} ${key}: the value, or the default, as before`);
+    assert.equal(receipt.effectiveValue, row.currentValue, `${verb} ${key}: settings-catalog's currentValue`);
+    if (Object.hasOwn(expected, key)) assert.equal(receipt.effectiveValue, expected[key][value === null ? 1 : 0], `${verb} ${key}`);
+    assertReceiptShape(receipt);
+  }
+  assert.equal(await versionOf(workspace), writes.length);
 });

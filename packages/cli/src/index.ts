@@ -918,10 +918,17 @@ function writtenIdsField(): { readonly ids?: readonly string[] } {
   return ids === null ? {} : { ids };
 }
 
+// TCRN-CROSS-STORY-510 R2 (TCRN-CROSS-SUB-417): the receipt's effectiveValue is the key's
+// currentValue in settings-catalog, read with that verb's arguments, so a key whose unset value is
+// derived reads the same in both: an unset models.category is the default categories and every
+// other category models.tiers names, not the default table. A set key is still its value and any
+// other unset key its default. The readback holds every registered key and no other.
 function writeSettingsState(io: CliIo, state: Awaited<ReturnType<typeof materializeWorkspace>>, key: string): void {
   const setting = state.settings.find((entry) => entry.key === key);
-  const catalogEntry = SETTINGS_CATALOG.find((entry) => entry.key === key);
-  if (catalogEntry === undefined) fail("CLI_COMMAND_FAILED", `setting ${key} is not registered`);
+  const current = readSettingsCatalog(state.metadata.workspaceId, state.settings,
+    state.metadata.storageVersion === 2 ? { "storage.segmentBytes": String(state.metadata.segmentEventLimit) } : {})
+    .settings.find((entry) => entry.key === key);
+  if (current === undefined) fail("CLI_COMMAND_FAILED", `setting ${key} is not registered`);
   const receipt = {
     schemaVersion: "tcrn.settings-write-receipt.v1",
     workspaceId: state.metadata.workspaceId,
@@ -929,7 +936,7 @@ function writeSettingsState(io: CliIo, state: Awaited<ReturnType<typeof material
     headEventHash: state.headEventHash,
     recordId: key,
     setting: setting ?? null,
-    effectiveValue: setting?.value ?? catalogEntry.defaultValue,
+    effectiveValue: current.currentValue,
   } as const;
   io.write(canonicalJson({
     reasonCode: "SETTINGS_WRITE_COMMITTED",

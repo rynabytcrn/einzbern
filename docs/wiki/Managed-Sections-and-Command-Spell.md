@@ -25,7 +25,7 @@ AGENTS.md 与 CLAUDE.md 是你的文件。Einzbern 只写它自己标记出来�
 | --- | --- | --- |
 | `claude-import` | CLAUDE.md | 一行 `@AGENTS.md`；只在 CLAUDE.md 还没有导入 AGENTS.md 时写。没有 CLAUDE.md 的项目会得到只含这一段的 CLAUDE.md。 |
 | `navigation` | AGENTS.md | 三行导航：本项目由 Einzbern 管理、开工前加载 Mana Orchestrate、先检索再动手。只在本机的 `agents.navigation` 为 `written` 时写；选了 `declined` 的设备改由 SessionStart 与 SubagentStart 两个指针钩子给出同样三行。 |
-| `variables-system` | AGENTS.md | 系统变量：`models.tiers` 与 `design.authority`，见「变量」页。 |
+| `variables-system` | AGENTS.md | 系统变量：模型分类 `models.category` 与模型档位 `models.tiers`（都按顺序排列）、三个升档键 `models.escalation.*`，以及 `design.authority`，见「变量」页。 |
 | `variables-custom` | AGENTS.md | 自定义变量，见「变量」页。 |
 | `rule:<规则 id>` | AGENTS.md | 一条已启用的 Command Spell 原则的正文。 |
 

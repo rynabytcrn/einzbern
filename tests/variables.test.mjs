@@ -2,8 +2,9 @@
 // TCRN-CROSS-STORY-484 R1, R2, AC1-AC3 (MIN-227 D12; TCRN-CROSS-SUB-340): custom variables and the
 // two variable sections of AGENTS.md. A variable is a configuration record of its own collection,
 // not a setting, so settings-catalog never lists one; a value or description shaped like a
-// credential is refused when written; the system section renders models.tiers (order, category,
-// runner, model, effort, note: TCRN-CROSS-STORY-508 R2) and design.authority and nothing else; the
+// credential is refused when written; the system section renders models.category and models.tiers
+// (TCRN-CROSS-STORY-508 R1, R2), each in ascending order, the three models.escalation settings
+// (TCRN-CROSS-STORY-508 R3, R8, AC7; TCRN-CROSS-SUB-407) and design.authority, and nothing else; the
 // custom section renders every variable;
 // both are managed sections, and neither ever renders an absolute path.
 
@@ -17,7 +18,7 @@ import test from "node:test";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { SETTINGS_CATALOG, initializeLibrary, materializeWorkspace, registerLibrary, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
 import { configRecord, setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
-import { managedSectionRecordsFor, parseManagedFile } from "../dist/build/packages/core/src/managed-sections.js";
+import { absolutePathLine, managedSectionRecordsFor, parseManagedFile } from "../dist/build/packages/core/src/managed-sections.js";
 import {
   SYSTEM_VARIABLE_KEYS,
   VARIABLES_CUSTOM_SECTION_ID,
@@ -197,6 +198,16 @@ test("484-AC2: a value shaped like a credential is refused, and nothing is recor
 // ascending order with its order, category, runner, model, effort and note.
 const tierRecord = (order, category, runner, model, effort, note = "") => ({ order, category, runner, model, effort, note });
 
+// The lines of one subsection of the system section, from its heading to the next, and their table rows.
+function subsection(body, heading) {
+  const lines = body.split("\n");
+  const start = lines.indexOf(`### ${heading}`);
+  assert.notEqual(start, -1, `### ${heading}`);
+  const end = lines.findIndex((line, index) => index > start && line.startsWith("### "));
+  return lines.slice(start + 1, end === -1 ? lines.length : end);
+}
+const tableRows = (lines) => lines.filter((line) => line.startsWith("| "));
+
 test("484-AC3, 508-R2: an economy record on codex-cli shows that runner in the system section, the records in ascending order", async (context) => {
   const fx = await project(context);
   const tiers = [
@@ -207,7 +218,7 @@ test("484-AC3, 508-R2: an economy record on codex-cli shows that runner in the s
   ];
   await setWorkspaceSetting(fx.library, { key: "models.tiers", value: JSON.stringify(tiers), occurredAt: at() });
   const rendered = renderSystemVariablesSection(await materializeWorkspace(fx.library));
-  assert.deepEqual(rendered.body.split("\n").filter((line) => line.startsWith("| ")), [
+  assert.deepEqual(tableRows(subsection(rendered.body, "models.tiers")), [
     "| Order | Category | Runner | Model | Effort | Note |",
     "| --- | --- | --- | --- | --- | --- |",
     "| 10 | flagship | claude-code | fixture-flagship | max |  |",
@@ -219,12 +230,28 @@ test("484-AC3, 508-R2: an economy record on codex-cli shows that runner in the s
   assert.match((await sections(fx))[VARIABLES_SYSTEM_SECTION_ID], /^\| 40 \| economy \| codex-cli \| fixture-codex \| max \| {2}\|$/mu);
 });
 
-test("484-R2: the system section holds models.tiers and design.authority, and no other setting", async (context) => {
+const SYSTEM_HEADINGS = ["### models.category", "### models.tiers", "### models.escalation", "### design.authority"];
+
+test("484-R2, 508-R8: the system section holds the categories, the tiers, the three escalation settings and design.authority, and no other setting", async (context) => {
   const fx = await project(context);
-  assert.deepEqual(SYSTEM_VARIABLE_KEYS, ["models.tiers", "design.authority"]);
+  assert.deepEqual(SYSTEM_VARIABLE_KEYS, ["models.category", "models.tiers", "models.escalation.enabled", "models.escalation.threshold", "models.escalation.ceiling", "design.authority"]);
   const unset = renderSystemVariablesSection(await materializeWorkspace(fx.library));
-  assert.match(unset.body, /^### models\.tiers$/mu);
+  assert.deepEqual(unset.body.match(/^### .+$/gmu), SYSTEM_HEADINGS, "one subsection each, in this order");
+  assert.deepEqual(tableRows(subsection(unset.body, "models.category")), [
+    "| Order | Id | Name | Description |",
+    "| --- | --- | --- | --- |",
+    "| 10 | flagship | flagship |  |",
+    "| 20 | main | main |  |",
+    "| 30 | economy | economy |  |",
+  ], "the default categories, by order");
   assert.match(unset.body, /^\| 60 \| economy \| claude-code \| \(unset\) \| \(unset\) \| {2}\|$/mu, "the default table, unfilled");
+  assert.deepEqual(tableRows(subsection(unset.body, "models.escalation")), [
+    "| Setting | Value |",
+    "| --- | --- |",
+    "| models.escalation.enabled | true |",
+    "| models.escalation.threshold | 1 |",
+    "| models.escalation.ceiling | main |",
+  ], "the escalation defaults");
   assert.match(unset.body, /^### design\.authority\n\n\(unset\)$/mu);
   await setWorkspaceSetting(fx.library, { key: "design.authority", value: "https://design.example/system", occurredAt: at() });
   await setWorkspaceSetting(fx.library, { key: "retrieval.tau", value: "3", occurredAt: at() });
@@ -234,9 +261,91 @@ test("484-R2: the system section holds models.tiers and design.authority, and no
   assert.match(body, /^### design\.authority\n\nhttps:\/\/design\.example\/system$/mu);
   const others = SETTINGS_CATALOG.map((entry) => entry.key).filter((key) => !SYSTEM_VARIABLE_KEYS.includes(key));
   assert.deepEqual(others.filter((key) => body.includes(key)), [], "no other setting is named");
+  assert.deepEqual(SYSTEM_VARIABLE_KEYS.filter((key) => !body.includes(key)), [], "every system setting is");
   assert.equal(body.includes("deploy.host"), false, "and no custom variable");
-  assert.deepEqual(body.match(/^### .+$/gmu), ["### models.tiers", "### design.authority"]);
+  assert.deepEqual(body.match(/^### .+$/gmu), SYSTEM_HEADINGS);
   assert.equal(renderCustomVariablesSection(state).body.includes("design.authority"), false);
+});
+
+test("508-AC7: GIVEN categories, tiers, escalation settings and design.authority WHEN AGENTS.md is rendered THEN its system section holds the categories, the tiers in order and the three escalation settings beside design.authority, and no absolute path", async (context) => {
+  const fx = await project(context);
+  const categories = [
+    { id: "economy", name: "Economy", description: "routine work", order: 30 },
+    { id: "flagship", name: "Flagship", description: "", order: 10 },
+    { id: "main", name: "Main", description: "implementation | review", order: 20 },
+  ];
+  await setWorkspaceSetting(fx.library, { key: "models.category", value: JSON.stringify(categories), occurredAt: at() });
+  await setWorkspaceSetting(fx.library, { key: "models.tiers", value: JSON.stringify([
+    tierRecord(40, "economy", "claude-code", "fixture-main", "low", "cheap first"),
+    tierRecord(10, "flagship", "claude-code", "fixture-flagship", "max"),
+    tierRecord(30, "main", "claude-code", "fixture-main", "max"),
+  ]), occurredAt: at() });
+  await setWorkspaceSetting(fx.library, { key: "models.escalation.enabled", value: "false", occurredAt: at() });
+  await setWorkspaceSetting(fx.library, { key: "models.escalation.threshold", value: "2", occurredAt: at() });
+  await setWorkspaceSetting(fx.library, { key: "models.escalation.ceiling", value: "flagship", occurredAt: at() });
+  await setWorkspaceSetting(fx.library, { key: "design.authority", value: "https://design.example/system", occurredAt: at() });
+  const result = await write(fx);
+  assert.deepEqual(result.withheld, []);
+  const body = (await sections(fx))[VARIABLES_SYSTEM_SECTION_ID];
+  assert.deepEqual(body.match(/^### .+$/gmu), SYSTEM_HEADINGS);
+  assert.deepEqual(tableRows(subsection(body, "models.category")).slice(2), [
+    "| 10 | flagship | Flagship |  |",
+    "| 20 | main | Main | implementation \\| review |",
+    "| 30 | economy | Economy | routine work |",
+  ], "by order; a pipe in a cell is escaped");
+  assert.deepEqual(tableRows(subsection(body, "models.tiers")).slice(2), [
+    "| 10 | flagship | claude-code | fixture-flagship | max |  |",
+    "| 30 | main | claude-code | fixture-main | max |  |",
+    "| 40 | economy | claude-code | fixture-main | low | cheap first |",
+  ], "by order");
+  assert.deepEqual(tableRows(subsection(body, "models.escalation")).slice(2), [
+    "| models.escalation.enabled | false |",
+    "| models.escalation.threshold | 2 |",
+    "| models.escalation.ceiling | flagship |",
+  ]);
+  assert.deepEqual(subsection(body, "design.authority").filter((line) => line !== ""), ["https://design.example/system"]);
+  assert.equal(absolutePathLine(body), null, "no line names an absolute path");
+  const text = await readFile(fx.agents, "utf8");
+  for (const path of [fx.library, fx.root, fx.backupRoot]) assert.equal(text.includes(path), false, "not even the library's or the project's own");
+});
+
+test("508-R8: a category whose name or description would put an absolute path or a credential into AGENTS.md is withheld with its reason, and the rest is written", async (context) => {
+  const fx = await project(context);
+  await setWorkspaceSetting(fx.library, { key: "models.category", value: JSON.stringify([
+    { id: "flagship", name: "Flagship", description: "see /opt/models/flagship", order: 10 },
+    { id: "main", name: "sk-proj-0123456789abcdef", description: "", order: 20 },
+    { id: "economy", name: "Economy", description: "routine work", order: 30 },
+  ]), occurredAt: at() });
+  const result = await write(fx);
+  assert.deepEqual(result.withheld, [
+    { name: "models.category.flagship", reason: "absolute-path" },
+    { name: "models.category.main", reason: "secret-shaped" },
+  ]);
+  assert.deepEqual(result.pendingSections, [], "a withheld system row leaves the section managed, as before");
+  assert.deepEqual(tableRows(subsection((await sections(fx))[VARIABLES_SYSTEM_SECTION_ID], "models.category")).slice(2), [
+    "| 10 | flagship | (withheld) | (withheld) |",
+    "| 20 | main | (withheld) | (withheld) |",
+    "| 30 | economy | Economy | routine work |",
+  ]);
+  const text = await readFile(fx.agents, "utf8");
+  for (const shown of ["/opt/models", "sk-proj"]) assert.equal(text.includes(shown), false, shown);
+});
+
+test("508-R8: a changed escalation setting replaces the system section, and a system section the user edited is left as it is", async (context) => {
+  const fx = await project(context);
+  await write(fx);
+  await setWorkspaceSetting(fx.library, { key: "models.escalation.threshold", value: "3", occurredAt: at() });
+  const replaced = await write(fx);
+  assert.deepEqual(replaced.sections.map((decision) => [decision.id, decision.result, decision.record.rev]), [[VARIABLES_SYSTEM_SECTION_ID, "replace", 2], [VARIABLES_CUSTOM_SECTION_ID, "unchanged", 1]]);
+  assert.match((await sections(fx))[VARIABLES_SYSTEM_SECTION_ID], /^\| models\.escalation\.threshold \| 3 \|$/mu);
+  // The three digests no longer agree once the user edits the section, so the next change does not replace it.
+  const edited = (await readFile(fx.agents, "utf8")).replace("| models.escalation.threshold | 3 |", "| models.escalation.threshold | 9 |");
+  await writeFile(fx.agents, edited);
+  await setWorkspaceSetting(fx.library, { key: "models.escalation.ceiling", value: "flagship", occurredAt: at() });
+  const kept = await write(fx);
+  assert.deepEqual(kept.pendingSections, [VARIABLES_SYSTEM_SECTION_ID]);
+  assert.equal(await readFile(fx.agents, "utf8"), edited, "the user's section stays as it is");
+  assert.equal(configRecord(await materializeWorkspace(fx.library), "managed-section", `AGENTS.md#${VARIABLES_SYSTEM_SECTION_ID}`).value.state, "pending");
 });
 
 test("484-R1: variable names, types and values follow their rules, and a system setting's key is not a variable name", async (context) => {

@@ -612,6 +612,19 @@ is the answer. An unknown or empty category or ceiling is `MODELS_CATEGORY_UNKNO
 runner filter, so from the default `economy` base record (`claude-code`, 60) the first step is
 `codex` (50).
 
+The `variables-system` section of AGENTS.md renders every system setting (TCRN-CROSS-STORY-508 R8,
+AC7; MIN-236 D8; `packages/core/src/variables-sections.ts`, `docs/wiki/Variables.md`). R8 adds to what
+it rendered rather than replacing it, so `design.authority` stays (MIN-227 D11). `SYSTEM_VARIABLE_KEYS`
+is `models.category`, `models.tiers`, the three `models.escalation.*` keys and `design.authority`, and
+the section has one subsection each in that order, the three escalation keys sharing one:
+`models.category` in the columns Order, Id, Name and Description and `models.tiers` in Order, Category,
+Runner, Model, Effort and Note, both in ascending order; `models.escalation` as a Setting and Value
+table of the three effective values; and `design.authority`. A line before each table says how to
+read it. A category whose name or description would put an absolute path or a credential into the
+file keeps its row with those cells `(withheld)` and is reported as `models.category.<id>`, as a tier
+record already is as `models.tiers.<order>`; the section still names no absolute path, and it is still
+replaced only while its three digests agree.
+
 The engine ships as one release archive that needs nothing but Node.js (TCRN-CROSS-STORY-481;
 MIN-227 D23, D28; `scripts/lib/bundle.mjs`, `scripts/pack-release.mjs`,
 `skill/mana-orchestrate/scripts/install.mjs`, `packages/core/src/node-floor.ts`).

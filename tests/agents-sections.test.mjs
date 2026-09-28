@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { initializeLibrary, materializeWorkspace } from "../dist/build/packages/core/src/index.js";
+import { initializeLibrary, materializeWorkspace, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
 import {
   AGENTS_FILE,
   CLAUDE_FILE,
@@ -35,7 +35,7 @@ import {
 import { setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
 import { HOST_HOOK_POINTER_EVENTS, mergeHostHooks, planHostHooks } from "../dist/build/packages/core/src/host-hooks.js";
 import { AGENTS_NAVIGATION_SETTING, MACHINE_SETTINGS_CATALOG, applyMachineSettingSet, readAgentsNavigation } from "../dist/build/packages/core/src/machine-settings.js";
-import { managedSectionRecordsFor, parseManagedFile, renderSection, sectionDigest } from "../dist/build/packages/core/src/managed-sections.js";
+import { absolutePathLine, managedSectionRecordsFor, parseManagedFile, renderSection, sectionDigest } from "../dist/build/packages/core/src/managed-sections.js";
 import { setVariable } from "../dist/build/packages/core/src/variables.js";
 
 let second = 0;
@@ -421,4 +421,35 @@ test("508-R7: orderRuleSections leaves a plan alone while no rule holds an order
   assert.equal(orderRuleSections(plan, new Map([["batch", 1]])), plan, "a file already in order is not written");
   const ordered = orderRuleSections(plan, new Map([["autonomy", 1]]));
   assert.deepEqual([ordered.write, ordered.before, ordered.after], [true, text, `${USER_TEXT}\n${autonomy}\n${batch}`]);
+});
+
+// TCRN-CROSS-STORY-508 R8, AC7 (MIN-236 D8; TCRN-CROSS-SUB-407): the system section a render writes into
+// AGENTS.md is the engine's text for it, with the categories, the tiers in order, the three escalation
+// settings and design.authority, and it names no absolute path, not even the project's or the library's.
+test("508-AC7 via the render: the system section in AGENTS.md holds the categories, the tiers in order, the escalation settings and design.authority, and no absolute path", async (context) => {
+  const { base, project, backups } = await scratch(context);
+  const root = await library(base);
+  await setWorkspaceSetting(root, { key: "models.escalation.threshold", value: "2", occurredAt: at() });
+  await setWorkspaceSetting(root, { key: "models.escalation.ceiling", value: "flagship", occurredAt: at() });
+  const rendered = await renderAgentsSections(root, { projectRoot: project, navigation: "declined", backupRoot: backups, occurredAt: at() });
+  assert.deepEqual(rendered.withheld, []);
+  const text = await readFile(join(project, AGENTS_FILE), "utf8");
+  const system = sectionOf(text, "variables-system");
+  assert.equal(system.body, engineSectionBody(rendered.state, "variables-system"), "the file holds the engine's text");
+  assert.deepEqual(system.body.match(/^### .+$/gmu), ["### models.category", "### models.tiers", "### models.escalation", "### design.authority"]);
+  const lines = system.body.split("\n");
+  for (const line of [
+    "| 10 | flagship | flagship |  |",
+    "| 30 | economy | economy |  |",
+    "| 60 | economy | claude-code | (unset) | (unset) |  |",
+    "| models.escalation.enabled | true |",
+    "| models.escalation.threshold | 2 |",
+    "| models.escalation.ceiling | flagship |",
+  ]) assert.ok(lines.includes(line), line);
+  const tiers = lines.slice(lines.indexOf("### models.tiers"), lines.indexOf("### models.escalation"));
+  const tierOrders = tiers.filter((line) => /^\| [0-9]+ \| /u.test(line)).map((line) => Number(line.split(" | ")[0].slice(2)));
+  assert.deepEqual(tierOrders, [10, 20, 30, 40, 50, 60], "the tiers in ascending order");
+  assert.match(system.body, /^### design\.authority\n\n\(unset\)$/mu);
+  assert.equal(absolutePathLine(system.body), null);
+  assert.equal(text.includes(base), false, "no path of this machine appears in AGENTS.md");
 });

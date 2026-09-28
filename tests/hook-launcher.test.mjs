@@ -369,3 +369,58 @@ test("477-R2: a changed library, a missing engine, a damaged registry and a bad 
   const none = runHook(launcherPath, { home, cwd: directory });
   assert.deepEqual([none.status, none.stdout, none.stderr], [0, "", ""]);
 });
+
+// MIN-235 D9 (TCRN-CROSS-SUB-302): the zoo library with no retrieval.tau recorded, so the hook answers
+// at the shipped default. zooLibrary records 1 for the cases above, written when the default was a
+// bm25 number calibrated on the cross-project chain; the default now counts words only one record
+// carries, and holds in a library this small.
+async function zooLibraryAtDefault(library) {
+  await initializeLibrary({ root: library, createdAt: at(0) });
+  const projectId = (await createProject(library, { occurredAt: at(1), externalKey: "HOOK-PROJECT", name: "Hook" })).projects[0].id;
+  await createWork(library, {
+    occurredAt: at(2), projectId, externalKey: "HOOK-INIT", kind: "Initiative", parentId: null, title: "Aviary initiative",
+    scope: "## Goal\nBuild the heron aviary.",
+  });
+  await createWork(library, { occurredAt: at(3), projectId, externalKey: "HOOK-EPIC", kind: "Epic", parentId: idOf("HOOK-INIT"), title: "Wetland epic", goal: "Keep the flamingo pond." });
+  await createWork(library, {
+    occurredAt: at(4), projectId, externalKey: "HOOK-STORY", kind: "Story", parentId: idOf("HOOK-EPIC"), title: "Zebrafish tank",
+    goal: "Give the zebrafish a tank.", acceptance: "GIVEN the tank WHEN it is filled THEN the zebrafish swim",
+  });
+}
+
+test("D9 (477-AC3, SUB-387 at the default threshold): a Story's prompt and a user card's prompt get their lines, and unrelated prompts get nothing", async (context) => {
+  const { base, home } = await scratch(context);
+  const launcherPath = await installEngine(home);
+  const directory = join(base, "project");
+  await mkdir(join(directory, "src"), { recursive: true });
+  gitRepository(directory, REMOTE);
+  const library = join(directory, ".ether");
+  await zooLibraryAtDefault(library);
+  await registerLibrary({ projectPath: directory, libraryPath: library, registeredAt: at(9) });
+
+  const run = runHook(launcherPath, { home, cwd: join(directory, "src") });
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(run.stderr, "");
+  assert.deepEqual(JSON.parse(run.stdout), { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: STORY_LINE } });
+  for (const prompt of ["rename parser module, rerun compiler", "What time does the pharmacy close on Sundays?", "今天的天气怎么样"]) {
+    const quiet = runHook(launcherPath, { home, cwd: directory, prompt });
+    assert.deepEqual([quiet.status, quiet.stdout, quiet.stderr], [0, "", ""], prompt);
+  }
+
+  const created = await createKnowledgeUnit(library, {
+    occurredAt: at(10), externalKey: "HOOK-USER-QUOLL", scope: "user", projectId: null, roleScopes: [],
+    category: "workflow", kind: "guide", tags: ["lesson"], subject: "Quoll den cleaning schedule",
+    summary: "Clean the quoll den before dusk", snippet: "clean quoll den before dusk",
+    accountableOwnerId: deriveStableId("owner", "HOOK-USER-QUOLL-OWNER"),
+    sourceReferences: ["evidence://hook/quoll"], sourceDigest: canonicalSha256({ source: "hook-quoll" }), supersedes: null,
+    linkedWorkIds: [], linkedDecisionIds: [], linkedGateIds: [], linkedEvidenceIds: [deriveStableId("evidence", "HOOK-USER-QUOLL")],
+    retrievalDisposition: "default", freshnessState: "fresh", lastVerified: null,
+    stalenessPolicy: { maximumAgeDays: null, unknownDisposition: "fail-closed" }, exportDisposition: "metadata-only",
+    body: "Clean the den before dusk.",
+  });
+  const card = runHook(launcherPath, { home, cwd: directory, prompt: "What is the quoll den cleaning schedule?" });
+  assert.equal(card.status, 0, card.stderr);
+  assert.deepEqual(JSON.parse(card.stdout), { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: `[卡片 用户] Quoll den cleaning schedule · ${created.id}` } });
+  const stillQuiet = runHook(launcherPath, { home, cwd: directory, prompt: "rename parser module, rerun compiler" });
+  assert.deepEqual([stillQuiet.status, stillQuiet.stdout, stillQuiet.stderr], [0, "", ""]);
+});

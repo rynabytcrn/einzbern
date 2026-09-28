@@ -73,6 +73,7 @@ export interface RecallHit {
 }
 
 export interface RecallSelectionOptions {
+  // The absolute floor in bm25, the unit of the ranked scores (selectRecallHits); not retrieval.tau.
   readonly tau?: number;
   readonly relativeFloor?: number;
   readonly limit?: number;
@@ -88,21 +89,43 @@ export interface RecallSelectionOptions {
 export const RECALL_FIELD_WEIGHTS = { title: 8, body: 3, tags: 5, expansions: 6, externalKey: 1 } as const;
 
 /**
- * TCRN-CROSS-STORY-474 R3 (MIN-227 D7): the strong-hit threshold, in bm25 units, and the default of
- * the `retrieval.tau` setting. When the best hit of a prompt scores below it the prompt is about
- * nothing the library holds, and recall answers with nothing at all (RECALL_NO_STRONG_HIT) rather
- * than its best weak guesses -- a prompt that has no business in the library must not be handed
- * a reminder. Above it, the threshold is still the absolute floor of every hit. A term carried by
- * most of the corpus scores near zero by construction (FTS5 clamps a non-positive inverse
- * document frequency), which is what turns "every card is tagged lesson" into no answer.
- * The value is calibrated by retrieval-eval and held in tests/fixtures/retrieval-eval/
- * strong-threshold.json (TCRN-CROSS-SUB-303): the smallest multiple of 0.25 above the best score
- * any prompt of the unrelated group reaches on the recorded cross-project corpus (16.98, a
- * two-word coincidence with a record written in English). bm25 grows with the size of the
- * library, so in a library of a few dozen records only a title match or a named key clears it;
- * such a library lowers `retrieval.tau` (settings) or passes `--tau`.
+ * TCRN-CROSS-STORY-474 R3, MIN-235 D9 (TCRN-CROSS-SUB-302): the unit the strong-hit threshold is
+ * counted in -- the bm25 weight of a word exactly one of the index's `indexed` records carries,
+ * ln((N - 0.5) / 1.5), with the floor FTS5 puts under a non-positive inverse document frequency
+ * (1e-6), so in a library of one or two records a threshold scales exactly as its scores do. bm25
+ * grows with the logarithm of a library's size, so one bm25 number means one thing in four records
+ * and another in six hundred: measured on 2026-09-28, the goal words of a Story in a four-record
+ * library scored 3.65 while an unrelated prompt reached 16.98 on the recorded cross-project corpus,
+ * and no fixed number sat between the two. In this unit they are 4.31 and 2.83.
  */
-export const RECALL_STRONG_TAU = 17;
+export function recallScoreUnit(indexed: number): number {
+  const weight = Math.log((indexed - 0.5) / 1.5);
+  return weight > 0 ? weight : 1e-6;
+}
+
+/** The bm25 floor a strong-hit threshold `tau` becomes in an index of `indexed` records. */
+export function recallStrongHitFloor(tau: number, indexed: number): number {
+  return tau * recallScoreUnit(indexed);
+}
+
+/**
+ * TCRN-CROSS-STORY-474 R3 (MIN-227 D7), MIN-235 D9: the strong-hit threshold and the default of the
+ * `retrieval.tau` setting, in recallScoreUnit units -- a strong hit is worth at least three words
+ * that only one record carries. When the best hit of a prompt scores below it the prompt is about
+ * nothing the library holds, and recall answers with nothing at all (RECALL_NO_STRONG_HIT) rather
+ * than its best weak guesses -- a prompt that has no business in the library must not be handed a
+ * reminder. Above it, the threshold is still the absolute floor of every hit. A term carried by
+ * most of the corpus scores near zero by construction (FTS5 clamps a non-positive inverse document
+ * frequency), which is what turns "every card is tagged lesson" into no answer.
+ * The value is calibrated by retrieval-eval and held in tests/fixtures/retrieval-eval/
+ * strong-threshold.json (TCRN-CROSS-SUB-303): the smallest whole number above the best score any
+ * unrelated prompt reaches -- 2.83 on the recorded cross-project corpus (16.98 in bm25 over its
+ * 600 records, a two-word coincidence with a record written in English) and 0 in the four-record
+ * library -- and no higher than the lowest score a query of the four-record library's related
+ * group reaches (3.52, the other Story's goal words). Because the unit moves with the library,
+ * the one default holds at both sizes; the setting stays a whole number, as it always was.
+ */
+export const RECALL_STRONG_TAU = 3;
 
 /** The name the absolute floor had before it became the strong-hit threshold; the same value. */
 export const RECALL_DEFAULT_TAU = RECALL_STRONG_TAU;
@@ -463,12 +486,15 @@ export class RecallIndex {
  * Absolute floor, then relative floor, then the per-kind quota, then the limit. The
  * relative floor's basis is the best bm25 score rather than the best score outright,
  * so a prompt that names one record by key does not silence everything else.
+ * TCRN-CROSS-SUB-302: `tau` here is the absolute floor in bm25, the unit of the ranked scores; a
+ * list carries no library size, so it has no default of its own. recall() passes the floor its
+ * strong-hit threshold becomes in the library it searched (recallStrongHitFloor).
  */
 export function selectRecallHits(
   ranked: readonly RecallHit[],
   options: RecallSelectionOptions = {},
 ): readonly RecallHit[] {
-  const tau = options.tau ?? RECALL_DEFAULT_TAU;
+  const tau = options.tau ?? 0;
   const relativeFloor = options.relativeFloor ?? RECALL_RELATIVE_FLOOR;
   const limit = options.limit ?? RECALL_DEFAULT_LIMIT;
   const quota = options.quota === undefined ? RECALL_KIND_QUOTA : options.quota;
@@ -664,7 +690,7 @@ export interface RecallRequest {
 }
 
 export interface RecallResult {
-  // RECALL_NO_STRONG_HIT: the best hit scored below tau, so records is empty.
+  // RECALL_NO_STRONG_HIT: the best hit scored below the floor tau becomes, so records is empty.
   readonly reasonCode: "RECALL_READY" | "RECALL_NO_STRONG_HIT";
   readonly checkpoint: string;
   readonly indexed: number;
@@ -672,7 +698,10 @@ export interface RecallResult {
   readonly inserted: number;
   readonly removed: number;
   readonly tokens: readonly string[];
+  // The strong-hit threshold, in recallScoreUnit units (TCRN-CROSS-SUB-302), and the bm25 floor it
+  // became in this index: tau times recallScoreUnit(indexed).
   readonly tau: number;
+  readonly floor: number;
   readonly relativeFloor: number;
   readonly limit: number;
   readonly total: number;
@@ -726,11 +755,14 @@ export function recall(request: RecallRequest): RecallResult {
   const relativeFloor = request.relativeFloor ?? RECALL_RELATIVE_FLOOR;
   const limit = request.limit ?? RECALL_DEFAULT_LIMIT;
   // TCRN-CROSS-STORY-474 R3: no strong hit, no answer. An exact external-key hit is the strongest
-  // hit there is (RECALL_EXTERNAL_KEY_SCORE), so naming a record is always answered.
-  const strong = ranked.some((hit) => hit.score >= tau);
+  // hit there is (RECALL_EXTERNAL_KEY_SCORE), so naming a record is always answered, whatever tau.
+  // MIN-235 D9 (TCRN-CROSS-SUB-302): tau is counted in words only one record of this library carries,
+  // so the bm25 floor it becomes moves with the library the prompt is put to.
+  const floor = recallStrongHitFloor(tau, index.size);
+  const strong = ranked.some((hit) => hit.score === RECALL_EXTERNAL_KEY_SCORE || hit.score >= floor);
   const records = strong
     ? selectRecallHits(ranked, {
-      tau,
+      tau: floor,
       relativeFloor,
       limit,
       quota: request.quota === undefined ? RECALL_KIND_QUOTA : request.quota,
@@ -745,6 +777,7 @@ export function recall(request: RecallRequest): RecallResult {
     removed: moved.removed,
     tokens: recallQueryTokens(request.query),
     tau,
+    floor,
     relativeFloor,
     limit,
     total: ranked.length,

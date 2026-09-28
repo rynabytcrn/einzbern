@@ -133,3 +133,55 @@ test("STORY-474 R4: the engine has no session-level injection entry; recall is a
   assert.deepEqual(COMMAND_CATALOG.filter((entry) => /inject|session/u.test(entry.name)).map((entry) => entry.name), [],
     "no verb injects context into a session or keeps a session byte ledger");
 });
+
+// MIN-235 D9 (TCRN-CROSS-SUB-302) through the verb, with no threshold passed and none recorded: the
+// small library the R13 acceptance probe built -- one Initiative, one Epic and two Stories written
+// with the goal and body fields -- where a Story's goal words, body words and title were answered
+// with nothing at the old default, and prompts that share at most one word with it.
+async function smallLibrary(context) {
+  const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-recall-cli-small-")));
+  context.after(() => { rm(base, { recursive: true, force: true }); resetRecallCache(); });
+  const workspace = join(base, "library");
+  await initializeLibrary({ root: workspace, createdAt: at(0) });
+  const projectId = (await createProject(workspace, { occurredAt: at(1), externalKey: "D9-PROJECT", name: "d9" })).projects[0].id;
+  await createWork(workspace, { occurredAt: at(2), projectId, externalKey: "D9-INIT-1", kind: "Initiative", parentId: null, title: "Field notebook platform" });
+  await createWork(workspace, { occurredAt: at(3), projectId, externalKey: "D9-EPIC-1", kind: "Epic", parentId: idOf("D9-INIT-1"), title: "Survey capture" });
+  await createWork(workspace, {
+    occurredAt: at(4), projectId, externalKey: "D9-STORY-1", kind: "Story", parentId: idOf("D9-EPIC-1"), title: "Offline tally sheet",
+    goal: "Rangers record the pangolin sighting tally while the tablet has no signal",
+    acceptance: "GIVEN no signal WHEN a ranger saves a tally THEN it syncs later",
+    body: "The quokka moult calendar decides which transect is walked first each morning.",
+  });
+  await createWork(workspace, {
+    occurredAt: at(5), projectId, externalKey: "D9-STORY-2", kind: "Story", parentId: idOf("D9-EPIC-1"), title: "Photo attachment",
+    goal: "Attach a photo of each nest to its survey entry",
+    acceptance: "GIVEN a nest entry WHEN a photo is attached THEN it shows in the entry",
+  });
+  return workspace;
+}
+
+test("D9 (CLI): at the default threshold a small library answers a Story's goal words, body words and title, and nothing else", async (context) => {
+  const workspace = await smallLibrary(context);
+  const line = `[Story planned] Offline tally sheet · D9-STORY-1 · ${idOf("D9-STORY-1")} · Survey capture ‹ Field notebook platform`;
+  for (const query of ["pangolin sighting tally", "quokka moult calendar", "Offline tally sheet"]) {
+    const answer = await recallCli(workspace, query);
+    assert.equal(answer.tau, RECALL_STRONG_TAU.toFixed(4), "the shipped default, not a lowered one");
+    assert.equal(answer.reasonCode, "RECALL_READY", query);
+    assert.equal(answer.indexed, 4);
+    assert.deepEqual(answer.context, [line], query);
+  }
+  const other = await recallCli(workspace, "nest photo");
+  assert.equal(other.records[0]?.id, idOf("D9-STORY-2"), "the other Story's goal words find the other Story");
+  const unrelated = ["what is on the football calendar this season", "how long does a photo print take to dry", "sheet music for a beginner piano piece", "今天的天气怎么样"];
+  for (const query of unrelated) {
+    const answer = await recallCli(workspace, query);
+    assert.equal(answer.reasonCode, "RECALL_NO_STRONG_HIT", query);
+    assert.deepEqual([answer.records, answer.context], [[], []], query);
+  }
+  // Three of the four share one word with the library, and at threshold 0 that coincidence is answered.
+  const answeredAtZero = [];
+  for (const query of unrelated) {
+    if ((await recallCli(workspace, query, ["--tau", "0"])).records.length > 0) answeredAtZero.push(query);
+  }
+  assert.equal(answeredAtZero.length, 3, answeredAtZero.join(" | "));
+});

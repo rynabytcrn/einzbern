@@ -361,16 +361,39 @@ async function waitForTestControllerBindWindow() {
   }, () => fail("TEST_CONTROLLER_BIND_WINDOW_TIMEOUT", holdPath));
 }
 
+// TCRN-CROSS-INC-393 (TCRN-CROSS-SUB-402): kill(-group, 0) can answer EPERM for a group whose
+// members are still exiting. EPERM is asked again inside the same 10 s window; ESRCH is exit. Any
+// other code fails closed at once, and an EPERM that outlasts the window fails closed with that
+// code. Test seam, and only that: TCRN_TEST_PROCESS_GROUP_PROBE_CODES is a comma-separated list
+// of error codes that the first probes of each call report instead of probing; a last code
+// ending in "*" is reported by every later probe of the call.
 async function waitForProcessGroupExit(processGroup) {
+  const seam = process.env.TCRN_TEST_PROCESS_GROUP_PROBE_CODES;
+  const injected = seam === undefined || seam === "" ? [] : seam.split(",");
+  const repeatsLast = injected.at(-1)?.endsWith("*") === true;
+  if (repeatsLast) injected[injected.length - 1] = injected.at(-1).slice(0, -1);
+  assertion(injected.every((code) => /^E[A-Z0-9]+$/u.test(code)), "TEST_CONTROLLER_GROUP_PROBE_INJECTION_INVALID", String(seam));
+  let probes = 0;
+  let unresolvedCode = null;
   await waitForLifecycleCondition(() => {
+    const injectedCode = probes < injected.length ? injected[probes] : repeatsLast ? injected.at(-1) : undefined;
+    probes += 1;
     try {
+      if (injectedCode !== undefined) throw Object.assign(new Error(`injected ${injectedCode}`), { code: injectedCode });
       process.kill(-processGroup, 0);
+      unresolvedCode = null;
       return false;
     } catch (error) {
       if (error.code === "ESRCH") return true;
+      if (error.code === "EPERM") {
+        unresolvedCode = error.code;
+        return false;
+      }
       fail("TEST_CONTROLLER_GROUP_LIVENESS_UNKNOWN", `${processGroup}: ${error.code ?? error.message}`);
     }
-  }, () => fail("TEST_CONTROLLER_GROUP_LIVENESS_TIMEOUT", String(processGroup)));
+  }, () => unresolvedCode === null
+    ? fail("TEST_CONTROLLER_GROUP_LIVENESS_TIMEOUT", String(processGroup))
+    : fail("TEST_CONTROLLER_GROUP_LIVENESS_UNKNOWN", `${processGroup}: ${unresolvedCode}`));
 }
 
 async function waitForLifecycleCondition(probe, onTimeout) {

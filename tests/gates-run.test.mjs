@@ -142,7 +142,11 @@ test("485-AC3: a timed-out gate does not leave a delayed kill armed after it exi
     stop: declare([node, "-e", "setTimeout(() => process.exit(0), 250)"], ["**"]),
     pass: declare([node, "-e", "process.exit(0)"], ["**"]),
   });
-  const plan = await planGates({ projectRoot: project, gates: listGates(state), release: true });
+  const libraryId = state.metadata.workspaceId;
+  // TCRN-CROSS-SUB-398: the 100 ms budget belongs to the gate it stops. The passing gate is not
+  // timed against it: it runs on its own under the default budget, after the stopped gate and
+  // inside the window where a delayed kill would land.
+  const planOf = (name) => planGates({ projectRoot: project, gates: listGates(state).filter((gate) => gate.name === name), release: true });
   const signals = [];
   const originalKill = process.kill;
   process.kill = (pid, signal) => {
@@ -150,9 +154,13 @@ test("485-AC3: a timed-out gate does not leave a delayed kill armed after it exi
     return originalKill.call(process, pid, signal);
   };
   try {
-    const { run, recordPath } = await runGates(plan, { libraryId: state.metadata.workspaceId, at: at(), deviceHome: desk, timeoutMs: 100 });
-    assert.equal(run.gates.find((gate) => gate.name === "stop")?.timedOut, true, gateDiagnostic(run, recordPath));
-    assert.deepEqual(run.gates.map((gate) => [gate.name, gate.ok]), [["pass", true], ["stop", false]], gateDiagnostic(run, recordPath));
+    const stopped = await runGates(await planOf("stop"), { libraryId, at: at(), deviceHome: desk, timeoutMs: 100 });
+    assert.equal(stopped.run.gates.find((gate) => gate.name === "stop")?.timedOut, true, gateDiagnostic(stopped.run, stopped.recordPath));
+    assert.deepEqual(stopped.run.gates.map((gate) => [gate.name, gate.ok]), [["stop", false]], gateDiagnostic(stopped.run, stopped.recordPath));
+    assert.deepEqual(stopped.run.reds, ["stop"], gateDiagnostic(stopped.run, stopped.recordPath));
+    const passed = await runGates(await planOf("pass"), { libraryId, at: at(), deviceHome: desk });
+    assert.deepEqual(passed.run.gates.map((gate) => [gate.name, gate.ok, gate.exitCode, gate.timedOut]), [["pass", true, 0, false]], gateDiagnostic(passed.run, passed.recordPath));
+    assert.deepEqual(passed.run.reds, [], gateDiagnostic(passed.run, passed.recordPath));
     await new Promise((resolve) => setTimeout(resolve, 1_100));
   } finally {
     process.kill = originalKill;

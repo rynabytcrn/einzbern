@@ -2617,6 +2617,93 @@ test("a pre-bind process-group bind failure terminates the controller before tes
   await assertTaskResidueClean(root);
 });
 
+// TCRN-CROSS-INC-393 (TCRN-CROSS-SUB-402): kill(-group, 0) can answer EPERM for a group whose
+// members are still exiting. The pre-bind path waits for the bootstrap and reaper groups; the
+// probe codes injected through TCRN_TEST_PROCESS_GROUP_PROBE_CODES stand in for the kernel's.
+function startPreBindGroupProbe(root, importPath, codes) {
+  return startTaskEntrypoint(root, {
+    TCRN_TEST_BIND_PROCESS_GROUP_FAILURE: "1",
+    TCRN_TEST_BIND_WINDOW_IMPORT_PATH: importPath,
+    TCRN_TEST_PROCESS_GROUP_PROBE_CODES: codes,
+  }).result;
+}
+
+function preBindGroupProbeFailure(result) {
+  assert.equal(result.code, 1, result.stderr);
+  assert.equal(result.signal, null);
+  assert.equal(result.stdout, "");
+  return JSON.parse(result.stderr);
+}
+
+// A run that fails closed before it has joined the reaper's group removes the progress directory
+// the reaper still has to record its cleanup in, and the reaper then retries that record without
+// end. That is outside TCRN-CROSS-SUB-402's files and is reported with it; here the test reclaims
+// what its own run started. Only a reaper may be left; it goes with its output directory.
+async function reclaimFixtureReapers(root) {
+  const scriptRoots = [...new Set([root, await realpath(root)])].map((path) => `${path}/scripts/`);
+  const fixtureProcesses = () => {
+    const listed = spawnSync("/bin/ps", ["-axo", "pid=,command="], { encoding: "utf8", env: { PATH: "/usr/bin:/bin" } });
+    assert.equal(listed.status, 0, listed.stderr);
+    return listed.stdout.split("\n").filter((line) => scriptRoots.some((scriptRoot) => line.includes(scriptRoot)));
+  };
+  const reapers = fixtureProcesses().map((line) => {
+    const match = /^\s*(\d+)\s.*\/scripts\/test-controller-reaper\.mjs \d+ \d+ (\S+\/tcrn-test-controller-[A-Za-z0-9]+) /u.exec(line);
+    assert.ok(match, `only a reaper may outlive the run: ${line}`);
+    return { pid: Number(match[1]), outputDirectory: match[2] };
+  });
+  for (const { pid } of reapers) {
+    // The reaper leads its own detached group.
+    try { process.kill(-pid, "SIGTERM"); } catch (error) {
+      if (error?.code !== "ESRCH" && error?.code !== "EPERM") throw error;
+    }
+  }
+  await pollUntil(() => (fixtureProcesses().length === 0 ? true : undefined), () => assert.fail(`fixture processes remain: ${fixtureProcesses().join(" | ")}`));
+  for (const { outputDirectory } of reapers) await rm(outputDirectory, { recursive: true, force: true });
+  return reapers.length;
+}
+
+test("INC-393: a pre-bind group wait asks again after transient EPERM and fails closed at once on any other code", async (context) => {
+  const { root, importPath } = await importGuardTaskFixture(context, 'test("a group probe never discovers this source", () => {});');
+
+  // EPERM, then the real probe: both groups are judged gone and the injected bind failure is reached.
+  const recovered = preBindGroupProbeFailure(await startPreBindGroupProbe(root, importPath, "EPERM,EPERM,EPERM"));
+  assert.equal(recovered.reasonCode, "TEST_CONTROLLER_BIND_INJECTED_FAILURE", JSON.stringify(recovered));
+  await assert.rejects(lstat(importPath), { code: "ENOENT" });
+  assert.equal(await reclaimFixtureReapers(root), 0, "both groups were joined, so nothing outlives the run");
+  await assertTaskResidueClean(root);
+
+  // Any other code, also after an EPERM, fails closed at once and names that code.
+  for (const [codes, code] of [["EIO", "EIO"], ["EPERM,EINVAL", "EINVAL"]]) {
+    const unknown = preBindGroupProbeFailure(await startPreBindGroupProbe(root, importPath, codes));
+    assert.equal(unknown.reasonCode, "TEST_CONTROLLER_GROUP_LIVENESS_UNKNOWN", JSON.stringify(unknown));
+    assert.match(unknown.error, new RegExp(`^\\d+: ${code}$`, "u"));
+    await assert.rejects(lstat(importPath), { code: "ENOENT" });
+    await reclaimFixtureReapers(root);
+    await assertTaskResidueClean(root);
+  }
+
+  // A malformed seam is refused, never read as no injection.
+  const malformed = preBindGroupProbeFailure(await startPreBindGroupProbe(root, importPath, "EPERM,*"));
+  assert.equal(malformed.reasonCode, "TEST_CONTROLLER_GROUP_PROBE_INJECTION_INVALID", JSON.stringify(malformed));
+  await assert.rejects(lstat(importPath), { code: "ENOENT" });
+  await reclaimFixtureReapers(root);
+  await assertTaskResidueClean(root);
+});
+
+test("INC-393: EPERM that lasts the whole group wait window fails closed with EPERM", async (context) => {
+  const { root, importPath } = await importGuardTaskFixture(context, 'test("a group probe never discovers this source", () => {});');
+  const startedAt = Date.now();
+  const exhausted = preBindGroupProbeFailure(await startPreBindGroupProbe(root, importPath, "EPERM*"));
+  const elapsedMs = Date.now() - startedAt;
+  assert.equal(exhausted.reasonCode, "TEST_CONTROLLER_GROUP_LIVENESS_UNKNOWN", JSON.stringify(exhausted));
+  assert.match(exhausted.error, /^\d+: EPERM$/u);
+  // The window is 1,000 probes 10 ms apart; failing at the first EPERM would take a fraction of it.
+  assert.ok(elapsedMs >= 9_000, `the EPERM probe spent its window before failing closed: ${elapsedMs} ms`);
+  await assert.rejects(lstat(importPath), { code: "ENOENT" });
+  await reclaimFixtureReapers(root);
+  await assertTaskResidueClean(root);
+});
+
 test("a bound bootstrap blocks recovery before it starts the test controller", async (context) => {
   const { root, importPath } = await importGuardTaskFixture(context, 'test("controller starts only after its group was recorded", () => {});');
   const boundPath = resolve(root, "bind-window-bound.json");

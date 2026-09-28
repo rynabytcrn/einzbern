@@ -209,7 +209,16 @@ function readInstant() {
 // of it; after WORK_READ_ATTEMPTS reads that never held still, the view is refused. A page the
 // budget refuses is asked for again at half the size, and a page of one record that the budget
 // still refuses is the refusal. The /api/work result is the one it always was.
+//
+// TCRN-CROSS-SUB-416 (TCRN-CROSS-STORY-510): read one page after another, that library took a
+// minute. The first page is still read alone: it names the version, head and total every other
+// page must answer for, and the page size the budget allows. The pages after it are planned from
+// that size in stretches of one page each and read WORK_PAGE_CONCURRENCY stretches at a time;
+// every page is checked against the first as before, and the records are put back together in
+// offset order. A page the budget refuses is halved within its own stretch, and no page reaches
+// past its stretch into the next one.
 const WORK_PAGE_LIMIT = 100;
+const WORK_PAGE_CONCURRENCY = 4;
 const WORK_READ_ATTEMPTS = 3;
 const WORK_PAGE_OVERSIZED = "CLI_WORK_LIST_OVERSIZED";
 
@@ -225,30 +234,84 @@ function workPageIdentity(page) {
 const sameWorkPage = (left, right) => left.workspaceId === right.workspaceId && left.version === right.version &&
   left.headEventHash === right.headEventHash && left.total === right.total;
 
-// One pass over the library, page by page. It answers read (every record of one version), failed
-// (a refusal of the CLI's, passed on as it came) or unsettled (the pages did not add up to one
-// version of the library: it moved, or a page repeated or skipped a record).
+// One work-list page at `offset` of at most `limit` records. It answers read (the size that was
+// read, the page's identity and its records) or failed (a refusal of the CLI's, passed on as it
+// came). A page the budget refuses is asked for again at half the size, and a page of one record
+// that the budget still refuses is the refusal.
+async function readWorkPage(libraryPath, offset, limit) {
+  let size = limit;
+  for (;;) {
+    const read = await cliResult(["work-list", "--workspace", libraryPath, "--limit", String(size), "--offset", String(offset)]);
+    if (read.ok) {
+      const identity = workPageIdentity(read.body);
+      if (identity.total === null) return { state: "failed", source: { ok: false, reasonCode: "PORTAL_WORK_PAGE_MALFORMED", offset } };
+      return { state: "read", size, identity, records: Array.isArray(read.body.records) ? read.body.records : [] };
+    }
+    if (read.body?.reasonCode !== WORK_PAGE_OVERSIZED || size <= 1) return { state: "failed", source: read.body };
+    size = Math.max(1, Math.floor(size / 2));
+  }
+}
+
+// The records of one stretch past the first page, [offset, end), page by page, every page checked
+// against the first. A page the budget refused stays halved for the rest of its stretch, and a page
+// never reaches past the stretch's end, save on the last stretch: its end is the total, and it asks
+// for whole pages as the serial read did.
+async function readWorkStretch(libraryPath, first, { offset, end, limit, last }) {
+  const records = [];
+  let size = limit;
+  while (offset + records.length < end) {
+    const at = offset + records.length;
+    const page = await readWorkPage(libraryPath, at, last ? size : Math.min(size, end - at));
+    if (page.state !== "read") return page;
+    if (!sameWorkPage(first, page.identity)) return { state: "unsettled", cause: "moved" };
+    if (page.records.length === 0) return { state: "unsettled", cause: "short-page" };
+    size = page.size;
+    records.push(...page.records);
+  }
+  return { state: "read", records };
+}
+
+// The stretches in offset order, at most WORK_PAGE_CONCURRENCY of them out at once. Once one answers
+// anything but read, no later stretch is started; every stretch before that one was started, and
+// all that were started are let finish, so each of them has its answer. The answers come back in
+// stretch order.
+async function readWorkStretches(libraryPath, first, stretches) {
+  const outcomes = [];
+  let next = 0;
+  let stopped = false;
+  const reader = async () => {
+    while (!stopped && next < stretches.length) {
+      const index = next;
+      next += 1;
+      outcomes[index] = await readWorkStretch(libraryPath, first, stretches[index]);
+      if (outcomes[index].state !== "read") stopped = true;
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(WORK_PAGE_CONCURRENCY, stretches.length) }, reader));
+  return outcomes;
+}
+
+// One pass over the library: the first page, then the stretches after it. It answers read (every
+// record of one version, in offset order), failed (a refusal of the CLI's, passed on as it came)
+// or unsettled (the pages did not add up to one version of the library: it moved, or a page
+// repeated or skipped a record). The answers are taken in offset order: the first stretch that did
+// not read is the one reported, and a record seen twice is found as the records are put together.
 async function readWorkPages(libraryPath) {
-  let limit = WORK_PAGE_LIMIT;
-  let first = null;
+  const head = await readWorkPage(libraryPath, 0, WORK_PAGE_LIMIT);
+  if (head.state !== "read") return head;
+  const first = head.identity;
+  if (head.records.length === 0 && first.total > 0) return { state: "unsettled", cause: "short-page" };
+  const stretches = [];
+  for (let offset = head.records.length; offset < first.total; offset += head.size) {
+    const end = Math.min(offset + head.size, first.total);
+    stretches.push({ offset, end, limit: head.size, last: end === first.total });
+  }
+  const outcomes = [{ state: "read", records: head.records }, ...await readWorkStretches(libraryPath, first, stretches)];
   const records = [];
   const seen = new Set();
-  while (first === null || records.length < first.total) {
-    const read = await cliResult(["work-list", "--workspace", libraryPath, "--limit", String(limit), "--offset", String(records.length)]);
-    if (!read.ok) {
-      if (read.body?.reasonCode === WORK_PAGE_OVERSIZED && limit > 1) {
-        limit = Math.max(1, Math.floor(limit / 2));
-        continue;
-      }
-      return { state: "failed", source: read.body };
-    }
-    const identity = workPageIdentity(read.body);
-    if (identity.total === null) return { state: "failed", source: { ok: false, reasonCode: "PORTAL_WORK_PAGE_MALFORMED", offset: records.length } };
-    if (first === null) first = identity;
-    else if (!sameWorkPage(first, identity)) return { state: "unsettled", cause: "moved" };
-    const page = Array.isArray(read.body.records) ? read.body.records : [];
-    if (page.length === 0 && records.length < first.total) return { state: "unsettled", cause: "short-page" };
-    for (const record of page) {
+  for (const outcome of outcomes) {
+    if (outcome.state !== "read") return outcome;
+    for (const record of outcome.records) {
       const id = record?.id;
       if (typeof id !== "string" || seen.has(id)) return { state: "unsettled", cause: "repeated-record" };
       seen.add(id);

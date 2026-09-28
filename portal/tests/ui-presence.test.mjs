@@ -191,7 +191,7 @@ async function startPortal(fixture, env = {}) {
   return { child, url };
 }
 
-async function loadExecutedDom(fixture, env = {}) {
+async function loadExecutedDom(fixture, env = {}, { hold = () => false } = {}) {
   const { child, url } = await startPortal(fixture, env);
   const nativeFetch = globalThis.fetch;
   let source = await (await nativeFetch(url)).text();
@@ -212,14 +212,34 @@ async function loadExecutedDom(fixture, env = {}) {
   let lastSettled = Date.now();
   // Every path the page asks for, in order, so a case can state what the page never requests.
   const requests = [];
-  window.fetch = (path, options = {}) => {
+  const send = (path, options) => {
     inFlight += 1;
     lastSettled = Date.now();
-    requests.push(String(path));
     return nativeFetch(new URL(path, url), options).finally(() => {
       inFlight -= 1;
       lastSettled = Date.now();
     });
+  };
+  // TCRN-CROSS-SUB-416: a case can hold back the requests its `hold` names. A held request stays
+  // unanswered, and outside the settle count, until the case lets it go: `release()` sends it on,
+  // and `release({ error })` fails it as a broken connection would. Releasing ends the hold, and
+  // `hold(predicate)` begins another.
+  let holding = hold;
+  const held = [];
+  window.fetch = (path, options = {}) => {
+    requests.push(String(path));
+    if (!holding(String(path))) return send(path, options);
+    return new Promise((resolveHeld, rejectHeld) => { held.push({ path, options, resolveHeld, rejectHeld }); });
+  };
+  const release = ({ error } = {}) => {
+    holding = () => false;
+    const waiting = held.splice(0);
+    for (const entry of waiting) {
+      if (error === undefined) entry.resolveHeld(send(entry.path, entry.options));
+      else entry.rejectHeld(error);
+    }
+    lastSettled = Date.now();
+    return waiting.length;
   };
   const context = vm.createContext(window);
   for (const script of [...document.querySelectorAll("script")]) {
@@ -242,7 +262,7 @@ async function loadExecutedDom(fixture, env = {}) {
     "the page's requests to settle",
     20_000,
   );
-  return { child, document, source, window, requests, waitForSettled };
+  return { child, document, source, window, requests, waitForSettled, held: () => held.length, release, hold: (predicate) => { holding = predicate; } };
 }
 
 function missingComponents(document) {
@@ -2101,5 +2121,121 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       page.document.querySelector('[data-locale-option="en"]')?.click();
       assert.equal(page.document.querySelector('[data-workspace-tab="knowledge"]')?.textContent, "Knowledge");
     } finally { await page.cleanup(); }
+  });
+
+  // TCRN-CROSS-SUB-416 (TCRN-CROSS-STORY-510): refresh does not put /api/work in the wait the other
+  // views share. The page asks for /api/work in one place, the work view's own read, which refresh
+  // starts first and does not await; that read renders the work view and nothing else.
+  test("SUB-416 (STORY-510): refresh's shared wait leaves /api/work out, and the work view reads it on its own", async () => {
+    const source = await readFile(join(portalRoot, "index.html"), "utf8");
+    const refresh = source.match(/\n {2}const refresh = async \(\) => \{([^\n]*)\};\n/u)?.[1] ?? "";
+    assert.match(refresh, /^ refreshWork\(\); try \{ const \[[^\]]*\] = await Promise\.all\(\[/u, "refresh starts the work read, then waits for the other views' reads together");
+    assert.doesNotMatch(refresh, /\/api\/work|await refreshWork/u, "neither /api/work nor the work read is in that wait");
+    assert.equal(source.split('api("/api/work")').length - 1, 1, "the page asks for /api/work in one place");
+    const refreshWork = source.match(/\n {2}const refreshWork = async \(\) => \{\n([\s\S]*?)\n {2}\};\n/u)?.[1] ?? "";
+    assert.match(refreshWork, /work = await api\("\/api\/work"\)/u, "that place is the work view's own read");
+    assert.match(refreshWork, /renderWorkView\(\)/u);
+    assert.doesNotMatch(refreshWork, /render(?:Dashboard|Settings|Collections|Variables|Vocabulary|ProseDirectory)\(|showReceipt\(/u, "it renders the work view alone and leaves the receipt alone");
+  });
+
+  // TCRN-CROSS-SUB-416 (TCRN-CROSS-STORY-510): /api/work is held back. Status, settings, the model
+  // tables, variables and rules render while it is out, and the work view renders when it returns:
+  // when the page opens, and again on the refresh a settings write asks for.
+  test("SUB-416 (STORY-510): the views that read no work render while /api/work is out, and the work view when it returns", async () => {
+    const fixture = await scratch("tcrn-416-refresh-dom-");
+    const project = await cli(["project-create", "--workspace", fixture.workspace, "--at", nextAt(), "--external-key", "PORTAL-REFRESH-PROJECT", "--name", "Portal refresh project"], fixture.deviceEnv);
+    const common = ["--workspace", fixture.workspace, "--project-id", project.record.id];
+    const initiative = await cli(["work-create", ...common, "--at", nextAt(), "--external-key", "PORTAL-REFRESH-INIT", "--kind", "Initiative", "--title", "Portal refresh work"], fixture.deviceEnv);
+    const epic = await cli(["work-create", ...common, "--at", nextAt(), "--external-key", "PORTAL-REFRESH-EPIC", "--kind", "Epic", "--parent-id", initiative.record.id, "--title", "Portal refresh epic"], fixture.deviceEnv);
+    const status = await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv);
+    const isWork = (path) => path === "/api/work";
+    const page = await loadExecutedDom(fixture, {}, { hold: isWork });
+    try {
+      const { document } = page;
+      const text = (selector) => document.querySelector(selector)?.textContent ?? "";
+      const content = document.querySelector("#work-tree-content");
+      const workShown = () => Boolean(document.querySelector(`[data-work-id="${initiative.record.id}"]`) && document.querySelector(`[data-work-id="${epic.record.id}"]`));
+      assert.equal(page.held(), 1, "the page opened and asked for /api/work, which is still out");
+      assert.equal(text("#stat-version"), String(status.version), "status rendered");
+      assert.ok(document.querySelectorAll("[data-doctor-check]").length > 0, "the doctor checks rendered");
+      assert.ok(document.querySelectorAll("#settings-rows [data-setting-row]").length > 0, "settings rendered");
+      assert.notEqual(text("#model-categories-count"), "—", "the model categories rendered");
+      assert.notEqual(text("#model-tiers-count"), "—", "the model tiers rendered");
+      assert.notEqual(text("#variables-count"), "", "the variables rendered");
+      assert.ok(document.querySelectorAll("#prose-directory [data-rule-card]").length > 0, "the rules rendered");
+      assert.deepEqual([content.getAttribute("aria-busy"), text("#work-count"), content.innerHTML], ["true", "—", ""], "the work view waits for its own read");
+
+      assert.equal(page.release(), 1);
+      await page.waitForSettled();
+      assert.equal(content.getAttribute("aria-busy"), "false");
+      assert.match(text("#work-count"), /^1 /u);
+      assert.equal(workShown(), true, "the work view rendered when /api/work returned");
+
+      // A settings write asks for a refresh while /api/work is held again: the setting reads back
+      // while the work read is out, and the work view keeps what it showed until that read returns.
+      page.hold(isWork);
+      document.querySelector('[data-page-target="settings"]')?.click();
+      document.querySelector('[data-setting-group="execution"]')?.click();
+      const control = document.querySelector('[data-setting-control="execution.maxConcurrentSubagents"]');
+      const before = receiptText(document);
+      control.value = "7";
+      control.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+      await waitFor(receiptAdvanced(document, before), "the setting write receipt");
+      await waitFor(() => document.querySelector('[data-setting-row="execution.maxConcurrentSubagents"]')?.dataset.modified === "true", "the setting to read back while /api/work is out");
+      assert.equal(page.held(), 1, "the refresh asked for /api/work, which is still out");
+      assert.equal(content.getAttribute("aria-busy"), "true");
+      assert.equal(workShown(), true, "the work view keeps what it showed");
+      assert.equal(page.release(), 1);
+      await page.waitForSettled();
+      assert.equal(content.getAttribute("aria-busy"), "false");
+      assert.equal(workShown(), true);
+    } finally { page.child.kill(); await rm(fixture.base, { recursive: true, force: true }); }
+  });
+
+  // TCRN-CROSS-SUB-416 (TCRN-CROSS-STORY-510): a work read that fails is shown in the work view, and
+  // only there. The engine's refusal comes back with both reason codes; a broken connection comes
+  // back as PORTAL_READ_FAILED. Either way status reads on, the other views render, and no receipt
+  // is raised for it.
+  test("SUB-416 (STORY-510): a work read that fails is shown in the work view alone", async () => {
+    const fixture = await scratch("tcrn-416-failure-dom-");
+    try {
+      const wrapper = join(fixture.base, "work-refused-wrapper.mjs");
+      await writeFile(wrapper, `import { spawnSync } from "node:child_process";
+if (process.argv[2] === "work-list") {
+  process.stderr.write(JSON.stringify({ ok: false, reasonCode: "PORTAL_TEST_WORK_REFUSED", error: "the test refuses every work-list" }) + "\\n");
+  process.exitCode = 1;
+} else {
+  const actual = spawnSync(process.execPath, [${JSON.stringify(CLI)}, ...process.argv.slice(2)], { encoding: "utf8", maxBuffer: 64e6 });
+  process.stdout.write(actual.stdout || "");
+  process.stderr.write(actual.stderr || "");
+  process.exitCode = actual.status ?? 1;
+}
+`, "utf8");
+      const status = await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv);
+      const assertOnlyWorkFailed = (page, reasonCode) => {
+        const text = (selector) => page.document.querySelector(selector)?.textContent ?? "";
+        const failure = page.document.querySelector("#work-tree-content [data-work-failure]");
+        assert.equal(failure?.getAttribute("role"), "alert");
+        assert.equal(failure.dataset.workFailure, reasonCode);
+        assert.equal(text("#work-count"), "—");
+        assert.equal(text("#stat-version"), String(status.version), "status reads on");
+        assert.ok(page.document.querySelectorAll("#settings-rows [data-setting-row]").length > 0, "settings rendered");
+        assert.ok(page.document.querySelectorAll("#prose-directory [data-rule-card]").length > 0, "the rules rendered");
+        assert.equal(page.document.querySelector("#operation-feedback")?.dataset.operationPhase, "idle", "no receipt is raised for the work read");
+        return failure;
+      };
+
+      const refused = await loadExecutedDom(fixture, { TCRN_WORKFLOW_CLI: wrapper });
+      try {
+        assert.equal(assertOnlyWorkFailed(refused, "PORTAL_WORK_READ_FAILED").textContent, "PORTAL_WORK_READ_FAILED · PORTAL_TEST_WORK_REFUSED");
+      } finally { refused.child.kill(); }
+
+      const broken = await loadExecutedDom(fixture, {}, { hold: (path) => path === "/api/work" });
+      try {
+        assert.equal(broken.release({ error: new TypeError("fetch failed") }), 1);
+        await broken.waitForSettled();
+        assert.equal(assertOnlyWorkFailed(broken, "PORTAL_READ_FAILED").textContent, "PORTAL_READ_FAILED");
+      } finally { broken.child.kill(); }
+    } finally { await rm(fixture.base, { recursive: true, force: true }); }
   });
 }

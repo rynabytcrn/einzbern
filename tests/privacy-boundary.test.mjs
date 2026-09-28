@@ -262,6 +262,43 @@ test("classified privacy samples stay path-and-line exact across source, history
   })));
   assert.deepEqual(scanPrivacyEntries(sourceEntries, { owner }), []);
 
+  const p1Path = "tests/p1-all-legs.test.mjs";
+  const p1Fixture = sourceEntries.find((entry) => entry.label === p1Path)?.content;
+  assert.ok(p1Fixture, "the reviewed P1 test fixture is present in the source surface");
+  const p1Email = p1Fixture.match(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/iu)?.[0];
+  const p1EmailLine = p1Fixture.split("\n").find((line) => line.includes('"user.email"'));
+  assert.ok(p1Email, "the reviewed test identity sample is present");
+  assert.ok(p1EmailLine, "the sample is used only on the fixture's Git identity line");
+
+  const p1BlobIdResult = spawnSync("git", ["rev-parse", `HEAD:${p1Path}`], { cwd: repositoryRoot, encoding: "utf8" });
+  assert.equal(p1BlobIdResult.status, 0, "the current fixture blob is reachable from HEAD");
+  const p1BlobId = p1BlobIdResult.stdout.trim();
+  const p1BlobResult = spawnSync("git", ["cat-file", "blob", p1BlobId], { cwd: repositoryRoot, encoding: "utf8" });
+  assert.equal(p1BlobResult.status, 0, "the current fixture blob can be read");
+  assert.equal(p1BlobResult.stdout, p1Fixture, "the reachable blob carries the reviewed source bytes");
+  assert.deepEqual(scanPrivacyEntries([{
+    label: `git-blob:${p1BlobId}`,
+    kind: "blob",
+    sourcePaths: [p1Path],
+    content: p1BlobResult.stdout,
+  }], { owner }), []);
+
+  const p1Archive = writeUstar([{ path: p1Path, bytes: Buffer.from(p1Fixture, "utf8") }]);
+  assert.deepEqual(scanPrivacyEntries([{
+    label: "dist/source/einzbern-source.tar",
+    kind: "archive",
+    content: p1Archive,
+  }], { owner }), []);
+
+  const changedLine = p1Fixture.replace(p1EmailLine, `${p1EmailLine} // changed`);
+  assert.ok(scanPrivacyEntries([{ label: p1Path, kind: "source", content: changedLine }], { owner })
+    .includes(`EMAIL_IDENTIFIER:source:${p1Path}`), "a changed full-line digest remains a finding");
+  assert.ok(scanPrivacyEntries([{ label: "tests/other-fixture.test.mjs", kind: "source", content: p1Fixture }], { owner })
+    .includes("EMAIL_IDENTIFIER:source:tests/other-fixture.test.mjs"), "the same sample on another path remains a finding");
+  const changedMatch = p1Fixture.replace(p1Email, joinParts(["different", "@", "example.invalid"], ""));
+  assert.ok(scanPrivacyEntries([{ label: p1Path, kind: "source", content: changedMatch }], { owner })
+    .includes(`EMAIL_IDENTIFIER:source:${p1Path}`), "a changed match digest remains a finding");
+
   const variableFixture = await readFile(join(repositoryRoot, "tests/variables.test.mjs"), "utf8");
   assert.deepEqual(scanPrivacyEntries([{
     label: `git-blob:${"a".repeat(40)}`,

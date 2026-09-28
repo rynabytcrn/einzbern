@@ -4201,7 +4201,9 @@ export async function projectConfiguration(root: string, state: WorkspaceState):
 // above enforces the same key, layer, revision, and value contract. They are the
 // project level (TCRN-CROSS-STORY-469 R2): a device-level key is refused here and
 // written by machine-settings-set. TCRN-CROSS-STORY-508 R1, R2: a write of models.category or
-// models.tiers is also checked against the other table as it stands (assertSettingWriteConsistent).
+// models.tiers is also checked against the other table as it stands (assertSettingWriteConsistent);
+// R3: so is a write of models.escalation.ceiling, which may only name a category models.category
+// holds. A settings-remove runs the same check on the default it puts back.
 export async function setWorkspaceSetting(workspaceRoot: string, input: {
   readonly key: string;
   readonly value: string;

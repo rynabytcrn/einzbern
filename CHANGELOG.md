@@ -341,6 +341,21 @@ paths, addresses and host names redacted, and the gate holds the unrelated group
 threshold and answered at zero (`RETRIEVAL_EVAL_THRESHOLD_DETACHED` otherwise). The engine package
 has no session-level injection entry: its host hooks render no SessionStart or PostToolUse hook.
 
+The strong-hit threshold is counted in words one record carries (TCRN-CROSS-SUB-302, SUB-303;
+TCRN-CROSS-STORY-474; MIN-235 D9; `packages/core/src/recall.ts`, `packages/core/src/settings.ts`,
+`scripts/retrieval-eval.mjs`). `retrieval.tau` is no longer a raw bm25 score: it counts the bm25
+weight of a word exactly one of the library's N indexed records carries, ln((N - 0.5) / 1.5) (at
+least 1e-6), and recall compares the ranked scores with the searched library's own floor, tau times
+that unit, so one value means the same in a library of four records and in one of six hundred. The
+default `RECALL_STRONG_TAU` is 3, replacing the raw default of 17 above: the smallest whole number
+above every unrelated prompt of the recorded corpus (2.83 units) and no higher than the lowest
+related query of a four-record goal and body library (3.52 units), recorded as
+`tests/fixtures/retrieval-eval/small-library.json` beside `strong-threshold.json` (v2). The range
+stays 0 to 100, hit scores stay raw bm25, the core recall result also reports that `floor`, and a
+named key is answered whatever the threshold. `scripts/retrieval-eval.mjs` calibrates on both
+libraries, holds both unrelated groups empty at the default and answered at zero, and fails with
+`RETRIEVAL_EVAL_THRESHOLD_FAILED` when no whole number separates the groups.
+
 One hook replaces the harness (TCRN-CROSS-STORY-477; MIN-227 D4, D5; `packages/core/src/host-hooks.ts`,
 `packages/core/src/hook-recall.ts`). A host's settings carry one Einzbern hook, on UserPromptSubmit
 only: `node "<device directory>/engine/hook.mjs" user-prompt-submit`. The path is absolute and
@@ -717,6 +732,17 @@ installation from before the rename (`SETUP_MIGRATE_PENDING`); its migration com
 (`engine-version`, `hooks-present`, `skill-copies`, `registry`, `library-format`, `device-stream`,
 `managed-sections`, `cloud-flag`), each `{check, ok, reasonCode, detail}` with its causes in
 `detail.causes`. The skill's references follow these flags and reason codes.
+
+The repository's `test` task waits out a process group whose members are still exiting
+(TCRN-CROSS-SUB-402, TCRN-CROSS-INC-393; TCRN-CROSS-STORY-493; `scripts/task.mjs`). `kill(-group, 0)`
+can answer EPERM for such a group, so the group exit wait asks again after EPERM inside the same
+10 s window (1,000 probes 10 ms apart); ESRCH is exit, any other code still fails closed at once
+with `TEST_CONTROLLER_GROUP_LIVENESS_UNKNOWN` naming that code, an EPERM that lasts the whole window
+fails closed the same way naming EPERM, and a group still alive at the end is still
+`TEST_CONTROLLER_GROUP_LIVENESS_TIMEOUT`. The wait carries a test seam,
+`TCRN_TEST_PROCESS_GROUP_PROBE_CODES`: a comma-separated list of error codes (`E[A-Z0-9]+`) that the
+first probes of each wait report instead of probing, the last one repeated when it ends in `*`; a
+malformed value fails closed with the new `TEST_CONTROLLER_GROUP_PROBE_INJECTION_INVALID`.
 
 ## 1.2.1 — patch candidate
 

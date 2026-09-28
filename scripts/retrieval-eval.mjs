@@ -24,6 +24,17 @@
 // must be answered -- otherwise the emptiness does not hang on the threshold, and the gate says
 // RETRIEVAL_EVAL_THRESHOLD_DETACHED. `--calibrate` prints the calibration instead of the gate.
 //
+// MIN-235 D9 (TCRN-CROSS-SUB-303): the threshold is calibrated at both ends of a library's size.
+// small-library.json is a four-record library written with the goal and body fields, recorded by
+// the same recorder, with a related group (a Story's goal words, body words and title) and an
+// unrelated group. The threshold is counted in recallScoreUnit, the bm25 weight of a word one
+// record of the library carries, so a score is bm25 divided by that unit of its own index. The
+// rule: the smallest whole number above the best score any unrelated prompt of either library
+// reaches, and no higher than the lowest score a related query reaches; when no whole number fits
+// between the two the gate fails rather than pick one, because that trade-off is the Owner's. At
+// the threshold every related query is answered with its Story first and every unrelated prompt
+// of either library with nothing, and at zero each unrelated group must answer something.
+//
 // Two indexes are built on purpose. The cards-only index is the knowledge surface
 // alone; the mixed index adds minutes and work records, which is what the recall verb
 // answers from. Their numbers differ, so neither can stand in for the other, and both
@@ -51,11 +62,14 @@ import {
   RecallIndex,
   recall,
   recallDocuments,
+  recallScoreUnit,
+  recallStrongHitFloor,
   resetRecallCache,
   selectRecallHits,
 } from "../dist/build/packages/core/src/recall.js";
 import { canonicalSha256, parseStrictInstant } from "../dist/build/packages/protocol/src/index.js";
 import { buildIncidentReplay } from "./incident-replay.mjs";
+import { CARDS_SCHEMA_VERSION, MINUTES_SCHEMA_VERSION, WORK_SCHEMA_VERSION } from "./retrieval-eval-record.mjs";
 
 const SCOPE_EXCERPT_BYTES = 512;
 const TOP_K = 8;
@@ -63,12 +77,19 @@ const PRECISION_K = 3;
 const INDEPENDENT_INCIDENT_FILE = "incident-replay-frozen.json";
 const PRE_REGISTERED_HOLDOUT_FILE = "holdout-preregistered.json";
 const PRE_REGISTERED_HOLDOUT_SOURCE_FILE = "holdout-source.json";
-const STRONG_THRESHOLD_SCHEMA_VERSION = "einzbern.retrieval-strong-threshold.v1";
+const STRONG_THRESHOLD_SCHEMA_VERSION = "einzbern.retrieval-strong-threshold.v2";
 const NEGATIVE_QUERIES_SCHEMA_VERSION = "einzbern.retrieval-negative-queries.v1";
 const NEGATIVE_QUERIES_AT_LEAST = 10;
+const SMALL_LIBRARY_FILE = "small-library.json";
+const SMALL_LIBRARY_SCHEMA_VERSION = "einzbern.retrieval-eval-small-library.v1";
+// D9 names three kinds of related query -- a Story's goal words, its body words and its title --
+// and the unrelated group is as large as the recorded corpus's.
+const SMALL_RELATED_FIELDS = ["body", "goal", "title"];
+const SMALL_UNRELATED_AT_LEAST = 10;
 // The calibration rule: the threshold is the smallest multiple of this step strictly above the
-// best score any unrelated prompt reaches on the mixed index.
-const CALIBRATION_STEP = 0.25;
+// best score any unrelated prompt reaches, in recallScoreUnit units. A whole number, because
+// retrieval.tau takes whole numbers.
+const CALIBRATION_STEP = 1;
 
 // Every file the score depends on. Order is fixed and the name is hashed with the
 // bytes so a rename cannot pass for an edit.
@@ -79,14 +100,16 @@ const CORPUS_FILES = [
   "judge-sheet.json",
   "minutes-compact.json",
   "negative-queries.json",
+  SMALL_LIBRARY_FILE,
   "strong-threshold.json",
   "synthetic-queries.json",
   "translations-sonnet.json",
   "work-compact.json",
 ];
-// The files the strong-hit threshold was calibrated on: the mixed index and the unrelated group.
-// strong-threshold.json names their digest, so it cannot be carried to another corpus.
-const CALIBRATION_FILES = ["cards-compact.json", "minutes-compact.json", "negative-queries.json", "work-compact.json"];
+// The files the strong-hit threshold was calibrated on: the mixed index and its unrelated group,
+// and the small library with its two groups. strong-threshold.json names their digest, so it
+// cannot be carried to another corpus.
+const CALIBRATION_FILES = ["cards-compact.json", "minutes-compact.json", "negative-queries.json", SMALL_LIBRARY_FILE, "work-compact.json"];
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const fixture = (name) => resolve(root, "tests/fixtures/retrieval-eval", name);
@@ -104,12 +127,15 @@ function calibratedTau(maximumUnrelatedScore) {
   return (Math.floor(maximumUnrelatedScore / CALIBRATION_STEP) + 1) * CALIBRATION_STEP;
 }
 
+const round = (value) => Number(value.toFixed(4));
+
 function readCorpus() {
   const work = readJson(fixture("work-compact.json")).records;
   const minutes = readJson(fixture("minutes-compact.json")).records;
   const knowledge = readJson(fixture("cards-compact.json")).records;
   const snapshot = readJson(fixture("corpus-snapshot.json"));
   const negatives = readJson(fixture("negative-queries.json"));
+  const small = readJson(fixture(SMALL_LIBRARY_FILE));
   // The migrated cards supersede the ones an older fixture names; a label follows the chain to
   // the card the corpus holds now.
   const successor = new Map();
@@ -119,10 +145,45 @@ function readCorpus() {
     for (let step = 0; step < 8 && successor.has(current); step += 1) current = successor.get(current);
     return current;
   };
-  return { work, minutes, knowledge, snapshot, negatives, liveCardId };
+  return { work, minutes, knowledge, snapshot, negatives, small, liveCardId };
 }
 
-/** Every unrelated prompt put to the recall core at `tau`: how many are answered, and the best score each reaches. */
+/** The small library as the recall verb would index it. */
+function smallLibraryDocuments(small) {
+  return recallDocuments({ knowledge: small.cards ?? [], minutes: small.minutes ?? [], work: small.work ?? [], scopeExcerptBytes: SCOPE_EXCERPT_BYTES });
+}
+
+/**
+ * small-library.json's records are the recorder's output, unedited: each list, serialized the way
+ * scripts/retrieval-eval-record.mjs writes its file, hashes to the digest the recording names.
+ */
+function smallLibraryProblems(small) {
+  const problems = [];
+  if (small.schemaVersion !== SMALL_LIBRARY_SCHEMA_VERSION) return [`${SMALL_LIBRARY_FILE} is not a small-library fixture`];
+  for (const name of ["work", "minutes", "cards", "related", "unrelated"]) {
+    if (!Array.isArray(small[name])) problems.push(`${SMALL_LIBRARY_FILE} has no ${name} list`);
+  }
+  if (problems.length > 0) return problems;
+  const recorded = {
+    "work-compact.json": { schemaVersion: WORK_SCHEMA_VERSION, strategy: "recall-inputs", scopeExcerptBytes: SCOPE_EXCERPT_BYTES, total: small.work.length, records: small.work },
+    "minutes-compact.json": { schemaVersion: MINUTES_SCHEMA_VERSION, strategy: "recall-inputs", total: small.minutes.length, records: small.minutes },
+    "cards-compact.json": { schemaVersion: CARDS_SCHEMA_VERSION, strategy: "recall-inputs", total: small.cards.length, records: small.cards },
+  };
+  for (const [name, content] of Object.entries(recorded)) {
+    const digest = createHash("sha256").update(`${JSON.stringify(content, null, 2)}\n`, "utf8").digest("hex");
+    if (small.recording?.files?.[name] !== digest) problems.push(`${SMALL_LIBRARY_FILE} does not hold the ${name} its recording names`);
+  }
+  const ids = new Set(small.work.map((record) => record.id));
+  const fields = [...new Set(small.related.map((entry) => entry.field))].sort();
+  if (SMALL_RELATED_FIELDS.some((field) => !fields.includes(field))) problems.push(`the small library's related group must cover ${SMALL_RELATED_FIELDS.join(", ")}`);
+  if (small.related.some((entry) => typeof entry.query !== "string" || entry.query.length === 0 || !ids.has(entry.expectedId))) problems.push("a related query of the small library names no record it holds");
+  if (small.unrelated.length < SMALL_UNRELATED_AT_LEAST || small.unrelated.some((entry) => typeof entry.query !== "string" || entry.query.length === 0)) {
+    problems.push(`the small library must hold at least ${String(SMALL_UNRELATED_AT_LEAST)} unrelated prompts`);
+  }
+  return problems;
+}
+
+/** Every unrelated prompt put to the recall core at `tau`: how many are answered, and which. */
 function unrelatedGroup(documents, queries, tau, cacheKey) {
   const answers = queries.map((entry) => recall({ cacheKey, checkpoint: "retrieval-eval", documents: () => documents, query: entry.query, tau }));
   return {
@@ -131,12 +192,71 @@ function unrelatedGroup(documents, queries, tau, cacheKey) {
   };
 }
 
-function calibration(documents, queries) {
-  const index = new RecallIndex(documents, "calibration");
-  const best = queries.map((entry) => ({ query: entry.query, best: index.search(entry.query)[0]?.score ?? 0 }));
-  index.close();
-  const maximum = Math.max(0, ...best.map((entry) => entry.best));
-  return { maximumUnrelatedScore: Number(maximum.toFixed(4)), tau: calibratedTau(maximum), scores: best.map((entry) => ({ query: entry.query, best: Number(entry.best.toFixed(4)) })) };
+/** Every related query put to the recall core at `tau`: answered with its own record first, or missed. */
+function relatedGroup(documents, entries, tau, cacheKey) {
+  const missed = entries
+    .filter((entry) => recall({ cacheKey, checkpoint: "retrieval-eval", documents: () => documents, query: entry.query, tau }).records[0]?.id !== entry.expectedId)
+    .map((entry) => entry.query);
+  return { answered: entries.length - missed.length, missed };
+}
+
+/**
+ * The scores the calibration rule reads, in recallScoreUnit units of the index a query is put to:
+ * an unrelated prompt's best ranked score, and a related query's score for its own record.
+ */
+function groupScores(documents, entries, label) {
+  const index = new RecallIndex(documents, label);
+  try {
+    const unit = recallScoreUnit(index.size);
+    const scores = entries.map((entry) => {
+      const hits = index.search(entry.query);
+      const bm25 = (entry.expectedId === undefined ? hits[0] : hits.find((hit) => hit.id === entry.expectedId))?.score ?? 0;
+      return { query: entry.query, best: bm25 / unit, bm25 };
+    });
+    return { documents: index.size, unit, scores };
+  } finally {
+    index.close();
+  }
+}
+
+const listed = (group) => group.scores.map((entry) => ({ query: entry.query, best: round(entry.best), bm25: round(entry.bm25) }));
+
+/**
+ * The calibration rule on both libraries: the smallest whole number above the best unrelated score
+ * of either, separable when it is no higher than the lowest related score of the small library.
+ */
+function calibration(documents, negativeQueries, small) {
+  const smallDocuments = smallLibraryDocuments(small);
+  const large = groupScores(documents, negativeQueries.map((entry) => ({ query: entry.query })), "calibration-large");
+  const smallUnrelated = groupScores(smallDocuments, (small.unrelated ?? []).map((entry) => ({ query: entry.query })), "calibration-small");
+  const smallRelated = groupScores(smallDocuments, (small.related ?? []).map((entry) => ({ query: entry.query, expectedId: entry.expectedId })), "calibration-small");
+  const largeMaximum = Math.max(0, ...large.scores.map((entry) => entry.best));
+  const smallMaximum = Math.max(0, ...smallUnrelated.scores.map((entry) => entry.best));
+  const maximumUnrelated = Math.max(largeMaximum, smallMaximum);
+  const minimumRelated = Math.min(...smallRelated.scores.map((entry) => entry.best));
+  const tau = calibratedTau(maximumUnrelated);
+  return {
+    tau,
+    step: CALIBRATION_STEP,
+    separable: tau <= minimumRelated,
+    window: { above: round(maximumUnrelated), atMost: round(minimumRelated) },
+    large: {
+      index: "mixed",
+      documents: large.documents,
+      unit: round(large.unit),
+      maximumUnrelated: round(largeMaximum),
+      maximumUnrelatedScore: round(Math.max(0, ...large.scores.map((entry) => entry.bm25))),
+      unrelatedScores: listed(large),
+    },
+    small: {
+      documents: smallRelated.documents,
+      unit: round(smallRelated.unit),
+      minimumRelated: round(minimumRelated),
+      maximumUnrelated: round(smallMaximum),
+      relatedScores: listed(smallRelated).map((entry, index) => ({ ...entry, field: small.related[index].field, externalKey: small.related[index].externalKey })),
+      unrelatedScores: listed(smallUnrelated),
+    },
+  };
 }
 
 const policy = readJson(resolve(root, "scripts/policy/retrieval-eval-thresholds.json"));
@@ -144,7 +264,7 @@ const policy = readJson(resolve(root, "scripts/policy/retrieval-eval-thresholds.
 if (process.argv.includes("--calibrate")) {
   const corpus = readCorpus();
   const documents = recallDocuments({ knowledge: corpus.knowledge, minutes: corpus.minutes, work: corpus.work, scopeExcerptBytes: SCOPE_EXCERPT_BYTES });
-  console.log(JSON.stringify({ reasonCode: "RETRIEVAL_EVAL_CALIBRATION", calibrationDigest: filesDigest(CALIBRATION_FILES), step: CALIBRATION_STEP, documents: documents.length, ...calibration(documents, corpus.negatives.queries) }));
+  console.log(JSON.stringify({ reasonCode: "RETRIEVAL_EVAL_CALIBRATION", calibrationDigest: filesDigest(CALIBRATION_FILES), ...calibration(documents, corpus.negatives.queries, corpus.small) }));
 } else {
   const corpusDigest = filesDigest(CORPUS_FILES);
   if (corpusDigest !== policy.corpusDigest) {
@@ -155,7 +275,7 @@ if (process.argv.includes("--calibrate")) {
 }
 
 function evaluate(corpusDigest, policy) {
-  const { work, minutes, knowledge, snapshot, negatives, liveCardId } = readCorpus();
+  const { work, minutes, knowledge, snapshot, negatives, small, liveCardId } = readCorpus();
   const externalKeyById = new Map(knowledge.map((card) => [card.id, card.externalKey]));
   const incidentReplay = buildIncidentReplay({ workRecords: work, cards: snapshot.records, minutes, at: snapshot.recordedAt });
   const developmentIncidentReplay = readDevelopmentIncidentReplay(policy.incidentReplayIndependent, work, minutes);
@@ -176,7 +296,7 @@ function evaluate(corpusDigest, policy) {
   const detached = [];
   const strong = readJson(fixture("strong-threshold.json"));
   const tau = strong.tau;
-  if (strong.schemaVersion !== STRONG_THRESHOLD_SCHEMA_VERSION || typeof tau !== "number" || !Number.isFinite(tau) || tau < 0) {
+  if (strong.schemaVersion !== STRONG_THRESHOLD_SCHEMA_VERSION || !Number.isSafeInteger(tau) || tau < 0) {
     failures.push("strong-threshold.json is not a strong-hit threshold");
   }
   if (tau !== RECALL_STRONG_TAU) detached.push(`strong-threshold.json holds ${String(tau)} and the engine ships RECALL_STRONG_TAU ${String(RECALL_STRONG_TAU)}`);
@@ -185,6 +305,8 @@ function evaluate(corpusDigest, policy) {
   if (negatives.schemaVersion !== NEGATIVE_QUERIES_SCHEMA_VERSION || !Array.isArray(negatives.queries) || negatives.queries.length < NEGATIVE_QUERIES_AT_LEAST) {
     failures.push(`negative-queries.json must hold at least ${String(NEGATIVE_QUERIES_AT_LEAST)} unrelated prompts`);
   }
+  const smallProblems = smallLibraryProblems(small);
+  failures.push(...smallProblems);
 
   const cardDocuments = recallDocuments({ knowledge });
   const mixedDocuments = recallDocuments({ knowledge, minutes, work, scopeExcerptBytes: SCOPE_EXCERPT_BYTES });
@@ -205,8 +327,29 @@ function evaluate(corpusDigest, policy) {
   resetRecallCache();
   if (atTau.answered > 0) failures.push(`negative.answered ${String(atTau.answered)} > 0: ${atTau.answeredQueries.join(" | ")}`);
   if (atZero.answered === 0) detached.push("with the threshold at 0 no unrelated prompt is answered, so their emptiness does not hang on the threshold");
-  const calibrated = calibration(mixedDocuments, negativeQueries);
-  if (calibrated.tau !== tau) failures.push(`strong-threshold.json holds ${String(tau)}, and the calibration rule gives ${String(calibrated.tau)} on this corpus`);
+
+  // MIN-235 D9, the small end: at the threshold each related query is answered with its own record
+  // first and each unrelated prompt with nothing, and at zero some unrelated prompt is answered.
+  const smallReady = smallProblems.length === 0;
+  const smallDocuments = smallReady ? smallLibraryDocuments(small) : [];
+  const smallRelated = smallReady ? relatedGroup(smallDocuments, small.related, tau, "retrieval-eval-small") : { answered: 0, missed: [] };
+  const smallAtTau = smallReady ? unrelatedGroup(smallDocuments, small.unrelated, tau, "retrieval-eval-small") : { answered: 0, answeredQueries: [] };
+  const smallAtZero = smallReady ? unrelatedGroup(smallDocuments, small.unrelated, 0, "retrieval-eval-small") : { answered: 0, answeredQueries: [] };
+  resetRecallCache();
+  if (smallRelated.missed.length > 0) failures.push(`smallLibrary.related missed ${String(smallRelated.missed.length)}: ${smallRelated.missed.join(" | ")}`);
+  if (smallAtTau.answered > 0) failures.push(`smallLibrary.unrelated.answered ${String(smallAtTau.answered)} > 0: ${smallAtTau.answeredQueries.join(" | ")}`);
+  if (smallReady && smallAtZero.answered === 0) detached.push("with the threshold at 0 no unrelated prompt of the small library is answered, so their emptiness does not hang on the threshold");
+
+  const calibrated = smallReady ? calibration(mixedDocuments, negativeQueries, small) : null;
+  if (calibrated !== null) {
+    if (!calibrated.separable) {
+      failures.push(`no whole number lies above every unrelated score (${String(calibrated.window.above)}) and at or below every related score (${String(calibrated.window.atMost)}); choosing between them is the Owner's (MIN-235 D9)`);
+    }
+    if (calibrated.tau !== tau) failures.push(`strong-threshold.json holds ${String(tau)}, and the calibration rule gives ${String(calibrated.tau)} on this corpus`);
+    if (strong.calibration?.window?.above !== calibrated.window.above || strong.calibration?.window?.atMost !== calibrated.window.atMost) {
+      failures.push(`strong-threshold.json records the window ${JSON.stringify(strong.calibration?.window ?? null)}, and this corpus gives ${JSON.stringify(calibrated.window)}`);
+    }
+  }
 
   // The cards-only index is read raw: it is one kind, so the per-kind quota has nothing
   // to arbitrate. The mixed index goes through the selector the recall verb uses, the
@@ -216,8 +359,11 @@ function evaluate(corpusDigest, policy) {
     const index = cardIndex.search(query).slice(0, TOP_K).findIndex((hit) => hit.id === id);
     return index < 0 ? null : index + 1;
   };
+  // The threshold becomes each index's own bm25 floor, as recall() makes it (recallStrongHitFloor).
+  const mixedFloor = recallStrongHitFloor(tau, mixedIndex.size);
+  const holdoutFloor = recallStrongHitFloor(tau, holdoutIndex.size);
   const selectMixed = (query) => selectRecallHits(mixedIndex.search(query), {
-    tau,
+    tau: mixedFloor,
     relativeFloor: RECALL_RELATIVE_FLOOR,
     limit: TOP_K,
     quota: RECALL_KIND_QUOTA,
@@ -273,7 +419,7 @@ function evaluate(corpusDigest, policy) {
   const preRegisteredHoldoutRanks = preRegisteredHoldout.ok
     ? preRegisteredHoldout.records.map((pair) => {
       const rank = selectRecallHits(holdoutIndex.search(pair.prompt), {
-        tau,
+        tau: holdoutFloor,
         relativeFloor: RECALL_RELATIVE_FLOOR,
         limit: TOP_K,
         quota: RECALL_KIND_QUOTA,
@@ -343,8 +489,21 @@ function evaluate(corpusDigest, policy) {
     reasonCode: detached.length > 0 ? "RETRIEVAL_EVAL_THRESHOLD_DETACHED" : failures.length > 0 ? "RETRIEVAL_EVAL_THRESHOLD_FAILED" : "RETRIEVAL_EVAL_VERIFIED",
     corpusDigest,
     documents: { card: cardDocuments.length, mixed: mixedDocuments.length, minutes: minutes.length, work: work.length },
-    strongThreshold: { tau, engine: RECALL_STRONG_TAU, calibrated: calibrated.tau, maximumUnrelatedScore: calibrated.maximumUnrelatedScore, calibrationDigest },
+    strongThreshold: {
+      tau,
+      engine: RECALL_STRONG_TAU,
+      calibrated: calibrated?.tau ?? null,
+      step: CALIBRATION_STEP,
+      window: calibrated?.window ?? null,
+      floors: { mixed: round(mixedFloor), small: round(recallStrongHitFloor(tau, smallDocuments.length)) },
+      calibrationDigest,
+    },
     negative: { queries: negativeQueries.length, answeredAtTau: atTau.answered, answeredAtZero: atZero.answered },
+    smallLibrary: {
+      documents: smallDocuments.length,
+      related: { queries: Array.isArray(small.related) ? small.related.length : 0, answered: smallRelated.answered },
+      unrelated: { queries: Array.isArray(small.unrelated) ? small.unrelated.length : 0, answeredAtTau: smallAtTau.answered, answeredAtZero: smallAtZero.answered },
+    },
     cardsOnly,
     mixed,
     language,

@@ -1,85 +1,206 @@
 {
-  "schemaVersion": "einzbern.retrieval-strong-threshold.v1",
-  "tau": 17,
-  "method": "The smallest multiple of 0.25 strictly above the best bm25 score any prompt of negative-queries.json reaches on the mixed index of this corpus (cards, minutes and work records, built as recall-inputs.ts builds it), with the recall core's own tokenizer. No margin beyond the step (TCRN-CROSS-MIN-164 D4). Recompute with node scripts/retrieval-eval.mjs --calibrate; the gate refuses a threshold the rule does not give on the corpus it names.",
+  "schemaVersion": "einzbern.retrieval-strong-threshold.v2",
+  "tau": 3,
+  "unit": "recallScoreUnit (packages/core/src/recall.ts): the bm25 weight of a word exactly one of a library's N indexed records carries, ln((N - 0.5) / 1.5), floored at 1e-6 as FTS5 floors a non-positive inverse document frequency. The threshold is counted in this unit and becomes the bm25 floor tau x unit in the library a prompt is put to (recallStrongHitFloor); a score below is divided by the unit of its own index.",
+  "method": "The smallest whole number strictly above the best score, in that unit, any unrelated prompt reaches -- the recorded cross-project corpus's unrelated group (negative-queries.json) on the mixed index of this corpus (cards, minutes and work records, built as recall-inputs.ts builds them) and the small library's unrelated group (small-library.json) -- provided it is no higher than the lowest score a query of the small library's related group reaches for its own Story. Whole numbers, because retrieval.tau takes whole numbers. No margin beyond the step (TCRN-CROSS-MIN-164 D4). Recompute with node scripts/retrieval-eval.mjs --calibrate; the gate refuses a threshold the rule does not give on the corpus it names or a window the corpus no longer gives, and when no whole number separates the two groups it fails rather than pick one, because that trade-off belongs to the Owner (MIN-235 D9).",
   "calibration": {
-    "corpusDigest": "38966f6be8462427c46b10521f306eb719690fe2638bb458ad9395e02a4ee55a",
+    "corpusDigest": "8ab57dd9d916a3968a0a93ea719fa2f2eddcbed5fa79eeb570bdb6c90fe6d182",
     "files": [
       "cards-compact.json",
       "minutes-compact.json",
       "negative-queries.json",
+      "small-library.json",
       "work-compact.json"
     ],
-    "index": "mixed",
-    "documents": 600,
-    "step": 0.25,
-    "maximumUnrelatedScore": 16.9767,
-    "unrelatedScores": [
-      {
-        "query": "how do I cook the rice and the beans",
-        "best": 0
-      },
-      {
-        "query": "I want to book a flight to Tokyo in May",
-        "best": 0
-      },
-      {
-        "query": "can I get a refund for a pair of shoes",
-        "best": 9.5002
-      },
-      {
-        "query": "what is the weather like in Paris today",
-        "best": 9.069
-      },
-      {
-        "query": "write a short poem about the sea and the sky",
-        "best": 10.6612
-      },
-      {
-        "query": "name the capital of Australia and the capital of Peru",
-        "best": 5.9929
-      },
-      {
-        "query": "how many calories are in a banana",
-        "best": 0
-      },
-      {
-        "query": "recommend a good novel for a long train ride",
-        "best": 16.9767
-      },
-      {
-        "query": "今天的天气怎么样",
-        "best": 15.0682
-      },
-      {
-        "query": "推荐一部好看的电影",
-        "best": 10.8381
-      },
-      {
-        "query": "红烧肉怎么做才好吃",
-        "best": 7.0476
-      },
-      {
-        "query": "周末去爬山要带些什么",
-        "best": 10.7263
-      },
-      {
-        "query": "帮我写一首关于春天的诗",
-        "best": 8.9226
-      },
-      {
-        "query": "北京到上海的高铁要多久",
-        "best": 8.3769
-      },
-      {
-        "query": "猫咪不爱喝水怎么办",
-        "best": 9.4241
-      },
-      {
-        "query": "明天早上七点叫我起床",
-        "best": 11.437
-      }
-    ]
+    "step": 1,
+    "window": {
+      "above": 2.8339,
+      "atMost": 3.5184
+    },
+    "large": {
+      "index": "mixed",
+      "documents": 600,
+      "unit": 5.9906,
+      "maximumUnrelated": 2.8339,
+      "maximumUnrelatedScore": 16.9767,
+      "unrelatedScores": [
+        {
+          "query": "how do I cook the rice and the beans",
+          "best": 0,
+          "bm25": 0
+        },
+        {
+          "query": "I want to book a flight to Tokyo in May",
+          "best": 0,
+          "bm25": 0
+        },
+        {
+          "query": "can I get a refund for a pair of shoes",
+          "best": 1.5858,
+          "bm25": 9.5002
+        },
+        {
+          "query": "what is the weather like in Paris today",
+          "best": 1.5139,
+          "bm25": 9.069
+        },
+        {
+          "query": "write a short poem about the sea and the sky",
+          "best": 1.7796,
+          "bm25": 10.6612
+        },
+        {
+          "query": "name the capital of Australia and the capital of Peru",
+          "best": 1.0004,
+          "bm25": 5.9929
+        },
+        {
+          "query": "how many calories are in a banana",
+          "best": 0,
+          "bm25": 0
+        },
+        {
+          "query": "recommend a good novel for a long train ride",
+          "best": 2.8339,
+          "bm25": 16.9767
+        },
+        {
+          "query": "今天的天气怎么样",
+          "best": 2.5153,
+          "bm25": 15.0682
+        },
+        {
+          "query": "推荐一部好看的电影",
+          "best": 1.8092,
+          "bm25": 10.8381
+        },
+        {
+          "query": "红烧肉怎么做才好吃",
+          "best": 1.1764,
+          "bm25": 7.0476
+        },
+        {
+          "query": "周末去爬山要带些什么",
+          "best": 1.7905,
+          "bm25": 10.7263
+        },
+        {
+          "query": "帮我写一首关于春天的诗",
+          "best": 1.4894,
+          "bm25": 8.9226
+        },
+        {
+          "query": "北京到上海的高铁要多久",
+          "best": 1.3983,
+          "bm25": 8.3769
+        },
+        {
+          "query": "猫咪不爱喝水怎么办",
+          "best": 1.5731,
+          "bm25": 9.4241
+        },
+        {
+          "query": "明天早上七点叫我起床",
+          "best": 1.9091,
+          "bm25": 11.437
+        }
+      ]
+    },
+    "small": {
+      "documents": 4,
+      "unit": 0.8473,
+      "minimumRelated": 3.5184,
+      "maximumUnrelated": 1.9724,
+      "relatedScores": [
+        {
+          "query": "pangolin sighting tally",
+          "best": 4.3055,
+          "bm25": 3.648,
+          "field": "goal",
+          "externalKey": "D9-STORY-1"
+        },
+        {
+          "query": "quokka moult calendar",
+          "best": 3.7304,
+          "bm25": 3.1608,
+          "field": "body",
+          "externalKey": "D9-STORY-1"
+        },
+        {
+          "query": "Offline tally sheet",
+          "best": 5.2334,
+          "bm25": 4.4343,
+          "field": "title",
+          "externalKey": "D9-STORY-1"
+        },
+        {
+          "query": "nest photo",
+          "best": 3.5184,
+          "bm25": 2.9811,
+          "field": "goal",
+          "externalKey": "D9-STORY-2"
+        },
+        {
+          "query": "Photo attachment",
+          "best": 3.8712,
+          "bm25": 3.28,
+          "field": "title",
+          "externalKey": "D9-STORY-2"
+        }
+      ],
+      "unrelatedScores": [
+        {
+          "query": "what is on the football calendar this season",
+          "best": 1.2435,
+          "bm25": 1.0536
+        },
+        {
+          "query": "how long does a photo print take to dry",
+          "best": 1.9724,
+          "bm25": 1.6712
+        },
+        {
+          "query": "is the new tablet worth buying",
+          "best": 1.2435,
+          "bm25": 1.0536
+        },
+        {
+          "query": "sheet music for a beginner piano piece",
+          "best": 1.7075,
+          "bm25": 1.4467
+        },
+        {
+          "query": "best signal booster for a rural house",
+          "best": 1.2435,
+          "bm25": 1.0536
+        },
+        {
+          "query": "can I watch films offline on a plane",
+          "best": 1.7075,
+          "bm25": 1.4467
+        },
+        {
+          "query": "how do I cook the rice and the beans",
+          "best": 0,
+          "bm25": 0
+        },
+        {
+          "query": "今天的天气怎么样",
+          "best": 0,
+          "bm25": 0
+        },
+        {
+          "query": "推荐一部好看的电影",
+          "best": 0,
+          "bm25": 0
+        },
+        {
+          "query": "明天早上七点叫我起床",
+          "best": 0,
+          "bm25": 0
+        }
+      ]
+    }
   },
   "corpus": {
     "recordedAt": "2026-09-26T13:00:00Z",
@@ -90,5 +211,26 @@
       "headEventHash": "c0ca7416385150e2eb1a00e35c15dac0b0c433884c3f7770e32ed3100e9d9366"
     },
     "recordingDigest": "8c4fe40692a836635c90083dfff6815b968f2a44987e6638ab90a63095551942"
+  },
+  "smallLibrary": {
+    "file": "small-library.json",
+    "recorder": "scripts/retrieval-eval-record.mjs",
+    "recordedAt": "2026-09-28T15:00:00Z",
+    "engineCommit": "58e0b6d1e956a3b19be6d91c9eef9ee38f2bf931",
+    "source": {
+      "layout": "library",
+      "workspaceId": "library:dcd85a91b9cabedb10d1e94a",
+      "chainVersion": 5,
+      "headEventHash": "4241b0b69bd8c5a74d2bf5375bf46050778c4f3df53d4dbb14f84bb9439a68e9"
+    },
+    "corpusDigest": "5611d4297000b5601776e672dbac48daab3bff61ddda4f71ade4a24c6af0026e"
+  },
+  "previous": {
+    "schemaVersion": "einzbern.retrieval-strong-threshold.v1",
+    "tau": 17,
+    "unit": "bm25",
+    "maximumUnrelatedScore": 16.9767,
+    "documents": 600,
+    "superseded": "MIN-235 D9 (TCRN-CROSS-SUB-302, SUB-303): at 17 bm25 the small library's goal words, body words and title were each answered with nothing (3.648, 3.1608 and 4.4343 at threshold zero); no bm25 number lies above 16.9767 and below 2.9811."
   }
 }

@@ -70,11 +70,42 @@ test("the flagship governed loop replays end-to-end through the CLI with an unbr
   const initReceipt = await invoke(render(initCommand, substitutions));
   assert.equal(initReceipt.reasonCode, "LIBRARY_CREATED", "init");
   assert.equal(initReceipt.version, 0);
+  const registered = await invoke([
+    "library-register",
+    "--project", base,
+    "--library", substitutions[WORKSPACE_PATH],
+    "--at", "2026-07-11T00:00:00Z",
+  ]);
+  assert.equal(registered.reasonCode, "LIBRARY_REGISTERED", "the done transition resolves the same project root as the gate run");
 
   // Replay the governed loop, asserting each step's observable reason and
   // capturing the identifiers later steps depend on.
   const captured = {};
   for (const step of governedLoopStoryline) {
+    if (step.key === "work-transition-story-done") {
+      const workspace = substitutions[WORKSPACE_PATH];
+      const storyId = substitutions["<story-id>"];
+      const command = [process.execPath, "-e", "process.exit(0)"];
+      const declaration = await invoke([
+        "gates-config-set", "--workspace", workspace, "--at", "2026-07-11T00:00:09Z",
+        "--name", "fixture-story-coverage", "--command", JSON.stringify(command),
+        "--root", ".", "--covers", storyId, "--required", "true",
+      ]);
+      assert.deepEqual(declaration.gate, {
+        name: "fixture-story-coverage", command, root: ".", covers: [storyId], required: true, enabled: true, releaseOnly: false,
+      });
+      const gateRun = await invoke([
+        "gates-run", "--workspace", workspace, "--at", "2026-07-11T00:00:09Z",
+        "--release", "true", "--work-id", storyId,
+      ]);
+      assert.equal(gateRun.reasonCode, "GATES_RUN_COMPLETED");
+      assert.equal(gateRun.ok, true);
+      assert.deepEqual(gateRun.requiredReds, []);
+      assert.deepEqual(gateRun.run.workIds, [storyId]);
+      assert.deepEqual(gateRun.run.gates.map(({ name, required, matchedWorkIds, ok }) => [name, required, matchedWorkIds, ok]), [
+        ["fixture-story-coverage", true, [storyId], true],
+      ], "the required gate ran green with exact coverage for this Story");
+    }
     const output = await invoke(render(step.command, substitutions));
     assert.equal(output.reasonCode, step.reasonCode, step.key);
     switch (step.key) {

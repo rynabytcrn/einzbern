@@ -10,7 +10,7 @@ import { standInForAtelier } from "./helpers/workspace-fixture.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cp, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative, resolve } from "node:path";
 import test from "node:test";
@@ -75,6 +75,32 @@ async function refusal(device, args) {
   assert.fail(`${args[0]} was expected to refuse`);
 }
 
+async function declareStoryGate(device, library, storyId) {
+  const command = [process.execPath, "-e", "process.exit(0)"];
+  const declaration = await as(device, [
+    "gates-config-set", "--workspace", library, "--at", at(), "--name", "fixture-story-coverage",
+    "--command", JSON.stringify(command), "--root", ".", "--covers", storyId, "--required", "true",
+  ]);
+  assert.deepEqual(declaration.gate, {
+    name: "fixture-story-coverage", command, root: ".", covers: [storyId], required: true, enabled: true, releaseOnly: false,
+  });
+}
+
+async function runStoryGate(device, library, projectRoot, storyId) {
+  const gateRun = await as(device, [
+    "gates-run", "--workspace", library, "--at", at(), "--project", projectRoot,
+    "--release", "true", "--work-id", storyId,
+  ]);
+  assert.equal(gateRun.reasonCode, "GATES_RUN_COMPLETED");
+  assert.equal(gateRun.ok, true);
+  assert.deepEqual(gateRun.requiredReds, []);
+  assert.deepEqual(gateRun.run.workIds, [storyId]);
+  assert.deepEqual(gateRun.run.gates.map(({ name, required, matchedWorkIds, ok }) => [name, required, matchedWorkIds, ok]), [
+    ["fixture-story-coverage", true, [storyId], true],
+  ], "the required gate ran green with exact coverage for this Story");
+  return gateRun;
+}
+
 /** A project, an Initiative, an Epic under it and a Story under that, all active but the Story. */
 async function seed(device, library, key) {
   const project = await as(device, ["project-create", "--workspace", library, "--at", at(), "--external-key", `${key}-PROJECT`, "--name", key]);
@@ -98,13 +124,16 @@ const deviceIdOf = async (device) => JSON.parse(await readFile(join(device, "dev
 test("469: init creates a library, and projects, work, transitions, lists and shows go through it", async (context) => {
   const base = await scratch(context);
   const device = join(base, "device");
-  const library = join(base, "project", ".ether");
+  const project = join(base, "project");
+  const library = join(project, ".ether");
   const created = await as(device, ["init", "--workspace", library, "--project-name", "Switch", "--at", at()]);
   assert.equal(created.reasonCode, "LIBRARY_CREATED");
   assert.match(created.libraryId, /^library:[a-f0-9]{24}$/u);
   assert.deepEqual(created.versionVector, {});
   const { story, epic } = await seed(device, library, "SWITCH");
-  const moved = await as(device, ["work-transition", "--workspace", library, "--at", at(), "--id", story.id, "--status", "done", "--summary", "finished"]);
+  await declareStoryGate(device, library, story.id);
+  await runStoryGate(device, library, project, story.id);
+  const moved = await as(device, ["work-transition", "--workspace", library, "--at", at(), "--id", story.id, "--status", "done", "--summary", "finished", "--project", project]);
   assert.equal(moved.reasonCode, "WORKSPACE_COMMAND_COMPLETED");
   assert.deepEqual(moved.ids, [story.id], "a write receipt names what it wrote");
   const listed = await as(device, ["work-list", "--workspace", library, "--parent-id", epic.id]);
@@ -116,9 +145,9 @@ test("469: init creates a library, and projects, work, transitions, lists and sh
   const deviceId = await deviceIdOf(device);
   const status = await as(device, ["status", "--workspace", library]);
   assert.equal(status.layout, "library");
-  assert.equal(status.version, 5);
-  assert.deepEqual(status.versionVector, { [deviceId]: 5 });
-  assert.deepEqual(status.streams.map((stream) => [stream.deviceId, stream.sequence]), [[deviceId, 5]]);
+  assert.equal(status.version, 6);
+  assert.deepEqual(status.versionVector, { [deviceId]: 6 });
+  assert.deepEqual(status.streams.map((stream) => [stream.deviceId, stream.sequence]), [[deviceId, 6]]);
   assert.equal(status.rejectedEventCount, 0);
   // Nothing but the stream directory was added to the library; the lock and the cache of derived
   // state live on the device (TCRN-CROSS-STORY-469 R4).
@@ -158,12 +187,18 @@ test("468-AC2, AC3 (CLI): a lost race is a rejected event on work-show, and a ta
   await as(desk, ["init", "--workspace", deskLibrary, "--at", at()]);
   const { projectId, story, epic } = await seed(desk, deskLibrary, "RACE");
   const laptopLibrary = join(base, "laptop", ".ether");
+  const deskProject = join(base, "desk");
+  const laptopProject = join(base, "laptop");
+  await declareStoryGate(desk, deskLibrary, story.id);
+  await mkdir(laptopProject, { recursive: true });
   await cp(deskLibrary, laptopLibrary, { recursive: true });
   // Apart: the desk finishes the Story; the laptop writes once more first, then finishes it too.
-  await as(desk, ["work-transition", "--workspace", deskLibrary, "--at", at(), "--id", story.id, "--status", "done", "--summary", "done on the desk"]);
+  await runStoryGate(desk, deskLibrary, deskProject, story.id);
+  await as(desk, ["work-transition", "--workspace", deskLibrary, "--at", at(), "--id", story.id, "--status", "done", "--summary", "done on the desk", "--project", deskProject]);
   await as(laptop, ["work-create", "--workspace", laptopLibrary, "--at", at(), "--project-id", projectId, "--parent-id", epic.id,
     "--external-key", "RACE-STORY-500", "--kind", "Story", "--title", "Laptop 500", "--scope", STORY_SCOPE]);
-  const lost = await as(laptop, ["work-transition", "--workspace", laptopLibrary, "--at", at(), "--id", story.id, "--status", "done", "--summary", "done on the laptop"]);
+  await runStoryGate(laptop, laptopLibrary, laptopProject, story.id);
+  const lost = await as(laptop, ["work-transition", "--workspace", laptopLibrary, "--at", at(), "--id", story.id, "--status", "done", "--summary", "done on the laptop", "--project", laptopProject]);
   await as(desk, ["work-create", "--workspace", deskLibrary, "--at", at(), "--project-id", projectId, "--parent-id", epic.id,
     "--external-key", "RACE-STORY-500", "--kind", "Story", "--title", "Desk 500", "--scope", STORY_SCOPE]);
   const [deskId, laptopId] = [await deviceIdOf(desk), await deviceIdOf(laptop)];

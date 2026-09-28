@@ -3,9 +3,9 @@
 // TCRN-CROSS-STORY-469 R1, R6 (MIN-227 D19, D21): a library, the `.ether` directory that holds
 // one project's records. Its root has exactly seven entries:
 //
-//   manifest.json   the library id, format version, minimum engine version and project hint;
-//                   written when the library is created, when its format changes and when it
-//                   moves, and at no other time
+//   manifest.json   static library identity, format, minimum engine version, project hint and
+//                   creation time; one controlled writer replaces it only at creation, format
+//                   upgrade or migration. Ordinary event append and merge never write it.
 //   akasha/         one directory per device, each written by that device alone
 //   crest/          the knowledge store
 //   config/         a readable projection of the project-level settings
@@ -13,9 +13,9 @@
 //   README.md       what every name here means, and the old names
 //   .gitignore      `*`, so a library inside a Git working tree never shows in `git status`
 //
-// Streams are found by listing akasha/, not from the root manifest, so the root manifest
-// keeps a single writer and a quiet life. Paths inside a library are short, relative and
-// lowercase; text is LF; nothing depends on permission bits.
+// Streams are found by listing akasha/, not from the root manifest, so the root manifest keeps
+// its single-writer contract and carries no per-stream digest. Paths inside a library are short,
+// relative and lowercase; text is LF; nothing depends on permission bits.
 
 import { randomBytes } from "node:crypto";
 import { lstat, mkdir, readdir, readFile, realpath } from "node:fs/promises";

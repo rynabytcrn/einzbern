@@ -267,8 +267,8 @@ test("STORY-485 R1 to R4: the gates verbs are cataloged, and work-transition and
   assert.deepEqual(shape("gates-plan"), [false, []]);
   assert.deepEqual(shape("gates-run"), [true, ["at"]], "gates-run starts the gates' processes and records the run");
   const flagsOf = (name) => new Map(entry(name).flags.map((flag) => [flag.name, flag]));
-  assert.deepEqual(["command", "root", "covers", "required", "enabled", "release-only"].map((name) => flagsOf("gates-config-set").get(name)?.valueKind),
-    ["string", "string", "list", "boolean", "boolean", "boolean"]);
+  assert.deepEqual(["command", "root", "covers", "required", "enabled", "release-only", "order"].map((name) => flagsOf("gates-config-set").get(name)?.valueKind),
+    ["string", "string", "list", "boolean", "boolean", "boolean", "integer"]);
   for (const verb of ["gates-plan", "gates-run"]) {
     assert.deepEqual(["project", "base", "release"].map((name) => flagsOf(verb).get(name)?.valueKind), ["string", "string", "boolean"], verb);
   }
@@ -313,7 +313,7 @@ test("STORY-484 R1, R4: variable-list reads; variable-set and variable-remove wr
   assert.equal(entry("variable-set").mutates, true);
   assert.deepEqual(flags("variable-set"), [
     ["workspace", false, "string"], ["at", true, "instant"], ["name", true, "string"], ["type", true, "string"],
-    ["value", true, "string"], ["description", false, "string"], ["actor", false, "string"],
+    ["value", true, "string"], ["description", false, "string"], ["order", false, "integer"], ["actor", false, "string"],
   ]);
   assert.equal(entry("variable-remove").mutates, true);
   assert.deepEqual(flags("variable-remove"), [["workspace", false, "string"], ["at", true, "instant"], ["name", true, "string"], ["actor", false, "string"]]);
@@ -329,7 +329,7 @@ test("STORY-483 R2: rule-list reads; rule-enable and rule-disable write, take --
   assert.equal(entry("rule-list").mutates, false);
   assert.deepEqual(flags("rule-list"), [["project", false, "string"]]);
   assert.equal(entry("rule-enable").mutates, true);
-  assert.deepEqual(flags("rule-enable"), [["id", true, "string"], ["at", true, "instant"], ["project", false, "string"], ["actor", false, "string"]]);
+  assert.deepEqual(flags("rule-enable"), [["id", true, "string"], ["at", true, "instant"], ["project", false, "string"], ["order", false, "integer"], ["actor", false, "string"]]);
   assert.equal(entry("rule-disable").mutates, true);
   assert.deepEqual(flags("rule-disable"), [
     ["id", true, "string"], ["force", false, "boolean"], ["at", true, "instant"], ["project", false, "string"], ["actor", false, "string"],

@@ -289,6 +289,11 @@ test("classified privacy samples stay path-and-line exact across source, history
     kind: "archive",
     content: p1Archive,
   }], { owner }), []);
+  assert.deepEqual(scanPrivacyEntries([{
+    label: "dist/release/einzbern-1.2.1-source.tar",
+    kind: "release",
+    content: p1Archive,
+  }], { owner }), []);
 
   const changedLine = p1Fixture.replace(p1EmailLine, `${p1EmailLine} // changed`);
   assert.ok(scanPrivacyEntries([{ label: p1Path, kind: "source", content: changedLine }], { owner })

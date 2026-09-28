@@ -4,7 +4,8 @@
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cp } from "node:fs/promises";
 import test from "node:test";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -19,7 +20,7 @@ import { assessEvidenceReuse, assessDynamicEvidenceReuse, buildDevelopmentPlan, 
 import { classifyProcess } from "../scripts/operational-batch-entry.mjs";
 import * as operationalBatchEntry from "../scripts/operational-batch-entry.mjs";
 import { appendProgressEvent, readProgressDelta, summarizeProgress, waitForProgress } from "../scripts/lib/incremental-output.mjs";
-import { runHistoricalCommand } from "../scripts/verbatim-evidence-proof.mjs";
+import { copyHistoricalTypeScriptRuntime, runHistoricalCommand } from "../scripts/verbatim-evidence-proof.mjs";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { LOCAL_DIRECTORY_NAMES, initializeLibrary } from "../dist/build/packages/core/src/index.js";
 
@@ -35,7 +36,10 @@ test("INC-391 preserves historical child exit, signal, and buffer diagnostics wi
   });
 
   const privateMarker = "INC391_PRIVATE_CHILD_OUTPUT";
-  const exited = await run(`process.stdout.write(${JSON.stringify(privateMarker)}); process.exitCode = 23;`, 1024);
+  // R8's full-suite run captured 0 bytes where the focused case captured 27.
+  // Wait for the child stream callback to define an explicit flush point before
+  // exit; the assertion still checks the bytes that execFile actually captured.
+  const exited = await run(`process.stdout.write(${JSON.stringify(privateMarker)}, () => { process.exitCode = 23; });`, 1024);
   assert.equal(exited.ok, false);
   assert.deepEqual(exited.failure, {
     stage: "historical-command",
@@ -63,6 +67,32 @@ test("INC-391 preserves historical child exit, signal, and buffer diagnostics wi
   assert.equal(overflowed.failure.exitCode, null);
   assert.equal(overflowed.failure.maxBufferBytes, 1024);
   assert.equal(overflowed.failure.stdoutBytes, 1024);
+});
+
+test("INC-391 copies only the TypeScript runtime and ignores a package self-link", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "tcrn-inc391-typescript-copy-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+
+  const packageRoot = join(directory, "node_modules", ".pnpm", "typescript@5.9.3", "node_modules", "typescript");
+  const packageAlias = join(directory, "node_modules", "typescript");
+  mkdirSync(join(packageRoot, "lib"), { recursive: true });
+  const manifest = JSON.stringify({ name: "typescript", version: "5.9.3", main: "./lib/typescript.js" });
+  const runtime = "module.exports = { createSourceFile() {} };\n";
+  writeFileSync(join(packageRoot, "package.json"), manifest);
+  writeFileSync(join(packageRoot, "lib", "typescript.js"), runtime);
+  symlinkSync(packageRoot, packageAlias, "dir");
+  symlinkSync(packageAlias, join(packageRoot, "typescript"), "dir");
+
+  await assert.rejects(
+    cp(packageAlias, join(directory, "unsafe-copy"), { recursive: true, dereference: true }),
+    { code: "ELOOP" },
+  );
+
+  const destination = join(directory, "historical", "node_modules", "typescript");
+  await copyHistoricalTypeScriptRuntime(packageAlias, destination);
+  assert.equal(readFileSync(join(destination, "package.json"), "utf8"), manifest);
+  assert.equal(readFileSync(join(destination, "lib", "typescript.js"), "utf8"), runtime);
+  assert.equal(existsSync(join(destination, "typescript")), false);
 });
 
 function gitFixture(t) {

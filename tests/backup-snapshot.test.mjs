@@ -242,6 +242,8 @@ async function roundTripFixture() {
   return {
     base,
     workspace,
+    projectId,
+    workId,
     async close() {
       await rm(base, { recursive: true, force: true });
     },
@@ -270,22 +272,34 @@ test("WSF-3 case 8: snapshot then wipe then restore round-trips the whole librar
   assert.equal(remanifest, manifest, "the restored tree re-manifests byte-identically");
 });
 
+// TCRN-CROSS-SUB-414 (MIN-235 D7): what binds the knowledge store to the chain is no longer a
+// high water store.json holds -- nothing but initialization writes it, and a rebase writes nothing
+// -- but the chain position each card's event names: every chain stream's head the write was
+// checked against. A store newer than its chain is one holding a card written against chain events
+// the chain no longer has, and validate refuses it, naming the card.
 test("WSF-3 case 9: partial restore leaving a newer knowledge store fails KNOWLEDGE_HIGH_WATER_MISMATCH", async (t) => {
   const fixture = await roundTripFixture();
   t.after(() => fixture.close());
   // Save only the chain portion (state A): the akasha streams.
   const backup = join(fixture.base, "akasha-backup");
   await cp(join(fixture.workspace, "akasha"), backup, { recursive: true });
-  // Advance the head, then rebase the knowledge store onto the new head so the
-  // knowledge marker is strictly NEWER than the saved chain state.
+  // Advance the head, then write a card against the new head, so the knowledge store is strictly
+  // NEWER than the saved chain state. A rebase no longer makes it so: it re-binds nothing.
   await createProject(fixture.workspace, { externalKey: "PROJ-GAMMA", name: "Gamma", occurredAt: instant(8) });
-  await rebaseKnowledgeStore(fixture.workspace, { at: instant(9), retireInvalid: false });
+  const manifest = await readFile(join(fixture.workspace, "crest", "store.json"));
+  await rebaseKnowledgeStore(fixture.workspace, { at: instant(9) });
+  assert.deepEqual(await readFile(join(fixture.workspace, "crest", "store.json")), manifest, "the rebase wrote nothing");
+  const newer = await createKnowledgeUnit(fixture.workspace, {
+    ...knowledgeInput({ projectId: fixture.projectId, workId: fixture.workId }),
+    occurredAt: instant(9), externalKey: "KNOWLEDGE-BK-NEWER", subject: "Written against the advanced head", tags: ["backup", "newer"],
+  });
+  assert.equal((await validateKnowledgeStore(fixture.workspace)).reasonCode, "KNOWLEDGE_STORE_VALID", "before the restore the chain holds every card");
   // Partial restore: return only the streams to state A, keep the newer store.
   await rm(join(fixture.workspace, "akasha"), { recursive: true, force: true });
   await cp(backup, join(fixture.workspace, "akasha"), { recursive: true });
   await assert.rejects(
     validateKnowledgeStore(fixture.workspace),
-    (error) => error?.reasonCode === "KNOWLEDGE_HIGH_WATER_MISMATCH",
+    (error) => error?.reasonCode === "KNOWLEDGE_HIGH_WATER_MISMATCH" && error.details.awaitingChain.map((entry) => entry.id).join() === newer.id,
   );
 });
 

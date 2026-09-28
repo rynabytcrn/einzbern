@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { constants, readFileSync } from "node:fs";
 import {
   lstat,
@@ -185,8 +185,18 @@ export const USER_CREST_ID = deriveStableId("user-crest", "USER-CREST");
 const USER_CREST_HIGH_WATER = createHash("sha256").update(USER_CREST_ID, "utf8").digest("hex");
 const USER_CREST_EVENT_SCHEMA_VERSION = "tcrn.user-crest-event.v1" as const;
 const USER_CREST_EVENT_HEAD_SCHEMA_VERSION = "tcrn.user-crest-head.v1" as const;
-const USER_CREST_EVENT_FILE_PATTERN = /^(\d{8,})-([a-f0-9]{64})\.json$/u;
-const USER_CREST_BODY_FILE_PATTERN = /^(\d{8,})-([a-f0-9]{64})\.body$/u;
+// The names every crest event stream uses, a library's and the user crest's alike: the event
+// `<sequence>-<event hash>.json` and its body `<sequence>-<body sha256>.body`.
+const CREST_EVENT_FILE_PATTERN = /^(\d{8,})-([a-f0-9]{64})\.json$/u;
+const CREST_BODY_FILE_PATTERN = /^(\d{8,})-([a-f0-9]{64})\.body$/u;
+// TCRN-CROSS-SUB-414 (STORY-476 D7, MIN-235 D7): a library crest's card writes are events in the
+// writing device's own stream, crest/events/<device id>/, the directory name the user crest uses.
+const CREST_EVENT_SCHEMA_VERSION = "einzbern.crest-event.v1" as const;
+const CREST_EVENTS_DIRECTORY = USER_CREST_EVENTS_DIRECTORY;
+// The most chain streams one event may name as the chain it was written against, and so the
+// largest event file a reader admits: the metadata budget, the event's own fields, and the chain.
+const CREST_EVENT_CHAIN_LIMIT = 256;
+const CREST_EVENT_MAXIMUM_BYTES = KNOWLEDGE_LIMITS.maximumMetadataBytes + 4_096 + CREST_EVENT_CHAIN_LIMIT * 160;
 export type KnowledgeCategory = "architecture" | "domain" | "implementation" | "standards" | "testing" | "workflow" | "decision" | "evidence";
 export type KnowledgeKind = "fact" | "guide" | "decision" | "reference" | "summary";
 export type KnowledgeLifecycle = "candidate" | "active" | "retired";
@@ -393,10 +403,12 @@ export interface KnowledgeBodyReadOptions extends KnowledgeScopedReadOptions {
   readonly allowStale?: boolean;
 }
 
-// In a library (TCRN-CROSS-STORY-469) the marker binds the store to the library id (workspaceId)
-// and to the library head (eventHighWaterDigest): one digest over every stream's head, so it moves
-// with any entry of the version vector, whichever device wrote it. An old-layout store binds its
-// workspace id and its one chain's head.
+// In a library (TCRN-CROSS-STORY-469) the marker binds the store to the library id (workspaceId).
+// TCRN-CROSS-SUB-414: it is written once, by initialization, and binds the library identity's
+// own digest as its high water; a read answers the marker projected over the event streams, its
+// high water the chain head it read (scanLibraryCrest). A crest an engine before events wrote
+// keeps the library head its last write bound, and that value is read, never compared or
+// rewritten. An old-layout store binds its workspace id and its one chain's head.
 interface KnowledgeStoreMarker {
   readonly schemaVersion: typeof KNOWLEDGE_STORE_SCHEMA_VERSION;
   readonly workspaceId: string;
@@ -415,6 +427,49 @@ interface UserCrestEvent {
   readonly priorHash: string | null;
   readonly metadata: KnowledgeUnitMetadata;
   readonly body: { readonly file: string; readonly sha256: string; readonly bytes: number };
+  readonly eventHash: string;
+}
+
+// TCRN-CROSS-SUB-414: one chain stream as a library crest event saw it when it was written: the
+// device, the sequence of the stream's head and that head event's hash.
+interface ChainPosition {
+  readonly deviceId: string;
+  readonly sequence: number;
+  readonly eventHash: string;
+}
+
+// TCRN-CROSS-SUB-414 (STORY-476 D7, MIN-235 D7): one record of a library crest, appended to the
+// writing device's stream. `chain` is every chain stream's head the write read, so a reader knows
+// whether its own chain holds what the card was written against; `replaces` is the digest of the
+// stored record of the same card this record replaces (a re-verification, a policy update, an
+// article refresh), null for the record that writes a card for the first time. The body is the
+// record's own copy, null only for a record that is retired (an older engine reclaimed its body).
+interface LibraryCrestEvent {
+  readonly schemaVersion: typeof CREST_EVENT_SCHEMA_VERSION;
+  readonly deviceId: string;
+  readonly sequence: number;
+  readonly occurredAt: string;
+  readonly priorHash: string | null;
+  readonly chain: readonly ChainPosition[];
+  readonly replaces: string | null;
+  readonly metadata: KnowledgeUnitMetadata;
+  readonly body: { readonly file: string; readonly sha256: string; readonly bytes: number } | null;
+  readonly eventHash: string;
+}
+
+// The head of one device's crest event stream.
+interface CrestEventHead {
+  readonly deviceId: string;
+  readonly sequence: number;
+  readonly eventHash: string;
+}
+
+// TCRN-CROSS-SUB-414: a library crest record whose event was written against chain events this
+// device has not received yet: the card it belongs to and the event that holds the record.
+interface AwaitingChainEntry {
+  readonly id: string;
+  readonly deviceId: string;
+  readonly sequence: number;
   readonly eventHash: string;
 }
 
@@ -443,14 +498,63 @@ interface ScannedKnowledgeUnit {
   readonly readBody?: () => Promise<Buffer>;
 }
 
+// TCRN-CROSS-SUB-310: the one writer a crest record came from -- a device's event stream, named by
+// its device id, or the metadata/body layout an engine before events wrote under the store's
+// mutation claim. One writer scans before it writes, so it saw every earlier card of its own.
+const USER_CREST_LEGACY_LINEAGE = "legacy" as const;
+
+// One record of a crest, as a scan read it: the card's metadata and where it came from.
+interface CrestUnit extends ScannedKnowledgeUnit {
+  readonly lineage: string;
+  // TCRN-CROSS-SUB-413: the event that holds the record in its device's stream; null for a record
+  // the metadata/body layout holds.
+  readonly event: { readonly sequence: number; readonly eventHash: string } | null;
+  // TCRN-CROSS-SUB-414: the stored record of the same card this record replaces (its recordDigest);
+  // null for the record that writes a card for the first time, and for every user-crest record.
+  readonly replaces: string | null;
+  // TCRN-CROSS-SUB-414: the chain streams a library crest event was written against; null for a
+  // record with no event, and for every user-crest record.
+  readonly chain: readonly ChainPosition[] | null;
+  // The recordDigest of the metadata as stored, which a scan's projection never changes.
+  readonly storedDigest: string;
+}
+
+// TCRN-CROSS-SUB-413 (STORY-476 D7): one knowledge id -- one external key, since the id is derived
+// from the key -- that more than one writer wrote with differing metadata, each before it saw the
+// other's. None of its versions is the card: every one stays in its writer's stream and is read
+// explicitly, none is selected by default or recalled while the id is unresolved, and a card whose
+// supersedes names the id replaces every version at once (projectCrestUnits).
+interface CrestDuplicate {
+  readonly id: string;
+  readonly externalKey: string;
+  // One version per writer, in canonical order of the writer (its device id, or `legacy`).
+  readonly versions: readonly CrestUnit[];
+}
+
 // TCRN-CROSS-STORY-476 R5: what a write reads from a scan of either store, a library's crest
-// (KnowledgeStoreScan) or the user crest (UserCrestScan).
+// (KnowledgeStoreScan) or the user crest (UserCrestScan). TCRN-CROSS-SUB-414: both are merged from
+// every writer's records, so both answer what a merge can hold besides its cards.
 interface CrestScan {
   readonly storeRoot: string;
   readonly marker: KnowledgeStoreMarker;
-  readonly units: readonly ScannedKnowledgeUnit[];
+  // The cards: one record per id, projected (a card another card replaced carries supersededBy).
+  readonly units: readonly CrestUnit[];
   readonly index: Readonly<Record<string, JsonValue>>;
   readonly capacity: { readonly bodyBytes: number; readonly limit: number };
+  // TCRN-CROSS-SUB-310 (MIN-235 D7): pairs of live cards from two writers that each wrote without
+  // seeing the other, which the write-time conflict check would have refused. Each pair is in
+  // canonical id order and so is the list. Both cards stay readable; default selection leaves
+  // them out until a write resolves the pair (projectCrestUnits).
+  readonly unresolvedConflicts: readonly (readonly string[])[];
+  // TCRN-CROSS-SUB-413 (STORY-476 D7): every id more than one writer wrote with differing metadata,
+  // in canonical id order, resolved or not. Their versions are not in `units`.
+  readonly duplicates: readonly CrestDuplicate[];
+  // TCRN-CROSS-SUB-414: the library crest records written against chain events this device has
+  // not received, in canonical id order; their cards leave default selection until the chain
+  // arrives. Always empty for the user crest and an old-layout store.
+  readonly awaitingChain: readonly AwaitingChainEntry[];
+  // The head of every device's crest event stream, in canonical device order.
+  readonly eventHeads: readonly CrestEventHead[];
 }
 
 // The user crest, read: no library, no chain head and no links to check a card against beyond
@@ -458,52 +562,19 @@ interface CrestScan {
 interface UserCrestScan extends CrestScan {
   readonly device: string;
   readonly eventOnly: boolean;
-  readonly eventHeads: readonly { readonly deviceId: string; readonly sequence: number; readonly eventHash: string }[];
-  // TCRN-CROSS-SUB-310 (MIN-235 D7): pairs of live cards from two writers that each wrote without
-  // seeing the other, which the write-time conflict check would have refused. Each pair is in
-  // canonical id order and so is the list. Both cards stay readable; default selection leaves
-  // them out until a write resolves the pair (projectUserCrestUnits).
-  readonly unresolvedConflicts: readonly (readonly string[])[];
-  // TCRN-CROSS-SUB-413 (STORY-476 D7): every id more than one writer wrote with differing metadata,
-  // in canonical id order, resolved or not. Their versions are not in `units`.
-  readonly duplicates: readonly UserCrestDuplicate[];
 }
 
-// TCRN-CROSS-SUB-310: the one writer a user-crest card came from -- a device's event stream, named
-// by its device id, or the metadata/body layout an engine before events wrote under the store's
-// mutation claim. One writer scans before it writes, so it saw every earlier card of its own.
-const USER_CREST_LEGACY_LINEAGE = "legacy" as const;
-
-interface UserCrestUnit extends ScannedKnowledgeUnit {
-  readonly lineage: string;
-  // TCRN-CROSS-SUB-413: the event that holds the card in its device's stream; null for a card the
-  // metadata/body layout holds.
-  readonly event: { readonly sequence: number; readonly eventHash: string } | null;
-}
-
-// TCRN-CROSS-SUB-413 (STORY-476 D7): one knowledge id -- one external key, since the id is derived
-// from the key -- that more than one writer wrote with differing metadata, each before it saw the
-// other's. None of its versions is the card: every one stays in its writer's stream and is read
-// explicitly, none is selected by default or recalled while the id is unresolved, and a card whose
-// supersedes names the id replaces every version at once (projectUserCrestUnits).
-interface UserCrestDuplicate {
-  readonly id: string;
-  readonly externalKey: string;
-  // One version per writer, in canonical order of the writer (its device id, or `legacy`).
-  readonly versions: readonly UserCrestUnit[];
-}
-
-interface KnowledgeStoreScan {
+interface KnowledgeStoreScan extends CrestScan {
+  // TCRN-CROSS-SUB-414: a library's crest, merged from its device streams and any metadata/body
+  // layout, or an old-layout workspace's store, read as its engine left it.
+  readonly layout: "library" | "old-layout";
   readonly workspaceRoot: string;
-  readonly storeRoot: string;
-  readonly metadataRoot: string;
-  readonly bodiesRoot: string;
+  // The metadata/body layout's directories; null for a library crest that holds only event streams.
+  readonly metadataRoot: string | null;
+  readonly bodiesRoot: string | null;
   // The old layout's views/ directory; null for a library, whose index view is this device's cache.
   readonly viewsRoot: string | null;
-  readonly marker: KnowledgeStoreMarker;
   readonly workspace: WorkspaceState;
-  readonly units: readonly ScannedKnowledgeUnit[];
-  readonly index: Readonly<Record<string, JsonValue>>;
   // WSC-2: in rebase mode, the id-sorted set of live (non-retired) records whose
   // scope/project no longer resolves against the advanced workspace head. Empty
   // otherwise; dangling work references have their own non-blocking diagnostic.
@@ -511,9 +582,6 @@ interface KnowledgeStoreScan {
   // Live records may retain links to work items removed from the current chain.
   // They remain readable and writable, while validation reports these links.
   readonly danglingWorkLinks: readonly { readonly knowledgeId: string; readonly workIds: readonly string[] }[];
-  // TCRN-CROSS-SUB-309: the budget as this read measured it -- live card body bytes -- and
-  // the knowledge.aggregateBytes limit it is held to.
-  readonly capacity: { readonly bodyBytes: number; readonly limit: number };
 }
 
 const markerFields = ["schemaVersion", "workspaceId", "eventHighWaterDigest", "version", "disposable", "authority"];
@@ -954,9 +1022,11 @@ async function libraryKnowledgeViewFile(storeRoot: string): Promise<string | nul
 /**
  * Run a crest write under this machine's lock of the library (TCRN-CROSS-STORY-469 R3): the lock
  * file lives in the device directory, never in the library, and it is the one every chain write
- * takes, so the writers on one machine never interleave. The mutation claim inside crest/ stays
- * the crash journal a recovery reads. Nothing here makes two devices' crest writes safe against
- * each other. An old-layout store is read-only: its writers refuse on their own.
+ * takes, so the writers on one machine never interleave. TCRN-CROSS-SUB-414: those writers share
+ * one thing, this device's crest event stream, which is what the lock serialises; two devices never
+ * write one file of a crest, since each appends only to its own stream and nothing but
+ * initialization writes the root manifest. An old-layout store is read-only: its writers refuse
+ * on their own.
  */
 export async function withCrestWriteLock<T>(workspaceRoot: string, operation: () => Promise<T>): Promise<T> {
   if (!(await hasLibraryManifest(resolve(workspaceRoot)))) return operation();
@@ -968,11 +1038,13 @@ export async function migrateKnowledgeBodies(workspaceRootInput: string, segment
 }
 
 async function migrateKnowledgeBodiesUnlocked(workspaceRootInput: string, segmentBytes = 1_048_576): Promise<Readonly<Record<string, JsonValue>>> {
-  // Body migration is a disposable-store rewrite. It may run while the chain
-  // head has advanced past store.json; the ordinary metadata-only trailing read
-  // is the established way to locate the store without pretending its marker
-  // is current. The caller rebase/validates the marker after the rewrite.
+  // Body migration is a disposable-store rewrite of the metadata/body layout's bodies/ into
+  // segments. TCRN-CROSS-SUB-414: it writes neither store.json nor an event stream, so an event
+  // stream's bodies stay where their events name them, and a crest holding only event streams has
+  // nothing to migrate. An old-layout store is read-only, and so refuses it.
+  await assertKnowledgeWritable(resolve(workspaceRootInput));
   const scan = await scanKnowledgeStore(workspaceRootInput, { allowTrailing: true }, false, "metadata-only");
+  if (scan.bodiesRoot === null) return { schemaVersion: "tcrn.knowledge-body-migration.v1", before: 0, after: 0, bodyBytes: 0 };
   const backend = storeBackendFor(scan.storeRoot);
   if (!(backend instanceof SegmentedKnowledgeStoreBackend)) {
     fail("KNOWLEDGE_PARTIAL_STATE", "the local segmented knowledge backend is unavailable");
@@ -983,7 +1055,9 @@ async function migrateKnowledgeBodiesUnlocked(workspaceRootInput: string, segmen
 
 // The claim protocol is file-native (STORY-177, like STORY-174's workspace leases):
 // mutation.claim is the O_EXCL exclusive file whose identity the release verifies.
-// Only the data-plane IO rides through the StoreBackend; these helpers stay.
+// TCRN-CROSS-SUB-414: this engine takes no claim of its own; it reads, and recovers, the claim an
+// interrupted writer of the metadata/body layout left. Only the data-plane IO rides through the
+// StoreBackend; these helpers stay.
 async function syncDirectory(path: string): Promise<void> {
   const handle = await open(path, constants.O_RDONLY);
   try {
@@ -1465,11 +1539,6 @@ function validateMetadataBody(metadata: KnowledgeUnitMetadata, body: Buffer, wor
   }
 }
 
-function requireBody(unit: ScannedKnowledgeUnit): Buffer {
-  if (unit.body === null) fail("KNOWLEDGE_RECORD_INVALID", `${unit.metadata.id}:body was not admitted`);
-  return unit.body;
-}
-
 function knowledgeIndex(marker: KnowledgeStoreMarker, metadata: readonly KnowledgeUnitMetadata[]): Readonly<Record<string, JsonValue>> {
   const records = [...metadata]
     .sort((left, right) => compareCanonicalText(left.id, right.id))
@@ -1526,8 +1595,8 @@ async function readMutationClaim(storeRoot: string): Promise<KnowledgeMutationCl
   return { path, identity: { dev: stats.dev, ino: stats.ino }, workspaceId: String(value.workspaceId), token: String(value.token), pid: Number(value.pid), acquiredAt: String(value.acquiredAt) };
 }
 
-// A store root holds exactly its three entries (an old-layout store adds views/), and a mutation
-// claim only while a write that admitted it runs.
+// An old-layout store's root holds exactly its four entries, and a mutation claim only while a
+// write of its engine ran (a library's crest checks its own root, scanLibraryCrest).
 async function assertStoreRootEntries(storeRoot: string, viewsInRoot: boolean, allowClaim: boolean): Promise<void> {
   const rootEntries = (await readdir(storeRoot)).sort(compareCanonicalText);
   const expectedRootEntries = ["bodies", "metadata", "store.json", ...(viewsInRoot ? ["views"] : []), ...(allowClaim ? ["mutation.claim"] : [])].sort(compareCanonicalText);
@@ -1656,14 +1725,33 @@ async function scanKnowledgeStore(
     fail("KNOWLEDGE_PATH_INVALID", "knowledge store is not under the Workspace authority root");
   }
   const storeRoot = await boundDirectory(await knowledgeStorePath(workspaceRoot), workspaceRoot);
+  if (await hasLibraryManifest(workspaceRoot)) {
+    return scanLibraryCrest(workspace, workspaceRoot, storeRoot, options, allowClaim, bodyMode, rebase);
+  }
+  return scanOldLayoutStore(workspace, workspaceRoot, storeRoot, options, allowClaim, bodyMode, rebase, allowStaleIndex);
+}
+
+// An old-layout workspace's store (knowledge/ in its control directory), read exactly as its
+// engine left it: metadata/, bodies/ and views/ beside a marker bound to the old chain's head.
+// It is read-only (TCRN-CROSS-STORY-469), so its marker can trail its chain, and a read admits
+// that only when asked to (TCRN-CROSS-INC-226).
+async function scanOldLayoutStore(
+  workspace: WorkspaceState,
+  workspaceRoot: string,
+  storeRoot: string,
+  options: KnowledgeReadOptions,
+  allowClaim: boolean,
+  bodyMode: "full" | "metadata-only",
+  rebase: boolean,
+  allowStaleIndex: boolean,
+): Promise<KnowledgeStoreScan> {
   const metadataRoot = await boundDirectory(resolve(storeRoot, "metadata"), storeRoot);
   const bodiesRoot = await boundDirectory(resolve(storeRoot, "bodies"), storeRoot);
-  const inLibrary = await hasLibraryManifest(workspaceRoot);
-  const viewsRoot = inLibrary ? null : await boundDirectory(resolve(storeRoot, "views"), storeRoot);
+  const viewsRoot = await boundDirectory(resolve(storeRoot, "views"), storeRoot);
   // STORY-177: marker, metadata/body/view and their enumeration ride through the
   // StoreBackend; directory-structure validation stays file-native below.
   const backend = storeBackendFor(storeRoot, options);
-  await assertStoreRootEntries(storeRoot, !inLibrary, allowClaim);
+  await assertStoreRootEntries(storeRoot, true, allowClaim);
   const markerBytes = await backend.readKnowledgeMarker();
   const marker = validateMarker(parseCanonicalObject(
     markerBytes,
@@ -1703,11 +1791,9 @@ async function scanKnowledgeStore(
     body: (metadata, body) => validateMetadataBody(metadata, body, workspace),
   });
   const index = knowledgeIndex(marker, units.map((unit) => unit.metadata));
-  if (viewsRoot !== null) {
-    const viewEntries = await readdir(viewsRoot);
-    if (JSON.stringify(viewEntries.sort(compareCanonicalText)) !== JSON.stringify(["index.json"])) {
-      fail("KNOWLEDGE_PARTIAL_STATE", "knowledge views are not exact");
-    }
+  const viewEntries = await readdir(viewsRoot);
+  if (JSON.stringify(viewEntries.sort(compareCanonicalText)) !== JSON.stringify(["index.json"])) {
+    fail("KNOWLEDGE_PARTIAL_STATE", "knowledge views are not exact");
   }
   // TCRN-CROSS-STORY-023: the index is a derived rebuildable view whose `records`
   // array is a re-serialization of the metadata, so charging its bytes against the cap
@@ -1715,20 +1801,231 @@ async function scanKnowledgeStore(
   // cap now counts live card bodies only (capacityBodyBytes), not the marker and not
   // the metadata either. The index is still validated byte-for-byte against the
   // canonical rebuild below.
-  if (inLibrary) {
-    await projectCachedView(backend, index);
-  } else {
-    const viewBytes = await backend.readKnowledgeView();
-    const view = viewBytes.toString("utf8");
-    if (!allowStaleIndex && view !== canonicalJson(index)) {
-      fail("KNOWLEDGE_PARTIAL_STATE", "knowledge index is stale");
-    }
+  const viewBytes = await backend.readKnowledgeView();
+  const view = viewBytes.toString("utf8");
+  if (!allowStaleIndex && view !== canonicalJson(index)) {
+    fail("KNOWLEDGE_PARTIAL_STATE", "knowledge index is stale");
   }
   return {
-    workspaceRoot, storeRoot, metadataRoot, bodiesRoot, viewsRoot, marker, workspace, units, index,
+    layout: "old-layout", workspaceRoot, storeRoot, metadataRoot, bodiesRoot, viewsRoot, marker, workspace,
+    units: units.map(metadataBodyLayoutUnit), index,
     linkInvalid,
     danglingWorkLinks,
     capacity: { bodyBytes: capacityBytes, limit: aggregateLimit },
+    unresolvedConflicts: [], duplicates: [], awaitingChain: [], eventHeads: [],
+  };
+}
+
+// A record the metadata/body layout holds, as a crest record: its one writer is that layout.
+function metadataBodyLayoutUnit(unit: ScannedKnowledgeUnit): CrestUnit {
+  return { ...unit, lineage: USER_CREST_LEGACY_LINEAGE, event: null, replaces: null, chain: null, storedDigest: recordDigest(unit.metadata) };
+}
+
+// TCRN-CROSS-SUB-414: the digest a later record of the same card names in its `replaces`: the
+// canonical form of the metadata as a scan admits it.
+function recordDigest(metadata: KnowledgeUnitMetadata): string {
+  return sha256(canonicalJson(metadata));
+}
+
+// TCRN-CROSS-SUB-414: every chain stream's head a library's replay holds, in canonical device
+// order: what a library crest event records as the chain it was written against.
+function chainPositions(workspace: WorkspaceState): readonly ChainPosition[] {
+  return (workspace.library?.streams ?? [])
+    .filter((stream) => stream.sequence > 0 && stream.headEventHash !== null)
+    .map((stream) => ({ deviceId: stream.deviceId, sequence: stream.sequence, eventHash: stream.headEventHash as string }))
+    .sort((left, right) => compareCanonicalText(left.deviceId, right.deviceId));
+}
+
+const chainEventHashes = new WeakMap<WorkspaceState, ReadonlyMap<string, string>>();
+
+// The hash of one chain stream's event at one sequence, from the events a replay holds.
+function chainEventHash(workspace: WorkspaceState, streamId: string, sequence: number): string | undefined {
+  let hashes = chainEventHashes.get(workspace);
+  if (hashes === undefined) {
+    const built = new Map<string, string>();
+    for (const event of workspace.events) built.set(`${event.streamId}\u0000${event.sequence}`, event.eventHash);
+    chainEventHashes.set(workspace, built);
+    hashes = built;
+  }
+  return hashes.get(`${streamId}\u0000${sequence}`);
+}
+
+// Whether this device's chain holds every chain event a library crest event was written against:
+// each named stream has reached the sequence, and its event there is the one named.
+function chainHolds(workspace: WorkspaceState, chain: readonly ChainPosition[]): boolean {
+  const streams = workspace.library?.streams ?? [];
+  return chain.every((position) => {
+    const stream = streams.find((entry) => entry.deviceId === position.deviceId);
+    if (stream === undefined || stream.sequence < position.sequence) return false;
+    if (stream.sequence === position.sequence) return stream.headEventHash === position.eventHash;
+    return chainEventHash(workspace, stream.streamId, position.sequence) === position.eventHash;
+  });
+}
+
+function validateChainPositions(value: readonly unknown[], where: string): readonly ChainPosition[] {
+  const positions: ChainPosition[] = [];
+  for (const entry of value) {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) fail("KNOWLEDGE_RECORD_INVALID", `${where}: chain`);
+    exactFields(entry, ["deviceId", "eventHash", "sequence"], "crest event chain position", "KNOWLEDGE_RECORD_INVALID");
+    const position = entry as Readonly<Record<string, unknown>>;
+    if (typeof position.deviceId !== "string" || !/^[a-f0-9]{32}$/u.test(position.deviceId) ||
+      !Number.isSafeInteger(position.sequence) || Number(position.sequence) < 1 ||
+      typeof position.eventHash !== "string" || !/^[a-f0-9]{64}$/u.test(position.eventHash) ||
+      (positions.length > 0 && compareCanonicalText((positions.at(-1) as ChainPosition).deviceId, position.deviceId) >= 0)) {
+      fail("KNOWLEDGE_RECORD_INVALID", `${where}: chain`);
+    }
+    positions.push({ deviceId: position.deviceId, sequence: Number(position.sequence), eventHash: position.eventHash });
+  }
+  return positions;
+}
+
+// TCRN-CROSS-SUB-414: one library crest event, checked against the device stream and file that
+// hold it. Its metadata is checked for shape here; its links are checked against the chain once
+// the records are merged (scanLibraryCrest), since only a card's current record is bound to them.
+function validateLibraryCrestEvent(value: Readonly<Record<string, JsonValue>>, deviceId: string, filename: string, workspace: WorkspaceState): LibraryCrestEvent {
+  const where = `${deviceId}/${filename}`;
+  exactFields(value, ["schemaVersion", "deviceId", "sequence", "occurredAt", "priorHash", "chain", "replaces", "metadata", "body", "eventHash"], "crest event", "KNOWLEDGE_RECORD_INVALID");
+  if (value.schemaVersion !== CREST_EVENT_SCHEMA_VERSION || value.deviceId !== deviceId || !/^[a-f0-9]{32}$/u.test(deviceId) ||
+    !Number.isSafeInteger(value.sequence) || Number(value.sequence) < 1 || typeof value.occurredAt !== "string" ||
+    (value.priorHash !== null && (typeof value.priorHash !== "string" || !/^[a-f0-9]{64}$/u.test(value.priorHash))) ||
+    (value.replaces !== null && (typeof value.replaces !== "string" || !/^[a-f0-9]{64}$/u.test(value.replaces))) ||
+    typeof value.eventHash !== "string" || !/^[a-f0-9]{64}$/u.test(value.eventHash) ||
+    !Array.isArray(value.chain) || value.chain.length > CREST_EVENT_CHAIN_LIMIT ||
+    value.metadata === null || typeof value.metadata !== "object" || Array.isArray(value.metadata) ||
+    (value.body !== null && (typeof value.body !== "object" || Array.isArray(value.body)))) {
+    fail("KNOWLEDGE_RECORD_INVALID", `${where}: event fields`);
+  }
+  validateChainPositions(value.chain, where);
+  const sequenceText = String(Number(value.sequence)).padStart(8, "0");
+  const metadata = validateMetadataShape(value.metadata as Readonly<Record<string, JsonValue>>, workspace, true);
+  if (metadata.scope === "user" || value.occurredAt !== metadata.updatedAt || filename !== `${sequenceText}-${value.eventHash}.json`) {
+    fail("KNOWLEDGE_RECORD_INVALID", `${where}: event binding`);
+  }
+  if (value.body === null) {
+    // Only a retired record goes without a body: an older engine reclaimed it.
+    if (metadata.lifecycle !== "retired") fail("KNOWLEDGE_RECORD_INVALID", `${where}: event binding`);
+  } else {
+    const bodyValue = value.body as Readonly<Record<string, JsonValue>>;
+    exactFields(bodyValue, ["file", "sha256", "bytes"], "crest body reference", "KNOWLEDGE_RECORD_INVALID");
+    if (!Number.isSafeInteger(bodyValue.bytes) || bodyValue.file !== `${sequenceText}-${metadata.bodySha256}.body` ||
+      bodyValue.sha256 !== metadata.bodySha256 || bodyValue.bytes !== metadata.bodyBytes) {
+      fail("KNOWLEDGE_RECORD_INVALID", `${where}: event binding`);
+    }
+  }
+  try { assertStrictInstant(value.occurredAt); } catch { fail("KNOWLEDGE_RECORD_INVALID", `${where}: occurredAt`); }
+  const { eventHash, ...unsigned } = value;
+  if (canonicalSha256(unsigned as unknown as JsonValue) !== eventHash) fail("KNOWLEDGE_RECORD_INVALID", `${where}: event hash`);
+  return value as unknown as LibraryCrestEvent;
+}
+
+// TCRN-CROSS-SUB-414 (STORY-476 D7, MIN-235 D7): a library's crest, read. Its records are the events
+// every device appended to its own stream, crest/events/<device id>/, beside any metadata/body layout
+// an engine before events left; this read merges them (projectCrestUnits) and projects the marker
+// and this device's index view from them. Neither projection is authority, and nothing here writes
+// the crest. The read answers at the chain head it replayed, so a chain write never leaves the crest
+// behind; a record written against chain events this device has not received is named in
+// `awaitingChain`, its card leaves default selection, and its links are checked once they arrive.
+async function scanLibraryCrest(
+  workspace: WorkspaceState,
+  workspaceRoot: string,
+  storeRoot: string,
+  options: KnowledgeReadOptions,
+  allowClaim: boolean,
+  bodyMode: "full" | "metadata-only",
+  rebase: boolean,
+): Promise<KnowledgeStoreScan> {
+  const backend = storeBackendFor(storeRoot, options);
+  // The marker first: a crest nobody initialized has none, and says so as it always did.
+  const marker = validateMarker(parseCanonicalObject(await backend.readKnowledgeMarker(), "knowledge marker", "KNOWLEDGE_RECORD_INVALID"));
+  const entries = await readdir(storeRoot);
+  const hasMetadata = entries.includes("metadata");
+  const hasBodies = entries.includes("bodies");
+  const hasEvents = entries.includes(CREST_EVENTS_DIRECTORY);
+  const expected = [
+    "store.json",
+    ...(hasMetadata && hasBodies ? ["bodies", "metadata"] : []),
+    ...(hasEvents ? [CREST_EVENTS_DIRECTORY] : []),
+    ...(allowClaim && entries.includes("mutation.claim") ? ["mutation.claim"] : []),
+  ].sort(compareCanonicalText);
+  if (hasMetadata !== hasBodies || JSON.stringify([...entries].sort(compareCanonicalText)) !== JSON.stringify(expected)) {
+    fail("KNOWLEDGE_PARTIAL_STATE", "knowledge store root entries are not exact");
+  }
+  if (!allowClaim && await claimPresence(storeRoot) === "present") fail("KNOWLEDGE_PARTIAL_STATE", "mutation claim is present");
+  if (marker.workspaceId !== workspace.metadata.workspaceId) fail("KNOWLEDGE_HIGH_WATER_MISMATCH", marker.workspaceId);
+  const legacyLayout = hasMetadata && hasBodies;
+  const metadataRoot = legacyLayout ? await boundDirectory(resolve(storeRoot, "metadata"), storeRoot) : null;
+  const bodiesRoot = legacyLayout ? await boundDirectory(resolve(storeRoot, "bodies"), storeRoot) : null;
+  let legacyUnits: readonly CrestUnit[] = [];
+  if (metadataRoot !== null && bodiesRoot !== null) {
+    // Links are checked on the merged cards below, not on each stored record.
+    const legacy = await scanStoreRecords(backend, { metadataRoot, bodiesRoot }, bodyMode, () => knowledgeAggregateLimit(workspace), {
+      shape: (value) => validateMetadataShape(value, workspace, true),
+      links: null,
+      danglingWorkLinks: null,
+      body: (metadata, body) => validateMetadataBody(metadata, body, workspace),
+    });
+    legacyUnits = legacy.units.map(metadataBodyLayoutUnit);
+  }
+  const streams = hasEvents
+    ? await readCrestEventStreams(storeRoot, bodyMode, {
+      linkState: workspace,
+      validate: (value, deviceId, filename) => validateLibraryCrestEvent(value, deviceId, filename, workspace),
+      maximumEventBytes: CREST_EVENT_MAXIMUM_BYTES,
+      library: true,
+      hooks: options,
+    })
+    : { units: [], eventCount: 0, heads: [] };
+  const { units, unresolvedConflicts, duplicates } = projectCrestUnits([...legacyUnits, ...streams.units], workspace, true);
+  const awaitingChain: AwaitingChainEntry[] = [];
+  for (const unit of streams.units) {
+    if (unit.chain === null || unit.event === null || chainHolds(workspace, unit.chain)) continue;
+    awaitingChain.push({ id: unit.metadata.id, deviceId: unit.lineage, sequence: unit.event.sequence, eventHash: unit.event.eventHash });
+  }
+  awaitingChain.sort((left, right) => compareCanonicalText(left.id, right.id) || compareCanonicalText(left.deviceId, right.deviceId) || left.sequence - right.sequence);
+  const awaitingIds = new Set(awaitingChain.map((entry) => entry.id));
+  // TCRN-CROSS-SUB-413: every live version of a duplicate is live body bytes until a card supersedes
+  // its id. O-1 is pending: a merge whose live bodies exceed the budget is refused whole, unchanged.
+  const records = crestRecords({ units, duplicates });
+  const aggregateLimit = knowledgeAggregateLimit(workspace);
+  const capacityBytes = capacityBodyBytes(records.map((unit) => unit.metadata));
+  assertWithinCapacity(capacityBytes, aggregateLimit, "knowledge aggregate bytes");
+  // WSC-2: the current record of each card is bound to the chain this read replayed. Rebase defers
+  // scope/project liveness into the offender list; dangling work references are diagnostics.
+  const linkInvalid = new Set<string>();
+  const dangling = new Map<string, Set<string>>();
+  for (const { metadata } of records) {
+    if (metadata.lifecycle === "retired" || awaitingIds.has(metadata.id)) continue;
+    if (rebase) {
+      try {
+        validateMetadataScope(metadata, workspace);
+      } catch (error) {
+        if (!(error instanceof KnowledgeCoreError) || error.reasonCode !== "KNOWLEDGE_LINK_INVALID") throw error;
+        linkInvalid.add(metadata.id);
+      }
+    } else {
+      validateMetadataScope(metadata, workspace);
+    }
+    const workIds = danglingLinkedWorkIds(metadata, workspace);
+    if (workIds.length > 0) dangling.set(metadata.id, new Set([...(dangling.get(metadata.id) ?? []), ...workIds]));
+  }
+  const danglingWorkLinks = [...dangling]
+    .map(([knowledgeId, workIds]) => ({ knowledgeId, workIds: [...workIds].sort(compareCanonicalText) }))
+    .sort((left, right) => compareCanonicalText(left.knowledgeId, right.knowledgeId));
+  // The marker a read answers: its version advanced by every event, its high water the chain head
+  // this read was bound against. It is a projection, never persisted.
+  const projectedMarker: KnowledgeStoreMarker = {
+    ...marker,
+    eventHighWaterDigest: workspace.headEventHash ?? marker.eventHighWaterDigest,
+    version: marker.version + streams.eventCount,
+  };
+  const index = knowledgeIndex(projectedMarker, records.map((unit) => unit.metadata));
+  await projectCachedView(backend, index);
+  return {
+    layout: "library", workspaceRoot, storeRoot, metadataRoot, bodiesRoot, viewsRoot: null, marker: projectedMarker, workspace, units, index,
+    linkInvalid: [...linkInvalid].sort(compareCanonicalText),
+    danglingWorkLinks,
+    capacity: { bodyBytes: capacityBytes, limit: aggregateLimit },
+    unresolvedConflicts, duplicates, awaitingChain, eventHeads: streams.heads,
   };
 }
 
@@ -1809,13 +2106,29 @@ async function userCrestParent(location: UserCrestLocation, create: boolean): Pr
   }
 }
 
-interface UserCrestEventStreams {
-  readonly units: readonly UserCrestUnit[];
+interface CrestEventStreams {
+  readonly units: readonly CrestUnit[];
   readonly eventCount: number;
-  readonly heads: readonly { readonly deviceId: string; readonly sequence: number; readonly eventHash: string }[];
+  readonly heads: readonly CrestEventHead[];
 }
 
-async function readUserCrestFile(path: string, maximumBytes: number): Promise<Buffer> {
+// One crest event as its stream holds it, whichever crest: the user crest's (validateUserCrestEvent)
+// or a library's (validateLibraryCrestEvent), whose records can replace one another and carry the
+// chain they were written against.
+interface ValidatedCrestEvent {
+  readonly sequence: number;
+  readonly eventHash: string;
+  readonly priorHash: string | null;
+  readonly metadata: KnowledgeUnitMetadata;
+  readonly body: { readonly file: string; readonly sha256: string; readonly bytes: number } | null;
+  readonly replaces: string | null;
+  readonly chain: readonly ChainPosition[] | null;
+}
+
+// One file of a crest event stream, read through a no-follow descriptor bound to the file it
+// names. `hooks` are the descriptor-read observation seams a read's options carry, as the store
+// backend honours them for the metadata/body layout.
+async function readUserCrestFile(path: string, maximumBytes: number, hooks: KnowledgeReadOptions = {}): Promise<Buffer> {
   let before;
   try {
     before = await lstat(path, { bigint: true });
@@ -1824,6 +2137,7 @@ async function readUserCrestFile(path: string, maximumBytes: number): Promise<Bu
   }
   if (before.isSymbolicLink() || !before.isFile() || before.nlink !== 1n) fail("KNOWLEDGE_LINK_UNSAFE", path);
   if (before.size > BigInt(maximumBytes)) fail("KNOWLEDGE_LIMIT_EXCEEDED", path);
+  await hooks.beforeDescriptorReadForTest?.(path);
   let handle: Awaited<ReturnType<typeof open>> | undefined;
   try {
     handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
@@ -1831,6 +2145,7 @@ async function readUserCrestFile(path: string, maximumBytes: number): Promise<Bu
     if (!opened.isFile() || opened.nlink !== 1n || !sameIdentity(before, opened) || opened.size > BigInt(maximumBytes)) {
       fail("KNOWLEDGE_SOURCE_CHANGED", path);
     }
+    await hooks.afterDescriptorOpenForTest?.(path);
     const bounded = Buffer.alloc(maximumBytes + 1);
     let bytesRead = 0;
     while (bytesRead < bounded.length) {
@@ -1892,10 +2207,40 @@ function validateUserCrestEvent(value: Readonly<Record<string, JsonValue>>, devi
   return value as unknown as UserCrestEvent;
 }
 
-async function readUserCrestEventStreams(
-  storeRoot: string,
-  bodyMode: "full" | "metadata-only",
-): Promise<UserCrestEventStreams> {
+// How one crest's event streams are read. The user crest (TCRN-CROSS-SUB-310) admits only regular
+// files into a stream and checks every event's body file, whatever the read. A library's crest
+// (TCRN-CROSS-SUB-414) reads its streams as its metadata/body layout was always read: a
+// metadata-first surface checks only that the stream names an event's body and never touches the
+// file, and a full read or an explicit body read refuses a link or a special file where it finds one
+// (KNOWLEDGE_LINK_UNSAFE, KNOWLEDGE_SPECIAL_FILE).
+interface CrestStreamReading {
+  // What a body is checked against: a library's state, or null for the user crest.
+  readonly linkState: WorkspaceState | null;
+  readonly validate: (value: Readonly<Record<string, JsonValue>>, deviceId: string, filename: string) => ValidatedCrestEvent;
+  readonly maximumEventBytes: number;
+  readonly library: boolean;
+  // The read's descriptor observation seams.
+  readonly hooks: KnowledgeReadOptions;
+}
+
+// A file of a library crest's stream: a special file in a body's or an event's place is named as
+// one before the descriptor read, which refuses a link.
+async function readLibraryCrestFile(path: string, maximumBytes: number, hooks: KnowledgeReadOptions): Promise<Buffer> {
+  let stats;
+  try {
+    stats = await lstat(path);
+  } catch (error) {
+    fail("KNOWLEDGE_PARTIAL_STATE", `${path}:${String((error as { code?: string }).code ?? error)}`);
+  }
+  if (!stats.isSymbolicLink() && !stats.isFile()) fail("KNOWLEDGE_SPECIAL_FILE", path);
+  return readUserCrestFile(path, maximumBytes, hooks);
+}
+
+// Every device stream of a crest's events/ directory, in each stream's own order: a stream is a
+// chain of events from sequence 1, each naming the previous one's hash, and each event's body is a
+// file of the same stream written before it. A body no event names is an interrupted write's and
+// is ignored.
+async function readCrestEventStreams(storeRoot: string, bodyMode: "full" | "metadata-only", reading: CrestStreamReading): Promise<CrestEventStreams> {
   const eventsPath = userCrestEventsPath(storeRoot);
   try {
     await lstat(eventsPath);
@@ -1904,8 +2249,11 @@ async function readUserCrestEventStreams(
     fail("KNOWLEDGE_PATH_INVALID", `${eventsPath}:${String((error as { code?: string }).code ?? error)}`);
   }
   const eventsRoot = await boundDirectory(eventsPath, storeRoot);
-  const units: UserCrestUnit[] = [];
-  const heads: { deviceId: string; sequence: number; eventHash: string }[] = [];
+  const readFileOf = (path: string, maximumBytes: number): Promise<Buffer> => reading.library
+    ? readLibraryCrestFile(path, maximumBytes, reading.hooks)
+    : readUserCrestFile(path, maximumBytes, reading.hooks);
+  const units: CrestUnit[] = [];
+  const heads: CrestEventHead[] = [];
   let eventCount = 0;
   const deviceEntries = await readdir(eventsRoot, { withFileTypes: true });
   for (const entry of deviceEntries) {
@@ -1920,12 +2268,13 @@ async function readUserCrestEventStreams(
     const bodyNames = new Set<string>();
     for (const streamEntry of streamEntries) {
       if (isAtomicTemporaryName(streamEntry.name)) continue;
-      const eventMatch = USER_CREST_EVENT_FILE_PATTERN.exec(streamEntry.name);
-      if (eventMatch !== null && streamEntry.isFile()) {
+      const admitted = reading.library || streamEntry.isFile();
+      const eventMatch = CREST_EVENT_FILE_PATTERN.exec(streamEntry.name);
+      if (eventMatch !== null && admitted) {
         files.push({ name: streamEntry.name, sequence: Number(eventMatch[1]), eventHash: eventMatch[2] as string });
         continue;
       }
-      if (USER_CREST_BODY_FILE_PATTERN.test(streamEntry.name) && streamEntry.isFile()) {
+      if (CREST_BODY_FILE_PATTERN.test(streamEntry.name) && admitted) {
         bodyNames.add(streamEntry.name);
         continue;
       }
@@ -1938,23 +2287,34 @@ async function readUserCrestEventStreams(
         fail("KNOWLEDGE_PARTIAL_STATE", `${deviceId}: event stream has a gap or fork at sequence ${index + 1}`);
       }
       const eventPath = resolve(streamRoot, file.name);
-      const event = validateUserCrestEvent(parseCanonicalObject(await readUserCrestFile(eventPath, KNOWLEDGE_LIMITS.maximumMetadataBytes + 4_096), "user crest event", "KNOWLEDGE_RECORD_INVALID"), deviceId, file.name);
+      const event = reading.validate(parseCanonicalObject(await readFileOf(eventPath, reading.maximumEventBytes), "crest event", "KNOWLEDGE_RECORD_INVALID"), deviceId, file.name);
       if (event.sequence !== file.sequence || event.eventHash !== file.eventHash || event.priorHash !== priorHash) {
         fail("KNOWLEDGE_PARTIAL_STATE", `${deviceId}: event chain breaks at sequence ${file.sequence}`);
       }
-      const bodyPath = resolve(streamRoot, event.body.file);
-      if (!bodyNames.has(event.body.file)) fail("KNOWLEDGE_PARTIAL_STATE", `${deviceId}/${file.name}: body reference is missing`);
-      await assertUserCrestBodyReference(bodyPath, event.body.bytes);
-      const body = bodyMode === "full" ? await readUserCrestFile(bodyPath, KNOWLEDGE_LIMITS.maximumBodyBytes) : null;
-      if (body !== null) validateMetadataBody(event.metadata, body, null);
+      let body: Buffer | null = null;
+      let bodyPath = eventPath;
+      let readBody = async (): Promise<Buffer> => fail("KNOWLEDGE_RECORD_INVALID", `${event.metadata.id}:body was not admitted`);
+      if (event.body !== null) {
+        const reference = event.body;
+        const referencedPath = resolve(streamRoot, reference.file);
+        if (!bodyNames.has(reference.file)) fail("KNOWLEDGE_PARTIAL_STATE", `${deviceId}/${file.name}: body reference is missing`);
+        if (!reading.library) await assertUserCrestBodyReference(referencedPath, reference.bytes);
+        body = bodyMode === "full" ? await readFileOf(referencedPath, KNOWLEDGE_LIMITS.maximumBodyBytes) : null;
+        if (body !== null) validateMetadataBody(event.metadata, body, reading.linkState);
+        bodyPath = referencedPath;
+        readBody = async () => readFileOf(referencedPath, KNOWLEDGE_LIMITS.maximumBodyBytes);
+      }
       units.push({
         metadataPath: eventPath,
         bodyPath,
         metadata: event.metadata,
         body,
-        readBody: async () => readUserCrestFile(bodyPath, KNOWLEDGE_LIMITS.maximumBodyBytes),
+        readBody,
         lineage: deviceId,
         event: { sequence: event.sequence, eventHash: event.eventHash },
+        replaces: event.replaces,
+        chain: event.chain,
+        storedDigest: recordDigest(event.metadata),
       });
       priorHash = event.eventHash;
       eventCount += 1;
@@ -1968,28 +2328,34 @@ async function readUserCrestEventStreams(
   return { units, eventCount, heads };
 }
 
-interface UserCrestProjection {
-  readonly units: readonly UserCrestUnit[];
+interface CrestProjection {
+  readonly units: readonly CrestUnit[];
   readonly unresolvedConflicts: readonly (readonly string[])[];
-  readonly duplicates: readonly UserCrestDuplicate[];
+  readonly duplicates: readonly CrestDuplicate[];
 }
 
 // Of the cards that replace one card, the one its projected supersededBy names: the latest
 // written, and of those written at one instant the last in canonical id order.
-function latestReplacement(replacements: readonly UserCrestUnit[]): UserCrestUnit {
+function latestReplacement(replacements: readonly CrestUnit[]): CrestUnit {
   return [...replacements].sort((left, right) => {
     const leftAt = parseStrictInstant(left.metadata.updatedAt);
     const rightAt = parseStrictInstant(right.metadata.updatedAt);
     return leftAt === rightAt ? compareCanonicalText(left.metadata.id, right.metadata.id) : leftAt < rightAt ? -1 : 1;
-  }).at(-1) as UserCrestUnit;
+  }).at(-1) as CrestUnit;
 }
 
-// TCRN-CROSS-SUB-310 (MIN-235 D7; R14 (a)): the user crest's cards, merged from every writer.
-// A shared folder can deliver one device's events after another device has already written: two
-// cards about one thing then stand side by side although neither writer saw the other, which the
-// write-time conflict check exists to refuse. Such a pair is not a reason to refuse the whole
-// crest: it is returned as an unresolved conflict, and only its two cards leave default selection.
-// A pair counts only when its cards come from different writers and neither acknowledges the other:
+// The order records of one id are merged in: by writer (canonical, so the metadata/body layout's
+// `legacy` comes after every device id), and a writer's own records in the order it wrote them.
+function compareCrestRecords(left: CrestUnit, right: CrestUnit): number {
+  return compareCanonicalText(left.lineage, right.lineage) || (left.event?.sequence ?? 0) - (right.event?.sequence ?? 0);
+}
+
+// TCRN-CROSS-SUB-310 (MIN-235 D7; R14 (a)): a crest's cards, merged from every writer. A shared
+// folder can deliver one device's events after another device has already written: two cards about
+// one thing then stand side by side although neither writer saw the other, which the write-time
+// conflict check exists to refuse. Such a pair is not a reason to refuse the whole crest: it is
+// returned as an unresolved conflict, and only its two cards leave default selection. A pair counts
+// only when its cards were first written by different writers and neither acknowledges the other:
 // one writer scans before it writes, so the conflicts it saw were refused, or recorded in the new
 // card's coexistsWith (--coexist, or beside a card it supersedes). A write that supersedes either
 // card resolves the pair. A card replaced by more than one card -- two devices that replaced it
@@ -1998,67 +2364,99 @@ function latestReplacement(replacements: readonly UserCrestUnit[]): UserCrestUni
 //
 // TCRN-CROSS-SUB-413 (STORY-476 D7): two writers can also write one external key, and so one id,
 // before either sees the other's. That is not a reason to refuse the crest either. The records are
-// grouped by id: one record delivered twice, or written the same by two writers, is one card; a
-// writer holding two different records for one id is refused, since one writer scans before it
-// writes and a stream like that is not one this engine writes; and differing records from different
-// writers are the versions of a duplicate, held apart from the cards (UserCrestDuplicate). Each
-// version's own supersedes still replaces the card it names, and a card whose supersedes names the
-// duplicate's id replaces every version. Versions are not paired: they are withheld already.
-function projectUserCrestUnits(units: readonly UserCrestUnit[]): UserCrestProjection {
-  const written = new Map<string, UserCrestUnit[]>();
+// grouped by id: one record delivered twice, or written the same by two writers, is one record; a
+// writer that writes a second record for an id without replacing its first is refused, since one
+// writer scans before it writes and a stream like that is not one this engine writes; and differing
+// records from different writers that neither replaced are the versions of a duplicate, held apart
+// from the cards (CrestDuplicate). Each version's own supersedes still replaces the card it names,
+// and a card whose supersedes names the duplicate's id replaces every version. Versions are not
+// paired: they are withheld already.
+//
+// TCRN-CROSS-SUB-414 (STORY-476 D7): a library crest's card can be written again -- re-verified,
+// re-policied, its article refreshed -- as a new record naming the stored record it replaces. A
+// writer's latest record of an id stands for all its earlier ones; of the writers' latest records,
+// the ones no other record replaces are the card's current records: one is the card, more than one
+// a duplicate, so two devices that each rewrote one card before either saw the other's rewrite hold
+// both rewrites as versions and lose neither. A library crest event whose supersedes names a card
+// not delivered yet is admitted (`toleratePendingSupersedes`): the card is replaced when it arrives.
+// `linkState` is what a projected record is checked against: null for the user crest, whose cards
+// are checked against the card alone; a library's state, whose links the caller checks after the merge.
+function projectCrestUnits(units: readonly CrestUnit[], linkState: WorkspaceState | null, toleratePendingSupersedes: boolean): CrestProjection {
+  const written = new Map<string, CrestUnit[]>();
   for (const unit of units) written.set(unit.metadata.id, [...(written.get(unit.metadata.id) ?? []), unit]);
-  const byId = new Map<string, UserCrestUnit>();
-  const divergent = new Map<string, readonly UserCrestUnit[]>();
+  const byId = new Map<string, CrestUnit>();
+  const divergent = new Map<string, readonly CrestUnit[]>();
+  // The writer that first wrote each card: the one whose record replaces nothing.
+  const origins = new Map<string, string>();
   for (const [id, records] of written) {
-    const versions: UserCrestUnit[] = [];
-    for (const unit of [...records].sort((left, right) => compareCanonicalText(left.lineage, right.lineage))) {
-      if (versions.some((version) => canonicalJson(version.metadata) === canonicalJson(unit.metadata))) continue;
-      if (versions.some((version) => version.lineage === unit.lineage)) {
+    const distinct: CrestUnit[] = [];
+    for (const unit of [...records].sort(compareCrestRecords)) {
+      if (distinct.some((kept) => kept.storedDigest === unit.storedDigest)) continue;
+      distinct.push(unit);
+    }
+    const latest = new Map<string, CrestUnit>();
+    for (const unit of distinct) {
+      if (latest.has(unit.lineage) && unit.replaces === null) {
         fail("KNOWLEDGE_PARTIAL_STATE", `${id}: writer ${unit.lineage} holds conflicting events for one knowledge id`);
       }
-      versions.push(unit);
+      latest.set(unit.lineage, unit);
     }
-    if (versions.length === 1) byId.set(id, versions[0] as UserCrestUnit);
-    else divergent.set(id, versions);
+    const replaced = new Set(distinct.flatMap((unit) => unit.replaces === null ? [] : [unit.replaces]));
+    const current = [...latest.values()].filter((unit) => !replaced.has(unit.storedDigest));
+    if (current.length === 0) fail("KNOWLEDGE_PARTIAL_STATE", `${id}: its records replace one another`);
+    origins.set(id, (distinct.find((unit) => unit.replaces === null) ?? current[0] as CrestUnit).lineage);
+    if (current.length === 1) byId.set(id, current[0] as CrestUnit);
+    else divergent.set(id, current);
   }
-  const replacements = new Map<string, UserCrestUnit[]>();
+  const replacements = new Map<string, CrestUnit[]>();
+  // The stored records whose supersedes names a card not delivered yet.
+  const pendingSupersedes = new Set<string>();
   for (const unit of [...byId.values(), ...[...divergent.values()].flat()]) {
     if (unit.metadata.supersedes === null) continue;
     if (!byId.has(unit.metadata.supersedes) && !divergent.has(unit.metadata.supersedes)) {
+      if (toleratePendingSupersedes && unit.event !== null) {
+        pendingSupersedes.add(unit.storedDigest);
+        continue;
+      }
       fail("KNOWLEDGE_LINK_INVALID", `${unit.metadata.id}:supersedes:${unit.metadata.supersedes}`);
     }
     replacements.set(unit.metadata.supersedes, [...(replacements.get(unit.metadata.supersedes) ?? []), unit]);
   }
-  const projectReplaced = (unit: UserCrestUnit): UserCrestUnit => {
+  const projectReplaced = (unit: CrestUnit): CrestUnit => {
     const successors = replacements.get(unit.metadata.id);
-    // A card the metadata/body layout already marked replaced keeps the mark it was written with.
+    // A card whose own record already carries the mark keeps the mark it was written with.
     if (successors === undefined || unit.metadata.extensions.supersededBy !== undefined) return unit;
     const successor = latestReplacement(successors);
-    const metadata = validateExistingMetadataShape({
+    const replacedMetadata: KnowledgeUnitMetadata = {
       ...unit.metadata,
       extensions: { ...unit.metadata.extensions, supersededBy: successor.metadata.id },
       revision: unit.metadata.revision + 1,
       updatedAt: successor.metadata.updatedAt,
-    }, null);
+    };
+    const metadata = linkState === null
+      ? validateExistingMetadataShape(replacedMetadata, null)
+      : validateMetadataShape(replacedMetadata as unknown as Readonly<Record<string, JsonValue>>, linkState, true);
     return { ...unit, metadata };
   };
   const projected = [...byId.values()].map(projectReplaced)
     .sort((left, right) => compareCanonicalText(left.metadata.id, right.metadata.id));
-  const duplicates = [...divergent].map(([id, versions]): UserCrestDuplicate => ({
+  const duplicates = [...divergent].map(([id, versions]): CrestDuplicate => ({
     id,
-    externalKey: (versions[0] as UserCrestUnit).metadata.externalKey,
+    externalKey: (versions[0] as CrestUnit).metadata.externalKey,
     versions: versions.map(projectReplaced),
   })).sort((left, right) => compareCanonicalText(left.id, right.id));
   const byProjectedId = new Map(projected.map((unit) => [unit.metadata.id, unit.metadata]));
-  for (const duplicate of duplicates) byProjectedId.set(duplicate.id, (duplicate.versions[0] as UserCrestUnit).metadata);
-  for (const unit of [...projected, ...duplicates.flatMap((duplicate) => duplicate.versions)]) validateSupersedesLink(unit.metadata, byProjectedId);
+  for (const duplicate of duplicates) byProjectedId.set(duplicate.id, (duplicate.versions[0] as CrestUnit).metadata);
+  for (const unit of [...projected, ...duplicates.flatMap((duplicate) => duplicate.versions)]) {
+    if (!pendingSupersedes.has(unit.storedDigest)) validateSupersedesLink(unit.metadata, byProjectedId);
+  }
   const unresolvedConflicts: (readonly string[])[] = [];
   for (let leftIndex = 0; leftIndex < projected.length; leftIndex += 1) {
-    const left = projected[leftIndex] as UserCrestUnit;
+    const left = projected[leftIndex] as CrestUnit;
     if (!countsTowardCapacity(left.metadata)) continue;
     for (let rightIndex = leftIndex + 1; rightIndex < projected.length; rightIndex += 1) {
-      const right = projected[rightIndex] as UserCrestUnit;
-      if (!countsTowardCapacity(right.metadata) || left.lineage === right.lineage) continue;
+      const right = projected[rightIndex] as CrestUnit;
+      if (!countsTowardCapacity(right.metadata) || origins.get(left.metadata.id) === origins.get(right.metadata.id)) continue;
       const conflicts = knowledgeConflictHits([left.metadata], right.metadata.subject, [right.metadata.id]).length > 0 ||
         knowledgeConflictHits([right.metadata], left.metadata.subject, [left.metadata.id]).length > 0;
       const acknowledged = left.metadata.extensions.coexistsWith?.includes(right.metadata.id) === true ||
@@ -2070,27 +2468,27 @@ function projectUserCrestUnits(units: readonly UserCrestUnit[]): UserCrestProjec
 }
 
 // The ids of the cards an unresolved conflict holds out of default selection.
-function unresolvedConflictIds(scan: Pick<UserCrestScan, "unresolvedConflicts">): ReadonlySet<string> {
+function unresolvedConflictIds(scan: Pick<CrestScan, "unresolvedConflicts">): ReadonlySet<string> {
   return new Set(scan.unresolvedConflicts.flat());
 }
 
 // TCRN-CROSS-SUB-413: a duplicate is unresolved while one of its versions is still live -- not
 // replaced and not retired. A card whose supersedes names its id resolves it.
-function unresolvedDuplicates(scan: Pick<UserCrestScan, "duplicates">): readonly UserCrestDuplicate[] {
+function unresolvedDuplicates(scan: Pick<CrestScan, "duplicates">): readonly CrestDuplicate[] {
   return scan.duplicates.filter((duplicate) => duplicate.versions.some((version) => countsTowardCapacity(version.metadata)));
 }
 
-// Every record the user crest holds -- its cards and every version of every duplicate -- in
-// canonical id order, the versions of one id in their canonical writer order: what its index view,
-// its budget and a `--selection all` list read.
-function userCrestRecords(scan: Pick<UserCrestScan, "units" | "duplicates">): readonly ScannedKnowledgeUnit[] {
+// Every record a crest holds -- its cards and every version of every duplicate -- in canonical id
+// order, the versions of one id in their canonical writer order: what its index view, its budget
+// and a `--selection all` list read.
+function crestRecords(scan: Pick<CrestScan, "units" | "duplicates">): readonly CrestUnit[] {
   return [...scan.units, ...scan.duplicates.flatMap((duplicate) => duplicate.versions)]
     .sort((left, right) => compareCanonicalText(left.metadata.id, right.metadata.id));
 }
 
 // Which writer holds a version, and where: the device whose event stream holds it, with the event's
 // sequence and hash; all three null for a version the metadata/body layout holds.
-function duplicateVersionIdentity(version: UserCrestUnit): Readonly<Record<string, JsonValue>> {
+function duplicateVersionIdentity(version: CrestUnit): Readonly<Record<string, JsonValue>> {
   return version.event === null
     ? { deviceId: null, sequence: null, eventHash: null }
     : { deviceId: version.lineage, sequence: version.event.sequence, eventHash: version.event.eventHash };
@@ -2098,7 +2496,7 @@ function duplicateVersionIdentity(version: UserCrestUnit): Readonly<Record<strin
 
 // The diagnostic entry of one duplicate, as knowledge-list, a read of its id and recall name it
 // (knowledge-core-v1.md, "Storage and authority").
-function duplicateDiagnostic(duplicate: UserCrestDuplicate): Readonly<Record<string, JsonValue>> {
+function duplicateDiagnostic(duplicate: CrestDuplicate): Readonly<Record<string, JsonValue>> {
   return {
     id: duplicate.id,
     externalKey: duplicate.externalKey,
@@ -2145,7 +2543,7 @@ async function scanUserCrest(
   const legacyLayout = hasLegacyMetadata && hasLegacyBodies;
   await assertUserCrestRootEntries(storeRoot, legacyLayout, hasEvents, allowClaim);
   if (!legacyLayout && !hasEvents) fail("KNOWLEDGE_PARTIAL_STATE", "user crest event streams are missing");
-  let legacyUnits: readonly UserCrestUnit[] = [];
+  let legacyUnits: readonly CrestUnit[] = [];
   if (legacyLayout) {
     const metadataRoot = await boundDirectory(resolve(storeRoot, "metadata"), storeRoot);
     const bodiesRoot = await boundDirectory(resolve(storeRoot, "bodies"), storeRoot);
@@ -2155,13 +2553,21 @@ async function scanUserCrest(
       danglingWorkLinks: null,
       body: (metadata, body) => validateMetadataBody(metadata, body, null),
     });
-    legacyUnits = legacy.units.map((unit): UserCrestUnit => ({ ...unit, lineage: USER_CREST_LEGACY_LINEAGE, event: null }));
+    legacyUnits = legacy.units.map(metadataBodyLayoutUnit);
   }
-  const streams = hasEvents ? await readUserCrestEventStreams(storeRoot, bodyMode) : { units: [], eventCount: 0, heads: [] };
-  const { units, unresolvedConflicts, duplicates } = projectUserCrestUnits([...legacyUnits, ...streams.units]);
+  const streams = hasEvents
+    ? await readCrestEventStreams(storeRoot, bodyMode, {
+      linkState: null,
+      validate: (value, deviceId, filename) => ({ ...validateUserCrestEvent(value, deviceId, filename), replaces: null, chain: null }),
+      maximumEventBytes: KNOWLEDGE_LIMITS.maximumMetadataBytes + 4_096,
+      library: false,
+      hooks: {},
+    })
+    : { units: [], eventCount: 0, heads: [] };
+  const { units, unresolvedConflicts, duplicates } = projectCrestUnits([...legacyUnits, ...streams.units], null, false);
   // TCRN-CROSS-SUB-413: every live version of a duplicate is live body bytes until a card
   // supersedes its id; the index view lists every version beside the cards.
-  const records = userCrestRecords({ units, duplicates }).map((unit) => unit.metadata);
+  const records = crestRecords({ units, duplicates }).map((unit) => unit.metadata);
   // O-1 is pending (R14 (b)): a merge whose live bodies exceed the budget is refused whole here,
   // unchanged; recall reports the refusal as a degraded user crest (readRecallCards).
   const capacityBytes = capacityBodyBytes(records);
@@ -2179,7 +2585,7 @@ async function scanUserCrest(
   await projectCachedView(backend, index);
   return {
     storeRoot, device: location.device, eventOnly: !legacyLayout, eventHeads: streams.heads, marker: projectedMarker, units, index,
-    capacity: { bodyBytes: capacityBytes, limit: aggregateLimit }, unresolvedConflicts, duplicates,
+    capacity: { bodyBytes: capacityBytes, limit: aggregateLimit }, unresolvedConflicts, duplicates, awaitingChain: [],
   };
 }
 
@@ -2287,6 +2693,11 @@ function assertStoreScope(scope: unknown): asserts scope is KnowledgeStoreScope 
   }
 }
 
+// TCRN-CROSS-SUB-414: what a library crest write, and a rebase, read first: the whole crest, every
+// body bound (a mutation validates every body binding). A write takes no claim of its own -- it
+// appends to this device's stream under this machine's lock -- so a mutation claim can only be one
+// an interrupted writer of the metadata/body layout left, which knowledge-recover completes; until
+// then the crest is KNOWLEDGE_LOCKED rather than partial.
 async function mutationAdmissionScan(workspaceRoot: string, options: KnowledgeReadOptions, rebase = false): Promise<KnowledgeStoreScan> {
   try {
     return await scanKnowledgeStore(workspaceRoot, options, false, "full", rebase);
@@ -2294,34 +2705,6 @@ async function mutationAdmissionScan(workspaceRoot: string, options: KnowledgeRe
     if (error instanceof KnowledgeCoreError && error.reasonCode === "KNOWLEDGE_PARTIAL_STATE") {
       const root = await knowledgeStorePath(workspaceRoot);
       if (await claimPresence(root) === "present") fail("KNOWLEDGE_LOCKED", "knowledge mutation claim exists");
-    }
-    throw error;
-  }
-}
-
-async function acquireMutationClaim(scan: KnowledgeStoreScan): Promise<KnowledgeMutationClaim> {
-  await assertKnowledgeWritable(scan.workspaceRoot);
-  return claimKnowledgeStore(scan);
-}
-
-// The claim itself, in the store root of a library's crest or of the user crest: the O_EXCL
-// crash journal a recovery reads.
-async function claimKnowledgeStore(scan: Pick<CrestScan, "storeRoot" | "marker">): Promise<KnowledgeMutationClaim> {
-  const token = randomBytes(24).toString("hex");
-  const acquiredAt = new Date().toISOString();
-  try {
-    const claim = await writeExclusiveFile(resolve(scan.storeRoot, "mutation.claim"), canonicalJson({
-      schemaVersion: "tcrn.knowledge-mutation-claim.v1",
-      workspaceId: scan.marker.workspaceId,
-      version: scan.marker.version,
-      token,
-      pid: process.pid,
-      acquiredAt,
-    }));
-    return { ...claim, workspaceId: scan.marker.workspaceId, token, pid: process.pid, acquiredAt };
-  } catch (error) {
-    if (error instanceof KnowledgeCoreError && error.reasonCode === "KNOWLEDGE_ALREADY_EXISTS") {
-      fail("KNOWLEDGE_LOCKED", "knowledge mutation claim exists");
     }
     throw error;
   }
@@ -2387,7 +2770,7 @@ async function recoverUserCrestUnlocked(location: UserCrestLocation, options: Kn
   // the streams and refuse every later read. What recovery repairs is this device's derived index
   // and the claim an interrupted writer of the metadata/body layout left; it deletes no body.
   const backend = userCrestBackend(scan.storeRoot, location.device, options);
-  await writeIndex(backend, scan.marker, userCrestRecords(scan).map((unit) => unit.metadata));
+  await writeIndex(backend, scan.marker, crestRecords(scan).map((unit) => unit.metadata));
   await releaseMutationClaim(scan.storeRoot, boundClaim);
   await scanUserCrest(location, options);
   return {
@@ -2414,31 +2797,17 @@ async function recoverKnowledgeStoreUnlocked(workspaceRoot: string, options: Kno
     boundClaim.workspaceId !== scan.marker.workspaceId || !sameIdentity(boundClaim.identity, claim.identity)) {
     fail("KNOWLEDGE_SOURCE_CHANGED", "knowledge mutation claim changed during recovery");
   }
+  // TCRN-CROSS-SUB-414 (MIN-235 D7): recovery never writes the root manifest. The marker a scan
+  // answers is a projection over every event stream (scanLibraryCrest), and persisting it would bind
+  // the manifest to one moment of the streams and of the chain. What recovery completes is the stopped
+  // write of the metadata/body layout that left the claim: this device's derived index is projected
+  // again, and a record that write retired gives back the body it still holds, as that layout's
+  // retire did. No event stream is touched.
   const backend = storeBackendFor(scan.storeRoot, options);
-  const readView = async (): Promise<Readonly<Record<string, JsonValue>>> => {
-    const viewValue = parseCanonicalObject(await backend.readKnowledgeView(), "knowledge index", "KNOWLEDGE_RECORD_INVALID");
-    if (viewValue.schemaVersion !== "tcrn.knowledge-index.v1" || viewValue.authority !== "derived-rebuildable" ||
-      viewValue.workspaceId !== scan.marker.workspaceId || viewValue.eventHighWaterDigest !== scan.marker.eventHighWaterDigest ||
-      !Number.isSafeInteger(viewValue.version) || Number(viewValue.version) < 0 || !Array.isArray(viewValue.records) ||
-      typeof viewValue.indexDigest !== "string" || !/^[a-f0-9]{64}$/u.test(viewValue.indexDigest)) {
-      fail("KNOWLEDGE_RECORD_INVALID", "knowledge index fields");
-    }
-    return viewValue;
-  };
-  // A library's view is this device's cache (the scan above has just projected it again), so it
-  // cannot tell whether the interrupted mutation wrote records the marker does not count yet;
-  // the version then advances, which is safe whenever it is not needed.
-  const viewValue = scan.viewsRoot === null ? null : await readView();
-  const indexNeedsVersionAdvance = viewValue === null || (scan.marker.version === Number(viewValue.version) &&
-    canonicalJson(viewValue) !== canonicalJson(scan.index));
-  const marker: KnowledgeStoreMarker = indexNeedsVersionAdvance
-    ? { ...scan.marker, version: scan.marker.version + 1 }
-    : scan.marker;
-  await backend.writeKnowledgeMarker(canonicalJson(marker));
-  await writeIndex(backend, marker, scan.units.map((unit) => unit.metadata));
+  await writeIndex(backend, scan.marker, crestRecords(scan).map((unit) => unit.metadata));
   let reclaimedRetiredBodies = 0;
-  for (const unit of scan.units) {
-    if (unit.metadata.lifecycle !== "retired" || unit.body === null) continue;
+  for (const unit of crestRecords(scan)) {
+    if (unit.event !== null || unit.metadata.lifecycle !== "retired" || unit.body === null) continue;
     if (backend instanceof SegmentedKnowledgeStoreBackend) await backend.removeKnowledgeBody(unit.metadata.id);
     else await rm(unit.bodyPath, { force: true });
     reclaimedRetiredBodies += 1;
@@ -2449,7 +2818,7 @@ async function recoverKnowledgeStoreUnlocked(workspaceRoot: string, options: Kno
     schemaVersion: "tcrn.knowledge-recovery-result.v1",
     reasonCode: "KNOWLEDGE_RECOVERED",
     recovered: true,
-    version: marker.version,
+    version: scan.marker.version,
     reclaimedRetiredBodies,
   };
 }
@@ -2665,23 +3034,20 @@ async function initializeKnowledgeStoreUnlocked(workspaceRootInput: string, opti
   const workspaceRoot = await boundDirectory(workspaceRootInput);
   await assertKnowledgeWritable(workspaceRoot);
   const storeRoot = await ensureEmptyStoreRoot(await knowledgeStorePath(workspaceRoot), workspaceRoot);
-  const metadataRoot = await ensureNewDirectory(resolve(storeRoot, "metadata"), storeRoot);
-  const bodiesRoot = await ensureNewDirectory(resolve(storeRoot, "bodies"), storeRoot);
-  void metadataRoot;
-  void bodiesRoot;
-  // A library's index view goes to the device cache (libraryKnowledgeViewFile); only an old-layout
-  // store, which this engine no longer creates, had a views/ directory in its root.
+  // TCRN-CROSS-SUB-414 (MIN-235 D7): initialization is the one operation of this engine that writes
+  // a library crest's root manifest, and it creates it once, exclusively, never replacing one. The
+  // manifest binds the library id and that id's own digest, not the chain head of the moment, so it
+  // holds the same bytes whichever device writes it. Cards go to each device's event stream, which
+  // the first write lays out; the index view is this device's cache (libraryKnowledgeViewFile).
   const marker: KnowledgeStoreMarker = {
     schemaVersion: KNOWLEDGE_STORE_SCHEMA_VERSION,
     workspaceId: workspace.metadata.workspaceId,
-    eventHighWaterDigest: workspace.headEventHash,
+    eventHighWaterDigest: libraryCrestIdentityDigest(workspace.metadata.workspaceId),
     version: 0,
     disposable: true,
     authority: "metadata-index-authority-body-separate",
   };
-  const backend = storeBackendFor(storeRoot);
-  await backend.writeKnowledgeMarker(canonicalJson(marker));
-  await backend.writeKnowledgeView(canonicalJson(knowledgeIndex(marker, [])));
+  await writeExclusiveFile(resolve(storeRoot, "store.json"), canonicalJson(marker));
   await syncDirectory(storeRoot);
   await scanKnowledgeStore(workspaceRoot);
   return {
@@ -2695,17 +3061,24 @@ async function initializeKnowledgeStoreUnlocked(workspaceRootInput: string, opti
   };
 }
 
+// TCRN-CROSS-SUB-414: the high water a library crest's root manifest binds when it is created: the
+// library id's own digest, as the user crest's binds its identity's.
+function libraryCrestIdentityDigest(libraryId: string): string {
+  return createHash("sha256").update(libraryId, "utf8").digest("hex");
+}
+
 export async function readKnowledgeStoreMarker(workspaceRoot: string, options: KnowledgeReadOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
-  // INC-244: this is the bounded diagnostic read used before automatic rebase.
-  // It is separate from validateKnowledgeStore so the strict validation contract
-  // cannot accidentally become a trailing-read exemption.
+  // INC-244: the bounded diagnostic read of the marker. It is separate from validateKnowledgeStore
+  // so the strict validation contract cannot accidentally become a trailing-read exemption.
+  // TCRN-CROSS-SUB-414: a library's marker is answered as projected, its version advanced by every
+  // event and its high water the chain head the read was bound against.
   const scan = await scanKnowledgeStore(workspaceRoot, { ...options, allowTrailing: true }, false, "metadata-only");
   return {
     schemaVersion: "tcrn.knowledge-store-marker-read.v1",
     reasonCode: "KNOWLEDGE_STORE_MARKER_READ",
     workspaceId: scan.marker.workspaceId,
     version: scan.marker.version,
-    records: scan.units.length,
+    records: crestRecords(scan).length,
     indexDigest: scan.index.indexDigest ?? "",
     eventHighWaterDigest: scan.marker.eventHighWaterDigest,
     ...(scan.marker.lastSweepAt === undefined ? {} : { lastSweepAt: scan.marker.lastSweepAt }),
@@ -2713,14 +3086,30 @@ export async function readKnowledgeStoreMarker(workspaceRoot: string, options: K
   };
 }
 
+// TCRN-CROSS-SUB-414: the strict surfaces -- validate, a checkpoint and a rebase -- answer only for
+// a crest this device's chain holds whole. A record written against chain events this device has not
+// received (a partial restore that left the crest newer than the chain, or a folder that delivered a
+// card before the chain events it was written against) refuses them, naming the records.
+function assertChainHoldsCrest(scan: KnowledgeStoreScan): void {
+  if (scan.awaitingChain.length === 0) return;
+  fail("KNOWLEDGE_HIGH_WATER_MISMATCH", `${scan.awaitingChain.length} crest record(s) await chain events this device does not hold`, {
+    awaitingChain: awaitingChainDiagnostic(scan.awaitingChain),
+  });
+}
+
+function awaitingChainDiagnostic(entries: readonly AwaitingChainEntry[]): JsonValue {
+  return entries.map((entry) => ({ id: entry.id, deviceId: entry.deviceId, sequence: entry.sequence, eventHash: entry.eventHash }));
+}
+
 export async function validateKnowledgeStore(workspaceRoot: string, options: KnowledgeReadOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
   const scan = await scanKnowledgeStore(workspaceRoot, options);
+  assertChainHoldsCrest(scan);
   return {
     schemaVersion: "tcrn.knowledge-store-validation.v1",
     reasonCode: "KNOWLEDGE_STORE_VALID",
     workspaceId: scan.marker.workspaceId,
     version: scan.marker.version,
-    records: scan.units.length,
+    records: crestRecords(scan).length,
     indexDigest: scan.index.indexDigest ?? "",
     eventHighWaterDigest: scan.marker.eventHighWaterDigest,
     // TCRN-CROSS-SUB-309: the capacity report -- live card body bytes against the
@@ -2730,43 +3119,19 @@ export async function validateKnowledgeStore(workspaceRoot: string, options: Kno
   };
 }
 
-// TCRN-CROSS-STORY-476 R5: the store a create lands in -- a library's crest or the user crest --
-// and how that store is laid out on first use, scanned, claimed and written.
-interface CrestWriteTarget<S extends CrestScan> {
-  readonly scope: KnowledgeStoreScope;
-  readonly prepare: () => Promise<void>;
-  readonly admissionScan: (options: KnowledgeReadOptions) => Promise<S>;
-  readonly scan: (options: KnowledgeReadOptions, allowClaim: boolean) => Promise<S>;
-  readonly claim: (scan: S) => Promise<KnowledgeMutationClaim>;
-  readonly backend: (storeRoot: string, options: KnowledgeReadOptions) => StoreBackend;
-  // What a card's links are checked against: the library's state, or null for the user crest.
-  readonly linkState: (scan: S) => WorkspaceState | null;
-}
-
-function libraryCrestTarget(workspaceRoot: string): CrestWriteTarget<KnowledgeStoreScan> {
-  return {
-    scope: "project",
-    prepare: async () => undefined,
-    admissionScan: (options) => mutationAdmissionScan(workspaceRoot, options),
-    scan: (options, allowClaim) => scanKnowledgeStore(workspaceRoot, options, allowClaim),
-    claim: (scan) => acquireMutationClaim(scan),
-    backend: (storeRoot, options) => storeBackendFor(storeRoot, options),
-    linkState: (scan) => scan.workspace,
-  };
-}
-
 /**
  * Write one card. TCRN-CROSS-STORY-476 R5: scope "user" writes it to this user's crest, under this
  * machine's lock of the user crest, and the crest's first card lays the crest out; the library at
  * `workspaceRoot` still supplies the language policy and the source files the card names. Every
- * other scope writes the library's crest, as it always did.
+ * other scope writes the library's crest: TCRN-CROSS-SUB-414, as an event appended to this device's
+ * stream of it (createLibraryCrestEvent).
  */
 export async function createKnowledgeUnit(workspaceRoot: string, input: CreateKnowledgeUnitInput, options: KnowledgeMutationOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
   if (input.scope === "user") {
     const location = await locateUserCrest();
     return withUserCrestLock(location, () => createUserCrestEvent(workspaceRoot, input, options, location));
   }
-  return withCrestWriteLock(workspaceRoot, () => createKnowledgeUnitUnlocked(workspaceRoot, input, options, libraryCrestTarget(workspaceRoot)));
+  return withCrestWriteLock(workspaceRoot, () => createLibraryCrestEvent(workspaceRoot, input, options));
 }
 
 async function createUserCrestEvent(
@@ -2800,7 +3165,7 @@ async function createUserCrestEvent(
   // much as a card: a conflict it scores against (named once per id), an id and external key it may
   // not reuse, and live body bytes of the budget. A write whose supersedes names a duplicate's id
   // replaces every version of it at once; it is refused only when every version is retired.
-  const records = userCrestRecords(scan);
+  const records = crestRecords(scan);
   const replacedRecords = metadata.supersedes === null ? [] : records.filter((unit) => unit.metadata.id === metadata.supersedes);
   if (metadata.supersedes !== null && replacedRecords.every((unit) => unit.metadata.lifecycle === "retired")) {
     fail("KNOWLEDGE_LINK_INVALID", `${metadata.id}:supersedes:${metadata.supersedes}`);
@@ -2815,7 +3180,8 @@ async function createUserCrestEvent(
   }
   // TCRN-CROSS-SUB-310: the conflicts this write saw and was admitted beside -- with --coexist, or
   // beside the card it supersedes -- are recorded in the card, so a reader tells them from a
-  // conflict no writer saw (projectUserCrestUnits). A library's write records only --coexist.
+  // conflict no writer saw (projectCrestUnits). A library's write records them the same way
+  // (TCRN-CROSS-SUB-414, createLibraryCrestEvent).
   const written: KnowledgeUnitMetadata = conflicts.length === 0
     ? metadata
     : { ...metadata, extensions: { coexistsWith: conflicts.slice(0, KNOWLEDGE_LIMITS.maximumQueryResults) } };
@@ -2886,119 +3252,188 @@ async function createUserCrestEvent(
   };
 }
 
-async function createKnowledgeUnitUnlocked<S extends CrestScan>(
+// TCRN-CROSS-SUB-414: where this device appends to a library's crest -- its own stream,
+// crest/events/<device id>/, laid out by its first write -- and the head the write continues.
+interface LibraryCrestStream {
+  readonly streamRoot: string;
+  readonly deviceId: string;
+  readonly prior: CrestEventHead | undefined;
+}
+
+async function libraryCrestStream(scan: KnowledgeStoreScan): Promise<LibraryCrestStream> {
+  const eventsPath = resolve(scan.storeRoot, CREST_EVENTS_DIRECTORY);
+  try {
+    await mkdir(eventsPath, { mode: 0o700 });
+  } catch (error) {
+    if ((error as { code?: string }).code !== "EEXIST") fail("KNOWLEDGE_PATH_INVALID", `${eventsPath}:${String(error)}`);
+  }
+  const eventsRoot = await boundDirectory(eventsPath, scan.storeRoot);
+  const { device } = await readOrCreateDevice({ home: deviceHome() });
+  const streamPath = resolve(eventsRoot, device.deviceId);
+  try {
+    await mkdir(streamPath, { mode: 0o700 });
+  } catch (error) {
+    if ((error as { code?: string }).code !== "EEXIST") fail("KNOWLEDGE_PATH_INVALID", `${streamPath}:${String(error)}`);
+  }
+  const streamRoot = await boundDirectory(streamPath, eventsRoot);
+  return { streamRoot, deviceId: device.deviceId, prior: scan.eventHeads.find((head) => head.deviceId === device.deviceId) };
+}
+
+// TCRN-CROSS-SUB-414 (STORY-476 D7, MIN-235 D7): append one record to this device's stream of a
+// library's crest as the event after the head the write's scan read: its body first, then the event
+// that commits it, each created exclusively and never replaced. The event names the chain the write
+// was checked against and, for a card written again, the stored record it replaces. Nothing else of
+// the crest is written: not the root manifest, not another device's stream, not the metadata/body
+// layout, and no claim is taken; this machine's lock of the library is what serialises the writers
+// of this one stream.
+async function appendLibraryCrestEvent(
+  scan: KnowledgeStoreScan,
+  metadata: KnowledgeUnitMetadata,
+  body: Buffer | null,
+  replaces: CrestUnit | null,
+  faultAt: KnowledgeFaultPoint | undefined,
+): Promise<CrestEventHead> {
+  const stream = await libraryCrestStream(scan);
+  const sequence = (stream.prior?.sequence ?? 0) + 1;
+  if (!Number.isSafeInteger(sequence)) fail("KNOWLEDGE_LIMIT_EXCEEDED", "crest event sequence");
+  const chain = chainPositions(scan.workspace);
+  if (chain.length > CREST_EVENT_CHAIN_LIMIT) fail("KNOWLEDGE_LIMIT_EXCEEDED", "crest event chain");
+  const sequenceText = String(sequence).padStart(8, "0");
+  let reference: LibraryCrestEvent["body"] = null;
+  if (body !== null) {
+    reference = { file: `${sequenceText}-${metadata.bodySha256}.body`, sha256: metadata.bodySha256, bytes: metadata.bodyBytes };
+    await writeImmutableUserCrestFile(resolve(stream.streamRoot, reference.file), body);
+  }
+  crash("after-body-write", faultAt);
+  const unsigned: Omit<LibraryCrestEvent, "eventHash"> = {
+    schemaVersion: CREST_EVENT_SCHEMA_VERSION,
+    deviceId: stream.deviceId,
+    sequence,
+    occurredAt: metadata.updatedAt,
+    priorHash: stream.prior?.eventHash ?? null,
+    chain,
+    replaces: replaces?.storedDigest ?? null,
+    metadata,
+    body: reference,
+  };
+  const eventHash = canonicalSha256(unsigned as unknown as JsonValue);
+  const event = canonicalJson({ ...unsigned, eventHash } as unknown as JsonValue);
+  if (Buffer.byteLength(event, "utf8") > CREST_EVENT_MAXIMUM_BYTES) fail("KNOWLEDGE_LIMIT_EXCEEDED", "crest event");
+  await writeImmutableUserCrestFile(resolve(stream.streamRoot, `${sequenceText}-${eventHash}.json`), event);
+  crash("after-metadata-write", faultAt);
+  // The root manifest is not written: the event is the commit (initializeKnowledgeStore).
+  crash("after-marker-write", faultAt);
+  return { deviceId: stream.deviceId, sequence, eventHash };
+}
+
+// TCRN-CROSS-SUB-414: this device's index view once a write's event is committed, projected from the
+// write's own scan and the record it appended: what the next read projects, unless another device's
+// events arrive first, and then that read projects it again. It is a cache in the device directory,
+// and failing to write it never fails the write.
+async function projectViewAfterWrite(scan: KnowledgeStoreScan, records: readonly KnowledgeUnitMetadata[], options: KnowledgeReadOptions): Promise<void> {
+  await writeIndex(storeBackendFor(scan.storeRoot, options), { ...scan.marker, version: scan.marker.version + 1 }, records);
+}
+
+// A crest record's body, as an explicit read reads it: from its event stream, or through the store
+// backend for the metadata/body layout.
+async function crestRecordBody(scan: KnowledgeStoreScan, unit: CrestUnit, options: KnowledgeReadOptions): Promise<Buffer> {
+  if (unit.body !== null) return unit.body;
+  return unit.readBody === undefined ? storeBackendFor(scan.storeRoot, options).readKnowledgeBody(unit.metadata.id) : unit.readBody();
+}
+
+// TCRN-CROSS-SUB-414: write one card to a library's crest, as an event in this device's stream. The
+// write reads the whole crest first -- every writer's records merged -- and sees every record of it:
+// a card or a version of a duplicate is a conflict it scores against (named once per id), an id and
+// external key it may not reuse, and live body bytes of the budget. A write whose supersedes names a
+// duplicate's id replaces every version of it; the replaced card is not rewritten, since a read
+// projects the mark from this card's supersedes. The conflicts the write saw and was admitted beside
+// -- with --coexist, or beside the card it supersedes -- are recorded in the new card (SUB-310 (a)),
+// so a reader tells them from a conflict no writer saw. A committed event is answered from the
+// write's own scan, its version the scanned one plus one: nothing another device delivers meanwhile
+// can turn it into a refusal, and the next read reports any conflict it forms.
+async function createLibraryCrestEvent(
   workspaceRoot: string,
   input: CreateKnowledgeUnitInput,
   options: KnowledgeMutationOptions,
-  target: CrestWriteTarget<S>,
 ): Promise<Readonly<Record<string, JsonValue>>> {
   assertBoundedString(input.body, KNOWLEDGE_LIMITS.maximumBodyBytes, "body");
+  await assertKnowledgeWritable(resolve(workspaceRoot));
   const body = Buffer.from(input.body, "utf8");
   const workspace = await materializeWorkspace(workspaceRoot);
   const sourceDigest = input.sourceDigest && input.sourceDigest.length > 0
     ? input.sourceDigest
     : await calculateKnowledgeSourceDigest(workspaceRoot, workspace, input.sourceReferences, input.body);
   const metadata = buildMetadata({ ...input, sourceDigest }, body, workspace, options.languageProvider, options.host);
-  await target.prepare();
-  const initial = await target.admissionScan(options);
-  const claim = await target.claim(initial);
-  // WSC-6: every escape from the claim-held region that leaves this process alive must
-  // give the claim back. scanKnowledgeStore alone raises eight distinct reason codes, and
-  // one leaked claim bricks the store for good: each later mutationAdmissionScan re-maps
-  // the resulting partial state to KNOWLEDGE_LOCKED, and no verb can clear it.
-  //
-  // The KNOWLEDGE_FAULT_INJECTED exemption is deliberate. A real SIGKILL never runs a
-  // finally block, so a retained claim is the operating system's doing, not ours, and it
-  // is the signal that the store is mid-write. crash() is the only executable proxy for
-  // that scenario; releasing on it would turn the fault-injection tests into a weaker
-  // duplicate of the ordinary-error path and leave "a crash leaves the store claim-held"
-  // with no executable expression anywhere. This is why the reverify/policy/article
-  // finallys below are NOT the model to copy here.
-  let released = false;
-  try {
-    const scan = await target.scan(options, true);
-    const linkState = target.linkState(scan);
-    let superseded: ScannedKnowledgeUnit | undefined;
-    if (metadata.supersedes !== null) {
-      superseded = scan.units.find((unit) => unit.metadata.id === metadata.supersedes);
-      if (superseded === undefined || superseded.metadata.lifecycle === "retired") {
-        fail("KNOWLEDGE_LINK_INVALID", `${metadata.id}:supersedes:${metadata.supersedes}`);
-      }
-    }
-    // TCRN-CROSS-STORY-365: score before writing. Above the threshold the writer must have
-    // said which it is -- this card replaces those (--supersedes) or stands beside them
-    // (--coexist) -- and the refusal hands back the hit list rather than only naming it.
-    const conflicts = knowledgeConflictHits(
-      scan.units.map((unit) => unit.metadata),
-      metadata.subject,
-      metadata.supersedes === null ? [metadata.id] : [metadata.id, metadata.supersedes],
-    );
-    if (conflicts.length > 0 && metadata.supersedes === null && input.coexist !== true) {
-      fail("KNOWLEDGE_POSSIBLE_CONFLICT", conflicts.join(","), { conflicts: [...conflicts] });
-    }
-    const written: KnowledgeUnitMetadata = conflicts.length === 0 || metadata.supersedes !== null
-      ? metadata
-      : { ...metadata, extensions: { coexistsWith: conflicts.slice(0, KNOWLEDGE_LIMITS.maximumQueryResults) } };
-    // The replaced card carries the mark, so "which one did this replace" is answerable
-    // from either end and default retrieval drops the loser without deleting it.
-    const supersededMetadata: KnowledgeUnitMetadata | null = superseded === undefined ? null : {
-      ...superseded.metadata,
-      extensions: { ...superseded.metadata.extensions, supersededBy: written.id },
-      revision: superseded.metadata.revision + 1,
+  const scan = await mutationAdmissionScan(workspaceRoot, options);
+  // The chain the event will name is the one the scan read, so the card's links are held to it.
+  validateMetadataLinks(metadata, scan.workspace);
+  const records = crestRecords(scan);
+  const replacedRecords = metadata.supersedes === null ? [] : records.filter((unit) => unit.metadata.id === metadata.supersedes);
+  if (metadata.supersedes !== null && replacedRecords.every((unit) => unit.metadata.lifecycle === "retired")) {
+    fail("KNOWLEDGE_LINK_INVALID", `${metadata.id}:supersedes:${metadata.supersedes}`);
+  }
+  // TCRN-CROSS-STORY-365: score before writing. Above the threshold the writer must have said which
+  // it is -- this card replaces those (--supersedes) or stands beside them (--coexist) -- and the
+  // refusal hands back the hit list rather than only naming it.
+  const conflicts = [...new Set(knowledgeConflictHits(
+    records.map((unit) => unit.metadata),
+    metadata.subject,
+    metadata.supersedes === null ? [metadata.id] : [metadata.id, metadata.supersedes],
+  ))];
+  if (conflicts.length > 0 && metadata.supersedes === null && input.coexist !== true) {
+    fail("KNOWLEDGE_POSSIBLE_CONFLICT", conflicts.join(","), { conflicts: [...conflicts] });
+  }
+  const written: KnowledgeUnitMetadata = conflicts.length === 0
+    ? metadata
+    : { ...metadata, extensions: { coexistsWith: conflicts.slice(0, KNOWLEDGE_LIMITS.maximumQueryResults) } };
+  if (written !== metadata) validateMetadataBody(validateMetadataShape(written as unknown as Readonly<Record<string, JsonValue>>, scan.workspace), body, scan.workspace);
+  // The records this write replaces, as the next read projects them. A retired one gives no bytes
+  // back and is left as it is.
+  const replaced = new Map<CrestUnit, KnowledgeUnitMetadata>();
+  for (const unit of replacedRecords) {
+    if (unit.metadata.lifecycle === "retired") continue;
+    const supersededMetadata: KnowledgeUnitMetadata = {
+      ...unit.metadata,
+      extensions: { ...unit.metadata.extensions, supersededBy: written.id },
+      revision: unit.metadata.revision + 1,
       updatedAt: input.occurredAt,
     };
-    if (written !== metadata) validateMetadataBody(validateMetadataShape(written as unknown as Readonly<Record<string, JsonValue>>, linkState), body, linkState);
-    if (supersededMetadata !== null && superseded !== undefined) {
-      validateMetadataBody(validateExistingMetadataShape(supersededMetadata, linkState), requireBody(superseded), linkState);
-    }
-    const metadataBytes = Buffer.from(canonicalJson(written), "utf8");
-    const marker: KnowledgeStoreMarker = { ...scan.marker, version: scan.marker.version + 1 };
-    const projectedMetadata = [...scan.units.map((unit) =>
-      supersededMetadata !== null && unit.metadata.id === supersededMetadata.id ? supersededMetadata : unit.metadata), written];
-    // TCRN-CROSS-SUB-309: the create projection mirrors the scan's measure -- the live card
-    // bodies once this write lands. The new body joins it, and a card this write supersedes
-    // leaves it, which is how a replacement makes room rather than doubling the store.
-    // STORY-330: no record-count admission branch remains. The body budget and the
-    // canonical metadata/body limits are the capacity checks.
-    if (metadataBytes.length > KNOWLEDGE_LIMITS.maximumMetadataBytes) {
-      fail("KNOWLEDGE_LIMIT_EXCEEDED", "knowledge create budget");
-    }
-    // The scan measured knowledge.aggregateBytes against the same state (a library's settings, or
-    // the default for the user crest), so the limit is the scan's.
-    assertWithinCapacity(capacityBodyBytes(projectedMetadata), scan.capacity.limit, "knowledge create budget");
-    if (scan.units.some((unit) => unit.metadata.id === metadata.id || unit.metadata.externalKey === metadata.externalKey)) {
-      fail("KNOWLEDGE_DUPLICATE", metadata.id);
-    }
-    const backend = target.backend(scan.storeRoot, options);
-    await backend.writeKnowledgeBody(written.id, body);
-    crash("after-body-write", options.faultAt);
-    await backend.writeKnowledgeMetadata(written.id, metadataBytes);
-    if (supersededMetadata !== null) await backend.writeKnowledgeMetadata(supersededMetadata.id, canonicalJson(supersededMetadata));
-    crash("after-metadata-write", options.faultAt);
-    await backend.writeKnowledgeMarker(canonicalJson(marker));
-    crash("after-marker-write", options.faultAt);
-    await writeIndex(backend, marker, projectedMetadata);
-    await releaseMutationClaim(scan.storeRoot, claim);
-    released = true;
-    const final = await target.scan(options, false);
-    return {
-      schemaVersion: "tcrn.knowledge-create-result.v1",
-      reasonCode: "KNOWLEDGE_UNIT_CREATED",
-      id: written.id,
-      externalKey: written.externalKey,
-      revision: written.revision,
-      version: final.marker.version,
-      // A card in the user crest says so; a library's answer keeps the shape it always had.
-      ...(target.scope === "user" ? { scope: "user" } : {}),
-      ...(conflicts.length > 0 ? { conflicts: [...conflicts] } : {}),
-      ...(supersededMetadata === null ? {} : { superseded: supersededMetadata.id }),
-    };
-  } catch (error) {
-    if (error instanceof KnowledgeCoreError && error.reasonCode === "KNOWLEDGE_FAULT_INJECTED") released = true;
-    throw error;
-  } finally {
-    if (!released) await releaseMutationClaim(initial.storeRoot, claim);
+    validateMetadataBody(validateMetadataShape(supersededMetadata as unknown as Readonly<Record<string, JsonValue>>, scan.workspace, true), await crestRecordBody(scan, unit, options), scan.workspace);
+    replaced.set(unit, supersededMetadata);
   }
+  if (Buffer.byteLength(canonicalJson(written), "utf8") > KNOWLEDGE_LIMITS.maximumMetadataBytes) {
+    fail("KNOWLEDGE_LIMIT_EXCEEDED", "knowledge create budget");
+  }
+  // TCRN-CROSS-SUB-309: the live card bodies once this write lands. The new body joins them, and a
+  // card this write supersedes leaves them, which is how a replacement makes room rather than
+  // doubling the store. The scan measured knowledge.aggregateBytes against the same library.
+  const projectedMetadata = records.map((unit) => replaced.get(unit) ?? unit.metadata).concat(written);
+  assertWithinCapacity(capacityBodyBytes(projectedMetadata), scan.capacity.limit, "knowledge create budget");
+  if (records.some((unit) => unit.metadata.id === metadata.id || unit.metadata.externalKey === metadata.externalKey)) {
+    fail("KNOWLEDGE_DUPLICATE", metadata.id);
+  }
+  await appendLibraryCrestEvent(scan, written, body, null, options.faultAt);
+  await projectViewAfterWrite(scan, projectedMetadata, options);
+  return {
+    schemaVersion: "tcrn.knowledge-create-result.v1",
+    reasonCode: "KNOWLEDGE_UNIT_CREATED",
+    id: written.id,
+    externalKey: written.externalKey,
+    revision: written.revision,
+    version: scan.marker.version + 1,
+    ...(conflicts.length > 0 ? { conflicts: [...conflicts] } : {}),
+    ...(metadata.supersedes === null ? {} : { superseded: metadata.supersedes }),
+  };
+}
+
+// TCRN-CROSS-SUB-414: the card a re-verification, a policy update or an article refresh writes
+// again: the one card of that id. An id two writers wrote before either saw the other's is not one
+// card, and is refused (KNOWLEDGE_DUPLICATE) until a card that supersedes it resolves it.
+function libraryCrestCard(scan: KnowledgeStoreScan, id: string): CrestUnit {
+  if (scan.duplicates.some((duplicate) => duplicate.id === id)) fail("KNOWLEDGE_DUPLICATE", id);
+  const unit = scan.units.find((entry) => entry.metadata.id === id);
+  if (unit === undefined) fail("KNOWLEDGE_NOT_FOUND", id);
+  return unit;
 }
 
 export async function createKnowledgeArticle(
@@ -3115,8 +3550,8 @@ export interface CaptureKnowledgeUnitInput {
  *
  * The store version is optional because the caller of this verb is a Stop hook with no
  * reason to have read the marker first. Supplied, it is the ordinary compare-and-set;
- * omitted, it is read here and the mutation claim inside createKnowledgeUnit is what
- * serialises writers.
+ * omitted, it is read here and this machine's lock of the store is what serialises writers
+ * (TCRN-CROSS-SUB-414: a library card is an event appended to this device's stream).
  */
 export async function captureKnowledgeUnit(
   workspaceRoot: string,
@@ -3159,10 +3594,18 @@ export async function captureKnowledgeUnit(
   }, options);
 }
 
-// WSC-2: re-bind the store to the advanced workspace head after full per-record
-// re-validation. Invalid scope/project links still block the rebase; dangling work
-// links remain attached and are reported without blocking access. Single version step
-// under a mutation claim.
+// WSC-2: re-validate every record against the advanced workspace head. Invalid scope/project links
+// still block the rebase; dangling work links remain attached and are reported without blocking
+// access.
+//
+// TCRN-CROSS-SUB-414 (MIN-235 D7): a rebase no longer re-binds anything. A library crest's marker is
+// projected by every read at the chain head that read replayed (scanLibraryCrest), so there is no
+// stored high water to move, and rebasing writes nothing: not store.json, not a claim, not an event.
+// It is the full re-validation it always was -- every record's shape, body binding and links against
+// the chain as it stands -- refused as KNOWLEDGE_REBASE_BLOCKED for a scope/project offender and as
+// KNOWLEDGE_HIGH_WATER_MISMATCH for a record this device's chain does not hold yet; answered, it
+// reports the projected version and the chain head, and this device's index view is projected
+// again. knowledge-rebase and knowledge-batch --align-first stay accepted and answer the same shape.
 export async function rebaseKnowledgeStore(...args: Parameters<typeof rebaseKnowledgeStoreUnlocked>): Promise<Readonly<Record<string, JsonValue>>> {
   return withCrestWriteLock(args[0], () => rebaseKnowledgeStoreUnlocked(...args));
 }
@@ -3171,46 +3614,26 @@ async function rebaseKnowledgeStoreUnlocked(workspaceRoot: string, input: {
   readonly at: string;
 }, options: KnowledgeMutationOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
   assertStrictInstant(input.at);
-  const workspace = await materializeWorkspace(workspaceRoot);
-  const initial = await mutationAdmissionScan(workspaceRoot, options, true);
-  const claim = await acquireMutationClaim(initial);
-  // WSC-6: see createKnowledgeUnit for the full rationale, including why
-  // KNOWLEDGE_FAULT_INJECTED is exempt.
-  let released = false;
-  try {
-    const scan = await scanKnowledgeStore(workspaceRoot, options, true, "full", true);
-    // Scope/project offenders still block rebase. Dangling linked work is diagnostic only;
-    // neither this write nor its receipt retires or rewrites those records.
-    const offenders = scan.linkInvalid;
-    if (offenders.length > 0) {
-      fail("KNOWLEDGE_REBASE_BLOCKED", offenders.join(","));
-    }
-    const marker: KnowledgeStoreMarker = { ...scan.marker, eventHighWaterDigest: workspace.headEventHash ?? scan.marker.eventHighWaterDigest, version: scan.marker.version + 1 };
-    const backend = storeBackendFor(scan.storeRoot, options);
-    crash("after-metadata-write", options.faultAt);
-    await backend.writeKnowledgeMarker(canonicalJson(marker));
-    crash("after-marker-write", options.faultAt);
-    await writeIndex(backend, marker, scan.units.map((unit) => unit.metadata));
-    await releaseMutationClaim(scan.storeRoot, claim);
-    released = true;
-    const final = await scanKnowledgeStore(workspaceRoot, options);
-    return {
-      schemaVersion: "tcrn.knowledge-rebase-result.v1",
-      reasonCode: "KNOWLEDGE_STORE_REBASED",
-      version: final.marker.version,
-      eventHighWaterDigest: final.marker.eventHighWaterDigest,
-      // The v1 result keeps its two fields: a rebase that lands retired nothing and had no
-      // scope/project offender, since such an offender still refuses it.
-      retired: 0,
-      offenders: [],
-      ...(final.danglingWorkLinks.length === 0 ? {} : { danglingWorkLinks: final.danglingWorkLinks }),
-    };
-  } catch (error) {
-    if (error instanceof KnowledgeCoreError && error.reasonCode === "KNOWLEDGE_FAULT_INJECTED") released = true;
-    throw error;
-  } finally {
-    if (!released) await releaseMutationClaim(initial.storeRoot, claim);
+  await assertKnowledgeWritable(resolve(workspaceRoot));
+  const scan = await mutationAdmissionScan(workspaceRoot, options, true);
+  // Scope/project offenders still block rebase. Dangling linked work is diagnostic only; the rebase
+  // retires and rewrites nothing.
+  const offenders = scan.linkInvalid;
+  if (offenders.length > 0) {
+    fail("KNOWLEDGE_REBASE_BLOCKED", offenders.join(","));
   }
+  assertChainHoldsCrest(scan);
+  return {
+    schemaVersion: "tcrn.knowledge-rebase-result.v1",
+    reasonCode: "KNOWLEDGE_STORE_REBASED",
+    version: scan.marker.version,
+    eventHighWaterDigest: scan.marker.eventHighWaterDigest,
+    // The v1 result keeps its two fields: a rebase that lands retired nothing and had no
+    // scope/project offender, since such an offender still refuses it.
+    retired: 0,
+    offenders: [],
+    ...(scan.danglingWorkLinks.length === 0 ? {} : { danglingWorkLinks: scan.danglingWorkLinks }),
+  };
 }
 
 interface NormalizedListQuery {
@@ -3372,8 +3795,13 @@ function selectKnowledgeMetadata(
 // today's shape has to change. When it trails, three fields appear together: the flag
 // a caller can branch on, and both digests, so "how stale" is answerable from the
 // response rather than by a second round trip.
+//
+// TCRN-CROSS-SUB-414: a library's crest never trails. Every read answers at the chain head it
+// replayed (scanLibraryCrest), so a chain write leaves nothing behind to disclose, and
+// --allow-trailing, still accepted, changes nothing about a library's answer. Only an old-layout
+// store, read-only with its marker bound to its chain's head, can trail.
 function trailingDisclosure(scan: KnowledgeStoreScan): Readonly<Record<string, JsonValue>> {
-  if (scan.marker.eventHighWaterDigest === scan.workspace.headEventHash) return {};
+  if (scan.layout === "library" || scan.marker.eventHighWaterDigest === scan.workspace.headEventHash) return {};
   return {
     knowledgeStoreTrailing: true,
     storeHighWaterDigest: scan.marker.eventHighWaterDigest,
@@ -3385,14 +3813,46 @@ function trailingDisclosure(scan: KnowledgeStoreScan): Readonly<Record<string, J
 // read carries its trailing disclosure; the user crest has no chain head to trail.
 const USER_CREST_DISCLOSURE: Readonly<Record<string, JsonValue>> = Object.freeze({ scope: "user" });
 
+// What a crest merged from more than one writer says at the top of a list: its unresolved pairs
+// (TCRN-CROSS-SUB-310), its unresolved duplicates (TCRN-CROSS-SUB-413) and, for a library's crest,
+// the records awaiting chain events this device has not received (TCRN-CROSS-SUB-414). Nothing
+// when it holds none of them.
+function mergedCrestDisclosure(scan: CrestScan): Readonly<Record<string, JsonValue>> {
+  const duplicates = unresolvedDuplicates(scan);
+  return {
+    ...(scan.unresolvedConflicts.length === 0 ? {} : { unresolvedConflicts: scan.unresolvedConflicts as unknown as JsonValue }),
+    ...(duplicates.length === 0 ? {} : { unresolvedDuplicates: duplicates.map(duplicateDiagnostic) }),
+    ...(scan.awaitingChain.length === 0 ? {} : { awaitingChain: awaitingChainDiagnostic(scan.awaitingChain) }),
+  };
+}
+
+// The records of one id awaiting chain events, as a read of that id carries them at its top.
+function awaitingReadDisclosure(scan: CrestScan, id: string): Readonly<Record<string, JsonValue>> {
+  const entries = scan.awaitingChain.filter((entry) => entry.id === id);
+  return entries.length === 0 ? {} : { awaitingChain: awaitingChainDiagnostic(entries) };
+}
+
+// The ids a merged crest's default selection leaves out: both cards of an unresolved pair, every
+// version of an unresolved duplicate, and a library card with a record awaiting chain events.
+function withheldCardIds(scan: CrestScan): ReadonlySet<string> {
+  return new Set([
+    ...unresolvedConflictIds(scan),
+    ...unresolvedDuplicates(scan).map((duplicate) => duplicate.id),
+    ...scan.awaitingChain.map((entry) => entry.id),
+  ]);
+}
+
 /**
  * The card metadata a query selects. `query.scope` "user" reads this user's crest (TCRN-CROSS-STORY-476
  * R5), whichever library `workspaceRoot` names, and lists nothing before the crest's first card;
- * left out, the library's crest, exactly as before. TCRN-CROSS-SUB-310: a user crest holding
+ * left out, the library's crest, exactly as before. TCRN-CROSS-SUB-310: a crest holding
  * unresolved conflicts answers them as `unresolvedConflicts` (pairs of card ids), and its default
  * selection leaves their cards out; selection "all" lists them. TCRN-CROSS-SUB-413: likewise an id
  * more than one writer wrote, answered as `unresolvedDuplicates` (duplicateDiagnostic) while it is
  * unresolved: default selection leaves out every version, and selection "all" lists each one.
+ * TCRN-CROSS-SUB-414: a library's crest answers both the same way, and names under `awaitingChain`
+ * the records written against chain events this device has not received, whose cards default
+ * selection leaves out until the chain arrives.
  */
 export async function listKnowledgeMetadata(workspaceRoot: string, query: KnowledgeListQuery): Promise<Readonly<Record<string, JsonValue>>> {
   const normalized = normalizeListQuery(query);
@@ -3400,19 +3860,23 @@ export async function listKnowledgeMetadata(workspaceRoot: string, query: Knowle
   if (query.scope === "user") {
     return readUserCrest(query, async (scan) => {
       if (scan === null) return knowledgeListAnswer([], query, normalized, USER_CREST_DISCLOSURE);
-      const duplicates = unresolvedDuplicates(scan);
-      const withheld = new Set([...unresolvedConflictIds(scan), ...duplicates.map((duplicate) => duplicate.id)]);
-      const matched = selectKnowledgeMetadata({ units: userCrestRecords(scan) }, query, normalized, true)
-        .filter((metadata) => normalized.selection !== "default" || !withheld.has(metadata.id));
-      return knowledgeListAnswer(matched, query, normalized, {
-        ...USER_CREST_DISCLOSURE,
-        ...(scan.unresolvedConflicts.length === 0 ? {} : { unresolvedConflicts: scan.unresolvedConflicts as unknown as JsonValue }),
-        ...(duplicates.length === 0 ? {} : { unresolvedDuplicates: duplicates.map(duplicateDiagnostic) }),
-      });
+      return mergedCrestList(scan, query, normalized, USER_CREST_DISCLOSURE);
     });
   }
   const scan = await scanKnowledgeStore(workspaceRoot, query, false, "metadata-only");
-  return knowledgeListAnswer(selectKnowledgeMetadata(scan, query, normalized, true), query, normalized, trailingDisclosure(scan));
+  return mergedCrestList(scan, query, normalized, trailingDisclosure(scan));
+}
+
+function mergedCrestList(
+  scan: CrestScan,
+  query: KnowledgeListQuery,
+  normalized: NormalizedListQuery,
+  disclosure: Readonly<Record<string, JsonValue>>,
+): Readonly<Record<string, JsonValue>> {
+  const withheld = withheldCardIds(scan);
+  const matched = selectKnowledgeMetadata({ units: crestRecords(scan) }, query, normalized, true)
+    .filter((metadata) => normalized.selection !== "default" || !withheld.has(metadata.id));
+  return knowledgeListAnswer(matched, query, normalized, { ...disclosure, ...mergedCrestDisclosure(scan) });
 }
 
 function knowledgeListAnswer(
@@ -3450,40 +3914,48 @@ function assertKnowledgeReadId(id: string): void {
 
 // TCRN-CROSS-SUB-413: a read of a duplicate's id carries at its top the entry knowledge-list names
 // while the duplicate is unresolved, and nothing more once a card has superseded it.
-function duplicateReadDisclosure(duplicate: UserCrestDuplicate): Readonly<Record<string, JsonValue>> {
+function duplicateReadDisclosure(duplicate: CrestDuplicate, disclosure: Readonly<Record<string, JsonValue>>): Readonly<Record<string, JsonValue>> {
   return unresolvedDuplicates({ duplicates: [duplicate] }).length === 0
-    ? USER_CREST_DISCLOSURE
-    : { ...USER_CREST_DISCLOSURE, unresolvedDuplicates: [duplicateDiagnostic(duplicate)] };
+    ? disclosure
+    : { ...disclosure, unresolvedDuplicates: [duplicateDiagnostic(duplicate)] };
 }
 
 /**
  * One card's snippet; `options.scope` "user" reads it from this user's crest (TCRN-CROSS-STORY-476 R5).
- * TCRN-CROSS-SUB-413: the id of a user-crest duplicate answers every version's snippet under
- * `versions`, each named by its writer, in place of one card's fields.
+ * TCRN-CROSS-SUB-413: the id of a duplicate answers every version's snippet under `versions`, each
+ * named by its writer, in place of one card's fields; TCRN-CROSS-SUB-414 answers a library crest's
+ * duplicates the same way.
  */
 export async function readKnowledgeSnippet(workspaceRoot: string, id: string, options: KnowledgeScopedReadOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
   assertKnowledgeReadId(id);
   assertStoreScope(options.scope);
   if (options.scope === "user") {
     return readUserCrest(options, async (scan) => {
-      const duplicate = scan?.duplicates.find((entry) => entry.id === id);
-      if (duplicate === undefined) return knowledgeSnippetAnswer(id, scan === null ? [] : scan.units, USER_CREST_DISCLOSURE);
-      return {
-        schemaVersion: "tcrn.knowledge-snippet.v1",
-        ...duplicateReadDisclosure(duplicate),
-        id,
-        versions: duplicate.versions.map((version) => ({
-          ...duplicateVersionIdentity(version),
-          subject: version.metadata.subject,
-          summary: version.metadata.summary,
-          snippet: version.metadata.snippet,
-          revision: version.metadata.revision,
-        })),
-      };
+      if (scan === null) return knowledgeSnippetAnswer(id, [], USER_CREST_DISCLOSURE);
+      return crestSnippetAnswer(scan, id, USER_CREST_DISCLOSURE);
     });
   }
   const scan = await scanKnowledgeStore(workspaceRoot, options, false, "metadata-only");
-  return knowledgeSnippetAnswer(id, scan.units, trailingDisclosure(scan));
+  return crestSnippetAnswer(scan, id, trailingDisclosure(scan));
+}
+
+function crestSnippetAnswer(scan: CrestScan, id: string, disclosure: Readonly<Record<string, JsonValue>>): Readonly<Record<string, JsonValue>> {
+  const awaiting = awaitingReadDisclosure(scan, id);
+  const duplicate = scan.duplicates.find((entry) => entry.id === id);
+  if (duplicate === undefined) return knowledgeSnippetAnswer(id, scan.units, { ...disclosure, ...awaiting });
+  return {
+    schemaVersion: "tcrn.knowledge-snippet.v1",
+    ...duplicateReadDisclosure(duplicate, disclosure),
+    ...awaiting,
+    id,
+    versions: duplicate.versions.map((version) => ({
+      ...duplicateVersionIdentity(version),
+      subject: version.metadata.subject,
+      summary: version.metadata.summary,
+      snippet: version.metadata.snippet,
+      revision: version.metadata.revision,
+    })),
+  };
 }
 
 function knowledgeSnippetAnswer(id: string, units: readonly ScannedKnowledgeUnit[], disclosure: Readonly<Record<string, JsonValue>>): Readonly<Record<string, JsonValue>> {
@@ -3502,8 +3974,9 @@ function knowledgeSnippetAnswer(id: string, units: readonly ScannedKnowledgeUnit
 
 /**
  * One card's body, read explicitly; `options.scope` "user" reads it from this user's crest (TCRN-CROSS-STORY-476 R5).
- * TCRN-CROSS-SUB-413: the id of a user-crest duplicate answers every version's body under
- * `versions`, each named by its writer, once every version passes the check one card's body does.
+ * TCRN-CROSS-SUB-413: the id of a duplicate answers every version's body under `versions`, each
+ * named by its writer, once every version passes the check one card's body does; TCRN-CROSS-SUB-414
+ * answers a library crest's duplicates the same way.
  */
 export async function readKnowledgeBody(workspaceRoot: string, id: string, options: KnowledgeBodyReadOptions): Promise<Readonly<Record<string, JsonValue>>> {
   assertKnowledgeReadId(id);
@@ -3512,27 +3985,38 @@ export async function readKnowledgeBody(workspaceRoot: string, id: string, optio
   if (options.scope === "user") {
     return readUserCrest(options, async (scan) => {
       if (scan === null) fail("KNOWLEDGE_NOT_FOUND", id);
-      const backend = userCrestBackend(scan.storeRoot, scan.device, options);
-      const duplicate = scan.duplicates.find((entry) => entry.id === id);
-      if (duplicate === undefined) return knowledgeBodyAnswer(id, scan.units, options, backend, null, USER_CREST_DISCLOSURE);
-      const freshness = duplicate.versions.map((version) => readableBodyFreshness(version.metadata, options));
-      const versions: Readonly<Record<string, JsonValue>>[] = [];
-      for (const [index, version] of duplicate.versions.entries()) {
-        const body = version.readBody === undefined ? await backend.readKnowledgeBody(id) : await version.readBody();
-        validateMetadataBody(version.metadata, body, null);
-        versions.push({
-          ...duplicateVersionIdentity(version),
-          revision: version.metadata.revision,
-          freshness: freshness[index] as KnowledgeFreshnessState,
-          bodySha256: version.metadata.bodySha256,
-          body: body.toString("utf8"),
-        });
-      }
-      return { schemaVersion: "tcrn.knowledge-body-read.v1", ...duplicateReadDisclosure(duplicate), id, versions, explicit: true };
+      return crestBodyAnswer(scan, id, options, userCrestBackend(scan.storeRoot, scan.device, options), null, USER_CREST_DISCLOSURE);
     });
   }
   const scan = await scanKnowledgeStore(workspaceRoot, options, false, "metadata-only");
-  return knowledgeBodyAnswer(id, scan.units, options, storeBackendFor(scan.storeRoot, options), scan.workspace, trailingDisclosure(scan));
+  return crestBodyAnswer(scan, id, options, storeBackendFor(scan.storeRoot, options), scan.workspace, trailingDisclosure(scan));
+}
+
+async function crestBodyAnswer(
+  scan: CrestScan,
+  id: string,
+  options: KnowledgeBodyReadOptions,
+  backend: StoreBackend,
+  linkState: WorkspaceState | null,
+  disclosure: Readonly<Record<string, JsonValue>>,
+): Promise<Readonly<Record<string, JsonValue>>> {
+  const awaiting = awaitingReadDisclosure(scan, id);
+  const duplicate = scan.duplicates.find((entry) => entry.id === id);
+  if (duplicate === undefined) return knowledgeBodyAnswer(id, scan.units, options, backend, linkState, { ...disclosure, ...awaiting });
+  const freshness = duplicate.versions.map((version) => readableBodyFreshness(version.metadata, options));
+  const versions: Readonly<Record<string, JsonValue>>[] = [];
+  for (const [index, version] of duplicate.versions.entries()) {
+    const body = version.readBody === undefined ? await backend.readKnowledgeBody(id) : await version.readBody();
+    validateMetadataBody(version.metadata, body, linkState);
+    versions.push({
+      ...duplicateVersionIdentity(version),
+      revision: version.metadata.revision,
+      freshness: freshness[index] as KnowledgeFreshnessState,
+      bodySha256: version.metadata.bodySha256,
+      body: body.toString("utf8"),
+    });
+  }
+  return { schemaVersion: "tcrn.knowledge-body-read.v1", ...duplicateReadDisclosure(duplicate, disclosure), ...awaiting, id, versions, explicit: true };
 }
 
 // The freshness of a card whose body an explicit read may open; a card it may not open is refused.
@@ -3577,7 +4061,7 @@ async function knowledgeBodyAnswer(
 export async function evaluateKnowledgeFreshness(workspaceRoot: string, at: string, options: KnowledgeReadOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
   assertEvaluationInstant(at);
   const scan = await scanKnowledgeStore(workspaceRoot, options, false, "metadata-only");
-  const records = scan.units.map((unit) => ({
+  const records = crestRecords(scan).map((unit) => ({
     id: unit.metadata.id,
     state: computeFreshness(unit.metadata, at),
     lastVerified: unit.metadata.lastVerified,
@@ -3602,7 +4086,7 @@ export async function evaluateKnowledgeFreshness(workspaceRoot: string, at: stri
 export async function checkKnowledgeSources(workspaceRoot: string, options: KnowledgeReadOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
   const scan = await scanKnowledgeStore(workspaceRoot, { ...options, allowTrailing: options.allowTrailing ?? true }, false, "metadata-only");
   const reports: Array<Record<string, JsonValue>> = [];
-  for (const unit of scan.units) {
+  for (const unit of crestRecords(scan)) {
     const references = unit.metadata.sourceReferences.filter(sourceReferenceIsFile);
     if (references.length === 0) {
       reports.push({ id: unit.metadata.id, status: "uncheckable", sourceReferences: unit.metadata.sourceReferences as unknown as JsonValue, expectedDigest: unit.metadata.sourceDigest, action: "none" });
@@ -3648,6 +4132,8 @@ export async function checkKnowledgeSources(workspaceRoot: string, options: Know
 // WSC-5: re-verify an eligible record — touch lastVerified to the given instant and
 // restore a fresh posture, so knowledge does not decay irreversibly out of default
 // selection. Historical candidate and rejected records remain ineligible (OD-17).
+// TCRN-CROSS-SUB-414: the card is written again as a new record in this device's stream, naming the
+// record it replaces; nothing of the crest is rewritten (appendLibraryCrestEvent).
 export async function reverifyKnowledgeUnit(...args: Parameters<typeof reverifyKnowledgeUnitUnlocked>): Promise<Readonly<Record<string, JsonValue>>> {
   return withCrestWriteLock(args[0], () => reverifyKnowledgeUnitUnlocked(...args));
 }
@@ -3666,50 +4152,28 @@ async function reverifyKnowledgeUnitUnlocked(workspaceRoot: string, input: {
   if (!Number.isSafeInteger(input.expectedRevision) || input.expectedRevision < 1) {
     fail("KNOWLEDGE_INPUT_INVALID", "reverify versions");
   }
-  const initial = await mutationAdmissionScan(workspaceRoot, options);
-  const claim = await acquireMutationClaim(initial);
-  let released = false;
-  try {
-    const scan = await scanKnowledgeStore(workspaceRoot, options, true);
-    const unit = scan.units.find((entry) => entry.metadata.id === input.id);
-    if (!unit) fail("KNOWLEDGE_NOT_FOUND", input.id);
-    if (unit.metadata.revision !== input.expectedRevision) {
-      fail("KNOWLEDGE_CAS_MISMATCH", `${input.expectedRevision}:${unit.metadata.revision}`);
-    }
-    if ((unit.metadata.promotionState !== undefined && unit.metadata.promotionState !== "promoted") || unit.metadata.lifecycle === "retired") {
-      fail("KNOWLEDGE_LIFECYCLE_INVALID", "only an eligible, non-retired record can be re-verified");
-    }
-    const metadata: KnowledgeUnitMetadata = { ...unit.metadata, lastVerified: input.occurredAt, freshnessState: "fresh", revision: unit.metadata.revision + 1, updatedAt: input.occurredAt };
-    const unitBody = requireBody(unit);
-    const validated = validateExistingMetadataShape(metadata, scan.workspace);
-    validateMetadataBody(validated, unitBody, scan.workspace);
-    const marker: KnowledgeStoreMarker = { ...scan.marker, version: scan.marker.version + 1 };
-    const projectedMetadata = scan.units.map((entry) => entry.metadata.id === metadata.id ? metadata : entry.metadata);
-    const backend = storeBackendFor(scan.storeRoot, options);
-    await backend.writeKnowledgeMetadata(unit.metadata.id, canonicalJson(metadata));
-    crash("after-metadata-write", options.faultAt);
-    await backend.writeKnowledgeMarker(canonicalJson(marker));
-    crash("after-marker-write", options.faultAt);
-    await writeIndex(backend, marker, projectedMetadata);
-    await releaseMutationClaim(scan.storeRoot, claim);
-    released = true;
-    await scanKnowledgeStore(workspaceRoot, options);
-    return {
-      schemaVersion: "tcrn.knowledge-reverify-result.v1",
-      reasonCode: "KNOWLEDGE_REVERIFIED",
-      id: metadata.id,
-      lastVerified: metadata.lastVerified,
-      revision: metadata.revision,
-      version: marker.version,
-    };
-  } catch (error) {
-    // WSC-6: same crash exemption as createKnowledgeUnit -- a simulated crash must leave
-    // the claim exactly where a real SIGKILL would, since finally never runs for one.
-    if (error instanceof KnowledgeCoreError && error.reasonCode === "KNOWLEDGE_FAULT_INJECTED") released = true;
-    throw error;
-  } finally {
-    if (!released) await releaseMutationClaim(initial.storeRoot, claim);
+  await assertKnowledgeWritable(resolve(workspaceRoot));
+  const scan = await mutationAdmissionScan(workspaceRoot, options);
+  const unit = libraryCrestCard(scan, input.id);
+  if (unit.metadata.revision !== input.expectedRevision) {
+    fail("KNOWLEDGE_CAS_MISMATCH", `${input.expectedRevision}:${unit.metadata.revision}`);
   }
+  if ((unit.metadata.promotionState !== undefined && unit.metadata.promotionState !== "promoted") || unit.metadata.lifecycle === "retired") {
+    fail("KNOWLEDGE_LIFECYCLE_INVALID", "only an eligible, non-retired record can be re-verified");
+  }
+  const metadata: KnowledgeUnitMetadata = { ...unit.metadata, lastVerified: input.occurredAt, freshnessState: "fresh", revision: unit.metadata.revision + 1, updatedAt: input.occurredAt };
+  const body = await crestRecordBody(scan, unit, options);
+  validateMetadataBody(validateExistingMetadataShape(metadata, scan.workspace), body, scan.workspace);
+  await appendLibraryCrestEvent(scan, metadata, body, unit, options.faultAt);
+  await projectViewAfterWrite(scan, crestRecords(scan).map((entry) => entry === unit ? metadata : entry.metadata), options);
+  return {
+    schemaVersion: "tcrn.knowledge-reverify-result.v1",
+    reasonCode: "KNOWLEDGE_REVERIFIED",
+    id: metadata.id,
+    lastVerified: metadata.lastVerified,
+    revision: metadata.revision,
+    version: scan.marker.version + 1,
+  };
 }
 
 export async function refreshKnowledgeArticle(...args: Parameters<typeof refreshKnowledgeArticleUnlocked>): Promise<Readonly<Record<string, JsonValue>>> {
@@ -3731,91 +4195,70 @@ async function refreshKnowledgeArticleUnlocked(
     fail("KNOWLEDGE_INPUT_INVALID", "article refresh versions");
   }
   assertArticleField(input.summary, KNOWLEDGE_LIMITS.maximumSummaryBytes, "article summary");
-  const initial = await mutationAdmissionScan(workspaceRoot, options);
-  const claim = await acquireMutationClaim(initial);
-  let released = false;
-  try {
-    const scan = await scanKnowledgeStore(workspaceRoot, options, true);
-    const unit = scan.units.find((entry) => entry.metadata.id === input.id);
-    if (unit === undefined) fail("KNOWLEDGE_NOT_FOUND", input.id);
-    if (unit.metadata.revision !== input.expectedRevision) fail("KNOWLEDGE_CAS_MISMATCH", `${input.expectedRevision}:${unit.metadata.revision}`);
-    if (unit.metadata.kind !== "reference" || unit.metadata.retrievalDisposition !== "explicit-only" || unit.metadata.lifecycle === "retired") {
-      fail("KNOWLEDGE_LIFECYCLE_INVALID", "only an active article index can be refreshed");
-    }
-    if (!unit.metadata.sourceReferences.includes(input.path)) fail("KNOWLEDGE_PATH_INVALID", "article identity does not match source path");
-    const workspaceArticle = await articlePathFor(scan.workspaceRoot, scan.workspace, input.path);
-    const articleBytes = await readArticleBytes(workspaceArticle.file);
-    const article = parseArticleMarkdown(articleBytes, input.path);
-    const sourceDigest = sha256(articleBytes);
-    let language;
-    try {
-      language = applyWriteLanguagePolicy(
-        { subject: article.title, summary: input.summary, snippet: truncateArticleUtf8(input.summary, KNOWLEDGE_LIMITS.maximumSnippetBytes) },
-        readKnowledgeLanguagePolicy(scan.workspace.settings, options.host),
-        options.languageProvider,
-      );
-    } catch (error) {
-      if (error instanceof KnowledgeLanguageError) fail(error.reasonCode, error.message, error.details as Readonly<Record<string, JsonValue>>);
-      throw error;
-    }
-    const body = articleIndexBody(article.title, input.summary, input.path);
-    const metadata: KnowledgeUnitMetadata = {
-      ...unit.metadata,
-      category: article.category,
-      tags: ["article", article.category].sort(compareCanonicalText),
-      subject: language.subject,
-      summary: language.summary,
-      snippet: language.snippet,
-      sourceDigest,
-      freshnessState: "fresh",
-      lastVerified: input.occurredAt,
-      bodySha256: sha256(body),
-      bodyBytes: Buffer.byteLength(body, "utf8"),
-      revision: unit.metadata.revision + 1,
-      updatedAt: input.occurredAt,
-      expansions: language.expansions,
-    };
-    const validated = validateExistingMetadataShape(metadata, scan.workspace);
-    validateMetadataBody(validated, Buffer.from(body, "utf8"), scan.workspace);
-    const secondRead = await readArticleBytes(workspaceArticle.file);
-    if (!secondRead.equals(articleBytes)) fail("KNOWLEDGE_SOURCE_CHANGED", workspaceArticle.file);
-    const marker: KnowledgeStoreMarker = { ...scan.marker, version: scan.marker.version + 1 };
-    const projectedMetadata = scan.units.map((entry) => entry.metadata.id === metadata.id ? metadata : entry.metadata);
-    // TCRN-CROSS-SUB-309: the refreshed index body replaces the old one in the body budget.
-    assertWithinCapacity(capacityBodyBytes(projectedMetadata), knowledgeAggregateLimit(scan.workspace), "article refresh aggregate bytes");
-    const backend = storeBackendFor(scan.storeRoot, options);
-    await backend.writeKnowledgeBody(metadata.id, Buffer.from(body, "utf8"));
-    crash("after-body-write", options.faultAt);
-    await backend.writeKnowledgeMetadata(metadata.id, canonicalJson(metadata));
-    crash("after-metadata-write", options.faultAt);
-    await backend.writeKnowledgeMarker(canonicalJson(marker));
-    crash("after-marker-write", options.faultAt);
-    await writeIndex(backend, marker, projectedMetadata);
-    await releaseMutationClaim(scan.storeRoot, claim);
-    released = true;
-    await scanKnowledgeStore(workspaceRoot, options);
-    return {
-      schemaVersion: "tcrn.knowledge-article-refresh-result.v1",
-      reasonCode: "KNOWLEDGE_ARTICLE_REFRESHED",
-      id: metadata.id,
-      revision: metadata.revision,
-      version: marker.version,
-      path: workspaceArticle.file,
-      articlePath: input.path,
-      articleBytes: articleBytes.length,
-      previousSourceDigest: unit.metadata.sourceDigest,
-      sourceDigest: metadata.sourceDigest,
-      bodyBytes: metadata.bodyBytes,
-      category: metadata.category,
-      title: metadata.subject,
-      summary: metadata.summary,
-    };
-  } catch (error) {
-    if (error instanceof KnowledgeCoreError && error.reasonCode === "KNOWLEDGE_FAULT_INJECTED") released = true;
-    throw error;
-  } finally {
-    if (!released) await releaseMutationClaim(initial.storeRoot, claim);
+  await assertKnowledgeWritable(resolve(workspaceRoot));
+  const scan = await mutationAdmissionScan(workspaceRoot, options);
+  const unit = libraryCrestCard(scan, input.id);
+  if (unit.metadata.revision !== input.expectedRevision) fail("KNOWLEDGE_CAS_MISMATCH", `${input.expectedRevision}:${unit.metadata.revision}`);
+  if (unit.metadata.kind !== "reference" || unit.metadata.retrievalDisposition !== "explicit-only" || unit.metadata.lifecycle === "retired") {
+    fail("KNOWLEDGE_LIFECYCLE_INVALID", "only an active article index can be refreshed");
   }
+  if (!unit.metadata.sourceReferences.includes(input.path)) fail("KNOWLEDGE_PATH_INVALID", "article identity does not match source path");
+  const workspaceArticle = await articlePathFor(scan.workspaceRoot, scan.workspace, input.path);
+  const articleBytes = await readArticleBytes(workspaceArticle.file);
+  const article = parseArticleMarkdown(articleBytes, input.path);
+  const sourceDigest = sha256(articleBytes);
+  let language;
+  try {
+    language = applyWriteLanguagePolicy(
+      { subject: article.title, summary: input.summary, snippet: truncateArticleUtf8(input.summary, KNOWLEDGE_LIMITS.maximumSnippetBytes) },
+      readKnowledgeLanguagePolicy(scan.workspace.settings, options.host),
+      options.languageProvider,
+    );
+  } catch (error) {
+    if (error instanceof KnowledgeLanguageError) fail(error.reasonCode, error.message, error.details as Readonly<Record<string, JsonValue>>);
+    throw error;
+  }
+  const body = Buffer.from(articleIndexBody(article.title, input.summary, input.path), "utf8");
+  const metadata: KnowledgeUnitMetadata = {
+    ...unit.metadata,
+    category: article.category,
+    tags: ["article", article.category].sort(compareCanonicalText),
+    subject: language.subject,
+    summary: language.summary,
+    snippet: language.snippet,
+    sourceDigest,
+    freshnessState: "fresh",
+    lastVerified: input.occurredAt,
+    bodySha256: sha256(body),
+    bodyBytes: body.length,
+    revision: unit.metadata.revision + 1,
+    updatedAt: input.occurredAt,
+    expansions: language.expansions,
+  };
+  validateMetadataBody(validateExistingMetadataShape(metadata, scan.workspace), body, scan.workspace);
+  const secondRead = await readArticleBytes(workspaceArticle.file);
+  if (!secondRead.equals(articleBytes)) fail("KNOWLEDGE_SOURCE_CHANGED", workspaceArticle.file);
+  // TCRN-CROSS-SUB-309: the refreshed index body replaces the old one in the body budget.
+  const projectedMetadata = crestRecords(scan).map((entry) => entry === unit ? metadata : entry.metadata);
+  assertWithinCapacity(capacityBodyBytes(projectedMetadata), scan.capacity.limit, "article refresh aggregate bytes");
+  await appendLibraryCrestEvent(scan, metadata, body, unit, options.faultAt);
+  await projectViewAfterWrite(scan, projectedMetadata, options);
+  return {
+    schemaVersion: "tcrn.knowledge-article-refresh-result.v1",
+    reasonCode: "KNOWLEDGE_ARTICLE_REFRESHED",
+    id: metadata.id,
+    revision: metadata.revision,
+    version: scan.marker.version + 1,
+    path: workspaceArticle.file,
+    articlePath: input.path,
+    articleBytes: articleBytes.length,
+    previousSourceDigest: unit.metadata.sourceDigest,
+    sourceDigest: metadata.sourceDigest,
+    bodyBytes: metadata.bodyBytes,
+    category: metadata.category,
+    title: metadata.subject,
+    summary: metadata.summary,
+  };
 }
 
 // INC-256: change the freshness policy without changing the card's content or
@@ -3824,6 +4267,8 @@ async function refreshKnowledgeArticleUnlocked(
 // A null maximum age also clears a stale state that was produced by the old
 // calendar policy; a later explicit source check or re-verification can mark the
 // record stale again when a current source actually warrants it.
+// TCRN-CROSS-SUB-414: the card is written again as a new record in this device's stream; a retired
+// record, whose body an older engine may have reclaimed, is written again without one.
 export async function updateKnowledgeStalenessPolicy(...args: Parameters<typeof updateKnowledgeStalenessPolicyUnlocked>): Promise<Readonly<Record<string, JsonValue>>> {
   return withCrestWriteLock(args[0], () => updateKnowledgeStalenessPolicyUnlocked(...args));
 }
@@ -3849,51 +4294,33 @@ async function updateKnowledgeStalenessPolicyUnlocked(workspaceRoot: string, inp
     (unknownDisposition !== "fail-closed" && unknownDisposition !== "fail-open")) {
     fail("KNOWLEDGE_INPUT_INVALID", "staleness policy");
   }
-  const initial = await mutationAdmissionScan(workspaceRoot, options);
-  const claim = await acquireMutationClaim(initial);
-  let released = false;
-  try {
-    const scan = await scanKnowledgeStore(workspaceRoot, options, true);
-    const unit = scan.units.find((entry) => entry.metadata.id === input.id);
-    if (!unit) fail("KNOWLEDGE_NOT_FOUND", input.id);
-    if (unit.metadata.revision !== input.expectedRevision) {
-      fail("KNOWLEDGE_CAS_MISMATCH", `${input.expectedRevision}:${unit.metadata.revision}`);
-    }
-    const metadata: KnowledgeUnitMetadata = {
-      ...unit.metadata,
-      stalenessPolicy: input.stalenessPolicy,
-      freshnessState: maximumAgeDays === null ? "fresh" : unit.metadata.freshnessState,
-      revision: unit.metadata.revision + 1,
-      updatedAt: input.occurredAt,
-    };
-    const validated = validateExistingMetadataShape(metadata, scan.workspace);
-    if (unit.metadata.lifecycle !== "retired") validateMetadataBody(validated, requireBody(unit), scan.workspace);
-    const marker: KnowledgeStoreMarker = { ...scan.marker, version: scan.marker.version + 1 };
-    const projectedMetadata = scan.units.map((entry) => entry.metadata.id === metadata.id ? metadata : entry.metadata);
-    const backend = storeBackendFor(scan.storeRoot, options);
-    await backend.writeKnowledgeMetadata(unit.metadata.id, canonicalJson(metadata));
-    crash("after-metadata-write", options.faultAt);
-    await backend.writeKnowledgeMarker(canonicalJson(marker));
-    crash("after-marker-write", options.faultAt);
-    await writeIndex(backend, marker, projectedMetadata);
-    await releaseMutationClaim(scan.storeRoot, claim);
-    released = true;
-    await scanKnowledgeStore(workspaceRoot, options);
-    return {
-      schemaVersion: "tcrn.knowledge-policy-result.v1",
-      reasonCode: "KNOWLEDGE_POLICY_UPDATED",
-      id: metadata.id,
-      maximumAgeDays: metadata.stalenessPolicy.maximumAgeDays,
-      unknownDisposition: metadata.stalenessPolicy.unknownDisposition,
-      revision: metadata.revision,
-      version: marker.version,
-    };
-  } catch (error) {
-    if (error instanceof KnowledgeCoreError && error.reasonCode === "KNOWLEDGE_FAULT_INJECTED") released = true;
-    throw error;
-  } finally {
-    if (!released) await releaseMutationClaim(initial.storeRoot, claim);
+  await assertKnowledgeWritable(resolve(workspaceRoot));
+  const scan = await mutationAdmissionScan(workspaceRoot, options);
+  const unit = libraryCrestCard(scan, input.id);
+  if (unit.metadata.revision !== input.expectedRevision) {
+    fail("KNOWLEDGE_CAS_MISMATCH", `${input.expectedRevision}:${unit.metadata.revision}`);
   }
+  const metadata: KnowledgeUnitMetadata = {
+    ...unit.metadata,
+    stalenessPolicy: input.stalenessPolicy,
+    freshnessState: maximumAgeDays === null ? "fresh" : unit.metadata.freshnessState,
+    revision: unit.metadata.revision + 1,
+    updatedAt: input.occurredAt,
+  };
+  const validated = validateExistingMetadataShape(metadata, scan.workspace);
+  const body = unit.metadata.lifecycle === "retired" ? null : await crestRecordBody(scan, unit, options);
+  if (body !== null) validateMetadataBody(validated, body, scan.workspace);
+  await appendLibraryCrestEvent(scan, metadata, body, unit, options.faultAt);
+  await projectViewAfterWrite(scan, crestRecords(scan).map((entry) => entry === unit ? metadata : entry.metadata), options);
+  return {
+    schemaVersion: "tcrn.knowledge-policy-result.v1",
+    reasonCode: "KNOWLEDGE_POLICY_UPDATED",
+    id: metadata.id,
+    maximumAgeDays: metadata.stalenessPolicy.maximumAgeDays,
+    unknownDisposition: metadata.stalenessPolicy.unknownDisposition,
+    revision: metadata.revision,
+    version: scan.marker.version + 1,
+  };
 }
 
 export async function exportKnowledgeCheckpoint(workspaceRoot: string, at: string, options: KnowledgeReadOptions = {}): Promise<string> {
@@ -3906,8 +4333,12 @@ export async function exportKnowledgeCheckpoint(workspaceRoot: string, at: strin
   // head) free to be a stale head reported with nothing beside it for comparison. A
   // checkpoint is this surface's export artifact: the strongest answer it produces and
   // the one a reader is least able to re-derive. It takes the strict rule, not a label.
+  // TCRN-CROSS-SUB-414: for a library's crest the strict rule is that this device's chain holds
+  // every record, and the corpus is the default selection's.
   const scan = await scanKnowledgeStore(workspaceRoot, { ...options, allowTrailing: false }, false, "metadata-only");
-  const records = scan.units.map((unit) => unit.metadata).filter((metadata) => isDefaultSelectable(metadata, at));
+  assertChainHoldsCrest(scan);
+  const withheld = withheldCardIds(scan);
+  const records = scan.units.map((unit) => unit.metadata).filter((metadata) => !withheld.has(metadata.id) && isDefaultSelectable(metadata, at));
   records.sort((left, right) => compareCanonicalText(left.id, right.id));
   return canonicalJson({
     schemaVersion: "tcrn.knowledge-checkpoint.v1",

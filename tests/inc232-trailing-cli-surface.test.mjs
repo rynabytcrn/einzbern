@@ -12,10 +12,16 @@
 // The snippet and body reads are here for a second reason. They were given the
 // exemption and the disclosure with no criterion on either, so a stale BODY -- the one
 // read that returns content rather than metadata -- could have passed for a current one.
+//
+// TCRN-CROSS-SUB-414 (MIN-235 D7): a library's crest no longer trails its chain -- every read
+// projects it at the head it replays -- so these verbs answer after a chain write by default. The
+// flag must still survive the trip: every verb the catalog says takes it still takes it, and
+// answers exactly as it does without it. The checkpoint keeps the strict rule, now over each
+// record's chain position: it refuses a crest newer than its chain, however the flag is passed.
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { cp, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -93,10 +99,10 @@ async function cli(argv) {
   }
 }
 
-// Red leg: drop the flag from any one verb's parseArguments list, or forget to thread it
-// into that verb's options object, and exactly that verb comes back red here while the
-// core criteria and the catalog criterion both stay green.
-test("INC-232: every read verb the catalog says takes --allow-trailing actually honours it", async () => {
+// Red leg: drop the flag from any one verb's parseArguments list and exactly that verb comes back
+// CLI_ARGUMENT_UNKNOWN here; bind a library read to a stored high water again and the plain
+// invocation refuses.
+test("INC-232, SUB-414: every read verb the catalog says takes --allow-trailing takes it, and answers as it does without it", async () => {
   const { base, workspace, id } = await trailingFixture();
   try {
     const invocations = [
@@ -108,46 +114,70 @@ test("INC-232: every read verb the catalog says takes --allow-trailing actually 
       ["knowledge-body", "--workspace", workspace, "--id", id, "--at", instant(7)],
     ];
     for (const argv of invocations) {
-      const refused = await cli(argv);
-      assert.equal(refused.ok, false, `${argv[0]} must refuse a trailing store by default`);
-      assert.equal(refused.reasonCode, "KNOWLEDGE_HIGH_WATER_MISMATCH", argv[0]);
-      const admitted = await cli([...argv, "--allow-trailing", "true"]);
-      assert.equal(admitted.ok, true, `${argv[0]} must be admitted with the flag: ${admitted.reasonCode}`);
-      assert.equal(admitted.value.knowledgeStoreTrailing, true, `${argv[0]} must disclose that it trails`);
-      assert.notEqual(admitted.value.storeHighWaterDigest, admitted.value.chainHeadEventHash, argv[0]);
+      const plain = await cli(argv);
+      assert.equal(plain.ok, true, `${argv[0]} answers after the chain moved: ${plain.reasonCode}`);
+      const flagged = await cli([...argv, "--allow-trailing", "true"]);
+      assert.equal(flagged.ok, true, `${argv[0]} still takes the flag: ${flagged.reasonCode}`);
+      assert.deepEqual(flagged.value, plain.value, `${argv[0]}: the flag changes nothing`);
+      assert.equal("knowledgeStoreTrailing" in plain.value, false, `${argv[0]}: nothing trails`);
     }
   } finally {
     await rm(base, { recursive: true, force: true });
   }
 });
 
-// The two content-bearing reads had the exemption and no criterion. A body is the only
-// read that returns bytes rather than metadata, so an undisclosed stale one is the worst
-// case this disclosure exists for. Red leg: drop trailingDisclosure from either result.
-test("INC-232: a trailing snippet and a trailing body both say so at the library level", async () => {
+// The two content-bearing reads: after the chain moved, the snippet and the body answer the card
+// as it is, with nothing to disclose. Red leg: disclose a trailing store that is not trailing and
+// every consumer that branches on the flag treats a current answer as stale.
+test("INC-232, SUB-414: a snippet and a body after the chain moves answer the card as it is, with nothing trailing", async () => {
   const { base, workspace, id } = await trailingFixture();
   try {
     const snippet = await readKnowledgeSnippet(workspace, id, { allowTrailing: true });
-    assert.equal(snippet.knowledgeStoreTrailing, true);
-    assert.notEqual(snippet.storeHighWaterDigest, snippet.chainHeadEventHash);
+    assert.equal(snippet.subject, "A card that outlives the head it was filed against");
+    assert.equal("knowledgeStoreTrailing" in snippet, false);
     const body = await readKnowledgeBody(workspace, id, { at: instant(7), allowTrailing: true, allowUnpromoted: true });
-    assert.equal(body.knowledgeStoreTrailing, true, "a stale body must never pass for a current one");
-    assert.notEqual(body.storeHighWaterDigest, body.chainHeadEventHash);
+    assert.equal(body.body, "Body bytes that must not pass for current ones.");
+    assert.equal("knowledgeStoreTrailing" in body, false);
   } finally {
     await rm(base, { recursive: true, force: true });
   }
 });
 
-// Red leg: let exportKnowledgeCheckpoint keep the exemption it inherited from the
-// five/six miscount. The checkpoint is the export artifact and must not be stale-able,
-// and it is the one metadata-only scan whose result carries no disclosure to fall back on.
-test("INC-232: a checkpoint refuses a trailing store however the flag is passed", async () => {
-  const { base, workspace } = await trailingFixture();
+// Red leg: let the checkpoint answer for a crest its chain does not hold. The checkpoint is the
+// export artifact and must not be stale-able; after a chain write it is taken at the new head, and
+// a crest newer than its chain (a partial restore) refuses it, the flag passed or not.
+test("INC-232, SUB-414: a checkpoint is taken at the current head, and refuses a crest newer than its chain however the flag is passed", async () => {
+  const { base, workspace, id } = await trailingFixture();
   try {
-    const { exportKnowledgeCheckpoint } = await import("../dist/build/packages/core/src/index.js");
+    const { exportKnowledgeCheckpoint, createWork, validateWorkspace } = await import("../dist/build/packages/core/src/index.js");
+    const head = (await validateWorkspace(workspace)).headEventHash;
+    for (const options of [{}, { allowTrailing: true }]) {
+      const checkpoint = JSON.parse(await exportKnowledgeCheckpoint(workspace, instant(7), options));
+      assert.deepEqual([checkpoint.eventHighWaterDigest, checkpoint.records.map((record) => record.id)], [head, [id]]);
+    }
+    const saved = join(base, "akasha-saved");
+    await cp(join(workspace, "akasha"), saved, { recursive: true });
+    const state = await validateWorkspace(workspace);
+    await createWork(workspace, {
+      occurredAt: instant(8), projectId: state.projects[0].id,
+      externalKey: "INC232-LOST-WRITE", kind: "Initiative", parentId: null, status: "active",
+    });
+    await createKnowledgeUnit(workspace, {
+      occurredAt: instant(9), externalKey: "INC232-CARD-NEWER",
+      scope: "workspace", projectId: null, roleScopes: [],
+      category: "workflow", kind: "fact", tags: ["transport"],
+      subject: "Restore drill outcome", summary: "Newer than the chain.", snippet: "Newer than the chain.",
+      accountableOwnerId: deriveStableId("owner", "INC232-OWNER-NEWER"),
+      sourceReferences: [], sourceDigest: null, linkedWorkIds: [], linkedDecisionIds: [], linkedGateIds: [], linkedEvidenceIds: [],
+      lifecycle: "active", retrievalDisposition: "default", freshnessState: "fresh", lastVerified: null,
+      stalenessPolicy: { maximumAgeDays: null, unknownDisposition: "fail-closed" },
+      exportDisposition: "metadata-only", body: "Newer than the chain.",
+    });
+    await rm(join(workspace, "akasha"), { recursive: true, force: true });
+    await cp(saved, join(workspace, "akasha"), { recursive: true });
     for (const options of [{}, { allowTrailing: true }]) {
       await assert.rejects(
-        () => exportKnowledgeCheckpoint(workspace, instant(7), options),
+        () => exportKnowledgeCheckpoint(workspace, instant(10), options),
         (error) => error?.reasonCode === "KNOWLEDGE_HIGH_WATER_MISMATCH",
         "an export artifact takes the strict rule, not a label",
       );

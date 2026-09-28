@@ -35,9 +35,10 @@ import { assertCanonicalJson, canonicalJson, canonicalSha256, compareCanonicalTe
 import type { JsonValue } from "../../protocol/src/index.js";
 
 export interface StoreBackend {
-  // knowledge marker (store.json)
+  // knowledge marker (store.json). TCRN-CROSS-SUB-414 (MIN-235 D7): read only. Initialization creates
+  // a crest's root manifest once, with an exclusive create of its own (knowledge-core.ts), and nothing
+  // replaces it, so the backend carries no marker write for a code path to reach.
   readKnowledgeMarker(): Promise<Buffer>;
-  writeKnowledgeMarker(bytes: Buffer | string): Promise<void>;
   // knowledge metadata records (metadata/*.json)
   listKnowledgeMetadata(): Promise<string[]>;
   readKnowledgeMetadata(id: string): Promise<Buffer>;
@@ -178,10 +179,6 @@ export class FileStoreBackend implements StoreBackend {
 
   async readKnowledgeMarker(): Promise<Buffer> {
     return (await this.readBoundRegularFile(this.path("store.json"), this.limits.markerBytes)).bytes;
-  }
-
-  async writeKnowledgeMarker(bytes: Buffer | string): Promise<void> {
-    await this.writeAtomic(this.path("store.json"), bytes);
   }
 
   async listKnowledgeMetadata(): Promise<string[]> {
@@ -427,9 +424,10 @@ export class FileStoreBackend implements StoreBackend {
       existing = undefined;
     }
     if (existing !== undefined) {
-      // Replace branch: the mutation-verb call sites (create marker/metadata/view,
-      // promote/retire/rebase/reverify metadata and marker). Mirrors the stores'
-      // replaceRegularFile: the target must be a safe single-link regular file.
+      // Replace branch: the call sites that replace a record in place (the device cache's
+      // index view, the metadata/body layout's body segments and sidecars, the artifact
+      // store's records). Mirrors the stores' replaceRegularFile: the target must be a safe
+      // single-link regular file.
       if (existing.isSymbolicLink() || !existing.isFile() || existing.nlink !== 1) {
         throw new StoreBackendError(existing.isSymbolicLink() || existing.nlink !== 1 ? this.codes.linkUnsafe : this.codes.specialFile, path);
       }
@@ -452,8 +450,8 @@ export class FileStoreBackend implements StoreBackend {
       }
       return;
     }
-    // Create branch: the exclusive-create call sites (init marker/view, create body,
-    // restore records). Mirrors the stores' writeExclusiveFile.
+    // Create branch: the exclusive-create call sites (a view or record written for the
+    // first time). Mirrors the stores' writeExclusiveFile.
     await this.writeExclusive(path, bytes);
   }
 
@@ -531,7 +529,6 @@ export class SegmentedKnowledgeStoreBackend implements StoreBackend {
   constructor(private readonly delegate: FileStoreBackend) {}
 
   readKnowledgeMarker(): Promise<Buffer> { return this.delegate.readKnowledgeMarker(); }
-  writeKnowledgeMarker(bytes: Buffer | string): Promise<void> { return this.delegate.writeKnowledgeMarker(bytes); }
   listKnowledgeMetadata(): Promise<string[]> { return this.delegate.listKnowledgeMetadata(); }
   readKnowledgeMetadata(id: string): Promise<Buffer> { return this.delegate.readKnowledgeMetadata(id); }
   writeKnowledgeMetadata(id: string, bytes: Buffer | string): Promise<void> { return this.delegate.writeKnowledgeMetadata(id, bytes); }

@@ -26,7 +26,6 @@ import {
   workBatchReceipt,
   workspaceBudgets,
   readKnowledgeBody,
-  readKnowledgeStoreMarker,
   readKnowledgeSnippet,
   recoverKnowledgeStore,
   rebaseKnowledgeStore,
@@ -83,7 +82,6 @@ import {
   templateBindingFromWorkRecord,
   probeHost,
   validateTemplateDocument,
-  knowledgeStorePath,
   materializeFromGenesis,
   openLegacyWorkspace,
   validateLegacyChain,
@@ -448,27 +446,12 @@ function decisionsFromFile(path: string): readonly string[] {
   return document as readonly string[];
 }
 
-function workspaceHeadOf(value: unknown): string | null {
-  if (value === null || typeof value !== "object") return null;
-  const record = value as { readonly headEventHash?: unknown; readonly state?: unknown };
-  if (typeof record.headEventHash === "string") return record.headEventHash;
-  return workspaceHeadOf(record.state);
-}
-
-// INC-244: a successful workspace event must not leave the derived knowledge
-// store frozen at the previous high-water. The event is already authoritative,
-// so this is deliberately a post-commit repair: a blocked rebase is surfaced to
-// the caller with its original reason code, never hidden behind a green write.
-// A missing store is a no-op because knowledge is an optional derived surface.
-async function autoRebaseKnowledgeAfterWorkspaceWrite(workspace: string, at: string, beforeHead: string | null, result: unknown): Promise<void> {
-  const afterHead = workspaceHeadOf(result);
-  if (beforeHead === null || afterHead === null || afterHead === beforeHead) return;
-  const storeRoot = await knowledgeStorePath(workspace);
-  if (!existsSync(join(storeRoot, "store.json"))) return;
-  const current = await readKnowledgeStoreMarker(workspace);
-  if (current.eventHighWaterDigest === afterHead) return;
-  await rebaseKnowledgeStore(workspace, { at });
-}
+// INC-244: a successful workspace event must not leave the derived knowledge store frozen at the
+// previous high water. TCRN-CROSS-SUB-414 (MIN-235 D7) keeps that purpose without a write: a
+// library crest's marker is projected by every knowledge read at the chain head the read replayed,
+// so a chain write leaves nothing to rebind. The knowledge rebind that ran after every chain write
+// here -- a rebase that took the crest's claim and rewrote its store.json, which two devices
+// writing one library contended for -- is gone; a chain write neither reads nor writes the crest.
 
 // TCRN-CROSS-STORY-467 R1: the record ids the last write touched, for the receipt. Set by
 // withWriteLock, read once by the receipt writer, cleared at the start of every command.
@@ -482,22 +465,22 @@ function writtenIdsOf(result: unknown, sinceVersion: number | null): readonly st
 }
 
 // TCRN-CROSS-STORY-467 R1: a write verb holds the engine write lock for its whole sequence
-// -- the before-read, the write, and the knowledge rebind -- so nothing interleaves; the
-// engine write functions take the same lock again (it is re-entrant within the flow). There
-// is no caller-supplied version: the engine reads the latest state under the lock.
-async function withWriteLock<T>(workspace: string, at: string, operation: () => Promise<T>): Promise<T> {
+// -- the before-read and the write -- so nothing interleaves; the engine write functions take the
+// same lock again (it is re-entrant within the flow). There is no caller-supplied version: the
+// engine reads the latest state under the lock. TCRN-CROSS-SUB-414: the knowledge rebind that
+// followed the write, the one reader of the instant passed here, is gone (see above).
+async function withWriteLock<T>(workspace: string, _at: string, operation: () => Promise<T>): Promise<T> {
   return withWorkspaceWriteLock(workspace, async () => {
-    let before: { readonly version: number; readonly headEventHash: string | null } | null = null;
+    let before: { readonly version: number } | null = null;
     try {
       const state = await materializeWorkspace(workspace);
-      before = { version: state.version, headEventHash: state.headEventHash };
+      before = { version: state.version };
     } catch {
       // Recovery verbs deliberately repair residue that makes a pre-read fail.
       // Their own operation remains the authority for whether repair is allowed.
     }
     const result = await operation();
     lastWrittenIds = writtenIdsOf(result, before?.version ?? null);
-    await autoRebaseKnowledgeAfterWorkspaceWrite(workspace, at, before?.headEventHash ?? null, result);
     return result;
   });
 }

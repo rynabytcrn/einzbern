@@ -3,16 +3,20 @@
 // Knowledge-batch: file, reverify or re-policy N knowledge cards in one CLI act.
 //
 // The measured ceremony this removes: filing four cards on 2026-08-19 took sixteen CLI
-// round trips, because every card needs the store's version read, the write made, and the
-// receipt read back -- and any chain write in between invalidates the store, adding a
+// round trips, because every card needed the store's version read, the write made, and the
+// receipt read back -- and any chain write in between invalidated the store, adding a
 // rebase. One batch is one invocation: an optional leading rebase, then the members in
 // order, the store version threaded internally so the caller never re-reads it.
+// TCRN-CROSS-SUB-414: a chain write no longer invalidates a library's crest -- every read
+// projects it at the chain head it replays -- so the leading rebase is the full re-validation
+// of the crest against that head, and it writes nothing.
 //
 // ONE HONEST DIFFERENCE FROM work-batch, stated here because hiding it would be the
 // weaker-answer defect this repository keeps finding in itself. work-batch is atomic:
 // all members land or none do, because chain events are irreversible facts. This batch
-// is NOT atomic across members. Each member commits individually under the store's own
-// mutation claim -- the same per-mutation atomicity every knowledge verb has always had --
+// is NOT atomic across members. Each member commits individually -- TCRN-CROSS-SUB-414: as
+// its own event appended to this device's stream of the crest, the same per-mutation
+// atomicity every knowledge verb has --
 // and a member that fails leaves the members before it applied. That is a deliberate
 // trade, not a shortcut: the knowledge store is a disposable, rebuildable projection
 // (knowledge-init requires acknowledging exactly that), member-level rollback would mean
@@ -69,9 +73,10 @@ export interface KnowledgeBatchOptions {
   // TCRN-CROSS-STORY-467 R1: no expected store version; each member is applied to the
   // store as it stands, in order.
   readonly occurredAt: string;
-  // Rebase the store to the chain head before the first member. In a workspace being
-  // written to this is the normal case, because any chain event invalidates the store
-  // for writes; carrying it inside the batch is what keeps N cards at one invocation.
+  // Rebase the store to the chain head before the first member. TCRN-CROSS-SUB-414: a chain
+  // event no longer invalidates a library's crest, so this is the rebase's full re-validation
+  // against the head -- a scope offender or a record the chain here does not hold yet refuses
+  // the batch before any member -- and it writes nothing.
   readonly alignFirst?: boolean;
   readonly mutation?: KnowledgeMutationOptions;
   // TCRN-CROSS-STORY-364 requirement 3: knowledge-create is a card write path, and a
@@ -138,7 +143,8 @@ function shapeProblems(members: readonly unknown[]): readonly KnowledgeBatchProb
 }
 
 // TCRN-CROSS-STORY-469 R3: the whole batch holds this machine's lock of the library, so no other
-// writer on the machine lands between its members (each member takes the same lock again).
+// writer on the machine lands between its members (each member takes the same lock again), and
+// the members append to this device's stream one after another (TCRN-CROSS-SUB-414).
 export async function applyKnowledgeBatch(
   workspaceRoot: string,
   document: unknown,

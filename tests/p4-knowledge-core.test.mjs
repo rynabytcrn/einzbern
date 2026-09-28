@@ -12,6 +12,7 @@ import {
   realpath,
   rename,
   rm,
+  stat,
   symlink,
   unlink,
   writeFile,
@@ -39,7 +40,9 @@ import {
   listKnowledgeMetadata,
   readKnowledgeBody,
   readKnowledgeSnippet,
+  readKnowledgeStoreMarker,
   rebaseKnowledgeStore,
+  recoverKnowledgeStore,
   reverifyKnowledgeUnit,
   validateKnowledgeStore,
   acquireFileLock,
@@ -152,11 +155,53 @@ async function cliJson(args) {
   return JSON.parse(output);
 }
 
+// TCRN-CROSS-SUB-414: a library's crest keeps each card as a record in the writing device's event
+// stream, crest/events/<device id>/. The stream of this test process's device.
+async function streamRoot(fixture) {
+  const [deviceId] = await readdir(join(fixture.store, "events"));
+  return join(fixture.store, "events", deviceId);
+}
+
+// The latest event this device's stream holds for a card, with its path and its body file's.
+async function cardEvent(fixture, id) {
+  const root = await streamRoot(fixture);
+  let found = null;
+  for (const name of (await readdir(root)).filter((entry) => entry.endsWith(".json")).sort()) {
+    const event = JSON.parse(await readFile(join(root, name), "utf8"));
+    if (event.metadata.id === id) found = { path: join(root, name), event, bodyPath: event.body === null ? null : join(root, event.body.file) };
+  }
+  return found;
+}
+
+// TCRN-CROSS-SUB-414: the crest as an engine before event streams left it -- one metadata file and
+// one body file per card, the marker's version counting its writes. This lays the fixture's crest
+// down that way, every record as the streams hold it now, and takes the streams away, so the read
+// and write paths that still meet such a crest keep their proof.
+async function asOlderEngineCrest(fixture) {
+  const at = "2099-01-01T00:00:00Z";
+  const all = await listKnowledgeMetadata(fixture.workspace, { at, selection: "all", limit: 1_000_000 });
+  const marker = await readKnowledgeStoreMarker(fixture.workspace);
+  const root = await streamRoot(fixture);
+  const bodies = new Map();
+  for (const name of (await readdir(root)).filter((entry) => entry.endsWith(".body"))) bodies.set(name.slice(9, -5), await readFile(join(root, name)));
+  await mkdir(join(fixture.store, "metadata"));
+  await mkdir(join(fixture.store, "bodies"));
+  for (const record of all.records) {
+    await writeFile(join(fixture.store, "metadata", `${record.id}.json`), canonicalJson(record));
+    await writeFile(join(fixture.store, "bodies", `${record.id}.body`), bodies.get(record.bodySha256));
+  }
+  const storeJson = join(fixture.store, "store.json");
+  await writeFile(storeJson, canonicalJson({ ...JSON.parse(await readFile(storeJson, "utf8")), version: marker.version, eventHighWaterDigest: marker.eventHighWaterDigest }));
+  await rm(join(fixture.store, "events"), { recursive: true });
+}
+
 // TCRN-CROSS-SUB-308: nothing writes lifecycle "retired" any more, but a store an older engine
 // wrote may hold such a record. This lays one down the way that engine's knowledge-retire left
 // it -- the metadata at the next revision, lifecycle "retired", the body reclaimed -- so the read
-// and write paths that still meet one keep their proof.
+// and write paths that still meet one keep their proof. TCRN-CROSS-SUB-414: that engine wrote the
+// metadata/body layout, so the crest is laid down that way first (asOlderEngineCrest).
 async function retireByHand(fixture, id) {
+  if (await stat(join(fixture.store, "events")).then(() => true, () => false)) await asOlderEngineCrest(fixture);
   const path = join(fixture.store, "metadata", `${id}.json`);
   const metadata = JSON.parse(await readFile(path, "utf8"));
   await writeFile(path, canonicalJson({ ...metadata, lifecycle: "retired", revision: metadata.revision + 1 }));
@@ -218,15 +263,24 @@ test("WSC-1: knowledge-init CLI round-trips the acknowledgment flag", async () =
   }
 });
 
-test("WSC-2: knowledge-rebase re-binds the store to an advanced workspace head", async () => {
+// TCRN-CROSS-SUB-414 (MIN-235 D7): a chain write no longer leaves a library's crest behind -- every
+// read projects it at the chain head it replayed -- so there is nothing for a rebase to re-bind. The
+// rebase stays the full re-validation against that head, and writes nothing.
+test("WSC-2, SUB-414: a chain write leaves the crest current, and knowledge-rebase re-validates it without a write", async () => {
   const fixture = await workspaceFixture();
   try {
-    await createProject(fixture.workspace, { occurredAt: instant(20, 2), externalKey: "FIXTURE-KNOWLEDGE-PROJECT-TWO", name: "Two" });
-    await expectReason("KNOWLEDGE_HIGH_WATER_MISMATCH", () => validateKnowledgeStore(fixture.workspace));
+    const manifest = await readFile(join(fixture.store, "store.json"));
+    const advanced = await createProject(fixture.workspace, { occurredAt: instant(20, 2), externalKey: "FIXTURE-KNOWLEDGE-PROJECT-TWO", name: "Two" });
+    const validation = await validateKnowledgeStore(fixture.workspace);
+    assert.equal(validation.reasonCode, "KNOWLEDGE_STORE_VALID", "the crest answers at the advanced head with no rebase");
+    assert.equal(validation.eventHighWaterDigest, advanced.headEventHash);
     const result = await rebaseKnowledgeStore(fixture.workspace, { at: instant(20, 3) });
     assert.equal(result.reasonCode, "KNOWLEDGE_STORE_REBASED");
     assert.equal(result.retired, 0);
     assert.deepEqual(result.offenders, []);
+    assert.deepEqual([result.version, result.eventHighWaterDigest], [validation.version, advanced.headEventHash], "the rebase answers the projection it re-validated");
+    assert.deepEqual(await readFile(join(fixture.store, "store.json")), manifest, "and writes nothing: store.json is the bytes initialization wrote");
+    assert.deepEqual(await readdir(fixture.store), ["store.json"]);
     assert.equal((await validateKnowledgeStore(fixture.workspace)).reasonCode, "KNOWLEDGE_STORE_VALID");
   } finally {
     await fixture.close();
@@ -245,31 +299,39 @@ test("WSC-2: knowledge-rebase reports dangling work without retiring the record"
     assert.deepEqual(rebased.danglingWorkLinks, [{ knowledgeId: created.id, workIds: [fixture.workId] }]);
     assert.deepEqual((await validateKnowledgeStore(fixture.workspace)).danglingWorkLinks,
       [{ knowledgeId: created.id, workIds: [fixture.workId] }]);
-    const record = JSON.parse(await readFile(join(fixture.store, "metadata", `${created.id}.json`), "utf8"));
-    assert.deepEqual([record.lifecycle, record.revision], ["active", 1], "the record remains active and unmodified");
-    assert.deepEqual(record.linkedWorkIds, [fixture.workId], "the dangling link stays attached");
+    const { event } = await cardEvent(fixture, created.id);
+    assert.equal((await readdir(await streamRoot(fixture))).filter((name) => name.endsWith(".json")).length, 1, "the rebase appended no record");
+    assert.deepEqual([event.metadata.lifecycle, event.metadata.revision], ["active", 1], "the record remains active and unmodified");
+    assert.deepEqual(event.metadata.linkedWorkIds, [fixture.workId], "the dangling link stays attached");
     assert.equal((await readKnowledgeBody(fixture.workspace, created.id, { at: instant(21, 4) })).body, "Body REBASE-OFFENDER");
-    assert.equal((await readdir(fixture.store)).includes("mutation.claim"), false, "the rebase releases its mutation claim");
+    assert.equal((await readdir(fixture.store)).includes("mutation.claim"), false, "the rebase takes no mutation claim");
   } finally {
     await fixture.close();
   }
 });
 
-test("WSC-2: knowledge-rebase fails closed at fault points leaving the store locked", async () => {
+// TCRN-CROSS-SUB-414: a rebase has no write for a fault point to interrupt, so a simulated crash
+// never fires in it and it never leaves a claim. The one claim a crest can still hold is the crash
+// journal an interrupted writer of the metadata/body layout left, and that locks the rebase, as it
+// locks every write, until knowledge-recover completes it.
+test("WSC-2, SUB-414: a rebase has no fault point, and a claim an interrupted older writer left locks it until recovery", async () => {
   const fixture = await workspaceFixture();
   try {
     await createProject(fixture.workspace, { occurredAt: instant(22, 2), externalKey: "FIXTURE-KNOWLEDGE-PROJECT-THREE", name: "Three" });
-    // The store-version CAS this case opened with went with the expected-version input
-    // (TCRN-CROSS-STORY-467 R1); the claim contract below is unchanged.
-    // WSC-6: the two claim-state assertions below are the executable form of the crash
-    // contract. A failure that leaves the process alive must give the claim back, so the
-    // store stays usable; a simulated crash must NOT, because a real SIGKILL cannot run a
-    // finally block and the retained claim is what marks the store as mid-write. Removing
-    // the KNOWLEDGE_FAULT_INJECTED exemption from the mutation finallys flips the second.
+    const manifest = await readFile(join(fixture.store, "store.json"));
+    const rebased = await rebaseKnowledgeStore(fixture.workspace, { at: instant(22, 4) }, { faultAt: "after-marker-write" });
+    assert.equal(rebased.reasonCode, "KNOWLEDGE_STORE_REBASED", "there is no marker write to crash after");
     assert.equal((await readdir(fixture.store)).includes("mutation.claim"), false);
-    await expectReason("KNOWLEDGE_FAULT_INJECTED", () => rebaseKnowledgeStore(fixture.workspace, { at: instant(22, 4) }, { faultAt: "after-marker-write" }));
-    assert.equal((await readdir(fixture.store)).includes("mutation.claim"), true);
+    const marker = await readKnowledgeStoreMarker(fixture.workspace);
+    await writeFile(join(fixture.store, "mutation.claim"), canonicalJson({
+      schemaVersion: "tcrn.knowledge-mutation-claim.v1", workspaceId: marker.workspaceId, version: marker.version,
+      token: "c".repeat(48), pid: process.pid + 1_000_000, acquiredAt: instant(22, 5),
+    }));
     await expectReason("KNOWLEDGE_LOCKED", () => rebaseKnowledgeStore(fixture.workspace, { at: instant(22, 5) }));
+    await expectReason("KNOWLEDGE_LOCKED", () => createKnowledgeUnit(fixture.workspace, unitInput(fixture, "KNOWLEDGE-WHILE-CLAIMED")));
+    assert.equal((await recoverKnowledgeStore(fixture.workspace)).reasonCode, "KNOWLEDGE_RECOVERED");
+    assert.equal((await rebaseKnowledgeStore(fixture.workspace, { at: instant(22, 6) })).reasonCode, "KNOWLEDGE_STORE_REBASED");
+    assert.deepEqual(await readFile(join(fixture.store, "store.json")), manifest, "neither the rebase nor the recovery wrote store.json");
   } finally {
     await fixture.close();
   }
@@ -303,7 +365,7 @@ test("469-R4: a library's knowledge index view is the device cache, rebuilt when
   } finally {
     process.env.EINZBERN_HOME = previous;
   }
-  assert.deepEqual((await readdir(fixture.store)).sort(), ["bodies", "metadata", "store.json"], "no view was written into crest/");
+  assert.deepEqual((await readdir(fixture.store)).sort(), ["events", "store.json"], "no view was written into crest/");
 });
 
 // TCRN-CROSS-STORY-469 R3: a crest write takes this machine's lock of the library, the lock every
@@ -331,11 +393,11 @@ test("empty Knowledge bootstrap is closed, schema-valid, deterministic, and body
     assert.equal(validation.version, 0);
     assert.equal(validation.records, 0);
     // crest/ holds the store's own files; the library root keeps its seven entries; the derived
-    // index view is in the device cache (TCRN-CROSS-STORY-469 R1, R4).
-    assert.deepEqual((await readdir(fixture.store)).sort(), ["bodies", "metadata", "store.json"]);
+    // index view is in the device cache (TCRN-CROSS-STORY-469 R1, R4). TCRN-CROSS-SUB-414: before
+    // its first card the crest is its root manifest alone; each device's first card lays out its
+    // own event stream.
+    assert.deepEqual((await readdir(fixture.store)).sort(), ["store.json"]);
     assert.deepEqual((await readdir(fixture.workspace)).sort(), [".gitignore", "README.md", "akasha", "artifacts", "config", "crest", "manifest.json"]);
-    assert.deepEqual(await readdir(join(fixture.store, "metadata")), []);
-    assert.deepEqual(await readdir(join(fixture.store, "bodies")), []);
     const index1 = await readFile(fixture.indexView, "utf8");
     const index2 = await readFile(fixture.indexView, "utf8");
     assert.equal(index1, index2);
@@ -356,10 +418,14 @@ test("metadata/body separation, default omission, explicit reads, freshness, and
     assert.equal(created.reasonCode, "KNOWLEDGE_UNIT_CREATED");
     assert.equal(created.version, 1);
     const id = created.id;
-    const metadataText = await readFile(join(fixture.store, "metadata", `${id}.json`), "utf8");
-    const bodyText = await readFile(join(fixture.store, "bodies", `${id}.body`), "utf8");
+    // TCRN-CROSS-SUB-414: the card is one event in this device's stream: its metadata inside the
+    // event, its body in a file of its own beside it.
+    const written = await cardEvent(fixture, id);
+    const metadataText = canonicalJson(written.event.metadata);
+    const eventText = await readFile(written.path, "utf8");
+    const bodyText = await readFile(written.bodyPath, "utf8");
     assert.equal(bodyText, input.body);
-    assert.equal(metadataText.includes(input.body), false);
+    assert.equal(eventText.includes(input.body), false);
     const schema = JSON.parse(await readFile(new URL("../packages/core/schema/knowledge-core-v1.schema.json", import.meta.url), "utf8"));
     const ajv = knowledgeAjv();
     assert.equal(ajv.validate(schema, JSON.parse(metadataText)), true, JSON.stringify(ajv.errors));
@@ -399,7 +465,7 @@ test("metadata-only surfaces never open bodies while explicit/full integrity pat
   try {
     // TCRN-CROSS-INC-282: no promotion step remains; an active write is immediately eligible.
     const created = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "KNOWLEDGE-METADATA-ONLY"));
-    const bodyPath = join(fixture.store, "bodies", `${created.id}.body`);
+    const { bodyPath } = await cardEvent(fixture, created.id);
     const observed = [];
     const observation = { beforeDescriptorReadForTest: async (path) => { observed.push(path); } };
     await listKnowledgeMetadata(fixture.workspace, { at: instant(12), ...observation });
@@ -795,7 +861,7 @@ test("WSC-3: knowledge-create accepts unsorted arrays and sorts them server-side
       roleScopes: [],
     }));
     assert.equal(created.reasonCode, "KNOWLEDGE_UNIT_CREATED");
-    const metadata = JSON.parse(await readFile(join(fixture.store, "metadata", `${created.id}.json`), "utf8"));
+    const { metadata } = (await cardEvent(fixture, created.id)).event;
     assert.deepEqual(metadata.tags, ["architecture", "knowledge", "workflow"]);
     // the stored record is canonical and re-validates
     assert.equal((await validateKnowledgeStore(fixture.workspace)).reasonCode, "KNOWLEDGE_STORE_VALID");
@@ -923,7 +989,7 @@ test("custom schema proof enforces the normative UTF-8 byte budgets", async () =
       assert.equal(Buffer.byteLength(exact, "utf8"), maximumBytes);
       const exactOverride = field === "sourceReferences" ? { sourceReferences: [exact] } : { [field]: exact };
       const created = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, `KNOWLEDGE-UTF8-${field.toUpperCase()}`, exactOverride));
-      const metadata = JSON.parse(await readFile(join(fixture.store, "metadata", `${created.id}.json`), "utf8"));
+      const { metadata } = (await cardEvent(fixture, created.id)).event;
       assert.equal(customAjv.validate(schema, metadata), true, JSON.stringify(customAjv.errors));
       const over = `${exact}a`;
       assert.equal(Buffer.byteLength(over, "utf8"), maximumBytes + 1);
@@ -992,12 +1058,23 @@ test("duplicate, revision CAS, lifecycle, and concurrent writer integrity fail c
   }
 });
 
+// TCRN-CROSS-SUB-414: an event stream's record is bound by its event hash, so a record edited in
+// place is refused for the hash; one edited and signed again reaches the metadata checks. `change`
+// rewrites the card's latest event, and `resign` recomputes its hash and file name.
+async function tamperEvent(fixture, id, change, { resign }) {
+  const { path, event } = await cardEvent(fixture, id);
+  const { eventHash: original, ...unsigned } = change(structuredClone(event));
+  const eventHash = resign ? canonicalSha256(unsigned) : original;
+  await rm(path);
+  await writeFile(resign ? join(await streamRoot(fixture), `${String(event.sequence).padStart(8, "0")}-${eventHash}.json`) : path, canonicalJson({ ...unsigned, eventHash }));
+}
+
 test("link, special-file, source-replacement, unknown-field, and partial-state attacks fail closed", async () => {
   for (const kind of ["symlink", "hardlink", "directory"]) {
     const fixture = await workspaceFixture({ externalKey: `FIXTURE-KNOWLEDGE-${kind.toUpperCase()}` });
     try {
       const created = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, `KNOWLEDGE-${kind.toUpperCase()}`));
-      const bodyPath = join(fixture.store, "bodies", `${created.id}.body`);
+      const { bodyPath } = await cardEvent(fixture, created.id);
       const backing = join(fixture.base, `body-${kind}`);
       if (kind === "symlink") {
         await rename(bodyPath, backing);
@@ -1017,14 +1094,14 @@ test("link, special-file, source-replacement, unknown-field, and partial-state a
   try {
     const input = unitInput(replacement, "KNOWLEDGE-REPLACEMENT");
     const created = await createKnowledgeUnit(replacement.workspace, input);
-    const bodyPath = join(replacement.store, "bodies", `${created.id}.body`);
+    const { bodyPath } = await cardEvent(replacement, created.id);
     let replaced = false;
     await expectReason("KNOWLEDGE_SOURCE_CHANGED", () => readKnowledgeBody(replacement.workspace, created.id, {
       at: instant(12), allowUnpromoted: true,
       async beforeDescriptorReadForTest(path) {
         if (!replaced && path === bodyPath) {
           replaced = true;
-          await rename(bodyPath, `${bodyPath}.old`);
+          await rename(bodyPath, `${join(replacement.base, "replaced-body")}`);
           await writeFile(bodyPath, input.body);
         }
       },
@@ -1032,57 +1109,69 @@ test("link, special-file, source-replacement, unknown-field, and partial-state a
   } finally {
     await replacement.close();
   }
-  const malformed = await workspaceFixture({ externalKey: "FIXTURE-KNOWLEDGE-MALFORMED" });
-  try {
-    const created = await createKnowledgeUnit(malformed.workspace, unitInput(malformed, "KNOWLEDGE-MALFORMED"));
-    const path = join(malformed.store, "metadata", `${created.id}.json`);
-    const metadata = JSON.parse(await readFile(path, "utf8"));
-    metadata.extraAuthority = true;
-    await writeFile(path, canonicalJson(metadata));
-    await expectReason("KNOWLEDGE_RECORD_INVALID", () => validateKnowledgeStore(malformed.workspace));
-  } finally {
-    await malformed.close();
+  // An unknown field and a mistyped one: in an event signed again, and in the metadata/body layout
+  // an older engine left. An event edited in place is refused for its hash.
+  for (const [label, change] of [
+    ["unknown-field", (metadata) => ({ ...metadata, extraAuthority: true })],
+    ["mistyped-field", (metadata) => ({ ...metadata, subject: 7 })],
+  ]) {
+    const signed = await workspaceFixture({ externalKey: `FIXTURE-KNOWLEDGE-SIGNED-${label.toUpperCase()}` });
+    try {
+      const created = await createKnowledgeUnit(signed.workspace, unitInput(signed, `KNOWLEDGE-SIGNED-${label.toUpperCase()}`));
+      await tamperEvent(signed, created.id, (event) => ({ ...event, metadata: change(event.metadata) }), { resign: true });
+      await expectReason("KNOWLEDGE_RECORD_INVALID", () => validateKnowledgeStore(signed.workspace));
+      await expectReason("KNOWLEDGE_RECORD_INVALID", () => listKnowledgeMetadata(signed.workspace, { at: instant(12) }));
+    } finally {
+      await signed.close();
+    }
+    const older = await workspaceFixture({ externalKey: `FIXTURE-KNOWLEDGE-OLDER-${label.toUpperCase()}` });
+    try {
+      const created = await createKnowledgeUnit(older.workspace, unitInput(older, `KNOWLEDGE-OLDER-${label.toUpperCase()}`));
+      await asOlderEngineCrest(older);
+      const path = join(older.store, "metadata", `${created.id}.json`);
+      await writeFile(path, canonicalJson(change(JSON.parse(await readFile(path, "utf8")))));
+      await expectReason("KNOWLEDGE_RECORD_INVALID", () => validateKnowledgeStore(older.workspace));
+    } finally {
+      await older.close();
+    }
   }
-  const malformedType = await workspaceFixture({ externalKey: "FIXTURE-KNOWLEDGE-MALFORMED-TYPE" });
+  const edited = await workspaceFixture({ externalKey: "FIXTURE-KNOWLEDGE-EDITED-EVENT" });
   try {
-    const created = await createKnowledgeUnit(malformedType.workspace, unitInput(malformedType, "KNOWLEDGE-MALFORMED-TYPE"));
-    const path = join(malformedType.store, "metadata", `${created.id}.json`);
-    const metadata = JSON.parse(await readFile(path, "utf8"));
-    metadata.subject = 7;
-    await writeFile(path, canonicalJson(metadata));
-    await expectReason("KNOWLEDGE_RECORD_INVALID", () => validateKnowledgeStore(malformedType.workspace));
+    const created = await createKnowledgeUnit(edited.workspace, unitInput(edited, "KNOWLEDGE-EDITED-EVENT"));
+    await tamperEvent(edited, created.id, (event) => ({ ...event, metadata: { ...event.metadata, summary: "edited in place" } }), { resign: false });
+    await expectReason("KNOWLEDGE_RECORD_INVALID", () => listKnowledgeMetadata(edited.workspace, { at: instant(12) }));
   } finally {
-    await malformedType.close();
+    await edited.close();
   }
-  for (const faultAt of ["after-body-write", "after-metadata-write", "after-marker-write"]) {
+  // TCRN-CROSS-SUB-414: a write commits one event, after its body, with no claim to hold. A crash
+  // before the event leaves a body no event names, which reads ignore; a crash after it leaves the
+  // committed card. Either way the crest reads, holds no claim, and takes the next write.
+  for (const [faultAt, landed] of [["after-body-write", 0], ["after-metadata-write", 1], ["after-marker-write", 1]]) {
     const fixture = await workspaceFixture({ externalKey: `FIXTURE-KNOWLEDGE-FAULT-${faultAt.toUpperCase()}` });
     try {
-      await expectReason("KNOWLEDGE_FAULT_INJECTED", () => createKnowledgeUnit(
-        fixture.workspace,
-        unitInput(fixture, `KNOWLEDGE-FAULT-${faultAt.toUpperCase()}`),
-        { faultAt },
-      ));
-      await expectReason("KNOWLEDGE_PARTIAL_STATE", () => validateKnowledgeStore(fixture.workspace));
+      const input = unitInput(fixture, `KNOWLEDGE-FAULT-${faultAt.toUpperCase()}`);
+      await expectReason("KNOWLEDGE_FAULT_INJECTED", () => createKnowledgeUnit(fixture.workspace, input, { faultAt }));
+      const validation = await validateKnowledgeStore(fixture.workspace);
+      assert.deepEqual([validation.reasonCode, validation.records], ["KNOWLEDGE_STORE_VALID", landed], faultAt);
+      assert.equal((await readdir(fixture.store)).includes("mutation.claim"), false, `${faultAt} leaves no claim`);
+      if (landed === 0) assert.equal((await createKnowledgeUnit(fixture.workspace, input)).reasonCode, "KNOWLEDGE_UNIT_CREATED", "the interrupted write can be made again");
     } finally {
       await fixture.close();
     }
   }
 
-  // WSC-6: the record mutations carry the same crash points as create and rebase. A simulated
-  // crash must retain the claim exactly as those do, because a real SIGKILL never runs the
-  // finally that would release it. (The promote and retire siblings went with their verbs,
-  // TCRN-CROSS-SUB-308.)
+  // WSC-6: the record mutations carry the same crash points as create. A crash after the event of
+  // a re-verification leaves it committed and no claim behind. (The promote and retire siblings
+  // went with their verbs, TCRN-CROSS-SUB-308.)
   for (const verb of ["reverify"]) {
     const fixture = await workspaceFixture({ externalKey: `FIXTURE-KNOWLEDGE-SIBLING-${verb.toUpperCase()}` });
     try {
       const unit = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, `KNOWLEDGE-SIBLING-${verb.toUpperCase()}`));
-      const revision = 1;
-      const run = () => {
-        const common = { expectedRevision: revision, occurredAt: instant(12, 5), id: unit.id };
-        return reverifyKnowledgeUnit(fixture.workspace, common, { faultAt: "after-metadata-write" });
-      };
+      const run = () => reverifyKnowledgeUnit(fixture.workspace, { expectedRevision: 1, occurredAt: instant(12, 5), id: unit.id }, { faultAt: "after-metadata-write" });
       await expectReason("KNOWLEDGE_FAULT_INJECTED", run);
-      assert.equal((await readdir(fixture.store)).includes("mutation.claim"), true, `${verb} must retain the claim after a simulated crash`);
+      assert.equal((await readdir(fixture.store)).includes("mutation.claim"), false, `${verb} leaves no claim after a simulated crash`);
+      const listed = await listKnowledgeMetadata(fixture.workspace, { at: instant(12, 6), selection: "all" });
+      assert.equal(listed.records.find((record) => record.id === unit.id).revision, 2, "the committed record stands");
     } finally {
       await fixture.close();
     }
@@ -1284,6 +1373,9 @@ test("SUB-386: dangling linked work is diagnosed without blocking reads or write
   try {
     const created = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "DANGLING-WORK-CARD"));
     const danglingId = deriveStableId("work", "SUB386-DANGLING-WORK");
+    // TCRN-CROSS-SUB-414: a record linking work its chain no longer holds is one an older engine
+    // could leave; laid down in its metadata/body layout.
+    await asOlderEngineCrest(fixture);
     const metadataPath = join(fixture.store, "metadata", `${created.id}.json`);
     const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
     await writeFile(metadataPath, canonicalJson({ ...metadata, linkedWorkIds: [danglingId] }));
@@ -1312,6 +1404,7 @@ test("SUB-386: historical promotion metadata and candidate records remain readab
   const fixture = await workspaceFixture({ externalKey: "FIXTURE-KNOWLEDGE-HISTORICAL-PROMOTION" });
   try {
     const created = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "HISTORICAL-CANDIDATE"));
+    await asOlderEngineCrest(fixture);
     const metadataPath = join(fixture.store, "metadata", `${created.id}.json`);
     const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
     await writeFile(metadataPath, canonicalJson({ ...metadata, lifecycle: "candidate", promotionState: "candidate" }));
@@ -1348,9 +1441,15 @@ test("TCRN-CROSS-STORY-023, TCRN-CROSS-SUB-309: the aggregate cap counts card bo
       }
     }
     assert.ok(rejected !== null, "the cap must still reject once the body bytes exceed it");
+    // TCRN-CROSS-SUB-414: each card is an event (its metadata) and a body file in this device's stream.
     let sumMeta = 0, sumBody = 0;
-    for (const n of await readdir(join(storeRoot, "metadata"))) sumMeta += (await readFile(join(storeRoot, "metadata", n))).length;
-    for (const n of await readdir(join(storeRoot, "bodies"))) sumBody += (await readFile(join(storeRoot, "bodies", n))).length;
+    const stream = await streamRoot(fx);
+    for (const n of await readdir(stream)) {
+      const bytes = (await readFile(join(stream, n))).length;
+      if (n.endsWith(".body")) sumBody += bytes;
+      else sumMeta += bytes;
+    }
+    void storeRoot;
     const marker = (await readFile(join(storeRoot, "store.json"))).length;
     const cap = 131_072;
     assert.equal(sumBody, admitted * 7_500);
@@ -1388,19 +1487,20 @@ test("TCRN-CROSS-STORY-024: a retired record without its body keeps the store va
     const created = await createKnowledgeUnit(fx.workspace, unitInput(fx, "S024-RECLAIM", {
       occurredAt: instant(11, 3), body: "x".repeat(7_500),
     }));
-    const bodyFile = join(bodiesDir, `${created.id}.body`);
-    assert.equal((await readFile(bodyFile)).length, 7_500, "body present before retire");
     // A retirement an older engine made reclaimed the body file (TCRN-CROSS-SUB-308: nothing
-    // retires by hand now), and the store is still valid without it.
+    // retires by hand now), and the store is still valid without it. That engine wrote the
+    // metadata/body layout (TCRN-CROSS-SUB-414), which retireByHand lays down first.
     await retireByHand(fx, created.id);
+    const bodyFile = join(bodiesDir, `${created.id}.body`);
     await assert.rejects(readFile(bodyFile), "retired body must be deleted");
     assert.equal((await validateKnowledgeStore(fx.workspace)).reasonCode, "KNOWLEDGE_STORE_VALID");
     // The retired record survives as a metadata-only audit entry.
     const all = await listKnowledgeMetadata(fx.workspace, { at: instant(12), selection: "all" });
     assert.equal(all.records.some((r) => r.id === created.id), true, "retired record kept as audit entry");
-    // Integrity still fires: a LIVE record missing its body corrupts the store.
+    // Integrity still fires: a LIVE record missing its body corrupts the store, in the older layout
+    // and in an event stream alike.
     const live = await createKnowledgeUnit(fx.workspace, unitInput(fx, "S024-LIVE", { occurredAt: instant(11, 5) }));
-    await rm(join(bodiesDir, `${live.id}.body`));
+    await rm((await cardEvent(fx, live.id)).bodyPath);
     await expectReason("KNOWLEDGE_PARTIAL_STATE", () => validateKnowledgeStore(fx.workspace));
   } finally { await fx.close(); }
 });
@@ -1497,8 +1597,9 @@ test("STORY-366 GWT1: an article stores full Markdown outside the chain and only
     assert.match(markdown, /^---\ncategory: architecture\ntitle: 分区 拓扑\n---\n/u);
     assert.ok(markdown.includes(content));
     assert.equal(created.sourceDigest, createHash("sha256").update(markdown).digest("hex"));
-    const metadata = JSON.parse(await readFile(join(fx.store, "metadata", `${created.id}.json`), "utf8"));
-    const storedBody = await readFile(join(fx.store, "bodies", `${created.id}.body`));
+    const stored = await cardEvent(fx, created.id);
+    const metadata = stored.event.metadata;
+    const storedBody = await readFile(stored.bodyPath);
     assert.equal(metadata.kind, "reference");
     assert.equal(metadata.retrievalDisposition, "explicit-only");
     assert.deepEqual(metadata.sourceReferences, ["topology.md"]);
@@ -1537,8 +1638,12 @@ test("STORY-366 GWT2: refresh reads the edited file, updates its digest and summ
     const after = await readFile(articlePath, "utf8");
     assert.equal(refreshed.sourceDigest, createHash("sha256").update(after).digest("hex"));
     assert.notEqual(refreshed.sourceDigest, created.sourceDigest);
-    const metadata = JSON.parse(await readFile(join(fx.store, "metadata", `${created.id}.json`), "utf8"));
+    // TCRN-CROSS-SUB-414: the refresh wrote the card again, a record naming the one it replaces.
+    const { event } = await cardEvent(fx, created.id);
+    const metadata = event.metadata;
     assert.equal(metadata.summary, "更新摘要");
+    assert.equal(metadata.revision, 2);
+    assert.match(event.replaces, /^[a-f0-9]{64}$/u);
     assert.equal((await listKnowledgeMetadata(fx.workspace, { at: instant(12), search: "更新摘要" })).records[0].id, created.id);
     await assert.rejects(
       () => cliJson(["knowledge-article-refresh", "--workspace", fx.workspace, "--expected-revision", "1", "--at", instant(11, 5), "--id", created.id, "--path", "refresh.md", "--summary", "stale"]),
@@ -1573,7 +1678,7 @@ test("INIT-047: supersedes is validated, source digests are computed and source 
       sourceReferences: ["source.md"], sourceDigest: null, linkedEvidenceIds: [deriveStableId("evidence", "INIT047-SOURCE")],
       retrievalDisposition: "explicit-only", lastVerified: instant(11, 3), freshnessState: "fresh",
     }));
-    const metadata = JSON.parse(await readFile(join(fx.store, "metadata", `${sourced.id}.json`), "utf8"));
+    const { metadata } = (await cardEvent(fx, sourced.id)).event;
     assert.equal(metadata.sourceDigest, createHash("sha256").update("source-v1").digest("hex"));
     assert.equal(Object.hasOwn(sourced, "promotionState"), false, "the receipt omits the retired promotion marker");
     assert.equal((await checkKnowledgeSources(fx.workspace)).records.find((record) => record.id === sourced.id).status, "unchanged");

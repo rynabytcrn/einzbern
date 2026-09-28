@@ -9,14 +9,23 @@ import { createHash } from "node:crypto";
 import { execFile, execFileSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { promisify } from "node:util";
 import { join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { compareCanonicalText } from "./lib/canonical-order.mjs";
 import { repositoryRoot, toPosixPath, walkFiles } from "./lib/files.mjs";
 
-const execFileAsync = promisify(execFile);
+const execFileAsync = (file, args, options) => new Promise((resolveResult, rejectResult) => {
+  execFile(file, args, options, (error, stdout, stderr) => {
+    if (error) {
+      error.stdout = stdout;
+      error.stderr = stderr;
+      rejectResult(error);
+    } else {
+      resolveResult({ stdout, stderr });
+    }
+  });
+});
 const HISTORICAL_COMMAND_MAX_BUFFER_BYTES = 16 * 1024 * 1024;
 const EVIDENCE_ROOTS = [
   "docs/reports/init-028-design/evidence/",

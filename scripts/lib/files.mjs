@@ -7,11 +7,20 @@ import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { compareCanonicalText } from "./canonical-order.mjs";
-import { LEGACY_ENGINE_NAME } from "./names.mjs";
 import { BoundaryError, readBoundRegularFile } from "./safe-io.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 export const repositoryRoot = resolve(scriptDirectory, "../..");
+
+// TCRN-CROSS-SUB-267: the old engine's name comes from the names module, which is the TypeScript
+// source itself (./names.mjs). It is imported only once a walk reaches a `.claude/` directory, not
+// when this file loads: scripts/task.mjs imports this file, and the task-entry fixtures carry
+// scripts/ without packages/, so an import at load would stop the task entry from starting there.
+let legacyEngineName;
+async function legacyEngineDirectoryName() {
+  legacyEngineName ??= (await import("./names.mjs")).LEGACY_ENGINE_NAME;
+  return legacyEngineName;
+}
 
 export const excludedDirectories = new Set([
   ".git",
@@ -92,7 +101,7 @@ export async function walkFiles(root = repositoryRoot) {
       // Claude Code adapter bundle, a directory named after the old engine inside `.claude/`, is a
       // local installation surface like `.codex` and is still skipped. Its name is the alias
       // constant of the names module, never a literal of this file.
-      if (entry.isDirectory() && entry.name === LEGACY_ENGINE_NAME && directory.split(sep).at(-1) === ".claude") {
+      if (entry.isDirectory() && directory.split(sep).at(-1) === ".claude" && entry.name === await legacyEngineDirectoryName()) {
         continue;
       }
       const absolute = resolve(directory, entry.name);

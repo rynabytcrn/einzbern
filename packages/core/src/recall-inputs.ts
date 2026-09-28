@@ -90,6 +90,22 @@ export interface RecallCardStoreRead {
   readonly reasonCode: string;
   readonly digest: string;
   readonly cards: number;
+  // TCRN-CROSS-SUB-310: the pairs of cards the store holds in unresolved conflict, which its
+  // default selection left out of the cards counted above; empty for a store with none.
+  readonly unresolvedConflicts: readonly (readonly string[])[];
+}
+
+/**
+ * TCRN-CROSS-SUB-310 (MIN-235 D7): why the user crest gave recall fewer cards than it holds. Either
+ * its read was refused (`reasonCode` the refusal's, e.g. KNOWLEDGE_LIMIT_EXCEEDED: no user card is
+ * recalled), or it withheld cards in unresolved conflict (`reasonCode` KNOWLEDGE_POSSIBLE_CONFLICT,
+ * the pairs under `unresolvedConflicts` and their number of cards as `withheldCards`; every other
+ * user card is recalled).
+ */
+export interface RecallUserCrestDegraded {
+  readonly reasonCode: string;
+  readonly unresolvedConflicts?: readonly (readonly string[])[];
+  readonly withheldCards?: number;
 }
 
 export interface RecallCardRead {
@@ -97,6 +113,24 @@ export interface RecallCardRead {
   readonly stores: Readonly<Record<KnowledgeStoreScope, RecallCardStoreRead>>;
   // Both stores' digests, so a recall checkpoint moves when either store does.
   readonly digest: string;
+  // TCRN-CROSS-SUB-310: null when the user crest gave every card it holds, or holds none.
+  readonly userCrestDegraded: RecallUserCrestDegraded | null;
+}
+
+function conflictPairs(value: unknown): readonly (readonly string[])[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((pair): pair is readonly unknown[] => Array.isArray(pair)).map((pair) => pair.map((id) => String(id)));
+}
+
+/** The user crest's degradation for recall, from how its read went; null when it is not degraded. */
+function userCrestDegradation(read: RecallCardStoreRead): RecallUserCrestDegraded | null {
+  if (read.reasonCode !== "KNOWLEDGE_LIST_READY") return { reasonCode: read.reasonCode };
+  if (read.unresolvedConflicts.length === 0) return null;
+  return {
+    reasonCode: "KNOWLEDGE_POSSIBLE_CONFLICT",
+    unresolvedConflicts: read.unresolvedConflicts,
+    withheldCards: new Set(read.unresolvedConflicts.flat()).size,
+  };
 }
 
 export interface RecallCardReadOptions {
@@ -110,7 +144,9 @@ export interface RecallCardReadOptions {
  * the complete corpus before scoring, so bm25 keeps its baseline) and merged by mergeRecallCards.
  * A store that cannot be read gives no cards and its reason code rather than failing the recall,
  * so "no cards" never reads like "no card matched"; a user crest that has never been written is an
- * empty read, not a failure.
+ * empty read, not a failure. TCRN-CROSS-SUB-310: cards a user crest holds in unresolved conflict
+ * are not recalled, the rest are, and `userCrestDegraded` says why the user crest gave fewer cards
+ * than it holds -- a refusal or the withheld conflicts -- rather than leaving it to a nested code.
  */
 export async function readRecallCards(workspaceRoot: string, options: RecallCardReadOptions): Promise<RecallCardRead> {
   const read = async (scope: KnowledgeStoreScope): Promise<{ readonly cards: readonly RecallKnowledgeInput[]; readonly store: RecallCardStoreRead }> => {
@@ -123,11 +159,19 @@ export async function readRecallCards(workspaceRoot: string, options: RecallCard
         ...(scope === "user" ? { scope } : {}),
       });
       const cards = ((answer["records"] ?? []) as readonly Readonly<Record<string, unknown>>[]).map((record) => recallCardFromRecord(record, scope));
-      return { cards, store: { reasonCode: String(answer["reasonCode"] ?? ""), digest: String(answer["resultDigest"] ?? ""), cards: cards.length } };
+      return {
+        cards,
+        store: {
+          reasonCode: String(answer["reasonCode"] ?? ""),
+          digest: String(answer["resultDigest"] ?? ""),
+          cards: cards.length,
+          unresolvedConflicts: conflictPairs(answer["unresolvedConflicts"]),
+        },
+      };
     } catch (error) {
       const reasonCode = (error as { readonly reasonCode?: unknown }).reasonCode;
       if (typeof reasonCode !== "string") throw error;
-      return { cards: [], store: { reasonCode, digest: "absent", cards: 0 } };
+      return { cards: [], store: { reasonCode, digest: "absent", cards: 0, unresolvedConflicts: [] } };
     }
   };
   const project = await read("project");
@@ -136,6 +180,7 @@ export async function readRecallCards(workspaceRoot: string, options: RecallCard
     cards: mergeRecallCards(project.cards, user.cards),
     stores: { project: project.store, user: user.store },
     digest: `${project.store.digest}:${user.store.digest}`,
+    userCrestDegraded: userCrestDegradation(user.store),
   };
 }
 

@@ -450,6 +450,25 @@ work record reaching done (`work-transition`, and each done member of `work-batc
 scorer finds against the record's title and goal or the minutes' summary, in both stores. A
 possible conflict names the cards under `conflicts` on stderr.
 
+Two devices share the user crest through a synced folder without one device's late delivery
+stopping the other (TCRN-CROSS-SUB-310; MIN-235 D7; `packages/core/src/knowledge-core.ts`,
+`packages/core/src/recall-inputs.ts`). Each device appends immutable events under
+`events/<device id>/`, and a same-subject pair two devices wrote before either saw the other is an
+unresolved conflict, not a refusal of the whole crest: `knowledge-list --scope user` names such
+pairs as `unresolvedConflicts`, its default selection leaves their cards out (`--selection all`,
+`knowledge-snippet` and `knowledge-body` still read them), every other card reads, recalls and is
+written as before, and a write whose `--supersedes` names either card of a pair resolves it. A
+user-crest write records every conflict it was admitted beside in the new card's `coexistsWith`,
+with `--coexist` or beside the card it supersedes; a card two devices each replaced is replaced,
+and colliding replacements form a pair like any other. `recall` answers `userCrestDegraded` at its
+top when the user crest gave fewer cards than it holds: the read's refusal code alone (such as
+`KNOWLEDGE_LIMIT_EXCEEDED` for a merge past `knowledge.aggregateBytes`, whose disposition is still
+pending), or `KNOWLEDGE_POSSIBLE_CONFLICT` with `unresolvedConflicts` and `withheldCards`; it is
+absent otherwise. A user-crest `knowledge-create` whose event is committed answers from its own
+scan (`version` is that scan's plus one) and never reads the crest again, so nothing delivered
+meanwhile turns it into a refusal. `knowledge-recover --scope user` never writes the crest's
+`store.json`: initialization by the first card is the one operation that does.
+
 Gates are declared per project and chosen by the change (TCRN-CROSS-STORY-485; MIN-227 D4;
 `packages/core/src/gates-config.ts`, `gates-plan.ts`, `gates-run.ts`, `gates-done.ts`). A gate is a
 project-level configuration record of the gate collection, keyed by its name: its command is an

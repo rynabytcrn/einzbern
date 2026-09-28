@@ -459,6 +459,20 @@ interface UserCrestScan extends CrestScan {
   readonly device: string;
   readonly eventOnly: boolean;
   readonly eventHeads: readonly { readonly deviceId: string; readonly sequence: number; readonly eventHash: string }[];
+  // TCRN-CROSS-SUB-310 (MIN-235 D7): pairs of live cards from two writers that each wrote without
+  // seeing the other, which the write-time conflict check would have refused. Each pair is in
+  // canonical id order and so is the list. Both cards stay readable; default selection leaves
+  // them out until a write resolves the pair (projectUserCrestUnits).
+  readonly unresolvedConflicts: readonly (readonly string[])[];
+}
+
+// TCRN-CROSS-SUB-310: the one writer a user-crest card came from -- a device's event stream, named
+// by its device id, or the metadata/body layout an engine before events wrote under the store's
+// mutation claim. One writer scans before it writes, so it saw every earlier card of its own.
+const USER_CREST_LEGACY_LINEAGE = "legacy" as const;
+
+interface UserCrestUnit extends ScannedKnowledgeUnit {
+  readonly lineage: string;
 }
 
 interface KnowledgeStoreScan {
@@ -1778,7 +1792,7 @@ async function userCrestParent(location: UserCrestLocation, create: boolean): Pr
 }
 
 interface UserCrestEventStreams {
-  readonly units: readonly ScannedKnowledgeUnit[];
+  readonly units: readonly UserCrestUnit[];
   readonly eventCount: number;
   readonly heads: readonly { readonly deviceId: string; readonly sequence: number; readonly eventHash: string }[];
 }
@@ -1872,7 +1886,7 @@ async function readUserCrestEventStreams(
     fail("KNOWLEDGE_PATH_INVALID", `${eventsPath}:${String((error as { code?: string }).code ?? error)}`);
   }
   const eventsRoot = await boundDirectory(eventsPath, storeRoot);
-  const units: ScannedKnowledgeUnit[] = [];
+  const units: UserCrestUnit[] = [];
   const heads: { deviceId: string; sequence: number; eventHash: string }[] = [];
   let eventCount = 0;
   const deviceEntries = await readdir(eventsRoot, { withFileTypes: true });
@@ -1921,6 +1935,7 @@ async function readUserCrestEventStreams(
         metadata: event.metadata,
         body,
         readBody: async () => readUserCrestFile(bodyPath, KNOWLEDGE_LIMITS.maximumBodyBytes),
+        lineage: deviceId,
       });
       priorHash = event.eventHash;
       eventCount += 1;
@@ -1934,8 +1949,34 @@ async function readUserCrestEventStreams(
   return { units, eventCount, heads };
 }
 
-function projectUserCrestUnits(units: readonly ScannedKnowledgeUnit[]): readonly ScannedKnowledgeUnit[] {
-  const byId = new Map<string, ScannedKnowledgeUnit>();
+interface UserCrestProjection {
+  readonly units: readonly UserCrestUnit[];
+  readonly unresolvedConflicts: readonly (readonly string[])[];
+}
+
+// Of the cards that replace one card, the one its projected supersededBy names: the latest
+// written, and of those written at one instant the last in canonical id order.
+function latestReplacement(replacements: readonly UserCrestUnit[]): UserCrestUnit {
+  return [...replacements].sort((left, right) => {
+    const leftAt = parseStrictInstant(left.metadata.updatedAt);
+    const rightAt = parseStrictInstant(right.metadata.updatedAt);
+    return leftAt === rightAt ? compareCanonicalText(left.metadata.id, right.metadata.id) : leftAt < rightAt ? -1 : 1;
+  }).at(-1) as UserCrestUnit;
+}
+
+// TCRN-CROSS-SUB-310 (MIN-235 D7; R14 (a)): the user crest's cards, merged from every writer.
+// A shared folder can deliver one device's events after another device has already written: two
+// cards about one thing then stand side by side although neither writer saw the other, which the
+// write-time conflict check exists to refuse. Such a pair is not a reason to refuse the whole
+// crest: it is returned as an unresolved conflict, and only its two cards leave default selection.
+// A pair counts only when its cards come from different writers and neither acknowledges the other:
+// one writer scans before it writes, so the conflicts it saw were refused, or recorded in the new
+// card's coexistsWith (--coexist, or beside a card it supersedes). A write that supersedes either
+// card resolves the pair. A card replaced by more than one card -- two devices that replaced it
+// before either saw the other's replacement -- is replaced either way; every replacement stays
+// live, and replacements that collide form an unresolved pair like any other.
+function projectUserCrestUnits(units: readonly UserCrestUnit[]): UserCrestProjection {
+  const byId = new Map<string, UserCrestUnit>();
   const idByExternalKey = new Map<string, string>();
   for (const unit of units) {
     const previous = byId.get(unit.metadata.id);
@@ -1952,23 +1993,17 @@ function projectUserCrestUnits(units: readonly ScannedKnowledgeUnit[]): readonly
     byId.set(unit.metadata.id, unit);
     idByExternalKey.set(unit.metadata.externalKey, unit.metadata.id);
   }
-  const superseders = new Map<string, ScannedKnowledgeUnit>();
+  const replacements = new Map<string, UserCrestUnit[]>();
   for (const unit of byId.values()) {
     if (unit.metadata.supersedes === null) continue;
     if (!byId.has(unit.metadata.supersedes)) fail("KNOWLEDGE_LINK_INVALID", `${unit.metadata.id}:supersedes:${unit.metadata.supersedes}`);
-    if (superseders.has(unit.metadata.supersedes)) {
-      fail("KNOWLEDGE_PARTIAL_STATE", `${unit.metadata.supersedes}: competing superseding events`);
-    }
-    superseders.set(unit.metadata.supersedes, unit);
+    replacements.set(unit.metadata.supersedes, [...(replacements.get(unit.metadata.supersedes) ?? []), unit]);
   }
-  const projected = [...byId.values()].map((unit): ScannedKnowledgeUnit => {
-    const successor = superseders.get(unit.metadata.id);
-    if (successor === undefined) return unit;
-    const existing = unit.metadata.extensions.supersededBy;
-    if (existing !== undefined && existing !== successor.metadata.id) {
-      fail("KNOWLEDGE_PARTIAL_STATE", `${unit.metadata.id}: conflicting supersededBy projection`);
-    }
-    if (existing === successor.metadata.id) return unit;
+  const projected = [...byId.values()].map((unit): UserCrestUnit => {
+    const successors = replacements.get(unit.metadata.id);
+    // A card the metadata/body layout already marked replaced keeps the mark it was written with.
+    if (successors === undefined || unit.metadata.extensions.supersededBy !== undefined) return unit;
+    const successor = latestReplacement(successors);
     const metadata = validateExistingMetadataShape({
       ...unit.metadata,
       extensions: { ...unit.metadata.extensions, supersededBy: successor.metadata.id },
@@ -1979,22 +2014,26 @@ function projectUserCrestUnits(units: readonly ScannedKnowledgeUnit[]): readonly
   }).sort((left, right) => compareCanonicalText(left.metadata.id, right.metadata.id));
   const byProjectedId = new Map(projected.map((unit) => [unit.metadata.id, unit.metadata]));
   for (const unit of projected) validateSupersedesLink(unit.metadata, byProjectedId);
+  const unresolvedConflicts: (readonly string[])[] = [];
   for (let leftIndex = 0; leftIndex < projected.length; leftIndex += 1) {
-    const left = projected[leftIndex] as ScannedKnowledgeUnit;
+    const left = projected[leftIndex] as UserCrestUnit;
     if (!countsTowardCapacity(left.metadata)) continue;
     for (let rightIndex = leftIndex + 1; rightIndex < projected.length; rightIndex += 1) {
-      const right = projected[rightIndex] as ScannedKnowledgeUnit;
-      if (!countsTowardCapacity(right.metadata)) continue;
+      const right = projected[rightIndex] as UserCrestUnit;
+      if (!countsTowardCapacity(right.metadata) || left.lineage === right.lineage) continue;
       const conflicts = knowledgeConflictHits([left.metadata], right.metadata.subject, [right.metadata.id]).length > 0 ||
         knowledgeConflictHits([right.metadata], left.metadata.subject, [left.metadata.id]).length > 0;
       const acknowledged = left.metadata.extensions.coexistsWith?.includes(right.metadata.id) === true ||
         right.metadata.extensions.coexistsWith?.includes(left.metadata.id) === true;
-      if (conflicts && !acknowledged) {
-        fail("KNOWLEDGE_POSSIBLE_CONFLICT", `${left.metadata.id},${right.metadata.id}`, { conflicts: [left.metadata.id, right.metadata.id] });
-      }
+      if (conflicts && !acknowledged) unresolvedConflicts.push([left.metadata.id, right.metadata.id]);
     }
   }
-  return projected;
+  return { units: projected, unresolvedConflicts };
+}
+
+// The ids of the cards an unresolved conflict holds out of default selection.
+function unresolvedConflictIds(scan: Pick<UserCrestScan, "unresolvedConflicts">): ReadonlySet<string> {
+  return new Set(scan.unresolvedConflicts.flat());
 }
 
 async function assertUserCrestRootEntries(storeRoot: string, legacyLayout: boolean, hasEvents: boolean, allowClaim: boolean): Promise<void> {
@@ -2031,7 +2070,7 @@ async function scanUserCrest(
   const legacyLayout = hasLegacyMetadata && hasLegacyBodies;
   await assertUserCrestRootEntries(storeRoot, legacyLayout, hasEvents, allowClaim);
   if (!legacyLayout && !hasEvents) fail("KNOWLEDGE_PARTIAL_STATE", "user crest event streams are missing");
-  let legacyUnits: readonly ScannedKnowledgeUnit[] = [];
+  let legacyUnits: readonly UserCrestUnit[] = [];
   if (legacyLayout) {
     const metadataRoot = await boundDirectory(resolve(storeRoot, "metadata"), storeRoot);
     const bodiesRoot = await boundDirectory(resolve(storeRoot, "bodies"), storeRoot);
@@ -2041,10 +2080,12 @@ async function scanUserCrest(
       danglingWorkLinks: null,
       body: (metadata, body) => validateMetadataBody(metadata, body, null),
     });
-    legacyUnits = legacy.units;
+    legacyUnits = legacy.units.map((unit): UserCrestUnit => ({ ...unit, lineage: USER_CREST_LEGACY_LINEAGE }));
   }
   const streams = hasEvents ? await readUserCrestEventStreams(storeRoot, bodyMode) : { units: [], eventCount: 0, heads: [] };
-  const units = projectUserCrestUnits([...legacyUnits, ...streams.units]);
+  const { units, unresolvedConflicts } = projectUserCrestUnits([...legacyUnits, ...streams.units]);
+  // O-1 is pending (R14 (b)): a merge whose live bodies exceed the budget is refused whole here,
+  // unchanged; recall reports the refusal as a degraded user crest (readRecallCards).
   const capacityBytes = capacityBodyBytes(units.map((unit) => unit.metadata));
   const aggregateLimit = KNOWLEDGE_AGGREGATE_DEFAULT;
   assertWithinCapacity(capacityBytes, aggregateLimit, "knowledge aggregate bytes");
@@ -2058,11 +2099,16 @@ async function scanUserCrest(
   };
   const index = knowledgeIndex(projectedMarker, units.map((unit) => unit.metadata));
   await projectCachedView(backend, index);
-  return { storeRoot, device: location.device, eventOnly: !legacyLayout, eventHeads: streams.heads, marker: projectedMarker, units, index, capacity: { bodyBytes: capacityBytes, limit: aggregateLimit } };
+  return {
+    storeRoot, device: location.device, eventOnly: !legacyLayout, eventHeads: streams.heads, marker: projectedMarker, units, index,
+    capacity: { bodyBytes: capacityBytes, limit: aggregateLimit }, unresolvedConflicts,
+  };
 }
 
 // The root marker is created once and never advanced by card writes. Each device appends immutable
 // events beneath events/<device id>/; every read reconstructs metadata from those streams.
+// TCRN-CROSS-SUB-310 (R14 (c)): this exclusive create is the one operation of this engine that
+// writes the user crest's root manifest (knowledge-core-v1.md lists it); recovery never does.
 async function ensureUserCrest(location: UserCrestLocation): Promise<void> {
   if (await userCrestInitialized(location.root)) {
     try {
@@ -2257,25 +2303,13 @@ async function recoverUserCrestUnlocked(location: UserCrestLocation, options: Kn
     boundClaim.workspaceId !== USER_CREST_ID || !sameIdentity(boundClaim.identity, claim.identity)) {
     fail("KNOWLEDGE_SOURCE_CHANGED", "knowledge user-crest claim changed during recovery");
   }
+  // TCRN-CROSS-SUB-310 (MIN-235 D7; R14 (c)): recovery never writes the root manifest, whichever
+  // layouts the crest holds. The marker a scan answers is a projection over every event stream
+  // (scanUserCrest), not the manifest, and persisting it would bind the manifest to one moment of
+  // the streams and refuse every later read. What recovery repairs is this device's derived index
+  // and the claim an interrupted writer of the metadata/body layout left; it deletes no body.
   const backend = userCrestBackend(scan.storeRoot, location.device, options);
-  if (scan.eventOnly) {
-    await writeIndex(backend, scan.marker, scan.units.map((unit) => unit.metadata));
-    await releaseMutationClaim(scan.storeRoot, boundClaim);
-    await scanUserCrest(location, options);
-    return {
-      schemaVersion: "tcrn.knowledge-recovery-result.v1",
-      reasonCode: "KNOWLEDGE_RECOVERED",
-      recovered: true,
-      scope: "user",
-      version: scan.marker.version,
-      reclaimedRetiredBodies: 0,
-    };
-  }
-  const marker: KnowledgeStoreMarker = { ...scan.marker, version: scan.marker.version + 1 };
-  await backend.writeKnowledgeMarker(canonicalJson(marker));
-  await writeIndex(backend, marker, scan.units.map((unit) => unit.metadata));
-  // O6 remains pending: user-crest recovery repairs the interrupted index and marker but
-  // does not physically delete any retained body.
+  await writeIndex(backend, scan.marker, scan.units.map((unit) => unit.metadata));
   await releaseMutationClaim(scan.storeRoot, boundClaim);
   await scanUserCrest(location, options);
   return {
@@ -2283,7 +2317,7 @@ async function recoverUserCrestUnlocked(location: UserCrestLocation, options: Kn
     reasonCode: "KNOWLEDGE_RECOVERED",
     recovered: true,
     scope: "user",
-    version: marker.version,
+    version: scan.marker.version,
     reclaimedRetiredBodies: 0,
   };
 }
@@ -2699,9 +2733,13 @@ async function createUserCrestEvent(
   if (conflicts.length > 0 && metadata.supersedes === null && input.coexist !== true) {
     fail("KNOWLEDGE_POSSIBLE_CONFLICT", conflicts.join(","), { conflicts: [...conflicts] });
   }
-  const written: KnowledgeUnitMetadata = conflicts.length === 0 || metadata.supersedes !== null
+  // TCRN-CROSS-SUB-310: the conflicts this write saw and was admitted beside -- with --coexist, or
+  // beside the card it supersedes -- are recorded in the card, so a reader tells them from a
+  // conflict no writer saw (projectUserCrestUnits). A library's write records only --coexist.
+  const written: KnowledgeUnitMetadata = conflicts.length === 0
     ? metadata
     : { ...metadata, extensions: { coexistsWith: conflicts.slice(0, KNOWLEDGE_LIMITS.maximumQueryResults) } };
+  if (written !== metadata) validateMetadataBody(validateMetadataShape(written as unknown as Readonly<Record<string, JsonValue>>, null), body, null);
   const metadataBytes = Buffer.from(canonicalJson(written), "utf8");
   if (metadataBytes.length > KNOWLEDGE_LIMITS.maximumMetadataBytes) fail("KNOWLEDGE_LIMIT_EXCEEDED", "knowledge create budget");
   if (scan.units.some((unit) => unit.metadata.id === metadata.id || unit.metadata.externalKey === metadata.externalKey)) {
@@ -2745,14 +2783,17 @@ async function createUserCrestEvent(
   // The user crest root manifest is initialized once. Event heads carry the changing high-water
   // projection, so no multi-device writer performs a shared manifest update.
   crash("after-marker-write", options.faultAt);
-  const final = await scanUserCrest(location, options, false, "full");
+  // TCRN-CROSS-SUB-310 (R14 (d)): the event is committed, so the answer is the write's own: nothing
+  // after this point re-reads the crest. An event another device delivered meanwhile cannot turn a
+  // committed write into a refusal; the next read reports any conflict it forms. The version is
+  // the one this write's scan projected, advanced by this event.
   return {
     schemaVersion: "tcrn.knowledge-create-result.v1",
     reasonCode: "KNOWLEDGE_UNIT_CREATED",
     id: written.id,
     externalKey: written.externalKey,
     revision: written.revision,
-    version: final.marker.version,
+    version: scan.marker.version + 1,
     scope: "user",
     ...(conflicts.length > 0 ? { conflicts: [...conflicts] } : {}),
     ...(supersededMetadata === null ? {} : { superseded: supersededMetadata.id }),
@@ -3261,14 +3302,23 @@ const USER_CREST_DISCLOSURE: Readonly<Record<string, JsonValue>> = Object.freeze
 /**
  * The card metadata a query selects. `query.scope` "user" reads this user's crest (TCRN-CROSS-STORY-476
  * R5), whichever library `workspaceRoot` names, and lists nothing before the crest's first card;
- * left out, the library's crest, exactly as before.
+ * left out, the library's crest, exactly as before. TCRN-CROSS-SUB-310: a user crest holding
+ * unresolved conflicts answers them as `unresolvedConflicts` (pairs of card ids), and its default
+ * selection leaves their cards out; selection "all" lists them.
  */
 export async function listKnowledgeMetadata(workspaceRoot: string, query: KnowledgeListQuery): Promise<Readonly<Record<string, JsonValue>>> {
   const normalized = normalizeListQuery(query);
   assertStoreScope(query.scope);
   if (query.scope === "user") {
-    return readUserCrest(query, async (scan) =>
-      knowledgeListAnswer(scan === null ? [] : selectKnowledgeMetadata(scan, query, normalized, true), query, normalized, USER_CREST_DISCLOSURE));
+    return readUserCrest(query, async (scan) => {
+      if (scan === null) return knowledgeListAnswer([], query, normalized, USER_CREST_DISCLOSURE);
+      const withheld = unresolvedConflictIds(scan);
+      const matched = selectKnowledgeMetadata(scan, query, normalized, true)
+        .filter((metadata) => normalized.selection !== "default" || !withheld.has(metadata.id));
+      return knowledgeListAnswer(matched, query, normalized, scan.unresolvedConflicts.length === 0
+        ? USER_CREST_DISCLOSURE
+        : { ...USER_CREST_DISCLOSURE, unresolvedConflicts: scan.unresolvedConflicts as unknown as JsonValue });
+    });
   }
   const scan = await scanKnowledgeStore(workspaceRoot, query, false, "metadata-only");
   return knowledgeListAnswer(selectKnowledgeMetadata(scan, query, normalized, true), query, normalized, trailingDisclosure(scan));

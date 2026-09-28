@@ -2609,6 +2609,11 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
         project: { reasonCode: cards.stores.project.reasonCode, cards: cards.stores.project.cards },
         user: { reasonCode: cards.stores.user.reasonCode, cards: cards.stores.user.cards },
       },
+      // TCRN-CROSS-SUB-310 (MIN-235 D7): a user crest that gave fewer cards than it holds says so at
+      // the top of the answer -- its read refused (the refusal's reasonCode), or cards withheld in
+      // unresolved conflict (KNOWLEDGE_POSSIBLE_CONFLICT with unresolvedConflicts and withheldCards)
+      // -- so "no user card matched" never stands in for "the user crest was not read".
+      ...(cards.userCrestDegraded === null ? {} : { userCrestDegraded: cards.userCrestDegraded as unknown as JsonValue }),
       query,
       queryTokens: [...result.tokens],
       // The canonical protocol carries only safe integers, and a bm25 score is not one.

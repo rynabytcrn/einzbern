@@ -448,6 +448,69 @@ test("SUB-414: a pair two devices wrote about one thing, and one key both wrote,
   assert.deepEqual(versions.map((record) => record.extensions.supersededBy), [deriveStableId("knowledge", "SUB-414-KEY-RESOLVED"), deriveStableId("knowledge", "SUB-414-KEY-RESOLVED")], "every version is replaced, and stays readable by the id");
 });
 
+// A card is written again as a new record naming the record it replaces. The device that receives
+// a card and writes it again replaces it; two devices that each write it again before either sees
+// the other's both keep their record, as a duplicate. Red leg: merge by revision or by device alone
+// and the first case forms a false duplicate, or the second silently keeps one rewrite.
+test("SUB-414: a card the other device writes again is replaced; written again on both before either sees the other's, neither record is lost", async (context) => {
+  const fx = await twoDevices(context, "rewrites");
+  const heron = await as(fx.homeA, () => createKnowledgeUnit(fx.workspace, card("SUB-414-HERON", "Heron wading depth")));
+  const reverified = await as(fx.homeB, () => reverifyKnowledgeUnit(fx.workspace, { expectedRevision: 1, occurredAt: instant(6), id: heron.id }));
+  assert.equal(reverified.revision, 2);
+  for (const home of [fx.homeA, fx.homeB]) {
+    const listed = await as(home, () => listKnowledgeMetadata(fx.workspace, { at: AT }));
+    assert.deepEqual(listed.records.map((record) => [record.id, record.revision, record.lastVerified]), [[heron.id, 2, instant(6)]], "B's record replaces A's: one card");
+    assert.equal(Object.hasOwn(listed, "unresolvedDuplicates"), false);
+  }
+  const [b2] = await streamEvents(fx.store, DEVICE_B);
+  const [a1] = await streamEvents(fx.store, DEVICE_A);
+  assert.equal(b2.replaces, sha256Hex(canonicalJson(a1.metadata)), "the record names the one it replaces, whichever device wrote that");
+  // Both write the card again before either sees the other's rewrite.
+  await fx.mark(fx.homeA);
+  await as(fx.homeA, () => updateKnowledgeStalenessPolicy(fx.workspace, { expectedRevision: 2, occurredAt: instant(7), id: heron.id, stalenessPolicy: { maximumAgeDays: 90, unknownDisposition: "fail-closed" } }));
+  await fx.hold(fx.homeA);
+  await as(fx.homeB, () => reverifyKnowledgeUnit(fx.workspace, { expectedRevision: 2, occurredAt: instant(8), id: heron.id }));
+  await fx.deliver(fx.homeA);
+  const onA = await projection(fx, fx.homeA);
+  assert.deepEqual(await projection(fx, fx.homeB), onA);
+  const listed = JSON.parse(onA.listed);
+  assert.deepEqual(listed.records, [], "neither rewrite is the card while both stand");
+  assert.deepEqual(listed.unresolvedDuplicates.map((entry) => [entry.id, entry.versions.map((version) => [version.deviceId, version.updatedAt])]),
+    [[heron.id, [[DEVICE_A, instant(7)], [DEVICE_B, instant(8)]]]], "both rewrites stand as versions, one per device");
+  const all = JSON.parse(onA.all).records.filter((record) => record.id === heron.id);
+  assert.deepEqual(all.map((record) => [record.revision, record.stalenessPolicy.maximumAgeDays, record.lastVerified]), [[3, 90, instant(6)], [3, null, instant(8)]]);
+  // A write that supersedes the id resolves it, as it resolves any duplicate.
+  await as(fx.homeA, () => createKnowledgeUnit(fx.workspace, card("SUB-414-HERON-MERGED", "Heron wading depth, both rewrites", { occurredAt: instant(9), supersedes: heron.id })));
+  const resolved = await as(fx.homeB, () => listKnowledgeMetadata(fx.workspace, { at: AT }));
+  assert.deepEqual(resolved.records.map((record) => record.externalKey), ["SUB-414-HERON-MERGED"]);
+  assert.equal(Object.hasOwn(resolved, "unresolvedDuplicates"), false);
+});
+
+// problems-r15-crest-dupkey #3, second half, for a library's crest: a folder can deliver the stream
+// of a card that supersedes another before the stream of the card it names. The replacement stands
+// and nothing refuses the crest; the named card is replaced once it arrives. Red leg: refuse a
+// supersedes whose target is absent and the whole crest reads KNOWLEDGE_LINK_INVALID meanwhile.
+test("SUB-414: a replacement delivered before the card it replaces stands, and that card is replaced when it arrives", async (context) => {
+  const fx = await twoDevices(context, "pending-supersedes");
+  const heron = await as(fx.homeA, () => createKnowledgeUnit(fx.workspace, card("SUB-414-HERON", "Heron wading depth")));
+  const replacement = await as(fx.homeB, () => createKnowledgeUnit(fx.workspace, card("SUB-414-HERON-NEW", "Heron wading depth, measured", { occurredAt: instant(6), supersedes: heron.id })));
+  // A third device's view: B's stream has arrived, A's has not.
+  const homeC = await deviceHome(fx.base, "device-c", "c".repeat(32));
+  const aside = join(fx.base, "held", "a-crest-stream");
+  await rename(join(fx.store, "events", DEVICE_A), aside);
+  await as(homeC, async () => {
+    const listed = await listKnowledgeMetadata(fx.workspace, { at: AT });
+    assert.deepEqual(listed.records.map((record) => record.id), [replacement.id], "the replacement stands");
+    assert.equal((await validateKnowledgeStore(fx.workspace)).reasonCode, "KNOWLEDGE_STORE_VALID");
+  });
+  await rename(aside, join(fx.store, "events", DEVICE_A));
+  await as(homeC, async () => {
+    const all = await listKnowledgeMetadata(fx.workspace, { at: AT, selection: "all" });
+    assert.equal(all.records.find((record) => record.id === heron.id).extensions.supersededBy, replacement.id, "and the card it names is replaced once it arrives");
+    assert.deepEqual((await listKnowledgeMetadata(fx.workspace, { at: AT })).records.map((record) => record.id), [replacement.id]);
+  });
+});
+
 test("SUB-414: a card delivered before the chain events it was written against waits for them, named, while the strict surfaces refuse", async (context) => {
   const fx = await twoDevices(context, "awaiting");
   const own = await as(fx.homeB, () => createKnowledgeUnit(fx.workspace, card("SUB-414-B-OWN", "Beaver dam height")));
@@ -542,7 +605,7 @@ test("SUB-414: a crest an older engine left in the metadata/body layout, or with
   const after = await read(fx.homeA);
   assert.deepEqual(await read(fx.homeB), after);
   assert.deepEqual(after.all.find(([key]) => key === "SUB-414-KESTREL"), ["SUB-414-KESTREL", 2, deriveStableId("knowledge", "SUB-414-KESTREL-NEW")], "a card of the older layout is replaced by projection");
-  assert.deepEqual(after.all.find(([key]) => key === "SUB-414-OTTER"), ["SUB-414-OTTER", 2, null], "and written again as a record in the stream");
+  assert.deepEqual(after.all.filter(([key]) => key === "SUB-414-OTTER"), [["SUB-414-OTTER", 2, null]], "and written again as a record in the stream that replaces it: one card");
   // The bodies of the metadata/body layout can still move into segments -- the one operation that
   // rewrites that layout, run by one device -- and the crest reads the same afterwards.
   const migrated = await as(fx.homeA, () => migrateKnowledgeBodies(fx.workspace, 4096));

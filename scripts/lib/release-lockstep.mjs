@@ -16,7 +16,17 @@ export const RELEASE_OUTPUT_DIRECTORY = "dist/release";
 
 const HELPER_README_NAMES = Object.freeze(["README.md", "README.en.md", "README.ja.md", "README.ko.md", "README.fr.md"]);
 const RELEASE_ASSET = (version) => `${ENGINE_PACKAGE_NAME}-${version}.tar.gz`;
-const RELEASE_SUMMARY = (version) => `Einzbern and Mana Orchestrate ship in lockstep at ${version}. The former TCRN Workflow and tcrn-workflow-helper release names are retired; previously written TCRN keys and tcrn.* records remain historical compatibility identifiers. Retired surfaces are listed below.`;
+const RELEASE_SUMMARY = (version, { LEGACY_BRAND_NAME, LEGACY_HELPER_NAME }) => `Einzbern and Mana Orchestrate ship in lockstep at ${version}. The former ${LEGACY_BRAND_NAME} and ${LEGACY_HELPER_NAME} release names are retired; previously written TCRN keys and tcrn.* records remain historical compatibility identifiers. Retired surfaces are listed below.`;
+
+// TCRN-CROSS-SUB-267: the retired engine and helper names in the release summary and in the
+// CHANGELOG check are the alias constants of the names module, never literals of this file. The
+// names module is the TypeScript source itself, so it is imported when a release is checked or
+// prepared, not when this file loads, the way scripts/task.mjs loads the repository names: a tree
+// that carries scripts/ without packages/ still loads this file.
+async function legacyReleaseNames() {
+  const { LEGACY_BRAND_NAME, LEGACY_HELPER_NAME } = await import("./names.mjs");
+  return { LEGACY_BRAND_NAME, LEGACY_HELPER_NAME };
+}
 
 export class ReleaseLockstepError extends Error {
   constructor(reasonCode, message, details = {}) {
@@ -81,7 +91,7 @@ function changelogSection(changelog, version) {
   return next ? remainder.slice(0, next.index).trim() : remainder.trim();
 }
 
-function validateChangelog(changelog, version, mismatches) {
+function validateChangelog(changelog, version, mismatches, { LEGACY_BRAND_NAME, LEGACY_HELPER_NAME }) {
   const section = changelogSection(changelog, version);
   if (section === null) {
     mismatches.push({ path: CHANGELOG_FILE, expected: `## ${version} section`, actual: "missing" });
@@ -89,7 +99,7 @@ function validateChangelog(changelog, version, mismatches) {
   }
   const hasEngineRename = section.includes("Einzbern");
   const hasHelperRename = section.includes("Mana Orchestrate");
-  const hasDeprecatedNames = section.includes("tcrn-workflow-helper") && /TCRN Workflow/iu.test(section);
+  const hasDeprecatedNames = section.includes(LEGACY_HELPER_NAME) && new RegExp(escapeRegExp(LEGACY_BRAND_NAME), "iu").test(section);
   const hasRetiredItems = /(retired|retire|deprecated|deprecation|停用|退役|移除|删除)/iu.test(section);
   if (!hasEngineRename || !hasHelperRename || !hasDeprecatedNames || !hasRetiredItems) {
     mismatches.push({
@@ -197,7 +207,7 @@ export async function checkRelease({ engineRoot, helperRoot, version, env = proc
   const changelog = await readFile(join(engine.root, CHANGELOG_FILE), "utf8").catch((error) => {
     refuse("RELEASE_FILE_MISSING", `${CHANGELOG_FILE} does not exist`, { path: CHANGELOG_FILE, code: error?.code ?? "UNKNOWN" });
   });
-  validateChangelog(changelog, version, mismatches);
+  validateChangelog(changelog, version, mismatches, await legacyReleaseNames());
 
   try {
     const readme = await renderReadmes({ root: engine.root, version, check: true });
@@ -252,7 +262,7 @@ function writeResult(command, args, { cwd, env, runner } = {}) {
   return runner ? runner(command, args, { cwd, env }) : run(command, args, { cwd, env });
 }
 
-function changelogForPrepare(source, version) {
+function changelogForPrepare(source, version, legacyNames) {
   const headings = [...source.matchAll(/^## Unreleased[ \t]*\r?$/gmu)];
   if (headings.length !== 1) refuse("RELEASE_CHANGELOG_UNRELEASED_MISSING", "CHANGELOG.md must have exactly one Unreleased section", { count: headings.length });
   if (changelogSection(source, version) !== null) refuse("RELEASE_CHANGELOG_VERSION_EXISTS", `CHANGELOG.md already has a ${version} section`, { version });
@@ -265,7 +275,7 @@ function changelogForPrepare(source, version) {
   if (body.length === 0) refuse("RELEASE_CHANGELOG_EMPTY", "the Unreleased section has no release notes to cut", {});
   const suffix = next ? remainder.slice(next.index) : "";
   const prefix = source.slice(0, heading.index);
-  const releaseNotes = `## ${version}\n\n${RELEASE_SUMMARY(version)}\n\n${body}\n`;
+  const releaseNotes = `## ${version}\n\n${RELEASE_SUMMARY(version, legacyNames)}\n\n${body}\n`;
   return `${prefix}## Unreleased\n\n${releaseNotes}${suffix.length === 0 ? "" : `\n${suffix}`}`;
 }
 
@@ -326,7 +336,7 @@ export async function prepareRelease({ engineRoot, helperRoot, version, workspac
   const changelog = await readFile(changelogPath, "utf8").catch((error) => {
     refuse("RELEASE_FILE_MISSING", `${CHANGELOG_FILE} does not exist`, { path: CHANGELOG_FILE, code: error?.code ?? "UNKNOWN" });
   });
-  const nextChangelog = changelogForPrepare(changelog, version);
+  const nextChangelog = changelogForPrepare(changelog, version, await legacyReleaseNames());
   for (const path of packagePaths) await updatePackageVersion(path, version);
   await writeFile(changelogPath, nextChangelog);
 

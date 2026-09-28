@@ -191,6 +191,152 @@ test("STORY-379 read views use CLI projections and keep partial data visible", a
   assert.equal(untokened.body.reasonCode, "PORTAL_TOKEN_REQUIRED");
 });
 
+// TCRN-CROSS-SUB-403 (STORY-482 Goal, R3): a library larger than one work-list read. It holds an
+// Initiative, an Epic and LARGE_STORIES Stories of some eleven KB each: more records than the
+// portal's page of 100, and more bytes than one work-list page may carry, so the unpaged read the
+// work view used to make is refused, and so is a page of 100.
+const LARGE_STORIES = 120;
+const LARGE_BATCH = 40;
+
+async function largeLibrary(fixture) {
+  const projectId = (await cli(["project-create", "--workspace", fixture.workspace, "--at", "2026-08-11T15:10:00Z", "--external-key", "PORTAL-LARGE-PROJECT", "--name", "Large"], fixture.deviceEnv)).record.id;
+  const common = ["--workspace", fixture.workspace, "--project-id", projectId];
+  const initiative = await cli(["work-create", ...common, "--at", "2026-08-11T15:10:01Z", "--external-key", "PORTAL-LARGE-INIT", "--kind", "Initiative", "--title", "Large library"], fixture.deviceEnv);
+  const epic = await cli(["work-create", ...common, "--at", "2026-08-11T15:10:02Z", "--external-key", "PORTAL-LARGE-EPIC", "--kind", "Epic", "--parent-id", initiative.record.id, "--title", "Large epic"], fixture.deviceEnv);
+  const text = (label, length) => `${label} `.padEnd(length, "large library text ");
+  for (let batch = 0; batch * LARGE_BATCH < LARGE_STORIES; batch += 1) {
+    const members = Array.from({ length: LARGE_BATCH }, (_, index) => {
+      const number = batch * LARGE_BATCH + index;
+      return {
+        verb: "work-create", projectId, externalKey: `PORTAL-LARGE-${String(number).padStart(3, "0")}`, kind: "Story",
+        parentId: epic.record.id, status: "planned", title: `Large story ${number}`,
+        goal: text(`Goal ${number}`, 2100), acceptance: text(`GIVEN story ${number} WHEN listed THEN read whole`, 2100), body: text(`Body ${number}`, 6300),
+      };
+    });
+    const file = join(fixture.base, `large-${batch}.json`);
+    await writeFile(file, `${JSON.stringify({ schemaVersion: "tcrn.work-batch.v1", members })}\n`, "utf8");
+    await cli(["work-batch", "--workspace", fixture.workspace, "--at", `2026-08-11T15:1${batch + 1}:00Z`, "--from-file", file], fixture.deviceEnv);
+  }
+}
+
+async function cliRefusal(args, env = {}) {
+  try { await cli(args, env); } catch (error) { return JSON.parse(String(error.stderr ?? "").trim().split("\n").at(-1) || "{}"); }
+  return assert.fail(`${args[0]} was expected to refuse`);
+}
+
+// The library read page by page straight from the CLI, the reading /api/work must agree with.
+async function pagedWork(fixture, limit) {
+  let first = null;
+  const ids = [];
+  for (let offset = 0; first === null || offset < first.total; offset += limit) {
+    const page = await cli(["work-list", "--workspace", fixture.workspace, "--limit", String(limit), "--offset", String(offset)], fixture.deviceEnv);
+    first ??= page;
+    assert.deepEqual([page.version, page.headEventHash, page.total], [first.version, first.headEventHash, first.total]);
+    ids.push(...page.records.map((record) => record.id));
+  }
+  return { workspaceId: first.workspaceId, version: first.version, headEventHash: first.headEventHash, total: first.total, ids };
+}
+
+// Stands in front of the real CLI. It logs every work-list the portal asks for, and by the mode
+// the test writes it passes the page on, makes a real write to the library before a page past the
+// first (once, or on every read), or answers every page as over the budget.
+const WORK_PAGES_WRAPPER = `import { spawnSync } from "node:child_process";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+const argv = process.argv.slice(2);
+const state = process.env.TCRN_TEST_WORK_STATE;
+const run = (args, env = {}) => spawnSync(process.execPath, [process.env.TCRN_TEST_REAL_CLI, ...args], { encoding: "utf8", maxBuffer: 64e6, env: { ...process.env, ...env } });
+const flag = (name) => { const index = argv.indexOf("--" + name); return index >= 0 ? argv[index + 1] : undefined; };
+if (argv[0] === "work-list") {
+  const mode = JSON.parse(readFileSync(join(state, "mode.json"), "utf8")).mode;
+  appendFileSync(join(state, "calls.log"), JSON.stringify({ limit: flag("limit") ?? null, offset: flag("offset") ?? null }) + "\\n");
+  if (mode === "oversized") {
+    process.stderr.write(JSON.stringify({ ok: false, reasonCode: "CLI_WORK_LIST_OVERSIZED", error: "work-list page exceeds the canonical byte budget; lower --limit" }) + "\\n");
+    process.exit(1);
+  }
+  const moves = mode === "move-always" || (mode === "move-once" && !existsSync(join(state, "moved")));
+  if (moves && (flag("offset") ?? "0") !== "0") {
+    writeFileSync(join(state, "moved"), "");
+    const writes = existsSync(join(state, "writes")) ? Number(readFileSync(join(state, "writes"), "utf8")) : 0;
+    writeFileSync(join(state, "writes"), String(writes + 1));
+    const at = new Date(Date.parse("2026-08-11T16:00:00Z") + writes * 1000).toISOString().replace(/\\.\\d{3}Z$/u, "Z");
+    const write = run(["settings-set", "--workspace", flag("workspace"), "--at", at, "--actor", "agent:test", "--key", "retrieval.scopeExcerptBytes", "--value", String(600 + writes)], { EINZBERN_SURFACE: "atelier" });
+    if (write.status !== 0) { process.stderr.write(write.stderr || ""); process.exit(write.status ?? 1); }
+  }
+}
+const actual = run(argv);
+process.stdout.write(actual.stdout || "");
+process.stderr.write(actual.stderr || "");
+process.exitCode = actual.status ?? 1;
+`;
+
+test("SUB-403 (STORY-482 R3): /api/work reads a library larger than one work-list page whole, and never mixes two versions of it", async (t) => {
+  const fixture = await scratch("tcrn-portal-large-", "TCRN-PORTAL-LARGE");
+  await largeLibrary(fixture);
+  assert.equal((await cliRefusal(["work-list", "--workspace", fixture.workspace], fixture.deviceEnv)).reasonCode, "CLI_WORK_LIST_OVERSIZED", "the fixture carries more bytes than one work-list read");
+  assert.equal((await cliRefusal(["work-list", "--workspace", fixture.workspace, "--limit", "100"], fixture.deviceEnv)).reasonCode, "CLI_WORK_LIST_OVERSIZED", "a page of 100 is over the budget too");
+  const expected = await pagedWork(fixture, 30);
+  assert.equal(expected.total, LARGE_STORIES + 2);
+  assert.equal(expected.ids.length, expected.total);
+
+  const state = join(fixture.base, "work-pages");
+  await mkdir(state);
+  const mode = (value) => writeFile(join(state, "mode.json"), JSON.stringify({ mode: value }), "utf8");
+  const calls = async () => {
+    const log = await readFile(join(state, "calls.log"), "utf8").catch(() => "");
+    await writeFile(join(state, "calls.log"), "", "utf8");
+    return log.split("\n").filter((line) => line !== "").map((line) => JSON.parse(line));
+  };
+  await mode("pass");
+  const wrapper = join(fixture.base, "work-pages-wrapper.mjs");
+  await writeFile(wrapper, WORK_PAGES_WRAPPER, "utf8");
+  const { child, url } = await startPortal({ ...fixture, env: { TCRN_WORKFLOW_CLI: wrapper, TCRN_TEST_REAL_CLI: CLI, TCRN_TEST_WORK_STATE: state } });
+  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
+  const { boot } = await readBoot(url);
+  const readWork = async () => (await request(url, "/api/work", readOptions(boot.token))).body;
+  const idsOf = (body) => body.records.map((record) => record.id);
+  await calls();
+
+  // Read whole: every record, once, in pages of at most 100; the page of 100 the budget refused
+  // was asked for again at 50.
+  const whole = await readWork();
+  assert.equal(whole.ok, true);
+  assert.equal(whole.reasonCode, "PORTAL_WORK_READY");
+  assert.deepEqual([whole.workspaceId, whole.version, whole.headEventHash, whole.total], [expected.workspaceId, expected.version, expected.headEventHash, expected.total]);
+  assert.equal(new Set(idsOf(whole)).size, whole.records.length, "no record twice");
+  assert.deepEqual([...idsOf(whole)].sort(), [...expected.ids].sort());
+  assert.deepEqual((await calls()).map(({ limit, offset }) => [limit, offset]), [["100", "0"], ["50", "0"], ["50", "50"], ["50", "100"]]);
+
+  // The library moves between two pages: the read starts over and answers for the new version.
+  await mode("move-once");
+  const moved = await readWork();
+  const after = await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv);
+  assert.equal(moved.ok, true);
+  assert.notEqual(after.version, whole.version, "the wrapper wrote to the library between two pages");
+  assert.deepEqual([moved.version, moved.headEventHash, moved.total], [after.version, after.headEventHash, expected.total]);
+  assert.deepEqual([...idsOf(moved)].sort(), [...expected.ids].sort());
+  assert.deepEqual((await calls()).map(({ offset }) => offset), ["0", "0", "50", "0", "0", "50", "100"], "the moved read was abandoned and read again from the start");
+
+  // It moves on every read: nothing mixed, a refusal.
+  await mode("move-always");
+  const unstable = await readWork();
+  assert.deepEqual([unstable.ok, unstable.reasonCode, unstable.total, unstable.records], [false, "PORTAL_WORK_READ_FAILED", 0, []]);
+  assert.deepEqual([unstable.source.reasonCode, unstable.source.attempts, unstable.source.cause], ["PORTAL_WORK_READ_UNSTABLE", 3, "moved"]);
+  await calls();
+
+  // Every page is over the budget: the page shrinks to one record, and then the read is refused.
+  await mode("oversized");
+  const oversized = await readWork();
+  assert.deepEqual([oversized.ok, oversized.reasonCode, oversized.total, oversized.records], [false, "PORTAL_WORK_READ_FAILED", 0, []]);
+  assert.equal(oversized.source.reasonCode, "CLI_WORK_LIST_OVERSIZED");
+  assert.deepEqual((await calls()).map(({ limit, offset }) => [limit, offset]), [["100", "0"], ["50", "0"], ["25", "0"], ["12", "0"], ["6", "0"], ["3", "0"], ["1", "0"]]);
+
+  // The token gate is unchanged.
+  const untokened = await request(url, "/api/work");
+  assert.equal(untokened.response.status, 403);
+  assert.equal(untokened.body.reasonCode, "PORTAL_TOKEN_REQUIRED");
+});
+
 // TCRN-CROSS-STORY-482 R4, AC3: the pages that showed the retired mechanisms went with them, and
 // so did their routes. The old execution and evolution projections, the session audit and the
 // host probe answer as unknown routes, exactly like a path the portal never had; the token check

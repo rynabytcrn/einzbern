@@ -56,12 +56,57 @@ Device-local locks serialize that device's writes; independent devices append
 without replacing one another's events. The root manifest is not rewritten for
 card appends. Reads derive the combined event heads, version and local cache
 projection from the streams; those projections are not authority. A forked
-stream, duplicate key/id with differing metadata, competing replacement, or
-unresolved write conflict is returned as an explicit refusal. A write interrupted
-before its event commit can leave an unreferenced body, which is ignored; a
-committed event is complete because its body is written first. Older metadata and
-body user crests remain readable, and new events can be appended without
-rewriting their existing records.
+stream, or a duplicate key/id with differing metadata, is returned as an explicit
+refusal. A write interrupted before its event commit can leave an unreferenced
+body, which is ignored; a committed event is complete because its body is written
+first. Older metadata and body user crests remain readable, and new events can be
+appended without rewriting their existing records.
+
+The user crest's root manifest, `store.json`, is written by exactly one operation
+of this engine (TCRN-CROSS-SUB-310, MIN-235 D7):
+
+1. Initialization by the crest's first card write: `store.json` is created with an
+   exclusive no-follow create, version 0, bound to the user-crest identity. A
+   writer that loses the create reads the winner's marker and accepts it only
+   when it binds the same identity and high-water digest; it never replaces it.
+
+Nothing else writes it: not a card append, not a supersede, not a read or its
+cache projection, and not `knowledge-recover --scope user`, which only verifies
+the crest, rewrites this device's derived index and releases the stale claim an
+interrupted writer of the metadata/body layout left. The marker a read answers,
+its version advanced by the event count and its high-water digest taken over the
+stream heads, is a projection and is never persisted; a manifest that stopped
+binding the identity digest would refuse every read with
+`KNOWLEDGE_HIGH_WATER_MISMATCH`. An engine before event streams advanced the
+marker's version on each card write under its store claim; this engine reads that
+version as written and never advances it.
+
+A shared folder can deliver one device's events after another device has already
+written, so two cards about one thing can stand side by side although neither
+writer saw the other. Such a pair is an unresolved conflict, not a refusal of the
+crest. A pair counts only when its two live cards come from different writers --
+different device streams, or a stream and the metadata/body layout -- score as a
+write-time conflict against each other, and neither lists the other in
+`coexistsWith`: one writer scans before it writes, so the conflicts it saw were
+refused or recorded, and a user-crest write records in the new card's
+`coexistsWith` every conflict it was admitted beside, with `--coexist` or beside
+the card it supersedes. `knowledge-list --scope user` names the pairs as
+`unresolvedConflicts` (each pair and the list in canonical id order); its default
+selection leaves their cards out while `--selection all`, `knowledge-snippet` and
+`knowledge-body` still read them, and every other card reads, recalls and is
+written as before. A new card on the same subject is refused naming both cards; a
+write whose `--supersedes` names either card of a pair resolves it. A card that
+more than one card replaces -- two devices that each replaced it before either saw
+the other's replacement -- is replaced either way: its projected `supersededBy`
+names the latest replacement (a mark the metadata/body layout stored stays), each
+replacement stays live, and replacements that collide form a pair like any other.
+A write whose event is committed answers from its own scan and that event, its
+`version` the scanned version plus one: it never reads the crest again, so what
+another device delivers meanwhile cannot turn a committed write into a refusal,
+and the next read reports any pair it forms. A merge whose live bodies exceed
+`knowledge.aggregateBytes` is still refused whole by reads and writes (its
+disposition is pending); `recall` names it, or withheld conflicts, under
+`userCrestDegraded` (see "Freshness, writing, and retrieval").
 
 ## Metadata
 
@@ -90,6 +135,16 @@ and excluded export disposition. TCRN-CROSS-INC-282 (Owner rulings
 TCRN-CROSS-MIN-146 D1 and TCRN-CROSS-MIN-158 D1) made the default selection every
 active card, because a promotion gate on retrieval is what left a written card
 unfindable with nothing in its receipt to say so.
+
+In the user crest, default selection also leaves out the cards of an unresolved
+conflict (see "Storage and authority"). Recall reads the library's crest and the
+user crest; a store it cannot read gives no cards and its reason code under
+`knowledgeStores`. When the user crest gave recall fewer cards than it holds, the
+answer says so at its top as `userCrestDegraded` (TCRN-CROSS-SUB-310): the read's
+refusal code alone (for example `KNOWLEDGE_LIMIT_EXCEEDED`, no user card
+recalled), or `KNOWLEDGE_POSSIBLE_CONFLICT` with `unresolvedConflicts` and
+`withheldCards` (every other user card recalled). It is absent when the user crest
+gave every card it holds, or holds none.
 
 A card is retrievable the moment it is written (TCRN-CROSS-STORY-476 R1,
 TCRN-CROSS-MIN-227 D9, TCRN-CROSS-SUB-308). Every write lands lifecycle `active`

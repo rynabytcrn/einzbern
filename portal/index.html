@@ -4111,7 +4111,8 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 [data-ui="gate-config-table"] { width: 100%; border-collapse: collapse; }
 [data-ui="gate-config-table"] th, [data-ui="gate-config-table"] td { padding: var(--tcrn-space-3); border-bottom: 1px solid var(--tcrn-color-border-subtle); text-align: start; vertical-align: top; }
 [data-ui="gate-config-table"] th { color: var(--tcrn-color-text-secondary); font-size: var(--tcrn-type-size-caption); font-weight: var(--tcrn-type-weight-semibold); }
-[data-ui="gate-config-table"] td:first-child { min-width: 15rem; }
+[data-ui="gate-config-table"] th:first-child, [data-ui="gate-config-table"] td:first-child { width: 7.5rem; min-width: 6.5rem; }
+[data-ui="gate-config-table"] td:nth-child(2) { min-width: 15rem; }
 [data-ui="gate-config-table"] td:last-child { min-width: 13rem; }
 [data-gate-cell] { display: grid; gap: var(--tcrn-space-2); }
 [data-gate-cell-actions] { display: flex; flex-wrap: wrap; gap: var(--tcrn-space-2); }
@@ -4143,6 +4144,16 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 [data-collection-links] { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tcrn-space-2); }
 [data-setting-layer] { justify-self: start; }
 [data-collection-count] { margin-inline-start: var(--tcrn-space-2); align-self: center; }
+/* TCRN-CROSS-SUB-410 (TCRN-CROSS-STORY-508 R6, R7): the custom variables table leads with its order
+   column as the collection tables do, and its fields fill their cells; a rule card and a gate row
+   carry their order in the same NumberInput. The tier page's escalation summary is a read-only list. */
+[data-variable-table] { --tcrn-table-column-count: 6; --tcrn-table-shell-column-min-width: 7.5rem; --tcrn-table-shell-columns: minmax(5.5rem, 0.6fr) minmax(8rem, 1fr) minmax(7rem, 0.8fr) minmax(8rem, 1.1fr) minmax(8rem, 1.1fr) minmax(10.5rem, 1fr); }
+[data-variable-field] { min-inline-size: 0; inline-size: 100%; }
+[data-rule-card-order] { display: flex; flex-wrap: wrap; align-items: end; gap: var(--tcrn-space-2); }
+[data-rule-order-field] { flex: 0 1 8rem; }
+[data-rule-order-note] { color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); }
+[data-gate-order] { min-inline-size: 0; inline-size: 100%; }
+[data-escalation-summary] .tcrn-list__row { align-items: center; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: var(--tcrn-motion-reduced-duration) !important; animation-duration: var(--tcrn-motion-reduced-duration) !important; } }
 </style>
 </head>
@@ -4262,7 +4273,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
       <section class="tcrn-page tcrn-page--manage" data-page="variables" hidden>
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
-            <div class="tcrn-page__head"><div><h1 data-i18n="page.variables">Variables</h1><p class="tcrn-page__lede" data-i18n="variables.lede">Project variables are managed here, separately from system settings.</p></div><div class="tcrn-page__actions"><span class="tcrn-badge" id="variables-count"></span></div></div>
+            <div class="tcrn-page__head"><div><h1 data-i18n="page.variables">Variables</h1><p class="tcrn-page__lede" data-i18n="variables.lede" data-order-purpose="variables">Add, edit, rename and remove project variables. The order column sets the order AGENTS.md renders them in: variables with an order first, from the smallest, then the others by name.</p></div><div class="tcrn-page__actions"><span class="tcrn-badge" id="variables-count"></span></div></div>
           </div>
           <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs"><p class="tcrn-scope-note" data-i18n="variables.scope">Custom variables are stored with this library and rendered into AGENTS.md.</p></div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content"><div id="variables-view" data-ui="variables-view"></div></div>
@@ -4271,7 +4282,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
       <section class="tcrn-page tcrn-page--manage" data-page="gates" hidden>
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
-            <div class="tcrn-page__head"><div><h1 data-i18n="page.gates">Gate configuration</h1><p class="tcrn-page__lede" data-i18n="gates.lede">Project gates are selected from changed paths and stored with this library.</p></div><div class="tcrn-page__actions"><span class="tcrn-badge" id="gates-count">—</span></div></div>
+            <div class="tcrn-page__head"><div><h1 data-i18n="page.gates">Gate configuration</h1><p class="tcrn-page__lede" data-i18n="gates.lede" data-order-purpose="gates">Project gates are selected from changed paths and stored with this library. The order column sets the order gates are planned, run and listed in: gates with an order first, from the smallest, then the others by name.</p></div><div class="tcrn-page__actions"><span class="tcrn-badge" id="gates-count">—</span></div></div>
           </div>
           <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs"><p class="tcrn-scope-note" data-i18n="gates.scope">Enabled gates run when their covered paths change. Required gates are checked before work is marked done.</p></div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content">
@@ -4294,7 +4305,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
                 </form>
               </article>
               <article class="tcrn-surface" aria-labelledby="gates-list-title"><div class="tcrn-surface__head"><div><h2 id="gates-list-title" data-i18n="gates.listTitle">Configured gates</h2></div></div>
-                <div class="tcrn-table-scroll"><table data-ui="gate-config-table"><thead><tr><th scope="col" data-i18n="gates.columnGate">Gate</th><th scope="col" data-i18n="gates.columnEnabled">Enabled</th><th scope="col" data-i18n="gates.columnRequired">Required</th><th scope="col" data-i18n="gates.columnCovers">Covered paths</th></tr></thead><tbody id="gates-rows"></tbody></table></div>
+                <div class="tcrn-table-scroll"><table data-ui="gate-config-table"><thead><tr><th scope="col" data-i18n="collection.order">Order</th><th scope="col" data-i18n="gates.columnGate">Gate</th><th scope="col" data-i18n="gates.columnEnabled">Enabled</th><th scope="col" data-i18n="gates.columnRequired">Required</th><th scope="col" data-i18n="gates.columnCovers">Covered paths</th></tr></thead><tbody id="gates-rows"></tbody></table></div>
                 <div id="gates-empty" class="tcrn-state-surface" data-ui="gates-empty" hidden></div>
               </article>
             </div>
@@ -4304,7 +4315,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
       <section class="tcrn-page tcrn-page--manage" data-page="prose" hidden>
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
-            <div class="tcrn-page__head"><div><h1 data-i18n="page.prose">Rules</h1><p class="tcrn-page__lede" data-i18n="prose.lede">Manage built-in rules and edit AGENTS.md.</p></div><div class="tcrn-page__actions"><button class="tcrn-button tcrn-button--secondary" id="pending-open" data-i18n="rule.pendingTitle">Pending</button><span class="tcrn-badge" id="reconcile-chip">—</span><button class="tcrn-button tcrn-button--primary" id="save-agents" data-i18n="prose.save" data-cli-action="rule-list">Save and check</button></div></div>
+            <div class="tcrn-page__head"><div><h1 data-i18n="page.prose">Rules</h1><p class="tcrn-page__lede" data-i18n="prose.lede" data-order-purpose="rules">Manage built-in rules and edit the project's AGENTS.md. A rule's order sets the order AGENTS.md renders the rule sections in: rules with an order first, from the smallest, then the others in catalog order.</p></div><div class="tcrn-page__actions"><button class="tcrn-button tcrn-button--secondary" id="pending-open" data-i18n="rule.pendingTitle">Pending</button><span class="tcrn-badge" id="reconcile-chip">—</span><button class="tcrn-button tcrn-button--primary" id="save-agents" data-i18n="prose.save" data-cli-action="rule-list">Save and check</button></div></div>
           </div>
           <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs">
             <div id="rules-pending" data-ui="rules-pending" aria-label="Pending rule changes"><strong data-i18n="rule.pendingTitle">Pending</strong><label class="tcrn-sr-only" for="pending-section" data-i18n="rule.pendingSelect">Pending section</label><select class="tcrn-select" id="pending-section" data-ui="pending-section"></select><button class="tcrn-button tcrn-button--secondary" type="button" data-pending-action="keep" data-i18n="rule.keep">Keep my text</button><button class="tcrn-button tcrn-button--secondary" type="button" data-pending-action="overwrite" data-i18n="rule.overwrite">Overwrite</button><button class="tcrn-button tcrn-button--quiet" type="button" data-pending-action="unmanage" data-i18n="rule.unmanage">Unmanage</button></div>
@@ -5062,6 +5073,31 @@ const BOOT = __PORTAL_BOOT__;
     const reset = modified ? `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-collection-reset="${esc(key)}" data-cli-action="settings-remove">${esc(t("collection.restoreDefault"))}</button>` : "";
     return `<section class="tcrn-surface" data-content-scope="${esc(COLLECTION_PAGES[key])}"><div class="tcrn-surface__head"><div><h2>${esc(title)}</h2><p class="tcrn-surface__note">${esc(t("collection.saveNote"))}</p></div><div data-collection-links>${links}${layerBadge("project")}</div></div>${alertBlock}${table}<div class="tcrn-action-row" data-collection-actions="${esc(key)}"><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-collection-add="${esc(key)}">${esc(addLabel)}</button>${reset}<button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-collection-save="${esc(key)}" data-cli-action="settings-set">${esc(t("collection.save"))}</button></div></section>`;
   };
+  // TCRN-CROSS-SUB-410 (TCRN-CROSS-STORY-508 R6; contract C-R14-3): the top of the tier page shows the
+  // three escalation settings as they stand, read only, and links to the settings group that holds
+  // them. A ceiling whose category the category table lacks (a merge brought them apart) is marked.
+  const ESCALATION_KEYS = Object.freeze(["models.escalation.enabled", "models.escalation.threshold", "models.escalation.ceiling"]);
+  const effectiveSetting = (key) => String(currentSetting(key)?.currentValue ?? currentSetting(key)?.defaultValue ?? "");
+  const escalationSummary = (categories, categoryLabel) => {
+    const ceiling = effectiveSetting("models.escalation.ceiling");
+    const category = categories.find((entry) => entry.id === ceiling);
+    const shown = {
+      "models.escalation.enabled": effectiveSetting("models.escalation.enabled") === "true" ? t("config.enabled") : t("config.disabled"),
+      "models.escalation.threshold": effectiveSetting("models.escalation.threshold"),
+      "models.escalation.ceiling": category === undefined ? t("modelTiers.missingCategory", { category: ceiling }) : categoryLabel(category),
+    };
+    const rows = ESCALATION_KEYS.map((key) => {
+      const tone = key === "models.escalation.ceiling" && category === undefined ? " tcrn-badge--warning" : "";
+      return `<div class="tcrn-list__row" data-escalation-key="${esc(key)}"><span>${esc(settingLabel(key))}</span><span class="tcrn-badge${tone}" data-escalation-value="${esc(key)}">${esc(shown[key])}</span></div>`;
+    }).join("");
+    return `<section class="tcrn-surface" data-escalation-summary aria-label="${esc(t("modelTiers.escalationTitle"))}"><div class="tcrn-surface__head"><div><h2>${esc(t("modelTiers.escalationTitle"))}</h2><p class="tcrn-surface__note">${esc(t("modelTiers.escalationNote"))}</p></div><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-escalation-settings-link>${esc(t("modelTiers.escalationChange"))}</button></div><div class="tcrn-list">${rows}</div></section>`;
+  };
+  const openEscalationSettings = () => {
+    state.collectionFocus = null;
+    state.settingGroup = settingGroup(ESCALATION_KEYS[0]);
+    navigate("settings");
+    renderSettings();
+  };
   const tierCounts = () => storedRecords("models.tiers").reduce((counts, record) => counts.set(record.category, (counts.get(record.category) ?? 0) + 1), new Map());
   const renderModelCategories = () => {
     const key = "models.category";
@@ -5132,13 +5168,14 @@ const BOOT = __PORTAL_BOOT__;
       : emptyGuide(t("modelTiers.emptyTitle"), t("modelTiers.emptyBody"), `<button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-collection-add="models.tiers">${esc(t("modelTiers.add"))}</button>`);
     const links = `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-collection-link="model-categories">${esc(t("modelTiers.openCategories"))}</button>`;
     const view = $("#model-tiers-view");
-    view.innerHTML = collectionView({
+    view.innerHTML = escalationSummary(categories, categoryLabel) + collectionView({
       key,
       title: t("modelTiers.title"),
       links,
       addLabel: t("modelTiers.add"),
       table: collectionTable({ key, ui: "model-tiers-table", label: t("modelTiers.title"), columns, rows, findings: [...status.findings, ...dangling], empty }),
     });
+    $$("[data-escalation-settings-link]", view).forEach((button) => button.addEventListener("click", openEscalationSettings));
     wireCollection(key, view);
   };
   const renderCollection = (key) => {
@@ -5241,6 +5278,7 @@ const BOOT = __PORTAL_BOOT__;
   };
   const variableTypes = Object.freeze(["boolean", "number", "string"]);
   const variableLabel = (field) => {
+    if (field === "order") return t("collection.order");
     if (field === "name") return t("variables.name");
     if (field === "type") return t("variables.type");
     if (field === "value") return t("variables.value");
@@ -5252,12 +5290,21 @@ const BOOT = __PORTAL_BOOT__;
     if (type === "number") return t("variables.type.number");
     return t("variables.type.string");
   };
+  // TCRN-CROSS-SUB-410 (TCRN-CROSS-STORY-508 R7; contract C-R14-5): the order a variable, a rule or a
+  // gate may carry is one NumberInput, empty for a record without one. Each page lists its records as
+  // the engine renders or plans them: those with an order first, by order, then the others in the
+  // order they came in (variables and gates by name, rules in catalog order).
+  const hasOrder = (record) => Number.isSafeInteger(record?.order);
+  const inRecordOrder = (records) => [...records].sort((left, right) => hasOrder(left) && hasOrder(right) ? left.order - right.order : Number(hasOrder(right)) - Number(hasOrder(left)));
+  const orderInput = (value, attributes) => `<input class="tcrn-input tcrn-number-input" type="number" min="1" step="1" value="${esc(value ?? "")}" data-number-input-component="NumberInput" data-number-input="true" data-number-input-semantic="numeric-entry" data-number-input-visibility="full-value" ${attributes}>`;
   const variableField = (field, value, selector = "data-variable-field") => {
     const label = variableLabel(field);
+    if (field === "order") return `<label class="tcrn-table-shell__cell tcrn-field" role="cell" data-label="${esc(label)}"><span class="tcrn-sr-only">${esc(label)}</span>${orderInput(value, `aria-label="${esc(label)}" ${selector}="order"`)}</label>`;
     if (field === "type") return `<label class="tcrn-table-shell__cell tcrn-field" role="cell" data-label="${esc(label)}"><span class="tcrn-sr-only">${esc(label)}</span><select class="tcrn-select" aria-label="${esc(label)}" ${selector}="type">${variableTypes.map((type) => `<option value="${type}" ${type === value ? "selected" : ""}>${esc(variableTypeLabel(type))}</option>`).join("")}</select></label>`;
     return `<label class="tcrn-table-shell__cell tcrn-field" role="cell" data-label="${esc(label)}"><span class="tcrn-sr-only">${esc(label)}</span><input class="tcrn-input" value="${esc(value)}" aria-label="${esc(label)}" ${selector}="${field}"></label>`;
   };
   const variableRow = (variable, isNew = false) => `<div class="tcrn-table-shell__row" role="row" ${isNew ? 'data-variable-create-row' : `data-variable-row="${esc(variable.name)}"`}>
+    ${variableField("order", variable.order ?? "")}
     ${variableField("name", variable.name ?? "")}
     ${variableField("type", variable.type ?? "string")}
     ${variableField("value", variable.value ?? "")}
@@ -5269,11 +5316,12 @@ const BOOT = __PORTAL_BOOT__;
   const variableFieldValues = (row) => Object.fromEntries([...row.querySelectorAll("[data-variable-field]")].map((field) => [field.dataset.variableField, field.value]));
   const renderVariables = () => {
     const source = state.variables;
-    const variables = Array.isArray(source?.variables) ? source.variables : [];
+    // The rows follow the custom section of AGENTS.md: variables with an order first, then by name.
+    const variables = inRecordOrder(Array.isArray(source?.variables) ? source.variables : []);
     setText("#variables-count", t("variables.count", { count: variables.length }));
     const unavailable = source?.ok === false;
     const rows = variables.length > 0 ? variables.map((variable) => variableRow(variable)).join("") : `<div class="tcrn-table-shell__row tcrn-table-shell__empty-row" role="row" data-variable-empty><span class="tcrn-table-shell__empty" role="cell">${esc(t("variables.empty"))}</span></div>`;
-    const headers = [t("variables.name"), t("variables.type"), t("variables.value"), t("variables.description"), t("variables.actions")];
+    const headers = [t("collection.order"), t("variables.name"), t("variables.type"), t("variables.value"), t("variables.description"), t("variables.actions")];
     const content = unavailable
       ? `<div class="tcrn-state-surface" role="alert">${esc(source?.reasonCode ?? t("health.unavailable"))}</div>`
       : `<section class="tcrn-surface" data-content-scope="custom-variables"><div class="tcrn-surface__head"><div><h2>${esc(t("variables.title"))}</h2><p class="tcrn-surface__note">${esc(t("variables.note"))}</p></div></div><div class="tcrn-table-shell tcrn-variable-table" role="table" aria-label="${esc(t("variables.title"))}" data-variable-table="true"><div class="tcrn-table-shell__head" role="row">${headers.map((label) => `<span role="columnheader">${esc(label)}</span>`).join("")}</div>${variableRow({ name: "", type: "string", value: "", description: "" }, true)}${rows}</div></section>${source?.withheld?.length ? `<p class="tcrn-scope-note">${esc(t("variables.withheld", { count: source.withheld.length }))}</p>` : ""}`;
@@ -5296,7 +5344,8 @@ const BOOT = __PORTAL_BOOT__;
       showReceipt({ ok: false, reasonCode: "VARIABLE_NAME_INVALID", error: t("variables.nameExists", { name }) });
       return;
     }
-    echo("variable-set", ["--name", name, "--type", values.type, "--value", values.value]);
+    const order = String(values.order ?? "").trim();
+    echo("variable-set", ["--name", name, "--type", values.type, "--value", values.value, ...(order === "" ? [] : ["--order", order])]);
     let result = await api("/api/variables", { method: "POST", body: JSON.stringify(values) });
     let committed = result.ok !== false || result.mutation !== undefined;
     if (committed && previousName !== null && name !== previousName) {
@@ -5384,12 +5433,14 @@ const BOOT = __PORTAL_BOOT__;
     attachEcho($("#knowledge-view-content"));
   };
   const renderGates = () => {
-    const gates = Array.isArray(state.gates) ? state.gates : [];
+    // The rows follow the plan: gates with an order first, then by name (TCRN-CROSS-SUB-410).
+    const gates = inRecordOrder(Array.isArray(state.gates) ? state.gates : []);
     setText("#gates-count", String(gates.length));
     const empty = $("#gates-empty");
     empty.hidden = gates.length > 0;
     empty.textContent = state.gateResponse?.ok === false ? state.gateResponse.reasonCode || t("gates.listEmpty") : t("gates.listEmpty");
     $("#gates-rows").innerHTML = gates.map((gate) => `<tr data-gate-row="${esc(gate.name)}">
+      <td><label class="tcrn-field"><span class="tcrn-sr-only">${esc(t("collection.order"))}</span>${orderInput(gate.order ?? "", `aria-label="${esc(t("collection.order"))}" data-gate-order`)}</label></td>
       <td><div data-gate-cell><strong><code>${esc(gate.name)}</code></strong>
         <label class="tcrn-field"><span class="tcrn-field__label">${esc(t("gates.command"))}</span><textarea class="tcrn-input tcrn-textarea" data-gate-command rows="2">${esc(JSON.stringify(gate.command ?? []))}</textarea></label>
         <label class="tcrn-field"><span class="tcrn-field__label">${esc(t("gates.root"))}</span><input class="tcrn-input" data-gate-root value="${esc(gate.root ?? ".")}"></label>
@@ -5608,24 +5659,47 @@ const BOOT = __PORTAL_BOOT__;
     $$('[data-pending-action]').forEach((button) => { button.disabled = pending.length === 0; });
     $("#pending-open").textContent = `${t("rule.pendingTitle")} · ${pending.length}`;
   };
+  // TCRN-CROSS-SUB-410 (TCRN-CROSS-STORY-508 R7): a rule's order places its section in AGENTS.md, and
+  // only rule-enable records it. An enabled rule saves a new order through rule-enable; a disabled
+  // rule's order is sent when it is switched on. A rule in any other state would change more than its
+  // order through rule-enable (a newer version, a pending section), so its order is shown, not edited.
+  const ruleOrderField = (rule) => {
+    const editable = rule.state === "enabled" || rule.state === "disabled";
+    const note = rule.state === "enabled" ? "" : `<span data-rule-order-note>${esc(editable ? t("rule.orderOnEnable") : t("rule.orderLocked"))}</span>`;
+    const save = rule.state === "enabled" ? `<button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-rule-order-save="${esc(rule.id)}" data-cli-action="rule-enable">${esc(t("rule.saveOrder"))}</button>` : "";
+    return `<div data-rule-card-order><label class="tcrn-field" data-rule-order-field><span class="tcrn-field__label">${esc(t("collection.order"))}</span>${orderInput(rule.order ?? "", `aria-label="${esc(`${t("collection.order")} · ${ruleTitle(rule.id)}`)}" data-rule-order="${esc(rule.id)}"${editable ? "" : " disabled"}`)}</label>${save}${note}</div>`;
+  };
+  const ruleOrderValue = (id) => $(`[data-rule-order="${CSS.escape(id)}"]`)?.value.trim() ?? "";
   const renderProseDirectory = () => {
-    const rules = state.rules?.rules || [];
+    // The cards follow the rule sections of AGENTS.md: rules with an order first, then in catalog order.
+    const rules = inRecordOrder(state.rules?.rules || []);
     $("#prose-directory").innerHTML = rules.length ? rules.map((rule) => {
       const enabled = ruleIsEnabled(rule);
       const changed = ["user-modified", "pending"].includes(rule.state);
       const forceId = `rule-force-${rule.id}`;
-      return `<article data-rule-card="${esc(rule.id)}"><div data-rule-card-head><h2 data-rule-card-title>${esc(ruleTitle(rule.id))}</h2><span class="tcrn-badge" data-rule-state="${esc(rule.state)}">${esc(ruleStateLabel(rule.state))}</span></div><div data-rule-card-meta>${esc(rule.section)} · v${esc(rule.version ?? "—")}</div><div data-rule-card-actions><label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-rule-switch="${esc(rule.id)}" aria-label="${esc(ruleTitle(rule.id))}" ${enabled ? "checked" : ""}><span class="tcrn-switch__label">${esc(enabled ? t("config.enabled") : t("config.disabled"))}</span></label>${changed && enabled ? `<label data-rule-force-label for="${forceId}"><input class="tcrn-input" type="checkbox" id="${forceId}" data-rule-force="${esc(rule.id)}">${esc(t("rule.forceDisable"))}</label>` : ""}</div></article>`;
+      return `<article data-rule-card="${esc(rule.id)}"><div data-rule-card-head><h2 data-rule-card-title>${esc(ruleTitle(rule.id))}</h2><span class="tcrn-badge" data-rule-state="${esc(rule.state)}">${esc(ruleStateLabel(rule.state))}</span></div><div data-rule-card-meta>${esc(rule.section)} · v${esc(rule.version ?? "—")}</div>${ruleOrderField(rule)}<div data-rule-card-actions><label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-rule-switch="${esc(rule.id)}" aria-label="${esc(ruleTitle(rule.id))}" ${enabled ? "checked" : ""}><span class="tcrn-switch__label">${esc(enabled ? t("config.enabled") : t("config.disabled"))}</span></label>${changed && enabled ? `<label data-rule-force-label for="${forceId}"><input class="tcrn-input" type="checkbox" id="${forceId}" data-rule-force="${esc(rule.id)}">${esc(t("rule.forceDisable"))}</label>` : ""}</div></article>`;
     }).join("") : `<div class="tcrn-state-surface">${esc(t("config.loading"))}</div>`;
     $$('[data-rule-switch]').forEach((input) => input.addEventListener("change", async () => {
       const id = input.dataset.ruleSwitch;
       const action = input.checked ? "enable" : "disable";
       const force = $(`[data-rule-force="${CSS.escape(id)}"]`)?.checked === true;
-      echo(action === "enable" ? "rule-enable" : "rule-disable", ["--id", id, ...(force ? ["--force", "true"] : [])]);
-      const result = await api(`/api/rules/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify({ action, ...(force ? { force: true } : {}) }) });
+      const order = action === "enable" ? ruleOrderValue(id) : "";
+      echo(action === "enable" ? "rule-enable" : "rule-disable", ["--id", id, ...(force ? ["--force", "true"] : []), ...(order === "" ? [] : ["--order", order])]);
+      const result = await api(`/api/rules/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify({ action, ...(force ? { force: true } : {}), ...(order === "" ? {} : { order }) }) });
       showReceipt(result);
       if (result.ok && result.rules) state.rules = result;
       else input.checked = !input.checked;
       renderProseDirectory(); renderPending();
+    }));
+    // A saved order moves the rule's section, so AGENTS.md is read back with the rules.
+    $$('[data-rule-order-save]').forEach((button) => button.addEventListener("click", async () => {
+      const id = button.dataset.ruleOrderSave;
+      const order = ruleOrderValue(id);
+      echo("rule-enable", ["--id", id, ...(order === "" ? [] : ["--order", order])]);
+      const result = await api(`/api/rules/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify({ action: "enable", ...(order === "" ? {} : { order }) }) });
+      showReceipt(result);
+      if (result.ok && result.rules) await loadAgents();
+      else { renderProseDirectory(); renderPending(); }
     }));
   };
   const renderGutter = () => {
@@ -5768,12 +5842,14 @@ const BOOT = __PORTAL_BOOT__;
     if (button.hasAttribute("data-gate-save")) {
       const command = parseGateArgv(row.querySelector("[data-gate-command]").value);
       if (command === null) { showReceipt({ ok: false, reasonCode: "PORTAL_GATE_COMMAND_INVALID" }); return; }
+      const order = row.querySelector("[data-gate-order]")?.value.trim() ?? "";
       const gate = {
         name: button.dataset.gateSave, command, root: row.querySelector("[data-gate-root]").value,
         covers: gateCoversFrom(row), required: row.querySelector("[data-gate-required]").checked,
         enabled: row.querySelector("[data-gate-enabled]").checked, releaseOnly: row.querySelector("[data-gate-release-only]").checked,
+        ...(order === "" ? {} : { order }),
       };
-      echo("gates-config-set", ["--name", gate.name, "--command", JSON.stringify(gate.command)]);
+      echo("gates-config-set", ["--name", gate.name, "--command", JSON.stringify(gate.command), ...(order === "" ? [] : ["--order", order])]);
       const result = await api("/api/gates", { method: "POST", body: JSON.stringify(gate) });
       showReceipt(result);
       if (result.ok) await refreshGates();
@@ -5830,7 +5906,7 @@ const BOOT = __PORTAL_BOOT__;
       tcrnWritePreference("locale", state.locale);
       setLocaleMenuOpen(false);
       localeTrigger.focus();
-      applyLocale(); renderDashboard(); renderSettings(); renderCollections(); renderVocabulary(); renderGates(); renderProseDirectory(); renderPending(); renderReconciliation(state.reconciliation || { ok: true, findings: [] });
+      applyLocale(); renderDashboard(); renderSettings(); renderCollections(); renderVariables(); renderVocabulary(); renderGates(); renderProseDirectory(); renderPending(); renderReconciliation(state.reconciliation || { ok: true, findings: [] });
     });
   });
   document.addEventListener("pointerdown", (event) => { if (!localeMenu.contains(event.target)) setLocaleMenuOpen(false); });

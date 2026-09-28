@@ -307,8 +307,13 @@ function pageHierarchyFindings(document, source) {
       const table = view?.querySelector('[data-ui="gate-config-table"]');
       const form = view?.querySelector('[data-ui="gate-add-form"]');
       const lastRun = view?.querySelector('[data-ui="gates-last-run"]');
-      if (!view || !table || table.querySelectorAll("thead th").length !== 4 || !form || !lastRun || childIndex(lowerContent, view) !== 0) findings.push("gates:four-columns");
+      // TCRN-CROSS-SUB-410: the order column leads the gate table, so it has five columns.
+      if (!view || !table || table.querySelectorAll("thead th").length !== 5 || !form || !lastRun || childIndex(lowerContent, view) !== 0) findings.push("gates:five-columns");
     }
+    // TCRN-CROSS-SUB-410 (STORY-508 R7): the variables, rules and gates pages each say in their header
+    // what their order column is for.
+    const orderPurpose = { variables: "variables", prose: "rules", gates: "gates" }[name];
+    if (orderPurpose !== undefined && !head?.querySelector(`.tcrn-page__lede[data-order-purpose="${orderPurpose}"]`)) findings.push(`${name}:order-purpose`);
     if (name === "prose") {
       const pending = tabsRegion?.querySelector(":scope > #rules-pending");
       const layout = lowerContent?.querySelector(':scope > [data-ui="rules-layout"]');
@@ -1499,6 +1504,147 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       const listed = await cli(["variable-list", "--workspace", page.workspace], page.deviceEnv);
       assert.deepEqual(listed.variables, []);
       assert.doesNotMatch(await readFile(join(page.fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.target/u, "deleting a variable removes its managed row");
+    } finally { await page.cleanup(); }
+  });
+
+  // TCRN-CROSS-SUB-410 (TCRN-CROSS-STORY-508 R7; contract C-R14-5): the variables, rules and gates pages
+  // each carry an order in the same NumberInput, under a header that says what it orders: the render
+  // order of AGENTS.md for variables and rules, the plan and display order for gates. Each lists its
+  // records in that order, and an order changed on the page is written by the engine and read back.
+  test("SUB-410 (STORY-508 R7): variables, rules and gates each show their order, say what it orders, and write it through the engine", async () => {
+    const fixture = await scratch("tcrn-410-orders-");
+    const atelier = { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" };
+    const write = (command, args) => cli([command, "--workspace", fixture.workspace, "--at", nextAt(), "--actor", "agent:test", ...args], atelier);
+    await write("variable-set", ["--name", "alpha", "--type", "string", "--value", "a"]);
+    await write("variable-set", ["--name", "beta", "--type", "string", "--value", "b", "--order", "5"]);
+    await write("gates-config-set", ["--name", "lint", "--command", JSON.stringify(["node", "--version"])]);
+    await write("gates-config-set", ["--name", "unit", "--command", JSON.stringify(["node", "--version"]), "--order", "4"]);
+    for (const [id, order] of [["batch", ["--order", "3"]], ["autonomy", []]]) {
+      await cli(["rule-enable", "--project", fixture.proseRoot, "--id", id, ...order, "--at", nextAt(), "--actor", "agent:test"], fixture.deviceEnv);
+    }
+    const page = await loadExecutedDom(fixture);
+    const document = page.document;
+    const agents = () => readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8");
+    const type = (input, value) => { input.value = value; input.dispatchEvent(new page.window.Event("input", { bubbles: true })); };
+    const act = async (element) => { element.click(); await page.waitForSettled(); return receiptText(document); };
+    const variableRows = () => [...document.querySelectorAll("[data-variable-row]")].map((row) => [row.dataset.variableRow, row.querySelector('[data-variable-field="order"]').value]);
+    const gateRows = () => [...document.querySelectorAll("[data-gate-row]")].map((row) => [row.dataset.gateRow, row.querySelector("[data-gate-order]").value]);
+    const ruleCards = () => [...document.querySelectorAll("[data-rule-card]")].map((card) => [card.dataset.ruleCard, card.querySelector("[data-rule-order]").value]);
+    try {
+      // Each page lists its records as the engine renders or plans them, each order in a NumberInput.
+      assert.deepEqual(variableRows(), [["beta", "5"], ["alpha", ""]]);
+      assert.deepEqual(gateRows(), [["unit", "4"], ["lint", ""]]);
+      assert.deepEqual(ruleCards(), [["batch", "3"], ["autonomy", ""], ["unattended-commands", ""], ["silent-reporting", ""]]);
+      const orderInputs = [...document.querySelectorAll('[data-variable-field="order"], [data-gate-order], [data-rule-order]')];
+      assert.ok(orderInputs.length === 9 && orderInputs.every((input) => input.getAttribute("data-number-input-component") === "NumberInput" && input.type === "number" && input.getAttribute("min") === "1"));
+      // An enabled rule saves its order; a disabled one takes it when it is switched on.
+      assert.ok(document.querySelector('[data-rule-card="batch"] [data-rule-order-save][data-cli-action="rule-enable"]'));
+      assert.equal(document.querySelector('[data-rule-card="silent-reporting"] [data-rule-order-save]'), null);
+      assert.equal(document.querySelector('[data-rule-card="silent-reporting"] [data-rule-order]').disabled, false);
+
+      // Five languages: each page's header says what its order is for, and the order column is named.
+      const orderNames = { en: "Order", "zh-CN": "顺序", ja: "順序", ko: "순서", fr: "Ordre" };
+      for (const [locale, orderName] of Object.entries(orderNames)) {
+        document.querySelector(`[data-locale-option="${locale}"]`)?.click();
+        for (const purpose of ["variables", "rules", "gates"]) {
+          const text = document.querySelector(`.tcrn-page__lede[data-order-purpose="${purpose}"]`).textContent;
+          assert.ok(text.toLocaleLowerCase().includes(orderName.toLocaleLowerCase()) && text.includes(purpose === "gates" ? "" : "AGENTS.md"), `${locale} ${purpose}: the header says what the order is for`);
+        }
+        assert.equal(document.querySelector("[data-variable-table] [role=columnheader]").textContent, orderName);
+        assert.equal(document.querySelector('[data-ui="gate-config-table"] thead th').textContent, orderName);
+        assert.equal(document.querySelector('[data-rule-card="batch"] [data-rule-card-order] .tcrn-field__label').textContent, orderName);
+      }
+      document.querySelector('[data-locale-option="en"]')?.click();
+
+      // Variables: an order moves the variable in the table and in the custom section; an empty one clears it.
+      document.querySelector('[data-page-target="variables"]').click();
+      type(document.querySelector('[data-variable-row="alpha"] [data-variable-field="order"]'), "2");
+      assert.match(await act(document.querySelector('[data-variable-row="alpha"] [data-variable-save]')), /^✓v\d+$/u);
+      assert.deepEqual(variableRows(), [["alpha", "2"], ["beta", "5"]]);
+      assert.ok((await agents()).indexOf("| alpha |") < (await agents()).indexOf("| beta |"), "the custom section follows the order");
+      type(document.querySelector('[data-variable-row="beta"] [data-variable-field="order"]'), "");
+      assert.match(await act(document.querySelector('[data-variable-row="beta"] [data-variable-save]')), /^✓v\d+$/u);
+      const variables = (await cli(["variable-list", "--workspace", fixture.workspace], fixture.deviceEnv)).variables;
+      assert.deepEqual(variables.map((variable) => [variable.name, variable.order ?? null]), [["alpha", 2], ["beta", null]]);
+      assert.deepEqual(variableRows(), [["alpha", "2"], ["beta", ""]]);
+
+      // Gates: the engine judges the order; a refused one records nothing, an accepted one reorders the plan.
+      document.querySelector('[data-page-target="gates"]').click();
+      // The DOM harness reads a parsed textarea's text still escaped and a parsed checkbox as neither
+      // checked nor unchecked, so the row is given its command and switches as a reader's browser holds them.
+      const command = () => {
+        const row = document.querySelector('[data-gate-row="lint"]');
+        row.querySelector("[data-gate-command]").value = JSON.stringify(["node", "--version"]);
+        for (const [field, checked] of [["required", true], ["enabled", true], ["release-only", false]]) row.querySelector(`[data-gate-${field}]`).checked = checked;
+      };
+      command();
+      type(document.querySelector('[data-gate-row="lint"] [data-gate-order]'), "0");
+      assert.match(await act(document.querySelector('[data-gate-save="lint"]')), /^✕/u);
+      assert.match(document.querySelector("#receipt-body")?.textContent ?? "", /CLI_ARGUMENT_MALFORMED/u);
+      command();
+      type(document.querySelector('[data-gate-row="lint"] [data-gate-order]'), "2");
+      assert.match(await act(document.querySelector('[data-gate-save="lint"]')), /^✓v\d+$/u);
+      assert.deepEqual(gateRows(), [["lint", "2"], ["unit", "4"]]);
+      const gates = (await cli(["gates-config-list", "--workspace", fixture.workspace], fixture.deviceEnv)).records;
+      assert.deepEqual(gates.map((gate) => [gate.name, gate.order ?? null]), [["lint", 2], ["unit", 4]]);
+
+      // Rules: an enabled rule's saved order moves its section; a disabled rule switched on takes its order.
+      document.querySelector('[data-page-target="prose"]').click();
+      type(document.querySelector('[data-rule-order="autonomy"]'), "1");
+      assert.match(await act(document.querySelector('[data-rule-order-save="autonomy"]')), /^✓v\d+$/u);
+      assert.deepEqual(ruleCards().slice(0, 2), [["autonomy", "1"], ["batch", "3"]]);
+      const moved = await agents();
+      assert.ok(moved.indexOf("rule:autonomy") < moved.indexOf("rule:batch"), "the rule sections follow the order");
+      assert.equal(document.querySelector("#agents-md").value, moved, "the editor reads AGENTS.md back");
+      type(document.querySelector('[data-rule-order="silent-reporting"]'), "2");
+      const toggle = document.querySelector('[data-rule-switch="silent-reporting"]');
+      toggle.checked = true;
+      toggle.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+      await page.waitForSettled();
+      assert.deepEqual(ruleCards(), [["autonomy", "1"], ["silent-reporting", "2"], ["batch", "3"], ["unattended-commands", ""]]);
+      const listed = (await cli(["rule-list", "--project", fixture.proseRoot], fixture.deviceEnv)).rules;
+      assert.deepEqual(listed.filter((rule) => rule.order !== undefined).map((rule) => [rule.id, rule.state, rule.order]), [["autonomy", "enabled", 1], ["batch", "enabled", 3], ["silent-reporting", "enabled", 2]]);
+      const text = await agents();
+      assert.ok(text.indexOf("rule:autonomy") < text.indexOf("rule:silent-reporting") && text.indexOf("rule:silent-reporting") < text.indexOf("rule:batch"), "a rule switched on with an order takes its place");
+    } finally { page.child.kill(); await rm(fixture.base, { recursive: true, force: true }); }
+  });
+
+  // TCRN-CROSS-SUB-410 (TCRN-CROSS-STORY-508 R6; contract C-R14-3): the top of the tier page shows the
+  // three escalation settings as they stand, read only, and links to the settings group where they are
+  // changed; a change made there shows on the tier page.
+  test("SUB-410 (STORY-508 R6): the tier page shows the escalation settings read only and links to their settings group", async () => {
+    const page = await preparePage();
+    try {
+      const document = page.document;
+      document.querySelector('[data-page-target="model-tiers"]').click();
+      const view = document.querySelector('[data-collection-view="models.tiers"]');
+      const summary = () => view.querySelector(":scope > [data-escalation-summary]");
+      assert.equal(view.firstElementChild, summary(), "the summary heads the tier page");
+      const shown = () => Object.fromEntries([...summary().querySelectorAll("[data-escalation-value]")].map((node) => [node.dataset.escalationValue, node.textContent]));
+      assert.deepEqual(shown(), { "models.escalation.enabled": "enabled", "models.escalation.threshold": "1", "models.escalation.ceiling": "main" });
+      assert.equal(summary().querySelectorAll("input, select, textarea").length, 0, "the summary is read only");
+      const keys = ["models.escalation.enabled", "models.escalation.threshold", "models.escalation.ceiling"];
+      for (const locale of ["en", "zh-CN", "ja", "ko", "fr"]) {
+        document.querySelector(`[data-locale-option="${locale}"]`)?.click();
+        const labels = [...summary().querySelectorAll("[data-escalation-key] > span:first-child")].map((node) => node.textContent.trim());
+        assert.ok(labels.length === 3 && labels.every((label) => label !== "" && !label.startsWith("setting.")), `${locale} names the three settings`);
+        assert.ok(!summary().querySelector("h2").textContent.startsWith("modelTiers."), `${locale} names the summary`);
+      }
+      document.querySelector('[data-locale-option="en"]')?.click();
+
+      // The link opens the settings group that holds the three keys, and a change there shows here.
+      summary().querySelector("[data-escalation-settings-link]").click();
+      assert.equal(document.querySelector('[data-page="settings"]').hidden, false);
+      assert.equal(document.querySelector('[data-settings-layout-nav] [data-setting-group="models"]').getAttribute("aria-selected"), "true");
+      for (const key of keys) assert.ok(document.querySelector(`[data-setting-row="${key}"]`), `${key} is in the group`);
+      const before = receiptText(document);
+      const threshold = document.querySelector('[data-setting-control="models.escalation.threshold"]');
+      threshold.value = "3";
+      threshold.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+      await waitFor(() => receiptAdvanced(document, before)(), "the threshold write receipt");
+      await page.waitForSettled();
+      document.querySelector('[data-page-target="model-tiers"]').click();
+      assert.equal(shown()["models.escalation.threshold"], "3");
     } finally { await page.cleanup(); }
   });
 

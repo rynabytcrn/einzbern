@@ -671,6 +671,51 @@ test("STORY-485: Atelier edits gate declarations and reads each library's latest
   assert.deepEqual((await gatesNow()).gates, []);
 });
 
+// TCRN-CROSS-SUB-410 (TCRN-CROSS-STORY-508 R7; contract C-R14-5): the variable, rule and gate routes
+// pass an order to the engine as it was sent, so the engine records it or says what is wrong with it,
+// and each read-back carries it. An empty order is none: variable-set then writes a variable without
+// one, and rule-enable and gates-config-set keep the order the record holds.
+test("SUB-410 (STORY-508 R7): the variable, rule and gate routes write an order through the engine and read it back", async (t) => {
+  const fixture = await scratch("tcrn-portal-orders-", "TCRN-PORTAL-ORDERS");
+  const { child, url } = await startPortal(fixture);
+  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
+  const { boot } = await readBoot(url);
+  const post = (path, body) => request(url, path, writeOptions(boot.token, "POST", body));
+
+  const variable = await post("/api/variables", { name: "deploy.host", type: "string", value: "build.example.com", order: "3" });
+  assert.equal(variable.response.status, 200);
+  assert.deepEqual(variable.body.readback, { name: "deploy.host", type: "string", value: "build.example.com", description: "", order: 3 });
+  const unordered = await post("/api/variables", { name: "deploy.host", type: "string", value: "build.example.com", order: "" });
+  assert.equal(Object.hasOwn(unordered.body.readback, "order"), false, "variable-set writes the whole record, so no order is none");
+  const malformed = await post("/api/variables", { name: "deploy.host", type: "string", value: "x", order: "0" });
+  assert.equal(malformed.response.status, 409);
+  assert.equal(malformed.body.reasonCode, "CLI_ARGUMENT_MALFORMED");
+  // The variable write rendered the system variables section too; its heading models.escalation names
+  // the family of the three escalation keys, so the Rules page's check does not count it as a claim.
+  const reconciled = await request(url, "/api/agents-md/reconcile", readOptions(boot.token));
+  assert.ok(reconciled.body.rows.some((row) => row.key === "models.escalation" && row.kind === "registered"));
+  assert.deepEqual(reconciled.body.findings.filter((row) => row.key.startsWith("models.")), []);
+
+  const rule = await post("/api/rules/batch", { action: "enable", order: 2 });
+  assert.equal(rule.body.reasonCode, "RULE_ENABLED");
+  assert.equal(rule.body.rules.find((entry) => entry.id === "batch").order, 2);
+  const kept = await post("/api/rules/batch", { action: "enable" });
+  assert.equal(kept.body.rules.find((entry) => entry.id === "batch").order, 2, "an enable without an order keeps the recorded one");
+  const disabled = await post("/api/rules/batch", { action: "disable", order: 7 });
+  assert.equal(disabled.body.reasonCode, "RULE_DISABLED");
+  assert.equal(disabled.body.rules.find((entry) => entry.id === "batch").order, 2, "a disable carries no order and keeps the recorded one");
+
+  const gate = { name: "unit", command: ["node", "--version"], root: ".", covers: ["**"], enabled: true, required: true, releaseOnly: false };
+  const declared = await post("/api/gates", { ...gate, order: 4 });
+  assert.equal(declared.response.status, 200);
+  assert.equal(declared.body.gate.order, 4);
+  assert.equal((await post("/api/gates", gate)).body.gate.order, 4, "a redeclaration without an order keeps the recorded one");
+  const refused = await post("/api/gates", { ...gate, order: "0" });
+  assert.equal(refused.response.status, 409);
+  assert.equal(refused.body.reasonCode, "CLI_ARGUMENT_MALFORMED");
+  assert.equal((await post("/api/gates", { ...gate, order: { value: 1 } })).body.reasonCode, "PORTAL_GATE_INPUT_INVALID");
+});
+
 test("state surface uses the doctor's eight checks and selected library projection", async (t) => {
   const fixture = await scratch("tcrn-portal-state-", "TCRN-PORTAL-STATE");
   const wrapper = join(fixture.base, "status-wrapper.mjs");

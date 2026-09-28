@@ -457,12 +457,19 @@ function withheldCollectionFindings(key, render, stored) {
   });
 }
 
+// TCRN-CROSS-SUB-410 (TCRN-CROSS-STORY-508 R7; contract C-R14-5): a variable, a rule and a gate each
+// take an optional order, passed to the engine as it was typed so the engine, not the portal, says what
+// is wrong with it. An empty order is no --order: variable-set then writes a variable without one,
+// and rule-enable and gates-config-set keep the order the record holds.
+const orderArguments = (order) => order === undefined || order === null || String(order).trim() === "" ? [] : ["--order", String(order).trim()];
+
 const writeVariable = (body) => governedWrite((common) => [
   "variable-set", ...common,
   "--name", String(body.name ?? ""),
   "--type", String(body.type ?? ""),
   "--value", String(body.value ?? ""),
   ...(body.description === undefined ? [] : ["--description", String(body.description)]),
+  ...orderArguments(body.order),
 ], ATELIER_SURFACE);
 const removeVariable = (name) => governedWrite((common) => ["variable-remove", ...common, "--name", String(name)], ATELIER_SURFACE);
 const variablesCatalog = () => cliResult(["variable-list", "--workspace", currentLibrary().libraryPath]);
@@ -516,8 +523,9 @@ function gateInput(body) {
   const covers = body.covers;
   if (name === "" || !Array.isArray(command) || command.length === 0 || command.some((part) => typeof part !== "string" || part === "") ||
     typeof root !== "string" || !Array.isArray(covers) || covers.some((cover) => typeof cover !== "string") ||
-    typeof body.required !== "boolean" || typeof body.enabled !== "boolean" || typeof body.releaseOnly !== "boolean") return null;
-  return { name, command, root, covers, required: body.required, enabled: body.enabled, releaseOnly: body.releaseOnly };
+    typeof body.required !== "boolean" || typeof body.enabled !== "boolean" || typeof body.releaseOnly !== "boolean" ||
+    !(body.order === undefined || body.order === null || typeof body.order === "number" || typeof body.order === "string")) return null;
+  return { name, command, root, covers, required: body.required, enabled: body.enabled, releaseOnly: body.releaseOnly, order: body.order };
 }
 
 const writeGate = (gate) => governedWrite((common) => [
@@ -529,6 +537,7 @@ const writeGate = (gate) => governedWrite((common) => [
   "--required", String(gate.required),
   "--enabled", String(gate.enabled),
   "--release-only", String(gate.releaseOnly),
+  ...orderArguments(gate.order),
 ], ATELIER_SURFACE);
 const deleteGate = (name) => governedWrite((common) => ["gates-config-remove", ...common, "--name", name], ATELIER_SURFACE);
 
@@ -602,7 +611,9 @@ async function reconcile() {
         const key = match[1];
         const namespace = key.slice(0, key.indexOf("."));
         if (![...registered].some((entry) => entry.startsWith(`${namespace}.`))) continue;
-        const known = registered.has(key);
+        // TCRN-CROSS-SUB-410: a token naming a family of registered keys claims no key of its own, such
+        // as the heading models.escalation the system variables section gives the three escalation keys.
+        const known = registered.has(key) || [...registered].some((entry) => entry.startsWith(`${key}.`));
         rows.push({ file: name, line: lineIndex + 1, token: key, key, registered: known, kind: known ? "registered" : "unregistered" });
       }
     }
@@ -805,10 +816,13 @@ const server = createServer(async (request, response) => {
         send(response, 400, { ok: false, reasonCode: "PORTAL_RULE_ACTION_INVALID", id, action });
         return;
       }
+      // TCRN-CROSS-SUB-410 (STORY-508 R7): an enable carries the rule's order when one is given; the
+      // engine places the rule's section by it and keeps it through a later disable.
       const result = await projectWrite((common) => [
         action === "enable" ? "rule-enable" : "rule-disable",
         "--id", id,
         ...(action === "disable" && body.force === true ? ["--force", "true"] : []),
+        ...(action === "enable" ? orderArguments(body.order) : []),
         ...common,
       ]);
       const payload = { ...result.body, ok: result.ok };

@@ -2567,6 +2567,8 @@ test("an unbound detached test controller exits before discovery after its task 
     TCRN_TEST_BIND_WINDOW_HOLD_PATH: holdPath,
     TCRN_TEST_BIND_WINDOW_ORPHAN_DELAY_MS: "3000",
     TCRN_TEST_BIND_WINDOW_IMPORT_PATH: importPath,
+    // TCRN-CROSS-INC-394: the SIGKILLed runner cannot remove its progress directory; it goes with this TMPDIR.
+    TMPDIR: await runTemporaryDirectory(context),
   });
   await waitForPath(lockPath(root), interrupted.result);
   await waitForPath(readyPath, interrupted.result);
@@ -2620,11 +2622,12 @@ test("a pre-bind process-group bind failure terminates the controller before tes
 // TCRN-CROSS-INC-393 (TCRN-CROSS-SUB-402): kill(-group, 0) can answer EPERM for a group whose
 // members are still exiting. The pre-bind path waits for the bootstrap and reaper groups; the
 // probe codes injected through TCRN_TEST_PROCESS_GROUP_PROBE_CODES stand in for the kernel's.
-function startPreBindGroupProbe(root, importPath, codes) {
+function startPreBindGroupProbe(root, importPath, codes, extraEnvironment = {}) {
   return startTaskEntrypoint(root, {
     TCRN_TEST_BIND_PROCESS_GROUP_FAILURE: "1",
     TCRN_TEST_BIND_WINDOW_IMPORT_PATH: importPath,
     TCRN_TEST_PROCESS_GROUP_PROBE_CODES: codes,
+    ...extraEnvironment,
   }).result;
 }
 
@@ -2635,17 +2638,23 @@ function preBindGroupProbeFailure(result) {
   return JSON.parse(result.stderr);
 }
 
-// A run that fails closed before it has joined the reaper's group removes the progress directory
-// the reaper still has to record its cleanup in, and the reaper then retries that record without
-// end. That is outside TCRN-CROSS-SUB-402's files and is reported with it; here the test reclaims
-// what its own run started. Only a reaper may be left; it goes with its output directory.
-async function reclaimFixtureReapers(root) {
+// The processes still running the fixture's own copy of scripts/.
+async function fixtureProcessLister(root) {
   const scriptRoots = [...new Set([root, await realpath(root)])].map((path) => `${path}/scripts/`);
-  const fixtureProcesses = () => {
+  return () => {
     const listed = spawnSync("/bin/ps", ["-axo", "pid=,command="], { encoding: "utf8", env: { PATH: "/usr/bin:/bin" } });
     assert.equal(listed.status, 0, listed.stderr);
     return listed.stdout.split("\n").filter((line) => scriptRoots.some((scriptRoot) => line.includes(scriptRoot)));
   };
+}
+
+// A run that fails closed before it has joined the reaper's group removes the progress directory
+// the reaper still has to record its cleanup in. Until TCRN-CROSS-INC-394 the reaper then retried
+// that record without end; it now ends the record, removes its output directory and exits, and the
+// INC-394 cases below prove that nothing is left to reclaim. The reclaim stays as the backstop for
+// what a run started: only a reaper may be left, and it goes with its output directory.
+async function reclaimFixtureReapers(root) {
+  const fixtureProcesses = await fixtureProcessLister(root);
   const reapers = fixtureProcesses().map((line) => {
     const match = /^\s*(\d+)\s.*\/scripts\/test-controller-reaper\.mjs \d+ \d+ (\S+\/tcrn-test-controller-[A-Za-z0-9]+) /u.exec(line);
     assert.ok(match, `only a reaper may outlive the run: ${line}`);
@@ -2704,6 +2713,89 @@ test("INC-393: EPERM that lasts the whole group wait window fails closed with EP
   await assertTaskResidueClean(root);
 });
 
+// TCRN-CROSS-INC-394 (TCRN-CROSS-SUB-418): a run gets its own TMPDIR, so the controller and
+// progress directories it creates are counted exactly, whatever else shares the host's TMPDIR.
+async function runTemporaryDirectory(context) {
+  const path = await mkdtemp(join(tmpdir(), "tcrn-run-tmpdir-"));
+  context.after(() => rm(path, { recursive: true, force: true }));
+  return path;
+}
+
+async function controllerDirectories(path) {
+  return (await readdir(path)).filter((name) => /^tcrn-test-(?:controller|progress)-/u.test(name)).sort();
+}
+
+// Waits, signalling nothing, for the fixture's processes to finish on their own; the reclaim that
+// follows is the verdict.
+async function settleFixtureProcesses(root) {
+  const fixtureProcesses = await fixtureProcessLister(root);
+  await pollUntil(() => (fixtureProcesses().length === 0 ? true : undefined), () => false);
+}
+
+test("INC-394: an immediate pre-bind fail-closed leaves no reaper and no controller or progress directory", async (context) => {
+  const { root, importPath } = await importGuardTaskFixture(context, 'test("a group probe never discovers this source", () => {});');
+
+  // Positive: after transient EPERM both groups are joined before the progress directory goes.
+  const joinedTemporary = await runTemporaryDirectory(context);
+  const joined = preBindGroupProbeFailure(await startPreBindGroupProbe(root, importPath, "EPERM,EPERM,EPERM", { TMPDIR: joinedTemporary }));
+  assert.equal(joined.reasonCode, "TEST_CONTROLLER_BIND_INJECTED_FAILURE", JSON.stringify(joined));
+  assert.equal(await reclaimFixtureReapers(root), 0, "both groups were joined");
+  assert.deepEqual(await controllerDirectories(joinedTemporary), [], "the joined run removed its controller and progress directories");
+  await assertTaskResidueClean(root);
+
+  // Negative: each immediate fail-closed keeps its reason, and the reaper it never joined finishes
+  // on its own instead of retrying its record in the removed progress directory.
+  for (const [codes, reasonCode, detail] of [
+    ["EIO", "TEST_CONTROLLER_GROUP_LIVENESS_UNKNOWN", /^\d+: EIO$/u],
+    ["EPERM,EINVAL", "TEST_CONTROLLER_GROUP_LIVENESS_UNKNOWN", /^\d+: EINVAL$/u],
+    ["EPERM,*", "TEST_CONTROLLER_GROUP_PROBE_INJECTION_INVALID", /^EPERM,\*$/u],
+  ]) {
+    const runTemporary = await runTemporaryDirectory(context);
+    const failed = preBindGroupProbeFailure(await startPreBindGroupProbe(root, importPath, codes, { TMPDIR: runTemporary }));
+    assert.equal(failed.reasonCode, reasonCode, JSON.stringify(failed));
+    assert.match(failed.error, detail);
+    await assert.rejects(lstat(importPath), { code: "ENOENT" });
+    await settleFixtureProcesses(root);
+    assert.equal(await reclaimFixtureReapers(root), 0, `${codes}: the reaper finished on its own`);
+    assert.deepEqual(await controllerDirectories(runTemporary), [], `${codes}: the run removed its controller and progress directories`);
+    await assertTaskResidueClean(root);
+  }
+});
+
+test("INC-394: a removed progress directory ends the reaper's record, never a cleanup it has not confirmed", async (context) => {
+  const runTemporary = await runTemporaryDirectory(context);
+  const outputDirectory = await mkdtemp(join(runTemporary, "tcrn-test-controller-"));
+  const registry = resolve(outputDirectory, "managed-child-groups");
+  await mkdir(registry);
+  // The reaper requires mode 0700 here, so this registry keeps its cleanup unconfirmed.
+  await chmod(registry, 0o755);
+  // The pid of an exited child that never led a group: a controller group nothing belongs to.
+  const finished = spawn(process.execPath, ["--eval", ""], { stdio: "ignore" });
+  await once(finished, "exit");
+  const reaper = spawn(process.execPath, [resolve(productRoot, "scripts/test-controller-reaper.mjs"), String(process.pid), String(finished.pid), outputDirectory, registry], {
+    stdio: ["ignore", "ignore", "ignore", "ipc"],
+    // As after a run that failed closed before joining the reaper: the progress directory is gone.
+    env: { ...process.env, TCRN_TEST_CONTROLLER_PROGRESS_PATH: resolve(runTemporary, "tcrn-test-progress-removed", "events.ndjson") },
+  });
+  const settled = () => reaper.exitCode !== null || reaper.signalCode !== null;
+  context.after(() => { if (!settled()) reaper.kill("SIGKILL"); });
+  const [ready] = await Promise.race([once(reaper, "message"), once(reaper, "exit").then(() => [null])]);
+  assert.equal(ready?.type, "ready");
+  // As far as the reaper can tell, its parent is gone.
+  reaper.disconnect();
+
+  // Negative: the missing progress directory does not end a cleanup that is still unconfirmed.
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, 500));
+  assert.deepEqual({ code: reaper.exitCode, signal: reaper.signalCode }, { code: null, signal: null });
+  await lstat(outputDirectory);
+
+  // Positive: once the cleanup is confirmed, the reaper removes its output directory and exits 0.
+  await chmod(registry, 0o700);
+  await pollUntil(() => (settled() ? true : undefined), () => assert.fail("the reaper did not finish once its cleanup was confirmed"));
+  assert.deepEqual({ code: reaper.exitCode, signal: reaper.signalCode }, { code: 0, signal: null });
+  assert.deepEqual(await controllerDirectories(runTemporary), []);
+});
+
 test("a bound bootstrap blocks recovery before it starts the test controller", async (context) => {
   const { root, importPath } = await importGuardTaskFixture(context, 'test("controller starts only after its group was recorded", () => {});');
   const boundPath = resolve(root, "bind-window-bound.json");
@@ -2712,6 +2804,8 @@ test("a bound bootstrap blocks recovery before it starts the test controller", a
     TCRN_TEST_BIND_WINDOW_BOUND_PATH: boundPath,
     TCRN_TEST_BIND_WINDOW_RUN_PATH: runPath,
     TCRN_TEST_BIND_WINDOW_IMPORT_PATH: importPath,
+    // TCRN-CROSS-INC-394: the SIGKILLed runner cannot remove its progress directory; it goes with this TMPDIR.
+    TMPDIR: await runTemporaryDirectory(context),
   });
   await waitForPath(lockPath(root), interrupted.result);
   await waitForPath(boundPath, interrupted.result);
@@ -2760,7 +2854,8 @@ test("a fresh real task entrypoint fails closed while a killed predecessor group
     "",
   ].join("\n");
   const root = await taskEntrypointFixture(context, crashSource);
-  const interrupted = startTaskEntrypoint(root);
+  // TCRN-CROSS-INC-394: the SIGKILLed runner cannot remove its progress directory; it goes with this TMPDIR.
+  const interrupted = startTaskEntrypoint(root, { TMPDIR: await runTemporaryDirectory(context) });
   await waitForPath(lockPath(root), interrupted.result);
   await waitForPath(resolve(root, "descendant.pid"), interrupted.result);
   const descendants = JSON.parse(await readFile(resolve(root, "descendant.pid"), "utf8"));
@@ -2889,6 +2984,9 @@ test("the real command-five test path rejects detached inherited-pipe descendant
   const rejectedHolderPath = resolve(rejected, "pipe-holder.pid");
   const rejectedRun = startTaskEntrypoint(rejected, {
     TCRN_TASK_PIPE_HOLDER_PID_PATH: rejectedHolderPath,
+    // TCRN-CROSS-INC-394: the SIGKILLed runner and reaper group cannot remove their progress and
+    // output directories; they go with this TMPDIR.
+    TMPDIR: await runTemporaryDirectory(context),
   });
   await waitForPath(rejectedHolderPath, rejectedRun.result);
   const early = await Promise.race([

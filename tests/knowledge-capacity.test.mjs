@@ -15,6 +15,8 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
+import { recall, recallDocuments } from "../dist/build/packages/core/src/recall.js";
+import { readRecallCards } from "../dist/build/packages/core/src/recall-inputs.js";
 import {
   captureKnowledgeUnit,
   createProject,
@@ -115,14 +117,18 @@ test("476-R3: capacity counts card bodies only, not the marker or the metadata",
 test("476-R3: a superseded card gives its body back to the budget, and its body stays readable", async (t) => {
   const fx = await fixture(t, "FIXTURE-SUB-309-SUPERSEDE", { aggregateBytes: 4_096 });
   const subject = "SUB-309 the old answer to the retry question";
-  const old = await captureKnowledgeUnit(fx.workspace, card("SUB-309-OLD", subject, "o".repeat(3_000)));
+  const old = await captureKnowledgeUnit(fx.workspace, card("SUB-309-OLD", subject, "o".repeat(3_000), {
+    summary: "Abandoned quokka migration calendar", snippet: "obsolete quokka travel date",
+  }));
   const other = card("SUB-309-OTHER", "unrelated guidance about portal ports", "p".repeat(1_500));
   const full = await refusalOf(() => captureKnowledgeUnit(fx.workspace, other));
   assert.equal(full?.reasonCode, "KNOWLEDGE_LIMIT_EXCEEDED");
   assert.deepEqual(full.details, { bodyBytes: 4_500, limit: 4_096 }, "3,000 + 1,500 does not fit");
 
   // The replacement is charged its own body less the one it retires: 2,000, not 5,000.
-  const replacement = await captureKnowledgeUnit(fx.workspace, card("SUB-309-NEW", subject, "n".repeat(2_000), { supersedes: old.id }));
+  const replacement = await captureKnowledgeUnit(fx.workspace, card("SUB-309-NEW", subject, "n".repeat(2_000), {
+    supersedes: old.id, summary: "Revised quokka migration calendar", snippet: "current quokka travel date",
+  }));
   assert.equal(replacement.superseded, old.id);
   assert.deepEqual((await validateKnowledgeStore(fx.workspace)).capacity, { bodyBytes: 2_000, limit: 4_096 }, "the superseded body left the count");
   const admitted = await captureKnowledgeUnit(fx.workspace, other);
@@ -134,6 +140,16 @@ test("476-R3: a superseded card gives its body back to the budget, and its body 
   assert.equal((await readKnowledgeBody(fx.workspace, old.id, { at: AT })).body, "o".repeat(3_000));
   assert.equal(await fileBytes(join(fx.store, "bodies")), 6_500, "three bodies on disk, 3,500 bytes of them charged");
   assert.equal((await listKnowledgeMetadata(fx.workspace, { at: AT })).records.some((record) => record.id === old.id), false);
+  const defaultCards = await readRecallCards(fx.workspace, { at: AT });
+  assert.equal(defaultCards.cards.some((record) => record.id === old.id), false, "superseded metadata is outside default recall");
+  const recallResult = recall({
+    cacheKey: "sub309-superseded-default-recall",
+    checkpoint: defaultCards.digest,
+    documents: () => recallDocuments({ cards: defaultCards.cards }),
+    query: "obsolete quokka travel date",
+    tau: 0,
+  });
+  assert.equal(recallResult.records.some((record) => record.id === old.id), false, "the retired body is auditable but never a default recall hit");
 });
 
 test("476 Implementation Notes: an existing store is recounted on read, with no migration write", async (t) => {

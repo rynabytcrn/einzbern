@@ -7,6 +7,8 @@
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
+import { execFile as execFileCallback } from "node:child_process";
+import { promisify } from "node:util";
 import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -30,6 +32,7 @@ import { canonicalJson, canonicalSha256, deriveStableId } from "../dist/build/pa
 
 const at = "2026-09-26T12:00:00Z";
 const instant = (second) => `2026-09-26T11:00:${String(second).padStart(2, "0")}Z`;
+const execFile = promisify(execFileCallback);
 
 // A device directory of this test's own, so the user crest it writes is never another test's.
 async function device(context) {
@@ -120,17 +123,23 @@ test("476-R5 / AC3: a user card lands in <device>/crest, not in its library, and
   // The first write laid the user crest out in the device directory, bound to the user-crest
   // identity rather than to a library id, with its index view in this device's cache.
   const crest = join(home, "crest");
-  assert.deepEqual((await readdir(crest)).sort(), ["bodies", "metadata", "store.json"]);
-  assert.deepEqual(await readdir(join(crest, "metadata")), [`${created.id}.json`]);
+  assert.deepEqual((await readdir(crest)).sort(), ["events", "store.json"]);
   const marker = JSON.parse(await readFile(join(crest, "store.json"), "utf8"));
   assert.equal(marker.workspaceId, USER_CREST_ID);
   assert.match(marker.workspaceId, /^user-crest:[a-f0-9]{24}$/u);
-  assert.equal(marker.version, 1);
+  assert.equal(marker.authority, "metadata-index-authority-body-separate", "the marker keeps the existing V1 schema while events carry authority");
+  assert.equal(marker.version, 0, "the root manifest is initialized once and never rewritten by card appends");
+  const deviceId = JSON.parse(await readFile(join(home, "device.json"), "utf8")).deviceId;
+  const stream = join(crest, "events", deviceId);
+  const [eventName] = (await readdir(stream)).filter((name) => name.endsWith(".json"));
+  const event = JSON.parse(await readFile(join(stream, eventName), "utf8"));
+  assert.equal(event.metadata.id, created.id);
+  assert.equal(event.metadata.scope, "user");
+  assert.equal(event.metadata.projectId, null);
+  assert.equal(event.priorHash, null);
+  assert.equal((await readFile(join(stream, event.body.file), "utf8")), "Body UC-WOMBAT");
   assert.ok((await stat(join(userCrestCachePath(home), "crest-views", "index.json"))).isFile());
   await assert.rejects(stat(userCrestLockPath(home)), { code: "ENOENT" }, "the user crest lock is given back");
-  const stored = JSON.parse(await readFile(join(crest, "metadata", `${created.id}.json`), "utf8"));
-  assert.equal(stored.scope, "user");
-  assert.equal(stored.projectId, null);
 
   // The library it was written from holds nothing.
   assert.equal((await listKnowledgeMetadata(first.workspace, { at, selection: "all" })).total, 0);
@@ -159,7 +168,7 @@ test("476-R5 / AC3: a user card lands in <device>/crest, not in its library, and
   assert.deepEqual(firstRead.cards.map((entry) => [entry.id, entry.scope]), [[created.id, "user"]]);
 });
 
-test("SUB-387: user-crest recovery rebuilds in order without changing either library", async (context) => {
+test("R13: a committed user event remains readable after interruption without a root-manifest recovery write", async (context) => {
   const { base, home } = await device(context);
   const first = await library(base, "first");
   const second = await library(base, "second");
@@ -170,15 +179,11 @@ test("SUB-387: user-crest recovery rebuilds in order without changing either lib
   }), { faultAt: "after-metadata-write" });
   await expectReason("KNOWLEDGE_FAULT_INJECTED", interrupted);
   const crest = join(home, "crest");
-  assert.ok((await readdir(crest)).includes("mutation.claim"), "the simulated crash leaves a claim to recover");
-  const claimPath = join(crest, "mutation.claim");
-  const claim = JSON.parse(await readFile(claimPath, "utf8"));
-  await writeFile(claimPath, canonicalJson({ ...claim, pid: process.pid + 1_000_000 }));
-
+  assert.deepEqual((await readdir(crest)).sort(), ["events", "store.json"]);
+  const manifestBefore = await readFile(join(crest, "store.json"), "utf8");
   const recovered = await recoverKnowledgeStore(first.workspace, { scope: "user" });
-  assert.deepEqual([recovered.reasonCode, recovered.recovered, recovered.scope, recovered.version],
-    ["KNOWLEDGE_RECOVERED", true, "user", 1]);
-  assert.equal((await readdir(crest)).includes("mutation.claim"), false);
+  assert.deepEqual([recovered.reasonCode, recovered.recovered], ["KNOWLEDGE_RECOVERY_NOT_NEEDED", false]);
+  assert.equal(await readFile(join(crest, "store.json"), "utf8"), manifestBefore, "recovery leaves the static root manifest unchanged");
   assert.deepEqual(await treeSnapshot(first.workspace), firstBefore, "the caller library keeps every byte");
   assert.deepEqual(await treeSnapshot(second.workspace), secondBefore, "the other project library keeps every byte");
 
@@ -187,6 +192,67 @@ test("SUB-387: user-crest recovery rebuilds in order without changing either lib
   assert.deepEqual(listed.records.map((record) => [record.id, record.scope]), [[id, "user"]]);
   assert.equal((await readKnowledgeBody(second.workspace, id, { at, scope: "user" })).body, "Body UC-RECOVERY");
   assert.deepEqual(JSON.parse(await readFile(join(userCrestCachePath(home), "crest-views", "index.json"), "utf8")).records.map((record) => record.id), [id]);
+});
+
+test("R13: a legacy user crest stays readable as new events append, with its metadata and root marker untouched", async (context) => {
+  const { base, home } = await device(context);
+  const first = await library(base, "legacy");
+  const legacyCard = await createKnowledgeUnit(first.workspace, card("UC-LEGACY", { subject: "Wren nest material" }));
+  const crest = join(home, "crest");
+  const deviceId = JSON.parse(await readFile(join(home, "device.json"), "utf8")).deviceId;
+  const eventDirectory = join(crest, "events", deviceId);
+  const eventFile = (await readdir(eventDirectory)).find((name) => name.endsWith(".json"));
+  const event = JSON.parse(await readFile(join(eventDirectory, eventFile), "utf8"));
+  await mkdir(join(crest, "metadata"));
+  await mkdir(join(crest, "bodies"));
+  const legacyMetadataPath = join(crest, "metadata", `${legacyCard.id}.json`);
+  const legacyBodyPath = join(crest, "bodies", `${legacyCard.id}.body`);
+  await writeFile(legacyMetadataPath, canonicalJson(event.metadata));
+  await writeFile(legacyBodyPath, await readFile(join(eventDirectory, event.body.file)));
+  await rm(join(crest, "events"), { recursive: true, force: true });
+  const legacyMarker = JSON.parse(await readFile(join(crest, "store.json"), "utf8"));
+  legacyMarker.authority = "metadata-index-authority-body-separate";
+  legacyMarker.version = 1;
+  await writeFile(join(crest, "store.json"), canonicalJson(legacyMarker));
+  const markerBefore = await readFile(join(crest, "store.json"), "utf8");
+  const metadataBefore = await readFile(legacyMetadataPath, "utf8");
+
+  assert.equal((await listKnowledgeMetadata(first.workspace, { at, scope: "user" })).total, 1);
+  assert.equal((await readKnowledgeBody(first.workspace, legacyCard.id, { at, scope: "user" })).body, "Body UC-LEGACY");
+  await createKnowledgeUnit(first.workspace, card("UC-APPENDED", { subject: "Raven feather collection" }));
+  assert.equal((await listKnowledgeMetadata(first.workspace, { at, scope: "user", selection: "all" })).total, 2);
+  assert.equal(await readFile(join(crest, "store.json"), "utf8"), markerBefore);
+  assert.equal(await readFile(legacyMetadataPath, "utf8"), metadataBefore);
+});
+
+test("R13 D10: superseded user bodies remain auditable and leave active/default recall", async (context) => {
+  const { base, home } = await device(context);
+  const first = await library(base, "supersede");
+  const subject = "Pademelon shelter repair sequence";
+  const old = await createKnowledgeUnit(first.workspace, card("UC-OLD-SHELTER", {
+    subject, summary: "Outdated pademelon shelter instructions", snippet: "old shelter repair steps", body: "Archived body for the old shelter plan.",
+  }));
+  const replacement = await createKnowledgeUnit(first.workspace, card("UC-NEW-SHELTER", {
+    subject, summary: "Current pademelon shelter instructions", snippet: "current shelter repair steps", body: "Current body for the shelter plan.", supersedes: old.id,
+  }));
+  const all = await listKnowledgeMetadata(first.workspace, { at, scope: "user", selection: "all" });
+  const oldRecord = all.records.find((record) => record.id === old.id);
+  assert.equal(oldRecord.extensions.supersededBy, replacement.id);
+  assert.deepEqual((await listKnowledgeMetadata(first.workspace, { at, scope: "user" })).records.map((record) => record.id), [replacement.id]);
+  assert.equal((await readKnowledgeBody(first.workspace, old.id, { at, scope: "user" })).body, "Archived body for the old shelter plan.");
+  const deviceId = JSON.parse(await readFile(join(home, "device.json"), "utf8")).deviceId;
+  const stream = join(home, "crest", "events", deviceId);
+  assert.equal((await readdir(stream)).filter((name) => name.endsWith(".body")).length, 2, "both immutable body references stay on disk");
+  const recallCards = await readRecallCards(first.workspace, { at });
+  assert.deepEqual(recallCards.cards.map((entry) => entry.id), [replacement.id], "the superseded body is absent from the recall corpus");
+  const recallResult = recall({
+    cacheKey: "r13-user-superseded-card",
+    checkpoint: recallCards.digest,
+    documents: () => recallDocuments({ cards: recallCards.cards }),
+    query: "outdated pademelon shelter",
+    tau: 0,
+  });
+  assert.equal(recallResult.records.some((record) => record.id === old.id), false);
 });
 
 test("476-R5: crest.userPath puts the user crest in a cloud folder, stored as its real path, and reads and writes go there", async (context) => {
@@ -202,7 +268,7 @@ test("476-R5: crest.userPath puts the user crest in a cloud folder, stored as it
 
   const first = await library(base, "first");
   const created = await createKnowledgeUnit(first.workspace, card("UC-QUOLL", { subject: "Quoll den survey", body: "Count the quoll dens at dawn." }));
-  assert.deepEqual(await readdir(join(cloud, "crest", "metadata")), [`${created.id}.json`]);
+  assert.equal((await readdir(join(cloud, "crest", "events"))).length, 1);
   await assert.rejects(stat(join(home, "crest")), { code: "ENOENT" }, "the default place stays empty");
 
   const listed = await listKnowledgeMetadata(first.workspace, { at, scope: "user" });
@@ -219,7 +285,72 @@ test("476-R5: crest.userPath puts the user crest in a cloud folder, stored as it
   // A second user card joins the same cloud crest.
   await createKnowledgeUnit(first.workspace, card("UC-NUMBAT", { subject: "Numbat termite diet" }));
   assert.equal((await listKnowledgeMetadata(first.workspace, { at, scope: "user" })).total, 2);
-  assert.equal(JSON.parse(await readFile(join(cloud, "crest", "store.json"), "utf8")).version, 2);
+  assert.equal(JSON.parse(await readFile(join(cloud, "crest", "store.json"), "utf8")).version, 0);
+});
+
+test("R13 D7: simultaneous writes from two devices append separate streams and both cards survive", async (context) => {
+  const { base, home: deviceOne } = await device(context);
+  const second = await library(base, "shared-library");
+  const sharedParent = join(base, "synced");
+  const sharedCrest = join(sharedParent, "crest");
+  await mkdir(sharedParent);
+  const previous = process.env.EINZBERN_HOME;
+  let runOnDevice;
+  const deviceTwo = join(base, "second-device");
+  try {
+    process.env.EINZBERN_HOME = deviceOne;
+    await applyMachineSettingSet({ key: "crest.userPath", value: sharedCrest, occurredAt: at });
+    process.env.EINZBERN_HOME = deviceTwo;
+    await applyMachineSettingSet({ key: "crest.userPath", value: sharedCrest, occurredAt: at });
+    await mkdir(deviceTwo, { recursive: true });
+    process.env.EINZBERN_HOME = previous;
+
+    const moduleUrl = new URL("../dist/build/packages/core/src/knowledge-core.js", import.meta.url).href;
+    runOnDevice = async (home, input) => {
+      const payload = Buffer.from(JSON.stringify({ workspace: second.workspace, input })).toString("base64");
+      const source = `import { createKnowledgeUnit } from ${JSON.stringify(moduleUrl)}; const { workspace, input } = JSON.parse(Buffer.from(${JSON.stringify(payload)}, "base64").toString("utf8")); await createKnowledgeUnit(workspace, input);`;
+      return execFile(process.execPath, ["--input-type=module", "-e", source], { env: { ...process.env, EINZBERN_HOME: home } });
+    };
+    await Promise.all([
+      runOnDevice(deviceOne, card("UC-DEVICE-ONE", { subject: "Marmot burrow safety", summary: "Marmot burrow notes", snippet: "mark the marmot burrow" })),
+      runOnDevice(deviceTwo, card("UC-DEVICE-TWO", { subject: "Saffron finch hatch timing", summary: "Finch hatch notes", snippet: "check the saffron finch nest" })),
+    ]);
+  } finally {
+    process.env.EINZBERN_HOME = previous;
+  }
+
+  const streams = await readdir(join(sharedCrest, "events"));
+  assert.equal(streams.length, 2, "each device owns one append-only stream");
+  for (const deviceId of streams) assert.equal((await readdir(join(sharedCrest, "events", deviceId))).filter((name) => name.endsWith(".json")).length, 1);
+  const listed = await listKnowledgeMetadata(second.workspace, { at, scope: "user", selection: "all" });
+  assert.deepEqual(listed.records.map((record) => record.externalKey).sort(), ["UC-DEVICE-ONE", "UC-DEVICE-TWO"]);
+  assert.equal((await readKnowledgeBody(second.workspace, deriveStableId("knowledge", "UC-DEVICE-ONE"), { at, scope: "user" })).body, "Body UC-DEVICE-ONE");
+  assert.equal((await readKnowledgeBody(second.workspace, deriveStableId("knowledge", "UC-DEVICE-TWO"), { at, scope: "user" })).body, "Body UC-DEVICE-TWO");
+  assert.equal(JSON.parse(await readFile(join(sharedCrest, "store.json"), "utf8")).version, 0);
+
+  const conflictAttempts = await Promise.allSettled([
+    runOnDevice(deviceOne, card("UC-CONFLICT-ONE", { subject: "Gull nesting location", summary: "Gull nest sites", snippet: "mark each gull nest" })),
+    runOnDevice(deviceTwo, card("UC-CONFLICT-TWO", { subject: "Gull nesting location", summary: "Gull nest sites", snippet: "mark each gull nest" })),
+  ]);
+  assert.ok(conflictAttempts.some((attempt) => attempt.status === "rejected"), "a cross-device conflict is refused explicitly");
+  const conflictEvents = [];
+  for (const deviceId of streams) {
+    for (const name of (await readdir(join(sharedCrest, "events", deviceId))).filter((entry) => entry.endsWith(".json"))) {
+      const event = JSON.parse(await readFile(join(sharedCrest, "events", deviceId, name), "utf8"));
+      if (event.metadata.externalKey.startsWith("UC-CONFLICT-")) conflictEvents.push({ deviceId, event });
+    }
+  }
+  assert.ok(conflictEvents.length === 1 || conflictEvents.length === 2, "every accepted concurrent event remains in its own stream");
+  for (const { deviceId, event } of conflictEvents) {
+    assert.ok((await readFile(join(sharedCrest, "events", deviceId, event.body.file))).length > 0, "each accepted event keeps its body reference");
+    assert.equal(event.metadata.extensions.coexistsWith, undefined, "a derived conflict projection is never written back as authority");
+  }
+  if (conflictEvents.length === 2) {
+    await expectReason("KNOWLEDGE_POSSIBLE_CONFLICT", listKnowledgeMetadata(second.workspace, { at, scope: "user" }));
+  } else {
+    const afterRefusal = await listKnowledgeMetadata(second.workspace, { at, scope: "user", selection: "all" });
+    assert.equal(afterRefusal.records.filter((record) => record.externalKey.startsWith("UC-CONFLICT-")).length, 1);
+  }
 });
 
 test("476-R5: a library write never reaches the user crest, and a user card names no project, role or work", async (context) => {

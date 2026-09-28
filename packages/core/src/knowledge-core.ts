@@ -43,7 +43,18 @@ import { activeWorkspaceRoot, materializeWorkspace, withWorkspaceWriteLock } fro
 import type { ProjectRecord, WorkspaceState } from "./workspace.js";
 import { SETTINGS_CATALOG, resolveKnowledgeArticlesPath } from "./settings.js";
 import { hasLibraryManifest, openLibrary } from "./ether-library.js";
-import { cachePath, deviceHome, ensureDeviceDirectory, userCrestCachePath, userCrestLockPath, userCrestPath } from "./device-home.js";
+import {
+  cachePath,
+  deviceHome,
+  ensureDeviceDirectory,
+  USER_CREST_EVENTS_DIRECTORY,
+  userCrestCachePath,
+  userCrestEventsPath,
+  userCrestLockPath,
+  userCrestPath,
+} from "./device-home.js";
+import { isAtomicTemporaryName } from "./atomic-file.js";
+import { readOrCreateDevice } from "./device-identity.js";
 import { FileLockError, withFileLock } from "./file-lock.js";
 import { readUserCrestPath } from "./machine-settings.js";
 import { DIRECTORY, LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY } from "./names.js";
@@ -86,7 +97,8 @@ function knowledgeAggregateLimit(workspace: WorkspaceState): number {
 // and nothing else -- not the store marker, not the metadata, not the derived index -- and
 // only the bodies of cards that are still live. A card a later card superseded (the one
 // retirement left, TCRN-CROSS-SUB-308), or one an older engine retired, gives its body back to
-// the budget; a superseded body stays on disk for an explicit read, it is simply not charged.
+// the budget; a superseded body stays in its immutable store or event stream for explicit reads,
+// is excluded from default recall, and is never physically deleted by superseding.
 // The count reads each record's own bodyBytes, which a full read binds to the body on disk, so
 // a metadata-only read measures the same number, and a store written before this is measured
 // the new way the first time it is read: nothing is migrated or rewritten.
@@ -171,6 +183,10 @@ export const KNOWLEDGE_STORE_SCOPES: readonly KnowledgeStoreScope[] = Object.fre
  */
 export const USER_CREST_ID = deriveStableId("user-crest", "USER-CREST");
 const USER_CREST_HIGH_WATER = createHash("sha256").update(USER_CREST_ID, "utf8").digest("hex");
+const USER_CREST_EVENT_SCHEMA_VERSION = "tcrn.user-crest-event.v1" as const;
+const USER_CREST_EVENT_HEAD_SCHEMA_VERSION = "tcrn.user-crest-head.v1" as const;
+const USER_CREST_EVENT_FILE_PATTERN = /^(\d{8,})-([a-f0-9]{64})\.json$/u;
+const USER_CREST_BODY_FILE_PATTERN = /^(\d{8,})-([a-f0-9]{64})\.body$/u;
 export type KnowledgeCategory = "architecture" | "domain" | "implementation" | "standards" | "testing" | "workflow" | "decision" | "evidence";
 export type KnowledgeKind = "fact" | "guide" | "decision" | "reference" | "summary";
 export type KnowledgeLifecycle = "candidate" | "active" | "retired";
@@ -391,6 +407,17 @@ interface KnowledgeStoreMarker {
   readonly lastSweepAt?: string;
 }
 
+interface UserCrestEvent {
+  readonly schemaVersion: typeof USER_CREST_EVENT_SCHEMA_VERSION;
+  readonly deviceId: string;
+  readonly sequence: number;
+  readonly occurredAt: string;
+  readonly priorHash: string | null;
+  readonly metadata: KnowledgeUnitMetadata;
+  readonly body: { readonly file: string; readonly sha256: string; readonly bytes: number };
+  readonly eventHash: string;
+}
+
 interface FileIdentity {
   readonly dev: number | bigint;
   readonly ino: number | bigint;
@@ -413,6 +440,7 @@ interface ScannedKnowledgeUnit {
   readonly bodyPath: string;
   readonly metadata: KnowledgeUnitMetadata;
   readonly body: Buffer | null;
+  readonly readBody?: () => Promise<Buffer>;
 }
 
 // TCRN-CROSS-STORY-476 R5: what a write reads from a scan of either store, a library's crest
@@ -429,6 +457,8 @@ interface CrestScan {
 // the card itself. `device` is the device directory whose cache holds its index view.
 interface UserCrestScan extends CrestScan {
   readonly device: string;
+  readonly eventOnly: boolean;
+  readonly eventHeads: readonly { readonly deviceId: string; readonly sequence: number; readonly eventHash: string }[];
 }
 
 interface KnowledgeStoreScan {
@@ -1670,18 +1700,15 @@ async function scanKnowledgeStore(
   };
 }
 
-// ---- TCRN-CROSS-STORY-476 R5 (MIN-227 D25): the user crest ----
+// ---- TCRN-CROSS-STORY-476 R13 (MIN-235 D7): the user crest ----
 //
 // One knowledge store per person rather than per library: the card a writer files with scope
-// "user" is recalled in every project. It is laid out like a library's crest -- store.json,
-// metadata/, bodies/ -- and read and written by the same code, with three differences. Its marker
-// binds USER_CREST_ID, not a library id, and no chain head. A card in it names no project, no
-// role and no work (validateUserCrestLinks), because the one thing it is not is a project's. And
-// its place is the device-level key crest.userPath, which may be a cloud folder, or `crest` in the
-// device directory; its index view is this device's cache, and its lock this device's
-// locks/user-crest.lock, which every read and every write of it takes. As with a library's crest
-// (withCrestWriteLock), nothing here makes two devices' writes to one shared user crest safe
-// against each other.
+// "user" is recalled in every project. Its static root marker binds USER_CREST_ID; each device
+// appends immutable metadata/body events under its own stream. Reads derive combined heads and
+// this device's cache index from those streams; neither projection is authority. A card names no
+// project, role or work (validateUserCrestLinks). Its place is the device-level key crest.userPath,
+// which may be a cloud folder, or `crest` in the device directory. This device's lock serializes
+// only local operations; independent devices never replace one another's event files.
 
 interface UserCrestLocation {
   readonly device: string;
@@ -1750,6 +1777,237 @@ async function userCrestParent(location: UserCrestLocation, create: boolean): Pr
   }
 }
 
+interface UserCrestEventStreams {
+  readonly units: readonly ScannedKnowledgeUnit[];
+  readonly eventCount: number;
+  readonly heads: readonly { readonly deviceId: string; readonly sequence: number; readonly eventHash: string }[];
+}
+
+async function readUserCrestFile(path: string, maximumBytes: number): Promise<Buffer> {
+  let before;
+  try {
+    before = await lstat(path, { bigint: true });
+  } catch (error) {
+    fail("KNOWLEDGE_PARTIAL_STATE", `${path}:${String((error as { code?: string }).code ?? error)}`);
+  }
+  if (before.isSymbolicLink() || !before.isFile() || before.nlink !== 1n) fail("KNOWLEDGE_LINK_UNSAFE", path);
+  if (before.size > BigInt(maximumBytes)) fail("KNOWLEDGE_LIMIT_EXCEEDED", path);
+  let handle: Awaited<ReturnType<typeof open>> | undefined;
+  try {
+    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const opened = await handle.stat({ bigint: true });
+    if (!opened.isFile() || opened.nlink !== 1n || !sameIdentity(before, opened) || opened.size > BigInt(maximumBytes)) {
+      fail("KNOWLEDGE_SOURCE_CHANGED", path);
+    }
+    const bounded = Buffer.alloc(maximumBytes + 1);
+    let bytesRead = 0;
+    while (bytesRead < bounded.length) {
+      const result = await handle.read(bounded, bytesRead, bounded.length - bytesRead, bytesRead);
+      if (result.bytesRead === 0) break;
+      bytesRead += result.bytesRead;
+    }
+    if (bytesRead > maximumBytes) fail("KNOWLEDGE_LIMIT_EXCEEDED", path);
+    const bytes = Buffer.from(bounded.subarray(0, bytesRead));
+    const after = await handle.stat({ bigint: true });
+    if (after.size > BigInt(maximumBytes) || !sameIdentity(opened, after) || opened.size !== after.size || BigInt(bytes.length) !== after.size) {
+      fail("KNOWLEDGE_SOURCE_CHANGED", path);
+    }
+    return bytes;
+  } catch (error) {
+    if (error instanceof KnowledgeCoreError) throw error;
+    return fail("KNOWLEDGE_PATH_INVALID", `${path}:${String((error as { code?: string }).code ?? error)}`);
+  } finally {
+    await handle?.close();
+  }
+}
+
+async function assertUserCrestBodyReference(path: string, expectedBytes: number): Promise<void> {
+  let stats;
+  try {
+    stats = await lstat(path, { bigint: true });
+  } catch (error) {
+    fail("KNOWLEDGE_PARTIAL_STATE", `${path}:${String((error as { code?: string }).code ?? error)}`);
+  }
+  if (stats.isSymbolicLink() || !stats.isFile() || stats.nlink !== 1n) fail("KNOWLEDGE_LINK_UNSAFE", path);
+  if (stats.size !== BigInt(expectedBytes)) fail("KNOWLEDGE_PARTIAL_STATE", `${path}:body reference size`);
+}
+
+function validateUserCrestEvent(value: Readonly<Record<string, JsonValue>>, deviceId: string, filename: string): UserCrestEvent {
+  exactFields(value, ["schemaVersion", "deviceId", "sequence", "occurredAt", "priorHash", "metadata", "body", "eventHash"], "user crest event", "KNOWLEDGE_RECORD_INVALID");
+  if (value.schemaVersion !== USER_CREST_EVENT_SCHEMA_VERSION || value.deviceId !== deviceId || !/^[a-f0-9]{32}$/u.test(deviceId) ||
+    !Number.isSafeInteger(value.sequence) || Number(value.sequence) < 1 || typeof value.occurredAt !== "string" ||
+    (value.priorHash !== null && (typeof value.priorHash !== "string" || !/^[a-f0-9]{64}$/u.test(value.priorHash))) ||
+    typeof value.eventHash !== "string" || !/^[a-f0-9]{64}$/u.test(value.eventHash) ||
+    value.metadata === null || typeof value.metadata !== "object" || Array.isArray(value.metadata) ||
+    value.body === null || typeof value.body !== "object" || Array.isArray(value.body)) {
+    fail("KNOWLEDGE_RECORD_INVALID", `${deviceId}/${filename}: event fields`);
+  }
+  const sequence = Number(value.sequence);
+  const bodyValue = value.body as Readonly<Record<string, JsonValue>>;
+  exactFields(bodyValue, ["file", "sha256", "bytes"], "user crest body reference", "KNOWLEDGE_RECORD_INVALID");
+  const metadata = validateMetadataShape(value.metadata as Readonly<Record<string, JsonValue>>, null);
+  const bodyFile = `${String(sequence).padStart(8, "0")}-${metadata.bodySha256}.body`;
+  if (!Number.isSafeInteger(bodyValue.bytes) || Number(bodyValue.bytes) < 0 || metadata.scope !== "user" || value.occurredAt !== metadata.updatedAt || bodyValue.file !== bodyFile ||
+    bodyValue.sha256 !== metadata.bodySha256 || bodyValue.bytes !== metadata.bodyBytes ||
+    typeof value.eventHash !== "string" || filename !== `${String(sequence).padStart(8, "0")}-${value.eventHash}.json`) {
+    fail("KNOWLEDGE_RECORD_INVALID", `${deviceId}/${filename}: event binding`);
+  }
+  try { assertStrictInstant(value.occurredAt); } catch { fail("KNOWLEDGE_RECORD_INVALID", `${deviceId}/${filename}: occurredAt`); }
+  const { eventHash, ...unsigned } = value;
+  if (canonicalSha256(unsigned as unknown as JsonValue) !== eventHash) {
+    fail("KNOWLEDGE_RECORD_INVALID", `${deviceId}/${filename}: event hash`);
+  }
+  return value as unknown as UserCrestEvent;
+}
+
+async function readUserCrestEventStreams(
+  storeRoot: string,
+  bodyMode: "full" | "metadata-only",
+): Promise<UserCrestEventStreams> {
+  const eventsPath = userCrestEventsPath(storeRoot);
+  try {
+    await lstat(eventsPath);
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return { units: [], eventCount: 0, heads: [] };
+    fail("KNOWLEDGE_PATH_INVALID", `${eventsPath}:${String((error as { code?: string }).code ?? error)}`);
+  }
+  const eventsRoot = await boundDirectory(eventsPath, storeRoot);
+  const units: ScannedKnowledgeUnit[] = [];
+  const heads: { deviceId: string; sequence: number; eventHash: string }[] = [];
+  let eventCount = 0;
+  const deviceEntries = await readdir(eventsRoot, { withFileTypes: true });
+  for (const entry of deviceEntries) {
+    if (isAtomicTemporaryName(entry.name)) continue;
+    if (!/^[a-f0-9]{32}$/u.test(entry.name) || !entry.isDirectory()) {
+      fail("KNOWLEDGE_PARTIAL_STATE", `${eventsPath}: unexpected entry ${entry.name}`);
+    }
+    const deviceId = entry.name;
+    const streamRoot = await boundDirectory(resolve(eventsRoot, deviceId), eventsRoot);
+    const streamEntries = await readdir(streamRoot, { withFileTypes: true });
+    const files: { readonly name: string; readonly sequence: number; readonly eventHash: string }[] = [];
+    const bodyNames = new Set<string>();
+    for (const streamEntry of streamEntries) {
+      if (isAtomicTemporaryName(streamEntry.name)) continue;
+      const eventMatch = USER_CREST_EVENT_FILE_PATTERN.exec(streamEntry.name);
+      if (eventMatch !== null && streamEntry.isFile()) {
+        files.push({ name: streamEntry.name, sequence: Number(eventMatch[1]), eventHash: eventMatch[2] as string });
+        continue;
+      }
+      if (USER_CREST_BODY_FILE_PATTERN.test(streamEntry.name) && streamEntry.isFile()) {
+        bodyNames.add(streamEntry.name);
+        continue;
+      }
+      fail("KNOWLEDGE_PARTIAL_STATE", `${eventsPath}/${deviceId}: unexpected entry ${streamEntry.name}`);
+    }
+    files.sort((left, right) => left.sequence - right.sequence || compareCanonicalText(left.name, right.name));
+    let priorHash: string | null = null;
+    for (const [index, file] of files.entries()) {
+      if (file.sequence !== index + 1) {
+        fail("KNOWLEDGE_PARTIAL_STATE", `${deviceId}: event stream has a gap or fork at sequence ${index + 1}`);
+      }
+      const eventPath = resolve(streamRoot, file.name);
+      const event = validateUserCrestEvent(parseCanonicalObject(await readUserCrestFile(eventPath, KNOWLEDGE_LIMITS.maximumMetadataBytes + 4_096), "user crest event", "KNOWLEDGE_RECORD_INVALID"), deviceId, file.name);
+      if (event.sequence !== file.sequence || event.eventHash !== file.eventHash || event.priorHash !== priorHash) {
+        fail("KNOWLEDGE_PARTIAL_STATE", `${deviceId}: event chain breaks at sequence ${file.sequence}`);
+      }
+      const bodyPath = resolve(streamRoot, event.body.file);
+      if (!bodyNames.has(event.body.file)) fail("KNOWLEDGE_PARTIAL_STATE", `${deviceId}/${file.name}: body reference is missing`);
+      await assertUserCrestBodyReference(bodyPath, event.body.bytes);
+      const body = bodyMode === "full" ? await readUserCrestFile(bodyPath, KNOWLEDGE_LIMITS.maximumBodyBytes) : null;
+      if (body !== null) validateMetadataBody(event.metadata, body, null);
+      units.push({
+        metadataPath: eventPath,
+        bodyPath,
+        metadata: event.metadata,
+        body,
+        readBody: async () => readUserCrestFile(bodyPath, KNOWLEDGE_LIMITS.maximumBodyBytes),
+      });
+      priorHash = event.eventHash;
+      eventCount += 1;
+    }
+    if (files.length > 0) {
+      const last = files.at(-1) as { readonly sequence: number; readonly eventHash: string };
+      heads.push({ deviceId, sequence: last.sequence, eventHash: last.eventHash });
+    }
+  }
+  heads.sort((left, right) => compareCanonicalText(left.deviceId, right.deviceId));
+  return { units, eventCount, heads };
+}
+
+function projectUserCrestUnits(units: readonly ScannedKnowledgeUnit[]): readonly ScannedKnowledgeUnit[] {
+  const byId = new Map<string, ScannedKnowledgeUnit>();
+  const idByExternalKey = new Map<string, string>();
+  for (const unit of units) {
+    const previous = byId.get(unit.metadata.id);
+    if (previous !== undefined) {
+      if (canonicalJson(previous.metadata) !== canonicalJson(unit.metadata)) {
+        fail("KNOWLEDGE_PARTIAL_STATE", `${unit.metadata.id}: conflicting events share a knowledge id`);
+      }
+      continue;
+    }
+    const previousId = idByExternalKey.get(unit.metadata.externalKey);
+    if (previousId !== undefined && previousId !== unit.metadata.id) {
+      fail("KNOWLEDGE_PARTIAL_STATE", `${unit.metadata.externalKey}: conflicting events share an external key`);
+    }
+    byId.set(unit.metadata.id, unit);
+    idByExternalKey.set(unit.metadata.externalKey, unit.metadata.id);
+  }
+  const superseders = new Map<string, ScannedKnowledgeUnit>();
+  for (const unit of byId.values()) {
+    if (unit.metadata.supersedes === null) continue;
+    if (!byId.has(unit.metadata.supersedes)) fail("KNOWLEDGE_LINK_INVALID", `${unit.metadata.id}:supersedes:${unit.metadata.supersedes}`);
+    if (superseders.has(unit.metadata.supersedes)) {
+      fail("KNOWLEDGE_PARTIAL_STATE", `${unit.metadata.supersedes}: competing superseding events`);
+    }
+    superseders.set(unit.metadata.supersedes, unit);
+  }
+  const projected = [...byId.values()].map((unit): ScannedKnowledgeUnit => {
+    const successor = superseders.get(unit.metadata.id);
+    if (successor === undefined) return unit;
+    const existing = unit.metadata.extensions.supersededBy;
+    if (existing !== undefined && existing !== successor.metadata.id) {
+      fail("KNOWLEDGE_PARTIAL_STATE", `${unit.metadata.id}: conflicting supersededBy projection`);
+    }
+    if (existing === successor.metadata.id) return unit;
+    const metadata = validateExistingMetadataShape({
+      ...unit.metadata,
+      extensions: { ...unit.metadata.extensions, supersededBy: successor.metadata.id },
+      revision: unit.metadata.revision + 1,
+      updatedAt: successor.metadata.updatedAt,
+    }, null);
+    return { ...unit, metadata };
+  }).sort((left, right) => compareCanonicalText(left.metadata.id, right.metadata.id));
+  const byProjectedId = new Map(projected.map((unit) => [unit.metadata.id, unit.metadata]));
+  for (const unit of projected) validateSupersedesLink(unit.metadata, byProjectedId);
+  for (let leftIndex = 0; leftIndex < projected.length; leftIndex += 1) {
+    const left = projected[leftIndex] as ScannedKnowledgeUnit;
+    if (!countsTowardCapacity(left.metadata)) continue;
+    for (let rightIndex = leftIndex + 1; rightIndex < projected.length; rightIndex += 1) {
+      const right = projected[rightIndex] as ScannedKnowledgeUnit;
+      if (!countsTowardCapacity(right.metadata)) continue;
+      const conflicts = knowledgeConflictHits([left.metadata], right.metadata.subject, [right.metadata.id]).length > 0 ||
+        knowledgeConflictHits([right.metadata], left.metadata.subject, [left.metadata.id]).length > 0;
+      const acknowledged = left.metadata.extensions.coexistsWith?.includes(right.metadata.id) === true ||
+        right.metadata.extensions.coexistsWith?.includes(left.metadata.id) === true;
+      if (conflicts && !acknowledged) {
+        fail("KNOWLEDGE_POSSIBLE_CONFLICT", `${left.metadata.id},${right.metadata.id}`, { conflicts: [left.metadata.id, right.metadata.id] });
+      }
+    }
+  }
+  return projected;
+}
+
+async function assertUserCrestRootEntries(storeRoot: string, legacyLayout: boolean, hasEvents: boolean, allowClaim: boolean): Promise<void> {
+  const actual = (await readdir(storeRoot)).sort(compareCanonicalText);
+  const expected = (legacyLayout
+    ? ["bodies", "metadata", "store.json", ...(hasEvents ? [USER_CREST_EVENTS_DIRECTORY] : [])]
+    : ["store.json", USER_CREST_EVENTS_DIRECTORY])
+    .concat(allowClaim ? ["mutation.claim"] : [])
+    .sort(compareCanonicalText);
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) fail("KNOWLEDGE_PARTIAL_STATE", "user crest root entries are not exact");
+  if (!allowClaim && await claimPresence(storeRoot) === "present") fail("KNOWLEDGE_PARTIAL_STATE", "mutation claim is present");
+}
+
 async function scanUserCrest(
   location: UserCrestLocation,
   options: KnowledgeReadOptions = {},
@@ -1758,37 +2016,86 @@ async function scanUserCrest(
 ): Promise<UserCrestScan> {
   const parent = await userCrestParent(location, false);
   const storeRoot = await boundDirectory(join(parent, basename(location.root)), parent);
-  const metadataRoot = await boundDirectory(resolve(storeRoot, "metadata"), storeRoot);
-  const bodiesRoot = await boundDirectory(resolve(storeRoot, "bodies"), storeRoot);
   const backend = userCrestBackend(storeRoot, location.device, options);
-  await assertStoreRootEntries(storeRoot, false, allowClaim);
   const marker = validateMarker(parseCanonicalObject(await backend.readKnowledgeMarker(), "knowledge marker", "KNOWLEDGE_RECORD_INVALID"));
   // A library's crest put in the user crest's place is not a user crest, and the other way round
   // (scanKnowledgeStore compares the marker with the library id).
   if (marker.workspaceId !== USER_CREST_ID || marker.eventHighWaterDigest !== USER_CREST_HIGH_WATER) {
     fail("KNOWLEDGE_HIGH_WATER_MISMATCH", marker.workspaceId);
   }
-  // The user crest has no settings of its own, so its budget is knowledge.aggregateBytes's default.
-  const { units, capacityBytes, aggregateLimit } = await scanStoreRecords(backend, { metadataRoot, bodiesRoot }, bodyMode, () => KNOWLEDGE_AGGREGATE_DEFAULT, {
-    shape: (value) => validateMetadataShape(value, null),
-    links: null,
-    danglingWorkLinks: null,
-    body: (metadata, body) => validateMetadataBody(metadata, body, null),
-  });
-  const index = knowledgeIndex(marker, units.map((unit) => unit.metadata));
+  const rootEntries = await readdir(storeRoot);
+  const hasEvents = rootEntries.includes(USER_CREST_EVENTS_DIRECTORY);
+  const hasLegacyMetadata = rootEntries.includes("metadata");
+  const hasLegacyBodies = rootEntries.includes("bodies");
+  if (hasLegacyMetadata !== hasLegacyBodies) fail("KNOWLEDGE_PARTIAL_STATE", "user crest legacy metadata/body layout is incomplete");
+  const legacyLayout = hasLegacyMetadata && hasLegacyBodies;
+  await assertUserCrestRootEntries(storeRoot, legacyLayout, hasEvents, allowClaim);
+  if (!legacyLayout && !hasEvents) fail("KNOWLEDGE_PARTIAL_STATE", "user crest event streams are missing");
+  let legacyUnits: readonly ScannedKnowledgeUnit[] = [];
+  if (legacyLayout) {
+    const metadataRoot = await boundDirectory(resolve(storeRoot, "metadata"), storeRoot);
+    const bodiesRoot = await boundDirectory(resolve(storeRoot, "bodies"), storeRoot);
+    const legacy = await scanStoreRecords(backend, { metadataRoot, bodiesRoot }, bodyMode, () => KNOWLEDGE_AGGREGATE_DEFAULT, {
+      shape: (value) => validateMetadataShape(value, null),
+      links: null,
+      danglingWorkLinks: null,
+      body: (metadata, body) => validateMetadataBody(metadata, body, null),
+    });
+    legacyUnits = legacy.units;
+  }
+  const streams = hasEvents ? await readUserCrestEventStreams(storeRoot, bodyMode) : { units: [], eventCount: 0, heads: [] };
+  const units = projectUserCrestUnits([...legacyUnits, ...streams.units]);
+  const capacityBytes = capacityBodyBytes(units.map((unit) => unit.metadata));
+  const aggregateLimit = KNOWLEDGE_AGGREGATE_DEFAULT;
+  assertWithinCapacity(capacityBytes, aggregateLimit, "knowledge aggregate bytes");
+  const eventHighWaterDigest = streams.eventCount === 0
+    ? marker.eventHighWaterDigest
+    : canonicalSha256({ schemaVersion: USER_CREST_EVENT_HEAD_SCHEMA_VERSION, heads: streams.heads } as unknown as JsonValue);
+  const projectedMarker: KnowledgeStoreMarker = {
+    ...marker,
+    version: marker.version + streams.eventCount,
+    eventHighWaterDigest,
+  };
+  const index = knowledgeIndex(projectedMarker, units.map((unit) => unit.metadata));
   await projectCachedView(backend, index);
-  return { storeRoot, device: location.device, marker, units, index, capacity: { bodyBytes: capacityBytes, limit: aggregateLimit } };
+  return { storeRoot, device: location.device, eventOnly: !legacyLayout, eventHeads: streams.heads, marker: projectedMarker, units, index, capacity: { bodyBytes: capacityBytes, limit: aggregateLimit } };
 }
 
-// The user crest's first write lays it out: the folder (and the device directory, for the default
-// place), metadata/ and bodies/, and a marker at version 0 binding USER_CREST_ID. Its index view
-// goes to this device's cache.
+// The root marker is created once and never advanced by card writes. Each device appends immutable
+// events beneath events/<device id>/; every read reconstructs metadata from those streams.
 async function ensureUserCrest(location: UserCrestLocation): Promise<void> {
-  if (await userCrestInitialized(location.root)) return;
+  if (await userCrestInitialized(location.root)) {
+    try {
+      await lstat(join(location.root, "store.json"));
+      return;
+    } catch (error) {
+      if ((error as { code?: string }).code !== "ENOENT") throw error;
+    }
+  }
   const parent = await userCrestParent(location, true);
-  const storeRoot = await ensureEmptyStoreRoot(join(parent, basename(location.root)), parent);
-  await ensureNewDirectory(resolve(storeRoot, "metadata"), storeRoot);
-  await ensureNewDirectory(resolve(storeRoot, "bodies"), storeRoot);
+  const rootPath = join(parent, basename(location.root));
+  try {
+    await mkdir(rootPath, { mode: 0o700 });
+  } catch (error) {
+    if ((error as { code?: string }).code !== "EEXIST") fail("KNOWLEDGE_PATH_INVALID", `${rootPath}:${String(error)}`);
+  }
+  const storeRoot = await boundDirectory(rootPath, parent);
+  const entries = await readdir(storeRoot);
+  if (entries.includes("store.json")) return;
+  if (entries.some((entry) => entry !== USER_CREST_EVENTS_DIRECTORY)) {
+    fail("KNOWLEDGE_PARTIAL_STATE", "user crest has content without a root marker");
+  }
+  const eventsPath = userCrestEventsPath(storeRoot);
+  try {
+    await mkdir(eventsPath, { mode: 0o700 });
+  } catch (error) {
+    if ((error as { code?: string }).code !== "EEXIST") fail("KNOWLEDGE_PATH_INVALID", `${eventsPath}:${String(error)}`);
+  }
+  const eventsRoot = await boundDirectory(eventsPath, storeRoot);
+  const eventEntries = await readdir(eventsRoot);
+  if (eventEntries.some((entry) => !isAtomicTemporaryName(entry))) {
+    fail("KNOWLEDGE_PARTIAL_STATE", "user crest events exist without a root marker");
+  }
   const marker: KnowledgeStoreMarker = {
     schemaVersion: KNOWLEDGE_STORE_SCHEMA_VERSION,
     workspaceId: USER_CREST_ID,
@@ -1797,21 +2104,46 @@ async function ensureUserCrest(location: UserCrestLocation): Promise<void> {
     disposable: true,
     authority: "metadata-index-authority-body-separate",
   };
-  const backend = userCrestBackend(storeRoot, location.device);
-  await backend.writeKnowledgeMarker(canonicalJson(marker));
-  await backend.writeKnowledgeView(canonicalJson(knowledgeIndex(marker, [])));
+  try {
+    await writeExclusiveFile(resolve(storeRoot, "store.json"), canonicalJson(marker));
+  } catch (error) {
+    if (!(error instanceof KnowledgeCoreError) || error.reasonCode !== "KNOWLEDGE_ALREADY_EXISTS") throw error;
+    const markerBytes = await userCrestBackend(storeRoot, location.device).readKnowledgeMarker();
+    const existing = validateMarker(parseCanonicalObject(markerBytes, "knowledge marker", "KNOWLEDGE_RECORD_INVALID"));
+    if (existing.workspaceId !== USER_CREST_ID || existing.eventHighWaterDigest !== USER_CREST_HIGH_WATER) {
+      fail("KNOWLEDGE_SOURCE_CHANGED", "user crest root marker changed during initialization");
+    }
+  }
   await syncDirectory(storeRoot);
 }
 
-async function userCrestAdmissionScan(location: UserCrestLocation, options: KnowledgeReadOptions): Promise<UserCrestScan> {
+async function ensureUserCrestEventRoot(location: UserCrestLocation): Promise<{ readonly storeRoot: string; readonly eventsRoot: string }> {
+  await ensureUserCrest(location);
+  const parent = await userCrestParent(location, false);
+  const storeRoot = await boundDirectory(join(parent, basename(location.root)), parent);
+  const markerBytes = await userCrestBackend(storeRoot, location.device).readKnowledgeMarker();
+  const marker = validateMarker(parseCanonicalObject(markerBytes, "knowledge marker", "KNOWLEDGE_RECORD_INVALID"));
+  if (marker.workspaceId !== USER_CREST_ID || marker.eventHighWaterDigest !== USER_CREST_HIGH_WATER) {
+    fail("KNOWLEDGE_HIGH_WATER_MISMATCH", marker.workspaceId);
+  }
+  const eventsPath = userCrestEventsPath(storeRoot);
   try {
-    return await scanUserCrest(location, options);
+    await mkdir(eventsPath, { mode: 0o700 });
   } catch (error) {
-    if (error instanceof KnowledgeCoreError && error.reasonCode === "KNOWLEDGE_PARTIAL_STATE" &&
-      await claimPresence(join(await userCrestParent(location, false), basename(location.root))) === "present") {
-      fail("KNOWLEDGE_LOCKED", "knowledge mutation claim exists");
-    }
-    throw error;
+    if ((error as { code?: string }).code !== "EEXIST") fail("KNOWLEDGE_PATH_INVALID", `${eventsPath}:${String(error)}`);
+  }
+  const eventsRoot = await boundDirectory(eventsPath, storeRoot);
+  return { storeRoot, eventsRoot };
+}
+
+async function writeImmutableUserCrestFile(path: string, bytes: Buffer | string): Promise<void> {
+  try {
+    await writeExclusiveFile(path, bytes);
+  } catch (error) {
+    if (!(error instanceof KnowledgeCoreError) || error.reasonCode !== "KNOWLEDGE_ALREADY_EXISTS") throw error;
+    const expected = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes, "utf8");
+    const existing = await readUserCrestFile(path, Math.max(expected.length, 1));
+    if (!existing.equals(expected)) fail("KNOWLEDGE_PARTIAL_STATE", `${path}: immutable event data differs`);
   }
 }
 
@@ -1925,8 +2257,21 @@ async function recoverUserCrestUnlocked(location: UserCrestLocation, options: Kn
     boundClaim.workspaceId !== USER_CREST_ID || !sameIdentity(boundClaim.identity, claim.identity)) {
     fail("KNOWLEDGE_SOURCE_CHANGED", "knowledge user-crest claim changed during recovery");
   }
-  const marker: KnowledgeStoreMarker = { ...scan.marker, version: scan.marker.version + 1 };
   const backend = userCrestBackend(scan.storeRoot, location.device, options);
+  if (scan.eventOnly) {
+    await writeIndex(backend, scan.marker, scan.units.map((unit) => unit.metadata));
+    await releaseMutationClaim(scan.storeRoot, boundClaim);
+    await scanUserCrest(location, options);
+    return {
+      schemaVersion: "tcrn.knowledge-recovery-result.v1",
+      reasonCode: "KNOWLEDGE_RECOVERED",
+      recovered: true,
+      scope: "user",
+      version: scan.marker.version,
+      reclaimedRetiredBodies: 0,
+    };
+  }
+  const marker: KnowledgeStoreMarker = { ...scan.marker, version: scan.marker.version + 1 };
   await backend.writeKnowledgeMarker(canonicalJson(marker));
   await writeIndex(backend, marker, scan.units.map((unit) => unit.metadata));
   // O6 remains pending: user-crest recovery repairs the interrupted index and marker but
@@ -2298,18 +2643,6 @@ function libraryCrestTarget(workspaceRoot: string): CrestWriteTarget<KnowledgeSt
   };
 }
 
-function userCrestTarget(location: UserCrestLocation): CrestWriteTarget<UserCrestScan> {
-  return {
-    scope: "user",
-    prepare: () => ensureUserCrest(location),
-    admissionScan: (options) => userCrestAdmissionScan(location, options),
-    scan: (options, allowClaim) => scanUserCrest(location, options, allowClaim),
-    claim: (scan) => claimKnowledgeStore(scan),
-    backend: (storeRoot, options) => userCrestBackend(storeRoot, location.device, options),
-    linkState: () => null,
-  };
-}
-
 /**
  * Write one card. TCRN-CROSS-STORY-476 R5: scope "user" writes it to this user's crest, under this
  * machine's lock of the user crest, and the crest's first card lays the crest out; the library at
@@ -2319,9 +2652,111 @@ function userCrestTarget(location: UserCrestLocation): CrestWriteTarget<UserCres
 export async function createKnowledgeUnit(workspaceRoot: string, input: CreateKnowledgeUnitInput, options: KnowledgeMutationOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
   if (input.scope === "user") {
     const location = await locateUserCrest();
-    return withUserCrestLock(location, () => createKnowledgeUnitUnlocked(workspaceRoot, input, options, userCrestTarget(location)));
+    return withUserCrestLock(location, () => createUserCrestEvent(workspaceRoot, input, options, location));
   }
   return withCrestWriteLock(workspaceRoot, () => createKnowledgeUnitUnlocked(workspaceRoot, input, options, libraryCrestTarget(workspaceRoot)));
+}
+
+async function createUserCrestEvent(
+  workspaceRoot: string,
+  input: CreateKnowledgeUnitInput,
+  options: KnowledgeMutationOptions,
+  location: UserCrestLocation,
+): Promise<Readonly<Record<string, JsonValue>>> {
+  assertBoundedString(input.body, KNOWLEDGE_LIMITS.maximumBodyBytes, "body");
+  const body = Buffer.from(input.body, "utf8");
+  const workspace = await materializeWorkspace(workspaceRoot);
+  const sourceDigest = input.sourceDigest && input.sourceDigest.length > 0
+    ? input.sourceDigest
+    : await calculateKnowledgeSourceDigest(workspaceRoot, workspace, input.sourceReferences, input.body);
+  const metadata = buildMetadata({ ...input, sourceDigest }, body, workspace, options.languageProvider, options.host);
+  const { eventsRoot } = await ensureUserCrestEventRoot(location);
+  const { device } = await readOrCreateDevice({ home: location.device });
+  const streamPath = resolve(eventsRoot, device.deviceId);
+  try {
+    await mkdir(streamPath, { mode: 0o700 });
+  } catch (error) {
+    if ((error as { code?: string }).code !== "EEXIST") fail("KNOWLEDGE_PATH_INVALID", `${streamPath}:${String(error)}`);
+  }
+  const streamRoot = await boundDirectory(streamPath, eventsRoot);
+  const scan = await scanUserCrest(location, options, false, "metadata-only");
+  const prior = scan.eventHeads.find((head) => head.deviceId === device.deviceId);
+  const sequence = (prior?.sequence ?? 0) + 1;
+  if (!Number.isSafeInteger(sequence)) fail("KNOWLEDGE_LIMIT_EXCEEDED", "user crest event sequence");
+
+  let superseded: ScannedKnowledgeUnit | undefined;
+  if (metadata.supersedes !== null) {
+    superseded = scan.units.find((unit) => unit.metadata.id === metadata.supersedes);
+    if (superseded === undefined || superseded.metadata.lifecycle === "retired") {
+      fail("KNOWLEDGE_LINK_INVALID", `${metadata.id}:supersedes:${metadata.supersedes}`);
+    }
+  }
+  const conflicts = knowledgeConflictHits(
+    scan.units.map((unit) => unit.metadata),
+    metadata.subject,
+    metadata.supersedes === null ? [metadata.id] : [metadata.id, metadata.supersedes],
+  );
+  if (conflicts.length > 0 && metadata.supersedes === null && input.coexist !== true) {
+    fail("KNOWLEDGE_POSSIBLE_CONFLICT", conflicts.join(","), { conflicts: [...conflicts] });
+  }
+  const written: KnowledgeUnitMetadata = conflicts.length === 0 || metadata.supersedes !== null
+    ? metadata
+    : { ...metadata, extensions: { coexistsWith: conflicts.slice(0, KNOWLEDGE_LIMITS.maximumQueryResults) } };
+  const metadataBytes = Buffer.from(canonicalJson(written), "utf8");
+  if (metadataBytes.length > KNOWLEDGE_LIMITS.maximumMetadataBytes) fail("KNOWLEDGE_LIMIT_EXCEEDED", "knowledge create budget");
+  if (scan.units.some((unit) => unit.metadata.id === metadata.id || unit.metadata.externalKey === metadata.externalKey)) {
+    fail("KNOWLEDGE_DUPLICATE", metadata.id);
+  }
+
+  const supersededMetadata: KnowledgeUnitMetadata | null = superseded === undefined ? null : {
+    ...superseded.metadata,
+    extensions: { ...superseded.metadata.extensions, supersededBy: written.id },
+    revision: superseded.metadata.revision + 1,
+    updatedAt: input.occurredAt,
+  };
+  if (supersededMetadata !== null && superseded !== undefined) {
+    const oldBody = superseded.body ?? (superseded.readBody === undefined ? null : await superseded.readBody());
+    if (oldBody === null) fail("KNOWLEDGE_RECORD_INVALID", `${superseded.metadata.id}:body was not admitted`);
+    validateMetadataBody(validateExistingMetadataShape(supersededMetadata, null), oldBody, null);
+  }
+  const projectedMetadata = scan.units.map((unit) =>
+    supersededMetadata !== null && unit.metadata.id === supersededMetadata.id ? supersededMetadata : unit.metadata).concat(written);
+  assertWithinCapacity(capacityBodyBytes(projectedMetadata), scan.capacity.limit, "knowledge create budget");
+
+  const sequenceText = String(sequence).padStart(8, "0");
+  const bodyFile = `${sequenceText}-${written.bodySha256}.body`;
+  const bodyPath = resolve(streamRoot, bodyFile);
+  await writeImmutableUserCrestFile(bodyPath, body);
+  crash("after-body-write", options.faultAt);
+  const unsigned: Omit<UserCrestEvent, "eventHash"> = {
+    schemaVersion: USER_CREST_EVENT_SCHEMA_VERSION,
+    deviceId: device.deviceId,
+    sequence,
+    occurredAt: written.updatedAt,
+    priorHash: prior?.eventHash ?? null,
+    metadata: written,
+    body: { file: bodyFile, sha256: written.bodySha256, bytes: written.bodyBytes },
+  };
+  const eventHash = canonicalSha256(unsigned as unknown as JsonValue);
+  const event: UserCrestEvent = { ...unsigned, eventHash };
+  const eventPath = resolve(streamRoot, `${sequenceText}-${eventHash}.json`);
+  await writeImmutableUserCrestFile(eventPath, canonicalJson(event));
+  crash("after-metadata-write", options.faultAt);
+  // The user crest root manifest is initialized once. Event heads carry the changing high-water
+  // projection, so no multi-device writer performs a shared manifest update.
+  crash("after-marker-write", options.faultAt);
+  const final = await scanUserCrest(location, options, false, "full");
+  return {
+    schemaVersion: "tcrn.knowledge-create-result.v1",
+    reasonCode: "KNOWLEDGE_UNIT_CREATED",
+    id: written.id,
+    externalKey: written.externalKey,
+    revision: written.revision,
+    version: final.marker.version,
+    scope: "user",
+    ...(conflicts.length > 0 ? { conflicts: [...conflicts] } : {}),
+    ...(supersededMetadata === null ? {} : { superseded: supersededMetadata.id }),
+  };
 }
 
 async function createKnowledgeUnitUnlocked<S extends CrestScan>(
@@ -2931,7 +3366,7 @@ async function knowledgeBodyAnswer(
     (!options.allowStale && freshness !== "fresh") || unit.metadata.retrievalDisposition === "excluded" || unit.metadata.lifecycle === "retired") {
     fail("KNOWLEDGE_BODY_ACCESS_DENIED", id);
   }
-  const body = await backend.readKnowledgeBody(id);
+  const body = unit.readBody === undefined ? await backend.readKnowledgeBody(id) : await unit.readBody();
   validateMetadataBody(unit.metadata, body, linkState);
   return {
     schemaVersion: "tcrn.knowledge-body-read.v1",

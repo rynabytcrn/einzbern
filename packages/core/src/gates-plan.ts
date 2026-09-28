@@ -2,12 +2,11 @@
 
 // TCRN-CROSS-STORY-485 R2 (MIN-227 D4; TCRN-CROSS-SUB-343): which gates a change needs. A project
 // declares its gates (gates-config.ts): each names a root, a directory of the project, and the
-// paths under it that the gate covers, as globs. The plan takes each root's changes from Git
-// against a base (HEAD unless another is named) together with the uncommitted and the untracked
-// files, and lists every enabled gate whose covers match one of its root's changed files. A
-// release plan lists every enabled gate, the release-only ones included, and needs no Git at
-// all; without Git a project can only run that one. The engine derives the selection from the
-// declarations; nobody picks gates by hand.
+// paths under it that the gate covers, as globs or exact work ids. A non-release plan requires an
+// explicit Git base, includes committed and working-tree changes, and selects declarations by
+// path or target id. A release plan lists every enabled gate, the release-only ones included, and
+// needs no Git at all; without Git a project can only run that one. The engine derives the
+// selection from the declarations; nobody picks gates by hand.
 
 import { execFileSync } from "node:child_process";
 import { realpath, stat } from "node:fs/promises";
@@ -18,9 +17,11 @@ import type { NamedGate } from "./gates-config.js";
 
 export const GATES_PLAN_REASON_CODES = Object.freeze([
   "GATES_BASE_INVALID",
+  "GATES_BASE_REQUIRED",
   "GATES_GIT_UNAVAILABLE",
   "GATES_GLOB_INVALID",
   "GATES_ROOT_INVALID",
+  "GATES_WORK_ID_INVALID",
 ] as const);
 
 export type GatesPlanReasonCode = typeof GATES_PLAN_REASON_CODES[number];
@@ -156,8 +157,10 @@ export function changedFiles(root: string, options: { readonly base?: string } =
     fail("GATES_GIT_UNAVAILABLE", `${root} is not inside a Git working tree, or git cannot run; without Git only a release plan runs`, { root, remedy: "--release" });
   }
   const base = options.base;
-  if (base !== undefined && (!BASE_SHAPE.test(base) || git(root, ["rev-parse", "--verify", "--quiet", `${base}^{commit}`]) === null)) {
-    fail("GATES_BASE_INVALID", `${base} does not name a commit of the repository at ${root}`, { root, base });
+  if (base !== undefined) {
+    if (!BASE_SHAPE.test(base) || git(root, ["rev-parse", "--verify", "--quiet", `${base}^{commit}`]) === null) {
+      fail("GATES_BASE_INVALID", `${base} does not name a commit in the repository at ${root}`, { root, base });
+    }
   }
   const against = base ?? (gitHead(root) === null ? null : "HEAD");
   const tracked = against === null
@@ -176,10 +179,12 @@ export interface PlannedGate {
   readonly command: readonly string[];
   readonly required: boolean;
   readonly releaseOnly: boolean;
-  // "release" in a release plan; "changed" when the gate's covers match changed files.
-  readonly reason: "changed" | "release";
+  // "release" for a full run, "changed" for path coverage, or "work-id" for an exact subject cover.
+  readonly reason: "changed" | "release" | "work-id";
   // The changed files under the gate's root that its covers match (none in a release plan).
   readonly matched: readonly string[];
+  // Exact Story subjects matched by this declaration.
+  readonly matchedWorkIds: readonly string[];
 }
 
 export interface GatesPlan {
@@ -187,6 +192,8 @@ export interface GatesPlan {
   readonly projectRoot: string;
   readonly release: boolean;
   readonly base: string | null;
+  // Stories whose required coverage this plan is intended to prove.
+  readonly workIds: readonly string[];
   // Each root's changed files the covers were matched against; null for a release plan.
   readonly changed: readonly { readonly root: string; readonly files: readonly string[] }[] | null;
   readonly gates: readonly PlannedGate[];
@@ -227,20 +234,33 @@ export function gateDeclarationsDigest(gates: readonly NamedGate[]): string {
   });
 }
 
-function planned(gate: NamedGate, reason: PlannedGate["reason"], matched: readonly string[]): PlannedGate {
-  return { name: gate.name, root: gate.root, command: gate.command, required: gate.required, releaseOnly: gate.releaseOnly, reason, matched };
+function planned(gate: NamedGate, reason: PlannedGate["reason"], matched: readonly string[], matchedWorkIds: readonly string[]): PlannedGate {
+  return { name: gate.name, root: gate.root, command: gate.command, required: gate.required, releaseOnly: gate.releaseOnly, reason, matched, matchedWorkIds };
+}
+
+const WORK_ID = /^work:[0-9a-f]{24}$/u;
+
+function normalizedWorkIds(workIds: readonly string[] | undefined): readonly string[] {
+  const unique = new Set<string>();
+  for (const workId of workIds ?? []) {
+    if (!WORK_ID.test(workId)) fail("GATES_WORK_ID_INVALID", `${workId} is not a work:<24 lowercase hexadecimal characters> id`, { workId });
+    unique.add(workId);
+  }
+  return [...unique].sort(compareCanonicalText);
 }
 
 /**
- * The gates a change needs: every enabled gate whose covers match a changed file of its root,
- * release-only gates left out; or, for a release, every enabled gate. Disabled gates are never
- * listed.
+ * The gates a change or Story needs: every enabled, non-release-only gate whose path covers match
+ * changed files under its root or whose exact work-id cover matches a target id; or, for a release,
+ * every enabled gate. Non-release plans require an explicit valid Git base. Disabled gates are
+ * never listed.
  */
 export async function planGates(input: {
   readonly projectRoot: string;
   readonly gates: readonly NamedGate[];
   readonly release?: boolean;
   readonly base?: string;
+  readonly workIds?: readonly string[];
 }): Promise<GatesPlan> {
   let projectRoot: string;
   try {
@@ -249,6 +269,10 @@ export async function planGates(input: {
     return fail("GATES_ROOT_INVALID", `the project ${input.projectRoot} does not exist`, { root: "." });
   }
   const release = input.release === true;
+  const workIds = normalizedWorkIds(input.workIds);
+  if (!release && input.base === undefined) {
+    fail("GATES_BASE_REQUIRED", "a non-release gate plan requires an explicit Git --base; use --release for a full run", { remedy: "--base <commit> or --release" });
+  }
   const enabled = [...input.gates]
     .filter((gate) => gate.enabled)
     .sort((left, right) => compareCanonicalText(left.name, right.name));
@@ -259,23 +283,35 @@ export async function planGates(input: {
   }
   const base = input.base ?? null;
   const declared = { roots: [...roots.keys()].sort(compareCanonicalText), declarationsDigest: gateDeclarationsDigest(enabled) };
-  if (release) return { projectRoot, release, base, changed: null, gates: gates.map((gate) => planned(gate, "release", [])), ...declared };
+  if (release) return {
+    projectRoot, release, base, workIds, changed: null,
+    gates: gates.map((gate) => planned(gate, "release", [], workIds.filter((workId) => gate.covers.includes(workId)))),
+    ...declared,
+  };
   const changed = new Map<string, readonly string[]>();
   for (const root of declared.roots) {
     const directory = roots.get(root);
-    if (directory === undefined || !gates.some((gate) => gate.root === root)) continue;
-    changed.set(root, changedFiles(directory, input.base === undefined ? {} : { base: input.base }));
+    if (directory === undefined) continue;
+    const files = changedFiles(directory, { base: input.base! });
+    if (gates.some((gate) => gate.root === root)) changed.set(root, files);
   }
+  // Even an empty plan or a declaration set containing only release-only gates must reject a
+  // missing Git project or a base that names no commit.
+  if (declared.roots.length === 0) changedFiles(projectRoot, { base: input.base! });
   const selected: PlannedGate[] = [];
   for (const gate of gates) {
-    const covers = gate.covers.map((glob) => compileGlob(glob));
+    const covers = gate.covers.filter((cover) => !cover.startsWith("work:")).map((glob) => compileGlob(glob));
     const matched = (changed.get(gate.root) ?? []).filter((file) => covers.some((glob) => glob.test(file)));
-    if (matched.length > 0) selected.push(planned(gate, "changed", matched));
+    const matchedWorkIds = workIds.filter((workId) => gate.covers.includes(workId));
+    if (matched.length > 0 || matchedWorkIds.length > 0) {
+      selected.push(planned(gate, matched.length > 0 ? "changed" : "work-id", matched, matchedWorkIds));
+    }
   }
   return {
     projectRoot,
     release,
     base,
+    workIds,
     changed: [...changed.entries()].map(([root, files]) => ({ root, files })),
     gates: selected,
     ...declared,

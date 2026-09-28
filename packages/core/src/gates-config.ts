@@ -49,6 +49,7 @@ export interface NamedGate extends GateDeclaration {
 export const GATE_COMMAND_MAX_ARGUMENTS = 64 as const;
 export const GATE_ARGUMENT_MAX_BYTES = 4_096 as const;
 export const GATE_COVERS_MAX = 64 as const;
+const GATE_WORK_COVER = /^work:[0-9a-f]{24}$/u;
 const GATE_FIELDS = ["command", "covers", "enabled", "releaseOnly", "required", "root"];
 const GATE_NAME = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/u;
 
@@ -82,11 +83,15 @@ export function checkGateDeclaration(value: unknown, name = "the gate"): GateDec
   if (!Array.isArray(covers) || covers.length > GATE_COVERS_MAX || covers.some((glob) => typeof glob !== "string")) {
     invalid("covers", `the covers of ${name} are at most ${GATE_COVERS_MAX} globs`, { name });
   }
-  for (const glob of covers as readonly string[]) {
+  for (const cover of covers as readonly string[]) {
+    if (cover.startsWith("work:")) {
+      if (!GATE_WORK_COVER.test(cover)) invalid("covers", `the work-id cover of ${name} is work:<24 lowercase hexadecimal characters>`, { name, cover });
+      continue;
+    }
     try {
-      compileGlob(glob);
+      compileGlob(cover);
     } catch (error) {
-      if (error instanceof GatesPlanError) invalid("covers", `the covers of ${name}: ${error.message}`, { name, glob, reason: error.details?.reason ?? "" });
+      if (error instanceof GatesPlanError) invalid("covers", `the covers of ${name}: ${error.message}`, { name, glob: cover, reason: error.details?.reason ?? "" });
       throw error;
     }
   }

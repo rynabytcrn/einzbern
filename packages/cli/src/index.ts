@@ -781,8 +781,8 @@ async function knowledgeHints(
   return targets.map((target) => knowledgeHintFor(state, cards, target));
 }
 
-// The records a work-batch document takes to done: its work-transition members with status done,
-// by id or by the id their external key derives, each once, in member order.
+// The records a work-batch document takes to done: transition-to-done targets and Stories born
+// directly done, by id or by the id their external key derives, each once, in member order.
 function batchDoneWorkIds(document: unknown): readonly string[] {
   const members = (document as { readonly members?: unknown } | null)?.members;
   if (!Array.isArray(members)) return [];
@@ -790,12 +790,14 @@ function batchDoneWorkIds(document: unknown): readonly string[] {
   for (const member of members as readonly unknown[]) {
     if (member === null || typeof member !== "object") continue;
     const entry = member as Readonly<Record<string, unknown>>;
-    if (entry.verb !== "work-transition" || entry.status !== "done") continue;
-    const id = typeof entry.id === "string" && entry.id.length > 0
-      ? entry.id
-      : typeof entry.externalKey === "string" && entry.externalKey.length > 0
-        ? deriveStableId("work", canonicalExternalKey(entry.externalKey))
-        : null;
+    if (entry.status !== "done" || (entry.verb !== "work-transition" && entry.verb !== "work-create")) continue;
+    const id = entry.verb === "work-create" && typeof entry.externalKey === "string" && entry.externalKey.length > 0
+      ? deriveStableId("work", canonicalExternalKey(entry.externalKey))
+      : typeof entry.id === "string" && entry.id.length > 0
+        ? entry.id
+        : typeof entry.externalKey === "string" && entry.externalKey.length > 0
+          ? deriveStableId("work", canonicalExternalKey(entry.externalKey))
+          : null;
     if (id !== null && !ids.includes(id)) ids.push(id);
   }
   return ids;
@@ -873,8 +875,8 @@ async function gatesProjectRoot(libraryId: string, project: string | undefined):
 // TCRN-CROSS-STORY-485 R4 (TCRN-CROSS-SUB-345): before a Story goes to done, the required gates of its
 // change must be green on the tree as it is (gates-done.ts). The records going to done are judged
 // against the library as it stands before the write, and a Story the same batch creates counts as
-// one; a project is looked up only when a Story is among them and the library declares an enabled
-// gate, so a library with no gates never needs one.
+// one; a project is looked up only when a Story is among them and an enabled required declaration
+// could cover it. No enabled required coverage is itself a refusal, before a project lookup.
 async function doneGates(
   state: Awaited<ReturnType<typeof materializeWorkspace>>,
   workIds: readonly string[],
@@ -887,7 +889,7 @@ async function doneGates(
     .map((entry) => ({ id: entry.id, kind: "Story" }) as unknown as WorkRecord);
   const work = [...state.work, ...createdStories];
   const gated = workIds.some((id) => work.some((record) => record.id === id && record.kind === "Story")) &&
-    listGates(state).some((gate) => gate.enabled);
+    listGates(state).some((gate) => gate.enabled && gate.required && gate.covers.length > 0);
   return assertDoneGates({
     projectRoot: gated ? await gatesProjectRoot(state.metadata.workspaceId, project) : "",
     library: { configRecords: state.configRecords, metadata: state.metadata, work },
@@ -1103,12 +1105,12 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "event-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "export", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-485 R1 to R3: gate declarations (one configuration record per gate), the plan a
-  // change needs, and running it into this device's cache. gates-run starts the gates' processes.
+  // change and optional Story need, and running it into this device's cache.
   { name: "gates-config-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   { name: "gates-config-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "gates-config-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "command", required: false, valueKind: "string" }, { name: "root", required: false, valueKind: "string" }, { name: "covers", required: false, valueKind: "list" }, { name: "required", required: false, valueKind: "boolean" }, { name: "enabled", required: false, valueKind: "boolean" }, { name: "release-only", required: false, valueKind: "boolean" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "gates-plan", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "base", required: false, valueKind: "string" }, { name: "release", required: false, valueKind: "boolean" }] },
-  { name: "gates-run", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "base", required: false, valueKind: "string" }, { name: "release", required: false, valueKind: "boolean" }] },
+  { name: "gates-plan", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "base", required: false, valueKind: "string" }, { name: "release", required: false, valueKind: "boolean" }, { name: "work-id", required: false, valueKind: "list" }] },
+  { name: "gates-run", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "base", required: false, valueKind: "string" }, { name: "release", required: false, valueKind: "boolean" }, { name: "work-id", required: false, valueKind: "list" }] },
   { name: "host-probe", availability: "cli", mutates: false, flags: [{ name: "host", required: true, valueKind: "string" }, { name: "model", required: true, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "init", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-name", required: false, valueKind: "string" }, { name: "git-remote", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "cloud-hosted", required: false, valueKind: "boolean" }] },
   { name: "install-manifest", availability: "cli", mutates: false, flags: [] },
@@ -2706,25 +2708,34 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     if (values.status !== undefined && !isWorkStatus(values.status)) fail("CLI_ARGUMENT_MALFORMED", `status=${values.status}`);
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
-    const state = await withWriteLock(workspace, at, async () => createWork(workspace, {
-      occurredAt: at,
-      projectId: values["project-id"] ?? "",
-      externalKey: values["external-key"] ?? "",
-      kind: values.kind as PlannedDeliveryKind,
-      parentId: nullableValue(values["parent-id"]),
-      ...(values.status ? { status: values.status as WorkStatus } : {}),
-      ...(values.scope !== undefined ? { scope: values.scope } : {}),
-      ...storyFieldsInput(values),
-      ...(values["decided-by"] !== undefined ? { decidedBy: listValue(values["decided-by"]) } : {}),
-      ...relationsInput(values),
-      ...(values.title !== undefined ? { title: values.title } : {}),
-      ...(values.summary !== undefined ? { summary: values.summary } : {}),
-      ...(values.labels !== undefined ? { labels: listValue(values.labels) } : {}),
-      ...(values["template-receipt"] !== undefined ? { templateAdmission: jsonValue(values["template-receipt"], "template-receipt") } : {}),
-      ...(values.actor ? { actorId: values.actor } : {}),
-    }));
     const id = deriveStableId("work", canonicalExternalKey(values["external-key"] ?? ""));
-    writeState(io, state, workSummary(state.work.find((entry) => entry.id === id)!));
+    const { state, gates } = await withWriteLock(workspace, at, async () => {
+      const before = await materializeWorkspace(workspace);
+      const verdict: DoneGatesVerdict | null = values.kind === "Story" && values.status === "done"
+        ? await doneGates(before, [id], [{ id, kind: "Story" }], undefined)
+        : null;
+      return {
+        state: await createWork(workspace, {
+          occurredAt: at,
+          projectId: values["project-id"] ?? "",
+          externalKey: values["external-key"] ?? "",
+          kind: values.kind as PlannedDeliveryKind,
+          parentId: nullableValue(values["parent-id"]),
+          ...(values.status ? { status: values.status as WorkStatus } : {}),
+          ...(values.scope !== undefined ? { scope: values.scope } : {}),
+          ...storyFieldsInput(values),
+          ...(values["decided-by"] !== undefined ? { decidedBy: listValue(values["decided-by"]) } : {}),
+          ...relationsInput(values),
+          ...(values.title !== undefined ? { title: values.title } : {}),
+          ...(values.summary !== undefined ? { summary: values.summary } : {}),
+          ...(values.labels !== undefined ? { labels: listValue(values.labels) } : {}),
+          ...(values["template-receipt"] !== undefined ? { templateAdmission: jsonValue(values["template-receipt"], "template-receipt") } : {}),
+          ...(values.actor ? { actorId: values.actor } : {}),
+        }),
+        gates: verdict,
+      };
+    });
+    writeState(io, state, workSummary(state.work.find((entry) => entry.id === id)!), undefined, gates === null ? {} : { doneGates: gates });
     return;
   }
   if (command === "work-batch") {
@@ -3098,11 +3109,10 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     writeState(io, state, undefined, undefined, { removed: values.name ?? "" });
     return;
   }
-  // TCRN-CROSS-STORY-485 R2: the gates a change needs -- every enabled gate whose covers match a file
-  // changed under its root against --base (HEAD when left out), release-only gates left out -- or,
-  // with --release true, every enabled gate. Reading Git is all it does.
+  // TCRN-CROSS-STORY-485 R2 (MIN-235 D8): the gates a change and optional Story need. Non-release
+  // plans name their Git base, and --work-id binds exact Story coverage alongside path coverage.
   if (command === "gates-plan") {
-    const values = parseArguments(rest, ["workspace", "project", "base", "release"]);
+    const values = parseArguments(rest, ["workspace", "project", "base", "release", "work-id"]);
     required(values, ["workspace"]);
     const state = await validateWorkspace(values.workspace ?? "");
     const plan = await planGates({
@@ -3110,6 +3120,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       gates: listGates(state),
       release: booleanValue(values.release, "release"),
       ...(values.base === undefined ? {} : { base: values.base }),
+      workIds: values["work-id"] === undefined ? [] : listValue(values["work-id"]),
     });
     io.write(canonicalJson({
       reasonCode: "GATES_PLAN_READY",
@@ -3124,7 +3135,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // and record the run in this device's cache of the library under the digest of the tree it ran
   // on. The answer lists every red gate, and the required ones among them apart.
   if (command === "gates-run") {
-    const values = parseArguments(rest, ["workspace", "at", "project", "base", "release"]);
+    const values = parseArguments(rest, ["workspace", "at", "project", "base", "release", "work-id"]);
     required(values, ["workspace", "at"]);
     const state = await validateWorkspace(values.workspace ?? "");
     const plan = await planGates({
@@ -3132,6 +3143,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       gates: listGates(state),
       release: booleanValue(values.release, "release"),
       ...(values.base === undefined ? {} : { base: values.base }),
+      workIds: values["work-id"] === undefined ? [] : listValue(values["work-id"]),
     });
     const { run, recordPath } = await runGates(plan, { libraryId: state.metadata.workspaceId, at: values.at ?? "" });
     io.write(canonicalJson({

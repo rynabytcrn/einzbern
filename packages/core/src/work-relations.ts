@@ -83,6 +83,8 @@ export interface WorkRelationsView {
     readonly fixedBy: readonly string[];
     readonly decides: readonly string[];
   };
+  /** Forward work or minutes targets this library does not currently hold as live records. */
+  readonly missing: readonly string[];
 }
 
 const INPUT_FIELDS: readonly string[] = [...STORED_RELATION_FIELDS, "decidedIn"];
@@ -220,10 +222,11 @@ export function relationsShapeProblem(value: unknown, id: string): string | null
  * Both directions of a record's relations. Forward is what the record stores (parent from its
  * parentId). Reverse is projected by one scan of the live records: who is blocked by it,
  * implements it, supersedes it or fixes it; and, asked of a minutes id, which records name it as
- * decided-in (decides). An id that names no record has no forward relations and may still have
- * reverse ones.
+ * decided-in (decides). `missing` projects forward targets that are not live in this library; it
+ * is recomputed on every read so a minutes record arriving later clears its missing marker without
+ * changing the stored relation.
  */
-export function workRelations(state: Pick<WorkspaceState, "work">, id: string): WorkRelationsView {
+export function workRelations(state: Pick<WorkspaceState, "work" | "minutes" | "conferenceMinutes">, id: string): WorkRelationsView {
   const record = state.work.find((entry) => entry.id === id);
   const stored = record === undefined ? {} : storedRelations(record);
   const reverse: { [name in ReverseRelationName]: string[] } = {
@@ -238,15 +241,29 @@ export function workRelations(state: Pick<WorkspaceState, "work">, id: string): 
     if (decidedInOf(other).includes(id)) reverse.decides.push(other.id);
   }
   const sorted = (list: readonly string[]): readonly string[] => [...list].sort(compareCanonicalText);
+  const forward = {
+    parent: record?.parentId ?? null,
+    blockedBy: stored.blockedBy ?? [],
+    implements: stored.implements ?? [],
+    supersedes: stored.supersedes ?? [],
+    fixes: stored.fixes ?? [],
+    decidedIn: record === undefined ? [] : decidedInOf(record),
+  };
+  const liveWork = new Set(state.work.filter((entry) => !entry.tombstone).map((entry) => entry.id));
+  const liveMinutes = new Set([
+    ...state.minutes.filter((entry) => !entry.tombstone).map((entry) => entry.id),
+    ...state.conferenceMinutes.filter((entry) => !entry.tombstone).map((entry) => entry.id),
+  ]);
+  const workTargets = [
+    ...(forward.parent === null ? [] : [forward.parent]),
+    ...forward.blockedBy, ...forward.implements, ...forward.supersedes, ...forward.fixes,
+  ];
+  const missing = sorted([...new Set([
+    ...workTargets.filter((target) => !liveWork.has(target)),
+    ...forward.decidedIn.filter((target) => isMinutesId(target) && !liveMinutes.has(target)),
+  ])]);
   return {
-    forward: {
-      parent: record?.parentId ?? null,
-      blockedBy: stored.blockedBy ?? [],
-      implements: stored.implements ?? [],
-      supersedes: stored.supersedes ?? [],
-      fixes: stored.fixes ?? [],
-      decidedIn: record === undefined ? [] : decidedInOf(record),
-    },
+    forward,
     reverse: {
       blocks: sorted(reverse.blocks),
       implementedBy: sorted(reverse["implemented-by"]),
@@ -254,6 +271,7 @@ export function workRelations(state: Pick<WorkspaceState, "work">, id: string): 
       fixedBy: sorted(reverse["fixed-by"]),
       decides: sorted(reverse.decides),
     },
+    missing,
   };
 }
 

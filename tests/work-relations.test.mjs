@@ -21,6 +21,7 @@ import {
   materializeWorkspace,
   materializeWorkspaceFromGenesis,
   openLegacyWorkspace,
+  recordMinutes,
   replayLegacyWorkspace,
 } from "../dist/build/packages/core/src/index.js";
 import {
@@ -132,6 +133,45 @@ test("STORY-472 AC3 (core): a historical Incident still reads, and a new Story m
   assert.deepEqual(await materializeWorkspaceFromGenesis(fixture.workspace), await materializeWorkspace(fixture.workspace), "genesis and cached reads agree");
 });
 
+test("STORY-502 D4: decided-in missing is projected at read time and clears when its minutes record arrives", async (context) => {
+  const fixture = await library(context);
+  const presentMinutesId = deriveStableId("minutes", "REL-MIN-PRESENT");
+  let state = await recordMinutes(fixture.workspace, {
+    occurredAt: at(2), externalKey: "REL-MIN-PRESENT", projectId: fixture.projectId,
+    title: "Present decision", summary: "Already in this library.", decisions: ["Keep the identity."],
+    decidedBy: [], linkedWorkIds: [],
+  });
+  const presentLinked = await initiative(fixture, "REL-MIN-PRESENT-LINK", 3, { relations: { decidedIn: [presentMinutesId] } });
+  assert.deepEqual(workRelations(presentLinked, idOf("REL-MIN-PRESENT-LINK")).missing, [], "a current minutes target is not missing");
+
+  const workTarget = idOf("REL-MIN-LIVE-TARGET");
+  state = await initiative(fixture, "REL-MIN-LIVE-TARGET", 4);
+  const laterMinutesId = deriveStableId("minutes", "REL-MIN-LATER");
+  state = await initiative(fixture, "REL-MIN-LATER-LINK", 5, {
+    relations: { blockedBy: [workTarget], decidedIn: [laterMinutesId] },
+  });
+  const linkedId = idOf("REL-MIN-LATER-LINK");
+  const workEventBefore = state.events.find((event) => event.payload?.record?.id === linkedId);
+  assert.ok(workEventBefore, "the work record has one stored create event");
+  const payloadBefore = canonicalJson(workEventBefore.payload);
+  assert.deepEqual(workRelations(state, linkedId).forward.decidedIn, [laterMinutesId]);
+  assert.deepEqual(workRelations(state, linkedId).forward.blockedBy, [workTarget], "the work relation remains available");
+  assert.deepEqual(workRelations(state, linkedId).missing, [laterMinutesId], "an absent but well-shaped minutes id is reported missing");
+
+  state = await recordMinutes(fixture.workspace, {
+    occurredAt: at(6), externalKey: "REL-MIN-LATER", projectId: fixture.projectId,
+    title: "Arrived decision", summary: "The target arrived later.", decisions: ["Keep the original reference."],
+    decidedBy: [], linkedWorkIds: [],
+  });
+  const workEventAfter = state.events.find((event) => event.id === workEventBefore.id);
+  assert.ok(workEventAfter, "the original work event remains in the history");
+  assert.equal(canonicalJson(workEventAfter.payload), payloadBefore, "arrival does not rewrite the historical work event");
+  assert.deepEqual(state.work.find((record) => record.id === linkedId).extensions["advisory:decided-by"].value, [laterMinutesId]);
+  assert.deepEqual(workRelations(state, linkedId).forward.decidedIn, [laterMinutesId], "the stored identity is unchanged");
+  assert.deepEqual(workRelations(state, linkedId).missing, [], "the projection clears once the minutes record is present");
+  assert.deepEqual(workRelations(state, workTarget).reverse.blocks, [linkedId], "existing work-target projection is unchanged");
+});
+
 test("STORY-472 R2: a missing or deleted target, the record itself and an unknown relation are refused, nothing written", async (context) => {
   const fixture = await library(context);
   await initiative(fixture, "REL-X", 2);
@@ -144,6 +184,7 @@ test("STORY-472 R2: a missing or deleted target, the record itself and an unknow
     () => initiative(fixture, "REL-Y", 5, { relations: { causes: [idOf("REL-X")] } }),
     () => initiative(fixture, "REL-Y", 5, { relations: { implements: ["minutes:c8953141f2d862c26ff3db46"] } }),
     () => initiative(fixture, "REL-Y", 5, { relations: { decidedIn: [idOf("REL-X")] } }),
+    () => initiative(fixture, "REL-Y", 5, { relations: { decidedIn: ["not-a-minutes-id"] } }),
     () => annotateWork(fixture.workspace, { occurredAt: at(5), id: idOf("REL-X"), relations: { blockedBy: [idOf("REL-X")] } }),
   ];
   for (const refusal of refusals) {

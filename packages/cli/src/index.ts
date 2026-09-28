@@ -2939,12 +2939,6 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // library does not hold as a live record (deleted, or written on a device not merged yet) is
     // listed under missing.
     const relations = workRelations(state, record.id);
-    const live = new Set(state.work.filter((entry) => !entry.tombstone).map((entry) => entry.id));
-    const forwardTargets = [
-      ...(relations.forward.parent === null ? [] : [relations.forward.parent]),
-      ...relations.forward.blockedBy, ...relations.forward.implements, ...relations.forward.supersedes, ...relations.forward.fixes,
-    ];
-    const missing = [...new Set(forwardTargets.filter((id) => !live.has(id)))].sort();
     io.write(canonicalJson({
       reasonCode: "WORKSPACE_RECORD_READY",
       workspaceId: state.metadata.workspaceId,
@@ -2956,7 +2950,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       // from -- the record's own fields, or the blocks of an old scope mapped on this read.
       fields: storyFields(record),
       ...(advisory !== null ? { advisory } : {}),
-      relations: { forward: relations.forward, reverse: relations.reverse, missing },
+      relations: { forward: relations.forward, reverse: relations.reverse, missing: relations.missing },
       ...(aliases.aliases.length === 0 ? {} : { aliases: aliases.aliases.map((entry) => ({ externalKey: entry.externalKey, id: entry.id, deviceId: entry.deviceId })) }),
       ...(aliases.aliasedBy.length === 0 ? {} : { aliasedBy: aliases.aliasedBy.map((entry) => ({ externalKey: entry.aliasExternalKey, id: entry.aliasId, deviceId: entry.deviceId })) }),
       ...(rejectedEvents.length === 0 ? {} : { rejectedEvents }),

@@ -349,3 +349,44 @@ test("476 (bin): a refused knowledge write names its body bytes and limit, or th
   assert.equal(conflict.reasonCode, "KNOWLEDGE_POSSIBLE_CONFLICT");
   assert.deepEqual(conflict.conflicts, [kept.id]);
 });
+
+// MIN-235 D9 (TCRN-CROSS-SUB-302): the recall cases above pass --tau 0, written when the default was a
+// bm25 number calibrated on the cross-project chain. The default now counts words only one record of
+// the library carries; these ask again with no --tau and nothing recorded.
+async function recallAtDefault(workspace, second, query) {
+  return cli(["recall", "--workspace", workspace, "--at", at(second), "--query", query, "--allow-trailing", "true"]);
+}
+
+test("D9 (476-AC1, AC3 at the default threshold): a project card and a user card are recalled by their subjects, and an unrelated prompt is answered with nothing", async (context) => {
+  const base = await device(context);
+  const first = await library(base, "gamma");
+  const second = await library(base, "delta");
+  await cli(["library-register", "--project", join(base, "gamma"), "--library", first.workspace, "--at", at(60)]);
+  await cli(["library-register", "--project", join(base, "delta"), "--library", second.workspace, "--at", at(61)]);
+  const project = await cli(createArgs(first.workspace, 62, {
+    key: "KC-PANGOLIN-D9", subject: "Pangolin scale inventory", summary: "How the pangolin scales are counted", snippet: "count pangolin scales at dusk",
+  }));
+  const user = await cli(createArgs(first.workspace, 63, {
+    key: "KC-QUOLL-D9", scope: "user", subject: "Quoll den survey", summary: "Count the quoll dens at dawn", snippet: "quoll dens at dawn",
+  }));
+
+  const found = await recallAtDefault(first.workspace, 64, "pangolin scale inventory");
+  assert.equal(found.reasonCode, "RECALL_READY");
+  assert.equal(found.tau, "3.0000", "the shipped default");
+  assert.deepEqual(found.records.map((record) => [record.id, record.scope]), [[project.id, "project"]]);
+  // Another project recalls the user card, marked user.
+  const elsewhere = await recallAtDefault(second.workspace, 65, "quoll den survey");
+  assert.equal(elsewhere.reasonCode, "RECALL_READY");
+  assert.deepEqual(elsewhere.records.map((record) => [record.id, record.scope]), [[user.id, "user"]]);
+
+  for (const workspace of [first.workspace, second.workspace]) {
+    for (const query of ["what is the weather like in Paris today", "how many scales does a fish have", "推荐一部好看的电影"]) {
+      const quiet = await recallAtDefault(workspace, 66, query);
+      assert.equal(quiet.reasonCode, "RECALL_NO_STRONG_HIT", query);
+      assert.deepEqual([quiet.records, quiet.context], [[], []], query);
+    }
+  }
+  // The one-word coincidence is answered at --tau 0: the emptiness above hangs on the threshold.
+  const lowered = await recallCli(first.workspace, 67, "how many scales does a fish have");
+  assert.deepEqual(lowered.records.map((record) => record.id), [project.id]);
+});

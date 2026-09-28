@@ -390,17 +390,20 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     max: 65_536,
   },
   {
-    // TCRN-CROSS-STORY-362, STORY-474 R3: the strong-hit threshold, in bm25 units. A prompt whose
-    // best hit scores below it is answered with nothing (RECALL_NO_STRONG_HIT); above it, it is
-    // also every hit's absolute floor. Its default is RECALL_STRONG_TAU (recall.ts), calibrated by
-    // retrieval-eval (tests/fixtures/retrieval-eval/strong-threshold.json, TCRN-CROSS-SUB-303). A
-    // string-typed number like every other numeric setting here, so the catalog keeps one value
-    // shape; the verb parses it and refuses a value it cannot use.
+    // TCRN-CROSS-STORY-362, STORY-474 R3: the strong-hit threshold. A prompt whose best hit scores
+    // below it is answered with nothing (RECALL_NO_STRONG_HIT); above it, it is also every hit's
+    // absolute floor. MIN-235 D9 (TCRN-CROSS-SUB-302): it is counted in words that only one record
+    // of the library carries (recallScoreUnit, recall.ts), not in raw bm25, so one value means the
+    // same in a library of four records and in one of six hundred; its default is
+    // RECALL_STRONG_TAU, 3, calibrated by retrieval-eval on both sizes
+    // (tests/fixtures/retrieval-eval/strong-threshold.json, TCRN-CROSS-SUB-303). A string-typed
+    // whole number like every other numeric setting here, so the catalog keeps one value shape;
+    // the verb parses it and refuses a value it cannot use.
     key: "retrieval.tau",
     type: "string",
     controlType: "number",
     layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: "17",
+    defaultValue: "3",
     min: 0,
     max: 100,
   },

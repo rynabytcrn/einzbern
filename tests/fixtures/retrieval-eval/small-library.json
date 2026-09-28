@@ -1,0 +1,236 @@
+{
+  "schemaVersion": "einzbern.retrieval-eval-small-library.v1",
+  "purpose": "MIN-235 D9 (TCRN-CROSS-SUB-303): the small end of the strong-hit calibration. One Initiative, one Epic and two Stories written with the goal and body fields -- the library the R13 acceptance probe measured -- with a related group (a Story's goal words, its body words, its title, and the other Story's goal words and title) and an unrelated group (prompts sharing at most one word with the library). At the shipped threshold every related query is answered with its Story first and every unrelated prompt with nothing; at threshold zero the one-word coincidences are answered.",
+  "written": [
+    {
+      "externalKey": "D9-INIT-1",
+      "kind": "Initiative",
+      "parent": null,
+      "title": "Field notebook platform"
+    },
+    {
+      "externalKey": "D9-EPIC-1",
+      "kind": "Epic",
+      "parent": "D9-INIT-1",
+      "title": "Survey capture"
+    },
+    {
+      "externalKey": "D9-STORY-1",
+      "kind": "Story",
+      "parent": "D9-EPIC-1",
+      "title": "Offline tally sheet",
+      "goal": "Rangers record the pangolin sighting tally while the tablet has no signal",
+      "acceptance": "GIVEN no signal WHEN a ranger saves a tally THEN it syncs later",
+      "body": "The quokka moult calendar decides which transect is walked first each morning."
+    },
+    {
+      "externalKey": "D9-STORY-2",
+      "kind": "Story",
+      "parent": "D9-EPIC-1",
+      "title": "Photo attachment",
+      "goal": "Attach a photo of each nest to its survey entry",
+      "acceptance": "GIVEN a nest entry WHEN a photo is attached THEN it shows in the entry"
+    }
+  ],
+  "recording": {
+    "recorder": "scripts/retrieval-eval-record.mjs",
+    "recordedAt": "2026-09-28T15:00:00Z",
+    "engineCommit": "58e0b6d1e956a3b19be6d91c9eef9ee38f2bf931",
+    "source": {
+      "layout": "library",
+      "workspaceId": "library:dcd85a91b9cabedb10d1e94a",
+      "chainVersion": 5,
+      "headEventHash": "4241b0b69bd8c5a74d2bf5375bf46050778c4f3df53d4dbb14f84bb9439a68e9",
+      "knowledgeReasonCode": "KNOWLEDGE_PATH_INVALID",
+      "knowledgeResultDigest": "absent"
+    },
+    "sampling": {
+      "sample": 1,
+      "rule": "every Initiative, Epic, minutes record and live card; a Story or Incident when an evaluation fixture names it or when the first four bytes of sha256(id) as an unsigned integer are divisible by sample; never a pre-registered holdout record",
+      "scopeExcerptBytes": 512
+    },
+    "counts": {
+      "sourceWork": 4,
+      "indexableWork": 4,
+      "work": 4,
+      "workKinds": {
+        "Epic": 1,
+        "Initiative": 1,
+        "Story": 2
+      },
+      "keptNamed": 0,
+      "keptSampled": 2,
+      "keptAlways": 2,
+      "droppedHoldout": 0,
+      "droppedUnsampled": 0,
+      "minutes": 0,
+      "cards": 0
+    },
+    "redactions": {
+      "path": 0,
+      "link": 0,
+      "url": 0,
+      "email": 0,
+      "login": 0,
+      "ip": 0,
+      "secret": 0,
+      "threadId": 0,
+      "user": 0,
+      "host": 0
+    },
+    "files": {
+      "work-compact.json": "5a786fe16afccf06d725ad1e994d0ca38687827ae756abdb64f2a49894e85c28",
+      "minutes-compact.json": "02086fe136855f85bf3c262e76aab68024ce72f52c3244a488a5af8215cf89ae",
+      "cards-compact.json": "0e98a968a9122c402f9b9caaf5a34a87003bb8fb0c30487062032af8add5b304"
+    },
+    "corpusDigest": "5611d4297000b5601776e672dbac48daab3bff61ddda4f71ade4a24c6af0026e"
+  },
+  "work": [
+    {
+      "id": "work:a959a5f656c4455d2c194c43",
+      "externalKey": "D9-EPIC-1",
+      "kind": "Epic",
+      "status": "planned",
+      "title": "Survey capture",
+      "summary": null,
+      "scope": "",
+      "labels": [],
+      "goal": null,
+      "body": null,
+      "parentChain": [
+        "Field notebook platform"
+      ]
+    },
+    {
+      "id": "work:a6bd8c8cb948e2f48fa1ccb3",
+      "externalKey": "D9-INIT-1",
+      "kind": "Initiative",
+      "status": "planned",
+      "title": "Field notebook platform",
+      "summary": null,
+      "scope": "",
+      "labels": [],
+      "goal": null,
+      "body": null,
+      "parentChain": []
+    },
+    {
+      "id": "work:5a17b2bcb630b73e19f1e752",
+      "externalKey": "D9-STORY-1",
+      "kind": "Story",
+      "status": "planned",
+      "title": "Offline tally sheet",
+      "summary": "Rangers record the pangolin sighting tally while the tablet has no signal",
+      "scope": "",
+      "labels": [],
+      "goal": "Rangers record the pangolin sighting tally while the tablet has no signal",
+      "body": "The quokka moult calendar decides which transect is walked first each morning.",
+      "parentChain": [
+        "Survey capture",
+        "Field notebook platform"
+      ]
+    },
+    {
+      "id": "work:81ab6c9d7a2163ffec25b91f",
+      "externalKey": "D9-STORY-2",
+      "kind": "Story",
+      "status": "planned",
+      "title": "Photo attachment",
+      "summary": "Attach a photo of each nest to its survey entry",
+      "scope": "",
+      "labels": [],
+      "goal": "Attach a photo of each nest to its survey entry",
+      "body": null,
+      "parentChain": [
+        "Survey capture",
+        "Field notebook platform"
+      ]
+    }
+  ],
+  "minutes": [],
+  "cards": [],
+  "related": [
+    {
+      "query": "pangolin sighting tally",
+      "field": "goal",
+      "externalKey": "D9-STORY-1",
+      "expectedId": "work:5a17b2bcb630b73e19f1e752"
+    },
+    {
+      "query": "quokka moult calendar",
+      "field": "body",
+      "externalKey": "D9-STORY-1",
+      "expectedId": "work:5a17b2bcb630b73e19f1e752"
+    },
+    {
+      "query": "Offline tally sheet",
+      "field": "title",
+      "externalKey": "D9-STORY-1",
+      "expectedId": "work:5a17b2bcb630b73e19f1e752"
+    },
+    {
+      "query": "nest photo",
+      "field": "goal",
+      "externalKey": "D9-STORY-2",
+      "expectedId": "work:81ab6c9d7a2163ffec25b91f"
+    },
+    {
+      "query": "Photo attachment",
+      "field": "title",
+      "externalKey": "D9-STORY-2",
+      "expectedId": "work:81ab6c9d7a2163ffec25b91f"
+    }
+  ],
+  "unrelated": [
+    {
+      "query": "what is on the football calendar this season",
+      "language": "en",
+      "shares": "calendar"
+    },
+    {
+      "query": "how long does a photo print take to dry",
+      "language": "en",
+      "shares": "photo"
+    },
+    {
+      "query": "is the new tablet worth buying",
+      "language": "en",
+      "shares": "tablet"
+    },
+    {
+      "query": "sheet music for a beginner piano piece",
+      "language": "en",
+      "shares": "sheet"
+    },
+    {
+      "query": "best signal booster for a rural house",
+      "language": "en",
+      "shares": "signal"
+    },
+    {
+      "query": "can I watch films offline on a plane",
+      "language": "en",
+      "shares": "offline"
+    },
+    {
+      "query": "how do I cook the rice and the beans",
+      "language": "en",
+      "shares": null
+    },
+    {
+      "query": "今天的天气怎么样",
+      "language": "zh",
+      "shares": null
+    },
+    {
+      "query": "推荐一部好看的电影",
+      "language": "zh",
+      "shares": null
+    },
+    {
+      "query": "明天早上七点叫我起床",
+      "language": "zh",
+      "shares": null
+    }
+  ]
+}

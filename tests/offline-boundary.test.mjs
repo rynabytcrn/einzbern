@@ -144,10 +144,11 @@ if (process.env.TCRN_OFFLINE_PROOF !== "1") {
     const root = join(temporaryRoot, "engine");
     await mkdir(join(root, ".git"), { recursive: true });
     await cp(join(repositoryRoot, "scripts"), join(root, "scripts"), { recursive: true });
+    const installerPath = join(root, "skill", "mana-orchestrate", "scripts", "install.mjs");
     await mkdir(join(root, "skill", "mana-orchestrate", "scripts"), { recursive: true });
     await cp(
       join(repositoryRoot, "skill", "mana-orchestrate", "scripts", "install.mjs"),
-      join(root, "skill", "mana-orchestrate", "scripts", "install.mjs"),
+      installerPath,
     );
     await mkdir(join(root, "tests"), { recursive: true });
     await cp(import.meta.filename, join(root, "tests", "offline-boundary.test.mjs"));
@@ -160,8 +161,8 @@ if (process.env.TCRN_OFFLINE_PROOF !== "1") {
     }
     if (extraInstallerFetch) {
       await writeFile(
-        join(root, "skill", "mana-orchestrate", "scripts", "install.mjs"),
-        `${await readFile(join(root, "skill", "mana-orchestrate", "scripts", "install.mjs"), "utf8")}\nvoid fetch("https://example.invalid");\n`,
+        installerPath,
+        `${await readFile(installerPath, "utf8")}\nvoid fetch("https://example.invalid");\n`,
       );
     }
     return { root, temporaryRoot };

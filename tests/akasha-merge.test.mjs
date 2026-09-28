@@ -104,6 +104,44 @@ test("468-AC1: two devices append 100 events each apart; after sync either merge
   assert.deepEqual(clocks.slice(0, 4), [[1, A.deviceId], [1, B.deviceId], [2, A.deviceId], [2, B.deviceId]]);
 });
 
+test("469-D7: the root manifest stays static across device appends, and discovered streams validate their segment digests", async (t) => {
+  const context = await setup(t);
+  const desk = context.library;
+  const laptop = await offlineCopy(context.base, desk);
+  const rootManifestPath = join(desk.root, "manifest.json");
+  const rootManifestBytes = await readFile(rootManifestPath, "utf8");
+  const rootManifest = JSON.parse(rootManifestBytes);
+
+  assert.deepEqual(Object.keys(rootManifest).sort(), ["createdAt", "formatVersion", "libraryId", "minEngineVersion", "project", "schemaVersion"]);
+  await write(context, desk, A, createProject("ROOT-MANIFEST-DESK"));
+  await write(context, laptop, B, createProject("ROOT-MANIFEST-LAPTOP"));
+  await sync(desk, laptop);
+
+  for (const copy of [desk, laptop]) {
+    assert.equal(await readFile(join(copy.root, "manifest.json"), "utf8"), rootManifestBytes,
+      "ordinary event appends and stream merge do not rewrite the root manifest");
+  }
+
+  const discovered = await readAllStreams(desk.root);
+  assert.deepEqual(discovered.streams.map((stream) => stream.deviceId).sort(), [A.deviceId, B.deviceId]);
+  for (const stream of discovered.streams) {
+    assert.ok(stream.manifest, "the discovered device has a committed stream manifest");
+    assert.equal(stream.manifest.segments.length, 1);
+    assert.match(stream.manifest.segments[0].sha256, /^[a-f0-9]{64}$/u);
+  }
+
+  const laptopManifestPath = join(streamDirectory(desk.root, B.deviceId), "manifest.json");
+  const laptopManifest = JSON.parse(await readFile(laptopManifestPath, "utf8"));
+  laptopManifest.segments[0].sha256 = "0".repeat(64);
+  await writeFile(laptopManifestPath, canonicalJson(laptopManifest));
+  await assert.rejects(readAllStreams(desk.root), (error) => {
+    assert.equal(error.reasonCode, "AKASHA_SEGMENT_CORRUPT");
+    assert.equal(error.details.deviceId, B.deviceId);
+    assert.equal(error.details.segment, laptopManifest.segments[0].name);
+    return true;
+  }, "a reader validates the on-disk digest after discovering the device stream");
+});
+
 test("468-AC2: both devices move the same item to done; the earlier clock wins and the later is a rejected event", async (t) => {
   const context = await setup(t);
   const desk = context.library;

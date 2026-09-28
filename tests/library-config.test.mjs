@@ -15,7 +15,7 @@ import { join, relative } from "node:path";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { materializeWorkspace } from "../dist/build/packages/core/src/index.js";
+import { cachePath, materializeWorkspace } from "../dist/build/packages/core/src/index.js";
 
 // TCRN-CROSS-STORY-484 R4: these tests write settings through the CLI, as Atelier does.
 standInForAtelier();
@@ -191,4 +191,58 @@ test("469-R2: reads trust the events, not config/project.json, and status report
   await as(desk, ["settings-remove", "--workspace", library, "--at", at(), "--key", "retrieval.tau"]);
   assert.deepEqual(JSON.parse(await readFile(path, "utf8")).values, {});
   assert.equal((await as(desk, ["status", "--workspace", library])).configProjection, "current");
+});
+
+test("469-D7: conflicting or corrupt projections cannot override merged events after cache rebuild", async (context) => {
+  const base = await scratch(context);
+  const desk = join(base, "desk");
+  const laptop = join(base, "laptop");
+  const library = join(base, ".ether");
+  const apart = join(base, "laptop-copy");
+  await as(desk, ["init", "--workspace", library, "--at", at()]);
+  await cp(library, apart, { recursive: true });
+
+  await as(desk, ["settings-set", "--workspace", library, "--at", at(), "--key", "design.authority", "--value", "https://design.example/desk"]);
+  await as(laptop, ["settings-set", "--workspace", apart, "--at", at(), "--key", "design.authority", "--value", "https://design.example/laptop"]);
+  const deskId = await deviceIdOf(desk);
+  const laptopId = await deviceIdOf(laptop);
+  await syncStream(apart, library, laptopId);
+  await syncStream(library, apart, deskId);
+
+  const mergedDesk = await read(desk, library);
+  const mergedLaptop = await read(laptop, apart);
+  assert.deepEqual(mergedDesk.settings, mergedLaptop.settings, "both devices replay the same event state");
+  assert.deepEqual(mergedDesk.library.versionVector, mergedLaptop.library.versionVector);
+  const mergedVersionVector = mergedDesk.library.versionVector;
+  const eventValue = settingValue(mergedDesk, "design.authority");
+  assert.ok(eventValue === "https://design.example/desk" || eventValue === "https://design.example/laptop");
+
+  const deskProjectionPath = join(library, "config", "project.json");
+  const laptopProjectionPath = join(apart, "config", "project.json");
+  const deskProjection = JSON.parse(await readFile(deskProjectionPath, "utf8"));
+  const laptopProjection = JSON.parse(await readFile(laptopProjectionPath, "utf8"));
+  assert.notDeepEqual(deskProjection.values, laptopProjection.values, "the two offline projection writes conflict");
+  await writeFile(deskProjectionPath, `${JSON.stringify({ ...deskProjection, versionVector: mergedVersionVector, values: { "design.authority": "https://forged.example/desk" } })}\n`);
+  await writeFile(laptopProjectionPath, `${JSON.stringify({ ...laptopProjection, versionVector: mergedVersionVector, values: { "design.authority": "https://forged.example/laptop" } })}\n`);
+
+  const libraryId = (await as(desk, ["status", "--workspace", library])).workspaceId;
+  await rm(cachePath(libraryId, desk), { recursive: true, force: true });
+  await rm(cachePath(libraryId, laptop), { recursive: true, force: true });
+  const afterRebuildDesk = await read(desk, library);
+  const afterRebuildLaptop = await read(laptop, apart);
+  assert.equal(settingValue(afterRebuildDesk, "design.authority"), eventValue, "desk rebuild uses event replay");
+  assert.equal(settingValue(afterRebuildLaptop, "design.authority"), eventValue, "laptop rebuild uses event replay");
+  assert.deepEqual(afterRebuildDesk.settings, afterRebuildLaptop.settings, "cache rebuilds agree despite conflicting projections");
+  assert.equal((await as(desk, ["status", "--workspace", library])).configProjection, "stale");
+  assert.equal((await as(laptop, ["status", "--workspace", apart])).configProjection, "stale");
+  assert.equal(JSON.parse(await readFile(deskProjectionPath, "utf8")).values["design.authority"], "https://forged.example/desk",
+    "cache rebuild does not rewrite the projection");
+  assert.equal(JSON.parse(await readFile(laptopProjectionPath, "utf8")).values["design.authority"], "https://forged.example/laptop",
+    "cache rebuild does not rewrite the other projection");
+
+  await writeFile(laptopProjectionPath, "{not json");
+  await rm(cachePath(libraryId, laptop), { recursive: true, force: true });
+  const afterCorruptRebuild = await read(laptop, apart);
+  assert.equal(settingValue(afterCorruptRebuild, "design.authority"), eventValue, "a corrupt projection also cannot override event replay");
+  assert.equal((await as(laptop, ["status", "--workspace", apart])).configProjection, "invalid");
 });

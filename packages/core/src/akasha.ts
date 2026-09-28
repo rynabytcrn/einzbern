@@ -13,6 +13,8 @@
 // the manifest: it reads each named segment up to the recorded length, so bytes a crashed
 // writer appended after its last manifest are never read, and the next append on that device
 // cuts them off before it writes.
+// Readers first discover device directories under akasha/, then validate each discovered
+// stream's manifest and segment digests before replay; directory presence alone proves nothing.
 //
 // Appends on one machine are serialised by the device-local lock of the library
 // (device-home lockPath), so two processes of one device continue one sequence. Each new event

@@ -29,6 +29,7 @@ import { lstat, readFile, realpath } from "node:fs/promises";
 import { isUtf8 } from "node:buffer";
 import { dirname, join, resolve } from "node:path";
 
+import { compareCanonicalText } from "../../protocol/src/index.js";
 import { removeConfigRecordDelta, setConfigRecordDelta } from "./config-records.js";
 import {
   ManagedSectionError,
@@ -63,6 +64,7 @@ import {
   renderSystemVariablesSection,
 } from "./variables-sections.js";
 import type { WithheldEntry } from "./variables-sections.js";
+import { compareRecordOrder } from "./variables.js";
 import { appendEvents, materializeWorkspace, projectConfiguration, withWorkspaceWriteLock } from "./workspace.js";
 import type { MutationDelta, WorkspaceMutationOptions, WorkspaceState } from "./workspace.js";
 
@@ -505,17 +507,73 @@ export interface AgentsRenderResult {
   readonly state: WorkspaceState;
 }
 
+// ---- The order of the rule sections (TCRN-CROSS-STORY-508 R7) ----
+
+/** The order each rule's record holds, by rule id; a rule whose record holds none is not in it. */
+export function ruleOrders(state: Pick<WorkspaceState, "configRecords">): ReadonlyMap<string, number> {
+  const orders = new Map<string, number>();
+  for (const record of state.configRecords) {
+    if (record.collection === "rule" && typeof record.value.order === "number") orders.set(record.key, record.value.order);
+  }
+  return orders;
+}
+
+// How two rules compare in AGENTS.md: a rule whose record holds an order goes first, by order; the
+// rules without one follow in catalog order, and a rule this engine does not ship after them, by id.
+function compareRules(orders: ReadonlyMap<string, number>): (left: string, right: string) => number {
+  const place = (id: string): number => {
+    const index = BUILT_IN_RULES.findIndex((rule) => rule.id === id);
+    return index === -1 ? BUILT_IN_RULES.length : index;
+  };
+  return (left, right) => compareRecordOrder({ order: orders.get(left) }, { order: orders.get(right) }) || place(left) - place(right) || compareCanonicalText(left, right);
+}
+
+/**
+ * A write plan for AGENTS.md whose rule sections stand in the rules' order. The places the rule
+ * sections hold in the file stay where they are, and so does every byte around them: the sections
+ * are arranged across those places, each moved as a whole. A section the engine may not write (the
+ * user changed it, it waits, or the user kept it or took it over) keeps its own place, and the others
+ * fill the remaining places in order. While no rule holds an order nothing is arranged, so a library
+ * without orders renders as it did before. A plan that writes nothing gets a write when the file's
+ * rule sections are out of order.
+ */
+export function orderRuleSections(plan: ManagedWritePlan, orders: ReadonlyMap<string, number>): ManagedWritePlan {
+  const text = plan.write ? plan.after : plan.before;
+  if (text === null || orders.size === 0) return plan;
+  const parsed = parseManagedFile(text, plan.file);
+  // The records as the plan leaves them: a section it refused over the user's change is pending.
+  const records = new Map(plan.sections.map((decision) => [decision.id, decision.record]));
+  const places = parsed.sections.flatMap((section, index) =>
+    section.id.startsWith(RULE_SECTION_PREFIX) && !userModified(section, records.get(section.id)) ? [index] : []);
+  const compare = compareRules(orders);
+  const ruleId = (section: ParsedSection): string => section.id.slice(RULE_SECTION_PREFIX.length);
+  const arranged = places.map((index) => parsed.sections[index]!).sort((left, right) => compare(ruleId(left), ruleId(right)));
+  if (arranged.every((section, position) => section === parsed.sections[places[position]!])) return plan;
+  const placed = new Map(places.map((index, position) => [index, arranged[position]!]));
+  let after = "";
+  for (const [index, section] of parsed.sections.entries()) {
+    after += parsed.outside[index] ?? "";
+    const moved = placed.get(index) ?? section;
+    // Only the file's last line may lack its line ending; a section moved off that line gets one.
+    after += moved !== section && !moved.raw.endsWith("\n") ? `${moved.raw}${parsed.eol}` : moved.raw;
+  }
+  after += parsed.outside[parsed.sections.length] ?? "";
+  return { ...plan, after, write: true };
+}
+
 // The sections of the Command Spell rules the library has enabled (TCRN-CROSS-STORY-483, rules.ts),
-// in catalog order and in the project's artifact language. A rule enabled at a version other than
-// the one this engine ships is left as the file holds it: an older engine does not write its text
-// over a newer one, and a newer version waits for rule-enable (update-available).
+// in the rules' order (compareRules: catalog order while no rule holds an order) and in the
+// project's artifact language. A rule enabled at a version other than the one this engine ships is
+// left as the file holds it: an older engine does not write its text over a newer one, and a newer
+// version waits for rule-enable (update-available).
 function enabledRuleSections(state: Pick<WorkspaceState, "settings" | "configRecords">): readonly AgentsSection[] {
   const language = artifactLanguage(state);
+  const compare = compareRules(ruleOrders(state));
   return BUILT_IN_RULES.flatMap((rule) => {
     const record = state.configRecords.find((entry) => entry.collection === "rule" && entry.key === rule.id)?.value;
     if (record?.enabled !== true || record.version !== rule.version) return [];
     return [{ id: `${RULE_SECTION_PREFIX}${rule.id}`, file: AGENTS_FILE, body: ruleBody(rule.id, language) }];
-  });
+  }).sort((left, right) => compare(left.id.slice(RULE_SECTION_PREFIX.length), right.id.slice(RULE_SECTION_PREFIX.length)));
 }
 
 /**
@@ -559,12 +617,13 @@ export async function renderAgentsSections(workspaceRoot: string, input: {
     const state = await materializeWorkspace(root);
     const agents = agentsFileSections(state, input.navigation);
     const plans = [
-      await planManagedWrite({
+      // TCRN-CROSS-STORY-508 R7: with the rule sections in the rules' order.
+      orderRuleSections(await planManagedWrite({
         filePath: join(input.projectRoot, AGENTS_FILE),
         file: AGENTS_FILE,
         desired: agents.sections.map((section) => ({ id: section.id, body: section.body })),
         records: managedSectionRecordsFor(state, AGENTS_FILE),
-      }),
+      }), ruleOrders(state)),
       await planClaudeImport(input.projectRoot, managedSectionRecordsFor(state, CLAUDE_FILE)),
     ];
     const files: RenderedFile[] = [];

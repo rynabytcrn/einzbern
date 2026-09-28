@@ -17,7 +17,7 @@ import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { initializeLibrary, materializeWorkspace } from "../dist/build/packages/core/src/index.js";
-import { resolveAgentsSection } from "../dist/build/packages/core/src/agents-sections.js";
+import { renderAgentsSections, resolveAgentsSection } from "../dist/build/packages/core/src/agents-sections.js";
 import { configRecord, setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
 import { managedSectionRecordsFor, parseManagedFile, sectionDigest } from "../dist/build/packages/core/src/managed-sections.js";
 import { BUILT_IN_RULES, builtInRule } from "../dist/build/packages/core/src/rules-catalog.js";
@@ -354,4 +354,84 @@ test("483-R2: an unknown rule is refused, a rule record holds exactly enabled an
   const off = await disable(paths, "future-rule");
   assert.deepEqual([off.result, off.status.state, off.status.recordedVersion], ["disabled", "disabled", 3]);
   assert.deepEqual(await ruleRecord(paths, "future-rule"), { enabled: false, version: 3 });
+});
+
+// TCRN-CROSS-STORY-508 R7 (MIN-236 D7; TCRN-CROSS-SUB-408): a rule's record may hold an order, which
+// places its section among the rule sections of AGENTS.md.
+const ruleSections = (text) => parseManagedFile(text).sections.map((section) => section.id).filter((id) => id.startsWith("rule:"));
+const render = (paths) => renderAgentsSections(paths.library, { projectRoot: paths.project, navigation: null, backupRoot: paths.backups, occurredAt: at() });
+
+test("508-R7: GIVEN rules with an order WHEN they are enabled and AGENTS.md is rendered THEN their sections stand in that order; with no order nothing moves", async (context) => {
+  const paths = await scratch(context);
+  await enable(paths, "batch");
+  await enable(paths, "autonomy");
+  const unordered = await readFile(paths.agents, "utf8");
+  assert.deepEqual(ruleSections(unordered), ["rule:batch", "rule:autonomy"], "each section goes where it was written");
+  // No rule holds an order: a render arranges nothing, as before.
+  await render(paths);
+  const rendered = await readFile(paths.agents, "utf8");
+  assert.deepEqual(ruleSections(rendered), ["rule:batch", "rule:autonomy"]);
+  assert.equal(sectionOf(rendered, "rule:batch").raw, sectionOf(unordered, "rule:batch").raw);
+
+  // An order puts the rule first; the rules without one follow in catalog order.
+  const first = await enable(paths, "silent-reporting", { order: 1 });
+  assert.deepEqual([first.result, first.written, first.recorded, first.status.order], ["create", true, 2, 1]);
+  const arranged = await readFile(paths.agents, "utf8");
+  assert.deepEqual(ruleSections(arranged), ["rule:silent-reporting", "rule:autonomy", "rule:batch"]);
+  assert.equal(arranged.startsWith(`${USER_TEXT}\n`), true, "the user's text stays where it was");
+  for (const id of ["rule:autonomy", "rule:batch"]) assert.equal(sectionOf(arranged, id).raw, sectionOf(rendered, id).raw, `${id} moved whole`);
+  // Nothing around the sections moved: the text between them is what the render left, and the new
+  // section's blank line before it.
+  assert.deepEqual(parseManagedFile(arranged).outside, [...parseManagedFile(rendered).outside.slice(0, -1), "\n", ""]);
+  assert.deepEqual(await ruleRecord(paths, "silent-reporting"), { enabled: true, version: 1, order: 1 });
+  assert.equal((await ruleOf(paths, "silent-reporting")).order, 1);
+  assert.equal(Object.hasOwn(await ruleOf(paths, "batch"), "order"), false, "a rule without an order lists none");
+
+  // Enabling a rule that is enabled already sets its order and moves its section, nothing else.
+  const moved = await enable(paths, "batch", { order: 2 });
+  assert.deepEqual([moved.result, moved.written, moved.recorded, moved.status.state, moved.status.order], ["unchanged", true, 1, "enabled", 2]);
+  const reordered = await readFile(paths.agents, "utf8");
+  assert.deepEqual(ruleSections(reordered), ["rule:silent-reporting", "rule:batch", "rule:autonomy"]);
+  assert.equal(await readFile(moved.backupPath, "utf8"), arranged, "the file is backed up before it is rearranged");
+  assert.deepEqual([(await render(paths)).files.find((file) => file.file === "AGENTS.md").written, await readFile(paths.agents, "utf8")], [false, reordered], "a render finds it in order");
+  // Enabled again without an order, a rule keeps the one it holds.
+  const again = await enable(paths, "batch");
+  assert.deepEqual([again.written, again.recorded, again.status.order], [false, 0, 2]);
+
+  // Disabling keeps the order, so the rule enabled again takes its old place.
+  await disable(paths, "silent-reporting");
+  assert.deepEqual(await ruleRecord(paths, "silent-reporting"), { enabled: false, version: 1, order: 1 });
+  assert.deepEqual(ruleSections(await readFile(paths.agents, "utf8")), ["rule:batch", "rule:autonomy"]);
+  await enable(paths, "silent-reporting");
+  assert.deepEqual(await ruleRecord(paths, "silent-reporting"), { enabled: true, version: 1, order: 1 });
+  assert.deepEqual(ruleSections(await readFile(paths.agents, "utf8")), ["rule:silent-reporting", "rule:batch", "rule:autonomy"]);
+});
+
+test("508-R7: a section the user changed keeps its place and its text while the other rule sections are arranged around it", async (context) => {
+  const paths = await scratch(context);
+  for (const id of ["autonomy", "batch", "silent-reporting"]) await enable(paths, id);
+  const edited = (await readFile(paths.agents, "utf8")).replace("批的单位", "批的单元");
+  await writeFile(paths.agents, edited);
+  const change = await enable(paths, "silent-reporting", { order: 1 });
+  assert.deepEqual([change.result, change.written, change.recorded], ["unchanged", true, 1]);
+  const text = await readFile(paths.agents, "utf8");
+  assert.deepEqual(ruleSections(text), ["rule:silent-reporting", "rule:batch", "rule:autonomy"], "batch holds its place; the others fill the rest in order");
+  assert.equal(sectionOf(text, "rule:batch").raw, sectionOf(edited, "rule:batch").raw, "and its text is the user's");
+  assert.equal((await ruleOf(paths, "batch")).state, "user-modified");
+});
+
+test("508-R7: a rule record's order is checked on every write and replay, and a refused order writes nothing", async (context) => {
+  const paths = await scratch(context);
+  assert.doesNotThrow(() => checkRuleRecordValue({ enabled: true, version: 2, order: 3 }, "batch"));
+  assert.doesNotThrow(() => checkRuleRecordValue({ enabled: false, version: 1, order: 1 }, "autonomy"));
+  for (const order of [0, -2, 1.5, "2", null]) {
+    assert.throws(() => checkRuleRecordValue({ enabled: true, version: 2, order }, "batch"), (error) => error?.reasonCode === "RULE_RECORD_INVALID" && error.details.field === "order", JSON.stringify(order));
+  }
+  const replayed = await refusal(() => setConfigRecord(paths.library, { collection: "rule", key: "batch", value: { enabled: true, version: 2, order: 0 }, occurredAt: at() }));
+  assert.deepEqual([replayed.reasonCode, replayed.details.refusedBy], ["CONFIG_RECORD_VALUE_INVALID", "RULE_RECORD_INVALID"]);
+  const version = (await materializeWorkspace(paths.library)).version;
+  const refused = await refusal(() => enable(paths, "batch", { order: 0 }));
+  assert.deepEqual([refused.reasonCode, refused.details.id, refused.details.field], ["RULE_RECORD_INVALID", "batch", "order"]);
+  assert.equal(await readFile(paths.agents, "utf8"), USER_TEXT, "the file is not written");
+  assert.equal((await materializeWorkspace(paths.library)).version, version, "and nothing is recorded");
 });

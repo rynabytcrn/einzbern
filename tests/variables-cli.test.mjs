@@ -14,7 +14,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { MODEL_WRITE_REMEDY, SURFACE_ENVIRONMENT_VARIABLE, assertModelWriteAllowed, runCli } from "../dist/build/packages/cli/src/index.js";
+import { COMMAND_CATALOG, MODEL_WRITE_REMEDY, SURFACE_ENVIRONMENT_VARIABLE, assertModelWriteAllowed, runCli } from "../dist/build/packages/cli/src/index.js";
 import { SETTINGS_CATALOG, initializeLibrary, materializeWorkspace, writeVariablesSections } from "../dist/build/packages/core/src/index.js";
 import { parseManagedFile } from "../dist/build/packages/core/src/managed-sections.js";
 import { VARIABLES_CUSTOM_SECTION_ID } from "../dist/build/packages/core/src/variables-sections.js";
@@ -233,4 +233,30 @@ test("484-R1 through the CLI: variables are set, changed, listed by name with wh
   const again = await asAtelier(() => refusal(["variable-remove", "--workspace", fx.workspace, "--at", at(), "--name", "deploy.host"]));
   assert.equal(again.reasonCode, "CONFIG_RECORD_NOT_FOUND");
   assert.equal(await versionOf(fx.workspace), before + 1);
+});
+
+// TCRN-CROSS-STORY-508 R7 (MIN-236 D7; TCRN-CROSS-SUB-408): variable-set --order.
+test("508-R7 through the CLI: variable-set --order records the order, the receipt and variable-list carry it, and the custom section follows it", async (context) => {
+  const fx = await library(context);
+  assert.deepEqual(COMMAND_CATALOG.find((entry) => entry.name === "variable-set").flags.find((flag) => flag.name === "order"), { name: "order", required: false, valueKind: "integer" });
+  const set = (flags) => asAtelier(() => cli(["variable-set", "--workspace", fx.workspace, "--at", at(), ...flags]));
+  const late = await set(["--name", "alpha", "--type", "string", "--value", "a", "--order", "20"]);
+  assert.deepEqual(late.variable, { name: "alpha", type: "string", value: "a", description: "", order: 20 });
+  await set(["--name", "bravo", "--type", "string", "--value", "b", "--order", "10"]);
+  const plain = await set(["--name", "charlie", "--type", "string", "--value", "c"]);
+  assert.deepEqual(plain.variable, { name: "charlie", type: "string", value: "c", description: "" }, "a variable set without --order has none");
+
+  const listed = await cli(["variable-list", "--workspace", fx.workspace]);
+  assert.deepEqual(listed.variables.map((variable) => [variable.name, variable.order ?? null]), [["alpha", 20], ["bravo", 10], ["charlie", null]], "listed by name, each with its order");
+
+  await writeVariablesSections(fx.workspace, { projectRoot: fx.root, backupRoot: join(fx.base, "backups"), occurredAt: at() });
+  const custom = parseManagedFile(await readFile(join(fx.root, "AGENTS.md"), "utf8"), "AGENTS.md").sections.find((section) => section.id === VARIABLES_CUSTOM_SECTION_ID);
+  assert.deepEqual(custom.body.split("\n").filter((line) => /^\| [a-z]/u.test(line)).map((line) => line.split(" | ")[0].slice(2)), ["bravo", "alpha", "charlie"]);
+
+  const before = await versionOf(fx.workspace);
+  for (const order of ["0", "-3", "1.5", "first"]) {
+    const refused = await asAtelier(() => refusal(["variable-set", "--workspace", fx.workspace, "--at", at(), "--name", "delta", "--type", "string", "--value", "d", "--order", order]));
+    assert.deepEqual([refused.reasonCode, refused.message], ["CLI_ARGUMENT_MALFORMED", "order"], order);
+  }
+  assert.equal(await versionOf(fx.workspace), before, "a malformed order appends nothing");
 });

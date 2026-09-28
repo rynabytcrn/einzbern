@@ -25,7 +25,7 @@ import {
   renderSystemVariablesSection,
   writeVariablesSections,
 } from "../dist/build/packages/core/src/variables-sections.js";
-import { listVariables, looksSecretShaped, removeVariable, setVariable } from "../dist/build/packages/core/src/variables.js";
+import { compareRecordOrder, listVariables, looksSecretShaped, removeVariable, setVariable, variablesInRenderOrder } from "../dist/build/packages/core/src/variables.js";
 
 let second = 0;
 const at = () => {
@@ -327,4 +327,79 @@ test("484-R1, R2: the variable collection checks a record's shape on every write
   const result = await write(fx);
   assert.deepEqual(result.withheld, [{ name: "legacy.token", reason: "secret-shaped" }]);
   assert.equal((await readFile(fx.agents, "utf8")).includes("sk-recorded"), false);
+});
+
+// TCRN-CROSS-STORY-508 R7 (MIN-236 D7; TCRN-CROSS-SUB-408): a variable may hold an order, and the
+// custom section renders the variables with one first, by order, then the others by name.
+const customRows = async (fx) => (await sections(fx))[VARIABLES_CUSTOM_SECTION_ID].split("\n").filter((line) => /^\| [a-z]/u.test(line)).map((line) => line.split(" | ")[0].slice(2));
+
+test("508-R7: GIVEN variables with an order WHEN AGENTS.md is rendered THEN they come first, by order, and the rest by name", async (context) => {
+  const fx = await project(context);
+  await setVariable(fx.library, { name: "alpha", type: "string", value: "a", occurredAt: at() });
+  await setVariable(fx.library, { name: "bravo", type: "string", value: "b", order: 2, occurredAt: at() });
+  await setVariable(fx.library, { name: "charlie", type: "string", value: "c", order: 1, occurredAt: at() });
+  await setVariable(fx.library, { name: "delta", type: "string", value: "d", occurredAt: at() });
+  await setVariable(fx.library, { name: "echo", type: "string", value: "e", order: 2, occurredAt: at() });
+  const state = await materializeWorkspace(fx.library);
+  // The records hold the order only when one was given; variable-list stays by name.
+  assert.deepEqual(configRecord(state, "variable", "charlie").value, { type: "string", value: "c", description: "", order: 1 });
+  assert.deepEqual(configRecord(state, "variable", "alpha").value, { type: "string", value: "a", description: "" });
+  assert.deepEqual(listVariables(state).map((variable) => [variable.name, variable.order]), [["alpha", undefined], ["bravo", 2], ["charlie", 1], ["delta", undefined], ["echo", 2]]);
+  assert.deepEqual(variablesInRenderOrder(state).map((variable) => variable.name), ["charlie", "bravo", "echo", "alpha", "delta"], "one order keeps name order among its variables");
+
+  await write(fx);
+  assert.deepEqual(await customRows(fx), ["charlie", "bravo", "echo", "alpha", "delta"]);
+  const body = (await sections(fx))[VARIABLES_CUSTOM_SECTION_ID];
+  assert.match(body, /^\| Name \| Type \| Value \| Description \|$/mu, "the order is not a column");
+
+  // variable-set writes the whole record: set again without an order, the variable has none.
+  await setVariable(fx.library, { name: "charlie", type: "string", value: "c", occurredAt: at() });
+  assert.equal(Object.hasOwn(configRecord(await materializeWorkspace(fx.library), "variable", "charlie").value, "order"), false);
+  const moved = await write(fx);
+  assert.deepEqual(moved.sections.map((decision) => [decision.id, decision.result]), [[VARIABLES_SYSTEM_SECTION_ID, "unchanged"], [VARIABLES_CUSTOM_SECTION_ID, "replace"]]);
+  assert.deepEqual(await customRows(fx), ["bravo", "echo", "alpha", "charlie", "delta"]);
+
+  assert.equal(compareRecordOrder({ order: 1 }, {}), -1);
+  assert.equal(compareRecordOrder({}, { order: 1 }), 1);
+  assert.equal(compareRecordOrder({}, {}), 0);
+  assert.equal(compareRecordOrder({ order: 3 }, { order: 3 }), 0);
+});
+
+test("508-R7: GIVEN no variable holds an order THEN the custom section renders by name as before", async (context) => {
+  const fx = await project(context);
+  for (const name of ["zulu", "alpha", "mike"]) await setVariable(fx.library, { name, type: "string", value: name, occurredAt: at() });
+  const state = await materializeWorkspace(fx.library);
+  assert.deepEqual(variablesInRenderOrder(state), listVariables(state));
+  await write(fx);
+  assert.deepEqual(await customRows(fx), ["alpha", "mike", "zulu"]);
+});
+
+test("508-R7: a reorder is a change of the custom section, so a section the user edited is not overwritten by it", async (context) => {
+  const fx = await project(context);
+  await setVariable(fx.library, { name: "alpha", type: "string", value: "a", occurredAt: at() });
+  await setVariable(fx.library, { name: "bravo", type: "string", value: "b", occurredAt: at() });
+  await write(fx);
+  const edited = (await readFile(fx.agents, "utf8")).replace("| alpha | string | a |", "| alpha | string | hand |");
+  await writeFile(fx.agents, edited);
+  await setVariable(fx.library, { name: "bravo", type: "string", value: "b", order: 1, occurredAt: at() });
+  const result = await write(fx);
+  assert.deepEqual(result.pendingSections, [VARIABLES_CUSTOM_SECTION_ID]);
+  assert.equal(await readFile(fx.agents, "utf8"), edited, "the user's section stays as it is");
+});
+
+test("508-R7: the variable collection checks an order on every write and replay", async (context) => {
+  const fx = await project(context);
+  const before = (await materializeWorkspace(fx.library)).version;
+  for (const order of [0, -1, "1", null]) {
+    const refused = await refusal(() => setConfigRecord(fx.library, { collection: "variable", key: "deploy.host", value: { type: "string", value: "x", description: "", order }, occurredAt: at() }));
+    assert.deepEqual([refused.reasonCode, refused.details.refusedBy], ["CONFIG_RECORD_VALUE_INVALID", "VARIABLE_RECORD_INVALID"], JSON.stringify(order));
+  }
+  // A fraction is not canonical JSON, so the record is refused before its collection looks at it.
+  const fraction = await refusal(() => setConfigRecord(fx.library, { collection: "variable", key: "deploy.host", value: { type: "string", value: "x", description: "", order: 1.5 }, occurredAt: at() }));
+  assert.equal(fraction.reasonCode, "CONFIG_RECORD_VALUE_INVALID");
+  const input = await refusal(() => setVariable(fx.library, { name: "deploy.host", type: "string", value: "x", order: 0, occurredAt: at() }));
+  assert.deepEqual([input.reasonCode, input.details.name, input.details.field], ["VARIABLE_RECORD_INVALID", "deploy.host", "order"]);
+  assert.equal((await materializeWorkspace(fx.library)).version, before, "no refused order was recorded");
+  await setConfigRecord(fx.library, { collection: "variable", key: "deploy.host", value: { type: "string", value: "x", description: "", order: 7 }, occurredAt: at() });
+  assert.deepEqual(listVariables(await materializeWorkspace(fx.library)), [{ name: "deploy.host", type: "string", value: "x", description: "", order: 7 }]);
 });

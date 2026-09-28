@@ -331,3 +331,57 @@ test("D8 (CLI): path covers still select gates, but only exact work-id covers es
   const passed = await cli(["work-transition", "--workspace", library, "--at", at(), "--id", storyId, "--status", "done", "--project", project]);
   assert.equal(passed.doneGates.runId, coveredRun.run.runId);
 });
+
+// TCRN-CROSS-STORY-508 R7 (MIN-236 D7; TCRN-CROSS-SUB-408): gates-config-set --order places a gate in
+// the plan; the order is not part of what a run proves (STORY-485 D8 unchanged).
+test("508-R7 (CLI): gates-config-set --order orders the plan and the run; only the order changed, the last run still takes the Story to done; a changed command, covers or required does not", async (context) => {
+  assert.deepEqual(COMMAND_CATALOG.find((entry) => entry.name === "gates-config-set").flags.find((flag) => flag.name === "order"), { name: "order", required: false, valueKind: "integer" });
+  const { project, library } = await setup(context);
+  const projectId = (await cli(["project-create", "--workspace", library, "--at", at(), "--external-key", "GC-ORDER-PROJECT", "--name", "Gates order"])).record.id;
+  await cli(["work-create", "--workspace", library, "--at", at(), "--project-id", projectId, "--external-key", "GC-ORDER-INIT", "--kind", "Initiative", "--title", "Ordered gates"]);
+  await cli(["work-create", "--workspace", library, "--at", at(), "--project-id", projectId, "--external-key", "GC-ORDER-EPIC", "--kind", "Epic", "--status", "active", "--parent-id", workId("GC-ORDER-INIT"), "--title", "Ordered epic"]);
+  const story = async (key) => (await cli([
+    "work-create", "--workspace", library, "--at", at(), "--project-id", projectId, "--external-key", key, "--kind", "Story", "--status", "active",
+    "--parent-id", workId("GC-ORDER-EPIC"), "--title", `Ordered story ${key}`, "--goal", "Pass the gates", "--acceptance", "GIVEN the gates WHEN green THEN done",
+  ])).record.id;
+  const first = await story("GC-ORDER-STORY-1");
+  const second = await story("GC-ORDER-STORY-2");
+  await cli(["library-register", "--project", project, "--library", library, "--at", at()]);
+  const covers = `src/**,${first},${second}`;
+  await declare(library, "alpha", [node, "-e", "process.exit(0)"], ["--covers", covers]);
+  const zulu = await declare(library, "zulu", [node, "-e", "process.exit(0)"], ["--covers", covers, "--order", "1"]);
+  assert.equal(zulu.gate.order, 1);
+  assert.deepEqual((await cli(["gates-config-list", "--workspace", library])).records.map((gate) => [gate.name, gate.order ?? null]), [["alpha", null], ["zulu", 1]]);
+  assert.deepEqual(names(await cli(["gates-plan", "--workspace", library, "--release", "true"])), ["zulu", "alpha"], "the gate with an order first");
+  // Redeclared in part, a gate keeps its order.
+  assert.equal((await declare(library, "zulu", null, ["--required", "true"])).gate.order, 1);
+  const malformed = await refusal(["gates-config-set", "--workspace", library, "--at", at(), "--name", "alpha", "--order", "0"]);
+  assert.deepEqual([malformed?.reasonCode, malformed?.message], ["CLI_ARGUMENT_MALFORMED", "order"]);
+
+  const run = await cli(["gates-run", "--workspace", library, "--at", at(), "--release", "true", "--work-id", first]);
+  assert.deepEqual(run.run.gates.map((gate) => gate.name), ["zulu", "alpha"], `the run follows the plan; ${gateDiagnostic(run.run, run.recordPath)}`);
+  assert.equal(run.ok, true, gateDiagnostic(run.run, run.recordPath));
+
+  // Only the orders change: the same run still counts.
+  await declare(library, "alpha", null, ["--order", "1"]);
+  await declare(library, "zulu", null, ["--order", "2"]);
+  assert.deepEqual(names(await cli(["gates-plan", "--workspace", library, "--release", "true"])), ["alpha", "zulu"]);
+  const done = await cli(["work-transition", "--workspace", library, "--at", at(), "--id", first, "--status", "done", "--project", project]);
+  assert.deepEqual([done.record.status, done.doneGates.runId], ["done", run.run.runId]);
+
+  // A changed command, covers or required is another declaration: the run before it does not count.
+  for (const [label, flags] of [
+    ["command", ["--command", JSON.stringify([node, "-e", "process.exit(0) // changed"])]],
+    ["covers", ["--covers", `${first},${second}`]],
+    ["required", ["--required", "false"]],
+  ]) {
+    const green = await cli(["gates-run", "--workspace", library, "--at", at(), "--release", "true", "--work-id", second]);
+    assert.equal(green.ok, true, `${label}: ${gateDiagnostic(green.run, green.recordPath)}`);
+    await declare(library, "alpha", null, flags);
+    const refused = await refusal(["work-transition", "--workspace", library, "--at", at(), "--id", second, "--status", "done", "--project", project]);
+    assert.equal(refused?.reasonCode, "WORK_DONE_GATES_NOT_RUN", label);
+  }
+  const last = await cli(["gates-run", "--workspace", library, "--at", at(), "--release", "true", "--work-id", second]);
+  const passed = await cli(["work-transition", "--workspace", library, "--at", at(), "--id", second, "--status", "done", "--project", project]);
+  assert.deepEqual([passed.record.status, passed.doneGates.runId], ["done", last.run.runId]);
+});

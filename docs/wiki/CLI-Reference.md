@@ -152,6 +152,7 @@
 | `--required` | 可选 | `boolean` |
 | `--enabled` | 可选 | `boolean` |
 | `--release-only` | 可选 | `boolean` |
+| `--order` | 可选 | `integer` |
 | `--actor` | 可选 | `string` |
 
 ## `gates-plan`
@@ -682,6 +683,7 @@
 | `--id` | 必填 | `string` |
 | `--at` | 必填 | `instant` |
 | `--project` | 可选 | `string` |
+| `--order` | 可选 | `integer` |
 | `--actor` | 可选 | `string` |
 
 ## `rule-list`
@@ -866,6 +868,7 @@
 | `--type` | 必填 | `string` |
 | `--value` | 必填 | `string` |
 | `--description` | 可选 | `string` |
+| `--order` | 可选 | `integer` |
 | `--actor` | 可选 | `string` |
 
 ## `vocabulary`

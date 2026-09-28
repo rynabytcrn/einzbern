@@ -26,7 +26,7 @@ import {
 } from "./managed-sections.js";
 import type { ManagedSectionDecision, ManagedSectionRecord, ManagedWritePlan } from "./managed-sections.js";
 import { MODELS_TIERS_DEFAULT_TIER_NAMES, MODELS_TIERS_SETTING_KEY, readModelsTiers } from "./models-tiers.js";
-import { listVariables, looksSecretShaped } from "./variables.js";
+import { looksSecretShaped, variablesInRenderOrder } from "./variables.js";
 import { appendEvents, materializeWorkspace, projectConfiguration, withWorkspaceWriteLock } from "./workspace.js";
 import type { WorkspaceMutationOptions, WorkspaceState } from "./workspace.js";
 
@@ -115,11 +115,15 @@ export function renderSystemVariablesSection(state: Pick<WorkspaceState, "settin
   return { id: VARIABLES_SYSTEM_SECTION_ID, body: `${lines.join("\n")}\n`, withheld };
 }
 
-/** The custom section: every variable's name, type, value and description, less any row that may not be written. */
+/**
+ * The custom section: every variable's name, type, value and description, less any row that may not
+ * be written. TCRN-CROSS-STORY-508 R7: the rows follow the variables' order (variablesInRenderOrder);
+ * without one they are by name, as before, and the order itself is not a column.
+ */
 export function renderCustomVariablesSection(state: Pick<WorkspaceState, "configRecords">): RenderedVariablesSection {
   const withheld: WithheldEntry[] = [];
   const rows: string[] = [];
-  for (const variable of listVariables(state)) {
+  for (const variable of variablesInRenderOrder(state)) {
     const line = row([variable.name, variable.type, cell(variable.value), variable.description === "" ? "" : cell(variable.description)]);
     const reason = withheldReason(line, [variable.value, variable.description]);
     if (reason === null) rows.push(line);

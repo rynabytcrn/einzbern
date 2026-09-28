@@ -7,6 +7,11 @@
 // runs in and whose Git changes select it), which paths under that root it covers (globs, see
 // gates-plan.ts), whether it is required before a Story is done, whether it is enabled, and
 // whether it runs only for a release. A gate is configuration, not a setting.
+//
+// TCRN-CROSS-STORY-508 R7 (MIN-236 D7): a declaration may also hold an order, a positive integer
+// that places the gate in a plan: the gates with an order are planned, run and shown first, by
+// order, and the others follow by name (gates-plan.ts). The order says when a gate runs, not what it
+// proves, so it is not part of the declarations digest a run is judged by.
 
 import { configRecords, removeConfigRecord, setConfigRecord } from "./config-records.js";
 import { GatesPlanError, compileGlob } from "./gates-plan.js";
@@ -32,7 +37,7 @@ function invalid(field: string, message: string, details: Readonly<Record<string
   throw new GatesConfigError("GATES_CONFIG_INVALID", message, { field, ...details });
 }
 
-/** What a gate declares; its name is the record's key. */
+/** What a gate declares; its name is the record's key. A declaration without an order has no order field. */
 export interface GateDeclaration {
   readonly command: readonly string[];
   readonly root: string;
@@ -40,6 +45,7 @@ export interface GateDeclaration {
   readonly required: boolean;
   readonly enabled: boolean;
   readonly releaseOnly: boolean;
+  readonly order?: number;
 }
 
 export interface NamedGate extends GateDeclaration {
@@ -51,6 +57,7 @@ export const GATE_ARGUMENT_MAX_BYTES = 4_096 as const;
 export const GATE_COVERS_MAX = 64 as const;
 const GATE_WORK_COVER = /^work:[0-9a-f]{24}$/u;
 const GATE_FIELDS = ["command", "covers", "enabled", "releaseOnly", "required", "root"];
+const ORDERED_GATE_FIELDS = ["command", "covers", "enabled", "order", "releaseOnly", "required", "root"];
 const GATE_NAME = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/u;
 
 export function isGateName(value: unknown): value is string {
@@ -69,8 +76,10 @@ export function isProjectRelativeRoot(value: unknown): value is string {
 export function checkGateDeclaration(value: unknown, name = "the gate"): GateDeclaration {
   if (value === null || typeof value !== "object" || Array.isArray(value)) invalid("gate", `${name} is not a JSON object`, { name });
   const record = value as Readonly<Record<string, unknown>>;
-  const fields = Object.keys(record).sort();
-  if (fields.join(",") !== GATE_FIELDS.join(",")) invalid("gate", `${name} declares exactly ${GATE_FIELDS.join(", ")}`, { name });
+  const fields = Object.keys(record).sort().join(",");
+  if (fields !== GATE_FIELDS.join(",") && fields !== ORDERED_GATE_FIELDS.join(",")) {
+    invalid("gate", `${name} declares exactly ${GATE_FIELDS.join(", ")}, and may declare an order`, { name });
+  }
   const command = record.command;
   if (!Array.isArray(command) || command.length === 0 || command.length > GATE_COMMAND_MAX_ARGUMENTS ||
     command.some((argument) => typeof argument !== "string" || argument === "" || argument.includes("\u0000") || Buffer.byteLength(argument, "utf8") > GATE_ARGUMENT_MAX_BYTES)) {
@@ -98,6 +107,10 @@ export function checkGateDeclaration(value: unknown, name = "the gate"): GateDec
   for (const field of ["required", "enabled", "releaseOnly"]) {
     if (typeof record[field] !== "boolean") invalid(field, `${field} of ${name} is true or false`, { name });
   }
+  const order = record.order;
+  if (order !== undefined && (typeof order !== "number" || !Number.isSafeInteger(order) || order < 1)) {
+    invalid("order", `the order of ${name} is a positive integer`, { name });
+  }
   return {
     command: [...(command as readonly string[])],
     root: record.root,
@@ -105,6 +118,7 @@ export function checkGateDeclaration(value: unknown, name = "the gate"): GateDec
     required: record.required as boolean,
     enabled: record.enabled as boolean,
     releaseOnly: record.releaseOnly as boolean,
+    ...(order === undefined ? {} : { order }),
   };
 }
 

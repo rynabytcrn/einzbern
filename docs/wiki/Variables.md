@@ -41,13 +41,20 @@
 | 类型 | `string`、`number` 或 `boolean`。 |
 | 值 | 始终按文本存储，最多 1024 个字符，不含控制字符。`number` 的值是十进制数（可带负号和小数部分），`boolean` 的值是 `true` 或 `false`。 |
 | 说明 | 可选，最多 512 个字符，不含控制字符。 |
+| 顺序 | 可选，正整数，决定这个变量在自定义变量段里的位置（TCRN-CROSS-STORY-508 R7）。 |
 
-自定义变量段 `variables-custom` 渲染成 Name、Type、Value、Description 四列的表，一行一个变量，按名字排序。
+自定义变量段 `variables-custom` 渲染成 Name、Type、Value、Description 四列的表，一行一个变量：
+
+- 有顺序的变量排在前面，按顺序从小到大；没有顺序的排在后面，按名字排序；顺序相同的几个之间也按名字。
+- 顺序不单独成列。没有任何变量带顺序时，行序与从前一样，按名字。
+- 改顺序会改变这一段的正文，所以和改值一样，只在三处摘要一致时才替换。你改过的段不会因为重排被覆盖，而是转为待处理。
 
 ### 命令
 
-- `variable-list [--workspace <库>]`：回执 `VARIABLE_LIST_READY`，给出全部变量，以及自定义段略去的行（`withheld`，每项 `{name, reason}`）。
-- `variable-set --name <名字> --type <类型> --value <值> [--description <说明>] --at <时刻>`：写入一个变量，回执 `VARIABLE_WRITE_COMMITTED`。
+- `variable-list [--workspace <库>]`：回执 `VARIABLE_LIST_READY`，给出全部变量（按名字排序，带顺序的变量带 `order`），以及自定义段略去的行（`withheld`，每项 `{name, reason}`）。
+- `variable-set --name <名字> --type <类型> --value <值> [--description <说明>] [--order <正整数>] --at <时刻>`：写入一个变量，回执 `VARIABLE_WRITE_COMMITTED`。
+  - 它写入整条记录：不带 `--order` 时这个变量没有顺序，正如不带 `--description` 时说明为空。
+  - `--order` 不是正整数时报 `CLI_ARGUMENT_MALFORMED`，库里不留任何记录。
 - `variable-remove --name <名字> --at <时刻>`：删除一个变量；删除不存在的变量报 `CONFIG_RECORD_NOT_FOUND`。
 
 省略 `--workspace` 时，命令作用于本机注册表从当前目录解析出的库。写变量不会顺带改 AGENTS.md；要把变量渲染进去，运行 `agents-render`。

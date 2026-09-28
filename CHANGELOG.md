@@ -546,6 +546,23 @@ waits for `rule-resolve`). `agents-render` renders the enabled rules' sections w
 leaves a rule enabled at another version as the file holds it, and an engine that ships an older
 version than the library records refuses to enable the rule (`RULE_VERSION_NEWER`).
 
+Custom variables, Command Spell rules and gates each take an optional order (TCRN-CROSS-STORY-508
+R7; MIN-236 D7; `packages/core/src/variables.ts`, `rules.ts`, `gates-config.ts`, `gates-plan.ts`,
+`agents-sections.ts`): a positive integer recorded by `variable-set --order`, `rule-enable --order`
+and `gates-config-set --order` (`CLI_ARGUMENT_MALFORMED` when it is not one). A record without an
+order has no `order` field, and without orders every surface renders and plans as before. The
+custom-variables section lists the variables with an order first, by order, then the rest by name;
+the order is not a column. Once any rule holds an order, the rule sections of AGENTS.md follow it:
+ordered rules first, then the others in catalog order. `rule-enable` and `agents-render` arrange
+them across the places rule sections already hold, moving each section whole and no byte around
+them; a section the user changed, kept or took over keeps its place. `rule-enable` keeps a recorded
+order when `--order` is left out, `rule-disable` keeps it, and `rule-list` shows it.
+`gates-plan` and `gates-run` plan, run and list the gates with an order first, by order, then the
+rest by name. The order is not part of the gate declarations digest, so a run stays valid when only
+orders change, and a changed command, cover or required still invalidates it (STORY-485 D8
+unchanged). `variable-set` writes the whole record, so a variable set without `--order` has none;
+`gates-config-set` keeps a recorded order when `--order` is left out.
+
 The engine ships as one release archive that needs nothing but Node.js (TCRN-CROSS-STORY-481;
 MIN-227 D23, D28; `scripts/lib/bundle.mjs`, `scripts/pack-release.mjs`,
 `skill/mana-orchestrate/scripts/install.mjs`, `packages/core/src/node-floor.ts`).

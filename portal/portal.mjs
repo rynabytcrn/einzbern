@@ -361,6 +361,78 @@ function stableId(namespace, externalKey) {
 
 const writeSetting = (key, value) => governedWrite((common) => ["settings-set", ...common, "--key", String(key), "--value", String(value)], ATELIER_SURFACE);
 const removeSetting = (key) => governedWrite((common) => ["settings-remove", ...common, "--key", String(key)], ATELIER_SURFACE);
+
+// TCRN-CROSS-STORY-508 R8 (TCRN-CROSS-SUB-409, contract C-R14-6): the keys the system variables
+// section of AGENTS.md shows. A write of one, or its removal, renders the managed sections again, so
+// AGENTS.md follows the value; the escalation keys join the section under their prefix.
+const SYSTEM_VARIABLE_KEYS = Object.freeze(["design.authority", "models.category", "models.tiers"]);
+const rendersSystemVariables = (key) => SYSTEM_VARIABLE_KEYS.includes(key) || key.startsWith("models.escalation.");
+
+// TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R5, R6; contracts C-R14-2, C-R14-6): a collection key is
+// a table of records, written whole, so the engine judges the whole table and refuses it with one
+// reason code. The rows that code is about are found here, from the table as it was sent and the two
+// tables as they stand, so the page can show the code on each of them: a repeated order on every row
+// that shares it, a repeated category id on every row that shares it, and an unknown category on
+// every tier that names one. A dropped category that tiers still name is no row of the table sent, so
+// it comes with the tier records that name it. After a write that renders the system variables
+// section, every record the render withheld (secret-shaped or absolute-path) is reported on its row.
+// A finding's `index` is the row's place in the table the page shows next: the table it sent when the
+// write was refused, the stored table when the write landed. Any other refusal names no row, and the
+// page shows it above the table with the engine's own words.
+const COLLECTION_KEYS = Object.freeze(["models.category", "models.tiers"]);
+const COLLECTION_IDENTITY = Object.freeze({ "models.category": "id", "models.tiers": "order" });
+
+function tableOf(text) {
+  try {
+    const value = JSON.parse(String(text ?? ""));
+    return Array.isArray(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+const recordOf = (value) => value !== null && typeof value === "object" && !Array.isArray(value) ? value : {};
+const storedTable = (catalog, key) => tableOf(catalog?.settings?.find((entry) => entry.key === key)?.currentValue) ?? [];
+
+function rowsSharing(rows, field) {
+  const counts = new Map();
+  const valueOf = (row) => JSON.stringify(recordOf(row)[field] ?? null);
+  for (const row of rows) counts.set(valueOf(row), (counts.get(valueOf(row)) ?? 0) + 1);
+  return rows.flatMap((row, index) => (counts.get(valueOf(row)) ?? 0) > 1 ? [index] : []);
+}
+
+function refusedCollectionFindings(key, sent, refusal, catalog) {
+  const rows = tableOf(sent);
+  const reasonCode = refusal?.reasonCode;
+  if (rows === null || typeof reasonCode !== "string") return [];
+  const on = (indices, field) => indices.map((index) => ({ index, field, reasonCode }));
+  if (reasonCode === "MODELS_ORDER_DUPLICATE") return on(rowsSharing(rows, "order"), "order");
+  if (reasonCode === "MODELS_CATEGORY_DUPLICATE" && key === "models.category") return on(rowsSharing(rows, "id"), "id");
+  if (reasonCode === "MODELS_CATEGORY_UNKNOWN" && key === "models.tiers") {
+    const known = new Set(storedTable(catalog, "models.category").map((category) => recordOf(category).id));
+    return on(rows.flatMap((row, index) => known.has(recordOf(row).category) ? [] : [index]), "category");
+  }
+  if (reasonCode === "MODELS_CATEGORY_IN_USE" && key === "models.category") {
+    const kept = new Set(rows.map((row) => recordOf(row).id));
+    const tiers = storedTable(catalog, "models.tiers").map(recordOf);
+    return storedTable(catalog, "models.category").map((category) => recordOf(category).id).filter((id) => !kept.has(id)).flatMap((category) => {
+      const references = tiers.filter((tier) => tier.category === category).map((tier) => `models.tiers.${tier.order}`);
+      return references.length === 0 ? [] : [{ index: null, field: "id", reasonCode, category, references }];
+    });
+  }
+  return [];
+}
+
+function withheldCollectionFindings(key, render, stored) {
+  const rows = tableOf(stored?.currentValue) ?? [];
+  const identity = COLLECTION_IDENTITY[key];
+  const withheld = Array.isArray(render?.withheld) ? render.withheld : [];
+  return withheld.flatMap((entry) => {
+    const index = rows.findIndex((row) => entry?.name === `${key}.${recordOf(row)[identity]}`);
+    return index < 0 ? [] : [{ index, field: null, reasonCode: String(entry.reason ?? "withheld") }];
+  });
+}
+
 const writeVariable = (body) => governedWrite((common) => [
   "variable-set", ...common,
   "--name", String(body.name ?? ""),
@@ -639,6 +711,9 @@ const server = createServer(async (request, response) => {
       send(response, 403, { ok: false, reasonCode: "PORTAL_TOKEN_REQUIRED" });
       return;
     }
+    // TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R5, contract C-R14-1): both catalogs are passed on as
+    // the engine wrote them, so every row keeps its shape, group and order; the page lays the settings
+    // out from those three and keeps no grouping of its own.
     if (request.method === "GET" && pathname === "/api/settings") {
       send(response, 200, await settingsCatalog());
       return;
@@ -774,16 +849,24 @@ const server = createServer(async (request, response) => {
     if (request.method === "POST" && pathname === "/api/settings") {
       const body = await readJsonBody(request);
       const key = String(body.key ?? "");
-      const result = body.reset === true ? await removeSetting(key) : await writeSetting(key, String(body.value ?? ""));
-      const render = result.ok && ["models.tiers", "design.authority"].includes(key) ? await renderManagedAgents() : null;
-      const readback = result.ok ? await settingsCatalog() : null;
+      const reset = body.reset === true;
+      const value = String(body.value ?? "");
+      const result = reset ? await removeSetting(key) : await writeSetting(key, value);
+      const render = result.ok && rendersSystemVariables(key) ? await renderManagedAgents() : null;
+      const collection = COLLECTION_KEYS.includes(key);
+      const catalog = result.ok || collection ? await settingsCatalog() : null;
+      const readback = result.ok ? catalog?.settings.find((entry) => entry.key === key) ?? null : null;
       const ok = result.ok && (render?.ok ?? true);
+      const findings = !collection ? null
+        : result.ok ? withheldCollectionFindings(key, render?.body, readback)
+        : reset ? [] : refusedCollectionFindings(key, value, result.body, catalog);
       send(response, ok ? 200 : 409, {
         ...result.body,
         ok,
         ...(render === null ? {} : { render: render.body }),
         ...(!ok && result.ok && render !== null ? { mutation: result.body, reasonCode: render.body?.reasonCode ?? "PORTAL_SETTINGS_WRITE_PARTIAL" } : {}),
-        readback: readback?.settings.find((entry) => entry.key === key) ?? null,
+        readback,
+        ...(findings === null ? {} : { findings }),
       });
       return;
     }

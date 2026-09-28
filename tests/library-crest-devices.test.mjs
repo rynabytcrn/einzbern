@@ -423,6 +423,13 @@ test("SUB-414: a pair two devices wrote about one thing, and one key both wrote,
     assert.deepEqual(recalled.cards.map((entry) => entry.id), [control.id]);
     assert.deepEqual(recalled.stores.project.unresolvedConflicts, [[gullA.id, gullB.id].sort()]);
     assert.deepEqual(recalled.stores.project.unresolvedDuplicates.map((entry) => entry.id), [keyA.id]);
+    // C-R15-1: recall names them at the top of its answer, in the form userCrestDegraded has.
+    const withheld = { reasonCode: "KNOWLEDGE_POSSIBLE_CONFLICT", unresolvedConflicts: [[gullA.id, gullB.id].sort()], unresolvedDuplicates: listed.unresolvedDuplicates, withheldCards: 4 };
+    assert.deepEqual(recalled.projectCrestDegraded, withheld, "the pair's two cards and the key's two versions");
+    const answer = await cli(fx.homeB, ["recall", "--workspace", fx.workspace, "--at", AT, "--query", "gull nesting cliff", "--tau", "0"]);
+    assert.deepEqual(answer.projectCrestDegraded, withheld);
+    assert.deepEqual(answer.knowledgeStores.project, { reasonCode: "KNOWLEDGE_LIST_READY", cards: 1 });
+    assert.equal(Object.hasOwn(answer, "userCrestDegraded"), false, "the user crest withheld nothing");
     const unrelated = await createKnowledgeUnit(fx.workspace, card("SUB-414-UNRELATED", "Otter slide angle", { occurredAt: instant(10) }));
     assert.equal(unrelated.reasonCode, "KNOWLEDGE_UNIT_CREATED");
     // A write that has seen them is refused before anything is written, naming what it saw.
@@ -446,6 +453,8 @@ test("SUB-414: a pair two devices wrote about one thing, and one key both wrote,
   assert.deepEqual(after.records.map((record) => record.externalKey).sort(), ["SUB-414-CONTROL", "SUB-414-GULL-B", "SUB-414-GULL-RESOLVED", "SUB-414-KEY-RESOLVED", "SUB-414-UNRELATED"]);
   const versions = JSON.parse(resolved.all).records.filter((record) => record.id === keyA.id);
   assert.deepEqual(versions.map((record) => record.extensions.supersededBy), [deriveStableId("knowledge", "SUB-414-KEY-RESOLVED"), deriveStableId("knowledge", "SUB-414-KEY-RESOLVED")], "every version is replaced, and stays readable by the id");
+  assert.equal((await as(fx.homeA, () => readRecallCards(fx.workspace, { at: AT }))).projectCrestDegraded, null, "resolved, the crest withholds nothing");
+  assert.equal(Object.hasOwn(await cli(fx.homeA, ["recall", "--workspace", fx.workspace, "--at", AT, "--query", "gull nesting cliff", "--tau", "0"]), "projectCrestDegraded"), false);
 });
 
 // A card is written again as a new record naming the record it replaces. The device that receives
@@ -477,6 +486,8 @@ test("SUB-414: a card the other device writes again is replaced; written again o
   assert.deepEqual(listed.records, [], "neither rewrite is the card while both stand");
   assert.deepEqual(listed.unresolvedDuplicates.map((entry) => [entry.id, entry.versions.map((version) => [version.deviceId, version.updatedAt])]),
     [[heron.id, [[DEVICE_A, instant(7)], [DEVICE_B, instant(8)]]]], "both rewrites stand as versions, one per device");
+  assert.deepEqual((await as(fx.homeB, () => readRecallCards(fx.workspace, { at: AT }))).projectCrestDegraded,
+    { reasonCode: "KNOWLEDGE_DUPLICATE", unresolvedDuplicates: listed.unresolvedDuplicates, withheldCards: 2 }, "a duplicate alone is named as KNOWLEDGE_DUPLICATE, both versions withheld");
   const all = JSON.parse(onA.all).records.filter((record) => record.id === heron.id);
   assert.deepEqual(all.map((record) => [record.revision, record.stalenessPolicy.maximumAgeDays, record.lastVerified]), [[3, 90, instant(6)], [3, null, instant(8)]]);
   // A write that supersedes the id resolves it, as it resolves any duplicate.
@@ -536,7 +547,12 @@ test("SUB-414: a card delivered before the chain events it was written against w
       assert.equal(refused?.reasonCode, "KNOWLEDGE_HIGH_WATER_MISMATCH");
       assert.deepEqual(refused.details.awaitingChain, awaiting);
     }
-    assert.deepEqual((await readRecallCards(fx.workspace, { at: AT })).cards.map((entry) => entry.id), [own.id]);
+    const recalled = await readRecallCards(fx.workspace, { at: AT });
+    assert.deepEqual(recalled.cards.map((entry) => entry.id), [own.id]);
+    // C-R15-1: recall names the waiting record at its top; waiting alone is the strict surfaces' refusal.
+    const withheld = { reasonCode: "KNOWLEDGE_HIGH_WATER_MISMATCH", awaitingChain: awaiting, withheldCards: 1 };
+    assert.deepEqual(recalled.projectCrestDegraded, withheld);
+    assert.deepEqual((await cli(fx.homeB, ["recall", "--workspace", fx.workspace, "--at", AT, "--query", "kestrel hover timing", "--tau", "0"])).projectCrestDegraded, withheld);
     const unrelated = await createKnowledgeUnit(fx.workspace, card("SUB-414-B-UNRELATED", "Otter slide angle", { occurredAt: instant(8) }));
     assert.equal(unrelated.reasonCode, "KNOWLEDGE_UNIT_CREATED", "an unrelated write lands while the card waits");
   });
@@ -546,8 +562,54 @@ test("SUB-414: a card delivered before the chain events it was written against w
     assert.equal(Object.hasOwn(listed, "awaitingChain"), false);
     assert.deepEqual(listed.records.map((record) => record.id).sort(), [own.id, waiting.id, deriveStableId("knowledge", "SUB-414-B-UNRELATED")].sort());
     assert.equal((await validateKnowledgeStore(fx.workspace)).reasonCode, "KNOWLEDGE_STORE_VALID");
+    assert.equal((await readRecallCards(fx.workspace, { at: AT })).projectCrestDegraded, null, "the chain arrived: nothing is withheld");
   });
   assert.deepEqual(await projection(fx, fx.homeA), await projection(fx, fx.homeB));
+});
+
+// C-R15-1 for recall: every card a library's crest withheld is named at the top of recall's answer,
+// in the form userCrestDegraded has, and a card more than one list names -- a pair's card or a
+// duplicate's version that also awaits chain events -- counts once. Red leg: add the three lists up
+// and withheldCards says six where four cards are withheld.
+test("SUB-414: recall names every card the library's crest withheld at its top, each counted once", async (context) => {
+  const fx = await twoDevices(context, "recall-withheld");
+  const own = await as(fx.homeB, () => createKnowledgeUnit(fx.workspace, card("SUB-414-B-OWN", "Wombat burrow etiquette")));
+  await fx.mark(fx.homeA);
+  // A's chain moves first, so every card A writes next awaits that chain event on B until it arrives.
+  await as(fx.homeA, () => createWork(fx.workspace, { occurredAt: instant(6), projectId: fx.project, externalKey: "SUB-414-WORK-LATE", kind: "Initiative", parentId: null, status: "active" }));
+  const gullA = await as(fx.homeA, () => createKnowledgeUnit(fx.workspace, card("SUB-414-GULL-A", "Gull nesting cliff survey", { occurredAt: instant(7) })));
+  const keyA = await as(fx.homeA, () => createKnowledgeUnit(fx.workspace, card("SUB-414-SHARED-KEY", "Kestrel hover timing", { occurredAt: instant(8), body: "A's kestrel version" })));
+  await fx.hold(fx.homeA);
+  const gullB = await as(fx.homeB, () => createKnowledgeUnit(fx.workspace, card("SUB-414-GULL-B", "Gull nesting cliff census", { occurredAt: instant(9) })));
+  await as(fx.homeB, () => createKnowledgeUnit(fx.workspace, card("SUB-414-SHARED-KEY", "Beaver dam height", { occurredAt: instant(10), body: "B's beaver version" })));
+  // The folder delivers A's crest stream first; A's chain stream comes later.
+  await fx.deliverCrest(fx.homeA);
+  const recallOnB = () => cli(fx.homeB, ["recall", "--workspace", fx.workspace, "--at", AT, "--query", "gull nesting cliff", "--tau", "0"]);
+  const listed = await as(fx.homeB, () => listKnowledgeMetadata(fx.workspace, { at: AT }));
+  assert.deepEqual(listed.records.map((record) => record.id), [own.id]);
+  assert.deepEqual(listed.unresolvedConflicts, [[gullA.id, gullB.id].sort()]);
+  assert.deepEqual(listed.unresolvedDuplicates.map((entry) => entry.id), [keyA.id]);
+  assert.deepEqual(listed.awaitingChain.map((entry) => [entry.id, entry.deviceId]), [[gullA.id, DEVICE_A], [keyA.id, DEVICE_A]].sort(), "both of A's cards await its chain");
+  const withheld = {
+    reasonCode: "KNOWLEDGE_POSSIBLE_CONFLICT", unresolvedConflicts: listed.unresolvedConflicts, unresolvedDuplicates: listed.unresolvedDuplicates,
+    awaitingChain: listed.awaitingChain, withheldCards: 4,
+  };
+  assert.deepEqual((await as(fx.homeB, () => readRecallCards(fx.workspace, { at: AT }))).projectCrestDegraded, withheld, "the pair's two cards and the key's two versions, each once");
+  const answer = await recallOnB();
+  assert.deepEqual(answer.projectCrestDegraded, withheld);
+  assert.deepEqual([answer.knowledgeReasonCode, answer.knowledgeStores.project], ["KNOWLEDGE_LIST_READY", { reasonCode: "KNOWLEDGE_LIST_READY", cards: 1 }]);
+  assert.equal(Object.hasOwn(answer, "userCrestDegraded"), false, "the user crest withheld nothing");
+  // A's chain arrives: the pair and the duplicate stay withheld, and nothing awaits.
+  await fx.deliverChain(fx.homeA);
+  const { awaitingChain: _delivered, ...afterChain } = withheld;
+  assert.deepEqual((await recallOnB()).projectCrestDegraded, afterChain);
+  // The existing write path resolves both, and recall's answer no longer names the crest.
+  await as(fx.homeB, async () => {
+    await createKnowledgeUnit(fx.workspace, card("SUB-414-GULL-RESOLVED", "Gull nesting cliff survey, merged", { occurredAt: instant(11), supersedes: gullA.id }));
+    await createKnowledgeUnit(fx.workspace, card("SUB-414-KEY-RESOLVED", "Kestrel hover timing and beaver dams", { occurredAt: instant(12), supersedes: keyA.id }));
+    assert.equal((await readRecallCards(fx.workspace, { at: AT })).projectCrestDegraded, null);
+  });
+  assert.equal(Object.hasOwn(await recallOnB(), "projectCrestDegraded"), false);
 });
 
 // The crest as an engine before event streams left it: one metadata file and one body file per
@@ -664,4 +726,5 @@ test("SUB-414 (O-1 pending, diagnostic only): a merge past the budget is named i
   await fx.deliver(fx.homeA);
   const recalled = await as(fx.homeB, () => readRecallCards(fx.workspace, { at: AT }));
   assert.equal(recalled.stores.project.reasonCode, "KNOWLEDGE_LIMIT_EXCEEDED");
+  assert.equal(recalled.projectCrestDegraded, null, "a refused read is the answer's knowledgeReasonCode, not a withheld card");
 });

@@ -504,8 +504,8 @@ reads that card's body as an explicit read does, rather than refusing it as not 
 
 Two devices write one library's crest without sharing a file (TCRN-CROSS-SUB-414; STORY-476 D7;
 MIN-235 D7, O3; `packages/core/src/knowledge-core.ts`, `knowledge-batch.ts`, `store-backend.ts`,
-`packages/cli/src/index.ts`; `packages/core/spec/knowledge-core-v1.md`). Each device appends its cards
-to its own event stream, `crest/events/<device id>/`, and those streams are the authority: an
+`recall-inputs.ts`, `packages/cli/src/index.ts`; `packages/core/spec/knowledge-core-v1.md`). Each
+device appends its cards to its own event stream, `crest/events/<device id>/`, and those streams are the authority: an
 `einzbern.crest-event.v1` event holds the card's metadata, names its body file (written first), and
 records `chain` -- every chain stream's head the write was checked against -- and `replaces`, the digest
 of the record of the same card it replaces. `knowledge-reverify`, `knowledge-policy` and
@@ -535,8 +535,15 @@ interrupted write left still locks writes until `knowledge-recover`, which compl
 writing `store.json`. A new crest is `store.json` alone until its first card; `knowledge-bodies-migrate`
 answers zero bodies for a crest of event streams only and refuses an old-layout store; the exported
 `StoreBackend` type has no `writeKnowledgeMarker`. This replaces the STORY-469 statement above that two
-devices' concurrent crest writes are not made safe against each other. O-1 is unchanged: a merge whose
-live bodies exceed `knowledge.aggregateBytes` is refused whole, and `recall` reports it under
+devices' concurrent crest writes are not made safe against each other. `recall` names the cards a
+library's crest withheld at the top of its answer as `projectCrestDegraded`, in the form
+`userCrestDegraded` has: reason code `KNOWLEDGE_POSSIBLE_CONFLICT` when an unresolved pair is withheld,
+else `KNOWLEDGE_DUPLICATE` when versions of an unresolved duplicate are, else
+`KNOWLEDGE_HIGH_WATER_MISMATCH` when records awaiting chain events are all it withheld;
+`unresolvedConflicts`, `unresolvedDuplicates` and `awaitingChain` carry what `knowledge-list` names, each
+present when it is not empty, and `withheldCards` counts every withheld card and version once. It is
+absent when nothing is withheld, and a refused read stays `knowledgeReasonCode`. O-1 is unchanged: a
+merge whose live bodies exceed `knowledge.aggregateBytes` is refused whole, and `recall` reports it under
 `knowledgeStores.project`.
 
 Gates are declared per project and chosen by the change (TCRN-CROSS-STORY-485; MIN-227 D4;

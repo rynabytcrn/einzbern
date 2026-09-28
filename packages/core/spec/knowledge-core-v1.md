@@ -58,15 +58,16 @@ is not rewritten; a card whose supersedes names a card not delivered yet stands,
 replaced when it arrives. A library's crest holds unresolved conflicts and duplicates by the rules the
 user crest's follow (below) -- a card's writer, for a pair, is the writer of its first record, and a
 duplicate's versions are its writers' current records -- and `knowledge-list` and a read of the id name
-them with the same fields; `recall` leaves their cards out.
+them with the same fields; `recall` leaves their cards out and names them at its top under
+`projectCrestDegraded` (see "Freshness, writing, and retrieval").
 A read also checks each event's `chain` against the chain it replays. A record written against chain
 events this device does not hold yet -- a folder that delivered the card before those events, or a
 partial restore that left the crest newer than its chain -- is named at the top of `knowledge-list`
 and of a read of its id as `awaitingChain` (`id`, `deviceId`, `sequence`, `eventHash`, in canonical id
-order); its card leaves default selection and `recall`, its links are checked once the events arrive,
-and `knowledge-validate`, `knowledge-checkpoint` and `knowledge-rebase` refuse with
-`KNOWLEDGE_HIGH_WATER_MISMATCH`, details `awaitingChain`. Every other card reads, recalls and is
-written as before.
+order); its card leaves default selection and `recall` (which names the record under `awaitingChain` in
+`projectCrestDegraded`), its links are checked once the events arrive, and `knowledge-validate`,
+`knowledge-checkpoint` and `knowledge-rebase` refuse with `KNOWLEDGE_HIGH_WATER_MISMATCH`, details
+`awaitingChain`. Every other card reads, recalls and is written as before.
 
 The library crest's root manifest, `store.json`, is written by exactly one operation of this engine
 (TCRN-CROSS-SUB-414, MIN-235 D7):
@@ -246,6 +247,20 @@ unresolved duplicate are withheld; the reason code is then `KNOWLEDGE_DUPLICATE`
 unless a pair is withheld as well, and `withheldCards` counts the pairs' cards
 and every withheld version. It is absent when the user crest gave every card it
 holds, or holds none.
+
+The library's crest says the same at the top of a recall answer as
+`projectCrestDegraded` (TCRN-CROSS-SUB-414), in the form `userCrestDegraded` has,
+when its default selection withheld cards: `KNOWLEDGE_POSSIBLE_CONFLICT` when an
+unresolved pair is withheld, else `KNOWLEDGE_DUPLICATE` when versions of an
+unresolved duplicate are, else `KNOWLEDGE_HIGH_WATER_MISMATCH` -- the refusal
+`knowledge-validate`, `knowledge-checkpoint` and `knowledge-rebase` meet -- when
+records awaiting chain events are all it withheld. `unresolvedConflicts`,
+`unresolvedDuplicates` and `awaitingChain` carry what `knowledge-list` names, each
+present when it is not empty, and `withheldCards` counts every withheld card and
+version once, although a pair's card or a duplicate's version can also await chain
+events. A refused read of the library's crest is not repeated there: its code
+stays `knowledgeReasonCode` and `knowledgeStores.project`, as it always was. It is
+absent when the library's crest withheld nothing.
 
 A card is retrievable the moment it is written (TCRN-CROSS-STORY-476 R1,
 TCRN-CROSS-MIN-227 D9, TCRN-CROSS-SUB-308). Every write lands lifecycle `active`

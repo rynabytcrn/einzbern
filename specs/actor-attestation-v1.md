@@ -66,8 +66,12 @@ WSE-2 engine rules; the CLI adds no actor vocabulary of its own.
   `attestation-*` verbs (TCRN-CROSS-STORY-467 R2). It used to append the one-way
   `attestation.actor.enabled` event carrying the enabling actor; chains that carry
   that event are unaffected.
-- `--actor <stableId>` is an optional flag on every workspace-event mutation verb
-  — `project-create`/`-update`/`-delete`, `work-create`/`-transition`/`-delete`.
+- `--actor <stableId>` is an optional flag on the workspace mutation verbs the
+  command catalog gives it: `project-create`/`-update`/`-delete`,
+  `work-create`/`-transition`/`-delete`/`-annotate`/`-batch`, `minutes-record`,
+  `settings-set`/`-remove`, `variable-set`/`-remove`, `gates-config-set`/`-remove`,
+  `rule-enable`/`-disable`/`-resolve`, `agents-render` and `template-admit`.
+  `commands` is the authority on which verbs carry it; the knowledge verbs do not.
   The conference verbs `conference-open`/`-append-position`/`-close`/`-cancel`
   carried it until the conference write path retired (TCRN-CROSS-STORY-475 R3);
   they now answer `CLI_COMMAND_UNKNOWN`. `--actor` is declared
@@ -100,8 +104,10 @@ version with its own threat model.
 
 Attestation answers "who acted" by binding each event to an accountable actor; the
 "on what evidence" half is carried by the work-log convention (work-log-v1, Event
-linkage) and is not duplicated here. A work-log knowledge candidate references its
+linkage) and is not duplicated here. A work-log knowledge record references its
 covered events by their `event:<eventHash>` form, sets `accountableOwnerId` to match
-the attested actor, and links the evidence through the existing knowledge promotion
-rules. The audit walk `payload.actor` -> work-log candidate -> linked evidence closes
-there; this spec adds no evidence rule of its own.
+the attested actor, and names its evidence in `linkedEvidenceIds`. It is an ordinary
+knowledge card, retrievable as soon as it is written: there is no candidate state and
+no promotion step (TCRN-CROSS-STORY-476 R1). The audit walk `payload.actor` ->
+work-log record -> linked evidence closes there; this spec adds no evidence rule of
+its own.

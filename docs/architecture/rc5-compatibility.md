@@ -124,6 +124,16 @@ interchangeable:
 
 ### Disposable re-initialization procedure
 
+**Historical record (rc.4 → rc.5).** The steps below are kept as the rc.4 → rc.5
+procedure and do not run on the current engine. From EPIC-141 on the engine only
+reads an old-layout workspace, so step 3's `knowledge-init` on `<root>` is refused
+with `LEGACY_WORKSPACE_READ_ONLY`. To carry an old-layout workspace forward now,
+import its chain into a library with
+`library-import-legacy --legacy "<root>" --at <instant>`, then re-capture the cards
+you need in that library with `knowledge-create --workspace "<library>"`, where
+`<library>` is the library the import created. `commands` lists both verbs and
+their flags.
+
 1. **The authority is safe.** The workspace event log under
    `<root>/<control>/events/` is the system of record and is untouched by
    this procedure. Nothing below rewrites a workspace event.

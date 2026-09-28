@@ -108,7 +108,7 @@ them on a user's behalf.
 
 **Tier-2 — conversational preferences.** The legal region for agent-assisted
 adjustment: profile selection, `ContextBudgets` allocations under the frozen caps,
-staleness defaults, work-log verbosity, conference default type, and language.
+staleness defaults, work-log verbosity, and language.
 
 Each engine-catalogued knob records: key, type, layer, default, bounds, and a
 governed read/write mechanism.
@@ -177,7 +177,8 @@ describe the retired verbs.
 
 A retired key is refused on every new write (`SETTINGS_KEY_UNREGISTERED`), and its recorded
 values stay readable history: a replay checks their envelope and never makes them current.
-`RETIRED_SETTING_KEYS` in `packages/core/src/settings.ts` is the list.
+`RETIRED_SETTING_KEYS` in `packages/core/src/settings.ts` is the list. The first four
+entries below are TCRN-CROSS-STORY-484's; the others name the change that retired them.
 
 - `backup.cadence`, `backup.destination`, `execution.claudeCodeSubagentPlan`,
   `execution.codexSubagentPlan` and `execution.subagentPolicy` retire with the mechanisms
@@ -189,6 +190,19 @@ values stay readable history: a replay checks their envelope and never makes the
 - `execution.dispatchTiers` is renamed `models.tiers`. A recorded value is still the effective
   `models.tiers` value, each row given the host it sits under as its runner and read as records
   (see `models.tiers` below), until a `models.tiers` write supersedes it.
+- `conference.positionBudgetBytes` and `execution.independenceFloor` retire with the
+  conference write verbs they governed (TCRN-CROSS-STORY-475 R3, MIN-227 D10; see the
+  conference section above).
+- `fitness.minEvents` and `fitness.windowDays` retire with the time-based retirement they
+  configured (TCRN-CROSS-MIN-225 D1, D3; TCRN-CROSS-SUB-258).
+- `injection.budgetBytes` retires with the session-wide injection it budgeted
+  (TCRN-CROSS-STORY-474, MIN-227 D7); a prompt's own budget is `injection.perPromptBytes`.
+- `execution.personalessDispatch` retires with the persona surface (TCRN-CROSS-STORY-370);
+  TCRN-CROSS-INC-321 put it on the list so that a replay from genesis still reads its
+  recorded values.
+- `model.economyTier` retires in favour of the economy tier of `execution.dispatchTiers`, now
+  `models.tiers` (TCRN-CROSS-STORY-364, MIN-152 D3); TCRN-CROSS-STORY-409 took it out of the
+  live catalog.
 
 ## Engine-consumed keys — workspace
 

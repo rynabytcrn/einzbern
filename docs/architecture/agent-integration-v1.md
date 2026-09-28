@@ -106,6 +106,10 @@ Every change below alters what a caller observes. Each was a defect fix, not a
 redesign, so no verb changed its purpose — but an agent that hardcoded a reason
 code or an admission outcome may need to adjust.
 
+Each row spells verbs, flags and reason codes as they were named when that change
+landed. Several have retired since, so `commands` (section 1) is the authority on
+what exists now, not the names in a row.
+
 | Surface | Before | Now | Why |
 | --- | --- | --- | --- |
 | Knowledge mutations after a non-crash write-region failure | `KNOWLEDGE_LOCKED` on every later mutation, permanently | The claim is released; the next mutation reports the real fault | The claim leaked on every failure that left the process alive, bricking the store. A simulated crash still retains the claim, because a real SIGKILL would. |

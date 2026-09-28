@@ -961,11 +961,14 @@ test("switching the library moves the Rules page to its project, and a library r
   const prose = await request(url, "/api/agents-md", readOptions(boot.token));
   assert.equal(prose.body.text, "# second project\n");
   assert.equal(prose.body.path, join(fixture.second.project, "AGENTS.md"));
+  // TCRN-CROSS-SUB-338: the save lands in the second project and is judged there, against the
+  // second library, and nothing is rendered into it. Batch is enabled in the second library only,
+  // so once the save takes its section out it reads removed-from-file (in the first, disabled).
+  await cli(["rule-enable", "--project", fixture.second.project, "--id", "batch", "--at", "2026-08-11T15:30:00Z", "--actor", "agent:test"], fixture.deviceEnv);
   const written = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { file: "AGENTS.md", text: "# second project, edited\n" }));
   assert.equal(written.body.reasonCode, "PORTAL_AGENTS_MD_WRITTEN");
-  assert.equal(written.body.text.startsWith("# second project, edited\n"), true);
-  assert.match(written.body.text, /## System variables/u);
-  assert.match(written.body.text, /## Custom variables/u);
+  assert.equal(written.body.text, "# second project, edited\n");
+  assert.equal(written.body.rules.find((rule) => rule.id === "batch").state, "removed-from-file");
   assert.equal(await readFile(join(fixture.second.project, "AGENTS.md"), "utf8"), written.body.text);
   assert.equal(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), "# first project\n", "the first project's rules are untouched");
   const catalog = await request(url, "/api/settings", readOptions(boot.token));

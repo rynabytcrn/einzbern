@@ -17,12 +17,18 @@ import { mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, writeFile } fr
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { gunzipSync } from "node:zlib";
+import { gzipSync, gunzipSync, constants as zlibConstants } from "node:zlib";
 import test, { after } from "node:test";
 
 import { FRAMEWORK_VERSION, computeInstallTreeDigest } from "../dist/build/packages/core/src/index.js";
 import { NODE_FLOOR } from "../dist/build/packages/core/src/node-floor.js";
-import { buildCanonicalUstar } from "../scripts/lib/p8-workflow-rc.mjs";
+import {
+  P8_RELEASE_ARTIFACTS,
+  P8_RELEASE_ARCHIVE,
+  P8_RELEASE_ARCHIVE_SHA256,
+  buildCanonicalUstar,
+  buildP8ReleaseArtifacts,
+} from "../scripts/lib/p8-workflow-rc.mjs";
 import { TAR_REASON_CODES, readUstar, tarMode, writeUstar } from "../scripts/lib/tar.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
@@ -101,7 +107,7 @@ async function filesUnder(root, relativePath = "") {
   return found.sort();
 }
 
-test("481-R2: two packs of one tree are the same archive, and its .sha256 states it", async () => {
+test("481-R2, MIN-235 D14: two packs are byte-identical and the .sha256 covers the complete archive including manifest", async () => {
   const first = await packedRelease();
   const second = pack(join(base, "again"));
   assert.equal(second.status, 0, second.stderr);
@@ -109,11 +115,31 @@ test("481-R2: two packs of one tree are the same archive, and its .sha256 states
   assert.ok(first.archive.equals(again), "the second pack wrote other bytes");
   assert.equal(first.report.reasonCode, "RELEASE_PACKED");
   assert.equal(first.report.version, FRAMEWORK_VERSION);
+  assert.equal(P8_RELEASE_ARCHIVE, ARCHIVE);
+  assert.equal(P8_RELEASE_ARCHIVE_SHA256, `${ARCHIVE}.sha256`);
   assert.equal(first.report.sha256, sha256(first.archive));
   assert.equal(JSON.parse(second.stdout).sha256, first.report.sha256);
+  const checksum = await readFile(join(first.out, `${ARCHIVE}.sha256`));
+  const candidate = buildP8ReleaseArtifacts({
+    sourceArchive: Buffer.from("source fixture\n", "utf8"),
+    sbom: Buffer.from('{"bomFormat":"CycloneDX"}\n', "utf8"),
+    releaseArchive: first.archive,
+    releaseArchiveSha256: checksum,
+  });
+  assert.deepEqual([...candidate.keys()].sort(), [...P8_RELEASE_ARTIFACTS].sort());
+  assert.ok(candidate.get(ARCHIVE).equals(first.archive));
+  assert.ok(candidate.get(`${ARCHIVE}.sha256`).equals(checksum));
   for (const out of [first.out, join(base, "again")]) {
     assert.equal(await readFile(join(out, `${ARCHIVE}.sha256`), "utf8"), `${first.report.sha256}  ${ARCHIVE}\n`);
   }
+  const changedManifest = first.entries.map((entry) => entry.path === `${RELEASE}/manifest.json`
+    ? { ...entry, bytes: Buffer.concat([entry.bytes, Buffer.from(" ", "utf8")]) }
+    : entry);
+  const repackedManifest = gzipSync(writeUstar(changedManifest), { level: zlibConstants.Z_BEST_COMPRESSION });
+  repackedManifest.fill(0, 4, 8);
+  repackedManifest[9] = 0xff;
+  assert.notEqual(sha256(repackedManifest), first.report.sha256, "changing the packaged manifest changes the whole-archive digest");
+  assert.notEqual(`${sha256(repackedManifest)}  ${ARCHIVE}\n`, await readFile(join(first.out, `${ARCHIVE}.sha256`), "utf8"));
   // The gzip header names no time and no platform.
   assert.deepEqual([...first.archive.subarray(0, 4)], [0x1f, 0x8b, 8, 0]);
   assert.deepEqual([...first.archive.subarray(4, 8)], [0, 0, 0, 0]);
@@ -185,6 +211,7 @@ test("481-R2: the manifest states the install-tree digest of the unpacked direct
   assert.deepEqual(Object.keys(manifest), ["schemaVersion", "version", "nodeFloor", "installTreeDigest", "files"]);
   assert.equal(manifest.schemaVersion, "einzbern.release-manifest.v1");
   assert.equal(manifest.version, FRAMEWORK_VERSION);
+  assert.notEqual(manifest.schemaVersion, manifest.version);
   assert.equal(manifest.nodeFloor, NODE_FLOOR);
   const aside = join(base, "manifest-aside");
   await mkdir(aside, { recursive: true });
@@ -195,6 +222,18 @@ test("481-R2: the manifest states the install-tree digest of the unpacked direct
     assert.deepEqual(manifest.files, JSON.parse(JSON.stringify(digest.entries)));
   } finally {
     await rename(join(aside, "manifest.json"), join(tree, "manifest.json"));
+  }
+  const covered = manifest.files[0];
+  const coveredPath = join(tree, ...covered.path.split("/"));
+  const coveredBytes = await readFile(coveredPath);
+  assert.ok(coveredBytes.length > 0);
+  const alteredBytes = Buffer.from(coveredBytes);
+  alteredBytes[0] ^= 1;
+  await writeFile(coveredPath, alteredBytes);
+  try {
+    assert.notEqual((await computeInstallTreeDigest(tree)).sha256, manifest.installTreeDigest, "any other covered byte changes the tree digest");
+  } finally {
+    await writeFile(coveredPath, coveredBytes);
   }
 });
 

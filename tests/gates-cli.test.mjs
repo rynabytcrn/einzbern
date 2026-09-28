@@ -2,8 +2,8 @@
 // TCRN-CROSS-STORY-485 AC1 to AC4 through the CLI (MIN-227 D4; TCRN-CROSS-SUB-345). Gates are
 // declared with gates-config-set, listed and removed; gates-plan names the gates a change needs, or
 // every enabled gate for a release; gates-run runs them all and answers every red; and a Story is
-// refused at done while a required gate of its change is red on the tree as it is, or has not run
-// on it. Every project, library and device directory here is a temporary one.
+// refused at done without required coverage or a same-tree, same-declaration, subject-bound run.
+// Every project, library and device directory here is a temporary one.
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
@@ -15,7 +15,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { runCli } from "../dist/build/packages/cli/src/index.js";
+import { COMMAND_CATALOG, runCli } from "../dist/build/packages/cli/src/index.js";
 import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
 let second = 0;
@@ -91,7 +91,7 @@ async function setup(context) {
   git(project, ["commit", "-q", "-m", "initial"]);
   const library = join(base, ".ether");
   await cli(["init", "--workspace", library, "--at", at()]);
-  return { base, project, library };
+  return { base, project, library, baseCommit: git(project, ["rev-parse", "HEAD"]).trim() };
 }
 
 function declare(library, name, command, extra = []) {
@@ -139,19 +139,19 @@ test("485-R1 (CLI): gates are declared, listed, redeclared in part and removed, 
 });
 
 test("485-AC1 (CLI): only a file under portal changed, so gates-plan names only the gate covering portal", async (context) => {
-  const { project, library } = await setup(context);
+  const { project, library, baseCommit } = await setup(context);
   await declareSuite(library);
   await put(project, "portal/index.html", "<p>changed</p>\n");
-  const plan = await cli(["gates-plan", "--workspace", library, "--project", project]);
+  const plan = await cli(["gates-plan", "--workspace", library, "--project", project, "--base", baseCommit]);
   assert.equal(plan.reasonCode, "GATES_PLAN_READY");
   assert.deepEqual(names(plan), ["portal"]);
-  assert.deepEqual(plan.gates[0], { name: "portal", root: ".", command: ["node", "--version"], required: true, releaseOnly: false, reason: "changed", matched: ["portal/index.html"] });
+  assert.deepEqual(plan.gates[0], { name: "portal", root: ".", command: ["node", "--version"], required: true, releaseOnly: false, reason: "changed", matched: ["portal/index.html"], matchedWorkIds: [] });
   assert.deepEqual(plan.changed, [{ root: ".", files: ["portal/index.html"] }]);
   assert.equal(plan.release, false);
   // A committed change is planned against the base it forked from.
   git(project, ["commit", "-q", "-am", "portal"]);
-  assert.deepEqual(names(await cli(["gates-plan", "--workspace", library, "--project", project])), [], "nothing changed against HEAD");
-  assert.deepEqual(names(await cli(["gates-plan", "--workspace", library, "--project", project, "--base", "HEAD~1"])), ["portal"]);
+  assert.equal((await refusal(["gates-plan", "--workspace", library, "--project", project]))?.reasonCode, "GATES_BASE_REQUIRED");
+  assert.deepEqual(names(await cli(["gates-plan", "--workspace", library, "--project", project, "--base", baseCommit])), ["portal"], "an explicit base includes committed changes");
 });
 
 test("485-AC2 (CLI): a release plan lists every enabled gate, release-only included, and the project comes from the registry", async (context) => {
@@ -170,12 +170,12 @@ test("485-AC2 (CLI): a release plan lists every enabled gate, release-only inclu
 });
 
 test("485-AC3 (CLI): two gates red at once give two reds, and a red gate does not stop the next one", async (context) => {
-  const { project, library } = await setup(context);
+  const { project, library, baseCommit } = await setup(context);
   await declare(library, "fail-a", [node, "-e", "process.stdout.write('a'); process.exit(3)"]);
   await declare(library, "fail-b", [node, "-e", "process.stderr.write('b'); process.exit(4)"]);
   await declare(library, "pass", [node, "-e", "process.exit(0)"], ["--required", "false"]);
   await put(project, "src/a.ts", "export const a = 2;\n");
-  const ran = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project]);
+  const ran = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project, "--base", baseCommit]);
   assert.equal(ran.reasonCode, "GATES_RUN_COMPLETED");
   assert.equal(ran.ok, false, gateDiagnostic(ran.run, ran.recordPath));
   assert.deepEqual(ran.reds, ["fail-a", "fail-b"], gateDiagnostic(ran.run, ran.recordPath));
@@ -184,8 +184,8 @@ test("485-AC3 (CLI): two gates red at once give two reds, and a red gate does no
   assert.ok(ran.recordPath.endsWith(`${ran.run.runId}.json`));
 });
 
-test("485-AC4 (CLI): a required gate red refuses the Story's done and names it; green, the Story is done", async (context) => {
-  const { project, library } = await setup(context);
+test("485-AC4 (CLI): required path coverage guards transition, birth-done, and batch done writes", async (context) => {
+  const { project, library, baseCommit } = await setup(context);
   const projectId = (await cli(["project-create", "--workspace", library, "--at", at(), "--external-key", "GC-PROJECT", "--name", "Gates CLI"])).record.id;
   await cli(["work-create", "--workspace", library, "--at", at(), "--project-id", projectId, "--external-key", "GC-INIT", "--kind", "Initiative", "--title", "Gated work"]);
   await cli(["work-create", "--workspace", library, "--at", at(), "--project-id", projectId, "--external-key", "GC-EPIC", "--kind", "Epic", "--status", "active", "--parent-id", workId("GC-INIT"), "--title", "Gated epic"]);
@@ -194,8 +194,11 @@ test("485-AC4 (CLI): a required gate red refuses the Story's done and names it; 
     "--parent-id", workId("GC-EPIC"), "--title", `Gated story ${key}`, "--goal", "Pass the gates", "--acceptance", "GIVEN the gates WHEN green THEN done",
   ]);
   const storyId = (await story("GC-STORY-1")).record.id;
+  const story2Id = workId("GC-STORY-2");
+  const birthId = workId("GC-STORY-BIRTH");
   await declare(library, "unit", [node, "-e", "process.exit(require('node:fs').existsSync('src/ok') ? 0 : 1)"], ["--covers", "src/**"]);
   await declare(library, "lint", [node, "-e", "process.exit(2)"], ["--covers", "src/**", "--required", "false"]);
+  await cli(["library-register", "--project", project, "--library", library, "--at", at()]);
   await put(project, "src/a.ts", "export const a = 2;\n");
   const done = (id = storyId) => ["work-transition", "--workspace", library, "--at", at(), "--id", id, "--status", "done", "--project", project];
 
@@ -204,7 +207,7 @@ test("485-AC4 (CLI): a required gate red refuses the Story's done and names it; 
   assert.equal(notRun.details.remedy, "gates-run");
   assert.deepEqual(notRun.details.stories, [storyId]);
 
-  const red = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project]);
+  const red = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project, "--base", baseCommit, "--work-id", storyId]);
   assert.deepEqual([red.reds, red.requiredReds], [["lint", "unit"], ["unit"]], gateDiagnostic(red.run, red.recordPath));
   const refused = await refusal(done());
   assert.equal(refused?.reasonCode, "WORK_DONE_GATES_RED");
@@ -224,7 +227,7 @@ test("485-AC4 (CLI): a required gate red refuses the Story's done and names it; 
   const epic = await cli(["work-transition", "--workspace", library, "--at", at(), "--id", workId("GC-EPIC"), "--status", "done", "--project", project]);
   assert.deepEqual(epic.doneGates, { checked: false, reason: "no-story", runId: null, treeDigest: null });
 
-  // A Story a batch creates and takes to done passes the same check, and a refusal writes no member.
+  // An existing Story that a batch takes to done is checked with the exact subject-bound run.
   const batch = join(project, "..", "batch.json");
   await writeFile(batch, `${JSON.stringify({
     schemaVersion: "tcrn.work-batch.v1",
@@ -233,19 +236,91 @@ test("485-AC4 (CLI): a required gate red refuses the Story's done and names it; 
       { verb: "work-transition", externalKey: "GC-STORY-2", status: "done" },
     ],
   })}\n`);
+  const red2 = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project, "--base", baseCommit, "--work-id", workId("GC-STORY-2")]);
+  assert.deepEqual(red2.requiredReds, ["unit"], gateDiagnostic(red2.run, red2.recordPath));
   const batchRefused = await refusal(["work-batch", "--workspace", library, "--at", at(), "--from-file", batch, "--project", project]);
   assert.equal(batchRefused?.reasonCode, "WORK_DONE_GATES_RED");
-  assert.deepEqual(batchRefused.details.stories, [workId("GC-STORY-2")]);
-  assert.equal((await refusal(["work-show", "--workspace", library, "--id", workId("GC-STORY-2")]))?.reasonCode, "WORKSPACE_INPUT_INVALID", "the batch wrote nothing");
+  assert.deepEqual(batchRefused.details.stories, [story2Id]);
+  assert.equal((await refusal(["work-show", "--workspace", library, "--id", story2Id]))?.reasonCode, "WORKSPACE_INPUT_INVALID", "the batch wrote nothing");
 
-  // Green on the tree as it is now: the Story is done, and the receipt says which run passed it.
+  // A batch combining a normal transition with a directly born done Story refuses before either member writes.
+  const mixed = join(project, "..", "mixed-batch.json");
+  await writeFile(mixed, `${JSON.stringify({
+    schemaVersion: "tcrn.work-batch.v1",
+    members: [
+      { verb: "work-transition", id: storyId, status: "done" },
+      { verb: "work-create", projectId, externalKey: "GC-STORY-BIRTH", kind: "Story", status: "done", parentId: workId("GC-EPIC"), title: "Born done Story", goal: "Pass the gates", acceptance: "GIVEN the gates WHEN green THEN done" },
+    ],
+  })}\n`);
+  const mixedRun = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project, "--base", baseCommit, "--work-id", `${storyId},${birthId}`]);
+  assert.deepEqual(mixedRun.requiredReds, ["unit"], gateDiagnostic(mixedRun.run, mixedRun.recordPath));
+  const mixedRefused = await refusal(["work-batch", "--workspace", library, "--at", at(), "--from-file", mixed, "--project", project]);
+  assert.equal(mixedRefused?.reasonCode, "WORK_DONE_GATES_RED");
+  assert.deepEqual(mixedRefused.details.stories, [storyId, birthId]);
+  assert.equal((await cli(["work-show", "--workspace", library, "--id", storyId])).record.status, "active");
+  assert.equal((await refusal(["work-show", "--workspace", library, "--id", birthId]))?.reasonCode, "WORKSPACE_INPUT_INVALID", "neither mixed-batch member was written");
+
+  // A standalone birth-done Story also needs its own bound green run.
+  const createBorn = ["work-create", "--workspace", library, "--at", at(), "--project-id", projectId, "--external-key", "GC-STORY-BIRTH", "--kind", "Story", "--status", "done", "--parent-id", workId("GC-EPIC"), "--title", "Born done Story", "--goal", "Pass the gates", "--acceptance", "GIVEN the gates WHEN green THEN done"];
+  const birthRed = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project, "--base", baseCommit, "--work-id", birthId]);
+  assert.deepEqual(birthRed.requiredReds, ["unit"], gateDiagnostic(birthRed.run, birthRed.recordPath));
+  const birthRefused = await refusal(createBorn);
+  assert.equal(birthRefused?.reasonCode, "WORK_DONE_GATES_RED");
+  assert.equal((await refusal(["work-show", "--workspace", library, "--id", birthId]))?.reasonCode, "WORKSPACE_INPUT_INVALID", "birth-done refusal wrote no Story");
+
+  // Green on the tree as it is now: each exact Story binding passes transition, batch, and birth-done.
   await put(project, "src/ok", "");
-  const green = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project]);
+  const green2 = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project, "--base", baseCommit, "--work-id", story2Id]);
+  assert.deepEqual([green2.reds, green2.requiredReds], [["lint"], []], gateDiagnostic(green2.run, green2.recordPath));
+  const batched = await cli(["work-batch", "--workspace", library, "--at", at(), "--from-file", batch, "--project", project]);
+  assert.equal(batched.doneGates.reason, "green");
+  assert.equal((await cli(["work-show", "--workspace", library, "--id", story2Id])).record.status, "done");
+
+  const green = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project, "--base", baseCommit, "--work-id", storyId]);
   assert.deepEqual([green.reds, green.requiredReds], [["lint"], []], gateDiagnostic(green.run, green.recordPath));
   const passed = await cli(done());
   assert.equal(passed.record.status, "done");
   assert.deepEqual(passed.doneGates, { checked: true, reason: "green", runId: green.run.runId, treeDigest: green.run.treeDigest });
-  const batched = await cli(["work-batch", "--workspace", library, "--at", at(), "--from-file", batch, "--project", project]);
-  assert.equal(batched.doneGates.reason, "green");
-  assert.equal((await cli(["work-show", "--workspace", library, "--id", workId("GC-STORY-2")])).record.status, "done");
+
+  const greenBirth = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project, "--base", baseCommit, "--work-id", birthId]);
+  assert.deepEqual(greenBirth.requiredReds, [], gateDiagnostic(greenBirth.run, greenBirth.recordPath));
+  const born = await cli(createBorn);
+  assert.equal(born.record.status, "done");
+  assert.deepEqual(born.doneGates, { checked: true, reason: "green", runId: greenBirth.run.runId, treeDigest: greenBirth.run.treeDigest });
+});
+
+test("D8 (CLI): gates-plan accepts exact work-id covers and unrelated covers cannot establish Story coverage", async (context) => {
+  for (const verb of ["gates-plan", "gates-run"]) {
+    assert.deepEqual(COMMAND_CATALOG.find((entry) => entry.name === verb)?.flags.find((flag) => flag.name === "work-id"),
+      { name: "work-id", required: false, valueKind: "list" }, `${verb} catalogs its exact Story binding`);
+  }
+  const { project, library, baseCommit } = await setup(context);
+  const projectId = (await cli(["project-create", "--workspace", library, "--at", at(), "--external-key", "GC-ID-PROJECT", "--name", "Gates ID CLI"])).record.id;
+  await cli(["work-create", "--workspace", library, "--at", at(), "--project-id", projectId, "--external-key", "GC-ID-INIT", "--kind", "Initiative", "--title", "Gated work"]);
+  await cli(["work-create", "--workspace", library, "--at", at(), "--project-id", projectId, "--external-key", "GC-ID-EPIC", "--kind", "Epic", "--status", "active", "--parent-id", workId("GC-ID-INIT"), "--title", "Gated epic"]);
+  const storyId = workId("GC-ID-STORY");
+  await cli(["work-create", "--workspace", library, "--at", at(), "--project-id", projectId, "--external-key", "GC-ID-STORY", "--kind", "Story", "--status", "active", "--parent-id", workId("GC-ID-EPIC"), "--title", "Subject Story", "--goal", "Pass the gates", "--acceptance", "GIVEN the gates WHEN green THEN done"]);
+  await cli(["library-register", "--project", project, "--library", library, "--at", at()]);
+  const other = workId("GC-ID-OTHER");
+  await declare(library, "subject", [node, "-e", "process.exit(0)"], ["--covers", other]);
+  const bin = fileURLToPath(new URL("../scripts/einzbern.mjs", import.meta.url));
+  const invalidWorkId = spawnSync(process.execPath, [bin, "gates-plan", "--workspace", library, "--project", project, "--base", baseCommit, "--work-id", "work:not-an-id"], { encoding: "utf8", env: process.env });
+  assert.equal(invalidWorkId.status, 1);
+  const invalidEnvelope = JSON.parse(invalidWorkId.stderr.trim().split("\n").at(-1));
+  assert.deepEqual([invalidEnvelope.reasonCode, invalidEnvelope.workId], ["GATES_WORK_ID_INVALID", "work:not-an-id"]);
+  const uncoveredPlan = await cli(["gates-plan", "--workspace", library, "--project", project, "--base", baseCommit, "--work-id", storyId]);
+  assert.deepEqual(uncoveredPlan.gates, [], "an unrelated Story id does not select the required gate");
+  const uncoveredRun = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project, "--base", baseCommit, "--work-id", storyId]);
+  assert.deepEqual(uncoveredRun.run.workIds, [storyId]);
+  const refused = await refusal(["work-transition", "--workspace", library, "--at", at(), "--id", storyId, "--status", "done", "--project", project]);
+  assert.equal(refused?.reasonCode, "WORK_DONE_GATES_NOT_COVERED");
+  assert.equal((await cli(["work-show", "--workspace", library, "--id", storyId])).record.status, "active");
+
+  await declare(library, "subject", null, ["--covers", storyId]);
+  const coveredPlan = await cli(["gates-plan", "--workspace", library, "--project", project, "--base", baseCommit, "--work-id", storyId]);
+  assert.deepEqual(coveredPlan.gates.map((gate) => [gate.name, gate.reason, gate.matchedWorkIds]), [["subject", "work-id", [storyId]]]);
+  const coveredRun = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project, "--base", baseCommit, "--work-id", storyId]);
+  assert.deepEqual(coveredRun.run.gates[0].matchedWorkIds, [storyId]);
+  const passed = await cli(["work-transition", "--workspace", library, "--at", at(), "--id", storyId, "--status", "done", "--project", project]);
+  assert.equal(passed.doneGates.runId, coveredRun.run.runId);
 });

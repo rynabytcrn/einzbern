@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 
-// TCRN-CROSS-STORY-485 R3 (MIN-227 D4; TCRN-CROSS-SUB-344): running a plan's gates. Every planned
+// TCRN-CROSS-STORY-485 R3 (MIN-235 D8; TCRN-CROSS-SUB-344): running a plan's gates. Every planned
 // gate runs, one after another, as its own process in its root, with no shell; a red gate does
 // not stop the ones after it, and the run reports every red at the end. Each gate's output
 // (stdout and stderr in the order they arrive, cut at a bound) goes to a file, and the run is
 // recorded in this device's cache of the library, at cache/<library>/gate-runs/<runId>.json
-// (einzbern.gate-run.v1), with the digest of the tree it ran on: for each root of every enabled
-// gate, the commit HEAD names and the content of every changed and untracked file. The done
-// check (gates-done.ts) accepts a run only for the tree it was made on. A gate that outlives its
-// timeout is stopped with its whole process group, and whatever a gate left running in its
-// group is stopped when it ends.
+// (einzbern.gate-run.v1), with its exact target work ids, path/id matches, declaration digest and
+// tree digest. The done check (gates-done.ts) accepts a run only for the same target set, tree and
+// declarations. A gate that outlives its timeout is stopped with its whole process group, and
+// whatever a gate left running in its group is stopped when it ends.
 
 import { spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
@@ -68,6 +67,9 @@ export interface GateRunResult {
   readonly name: string;
   readonly root: string;
   readonly required: boolean;
+  // Path and exact work-id coverage are kept separate so the done check can prove what matched.
+  readonly matched: readonly string[];
+  readonly matchedWorkIds: readonly string[];
   readonly ok: boolean;
   readonly exitCode: number | null;
   readonly signal: string | null;
@@ -85,6 +87,8 @@ export interface GateRun {
   readonly at: string;
   readonly release: boolean;
   readonly base: string | null;
+  // The Stories the run was planned to cover; an unbound run cannot satisfy a Story's done check.
+  readonly workIds: readonly string[];
   readonly treeDigest: string;
   readonly declarationsDigest: string;
   readonly trees: readonly GateRootTree[];
@@ -245,6 +249,7 @@ export async function runGates(plan: GatesPlan, options: {
     declarationsDigest: plan.declarationsDigest,
     release: plan.release,
     base: plan.base,
+    workIds: plan.workIds,
     gates: plan.gates.map((gate) => gate.name),
   }).slice(0, 12)}`;
   await mkdir(join(directory, runId), { recursive: true });
@@ -258,6 +263,8 @@ export async function runGates(plan: GatesPlan, options: {
       name: gate.name,
       root: gate.root,
       required: gate.required,
+      matched: gate.matched,
+      matchedWorkIds: gate.matchedWorkIds,
       ok: outcome.exitCode === 0 && !outcome.timedOut,
       exitCode: outcome.exitCode,
       signal: outcome.signal,
@@ -274,6 +281,7 @@ export async function runGates(plan: GatesPlan, options: {
     at: options.at,
     release: plan.release,
     base: plan.base,
+    workIds: plan.workIds,
     treeDigest: tree.treeDigest,
     declarationsDigest: plan.declarationsDigest,
     trees: tree.trees,
@@ -288,11 +296,20 @@ export async function runGates(plan: GatesPlan, options: {
 function isGateRun(value: unknown): value is GateRun {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return false;
   const record = value as Readonly<Record<string, unknown>>;
+  const workIds = record.workIds;
+  const gates = record.gates;
   return record.schemaVersion === GATE_RUN_SCHEMA_VERSION && typeof record.runId === "string" && typeof record.libraryId === "string" &&
     typeof record.at === "string" && typeof record.treeDigest === "string" && typeof record.declarationsDigest === "string" &&
-    Array.isArray(record.gates) && record.gates.every((gate: unknown) => gate !== null && typeof gate === "object" &&
-      typeof (gate as Readonly<Record<string, unknown>>).name === "string" && typeof (gate as Readonly<Record<string, unknown>>).ok === "boolean" &&
-      typeof (gate as Readonly<Record<string, unknown>>).required === "boolean");
+    Array.isArray(workIds) && workIds.every((workId: unknown) => typeof workId === "string" && /^work:[0-9a-f]{24}$/u.test(workId)) &&
+    Array.isArray(gates) && gates.every((gate: unknown) => {
+      if (gate === null || typeof gate !== "object") return false;
+      const result = gate as Readonly<Record<string, unknown>>;
+      const matched = result.matched;
+      const matchedWorkIds = result.matchedWorkIds;
+      return typeof result.name === "string" && typeof result.ok === "boolean" && typeof result.required === "boolean" &&
+        Array.isArray(matched) && matched.every((path: unknown) => typeof path === "string") &&
+        Array.isArray(matchedWorkIds) && matchedWorkIds.every((workId: unknown) => typeof workId === "string" && /^work:[0-9a-f]{24}$/u.test(workId));
+    });
 }
 
 function instant(value: string): bigint | null {
@@ -313,6 +330,7 @@ export async function latestGateRun(input: {
   readonly deviceHome?: string;
   readonly treeDigest?: string;
   readonly declarationsDigest?: string;
+  readonly workIds?: readonly string[];
 }): Promise<GateRun | null> {
   const directory = gateRunsDirectory(input.libraryId, input.deviceHome);
   let names: readonly string[];
@@ -333,6 +351,10 @@ export async function latestGateRun(input: {
     if (!isGateRun(run) || run.libraryId !== input.libraryId) continue;
     if (input.treeDigest !== undefined && run.treeDigest !== input.treeDigest) continue;
     if (input.declarationsDigest !== undefined && run.declarationsDigest !== input.declarationsDigest) continue;
+    if (input.workIds !== undefined) {
+      const expected = [...new Set(input.workIds)].sort(compareCanonicalText);
+      if (run.workIds.length !== expected.length || run.workIds.some((workId, index) => workId !== expected[index])) continue;
+    }
     const at = instant(run.at);
     if (at === null) continue;
     if (latest === null || at > latest.at || (at === latest.at && compareCanonicalText(run.runId, latest.run.runId) > 0)) latest = { run, at };

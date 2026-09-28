@@ -71,11 +71,13 @@ const GATES = [
 ];
 
 const names = (plan) => plan.gates.map((entry) => entry.name);
+const head = (root) => git(root, ["rev-parse", "HEAD"]).trim();
 
 test("485-AC1: only a file under portal changed, so only the gate covering portal is planned", async (context) => {
   const root = await project(await scratch(context));
+  const base = head(root);
   await put(root, "portal/index.html", "<p>changed</p>\n");
-  const plan = await planGates({ projectRoot: root, gates: GATES });
+  const plan = await planGates({ projectRoot: root, gates: GATES, base });
   assert.deepEqual(names(plan), ["portal"]);
   assert.deepEqual(plan.gates[0], {
     name: "portal",
@@ -85,9 +87,11 @@ test("485-AC1: only a file under portal changed, so only the gate covering porta
     releaseOnly: false,
     reason: "changed",
     matched: ["portal/index.html"],
+    matchedWorkIds: [],
   });
   assert.deepEqual(plan.changed, [{ root: ".", files: ["portal/index.html"] }]);
   assert.equal(plan.release, false);
+  assert.deepEqual(plan.workIds, []);
 });
 
 test("485-AC2: a release plan lists every enabled gate, the release-only one included, and needs no Git", async (context) => {
@@ -96,22 +100,55 @@ test("485-AC2: a release plan lists every enabled gate, the release-only one inc
   const plan = await planGates({ projectRoot: root, gates: GATES, release: true });
   assert.deepEqual(names(plan), ["engine", "links", "portal", "release-pack"], "every enabled gate, sorted; the disabled one is not listed");
   assert.equal(plan.changed, null);
-  assert.ok(plan.gates.every((entry) => entry.reason === "release" && entry.matched.length === 0));
+  assert.ok(plan.gates.every((entry) => entry.reason === "release" && entry.matched.length === 0 && entry.matchedWorkIds.length === 0));
 
   // Outside a Git working tree a normal plan refuses and a release plan still lists every gate.
   const plain = join(base, "plain");
   await mkdir(plain);
-  await assert.rejects(planGates({ projectRoot: plain, gates: GATES }), { reasonCode: "GATES_GIT_UNAVAILABLE" });
+  await assert.rejects(planGates({ projectRoot: plain, gates: GATES, base: "HEAD" }), { reasonCode: "GATES_GIT_UNAVAILABLE" });
   assert.deepEqual(names(await planGates({ projectRoot: plain, gates: GATES, release: true })), ["engine", "links", "portal", "release-pack"]);
 });
 
 test("485-R2: a release-only gate is not planned for an ordinary change, even when its covers match", async (context) => {
   const root = await project(await scratch(context));
+  const base = head(root);
   await put(root, "README.md", "# Changed\n");
-  const plan = await planGates({ projectRoot: root, gates: GATES });
+  const plan = await planGates({ projectRoot: root, gates: GATES, base });
   assert.deepEqual(names(plan), ["links"]);
   assert.deepEqual(plan.gates[0].matched, ["README.md"]);
-  assert.deepEqual(names(await planGates({ projectRoot: root, gates: [] })), [], "a project without gates plans none");
+  assert.deepEqual(names(await planGates({ projectRoot: root, gates: [], base })), [], "a project without gates plans none");
+  await assert.rejects(planGates({ projectRoot: root, gates: [], base: "no-such-commit" }), { reasonCode: "GATES_BASE_INVALID" },
+    "an empty plan still validates its explicit base");
+  await assert.rejects(planGates({ projectRoot: root, gates: [GATES[3]], base: "no-such-commit" }), { reasonCode: "GATES_BASE_INVALID" },
+    "a release-only declaration cannot bypass non-release base validation");
+});
+
+test("D8: exact Story covers are distinct from path globs and an unrelated work id does not select a gate", async (context) => {
+  const root = await project(await scratch(context));
+  const base = head(root);
+  const story = `work:${"1".repeat(24)}`;
+  const other = `work:${"2".repeat(24)}`;
+  const gates = [
+    { name: "path", ...gate(["portal/**"]) },
+    { name: "story", ...gate([story]) },
+    { name: "other-story", ...gate([other]) },
+  ];
+
+  const byId = await planGates({ projectRoot: root, gates, base, workIds: [story] });
+  assert.deepEqual(names(byId), ["story"]);
+  assert.deepEqual(byId.gates[0], {
+    name: "story", root: ".", command: ["node", "--version"], required: true, releaseOnly: false,
+    reason: "work-id", matched: [], matchedWorkIds: [story],
+  });
+  assert.deepEqual(names(await planGates({ projectRoot: root, gates: [gates[2]], base, workIds: [story] })), [], "a different Story id is not coverage");
+
+  await put(root, "portal/index.html", "<p>changed</p>\n");
+  const byPath = await planGates({ projectRoot: root, gates, base, workIds: [story] });
+  assert.deepEqual(names(byPath), ["path", "story"]);
+  assert.deepEqual(byPath.gates.find((entry) => entry.name === "path")?.matched, ["portal/index.html"]);
+  assert.deepEqual(byPath.gates.find((entry) => entry.name === "path")?.matchedWorkIds, [], "path matching is not rewritten as an id match");
+
+  await assert.rejects(planGates({ projectRoot: root, gates, base, workIds: ["work:not-an-id"] }), { reasonCode: "GATES_WORK_ID_INVALID" });
 });
 
 test("485-R2: the changes are the base's difference plus staged, unstaged, deleted, renamed and untracked files", async (context) => {
@@ -119,15 +156,15 @@ test("485-R2: the changes are the base's difference plus staged, unstaged, delet
   const initial = git(root, ["rev-parse", "HEAD"]).trim();
   await put(root, "packages/core/src/a.ts", "export const a = 2;\n");
   git(root, ["commit", "-q", "-am", "engine change"]);
-  assert.deepEqual(names(await planGates({ projectRoot: root, gates: GATES })), [], "a committed change is behind HEAD");
-  assert.deepEqual(names(await planGates({ projectRoot: root, gates: GATES, base: initial })), ["engine"], "against the base it is a change");
+  await assert.rejects(planGates({ projectRoot: root, gates: GATES }), { reasonCode: "GATES_BASE_REQUIRED" }, "HEAD is never chosen implicitly");
+  assert.deepEqual(names(await planGates({ projectRoot: root, gates: GATES, base: initial })), ["engine"], "an explicit base includes committed-only changes");
 
   await put(root, "portal/new.css", "p {}\n");
   git(root, ["mv", "docs/guide.md", "docs/handbook.md"]);
   await unlink(join(root, "README.md"));
   await put(root, "build/output.txt", "ignored\n");
   assert.deepEqual(changedFiles(root), ["README.md", "docs/guide.md", "docs/handbook.md", "portal/new.css"], "untracked, both sides of a rename, a deletion; ignored files left out");
-  assert.deepEqual(names(await planGates({ projectRoot: root, gates: GATES })), ["links", "portal"]);
+  assert.deepEqual(names(await planGates({ projectRoot: root, gates: GATES, base: initial })), ["engine", "links", "portal"]);
 
   for (const base of ["no-such-commit", "--output=x", "HEAD..HEAD~1 extra"]) {
     await assert.rejects(planGates({ projectRoot: root, gates: GATES, base }), { reasonCode: "GATES_BASE_INVALID" }, base);
@@ -137,6 +174,7 @@ test("485-R2: the changes are the base's difference plus staged, unstaged, delet
 test("485-R2: each root takes its own changes, relative to itself", async (context) => {
   const base = await scratch(context);
   const root = await project(base);
+  git(root, ["branch", "baseline"]);
   // A second repository inside the project, which the project's own repository ignores.
   const tool = join(root, "vendor-tool");
   await mkdir(tool);
@@ -144,6 +182,7 @@ test("485-R2: each root takes its own changes, relative to itself", async (conte
   await put(tool, "src/b.ts", "export const b = 1;\n");
   git(tool, ["add", "-A"]);
   git(tool, ["commit", "-q", "-m", "tool"]);
+  git(tool, ["branch", "baseline"]);
   const gates = [
     ...GATES,
     { name: "tool-tests", ...gate(["src/**"], { root: "vendor-tool" }) },
@@ -151,19 +190,19 @@ test("485-R2: each root takes its own changes, relative to itself", async (conte
   ];
 
   await put(tool, "src/b.ts", "export const b = 2;\n");
-  let plan = await planGates({ projectRoot: root, gates });
+  let plan = await planGates({ projectRoot: root, gates, base: "baseline" });
   assert.deepEqual(names(plan), ["tool-tests"], "a change in the second repository selects only its gate");
   assert.deepEqual(plan.changed, [{ root: ".", files: [] }, { root: "portal", files: [] }, { root: "vendor-tool", files: ["src/b.ts"] }]);
 
   git(tool, ["commit", "-q", "-am", "tool change"]);
   await put(root, "portal/index.html", "<p>again</p>\n");
-  plan = await planGates({ projectRoot: root, gates });
-  assert.deepEqual(names(plan), ["portal", "portal-html"]);
+  plan = await planGates({ projectRoot: root, gates, base: "baseline" });
+  assert.deepEqual(names(plan), ["portal", "portal-html", "tool-tests"], "the explicit baseline retains committed changes in each root");
   assert.deepEqual(plan.gates.find((entry) => entry.name === "portal-html").matched, ["index.html"], "a subdirectory root sees paths relative to itself");
 
-  await assert.rejects(planGates({ projectRoot: root, gates: [{ name: "missing", ...gate(["**"], { root: "no/such/dir" }) }] }), { reasonCode: "GATES_ROOT_INVALID" });
+  await assert.rejects(planGates({ projectRoot: root, gates: [{ name: "missing", ...gate(["**"], { root: "no/such/dir" }) }], base: "baseline" }), { reasonCode: "GATES_ROOT_INVALID" });
   await symlink(base, join(root, "outside"));
-  await assert.rejects(planGates({ projectRoot: root, gates: [{ name: "escape", ...gate(["**"], { root: "outside" }) }] }), { reasonCode: "GATES_ROOT_INVALID" }, "a root reached through a link must stay inside the project");
+  await assert.rejects(planGates({ projectRoot: root, gates: [{ name: "escape", ...gate(["**"], { root: "outside" }) }], base: "baseline" }), { reasonCode: "GATES_ROOT_INVALID" }, "a root reached through a link must stay inside the project");
 });
 
 test("485-R2: globs match whole paths: ** across segments, * and ? within one, character classes", () => {
@@ -217,6 +256,7 @@ test("485-R1: a gate is declared in the library, checked field by field, listed 
     ["a shell line", gate(["**"], { command: "pnpm test" }), "command"],
     ["an empty argument", gate(["**"], { command: ["node", ""] }), "command"],
     ["a bad glob", gate(["portal/[x"]), "covers"],
+    ["an invalid work id", gate(["work:1234"]), "covers"],
     ["a flag that is not a boolean", gate(["**"], { required: "yes" }), "required"],
     ["an extra field", { ...gate(["**"]), timeoutMs: 5 }, "gate"],
   ]) {

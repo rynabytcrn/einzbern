@@ -373,14 +373,17 @@ const rendersSystemVariables = (key) => SYSTEM_VARIABLE_KEYS.includes(key) || ke
 // reason code. The rows that code is about are found here, from the table as it was sent and the two
 // tables as they stand, so the page can show the code on each of them: a repeated order on every row
 // that shares it, a repeated category id on every row that shares it, and an unknown category on
-// every tier that names one. A dropped category that tiers still name is no row of the table sent, so
-// it comes with the tier records that name it. After a write that renders the system variables
-// section, every record the render withheld (secret-shaped or absolute-path) is reported on its row.
+// every tier that names one. A dropped category that tiers or the escalation ceiling still name is no
+// row of the table sent, so it comes with what names it: the tier records, and
+// models.escalation.ceiling (TCRN-CROSS-SUB-406); a restore of the default category table is refused
+// only for such a category, and says which. After a write that renders the system variables section,
+// every record the render withheld (secret-shaped or absolute-path) is reported on its row.
 // A finding's `index` is the row's place in the table the page shows next: the table it sent when the
 // write was refused, the stored table when the write landed. Any other refusal names no row, and the
 // page shows it above the table with the engine's own words.
 const COLLECTION_KEYS = Object.freeze(["models.category", "models.tiers"]);
 const COLLECTION_IDENTITY = Object.freeze({ "models.category": "id", "models.tiers": "order" });
+const ESCALATION_CEILING_KEY = "models.escalation.ceiling";
 
 function tableOf(text) {
   try {
@@ -415,12 +418,33 @@ function refusedCollectionFindings(key, sent, refusal, catalog) {
   if (reasonCode === "MODELS_CATEGORY_IN_USE" && key === "models.category") {
     const kept = new Set(rows.map((row) => recordOf(row).id));
     const tiers = storedTable(catalog, "models.tiers").map(recordOf);
+    // TCRN-CROSS-SUB-406 (TCRN-CROSS-STORY-508 R3): the escalation ceiling names a category too, and a
+    // write may not drop it either, so it is listed beside the tier records as models.escalation.ceiling.
+    const ceiling = catalog?.settings?.find((entry) => entry.key === ESCALATION_CEILING_KEY)?.currentValue;
     return storedTable(catalog, "models.category").map((category) => recordOf(category).id).filter((id) => !kept.has(id)).flatMap((category) => {
-      const references = tiers.filter((tier) => tier.category === category).map((tier) => `models.tiers.${tier.order}`);
+      const references = [
+        ...tiers.filter((tier) => tier.category === category).map((tier) => `models.tiers.${tier.order}`),
+        ...(category === ceiling ? [ESCALATION_CEILING_KEY] : []),
+      ];
       return references.length === 0 ? [] : [{ index: null, field: "id", reasonCode, category, references }];
     });
   }
   return [];
+}
+
+// A settings-remove of models.category puts back the default categories and every other category the
+// stored tiers name (specs/settings-catalog-v1.md), so a restore drops only categories no tier names;
+// when one of them is the ceiling's, the refusal is named against that table, above the page's table.
+function restoredCategoryTable(catalog) {
+  const defaults = tableOf(catalog?.settings?.find((entry) => entry.key === "models.category")?.defaultValue) ?? [];
+  const ids = new Set(defaults.map((category) => recordOf(category).id));
+  const named = storedTable(catalog, "models.tiers").map((tier) => recordOf(tier).category).filter((id) => typeof id === "string" && !ids.has(id));
+  return [...defaults, ...[...new Set(named)].map((id) => ({ id }))];
+}
+
+function refusedRestoreFindings(key, refusal, catalog) {
+  if (key !== "models.category") return [];
+  return refusedCollectionFindings(key, JSON.stringify(restoredCategoryTable(catalog)), refusal, catalog).filter((finding) => finding.index === null);
 }
 
 function withheldCollectionFindings(key, render, stored) {
@@ -859,7 +883,7 @@ const server = createServer(async (request, response) => {
       const ok = result.ok && (render?.ok ?? true);
       const findings = !collection ? null
         : result.ok ? withheldCollectionFindings(key, render?.body, readback)
-        : reset ? [] : refusedCollectionFindings(key, value, result.body, catalog);
+        : reset ? refusedRestoreFindings(key, result.body, catalog) : refusedCollectionFindings(key, value, result.body, catalog);
       send(response, ok ? 200 : 409, {
         ...result.body,
         ok,

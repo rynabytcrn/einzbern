@@ -97,6 +97,19 @@ async function asFixtureDevice(fixture, operation) {
   try { return await operation(); } finally { process.env.EINZBERN_HOME = previous; }
 }
 
+// TCRN-CROSS-SUB-406 (TCRN-CROSS-STORY-508 R3): a setting recorded as replay reads a merged value, through
+// the engine's own append and without the checks a settings-set runs, since a merge may bring the two
+// model tables apart. The fixture's device is lent to it, as to the historical records above.
+async function mergedSetting(fixture, key, value) {
+  const moduleUrl = new URL("../../dist/build/packages/core/src/index.js", import.meta.url).href;
+  const script = `const m = await import(${JSON.stringify(moduleUrl)}); const [workspace, key, value, at] = process.argv.slice(1);
+await m.appendEvents(workspace, [(state) => {
+  const record = { schemaVersion: "tcrn.workspace-setting.v1", key, layerKind: "workspace_configuration", value, revision: (state.settings.find((entry) => entry.key === key)?.revision ?? 0) + 1, updatedAt: at, tombstone: false };
+  return { payload: { operation: "settings.updated", record }, projects: state.projects, work: state.work, settings: m.sortWorkspaceSettings([...state.settings.filter((entry) => entry.key !== key), record]) };
+}], { occurredAt: at });`;
+  await asFixtureDevice(fixture, () => execFileAsync(process.execPath, ["--input-type=module", "-e", script, fixture.workspace, key, value, nextAt()], { encoding: "utf8" }));
+}
+
 async function seed(fixture) {
   await asFixtureDevice(fixture, () => historicalModelPlan(fixture.workspace, "set", { host: "claude-code", name: "budget", defaultModel: "claude-sonnet-4-5" }, nextAt()));
   // The setting that pointed at the plan, execution.claudeCodeSubagentPlan, is retired
@@ -1388,13 +1401,15 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
 
   // TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R6): an empty table says what to do first, with the control
   // that does it, and keeps its order column; a tier table with no category to file under sends the
-  // reader to the category page.
+  // reader to the category page. TCRN-CROSS-SUB-406 (R3): a write may not drop the category the
+  // escalation ceiling names, so only a merge leaves the category table empty (the fixture records it as
+  // replay reads a merged value), and emptying it on the page is refused with the ceiling named.
   test("SUB-409 (STORY-508 R6): an empty table guides the reader to its first record", async () => {
     const fixture = await scratch("tcrn-409-empty-");
     const atelier = { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" };
     // The tiers go first: a category that tiers are filed under cannot be dropped.
     await cli(["settings-set", "--workspace", fixture.workspace, "--at", nextAt(), "--actor", "agent:test", "--key", "models.tiers", "--value", "[]"], atelier);
-    await cli(["settings-set", "--workspace", fixture.workspace, "--at", nextAt(), "--actor", "agent:test", "--key", "models.category", "--value", "[]"], atelier);
+    await mergedSetting(fixture, "models.category", "[]");
     const page = await loadExecutedDom(fixture);
     try {
       for (const key of ["models.category", "models.tiers"]) {
@@ -1419,6 +1434,28 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
         const guide = page.document.querySelector('[data-collection-empty="models.tiers"]');
         assert.ok([...guide.querySelectorAll(".tcrn-state-surface__title, .tcrn-state-surface__description")].every((node) => node.textContent.trim() && !node.textContent.startsWith("modelTiers.")), `${locale} guides the reader`);
       }
+      // The first category is main, so the ceiling (main while unset) names a category again; emptying
+      // the table on the page shows its guide, and saving it is refused with the ceiling named above it.
+      page.document.querySelector('[data-locale-option="en"]')?.click();
+      page.document.querySelector('[data-page-target="model-categories"]').click();
+      for (const [name, value] of [["id", "main"], ["name", "Main"]]) {
+        const input = page.document.querySelector(`[data-collection-table="models.category"] [data-collection-row="0"] [data-collection-field="${name}"]`);
+        input.value = value;
+        input.dispatchEvent(new page.window.Event("input", { bubbles: true }));
+      }
+      const saveCategories = async () => {
+        page.document.querySelector('[data-collection-save="models.category"]').click();
+        await page.waitForSettled();
+        return receiptText(page.document);
+      };
+      assert.match(await saveCategories(), /^✓v\d+$/u);
+      page.document.querySelector('[data-collection-table="models.category"] [data-collection-remove="0"]').click();
+      assert.ok(page.document.querySelector('[data-collection-empty="models.category"]'), "the emptied table shows its guide before it is saved");
+      assert.match(await saveCategories(), /^✕/u);
+      const inUse = page.document.querySelector('[data-collection-alerts="models.category"] [data-collection-finding="MODELS_CATEGORY_IN_USE"]');
+      assert.match(inUse?.textContent ?? "", /main: models\.escalation\.ceiling/u, "the refusal names the ceiling that keeps the category");
+      const stored = JSON.parse((await cli(["settings-catalog", "--workspace", fixture.workspace], fixture.deviceEnv)).settings.find((entry) => entry.key === "models.category").currentValue);
+      assert.deepEqual(stored.map((entry) => entry.id), ["main"], "the refused table writes nothing");
     } finally { page.child.kill(); await rm(fixture.base, { recursive: true, force: true }); }
   });
 

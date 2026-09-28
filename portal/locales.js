@@ -355,7 +355,7 @@ window.PORTAL_LOCALES = {
     "reason.MODELS_ORDER_DUPLICATE": "Two records share this order; every order in a table must be different.",
     "reason.MODELS_CATEGORY_UNKNOWN": "This tier names a category the category table does not hold.",
     "reason.MODELS_CATEGORY_DUPLICATE": "Two categories share this id; every id must be different.",
-    "reason.MODELS_CATEGORY_IN_USE": "Tiers are still filed under this category, so it cannot be removed. Move or remove these tiers first:",
+    "reason.MODELS_CATEGORY_IN_USE": "Tiers or the escalation ceiling still name this category, so it cannot be removed. Move those tiers or change the ceiling first:",
   },
   "zh-CN": {
     "app.brand": "Atelier",
@@ -709,7 +709,7 @@ window.PORTAL_LOCALES = {
     "reason.MODELS_ORDER_DUPLICATE": "两条记录的顺序相同；同一张表中的顺序必须互不相同。",
     "reason.MODELS_CATEGORY_UNKNOWN": "此档位引用的分类不在分类表中。",
     "reason.MODELS_CATEGORY_DUPLICATE": "两个分类的标识相同；标识必须互不相同。",
-    "reason.MODELS_CATEGORY_IN_USE": "仍有档位归入此分类，因此不能删除。请先移走或删除这些档位：",
+    "reason.MODELS_CATEGORY_IN_USE": "仍有档位或升档上限指向此分类，因此不能删除。请先移走这些档位，或改掉升档上限：",
   },
   "ja": {
     "app.brand": "Atelier",
@@ -1063,7 +1063,7 @@ window.PORTAL_LOCALES = {
     "reason.MODELS_ORDER_DUPLICATE": "2 つのレコードの順序が同じです。テーブル内の順序はすべて異なる必要があります。",
     "reason.MODELS_CATEGORY_UNKNOWN": "このティアは分類表にない分類を指しています。",
     "reason.MODELS_CATEGORY_DUPLICATE": "2 つの分類の ID が同じです。ID はすべて異なる必要があります。",
-    "reason.MODELS_CATEGORY_IN_USE": "この分類にはまだティアが属しているため削除できません。先に次のティアを移すか削除してください：",
+    "reason.MODELS_CATEGORY_IN_USE": "この分類はまだティアまたはエスカレーションの上限が指しているため削除できません。先にそのティアを移すか、上限を変更してください：",
   },
   "ko": {
     "app.brand": "Atelier",
@@ -1417,7 +1417,7 @@ window.PORTAL_LOCALES = {
     "reason.MODELS_ORDER_DUPLICATE": "두 레코드의 순서가 같습니다. 표 안의 순서는 모두 달라야 합니다.",
     "reason.MODELS_CATEGORY_UNKNOWN": "이 티어가 분류 표에 없는 분류를 가리킵니다.",
     "reason.MODELS_CATEGORY_DUPLICATE": "두 분류의 ID가 같습니다. ID는 모두 달라야 합니다.",
-    "reason.MODELS_CATEGORY_IN_USE": "이 분류에 아직 티어가 속해 있어 삭제할 수 없습니다. 먼저 다음 티어를 옮기거나 삭제하세요:",
+    "reason.MODELS_CATEGORY_IN_USE": "이 분류는 아직 티어나 상향 조정 상한이 가리키고 있어 삭제할 수 없습니다. 먼저 해당 티어를 옮기거나 상한을 바꾸세요:",
   },
   "fr": {
     "app.brand": "Atelier",
@@ -1771,6 +1771,6 @@ window.PORTAL_LOCALES = {
     "reason.MODELS_ORDER_DUPLICATE": "Deux enregistrements partagent cet ordre ; chaque ordre d’une table doit être différent.",
     "reason.MODELS_CATEGORY_UNKNOWN": "Ce niveau nomme une catégorie absente de la table des catégories.",
     "reason.MODELS_CATEGORY_DUPLICATE": "Deux catégories partagent cet identifiant ; chaque identifiant doit être différent.",
-    "reason.MODELS_CATEGORY_IN_USE": "Des niveaux sont encore rangés dans cette catégorie ; elle ne peut pas être supprimée. Déplacez ou supprimez d’abord ces niveaux :",
+    "reason.MODELS_CATEGORY_IN_USE": "Des niveaux ou le plafond d’escalade désignent encore cette catégorie ; elle ne peut pas être supprimée. Déplacez d’abord ces niveaux ou changez le plafond :",
   }
 };

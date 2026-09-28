@@ -526,7 +526,21 @@ test("SUB-409 (STORY-508 R6): a collection is written whole, and the engine's re
   assert.deepEqual(JSON.parse(reset.body.readback.currentValue).map((record) => record.category), ["flagship", "flagship", "main", "main", "economy", "economy"]);
   assert.deepEqual(reset.body.findings, []);
   assert.doesNotMatch(await agents(), /\(withheld\)/u);
-  const untokened = await request(url, "/api/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: "models.tiers", value: "[]" }) });
+
+  // TCRN-CROSS-SUB-406 (STORY-508 R3): the escalation ceiling (main, unset) names a category too, so a
+  // dropped main comes with the ceiling beside the tier records that still name it,
+  const ceiling = await write("models.category", [categories[0], categories[2], categories[3]]);
+  assert.equal(ceiling.body.reasonCode, "MODELS_CATEGORY_IN_USE");
+  assert.deepEqual(ceiling.body.findings, [{ index: null, field: "id", reasonCode: "MODELS_CATEGORY_IN_USE", category: "main", references: ["models.tiers.30", "models.tiers.40", "models.escalation.ceiling"] }]);
+  // and restoring the default table, which keeps only the categories the tiers name, may not drop the
+  // ceiling's own category either: the refusal names it against the table the restore would put back.
+  assert.equal((await write("models.category", [...categories, category(50, "spare")])).body.reasonCode, "SETTINGS_WRITE_COMMITTED");
+  assert.equal((await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "models.escalation.ceiling", value: "spare" }))).body.reasonCode, "SETTINGS_WRITE_COMMITTED");
+  const restore = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "models.category", reset: true }));
+  assert.equal(restore.response.status, 409);
+  assert.equal(restore.body.reasonCode, "MODELS_CATEGORY_IN_USE");
+  assert.deepEqual(restore.body.findings, [{ index: null, field: "id", reasonCode: "MODELS_CATEGORY_IN_USE", category: "spare", references: ["models.escalation.ceiling"] }]);
+  const untokened =await request(url, "/api/settings", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ key: "models.tiers", value: "[]" }) });
   assert.equal(untokened.response.status, 403);
   assert.equal(untokened.body.reasonCode, "PORTAL_TOKEN_REQUIRED");
 });

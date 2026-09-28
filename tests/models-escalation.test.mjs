@@ -2,7 +2,8 @@
 // TCRN-CROSS-STORY-508 R3, R4, AC1, AC5 (MIN-236 D5, D6; TCRN-CROSS-SUB-406): the three
 // models.escalation settings and the escalation along the order of models.tiers. The keys are
 // scalars of the models group, true, 1 and main by default; a model does not write them through the
-// CLI, and a ceiling must name a category models.category holds when it is written. resolveModelsTier
+// CLI, a ceiling must name a category models.category holds when it is written, and a models.category
+// write may not drop the category the ceiling names. resolveModelsTier
 // is a pure function: from a category's base record it escalates one record for every threshold
 // rejections its caller passes in, across categories and runners, up to the ceiling category's record
 // with the smallest order, and not at all while escalation is disabled. The engine keeps no count.
@@ -202,6 +203,52 @@ test("508-R3: replay checks a recorded ceiling's name and not its category; a ce
     refusedWith(() => resolveModelsTier(input), "MODELS_CATEGORY_UNKNOWN", { path: CEILING, category: "review" });
     assert.deepEqual(orderOf(resolveModelsTier({ ...input, escalation: { ...input.escalation, enabled: false } })), [60, 0, false], `${read}: disabled, the ceiling is not read`);
   }
+});
+
+test("508-R3: GIVEN the category the ceiling names WHEN a models.category write drops it THEN it is refused with MODELS_CATEGORY_IN_USE naming the ceiling, and nothing is recorded; a category the ceiling does not name may go", async (context) => {
+  const workspace = await library(context);
+  const ids = (receipt) => JSON.parse(receipt.setting.value).map((entry) => entry.id);
+  const refusedDrop = async (argv, ceiling) => {
+    const before = await versionOf(workspace);
+    const refused = await refusalOf(argv);
+    assert.deepEqual([refused.reasonCode, refused.details.path, refused.details.category, refused.details.categories, refused.details.references],
+      ["MODELS_CATEGORY_IN_USE", "models.category", ceiling, [ceiling], [CEILING]]);
+    assert.match(refused.message, new RegExp(`may not drop ${ceiling}: models\\.escalation\\.ceiling still names it`, "u"));
+    assert.equal(await versionOf(workspace), before, "a refused drop appends no event");
+  };
+  // Tier records that still name a category are named first (508-AC4): the default tiers file two under main.
+  const named = await refusalOf(set(workspace, "models.category", [category("flagship", 10), category("economy", 30)]));
+  assert.deepEqual([named.reasonCode, named.details.references], ["MODELS_CATEGORY_IN_USE", ["models.tiers.30", "models.tiers.40"]]);
+  // With no tier left, the ceiling alone names a category: main, while it is unset.
+  await cli(set(workspace, "models.tiers", []));
+  await refusedDrop(set(workspace, "models.category", [category("flagship", 10), category("economy", 30)]), "main");
+  assert.deepEqual(ids(await cli(set(workspace, "models.category", [category("main", 20)]))), ["main"], "every category the ceiling does not name may go");
+  // A recorded ceiling is the one checked: on cheap, main may go and cheap may not.
+  await cli(set(workspace, "models.category", [category("main", 20), category("cheap", 40)]));
+  await cli(set(workspace, CEILING, "cheap"));
+  assert.deepEqual(ids(await cli(set(workspace, "models.category", [category("cheap", 40)]))), ["cheap"]);
+  await refusedDrop(set(workspace, "models.category", []), "cheap");
+  // settings-remove puts the default table back, which lacks cheap, so it is refused the same way.
+  await refusedDrop(remove(workspace, "models.category"), "cheap");
+  await cli(set(workspace, "models.category", [category("main", 20), category("cheap", 40)]));
+  await cli(set(workspace, CEILING, "main"));
+  await cli(remove(workspace, "models.category"));
+  assert.deepEqual(readModelsCategory((await materializeWorkspace(workspace)).settings).map((entry) => entry.id), ["flagship", "main", "economy"]);
+});
+
+test("508-R3: GIVEN a ceiling a merge left without its category WHEN models.category is written THEN the write is not refused for it", async (context) => {
+  const workspace = await library(context);
+  const occurredAt = at();
+  const setting = { schemaVersion: "tcrn.workspace-setting.v1", key: CEILING, layerKind: "workspace_configuration", value: "review", revision: 1, updatedAt: occurredAt, tombstone: false };
+  await appendEvents(workspace, [(state) => ({
+    payload: { operation: "settings.updated", record: setting },
+    projects: state.projects,
+    work: state.work,
+    settings: sortWorkspaceSettings([...state.settings, setting]),
+  })], { occurredAt });
+  await cli(set(workspace, "models.tiers", []));
+  assert.equal((await cli(set(workspace, "models.category", [category("flagship", 10)]))).reasonCode, "SETTINGS_WRITE_COMMITTED", "the table lacked review before this write");
+  assert.equal(readModelsEscalation((await materializeWorkspace(workspace)).settings).ceiling, "review");
 });
 
 test("508-AC5: GIVEN a rule naming economy, which files two records, WHEN resolved THEN it gets the one with the larger order", () => {

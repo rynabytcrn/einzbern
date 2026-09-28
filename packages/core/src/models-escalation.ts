@@ -114,17 +114,51 @@ export function validateModelsEscalationCeiling(value: string): string {
   return modelsName(value, MODELS_ESCALATION_CEILING_SETTING_KEY, "MODELS_CATEGORY_INVALID");
 }
 
+// Whether the category table of `settings` holds the category `id`.
+function holdsCategory(settings: readonly ModelsSettingView[], id: string): boolean {
+  return readModelsCategory(settings).some((category) => category.id === id);
+}
+
+// A models.category write may not take away the category the ceiling names: the ceiling's effective
+// value (its recorded value, or main while it is unset) is held by the table before the write and not
+// after it. A ceiling the table already lacked (a merge brought them apart) is not this write's doing,
+// and it is refused where it is used, as before.
+function assertCeilingCategoryKept(settings: readonly ModelsSettingView[], value: string | null): void {
+  const ceiling = settings.find((setting) => setting.key === MODELS_ESCALATION_CEILING_SETTING_KEY)?.value ?? MODELS_ESCALATION_CEILING_DEFAULT_VALUE;
+  if (!holdsCategory(settings, ceiling)) return;
+  const after = [
+    ...settings.filter((setting) => setting.key !== MODELS_CATEGORY_SETTING_KEY),
+    ...(value === null ? [] : [{ key: MODELS_CATEGORY_SETTING_KEY, value }]),
+  ];
+  if (holdsCategory(after, ceiling)) return;
+  modelsFail("MODELS_CATEGORY_IN_USE", `${MODELS_CATEGORY_SETTING_KEY} may not drop ${ceiling}: ${MODELS_ESCALATION_CEILING_SETTING_KEY} still names it`, {
+    path: MODELS_CATEGORY_SETTING_KEY,
+    category: ceiling,
+    categories: [ceiling],
+    references: [MODELS_ESCALATION_CEILING_SETTING_KEY],
+  });
+}
+
 /**
  * TCRN-CROSS-STORY-508 R3: a write of models.escalation.ceiling (settings-set, or settings-remove when
  * `value` is null, which puts the default back) may only name a category models.category holds as it
- * stands, or it is refused with MODELS_CATEGORY_UNKNOWN (`details.path` and `details.category`).
- * Replay checks no reference, the rule every recorded value follows; a ceiling a merge leaves without
- * its category is refused where it is used (resolveModelsTier). Every other key passes.
+ * stands, or it is refused with MODELS_CATEGORY_UNKNOWN (`details.path` and `details.category`). The
+ * other way round, a write of models.category (settings-set, or settings-remove, which puts the
+ * default table back) may not drop the category the effective ceiling names while the table holds it:
+ * it is refused with MODELS_CATEGORY_IN_USE, `details.references` ["models.escalation.ceiling"], the
+ * reason code a category tier records still name is refused with. Replay checks no reference, the
+ * rule every recorded value follows; a ceiling a merge leaves without its category is refused where it
+ * is used (resolveModelsTier), and a later category write is not refused for it. Every other key
+ * passes.
  */
 export function assertModelsEscalationWrite(settings: readonly ModelsSettingView[], key: string, value: string | null): void {
+  if (key === MODELS_CATEGORY_SETTING_KEY) {
+    assertCeilingCategoryKept(settings, value);
+    return;
+  }
   if (key !== MODELS_ESCALATION_CEILING_SETTING_KEY) return;
   const ceiling = value ?? MODELS_ESCALATION_CEILING_DEFAULT_VALUE;
-  if (!readModelsCategory(settings).some((category) => category.id === ceiling)) {
+  if (!holdsCategory(settings, ceiling)) {
     modelsFail("MODELS_CATEGORY_UNKNOWN", `${MODELS_ESCALATION_CEILING_SETTING_KEY} names the category ${ceiling}, which ${MODELS_CATEGORY_SETTING_KEY} does not hold`, {
       path: MODELS_ESCALATION_CEILING_SETTING_KEY,
       category: ceiling,

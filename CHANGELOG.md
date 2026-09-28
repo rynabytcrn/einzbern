@@ -600,6 +600,13 @@ tables: `models.escalation.enabled` (`true` or `false`, a boolean control, defau
 (`MODEL_WRITE_REFUSED`). A `settings-set` of the ceiling naming a category `models.category` does not
 hold, and a `settings-remove` of it while the table does not hold `main`, are refused with
 `MODELS_CATEGORY_UNKNOWN` (`details.path` `models.escalation.ceiling`); replay checks the name only.
+The other way round, a `models.category` write (`settings-set`, or `settings-remove`, which puts the
+default table back) that drops the category the ceiling names (its recorded value, or `main` while it
+is unset) is refused with `MODELS_CATEGORY_IN_USE`, `details.references` `["models.escalation.ceiling"]`,
+and nothing is recorded; tier records that still name a dropped category are named first, and a
+ceiling a merge already left without its category does not hold up a category write. Atelier lists
+`models.escalation.ceiling` beside the tier records above a refused category table, and a refused
+restore of the default table names the ceiling's category the same way.
 Core exports `resolveModelsTier`, a pure function of the two tables, the three keys' effective values
 (`readModelsEscalation`), the category a rule names and the number of rejections its caller counts: it
 starts at the category's base record and, for every `threshold` rejections, escalates to the record

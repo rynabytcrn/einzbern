@@ -270,10 +270,12 @@ back) is checked against the other as it stands. A `models.tiers` record naming 
 `models.category` does not hold is refused with `MODELS_CATEGORY_UNKNOWN` (`details.path`,
 `details.category` and `details.references`); a `models.category` value that drops a category
 records still name is refused with `MODELS_CATEGORY_IN_USE`, and `details.references` lists
-those records as `models.tiers.<order>`. Nothing is recorded on a refusal. Replay checks each
-value's shape and no reference, the rule every recorded value follows: a merge may bring the
-two tables apart, and the next write of either names what is missing. Every other malformed
-field of either table is `SETTINGS_VALUE_INVALID` with its `details.path`.
+those records as `models.tiers.<order>`; one that drops the category the escalation ceiling names
+is refused the same way with `models.escalation.ceiling` as its reference (see that key). Nothing
+is recorded on a refusal. Replay checks each value's shape and no reference, the rule every
+recorded value follows: a merge may bring the two tables apart, and the next write of either
+names what is missing. Every other malformed field of either table is `SETTINGS_VALUE_INVALID`
+with its `details.path`.
 
 The three escalation keys say how a rule's record escalates along the order of `models.tiers`
 (TCRN-CROSS-STORY-508 R3, R4; MIN-236 D5, D6). They are scalars of the `models` group.
@@ -307,9 +309,15 @@ The three escalation keys say how a rule's record escalates along the order of `
     when it is written. A `settings-set` naming a category the table does not hold, and a
     `settings-remove` while the table does not hold `main`, are refused with
     `MODELS_CATEGORY_UNKNOWN` (`details.path` `models.escalation.ceiling` and `details.category`),
-    and nothing is recorded. Replay checks the name only. A `models.category` write is not checked
-    against the ceiling: a ceiling whose category the table no longer holds is refused where it is
-    used (below).
+    and nothing is recorded. The other way round, a `models.category` write (`settings-set`, and
+    `settings-remove`, which puts the default table back) may not drop the category the effective
+    ceiling names (its recorded value, or `main` while it is unset) while the table holds it: it is
+    refused with `MODELS_CATEGORY_IN_USE`, `details.category` that category and
+    `details.references` `["models.escalation.ceiling"]`, and nothing is recorded. Tier records
+    that still name a dropped category are named first, as above; a category the ceiling does not
+    name may go. Replay checks the name only, so a merge may leave the ceiling without its
+    category; a later `models.category` write is not refused for that, and the ceiling is refused
+    where it is used (below).
   - **Meaning:** the category an escalation stops in, at its record with the smallest order.
   - **Decision record:** MIN-236 D5 (TCRN-CROSS-STORY-508 R3).
 

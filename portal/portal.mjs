@@ -546,45 +546,24 @@ async function agentsRead(name) {
   return { status: 200, body: { ok: true, reasonCode: "PORTAL_AGENTS_MD_READY", file: name, path, text } };
 }
 
+// TCRN-CROSS-SUB-338 (TCRN-CROSS-STORY-483 R3, AC2; MIN-235 D4, judgment 1.5 (a)): a save writes
+// the file the user edited and judges it; it renders nothing. The judgment is rule-list, which
+// writes nothing, so a rule section changed by one character reads user-modified, AGENTS.md is
+// the bytes that were saved, and no section goes pending. The managed sections are rendered by
+// the engine writes that change what they show (a setting, a variable, a rule), never by a save.
 async function agentsWrite(body) {
   const file = String(body.file ?? PROSE_FILES[0]);
   const path = proseTarget(file);
   if (!path) return { status: 404, body: { ok: false, reasonCode: "PORTAL_PATH_ESCAPE", file } };
   const text = String(body.text ?? "");
   await writeFile(path, text, "utf8");
-  const savedText = await readFile(path, "utf8");
-  const rendered = await renderManagedAgents();
   const readback = await readFile(path, "utf8");
-  if (!rendered.ok) {
-    return {
-      status: 409,
-      body: {
-        ok: false,
-        reasonCode: rendered.body?.reasonCode ?? "PORTAL_AGENTS_RENDER_FAILED",
-        file,
-        path,
-        saved: true,
-        matches: savedText === text,
-        text: readback,
-        render: rendered.body,
-      },
-    };
+  const saved = { file, path, saved: true, matches: readback === text, text: readback };
+  const judged = await rulesProjection();
+  if (!judged.ok) {
+    return { status: 409, body: { ...saved, ok: false, reasonCode: judged.reasonCode ?? "PORTAL_RULES_READ_FAILED", rules: [], pending: [], source: judged } };
   }
-  return {
-    status: 200,
-    body: {
-      ok: true,
-      reasonCode: "PORTAL_AGENTS_MD_WRITTEN",
-      file,
-      path,
-      saved: true,
-      matches: savedText === text,
-      text: readback,
-      sections: rendered.body.sections ?? [],
-      pending: rendered.body.pending ?? [],
-      render: rendered.body,
-    },
-  };
+  return { status: 200, body: { ...saved, ok: true, reasonCode: "PORTAL_AGENTS_MD_WRITTEN", rules: judged.rules ?? [], pending: judged.pending } };
 }
 
 const apiAlias = (pathname) => pathname === "/api/prose" ? "/api/agents-md" : pathname === "/api/reconcile" ? "/api/agents-md/reconcile" : pathname;

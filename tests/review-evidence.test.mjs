@@ -35,6 +35,20 @@ test("INC-391 preserves historical child exit, signal, and buffer diagnostics wi
     maxBufferBytes,
   });
 
+  const successMarker = "INC391_CAPTURED_SUCCESS_OUTPUT";
+  const succeeded = await run(`process.stdout.write(${JSON.stringify(successMarker)});`, 1024);
+  assert.deepEqual({
+    ok: succeeded.ok,
+    stdoutMatches: succeeded.ok && succeeded.result.stdout === successMarker,
+    stdoutBytes: succeeded.ok ? Buffer.byteLength(succeeded.result.stdout) : null,
+    stderrEmpty: succeeded.ok && succeeded.result.stderr === "",
+  }, {
+    ok: true,
+    stdoutMatches: true,
+    stdoutBytes: Buffer.byteLength(successMarker),
+    stderrEmpty: true,
+  });
+
   const privateMarker = "INC391_PRIVATE_CHILD_OUTPUT";
   // R8's full-suite run captured 0 bytes where the focused case captured 27.
   // Wait for the child stream callback to define an explicit flush point before

@@ -11,6 +11,11 @@
 // and a user crest that gave recall fewer cards than it holds is named at the top of recall. Each
 // delay is the test's own step, so every case has one outcome. (b), a merge past the budget, is
 // O-1's: only its diagnostic is asserted.
+//
+// TCRN-CROSS-SUB-413 (STORY-476 D7): the same two devices writing one external key before either
+// delivers. The key's versions are an unresolved duplicate, named by list, a read of its id and
+// recall, withheld from default selection and recall, and resolved by --supersedes naming the id;
+// the same record twice is one card, and a forked, altered or self-contradicting stream is refused.
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
@@ -18,7 +23,7 @@ import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
@@ -190,6 +195,47 @@ async function treeSnapshot(root) {
   };
   await walk(root, "");
   return files;
+}
+
+// TCRN-CROSS-SUB-413: a knowledge verb's answer, as a host reads it from the CLI.
+async function cli(args) {
+  let output = "";
+  await runCli(args, { write(value) { output += value; } });
+  return JSON.parse(output);
+}
+
+// Every committed event of one external key in a shared crest, read from disk, as the duplicate
+// diagnostic names its versions: in the canonical order of the device ids.
+async function versionsOnDisk(crest, externalKey) {
+  const found = [];
+  for (const deviceId of (await readdir(join(crest, "events"))).sort()) {
+    for (const name of (await readdir(join(crest, "events", deviceId))).filter((entry) => entry.endsWith(".json")).sort()) {
+      const event = JSON.parse(await readFile(join(crest, "events", deviceId, name), "utf8"));
+      if (event.metadata.externalKey !== externalKey) continue;
+      found.push({
+        deviceId, sequence: event.sequence, eventHash: event.eventHash,
+        updatedAt: event.metadata.updatedAt, subject: event.metadata.subject, bodySha256: event.metadata.bodySha256,
+      });
+    }
+  }
+  return found;
+}
+
+// TCRN-CROSS-SUB-413 (STORY-476 D7): the state R14 left refusing the whole crest. A writes a control
+// card and then external key UC-SHARED-KEY about kestrels; before the folder delivers A's stream, B
+// writes the same key about beavers. The folder then delivers A's stream.
+async function sameKeyOnTwoDevices(shared) {
+  const { workspace, deviceA, deviceB } = shared;
+  const heron = await asDevice(deviceA, () => createKnowledgeUnit(workspace, card("UC-A-HERON", { subject: "Heron wading depth" })));
+  const kestrel = await asDevice(deviceA, () => createKnowledgeUnit(workspace, card("UC-SHARED-KEY", {
+    occurredAt: instant(3), subject: "Kestrel hover timing", summary: "Kestrel notes", snippet: "time the kestrel hover", body: "Body of A's kestrel version",
+  })));
+  await shared.hold(deviceA);
+  const beaver = await asDevice(deviceB, () => createKnowledgeUnit(workspace, card("UC-SHARED-KEY", {
+    occurredAt: instant(4), subject: "Beaver dam height", summary: "Beaver notes", snippet: "measure the beaver dam", body: "Body of B's beaver version",
+  })));
+  await shared.deliver(deviceA);
+  return { heron, kestrel, beaver, id: kestrel.id };
 }
 
 test("476-R5 / AC3: a user card lands in <device>/crest, not in its library, and another library recalls it as scope user", async (context) => {
@@ -600,6 +646,243 @@ test("R14 (d) D7: a write whose event is committed is answered as created, thoug
   const listed = await asDevice(deviceB, () => listKnowledgeMetadata(workspace, { at, scope: "user", selection: "all" }));
   assert.deepEqual(listed.unresolvedConflicts, [[gullA.id, written.id].sort()]);
   assert.deepEqual(sortedIds(listed.records), [gullA.id, written.id].sort());
+});
+
+test("R15 D7 (SUB-413): one external key two devices wrote before either delivered is an unresolved duplicate, not a refusal of the crest: its versions leave default list and recall, list, a read of its id and recall name both devices and versions, and every other card reads, recalls and is written", async (context) => {
+  const shared = await twoDevices(context);
+  const { workspace, deviceA, deviceB } = shared;
+  const { heron, beaver, id } = await sameKeyOnTwoDevices(shared);
+  assert.deepEqual([beaver.reasonCode, beaver.id], ["KNOWLEDGE_UNIT_CREATED", id], "B saw no card under the key, and one external key is one id");
+  const versions = await versionsOnDisk(shared.crest, "UC-SHARED-KEY");
+  assert.deepEqual(versions.map((version) => version.subject).sort(), ["Beaver dam height", "Kestrel hover timing"]);
+  assert.notEqual(versions[0].deviceId, versions[1].deviceId, "each version sits in its own device's stream");
+  const bodyOf = (version) => (version.subject === "Kestrel hover timing" ? "Body of A's kestrel version" : "Body of B's beaver version");
+  const entry = { id, externalKey: "UC-SHARED-KEY", versions };
+  const expected = { reasonCode: "KNOWLEDGE_DUPLICATE", unresolvedDuplicates: [entry], withheldCards: 2 };
+
+  for (const home of [deviceA, deviceB]) {
+    const listed = await asDevice(home, () => listKnowledgeMetadata(workspace, { at, scope: "user" }));
+    assert.equal(listed.reasonCode, "KNOWLEDGE_LIST_READY", "the crest reads on either device: no KNOWLEDGE_PARTIAL_STATE");
+    assert.deepEqual(listed.unresolvedDuplicates, [entry], "the list names the key, both devices and their versions at its top");
+    assert.equal(Object.hasOwn(listed, "unresolvedConflicts"), false);
+    assert.deepEqual(sortedIds(listed.records), [heron.id], "neither version is a default answer; the control card is");
+    const all = await asDevice(home, () => listKnowledgeMetadata(workspace, { at, scope: "user", selection: "all" }));
+    assert.deepEqual(all.records.map((record) => `${record.id} ${record.subject}`).sort(),
+      [`${heron.id} Heron wading depth`, `${id} Beaver dam height`, `${id} Kestrel hover timing`].sort(), "selection all lists each version");
+    assert.deepEqual(all.unresolvedDuplicates, [entry]);
+
+    // A read of the id answers every version, named by its device, with the same diagnostic.
+    const snippet = await asDevice(home, () => readKnowledgeSnippet(workspace, id, { scope: "user" }));
+    assert.deepEqual(snippet.unresolvedDuplicates, [entry], "a read of the id gives the same diagnostic");
+    assert.deepEqual(snippet.versions.map((version) => [version.deviceId, version.sequence, version.eventHash, version.subject]),
+      versions.map((version) => [version.deviceId, version.sequence, version.eventHash, version.subject]));
+    assert.equal(Object.hasOwn(snippet, "subject"), false, "no version is answered as the card");
+    const body = await asDevice(home, () => readKnowledgeBody(workspace, id, { at, scope: "user" }));
+    assert.deepEqual(body.unresolvedDuplicates, [entry]);
+    assert.deepEqual(body.versions.map((version) => [version.deviceId, version.body]), versions.map((version) => [version.deviceId, bodyOf(version)]));
+    assert.equal(Object.hasOwn(body, "body"), false);
+    // Another card reads as it always has, with nothing added.
+    assert.deepEqual(await asDevice(home, () => readKnowledgeSnippet(workspace, heron.id, { scope: "user" })), {
+      schemaVersion: "tcrn.knowledge-snippet.v1", scope: "user", id: heron.id,
+      subject: "Heron wading depth", summary: "Summary UC-A-HERON", snippet: "Snippet UC-A-HERON", revision: 1,
+    });
+
+    // Recall gives every other user card and names the key, both devices and versions at its top.
+    const read = await asDevice(home, () => readRecallCards(workspace, { at }));
+    assert.deepEqual(read.cards.map((card) => [card.id, card.scope]), [[heron.id, "user"]]);
+    assert.deepEqual(read.userCrestDegraded, expected);
+    const answer = await asDevice(home, () => recallCli(workspace, "kestrel hover timing"));
+    assert.deepEqual(answer.userCrestDegraded, expected);
+    assert.deepEqual(answer.knowledgeStores.user, { reasonCode: "KNOWLEDGE_LIST_READY", cards: 1 });
+    assert.equal(answer.records.some((record) => record.id === id), false, "no version is recalled");
+    const control = await asDevice(home, () => recallCli(workspace, "heron wading depth"));
+    assert.deepEqual(control.records.filter((record) => record.kind === "card").map((record) => record.id), [heron.id], "the control card is recalled");
+  }
+  // The CLI's list and read answers carry the diagnostic as core gives it.
+  const listedByCli = await asDevice(deviceB, () => cli(["knowledge-list", "--workspace", workspace, "--at", at, "--scope", "user"]));
+  assert.deepEqual([listedByCli.reasonCode, listedByCli.unresolvedDuplicates, listedByCli.total], ["KNOWLEDGE_LIST_READY", [entry], 1]);
+  const readByCli = await asDevice(deviceA, () => cli(["knowledge-body", "--workspace", workspace, "--id", id, "--at", at, "--scope", "user"]));
+  assert.deepEqual([readByCli.unresolvedDuplicates, readByCli.versions.length], [[entry], 2]);
+
+  // An unrelated card is written on either device, and listed and recalled on both.
+  const otter = await asDevice(deviceA, () => createKnowledgeUnit(workspace, card("UC-A-OTTER", { subject: "Otter holt survey" })));
+  const vole = await asDevice(deviceB, () => createKnowledgeUnit(workspace, card("UC-B-VOLE", { subject: "Vole tunnel depth" })));
+  assert.deepEqual([otter.reasonCode, vole.reasonCode], ["KNOWLEDGE_UNIT_CREATED", "KNOWLEDGE_UNIT_CREATED"]);
+  for (const home of [deviceA, deviceB]) {
+    assert.deepEqual(sortedIds((await asDevice(home, () => listKnowledgeMetadata(workspace, { at, scope: "user" }))).records), [heron.id, otter.id, vole.id].sort());
+    assert.deepEqual((await asDevice(home, () => readRecallCards(workspace, { at }))).cards.map((card) => card.id).sort(), [heron.id, otter.id, vole.id].sort());
+  }
+
+  // A write that sees the key is refused as before, and one about a version's subject names the key.
+  await expectReason("KNOWLEDGE_DUPLICATE", asDevice(deviceB, () => createKnowledgeUnit(workspace, card("UC-SHARED-KEY", { subject: "Beaver lodge entrance" }))));
+  const refused = await asDevice(deviceA, () => createKnowledgeUnit(workspace, card("UC-A-KESTREL-3", { subject: "Kestrel hover timing" }))).then(() => null, (error) => error);
+  assert.deepEqual([refused?.reasonCode, refused?.details?.conflicts], ["KNOWLEDGE_POSSIBLE_CONFLICT", [id]]);
+  assert.deepEqual((await shared.events()).map((event) => event.externalKey).filter((key) => key === "UC-SHARED-KEY" || key === "UC-A-KESTREL-3"),
+    ["UC-SHARED-KEY", "UC-SHARED-KEY"], "a refused write commits nothing");
+});
+
+test("R15 D7 (SUB-413): --supersedes naming the id resolves the duplicate on both devices: every version leaves default list and recall and stays readable by id, the diagnostic is gone and the new card is recalled at once", async (context) => {
+  const shared = await twoDevices(context);
+  const { workspace, deviceA, deviceB } = shared;
+  const { heron, id } = await sameKeyOnTwoDevices(shared);
+  const settled = await asDevice(deviceB, () => createKnowledgeUnit(workspace, card("UC-B-KESTREL-SETTLED", {
+    occurredAt: instant(8), subject: "Kestrel hover timing", summary: "Settled kestrel notes", snippet: "time the kestrel hover again",
+    body: "The settled kestrel card.", supersedes: id,
+  })));
+  assert.deepEqual([settled.reasonCode, settled.superseded, settled.conflicts], ["KNOWLEDGE_UNIT_CREATED", id, undefined], "the write names the id it replaced");
+  const answers = [];
+  for (const home of [deviceA, deviceB]) {
+    const listed = await asDevice(home, () => listKnowledgeMetadata(workspace, { at, scope: "user" }));
+    assert.equal(Object.hasOwn(listed, "unresolvedDuplicates"), false, "the diagnostic is gone");
+    assert.deepEqual(sortedIds(listed.records), [heron.id, settled.id].sort(), "no version is a default answer; the new card is");
+    const all = await asDevice(home, () => listKnowledgeMetadata(workspace, { at, scope: "user", selection: "all" }));
+    assert.deepEqual(all.records.filter((record) => record.id === id).map((record) => record.extensions.supersededBy), [settled.id, settled.id],
+      "every version names the card that replaced it");
+    const snippet = await asDevice(home, () => readKnowledgeSnippet(workspace, id, { scope: "user" }));
+    assert.equal(Object.hasOwn(snippet, "unresolvedDuplicates"), false);
+    const body = await asDevice(home, () => readKnowledgeBody(workspace, id, { at, scope: "user" }));
+    assert.equal(Object.hasOwn(body, "unresolvedDuplicates"), false);
+    assert.deepEqual(body.versions.map((version) => version.body).sort(), ["Body of A's kestrel version", "Body of B's beaver version"],
+      "each version's body stays readable by its id");
+    const read = await asDevice(home, () => readRecallCards(workspace, { at }));
+    assert.equal(read.userCrestDegraded, null);
+    assert.deepEqual(read.cards.map((card) => card.id).sort(), [heron.id, settled.id].sort());
+    const answer = await asDevice(home, () => recallCli(workspace, "kestrel hover timing"));
+    assert.equal(Object.hasOwn(answer, "userCrestDegraded"), false);
+    assert.deepEqual(answer.records.filter((record) => record.kind === "card").map((record) => record.id), [settled.id], "the new card is recalled at once, and no version is");
+    answers.push({ listed, all, snippet, body });
+  }
+  assert.deepEqual(answers[0], answers[1], "both devices read the same crest");
+  assert.equal((await versionsOnDisk(shared.crest, "UC-SHARED-KEY")).length, 2, "both versions' events stay in their streams");
+});
+
+test("R15 D7 (SUB-413): both versions count toward the user crest's budget until --supersedes resolves the duplicate, and neither does after", async (context) => {
+  const shared = await twoDevices(context);
+  const { workspace, deviceA, deviceB } = shared;
+  const full = "x".repeat(8_192);
+  const subjects = ["Otter holt survey", "Newt pond census", "Badger sett mapping", "Heron colony count", "Stoat winter coat", "Hare form spotting", "Plover scrape watch",
+    "Curlew call record", "Lizard basking rock", "Moth trap catalogue", "Grebe dive length", "Shrew burrow route", "Swift nest ledge", "Toad crossing night"];
+  for (const [index, subject] of subjects.entries()) {
+    await asDevice(deviceA, () => createKnowledgeUnit(workspace, card(`UC-A-FULL-${index}`, { subject, body: full })));
+  }
+  await asDevice(deviceA, () => createKnowledgeUnit(workspace, card("UC-SHARED-BUDGET", { subject: "Kestrel hover timing", body: full })));
+  await shared.hold(deviceA);
+  await asDevice(deviceB, () => createKnowledgeUnit(workspace, card("UC-SHARED-BUDGET", { subject: "Beaver dam height", body: full })));
+  await shared.deliver(deviceA);
+  const id = deriveStableId("knowledge", "UC-SHARED-BUDGET");
+  // Fourteen cards and both versions are sixteen bodies of 8192 bytes: the whole budget, 131072.
+  const refused = await asDevice(deviceA, () => createKnowledgeUnit(workspace, card("UC-A-ONE-BYTE", { subject: "Wagtail roost tree", body: "w" }))).then(() => null, (error) => error);
+  assert.deepEqual([refused?.reasonCode, refused?.details], ["KNOWLEDGE_LIMIT_EXCEEDED", { bodyBytes: 16 * 8_192 + 1, limit: 131_072 }], "both unresolved versions are live bytes");
+  const settled = await asDevice(deviceB, () => createKnowledgeUnit(workspace, card("UC-B-SETTLED", { subject: "Kestrel hover timing", body: "k", supersedes: id })));
+  assert.equal(settled.reasonCode, "KNOWLEDGE_UNIT_CREATED");
+  const after = await asDevice(deviceA, () => createKnowledgeUnit(workspace, card("UC-A-FULL-AFTER", { subject: "Wagtail roost tree", body: full })));
+  assert.equal(after.reasonCode, "KNOWLEDGE_UNIT_CREATED", "neither version holds budget once the id is superseded: 14 x 8192 + 1 + 8192 bytes fit");
+});
+
+test("R15 D7 (SUB-413): a version the metadata/body layout holds and a device's version of one key are a duplicate that names the layout as no device, and --supersedes resolves it", async (context) => {
+  const shared = await twoDevices(context);
+  const { workspace, deviceA, deviceB, crest, base } = { ...shared, base: dirname(dirname(shared.crest)) };
+  const kestrel = await asDevice(deviceA, () => createKnowledgeUnit(workspace, card("UC-SHARED-LEGACY", { subject: "Kestrel hover timing", body: "Legacy kestrel body" })));
+  // Lay A's card out as an engine before events wrote it, then hold that layout back from B.
+  const [stream] = await readdir(join(crest, "events"));
+  const [eventName] = (await readdir(join(crest, "events", stream))).filter((name) => name.endsWith(".json"));
+  const event = JSON.parse(await readFile(join(crest, "events", stream, eventName), "utf8"));
+  const legacyHeld = join(base, "legacy-held");
+  await mkdir(join(legacyHeld, "metadata"), { recursive: true });
+  await mkdir(join(legacyHeld, "bodies"), { recursive: true });
+  await writeFile(join(legacyHeld, "metadata", `${kestrel.id}.json`), canonicalJson(event.metadata));
+  await writeFile(join(legacyHeld, "bodies", `${kestrel.id}.body`), await readFile(join(crest, "events", stream, event.body.file)));
+  await rm(join(crest, "events"), { recursive: true, force: true });
+  const beaver = await asDevice(deviceB, () => createKnowledgeUnit(workspace, card("UC-SHARED-LEGACY", { subject: "Beaver dam height", body: "Stream beaver body" })));
+  for (const name of ["metadata", "bodies"]) await rename(join(legacyHeld, name), join(crest, name));
+
+  const [streamVersion] = await versionsOnDisk(crest, "UC-SHARED-LEGACY");
+  const entry = {
+    id: beaver.id,
+    externalKey: "UC-SHARED-LEGACY",
+    versions: [streamVersion, {
+      deviceId: null, sequence: null, eventHash: null,
+      updatedAt: event.metadata.updatedAt, subject: "Kestrel hover timing", bodySha256: event.metadata.bodySha256,
+    }],
+  };
+  const listed = await asDevice(deviceA, () => listKnowledgeMetadata(workspace, { at, scope: "user" }));
+  assert.deepEqual([listed.unresolvedDuplicates, listed.total], [[entry], 0], "the layout's version is named with no device, after the device's");
+  const body = await asDevice(deviceB, () => readKnowledgeBody(workspace, beaver.id, { at, scope: "user" }));
+  assert.deepEqual(body.versions.map((version) => [version.deviceId, version.body]), [[streamVersion.deviceId, "Stream beaver body"], [null, "Legacy kestrel body"]]);
+
+  const settled = await asDevice(deviceA, () => createKnowledgeUnit(workspace, card("UC-A-SETTLED", { subject: "Kestrel hover timing", supersedes: beaver.id })));
+  assert.deepEqual([settled.reasonCode, settled.superseded], ["KNOWLEDGE_UNIT_CREATED", beaver.id]);
+  for (const home of [deviceA, deviceB]) {
+    const resolved = await asDevice(home, () => listKnowledgeMetadata(workspace, { at, scope: "user" }));
+    assert.equal(Object.hasOwn(resolved, "unresolvedDuplicates"), false);
+    assert.deepEqual(sortedIds(resolved.records), [settled.id]);
+  }
+});
+
+test("R15 D7 (SUB-413) negative: the same record written on two devices is one card, and a write that already sees the key is refused as before", async (context) => {
+  const shared = await twoDevices(context);
+  const { workspace, deviceA, deviceB } = shared;
+  const input = card("UC-SAME-RECORD", { subject: "Kestrel hover timing" });
+  const first = await asDevice(deviceA, () => createKnowledgeUnit(workspace, input));
+  await expectReason("KNOWLEDGE_DUPLICATE", asDevice(deviceA, () => createKnowledgeUnit(workspace, card("UC-SAME-RECORD", { subject: "Beaver dam height" }))));
+  await shared.hold(deviceA);
+  const second = await asDevice(deviceB, () => createKnowledgeUnit(workspace, input));
+  await shared.deliver(deviceA);
+  assert.equal(second.id, first.id);
+  assert.deepEqual((await shared.events()).map((event) => event.externalKey), ["UC-SAME-RECORD", "UC-SAME-RECORD"], "each device committed the record in its own stream");
+  for (const home of [deviceA, deviceB]) {
+    const listed = await asDevice(home, () => listKnowledgeMetadata(workspace, { at, scope: "user", selection: "all" }));
+    assert.equal(Object.hasOwn(listed, "unresolvedDuplicates"), false, "one record twice is no duplicate");
+    assert.deepEqual(sortedIds(listed.records), [first.id], "it is one card");
+    assert.equal((await asDevice(home, () => readKnowledgeSnippet(workspace, first.id, { scope: "user" }))).subject, "Kestrel hover timing");
+    const read = await asDevice(home, () => readRecallCards(workspace, { at }));
+    assert.deepEqual([read.cards.map((card) => card.id), read.userCrestDegraded], [[first.id], null]);
+    await expectReason("KNOWLEDGE_DUPLICATE", asDevice(home, () => createKnowledgeUnit(workspace, card("UC-SAME-RECORD", { subject: "Beaver dam height" }))));
+  }
+});
+
+test("R15 D7 (SUB-413) negative: a forked or altered stream is still refused naming its device, and so is one stream that holds two different records for one id", async (context) => {
+  const { base, home } = await device(context);
+  const first = await library(base, "refusals");
+  const heron = await createKnowledgeUnit(first.workspace, card("UC-HERON", { subject: "Heron wading depth" }));
+  await createKnowledgeUnit(first.workspace, card("UC-OTTER", { subject: "Otter holt survey" }));
+  const deviceId = JSON.parse(await readFile(join(home, "device.json"), "utf8")).deviceId;
+  const stream = join(home, "crest", "events", deviceId);
+  const aside = join(base, "aside");
+  await mkdir(aside);
+  const eventNames = (await readdir(stream)).filter((name) => name.endsWith(".json")).sort();
+  const refusal = () => listKnowledgeMetadata(first.workspace, { at, scope: "user" }).then(() => null, (error) => error);
+
+  // A fork: a second event at sequence 2.
+  const forked = `00000002-${"f".repeat(64)}.json`;
+  await writeFile(join(stream, forked), await readFile(join(stream, eventNames[1])));
+  let refused = await refusal();
+  assert.equal(refused?.reasonCode, "KNOWLEDGE_PARTIAL_STATE");
+  assert.ok(refused.message.includes(`${deviceId}: event stream has a gap or fork at sequence 3`), refused.message);
+  await rename(join(stream, forked), join(aside, forked));
+
+  // An altered event: its bytes no longer hash to the name it carries.
+  const original = await readFile(join(stream, eventNames[1]), "utf8");
+  await writeFile(join(stream, eventNames[1]), original.replace("Otter holt survey", "Otter holt census"));
+  refused = await refusal();
+  assert.equal(refused?.reasonCode, "KNOWLEDGE_RECORD_INVALID");
+  assert.ok(refused.message.includes(`${deviceId}/${eventNames[1]}: event hash`), refused.message);
+  await writeFile(join(stream, eventNames[1]), original);
+  assert.equal((await refusal()), null, "the restored stream reads");
+
+  // A third event, validly chained and hashed, carrying a different record for the first card's id:
+  // one writer scans before it writes, so no writer of this engine leaves a stream like that.
+  const [heronEvent, otterEvent] = await Promise.all(eventNames.map(async (name) => JSON.parse(await readFile(join(stream, name), "utf8"))));
+  const metadata = { ...heronEvent.metadata, subject: "Heron wading depth, revised" };
+  const bodyFile = `00000003-${metadata.bodySha256}.body`;
+  await writeFile(join(stream, bodyFile), await readFile(join(stream, heronEvent.body.file)));
+  const unsigned = { schemaVersion: heronEvent.schemaVersion, deviceId, sequence: 3, occurredAt: metadata.updatedAt, priorHash: otterEvent.eventHash, metadata, body: { ...heronEvent.body, file: bodyFile } };
+  const eventHash = canonicalSha256(unsigned);
+  await writeFile(join(stream, `00000003-${eventHash}.json`), canonicalJson({ ...unsigned, eventHash }));
+  refused = await refusal();
+  assert.equal(refused?.reasonCode, "KNOWLEDGE_PARTIAL_STATE");
+  assert.ok(refused.message.includes(`${heron.id}: writer ${deviceId} holds conflicting events for one knowledge id`), refused.message);
+  assert.equal((await readRecallCards(first.workspace, { at })).userCrestDegraded?.reasonCode, "KNOWLEDGE_PARTIAL_STATE", "recall names the refusal");
 });
 
 test("R14 (b) diagnostic only: a merge past the user crest's budget is named at the top of CLI recall (O-1 pending: nothing else about it is asserted)", async (context) => {

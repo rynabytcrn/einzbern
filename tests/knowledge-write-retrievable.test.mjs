@@ -13,7 +13,7 @@
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -107,8 +107,9 @@ function refusalOf(operation) {
   return operation().then(() => null, (error) => error);
 }
 
-// Every file of the knowledge store, by relative path. `cardsOnly` keeps metadata/ and bodies/: the
-// cards themselves, without the marker.
+// Every file of the knowledge store, by relative path. `cardsOnly` keeps the cards themselves,
+// without the marker: the event streams (TCRN-CROSS-SUB-414), and metadata/ and bodies/ where an
+// older engine's layout holds them.
 async function storeBytes(fx, { cardsOnly = false } = {}) {
   const files = {};
   const walk = async (directory, prefix) => {
@@ -119,7 +120,40 @@ async function storeBytes(fx, { cardsOnly = false } = {}) {
     }
   };
   await walk(fx.store, "");
-  return cardsOnly ? Object.fromEntries(Object.entries(files).filter(([path]) => path.startsWith("metadata/") || path.startsWith("bodies/"))) : files;
+  return cardsOnly ? Object.fromEntries(Object.entries(files).filter(([path]) => path.startsWith("events/") || path.startsWith("metadata/") || path.startsWith("bodies/"))) : files;
+}
+
+// TCRN-CROSS-SUB-414: the latest event this device's stream of the crest holds for a card.
+async function storedEvent(fx, id) {
+  const [deviceId] = await readdir(join(fx.store, "events"));
+  const stream = join(fx.store, "events", deviceId);
+  let found = null;
+  for (const name of (await readdir(stream)).filter((entry) => entry.endsWith(".json")).sort()) {
+    const event = JSON.parse(await readFile(join(stream, name), "utf8"));
+    if (event.metadata.id === id) found = event;
+  }
+  return found;
+}
+
+// TCRN-CROSS-SUB-414: the crest as an engine before event streams left it -- one metadata file and
+// one body file per card, the marker's version counting its writes -- laid down from what the
+// streams hold now, the streams taken away.
+async function asOlderEngineCrest(fx) {
+  const all = await listKnowledgeMetadata(fx.workspace, { at: AT, selection: "all", limit: 1_000_000 });
+  const marker = await readKnowledgeStoreMarker(fx.workspace);
+  const [deviceId] = await readdir(join(fx.store, "events"));
+  const stream = join(fx.store, "events", deviceId);
+  const bodies = new Map();
+  for (const name of (await readdir(stream)).filter((entry) => entry.endsWith(".body"))) bodies.set(name.slice(9, -5), await readFile(join(stream, name)));
+  await mkdir(join(fx.store, "metadata"));
+  await mkdir(join(fx.store, "bodies"));
+  for (const record of all.records) {
+    await writeFile(join(fx.store, "metadata", `${record.id}.json`), canonicalJson(record));
+    await writeFile(join(fx.store, "bodies", `${record.id}.body`), bodies.get(record.bodySha256));
+  }
+  const storeJson = join(fx.store, "store.json");
+  await writeFile(storeJson, canonicalJson({ ...JSON.parse(await readFile(storeJson, "utf8")), version: marker.version, eventHighWaterDigest: marker.eventHighWaterDigest }));
+  await rm(join(fx.store, "events"), { recursive: true });
 }
 
 test("476-AC1: a card is retrieved the moment it is written, and nothing about it is a candidate", async (t) => {
@@ -129,8 +163,9 @@ test("476-AC1: a card is retrieved the moment it is written, and nothing about i
   const created = await createKnowledgeUnit(fx.workspace, sourcedGuide(fx, "SUB-308-SOURCED-GUIDE"));
   assert.equal(created.reasonCode, "KNOWLEDGE_UNIT_CREATED");
 
-  // Stored: active, with no retired promotion marker or candidate state.
-  const stored = JSON.parse(await readFile(join(fx.store, "metadata", `${created.id}.json`), "utf8"));
+  // Stored: active, with no retired promotion marker or candidate state -- as the one event this
+  // device's stream holds for it (TCRN-CROSS-SUB-414).
+  const stored = (await storedEvent(fx, created.id)).metadata;
   assert.equal(stored.lifecycle, "active");
   assert.equal(Object.hasOwn(stored, "promotionState"), false);
   assert.equal(Object.values(stored).includes("candidate"), false, "no candidate state on the written record");
@@ -264,10 +299,13 @@ test("MIN-225: a stale card and a full store lose nothing", async (t) => {
 // What a 1.2.0 store may hold stays readable: a card a fitness sweep retired with its retirement
 // record, the marker's lastSweepAt, and a retire that stopped after its metadata write, which
 // knowledge-recover still completes by reclaiming the body once. The telemetry verbs stay retired.
+// TCRN-CROSS-SUB-414: that engine wrote the metadata/body layout, which asOlderEngineCrest lays down;
+// the recovery completes the stopped retire without writing store.json.
 test("historical records stay readable, and knowledge-recover still completes a stopped retire", async (t) => {
   const fx = await fixture(t, "FIXTURE-SUB-308-HISTORY");
   const swept = await captureKnowledgeUnit(fx.workspace, lesson("SUB-308-SWEPT", "SUB-308 a card a sweep retired"));
   const kept = await captureKnowledgeUnit(fx.workspace, lesson("SUB-308-KEPT", "SUB-308 a card nothing retired", { coexist: true }));
+  await asOlderEngineCrest(fx);
   const retirement = { schemaVersion: "tcrn.knowledge-retirement.v1", id: swept.id, reason: "zero-retrieval-zero-reference", retrievalCount: 0, referenceCount: 0, observedEvents: 1, windowDays: 90, windowStart: "2026-06-03T00:00:00.000Z", windowEnd: "2026-08-31T23:59:59.999Z", sweptAt: "2026-09-01T00:47:10.039Z" };
   // The retire as 1.2.0 wrote it, stopped after its metadata: the record is retired, its body is
   // still on disk, and the mutation claim of a process that is gone is left behind.
@@ -279,8 +317,10 @@ test("historical records stay readable, and knowledge-recover still completes a 
     schemaVersion: "tcrn.knowledge-mutation-claim.v1", workspaceId: marker.workspaceId, version: marker.version,
     token: "a".repeat(48), pid: process.pid + 1_000_000, acquiredAt: retirement.sweptAt,
   }));
+  const manifest = await readFile(join(fx.store, "store.json"));
   const recovered = await recoverKnowledgeStore(fx.workspace);
   assert.deepEqual([recovered.reasonCode, recovered.reclaimedRetiredBodies], ["KNOWLEDGE_RECOVERED", 1]);
+  assert.deepEqual(await readFile(join(fx.store, "store.json")), manifest, "the recovery wrote no root manifest");
   assert.equal((await recoverKnowledgeStore(fx.workspace)).reasonCode, "KNOWLEDGE_RECOVERY_NOT_NEEDED");
   assert.equal((await readdir(join(fx.store, "bodies"))).includes(`${swept.id}.body`), false, "the retired body is reclaimed once");
 

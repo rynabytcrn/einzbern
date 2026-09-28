@@ -14,7 +14,7 @@
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -73,10 +73,10 @@ const refusal = async (operation) => {
   }
 };
 
-// The motivating case, whole: a chain write has invalidated the store (the normal state of
-// a workspace being worked in), and one invocation aligns it, files four cards and
-// re-verifies one. Red leg: drop the alignFirst rebase and the first create refuses
-// KNOWLEDGE_HIGH_WATER_MISMATCH -- sixteen round trips' worth of ceremony returns.
+// The motivating case, whole: a chain write has moved the head (the normal state of a
+// workspace being worked in), and one invocation aligns, files four cards and re-verifies
+// one. TCRN-CROSS-SUB-414: the alignment is now the rebase's re-validation, which writes
+// nothing -- the next case shows the batch needs none.
 test("knowledge-batch: align, four cards and a reverify in one act", async () => {
   const fixture = await workspaceWithStore();
   try {
@@ -104,6 +104,38 @@ test("knowledge-batch: align, four cards and a reverify in one act", async () =>
       [1, 1, 1], "and left the three it did not name at their written revision");
     const answered = await listKnowledgeMetadata(fixture.root, { at: at(4), allowTrailing: true });
     assert.equal(answered.total, 4, "default recall answers for all four from the write");
+  } finally {
+    await rm(fixture.base, { recursive: true, force: true });
+  }
+});
+
+// TCRN-CROSS-SUB-414 (MIN-235 D7): a chain write no longer leaves the crest behind, so a batch
+// after one lands with no alignment; its members append to this device's stream, one event per
+// record written, and the crest's root manifest is the bytes initialization wrote. Red leg: rebind
+// the crest after the chain write or in the batch and store.json changes.
+test("knowledge-batch, SUB-414: after a chain write a batch lands unaligned, appends one event per record, and leaves store.json alone", async () => {
+  const fixture = await workspaceWithStore();
+  try {
+    const store = join(fixture.root, "crest");
+    const manifest = await readFile(join(store, "store.json"));
+    await createWork(fixture.root, {
+      occurredAt: at(2), projectId: fixture.projectId,
+      externalKey: "KBATCH-W2", kind: "Initiative", parentId: null, status: "active",
+    });
+    const result = await applyKnowledgeBatch(fixture.root, batch([
+      card(fixture, 1), card(fixture, 2),
+      { verb: "knowledge-reverify", externalKey: "KB-CARD-1" },
+      { verb: "knowledge-policy", externalKey: "KB-CARD-2", stalenessPolicy: { maximumAgeDays: null, unknownDisposition: "fail-closed" } },
+    ]), { occurredAt: at(3) });
+    assert.deepEqual([result.reasonCode, result.aligned, result.version], ["KNOWLEDGE_BATCH_APPLIED", false, 4]);
+    assert.deepEqual(await readFile(join(store, "store.json")), manifest, "the batch wrote no root manifest");
+    assert.deepEqual((await readdir(store)).sort(), ["events", "store.json"], "and took no claim");
+    const [deviceId] = await readdir(join(store, "events"));
+    const events = (await readdir(join(store, "events", deviceId))).filter((name) => name.endsWith(".json"));
+    assert.equal(events.length, 4, "one event per record the members wrote");
+    const aligned = await applyKnowledgeBatch(fixture.root, batch([card(fixture, 3)]), { occurredAt: at(4), alignFirst: true });
+    assert.deepEqual(aligned.applied[0], { verb: "knowledge-rebase", reasonCode: "KNOWLEDGE_STORE_REBASED", version: 4 }, "the alignment re-validates and advances nothing");
+    assert.deepEqual(await readFile(join(store, "store.json")), manifest);
   } finally {
     await rm(fixture.base, { recursive: true, force: true });
   }

@@ -3,7 +3,7 @@
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -17,12 +17,36 @@ import {
   initializeKnowledgeStore,
   initializeLibrary,
   listKnowledgeMetadata,
+  readKnowledgeStoreMarker,
   validateKnowledgeStore,
   DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalJson, canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
 const instant = (second) => `2026-09-02T00:00:${String(second).padStart(2, "0")}Z`;
+
+// TCRN-CROSS-SUB-414: this engine writes a library's cards as events in each device's stream,
+// crest/events/<device id>/. A crest an engine before event streams wrote held one metadata file and
+// one body file per card instead, its marker's version counting the writes; this lays the crest down
+// that way, every record as the streams hold it now, and takes the streams away.
+async function asOlderEngineCrest(workspace) {
+  const store = join(workspace, DIRECTORY.knowledge);
+  const all = await listKnowledgeMetadata(workspace, { at: "2099-01-01T00:00:00Z", selection: "all", limit: 1_000_000 });
+  const marker = await readKnowledgeStoreMarker(workspace);
+  const [deviceId] = await readdir(join(store, "events"));
+  const stream = join(store, "events", deviceId);
+  const bodies = new Map();
+  for (const name of (await readdir(stream)).filter((entry) => entry.endsWith(".body"))) bodies.set(name.slice(9, -5), await readFile(join(stream, name)));
+  await mkdir(join(store, "metadata"));
+  await mkdir(join(store, "bodies"));
+  for (const record of all.records) {
+    await writeFile(join(store, "metadata", `${record.id}.json`), canonicalJson(record));
+    await writeFile(join(store, "bodies", `${record.id}.body`), bodies.get(record.bodySha256));
+  }
+  const storeJson = join(store, "store.json");
+  await writeFile(storeJson, canonicalJson({ ...JSON.parse(await readFile(storeJson, "utf8")), version: marker.version, eventHighWaterDigest: marker.eventHighWaterDigest }));
+  await rm(join(store, "events"), { recursive: true });
+}
 
 async function fixture() {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-inc256-")));
@@ -142,6 +166,7 @@ test("INC-256 policy migration also updates retired metadata without requiring a
     // down the way an older engine's knowledge-retire left it: the next revision, lifecycle
     // "retired", and the body reclaimed.
     const created = await createKnowledgeUnit(fx.workspace, card(fx, "CARD-RETIRED", "guide", 0));
+    await asOlderEngineCrest(fx.workspace);
     const store = join(fx.workspace, DIRECTORY.knowledge);
     const metadataPath = join(store, "metadata", `${created.id}.json`);
     const metadata = JSON.parse(await readFile(metadataPath, "utf8"));

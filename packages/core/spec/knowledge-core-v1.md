@@ -10,14 +10,18 @@ infers, or consults any predecessor knowledge or workflow source.
 
 ## Storage and authority
 
-The store is a library's `crest/` directory (TCRN-CROSS-STORY-469 R1, 466 R1) with closed
-`store.json`, `metadata/` and `bodies/` entries; initializing it adds nothing to the library
-root, which keeps its seven entries. Metadata is the index authority. The index view,
+The store is a library's `crest/` directory (TCRN-CROSS-STORY-469 R1, 466 R1); initializing it
+adds nothing to the library root, which keeps its seven entries. Every device that shares the
+library writes its crest (TCRN-CROSS-SUB-414; STORY-476 D7; MIN-235 D7, O3): each device appends
+its cards to its own event stream, `events/<device-id>/`, and those streams are the authority for
+card metadata and body references. A crest holds `store.json`, its root manifest, and the
+`events/` directory its first card lays out; a crest an engine before event streams wrote also
+holds that engine's `metadata/` and `bodies/` (the metadata/body layout below). The index view,
 `index.json`, is derived, so it is this device's cache, `cache/<library>/crest-views/` in the
 device directory (469 R4): a read that finds it missing or out of date projects it again
-instead of failing, and another device reading the same store projects its own. An
-old-layout workspace's store (`knowledge/` in its control directory, with a
-`views/index.json` entry) opens read-only; every write refuses with
+instead of failing, and another device reading the same store projects its own; a write projects
+this device's copy from its own scan. An old-layout workspace's store (`knowledge/` in its
+control directory, with a `views/index.json` entry) opens read-only; every write refuses with
 `LEGACY_WORKSPACE_READ_ONLY`.
 Bodies are separate single-link regular files and never appear in metadata
 views, default selection, or checkpoints. Metadata listing, snippet, freshness,
@@ -26,26 +30,81 @@ read body files. Full validation and mutations validate all body bindings;
 explicit body read validates only the requested body through its bound
 descriptor.
 
-The store marker binds the exact Workspace ID and event high-water digest. In a library they
-are the library id and the library head, one digest over every stream's head, so the binding
-moves with any entry of the version vector, whichever device wrote it. Every write runs under
-this machine's lock of the library (`locks/<library>.lock` in the device directory, the lock
-every chain write takes), and inside it all mutations require an exclusive no-follow claim and
-exact store-version CAS. The lock serialises one machine's writers; nothing makes two devices'
-concurrent crest writes safe against each other.
-Re-verification, policy updates and article refreshes additionally require
-record-revision CAS. Descriptor-bound reads
-bind device, inode, size, mode, and nanosecond change metadata. Atomic
-replacement uses exclusive no-follow temporary files. Link, special-file,
-source-replacement, partial/crash, count, size, and aggregate violations fail
-closed. P1 Option-B remains the ancestor-component threat boundary.
+Each event of a library's crest (`einzbern.crest-event.v1`, named `<sequence>-<event hash>.json`)
+holds one record of one card: its metadata, its body file `<sequence>-<body sha256>.body` written
+before it, its device, its sequence and the previous event's hash, and two fields the user crest's
+events do not carry. `chain` is every chain stream's head (device, sequence, event hash) the write
+was checked against; `replaces` is the digest of the stored record of the same card that this record
+replaces, null for a card's first record. A card is written again -- `knowledge-reverify`,
+`knowledge-policy`, `knowledge-article-refresh` -- as a new record in the writing device's stream
+naming the record it replaces, under record-revision CAS against the card as a read projects it; a
+retired record, whose body an older engine may have reclaimed, is written again without a body.
+Nothing is rewritten in place: a write creates its body file and its event with exclusive no-follow
+creates, a crash before the event leaves a body no event names, which reads ignore, and a committed
+event is complete. This machine's lock of the library (`locks/<library>.lock` in the device
+directory, the lock every chain write takes) serialises the writers of one device's stream; two
+devices never write one file of a crest. Descriptor-bound reads bind device, inode, size, mode, and
+nanosecond change metadata. Link, special-file, source-replacement, partial, count, size, and
+aggregate violations fail closed. P1 Option-B remains the ancestor-component threat boundary.
 
-The legacy body-file wording above describes the compatibility reader. Current
-local migrations may replace the body files with canonical NDJSON segments,
-point indexes, and a manifest; metadata remains one record per id and is still
-the authority. `knowledge.aggregateBytes` is the workspace setting for the
+A read merges every writer's records, the metadata/body layout's among them. A writer's latest record
+of a card stands for its earlier ones, and of the writers' latest records the ones no other record
+replaces are the card's current records: one is the card, and more than one is an unresolved
+duplicate (the same-key rule below), so two devices that each wrote one card again before either saw
+the other's lose neither record. A writer holding a second record of an id that replaces nothing is
+refused as `KNOWLEDGE_PARTIAL_STATE`, naming the writer. A card whose `supersedes` names another is
+projected over it -- the replaced card reads `supersededBy`, one revision on -- and the replaced record
+is not rewritten; a card whose supersedes names a card not delivered yet stands, and the named card is
+replaced when it arrives. A library's crest holds unresolved conflicts and duplicates by the rules the
+user crest's follow (below) -- a card's writer, for a pair, is the writer of its first record, and a
+duplicate's versions are its writers' current records -- and `knowledge-list` and a read of the id name
+them with the same fields; `recall` leaves their cards out and names them at its top under
+`projectCrestDegraded` (see "Freshness, writing, and retrieval").
+A read also checks each event's `chain` against the chain it replays. A record written against chain
+events this device does not hold yet -- a folder that delivered the card before those events, or a
+partial restore that left the crest newer than its chain -- is named at the top of `knowledge-list`
+and of a read of its id as `awaitingChain` (`id`, `deviceId`, `sequence`, `eventHash`, in canonical id
+order); its card leaves default selection and `recall` (which names the record under `awaitingChain` in
+`projectCrestDegraded`), its links are checked once the events arrive, and `knowledge-validate`,
+`knowledge-checkpoint` and `knowledge-rebase` refuse with `KNOWLEDGE_HIGH_WATER_MISMATCH`, details
+`awaitingChain`. Every other card reads, recalls and is written as before.
+
+The library crest's root manifest, `store.json`, is written by exactly one operation of this engine
+(TCRN-CROSS-SUB-414, MIN-235 D7):
+
+1. Initialization, `knowledge-init`: `store.json` is created with an exclusive no-follow create,
+   version 0, bound to the library id and that id's own digest -- the same bytes whichever device
+   writes it. A crest that already holds anything refuses with `KNOWLEDGE_ALREADY_EXISTS`, and
+   nothing replaces a manifest.
+
+Nothing else writes it, and nothing else takes a claim on the crest: not a chain write, and no
+knowledge rebind after one (the CLI ran a rebase after every chain write until this change); not a
+card write (`knowledge-create`, `knowledge-capture`, `knowledge-article-create`, a `knowledge-batch`
+create member, `conference-close --distill`); not a supersede; not a card written again
+(`knowledge-reverify`, `knowledge-policy`, `knowledge-article-refresh` and their batch members); not
+`knowledge-rebase` or `knowledge-batch --align-first`, which re-validate and write nothing; not
+`knowledge-recover`, which completes a stopped write of the metadata/body layout and never writes the
+manifest; not `knowledge-bodies-migrate`, which rewrites the metadata/body layout's bodies into
+segments, is run by one device, and writes neither the manifest nor an event stream; and not a read or
+its cache projection. The marker a read answers is a projection and is never persisted: its version is
+the manifest's advanced by every event of every stream, and its high water, `eventHighWaterDigest`, is
+the chain head the read replayed. A chain write therefore never leaves the crest behind -- the purpose
+the rebind after it served (TCRN-CROSS-INC-244) -- and a library's read never trails its chain. A
+manifest that does not bind the library's id refuses every read with `KNOWLEDGE_HIGH_WATER_MISMATCH`.
+An engine before event streams bound the manifest to the library head at its last write and advanced
+its version per write under a mutation claim; this engine reads both as written and writes neither.
+
+The metadata/body layout -- one `metadata/<id>.json` and one `bodies/<id>.body` per card -- is what an
+engine before event streams wrote. It stays readable beside the device streams as the writer `legacy`
+and metadata remains one record per id in it; new cards are appended to event streams, and no record of
+it is rewritten by one. The body-file wording above describes its reader. A local migration,
+`knowledge-bodies-migrate`, may replace its body files with canonical NDJSON segments, point indexes,
+and a manifest; a crest holding only event streams has nothing to migrate. A mutation claim can be
+found only in that layout, left by an interrupted write of that engine, and until `knowledge-recover`
+completes it every write and rebase of the crest refuses with `KNOWLEDGE_LOCKED`.
+`knowledge.aggregateBytes` is the workspace setting for the
 body bytes of live cards (see "Capacity"), with the fixed canonical ceiling as its
-upper bound; the body layout (one file per card or segments) does not change the
+upper bound; the body layout (one file per card, segments or event streams) does not change the
 count.
 
 The user crest is shared between projects and can live in a synced folder. It
@@ -55,12 +114,16 @@ event hash and each event binds its metadata to a body file in that stream.
 Device-local locks serialize that device's writes; independent devices append
 without replacing one another's events. The root manifest is not rewritten for
 card appends. Reads derive the combined event heads, version and local cache
-projection from the streams; those projections are not authority. A forked
-stream, or a duplicate key/id with differing metadata, is returned as an explicit
-refusal. A write interrupted before its event commit can leave an unreferenced
-body, which is ignored; a committed event is complete because its body is written
-first. Older metadata and body user crests remain readable, and new events can be
-appended without rewriting their existing records.
+projection from the streams; those projections are not authority. A forked,
+broken or altered stream is returned as an explicit refusal naming its device and
+the sequence or file, and so is one stream that holds two different records for
+one knowledge id, which no writer of this engine leaves: it scans before it
+writes. One external key that two writers wrote with differing metadata is not a
+refusal of the crest (see the same-key rule below). A write interrupted before
+its event commit can leave an unreferenced body, which is ignored; a committed
+event is complete because its body is written first. Older metadata and body user
+crests remain readable, and new events can be appended without rewriting their
+existing records.
 
 The user crest's root manifest, `store.json`, is written by exactly one operation
 of this engine (TCRN-CROSS-SUB-310, MIN-235 D7):
@@ -108,6 +171,39 @@ and the next read reports any pair it forms. A merge whose live bodies exceed
 disposition is pending); `recall` names it, or withheld conflicts, under
 `userCrestDegraded` (see "Freshness, writing, and retrieval").
 
+The same-key rule (TCRN-CROSS-SUB-413, STORY-476 D7): a knowledge id is derived
+from its external key, so two writers that each write one external key before
+either sees the other's write one id. The same record written by both, or
+delivered twice, is one card. Records that differ are an unresolved duplicate,
+not a refusal of the crest, and none of its versions is the card: each stays in
+its writer's stream, and while the duplicate is unresolved default selection and
+`recall` leave out every version. `knowledge-list --scope user` names it at its
+top as `unresolvedDuplicates`, one entry per id in canonical id order, each with
+`id`, `externalKey` and `versions`: one version per writer in canonical order of
+its device id (a version the metadata/body layout holds comes after them), each
+naming `deviceId`, `sequence` and `eventHash` -- the device stream and the event
+that hold it, all three `null` for the metadata/body layout -- with its
+`updatedAt`, `subject` and `bodySha256`. `--selection all` lists every version
+as its own record. `knowledge-snippet` and `knowledge-body` for the id answer
+`versions` in the same order, in place of one card's fields: each version's
+`deviceId`, `sequence` and `eventHash` with its `subject`, `summary`, `snippet`
+and `revision`, or with its `revision`, `freshness`, `bodySha256` and `body`
+(a body read opens only when every version passes the check one card's body
+does); while the duplicate is unresolved they carry its `unresolvedDuplicates`
+entry at their top. Every other card reads, recalls and is written as before. A
+write sees every version: it may not reuse the id or external key
+(`KNOWLEDGE_DUPLICATE`), a version on its subject is a conflict it names by the
+id, and each live version counts toward `knowledge.aggregateBytes`. A version's
+own `supersedes` still replaces the card it names. The duplicate is resolved by
+the existing write path: a write whose `--supersedes` names the id replaces every
+version at once, whichever of them its writer saw. Each version's projected
+`supersededBy` then names the replacement, so every version leaves the budget,
+default selection and `recall`, its event and body stay in their stream and read
+by the id, and the diagnostic is gone; a duplicate is unresolved while one of its
+versions is neither replaced nor retired. To keep one version, write its content
+again under a new external key with `--supersedes` naming the id. `recall` names
+an unresolved duplicate under `userCrestDegraded`.
+
 ## Metadata
 
 `KnowledgeUnitMetadata` is closed and binds its stable ID/external key, scope,
@@ -136,15 +232,35 @@ TCRN-CROSS-MIN-146 D1 and TCRN-CROSS-MIN-158 D1) made the default selection ever
 active card, because a promotion gate on retrieval is what left a written card
 unfindable with nothing in its receipt to say so.
 
-In the user crest, default selection also leaves out the cards of an unresolved
-conflict (see "Storage and authority"). Recall reads the library's crest and the
-user crest; a store it cannot read gives no cards and its reason code under
-`knowledgeStores`. When the user crest gave recall fewer cards than it holds, the
+In either crest, default selection also leaves out the cards of an unresolved
+conflict and every version of an unresolved duplicate, and in a library's crest the
+card of a record awaiting chain events (see "Storage and authority"). Recall reads the
+library's crest and the user crest; a store it cannot read gives no cards and its
+reason code under `knowledgeStores`, and the cards a store's default selection leaves
+out are not recalled. When the user crest gave recall fewer cards than it holds, the
 answer says so at its top as `userCrestDegraded` (TCRN-CROSS-SUB-310): the read's
 refusal code alone (for example `KNOWLEDGE_LIMIT_EXCEEDED`, no user card
 recalled), or `KNOWLEDGE_POSSIBLE_CONFLICT` with `unresolvedConflicts` and
-`withheldCards` (every other user card recalled). It is absent when the user crest
-gave every card it holds, or holds none.
+`withheldCards` (every other user card recalled). TCRN-CROSS-SUB-413 adds
+`unresolvedDuplicates`, the entries `knowledge-list` names, when versions of an
+unresolved duplicate are withheld; the reason code is then `KNOWLEDGE_DUPLICATE`
+unless a pair is withheld as well, and `withheldCards` counts the pairs' cards
+and every withheld version. It is absent when the user crest gave every card it
+holds, or holds none.
+
+The library's crest says the same at the top of a recall answer as
+`projectCrestDegraded` (TCRN-CROSS-SUB-414), in the form `userCrestDegraded` has,
+when its default selection withheld cards: `KNOWLEDGE_POSSIBLE_CONFLICT` when an
+unresolved pair is withheld, else `KNOWLEDGE_DUPLICATE` when versions of an
+unresolved duplicate are, else `KNOWLEDGE_HIGH_WATER_MISMATCH` -- the refusal
+`knowledge-validate`, `knowledge-checkpoint` and `knowledge-rebase` meet -- when
+records awaiting chain events are all it withheld. `unresolvedConflicts`,
+`unresolvedDuplicates` and `awaitingChain` carry what `knowledge-list` names, each
+present when it is not empty, and `withheldCards` counts every withheld card and
+version once, although a pair's card or a duplicate's version can also await chain
+events. A refused read of the library's crest is not repeated there: its code
+stays `knowledgeReasonCode` and `knowledgeStores.project`, as it always was. It is
+absent when the library's crest withheld nothing.
 
 A card is retrievable the moment it is written (TCRN-CROSS-STORY-476 R1,
 TCRN-CROSS-MIN-227 D9, TCRN-CROSS-SUB-308). Every write lands lifecycle `active`
@@ -172,10 +288,10 @@ advances the disposable store version and metadata revision without changing the
 body, source digest, or verification instant; setting `maximumAgeDays` to `null`
 also removes a stale posture that came only from the retired calendar policy.
 
-Mutation input is validated before the mutation claim is acquired. Every
-non-crash error after claim acquisition releases only the identity-bound claim
-generation before returning its frozen reason code, so an invalid request cannot
-poison an otherwise valid store or block a later valid mutation.
+Mutation input is validated before anything is written. A write takes no claim
+(TCRN-CROSS-SUB-414): every refusal is decided before its event is written, so an
+invalid request cannot poison the crest or block a later valid write, and a crash
+leaves either no event or a complete one.
 
 ## Limits and privacy
 
@@ -227,21 +343,32 @@ policy; this remains a bounded policy and is not a general DLP claim.
 
 ## High-water rebase
 
-The store marker binds the workspace event head at which it was last consistent.
-Any workspace event advances that head, and every knowledge read then fails
-closed with `KNOWLEDGE_HIGH_WATER_MISMATCH` until a governed rebase re-binds the
-store. Rebase re-validates every record's full metadata shape, body binding, and
-scope/project/work links against the new workspace state. A live record whose
-scope/project or linked-work references no longer resolve is an offender: the
-rebase fails closed with `KNOWLEDGE_REBASE_BLOCKED` and a deterministic id-sorted
-offender list. The `retire-invalid` escape that retired those records is gone
-with every other retirement path but `--supersedes` (TCRN-CROSS-SUB-308); a
-rebase that lands rewrites no record, and its result reports `retired: 0` and
-no offender. Rebase is a single version step under the mutation claim; a fault at either write
-point leaves the claim present so the next admission fails closed
-(`KNOWLEDGE_PARTIAL_STATE`/`KNOWLEDGE_LOCKED`), never accepting a half-rebased
-marker. The store is not event-sourced, so rebase — not re-initialization — is the
-only path that preserves records across workspace events.
+A library crest's marker no longer holds a high water to re-bind (TCRN-CROSS-SUB-414, MIN-235
+D7). Every read projects the crest at the chain head it replays and checks each card's current
+record against that chain: a live record whose scope/project no longer resolves refuses the read
+with `KNOWLEDGE_LINK_INVALID`, and linked work the chain no longer holds is reported as
+`danglingWorkLinks` without blocking. No chain event makes a knowledge read refuse, and nothing
+needs re-binding after one; a record written against chain events this device does not hold yet
+waits for them (see "Storage and authority").
+
+`knowledge-rebase`, and `knowledge-batch --align-first`, is the full re-validation of every
+record's metadata shape, body binding, and scope/project/work links against the chain as it
+stands, and it writes nothing. A live record whose scope/project references no longer resolve is
+an offender: the rebase fails closed with `KNOWLEDGE_REBASE_BLOCKED` and a deterministic id-sorted
+offender list. A record this device's chain does not hold yet refuses it with
+`KNOWLEDGE_HIGH_WATER_MISMATCH`, and a crest holding an older engine's mutation claim with
+`KNOWLEDGE_LOCKED`. The `retire-invalid` escape that retired offenders is gone with every other
+retirement path but `--supersedes` (TCRN-CROSS-SUB-308). A rebase that answers reports the
+projected `version`, the chain head as `eventHighWaterDigest`, `retired: 0` and no offender, and
+projects this device's index view again; there is no write for a fault to interrupt.
+
+`--allow-trailing`, still taken by the metadata-first reads, changes nothing about a library's
+answer. It keeps its meaning for an old-layout workspace's read-only store, whose marker binds its
+old chain's head: a read of it refuses with `KNOWLEDGE_HIGH_WATER_MISMATCH` when that head is not
+the chain's, unless the flag admits it, labelled with both heads (TCRN-CROSS-INC-226).
+`knowledge-validate` and `knowledge-checkpoint` are never exempt. For a library's crest they refuse
+a crest its chain does not hold, which is how a snapshot restore that put the chain back without the
+crest (WSF-3) finds a crest newer than the chain beside it; for an old-layout store, a trailing marker.
 
 ## Lifecycle
 
@@ -276,9 +403,12 @@ The `tcrn.knowledge-retirement.v1` metadata record (card id, reason, counts, swe
 instant and window) and the marker's `lastSweepAt` are read-only historical formats:
 readers and the schema accept them, and no command writes them any more.
 
-The knowledge mutation claim records its process identity and acquisition instant.
-`knowledge-recover` only reclaims a claim whose process is demonstrably gone and whose
-metadata/body set can be fully validated; otherwise the store remains blocked.
+The knowledge mutation claim an engine before event streams took records its process identity
+and acquisition instant. `knowledge-recover` only reclaims a claim whose process is demonstrably
+gone and whose crest can be fully validated; otherwise the store remains blocked. It completes the
+stopped write of the metadata/body layout -- this device's index view projected again, a record that
+write retired giving back the body it still holds -- releases the claim, and writes no root manifest
+and no event (TCRN-CROSS-SUB-414).
 
 ## Governed surfaces
 

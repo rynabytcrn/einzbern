@@ -33,6 +33,26 @@ are first-class here — always double-quote them.
    `KNOWLEDGE_HIGH_WATER_MISMATCH`. Whole-control-tree byte-identical restore keeps
    both stores in lockstep by construction — never restore one store alone.
 
+   That binding is the old layout's. In a library (`.ether/`) the knowledge store,
+   `crest/`, is each device's event stream (TCRN-CROSS-SUB-414): its root manifest
+   `store.json` binds only the library's id, and each card's event names the chain
+   heads, in `akasha/`, it was written against. The rule is the same — restore the
+   whole library, never `akasha/` or `crest/` alone — but a partial restore shows
+   differently (`packages/core/spec/knowledge-core-v1.md`, "Storage and authority"):
+   - `akasha/` put back older than `crest/` leaves records written against chain
+     events the chain no longer holds. `knowledge-list` and a read of their id name
+     them as `awaitingChain`; their cards leave default selection and `recall`,
+     which names them under `projectCrestDegraded`; and `knowledge-validate`,
+     `knowledge-checkpoint` and `knowledge-rebase` refuse with
+     `KNOWLEDGE_HIGH_WATER_MISMATCH`, details `awaitingChain`, until those chain
+     events are back.
+   - `crest/` put back older than `akasha/` is not refused: a read answers at the
+     chain head, and the cards written after the crest was copied are simply absent,
+     with nothing to name them.
+
+   Records of the metadata/body layout that an engine before event streams wrote
+   name no chain position, so they never wait this way.
+
 The control tree may contain numbered byte-bounded `events/*.ndjson` segments,
 matching point/label/time/manifest sidecars, and `snapshots/manifest.json` for
 the engine's read-path checkpoint. The checkpoint is included in this whole-tree
@@ -146,7 +166,7 @@ of these, stop and follow the action — do not force past it.
 | `SNAPSHOT_RESIDUE_PRESENT` | The tree carries crashed-session quarantine residue (`stale-lease-*`, `released-*`, `attempt-owned-*`); a snapshot over it would bake partial state into the receipt | Remove the named quarantine directory by hand, then re-run the SNAPSHOT procedure from step 2 |
 | `SNAPSHOT_MISMATCH` | The copy differs from the manifest at the named path — corrupt or truncated copy | Discard the copy and re-copy from a verified source; do not restore from it |
 | `WORKSPACE_SCHEMA_INVALID` | Restored to the wrong path or a second machine (root-identity mismatch) | Restore in place at the exact original `<root>` on the original machine (same-path doctrine) |
-| `KNOWLEDGE_HIGH_WATER_MISMATCH` | Partial restore — the workspace and knowledge stores are out of lockstep | Restore the WHOLE control tree so both stores return together; partial restore is unrecoverable by design in V1 |
+| `KNOWLEDGE_HIGH_WATER_MISMATCH` | Partial restore — the workspace and knowledge stores are out of lockstep. In a library, the crest holds records written against chain events `akasha/` no longer holds, named in `details.awaitingChain` (TCRN-CROSS-SUB-414) | Restore the WHOLE control tree so both stores return together; partial restore is unrecoverable by design in V1. In a library, restore the whole library; the named records wait until those chain events are back |
 | `WORKSPACE_VIEW_STALE` | Derived views drifted from the event log | Run `recover --workspace "<root>" --at "<instant>"`, then `validate` |
 | `WORKSPACE_LOCKED` | A live lease holder is present — the workspace was not quiesced | End all agent sessions and retry |
 | `WORKSPACE_PATH_INVALID` | A required control-tree directory is missing (e.g. an empty directory a git restore dropped) | Recreate the missing directory (see the recreation list), then re-run `validate` |

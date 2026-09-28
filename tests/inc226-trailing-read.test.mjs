@@ -10,10 +10,18 @@
 //
 // The exemption these criteria pin is deliberately narrow, and it is paid for: a
 // trailing read is admitted, and the answer says that it trails.
+//
+// TCRN-CROSS-SUB-414 (MIN-235 D7) removes what the exemption worked around. A library's crest is
+// no longer bound to the chain head its last write saw: every read projects it at the head it
+// replays, so a chain write leaves nothing trailing. The criteria below keep their subjects and
+// pin the new answers: a read answers after the chain moves, asked or not, with nothing to
+// disclose; --allow-trailing is still taken and changes nothing; validate and a write are still
+// held to what the chain holds, which is now each record's own chain position (a crest newer than
+// its chain refuses validate), and a write records the chain it was checked against.
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { cp, mkdtemp, readdir, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -26,6 +34,7 @@ import {
   initializeKnowledgeStore,
   initializeLibrary,
   listKnowledgeMetadata,
+  readKnowledgeStoreMarker,
   validateKnowledgeStore,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
@@ -36,6 +45,27 @@ async function emptyWorkspace(externalKey) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-inc226-")));
   await initializeLibrary({ root: join(base, "workspace"), createdAt: instant(19) });
   return { base, workspace: join(base, "workspace") };
+}
+
+// A card of the fixture's project, linked to its anchor work.
+function cardInput(externalKey, subject, projectId, workId) {
+  return {
+    occurredAt: instant(19, 8), externalKey,
+    scope: "project", projectId, roleScopes: [],
+    category: "workflow", kind: "guide", tags: ["retrieval"],
+    subject, summary: `${subject}.`, snippet: `${subject}.`,
+    accountableOwnerId: deriveStableId("owner", `${externalKey}-OWNER`),
+    sourceReferences: [`evidence://fixture/${externalKey.toLowerCase()}`],
+    sourceDigest: canonicalSha256({ key: externalKey }),
+    linkedWorkIds: [workId],
+    linkedDecisionIds: [deriveStableId("decision", `${externalKey}-DECISION`)],
+    linkedGateIds: [deriveStableId("gate", `${externalKey}-GATE`)],
+    linkedEvidenceIds: [deriveStableId("evidence", `${externalKey}-EVIDENCE`)],
+    lifecycle: "active", retrievalDisposition: "default", freshnessState: "fresh",
+    lastVerified: instant(19, 5),
+    stalenessPolicy: { maximumAgeDays: 30, unknownDisposition: "fail-closed" },
+    exportDisposition: "metadata-only", body: `${subject}.`,
+  };
 }
 
 // A store holding one card, and a chain that has since taken exactly one more event.
@@ -76,32 +106,26 @@ async function storeTrailingByOneWrite() {
   return { base, workspace, headEventHash: advanced.headEventHash, projectId: state.projects[0].id, workId: state.work[0].id };
 }
 
-// Red leg: drop the `trailingAdmitted` term and this is KNOWLEDGE_HIGH_WATER_MISMATCH
-// again -- which is what every session on this platform hit all week.
-test("INC-226: a metadata-first read answers after the chain advances, when asked to", async () => {
+// TCRN-CROSS-SUB-414: what used to be the refusal every session hit is gone at its root: the read
+// answers after the chain advances by default, and asking for a trailing read changes nothing.
+// Red leg: bind a library read to a stored high water again and the default read refuses.
+test("INC-226, SUB-414: a metadata-first read answers after the chain advances, asked or not", async () => {
   const { base, workspace } = await storeTrailingByOneWrite();
   try {
-    await assert.rejects(
-      () => listKnowledgeMetadata(workspace, { at: instant(19, 6) }),
-      (error) => error?.reasonCode === "KNOWLEDGE_HIGH_WATER_MISMATCH",
-      "the default must keep refusing -- every existing caller depends on it",
-    );
-    // selection "all" rather than the default: a freshly created card is a promotion
-    // candidate, and the default selection shows only promoted ones. That filter is
-    // orthogonal to this defect and stays exactly as it was -- the claim here is that
-    // the read answers at all, where it used to refuse.
-    const admitted = await listKnowledgeMetadata(workspace, { at: instant(19, 6), selection: "all", allowTrailing: true });
-    assert.equal(admitted.reasonCode, "KNOWLEDGE_LIST_READY");
-    assert.equal(admitted.total, 1, "the card filed before the write is still retrievable");
+    const plain = await listKnowledgeMetadata(workspace, { at: instant(19, 6), selection: "all" });
+    assert.equal(plain.reasonCode, "KNOWLEDGE_LIST_READY", "the default read answers: a library's crest never trails its chain");
+    assert.equal(plain.total, 1, "the card filed before the write is retrievable");
+    const asked = await listKnowledgeMetadata(workspace, { at: instant(19, 6), selection: "all", allowTrailing: true });
+    assert.deepEqual(asked, plain, "the flag is still taken, and changes nothing");
   } finally {
     await rm(base, { recursive: true, force: true });
   }
 });
 
-// The exemption is only worth having if a stale answer cannot pass for a current one.
-// Red leg: drop trailingDisclosure and the response is indistinguishable from an
-// aligned one, which is strictly worse than the refusal it replaced.
-test("INC-226: a trailing answer carries both heads, so staleness is answerable from it", async () => {
+// The disclosure existed so a stale answer could not pass for a current one. The answer is now
+// current: it is projected at the chain head it read. Red leg: project the high water from a stored
+// value and the marker names a head the chain has left.
+test("INC-226, SUB-414: an answer after the chain advances is bound to the head it read, with nothing trailing to disclose", async () => {
   const { base, workspace, headEventHash } = await storeTrailingByOneWrite();
   try {
     for (const read of [
@@ -109,26 +133,41 @@ test("INC-226: a trailing answer carries both heads, so staleness is answerable 
       () => evaluateKnowledgeFreshness(workspace, instant(19, 6), { allowTrailing: true }),
     ]) {
       const result = await read();
-      assert.equal(result.knowledgeStoreTrailing, true, "the flag a caller branches on");
-      assert.equal(result.chainHeadEventHash, headEventHash, "the head it trails");
-      assert.notEqual(result.storeHighWaterDigest, result.chainHeadEventHash, "and its own, which differs");
+      for (const key of ["knowledgeStoreTrailing", "storeHighWaterDigest", "chainHeadEventHash"]) {
+        assert.equal(key in result, false, `${key}: nothing trails`);
+      }
     }
+    assert.equal((await readKnowledgeStoreMarker(workspace)).eventHighWaterDigest, headEventHash, "the projected high water is the chain head");
   } finally {
     await rm(base, { recursive: true, force: true });
   }
 });
 
-// Red leg: widen the exemption past `bodyMode === "metadata-only"` and validate stops
-// being able to tell an aligned store from a trailing one -- the check whose entire
-// job is to answer that question.
-test("INC-226: validate is not exempt, however the flag is passed", async () => {
-  const { base, workspace } = await storeTrailingByOneWrite();
+// Validate keeps its job -- answering whether the crest and the chain agree -- against what now
+// binds a record to the chain: the chain position its event names. Red leg: drop the chain-position
+// check and a crest newer than its chain validates.
+test("INC-226, SUB-414: validate answers at the advanced head, and still refuses a crest its chain does not hold, however the flag is passed", async () => {
+  const { base, workspace, headEventHash, projectId, workId } = await storeTrailingByOneWrite();
   try {
+    for (const options of [{}, { allowTrailing: true }]) {
+      const validation = await validateKnowledgeStore(workspace, options);
+      assert.deepEqual([validation.reasonCode, validation.eventHighWaterDigest], ["KNOWLEDGE_STORE_VALID", headEventHash]);
+    }
+    // A card written against a chain event the chain then loses (a partial restore) is newer than
+    // the chain: validate refuses, naming it.
+    const saved = join(base, "akasha-saved");
+    await cp(join(workspace, "akasha"), saved, { recursive: true });
+    await createWork(workspace, {
+      occurredAt: instant(19, 7), projectId, externalKey: "INC226-LOST-WRITE", kind: "Initiative", parentId: null, status: "active",
+    });
+    const newer = await createKnowledgeUnit(workspace, cardInput("INC226-CARD-NEWER", "Queue depth guidance", projectId, workId));
+    await rm(join(workspace, "akasha"), { recursive: true, force: true });
+    await cp(saved, join(workspace, "akasha"), { recursive: true });
     for (const options of [{}, { allowTrailing: true }]) {
       await assert.rejects(
         () => validateKnowledgeStore(workspace, options),
-        (error) => error?.reasonCode === "KNOWLEDGE_HIGH_WATER_MISMATCH",
-        "validate must refuse a trailing store even when handed the read-path flag",
+        (error) => error?.reasonCode === "KNOWLEDGE_HIGH_WATER_MISMATCH" && error.details.awaitingChain[0].id === newer.id,
+        "validate must refuse a crest newer than its chain even when handed the read-path flag",
       );
     }
   } finally {
@@ -136,36 +175,24 @@ test("INC-226: validate is not exempt, however the flag is passed", async () => 
   }
 });
 
-// Red leg: let the exemption reach a mutation and a candidate can be filed against a
-// head the store never saw -- the provenance hole the strict equality existed to close.
-test("INC-226: a write is not exempt -- filing still demands an aligned store", async () => {
-  const { base, workspace, projectId, workId } = await storeTrailingByOneWrite();
+// The strict equality closed a provenance hole: a card filed against a head the store never saw.
+// TCRN-CROSS-SUB-414 closes it in the record itself: a write after the chain moves lands, and its
+// event names every chain stream's head it was checked against. Red leg: record no chain and the
+// card cannot say which chain it was filed against.
+test("INC-226, SUB-414: a write after the chain advances lands, and its event names the chain it was checked against", async () => {
+  const { base, workspace, headEventHash, projectId, workId } = await storeTrailingByOneWrite();
   try {
-    await assert.rejects(
-      () => createKnowledgeUnit(workspace, {
-        occurredAt: instant(19, 6), externalKey: "INC226-CARD-2",
-        scope: "project", projectId, roleScopes: [],
-        category: "workflow", kind: "guide", tags: ["retrieval"],
-        subject: "Filed against a head the store never saw",
-        summary: "Must not be admitted.", snippet: "Must not be admitted.",
-        accountableOwnerId: deriveStableId("owner", "INC226-OWNER-2"),
-        sourceReferences: ["evidence://fixture/inc226-2"],
-        sourceDigest: canonicalSha256({ key: "INC226-CARD-2" }),
-        linkedWorkIds: [workId],
-        linkedDecisionIds: [deriveStableId("decision", "INC226-DECISION-2")],
-        linkedGateIds: [deriveStableId("gate", "INC226-GATE-2")],
-        linkedEvidenceIds: [deriveStableId("evidence", "INC226-EVIDENCE-2")],
-        lifecycle: "active", retrievalDisposition: "default", freshnessState: "fresh",
-        lastVerified: instant(19, 5),
-        stalenessPolicy: { maximumAgeDays: 30, unknownDisposition: "fail-closed" },
-        exportDisposition: "metadata-only", body: "Must not be admitted.",
-      // TCRN-CROSS-INC-232: allowTrailing belongs in the OPTIONS parameter, not the input
-      // object. Passed inside the input it was read by nothing, so widening the guard to
-      // reach writes left this criterion green -- it asserted that a write refuses while
-      // never handing the write the flag that would have exempted it.
-      }, { allowTrailing: true }),
-      (error) => error?.reasonCode === "KNOWLEDGE_HIGH_WATER_MISMATCH",
-    );
+    const created = await createKnowledgeUnit(workspace, cardInput("INC226-CARD-2", "Retry backoff guidance", projectId, workId), { allowTrailing: true });
+    assert.equal(created.reasonCode, "KNOWLEDGE_UNIT_CREATED");
+    const [deviceId] = await readdir(join(workspace, "crest", "events"));
+    const stream = join(workspace, "crest", "events", deviceId);
+    const events = await Promise.all((await readdir(stream)).filter((name) => name.endsWith(".json")).sort()
+      .map(async (name) => JSON.parse(await readFile(join(stream, name), "utf8"))));
+    const event = events.find((entry) => entry.metadata.id === created.id);
+    const [akashaDevice] = await readdir(join(workspace, "akasha"));
+    const manifest = JSON.parse(await readFile(join(workspace, "akasha", akashaDevice, "manifest.json"), "utf8"));
+    assert.deepEqual(event.chain, [{ deviceId: akashaDevice, sequence: manifest.sequence, eventHash: manifest.headEventHash }]);
+    assert.equal((await validateKnowledgeStore(workspace)).eventHighWaterDigest, headEventHash);
   } finally {
     await rm(base, { recursive: true, force: true });
   }

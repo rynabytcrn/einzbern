@@ -484,6 +484,68 @@ scan (`version` is that scan's plus one) and never reads the crest again, so not
 meanwhile turns it into a refusal. `knowledge-recover --scope user` never writes the crest's
 `store.json`: initialization by the first card is the one operation that does.
 
+Two devices that write one external key before either sees the other's no longer stop the user
+crest either (TCRN-CROSS-SUB-413; STORY-476 D7; `packages/core/src/knowledge-core.ts`,
+`packages/core/src/recall-inputs.ts`). The key's differing records are an unresolved duplicate, not
+`KNOWLEDGE_PARTIAL_STATE`: `knowledge-list --scope user` names it at its top as
+`unresolvedDuplicates` (`id`, `externalKey` and `versions`, each version's `deviceId`, `sequence`
+and `eventHash` with its `updatedAt`, `subject` and `bodySha256`), its default selection and
+`recall` leave every version out (`--selection all` lists each), and `knowledge-snippet` and
+`knowledge-body` for the id answer every version under `versions` with the same entry at their
+top. `recall` names it under `userCrestDegraded` as `unresolvedDuplicates`, with reason code
+`KNOWLEDGE_DUPLICATE` when no pair is withheld as well; `withheldCards` counts every withheld card
+and version. Every other card reads, recalls and is written as before, and each live version holds
+budget. A write whose `--supersedes` names the id resolves it: every version is replaced at once,
+leaves the budget and default recall, and stays readable by the id. A write of a key the crest
+already holds is still refused as `KNOWLEDGE_DUPLICATE`, the same record delivered twice is one card,
+and a forked or altered stream, or one stream holding two different records for one id, is still
+refused naming its device. A user-crest write that supersedes a card of the metadata/body layout
+reads that card's body as an explicit read does, rather than refusing it as not admitted.
+
+Two devices write one library's crest without sharing a file (TCRN-CROSS-SUB-414; STORY-476 D7;
+MIN-235 D7, O3; `packages/core/src/knowledge-core.ts`, `knowledge-batch.ts`, `store-backend.ts`,
+`recall-inputs.ts`, `packages/cli/src/index.ts`; `packages/core/spec/knowledge-core-v1.md`). Each
+device appends its cards to its own event stream, `crest/events/<device id>/`, and those streams are the authority: an
+`einzbern.crest-event.v1` event holds the card's metadata, names its body file (written first), and
+records `chain` -- every chain stream's head the write was checked against -- and `replaces`, the digest
+of the record of the same card it replaces. `knowledge-reverify`, `knowledge-policy` and
+`knowledge-article-refresh` append the card again as a new record; a supersede appends only the new
+card, and reads project `supersededBy` over the card it names. `store.json` is written by
+`knowledge-init` alone, once and exclusively, bound to the library id and that id's own digest (the
+same bytes on every device); no card write, supersede, rebase, recovery, body migration, read or chain
+write writes it, and no write takes a mutation claim. The CLI no longer rebases the crest after each
+chain write: a library read answers at the chain head it replays (`eventHighWaterDigest` is that head,
+`version` counts every event), so a chain write never leaves the crest trailing; `--allow-trailing` is
+still taken and changes nothing about a library's answer (it keeps its meaning for an old-layout store);
+and `knowledge-rebase` and `knowledge-batch --align-first` re-validate every record against the chain,
+write nothing, and answer the same shape. For a library's crest `KNOWLEDGE_HIGH_WATER_MISMATCH` now
+means a manifest that does not bind the library, or a record written against chain events this device
+does not hold -- a folder that delivered the card first, or a partial restore that left the crest newer
+than its chain (WSF-3): `knowledge-list` and a read of the id name those records under `awaitingChain`
+and leave their cards out of default selection and recall, and `knowledge-validate`,
+`knowledge-checkpoint` and `knowledge-rebase` refuse with details `awaitingChain`. A library's crest
+merges its writers as the user crest does: a same-subject pair two devices wrote is
+`unresolvedConflicts`, and one key two devices wrote, or one card two devices each wrote again, is
+`unresolvedDuplicates`, both named by `knowledge-list` and a read of the id and resolved by
+`--supersedes`; a library write now records in `coexistsWith` the conflicts it was admitted beside a
+card it supersedes, as it did with `--coexist`. A crash leaves a committed event or a body no event
+names, which reads ignore, so nothing needs recovering. The metadata/body layout an engine before event
+streams wrote, its bodies in segments or not, stays readable and no new card rewrites it; the claim its
+interrupted write left still locks writes until `knowledge-recover`, which completes that write without
+writing `store.json`. A new crest is `store.json` alone until its first card; `knowledge-bodies-migrate`
+answers zero bodies for a crest of event streams only and refuses an old-layout store; the exported
+`StoreBackend` type has no `writeKnowledgeMarker`. This replaces the STORY-469 statement above that two
+devices' concurrent crest writes are not made safe against each other. `recall` names the cards a
+library's crest withheld at the top of its answer as `projectCrestDegraded`, in the form
+`userCrestDegraded` has: reason code `KNOWLEDGE_POSSIBLE_CONFLICT` when an unresolved pair is withheld,
+else `KNOWLEDGE_DUPLICATE` when versions of an unresolved duplicate are, else
+`KNOWLEDGE_HIGH_WATER_MISMATCH` when records awaiting chain events are all it withheld;
+`unresolvedConflicts`, `unresolvedDuplicates` and `awaitingChain` carry what `knowledge-list` names, each
+present when it is not empty, and `withheldCards` counts every withheld card and version once. It is
+absent when nothing is withheld, and a refused read stays `knowledgeReasonCode`. O-1 is unchanged: a
+merge whose live bodies exceed `knowledge.aggregateBytes` is refused whole, and `recall` reports it under
+`knowledgeStores.project`.
+
 Gates are declared per project and chosen by the change (TCRN-CROSS-STORY-485; MIN-227 D4;
 `packages/core/src/gates-config.ts`, `gates-plan.ts`, `gates-run.ts`, `gates-done.ts`). A gate is a
 project-level configuration record of the gate collection, keyed by its name: its command is an

@@ -9,7 +9,7 @@
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -60,10 +60,37 @@ function refusalOf(operation) {
   return operation().then(() => null, (error) => error);
 }
 
-async function fileBytes(directory) {
+async function fileBytes(directory, keep = () => true) {
   let total = 0;
-  for (const name of await readdir(directory)) total += (await readFile(join(directory, name))).length;
+  for (const name of (await readdir(directory)).filter(keep)) total += (await readFile(join(directory, name))).length;
   return total;
+}
+
+// TCRN-CROSS-SUB-414: a library's crest keeps each card as an event (its metadata) and a body file
+// in this device's stream, crest/events/<device id>/.
+async function streamOf(fx) {
+  const [deviceId] = await readdir(join(fx.store, "events"));
+  return join(fx.store, "events", deviceId);
+}
+
+// TCRN-CROSS-SUB-414: the crest as an engine before event streams left it -- one metadata file and
+// one body file per card, the marker's version counting its writes -- laid down from what the
+// stream holds now, the streams taken away.
+async function asOlderEngineCrest(fx) {
+  const all = await listKnowledgeMetadata(fx.workspace, { at: AT, selection: "all", limit: 1_000_000 });
+  const marker = await readKnowledgeStoreMarker(fx.workspace);
+  const stream = await streamOf(fx);
+  const bodies = new Map();
+  for (const name of (await readdir(stream)).filter((entry) => entry.endsWith(".body"))) bodies.set(name.slice(9, -5), await readFile(join(stream, name)));
+  await mkdir(join(fx.store, "metadata"));
+  await mkdir(join(fx.store, "bodies"));
+  for (const record of all.records) {
+    await writeFile(join(fx.store, "metadata", `${record.id}.json`), canonicalJson(record));
+    await writeFile(join(fx.store, "bodies", `${record.id}.body`), bodies.get(record.bodySha256));
+  }
+  const storeJson = join(fx.store, "store.json");
+  await writeFile(storeJson, canonicalJson({ ...JSON.parse(await readFile(storeJson, "utf8")), version: marker.version, eventHighWaterDigest: marker.eventHighWaterDigest }));
+  await rm(join(fx.store, "events"), { recursive: true });
 }
 
 // Every file of the knowledge store, by relative path and bytes.
@@ -95,8 +122,9 @@ test("476-R3: capacity counts card bodies only, not the marker or the metadata",
   const validation = await validateKnowledgeStore(fx.workspace);
   assert.deepEqual(validation.capacity, { bodyBytes: 1_000, limit: 4_096 }, "the report counts the ten 100-byte bodies and nothing else");
   const marker = (await readFile(join(fx.store, "store.json"))).length;
-  const metadata = await fileBytes(join(fx.store, "metadata"));
-  assert.equal(await fileBytes(join(fx.store, "bodies")), 1_000);
+  const stream = await streamOf(fx);
+  const metadata = await fileBytes(stream, (name) => name.endsWith(".json"));
+  assert.equal(await fileBytes(stream, (name) => name.endsWith(".body")), 1_000);
   assert.ok(marker + metadata > 4_096, `marker and metadata alone exceed the limit and are not charged: ${marker + metadata}`);
 
   // The limit still binds the bodies: one body that would take the count past it is refused,
@@ -136,9 +164,12 @@ test("476-R3: a superseded card gives its body back to the budget, and its body 
   assert.deepEqual((await validateKnowledgeStore(fx.workspace)).capacity, { bodyBytes: 3_500, limit: 4_096 });
 
   // Reclaimed from the budget, not from the disk: the old body is still there and still reads.
-  assert.equal((await readdir(join(fx.store, "bodies"))).includes(`${old.id}.body`), true);
+  const stream = await streamOf(fx);
+  const oldEvent = (await Promise.all((await readdir(stream)).filter((name) => name.endsWith(".json"))
+    .map(async (name) => JSON.parse(await readFile(join(stream, name), "utf8"))))).find((event) => event.metadata.id === old.id);
+  assert.equal((await readdir(stream)).includes(oldEvent.body.file), true);
   assert.equal((await readKnowledgeBody(fx.workspace, old.id, { at: AT })).body, "o".repeat(3_000));
-  assert.equal(await fileBytes(join(fx.store, "bodies")), 6_500, "three bodies on disk, 3,500 bytes of them charged");
+  assert.equal(await fileBytes(stream, (name) => name.endsWith(".body")), 6_500, "three bodies on disk, 3,500 bytes of them charged");
   assert.equal((await listKnowledgeMetadata(fx.workspace, { at: AT })).records.some((record) => record.id === old.id), false);
   const defaultCards = await readRecallCards(fx.workspace, { at: AT });
   assert.equal(defaultCards.cards.some((record) => record.id === old.id), false, "superseded metadata is outside default recall");
@@ -162,7 +193,9 @@ test("476 Implementation Notes: an existing store is recounted on read, with no 
   const candidate = await captureKnowledgeUnit(fx.workspace, card("SUB-309-CANDIDATE", "papa lesson", "c".repeat(300)));
   // Lay down what stores written by earlier engines hold: a card an older engine retired with
   // its body still on disk, a card still in the candidate state it was written in, and a card
-  // written before `supersedes` and `expansions` existed. None of these shapes is written now.
+  // written before `supersedes` and `expansions` existed. None of these shapes is written now,
+  // and that engine wrote the metadata/body layout (TCRN-CROSS-SUB-414).
+  await asOlderEngineCrest(fx);
   const rewrite = async (id, change) => {
     const path = join(fx.store, "metadata", `${id}.json`);
     const metadata = JSON.parse(await readFile(path, "utf8"));

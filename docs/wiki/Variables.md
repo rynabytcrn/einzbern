@@ -22,6 +22,7 @@
 - 默认有三个分类：`flagship`（10）、`main`（20）、`economy`（30）。名字就是 id，说明为空。
 - 未设置时，档位表里引用了、默认表里却没有的分类，按名字排在默认分类后面，顺序依次加 10。所以从旧值读出的档位表，不会引用不存在的分类。
 - 删除仍被档位记录引用的分类会被拒绝，报 `MODELS_CATEGORY_IN_USE`，并列出引用它的记录（写作 `models.tiers.<order>`）。
+- 升档上限 `models.escalation.ceiling` 指向的分类（未设置时是默认值 `main`）同样不能删除，也报 `MODELS_CATEGORY_IN_USE`，`details.references` 列出 `models.escalation.ceiling`；放回默认分类表时若会去掉这个分类，同样被拒。
 
 ### models.tiers
 

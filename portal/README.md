@@ -79,9 +79,16 @@ evidence, where reproducing them verbatim is the point.
 
 ## Surfaces
 
-- **Config** — the registered settings catalog; commit one change and keep its receipt beside the CLI readback.
-- **Prose** — read and write the canonical `AGENTS.md`.
-- **Reconcile** — every setting key the prose claims, checked against the keys the engine registers; red when prose names one that does not exist.
+The side navigation opens these pages, in this order:
+
+- **Status** — doctor's checks and the selected library's state, with Work and Knowledge tabs beside the overview.
+- **Settings** — the registered settings catalog; commit one change and keep its receipt beside the CLI readback.
+- **Model categories** — the `models.category` table: the categories the model tiers are filed under, ranked by order.
+- **Model tiers** — the `models.tiers` table: every model a rule can be given, one record per row.
+- **Variables** — add, edit, rename and remove the project variables rendered into `AGENTS.md`.
+- **Rules** — the built-in rules and the canonical `AGENTS.md`. Every setting key the prose names is checked against the settings and variables the engine registers, and a line that names one that does not exist is marked.
+- **Vocabulary** — the engine's read-only terms; the portal invents no enums.
+- **Gates** — the project's gate configuration: which gates run when their covered paths change, and which are required before work is marked done.
 
 ## Flags
 
@@ -117,17 +124,22 @@ This generates `atelier.command` for macOS,
 Windows. The Windows launcher shape is generated here; full Windows-host
 runtime validation remains a separate verification item.
 
-The portal's remote creation is intentionally not part of this local
-installation. It remains `未证——归门户仓建 remote/Owner` until the explicit
-publication ceremony.
+The portal has no repository or remote of its own. It ships inside the engine, so
+it is published only with an engine release, whose tag, push and release steps are
+separate stops that run only when named (`docs/versioning/release-policy.md`);
+generating launchers publishes nothing.
 
 ## Checks
 
+`portal/` has no `package.json` of its own. Its checks are scripts in the engine's
+root `package.json`, run from the engine checkout:
+
 ```bash
-npm run proof             # design + i18n + dependency audit + tests
-npm test                  # portal against a real governed scratch workspace
-npm run design:proof      # tokens byte-identical to @tcrn/ui-tokens; no literal colours
-npm run i18n:proof        # locale set, key coverage, placeholder consistency
-npm run audit:dependencies
-npm run demo:e2e
+corepack pnpm@11.3.0 run portal:test        # the portal suite against real scratch libraries and the real CLI
+corepack pnpm@11.3.0 run portal:proof       # design proof, i18n proof and dependency audit
+corepack pnpm@11.3.0 run portal:launchers --output-dir "/path/to/launchers"   # the launcher generator above
+corepack pnpm@11.3.0 run verify:portal      # the portal train: suite, proofs, privacy, DS component CSS, verbatim evidence
 ```
+
+`portal/README-TESTING.md` explains why the portal suite runs beside the engine
+suite rather than inside it.

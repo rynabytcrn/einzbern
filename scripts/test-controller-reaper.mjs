@@ -2,7 +2,7 @@
 
 import { spawnSync } from "node:child_process";
 import { lstat, readFile, readdir, rm, unlink } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { basename, dirname, resolve } from "node:path";
 import { stopCoverage } from "node:v8";
 
 import { appendProgressIfConfigured, delay } from "./lib/incremental-output.mjs";
@@ -178,6 +178,38 @@ let cleaned = false;
 let disposeRequested = false;
 let parentCleanupStarted = false;
 
+// TCRN-CROSS-INC-394 (TCRN-CROSS-SUB-418): the task runner removes the progress directory once it
+// has stopped reading it: after it joined this reaper's group, or at once when it failed closed
+// before joining it. A missing directory therefore means nobody is left to read the reaper-clean
+// record. It ends the record, never the cleanup, which is already confirmed when the record is
+// written; any other failure to record is retried as before.
+async function progressDirectoryGone() {
+  try {
+    await lstat(dirname(progressPath));
+    return false;
+  } catch (error) {
+    if (error?.code === "ENOENT") return true;
+    throw error;
+  }
+}
+
+async function recordClean() {
+  try {
+    await appendProgressIfConfigured(progressPath, "reaper-clean", { processGroup: controllerGroup, reaperProcessGroup: process.pid, managedChildGroups: cleanCount });
+  } catch (error) {
+    if (error?.code !== "ENOENT" || !await progressDirectoryGone()) throw error;
+  }
+}
+
+// A parent that has gone cannot be told. Without a callback, process.send on a closed channel
+// raises an unhandled 'error' event on the next tick, which ended the reaper before it removed
+// its output directory. A send that fails means the channel closed, and the disconnect handler
+// finishes the run.
+function notifyParent(message) {
+  if (typeof process.send !== "function" || !process.connected) return;
+  process.send(message, () => {});
+}
+
 function cleanupOnce() {
   if (cleanupPromise) return cleanupPromise;
   cleanupPromise = (async () => {
@@ -186,8 +218,8 @@ function cleanupOnce() {
         cleanCount += await terminateManagedChildGroups();
         await terminateGroupMembers(controllerGroup, parentPid);
         cleaned = true;
-        await appendProgressIfConfigured(progressPath, "reaper-clean", { processGroup: controllerGroup, reaperProcessGroup: process.pid, managedChildGroups: cleanCount });
-        process.send?.({ type: "clean", managedChildGroups: cleanCount });
+        await recordClean();
+        notifyParent({ type: "clean", managedChildGroups: cleanCount });
         return;
       } catch {
         await delay(100);

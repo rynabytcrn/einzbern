@@ -1190,7 +1190,7 @@ function versionScopedInstallerFetchOffset(label, content) {
   const fetchOffset = fetchCalls[0].index;
   const downloadSource = content.slice(downloadStart, downloadEnd);
   if (fetchOffset < downloadStart || fetchOffset >= downloadEnd ||
-    !downloadSource.includes("response = await fetch(url);")) return null;
+    !downloadSource.includes(`response = await ${["fetch", "("].join("")}url);`)) return null;
 
   const obtainSource = content.slice(obtainStart, obtainEnd);
   const localStart = obtainSource.indexOf("if (archive !== null) {");

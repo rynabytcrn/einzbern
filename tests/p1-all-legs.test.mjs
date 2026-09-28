@@ -59,7 +59,18 @@ async function p1Fixture(context) {
   await cp(resolve(productRoot, "node_modules"), resolve(root, "node_modules"), { recursive: true });
   await writeFile(resolve(root, "package.json"), "{\"name\":\"einzbern-p1-fixture\",\"type\":\"module\"}\n");
   await writeFile(resolve(root, ".gitignore"), "dist/\nnode_modules/\n");
-  for (const argv of [["init", "--quiet"], ["config", "user.email", "fixture@example.invalid"], ["config", "user.name", "Fixture"], ["add", "package.json", ".gitignore", "scripts"], ["commit", "--quiet", "-m", "fixture"]]) {
+  for (const argv of [
+    ["init", "--quiet"],
+    ["config", "user.email", "fixture@example.invalid"],
+    ["config", "user.name", "Fixture"],
+    // This fixture adds more than Git's loose-object maintenance threshold. Keep
+    // commit from detaching `git maintenance run --auto`, which can still write
+    // `.git/objects` after spawnSync has returned and race the fixture's teardown.
+    ["config", "maintenance.auto", "false"],
+    ["config", "gc.auto", "0"],
+    ["add", "package.json", ".gitignore", "scripts"],
+    ["commit", "--quiet", "-m", "fixture"],
+  ]) {
     const result = spawnSync("git", argv, { cwd: root, encoding: "utf8" });
     assert.equal(result.status, 0, `${argv.join(" ")}\n${result.stderr}`);
   }

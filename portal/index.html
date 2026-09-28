@@ -4362,7 +4362,7 @@ const BOOT = __PORTAL_BOOT__;
   const storedTheme = tcrnReadPreference("theme", ["light", "dark"], null);
   const machineTheme = ["light", "dark"].includes(BOOT.machineDefaults?.theme) ? BOOT.machineDefaults.theme : null;
   if (storedTheme === null && machineTheme !== null) document.documentElement.dataset.tcrnTheme = machineTheme;
-  const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? "en", theme: document.documentElement.dataset.tcrnTheme, page: "dashboard", dashboardTab: "overview", settingGroup: "general", collections: { "models.category": { draft: null, dirty: false, findings: [], refusal: null }, "models.tiers": { draft: null, dirty: false, findings: [], refusal: null } }, collectionFocus: null, settings: null, machineSettings: null, variables: null, vocabulary: null, status: null, work: null, knowledge: null, knowledgeQuery: "", knowledgeBody: null, gates: [], gateResponse: null, lastGateRun: null, commands: [], selectedVocabulary: "conferenceTypes", receipt: null, operationDetailsOpen: false, agentsText: "", reconciliation: null, rules: null, pendingSection: "", searchIndex: [], searchResults: [], searchSelection: 0 };
+  const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? "en", theme: document.documentElement.dataset.tcrnTheme, page: "dashboard", dashboardTab: "overview", settingGroup: "general", collections: { "models.category": { draft: null, dirty: false, findings: [], refusal: null }, "models.tiers": { draft: null, dirty: false, findings: [], refusal: null } }, collectionFocus: null, settings: null, machineSettings: null, variables: null, vocabulary: null, status: null, work: null, workRead: { library: 0, readingFor: null, again: false }, knowledge: null, knowledgeQuery: "", knowledgeBody: null, gates: [], gateResponse: null, lastGateRun: null, commands: [], selectedVocabulary: "conferenceTypes", receipt: null, operationDetailsOpen: false, agentsText: "", reconciliation: null, rules: null, pendingSection: "", searchIndex: [], searchResults: [], searchSelection: 0 };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   // DS Tabs is a behavior contract, not a role decoration. Every tablist below
@@ -5370,16 +5370,32 @@ const BOOT = __PORTAL_BOOT__;
   };
   const statusBadge = (value, tone = "") => `<span class="tcrn-badge ${tone ? `tcrn-badge--${tone}` : ""}">${esc(value ?? "—")}</span>`;
   const statusTone = (value) => ["done", "satisfied", "active", "ready"].includes(String(value)) ? "positive" : ["blocked", "cancelled", "failed", "retired"].includes(String(value)) ? "danger" : "";
+  // TCRN-CROSS-SUB-416 (TCRN-CROSS-STORY-510): the work view is busy while a read of this library is
+  // out, and what it showed stays until that read returns. Before the first read returns it shows
+  // nothing; a read that failed is shown here, and only here, with its reason codes.
   const renderWorkView = () => {
     const data = state.work;
-    const records = Array.isArray(data?.records) ? data.records : [];
+    const content = $("#work-tree-content");
+    content.setAttribute("aria-busy", String(state.workRead.readingFor === state.workRead.library));
+    if (data === null) {
+      setText("#work-count", "—");
+      content.innerHTML = "";
+      return;
+    }
+    if (data.ok === false) {
+      setText("#work-count", "—");
+      const reason = typeof data.reasonCode === "string" ? `<code>${esc(data.reasonCode)}</code>` : esc(t("dashboard.noWork"));
+      const cause = typeof data.source?.reasonCode === "string" ? ` · <code>${esc(data.source.reasonCode)}</code>` : "";
+      content.innerHTML = `<div class="tcrn-state-surface" role="alert" data-work-failure="${esc(data.reasonCode ?? "")}">${reason}${cause}</div>`;
+      return;
+    }
+    const records = Array.isArray(data.records) ? data.records : [];
     const initiatives = records.filter((entry) => entry.kind === "Initiative").sort((left, right) => String(left.externalKey).localeCompare(String(right.externalKey)));
     const epicsFor = (initiative) => records.filter((entry) => entry.parentId === initiative.id && entry.kind === "Epic").sort((left, right) => String(left.externalKey).localeCompare(String(right.externalKey)));
     const epicCount = initiatives.reduce((count, initiative) => count + epicsFor(initiative).length, 0);
     setText("#work-count", `${epicCount} ${t("dashboard.epics")}`);
     if (initiatives.length === 0) {
-      const emptyMessage = data?.ok === false ? data.reasonCode ?? t("dashboard.noWork") : t("dashboard.noWorkRecords");
-      $("#work-tree-content").innerHTML = `<div class="tcrn-state-surface">${esc(emptyMessage)}</div>`;
+      content.innerHTML = `<div class="tcrn-state-surface">${esc(t("dashboard.noWorkRecords"))}</div>`;
       return;
     }
     const summaryFor = (entry) => entry.summary || entry.title || t("dashboard.missingSummary");
@@ -5774,7 +5790,32 @@ const BOOT = __PORTAL_BOOT__;
     select.disabled = libraries.length < 2;
     select.title = BOOT.library ? libraryLabel(BOOT.library) : "";
   };
-  const refresh = async () => { try { const [settings, vocabularyResult, status, commandsResult, machine, work, knowledge, variables] = await Promise.all([api("/api/settings"), api("/api/vocabulary"), api("/api/status"), api("/api/commands"), api("/api/machine-settings"), api("/api/work"), api("/api/knowledge"), api("/api/variables")]); state.machineSettings = machine; state.settings = settings; state.vocabulary = vocabularyResult; state.status = status; state.work = work; state.knowledge = knowledge; state.variables = variables; state.commands = commandsResult.commands || []; for (const collection of Object.values(state.collections)) if (!collection.dirty) collection.draft = null; renderDashboard(); renderSettings(); renderCollections(); renderVariables(); renderVocabulary(); rebuildSearchIndex(); } catch (error) { state.status = { ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE", checks: [], library: null }; renderDashboard(); showReceipt({ ok: false, reasonCode: "PORTAL_READ_FAILED", error: String(error?.message ?? error) }); } };
+  // TCRN-CROSS-SUB-416 (TCRN-CROSS-STORY-510): the work view reads on its own. A large library's
+  // /api/work takes as long as its pages do, and no other view waits for it: status, settings, the
+  // model tables, variables and rules render as their own reads return, and the work view when its
+  // read does. A work read that fails is shown in the work view alone. One read of a library is out
+  // at a time; a refresh asked for while it is out is answered by one more read after it, so the
+  // view ends on the library as it stood at the last refresh. The answer of a read of a library the
+  // page has since left is dropped.
+  const refreshWork = async () => {
+    const reading = state.workRead;
+    const library = reading.library;
+    if (reading.readingFor === library) { reading.again = true; return; }
+    reading.readingFor = library;
+    do {
+      reading.again = false;
+      renderWorkView();
+      let work;
+      try { work = await api("/api/work"); } catch (error) { work = { ok: false, reasonCode: "PORTAL_READ_FAILED", error: String(error?.message ?? error), records: [], total: 0 }; }
+      if (reading.library !== library) return;
+      state.work = work;
+    } while (reading.again);
+    reading.readingFor = null;
+    renderWorkView();
+  };
+  // A library switch leaves the work the page showed behind: the view is empty until the new library's read returns.
+  const leaveWork = () => { state.work = null; state.workRead.library += 1; };
+  const refresh = async () => { refreshWork(); try { const [settings, vocabularyResult, status, commandsResult, machine, knowledge, variables] = await Promise.all([api("/api/settings"), api("/api/vocabulary"), api("/api/status"), api("/api/commands"), api("/api/machine-settings"), api("/api/knowledge"), api("/api/variables")]); state.machineSettings = machine; state.settings = settings; state.vocabulary = vocabularyResult; state.status = status; state.knowledge = knowledge; state.variables = variables; state.commands = commandsResult.commands || []; for (const collection of Object.values(state.collections)) if (!collection.dirty) collection.draft = null; renderDashboard(); renderSettings(); renderCollections(); renderVariables(); renderVocabulary(); rebuildSearchIndex(); } catch (error) { state.status = { ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE", checks: [], library: null }; renderDashboard(); showReceipt({ ok: false, reasonCode: "PORTAL_READ_FAILED", error: String(error?.message ?? error) }); } };
   const rebuildSearchIndex = () => {
     const rows = [];
     // Every key of both catalogs; a collection key is found on its own page.
@@ -5877,7 +5918,7 @@ const BOOT = __PORTAL_BOOT__;
     await loadAgents();
   }));
   $("#receipt-chip").addEventListener("click", openReceipt); $("#receipt-details-trigger").addEventListener("click", toggleReceiptDetails); $("#drawer-button").addEventListener("click", openReceipt); $("#drawer-close").addEventListener("click", closeReceipt);
-  $("#library-select").addEventListener("change", async (event) => { const selected = await api("/api/library", { method: "POST", body: JSON.stringify({ library: event.target.value }) }); if (selected.ok) { BOOT.library = selected.library; BOOT.workspace = selected.workspace; BOOT.libraryName = selected.libraryName; BOOT.proseRoot = selected.proseRoot; const listing = await api("/api/libraries"); loadLibraries(listing.ok ? listing.libraries : BOOT.libraries); setText("#workspace-label", BOOT.workspace); $("#workspace-label").title = BOOT.workspace; applyRailIdentity(); resetCollections(); await refresh(); await refreshGates(); await loadAgents(); } else { loadLibraries(); showReceipt(selected); } });
+  $("#library-select").addEventListener("change", async (event) => { const selected = await api("/api/library", { method: "POST", body: JSON.stringify({ library: event.target.value }) }); if (selected.ok) { BOOT.library = selected.library; BOOT.workspace = selected.workspace; BOOT.libraryName = selected.libraryName; BOOT.proseRoot = selected.proseRoot; const listing = await api("/api/libraries"); loadLibraries(listing.ok ? listing.libraries : BOOT.libraries); setText("#workspace-label", BOOT.workspace); $("#workspace-label").title = BOOT.workspace; applyRailIdentity(); resetCollections(); leaveWork(); await refresh(); await refreshGates(); await loadAgents(); } else { loadLibraries(); showReceipt(selected); } });
   $("#theme-button").addEventListener("click", () => {
     state.theme = state.theme === "light" ? "dark" : "light";
     document.documentElement.dataset.tcrnTheme = state.theme;

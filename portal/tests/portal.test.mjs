@@ -229,48 +229,92 @@ async function cliRefusal(args, env = {}) {
 // The library read page by page straight from the CLI, the reading /api/work must agree with.
 async function pagedWork(fixture, limit) {
   let first = null;
-  const ids = [];
+  const records = [];
   for (let offset = 0; first === null || offset < first.total; offset += limit) {
     const page = await cli(["work-list", "--workspace", fixture.workspace, "--limit", String(limit), "--offset", String(offset)], fixture.deviceEnv);
     first ??= page;
     assert.deepEqual([page.version, page.headEventHash, page.total], [first.version, first.headEventHash, first.total]);
-    ids.push(...page.records.map((record) => record.id));
+    records.push(...page.records);
   }
-  return { workspaceId: first.workspaceId, version: first.version, headEventHash: first.headEventHash, total: first.total, ids };
+  return { workspaceId: first.workspaceId, version: first.version, headEventHash: first.headEventHash, total: first.total, ids: records.map((record) => record.id), records };
 }
 
-// Stands in front of the real CLI. It logs every work-list the portal asks for, and by the mode
-// the test writes it passes the page on, makes a real write to the library before a page past the
-// first (once, or on every read), or answers every page as over the budget.
+// Stands in front of the real CLI. It logs every work-list the portal asks for (its limit and
+// offset, and when it began and ended), and by the mode the test writes it passes the page on,
+// makes a real write to the library before a page past the first (once, or on every read), answers
+// every page as over the budget, or (delay) answers a page larger than the cap for its offset as
+// over the budget and holds every other page for the delay given for its offset before passing it
+// on. Since TCRN-CROSS-SUB-416 the pages past the first are read several at once, so the writes
+// take turns under a lock, each at the next instant.
 const WORK_PAGES_WRAPPER = `import { spawnSync } from "node:child_process";
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, rmdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const argv = process.argv.slice(2);
 const state = process.env.TCRN_TEST_WORK_STATE;
+const began = Date.now();
 const run = (args, env = {}) => spawnSync(process.execPath, [process.env.TCRN_TEST_REAL_CLI, ...args], { encoding: "utf8", maxBuffer: 64e6, env: { ...process.env, ...env } });
 const flag = (name) => { const index = argv.indexOf("--" + name); return index >= 0 ? argv[index + 1] : undefined; };
-if (argv[0] === "work-list") {
-  const mode = JSON.parse(readFileSync(join(state, "mode.json"), "utf8")).mode;
-  appendFileSync(join(state, "calls.log"), JSON.stringify({ limit: flag("limit") ?? null, offset: flag("offset") ?? null }) + "\\n");
-  if (mode === "oversized") {
-    process.stderr.write(JSON.stringify({ ok: false, reasonCode: "CLI_WORK_LIST_OVERSIZED", error: "work-list page exceeds the canonical byte budget; lower --limit" }) + "\\n");
-    process.exit(1);
+const pause = (ms) => { if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); };
+const pass = () => { const actual = run(argv); return { status: actual.status ?? 1, stdout: actual.stdout || "", stderr: actual.stderr || "" }; };
+const oversized = { status: 1, stdout: "", stderr: JSON.stringify({ ok: false, reasonCode: "CLI_WORK_LIST_OVERSIZED", error: "work-list page exceeds the canonical byte budget; lower --limit" }) + "\\n" };
+const inTurn = (work) => {
+  const lock = join(state, "write.lock");
+  for (;;) {
+    try { mkdirSync(lock); break; } catch (error) { if (error.code !== "EEXIST") throw error; pause(10); }
   }
-  const moves = mode === "move-always" || (mode === "move-once" && !existsSync(join(state, "moved")));
-  if (moves && (flag("offset") ?? "0") !== "0") {
-    writeFileSync(join(state, "moved"), "");
-    const writes = existsSync(join(state, "writes")) ? Number(readFileSync(join(state, "writes"), "utf8")) : 0;
-    writeFileSync(join(state, "writes"), String(writes + 1));
-    const at = new Date(Date.parse("2026-08-11T16:00:00Z") + writes * 1000).toISOString().replace(/\\.\\d{3}Z$/u, "Z");
-    const write = run(["settings-set", "--workspace", flag("workspace"), "--at", at, "--actor", "agent:test", "--key", "retrieval.scopeExcerptBytes", "--value", String(600 + writes)], { EINZBERN_SURFACE: "atelier" });
-    if (write.status !== 0) { process.stderr.write(write.stderr || ""); process.exit(write.status ?? 1); }
+  try { return work(); } finally { rmdirSync(lock); }
+};
+const workList = () => {
+  const setting = JSON.parse(readFileSync(join(state, "mode.json"), "utf8"));
+  const offset = flag("offset") ?? "0";
+  if (setting.mode === "oversized") return oversized;
+  if (setting.mode === "delay") {
+    if (Number(flag("limit")) > (setting.caps?.[offset] ?? setting.cap ?? Infinity)) return oversized;
+    pause(setting.delays?.[offset] ?? 0);
+    return pass();
   }
-}
-const actual = run(argv);
-process.stdout.write(actual.stdout || "");
-process.stderr.write(actual.stderr || "");
-process.exitCode = actual.status ?? 1;
+  if ((setting.mode === "move-always" || setting.mode === "move-once") && offset !== "0") {
+    const refused = inTurn(() => {
+      if (setting.mode === "move-once" && existsSync(join(state, "moved"))) return null;
+      writeFileSync(join(state, "moved"), "");
+      const writes = existsSync(join(state, "writes")) ? Number(readFileSync(join(state, "writes"), "utf8")) : 0;
+      writeFileSync(join(state, "writes"), String(writes + 1));
+      const at = new Date(Date.parse("2026-08-11T16:00:00Z") + writes * 1000).toISOString().replace(/\\.\\d{3}Z$/u, "Z");
+      const write = run(["settings-set", "--workspace", flag("workspace"), "--at", at, "--actor", "agent:test", "--key", "retrieval.scopeExcerptBytes", "--value", String(600 + writes)], { EINZBERN_SURFACE: "atelier" });
+      return write.status === 0 ? null : { status: write.status ?? 1, stdout: "", stderr: write.stderr || "" };
+    });
+    if (refused !== null) return refused;
+  }
+  return pass();
+};
+const answer = argv[0] === "work-list" ? workList() : pass();
+if (argv[0] === "work-list") appendFileSync(join(state, "calls.log"), JSON.stringify({ limit: flag("limit") ?? null, offset: flag("offset") ?? null, began, ended: Date.now() }) + "\\n");
+process.stdout.write(answer.stdout);
+process.stderr.write(answer.stderr);
+process.exitCode = answer.status;
 `;
+
+// The wrapper's state directory and its two controls: the mode the next work-list calls run
+// under, and the calls logged since the last look (each call is logged as it ends).
+async function workPagesHarness(fixture) {
+  const state = join(fixture.base, "work-pages");
+  await mkdir(state);
+  const wrapper = join(fixture.base, "work-pages-wrapper.mjs");
+  await writeFile(wrapper, WORK_PAGES_WRAPPER, "utf8");
+  const mode = (value) => writeFile(join(state, "mode.json"), JSON.stringify(typeof value === "string" ? { mode: value } : value), "utf8");
+  const calls = async () => {
+    const log = await readFile(join(state, "calls.log"), "utf8").catch(() => "");
+    await writeFile(join(state, "calls.log"), "", "utf8");
+    return log.split("\n").filter((line) => line !== "").map((line) => JSON.parse(line));
+  };
+  await mode("pass");
+  return { mode, calls, env: { TCRN_WORKFLOW_CLI: wrapper, TCRN_TEST_REAL_CLI: CLI, TCRN_TEST_WORK_STATE: state } };
+}
+
+// A call as [limit, offset]. The pages past the first are read several at once, so they are
+// logged in the order they end; `unordered` puts them in offset order (the larger page first).
+const pageOf = ({ limit, offset }) => [limit, offset];
+const unordered = (pages) => [...pages].sort((left, right) => Number(left[1]) - Number(right[1]) || Number(right[0]) - Number(left[0]));
 
 test("SUB-403 (STORY-482 R3): /api/work reads a library larger than one work-list page whole, and never mixes two versions of it", async (t) => {
   const fixture = await scratch("tcrn-portal-large-", "TCRN-PORTAL-LARGE");
@@ -281,18 +325,9 @@ test("SUB-403 (STORY-482 R3): /api/work reads a library larger than one work-lis
   assert.equal(expected.total, LARGE_STORIES + 2);
   assert.equal(expected.ids.length, expected.total);
 
-  const state = join(fixture.base, "work-pages");
-  await mkdir(state);
-  const mode = (value) => writeFile(join(state, "mode.json"), JSON.stringify({ mode: value }), "utf8");
-  const calls = async () => {
-    const log = await readFile(join(state, "calls.log"), "utf8").catch(() => "");
-    await writeFile(join(state, "calls.log"), "", "utf8");
-    return log.split("\n").filter((line) => line !== "").map((line) => JSON.parse(line));
-  };
-  await mode("pass");
-  const wrapper = join(fixture.base, "work-pages-wrapper.mjs");
-  await writeFile(wrapper, WORK_PAGES_WRAPPER, "utf8");
-  const { child, url } = await startPortal({ ...fixture, env: { TCRN_WORKFLOW_CLI: wrapper, TCRN_TEST_REAL_CLI: CLI, TCRN_TEST_WORK_STATE: state } });
+  const harness = await workPagesHarness(fixture);
+  const { mode, calls } = harness;
+  const { child, url } = await startPortal({ ...fixture, env: harness.env });
   t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
   const { boot } = await readBoot(url);
   const readWork = async () => (await request(url, "/api/work", readOptions(boot.token))).body;
@@ -300,14 +335,16 @@ test("SUB-403 (STORY-482 R3): /api/work reads a library larger than one work-lis
   await calls();
 
   // Read whole: every record, once, in pages of at most 100; the page of 100 the budget refused
-  // was asked for again at 50.
+  // was asked for again at 50, and the two pages after it were read at once (TCRN-CROSS-SUB-416).
   const whole = await readWork();
   assert.equal(whole.ok, true);
   assert.equal(whole.reasonCode, "PORTAL_WORK_READY");
   assert.deepEqual([whole.workspaceId, whole.version, whole.headEventHash, whole.total], [expected.workspaceId, expected.version, expected.headEventHash, expected.total]);
   assert.equal(new Set(idsOf(whole)).size, whole.records.length, "no record twice");
   assert.deepEqual([...idsOf(whole)].sort(), [...expected.ids].sort());
-  assert.deepEqual((await calls()).map(({ limit, offset }) => [limit, offset]), [["100", "0"], ["50", "0"], ["50", "50"], ["50", "100"]]);
+  const wholeCalls = (await calls()).map(pageOf);
+  assert.deepEqual(wholeCalls.slice(0, 2), [["100", "0"], ["50", "0"]]);
+  assert.deepEqual(unordered(wholeCalls.slice(2)), [["50", "50"], ["50", "100"]]);
 
   // The library moves between two pages: the read starts over and answers for the new version.
   await mode("move-once");
@@ -317,7 +354,16 @@ test("SUB-403 (STORY-482 R3): /api/work reads a library larger than one work-lis
   assert.notEqual(after.version, whole.version, "the wrapper wrote to the library between two pages");
   assert.deepEqual([moved.version, moved.headEventHash, moved.total], [after.version, after.headEventHash, expected.total]);
   assert.deepEqual([...idsOf(moved)].sort(), [...expected.ids].sort());
-  assert.deepEqual((await calls()).map(({ offset }) => offset), ["0", "0", "50", "0", "0", "50", "100"], "the moved read was abandoned and read again from the start");
+  // Each read begins with the page of 100 at offset 0; the pages of one read all end before the next read begins.
+  const reads = (await calls()).map(pageOf).reduce((runs, page) => {
+    if (page[0] === "100" && page[1] === "0") runs.push([]);
+    runs.at(-1).push(page);
+    return runs;
+  }, []);
+  assert.deepEqual(reads.map((pages) => [...pages.slice(0, 2), ...unordered(pages.slice(2))]), [
+    [["100", "0"], ["50", "0"], ["50", "50"], ["50", "100"]],
+    [["100", "0"], ["50", "0"], ["50", "50"], ["50", "100"]],
+  ], "the moved read was abandoned and read again from the start");
 
   // It moves on every read: nothing mixed, a refusal.
   await mode("move-always");
@@ -337,6 +383,65 @@ test("SUB-403 (STORY-482 R3): /api/work reads a library larger than one work-lis
   const untokened = await request(url, "/api/work");
   assert.equal(untokened.response.status, 403);
   assert.equal(untokened.body.reasonCode, "PORTAL_TOKEN_REQUIRED");
+});
+
+// TCRN-CROSS-SUB-416 (TCRN-CROSS-STORY-510): the pages past the first are read a few at a time,
+// and the wrapper holds each for a delay of its own, so they end out of offset order. /api/work
+// still answers what the library read page by page answers: the same records in the same order,
+// the same total, nothing twice. A page past the first that the budget refuses is halved within
+// its own stretch, and one the budget still refuses at one record is the refusal.
+test("SUB-416 (STORY-510): /api/work reads the pages past the first a few at a time and answers exactly the serial page-by-page read", async (t) => {
+  const bound = Number((await readFile(join(portalRoot, "portal.mjs"), "utf8")).match(/const WORK_PAGE_CONCURRENCY = (\d+);/u)?.[1]);
+  assert.ok(bound > 1, "the portal names a concurrency bound above one");
+  const fixture = await scratch("tcrn-portal-concurrent-", "TCRN-PORTAL-CONCURRENT");
+  await largeLibrary(fixture);
+  const serial = await pagedWork(fixture, 30);
+  assert.equal(serial.total, LARGE_STORIES + 2);
+  const harness = await workPagesHarness(fixture);
+  const { mode, calls } = harness;
+  const { child, url } = await startPortal({ ...fixture, env: harness.env });
+  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
+  const { boot } = await readBoot(url);
+  const readWork = async () => (await request(url, "/api/work", readOptions(boot.token))).body;
+  const assertSerial = (body) => {
+    assert.deepEqual([body.ok, body.reasonCode, body.workspaceId, body.version, body.headEventHash, body.total], [true, "PORTAL_WORK_READY", serial.workspaceId, serial.version, serial.headEventHash, serial.total]);
+    assert.deepEqual(body.records, serial.records, "the serial read's records, in its order");
+    assert.equal(new Set(body.records.map((record) => record.id)).size, body.total, "no record twice");
+  };
+  await calls();
+
+  // Pages of 12, since the cap refuses 100, 50 and 25: ten stretches past the first page, each held
+  // so that the last of every four the portal sends out ends first.
+  const delays = {};
+  for (let offset = 12; offset < serial.total; offset += 12) delays[offset] = [900, 600, 300, 0][(offset / 12 - 1) % 4];
+  await mode({ mode: "delay", cap: 12, delays });
+  assertSerial(await readWork());
+  const log = await calls();
+  assert.deepEqual(log.slice(0, 4).map(pageOf), [["100", "0"], ["50", "0"], ["25", "0"], ["12", "0"]], "the first page is read alone, halved as before");
+  const stretches = log.slice(4);
+  assert.deepEqual(unordered(stretches.map(pageOf)), Object.keys(delays).map((offset) => ["12", offset]), "each page past the first once, at the size the first page was read at");
+  const ended = stretches.map(({ offset }) => Number(offset));
+  assert.notDeepEqual(ended, [...ended].sort((left, right) => left - right), "the pages ended out of offset order");
+  const outAtOnce = Math.max(...stretches.map((call) => stretches.filter((other) => other.began <= call.began && call.began < other.ended).length));
+  assert.ok(outAtOnce > 1 && outAtOnce <= bound, `more than one page and at most ${bound} out at once, not ${outAtOnce}`);
+
+  // Pages of 25, and the page at offset 50 is over the budget until it is 12: its stretch [50, 75)
+  // is read as 12, 12 and 1 records, and never reaches into the stretch after it.
+  await mode({ mode: "delay", cap: 25, caps: { 50: 12 }, delays: { 25: 300, 75: 150 } });
+  assertSerial(await readWork());
+  const halved = (await calls()).map(pageOf);
+  assert.deepEqual(halved.slice(0, 3), [["100", "0"], ["50", "0"], ["25", "0"]]);
+  assert.deepEqual(unordered(halved.slice(3)), [["25", "25"], ["25", "50"], ["12", "50"], ["12", "62"], ["1", "74"], ["25", "75"], ["25", "100"]]);
+
+  // The page at offset 50 is over the budget even at one record: that is the refusal, and nothing
+  // mixed is shown.
+  await mode({ mode: "delay", cap: 25, caps: { 50: 0 } });
+  const refused = await readWork();
+  assert.deepEqual([refused.ok, refused.reasonCode, refused.total, refused.records], [false, "PORTAL_WORK_READ_FAILED", 0, []]);
+  assert.equal(refused.source.reasonCode, "CLI_WORK_LIST_OVERSIZED");
+  const refusedCalls = (await calls()).map(pageOf);
+  assert.deepEqual(refusedCalls.filter(([, offset]) => offset === "50"), [["25", "50"], ["12", "50"], ["6", "50"], ["3", "50"], ["1", "50"]], "the page is halved down to one record before it is the refusal");
+  assert.deepEqual(refusedCalls.filter(([, offset]) => offset !== "50" && offset !== "0").filter(([limit, offset]) => limit !== "25" || !["25", "75", "100"].includes(offset)), [], "every other page is a whole page at a stretch's start");
 });
 
 // TCRN-CROSS-STORY-482 R4, AC3: the pages that showed the retired mechanisms went with them, and

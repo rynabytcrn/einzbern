@@ -39,6 +39,18 @@ export type SettingLayer = "project" | "device";
 export const SETTINGS_PROJECT_LAYER = "project" as const satisfies SettingLayer;
 export const SETTINGS_DEVICE_LAYER = "device" as const satisfies SettingLayer;
 
+// TCRN-CROSS-STORY-508 R5 (MIN-236 D7): every row of settings-catalog and machine-settings-catalog
+// says how a configuration surface lays its key out. `shape` is `collection` for a key whose value
+// is a table of records, which Atelier edits on a page of its own, and `scalar` for every other key,
+// which the settings page files under its `group`. `order` is the key's place in that group: a
+// positive integer, unique within the group across both layers, so a group that holds keys of both
+// layers still has one display order. specs/settings-catalog-v1.md lists every key's group and order.
+export type SettingShape = "collection" | "scalar";
+// The groups in the order the settings page shows them; a group's name is the text key
+// `settings.group.<id>`. `models` is the models and escalation group.
+export const SETTING_GROUPS = Object.freeze(["general", "models", "execution", "knowledge", "retrieval", "storage", "atelier"] as const);
+export type SettingGroup = typeof SETTING_GROUPS[number];
+
 // A catalog deletion must leave a replay-compatibility marker behind. Keep this
 // list separate from the live catalog: old events may be read, but the setting
 // is not a valid target for any new write.
@@ -124,6 +136,11 @@ export interface SettingsCatalogEntry {
   // TCRN-CROSS-STORY-484 R4: whether a model may write this key through the CLI. False unless the
   // entry says otherwise; the CLI refusal that reads it is TCRN-CROSS-SUB-341's.
   readonly modelWritable: boolean;
+  // TCRN-CROSS-STORY-508 R5: the layout of the key (SettingShape, SETTING_GROUPS). `scalar` unless
+  // the entry says otherwise.
+  readonly shape: SettingShape;
+  readonly group: SettingGroup;
+  readonly order: number;
   readonly allowedValues?: readonly string[];
   readonly min?: number;
   readonly max?: number;
@@ -153,6 +170,9 @@ export interface SettingsCatalogReadback {
       readonly defaultValue: string | null;
       readonly currentValue: string | null;
       readonly modelWritable: boolean;
+      readonly shape: SettingShape;
+      readonly group: SettingGroup;
+      readonly order: number;
       readonly allowedValues?: readonly string[];
       readonly min?: number;
       readonly max?: number;
@@ -246,7 +266,12 @@ function assertAbsoluteArtifactsSettingPath(value: string, label: string, worksp
 // written at setup rather than during work, so a model changing one through the CLI is the
 // unapproved change R4 refuses. A key that turns out to be routine model work gets
 // `modelWritable: true` here, with its reason.
-const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWritable"> & { readonly modelWritable?: boolean })[] = [
+// TCRN-CROSS-STORY-508 R5: every entry names its group and its order in that group
+// (specs/settings-catalog-v1.md); an entry is a collection only when it says so.
+const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWritable" | "shape"> & {
+  readonly modelWritable?: boolean;
+  readonly shape?: SettingShape;
+})[] = [
   {
     // TCRN-CROSS-STORY-364: the language this workspace writes its knowledge cards in.
     // Its value set is the roster knowledge-language.ts can actually judge, so the two
@@ -257,6 +282,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     layerKind: SETTINGS_LAYER_KIND,
     defaultValue: "en",
     allowedValues: [...ARTIFACT_LANGUAGE_TAGS],
+    group: "knowledge",
+    order: 1,
   },
   {
     // INC-193: which design system this workspace treats as its authority, named by the
@@ -270,6 +297,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     controlType: "text",
     layerKind: SETTINGS_LAYER_KIND,
     defaultValue: null,
+    group: "general",
+    order: 2,
   },
   {
     key: "engine.requiredVersion",
@@ -277,6 +306,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     controlType: "text",
     layerKind: SETTINGS_LAYER_KIND,
     defaultValue: null,
+    group: "general",
+    order: 1,
   },
   {
     // INIT-027 S239. An orchestration control, a string on the governed surface so it stays
@@ -289,6 +320,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     defaultValue: "8",
     min: 1,
     max: 32,
+    group: "execution",
+    order: 1,
   },
   {
     key: "injection.perPromptBytes",
@@ -298,6 +331,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     defaultValue: "1600",
     min: 1,
     max: 1600,
+    group: "retrieval",
+    order: 4,
   },
   {
     key: "knowledge.aggregateBytes",
@@ -307,6 +342,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     defaultValue: "131072",
     min: 4096,
     max: 1_048_576,
+    group: "knowledge",
+    order: 3,
   },
   {
     // Article files are repository material, not knowledge-store control bytes. A
@@ -318,16 +355,22 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     controlType: "text",
     layerKind: SETTINGS_LAYER_KIND,
     defaultValue: "docs/knowledge/articles",
+    group: "knowledge",
+    order: 2,
   },
   {
     // TCRN-CROSS-STORY-484 R3 (MIN-227 D11, D12): the model tiers per host, each tier a runner, a
     // model and an effort; models-tiers.ts owns the shape and the default table. It replaces
-    // execution.dispatchTiers (RENAMED_SETTING_KEYS).
+    // execution.dispatchTiers (RENAMED_SETTING_KEYS). TCRN-CROSS-STORY-508 R5: a table of records,
+    // second in the models group after the categories it refers to.
     key: "models.tiers",
     type: "string",
     controlType: "text",
     layerKind: SETTINGS_LAYER_KIND,
     defaultValue: MODELS_TIERS_DEFAULT_VALUE,
+    shape: "collection",
+    group: "models",
+    order: 2,
   },
   {
     // TCRN-CROSS-STORY-484 (MIN-233 D2): when the orchestrating conversation shrinks its parallel
@@ -342,6 +385,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     defaultValue: "75",
     min: 1,
     max: 100,
+    group: "execution",
+    order: 2,
   },
   {
     key: "quota.fiveHourWaitPercent",
@@ -351,6 +396,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     defaultValue: "90",
     min: 1,
     max: 100,
+    group: "execution",
+    order: 3,
   },
   {
     key: "quota.weeklyParallelOffPercent",
@@ -360,6 +407,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     defaultValue: "95",
     min: 1,
     max: 100,
+    group: "execution",
+    order: 4,
   },
   {
     key: "quota.weeklyWaitPercent",
@@ -369,6 +418,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     defaultValue: null,
     min: 1,
     max: 100,
+    group: "execution",
+    order: 5,
   },
   {
     // TCRN-CROSS-STORY-364: which prompt languages this workspace expects questions in. A
@@ -379,6 +430,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     controlType: "text",
     layerKind: SETTINGS_LAYER_KIND,
     defaultValue: null,
+    group: "retrieval",
+    order: 1,
   },
   {
     key: "retrieval.scopeExcerptBytes",
@@ -388,6 +441,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     defaultValue: "512",
     min: 1,
     max: 65_536,
+    group: "retrieval",
+    order: 3,
   },
   {
     // TCRN-CROSS-STORY-362, STORY-474 R3: the strong-hit threshold, in bm25 units. A prompt whose
@@ -403,6 +458,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     defaultValue: "17",
     min: 0,
     max: 100,
+    group: "retrieval",
+    order: 2,
   },
   {
     key: "storage.segmentBytes",
@@ -414,6 +471,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     defaultValue: "1048576",
     min: 4096,
     max: 67108864,
+    group: "storage",
+    order: 2,
   },
   {
     key: "storage.snapshotEveryEvents",
@@ -423,6 +482,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     defaultValue: "512",
     min: 1,
     max: 20_000,
+    group: "storage",
+    order: 3,
   },
   {
     key: "workspace.generatedArtifactsPath",
@@ -431,6 +492,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     layerKind: SETTINGS_LAYER_KIND,
     // TCRN-CROSS-STORY-469 R1: relative to the library root, its artifacts/ directory.
     defaultValue: DIRECTORY.artifacts,
+    group: "storage",
+    order: 1,
   },
 ];
 
@@ -439,6 +502,7 @@ export const SETTINGS_CATALOG: readonly SettingsCatalogEntry[] = Object.freeze(
     ...entry,
     layer: SETTINGS_PROJECT_LAYER,
     modelWritable: entry.modelWritable ?? false,
+    shape: entry.shape ?? "scalar",
     ...(entry.allowedValues === undefined ? {} : { allowedValues: Object.freeze([...entry.allowedValues]) }),
   })),
 );
@@ -696,6 +760,9 @@ export function readSettingsCatalog(
       defaultValue: entry.defaultValue,
       currentValue: records.find((record) => record.key === entry.key)?.value ?? effectiveValues[entry.key] ?? entry.defaultValue,
       modelWritable: entry.modelWritable,
+      shape: entry.shape,
+      group: entry.group,
+      order: entry.order,
       ...(entry.allowedValues === undefined ? {} : { allowedValues: entry.allowedValues }),
       ...(entry.min === undefined ? {} : { min: entry.min }),
       ...(entry.max === undefined ? {} : { max: entry.max }),

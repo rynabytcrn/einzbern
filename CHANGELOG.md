@@ -512,6 +512,19 @@ is `atelier`, as it is when Atelier runs the CLI. The CLI cannot tell who runs i
 barrier. A key the engine refuses whoever asks keeps its own refusal (`SETTINGS_KEY_DEVICE_LEVEL`,
 `SETTINGS_KEY_UNREGISTERED`), and reads are never refused.
 
+Every row of `settings-catalog` and `machine-settings-catalog` carries its layout
+(TCRN-CROSS-STORY-508 R5; MIN-236 D7; `packages/core/src/settings.ts`,
+`packages/core/src/machine-settings.ts`, `specs/settings-catalog-v1.md`): `shape` is `collection` for
+`models.tiers`, a table of records that Atelier edits on a page of its own, and `scalar` for every
+other key and every device-level key; `group` is one of `general`, `models`, `execution`,
+`knowledge`, `retrieval`, `storage` and `atelier` (`SETTING_GROUPS`, in the order the settings page
+shows them; a group's name is the text key `settings.group.<id>`, and `models` is the models and
+escalation group); `order` is a positive integer, the key's place in its group, unique within the
+group across both catalogs, so a group holding keys of both layers has one display order. The
+layout says how a key is shown and nothing else: no record carries it, and no key's default,
+bounds, validation or `modelWritable` changes. The layout table of `specs/settings-catalog-v1.md`
+lists every key's group and order.
+
 A project can switch on Command Spell rules (TCRN-CROSS-STORY-483; MIN-228 D3, MIN-229 D6;
 `packages/core/src/rules-catalog.ts`, `packages/core/src/rules.ts`). The engine ships four, each with
 a version and a Chinese and an English text: `autonomy` v1, `batch` v2, `unattended-commands` v1 and

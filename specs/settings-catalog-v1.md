@@ -34,6 +34,66 @@ engine: no read trusts it, and `status` reports `configProjection` as `current`,
 (its values or its records differ from the merged ones, for example after a sync client
 kept another device's copy), `absent` or `invalid`.
 
+## Layout: shape, group and order (TCRN-CROSS-STORY-508 R5)
+
+Every row of `settings-catalog` and of `machine-settings-catalog` carries three layout
+fields, and Atelier lays its configuration pages out from them instead of a copy of its own
+(MIN-236 D7).
+
+- **`shape`**: `collection` or `scalar`. A collection key's value is a table of records, and
+  Atelier edits each collection on a page of its own; a scalar key is one value, and the
+  settings page shows it in its group. The collection keys are `models.category` and
+  `models.tiers`; every other key, and every device-level key, is `scalar`.
+- **`group`**: a stable lowercase id from the closed list `SETTING_GROUPS`
+  (`packages/core/src/settings.ts`). The settings page shows the groups in the order of the
+  table below, and a group's name is the text key `settings.group.<id>`. A group may hold keys
+  of both layers; Atelier marks each key as project-level (it travels with the library) or as
+  this device's from its `layer`. `models` is the models and escalation group: it holds the two
+  collection keys and the three `models.escalation.*` keys, and it is the group the escalation
+  summary on the model tiers page links to.
+- **`order`**: a positive integer, the key's place in its group. It is unique within the
+  group across both catalogs, so it is unique within a layer and a group and a group that holds
+  keys of both layers has one display order. It need not be contiguous.
+
+The layout fields describe how a key is shown, nothing more: they are not part of a setting
+record or of the machine settings file, nothing writes them, and they change no key's default,
+bounds, validation or `modelWritable`. A key added to either catalog names its group and order
+in the same change, and its row joins the table below; `tests/settings-catalog-shape.test.mjs`
+compares the table with both catalogs. A row marked *planned* is a key TCRN-CROSS-STORY-508
+adds later (`models.category` by R1, the `models.escalation.*` keys by R3): its layout is fixed
+here, and the change that catalogues the key uses it.
+
+| Group | Key | Layer | Shape | Order |
+| --- | --- | --- | --- | --- |
+| `general` | `engine.requiredVersion` | project | scalar | 1 |
+| `general` | `design.authority` | project | scalar | 2 |
+| `general` | `agents.navigation` | device | scalar | 3 |
+| `models` | `models.category` (*planned*) | project | collection | 1 |
+| `models` | `models.tiers` | project | collection | 2 |
+| `models` | `models.escalation.enabled` (*planned*) | project | scalar | 3 |
+| `models` | `models.escalation.threshold` (*planned*) | project | scalar | 4 |
+| `models` | `models.escalation.ceiling` (*planned*) | project | scalar | 5 |
+| `execution` | `execution.maxConcurrentSubagents` | project | scalar | 1 |
+| `execution` | `quota.fiveHourParallelOffPercent` | project | scalar | 2 |
+| `execution` | `quota.fiveHourWaitPercent` | project | scalar | 3 |
+| `execution` | `quota.weeklyParallelOffPercent` | project | scalar | 4 |
+| `execution` | `quota.weeklyWaitPercent` | project | scalar | 5 |
+| `knowledge` | `artifact.language` | project | scalar | 1 |
+| `knowledge` | `knowledge.articlesPath` | project | scalar | 2 |
+| `knowledge` | `knowledge.aggregateBytes` | project | scalar | 3 |
+| `knowledge` | `crest.userPath` | device | scalar | 4 |
+| `retrieval` | `retrieval.promptLanguages` | project | scalar | 1 |
+| `retrieval` | `retrieval.tau` | project | scalar | 2 |
+| `retrieval` | `retrieval.scopeExcerptBytes` | project | scalar | 3 |
+| `retrieval` | `injection.perPromptBytes` | project | scalar | 4 |
+| `storage` | `workspace.generatedArtifactsPath` | project | scalar | 1 |
+| `storage` | `storage.segmentBytes` | project | scalar | 2 |
+| `storage` | `storage.snapshotEveryEvents` | project | scalar | 3 |
+| `atelier` | `portal.defaultLocale` | device | scalar | 1 |
+| `atelier` | `portal.defaultTheme` | device | scalar | 2 |
+| `atelier` | `portal.defaultPartition` | device | scalar | 3 |
+| `atelier` | `portal.port` | device | scalar | 4 |
+
 ## Tier taxonomy
 
 **Tier-0 — frozen protocol limits.** Not settings; never appear in conversational
@@ -55,15 +115,16 @@ governed read/write mechanism.
 ## New-key rule
 
 Any new settings key requires, before it is catalogued: a default, explicit
-bounds, a tier assignment, and a decision record. This anti-knob-sprawl rule keeps
-the catalog bounded.
+bounds, a tier assignment, a decision record, and its row in the layout table (its
+shape, group and order). This anti-knob-sprawl rule keeps the catalog bounded.
 
 ### Shared decision-record format
 
 Per SDC-7 (the Settings-Catalog Key Allocation Contract), new keys are catalogued
 in append-only per-namespace sections. Each engine-consumed key records **key**,
 **type**, **layer**, **default**, **bounds**, and a governed read/write mechanism;
-the implementation also exposes those fields through `settings-catalog`. A
+the implementation also exposes those fields through `settings-catalog`, beside the
+key's layout (`shape`, `group` and `order`). A
 documentary preference may be mentioned before implementation, but it is
 explicitly reserved and must not be treated as an engine setting until it is
 added to the machine-readable catalog with a decision record.

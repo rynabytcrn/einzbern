@@ -402,19 +402,18 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     order: 1,
   },
   {
-    // TCRN-CROSS-STORY-484 R3 (MIN-227 D11, D12): the model tiers; models-tiers.ts owns the shape and
-    // the default table. It replaces execution.dispatchTiers (RENAMED_SETTING_KEYS).
-    // TCRN-CROSS-STORY-508 R2 (MIN-236 D6): one table of records {order, category, runner, model,
-    // effort, note}, each filed under a category of models.category, and second in the models group
-    // after the categories it refers to (R5).
-    key: "models.tiers",
+    // TCRN-CROSS-STORY-508 R3 (MIN-236 D5): the category an escalation stops in, at its record with
+    // the smallest order: a category id, which a write may only set to a category models.category
+    // holds (assertSettingWriteConsistent). The entries here stay in key order (S369); a key's place
+    // on the settings page is its group and order (R5), so the three escalation keys still show
+    // after the two tables, enabled, threshold, then ceiling.
+    key: "models.escalation.ceiling",
     type: "string",
     controlType: "text",
     layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: MODELS_TIERS_DEFAULT_VALUE,
-    shape: "collection",
+    defaultValue: MODELS_ESCALATION_CEILING_DEFAULT_VALUE,
     group: "models",
-    order: 2,
+    order: 5,
   },
   {
     // TCRN-CROSS-STORY-508 R3 (MIN-236 D5): whether a rule's record escalates along the order of
@@ -445,15 +444,19 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     order: 4,
   },
   {
-    // The category an escalation stops in, at its record with the smallest order: a category id,
-    // which a write may only set to a category models.category holds (assertSettingWriteConsistent).
-    key: "models.escalation.ceiling",
+    // TCRN-CROSS-STORY-484 R3 (MIN-227 D11, D12): the model tiers; models-tiers.ts owns the shape and
+    // the default table. It replaces execution.dispatchTiers (RENAMED_SETTING_KEYS).
+    // TCRN-CROSS-STORY-508 R2 (MIN-236 D6): one table of records {order, category, runner, model,
+    // effort, note}, each filed under a category of models.category, and second in the models group
+    // after the categories it refers to (R5).
+    key: "models.tiers",
     type: "string",
     controlType: "text",
     layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: MODELS_ESCALATION_CEILING_DEFAULT_VALUE,
+    defaultValue: MODELS_TIERS_DEFAULT_VALUE,
+    shape: "collection",
     group: "models",
-    order: 5,
+    order: 2,
   },
   {
     // TCRN-CROSS-STORY-484 (MIN-233 D2): when the orchestrating conversation shrinks its parallel

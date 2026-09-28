@@ -67,9 +67,10 @@ WSE-2 engine rules; the CLI adds no actor vocabulary of its own.
   `attestation.actor.enabled` event carrying the enabling actor; chains that carry
   that event are unaffected.
 - `--actor <stableId>` is an optional flag on every workspace-event mutation verb
-  — `project-create`/`-update`/`-delete`, `work-create`/`-transition`/`-delete`,
-  and the conference verbs `conference-open`/`-append-position`/`-close`/
-  `-cancel`. It is declared
+  — `project-create`/`-update`/`-delete`, `work-create`/`-transition`/`-delete`.
+  The conference verbs `conference-open`/`-append-position`/`-close`/`-cancel`
+  carried it until the conference write path retired (TCRN-CROSS-STORY-475 R3);
+  they now answer `CLI_COMMAND_UNKNOWN`. `--actor` is declared
   catalog-optional (`required: false`) because before enablement it is genuinely
   optional and after enablement the engine — not the CLI — makes it mandatory. The
   static command catalog cannot express "required only after the enable event", so
@@ -79,12 +80,12 @@ WSE-2 engine rules; the CLI adds no actor vocabulary of its own.
   `WORKSPACE_ACTOR_INVALID`. A supplied `--actor` on a non-enabled workspace is a
   no-op, so legacy no-actor invocations stay byte-identical.
 
-`conference-append-position` additionally carries `--actor-id`, the conference
-position's author recorded in the position document. That is a distinct field
-from `--actor`, the acting identity attested on the event. The two reach the core
-through one shared `actorId` slot, so on this verb the default path (no `--actor`)
-keeps the position author as the acting identity unchanged, and a supplied
-`--actor` takes precedence as the acting identity.
+`conference-append-position` additionally carried `--actor-id`, the conference
+position's author recorded in the position document, a distinct field from
+`--actor`, the acting identity attested on the event. The verb retired with the
+conference write path (TCRN-CROSS-STORY-475 R3) and answers
+`CLI_COMMAND_UNKNOWN`; position events already on a chain replay with the author
+and the actor they were written with.
 
 ### Non-claim
 

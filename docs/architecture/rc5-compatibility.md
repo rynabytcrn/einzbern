@@ -146,11 +146,15 @@ interchangeable:
    with `records: 0` and binds to the current workspace head.
 
 4. **Re-capture units.** Re-create the knowledge units you need with
-   `knowledge-create`, then re-run the governed lifecycle (`knowledge-promote`,
-   `knowledge-reverify`, `knowledge-retire`) to restore promotion and freshness
-   posture. Conference-distilled decisions are re-derivable by re-running
-   `conference-close --distill` (or the distillation path) against the preserved
-   conference minutes in the event log.
+   `knowledge-create`. A card is active and retrievable once written, so there is
+   no promotion to restore, and a card retires only when a later card names it
+   with `--supersedes`: `knowledge-promote` and `knowledge-retire` are retired
+   (TCRN-CROSS-STORY-476). `knowledge-reverify` restores a fresh posture.
+   Conference-distilled decisions are not re-derived: `conference-close --distill`
+   retired with the conference write path (TCRN-CROSS-STORY-475 R3) and answers
+   `CLI_COMMAND_UNKNOWN`. The conference minutes stay in the event log, where
+   `minutes-list` and `minutes-show` read them; a decision a card should carry is
+   captured again with `knowledge-create`.
 
 ### Preserved vs re-derived
 

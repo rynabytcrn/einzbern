@@ -34,7 +34,8 @@ record stores only its forward relations:
 
 - `parent` is its `parentId`;
 - `decided-in` is its `advisory:decided-by` extension, a non-empty list of minutes
-  ids checked for shape only;
+  ids checked for shape only, so a write may name minutes this library does not
+  hold yet;
 - `blocked-by`, `implements`, `supersedes` and `fixes` live in the `required:false`
   extension `advisory:relations`, whose value (`$defs/relationsExtensionValue` in
   `work-model-v1.schema.json`) is `{blockedBy?, implements?, supersedes?, fixes?}`,
@@ -51,3 +52,11 @@ Replay checks only the shape of the stored value: a chain written before a targe
 existed on this device, or merged from a device that saw records this one has not,
 still reads. `work-show` reports `relations {forward, reverse, missing}`, and
 `work-list --relation <name>=<id>` filters by a forward or a reverse name.
+
+`missing` lists every forward target the library does not currently hold as a live
+record: a `parent`, `blocked-by`, `implements`, `supersedes` or `fixes` target that
+is not a live work record, and a `decided-in` minutes id that no live minutes
+record here carries, minutes a conference close wrote included. It is marked when
+the record is read and never stored: once the target arrives, from a later write
+or a merged device stream, the next read no longer lists it, and the stored
+relation is unchanged.

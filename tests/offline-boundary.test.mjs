@@ -11,13 +11,17 @@ import { installNoNetworkGuard } from "../scripts/no-network.mjs";
 installNoNetworkGuard();
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import dgram from "node:dgram";
 import dns from "node:dns";
 import dnsPromises from "node:dns/promises";
+import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import http from "node:http";
 import http2 from "node:http2";
 import net, { connect as namedConnect, createConnection as namedCreateConnection } from "node:net";
 import test from "node:test";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 // The privacy gate refuses a literal loopback address in source, so the address the
 // transport tests need is assembled at run time, matching tests/p4-artifact-lifecycle.test.mjs:53.
@@ -131,3 +135,76 @@ test("ESM named imports resolve to the patched functions", () => {
   refuses("esm named connect", () => namedConnect(9, loopbackHost()));
   refuses("esm named createConnection", () => namedCreateConnection(9, loopbackHost()));
 });
+
+if (process.env.TCRN_OFFLINE_PROOF !== "1") {
+  const repositoryRoot = resolve(import.meta.dirname, "..");
+
+  async function offlineFixture({ unexpectedSource = false, extraInstallerFetch = false } = {}) {
+    const temporaryRoot = await mkdtemp(join(tmpdir(), "einzbern-offline-scan-"));
+    const root = join(temporaryRoot, "engine");
+    await mkdir(join(root, ".git"), { recursive: true });
+    await cp(join(repositoryRoot, "scripts"), join(root, "scripts"), { recursive: true });
+    await mkdir(join(root, "skill", "mana-orchestrate", "scripts"), { recursive: true });
+    await cp(
+      join(repositoryRoot, "skill", "mana-orchestrate", "scripts", "install.mjs"),
+      join(root, "skill", "mana-orchestrate", "scripts", "install.mjs"),
+    );
+    await mkdir(join(root, "tests"), { recursive: true });
+    await cp(import.meta.filename, join(root, "tests", "offline-boundary.test.mjs"));
+    await cp(join(repositoryRoot, "package.json"), join(root, "package.json"));
+    await cp(join(repositoryRoot, ".npmrc"), join(root, ".npmrc"));
+    await mkdir(join(root, "node_modules"), { recursive: true });
+    await symlink(await realpath(join(repositoryRoot, "node_modules", "ajv")), join(root, "node_modules", "ajv"), "dir");
+    if (unexpectedSource) {
+      await writeFile(join(root, "scripts", "unexpected-network.mjs"), 'await fetch("https://example.invalid");\n');
+    }
+    if (extraInstallerFetch) {
+      await writeFile(
+        join(root, "skill", "mana-orchestrate", "scripts", "install.mjs"),
+        `${await readFile(join(root, "skill", "mana-orchestrate", "scripts", "install.mjs"), "utf8")}\nvoid fetch("https://example.invalid");\n`,
+      );
+    }
+    return { root, temporaryRoot };
+  }
+
+  function scanOffline(root) {
+    const env = { ...process.env };
+    delete env.NODE_TEST_CONTEXT;
+    return spawnSync(process.execPath, [join(root, "scripts", "task.mjs"), "offline"], {
+      cwd: root,
+      encoding: "utf8",
+      env,
+      timeout: 30_000,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+  }
+
+  function scanReport(run) {
+    const output = run.status === 0 ? run.stdout : run.stderr;
+    return JSON.parse(output.trim().split("\n").at(-1));
+  }
+
+  test("offline scan allows the version-scoped installer fetch and still rejects unknown fetch sites", async () => {
+    for (const fixtureOptions of [{}, { unexpectedSource: true }, { extraInstallerFetch: true }]) {
+      const fixture = await offlineFixture(fixtureOptions);
+      try {
+        const run = scanOffline(fixture.root);
+        const report = scanReport(run);
+        if (fixtureOptions.unexpectedSource) {
+          assert.equal(run.status, 1, run.stdout);
+          assert.equal(report.reasonCode, "OFFLINE_BOUNDARY_FINDINGS");
+          assert.match(report.error, /NETWORK_API:scripts\/unexpected-network\.mjs/u);
+        } else if (fixtureOptions.extraInstallerFetch) {
+          assert.equal(run.status, 1, run.stdout);
+          assert.equal(report.reasonCode, "OFFLINE_BOUNDARY_FINDINGS");
+          assert.match(report.error, /NETWORK_API:skill\/mana-orchestrate\/scripts\/install\.mjs/u);
+        } else {
+          assert.equal(run.status, 0, run.stderr);
+          assert.equal(report.reasonCode, "OFFLINE_BOUNDARY_VERIFIED");
+        }
+      } finally {
+        await rm(fixture.temporaryRoot, { recursive: true, force: true });
+      }
+    }
+  });
+}

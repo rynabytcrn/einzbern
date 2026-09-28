@@ -12,7 +12,7 @@
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -27,12 +27,36 @@ import {
   knowledgeConflictHits,
   knowledgeRelevanceScore,
   listKnowledgeMetadata,
+  readKnowledgeStoreMarker,
   DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { canonicalJson } from "../dist/build/packages/protocol/src/index.js";
 
 const instant = (day, second = 0) => `2026-09-${String(day).padStart(2, "0")}T09:00:${String(second).padStart(2, "0")}Z`;
 const OWNER = "owner:agent-session";
+
+// TCRN-CROSS-SUB-414: this engine writes a library's cards as events in each device's stream,
+// crest/events/<device id>/. A crest an engine before event streams wrote held one metadata file and
+// one body file per card instead, its marker's version counting the writes; this lays the crest down
+// that way, every record as the streams hold it now, and takes the streams away.
+async function asOlderEngineCrest(workspace) {
+  const store = join(workspace, DIRECTORY.knowledge);
+  const all = await listKnowledgeMetadata(workspace, { at: "2099-01-01T00:00:00Z", selection: "all", limit: 1_000_000 });
+  const marker = await readKnowledgeStoreMarker(workspace);
+  const [deviceId] = await readdir(join(store, "events"));
+  const stream = join(store, "events", deviceId);
+  const bodies = new Map();
+  for (const name of (await readdir(stream)).filter((entry) => entry.endsWith(".body"))) bodies.set(name.slice(9, -5), await readFile(join(stream, name)));
+  await mkdir(join(store, "metadata"));
+  await mkdir(join(store, "bodies"));
+  for (const record of all.records) {
+    await writeFile(join(store, "metadata", `${record.id}.json`), canonicalJson(record));
+    await writeFile(join(store, "bodies", `${record.id}.body`), bodies.get(record.bodySha256));
+  }
+  const storeJson = join(store, "store.json");
+  await writeFile(storeJson, canonicalJson({ ...JSON.parse(await readFile(storeJson, "utf8")), version: marker.version, eventHighWaterDigest: marker.eventHighWaterDigest }));
+  await rm(join(store, "events"), { recursive: true });
+}
 
 /**
  * A throwaway platform container with one governed workspace in the cross-project
@@ -188,8 +212,11 @@ test("STORY-365 GWT4/GWT5: create needs no backlink lists, and nothing new lands
 test("STORY-365 the extension slot stays a closed roster of two knowledge-id keys", async () => {
   const fixture = await containerFixture("FIXTURE-CAPTURE-EXTENSIONS");
   try {
-    const { readFile, writeFile: write } = await import("node:fs/promises");
+    const write = writeFile;
     const first = await captureKnowledgeUnit(fixture.workspace, lessonCard("扩展槽是有界的两个键"), { allowTrailing: true });
+    // A metadata file to forge is the metadata/body layout's, which an engine before event streams
+    // wrote (TCRN-CROSS-SUB-414): the card is laid down that way first.
+    await asOlderEngineCrest(fixture.workspace);
     const path = join(fixture.workspace, DIRECTORY.knowledge, "metadata", `${first.id}.json`);
     const stored = JSON.parse(await readFile(path, "utf8"));
     for (const forged of [{ unknownKey: "x" }, { supersededBy: "not-an-id" }, { coexistsWith: [] }, { coexistsWith: ["knowledge:000000000000000000000002", "knowledge:000000000000000000000001"] }]) {

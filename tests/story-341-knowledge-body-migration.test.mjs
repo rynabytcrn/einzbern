@@ -3,7 +3,7 @@
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, readFile, realpath, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -14,11 +14,37 @@ import {
   FileStoreBackend,
   initializeKnowledgeStore,
   initializeLibrary,
+  listKnowledgeMetadata,
   migrateKnowledgeBodies,
+  readKnowledgeStoreMarker,
   SegmentedKnowledgeStoreBackend,
   validateKnowledgeStore,
   DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
+import { canonicalJson } from "../dist/build/packages/protocol/src/index.js";
+
+// TCRN-CROSS-SUB-414: this engine writes a library's cards as events in each device's stream,
+// crest/events/<device id>/. A crest an engine before event streams wrote held one metadata file and
+// one body file per card instead, its marker's version counting the writes; this lays the crest down
+// that way, every record as the streams hold it now, and takes the streams away.
+async function asOlderEngineCrest(workspace) {
+  const store = join(workspace, DIRECTORY.knowledge);
+  const all = await listKnowledgeMetadata(workspace, { at: "2099-01-01T00:00:00Z", selection: "all", limit: 1_000_000 });
+  const marker = await readKnowledgeStoreMarker(workspace);
+  const [deviceId] = await readdir(join(store, "events"));
+  const stream = join(store, "events", deviceId);
+  const bodies = new Map();
+  for (const name of (await readdir(stream)).filter((entry) => entry.endsWith(".body"))) bodies.set(name.slice(9, -5), await readFile(join(stream, name)));
+  await mkdir(join(store, "metadata"));
+  await mkdir(join(store, "bodies"));
+  for (const record of all.records) {
+    await writeFile(join(store, "metadata", `${record.id}.json`), canonicalJson(record));
+    await writeFile(join(store, "bodies", `${record.id}.body`), bodies.get(record.bodySha256));
+  }
+  const storeJson = join(store, "store.json");
+  await writeFile(storeJson, canonicalJson({ ...JSON.parse(await readFile(storeJson, "utf8")), version: marker.version, eventHighWaterDigest: marker.eventHighWaterDigest }));
+  await rm(join(store, "events"), { recursive: true });
+}
 
 const profile = {
   reasonCodes: {
@@ -90,6 +116,9 @@ test("STORY-341, SUB-309: moving bodies into segments leaves the capacity count 
       snippet: `${subject} snippet`, tags: ["segments"], accountableOwnerId: "owner:s341", body: "z".repeat(1_000 + index), coexist: true,
     });
   }
+  // The bodies that move into segments are the metadata/body layout's, which an engine before event
+  // streams wrote (TCRN-CROSS-SUB-414): the three cards are laid down that way first.
+  await asOlderEngineCrest(workspace);
   const store = join(workspace, DIRECTORY.knowledge);
   const metadataBefore = await Promise.all((await readdir(join(store, "metadata"))).sort().map((name) => readFile(join(store, "metadata", name), "utf8")));
   const before = (await validateKnowledgeStore(workspace)).capacity;

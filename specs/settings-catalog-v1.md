@@ -74,6 +74,14 @@ These preferences remain prose-only and are not returned by `settings-catalog`.
 They are retained here to preserve the prior decision record and to make the
 boundary visible to helper authors.
 
+The conference write path they served is retired (TCRN-CROSS-STORY-475 R3,
+MIN-227 D10): `conference-open` and `conference-close` answer
+`CLI_COMMAND_UNKNOWN`, so neither preference informs any invocation now, and the
+engine settings that governed those verbs, `execution.independenceFloor` and
+`conference.positionBudgetBytes`, are in `RETIRED_SETTING_KEYS`. The two entries
+below are that prior decision record as it was written; their mechanism lines
+describe the retired verbs.
+
 - **Key:** `conference.defaultType`
   - **Tier:** 2 (conversational preference).
   - **Default:** `architecture`.

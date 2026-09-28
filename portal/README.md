@@ -87,25 +87,30 @@ evidence, where reproducing them verbatim is the point.
 
 | Flag | Default | Meaning |
 | --- | --- | --- |
-| `--library` | the working directory's library | A registered library (its path or id, or its project's path) to open first |
-| `--port` | `4319` | Loopback port (`0` picks a free one) |
+| `--library` | `TCRN_PORTAL_LIBRARY`, else the working directory's library | A registered library (its path or id, or its project's path) to open first |
+| `--port` | `TCRN_PORTAL_PORT`, else the `portal.port` machine setting, else `4319` | Loopback port (`0` picks a free one) |
 | `TCRN_PORTAL_ACTOR` | `agent:portal` | Actor recorded on governed writes |
 | `TCRN_WORKFLOW_CLI` | `scripts/einzbern.mjs` beside the portal | CLI entry point |
 
 ## Launchers
 
-The initialization step writes ordinary, reviewable files to the platform
-root. Paths are absolute and the files are never symlinks:
+The launcher generator writes ordinary, reviewable files into `--output-dir`, an
+existing directory that defaults to the one holding `portal/` (the engine copy the
+portal runs from); no setup step runs it. Paths are absolute and the files are
+never symlinks:
 
 ```bash
 node <engine>/portal/scripts/generate-launchers.mjs \
-  --output-dir "/path/to/platform" \
+  --output-dir "/path/to/launchers" \
   --library "/path/to/project/.ether" \
   --port 4319
 ```
 
 `--library` is optional: a launcher without it opens the library of the directory
 it runs in, then the machine's default library, then the first registered one.
+The partition, container, prose-root and workspace arguments of the old portal are
+gone (TCRN-CROSS-STORY-482 R3); neither the generator nor `portal.mjs` reads them,
+so regenerate a launcher that still passes them with the command above.
 
 This generates `atelier.command` for macOS,
 `atelier.sh` for Linux, and `atelier.cmd` for

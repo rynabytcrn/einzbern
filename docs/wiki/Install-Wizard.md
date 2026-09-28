@@ -2,6 +2,10 @@
 
 Mana Orchestrate 带有 Einzbern 安装向导。它在项目目录中运行 `setup`，用六种模式处理安装、恢复、更新、修复、迁移和卸载；另用 `doctor` 做体检。向导先列出问题、已经确定的答案和将写入的文件；检查这份计划后再执行。
 
+## 先让引擎就位
+
+向导使用本机当前的引擎。本机还没有引擎时（设备目录下没有 `engine/einzbern.mjs`，或计划报阻塞项 `SETUP_ENGINE_NOT_INSTALLED`），先用 Mana Orchestrate 自带的取件步骤放上一个引擎：`node <技能目录>/scripts/install.mjs --archive <本地发布包>` 安装本机已有的发布包，不联网；`--version <版本>` 则下载该版本的发布包。下载是整个安装过程中唯一的联网动作，下载前先征得用户同意。取件成功返回 `INSTALL_ENGINE_READY`，之后再按下文运行 `setup`。
+
 ## 一屏计划与确认
 
 ```text

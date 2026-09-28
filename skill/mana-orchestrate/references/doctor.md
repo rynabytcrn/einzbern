@@ -76,13 +76,23 @@ The managed sections in the project's instruction files match their records. Not
 overwrite it, keep it, or stop managing it, and apply the choice with the managed-section verb that
 the engine's `commands` catalog lists. A section whose markers were removed stays removed. A file
 with a broken marker (`MANAGED_SECTION_MALFORMED`, whose detail names the line) is not written at
-all until the user fixes that line.
+all until the user fixes that line. A file the engine cannot write sections into, because it is a
+symbolic link (`CLAUDE.md` pointing at `AGENTS.md`, say) or another kind of non-regular file, or is
+not UTF-8 text (`MANAGED_SECTION_FILE_UNSUPPORTED`, the file named in `detail.problems`), turns
+the check red only while the library records a section in it; with none recorded, the file is
+listed in `detail.skipped` and the check stays ok. Leave such a file alone and ask the user what
+to do with it.
 
 ### cloud-flag
 
 The cloud-drive flag matches where the library sits. Not ok, as a hint only:
 `DOCTOR_CLOUD_FLAG_MISMATCH` (`CLOUD_FLAG_DIFFERS_FROM_SUGGESTION`). Ask whether the library's
 folder is synced by a cloud drive, then repair with `--cloud true` or `--cloud false`.
+
+A check that met an error carrying no reason code of its own names `DOCTOR_CHECK_FAILED` among its
+causes; when the check stopped on it, `detail.error` holds the message, and the checks after it
+still ran. The cause is not known, so no fix above applies: quote the detail as it is, fix
+nothing, and report it to the user.
 
 Any other cause: quote it with its detail, apply the handling of its check, and if that does not
 fit, stop and ask the user.

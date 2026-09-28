@@ -165,6 +165,7 @@
 | `--project` | 可选 | `string` |
 | `--base` | 可选 | `string` |
 | `--release` | 可选 | `boolean` |
+| `--work-id` | 可选 | `list` |
 
 ## `gates-run`
 
@@ -178,6 +179,7 @@
 | `--project` | 可选 | `string` |
 | `--base` | 可选 | `string` |
 | `--release` | 可选 | `boolean` |
+| `--work-id` | 可选 | `list` |
 
 ## `host-probe`
 

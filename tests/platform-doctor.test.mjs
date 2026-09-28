@@ -2,6 +2,7 @@
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { chmod, mkdir, mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -206,7 +207,14 @@ test("MIN-235 D3: the current roster records each existing group's batch applica
     secondBatch: "accepted-existing-exception-only",
     criteria: "Keep exactly the existing PLATFORM_LAUNCHD_NOT_ON_DUTY exception; it does not accept any other doctor finding.",
   });
-  assert.equal(platformLayout.subchecks.find(({ id }) => id === "harnessSurface").secondBatch, "unresolved-host-specific-reconciliation");
+  // TCRN-CROSS-SUB-274 R14: the roster states the path this leg took (a lawful declaration in the
+  // source tree) in the same words as the platform roster, so the two cannot drift apart silently.
+  assert.deepEqual(platformLayout.subchecks.find(({ id }) => id === "harnessSurface"), {
+    id: "harnessSurface",
+    firstBatch: "record-host-specific-raw-state",
+    secondBatch: "unresolved-host-specific-reconciliation",
+    criteria: "Lawful declaration in the current source tree (MIN-235 D3, SUB-274 R14): platform-doctor reports a governed .claude that holds only a git-ignored per-host .claude/settings.local.json as PLATFORM_HARNESS_HOST_LOCAL, a host-specific raw result that stays red and is distinct from PLATFORM_HARNESS_UNDECLARED, which still reports any undeclared managed harness content. First batch: record each host's observed raw result as it is; it is never rewritten green. The ignored per-host .claude/settings.local.json is not a universal project requirement; do not move or delete it or declare it required on every host. Second batch: the host-specific reconciliation stays unresolved.",
+  });
   assert.deepEqual(acceptanceRosterFixture.groups.find((group) => group.id === "platform-layout").acceptedExceptions, [{
     acceptedAt: "2026-08-15",
     reasonCode: "PLATFORM_LAUNCHD_NOT_ON_DUTY",
@@ -530,6 +538,49 @@ test("INC-206 an undeclared harness inside the governed area is red, and an unre
   await writeFile(join(fixture.root, "unrelated-project", ".claude", "settings.json"), "{}\n", "utf8");
   const unrelated = await inspectInstallFixture(fixture);
   assert.equal(surface(unrelated).ok, true, "an unrelated project's own harness is not the platform's business");
+});
+
+// TCRN-CROSS-SUB-274 (MIN-235 D3, R14 revision): the lawful declaration of the host-specific state
+// the roster records. A declared project's .claude that holds only the per-host local settings file
+// git ignores is PLATFORM_HARNESS_HOST_LOCAL: still red and recorded raw, but told apart from an
+// undeclared managed harness. Git answers whether the file is ignored, here through the repository's
+// own exclude file, so the answer does not depend on the global excludes of the host running the
+// test. A tracked copy of the same file, or anything beside it, is managed content.
+test("SUB-274 R14: a .claude holding only a git-ignored per-host local file is a host-specific raw result, and managed content stays undeclared", async (context) => {
+  const fixture = await completeInstallFixture(context);
+  const surface = (result) => result.checks.find((entry) => entry.name === "harnessSurface");
+  const project = join(fixture.root, LOCAL_DIRECTORY_NAMES.engine);
+  const harness = join(project, ".claude");
+  await mkdir(harness, { recursive: true });
+  execFileSync("git", ["init", "--quiet", project]);
+  await mkdir(join(project, ".git", "info"), { recursive: true });
+  await writeFile(join(project, ".git", "info", "exclude"), ".claude/settings.local.json\n");
+  await writeFile(join(harness, "settings.local.json"), "{}\n");
+
+  const hostLocal = surface(await inspectInstallFixture(fixture));
+  assert.equal(hostLocal.ok, false, "the host-specific state is recorded raw, never turned green");
+  assert.equal(hostLocal.reasonCode, "PLATFORM_HARNESS_HOST_LOCAL");
+  assert.deepEqual(hostLocal.hostLocal, [join(LOCAL_DIRECTORY_NAMES.engine, ".claude", "settings.local.json")]);
+  assert.equal(hostLocal.undeclared, undefined);
+
+  // Managed content beside the local file makes the root an undeclared harness again.
+  await writeFile(join(harness, "settings.json"), "{}\n");
+  const managed = surface(await inspectInstallFixture(fixture));
+  assert.equal(managed.ok, false);
+  assert.equal(managed.reasonCode, "PLATFORM_HARNESS_UNDECLARED");
+  assert.deepEqual(managed.undeclared, [join(LOCAL_DIRECTORY_NAMES.engine, ".claude")]);
+  await rm(join(harness, "settings.json"));
+
+  // A tracked copy of the local file is managed content as well: git no longer ignores it.
+  execFileSync("git", ["-C", project, "add", "--force", ".claude/settings.local.json"]);
+  const tracked = surface(await inspectInstallFixture(fixture));
+  assert.equal(tracked.reasonCode, "PLATFORM_HARNESS_UNDECLARED");
+  assert.deepEqual(tracked.undeclared, [join(LOCAL_DIRECTORY_NAMES.engine, ".claude")]);
+  execFileSync("git", ["-C", project, "rm", "--cached", "--quiet", ".claude/settings.local.json"]);
+
+  // Not a requirement of every host: a project without the local file has nothing to report.
+  await rm(harness, { recursive: true, force: true });
+  assert.equal(surface(await inspectInstallFixture(fixture)).ok, true);
 });
 
 test("INC-195 the snapshot train is owed only when a chain declares an automatic cadence", async (context) => {

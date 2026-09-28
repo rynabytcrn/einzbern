@@ -2223,6 +2223,47 @@ async function declaredBackupCadences(options, platformRoot) {
 // reader to ignore the leg.
 const HARNESS_DIRECTORY_NAMES = Object.freeze([".claude", ".codex"]);
 
+// TCRN-CROSS-SUB-274 (MIN-235 D3, R14 revision): the lawful declaration, in this source tree, of
+// the one host-specific state the acceptance roster records for this leg. A host keeps settings of
+// its own in a per-host local file that git ignores (Claude Code's `.claude/settings.local.json`).
+// A harness root that holds nothing but such files is not an undeclared managed harness, and it
+// is not something every host must have either: the doctor reports it as a raw result of its own,
+// PLATFORM_HARNESS_HOST_LOCAL, still red, so the first batch records it as observed and nothing
+// turns green by being declared. This is not the roster of known-acceptable strays MIN-099 ruled
+// out: it names a kind of file, not a place, and git answers on each host whether that file is
+// ignored there. A tracked file, a file git does not ignore, anything else in the directory, or
+// no answer from git is managed content, and the root stays PLATFORM_HARNESS_UNDECLARED.
+const HOST_LOCAL_HARNESS_FILES = Object.freeze({
+  ".claude": Object.freeze(["settings.local.json"]),
+  ".codex": Object.freeze([]),
+});
+
+async function gitIgnores(directory, name) {
+  try {
+    await execFileAsync("git", ["-C", directory, "check-ignore", "--quiet", "--", name], { timeout: 30_000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// The per-host local files a harness root holds when it holds nothing else, or null.
+async function hostLocalHarnessFiles(path, name) {
+  const allowed = HOST_LOCAL_HARNESS_FILES[name] ?? [];
+  let entries;
+  try {
+    entries = await readdir(path, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+  if (entries.length === 0) return null;
+  for (const entry of entries) {
+    if (!entry.isFile() || !allowed.includes(entry.name)) return null;
+    if (!(await gitIgnores(path, entry.name))) return null;
+  }
+  return entries.map((entry) => entry.name).sort(compareCanonicalTextLocal);
+}
+
 async function inspectHarnessSurface(root, manifest) {
   const declaredPrefixes = manifest.items
     .filter((entry) => entry.pathTemplate.startsWith("<PLATFORM_ROOT>/"))
@@ -2245,25 +2286,39 @@ async function inspectHarnessSurface(root, manifest) {
   }
 
   const undeclared = [];
+  const hostLocal = [];
   for (const directory of [...governed].sort(compareCanonicalTextLocal)) {
     for (const name of HARNESS_DIRECTORY_NAMES) {
       const path = join(directory, name);
       if (!(await existingPath(path))?.isDirectory()) continue;
-      if (!declaresSomethingUnder(path)) undeclared.push(relative(root, path));
+      if (declaresSomethingUnder(path)) continue;
+      const localFiles = await hostLocalHarnessFiles(path, name);
+      if (localFiles === null) undeclared.push(relative(root, path));
+      else hostLocal.push(...localFiles.map((file) => relative(root, join(path, file))));
     }
   }
 
-  return undeclared.length === 0
-    ? check("harnessSurface", true, {
-      governedDirectories: [...governed].map((path) => relative(root, path) || ".").sort(compareCanonicalTextLocal),
-      source: "install-manifest",
-    })
-    : check("harnessSurface", false, {
+  if (undeclared.length > 0) {
+    return check("harnessSurface", false, {
       reasonCode: "PLATFORM_HARNESS_UNDECLARED",
       undeclared: undeclared.sort(compareCanonicalTextLocal),
+      ...(hostLocal.length > 0 ? { hostLocal: hostLocal.sort(compareCanonicalTextLocal) } : {}),
       hint: "declare it in the install manifest, or retire it — an undeclared harness decides what runs and no other leg can see it",
       source: "install-manifest",
     });
+  }
+  if (hostLocal.length > 0) {
+    return check("harnessSurface", false, {
+      reasonCode: "PLATFORM_HARNESS_HOST_LOCAL",
+      hostLocal: hostLocal.sort(compareCanonicalTextLocal),
+      hint: "host-specific raw state: the harness root holds only per-host local files git ignores; record it as observed — it is not a requirement of every host, so it is not moved, deleted or declared required",
+      source: "install-manifest",
+    });
+  }
+  return check("harnessSurface", true, {
+    governedDirectories: [...governed].map((path) => relative(root, path) || ".").sort(compareCanonicalTextLocal),
+    source: "install-manifest",
+  });
 }
 
 const compareCanonicalTextLocal = (left, right) => (left < right ? -1 : left > right ? 1 : 0);

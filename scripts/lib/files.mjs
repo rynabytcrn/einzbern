@@ -7,6 +7,7 @@ import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { compareCanonicalText } from "./canonical-order.mjs";
+import { LEGACY_ENGINE_NAME } from "./names.mjs";
 import { BoundaryError, readBoundRegularFile } from "./safe-io.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
@@ -87,7 +88,11 @@ export async function walkFiles(root = repositoryRoot) {
       if (entry.isDirectory() && excludedDirectories.has(entry.name)) {
         continue;
       }
-      if (entry.isDirectory() && entry.name === "tcrn-workflow" && directory.split(sep).at(-1) === ".claude") {
+      // Compatibility identity, old-directory recognition (TCRN-CROSS-STORY-466 R14): the old
+      // Claude Code adapter bundle, a directory named after the old engine inside `.claude/`, is a
+      // local installation surface like `.codex` and is still skipped. Its name is the alias
+      // constant of the names module, never a literal of this file.
+      if (entry.isDirectory() && entry.name === LEGACY_ENGINE_NAME && directory.split(sep).at(-1) === ".claude") {
         continue;
       }
       const absolute = resolve(directory, entry.name);

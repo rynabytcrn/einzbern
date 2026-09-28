@@ -408,7 +408,7 @@ export class RecallIndex {
    * prompt names the one record whose key holds those whole tokens in that order. TCRN-CROSS-SUB-303:
    * a fragment is as deliberate as a full key, and at the calibrated strong-hit threshold its prefix
    * score alone (the weight-1 key column) would no longer be answered. A fragment needs two tokens and
-   * a digit, so a hyphenated word ("tcrn-workflow", "e-mail") names nothing.
+   * a digit, so a hyphenated word ("read-only", "e-mail") names nothing.
    */
   #namedByFragment(candidate: string): RecallDocument | undefined {
     const run = keyTokenRun(candidate);

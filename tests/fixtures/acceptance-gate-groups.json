@@ -142,7 +142,7 @@
               "id": "harnessSurface",
               "firstBatch": "record-host-specific-raw-state",
               "secondBatch": "unresolved-host-specific-reconciliation",
-              "criteria": "Keep the observed red raw. An ignored per-host .claude/settings.local.json is not a universal project requirement; do not move or delete it or declare it required on every host."
+              "criteria": "Lawful declaration in the current source tree (MIN-235 D3, SUB-274 R14): platform-doctor reports a governed .claude that holds only a git-ignored per-host .claude/settings.local.json as PLATFORM_HARNESS_HOST_LOCAL, a host-specific raw result that stays red and is distinct from PLATFORM_HARNESS_UNDECLARED, which still reports any undeclared managed harness content. First batch: record each host's observed raw result as it is; it is never rewritten green. The ignored per-host .claude/settings.local.json is not a universal project requirement; do not move or delete it or declare it required on every host. Second batch: the host-specific reconciliation stays unresolved."
             }
           ]
         },

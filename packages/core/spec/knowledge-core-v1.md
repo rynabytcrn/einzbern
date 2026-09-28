@@ -48,6 +48,21 @@ body bytes of live cards (see "Capacity"), with the fixed canonical ceiling as i
 upper bound; the body layout (one file per card or segments) does not change the
 count.
 
+The user crest is shared between projects and can live in a synced folder. It
+uses the same one-time root identity marker, then keeps immutable event streams
+under `events/<device-id>/`. Each stream advances its own sequence and previous
+event hash and each event binds its metadata to a body file in that stream.
+Device-local locks serialize that device's writes; independent devices append
+without replacing one another's events. The root manifest is not rewritten for
+card appends. Reads derive the combined event heads, version and local cache
+projection from the streams; those projections are not authority. A forked
+stream, duplicate key/id with differing metadata, competing replacement, or
+unresolved write conflict is returned as an explicit refusal. A write interrupted
+before its event commit can leave an unreferenced body, which is ignored; a
+committed event is complete because its body is written first. Older metadata and
+body user crests remain readable, and new events can be appended without
+rewriting their existing records.
+
 ## Metadata
 
 `KnowledgeUnitMetadata` is closed and binds its stable ID/external key, scope,
@@ -131,8 +146,9 @@ Capacity counts card bodies and nothing else (TCRN-CROSS-STORY-476 R3,
 TCRN-CROSS-SUB-309): not the store marker, not the metadata, not the derived index.
 Only live cards count: a card that a later card superseded, the one retirement there
 is, gives its body back to the budget, and so does a `retired` record an older engine
-left. A superseded card's body stays on disk for an explicit read; it is simply not
-charged. The count is the sum of each counted record's own `bodyBytes`, which a full
+left. A superseded card's body stays in its immutable store or event stream for an
+explicit read; it is simply not charged or included in default recall. No supersede
+operation physically deletes that body. The count is the sum of each counted record's own `bodyBytes`, which a full
 read binds to the body on disk, so a metadata-only read measures the same number.
 Every read measures a store this way, including one written before the change, so an
 existing store is recounted the first time it is read and nothing is migrated or

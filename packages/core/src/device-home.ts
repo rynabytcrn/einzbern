@@ -28,6 +28,7 @@ export const DEVICE_HOME_ENTRIES = Object.freeze({
   // TCRN-CROSS-STORY-476 R5: the user-level crest, unless crest.userPath names another place.
   crest: "crest",
 } as const);
+export const USER_CREST_EVENTS_DIRECTORY = "events" as const;
 // TCRN-CROSS-STORY-477 R1: the stable hook launcher in engine/, beside the stable entry
 // engine/einzbern.mjs; every host hook runs it (host-hooks.ts) and the install manifest lists it.
 // Defined here, in a module that imports no other engine module, so the install manifest can read
@@ -100,6 +101,11 @@ export function lockPath(libraryId: string, home: string = deviceHome()): string
 export function userCrestPath(settings: Readonly<Record<string, string>> = {}, home: string = deviceHome()): string {
   const configured = settings[USER_CREST_PATH_SETTING];
   return typeof configured === "string" && configured.length > 0 ? configured : join(home, DEVICE_HOME_ENTRIES.crest);
+}
+
+/** The shared, append-only event root inside this user's crest. */
+export function userCrestEventsPath(crest: string): string {
+  return join(crest, USER_CREST_EVENTS_DIRECTORY);
 }
 
 /** The one lock every process on this machine takes before reading or writing the user crest. */

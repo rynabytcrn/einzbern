@@ -212,6 +212,8 @@ test("469-D7: conflicting or corrupt projections cannot override merged events a
   const mergedDesk = await read(desk, library);
   const mergedLaptop = await read(laptop, apart);
   assert.deepEqual(mergedDesk.settings, mergedLaptop.settings, "both devices replay the same event state");
+  assert.deepEqual(mergedDesk.library.versionVector, mergedLaptop.library.versionVector);
+  const mergedVersionVector = mergedDesk.library.versionVector;
   const eventValue = settingValue(mergedDesk, "design.authority");
   assert.ok(eventValue === "https://design.example/desk" || eventValue === "https://design.example/laptop");
 
@@ -220,8 +222,8 @@ test("469-D7: conflicting or corrupt projections cannot override merged events a
   const deskProjection = JSON.parse(await readFile(deskProjectionPath, "utf8"));
   const laptopProjection = JSON.parse(await readFile(laptopProjectionPath, "utf8"));
   assert.notDeepEqual(deskProjection.values, laptopProjection.values, "the two offline projection writes conflict");
-  await writeFile(deskProjectionPath, `${JSON.stringify({ ...deskProjection, values: { "design.authority": "https://forged.example/desk" } })}\n`);
-  await writeFile(laptopProjectionPath, `${JSON.stringify({ ...laptopProjection, values: { "design.authority": "https://forged.example/laptop" } })}\n`);
+  await writeFile(deskProjectionPath, `${JSON.stringify({ ...deskProjection, versionVector: mergedVersionVector, values: { "design.authority": "https://forged.example/desk" } })}\n`);
+  await writeFile(laptopProjectionPath, `${JSON.stringify({ ...laptopProjection, versionVector: mergedVersionVector, values: { "design.authority": "https://forged.example/laptop" } })}\n`);
 
   const libraryId = (await as(desk, ["status", "--workspace", library])).workspaceId;
   await rm(cachePath(libraryId, desk), { recursive: true, force: true });

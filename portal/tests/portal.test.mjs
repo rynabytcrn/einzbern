@@ -3,7 +3,9 @@
 
 // Every CLI and portal child inherits the test process's device directory, never the real one.
 import "../../tests/helpers/device-home.mjs";
+import { forgeOwnStream } from "../../tests/helpers/library-forge.mjs";
 import { execFile, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
@@ -186,6 +188,152 @@ test("STORY-379 read views use CLI projections and keep partial data visible", a
   assert.equal(gates.body.reasonCode, "PORTAL_GATES_READY");
   assert.deepEqual(gates.body.gates, []);
 
+  const untokened = await request(url, "/api/work");
+  assert.equal(untokened.response.status, 403);
+  assert.equal(untokened.body.reasonCode, "PORTAL_TOKEN_REQUIRED");
+});
+
+// TCRN-CROSS-SUB-403 (STORY-482 Goal, R3): a library larger than one work-list read. It holds an
+// Initiative, an Epic and LARGE_STORIES Stories of some eleven KB each: more records than the
+// portal's page of 100, and more bytes than one work-list page may carry, so the unpaged read the
+// work view used to make is refused, and so is a page of 100.
+const LARGE_STORIES = 120;
+const LARGE_BATCH = 40;
+
+async function largeLibrary(fixture) {
+  const projectId = (await cli(["project-create", "--workspace", fixture.workspace, "--at", "2026-08-11T15:10:00Z", "--external-key", "PORTAL-LARGE-PROJECT", "--name", "Large"], fixture.deviceEnv)).record.id;
+  const common = ["--workspace", fixture.workspace, "--project-id", projectId];
+  const initiative = await cli(["work-create", ...common, "--at", "2026-08-11T15:10:01Z", "--external-key", "PORTAL-LARGE-INIT", "--kind", "Initiative", "--title", "Large library"], fixture.deviceEnv);
+  const epic = await cli(["work-create", ...common, "--at", "2026-08-11T15:10:02Z", "--external-key", "PORTAL-LARGE-EPIC", "--kind", "Epic", "--parent-id", initiative.record.id, "--title", "Large epic"], fixture.deviceEnv);
+  const text = (label, length) => `${label} `.padEnd(length, "large library text ");
+  for (let batch = 0; batch * LARGE_BATCH < LARGE_STORIES; batch += 1) {
+    const members = Array.from({ length: LARGE_BATCH }, (_, index) => {
+      const number = batch * LARGE_BATCH + index;
+      return {
+        verb: "work-create", projectId, externalKey: `PORTAL-LARGE-${String(number).padStart(3, "0")}`, kind: "Story",
+        parentId: epic.record.id, status: "planned", title: `Large story ${number}`,
+        goal: text(`Goal ${number}`, 2100), acceptance: text(`GIVEN story ${number} WHEN listed THEN read whole`, 2100), body: text(`Body ${number}`, 6300),
+      };
+    });
+    const file = join(fixture.base, `large-${batch}.json`);
+    await writeFile(file, `${JSON.stringify({ schemaVersion: "tcrn.work-batch.v1", members })}\n`, "utf8");
+    await cli(["work-batch", "--workspace", fixture.workspace, "--at", `2026-08-11T15:1${batch + 1}:00Z`, "--from-file", file], fixture.deviceEnv);
+  }
+}
+
+async function cliRefusal(args, env = {}) {
+  try { await cli(args, env); } catch (error) { return JSON.parse(String(error.stderr ?? "").trim().split("\n").at(-1) || "{}"); }
+  return assert.fail(`${args[0]} was expected to refuse`);
+}
+
+// The library read page by page straight from the CLI, the reading /api/work must agree with.
+async function pagedWork(fixture, limit) {
+  let first = null;
+  const ids = [];
+  for (let offset = 0; first === null || offset < first.total; offset += limit) {
+    const page = await cli(["work-list", "--workspace", fixture.workspace, "--limit", String(limit), "--offset", String(offset)], fixture.deviceEnv);
+    first ??= page;
+    assert.deepEqual([page.version, page.headEventHash, page.total], [first.version, first.headEventHash, first.total]);
+    ids.push(...page.records.map((record) => record.id));
+  }
+  return { workspaceId: first.workspaceId, version: first.version, headEventHash: first.headEventHash, total: first.total, ids };
+}
+
+// Stands in front of the real CLI. It logs every work-list the portal asks for, and by the mode
+// the test writes it passes the page on, makes a real write to the library before a page past the
+// first (once, or on every read), or answers every page as over the budget.
+const WORK_PAGES_WRAPPER = `import { spawnSync } from "node:child_process";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+const argv = process.argv.slice(2);
+const state = process.env.TCRN_TEST_WORK_STATE;
+const run = (args, env = {}) => spawnSync(process.execPath, [process.env.TCRN_TEST_REAL_CLI, ...args], { encoding: "utf8", maxBuffer: 64e6, env: { ...process.env, ...env } });
+const flag = (name) => { const index = argv.indexOf("--" + name); return index >= 0 ? argv[index + 1] : undefined; };
+if (argv[0] === "work-list") {
+  const mode = JSON.parse(readFileSync(join(state, "mode.json"), "utf8")).mode;
+  appendFileSync(join(state, "calls.log"), JSON.stringify({ limit: flag("limit") ?? null, offset: flag("offset") ?? null }) + "\\n");
+  if (mode === "oversized") {
+    process.stderr.write(JSON.stringify({ ok: false, reasonCode: "CLI_WORK_LIST_OVERSIZED", error: "work-list page exceeds the canonical byte budget; lower --limit" }) + "\\n");
+    process.exit(1);
+  }
+  const moves = mode === "move-always" || (mode === "move-once" && !existsSync(join(state, "moved")));
+  if (moves && (flag("offset") ?? "0") !== "0") {
+    writeFileSync(join(state, "moved"), "");
+    const writes = existsSync(join(state, "writes")) ? Number(readFileSync(join(state, "writes"), "utf8")) : 0;
+    writeFileSync(join(state, "writes"), String(writes + 1));
+    const at = new Date(Date.parse("2026-08-11T16:00:00Z") + writes * 1000).toISOString().replace(/\\.\\d{3}Z$/u, "Z");
+    const write = run(["settings-set", "--workspace", flag("workspace"), "--at", at, "--actor", "agent:test", "--key", "retrieval.scopeExcerptBytes", "--value", String(600 + writes)], { EINZBERN_SURFACE: "atelier" });
+    if (write.status !== 0) { process.stderr.write(write.stderr || ""); process.exit(write.status ?? 1); }
+  }
+}
+const actual = run(argv);
+process.stdout.write(actual.stdout || "");
+process.stderr.write(actual.stderr || "");
+process.exitCode = actual.status ?? 1;
+`;
+
+test("SUB-403 (STORY-482 R3): /api/work reads a library larger than one work-list page whole, and never mixes two versions of it", async (t) => {
+  const fixture = await scratch("tcrn-portal-large-", "TCRN-PORTAL-LARGE");
+  await largeLibrary(fixture);
+  assert.equal((await cliRefusal(["work-list", "--workspace", fixture.workspace], fixture.deviceEnv)).reasonCode, "CLI_WORK_LIST_OVERSIZED", "the fixture carries more bytes than one work-list read");
+  assert.equal((await cliRefusal(["work-list", "--workspace", fixture.workspace, "--limit", "100"], fixture.deviceEnv)).reasonCode, "CLI_WORK_LIST_OVERSIZED", "a page of 100 is over the budget too");
+  const expected = await pagedWork(fixture, 30);
+  assert.equal(expected.total, LARGE_STORIES + 2);
+  assert.equal(expected.ids.length, expected.total);
+
+  const state = join(fixture.base, "work-pages");
+  await mkdir(state);
+  const mode = (value) => writeFile(join(state, "mode.json"), JSON.stringify({ mode: value }), "utf8");
+  const calls = async () => {
+    const log = await readFile(join(state, "calls.log"), "utf8").catch(() => "");
+    await writeFile(join(state, "calls.log"), "", "utf8");
+    return log.split("\n").filter((line) => line !== "").map((line) => JSON.parse(line));
+  };
+  await mode("pass");
+  const wrapper = join(fixture.base, "work-pages-wrapper.mjs");
+  await writeFile(wrapper, WORK_PAGES_WRAPPER, "utf8");
+  const { child, url } = await startPortal({ ...fixture, env: { TCRN_WORKFLOW_CLI: wrapper, TCRN_TEST_REAL_CLI: CLI, TCRN_TEST_WORK_STATE: state } });
+  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
+  const { boot } = await readBoot(url);
+  const readWork = async () => (await request(url, "/api/work", readOptions(boot.token))).body;
+  const idsOf = (body) => body.records.map((record) => record.id);
+  await calls();
+
+  // Read whole: every record, once, in pages of at most 100; the page of 100 the budget refused
+  // was asked for again at 50.
+  const whole = await readWork();
+  assert.equal(whole.ok, true);
+  assert.equal(whole.reasonCode, "PORTAL_WORK_READY");
+  assert.deepEqual([whole.workspaceId, whole.version, whole.headEventHash, whole.total], [expected.workspaceId, expected.version, expected.headEventHash, expected.total]);
+  assert.equal(new Set(idsOf(whole)).size, whole.records.length, "no record twice");
+  assert.deepEqual([...idsOf(whole)].sort(), [...expected.ids].sort());
+  assert.deepEqual((await calls()).map(({ limit, offset }) => [limit, offset]), [["100", "0"], ["50", "0"], ["50", "50"], ["50", "100"]]);
+
+  // The library moves between two pages: the read starts over and answers for the new version.
+  await mode("move-once");
+  const moved = await readWork();
+  const after = await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv);
+  assert.equal(moved.ok, true);
+  assert.notEqual(after.version, whole.version, "the wrapper wrote to the library between two pages");
+  assert.deepEqual([moved.version, moved.headEventHash, moved.total], [after.version, after.headEventHash, expected.total]);
+  assert.deepEqual([...idsOf(moved)].sort(), [...expected.ids].sort());
+  assert.deepEqual((await calls()).map(({ offset }) => offset), ["0", "0", "50", "0", "0", "50", "100"], "the moved read was abandoned and read again from the start");
+
+  // It moves on every read: nothing mixed, a refusal.
+  await mode("move-always");
+  const unstable = await readWork();
+  assert.deepEqual([unstable.ok, unstable.reasonCode, unstable.total, unstable.records], [false, "PORTAL_WORK_READ_FAILED", 0, []]);
+  assert.deepEqual([unstable.source.reasonCode, unstable.source.attempts, unstable.source.cause], ["PORTAL_WORK_READ_UNSTABLE", 3, "moved"]);
+  await calls();
+
+  // Every page is over the budget: the page shrinks to one record, and then the read is refused.
+  await mode("oversized");
+  const oversized = await readWork();
+  assert.deepEqual([oversized.ok, oversized.reasonCode, oversized.total, oversized.records], [false, "PORTAL_WORK_READ_FAILED", 0, []]);
+  assert.equal(oversized.source.reasonCode, "CLI_WORK_LIST_OVERSIZED");
+  assert.deepEqual((await calls()).map(({ limit, offset }) => [limit, offset]), [["100", "0"], ["50", "0"], ["25", "0"], ["12", "0"], ["6", "0"], ["3", "0"], ["1", "0"]]);
+
+  // The token gate is unchanged.
   const untokened = await request(url, "/api/work");
   assert.equal(untokened.response.status, 403);
   assert.equal(untokened.body.reasonCode, "PORTAL_TOKEN_REQUIRED");
@@ -468,7 +616,9 @@ test("AGENTS.md read/write is allow-listed and reconciliation reports line-level
   assert.equal(written.body.reasonCode, "PORTAL_AGENTS_MD_WRITTEN");
   assert.equal(written.body.matches, true);
   assert.equal(written.body.saved, true);
-  assert.equal(written.body.render.reasonCode, "AGENTS_RENDERED");
+  // TCRN-CROSS-SUB-338: a save judges and renders nothing.
+  assert.equal(Object.hasOwn(written.body, "render"), false);
+  assert.equal(written.body.text, text);
   assert.equal(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), written.body.text);
   const green = await request(url, "/api/agents-md/reconcile", readOptions(boot.token));
   assert.equal(green.body.ok, true);
@@ -613,17 +763,23 @@ test("reconciliation includes custom variable names as well as registered settin
   assert.equal((await request(url, "/api/agents-md/reconcile", readOptions(boot.token))).body.ok, true);
 });
 
-test("AGENTS.md save writes the file, renders managed sections, and reads it back", async (t) => {
+// TCRN-CROSS-SUB-338 (STORY-483 R3; MIN-235 D4): a save writes the file and judges it through
+// rule-list; it renders no managed section and writes nothing to the library.
+test("AGENTS.md save writes the file, judges it without rendering, and reads it back", async (t) => {
   const fixture = await scratch("tcrn-portal-conservation-prose-", "TCRN-PORTAL-CONSERVATION-PROSE");
   const { child, url } = await startPortal(fixture);
   t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
   const { boot } = await readBoot(url);
   const text = "# AGENTS.md\n\nOwner actions stay parked.\n";
+  const version = (await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).version;
   const written = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { file: "AGENTS.md", text }));
   assert.equal(written.body.reasonCode, "PORTAL_AGENTS_MD_WRITTEN");
   assert.equal(written.body.matches, true);
-  assert.equal(written.body.render.reasonCode, "AGENTS_RENDERED");
+  assert.equal(Object.hasOwn(written.body, "render"), false);
+  assert.deepEqual(written.body.rules.map((rule) => [rule.id, rule.state]), [["autonomy", "disabled"], ["batch", "disabled"], ["unattended-commands", "disabled"], ["silent-reporting", "disabled"]]);
   assert.deepEqual(written.body.pending, []);
+  assert.equal(written.body.text, text, "no managed section was rendered into the saved text");
+  assert.equal((await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).version, version, "a save writes nothing to the library");
   assert.equal(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), written.body.text);
   const readback = await request(url, "/api/agents-md", readOptions(boot.token));
   assert.equal(readback.body.text, written.body.text);
@@ -636,11 +792,33 @@ test("AGENTS.md save writes the file, renders managed sections, and reads it bac
   assert.equal(escapedWrite.body.reasonCode, "PORTAL_PATH_ESCAPE");
 });
 
-test("rules routes expose state, enable a rule, render an edit as pending, and resolve keep", async (t) => {
+// One managed section as a file holds it, markers included (the format managed-sections.ts
+// documents), or null.
+function managedSection(text, id) {
+  const match = new RegExp(`<!-- einzbern:section id=${id} rev=(\\d+) digest=([a-f0-9]{64}) -->\\n([\\s\\S]*?)<!-- einzbern:section-end id=${id} -->\\n?`, "u").exec(text);
+  return match === null ? null : { raw: match[0], rev: Number(match[1]), digest: match[2], body: match[3] };
+}
+
+// A section body as its digest is taken: LF line ends, no trailing blanks, one final line feed.
+function normalizedSection(text) {
+  const joined = text.replace(/\r\n?/gu, "\n").split("\n").map((line) => line.replace(/[ \t]+$/u, "")).join("\n").replace(/\n+$/u, "");
+  return joined === "" ? "" : `${joined}\n`;
+}
+const sectionDigest = (body) => createHash("sha256").update(normalizedSection(body), "utf8").digest("hex");
+
+// TCRN-CROSS-SUB-338 (STORY-483 AC2; MIN-235 D4, judgment 1.5 (a)): an edit saved through Atelier
+// is judged, not rendered. The batch section changed by one character reads user-modified at
+// once, AGENTS.md is the bytes saved, and nothing goes pending. A section goes pending only when an
+// engine write renders the managed sections (a variable write here); keep then makes it the
+// user's, and the engine writes it no more.
+test("rules routes expose state, enable a rule, judge a saved edit as user-modified, and settle a pending section with keep", async (t) => {
   const fixture = await scratch("tcrn-portal-rules-", "TCRN-PORTAL-RULES");
   const { child, url } = await startPortal(fixture);
   t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
   const { boot } = await readBoot(url);
+  const agentsPath = join(fixture.proseRoot, "AGENTS.md");
+  const batchOf = (body) => body.rules.find((rule) => rule.id === "batch");
+  const libraryVersion = async () => (await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).version;
   const listed = await request(url, "/api/rules", readOptions(boot.token));
   assert.equal(listed.body.reasonCode, "RULE_LIST_READY");
   assert.deepEqual(listed.body.rules.map((rule) => rule.id), ["autonomy", "batch", "unattended-commands", "silent-reporting"]);
@@ -648,26 +826,101 @@ test("rules routes expose state, enable a rule, render an edit as pending, and r
 
   const enabled = await request(url, "/api/rules/batch", writeOptions(boot.token, "POST", { action: "enable" }));
   assert.equal(enabled.body.reasonCode, "RULE_ENABLED");
-  assert.equal(enabled.body.rules.find((rule) => rule.id === "batch").state, "enabled");
-  let edited = await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8");
-  assert.match(edited, /id=rule:batch/u);
-  edited = edited.replace("All open Stories under one INIT", "All open Stories in one INIT");
-  const saved = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { file: "AGENTS.md", text: edited }));
-  assert.equal(saved.body.reasonCode, "PORTAL_AGENTS_MD_WRITTEN");
-  assert.deepEqual(saved.body.pending, [{ id: "rule:batch", file: "AGENTS.md" }]);
-  const pending = await request(url, "/api/rules", readOptions(boot.token));
-  assert.equal(pending.body.rules.find((rule) => rule.id === "batch").state, "pending");
+  assert.equal(batchOf(enabled.body).state, "enabled");
+  const original = await readFile(agentsPath, "utf8");
+  assert.match(original, /id=rule:batch/u);
+  const edited = original.replace("All open Stories", "All open stories");
+  assert.equal([...edited].filter((character, index) => character !== [...original][index]).length, 1, "one character of the rule's text");
 
+  // AC2: the save is judged: user-modified, the file is the bytes saved, and nothing is pending
+  // or written to the library.
+  const before = await libraryVersion();
+  const saved = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { file: "AGENTS.md", text: edited }));
+  assert.equal(saved.response.status, 200);
+  assert.equal(saved.body.reasonCode, "PORTAL_AGENTS_MD_WRITTEN");
+  assert.equal(batchOf(saved.body).state, "user-modified");
+  assert.deepEqual(saved.body.pending, []);
+  assert.equal(Object.hasOwn(saved.body, "render"), false);
+  assert.equal(saved.body.text, edited);
+  assert.equal(await readFile(agentsPath, "utf8"), edited, "AGENTS.md is the bytes saved; nothing rendered over them");
+  assert.equal(await libraryVersion(), before, "a save writes nothing to the library");
+  const judged = await request(url, "/api/rules", readOptions(boot.token));
+  assert.equal(batchOf(judged.body).state, "user-modified");
+  assert.deepEqual(judged.body.pending, []);
+
+  // An engine write renders the managed sections: the section the user changed is left as it is
+  // and goes pending.
+  const variable = await request(url, "/api/variables", writeOptions(boot.token, "POST", { name: "deploy.host", type: "string", value: "build.example.com" }));
+  assert.equal(variable.body.reasonCode, "VARIABLE_WRITE_COMMITTED");
+  assert.deepEqual(variable.body.render.pending, [{ id: "rule:batch", file: "AGENTS.md" }]);
+  const pending = await request(url, "/api/rules", readOptions(boot.token));
+  assert.equal(batchOf(pending.body).state, "pending");
+  assert.deepEqual(pending.body.pending, [{ id: "rule:batch", file: "AGENTS.md", ruleId: "batch" }]);
+  assert.equal(managedSection(await readFile(agentsPath, "utf8"), "rule:batch").raw, managedSection(edited, "rule:batch").raw);
+
+  // keep makes the section the user's: it reads user-modified, and the engine writes it no more.
   const kept = await request(url, "/api/rules/resolve", writeOptions(boot.token, "POST", { section: "rule:batch", action: "keep" }));
   assert.equal(kept.body.reasonCode, "MANAGED_SECTION_RESOLVED");
   assert.deepEqual(kept.body.pending, []);
-  assert.equal(kept.body.rules.find((rule) => rule.id === "batch").state, "user-modified");
-  assert.equal(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), saved.body.text);
+  assert.equal(batchOf(kept.body).state, "user-modified");
+  const again = await request(url, "/api/variables", writeOptions(boot.token, "POST", { name: "deploy.host", type: "string", value: "stage.example.com" }));
+  assert.equal(again.body.reasonCode, "VARIABLE_WRITE_COMMITTED");
+  assert.deepEqual(again.body.render.pending, []);
+  const settled = await readFile(agentsPath, "utf8");
+  assert.match(settled, /stage\.example\.com/u, "the engine still renders the sections it owns");
+  assert.equal(managedSection(settled, "rule:batch").raw, managedSection(edited, "rule:batch").raw, "the kept section is the user's text");
+  assert.equal(batchOf((await request(url, "/api/rules", readOptions(boot.token))).body).state, "user-modified");
 
   const forcedOff = await request(url, "/api/rules/batch", writeOptions(boot.token, "POST", { action: "disable", force: true }));
   assert.equal(forcedOff.body.reasonCode, "RULE_DISABLED");
   assert.equal(forcedOff.body.rules.find((rule) => rule.id === "batch").state, "disabled");
   assert.doesNotMatch(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), /id=rule:batch/u);
+});
+
+// TCRN-CROSS-SUB-338 (STORY-483 AC3): a project that enabled batch processing at v1, read by an
+// engine that ships v2. No verb records a rule at another version than the one this engine
+// ships, so the fixture is left the way an older engine would have left it: this engine enables
+// batch, and then the section in AGENTS.md (its text and digest), the rule's recorded version and
+// the section record's digest are put back to v1, the last two through the test forger. The
+// section's rev is its own revision, the first either way.
+test("SUB-338 (STORY-483 AC3): batch enabled at v1 reads update-available at the route, and neither the read nor a save writes AGENTS.md", async (t) => {
+  const fixture = await scratch("tcrn-portal-rule-v1-", "TCRN-PORTAL-RULE-V1");
+  let portal = null;
+  t.after(async () => { portal?.child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
+  const agentsPath = join(fixture.proseRoot, "AGENTS.md");
+  await cli(["rule-enable", "--project", fixture.proseRoot, "--id", "batch", "--at", "2026-08-11T15:20:00Z", "--actor", "agent:test"], fixture.deviceEnv);
+  const enabled = await readFile(agentsPath, "utf8");
+  const v2 = managedSection(enabled, "rule:batch");
+  assert.equal(sectionDigest(v2.body), v2.digest, "the digest taken here is the engine's");
+  const v1Body = normalizedSection(await readFile(join(portalRoot, "..", "tests", "fixtures", "rules", "batch-v1.zh.md"), "utf8"));
+  assert.notEqual(v1Body, normalizedSection(v2.body));
+  const v1Digest = sectionDigest(v1Body);
+  await writeFile(agentsPath, enabled.replace(v2.raw, `<!-- einzbern:section id=rule:batch rev=${v2.rev} digest=${v1Digest} -->\n${v1Body}<!-- einzbern:section-end id=rule:batch -->\n`), "utf8");
+  let forged = 0;
+  await forgeOwnStream(fixture.workspace, (events) => events.map((event) => {
+    const record = event.payload?.operation === "config.record.set" ? event.payload.record : null;
+    if (record?.collection === "rule" && record.key === "batch") { record.value.version = 1; forged += 1; }
+    if (record?.collection === "managed-section" && record.key === "AGENTS.md#rule:batch") { record.value.digest = v1Digest; forged += 1; }
+    return { occurredAt: event.occurredAt, payload: event.payload, clock: event.clock };
+  }));
+  assert.equal(forged, 2, "the rule's record and its section's record");
+  const v1File = await readFile(agentsPath, "utf8");
+
+  portal = await startPortal(fixture);
+  const { url } = portal;
+  const { boot } = await readBoot(url);
+  const listed = await request(url, "/api/rules", readOptions(boot.token));
+  assert.equal(listed.response.status, 200);
+  assert.deepEqual(listed.body.rules.find((rule) => rule.id === "batch"), { id: "batch", version: 2, recordedVersion: 1, fileVersion: 1, section: "rule:batch", state: "update-available" });
+  assert.deepEqual(listed.body.pending, []);
+  assert.equal(await readFile(agentsPath, "utf8"), v1File, "GET /api/rules writes nothing");
+
+  // Saving those bytes is judged and renders nothing, so the v1 section stays as it is.
+  const saved = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { file: "AGENTS.md", text: v1File }));
+  assert.equal(saved.body.reasonCode, "PORTAL_AGENTS_MD_WRITTEN");
+  assert.equal(saved.body.rules.find((rule) => rule.id === "batch").state, "update-available");
+  assert.deepEqual(saved.body.pending, []);
+  assert.equal(await readFile(agentsPath, "utf8"), v1File);
 });
 
 test("the page boots with the shipped locale contract and needs nothing outside the portal", async (t) => {
@@ -708,11 +961,14 @@ test("switching the library moves the Rules page to its project, and a library r
   const prose = await request(url, "/api/agents-md", readOptions(boot.token));
   assert.equal(prose.body.text, "# second project\n");
   assert.equal(prose.body.path, join(fixture.second.project, "AGENTS.md"));
+  // TCRN-CROSS-SUB-338: the save lands in the second project and is judged there, against the
+  // second library, and nothing is rendered into it. Batch is enabled in the second library only,
+  // so once the save takes its section out it reads removed-from-file (in the first, disabled).
+  await cli(["rule-enable", "--project", fixture.second.project, "--id", "batch", "--at", "2026-08-11T15:30:00Z", "--actor", "agent:test"], fixture.deviceEnv);
   const written = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { file: "AGENTS.md", text: "# second project, edited\n" }));
   assert.equal(written.body.reasonCode, "PORTAL_AGENTS_MD_WRITTEN");
-  assert.equal(written.body.text.startsWith("# second project, edited\n"), true);
-  assert.match(written.body.text, /## System variables/u);
-  assert.match(written.body.text, /## Custom variables/u);
+  assert.equal(written.body.text, "# second project, edited\n");
+  assert.equal(written.body.rules.find((rule) => rule.id === "batch").state, "removed-from-file");
   assert.equal(await readFile(join(fixture.second.project, "AGENTS.md"), "utf8"), written.body.text);
   assert.equal(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), "# first project\n", "the first project's rules are untouched");
   const catalog = await request(url, "/api/settings", readOptions(boot.token));
@@ -803,6 +1059,29 @@ test("i18n full-table proof turns red when an existing translation regresses", a
   const leg = report.legs.find((entry) => entry.leg === "translation-full-table");
   assert.equal(leg.reasonCode, "FULL_LOCALE_TABLE_REALITY_GAP");
   assert.ok(leg.problems.some((problem) => problem.locale === "ja" && problem.unexpected.includes("receipt.title")));
+});
+
+// TCRN-CROSS-SUB-412 (STORY-507; MIN-235 D10): the knowledge capacity counts only the body bytes of
+// live cards; a superseded card leaves the count and default recall, and its body is kept for
+// audit. Both texts say so in all five languages, and neither still counts markers or metadata.
+test("SUB-412 (STORY-507, MIN-235 D10): the knowledge capacity copy counts only live card bodies, in every language", async () => {
+  const sandbox = {};
+  new Function("window", await readFile(join(portalRoot, "locales.js"), "utf8"))(sandbox);
+  const terms = {
+    en: { says: [/body bytes of live cards/u, /superseded card/u, /default recall/u, /audit/u], retired: /marker|metadata/iu },
+    "zh-CN": { says: [/活卡的正文字节/u, /被取代的卡/u, /默认召回/u, /审计/u], retired: /标记|元数据/u },
+    ja: { says: [/有効なカードの本文バイト/u, /置き換えられたカード/u, /既定の recall/u, /監査/u], retired: /マーカー|メタデータ/u },
+    ko: { says: [/유효한 카드의 본문 바이트/u, /대체된 카드/u, /기본 recall/u, /감사/u], retired: /마커|메타데이터/u },
+    fr: { says: [/corps des fiches actives/u, /fiche remplacée/u, /recall par défaut/u, /audit/u], retired: /marqueur|métadonnées/iu },
+  };
+  assert.deepEqual(Object.keys(sandbox.PORTAL_LOCALES).sort(), Object.keys(terms).sort());
+  for (const [locale, { says, retired }] of Object.entries(terms)) {
+    for (const key of ["setting.knowledge.aggregateBytes.description", "concept.setting.knowledge.aggregateBytes"]) {
+      const text = sandbox.PORTAL_LOCALES[locale][key];
+      for (const pattern of says) assert.match(text, pattern, `${locale} ${key}`);
+      assert.doesNotMatch(text, retired, `${locale} ${key}`);
+    }
+  }
 });
 
 // TCRN-CROSS-STORY-467 R3: the execution route and its page left with the dispatch-* verbs, and the

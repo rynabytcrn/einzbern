@@ -200,11 +200,83 @@ function readInstant() {
   return new Date().toISOString();
 }
 
+// TCRN-CROSS-SUB-403 (TCRN-CROSS-STORY-482 Goal, R3): Atelier opens any library in the registry,
+// the large ones too. One work-list read of a library of some fifteen hundred records runs past
+// the CLI's one-MiB page budget and is refused (CLI_WORK_LIST_OVERSIZED), so the work view reads
+// in pages of at most WORK_PAGE_LIMIT records by --offset. Every page must answer for the library
+// the first page answered for: the same workspace, version, head and total. A page that does not
+// means the library moved during the read, and the read starts over rather than join two versions
+// of it; after WORK_READ_ATTEMPTS reads that never held still, the view is refused. A page the
+// budget refuses is asked for again at half the size, and a page of one record that the budget
+// still refuses is the refusal. The /api/work result is the one it always was.
+const WORK_PAGE_LIMIT = 100;
+const WORK_READ_ATTEMPTS = 3;
+const WORK_PAGE_OVERSIZED = "CLI_WORK_LIST_OVERSIZED";
+
+function workPageIdentity(page) {
+  return {
+    workspaceId: page?.workspaceId ?? null,
+    version: page?.version ?? null,
+    headEventHash: page?.headEventHash ?? null,
+    total: Number.isSafeInteger(page?.total) && page.total >= 0 ? page.total : null,
+  };
+}
+
+const sameWorkPage = (left, right) => left.workspaceId === right.workspaceId && left.version === right.version &&
+  left.headEventHash === right.headEventHash && left.total === right.total;
+
+// One pass over the library, page by page. It answers read (every record of one version), failed
+// (a refusal of the CLI's, passed on as it came) or unsettled (the pages did not add up to one
+// version of the library: it moved, or a page repeated or skipped a record).
+async function readWorkPages(libraryPath) {
+  let limit = WORK_PAGE_LIMIT;
+  let first = null;
+  const records = [];
+  const seen = new Set();
+  while (first === null || records.length < first.total) {
+    const read = await cliResult(["work-list", "--workspace", libraryPath, "--limit", String(limit), "--offset", String(records.length)]);
+    if (!read.ok) {
+      if (read.body?.reasonCode === WORK_PAGE_OVERSIZED && limit > 1) {
+        limit = Math.max(1, Math.floor(limit / 2));
+        continue;
+      }
+      return { state: "failed", source: read.body };
+    }
+    const identity = workPageIdentity(read.body);
+    if (identity.total === null) return { state: "failed", source: { ok: false, reasonCode: "PORTAL_WORK_PAGE_MALFORMED", offset: records.length } };
+    if (first === null) first = identity;
+    else if (!sameWorkPage(first, identity)) return { state: "unsettled", cause: "moved" };
+    const page = Array.isArray(read.body.records) ? read.body.records : [];
+    if (page.length === 0 && records.length < first.total) return { state: "unsettled", cause: "short-page" };
+    for (const record of page) {
+      const id = record?.id;
+      if (typeof id !== "string" || seen.has(id)) return { state: "unsettled", cause: "repeated-record" };
+      seen.add(id);
+      records.push(record);
+    }
+  }
+  if (records.length !== first.total) return { state: "unsettled", cause: "short-page" };
+  return { state: "read", identity: first, records };
+}
+
 async function workProjection() {
   const selected = currentLibrary();
-  const result = await cliResult(["work-list", "--workspace", selected.libraryPath, "--limit", "4096"]);
-  if (!result.ok) return { ok: false, reasonCode: "PORTAL_WORK_READ_FAILED", source: result.body, records: [], total: 0 };
-  return { ok: true, reasonCode: "PORTAL_WORK_READY", workspaceId: result.body.workspaceId ?? null, version: result.body.version ?? null, headEventHash: result.body.headEventHash ?? null, total: result.body.total ?? result.body.records?.length ?? 0, records: result.body.records ?? [] };
+  let outcome = { state: "unsettled", cause: "moved" };
+  for (let attempt = 1; attempt <= WORK_READ_ATTEMPTS && outcome.state === "unsettled"; attempt += 1) {
+    outcome = await readWorkPages(selected.libraryPath);
+  }
+  if (outcome.state === "failed") return { ok: false, reasonCode: "PORTAL_WORK_READ_FAILED", source: outcome.source, records: [], total: 0 };
+  if (outcome.state === "unsettled") {
+    return {
+      ok: false,
+      reasonCode: "PORTAL_WORK_READ_FAILED",
+      source: { ok: false, reasonCode: "PORTAL_WORK_READ_UNSTABLE", attempts: WORK_READ_ATTEMPTS, cause: outcome.cause, error: "no attempt read work-list pages that add up to one version of the library; nothing mixed is shown" },
+      records: [],
+      total: 0,
+    };
+  }
+  const { identity, records } = outcome;
+  return { ok: true, reasonCode: "PORTAL_WORK_READY", workspaceId: identity.workspaceId, version: identity.version, headEventHash: identity.headEventHash, total: identity.total, records };
 }
 
 async function knowledgeProjection() {
@@ -474,45 +546,24 @@ async function agentsRead(name) {
   return { status: 200, body: { ok: true, reasonCode: "PORTAL_AGENTS_MD_READY", file: name, path, text } };
 }
 
+// TCRN-CROSS-SUB-338 (TCRN-CROSS-STORY-483 R3, AC2; MIN-235 D4, judgment 1.5 (a)): a save writes
+// the file the user edited and judges it; it renders nothing. The judgment is rule-list, which
+// writes nothing, so a rule section changed by one character reads user-modified, AGENTS.md is
+// the bytes that were saved, and no section goes pending. The managed sections are rendered by
+// the engine writes that change what they show (a setting, a variable, a rule), never by a save.
 async function agentsWrite(body) {
   const file = String(body.file ?? PROSE_FILES[0]);
   const path = proseTarget(file);
   if (!path) return { status: 404, body: { ok: false, reasonCode: "PORTAL_PATH_ESCAPE", file } };
   const text = String(body.text ?? "");
   await writeFile(path, text, "utf8");
-  const savedText = await readFile(path, "utf8");
-  const rendered = await renderManagedAgents();
   const readback = await readFile(path, "utf8");
-  if (!rendered.ok) {
-    return {
-      status: 409,
-      body: {
-        ok: false,
-        reasonCode: rendered.body?.reasonCode ?? "PORTAL_AGENTS_RENDER_FAILED",
-        file,
-        path,
-        saved: true,
-        matches: savedText === text,
-        text: readback,
-        render: rendered.body,
-      },
-    };
+  const saved = { file, path, saved: true, matches: readback === text, text: readback };
+  const judged = await rulesProjection();
+  if (!judged.ok) {
+    return { status: 409, body: { ...saved, ok: false, reasonCode: judged.reasonCode ?? "PORTAL_RULES_READ_FAILED", rules: [], pending: [], source: judged } };
   }
-  return {
-    status: 200,
-    body: {
-      ok: true,
-      reasonCode: "PORTAL_AGENTS_MD_WRITTEN",
-      file,
-      path,
-      saved: true,
-      matches: savedText === text,
-      text: readback,
-      sections: rendered.body.sections ?? [],
-      pending: rendered.body.pending ?? [],
-      render: rendered.body,
-    },
-  };
+  return { status: 200, body: { ...saved, ok: true, reasonCode: "PORTAL_AGENTS_MD_WRITTEN", rules: judged.rules ?? [], pending: judged.pending } };
 }
 
 const apiAlias = (pathname) => pathname === "/api/prose" ? "/api/agents-md" : pathname === "/api/reconcile" ? "/api/agents-md/reconcile" : pathname;

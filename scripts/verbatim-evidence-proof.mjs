@@ -236,7 +236,19 @@ async function currentPortalProof() {
     const bytes = await readFile(resolve(repositoryRoot, path));
     sources.push({ path, bytes: bytes.length, sha256: sha256(bytes) });
   }
-  const [scan, i18n] = await Promise.all([hostRoleScan(), i18nCurrentSummary()]);
+  // TCRN-CROSS-SUB-409 (R14 integration revision, MIN-236 D1): SUB-409 removed the last
+  // host or role expression, the old per-host tier duplicate check, from portal/index.html.
+  // For the current portal a scan that finds nothing is a fact, recorded the way rg reports
+  // it: exit 1 and no lines. Every other failure still refuses: a missing or unreadable file
+  // is where rg would exit 2. inc153-host-role-scan keeps refusing a scan that finds nothing,
+  // and its historical block replays in its own source snapshot.
+  const [scan, i18n] = await Promise.all([
+    hostRoleScan().catch((error) => {
+      if (error?.message !== "HOST_ROLE_SCAN_NO_MATCHES") throw error;
+      return { scan: HOST_ROLE_SCAN, exitCode: 1, matchCount: 0, matches: [] };
+    }),
+    i18nCurrentSummary(),
+  ]);
   if (i18n.ok !== true) throw new Error(`CURRENT_PORTAL_I18N_NOT_GREEN:${i18n.reasonCode}`);
   return {
     schemaVersion: "tcrn.init053-current-portal-proof.v1",

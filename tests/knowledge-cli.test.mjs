@@ -248,18 +248,40 @@ test("476-AC4 (CLI): done and minutes-record answer the knowledge line, naming t
   ]);
   const storyId = story.record.id;
 
-  const done = await cli(["work-transition", "--workspace", workspace, "--at", at(43), "--id", storyId, "--status", "done"]);
+  const projectRoot = join(base, "gamma");
+  const gateCommand = [process.execPath, "-e", "process.exit(0)"];
+  const declaration = await cli([
+    "gates-config-set", "--workspace", workspace, "--at", at(43), "--name", "fixture-story-coverage",
+    "--command", JSON.stringify(gateCommand), "--root", ".", "--covers", storyId, "--required", "true",
+  ]);
+  assert.deepEqual(declaration.gate, {
+    name: "fixture-story-coverage", command: gateCommand, root: ".", covers: [storyId], required: true, enabled: true, releaseOnly: false,
+  });
+  const gateRun = await cli([
+    "gates-run", "--workspace", workspace, "--at", at(43), "--project", projectRoot,
+    "--release", "true", "--work-id", storyId,
+  ]);
+  assert.equal(gateRun.reasonCode, "GATES_RUN_COMPLETED");
+  assert.equal(gateRun.ok, true);
+  assert.deepEqual(gateRun.requiredReds, []);
+  assert.deepEqual(gateRun.run.workIds, [storyId]);
+  assert.deepEqual(gateRun.run.gates.map(({ name, required, matchedWorkIds, ok }) => [name, required, matchedWorkIds, ok]), [
+    ["fixture-story-coverage", true, [storyId], true],
+  ], "the required gate ran green with exact coverage for this Story");
+
+  const done = await cli(["work-transition", "--workspace", workspace, "--at", at(43), "--id", storyId, "--status", "done", "--project", projectRoot]);
   assert.equal(done.reasonCode, "WORKSPACE_COMMAND_COMPLETED");
   assert.equal(done.record.status, "done");
   assert.deepEqual(done.knowledgeHint.conflictCandidateIds, [card.id], "the card about the same thing is named");
   assert.equal(done.knowledgeHint.line, `${HINT_PREFIX}${card.id}`);
 
   // A transition that does not reach done asks nothing.
+  const story2Id = deriveStableId("work", "KC-STORY-2");
   await cli([
     "work-create", "--workspace", workspace, "--at", at(44), "--project-id", projectId, "--external-key", "KC-STORY-2", "--parent-id", epicId,
     "--kind", "Story", "--title", "Emu fence repair", "--goal", "Repair the emu fence", "--acceptance", "GIVEN the fence WHEN repaired THEN it stands",
   ]);
-  const ready = await cli(["work-transition", "--workspace", workspace, "--at", at(45), "--id", deriveStableId("work", "KC-STORY-2"), "--status", "ready"]);
+  const ready = await cli(["work-transition", "--workspace", workspace, "--at", at(45), "--id", story2Id, "--status", "ready"]);
   assert.equal(Object.hasOwn(ready, "knowledgeHint"), false);
 
   const minutes = await cli([
@@ -284,9 +306,26 @@ test("476-AC4 (CLI): done and minutes-record answer the knowledge line, naming t
       { verb: "work-transition", externalKey: "KC-STORY-2", status: "done" },
     ],
   })}\n`);
-  const applied = await cli(["work-batch", "--workspace", workspace, "--at", at(48), "--from-file", batch]);
+  const batchCoverage = await cli([
+    "gates-config-set", "--workspace", workspace, "--at", at(48), "--name", "fixture-story-coverage",
+    "--covers", `${storyId},${story2Id}`,
+  ]);
+  assert.equal(batchCoverage.gate.covers.includes(storyId), true);
+  assert.equal(batchCoverage.gate.covers.includes(story2Id), true);
+  const batchGateRun = await cli([
+    "gates-run", "--workspace", workspace, "--at", at(48), "--project", projectRoot,
+    "--release", "true", "--work-id", story2Id,
+  ]);
+  assert.equal(batchGateRun.reasonCode, "GATES_RUN_COMPLETED");
+  assert.equal(batchGateRun.ok, true);
+  assert.deepEqual(batchGateRun.requiredReds, []);
+  assert.deepEqual(batchGateRun.run.workIds, [story2Id]);
+  assert.deepEqual(batchGateRun.run.gates.map(({ name, required, matchedWorkIds, ok }) => [name, required, matchedWorkIds, ok]), [
+    ["fixture-story-coverage", true, [story2Id], true],
+  ], "the required gate ran green with exact coverage for the batch Story");
+  const applied = await cli(["work-batch", "--workspace", workspace, "--at", at(48), "--from-file", batch, "--project", projectRoot]);
   assert.equal(applied.reasonCode, "WORKSPACE_COMMAND_COMPLETED");
-  assert.deepEqual(applied.knowledgeHints, [{ workId: deriveStableId("work", "KC-STORY-2"), line: `${HINT_PREFIX}无`, conflictCandidateIds: [] }]);
+  assert.deepEqual(applied.knowledgeHints, [{ workId: story2Id, line: `${HINT_PREFIX}无`, conflictCandidateIds: [] }]);
 });
 
 // Problem list #11 (TCRN-CROSS-SUB-309): the bin printed only string details, so a knowledge write

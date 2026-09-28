@@ -244,10 +244,11 @@ function plan(name, command) {
     projectRoot,
     release: true,
     base: null,
+    workIds: [],
     changed: null,
     roots: ["."],
     declarationsDigest: "1".repeat(64),
-    gates: [{ name, root: ".", command, required: true, releaseOnly: false, reason: "release", matched: [] }],
+    gates: [{ name, root: ".", command, required: true, releaseOnly: false, reason: "release", matched: [], matchedWorkIds: [] }],
   };
 }
 

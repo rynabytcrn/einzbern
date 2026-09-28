@@ -4123,13 +4123,19 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 /* TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R5, R6): every collection page is one table component on
    the design system's table shell. Its track list is set per column count, the same contract as the
    vocabulary's and with no inline attribute: the order column first and narrower, every other column
-   a share of the rest. The layer badge of a settings row keeps its own width inside the label grid. */
+   a share of the rest; the two model tables name their own shares, so a category choice and a note
+   are not squeezed to the width of an effort. A field fills its cell rather than its own intrinsic
+   width. The layer badge of a settings row keeps its own width inside the label grid. */
 [data-collection-view] { display: grid; gap: var(--tcrn-space-4); }
 [data-collection-table] { --tcrn-table-shell-column-min-width: 7.5rem; }
 [data-collection-columns="6"] { --tcrn-table-column-count: 6; --tcrn-table-shell-columns: minmax(5.5rem, 0.6fr) repeat(5, minmax(var(--tcrn-table-shell-column-min-width, 160px), 1fr)); }
 [data-collection-columns="7"] { --tcrn-table-column-count: 7; --tcrn-table-shell-columns: minmax(5.5rem, 0.6fr) repeat(6, minmax(var(--tcrn-table-shell-column-min-width, 160px), 1fr)); }
+[data-collection-table="models.category"] { --tcrn-table-shell-columns: minmax(5.5rem, 0.6fr) minmax(8rem, 1fr) minmax(8rem, 1fr) minmax(10rem, 1.6fr) minmax(7rem, 0.8fr) minmax(6.5rem, 0.7fr); }
+[data-collection-table="models.tiers"] { --tcrn-table-shell-columns: minmax(5.5rem, 0.6fr) minmax(10.5rem, 1.3fr) minmax(8rem, 1fr) minmax(9rem, 1.2fr) minmax(6rem, 0.8fr) minmax(8rem, 1fr) minmax(6.5rem, 0.7fr); }
+[data-collection-field] { min-inline-size: 0; inline-size: 100%; }
+[data-collection-field][aria-invalid="true"] { border-color: var(--tcrn-color-state-blocked); }
 [data-collection-choice] { display: flex; align-items: center; gap: var(--tcrn-space-1); min-width: 0; }
-[data-collection-choice] > .tcrn-select { flex: 1 1 auto; min-width: 0; }
+[data-collection-choice] > [data-collection-field] { flex: 1 1 0; inline-size: auto; }
 [data-collection-findings] { display: grid; gap: var(--tcrn-space-1); padding: 0 var(--tcrn-space-3) var(--tcrn-space-3); }
 [data-collection-alerts] { display: grid; gap: var(--tcrn-space-2); margin-bottom: var(--tcrn-space-3); }
 [data-collection-finding] code, [data-collection-refusal] code { font-family: var(--tcrn-type-family-mono); overflow-wrap: anywhere; }

@@ -47,7 +47,7 @@ test("S239: defaults, closed enum, and bounded numeric strings are catalog-backe
   const catalog = await json(["settings-catalog", "--workspace", workspace]);
   const entries = new Map(catalog.settings.map((entry) => [entry.key, entry]));
   assert.deepEqual(entries.get("execution.maxConcurrentSubagents"), {
-    key: "execution.maxConcurrentSubagents", type: "string", controlType: "number", layer: "project", defaultValue: "8", currentValue: "8", modelWritable: false, min: 1, max: 32,
+    key: "execution.maxConcurrentSubagents", type: "string", controlType: "number", layer: "project", defaultValue: "8", currentValue: "8", modelWritable: false, min: 1, max: 32, shape: "scalar", group: "execution", order: 1,
   });
   assert.equal(entries.has("execution.maxDispatchDepth"), false);
   assert.equal(entries.has("execution.personalessDispatch"), false);

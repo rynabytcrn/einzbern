@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-484 R2 (MIN-227 D12; TCRN-CROSS-SUB-340): the two variable sections of
-// AGENTS.md. The system section renders exactly two system settings, models.tiers as a table of
-// host and tier (runner, model, effort) and design.authority; no other setting ever appears there.
+// AGENTS.md. The system section renders exactly two system settings, models.tiers as its table of
+// records in ascending order (order, category, runner, model, effort, note: TCRN-CROSS-STORY-508 R2,
+// R8) and design.authority; no other setting ever appears there.
 // The custom section renders the project's variables (variables.ts): name, type, value and
 // description. Both are managed sections (managed-sections.ts), variables-system and
 // variables-custom, written only when writeVariablesSections is called.
@@ -10,9 +11,9 @@
 // A managed section never renders an absolute path (TCRN-CROSS-STORY-478), and AGENTS.md is
 // committed, so it never renders a credential either. A variable whose row would name an absolute
 // path, or whose value or description is shaped like a credential (a record written around
-// setVariable, or before a stricter heuristic), is left out of the custom section; a tier whose model
-// or effort would is rendered as withheld. Each is reported with its reason, and everything else in
-// the section is still written.
+// setVariable, or before a stricter heuristic), is left out of the custom section; a tier record whose
+// model, effort or note would is rendered as withheld. Each is reported with its reason, and everything
+// else in the section is still written.
 
 import { join } from "node:path";
 
@@ -25,7 +26,7 @@ import {
   planManagedWrite,
 } from "./managed-sections.js";
 import type { ManagedSectionDecision, ManagedSectionRecord, ManagedWritePlan } from "./managed-sections.js";
-import { MODELS_TIERS_DEFAULT_TIER_NAMES, MODELS_TIERS_SETTING_KEY, readModelsTiers } from "./models-tiers.js";
+import { MODELS_TIERS_SETTING_KEY, modelsTierReference, readModelsTiers } from "./models-tiers.js";
 import { looksSecretShaped, variablesInRenderOrder } from "./variables.js";
 import { appendEvents, materializeWorkspace, projectConfiguration, withWorkspaceWriteLock } from "./workspace.js";
 import type { WorkspaceMutationOptions, WorkspaceState } from "./workspace.js";
@@ -43,7 +44,7 @@ const NOTE = "Written by Einzbern from the project's configuration. Change it in
 
 export type WithheldReason = "absolute-path" | "secret-shaped";
 
-/** What a section left out: a variable's name, or models.tiers.<host>.<tier>, and why. */
+/** What a section left out: a variable's name, or a tier record as models.tiers.<order>, and why. */
 export interface WithheldEntry {
   readonly name: string;
   readonly reason: WithheldReason;
@@ -72,30 +73,23 @@ function withheldReason(line: string, texts: readonly string[]): WithheldReason 
   return texts.some((text) => looksSecretShaped(text) !== null) ? "secret-shaped" : null;
 }
 
-// The default tier names first, in their order, then the others by name.
-function tierOrder(tiers: readonly string[]): readonly string[] {
-  const defaults = MODELS_TIERS_DEFAULT_TIER_NAMES.filter((tier) => tiers.includes(tier));
-  return [...defaults, ...tiers.filter((tier) => !defaults.includes(tier)).sort()];
-}
-
-/** The system section: models.tiers as a host-by-tier table with each tier's runner, and design.authority. */
+/**
+ * The system section: models.tiers as its table of records in ascending order, and design.authority.
+ * An empty model or effort reads as unset and an empty note is an empty cell. TCRN-CROSS-STORY-508
+ * R8: the categories and the escalation keys join the section later (TCRN-CROSS-SUB-407).
+ */
 export function renderSystemVariablesSection(state: Pick<WorkspaceState, "settings">): RenderedVariablesSection {
-  const tiers = readModelsTiers(state.settings);
   const withheld: WithheldEntry[] = [];
   const rows: string[] = [];
-  for (const host of Object.keys(tiers).sort()) {
-    const hostTiers = tiers[host] ?? {};
-    for (const tier of tierOrder(Object.keys(hostTiers))) {
-      const entry = hostTiers[tier];
-      if (entry === undefined) continue;
-      const line = row([host, tier, entry.runner, cell(entry.model), cell(entry.effort)]);
-      const reason = withheldReason(line, [entry.model, entry.effort]);
-      if (reason === null) {
-        rows.push(line);
-      } else {
-        withheld.push({ name: `${MODELS_TIERS_SETTING_KEY}.${host}.${tier}`, reason });
-        rows.push(row([host, tier, entry.runner, WITHHELD, WITHHELD]));
-      }
+  for (const record of readModelsTiers(state.settings)) {
+    const order = String(record.order);
+    const line = row([order, record.category, record.runner, cell(record.model), cell(record.effort), record.note === "" ? "" : cell(record.note)]);
+    const reason = withheldReason(line, [record.model, record.effort, record.note]);
+    if (reason === null) {
+      rows.push(line);
+    } else {
+      withheld.push({ name: modelsTierReference(record), reason });
+      rows.push(row([order, record.category, record.runner, WITHHELD, WITHHELD, WITHHELD]));
     }
   }
   const authority = state.settings.find((setting) => setting.key === "design.authority")?.value ?? "";
@@ -106,7 +100,7 @@ export function renderSystemVariablesSection(state: Pick<WorkspaceState, "settin
     "",
     `### ${MODELS_TIERS_SETTING_KEY}`,
     "",
-    ...(rows.length === 0 ? [NONE] : [row(["Host", "Tier", "Runner", "Model", "Effort"]), row(["---", "---", "---", "---", "---"]), ...rows]),
+    ...(rows.length === 0 ? [NONE] : [row(["Order", "Category", "Runner", "Model", "Effort", "Note"]), row(["---", "---", "---", "---", "---", "---"]), ...rows]),
     "",
     "### design.authority",
     "",
@@ -147,7 +141,7 @@ export interface VariablesSectionsResult {
   readonly sections: readonly ManagedSectionDecision[];
   // Sections awaiting attention: user-edited sections left intact, or a custom section with a withheld value.
   readonly pendingSections: readonly string[];
-  // What the sections left out: a variable's name, or models.tiers.<host>.<tier>, and why.
+  // What the sections left out: a variable's name, or a tier record as models.tiers.<order>, and why.
   readonly withheld: readonly WithheldEntry[];
 }
 

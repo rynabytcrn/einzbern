@@ -2,8 +2,9 @@
 // TCRN-CROSS-STORY-484 R1, R2, AC1-AC3 (MIN-227 D12; TCRN-CROSS-SUB-340): custom variables and the
 // two variable sections of AGENTS.md. A variable is a configuration record of its own collection,
 // not a setting, so settings-catalog never lists one; a value or description shaped like a
-// credential is refused when written; the system section renders models.tiers (host, tier, runner,
-// model, effort) and design.authority and nothing else; the custom section renders every variable;
+// credential is refused when written; the system section renders models.tiers (order, category,
+// runner, model, effort, note: TCRN-CROSS-STORY-508 R2) and design.authority and nothing else; the
+// custom section renders every variable;
 // both are managed sections, and neither ever renders an absolute path.
 
 import "./helpers/device-home.mjs";
@@ -192,28 +193,30 @@ test("484-AC2: a value shaped like a credential is refused, and nothing is recor
   }
 });
 
-test("484-AC3: an economy tier on codex-cli shows that runner in the system section", async (context) => {
+// TCRN-CROSS-STORY-508 R2, R8 (TCRN-CROSS-SUB-405): models.tiers is one table of records, rendered in
+// ascending order with its order, category, runner, model, effort and note.
+const tierRecord = (order, category, runner, model, effort, note = "") => ({ order, category, runner, model, effort, note });
+
+test("484-AC3, 508-R2: an economy record on codex-cli shows that runner in the system section, the records in ascending order", async (context) => {
   const fx = await project(context);
-  const tiers = {
-    "claude-code": {
-      flagship: { runner: "claude-code", model: "fixture-flagship", effort: "max" },
-      main: { runner: "claude-code", model: "fixture-main", effort: "max" },
-      economy: { runner: "codex-cli", model: "fixture-codex", effort: "max" },
-    },
-    codex: { main: { runner: "codex", model: "fixture-codex-main", effort: "high" } },
-  };
+  const tiers = [
+    tierRecord(30, "main", "codex", "fixture-codex-main", "high", "second opinion"),
+    tierRecord(10, "flagship", "claude-code", "fixture-flagship", "max"),
+    tierRecord(40, "economy", "codex-cli", "fixture-codex", "max"),
+    tierRecord(20, "main", "claude-code", "fixture-main", "max"),
+  ];
   await setWorkspaceSetting(fx.library, { key: "models.tiers", value: JSON.stringify(tiers), occurredAt: at() });
   const rendered = renderSystemVariablesSection(await materializeWorkspace(fx.library));
   assert.deepEqual(rendered.body.split("\n").filter((line) => line.startsWith("| ")), [
-    "| Host | Tier | Runner | Model | Effort |",
-    "| --- | --- | --- | --- | --- |",
-    "| claude-code | flagship | claude-code | fixture-flagship | max |",
-    "| claude-code | main | claude-code | fixture-main | max |",
-    "| claude-code | economy | codex-cli | fixture-codex | max |",
-    "| codex | main | codex | fixture-codex-main | high |",
-  ], "one row per host and tier, the default tiers in their order");
+    "| Order | Category | Runner | Model | Effort | Note |",
+    "| --- | --- | --- | --- | --- | --- |",
+    "| 10 | flagship | claude-code | fixture-flagship | max |  |",
+    "| 20 | main | claude-code | fixture-main | max |  |",
+    "| 30 | main | codex | fixture-codex-main | high | second opinion |",
+    "| 40 | economy | codex-cli | fixture-codex | max |  |",
+  ], "one row per record, by order; an empty note is an empty cell");
   await write(fx);
-  assert.match((await sections(fx))[VARIABLES_SYSTEM_SECTION_ID], /^\| claude-code \| economy \| codex-cli \| fixture-codex \| max \|$/mu);
+  assert.match((await sections(fx))[VARIABLES_SYSTEM_SECTION_ID], /^\| 40 \| economy \| codex-cli \| fixture-codex \| max \| {2}\|$/mu);
 });
 
 test("484-R2: the system section holds models.tiers and design.authority, and no other setting", async (context) => {
@@ -221,7 +224,7 @@ test("484-R2: the system section holds models.tiers and design.authority, and no
   assert.deepEqual(SYSTEM_VARIABLE_KEYS, ["models.tiers", "design.authority"]);
   const unset = renderSystemVariablesSection(await materializeWorkspace(fx.library));
   assert.match(unset.body, /^### models\.tiers$/mu);
-  assert.match(unset.body, /^\| claude-code \| economy \| claude-code \| \(unset\) \| \(unset\) \|$/mu, "the default table, unfilled");
+  assert.match(unset.body, /^\| 60 \| economy \| claude-code \| \(unset\) \| \(unset\) \| {2}\|$/mu, "the default table, unfilled");
   assert.match(unset.body, /^### design\.authority\n\n\(unset\)$/mu);
   await setWorkspaceSetting(fx.library, { key: "design.authority", value: "https://design.example/system", occurredAt: at() });
   await setWorkspaceSetting(fx.library, { key: "retrieval.tau", value: "3", occurredAt: at() });
@@ -276,10 +279,10 @@ test("484-R2: a variable whose row would name an absolute path is withheld with 
   await setVariable(fx.library, { name: "build.share", type: "string", value: "C:\\builds", occurredAt: at() });
   await setVariable(fx.library, { name: "build.note", type: "string", value: "fast", description: "cache in /var/cache/build", occurredAt: at() });
   await setVariable(fx.library, { name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
-  await setWorkspaceSetting(fx.library, { key: "models.tiers", value: JSON.stringify({ codex: { economy: { runner: "codex-cli", model: "/opt/models/local", effort: "low" } } }), occurredAt: at() });
+  await setWorkspaceSetting(fx.library, { key: "models.tiers", value: JSON.stringify([tierRecord(10, "economy", "codex-cli", "/opt/models/local", "low")]), occurredAt: at() });
   const result = await write(fx);
   assert.deepEqual(result.withheld, [
-    { name: "models.tiers.codex.economy", reason: "absolute-path" },
+    { name: "models.tiers.10", reason: "absolute-path" },
     { name: "build.note", reason: "absolute-path" },
     { name: "build.root", reason: "absolute-path" },
     { name: "build.share", reason: "absolute-path" },
@@ -290,7 +293,7 @@ test("484-R2: a variable whose row would name an absolute path is withheld with 
   for (const path of ["/srv/build", "C:\\builds", "/var/cache", "/opt/models"]) assert.equal(text.includes(path), false, path);
   const bodies = await sections(fx);
   assert.match(bodies[VARIABLES_CUSTOM_SECTION_ID], /^\| deploy\.host \| string \| build\.example\.com \|  \|$/mu, "an empty description is an empty cell");
-  assert.match(bodies[VARIABLES_SYSTEM_SECTION_ID], /^\| codex \| economy \| codex-cli \| \(withheld\) \| \(withheld\) \|$/mu);
+  assert.match(bodies[VARIABLES_SYSTEM_SECTION_ID], /^\| 10 \| economy \| codex-cli \| \(withheld\) \| \(withheld\) \| \(withheld\) \|$/mu);
 });
 
 test("484-R2: a section the user edited is left as it is and goes pending in the library", async (context) => {

@@ -230,10 +230,13 @@ export type {
   SettingsReasonCode,
   WorkspaceSettingRecord,
 } from "./settings.js";
-// TCRN-CROSS-STORY-484 R3: models.tiers, each host's tiers with a runner, a model and an effort;
-// readModelsTiers is the effective table of a settings list, the default table when it is unset.
-export { MODELS_TIERS_SETTING_KEY, readModelsTiers } from "./models-tiers.js";
-export type { ModelsTierEntry, ModelsTiers } from "./models-tiers.js";
+// TCRN-CROSS-STORY-484 R3, TCRN-CROSS-STORY-508 R1, R2, R4: models.category and models.tiers, two
+// tables of records; readModelsCategory and readModelsTiers are the effective tables of a settings
+// list, and baseModelsTier is a category's base record, the one a rule naming the category gets.
+export { MODELS_CATEGORY_SETTING_KEY } from "./models-category.js";
+export type { ModelsCategories, ModelsCategoryRecord } from "./models-category.js";
+export { MODELS_TIERS_SETTING_KEY, baseModelsTier, readModelsCategory, readModelsTiers } from "./models-tiers.js";
+export type { ModelsTierRecord, ModelsTiers } from "./models-tiers.js";
 // TCRN-CROSS-STORY-484 R1: the project's custom variables, records of the library's variable
 // collection; a credential-shaped value or description is refused when written.
 export { VARIABLE_TYPES, listVariables, removeVariable, setVariable } from "./variables.js";

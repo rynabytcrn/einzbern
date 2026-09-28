@@ -515,8 +515,8 @@ barrier. A key the engine refuses whoever asks keeps its own refusal (`SETTINGS_
 Every row of `settings-catalog` and `machine-settings-catalog` carries its layout
 (TCRN-CROSS-STORY-508 R5; MIN-236 D7; `packages/core/src/settings.ts`,
 `packages/core/src/machine-settings.ts`, `specs/settings-catalog-v1.md`): `shape` is `collection` for
-`models.tiers`, a table of records that Atelier edits on a page of its own, and `scalar` for every
-other key and every device-level key; `group` is one of `general`, `models`, `execution`,
+`models.category` and `models.tiers`, tables of records that Atelier edits on pages of their own, and
+`scalar` for every other key and every device-level key; `group` is one of `general`, `models`, `execution`,
 `knowledge`, `retrieval`, `storage` and `atelier` (`SETTING_GROUPS`, in the order the settings page
 shows them; a group's name is the text key `settings.group.<id>`, and `models` is the models and
 escalation group); `order` is a positive integer, the key's place in its group, unique within the
@@ -562,6 +562,34 @@ rest by name. The order is not part of the gate declarations digest, so a run st
 orders change, and a changed command, cover or required still invalidates it (STORY-485 D8
 unchanged). `variable-set` writes the whole record, so a variable set without `--order` has none;
 `gates-config-set` keeps a recorded order when `--order` is left out.
+
+The model categories and the model tiers are two tables of records (TCRN-CROSS-STORY-508 R1, R2, R4,
+AC2 to AC4; MIN-236 D5, D6; `packages/core/src/models-category.ts`, `models-tiers.ts`, `settings.ts`,
+`specs/settings-catalog-v1.md`). `models.category` joins the catalog, a collection first in the
+`models` group: `[{id, name, description, order}]`, ids and orders unique, by default `flagship` (10),
+`main` (20) and `economy` (30), each named by its id. `models.tiers` replaces the per-host shape above
+with `[{order, category, runner, model, effort, note}]`: an order unique across the table, a category
+of `models.category`, and a note of at most 256 characters; the lower the order, the stronger the
+record. Both are stored as canonical JSON in ascending order, at most 8192 characters. A per-host
+`models.tiers` value and a renamed `execution.dispatchTiers` value read as records without their
+events changing: each tier name is a category and each host and tier one record with its runner,
+numbered from 10 in steps of 10 category by category (`flagship`, `main`, `economy`, then the other
+tier names by name) and within a category the hosts in descending name order, so `claude-code` holds
+each default category's largest order. The default table is the old default read that way. While
+`models.category` is unset it is the default categories and every other category the tiers name.
+`settings-set` and `settings-remove` check each table against the other as it stands: a tier record
+naming a category that does not exist is refused with `MODELS_CATEGORY_UNKNOWN`, and a category value
+that drops a category records still name with `MODELS_CATEGORY_IN_USE`, `details.references` listing
+those records as `models.tiers.<order>`; a repeated order is `MODELS_ORDER_DUPLICATE`, a repeated
+category id `MODELS_CATEGORY_DUPLICATE`, and a new write takes the array only
+(`SETTINGS_VALUE_INVALID`). Replay checks each value's shape and no reference. A category's base
+record, the one a rule naming the category gets, is its record with the largest order whatever its
+runner (`baseModelsTier`, which refuses a category without a record with `MODELS_CATEGORY_EMPTY`), and
+the knowledge language's economy model is the `economy` base record's model, whichever host asks.
+Core exports `MODELS_CATEGORY_SETTING_KEY`, `readModelsCategory`, `baseModelsTier` and the record
+types beside `readModelsTiers`. The `variables-system` section renders `models.tiers` by order in the
+columns Order, Category, Runner, Model, Effort and Note, and names a withheld record
+`models.tiers.<order>`.
 
 The engine ships as one release archive that needs nothing but Node.js (TCRN-CROSS-STORY-481;
 MIN-227 D23, D28; `scripts/lib/bundle.mjs`, `scripts/pack-release.mjs`,

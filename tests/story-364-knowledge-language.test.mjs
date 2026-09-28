@@ -61,7 +61,9 @@ const OWNER = deriveStableId("owner", "STORY-364-OWNER");
 const ECONOMY_MODEL = "claude-sonnet-5";
 const RETIRED_ECONOMY_SETTING_KEY = "model.economyTier";
 // TCRN-CROSS-STORY-484 R3: the economy tier lives in models.tiers, each tier with its runner.
-const MODELS_TIERS_VALUE = JSON.stringify({ "claude-code": { economy: { runner: "claude-code", model: ECONOMY_MODEL, effort: "medium" } } });
+// TCRN-CROSS-STORY-508 R2, R4: a table of records; the economy model is the economy category's base
+// record, the one with the largest order.
+const MODELS_TIERS_VALUE = JSON.stringify([{ order: 10, category: "economy", runner: "claude-code", model: ECONOMY_MODEL, effort: "medium", note: "" }]);
 
 // The stand-in for the economy-tier model. The engine never calls a model, so what a test
 // supplies and what the write-path hook supplies are the same kind of thing: answers.
@@ -338,6 +340,28 @@ test("STORY-364: the answers are checked against the model the workspace actuall
     (error) => error.reasonCode === "KNOWLEDGE_LANGUAGE_INVALID",
     "prose the model handed back untranslated is refused rather than stored",
   );
+});
+
+test("508-R4: the economy model is the economy category's base record, whatever the host or the runner", () => {
+  const record = (order, category, runner, model) => ({ order, category, runner, model, effort: "low", note: "" });
+  const tiers = { key: "models.tiers", value: JSON.stringify([
+    record(20, "economy", "codex-cli", "fixture-codex"),
+    record(30, "economy", "claude-code", ECONOMY_MODEL),
+    record(10, "main", "claude-code", "fixture-main"),
+  ]) };
+  for (const host of [undefined, "claude-code", "codex"]) {
+    assert.equal(readKnowledgeLanguagePolicy([{ key: "artifact.language", value: "zh-CN" }, tiers], host).economyModel, ECONOMY_MODEL, String(host));
+  }
+  const swapped = { key: "models.tiers", value: JSON.stringify([record(40, "economy", "codex-cli", "fixture-codex"), record(30, "economy", "claude-code", ECONOMY_MODEL)]) };
+  assert.equal(readKnowledgeLanguagePolicy([swapped], "claude-code").economyModel, "fixture-codex", "the largest order wins, not the host's own record");
+  const unfilled = { key: "models.tiers", value: JSON.stringify([record(10, "main", "claude-code", "fixture-main"), record(20, "economy", "claude-code", "")]) };
+  assert.equal(readKnowledgeLanguagePolicy([unfilled], "claude-code").economyModel, null, "an unfilled base record is no model");
+  assert.equal(readKnowledgeLanguagePolicy([{ key: "models.tiers", value: JSON.stringify([record(10, "main", "claude-code", "fixture-main")]) }]).economyModel, null,
+    "and so is an economy category without a record");
+  assert.equal(readKnowledgeLanguagePolicy([]).economyModel, null, "the default table is unfilled");
+  // A value TCRN-CROSS-STORY-484 recorded, one table per host, is read as records too.
+  const perHost = { key: "models.tiers", value: JSON.stringify({ "claude-code": { economy: { runner: "claude-code", model: ECONOMY_MODEL, effort: "medium" } } }) };
+  assert.equal(readKnowledgeLanguagePolicy([perHost]).economyModel, ECONOMY_MODEL);
 });
 
 test("STORY-364: phrasings outside the normative bounds are refused", () => {

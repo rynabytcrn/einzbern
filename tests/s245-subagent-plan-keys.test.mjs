@@ -53,12 +53,13 @@ test("S369, STORY-484 R3: settings are sorted in source, the dispatch keys retir
   for (const key of ["execution.dispatchClasses", "execution.dispatchMode", "execution.dispatchModes", "execution.dispatchTiers", "execution.claudeCodeSubagentPlan", "execution.codexSubagentPlan"]) {
     assert.equal(catalog.settings.some((candidate) => candidate.key === key), false, key);
   }
-  // The default tiers: both hosts, the three default tier names, each host its own runner, unfilled.
+  // The default tiers: both hosts, the three default categories, each host its own runner, unfilled;
+  // TCRN-CROSS-STORY-508 R2 numbers them as records, category by category, codex before claude-code.
   const tiers = catalog.settings.find((entry) => entry.key === "models.tiers");
   assert.equal(tiers.type, "string");
-  assert.deepEqual(JSON.parse(tiers.defaultValue), Object.fromEntries(["claude-code", "codex"].map((host) => [host, Object.fromEntries(
-    ["economy", "flagship", "main"].map((tier) => [tier, { effort: "", model: "", runner: host }]),
-  )])));
+  assert.deepEqual(JSON.parse(tiers.defaultValue), ["flagship", "main", "economy"].flatMap((category, index) => ["codex", "claude-code"].map((host, place) => ({
+    order: 20 * index + 10 * (place + 1), category, runner: host, model: "", effort: "", note: "",
+  }))));
   assert.equal(tiers.currentValue, tiers.defaultValue);
 
   const vocabulary = await invoke(["vocabulary"]);
@@ -81,9 +82,9 @@ test("S369, STORY-484 R3: models.tiers written directly is validated, and the re
 
   const retiredClasses = await invoke(write("settings-set", workspace, 0, 1, ["--key", "execution.dispatchClasses", "--value", JSON.stringify({ "bad-class": { dispatch: true } })]));
   assert.equal(retiredClasses.reasonCode, "SETTINGS_KEY_UNREGISTERED");
-  const noRunner = await invoke(write("settings-set", workspace, 0, 1, ["--key", "models.tiers", "--value", JSON.stringify({ "claude-code": { economy: { model: "m", effort: "low" } } })]));
+  const noRunner = await invoke(write("settings-set", workspace, 0, 1, ["--key", "models.tiers", "--value", JSON.stringify([{ order: 10, category: "economy", model: "m", effort: "low", note: "" }])]));
   assert.equal(noRunner.reasonCode, "SETTINGS_VALUE_INVALID");
-  assert.equal(noRunner.details.path, "models.tiers.claude-code.economy");
+  assert.equal(noRunner.details.path, "models.tiers[0]");
   assert.equal((await invoke(["status", "--workspace", workspace])).version, 0);
   const retired = await invoke(["model-plan-list", "--workspace", workspace]);
   assert.equal(retired.reasonCode, "CLI_COMMAND_UNKNOWN");

@@ -1,6 +1,6 @@
 # 门
 
-门是项目声明的检查命令：测试、类型检查、链接检查，任何以退出码说明好坏的程序都可以。门按项目声明，由改动决定这一次要跑哪几道，没有人手工挑选。Story 转为完成之前，它的改动涉及的必需门必须是绿的。
+门是项目声明的检查命令：测试、类型检查、链接检查，任何以退出码说明好坏的程序都可以。门按项目声明，由改动决定这一次要跑哪几道，没有人手工挑选。Story 转为完成之前，至少一道必需门必须声明它的精确 work id，并在同树、同声明的运行中记录该 id；该次运行里的所有必需门都必须为绿。路径匹配只负责选择和运行门。
 
 ## 门声明
 
@@ -10,12 +10,12 @@
 | --- | --- | --- |
 | `command` | 要运行的命令，写成 argv 数组，不经过 shell。 | 必填 |
 | `root` | 命令在项目的哪个目录里运行；这个目录下的 Git 改动决定是否选中这道门。 | `.` |
-| `covers` | 这道门覆盖 `root` 之下的路径 glob，或精确的 `work:<24 位小写十六进制>` 主体 id。 | `**` |
+| `covers` | 选择门的 `root` 路径 glob，或用于证明 Story 覆盖的精确 `work:<24 位小写十六进制>` 主体 id。 | `**` |
 | `required` | Story 转为完成之前是否必须为绿。 | `true` |
 | `enabled` | 是否启用。 | `true` |
 | `releaseOnly` | 是否只在发布时运行。 | `false` |
 
-路径 glob 相对 `root` 匹配整条路径：`**` 必须独占一段，匹配任意多段；`*`、`?` 与 `[...]` 只在一段之内匹配。`*.md` 是 `root` 下第一层的 Markdown 文件，`**/*.md` 是任意深度的 Markdown 文件，以 `/` 结尾的 glob 覆盖那个目录下的一切。`work:<24 位小写十六进制>` 是精确主体 id，不作为路径 glob 编译；`--work-id` 给出的 id 与它完全相等时才匹配。
+路径 glob 相对 `root` 匹配整条路径：`**` 必须独占一段，匹配任意多段；`*`、`?` 与 `[...]` 只在一段之内匹配。`*.md` 是 `root` 下第一层的 Markdown 文件，`**/*.md` 是任意深度的 Markdown 文件，以 `/` 结尾的 glob 覆盖那个目录下的一切。路径匹配会选择并运行门，但当前没有可信的 Story 到路径映射，所以路径匹配本身不能证明任意 Story 已覆盖，release 模式也一样。`work:<24 位小写十六进制>` 是精确主体 id，不作为路径 glob 编译；只有声明包含目标 Story 的精确 id 且运行记录的 `matchedWorkIds` 包含该 id，才能证明 Story 覆盖。
 
 ```text
 gates-config-set --name <门名> --command '<JSON argv>' [--root <目录>] [--covers <glob-or-work-id,...>] [--required true|false] [--enabled true|false] [--release-only true|false] --at <时刻>
@@ -49,7 +49,7 @@ gates-run [--project <目录>] [--base <提交>] [--work-id <work-id,...>] [--re
 
 `work-create --status done`、`work-transition` 或 `work-batch` 让 Story 直接出生为完成或转为完成之前，引擎读取本设备为相同目标 Story、当前这棵树和当前这组门声明记录的最近一次运行，自己不跑门：
 
-- 没有启用的 required 声明能覆盖目标 Story，或所用运行没有相应 required 结果：拒绝，报 `WORK_DONE_GATES_NOT_COVERED`。变更模式的路径 glob 必须匹配改动；release 会跑全部启用门；主体 id 仍须精确匹配。空计划、只有 optional 门或不匹配的主体 id 都不算覆盖。
+- 没有启用的 required 声明包含目标 Story 的精确 work id，或同树同声明的运行没有相应 required 结果并在 `matchedWorkIds` 记录该 id：拒绝，报 `WORK_DONE_GATES_NOT_COVERED`。路径 glob 可选择变更模式要跑的门；release 会跑全部启用门，但任何路径 glob 都不能单独证明 Story 覆盖。空计划、只有 optional 门或不匹配的主体 id 都不算覆盖。
 - 找不到这样的运行：拒绝，报 `WORK_DONE_GATES_NOT_RUN`，补救是先跑 `gates-run`。
 - 运行里有必需门是红的：拒绝，报 `WORK_DONE_GATES_RED`，列出每一道红的必需门（stderr 上还有 `stories` 与 `runId`）。
 - 通过的转换在回执的 `doneGates` 里给出放行它的那次运行。

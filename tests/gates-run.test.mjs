@@ -203,7 +203,7 @@ test("485-R3: a gate past its timeout is stopped and red; output is cut at its b
 test("485-AC4 core: a red required gate refuses a Story's done and names it; a red optional gate does not", async (context) => {
   const { project, desk, library, baseCommit } = await setup(context);
   const state = withWork(await declareAll(library, {
-    unit: declare([node, "-e", "process.exit(require('node:fs').existsSync('src/ok') ? 0 : 1)"], ["src/**"]),
+    unit: declare([node, "-e", "process.exit(require('node:fs').existsSync('src/ok') ? 0 : 1)"], ["src/**", STORY]),
     lint: declare([node, "-e", "process.exit(2)"], ["src/**"], { required: false }),
     docs: declare([node, "-e", "process.exit(0)"], ["**/*.md"]),
   }));
@@ -263,31 +263,47 @@ test("D8: no required coverage, optional-only gates, empty plans, and unrelated 
   let run = await runGates(plan, { libraryId: state.metadata.workspaceId, at: at(), deviceHome: desk });
   let uncovered = await refusal(() => assertDoneGates({ projectRoot: project, library: state, workIds: [STORY], deviceHome: desk }));
   assert.equal(uncovered.reasonCode, "WORK_DONE_GATES_NOT_COVERED");
-  assert.match(uncovered.details.remedy, /--base <commit> or --release/u);
-  assert.equal(uncovered.details.runId, run.run.runId);
+  assert.equal(uncovered.details.runId, undefined, "path-only declarations cannot create Story coverage, even before consulting a run");
+  assert.match(uncovered.details.remedy, /covers work:<Story id>/u);
+
+  await put(project, "src/unrelated.ts");
+  plan = await planGates({ projectRoot: project, gates: listGates(state), base, workIds: [STORY] });
+  assert.deepEqual(plan.gates.map((gate) => [gate.name, gate.matched, gate.matchedWorkIds]), [
+    ["optional", ["src/unrelated.ts"], []],
+    ["path", ["src/unrelated.ts"], []],
+  ],
+    "a matching path still selects and runs its gate without claiming a Story mapping");
+  run = await runGates(plan, { libraryId: state.metadata.workspaceId, at: at(), deviceHome: desk });
+  assert.deepEqual(run.run.reds, []);
+  uncovered = await refusal(() => assertDoneGates({ projectRoot: project, library: state, workIds: [STORY], deviceHome: desk }));
+  assert.equal(uncovered.reasonCode, "WORK_DONE_GATES_NOT_COVERED");
 
   const otherStory = `work:${"3".repeat(24)}`;
   state = withWork(await declareAll(library, {
     other: declare([node, "-e", "process.exit(0)"], [otherStory]),
   }));
   plan = await planGates({ projectRoot: project, gates: listGates(state), base, workIds: [STORY] });
-  assert.deepEqual(plan.gates, [], "a work-id cover for another Story is not selected");
+  assert.deepEqual(plan.gates.map((gate) => gate.name), ["optional", "path"], "a work-id cover for another Story is not selected; changed paths still select their gates");
   run = await runGates(plan, { libraryId: state.metadata.workspaceId, at: at(), deviceHome: desk });
   uncovered = await refusal(() => assertDoneGates({ projectRoot: project, library: state, workIds: [STORY], deviceHome: desk }));
   assert.equal(uncovered.reasonCode, "WORK_DONE_GATES_NOT_COVERED");
-  assert.equal(uncovered.details.runId, run.run.runId);
+  assert.equal(uncovered.details.runId, undefined);
 
   state = withWork(await declareAll(library, {
     subject: declare([node, "-e", "process.exit(0)"], [STORY]),
   }));
   plan = await planGates({ projectRoot: project, gates: listGates(state), base, workIds: [STORY] });
-  assert.deepEqual(plan.gates.map((gate) => [gate.name, gate.matched, gate.matchedWorkIds]), [["subject", [], [STORY]]]);
+  assert.deepEqual(plan.gates.map((gate) => [gate.name, gate.matched, gate.matchedWorkIds]), [
+    ["optional", ["src/unrelated.ts"], []],
+    ["path", ["src/unrelated.ts"], []],
+    ["subject", [], [STORY]],
+  ]);
   run = await runGates(plan, { libraryId: state.metadata.workspaceId, at: at(), deviceHome: desk });
   assert.equal((await assertDoneGates({ projectRoot: project, library: state, workIds: [STORY], deviceHome: desk })).runId, run.run.runId,
     "an exact required work-id cover can prove Story coverage without a path change");
 });
 
-test("D8: an explicit release run binds every declared path gate to its Story, without widening exact-id covers", async (context) => {
+test("D8: release runs every path gate but only an exact work-id cover proves Story coverage", async (context) => {
   const { project, desk, library } = await setup(context);
   let state = withWork(await declareAll(library, {
     path: declare([node, "-e", "process.exit(0)"], ["src/**"]),
@@ -295,23 +311,28 @@ test("D8: an explicit release run binds every declared path gate to its Story, w
   let plan = await planGates({ projectRoot: project, gates: listGates(state), release: true, workIds: [STORY] });
   assert.deepEqual(plan.gates.map((gate) => [gate.name, gate.reason, gate.matchedWorkIds]), [["path", "release", []]]);
   let run = await runGates(plan, { libraryId: state.metadata.workspaceId, at: at(), deviceHome: desk });
-  assert.equal((await assertDoneGates({ projectRoot: project, library: state, workIds: [STORY], deviceHome: desk })).runId, run.run.runId,
-    "a release run executes the nonempty required path declaration for this bound Story");
+  let uncovered = await refusal(() => assertDoneGates({ projectRoot: project, library: state, workIds: [STORY], deviceHome: desk }));
+  assert.equal(uncovered.reasonCode, "WORK_DONE_GATES_NOT_COVERED",
+    "a caller-claimed Story id and a release glob do not establish a trusted mapping");
+  assert.equal(uncovered.details.runId, undefined);
 
   state = withWork(await declareAll(library, {
-    path: declare([node, "-e", "process.exit(0)"], [EPIC]),
+    subject: declare([node, "-e", "process.exit(0)"], [STORY]),
   }));
   plan = await planGates({ projectRoot: project, gates: listGates(state), release: true, workIds: [STORY] });
+  assert.deepEqual(plan.gates.map((gate) => [gate.name, gate.reason, gate.matchedWorkIds]), [
+    ["path", "release", []],
+    ["subject", "release", [STORY]],
+  ]);
   run = await runGates(plan, { libraryId: state.metadata.workspaceId, at: at(), deviceHome: desk });
-  const uncovered = await refusal(() => assertDoneGates({ projectRoot: project, library: state, workIds: [STORY], deviceHome: desk }));
-  assert.equal(uncovered.reasonCode, "WORK_DONE_GATES_NOT_COVERED", "an unrelated exact id is not widened by release mode");
-  assert.equal(uncovered.details.runId, run.run.runId);
+  assert.equal((await assertDoneGates({ projectRoot: project, library: state, workIds: [STORY], deviceHome: desk })).runId, run.run.runId,
+    "the exact declared id and recorded matchedWorkIds prove coverage in release mode");
 });
 
 test("485-R4: a run counts only for the tree and declarations it was made on, and the latest one decides", async (context) => {
   const { project, desk, library, baseCommit } = await setup(context);
   const state = withWork(await declareAll(library, {
-    unit: declare([node, "-e", "process.exit(process.env.GATE_EXIT === '0' ? 0 : 1)"], ["src/**"]),
+    unit: declare([node, "-e", "process.exit(process.env.GATE_EXIT === '0' ? 0 : 1)"], ["src/**", STORY]),
   }));
   const libraryId = state.metadata.workspaceId;
   const done = () => assertDoneGates({ projectRoot: project, library: state, workIds: [STORY], deviceHome: desk });
@@ -344,7 +365,7 @@ test("485-R4: a run counts only for the tree and declarations it was made on, an
 
   // A changed declaration is another set of gates, even on the same tree.
   const redeclared = withWork(await declareAll(library, {
-    unit: declare([node, "-e", "process.exit(process.env.GATE_EXIT === '0' ? 0 : 1)"], ["src/**", "test/**"]),
+    unit: declare([node, "-e", "process.exit(process.env.GATE_EXIT === '0' ? 0 : 1)"], ["src/**", STORY, "test/**"]),
   }));
   const other = await refusal(() => assertDoneGates({ projectRoot: project, library: redeclared, workIds: [STORY], deviceHome: desk }));
   assert.equal(other.reasonCode, "WORK_DONE_GATES_NOT_RUN", "a run under other declarations does not count");

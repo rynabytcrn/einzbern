@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-485 R4 (MIN-235 D8; TCRN-CROSS-SUB-344): a Story is done only when at least one
-// required gate covers that Story and every required gate in the Story's run is green. The check
-// does not run gates itself: it reads this device's latest run for the same tree, declarations and
-// exact Story set. Path coverage and work-id coverage remain explicit in the run record.
+// required gate declares and records an exact work-id cover for that Story, and every required
+// gate in the Story's run is green. A path match selects a gate but cannot establish Story coverage
+// without a trusted Story-to-path association. The check does not run gates itself: it reads this
+// device's latest run for the same tree, declarations and exact Story set.
 
 import { compareCanonicalText } from "../../protocol/src/index.js";
 import { listGates } from "./gates-config.js";
@@ -55,10 +56,11 @@ export async function assertDoneGates(input: {
   if (stories.length === 0) return { checked: false, reason: "no-story", runId: null, treeDigest: null };
   const gates = listGates(input.library).filter((gate) => gate.enabled);
   const required = gates.filter((gate) => gate.required);
-  if (required.length === 0 || required.every((gate) => gate.covers.length === 0)) {
-    throw new GatesDoneError("WORK_DONE_GATES_NOT_COVERED", "no enabled required gate declares coverage for the Story", {
-      stories,
-      remedy: "declare a required gate that covers the Story by work id or changed path",
+  const withoutRequiredSubjectCover = stories.filter((storyId) => !required.some((gate) => gate.covers.includes(storyId)));
+  if (withoutRequiredSubjectCover.length > 0) {
+    throw new GatesDoneError("WORK_DONE_GATES_NOT_COVERED", "no enabled required gate declares an exact work-id cover for the Story", {
+      stories: withoutRequiredSubjectCover,
+      remedy: "declare an enabled required gate with covers work:<Story id>, then run gates-run with that --work-id and --base <commit> or --release",
     });
   }
   const tree = await gateTreeState(input.projectRoot, [...new Set(gates.map((gate) => gate.root))].sort(compareCanonicalText));
@@ -77,16 +79,15 @@ export async function assertDoneGates(input: {
     });
   }
   const uncovered = stories.filter((storyId) => !run.gates.some((result) => {
-    if (!result.required) return false;
+    if (!result.required || !result.matchedWorkIds.includes(storyId)) return false;
     const declaration = gates.find((gate) => gate.name === result.name && gate.required);
-    const releasePathCoverage = run.release && declaration?.covers.some((cover) => !cover.startsWith("work:")) === true;
-    return result.matched.length > 0 || result.matchedWorkIds.includes(storyId) || releasePathCoverage;
+    return declaration?.covers.includes(storyId) === true;
   }));
   if (uncovered.length > 0) {
     throw new GatesDoneError("WORK_DONE_GATES_NOT_COVERED", "the latest gate run has no required coverage for the Story", {
       stories: uncovered,
       runId: run.runId,
-      remedy: "declare a required path or work-id cover for the Story, then gates-run --work-id <Story id> with --base <commit> or --release",
+      remedy: "declare an enabled required gate with covers work:<Story id>, then run gates-run with that --work-id and --base <commit> or --release",
     });
   }
   const reds = run.gates.filter((gate) => gate.required && !gate.ok).map((gate) => gate.name);

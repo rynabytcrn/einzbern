@@ -744,6 +744,16 @@ fails closed the same way naming EPERM, and a group still alive at the end is st
 first probes of each wait report instead of probing, the last one repeated when it ends in `*`; a
 malformed value fails closed with the new `TEST_CONTROLLER_GROUP_PROBE_INJECTION_INVALID`.
 
+The `effectiveValue` of a `settings-set` or `settings-remove` receipt is the key's `currentValue` in
+`settings-catalog` (TCRN-CROSS-STORY-510 R2, TCRN-CROSS-SUB-417; fixes TCRN-CROSS-STORY-508;
+`packages/cli/src/index.ts`). The receipt reads it with the arguments `settings-catalog` uses, the
+library's segment size for an unset `storage.segmentBytes` included, so the two agree on an unset
+`models.category`: the default categories and every other category `models.tiers` names. Removing
+`models.category` while a tier record names a category outside the default table now receipts that
+category too, where the receipt used to echo the default table. A set key's receipt still carries
+its value, and any other unset key's its default. The receipt's fields, what `receiptDigest` is
+taken over and the reason codes are unchanged.
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

@@ -624,6 +624,8 @@ async function verifyTestSuite() {
 async function verifyP8() {
   const {
     P8_SUPPORTED_AOS_RELEASES,
+    P8_RELEASE_ARCHIVE,
+    P8_RELEASE_ARCHIVE_SHA256,
     P8_TAG,
     P8_VERSION,
     buildP8ReleaseArtifacts,
@@ -648,18 +650,38 @@ async function verifyP8() {
     allowedFiles: trackedSourcePaths(),
   });
   assertion(sourceBytes.equals(independentlyRebuilt.archive), "P8_ARCHIVE_REPRODUCIBILITY_MISMATCH");
-  const artifacts = buildP8ReleaseArtifacts({ sourceArchive: sourceBytes, sbom: sbomBytes });
   // TCRN-CROSS-STORY-461 R1 (#232): a source archive left by the previous version is moved
-  // to dist/stale-release before the new artifacts are written and the set is asserted.
+  // to dist/stale-release before the new artifacts are written and the set is asserted. A prior
+  // formal package and sidecar are moved by the same versioned-artifact rule.
   const staleReleaseArtifacts = await moveStaleReleaseArtifacts(repositoryRoot);
+  // Run the existing deterministic package producer in this invocation. Reading its two files
+  // back prevents P8 from passing on a previous run's package or a claimed-only sha256 result.
+  const packedText = run(process.execPath, [resolve(repositoryRoot, "scripts/pack-release.mjs"), "--version", P8_VERSION]);
+  let packed;
+  try { packed = JSON.parse(packedText); } catch { fail("P8_RELEASE_PACK_TERMINAL_INVALID", "pack-release did not return its JSON result"); }
+  assertion(packed.reasonCode === "RELEASE_PACKED" && packed.version === P8_VERSION, "P8_RELEASE_PACK_FAILED");
+  const releaseArchive = await readSourceFile(resolve(repositoryRoot, `dist/release/${P8_RELEASE_ARCHIVE}`));
+  const releaseArchiveSha256 = await readSourceFile(resolve(repositoryRoot, `dist/release/${P8_RELEASE_ARCHIVE_SHA256}`));
+  assertion(packed.sha256 === createHash("sha256").update(releaseArchive).digest("hex"), "P8_RELEASE_PACK_DIGEST_MISMATCH");
+  const artifacts = buildP8ReleaseArtifacts({ sourceArchive: sourceBytes, sbom: sbomBytes, releaseArchive, releaseArchiveSha256 });
   for (const [name, content] of artifacts) await safeWriteOutput(repositoryRoot, `dist/release/${name}`, content);
+  const { gunzipSync } = await import("node:zlib");
+  const { readUstar } = await import("./lib/tar.mjs");
+  const packagedEntries = readUstar(gunzipSync(releaseArchive));
+  const packagedPrivacyEntries = packagedEntries.flatMap(({ path, bytes }) => {
+    const label = `dist/release/${P8_RELEASE_ARCHIVE}/${path}`;
+    return [
+      { label, kind: "filename", content: path },
+      { label, kind: "release", content: decodePrivacyScanBytes(bytes) },
+    ];
+  });
   const owner = await remoteOwner();
   const privacyFindings = scanPrivacyEntries(
     [...artifacts.entries()].map(([path, content]) => ({
       label: `dist/release/${path}`,
       kind: "release",
       content: path.endsWith("-source.tar") ? content : content.toString("utf8"),
-    })),
+    })).concat(packagedPrivacyEntries),
     { owner, repositories: await engineRepositoryNames() },
   );
   assertion(privacyFindings.length === 0, "P8_RELEASE_PRIVACY_FINDINGS", privacyFindings.join(","));

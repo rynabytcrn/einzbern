@@ -24,6 +24,7 @@ const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-release-locks
 const OLD_VERSION = "1.2.1";
 const HELPER_OLD_VERSION = "1.0.7";
 const NEXT_VERSION = "2.0.0";
+const FIXTURE_SCHEMA_VERSION = "tcrn.fixture-contract.v1";
 const HELPER_READMES = ["README.md", "README.en.md", "README.ja.md", "README.ko.md", "README.fr.md"];
 const RELEASE_NOTES = "Einzbern renamed TCRN Workflow and Mana Orchestrate replaced tcrn-workflow-helper. The previous commands are retired.";
 const RELEASE_CLI = fileURLToPath(new URL("../scripts/release.mjs", import.meta.url));
@@ -62,6 +63,7 @@ async function createRepos(name) {
   for (const packageName of ["cli", "core", "protocol"]) {
     await writeText(engineRoot, `packages/${packageName}/package.json`, `${JSON.stringify({ name: `@einzbern/${packageName}`, version: OLD_VERSION, private: true }, null, 2)}\n`);
   }
+  await writeText(engineRoot, "packages/protocol/schema-fixture.json", `${JSON.stringify({ schemaVersion: FIXTURE_SCHEMA_VERSION, record: { id: "stable" } }, null, 2)}\n`);
   await writeText(engineRoot, ".gitignore", "/dist/\n");
   await writeText(engineRoot, "CHANGELOG.md", `# Changelog\n\n## Unreleased\n\n${RELEASE_NOTES}\n\n## 1.2.1\n\nEarlier release.\n`);
   for (const name of README_NAMES) {
@@ -189,8 +191,10 @@ test("488-AC1: a helper version mismatch is refused with the locations that disa
   );
 });
 
-test("488-R1/R2/R4: prepare aligns both repositories, runs release gates before packing, and writes the matching checksum", async () => {
+test("488-R1/R2/R4, MIN-235 D13: prepare aligns both repositories, keeps schema IDs independent, gates before packing, and writes the checksum", async () => {
   const repos = await createRepos("prepare");
+  const schemaPath = join(repos.engineRoot, "packages/protocol/schema-fixture.json");
+  const schemaBefore = await readFile(schemaPath);
   const environment = await makeEnvironment("prepare");
   const workspace = await makeWorkspace("prepare");
   const { result, calls } = await fakePrepareRunner({ ...repos, environment, workspace });
@@ -202,6 +206,8 @@ test("488-R1/R2/R4: prepare aligns both repositories, runs release gates before 
   assert.equal(check.reasonCode, "RELEASE_VERSION_CHECKED");
   assert.equal(JSON.parse(await readFile(join(repos.engineRoot, "packages/core/package.json"), "utf8")).version, NEXT_VERSION);
   assert.equal(JSON.parse(await readFile(join(repos.helperRoot, "package.json"), "utf8")).version, NEXT_VERSION);
+  assert.deepEqual(await readFile(schemaPath), schemaBefore, "a package release version does not rewrite an unchanged schema identifier");
+  assert.equal(JSON.parse(await readFile(schemaPath, "utf8")).schemaVersion, FIXTURE_SCHEMA_VERSION);
   const changelog = await readFile(join(repos.engineRoot, "CHANGELOG.md"), "utf8");
   assert.match(changelog, new RegExp(`^## ${NEXT_VERSION}$`, "mu"));
   assert.match(changelog, /TCRN Workflow and tcrn-workflow-helper release names are retired/u);
@@ -272,6 +278,11 @@ test("488-AC1/AC2: the publish plan is inert; tag, push and GitHub release each 
   assert.equal(tag.reasonCode, "RELEASE_TAGS_CREATED");
   assert.equal(git(repos.engineRoot, ["tag", "--list", `v${NEXT_VERSION}`]), `v${NEXT_VERSION}`);
   assert.equal(git(repos.helperRoot, ["tag", "--list", `v${NEXT_VERSION}`]), `v${NEXT_VERSION}`);
+  await assert.rejects(
+    executeReleaseAction({ action: "tag", ...repos, version: NEXT_VERSION, env: environment }),
+    (error) => error.reasonCode === "RELEASE_TAG_EXISTS",
+    "one public version cannot reuse an existing local tag",
+  );
 
   const pushed = await executeReleaseAction({ action: "push", ...repos, version: NEXT_VERSION, env: environment });
   assert.equal(pushed.reasonCode, "RELEASE_PUSHED");

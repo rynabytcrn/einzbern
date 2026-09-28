@@ -14,16 +14,18 @@ The release triggers remain:
 | Host format break | A supported host changes a format this repository must produce or parse, such as a hook payload, settings shape, or session-start contract | A host version bump this repository parses unchanged |
 | Security fix | A defect with a security consequence in the shipped bytes | A hardening improvement with no defect behind it |
 
-The shared package version advances only on a protocol change. A host format break
-or security fix may ship without changing protocol identity. Both package manifests
-still carry the same version for every release.
+Every approved public release uses a fresh Semantic Version and `v<version>` tag,
+even when it does not change a protocol schema. Select the increment by the
+compatibility effect: breaking public changes use a major increment,
+backward-compatible functionality uses a minor increment, and compatible fixes use
+a patch increment. Both repositories carry the same version in every package
+manifest and generated versioned document. An existing changelog section or local
+or remote tag cannot be reused.
 
-There is a remaining policy conflict for those same-version releases: this script
-requires a new versioned CHANGELOG section and a fresh `v<version>` tag, while the
-prior release at that protocol version already owns both. `prepare` refuses an
-existing CHANGELOG section, and tag execution refuses an existing local or remote
-tag. This subtask does not choose a replacement versioning rule; see the package
-problem record before cutting a host-format or security-only release.
+`schemaVersion` identifies a protocol or document contract, independently of the
+package version. It changes when that contract's compatibility semantics change;
+a release can advance its Semantic Version while keeping every compatible schema
+identifier unchanged.
 
 ## Prepare the local release
 

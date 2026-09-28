@@ -17,12 +17,16 @@ export const P8_FAILURE_TERMINAL_SCHEMA = "tcrn.p8-child-failure.v1";
 export const P8_REPOSITORY = LEGACY_REPOSITORY_NAMES.engine;
 export const P8_WORKFLOW = "release";
 export const P8_SUPPORTED_AOS_RELEASES = Object.freeze([]);
+export const P8_RELEASE_ARCHIVE = `${BRAND.engine.id}-${P8_VERSION}.tar.gz`;
+export const P8_RELEASE_ARCHIVE_SHA256 = `${P8_RELEASE_ARCHIVE}.sha256`;
 export const P8_RELEASE_ARTIFACTS = Object.freeze([
   `${BRAND.engine.id}-${P8_VERSION}-source.tar`,
   "sbom.cdx.json",
   "release-manifest.json",
   "checksums.txt",
   "release-notes.md",
+  P8_RELEASE_ARCHIVE,
+  P8_RELEASE_ARCHIVE_SHA256,
 ]);
 
 /** A failed P8 run still emits one machine-readable terminal while retaining a nonzero exit. */
@@ -41,23 +45,24 @@ export function p8FailureTerminal({ reasonCode, error } = {}) {
   };
 }
 
-// TCRN-CROSS-STORY-461 R1 (#232). After a version bump dist/release can still hold the
-// previous release's source archive beside the new artifacts, and the closed
-// artifact set (P8_PRIVACY_RELEASE_ARTIFACT_SET) then fails. Stale artifacts go to an
-// ignored directory beside the release directory, never into dist/evidence.
+// TCRN-CROSS-STORY-461 R1 (#232), MIN-235 D18. After a version bump dist/release can still hold
+// the previous release's source archive or formal package beside the new artifacts, and the
+// closed artifact set then fails. Stale artifacts go to an ignored directory beside release,
+// never into dist/evidence.
 export const P8_STALE_RELEASE_DIRECTORY = "dist/stale-release";
-// A previous release archive may carry the old engine name; both prefixes are stale.
+// Previous release archives may carry the old engine name; both prefixes are stale.
 const P8_VERSIONED_SOURCE_ARCHIVE = new RegExp(`^(?:${BRAND.engine.id}|${LEGACY_ENGINE_NAME})-(\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?)-source\\.tar$`, "u");
+const P8_VERSIONED_PACKED_ARCHIVE = new RegExp(`^(?:${BRAND.engine.id}|${LEGACY_ENGINE_NAME})-(\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?)\\.tar\\.gz(?:\\.sha256)?$`, "u");
 
 /**
  * Name the stale release artifacts in a dist/release listing and where each one goes.
- * Pure: it reads and moves nothing. Only a source archive carrying a version other than
- * `version` is stale; every other unexpected name is left for the set assertion.
+ * Pure: it reads and moves nothing. Only a source archive or formal package carrying a version
+ * other than `version` is stale; every other unexpected name is left for the set assertion.
  */
 export function staleReleaseArtifactMoves(names, version = P8_VERSION) {
   assertion(Array.isArray(names) && names.every((name) => typeof name === "string"), "P8_RELEASE_LISTING_INVALID");
   return [...names].sort(compareCanonicalText).flatMap((name) => {
-    const stale = P8_VERSIONED_SOURCE_ARCHIVE.exec(name)?.[1];
+    const stale = P8_VERSIONED_SOURCE_ARCHIVE.exec(name)?.[1] ?? P8_VERSIONED_PACKED_ARCHIVE.exec(name)?.[1];
     return stale === undefined || stale === version ? [] : [{
       name,
       version: stale,
@@ -268,29 +273,49 @@ export function validateP8ReleaseDocuments(documents) {
   const manifestBasis = { ...manifest };
   delete manifestBasis.manifestDigest;
   assertion(manifest.manifestDigest === sha256(Buffer.from(canonicalJson(manifestBasis), "utf8")), "P8_RELEASE_MANIFEST_DIGEST");
-  // Cross-bind the manifest's asserted per-artifact digests to the actual shipped
-  // document bytes, so the manifest cannot claim a size/digest that differs from
-  // what is shipped (an external consumer verifies against these records).
-  assertion(Array.isArray(manifest.artifacts) && manifest.artifacts.length > 0, "P8_RELEASE_MANIFEST_INVALID", "artifacts");
+  assertion(manifest.schemaVersion !== manifest.version && manifest.schemaVersion !== manifest.tag, "P8_RELEASE_MANIFEST_INVALID", "schemaVersion must remain distinct from release identity");
+  // The formal archive has its own install-tree manifest; the P8 manifest binds the source,
+  // SBOM, formal archive and its sidecar, and release notes as bytes. These identifiers and
+  // digests are separate from the package version.
+  const expectedManifestPaths = [P8_RELEASE_ARTIFACTS[0], "sbom.cdx.json", P8_RELEASE_ARCHIVE, P8_RELEASE_ARCHIVE_SHA256, "release-notes.md"].sort(compareCanonicalText);
+  assertion(Array.isArray(manifest.artifacts) && manifest.artifacts.length === expectedManifestPaths.length && manifest.artifacts.every((artifact) => artifact && typeof artifact.path === "string"), "P8_RELEASE_MANIFEST_INVALID", "artifacts");
+  const manifestPaths = manifest.artifacts.map((artifact) => artifact?.path).sort(compareCanonicalText);
+  assertion(JSON.stringify(manifestPaths) === JSON.stringify(expectedManifestPaths), "P8_RELEASE_MANIFEST_INVALID", "artifacts");
   for (const artifact of manifest.artifacts) {
     const bytes = documents.get(artifact.path);
     assertion(Buffer.isBuffer(bytes) && artifact.sha256 === sha256(bytes) && artifact.size === bytes.length, "P8_RELEASE_MANIFEST_ARTIFACT_MISMATCH", String(artifact.path));
   }
+  const archiveBytes = documents.get(P8_RELEASE_ARCHIVE);
+  const archiveChecksum = documents.get(P8_RELEASE_ARCHIVE_SHA256).toString("utf8");
+  assertion(archiveChecksum === `${sha256(archiveBytes)}  ${P8_RELEASE_ARCHIVE}\n`, "P8_RELEASE_ARCHIVE_CHECKSUM_MISMATCH");
   const expected = new Map([...documents].filter(([path]) => path !== "checksums.txt").map(([path, bytes]) => [path, sha256(bytes)]));
-  const lines = documents.get("checksums.txt").toString("utf8").trim().split("\n").filter(Boolean);
+  const expectedPaths = [...expected.keys()].sort(compareCanonicalText);
+  const checksumText = documents.get("checksums.txt").toString("utf8");
+  assertion(checksumText.endsWith("\n") && !checksumText.endsWith("\n\n"), "P8_RELEASE_CHECKSUMS_INVALID");
+  const lines = checksumText.slice(0, -1).split("\n");
   assertion(lines.length === expected.size, "P8_RELEASE_CHECKSUMS_INVALID");
+  const checkedPaths = [];
   for (const line of lines) {
     const match = line.match(/^([a-f0-9]{64})  ([^\s]+)$/u);
     assertion(match, "P8_RELEASE_CHECKSUMS_INVALID", line);
+    checkedPaths.push(match[2]);
     assertion(expected.get(match[2]) === match[1], "P8_RELEASE_CHECKSUM_MISMATCH", match[2]);
   }
+  assertion(JSON.stringify(checkedPaths) === JSON.stringify(expectedPaths), "P8_RELEASE_CHECKSUMS_INVALID");
   return { releaseStatus: "accepted_release", supportedAosReleases: [], artifactCount: documents.size };
 }
 
-export function buildP8ReleaseArtifacts({ sourceArchive, sbom }) {
-  assertion(Buffer.isBuffer(sourceArchive) && Buffer.isBuffer(sbom), "P8_RELEASE_DOCUMENT_INVALID");
+export function buildP8ReleaseArtifacts({ sourceArchive, sbom, releaseArchive, releaseArchiveSha256 }) {
+  assertion(Buffer.isBuffer(sourceArchive) && Buffer.isBuffer(sbom) && Buffer.isBuffer(releaseArchive) && Buffer.isBuffer(releaseArchiveSha256), "P8_RELEASE_DOCUMENT_INVALID");
   const sourcePath = P8_RELEASE_ARTIFACTS[0];
   const notes = Buffer.from(`# ${BRAND.engine.name} ${P8_VERSION}\n\nThis is an immutable unpublished local release candidate. It supports no AOS releases, performs no publication, and is not a supported release.\n`, "utf8");
+  const releaseRecords = [
+    documentRecord(sourcePath, sourceArchive),
+    documentRecord("sbom.cdx.json", sbom),
+    documentRecord(P8_RELEASE_ARCHIVE, releaseArchive),
+    documentRecord(P8_RELEASE_ARCHIVE_SHA256, releaseArchiveSha256),
+    documentRecord("release-notes.md", notes),
+  ];
   const manifestBasis = {
     schemaVersion: "tcrn.workflow-release-candidate-manifest.v1",
     repository: P8_REPOSITORY,
@@ -299,19 +324,25 @@ export function buildP8ReleaseArtifacts({ sourceArchive, sbom }) {
     tag: P8_TAG,
     releaseStatus: "accepted_release",
     supportedAosReleases: P8_SUPPORTED_AOS_RELEASES,
-    artifacts: [documentRecord(sourcePath, sourceArchive), documentRecord("sbom.cdx.json", sbom), documentRecord("release-notes.md", notes)],
+    artifacts: releaseRecords.sort((left, right) => compareCanonicalText(left.path, right.path)),
   };
   const manifest = Buffer.from(`${canonicalJson({ ...manifestBasis, manifestDigest: sha256(Buffer.from(canonicalJson(manifestBasis), "utf8")) })}\n`, "utf8");
-  // The manifest and the checksums are P8's local record of the candidate's own bytes, kept
-  // for the version and digest checks in validateP8ReleaseDocuments; nothing signs them and
-  // P8 emits no provenance statement (TCRN-CROSS-STORY-488 R3). Release trust is the
-  // install-tree digest (packages/core/src/install-tree-digest.ts).
-  const checksums = Buffer.from([
-    documentRecord(sourcePath, sourceArchive), documentRecord("sbom.cdx.json", sbom), documentRecord("release-manifest.json", manifest), documentRecord("release-notes.md", notes),
-  ].sort((left, right) => compareCanonicalText(left.path, right.path)).map((record) => `${record.sha256}  ${record.path}`).join("\n") + "\n", "utf8");
-  const artifacts = new Map([
-    [sourcePath, sourceArchive], ["sbom.cdx.json", sbom], ["release-manifest.json", manifest], ["checksums.txt", checksums], ["release-notes.md", notes],
-  ]);
+  // P8's manifest and checksums are local records of candidate bytes. The formal archive sidecar
+  // covers the complete gzip package (including its manifest); the install-tree digest excludes
+  // only its own manifest. No signing or provenance statement is emitted.
+  const records = [
+    [sourcePath, sourceArchive],
+    ["sbom.cdx.json", sbom],
+    ["release-manifest.json", manifest],
+    ["release-notes.md", notes],
+    [P8_RELEASE_ARCHIVE, releaseArchive],
+    [P8_RELEASE_ARCHIVE_SHA256, releaseArchiveSha256],
+  ];
+  const checksums = Buffer.from([...records]
+    .sort(([left], [right]) => compareCanonicalText(left, right))
+    .map(([path, bytes]) => `${sha256(bytes)}  ${path}`)
+    .join("\n") + "\n", "utf8");
+  const artifacts = new Map([...records, ["checksums.txt", checksums]]);
   validateP8ReleaseDocuments(artifacts);
   return artifacts;
 }

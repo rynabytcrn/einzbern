@@ -25,6 +25,8 @@ import { canonicalJson, canonicalSha256, compareCanonicalText, deriveStableId } 
 
 import {
   P8_RELEASE_ARTIFACTS,
+  P8_RELEASE_ARCHIVE,
+  P8_RELEASE_ARCHIVE_SHA256,
   P8_SUPPORTED_AOS_RELEASES,
   P8_TAG,
   P8_VERSION,
@@ -41,6 +43,14 @@ import {
 } from "../scripts/lib/p8-workflow-rc.mjs";
 import { withExclusiveOutputSession } from "../scripts/lib/safe-io.mjs";
 
+function releaseArchiveInputs(bytes = Buffer.from(`formal package ${P8_VERSION}\n`, "utf8")) {
+  const digest = createHash("sha256").update(bytes).digest("hex");
+  return {
+    releaseArchive: bytes,
+    releaseArchiveSha256: Buffer.from(`${digest}  ${P8_RELEASE_ARCHIVE}\n`, "utf8"),
+  };
+}
+
 test("P8 rebuilds the exact tracked-file USTAR archive in two independent disposable roots", async () => {
   // The source set is the tracked file list since the allowlist retired (TCRN-CROSS-STORY-467 R2).
   const tracked = execFileSync("git", ["ls-files", "-z"], { encoding: "utf8" }).split("\0").filter((path) => path.length > 0);
@@ -56,16 +66,24 @@ test("P8 rebuilds the exact tracked-file USTAR archive in two independent dispos
 test("P8 creates a closed unpublished release candidate without supported AOS releases", () => {
   const source = Buffer.from("P8 source fixture\n", "utf8");
   const sbom = Buffer.from('{"bomFormat":"CycloneDX"}\n', "utf8");
-  const artifacts = buildP8ReleaseArtifacts({ sourceArchive: source, sbom });
+  const artifacts = buildP8ReleaseArtifacts({ sourceArchive: source, sbom, ...releaseArchiveInputs() });
   assert.deepEqual([...artifacts.keys()].sort(), [...P8_RELEASE_ARTIFACTS].sort());
+  assert.equal(P8_RELEASE_ARTIFACTS.length, 7);
+  assert.ok(P8_RELEASE_ARTIFACTS.includes(P8_RELEASE_ARCHIVE));
+  assert.ok(P8_RELEASE_ARTIFACTS.includes(P8_RELEASE_ARCHIVE_SHA256));
   assert.equal(P8_VERSION, "1.2.1");
   assert.equal(P8_TAG, "v1.2.1");
   assert.deepEqual(P8_SUPPORTED_AOS_RELEASES, []);
   const manifest = JSON.parse(artifacts.get("release-manifest.json").toString("utf8"));
+  assert.equal(manifest.schemaVersion, "tcrn.workflow-release-candidate-manifest.v1");
+  assert.notEqual(manifest.schemaVersion, manifest.version);
+  assert.equal(manifest.version, P8_VERSION);
   assert.equal(manifest.releaseStatus, "accepted_release");
   assert.deepEqual(manifest.supportedAosReleases, []);
-  // Five since the in-toto build statement retired with the trust root (TCRN-CROSS-STORY-467 R2).
-  assert.equal(p8ArtifactRecords(artifacts).length, 5);
+  assert.equal(p8ArtifactRecords(artifacts).length, 7);
+  assert.deepEqual(manifest.artifacts.map((artifact) => artifact.path).sort(compareCanonicalText), [
+    P8_RELEASE_ARTIFACTS[0], "sbom.cdx.json", P8_RELEASE_ARCHIVE, P8_RELEASE_ARCHIVE_SHA256, "release-notes.md",
+  ].sort(compareCanonicalText));
   // TCRN-CROSS-STORY-488 R3: the manifest and the checksums stay as P8's local record of the
   // candidate's bytes. Nothing in the set is a signature, a key or a provenance statement, and
   // the manifest names no signer.
@@ -96,7 +114,7 @@ test("a failed P8 command has a structured failure terminal and cannot claim suc
 // TCRN-CROSS-STORY-488 R3: the version check P8 keeps. A manifest that names another version
 // or another tag than the one P8 judges is refused, however intact the rest of it is.
 test("P8 refuses a release manifest that names another version or tag", () => {
-  const artifacts = buildP8ReleaseArtifacts({ sourceArchive: Buffer.from("P8 source fixture\n", "utf8"), sbom: Buffer.from('{"bomFormat":"CycloneDX"}\n', "utf8") });
+  const artifacts = buildP8ReleaseArtifacts({ sourceArchive: Buffer.from("P8 source fixture\n", "utf8"), sbom: Buffer.from('{"bomFormat":"CycloneDX"}\n', "utf8"), ...releaseArchiveInputs() });
   const manifest = JSON.parse(artifacts.get("release-manifest.json").toString("utf8"));
   assert.equal(validateP8ReleaseDocuments(artifacts).releaseStatus, "accepted_release");
   for (const drift of [{ version: "0.0.0" }, { tag: "v0.0.0" }]) {
@@ -104,6 +122,34 @@ test("P8 refuses a release manifest that names another version or tag", () => {
     documents.set("release-manifest.json", Buffer.from(`${JSON.stringify({ ...manifest, ...drift })}\n`, "utf8"));
     assert.throws(() => validateP8ReleaseDocuments(documents), (error) => error.reasonCode === "P8_RELEASE_MANIFEST_INVALID", JSON.stringify(drift));
   }
+});
+
+test("P8 refuses missing, extra, or altered members of its exact seven-artifact set", () => {
+  const artifacts = buildP8ReleaseArtifacts({
+    sourceArchive: Buffer.from("P8 source fixture\n", "utf8"),
+    sbom: Buffer.from('{"bomFormat":"CycloneDX"}\n', "utf8"),
+    ...releaseArchiveInputs(),
+  });
+  const withoutPackage = new Map(artifacts);
+  withoutPackage.delete(P8_RELEASE_ARCHIVE);
+  assert.throws(() => validateP8ReleaseDocuments(withoutPackage), (error) => error.reasonCode === "P8_RELEASE_DOCUMENT_SET");
+  const withExtra = new Map(artifacts);
+  withExtra.set(`${P8_RELEASE_ARCHIVE}.sig`, Buffer.from("unapproved signature file\n", "utf8"));
+  assert.throws(() => validateP8ReleaseDocuments(withExtra), (error) => error.reasonCode === "P8_RELEASE_DOCUMENT_SET");
+  assert.equal(p8ReleaseArtifactSetMatches(P8_RELEASE_ARTIFACTS.filter((name) => name !== P8_RELEASE_ARCHIVE_SHA256)), false);
+  assert.equal(p8ReleaseArtifactSetMatches([...P8_RELEASE_ARTIFACTS, "unexpected.txt"]), false);
+
+  const alteredPackage = new Map(artifacts);
+  alteredPackage.set(P8_RELEASE_ARCHIVE, Buffer.concat([artifacts.get(P8_RELEASE_ARCHIVE), Buffer.from("tamper", "utf8")]));
+  assert.throws(() => validateP8ReleaseDocuments(alteredPackage), (error) => error.reasonCode === "P8_RELEASE_MANIFEST_ARTIFACT_MISMATCH");
+
+  const alteredSidecar = new Map(artifacts);
+  alteredSidecar.set(P8_RELEASE_ARCHIVE_SHA256, Buffer.from("0".repeat(64) + `  ${P8_RELEASE_ARCHIVE}\n`, "utf8"));
+  assert.throws(() => validateP8ReleaseDocuments(alteredSidecar), (error) => error.reasonCode === "P8_RELEASE_MANIFEST_ARTIFACT_MISMATCH");
+
+  const alteredNotes = new Map(artifacts);
+  alteredNotes.set("release-notes.md", Buffer.from("tampered notes\n", "utf8"));
+  assert.throws(() => validateP8ReleaseDocuments(alteredNotes), (error) => error.reasonCode === "P8_RELEASE_MANIFEST_ARTIFACT_MISMATCH");
 });
 
 // TCRN-CROSS-STORY-461 R1 (SUB-240, #232). A temporary repository with an ignored dist tree:
@@ -157,6 +203,26 @@ test("STORY-461 SUB-240: a previous-version source archive moves to dist/stale-r
   assert.deepEqual(await readFile(join(root, "dist", "stale-release", "1.1.2", PREVIOUS_SOURCE_ARCHIVE)), previousBytes);
   assert.deepEqual(await treeBytes(root, "dist/evidence"), evidenceBefore, "dist/evidence is unchanged byte for byte");
   assert.deepEqual(await withExclusiveOutputSession(root, () => moveStaleReleaseArtifacts(root)), [], "a second run has nothing left to move");
+});
+
+test("MIN-235 D18: previous formal archives and their sidecars move together out of the exact P8 set", async (context) => {
+  const oldArchive = `einzbern-1.1.2.tar.gz`;
+  const oldSidecar = `${oldArchive}.sha256`;
+  const root = await staleReleaseFixture(context, [oldArchive, oldSidecar, ...P8_RELEASE_ARTIFACTS]);
+  const before = new Map(await Promise.all([oldArchive, oldSidecar].map(async (name) => [name, await readFile(join(root, "dist/release", name))])));
+
+  const moved = await withExclusiveOutputSession(root, () => moveStaleReleaseArtifacts(root));
+
+  assert.equal(p8ReleaseArtifactSetMatches(await releaseNames(root)), true);
+  assert.deepEqual((await releaseNames(root)).sort(compareCanonicalText), [...P8_RELEASE_ARTIFACTS].sort(compareCanonicalText));
+  assert.deepEqual(moved.map(({ from, to, version }) => ({ from, to, version })), [oldArchive, oldSidecar].map((name) => ({
+    from: `dist/release/${name}`,
+    to: `dist/stale-release/1.1.2/${name}`,
+    version: "1.1.2",
+  })));
+  for (const name of [oldArchive, oldSidecar]) {
+    assert.deepEqual(await readFile(join(root, "dist/stale-release/1.1.2", name)), before.get(name));
+  }
 });
 
 test("STORY-461 SUB-240: with no stale archive nothing moves and an unknown file is left for the set assertion", async (context) => {

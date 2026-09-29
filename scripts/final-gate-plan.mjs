@@ -4,7 +4,7 @@
 // This module plans work; it never turns a missing or failed result into a cache hit.
 
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { spawnSync } from "node:child_process";
 import { dirname, isAbsolute, join, resolve } from "node:path";
@@ -32,6 +32,9 @@ export const GATE_RECEIPT_AUTHORITY_VERSION = "tcrn.gate-receipt-authority.v1";
 export const GATE_RECEIPT_DOCUMENT_VERSION = "tcrn.gate-runner-receipt.v1";
 const RECEIPT_RUNNER_VERSION = "tcrn-code-owned-runner.v1";
 const RECEIPT_AUTHORITIES = new WeakMap();
+// Every store this process made, removed when the process exits (TCRN-CROSS-SUB-376, Q12).
+const RECEIPT_STORE_ROOTS = new Set();
+let receiptStoreRemovalRegistered = false;
 // A plan is executable only while this process still owns the opaque context
 // that created it.  The public JSON shape is an audit projection, not an
 // authority: in particular, `dynamic`, `integrity`, and `executable` may never
@@ -121,14 +124,37 @@ function bindReceiptAuthority(authority, requiredGateIds) {
   if (state.requiredGateIds === null) state.requiredGateIds = ids;
 }
 
+// A receipt is trusted only through the registration its authority keeps in this process's
+// memory, so a store is of no use once the process is gone. Until TCRN-CROSS-SUB-376 (Q12) no store
+// was ever removed and every run left a tcrn-code-owned-gates-* directory in TMPDIR. A store now
+// lasts exactly as long as its process: every receipt stays on disk for every query made while the
+// process runs, and the stores go when it exits. Removal is synchronous because an exit listener
+// cannot wait; it only ever removes stores this process made, and a store it cannot remove is left
+// where it is rather than changing the exit code of a run whose verdict is already written.
+function removeReceiptStores() {
+  for (const storeRoot of RECEIPT_STORE_ROOTS) {
+    try {
+      rmSync(storeRoot, { recursive: true, force: true });
+    } catch {
+      // Left in place, as every store was before; the process's own result stands.
+    }
+  }
+  RECEIPT_STORE_ROOTS.clear();
+}
+
 /**
  * Make an opaque, process-local issuer/query context for gate receipts.  The
  * filesystem location is intentionally generated here; a caller may inspect a
  * returned descriptor, but cannot make an arbitrary store or marker become an
- * issuer record.
+ * issuer record.  The store is removed when this process exits.
  */
 export function createGateReceiptAuthority() {
   const storeRoot = mkdtempSync(join(tmpdir(), "tcrn-code-owned-gates-"));
+  RECEIPT_STORE_ROOTS.add(storeRoot);
+  if (!receiptStoreRemovalRegistered) {
+    receiptStoreRemovalRegistered = true;
+    process.once("exit", removeReceiptStores);
+  }
   const authority = Object.freeze({ schemaVersion: GATE_RECEIPT_AUTHORITY_VERSION, storeRoot });
   RECEIPT_AUTHORITIES.set(authority, { storeRoot, records: new Map(), requiredGateIds: null });
   return authority;

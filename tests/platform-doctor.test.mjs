@@ -29,7 +29,6 @@ import { HOST_HOOK_HOSTS, mergeHostHooks, planHostHooks } from "../dist/build/pa
 import { BRAND, DIRECTORY, INSTALL_MANIFEST, LEGACY_BRAND_NAME, LEGACY_ENGINE_NAME, LOCAL_DIRECTORY_NAMES, initializeLibrary, materializeWorkspace, workspaceBudgets } from "../dist/build/packages/core/src/index.js";
 import { PROTOCOL_LIMITS, canonicalSha256 } from "../dist/build/packages/protocol/src/index.js";
 
-const topology = "## 三、分区拓扑\n";
 const FIXTURE_COMMIT = "f".repeat(40);
 const launchdLabel = "com.tcrn.platform.local-snapshot";
 const acceptanceRosterFixture = JSON.parse(await readFile(new URL("./fixtures/acceptance-gate-groups.json", import.meta.url), "utf8"));
@@ -93,7 +92,7 @@ function verdictDocumentForBindings(roster, bindings) {
   };
 }
 
-async function fixture(context, { agents = `${topology}fixture\n`, chain = true, git = false, whitelistGit = false, claude = "@AGENTS.md\n", roster = syntheticRoster(), trackedAgents = true, docsDirectory = "platform-docs" } = {}) {
+async function fixture(context, { agents = "fixture\n", chain = true, git = false, whitelistGit = false, claude = "@AGENTS.md\n", roster = syntheticRoster(), docsDirectory = "platform-docs" } = {}) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-platform-doctor-")));
   context.after(() => rm(base, { recursive: true, force: true }));
   const root = join(base, "platform");
@@ -118,12 +117,6 @@ async function fixture(context, { agents = `${topology}fixture\n`, chain = true,
       verdicts: Object.fromEntries(roster.groups.filter((group) => group.id !== "chain-validate").map((group) => [group.id, { verdict: "green", recordedAt, commit: FIXTURE_COMMIT }])),
     }, null, 2)}\n`);
   }
-  // STORY-300 Wave 2.2: the identity file's tracked copy, byte-identical unless a
-  // case deliberately diverges them.
-  if (agents !== null && trackedAgents !== false) {
-    await mkdir(join(root, docsDirectory), { recursive: true });
-    await writeFile(join(root, docsDirectory, "platform-root-agents.md"), trackedAgents === true || trackedAgents === undefined ? agents : trackedAgents);
-  }
   return root;
 }
 
@@ -132,7 +125,7 @@ test("a complete synthetic platform container is green", async (context) => {
   const result = await inspectPlatform(root, { includeInstallSurface: false });
   assert.equal(result.ok, true);
   assert.equal(result.reasonCode, "PLATFORM_LAYOUT_HEALTHY");
-  assert.deepEqual(result.checks.map((item) => item.ok), [true, true, true, true, true, true, true, true, true]);
+  assert.deepEqual(result.checks.map((item) => item.ok), [true, true, true, true, true, true, true]);
 });
 
 test("STORY-371: Claude's bridge is exact and arbitrary prose is red", async (context) => {
@@ -255,22 +248,32 @@ test("MIN-235 D3: doctor subchecks cannot be blanket-waived or promoted to a uni
   assert.ok(leg.invalidBatchApplicability.includes("platform-layout.subchecks.harnessSurface"));
 });
 
-// Red legs for the identity file's history, both observed before this landed. Two
-// copies of a governing document is normally the defect; it is admissible only
-// because one is checked against the other on every run, and these are what make
-// that check real.
-test("STORY-300: an untracked platform identity file is a red leg", async (context) => {
-  const root = await fixture(context, { trackedAgents: false });
+// TCRN-CROSS-SUB-376 (STORY-491 R2). The leg that required a topology section in the container
+// AGENTS.md and the leg that held it byte-equal to a tracked copy in the platform documents retire
+// with the layout rendering pipeline. Neither is reported on either surface, a container with
+// neither the section nor the copy is green (no fixture here writes the copy any more), and every
+// other leg keeps its name, order and reason code: an AGENTS.md that CLAUDE.md imports and that is
+// gone is still named, by the bridge leg. Red leg: restore either leg and the name list grows.
+test("SUB-376: the container AGENTS.md topology and tracked-copy legs are retired", async (context) => {
+  const retired = ["platformAgents", "platformAgentsHistory"];
+  const root = await fixture(context, { agents: "identity retained, no topology section\n" });
   const result = await inspectPlatform(root, { includeInstallSurface: false });
-  assert.equal(result.ok, false);
-  assert.equal(result.checks.find((item) => item.name === "platformAgentsHistory").reasonCode, "PLATFORM_AGENTS_UNTRACKED");
-});
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.deepEqual(result.checks.map((item) => item.name), [
+    "platformRoot", "acceptanceGateGroups", "workspaceContainer", "workspaceStorageShape", "containerOutsideGit", "claudeBridge", "bridgeSyntax",
+  ]);
 
-test("STORY-300: the identity file and its tracked copy may not diverge in silence", async (context) => {
-  const root = await fixture(context, { trackedAgents: `${topology}fixture\nan edit that never reached the tracked copy\n` });
-  const result = await inspectPlatform(root, { includeInstallSurface: false });
-  assert.equal(result.ok, false);
-  assert.equal(result.checks.find((item) => item.name === "platformAgentsHistory").reasonCode, "PLATFORM_AGENTS_HISTORY_DIVERGED");
+  const missing = await fixture(context, { agents: null });
+  const missingResult = await inspectPlatform(missing, { includeInstallSurface: false });
+  assert.equal(missingResult.ok, false);
+  assert.equal(missingResult.reasonCode, "PLATFORM_BRIDGE_TARGET_UNAVAILABLE");
+  assert.deepEqual(missingResult.checks.find((item) => item.name === "bridgeSyntax").failures.map(({ path, target }) => ({ path, target })), [{ path: "CLAUDE.md", target: "AGENTS.md" }]);
+  assert.deepEqual(missingResult.checks.filter((item) => retired.includes(item.name)), []);
+
+  const install = await completeInstallFixture(context);
+  const installResult = await inspectInstallFixture(install);
+  assert.equal(installResult.ok, true, JSON.stringify(installResult.checks.filter((item) => !item.ok)));
+  assert.deepEqual(installResult.checks.filter((item) => retired.includes(item.name)), []);
 });
 
 test("STORY-300: an acceptance roster entry missing a field is named by id", async (context) => {
@@ -280,29 +283,6 @@ test("STORY-300: an acceptance roster entry missing a field is named by id", asy
   const result = await inspectPlatform(root, { includeInstallSurface: false });
   assert.equal(result.ok, false);
   assert.deepEqual(result.checks.find((item) => item.name === "acceptanceGateGroups").incomplete, ["platform-layout"]);
-});
-
-test("an empty platform AGENTS.md is a load-bearing red leg", async (context) => {
-  const root = await fixture(context, { agents: "" });
-  const result = await inspectPlatform(root, { includeInstallSurface: false });
-  assert.equal(result.ok, false);
-  assert.equal(result.reasonCode, "PLATFORM_AGENTS_EMPTY");
-  assert.equal(result.checks.find((item) => item.name === "platformAgents").reasonCode, "PLATFORM_AGENTS_EMPTY");
-});
-
-test("a missing platform AGENTS.md is named separately", async (context) => {
-  const root = await fixture(context, { agents: null });
-  const result = await inspectPlatform(root, { includeInstallSurface: false });
-  assert.equal(result.ok, false);
-  assert.equal(result.reasonCode, "PLATFORM_AGENTS_MISSING");
-  // A present, non-empty file with the marker removed must take the distinct
-  // topology-negative path rather than being conflated with absence.
-  const markerRoot = await fixture(context, { agents: "identity retained but topology omitted\n" });
-  const missingMarker = await inspectPlatform(markerRoot, { includeInstallSurface: false });
-  assert.equal(missingMarker.ok, false);
-  const leg = missingMarker.checks.find((item) => item.name === "platformAgents");
-  assert.equal(leg.reasonCode, "PLATFORM_AGENTS_TOPOLOGY_SECTION_MISSING");
-  assert.equal(leg.marker, topology.trim());
 });
 
 test("a missing chain container is a distinct red leg", async (context) => {
@@ -333,16 +313,6 @@ test("a missing Claude bridge is named separately", async (context) => {
   const result = await inspectPlatform(root, { includeInstallSurface: false });
   assert.equal(result.ok, false);
   assert.equal(result.reasonCode, "PLATFORM_CLAUDE_BRIDGE_MISSING");
-});
-
-test("an empty misplaced AGENTS.md remains visible before the root is repaired", async (context) => {
-  const root = await fixture(context, { agents: null });
-  await mkdir(join(root, "classification"));
-  await writeFile(join(root, "classification", "AGENTS.md"), "");
-  const result = await inspectPlatform(root, { includeInstallSurface: false });
-  assert.equal(result.ok, false);
-  assert.equal(result.reasonCode, "PLATFORM_AGENTS_EMPTY");
-  assert.equal(result.checks.find((item) => item.name === "platformAgents").path, "classification/AGENTS.md");
 });
 
 test("a missing --platform-root argument fails closed", async () => {
@@ -413,7 +383,6 @@ async function completeInstallFixture(context, { engineVersion = "0.11.15", help
     schemaVersion: "tcrn.acceptance-verdicts.v1",
     verdicts: Object.fromEntries(completeRoster.groups.filter((group) => group.id !== "chain-validate").map((group) => [group.id, { verdict: "green", recordedAt: rosterRecordedAt, commit: FIXTURE_COMMIT }])),
   }, null, 2)}\n`);
-  await writeFile(join(root, docsDirectory, "platform-root-agents.md"), `${topology}fixture\n`);
   for (const entry of INSTALL_MANIFEST.items) {
     const path = entry.pathTemplate.replaceAll("<PLATFORM_ROOT>", root).replaceAll("<HOME>", home);
     if (entry.acceptanceProbe.startsWith("probe:regular-directory") || entry.acceptanceProbe.startsWith("probe:engine-version")) await mkdir(path, { recursive: true });
@@ -441,7 +410,7 @@ async function completeInstallFixture(context, { engineVersion = "0.11.15", help
       await writeFile(join(root, expected.hooksFile), `${JSON.stringify(mergeHostHooks(null, expected).document, null, 2)}\n`);
     }
   }
-  await writeFile(join(root, "AGENTS.md"), `${topology}fixture\n`);
+  await writeFile(join(root, "AGENTS.md"), "fixture\n");
   await writeFile(join(root, "CLAUDE.md"), "@AGENTS.md\n");
   await mkdir(managedRepoRoot, { recursive: true });
   await writeFile(join(managedRepoRoot, "package.json"), `${JSON.stringify({ version: engineVersion })}\n`);

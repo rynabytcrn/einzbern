@@ -95,7 +95,8 @@ const projects: readonly InstallManifestProject[] = Object.freeze([
 export const INSTALL_MANIFEST_ITEMS: readonly InstallManifestItem[] = Object.freeze([
   item("container.claude-settings", "container", "claude", "<PLATFORM_ROOT>/.claude/settings.json", "engine-adapter", "probe:regular-file"),
   item("container.mcp", "container", "claude", "<PLATFORM_ROOT>/.mcp.json", "engine-adapter", "probe:regular-file"),
-  item("container.platform-agents", "container", "shared", "<PLATFORM_ROOT>/AGENTS.md", "engine-adapter", "probe:regular-file"),
+  // The container AGENTS.md is no longer an install obligation: the layout rendering pipeline
+  // that owned it is retired (TCRN-CROSS-STORY-491 R2), and install wiring no longer probes it.
   item("container.platform-claude-bridge", "container", "claude", "<PLATFORM_ROOT>/CLAUDE.md", "engine-adapter", "probe:regular-file"),
   // The two inert adapter bundles and their install receipts are retired with the hook
   // scripts they carried (TCRN-CROSS-STORY-467 R3).
@@ -139,7 +140,6 @@ export const INSTALL_MANIFEST_ITEMS: readonly InstallManifestItem[] = Object.fre
 const REQUIRED_ITEM_ID_CATALOG = [
   "container.claude-settings",
   "container.mcp",
-  "container.platform-agents",
   "container.platform-claude-bridge",
   "machine.claude-settings",
   "machine.claude-skill",

@@ -21,7 +21,6 @@ import { INSTALL_MANIFEST } from "../dist/build/packages/core/src/index.js";
 
 const FIXTURE_COMMIT = "f".repeat(40);
 const launchdLabel = "com.tcrn.platform.local-snapshot";
-const topology = "## 三、分区拓扑\n";
 
 function syntheticRoster(count = 7) {
   return {
@@ -42,7 +41,7 @@ async function minimalFixture(context) {
   context.after(() => rm(base, { recursive: true, force: true }));
   const root = join(base, "platform");
   await mkdir(root, { recursive: true });
-  await writeFile(join(root, "AGENTS.md"), `${topology}fixture\n`);
+  await writeFile(join(root, "AGENTS.md"), "fixture\n");
   await writeFile(join(root, "CLAUDE.md"), "@AGENTS.md\n");
   await mkdir(join(root, ".tcrn-workspace", "cross-project", "workspace"), { recursive: true });
   const roster = syntheticRoster(7);
@@ -56,8 +55,6 @@ async function minimalFixture(context) {
       verdicts: Object.fromEntries(roster.groups.map((group) => [group.id, { verdict: "green", recordedAt, commit: FIXTURE_COMMIT }])),
     }, null, 2)}\n`
   );
-  await mkdir(join(root, "platform-docs"), { recursive: true });
-  await writeFile(join(root, "platform-docs", "platform-root-agents.md"), `${topology}fixture\n`);
   return root;
 }
 

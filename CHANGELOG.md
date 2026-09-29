@@ -920,6 +920,23 @@ target, and every file and empty directory it left there, relative to the target
 in `written`; nothing is removed, so an import into that target again is refused as not empty until
 it is moved aside.
 
+The platform doctor no longer checks the container `AGENTS.md`, whose layout rendering pipeline is
+retired (TCRN-CROSS-STORY-491 R2, TCRN-CROSS-SUB-376; `scripts/platform-doctor.mjs`,
+`packages/core/src/install-manifest.ts`). Its output drops the `platformAgents` leg (a non-empty
+file with the topology section; `PLATFORM_AGENTS_MISSING`, `PLATFORM_AGENTS_NOT_FILE`,
+`PLATFORM_AGENTS_EMPTY`, `PLATFORM_AGENTS_TOPOLOGY_SECTION_MISSING`) and the `platformAgentsHistory`
+leg (byte equality with `platform-docs/platform-root-agents.md`; `PLATFORM_AGENTS_UNTRACKED`,
+`PLATFORM_AGENTS_HISTORY_DIVERGED`), and `install-manifest` names 17 items: `container.platform-agents`
+is neither an item nor a required id, so `installWiring` no longer probes the file. Every other leg
+keeps its name, order and reason codes, and a `CLAUDE.md` whose import target is gone is still named
+by `bridgeSyntax` (`PLATFORM_BRIDGE_TARGET_UNAVAILABLE`). Gate receipt stores no longer pile up in
+TMPDIR (Q12; `scripts/final-gate-plan.mjs`): each receipt authority still makes its
+`tcrn-code-owned-gates-*` store with `mkdtemp`, and every receipt in it stays on disk and trusted for
+every query its process makes, but the stores a process made are removed when that process exits,
+which the tests and `batch:formal` both inherit, so the `storeRoot` a batch reports is gone once the
+run ends. A store that cannot be removed is left where it is and never changes the exit code. Receipt
+documents, descriptors, trust checks and reason codes are unchanged.
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

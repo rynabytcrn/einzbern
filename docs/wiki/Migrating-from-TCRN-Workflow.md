@@ -41,7 +41,7 @@ einzbern setup --mode migrate --project <项目目录> --mapping <迁移映射 J
 - `deviceSettings`：随迁的门户设置。
 - `hostCleanup`：每一项清理，含类别 `kind`、路径、动作（改写 `update` 或移走 `move`）与去向 `into`。
 
-`writes`、`backups`、`blockers` 与其他模式相同。有阻塞项时不会执行。
+`writes`、`backups`、`blockers` 与其他模式相同。有阻塞项时不会执行。旧知识库读不通的分区，另有一条知识类阻塞项，见下文「知识随迁」。
 
 ## 执行
 
@@ -68,6 +68,43 @@ einzbern setup --mode migrate --project <项目目录> --mapping <迁移映射 J
 - 另列出写入的文件、备份目录与 `selfCheck`。
 
 用同一映射再运行一次，什么也不写。
+
+## 知识随迁
+
+导入把旧工作区的知识库原样带进库的 `crest/`：
+
+- 带走的是旧控制目录里 `knowledge/` 的标记 `store.json`、`metadata/` 与 `bodies/`（含分段），逐字节复制并按 SHA-256 核对。旧的 `views/` 不带走，库的索引视图是本机缓存。
+- 库按这种布局读取旧卡，新卡作为事件写在旁边；带过来的文件不被改写。
+- 旧引擎在元数据里标了 `extensions.supersededBy` 的卡读作已移除：`knowledge-list` 只在 `--status removed` 或 `--status all` 时列出它。它照样随迁。
+
+`library-import-legacy` 的回执里，dry-run 与正式导入同一口径。旧工作区没有知识库时 `knowledge` 为 `null`，否则各字段含义如下：
+
+| 字段 | 含义 |
+| --- | --- |
+| `cards` | 旧库的全部卡数，任何状态都计（`knowledge-list --selection all --status all`） |
+| `removedCards` | 其中读作已移除的卡数（`--status removed`） |
+| `defaultCards` | 默认列出的卡数（只含有效卡） |
+| `files`、`bytes` | 带进 `crest/` 的文件数与字节数 |
+
+复制之后，库须答出同样的三个数，否则导入停在 `LEGACY_IMPORT_MISMATCH`。执行前想看某个分区的卡数，运行 `library-import-legacy --legacy <旧工作区> --dry-run true --at <UTC 时刻>`，它不写任何文件。
+
+旧知识库读不通时，该分区被阻断：
+
+- 计划里这次拒绝单列为一条阻塞项，`path` 是出问题的文件；针对整个知识库时是知识库本身。
+- 分区条目照样列出旧链的事件数、头哈希、未满足的 gate 与在途工作。
+- `library-import-legacy` 的拒绝在 `file` 里点名同一文件，相对旧知识库根；针对整个知识库时为 `.`。
+
+| 拒绝码 | 含义 |
+| --- | --- |
+| `KNOWLEDGE_RECORD_INVALID` | 点名的文件（标记或某张卡的元数据）已不是引擎写下的字节，常见于被其他工具重新保存：加了缩进，或缺了末尾换行。 |
+| `KNOWLEDGE_PATH_INVALID` | 知识库绑定的位置不是旧工作区现在所在的位置（引擎写入后被复制或移动过），或其中某个路径读不到。 |
+| `KNOWLEDGE_PARTIAL_STATE` | 知识库不完整：有引擎不会留下的条目（如没写完的 `mutation.claim`、多出的文件），卡与正文对不上，或索引视图过期。 |
+
+处置：
+
+- 展示阻塞项及其文件后停下；有阻塞项时什么也不迁移。
+- 不要自己改写、重排格式、移动或删除旧知识库里的文件。
+- 由用户把知识库恢复成引擎留下的样子（从备份或更早的副本），或把旧工作区放回知识库绑定的位置，然后重新计划。
 
 ## 备份：只移不删
 

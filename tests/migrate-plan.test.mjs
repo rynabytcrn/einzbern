@@ -7,6 +7,8 @@
 // tripwire. A target that is not a new or empty directory, an old workspace that does not read and
 // a project registered elsewhere stop the apply; with no mapping to follow and none to infer, the
 // plan names the question. Every home, device directory, container and project here is temporary.
+// TCRN-CROSS-SUB-421 R18: a partition whose old knowledge store is refused still lists its chain,
+// and the refusal is a blocker of its own on the file of the store it names.
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
@@ -81,6 +83,16 @@ async function project(m, name) {
   const root = join(m.container, name);
   await mkdir(root);
   return root;
+}
+
+/** Bind an old workspace's knowledge store to the root the workspace was restored at, as its engine bound a store to its root. */
+async function bindWhereRestored(root) {
+  const metadataPath = join(root, LEGACY_CONTROL_DIRECTORY, "workspace.json");
+  const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
+  metadata.roots = metadata.roots.map((entry) => (entry.kind === "workspace"
+    ? { ...entry, canonicalPath: root, path: root, portableIdentity: root.toLowerCase() }
+    : entry));
+  await writeFile(metadataPath, canonicalJson(metadata));
 }
 
 async function writeMapping(m, partitions, file = join(m.base, "mapping.json")) {
@@ -334,6 +346,55 @@ test("489-R1: a target that is not a new or empty directory, an old workspace th
   await assert.rejects(applySetup(planned), (error) => error.reasonCode === "SETUP_BLOCKED" && error.details.blockers === String(planned.blockers.length));
   assert.deepEqual(await readdir(join(alphaProject, ".ether")), ["keep.txt"]);
   assert.equal((await stat(join(betaProject, ".ether"))).isFile(), true);
+});
+
+test("SUB-421 R18: a partition whose old knowledge store is refused still lists its chain's events, head, gates and open work, and the refusal is a blocker of its own on the file it names", async (context) => {
+  const m = await machine(context);
+  // tms: a store whose marker another tool saved again, indented and without its terminal LF.
+  const tms = await oldPartition(m, "tms");
+  await bindWhereRestored(tms);
+  const tmsStore = join(tms, LEGACY_CONTROL_DIRECTORY, "knowledge");
+  for (const directory of ["bodies", "metadata", "views"]) await mkdir(join(tmsStore, directory), { recursive: true });
+  await writeFile(join(tmsStore, "store.json"), JSON.stringify({ workspaceId: expected.workspaceId }, null, 4));
+  // moved: a store bound to the root its engine knew, not to where the old workspace sits now.
+  const moved = await oldPartition(m, "moved");
+  const movedStore = join(moved, LEGACY_CONTROL_DIRECTORY, "knowledge");
+  await mkdir(movedStore);
+  // clean: no store at all.
+  const clean = await oldPartition(m, "clean");
+  const projects = { tms: await project(m, "tms"), moved: await project(m, "moved"), clean: await project(m, "clean") };
+  const mapping = await writeMapping(m, [
+    { partition: "tms", legacyWorkspace: tms, projectRoot: projects.tms },
+    { partition: "moved", legacyWorkspace: moved, projectRoot: projects.moved },
+    { partition: "clean", legacyWorkspace: clean, projectRoot: projects.clean },
+  ]);
+  const before = await treeDigest(m.base);
+
+  const planned = await plan(m, { mapping });
+  assert.deepEqual(await treeDigest(m.base), before, "the plan wrote nothing");
+  assert.deepEqual(planned.migration.partitions.map((entry) => [entry.partition, entry.targetState, entry.action]), [
+    ["tms", "absent", "blocked"],
+    ["moved", "absent", "blocked"],
+    ["clean", "absent", "import"],
+  ]);
+  // The chain of every partition is listed, a refused store's included.
+  const open = openWork(replayLegacyWorkspace(await openLegacyWorkspace(clean)));
+  for (const entry of planned.migration.partitions) {
+    assert.deepEqual([entry.workspaceId, entry.events, entry.headEventHash], [expected.workspaceId, expected.events, expected.headEventHash], entry.partition);
+    assert.deepEqual(entry.unsatisfiedGates, [FIXTURE_GATE], entry.partition);
+    assert.deepEqual(entry.openItems, open, entry.partition);
+  }
+  // Each refusal is a blocker of its own, on the file of the store it names: the marker, or the store
+  // as a whole when it is about the place the store is bound to.
+  const refused = planned.blockers.filter((entry) => entry.reasonCode.startsWith("KNOWLEDGE_"));
+  assert.deepEqual(refused.map((entry) => [entry.step, entry.path, entry.reasonCode]), [
+    ["library", join(tmsStore, "store.json"), "KNOWLEDGE_RECORD_INVALID"],
+    ["library", movedStore, "KNOWLEDGE_PATH_INVALID"],
+  ]);
+  assert.match(refused[0].message, /store\.json of the old knowledge store/u);
+  assert.deepEqual(planned.writes.filter((entry) => entry.step === "library").map((entry) => entry.path), [join(projects.clean, ".ether")]);
+  await assert.rejects(applySetup(planned), (error) => error.reasonCode === "SETUP_BLOCKED");
+  assert.deepEqual(await treeDigest(m.base), before);
 });
 
 test("489-R1: with no --mapping and no old workspace in the project, the plan names the mapping and cannot be applied", async (context) => {

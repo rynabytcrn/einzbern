@@ -11,6 +11,10 @@
 // package report. A dry run and an import make the same checks and report the same records digest
 // and knowledge; the old knowledge store (MIN-239 D7) lands in crest/ byte for byte and answers the
 // same cards; an import that stops after writing names its target and what it left there.
+//
+// TCRN-CROSS-SUB-421 R18: the receipt counts every card of the old store whatever its status
+// (`cards`), the removed ones (`removedCards`) and the default ones (`defaultCards`), and a store the
+// reader refuses is refused naming the file of the store the refusal is about (`details.file`).
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
@@ -34,7 +38,7 @@ import {
   DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
 import { readKnowledgeStoreMarker } from "../dist/build/packages/core/src/knowledge-core.js";
-import { LegacyImportStoppedError, assertLegacyRecordsMatch, legacyRecordsDigest } from "../dist/build/packages/core/src/legacy-import.js";
+import { LegacyImportStoppedError, LegacyKnowledgeRefusedError, assertLegacyRecordsMatch, legacyRecordsDigest } from "../dist/build/packages/core/src/legacy-import.js";
 import { canonicalByteLength, canonicalJson, canonicalSha256, compareCanonicalText } from "../dist/build/packages/protocol/src/index.js";
 import { LEGACY_FIXTURE_EXPECTED as expected, LEGACY_FIXTURE_ROOT, restoreLegacyFixture } from "./helpers/legacy-fixture.mjs";
 
@@ -174,10 +178,11 @@ async function restoreWithKnowledge(base, { segmented }) {
   return { ...restored, knowledge };
 }
 
-// What knowledge-list answers for a store: how many cards, in all and by default.
+// What knowledge-list answers for a store: how many cards whatever their status, how many of them are
+// removed, and how many it answers by default.
 async function listed(workspace, at = AT) {
-  const total = async (selection) => (await cli(["knowledge-list", "--workspace", workspace, "--at", at, "--selection", selection, "--allow-trailing", "true", "--limit", "1"])).total;
-  return { all: await total("all"), default: await total("default") };
+  const total = async (...flags) => (await cli(["knowledge-list", "--workspace", workspace, "--at", at, ...flags, "--allow-trailing", "true", "--limit", "1"])).total;
+  return { all: await total("--selection", "all", "--status", "all"), removed: await total("--status", "removed"), default: await total("--selection", "default") };
 }
 
 test("468-R6, AC4 (fixture): an import carries the old chain's events, head and segment bytes into the first stream", async (context) => {
@@ -264,8 +269,9 @@ test("468-AC4, SUB-421: a dry run under the write tripwire reports the chain, th
     ["LEGACY_IMPORT_DRY_RUN", true, expected.events, expected.headEventHash, null]);
   assert.equal(report.segments.length, expected.segments);
   assert.equal(report.records.digest, legacyRecordsDigest(await materializeWorkspace(root)));
-  // Four cards on disk; the superseded one is removed (TCRN-CROSS-SUB-425), so three in all, two by default.
-  assert.deepEqual([report.knowledge.cards, report.knowledge.defaultCards], [3, 2]);
+  // Four cards on disk, all counted whatever their status (R18); the superseded one reads as removed
+  // (TCRN-CROSS-SUB-425), and two are answered by default.
+  assert.deepEqual([report.knowledge.cards, report.knowledge.removedCards, report.knowledge.defaultCards], [4, 1, 2]);
   assert.deepEqual(await treeDigest(base), before, "nothing was written, the default target and the device directory included");
   await assert.rejects(stat(join(root, ".ether")), { code: "ENOENT" });
 });
@@ -322,8 +328,9 @@ test("SUB-421 (MIN-239 D7): a dry run and an import report the same checks; the 
   const carriedBytes = (await Promise.all(Object.keys(carried).map(async (path) => (await stat(join(knowledge, path))).size))).reduce((total, size) => total + size, 0);
   const oldTree = await treeDigest(root);
   const oldCards = await listed(root);
-  // Four cards as its engine left them; the superseded one is removed (TCRN-CROSS-SUB-425) and carried byte for byte.
-  assert.deepEqual(oldCards, { all: 3, default: 2 }, "the old store read as its engine left it");
+  // Four cards as its engine left them; the superseded one reads as removed (TCRN-CROSS-SUB-425) and is
+  // carried byte for byte with the rest.
+  assert.deepEqual(oldCards, { all: 4, removed: 1, default: 2 }, "the old store read as its engine left it");
 
   const dryRun = await cli(["library-import-legacy", "--legacy", root, "--at", AT, "--dry-run", "true"]);
   const target = join(base, ".ether");
@@ -333,7 +340,9 @@ test("SUB-421 (MIN-239 D7): a dry run and an import report the same checks; the 
   assert.equal(receipt.records.digest, legacyRecordsDigest(legacyState));
   assert.deepEqual(receipt.records.counts, Object.fromEntries(RECORD_COLLECTIONS.map((name) => [name, legacyState[name].length])));
   assert.deepEqual(receipt.knowledge, dryRun.knowledge);
-  assert.deepEqual(receipt.knowledge, { cards: oldCards.all, defaultCards: oldCards.default, files: Object.keys(carried).length, bytes: carriedBytes });
+  assert.deepEqual(receipt.knowledge, {
+    cards: oldCards.all, removedCards: oldCards.removed, defaultCards: oldCards.default, files: Object.keys(carried).length, bytes: carriedBytes,
+  });
   assert.deepEqual(await treeDigest(root), oldTree, "the old workspace was only read");
 
   // crest/ holds the old store's marker, metadata and bodies byte for byte, the segments included,
@@ -355,21 +364,76 @@ test("SUB-421 (MIN-239 D7): a dry run and an import report the same checks; the 
   const appended = await entries(crest);
   for (const [path, digest] of Object.entries(carried)) assert.equal(appended[path], digest, `the carried layout is not rewritten: ${path}`);
   assert.deepEqual(Object.keys(appended).filter((path) => !Object.hasOwn(carried, path)).every((path) => path.startsWith("events/")), true);
-  assert.deepEqual(await listed(target, LATER), { all: before.all + 1, default: before.default + 1 });
+  assert.deepEqual(await listed(target, LATER), { all: before.all + 1, removed: before.removed, default: before.default + 1 });
 });
 
 test("SUB-421: an old store its engine bound to another place is refused with that store's own reason code, in a dry run as in an import, before anything is written", async (context) => {
   const base = await scratch(context);
-  const { root } = await restoreWithKnowledge(base, { segmented: false });
+  const { root, knowledge } = await restoreWithKnowledge(base, { segmented: false });
   // The chain reads wherever it sits; the old layout's store is bound to the root its engine knew.
   const moved = join(base, "moved");
   await cp(root, moved, { recursive: true });
   const target = join(base, ".ether");
+  // R18: the refusal is about the store as a whole, the place its engine bound it to, named ".".
+  const movedStore = join(moved, relative(root, knowledge));
   for (const extra of [["--dry-run", "true"], ["--target", target]]) {
-    await assert.rejects(cli(["library-import-legacy", "--legacy", moved, "--at", AT, ...extra]), (error) => error?.reasonCode === "KNOWLEDGE_PATH_INVALID", extra.join(" "));
+    await assert.rejects(cli(["library-import-legacy", "--legacy", moved, "--at", AT, ...extra]), (error) =>
+      error instanceof LegacyKnowledgeRefusedError && error.reasonCode === "KNOWLEDGE_PATH_INVALID" && error.details.file === "." && error.store === movedStore, extra.join(" "));
   }
   await assert.rejects(stat(target), { code: "ENOENT" });
   await assert.rejects(stat(join(moved, ".ether")), { code: "ENOENT" });
+});
+
+test("SUB-421 R18: an old store its reader refuses is refused with the reader's reason code, naming the file of the store the refusal is about, in a dry run as in an import, before anything is written", async (context) => {
+  const base = await scratch(context);
+  const { root, knowledge } = await restoreWithKnowledge(base, { segmented: true });
+  const target = join(base, ".ether");
+  const refusedOn = (reasonCode, file) => (error) => {
+    assert.ok(error instanceof LegacyKnowledgeRefusedError, String(error));
+    assert.deepEqual([error.reasonCode, error.details.file, error.file, error.store], [reasonCode, file, file, knowledge]);
+    assert.equal(error.message.includes(`${file} of the old knowledge store ${knowledge}`), true, error.message);
+    return true;
+  };
+  const refusedBoth = async (reasonCode, file) => {
+    for (const extra of [["--dry-run", "true"], ["--target", target]]) {
+      await assert.rejects(cli(["library-import-legacy", "--legacy", root, "--at", AT, ...extra]), refusedOn(reasonCode, file), `${file}, ${extra.join(" ")}`);
+    }
+    await assert.rejects(stat(target), { code: "ENOENT" }, "the import wrote nothing");
+  };
+  // A file another tool saved again, indented and without its terminal LF, as TCRN-TMS's were found.
+  const reformat = async (path) => {
+    const bytes = await readFile(path);
+    await writeFile(path, JSON.stringify(JSON.parse(bytes.toString("utf8")), null, 4));
+    return bytes;
+  };
+  const before = await treeDigest(root);
+
+  // The marker, which the reader parses first.
+  const marker = await reformat(join(knowledge, "store.json"));
+  await refusedBoth("KNOWLEDGE_RECORD_INVALID", "store.json");
+  // The release entry's output keeps the file.
+  const run = spawnSync(process.execPath, [cliPath, "library-import-legacy", "--legacy", root, "--dry-run", "true", "--at", AT], { encoding: "utf8" });
+  assert.equal(run.status, 1, run.stdout);
+  const printed = JSON.parse(run.stderr.trim().split("\n").at(-1));
+  assert.deepEqual([printed.reasonCode, printed.file], ["KNOWLEDGE_RECORD_INVALID", "store.json"]);
+  await writeFile(join(knowledge, "store.json"), marker);
+
+  // One card's metadata: the marker reads, and the card is named.
+  const card = (await readdir(join(knowledge, "metadata"))).sort(compareCanonicalText).at(-1);
+  const metadata = await reformat(join(knowledge, "metadata", card));
+  await refusedBoth("KNOWLEDGE_RECORD_INVALID", `metadata/${card}`);
+  await writeFile(join(knowledge, "metadata", card), metadata);
+
+  // A mutation claim beside the store's four entries: a write of its engine that never finished.
+  await writeFile(join(knowledge, "mutation.claim"), "{}\n");
+  await refusedBoth("KNOWLEDGE_PARTIAL_STATE", "mutation.claim");
+  await rm(join(knowledge, "mutation.claim"));
+
+  // As its engine left it again, the store reads and is counted as before.
+  const dryRun = await cli(["library-import-legacy", "--legacy", root, "--at", AT, "--dry-run", "true"]);
+  assert.deepEqual([dryRun.knowledge.cards, dryRun.knowledge.removedCards, dryRun.knowledge.defaultCards], [4, 1, 2]);
+  const contents = (rows) => rows.map((row) => { const [path, , , digest] = row.split("|"); return `${path}|${digest}`; });
+  assert.deepEqual(contents(await treeDigest(root)), contents(before), "the old workspace holds its bytes again");
 });
 
 test("SUB-421 (INC-397): an import that stops after it has written names its target and everything it left there, and removes nothing", async (context) => {

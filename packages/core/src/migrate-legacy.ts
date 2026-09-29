@@ -19,10 +19,12 @@
 // and reports its events and head, then replays the chain once more and requires the same head.
 // From that replay it lists every gate that is not satisfied (id, bound work, status, title, outcome
 // class: a pending gate stays pending and is listed, never counted as none, MIN-238 D4) and counts
-// the work that is still open. A target that is not a new or empty directory stops the apply, as
-// the import itself would, unless it is the library an earlier run imported this same chain into
-// (TCRN-CROSS-SUB-365): that partition is skipped, so running the same mapping again changes
-// nothing. The plan also names the registry entry each library gets (migratedFrom is the old
+// the work that is still open. A dry run the old knowledge store refuses (TCRN-CROSS-SUB-421 R18)
+// read the chain first, so the chain is still replayed and listed, and the refusal is a blocker of
+// its own on the file of the store it names. A target that is not a new or empty directory stops
+// the apply, as the import itself would, unless it is the library an earlier run imported this same
+// chain into (TCRN-CROSS-SUB-365): that partition is skipped, so running the same mapping again
+// changes nothing. The plan also names the registry entry each library gets (migratedFrom is the old
 // workspace), the portal keys of the old device directory's machine settings, and the host files
 // the migration cleans up (TCRN-CROSS-SUB-366 fills those in).
 //
@@ -48,7 +50,8 @@ import { writeFileAtomic } from "./atomic-file.js";
 import { suggestCloudHosted } from "./cloud-roots.js";
 import { ensureDeviceDirectory, registryPath } from "./device-home.js";
 import { hasLibraryManifest, openLibrary } from "./ether-library.js";
-import { LegacyImportError, importLegacyWorkspace } from "./legacy-import.js";
+import { LegacyImportError, LegacyKnowledgeRefusedError, importLegacyWorkspace } from "./legacy-import.js";
+import type { LegacyImportReport } from "./legacy-import.js";
 import { openLegacyWorkspace, replayLegacyWorkspace } from "./legacy-workspace.js";
 import {
   MACHINE_SETTINGS_FILE_NAME,
@@ -454,6 +457,30 @@ function divergedMessage(target: string, name: string, chain: LegacyChainFacts):
   return `${target} holds the library ${chain.workspaceId}, the id of partition ${name}'s old workspace, but not its chain of ${chain.events} events up to ${chain.headEventHash ?? "no head"}: the library and the old workspace have diverged`;
 }
 
+interface PlannedDryRun {
+  readonly report: LegacyImportReport | null;
+  // The old knowledge store refused the dry run, after the chain was validated.
+  readonly knowledgeRefused: boolean;
+}
+
+// The import's dry run of a partition: its report, or null and a blocker. TCRN-CROSS-SUB-421 R18: a
+// refusal of the old knowledge store (LegacyKnowledgeRefusedError) is a blocker on the file of the
+// store it names, the store's root when it is about the store as a whole.
+async function dryRunImport(recorder: MigrationRecorder, legacyWorkspace: string, target: string, at: string): Promise<PlannedDryRun> {
+  try {
+    return { report: await importLegacyWorkspace(legacyWorkspace, target, { createdAt: at, dryRun: true }), knowledgeRefused: false };
+  } catch (error) {
+    if (error instanceof LegacyKnowledgeRefusedError) {
+      recorder.block("library", error.file === "." ? error.store : join(error.store, ...error.file.split("/")), error.reasonCode, error.message);
+      return { report: null, knowledgeRefused: true };
+    }
+    const reasonCode = reasonOf(error);
+    if (reasonCode === null) throw error;
+    recorder.block("library", legacyWorkspace, reasonCode, messageOf(error));
+    return { report: null, knowledgeRefused: false };
+  }
+}
+
 async function planPartition(recorder: MigrationRecorder, input: MigrationPlanInput, entry: MigrationMappingEntry, registry: Registry | null): Promise<PlannedPartition> {
   const blockersBefore = recorder.blockers.length;
   const name = entry.partition;
@@ -472,11 +499,13 @@ async function planPartition(recorder: MigrationRecorder, input: MigrationPlanIn
   // genesis and reports its events and head, and a replay of the same chain must reach the same
   // head before its gates and work are listed. Where the import would refuse the target, the
   // replay alone (which validates the chain from genesis too) says what the chain is.
+  // TCRN-CROSS-SUB-421 R18: a dry run refused by the old knowledge store validated the chain before
+  // it read the store, so the replay still says what the chain is, its gates and its open work; the
+  // store's refusal is a blocker of its own, on the file of the store it names.
   const legacyWorkspace = await realOrGiven(entry.legacyWorkspace);
-  const report = importable
-    ? await recorder.attempt("library", legacyWorkspace, () => importLegacyWorkspace(legacyWorkspace, target, { createdAt: input.at, dryRun: true }))
-    : null;
-  const replayed = importable && report === null
+  const dryRun = importable ? await dryRunImport(recorder, legacyWorkspace, target, input.at) : null;
+  const report = dryRun?.report ?? null;
+  const replayed = importable && report === null && dryRun?.knowledgeRefused !== true
     ? null
     : await recorder.attempt("library", legacyWorkspace, async () => replayLegacyWorkspace(await openLegacyWorkspace(legacyWorkspace)));
   if (report !== null && replayed !== null && (replayed.version !== report.events || replayed.headEventHash !== report.headEventHash)) {

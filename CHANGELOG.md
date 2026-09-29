@@ -1339,6 +1339,11 @@ that layout for a removed card's record alone. The migration reference runs the 
 the import and once more after the D7 cleanup. Metadata, event files, the streams' bodies and an
 old-layout workspace's read-only store are not touched, and no verb is added.
 
+The "A decision is made" line of the generated `SKILL.md` now says how a record replaces, withdraws
+or stands beside a recorded decision (`minutes:<id>#D<n>`): it declares it in the same record with
+`--supersedes <decision>=D<n>`, `--withdraws <decision>` or `--coexists <decision>`
+(TCRN-CROSS-SUB-427 R18; `packages/core/src/skill-render.ts`).
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

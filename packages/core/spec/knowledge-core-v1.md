@@ -517,7 +517,10 @@ nothing and backs nothing up, so a second run changes nothing. Its answer adds
 `clearedBodies` and `backupDir`, null when nothing was written. An old-layout
 workspace's read-only store keeps its bodies, which no read answers; so do the
 immutable events, whose metadata still holds the summary and snippet they were
-written with. A read
+written with; and a card a library import carried over that is removed only after
+another device has written to the library keeps its body in the carried segments,
+since the single-writer step then refuses with `KNOWLEDGE_SOLE_WRITER_REQUIRED`, and
+no read answers it. A read
 admits a missing body for a removed card's records alone, so a device that receives
 the deletion of a body before the removal event itself reads the crest as partial
 (`KNOWLEDGE_PARTIAL_STATE`) until the event arrives, as it does an event delivered

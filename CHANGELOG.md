@@ -670,7 +670,8 @@ the earliest stands. A removed card keeps its id, external key, subject, `supers
 (`reason`, `basis`, `actor`, `removedAt`, `supersededBy`, and the event's `deviceId`, `sequence` and
 `eventHash`); each device deletes the body files its own stream holds for removed cards at its next
 write to that crest, the removing or superseding write included, while the metadata/body layout an
-older engine left keeps its bodies. `knowledge-list` and `recall` take `--status valid|removed|all`
+older engine left keeps its bodies until `knowledge-bodies-migrate --clear-removed true` clears them
+(see below). `knowledge-list` and `recall` take `--status valid|removed|all`
 (`recall` also `obsolete`, a decision status that leaves its cards valid), `valid` when left out and
 echoed as `status`: default reads, `--selection all` among them, answer valid cards only, `removed`
 the removed cards alone and `all` every card, each removed card as it is kept, and a recall hit on
@@ -1336,7 +1337,7 @@ of the device directory first (a backup of the same second refuses with `KNOWLED
 keeps every other body byte for byte with the manifest and the point indexes, answers `clearedBodies`
 and `backupDir`, and a second run changes nothing. A read of a library's crest admits a missing body in
 that layout for a removed card's record alone. The migration reference runs the clearing once after
-the import and once more after the D7 cleanup. Metadata, event files, the streams' bodies and an
+the import and once more after each later removal of carried cards. Metadata, event files, the streams' bodies and an
 old-layout workspace's read-only store are not touched, and no verb is added.
 
 ## 1.2.1 — patch candidate

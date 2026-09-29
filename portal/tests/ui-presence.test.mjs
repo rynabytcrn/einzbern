@@ -2238,4 +2238,76 @@ if (process.argv[2] === "work-list") {
       } finally { broken.child.kill(); }
     } finally { await rm(fixture.base, { recursive: true, force: true }); }
   });
+
+  // TCRN-CROSS-SUB-424 (TCRN-CROSS-STORY-513 R3; MIN-238 D3): /api/work is held back. While the work
+  // view's read of the library is out, the view says so on a status line in the page's language, and
+  // the work tree stays aria-busy; the line goes when the read returns and the list shows. The other
+  // views do not wait for the work read (SUB-416), and a refresh's read of the same library shows the
+  // line again above the list the view keeps until that read returns.
+  test("SUB-424 (STORY-513 R3, MIN-238 D3): the work view says it is reading while /api/work is out, in the page's language", async () => {
+    const fixture = await scratch("tcrn-424-work-loading-dom-");
+    const project = await cli(["project-create", "--workspace", fixture.workspace, "--at", nextAt(), "--external-key", "PORTAL-LOADING-PROJECT", "--name", "Portal loading project"], fixture.deviceEnv);
+    const initiative = await cli(["work-create", "--workspace", fixture.workspace, "--project-id", project.record.id, "--at", nextAt(), "--external-key", "PORTAL-LOADING-INIT", "--kind", "Initiative", "--title", "Portal loading work"], fixture.deviceEnv);
+    const status = await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv);
+    const sandbox = {};
+    new Function("window", await readFile(join(portalRoot, "locales.js"), "utf8"))(sandbox);
+    const copy = (locale) => sandbox.PORTAL_LOCALES[locale]["dashboard.workLoading"];
+    const isWork = (path) => path === "/api/work";
+    const page = await loadExecutedDom(fixture, {}, { hold: isWork });
+    try {
+      const { document } = page;
+      const text = (selector) => document.querySelector(selector)?.textContent ?? "";
+      const content = document.querySelector("#work-tree-content");
+      const line = document.querySelector("#work-loading");
+      const listed = () => Boolean(content.querySelector(`[data-work-id="${initiative.record.id}"]`));
+      document.querySelector('[data-page-target="dashboard"]')?.click();
+      document.querySelector('[data-workspace-tab="work"]')?.click();
+      await waitFor(() => document.querySelector('[data-workspace-panel="work"]')?.hidden === false, "the work tab to open");
+      assert.equal(page.held(), 1, "the page asked for /api/work, which is still out");
+      assert.equal(line?.getAttribute("role"), "status");
+      assert.equal(line.hidden, false, "the reading line shows while the read is out");
+      assert.equal(content.getAttribute("aria-busy"), "true", "the work tree stays busy");
+      assert.deepEqual([text("#work-count"), content.innerHTML], ["—", ""], "nothing is listed before the first read returns");
+      const seen = new Set();
+      for (const locale of ["en", "zh-CN", "ja", "ko", "fr"]) {
+        document.querySelector(`[data-locale-option="${locale}"]`)?.click();
+        assert.equal(document.documentElement.lang, locale);
+        assert.equal(line.textContent, copy(locale), `${locale}: the reading line is in the page's language`);
+        assert.equal(line.hidden, false, `${locale}: the reading line still shows`);
+        seen.add(line.textContent);
+      }
+      assert.equal(seen.size, 5, "each language has a reading line of its own");
+      assert.equal(text("#stat-version"), String(status.version), "status did not wait for the work read");
+      assert.ok(document.querySelectorAll("#settings-rows [data-setting-row]").length > 0, "settings did not wait for the work read");
+      assert.ok(document.querySelectorAll("#prose-directory [data-rule-card]").length > 0, "the rules did not wait for the work read");
+
+      assert.equal(page.release(), 1);
+      await page.waitForSettled();
+      assert.equal(line.hidden, true, "the reading line goes when the read returns");
+      assert.equal(content.getAttribute("aria-busy"), "false");
+      assert.equal(listed(), true, "the list shows when the read returns");
+
+      // A settings write asks for a refresh while /api/work is held again: the line shows above the
+      // list the view keeps, and goes when that read returns.
+      page.hold(isWork);
+      document.querySelector('[data-page-target="settings"]')?.click();
+      document.querySelector('[data-setting-group="execution"]')?.click();
+      const control = document.querySelector('[data-setting-control="execution.maxConcurrentSubagents"]');
+      const before = receiptText(document);
+      control.value = "7";
+      control.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+      await waitFor(receiptAdvanced(document, before), "the setting write receipt");
+      await waitFor(() => page.held() === 1, "the refresh's read of /api/work");
+      document.querySelector('[data-page-target="dashboard"]')?.click();
+      assert.equal(line.hidden, false, "the reading line shows again while the refresh's read is out");
+      assert.equal(line.textContent, copy("fr"));
+      assert.equal(content.getAttribute("aria-busy"), "true");
+      assert.equal(listed(), true, "the view keeps its list while that read is out");
+      assert.equal(page.release(), 1);
+      await page.waitForSettled();
+      assert.equal(line.hidden, true);
+      assert.equal(content.getAttribute("aria-busy"), "false");
+      assert.equal(listed(), true);
+    } finally { page.child.kill(); await rm(fixture.base, { recursive: true, force: true }); }
+  });
 }

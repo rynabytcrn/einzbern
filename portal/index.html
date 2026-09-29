@@ -4234,7 +4234,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
             <article class="tcrn-surface"><div class="tcrn-surface__head"><div><h2 data-i18n="dashboard.libraryTitle">Selected library</h2><p class="tcrn-surface__note" data-i18n="dashboard.libraryNote">Read from the selected library's status.</p></div></div><dl class="tcrn-definition-list" id="library-state"></dl></article>
           </div>
         </div>
-        <div data-workspace-panel="work" hidden><div class="tcrn-surface" data-ui="work-tree"><div class="tcrn-surface__head"><div><h2 data-i18n="dashboard.workTitle">Work tree</h2><p class="tcrn-surface__note" data-i18n="dashboard.workNote">Initiatives, Epics, and Stories read from the engine.</p></div><span class="tcrn-badge" id="work-count">—</span></div><div id="work-tree-content"></div></div></div>
+        <div data-workspace-panel="work" hidden><div class="tcrn-surface" data-ui="work-tree"><div class="tcrn-surface__head"><div><h2 data-i18n="dashboard.workTitle">Work tree</h2><p class="tcrn-surface__note" data-i18n="dashboard.workNote">Initiatives, Epics, and Stories read from the engine.</p></div><span class="tcrn-badge" id="work-count">—</span></div><div class="tcrn-state-surface" id="work-loading" role="status" data-i18n="dashboard.workLoading" hidden>Reading work records through the engine…</div><div id="work-tree-content"></div></div></div>
         <div data-workspace-panel="knowledge" hidden><div class="tcrn-surface" data-ui="knowledge-view"><div class="tcrn-surface__head"><div><h2 data-i18n="dashboard.knowledgeTitle">Knowledge inventory</h2><p class="tcrn-surface__note" data-i18n="dashboard.knowledgeNote">Cards and article indexes, metadata only.</p></div><span class="tcrn-badge" id="knowledge-count">—</span></div><div id="knowledge-view-content"></div></div></div>
           </div>
         </div>
@@ -5371,12 +5371,16 @@ const BOOT = __PORTAL_BOOT__;
   const statusBadge = (value, tone = "") => `<span class="tcrn-badge ${tone ? `tcrn-badge--${tone}` : ""}">${esc(value ?? "—")}</span>`;
   const statusTone = (value) => ["done", "satisfied", "active", "ready"].includes(String(value)) ? "positive" : ["blocked", "cancelled", "failed", "retired"].includes(String(value)) ? "danger" : "";
   // TCRN-CROSS-SUB-416 (TCRN-CROSS-STORY-510): the work view is busy while a read of this library is
-  // out, and what it showed stays until that read returns. Before the first read returns it shows
+  // out, and what it showed stays until that read returns. Before the first read returns it lists
   // nothing; a read that failed is shown here, and only here, with its reason codes.
+  // TCRN-CROSS-SUB-424 (TCRN-CROSS-STORY-513 R3): while that read is out the view also says so, in the
+  // page's language, on a status line above what it shows; the line goes when the read returns.
   const renderWorkView = () => {
     const data = state.work;
     const content = $("#work-tree-content");
-    content.setAttribute("aria-busy", String(state.workRead.readingFor === state.workRead.library));
+    const reading = state.workRead.readingFor === state.workRead.library;
+    content.setAttribute("aria-busy", String(reading));
+    $("#work-loading").hidden = !reading;
     if (data === null) {
       setText("#work-count", "—");
       content.innerHTML = "";

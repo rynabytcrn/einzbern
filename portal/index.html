@@ -4294,7 +4294,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
                     <label class="tcrn-field"><span class="tcrn-field__label" data-i18n="gates.name">Gate name</span><input class="tcrn-input" name="name" required maxlength="64" autocomplete="off"></label>
                     <label class="tcrn-field"><span class="tcrn-field__label" data-i18n="gates.root">Project-relative root</span><input class="tcrn-input" name="root" value="." required autocomplete="off"></label>
                     <label class="tcrn-field"><span class="tcrn-field__label" data-i18n="gates.command">Command as JSON argv</span><textarea class="tcrn-input tcrn-textarea" name="command" required rows="2" placeholder='["pnpm","verify:links"]'></textarea></label>
-                    <label class="tcrn-field"><span class="tcrn-field__label" data-i18n="gates.coversInput">Covered paths, one glob per line</span><textarea class="tcrn-input tcrn-textarea" name="covers" rows="2" placeholder="src/**"></textarea></label>
+                    <label class="tcrn-field"><span class="tcrn-field__label" data-i18n="gates.coversInput">Covers, one per line: a path glob or a work id</span><textarea class="tcrn-input tcrn-textarea" name="covers" rows="2" placeholder="src/**"></textarea></label>
                   </div>
                   <div data-gate-options>
                     <label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" name="enabled" checked><span class="tcrn-switch__label" data-i18n="gates.enabled">Enabled</span></label>
@@ -4305,7 +4305,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
                 </form>
               </article>
               <article class="tcrn-surface" aria-labelledby="gates-list-title"><div class="tcrn-surface__head"><div><h2 id="gates-list-title" data-i18n="gates.listTitle">Configured gates</h2></div></div>
-                <div class="tcrn-table-scroll"><table data-ui="gate-config-table"><thead><tr><th scope="col" data-i18n="collection.order">Order</th><th scope="col" data-i18n="gates.columnGate">Gate</th><th scope="col" data-i18n="gates.columnEnabled">Enabled</th><th scope="col" data-i18n="gates.columnRequired">Required</th><th scope="col" data-i18n="gates.columnCovers">Covered paths</th></tr></thead><tbody id="gates-rows"></tbody></table></div>
+                <div class="tcrn-table-scroll"><table data-ui="gate-config-table"><thead><tr><th scope="col" data-i18n="collection.order">Order</th><th scope="col" data-i18n="gates.columnGate">Gate</th><th scope="col" data-i18n="gates.columnEnabled">Enabled</th><th scope="col" data-i18n="gates.columnRequired">Required</th><th scope="col" data-i18n="gates.columnCovers">Covers (path glob or work id)</th></tr></thead><tbody id="gates-rows"></tbody></table></div>
                 <div id="gates-empty" class="tcrn-state-surface" data-ui="gates-empty" hidden></div>
               </article>
             </div>

@@ -876,11 +876,13 @@ wait, a symbolic link, a file that is not regular and damaged content still fail
 `DEVICE_FILE_INVALID`. The `device.json` format, the device id and the reason codes are unchanged.
 
 Atelier's gate page says what a cover is (TCRN-CROSS-STORY-513 R2, TCRN-CROSS-SUB-423; fixes
-TCRN-CROSS-STORY-485; `portal/locales.js`). The label of the cover input on the add form and the
-heading of the cover column in the gate table read, in all five languages, that a cover is a path
-glob or a work id, the two forms `gates-config-set --covers` accepts; they used to say that covers
-were paths. The input still takes one cover per line, and the covers the page writes, the gate
-records and the reason codes are unchanged.
+TCRN-CROSS-STORY-485; `portal/locales.js`, `portal/index.html`). The label of the cover input on the
+add form, the heading of the cover column in the gate table, the column's add button and the name of
+the remove button beside each cover read, in all five languages, that a cover is a path glob or a
+work id, the two forms `gates-config-set --covers` accepts; they used to say that covers were paths.
+The page's own text for the label and the heading, shown before a language applies, is the English
+copy. The input still takes one cover per line, and the covers the page writes, the gate records and
+the reason codes are unchanged.
 
 Atelier's work tab says that it is reading (TCRN-CROSS-STORY-513 R3, TCRN-CROSS-SUB-424; fixes
 TCRN-CROSS-STORY-510; `portal/index.html`, `portal/locales.js`). While the work view's read of the

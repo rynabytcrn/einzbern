@@ -818,8 +818,8 @@ managed section and reports `engineSwitch`. repair runs the steps from the regis
 the registered library. uninstall takes the Einzbern hooks out of both hosts, moves both skill
 copies and their record into the device directory's backups and removes the registry entry after
 copying the registry there; the library is never read or written, and `--managed-sections remove`
-takes the section markers out of the project's files and leaves their text. migrate finds an
-installation from before the rename (`SETUP_MIGRATE_PENDING`); its migration comes later.
+takes the section markers out of the project's files and leaves their text. migrate plans the
+migration of an installation from before the rename (below).
 `doctor [--project <dir>]` answers `DOCTOR_READY` with `ok` and the eight checks
 (`engine-version`, `hooks-present`, `skill-copies`, `registry`, `library-format`, `device-stream`,
 `managed-sections`, `cloud-flag`), each `{check, ok, reasonCode, detail}` with its causes in
@@ -840,6 +840,59 @@ prints the plan and the receipt as they are; their schema versions, host-render 
 unchanged. The skill's install, update and restore references show the warnings at the final
 confirmation. Whether Git tracks a host file is asked of the index alone, before any library
 exists (`hostFileTrackedByGit`, exported by its module and not by core's index).
+
+`setup --mode migrate` plans the migration of an installation from before the rename
+(TCRN-CROSS-STORY-489 R1, TCRN-CROSS-SUB-364; MIN-235 D17, MIN-238 D4; `packages/core/src/migrate-legacy.ts`,
+`setup.ts`). It no longer answers `SETUP_MIGRATE_PENDING`, which leaves `SETUP_REASON_CODES`; with no
+installation from before the rename it still answers `SETUP_MIGRATE_NOTHING`, whatever `--mapping`
+names. The mode takes `--mapping`, `--cloud`, `--language` and `--navigation` (any other option is
+`SETUP_OPTION_NOT_APPLICABLE`), and without `--yes true` it writes nothing and answers
+`SETUP_PLAN_READY` with a new field, `migration`. Its apply is not in this engine yet
+(`SETUP_MODE_UNAVAILABLE`, TCRN-CROSS-SUB-365); a plan with a blocker is refused as before
+(`SETUP_BLOCKED`). The mapping is a JSON file of this device's paths that is never committed,
+`{"schemaVersion": "einzbern.migration-mapping.v1", "partitions": [{"partition", "legacyWorkspace",
+"projectRoot", "projectName"?, "gitRemote"?}]}`: at least one partition; `partition` is its name,
+`legacyWorkspace` the absolute path of the directory that holds the old control directory,
+`projectRoot` the absolute path of the project whose `.ether` the chain becomes (the container root
+for cross-project), and `projectName` and `gitRemote` the library's project hints, by default the
+project directory's name and its working tree's remote; no other field, and no partition, old
+workspace or project named twice, through a link included. A relative `--mapping` is taken from the
+project. A mapping that does not read or breaks these rules answers `SETUP_ANSWER_INVALID` with
+`question` `mapping`, `file` and, where one is at fault, `entry` and `field`. Without `--mapping`, an
+old workspace in the project itself is the one partition the plan infers; with none there the
+`library` step holds a `SETUP_ANSWER_REQUIRED` blocker. The question `mapping` (default null) is open
+whenever `--mapping` is not given, before `cloud`, `language` and `navigation`; `resolved.artifacts` is
+the library of the project's own partition, `resolved.language` the `artifact.language` that
+partition's chain records, else the default, and a given `--cloud` holds for every library, each of
+which otherwise takes the cloud folder table's suggestion. `migration` holds `mappingFile` (the
+resolved `--mapping`, or null), `mapping` (in the file's shape, or null), `partitions`, `registry`,
+`deviceSettings` and `hostCleanup`. A partition is `{partition, legacyWorkspace, projectRoot, target,
+targetState, action, workspaceId, streamId, events, headEventHash, projectName, gitRemote, language,
+unsatisfiedGates, openItems}`: the paths are real paths once they exist; `target` is
+`<projectRoot>/.ether`, `targetState` `absent`, `empty`, `not-empty` or `not-a-directory`, and `action`
+`import`, or `blocked` when a blocker names the partition; `workspaceId` (the library keeps it as its
+id), `streamId`, `events` and `headEventHash` are the import's dry run, which validates the chain from
+genesis, and a second replay must reach the same head (`LEGACY_IMPORT_MISMATCH` otherwise);
+`unsatisfiedGates` lists every gate that is not satisfied as `{id, workId, status, title,
+outcomeClass}`, so a pending gate stays pending and is listed, never counted as none; `openItems` is
+`{total, byStatus}` over the work that is neither done nor cancelled, `byStatus` keyed by `planned`,
+`ready`, `active`, `blocked` and `pending-owner-acceptance`; `workspaceId` to `headEventHash`,
+`language`, `unsatisfiedGates` and `openItems` are null when the old chain does not read, which is
+unknown and not none. `registry` holds the entry each library gets, `{partition, projectPath,
+libraryPath, libraryId, cloudHosted, gitRemote, migratedFrom}`, with the normalized remote and the old
+workspace as `migratedFrom`. `deviceSettings` is `{from, to, keys}`: the `portal.*` keys of the old
+device directory's `machine-settings.json` (`from`, null without one) against this device's (`to`),
+each `{key, value, current, action}`, where `action` is `set`, `unchanged`, `kept` (this device holds
+another value, which stays) or `invalid` (this engine does not take the key or value). `hostCleanup`
+is empty until TCRN-CROSS-SUB-366 fills it with `{path, action, into}`, `action` `move` or `update`
+and `into` the backup. The writes are this device's `device.json` when it has none, then each
+library to import, the registry and, when a key is set, the machine settings, in that order; the
+blockers are a target that is not a new or empty directory (`LIBRARY_TARGET_NOT_EMPTY`,
+`LIBRARY_TARGET_INVALID`), a mapped project that is not a directory (`SETUP_INPUT_INVALID`), an old
+workspace that does not read (its own reason code, such as `LEGACY_WORKSPACE_NOT_FOUND`), a project
+this device registered to another library (`SETUP_LIBRARY_CONFLICT`) and a machine settings file that
+does not read (`MACHINE_SETTINGS_FILE_INVALID`), beside the engine and device blockers of the other
+modes. `migrate-legacy.ts` is not exported by core's index.
 
 The repository's `test` task waits out a process group whose members are still exiting
 (TCRN-CROSS-SUB-402, TCRN-CROSS-INC-393; TCRN-CROSS-STORY-493; `scripts/task.mjs`). `kill(-group, 0)`

@@ -23,10 +23,12 @@
 // Each mode is one row of the mode table: fresh (setup-fresh.ts), restore (setup-restore.ts: eight
 // checks of the library before anything is written), and update, repair and uninstall
 // (setup-maintain.ts: a newer engine or the previous one with --rollback true, the wiring put back,
-// the wiring taken out with the library left as it is). migrate answers SETUP_MIGRATE_PENDING when it
-// finds an old installation, whose migration is the second batch's (SUB-364 to SUB-366). Whatever the
-// mode, the wizard never commits, pushes, edits .gitignore or deletes anything: what it takes out is
-// moved into the device directory's backups.
+// the wiring taken out with the library left as it is). migrate (TCRN-CROSS-STORY-489 R1,
+// TCRN-CROSS-SUB-364) plans an old installation's migration: each old workspace the mapping names
+// becomes the first stream of its project's library (migrate-legacy.ts), and the plan says what each
+// partition carries and what stops it; SETUP_MIGRATE_NOTHING when there is no old installation. Its
+// apply is TCRN-CROSS-SUB-365's. Whatever the mode, the wizard never commits, pushes, edits
+// .gitignore or deletes anything: what it takes out is moved into the device directory's backups.
 
 import { lstat, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -39,11 +41,25 @@ import { assertStrictInstant } from "../../protocol/src/index.js";
 import { deviceFilePath, deviceHome as currentDeviceHome } from "./device-home.js";
 import type { DoctorCheck } from "./doctor.js";
 import { readEngineCurrent } from "./engine-home.js";
+import { ARTIFACT_LANGUAGE_TAGS } from "./knowledge-language.js";
 import { legacyControlDirectory } from "./legacy-workspace.js";
-import { LEGACY_DEVICE_DIRECTORY } from "./names.js";
+import { inferMigrationMapping, planMigration, readMigrationMapping } from "./migrate-legacy.js";
+import type { MigrationPlan } from "./migrate-legacy.js";
+import { DIRECTORY, LEGACY_DEVICE_DIRECTORY } from "./names.js";
 import { readRegistry } from "./registry.js";
 import type { RegistryEntry } from "./registry.js";
-import { applyFreshSetup, planFreshSetup } from "./setup-fresh.js";
+import {
+  SetupRecorder,
+  applyFreshSetup,
+  defaultCloud,
+  defaultLanguage,
+  freshLanguageTag,
+  planDevice,
+  planEngineSource,
+  planFreshSetup,
+  readDeviceNavigation,
+  realTarget,
+} from "./setup-fresh.js";
 import {
   applyRepairSetup,
   applyUninstallSetup,
@@ -64,8 +80,8 @@ export const SETUP_APPLIED_SCHEMA_VERSION = "einzbern.setup-applied.v1" as const
 export const SETUP_REASON_CODES = Object.freeze([
   // A given answer is not one the question takes (details: question).
   "SETUP_ANSWER_INVALID",
-  // The mode needs an answer that has no default (restore's library, update's release); the plan
-  // names the question.
+  // The mode needs an answer that has no default (restore's library, update's release, migrate's
+  // mapping); the plan names the question.
   "SETUP_ANSWER_REQUIRED",
   // The plan names something that stops the apply; its blockers say what.
   "SETUP_BLOCKED",
@@ -80,8 +96,6 @@ export const SETUP_REASON_CODES = Object.freeze([
   "SETUP_LIBRARY_EXISTS",
   // migrate found no installation from before the rename.
   "SETUP_MIGRATE_NOTHING",
-  // migrate found one; its migration is not in this engine yet.
-  "SETUP_MIGRATE_PENDING",
   "SETUP_MODE_INVALID",
   "SETUP_MODE_UNAVAILABLE",
   // An option that belongs to another mode.
@@ -112,9 +126,10 @@ export function setupFail(reasonCode: SetupReasonCode, message: string, details:
 /** The four questions of a first installation, on one screen (R5), each with its flag. */
 export const SETUP_QUESTIONS = Object.freeze(["artifacts", "cloud", "language", "navigation"] as const);
 export type SetupQuestionId = typeof SETUP_QUESTIONS[number];
-// The questions of the other modes: the library restore reads, the release update installs, and
-// what uninstall does with the managed sections.
-export type SetupModeQuestionId = "restore" | "archive" | "managedSections";
+// The questions of the other modes: the library restore reads, the release update installs, what
+// uninstall does with the managed sections, and which library each old workspace migrate finds
+// becomes.
+export type SetupModeQuestionId = "restore" | "archive" | "managedSections" | "mapping";
 
 export interface SetupAnswers {
   // The library's place; a relative path is taken from the project root.
@@ -137,7 +152,9 @@ export interface SetupQuestion {
   readonly id: SetupQuestionId | SetupModeQuestionId;
   readonly flag: string;
   // What the apply takes when the question stays open; null when there is nothing to take, and the
-  // plan then holds a SETUP_ANSWER_REQUIRED blocker until it is answered.
+  // plan then holds a SETUP_ANSWER_REQUIRED blocker until it is answered. migrate's mapping is the
+  // exception: its default is null, and the apply takes the mapping the plan inferred
+  // (migration.mapping) unless there is none, which is the blocker.
   readonly default: string | boolean | null;
   // The values it takes, or null for a path.
   readonly choices: readonly (string | boolean)[] | null;
@@ -345,6 +362,10 @@ export interface SetupPlan {
   readonly verification?: readonly RestoreCheck[];
   // update: the engine version current now and the one the apply makes current.
   readonly engineSwitch?: SetupEngineSwitch;
+  // migrate: the mapping it follows and, for each partition, the library it becomes, the chain's
+  // events and head, the gates that are not satisfied and the open work; the registry entries, the
+  // device settings that move and the host files it cleans up (migrate-legacy.ts).
+  readonly migration?: MigrationPlan;
   // Every file and directory the apply writes, in the order it writes them, and every original it
   // copies first; backupDir holds the copies of this run.
   readonly writes: readonly SetupWrite[];
@@ -429,7 +450,7 @@ export interface SetupModeInput {
 }
 
 /** What a mode's planner answers; planSetup puts it into the plan, with no warnings when the mode names none. */
-export type SetupModePlan = Pick<SetupPlan, "questions" | "resolved" | "engine" | "library" | "writes" | "backups" | "backupDir" | "pendingSections" | "blockers" | "verification" | "engineSwitch">
+export type SetupModePlan = Pick<SetupPlan, "questions" | "resolved" | "engine" | "library" | "writes" | "backups" | "backupDir" | "pendingSections" | "blockers" | "verification" | "engineSwitch" | "migration">
   & { readonly warnings?: readonly SetupWarning[] };
 
 interface SetupModeEntry {
@@ -442,16 +463,86 @@ function unavailable(mode: SetupMode): never {
   return setupFail("SETUP_MODE_UNAVAILABLE", `setup --mode ${mode} is not available in this engine yet`, { mode });
 }
 
-function migratePlan(input: SetupModeInput): never {
-  const { legacy } = input.context;
+// migrate's questions, on one screen with the skill's references migrate.md: the mapping, then the
+// three answers the project's wiring takes.
+function migrateQuestions(input: SetupModeInput, defaults: ResolvedSetupAnswers): readonly SetupQuestion[] {
+  const questions: SetupQuestion[] = [];
+  if (input.options.mapping === undefined) questions.push({ id: "mapping", flag: "--mapping", default: null, choices: null });
+  if (input.answers.cloud === undefined) questions.push({ id: "cloud", flag: "--cloud", default: defaults.cloud, choices: [true, false] });
+  if (input.answers.language === undefined) questions.push({ id: "language", flag: "--language", default: defaults.language, choices: [...ARTIFACT_LANGUAGE_TAGS] });
+  if (input.answers.navigation === undefined) questions.push({ id: "navigation", flag: "--navigation", default: defaults.navigation, choices: [true, false] });
+  return questions;
+}
+
+/**
+ * Plan a migration (TCRN-CROSS-STORY-489 R1; TCRN-CROSS-SUB-364): SETUP_MIGRATE_NOTHING without an
+ * installation from before the rename. The mapping is --mapping's file (a relative one is taken from
+ * the project), else the old workspace in the project itself; with neither, the question stays open
+ * and SETUP_ANSWER_REQUIRED stops the apply. Each partition's plan comes from planMigration; the
+ * writes are this device's identity when it has none, then the migration's in the order it makes
+ * them. Nothing is written.
+ */
+async function planMigrateSetup(input: SetupModeInput): Promise<SetupModePlan> {
+  const { context, answers, options } = input;
+  const { projectRoot, home, deviceHome, legacy } = context;
   if (!legacy.detected) {
     setupFail("SETUP_MIGRATE_NOTHING", "no installation from before the rename was found here: there is nothing to migrate", { mode: "migrate", remedy: "--mode fresh" });
   }
-  return setupFail("SETUP_MIGRATE_PENDING", "an installation from before the rename was found; migrating it is not in this engine yet", {
-    mode: "migrate",
-    ...(legacy.controlDirectory === null ? {} : { controlDirectory: legacy.controlDirectory }),
-    ...(legacy.deviceDirectory === null ? {} : { deviceDirectory: legacy.deviceDirectory }),
+  const language = answers.language === undefined ? null : freshLanguageTag(answers.language);
+  const recorder = new SetupRecorder(deviceHome, input.at);
+  const engine = await planEngineSource(recorder, deviceHome);
+  const deviceNavigation = await readDeviceNavigation(recorder, deviceHome);
+  await planDevice(recorder, deviceHome);
+
+  const mappingFile = options.mapping === undefined ? null : resolve(projectRoot, options.mapping);
+  const mapping = mappingFile === null ? inferMigrationMapping(projectRoot, legacy.controlDirectory) : await readMigrationMapping(mappingFile);
+  if (mapping === null) {
+    recorder.block("library", projectRoot, "SETUP_ANSWER_REQUIRED",
+      "name the migration mapping with --mapping <file>: the project whose library each old workspace becomes");
+  }
+  const planned = await planMigration({
+    mapping,
+    mappingFile,
+    home,
+    deviceHome,
+    legacyDeviceHome: legacy.deviceDirectory,
+    at: input.at,
+    ...(answers.cloud === undefined ? {} : { cloud: answers.cloud }),
   });
+  for (const write of planned.writes) recorder.write(write.step, write.path, write.action);
+  for (const blocker of planned.blockers) {
+    // A file both readers refuse, such as this device's machine settings, stops the apply once.
+    if (recorder.blockers.some((held) => held.step === blocker.step && held.path === blocker.path && held.reasonCode === blocker.reasonCode)) continue;
+    recorder.block(blocker.step, blocker.path, blocker.reasonCode, blocker.message);
+  }
+
+  // The answers the project's own wiring takes: its library is the one its partition becomes.
+  const own = planned.migration.partitions.find((partition) => partition.projectRoot === projectRoot) ?? null;
+  const artifacts = own?.target ?? await realTarget(join(projectRoot, DIRECTORY.library));
+  const defaults: ResolvedSetupAnswers = {
+    artifacts,
+    cloud: defaultCloud(context, artifacts),
+    language: own?.language ?? defaultLanguage(),
+    navigation: deviceNavigation !== "declined",
+  };
+  return {
+    questions: migrateQuestions(input, defaults),
+    resolved: {
+      artifacts,
+      cloud: answers.cloud ?? defaults.cloud,
+      language: language ?? defaults.language,
+      navigation: answers.navigation ?? defaults.navigation,
+    },
+    engine: { version: engine.version, directory: engine.directory },
+    library: own === null ? null : { path: own.target, action: "create", libraryId: own.workspaceId },
+    writes: recorder.writes,
+    backups: recorder.backups,
+    backupDir: recorder.backups.length > 0 ? recorder.backupRoot : null,
+    pendingSections: [],
+    blockers: recorder.blockers,
+    warnings: recorder.warnings,
+    migration: planned.migration,
+  };
 }
 
 // The mode table. Each row names the options its mode takes, its planner and its apply; the rows
@@ -477,7 +568,11 @@ const MODE_TABLE: Readonly<Record<SetupMode, SetupModeEntry>> = Object.freeze({
     plan: (input: SetupModeInput): Promise<SetupModePlan> => planRepairSetup(input),
     apply: (plan: SetupPlan): Promise<SetupApplied> => applyRepairSetup(plan),
   },
-  migrate: { options: ["mapping"], plan: async (input: SetupModeInput): Promise<SetupModePlan> => migratePlan(input), apply: async (): Promise<SetupApplied> => unavailable("migrate") },
+  migrate: {
+    options: ["mapping", "cloud", "language", "navigation"],
+    plan: (input: SetupModeInput): Promise<SetupModePlan> => planMigrateSetup(input),
+    apply: async (): Promise<SetupApplied> => unavailable("migrate"),
+  },
   uninstall: {
     options: ["managedSections"],
     plan: (input: SetupModeInput): Promise<SetupModePlan> => planUninstallSetup(input),
@@ -544,7 +639,7 @@ function checkedModeOptions(options: SetupOptions): SetupModeOptions {
  * Plan a setup in `mode` (R1, R5): nothing is written. Answers SETUP_PLAN_READY with the answers
  * given, the open questions and their defaults, the files the apply would write and back up, and
  * whatever stops the apply. A mode not in this engine yet answers SETUP_MODE_UNAVAILABLE, and
- * migrate SETUP_MIGRATE_PENDING when it finds an installation from before the rename (R6).
+ * migrate SETUP_MIGRATE_NOTHING when it finds no installation from before the rename (R6).
  */
 export async function planSetup(options: SetupOptions): Promise<SetupPlan> {
   if (!isSetupMode(options.mode)) setupFail("SETUP_MODE_INVALID", `mode must be one of ${SETUP_MODES.join(", ")}`, { mode: String(options.mode) });

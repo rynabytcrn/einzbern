@@ -511,6 +511,9 @@ interface SegmentedKnowledgeBodyManifest {
   readonly indexDigest: string;
 }
 
+// The largest file of the segmented layout a read opens: a segment, its point index or the manifest.
+const SEGMENTED_BODY_FILE_LIMIT = 16_777_216;
+
 function segmentedBodySha256(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -594,17 +597,90 @@ export class SegmentedKnowledgeStoreBackend implements StoreBackend {
     await this.writeKnowledgeBodiesSegmented(records);
   }
 
+  /**
+   * STORY-341: move the metadata/body layout's body files into segments. TCRN-CROSS-SUB-425 R18 (fixes
+   * STORY-341): the bodies the segments of a manifest already hold are read first and written again
+   * beside the ones the body files add, so a layout whose bodies are in segments, or partly in them,
+   * loses none it did not rewrite; with no body file to move, nothing is written. A body file whose
+   * card's segment holds a different body is refused (KNOWLEDGE_PARTIAL_STATE) before anything is
+   * written. `before` and `after` count the bodies the layout holds before and after the run, and
+   * `bodyBytes` is their size after it.
+   */
   async migrateKnowledgeBodies(segmentBytes = 1_048_576): Promise<{ readonly before: number; readonly after: number; readonly bodyBytes: number }> {
-    const legacy = (await this.delegate.listKnowledgeBodyFiles()).filter((name) => name.endsWith(".body")).sort(compareCanonicalText);
-    const records = [] as { readonly id: string; readonly bytes: Buffer }[];
-    for (const name of legacy) records.push({ id: name.slice(0, -5), bytes: await this.delegate.readKnowledgeBody(name.slice(0, -5)) });
-    await this.writeKnowledgeBodiesSegmented(records, segmentBytes);
-    for (const record of records) {
-      const readback = await this.readKnowledgeBody(record.id);
-      if (!readback.equals(record.bytes)) throw new StoreBackendError("KNOWLEDGE_SOURCE_CHANGED", record.id);
+    const { before, after, bodyBytes } = await this.rewriteKnowledgeBodies(segmentBytes, new Set(), null);
+    return { before, after, bodyBytes };
+  }
+
+  /**
+   * TCRN-CROSS-SUB-425 R18 (STORY-514 R4): the same rewrite less the bodies of `cleared`, the removed
+   * cards knowledge-core names, so that no segment holds them afterwards; every other body is written
+   * again byte for byte, with the manifest and the point indexes. `beforeWrite` is handed every file
+   * of bodies/ as it is, once everything is read and checked, before the first write and only when
+   * the run writes: a run with no body file to move and no body to clear writes nothing.
+   */
+  async clearKnowledgeBodies(
+    cleared: ReadonlySet<string>,
+    segmentBytes: number,
+    beforeWrite: (files: readonly { readonly name: string; readonly bytes: Buffer }[]) => Promise<void>,
+  ): Promise<{ readonly before: number; readonly after: number; readonly bodyBytes: number; readonly cleared: number }> {
+    return this.rewriteKnowledgeBodies(segmentBytes, cleared, beforeWrite);
+  }
+
+  private async rewriteKnowledgeBodies(
+    segmentBytes: number,
+    cleared: ReadonlySet<string>,
+    beforeWrite: ((files: readonly { readonly name: string; readonly bytes: Buffer }[]) => Promise<void>) | null,
+  ): Promise<{ readonly before: number; readonly after: number; readonly bodyBytes: number; readonly cleared: number }> {
+    if (!Number.isSafeInteger(segmentBytes) || segmentBytes < 4096) throw new StoreBackendError("KNOWLEDGE_LIMIT_EXCEEDED", "body segment size");
+    const names = await this.delegate.listKnowledgeBodyFiles();
+    const bodyFiles = names.filter((name) => name.endsWith(".body")).sort(compareCanonicalText);
+    // Segments with no manifest are what a first migration that stopped before its manifest left: the
+    // body files it was moving are all still there, and this rewrite replaces those segments.
+    const manifest = names.includes("manifest.json") ? await this.readSegmentedManifest() : null;
+    const held = manifest === null ? new Map<string, Buffer>() : await this.readSegmentedBodies(manifest);
+    for (const name of bodyFiles) {
+      const id = name.slice(0, -5);
+      const bytes = await this.delegate.readKnowledgeBody(id);
+      const segmented = held.get(id);
+      if (segmented === undefined) held.set(id, bytes);
+      else if (!segmented.equals(bytes)) throw new StoreBackendError("KNOWLEDGE_PARTIAL_STATE", `${id}: its body file and its segment hold different bodies`);
     }
-    for (const name of legacy) await this.delegate.removeKnowledgeBodyFile(name);
-    return { before: records.length, after: await this.listKnowledgeBodies().then((ids) => ids.length), bodyBytes: records.reduce((total, record) => total + record.bytes.length, 0) };
+    const kept = [...held].filter(([id]) => !cleared.has(id)).map(([id, bytes]) => ({ id, bytes }));
+    const bodyBytes = kept.reduce((total, record) => total + record.bytes.length, 0);
+    const clearing = held.size - kept.length;
+    if (bodyFiles.length === 0 && clearing === 0) return { before: held.size, after: held.size, bodyBytes, cleared: 0 };
+    if (beforeWrite !== null) {
+      const files: { readonly name: string; readonly bytes: Buffer }[] = [];
+      for (const name of [...names].sort(compareCanonicalText)) files.push({ name, bytes: await this.delegate.readKnowledgeBodyFile(name, SEGMENTED_BODY_FILE_LIMIT) });
+      await beforeWrite(files);
+    }
+    await this.writeKnowledgeBodiesSegmented(kept, segmentBytes);
+    const written = await this.readSegmentedManifest();
+    const readback = written === null ? new Map<string, Buffer>() : await this.readSegmentedBodies(written);
+    if (readback.size !== kept.length) throw new StoreBackendError("KNOWLEDGE_SOURCE_CHANGED", "body segments");
+    for (const record of kept) {
+      if (readback.get(record.id)?.equals(record.bytes) !== true) throw new StoreBackendError("KNOWLEDGE_SOURCE_CHANGED", record.id);
+    }
+    for (const name of bodyFiles) await this.delegate.removeKnowledgeBodyFile(name);
+    return { before: held.size, after: readback.size, bodyBytes, cleared: clearing };
+  }
+
+  // Every body the segments of a manifest hold, by id: each segment read once and checked against the
+  // manifest as a point read checks it. An id two segments name answers the first, as a point read does.
+  private async readSegmentedBodies(manifest: SegmentedKnowledgeBodyManifest): Promise<Map<string, Buffer>> {
+    const bodies = new Map<string, Buffer>();
+    for (const segment of manifest.segments) {
+      const index = await this.readSegmentedIndex(segment.name);
+      const bytes = await this.delegate.readKnowledgeBodyFile(segment.name, Math.max(SEGMENTED_BODY_FILE_LIMIT, segment.bytes));
+      if (bytes.length !== segment.bytes || segmentedBodySha256(bytes) !== segment.sha256) throw new StoreBackendError("KNOWLEDGE_SOURCE_CHANGED", segment.name);
+      for (const [id, location] of Object.entries(index)) {
+        if (bodies.has(id)) continue;
+        const value = assertCanonicalJson(bytes.subarray(location.offset, location.offset + location.length).toString("utf8"));
+        if (!segmentedBodyObject(value) || value.id !== id || typeof value.body !== "string") throw new StoreBackendError("KNOWLEDGE_RECORD_INVALID", id);
+        bodies.set(id, Buffer.from(value.body, "utf8"));
+      }
+    }
+    return bodies;
   }
 
   private async readSegmentedManifest(): Promise<SegmentedKnowledgeBodyManifest | null> {

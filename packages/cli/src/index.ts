@@ -1178,7 +1178,9 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "knowledge-article-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "path", required: true, valueKind: "string" }, { name: "category", required: true, valueKind: "string" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "content", required: true, valueKind: "string" }, { name: "accountable-owner-id", required: true, valueKind: "string" }, { name: "evidence-ids", required: true, valueKind: "list" }, { name: "language-bundle", required: false, valueKind: "string" }] },
   { name: "knowledge-article-refresh", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "expected-revision", required: true, valueKind: "integer" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "path", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "language-bundle", required: false, valueKind: "string" }] },
   { name: "knowledge-batch", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "from-file", required: true, valueKind: "string" }, { name: "align-first", required: false, valueKind: "boolean" }, { name: "language-bundle", required: false, valueKind: "string" }] },
-  { name: "knowledge-bodies-migrate", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "segment-bytes", required: false, valueKind: "integer" }] },
+  // TCRN-CROSS-SUB-425 R18: --clear-removed true clears the removed cards' bodies from the metadata/body
+  // layout on the library's sole writer, and takes --at, the instant its backup is named by.
+  { name: "knowledge-bodies-migrate", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "segment-bytes", required: false, valueKind: "integer" }, { name: "clear-removed", required: false, valueKind: "boolean" }, { name: "at", required: false, valueKind: "instant" }] },
   // TCRN-CROSS-STORY-476 R1, R5: knowledge-create's --lifecycle is optional (active is all it takes),
   // --promotion and --allow-unpromoted are gone with the candidate, knowledge-create and
   // knowledge-capture take scope user, and list, snippet and body read the user crest with --scope user.
@@ -2351,10 +2353,13 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   if (command === "knowledge-bodies-migrate") {
-    const values = parseArguments(rest, ["workspace", "segment-bytes"]);
+    const values = parseArguments(rest, ["workspace", "segment-bytes", "clear-removed", "at"]);
     required(values, ["workspace"]);
     const segmentBytes = values["segment-bytes"] === undefined ? undefined : integerValue(values, "segment-bytes");
-    io.write(canonicalJson(await migrateKnowledgeBodies(values.workspace ?? "", segmentBytes)));
+    io.write(canonicalJson(await migrateKnowledgeBodies(values.workspace ?? "", segmentBytes, {
+      clearRemoved: booleanValue(values["clear-removed"], "clear-removed"),
+      ...(values.at === undefined ? {} : { at: values.at }),
+    })));
     return;
   }
   if (command === "knowledge-validate") {

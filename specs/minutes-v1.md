@@ -145,9 +145,14 @@ summary, snippet or references name the decision (`minutes:<id>#Dn`,
 record that carries it), are read with `obsoleteDecisions`: `[{decision,
 supersededBy}]`, `supersededBy` null when the decision was withdrawn. work-show
 answers the work record's; a recall hit carries its record's, and its line adds
-`过时决策 <decision>→<successor or 撤回>` after the id. Recall and the prompt
-hook index the valid decisions of each record only, and a record with none is
-not indexed.
+`过时决策 <decision>→<successor or 撤回>` after the id. Recall's `--status`
+reads only the family of records that has the status it names, as that family's
+read does: left out or `valid`, the valid decisions of each record, a record
+with none not indexed; `obsolete`, the obsolete decisions alone, a record with
+none not indexed, each minutes hit carrying its own under `obsoleteDecisions`;
+`all`, every decision of every record. `removed` names a card status and leaves
+the decisions valid. The prompt hook takes no status and indexes the valid
+decisions only.
 
 ## Cards that repeat a record
 

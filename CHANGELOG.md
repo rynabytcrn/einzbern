@@ -340,10 +340,14 @@ and one with obsolete decisions names their numbers under `withheldDecisions`; i
 each decision has `status`, and an obsolete one `supersededBy` (the successor's number, text and
 status, null when withdrawn) and `declaredIn`, while a valid one lists what it `supersedes`.
 `minutes-show --id minutes:<id>#D<n>` (or `--external-key <key>#D<n>`) reads that decision whatever
-its state. Recall and the prompt hook index only valid decisions (a minutes hit's lead keeps the
-decision's own number); `work-show` and a recall hit answer `obsoleteDecisions [{decision,
-supersededBy}]` when the record's decided-in minutes, or a card's referenced minutes or named
-decisions, hold an obsolete decision, and the hit's line adds `过时决策 <decision>→<successor>`.
+its state. Recall indexes only valid decisions (a minutes hit's lead keeps the decision's own
+number) unless `recall --status` names a decision status, which it reads as `minutes-list` does:
+`obsolete` the obsolete decisions alone, each minutes hit carrying its own under
+`obsoleteDecisions` with its successor or null, and `all` every decision; `removed`, a card status,
+leaves the decisions valid, and the prompt hook takes no status and indexes valid decisions only.
+`work-show` and a recall hit answer `obsoleteDecisions [{decision, supersededBy}]` when the
+record's decided-in minutes, or a card's referenced minutes or named decisions, hold an obsolete
+decision, and the hit's line adds `过时决策 <decision>→<successor>`.
 No minutes verb is added. Before a card is written, knowledge-create, knowledge-batch,
 knowledge-capture and an article's index card compare it with every live work record and every
 valid decision; a card whose words one of them carries for at least half their weight (eight or
@@ -666,10 +670,12 @@ the earliest stands. A removed card keeps its id, external key, subject, `supers
 (`reason`, `basis`, `actor`, `removedAt`, `supersededBy`, and the event's `deviceId`, `sequence` and
 `eventHash`); each device deletes the body files its own stream holds for removed cards at its next
 write to that crest, the removing or superseding write included, while the metadata/body layout an
-older engine left keeps its bodies. `knowledge-list` and `recall` take `--status valid|removed|all`,
-`valid` when left out and echoed as `status`: default reads, `--selection all` among them, answer valid
-cards only, and `removed` or `all` add each removed card as it is kept, a recall hit on one reading
-`[卡片 已移除]`. The prompt hook, the knowledge hint, a checkpoint, `knowledge-freshness` and
+older engine left keeps its bodies. `knowledge-list` and `recall` take `--status valid|removed|all`
+(`recall` also `obsolete`, a decision status that leaves its cards valid), `valid` when left out and
+echoed as `status`: default reads, `--selection all` among them, answer valid cards only, `removed`
+the removed cards alone and `all` every card, each removed card as it is kept, and a recall hit on
+one reads `[卡片 已移除]` and carries its `removal` as the list gives it. The prompt hook, the
+knowledge hint, a checkpoint, `knowledge-freshness` and
 `knowledge-source-check` read valid cards only. `knowledge-snippet`, `knowledge-body`,
 `knowledge-reverify`, `knowledge-policy`, `knowledge-article-refresh`, a write superseding a removed card
 and a second removal are refused with `KNOWLEDGE_CARD_REMOVED` (details `id`, `removal`, `remedy`),

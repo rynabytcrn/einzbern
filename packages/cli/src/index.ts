@@ -858,11 +858,15 @@ function statusFilterOption(value: string | undefined): { readonly status?: Know
   return { status: value as KnowledgeStatusFilter };
 }
 
-// TCRN-CROSS-SUB-426 R17 续作修订二 (MIN-239 D6; STORY-514 R4): recall's --status. Left out, or valid,
-// recall reads valid records only: valid cards and valid decisions. removed adds the removed cards, as
-// each is kept (TCRN-CROSS-SUB-425); obsolete adds the obsolete decisions, each with the decision that
-// superseded it or null when withdrawn, as minutes-show's explicit read says of it; all adds both. A
-// model adds it only when a user asked for them; the prompt hook reads valid records only, always.
+// TCRN-CROSS-SUB-426 R17 续作修订三 (C-R18-1; MIN-239 D6; STORY-514 R4): recall's --status. Each value
+// reads only the family of records that has that status, as that family's list verb reads it, and the
+// other family's valid records. Left out, or valid, recall reads valid records only: valid cards and
+// valid decisions. removed reads the removed cards alone, each as it is kept with its removal
+// (knowledge-list --status removed, TCRN-CROSS-SUB-425); obsolete reads the obsolete decisions alone,
+// each with the decision that superseded it or null when withdrawn (minutes-list --status obsolete);
+// all reads every card and every decision. Work records have no such status and are recalled as always.
+// A model adds it only when a user asked for them; the prompt hook takes none and reads valid records
+// only, always.
 const RECALL_STATUS_FILTERS = Object.freeze(["valid", "removed", "obsolete", "all"] as const);
 type RecallStatusFilter = typeof RECALL_STATUS_FILTERS[number];
 
@@ -2526,7 +2530,8 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   if (command === "knowledge-list") {
     // TCRN-CROSS-STORY-476 R1, R5 (TCRN-CROSS-SUB-311): --promotion is gone with the candidate it
     // selected, and --scope user lists this user's crest instead of the library's. TCRN-CROSS-SUB-425:
-    // --status removed or all adds the removed cards, each as it is kept; left out, the valid ones.
+    // left out, or valid, the valid cards; --status removed the removed cards alone and all every card,
+    // each removed one as it is kept.
     const values = parseArguments(rest, ["workspace", "at", "scope", "selection", "status", "project-id", "role-scope", "category", "kind", "tag", "freshness", "search", "limit", "offset", "allow-trailing"]);
     required(values, ["workspace", "at"]);
     io.write(canonicalJson(await listKnowledgeMetadata(values.workspace ?? "", {
@@ -2648,15 +2653,16 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // TCRN-CROSS-STORY-474: recall answers from one library, whatever directory it sits in; the
     // partition flag went with the partition registry. --host stays: it names the prompt-language
     // policy the answer is negotiated against.
-    // TCRN-CROSS-SUB-425 (MIN-239 D6): the cards are the valid ones unless --status asks for the removed
-    // ones as well (removed, all), which a model adds only when a user asked for them.
-    // TCRN-CROSS-SUB-426 R17 续作修订二 (STORY-514 R4): so are the decisions, unless --status asks for the
-    // obsolete ones as well (obsolete, all); see recallStatusOption.
+    // TCRN-CROSS-SUB-425 (MIN-239 D6), TCRN-CROSS-SUB-426 R17 续作修订三 (C-R18-1; STORY-514 R4): the
+    // cards and the decisions are the valid ones unless --status names a status of one family, which reads
+    // that family as its list verb does (removed: the removed cards alone; obsolete: the obsolete
+    // decisions alone; all: both families whole) and the other family's valid records; a model adds it
+    // only when a user asked for them. See recallStatusOption.
     const values = parseArguments(rest, ["workspace", "host", "at", "query", "limit", "tau", "allow-trailing", "status"]);
     required(values, ["workspace", "at", "query"]);
     const status = recallStatusOption(values.status);
-    const withRemovedCards = status.status === "removed" || status.status === "all";
-    const decisions: DecisionStatusFilter = status.status === "obsolete" || status.status === "all" ? "all" : "valid";
+    const cardStatus: KnowledgeStatusFilter = status.status === "removed" || status.status === "all" ? status.status : "valid";
+    const decisions: DecisionStatusFilter = status.status === "obsolete" || status.status === "all" ? status.status : "valid";
     const workspace = values.workspace ?? "";
     const query = values.query ?? "";
     if (query.length === 0 || query.length > 4096 || !query.isWellFormed()) fail("CLI_ARGUMENT_MALFORMED", "query");
@@ -2691,11 +2697,12 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // work records and minutes to recall, and its reason code is reported rather than swallowed,
     // so "no cards" is never indistinguishable from "no card matched". knowledgeReasonCode stays
     // the library store's, as it always was.
-    // A read of the removed cards as well reads every card, the valid ones and the removed ones.
+    // Each store answers the card status as knowledge-list does: removed, the removed cards alone; all,
+    // every card.
     const cards = await readRecallCards(workspace, {
       at: values.at ?? "",
       allowTrailing: booleanValue(values["allow-trailing"], "allow-trailing"),
-      ...(withRemovedCards ? { status: "all" as const } : {}),
+      ...(cardStatus === "valid" ? {} : { status: cardStatus }),
     });
     // TCRN-CROSS-STORY-474 R1: what the index holds is decided in one place (recall-inputs.ts), so
     // the verb and the prompt hook cannot index differently: the Stories, Incidents, Initiatives and
@@ -2708,21 +2715,27 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       // digests of the two knowledge answers they were read with. Any one moving is a
       // different corpus, and the index is rebuilt from the rows that actually changed.
       // A library's head is one digest over every stream's head, so it moves with any
-      // entry of the version vector. An index that holds the obsolete decisions as well is
-      // another corpus at the same head, and says so.
-      checkpoint: `${state.headEventHash}:${cards.digest}${decisions === "valid" ? "" : ":decisions=all"}`,
+      // entry of the version vector. An index of another status of decisions is another corpus
+      // at the same head, and names that status (the cards' status is in their digest).
+      checkpoint: `${state.headEventHash}:${cards.digest}${decisions === "valid" ? "" : `:decisions=${decisions}`}`,
       documents: () => recallDocuments(inputs),
       query,
       tau,
       ...(limit === undefined ? {} : { limit }),
     });
-    // TCRN-CROSS-SUB-425: a hit on a removed card, which only --status removed or all reads, says so.
-    const removedCards = new Set(cards.removedCardIds);
-    const statusHits = result.records.map((hit) => hit.kind === "card" && removedCards.has(hit.id) ? { ...hit, status: "removed" } : hit);
-    // TCRN-CROSS-SUB-426 (MIN-239 D5, D6): valid decisions are indexed unless --status asked for the
-    // obsolete ones too; a work or card hit that points at an obsolete decision -- and, in a recall that
-    // asked for them, a minutes hit that holds one -- carries it under obsoleteDecisions, with the
-    // decision that superseded it (null when withdrawn), and its line says so.
+    // TCRN-CROSS-SUB-425, TCRN-CROSS-SUB-426 R17 续作修订三 (STORY-514 AC1): a hit on a removed card, which
+    // only --status removed or all reads, says so and carries the card's removal as knowledge-list
+    // answers it: the reason, basis, actor and instant, the card that superseded it, and its event.
+    const removals = new Map(cards.cards.flatMap((card) => (card.removal === undefined ? [] : [[card.id, card.removal] as const])));
+    const statusHits = result.records.map((hit) => {
+      const removal = hit.kind === "card" ? removals.get(hit.id) : undefined;
+      return removal === undefined ? hit : { ...hit, status: "removed", removal };
+    });
+    // TCRN-CROSS-SUB-426 (MIN-239 D5, D6): the valid decisions are indexed unless --status named
+    // obsolete (the obsolete ones alone) or all (every one); a work or card hit that points at an
+    // obsolete decision -- and, in a recall that indexed them, a minutes hit that holds one -- carries it
+    // under obsoleteDecisions, with the decision that superseded it (null when withdrawn), and its line
+    // says so.
     const hits = recallDecisionHints(state, cards.cards, statusHits, { decisions });
     io.write(canonicalJson({
       schemaVersion: "tcrn.recall.v1",
@@ -2782,6 +2795,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
         line: formatRecallLine(hit), parentChain: [...hit.parentChain],
         ...(hit.scope === undefined ? {} : { scope: hit.scope }),
         ...(hit.obsoleteDecisions === undefined ? {} : { obsoleteDecisions: hit.obsoleteDecisions.map((entry) => ({ ...entry })) }),
+        ...(hit.removal === undefined ? {} : { removal: { ...hit.removal } }),
       })),
       perPromptBytes,
       context: [...recallContextLines(hits, perPromptBytes)],

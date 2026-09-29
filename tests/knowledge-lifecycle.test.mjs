@@ -7,9 +7,10 @@
 // body. A removal is an event in the remover's own stream of the crest, so it travels with the crest;
 // no event file is deleted, and each device clears the bodies its own stream holds for removed cards at
 // its next write. Reads answer valid cards unless asked for another status: knowledge-list, recall and
-// the prompt hook leave removed cards out, and --status removed answers each as it is kept -- its id,
-// external key, subject, removal and the supersession it took part in, with no summary, snippet or
-// body. A card another card supersedes is removed by it (conflict superseded).
+// the prompt hook leave removed cards out, and --status removed answers the removed cards alone, each as
+// it is kept -- its id, external key, subject, removal and the supersession it took part in, with no
+// summary, snippet or body; a recall hit on one carries the removal as the list gives it (TCRN-CROSS-SUB-426
+// R17 续作修订三). A card another card supersedes is removed by it (conflict superseded).
 //
 // Two devices share one library the way a synced folder shares it: both write into one directory, and
 // "not delivered yet" is the test holding a device's new files out of it, then putting them back.
@@ -249,6 +250,14 @@ test("SUB-425 AC1: a card removed as invalid leaves default list, recall and the
   const hit = recalledRemoved.records.find((entry) => entry.id === plover.id);
   assert.deepEqual([recalledRemoved.status, hit?.status, hit?.summary], ["removed", "removed", ""]);
   assert.ok(hit.line.startsWith("[卡片 已移除] Plover roost moved to the north spit"), hit.line);
+  // TCRN-CROSS-SUB-426 R17 续作修订三 (STORY-514 AC1): the hit carries the removal the list answers -- why,
+  // on what basis, by whom, when and by which card -- and --status removed recalls the removed cards alone.
+  assert.deepEqual(hit.removal, onlyRemoved.records[0].removal);
+  assert.deepEqual([hit.removal.reason, hit.removal.basis, hit.removal.actor, hit.removal.supersededBy], ["invalid", basis, ACTOR, null]);
+  const dunlinRemoved = await cli(fx.homeB, ["recall", "--workspace", fx.workspace, "--at", AT, "--query", "dunlin flocks low tide", "--tau", "0", "--status", "removed"]);
+  assert.equal(dunlinRemoved.records.some((entry) => entry.id === dunlin.id), false, "--status removed recalls no valid card");
+  const dunlinAll = await cli(fx.homeB, ["recall", "--workspace", fx.workspace, "--at", AT, "--query", "dunlin flocks low tide", "--tau", "0", "--status", "all"]);
+  assert.equal(Object.hasOwn(dunlinAll.records.find((entry) => entry.id === dunlin.id) ?? { removal: "missing hit" }, "removal"), false, "--status all recalls the valid card, with no removal");
 
   // The body and the snippet are refused, naming the removal; so is every write of the card.
   for (const read of [

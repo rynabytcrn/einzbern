@@ -340,19 +340,21 @@ test("MIN-239 D6: the prompt hook recalls valid decisions only and says what rep
   assert.ok(storyLines.some((line) => line.includes(`过时决策 ${address("DL-MIN-1", 1)}→${address("DL-MIN-2", 1)}`)), JSON.stringify(storyLines));
 });
 
-// TCRN-CROSS-SUB-426 R17 续作修订二 (MIN-239 D6; STORY-514 R4): recall --status takes valid, removed,
-// obsolete and all. valid, the default, reads valid records only; removed adds the removed cards,
-// obsolete adds the obsolete decisions, each with the decision that superseded it or 撤回, and all
-// adds both. The prompt hook takes no status and reads valid records only.
+// TCRN-CROSS-SUB-426 R17 续作修订三 (C-R18-1; MIN-239 D6; STORY-514 R4): recall --status takes valid,
+// removed, obsolete and all, and each value reads only the family of records that has that status, as
+// that family's list verb does, and the other family's valid records. valid, the default, reads valid
+// records only; removed reads the removed cards alone, each with its removal; obsolete reads the
+// obsolete decisions alone, each with the decision that superseded it or 撤回; all reads both families
+// whole. The prompt hook takes no status and reads valid records only.
 async function recallAs(fx, second, query, status) {
   return cli(["recall", "--workspace", fx.workspace, "--at", at(second), "--query", query, "--tau", "0", ...(status === undefined ? [] : ["--status", status])]);
 }
 
-test("SUB-426 (R17 续作修订二; STORY-514 R4): recall adds the obsolete decisions only under --status obsolete or all, each with its successor or 撤回", async (context) => {
+test("SUB-426 (R17 续作修订三; STORY-514 R4): recall --status obsolete reads the obsolete decisions alone and all every decision, each obsolete one with its successor or 撤回", async (context) => {
   const fx = await library(context);
   const first = await fx.record(10, "DL-MIN-1", [EAST]);
   const second = await fx.record(11, "DL-MIN-2", [WEST, PELICAN], ["--supersedes", "DL-MIN-1#D1=D1"]);
-  await fx.record(12, "DL-MIN-3", ["Settle the heron ledger."], ["--withdraws", "DL-MIN-2#D2"]);
+  const third = await fx.record(12, "DL-MIN-3", ["Settle the heron ledger."], ["--withdraws", "DL-MIN-2#D2"]);
   const hitOf = (answer, id) => answer.records.find((hit) => hit.id === id);
   const superseded = { decision: address("DL-MIN-1", 1), supersededBy: address("DL-MIN-2", 1) };
   const withdrawn = { decision: address("DL-MIN-2", 2), supersededBy: null };
@@ -368,39 +370,54 @@ test("SUB-426 (R17 续作修订二; STORY-514 R4): recall adds the obsolete deci
     assert.equal((await recallAs(fx, moment, "pelican noon", status)).records.some((hit) => hit.id === second.id), false, "the withdrawn decision's words find nothing");
   }
 
-  // obsolete and all add each obsolete decision beside the valid ones, with its successor or 撤回.
-  for (const [moment, status] of [[15, "obsolete"], [16, "all"]]) {
-    const answer = await recallAs(fx, moment, "east shelf otter archive", status);
-    assert.equal(answer.status, status);
-    const firstHit = hitOf(answer, first.id);
-    assert.deepEqual(firstHit?.obsoleteDecisions, [superseded], `${status}: the obsolete decision comes with the decision that superseded it`);
-    assert.ok(firstHit.line.includes(`D1 ${EAST}`), firstHit.line);
-    assert.ok(firstHit.line.includes(`过时决策 ${superseded.decision}→${superseded.supersededBy}`), firstHit.line);
-    const secondHit = hitOf(answer, second.id);
-    assert.ok(secondHit !== undefined, `${status}: the valid decisions are still recalled`);
-    assert.deepEqual(secondHit.obsoleteDecisions, [withdrawn], `${status}: a withdrawn decision has no successor`);
-    assert.ok(secondHit.line.includes(`过时决策 ${withdrawn.decision}→撤回`), secondHit.line);
-    const pelican = await recallAs(fx, moment, "pelican noon", status);
-    assert.deepEqual(hitOf(pelican, second.id)?.obsoleteDecisions, [withdrawn], `${status}: the withdrawn decision's words find its record`);
-  }
+  // obsolete: each record with its obsolete decisions alone, each with its successor or 撤回; a valid
+  // decision is not indexed, and a record with no obsolete decision is not recalled.
+  const obsolete = await recallAs(fx, 15, "east shelf otter archive", "obsolete");
+  assert.equal(obsolete.status, "obsolete");
+  const firstObsolete = hitOf(obsolete, first.id);
+  assert.deepEqual(firstObsolete?.obsoleteDecisions, [superseded], "the obsolete decision comes with the decision that superseded it");
+  assert.ok(firstObsolete.line.includes(`D1 ${EAST}`), firstObsolete.line);
+  assert.ok(firstObsolete.line.includes(`过时决策 ${superseded.decision}→${superseded.supersededBy}`), firstObsolete.line);
+  assert.equal(hitOf(await recallAs(fx, 15, "west shelf otter archive", "obsolete"), second.id), undefined, "the valid decision's words do not find its record");
+  const pelicanObsolete = hitOf(await recallAs(fx, 15, "pelican noon", "obsolete"), second.id);
+  assert.deepEqual(pelicanObsolete?.obsoleteDecisions, [withdrawn], "the withdrawn decision's words find its record, with no successor");
+  assert.ok(pelicanObsolete.line.includes(`D2 ${PELICAN}`), pelicanObsolete.line);
+  assert.ok(pelicanObsolete.line.includes(`过时决策 ${withdrawn.decision}→撤回`), pelicanObsolete.line);
+  assert.equal(hitOf(await recallAs(fx, 16, "heron ledger", "obsolete"), third.id), undefined, "a record with no obsolete decision is not indexed");
+
+  // all: every decision of every record, each obsolete one with its successor or 撤回. Asked right after
+  // an obsolete read, it is not answered from that read's index: the checkpoint names the status.
+  const heron = await recallAs(fx, 16, "heron ledger", "all");
+  assert.equal(heron.rebuilt, true, "an all read after an obsolete read at the same head rebuilds its index");
+  assert.ok(hitOf(heron, third.id) !== undefined, "a record whose decisions are all valid is recalled under all");
+  const all = await recallAs(fx, 17, "east shelf otter archive", "all");
+  assert.equal(all.status, "all");
+  const firstAll = hitOf(all, first.id);
+  assert.deepEqual(firstAll?.obsoleteDecisions, [superseded]);
+  assert.ok(firstAll.line.includes(`过时决策 ${superseded.decision}→${superseded.supersededBy}`), firstAll.line);
+  const secondAll = hitOf(all, second.id);
+  assert.ok(secondAll !== undefined, "all: the valid decisions are recalled beside the obsolete ones");
+  assert.deepEqual(secondAll.obsoleteDecisions, [withdrawn], "all: a withdrawn decision has no successor");
+  assert.ok(secondAll.line.includes(`过时决策 ${withdrawn.decision}→撤回`), secondAll.line);
+  assert.deepEqual(hitOf(await recallAs(fx, 17, "pelican noon", "all"), second.id)?.obsoleteDecisions, [withdrawn]);
 
   for (const status of ["gone", "removed,obsolete", "VALID"]) {
-    const refused = await refusal(["recall", "--workspace", fx.workspace, "--at", at(17), "--query", "otter", "--status", status]);
+    const refused = await refusal(["recall", "--workspace", fx.workspace, "--at", at(18), "--query", "otter", "--status", status]);
     assert.equal(refused?.reasonCode, "CLI_ARGUMENT_MALFORMED", status);
   }
   // A default read after the explicit ones is the default again: an index a status read built is not reused.
-  assert.equal(hitOf(await recallAs(fx, 18, "east shelf otter archive"), first.id), undefined);
+  assert.equal(hitOf(await recallAs(fx, 19, "east shelf otter archive"), first.id), undefined);
   assert.equal((await cli(["chain-validate", "--workspace", fx.workspace])).reasonCode, "CHAIN_VALIDATED");
 });
 
-test("SUB-426 (R17 续作修订二): recall --status removed adds the removed cards, all adds them and the obsolete decisions, and the prompt hook recalls valid records only", async (context) => {
+test("SUB-426 (R17 续作修订三; STORY-514 AC1): recall --status removed reads the removed cards alone with their removal and the valid decisions, obsolete the obsolete decisions and the valid cards, all both, and the prompt hook recalls valid records only", async (context) => {
   const fx = await library(context, "decision-recall-status");
   const directory = join(fx.base, "project");
   const git = spawnSync("git", ["init", "--quiet", directory], { encoding: "utf8" });
   assert.equal(git.status, 0, git.stderr);
   await registerLibrary({ projectPath: directory, libraryPath: fx.workspace, registeredAt: at(4) });
   const first = await fx.record(10, "DL-MIN-1", [EAST]);
-  await fx.record(11, "DL-MIN-2", [WEST], ["--supersedes", "DL-MIN-1#D1=D1"]);
+  const second = await fx.record(11, "DL-MIN-2", [WEST], ["--supersedes", "DL-MIN-1#D1=D1"]);
   await initializeKnowledgeStore(fx.workspace, { disposableAcknowledged: true });
   const card = (moment, key, subject, summary, body) => cli(["knowledge-create", "--workspace", fx.workspace, "--at", at(moment), "--external-key", key,
     "--scope", "workspace", "--project-id", "-", "--role-scopes", "-", "--category", "workflow", "--kind", "fact", "--tags", "lesson", "--subject", subject,
@@ -414,22 +431,31 @@ test("SUB-426 (R17 续作修订二): recall --status removed adds the removed ca
   await setWorkspaceSetting(fx.workspace, { occurredAt: at(15), key: "retrieval.tau", value: "0" });
   const ids = (answer) => answer.records.map((hit) => hit.id);
   const obsoleteHint = [{ decision: address("DL-MIN-1", 1), supersededBy: address("DL-MIN-2", 1) }];
+  const listedRemoval = (await cli(["knowledge-list", "--workspace", fx.workspace, "--at", at(16), "--status", "removed"])).records.find((record) => record.id === gone.id)?.removal;
+  assert.deepEqual([listedRemoval?.reason, listedRemoval?.basis, listedRemoval?.actor, listedRemoval?.supersededBy], ["invalid", "The lamp was taken out.", OWNER, null]);
 
-  // removed: the removed card as it is kept, beside the valid cards, and no obsolete decision.
+  // removed: the removed card as it is kept, with the removal knowledge-list answers; no valid card and
+  // no obsolete decision, and the valid decisions still.
   const lamp = await recallAs(fx, 16, "quokka enclosure lamp", "removed");
   const lampHit = lamp.records.find((hit) => hit.id === gone.id);
   assert.deepEqual([lamp.status, lampHit?.status, lampHit?.summary], ["removed", "removed", ""]);
+  assert.deepEqual(lampHit.removal, listedRemoval, "the hit carries the card's removal as knowledge-list answers it");
   assert.ok(lampHit.line.startsWith("[卡片 已移除] Quokka enclosure lamp notes"), lampHit.line);
-  assert.ok(ids(await recallAs(fx, 16, "walrus pool filter", "removed")).includes(kept.id), "removed adds to the valid cards and does not replace them");
-  assert.equal(ids(await recallAs(fx, 16, "east shelf otter archive", "removed")).includes(first.id), false, "removed adds no obsolete decision");
-  // obsolete: the obsolete decision, and no removed card.
+  assert.equal(ids(await recallAs(fx, 16, "walrus pool filter", "removed")).includes(kept.id), false, "removed reads the removed cards alone");
+  assert.equal(ids(await recallAs(fx, 16, "east shelf otter archive", "removed")).includes(first.id), false, "removed reads no obsolete decision");
+  assert.ok(ids(await recallAs(fx, 16, "west shelf otter archive", "removed")).includes(second.id), "removed keeps the valid decisions");
+  // obsolete: the obsolete decision alone, and the valid cards.
   assert.deepEqual((await recallAs(fx, 17, "east shelf otter archive", "obsolete")).records.find((hit) => hit.id === first.id)?.obsoleteDecisions, obsoleteHint);
-  assert.equal(ids(await recallAs(fx, 17, "quokka enclosure lamp", "obsolete")).includes(gone.id), false, "obsolete adds no removed card");
-  assert.ok(ids(await recallAs(fx, 17, "walrus pool filter", "obsolete")).includes(kept.id));
-  // all: both, beside the valid records.
-  assert.equal((await recallAs(fx, 18, "quokka enclosure lamp", "all")).records.find((hit) => hit.id === gone.id)?.status, "removed");
+  assert.equal(ids(await recallAs(fx, 17, "west shelf otter archive", "obsolete")).includes(second.id), false, "obsolete reads no valid decision");
+  assert.equal(ids(await recallAs(fx, 17, "quokka enclosure lamp", "obsolete")).includes(gone.id), false, "obsolete reads no removed card");
+  assert.ok(ids(await recallAs(fx, 17, "walrus pool filter", "obsolete")).includes(kept.id), "obsolete keeps the valid cards");
+  // all: both families whole.
+  const allLamp = (await recallAs(fx, 18, "quokka enclosure lamp", "all")).records.find((hit) => hit.id === gone.id);
+  assert.deepEqual([allLamp?.status, allLamp?.removal], ["removed", listedRemoval]);
   assert.deepEqual((await recallAs(fx, 18, "east shelf otter archive", "all")).records.find((hit) => hit.id === first.id)?.obsoleteDecisions, obsoleteHint);
-  assert.ok(ids(await recallAs(fx, 18, "walrus pool filter", "all")).includes(kept.id));
+  const walrusAll = (await recallAs(fx, 18, "walrus pool filter", "all")).records.find((hit) => hit.id === kept.id);
+  assert.deepEqual([walrusAll?.status, Object.hasOwn(walrusAll ?? {}, "removal")], ["active", false], "a valid card's hit carries no removal");
+  assert.ok(ids(await recallAs(fx, 18, "west shelf otter archive", "all")).includes(second.id));
   // The default: neither.
   assert.equal(ids(await recallAs(fx, 19, "quokka enclosure lamp")).includes(gone.id), false);
   assert.equal(ids(await recallAs(fx, 19, "east shelf otter archive")).includes(first.id), false);
@@ -442,6 +468,104 @@ test("SUB-426 (R17 续作修订二): recall --status removed adds the removed ca
   const cardLines = await ask("quokka enclosure lamp");
   assert.equal(cardLines.some((line) => line.includes(gone.id) || line.includes("已移除")), false, JSON.stringify(cardLines));
   assert.ok((await ask("walrus pool filter")).some((line) => line.includes(kept.id)));
+});
+
+// TCRN-CROSS-SUB-426 R17 续作修订三 (C-R18-1; accept-r17-epic142 §4.1): the four read surfaces answer each
+// --status value alike. knowledge-list and Atelier's knowledge list read the cards, minutes-list and
+// minutes-show the decisions, and recall both: a value names a status of one family, which every
+// surface of that family reads the same way, while a surface of the other family refuses it and recall
+// reads that family's valid records. Atelier's list is the read its /api/knowledge runs
+// (portal/portal.mjs, knowledgeProjection), with the status the viewer picked, valid when none; its
+// route's refusal of any other value is portal/tests/portal.test.mjs's.
+const ATELIER_KNOWLEDGE_READ = Object.freeze(["--selection", "all", "--allow-trailing", "true"]);
+
+test("SUB-426 (R17 续作修订三; C-R18-1): each --status value means the same on knowledge-list, minutes-list and minutes-show, recall and Atelier's knowledge list", async (context) => {
+  const fx = await library(context, "decision-four-surfaces");
+  await initializeKnowledgeStore(fx.workspace, { disposableAcknowledged: true });
+  const card = (moment, key, subject, body, extra = []) => cli(["knowledge-create", "--workspace", fx.workspace, "--at", at(moment), "--external-key", key,
+    "--scope", "workspace", "--project-id", "-", "--role-scopes", "-", "--category", "workflow", "--kind", "fact", "--tags", "lesson", "--subject", subject,
+    "--summary", `${subject} summary`, "--snippet", body.toLowerCase(), "--accountable-owner-id", OWNER, "--source-references", "-", "--retrieval", "default",
+    "--freshness", "fresh", "--last-verified", "-", "--stale-days", "-", "--export", "metadata-only", "--coexist", "true", "--body", body, ...extra]);
+  const minutes = (moment, key, title, decisions, extra = []) => cli(["minutes-record", "--workspace", fx.workspace, "--at", at(moment), "--project-id", fx.projectId,
+    "--external-key", key, "--title", title, "--summary", `${title}.`, "--decisions", decisions.join(","), ...extra]);
+  // Three cards and three minutes records -- recall's quota of each kind -- all about the kingfisher bank:
+  // one valid card and two removed (one invalid, one superseded by the valid one); two valid decisions,
+  // one superseded and one withdrawn.
+  const perch = await card(10, "DL-FOUR-PERCH", "Kingfisher bank perch post", "The kingfisher bank perch post stands by the weir.");
+  const removal = await cli(["knowledge-remove", "--workspace", fx.workspace, "--at", at(11), "--id", perch.id, "--reason", "invalid",
+    "--basis", "The perch post fell into the river.", "--actor", OWNER]);
+  assert.equal(removal.reasonCode, "KNOWLEDGE_UNIT_REMOVED");
+  const boat = await card(12, "DL-FOUR-BOAT", "Kingfisher bank survey count", "Survey the kingfisher bank from the boat.");
+  const drone = await card(13, "DL-FOUR-DRONE", "Kingfisher bank survey count by drone", "Survey the kingfisher bank by drone.", ["--supersedes", boat.id]);
+  assert.deepEqual([perch.reasonCode, boat.reasonCode, drone.reasonCode], ["KNOWLEDGE_UNIT_CREATED", "KNOWLEDGE_UNIT_CREATED", "KNOWLEDGE_UNIT_CREATED"]);
+  const july = await minutes(14, "DL-FOUR-1", "Kingfisher bank fledglings", ["Count the kingfisher bank fledglings in July"]);
+  const august = await minutes(15, "DL-FOUR-2", "Kingfisher bank fledglings moved", ["Count the kingfisher bank fledglings in August", "Fence the kingfisher bank footpath"],
+    ["--supersedes", "DL-FOUR-1#D1=D1"]);
+  const dawn = await minutes(16, "DL-FOUR-3", "Kingfisher bank filming", ["Film the kingfisher bank at dawn"], ["--withdraws", "DL-FOUR-2#D2", "--coexists", "DL-FOUR-2#D1"]);
+  const records = [july, august, dawn];
+
+  // What a surface answers, one string per record: a card and its status; a minutes record and its
+  // obsolete decisions, each with the decision that superseded it (null when withdrawn).
+  const cardsOf = (list) => list.map((record) => `${record.id}:${record.status === undefined || record.status === "active" ? "valid" : record.status}`).sort();
+  const minutesOf = (entries) => entries.map((entry) => `${entry.id}:${entry.decisions.filter((decision) => decision.status === "obsolete")
+    .map((decision) => `${entry.id}#D${decision.number}>${decision.supersededBy === null ? null : decision.supersededBy.decision}`).join(" ")}`).sort();
+  const hitMinutesOf = (hits) => hits.map((hit) => `${hit.id}:${(hit.obsoleteDecisions ?? []).map((hint) => `${hint.decision}>${hint.supersededBy}`).join(" ")}`).sort();
+  const flag = (value) => (value === undefined ? [] : ["--status", value]);
+  const knowledgeList = (value, moment) => cli(["knowledge-list", "--workspace", fx.workspace, "--at", at(moment), ...flag(value)]);
+  const atelierList = (value, moment) => cli(["knowledge-list", "--workspace", fx.workspace, "--at", at(moment), ...ATELIER_KNOWLEDGE_READ, "--status", value ?? "valid"]);
+  const minutesList = (value) => cli(["minutes-list", "--workspace", fx.workspace, ...flag(value)]);
+  const minutesShow = (value, id) => cli(["minutes-show", "--workspace", fx.workspace, "--id", id, ...flag(value)]);
+
+  // The families as their own list verbs read them.
+  const cardsBy = new Map();
+  for (const value of [undefined, "valid", "removed", "all"]) cardsBy.set(value, cardsOf((await knowledgeList(value, 20)).records));
+  const decisionsBy = new Map();
+  for (const value of [undefined, "valid", "obsolete", "all"]) decisionsBy.set(value, minutesOf((await minutesList(value)).records));
+  assert.deepEqual(cardsBy.get(undefined), [`${drone.id}:valid`]);
+  assert.deepEqual(cardsBy.get("removed"), [`${boat.id}:removed`, `${perch.id}:removed`].sort());
+  assert.deepEqual(cardsBy.get("all"), [`${drone.id}:valid`, `${boat.id}:removed`, `${perch.id}:removed`].sort());
+  assert.deepEqual(decisionsBy.get(undefined), [`${august.id}:`, `${dawn.id}:`].sort());
+  assert.deepEqual(decisionsBy.get("obsolete"), [`${july.id}:${address("DL-FOUR-1", 1)}>${address("DL-FOUR-2", 1)}`, `${august.id}:${address("DL-FOUR-2", 2)}>null`].sort());
+  assert.deepEqual(decisionsBy.get("all"), [`${july.id}:${address("DL-FOUR-1", 1)}>${address("DL-FOUR-2", 1)}`, `${august.id}:${address("DL-FOUR-2", 2)}>null`, `${dawn.id}:`].sort());
+  const listedRemovals = new Map((await knowledgeList("removed", 20)).records.map((record) => [record.id, record.removal]));
+
+  let moment = 21;
+  for (const value of [undefined, "valid", "removed", "obsolete", "all"]) {
+    const label = value ?? "(default)";
+    const cardValue = value === "obsolete" ? undefined : value;
+    const decisionValue = value === "removed" ? undefined : value;
+    // The card surfaces: knowledge-list and Atelier answer alike, and refuse a decision status.
+    if (value === "obsolete") {
+      assert.equal((await refusal(["knowledge-list", "--workspace", fx.workspace, "--at", at(moment), ...flag(value)]))?.reasonCode, "CLI_ARGUMENT_MALFORMED");
+      assert.equal((await refusal(["knowledge-list", "--workspace", fx.workspace, "--at", at(moment), ...ATELIER_KNOWLEDGE_READ, "--status", value]))?.reasonCode, "CLI_ARGUMENT_MALFORMED");
+    } else {
+      assert.deepEqual(cardsOf((await atelierList(value, moment)).records), cardsBy.get(value), `${label}: Atelier's list is knowledge-list's`);
+    }
+    // The decision surfaces: minutes-list and minutes-show answer alike, and refuse a card status.
+    if (value === "removed") {
+      assert.equal((await refusal(["minutes-list", "--workspace", fx.workspace, ...flag(value)]))?.reasonCode, "CLI_ARGUMENT_MALFORMED");
+      assert.equal((await refusal(["minutes-show", "--workspace", fx.workspace, "--id", july.id, ...flag(value)]))?.reasonCode, "CLI_ARGUMENT_MALFORMED");
+    } else {
+      const shown = [];
+      for (const record of records) {
+        const one = (await minutesShow(value, record.id)).record;
+        if (one.decisions.length > 0) shown.push(one);
+      }
+      assert.deepEqual(minutesOf(shown), decisionsBy.get(value), `${label}: minutes-show gives each record what minutes-list gives`);
+    }
+    // recall: each family as its list verb reads the value, the other family valid.
+    const recalled = await cli(["recall", "--workspace", fx.workspace, "--at", at(moment), "--query", "kingfisher bank", "--tau", "0", "--limit", "20", ...flag(value)]);
+    assert.equal(recalled.status, value, `${label}: the status is echoed when it is named`);
+    const cardHits = recalled.records.filter((hit) => hit.kind === "card");
+    assert.deepEqual(cardsOf(cardHits), cardsBy.get(cardValue), `${label}: recall's cards are knowledge-list's`);
+    assert.deepEqual(hitMinutesOf(recalled.records.filter((hit) => hit.kind === "minutes")), decisionsBy.get(decisionValue), `${label}: recall's decisions are minutes-list's`);
+    for (const hit of cardHits) {
+      assert.deepEqual(hit.removal, listedRemovals.get(hit.id), `${label}: ${hit.id} carries the removal knowledge-list answers, and a valid card none`);
+    }
+    moment += 1;
+  }
+  assert.deepEqual([listedRemovals.get(boat.id)?.reason, listedRemovals.get(boat.id)?.supersededBy, listedRemovals.get(perch.id)?.basis],
+    ["superseded", drone.id, "The perch post fell into the river."], "the removals say why, on what basis and by which card");
 });
 
 test("SUB-426: the historical minutes' decisions are numbered and can be superseded by new minutes", async (context) => {

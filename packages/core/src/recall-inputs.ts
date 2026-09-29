@@ -23,7 +23,7 @@ import type { KnowledgeStatusFilter, KnowledgeStoreScope } from "./knowledge-cor
 import { expansionsText } from "./knowledge-language.js";
 import { decisionLedger, decisionsNamedIn, decisionsOfMinutes, minutesView, obsoleteDecisionHints } from "./minutes.js";
 import type { DecisionLedger, DecisionStatusFilter, ObsoleteDecisionHint } from "./minutes.js";
-import type { RecallHit, RecallInputs, RecallKnowledgeInput, RecallMinutesInput, RecallScope, RecallWorkInput } from "./recall.js";
+import type { RecallCardRemoval, RecallHit, RecallInputs, RecallKnowledgeInput, RecallMinutesInput, RecallScope, RecallWorkInput } from "./recall.js";
 import { RECALL_INDEXED_WORK_KINDS } from "./recall.js";
 import { storyFields } from "./story-fields.js";
 import { decidedInOf } from "./work-relations.js";
@@ -35,9 +35,10 @@ const PARENT_CHAIN_DEPTH = 8;
 
 export interface RecallInputOptions {
   readonly scopeExcerptBytes?: number;
-  // TCRN-CROSS-SUB-426 R17 续作修订二 (MIN-239 D6; STORY-514 R4): which decisions of each minutes record
-  // recall indexes. Left out, the valid ones; "all" adds the obsolete ones, which only a recall asked
-  // for them gives (the recall verb's --status obsolete or all). The prompt hook leaves it out.
+  // TCRN-CROSS-SUB-426 R17 续作修订三 (C-R18-1; MIN-239 D6; STORY-514 R4): which decisions of each
+  // minutes record recall indexes, as minutes-list reads them. Left out, the valid ones; "obsolete" the
+  // obsolete ones alone and "all" every one, which only a recall asked for them gives (the recall verb's
+  // --status obsolete or all). The prompt hook leaves it out.
   readonly decisions?: DecisionStatusFilter;
 }
 
@@ -64,7 +65,11 @@ export function workParentChain(work: ReadonlyMap<string, WorkRecord>, record: W
   return chain;
 }
 
-/** A card read from a store's knowledge-list record, labelled with the store it came from. */
+/**
+ * A card read from a store's knowledge-list record, labelled with the store it came from.
+ * TCRN-CROSS-SUB-426 R17 续作修订三 (STORY-514 AC1): a removed card -- a record whose status is
+ * "removed", which only a read asked for removed cards gives -- keeps its removal as the list gave it.
+ */
 export function recallCardFromRecord(record: Readonly<Record<string, unknown>>, scope: RecallScope): RecallKnowledgeInput {
   const references = Array.isArray(record["sourceReferences"])
     ? (record["sourceReferences"] as readonly unknown[]).filter((entry): entry is string => typeof entry === "string")
@@ -82,6 +87,29 @@ export function recallCardFromRecord(record: Readonly<Record<string, unknown>>, 
     scope,
     // TCRN-CROSS-SUB-426: never indexed; read only for the obsolete-decision hint.
     ...(references.length === 0 ? {} : { sourceReferences: references }),
+    // Never indexed either; read only for the removed card's hit.
+    ...(record["status"] === "removed" ? { removal: cardRemoval(record["removal"]) } : {}),
+  };
+}
+
+// A removed card's removal as knowledge-list answers it (knowledge-core.ts, removalDiagnostic), field
+// by field; a field the list did not give as its type is empty, or null where the list can give null.
+function cardRemoval(value: unknown): RecallCardRemoval {
+  const removal: Readonly<Record<string, unknown>> = isRecord(value) ? value : {};
+  const text = (field: string): string | null => {
+    const entry = removal[field];
+    return typeof entry === "string" ? entry : null;
+  };
+  const sequence = removal["sequence"];
+  return {
+    reason: text("reason") ?? "",
+    basis: text("basis") ?? "",
+    actor: text("actor"),
+    removedAt: text("removedAt") ?? "",
+    supersededBy: text("supersededBy"),
+    deviceId: text("deviceId"),
+    sequence: typeof sequence === "number" ? sequence : null,
+    eventHash: text("eventHash"),
   };
 }
 
@@ -313,9 +341,9 @@ function projectCrestDegradation(read: RecallCardStoreRead): RecallProjectCrestD
 export interface RecallCardReadOptions {
   readonly at: string;
   readonly allowTrailing?: boolean;
-  // TCRN-CROSS-SUB-425 (MIN-239 D6): which cards to read from each store. Left out, the valid ones;
-  // "removed" or "all" only when a user asked for them (the recall verb's --status). The prompt hook
-  // always reads the valid ones.
+  // TCRN-CROSS-SUB-425 (MIN-239 D6): which cards to read from each store, as knowledge-list reads them.
+  // Left out, the valid ones; "removed" (the removed ones alone) or "all" only when a user asked for
+  // them (the recall verb's --status). The prompt hook always reads the valid ones.
   readonly status?: KnowledgeStatusFilter;
 }
 
@@ -332,12 +360,12 @@ export interface RecallCardReadOptions {
  * TCRN-CROSS-SUB-414: the library's crest withholds its pairs, its duplicates' versions and its cards
  * awaiting chain events the same way, and `projectCrestDegraded` names them in the same form; R16
  * adds its cards whose project the chain no longer holds, under `unresolvedScopes`.
- * TCRN-CROSS-SUB-425 (MIN-239 D6): only valid cards are read, unless `options.status` asks for the
- * removed ones too; a removed card is indexed by what it keeps, its subject, and its id is named in
- * `removedCardIds`.
+ * TCRN-CROSS-SUB-425 (MIN-239 D6): only valid cards are read, unless `options.status` asks for another
+ * status, which each store answers as knowledge-list does (R17 续作修订三, C-R18-1): "removed" the removed
+ * cards alone, "all" every card. A removed card is indexed by what it keeps, its subject; it carries its
+ * removal, as the list gave it, and its id is named in `removedCardIds`.
  */
 export async function readRecallCards(workspaceRoot: string, options: RecallCardReadOptions): Promise<RecallCardRead> {
-  const removedCardIds: string[] = [];
   const read = async (scope: KnowledgeStoreScope): Promise<{ readonly cards: readonly RecallKnowledgeInput[]; readonly store: RecallCardStoreRead }> => {
     try {
       const answer = await listKnowledgeMetadata(workspaceRoot, {
@@ -349,7 +377,6 @@ export async function readRecallCards(workspaceRoot: string, options: RecallCard
         ...(scope === "user" ? { scope } : {}),
       });
       const records = (answer["records"] ?? []) as readonly Readonly<Record<string, unknown>>[];
-      for (const record of records) if (record["status"] === "removed") removedCardIds.push(String(record["id"] ?? ""));
       const cards = records.map((record) => recallCardFromRecord(record, scope));
       return {
         cards,
@@ -371,13 +398,15 @@ export async function readRecallCards(workspaceRoot: string, options: RecallCard
   };
   const project = await read("project");
   const user = await read("user");
+  const cards = mergeRecallCards(project.cards, user.cards);
   return {
-    cards: mergeRecallCards(project.cards, user.cards),
+    cards,
     stores: { project: project.store, user: user.store },
     digest: `${project.store.digest}:${user.store.digest}`,
     userCrestDegraded: userCrestDegradation(user.store),
     projectCrestDegraded: projectCrestDegradation(project.store),
-    removedCardIds,
+    // The removed cards the merge kept: a user card whose id the library's crest already gave is not one.
+    removedCardIds: cards.filter((card) => card.removal !== undefined).map((card) => card.id),
   };
 }
 
@@ -388,8 +417,9 @@ export async function readRecallCards(workspaceRoot: string, options: RecallCard
  * -- a card that does not say which store it came from is the library's (TCRN-CROSS-STORY-476 R5).
  * TCRN-CROSS-SUB-426 (MIN-239 D6): a minutes record is indexed with its valid decisions alone, and
  * a record none of whose decisions is valid is not indexed; the prompt hook reads the same inputs.
- * R17 续作修订二 (STORY-514 R4): `options.decisions` "all" indexes every decision of every record
- * instead, the obsolete ones included, for a recall that was asked for them.
+ * R17 续作修订三 (C-R18-1; STORY-514 R4): `options.decisions` names another status as minutes-list
+ * does, for a recall that was asked for it: "obsolete" indexes each record's obsolete decisions alone,
+ * a record with none not indexed, and "all" every decision of every record.
  */
 export function recallInputsFromState(
   state: Pick<WorkspaceState, "work" | "minutes" | "conferenceMinutes" | "conferences">,
@@ -476,10 +506,10 @@ export function workObsoleteDecisions(state: Pick<WorkspaceState, "minutes" | "c
  * points at -- a work record's decided-by minutes, a card's linked minutes and named decisions -- and
  * the decision that superseded each (null when withdrawn). A hit that points at none is returned as
  * it was, and so is every hit of a library with no obsolete decision. R17 续作修订二 (STORY-514 R4):
- * when the recall indexed the obsolete decisions too (`options.decisions` other than "valid"), a
- * minutes hit carries its own obsolete decisions the same way, so an obsolete decision a recall gives
- * comes with the decision that superseded it or with null, withdrawn -- what minutes-show's explicit
- * read says of it.
+ * when the recall indexed the obsolete decisions (`options.decisions` "obsolete" or "all"), a minutes
+ * hit carries its own obsolete decisions the same way, so an obsolete decision a recall gives comes
+ * with the decision that superseded it or with null, withdrawn -- what minutes-show's explicit read
+ * says of it.
  */
 export function recallDecisionHints(
   state: HintState,

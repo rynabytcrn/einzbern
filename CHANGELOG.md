@@ -1074,6 +1074,24 @@ cannot tell who runs it, so this remains a convention and not an identity check.
 `rule-resolve`, `agents-render`, `gates-config-list`, `gates-plan` and `gates-run` are not refused,
 and the verbs' flags and the command catalog are unchanged.
 
+Atelier's gate page says what a cover is (TCRN-CROSS-STORY-513 R2, TCRN-CROSS-SUB-423; fixes
+TCRN-CROSS-STORY-485; `portal/locales.js`, `portal/index.html`). The label of the cover input on the
+add form, the heading of the cover column in the gate table, the column's add button and the name of
+the remove button beside each cover read, in all five languages, that a cover is a path glob or a
+work id, the two forms `gates-config-set --covers` accepts; they used to say that covers were paths.
+The page's own text for the label and the heading, shown before a language applies, is the English
+copy. The input still takes one cover per line, and the covers the page writes, the gate records and
+the reason codes are unchanged.
+
+Atelier's work tab says that it is reading (TCRN-CROSS-STORY-513 R3, TCRN-CROSS-SUB-424; fixes
+TCRN-CROSS-STORY-510; `portal/index.html`, `portal/locales.js`). While the work view's read of the
+selected library is out, a status line above the work tree reads, in the page's language, that the
+work records are being read through the engine (`dashboard.workLoading`, one key in each of the five
+languages); it goes when the read returns and the list shows. The work tree keeps its `aria-busy`, the
+view still keeps what it showed until a refresh's read returns, a read that failed is still shown in
+the work view alone, and no other view waits for the work read. `/api/work`, its pages and its result
+are unchanged.
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

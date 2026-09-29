@@ -1397,6 +1397,39 @@ test("SUB-310 R17 (MIN-238 D1): the retired knowledge total setting has no copy 
   }
 });
 
+// TCRN-CROSS-SUB-423 (STORY-513 R2; MIN-238 D3): the gate page's cover input, its cover column and the
+// column's add and remove buttons say what a cover is, in all five languages: a path glob or a work id,
+// the two forms `gates-config-set --covers` takes (docs/wiki/Gates.md). None says any more that a cover
+// is a path, and the page's own text before a language applies is the English copy.
+test("SUB-423 (STORY-513 R2, MIN-238 D3): the cover input, the cover column and its add and remove buttons say a path glob or a work id, in every language", async () => {
+  const source = await readFile(join(portalRoot, "index.html"), "utf8");
+  assert.match(source, /data-i18n="gates\.coversInput">[^<]*<\/span><textarea [^>]*name="covers"/u, "the cover input is labelled by gates.coversInput");
+  assert.match(source, /data-ui="gate-config-table"><thead><tr>(?:<th [^>]*>[^<]*<\/th>)*<th scope="col" data-i18n="gates\.columnCovers">/u, "the cover column is headed by gates.columnCovers");
+  assert.match(source, /data-gate-add-cover>\$\{esc\(t\("gates\.addCover"\)\)\}<\/button>/u, "the add button reads gates.addCover");
+  assert.match(source, /data-gate-remove-cover aria-label="\$\{esc\(t\("gates\.removeCover"\)\)\}"/u, "the remove button is named by gates.removeCover");
+  const sandbox = {};
+  new Function("window", await readFile(join(portalRoot, "locales.js"), "utf8"))(sandbox);
+  for (const key of ["gates.coversInput", "gates.columnCovers"]) {
+    const fallback = source.match(new RegExp(`data-i18n="${key.replace(".", "\\.")}">([^<]*)<`, "u"))?.[1];
+    assert.equal(fallback, sandbox.PORTAL_LOCALES.en[key], `${key}: the page's own text is the English copy`);
+  }
+  const terms = {
+    en: { says: /path glob or (?:a )?work id/u, retired: /covered path|Remove path/iu },
+    "zh-CN": { says: /路径 glob 或 work id/u, retired: /覆盖路径|移除路径/u },
+    ja: { says: /パスの glob または work id/u, retired: /対象パス|パスを削除/u },
+    ko: { says: /경로 glob 또는 work id/u, retired: /대상 경로|경로 제거/u },
+    fr: { says: /glob de chemin ou (?:un )?work id/u, retired: /Chemins couverts|Ajouter un chemin|Retirer le chemin/u },
+  };
+  assert.deepEqual(Object.keys(sandbox.PORTAL_LOCALES).sort(), Object.keys(terms).sort());
+  for (const [locale, { says, retired }] of Object.entries(terms)) {
+    for (const key of ["gates.coversInput", "gates.columnCovers", "gates.addCover", "gates.removeCover"]) {
+      const text = sandbox.PORTAL_LOCALES[locale][key];
+      assert.match(text, says, `${locale} ${key}`);
+      assert.doesNotMatch(text, retired, `${locale} ${key}`);
+    }
+  }
+});
+
 // TCRN-CROSS-STORY-467 R3: the execution route and its page left with the dispatch-* verbs, and the
 // dispatch mode setting with TCRN-CROSS-STORY-484 R3. The owner's concurrency limit is a registered
 // setting, written and read back through settings.

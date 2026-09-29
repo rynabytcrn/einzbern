@@ -3,7 +3,7 @@
 
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstat, readFile, readdir, realpath, stat } from "node:fs/promises";
+import { lstat, readFile, readdir, realpath } from "node:fs/promises";
 import { promisify } from "node:util";
 import { dirname, extname, join, parse, relative, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -29,7 +29,6 @@ import { PROTOCOL_LIMITS, canonicalSha256 } from "../dist/build/packages/protoco
 import { toPosixPath, walkFiles } from "./lib/files.mjs";
 
 const execFileAsync = promisify(execFile);
-const TOPOLOGY_SECTION_MARKER = "## 三、分区拓扑";
 const PLATFORM_DOCS_RELATIVE = "platform-docs";
 const ACCEPTANCE_GROUP_IDS = [
   "engine-suite",
@@ -368,53 +367,6 @@ function compareAcceptanceBindings(recorded, current) {
 // which the platform forbids outright; what this can settle is that the roster is
 // present, complete, and says for every group which repository proves it and how.
 // The rest is the operator's to run and the record's to cite.
-// STORY-300, Wave 2.2. The platform identity file governs every repository below
-// this container and had no revision history: it is not in a repository, and the
-// container deliberately is not one either -- a gate below refuses a container
-// inside Git ancestry, and that gate is right.
-//
-// So the file gets a history the only way it can without moving: a tracked copy
-// inside the platform documents repository, and this leg holding the two to each
-// other. Two copies of a governing document is normally the defect, not the fix.
-// It is admissible here only because exactly one of them is checked against the
-// other on every run -- an unchecked second copy is how "the roster said six while
-// the catalog carried twenty-eight" happened three times in one week.
-//
-// Which one is canonical does not matter to this check and is deliberately not
-// encoded: what matters is that they cannot diverge in silence.
-async function inspectAgentsHistory(root) {
-  const live = join(root, "AGENTS.md");
-  const docsRoot = await platformDocsRoot(root);
-  const tracked = join(docsRoot.path, "platform-root-agents.md");
-  const liveStats = await existingPath(live);
-  let trackedStats = null;
-  try {
-    trackedStats = await stat(tracked);
-  } catch (error) {
-    if (error?.code !== "ENOENT" && error?.code !== "ENOTDIR") throw error;
-  }
-  if (!liveStats?.isFile() || !trackedStats?.isFile()) {
-    // An absent live AGENTS.md is already named by the leg above; this one reports
-    // only the half it owns.
-    if (!trackedStats?.isFile()) {
-      return check("platformAgentsHistory", false, {
-        reasonCode: "PLATFORM_AGENTS_UNTRACKED",
-        path: join(docsRoot.relativePath, "platform-root-agents.md"),
-      });
-    }
-    return check("platformAgentsHistory", true, { skipped: "no live AGENTS.md to compare" });
-  }
-  const liveBytes = await readFile(live);
-  const trackedBytes = await readFile(tracked);
-  if (!liveBytes.equals(trackedBytes)) {
-    return check("platformAgentsHistory", false, {
-      reasonCode: "PLATFORM_AGENTS_HISTORY_DIVERGED",
-      liveBytes: liveBytes.length,
-      trackedBytes: trackedBytes.length,
-    });
-  }
-  return check("platformAgentsHistory", true, { bytes: liveBytes.length });
-}
 
 // TCRN-CROSS-STORY-361: the charter rule "no consumer, isolate it", with a leg that can
 // see whether it is being followed. `packages/core/src/index.ts` is this engine's public
@@ -959,38 +911,6 @@ async function inspectAcceptanceGateGroups(root) {
     batchApplicability: Object.fromEntries(Object.entries(ACCEPTANCE_BATCH_STATUS).map(([id, phases]) => [id, phases])),
     ...(topLevel === null ? {} : { topLevel, containedGroups: roster.groups.length - topLevel.length }),
   });
-}
-
-async function inspectAgents(root) {
-  const path = join(root, "AGENTS.md");
-  const stats = await existingPath(path);
-  if (!stats) {
-    const entries = await readdir(root, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const misplacedPath = join(root, entry.name, "AGENTS.md");
-      const misplacedStats = await existingPath(misplacedPath);
-      if (misplacedStats?.isFile() && (await readFile(misplacedPath, "utf8")).length === 0) {
-        return check("platformAgents", false, {
-          reasonCode: "PLATFORM_AGENTS_EMPTY",
-          path: relative(root, misplacedPath),
-          expectedPath: "AGENTS.md",
-        });
-      }
-    }
-    return check("platformAgents", false, { reasonCode: "PLATFORM_AGENTS_MISSING", path: "AGENTS.md" });
-  }
-  if (!stats.isFile()) return check("platformAgents", false, { reasonCode: "PLATFORM_AGENTS_NOT_FILE", path: "AGENTS.md" });
-  const content = await readFile(path, "utf8");
-  if (content.length === 0) return check("platformAgents", false, { reasonCode: "PLATFORM_AGENTS_EMPTY", path: "AGENTS.md" });
-  if (!content.includes(TOPOLOGY_SECTION_MARKER)) {
-    return check("platformAgents", false, {
-      reasonCode: "PLATFORM_AGENTS_TOPOLOGY_SECTION_MISSING",
-      path: "AGENTS.md",
-      marker: TOPOLOGY_SECTION_MARKER,
-    });
-  }
-  return check("platformAgents", true, { path: "AGENTS.md", marker: TOPOLOGY_SECTION_MARKER });
 }
 
 async function inspectWorkspaceContainer(root) {
@@ -2384,8 +2304,9 @@ export async function inspectPlatform(platformRootArgument, options = {}) {
   const checks = [
     check("platformRoot", true, { path: root }),
     await inspectAcceptanceGateGroups(root),
-    await inspectAgents(root),
-    await inspectAgentsHistory(root),
+    // The container AGENTS.md's topology-marker leg and the leg holding it byte-equal to a tracked
+    // copy in the platform documents retire with the layout rendering pipeline
+    // (TCRN-CROSS-STORY-491 R2); the Claude bridge legs below still name a bridge target that is gone.
     await inspectWorkspaceContainer(root),
     await inspectWorkspaceStorageShape(root, options),
     await inspectGitAncestors(root),

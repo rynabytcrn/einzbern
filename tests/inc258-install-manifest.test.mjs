@@ -62,8 +62,9 @@ test("INC-258 install manifest matches the post-removal surface and rejects rest
   // 20 until TCRN-CROSS-STORY-467 R3 retired the two adapter bundles, their two install
   // receipts and the engine repository's own settings fixture; 14 since R2 retired the
   // helper trust archive; 15 since TCRN-CROSS-STORY-477 R1 added the stable hook launcher; 18 since
-  // TCRN-CROSS-STORY-480 R4 added the engine pointer, the stable entry and the skill copies' record.
-  assert.equal(INSTALL_MANIFEST.items.length, 18);
+  // TCRN-CROSS-STORY-480 R4 added the engine pointer, the stable entry and the skill copies' record;
+  // 17 since TCRN-CROSS-STORY-491 R2 (SUB-376) retired the container AGENTS.md.
+  assert.equal(INSTALL_MANIFEST.items.length, 17);
   assert.deepEqual(REMOVED_IDS.filter((id) => INSTALL_MANIFEST.items.some((entry) => entry.id === id)), []);
   assert.deepEqual(REMOVED_IDS.filter((id) => INSTALL_MANIFEST_REQUIRED_ITEM_IDS.includes(id)), []);
   const restored = {
@@ -119,4 +120,27 @@ test("480-R4: the install manifest names the engine pointer, the stable entry an
   const red = await inspectInstallWiring(fixture.root, fixture.home);
   assert.equal(red.ok, false);
   assert.deepEqual(red.missing.map((item) => item.id).sort(), Object.keys(expected).sort());
+});
+
+// TCRN-CROSS-STORY-491 R2 (SUB-376): the layout rendering pipeline is retired, and with it the
+// container AGENTS.md as an install obligation. The manifest names 17 items, the required catalog
+// names the same 17, and install wiring is green on a container that has no AGENTS.md at all.
+// Red leg: restore the item and install wiring names it as missing.
+test("SUB-376: the container AGENTS.md is no longer an install obligation", async (context) => {
+  const ids = INSTALL_MANIFEST.items.map((entry) => entry.id);
+  assert.equal(ids.includes("container.platform-agents"), false);
+  assert.equal(INSTALL_MANIFEST_REQUIRED_ITEM_IDS.includes("container.platform-agents"), false);
+  assert.deepEqual(INSTALL_MANIFEST.items.filter((entry) => entry.pathTemplate === "<PLATFORM_ROOT>/AGENTS.md"), []);
+  assert.deepEqual([...INSTALL_MANIFEST_REQUIRED_ITEM_IDS].sort(), [...ids].sort());
+  const fixture = await createInstallFixture(context);
+  await assert.rejects(stat(join(fixture.root, "AGENTS.md")), { code: "ENOENT" });
+  const green = await inspectInstallWiring(fixture.root, fixture.home);
+  assert.equal(green.ok, true, JSON.stringify(green));
+  assert.equal(green.itemCount, 17);
+  const restored = {
+    ...INSTALL_MANIFEST,
+    items: [...INSTALL_MANIFEST.items, { id: "container.platform-agents", layer: "container", host: "shared", pathTemplate: "<PLATFORM_ROOT>/AGENTS.md", writer: "engine-adapter", acceptanceProbe: "probe:regular-file" }],
+  };
+  const red = await inspectInstallWiring(fixture.root, fixture.home, restored);
+  assert.deepEqual(red.missing.map((entry) => entry.id), ["container.platform-agents"]);
 });

@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-433 — production terminal replay and bounded rerun diagnosis.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { buildGateImpactMap, createGateReceiptAuthority, executeQualifiedBatch, issueGateReceipt, qualifyBatch } from "../scripts/final-gate-plan.mjs";
 import * as finalGatePlan from "../scripts/final-gate-plan.mjs";
 
@@ -146,4 +148,42 @@ test("INC-383: another red, or an exception the tracked roster does not accept, 
   const forged = await runLayoutRoot(hooksOnly, forgedRoster);
   assert.deepEqual([forged.receipts[0].status, forged.receipts[0].acceptedExceptions], ["completed", ["PLATFORM_HOOK_TARGET_UNAVAILABLE"]], "the issuing call was handed a roster that accepts the code");
   assert.equal(forged.outcome, "failed:GATE_PLAN_TERMINAL_EVIDENCE_INVALID", "the runner re-reads the tracked roster and refuses a self-reported exception");
+});
+
+// TCRN-CROSS-SUB-376 (STORY-491, Q12). Every receipt authority made its store with mkdtemp and
+// nothing removed it, so each run of these tests and of the production batch entry left a
+// tcrn-code-owned-gates-* directory in TMPDIR. The authority is process-local, so a store is of
+// no use once its process is gone: it is removed when that process exits, and not before. A child
+// process with its own TMPDIR issues and trusts a receipt, then exits with its own exit code.
+// Red leg: take the exit-time removal out and both stores are still there.
+test("SUB-376 Q12: a receipt store serves its process and is removed when that process exits", (t) => {
+  const temporaryRoot = mkdtempSync(join(tmpdir(), "tcrn-q12-receipt-store-"));
+  t.after(() => rmSync(temporaryRoot, { recursive: true, force: true }));
+  const child = [
+    `import { existsSync } from "node:fs";`,
+    `import { createGateReceiptAuthority, issueGateReceipt, queryGateReceipt } from ${JSON.stringify(pathToFileURL(resolve(REPOSITORY_ROOT, "scripts/final-gate-plan.mjs")).href)};`,
+    `const entry = { id: "engine-release", command: "node scripts/push-gate.mjs" };`,
+    `const invocation = { executable: "node", argv: ["scripts/push-gate.mjs"], cwd: ${JSON.stringify(REPOSITORY_ROOT)}, command: entry.command };`,
+    `const inputs = { sourceDigest: "source-q12", environmentDigest: "environment-q12", commandDigest: "command-q12", baselineDigest: "baseline-q12" };`,
+    `const first = createGateReceiptAuthority();`,
+    `const second = createGateReceiptAuthority();`,
+    `const receipt = issueGateReceipt(first, { entry, invocation, inputs, result: { ok: true, status: 0, signal: null, stdout: "", stderr: "" }, roster: { groups: [] } });`,
+    `const trusted = queryGateReceipt(first, receipt.terminalEvidence, { gateId: entry.id, expectedInputs: inputs, expectedCommand: entry.command, expectedInvocation: invocation });`,
+    `process.stdout.write(JSON.stringify({ stores: [first.storeRoot, second.storeRoot], receiptPresent: existsSync(receipt.terminalEvidence.path), trustedGate: trusted?.gateId ?? null }));`,
+    `process.exitCode = 3;`,
+  ].join("\n");
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", child], {
+    cwd: REPOSITORY_ROOT,
+    encoding: "utf8",
+    env: { ...process.env, TMPDIR: temporaryRoot, TMP: temporaryRoot, TEMP: temporaryRoot },
+  });
+  assert.equal(run.status, 3, `the child keeps its own exit code: ${run.stderr}`);
+  const observed = JSON.parse(run.stdout);
+  assert.deepEqual([observed.receiptPresent, observed.trustedGate], [true, "engine-release"], "while the process runs its receipt is on disk and trusted");
+  assert.equal(observed.stores.length, 2);
+  for (const store of observed.stores) {
+    assert.equal(dirname(store), temporaryRoot, "each store is made under the process's TMPDIR");
+    assert.equal(existsSync(store), false, `${store} is removed when its process exits`);
+  }
+  assert.deepEqual(readdirSync(temporaryRoot).filter((name) => name.startsWith("tcrn-code-owned-gates-")), []);
 });

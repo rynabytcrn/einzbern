@@ -53,6 +53,8 @@ import type { Library } from "./ether-library.js";
 import { readOrCreateDevice } from "./device-identity.js";
 import { legacyControlDirectory, openLegacyWorkspace, replayLegacyWorkspace } from "./legacy-workspace.js";
 import { LEGACY_CONTROL_DIRECTORY } from "./names.js";
+// TCRN-CROSS-STORY-489 R4: used only inside functions; registry.ts imports nothing from this module.
+import { findMigratedEntry } from "./registry.js";
 import { recordClosureValidation, recordCollectionScan, recordExtensionClosureValidation, recordFullMaterialize, recordSnapshotMaterialize, recordTerminalGraphValidation } from "./workspace-perf-instrumentation.js";
 import {
   ACTOR_ATTESTATION_ENABLE_OPERATION,
@@ -158,6 +160,9 @@ export const WORKSPACE_CONTROL_DIRECTORY = LEGACY_CONTROL_DIRECTORY;
 export const WORKSPACE_REASON_CODES = Object.freeze([
   // TCRN-CROSS-STORY-469: a path that names neither a library nor an old-layout workspace, and a
   // write aimed at an old-layout workspace, which opens read-only.
+  // TCRN-CROSS-STORY-489 R4: a write aimed at an old-layout workspace this device migrated names
+  // the library it moved to (details.movedTo).
+  "LEGACY_WORKSPACE_MIGRATED",
   "LEGACY_WORKSPACE_READ_ONLY",
   "LIBRARY_NOT_FOUND",
   // TCRN-CROSS-STORY-470 R3: a write aimed at a library that was relocated; it names the new place.
@@ -1138,6 +1143,77 @@ function readGateEvidenceLocator(extensions: Readonly<Record<string, unknown>>):
   return typeof value === "string" ? value : undefined;
 }
 
+// TCRN-CROSS-STORY-489 (TCRN-CROSS-SUB-365; MIN-235 D17, D11; MIN-238 D4): the release of a gate a
+// migration carried over. The gate verbs and the conference verbs are retired, so a gate that was
+// still pending when its chain became a library can no longer be satisfied by citing minutes; it
+// stays pending, holding its work item back from done, until it is released in Atelier. A release
+// is a gate.updated to satisfied whose one extensions delta is this entry, written down whole: who
+// released it (an actor id), when (the event's own instant) and why. Replay re-checks all three and
+// never needs anything outside the chain. The CLI verb refuses a model (MODEL_WRITE_REFUSED unless
+// EINZBERN_SURFACE=atelier); that surface is an agreed convention, not proof of who ran it (D11).
+const GATE_RELEASE_KEY = "gate-evidence:atelier-release";
+const GATE_RELEASE_FIELDS = ["actor", "reason", "releasedAt"];
+const GATE_RELEASE_REASON_MAXIMUM_BYTES = 2_048;
+/** The verb a gate is released with, named by the refusal a gate that is not satisfied gives. */
+export const GATE_RELEASE_VERB = "work-gate-release" as const;
+
+/** A release as its entry records it (TCRN-CROSS-STORY-489). */
+export interface GateRelease {
+  readonly actor: string;
+  readonly reason: string;
+  readonly releasedAt: string;
+}
+
+// The release entry's value, checked: exactly the three fields, a valid actor, a reason of one to
+// GATE_RELEASE_REASON_MAXIMUM_BYTES bytes that is not blank, and a strict instant. The verb refuses
+// with WORKSPACE_INPUT_INVALID or WORKSPACE_ACTOR_INVALID, replay with WORKSPACE_EVENT_CORRUPT.
+function checkedGateRelease(value: unknown, reasonCode: WorkspaceReasonCode): GateRelease {
+  exactFields(value, GATE_RELEASE_FIELDS, reasonCode, "gate release");
+  const { actor, reason, releasedAt } = value;
+  try {
+    assertActorId(actor);
+  } catch (error) {
+    if (!(error instanceof ActorAttestationError)) throw error;
+    fail(reasonCode === "WORKSPACE_INPUT_INVALID" ? "WORKSPACE_ACTOR_INVALID" : reasonCode, `gate release actor ${String(actor)} is not an actor id`);
+  }
+  if (typeof reason !== "string" || !reason.isWellFormed() || reason.trim() === "" ||
+    Buffer.byteLength(reason, "utf8") > GATE_RELEASE_REASON_MAXIMUM_BYTES) {
+    fail(reasonCode, `a gate release gives its reason in one to ${GATE_RELEASE_REASON_MAXIMUM_BYTES} bytes of text`);
+  }
+  try {
+    assertStrictInstant(releasedAt);
+  } catch {
+    fail(reasonCode, "a gate release records its instant");
+  }
+  return { actor, reason, releasedAt: releasedAt as string };
+}
+
+function gateReleaseExtensions(base: Readonly<Record<string, unknown>>, release: GateRelease): Readonly<Record<string, unknown>> {
+  return { ...base, [GATE_RELEASE_KEY]: { required: false, value: { actor: release.actor, reason: release.reason, releasedAt: release.releasedAt } } };
+}
+
+// Replay of a release (a gate.updated to satisfied that carries GATE_RELEASE_KEY): the entry is
+// well formed, its instant is the event's (the record's updatedAt is bound to the event before
+// this runs), its actor is the one the event was signed with when the chain signs its events,
+// and it is the only extensions delta, so no minutes locator or identity entry rides along.
+// Before attestation is enabled an event carries no actor, and the entry's actor stands
+// uncorroborated, as an identity decision's does.
+function assertGateReleaseReplay(current: GateRecord, record: GateRecord, signer: JsonValue | undefined): void {
+  const entry = record.extensions[GATE_RELEASE_KEY];
+  const release = checkedGateRelease(entry !== null && typeof entry === "object" && !Array.isArray(entry)
+    ? (entry as Readonly<Record<string, unknown>>).value
+    : undefined, "WORKSPACE_EVENT_CORRUPT");
+  if (release.releasedAt !== record.updatedAt) {
+    fail("WORKSPACE_EVENT_CORRUPT", `gate ${record.id} release names ${release.releasedAt}, not the instant it was written at`);
+  }
+  if (signer !== undefined && signer !== release.actor) {
+    fail("WORKSPACE_EVENT_CORRUPT", `gate ${record.id} release names ${release.actor} but the event was signed by ${String(signer)}`);
+  }
+  if (canonicalJson(record.extensions) !== canonicalJson(gateReleaseExtensions(current.extensions, release))) {
+    fail("WORKSPACE_EVENT_CORRUPT", `gate ${record.id} release extensions are not exact`);
+  }
+}
+
 // E05 (advisory scope-on-record): advisory fields on a work record, written by the
 // additive work.annotated operation. Both are required:false extensions -- no registry
 // row; Story scope gates execution and Owner-decided completion, while a binary
@@ -1736,9 +1812,27 @@ function assertGateClearance(gates: Iterable<GateRecord>, workId: string, target
     .filter((gate) => !gate.tombstone && gate.status !== "satisfied" && gate.workId === workId)
     .map((gate) => gate.id)
     .sort(compareCanonicalText);
-  if (blocking.length > 0) {
+  if (blocking.length === 0) return;
+  if (reasonCode !== "WORKSPACE_GATE_PENDING") {
     fail(reasonCode, `work ${workId} is blocked by pending gate(s) ${blocking.join(",")}`);
   }
+  // TCRN-CROSS-STORY-489 (MIN-238 D4): on the verb the refusal names each gate and the one way it
+  // is released, in Atelier (GATE_RELEASE_VERB); a migration never satisfies a gate by itself.
+  throw new WorkspaceError(
+    reasonCode,
+    `work ${workId} is blocked by pending gate(s) ${blocking.join(",")}; each is released in Atelier with ${GATE_RELEASE_VERB} --id <gate> --reason <why>`,
+    { workId, gates: blocking.join(","), remedy: `${GATE_RELEASE_VERB} --id ${blocking[0]} --reason <why>, in Atelier` },
+  );
+}
+
+/**
+ * Refuse, before anything else is checked or written, a move to done of any of `workIds` while a
+ * gate that is not satisfied holds it (WORKSPACE_GATE_PENDING, naming the gates and how each is
+ * released). The transition checks the same thing again as it writes; this lets a caller name the
+ * gate before it weighs anything slower, such as the project's code gates (TCRN-CROSS-STORY-489).
+ */
+export function assertWorkGatesClear(state: Pick<WorkspaceState, "gates">, workIds: readonly string[]): void {
+  for (const workId of workIds) assertGateClearance(state.gates, workId, "done", "WORKSPACE_GATE_PENDING");
 }
 
 // TCRN-CROSS-STORY-468 R5: in a merged replay an event that does not apply is undone, not fatal.
@@ -2235,7 +2329,15 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
         if (!GATE_TRANSITIONS[current.status].includes(record.status)) {
           fail("WORKSPACE_EVENT_CORRUPT", `invalid gate transition ${record.id}`);
         }
-        if (record.status === "satisfied") {
+        if (record.status === "satisfied" && record.extensions[GATE_RELEASE_KEY] !== undefined) {
+          // TCRN-CROSS-STORY-489: released in Atelier rather than satisfied by resolving minutes;
+          // who, when and why are checked from the event alone.
+          const signer = payload !== null && typeof payload === "object" && !Array.isArray(payload)
+            ? (payload as Readonly<Record<string, JsonValue>>).actor
+            : undefined;
+          assertGateReleaseReplay(current, record, signer);
+          gateMutableFields = ["status", "revision", "updatedAt", "extensions"];
+        } else if (record.status === "satisfied") {
           const locator = readGateEvidenceLocator(record.extensions);
           // CQ-10b: counted collection copy. Two full copies fed to array .find while
           // the Maps are in hand; runs once per gate-satisfied transition, and only
@@ -2812,7 +2914,7 @@ export async function withWorkspaceWriteLock<T>(
   operation: (workspaceRoot: string) => Promise<T>,
 ): Promise<T> {
   const layout = await resolveLayout(workspaceRootInput);
-  if (layout.kind === "legacy") refuseLegacyWrite(layout.root);
+  if (layout.kind === "legacy") return refuseLegacyWrite(layout.root);
   await refuseTombstonedWrite(layout.root);
   const held = heldWriteLocks.getStore() ?? new Set<string>();
   if (held.has(layout.root)) return operation(layout.root);
@@ -2899,7 +3001,25 @@ async function refuseTombstonedWrite(root: string): Promise<void> {
   );
 }
 
-function refuseLegacyWrite(root: string): never {
+// TCRN-CROSS-STORY-489 R4 (TCRN-CROSS-SUB-365): an old-layout workspace that setup --mode migrate
+// moved into a library is refused with that library, which this device's registry names: the
+// entry whose migratedFrom is this old workspace is its tombstone, and nothing is written into the
+// old workspace itself. Without one, or with a registry that does not read, the write is refused
+// as before; either way nothing is written.
+async function refuseLegacyWrite(root: string): Promise<never> {
+  let movedTo: string | null = null;
+  try {
+    movedTo = (await findMigratedEntry(root))?.libraryPath ?? null;
+  } catch (error) {
+    if (typeof (error as { reasonCode?: unknown }).reasonCode !== "string") throw error;
+  }
+  if (movedTo !== null) {
+    throw new WorkspaceError(
+      "LEGACY_WORKSPACE_MIGRATED",
+      `${root} is an old-layout workspace this device migrated into the library at ${movedTo}; it opens read-only, and writes go to the library`,
+      { workspace: root, layout: "legacy", movedTo, remedy: `--workspace ${movedTo}` },
+    );
+  }
   throw new WorkspaceError(
     "LEGACY_WORKSPACE_READ_ONLY",
     `${root} is an old-layout workspace and opens read-only; import it into a library with library-import-legacy`,
@@ -3792,6 +3912,56 @@ function transitionWorkReducerDelta(state: WorkspaceState, input: { readonly id:
     const storedRecord: WorkRecord = { ...record, extensions: workEventExtensions(record, true) };
     return { payload: { operation: "work.updated", record: workJsonFields(storedRecord) }, projects: state.projects, work };
   }
+}
+
+/** What releasing a gate takes besides the instant: the gate, why it is released, and who releases it. */
+export interface ReleaseGateInput {
+  readonly id: string;
+  readonly reason: string;
+  readonly actorId: string;
+}
+
+/**
+ * Release a gate that is not satisfied (TCRN-CROSS-STORY-489; MIN-235 D17, D11; MIN-238 D4): one
+ * gate.updated to satisfied whose only extensions delta is the release entry, recording who
+ * released it, when (the event's instant) and why, which replay checks again. The actor is always
+ * named, whether or not the chain signs its events. A gate that is deleted or already satisfied is
+ * refused with WORKSPACE_INPUT_INVALID, and nothing is written. Only Atelier runs this through the
+ * CLI (work-gate-release refuses a model with MODEL_WRITE_REFUSED).
+ */
+export async function releaseGate(workspaceRoot: string, input: ReleaseGateInput & WorkspaceMutationOptions): Promise<WorkspaceState> {
+  return appendEvent(workspaceRoot, (state) => releaseGateDelta(state, input), input);
+}
+
+function releaseGateDelta(state: WorkspaceState, input: ReleaseGateInput & { readonly occurredAt: string }): MutationDelta {
+  const current = state.gates.find((gate) => gate.id === input.id);
+  if (current === undefined || current.tombstone) {
+    fail("WORKSPACE_INPUT_INVALID", `gate ${input.id} is unavailable`);
+  }
+  if (current.status === "satisfied") {
+    fail("WORKSPACE_INPUT_INVALID", `gate ${input.id} is satisfied already; a satisfied gate is not released again`);
+  }
+  const release = checkedGateRelease({ actor: input.actorId, reason: input.reason, releasedAt: input.occurredAt }, "WORKSPACE_INPUT_INVALID");
+  let record: GateRecord;
+  try {
+    record = validateGateRecord({
+      ...current,
+      status: "satisfied",
+      revision: current.revision + 1,
+      updatedAt: input.occurredAt,
+      extensions: gateReleaseExtensions(current.extensions, release),
+    });
+  } catch (error) {
+    if (error instanceof AssignmentGateError) fail("WORKSPACE_INPUT_INVALID", `gate ${input.id} cannot be released: ${error.message}`);
+    throw error;
+  }
+  const gates = sortExtensionRecords([...state.gates.filter((gate) => gate.id !== record.id), record]);
+  return {
+    payload: { operation: "gate.updated", record: record as unknown as JsonValue },
+    projects: state.projects,
+    work: state.work,
+    gates,
+  };
 }
 
 // E05 (scope-on-record): attach advisory fields to a live work record. It never changes

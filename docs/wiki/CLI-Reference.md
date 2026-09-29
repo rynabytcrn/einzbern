@@ -972,6 +972,32 @@
 | `--kind` | 必填 | `string` |
 | `--project-id` | 必填 | `string` |
 
+## `work-gate-list`
+
+- 可用范围：`cli`。
+- 是否写入：否。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--workspace` | 可选 | `string` |
+| `--work-id` | 可选 | `string` |
+| `--status` | 可选 | `string` |
+| `--limit` | 可选 | `integer` |
+| `--offset` | 可选 | `integer` |
+
+## `work-gate-release`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--workspace` | 可选 | `string` |
+| `--at` | 必填 | `instant` |
+| `--id` | 必填 | `string` |
+| `--reason` | 必填 | `string` |
+| `--actor` | 必填 | `string` |
+
 ## `work-list`
 
 - 可用范围：`cli`。

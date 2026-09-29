@@ -14,15 +14,26 @@
 // hints, by default the project directory's name and its working tree's remote. Without a mapping,
 // an old workspace in the project itself is the one partition there is to infer.
 //
-// planMigration writes nothing. For each partition it runs the import's dry run (legacy-import.ts),
-// which validates the whole chain from genesis and reports its events and head, then replays the
-// chain once more and requires the same head. From that replay it lists every gate that is not
-// satisfied (id, bound work, status, title, outcome class: a pending gate stays pending and is
-// listed, never counted as none, MIN-238 D4) and counts the work that is still open. A target that
-// is not a new or empty directory stops the apply, as the import itself would. The plan also names
-// the registry entry each library gets (migratedFrom is the old workspace), the portal keys of the
-// old device directory's machine settings, and the host files the migration cleans up
-// (TCRN-CROSS-SUB-366 fills those in). Running the plan is TCRN-CROSS-SUB-365's.
+// planMigration writes nothing. For each partition whose target the import can create the library
+// in, it runs the import's dry run (legacy-import.ts), which validates the whole chain from genesis
+// and reports its events and head, then replays the chain once more and requires the same head.
+// From that replay it lists every gate that is not satisfied (id, bound work, status, title, outcome
+// class: a pending gate stays pending and is listed, never counted as none, MIN-238 D4) and counts
+// the work that is still open. A target that is not a new or empty directory stops the apply, as
+// the import itself would, unless it is the library an earlier run imported this same chain into
+// (TCRN-CROSS-SUB-365): that partition is skipped, so running the same mapping again changes
+// nothing. The plan also names the registry entry each library gets (migratedFrom is the old
+// workspace), the portal keys of the old device directory's machine settings, and the host files
+// the migration cleans up (TCRN-CROSS-SUB-366 fills those in).
+//
+// applyMigration (TCRN-CROSS-STORY-489 R1, R2, R4; TCRN-CROSS-SUB-365) runs a confirmed plan in the
+// plan's order: each partition's library, imported as its first stream and its events and head
+// compared with the plan's (a difference stops the apply and names the partition), or skipped
+// once the library holds that chain; then the registry entries, each with migratedFrom, the old
+// path's tombstone (registry.ts), an existing registry copied into this run's backups first; then
+// the portal keys this device does not hold yet. Nothing is written into an old workspace, and no
+// gate changes: a pending one stays pending in the library (MIN-238 D4) until it is released in
+// Atelier (workspace.ts, work-gate-release).
 
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { basename, isAbsolute, join, resolve } from "node:path";
@@ -31,18 +42,29 @@ import { basename, isAbsolute, join, resolve } from "node:path";
 // evaluates it, whichever module a caller imports first.
 import "./index.js";
 import type { WorkStatus } from "../../protocol/src/index.js";
+import { readAllStreams } from "./akasha.js";
 import type { GateRecord } from "./assignment-gate.js";
+import { writeFileAtomic } from "./atomic-file.js";
 import { suggestCloudHosted } from "./cloud-roots.js";
-import { registryPath } from "./device-home.js";
-import { importLegacyWorkspace } from "./legacy-import.js";
+import { ensureDeviceDirectory, registryPath } from "./device-home.js";
+import { hasLibraryManifest, openLibrary } from "./ether-library.js";
+import { LegacyImportError, importLegacyWorkspace } from "./legacy-import.js";
 import { openLegacyWorkspace, replayLegacyWorkspace } from "./legacy-workspace.js";
-import { MACHINE_SETTINGS_FILE_NAME, assertMachineSettingKey, readMachineSettings, validateMachineSettingValue } from "./machine-settings.js";
+import {
+  MACHINE_SETTINGS_FILE_NAME,
+  applyMachineSettingSet,
+  assertMachineSettingKey,
+  readMachineSettings,
+  validateMachineSettingValue,
+} from "./machine-settings.js";
 import { DIRECTORY } from "./names.js";
-import { gitRemoteOf, normalizeGitRemote, readRegistry } from "./registry.js";
-import type { Registry } from "./registry.js";
+import { gitRemoteOf, normalizeGitRemote, readRegistry, registerLibrary } from "./registry.js";
+import type { Registry, RegistryEntry } from "./registry.js";
 import { setupFail } from "./setup.js";
 import type { SetupBlocker, SetupStep, SetupWrite, SetupWriteAction } from "./setup.js";
 import { entryKind, libraryLanguage, messageOf, realTarget, reasonOf } from "./setup-fresh.js";
+import type { SetupRecorder } from "./setup-fresh.js";
+import { legacyWorkspaceStreamId } from "./workspace.js";
 import type { WorkspaceState } from "./workspace.js";
 
 export const MIGRATION_MAPPING_SCHEMA_VERSION = "einzbern.migration-mapping.v1" as const;
@@ -69,8 +91,10 @@ export interface MigrationMapping {
 }
 
 // What is at a partition's target: nothing or an empty directory, which the import creates the
-// library in, or something the import refuses.
-export type MigrationTargetState = "absent" | "empty" | "not-empty" | "not-a-directory";
+// library in; the library an earlier run imported this partition's chain into (migrated: its id is
+// the old workspace id and its first stream carries the old chain up to the old head); or
+// something the import refuses.
+export type MigrationTargetState = "absent" | "empty" | "migrated" | "not-empty" | "not-a-directory";
 
 /** A gate of the old chain that is not satisfied; it keeps its status through the migration. */
 export interface MigrationGate {
@@ -98,10 +122,12 @@ export interface MigrationPartitionPlan {
   // The library the chain becomes, <projectRoot>/.ether, and what is there now.
   readonly target: string;
   readonly targetState: MigrationTargetState;
-  // import, or blocked when a blocker of the plan names this partition.
-  readonly action: "import" | "blocked";
-  // The import's dry run: the old workspace id (the library keeps it as its id), its stream, and the
-  // chain's events and head. Null when the old workspace does not read.
+  // import; skip, when the target is migrated already; or blocked when a blocker of the plan names
+  // this partition.
+  readonly action: "import" | "skip" | "blocked";
+  // The import's dry run (or, for a target it would refuse, the replay): the old workspace id (the
+  // library keeps it as its id), its stream, and the chain's events and head. Null when the old
+  // workspace does not read.
   readonly workspaceId: string | null;
   readonly streamId: string | null;
   readonly events: number | null;
@@ -180,11 +206,43 @@ export interface MigrationPlanInput {
   readonly cloud?: boolean;
 }
 
-/** The plan, the writes its apply makes in order (library, registry, machine-settings), and what stops the apply. */
+/** The plan, the writes its apply makes in order (library, registry, machine-settings), the originals it copies first, and what stops the apply. */
 export interface MigrationPlanResult {
   readonly migration: MigrationPlan;
   readonly writes: readonly SetupWrite[];
+  // An existing registry the apply changes is copied into this run's backups first.
+  readonly backups: readonly { readonly step: SetupStep; readonly path: string }[];
   readonly blockers: readonly SetupBlocker[];
+}
+
+/** A partition as the apply left it: its library imported, or skipped as migrated already. */
+export interface MigrationPartitionApplied {
+  readonly partition: string;
+  readonly legacyWorkspace: string;
+  readonly projectRoot: string;
+  readonly target: string;
+  readonly libraryId: string;
+  readonly action: "imported" | "skipped";
+  // The old chain the library's first stream carries.
+  readonly events: number;
+  readonly headEventHash: string | null;
+}
+
+/** What setup --mode migrate did (the SETUP_APPLIED receipt's migration field). */
+export interface MigrationApplied {
+  readonly partitions: readonly MigrationPartitionApplied[];
+  // Each partition's registry entry as it stands after the apply, migratedFrom included.
+  readonly registry: readonly RegistryEntry[];
+  // The portal keys, with what this device held before the apply and what the apply did.
+  readonly deviceSettings: MigrationDeviceSettings;
+}
+
+export interface MigrationApplyInput {
+  // The confirmed plan's migration: the apply follows it, and reads each file again first.
+  readonly migration: MigrationPlan;
+  readonly deviceHome: string;
+  // The plan's instant, which the libraries and the registry entries are stamped with.
+  readonly at: string;
 }
 
 // ---- The mapping ----
@@ -284,13 +342,18 @@ export function inferMigrationMapping(projectRoot: string, controlDirectory: str
 
 // ---- The plan ----
 
-/** The writes and blockers of one plan, each listed once. */
+/** The writes, backups and blockers of one plan, each listed once. */
 class MigrationRecorder {
   readonly writes: SetupWrite[] = [];
+  readonly backups: { readonly step: SetupStep; readonly path: string }[] = [];
   readonly blockers: SetupBlocker[] = [];
 
   write(step: SetupStep, path: string, action: SetupWriteAction): void {
     if (!this.writes.some((entry) => entry.path === path)) this.writes.push({ step, path, action });
+  }
+
+  backup(step: SetupStep, path: string): void {
+    if (!this.backups.some((entry) => entry.path === path)) this.backups.push({ step, path });
   }
 
   block(step: SetupBlocker["step"], path: string, reasonCode: string, message: string): void {
@@ -363,6 +426,34 @@ interface PlannedPartition {
   readonly registry: MigrationRegistryEntry;
 }
 
+/** The old chain a partition carries: the old workspace id, its stream, and its events and head. */
+interface LegacyChainFacts {
+  readonly workspaceId: string;
+  readonly streamId: string;
+  readonly events: number;
+  readonly headEventHash: string | null;
+}
+
+// Whether `target` is the library an import of this chain created (TCRN-CROSS-SUB-365): its id is
+// the old workspace id and one of its streams is the old stream, imported as it was (the legacy
+// identity scheme), carrying the old chain up to the old head, whatever this device has appended
+// since. A library with that id whose stream does not is diverged; anything else is some other
+// content of the directory.
+async function migratedLibraryState(target: string, chain: LegacyChainFacts): Promise<"migrated" | "diverged" | "other"> {
+  if (!(await hasLibraryManifest(target))) return "other";
+  const library = await openLibrary(target);
+  if (library.manifest.libraryId !== chain.workspaceId) return "other";
+  const stream = (await readAllStreams(library.root)).streams
+    .find((entry) => entry.manifest?.streamId === chain.streamId && entry.manifest.identityScheme === "legacy");
+  if (stream === undefined) return "diverged";
+  if (chain.events === 0) return "migrated";
+  return stream.events.length >= chain.events && stream.events[chain.events - 1]?.eventHash === chain.headEventHash ? "migrated" : "diverged";
+}
+
+function divergedMessage(target: string, name: string, chain: LegacyChainFacts): string {
+  return `${target} holds the library ${chain.workspaceId}, the id of partition ${name}'s old workspace, but not its chain of ${chain.events} events up to ${chain.headEventHash ?? "no head"}: the library and the old workspace have diverged`;
+}
+
 async function planPartition(recorder: MigrationRecorder, input: MigrationPlanInput, entry: MigrationMappingEntry, registry: Registry | null): Promise<PlannedPartition> {
   const blockersBefore = recorder.blockers.length;
   const name = entry.partition;
@@ -374,21 +465,40 @@ async function planPartition(recorder: MigrationRecorder, input: MigrationPlanIn
     recorder.block("library", projectRoot, "SETUP_INPUT_INVALID", `the project ${projectRoot} of partition ${name} is not a directory`);
   }
   const target = projectKind === "directory" ? await realTarget(join(projectRoot, DIRECTORY.library)) : join(projectRoot, DIRECTORY.library);
-  const state = await targetState(target);
-  if (state === "not-empty") {
-    recorder.block("library", target, "LIBRARY_TARGET_NOT_EMPTY", `${target} is not empty: partition ${name} is imported into a new or empty directory`);
-  } else if (state === "not-a-directory") {
-    recorder.block("library", target, "LIBRARY_TARGET_INVALID", `${target} is not a directory: partition ${name} is imported into a new or empty directory`);
-  }
+  let state = await targetState(target);
+  const importable = state === "absent" || state === "empty";
 
-  // The old chain: the import's dry run validates it from genesis and reports its events and head;
-  // a replay of the same chain must reach the same head before its gates and work are listed.
+  // The old chain. Where the import could create the library, its dry run validates the chain from
+  // genesis and reports its events and head, and a replay of the same chain must reach the same
+  // head before its gates and work are listed. Where the import would refuse the target, the
+  // replay alone (which validates the chain from genesis too) says what the chain is.
   const legacyWorkspace = await realOrGiven(entry.legacyWorkspace);
-  const report = await recorder.attempt("library", legacyWorkspace, () => importLegacyWorkspace(legacyWorkspace, target, { createdAt: input.at, dryRun: true }));
-  const replayed = report === null ? null : await recorder.attempt("library", legacyWorkspace, async () => replayLegacyWorkspace(await openLegacyWorkspace(legacyWorkspace)));
+  const report = importable
+    ? await recorder.attempt("library", legacyWorkspace, () => importLegacyWorkspace(legacyWorkspace, target, { createdAt: input.at, dryRun: true }))
+    : null;
+  const replayed = importable && report === null
+    ? null
+    : await recorder.attempt("library", legacyWorkspace, async () => replayLegacyWorkspace(await openLegacyWorkspace(legacyWorkspace)));
   if (report !== null && replayed !== null && (replayed.version !== report.events || replayed.headEventHash !== report.headEventHash)) {
     recorder.block("library", legacyWorkspace, "LEGACY_IMPORT_MISMATCH",
       `the old workspace of partition ${name} changed while it was planned (${report.events} events, then ${replayed.version}): plan again once nothing writes to it`);
+  }
+  const chain: LegacyChainFacts | null = report !== null
+    ? { workspaceId: report.workspaceId, streamId: report.streamId, events: report.events, headEventHash: report.headEventHash }
+    : replayed === null
+      ? null
+      : { workspaceId: replayed.metadata.workspaceId, streamId: legacyWorkspaceStreamId(replayed.metadata), events: replayed.version, headEventHash: replayed.headEventHash };
+
+  // A target that is not empty is refused, unless it is this chain's library from an earlier run.
+  if (state === "not-empty" && chain !== null) {
+    const found = await recorder.attempt("library", target, () => migratedLibraryState(target, chain));
+    if (found === "migrated") state = "migrated";
+    if (found === "diverged") recorder.block("library", target, "LEGACY_IMPORT_MISMATCH", divergedMessage(target, name, chain));
+  }
+  if (state === "not-empty" && !recorder.blockers.slice(blockersBefore).some((blocker) => blocker.path === target)) {
+    recorder.block("library", target, "LIBRARY_TARGET_NOT_EMPTY", `${target} is not empty: partition ${name} is imported into a new or empty directory`);
+  } else if (state === "not-a-directory") {
+    recorder.block("library", target, "LIBRARY_TARGET_INVALID", `${target} is not a directory: partition ${name} is imported into a new or empty directory`);
   }
 
   // This device's registry: a project registered to another library keeps it until the user moves it.
@@ -400,24 +510,28 @@ async function planPartition(recorder: MigrationRecorder, input: MigrationPlanIn
 
   const remote = entry.gitRemote ?? (projectKind === "directory" ? gitRemoteOf(projectRoot) : null);
   const gitRemote = remote === null ? null : hintOrNull(normalizeGitRemote(remote));
-  const workspaceId = report?.workspaceId ?? null;
+  const workspaceId = chain?.workspaceId ?? null;
   const partition: MigrationPartitionPlan = {
     partition: name,
     legacyWorkspace,
     projectRoot,
     target,
     targetState: state,
-    action: recorder.blockers.length > blockersBefore ? "blocked" : "import",
+    action: recorder.blockers.length > blockersBefore ? "blocked" : state === "migrated" ? "skip" : "import",
     workspaceId,
-    streamId: report?.streamId ?? null,
-    events: report?.events ?? null,
-    headEventHash: report?.headEventHash ?? null,
+    streamId: chain?.streamId ?? null,
+    events: chain?.events ?? null,
+    headEventHash: chain?.headEventHash ?? null,
     projectName: entry.projectName ?? hintOrNull(basename(projectRoot)),
     gitRemote,
     language: replayed === null ? null : libraryLanguage(replayed),
     unsatisfiedGates: replayed === null ? null : unsatisfiedGates(replayed),
     openItems: replayed === null ? null : openItems(replayed),
   };
+  // The cloud flag: --cloud; else what this device's registry holds for the project and this
+  // library, so running the plan again keeps it; else the cloud folder table's suggestion.
+  const cloudHosted = input.cloud ??
+    (registered !== null && registered.libraryPath === target ? registered.cloudHosted : suggestCloudHosted(target, { platform: process.platform, env: process.env, home: input.home }));
   return {
     partition,
     registry: {
@@ -425,11 +539,18 @@ async function planPartition(recorder: MigrationRecorder, input: MigrationPlanIn
       projectPath: projectRoot,
       libraryPath: target,
       libraryId: workspaceId,
-      cloudHosted: input.cloud ?? suggestCloudHosted(target, { platform: process.platform, env: process.env, home: input.home }),
+      cloudHosted,
       gitRemote,
       migratedFrom: legacyWorkspace,
     },
   };
+}
+
+// Whether the registry already holds the entry a partition gets, so the apply leaves it as it is.
+function registryEntryCurrent(registry: Registry | null, planned: MigrationRegistryEntry): boolean {
+  const entry = registry?.entries.find((candidate) => candidate.projectPath === planned.projectPath);
+  return entry !== undefined && entry.libraryPath === planned.libraryPath && entry.libraryId === planned.libraryId &&
+    entry.cloudHosted === planned.cloudHosted && entry.gitRemote === planned.gitRemote && entry.migratedFrom === planned.migratedFrom;
 }
 
 function validPortalSetting(key: string, value: unknown): boolean {
@@ -513,7 +634,12 @@ export async function planMigration(input: MigrationPlanInput): Promise<Migratio
     registryEntries.push(planned.registry);
   }
   for (const partition of partitions) if (partition.action === "import") recorder.write("library", partition.target, "create");
-  if (partitions.length > 0) recorder.write("registry", registryFile, await entryKind(registryFile) === null ? "create" : "update");
+  // The registry is written when an entry is missing or differs; an existing file is copied first.
+  if (registryEntries.some((planned) => !registryEntryCurrent(registry, planned))) {
+    const exists = await entryKind(registryFile) !== null;
+    recorder.write("registry", registryFile, exists ? "update" : "create");
+    if (exists) recorder.backup("registry", registryFile);
+  }
   const deviceSettings = await planDeviceSettings(recorder, input);
   return {
     migration: {
@@ -525,6 +651,150 @@ export async function planMigration(input: MigrationPlanInput): Promise<Migratio
       hostCleanup: [],
     },
     writes: recorder.writes,
+    backups: recorder.backups,
     blockers: recorder.blockers,
   };
+}
+
+// ---- The apply ----
+
+function applyFail(reasonCode: "LEGACY_IMPORT_MISMATCH", message: string, partition: MigrationPartitionPlan): never {
+  throw new LegacyImportError(reasonCode, message, {
+    partition: partition.partition,
+    legacyWorkspace: partition.legacyWorkspace,
+    target: partition.target,
+  });
+}
+
+// An import that stops says which partition it was importing: the refusal keeps its own reason
+// code and details, and its message and a partition field name the partition.
+function namingPartition(error: unknown, partition: MigrationPartitionPlan): unknown {
+  if (error instanceof Error && typeof (error as { reasonCode?: unknown }).reasonCode === "string") {
+    error.message = `partition ${partition.partition}: ${error.message}`;
+    Object.assign(error, { partition: partition.partition });
+  }
+  return error;
+}
+
+function plannedChain(partition: MigrationPartitionPlan): LegacyChainFacts {
+  if (partition.workspaceId === null || partition.streamId === null || partition.events === null) {
+    return setupFail("SETUP_INPUT_INVALID", `the plan does not say what partition ${partition.partition}'s old chain is`, { field: "plan" });
+  }
+  return { workspaceId: partition.workspaceId, streamId: partition.streamId, events: partition.events, headEventHash: partition.headEventHash };
+}
+
+// One partition's library, in the plan's order: imported, with the events and head it carries
+// compared with the plan's, or, planned as skipped, found holding the same chain again.
+async function applyPartition(recorder: SetupRecorder, partition: MigrationPartitionPlan, at: string): Promise<MigrationPartitionApplied> {
+  if (partition.action === "blocked") {
+    return setupFail("SETUP_BLOCKED", `partition ${partition.partition} cannot be migrated as planned`, { field: "plan", partition: partition.partition });
+  }
+  const chain = plannedChain(partition);
+  const applied = {
+    partition: partition.partition,
+    legacyWorkspace: partition.legacyWorkspace,
+    projectRoot: partition.projectRoot,
+    target: partition.target,
+    libraryId: chain.workspaceId,
+  };
+  if (partition.action === "skip") {
+    const found = await migratedLibraryState(partition.target, chain);
+    if (found !== "migrated") {
+      applyFail("LEGACY_IMPORT_MISMATCH", `partition ${partition.partition}: ${partition.target} no longer holds the library the plan found migrated; plan again`, partition);
+    }
+    return { ...applied, action: "skipped", events: chain.events, headEventHash: chain.headEventHash };
+  }
+  let report: Awaited<ReturnType<typeof importLegacyWorkspace>>;
+  try {
+    report = await importLegacyWorkspace(partition.legacyWorkspace, partition.target, {
+      createdAt: at,
+      projectName: partition.projectName,
+      gitRemote: partition.gitRemote,
+    });
+  } catch (error) {
+    throw namingPartition(error, partition);
+  }
+  recorder.write("library", report.target ?? partition.target, "create");
+  if (report.workspaceId !== chain.workspaceId || report.streamId !== chain.streamId || report.events !== chain.events || report.headEventHash !== chain.headEventHash) {
+    applyFail("LEGACY_IMPORT_MISMATCH",
+      `partition ${partition.partition}: the old workspace was imported with ${report.events} events up to ${report.headEventHash ?? "no head"}, not the ${chain.events} up to ${chain.headEventHash ?? "no head"} the plan read; the library at ${partition.target} holds the chain as it was imported, and the apply stopped before the registry: plan again once nothing writes to the old workspace`,
+      partition);
+  }
+  return { ...applied, action: "imported", events: report.events, headEventHash: report.headEventHash };
+}
+
+// The registry entries, each written only when it is missing or differs; an existing registry is
+// copied into this run's backups before the first write.
+async function applyRegistryEntries(recorder: SetupRecorder, input: MigrationApplyInput, planned: readonly MigrationRegistryEntry[]): Promise<readonly RegistryEntry[]> {
+  const registryFile = registryPath(input.deviceHome);
+  const existed = await entryKind(registryFile) !== null;
+  let registry = await readRegistry(input.deviceHome);
+  const written: RegistryEntry[] = [];
+  let backedUp = false;
+  for (const entry of planned) {
+    if (!registryEntryCurrent(registry, entry)) {
+      if (existed && !backedUp) {
+        const copy = join(recorder.backupDirectory("registry"), basename(registryFile));
+        if (await entryKind(copy) === null) {
+          await ensureDeviceDirectory(recorder.backupDirectory("registry"));
+          await writeFileAtomic(copy, await readFile(registryFile));
+        }
+        recorder.backup("registry", registryFile);
+        backedUp = true;
+      }
+      await registerLibrary({
+        projectPath: entry.projectPath,
+        libraryPath: entry.libraryPath,
+        registeredAt: input.at,
+        cloudHosted: entry.cloudHosted,
+        gitRemote: entry.gitRemote,
+        migratedFrom: entry.migratedFrom,
+      }, input.deviceHome);
+      recorder.write("registry", registryFile, existed ? "update" : "create");
+      registry = await readRegistry(input.deviceHome);
+    }
+    const current = registry.entries.find((candidate) => candidate.projectPath === entry.projectPath);
+    if (current !== undefined) written.push(current);
+  }
+  return written;
+}
+
+// The portal keys the plan sets, each set only while this device still holds none for it.
+async function applyDeviceSettings(recorder: SetupRecorder, input: MigrationApplyInput): Promise<MigrationDeviceSettings> {
+  const { deviceSettings } = input.migration;
+  if (deviceSettings.keys.length === 0) return deviceSettings;
+  const held = await readMachineSettings(deviceSettings.to);
+  const existed = await entryKind(deviceSettings.to) !== null;
+  const keys: MigrationDeviceSetting[] = [];
+  for (const setting of deviceSettings.keys) {
+    const current = held.values[setting.key] ?? null;
+    if (setting.action === "invalid") {
+      keys.push({ ...setting, current });
+      continue;
+    }
+    if (current !== null) {
+      keys.push({ ...setting, current, action: current === setting.value ? "unchanged" : "kept" });
+      continue;
+    }
+    await applyMachineSettingSet({ key: setting.key, value: setting.value, occurredAt: input.at, path: deviceSettings.to });
+    recorder.write("machine-settings", deviceSettings.to, existed ? "update" : "create");
+    keys.push({ ...setting, current, action: "set" });
+  }
+  return { from: deviceSettings.from, to: deviceSettings.to, keys };
+}
+
+/**
+ * Apply a confirmed migration plan (TCRN-CROSS-STORY-489 R1, R2, R4; TCRN-CROSS-SUB-365), after the
+ * device step: each partition's library in the plan's order (imported and compared with the plan,
+ * or skipped as migrated already; a difference stops the apply and names the partition), then the
+ * registry entries with migratedFrom, then the portal keys this device does not hold yet. Every
+ * file is read again before it is written, so applying the same mapping again writes nothing. No
+ * old workspace is written, and no gate is satisfied.
+ */
+export async function applyMigration(recorder: SetupRecorder, input: MigrationApplyInput): Promise<MigrationApplied> {
+  const partitions: MigrationPartitionApplied[] = [];
+  for (const partition of input.migration.partitions) partitions.push(await applyPartition(recorder, partition, input.at));
+  const registry = await applyRegistryEntries(recorder, input, input.migration.registry);
+  const deviceSettings = await applyDeviceSettings(recorder, input);
+  return { partitions, registry, deviceSettings };
 }

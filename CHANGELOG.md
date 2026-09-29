@@ -847,9 +847,8 @@ exists (`hostFileTrackedByGit`, exported by its module and not by core's index).
 installation from before the rename it still answers `SETUP_MIGRATE_NOTHING`, whatever `--mapping`
 names. The mode takes `--mapping`, `--cloud`, `--language` and `--navigation` (any other option is
 `SETUP_OPTION_NOT_APPLICABLE`), and without `--yes true` it writes nothing and answers
-`SETUP_PLAN_READY` with a new field, `migration`. Its apply is not in this engine yet
-(`SETUP_MODE_UNAVAILABLE`, TCRN-CROSS-SUB-365); a plan with a blocker is refused as before
-(`SETUP_BLOCKED`). The mapping is a JSON file of this device's paths that is never committed,
+`SETUP_PLAN_READY` with a new field, `migration`. Its apply, and what a second run of the same mapping
+plans, are below (TCRN-CROSS-SUB-365); a plan with a blocker is refused as before (`SETUP_BLOCKED`). The mapping is a JSON file of this device's paths that is never committed,
 `{"schemaVersion": "einzbern.migration-mapping.v1", "partitions": [{"partition", "legacyWorkspace",
 "projectRoot", "projectName"?, "gitRemote"?}]}`: at least one partition; `partition` is its name,
 `legacyWorkspace` the absolute path of the directory that holds the old control directory,
@@ -893,6 +892,74 @@ workspace that does not read (its own reason code, such as `LEGACY_WORKSPACE_NOT
 this device registered to another library (`SETUP_LIBRARY_CONFLICT`) and a machine settings file that
 does not read (`MACHINE_SETTINGS_FILE_INVALID`), beside the engine and device blockers of the other
 modes. `migrate-legacy.ts` is not exported by core's index.
+
+`setup --mode migrate --yes true` applies the plan (TCRN-CROSS-STORY-489 R1, R2, R4,
+TCRN-CROSS-SUB-365; MIN-235 D17, D11, MIN-238 D4; `packages/core/src/migrate-legacy.ts`, `setup.ts`,
+`registry.ts`, `workspace.ts`, `packages/cli/src/index.ts`, `specs/gate-v1.md`). After this device's
+`device.json` (when it has none), each partition is imported, in the plan's order, into its `target` as
+the library's first stream by the import `library-import-legacy` runs (the chain validated from genesis,
+the new library replayed to the same events, head and records), and the workspace id, stream, events
+and head it carried are compared with the plan's: a difference stops the apply with
+`LEGACY_IMPORT_MISMATCH`, whose message and `details.partition` name the partition, before anything is
+registered (an import that fails for another reason keeps its own reason code and is named the same
+way). Then each partition's registry entry is written with `migratedFrom`, the real path of its old
+workspace, an existing `registry.json` copied first into `backups/<UTC>/registry/` of the device
+directory; then each `portal.*` key the plan sets that this device still does not hold. No old
+workspace or old device directory is written, and no gate changes: a pending gate is pending in the
+library (MIN-238 D4). `SETUP_APPLIED` has a new field, `migration`: `partitions`, each `{partition,
+legacyWorkspace, projectRoot, target, libraryId, action, events, headEventHash}` with `action`
+`imported` or `skipped`; `registry`, the entries as they stand after the apply; and `deviceSettings`,
+`{from, to, keys}` with each key's `current` as this device held it before and `action` as the apply
+took it. `library` is the project's own partition's library. The self-check is doctor's eight checks,
+as in the other modes; host wiring and cleanup (TCRN-CROSS-SUB-366) are not part of this apply yet, so
+`--language` and `--navigation` are planned but not written by it. `SETUP_MODE_UNAVAILABLE` leaves
+`SETUP_REASON_CODES`: no mode answers it any more.
+
+The same mapping applied again changes nothing (TCRN-CROSS-SUB-365). A target that is not empty is now
+read: when it is the library an import of the partition's chain created (its id is the old workspace
+id and one of its streams is the old stream, imported under the legacy identity scheme, carrying the
+old chain up to the old head, whatever this device appended since), `targetState` is the new
+`migrated` and `action` the new `skip`, and the apply finds it so again and writes nothing for it; a
+library with that id that does not carry the chain stops the plan with `LEGACY_IMPORT_MISMATCH` (they
+have diverged). For a target the import would refuse, `workspaceId`, `streamId`, `events` and
+`headEventHash` come from the replay, which validates the chain from genesis too, rather than from the
+dry run. The registry write is planned only when an entry is missing or differs, and listed in the
+plan's `backups` when the file exists; a partition already registered to its library keeps its cloud
+flag unless `--cloud` is given; a portal key this device holds is not set again. `library.action` is
+`reuse` for a migrated partition.
+
+The registry (`einzbern.registry.v1`) takes an optional entry field, `migratedFrom`, an absolute path
+(TCRN-CROSS-STORY-489 R2, R4; `packages/core/src/registry.ts`, `workspace.ts`). An entry without it
+reads as before; one whose `migratedFrom` is not an absolute path is not written and does not read
+(`LIBRARY_REGISTRY_INVALID`). Registering a project to the same library again keeps the entry's
+`migratedFrom`, and to another library drops it. The field is the old path's tombstone, kept on this
+device and never in the old workspace: a write aimed at an old-layout workspace an entry was migrated
+from is refused with the new `LEGACY_WORKSPACE_MIGRATED` (in `WORKSPACE_REASON_CODES`),
+`details.movedTo` the library and `details.remedy` `--workspace <library>`, and the old workspace still
+reads. One no entry names, or any when the registry does not read, is refused with
+`LEGACY_WORKSPACE_READ_ONLY` as before; a knowledge write to an old layout keeps its own refusal.
+
+A gate a migration carried over is released in Atelier (TCRN-CROSS-STORY-489; MIN-235 D17, D11, MIN-238
+D4; `packages/core/src/workspace.ts`, `packages/cli/src/index.ts`, `specs/gate-v1.md`). The gate and
+conference verbs stay retired, so a gate still `pending` or `blocked` when its chain became a library
+keeps holding its work item back from `done`; the refusal, `WORKSPACE_GATE_PENDING`, now names each
+gate (`details.gates` and the message) and `details.remedy`
+`work-gate-release --id <gate> --reason <why>, in Atelier`, and `work-transition` and `work-batch`
+make that check before they weigh a Story's code gates, so the gate is what a held work item hears
+first. `work-gate-release --id <gate> --reason <why> --actor <actor> --at <instant>` writes one
+`gate.updated` to `satisfied` whose only extensions delta is `gate-evidence:atelier-release`,
+`{required: false, value: {actor, reason, releasedAt}}`: who, why (one to 2048 bytes, not blank) and
+the event's own instant. Without `EINZBERN_SURFACE=atelier` it is refused with `MODEL_WRITE_REFUSED`
+(remedy `change it in Atelier`) and nothing appended; that surface is a convention, not proof of who
+ran it. A deleted or already satisfied gate, a blank or oversized reason and an invalid actor are
+refused with `WORKSPACE_INPUT_INVALID` or `WORKSPACE_ACTOR_INVALID`. Replay checks the entry from the
+chain alone (the three fields, the instant equal to the event's, the only extensions delta, and the
+event's signer when the chain signs its events) and otherwise rejects the event, leaving the gate as it
+was. `work-gate-list [--work-id <id>] [--status pending|blocked|satisfied|all]` is the read face: a
+`WORKSPACE_LIST_READY` page of kind `work-gate`, by default the gates that still hold work back.
+Neither verb starts with `gate-` or `minutes-`. Core's index exports the two functions the CLI calls
+for them, `releaseGate` and `assertWorkGatesClear`; `findMigratedEntry` and `applyMigration` are
+exported by their modules only.
 
 The repository's `test` task waits out a process group whose members are still exiting
 (TCRN-CROSS-SUB-402, TCRN-CROSS-INC-393; TCRN-CROSS-STORY-493; `scripts/task.mjs`). `kill(-group, 0)`

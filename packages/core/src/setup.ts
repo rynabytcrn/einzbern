@@ -27,8 +27,12 @@
 // TCRN-CROSS-SUB-364) plans an old installation's migration: each old workspace the mapping names
 // becomes the first stream of its project's library (migrate-legacy.ts), and the plan says what each
 // partition carries and what stops it; SETUP_MIGRATE_NOTHING when there is no old installation. Its
-// apply is TCRN-CROSS-SUB-365's. Whatever the mode, the wizard never commits, pushes, edits
-// .gitignore or deletes anything: what it takes out is moved into the device directory's backups.
+// apply (TCRN-CROSS-SUB-365) makes this device's identity when it has none, then imports each
+// partition and compares its head with the plan's, writes the registry entries with migratedFrom
+// and sets the portal keys this device does not hold; a partition already migrated is skipped, so
+// the same mapping applied again writes nothing. Its host cleanup and wiring are
+// TCRN-CROSS-SUB-366's. Whatever the mode, the wizard never commits, pushes, edits .gitignore or
+// deletes anything: what it takes out is moved into the device directory's backups.
 
 import { lstat, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -43,13 +47,14 @@ import type { DoctorCheck } from "./doctor.js";
 import { readEngineCurrent } from "./engine-home.js";
 import { ARTIFACT_LANGUAGE_TAGS } from "./knowledge-language.js";
 import { legacyControlDirectory } from "./legacy-workspace.js";
-import { inferMigrationMapping, planMigration, readMigrationMapping } from "./migrate-legacy.js";
-import type { MigrationPlan } from "./migrate-legacy.js";
+import { applyMigration, inferMigrationMapping, planMigration, readMigrationMapping } from "./migrate-legacy.js";
+import type { MigrationApplied, MigrationPlan } from "./migrate-legacy.js";
 import { DIRECTORY, LEGACY_DEVICE_DIRECTORY } from "./names.js";
 import { readRegistry } from "./registry.js";
 import type { RegistryEntry } from "./registry.js";
 import {
   SetupRecorder,
+  applyDevice,
   applyFreshSetup,
   defaultCloud,
   defaultLanguage,
@@ -59,6 +64,7 @@ import {
   planFreshSetup,
   readDeviceNavigation,
   realTarget,
+  setupApplied,
 } from "./setup-fresh.js";
 import {
   applyRepairSetup,
@@ -97,7 +103,6 @@ export const SETUP_REASON_CODES = Object.freeze([
   // migrate found no installation from before the rename.
   "SETUP_MIGRATE_NOTHING",
   "SETUP_MODE_INVALID",
-  "SETUP_MODE_UNAVAILABLE",
   // An option that belongs to another mode.
   "SETUP_OPTION_NOT_APPLICABLE",
   // A file setup would replace is not a regular file.
@@ -436,6 +441,9 @@ export interface SetupApplied {
   readonly columns?: SetupColumns;
   // update: the engine switch it made.
   readonly engineSwitch?: SetupEngineSwitched;
+  // migrate: each partition's library as the apply left it (imported, or skipped as migrated
+  // already), each registry entry with migratedFrom, and the portal keys (migrate-legacy.ts).
+  readonly migration?: MigrationApplied;
   // doctor's eight checks right after the apply.
   readonly selfCheck: readonly DoctorCheck[];
 }
@@ -457,10 +465,6 @@ interface SetupModeEntry {
   readonly options: readonly SetupOptionName[];
   readonly plan: (input: SetupModeInput) => Promise<SetupModePlan>;
   readonly apply: (plan: SetupPlan) => Promise<SetupApplied>;
-}
-
-function unavailable(mode: SetupMode): never {
-  return setupFail("SETUP_MODE_UNAVAILABLE", `setup --mode ${mode} is not available in this engine yet`, { mode });
 }
 
 // migrate's questions, on one screen with the skill's references migrate.md: the mapping, then the
@@ -510,6 +514,7 @@ async function planMigrateSetup(input: SetupModeInput): Promise<SetupModePlan> {
     ...(answers.cloud === undefined ? {} : { cloud: answers.cloud }),
   });
   for (const write of planned.writes) recorder.write(write.step, write.path, write.action);
+  for (const backup of planned.backups) recorder.backup(backup.step, backup.path);
   for (const blocker of planned.blockers) {
     // A file both readers refuse, such as this device's machine settings, stops the apply once.
     if (recorder.blockers.some((held) => held.step === blocker.step && held.path === blocker.path && held.reasonCode === blocker.reasonCode)) continue;
@@ -534,7 +539,8 @@ async function planMigrateSetup(input: SetupModeInput): Promise<SetupModePlan> {
       navigation: answers.navigation ?? defaults.navigation,
     },
     engine: { version: engine.version, directory: engine.directory },
-    library: own === null ? null : { path: own.target, action: "create", libraryId: own.workspaceId },
+    // A partition migrated by an earlier run keeps the library it has.
+    library: own === null ? null : { path: own.target, action: own.action === "skip" ? "reuse" : "create", libraryId: own.workspaceId },
     writes: recorder.writes,
     backups: recorder.backups,
     backupDir: recorder.backups.length > 0 ? recorder.backupRoot : null,
@@ -543,6 +549,31 @@ async function planMigrateSetup(input: SetupModeInput): Promise<SetupModePlan> {
     warnings: recorder.warnings,
     migration: planned.migration,
   };
+}
+
+/**
+ * Apply a confirmed migration (TCRN-CROSS-STORY-489 R1, R2, R4; TCRN-CROSS-SUB-365): this device's
+ * identity when it has none, then applyMigration in the plan's order (each partition imported and
+ * its head compared with the plan's, or skipped as migrated already; the registry entries with
+ * migratedFrom; the portal keys). SETUP_APPLIED carries what it did as migration, the project's own
+ * library, and doctor's eight checks. No old workspace is written and no gate is satisfied.
+ */
+async function applyMigrateSetup(plan: SetupPlan): Promise<SetupApplied> {
+  const { at, projectRoot, deviceHome } = plan;
+  const migration = plan.migration;
+  if (migration === undefined || migration.mapping === null) {
+    return setupFail("SETUP_INPUT_INVALID", "the plan names no migration to apply", { field: "plan" });
+  }
+  const recorder = new SetupRecorder(deviceHome, at);
+  const device = await applyDevice(recorder, deviceHome, at);
+  const applied = await applyMigration(recorder, { migration, deviceHome, at });
+  const own = applied.partitions.find((partition) => partition.projectRoot === projectRoot) ?? null;
+  const receipt = await setupApplied(plan, recorder, {
+    deviceId: device.deviceId,
+    library: own === null ? null : { path: own.target, libraryId: own.libraryId, created: own.action === "imported" },
+    pending: [],
+  });
+  return { ...receipt, migration: applied };
 }
 
 // The mode table. Each row names the options its mode takes, its planner and its apply; the rows
@@ -571,7 +602,7 @@ const MODE_TABLE: Readonly<Record<SetupMode, SetupModeEntry>> = Object.freeze({
   migrate: {
     options: ["mapping", "cloud", "language", "navigation"],
     plan: (input: SetupModeInput): Promise<SetupModePlan> => planMigrateSetup(input),
-    apply: async (): Promise<SetupApplied> => unavailable("migrate"),
+    apply: (plan: SetupPlan): Promise<SetupApplied> => applyMigrateSetup(plan),
   },
   uninstall: {
     options: ["managedSections"],
@@ -638,8 +669,8 @@ function checkedModeOptions(options: SetupOptions): SetupModeOptions {
 /**
  * Plan a setup in `mode` (R1, R5): nothing is written. Answers SETUP_PLAN_READY with the answers
  * given, the open questions and their defaults, the files the apply would write and back up, and
- * whatever stops the apply. A mode not in this engine yet answers SETUP_MODE_UNAVAILABLE, and
- * migrate SETUP_MIGRATE_NOTHING when it finds no installation from before the rename (R6).
+ * whatever stops the apply. migrate answers SETUP_MIGRATE_NOTHING when it finds no installation from
+ * before the rename (R6).
  */
 export async function planSetup(options: SetupOptions): Promise<SetupPlan> {
   if (!isSetupMode(options.mode)) setupFail("SETUP_MODE_INVALID", `mode must be one of ${SETUP_MODES.join(", ")}`, { mode: String(options.mode) });

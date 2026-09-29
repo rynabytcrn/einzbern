@@ -14,6 +14,12 @@ The gate write and read verbs (`gate-create`, `gate-transition`, `gate-delete`,
 already on a chain are validated exactly as below, and a pending gate still holds
 its work item back from `done`.
 
+A migration (`setup --mode migrate`, TCRN-CROSS-STORY-489) carries every gate over
+as it is: a pending gate stays pending in the library and is never satisfied by the
+migration itself. Two verbs, neither of them a `gate-` verb, reach those gates:
+`work-gate-list` reads them, and `work-gate-release` releases one in Atelier (see
+Release below).
+
 ## Record
 
 A gate carries `id`, `projectId`, an optional `workId` (nullable — a gate may be
@@ -43,6 +49,13 @@ a knowledge unit may reference a gate `id` that now has a defined shape.
 `list-by-work-item` returns non-tombstoned gates for a work item in
 `utf8-byte-order-v1` over `projectId` then `id`.
 
+`work-gate-list` (TCRN-CROSS-STORY-489) returns the library's gates as records,
+in the same order, as a `WORKSPACE_LIST_READY` page of kind `work-gate`. Without
+`--status` it lists the gates that still hold a work item back from `done` (not
+deleted, not `satisfied`); `--status pending`, `blocked` or `satisfied` lists
+those, and `--status all` every gate that is not deleted. `--work-id` keeps the
+gates anchored to one work item. A released gate carries its release entry.
+
 ## Persistence
 
 Gate records persist as additive workspace event-log operations: `gate.created`,
@@ -56,7 +69,8 @@ non-null — a live same-project work anchor. A mutation carries `revision`
 exactly one above the current record and pins every field it does not explicitly
 mutate (identity, `projectId`, and `workId` never change): `gate.updated`
 mutates `status` (and, on the move to `satisfied`, adds exactly the evidence
-entry described under Enforcement) and `gate.deleted` is the only tombstone route
+entry described under Enforcement or the release entry described under Release)
+and `gate.deleted` is the only tombstone route
 (there is no untombstone). Violations fail closed with `WORKSPACE_EVENT_CORRUPT`
 at replay time.
 
@@ -69,14 +83,21 @@ the per-work-item opt-in — there is no global switch.
 Designated transition set. A non-tombstoned gate that is **not `satisfied`** and
 whose `workId` anchors a work item blocks any work transition whose target status
 is `done`, with stable reason `WORKSPACE_GATE_PENDING` and no event appended. The
-designated set is exactly `done`: transitions to `cancelled`, `blocked`, `ready`,
-or `active` are never blocked, so cleanup and re-planning can never wedge. The
-identical predicate runs in the replay reducer as `WORKSPACE_EVENT_CORRUPT`, so a
-hand-tampered event log cannot drive a work item to `done` past an unsatisfied gate.
+refusal names each such gate (`details.gates`, comma-separated, and the message)
+and how it is released: `details.remedy` is
+`work-gate-release --id <gate> --reason <why>, in Atelier` for the first of them.
+`work-transition` and `work-batch` make this check before they weigh the code
+gates of a Story going to `done` (TCRN-CROSS-STORY-485 R4), so a work item a gate
+holds hears about its gate first. The designated set is exactly `done`:
+transitions to `cancelled`, `blocked`, `ready`, or `active` are never blocked, so
+cleanup and re-planning can never wedge. The identical predicate runs in the replay
+reducer as `WORKSPACE_EVENT_CORRUPT`, so a hand-tampered event log cannot drive a
+work item to `done` past an unsatisfied gate.
 
-The clearing state is `satisfied` and only `satisfied`, because that is the one
-state reached by citing resolving minutes. This is worth stating rather than
-leaving to be inferred, since the earlier predicate counted `pending` alone: with
+The clearing state is `satisfied` and only `satisfied`, reached by citing resolving
+minutes or, for a gate a migration carried over, by a release (below). This is
+worth stating rather than leaving to be inferred, since the earlier predicate
+counted `pending` alone: with
 `pending` and `blocked` freely interconvertible and no evidence required to move
 between them, flipping a gate to `blocked` *released* the work item — two legal
 commands took an unsatisfied gate out of the way of `done`, in a state whose name
@@ -90,12 +111,13 @@ proceed), and `blocked` as an `outcomeClass` value (retired from the write path,
 see below). Only the work status is in active use.
 
 Gate lifecycle. `pending` and `blocked` interconvert freely; a gate reaches
-`satisfied` only from `pending` or `blocked` and only with resolving evidence;
-`satisfied` is terminal (its only exit is a `gate.deleted` tombstone). The
+`satisfied` only from `pending` or `blocked` and only with resolving evidence or a
+release; `satisfied` is terminal (its only exit is a `gate.deleted` tombstone). The
 tombstone route also serves as the documented deadlock escape when a gate's
 conference is cancelled and no minutes can ever resolve.
 
-Satisfaction evidence. A transition to `satisfied` requires a minutes locator of
+Satisfaction evidence. A transition to `satisfied` requires either a release
+(below) or a minutes locator of
 the form `conference-minutes:<suffix>` (a protocol id). It resolves when a
 non-tombstoned conference-minutes record whose id shares that suffix exists and —
 when the gate's `workId` is non-null — that minutes record's conference lists the
@@ -115,6 +137,38 @@ rather than proportional to the number of gates, while any byte inside any gate
 record still moves it. Since the gate verbs are retired, gate records are read from the event log (`export`, `event-list`). `storageVersion` stays 1: an old binary reading a
 workspace that contains these events fails closed with
 `WORKSPACE_EVENT_CORRUPT` (unknown operation).
+
+## Release (TCRN-CROSS-STORY-489)
+
+With the gate and conference verbs retired, a gate that was still `pending` or
+`blocked` when its chain became a library cannot cite resolving minutes any more.
+It is released instead (MIN-235 D17, D11; MIN-238 D4), one gate at a time:
+
+- **The write.** A release is a `gate.updated` to `satisfied` whose only extensions
+  delta is one entry under key `gate-evidence:atelier-release`:
+  `{required: false, value: {actor, reason, releasedAt}}`. `actor` is an actor id
+  (who), `releasedAt` is the event's own instant (when), and `reason` is one to 2048
+  bytes of text that is not blank (why). Every other field is pinned as for any
+  `gate.updated`. A release and a minutes locator never travel together.
+- **Replay.** The reducer checks the entry from the chain alone: exactly those three
+  fields, a valid actor, a reason of that size, `releasedAt` equal to the record's
+  `updatedAt` (itself bound to the event), the entry as the only extensions delta,
+  and — once the chain signs its events (attestation enabled) — `actor` equal to the
+  actor the event was signed with. Before attestation an event carries no actor, and
+  the entry's actor stands uncorroborated, as an identity decision's does. A release
+  that fails any of these fails closed with `WORKSPACE_EVENT_CORRUPT`; in a library's
+  merged replay that event is rejected and the gate stays as it was.
+- **The verb.** `work-gate-release --id <gate> --reason <why> --actor <actor> --at
+  <instant>` writes it. It is refused with `MODEL_WRITE_REFUSED` (remedy
+  `change it in Atelier`) and nothing appended unless it runs with
+  `EINZBERN_SURFACE=atelier`, the surface Atelier writes through. That surface is an
+  agreed convention, not proof of who ran the command (MIN-235 D11). A gate that is
+  deleted or already `satisfied`, a blank or oversized reason, or an actor that is
+  not an actor id is refused with `WORKSPACE_INPUT_INVALID` or
+  `WORKSPACE_ACTOR_INVALID`, and nothing is appended.
+
+A released gate no longer holds its work item back; `work-gate-list --status
+satisfied` shows it with its release entry.
 
 ## Residuals
 

@@ -11,10 +11,11 @@
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { cp, mkdir, mkdtemp, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import Ajv2020 from "ajv/dist/2020.js";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { initializeKnowledgeStore, materializeWorkspace, materializeWorkspaceFromGenesis, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
@@ -105,6 +106,44 @@ test("SUB-426 R2: a decision's number is minutes:<id>#D<n>, and a record's shape
   for (const record of refused) {
     assert.throws(() => validateMinutesRecord(record), (error) => error?.reasonCode === "MINUTES_RECORD_INVALID", JSON.stringify(record.declarations));
   }
+});
+
+test("SUB-426 (R17 续作): the minutes schema describes the optional declarations, and a record without them stays valid", async (context) => {
+  const schema = JSON.parse(await readFile(new URL("../schemas/minutes-v1.schema.json", import.meta.url), "utf8"));
+  const protocolSchema = JSON.parse(await readFile(new URL("../schemas/protocol-common-v1.schema.json", import.meta.url), "utf8"));
+  const ajv = new Ajv2020({ strict: false, allErrors: true });
+  ajv.addKeyword({ keyword: "x-tcrn-maxUtf8Bytes", type: "string", schemaType: "number", validate: (limit, value) => Buffer.byteLength(value, "utf8") <= limit });
+  ajv.addSchema(protocolSchema);
+  const validate = ajv.compile(schema);
+  assert.equal(schema.required.includes("declarations"), false, "a record that declares nothing leaves the field out");
+
+  // Records the engine wrote: one in the shape every earlier record has, one that declares.
+  const fx = await library(context);
+  await fx.record(10, "DL-MIN-1", [EAST]);
+  await fx.record(11, "DL-MIN-2", [WEST, PELICAN], ["--supersedes", "DL-MIN-1#D1=D1"]);
+  const state = await materializeWorkspace(fx.workspace);
+  const plain = state.minutes.find((record) => record.externalKey === "DL-MIN-1");
+  const declared = state.minutes.find((record) => record.externalKey === "DL-MIN-2");
+  assert.equal(Object.hasOwn(plain, "declarations"), false);
+  for (const record of [plain, declared]) assert.equal(validate(record), true, JSON.stringify(validate.errors));
+
+  // The schema and the runtime refuse the same declarations out of shape.
+  const [supersession] = declared.declarations.supersedes;
+  const vectors = [
+    { ...declared, declarations: { ...declared.declarations, extra: [] } },
+    { ...declared, declarations: { supersedes: declared.declarations.supersedes, withdraws: [] } },
+    { ...declared, declarations: { ...declared.declarations, supersedes: [{ decision: supersession.decision }] } },
+    { ...declared, declarations: { ...declared.declarations, withdraws: ["DL-MIN-1 D1"] } },
+    { ...declared, declarations: [] },
+  ];
+  for (const vector of vectors) {
+    assert.equal(validate(vector), false, JSON.stringify(vector.declarations));
+    assert.throws(() => validateMinutesRecord(vector), (error) => error?.reasonCode === "MINUTES_RECORD_INVALID");
+  }
+  // What the schema cannot say -- at least one list, order, one fate per decision -- the runtime refuses alone.
+  const empty = { ...declared, declarations: { supersedes: [], withdraws: [], coexists: [] } };
+  assert.equal(validate(empty), true);
+  assert.throws(() => validateMinutesRecord(empty), (error) => error?.reasonCode === "MINUTES_RECORD_INVALID");
 });
 
 test("STORY-514 AC4: minutes that supersede a valid decision make it obsolete both ways, and the reads give it only when asked, with its successor", async (context) => {

@@ -2,7 +2,7 @@
   "$id": "https://tcrn.dev/schemas/minutes-v1.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Einzbern Minutes V1",
-  "$comment": "TCRN-CROSS-STORY-475 R1: a minutes record written in one minutes.recorded event. Decision n is Dn (its index plus one); a decision is cited as <minutes id> Dn. The id is the one deriveStableId(\"minutes\", externalKey) gives. Minutes a conference close wrote keep tcrn.conference.v1.minutes (conference-minutes-v1.schema.json) and are read beside these.",
+  "$comment": "TCRN-CROSS-STORY-475 R1: a minutes record written in one minutes.recorded event. Decision n is Dn (its index plus one); a decision is cited as <minutes id> Dn. The id is the one deriveStableId(\"minutes\", externalKey) gives. Minutes a conference close wrote keep tcrn.conference.v1.minutes (conference-minutes-v1.schema.json) and are read beside these. A record that declares what it does to decisions already recorded carries the optional declarations field (TCRN-CROSS-SUB-426; specs/minutes-v1.md, Declarations).",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -79,6 +79,38 @@
     },
     "tombstone": {
       "const": false
+    },
+    "declarations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coexists", "supersedes", "withdraws"],
+      "properties": {
+        "supersedes": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["by", "decision"],
+            "properties": {
+              "by": { "type": "string", "pattern": "^minutes:[a-z0-9][a-z0-9._-]{0,127}#D[1-9][0-9]{0,2}$" },
+              "decision": { "type": "string", "pattern": "^minutes:[a-z0-9][a-z0-9._-]{0,127}#D[1-9][0-9]{0,2}$" }
+            }
+          }
+        },
+        "withdraws": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^minutes:[a-z0-9][a-z0-9._-]{0,127}#D[1-9][0-9]{0,2}$" }
+        },
+        "coexists": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^minutes:[a-z0-9][a-z0-9._-]{0,127}#D[1-9][0-9]{0,2}$" }
+        }
+      }
     }
   }
 }

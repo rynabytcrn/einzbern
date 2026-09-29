@@ -129,10 +129,14 @@ procedure and do not run on the current engine. From EPIC-141 on the engine only
 reads an old-layout workspace, so step 3's `knowledge-init` on `<root>` is refused
 with `LEGACY_WORKSPACE_READ_ONLY`. To carry an old-layout workspace forward now,
 import its chain into a library with
-`library-import-legacy --legacy "<root>" --at <instant>`, then re-capture the cards
-you need in that library with `knowledge-create --workspace "<library>"`, where
-`<library>` is the library the import created. `commands` lists both verbs and
-their flags.
+`library-import-legacy --legacy "<root>" --at <instant>` (`LEGACY_IMPORTED`), then
+initialize that library's knowledge store with
+`knowledge-init --workspace "<library>" --acknowledge-disposable true`
+(`KNOWLEDGE_STORE_INITIALIZED`), and only then re-capture the cards you need with
+`knowledge-create --workspace "<library>"` (`KNOWLEDGE_UNIT_CREATED`). `<library>`
+is the library the import created, the `target` its result names. The import
+creates no knowledge store, so a `knowledge-create` before `knowledge-init` fails
+`KNOWLEDGE_PATH_INVALID`. `commands` lists the three verbs and their flags.
 
 1. **The authority is safe.** The workspace event log under
    `<root>/<control>/events/` is the system of record and is untouched by

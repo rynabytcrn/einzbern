@@ -821,6 +821,43 @@ test("SUB-410 (STORY-508 R7): the variable, rule and gate routes write an order 
   assert.equal((await post("/api/gates", { ...gate, order: { value: 1 } })).body.reasonCode, "PORTAL_GATE_INPUT_INVALID");
 });
 
+// TCRN-CROSS-SUB-422 (TCRN-CROSS-STORY-513 AC1, AC2; MIN-238 D2): the CLI refuses a model's rule and
+// gate writes, and Atelier's routes, which run them with EINZBERN_SURFACE=atelier, write them. The
+// portal is started from a shell whose surface is not Atelier's, so the surface its writes carry is
+// its own.
+test("SUB-422 (STORY-513 AC2): Atelier switches a rule and saves and deletes a gate that the CLI refuses a model", async (t) => {
+  const fixture = await scratch("tcrn-portal-write-guard-", "TCRN-PORTAL-WRITE-GUARD");
+  const { child, url } = await startPortal({ ...fixture, env: { EINZBERN_SURFACE: "" } });
+  t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
+  const { boot } = await readBoot(url);
+  const send = (path, method, body) => request(url, path, writeOptions(boot.token, method, body));
+  const libraryVersion = async () => (await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).version;
+  const before = await libraryVersion();
+  const model = { ...fixture.deviceEnv, EINZBERN_SURFACE: "" };
+  const common = ["--at", "2026-08-11T15:40:00Z", "--actor", "agent:test"];
+  for (const args of [
+    ["rule-enable", "--project", fixture.proseRoot, "--id", "batch", ...common],
+    ["rule-disable", "--project", fixture.proseRoot, "--id", "batch", ...common],
+    ["gates-config-set", "--workspace", fixture.workspace, "--name", "unit", "--command", JSON.stringify(["node", "--version"]), ...common],
+    ["gates-config-remove", "--workspace", fixture.workspace, "--name", "unit", ...common],
+  ]) {
+    const refused = await cliRefusal(args, model);
+    assert.deepEqual([refused.reasonCode, refused.remedy], ["MODEL_WRITE_REFUSED", "change it in Atelier"], args[0]);
+  }
+  assert.equal(await libraryVersion(), before, "no refused write appended an event");
+
+  const enabled = await send("/api/rules/batch", "POST", { action: "enable" });
+  assert.deepEqual([enabled.response.status, enabled.body.reasonCode], [200, "RULE_ENABLED"]);
+  const disabled = await send("/api/rules/batch", "POST", { action: "disable" });
+  assert.deepEqual([disabled.response.status, disabled.body.reasonCode], [200, "RULE_DISABLED"]);
+  const gate = { name: "unit", command: ["node", "--version"], root: ".", covers: ["**"], enabled: true, required: true, releaseOnly: false };
+  const saved = await send("/api/gates", "POST", gate);
+  assert.deepEqual([saved.response.status, saved.body.gate], [200, gate]);
+  const deleted = await send("/api/gates", "DELETE", { name: "unit" });
+  assert.deepEqual([deleted.response.status, deleted.body.gates], [200, []]);
+  assert.ok(await libraryVersion() > before, "Atelier's writes are recorded");
+});
+
 test("state surface uses the doctor's eight checks and selected library projection", async (t) => {
   const fixture = await scratch("tcrn-portal-state-", "TCRN-PORTAL-STATE");
   const wrapper = join(fixture.base, "status-wrapper.mjs");
@@ -1156,7 +1193,7 @@ test("SUB-338 (STORY-483 AC3): batch enabled at v1 reads update-available at the
   let portal = null;
   t.after(async () => { portal?.child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
   const agentsPath = join(fixture.proseRoot, "AGENTS.md");
-  await cli(["rule-enable", "--project", fixture.proseRoot, "--id", "batch", "--at", "2026-08-11T15:20:00Z", "--actor", "agent:test"], fixture.deviceEnv);
+  await cli(["rule-enable", "--project", fixture.proseRoot, "--id", "batch", "--at", "2026-08-11T15:20:00Z", "--actor", "agent:test"], { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" });
   const enabled = await readFile(agentsPath, "utf8");
   const v2 = managedSection(enabled, "rule:batch");
   assert.equal(sectionDigest(v2.body), v2.digest, "the digest taken here is the engine's");
@@ -1232,7 +1269,7 @@ test("switching the library moves the Rules page to its project, and a library r
   // TCRN-CROSS-SUB-338: the save lands in the second project and is judged there, against the
   // second library, and nothing is rendered into it. Batch is enabled in the second library only,
   // so once the save takes its section out it reads removed-from-file (in the first, disabled).
-  await cli(["rule-enable", "--project", fixture.second.project, "--id", "batch", "--at", "2026-08-11T15:30:00Z", "--actor", "agent:test"], fixture.deviceEnv);
+  await cli(["rule-enable", "--project", fixture.second.project, "--id", "batch", "--at", "2026-08-11T15:30:00Z", "--actor", "agent:test"], { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" });
   const written = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { file: "AGENTS.md", text: "# second project, edited\n" }));
   assert.equal(written.body.reasonCode, "PORTAL_AGENTS_MD_WRITTEN");
   assert.equal(written.body.text, "# second project, edited\n");

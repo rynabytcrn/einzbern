@@ -67,6 +67,8 @@ rule-resolve --section <段 id> --action overwrite|keep|unmanage [--force true] 
   - `--order` 不是正整数时报 `CLI_ARGUMENT_MALFORMED`，什么也不写。
 - `rule-disable --id <规则 id> [--force true] [--project <目录>] --at <时刻>`：连同标记把这一段从 AGENTS.md 拿掉，并记下 `{enabled: false, version}`，已记的顺序保留，重新启用时回到原来的位置。你改过的段要加 `--force true`。回执 `RULE_DISABLED`。
 
+原则的启停由人在 Atelier 的规则页里做（TCRN-CROSS-STORY-513 R1）。环境变量 `EINZBERN_SURFACE` 不为 `atelier` 时，`rule-enable` 与 `rule-disable` 一律拒绝，只带 `--order` 的调整也一样：报 `MODEL_WRITE_REFUSED`，补救提示为 `change it in Atelier`，details 的 `rule` 是原则 id，库与 AGENTS.md 都不动。在 Atelier 里启停，或以 `EINZBERN_SURFACE=atelier` 运行同一条命令，照常写入。这是约定，不是身份保证：CLI 分辨不了是谁在运行它，自己带上这个变量的调用同样放行（见「变量」页的模型写保护）。`rule-list`、`rule-resolve` 与 `agents-render` 不受限。下文「怎么办」一栏里的 `rule-enable` 与 `rule-disable` 也照此在 Atelier 里做。
+
 `agents-render` 也渲染已启用原则的段：项目换了 `artifact.language`，下一次渲染就换成对应语言的正文。
 
 ### 原则段的顺序

@@ -1540,7 +1540,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
     await write("gates-config-set", ["--name", "lint", "--command", JSON.stringify(["node", "--version"])]);
     await write("gates-config-set", ["--name", "unit", "--command", JSON.stringify(["node", "--version"]), "--order", "4"]);
     for (const [id, order] of [["batch", ["--order", "3"]], ["autonomy", []]]) {
-      await cli(["rule-enable", "--project", fixture.proseRoot, "--id", id, ...order, "--at", nextAt(), "--actor", "agent:test"], fixture.deviceEnv);
+      await cli(["rule-enable", "--project", fixture.proseRoot, "--id", id, ...order, "--at", nextAt(), "--actor", "agent:test"], atelier);
     }
     const page = await loadExecutedDom(fixture);
     const document = page.document;

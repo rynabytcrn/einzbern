@@ -10,7 +10,7 @@
 
 ## 我删掉了一整段（连同标记），下次渲染会补回来吗？
 
-不会。标记不在了，引擎就当你移除了这一段，记录转为 `removed`。如果那是一条 Command Spell 原则的段，它的状态变为 `removed-from-file`；想重新写入，先 `rule-disable` 再 `rule-enable`。
+不会。标记不在了，引擎就当你移除了这一段，记录转为 `removed`。如果那是一条 Command Spell 原则的段，它的状态变为 `removed-from-file`；想重新写入，在 Atelier 里先停用再启用这条原则（`rule-disable` 再 `rule-enable`）。
 
 ## 引擎改写文件之前会备份吗？备份在哪里？
 
@@ -22,19 +22,19 @@
 
 ## 为什么 Command Spell 的原则默认全部关闭？
 
-原则改变的是 Agent 在这个项目里的工作方式，是否采用由项目自己决定。用 `rule-enable --id <规则 id>` 逐条打开，`rule-list` 查看每条的状态。
+原则改变的是 Agent 在这个项目里的工作方式，是否采用由项目自己决定。在 Atelier 的规则页逐条打开（命令是 `rule-enable --id <规则 id>`，以 `EINZBERN_SURFACE=atelier` 运行），`rule-list` 查看每条的状态。
 
 ## 引擎升级带来了原则的新版本，我的 AGENTS.md 会自动更新吗？
 
-不会。引擎升级不写任何文件。`rule-list` 会把这条原则标为 `update-available`，`agents-render` 也保持文件原样；运行 `rule-enable --id <规则 id>` 才会换成新版本的正文。
+不会。引擎升级不写任何文件。`rule-list` 会把这条原则标为 `update-available`，`agents-render` 也保持文件原样；在 Atelier 里重新启用它（`rule-enable --id <规则 id>`）才会换成新版本的正文。
 
 ## 原则写成中文还是英文？
 
 按项目的 `artifact.language`：`zh-CN` 写中文，其他取值或未设置时写英文。改了这个设置之后运行一次 `agents-render`，已启用原则的段就换成对应的语言。
 
-## 为什么 settings-set 或 variable-set 报 MODEL_WRITE_REFUSED？
+## 为什么 settings-set、variable-set、rule-enable 或 gates-config-set 报 MODEL_WRITE_REFUSED？
 
-项目配置由人在 Atelier 里改。环境变量 `EINZBERN_SURFACE` 不为 `atelier` 时，这些写入一律拒绝，补救提示是 `change it in Atelier`。这是一道软屏障，挡的是模型在工作途中顺手改配置。读取从不拒绝。
+项目配置由人在 Atelier 里改：设置、变量、Command Spell 原则的启停和门声明都是。环境变量 `EINZBERN_SURFACE` 不为 `atelier` 时，`settings-set`、`settings-remove`、`variable-set`、`variable-remove`、`rule-enable`、`rule-disable`、`gates-config-set` 与 `gates-config-remove` 一律拒绝，补救提示是 `change it in Atelier`，库里不追加任何事件。在 Atelier 里改，或以 `EINZBERN_SURFACE=atelier` 运行同一条命令，写入照常进行。这是约定，不是身份保证：CLI 分辨不了是谁在运行它，这道软屏障挡的是模型在工作途中顺手改配置，不是蓄意绕过。读取从不拒绝。
 
 ## 变量里能放 API 密钥吗？
 

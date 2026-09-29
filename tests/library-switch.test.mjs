@@ -19,7 +19,8 @@ import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 import { LEGACY_FIXTURE_EXPECTED, restoreLegacyFixture } from "./helpers/legacy-fixture.mjs";
 
-// TCRN-CROSS-STORY-484 R4: these tests write settings through the CLI, as Atelier does.
+// TCRN-CROSS-STORY-484 R4, TCRN-CROSS-STORY-513 R1: these tests write settings and gates through the
+// CLI, as Atelier does.
 standInForAtelier();
 
 const repositoryRoot = resolve(import.meta.dirname, "..");

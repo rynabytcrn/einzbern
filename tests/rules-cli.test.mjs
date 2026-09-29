@@ -7,22 +7,30 @@
 // after rule-resolve keep neither rule-enable nor agents-render writes the section (AC4). Disabling
 // a changed section needs --force true. agents-render keeps an enabled rule's section in the
 // project's artifact language and leaves one the catalog has a newer version of as it is.
+// TCRN-CROSS-STORY-513 R1, AC1 (MIN-238 D2; TCRN-CROSS-SUB-422): rule-enable and rule-disable run
+// for Atelier only; a model's run is refused with MODEL_WRITE_REFUSED and appends nothing, while
+// rule-list, rule-resolve and agents-render answer it.
 // Everything here is temporary: a project, its library and a device directory.
 
 import "./helpers/device-home.mjs";
+import { ATELIER_SURFACE, standInForAtelier, withSurface } from "./helpers/workspace-fixture.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
-import { COMMAND_CATALOG, runCli } from "../dist/build/packages/cli/src/index.js";
+import { COMMAND_CATALOG, MODEL_WRITE_REMEDY, SURFACE_ENVIRONMENT_VARIABLE, runCli } from "../dist/build/packages/cli/src/index.js";
 import { setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
 import { parseManagedFile } from "../dist/build/packages/core/src/managed-sections.js";
 import { BUILT_IN_RULES, builtInRule } from "../dist/build/packages/core/src/rules-catalog.js";
 import { enableRule } from "../dist/build/packages/core/src/rules.js";
-import { setWorkspaceSetting } from "../dist/build/packages/core/src/workspace.js";
+import { materializeWorkspace, setWorkspaceSetting } from "../dist/build/packages/core/src/workspace.js";
+
+// TCRN-CROSS-STORY-513 R1: these tests switch rules through the CLI, as Atelier does; a model's shell
+// is withSurface(undefined, ...).
+standInForAtelier();
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
 const ENTRY = join(repositoryRoot, "scripts/einzbern.mjs");
@@ -51,8 +59,8 @@ async function refusal(args) {
 }
 
 /** The shipped entry, run as a host would run it: its exit code, stdout and the refusal on stderr. */
-function shipped(args, { device, cwd = repositoryRoot }) {
-  const run = spawnSync(process.execPath, [ENTRY, ...args], { cwd, encoding: "utf8", env: { ...process.env, EINZBERN_HOME: device } });
+function shipped(args, { device, cwd = repositoryRoot, env = {} }) {
+  const run = spawnSync(process.execPath, [ENTRY, ...args], { cwd, encoding: "utf8", env: { ...process.env, ...env, EINZBERN_HOME: device } });
   return { status: run.status, stdout: run.stdout, refusal: run.stderr.trim() === "" ? null : JSON.parse(run.stderr.trim()) };
 }
 
@@ -254,4 +262,68 @@ test("508-R7 via rule-enable --order: the rule's section takes its place, rule-l
     assert.deepEqual([refused.reasonCode, refused.message], ["CLI_ARGUMENT_MALFORMED", "order"], order);
   }
   assert.equal(await readFile(agents, "utf8"), before, "a malformed order writes nothing");
+});
+
+// TCRN-CROSS-STORY-513 R1, AC1 (MIN-238 D2, MIN-235 D11; TCRN-CROSS-SUB-422): a model runs the CLI
+// from its shell, where EINZBERN_SURFACE is not atelier, so it neither switches a Command Spell rule
+// on or off nor reorders one. Its rule-enable and rule-disable are refused with MODEL_WRITE_REFUSED
+// and the remedy of changing it in Atelier before the rule or the project is looked up: no event, no
+// file and no backup. The same runs for Atelier write. rule-list, agents-render and rule-resolve
+// answer a model.
+test("513-AC1 via rule-enable and rule-disable: a model's run is refused with the remedy and changes nothing; Atelier's run writes; rule-list, agents-render and rule-resolve are not refused", async (context) => {
+  const { device, project, library, agents } = await scratch(context);
+  await enable(project, "batch");
+  const asModel = (operation) => withSurface(undefined, operation);
+  const versionOf = async () => (await materializeWorkspace(library)).version;
+  const backups = () => readdir(join(device, "backups"));
+  const before = { version: await versionOf(), text: await readFile(agents, "utf8"), rules: (await list(project)).rules, backups: await backups() };
+  const writes = [
+    [() => ["rule-enable", "--project", project, "--id", "autonomy", "--at", at()], "autonomy"],
+    [() => ["rule-enable", "--project", project, "--id", "batch", "--order", "1", "--at", at()], "batch"],
+    [() => ["rule-disable", "--project", project, "--id", "batch", "--at", at()], "batch"],
+    [() => ["rule-disable", "--project", project, "--id", "batch", "--force", "true", "--at", at()], "batch"],
+  ];
+  // Only the exact surface name lets a write through.
+  for (const surface of [undefined, "", "Atelier", "atelier ", "portal"]) {
+    for (const [argv, rule] of writes) {
+      const args = argv();
+      const error = await withSurface(surface, () => refusal(args));
+      assert.equal(error.reasonCode, "MODEL_WRITE_REFUSED", `${args.join(" ")} with EINZBERN_SURFACE=${String(surface)}`);
+      assert.deepEqual({ ...error.details }, { rule, remedy: MODEL_WRITE_REMEDY });
+      assert.equal(error.message, `rule ${rule} is changed in Atelier; a model does not write it through the CLI`);
+    }
+  }
+  // The refusal comes before the rule is looked up: an unknown rule is refused the same way.
+  const unknown = await asModel(() => refusal(["rule-enable", "--project", project, "--id", "nothing", "--at", at()]));
+  assert.deepEqual([unknown.reasonCode, { ...unknown.details }], ["MODEL_WRITE_REFUSED", { rule: "nothing", remedy: MODEL_WRITE_REMEDY }]);
+
+  // Through the shipped entry the refusal reaches stderr with its remedy, and a run carrying
+  // EINZBERN_SURFACE=atelier, as Atelier's does, commits.
+  const model = await asModel(async () => shipped(["rule-enable", "--project", project, "--id", "silent-reporting", "--at", at()], { device }));
+  assert.deepEqual([model.status, model.stdout], [1, ""]);
+  assert.deepEqual(model.refusal, { ok: false, reasonCode: "MODEL_WRITE_REFUSED", remedy: MODEL_WRITE_REMEDY, error: "rule silent-reporting is changed in Atelier; a model does not write it through the CLI" });
+  assert.equal(await versionOf(), before.version, "no refused write appended an event");
+  assert.equal(await readFile(agents, "utf8"), before.text, "no refused write touched AGENTS.md");
+  assert.deepEqual(await backups(), before.backups, "no refused write backed a file up");
+  assert.deepEqual((await asModel(() => list(project))).rules, before.rules, "a model reads the rules, unchanged");
+  const atelier = await asModel(async () => shipped(["rule-enable", "--project", project, "--id", "silent-reporting", "--at", at()], { device, env: { [SURFACE_ENVIRONMENT_VARIABLE]: ATELIER_SURFACE } }));
+  assert.equal(atelier.status, 0, JSON.stringify(atelier.refusal));
+  const shippedReceipt = JSON.parse(atelier.stdout);
+  assert.deepEqual([shippedReceipt.reasonCode, shippedReceipt.rule.id, shippedReceipt.rule.state], ["RULE_ENABLED", "silent-reporting", "enabled"]);
+
+  // The same writes run for Atelier commit, in order.
+  const receipts = [];
+  for (const [argv] of writes) receipts.push(await cli(argv()));
+  assert.deepEqual(receipts.map((receipt) => [receipt.reasonCode, receipt.rule.id, receipt.rule.state, receipt.rule.order ?? null]), [
+    ["RULE_ENABLED", "autonomy", "enabled", null],
+    ["RULE_ENABLED", "batch", "enabled", 1],
+    ["RULE_DISABLED", "batch", "disabled", 1],
+    ["RULE_DISABLED", "batch", "disabled", 1],
+  ]);
+  assert.equal(await versionOf(), before.version + shippedReceipt.recorded + receipts.reduce((sum, receipt) => sum + receipt.recorded, 0));
+
+  // agents-render and rule-resolve settle and render sections; they answer a model.
+  assert.equal((await asModel(() => render(project))).reasonCode, "AGENTS_RENDERED");
+  const kept = await asModel(() => cli(["rule-resolve", "--project", project, "--section", "rule:autonomy", "--action", "keep", "--at", at()]));
+  assert.deepEqual([kept.reasonCode, kept.result, kept.state], ["MANAGED_SECTION_RESOLVED", "kept", "user-owned"]);
 });

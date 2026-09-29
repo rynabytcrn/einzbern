@@ -26,6 +26,8 @@ gates-config-remove --name <门名> --at <时刻>
 
 例如 `gates-config-set --name links --command '["pnpm","run","verify:links"]' --root docs --covers '**/*.md' --at <时刻>`。再次声明同一道门时，没有给出的旗标保留原来的值，顺序也一样。`--order` 不是正整数时报 `CLI_ARGUMENT_MALFORMED`。`gates-config-list` 按名字列出声明，带顺序的声明带 `order`。
 
+门声明由人在 Atelier 的门页里保存和删除（TCRN-CROSS-STORY-513 R1）。环境变量 `EINZBERN_SURFACE` 不为 `atelier` 时，`gates-config-set` 与 `gates-config-remove` 一律拒绝，报 `MODEL_WRITE_REFUSED`，补救提示为 `change it in Atelier`，details 的 `gate` 是门名，库里不追加任何事件。这样模型在工作途中既不能给自己的 Story 声明一道门再自己满足它，也不能放宽或删掉挡住它的门。在 Atelier 里改，或以 `EINZBERN_SURFACE=atelier` 运行同一条命令，照常写入。这是约定，不是身份保证：CLI 分辨不了是谁在运行它，自己带上这个变量的调用同样放行（见「变量」页的模型写保护）。`gates-config-list`、`gates-plan` 与 `gates-run` 不受限。
+
 ## gates-plan：这次改动要跑哪几道门
 
 ```text

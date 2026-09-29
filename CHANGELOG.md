@@ -947,6 +947,22 @@ SKILL.md, of the five Einzbern READMEs and of the five Mana Orchestrate READMEs 
 repository's. The five root READMEs are rendered again from their templates. Renaming the two
 repositories on GitHub and pointing the local remotes at them remain a stop for the Owner.
 
+A model no longer switches Command Spell rules or declares gates through the CLI
+(TCRN-CROSS-STORY-513 R1, TCRN-CROSS-SUB-422; MIN-238 D2, MIN-235 D11; fixes TCRN-CROSS-STORY-483,
+TCRN-CROSS-STORY-484 R4, TCRN-CROSS-STORY-485; `packages/cli/src/index.ts`, `portal/portal.mjs`).
+`rule-enable`, `rule-disable`, `gates-config-set` and `gates-config-remove` join the writes that are
+refused with `MODEL_WRITE_REFUSED` and the remedy `change it in Atelier` unless `EINZBERN_SURFACE` is
+`atelier`: the refusal comes once the arguments parse, before the project or the library is read, and
+appends no event and writes no file, so a model at work can no longer declare a gate its own Story is
+then held to, or loosen or remove the gate that holds it. The refusal's details name the rule by its
+id (`rule`) or the gate by its name (`gate`) beside `remedy`, as a setting's name its `key` and a
+variable's its `name`; stderr carries `remedy` and the message naming it. Atelier's rule switch now
+runs the CLI with `EINZBERN_SURFACE=atelier`, as its setting, variable and gate writes already did, so
+rules are enabled, disabled and reordered and gates saved and deleted in Atelier as before. The CLI
+cannot tell who runs it, so this remains a convention and not an identity check. `rule-list`,
+`rule-resolve`, `agents-render`, `gates-config-list`, `gates-plan` and `gates-run` are not refused,
+and the verbs' flags and the command catalog are unchanged.
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

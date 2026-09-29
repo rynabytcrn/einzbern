@@ -8,6 +8,7 @@
 // knowledge write answers the ids it wrote beside the store version (problem list #18).
 
 import "./helpers/device-home.mjs";
+import { ATELIER_SURFACE, withSurface } from "./helpers/workspace-fixture.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
@@ -250,10 +251,12 @@ test("476-AC4 (CLI): done and minutes-record answer the knowledge line, naming t
 
   const projectRoot = join(base, "gamma");
   const gateCommand = [process.execPath, "-e", "process.exit(0)"];
-  const declaration = await cli([
+  // TCRN-CROSS-STORY-513 R1 (TCRN-CROSS-SUB-422): gates are declared as Atelier declares them; the CLI
+  // refuses a model's gates-config-set.
+  const declaration = await withSurface(ATELIER_SURFACE, () => cli([
     "gates-config-set", "--workspace", workspace, "--at", at(43), "--name", "fixture-story-coverage",
     "--command", JSON.stringify(gateCommand), "--root", ".", "--covers", storyId, "--required", "true",
-  ]);
+  ]));
   assert.deepEqual(declaration.gate, {
     name: "fixture-story-coverage", command: gateCommand, root: ".", covers: [storyId], required: true, enabled: true, releaseOnly: false,
   });
@@ -306,10 +309,10 @@ test("476-AC4 (CLI): done and minutes-record answer the knowledge line, naming t
       { verb: "work-transition", externalKey: "KC-STORY-2", status: "done" },
     ],
   })}\n`);
-  const batchCoverage = await cli([
+  const batchCoverage = await withSurface(ATELIER_SURFACE, () => cli([
     "gates-config-set", "--workspace", workspace, "--at", at(48), "--name", "fixture-story-coverage",
     "--covers", `${storyId},${story2Id}`,
-  ]);
+  ]));
   assert.equal(batchCoverage.gate.covers.includes(storyId), true);
   assert.equal(batchCoverage.gate.covers.includes(story2Id), true);
   const batchGateRun = await cli([

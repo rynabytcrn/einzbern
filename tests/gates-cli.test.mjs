@@ -3,9 +3,13 @@
 // declared with gates-config-set, listed and removed; gates-plan names the gates a change needs, or
 // every enabled gate for a release; gates-run runs them all and answers every red; and a Story is
 // refused at done without required coverage or a same-tree, same-declaration, subject-bound run.
+// TCRN-CROSS-STORY-513 R1, AC1 (MIN-238 D2; TCRN-CROSS-SUB-422): gates-config-set and
+// gates-config-remove run for Atelier only; a model's run is refused with MODEL_WRITE_REFUSED and
+// appends nothing, while the reads, the plan and the run answer it.
 // Every project, library and device directory here is a temporary one.
 
 import "./helpers/device-home.mjs";
+import { ATELIER_SURFACE, standInForAtelier, withSurface } from "./helpers/workspace-fixture.mjs";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -15,8 +19,13 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { COMMAND_CATALOG, runCli } from "../dist/build/packages/cli/src/index.js";
+import { COMMAND_CATALOG, MODEL_WRITE_REMEDY, SURFACE_ENVIRONMENT_VARIABLE, runCli } from "../dist/build/packages/cli/src/index.js";
+import { materializeWorkspace } from "../dist/build/packages/core/src/index.js";
 import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
+
+// TCRN-CROSS-STORY-513 R1: these tests declare and remove gates through the CLI, as Atelier does; a
+// model's shell is withSurface(undefined, ...).
+standInForAtelier();
 
 let second = 0;
 const at = () => {
@@ -384,4 +393,72 @@ test("508-R7 (CLI): gates-config-set --order orders the plan and the run; only t
   const last = await cli(["gates-run", "--workspace", library, "--at", at(), "--release", "true", "--work-id", second]);
   const passed = await cli(["work-transition", "--workspace", library, "--at", at(), "--id", second, "--status", "done", "--project", project]);
   assert.deepEqual([passed.record.status, passed.doneGates.runId], ["done", last.run.runId]);
+});
+
+// TCRN-CROSS-STORY-513 R1, AC1 (MIN-238 D2, MIN-235 D11; TCRN-CROSS-SUB-422): a model at work can
+// neither declare a gate that its own Story is then held to, nor loosen or take away the gate that
+// holds it. Its gates-config-set and gates-config-remove are refused with MODEL_WRITE_REFUSED and the
+// remedy of changing it in Atelier before the library is read, and append nothing; the same runs for
+// Atelier write. gates-config-list, gates-plan and gates-run answer a model, and the red gate still
+// holds its Story back.
+test("513-AC1 (CLI): a model's gates-config-set and gates-config-remove are refused with the remedy and append nothing; Atelier's run writes; list, plan and run are not refused", async (context) => {
+  const { project, library } = await setup(context);
+  const projectId = (await cli(["project-create", "--workspace", library, "--at", at(), "--external-key", "GC-GUARD-PROJECT", "--name", "Gates guard"])).record.id;
+  await cli(["work-create", "--workspace", library, "--at", at(), "--project-id", projectId, "--external-key", "GC-GUARD-INIT", "--kind", "Initiative", "--title", "Guarded gates"]);
+  await cli(["work-create", "--workspace", library, "--at", at(), "--project-id", projectId, "--external-key", "GC-GUARD-EPIC", "--kind", "Epic", "--status", "active", "--parent-id", workId("GC-GUARD-INIT"), "--title", "Guarded epic"]);
+  const storyId = (await cli([
+    "work-create", "--workspace", library, "--at", at(), "--project-id", projectId, "--external-key", "GC-GUARD-STORY", "--kind", "Story", "--status", "active",
+    "--parent-id", workId("GC-GUARD-EPIC"), "--title", "Guarded story", "--goal", "Pass the gates", "--acceptance", "GIVEN the gates WHEN green THEN done",
+  ])).record.id;
+  await cli(["library-register", "--project", project, "--library", library, "--at", at()]);
+  // Atelier holds the Story to a required gate that is red.
+  await declare(library, "unit", [node, "-e", "process.exit(1)"], ["--covers", storyId]);
+  const asModel = (operation) => withSurface(undefined, operation);
+  const versionOf = async () => (await materializeWorkspace(library)).version;
+  const listed = async () => (await asModel(() => cli(["gates-config-list", "--workspace", library]))).records;
+  const before = { version: await versionOf(), gates: await listed() };
+
+  const green = [node, "-e", "process.exit(0)"];
+  const writes = [
+    // a green gate of its own that covers its Story,
+    [() => ["gates-config-set", "--workspace", library, "--at", at(), "--name", "self-check", "--command", JSON.stringify(green), "--covers", storyId], "self-check"],
+    // the red gate made optional,
+    [() => ["gates-config-set", "--workspace", library, "--at", at(), "--name", "unit", "--required", "false"], "unit"],
+    // or the red gate taken away.
+    [() => ["gates-config-remove", "--workspace", library, "--at", at(), "--name", "unit"], "unit"],
+  ];
+  // Only the exact surface name lets a write through.
+  for (const surface of [undefined, "", "Atelier", "atelier ", "portal"]) {
+    for (const [argv, gate] of writes) {
+      const args = argv();
+      const error = await withSurface(surface, () => refusal(args));
+      assert.equal(error?.reasonCode, "MODEL_WRITE_REFUSED", `${args[0]} ${gate} with EINZBERN_SURFACE=${String(surface)}`);
+      assert.deepEqual({ ...error.details }, { gate, remedy: MODEL_WRITE_REMEDY });
+      assert.equal(error.message, `gate ${gate} is changed in Atelier; a model does not write it through the CLI`);
+    }
+  }
+  // Through the shipped entry the refusal reaches stderr with its remedy.
+  const bin = fileURLToPath(new URL("../scripts/einzbern.mjs", import.meta.url));
+  const shipped = await asModel(async () => spawnSync(process.execPath, [bin, ...writes[0][0]()], { encoding: "utf8", env: process.env }));
+  assert.deepEqual([shipped.status, shipped.stdout], [1, ""]);
+  assert.deepEqual(JSON.parse(shipped.stderr.trim().split("\n").at(-1)), { ok: false, reasonCode: "MODEL_WRITE_REFUSED", remedy: MODEL_WRITE_REMEDY, error: "gate self-check is changed in Atelier; a model does not write it through the CLI" });
+  assert.equal(await versionOf(), before.version, "no refused write appended an event");
+  assert.deepEqual(await listed(), before.gates, "a model reads the gates, unchanged");
+
+  // The plan and the run answer a model, and the red gate still holds its Story back.
+  assert.deepEqual(names(await asModel(() => cli(["gates-plan", "--workspace", library, "--release", "true", "--work-id", storyId]))), ["unit"]);
+  const red = await asModel(() => cli(["gates-run", "--workspace", library, "--at", at(), "--release", "true", "--work-id", storyId]));
+  assert.deepEqual(red.requiredReds, ["unit"], gateDiagnostic(red.run, red.recordPath));
+  const held = await asModel(() => refusal(["work-transition", "--workspace", library, "--at", at(), "--id", storyId, "--status", "done", "--project", project]));
+  assert.equal(held?.reasonCode, "WORK_DONE_GATES_RED");
+
+  // The same writes run for Atelier commit, in order: the first through the shipped entry with
+  // EINZBERN_SURFACE=atelier, as Atelier runs it.
+  const atelier = await asModel(async () => spawnSync(process.execPath, [bin, ...writes[0][0]()], { encoding: "utf8", env: { ...process.env, [SURFACE_ENVIRONMENT_VARIABLE]: ATELIER_SURFACE } }));
+  assert.equal(atelier.status, 0, atelier.stderr);
+  assert.deepEqual(JSON.parse(atelier.stdout).gate, { name: "self-check", command: green, root: ".", covers: [storyId], required: true, enabled: true, releaseOnly: false });
+  assert.equal((await cli(writes[1][0]())).gate.required, false);
+  assert.equal((await cli(writes[2][0]())).removed, "unit");
+  assert.equal(await versionOf(), before.version + writes.length);
+  assert.deepEqual((await listed()).map((gate) => gate.name), ["self-check"]);
 });

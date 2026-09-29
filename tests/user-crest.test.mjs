@@ -355,7 +355,9 @@ test("R13: a legacy user crest stays readable as new events append, with its met
   assert.equal(await readFile(legacyMetadataPath, "utf8"), metadataBefore);
 });
 
-test("R13 D10: superseded user bodies remain auditable and leave active/default recall", async (context) => {
+// TCRN-CROSS-SUB-425 (MIN-239 D4, which replaces R13 D10's audit copy for cards): a superseded user card
+// is removed, conflict superseded; its event stays and its body is cleared.
+test("R13 D10, SUB-425: a superseded user card is removed: its body is cleared, its event stays, and it leaves default recall", async (context) => {
   const { base, home } = await device(context);
   const first = await library(base, "supersede");
   const subject = "Pademelon shelter repair sequence";
@@ -365,16 +367,16 @@ test("R13 D10: superseded user bodies remain auditable and leave active/default 
   const replacement = await createKnowledgeUnit(first.workspace, card("UC-NEW-SHELTER", {
     subject, summary: "Current pademelon shelter instructions", snippet: "current shelter repair steps", body: "Current body for the shelter plan.", supersedes: old.id,
   }));
-  const all = await listKnowledgeMetadata(first.workspace, { at, scope: "user", selection: "all" });
-  const oldRecord = all.records.find((record) => record.id === old.id);
-  assert.equal(oldRecord.extensions.supersededBy, replacement.id);
-  assert.deepEqual((await listKnowledgeMetadata(first.workspace, { at, scope: "user" })).records.map((record) => record.id), [replacement.id]);
-  assert.equal((await readKnowledgeBody(first.workspace, old.id, { at, scope: "user" })).body, "Archived body for the old shelter plan.");
+  const removed = await listKnowledgeMetadata(first.workspace, { at, scope: "user", status: "removed" });
+  assert.deepEqual(removed.records.map((record) => [record.id, record.removal.reason, record.removal.supersededBy]), [[old.id, "superseded", replacement.id]]);
+  assert.deepEqual((await listKnowledgeMetadata(first.workspace, { at, scope: "user", selection: "all" })).records.map((record) => record.id), [replacement.id]);
+  await expectReason("KNOWLEDGE_CARD_REMOVED", () => readKnowledgeBody(first.workspace, old.id, { at, scope: "user" }));
   const deviceId = JSON.parse(await readFile(join(home, "device.json"), "utf8")).deviceId;
   const stream = join(home, "crest", "events", deviceId);
-  assert.equal((await readdir(stream)).filter((name) => name.endsWith(".body")).length, 2, "both immutable body references stay on disk");
+  assert.equal((await readdir(stream)).filter((name) => name.endsWith(".body")).length, 1, "the superseded card's body is cleared");
+  assert.equal((await readdir(stream)).filter((name) => name.endsWith(".json")).length, 2, "and both events stay");
   const recallCards = await readRecallCards(first.workspace, { at });
-  assert.deepEqual(recallCards.cards.map((entry) => entry.id), [replacement.id], "the superseded body is absent from the recall corpus");
+  assert.deepEqual(recallCards.cards.map((entry) => entry.id), [replacement.id], "the removed card is absent from the recall corpus");
   const recallResult = recall({
     cacheKey: "r13-user-superseded-card",
     checkpoint: recallCards.digest,
@@ -561,19 +563,23 @@ test("R14 (a) D7: cards one writer wrote -- here the metadata/body layout, whose
   const first = await library(base, "one-writer");
   const gull = await createKnowledgeUnit(first.workspace, card("UC-GULL", { subject: "Gull nesting location" }));
   const heron = await createKnowledgeUnit(first.workspace, card("UC-HERON", { subject: "Heron wading depth" }));
-  const moved = await createKnowledgeUnit(first.workspace, card("UC-GULL-MOVED", { subject: "Gull nesting location", supersedes: heron.id }));
-  // Lay the three cards out as an engine before events wrote them: one metadata file and one body
-  // each, the replacement carrying no coexistsWith.
   const crest = join(home, "crest");
   const deviceId = JSON.parse(await readFile(join(home, "device.json"), "utf8")).deviceId;
   const stream = join(crest, "events", deviceId);
+  // The bodies before the supersede, which clears the one it removes (TCRN-CROSS-SUB-425); an engine
+  // before events kept every body.
+  const bodies = new Map();
+  for (const name of (await readdir(stream)).filter((entry) => entry.endsWith(".body"))) bodies.set(name, await readFile(join(stream, name)));
+  const moved = await createKnowledgeUnit(first.workspace, card("UC-GULL-MOVED", { subject: "Gull nesting location", supersedes: heron.id }));
+  // Lay the three cards out as an engine before events wrote them: one metadata file and one body
+  // each, the replacement carrying no coexistsWith.
   await mkdir(join(crest, "metadata"));
   await mkdir(join(crest, "bodies"));
   for (const name of (await readdir(stream)).filter((entry) => entry.endsWith(".json"))) {
     const event = JSON.parse(await readFile(join(stream, name), "utf8"));
     const metadata = { ...event.metadata, extensions: {} };
     await writeFile(join(crest, "metadata", `${metadata.id}.json`), canonicalJson(metadata));
-    await writeFile(join(crest, "bodies", `${metadata.id}.body`), await readFile(join(stream, event.body.file)));
+    await writeFile(join(crest, "bodies", `${metadata.id}.body`), bodies.get(event.body.file) ?? await readFile(join(stream, event.body.file)));
   }
   await rm(join(crest, "events"), { recursive: true, force: true });
 
@@ -605,8 +611,9 @@ test("R14 (a) D7: two devices that each supersede the same card before either de
   assert.equal(listed.reasonCode, "KNOWLEDGE_LIST_READY", "competing replacements no longer refuse the crest");
   assert.deepEqual(listed.unresolvedConflicts, [[byA.id, byB.id].sort()]);
   assert.deepEqual(sortedIds(listed.records), [gullA.id]);
-  const all = await asDevice(deviceA, () => listKnowledgeMetadata(workspace, { at, scope: "user", selection: "all" }));
-  assert.equal(all.records.find((record) => record.id === gullB.id).extensions.supersededBy, byB.id, "the replaced card names its latest replacement");
+  const removed = await asDevice(deviceA, () => listKnowledgeMetadata(workspace, { at, scope: "user", status: "removed" }));
+  assert.deepEqual(removed.records.map((record) => [record.id, record.removal.reason, record.removal.supersededBy]), [[gullB.id, "superseded", byB.id]],
+    "the replaced card is removed, naming its latest replacement (TCRN-CROSS-SUB-425)");
   assert.equal((await asDevice(deviceA, () => readRecallCards(workspace, { at }))).userCrestDegraded.withheldCards, 2);
 
   const settled = await asDevice(deviceA, () => createKnowledgeUnit(workspace, card("UC-A-GULL-SETTLED", {
@@ -725,7 +732,9 @@ test("R15 D7 (SUB-413): one external key two devices wrote before either deliver
     ["UC-SHARED-KEY", "UC-SHARED-KEY"], "a refused write commits nothing");
 });
 
-test("R15 D7 (SUB-413): --supersedes naming the id resolves the duplicate on both devices: every version leaves default list and recall and stays readable by id, the diagnostic is gone and the new card is recalled at once", async (context) => {
+// TCRN-CROSS-SUB-425 (MIN-239 D4): the id the new card supersedes is removed, every version with it, and
+// a read of it is refused; the versions' events stay in their streams.
+test("R15 D7 (SUB-413), SUB-425: --supersedes naming the id resolves the duplicate on both devices: the id is removed with every version, the diagnostic is gone and the new card is recalled at once", async (context) => {
   const shared = await twoDevices(context);
   const { workspace, deviceA, deviceB } = shared;
   const { heron, id } = await sameKeyOnTwoDevices(shared);
@@ -739,15 +748,12 @@ test("R15 D7 (SUB-413): --supersedes naming the id resolves the duplicate on bot
     const listed = await asDevice(home, () => listKnowledgeMetadata(workspace, { at, scope: "user" }));
     assert.equal(Object.hasOwn(listed, "unresolvedDuplicates"), false, "the diagnostic is gone");
     assert.deepEqual(sortedIds(listed.records), [heron.id, settled.id].sort(), "no version is a default answer; the new card is");
-    const all = await asDevice(home, () => listKnowledgeMetadata(workspace, { at, scope: "user", selection: "all" }));
-    assert.deepEqual(all.records.filter((record) => record.id === id).map((record) => record.extensions.supersededBy), [settled.id, settled.id],
-      "every version names the card that replaced it");
-    const snippet = await asDevice(home, () => readKnowledgeSnippet(workspace, id, { scope: "user" }));
-    assert.equal(Object.hasOwn(snippet, "unresolvedDuplicates"), false);
-    const body = await asDevice(home, () => readKnowledgeBody(workspace, id, { at, scope: "user" }));
-    assert.equal(Object.hasOwn(body, "unresolvedDuplicates"), false);
-    assert.deepEqual(body.versions.map((version) => version.body).sort(), ["Body of A's kestrel version", "Body of B's beaver version"],
-      "each version's body stays readable by its id");
+    const all = await asDevice(home, () => listKnowledgeMetadata(workspace, { at, scope: "user", status: "removed" }));
+    assert.deepEqual(all.records.map((record) => [record.id, record.removal.reason, record.removal.supersededBy]), [[id, "superseded", settled.id]],
+      "the id is removed once, every version with it, naming the card that replaced it");
+    const snippet = await asDevice(home, () => readKnowledgeSnippet(workspace, id, { scope: "user" }).then(() => null, (error) => error.reasonCode));
+    const body = await asDevice(home, () => readKnowledgeBody(workspace, id, { at, scope: "user" }).then(() => null, (error) => error.reasonCode));
+    assert.deepEqual([snippet, body], ["KNOWLEDGE_CARD_REMOVED", "KNOWLEDGE_CARD_REMOVED"], "and a read of it is refused");
     const read = await asDevice(home, () => readRecallCards(workspace, { at }));
     assert.equal(read.userCrestDegraded, null);
     assert.deepEqual(read.cards.map((card) => card.id).sort(), [heron.id, settled.id].sort());

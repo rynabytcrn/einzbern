@@ -1698,15 +1698,18 @@ test("INIT-047: supersedes is validated, source digests are computed and source 
       stalenessPolicy: { maximumAgeDays: null, unknownDisposition: "fail-closed" }, lastVerified: null, freshnessState: "fresh",
       ...overrides,
     });
-    const old = await createKnowledgeUnit(fx.workspace, fragment("INIT047-OLD", 0));
-    const replacement = await createKnowledgeUnit(fx.workspace, fragment("INIT047-NEW", 1, { supersedes: old.id }));
+    // A retired target is still refused; nothing retires a card by hand now (TCRN-CROSS-SUB-308), so
+    // the retired record is the one an older engine would have left.
+    const retiredTarget = await createKnowledgeUnit(fx.workspace, fragment("INIT047-RETIRED", 0));
+    await retireByHand(fx, retiredTarget.id);
+    await expectReason("KNOWLEDGE_LINK_INVALID", () => createKnowledgeUnit(fx.workspace, fragment("INIT047-AFTER-RETIRE", 1, { supersedes: retiredTarget.id })));
+    const old = await createKnowledgeUnit(fx.workspace, fragment("INIT047-OLD", 1));
+    const replacement = await createKnowledgeUnit(fx.workspace, fragment("INIT047-NEW", 2, { supersedes: old.id }));
     const listed = await listKnowledgeMetadata(fx.workspace, { at: instant(12), selection: "all" });
     assert.equal(listed.records.find((record) => record.id === replacement.id).supersedes, old.id);
-    // TCRN-CROSS-STORY-365: the supersede marked `old` with extensions.supersededBy, so it
-    // is at revision 2. A retired target is still refused; nothing retires a card by hand now
-    // (TCRN-CROSS-SUB-308), so the retired record is the one an older engine would have left.
-    await retireByHand(fx, old.id);
-    await expectReason("KNOWLEDGE_LINK_INVALID", () => createKnowledgeUnit(fx.workspace, fragment("INIT047-AFTER-RETIRE", 3, { supersedes: old.id })));
+    // TCRN-CROSS-SUB-425 (MIN-239 D3, D4): the supersede removed `old`, conflict superseded, and a
+    // removed card is terminal: no later card supersedes it.
+    await expectReason("KNOWLEDGE_CARD_REMOVED", () => createKnowledgeUnit(fx.workspace, fragment("INIT047-AFTER-REMOVE", 3, { supersedes: old.id })));
 
     await writeFile(join(fx.workspace, "source.md"), "source-v1");
     const sourced = await createKnowledgeUnit(fx.workspace, unitInput(fx, "INIT047-SOURCE", {

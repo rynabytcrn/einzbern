@@ -55,9 +55,11 @@ replaces are the card's current records: one is the card, and more than one is a
 duplicate (the same-key rule below), so two devices that each wrote one card again before either saw
 the other's lose neither record. A writer holding a second record of an id that replaces nothing is
 refused as `KNOWLEDGE_PARTIAL_STATE`, naming the writer. A card whose `supersedes` names another is
-projected over it -- the replaced card reads `supersededBy`, one revision on -- and the replaced record
-is not rewritten; a card whose supersedes names a card not delivered yet stands, and the named card is
-replaced when it arrives. A library's crest holds unresolved conflicts and duplicates by the rules the
+projected over it -- the replaced card is removed, conflict superseded (see "Valid and removed") -- and
+the replaced record is not rewritten; a card whose supersedes names a card not delivered yet stands,
+and the named card is removed when it arrives. A stream also holds removal events
+(`einzbern.crest-removal.v1`, the same file names), each after its device's earlier events and
+chained to them like any other. A library's crest holds unresolved conflicts and duplicates by the rules the
 user crest's follow (below) -- a card's writer, for a pair, is the writer of its first record, and a
 duplicate's versions are its writers' current records -- and `knowledge-list` and a read of the id name
 them with the same fields; `recall` leaves their cards out and names them at its top under
@@ -87,8 +89,9 @@ reads, recalls and is written as before; a write of that card itself (`knowledge
 `knowledge-validate` and `knowledge-checkpoint` refuse with `KNOWLEDGE_LINK_INVALID` (`<id>:scope`,
 naming the first such card) and `knowledge-rebase` with `KNOWLEDGE_REBASE_BLOCKED` (see "High-water
 rebase"), their details carrying `unresolvedScopes` and a `remedy` naming every such card. The way out
-is the retirement there is: a card that supersedes it (`knowledge-create --supersedes <id>`), which is
-admitted; the superseded record is no longer live, nothing names it, and the three answer again. A
+is a card that supersedes it (`knowledge-create --supersedes <id>`), which is admitted; the superseded
+card is removed, conflict superseded, nothing names it, and the three answer again. A removal of the
+card (`knowledge-remove`) is a way out as well: a removed card is not live either. A
 record whose scope contradicts itself -- a user card, or a scope its project and role scopes disagree
 with -- is not one of these, and still refuses the read with `KNOWLEDGE_LINK_INVALID`.
 
@@ -181,9 +184,9 @@ selection leaves their cards out while `--selection all`, `knowledge-snippet` an
 written as before. A new card on the same subject is refused naming both cards; a
 write whose `--supersedes` names either card of a pair resolves it. A card that
 more than one card replaces -- two devices that each replaced it before either saw
-the other's replacement -- is replaced either way: its projected `supersededBy`
+the other's replacement -- is removed either way: its removal's `supersededBy`
 names the latest replacement (a mark the metadata/body layout stored stays), each
-replacement stays live, and replacements that collide form a pair like any other.
+replacement stays valid, and replacements that collide form a pair like any other.
 A write whose event is committed answers from its own scan and that event, its
 `version` the scanned version plus one: it never reads the crest again, so what
 another device delivers meanwhile cannot turn a committed write into a refusal,
@@ -218,10 +221,12 @@ write sees every version: it may not reuse the id or external key
 (`KNOWLEDGE_DUPLICATE`), and a version on its subject is a conflict it names by
 the id. A version's own `supersedes` still replaces the card it names. The
 duplicate is resolved by the existing write path: a write whose `--supersedes`
-names the id replaces every version at once, whichever of them its writer saw.
-Each version's projected `supersededBy` then names the replacement, so every
-version leaves default selection and `recall`, its event and body stay in their
-stream and read by the id, and the diagnostic is gone; a duplicate is unresolved while one of its
+names the id replaces every version at once, whichever of them its writer saw:
+the id is removed, conflict superseded, with every version (see "Valid and
+removed"), so no version is a default answer or a recall hit, each version's event
+stays in its stream, each device clears its own version's body at its next write,
+and the diagnostic is gone. A removal of the id (`knowledge-remove`) resolves it
+the same way. A duplicate is unresolved while its id is not removed and one of its
 versions is neither replaced nor retired. To keep one version, write its content
 again under a new external key with `--supersedes` naming the id. `recall` names
 an unresolved duplicate under `userCrestDegraded`.
@@ -248,15 +253,17 @@ Freshness is evaluated at an explicit strict instant. A null
 cards with no verification instant are still selectable. A finite policy marks
 an expired age window `stale`, but a missing verification instant is not made
 unselectable by an `unknown` result. Default selection and checkpoints exclude
-stale records, superseded, rejected or retired records, non-default retrieval,
-and excluded export disposition. TCRN-CROSS-INC-282 (Owner rulings
+removed cards (a superseded card is one; see "Valid and removed"), stale records,
+rejected or retired records, non-default retrieval, and excluded export
+disposition. TCRN-CROSS-INC-282 (Owner rulings
 TCRN-CROSS-MIN-146 D1 and TCRN-CROSS-MIN-158 D1) made the default selection every
 active card, because a promotion gate on retrieval is what left a written card
 unfindable with nothing in its receipt to say so.
 
 In either crest, default selection also leaves out the cards of an unresolved
 conflict and every version of an unresolved duplicate, and in a library's crest the
-card of a record awaiting chain events (see "Storage and authority"). Recall reads the
+card of a record awaiting chain events or of a live record whose project the chain
+no longer holds (see "Storage and authority"). Recall reads the
 library's crest and the user crest; a store it cannot read gives no cards and its
 reason code under `knowledgeStores`, and the cards a store's default selection leaves
 out are not recalled. When the user crest gave recall fewer cards than it holds, the
@@ -275,24 +282,29 @@ The library's crest says the same at the top of a recall answer as
 `projectCrestDegraded` (TCRN-CROSS-SUB-414), in the form `userCrestDegraded` has,
 when its default selection withheld cards: `KNOWLEDGE_POSSIBLE_CONFLICT` when an
 unresolved pair is withheld, else `KNOWLEDGE_DUPLICATE` when versions of an
-unresolved duplicate are, else `KNOWLEDGE_HIGH_WATER_MISMATCH` -- the refusal
+unresolved duplicate are, else `KNOWLEDGE_LINK_INVALID` -- the refusal
+`knowledge-validate` and `knowledge-checkpoint` meet -- when cards whose project the
+chain no longer holds are, else `KNOWLEDGE_HIGH_WATER_MISMATCH` -- the refusal
 `knowledge-validate`, `knowledge-checkpoint` and `knowledge-rebase` meet -- when
 records awaiting chain events are all it withheld. `unresolvedConflicts`,
-`unresolvedDuplicates` and `awaitingChain` carry what `knowledge-list` names, each
-present when it is not empty, and `withheldCards` counts every withheld card and
-version once, although a pair's card or a duplicate's version can also await chain
-events. A refused read of the library's crest is not repeated there: its code
+`unresolvedDuplicates`, `awaitingChain` and `unresolvedScopes` carry what
+`knowledge-list` names, each present when it is not empty, and `withheldCards`
+counts every withheld card and version once, although a pair's card or a
+duplicate's version can also await chain events or name a project the chain no
+longer holds. A refused read of the library's crest is not repeated there: its code
 stays `knowledgeReasonCode` and `knowledgeStores.project`, as it always was. It is
 absent when the library's crest withheld nothing.
 
 A card is retrievable the moment it is written (TCRN-CROSS-STORY-476 R1,
 TCRN-CROSS-MIN-227 D9, TCRN-CROSS-SUB-308). Every write lands lifecycle `active`
-and promotion state `promoted`, whatever its kind and whatever provenance it
-carries; there is no candidate state to write and no promotion step. A write may
-leave the lifecycle out; one that names `candidate` or `retired` is refused with
-`KNOWLEDGE_LIFECYCLE_RETIRED` (details `required`, `actual`, `remedy`) before
-anything is written. The provenance floor is therefore write time:
-`validateMetadataShape` runs its assertions on a promoted record, so a `guide` or
+and carries no promotion state at all -- the field is gone from new records --
+whatever its kind and whatever provenance it carries; there is no candidate state
+to write and no promotion step. A write may leave the lifecycle out; one that names
+`candidate` or `retired` is refused with `KNOWLEDGE_LIFECYCLE_RETIRED` (details
+`required`, `actual`, `remedy`) before anything is written. The provenance floor is
+therefore write time: `validateMetadataShape` holds a record with no promotion
+state, as it holds one an older engine wrote `promoted`, to the provenance
+assertions, so a `guide` or
 `reference` without a source reference and an evidence link is refused at capture
 rather than stored as a card no reader returns, and a fragment kind (`fact`,
 `decision`, `summary`) is admitted with half-supplied provenance. Records written
@@ -404,14 +416,15 @@ for them (see "Storage and authority").
 record's metadata shape, body binding, and scope/project/work links against the chain as it
 stands, and it writes nothing. A live record whose scope/project references no longer resolve is
 an offender: the rebase fails closed with `KNOWLEDGE_REBASE_BLOCKED` and a deterministic id-sorted
-offender list. A live record is one no card supersedes and that is not retired; a superseded or
-retired record is no offender, whatever its links (R16). When an offender is a card whose project
+offender list. A live record is one no card supersedes, no removal removes and that is not retired;
+a removed or retired record is no offender, whatever its links (R16; TCRN-CROSS-SUB-425). When an offender is a card whose project
 the chain no longer holds, the refusal's details carry `unresolvedScopes` and the `remedy`,
 `knowledge-create --supersedes <id>` for each such card. A record this device's chain does not hold
 yet refuses it with `KNOWLEDGE_HIGH_WATER_MISMATCH`, and a crest holding an older engine's mutation
 claim with `KNOWLEDGE_LOCKED`. The `retire-invalid` escape that retired offenders is gone with every
 other retirement path but `--supersedes` (TCRN-CROSS-SUB-308), and since R16 that one is open to an
-offender whose project is gone: the crest's read no longer refuses the supersede. A rebase that
+offender whose project is gone: the crest's read no longer refuses the supersede. A removal
+(`knowledge-remove`, TCRN-CROSS-SUB-425) takes such a card out of the offenders as well. A rebase that
 answers reports the projected `version`, the chain head as `eventHighWaterDigest`, `retired: 0` and
 no offender, and projects this device's index view again; there is no write for a fault to
 interrupt.
@@ -424,13 +437,105 @@ the chain's, unless the flag admits it, labelled with both heads (TCRN-CROSS-INC
 a crest its chain does not hold, which is how a snapshot restore that put the chain back without the
 crest (WSF-3) finds a crest newer than the chain beside it; for an old-layout store, a trailing marker.
 
+## Valid and removed
+
+A card is valid or removed (TCRN-CROSS-SUB-425; TCRN-CROSS-STORY-514 R1, R3, R4;
+TCRN-CROSS-MIN-239 D3, D4, D6, which for knowledge cards replaces the audit copy
+TCRN-CROSS-MIN-235 D10 kept of a superseded body). Removed is terminal: no verb
+restores a card, and a card removed by mistake is answered by a new card under a new
+external key. A card is removed for one of three reasons, and every removal names its
+basis, its actor and its instant:
+
+- `superseded` -- another card supersedes it in a conflict. A write whose
+  `--supersedes` names the card removes it -- the removal's basis names the new card,
+  its actor is the new card's accountable owner and its instant the new card's -- and
+  so does the mark an older engine stored on a card it replaced.
+  `knowledge-remove --reason superseded --superseded-by <id>` records the same reason
+  for a card that a valid card of the same crest already covers.
+- `invalid` -- the card is wrong. Nothing judges that on its own: the model that finds
+  a card invalid in use removes it with `knowledge-remove --reason invalid` and writes
+  down why.
+- `duplicate` -- the card repeats what a work item or a decision holds, which the basis
+  names.
+
+`knowledge-remove --id <id> --reason <reason> --basis <text> --actor <id> --at <instant>`
+(with `--superseded-by <id>` for the reason `superseded` only, and `--scope user` for a
+card of the user crest) reads the whole crest under this machine's lock of it and
+refuses, before anything is written: an unknown reason, a blank basis, an actor that is
+no `owner:`, `profile:` or `agent:` id, or `--superseded-by` given for another reason or
+left out for `superseded` (`KNOWLEDGE_INPUT_INVALID`); a basis past 2,048 bytes
+(`KNOWLEDGE_LIMIT_EXCEEDED`); a card the crest does not hold (`KNOWLEDGE_NOT_FOUND`); a
+successor it does not hold (`KNOWLEDGE_LINK_INVALID`); and a card or successor already
+removed (`KNOWLEDGE_CARD_REMOVED`). Otherwise it appends one removal event,
+`einzbern.crest-removal.v1` -- the card's id, the reason, the basis, the actor and the
+successor or null, with the instant as `occurredAt` -- to this device's stream of that
+crest, and answers `KNOWLEDGE_UNIT_REMOVED` with the card as it is now kept, the
+version its scan projected advanced by the event, and `clearedBodies`. The id of a
+duplicate is removed with every version.
+
+A removal event travels with the crest like every other event, and no event file is
+ever deleted. A read of either crest applies each removal event to the card it names;
+one naming a card not delivered yet waits for it, as a supersede does. Of several
+removals of one card -- two devices that each removed it before either saw the other's
+-- the earliest stands, then one an event holds before one a supersession derives,
+then the event's device and sequence in canonical order; every event stays.
+
+What a removed card keeps is its `id`, `externalKey` and `subject`, the `supersedes`
+its own record named, `status: "removed"`, and `removal`: `reason`, `basis`, `actor`,
+`removedAt`, `supersededBy` (the successor, or null), and the `deviceId`, `sequence` and
+`eventHash` of the event that holds it -- all three null for a removal a supersession
+derives, whose `actor` is the successor's accountable owner (null only where an older
+engine's mark names a successor the crest does not hold). Its summary, snippet, tags,
+links and sources are answered by no read, and its body is cleared: every device
+deletes the body files its own stream holds for removed cards the next time it writes
+to that crest -- the write that removes or supersedes the card, or any later card
+write, removal, re-verification, policy update or article refresh -- after that
+write's event is committed and under its lock; a file it cannot delete is left for its
+next write and never turns a committed write into a refusal. A device clears only its
+own stream, since two devices never write one file of a crest. The metadata/body
+layout an older engine left, which no device owns, and an old-layout workspace's
+read-only store keep their bodies, which no read answers; so do the immutable events,
+whose metadata still holds the summary and snippet they were written with. A read
+admits a missing body for a removed card's records alone, so a device that receives
+the deletion of a body before the removal event itself reads the crest as partial
+(`KNOWLEDGE_PARTIAL_STATE`) until the event arrives, as it does an event delivered
+before its body.
+
+Reads answer valid cards unless asked for another status. `knowledge-list` and
+`recall` take `--status valid|removed|all` (left out, `valid`), which a model adds only
+when a user asked for removed cards; the list echoes it as `status`, and so does a
+recall that was given one. `--selection` chooses among the valid cards as it always
+did; a removed card is listed only under `removed` or `all`, once per id, as it is
+kept, and a list filtered by project, role, category, kind, tag or freshness lists
+none, since a removed card keeps none of them, while a search matches its subject. A
+recall hit on a removed card says `status: "removed"` and its line reads
+`[卡片 已移除]`. The prompt hook, the knowledge hint, a checkpoint, `knowledge-freshness`
+and `knowledge-source-check` read valid cards only, always, and so does Atelier's
+knowledge list unless its viewer picks another status. `knowledge-snippet` and
+`knowledge-body` refuse a removed card with `KNOWLEDGE_CARD_REMOVED` -- details `id`,
+`removal` and `remedy` -- before any body file is opened, and so do
+`knowledge-reverify`, `knowledge-policy`, `knowledge-article-refresh`, a write whose
+`--supersedes` names it, and a second removal. A removed card's id and external key
+stay taken (`KNOWLEDGE_DUPLICATE`). A removed card is in no unresolved pair, resolves
+the duplicate whose id it is, and is named in no `unresolvedScopes`, no
+`danglingWorkLinks` and no rebase's offenders. A crest's index view holds it as it is
+kept, one record per id, and `knowledge-validate` and the marker count it among
+`records`; an old-layout store's index stays its engine's, every record as written.
+
+A crest that holds a removal event is refused by an engine before this one, which does
+not read the event's schema. A `retired` record an older engine left without a
+supersession is read as that engine left it (see "Lifecycle"), and `knowledge-remove`
+can remove it.
+
 ## Lifecycle
 
 A written card can be re-verified: `reverify` touches `lastVerified` to the
 supplied instant and restores a fresh posture under CAS, so written knowledge
-does not decay irreversibly out of default selection; only a promoted, non-retired
-record admits it, which is every card written now. There is no manual retirement:
-the `knowledge-retire` verb and its batch member are gone (TCRN-CROSS-SUB-308).
+does not decay irreversibly out of default selection; only a record with no promotion
+state (or one an older engine wrote `promoted`) that is neither retired nor removed
+admits it, which is every valid card written now. The
+`knowledge-retire` verb and its batch member are gone (TCRN-CROSS-SUB-308); a card
+leaves by removal (see "Valid and removed").
 There is no record-count cap and no body budget either (see "Capacity"): nothing
 retires a card to make room, and no allowance is kept for retired records. A
 `retired` record an older engine left is a tombstoned audit entry: it stays
@@ -440,15 +545,16 @@ retired record with its body.
 
 ## Conflict retirement
 
-Knowledge retires only at write time (TCRN-CROSS-MIN-225 D1, TCRN-CROSS-MIN-227 D9,
-TCRN-CROSS-STORY-476 R2). A capture or create whose subject scores as a possible
-conflict with an active card is refused with `KNOWLEDGE_POSSIBLE_CONFLICT` (details
-`conflicts`) unless it names `--supersedes` or `--coexist`; `--supersedes` marks the
-older card with `extensions.supersededBy`, which takes it out of default and
-searched retrieval while it stays lifecycle `active` and its body stays readable by
-an explicit body read. No clock, observation day, window, operator act or store size
-retires a card: `maximumAgeDays` only marks a card `stale`, and a store has no body
-budget a write could reach, so nothing is ever evicted to make room (see "Capacity").
+A card leaves only by a write (TCRN-CROSS-MIN-225 D1, TCRN-CROSS-MIN-227 D9,
+TCRN-CROSS-STORY-476 R2, TCRN-CROSS-MIN-239 D5). A capture or create whose subject
+scores as a possible conflict with a valid card is refused with
+`KNOWLEDGE_POSSIBLE_CONFLICT` (details `conflicts`) unless it names `--supersedes` or
+`--coexist`; `--supersedes` removes the older card, conflict superseded (see "Valid
+and removed"): it leaves every default and searched read, and its body is cleared.
+`knowledge-remove` removes a card a model found invalid in use, or one that repeats a
+work item or a decision. No clock, observation day, window or store size removes a
+card: `maximumAgeDays` only marks a card `stale`, and a store has no body budget a
+write could reach, so nothing is ever evicted to make room (see "Capacity").
 The fitness statistic, `retire-proposals`, `retire-sweep`, `knowledge-retire` and the
 rebase's `--retire-invalid` are gone (TCRN-CROSS-SUB-308); `fitness.windowDays` and
 `fitness.minEvents` are retired settings whose recorded values replay as history.
@@ -467,9 +573,9 @@ and no event (TCRN-CROSS-SUB-414).
 ## Governed surfaces
 
 Core exports empty initialization/validation, creation (with its conflict
-supersede), metadata listing and filtering, bounded snippet read, explicit body
-read, freshness evaluation, re-verify, staleness-policy update, high-water rebase,
-metadata-only checkpoint generation, and dead-claim recovery. CLI commands mirror
+supersede), removal, metadata listing and filtering by status, bounded snippet
+read, explicit body read, freshness evaluation, re-verify, staleness-policy update,
+high-water rebase, metadata-only checkpoint generation, and dead-claim recovery. CLI commands mirror
 these surfaces.
 `P4_KNOWLEDGE_CORE_VERIFIED` proves only this bounded file-native capability; it
 does not mark the graph work done or start RC2/P5/P6.

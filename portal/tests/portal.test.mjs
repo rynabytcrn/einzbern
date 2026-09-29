@@ -715,6 +715,21 @@ test("STORY-366: the article endpoint is refused while the native article stays 
   const refused = await request(url, "/api/knowledge/articles", writeOptions(boot.token, "POST", { title: "Manual article", category: "architecture", content: "must not write" }));
   assert.equal(refused.response.status, 404);
   assert.equal(refused.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
+  // TCRN-CROSS-SUB-425 (MIN-239 D6): the knowledge list answers valid cards by default; a removed card
+  // is listed only when a status asks for it, as it is kept, and its body is refused.
+  const removed = await cli(["knowledge-remove", "--workspace", fixture.workspace, "--at", "2026-08-11T15:00:02Z", "--id", article.id, "--reason", "invalid",
+    "--basis", "the article moved to the design notes", "--actor", "agent:portal-test"], fixture.deviceEnv);
+  assert.equal(removed.reasonCode, "KNOWLEDGE_UNIT_REMOVED");
+  const valid = await request(url, "/api/knowledge", readOptions(boot.token));
+  assert.deepEqual([valid.body.status, valid.body.records.some((record) => record.id === article.id)], ["valid", false]);
+  const listedRemoved = await request(url, "/api/knowledge?status=removed", readOptions(boot.token));
+  const kept = listedRemoved.body.records.find((record) => record.id === article.id);
+  assert.deepEqual([listedRemoved.body.status, kept?.status, kept?.removal.reason, Object.hasOwn(kept ?? {}, "summary")], ["removed", "removed", "invalid", false]);
+  assert.equal((await request(url, "/api/knowledge?status=all", readOptions(boot.token))).body.records.some((record) => record.id === article.id), true);
+  const removedBody = await request(url, `/api/knowledge/body?id=${encodeURIComponent(article.id)}`, readOptions(boot.token));
+  assert.deepEqual([removedBody.response.status, removedBody.body.reasonCode], [409, "KNOWLEDGE_CARD_REMOVED"]);
+  const badStatus = await request(url, "/api/knowledge?status=obsolete", readOptions(boot.token));
+  assert.deepEqual([badStatus.response.status, badStatus.body.reasonCode], [400, "PORTAL_KNOWLEDGE_STATUS_INVALID"]);
 });
 
 test("STORY-485: Atelier edits gate declarations and reads each library's latest cached gate run", async (t) => {

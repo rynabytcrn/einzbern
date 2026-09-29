@@ -17,7 +17,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
 
-import { FRAMEWORK_VERSION, createKnowledgeUnit, createProject, createWork, initializeLibrary, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
+import { FRAMEWORK_VERSION, createKnowledgeUnit, createProject, createWork, initializeLibrary, removeKnowledgeUnit, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
 import { deviceHome } from "../dist/build/packages/core/src/device-home.js";
 import { NODE_FLOOR } from "../dist/build/packages/core/src/node-floor.js";
 import { NAVIGATION_LINES } from "../dist/build/packages/core/src/agents-sections.js";
@@ -230,6 +230,35 @@ test("SUB-387: both registered projects recall the same user-crest card through 
     assert.deepEqual(JSON.parse(run.stdout), { hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: line } });
     assert.equal(run.stdout, `${hookProtocolOutput("claude-code", "UserPromptSubmit", [line])}\n`);
   }
+});
+
+// TCRN-CROSS-SUB-425 (TCRN-CROSS-STORY-514 R4, AC1; MIN-239 D6): the prompt hook recalls valid cards
+// only, always. Once the card a prompt found is removed, the same prompt gets nothing.
+test("SUB-425: the prompt hook recalls valid cards only, and a removed card's prompt gets nothing", async (context) => {
+  const { base, home } = await scratch(context);
+  const launcherPath = await installEngine(home);
+  const project = await registeredProject(base);
+  const created = await createKnowledgeUnit(project.library, {
+    occurredAt: at(10), externalKey: "HOOK-USER-NUMBAT", scope: "user", projectId: null, roleScopes: [],
+    category: "workflow", kind: "guide", tags: ["lesson"], subject: "Numbat termite feeding hours",
+    summary: "Numbats feed on termites by day", snippet: "numbat termite feeding by day",
+    accountableOwnerId: deriveStableId("owner", "HOOK-USER-NUMBAT-OWNER"),
+    sourceReferences: ["evidence://hook/numbat"], sourceDigest: canonicalSha256({ source: "hook-numbat" }), supersedes: null,
+    linkedWorkIds: [], linkedDecisionIds: [], linkedGateIds: [], linkedEvidenceIds: [deriveStableId("evidence", "HOOK-USER-NUMBAT")],
+    retrievalDisposition: "default", freshnessState: "fresh", lastVerified: null,
+    stalenessPolicy: { maximumAgeDays: null, unknownDisposition: "fail-closed" }, exportDisposition: "metadata-only",
+    body: "Feed at midday.",
+  });
+  const prompt = "What are the numbat termite feeding hours?";
+  const found = runHook(launcherPath, { home, cwd: join(project.directory, "src"), prompt });
+  assert.equal(found.status, 0, found.stderr);
+  assert.equal(JSON.parse(found.stdout).hookSpecificOutput.additionalContext, `[卡片 用户] Numbat termite feeding hours · ${created.id}`);
+  const removed = await removeKnowledgeUnit(project.library, {
+    occurredAt: at(11), id: created.id, reason: "invalid", basis: "numbats feed by day only in winter", actor: "agent:claude-opus-5-5",
+  }, { scope: "user" });
+  assert.equal(removed.reasonCode, "KNOWLEDGE_UNIT_REMOVED");
+  const quiet = runHook(launcherPath, { home, cwd: join(project.directory, "src"), prompt });
+  assert.deepEqual([quiet.status, quiet.stdout, quiet.stderr], [0, "", ""], "the removed card is not recalled");
 });
 
 test("478-AC5: the pointer hooks answer with the three navigation lines on both hosts, reading no library file", async (context) => {

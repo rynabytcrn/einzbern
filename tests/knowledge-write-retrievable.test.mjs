@@ -5,7 +5,8 @@
 // promotion step to take, so knowledge-promote, knowledge-retire, retire-sweep, retire-proposals
 // and the rebase's --retire-invalid are gone. A card retires only when a later card names it with
 // --supersedes: a conflicting write without it is refused, and with it the older card leaves
-// default retrieval. Records written before keep what they were written with and stay readable.
+// default retrieval -- TCRN-CROSS-SUB-425 (MIN-239 D3, D4): it is removed, conflict superseded, and
+// its body is cleared. Records written before keep what they were written with and stay readable.
 //
 // The cases that tests/story-377-retire-sweep.test.mjs held for subjects that stay -- the
 // supersede, the stale card and the full store, and the historical records -- are carried here;
@@ -222,9 +223,9 @@ test("476-R1, R2: the promotion and retirement verbs are gone from the catalog a
 });
 
 // AC2: the one retirement left is the write path's own. A possible conflict is refused, and
-// --supersedes marks the older card instead: out of default and searched retrieval, still active,
-// its body kept for an explicit read.
-test("476-AC2: a conflicting write is refused without --supersedes, and with it the older card leaves default retrieval", async (t) => {
+// --supersedes removes the older card instead: out of default and searched retrieval, and, since
+// TCRN-CROSS-SUB-425 (MIN-239 D4), its body cleared and an explicit read of it refused.
+test("476-AC2, SUB-425: a conflicting write is refused without --supersedes, and with it the older card is removed and leaves default retrieval", async (t) => {
   const fx = await fixture(t, "FIXTURE-SUB-308-SUPERSEDE");
   const subject = "SUB-308 only a conflicting write retires a card";
   const old = await captureKnowledgeUnit(fx.workspace, lesson("SUB-308-OLD", subject));
@@ -233,10 +234,10 @@ test("476-AC2: a conflicting write is refused without --supersedes, and with it 
   assert.deepEqual(refused.details.conflicts, [old.id]);
   const replacement = await captureKnowledgeUnit(fx.workspace, lesson("SUB-308-NEW", subject, { supersedes: old.id }));
   assert.equal(replacement.superseded, old.id);
-  const replaced = (await listKnowledgeMetadata(fx.workspace, { at: AT, selection: "all" })).records.find((record) => record.id === old.id);
-  assert.equal(replaced.extensions.supersededBy, replacement.id, "the older card carries the mark");
-  assert.equal(replaced.lifecycle, "active", "and is retired by the mark, not deleted");
-  assert.equal((await readKnowledgeBody(fx.workspace, old.id, { at: AT })).body, "SUB-308-OLD body", "its body stays for an explicit read");
+  assert.equal((await listKnowledgeMetadata(fx.workspace, { at: AT, selection: "all" })).records.some((record) => record.id === old.id), false, "no valid card any more");
+  const replaced = (await listKnowledgeMetadata(fx.workspace, { at: AT, status: "removed" })).records.find((record) => record.id === old.id);
+  assert.deepEqual([replaced.status, replaced.removal.reason, replaced.removal.supersededBy], ["removed", "superseded", replacement.id], "the older card is removed, conflict superseded");
+  assert.equal((await refusalOf(() => readKnowledgeBody(fx.workspace, old.id, { at: AT })))?.reasonCode, "KNOWLEDGE_CARD_REMOVED", "its body is cleared, and an explicit read refused");
   assert.deepEqual((await listKnowledgeMetadata(fx.workspace, { at: AT })).records.map((record) => record.id), [replacement.id], "default retrieval answers with the new card only");
   assert.deepEqual((await listKnowledgeMetadata(fx.workspace, { at: AT, search: "conflicting" })).records.map((record) => record.id), [replacement.id], "and so does a search");
   const recalled = await cliJson(["recall", "--workspace", fx.workspace, "--at", AT, "--query", subject, "--tau", "0"]);

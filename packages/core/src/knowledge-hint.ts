@@ -65,8 +65,9 @@ export function knowledgeHintFor(state: HintState, cards: readonly KnowledgeUnit
 }
 
 /**
- * The cards a hint is scored against: every card of the library's crest and of this user's crest,
- * read the way a write reads them (selection "all"; a retired card is dropped by the scorer). A
+ * The cards a hint is scored against: every valid card of the library's crest and of this user's
+ * crest, read the way a write reads them (selection "all"; a retired card is dropped by the scorer).
+ * TCRN-CROSS-SUB-425 (MIN-239 D6): a removed card is no candidate, so only the valid cards are read. A
  * store that refuses the read -- one never initialized, or one another writer holds -- gives no
  * cards; the read admits a store trailing the chain, because the write it answers has just moved
  * the chain.
@@ -78,6 +79,7 @@ export async function readKnowledgeHintCards(workspaceRoot: string, at: string):
       const answer = await listKnowledgeMetadata(workspaceRoot, {
         at,
         selection: "all",
+        status: "valid",
         allowTrailing: true,
         limit: PROTOCOL_LIMITS.maxCanonicalBytes,
         ...(scope === "user" ? { scope } : {}),

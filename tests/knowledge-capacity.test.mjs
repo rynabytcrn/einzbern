@@ -6,8 +6,9 @@
 // the bodies of live cards against a limit (TCRN-CROSS-SUB-309), is retired with the limit, and no
 // read, write, recall or recovery refuses for the bytes the bodies add up to -- nor for a crest an
 // older engine laid out. Each card keeps its own limits: one past them is refused with KNOWLEDGE_LIMIT_EXCEEDED and
-// writes nothing. A superseded card still leaves default selection and recall while its body reads
-// by its id (MIN-235 D10). knowledge-validate no longer reports a capacity.
+// writes nothing. A superseded card is removed (TCRN-CROSS-SUB-425, MIN-239 D4, which replaces
+// MIN-235 D10 for cards): it leaves default selection and recall, its event stays and its body is
+// cleared. knowledge-validate no longer reports a capacity.
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
@@ -199,7 +200,7 @@ test("R17 (MIN-239 D1): each card's own limits still refuse -- in the library cr
   assert.equal((await listKnowledgeMetadata(fx.workspace, { at: AT })).total, 1);
 });
 
-test("476-R3 (MIN-235 D10): a superseded card leaves default list and recall, and its body stays readable", async (t) => {
+test("476-R3, SUB-425 (MIN-239 D4): a superseded card is removed: it leaves default list and recall, its event stays and its body is cleared", async (t) => {
   const fx = await fixture(t, "FIXTURE-SUB-310-SUPERSEDE");
   const subject = "SUB-310 the old answer to the retry question";
   const old = await captureKnowledgeUnit(fx.workspace, card("SUB-310-OLD", subject, "o".repeat(3_000), {
@@ -209,12 +210,15 @@ test("476-R3 (MIN-235 D10): a superseded card leaves default list and recall, an
     supersedes: old.id, summary: "Revised quokka migration calendar", snippet: "current quokka travel date",
   }));
   assert.equal(replacement.superseded, old.id);
-  // Superseded, not deleted: the old body file is still in the stream and still reads.
+  // Superseded, so removed: its event stays in the stream, its body file is cleared, and a read of
+  // its body is refused.
   const stream = await streamOf(fx);
   const oldEvent = (await Promise.all((await readdir(stream)).filter((name) => name.endsWith(".json"))
-    .map(async (name) => JSON.parse(await readFile(join(stream, name), "utf8"))))).find((event) => event.metadata.id === old.id);
-  assert.equal((await readdir(stream)).includes(oldEvent.body.file), true);
-  assert.equal((await readKnowledgeBody(fx.workspace, old.id, { at: AT })).body, "o".repeat(3_000));
+    .map(async (name) => JSON.parse(await readFile(join(stream, name), "utf8"))))).find((event) => event.metadata?.id === old.id);
+  assert.equal((await readdir(stream)).includes(oldEvent.body.file), false);
+  assert.equal((await refusalOf(() => readKnowledgeBody(fx.workspace, old.id, { at: AT })))?.reasonCode, "KNOWLEDGE_CARD_REMOVED");
+  const removed = (await listKnowledgeMetadata(fx.workspace, { at: AT, status: "removed" })).records;
+  assert.deepEqual(removed.map((record) => [record.id, record.removal.reason, record.removal.supersededBy]), [[old.id, "superseded", replacement.id]]);
   assert.equal((await listKnowledgeMetadata(fx.workspace, { at: AT })).records.some((record) => record.id === old.id), false);
   const defaultCards = await readRecallCards(fx.workspace, { at: AT });
   assert.equal(defaultCards.cards.some((record) => record.id === old.id), false, "superseded metadata is outside default recall");
@@ -225,7 +229,7 @@ test("476-R3 (MIN-235 D10): a superseded card leaves default list and recall, an
     query: "obsolete quokka travel date",
     tau: 0,
   });
-  assert.equal(recallResult.records.some((record) => record.id === old.id), false, "the superseded body is auditable but never a default recall hit");
+  assert.equal(recallResult.records.some((record) => record.id === old.id), false, "the removed card is never a default recall hit");
   assert.equal(recallResult.records.some((record) => record.id === replacement.id), true, "while the card that replaced it is");
 });
 
@@ -234,7 +238,8 @@ test("R17 (MIN-238 D1): an older engine's crest past the old default is read by 
   const live = await captureKnowledgeUnit(fx.workspace, card("SUB-310-LIVE", "mike lesson", "m".repeat(700)));
   const subject = "SUB-310 november lesson written twice";
   const replaced = await captureKnowledgeUnit(fx.workspace, card("SUB-310-REPLACED", subject, "r".repeat(900)));
-  const replacing = await captureKnowledgeUnit(fx.workspace, card("SUB-310-REPLACING", subject, "q".repeat(400), { supersedes: replaced.id }));
+  // An older engine's supersede, laid down below: this engine's would clear the replaced body.
+  const replacing = await captureKnowledgeUnit(fx.workspace, card("SUB-310-REPLACING", subject, "q".repeat(400), { coexist: true }));
   const retired = await captureKnowledgeUnit(fx.workspace, card("SUB-310-RETIRED", "oscar lesson", "x".repeat(1_100)));
   const candidate = await captureKnowledgeUnit(fx.workspace, card("SUB-310-CANDIDATE", "papa lesson", "c".repeat(300)));
   // Sixteen full bodies take the live bodies past the old default: 16 x 8,192 + 700 + 400 + 300.
@@ -242,9 +247,10 @@ test("R17 (MIN-238 D1): an older engine's crest past the old default is read by 
     await captureKnowledgeUnit(fx.workspace, card(`SUB-310-FILL-${index}`, subject, bodyOf(8_192, index), { coexist: true }));
   }
   // Lay down what stores written by earlier engines hold: a card an older engine retired with its
-  // body still on disk, a card still in the candidate state it was written in, and a card written
-  // before `supersedes` and `expansions` existed, in the metadata/body layout that engine wrote
-  // (TCRN-CROSS-SUB-414). None of these shapes is written now.
+  // body still on disk, a card still in the candidate state it was written in, a card written
+  // before `supersedes` and `expansions` existed, and a card another superseded, marked and with its
+  // body kept, in the metadata/body layout that engine wrote (TCRN-CROSS-SUB-414). None of these
+  // shapes is written now.
   await asOlderEngineCrest(fx);
   const rewrite = async (id, change) => {
     const path = join(fx.store, "metadata", `${id}.json`);
@@ -254,20 +260,24 @@ test("R17 (MIN-238 D1): an older engine's crest past the old default is read by 
   await rewrite(retired.id, (metadata) => ({ ...metadata, lifecycle: "retired", revision: metadata.revision + 1 }));
   await rewrite(candidate.id, (metadata) => ({ ...metadata, lifecycle: "candidate", promotionState: "candidate" }));
   await rewrite(live.id, (metadata) => Object.fromEntries(Object.entries(metadata).filter(([key]) => key !== "supersedes" && key !== "expansions")));
+  await rewrite(replacing.id, (metadata) => ({ ...metadata, supersedes: replaced.id }));
+  await rewrite(replaced.id, (metadata) => ({ ...metadata, extensions: { ...metadata.extensions, supersededBy: replacing.id }, revision: metadata.revision + 1 }));
   assert.ok(await fileBytes(join(fx.store, "bodies")) > OLD_DEFAULT, "the bodies on disk are past the old default");
 
   const before = await storeFiles(fx);
   const validation = await validateKnowledgeStore(fx.workspace);
   assert.deepEqual([validation.reasonCode, validation.records, Object.hasOwn(validation, "capacity")], ["KNOWLEDGE_STORE_VALID", 21, false]);
-  assert.equal((await listKnowledgeMetadata(fx.workspace, { at: AT, selection: "all", limit: 64 })).total, 21);
+  // TCRN-CROSS-SUB-425: the superseded card is removed, one of the index's 21 records, and no valid card.
+  assert.equal((await listKnowledgeMetadata(fx.workspace, { at: AT, selection: "all", limit: 64 })).total, 20);
+  const removed = (await listKnowledgeMetadata(fx.workspace, { at: AT, status: "removed" })).records;
+  assert.deepEqual(removed.map((record) => [record.id, record.removal.reason, record.removal.supersededBy, record.removal.deviceId]), [[replaced.id, "superseded", replacing.id, null]]);
   assert.equal((await listKnowledgeMetadata(fx.workspace, { at: AT, limit: 64 })).reasonCode, "KNOWLEDGE_LIST_READY");
   await readKnowledgeStoreMarker(fx.workspace);
   await evaluateKnowledgeFreshness(fx.workspace, AT);
   assert.equal((await readKnowledgeBody(fx.workspace, live.id, { at: AT })).body, "m".repeat(700));
   assert.equal((await readRecallCards(fx.workspace, { at: AT })).stores.project.reasonCode, "KNOWLEDGE_LIST_READY");
   assert.deepEqual(await storeFiles(fx), before, "no read migrated or rewrote a byte of the store");
-  assert.equal((await readdir(join(fx.store, "bodies"))).length, 21, "every body is still on disk");
-  assert.equal(replacing.superseded, replaced.id);
+  assert.equal((await readdir(join(fx.store, "bodies"))).length, 21, "every body is still on disk: no device clears the metadata/body layout's");
 
   // The claim a write of that engine left when it stopped: recovery reads the whole crest, past the
   // old default, and completes the write.

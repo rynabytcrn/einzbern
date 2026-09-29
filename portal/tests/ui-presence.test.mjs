@@ -1979,6 +1979,11 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
         await new Promise((resolve) => setTimeout(resolve, 40));
         assert.equal(page.document.querySelector(`[data-workspace-panel="${target}"]`)?.hidden, false, `${target} panel must be reachable`);
       }
+      // TCRN-CROSS-SUB-425 (MIN-239 D6): the knowledge list reads valid cards unless the viewer picks
+      // another status; the filter offers the three statuses, valid selected.
+      const status = page.document.querySelector('[data-ui="knowledge-status-filter"]');
+      assert.deepEqual([...(status?.querySelectorAll("option") ?? [])].map((option) => option.value), ["valid", "removed", "all"]);
+      assert.equal(status?.value, "valid");
       for (const locale of ["en", "zh-CN", "ja", "ko", "fr"]) {
         page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
         await new Promise((resolve) => setTimeout(resolve, 40));

@@ -371,6 +371,8 @@ export type {
 // CLI's rebind after each chain write, the last caller either had in a recorded consumer root. Core
 // finds the crest through knowledgeStorePath inside core, and the tests that read the projected
 // marker import it from knowledge-core.ts, as artifact-store.ts's readers do above.
+// TCRN-CROSS-SUB-425: removeKnowledgeUnit, the removal reasons and the read status filter are the
+// CLI's knowledge-remove and the --status of knowledge-list and recall.
 export {
   KNOWLEDGE_CONFLICT_SCORE_THRESHOLD,
   KNOWLEDGE_CORE_VERSION,
@@ -378,6 +380,8 @@ export {
   KNOWLEDGE_METADATA_SCHEMA_VERSION,
   KNOWLEDGE_PROVENANCE_POLICY,
   KNOWLEDGE_REASON_CODES,
+  KNOWLEDGE_REMOVAL_REASONS,
+  KNOWLEDGE_STATUS_FILTERS,
   KNOWLEDGE_STORE_SCHEMA_VERSION,
   KNOWLEDGE_STORE_SCOPES,
   KnowledgeCoreError,
@@ -399,6 +403,7 @@ export {
   rebaseKnowledgeStore,
   recoverKnowledgeStore,
   refreshKnowledgeArticle,
+  removeKnowledgeUnit,
   reverifyKnowledgeUnit,
   updateKnowledgeStalenessPolicy,
   validateKnowledgeStore,
@@ -419,9 +424,11 @@ export type {
   KnowledgeMutationOptions,
   KnowledgeReadOptions,
   KnowledgeReasonCode,
+  KnowledgeRemovalReason,
   KnowledgeRetrievalDisposition,
   KnowledgeScope,
   KnowledgeStalenessPolicy,
+  KnowledgeStatusFilter,
   KnowledgeStoreScope,
   KnowledgeUnitExtensions,
   KnowledgeUnitMetadata,

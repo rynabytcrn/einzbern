@@ -54,6 +54,7 @@ import {
   userCrestPath,
 } from "./device-home.js";
 import { isAtomicTemporaryName } from "./atomic-file.js";
+import { assertActorId } from "./actor-attestation.js";
 import { readOrCreateDevice } from "./device-identity.js";
 import { FileLockError, withFileLock } from "./file-lock.js";
 import { readUserCrestPath } from "./machine-settings.js";
@@ -81,10 +82,11 @@ export const KNOWLEDGE_LIMITS = Object.freeze({
   maximumRoleScopes: 16,
 });
 
-// A live record: no later card supersedes it (the one retirement left, TCRN-CROSS-SUB-308) and an
-// older engine did not retire it. Only live cards form an unresolved conflict, hold a duplicate
-// unresolved or are named for a project the chain no longer holds; a superseded record stays in its
-// immutable store or event stream for explicit reads and is excluded from default recall.
+// A live record: no later card supersedes it and an older engine did not retire it. Only live cards
+// form an unresolved conflict, hold a duplicate unresolved or are named for a project the chain no
+// longer holds. TCRN-CROSS-SUB-425 (MIN-239 D3, D4): a superseded card is removed, and so is a card a
+// removal event names; a scan's `removals` say which, and no removed card is live. Its records stay
+// in their immutable store or event stream, and no read answers their content.
 function isLiveRecord(metadata: KnowledgeUnitMetadata): boolean {
   return metadata.lifecycle !== "retired" && metadata.extensions.supersededBy === undefined;
 }
@@ -97,6 +99,9 @@ export const KNOWLEDGE_REASON_CODES = Object.freeze([
   "KNOWLEDGE_ARTICLE_REFRESHED",
   "KNOWLEDGE_BODY_ACCESS_DENIED",
   "KNOWLEDGE_CANONICAL_INVALID",
+  // TCRN-CROSS-SUB-425 (STORY-514 R1, MIN-239 D3, D4): the card a read or a write names is removed.
+  // Removed is terminal, so its snippet and body are refused, and so is writing it again.
+  "KNOWLEDGE_CARD_REMOVED",
   "KNOWLEDGE_CAS_MISMATCH",
   "KNOWLEDGE_CHECKPOINT_READY",
   "KNOWLEDGE_DISPOSABLE_ACK_REQUIRED",
@@ -139,6 +144,8 @@ export const KNOWLEDGE_REASON_CODES = Object.freeze([
   "KNOWLEDGE_STORE_REBASED",
   "KNOWLEDGE_STORE_VALID",
   "KNOWLEDGE_UNIT_CREATED",
+  // TCRN-CROSS-SUB-425: knowledge-remove recorded a removal event.
+  "KNOWLEDGE_UNIT_REMOVED",
 ] as const);
 
 export type KnowledgeReasonCode = typeof KNOWLEDGE_REASON_CODES[number];
@@ -149,6 +156,27 @@ export type KnowledgeScope = "workspace" | "project" | "role" | "user";
 /** TCRN-CROSS-STORY-476 R5: which store a card lives in -- the library's crest or this user's. */
 export type KnowledgeStoreScope = "project" | "user";
 export const KNOWLEDGE_STORE_SCOPES: readonly KnowledgeStoreScope[] = Object.freeze(["project", "user"]);
+
+// TCRN-CROSS-SUB-425 (TCRN-CROSS-STORY-514 R1, R4; MIN-239 D3, D4, D6): a card is valid or removed,
+// and removed is terminal: nothing restores it, and a mistaken removal is answered by a new card. A
+// card is removed for one of three reasons -- another card superseded it in a conflict, it was judged
+// invalid, or it repeats what a work item or a decision holds -- and every removal names its basis,
+// its actor and its instant. A removal is an event in the remover's own stream of the crest, so it
+// travels with the crest to every device, and no event file is deleted; what a removed card keeps is
+// its id, external key, subject, the removal and the supersession it took part in. Its body is
+// cleared: each device deletes the body files its own stream holds for removed cards the next time it
+// writes to that crest (clearRemovedBodies), and no read returns a removed card's summary, snippet or
+// body. Reads answer valid cards unless asked for another status (KnowledgeStatusFilter).
+export type KnowledgeRemovalReason = "superseded" | "invalid" | "duplicate";
+export const KNOWLEDGE_REMOVAL_REASONS: readonly KnowledgeRemovalReason[] = Object.freeze(["superseded", "invalid", "duplicate"]);
+/** Which cards a read answers: the valid ones (the default), the removed ones, or both. */
+export type KnowledgeStatusFilter = "valid" | "removed" | "all";
+export const KNOWLEDGE_STATUS_FILTERS: readonly KnowledgeStatusFilter[] = Object.freeze(["valid", "removed", "all"]);
+// The removal event, one schema for a library's crest and the user crest: it names no chain and no
+// body, only the card it removes and why.
+const CREST_REMOVAL_SCHEMA_VERSION = "einzbern.crest-removal.v1" as const;
+// A removal's basis is a bounded sentence, held to the summary's budget.
+const KNOWLEDGE_REMOVAL_BASIS_BYTES = 2_048;
 
 /**
  * TCRN-CROSS-STORY-476 R5: the identity a user crest's marker binds where a library's crest binds
@@ -355,6 +383,9 @@ export interface KnowledgeMutationOptions extends KnowledgeReadOptions {
 
 export interface KnowledgeListQuery extends KnowledgeScopedReadOptions {
   readonly selection?: "default" | "all";
+  // TCRN-CROSS-SUB-425 (MIN-239 D6): which cards the list answers. Left out, the valid ones; the
+  // removed ones only when the caller asks for them, in the form a removed card keeps.
+  readonly status?: KnowledgeStatusFilter;
   readonly at: string;
   readonly projectId?: string;
   readonly roleScope?: string;
@@ -376,6 +407,25 @@ export interface KnowledgeBodyReadOptions extends KnowledgeScopedReadOptions {
   readonly at: string;
   readonly allowUnpromoted?: boolean;
   readonly allowStale?: boolean;
+}
+
+/** TCRN-CROSS-SUB-425: one removal, as knowledge-remove records it. */
+export interface KnowledgeRemoveInput {
+  readonly occurredAt: string;
+  readonly id: string;
+  readonly reason: KnowledgeRemovalReason;
+  // Why, in a sentence the next reader can check: what the card got wrong, or which work item or
+  // decision already holds it.
+  readonly basis: string;
+  // Who removed it: an owner:, profile: or agent: id.
+  readonly actor: string;
+  // The card that supersedes it; named for the reason "superseded" and for no other.
+  readonly supersededBy?: string | null;
+}
+
+/** Where a removal is recorded: the library's crest (the default) or this user's crest. */
+export interface KnowledgeRemoveOptions extends KnowledgeMutationOptions {
+  readonly scope?: KnowledgeStoreScope;
 }
 
 // In a library (TCRN-CROSS-STORY-469) the marker binds the store to the library id (workspaceId).
@@ -461,6 +511,74 @@ interface UnresolvedScopeEntry {
   readonly projectId: string;
 }
 
+// TCRN-CROSS-SUB-425 (MIN-239 D4): one removal as its event holds it, in the stream of the device that
+// recorded it, after that device's other events. The same schema serves a library's crest and the
+// user crest; it carries no chain position, since it links nothing the chain holds.
+interface CrestRemovalEvent {
+  readonly schemaVersion: typeof CREST_REMOVAL_SCHEMA_VERSION;
+  readonly deviceId: string;
+  readonly sequence: number;
+  readonly occurredAt: string;
+  readonly priorHash: string | null;
+  readonly removal: {
+    readonly id: string;
+    readonly reason: KnowledgeRemovalReason;
+    readonly basis: string;
+    readonly actor: string;
+    readonly supersededBy: string | null;
+  };
+  readonly eventHash: string;
+}
+
+// TCRN-CROSS-SUB-425: the removal a read projects for one card. A removal event gives it, or a card
+// that supersedes this one (knowledge-create --supersedes, and the supersessions every engine before
+// recorded): that removal has no event of its own, so its device, sequence and event hash are null,
+// its basis names the card that superseded it, and its actor is that card's accountable owner, null
+// only when the mark an older engine stored names a card the crest does not hold.
+interface CrestRemoval {
+  readonly id: string;
+  readonly reason: KnowledgeRemovalReason;
+  readonly basis: string;
+  readonly actor: string | null;
+  readonly removedAt: string;
+  readonly supersededBy: string | null;
+  readonly deviceId: string | null;
+  readonly sequence: number | null;
+  readonly eventHash: string | null;
+}
+
+// TCRN-CROSS-SUB-425: the body file one stream event names, and whether the stream still holds it. A
+// scan admits a missing body only for a removed card (admitCrestBodies).
+interface StreamBodyReference {
+  readonly path: string;
+  readonly file: string;
+  readonly bytes: number;
+  readonly present: boolean;
+}
+
+// A body file some device's stream holds for a card: what a writer on that device clears once the
+// card is removed (clearRemovedBodies).
+interface CrestStreamBody {
+  readonly id: string;
+  readonly deviceId: string;
+  readonly path: string;
+  readonly present: boolean;
+}
+
+// What a removed card keeps (knowledge-core-v1.md, "Valid and removed"): its id, external key and
+// subject, the supersession it named, and the removal. Its summary, snippet, links and body are gone.
+interface RemovedCardRecord {
+  readonly id: string;
+  readonly externalKey: string;
+  readonly subject: string;
+  readonly status: "removed";
+  readonly removal: Readonly<Record<string, JsonValue>>;
+  readonly supersedes?: string;
+}
+
+// One record of a crest's index and of a list page: a valid card's metadata, or a removed card.
+type KnowledgeIndexRecord = KnowledgeUnitMetadata | RemovedCardRecord;
+
 interface FileIdentity {
   readonly dev: number | bigint;
   readonly ino: number | bigint;
@@ -505,13 +623,17 @@ interface CrestUnit extends ScannedKnowledgeUnit {
   readonly chain: readonly ChainPosition[] | null;
   // The recordDigest of the metadata as stored, which a scan's projection never changes.
   readonly storedDigest: string;
+  // TCRN-CROSS-SUB-425: the body file a stream event names; null for a record the metadata/body
+  // layout holds and for a stream record written without a body.
+  readonly streamBody: StreamBodyReference | null;
 }
 
 // TCRN-CROSS-SUB-413 (STORY-476 D7): one knowledge id -- one external key, since the id is derived
 // from the key -- that more than one writer wrote with differing metadata, each before it saw the
 // other's. None of its versions is the card: every one stays in its writer's stream and is read
 // explicitly, none is selected by default or recalled while the id is unresolved, and a card whose
-// supersedes names the id replaces every version at once (projectCrestUnits).
+// supersedes names the id replaces every version at once (projectCrestUnits). TCRN-CROSS-SUB-425: that
+// card, or a removal of the id, removes the id with every version, and no read answers them then.
 interface CrestDuplicate {
   readonly id: string;
   readonly externalKey: string;
@@ -547,6 +669,14 @@ interface CrestScan {
   readonly unresolvedScopes: readonly UnresolvedScopeEntry[];
   // The head of every device's crest event stream, in canonical device order.
   readonly eventHeads: readonly CrestEventHead[];
+  // TCRN-CROSS-SUB-425 (MIN-239 D3, D4): the removed cards, by id, each with the removal a read
+  // projects for it (projectRemovals). Their records stay in `units` and `duplicates`, for the writes
+  // that must still see them (an id and external key no card may reuse), and nothing that answers a
+  // card's content reads them.
+  readonly removals: ReadonlyMap<string, CrestRemoval>;
+  // Every body file the crest's device streams name, with its card: what a device clears from its own
+  // stream once the card is removed. Empty for an old-layout store.
+  readonly streamBodies: readonly CrestStreamBody[];
 }
 
 // The user crest, read: no library, no chain head and no links to check a card against beyond
@@ -1578,15 +1708,20 @@ const KNOWLEDGE_INDEX_SCHEMA_VERSION = "tcrn.knowledge-index.v1" as const;
 const KNOWLEDGE_INDEX_PAGES_SCHEMA_VERSION = "tcrn.knowledge-index-pages.v1" as const;
 const KNOWLEDGE_INDEX_PAGE_SCHEMA_VERSION = "tcrn.knowledge-index-page.v1" as const;
 
-function knowledgeIndex(marker: KnowledgeStoreMarker, metadata: readonly KnowledgeUnitMetadata[]): KnowledgeIndex {
+// TCRN-CROSS-SUB-425: a crest's index holds each valid card's metadata and each removed card as it
+// keeps it (indexRecords); an old-layout store's holds every record as its engine wrote it.
+function knowledgeIndex(marker: KnowledgeStoreMarker, metadata: readonly KnowledgeIndexRecord[]): KnowledgeIndex {
   const records = [...metadata]
     .sort((left, right) => compareCanonicalText(left.id, right.id))
     // Existing stores predate STORY-326. Keep the derived view byte-compatible
     // for the default null value while metadata-first reads expose supersedes:null.
-    .map((record) => Object.fromEntries(Object.entries(record).filter(([key]) =>
-      !(key === "supersedes" && record.supersedes === null) &&
-      !(key === "retirement" && record.retirement === null) &&
-      !(key === "expansions" && Object.keys(record.expansions ?? {}).length === 0)))) as unknown as readonly JsonValue[];
+    .map((entry) => {
+      const record = entry as unknown as Readonly<Record<string, unknown>>;
+      return Object.fromEntries(Object.entries(record).filter(([key]) =>
+        !(key === "supersedes" && record.supersedes === null) &&
+        !(key === "retirement" && record.retirement === null) &&
+        !(key === "expansions" && Object.keys((record.expansions ?? {}) as object).length === 0)));
+    }) as unknown as readonly JsonValue[];
   const recordTexts = records.map(canonicalEntryText);
   return {
     document: {
@@ -1944,18 +2079,23 @@ async function scanOldLayoutStore(
   if (!allowStaleIndex && view !== canonicalJson(index.document)) {
     fail("KNOWLEDGE_PARTIAL_STATE", "knowledge index is stale");
   }
+  const cards = units.map(metadataBodyLayoutUnit);
+  // TCRN-CROSS-SUB-425: the store is read, never written, and its index view is its engine's, so the
+  // index above keeps every record as that engine wrote it. A card its engine marked superseded is
+  // removed as every read now answers it; the store holds no removal event.
   return {
     layout: "old-layout", workspaceRoot, storeRoot, metadataRoot, bodiesRoot, viewsRoot, marker, workspace,
-    units: units.map(metadataBodyLayoutUnit), index,
+    units: cards, index,
     linkInvalid,
     danglingWorkLinks,
     unresolvedConflicts: [], duplicates: [], awaitingChain: [], unresolvedScopes: [], eventHeads: [],
+    removals: projectRemovals(cards, [], []), streamBodies: [],
   };
 }
 
 // A record the metadata/body layout holds, as a crest record: its one writer is that layout.
 function metadataBodyLayoutUnit(unit: ScannedKnowledgeUnit): CrestUnit {
-  return { ...unit, lineage: USER_CREST_LEGACY_LINEAGE, event: null, replaces: null, chain: null, storedDigest: recordDigest(unit.metadata) };
+  return { ...unit, lineage: USER_CREST_LEGACY_LINEAGE, event: null, replaces: null, chain: null, storedDigest: recordDigest(unit.metadata), streamBody: null };
 }
 
 // TCRN-CROSS-SUB-414: the digest a later record of the same card names in its `replaces`: the
@@ -2105,16 +2245,21 @@ async function scanLibraryCrest(
     });
     legacyUnits = legacy.units.map(metadataBodyLayoutUnit);
   }
-  const streams = hasEvents
-    ? await readCrestEventStreams(storeRoot, bodyMode, {
-      linkState: workspace,
-      validate: (value, deviceId, filename) => validateLibraryCrestEvent(value, deviceId, filename, workspace),
-      maximumEventBytes: CREST_EVENT_MAXIMUM_BYTES,
-      library: true,
-      hooks: options,
-    })
-    : { units: [], eventCount: 0, heads: [] };
-  const { units, unresolvedConflicts, duplicates } = projectCrestUnits([...legacyUnits, ...streams.units], workspace, true);
+  const reading: CrestStreamReading = {
+    linkState: workspace,
+    validate: (value, deviceId, filename) => validateLibraryCrestEvent(value, deviceId, filename, workspace),
+    maximumEventBytes: CREST_EVENT_MAXIMUM_BYTES,
+    library: true,
+    hooks: options,
+  };
+  const streams = hasEvents ? await readCrestEventStreams(storeRoot, reading) : EMPTY_CREST_EVENT_STREAMS;
+  // TCRN-CROSS-SUB-425: the removals the streams hold, and the supersessions, decide which cards are
+  // removed; only then are the bodies admitted, since a removed card's may be cleared.
+  const projection = projectCrestUnits([...legacyUnits, ...streams.units], streams.removals, workspace, true);
+  const { removals, unresolvedConflicts } = projection;
+  const { admitted, streamBodies } = await admitCrestBodies(streams, removals, bodyMode, reading);
+  const units = projection.units.map((unit) => withAdmittedBody(unit, admitted));
+  const duplicates = projection.duplicates.map((duplicate) => ({ ...duplicate, versions: duplicate.versions.map((version) => withAdmittedBody(version, admitted)) }));
   const awaitingChain: AwaitingChainEntry[] = [];
   for (const unit of streams.units) {
     if (unit.chain === null || unit.event === null || chainHolds(workspace, unit.chain)) continue;
@@ -2134,15 +2279,18 @@ async function scanLibraryCrest(
   // recall until a card supersedes it; a superseded one is not live, and is tolerated as a retired
   // one always was. The strict surfaces still refuse while one is named (assertScopesResolve, and
   // the rebase's offenders). A record whose scope contradicts itself is still refused.
+  // TCRN-CROSS-SUB-425: a removed card is not live either: whatever project or work it named, it is
+  // named in no `unresolvedScopes` and no `danglingWorkLinks`, and no rebase counts it an offender.
   const linkInvalid = new Set<string>();
   const unresolvedScopes: UnresolvedScopeEntry[] = [];
   const dangling = new Map<string, Set<string>>();
   for (const unit of records) {
     const { metadata } = unit;
     if (metadata.lifecycle === "retired" || awaitingIds.has(metadata.id)) continue;
+    const removed = removals.has(metadata.id);
     const offence = scopeOffence(metadata, workspace);
     if (offence === "project") {
-      if (isLiveRecord(metadata)) {
+      if (isLiveRecord(metadata) && !removed) {
         unresolvedScopes.push({ id: metadata.id, ...recordIdentity(unit), projectId: metadata.projectId as string });
         if (rebase) linkInvalid.add(metadata.id);
       }
@@ -2150,6 +2298,7 @@ async function scanLibraryCrest(
       if (!rebase) fail("KNOWLEDGE_LINK_INVALID", `${metadata.id}:scope`);
       linkInvalid.add(metadata.id);
     }
+    if (removed) continue;
     const workIds = danglingLinkedWorkIds(metadata, workspace);
     if (workIds.length > 0) dangling.set(metadata.id, new Set([...(dangling.get(metadata.id) ?? []), ...workIds]));
   }
@@ -2168,13 +2317,14 @@ async function scanLibraryCrest(
     eventHighWaterDigest: workspace.headEventHash ?? marker.eventHighWaterDigest,
     version: marker.version + streams.eventCount,
   };
-  const index = knowledgeIndex(projectedMarker, records.map((unit) => unit.metadata));
+  const index = knowledgeIndex(projectedMarker, indexRecords(records.map((unit) => unit.metadata), removals));
   await projectKnowledgeView(libraryKnowledgeView(storeRoot, options), index);
   return {
     layout: "library", workspaceRoot, storeRoot, metadataRoot, bodiesRoot, viewsRoot: null, marker: projectedMarker, workspace, units, index,
     linkInvalid: [...linkInvalid].sort(compareCanonicalText),
     danglingWorkLinks,
     unresolvedConflicts, duplicates, awaitingChain, unresolvedScopes, eventHeads: streams.heads,
+    removals, streamBodies,
   };
 }
 
@@ -2254,11 +2404,17 @@ async function userCrestParent(location: UserCrestLocation, create: boolean): Pr
   }
 }
 
+// The streams of a crest as a first pass reads them: every card record with the body file its event
+// names, unread (admitCrestBodies reads and checks the bodies once the removed cards are known), and
+// every removal event, each in its stream's order.
 interface CrestEventStreams {
   readonly units: readonly CrestUnit[];
+  readonly removals: readonly CrestRemovalEvent[];
   readonly eventCount: number;
   readonly heads: readonly CrestEventHead[];
 }
+
+const EMPTY_CREST_EVENT_STREAMS: CrestEventStreams = Object.freeze({ units: [], removals: [], eventCount: 0, heads: [] });
 
 // One crest event as its stream holds it, whichever crest: the user crest's (validateUserCrestEvent)
 // or a library's (validateLibraryCrestEvent), whose records can replace one another and carry the
@@ -2355,6 +2511,44 @@ function validateUserCrestEvent(value: Readonly<Record<string, JsonValue>>, devi
   return value as unknown as UserCrestEvent;
 }
 
+// TCRN-CROSS-SUB-425: the bounded sentence a removal gives as its basis.
+function assertRemovalBasis(value: unknown, label: string, reasonCode: KnowledgeReasonCode): asserts value is string {
+  if (typeof value !== "string" || value.trim().length === 0 || Buffer.byteLength(value, "utf8") > KNOWLEDGE_REMOVAL_BASIS_BYTES ||
+    !value.isWellFormed()) {
+    fail(reasonCode, label);
+  }
+}
+
+// TCRN-CROSS-SUB-425 (MIN-239 D3, D4): one removal event, checked against the device stream and file
+// that hold it, whichever crest: its reason, basis, actor and the card that superseded the one it
+// removes (named for the reason "superseded" and for no other). The card it removes need not be
+// delivered yet: the removal waits for it (projectRemovals).
+function validateCrestRemovalEvent(value: Readonly<Record<string, JsonValue>>, deviceId: string, filename: string): CrestRemovalEvent {
+  const where = `${deviceId}/${filename}`;
+  exactFields(value, ["schemaVersion", "deviceId", "sequence", "occurredAt", "priorHash", "removal", "eventHash"], "crest removal event", "KNOWLEDGE_RECORD_INVALID");
+  if (value.schemaVersion !== CREST_REMOVAL_SCHEMA_VERSION || value.deviceId !== deviceId || !/^[a-f0-9]{32}$/u.test(deviceId) ||
+    !Number.isSafeInteger(value.sequence) || Number(value.sequence) < 1 || typeof value.occurredAt !== "string" ||
+    (value.priorHash !== null && (typeof value.priorHash !== "string" || !/^[a-f0-9]{64}$/u.test(value.priorHash))) ||
+    typeof value.eventHash !== "string" || !/^[a-f0-9]{64}$/u.test(value.eventHash) ||
+    filename !== `${String(Number(value.sequence)).padStart(8, "0")}-${value.eventHash}.json`) {
+    fail("KNOWLEDGE_RECORD_INVALID", `${where}: removal event fields`);
+  }
+  exactFields(value.removal, ["id", "reason", "basis", "actor", "supersededBy"], "crest removal", "KNOWLEDGE_RECORD_INVALID");
+  const removal = value.removal as Readonly<Record<string, JsonValue>>;
+  if (typeof removal.id !== "string" || !knowledgeIdPattern.test(removal.id) ||
+    typeof removal.reason !== "string" || !(KNOWLEDGE_REMOVAL_REASONS as readonly string[]).includes(removal.reason) ||
+    (removal.supersededBy !== null && (typeof removal.supersededBy !== "string" || !knowledgeIdPattern.test(removal.supersededBy) || removal.supersededBy === removal.id)) ||
+    (removal.reason === "superseded") !== (removal.supersededBy !== null)) {
+    fail("KNOWLEDGE_RECORD_INVALID", `${where}: removal`);
+  }
+  assertRemovalBasis(removal.basis, `${where}: removal basis`, "KNOWLEDGE_RECORD_INVALID");
+  try { assertActorId(removal.actor); } catch { fail("KNOWLEDGE_RECORD_INVALID", `${where}: removal actor`); }
+  try { assertStrictInstant(value.occurredAt); } catch { fail("KNOWLEDGE_RECORD_INVALID", `${where}: occurredAt`); }
+  const { eventHash, ...unsigned } = value;
+  if (canonicalSha256(unsigned as unknown as JsonValue) !== eventHash) fail("KNOWLEDGE_RECORD_INVALID", `${where}: event hash`);
+  return value as unknown as CrestRemovalEvent;
+}
+
 // How one crest's event streams are read. The user crest (TCRN-CROSS-SUB-310) admits only regular
 // files into a stream and checks every event's body file, whatever the read. A library's crest
 // (TCRN-CROSS-SUB-414) reads its streams as its metadata/body layout was always read: a
@@ -2384,23 +2578,32 @@ async function readLibraryCrestFile(path: string, maximumBytes: number, hooks: K
   return readUserCrestFile(path, maximumBytes, hooks);
 }
 
+// A file of a crest's stream, read the way that crest reads its streams (CrestStreamReading).
+function crestFileReader(reading: CrestStreamReading): (path: string, maximumBytes: number) => Promise<Buffer> {
+  return (path, maximumBytes) => reading.library
+    ? readLibraryCrestFile(path, maximumBytes, reading.hooks)
+    : readUserCrestFile(path, maximumBytes, reading.hooks);
+}
+
 // Every device stream of a crest's events/ directory, in each stream's own order: a stream is a
-// chain of events from sequence 1, each naming the previous one's hash, and each event's body is a
-// file of the same stream written before it. A body no event names is an interrupted write's and
-// is ignored.
-async function readCrestEventStreams(storeRoot: string, bodyMode: "full" | "metadata-only", reading: CrestStreamReading): Promise<CrestEventStreams> {
+// chain of events from sequence 1, each naming the previous one's hash, and each card event's body is
+// a file of the same stream written before it. A body no event names is an interrupted write's and
+// is ignored. TCRN-CROSS-SUB-425: an event is a card's record or a removal (validateCrestRemovalEvent),
+// and this first pass reads the events alone: whether each body the events name is still in its
+// stream is noted here and judged by admitCrestBodies, once the removed cards -- whose bodies a device
+// clears from its own stream -- are known.
+async function readCrestEventStreams(storeRoot: string, reading: CrestStreamReading): Promise<CrestEventStreams> {
   const eventsPath = userCrestEventsPath(storeRoot);
   try {
     await lstat(eventsPath);
   } catch (error) {
-    if ((error as { code?: string }).code === "ENOENT") return { units: [], eventCount: 0, heads: [] };
+    if ((error as { code?: string }).code === "ENOENT") return EMPTY_CREST_EVENT_STREAMS;
     fail("KNOWLEDGE_PATH_INVALID", `${eventsPath}:${String((error as { code?: string }).code ?? error)}`);
   }
   const eventsRoot = await boundDirectory(eventsPath, storeRoot);
-  const readFileOf = (path: string, maximumBytes: number): Promise<Buffer> => reading.library
-    ? readLibraryCrestFile(path, maximumBytes, reading.hooks)
-    : readUserCrestFile(path, maximumBytes, reading.hooks);
+  const readFileOf = crestFileReader(reading);
   const units: CrestUnit[] = [];
+  const removals: CrestRemovalEvent[] = [];
   const heads: CrestEventHead[] = [];
   let eventCount = 0;
   const deviceEntries = await readdir(eventsRoot, { withFileTypes: true });
@@ -2435,34 +2638,36 @@ async function readCrestEventStreams(storeRoot: string, bodyMode: "full" | "meta
         fail("KNOWLEDGE_PARTIAL_STATE", `${deviceId}: event stream has a gap or fork at sequence ${index + 1}`);
       }
       const eventPath = resolve(streamRoot, file.name);
-      const event = reading.validate(parseCanonicalObject(await readFileOf(eventPath, reading.maximumEventBytes), "crest event", "KNOWLEDGE_RECORD_INVALID"), deviceId, file.name);
+      const value = parseCanonicalObject(await readFileOf(eventPath, reading.maximumEventBytes), "crest event", "KNOWLEDGE_RECORD_INVALID");
+      if (value.schemaVersion === CREST_REMOVAL_SCHEMA_VERSION) {
+        const removal = validateCrestRemovalEvent(value, deviceId, file.name);
+        if (removal.sequence !== file.sequence || removal.eventHash !== file.eventHash || removal.priorHash !== priorHash) {
+          fail("KNOWLEDGE_PARTIAL_STATE", `${deviceId}: event chain breaks at sequence ${file.sequence}`);
+        }
+        removals.push(removal);
+        priorHash = removal.eventHash;
+        eventCount += 1;
+        continue;
+      }
+      const event = reading.validate(value, deviceId, file.name);
       if (event.sequence !== file.sequence || event.eventHash !== file.eventHash || event.priorHash !== priorHash) {
         fail("KNOWLEDGE_PARTIAL_STATE", `${deviceId}: event chain breaks at sequence ${file.sequence}`);
       }
-      let body: Buffer | null = null;
-      let bodyPath = eventPath;
-      let readBody = async (): Promise<Buffer> => fail("KNOWLEDGE_RECORD_INVALID", `${event.metadata.id}:body was not admitted`);
-      if (event.body !== null) {
-        const reference = event.body;
-        const referencedPath = resolve(streamRoot, reference.file);
-        if (!bodyNames.has(reference.file)) fail("KNOWLEDGE_PARTIAL_STATE", `${deviceId}/${file.name}: body reference is missing`);
-        if (!reading.library) await assertUserCrestBodyReference(referencedPath, reference.bytes);
-        body = bodyMode === "full" ? await readFileOf(referencedPath, KNOWLEDGE_LIMITS.maximumBodyBytes) : null;
-        if (body !== null) validateMetadataBody(event.metadata, body, reading.linkState);
-        bodyPath = referencedPath;
-        readBody = async () => readFileOf(referencedPath, KNOWLEDGE_LIMITS.maximumBodyBytes);
-      }
+      const streamBody: StreamBodyReference | null = event.body === null
+        ? null
+        : { path: resolve(streamRoot, event.body.file), file: event.body.file, bytes: event.body.bytes, present: bodyNames.has(event.body.file) };
       units.push({
         metadataPath: eventPath,
-        bodyPath,
+        bodyPath: streamBody?.path ?? eventPath,
         metadata: event.metadata,
-        body,
-        readBody,
+        body: null,
+        readBody: async () => fail("KNOWLEDGE_RECORD_INVALID", `${event.metadata.id}:body was not admitted`),
         lineage: deviceId,
         event: { sequence: event.sequence, eventHash: event.eventHash },
         replaces: event.replaces,
         chain: event.chain,
         storedDigest: recordDigest(event.metadata),
+        streamBody,
       });
       priorHash = event.eventHash;
       eventCount += 1;
@@ -2473,13 +2678,126 @@ async function readCrestEventStreams(storeRoot: string, bodyMode: "full" | "meta
     }
   }
   heads.sort((left, right) => compareCanonicalText(left.deviceId, right.deviceId));
-  return { units, eventCount, heads };
+  return { units, removals, eventCount, heads };
+}
+
+// Where a stream record sits: its device and sequence.
+function streamRecordKey(lineage: string, sequence: number): string {
+  return `${lineage}\u0000${sequence}`;
+}
+
+// What the second pass admits for one stream record: its body as the read's mode reads it, and how an
+// explicit read opens it.
+interface AdmittedStreamBody {
+  readonly body: Buffer | null;
+  readonly readBody: () => Promise<Buffer>;
+}
+
+// TCRN-CROSS-SUB-425: the second pass over a crest's streams. Every record of a card that is not
+// removed must still find the body its event names, as every record always had to: a metadata-first
+// read checks that the stream holds it (and, for the user crest, its size), and a full read reads and
+// binds it. A removed card's records need not: its bodies are cleared, device by device, and none is
+// read; an explicit read of one is refused (KNOWLEDGE_CARD_REMOVED). Also answered: every body file
+// the streams name, with its card and device, for the writer that clears its own (clearRemovedBodies).
+async function admitCrestBodies(
+  streams: CrestEventStreams,
+  removed: ReadonlyMap<string, CrestRemoval>,
+  bodyMode: "full" | "metadata-only",
+  reading: CrestStreamReading,
+): Promise<{ readonly admitted: ReadonlyMap<string, AdmittedStreamBody>; readonly streamBodies: readonly CrestStreamBody[] }> {
+  const readFileOf = crestFileReader(reading);
+  const admitted = new Map<string, AdmittedStreamBody>();
+  const streamBodies: CrestStreamBody[] = [];
+  for (const unit of streams.units) {
+    if (unit.event === null) continue;
+    const key = streamRecordKey(unit.lineage, unit.event.sequence);
+    const id = unit.metadata.id;
+    const reference = unit.streamBody;
+    if (reference !== null) streamBodies.push({ id, deviceId: unit.lineage, path: reference.path, present: reference.present });
+    if (removed.has(id)) {
+      admitted.set(key, { body: null, readBody: async () => fail("KNOWLEDGE_CARD_REMOVED", id) });
+      continue;
+    }
+    if (reference === null) continue;
+    if (!reference.present) fail("KNOWLEDGE_PARTIAL_STATE", `${unit.lineage}/${basename(unit.metadataPath)}: body reference is missing`);
+    if (!reading.library) await assertUserCrestBodyReference(reference.path, reference.bytes);
+    const body = bodyMode === "full" ? await readFileOf(reference.path, KNOWLEDGE_LIMITS.maximumBodyBytes) : null;
+    if (body !== null) validateMetadataBody(unit.metadata, body, reading.linkState);
+    admitted.set(key, { body, readBody: async () => readFileOf(reference.path, KNOWLEDGE_LIMITS.maximumBodyBytes) });
+  }
+  return { admitted, streamBodies };
+}
+
+// A projected record with what the second pass admitted for it: its body and body reader.
+function withAdmittedBody(unit: CrestUnit, admitted: ReadonlyMap<string, AdmittedStreamBody>): CrestUnit {
+  if (unit.event === null) return unit;
+  const entry = admitted.get(streamRecordKey(unit.lineage, unit.event.sequence));
+  return entry === undefined ? unit : { ...unit, body: entry.body, readBody: entry.readBody };
 }
 
 interface CrestProjection {
   readonly units: readonly CrestUnit[];
   readonly unresolvedConflicts: readonly (readonly string[])[];
   readonly duplicates: readonly CrestDuplicate[];
+  readonly removals: ReadonlyMap<string, CrestRemoval>;
+}
+
+// Of two removals of one card, the one that stands: the earlier, then one an event holds before one a
+// supersession derives, then the event's device and sequence in canonical order.
+function compareRemovals(left: CrestRemoval, right: CrestRemoval): number {
+  const leftAt = parseStrictInstant(left.removedAt);
+  const rightAt = parseStrictInstant(right.removedAt);
+  if (leftAt !== rightAt) return leftAt < rightAt ? -1 : 1;
+  if ((left.deviceId === null) !== (right.deviceId === null)) return left.deviceId === null ? 1 : -1;
+  return compareCanonicalText(left.deviceId ?? "", right.deviceId ?? "") || (left.sequence ?? 0) - (right.sequence ?? 0);
+}
+
+// TCRN-CROSS-SUB-425 (MIN-239 D3, D4; C-R17-3): the removed cards of a crest and the removal each one
+// carries. A removal event removes the card it names: a card this crest holds, or the versions of an
+// id two writers wrote (every version at once); one naming a card not delivered yet waits for it, as a
+// card whose supersedes names a card not delivered yet does. A card another card supersedes is removed
+// by that supersession -- conflict superseded -- the id of a duplicate once every version is
+// superseded; the mark an older engine stored counts as the supersession it recorded. A record an
+// older engine retired and no card superseded is read as its engine left it. Of several removals of
+// one card, from devices that each removed it before either saw the other's, the earliest stands; it
+// is terminal either way.
+function projectRemovals(cards: readonly CrestUnit[], duplicates: readonly CrestDuplicate[], events: readonly CrestRemovalEvent[]): ReadonlyMap<string, CrestRemoval> {
+  const held = new Map<string, readonly CrestUnit[]>();
+  for (const unit of cards) held.set(unit.metadata.id, [unit]);
+  for (const duplicate of duplicates) held.set(duplicate.id, duplicate.versions);
+  const candidates = new Map<string, CrestRemoval[]>();
+  const add = (removal: CrestRemoval): void => {
+    candidates.set(removal.id, [...(candidates.get(removal.id) ?? []), removal]);
+  };
+  for (const event of events) {
+    if (!held.has(event.removal.id)) continue;
+    add({
+      id: event.removal.id, reason: event.removal.reason, basis: event.removal.basis, actor: event.removal.actor,
+      removedAt: event.occurredAt, supersededBy: event.removal.supersededBy,
+      deviceId: event.deviceId, sequence: event.sequence, eventHash: event.eventHash,
+    });
+  }
+  for (const [id, records] of held) {
+    const successorId = (records[0] as CrestUnit).metadata.extensions.supersededBy;
+    if (successorId === undefined || records.some((record) => record.metadata.extensions.supersededBy === undefined)) continue;
+    const successor = held.get(successorId)?.[0];
+    add({
+      id, reason: "superseded", basis: `superseded by ${successorId}`, actor: successor?.metadata.accountableOwnerId ?? null,
+      removedAt: (records[0] as CrestUnit).metadata.updatedAt, supersededBy: successorId,
+      deviceId: null, sequence: null, eventHash: null,
+    });
+  }
+  const removals = new Map<string, CrestRemoval>();
+  for (const [id, list] of candidates) removals.set(id, [...list].sort(compareRemovals)[0] as CrestRemoval);
+  return removals;
+}
+
+// The removal a card that supersedes `id` makes of it, as the next read derives it (projectRemovals).
+function supersessionRemoval(id: string, successor: KnowledgeUnitMetadata): CrestRemoval {
+  return {
+    id, reason: "superseded", basis: `superseded by ${successor.id}`, actor: successor.accountableOwnerId,
+    removedAt: successor.updatedAt, supersededBy: successor.id, deviceId: null, sequence: null, eventHash: null,
+  };
 }
 
 // Of the cards that replace one card, the one its projected supersededBy names: the latest
@@ -2529,7 +2847,16 @@ function compareCrestRecords(left: CrestUnit, right: CrestUnit): number {
 // not delivered yet is admitted (`toleratePendingSupersedes`): the card is replaced when it arrives.
 // `linkState` is what a projected record is checked against: null for the user crest, whose cards
 // are checked against the card alone; a library's state, whose links the caller checks after the merge.
-function projectCrestUnits(units: readonly CrestUnit[], linkState: WorkspaceState | null, toleratePendingSupersedes: boolean): CrestProjection {
+//
+// TCRN-CROSS-SUB-425 (MIN-239 D3, D4): the removal events of every stream remove the cards they name,
+// and a card another card supersedes is removed by it (projectRemovals). A removed card is in no
+// unresolved pair, and a duplicate whose id is removed is resolved.
+function projectCrestUnits(
+  units: readonly CrestUnit[],
+  removalEvents: readonly CrestRemovalEvent[],
+  linkState: WorkspaceState | null,
+  toleratePendingSupersedes: boolean,
+): CrestProjection {
   const written = new Map<string, CrestUnit[]>();
   for (const unit of units) written.set(unit.metadata.id, [...(written.get(unit.metadata.id) ?? []), unit]);
   const byId = new Map<string, CrestUnit>();
@@ -2598,13 +2925,15 @@ function projectCrestUnits(units: readonly CrestUnit[], linkState: WorkspaceStat
   for (const unit of [...projected, ...duplicates.flatMap((duplicate) => duplicate.versions)]) {
     if (!pendingSupersedes.has(unit.storedDigest)) validateSupersedesLink(unit.metadata, byProjectedId);
   }
+  const removals = projectRemovals(projected, duplicates, removalEvents);
+  const live = (unit: CrestUnit): boolean => isLiveRecord(unit.metadata) && !removals.has(unit.metadata.id);
   const unresolvedConflicts: (readonly string[])[] = [];
   for (let leftIndex = 0; leftIndex < projected.length; leftIndex += 1) {
     const left = projected[leftIndex] as CrestUnit;
-    if (!isLiveRecord(left.metadata)) continue;
+    if (!live(left)) continue;
     for (let rightIndex = leftIndex + 1; rightIndex < projected.length; rightIndex += 1) {
       const right = projected[rightIndex] as CrestUnit;
-      if (!isLiveRecord(right.metadata) || origins.get(left.metadata.id) === origins.get(right.metadata.id)) continue;
+      if (!live(right) || origins.get(left.metadata.id) === origins.get(right.metadata.id)) continue;
       const conflicts = knowledgeConflictHits([left.metadata], right.metadata.subject, [right.metadata.id]).length > 0 ||
         knowledgeConflictHits([right.metadata], left.metadata.subject, [left.metadata.id]).length > 0;
       const acknowledged = left.metadata.extensions.coexistsWith?.includes(right.metadata.id) === true ||
@@ -2612,7 +2941,7 @@ function projectCrestUnits(units: readonly CrestUnit[], linkState: WorkspaceStat
       if (conflicts && !acknowledged) unresolvedConflicts.push([left.metadata.id, right.metadata.id]);
     }
   }
-  return { units: projected, unresolvedConflicts, duplicates };
+  return { units: projected, unresolvedConflicts, duplicates, removals };
 }
 
 // The ids of the cards an unresolved conflict holds out of default selection.
@@ -2621,9 +2950,106 @@ function unresolvedConflictIds(scan: Pick<CrestScan, "unresolvedConflicts">): Re
 }
 
 // TCRN-CROSS-SUB-413: a duplicate is unresolved while one of its versions is still live -- not
-// replaced and not retired. A card whose supersedes names its id resolves it.
-function unresolvedDuplicates(scan: Pick<CrestScan, "duplicates">): readonly CrestDuplicate[] {
-  return scan.duplicates.filter((duplicate) => duplicate.versions.some((version) => isLiveRecord(version.metadata)));
+// replaced and not retired. A card whose supersedes names its id resolves it; TCRN-CROSS-SUB-425: so
+// does a removal of its id, which removes every version.
+function unresolvedDuplicates(scan: Pick<CrestScan, "duplicates" | "removals">): readonly CrestDuplicate[] {
+  return scan.duplicates.filter((duplicate) => !scan.removals.has(duplicate.id) &&
+    duplicate.versions.some((version) => isLiveRecord(version.metadata)));
+}
+
+// TCRN-CROSS-SUB-425: what one removal says, as a removed card, a refusal naming one and a list carry
+// it: why, on what basis, by whom and when, the card that superseded it, and the event that holds it
+// (all three null for a removal a supersession derives).
+function removalDiagnostic(removal: CrestRemoval): Readonly<Record<string, JsonValue>> {
+  return {
+    reason: removal.reason,
+    basis: removal.basis,
+    actor: removal.actor,
+    removedAt: removal.removedAt,
+    supersededBy: removal.supersededBy,
+    deviceId: removal.deviceId,
+    sequence: removal.sequence,
+    eventHash: removal.eventHash,
+  };
+}
+
+// A removed card as it is kept: its id, external key and subject (of its first record, in canonical
+// writer order, for an id two writers wrote), the supersession its own record named, and its removal.
+function removedCardRecord(metadata: KnowledgeUnitMetadata, removal: CrestRemoval): RemovedCardRecord {
+  return {
+    id: metadata.id,
+    externalKey: metadata.externalKey,
+    subject: metadata.subject,
+    status: "removed",
+    removal: removalDiagnostic(removal),
+    ...(metadata.supersedes === null ? {} : { supersedes: metadata.supersedes }),
+  };
+}
+
+// TCRN-CROSS-SUB-425: the records of a crest's index, in canonical id order: every valid card's
+// metadata (a duplicate's versions each as its own record, as before) and one record per removed
+// card, as it is kept. `records` are a crest's records in that order (crestRecords).
+function indexRecords(records: readonly KnowledgeUnitMetadata[], removals: ReadonlyMap<string, CrestRemoval>): readonly KnowledgeIndexRecord[] {
+  const indexed: KnowledgeIndexRecord[] = [];
+  const kept = new Set<string>();
+  for (const metadata of records) {
+    const removal = removals.get(metadata.id);
+    if (removal === undefined) {
+      indexed.push(metadata);
+    } else if (!kept.has(metadata.id)) {
+      kept.add(metadata.id);
+      indexed.push(removedCardRecord(metadata, removal));
+    }
+  }
+  return indexed;
+}
+
+// A crest's index records, from its scan.
+function crestIndexRecords(scan: Pick<CrestScan, "units" | "duplicates" | "removals">): readonly KnowledgeIndexRecord[] {
+  return indexRecords(crestRecords(scan).map((unit) => unit.metadata), scan.removals);
+}
+
+// TCRN-CROSS-SUB-425: the records of a crest's valid cards, in crestRecords order.
+function validCrestRecords(scan: Pick<CrestScan, "units" | "duplicates" | "removals">): readonly CrestUnit[] {
+  return crestRecords(scan).filter((unit) => !scan.removals.has(unit.metadata.id));
+}
+
+// How many records a scan's index holds: what knowledge-validate and the marker read report.
+function indexRecordCount(scan: Pick<CrestScan, "index">): number {
+  return (scan.index.document.records as readonly JsonValue[]).length;
+}
+
+// TCRN-CROSS-SUB-425: what a refusal naming a removed card says to do instead.
+const REMOVED_READ_REMEDY = "the card is removed: read its removal with knowledge-list --status removed";
+const REMOVED_WRITE_REMEDY = "removal is terminal: write a new card with knowledge-create";
+
+// TCRN-CROSS-SUB-425 (MIN-239 D3): refuse a read of a removed card's content, or a write of it, with
+// KNOWLEDGE_CARD_REMOVED, the removal in the details.
+function assertNotRemoved(scan: Pick<CrestScan, "removals">, id: string, remedy: string): void {
+  const removal = scan.removals.get(id);
+  if (removal === undefined) return;
+  fail("KNOWLEDGE_CARD_REMOVED", `${id} is removed (${removal.reason}): ${removal.basis}`, { id, removal: removalDiagnostic(removal), remedy });
+}
+
+// TCRN-CROSS-SUB-425 (MIN-239 D4): clear, from this device's own stream of a crest, the body files of
+// the cards removed once a write lands (`removed`). A device clears only its own stream -- two devices
+// never write one file of a crest -- so a card whose records another device's stream holds is cleared
+// there by that device, at its next write after the removal reaches it. It runs after the write's
+// event is committed, under this machine's lock of the crest; a file it cannot remove is left for the
+// next write and never turns the committed write into a refusal. Answers how many it removed.
+async function clearRemovedBodies(scan: Pick<CrestScan, "streamBodies">, deviceId: string, removed: Iterable<string>): Promise<number> {
+  const ids = new Set(removed);
+  let cleared = 0;
+  for (const entry of scan.streamBodies) {
+    if (entry.deviceId !== deviceId || !entry.present || !ids.has(entry.id)) continue;
+    try {
+      await rm(entry.path);
+      cleared += 1;
+    } catch {
+      // Left for this device's next write.
+    }
+  }
+  return cleared;
 }
 
 // Every record a crest holds -- its cards and every version of every duplicate -- in canonical id
@@ -2708,20 +3134,25 @@ async function scanUserCrest(
     });
     legacyUnits = legacy.units.map(metadataBodyLayoutUnit);
   }
-  const streams = hasEvents
-    ? await readCrestEventStreams(storeRoot, bodyMode, {
-      linkState: null,
-      validate: (value, deviceId, filename) => ({ ...validateUserCrestEvent(value, deviceId, filename), replaces: null, chain: null }),
-      maximumEventBytes: KNOWLEDGE_LIMITS.maximumMetadataBytes + 4_096,
-      library: false,
-      hooks: {},
-    })
-    : { units: [], eventCount: 0, heads: [] };
-  const { units, unresolvedConflicts, duplicates } = projectCrestUnits([...legacyUnits, ...streams.units], null, false);
+  const reading: CrestStreamReading = {
+    linkState: null,
+    validate: (value, deviceId, filename) => ({ ...validateUserCrestEvent(value, deviceId, filename), replaces: null, chain: null }),
+    maximumEventBytes: KNOWLEDGE_LIMITS.maximumMetadataBytes + 4_096,
+    library: false,
+    hooks: {},
+  };
+  const streams = hasEvents ? await readCrestEventStreams(storeRoot, reading) : EMPTY_CREST_EVENT_STREAMS;
+  // TCRN-CROSS-SUB-425: removals decide which cards are removed before any body is admitted.
+  const projection = projectCrestUnits([...legacyUnits, ...streams.units], streams.removals, null, false);
+  const { removals, unresolvedConflicts } = projection;
+  const { admitted, streamBodies } = await admitCrestBodies(streams, removals, bodyMode, reading);
+  const units = projection.units.map((unit) => withAdmittedBody(unit, admitted));
+  const duplicates = projection.duplicates.map((duplicate) => ({ ...duplicate, versions: duplicate.versions.map((version) => withAdmittedBody(version, admitted)) }));
   // TCRN-CROSS-SUB-413: the index view lists every version of a duplicate beside the cards.
   // TCRN-CROSS-SUB-310 R17 (MIN-238 D1): however many body bytes the merged streams hold, the read
   // answers; nothing sums them, so recall never finds the user crest refused for its bodies' size.
-  const records = crestRecords({ units, duplicates }).map((unit) => unit.metadata);
+  // TCRN-CROSS-SUB-425: a removed card is indexed as it is kept.
+  const records = indexRecords(crestRecords({ units, duplicates }).map((unit) => unit.metadata), removals);
   const eventHighWaterDigest = streams.eventCount === 0
     ? marker.eventHighWaterDigest
     : canonicalSha256({ schemaVersion: USER_CREST_EVENT_HEAD_SCHEMA_VERSION, heads: streams.heads } as unknown as JsonValue);
@@ -2734,7 +3165,7 @@ async function scanUserCrest(
   await projectKnowledgeView(userCrestKnowledgeView(storeRoot, location.device, options), index);
   return {
     storeRoot, device: location.device, eventOnly: !legacyLayout, eventHeads: streams.heads, marker: projectedMarker, units, index,
-    unresolvedConflicts, duplicates, awaitingChain: [], unresolvedScopes: [],
+    unresolvedConflicts, duplicates, awaitingChain: [], unresolvedScopes: [], removals, streamBodies,
   };
 }
 
@@ -2918,7 +3349,7 @@ async function recoverUserCrestUnlocked(location: UserCrestLocation, options: Kn
   // (scanUserCrest), not the manifest, and persisting it would bind the manifest to one moment of
   // the streams and refuse every later read. What recovery repairs is this device's derived index
   // and the claim an interrupted writer of the metadata/body layout left; it deletes no body.
-  await writeIndex(userCrestKnowledgeView(scan.storeRoot, location.device, options), scan.marker, crestRecords(scan).map((unit) => unit.metadata));
+  await writeIndex(userCrestKnowledgeView(scan.storeRoot, location.device, options), scan.marker, crestIndexRecords(scan));
   await releaseMutationClaim(scan.storeRoot, boundClaim);
   await scanUserCrest(location, options);
   return {
@@ -2952,7 +3383,7 @@ async function recoverKnowledgeStoreUnlocked(workspaceRoot: string, options: Kno
   // again, and a record that write retired gives back the body it still holds, as that layout's
   // retire did. No event stream is touched.
   const backend = storeBackendFor(scan.storeRoot, options);
-  await writeIndex(libraryKnowledgeView(scan.storeRoot, options), scan.marker, crestRecords(scan).map((unit) => unit.metadata));
+  await writeIndex(libraryKnowledgeView(scan.storeRoot, options), scan.marker, crestIndexRecords(scan));
   let reclaimedRetiredBodies = 0;
   for (const unit of crestRecords(scan)) {
     if (unit.event !== null || unit.metadata.lifecycle !== "retired" || unit.body === null) continue;
@@ -3020,9 +3451,10 @@ function assertSelection(selection: unknown): asserts selection is "default" | "
   }
 }
 
-// TCRN-CROSS-STORY-365: a card the writer replaced stops being a default answer. It is
-// still readable explicitly and still exports; it just no longer competes with the card
-// that supersedes it, which is the whole point of having chosen --supersedes.
+// TCRN-CROSS-STORY-365: a card the writer replaced stops being a default answer: it no longer
+// competes with the card that supersedes it, which is the whole point of having chosen
+// --supersedes. TCRN-CROSS-SUB-425 (MIN-239 D4): it is removed as well, so no read answers its
+// content and its body is cleared; the scan's removals keep it out before this test is reached.
 //
 // TCRN-CROSS-INC-282 (Owner rulings TCRN-CROSS-MIN-146 D1, TCRN-CROSS-MIN-158 D1): the
 // default selection is every active card. It used to require promotionState "promoted",
@@ -3091,9 +3523,8 @@ function buildMetadata(
   // the last way round it, the lifecycle "candidate" write (see assertWritableLifecycle).
   //
   // TCRN-CROSS-STORY-364 (Owner ruling TCRN-CROSS-MIN-160 D3): the write-path hook, on the
-  // one function every write path reaches. knowledge-create calls it directly,
-  // knowledge-capture calls it through captureKnowledgeUnit, and conference-close --distill
-  // calls it once per distilled decision.
+  // one function every write path reaches. knowledge-create calls it directly, and
+  // knowledge-capture calls it through captureKnowledgeUnit.
   //
   // Fail-closed: a workspace that records artifact.language and cannot produce the
   // translation refuses here, with the reason code the caller can act on, rather than
@@ -3159,7 +3590,7 @@ function buildMetadata(
   return metadata;
 }
 
-async function writeIndex(place: KnowledgeViewPlace, marker: KnowledgeStoreMarker, metadata: readonly KnowledgeUnitMetadata[]): Promise<void> {
+async function writeIndex(place: KnowledgeViewPlace, marker: KnowledgeStoreMarker, metadata: readonly KnowledgeIndexRecord[]): Promise<void> {
   await projectKnowledgeView(place, knowledgeIndex(marker, metadata));
 }
 
@@ -3226,7 +3657,7 @@ export async function readKnowledgeStoreMarker(workspaceRoot: string, options: K
     reasonCode: "KNOWLEDGE_STORE_MARKER_READ",
     workspaceId: scan.marker.workspaceId,
     version: scan.marker.version,
-    records: crestRecords(scan).length,
+    records: indexRecordCount(scan),
     indexDigest: scan.index.document.indexDigest ?? "",
     eventHighWaterDigest: scan.marker.eventHighWaterDigest,
     ...(scan.marker.lastSweepAt === undefined ? {} : { lastSweepAt: scan.marker.lastSweepAt }),
@@ -3285,7 +3716,7 @@ export async function validateKnowledgeStore(workspaceRoot: string, options: Kno
     reasonCode: "KNOWLEDGE_STORE_VALID",
     workspaceId: scan.marker.workspaceId,
     version: scan.marker.version,
-    records: crestRecords(scan).length,
+    records: indexRecordCount(scan),
     indexDigest: scan.index.document.indexDigest ?? "",
     eventHighWaterDigest: scan.marker.eventHighWaterDigest,
     // TCRN-CROSS-SUB-310 R17: no `capacity` report. It measured the live card bodies against the
@@ -3341,13 +3772,17 @@ async function createUserCrestEvent(
   // may not reuse. A write whose supersedes names a duplicate's id replaces every version of it at
   // once; it is refused only when every version is retired. TCRN-CROSS-SUB-310 R17 (MIN-238 D1): no
   // total of the crest's bodies admits or refuses it; its own card is held to KNOWLEDGE_LIMITS.
+  // TCRN-CROSS-SUB-425: a removed card is terminal -- no write supersedes it, and no write scores
+  // against it -- while its id and external key stay taken. The card a write supersedes is removed by
+  // that write (conflict superseded).
   const records = crestRecords(scan);
+  if (metadata.supersedes !== null) assertNotRemoved(scan, metadata.supersedes, REMOVED_WRITE_REMEDY);
   const replacedRecords = metadata.supersedes === null ? [] : records.filter((unit) => unit.metadata.id === metadata.supersedes);
   if (metadata.supersedes !== null && replacedRecords.every((unit) => unit.metadata.lifecycle === "retired")) {
     fail("KNOWLEDGE_LINK_INVALID", `${metadata.id}:supersedes:${metadata.supersedes}`);
   }
   const conflicts = [...new Set(knowledgeConflictHits(
-    records.map((unit) => unit.metadata),
+    records.filter((unit) => !scan.removals.has(unit.metadata.id)).map((unit) => unit.metadata),
     metadata.subject,
     metadata.supersedes === null ? [metadata.id] : [metadata.id, metadata.supersedes],
   ))];
@@ -3407,6 +3842,9 @@ async function createUserCrestEvent(
   // The user crest root manifest is initialized once. Event heads carry the changing high-water
   // projection, so no multi-device writer performs a shared manifest update.
   crash("after-marker-write", options.faultAt);
+  // TCRN-CROSS-SUB-425 (MIN-239 D4): this device's stream gives up the bodies of the removed cards,
+  // the one this write superseded among them.
+  await clearRemovedBodies(scan, device.deviceId, [...scan.removals.keys(), ...(metadata.supersedes === null ? [] : [metadata.supersedes])]);
   // TCRN-CROSS-SUB-310 (R14 (d)): the event is committed, so the answer is the write's own: nothing
   // after this point re-reads the crest. An event another device delivered meanwhile cannot turn a
   // committed write into a refusal; the next read reports any conflict it forms. The version is
@@ -3504,7 +3942,7 @@ async function appendLibraryCrestEvent(
 // and failing to write it never fails the write. TCRN-CROSS-SUB-428 (INC-398; R14 (d)): nor does
 // anything else here -- building the index or projecting it -- turn the committed write into a
 // refusal; what fails is left for the next read, which projects the view again.
-async function projectViewAfterWrite(scan: KnowledgeStoreScan, records: readonly KnowledgeUnitMetadata[], options: KnowledgeReadOptions): Promise<void> {
+async function projectViewAfterWrite(scan: KnowledgeStoreScan, records: readonly KnowledgeIndexRecord[], options: KnowledgeReadOptions): Promise<void> {
   try {
     await writeIndex(libraryKnowledgeView(scan.storeRoot, options), { ...scan.marker, version: scan.marker.version + 1 }, records);
   } catch {
@@ -3546,7 +3984,10 @@ async function createLibraryCrestEvent(
   const scan = await mutationAdmissionScan(workspaceRoot, options);
   // The chain the event will name is the one the scan read, so the card's links are held to it.
   validateMetadataLinks(metadata, scan.workspace);
+  // TCRN-CROSS-SUB-425: a removed card is terminal -- no write supersedes it and none scores against
+  // it -- while its id and external key stay taken; the card this write supersedes it removes.
   const records = crestRecords(scan);
+  if (metadata.supersedes !== null) assertNotRemoved(scan, metadata.supersedes, REMOVED_WRITE_REMEDY);
   const replacedRecords = metadata.supersedes === null ? [] : records.filter((unit) => unit.metadata.id === metadata.supersedes);
   if (metadata.supersedes !== null && replacedRecords.every((unit) => unit.metadata.lifecycle === "retired")) {
     fail("KNOWLEDGE_LINK_INVALID", `${metadata.id}:supersedes:${metadata.supersedes}`);
@@ -3555,7 +3996,7 @@ async function createLibraryCrestEvent(
   // it is -- this card replaces those (--supersedes) or stands beside them (--coexist) -- and the
   // refusal hands back the hit list rather than only naming it.
   const conflicts = [...new Set(knowledgeConflictHits(
-    records.map((unit) => unit.metadata),
+    records.filter((unit) => !scan.removals.has(unit.metadata.id)).map((unit) => unit.metadata),
     metadata.subject,
     metadata.supersedes === null ? [metadata.id] : [metadata.id, metadata.supersedes],
   ))];
@@ -3582,12 +4023,17 @@ async function createLibraryCrestEvent(
   if (Buffer.byteLength(canonicalJson(written), "utf8") > KNOWLEDGE_LIMITS.maximumMetadataBytes) {
     fail("KNOWLEDGE_LIMIT_EXCEEDED", "knowledge create budget");
   }
-  // The records once this write lands, which this device's index view projects after it.
-  const projectedMetadata = records.map((unit) => replaced.get(unit) ?? unit.metadata).concat(written);
+  // The records once this write lands, which this device's index view projects after it: the card it
+  // supersedes is removed (TCRN-CROSS-SUB-425).
+  const removalsAfter = metadata.supersedes === null
+    ? scan.removals
+    : new Map<string, CrestRemoval>([...scan.removals, [metadata.supersedes, supersessionRemoval(metadata.supersedes, written)]]);
+  const projectedMetadata = indexRecords(records.map((unit) => replaced.get(unit) ?? unit.metadata).concat(written), removalsAfter);
   if (records.some((unit) => unit.metadata.id === metadata.id || unit.metadata.externalKey === metadata.externalKey)) {
     fail("KNOWLEDGE_DUPLICATE", metadata.id);
   }
-  await appendLibraryCrestEvent(scan, written, body, null, options.faultAt);
+  const head = await appendLibraryCrestEvent(scan, written, body, null, options.faultAt);
+  await clearRemovedBodies(scan, head.deviceId, removalsAfter.keys());
   await projectViewAfterWrite(scan, projectedMetadata, options);
   return {
     schemaVersion: "tcrn.knowledge-create-result.v1",
@@ -3601,10 +4047,168 @@ async function createLibraryCrestEvent(
   };
 }
 
+// TCRN-CROSS-SUB-425: a removal as knowledge-remove admits it, checked before anything is read.
+interface NormalizedRemoval {
+  readonly occurredAt: string;
+  readonly id: string;
+  readonly reason: KnowledgeRemovalReason;
+  readonly basis: string;
+  readonly actor: string;
+  readonly supersededBy: string | null;
+}
+
+function normalizeRemoveInput(input: KnowledgeRemoveInput): NormalizedRemoval {
+  if (typeof input.id !== "string" || !knowledgeIdPattern.test(input.id)) fail("KNOWLEDGE_INPUT_INVALID", `id=${String(input.id)}`);
+  try { assertStrictInstant(input.occurredAt); } catch (error) { fail("KNOWLEDGE_INPUT_INVALID", String(error)); }
+  if (!(KNOWLEDGE_REMOVAL_REASONS as readonly unknown[]).includes(input.reason)) fail("KNOWLEDGE_INPUT_INVALID", `reason=${String(input.reason)}`);
+  if (typeof input.basis !== "string" || input.basis.trim().length === 0 || !input.basis.isWellFormed()) fail("KNOWLEDGE_INPUT_INVALID", "basis");
+  if (Buffer.byteLength(input.basis, "utf8") > KNOWLEDGE_REMOVAL_BASIS_BYTES) fail("KNOWLEDGE_LIMIT_EXCEEDED", "basis");
+  try { assertActorId(input.actor); } catch { fail("KNOWLEDGE_INPUT_INVALID", `actor=${String(input.actor)}`); }
+  const supersededBy = input.supersededBy ?? null;
+  if (input.reason === "superseded") {
+    if (supersededBy === null || !knowledgeIdPattern.test(supersededBy) || supersededBy === input.id) {
+      fail("KNOWLEDGE_INPUT_INVALID", "the reason superseded names the card that supersedes it (supersededBy)");
+    }
+  } else if (supersededBy !== null) {
+    fail("KNOWLEDGE_INPUT_INVALID", `supersededBy is named only for the reason superseded, not ${input.reason}`);
+  }
+  return { occurredAt: input.occurredAt, id: input.id, reason: input.reason, basis: input.basis, actor: input.actor, supersededBy };
+}
+
+// What a crest must hold for a removal to be written: the card, not removed yet, and, for the reason
+// superseded, the card that supersedes it, itself valid. Answers the removed card's first record.
+function assertRemovable(scan: CrestScan, removal: NormalizedRemoval): KnowledgeUnitMetadata {
+  const records = crestRecords(scan);
+  const card = records.find((unit) => unit.metadata.id === removal.id);
+  if (card === undefined) fail("KNOWLEDGE_NOT_FOUND", removal.id);
+  assertNotRemoved(scan, removal.id, REMOVED_WRITE_REMEDY);
+  if (removal.supersededBy !== null) {
+    if (!records.some((unit) => unit.metadata.id === removal.supersededBy)) fail("KNOWLEDGE_LINK_INVALID", `${removal.id}:supersededBy:${removal.supersededBy}`);
+    assertNotRemoved(scan, removal.supersededBy, REMOVED_WRITE_REMEDY);
+  }
+  return card.metadata;
+}
+
+// TCRN-CROSS-SUB-425: append one removal to a device's own stream of a crest, as the event after the
+// head the removal's scan read, created exclusively and never replaced. It carries no body: nothing
+// is written before it, and the event is the commit.
+async function appendCrestRemovalEvent(
+  streamRoot: string,
+  deviceId: string,
+  prior: CrestEventHead | undefined,
+  removal: NormalizedRemoval,
+  faultAt: KnowledgeFaultPoint | undefined,
+): Promise<CrestEventHead> {
+  const sequence = (prior?.sequence ?? 0) + 1;
+  if (!Number.isSafeInteger(sequence)) fail("KNOWLEDGE_LIMIT_EXCEEDED", "crest event sequence");
+  crash("after-body-write", faultAt);
+  const unsigned: Omit<CrestRemovalEvent, "eventHash"> = {
+    schemaVersion: CREST_REMOVAL_SCHEMA_VERSION,
+    deviceId,
+    sequence,
+    occurredAt: removal.occurredAt,
+    priorHash: prior?.eventHash ?? null,
+    removal: { id: removal.id, reason: removal.reason, basis: removal.basis, actor: removal.actor, supersededBy: removal.supersededBy },
+  };
+  const eventHash = canonicalSha256(unsigned as unknown as JsonValue);
+  const event = canonicalJson({ ...unsigned, eventHash } as unknown as JsonValue);
+  await writeImmutableUserCrestFile(resolve(streamRoot, `${String(sequence).padStart(8, "0")}-${eventHash}.json`), event);
+  crash("after-metadata-write", faultAt);
+  crash("after-marker-write", faultAt);
+  return { deviceId, sequence, eventHash };
+}
+
+// The removal a committed removal event makes, as the next read projects it.
+function eventRemoval(removal: NormalizedRemoval, head: CrestEventHead): CrestRemoval {
+  return {
+    id: removal.id, reason: removal.reason, basis: removal.basis, actor: removal.actor, removedAt: removal.occurredAt,
+    supersededBy: removal.supersededBy, deviceId: head.deviceId, sequence: head.sequence, eventHash: head.eventHash,
+  };
+}
+
+// A committed removal's answer: the card as it is now kept, the version the write's scan projected
+// advanced by this event, and how many body files this device's own stream gave up.
+function removalAnswer(
+  card: KnowledgeUnitMetadata,
+  removal: CrestRemoval,
+  version: number,
+  clearedBodies: number,
+  disclosure: Readonly<Record<string, JsonValue>>,
+): Readonly<Record<string, JsonValue>> {
+  return {
+    schemaVersion: "tcrn.knowledge-remove-result.v1",
+    reasonCode: "KNOWLEDGE_UNIT_REMOVED",
+    ...disclosure,
+    id: card.id,
+    externalKey: card.externalKey,
+    subject: card.subject,
+    removal: removalDiagnostic(removal),
+    version,
+    clearedBodies,
+  };
+}
+
+/**
+ * TCRN-CROSS-SUB-425 (TCRN-CROSS-STORY-514 R1, R3; MIN-239 D3, D4, D5): remove one card, from the
+ * library's crest or, with `options.scope` "user", from this user's crest. The removal names its
+ * reason -- superseded (with the card that supersedes it), invalid, or duplicate (it repeats a work
+ * item or a decision) -- its basis and its actor, and it is terminal: a removed card is refused a
+ * second removal, a supersede, a re-verification, a policy update, an article refresh, and every read
+ * of its snippet or body; there is no verb that restores it. It is written as a removal event in this
+ * device's stream of the crest, after the whole crest is read, under this machine's lock of it; no
+ * event file is deleted, and this device's stream then gives up the bodies of every removed card it
+ * holds (clearRemovedBodies). Another device reads the removal once the crest delivers it, and clears
+ * its own stream's bodies at its next write. A committed removal is answered from its own scan.
+ */
+export async function removeKnowledgeUnit(workspaceRoot: string, input: KnowledgeRemoveInput, options: KnowledgeRemoveOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
+  assertStoreScope(options.scope);
+  const removal = normalizeRemoveInput(input);
+  if (options.scope === "user") {
+    const location = await locateUserCrest();
+    if (!(await userCrestInitialized(location.root))) fail("KNOWLEDGE_NOT_FOUND", removal.id);
+    return withUserCrestLock(location, () => removeUserCrestCard(location, removal, options));
+  }
+  return withCrestWriteLock(workspaceRoot, () => removeLibraryCrestCard(workspaceRoot, removal, options));
+}
+
+async function removeLibraryCrestCard(workspaceRoot: string, removal: NormalizedRemoval, options: KnowledgeRemoveOptions): Promise<Readonly<Record<string, JsonValue>>> {
+  await assertKnowledgeWritable(resolve(workspaceRoot));
+  const scan = await mutationAdmissionScan(workspaceRoot, options);
+  const card = assertRemovable(scan, removal);
+  const stream = await libraryCrestStream(scan);
+  const head = await appendCrestRemovalEvent(stream.streamRoot, stream.deviceId, stream.prior, removal, options.faultAt);
+  const removed = eventRemoval(removal, head);
+  const removalsAfter = new Map<string, CrestRemoval>([...scan.removals, [removal.id, removed]]);
+  const clearedBodies = await clearRemovedBodies(scan, head.deviceId, removalsAfter.keys());
+  await projectViewAfterWrite(scan, indexRecords(crestRecords(scan).map((unit) => unit.metadata), removalsAfter), options);
+  return removalAnswer(card, removed, scan.marker.version + 1, clearedBodies, {});
+}
+
+async function removeUserCrestCard(location: UserCrestLocation, removal: NormalizedRemoval, options: KnowledgeRemoveOptions): Promise<Readonly<Record<string, JsonValue>>> {
+  const scan = await scanUserCrest(location, options, false, "metadata-only");
+  const card = assertRemovable(scan, removal);
+  const { eventsRoot } = await ensureUserCrestEventRoot(location);
+  const { device } = await readOrCreateDevice({ home: location.device });
+  const streamPath = resolve(eventsRoot, device.deviceId);
+  try {
+    await mkdir(streamPath, { mode: 0o700 });
+  } catch (error) {
+    if ((error as { code?: string }).code !== "EEXIST") fail("KNOWLEDGE_PATH_INVALID", `${streamPath}:${String(error)}`);
+  }
+  const streamRoot = await boundDirectory(streamPath, eventsRoot);
+  const prior = scan.eventHeads.find((head) => head.deviceId === device.deviceId);
+  const head = await appendCrestRemovalEvent(streamRoot, device.deviceId, prior, removal, options.faultAt);
+  const removed = eventRemoval(removal, head);
+  const clearedBodies = await clearRemovedBodies(scan, device.deviceId, [...scan.removals.keys(), removal.id]);
+  return removalAnswer(card, removed, scan.marker.version + 1, clearedBodies, USER_CREST_DISCLOSURE);
+}
+
 // TCRN-CROSS-SUB-414: the card a re-verification, a policy update or an article refresh writes
 // again: the one card of that id. An id two writers wrote before either saw the other's is not one
 // card, and is refused (KNOWLEDGE_DUPLICATE) until a card that supersedes it resolves it.
+// TCRN-CROSS-SUB-425: a removed card is not written again, whatever removed it (KNOWLEDGE_CARD_REMOVED).
 function libraryCrestCard(scan: KnowledgeStoreScan, id: string): CrestUnit {
+  assertNotRemoved(scan, id, REMOVED_WRITE_REMEDY);
   if (scan.duplicates.some((duplicate) => duplicate.id === id)) fail("KNOWLEDGE_DUPLICATE", id);
   const unit = scan.units.find((entry) => entry.metadata.id === id);
   if (unit === undefined) fail("KNOWLEDGE_NOT_FOUND", id);
@@ -3815,9 +4419,15 @@ async function rebaseKnowledgeStoreUnlocked(workspaceRoot: string, input: {
 
 interface NormalizedListQuery {
   readonly selection: "default" | "all";
+  readonly status: KnowledgeStatusFilter;
   readonly search: string | undefined;
   readonly limit: number;
   readonly offset: number;
+}
+
+// TCRN-CROSS-SUB-425: a status filter a read names, "valid" when it names none.
+function assertStatusFilter(status: unknown): asserts status is KnowledgeStatusFilter {
+  if (!(KNOWLEDGE_STATUS_FILTERS as readonly unknown[]).includes(status)) fail("KNOWLEDGE_SELECTION_INVALID", `status=${String(status)}`);
 }
 
 // WSC-4: the metadata selection behind listKnowledgeMetadata. (The WSC-7 context-route
@@ -3826,6 +4436,8 @@ function normalizeListQuery(query: KnowledgeListQuery): NormalizedListQuery {
   assertEvaluationInstant(query.at);
   const selection = query.selection ?? "default";
   assertSelection(selection);
+  const status = query.status ?? "valid";
+  assertStatusFilter(status);
   let search: string | undefined;
   if (query.search !== undefined) {
     if (typeof query.search !== "string" || query.search.length === 0 || query.search.length > 256 || !query.search.isWellFormed()) {
@@ -3849,7 +4461,7 @@ function normalizeListQuery(query: KnowledgeListQuery): NormalizedListQuery {
     }
     offset = query.offset;
   }
-  return { selection, search, limit, offset };
+  return { selection, status, search, limit, offset };
 }
 
 function occurrenceCount(text: string, token: string): number {
@@ -4055,6 +4667,9 @@ export async function listKnowledgeMetadata(workspaceRoot: string, query: Knowle
   return mergedCrestList(scan, query, normalized, trailingDisclosure(scan));
 }
 
+// TCRN-CROSS-SUB-425 (MIN-239 D6): a list answers the valid cards unless it asks for another status.
+// `selection` chooses among the valid ones as it always did; the removed ones, asked for with status
+// "removed" or "all", are each answered as it is kept, whatever the selection.
 function mergedCrestList(
   scan: CrestScan,
   query: KnowledgeListQuery,
@@ -4062,13 +4677,49 @@ function mergedCrestList(
   disclosure: Readonly<Record<string, JsonValue>>,
 ): Readonly<Record<string, JsonValue>> {
   const withheld = withheldCardIds(scan);
-  const matched = selectKnowledgeMetadata({ units: crestRecords(scan) }, query, normalized, true)
-    .filter((metadata) => normalized.selection !== "default" || !withheld.has(metadata.id));
+  const valid = normalized.status === "removed"
+    ? []
+    : selectKnowledgeMetadata({ units: crestRecords(scan).filter((unit) => !scan.removals.has(unit.metadata.id)) }, query, normalized, true)
+      .filter((metadata) => normalized.selection !== "default" || !withheld.has(metadata.id));
+  const removed = normalized.status === "valid" ? [] : selectRemovedCards(scan, query, normalized);
+  const matched = normalized.status === "all" ? rankedRecords(valid, removed, normalized.search) : [...valid, ...removed];
   return knowledgeListAnswer(matched, query, normalized, { ...disclosure, ...mergedCrestDisclosure(scan) });
 }
 
+// A removed card's relevance to a search: its subject is all it keeps, weighted as a subject is.
+function removedRelevanceScore(record: RemovedCardRecord, search: string | undefined): number {
+  if (search === undefined) return 0;
+  const subject = record.subject.toLowerCase();
+  return relevanceTokens(search).reduce((score, token) => score + occurrenceCount(subject, token) * 8, 0);
+}
+
+// TCRN-CROSS-SUB-425: the removed cards a list selects, as each is kept, most relevant first and then
+// in canonical id order. A removed card keeps no project, role, category, kind, tag or freshness, so
+// a list filtered by any of those selects none of them; a search matches its subject alone.
+function selectRemovedCards(
+  scan: Pick<CrestScan, "units" | "duplicates" | "removals">,
+  query: KnowledgeListQuery,
+  normalized: NormalizedListQuery,
+): readonly RemovedCardRecord[] {
+  if (query.projectId || query.roleScope || query.category || query.kind || query.tag || query.freshness || query.promotionState) return [];
+  const { search } = normalized;
+  const kept = indexRecords(crestRecords(scan).filter((unit) => scan.removals.has(unit.metadata.id)).map((unit) => unit.metadata), scan.removals) as readonly RemovedCardRecord[];
+  return kept
+    .filter((record) => search === undefined || relevanceTokens(search).some((token) => record.subject.toLowerCase().includes(token)))
+    .sort((left, right) => removedRelevanceScore(right, search) - removedRelevanceScore(left, search) || compareCanonicalText(left.id, right.id));
+}
+
+// Valid and removed cards in one list: most relevant first, then in canonical id order.
+function rankedRecords(valid: readonly KnowledgeUnitMetadata[], removed: readonly RemovedCardRecord[], search: string | undefined): readonly KnowledgeIndexRecord[] {
+  const scored = [
+    ...valid.map((record) => ({ record: record as KnowledgeIndexRecord, score: knowledgeRelevanceScore(record, search) })),
+    ...removed.map((record) => ({ record: record as KnowledgeIndexRecord, score: removedRelevanceScore(record, search) })),
+  ];
+  return scored.sort((left, right) => right.score - left.score || compareCanonicalText(left.record.id, right.record.id)).map((entry) => entry.record);
+}
+
 function knowledgeListAnswer(
-  matched: readonly KnowledgeUnitMetadata[],
+  matched: readonly KnowledgeIndexRecord[],
   query: KnowledgeListQuery,
   normalized: NormalizedListQuery,
   disclosure: Readonly<Record<string, JsonValue>>,
@@ -4081,6 +4732,8 @@ function knowledgeListAnswer(
     reasonCode: "KNOWLEDGE_LIST_READY",
     ...disclosure,
     selection: normalized.selection,
+    // TCRN-CROSS-SUB-425: which cards the list answered, "valid" unless the caller asked otherwise.
+    status: normalized.status,
     at: query.at,
     total: matched.length,
     offset: normalized.offset,
@@ -4105,7 +4758,7 @@ function assertKnowledgeReadId(id: string): void {
 // TCRN-CROSS-SUB-413: a read of a duplicate's id carries at its top the entry knowledge-list names
 // while the duplicate is unresolved, and nothing more once a card has superseded it.
 function duplicateReadDisclosure(duplicate: CrestDuplicate, disclosure: Readonly<Record<string, JsonValue>>): Readonly<Record<string, JsonValue>> {
-  return unresolvedDuplicates({ duplicates: [duplicate] }).length === 0
+  return unresolvedDuplicates({ duplicates: [duplicate], removals: new Map() }).length === 0
     ? disclosure
     : { ...disclosure, unresolvedDuplicates: [duplicateDiagnostic(duplicate)] };
 }
@@ -4129,7 +4782,10 @@ export async function readKnowledgeSnippet(workspaceRoot: string, id: string, op
   return crestSnippetAnswer(scan, id, trailingDisclosure(scan));
 }
 
+// TCRN-CROSS-SUB-425 (C-R17-3): a removed card has no snippet to give: the read is refused, naming the
+// removal (KNOWLEDGE_CARD_REMOVED).
 function crestSnippetAnswer(scan: CrestScan, id: string, disclosure: Readonly<Record<string, JsonValue>>): Readonly<Record<string, JsonValue>> {
+  assertNotRemoved(scan, id, REMOVED_READ_REMEDY);
   const awaiting = awaitingReadDisclosure(scan, id);
   const duplicate = scan.duplicates.find((entry) => entry.id === id);
   if (duplicate === undefined) return knowledgeSnippetAnswer(id, scan.units, { ...disclosure, ...awaiting });
@@ -4182,6 +4838,8 @@ export async function readKnowledgeBody(workspaceRoot: string, id: string, optio
   return crestBodyAnswer(scan, id, options, storeBackendFor(scan.storeRoot, options), scan.workspace, trailingDisclosure(scan));
 }
 
+// TCRN-CROSS-SUB-425 (C-R17-3): a removed card's body is cleared, and an explicit read of it is refused
+// before any body file is opened, naming the removal (KNOWLEDGE_CARD_REMOVED).
 async function crestBodyAnswer(
   scan: CrestScan,
   id: string,
@@ -4190,6 +4848,7 @@ async function crestBodyAnswer(
   linkState: WorkspaceState | null,
   disclosure: Readonly<Record<string, JsonValue>>,
 ): Promise<Readonly<Record<string, JsonValue>>> {
+  assertNotRemoved(scan, id, REMOVED_READ_REMEDY);
   const awaiting = awaitingReadDisclosure(scan, id);
   const duplicate = scan.duplicates.find((entry) => entry.id === id);
   if (duplicate === undefined) return knowledgeBodyAnswer(id, scan.units, options, backend, linkState, { ...disclosure, ...awaiting });
@@ -4251,7 +4910,8 @@ async function knowledgeBodyAnswer(
 export async function evaluateKnowledgeFreshness(workspaceRoot: string, at: string, options: KnowledgeReadOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
   assertEvaluationInstant(at);
   const scan = await scanKnowledgeStore(workspaceRoot, options, false, "metadata-only");
-  const records = crestRecords(scan).map((unit) => ({
+  // TCRN-CROSS-SUB-425: a removed card keeps no freshness to evaluate; the valid cards are evaluated.
+  const records = validCrestRecords(scan).map((unit) => ({
     id: unit.metadata.id,
     state: computeFreshness(unit.metadata, at),
     lastVerified: unit.metadata.lastVerified,
@@ -4276,7 +4936,8 @@ export async function evaluateKnowledgeFreshness(workspaceRoot: string, at: stri
 export async function checkKnowledgeSources(workspaceRoot: string, options: KnowledgeReadOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
   const scan = await scanKnowledgeStore(workspaceRoot, { ...options, allowTrailing: options.allowTrailing ?? true }, false, "metadata-only");
   const reports: Array<Record<string, JsonValue>> = [];
-  for (const unit of crestRecords(scan)) {
+  // TCRN-CROSS-SUB-425: a removed card keeps no sources to check; the valid cards are checked.
+  for (const unit of validCrestRecords(scan)) {
     const references = unit.metadata.sourceReferences.filter(sourceReferenceIsFile);
     if (references.length === 0) {
       reports.push({ id: unit.metadata.id, status: "uncheckable", sourceReferences: unit.metadata.sourceReferences as unknown as JsonValue, expectedDigest: unit.metadata.sourceDigest, action: "none" });
@@ -4354,8 +5015,10 @@ async function reverifyKnowledgeUnitUnlocked(workspaceRoot: string, input: {
   const metadata: KnowledgeUnitMetadata = { ...unit.metadata, lastVerified: input.occurredAt, freshnessState: "fresh", revision: unit.metadata.revision + 1, updatedAt: input.occurredAt };
   const body = await crestRecordBody(scan, unit, options);
   validateMetadataBody(validateExistingMetadataShape(metadata, scan.workspace), body, scan.workspace);
-  await appendLibraryCrestEvent(scan, metadata, body, unit, options.faultAt);
-  await projectViewAfterWrite(scan, crestRecords(scan).map((entry) => entry === unit ? metadata : entry.metadata), options);
+  const head = await appendLibraryCrestEvent(scan, metadata, body, unit, options.faultAt);
+  // TCRN-CROSS-SUB-425: every write clears this device's bodies of removed cards.
+  await clearRemovedBodies(scan, head.deviceId, scan.removals.keys());
+  await projectViewAfterWrite(scan, indexRecords(crestRecords(scan).map((entry) => entry === unit ? metadata : entry.metadata), scan.removals), options);
   return {
     schemaVersion: "tcrn.knowledge-reverify-result.v1",
     reasonCode: "KNOWLEDGE_REVERIFIED",
@@ -4430,8 +5093,10 @@ async function refreshKnowledgeArticleUnlocked(
   if (!secondRead.equals(articleBytes)) fail("KNOWLEDGE_SOURCE_CHANGED", workspaceArticle.file);
   // The records once the refreshed card lands, which this device's index view projects after it; no
   // total of the crest's bodies is checked (TCRN-CROSS-SUB-310 R17, MIN-238 D1).
-  const projectedMetadata = crestRecords(scan).map((entry) => entry === unit ? metadata : entry.metadata);
-  await appendLibraryCrestEvent(scan, metadata, body, unit, options.faultAt);
+  const projectedMetadata = indexRecords(crestRecords(scan).map((entry) => entry === unit ? metadata : entry.metadata), scan.removals);
+  const head = await appendLibraryCrestEvent(scan, metadata, body, unit, options.faultAt);
+  // TCRN-CROSS-SUB-425: every write clears this device's bodies of removed cards.
+  await clearRemovedBodies(scan, head.deviceId, scan.removals.keys());
   await projectViewAfterWrite(scan, projectedMetadata, options);
   return {
     schemaVersion: "tcrn.knowledge-article-refresh-result.v1",
@@ -4500,8 +5165,10 @@ async function updateKnowledgeStalenessPolicyUnlocked(workspaceRoot: string, inp
   const validated = validateExistingMetadataShape(metadata, scan.workspace);
   const body = unit.metadata.lifecycle === "retired" ? null : await crestRecordBody(scan, unit, options);
   if (body !== null) validateMetadataBody(validated, body, scan.workspace);
-  await appendLibraryCrestEvent(scan, metadata, body, unit, options.faultAt);
-  await projectViewAfterWrite(scan, crestRecords(scan).map((entry) => entry === unit ? metadata : entry.metadata), options);
+  const head = await appendLibraryCrestEvent(scan, metadata, body, unit, options.faultAt);
+  // TCRN-CROSS-SUB-425: every write clears this device's bodies of removed cards.
+  await clearRemovedBodies(scan, head.deviceId, scan.removals.keys());
+  await projectViewAfterWrite(scan, indexRecords(crestRecords(scan).map((entry) => entry === unit ? metadata : entry.metadata), scan.removals), options);
   return {
     schemaVersion: "tcrn.knowledge-policy-result.v1",
     reasonCode: "KNOWLEDGE_POLICY_UPDATED",
@@ -4530,7 +5197,8 @@ export async function exportKnowledgeCheckpoint(workspaceRoot: string, at: strin
   assertScopesResolve(scan);
   assertChainHoldsCrest(scan);
   const withheld = withheldCardIds(scan);
-  const records = scan.units.map((unit) => unit.metadata).filter((metadata) => !withheld.has(metadata.id) && isDefaultSelectable(metadata, at));
+  // TCRN-CROSS-SUB-425: a removed card is in no checkpoint.
+  const records = scan.units.map((unit) => unit.metadata).filter((metadata) => !withheld.has(metadata.id) && !scan.removals.has(metadata.id) && isDefaultSelectable(metadata, at));
   records.sort((left, right) => compareCanonicalText(left.id, right.id));
   return canonicalJson({
     schemaVersion: "tcrn.knowledge-checkpoint.v1",

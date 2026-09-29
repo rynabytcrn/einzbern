@@ -160,7 +160,9 @@ export async function promptRecallContext(request: PromptRecallRequest): Promise
   if (library === null) return null;
   const at = request.at ?? currentInstant();
   const state = await materializeLibrary(library.libraryPath);
-  const { cards, digest } = await readRecallCards(library.libraryPath, { at, allowTrailing: true });
+  // TCRN-CROSS-SUB-425 (MIN-239 D6): the prompt hook recalls valid cards only, always; no prompt asks
+  // it for a removed one.
+  const { cards, digest } = await readRecallCards(library.libraryPath, { at, allowTrailing: true, status: "valid" });
   const tau = numericSetting(state, "retrieval.tau", (value) => Number.isFinite(value) && value >= 0);
   const scopeExcerptBytes = numericSetting(state, "retrieval.scopeExcerptBytes", (value) => Number.isSafeInteger(value) && value > 0);
   const perPromptBytes = numericSetting(state, "injection.perPromptBytes", (value) => Number.isSafeInteger(value) && value > 0);

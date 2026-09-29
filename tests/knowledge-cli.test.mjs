@@ -130,7 +130,7 @@ test("476-AC1 (CLI): a card written without a lifecycle flag is recalled at once
   assert.equal((await recallCli(workspace, 17, "okapi stripe survey")).records.find((record) => record.id === captured.id)?.scope, "project");
 });
 
-test("476-AC2 (CLI): a conflicting card is refused until it supersedes the older one, which then leaves default retrieval", async (context) => {
+test("476-AC2, SUB-425 (CLI): a conflicting card is refused until it supersedes the older one, which is then removed and leaves default retrieval", async (context) => {
   const base = await device(context);
   const { workspace } = await library(base, "beta");
   const older = await cli(createArgs(workspace, 20, {
@@ -153,7 +153,12 @@ test("476-AC2 (CLI): a conflicting card is refused until it supersedes the older
   const listed = await cli(["knowledge-list", "--workspace", workspace, "--at", at(24)]);
   assert.deepEqual(listed.records.map((record) => record.id), [replaced.id], "nor listed by default");
   const all = await cli(["knowledge-list", "--workspace", workspace, "--at", at(24), "--selection", "all"]);
-  assert.equal(all.records.find((record) => record.id === older.id)?.extensions.supersededBy, replaced.id, "it is kept, marked, and read with --selection all");
+  assert.equal(all.records.some((record) => record.id === older.id), false, "nor with --selection all, which chooses among valid cards");
+  // TCRN-CROSS-SUB-425 (MIN-239 D4, D6): it is removed, conflict superseded, and --status removed reads
+  // what it keeps.
+  const removed = await cli(["knowledge-list", "--workspace", workspace, "--at", at(24), "--status", "removed"]);
+  assert.deepEqual(removed.records.map((record) => [record.id, record.status, record.removal.reason, record.removal.supersededBy]), [[older.id, "removed", "superseded", replaced.id]]);
+  assert.equal((await refusal(["knowledge-body", "--workspace", workspace, "--id", older.id, "--at", at(24)]))?.reasonCode, "KNOWLEDGE_CARD_REMOVED");
 
   // A knowledge batch answers every card record it wrote the same way.
   const batch = join(base, "knowledge-batch.json");

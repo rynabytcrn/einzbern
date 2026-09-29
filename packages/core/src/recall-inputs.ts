@@ -19,7 +19,7 @@
 
 import type { WorkRecord } from "../../protocol/src/index.js";
 import { listKnowledgeMetadata } from "./knowledge-core.js";
-import type { KnowledgeStoreScope } from "./knowledge-core.js";
+import type { KnowledgeStatusFilter, KnowledgeStoreScope } from "./knowledge-core.js";
 import { expansionsText } from "./knowledge-language.js";
 import { minutesView } from "./minutes.js";
 import type { RecallHit, RecallInputs, RecallKnowledgeInput, RecallMinutesInput, RecallScope, RecallWorkInput } from "./recall.js";
@@ -196,6 +196,9 @@ export interface RecallCardRead {
   readonly userCrestDegraded: RecallUserCrestDegraded | null;
   // TCRN-CROSS-SUB-414: null when the library's crest withheld no card, or its read was refused.
   readonly projectCrestDegraded: RecallProjectCrestDegraded | null;
+  // TCRN-CROSS-SUB-425: the ids of the removed cards among `cards`, which a read asked for with status
+  // "removed" or "all"; empty for the valid cards every other read gives.
+  readonly removedCardIds: readonly string[];
 }
 
 function conflictPairs(value: unknown): readonly (readonly string[])[] {
@@ -299,6 +302,10 @@ function projectCrestDegradation(read: RecallCardStoreRead): RecallProjectCrestD
 export interface RecallCardReadOptions {
   readonly at: string;
   readonly allowTrailing?: boolean;
+  // TCRN-CROSS-SUB-425 (MIN-239 D6): which cards to read from each store. Left out, the valid ones;
+  // "removed" or "all" only when a user asked for them (the recall verb's --status). The prompt hook
+  // always reads the valid ones.
+  readonly status?: KnowledgeStatusFilter;
 }
 
 /**
@@ -314,18 +321,25 @@ export interface RecallCardReadOptions {
  * TCRN-CROSS-SUB-414: the library's crest withholds its pairs, its duplicates' versions and its cards
  * awaiting chain events the same way, and `projectCrestDegraded` names them in the same form; R16
  * adds its cards whose project the chain no longer holds, under `unresolvedScopes`.
+ * TCRN-CROSS-SUB-425 (MIN-239 D6): only valid cards are read, unless `options.status` asks for the
+ * removed ones too; a removed card is indexed by what it keeps, its subject, and its id is named in
+ * `removedCardIds`.
  */
 export async function readRecallCards(workspaceRoot: string, options: RecallCardReadOptions): Promise<RecallCardRead> {
+  const removedCardIds: string[] = [];
   const read = async (scope: KnowledgeStoreScope): Promise<{ readonly cards: readonly RecallKnowledgeInput[]; readonly store: RecallCardStoreRead }> => {
     try {
       const answer = await listKnowledgeMetadata(workspaceRoot, {
         at: options.at,
         ...(options.allowTrailing === undefined ? {} : { allowTrailing: options.allowTrailing }),
+        ...(options.status === undefined ? {} : { status: options.status }),
         includeExplicitOnly: true,
         limit: 1_048_576,
         ...(scope === "user" ? { scope } : {}),
       });
-      const cards = ((answer["records"] ?? []) as readonly Readonly<Record<string, unknown>>[]).map((record) => recallCardFromRecord(record, scope));
+      const records = (answer["records"] ?? []) as readonly Readonly<Record<string, unknown>>[];
+      for (const record of records) if (record["status"] === "removed") removedCardIds.push(String(record["id"] ?? ""));
+      const cards = records.map((record) => recallCardFromRecord(record, scope));
       return {
         cards,
         store: {
@@ -352,6 +366,7 @@ export async function readRecallCards(workspaceRoot: string, options: RecallCard
     digest: `${project.store.digest}:${user.store.digest}`,
     userCrestDegraded: userCrestDegradation(user.store),
     projectCrestDegraded: projectCrestDegradation(project.store),
+    removedCardIds,
   };
 }
 
@@ -421,14 +436,15 @@ function capBytes(text: string, maximumBytes: number): string {
 /**
  * One hit as one line: `[Story done] title · externalKey · id · Epic title ‹ Initiative title` for a
  * work record, `[纪要 key] title · D1 first decision …` for minutes, `[卡片] subject · id` for a card,
- * and `[卡片 用户] subject · id` for a card from the user's crest (TCRN-CROSS-STORY-476 R5). A line is
- * at most RECALL_LINE_MAX_BYTES and never holds a line break.
+ * and `[卡片 用户] subject · id` for a card from the user's crest (TCRN-CROSS-STORY-476 R5); a card hit
+ * whose status is "removed" -- only a recall that asked for removed cards has one (TCRN-CROSS-SUB-425)
+ * -- is marked `已移除`. A line is at most RECALL_LINE_MAX_BYTES and never holds a line break.
  */
 export function formatRecallLine(hit: RecallHit): string {
   const flat = (text: string): string => text.replace(/\s+/gu, " ").trim();
   let line: string;
   if (hit.kind === "card") {
-    line = `[卡片${hit.scope === "user" ? " 用户" : ""}] ${flat(hit.title)} · ${hit.id}`;
+    line = `[卡片${hit.scope === "user" ? " 用户" : ""}${hit.status === "removed" ? " 已移除" : ""}] ${flat(hit.title)} · ${hit.id}`;
   } else if (hit.kind === "minutes") {
     line = `[纪要 ${hit.key}] ${flat(hit.title)}${hit.lead.length > 0 ? ` · ${flat(hit.lead)}` : ""}`;
   } else {

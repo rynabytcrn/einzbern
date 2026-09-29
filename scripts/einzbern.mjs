@@ -21,7 +21,7 @@ try {
   // (TCRN-CROSS-STORY-478). A knowledge write refused as a possible conflict names the cards it
   // conflicts with (TCRN-CROSS-STORY-476, TCRN-CROSS-SUB-311); no knowledge write is refused for a
   // body-byte budget any more (TCRN-CROSS-SUB-310 R17), so no current refusal carries bodyBytes or
-  // limit. A Story refused at done names every
+  // a numeric limit. A Story refused at done names every
   // red required gate or missing required coverage, the Stories held back and the run and tree it
   // was judged on (TCRN-CROSS-STORY-485 R4, MIN-235 D8, TCRN-CROSS-SUB-345). A restore stopped
   // by one of its eight checks names the check (TCRN-CROSS-STORY-480 R3, TCRN-CROSS-SUB-327).

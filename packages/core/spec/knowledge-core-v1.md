@@ -522,10 +522,11 @@ the duplicate whose id it is, and is named in no `unresolvedScopes`, no
 kept, one record per id, and `knowledge-validate` and the marker count it among
 `records`; an old-layout store's index stays its engine's, every record as written.
 
-A crest that holds a removal event is refused by an engine before this one, which does
-not read the event's schema. A `retired` record an older engine left without a
-supersession is read as that engine left it (see "Lifecycle"), and `knowledge-remove`
-can remove it.
+A crest that holds a removal event, or a record whose body this engine cleared (a
+removed or superseded card), is refused by an engine before this one, which does not
+read the event's schema and requires every card's body file (`KNOWLEDGE_PARTIAL_STATE`).
+A `retired` record an older engine left without a supersession is read as that engine
+left it (see "Lifecycle"), and `knowledge-remove` can remove it.
 
 ## Lifecycle
 

@@ -678,7 +678,9 @@ duplicate whose id it is, and is named in no `unresolvedScopes`; the crest's ind
 is kept, one record per id, and an old-layout store's index is unchanged. Atelier's knowledge list
 reads valid cards and offers a card-status filter in all five languages; `/api/knowledge?status=`
 answers `removed` and `all`, and refuses another status with `PORTAL_KNOWLEDGE_STATUS_INVALID`. An
-engine before this one refuses a crest that holds a removal event. This replaces the statements
+engine before this one refuses a crest that holds a removal event, or a record whose body this
+engine cleared (a removed or superseded card), since it requires every card's body file
+(`KNOWLEDGE_PARTIAL_STATE`). This replaces the statements
 above that a card retires only when a later card supersedes it (TCRN-CROSS-STORY-476), that every
 version of a duplicate a card supersedes stays readable by the id (TCRN-CROSS-SUB-413), and that reads
 project `supersededBy` over the card a supersede names (TCRN-CROSS-SUB-414), and for knowledge cards it

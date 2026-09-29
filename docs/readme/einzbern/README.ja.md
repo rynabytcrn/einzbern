@@ -116,7 +116,7 @@ Einzbern は一つのスキルと一緒にやって来る。Mana Orchestrate（�
 skills コマンドで入れる。
 
 ```
-npx skills add einzbern/mana-orchestrate
+npx skills add tpmoonchefryan/mana-orchestrate
 ```
 
 あるいはホストに言う。Mana Orchestrate というスキルを探して入れて。

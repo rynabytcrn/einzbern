@@ -937,6 +937,16 @@ which the tests and `batch:formal` both inherit, so the `storeRoot` a batch repo
 run ends. A store that cannot be removed is left where it is and never changes the exit code. Receipt
 documents, descriptors, trust checks and reason codes are unchanged.
 
+The skill's fetch script and install line name the two repositories at their final addresses, the
+engine repository and the helper repository renamed under the existing GitHub account
+(TCRN-CROSS-SUB-358, TCRN-CROSS-STORY-488; MIN-238 D4; `skill/mana-orchestrate/scripts/install.mjs`,
+`packages/core/src/skill-render.ts`, `docs/readme/`). They replace the placeholders
+`einzbern/einzbern` and `einzbern/mana-orchestrate`: `scripts/install.mjs --version` downloads the
+release from the engine repository's final address, and the `npx skills add` line of the generated
+SKILL.md, of the five Einzbern READMEs and of the five Mana Orchestrate READMEs names the helper
+repository's. The five root READMEs are rendered again from their templates. Renaming the two
+repositories on GitHub and pointing the local remotes at them remain a stop for the Owner.
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

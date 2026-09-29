@@ -36,9 +36,9 @@ import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { gunzipSync } from "node:zlib";
 
-// The repository the releases are published in. A placeholder until the repository is renamed
-// (a stop point for the Owner); problem list #21 corrects it with the final address.
-const RELEASE_REPOSITORY = "einzbern/einzbern";
+// The repository the releases are published in, at its final address (MIN-238 D4). Renaming the
+// repository on GitHub to that address is a separate stop for the Owner.
+const RELEASE_REPOSITORY = "tpmoonchefryan/einzbern";
 const ENGINE_NAME = "einzbern";
 const DEVICE_DIRECTORY = ".einzbern";
 const ENGINE_DIRECTORY = "engine";

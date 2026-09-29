@@ -135,6 +135,27 @@ export function p8ReleasePrivacySourcePaths(label) {
   return sourcePath === undefined ? [] : [sourcePath];
 }
 
+// MIN-238 D4 (TCRN-CROSS-STORY-488): the engine and helper repositories keep the existing
+// account, so their final addresses carry the owner name. Under MIN-235 D6 exactly these two
+// (owner, repository) tuples are public metadata. The owner is the reviewed names.ts value,
+// pinned by its digest. An address counts only as the complete literal `<owner>/<repository>`
+// or `https://github.com/<owner>/<repository>` in file, object or package content. These stay
+// OWNER_PRIVATE_IDENTIFIER findings: the owner name on its own, another owner or repository,
+// an address that continues into a longer name, path or URL, and a file or member path. The
+// rule applies to each occurrence; no line or file is exempt.
+const REVIEWED_OWNER_DIGEST = "1b58b39b82f7665f411664797bcc897a75d9a6222ee4a8c97234493324aab74f";
+const PUBLIC_REPOSITORY_ADDRESSES = Object.freeze([
+  Object.freeze({ ownerDigest: REVIEWED_OWNER_DIGEST, repository: "einzbern" }),
+  Object.freeze({ ownerDigest: REVIEWED_OWNER_DIGEST, repository: "mana-orchestrate" }),
+]);
+const PUBLIC_REPOSITORY_URL_PREFIX = "https://github.com/";
+const PUBLIC_REPOSITORY_ADDRESS_KINDS = new Set(["source", "blob", "build", "archive", "release", "commit", "tag"]);
+// A neighbouring character from these sets would make the address part of a longer account,
+// repository, path, URL, host or mail address. A backslash may follow the address (the escaped
+// closing backtick of a template literal) but may not precede it (a Windows path).
+const ADDRESS_CONTINUES_BEFORE = /[A-Za-z0-9._~%+@:$\/\\-]/u;
+const ADDRESS_CONTINUES_AFTER = /[A-Za-z0-9._~%+@:$\/#?-]/u;
+
 function privacyDigest(value) {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
@@ -149,6 +170,23 @@ function classifiedOrigins(entry) {
   if (entry.kind === "source" || entry.kind === "build") return [entry.label];
   if (!Array.isArray(entry.sourcePaths)) return [];
   return [...new Set(entry.sourcePaths)];
+}
+
+function isPublicRepositoryAddress(entry, reasonCode, input, match) {
+  if (reasonCode !== "OWNER_PRIVATE_IDENTIFIER" || !PUBLIC_REPOSITORY_ADDRESS_KINDS.has(entry.kind)) return false;
+  // Archive headers carry member paths; a path that names the owner is not an address.
+  if (entry.label.includes("#header:")) return false;
+  const ownerDigest = privacyDigest(match[0]);
+  const ownerEnd = match.index + match[0].length;
+  const prefixStart = match.index - PUBLIC_REPOSITORY_URL_PREFIX.length;
+  const addressStart = prefixStart >= 0 && input.startsWith(PUBLIC_REPOSITORY_URL_PREFIX, prefixStart) ? prefixStart : match.index;
+  if (addressStart > 0 && ADDRESS_CONTINUES_BEFORE.test(input[addressStart - 1])) return false;
+  return PUBLIC_REPOSITORY_ADDRESSES.some((address) => {
+    const path = `/${address.repository}`;
+    if (address.ownerDigest !== ownerDigest || !input.startsWith(path, ownerEnd)) return false;
+    const end = ownerEnd + path.length;
+    return end === input.length || !ADDRESS_CONTINUES_AFTER.test(input[end]);
+  });
 }
 
 function hasUnclassifiedPrivacyMatch(entry, reasonCode, pattern, inputs) {
@@ -170,6 +208,7 @@ function hasUnclassifiedPrivacyMatch(entry, reasonCode, pattern, inputs) {
     const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
     const matcher = new RegExp(pattern.source, flags);
     for (const match of input.matchAll(matcher)) {
+      if (isPublicRepositoryAddress(entry, reasonCode, input, match)) continue;
       const digest = privacyDigest(match[0]);
       const lineDigest = privacyDigest(lineAt(input, match.index));
       if (origins.length === 0 || origins.some((origin) => !isClassified(origin, digest, lineDigest))) {

@@ -13,7 +13,7 @@
 </div>
 
 > [!TIP]
-> `npx skills add einzbern/mana-orchestrate` のあと、プロジェクトでホストに「Einzbern をインストールして」と言う。
+> `npx skills add tpmoonchefryan/mana-orchestrate` のあと、プロジェクトでホストに「Einzbern をインストールして」と言う。
 
 ---
 
@@ -32,7 +32,7 @@ Einzbern（アインツベルン）を Claude Code と Codex に接続するス�
 skills コマンドで：
 
 ```
-npx skills add einzbern/mana-orchestrate
+npx skills add tpmoonchefryan/mana-orchestrate
 ```
 
 あるいはホストに言う。Mana Orchestrate というスキルを探して入れて。

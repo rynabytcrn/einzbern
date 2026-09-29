@@ -149,7 +149,7 @@ export function renderSkillMarkdown(input: RenderSkillMarkdownInput): string {
     "",
     "## Three steps",
     "",
-    `1. Install this skill: \`npx skills add einzbern/${BRAND.helper.id}\`, or ask the host to find the skill called ${BRAND.helper.name} and install it.`,
+    `1. Install this skill: \`npx skills add tpmoonchefryan/mana-orchestrate\`, or ask the host to find the skill called ${BRAND.helper.name} and install it.`,
     `2. In the project, say "install ${BRAND.engine.name}". The wizard asks one screen of questions, confirms once, and sets up the engine and its hook for Claude Code and Codex together.`,
     `3. Then work as usual. Before every prompt the hook asks the engine for strongly relevant memory and puts it in the context; you record at the moments in the table above.`,
     "",

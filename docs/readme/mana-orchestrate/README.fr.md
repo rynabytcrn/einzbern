@@ -13,7 +13,7 @@ Le Graal exauce les vœux ; Mana Orchestrate fait couler le mana au bon endroit,
 </div>
 
 > [!TIP]
-> `npx skills add einzbern/mana-orchestrate`, puis dites à votre hôte « installe Einzbern » dans le projet.
+> `npx skills add tpmoonchefryan/mana-orchestrate`, puis dites à votre hôte « installe Einzbern » dans le projet.
 
 ---
 
@@ -32,7 +32,7 @@ C'est le skill qui amène Einzbern dans Claude Code et Codex. Einzbern est la m�
 Avec la commande skills :
 
 ```
-npx skills add einzbern/mana-orchestrate
+npx skills add tpmoonchefryan/mana-orchestrate
 ```
 
 Ou dites à votre hôte : trouve un skill nommé Mana Orchestrate et installe-le.

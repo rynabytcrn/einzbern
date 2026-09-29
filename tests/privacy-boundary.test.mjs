@@ -11,7 +11,7 @@ import test from "node:test";
 import { LocalCommandError, runLocalCommand } from "../scripts/lib/local-command.mjs";
 import { aggregatePrivacySurface, decodeGitMetadataBytes, normalizePrivacyText, p8ReleasePrivacySourcePaths, parseGitObjectBatch, parseHistoricalTreePaths, scanPrivacyEntries, walkHistoricalCommitPaths } from "../scripts/lib/privacy.mjs";
 import { writeUstar } from "../scripts/lib/tar.mjs";
-import { ENGINE_REPOSITORY_NAMES, LEGACY_REPOSITORY_NAMES } from "../dist/build/packages/core/src/index.js";
+import { BRAND, ENGINE_REPOSITORY_NAMES, LEGACY_REPOSITORY_NAMES } from "../dist/build/packages/core/src/index.js";
 
 const batchCheckFormat = "--batch-check=%(objectname) %(objecttype) %(objectsize)";
 const batchArguments = ["cat-file", "--batch-all-objects", "--batch"];
@@ -735,4 +735,122 @@ test("staged privacy command scans index bytes before a commit and leaves histor
   assert.equal(greenReport.stagedPaths, 1);
   assert.equal(greenReport.objects[0].scanned, true);
   assert.equal(greenReport.historicalScan, "preserved-by-pnpm-verify:privacy");
+});
+
+test("MIN-238 D4: only the two exact repository addresses under the reviewed owner are public metadata", async () => {
+  const owner = LEGACY_REPOSITORY_NAMES.owner;
+  assert.equal(createHash("sha256").update(owner, "utf8").digest("hex"), "1b58b39b82f7665f411664797bcc897a75d9a6222ee4a8c97234493324aab74f");
+  const repositories = [BRAND.engine.id, BRAND.helper.id];
+  assert.deepEqual(repositories, ["einzbern", "mana-orchestrate"], "the tuples name the engine and the helper repository");
+  const masked = (content) => JSON.stringify(content.replaceAll(owner, "<owner>"));
+  const ownerFindings = (content, { scanOwner = owner, ...entry } = {}) => scanPrivacyEntries(
+    [{ label: "fixture", kind: "source", ...entry, content }],
+    { owner: scanOwner },
+  ).filter((finding) => finding.startsWith("OWNER_PRIVATE_IDENTIFIER:"));
+
+  // Allowed: the complete literal, bare or behind https://github.com/, in any content surface.
+  const contentSurfaces = [
+    { kind: "source", label: "README.md" },
+    { kind: "blob", label: `git-blob:${"c".repeat(40)}`, sourcePaths: ["README.md"] },
+    { kind: "build", label: "dist/build/packages/core/src/skill-render.js" },
+    { kind: "release", label: "dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/README.md", releaseArchiveMember: true, sourcePaths: [] },
+    { kind: "commit", label: `git-commit:${"d".repeat(40)}` },
+    { kind: "tag", label: `git-tag:${"e".repeat(40)}` },
+  ];
+  for (const repository of repositories) {
+    const address = `${owner}/${repository}`;
+    const url = `https://github.com/${address}`;
+    for (const content of [
+      address,
+      url,
+      `const RELEASE_REPOSITORY = "${address}";\n`,
+      `npx skills add ${address}\n`,
+      `> \`npx skills add ${address}\`, then install.\n`,
+      `    \`1. Install this skill: \\\`npx skills add ${address}\\\`, or ask the host.\`,\n`,
+      `[${repository}](${url}) and <${url}>\n`,
+      `「${address}」`,
+    ]) {
+      for (const surface of contentSurfaces) {
+        assert.deepEqual(ownerFindings(content, surface), [], `${surface.kind}: ${masked(content)}`);
+      }
+    }
+  }
+  assert.deepEqual(ownerFindings(`${owner}/${BRAND.engine.id} and https://github.com/${owner}/${BRAND.helper.id}\n`), []);
+  const archive = writeUstar(repositories.map((repository) => ({
+    path: `docs/${repository}.md`,
+    bytes: Buffer.from(`npx skills add ${owner}/${repository}\n`, "utf8"),
+  })));
+  assert.deepEqual(scanPrivacyEntries([{ label: "dist/source/einzbern-source.tar", kind: "archive", content: archive }], { owner }), []);
+
+  // Refused: the owner name in every other context keeps its finding.
+  const refused = [
+    ["the owner name alone", owner],
+    ["a mention", `@${owner}`],
+    ["the account page", `https://github.com/${owner}`],
+    ["the account path", `https://github.com/${owner}/`],
+    ["the legacy engine repository", `${owner}/${LEGACY_REPOSITORY_NAMES.engine}`],
+    ["the legacy helper repository", `https://github.com/${owner}/${LEGACY_REPOSITORY_NAMES.helper}`],
+    ["another repository", `${owner}/other`],
+    ["a longer repository name", `${owner}/${BRAND.engine.id}-private`],
+    ["a repository name with a suffix", `${owner}/${BRAND.helper.id}2`],
+    ["a clone URL", `https://github.com/${owner}/${BRAND.engine.id}.git`],
+    ["a release download URL", `https://github.com/${owner}/${BRAND.engine.id}/releases/download/v1.2.1/einzbern-1.2.1.tar.gz`],
+    ["a path inside a repository", `${owner}/${BRAND.helper.id}/tree/main`],
+    ["an issue reference", `${owner}/${BRAND.engine.id}#12`],
+    ["a pinned reference", `${owner}/${BRAND.helper.id}@v1`],
+    ["another scheme", `http://github.com/${owner}/${BRAND.engine.id}`],
+    ["a host without a scheme", `github.com/${owner}/${BRAND.engine.id}`],
+    ["another host", `https://gitlab.com/${owner}/${BRAND.engine.id}`],
+    ["a package URL", `git+https://github.com/${owner}/${BRAND.engine.id}`],
+    ["an SSH remote", `${joinParts(["git", "@", "github.com:"], "")}${owner}/${BRAND.engine.id}`],
+    ["a local path", `${joinParts(["/", "Users", "/"], "")}${owner}/${BRAND.engine.id}`],
+    ["a longer account name", `${owner}-bot/${BRAND.engine.id}`],
+    ["an account name with a prefix", `x${owner}/${BRAND.engine.id}`],
+    ["an address beside the owner name", `npx skills add ${owner}/${BRAND.helper.id} # maintained by ${owner}`],
+    ["an address split across a join", `["${owner}", "${BRAND.engine.id}"].join("/")`],
+  ];
+  for (const [label, content] of refused) {
+    assert.deepEqual(ownerFindings(content), ["OWNER_PRIVATE_IDENTIFIER:source:fixture"], `${label}: ${masked(content)}`);
+  }
+  assert.deepEqual(
+    ownerFindings(`npx skills add ${owner}/${BRAND.helper.id}\nmaintained by ${owner}\n`),
+    ["OWNER_PRIVATE_IDENTIFIER:source:fixture"],
+    "an address elsewhere in the file exempts neither the file nor another line",
+  );
+  const otherOwner = publicIdentity.login;
+  for (const content of [`${otherOwner}/${BRAND.engine.id}`, `https://github.com/${otherOwner}/${BRAND.helper.id}`]) {
+    assert.deepEqual(ownerFindings(content, { scanOwner: otherOwner }), ["OWNER_PRIVATE_IDENTIFIER:source:fixture"], "the owner of each tuple is exact");
+  }
+  assert.deepEqual(ownerFindings(`${owner}/${BRAND.engine.id}`, { kind: "filename" }), ["OWNER_PRIVATE_IDENTIFIER:filename:fixture"], "a path that names the owner is not an address");
+  assert.deepEqual(ownerFindings(`https://github.com/${owner}/${BRAND.helper.id}`, { kind: "remote" }), ["OWNER_PRIVATE_IDENTIFIER:remote:fixture"], "the origin rule is unchanged");
+  const memberPath = `${owner}/${BRAND.engine.id}`;
+  const namedArchive = writeUstar([{ path: memberPath, bytes: Buffer.from("safe\n", "utf8") }]);
+  assert.deepEqual(
+    scanPrivacyEntries([{ label: "dist/source/einzbern-source.tar", kind: "archive", content: namedArchive }], { owner })
+      .filter((finding) => finding.startsWith("OWNER_PRIVATE_IDENTIFIER:")),
+    [`OWNER_PRIVATE_IDENTIFIER:archive:dist/source/einzbern-source.tar#header:${memberPath}`],
+    "an archive member path is not an address",
+  );
+
+  // The committed address lines are the only owner occurrences in the files that carry them.
+  const repositoryRoot = resolve(import.meta.dirname, "..");
+  const addressPaths = [
+    "skill/mana-orchestrate/scripts/install.mjs",
+    "packages/core/src/skill-render.ts",
+    "dist/build/packages/core/src/skill-render.js",
+    ...["", ".en", ".ja", ".ko", ".fr"].flatMap((language) => [
+      `README${language}.md`,
+      `docs/readme/einzbern/README${language}.md`,
+      `docs/readme/mana-orchestrate/README${language}.md`,
+    ]),
+  ];
+  const addressEntries = await Promise.all(addressPaths.map(async (path) => ({
+    label: path,
+    kind: path.startsWith("dist/") ? "build" : "source",
+    content: await readFile(join(repositoryRoot, path), "utf8"),
+  })));
+  for (const entry of addressEntries) {
+    assert.ok(repositories.some((repository) => entry.content.includes(`${owner}/${repository}`)), `${entry.label} names a final address`);
+  }
+  assert.deepEqual(scanPrivacyEntries(addressEntries, { owner }), []);
 });

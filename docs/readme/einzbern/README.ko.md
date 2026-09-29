@@ -116,7 +116,7 @@ Einzbern은 스킬 하나와 함께 온다. Mana Orchestrate(마나 오케스트
 skills 명령으로 설치한다.
 
 ```
-npx skills add einzbern/mana-orchestrate
+npx skills add tpmoonchefryan/mana-orchestrate
 ```
 
 또는 호스트에게 말한다. Mana Orchestrate라는 스킬을 찾아서 설치해 줘.

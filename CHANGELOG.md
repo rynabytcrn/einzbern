@@ -875,6 +875,24 @@ link that is still there under another name, a staging link that outlasts the un
 wait, a symbolic link, a file that is not regular and damaged content still fail closed with
 `DEVICE_FILE_INVALID`. The `device.json` format, the device id and the reason codes are unchanged.
 
+A read of a library that meets another writer's replacement of a stream manifest reads one whole
+version instead of refusing the manifest as damaged (TCRN-CROSS-STORY-512 R1, R2,
+TCRN-CROSS-SUB-420, TCRN-CROSS-INC-396; fixes TCRN-CROSS-STORY-503; `packages/core/src/akasha.ts`).
+A device commits an append by renaming a finished temporary file over its stream manifest. When that
+rename landed between a reader's open of the manifest and its stat of the open file, or inside the
+reader's lstat, the file the reader held had no link left, and the read failed with
+`AKASHA_STREAM_MANIFEST_INVALID` ("must be a single-link regular file") although nothing was
+damaged: about once in 1,280 writes when two devices' processes wrote one library at once, and the
+same could happen on one device when a hook, Atelier or another CLI read while a write committed. A
+file with no link left is not a second name, so it is now read: through the handle already open, as
+the manifest from before the replacement; after an lstat that saw it, through the name, as the
+manifest after it. Either way the segments that manifest names read back to its head, because a
+replaced file is never written in place and no write changes a segment within a length some
+manifest records. A second hard link, a symbolic link and a file that is not regular still fail
+closed, at the lstat and at the opened handle alike, with `AKASHA_STREAM_MANIFEST_INVALID` for a
+manifest and `AKASHA_SEGMENT_CORRUPT` for a segment. The manifest and segment formats, the stream
+identity, the atomic write, the read timeout and the reason codes are unchanged.
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

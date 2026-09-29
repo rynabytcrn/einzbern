@@ -199,16 +199,25 @@ export type ReadBytes = (path: string) => Promise<Buffer>;
 
 class AkashaFileShapeError extends Error {}
 
-function isSingleLinkFile(info: Awaited<ReturnType<typeof lstat>>): boolean {
-  return info.isFile() && !info.isSymbolicLink() && info.nlink === 1;
+// TCRN-CROSS-INC-396: an internal file is a regular file that no other name leads to. No link at
+// all is not a second name: the file's name went away while this reader held it, because another
+// writer's atomic replacement (a finished temporary file renamed over the name, atomic-file.ts)
+// or a removal landed between the reader's lookup of the name and its stat. A replaced file is
+// never written in place, so what the reader holds is still one whole earlier version. A second
+// hard link, a symbolic link and a file that is not regular still fail closed.
+function isUnsharedRegularFile(info: Awaited<ReturnType<typeof lstat>>): boolean {
+  return info.isFile() && !info.isSymbolicLink() && info.nlink <= 1;
 }
 
+// Reads through a handle opened without following a symbolic link, whose own stat decides the
+// shape. When a replacement lands after the open, the handle still reads the whole file it opened,
+// so the read returns the version from before the replacement.
 async function readWithoutFollowingLink(path: string): Promise<Buffer> {
   let handle;
   try {
     handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
     const info = await handle.stat();
-    if (!isSingleLinkFile(info)) throw new AkashaFileShapeError();
+    if (!isUnsharedRegularFile(info)) throw new AkashaFileShapeError();
     return await handle.readFile();
   } catch (error) {
     if ((error as { code?: string }).code === "ELOOP") throw new AkashaFileShapeError();
@@ -218,13 +227,16 @@ async function readWithoutFollowingLink(path: string): Promise<Buffer> {
   }
 }
 
+// The name is checked with lstat before the read opens it. A replacement that lands between the
+// two is read as the new version; one that lands inside the lstat shows the old file with no link
+// left, and the read judges the file the name leads to by then.
 async function readInternalFile(
   path: string,
   readFile: ReadBytes,
   rejectShape: (message: string) => never,
 ): Promise<Buffer> {
   const info = await lstat(path);
-  if (!isSingleLinkFile(info)) rejectShape("must be a single-link regular file");
+  if (!isUnsharedRegularFile(info)) rejectShape("must be a single-link regular file");
   try {
     return await readFile(path);
   } catch (error) {

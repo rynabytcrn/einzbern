@@ -114,20 +114,35 @@ async function hasTemporaryDeviceLink(directory: string, expected: { readonly de
   return false;
 }
 
-/** A just-published device file briefly has its staging hard link as a second link. */
+/** The link count of `path` while it is still the observed regular file; null once it is gone or is another file. */
+async function observedLinkCount(path: string, observed: { readonly dev: number; readonly ino: number }): Promise<number | null> {
+  let current;
+  try {
+    current = await lstat(path);
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return null;
+    throw error;
+  }
+  if (!current.isFile() || current.isSymbolicLink() || !sameFile(current, observed)) return null;
+  return current.nlink;
+}
+
+/**
+ * A just-published device file briefly has its staging hard link as a second link: the creator
+ * links the staging file into place and only then removes the staging name. That removal can
+ * land after this reader's lstat and before its scan for the staging name ends, so a scan that
+ * finds none is followed by one more lstat (TCRN-CROSS-INC-395). Removing the staging name is
+ * the last step of a publication, so one that finished meanwhile now shows as the same file with
+ * one link. A second link still there with no staging name beside it is not a publication and
+ * fails closed.
+ */
 async function waitForDevicePublication(path: string, observed: { readonly dev: number; readonly ino: number }): Promise<boolean> {
   const deadline = Date.now() + DEVICE_PUBLISH_WAIT_MS;
   while (Date.now() < deadline) {
-    let current;
-    try {
-      current = await lstat(path);
-    } catch (error) {
-      if ((error as { code?: string }).code === "ENOENT") return false;
-      throw error;
-    }
-    if (!current.isFile() || current.isSymbolicLink() || !sameFile(current, observed)) return false;
-    if (current.nlink === 1) return true;
-    if (current.nlink !== 2 || !(await hasTemporaryDeviceLink(dirname(path), current))) return false;
+    const links = await observedLinkCount(path, observed);
+    if (links === 1) return true;
+    if (links !== 2) return false;
+    if (!(await hasTemporaryDeviceLink(dirname(path), observed))) return (await observedLinkCount(path, observed)) === 1;
     await delay(5);
   }
   return false;

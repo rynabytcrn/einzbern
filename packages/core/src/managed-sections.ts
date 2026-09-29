@@ -17,11 +17,12 @@
 // is not put back. A file whose markers do not parse is refused whole, naming the line. A file
 // that does not exist is created only when a section is to be written into it. The text outside
 // the sections is never rewritten. Nothing here runs unless it is called: an engine upgrade
-// writes no file.
+// writes no file. A write whose caller cannot then record it is put back as the file was read
+// (revertManagedWrite; TCRN-CROSS-STORY-489).
 
 import { isUtf8 } from "node:buffer";
 import { createHash } from "node:crypto";
-import { lstat, mkdir, readFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 
 import { parseStrictInstant } from "../../protocol/src/index.js";
@@ -475,4 +476,22 @@ export async function applyManagedWrite(plan: ManagedWritePlan, options: { reado
   }
   await writeFileAtomic(plan.filePath, plan.after);
   return { filePath: plan.filePath, written: true, backupPath };
+}
+
+/**
+ * Put back a plan applyManagedWrite wrote (TCRN-CROSS-STORY-489): for a caller that wrote it and
+ * then could not record it. The file returns to what the plan read (`before`), through a temporary
+ * file and a rename, and a file the write created is taken away. Only a file that still holds what
+ * the plan wrote (`after`) is put back; one changed again since is left as it now is. The backup the
+ * write made stays where it is. Returns whether the file was put back.
+ */
+export async function revertManagedWrite(plan: ManagedWritePlan): Promise<boolean> {
+  if (!plan.write || plan.after === null) return false;
+  if (await readManagedFile(plan.filePath, plan.file) !== plan.after) return false;
+  if (plan.before === null) {
+    await unlink(plan.filePath);
+  } else {
+    await writeFileAtomic(plan.filePath, plan.before);
+  }
+  return true;
 }

@@ -795,6 +795,22 @@ installation from before the rename (`SETUP_MIGRATE_PENDING`); its migration com
 `managed-sections`, `cloud-flag`), each `{check, ok, reasonCode, detail}` with its causes in
 `detail.causes`. The skill's references follow these flags and reason codes.
 
+The installation wizard now says so before it writes this device's library path into a project
+host file Git tracks (TCRN-CROSS-STORY-499 R16, TCRN-CROSS-SUB-385; fixes TCRN-CROSS-STORY-478,
+TCRN-CROSS-STORY-480; `packages/core/src/setup.ts`, `setup-fresh.ts`, `host-writable-roots.ts`).
+When the library sits outside the project, fresh, restore and repair name it in the project's
+`.claude/settings.local.json` and `.codex/config.toml`; each of the two that is in Git's index is
+listed in the plan's new `warnings` before anything is written, and again in the `warnings` of
+`SETUP_APPLIED`, as `{reasonCode, file, message}`: `HOST_WRITABLE_ROOTS_TRACKED_BY_GIT`, the file
+relative to the project, and the message `scripts/host-render.mjs` gives for the same file. It is
+listed whether or not the run changes the file, since the file names the library either way.
+`warnings` is empty when neither file is tracked or the library is inside the project, and a
+warning never stops the apply: the wizard still commits, unstages and ignores nothing. The CLI
+prints the plan and the receipt as they are; their schema versions, host-render and doctor are
+unchanged. The skill's install, update and restore references show the warnings at the final
+confirmation. Whether Git tracks a host file is asked of the index alone, before any library
+exists (`hostFileTrackedByGit`, exported by its module and not by core's index).
+
 The repository's `test` task waits out a process group whose members are still exiting
 (TCRN-CROSS-SUB-402, TCRN-CROSS-INC-393; TCRN-CROSS-STORY-493; `scripts/task.mjs`). `kill(-group, 0)`
 can answer EPERM for such a group, so the group exit wait asks again after EPERM inside the same

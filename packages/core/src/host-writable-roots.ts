@@ -8,7 +8,9 @@
 //
 // The library path is this machine's absolute path, so it only ever goes into these local host
 // files, never into anything the engine commits. A host file Git already tracks is still wired,
-// and the result says so (trackedByGit), because committing it would publish the path. Before a
+// and the result says so (trackedByGit), because committing it would publish the path; the setup
+// wizard asks the same question (hostFileTrackedByGit) and names such a file in its plan and its
+// receipt (HOST_WRITABLE_ROOTS_TRACKED_BY_GIT, packages/core/src/setup-fresh.ts). Before a
 // file is replaced its original is copied into the device directory
 // (backups/<UTC instant>/writable-roots/<project digest>/, an earlier copy there is kept), and the
 // replacement is atomic. Wiring the same library twice changes nothing. A host file this module
@@ -415,7 +417,13 @@ async function readHostFile(path: string, file: string): Promise<string | null> 
   return bytes.toString("utf8");
 }
 
-function trackedByGit(projectRoot: string, file: string): boolean {
+/**
+ * Whether Git tracks a project's host file: it is in the index of the repository the project sits
+ * in. It reads neither the file nor a library, so the setup wizard asks it while it plans an
+ * installation whose library does not exist yet (TCRN-CROSS-SUB-385 R16); a project that is no Git
+ * repository, or a machine without Git, tracks nothing.
+ */
+export function hostFileTrackedByGit(projectRoot: string, file: string): boolean {
   try {
     execFileSync("git", ["-C", projectRoot, "ls-files", "--error-unmatch", "--", file], { stdio: "ignore", timeout: 5_000 });
     return true;
@@ -441,7 +449,7 @@ export async function planWritableRoots(input: WritableRootsInput): Promise<Writ
     const path = WRITABLE_ROOTS_FILES[host];
     const before = await readHostFile(join(projectRoot, path), path);
     const after = host === "claude-code" ? claudeWritableRoots(before, libraryPath) : codexWritableRoots(before, libraryPath);
-    files.push({ host, path, before, after, changed: after !== before, trackedByGit: trackedByGit(projectRoot, path) });
+    files.push({ host, path, before, after, changed: after !== before, trackedByGit: hostFileTrackedByGit(projectRoot, path) });
   }
   return { projectRoot, libraryPath, libraryInsideProject: false, files };
 }

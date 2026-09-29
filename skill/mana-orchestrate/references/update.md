@@ -52,7 +52,10 @@ the cloud-drive and navigation answers again (`--cloud`, `--navigation`).
 2. Ask any open question on one screen, then plan again with the answers until none is open.
 3. Final confirmation. Show the action, the engine version it moves to as the plan names it, and
    every file the plan would write, as the plan lists them, and ask once whether to apply.
-   Continue only on a clear yes.
+   Continue only on a clear yes. A repair plan's `warnings` name each project host file that Git
+   tracks and that the wiring writes this device's library path into
+   (`HOST_WRITABLE_ROOTS_TRACKED_BY_GIT`): show each with its file and message before asking, and
+   again from `SETUP_APPLIED`, as `install.md` does.
 4. Apply. Run the same command with `--yes true`. It returns `SETUP_APPLIED`: the files written,
    the backup directory, the switch it made (`engineSwitch`, for an update or a rollback), and
    `selfCheck`.

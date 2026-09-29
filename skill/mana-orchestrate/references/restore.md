@@ -36,7 +36,10 @@ among the decided answers.
    let the sync finish first.
 2. Ask the open questions on one screen, then plan again with the answers until none is open.
 3. Final confirmation. Show the library path, the decided answers, and every file the plan would
-   write, as the plan lists them, and ask once whether to apply. Continue only on a clear yes.
+   write, as the plan lists them, and ask once whether to apply. Continue only on a clear yes. The
+   plan's `warnings` name each project host file that Git tracks and that the wiring writes this
+   device's library path into (`HOST_WRITABLE_ROOTS_TRACKED_BY_GIT`): show each with its file and
+   message before asking, and again from `SETUP_APPLIED`, as `install.md` does.
 4. Apply. Run the same command with `--yes true`. It runs the eight checks again, then returns
    `SETUP_APPLIED`: the files written, two columns of settings, the backup directory, and
    `selfCheck`.

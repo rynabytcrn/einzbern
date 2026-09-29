@@ -675,6 +675,7 @@ export async function planRestoreSetup(input: SetupModeInput): Promise<SetupMode
     backupDir: recorder.backups.length > 0 ? recorder.backupRoot : null,
     pendingSections: pending,
     blockers: recorder.blockers,
+    warnings: recorder.warnings,
     verification: verification.checks,
   };
 }

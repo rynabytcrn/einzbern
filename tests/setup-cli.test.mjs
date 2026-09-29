@@ -16,6 +16,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
 
+import { renderWritableRoots } from "../scripts/host-render.mjs";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import {
   DOCTOR_CHECKS,
@@ -140,6 +141,14 @@ function assertChecksGreen(checks) {
   for (const entry of checks) assert.equal(entry.ok, true, `${entry.check}: ${JSON.stringify(entry.detail)}`);
 }
 
+// Git in a temporary project, under the fixture's temporary home; nothing is committed, so no
+// identity is configured.
+function git(directory, ...args) {
+  const run = spawnSync("git", ["-C", directory, ...args], { encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  return run.stdout;
+}
+
 test("480-AC1, AC2 through the CLI: setup plans without --yes and writes nothing, applies with --yes true and reports the self-check, and a second run writes nothing", async (context) => {
   const f = await fixture(context);
   const roots = [f.home, f.deviceHome, f.project];
@@ -150,11 +159,13 @@ test("480-AC1, AC2 through the CLI: setup plans without --yes and writes nothing
   assert.deepEqual(planned.blockers, []);
   assert.deepEqual(planned.questions.map((question) => question.flag), ["--artifacts", "--cloud", "--language", "--navigation"]);
   assert.equal(planned.writes.length, 14);
+  assert.deepEqual(planned.warnings, []);
   assert.deepEqual(await snapshot(roots), before, "without --yes true nothing is written");
 
   const applied = await setup(f, "fresh", "--yes", "true");
   assert.equal(applied.reasonCode, "SETUP_APPLIED");
   assert.deepEqual(rows(applied.written), rows(planned.writes), "the summary lists what the plan said");
+  assert.deepEqual(applied.warnings, []);
   assert.deepEqual(applied.library.path, f.library);
   // The self-check: doctor's eight checks, and the hook run once as a host runs it.
   assertChecksGreen(applied.selfCheck.checks);
@@ -271,4 +282,34 @@ test("480-R6 through the CLI: migrate is the entry for an installation from befo
   assert.equal(fresh.context.suggestedMode, "migrate");
   assert.equal(fresh.context.legacy.deviceDirectory, join(f.home, ".tcrn-workflow"));
   await assert.rejects(setup(f, "install"), { reasonCode: "SETUP_MODE_INVALID" });
+});
+
+test("385-R16 through the CLI: with the library outside the project, a host file Git tracks is a warning of the plan, of SETUP_APPLIED and of a repair plan, in host-render's words, and Git is left alone", async (context) => {
+  const f = await fixture(context);
+  const library = join(f.base, "libraries", "zebrafish");
+  const files = [".claude/settings.local.json", ".codex/config.toml"];
+  git(f.project, "init", "-q");
+  await mkdir(join(f.project, ".claude"));
+  await mkdir(join(f.project, ".codex"));
+  await writeFile(join(f.project, ".claude", "settings.local.json"), `${JSON.stringify({ model: "house-model" })}\n`);
+  await writeFile(join(f.project, ".codex", "config.toml"), "model = \"house-model\"\n");
+  git(f.project, "add", "--", ...files);
+
+  const roots = [f.home, f.deviceHome, f.project];
+  const before = await snapshot(roots);
+  const planned = await setup(f, "fresh", "--artifacts", library);
+  assert.equal(planned.reasonCode, "SETUP_PLAN_READY");
+  assert.deepEqual(planned.blockers, []);
+  assert.deepEqual(planned.warnings.map((warning) => [warning.reasonCode, warning.file]), files.map((file) => ["HOST_WRITABLE_ROOTS_TRACKED_BY_GIT", file]));
+  assert.deepEqual(await snapshot(roots), before, "the plan names the files and writes nothing");
+
+  const applied = await setup(f, "fresh", "--artifacts", library, "--yes", "true");
+  assert.equal(applied.reasonCode, "SETUP_APPLIED");
+  assert.deepEqual(applied.warnings, planned.warnings, "the receipt names the same files");
+  // scripts/host-render.mjs, the development script, says the same of the same files.
+  const rendered = [];
+  for (const host of ["claude-code", "codex"]) rendered.push(...(await renderWritableRoots({ host, root: f.project, library, planOnly: true })).warnings);
+  assert.deepEqual(applied.warnings, rendered);
+  assert.deepEqual((await setup(f, "repair")).warnings, planned.warnings, "a repair plan names them too");
+  assert.equal(git(f.project, "status", "--porcelain", "--", ...files), files.map((file) => `AM ${file}\n`).join(""), "the files stay staged as they were: nothing is committed or unstaged");
 });

@@ -146,6 +146,34 @@ async function snapshot(roots) {
   return lines;
 }
 
+// Git in a temporary project, under the fixture's temporary home. The tests only put files into the
+// index: they never commit, so no identity is configured.
+function git(directory, ...args) {
+  const run = spawnSync("git", ["-C", directory, ...args], { encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
+  return run.stdout;
+}
+
+// The project as a Git repository holding its two host files, each with content of its own; a test
+// puts them into the index with `git add` when it wants them tracked.
+const HOST_FILES = Object.freeze([".claude/settings.local.json", ".codex/config.toml"]);
+async function repositoryWithHostFiles(project) {
+  git(project, "init", "-q");
+  await mkdir(join(project, ".claude"), { recursive: true });
+  await mkdir(join(project, ".codex"), { recursive: true });
+  await writeFile(join(project, ".claude", "settings.local.json"), "{}\n");
+  await writeFile(join(project, ".codex", "config.toml"), "[features]\nhooks = true\n");
+}
+
+// The warning setup gives for each tracked host file, in the words scripts/host-render.mjs uses.
+function trackedWarnings(files = HOST_FILES) {
+  return files.map((file) => ({
+    reasonCode: "HOST_WRITABLE_ROOTS_TRACKED_BY_GIT",
+    file,
+    message: `${file} is tracked by Git and may publish this device's library path if committed`,
+  }));
+}
+
 // planSetup in a child process under the write tripwire over the home, the device directory and the project.
 async function planUnderTripwire(f, options) {
   const script = join(f.base, "plan-only.mjs");
@@ -369,7 +397,9 @@ test("480-R2: a library outside the project gets the project's host write roots;
   assert.deepEqual(planned.blockers, []);
   const roots = [join(f.project, ".claude", "settings.local.json"), join(f.project, ".codex", "config.toml")];
   for (const path of roots) assert.ok(planned.writes.some((entry) => entry.step === "writable-roots" && entry.path === path && entry.action === "create"), path);
+  assert.deepEqual(planned.warnings, [], "385-R16: a project Git does not track warns of nothing");
   const applied = await applySetup(planned);
+  assert.deepEqual(applied.warnings, []);
   assert.equal(applied.library.path, library);
   assert.deepEqual(JSON.parse(await readFile(roots[0], "utf8")).permissions.additionalDirectories, [library]);
   assert.ok((await readFile(roots[1], "utf8")).includes(JSON.stringify(library)));
@@ -407,4 +437,61 @@ test("480-R5: a host file that is a symbolic link, or a library already at the c
   assert.equal(created.reasonCode, "LIBRARY_CREATED");
   const taken = await plan(f, { artifacts: join(other, ".ether") });
   assert.ok(taken.blockers.some((blocker) => blocker.step === "library" && blocker.reasonCode === "SETUP_LIBRARY_EXISTS"));
+});
+
+test("385-R16: with the library outside the project, fresh and repair name each host file Git tracks before anything is written, and SETUP_APPLIED names it again", async (context) => {
+  const f = await fixture(context);
+  const library = join(f.base, "elsewhere", "Ether", "project");
+  const answers = { artifacts: library, cloud: false, language: "en", navigation: true };
+  await repositoryWithHostFiles(f.project);
+  assert.deepEqual((await plan(f, answers)).warnings, [], "files Git does not track yet warn of nothing");
+
+  git(f.project, "add", "--", ...HOST_FILES);
+  const roots = [f.home, f.deviceHome, f.project];
+  const before = await snapshot(roots);
+  const planned = await planUnderTripwire(f, { mode: "fresh", projectRoot: f.project, at: at(), home: f.home, deviceHome: f.deviceHome, answers });
+  assert.deepEqual(planned.blockers, []);
+  assert.deepEqual(planned.warnings, trackedWarnings(), "each tracked host file is named, file by file");
+  for (const file of HOST_FILES) {
+    assert.ok(planned.writes.some((entry) => entry.step === "writable-roots" && entry.path === join(f.project, ...file.split("/")) && entry.action === "update"), file);
+  }
+  assert.deepEqual(await snapshot(roots), before, "the plan and its warnings wrote nothing, Git's index included");
+
+  const applied = await applySetup(await plan(f, answers));
+  assert.equal(applied.reasonCode, "SETUP_APPLIED");
+  assert.deepEqual(applied.warnings, trackedWarnings(), "SETUP_APPLIED names the same files");
+  // The wizard warns and leaves Git alone: both files name the library, stay staged as they were, and nothing is committed.
+  for (const file of HOST_FILES) assert.ok((await readFile(join(f.project, ...file.split("/")), "utf8")).includes(library), file);
+  assert.equal(git(f.project, "status", "--porcelain", "--", ...HOST_FILES), HOST_FILES.map((file) => `AM ${file}\n`).join(""));
+  assert.notEqual(spawnSync("git", ["-C", f.project, "rev-parse", "--verify", "--quiet", "HEAD"]).status, 0, "no commit was made");
+  assertSelfCheckGreen(applied);
+
+  // A repair of the whole installation writes nothing and still names both files: they hold this device's library path.
+  const repair = await planSetup({ mode: "repair", projectRoot: f.project, at: at(), home: f.home, deviceHome: f.deviceHome });
+  assert.deepEqual(repair.blockers, []);
+  assert.deepEqual(repair.writes, []);
+  assert.deepEqual(repair.warnings, trackedWarnings());
+  const repaired = await applySetup(repair);
+  assert.deepEqual(repaired.written, []);
+  assert.deepEqual(repaired.warnings, trackedWarnings());
+
+  // Only a tracked file is named: once the Codex file leaves the index (its file stays), the Claude file alone is.
+  git(f.project, "rm", "--cached", "--force", "--quiet", "--", ".codex/config.toml");
+  assert.deepEqual((await planSetup({ mode: "repair", projectRoot: f.project, at: at(), home: f.home, deviceHome: f.deviceHome })).warnings,
+    trackedWarnings([".claude/settings.local.json"]));
+});
+
+test("385-R16: a library inside the project writes no host file, so tracked host files warn of nothing", async (context) => {
+  const f = await fixture(context);
+  await repositoryWithHostFiles(f.project);
+  git(f.project, "add", "--", ...HOST_FILES);
+  const planned = await plan(f);
+  assert.deepEqual(planned.blockers, []);
+  assert.equal(planned.resolved.artifacts, join(f.project, ".ether"));
+  assert.deepEqual(planned.writes.filter((entry) => entry.step === "writable-roots"), []);
+  assert.deepEqual(planned.warnings, []);
+  const applied = await applySetup(planned);
+  assert.deepEqual(applied.warnings, []);
+  assert.equal(await readFile(join(f.project, ".codex", "config.toml"), "utf8"), "[features]\nhooks = true\n");
+  assert.equal(await readFile(join(f.project, ".claude", "settings.local.json"), "utf8"), "{}\n");
 });

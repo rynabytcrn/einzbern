@@ -33,9 +33,9 @@ import {
 } from "./models-tiers.js";
 
 /**
- * Settings are a deliberately small engine-owned overlay surface. The generic
- * profile remains the authority for layer semantics; this module owns the
- * bounded vocabulary that the workspace can actually consume.
+ * Settings are a deliberately small engine-owned overlay surface. This module owns
+ * both the bounded vocabulary that the workspace can actually consume and the layer
+ * semantics below (specs/settings-catalog-v1.md, "Two layers").
  */
 export const SETTINGS_CATALOG_VERSION = "tcrn.settings-catalog.v1" as const;
 export const WORKSPACE_SETTING_VERSION = "tcrn.workspace-setting.v1" as const;

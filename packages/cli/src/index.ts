@@ -1616,12 +1616,13 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   }
   let rest = arguments_.slice(1);
   // A verb run without --workspace works on the library this device's registry resolves from the
-  // current directory (project path, Git top level, Git remote), or refuses LIBRARY_NOT_REGISTERED.
+  // current directory (project path, Git top level, Git remote), or refuses LIBRARY_NOT_REGISTERED,
+  // whose hint then offers --workspace, since every verb here takes it (TCRN-CROSS-SUB-427).
   // A verb missing another required flag is left to report CLI_ARGUMENT_MISSING first.
   const otherRequired = REGISTRY_RESOLVED_VERBS.get(command);
   if (otherRequired !== undefined && !rest.includes("--help") && !rest.includes("-h") && !hasFlag(rest, "workspace") &&
     otherRequired.every((name) => hasFlag(rest, name))) {
-    rest = ["--workspace", (await resolveLibrary(process.cwd())).libraryPath, ...rest];
+    rest = ["--workspace", (await resolveLibrary(process.cwd(), undefined, { workspaceFlag: true })).libraryPath, ...rest];
   }
   lastWrittenIds = null;
   // requiredShared is the mandatory pair every workspace-event mutation verb demands

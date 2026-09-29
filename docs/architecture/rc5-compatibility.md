@@ -98,29 +98,48 @@ id; a caller that does not will fail closed on its first mutation.
 
 ## Knowledge stores: metadata schema evolution
 
-The Knowledge Core store under `<root>/<control>/knowledge/` is a
-**disposable derived index**, never the system of record. Its store marker
-carries `disposable: true` and `authority: "metadata-index-authority-body-separate"`.
-The system of record is the workspace event log (projects, work, conferences,
-gates, decisions) — that authority is what is preserved across any knowledge
-metadata schema change, because the event log's `storageVersion` stays `1`.
+The Knowledge Core store is a **disposable derived index**, never the system of
+record. A library keeps it in `crest/`; an old-layout workspace's store stays in
+`<root>/<control>/knowledge/`, where the current engine only reads it. Its store
+marker carries `disposable: true` and
+`authority: "metadata-index-authority-body-separate"`. The system of record is
+the workspace event log (projects, work, conferences, gates, decisions) — that
+authority is what is preserved across any knowledge metadata schema change,
+because the event log's `storageVersion` stays `1`. The metadata schema is still
+`tcrn.knowledge-unit-metadata.v1`.
 
-The knowledge store binds itself to a specific metadata schema version
-(`tcrn.knowledge-unit-metadata.v1`) and to the workspace head via
-`eventHighWaterDigest`. Two distinct maintenance paths exist, and they are not
-interchangeable:
+**Historical record (rc.4 → rc.5).** An rc.5 store bound itself to that metadata
+schema version and to the workspace head through `eventHighWaterDigest`, and two
+maintenance paths existed. After a head advance, `knowledge-rebase` re-bound the
+store to the new head, failing closed on records whose references no longer
+resolved unless it was told to retire them as tombstoned audit records. A
+metadata schema change was met by re-initializing a fresh disposable store and
+re-capturing its units (the procedure below); there was no in-place metadata
+upgrader. Neither re-binding nor that retirement is current.
 
-- **Head advance (same schema).** When the workspace head moves ahead of the
-  store, re-bind with `knowledge-rebase`. It re-validates every record against
-  the advanced head and re-binds without discarding units, failing closed
-  `KNOWLEDGE_REBASE_BLOCKED` on records whose scope/project or linked-work
-  references no longer resolve (unless you direct it to retire them as
-  tombstoned audit records). Rebase is **not** a schema migration.
+**Current engine.** `packages/core/spec/knowledge-core-v1.md` ("Storage and
+authority", "High-water rebase", "Lifecycle") is the normative statement; in
+short:
 
-- **Metadata schema evolution (disposable re-init).** When the metadata schema
-  itself evolves, the supported migration is to re-initialize a fresh disposable
-  store and re-capture. There is no in-place metadata upgrader in V1 — the store
-  is disposable precisely so none is needed.
+- **Nothing to re-bind** (TCRN-CROSS-SUB-414). A library's store binds no chain
+  head: its marker binds a digest of the library id, each device appends its
+  cards to its own stream in `crest/events/`, and every read projects the store
+  at the chain head it replayed, so a chain write never leaves the store behind.
+- **Re-validation writes nothing.** `knowledge-rebase`, like
+  `knowledge-batch --align-first`, re-checks every record's shape, body binding
+  and scope/project/work links against the chain as it stands. It refuses with
+  `KNOWLEDGE_REBASE_BLOCKED` over a valid card whose scope or project no longer
+  resolves (a card whose project is gone is named with the remedy
+  `knowledge-create --supersedes <id>`), and with
+  `KNOWLEDGE_HIGH_WATER_MISMATCH` over a record written against chain events
+  this device does not hold yet. Linked work the chain no longer holds is
+  reported as `danglingWorkLinks` and refuses nothing. Re-validation is **not** a
+  schema migration.
+- **No retirement by links.** A card is valid or removed, and removal is final: a
+  later card that names it with `--supersedes` removes it as superseded, and a
+  card judged invalid, or one that repeats a work item or a decision, is removed
+  explicitly. Deleting a work item removes no card; a card whose project was
+  deleted leaves default selection until a card supersedes it.
 
 ### Disposable re-initialization procedure
 
@@ -129,13 +148,15 @@ procedure and do not run on the current engine. From EPIC-141 on the engine only
 reads an old-layout workspace, so step 3's `knowledge-init` on `<root>` is refused
 with `LEGACY_WORKSPACE_READ_ONLY`. To carry an old-layout workspace forward now,
 import its chain into a library with
-`library-import-legacy --legacy "<root>" --at <instant>` (`LEGACY_IMPORTED`), then
-initialize that library's knowledge store with
+`library-import-legacy --legacy "<root>" --at <instant>` (`LEGACY_IMPORTED`).
+`<library>` is the library the import created, the `target` its result names. The
+import carries the old workspace's knowledge store into the library's `crest/` as
+it is: its cards read as before, and a new card is written straight away with
+`knowledge-create --workspace "<library>"` (`KNOWLEDGE_UNIT_CREATED`); a
+`knowledge-init` there answers `KNOWLEDGE_ALREADY_EXISTS`. Only when the old
+workspace had no knowledge store does the library need one first:
 `knowledge-init --workspace "<library>" --acknowledge-disposable true`
-(`KNOWLEDGE_STORE_INITIALIZED`), and only then re-capture the cards you need with
-`knowledge-create --workspace "<library>"` (`KNOWLEDGE_UNIT_CREATED`). `<library>`
-is the library the import created, the `target` its result names. The import
-creates no knowledge store, so a `knowledge-create` before `knowledge-init` fails
+(`KNOWLEDGE_STORE_INITIALIZED`), without which a `knowledge-create` fails
 `KNOWLEDGE_PATH_INVALID`. `commands` lists the three verbs and their flags.
 
 1. **The authority is safe.** The workspace event log under
@@ -160,23 +181,32 @@ creates no knowledge store, so a `knowledge-create` before `knowledge-init` fail
    with `records: 0` and binds to the current workspace head.
 
 4. **Re-capture units.** Re-create the knowledge units you need with
-   `knowledge-create`. A card is active and retrievable once written, so there is
-   no promotion to restore, and a card retires only when a later card names it
-   with `--supersedes`: `knowledge-promote` and `knowledge-retire` are retired
-   (TCRN-CROSS-STORY-476). `knowledge-reverify` restores a fresh posture.
-   Conference-distilled decisions are not re-derived: `conference-close --distill`
-   retired with the conference write path (TCRN-CROSS-STORY-475 R3) and answers
-   `CLI_COMMAND_UNKNOWN`. The conference minutes stay in the event log, where
-   `minutes-list` and `minutes-show` read them; a decision a card should carry is
-   captured again with `knowledge-create`.
+   `knowledge-create`. A card is valid and retrievable once written, so there is
+   no promotion to restore, and it leaves the valid cards only when it is
+   removed, by a later card that names it with `--supersedes` or explicitly as
+   invalid or as a repeat of a work item or a decision: `knowledge-promote` and
+   `knowledge-retire` are retired (TCRN-CROSS-STORY-476). `knowledge-reverify`
+   restores a fresh posture. Conference-distilled decisions are not re-derived:
+   `conference-close --distill` retired with the conference write path
+   (TCRN-CROSS-STORY-475 R3) and answers `CLI_COMMAND_UNKNOWN`. The conference
+   minutes stay in the event log, where `minutes-list` and `minutes-show` read
+   them (their valid decisions by default, `--status obsolete|all` for the rest).
+   A decision is not copied into a card: a card that repeats a valid decision is
+   refused with `KNOWLEDGE_ALREADY_RECORDED`.
 
 ### Preserved vs re-derived
+
+**Historical record (rc.4 → rc.5).** The table is what the re-initialization
+above kept and rebuilt for an rc.5 store. The cells marked rc.5 describe that
+store only: a library's store on the current engine has no promotion state, and
+its marker binds a digest of the library id rather than a chain head (see
+"Current engine" above).
 
 | Preserved (system of record, untouched) | Re-derived (disposable, rebuilt on re-init) |
 | --- | --- |
 | The workspace event log: projects, work, conferences, gates, decisions — every hash-chained event. | The knowledge metadata index and `views/` under `knowledge/`. |
-| Conference minutes and gate evidence recorded as events. | Per-unit promotion state and freshness posture. |
-| `storageVersion` and the workspace head. | The store marker's `eventHighWaterDigest` binding (re-bound to the current head at init). |
+| Conference minutes and gate evidence recorded as events. | Per-unit promotion state (rc.5) and freshness posture. |
+| `storageVersion` and the workspace head. | The store marker's `eventHighWaterDigest` binding, re-bound to the current head at init (rc.5). |
 
 Because the durable authority is the event log, a metadata schema change never
 risks the governed record. It costs a re-capture of the derived index, which is
@@ -216,8 +246,11 @@ Every code below is emitted by the shipped engine; grep the source to confirm.
   documented here so operators know they are a different mechanism.
 - `KNOWLEDGE_DISPOSABLE_ACK_REQUIRED` — `knowledge-init` without
   `--acknowledge-disposable` on a non-fixture workspace.
-- `KNOWLEDGE_REBASE_BLOCKED` — a head-advance rebase over records whose
-  references no longer resolve.
-- `KNOWLEDGE_HIGH_WATER_MISMATCH` — the store bound to a workspace head it no
-  longer matches (the lockstep binding; see `backup-restore-runbook.md`).
+- `KNOWLEDGE_REBASE_BLOCKED` — `knowledge-rebase`, a re-validation that writes
+  nothing, over a valid card whose scope or project no longer resolves; linked
+  work that no longer resolves is only reported (`danglingWorkLinks`).
+- `KNOWLEDGE_HIGH_WATER_MISMATCH` — a library's store holding records written
+  against chain events this device does not hold yet, which validate, checkpoint
+  and rebase refuse (see `backup-restore-runbook.md`); for an old-layout store, a
+  marker bound to a head that is not its chain's.
 - `KNOWLEDGE_STORE_INITIALIZED` — a fresh disposable store after re-init.

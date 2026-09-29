@@ -27,6 +27,12 @@ never guess an answer.
 Repair and rollback ask nothing more unless the plan reports an open question: a repair may take
 the cloud-drive and navigation answers again (`--cloud`, `--navigation`).
 
+The navigation answer belongs to this device, not to one project. After a repair or an install
+changes it, repair each other project this device has registered (`library-list` names them,
+each entry's `projectPath`) with the same `--navigation` answer, as below. Until then that
+project's instruction files keep the old choice, so agents there get the navigation twice or not
+at all, and doctor does not report it.
+
 ## Before you plan
 
 - Repair. Run `doctor --project <dir>` first and show which checks fail. Repair puts back what

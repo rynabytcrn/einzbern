@@ -30,7 +30,12 @@ carries:
   is gone as a step: TCRN-CROSS-STORY-365 (Owner ruling TCRN-CROSS-MIN-146)
   removed its gate for the fragment kinds and TCRN-CROSS-INC-282 the last two
   branches that still parked a write;
-- lifecycle coupling: the record tombstones with its work item.
+- lifecycle coupling: none with its work item. Deleting the work item does not
+  retire the record: the link stays, and `knowledge-validate` reports it among
+  `danglingWorkLinks`, a diagnostic that refuses nothing. The record leaves the
+  valid cards only when it is removed, which is final: a later card that names it
+  with `--supersedes` removes it as superseded, and a record judged invalid, or
+  one that repeats a work item or a decision, is removed explicitly.
 
 No second knowledge store is created; the single knowledge store holds work-log
 records alongside other knowledge. High-frequency small records are bounded by

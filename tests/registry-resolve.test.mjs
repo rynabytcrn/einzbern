@@ -4,6 +4,7 @@
 // library of its own, resolves to the same library through its Git remote; an unregistered
 // directory is LIBRARY_NOT_REGISTERED; a library that no longer carries the registered id is
 // LIBRARY_REGISTRY_MISMATCH; and a verb run without --workspace works on the resolved library.
+// TCRN-CROSS-SUB-427: the unregistered refusal offers --workspace only to a verb that takes it.
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
@@ -126,4 +127,23 @@ test("470-R1: a verb run without --workspace works on the library the current di
   assert.deepEqual(workspaceFlags.filter(([, isRequired]) => isRequired), [["init", true]]);
   const registry = JSON.parse(await readFile(join(base, "device", "registry.json"), "utf8"));
   assert.equal(registry.schemaVersion, "einzbern.registry.v1");
+});
+
+test("SUB-427: the LIBRARY_NOT_REGISTERED hint offers --workspace only to a verb that takes it", async (context) => {
+  const base = await scratch(context);
+  const elsewhere = join(base, "elsewhere");
+  await mkdir(elsewhere);
+  // Verbs without --workspace: the hint names library-register alone; code and details are unchanged.
+  for (const args of [["library-resolve", "--cwd", elsewhere], ["rule-list", "--project", elsewhere], ["agents-render", "--project", elsewhere, "--at", at()]]) {
+    const refused = await refusal(args);
+    assert.equal(refused.reasonCode, "LIBRARY_NOT_REGISTERED", args[0]);
+    assert.deepEqual(refused.details, { cwd: elsewhere, remedy: "library-register" }, args[0]);
+    assert.match(refused.message, /on this device \(register one with library-register\)$/u, args[0]);
+  }
+  // A verb that takes --workspace, run from the unregistered directory, is offered it as well.
+  const status = spawnSync(process.execPath, [cliPath, "status"], { cwd: elsewhere, env: { ...process.env }, encoding: "utf8" });
+  assert.equal(status.status, 1);
+  const answer = JSON.parse(status.stderr);
+  assert.deepEqual([answer.reasonCode, answer.remedy], ["LIBRARY_NOT_REGISTERED", "library-register"]);
+  assert.match(answer.error, /on this device \(register one with library-register, or pass --workspace\)$/u);
 });

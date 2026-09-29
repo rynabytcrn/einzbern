@@ -48,7 +48,7 @@ import { managedSectionRecordsFor, parseManagedFile } from "./managed-sections.j
 import { BRAND, DIRECTORY } from "./names.js";
 import { readRegistry, unregisterLibrary } from "./registry.js";
 import type { RegistryEntry } from "./registry.js";
-import { setupFail } from "./setup.js";
+import { SETUP_ACTOR, setupFail } from "./setup.js";
 import type {
   ResolvedSetupAnswers,
   SetupAnswers,
@@ -649,6 +649,7 @@ async function applyChangedNavigationRemoval(
       id: "navigation",
       occurredAt: plan.at,
       backupRoot: backupsPath(plan.deviceHome),
+      actorId: SETUP_ACTOR,
     });
     if (change.written) {
       recorder.write("managed-sections", join(plan.projectRoot, AGENTS_FILE), "update");
@@ -721,6 +722,7 @@ export async function applyRepairSetup(plan: SetupPlan): Promise<SetupApplied> {
     cloud: resolved.cloud,
     navigation: navigationChoice(resolved.navigation),
     engineDirectory: directory,
+    actorId: SETUP_ACTOR,
   });
   pending = await applyChangedNavigationRemoval(plan, recorder, planned.path, pending, removeNavigation);
   return setupApplied(plan, recorder, { deviceId: device.deviceId, library: appliedLibrary(plan), pending });

@@ -10,7 +10,10 @@
 // into the device directory's backups and wires the container as fresh does: each library holds its
 // old chain up to the old head (AC1), each host keeps one hook and no deny rule (AC2), doctor's eight
 // checks are green (AC3), a write to an old path names the library it moved to (AC4), and the old
-// workspaces' container and the archive are not touched. A second run finds nothing to do.
+// workspaces' container and the archive are not touched. A second run finds nothing to do. The
+// migrated library's old chain enabled attestation, so a later repair, and a second device's
+// restore, write their section records under the wizard's actor and leave AGENTS.md and the
+// records in agreement.
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
@@ -19,7 +22,7 @@ import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { copyFile, cp, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, join, relative, resolve } from "node:path";
+import { basename, delimiter, dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
 
 import {
@@ -147,10 +150,10 @@ function refusal(result) {
 
 /**
  * The engine version directory as a release lays it out (scripts/pack-release.mjs), built from this
- * checkout, and installed as this device's current engine with engine-update.
+ * checkout, and installed as the current engine of the device m names, one tree per device.
  */
 async function installEngine(m) {
-  const tree = join(m.base, "trees", FRAMEWORK_VERSION);
+  const tree = join(m.base, "trees", basename(m.device), FRAMEWORK_VERSION);
   await mkdir(join(tree, "scripts", "policy"), { recursive: true });
   await copyFile(join(repositoryRoot, "scripts/einzbern.mjs"), join(tree, "scripts/einzbern.mjs"));
   await copyFile(join(repositoryRoot, "scripts/einzbern-hook.mjs"), join(tree, "scripts/einzbern-hook.mjs"));
@@ -439,4 +442,78 @@ test("489-AC1, AC2, AC3, AC4 (fixture): setup --mode migrate --yes true on a mac
   assert.deepEqual([again.written, again.migration.hostCleanup], [[], []]);
   const changed = (await treeDigest(m.base)).filter((row) => !settled.includes(row)).map((row) => row.split("|")[0]);
   assert.deepEqual(changed.filter((path) => !path.startsWith("device/")), [], "only the device directory's own bookkeeping moved");
+});
+
+/** A machine from before the rename, migrated once with the navigation section written. */
+async function migratedMachine(context) {
+  const m = await oldMachine(context);
+  assert.equal(receipt(setup(m, [...ANSWERS, "--yes", "true"])).reasonCode, "SETUP_APPLIED");
+  return m;
+}
+
+const NAVIGATION_SECTION = /<!-- einzbern:section id=navigation /u;
+
+/** The managed-section records a library holds, key to state, replayed from genesis. */
+async function sectionRecords(library) {
+  const state = await materializeWorkspaceFromGenesis(library);
+  return Object.fromEntries(state.configRecords.filter((record) => record.collection === "managed-section").map((record) => [record.key, record.value.state]));
+}
+
+/** The actor of every event a library holds beyond the old chain it was imported from. */
+async function actorsAfterImport(library) {
+  return (await readAllStreams(library)).streams.flatMap((stream) => stream.events
+    .slice(stream.manifest.identityScheme === "legacy" ? expected.events : 0)
+    .map((event) => event.payload.actor));
+}
+
+function assertDoctorGreen(receiptBody) {
+  assert.deepEqual(receiptBody.selfCheck.checks.map((entry) => [entry.check, entry.ok]), DOCTOR_CHECKS.map((check) => [check, true]),
+    JSON.stringify(receiptBody.selfCheck.checks.filter((entry) => !entry.ok)));
+}
+
+test("489 (TCRN-CROSS-SUB-366, problems #4): after a migration, repair with --navigation false succeeds on the migrated library, and AGENTS.md and the library's section records agree", async (context) => {
+  const m = await migratedMachine(context);
+  const library = m.partitions[0].target;
+  const agents = join(m.container, "AGENTS.md");
+  assert.match(await readFile(agents, "utf8"), NAVIGATION_SECTION);
+  assert.equal((await sectionRecords(library))["AGENTS.md#navigation"], "managed");
+
+  // The chain the library carries enabled attestation: the section's record goes under the
+  // wizard's actor, in the same run as the section leaves the file.
+  const repaired = receipt(run(m, ["setup", "--mode", "repair", "--project", m.container, "--navigation", "false", "--at", at(), "--yes", "true"],
+    { tripwire: [m.oldContainer, m.archive] }));
+  assert.equal(repaired.reasonCode, "SETUP_APPLIED");
+  assert.doesNotMatch(await readFile(agents, "utf8"), NAVIGATION_SECTION);
+  const records = await sectionRecords(library);
+  assert.equal(Object.hasOwn(records, "AGENTS.md#navigation"), false, "the navigation section's record left with the section");
+  assert.ok(Object.keys(records).length > 0 && Object.values(records).every((state) => state === "managed"), JSON.stringify(records));
+  assert.ok((await actorsAfterImport(library)).every((actor) => actor === SETUP_ACTOR), "every event after the old chain names the wizard");
+  assert.deepEqual(repaired.pendingSections, []);
+  assertDoctorGreen(repaired);
+  const validated = receipt(run(m, ["chain-validate", "--workspace", library]));
+  assert.deepEqual([validated.reasonCode, validated.rejectedEventCount], ["CHAIN_VALIDATED", 0]);
+});
+
+test("489 (TCRN-CROSS-SUB-366, problems #4): a second device restores the migrated library, writes its section records in its own stream under the wizard's actor, and AGENTS.md and the records agree", async (context) => {
+  const m = await migratedMachine(context);
+  const library = m.partitions[0].target;
+  const second = { ...m, home: join(m.base, "home2"), device: join(m.base, "device2") };
+  await mkdir(second.home, { recursive: true });
+  await installEngine(second);
+
+  // The second device declines the navigation section, so the restore takes it out of AGENTS.md
+  // and its record out of the library; nothing of the first device's is written.
+  const restored = receipt(run(second, ["setup", "--mode", "restore", "--project", m.container, "--restore", library, "--cloud", "false", "--navigation", "false", "--at", at(), "--yes", "true"],
+    { tripwire: [m.oldContainer, m.archive, m.home, m.device] }));
+  assert.equal(restored.reasonCode, "SETUP_APPLIED");
+  assert.deepEqual(restored.library, { path: library, libraryId: m.partitions[0].workspaceId, created: false });
+  assert.doesNotMatch(await readFile(join(m.container, "AGENTS.md"), "utf8"), NAVIGATION_SECTION);
+  assert.equal(Object.hasOwn(await sectionRecords(library), "AGENTS.md#navigation"), false);
+  const streams = (await readAllStreams(library)).streams;
+  const own = streams.filter((stream) => stream.manifest.identityScheme !== "legacy");
+  assert.equal(own.length, 1, "the second device writes its own stream");
+  assert.ok(own[0].events.length > 0 && own[0].events.every((event) => event.payload.actor === SETUP_ACTOR));
+  assertDoctorGreen(restored);
+  const validated = receipt(run(second, ["chain-validate", "--workspace", library]));
+  assert.deepEqual([validated.reasonCode, validated.rejectedEventCount], ["CHAIN_VALIDATED", 0]);
 });

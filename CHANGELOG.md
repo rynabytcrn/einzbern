@@ -961,49 +961,53 @@ Neither verb starts with `gate-` or `minutes-`. Core's index exports the two fun
 for them, `releaseGate` and `assertWorkGatesClear`; `findMigratedEntry` and `applyMigration` are
 exported by their modules only.
 
-`setup --mode migrate --yes true` now finishes the migration on this device (TCRN-CROSS-STORY-489 R3,
-AC2, AC3, TCRN-CROSS-SUB-366; MIN-238 D4; `packages/core/src/migrate-cleanup.ts`, `setup.ts`,
-`setup-fresh.ts`, `names.ts`). After the partitions are imported and registered and the portal keys
-set, the apply writes the language answer into the project's own library, takes the old installation off
-this device and wires the project as fresh does, every step but the registry, whose entries the
-migration wrote with `migratedFrom`: the two skill copies, the two launchers, one Einzbern hook per
-host in the user's settings, `agents.navigation`, CLAUDE.md's import section and, with
-`--navigation true`, AGENTS.md's navigation section. The cleanup renders the host files through
-host-hooks: the user's `.claude/settings.json` and `.codex/hooks.json` keep the one Einzbern hook
-(with the two pointer hooks when navigation is declined), and those of each project the mapping
-names (the container root among them) and of `--project` keep none of ours. Every hook of the old
-harness, on whatever event, the `permissions.deny` rules that fenced the old directories and the
-old inert key come out; other tools' hooks and keys stay, Codex's hooks switch stays on, and the
-trust state of each hook that went goes with it. A file with nothing of ours to take out is left
-to the wiring (the user's) or as it is. Then the cleanup moves into `backups/<UTC>/` of the device
-directory, deleting nothing: the old adapter's template directories (`.claude/<old engine name>/`
-and `.codex/<old engine name>/`) of the home and of each of those projects, and the old injection
-state of the home (named by `LEGACY_INJECTION_STATE_DIRECTORY` in `names.ts`), under
-`host-hooks/<root key>/`; the old portal's three launchers in each
-project's root, under `launchers/<root key>/`; and the old helper's skill copies and install
-markers, under `skill-copies/`, as `applyLegacySkillCleanup` moves them. A root key is the first
-sixteen hexadecimal digits of the SHA-256 of the root's path, which the host files' backups already
-use. The old workspaces' container and the platform archive are never listed, and the old device
-directory keeps its old engine copy. The plan's `migration.hostCleanup` lists each item as `{kind,
-path, action, into}`: `kind` `host-file` with `action` `update` and `into` the copy of its original,
-or `template`, `injection-state`, `launcher`, `skill-copy` or `marker` with `action` `move` and
-`into` its place in the backups. The receipt's `migration.hostCleanup` lists what was done, and
-`writes`, `backups` and `written` carry the same files under the `host-hooks`, `launchers` and
-`skill-copies` steps. A backup place already taken stops the plan (`MIGRATE_CLEANUP_BACKUP_EXISTS`,
-or `LEGACY_SKILL_CLEANUP_BACKUP_EXISTS` for the old helper's entries), and so does an entry on
-another volume than the device directory (`MIGRATE_CLEANUP_CROSS_VOLUME`), since a move is a rename;
-the apply checks every move again before it writes anything, and a rename that fails is
-`MIGRATE_CLEANUP_MOVE_FAILED`. A user host file host-hooks will not render is the wiring's blocker,
-recorded once. Without a mapping the plan lists no cleanup or wiring. A library a migration imported
-carries its old chain, and a chain that enabled attestation refuses a write that names no actor, so
-the wizard names `SETUP_ACTOR`, `agent:setup`, on every event it writes into a library: the language
-and the managed-section records (`WiringApplyInput.actorId`, which fresh, restore, repair and update
-do not pass). Like Atelier's `agent:portal`, it says which surface wrote and proves nothing. Those
-events go on the imported stream, which belongs to this device: the project's own library then
-holds its old chain up to the old head and this device's writes after it, while every other
-migrated library still ends at its old head. The same mapping applied again writes nothing. The
-migration is reached through `planSetup` and `applySetup`: `migrate-cleanup.ts`, like
-`migrate-legacy.ts`, is exported by its module only, since only core and its tests call it.
+`setup --mode migrate --yes true` now finishes the migration on this device (TCRN-CROSS-STORY-489
+R3, AC2, AC3, TCRN-CROSS-SUB-366; MIN-238 D4; `packages/core/src/migrate-cleanup.ts`, `setup.ts`,
+`setup-fresh.ts`, `setup-maintain.ts`, `setup-restore.ts`, `names.ts`). After the partitions are
+imported and registered and the portal keys set, the apply writes the language answer into the
+project's own library, takes the old installation off this device and wires the project as fresh
+does, every step but the registry, whose entries the migration wrote with `migratedFrom`: the two
+skill copies, the two launchers, one Einzbern hook per host in the user's settings,
+`agents.navigation`, CLAUDE.md's import section and, with `--navigation true`, AGENTS.md's
+navigation section. The cleanup renders the host files through host-hooks: the user's
+`.claude/settings.json` and `.codex/hooks.json` keep the one Einzbern hook (with the two pointer
+hooks when navigation is declined), and those of each project the mapping names (the container root
+among them) and of `--project` keep none of ours. Every hook of the old harness, on whatever event,
+the `permissions.deny` rules that fenced the old directories and the old inert key come out; other
+tools' hooks and keys stay, Codex's hooks switch stays on, and the trust state of each hook that
+went goes with it. A file with nothing of ours to take out is left to the wiring (the user's) or as
+it is. Then the cleanup moves into `backups/<UTC>/` of the device directory, deleting nothing: the
+old adapter's template directories (`.claude/<old engine name>/` and `.codex/<old engine name>/`) of
+the home and of each of those projects, and the old injection state of the home (named by
+`LEGACY_INJECTION_STATE_DIRECTORY` in `names.ts`), under `host-hooks/<root key>/`; the old portal's
+three launchers in each project's root, under `launchers/<root key>/`; and the old helper's skill
+copies and install markers, under `skill-copies/`, as `applyLegacySkillCleanup` moves them. A root
+key is the first sixteen hexadecimal digits of the SHA-256 of the root's path, which the host files'
+backups already use. The old workspaces' container and the platform archive are never listed, and
+the old device directory keeps its old engine copy. The plan's `migration.hostCleanup` lists each
+item as `{kind, path, action, into}`: `kind` `host-file` with `action` `update` and `into` the copy
+of its original, or `template`, `injection-state`, `launcher`, `skill-copy` or `marker` with
+`action` `move` and `into` its place in the backups. The receipt's `migration.hostCleanup` lists
+what was done, and `writes`, `backups` and `written` carry the same files under the `host-hooks`,
+`launchers` and `skill-copies` steps. A backup place already taken stops the plan
+(`MIGRATE_CLEANUP_BACKUP_EXISTS`, or `LEGACY_SKILL_CLEANUP_BACKUP_EXISTS` for the old helper's
+entries), and so does an entry on another volume than the device directory
+(`MIGRATE_CLEANUP_CROSS_VOLUME`), since a move is a rename; the apply checks every move again before
+it writes anything, and a rename that fails is `MIGRATE_CLEANUP_MOVE_FAILED`. A user host file
+host-hooks will not render is the wiring's blocker, recorded once. Without a mapping the plan lists
+no cleanup or wiring. A library a migration imported carries its old chain, and a chain that enabled
+attestation refuses a write that names no actor, so the wizard names `SETUP_ACTOR`, `agent:setup`,
+on every event it writes into a library: the language and the managed-section records. The wiring
+takes it as `WiringApplyInput.actorId`, which migrate, restore and repair pass, and repair names it
+when it takes out a declined navigation section too; fresh creates a library that enables no
+attestation, and update writes none. A repair or restore of such a library used to write the project
+file and then be refused with `WORKSPACE_ACTOR_REQUIRED` before it recorded the section. Like
+Atelier's `agent:portal`, the actor says which surface wrote and proves nothing. Those events go on
+the imported stream, which belongs to this device: the project's own library then holds its old
+chain up to the old head and this device's writes after it, while every other migrated library still
+ends at its old head. The same mapping applied again writes nothing. The migration is reached
+through `planSetup` and `applySetup`: `migrate-cleanup.ts`, like `migrate-legacy.ts`, is exported by
+its module only, since only core and its tests call it.
 
 The repository's `test` task waits out a process group whose members are still exiting
 (TCRN-CROSS-SUB-402, TCRN-CROSS-INC-393; TCRN-CROSS-STORY-493; `scripts/task.mjs`). `kill(-group, 0)`

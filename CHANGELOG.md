@@ -875,6 +875,33 @@ link that is still there under another name, a staging link that outlasts the un
 wait, a symbolic link, a file that is not regular and damaged content still fail closed with
 `DEVICE_FILE_INVALID`. The `device.json` format, the device id and the reason codes are unchanged.
 
+`library-import-legacy` compares a chain whose records run past one MiB, and carries the old
+knowledge store (TCRN-CROSS-SUB-421, TCRN-CROSS-INC-397; fixes TCRN-CROSS-STORY-468 R6; MIN-239 D7;
+`packages/core/src/legacy-import.ts`). The import checked the library's replay against the old
+chain's records with one `canonicalSha256` over the eight record collections, which refuses a value
+past one MiB: cross-project's records measure 7.7 MB, so its import stopped with `INPUT_OVERSIZED`
+after the segments and the stream manifest were written, while a dry run, which never made that
+check, passed. The digest (`legacyRecordsDigest`, exported by its module and not by core's index)
+is now the same canonical JSON fed to SHA-256 one record at a time, each record through
+`canonicalJson` with every check it makes: within the protocol's limits it equals `canonicalSha256`
+of the whole, past them it compares every record instead of refusing, and a record that is not
+canonical still throws. `PROTOCOL_LIMITS.maxCanonicalBytes` is unchanged, and a mismatch is still
+`LEGACY_IMPORT_MISMATCH`, now naming the collections that differ. A dry run makes every check an
+import makes before it writes, and both receipts carry `records` (that digest and each collection's
+count) and `knowledge`. The old workspace's knowledge store is carried into `crest/` as its engine
+left it: `store.json`, `metadata/` and `bodies/` (segments included), byte for byte and checked by
+SHA-256; `views/` stays behind, since a library's index view is this device's cache. The library's
+crest reads that layout as it reads any crest an older engine left and takes new cards as events
+beside it, and it must answer as many cards as the old store did, in all and by default; `knowledge`
+reports those two counts (`cards`, `defaultCards`) and the files and bytes carried, or is `null` when
+the old workspace has no store. `config/project.json` is written, with the settings and the
+configuration records, once every check has passed. This device's identity is read or made before
+the target is touched, and an import that stops after it has written into its target answers with the
+reason code and details of what stopped it (`LEGACY_IMPORT_STOPPED` when that carries none), the
+target, and every file and empty directory it left there, relative to the target, in the message and
+in `written`; nothing is removed, so an import into that target again is refused as not empty until
+it is moved aside.
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

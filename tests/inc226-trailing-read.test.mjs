@@ -34,9 +34,9 @@ import {
   initializeKnowledgeStore,
   initializeLibrary,
   listKnowledgeMetadata,
-  readKnowledgeStoreMarker,
   validateKnowledgeStore,
 } from "../dist/build/packages/core/src/index.js";
+import { readKnowledgeStoreMarker } from "../dist/build/packages/core/src/knowledge-core.js";
 import { canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
 const instant = (day, second = 0) => `2026-08-${String(day).padStart(2, "0")}T14:00:${String(second).padStart(2, "0")}Z`;

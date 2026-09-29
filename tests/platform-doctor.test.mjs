@@ -3,7 +3,7 @@
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmod, mkdir, mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -1367,6 +1367,26 @@ test("a recorded allowance that gained a consumer or lost its symbol is its own 
   assert.equal(both.reasonCode, "PLATFORM_CORE_EXPORT_UNCONSUMED");
   assert.deepEqual(both.unconsumedWithoutAllowance, ["beta"]);
   assert.deepEqual(both.absentAllowances, ["zeta"], "the stale entry is still reported beside it");
+});
+
+// TCRN-CROSS-SUB-414 (R16; judgment-r15 §2.7 V+1): every case above feeds the leg synthetic values,
+// which is how 2c17ec8e left two barrel symbols without a consumer and the suite stayed green until
+// the batch gate ran the doctor. This one measures this checkout -- the barrel, the policy file and
+// the consumer roots it names -- with the leg's own measurement, no synthetic values and no second
+// implementation. The checkout is the one this file sits in, reached through the engine directory
+// of a complete container, so run in a worktree it measures that worktree. Red leg: export a symbol
+// no recorded root names, without recording it, and this names it.
+test("SUB-414: unusedExports measured on this checkout names no unrecorded export and no stale allowance", async (context) => {
+  const fixture = await completeInstallFixture(context);
+  await mkdir(join(fixture.root, LOCAL_DIRECTORY_NAMES.classificationFolder), { recursive: true });
+  await symlink(join(import.meta.dirname, ".."), join(fixture.root, LOCAL_DIRECTORY_NAMES.engine));
+  const leg = (await inspectInstallFixture(fixture)).checks.find((entry) => entry.name === "unusedExports");
+  assert.equal(leg.source, "live-engine-checkout");
+  assert.notEqual(leg.comparable, false, "the checkout's policy and barrel were read");
+  const found = { reasonCode: leg.reasonCode, unconsumedWithoutAllowance: leg.unconsumedWithoutAllowance, absentAllowances: leg.absentAllowances, consumedAllowances: leg.consumedAllowances };
+  assert.equal(leg.ok, true, `unusedExports on this checkout: ${JSON.stringify(found)}`);
+  assert.equal(leg.unconsumedCount, leg.allowedCount, "every unconsumed export is recorded, and nothing else is");
+  assert.ok(leg.consumerFiles > 0, "the recorded consumer roots were walked");
 });
 
 // The barrel re-exports its type surface in its own `export type { ... }` blocks. A

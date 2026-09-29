@@ -25,11 +25,11 @@ import {
   initializeLibrary,
   listKnowledgeMetadata,
   readKnowledgeBody,
-  readKnowledgeStoreMarker,
   setWorkspaceSetting,
   validateKnowledgeStore,
   DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
+import { readKnowledgeStoreMarker } from "../dist/build/packages/core/src/knowledge-core.js";
 import { canonicalJson } from "../dist/build/packages/protocol/src/index.js";
 
 const AT = "2026-09-26T10:00:00.000Z";

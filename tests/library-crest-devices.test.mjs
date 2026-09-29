@@ -14,6 +14,7 @@
 // test's own, in order, so each outcome is the only one it can have.
 
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cp, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -27,6 +28,8 @@ import {
   createKnowledgeUnit,
   createProject,
   createWork,
+  deleteProject,
+  deleteWork,
   exportKnowledgeCheckpoint,
   initializeKnowledgeStore,
   initializeLibrary,
@@ -34,7 +37,6 @@ import {
   migrateKnowledgeBodies,
   readKnowledgeBody,
   readKnowledgeSnippet,
-  readKnowledgeStoreMarker,
   rebaseKnowledgeStore,
   recoverKnowledgeStore,
   reverifyKnowledgeUnit,
@@ -44,6 +46,7 @@ import {
   validateWorkspace,
   DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
+import { readKnowledgeStoreMarker } from "../dist/build/packages/core/src/knowledge-core.js";
 import { applyKnowledgeBatch } from "../dist/build/packages/core/src/knowledge-batch.js";
 import { readRecallCards } from "../dist/build/packages/core/src/recall-inputs.js";
 import { resetRecallCache } from "../dist/build/packages/core/src/recall.js";
@@ -679,6 +682,236 @@ test("SUB-414: a crest an older engine left in the metadata/body layout, or with
   const final = await tree(fx.store);
   for (const [path, bytes] of Object.entries(segmented)) assert.equal(final[path], bytes, `a new card leaves the segments as they were: ${path}`);
   assert.equal((await as(fx.homeA, () => readKnowledgeBody(fx.workspace, ids.kestrel, { at: AT }))).body, "SUB-414-KESTREL body", "a segmented body reads by its id");
+});
+
+// ---- TCRN-CROSS-SUB-414 R16 (C-R16-1; judgment-r15-batch1 T1, accept-r15-epic142 R15-B) ----
+//
+// A project deleted under a live card of a library's crest. project-delete refuses only a project
+// that still owns live work, and a device that deletes a project cannot see a card another device
+// wrote to it before either received the other's write, so the crest holds such a card instead of
+// refusing every read and write. The card is named at the top of knowledge-list, of a read of its id
+// and of recall as `unresolvedScopes` -- its id, the device, sequence and event hash of its record,
+// and the project id that no longer resolves -- and leaves default selection and recall, while every
+// other card is read, written and recalled as before. validate and a checkpoint refuse with
+// KNOWLEDGE_LINK_INVALID and the rebase with KNOWLEDGE_REBASE_BLOCKED, each naming the card and the
+// remedy, until a card supersedes it; then all three answer again. Red leg: refuse a live record's
+// lost project in the scan, as the crest did before R16, and every read below is
+// KNOWLEDGE_LINK_INVALID and no write lands.
+
+const GONE_QUERY = "curlew call pitch plover egg count";
+
+// The id of the project a state holds under an external key.
+function projectIdOf(state, externalKey) {
+  return state.projects.find((project) => project.externalKey === externalKey).id;
+}
+
+// A card's latest record in a device's stream, as `unresolvedScopes` names it.
+async function unresolvedScopeOf(fx, deviceId, id, projectId) {
+  const event = (await streamEvents(fx.store, deviceId)).findLast((entry) => entry.metadata.id === id);
+  return { id, deviceId, sequence: event.sequence, eventHash: event.eventHash, projectId };
+}
+
+// A refusal as a caller meets it: its code, its message and its details.
+async function refusalAnswer(home, operation) {
+  const refused = await as(home, () => refusalOf(operation));
+  return refused === null ? null : { reasonCode: refused.reasonCode, message: refused.message, details: refused.details ?? null };
+}
+
+// Everything one device answers about a crest holding a card whose project is gone: the list, the
+// list of every record, both reads of that card, recall through core and through the CLI, and the
+// three strict surfaces.
+async function goneProjectAnswers(fx, home, orphan) {
+  return {
+    listed: await as(home, () => listKnowledgeMetadata(fx.workspace, { at: AT })),
+    all: await as(home, () => listKnowledgeMetadata(fx.workspace, { at: AT, selection: "all" })),
+    snippet: await as(home, () => readKnowledgeSnippet(fx.workspace, orphan)),
+    body: await as(home, () => readKnowledgeBody(fx.workspace, orphan, { at: AT })),
+    recalled: await as(home, () => readRecallCards(fx.workspace, { at: AT })),
+    recall: await cli(home, ["recall", "--workspace", fx.workspace, "--at", AT, "--query", GONE_QUERY, "--tau", "0"]),
+    validate: await refusalAnswer(home, () => validateKnowledgeStore(fx.workspace)),
+    checkpoint: await refusalAnswer(home, () => exportKnowledgeCheckpoint(fx.workspace, AT)),
+    rebase: await refusalAnswer(home, () => rebaseKnowledgeStore(fx.workspace, { at: AT })),
+  };
+}
+
+// What those answers are while no card supersedes the one whose project is gone. `kept` is every
+// other card, which default selection and recall still give.
+function assertGoneProjectNamed(answers, { orphan, entries, kept }) {
+  assert.deepEqual(answers.listed.records.map((record) => record.id), [...kept].sort(), "default selection leaves the card out, and only it");
+  assert.deepEqual(answers.listed.unresolvedScopes, entries, "the list names it: its device, sequence, event hash and the project id that no longer resolves");
+  assert.deepEqual(answers.all.records.map((record) => record.id), [...kept, orphan].sort(), "--selection all lists it");
+  assert.deepEqual([answers.snippet.id, answers.snippet.unresolvedScopes], [orphan, entries], "a read of its id answers it, naming it at the top");
+  assert.deepEqual([answers.body.id, answers.body.unresolvedScopes], [orphan, entries]);
+  assert.deepEqual(answers.recalled.cards.map((entry) => entry.id).sort(), [...kept].sort(), "recall leaves it out and gives every other card");
+  const withheld = { reasonCode: "KNOWLEDGE_LINK_INVALID", unresolvedScopes: entries, withheldCards: 1 };
+  assert.deepEqual(answers.recalled.projectCrestDegraded, withheld);
+  assert.deepEqual(answers.recall.projectCrestDegraded, withheld, "recall names it at the top of its answer");
+  assert.deepEqual([answers.recall.knowledgeReasonCode, answers.recall.knowledgeStores.project],
+    ["KNOWLEDGE_LIST_READY", { reasonCode: "KNOWLEDGE_LIST_READY", cards: kept.length }], "the crest is read, not refused");
+  assert.equal(Object.hasOwn(answers.recall, "userCrestDegraded"), false, "the user crest is not touched");
+  const details = { unresolvedScopes: entries, remedy: `write a card with knowledge-create --supersedes ${orphan}` };
+  assert.deepEqual(answers.validate, { reasonCode: "KNOWLEDGE_LINK_INVALID", message: `${orphan}:scope`, details }, "validate refuses, naming the card and the remedy");
+  assert.deepEqual(answers.checkpoint, { reasonCode: "KNOWLEDGE_LINK_INVALID", message: `${orphan}:scope`, details });
+  assert.deepEqual(answers.rebase, { reasonCode: "KNOWLEDGE_REBASE_BLOCKED", message: orphan, details }, "the rebase's one offender is the card");
+}
+
+// Everything one device answers once a card has superseded the one whose project is gone.
+async function resolvedAnswers(fx, home, orphan) {
+  const answers = await as(home, async () => ({
+    listed: await listKnowledgeMetadata(fx.workspace, { at: AT }),
+    snippet: await readKnowledgeSnippet(fx.workspace, orphan),
+    body: await readKnowledgeBody(fx.workspace, orphan, { at: AT }),
+    validation: await validateKnowledgeStore(fx.workspace),
+    checkpoint: JSON.parse(await exportKnowledgeCheckpoint(fx.workspace, AT)),
+    rebased: await rebaseKnowledgeStore(fx.workspace, { at: AT }),
+    recalled: await readRecallCards(fx.workspace, { at: AT }),
+  }));
+  return { ...answers, recall: await cli(home, ["recall", "--workspace", fx.workspace, "--at", AT, "--query", GONE_QUERY, "--tau", "0"]) };
+}
+
+function assertGoneProjectResolved(answers, { orphan, orphanBody, kept }) {
+  assert.deepEqual(answers.listed.records.map((record) => record.id), [...kept].sort(), "the replaced card stays out of default selection, as a superseded card");
+  for (const answer of [answers.listed, answers.snippet, answers.body]) assert.equal(Object.hasOwn(answer, "unresolvedScopes"), false, "and nothing names it any more");
+  assert.deepEqual([answers.body.id, answers.body.body], [orphan, orphanBody], "its body stays readable by its id");
+  assert.equal(answers.validation.reasonCode, "KNOWLEDGE_STORE_VALID");
+  assert.equal(answers.checkpoint.reasonCode, "KNOWLEDGE_CHECKPOINT_READY");
+  assert.deepEqual([answers.rebased.reasonCode, answers.rebased.offenders], ["KNOWLEDGE_STORE_REBASED", []]);
+  assert.equal(answers.recalled.projectCrestDegraded, null);
+  assert.equal(Object.hasOwn(answers.recall, "projectCrestDegraded"), false, "recall no longer names the crest");
+}
+
+test("SUB-414 (R16): a project one device deletes while the other writes a card to it leaves the crest readable, writable and recallable on both, the card named and withheld until a card supersedes it", async (context) => {
+  const fx = await twoDevices(context, "project-delete");
+  const gone = await as(fx.homeA, async () => projectIdOf(await createProject(fx.workspace, { occurredAt: instant(3), externalKey: "SUB-414-GONE", name: "Gone" }), "SUB-414-GONE"));
+  const plover = await as(fx.homeA, () => createKnowledgeUnit(fx.workspace, card("SUB-414-PLOVER", "Plover egg count", { occurredAt: instant(4), scope: "project", projectId: fx.project })));
+  // A deletes the project, which holds no card and no live work on A; B has not received the delete.
+  await fx.mark(fx.homeA);
+  await as(fx.homeA, () => deleteProject(fx.workspace, { occurredAt: instant(6), id: gone }));
+  await fx.hold(fx.homeA);
+  const orphan = await as(fx.homeB, () => createKnowledgeUnit(fx.workspace, card("SUB-414-CURLEW", "Curlew call pitch", { occurredAt: instant(7), scope: "project", projectId: gone })));
+  assert.equal(orphan.reasonCode, "KNOWLEDGE_UNIT_CREATED", "B still holds the project, so its write is admitted");
+  await fx.deliver(fx.homeA);
+  const entries = [await unresolvedScopeOf(fx, DEVICE_B, orphan.id, gone)];
+  const onA = await goneProjectAnswers(fx, fx.homeA, orphan.id);
+  assert.equal(canonicalJson(await goneProjectAnswers(fx, fx.homeB, orphan.id)), canonicalJson(onA), "both devices answer every read and refusal byte for byte alike");
+  assertGoneProjectNamed(onA, { orphan: orphan.id, entries, kept: [plover.id] });
+  // What the CLI prints for the strict surfaces: the card and the remedy.
+  for (const [args, reasonCode, error] of [
+    [["knowledge-validate", "--workspace", fx.workspace], "KNOWLEDGE_LINK_INVALID", `${orphan.id}:scope`],
+    [["knowledge-rebase", "--workspace", fx.workspace, "--at", AT], "KNOWLEDGE_REBASE_BLOCKED", orphan.id],
+  ]) {
+    const printed = spawnSync(process.execPath, [join(import.meta.dirname, "..", "scripts", "einzbern.mjs"), ...args], { env: { ...process.env, EINZBERN_HOME: fx.homeB }, encoding: "utf8" });
+    assert.equal(printed.status, 1, args[0]);
+    assert.deepEqual(JSON.parse(printed.stderr.trim().split("\n").at(-1)),
+      { ok: false, reasonCode, remedy: `write a card with knowledge-create --supersedes ${orphan.id}`, error }, args[0]);
+  }
+  // Unrelated cards are written on both devices, and the card stays named on both.
+  const dunlin = await as(fx.homeA, () => createKnowledgeUnit(fx.workspace, card("SUB-414-DUNLIN", "Dunlin roost site", { occurredAt: instant(8) })));
+  const godwit = await as(fx.homeB, () => createKnowledgeUnit(fx.workspace, card("SUB-414-GODWIT", "Godwit tide timing", { occurredAt: instant(9), scope: "project", projectId: fx.project })));
+  assert.deepEqual([dunlin.reasonCode, godwit.reasonCode], ["KNOWLEDGE_UNIT_CREATED", "KNOWLEDGE_UNIT_CREATED"]);
+  const kept = [plover.id, dunlin.id, godwit.id];
+  const written = await goneProjectAnswers(fx, fx.homeB, orphan.id);
+  assert.equal(canonicalJson(await goneProjectAnswers(fx, fx.homeA, orphan.id)), canonicalJson(written));
+  assertGoneProjectNamed(written, { orphan: orphan.id, entries, kept });
+  // The existing verb resolves it: a card that supersedes it, written on either device.
+  const moved = await as(fx.homeA, () => createKnowledgeUnit(fx.workspace, card("SUB-414-CURLEW-KEPT", "Curlew call pitch, filed under the kept project", {
+    occurredAt: instant(10), scope: "project", projectId: fx.project, supersedes: orphan.id,
+  })));
+  assert.deepEqual([moved.reasonCode, moved.superseded], ["KNOWLEDGE_UNIT_CREATED", orphan.id]);
+  const resolved = await resolvedAnswers(fx, fx.homeB, orphan.id);
+  assert.equal(canonicalJson(await resolvedAnswers(fx, fx.homeA, orphan.id)), canonicalJson(resolved));
+  assertGoneProjectResolved(resolved, { orphan: orphan.id, orphanBody: "SUB-414-CURLEW body", kept: [...kept, moved.id] });
+});
+
+// The card can also be one card of a pair two devices wrote about one thing: recall names it in both
+// lists and counts it once, and the pair's reason code leads. Red leg: count the lists apart, and
+// withheldCards says three where two cards are withheld.
+test("SUB-414 (R16): a card whose project is gone that is also one card of an unresolved pair is named in both lists and withheld once", async (context) => {
+  const fx = await twoDevices(context, "project-delete-pair");
+  const gone = await as(fx.homeA, async () => projectIdOf(await createProject(fx.workspace, { occurredAt: instant(3), externalKey: "SUB-414-GONE", name: "Gone" }), "SUB-414-GONE"));
+  await fx.mark(fx.homeA);
+  await as(fx.homeA, () => deleteProject(fx.workspace, { occurredAt: instant(6), id: gone }));
+  const survey = await as(fx.homeA, () => createKnowledgeUnit(fx.workspace, card("SUB-414-CURLEW-SURVEY", "Curlew call pitch survey", { occurredAt: instant(7) })));
+  await fx.hold(fx.homeA);
+  const orphan = await as(fx.homeB, () => createKnowledgeUnit(fx.workspace, card("SUB-414-CURLEW", "Curlew call pitch census", { occurredAt: instant(8), scope: "project", projectId: gone })));
+  await fx.deliver(fx.homeA);
+  const entries = [await unresolvedScopeOf(fx, DEVICE_B, orphan.id, gone)];
+  const listed = await as(fx.homeB, () => listKnowledgeMetadata(fx.workspace, { at: AT }));
+  assert.deepEqual([listed.records, listed.unresolvedConflicts, listed.unresolvedScopes], [[], [[survey.id, orphan.id].sort()], entries]);
+  const withheld = { reasonCode: "KNOWLEDGE_POSSIBLE_CONFLICT", unresolvedConflicts: listed.unresolvedConflicts, unresolvedScopes: entries, withheldCards: 2 };
+  assert.deepEqual((await as(fx.homeA, () => readRecallCards(fx.workspace, { at: AT }))).projectCrestDegraded, withheld);
+  assert.deepEqual((await cli(fx.homeB, ["recall", "--workspace", fx.workspace, "--at", AT, "--query", GONE_QUERY, "--tau", "0"])).projectCrestDegraded, withheld);
+  // One card that supersedes the named card resolves the pair and the lost project at once.
+  await as(fx.homeB, () => createKnowledgeUnit(fx.workspace, card("SUB-414-CURLEW-MERGED", "Curlew call pitch, survey and census", { occurredAt: instant(9), supersedes: orphan.id })));
+  const after = await as(fx.homeA, () => listKnowledgeMetadata(fx.workspace, { at: AT }));
+  assert.deepEqual([Object.hasOwn(after, "unresolvedConflicts"), Object.hasOwn(after, "unresolvedScopes")], [false, false]);
+  assert.equal((await as(fx.homeA, () => readRecallCards(fx.workspace, { at: AT }))).projectCrestDegraded, null);
+  assert.equal((await as(fx.homeA, () => validateKnowledgeStore(fx.workspace))).reasonCode, "KNOWLEDGE_STORE_VALID");
+});
+
+test("SUB-414 (R16): on one device, a card whose project is deleted after it was written is named the same way; a dangling work link stays a diagnostic, and a forked or altered stream is still refused", async (context) => {
+  const fx = await twoDevices(context, "project-delete-one");
+  const { gone, work } = await as(fx.homeA, async () => {
+    const withGone = await createProject(fx.workspace, { occurredAt: instant(3), externalKey: "SUB-414-GONE", name: "Gone" });
+    const withWork = await createWork(fx.workspace, { occurredAt: instant(4), projectId: fx.project, externalKey: "SUB-414-WORK-DONE", kind: "Initiative", parentId: null, status: "active" });
+    return { gone: projectIdOf(withGone, "SUB-414-GONE"), work: withWork.work.find((record) => record.externalKey === "SUB-414-WORK-DONE").id };
+  });
+  const orphan = await as(fx.homeA, () => createKnowledgeUnit(fx.workspace, card("SUB-414-CURLEW", "Curlew call pitch", { occurredAt: instant(5), scope: "project", projectId: gone })));
+  const plover = await as(fx.homeA, () => createKnowledgeUnit(fx.workspace, card("SUB-414-PLOVER", "Plover egg count", {
+    occurredAt: instant(6), scope: "project", projectId: fx.project, linkedWorkIds: [work],
+  })));
+  await as(fx.homeA, async () => {
+    await deleteProject(fx.workspace, { occurredAt: instant(7), id: gone });
+    await deleteWork(fx.workspace, { occurredAt: instant(8), id: work });
+  });
+  const entries = [await unresolvedScopeOf(fx, DEVICE_A, orphan.id, gone)];
+  assertGoneProjectNamed(await goneProjectAnswers(fx, fx.homeA, orphan.id), { orphan: orphan.id, entries, kept: [plover.id] });
+  // Holding a card whose project is gone holds nothing else: a forked stream and a record edited in
+  // place are refused as before, naming the device and the sequence or the file.
+  const stream = join(fx.store, "events", DEVICE_A);
+  const orphanFile = (await readdir(stream)).find((name) => name.endsWith(`-${entries[0].eventHash}.json`));
+  const original = await readFile(join(stream, orphanFile));
+  const fork = join(stream, `${orphanFile.slice(0, 9)}${"f".repeat(64)}.json`);
+  await writeFile(fork, original);
+  const forked = await as(fx.homeA, () => refusalOf(() => listKnowledgeMetadata(fx.workspace, { at: AT })));
+  assert.equal(forked?.reasonCode, "KNOWLEDGE_PARTIAL_STATE");
+  assert.match(forked.message, new RegExp(`^${DEVICE_A}: event stream has a gap or fork at sequence \\d+$`, "u"));
+  await rm(fork);
+  const event = JSON.parse(original.toString("utf8"));
+  await writeFile(join(stream, orphanFile), canonicalJson({ ...event, metadata: { ...event.metadata, summary: "edited in place" } }));
+  const altered = await as(fx.homeA, () => refusalOf(() => listKnowledgeMetadata(fx.workspace, { at: AT })));
+  assert.deepEqual([altered?.reasonCode, altered?.message], ["KNOWLEDGE_RECORD_INVALID", `${DEVICE_A}/${orphanFile}: event hash`]);
+  await writeFile(join(stream, orphanFile), original);
+  // Every other card is written and read as before, and a dangling work link is what it was: a
+  // diagnostic that leaves its card in default selection.
+  const dunlin = await as(fx.homeA, () => createKnowledgeUnit(fx.workspace, card("SUB-414-DUNLIN", "Dunlin roost site", { occurredAt: instant(9) })));
+  assertGoneProjectNamed(await goneProjectAnswers(fx, fx.homeA, orphan.id), { orphan: orphan.id, entries, kept: [plover.id, dunlin.id] });
+  const moved = await as(fx.homeA, () => createKnowledgeUnit(fx.workspace, card("SUB-414-CURLEW-KEPT", "Curlew call pitch, filed under the kept project", {
+    occurredAt: instant(10), scope: "project", projectId: fx.project, supersedes: orphan.id,
+  })));
+  const resolved = await resolvedAnswers(fx, fx.homeA, orphan.id);
+  assertGoneProjectResolved(resolved, { orphan: orphan.id, orphanBody: "SUB-414-CURLEW body", kept: [plover.id, dunlin.id, moved.id] });
+  assert.deepEqual(resolved.validation.danglingWorkLinks, [{ knowledgeId: plover.id, workIds: [work] }]);
+  assert.deepEqual(resolved.rebased.danglingWorkLinks, [{ knowledgeId: plover.id, workIds: [work] }]);
+});
+
+test("SUB-414 (R16): a card of the metadata/body layout an older engine left, whose project is gone, is named with no device, sequence or event hash and resolved the same way", async (context) => {
+  const fx = await twoDevices(context, "project-delete-layout");
+  const gone = await as(fx.homeA, async () => projectIdOf(await createProject(fx.workspace, { occurredAt: instant(3), externalKey: "SUB-414-GONE", name: "Gone" }), "SUB-414-GONE"));
+  const { orphan, plover } = await as(fx.homeA, async () => ({
+    orphan: await createKnowledgeUnit(fx.workspace, card("SUB-414-CURLEW", "Curlew call pitch", { occurredAt: instant(4), scope: "project", projectId: gone })),
+    plover: await createKnowledgeUnit(fx.workspace, card("SUB-414-PLOVER", "Plover egg count", { occurredAt: instant(5), scope: "project", projectId: fx.project })),
+  }));
+  await asOlderEngineCrest(fx, fx.homeA);
+  await as(fx.homeA, () => deleteProject(fx.workspace, { occurredAt: instant(6), id: gone }));
+  const entries = [{ id: orphan.id, deviceId: null, sequence: null, eventHash: null, projectId: gone }];
+  const onB = await goneProjectAnswers(fx, fx.homeB, orphan.id);
+  assert.equal(canonicalJson(await goneProjectAnswers(fx, fx.homeA, orphan.id)), canonicalJson(onB));
+  assertGoneProjectNamed(onB, { orphan: orphan.id, entries, kept: [plover.id] });
+  const moved = await as(fx.homeB, () => createKnowledgeUnit(fx.workspace, card("SUB-414-CURLEW-KEPT", "Curlew call pitch, filed under the kept project", {
+    occurredAt: instant(7), scope: "project", projectId: fx.project, supersedes: orphan.id,
+  })));
+  assertGoneProjectResolved(await resolvedAnswers(fx, fx.homeA, orphan.id), { orphan: orphan.id, orphanBody: "SUB-414-CURLEW body", kept: [plover.id, moved.id] });
 });
 
 test("SUB-414: an old-layout workspace's knowledge store refuses every write with LEGACY_WORKSPACE_READ_ONLY and keeps every byte", async (context) => {

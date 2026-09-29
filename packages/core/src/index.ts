@@ -367,6 +367,10 @@ export type {
   StoryScopeSection,
   StoryScopeValidation,
 } from "./story-scope-compliance.js";
+// TCRN-CROSS-SUB-414 (R16): knowledgeStorePath and readKnowledgeStoreMarker left the barrel with the
+// CLI's rebind after each chain write, the last caller either had in a recorded consumer root. Core
+// finds the crest through knowledgeStorePath inside core, and the tests that read the projected
+// marker import it from knowledge-core.ts, as artifact-store.ts's readers do above.
 export {
   KNOWLEDGE_CONFLICT_SCORE_THRESHOLD,
   KNOWLEDGE_CORE_VERSION,
@@ -385,14 +389,12 @@ export {
   evaluateKnowledgeFreshness,
   exportKnowledgeCheckpoint,
   initializeKnowledgeStore,
-  knowledgeStorePath,
   migrateKnowledgeBodies,
   knowledgeConflictHits,
   knowledgeLinkIndexCountsForTest,
   knowledgeRelevanceScore,
   listKnowledgeMetadata,
   readKnowledgeBody,
-  readKnowledgeStoreMarker,
   readKnowledgeSnippet,
   rebaseKnowledgeStore,
   recoverKnowledgeStore,

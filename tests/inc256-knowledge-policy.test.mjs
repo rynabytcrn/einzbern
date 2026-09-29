@@ -17,10 +17,10 @@ import {
   initializeKnowledgeStore,
   initializeLibrary,
   listKnowledgeMetadata,
-  readKnowledgeStoreMarker,
   validateKnowledgeStore,
   DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
+import { readKnowledgeStoreMarker } from "../dist/build/packages/core/src/knowledge-core.js";
 import { canonicalJson, canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
 const instant = (second) => `2026-09-02T00:00:${String(second).padStart(2, "0")}Z`;

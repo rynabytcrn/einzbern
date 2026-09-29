@@ -21,9 +21,9 @@ import {
   initializeKnowledgeStore,
   initializeLibrary,
   listKnowledgeMetadata,
-  readKnowledgeStoreMarker,
   validateKnowledgeStore,
 } from "../dist/build/packages/core/src/index.js";
+import { readKnowledgeStoreMarker } from "../dist/build/packages/core/src/knowledge-core.js";
 
 const instant = second => `2026-08-21T12:00:${String(second).padStart(2, "0")}Z`;
 

@@ -69,6 +69,27 @@ order); its card leaves default selection and `recall` (which names the record u
 `knowledge-checkpoint` and `knowledge-rebase` refuse with `KNOWLEDGE_HIGH_WATER_MISMATCH`, details
 `awaitingChain`. Every other card reads, recalls and is written as before.
 
+A read checks each card's current record against the chain it replays as well (TCRN-CROSS-SUB-414
+R16). A live record -- no card supersedes it and it is not retired -- whose project the chain no longer
+holds does not refuse the crest: `project-delete` refuses only a project that still owns live work, and
+a device that deletes a project cannot see a card another device wrote to it before either received
+the other's write. The record is named at the top of `knowledge-list` and of a read of its id as
+`unresolvedScopes` (`id`, `deviceId`, `sequence`, `eventHash` -- all three null for a record of the
+metadata/body layout, as for a duplicate's version -- and `projectId`, the project that no longer
+resolves; in canonical id order, then writer order), and its card leaves default selection and
+`recall`, which names the record under `unresolvedScopes` in `projectCrestDegraded` with reason code
+`KNOWLEDGE_LINK_INVALID` when no unresolved pair and no duplicate's versions are withheld as well
+(ahead of the `KNOWLEDGE_HIGH_WATER_MISMATCH` of records awaiting chain events alone). Every other card
+reads, recalls and is written as before; a write of that card itself (`knowledge-reverify`,
+`knowledge-policy`, `knowledge-article-refresh`) is refused with `KNOWLEDGE_LINK_INVALID`, `<id>:scope`.
+`knowledge-validate` and `knowledge-checkpoint` refuse with `KNOWLEDGE_LINK_INVALID` (`<id>:scope`,
+naming the first such card) and `knowledge-rebase` with `KNOWLEDGE_REBASE_BLOCKED` (see "High-water
+rebase"), their details carrying `unresolvedScopes` and a `remedy` naming every such card. The way out
+is the retirement there is: a card that supersedes it (`knowledge-create --supersedes <id>`), which is
+admitted; the superseded record is no longer live, nothing names it, and the three answer again. A
+record whose scope contradicts itself -- a user card, or a scope its project and role scopes disagree
+with -- is not one of these, and still refuses the read with `KNOWLEDGE_LINK_INVALID`.
+
 The library crest's root manifest, `store.json`, is written by exactly one operation of this engine
 (TCRN-CROSS-SUB-414, MIN-235 D7):
 
@@ -80,7 +101,7 @@ The library crest's root manifest, `store.json`, is written by exactly one opera
 Nothing else writes it, and nothing else takes a claim on the crest: not a chain write, and no
 knowledge rebind after one (the CLI ran a rebase after every chain write until this change); not a
 card write (`knowledge-create`, `knowledge-capture`, `knowledge-article-create`, a `knowledge-batch`
-create member, `conference-close --distill`); not a supersede; not a card written again
+create member); not a supersede; not a card written again
 (`knowledge-reverify`, `knowledge-policy`, `knowledge-article-refresh` and their batch members); not
 `knowledge-rebase` or `knowledge-batch --align-first`, which re-validate and write nothing; not
 `knowledge-recover`, which completes a stopped write of the metadata/body layout and never writes the
@@ -345,22 +366,29 @@ policy; this remains a bounded policy and is not a general DLP claim.
 
 A library crest's marker no longer holds a high water to re-bind (TCRN-CROSS-SUB-414, MIN-235
 D7). Every read projects the crest at the chain head it replays and checks each card's current
-record against that chain: a live record whose scope/project no longer resolves refuses the read
-with `KNOWLEDGE_LINK_INVALID`, and linked work the chain no longer holds is reported as
-`danglingWorkLinks` without blocking. No chain event makes a knowledge read refuse, and nothing
-needs re-binding after one; a record written against chain events this device does not hold yet
-waits for them (see "Storage and authority").
+record against that chain: a live record whose project the chain no longer holds is named as
+`unresolvedScopes` and its card leaves default selection (R16; see "Storage and authority"), a
+record whose scope contradicts itself refuses the read with `KNOWLEDGE_LINK_INVALID`, and linked
+work the chain no longer holds is reported as `danglingWorkLinks` without blocking. No chain event
+makes a knowledge read refuse, not even a project deleted under a card, and nothing needs
+re-binding after one; a record written against chain events this device does not hold yet waits
+for them (see "Storage and authority").
 
 `knowledge-rebase`, and `knowledge-batch --align-first`, is the full re-validation of every
 record's metadata shape, body binding, and scope/project/work links against the chain as it
 stands, and it writes nothing. A live record whose scope/project references no longer resolve is
 an offender: the rebase fails closed with `KNOWLEDGE_REBASE_BLOCKED` and a deterministic id-sorted
-offender list. A record this device's chain does not hold yet refuses it with
-`KNOWLEDGE_HIGH_WATER_MISMATCH`, and a crest holding an older engine's mutation claim with
-`KNOWLEDGE_LOCKED`. The `retire-invalid` escape that retired offenders is gone with every other
-retirement path but `--supersedes` (TCRN-CROSS-SUB-308). A rebase that answers reports the
-projected `version`, the chain head as `eventHighWaterDigest`, `retired: 0` and no offender, and
-projects this device's index view again; there is no write for a fault to interrupt.
+offender list. A live record is one no card supersedes and that is not retired; a superseded or
+retired record is no offender, whatever its links (R16). When an offender is a card whose project
+the chain no longer holds, the refusal's details carry `unresolvedScopes` and the `remedy`,
+`knowledge-create --supersedes <id>` for each such card. A record this device's chain does not hold
+yet refuses it with `KNOWLEDGE_HIGH_WATER_MISMATCH`, and a crest holding an older engine's mutation
+claim with `KNOWLEDGE_LOCKED`. The `retire-invalid` escape that retired offenders is gone with every
+other retirement path but `--supersedes` (TCRN-CROSS-SUB-308), and since R16 that one is open to an
+offender whose project is gone: the crest's read no longer refuses the supersede. A rebase that
+answers reports the projected `version`, the chain head as `eventHighWaterDigest`, `retired: 0` and
+no offender, and projects this device's index view again; there is no write for a fault to
+interrupt.
 
 `--allow-trailing`, still taken by the metadata-first reads, changes nothing about a library's
 answer. It keeps its meaning for an old-layout workspace's read-only store, whose marker binds its

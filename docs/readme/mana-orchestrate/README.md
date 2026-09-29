@@ -13,7 +13,7 @@
 </div>
 
 > [!TIP]
-> `npx skills add einzbern/mana-orchestrate`，然后在项目里对宿主说「安装 Einzbern」。
+> `npx skills add tpmoonchefryan/mana-orchestrate`，然后在项目里对宿主说「安装 Einzbern」。
 
 ---
 
@@ -32,7 +32,7 @@
 用 skills 命令：
 
 ```
-npx skills add einzbern/mana-orchestrate
+npx skills add tpmoonchefryan/mana-orchestrate
 ```
 
 或者对宿主说：找一个叫 Mana Orchestrate 的 skill，装上。

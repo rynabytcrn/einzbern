@@ -116,7 +116,7 @@ Einzbern arrives through a skill: Mana Orchestrate. Mana is the memory in circul
 Install it with the skills command:
 
 ```
-npx skills add einzbern/mana-orchestrate
+npx skills add tpmoonchefryan/mana-orchestrate
 ```
 
 Or tell your host: find a skill called Mana Orchestrate and install it.

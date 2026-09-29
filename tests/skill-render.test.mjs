@@ -11,7 +11,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 
 import { COMMAND_CATALOG } from "../dist/build/packages/cli/src/index.js";
-import { BRAND } from "../dist/build/packages/core/src/names.js";
+import { BRAND, LEGACY_REPOSITORY_NAMES } from "../dist/build/packages/core/src/names.js";
 import {
   SKILL_DESCRIPTION,
   SKILL_MARKDOWN_BYTE_LIMIT,
@@ -178,4 +178,20 @@ test("479-R1: SKILL.md is generated for one engine version, the same way every t
   for (const bad of ["latest", "1.2", "v1.2.1", "1.2.1\n# injected", ""]) {
     assert.throws(() => render({ version: bad }), refusal("SKILL_VERSION_INVALID"), JSON.stringify(bad));
   }
+});
+
+test("488-AC2 (MIN-238 D4): the install line and the fetch script name both repositories under the existing account", async () => {
+  const lines = render().split("\n").filter((line) => line.includes("npx skills add"));
+  assert.equal(lines.length, 1, "one line installs the skill");
+  const helper = lines[0].match(/`npx skills add ([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+)`/u);
+  assert.ok(helper, lines[0]);
+  const installer = await readFile(join(repositoryRoot, "skill", BRAND.helper.id, "scripts", "install.mjs"), "utf8");
+  const constants = [...installer.matchAll(/^const RELEASE_REPOSITORY = "([A-Za-z0-9-]+)\/([A-Za-z0-9._-]+)";$/gmu)];
+  assert.equal(constants.length, 1, "the fetch script names one release repository");
+  const [, engineOwner, engineRepository] = constants[0];
+  const [, helperOwner, helperRepository] = helper;
+  assert.equal(helperRepository, BRAND.helper.id);
+  assert.equal(engineRepository, BRAND.engine.id);
+  assert.equal(helperOwner, engineOwner, "one account holds both repositories");
+  assert.equal(engineOwner, LEGACY_REPOSITORY_NAMES.owner, "renamed under the existing account, not the placeholder");
 });

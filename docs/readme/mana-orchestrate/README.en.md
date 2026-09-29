@@ -13,7 +13,7 @@ The Grail grants wishes; Mana Orchestrate makes the mana flow to the right place
 </div>
 
 > [!TIP]
-> `npx skills add einzbern/mana-orchestrate`, then tell your host "install Einzbern" inside the project.
+> `npx skills add tpmoonchefryan/mana-orchestrate`, then tell your host "install Einzbern" inside the project.
 
 ---
 
@@ -32,7 +32,7 @@ It is the skill that brings Einzbern into Claude Code and Codex. Einzbern is pro
 With the skills command:
 
 ```
-npx skills add einzbern/mana-orchestrate
+npx skills add tpmoonchefryan/mana-orchestrate
 ```
 
 Or tell your host: find a skill called Mana Orchestrate and install it.

@@ -23,13 +23,15 @@ const TEMPLATES = join(REPO_ROOT, "docs", "readme", "einzbern");
 const NAMES = ["README.md", "README.en.md", "README.ja.md", "README.ko.md", "README.fr.md"];
 const PLACEHOLDER = "{{version}}";
 const LOCAL_PATH_REASONS = new Set(["LOCAL_ABSOLUTE_PATH", "LINUX_HOME_PATH", "WINDOWS_USER_PATH"]);
-// Digests pin docs/dispatch/2026-09-25-einzbern/readme/einzbern/ as the independent final text.
+// Digests pin docs/dispatch/2026-09-25-einzbern/readme/einzbern/, the independent final text, with
+// the one change MIN-238 D4 makes to it: its `npx skills add` line names the helper repository at
+// the final address instead of the placeholder.
 const FINAL_README_TEMPLATE_SHA256 = Object.freeze({
-  "README.md": "d52fdf42ff3a4f46661652be21bff5feccbfbb4237a29d1212d9452d439815a2",
-  "README.en.md": "ae7d5f70ed4f0266274b205169038e24b9a2e51ce1eb82441b679126bad5f4a6",
-  "README.ja.md": "ca83f119f17ecadec80b1dc7dc6cb11324c015a82ce2e0cdeceb025ac3e2f145",
-  "README.ko.md": "f225c619491f3d78a524923b45cdd32986628db06b9d391feb0c00f2efe8d08e",
-  "README.fr.md": "07e38b8cf1648a2a0425ab9e586f2df58822862855aed32df0664e00409cbb2c",
+  "README.md": "64acd46dc91751c1b81a79715d120751b0ac934cd915f11180d40125175b8fcf",
+  "README.en.md": "5cd8dfd3ad4144a45c11115ebff60a951aa2505d53e19058c092ce5a0ef75ece",
+  "README.ja.md": "ef8e12a15feb22ff9df16f374b4e75ab4b8c2e96781d68320c48458fee613b86",
+  "README.ko.md": "c50504cc13c0f82a3f0e16912e16b67445089c23acdea171515a060a773ebdbd",
+  "README.fr.md": "75be372e75c53c133944141b131b6cd98d0ff07a3c22b859f11eafb3fcb1936b",
 });
 
 async function packageVersion() {

@@ -116,7 +116,7 @@ Einzbern 由一个 skill 带进来：Mana Orchestrate。Mana 是流转的记忆�
 用 skills 命令装：
 
 ```
-npx skills add einzbern/mana-orchestrate
+npx skills add tpmoonchefryan/mana-orchestrate
 ```
 
 或者对宿主说：找一个叫 Mana Orchestrate 的 skill，装上。

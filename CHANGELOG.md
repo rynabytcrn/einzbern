@@ -1272,6 +1272,32 @@ passing it to them is refused with `CLI_ARGUMENT_UNKNOWN`. Their refusal now nam
 offered it. The reason code, its `cwd` and `remedy` details and the command catalog are unchanged;
 `resolveLibrary` takes the choice as an optional third argument, `{ workspaceFlag }`.
 
+`knowledge-bodies-migrate` keeps every body of a crest whose metadata/body layout is already in
+segments, and `--clear-removed true` clears the removed cards' bodies from that layout
+(TCRN-CROSS-SUB-425 R18; fixes TCRN-CROSS-STORY-341; TCRN-CROSS-STORY-514 R4;
+`packages/core/src/store-backend.ts`, `packages/core/src/knowledge-core.ts`,
+`packages/cli/src/index.ts`, `packages/core/spec/knowledge-core-v1.md`,
+`skill/mana-orchestrate/references/migrate.md`). The migration rewrote the segments from the body
+files alone and removed every segment it had not written, so on a layout already in segments -- the
+crest a library import carries over -- it found no body file, answered `before` 0 and `after` 0, left
+an empty manifest, and every read of the crest then refused with `KNOWLEDGE_PARTIAL_STATE`; on a layout
+partly in segments it kept only the bodies its leftover files held. It now writes the bodies of the
+segments again beside the ones the body files add, refuses a body file whose segment holds a different
+body before it writes, and writes nothing when no body file is left to move; `before` and `after`
+count the bodies the layout holds before and after the run, and `bodyBytes` is their size after it. A
+layout that still holds one body file per card migrates as before. With
+`--clear-removed true --at <UTC>` the run also clears from that layout, which no device's writes
+clear, the bodies of the removed cards -- superseded ones, by this engine or by the mark an older one
+stored, and ones a removal event names. It runs only on a device whose writes are the library's only ones, chain and crest streams
+alike, and otherwise refuses with the new reason code `KNOWLEDGE_SOLE_WRITER_REQUIRED` (details
+`deviceId` and `writers`); it copies the layout's `bodies/` into `backups/<UTC>/crest-bodies/<library>/`
+of the device directory first (a backup of the same second refuses with `KNOWLEDGE_ALREADY_EXISTS`),
+keeps every other body byte for byte with the manifest and the point indexes, answers `clearedBodies`
+and `backupDir`, and a second run changes nothing. A read of a library's crest admits a missing body in
+that layout for a removed card's record alone. The migration reference runs the clearing once after
+the import and once more after the D7 cleanup. Metadata, event files, the streams' bodies and an
+old-layout workspace's read-only store are not touched, and no verb is added.
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

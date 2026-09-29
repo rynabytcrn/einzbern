@@ -111,8 +111,10 @@ create member); not a supersede; not a card written again
 `knowledge-rebase` or `knowledge-batch --align-first`, which re-validate and write nothing; not
 `knowledge-recover`, which completes a stopped write of the metadata/body layout and never writes the
 manifest; not `knowledge-bodies-migrate`, which rewrites the metadata/body layout's bodies into
-segments, is run by one device, and writes neither the manifest nor an event stream; and not a read or
-its cache projection. The marker a read answers is a projection and is never persisted: its version is
+segments, is run by one device, and writes neither the manifest nor an event stream -- with
+`--clear-removed true` it also clears the removed cards' bodies from that layout, a single-writer
+step that runs only on a device that is the library's sole writer (see "Valid and removed"); and not a
+read or its cache projection. The marker a read answers is a projection and is never persisted: its version is
 the manifest's advanced by every event of every stream, and its high water, `eventHighWaterDigest`, is
 the chain head the read replayed. A chain write therefore never leaves the crest behind -- the purpose
 the rebind after it served (TCRN-CROSS-INC-244) -- and a library's read never trails its chain. A
@@ -125,7 +127,12 @@ engine before event streams wrote. It stays readable beside the device streams a
 and metadata remains one record per id in it; new cards are appended to event streams, and no record of
 it is rewritten by one. The body-file wording above describes its reader. A local migration,
 `knowledge-bodies-migrate`, may replace its body files with canonical NDJSON segments, point indexes,
-and a manifest; a crest holding only event streams has nothing to migrate. A mutation claim can be
+and a manifest; a crest holding only event streams has nothing to migrate. A layout whose bodies are
+already in segments, or partly in them, keeps every body it holds (TCRN-CROSS-SUB-425 R18): the
+migration writes the bodies of its segments again beside the ones its body files add, refuses a body
+file whose segment holds a different body (`KNOWLEDGE_PARTIAL_STATE`) before it writes, and writes
+nothing when no body file is left to move. Its answer's `before` and `after` count the bodies the
+layout holds before and after the run, and `bodyBytes` is their size after it. A mutation claim can be
 found only in that layout, left by an interrupted write of that engine, and until `knowledge-recover`
 completes it every write and rebase of the crest refuses with `KNOWLEDGE_LOCKED`.
 Whichever layout holds the bodies -- one file per card, segments or event streams -- nothing
@@ -493,9 +500,24 @@ write, removal, re-verification, policy update or article refresh -- after that
 write's event is committed and under its lock; a file it cannot delete is left for its
 next write and never turns a committed write into a refusal. A device clears only its
 own stream, since two devices never write one file of a crest. The metadata/body
-layout an older engine left, which no device owns, and an old-layout workspace's
-read-only store keep their bodies, which no read answers; so do the immutable events,
-whose metadata still holds the summary and snippet they were written with. A read
+layout an older engine left, which no device owns, is cleared by one step instead,
+`knowledge-bodies-migrate --clear-removed true --at <instant>`, the library's
+single-writer step (TCRN-CROSS-SUB-425 R18; see "Storage and authority"). It runs only
+on a device that is the library's sole writer -- every stream of the library's chain
+and of its crest is that device's -- and otherwise refuses with
+`KNOWLEDGE_SOLE_WRITER_REQUIRED`, details `deviceId` and `writers`. Under this
+machine's lock of the library, after a read of the whole crest that binds every body,
+it copies the layout's `bodies/` into `backups/<UTC second>/crest-bodies/<library>/`
+of the device directory -- a backup is never overwritten, and a place already taken
+refuses with `KNOWLEDGE_ALREADY_EXISTS` -- then writes the segments again without the
+bodies of the removed cards, a superseded card's among them, and with every other
+body byte for byte, the manifest and the point indexes with them; a body file still
+left is moved in the same rewrite. With nothing to clear and nothing to move it writes
+nothing and backs nothing up, so a second run changes nothing. Its answer adds
+`clearedBodies` and `backupDir`, null when nothing was written. An old-layout
+workspace's read-only store keeps its bodies, which no read answers; so do the
+immutable events, whose metadata still holds the summary and snippet they were
+written with. A read
 admits a missing body for a removed card's records alone, so a device that receives
 the deletion of a body before the removal event itself reads the crest as partial
 (`KNOWLEDGE_PARTIAL_STATE`) until the event arrives, as it does an event delivered

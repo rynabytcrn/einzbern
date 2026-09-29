@@ -272,6 +272,8 @@
 | --- | --- | --- |
 | `--workspace` | 可选 | `string` |
 | `--segment-bytes` | 可选 | `integer` |
+| `--clear-removed` | 可选 | `boolean` |
+| `--at` | 可选 | `instant` |
 
 ## `knowledge-body`
 

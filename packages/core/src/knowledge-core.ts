@@ -44,18 +44,20 @@ import type { ProjectRecord, WorkspaceState } from "./workspace.js";
 import { SETTINGS_CATALOG, resolveKnowledgeArticlesPath } from "./settings.js";
 import { hasLibraryManifest, openLibrary } from "./ether-library.js";
 import {
+  backupsPath,
   cachePath,
   deviceHome,
   ensureDeviceDirectory,
+  libraryDirectoryName,
   USER_CREST_EVENTS_DIRECTORY,
   userCrestCachePath,
   userCrestEventsPath,
   userCrestLockPath,
   userCrestPath,
 } from "./device-home.js";
-import { isAtomicTemporaryName } from "./atomic-file.js";
+import { isAtomicTemporaryName, writeFileAtomic } from "./atomic-file.js";
 import { assertActorId } from "./actor-attestation.js";
-import { readOrCreateDevice } from "./device-identity.js";
+import { readDevice, readOrCreateDevice } from "./device-identity.js";
 import { FileLockError, withFileLock } from "./file-lock.js";
 import { readUserCrestPath } from "./machine-settings.js";
 import { DIRECTORY, LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY } from "./names.js";
@@ -136,6 +138,9 @@ export const KNOWLEDGE_REASON_CODES = Object.freeze([
   "KNOWLEDGE_RECOVERED",
   "KNOWLEDGE_REVERIFIED",
   "KNOWLEDGE_SELECTION_INVALID",
+  // TCRN-CROSS-SUB-425 R18: knowledge-bodies-migrate --clear-removed on a library another device writes.
+  // The metadata/body layout belongs to no device, so only the library's sole writer rewrites it.
+  "KNOWLEDGE_SOLE_WRITER_REQUIRED",
   "KNOWLEDGE_SOURCE_CHANGED",
   "KNOWLEDGE_SOURCES_ALIGNED",
   "KNOWLEDGE_SOURCE_MISSING",
@@ -1181,8 +1186,27 @@ export async function withCrestWriteLock<T>(workspaceRoot: string, operation: ()
   return withWorkspaceWriteLock(workspaceRoot, () => operation());
 }
 
-export async function migrateKnowledgeBodies(workspaceRootInput: string, segmentBytes = 1_048_576): Promise<Readonly<Record<string, JsonValue>>> {
-  return withCrestWriteLock(workspaceRootInput, () => migrateKnowledgeBodiesUnlocked(workspaceRootInput, segmentBytes));
+/**
+ * knowledge-bodies-migrate (STORY-341): rewrite the metadata/body layout's bodies/ into segments, under
+ * this machine's lock of the library. TCRN-CROSS-SUB-425 R18 (fixes STORY-341): a layout already in
+ * segments, or partly in them, keeps every body it holds, and one with no body file left to move is
+ * not written; the answer counts the bodies the layout holds before and after the run.
+ * `options.clearRemoved` (STORY-514 R4) clears the removed cards' bodies from the layout as well, and
+ * takes `options.at`, the instant its backup is named by (clearRemovedKnowledgeBodies).
+ */
+export async function migrateKnowledgeBodies(
+  workspaceRootInput: string,
+  segmentBytes = 1_048_576,
+  options: { readonly clearRemoved?: boolean; readonly at?: string } = {},
+): Promise<Readonly<Record<string, JsonValue>>> {
+  const at = options.at;
+  if (options.clearRemoved !== true) {
+    if (at !== undefined) fail("KNOWLEDGE_INPUT_INVALID", "--at is taken only with --clear-removed true");
+    return withCrestWriteLock(workspaceRootInput, () => migrateKnowledgeBodiesUnlocked(workspaceRootInput, segmentBytes));
+  }
+  if (at === undefined) fail("KNOWLEDGE_INPUT_INVALID", "--clear-removed true takes --at, the instant its backup is named by");
+  assertEvaluationInstant(at);
+  return withCrestWriteLock(workspaceRootInput, () => clearRemovedKnowledgeBodies(workspaceRootInput, segmentBytes, at));
 }
 
 async function migrateKnowledgeBodiesUnlocked(workspaceRootInput: string, segmentBytes = 1_048_576): Promise<Readonly<Record<string, JsonValue>>> {
@@ -1199,6 +1223,99 @@ async function migrateKnowledgeBodiesUnlocked(workspaceRootInput: string, segmen
   }
   const result = await backend.migrateKnowledgeBodies(segmentBytes);
   return { schemaVersion: "tcrn.knowledge-body-migration.v1", ...result };
+}
+
+// Where a clearing of the metadata/body layout backs its bodies/ up: backups/<UTC second>/ of the device
+// directory, as every backup of this engine (MIN-238 D4), then this directory and the library's name.
+const KNOWLEDGE_BODIES_BACKUP_DIRECTORY = "crest-bodies" as const;
+
+// The UTC second as a directory name that is legal everywhere: 20260930T123000Z.
+function backupStamp(at: string): string {
+  const milliseconds = Number(parseStrictInstant(at) / 1_000_000n);
+  return new Date(milliseconds).toISOString().replace(/\.\d{3}Z$/u, "Z").replace(/[-:]/gu, "");
+}
+
+/**
+ * TCRN-CROSS-SUB-425 R18 (STORY-514 R4; MIN-239 D4): clear the removed cards' bodies from the
+ * metadata/body layout an engine before event streams left in a library's crest -- a card another card
+ * superseded (by this engine, or by the mark an older one stored) and a card a removal event names --
+ * which no device clears at its writes, since the layout is no device's stream. It is the library's
+ * single-writer step: it runs under this machine's lock of the library, only on a device whose writes
+ * are the library's only ones (assertSoleLibraryWriter), after a full read of the crest that binds
+ * every body. It copies bodies/ as it is into backups/<UTC second>/crest-bodies/<library>/ of the device
+ * directory first, then rewrites the segments without those bodies -- any body file left is moved in
+ * the same rewrite -- every other body byte for byte, with the manifest and the point indexes. A run
+ * with nothing to clear and nothing to move writes nothing and backs nothing up, so a second run
+ * changes nothing. Metadata, event files, the streams' bodies and an old-layout store are not touched.
+ */
+async function clearRemovedKnowledgeBodies(workspaceRootInput: string, segmentBytes: number, at: string): Promise<Readonly<Record<string, JsonValue>>> {
+  await assertKnowledgeWritable(resolve(workspaceRootInput));
+  const scan = await mutationAdmissionScan(workspaceRootInput, {});
+  if (scan.bodiesRoot === null) {
+    return { schemaVersion: "tcrn.knowledge-body-migration.v1", before: 0, after: 0, bodyBytes: 0, clearedBodies: 0, backupDir: null };
+  }
+  await assertSoleLibraryWriter(scan);
+  const backend = storeBackendFor(scan.storeRoot);
+  if (!(backend instanceof SegmentedKnowledgeStoreBackend)) {
+    fail("KNOWLEDGE_PARTIAL_STATE", "the local segmented knowledge backend is unavailable");
+  }
+  const directory = join(backupsPath(deviceHome()), backupStamp(at), KNOWLEDGE_BODIES_BACKUP_DIRECTORY, libraryDirectoryName(scan.workspace.metadata.workspaceId));
+  const backup: { directory: string | null } = { directory: null };
+  const result = await backend.clearKnowledgeBodies(new Set(scan.removals.keys()), segmentBytes, async (files) => {
+    await backupKnowledgeBodies(directory, files);
+    backup.directory = directory;
+  });
+  return {
+    schemaVersion: "tcrn.knowledge-body-migration.v1",
+    before: result.before,
+    after: result.after,
+    bodyBytes: result.bodyBytes,
+    clearedBodies: result.cleared,
+    backupDir: backup.directory,
+  };
+}
+
+// TCRN-CROSS-SUB-425 R18: refuse unless this device is the library's sole writer -- every stream of its
+// chain (akasha/) and every stream of its crest (crest/events/) is this device's -- since the
+// metadata/body layout is no device's stream, and two devices never write one file of a crest.
+async function assertSoleLibraryWriter(scan: KnowledgeStoreScan): Promise<void> {
+  const device = await readDevice(deviceHome());
+  const writers = new Set((scan.workspace.library?.streams ?? []).map((stream) => stream.deviceId));
+  for (const deviceId of await crestStreamDevices(scan.storeRoot)) writers.add(deviceId);
+  const named = [...writers].sort(compareCanonicalText);
+  if (device === null || named.some((deviceId) => deviceId !== device.deviceId)) {
+    fail("KNOWLEDGE_SOLE_WRITER_REQUIRED", `${named.filter((deviceId) => deviceId !== device?.deviceId).join(",")} also write this library: only its sole writer clears the metadata/body layout`, {
+      deviceId: device?.deviceId ?? null,
+      writers: named,
+    });
+  }
+}
+
+// The devices with a stream in a crest's events/, whether or not it holds an event yet.
+async function crestStreamDevices(storeRoot: string): Promise<readonly string[]> {
+  let entries: string[];
+  try {
+    entries = await readdir(resolve(storeRoot, CREST_EVENTS_DIRECTORY));
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return [];
+    fail("KNOWLEDGE_PATH_INVALID", `${storeRoot}:${String(error)}`);
+  }
+  return entries.filter((name) => !isAtomicTemporaryName(name));
+}
+
+// Copy the files of a layout's bodies/ into a backup directory of their own. A backup is never
+// overwritten: a directory already there refuses (KNOWLEDGE_ALREADY_EXISTS) before the layout is written.
+async function backupKnowledgeBodies(directory: string, files: readonly { readonly name: string; readonly bytes: Buffer }[]): Promise<void> {
+  await ensureDeviceDirectory(dirname(directory));
+  try {
+    await mkdir(directory);
+  } catch (error) {
+    if ((error as { code?: string }).code === "EEXIST") {
+      fail("KNOWLEDGE_ALREADY_EXISTS", `${directory}: a backup of this second is already there; run again with a later --at`, { backupDir: directory });
+    }
+    fail("KNOWLEDGE_PATH_INVALID", `${directory}:${String(error)}`);
+  }
+  for (const file of files) await writeFileAtomic(join(directory, file.name), file.bytes);
 }
 
 // The claim protocol is file-native (STORY-177, like STORY-174's workspace leases):
@@ -1871,6 +1988,9 @@ interface ScannedRecords {
   readonly units: readonly ScannedKnowledgeUnit[];
   readonly linkInvalid: readonly string[];
   readonly danglingWorkLinks: readonly { readonly knowledgeId: string; readonly workIds: readonly string[] }[];
+  // TCRN-CROSS-SUB-425 R18: the ids of the live records that hold no body, in listing order, when the
+  // checks defer them (RecordChecks.missingBodies); empty otherwise, since the first refuses the scan.
+  readonly missingBodies: readonly string[];
 }
 
 interface RecordChecks {
@@ -1879,6 +1999,10 @@ interface RecordChecks {
   readonly links: ((metadata: KnowledgeUnitMetadata) => void) | null;
   readonly danglingWorkLinks: ((metadata: KnowledgeUnitMetadata) => readonly string[]) | null;
   readonly body: (metadata: KnowledgeUnitMetadata, body: Buffer) => void;
+  // TCRN-CROSS-SUB-425 R18: "deferred" hands a live record that holds no body back to the caller, which
+  // admits it once it knows the card is removed (a library's crest, whose metadata/body layout
+  // knowledge-bodies-migrate --clear-removed clears); left out, such a record refuses the scan.
+  readonly missingBodies?: "deferred";
 }
 
 // Every card of a store, each checked by `checks` against what that store binds: a library's
@@ -1908,6 +2032,7 @@ async function scanStoreRecords(
   const units: ScannedKnowledgeUnit[] = [];
   const linkInvalid: string[] = [];
   const danglingWorkLinks: { knowledgeId: string; workIds: readonly string[] }[] = [];
+  const missingBodies: string[] = [];
   for (const id of metadataIds) {
     const metadataPath = resolve(roots.metadataRoot, `${id}.json`);
     const bodyPath = resolve(roots.bodiesRoot, `${id}.body`);
@@ -1929,10 +2054,12 @@ async function scanStoreRecords(
       }
     }
     // TCRN-CROSS-STORY-024: a live record must still carry its body; a retired
-    // record's body may have been reclaimed and is read as absent.
+    // record's body may have been reclaimed and is read as absent. TCRN-CROSS-SUB-425 R18: so may a
+    // removed card's, which a caller that defers the check admits once it knows the removals.
     const hasBody = bodyIdSet.has(id);
     if (metadata.lifecycle !== "retired" && !hasBody) {
-      fail("KNOWLEDGE_PARTIAL_STATE", `${id}:live record is missing its body`);
+      if (checks.missingBodies !== "deferred") fail("KNOWLEDGE_PARTIAL_STATE", `${id}:live record is missing its body`);
+      missingBodies.push(id);
     }
     const body = bodyMode === "full" && hasBody
       ? await backend.readKnowledgeBody(id)
@@ -1947,7 +2074,7 @@ async function scanStoreRecords(
   const metadataById = new Map(units.map((unit) => [unit.metadata.id, unit.metadata]));
   for (const unit of units) validateSupersedesLink(unit.metadata, metadataById);
   danglingWorkLinks.sort((left, right) => compareCanonicalText(left.knowledgeId, right.knowledgeId));
-  return { units, linkInvalid: linkInvalid.sort(compareCanonicalText), danglingWorkLinks };
+  return { units, linkInvalid: linkInvalid.sort(compareCanonicalText), danglingWorkLinks, missingBodies };
 }
 
 // TCRN-CROSS-SUB-428 (INC-398): where this device keeps its index view of a crest: the folder of its
@@ -2236,6 +2363,7 @@ async function scanLibraryCrest(
   const metadataRoot = legacyLayout ? await boundDirectory(resolve(storeRoot, "metadata"), storeRoot) : null;
   const bodiesRoot = legacyLayout ? await boundDirectory(resolve(storeRoot, "bodies"), storeRoot) : null;
   let legacyUnits: readonly CrestUnit[] = [];
+  let legacyMissingBodies: readonly string[] = [];
   if (metadataRoot !== null && bodiesRoot !== null) {
     // Links are checked on the merged cards below, not on each stored record.
     const legacy = await scanStoreRecords(backend, { metadataRoot, bodiesRoot }, bodyMode, {
@@ -2243,8 +2371,10 @@ async function scanLibraryCrest(
       links: null,
       danglingWorkLinks: null,
       body: (metadata, body) => validateMetadataBody(metadata, body, workspace),
+      missingBodies: "deferred",
     });
     legacyUnits = legacy.units.map(metadataBodyLayoutUnit);
+    legacyMissingBodies = legacy.missingBodies;
   }
   const reading: CrestStreamReading = {
     linkState: workspace,
@@ -2258,6 +2388,10 @@ async function scanLibraryCrest(
   // removed; only then are the bodies admitted, since a removed card's may be cleared.
   const projection = projectCrestUnits([...legacyUnits, ...streams.units], streams.removals, workspace, true);
   const { removals, unresolvedConflicts } = projection;
+  // TCRN-CROSS-SUB-425 R18: a removed card's record of the metadata/body layout may hold no body, since
+  // knowledge-bodies-migrate --clear-removed clears it there; every other live record still holds its own.
+  const unadmitted = legacyMissingBodies.find((id) => !removals.has(id));
+  if (unadmitted !== undefined) fail("KNOWLEDGE_PARTIAL_STATE", `${unadmitted}:live record is missing its body`);
   const { admitted, streamBodies } = await admitCrestBodies(streams, removals, bodyMode, reading);
   const units = projection.units.map((unit) => withAdmittedBody(unit, admitted));
   const duplicates = projection.duplicates.map((duplicate) => ({ ...duplicate, versions: duplicate.versions.map((version) => withAdmittedBody(version, admitted)) }));

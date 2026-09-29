@@ -100,6 +100,16 @@ cleanup and the wiring find nothing left to do.
 
 ## After the migration
 
+- Clear the bodies of removed cards from the knowledge each library carried over: the import brings
+  the old store's cards as its engine left them, the bodies of superseded cards included. Run
+  `knowledge-bodies-migrate --workspace <library> --clear-removed true --at <UTC>` once after the
+  import, and once more after the D7 cleanup, since a card removed after the import leaves its body
+  there too. It runs only while this device is the library's sole writer, so run both before another
+  device writes to the library: `KNOWLEDGE_SOLE_WRITER_REQUIRED` says one has, and those bodies then
+  stay where no read answers them. The answer gives `clearedBodies` and the backup of the bodies it
+  rewrote, `backupDir`, under `backups/<UTC>/crest-bodies/`; a run with nothing left to clear writes
+  nothing. `KNOWLEDGE_ALREADY_EXISTS` means a backup of the same second is already there: run again
+  with a later `--at`.
 - The old workspace stays where it is and still reads. A write to it answers
   `LEGACY_WORKSPACE_MIGRATED`, whose `movedTo` is the library it became; write there instead
   (`--workspace <library>`, the refusal's remedy).

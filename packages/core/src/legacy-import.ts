@@ -25,13 +25,21 @@
 // index view is this device's cache. config/project.json is written once everything checked. An
 // import that stops after it has written into its target says what it left there
 // (LegacyImportStoppedError).
+//
+// TCRN-CROSS-SUB-421 R18 (STORY-489): the receipt counts the old store's cards as the store holds
+// them. `cards` is every card whatever its status -- since TCRN-CROSS-SUB-425 a card its engine
+// marked superseded (extensions.supersededBy) reads as removed, and it is carried with the rest --,
+// `removedCards` those that read as removed, and `defaultCards` those knowledge-list answers by
+// default; the carried crest must answer all three the same. A store this engine's reader refuses
+// is refused with the reader's own reason code, naming the file of the store the refusal is about
+// (LegacyKnowledgeRefusedError, `details.file` relative to the store's root).
 
 import { createHash } from "node:crypto";
 import type { Hash } from "node:crypto";
-import { lstat, mkdir, readdir, readFile } from "node:fs/promises";
+import { lstat, mkdir, readdir, readFile, realpath } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 
-import { assertStrictInstant, canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
+import { assertCanonicalJson, assertStrictInstant, canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
 import { writeFileAtomic } from "./atomic-file.js";
 import {
   STREAM_MANIFEST_FILE,
@@ -44,7 +52,8 @@ import {
 import type { StreamManifest, StreamSegment } from "./akasha.js";
 import { readOrCreateDevice } from "./device-identity.js";
 import { LIBRARY_FORMAT_VERSION, createLibrary } from "./ether-library.js";
-import { listKnowledgeMetadata } from "./knowledge-core.js";
+import { KnowledgeCoreError, listKnowledgeMetadata } from "./knowledge-core.js";
+import type { KnowledgeStatusFilter } from "./knowledge-core.js";
 import { writeConfigProjection } from "./library-config.js";
 import { openLegacyWorkspace, replayLegacyWorkspace, validateLegacyChain } from "./legacy-workspace.js";
 import { DIRECTORY, LEGACY_CONTROL_DIRECTORY, LEGACY_EVENTS_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY } from "./names.js";
@@ -106,6 +115,32 @@ export class LegacyImportStoppedError extends Error {
   }
 }
 
+/**
+ * TCRN-CROSS-SUB-421 R18: the old knowledge store, refused by this engine's reader of the old layout
+ * (KNOWLEDGE_RECORD_INVALID, KNOWLEDGE_PATH_INVALID, KNOWLEDGE_PARTIAL_STATE, ...). It keeps the
+ * reader's reason code, string details and message, and names the file of the store the refusal is
+ * about -- relative to the store's root, with `/`, or "." for the store as a whole -- in
+ * `details.file`, in `file` and in its message; `store` is the store's root. The store is read before
+ * the target is touched, so an import refused this way has written nothing, like a dry run.
+ */
+export class LegacyKnowledgeRefusedError extends Error {
+  readonly reasonCode: string;
+  readonly details: Readonly<Record<string, string>>;
+  readonly store: string;
+  readonly file: string;
+
+  constructor(cause: KnowledgeCoreError, store: string, file: string) {
+    const details: Record<string, string> = {};
+    for (const [key, value] of Object.entries(cause.details ?? {})) if (typeof value === "string") details[key] = value;
+    super(`${cause.message}: ${file === "." ? "the old knowledge store" : `${file} of the old knowledge store`} ${store}`, { cause });
+    this.name = "LegacyKnowledgeRefusedError";
+    this.reasonCode = cause.reasonCode;
+    this.details = { ...details, file };
+    this.store = store;
+    this.file = file;
+  }
+}
+
 export interface LegacyImportSegment {
   readonly source: string;
   readonly name: string;
@@ -126,9 +161,14 @@ export interface LegacyImportRecords {
 }
 
 export interface LegacyImportKnowledge {
-  // The cards the old store holds, and those knowledge-list answers by default at the import's
-  // instant: the library's crest answers both the same after an import.
+  // The old store's cards, counted as knowledge-list counts them at the import's instant: `cards`
+  // is every card whatever its status (--selection all --status all), `removedCards` those of them
+  // that read as removed (--status removed; a card its engine marked superseded, with
+  // extensions.supersededBy, reads so and is carried with the rest), and `defaultCards` those it
+  // answers by default (valid cards only). The library's crest answers all three the same after an
+  // import.
   readonly cards: number;
+  readonly removedCards: number;
   readonly defaultCards: number;
   // The files carried into crest/ unchanged -- the marker, one metadata file per card and the
   // bodies, one file per card or segments with their index and manifest -- and their bytes.
@@ -281,17 +321,101 @@ async function knowledgeFiles(storeRoot: string): Promise<readonly KnowledgeFile
   return files;
 }
 
-// How many cards knowledge-list answers for the store a root holds, at `at`. One card is asked for:
-// `total` counts every card the selection matches.
-async function listedCards(root: string, at: string, selection: "default" | "all"): Promise<number> {
-  const answer = await listKnowledgeMetadata(root, { at, selection, allowTrailing: true, limit: 1 });
+// How many cards knowledge-list answers for the store a root holds, at `at`, with one selection and
+// one status. One card is asked for: `total` counts every card the query matches.
+async function listedCards(root: string, at: string, selection: "default" | "all", status: KnowledgeStatusFilter): Promise<number> {
+  const answer = await listKnowledgeMetadata(root, { at, selection, status, allowTrailing: true, limit: 1 });
   return Number(answer.total);
+}
+
+type KnowledgeCardCounts = Pick<LegacyImportKnowledge, "cards" | "removedCards" | "defaultCards">;
+
+// The three counts of a receipt (LegacyImportKnowledge), as the store a root holds answers them.
+async function cardCounts(root: string, at: string): Promise<KnowledgeCardCounts> {
+  return {
+    cards: await listedCards(root, at, "all", "all"),
+    removedCards: await listedCards(root, at, "all", "removed"),
+    defaultCards: await listedCards(root, at, "default", "valid"),
+  };
+}
+
+// ---- which file of the old store a refusal is about (TCRN-CROSS-SUB-421 R18) ----
+
+// The one file an old store's views/ holds.
+const LEGACY_KNOWLEDGE_VIEW_FILE = "index.json";
+// The refusals the reader makes of a file's form, or of what the marker binds, as it parses the
+// marker and then each card.
+const KNOWLEDGE_FORM_REFUSALS: readonly string[] = Object.freeze(["KNOWLEDGE_CANONICAL_INVALID", "KNOWLEDGE_HIGH_WATER_MISMATCH", "KNOWLEDGE_RECORD_INVALID"]);
+
+async function sortedEntries(directory: string): Promise<readonly string[]> {
+  try {
+    return (await readdir(directory)).sort(compareCanonicalText);
+  } catch {
+    return [];
+  }
+}
+
+async function holdsCanonicalJson(path: string): Promise<boolean> {
+  try {
+    assertCanonicalJson((await readFile(path)).toString("utf8"));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The file of the old store a refusal of its reader is about, relative to the store's root with `/`,
+ * looked for in the order the reader reads the store. It is the file the refusal's message names,
+ * as a path under the store or as a card's id. Else, for a refusal of the store's parts
+ * (KNOWLEDGE_PARTIAL_STATE), the first entry its root or its views/ holds that its engine never left
+ * there, else the first one it lacks, else the index view when the refusal is about the index. Else,
+ * for a refusal of a file's form, the first file the reader parses as canonical JSON (the marker, then
+ * each card's metadata) that does not hold it, else the marker when the refusal is about the marker.
+ * Else ".", the store as a whole: the place its engine bound it to, or how its cards and bodies fit.
+ * The store is only read.
+ */
+async function refusedKnowledgeFile(storeRoot: string, error: KnowledgeCoreError): Promise<string> {
+  const rootEntries = await sortedEntries(storeRoot);
+  const views = await sortedEntries(join(storeRoot, "views"));
+  const metadata = (await sortedEntries(join(storeRoot, "metadata"))).map((name) => `metadata/${name}`);
+  const bodies = (await sortedEntries(join(storeRoot, "bodies"))).map((name) => `bodies/${name}`);
+  const files = [...rootEntries, ...metadata, ...bodies, ...views.map((name) => `views/${name}`)];
+  const { message, reasonCode } = error;
+  const roots = [storeRoot];
+  try {
+    roots.push(await realpath(storeRoot));
+  } catch {
+    // The store as it was named is the only form a message can hold.
+  }
+  const named = files
+    .filter((file) => roots.some((root) => message.includes(join(root, ...file.split("/")))))
+    .sort((left, right) => right.length - left.length)[0];
+  if (named !== undefined) return named;
+  const card = /knowledge:[a-f0-9]{24}/u.exec(message)?.[0];
+  if (card !== undefined && metadata.includes(`metadata/${card}.json`)) return `metadata/${card}.json`;
+  if (reasonCode === "KNOWLEDGE_PARTIAL_STATE") {
+    const part = rootEntries.find((name) => !LEGACY_KNOWLEDGE_ROOT_ENTRIES.includes(name)) ??
+      LEGACY_KNOWLEDGE_ROOT_ENTRIES.find((name) => !rootEntries.includes(name));
+    if (part !== undefined) return part;
+    const view = views.find((name) => name !== LEGACY_KNOWLEDGE_VIEW_FILE);
+    if (view !== undefined) return `views/${view}`;
+    if (!views.includes(LEGACY_KNOWLEDGE_VIEW_FILE) || message.includes("knowledge index")) return `views/${LEGACY_KNOWLEDGE_VIEW_FILE}`;
+  }
+  if (KNOWLEDGE_FORM_REFUSALS.includes(reasonCode)) {
+    for (const file of [KNOWLEDGE_MARKER_FILE, ...metadata]) {
+      if (!(await holdsCanonicalJson(join(storeRoot, file)))) return file;
+    }
+    if (reasonCode === "KNOWLEDGE_HIGH_WATER_MISMATCH" || message.includes("knowledge marker")) return KNOWLEDGE_MARKER_FILE;
+  }
+  return ".";
 }
 
 /**
  * The old workspace's knowledge store, read through this engine's own reader of the old layout (which
- * checks the marker, every card and the index view, and refuses a store it cannot read with that
- * store's own reason code), or null when the old workspace has none.
+ * checks the marker, every card and the index view), or null when the old workspace has none. A store
+ * the reader refuses is refused with the reader's reason code, naming the file the refusal is about
+ * (LegacyKnowledgeRefusedError).
  */
 async function readLegacyKnowledge(legacyRoot: string, at: string): Promise<LegacyKnowledge | null> {
   const storeRoot = join(legacyRoot, LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY);
@@ -301,13 +425,18 @@ async function readLegacyKnowledge(legacyRoot: string, at: string): Promise<Lega
     if ((error as { code?: string }).code === "ENOENT") return null;
     throw error;
   }
-  const cards = await listedCards(legacyRoot, at, "all");
-  const defaultCards = await listedCards(legacyRoot, at, "default");
+  let counts: KnowledgeCardCounts;
+  try {
+    counts = await cardCounts(legacyRoot, at);
+  } catch (error) {
+    if (!(error instanceof KnowledgeCoreError)) throw error;
+    throw new LegacyKnowledgeRefusedError(error, storeRoot, await refusedKnowledgeFile(storeRoot, error));
+  }
   const files = await knowledgeFiles(storeRoot);
   return {
     storeRoot,
     files,
-    report: { cards, defaultCards, files: files.length, bytes: files.reduce((total, file) => total + file.bytes, 0) },
+    report: { ...counts, files: files.length, bytes: files.reduce((total, file) => total + file.bytes, 0) },
   };
 }
 
@@ -331,7 +460,7 @@ async function carryKnowledge(knowledge: LegacyKnowledge, libraryRoot: string, o
 }
 
 // After the copy: the old store still holds exactly what was carried, and the library's crest answers
-// the cards the old store answered, in all and by default.
+// the three counts the old store answered: every card, the removed ones and the default ones.
 async function assertKnowledgeCarried(knowledge: LegacyKnowledge, libraryRoot: string, at: string): Promise<void> {
   const now = await knowledgeFiles(knowledge.storeRoot);
   // Compared file by file: a store's list of files is not held to the canonical ceilings.
@@ -341,10 +470,10 @@ async function assertKnowledgeCarried(knowledge: LegacyKnowledge, libraryRoot: s
   })) {
     mismatch("the old knowledge store changed while it was imported", { file: LEGACY_KNOWLEDGE_DIRECTORY });
   }
-  const cards = await listedCards(libraryRoot, at, "all");
-  const defaultCards = await listedCards(libraryRoot, at, "default");
-  if (cards !== knowledge.report.cards || defaultCards !== knowledge.report.defaultCards) {
-    mismatch(`the imported crest answers ${cards} cards, ${defaultCards} by default, where the old store answers ${knowledge.report.cards}, ${knowledge.report.defaultCards} by default`, {
+  const carried = await cardCounts(libraryRoot, at);
+  const { cards, removedCards, defaultCards } = knowledge.report;
+  if (carried.cards !== cards || carried.removedCards !== removedCards || carried.defaultCards !== defaultCards) {
+    mismatch(`the imported crest answers ${carried.cards} cards, ${carried.removedCards} of them removed and ${carried.defaultCards} by default, where the old store answers ${cards}, ${removedCards} and ${defaultCards}`, {
       file: DIRECTORY.knowledge,
     });
   }

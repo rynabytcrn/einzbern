@@ -78,6 +78,9 @@ and never guess an answer.
    - `LEGACY_IMPORT_MISMATCH`: the old workspace changed while it was planned, or the library at
      the target holds that workspace's id but not its chain. Plan again once nothing writes to the
      old workspace; for the second case, ask the user.
+   - `KNOWLEDGE_RECORD_INVALID`, `KNOWLEDGE_PATH_INVALID` or `KNOWLEDGE_PARTIAL_STATE`: the
+     partition's old knowledge store does not read, and the blocker's `path` is the file of the
+     store it is about. Handle it as "Knowledge carried" below says.
    - `SETUP_LIBRARY_CONFLICT`: this device registered the project to another library.
    - `MIGRATE_CLEANUP_BACKUP_EXISTS` or `LEGACY_SKILL_CLEANUP_BACKUP_EXISTS`: a backup of the same
      second is already there. Plan again with a later `--at`.
@@ -97,6 +100,45 @@ and never guess an answer.
 
 Running the same command again changes nothing: migrated partitions are skipped, and the
 cleanup and the wiring find nothing left to do.
+
+## Knowledge carried
+
+- The import carries each old workspace's knowledge store (`knowledge/` in its old control
+  directory) into the library's `crest/` as its engine left it: the marker `store.json`,
+  `metadata/` and `bodies/` (segments included), byte for byte. The old `views/` stays behind,
+  since the library's index view is this device's cache. The library reads that layout and writes
+  new cards beside it; the carried files are never rewritten.
+- A card the old engine marked as replaced (`extensions.supersededBy` in its metadata) reads as
+  removed: `knowledge-list` lists it only with `--status removed` or `--status all`. It is carried
+  with the rest.
+- The receipt of `library-import-legacy` (a dry run's and an import's alike) holds `knowledge`,
+  `null` when the old workspace has no store:
+  - `cards`: every card of the store, whatever its status
+    (`knowledge-list --selection all --status all`);
+  - `removedCards`: those of them that read as removed (`--status removed`);
+  - `defaultCards`: those `knowledge-list` answers by default (valid cards only);
+  - `files` and `bytes`: the files carried into `crest/` and their size.
+
+  After the copy the library must answer the same three counts, or the import stops with
+  `LEGACY_IMPORT_MISMATCH`. To see a partition's counts before the apply, run
+  `library-import-legacy --legacy <old workspace> --dry-run true --at <UTC>`; it writes nothing.
+- A store the engine cannot read blocks its partition. The plan lists the refusal as a blocker of
+  its own, whose `path` is the file of the store it is about (the store itself when it is about the
+  store as a whole), and still lists the partition's `events`, `headEventHash`,
+  `unsatisfiedGates` and `openItems`. `library-import-legacy` names the same file in `file`,
+  relative to the store (`.` for the store as a whole).
+  - `KNOWLEDGE_RECORD_INVALID`: the named file (the marker or a card's metadata) no longer holds
+    the bytes its engine wrote, typically because another tool saved it again, indented or
+    without its final newline.
+  - `KNOWLEDGE_PATH_INVALID`: the store is bound to another place than the one the old workspace
+    sits in now (it was copied or moved after its engine wrote it), or a path in it does not read.
+  - `KNOWLEDGE_PARTIAL_STATE`: the store is not whole: an entry its engine never leaves there (a
+    `mutation.claim` of a write that never finished, a stray file), cards and bodies that do not
+    match, or a stale index view.
+- Show each such blocker with its file and stop; nothing is migrated while one is there. Never
+  edit, reformat, move or delete a file of the old store yourself. The user restores the store as
+  its engine left it, from a backup or an earlier copy, or puts the old workspace back where its
+  store is bound; then plan again.
 
 ## After the migration
 

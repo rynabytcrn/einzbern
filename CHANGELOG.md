@@ -1191,9 +1191,10 @@ count) and `knowledge`. The old workspace's knowledge store is carried into `cre
 left it: `store.json`, `metadata/` and `bodies/` (segments included), byte for byte and checked by
 SHA-256; `views/` stays behind, since a library's index view is this device's cache. The library's
 crest reads that layout as it reads any crest an older engine left and takes new cards as events
-beside it, and it must answer as many cards as the old store did, in all and by default; `knowledge`
-reports those two counts (`cards`, `defaultCards`) and the files and bytes carried, or is `null` when
-the old workspace has no store. `config/project.json` is written, with the settings and the
+beside it, and it must answer the old store's three card counts: every card whatever its status, the
+cards that read as removed, and the cards listed by default; `knowledge` reports them (`cards`,
+`removedCards`, `defaultCards`) and the files and bytes carried, or is `null` when the old workspace
+has no store. `config/project.json` is written, with the settings and the
 configuration records, once every check has passed. This device's identity is read or made before
 the target is touched, and an import that stops after it has written into its target answers with the
 reason code and details of what stopped it (`LEGACY_IMPORT_STOPPED` when that carries none), the
@@ -1271,6 +1272,26 @@ passing it to them is refused with `CLI_ARGUMENT_UNKNOWN`. Their refusal now nam
 `library-register` alone; a verb that takes `--workspace` and leaves it to the registry is still
 offered it. The reason code, its `cwd` and `remedy` details and the command catalog are unchanged;
 `resolveLibrary` takes the choice as an optional third argument, `{ workspaceFlag }`.
+
+`library-import-legacy` counts the carried cards whatever their status, and names the file of an
+old knowledge store it refuses (TCRN-CROSS-SUB-421 R18, TCRN-CROSS-STORY-489;
+`packages/core/src/legacy-import.ts`, `packages/core/src/migrate-legacy.ts`). Since a card the old
+engine marked superseded (`extensions.supersededBy`) reads as removed (TCRN-CROSS-SUB-425), the
+receipt's `knowledge.cards` had counted the valid cards alone, 93 of cross-project's 158. It is
+again every card the store holds, whatever its status; the new `removedCards` counts those that
+read as removed (65 there), beside `defaultCards` (55), in a dry run and an import alike, and the
+library's crest must answer all three after the copy. A store this engine's reader refuses is
+refused with the reader's own reason code and message (`KNOWLEDGE_RECORD_INVALID`,
+`KNOWLEDGE_PATH_INVALID`, `KNOWLEDGE_PARTIAL_STATE`, ...), and the refusal now names the file of the
+store it is about, in its message and in `file`, relative to the store's root, or `.` for the store
+as a whole (`LegacyKnowledgeRefusedError`, exported by its module and not by core's index).
+TCRN-TMS's store, whose marker and one card were saved again by another tool, indented and without
+their final newline, is refused naming `store.json`. `setup --mode migrate` keeps the chain of such
+a partition in its plan: the old chain is still replayed, its events, head, unsatisfied gates and
+open work are listed, and the refusal is a blocker of its own whose `path` is the named file. The
+skill's migrate reference and the Wiki's migration page say how the store is carried, what each
+field of the receipt counts, and what the three knowledge refusals mean and how they are handled.
+The records digest, the segments, the carried bytes and every other reason code are unchanged.
 
 ## 1.2.1 — patch candidate
 

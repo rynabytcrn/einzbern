@@ -453,3 +453,127 @@ test("508-AC7 via the render: the system section in AGENTS.md holds the categori
   assert.equal(absolutePathLine(system.body), null);
   assert.equal(text.includes(base), false, "no path of this machine appears in AGENTS.md");
 });
+
+// TCRN-CROSS-STORY-489 (TCRN-CROSS-SUB-366, R17 continuation revision three): an entry point that
+// wrote a file and then cannot commit the section records puts back every file it wrote, as it read
+// it, and throws the error that stopped it; the library holds no new event. The commit is refused
+// here the way a library near its view budget refuses it (viewBudgetBytes narrows that budget), and
+// that refusal comes after the files were written.
+const OVER_BUDGET = Object.freeze({ viewBudgetBytes: 1 });
+
+async function libraryHead(root) {
+  const { version, headEventHash } = await materializeWorkspace(root);
+  return { version, headEventHash };
+}
+
+async function textOrNull(path) {
+  try {
+    return await readFile(path, "utf8");
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+test("489: a render whose records cannot be committed puts both files back as they were read", async (context) => {
+  const paths = await scratch(context);
+  const agentsPath = join(paths.project, AGENTS_FILE);
+  const claudePath = join(paths.project, CLAUDE_FILE);
+  await writeFile(agentsPath, USER_TEXT);
+  const root = await library(paths.base);
+  await setVariable(root, { name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
+  const render = (options = {}) => renderAgentsSections(root, { projectRoot: paths.project, navigation: "written", backupRoot: paths.backups, occurredAt: at(), ...options });
+
+  const empty = await libraryHead(root);
+  const refused = await refusal(() => render(OVER_BUDGET));
+  assert.equal(refused.reasonCode, "WORKSPACE_VIEW_BUDGET_EXCEEDED", "the error that stopped the commit is the one thrown");
+  assert.equal(await readFile(agentsPath, "utf8"), USER_TEXT, "AGENTS.md holds what it held");
+  assert.equal(await textOrNull(claudePath), null, "the CLAUDE.md the render created is taken away");
+  assert.deepEqual(await libraryHead(root), empty, "the library holds no new event");
+
+  // The normal path is as it was: the same render, committed, creates the four sections and records them.
+  const created = await render();
+  assert.deepEqual(created.sections.map((section) => [section.id, section.result]), [
+    ["navigation", "create"],
+    ["variables-system", "create"],
+    ["variables-custom", "create"],
+    ["claude-import", "create"],
+  ]);
+  assert.equal(created.recorded, 4);
+
+  // A replace that cannot be recorded leaves the section as its record says, so the next render does not take it for the user's change.
+  const written = await readFile(agentsPath, "utf8");
+  const recorded = await records(root);
+  await setVariable(root, { name: "deploy.port", type: "number", value: "8443", occurredAt: at() });
+  const head = await libraryHead(root);
+  const again = await refusal(() => render(OVER_BUDGET));
+  assert.equal(again.reasonCode, "WORKSPACE_VIEW_BUDGET_EXCEEDED");
+  assert.equal(await readFile(agentsPath, "utf8"), written, "AGENTS.md holds the sections the library recorded");
+  assert.deepEqual([await records(root), await libraryHead(root)], [recorded, head], "the records and the library are as they were");
+  const replaced = await render();
+  assert.deepEqual(replaced.pending, [], "no section waits for a change the user never made");
+  assert.equal(replaced.sections.find((section) => section.id === "variables-custom").result, "replace");
+  assert.match(sectionOf(await readFile(agentsPath, "utf8"), "variables-custom").body, /^\| deploy\.port \| number \| 8443 \|  \|$/mu);
+});
+
+test("489: a disposition whose record cannot be committed leaves the section as the user left it", async (context) => {
+  const { root, project, backups, path, edited } = await pendingProject(context);
+  const waiting = await records(root);
+  const head = await libraryHead(root);
+  for (const action of ["overwrite", "unmanage"]) {
+    const error = await refusal(() => resolveAgentsSection(root, { projectRoot: project, id: "navigation", action, backupRoot: backups, occurredAt: at(), ...OVER_BUDGET }));
+    assert.equal(error.reasonCode, "WORKSPACE_VIEW_BUDGET_EXCEEDED", action);
+    assert.equal(await readFile(path, "utf8"), edited, `${action}: the file is as the user left it`);
+    assert.deepEqual([await records(root), await libraryHead(root)], [waiting, head], `${action}: the section still waits, and the library holds no new event`);
+  }
+  const { change } = await resolveAgentsSection(root, { projectRoot: project, id: "navigation", action: "overwrite", backupRoot: backups, occurredAt: at() });
+  assert.deepEqual([change.result, change.written, change.record.rev, change.record.state], ["overwritten", true, 2, "managed"]);
+  assert.equal(sectionOf(await readFile(path, "utf8"), "navigation").body, NAVIGATION_SECTION.body);
+});
+
+test("489: a disable whose record cannot be removed puts the section back, and the next disable takes it out", async (context) => {
+  const { root, project, backups } = await renderedProject(context);
+  const path = join(project, AGENTS_FILE);
+  const written = await readFile(path, "utf8");
+  const recorded = await records(root);
+  const head = await libraryHead(root);
+  const error = await refusal(() => disableAgentsSection(root, { projectRoot: project, id: "navigation", backupRoot: backups, occurredAt: at(), ...OVER_BUDGET }));
+  assert.equal(error.reasonCode, "WORKSPACE_VIEW_BUDGET_EXCEEDED");
+  assert.equal(await readFile(path, "utf8"), written, "the section is back in the file, markers and all");
+  assert.deepEqual([await records(root), await libraryHead(root)], [recorded, head], "its record stays, and the library holds no new event");
+  const { change } = await disableAgentsSection(root, { projectRoot: project, id: "navigation", backupRoot: backups, occurredAt: at() });
+  assert.deepEqual([change.result, change.written, change.record], ["disabled", true, null]);
+  assert.equal(sectionOf(await readFile(path, "utf8"), "navigation"), null);
+});
+
+test("489: records that went in before the failure (a crash after the event commit) keep the files as written", async (context) => {
+  const paths = await scratch(context);
+  const agentsPath = join(paths.project, AGENTS_FILE);
+  await writeFile(agentsPath, USER_TEXT);
+  const root = await library(paths.base);
+  const head = await libraryHead(root);
+  const render = (options = {}) => renderAgentsSections(root, { projectRoot: paths.project, navigation: "written", backupRoot: paths.backups, occurredAt: at(), ...options });
+  const error = await refusal(() => render({ crashAt: "after-event-commit" }));
+  assert.equal(error.reasonCode, "WORKSPACE_FAULT_INJECTED");
+  assert.notDeepEqual(await libraryHead(root), head, "the records went in");
+  assert.deepEqual((await records(root)).map((record) => record.id).sort(), ["navigation", "variables-custom", "variables-system"]);
+  assert.notEqual(await readFile(agentsPath, "utf8"), USER_TEXT, "so the sections stay where they were written");
+  assert.notEqual(await textOrNull(join(paths.project, CLAUDE_FILE)), null);
+  const again = await render();
+  assert.deepEqual([again.pending, again.recorded, again.files.some((file) => file.written)], [[], 0, false], "the files and the records agree");
+});
+
+test("489: a render stopped at its second file takes back the first", async (context) => {
+  const paths = await scratch(context);
+  const claudePath = join(paths.project, CLAUDE_FILE);
+  await writeFile(claudePath, USER_TEXT);
+  const root = await library(paths.base);
+  const head = await libraryHead(root);
+  // CLAUDE.md is the one file with an original to back up, and its backup would go under a regular file.
+  const blocked = join(paths.base, "backups-are-a-file");
+  await writeFile(blocked, "");
+  await refusal(() => renderAgentsSections(root, { projectRoot: paths.project, navigation: "written", backupRoot: blocked, occurredAt: at() }));
+  assert.equal(await textOrNull(join(paths.project, AGENTS_FILE)), null, "the AGENTS.md the render created is taken away");
+  assert.equal(await readFile(claudePath, "utf8"), USER_TEXT);
+  assert.deepEqual(await libraryHead(root), head, "the library holds no new event");
+});

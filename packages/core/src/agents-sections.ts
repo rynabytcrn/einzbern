@@ -23,7 +23,9 @@
 // force. Every write follows the managed-section writer (managed-sections.ts): the file must
 // still hold what was read, the original is copied into the device directory's backups first,
 // and the file is replaced through a temporary file and a rename. Nothing here runs unless it is
-// called, so an engine upgrade writes no file.
+// called, so an engine upgrade writes no file. An entry point that wrote a file and then cannot
+// commit the records of what it wrote puts every file it wrote back as it read it before the error
+// goes on (TCRN-CROSS-STORY-489), so no file is left holding a section the library never recorded.
 
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { isUtf8 } from "node:buffer";
@@ -41,6 +43,7 @@ import {
   parseManagedFile,
   planManagedWrite,
   renderSection,
+  revertManagedWrite,
   sectionDigest,
 } from "./managed-sections.js";
 import type {
@@ -289,7 +292,14 @@ function replaceSection(parsed: ParsedManagedFile, index: number, replacement: s
   return parts.join("");
 }
 
-async function writeSectionFile(located: SectionInFile, after: string, at: string, backupRoot: string | undefined): Promise<AppliedManagedWrite> {
+// A section file written as `after`: what the write did, and the plan it wrote, which is what an
+// entry point puts back when it cannot record the change (TCRN-CROSS-STORY-489).
+interface SectionWrite {
+  readonly plan: ManagedWritePlan;
+  readonly applied: AppliedManagedWrite;
+}
+
+async function writeSectionFile(located: SectionInFile, after: string, at: string, backupRoot: string | undefined): Promise<SectionWrite> {
   const plan: ManagedWritePlan = {
     filePath: located.filePath,
     file: located.file,
@@ -300,7 +310,7 @@ async function writeSectionFile(located: SectionInFile, after: string, at: strin
     sections: [],
     pending: [],
   };
-  return applyManagedWrite(plan, { now: at, ...(backupRoot === undefined ? {} : { backupRoot }) });
+  return { plan, applied: await applyManagedWrite(plan, { now: at, ...(backupRoot === undefined ? {} : { backupRoot }) }) };
 }
 
 function sameRecord(left: ManagedSectionRecord | undefined, right: ManagedSectionRecord | null): boolean {
@@ -308,18 +318,27 @@ function sameRecord(left: ManagedSectionRecord | undefined, right: ManagedSectio
   return left.file === right.file && left.id === right.id && left.rev === right.rev && left.digest === right.digest && left.state === right.state;
 }
 
-function change(located: SectionInFile, id: string, action: SectionAction | "disable", done: SectionChangeResult, applied: AppliedManagedWrite | null, record: ManagedSectionRecord | null): SectionChange {
+// What one disposition or one disabling did, and the plan it wrote (null when it wrote nothing).
+interface SectionOutcome {
+  readonly change: SectionChange;
+  readonly wrote: ManagedWritePlan | null;
+}
+
+function change(located: SectionInFile, id: string, action: SectionAction | "disable", done: SectionChangeResult, write: SectionWrite | null, record: ManagedSectionRecord | null): SectionOutcome {
   const recordChanged = !sameRecord(located.record, record);
-  const written = applied?.written ?? false;
+  const written = write?.applied.written ?? false;
   return {
-    file: located.file,
-    id,
-    action,
-    result: written || recordChanged ? done : "unchanged",
-    written,
-    backupPath: applied?.backupPath ?? null,
-    record,
-    recordChanged,
+    change: {
+      file: located.file,
+      id,
+      action,
+      result: written || recordChanged ? done : "unchanged",
+      written,
+      backupPath: write?.applied.backupPath ?? null,
+      record,
+      recordChanged,
+    },
+    wrote: written && write !== null ? write.plan : null,
   };
 }
 
@@ -347,6 +366,11 @@ export interface ResolveSectionInput {
  * record to store.
  */
 export async function resolveSection(input: ResolveSectionInput): Promise<SectionChange> {
+  return (await settleSection(input)).change;
+}
+
+// resolveSection, and the plan it wrote (TCRN-CROSS-STORY-489).
+async function settleSection(input: ResolveSectionInput): Promise<SectionOutcome> {
   if (!SECTION_ACTIONS.includes(input.action)) {
     fail("MANAGED_SECTION_ACTION_INVALID", `action must be one of ${SECTION_ACTIONS.join(", ")}`, { section: String(input.id), action: String(input.action) });
   }
@@ -361,8 +385,8 @@ export async function resolveSection(input: ResolveSectionInput): Promise<Sectio
   }
   if (input.action === "unmanage") {
     const kept: ManagedSectionRecord = { file, id: input.id, rev: record?.rev ?? section.rev, digest: record?.digest ?? section.digest, state: "unmanaged" };
-    const applied = await writeSectionFile(located, replaceSection(parsed, index, section.body), at, input.backupRoot);
-    return change(located, input.id, "unmanage", "unmanaged", applied, kept);
+    const write = await writeSectionFile(located, replaceSection(parsed, index, section.body), at, input.backupRoot);
+    return change(located, input.id, "unmanage", "unmanaged", write, kept);
   }
   const body = input.body;
   if (body === undefined) {
@@ -380,8 +404,8 @@ export async function resolveSection(input: ResolveSectionInput): Promise<Sectio
     return change(located, input.id, "overwrite", "overwritten", null, { file, id: input.id, rev: section.rev, digest, state: "managed" });
   }
   const rev = Math.max(section.rev, record?.rev ?? 0) + 1;
-  const applied = await writeSectionFile(located, replaceSection(parsed, index, renderSection({ id: input.id, rev, body }, parsed.eol)), at, input.backupRoot);
-  return change(located, input.id, "overwrite", "overwritten", applied, { file, id: input.id, rev, digest, state: "managed" });
+  const write = await writeSectionFile(located, replaceSection(parsed, index, renderSection({ id: input.id, rev, body }, parsed.eol)), at, input.backupRoot);
+  return change(located, input.id, "overwrite", "overwritten", write, { file, id: input.id, rev, digest, state: "managed" });
 }
 
 export interface DisableSectionInput {
@@ -401,6 +425,11 @@ export interface DisableSectionInput {
  * the file only loses its record: text the user took over stays where it is.
  */
 export async function disableSection(input: DisableSectionInput): Promise<SectionChange> {
+  return (await takeSectionOut(input)).change;
+}
+
+// disableSection, and the plan it wrote (TCRN-CROSS-STORY-489).
+async function takeSectionOut(input: DisableSectionInput): Promise<SectionOutcome> {
   const located = await locateSection(input.projectRoot, input.id, input.records);
   const { file, parsed, section, record, index } = located;
   if (parsed === null || section === null) return change(located, input.id, "disable", "disabled", null, null);
@@ -411,8 +440,8 @@ export async function disableSection(input: DisableSectionInput): Promise<Sectio
       state: record?.state === "managed" || record === undefined ? "user-modified" : record.state,
     });
   }
-  const applied = await writeSectionFile(located, replaceSection(parsed, index, ""), input.at, input.backupRoot);
-  return change(located, input.id, "disable", "disabled", applied, null);
+  const write = await writeSectionFile(located, replaceSection(parsed, index, ""), input.at, input.backupRoot);
+  return change(located, input.id, "disable", "disabled", write, null);
 }
 
 // ---- The engine's sections and a library's records of them ----
@@ -474,6 +503,36 @@ async function commit(root: string, state: WorkspaceState, deltas: readonly ((st
   const committed = await appendEvents(root, deltas, options);
   await projectConfiguration(root, committed);
   return committed;
+}
+
+// TCRN-CROSS-STORY-489 (TCRN-CROSS-SUB-366): what an entry point does when it wrote files and then
+// cannot commit their records, before the error goes on as it was thrown. Each file it wrote goes
+// back to what its plan read (ManagedWritePlan.before), the last written first, so no file is left
+// holding a section the library never recorded, which the next render would take for the user's
+// change. When the library shows the records went in all the same (a crash simulated after the
+// event commit), the files already agree with it and stay as written. The put-back is best effort:
+// a file changed again since it was written, or one that cannot be written, is left as it is, and a
+// replaced file's original is still in the backup the write made.
+async function putBackUnrecorded(root: string, state: WorkspaceState, wrote: readonly ManagedWritePlan[]): Promise<void> {
+  if (wrote.length === 0 || await recordedSince(root, state)) return;
+  for (const plan of [...wrote].reverse()) {
+    try {
+      await revertManagedWrite(plan);
+    } catch {
+      // The caller learns the error that stopped the entry point, not this one.
+    }
+  }
+}
+
+// Whether the library, read again, has moved past `state`. One that cannot be read is taken not to
+// have: an append commits in one step, the rename of its stream manifest (akasha.ts), and every
+// refusal comes before that step, so a failed append appended nothing but for the simulated crash.
+async function recordedSince(root: string, state: WorkspaceState): Promise<boolean> {
+  try {
+    return (await materializeWorkspace(root)).headEventHash !== state.headEventHash;
+  } catch {
+    return false;
+  }
 }
 
 /** One section after a render: where it is, what the render did and the state its record now holds. */
@@ -606,7 +665,9 @@ export function agentsFileSections(state: Pick<WorkspaceState, "settings" | "con
  * gets its import section unless it imports AGENTS.md already. Both files are planned before
  * either is written, so a file whose markers do not parse refuses the whole render. A section the
  * user changed is left as it is and goes pending; one the user removed is not put back; a section
- * the engine does not render (a navigation section another device wrote) is left alone.
+ * the engine does not render (a navigation section another device wrote) is left alone. A render
+ * whose records cannot be committed, or whose second file cannot be written, returns each file it
+ * wrote to what it read before the error goes on (TCRN-CROSS-STORY-489).
  */
 export async function renderAgentsSections(workspaceRoot: string, input: {
   readonly projectRoot: string;
@@ -626,14 +687,23 @@ export async function renderAgentsSections(workspaceRoot: string, input: {
       }), ruleOrders(state)),
       await planClaudeImport(input.projectRoot, managedSectionRecordsFor(state, CLAUDE_FILE)),
     ];
-    const files: RenderedFile[] = [];
-    for (const plan of plans) {
-      const applied = await applyManagedWrite(plan, { now: input.occurredAt, ...(input.backupRoot === undefined ? {} : { backupRoot: input.backupRoot }) });
-      files.push({ file: plan.file, written: applied.written, backupPath: applied.backupPath });
-    }
     const decisions = plans.flatMap((plan) => plan.sections.map((decision) => ({ plan, decision })));
     const deltas = recordDeltas(decisions.map(({ plan, decision }) => ({ file: plan.file, id: decision.id, record: decision.record, recordChanged: decision.recordChanged, hadRecord: true })));
-    const committed = await commit(root, state, deltas, input);
+    const files: RenderedFile[] = [];
+    const wrote: ManagedWritePlan[] = [];
+    let committed: WorkspaceState;
+    try {
+      for (const plan of plans) {
+        const applied = await applyManagedWrite(plan, { now: input.occurredAt, ...(input.backupRoot === undefined ? {} : { backupRoot: input.backupRoot }) });
+        if (applied.written) wrote.push(plan);
+        files.push({ file: plan.file, written: applied.written, backupPath: applied.backupPath });
+      }
+      committed = await commit(root, state, deltas, input);
+    } catch (error) {
+      // TCRN-CROSS-STORY-489: this also takes back the first file when the second cannot be written.
+      await putBackUnrecorded(root, state, wrote);
+      throw error;
+    }
     const backup = files.find((file) => file.backupPath !== null)?.backupPath ?? null;
     return {
       projectRoot: input.projectRoot,
@@ -657,7 +727,9 @@ export interface AgentsSectionChangeResult {
 /**
  * Settle one section of a project against the library (R3): resolveSection with the library's
  * records and, for overwrite, the engine's text as the library now stands; the record it leaves is
- * recorded in the library. An id the engine writes no text for cannot be overwritten.
+ * recorded in the library. An id the engine writes no text for cannot be overwritten. When that
+ * record cannot be committed, the file returns to what it held before the error goes on
+ * (TCRN-CROSS-STORY-489).
  */
 export async function resolveAgentsSection(workspaceRoot: string, input: {
   readonly projectRoot: string;
@@ -678,7 +750,7 @@ export async function resolveAgentsSection(workspaceRoot: string, input: {
         action: "overwrite",
       });
     }
-    const outcome = await resolveSection({
+    const { change: outcome, wrote } = await settleSection({
       projectRoot: input.projectRoot,
       id: input.id,
       action: input.action,
@@ -689,12 +761,21 @@ export async function resolveAgentsSection(workspaceRoot: string, input: {
       ...(input.backupRoot === undefined ? {} : { backupRoot: input.backupRoot }),
     });
     const hadRecord = records.some((record) => record.id === input.id);
-    const committed = await commit(root, state, recordDeltas([{ file, id: input.id, record: outcome.record, recordChanged: outcome.recordChanged, hadRecord }]), input);
-    return { change: outcome, state: committed };
+    try {
+      const committed = await commit(root, state, recordDeltas([{ file, id: input.id, record: outcome.record, recordChanged: outcome.recordChanged, hadRecord }]), input);
+      return { change: outcome, state: committed };
+    } catch (error) {
+      await putBackUnrecorded(root, state, wrote === null ? [] : [wrote]);
+      throw error;
+    }
   });
 }
 
-/** Take one section out of a project's file and remove its record from the library (disableSection). */
+/**
+ * Take one section out of a project's file and remove its record from the library (disableSection).
+ * When the record cannot be removed, the file returns to what it held, the section in it, before
+ * the error goes on (TCRN-CROSS-STORY-489).
+ */
 export async function disableAgentsSection(workspaceRoot: string, input: {
   readonly projectRoot: string;
   readonly id: string;
@@ -705,7 +786,7 @@ export async function disableAgentsSection(workspaceRoot: string, input: {
     const state = await materializeWorkspace(root);
     const file = managedSectionFile(input.id);
     const records = managedSectionRecordsFor(state, file);
-    const outcome = await disableSection({
+    const { change: outcome, wrote } = await takeSectionOut({
       projectRoot: input.projectRoot,
       id: input.id,
       records,
@@ -714,7 +795,12 @@ export async function disableAgentsSection(workspaceRoot: string, input: {
       ...(input.backupRoot === undefined ? {} : { backupRoot: input.backupRoot }),
     });
     const hadRecord = records.some((record) => record.id === input.id);
-    const committed = await commit(root, state, recordDeltas([{ file, id: input.id, record: outcome.record, recordChanged: outcome.recordChanged, hadRecord }]), input);
-    return { change: outcome, state: committed };
+    try {
+      const committed = await commit(root, state, recordDeltas([{ file, id: input.id, record: outcome.record, recordChanged: outcome.recordChanged, hadRecord }]), input);
+      return { change: outcome, state: committed };
+    } catch (error) {
+      await putBackUnrecorded(root, state, wrote === null ? [] : [wrote]);
+      throw error;
+    }
   });
 }

@@ -1272,6 +1272,20 @@ passing it to them is refused with `CLI_ARGUMENT_UNKNOWN`. Their refusal now nam
 offered it. The reason code, its `cwd` and `remedy` details and the command catalog are unchanged;
 `resolveLibrary` takes the choice as an optional third argument, `{ workspaceFlag }`.
 
+A managed-section write whose records cannot be committed no longer leaves the file half changed
+(TCRN-CROSS-STORY-489, TCRN-CROSS-SUB-366; `packages/core/src/agents-sections.ts`,
+`packages/core/src/managed-sections.ts`). When `renderAgentsSections`, `resolveAgentsSection` or
+`disableAgentsSection` (behind `agents-render`, `rule-resolve` and setup) wrote AGENTS.md or
+CLAUDE.md and the commit of the section records then failed, the file kept the new text while the
+library kept the old records, and the next render took a replaced section for the user's change and
+left it pending. Each of them now puts every file it wrote back as it read it, and takes away a file
+it created, before it throws the error that stopped it, so the library holds no new event and the
+files match its records; a render whose second file cannot be written takes back the first the same
+way. A file changed again since the engine wrote it is left as it is, the backup the write made
+stays, and when the records went in all the same (a crash simulated after the event commit) the
+files stay as written. `revertManagedWrite` in `managed-sections.ts` does the putting back. The
+normal path, the results, the reason codes and the command catalog are unchanged.
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

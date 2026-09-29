@@ -473,6 +473,19 @@ interface AwaitingChainEntry {
   readonly eventHash: string;
 }
 
+// TCRN-CROSS-SUB-414 (R16, C-R16-1): a live library crest record whose project the chain it was read
+// against no longer holds -- the project was deleted after the card was written, or by another device
+// before either device received the other's write: the card, the device and event that hold the
+// record (all three null for a record of the metadata/body layout, as a duplicate's version names
+// one), and the project id that no longer resolves.
+interface UnresolvedScopeEntry {
+  readonly id: string;
+  readonly deviceId: string | null;
+  readonly sequence: number | null;
+  readonly eventHash: string | null;
+  readonly projectId: string;
+}
+
 interface FileIdentity {
   readonly dev: number | bigint;
   readonly ino: number | bigint;
@@ -553,6 +566,11 @@ interface CrestScan {
   // not received, in canonical id order; their cards leave default selection until the chain
   // arrives. Always empty for the user crest and an old-layout store.
   readonly awaitingChain: readonly AwaitingChainEntry[];
+  // TCRN-CROSS-SUB-414 (R16): the library crest's live records whose project the chain this read
+  // replayed no longer holds, in canonical id order, then writer, then sequence; their cards leave
+  // default selection until a card supersedes them. Always empty for the user crest and an
+  // old-layout store.
+  readonly unresolvedScopes: readonly UnresolvedScopeEntry[];
   // The head of every device's crest event stream, in canonical device order.
   readonly eventHeads: readonly CrestEventHead[];
 }
@@ -578,6 +596,8 @@ interface KnowledgeStoreScan extends CrestScan {
   // WSC-2: in rebase mode, the id-sorted set of live (non-retired) records whose
   // scope/project no longer resolves against the advanced workspace head. Empty
   // otherwise; dangling work references have their own non-blocking diagnostic.
+  // TCRN-CROSS-SUB-414 (R16): in a library's crest a record some card superseded is not live, and
+  // one whose project alone no longer resolves is also named in `unresolvedScopes`.
   readonly linkInvalid: readonly string[];
   // Live records may retain links to work items removed from the current chain.
   // They remain readable and writable, while validation reports these links.
@@ -1453,16 +1473,24 @@ export function knowledgeLinkIndexCountsForTest(): { readonly builds: number; re
 // liveness (KNOWLEDGE_LINK_INVALID:<workId>) — the two checks a rebase tolerates
 // (collecting offenders) and a retired record is durably exempt from.
 function validateMetadataScope(metadata: KnowledgeUnitMetadata, workspace: WorkspaceState): void {
+  if (scopeOffence(metadata, workspace) !== null) fail("KNOWLEDGE_LINK_INVALID", `${metadata.id}:scope`);
+}
+
+// Why a record's scope/project does not resolve against a chain, or null when it does. "shape" is a
+// record no write of this engine produces whatever the chain holds: a user card in a library's
+// crest (TCRN-CROSS-STORY-476 R5), or a scope its project and role scopes contradict. "project" is a
+// consistent record whose project the chain does not hold live: TCRN-CROSS-SUB-414 (R16) names that
+// one in a library's crest rather than refusing the crest. One project lookup either way (CQ-10).
+function scopeOffence(metadata: KnowledgeUnitMetadata, workspace: WorkspaceState): "shape" | "project" | null {
   const index = knowledgeLinkIndexFor(workspace);
   const project = metadata.projectId === null ? undefined : index.liveProject(metadata.projectId);
-  // TCRN-CROSS-STORY-476 R5: a user card lives in the user crest and never in a library's.
   if (metadata.scope === "user" ||
     (metadata.scope === "workspace" && (metadata.projectId !== null || metadata.roleScopes.length !== 0)) ||
-    (metadata.scope === "project" && (!project || metadata.roleScopes.length !== 0)) ||
-    (metadata.scope === "role" && metadata.roleScopes.length === 0) ||
-    (metadata.projectId !== null && !project)) {
-    fail("KNOWLEDGE_LINK_INVALID", `${metadata.id}:scope`);
+    (metadata.scope === "project" && (metadata.projectId === null || metadata.roleScopes.length !== 0)) ||
+    (metadata.scope === "role" && metadata.roleScopes.length === 0)) {
+    return "shape";
   }
+  return metadata.projectId !== null && !project ? "project" : null;
 }
 
 function danglingLinkedWorkIds(metadata: KnowledgeUnitMetadata, workspace: WorkspaceState): readonly string[] {
@@ -1812,7 +1840,7 @@ async function scanOldLayoutStore(
     linkInvalid,
     danglingWorkLinks,
     capacity: { bodyBytes: capacityBytes, limit: aggregateLimit },
-    unresolvedConflicts: [], duplicates: [], awaitingChain: [], eventHeads: [],
+    unresolvedConflicts: [], duplicates: [], awaitingChain: [], unresolvedScopes: [], eventHeads: [],
   };
 }
 
@@ -1925,6 +1953,8 @@ function validateLibraryCrestEvent(value: Readonly<Record<string, JsonValue>>, d
 // the crest. The read answers at the chain head it replayed, so a chain write never leaves the crest
 // behind; a record written against chain events this device has not received is named in
 // `awaitingChain`, its card leaves default selection, and its links are checked once they arrive.
+// R16 (C-R16-1): a live card whose project that chain no longer holds is named in
+// `unresolvedScopes` and leaves default selection too, rather than refusing the whole crest.
 async function scanLibraryCrest(
   workspace: WorkspaceState,
   workspaceRoot: string,
@@ -1991,23 +2021,37 @@ async function scanLibraryCrest(
   assertWithinCapacity(capacityBytes, aggregateLimit, "knowledge aggregate bytes");
   // WSC-2: the current record of each card is bound to the chain this read replayed. Rebase defers
   // scope/project liveness into the offender list; dangling work references are diagnostics.
+  // TCRN-CROSS-SUB-414 (R16, C-R16-1): a project deleted after a card was written -- or by another
+  // device before either received the other's write, when the deleting device could not see the
+  // card -- no longer refuses every read and write of the crest. A live record whose project alone
+  // no longer resolves is named in `unresolvedScopes`, and its card leaves default selection and
+  // recall until a card supersedes it; a superseded one is not live, and is tolerated as a retired
+  // one always was. The strict surfaces still refuse while one is named (assertScopesResolve, and
+  // the rebase's offenders). A record whose scope contradicts itself is still refused.
   const linkInvalid = new Set<string>();
+  const unresolvedScopes: UnresolvedScopeEntry[] = [];
   const dangling = new Map<string, Set<string>>();
-  for (const { metadata } of records) {
+  for (const unit of records) {
+    const { metadata } = unit;
     if (metadata.lifecycle === "retired" || awaitingIds.has(metadata.id)) continue;
-    if (rebase) {
-      try {
-        validateMetadataScope(metadata, workspace);
-      } catch (error) {
-        if (!(error instanceof KnowledgeCoreError) || error.reasonCode !== "KNOWLEDGE_LINK_INVALID") throw error;
-        linkInvalid.add(metadata.id);
+    const offence = scopeOffence(metadata, workspace);
+    if (offence === "project") {
+      if (countsTowardCapacity(metadata)) {
+        unresolvedScopes.push({ id: metadata.id, ...recordIdentity(unit), projectId: metadata.projectId as string });
+        if (rebase) linkInvalid.add(metadata.id);
       }
-    } else {
-      validateMetadataScope(metadata, workspace);
+    } else if (offence === "shape") {
+      if (!rebase) fail("KNOWLEDGE_LINK_INVALID", `${metadata.id}:scope`);
+      linkInvalid.add(metadata.id);
     }
     const workIds = danglingLinkedWorkIds(metadata, workspace);
     if (workIds.length > 0) dangling.set(metadata.id, new Set([...(dangling.get(metadata.id) ?? []), ...workIds]));
   }
+  // In canonical id order, and the records of one id in canonical writer order (a device id, or
+  // `legacy` for the metadata/body layout), as a duplicate's versions are.
+  unresolvedScopes.sort((left, right) => compareCanonicalText(left.id, right.id) ||
+    compareCanonicalText(left.deviceId ?? USER_CREST_LEGACY_LINEAGE, right.deviceId ?? USER_CREST_LEGACY_LINEAGE) ||
+    (left.sequence ?? 0) - (right.sequence ?? 0));
   const danglingWorkLinks = [...dangling]
     .map(([knowledgeId, workIds]) => ({ knowledgeId, workIds: [...workIds].sort(compareCanonicalText) }))
     .sort((left, right) => compareCanonicalText(left.knowledgeId, right.knowledgeId));
@@ -2025,7 +2069,7 @@ async function scanLibraryCrest(
     linkInvalid: [...linkInvalid].sort(compareCanonicalText),
     danglingWorkLinks,
     capacity: { bodyBytes: capacityBytes, limit: aggregateLimit },
-    unresolvedConflicts, duplicates, awaitingChain, eventHeads: streams.heads,
+    unresolvedConflicts, duplicates, awaitingChain, unresolvedScopes, eventHeads: streams.heads,
   };
 }
 
@@ -2486,12 +2530,17 @@ function crestRecords(scan: Pick<CrestScan, "units" | "duplicates">): readonly C
     .sort((left, right) => compareCanonicalText(left.metadata.id, right.metadata.id));
 }
 
-// Which writer holds a version, and where: the device whose event stream holds it, with the event's
-// sequence and hash; all three null for a version the metadata/body layout holds.
-function duplicateVersionIdentity(version: CrestUnit): Readonly<Record<string, JsonValue>> {
-  return version.event === null
+// Which writer holds a record, and where: the device whose event stream holds it, with the event's
+// sequence and hash; all three null for a record the metadata/body layout holds.
+function recordIdentity(unit: CrestUnit): { readonly deviceId: string | null; readonly sequence: number | null; readonly eventHash: string | null } {
+  return unit.event === null
     ? { deviceId: null, sequence: null, eventHash: null }
-    : { deviceId: version.lineage, sequence: version.event.sequence, eventHash: version.event.eventHash };
+    : { deviceId: unit.lineage, sequence: unit.event.sequence, eventHash: unit.event.eventHash };
+}
+
+// A duplicate's version, named the same way.
+function duplicateVersionIdentity(version: CrestUnit): Readonly<Record<string, JsonValue>> {
+  return { ...recordIdentity(version) };
 }
 
 // The diagnostic entry of one duplicate, as knowledge-list, a read of its id and recall name it
@@ -2585,7 +2634,7 @@ async function scanUserCrest(
   await projectCachedView(backend, index);
   return {
     storeRoot, device: location.device, eventOnly: !legacyLayout, eventHeads: streams.heads, marker: projectedMarker, units, index,
-    capacity: { bodyBytes: capacityBytes, limit: aggregateLimit }, unresolvedConflicts, duplicates, awaitingChain: [],
+    capacity: { bodyBytes: capacityBytes, limit: aggregateLimit }, unresolvedConflicts, duplicates, awaitingChain: [], unresolvedScopes: [],
   };
 }
 
@@ -3101,8 +3150,36 @@ function awaitingChainDiagnostic(entries: readonly AwaitingChainEntry[]): JsonVa
   return entries.map((entry) => ({ id: entry.id, deviceId: entry.deviceId, sequence: entry.sequence, eventHash: entry.eventHash }));
 }
 
+// TCRN-CROSS-SUB-414 (R16, C-R16-1): validate and a checkpoint answer only for a crest whose live cards
+// all resolve against the chain. While a card whose project the chain no longer holds is named in
+// `unresolvedScopes`, they refuse with the code a read of such a card always met,
+// KNOWLEDGE_LINK_INVALID (`<id>:scope`, the first card named), details naming every such record
+// and the remedy: the one retirement there is (TCRN-CROSS-SUB-308), a card that supersedes it.
+function assertScopesResolve(scan: CrestScan): void {
+  const [first] = scan.unresolvedScopes;
+  if (first === undefined) return;
+  fail("KNOWLEDGE_LINK_INVALID", `${first.id}:scope`, unresolvedScopeDetails(scan.unresolvedScopes));
+}
+
+// What a strict surface's refusal carries for the cards whose project the chain no longer holds: the
+// records, as knowledge-list names them, and the remedy that resolves them, naming every card.
+function unresolvedScopeDetails(entries: readonly UnresolvedScopeEntry[]): Readonly<Record<string, JsonValue>> {
+  const ids = [...new Set(entries.map((entry) => entry.id))];
+  return {
+    unresolvedScopes: unresolvedScopeDiagnostic(entries),
+    remedy: ids.length === 1
+      ? `write a card with knowledge-create --supersedes ${ids[0] as string}`
+      : `write a card with knowledge-create --supersedes <id> for each of ${ids.join(", ")}`,
+  };
+}
+
+function unresolvedScopeDiagnostic(entries: readonly UnresolvedScopeEntry[]): JsonValue {
+  return entries.map((entry) => ({ id: entry.id, deviceId: entry.deviceId, sequence: entry.sequence, eventHash: entry.eventHash, projectId: entry.projectId }));
+}
+
 export async function validateKnowledgeStore(workspaceRoot: string, options: KnowledgeReadOptions = {}): Promise<Readonly<Record<string, JsonValue>>> {
   const scan = await scanKnowledgeStore(workspaceRoot, options);
+  assertScopesResolve(scan);
   assertChainHoldsCrest(scan);
   return {
     schemaVersion: "tcrn.knowledge-store-validation.v1",
@@ -3617,10 +3694,12 @@ async function rebaseKnowledgeStoreUnlocked(workspaceRoot: string, input: {
   await assertKnowledgeWritable(resolve(workspaceRoot));
   const scan = await mutationAdmissionScan(workspaceRoot, options, true);
   // Scope/project offenders still block rebase. Dangling linked work is diagnostic only; the rebase
-  // retires and rewrites nothing.
+  // retires and rewrites nothing. TCRN-CROSS-SUB-414 (R16): an offender whose project alone no longer
+  // resolves is named with its record and the remedy, as validate names it; one a card superseded is
+  // no longer live, and no longer an offender.
   const offenders = scan.linkInvalid;
   if (offenders.length > 0) {
-    fail("KNOWLEDGE_REBASE_BLOCKED", offenders.join(","));
+    fail("KNOWLEDGE_REBASE_BLOCKED", offenders.join(","), scan.unresolvedScopes.length === 0 ? undefined : unresolvedScopeDetails(scan.unresolvedScopes));
   }
   assertChainHoldsCrest(scan);
   return {
@@ -3815,30 +3894,39 @@ const USER_CREST_DISCLOSURE: Readonly<Record<string, JsonValue>> = Object.freeze
 
 // What a crest merged from more than one writer says at the top of a list: its unresolved pairs
 // (TCRN-CROSS-SUB-310), its unresolved duplicates (TCRN-CROSS-SUB-413) and, for a library's crest,
-// the records awaiting chain events this device has not received (TCRN-CROSS-SUB-414). Nothing
-// when it holds none of them.
+// the records awaiting chain events this device has not received (TCRN-CROSS-SUB-414) and the live
+// records whose project the chain no longer holds (TCRN-CROSS-SUB-414 R16). Nothing when it holds
+// none of them.
 function mergedCrestDisclosure(scan: CrestScan): Readonly<Record<string, JsonValue>> {
   const duplicates = unresolvedDuplicates(scan);
   return {
     ...(scan.unresolvedConflicts.length === 0 ? {} : { unresolvedConflicts: scan.unresolvedConflicts as unknown as JsonValue }),
     ...(duplicates.length === 0 ? {} : { unresolvedDuplicates: duplicates.map(duplicateDiagnostic) }),
     ...(scan.awaitingChain.length === 0 ? {} : { awaitingChain: awaitingChainDiagnostic(scan.awaitingChain) }),
+    ...(scan.unresolvedScopes.length === 0 ? {} : { unresolvedScopes: unresolvedScopeDiagnostic(scan.unresolvedScopes) }),
   };
 }
 
-// The records of one id awaiting chain events, as a read of that id carries them at its top.
+// The records of one id awaiting chain events, and those of it whose project the chain no longer
+// holds, as a read of that id carries them at its top.
 function awaitingReadDisclosure(scan: CrestScan, id: string): Readonly<Record<string, JsonValue>> {
   const entries = scan.awaitingChain.filter((entry) => entry.id === id);
-  return entries.length === 0 ? {} : { awaitingChain: awaitingChainDiagnostic(entries) };
+  const unresolved = scan.unresolvedScopes.filter((entry) => entry.id === id);
+  return {
+    ...(entries.length === 0 ? {} : { awaitingChain: awaitingChainDiagnostic(entries) }),
+    ...(unresolved.length === 0 ? {} : { unresolvedScopes: unresolvedScopeDiagnostic(unresolved) }),
+  };
 }
 
 // The ids a merged crest's default selection leaves out: both cards of an unresolved pair, every
-// version of an unresolved duplicate, and a library card with a record awaiting chain events.
+// version of an unresolved duplicate, and a library card with a record awaiting chain events or a
+// live record whose project the chain no longer holds.
 function withheldCardIds(scan: CrestScan): ReadonlySet<string> {
   return new Set([
     ...unresolvedConflictIds(scan),
     ...unresolvedDuplicates(scan).map((duplicate) => duplicate.id),
     ...scan.awaitingChain.map((entry) => entry.id),
+    ...scan.unresolvedScopes.map((entry) => entry.id),
   ]);
 }
 
@@ -3852,7 +3940,9 @@ function withheldCardIds(scan: CrestScan): ReadonlySet<string> {
  * unresolved: default selection leaves out every version, and selection "all" lists each one.
  * TCRN-CROSS-SUB-414: a library's crest answers both the same way, and names under `awaitingChain`
  * the records written against chain events this device has not received, whose cards default
- * selection leaves out until the chain arrives.
+ * selection leaves out until the chain arrives. R16: and under `unresolvedScopes` the live records
+ * whose project the chain no longer holds, whose cards default selection leaves out until a card
+ * supersedes them.
  */
 export async function listKnowledgeMetadata(workspaceRoot: string, query: KnowledgeListQuery): Promise<Readonly<Record<string, JsonValue>>> {
   const normalized = normalizeListQuery(query);
@@ -4334,8 +4424,10 @@ export async function exportKnowledgeCheckpoint(workspaceRoot: string, at: strin
   // checkpoint is this surface's export artifact: the strongest answer it produces and
   // the one a reader is least able to re-derive. It takes the strict rule, not a label.
   // TCRN-CROSS-SUB-414: for a library's crest the strict rule is that this device's chain holds
-  // every record, and the corpus is the default selection's.
+  // every record, and the corpus is the default selection's. R16: and that every live card's project
+  // resolves against it.
   const scan = await scanKnowledgeStore(workspaceRoot, { ...options, allowTrailing: false }, false, "metadata-only");
+  assertScopesResolve(scan);
   assertChainHoldsCrest(scan);
   const withheld = withheldCardIds(scan);
   const records = scan.units.map((unit) => unit.metadata).filter((metadata) => !withheld.has(metadata.id) && isDefaultSelectable(metadata, at));

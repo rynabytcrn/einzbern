@@ -16,11 +16,11 @@ import {
   initializeLibrary,
   listKnowledgeMetadata,
   migrateKnowledgeBodies,
-  readKnowledgeStoreMarker,
   SegmentedKnowledgeStoreBackend,
   validateKnowledgeStore,
   DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
+import { readKnowledgeStoreMarker } from "../dist/build/packages/core/src/knowledge-core.js";
 import { canonicalJson } from "../dist/build/packages/protocol/src/index.js";
 
 // TCRN-CROSS-SUB-414: this engine writes a library's cards as events in each device's stream,

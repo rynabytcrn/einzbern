@@ -2619,9 +2619,11 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       ...(cards.userCrestDegraded === null ? {} : { userCrestDegraded: cards.userCrestDegraded as unknown as JsonValue }),
       // TCRN-CROSS-SUB-414 (C-R15-1): the cards the library's crest withheld are named the same way,
       // in the same form: an unresolved pair (KNOWLEDGE_POSSIBLE_CONFLICT), versions of an unresolved
-      // duplicate (KNOWLEDGE_DUPLICATE when no pair is withheld), or records awaiting chain events
-      // this device has not received, under awaitingChain (KNOWLEDGE_HIGH_WATER_MISMATCH when they
-      // are all that is withheld), with withheldCards. A refused read stays knowledgeReasonCode.
+      // duplicate (KNOWLEDGE_DUPLICATE when no pair is withheld), cards whose project the chain no
+      // longer holds, under unresolvedScopes (KNOWLEDGE_LINK_INVALID when neither is withheld; R16,
+      // C-R16-1), or records awaiting chain events this device has not received, under awaitingChain
+      // (KNOWLEDGE_HIGH_WATER_MISMATCH when they are all that is withheld), with withheldCards. A
+      // refused read stays knowledgeReasonCode.
       ...(cards.projectCrestDegraded === null ? {} : { projectCrestDegraded: cards.projectCrestDegraded as unknown as JsonValue }),
       query,
       queryTokens: [...result.tokens],

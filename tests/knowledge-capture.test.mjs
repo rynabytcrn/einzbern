@@ -27,9 +27,9 @@ import {
   knowledgeConflictHits,
   knowledgeRelevanceScore,
   listKnowledgeMetadata,
-  readKnowledgeStoreMarker,
   DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
+import { readKnowledgeStoreMarker } from "../dist/build/packages/core/src/knowledge-core.js";
 import { canonicalJson } from "../dist/build/packages/protocol/src/index.js";
 
 const instant = (day, second = 0) => `2026-09-${String(day).padStart(2, "0")}T09:00:${String(second).padStart(2, "0")}Z`;

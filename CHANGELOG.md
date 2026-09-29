@@ -546,6 +546,36 @@ absent when nothing is withheld, and a refused read stays `knowledgeReasonCode`.
 merge whose live bodies exceed `knowledge.aggregateBytes` is refused whole, and `recall` reports it under
 `knowledgeStores.project`.
 
+A project deleted under a live card no longer stops a library's crest (TCRN-CROSS-SUB-414 R16;
+STORY-476 D7; `packages/core/src/knowledge-core.ts`, `recall-inputs.ts`;
+`packages/core/spec/knowledge-core-v1.md`). `project-delete` refuses only a project that still owns
+live work, and a device that deletes a project cannot see a card another device wrote to it before
+either received the other's write; every read and write of the crest then refused with
+`KNOWLEDGE_LINK_INVALID`, the rebase with `KNOWLEDGE_REBASE_BLOCKED`, and a supersede of the card could
+not get past the read. Such a card -- live, its project gone from the chain the read replays -- is now
+named at the top of `knowledge-list` and of `knowledge-snippet` and `knowledge-body` for its id as
+`unresolvedScopes` (`id`, `deviceId`, `sequence` and `eventHash`, all three null for a record of the
+metadata/body layout, and `projectId`, the project that no longer resolves), leaves default selection
+and `recall`, and is named under `unresolvedScopes` in `recall`'s `projectCrestDegraded`, whose reason
+code is `KNOWLEDGE_LINK_INVALID` when no unresolved pair or duplicate is withheld as well (ahead of
+`KNOWLEDGE_HIGH_WATER_MISMATCH`). Every other card reads, recalls and is written as before, and a write
+of that card itself is refused naming it. `knowledge-validate` and `knowledge-checkpoint` still refuse
+with `KNOWLEDGE_LINK_INVALID` and `knowledge-rebase` with `KNOWLEDGE_REBASE_BLOCKED`, now with details
+`unresolvedScopes` and a `remedy` the CLI prints, `knowledge-create --supersedes <id>`, which is admitted:
+a superseded record is not live, so nothing names it, the rebase no longer counts it an offender, and
+all three answer again. A record whose scope contradicts itself still refuses the read, a forked or
+altered stream is still refused naming its device, and pairs, duplicates, `awaitingChain`, dangling work
+links, the user crest and O-1 are unchanged. `knowledgeStorePath` and `readKnowledgeStoreMarker` leave
+the `packages/core/src/index.ts` barrel: the CLI's rebind after each chain write, which this Subtask
+retired, was their last caller in a recorded consumer root, so platform-doctor's `unusedExports` leg
+reported them. Both stay exported from `knowledge-core.ts`, the `allowedUnconsumedRationale` of
+`scripts/policy/core-export-consumers.json` no longer says the CLI finds the store through
+`knowledgeStorePath`, and `tests/platform-doctor.test.mjs` runs that leg on the checkout itself. The
+spec no longer lists the retired `conference-close --distill` among the crest's card writes, and
+`docs/architecture/backup-restore-runbook.md` adds that a chain write made after a partial restore
+leaves the records awaiting chain events waiting for good, until the whole library is restored from one
+snapshot.
+
 Gates are declared per project and chosen by the change (TCRN-CROSS-STORY-485; MIN-227 D4;
 `packages/core/src/gates-config.ts`, `gates-plan.ts`, `gates-run.ts`, `gates-done.ts`). A gate is a
 project-level configuration record of the gate collection, keyed by its name: its command is an

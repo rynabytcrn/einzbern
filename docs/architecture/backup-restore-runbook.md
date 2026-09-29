@@ -45,7 +45,9 @@ are first-class here — always double-quote them.
      which names them under `projectCrestDegraded`; and `knowledge-validate`,
      `knowledge-checkpoint` and `knowledge-rebase` refuse with
      `KNOWLEDGE_HIGH_WATER_MISMATCH`, details `awaitingChain`, until those chain
-     events are back.
+     events are back. A chain write made before then puts a different event in
+     their place, and the records wait for good; restoring the whole library from
+     one snapshot brings them back, and discards that write.
    - `crest/` put back older than `akasha/` is not refused: a read answers at the
      chain head, and the cards written after the crest was copied are simply absent,
      with nothing to name them.

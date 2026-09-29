@@ -32,6 +32,7 @@ import {
   knowledgeLinkIndexCountsForTest,
   createProject,
   createWork,
+  deleteProject,
   deleteWork,
   evaluateKnowledgeFreshness,
   exportKnowledgeCheckpoint,
@@ -40,7 +41,6 @@ import {
   listKnowledgeMetadata,
   readKnowledgeBody,
   readKnowledgeSnippet,
-  readKnowledgeStoreMarker,
   rebaseKnowledgeStore,
   recoverKnowledgeStore,
   reverifyKnowledgeUnit,
@@ -50,6 +50,7 @@ import {
   lockPath,
   DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
+import { readKnowledgeStoreMarker } from "../dist/build/packages/core/src/knowledge-core.js";
 import { canonicalJson, canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
 const instant = (day, second = 0) => `2026-07-${String(day).padStart(2, "0")}T14:00:${String(second).padStart(2, "0")}Z`;
@@ -305,6 +306,52 @@ test("WSC-2: knowledge-rebase reports dangling work without retiring the record"
     assert.deepEqual(event.metadata.linkedWorkIds, [fixture.workId], "the dangling link stays attached");
     assert.equal((await readKnowledgeBody(fixture.workspace, created.id, { at: instant(21, 4) })).body, "Body REBASE-OFFENDER");
     assert.equal((await readdir(fixture.store)).includes("mutation.claim"), false, "the rebase takes no mutation claim");
+  } finally {
+    await fixture.close();
+  }
+});
+
+// TCRN-CROSS-SUB-414 (R16, C-R16-1): the scope/project offender under the new semantics. A project
+// deleted under a live card used to refuse every read and write of the crest with
+// KNOWLEDGE_LINK_INVALID, and the rebase with KNOWLEDGE_REBASE_BLOCKED, with no way out (the
+// retire-invalid escape went with SUB-308, and a supersede could not pass the read). Now the card is
+// named as `unresolvedScopes` and leaves default selection; every other card reads and is written;
+// the rebase still refuses with KNOWLEDGE_REBASE_BLOCKED and the id-sorted offender list, and
+// validate and a checkpoint with KNOWLEDGE_LINK_INVALID, each naming the card and the remedy; a
+// write of the card itself is refused naming it; and a card superseding it lets all three answer.
+// It also pins the project index's tombstone exclusion (CQ-10): keep a deleted project in the index
+// and the card is never named.
+test("WSC-2, SUB-414 R16: a project deleted under a live card names it as the rebase's offender with the remedy, and a card superseding it lets the rebase answer", async () => {
+  const fixture = await workspaceFixture({ externalKey: "FIXTURE-KNOWLEDGE-GONE-PROJECT" });
+  try {
+    const gone = (await createProject(fixture.workspace, { occurredAt: instant(20, 1), externalKey: "FIXTURE-KNOWLEDGE-GONE", name: "Gone" }))
+      .projects.find((project) => project.externalKey === "FIXTURE-KNOWLEDGE-GONE").id;
+    const orphan = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "REBASE-SCOPE-OFFENDER", { projectId: gone, linkedWorkIds: [] }));
+    const kept = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "REBASE-SCOPE-KEPT"));
+    await deleteProject(fixture.workspace, { occurredAt: instant(20, 2), id: gone });
+    const { event } = await cardEvent(fixture, orphan.id);
+    const unresolvedScopes = [{ id: orphan.id, deviceId: event.deviceId, sequence: event.sequence, eventHash: event.eventHash, projectId: gone }];
+    const details = { unresolvedScopes, remedy: `write a card with knowledge-create --supersedes ${orphan.id}` };
+    const listed = await listKnowledgeMetadata(fixture.workspace, { at: instant(21) });
+    assert.deepEqual(listed.records.map((record) => record.id), [kept.id], "the offender leaves default selection");
+    assert.deepEqual(listed.unresolvedScopes, unresolvedScopes);
+    const blocked = await settle(rebaseKnowledgeStore(fixture.workspace, { at: instant(21, 1) }));
+    assert.equal(blocked.reason?.reasonCode, "KNOWLEDGE_REBASE_BLOCKED");
+    assert.equal(blocked.reason.message, orphan.id, "the refusal names the offender");
+    assert.deepEqual(blocked.reason.details, details, "and the remedy");
+    for (const strict of [() => validateKnowledgeStore(fixture.workspace), () => exportKnowledgeCheckpoint(fixture.workspace, instant(21))]) {
+      const refused = await settle(strict());
+      assert.deepEqual([refused.reason?.reasonCode, refused.reason?.message, refused.reason?.details], ["KNOWLEDGE_LINK_INVALID", `${orphan.id}:scope`, details]);
+    }
+    await expectReason("KNOWLEDGE_LINK_INVALID", () => reverifyKnowledgeUnit(fixture.workspace, { expectedRevision: 1, occurredAt: instant(21, 2), id: orphan.id }));
+    assert.equal((await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "REBASE-SCOPE-UNRELATED", { occurredAt: instant(21, 2) }))).reasonCode, "KNOWLEDGE_UNIT_CREATED");
+    const replacement = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, "REBASE-SCOPE-REPLACEMENT", { occurredAt: instant(21, 3), supersedes: orphan.id }));
+    assert.equal(replacement.superseded, orphan.id);
+    const rebased = await rebaseKnowledgeStore(fixture.workspace, { at: instant(21, 4) });
+    assert.deepEqual([rebased.reasonCode, rebased.retired, rebased.offenders], ["KNOWLEDGE_STORE_REBASED", 0, []]);
+    assert.equal((await validateKnowledgeStore(fixture.workspace)).reasonCode, "KNOWLEDGE_STORE_VALID");
+    assert.equal(Object.hasOwn(await listKnowledgeMetadata(fixture.workspace, { at: instant(21) }), "unresolvedScopes"), false);
+    assert.deepEqual((await cardEvent(fixture, orphan.id)).event, event, "the offender's record is the one it was written with");
   } finally {
     await fixture.close();
   }
@@ -1346,9 +1393,10 @@ test("CQ-10: knowledge link liveness builds one index per workspace state, not o
 // from the index must still be refused, for both the project and the linked-work lookup.
 //
 // Two related properties are deliberately NOT claimed here, to keep this test honest about
-// what it proves. (1) Tombstone exclusion is already pinned by the existing WSC-2 rebase
-// test at :222 -- dropping `!entry.tombstone` from the index builder reddens that test, so
-// re-asserting it here would add proof mass without adding coverage. (2) The builder is
+// what it proves. (1) Tombstone exclusion is already pinned by the WSC-2 tests -- the
+// project index's by the one where a project is deleted under a live card, the work index's by
+// the dangling-work one -- and dropping `!entry.tombstone` from the index builder reddens them,
+// so re-asserting it here would add proof mass without adding coverage. (2) The builder is
 // first-wins to match `find`, but a materialized workspace has unique record ids, so no
 // test can distinguish first-wins from last-wins; that choice rests on review, not proof.
 test("CQ-10: the link index still refuses links that are absent from the workspace", async () => {

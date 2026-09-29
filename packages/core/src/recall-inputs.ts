@@ -120,6 +120,20 @@ export interface RecallAwaitingChainEntry {
   readonly eventHash: string;
 }
 
+/**
+ * TCRN-CROSS-SUB-414 (R16, C-R16-1): one live record of a library's crest whose project the chain no
+ * longer holds, as knowledge-list names it under `unresolvedScopes`: the card's id, the device stream
+ * and event that hold the record (all three null for a record the metadata/body layout holds, as for a
+ * duplicate's version), and the project id that no longer resolves.
+ */
+export interface RecallUnresolvedScopeEntry {
+  readonly id: string;
+  readonly deviceId: string | null;
+  readonly sequence: number | null;
+  readonly eventHash: string | null;
+  readonly projectId: string;
+}
+
 /** How one store's read went: its reason code (a refusal's, when it refused), its digest and its card count. */
 export interface RecallCardStoreRead {
   readonly reasonCode: string;
@@ -134,6 +148,9 @@ export interface RecallCardStoreRead {
   // TCRN-CROSS-SUB-414: the library crest's records awaiting chain events this device has not
   // received, whose cards its default selection left out; always empty for the user crest.
   readonly awaitingChain: readonly RecallAwaitingChainEntry[];
+  // TCRN-CROSS-SUB-414 (R16): the library crest's live records whose project the chain no longer
+  // holds, whose cards its default selection left out; always empty for the user crest.
+  readonly unresolvedScopes: readonly RecallUnresolvedScopeEntry[];
 }
 
 /**
@@ -156,13 +173,16 @@ export interface RecallUserCrestDegraded {
  * TCRN-CROSS-SUB-414 (C-R15-1): the cards a library's crest withheld from recall, in the form
  * RecallUserCrestDegraded has. `reasonCode` is KNOWLEDGE_POSSIBLE_CONFLICT when an unresolved pair is
  * withheld, else KNOWLEDGE_DUPLICATE when versions of an unresolved duplicate are, else
- * KNOWLEDGE_HIGH_WATER_MISMATCH -- the refusal the strict surfaces meet -- for records awaiting chain
- * events alone. Each list is present when it is not empty, `awaitingChain` naming those records as
- * knowledge-list does, and `withheldCards` counts every withheld card and version once. A refused
- * read of the library's crest is not one: it stays the answer's knowledgeReasonCode.
+ * KNOWLEDGE_LINK_INVALID -- the refusal validate and a checkpoint meet -- when cards whose project the
+ * chain no longer holds are (R16, C-R16-1), else KNOWLEDGE_HIGH_WATER_MISMATCH -- the refusal the
+ * strict surfaces meet -- for records awaiting chain events alone. Each list is present when it is
+ * not empty, `awaitingChain` and `unresolvedScopes` naming those records as knowledge-list does, and
+ * `withheldCards` counts every withheld card and version once. A refused read of the library's crest
+ * is not one: it stays the answer's knowledgeReasonCode.
  */
 export interface RecallProjectCrestDegraded extends RecallUserCrestDegraded {
   readonly awaitingChain?: readonly RecallAwaitingChainEntry[];
+  readonly unresolvedScopes?: readonly RecallUnresolvedScopeEntry[];
   readonly withheldCards: number;
 }
 
@@ -212,34 +232,55 @@ function awaitingChainEntries(value: unknown): readonly RecallAwaitingChainEntry
   }));
 }
 
+function unresolvedScopeEntries(value: unknown): readonly RecallUnresolvedScopeEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter(isRecord).map((entry): RecallUnresolvedScopeEntry => ({
+    id: String(entry["id"] ?? ""),
+    deviceId: typeof entry["deviceId"] === "string" ? entry["deviceId"] : null,
+    sequence: typeof entry["sequence"] === "number" ? entry["sequence"] : null,
+    eventHash: typeof entry["eventHash"] === "string" ? entry["eventHash"] : null,
+    projectId: String(entry["projectId"] ?? ""),
+  }));
+}
+
 /**
  * The cards a store that read withheld from recall, named as its knowledge-list named them; null when
  * it withheld none. Every version of a duplicate counts, and a card counts once however many of the
- * lists name it: a pair's card or a duplicate's version can also be a record awaiting chain events.
+ * lists name it: a pair's card or a duplicate's version can also be a record awaiting chain events,
+ * or one whose project the chain no longer holds.
  */
 function withheldCardsDiagnostic(read: RecallCardStoreRead): RecallProjectCrestDegraded | null {
-  if (read.unresolvedConflicts.length === 0 && read.unresolvedDuplicates.length === 0 && read.awaitingChain.length === 0) return null;
+  if (read.unresolvedConflicts.length === 0 && read.unresolvedDuplicates.length === 0 &&
+    read.awaitingChain.length === 0 && read.unresolvedScopes.length === 0) return null;
   const duplicateIds = new Set(read.unresolvedDuplicates.map((duplicate) => duplicate.id));
-  const cardIds = new Set([...read.unresolvedConflicts.flat(), ...read.awaitingChain.map((entry) => entry.id)].filter((id) => !duplicateIds.has(id)));
+  const cardIds = new Set([
+    ...read.unresolvedConflicts.flat(),
+    ...read.awaitingChain.map((entry) => entry.id),
+    ...read.unresolvedScopes.map((entry) => entry.id),
+  ].filter((id) => !duplicateIds.has(id)));
   return {
     // A withheld pair keeps the reason code it has always had; versions of a duplicate alone are
-    // KNOWLEDGE_DUPLICATE, the refusal a write that saw the other version would have met; records
-    // awaiting chain events alone are KNOWLEDGE_HIGH_WATER_MISMATCH, the refusal validate, a
-    // checkpoint and a rebase meet while they wait.
+    // KNOWLEDGE_DUPLICATE, the refusal a write that saw the other version would have met; cards whose
+    // project the chain no longer holds are KNOWLEDGE_LINK_INVALID, the refusal validate and a
+    // checkpoint meet until a card supersedes them; records awaiting chain events alone are
+    // KNOWLEDGE_HIGH_WATER_MISMATCH, the refusal validate, a checkpoint and a rebase meet while they wait.
     reasonCode: read.unresolvedConflicts.length > 0
       ? "KNOWLEDGE_POSSIBLE_CONFLICT"
-      : read.unresolvedDuplicates.length > 0 ? "KNOWLEDGE_DUPLICATE" : "KNOWLEDGE_HIGH_WATER_MISMATCH",
+      : read.unresolvedDuplicates.length > 0
+        ? "KNOWLEDGE_DUPLICATE"
+        : read.unresolvedScopes.length > 0 ? "KNOWLEDGE_LINK_INVALID" : "KNOWLEDGE_HIGH_WATER_MISMATCH",
     ...(read.unresolvedConflicts.length === 0 ? {} : { unresolvedConflicts: read.unresolvedConflicts }),
     ...(read.unresolvedDuplicates.length === 0 ? {} : { unresolvedDuplicates: read.unresolvedDuplicates }),
     ...(read.awaitingChain.length === 0 ? {} : { awaitingChain: read.awaitingChain }),
+    ...(read.unresolvedScopes.length === 0 ? {} : { unresolvedScopes: read.unresolvedScopes }),
     withheldCards: cardIds.size + read.unresolvedDuplicates.reduce((count, duplicate) => count + duplicate.versions.length, 0),
   };
 }
 
 /**
  * The user crest's degradation for recall, from how its read went; null when it is not degraded. It
- * holds no record awaiting chain events, and a pair's cards are never a duplicate's, so the withheld
- * cards read exactly as TCRN-CROSS-SUB-310 and SUB-413 named them.
+ * holds no record awaiting chain events and no card naming a project, and a pair's cards are never a
+ * duplicate's, so the withheld cards read exactly as TCRN-CROSS-SUB-310 and SUB-413 named them.
  */
 function userCrestDegradation(read: RecallCardStoreRead): RecallUserCrestDegraded | null {
   if (read.reasonCode !== "KNOWLEDGE_LIST_READY") return { reasonCode: read.reasonCode };
@@ -270,7 +311,8 @@ export interface RecallCardReadOptions {
  * than it holds -- a refusal or the withheld conflicts -- rather than leaving it to a nested code.
  * TCRN-CROSS-SUB-413: nor is any version of an unresolved duplicate, which it names the same way.
  * TCRN-CROSS-SUB-414: the library's crest withholds its pairs, its duplicates' versions and its cards
- * awaiting chain events the same way, and `projectCrestDegraded` names them in the same form.
+ * awaiting chain events the same way, and `projectCrestDegraded` names them in the same form; R16
+ * adds its cards whose project the chain no longer holds, under `unresolvedScopes`.
  */
 export async function readRecallCards(workspaceRoot: string, options: RecallCardReadOptions): Promise<RecallCardRead> {
   const read = async (scope: KnowledgeStoreScope): Promise<{ readonly cards: readonly RecallKnowledgeInput[]; readonly store: RecallCardStoreRead }> => {
@@ -292,12 +334,13 @@ export async function readRecallCards(workspaceRoot: string, options: RecallCard
           unresolvedConflicts: conflictPairs(answer["unresolvedConflicts"]),
           unresolvedDuplicates: duplicateEntries(answer["unresolvedDuplicates"]),
           awaitingChain: awaitingChainEntries(answer["awaitingChain"]),
+          unresolvedScopes: unresolvedScopeEntries(answer["unresolvedScopes"]),
         },
       };
     } catch (error) {
       const reasonCode = (error as { readonly reasonCode?: unknown }).reasonCode;
       if (typeof reasonCode !== "string") throw error;
-      return { cards: [], store: { reasonCode, digest: "absent", cards: 0, unresolvedConflicts: [], unresolvedDuplicates: [], awaitingChain: [] } };
+      return { cards: [], store: { reasonCode, digest: "absent", cards: 0, unresolvedConflicts: [], unresolvedDuplicates: [], awaitingChain: [], unresolvedScopes: [] } };
     }
   };
   const project = await read("project");

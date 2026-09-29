@@ -30,18 +30,18 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
   "currentSources": [
     {
       "path": "portal/index.html",
-      "bytes": 336111,
-      "sha256": "548ff22678f6001b9d52db8d981d298a1382bbf6ba6cb3df68bef8975ebe7627"
+      "bytes": 339400,
+      "sha256": "091f583562bea814875528c9fc5ede640e6b9d73d76774e1869951af798df6d5"
     },
     {
       "path": "portal/locales.js",
-      "bytes": 147439,
-      "sha256": "3c48cb05a2ec3eed0e16b529368fb13af0ea4e4de18e47a2b702c36b8f422fb2"
+      "bytes": 149307,
+      "sha256": "6eba0a4efc19884c392d71c8e7ee564b19f9a9189664a9ab46623bbfc4ffa3ba"
     },
     {
       "path": "portal/portal.mjs",
-      "bytes": 53654,
-      "sha256": "760184d89d5930544e8800722a5226631a03c087a026dfe6b27a0264a3266e0c"
+      "bytes": 54566,
+      "sha256": "1614c3d6f8fb0beae04b241b02b58c417ce70c2573f02866f1eef4ed90de0a28"
     },
     {
       "path": "portal/scripts/i18n-proof.mjs",
@@ -55,13 +55,13 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
     },
     {
       "path": "portal/tests/portal.test.mjs",
-      "bytes": 109236,
-      "sha256": "a4fd1b14d5a606a97bde402904cfcf3a14bbb90ff32c6d60daa692dc5b237701"
+      "bytes": 115749,
+      "sha256": "7bcf339b6b1c9b894cf8aad2c80679dca9f4d9a501869fdef7a791cf982e0c95"
     },
     {
       "path": "portal/tests/ui-presence.test.mjs",
-      "bytes": 163622,
-      "sha256": "ae7db0794c1848bd6398e8b198eb73c1649bec70fafcbc09de947e010abf78e4"
+      "bytes": 169692,
+      "sha256": "50283537cfa8a18a1ce1432149df54978ba5fee732f47f8a3568278b45761e9a"
     },
     {
       "path": "packages/core/src/doctor.ts",
@@ -117,9 +117,9 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
         "leg": "key-coverage",
         "ok": true,
         "reasonCode": "EVERY_KEY_TRANSLATED",
-        "keyCount": 364,
+        "keyCount": 373,
         "localeCount": 5,
-        "expectedStrings": 1820,
+        "expectedStrings": 1865,
         "gaps": []
       },
       {

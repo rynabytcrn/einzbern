@@ -816,6 +816,19 @@ category too, where the receipt used to echo the default table. A set key's rece
 its value, and any other unset key's its default. The receipt's fields, what `receiptDigest` is
 taken over and the reason codes are unchanged.
 
+A device file that another process is still publishing is read, not refused as damaged
+(TCRN-CROSS-STORY-511 R1, R2, TCRN-CROSS-SUB-419, TCRN-CROSS-INC-395; fixes TCRN-CROSS-STORY-468 R1;
+`packages/core/src/device-identity.ts`). The first use of a device links a complete staging file
+into place as `device.json` and then removes the staging name; `readDevice` waits while the file's
+second link is that staging link. A removal that landed between the reader's lstat and its scan of
+the device directory used to leave a second link with no staging name beside it, so the first
+concurrent use of a new device directory could fail with `DEVICE_FILE_INVALID` on any write path.
+A scan that finds no staging link is now followed by one more lstat, and the same file with one link
+is a finished publication; the lstat branch and the opened-handle branch share the wait. A second
+link that is still there under another name, a staging link that outlasts the unchanged one-second
+wait, a symbolic link, a file that is not regular and damaged content still fail closed with
+`DEVICE_FILE_INVALID`. The `device.json` format, the device id and the reason codes are unchanged.
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

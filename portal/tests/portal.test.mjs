@@ -715,6 +715,21 @@ test("STORY-366: the article endpoint is refused while the native article stays 
   const refused = await request(url, "/api/knowledge/articles", writeOptions(boot.token, "POST", { title: "Manual article", category: "architecture", content: "must not write" }));
   assert.equal(refused.response.status, 404);
   assert.equal(refused.body.reasonCode, "PORTAL_ROUTE_UNKNOWN");
+  // TCRN-CROSS-SUB-425 (MIN-239 D6): the knowledge list answers valid cards by default; a removed card
+  // is listed only when a status asks for it, as it is kept, and its body is refused.
+  const removed = await cli(["knowledge-remove", "--workspace", fixture.workspace, "--at", "2026-08-11T15:00:02Z", "--id", article.id, "--reason", "invalid",
+    "--basis", "the article moved to the design notes", "--actor", "agent:portal-test"], fixture.deviceEnv);
+  assert.equal(removed.reasonCode, "KNOWLEDGE_UNIT_REMOVED");
+  const valid = await request(url, "/api/knowledge", readOptions(boot.token));
+  assert.deepEqual([valid.body.status, valid.body.records.some((record) => record.id === article.id)], ["valid", false]);
+  const listedRemoved = await request(url, "/api/knowledge?status=removed", readOptions(boot.token));
+  const kept = listedRemoved.body.records.find((record) => record.id === article.id);
+  assert.deepEqual([listedRemoved.body.status, kept?.status, kept?.removal.reason, Object.hasOwn(kept ?? {}, "summary")], ["removed", "removed", "invalid", false]);
+  assert.equal((await request(url, "/api/knowledge?status=all", readOptions(boot.token))).body.records.some((record) => record.id === article.id), true);
+  const removedBody = await request(url, `/api/knowledge/body?id=${encodeURIComponent(article.id)}`, readOptions(boot.token));
+  assert.deepEqual([removedBody.response.status, removedBody.body.reasonCode], [409, "KNOWLEDGE_CARD_REMOVED"]);
+  const badStatus = await request(url, "/api/knowledge?status=obsolete", readOptions(boot.token));
+  assert.deepEqual([badStatus.response.status, badStatus.body.reasonCode], [400, "PORTAL_KNOWLEDGE_STATUS_INVALID"]);
 });
 
 test("STORY-485: Atelier edits gate declarations and reads each library's latest cached gate run", async (t) => {
@@ -1366,26 +1381,19 @@ test("i18n full-table proof turns red when an existing translation regresses", a
   assert.ok(leg.problems.some((problem) => problem.locale === "ja" && problem.unexpected.includes("receipt.title")));
 });
 
-// TCRN-CROSS-SUB-412 (STORY-507; MIN-235 D10): the knowledge capacity counts only the body bytes of
-// live cards; a superseded card leaves the count and default recall, and its body is kept for
-// audit. Both texts say so in all five languages, and neither still counts markers or metadata.
-test("SUB-412 (STORY-507, MIN-235 D10): the knowledge capacity copy counts only live card bodies, in every language", async () => {
+// TCRN-CROSS-SUB-310 R17 (MIN-238 D1, D5): no budget bounds the sum of a crest's card bodies, and
+// knowledge.aggregateBytes, the setting that set one, is retired. Its label, its description and its
+// concept explanation -- the copy TCRN-CROSS-SUB-412 wrote for the live-body count -- leave all five
+// languages, and no text there still names the key.
+test("SUB-310 R17 (MIN-238 D1): the retired knowledge total setting has no copy left, in any language", async () => {
   const sandbox = {};
   new Function("window", await readFile(join(portalRoot, "locales.js"), "utf8"))(sandbox);
-  const terms = {
-    en: { says: [/body bytes of live cards/u, /superseded card/u, /default recall/u, /audit/u], retired: /marker|metadata/iu },
-    "zh-CN": { says: [/活卡的正文字节/u, /被取代的卡/u, /默认召回/u, /审计/u], retired: /标记|元数据/u },
-    ja: { says: [/有効なカードの本文バイト/u, /置き換えられたカード/u, /既定の recall/u, /監査/u], retired: /マーカー|メタデータ/u },
-    ko: { says: [/유효한 카드의 본문 바이트/u, /대체된 카드/u, /기본 recall/u, /감사/u], retired: /마커|메타데이터/u },
-    fr: { says: [/corps des fiches actives/u, /fiche remplacée/u, /recall par défaut/u, /audit/u], retired: /marqueur|métadonnées/iu },
-  };
-  assert.deepEqual(Object.keys(sandbox.PORTAL_LOCALES).sort(), Object.keys(terms).sort());
-  for (const [locale, { says, retired }] of Object.entries(terms)) {
-    for (const key of ["setting.knowledge.aggregateBytes.description", "concept.setting.knowledge.aggregateBytes"]) {
-      const text = sandbox.PORTAL_LOCALES[locale][key];
-      for (const pattern of says) assert.match(text, pattern, `${locale} ${key}`);
-      assert.doesNotMatch(text, retired, `${locale} ${key}`);
+  assert.deepEqual(Object.keys(sandbox.PORTAL_LOCALES).sort(), ["en", "fr", "ja", "ko", "zh-CN"]);
+  for (const [locale, table] of Object.entries(sandbox.PORTAL_LOCALES)) {
+    for (const key of ["setting.knowledge.aggregateBytes.label", "setting.knowledge.aggregateBytes.description", "concept.setting.knowledge.aggregateBytes"]) {
+      assert.equal(Object.hasOwn(table, key), false, `${locale} ${key}`);
     }
+    assert.deepEqual(Object.entries(table).filter(([key, text]) => `${key} ${text}`.includes("knowledge.aggregateBytes")).map(([key]) => key), [], locale);
   }
 });
 

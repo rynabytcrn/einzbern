@@ -394,6 +394,7 @@
 | `--at` | 必填 | `instant` |
 | `--scope` | 可选 | `string` |
 | `--selection` | 可选 | `string` |
+| `--status` | 可选 | `string` |
 | `--project-id` | 可选 | `string` |
 | `--role-scope` | 可选 | `string` |
 | `--category` | 可选 | `string` |
@@ -423,6 +424,22 @@
 | 旗标 | 必填 | 取值类型 |
 | --- | --- | --- |
 | `--workspace` | 可选 | `string` |
+| `--scope` | 可选 | `string` |
+
+## `knowledge-remove`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--workspace` | 可选 | `string` |
+| `--at` | 必填 | `instant` |
+| `--id` | 必填 | `string` |
+| `--reason` | 必填 | `string` |
+| `--basis` | 必填 | `string` |
+| `--actor` | 必填 | `string` |
+| `--superseded-by` | 可选 | `string` |
 | `--scope` | 可选 | `string` |
 
 ## `knowledge-reverify`
@@ -649,6 +666,7 @@
 | `--limit` | 可选 | `integer` |
 | `--tau` | 可选 | `string` |
 | `--allow-trailing` | 可选 | `boolean` |
+| `--status` | 可选 | `string` |
 
 ## `recover`
 

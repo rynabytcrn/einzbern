@@ -215,7 +215,8 @@ test("STORY-472 R3, R4: work-create and work-annotate take the relation flags, a
 test("STORY-474 R2, R4: recall reads, keeps --host and --tau, and no longer takes --partition", () => {
   const entry = COMMAND_CATALOG.find((candidate) => candidate.name === "recall");
   assert.equal(entry.mutates, false);
-  assert.deepEqual(entry.flags.map((flag) => flag.name).sort(), ["allow-trailing", "at", "host", "limit", "query", "tau", "workspace"]);
+  // TCRN-CROSS-SUB-425 (MIN-239 D6): --status adds removed cards only when a user asked for them.
+  assert.deepEqual(entry.flags.map((flag) => flag.name).sort(), ["allow-trailing", "at", "host", "limit", "query", "status", "tau", "workspace"]);
   assert.deepEqual(entry.flags.filter((flag) => flag.required).map((flag) => flag.name).sort(), ["at", "query"]);
 });
 
@@ -256,6 +257,23 @@ test("STORY-476 R1, R5: knowledge-create's lifecycle is optional, the candidate 
   for (const retired of ["knowledge-promote", "knowledge-retire", "retire-proposals", "retire-sweep"]) {
     assert.equal(COMMAND_CATALOG.some((entry) => entry.name === retired), false, `${retired} is retired`);
   }
+});
+
+// TCRN-CROSS-SUB-425 (TCRN-CROSS-STORY-514 R1, R3, R4; MIN-239 D3 to D6): knowledge-remove writes a
+// terminal removal with its reason, basis and actor, and the knowledge reads that answer a set of cards
+// take --status; nothing restores a removed card.
+test("SUB-425: knowledge-remove is cataloged with its required flags, knowledge-list and recall take --status, and no verb restores a card", () => {
+  const entry = (name) => COMMAND_CATALOG.find((candidate) => candidate.name === name);
+  assert.equal(entry("knowledge-remove").mutates, true);
+  assert.deepEqual(entry("knowledge-remove").flags.map((flag) => [flag.name, flag.required, flag.valueKind]), [
+    ["workspace", false, "string"], ["at", true, "instant"], ["id", true, "string"], ["reason", true, "string"], ["basis", true, "string"],
+    ["actor", true, "string"], ["superseded-by", false, "string"], ["scope", false, "string"],
+  ]);
+  for (const verb of ["knowledge-list", "recall"]) {
+    const status = entry(verb).flags.find((flag) => flag.name === "status");
+    assert.deepEqual([status?.required, status?.valueKind], [false, "string"], `${verb} --status`);
+  }
+  assert.equal(COMMAND_CATALOG.some((candidate) => /^knowledge-(restore|unremove|revive)/u.test(candidate.name)), false);
 });
 
 test("STORY-485 R1 to R4: the gates verbs are cataloged, and work-transition and work-batch take --project", () => {

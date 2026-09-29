@@ -342,16 +342,21 @@ async function workProjection() {
   return { ok: true, reasonCode: "PORTAL_WORK_READY", workspaceId: identity.workspaceId, version: identity.version, headEventHash: identity.headEventHash, total: identity.total, records };
 }
 
-async function knowledgeProjection() {
+// TCRN-CROSS-SUB-425 (MIN-239 D6): the knowledge list answers valid cards unless the viewer picks
+// another status; removed cards come back as each is kept, with no body to read.
+const KNOWLEDGE_STATUSES = Object.freeze(["valid", "removed", "all"]);
+
+async function knowledgeProjection(status = "valid") {
   const selected = currentLibrary();
   const at = readInstant();
   // TCRN-CROSS-MIN-225 (TCRN-CROSS-SUB-259): the knowledge view never read the retire-proposals
   // answer fetched beside the list, so that call, a full telemetry read on every load, is gone.
-  const listing = await cliResult(["knowledge-list", "--workspace", selected.libraryPath, "--at", at, "--selection", "all", "--allow-trailing", "true"]);
+  const listing = await cliResult(["knowledge-list", "--workspace", selected.libraryPath, "--at", at, "--selection", "all", "--status", status, "--allow-trailing", "true"]);
   return {
     ok: listing.ok,
     reasonCode: listing.ok ? "PORTAL_KNOWLEDGE_READY" : "PORTAL_KNOWLEDGE_PARTIAL",
     at,
+    status,
     listing: listing.body,
     records: listing.ok ? (listing.body.records ?? []) : [],
     total: listing.ok ? (listing.body.total ?? listing.body.records?.length ?? 0) : 0,
@@ -833,7 +838,9 @@ const server = createServer(async (request, response) => {
       return;
     }
     if (request.method === "GET" && pathname === "/api/knowledge") {
-      send(response, 200, await knowledgeProjection());
+      const status = url.searchParams.get("status") ?? "valid";
+      if (!KNOWLEDGE_STATUSES.includes(status)) { send(response, 400, { ok: false, reasonCode: "PORTAL_KNOWLEDGE_STATUS_INVALID", status }); return; }
+      send(response, 200, await knowledgeProjection(status));
       return;
     }
     if (request.method === "GET" && pathname === "/api/knowledge/body") {

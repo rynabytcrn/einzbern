@@ -5,7 +5,8 @@
 // promotion step to take, so knowledge-promote, knowledge-retire, retire-sweep, retire-proposals
 // and the rebase's --retire-invalid are gone. A card retires only when a later card names it with
 // --supersedes: a conflicting write without it is refused, and with it the older card leaves
-// default retrieval. Records written before keep what they were written with and stay readable.
+// default retrieval -- TCRN-CROSS-SUB-425 (MIN-239 D3, D4): it is removed, conflict superseded, and
+// its body is cleared. Records written before keep what they were written with and stay readable.
 //
 // The cases that tests/story-377-retire-sweep.test.mjs held for subjects that stay -- the
 // supersede, the stale card and the full store, and the historical records -- are carried here;
@@ -29,7 +30,6 @@ import {
   listKnowledgeMetadata,
   readKnowledgeBody,
   recoverKnowledgeStore,
-  setWorkspaceSetting,
   validateKnowledgeStore,
   DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
@@ -39,7 +39,7 @@ import { canonicalJson, canonicalSha256 } from "../dist/build/packages/protocol/
 const AT = "2026-09-26T09:00:00.000Z";
 const OWNER = "owner:sub-308";
 
-async function fixture(t, externalKey, { aggregateBytes } = {}) {
+async function fixture(t, externalKey) {
   const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-sub308-")));
   t.after(() => rm(base, { recursive: true, force: true }));
   const workspace = join(base, "workspace");
@@ -49,9 +49,6 @@ async function fixture(t, externalKey, { aggregateBytes } = {}) {
     externalKey: `${externalKey}-PROJECT`,
     name: "SUB-308 fixture",
   });
-  if (aggregateBytes !== undefined) {
-    await setWorkspaceSetting(workspace, { key: "knowledge.aggregateBytes", value: String(aggregateBytes), occurredAt: "2026-01-01T00:00:02Z" });
-  }
   await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
   return { base, workspace, projectId: project.projects[0].id, store: join(workspace, DIRECTORY.knowledge) };
 }
@@ -226,9 +223,9 @@ test("476-R1, R2: the promotion and retirement verbs are gone from the catalog a
 });
 
 // AC2: the one retirement left is the write path's own. A possible conflict is refused, and
-// --supersedes marks the older card instead: out of default and searched retrieval, still active,
-// its body kept for an explicit read.
-test("476-AC2: a conflicting write is refused without --supersedes, and with it the older card leaves default retrieval", async (t) => {
+// --supersedes removes the older card instead: out of default and searched retrieval, and, since
+// TCRN-CROSS-SUB-425 (MIN-239 D4), its body cleared and an explicit read of it refused.
+test("476-AC2, SUB-425: a conflicting write is refused without --supersedes, and with it the older card is removed and leaves default retrieval", async (t) => {
   const fx = await fixture(t, "FIXTURE-SUB-308-SUPERSEDE");
   const subject = "SUB-308 only a conflicting write retires a card";
   const old = await captureKnowledgeUnit(fx.workspace, lesson("SUB-308-OLD", subject));
@@ -237,10 +234,10 @@ test("476-AC2: a conflicting write is refused without --supersedes, and with it 
   assert.deepEqual(refused.details.conflicts, [old.id]);
   const replacement = await captureKnowledgeUnit(fx.workspace, lesson("SUB-308-NEW", subject, { supersedes: old.id }));
   assert.equal(replacement.superseded, old.id);
-  const replaced = (await listKnowledgeMetadata(fx.workspace, { at: AT, selection: "all" })).records.find((record) => record.id === old.id);
-  assert.equal(replaced.extensions.supersededBy, replacement.id, "the older card carries the mark");
-  assert.equal(replaced.lifecycle, "active", "and is retired by the mark, not deleted");
-  assert.equal((await readKnowledgeBody(fx.workspace, old.id, { at: AT })).body, "SUB-308-OLD body", "its body stays for an explicit read");
+  assert.equal((await listKnowledgeMetadata(fx.workspace, { at: AT, selection: "all" })).records.some((record) => record.id === old.id), false, "no valid card any more");
+  const replaced = (await listKnowledgeMetadata(fx.workspace, { at: AT, status: "removed" })).records.find((record) => record.id === old.id);
+  assert.deepEqual([replaced.status, replaced.removal.reason, replaced.removal.supersededBy], ["removed", "superseded", replacement.id], "the older card is removed, conflict superseded");
+  assert.equal((await refusalOf(() => readKnowledgeBody(fx.workspace, old.id, { at: AT })))?.reasonCode, "KNOWLEDGE_CARD_REMOVED", "its body is cleared, and an explicit read refused");
   assert.deepEqual((await listKnowledgeMetadata(fx.workspace, { at: AT })).records.map((record) => record.id), [replacement.id], "default retrieval answers with the new card only");
   assert.deepEqual((await listKnowledgeMetadata(fx.workspace, { at: AT, search: "conflicting" })).records.map((record) => record.id), [replacement.id], "and so does a search");
   const recalled = await cliJson(["recall", "--workspace", fx.workspace, "--at", AT, "--query", subject, "--tau", "0"]);
@@ -258,10 +255,11 @@ test("SUB-386: a superseded card is not a default conflict candidate", async (t)
   assert.equal((await listKnowledgeMetadata(fx.workspace, { at: AT })).records.some((record) => record.id === old.id), false);
 });
 
-// MIN-225 AC3, kept: time and capacity retire nothing. A card past its maximumAgeDays turns stale
-// and stays active with its body; a store at its aggregate limit refuses the next write and evicts
-// nothing.
-test("MIN-225: a stale card and a full store lose nothing", async (t) => {
+// MIN-225 AC3, kept: time and size retire nothing. A card past its maximumAgeDays turns stale and
+// stays active with its body. TCRN-CROSS-SUB-310 R17 (MIN-238 D1): no store fills any more, so a
+// crest past the old 131,072-byte default of knowledge.aggregateBytes takes the next card, and
+// nothing is evicted to make room.
+test("MIN-225, R17: a stale card and a store past the old default lose nothing", async (t) => {
   const fx = await fixture(t, "FIXTURE-SUB-308-STALE");
   const stale = await createKnowledgeUnit(fx.workspace, sourcedGuide(fx, "SUB-308-STALE", {
     kind: "fact", subject: "SUB-308 stale fact", tags: ["fitness"], sourceReferences: [],
@@ -276,24 +274,20 @@ test("MIN-225: a stale card and a full store lose nothing", async (t) => {
   }
   assert.deepEqual(await storeBytes(fx, { cardsOnly: true }), cards, "its metadata and body are byte-identical");
 
-  const full = await fixture(t, "FIXTURE-SUB-308-FULL", { aggregateBytes: 4_096 });
+  const full = await fixture(t, "FIXTURE-SUB-308-FULL");
   const written = [];
-  let refusal = null;
-  for (let index = 0; index < 20 && refusal === null; index += 1) {
-    try {
-      written.push(await captureKnowledgeUnit(full.workspace, lesson(`SUB-308-FULL-${index}`, `SUB-308 full store card ${index}`, { body: `${"x".repeat(600)}${index}`, coexist: true })));
-    } catch (error) {
-      refusal = error;
-    }
+  // Seventeen 8,000-byte bodies are 136,000 bytes: the old default refused the seventeenth.
+  for (let index = 0; index < 17; index += 1) {
+    written.push(await captureKnowledgeUnit(full.workspace, lesson(`SUB-308-FULL-${index}`, `SUB-308 full store card ${index}`, { body: `${"x".repeat(7_998)}${String(index).padStart(2, "0")}`, coexist: true })));
   }
-  assert.equal(refusal?.reasonCode, "KNOWLEDGE_LIMIT_EXCEEDED", "the store fills to its aggregate limit");
-  assert.ok(written.length >= 1);
+  assert.deepEqual(written.map((entry) => entry.reasonCode), Array(17).fill("KNOWLEDGE_UNIT_CREATED"), "no write is refused for the store's size");
   const fullCards = await storeBytes(full, { cardsOnly: true });
-  const again = await refusalOf(() => captureKnowledgeUnit(full.workspace, lesson("SUB-308-FULL-AGAIN", "SUB-308 one more card", { body: `${"y".repeat(700)}`, coexist: true })));
-  assert.equal(again?.reasonCode, "KNOWLEDGE_LIMIT_EXCEEDED", "a full store refuses the next write");
-  assert.deepEqual(await storeBytes(full, { cardsOnly: true }), fullCards, "and evicts nothing to make room");
-  assert.deepEqual((await listKnowledgeMetadata(full.workspace, { at: AT, selection: "all" })).records.map((record) => `${record.id}|${record.lifecycle}`).sort(),
-    written.map((entry) => `${entry.id}|active`).sort());
+  const again = await captureKnowledgeUnit(full.workspace, lesson("SUB-308-FULL-AGAIN", "SUB-308 one more card", { body: `${"y".repeat(700)}`, coexist: true }));
+  assert.equal(again.reasonCode, "KNOWLEDGE_UNIT_CREATED", "the next card is admitted");
+  const afterCards = await storeBytes(full, { cardsOnly: true });
+  assert.deepEqual(Object.fromEntries(Object.keys(fullCards).map((path) => [path, afterCards[path]])), fullCards, "and evicts nothing: every earlier card keeps its bytes");
+  assert.deepEqual((await listKnowledgeMetadata(full.workspace, { at: AT, selection: "all", limit: 64 })).records.map((record) => `${record.id}|${record.lifecycle}`).sort(),
+    [...written, again].map((entry) => `${entry.id}|active`).sort());
 });
 
 // What a 1.2.0 store may hold stays readable: a card a fitness sweep retired with its retirement

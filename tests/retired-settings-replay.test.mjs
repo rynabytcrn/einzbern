@@ -2,6 +2,8 @@
 // TCRN-CROSS-MIN-225 (TCRN-CROSS-SUB-258) and TCRN-CROSS-INC-389: the retired fitness settings.
 // fitness.windowDays and fitness.minEvents configured the 1.2.0 fitness window; they are retired
 // keys whose recorded values replay as history in every read, and the write verbs refuse them.
+// TCRN-CROSS-SUB-310 R17 (MIN-238 D1, D5): knowledge.aggregateBytes joins them, and its recorded
+// value limits nothing.
 //
 // TCRN-CROSS-SUB-308 moved these cases here from tests/story-377-retire-sweep.test.mjs, which was
 // deleted with its subject (retire-sweep, retire-proposals, the fitness statistic and the manual
@@ -19,12 +21,14 @@ import { runCli } from "../dist/build/packages/cli/src/index.js";
 import {
   appendEvents,
   cachePath,
+  captureKnowledgeUnit,
   createProject,
   initializeKnowledgeStore,
   initializeLibrary,
   materializeWorkspace,
   materializeWorkspaceFromGenesis,
   sortWorkspaceSettings,
+  validateKnowledgeStore,
   validateWorkspace,
 } from "../dist/build/packages/core/src/index.js";
 import { withWorkspacePerfInstrumentation } from "../dist/build/packages/core/src/workspace-perf-instrumentation.js";
@@ -218,4 +222,40 @@ test("INC-389: live key rules and retired key refusals are unchanged", async (t)
     assert.equal(await reasonOf(["settings-remove", ...write]), "WORKSPACE_INPUT_INVALID", key);
   }
   assert.equal((await validateWorkspace(fx.workspace)).version, 1, "no refusal appended an event");
+});
+
+// TCRN-CROSS-SUB-310 R17 (MIN-238 D1, D5; MIN-239 D1): knowledge.aggregateBytes retires with the knowledge
+// total it bounded. A chain that recorded it -- as any engine before this one could, the value entering
+// its current settings -- still opens in every read, and the value is history, not a current setting.
+// It limits nothing: the crest under it takes cards past the recorded bound. The write verbs refuse the
+// key without appending, the catalog no longer offers it, and a removal recorded later is history too.
+test("SUB-310 R17: a recorded knowledge.aggregateBytes replays as history in every read, limits nothing, and refuses new writes", async (t) => {
+  const fx = await fixture(t, "FIXTURE-SUB-310-AGGREGATE");
+  await appendSettingEvents(fx, "2026-01-02T00:00:00Z", [recordedSetting("knowledge.aggregateBytes", "4096", "2026-01-02T00:00:00Z")]);
+  for (const [read, { state, error }] of Object.entries(await readEveryWay(fx.workspace))) {
+    assert.equal(error, undefined, `${read}: ${error?.reasonCode} ${error?.message}`);
+    assert.equal(state.version, 2, read);
+    assert.deepEqual(state.settings, [], `${read}: the recorded value is history, not a current setting`);
+  }
+  // Two 3,000-byte bodies pass the recorded 4,096 together, and both are admitted.
+  for (const [index, subject] of ["quokka burrow depth", "wombat den width"].entries()) {
+    const created = await captureKnowledgeUnit(fx.workspace, {
+      occurredAt: `2026-01-02T00:00:0${index + 1}Z`, externalKey: `SUB-310-RETIRED-${index}`, subject, summary: `${subject} summary`,
+      snippet: `${subject} snippet`, tags: ["retired"], accountableOwnerId: "owner:sub-310", body: "x".repeat(3_000),
+    });
+    assert.equal(created.reasonCode, "KNOWLEDGE_UNIT_CREATED", subject);
+  }
+  const validation = await validateKnowledgeStore(fx.workspace);
+  assert.deepEqual([validation.reasonCode, validation.records, Object.hasOwn(validation, "capacity")], ["KNOWLEDGE_STORE_VALID", 2, false]);
+  const write = ["--workspace", fx.workspace, "--at", "2026-01-03T00:00:00Z", "--key", "knowledge.aggregateBytes"];
+  assert.equal(await reasonOf(["settings-set", ...write, "--value", "65536"]), "SETTINGS_KEY_UNREGISTERED");
+  assert.equal(await reasonOf(["settings-remove", ...write]), "WORKSPACE_INPUT_INVALID");
+  assert.equal((await validateWorkspace(fx.workspace)).version, 2, "no refusal appended an event");
+  assert.equal((await cliJson(["settings-catalog", "--workspace", fx.workspace])).settings.some((entry) => entry.key === "knowledge.aggregateBytes"), false, "the catalog no longer offers it");
+  await appendSettingEvents(fx, "2026-01-04T00:00:00Z", [removedSetting("knowledge.aggregateBytes", "2026-01-04T00:00:00Z")]);
+  for (const [read, { state, error }] of Object.entries(await readEveryWay(fx.workspace))) {
+    assert.equal(error, undefined, `${read}: ${error?.reasonCode} ${error?.message}`);
+    assert.equal(state.version, 3, read);
+    assert.deepEqual(state.settings, [], `${read}: the removal is history too`);
+  }
 });

@@ -576,6 +576,85 @@ spec no longer lists the retired `conference-close --distill` among the crest's 
 leaves the records awaiting chain events waiting for good, until the whole library is restored from one
 snapshot.
 
+No budget bounds the sum of a crest's card bodies any more (TCRN-CROSS-SUB-310 R17; MIN-238 D1,
+D5; MIN-239 D1; `packages/core/src/knowledge-core.ts`, `settings.ts`;
+`packages/core/spec/knowledge-core-v1.md`). Nothing counts the bodies of the library's crest or of
+the user crest, so no read, write, `recall`, `knowledge-recover` or merge of two devices' streams is
+refused for the bytes they add up to: a merge whose live bodies pass what `knowledge.aggregateBytes`
+allowed (131,072 bytes unless set, 1 MiB at most) reads, recalls and takes the next card on every
+device, and `recall` no longer reports such a merge as a refused store under `knowledgeStores` or
+`userCrestDegraded`. Each card keeps its own limits: a body over 8,192 bytes, a summary over 2,048, a
+snippet over 512, metadata over 32,768 or an article over the canonical ceiling is still refused with
+`KNOWLEDGE_LIMIT_EXCEEDED` before anything is written. `knowledge.aggregateBytes` is a retired
+setting: `settings-catalog` and Atelier's settings page no longer offer it, its label and explanation
+leave all five languages, `settings-set` refuses it as `SETTINGS_KEY_UNREGISTERED`, and a value a
+chain recorded replays as history and binds nothing. `knowledge-validate` no longer answers
+`capacity`, the measure of live card bodies against that limit, and `KNOWLEDGE_LIMITS` has no
+`maximumAggregateBytes`. This replaces the statements above that `knowledge.aggregateBytes` counts
+the bodies of live cards and that a refusal for the budget names `bodyBytes` and `limit`
+(TCRN-CROSS-STORY-476), that a merge past it is refused whole with its disposition pending
+(TCRN-CROSS-SUB-310 and O-1, which MIN-238 D1 decided), that each live version of a duplicate holds
+budget until it is resolved (TCRN-CROSS-SUB-413), and that O-1 is unchanged (TCRN-CROSS-SUB-414).
+
+No single canonical value bounds a crest's derived index or a list's digest any more
+(TCRN-CROSS-SUB-428, TCRN-CROSS-INC-398; `packages/core/src/knowledge-core.ts`;
+`packages/core/spec/knowledge-core-v1.md`). With the body total gone, the index view -- every
+record's metadata in one canonical value -- was the last bound on a crest: at about 300 cards with
+2,000-byte summaries, the write that carried a library's index past the protocol's one-MiB ceiling was
+refused with `INPUT_OVERSIZED` after its event was committed, and every read and write of the crest
+was refused after it, `--supersedes` included; the user crest took that card and then refused every
+read and write. The index's `indexDigest` and a `knowledge-list` page's `resultDigest` are now the
+sha256 of the records' canonical list hashed one record at a time -- wherever the list fits one
+canonical value, the digest it always was -- so `knowledge-validate`, `knowledge-list`, `recall` and
+the knowledge hint, which read the whole crest as one page, answer at any size. This device's view
+keeps the whole index in `index.json`, byte for byte as before, while it fits the ceiling and the
+record-count limit; past either, `index.json` is a head, `tcrn.knowledge-index-pages.v1` (`count`,
+`pages`, `indexDigest`), and the records are in `index-000001.json` onwards
+(`tcrn.knowledge-index-page.v1`), each within the ceiling. A read projects a missing, damaged or
+out-of-date page again and removes a page the head does not name, and a view that cannot be
+projected, at a read or after a write's event is committed, is left for the next read: a committed
+write is answered as committed (R14 (d)). `PROTOCOL_LIMITS.maxCanonicalBytes` and each card's limits
+are unchanged, and an answer printed whole -- `knowledge-checkpoint`, `knowledge-freshness`,
+`knowledge-source-check`, or a page asked for with `--limit` -- is still refused with
+`INPUT_OVERSIZED` once it passes the ceiling.
+
+A knowledge card is valid or removed, and removed is terminal (TCRN-CROSS-SUB-425; STORY-514 R1, R3,
+R4; MIN-239 D3, D4, D6; `packages/core/src/knowledge-core.ts`, `recall-inputs.ts`, `hook-recall.ts`,
+`knowledge-hint.ts`, `packages/cli/src/index.ts`, `portal/`; `packages/core/spec/knowledge-core-v1.md`,
+`docs/wiki/Atelier.md`). `knowledge-remove --id --reason superseded|invalid|duplicate --basis --actor
+--at` (with `--superseded-by` for `superseded` only, `--scope user` for the user crest) appends a
+removal event, `einzbern.crest-removal.v1`, to this device's stream of the crest: the card, the
+reason, the basis (at most 2,048 bytes), the actor (an `owner:`, `profile:` or `agent:` id) and the
+card that supersedes it or null. It answers `KNOWLEDGE_UNIT_REMOVED` with the card as it is now kept
+and `clearedBodies`; no verb restores a card. A card another card supersedes -- `--supersedes`, or the
+mark an older engine stored -- is removed too, reason `superseded`, its basis naming the new card and
+its actor the new card's accountable owner. Removal events travel with the crest and no event file is
+deleted; a removal delivered before its card waits for it, and of two devices' removals of one card
+the earliest stands. A removed card keeps its id, external key, subject, `supersedes` and `removal`
+(`reason`, `basis`, `actor`, `removedAt`, `supersededBy`, and the event's `deviceId`, `sequence` and
+`eventHash`); each device deletes the body files its own stream holds for removed cards at its next
+write to that crest, the removing or superseding write included, while the metadata/body layout an
+older engine left keeps its bodies. `knowledge-list` and `recall` take `--status valid|removed|all`,
+`valid` when left out and echoed as `status`: default reads, `--selection all` among them, answer valid
+cards only, and `removed` or `all` add each removed card as it is kept, a recall hit on one reading
+`[卡片 已移除]`. The prompt hook, the knowledge hint, a checkpoint, `knowledge-freshness` and
+`knowledge-source-check` read valid cards only. `knowledge-snippet`, `knowledge-body`,
+`knowledge-reverify`, `knowledge-policy`, `knowledge-article-refresh`, a write superseding a removed card
+and a second removal are refused with `KNOWLEDGE_CARD_REMOVED` (details `id`, `removal`, `remedy`),
+and a removed card's id and key stay taken. A removed card is in no unresolved pair, resolves the
+duplicate whose id it is, and is named in no `unresolvedScopes`; the crest's index view holds it as it
+is kept, one record per id, and an old-layout store's index is unchanged. Atelier's knowledge list
+reads valid cards and offers a card-status filter in all five languages; `/api/knowledge?status=`
+answers `removed` and `all`, and refuses another status with `PORTAL_KNOWLEDGE_STATUS_INVALID`. An
+engine before this one refuses a crest that holds a removal event. This replaces the statements
+above that a card retires only when a later card supersedes it (TCRN-CROSS-STORY-476), that every
+version of a duplicate a card supersedes stays readable by the id (TCRN-CROSS-SUB-413), and that reads
+project `supersededBy` over the card a supersede names (TCRN-CROSS-SUB-414), and for knowledge cards it
+replaces the audit copy MIN-235 D10 kept of a superseded body. `knowledge-core-v1.md` also stops saying
+a write lands promotion state `promoted` (a new card carries none) and names, among what the library's
+crest withholds, the cards whose project the chain no longer holds with `KNOWLEDGE_LINK_INVALID` and
+`unresolvedScopes`.
+
 Gates are declared per project and chosen by the change (TCRN-CROSS-STORY-485; MIN-227 D4;
 `packages/core/src/gates-config.ts`, `gates-plan.ts`, `gates-run.ts`, `gates-done.ts`). A gate is a
 project-level configuration record of the gate collection, keyed by its name: its command is an

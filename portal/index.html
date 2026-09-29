@@ -4362,7 +4362,7 @@ const BOOT = __PORTAL_BOOT__;
   const storedTheme = tcrnReadPreference("theme", ["light", "dark"], null);
   const machineTheme = ["light", "dark"].includes(BOOT.machineDefaults?.theme) ? BOOT.machineDefaults.theme : null;
   if (storedTheme === null && machineTheme !== null) document.documentElement.dataset.tcrnTheme = machineTheme;
-  const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? "en", theme: document.documentElement.dataset.tcrnTheme, page: "dashboard", dashboardTab: "overview", settingGroup: "general", collections: { "models.category": { draft: null, dirty: false, findings: [], refusal: null }, "models.tiers": { draft: null, dirty: false, findings: [], refusal: null } }, collectionFocus: null, settings: null, machineSettings: null, variables: null, vocabulary: null, status: null, work: null, workRead: { library: 0, readingFor: null, again: false }, knowledge: null, knowledgeQuery: "", knowledgeBody: null, gates: [], gateResponse: null, lastGateRun: null, commands: [], selectedVocabulary: "conferenceTypes", receipt: null, operationDetailsOpen: false, agentsText: "", reconciliation: null, rules: null, pendingSection: "", searchIndex: [], searchResults: [], searchSelection: 0 };
+  const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? "en", theme: document.documentElement.dataset.tcrnTheme, page: "dashboard", dashboardTab: "overview", settingGroup: "general", collections: { "models.category": { draft: null, dirty: false, findings: [], refusal: null }, "models.tiers": { draft: null, dirty: false, findings: [], refusal: null } }, collectionFocus: null, settings: null, machineSettings: null, variables: null, vocabulary: null, status: null, work: null, workRead: { library: 0, readingFor: null, again: false }, knowledge: null, knowledgeQuery: "", knowledgeStatus: "valid", knowledgeBody: null, gates: [], gateResponse: null, lastGateRun: null, commands: [], selectedVocabulary: "conferenceTypes", receipt: null, operationDetailsOpen: false, agentsText: "", reconciliation: null, rules: null, pendingSection: "", searchIndex: [], searchResults: [], searchSelection: 0 };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   // DS Tabs is a behavior contract, not a role decoration. Every tablist below
@@ -5403,11 +5403,22 @@ const BOOT = __PORTAL_BOOT__;
     const epicRows = (initiative) => epicsFor(initiative).map((epic) => `<details class="tcrn-work-tree__epic" open role="treeitem" data-work-id="${esc(epic.id)}"><summary class="tcrn-work-tree__summary"><span><code class="tcrn-work-tree__key">${esc(epic.externalKey)}</code><strong>${esc(summaryFor(epic))}</strong></span>${statusBadge(epic.status, statusTone(epic.status))}</summary><div class="tcrn-work-tree__children" role="group">${storyRows(epic)}</div></details>`).join("") || `<div class="tcrn-meta">${esc(t("dashboard.noEpics"))}</div>`;
     $("#work-tree-content").innerHTML = `<div class="tcrn-work-tree" role="tree" aria-label="${esc(t("dashboard.workTreeLabel"))}">${initiatives.map((initiative) => `<details class="tcrn-work-tree__epic" open role="treeitem" data-work-id="${esc(initiative.id)}"><summary class="tcrn-work-tree__summary"><span><code class="tcrn-work-tree__key">${esc(initiative.externalKey)}</code><strong>${esc(summaryFor(initiative))}</strong></span>${statusBadge(initiative.status, statusTone(initiative.status))}</summary><div class="tcrn-work-tree__children" role="group">${epicRows(initiative)}</div></details>`).join("")}</div>`;
   };
+  // TCRN-CROSS-SUB-425 (MIN-239 D6): the list reads valid cards unless the viewer picks another status.
+  // A removed card is shown as it is kept -- its subject, the removal's reason, basis, actor and
+  // instant, and the card that superseded it -- and has no body to read.
+  const knowledgePath = () => state.knowledgeStatus === "valid" ? "/api/knowledge" : `/api/knowledge?status=${encodeURIComponent(state.knowledgeStatus)}`;
+  const removalReasonLabel = (reason) => reason === "superseded" ? t("knowledge.removalReasonSuperseded") : reason === "invalid" ? t("knowledge.removalReasonInvalid") : reason === "duplicate" ? t("knowledge.removalReasonDuplicate") : String(reason ?? "—");
+  const removedKnowledgeRow = (record) => {
+    const removal = record.removal ?? {};
+    const removedBy = t("knowledge.removedBy", { actor: removal.actor ?? "—", at: removal.removedAt ?? "—" });
+    const successor = typeof removal.supersededBy === "string" ? `<span class="tcrn-read-list__summary">${esc(t("knowledge.supersededBy"))}: <code>${esc(removal.supersededBy)}</code></span>` : "";
+    return `<div class="tcrn-read-list__row" role="listitem" data-knowledge-id="${esc(record.id)}" data-knowledge-status="removed"><div class="tcrn-read-list__main"><strong>${esc(record.subject || record.externalKey || record.id)}</strong><span class="tcrn-read-list__summary">${esc(t("knowledge.removalBasis"))}: ${esc(removal.basis ?? "—")}</span><span class="tcrn-read-list__meta"><code>${esc(record.id)}</code>${statusBadge(t("knowledge.statusRemoved"), "danger")}<span class="tcrn-meta">${esc(removalReasonLabel(removal.reason))}</span><span class="tcrn-meta">${esc(removedBy)}</span></span>${successor}</div></div>`;
+  };
   const renderKnowledgeView = () => {
     const data = state.knowledge;
     const records = Array.isArray(data?.records) ? data.records : [];
     const filter = state.knowledgeQuery.trim().toLocaleLowerCase();
-    const visibleRecords = filter.length === 0 ? records : records.filter((record) => [record.subject, record.summary, record.snippet, ...(record.sourceReferences || [])].filter((value) => typeof value === "string").join(" ").toLocaleLowerCase().includes(filter));
+    const visibleRecords = filter.length === 0 ? records : records.filter((record) => [record.subject, record.summary, record.snippet, record.removal?.basis, ...(record.sourceReferences || [])].filter((value) => typeof value === "string").join(" ").toLocaleLowerCase().includes(filter));
     setText("#knowledge-count", `${visibleRecords.length} ${t("dashboard.records")}`);
     const selectedBody = state.knowledgeBody;
     const selectedRecord = records.find((record) => record.id === selectedBody?.id);
@@ -5418,11 +5429,15 @@ const BOOT = __PORTAL_BOOT__;
         : selectedBody.body
           ? `<article class="tcrn-surface" data-ui="knowledge-body-reader"><div class="tcrn-surface__head"><div><h3>${esc(selectedRecord?.subject || selectedBody.id)}</h3><p class="tcrn-surface__note">${esc(t("knowledge.bodyReadBoundary"))}</p></div><span class="tcrn-badge">${esc(selectedBody.freshness || "—")}</span></div><pre class="tcrn-read-list__summary" role="document">${esc(selectedBody.body)}</pre><span class="tcrn-meta">${esc(t("knowledge.bodyDigest"))}: ${esc(selectedBody.bodySha256 || "—")}</span></article>`
           : `<article class="tcrn-surface" data-ui="knowledge-body-reader" role="alert"><div class="tcrn-surface__head"><h3>${esc(t("knowledge.bodyTitle"))}</h3></div><div class="tcrn-state-surface">${esc(selectedBody.reasonCode || t("knowledge.bodyUnavailable"))}</div></article>`;
-    const filterField = `<label class="tcrn-field"><span class="tcrn-field__label">${esc(t("knowledge.search"))}</span><input class="tcrn-input" id="knowledge-filter" type="search" value="${esc(state.knowledgeQuery)}" placeholder="${esc(t("knowledge.searchPlaceholder"))}" autocomplete="off"></label>`;
+    const statusOptions = [["valid", t("knowledge.statusValid")], ["removed", t("knowledge.statusRemoved")], ["all", t("knowledge.statusAll")]]
+      .map(([value, label]) => `<option value="${value}"${state.knowledgeStatus === value ? " selected" : ""}>${esc(label)}</option>`).join("");
+    const statusField = `<label class="tcrn-field" for="knowledge-status"><span class="tcrn-field__label">${esc(t("knowledge.status"))}</span><select class="tcrn-select" id="knowledge-status" data-ui="knowledge-status-filter">${statusOptions}</select></label>${state.knowledgeStatus === "valid" ? "" : `<p class="tcrn-scope-note">${esc(t("knowledge.removedNote"))}</p>`}`;
+    const filterField = `${statusField}<label class="tcrn-field"><span class="tcrn-field__label">${esc(t("knowledge.search"))}</span><input class="tcrn-input" id="knowledge-filter" type="search" value="${esc(state.knowledgeQuery)}" placeholder="${esc(t("knowledge.searchPlaceholder"))}" autocomplete="off"></label>`;
     if (visibleRecords.length === 0) {
       $("#knowledge-view-content").innerHTML = `${filterField}<div class="tcrn-state-surface">${esc(records.length === 0 ? (data?.listing?.reasonCode ?? t("dashboard.knowledgeEmpty")) : t("knowledge.noMatches"))}</div>${bodyReader}`;
     } else {
       $("#knowledge-view-content").innerHTML = `${filterField}<div class="tcrn-read-list" role="list">${visibleRecords.slice(0, 160).map((record) => {
+      if (record.status === "removed") return removedKnowledgeRow(record);
       const retired = record.lifecycle === "retired";
       const label = retired ? t("dashboard.retired") : record.lifecycle === "candidate" ? t("dashboard.candidate") : t("dashboard.active");
       const retirement = record.retirement?.reason ? ` · ${record.retirement.reason}` : "";
@@ -5436,6 +5451,12 @@ const BOOT = __PORTAL_BOOT__;
     }
     $("#knowledge-filter")?.addEventListener("input", (event) => {
       state.knowledgeQuery = event.target.value;
+      renderKnowledgeView();
+    });
+    $("#knowledge-status")?.addEventListener("change", async (event) => {
+      state.knowledgeStatus = ["valid", "removed", "all"].includes(event.target.value) ? event.target.value : "valid";
+      state.knowledgeBody = null;
+      state.knowledge = await api(knowledgePath());
       renderKnowledgeView();
     });
     $$('[data-knowledge-body-id]').forEach((button) => button.addEventListener("click", async () => {
@@ -5815,7 +5836,7 @@ const BOOT = __PORTAL_BOOT__;
   };
   // A library switch leaves the work the page showed behind: the view is empty until the new library's read returns.
   const leaveWork = () => { state.work = null; state.workRead.library += 1; };
-  const refresh = async () => { refreshWork(); try { const [settings, vocabularyResult, status, commandsResult, machine, knowledge, variables] = await Promise.all([api("/api/settings"), api("/api/vocabulary"), api("/api/status"), api("/api/commands"), api("/api/machine-settings"), api("/api/knowledge"), api("/api/variables")]); state.machineSettings = machine; state.settings = settings; state.vocabulary = vocabularyResult; state.status = status; state.knowledge = knowledge; state.variables = variables; state.commands = commandsResult.commands || []; for (const collection of Object.values(state.collections)) if (!collection.dirty) collection.draft = null; renderDashboard(); renderSettings(); renderCollections(); renderVariables(); renderVocabulary(); rebuildSearchIndex(); } catch (error) { state.status = { ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE", checks: [], library: null }; renderDashboard(); showReceipt({ ok: false, reasonCode: "PORTAL_READ_FAILED", error: String(error?.message ?? error) }); } };
+  const refresh = async () => { refreshWork(); try { const [settings, vocabularyResult, status, commandsResult, machine, knowledge, variables] = await Promise.all([api("/api/settings"), api("/api/vocabulary"), api("/api/status"), api("/api/commands"), api("/api/machine-settings"), api(knowledgePath()), api("/api/variables")]); state.machineSettings = machine; state.settings = settings; state.vocabulary = vocabularyResult; state.status = status; state.knowledge = knowledge; state.variables = variables; state.commands = commandsResult.commands || []; for (const collection of Object.values(state.collections)) if (!collection.dirty) collection.draft = null; renderDashboard(); renderSettings(); renderCollections(); renderVariables(); renderVocabulary(); rebuildSearchIndex(); } catch (error) { state.status = { ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE", checks: [], library: null }; renderDashboard(); showReceipt({ ok: false, reasonCode: "PORTAL_READ_FAILED", error: String(error?.message ?? error) }); } };
   const rebuildSearchIndex = () => {
     const rows = [];
     // Every key of both catalogs; a collection key is found on its own page.

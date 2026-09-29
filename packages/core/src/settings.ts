@@ -93,6 +93,8 @@ export type SettingGroup = typeof SETTING_GROUPS[number];
 // execution.maxDispatchDepth retires because nothing reads it either (R5: the consumer search found
 // only the catalog, the Atelier copy and its own test). execution.dispatchTiers is renamed
 // models.tiers: see RENAMED_SETTING_KEYS.
+// TCRN-CROSS-SUB-310 R17 (MIN-238 D1, D5; MIN-239 D1): knowledge.aggregateBytes retires with the body
+// budget it set; each card keeps its own limits (KNOWLEDGE_LIMITS in knowledge-core.ts).
 export const RETIRED_SETTING_KEYS: readonly string[] = Object.freeze([
   "backup.cadence",
   "backup.destination",
@@ -111,6 +113,7 @@ export const RETIRED_SETTING_KEYS: readonly string[] = Object.freeze([
   "fitness.minEvents",
   "fitness.windowDays",
   "injection.budgetBytes",
+  "knowledge.aggregateBytes",
   "model.economyTier",
   "storage.backend",
 ]);
@@ -125,7 +128,6 @@ export type SettingKey =
   | "engine.requiredVersion"
   | "execution.maxConcurrentSubagents"
   | "injection.perPromptBytes"
-  | "knowledge.aggregateBytes"
   | "knowledge.articlesPath"
   | "models.category"
   | "models.escalation.ceiling"
@@ -363,17 +365,6 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     max: 1600,
     group: "retrieval",
     order: 4,
-  },
-  {
-    key: "knowledge.aggregateBytes",
-    type: "string",
-    controlType: "number",
-    layerKind: SETTINGS_LAYER_KIND,
-    defaultValue: "131072",
-    min: 4096,
-    max: 1_048_576,
-    group: "knowledge",
-    order: 3,
   },
   {
     // Article files are repository material, not knowledge-store control bytes. A

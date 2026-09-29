@@ -1233,7 +1233,8 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "execution.maxConcurrentSubagents").currentValue, "8");
 
       // TCRN-CROSS-SUB-409: prompt languages sit in the retrieval group, the port in atelier, the
-      // knowledge budget in knowledge (their catalog rows say so).
+      // segment size in storage (their catalog rows say so). TCRN-CROSS-SUB-310 R17: the invalid-value
+      // state is proven on storage.segmentBytes, since knowledge.aggregateBytes left the catalog.
       selectGroup("retrieval");
       const prompt = page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]');
       assert.ok(prompt?.hasAttribute("multiple"));
@@ -1264,13 +1265,15 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       assert.match(page.document.querySelector('[data-machine-row="portal.port"]')?.textContent ?? "", /restart/u, "the machine port exposes its restart lifecycle");
 
       selectGroup("knowledge");
-      const numeric = page.document.querySelector('[data-setting-control="knowledge.aggregateBytes"]');
+      assert.equal(page.document.querySelector('[data-setting-row="knowledge.aggregateBytes"]'), null, "the retired knowledge total has no row");
+      selectGroup("storage");
+      const numeric = page.document.querySelector('[data-setting-control="storage.segmentBytes"]');
       const beforeInvalid = receiptText(page.document);
       numeric.value = "1024";
       numeric.dispatchEvent(new page.window.Event("change", { bubbles: true }));
       await waitFor(() => receiptText(page.document) !== beforeInvalid && receiptText(page.document).startsWith("✕"), "the invalid-value receipt");
-      assert.equal(page.document.querySelector('[data-setting-row="knowledge.aggregateBytes"]')?.dataset.modified, "false", "an engine-rejected value does not change the field");
-      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "knowledge.aggregateBytes").currentValue, "131072");
+      assert.equal(page.document.querySelector('[data-setting-row="storage.segmentBytes"]')?.dataset.modified, "false", "an engine-rejected value does not change the field");
+      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "storage.segmentBytes").currentValue, "1048576");
     } finally { await page.cleanup(); }
   });
 
@@ -1976,6 +1979,11 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
         await new Promise((resolve) => setTimeout(resolve, 40));
         assert.equal(page.document.querySelector(`[data-workspace-panel="${target}"]`)?.hidden, false, `${target} panel must be reachable`);
       }
+      // TCRN-CROSS-SUB-425 (MIN-239 D6): the knowledge list reads valid cards unless the viewer picks
+      // another status; the filter offers the three statuses, valid selected.
+      const status = page.document.querySelector('[data-ui="knowledge-status-filter"]');
+      assert.deepEqual([...(status?.querySelectorAll("option") ?? [])].map((option) => option.value), ["valid", "removed", "all"]);
+      assert.equal(status?.value, "valid");
       for (const locale of ["en", "zh-CN", "ja", "ko", "fr"]) {
         page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
         await new Promise((resolve) => setTimeout(resolve, 40));

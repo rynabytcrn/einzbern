@@ -40,7 +40,6 @@ import {
   rebaseKnowledgeStore,
   recoverKnowledgeStore,
   reverifyKnowledgeUnit,
-  setWorkspaceSetting,
   updateKnowledgeStalenessPolicy,
   validateKnowledgeStore,
   validateWorkspace,
@@ -111,7 +110,7 @@ function card(externalKey, subject, overrides = {}) {
 // folder -- its chain stream goes back to the copy the mark took, and its new crest events and
 // bodies leave -- and `deliver(home)` puts them back, as a folder that delivers late would. The
 // chain half and the crest half can also be delivered one at a time.
-async function twoDevices(context, name, { aggregateBytes } = {}) {
+async function twoDevices(context, name) {
   const base = await realpath(await mkdtemp(join(tmpdir(), `einzbern-sub414-${name}-`)));
   context.after(() => rm(base, { recursive: true, force: true }));
   const homeA = await deviceHome(base, "device-a", DEVICE_A);
@@ -121,9 +120,6 @@ async function twoDevices(context, name, { aggregateBytes } = {}) {
   const project = await as(homeA, async () => {
     await initializeLibrary({ root: workspace, createdAt: instant(0), libraryId });
     const state = await createProject(workspace, { occurredAt: instant(1), externalKey: "SUB-414-PROJECT", name: "Two devices" });
-    if (aggregateBytes !== undefined) {
-      await setWorkspaceSetting(workspace, { key: "knowledge.aggregateBytes", value: String(aggregateBytes), occurredAt: instant(2) });
-    }
     await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
     return state.projects[0].id;
   });
@@ -281,7 +277,9 @@ test("SUB-414: card writes, supersede, batch, reverify, policy, article refresh,
 
   // Every other operation, one at a time: store.json and the claim are untouched, every file the
   // crest held before is byte-identical after (appends only), and the records written land in this
-  // device's stream, one event each.
+  // device's stream, one event each. TCRN-CROSS-SUB-425 (MIN-239 D4): the one file a write gives up is
+  // the body of a card it removes -- here the supersede's, which removes the old card -- and never
+  // store.json or an event.
   const operations = [
     ["knowledge-create", 1, () => createKnowledgeUnit(fx.workspace, card("SUB-414-OLD", "Old answer about retries"))],
     ["knowledge-capture", 1, () => captureKnowledgeUnit(fx.workspace, { occurredAt: instant(6), externalKey: "SUB-414-CAPTURED", subject: "Captured lesson on ports", summary: "Ports collide", snippet: "pick a free port", tags: ["lesson"], accountableOwnerId: OWNER, body: "Captured body." })],
@@ -300,7 +298,8 @@ test("SUB-414: card writes, supersede, batch, reverify, policy, article refresh,
     ["reads", 0, async () => {
       await listKnowledgeMetadata(fx.workspace, { at: AT, selection: "all" });
       await readKnowledgeSnippet(fx.workspace, deriveStableId("knowledge", "SUB-414-NEW"));
-      await readKnowledgeBody(fx.workspace, deriveStableId("knowledge", "SUB-414-OLD"), { at: AT });
+      await readKnowledgeBody(fx.workspace, deriveStableId("knowledge", "SUB-414-NEW"), { at: AT });
+      assert.equal((await refusalOf(() => readKnowledgeBody(fx.workspace, deriveStableId("knowledge", "SUB-414-OLD"), { at: AT })))?.reasonCode, "KNOWLEDGE_CARD_REMOVED");
       await validateKnowledgeStore(fx.workspace);
       await exportKnowledgeCheckpoint(fx.workspace, AT);
       await readRecallCards(fx.workspace, { at: AT });
@@ -314,21 +313,27 @@ test("SUB-414: card writes, supersede, batch, reverify, policy, article refresh,
       const after = await tree(fx.store);
       assert.deepEqual(await readFile(join(fx.store, "store.json")), manifest, `${label} left store.json as initialization wrote it`);
       assert.equal(Object.hasOwn(after, "mutation.claim"), false, `${label} took no claim`);
-      for (const [path, bytes] of Object.entries(before)) assert.equal(after[path], bytes, `${label} rewrote nothing: ${path}`);
+      const oldBody = label === "supersede"
+        ? `events/${DEVICE_A}/${(await streamEvents(fx.store, DEVICE_A)).find((event) => event.metadata?.externalKey === "SUB-414-OLD").body.file}`
+        : null;
+      for (const [path, bytes] of Object.entries(before)) {
+        if (path === oldBody) assert.equal(Object.hasOwn(after, path), false, `${label} cleared the body of the card it removed`);
+        else assert.equal(after[path], bytes, `${label} rewrote nothing: ${path}`);
+      }
       const events = await streamEvents(fx.store, DEVICE_A);
       assert.equal(events.length - eventsBefore, appended, `${label} appended ${appended} event(s) to this device's stream`);
       for (const event of events.slice(eventsBefore)) assert.equal(event.deviceId, DEVICE_A);
     }
   });
-  // The supersede wrote one record, the new card's: the old card is marked by projection, and its
-  // own event is the one it was written with.
+  // The supersede wrote one record, the new card's: the old card is removed by projection (TCRN-CROSS-SUB-425,
+  // conflict superseded), and its own event is the one it was written with.
   const events = await streamEvents(fx.store, DEVICE_A);
   const old = events.filter((event) => event.metadata.externalKey === "SUB-414-OLD");
   assert.equal(old.length, 1);
   assert.deepEqual(old[0].metadata.extensions, {});
-  const all = await as(fx.homeA, () => listKnowledgeMetadata(fx.workspace, { at: AT, selection: "all" }));
-  const projected = all.records.find((record) => record.externalKey === "SUB-414-OLD");
-  assert.deepEqual([projected.extensions.supersededBy, projected.revision], [deriveStableId("knowledge", "SUB-414-NEW"), 2]);
+  const removed = await as(fx.homeA, () => listKnowledgeMetadata(fx.workspace, { at: AT, status: "removed" }));
+  const projected = removed.records.find((record) => record.externalKey === "SUB-414-OLD");
+  assert.deepEqual([projected.removal.reason, projected.removal.supersededBy], ["superseded", deriveStableId("knowledge", "SUB-414-NEW")]);
   // A card written again names the stored record it replaces; the captured card was written three times.
   const captured = events.filter((event) => event.metadata.externalKey === "SUB-414-CAPTURED");
   assert.deepEqual(captured.map((event) => event.metadata.revision), [1, 2, 3]);
@@ -454,8 +459,14 @@ test("SUB-414: a pair two devices wrote about one thing, and one key both wrote,
   assert.equal(Object.hasOwn(after, "unresolvedConflicts"), false);
   assert.equal(Object.hasOwn(after, "unresolvedDuplicates"), false);
   assert.deepEqual(after.records.map((record) => record.externalKey).sort(), ["SUB-414-CONTROL", "SUB-414-GULL-B", "SUB-414-GULL-RESOLVED", "SUB-414-KEY-RESOLVED", "SUB-414-UNRELATED"]);
-  const versions = JSON.parse(resolved.all).records.filter((record) => record.id === keyA.id);
-  assert.deepEqual(versions.map((record) => record.extensions.supersededBy), [deriveStableId("knowledge", "SUB-414-KEY-RESOLVED"), deriveStableId("knowledge", "SUB-414-KEY-RESOLVED")], "every version is replaced, and stays readable by the id");
+  // TCRN-CROSS-SUB-425: the key's id is removed, conflict superseded, every version with it, and so is
+  // the pair's superseded card; each is one removed record.
+  assert.equal(JSON.parse(resolved.all).records.some((record) => record.id === keyA.id || record.id === gullA.id), false);
+  const removed = (await as(fx.homeA, () => listKnowledgeMetadata(fx.workspace, { at: AT, status: "removed" }))).records;
+  assert.deepEqual(removed.map((record) => [record.id, record.removal.reason, record.removal.supersededBy]).sort(), [
+    [keyA.id, "superseded", deriveStableId("knowledge", "SUB-414-KEY-RESOLVED")],
+    [gullA.id, "superseded", deriveStableId("knowledge", "SUB-414-GULL-RESOLVED")],
+  ].sort(), "every version of the key is removed with its id");
   assert.equal((await as(fx.homeA, () => readRecallCards(fx.workspace, { at: AT }))).projectCrestDegraded, null, "resolved, the crest withholds nothing");
   assert.equal(Object.hasOwn(await cli(fx.homeA, ["recall", "--workspace", fx.workspace, "--at", AT, "--query", "gull nesting cliff", "--tau", "0"]), "projectCrestDegraded"), false);
 });
@@ -519,8 +530,9 @@ test("SUB-414: a replacement delivered before the card it replaces stands, and t
   });
   await rename(aside, join(fx.store, "events", DEVICE_A));
   await as(homeC, async () => {
-    const all = await listKnowledgeMetadata(fx.workspace, { at: AT, selection: "all" });
-    assert.equal(all.records.find((record) => record.id === heron.id).extensions.supersededBy, replacement.id, "and the card it names is replaced once it arrives");
+    const removed = await listKnowledgeMetadata(fx.workspace, { at: AT, status: "removed" });
+    assert.deepEqual(removed.records.map((record) => [record.id, record.removal.reason, record.removal.supersededBy]), [[heron.id, "superseded", replacement.id]],
+      "and the card it names is removed, conflict superseded, once it arrives (TCRN-CROSS-SUB-425)");
     assert.deepEqual((await listKnowledgeMetadata(fx.workspace, { at: AT })).records.map((record) => record.id), [replacement.id]);
   });
 });
@@ -644,21 +656,31 @@ test("SUB-414: a crest an older engine left in the metadata/body layout, or with
     const heron = await createKnowledgeUnit(fx.workspace, card("SUB-414-HERON", "Heron wading depth"));
     const kestrel = await createKnowledgeUnit(fx.workspace, card("SUB-414-KESTREL", "Kestrel hover timing"));
     const otter = await createKnowledgeUnit(fx.workspace, card("SUB-414-OTTER", "Otter slide angle"));
-    const heronNew = await createKnowledgeUnit(fx.workspace, card("SUB-414-HERON-NEW", "Heron wading depth, measured", { occurredAt: instant(6), supersedes: heron.id }));
+    // An older engine's supersede is laid down below, as that engine stored it: the replaced card
+    // marked and its body kept. This engine's would remove it and clear its body (TCRN-CROSS-SUB-425).
+    const heronNew = await createKnowledgeUnit(fx.workspace, card("SUB-414-HERON-NEW", "Heron wading depth, measured", { occurredAt: instant(6), coexist: true }));
     return { heron: heron.id, kestrel: kestrel.id, otter: otter.id, heronNew: heronNew.id };
   });
   await asOlderEngineCrest(fx, fx.homeA);
+  const stored = async (id, change) => {
+    const path = join(fx.store, "metadata", `${id}.json`);
+    await writeFile(path, canonicalJson(change(JSON.parse(await readFile(path, "utf8")))));
+  };
+  await stored(ids.heronNew, (metadata) => ({ ...metadata, supersedes: ids.heron }));
+  await stored(ids.heron, (metadata) => ({ ...metadata, extensions: { ...metadata.extensions, supersededBy: ids.heronNew }, revision: metadata.revision + 1 }));
   assert.deepEqual((await readdir(fx.store)).sort(), ["bodies", "metadata", "store.json"]);
   const legacy = await tree(fx.store);
   const read = async (home) => as(home, async () => ({
     all: (await listKnowledgeMetadata(fx.workspace, { at: AT, selection: "all" })).records.map((record) => [record.externalKey, record.revision, record.extensions.supersededBy ?? null]),
+    removed: (await listKnowledgeMetadata(fx.workspace, { at: AT, status: "removed" })).records.map((record) => [record.externalKey, record.removal.reason, record.removal.supersededBy]),
     body: (await readKnowledgeBody(fx.workspace, ids.otter, { at: AT })).body,
     valid: (await validateKnowledgeStore(fx.workspace)).reasonCode,
   }));
   const before = await read(fx.homeB);
   assert.equal(before.valid, "KNOWLEDGE_STORE_VALID");
   assert.equal(before.body, "SUB-414-OTTER body");
-  assert.deepEqual(before.all.find(([key]) => key === "SUB-414-HERON"), ["SUB-414-HERON", 2, ids.heronNew], "the mark the older engine stored reads as it was written");
+  assert.deepEqual(before.removed.find(([key]) => key === "SUB-414-HERON"), ["SUB-414-HERON", "superseded", ids.heronNew], "the mark the older engine stored reads as a removal, conflict superseded");
+  assert.equal(before.all.some(([key]) => key === "SUB-414-HERON"), false);
   // New writes on both devices: a card, a card superseding one the older engine wrote, and a
   // re-verification of another. Each appends to its device's stream; the layout stays as it was.
   await as(fx.homeB, () => createKnowledgeUnit(fx.workspace, card("SUB-414-KESTREL-NEW", "Kestrel hover timing, revised", { occurredAt: instant(7), supersedes: ids.kestrel })));
@@ -669,7 +691,7 @@ test("SUB-414: a crest an older engine left in the metadata/body layout, or with
   assert.deepEqual(Object.keys(appended).filter((path) => !Object.hasOwn(legacy, path)).every((path) => path.startsWith("events/")), true, "every new file is an event stream's");
   const after = await read(fx.homeA);
   assert.deepEqual(await read(fx.homeB), after);
-  assert.deepEqual(after.all.find(([key]) => key === "SUB-414-KESTREL"), ["SUB-414-KESTREL", 2, deriveStableId("knowledge", "SUB-414-KESTREL-NEW")], "a card of the older layout is replaced by projection");
+  assert.deepEqual(after.removed.find(([key]) => key === "SUB-414-KESTREL"), ["SUB-414-KESTREL", "superseded", deriveStableId("knowledge", "SUB-414-KESTREL-NEW")], "a card of the older layout is removed by projection; its body there stays, since no device clears that layout");
   assert.deepEqual(after.all.filter(([key]) => key === "SUB-414-OTTER"), [["SUB-414-OTTER", 2, null]], "and written again as a record in the stream that replaces it: one card");
   // The bodies of the metadata/body layout can still move into segments -- the one operation that
   // rewrites that layout, run by one device -- and the crest reads the same afterwards.
@@ -681,7 +703,8 @@ test("SUB-414: a crest an older engine left in the metadata/body layout, or with
   await as(fx.homeB, () => createKnowledgeUnit(fx.workspace, card("SUB-414-STORK", "Stork nest chimney", { occurredAt: instant(10) })));
   const final = await tree(fx.store);
   for (const [path, bytes] of Object.entries(segmented)) assert.equal(final[path], bytes, `a new card leaves the segments as they were: ${path}`);
-  assert.equal((await as(fx.homeA, () => readKnowledgeBody(fx.workspace, ids.kestrel, { at: AT }))).body, "SUB-414-KESTREL body", "a segmented body reads by its id");
+  assert.equal((await as(fx.homeA, () => readKnowledgeBody(fx.workspace, ids.heronNew, { at: AT }))).body, "SUB-414-HERON-NEW body", "a segmented body reads by its id");
+  assert.equal((await as(fx.homeA, () => refusalOf(() => readKnowledgeBody(fx.workspace, ids.kestrel, { at: AT }))))?.reasonCode, "KNOWLEDGE_CARD_REMOVED", "and a removed card's is refused");
 });
 
 // ---- TCRN-CROSS-SUB-414 R16 (C-R16-1; judgment-r15-batch1 T1, accept-r15-epic142 R15-B) ----
@@ -756,11 +779,14 @@ function assertGoneProjectNamed(answers, { orphan, entries, kept }) {
 }
 
 // Everything one device answers once a card has superseded the one whose project is gone.
+// TCRN-CROSS-SUB-425 (MIN-239 D4): the superseded card is removed, so both reads of it are refused
+// and --status removed answers what it keeps.
 async function resolvedAnswers(fx, home, orphan) {
   const answers = await as(home, async () => ({
     listed: await listKnowledgeMetadata(fx.workspace, { at: AT }),
-    snippet: await readKnowledgeSnippet(fx.workspace, orphan),
-    body: await readKnowledgeBody(fx.workspace, orphan, { at: AT }),
+    removed: await listKnowledgeMetadata(fx.workspace, { at: AT, status: "removed" }),
+    snippet: await refusalOf(() => readKnowledgeSnippet(fx.workspace, orphan)).then((error) => ({ reasonCode: error?.reasonCode, details: error?.details ?? null })),
+    body: await refusalOf(() => readKnowledgeBody(fx.workspace, orphan, { at: AT })).then((error) => ({ reasonCode: error?.reasonCode, details: error?.details ?? null })),
     validation: await validateKnowledgeStore(fx.workspace),
     checkpoint: JSON.parse(await exportKnowledgeCheckpoint(fx.workspace, AT)),
     rebased: await rebaseKnowledgeStore(fx.workspace, { at: AT }),
@@ -769,10 +795,14 @@ async function resolvedAnswers(fx, home, orphan) {
   return { ...answers, recall: await cli(home, ["recall", "--workspace", fx.workspace, "--at", AT, "--query", GONE_QUERY, "--tau", "0"]) };
 }
 
-function assertGoneProjectResolved(answers, { orphan, orphanBody, kept }) {
+function assertGoneProjectResolved(answers, { orphan, supersededBy, kept }) {
   assert.deepEqual(answers.listed.records.map((record) => record.id), [...kept].sort(), "the replaced card stays out of default selection, as a superseded card");
-  for (const answer of [answers.listed, answers.snippet, answers.body]) assert.equal(Object.hasOwn(answer, "unresolvedScopes"), false, "and nothing names it any more");
-  assert.deepEqual([answers.body.id, answers.body.body], [orphan, orphanBody], "its body stays readable by its id");
+  for (const answer of [answers.listed, answers.removed]) assert.equal(Object.hasOwn(answer, "unresolvedScopes"), false, "and nothing names it any more");
+  assert.deepEqual(answers.removed.records.map((record) => [record.id, record.removal.reason, record.removal.supersededBy]), [[orphan, "superseded", supersededBy]],
+    "it is removed, conflict superseded (TCRN-CROSS-SUB-425)");
+  for (const answer of [answers.snippet, answers.body]) {
+    assert.deepEqual([answer.reasonCode, answer.details?.id, answer.details?.removal.reason], ["KNOWLEDGE_CARD_REMOVED", orphan, "superseded"], "and a read of it is refused, naming the removal");
+  }
   assert.equal(answers.validation.reasonCode, "KNOWLEDGE_STORE_VALID");
   assert.equal(answers.checkpoint.reasonCode, "KNOWLEDGE_CHECKPOINT_READY");
   assert.deepEqual([answers.rebased.reasonCode, answers.rebased.offenders], ["KNOWLEDGE_STORE_REBASED", []]);
@@ -820,7 +850,7 @@ test("SUB-414 (R16): a project one device deletes while the other writes a card 
   assert.deepEqual([moved.reasonCode, moved.superseded], ["KNOWLEDGE_UNIT_CREATED", orphan.id]);
   const resolved = await resolvedAnswers(fx, fx.homeB, orphan.id);
   assert.equal(canonicalJson(await resolvedAnswers(fx, fx.homeA, orphan.id)), canonicalJson(resolved));
-  assertGoneProjectResolved(resolved, { orphan: orphan.id, orphanBody: "SUB-414-CURLEW body", kept: [...kept, moved.id] });
+  assertGoneProjectResolved(resolved, { orphan: orphan.id, supersededBy: moved.id, kept: [...kept, moved.id] });
 });
 
 // The card can also be one card of a pair two devices wrote about one thing: recall names it in both
@@ -890,7 +920,7 @@ test("SUB-414 (R16): on one device, a card whose project is deleted after it was
     occurredAt: instant(10), scope: "project", projectId: fx.project, supersedes: orphan.id,
   })));
   const resolved = await resolvedAnswers(fx, fx.homeA, orphan.id);
-  assertGoneProjectResolved(resolved, { orphan: orphan.id, orphanBody: "SUB-414-CURLEW body", kept: [plover.id, dunlin.id, moved.id] });
+  assertGoneProjectResolved(resolved, { orphan: orphan.id, supersededBy: moved.id, kept: [plover.id, dunlin.id, moved.id] });
   assert.deepEqual(resolved.validation.danglingWorkLinks, [{ knowledgeId: plover.id, workIds: [work] }]);
   assert.deepEqual(resolved.rebased.danglingWorkLinks, [{ knowledgeId: plover.id, workIds: [work] }]);
 });
@@ -911,7 +941,7 @@ test("SUB-414 (R16): a card of the metadata/body layout an older engine left, wh
   const moved = await as(fx.homeB, () => createKnowledgeUnit(fx.workspace, card("SUB-414-CURLEW-KEPT", "Curlew call pitch, filed under the kept project", {
     occurredAt: instant(7), scope: "project", projectId: fx.project, supersedes: orphan.id,
   })));
-  assertGoneProjectResolved(await resolvedAnswers(fx, fx.homeA, orphan.id), { orphan: orphan.id, orphanBody: "SUB-414-CURLEW body", kept: [plover.id, moved.id] });
+  assertGoneProjectResolved(await resolvedAnswers(fx, fx.homeA, orphan.id), { orphan: orphan.id, supersededBy: moved.id, kept: [plover.id, moved.id] });
 });
 
 test("SUB-414: an old-layout workspace's knowledge store refuses every write with LEGACY_WORKSPACE_READ_ONLY and keeps every byte", async (context) => {
@@ -948,16 +978,58 @@ test("SUB-414: an old-layout workspace's knowledge store refuses every write wit
   assert.equal((await readdir(control)).includes(DIRECTORY.knowledge), false, "and nothing laid a crest out beside it");
 });
 
-// O-1 is pending (C-R15-3): what a merge past knowledge.aggregateBytes does is not decided, so the
-// only claim here is that it is named where recall reports the library's crest.
-test("SUB-414 (O-1 pending, diagnostic only): a merge past the budget is named in recall's report of the library's crest", async (context) => {
-  const fx = await twoDevices(context, "budget", { aggregateBytes: 4_096 });
+// TCRN-CROSS-SUB-310 R17 (MIN-238 D1, D5; replaces O-1 and the diagnostic-only case that stood here):
+// no budget bounds the sum of the library crest's card bodies. Two devices that each stay under the
+// old 131,072-byte default of knowledge.aggregateBytes merge past it; neither device's list, read by
+// id, recall, validation, next card or recovery refuses, nothing is withheld, and both answer the same.
+test("SUB-310 R17 (MIN-238 D1): a two-device merge past the old default reads, recalls, writes and recovers on both devices, which answer alike", async (context) => {
+  const fx = await twoDevices(context, "past-default");
+  const subjectsA = ["Heron wading depth", "Kestrel hover timing", "Otter holt survey", "Newt pond census", "Badger sett mapping", "Vole tunnel network", "Stoat winter coat", "Hare form spotting", "Plover scrape watch"];
+  const subjectsB = ["Beaver dam height", "Curlew call record", "Lizard basking rock", "Moth trap catalogue", "Grebe dive length", "Shrew burrow route", "Swift nest ledge", "Toad crossing night", "Wagtail roost tree"];
+  const body = (letter, index) => `${letter.repeat(7_999)}${index}`;
   await fx.mark(fx.homeA);
-  await as(fx.homeA, () => createKnowledgeUnit(fx.workspace, card("SUB-414-BIG-A", "Heron wading depth", { body: "a".repeat(2_500) })));
+  const cardsA = [];
+  for (const [index, subject] of subjectsA.entries()) {
+    cardsA.push(await as(fx.homeA, () => createKnowledgeUnit(fx.workspace, card(`SUB-310-A-${index}`, subject, { body: body("a", index) }))));
+  }
   await fx.hold(fx.homeA);
-  await as(fx.homeB, () => createKnowledgeUnit(fx.workspace, card("SUB-414-BIG-B", "Beaver dam height", { body: "b".repeat(2_500) })));
+  // B writes its nine 8,000-byte cards without seeing A's: 72,000 bytes each, 144,000 merged.
+  const cardsB = [];
+  for (const [index, subject] of subjectsB.entries()) {
+    cardsB.push(await as(fx.homeB, () => createKnowledgeUnit(fx.workspace, card(`SUB-310-B-${index}`, subject, { body: body("b", index) }))));
+  }
   await fx.deliver(fx.homeA);
-  const recalled = await as(fx.homeB, () => readRecallCards(fx.workspace, { at: AT }));
-  assert.equal(recalled.stores.project.reasonCode, "KNOWLEDGE_LIMIT_EXCEEDED");
-  assert.equal(recalled.projectCrestDegraded, null, "a refused read is the answer's knowledgeReasonCode, not a withheld card");
+  assert.ok(9 * 8_000 <= 131_072 && 18 * 8_000 > 131_072, "each device stays under the old default and the merge passes it");
+
+  const answers = [];
+  for (const home of [fx.homeA, fx.homeB]) {
+    const device = home === fx.homeA ? "A" : "B";
+    const listed = await as(home, () => listKnowledgeMetadata(fx.workspace, { at: AT, limit: 64 }));
+    assert.deepEqual([listed.reasonCode, listed.total], ["KNOWLEDGE_LIST_READY", 18], device);
+    for (const name of ["unresolvedConflicts", "unresolvedDuplicates", "awaitingChain", "unresolvedScopes"]) assert.equal(Object.hasOwn(listed, name), false, `${device} ${name}`);
+    assert.equal((await as(home, () => readKnowledgeBody(fx.workspace, cardsA[8].id, { at: AT }))).body, body("a", 8), device);
+    assert.equal((await as(home, () => readKnowledgeBody(fx.workspace, cardsB[8].id, { at: AT }))).body, body("b", 8), device);
+    const recalled = await as(home, () => readRecallCards(fx.workspace, { at: AT }));
+    assert.deepEqual([recalled.stores.project.reasonCode, recalled.stores.project.cards, recalled.projectCrestDegraded], ["KNOWLEDGE_LIST_READY", 18, null], device);
+    const answer = await cli(home, ["recall", "--workspace", fx.workspace, "--at", AT, "--query", "Beaver dam height", "--tau", "0"]);
+    assert.deepEqual([answer.knowledgeReasonCode, answer.knowledgeStores.project.cards, Object.hasOwn(answer, "projectCrestDegraded")], ["KNOWLEDGE_LIST_READY", 18, false], device);
+    assert.equal(answer.records.find((record) => record.kind === "card")?.id, cardsB[0].id, `${device}: B's card is recalled by its subject`);
+    const validation = await as(home, () => validateKnowledgeStore(fx.workspace));
+    assert.deepEqual([validation.reasonCode, validation.records, Object.hasOwn(validation, "capacity")], ["KNOWLEDGE_STORE_VALID", 18, false], device);
+    answers.push({ records: listed.records, total: listed.total, resultDigest: listed.resultDigest, recallDigest: recalled.stores.project.digest, validation });
+  }
+  assert.deepEqual(answers[0], answers[1], "both devices read the same merged crest");
+
+  // Each device takes one more card, and each reads the other's at once.
+  const moreA = await as(fx.homeA, () => createKnowledgeUnit(fx.workspace, card("SUB-310-A-MORE", "Osprey plunge angle", { body: body("c", 9) })));
+  const moreB = await as(fx.homeB, () => createKnowledgeUnit(fx.workspace, card("SUB-310-B-MORE", "Dipper stream walking", { body: body("d", 9) })));
+  assert.deepEqual([moreA.reasonCode, moreB.reasonCode], ["KNOWLEDGE_UNIT_CREATED", "KNOWLEDGE_UNIT_CREATED"]);
+  const after = [];
+  for (const home of [fx.homeA, fx.homeB]) {
+    const listed = await as(home, () => listKnowledgeMetadata(fx.workspace, { at: AT, limit: 64 }));
+    assert.equal(listed.total, 20);
+    assert.equal((await as(home, () => recoverKnowledgeStore(fx.workspace))).reasonCode, "KNOWLEDGE_RECOVERY_NOT_NEEDED");
+    after.push({ records: listed.records, resultDigest: listed.resultDigest });
+  }
+  assert.deepEqual(after[0], after[1], "and both still answer alike");
 });

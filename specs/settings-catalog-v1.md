@@ -80,7 +80,6 @@ TCRN-CROSS-STORY-508 R3, are catalogued.
 | `execution` | `quota.weeklyWaitPercent` | project | scalar | 5 |
 | `knowledge` | `artifact.language` | project | scalar | 1 |
 | `knowledge` | `knowledge.articlesPath` | project | scalar | 2 |
-| `knowledge` | `knowledge.aggregateBytes` | project | scalar | 3 |
 | `knowledge` | `crest.userPath` | device | scalar | 4 |
 | `retrieval` | `retrieval.promptLanguages` | project | scalar | 1 |
 | `retrieval` | `retrieval.tau` | project | scalar | 2 |
@@ -195,6 +194,9 @@ entries below are TCRN-CROSS-STORY-484's; the others name the change that retire
   configured (TCRN-CROSS-MIN-225 D1, D3; TCRN-CROSS-SUB-258).
 - `injection.budgetBytes` retires with the session-wide injection it budgeted
   (TCRN-CROSS-STORY-474, MIN-227 D7); a prompt's own budget is `injection.perPromptBytes`.
+- `knowledge.aggregateBytes` retires with the body budget it set (TCRN-CROSS-SUB-310 R17; MIN-238
+  D1, D5; MIN-239 D1): nothing bounds the sum of a crest's card bodies, and each card keeps its own
+  limits (`packages/core/spec/knowledge-core-v1.md`, "Capacity"). A recorded value binds nothing.
 - `execution.personalessDispatch` retires with the persona surface (TCRN-CROSS-STORY-370);
   TCRN-CROSS-INC-321 put it on the list so that a replay from genesis still reads its
   recorded values.

@@ -105,10 +105,10 @@ test("STORY-365 GWT2/GWT3: the same subject twice is scored, refused, and releas
       { allowTrailing: true },
     );
     assert.equal(replacement.superseded, first.id, "the receipt names what was replaced");
-    const all = await listKnowledgeMetadata(fixture.workspace, { at: instant(3), selection: "all", allowTrailing: true });
+    const all = await listKnowledgeMetadata(fixture.workspace, { at: instant(3), status: "removed", allowTrailing: true });
     const replaced = all.records.find((record) => record.id === first.id);
-    assert.equal(replaced.extensions.supersededBy, replacement.id, "the replaced card carries the mark");
-    assert.equal(replaced.revision, 2, "and the mark is a revision of that record, not a note beside it");
+    assert.deepEqual([replaced.status, replaced.removal.reason, replaced.removal.supersededBy], ["removed", "superseded", replacement.id], "the replaced card is removed, superseded by the new one");
+    assert.deepEqual([Object.hasOwn(replaced, "summary"), Object.hasOwn(replaced, "snippet")], [false, false], "and keeps no summary or snippet");
     const listed = await listKnowledgeMetadata(fixture.workspace, { at: instant(3), allowTrailing: true });
     assert.deepEqual(listed.records.map((record) => record.id), [replacement.id], "default recall answers with one of them");
   } finally {

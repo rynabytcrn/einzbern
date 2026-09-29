@@ -10,7 +10,7 @@
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -73,8 +73,8 @@ async function refusal(operation) {
   assert.fail("expected a refusal");
 }
 
-async function write(fx) {
-  return writeVariablesSections(fx.library, { projectRoot: fx.root, backupRoot: fx.backupRoot, occurredAt: at() });
+async function write(fx, extra = {}) {
+  return writeVariablesSections(fx.library, { projectRoot: fx.root, backupRoot: fx.backupRoot, occurredAt: at(), ...extra });
 }
 
 async function sections(fx) {
@@ -514,4 +514,92 @@ test("508-R7: the variable collection checks an order on every write and replay"
   assert.equal((await materializeWorkspace(fx.library)).version, before, "no refused order was recorded");
   await setConfigRecord(fx.library, { collection: "variable", key: "deploy.host", value: { type: "string", value: "x", description: "", order: 7 }, occurredAt: at() });
   assert.deepEqual(listVariables(await materializeWorkspace(fx.library)), [{ name: "deploy.host", type: "string", value: "x", description: "", order: 7 }]);
+});
+
+// TCRN-CROSS-STORY-489 (TCRN-CROSS-SUB-366, R18 continuation revision): the section render that
+// follows variable-set and variable-remove writes AGENTS.md before it commits the section records.
+// When that commit fails, the file goes back to what it held byte for byte, a file the render created
+// is taken away, the backup the write made stays, the library holds no new event, and the error that
+// stopped the commit is the one thrown. The commit is refused the way tests/agents-sections.test.mjs
+// refuses it: viewBudgetBytes narrows the view budget, a refusal that comes after the file was
+// written. A crash after the event commit (crashAt) leaves the records in the library, and the file
+// stays as it was written.
+const OVER_BUDGET = Object.freeze({ viewBudgetBytes: 1 });
+const AFTER_COMMIT = Object.freeze({ crashAt: "after-event-commit" });
+
+async function libraryHead(fx) {
+  const { version, headEventHash } = await materializeWorkspace(fx.library);
+  return { version, headEventHash };
+}
+
+async function bytesOrNull(path) {
+  try {
+    return await readFile(path);
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+// Whether a file under the backups holds `bytes`: the copy a write makes before it replaces a file.
+async function backedUp(fx, bytes) {
+  const entries = await readdir(fx.backupRoot, { recursive: true, withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isFile() && (await readFile(join(entry.parentPath, entry.name))).equals(bytes)) return true;
+  }
+  return false;
+}
+
+test("489: a variable-section write whose records cannot be committed leaves AGENTS.md byte for byte, and takes away one it created", async (context) => {
+  const fx = await project(context);
+  await setVariable(fx.library, { name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
+  const head = await libraryHead(fx);
+  // No AGENTS.md: the file the render created is not there afterwards.
+  const created = await refusal(() => write(fx, OVER_BUDGET));
+  assert.equal(created.reasonCode, "WORKSPACE_VIEW_BUDGET_EXCEEDED", "the error that stopped the commit is the one thrown");
+  assert.equal(await bytesOrNull(fx.agents), null, "the AGENTS.md the render created is taken away");
+  assert.deepEqual(await libraryHead(fx), head, "the library holds no new event");
+
+  // The Owner's AGENTS.md holds what it held, byte for byte, and the backup the write made stays.
+  await writeFile(fx.agents, OWNER_TEXT);
+  const original = await readFile(fx.agents);
+  const refused = await refusal(() => write(fx, OVER_BUDGET));
+  assert.equal(refused.reasonCode, "WORKSPACE_VIEW_BUDGET_EXCEEDED");
+  assert.deepEqual(await readFile(fx.agents), original, "AGENTS.md holds what it held");
+  assert.deepEqual(await libraryHead(fx), head, "the library holds no new event");
+  assert.equal(await backedUp(fx, original), true, "the backup the write made stays");
+
+  // A replace that cannot be recorded leaves the sections as their records say, so the next render does not take them for the user's change.
+  await write(fx);
+  const written = await readFile(fx.agents);
+  const records = managedSectionRecordsFor(await materializeWorkspace(fx.library), "AGENTS.md");
+  await setVariable(fx.library, { name: "deploy.port", type: "number", value: "8443", occurredAt: at() });
+  const recorded = await libraryHead(fx);
+  const again = await refusal(() => write(fx, OVER_BUDGET));
+  assert.equal(again.reasonCode, "WORKSPACE_VIEW_BUDGET_EXCEEDED");
+  assert.deepEqual(await readFile(fx.agents), written, "AGENTS.md holds the sections the library records");
+  assert.deepEqual([managedSectionRecordsFor(await materializeWorkspace(fx.library), "AGENTS.md"), await libraryHead(fx)], [records, recorded], "the records and the library are as they were");
+
+  // The normal path is as it was: the same render, committed, replaces the custom section.
+  const replaced = await write(fx);
+  assert.deepEqual([replaced.written, replaced.pendingSections], [true, []], "no section waits for a change the user never made");
+  assert.equal(replaced.sections.find((decision) => decision.id === VARIABLES_CUSTOM_SECTION_ID).result, "replace");
+  assert.match((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /^\| deploy\.port \| number \| 8443 \|  \|$/mu);
+});
+
+test("489: a variable-section write whose records went in before the failure (a crash after the event commit) keeps AGENTS.md as written", async (context) => {
+  const fx = await project(context);
+  await writeFile(fx.agents, OWNER_TEXT);
+  await setVariable(fx.library, { name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
+  const head = await libraryHead(fx);
+  const error = await refusal(() => write(fx, AFTER_COMMIT));
+  assert.equal(error.reasonCode, "WORKSPACE_FAULT_INJECTED");
+  assert.notDeepEqual(await libraryHead(fx), head, "the records went in");
+  const state = await materializeWorkspace(fx.library);
+  assert.deepEqual(managedSectionRecordsFor(state, "AGENTS.md").map((record) => [record.id, record.state]), [[VARIABLES_CUSTOM_SECTION_ID, "managed"], [VARIABLES_SYSTEM_SECTION_ID, "managed"]]);
+  assert.equal((await readFile(fx.agents, "utf8")).startsWith(OWNER_TEXT), true);
+  assert.match((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /^\| deploy\.host \| string \| build\.example\.com \|  \|$/mu, "so the sections stay where they were written");
+  const again = await write(fx);
+  assert.deepEqual([again.written, again.pendingSections], [false, []], "the file and the records agree");
+  assert.equal((await materializeWorkspace(fx.library)).version, state.version, "and nothing more is recorded");
 });

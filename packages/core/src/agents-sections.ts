@@ -318,8 +318,12 @@ function sameRecord(left: ManagedSectionRecord | undefined, right: ManagedSectio
   return left.file === right.file && left.id === right.id && left.rev === right.rev && left.digest === right.digest && left.state === right.state;
 }
 
-// What one disposition or one disabling did, and the plan it wrote (null when it wrote nothing).
-interface SectionOutcome {
+/**
+ * What one disposition or one disabling did, and the plan it wrote (null when it wrote nothing):
+ * what a caller that then cannot record the change puts back (putBackUnrecorded;
+ * TCRN-CROSS-STORY-489).
+ */
+export interface SectionOutcome {
   readonly change: SectionChange;
   readonly wrote: ManagedWritePlan | null;
 }
@@ -428,8 +432,12 @@ export async function disableSection(input: DisableSectionInput): Promise<Sectio
   return (await takeSectionOut(input)).change;
 }
 
-// disableSection, and the plan it wrote (TCRN-CROSS-STORY-489).
-async function takeSectionOut(input: DisableSectionInput): Promise<SectionOutcome> {
+/**
+ * disableSection, and the plan it wrote (TCRN-CROSS-STORY-489): for a caller that records the
+ * change itself, disableAgentsSection here and disableRule in rules.ts, and puts the file back when
+ * it cannot.
+ */
+export async function takeSectionOut(input: DisableSectionInput): Promise<SectionOutcome> {
   const located = await locateSection(input.projectRoot, input.id, input.records);
   const { file, parsed, section, record, index } = located;
   if (parsed === null || section === null) return change(located, input.id, "disable", "disabled", null, null);
@@ -505,15 +513,22 @@ async function commit(root: string, state: WorkspaceState, deltas: readonly ((st
   return committed;
 }
 
-// TCRN-CROSS-STORY-489 (TCRN-CROSS-SUB-366): what an entry point does when it wrote files and then
-// cannot commit their records, before the error goes on as it was thrown. Each file it wrote goes
-// back to what its plan read (ManagedWritePlan.before), the last written first, so no file is left
-// holding a section the library never recorded, which the next render would take for the user's
-// change. When the library shows the records went in all the same (a crash simulated after the
-// event commit), the files already agree with it and stay as written. The put-back is best effort:
-// a file changed again since it was written, or one that cannot be written, is left as it is, and a
-// replaced file's original is still in the backup the write made.
-async function putBackUnrecorded(root: string, state: WorkspaceState, wrote: readonly ManagedWritePlan[]): Promise<void> {
+/**
+ * TCRN-CROSS-STORY-489 (TCRN-CROSS-SUB-366): what an entry point does when it wrote files and then
+ * cannot commit their records, before the error goes on as it was thrown. `root` and `state` are
+ * the library as the entry point read it under its write lock, and the put-back runs under that
+ * lock too. Each file it wrote goes back to what its plan read (ManagedWritePlan.before), the last
+ * written first, and a file it created is taken away, so no file is left holding a section the
+ * library never recorded, which the next render would take for the user's change. When the library
+ * shows the records went in all the same (a crash simulated after the event commit), the files
+ * already agree with it and stay as written. The put-back is best effort: a file changed again
+ * since it was written, or one that cannot be written, is left as it is, and a replaced file's
+ * original is still in the backup the write made. The entry points here share it with enableRule
+ * and disableRule (rules.ts) and writeVariablesSections (variables-sections.ts). Each call puts
+ * back only what it wrote: rule-resolve's resolveAgentsSection and the enableRule that follows it
+ * are two calls, and a failure of the second leaves what the first wrote and recorded.
+ */
+export async function putBackUnrecorded(root: string, state: WorkspaceState, wrote: readonly ManagedWritePlan[]): Promise<void> {
   if (wrote.length === 0 || await recordedSince(root, state)) return;
   for (const plan of [...wrote].reverse()) {
     try {

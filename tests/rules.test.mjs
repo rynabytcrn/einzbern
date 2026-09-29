@@ -10,7 +10,7 @@
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -434,4 +434,147 @@ test("508-R7: a rule record's order is checked on every write and replay, and a 
   assert.deepEqual([refused.reasonCode, refused.details.id, refused.details.field], ["RULE_RECORD_INVALID", "batch", "order"]);
   assert.equal(await readFile(paths.agents, "utf8"), USER_TEXT, "the file is not written");
   assert.equal((await materializeWorkspace(paths.library)).version, version, "and nothing is recorded");
+});
+
+// TCRN-CROSS-STORY-489 (TCRN-CROSS-SUB-366, R18 continuation revision): rule-enable and rule-disable
+// write AGENTS.md before they commit the records of what they wrote. When that commit fails, the file
+// goes back to what it held byte for byte, a file the enable created is taken away, the backup the
+// write made stays, the library holds no new event, and the error that stopped the commit is the one
+// thrown. The commit is refused the way tests/agents-sections.test.mjs refuses it: viewBudgetBytes
+// narrows the view budget, a refusal that comes after the file was written. A crash after the event
+// commit (crashAt) leaves the records in the library, and the file stays as it was written.
+const OVER_BUDGET = Object.freeze({ viewBudgetBytes: 1 });
+const AFTER_COMMIT = Object.freeze({ crashAt: "after-event-commit" });
+
+async function libraryHead(paths) {
+  const { version, headEventHash } = await materializeWorkspace(paths.library);
+  return { version, headEventHash };
+}
+
+async function ruleRecords(paths, id) {
+  return [await ruleRecord(paths, id), await sectionRecord(paths, id), await libraryHead(paths)];
+}
+
+async function bytesOrNull(path) {
+  try {
+    return await readFile(path);
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+// Whether a file under the device's backups holds `bytes`: the copy a write makes before it replaces a file.
+async function backedUp(paths, bytes) {
+  const entries = await readdir(paths.backups, { recursive: true, withFileTypes: true });
+  for (const entry of entries) {
+    if (entry.isFile() && (await readFile(join(entry.parentPath, entry.name))).equals(bytes)) return true;
+  }
+  return false;
+}
+
+test("489: a rule-enable whose records cannot be committed leaves AGENTS.md byte for byte, and takes away one it created", async (context) => {
+  const paths = await scratch(context);
+  const original = await readFile(paths.agents);
+  const head = await libraryHead(paths);
+  const refused = await refusal(() => enable(paths, "batch", OVER_BUDGET));
+  assert.equal(refused.reasonCode, "WORKSPACE_VIEW_BUDGET_EXCEEDED", "the error that stopped the commit is the one thrown");
+  assert.deepEqual(await readFile(paths.agents), original, "AGENTS.md holds what it held, byte for byte");
+  assert.deepEqual(await libraryHead(paths), head, "the library holds no new event");
+  assert.equal(await backedUp(paths, original), true, "the backup the write made stays");
+
+  // A project without AGENTS.md: the file the enable created is not there afterwards.
+  const bare = join(paths.base, "bare");
+  await mkdir(bare);
+  const created = await refusal(() => enable({ ...paths, project: bare }, "batch", OVER_BUDGET));
+  assert.equal(created.reasonCode, "WORKSPACE_VIEW_BUDGET_EXCEEDED");
+  assert.equal(await bytesOrNull(join(bare, "AGENTS.md")), null, "the AGENTS.md the enable created is taken away");
+  assert.deepEqual(await libraryHead(paths), head, "the library holds no new event");
+
+  // A replace that cannot be recorded leaves the section as its record says, so the rule does not read as the user's change.
+  await enable(paths, "batch", { catalog: await catalogWithBatchV1() });
+  const v1 = await readFile(paths.agents);
+  const recorded = await ruleRecords(paths, "batch");
+  const upgrade = await refusal(() => enable(paths, "batch", OVER_BUDGET));
+  assert.equal(upgrade.reasonCode, "WORKSPACE_VIEW_BUDGET_EXCEEDED");
+  assert.deepEqual(await readFile(paths.agents), v1, "AGENTS.md holds the version the library records");
+  assert.deepEqual(await ruleRecords(paths, "batch"), recorded, "the records are as they were, and the library holds no new event");
+  assert.equal((await ruleOf(paths, "batch")).state, "update-available", "the rule reads as it did before the enable");
+
+  // The normal path is as it was: the same enable, committed, replaces the section and records it.
+  const upgraded = await enable(paths, "batch");
+  assert.deepEqual([upgraded.result, upgraded.written, upgraded.recorded, upgraded.status.state], ["replace", true, 2, "enabled"]);
+});
+
+test("489: a rule-enable whose records went in before the failure (a crash after the event commit) keeps AGENTS.md as written", async (context) => {
+  const paths = await scratch(context);
+  const head = await libraryHead(paths);
+  const error = await refusal(() => enable(paths, "batch", AFTER_COMMIT));
+  assert.equal(error.reasonCode, "WORKSPACE_FAULT_INJECTED");
+  assert.notDeepEqual(await libraryHead(paths), head, "the records went in");
+  assert.deepEqual(await ruleRecord(paths, "batch"), { enabled: true, version: 2 });
+  const text = await readFile(paths.agents, "utf8");
+  assert.equal(sectionOf(text, "rule:batch")?.body, await readFile(join(fixtures, "batch.zh.md"), "utf8"), "so the section stays where it was written");
+  assert.equal(text.startsWith(`${USER_TEXT}\n`), true, "and the user's text where it was");
+  const again = await enable(paths, "batch");
+  assert.deepEqual([again.result, again.written, again.recorded, again.status.state], ["unchanged", false, 0, "enabled"], "the file and the records agree");
+});
+
+test("489: a rule-disable whose records cannot be committed puts the section back, the user's change with it", async (context) => {
+  const paths = await scratch(context);
+  await enable(paths, "autonomy");
+  await enable(paths, "batch");
+  const both = await readFile(paths.agents);
+  const recorded = await ruleRecords(paths, "batch");
+  const refused = await refusal(() => disable(paths, "batch", OVER_BUDGET));
+  assert.equal(refused.reasonCode, "WORKSPACE_VIEW_BUDGET_EXCEEDED", "the error that stopped the commit is the one thrown");
+  assert.deepEqual(await readFile(paths.agents), both, "the section is back in the file, markers and all, byte for byte");
+  assert.deepEqual(await ruleRecords(paths, "batch"), recorded, "the rule stays enabled with its section recorded, and the library holds no new event");
+  assert.equal(await backedUp(paths, both), true, "the backup the write made stays");
+
+  // A section the user changed, disabled with force: the user's text comes back as the user left it.
+  const edited = Buffer.from((await readFile(paths.agents, "utf8")).replace("批的单位", "批的单元"));
+  await writeFile(paths.agents, edited);
+  const forced = await refusal(() => disable(paths, "batch", { force: true, ...OVER_BUDGET }));
+  assert.equal(forced.reasonCode, "WORKSPACE_VIEW_BUDGET_EXCEEDED");
+  assert.deepEqual(await readFile(paths.agents), edited, "the user's text is where the user left it");
+  assert.deepEqual(await ruleRecords(paths, "batch"), recorded);
+  assert.equal((await ruleOf(paths, "batch")).state, "user-modified");
+
+  // The normal path is as it was: the same disable, committed, takes the section out.
+  const off = await disable(paths, "batch", { force: true });
+  assert.deepEqual([off.result, off.written, off.recorded, off.status.state], ["disabled", true, 2, "disabled"]);
+  assert.equal(sectionOf(await readFile(paths.agents, "utf8"), "rule:batch"), null);
+});
+
+test("489: a rule-disable whose records went in before the failure (a crash after the event commit) keeps the section out", async (context) => {
+  const paths = await scratch(context);
+  await enable(paths, "batch");
+  const head = await libraryHead(paths);
+  const error = await refusal(() => disable(paths, "batch", AFTER_COMMIT));
+  assert.equal(error.reasonCode, "WORKSPACE_FAULT_INJECTED");
+  assert.notDeepEqual(await libraryHead(paths), head, "the records went in");
+  assert.deepEqual([await ruleRecord(paths, "batch"), await sectionRecord(paths, "batch")], [{ enabled: false, version: 2 }, null]);
+  assert.equal(await readFile(paths.agents, "utf8"), USER_TEXT, "so the section stays out of the file");
+  const again = await disable(paths, "batch");
+  assert.deepEqual([again.result, again.written, again.recorded, again.status.state], ["unchanged", false, 0, "disabled"], "the file and the records agree");
+});
+
+test("489: rule-resolve's two calls each put back only what they wrote, and the resolve that was recorded stays", async (context) => {
+  const paths = await scratch(context);
+  await enable(paths, "autonomy");
+  await enable(paths, "batch");
+  await writeFile(paths.agents, (await readFile(paths.agents, "utf8")).replace("批的单位", "批的单元"));
+  assert.equal((await enable(paths, "batch")).status.state, "pending");
+  // rule-resolve's first call, resolveAgentsSection, writes the engine's text and records it.
+  const { change } = await resolveAgentsSection(paths.library, { projectRoot: paths.project, id: "rule:batch", action: "overwrite", backupRoot: paths.backups, occurredAt: at() });
+  assert.deepEqual([change.result, change.written, change.record.state], ["overwritten", true, "managed"]);
+  const resolved = await readFile(paths.agents);
+  const recorded = await ruleRecords(paths, "batch");
+  // Its second, enableRule, writes the file again (an order moves the section here) and cannot record it.
+  const refused = await refusal(() => enable(paths, "batch", { order: 1, ...OVER_BUDGET }));
+  assert.equal(refused.reasonCode, "WORKSPACE_VIEW_BUDGET_EXCEEDED");
+  assert.deepEqual(await readFile(paths.agents), resolved, "the file is as the first call wrote it, not as it was before that call");
+  assert.deepEqual(await ruleRecords(paths, "batch"), recorded, "the first call's record stays, and the library holds no new event");
+  assert.equal((await ruleOf(paths, "batch")).state, "enabled");
 });

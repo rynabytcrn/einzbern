@@ -49,6 +49,19 @@
 
 工单前缀 `TCRN-CROSS-*` 与全部历史 `externalKey` 不改。
 
+## 知识卡与决策的状态
+
+知识卡与决策各有两态，都按单条计（MIN-239 D3 至 D6）。召回、`knowledge-list`、纪要读取与提示词钩子默认只返回有效条目；其他状态只在显式 `--status` 时返回，该参数只在用户要求时由模型加上。决策的编号是 `minutes:<id>#D<n>`，历史会议纪要的决策同样这样编号。
+
+| 词 | 标识 | 含义 |
+| --- | --- | --- |
+| 有效 | 决策 `valid` | 默认读取、召回与钩子返回的条目。一张新卡、一条新决策写入即有效。 |
+| 已移除 | 知识卡 `--status removed` | 知识卡的终态：冲突被取代、判为无效或与工单或决策重复。移除记依据、操作者与时间，正文清除，只留编号、主题、原因与取代关系；没有恢复动词。 |
+| 过时 | 决策 `obsolete` | 决策的终态：被取代或撤回。只在纪要落档时、在同一次 `minutes-record` 写入里声明；显式读取（`--status obsolete` 或 `all`，或按编号读）时附上取代它的决策。判错以新决策取代。 |
+| 撤回 | 决策 `supersededBy: null` | 没有取代者的过时：纪要以 `--withdraws` 声明。 |
+
+写卡前，卡片与工单正文和有效决策比对，重复即拒写（`KNOWLEDGE_ALREADY_RECORDED`），内容应写进工单或纪要。新纪要的决策与某条有效决策主题相近而未声明取代、撤回或并存（`--coexists`）时拒写（`MINUTES_POSSIBLE_CONFLICT`），并点名候选。工单 decided-by 或卡片关联的决策已过时，`work-show` 与召回提示已被哪条取代。完整规则见 `specs/minutes-v1.md`。
+
 ## Command Spell 四原则
 
 Command Spell 默认全部关闭，可按项目逐条启用。完整正文与启用方式见[受管段与 Command Spell](Managed-Sections-and-Command-Spell.md)。

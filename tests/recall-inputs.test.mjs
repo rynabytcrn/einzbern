@@ -118,3 +118,23 @@ test("STORY-474 R2: an answer is cut to its byte budget at whole lines", async (
   const long = formatRecallLine({ ...hits[0], title: "长".repeat(400) });
   assert.ok(Buffer.byteLength(long, "utf8") <= 480 && long.endsWith("…"), "a line is capped at a code point");
 });
+
+test("SUB-426 (MIN-239 D6): a minutes record is indexed with its valid decisions, its lead numbered as recorded", async (context) => {
+  const state = await library(context);
+  const projectId = state.projects[0].id;
+  const workspace = state.library.libraryRoot;
+  // The otter decision D1 is superseded by a decision on another pond; D2 stays valid.
+  const next = await recordMinutes(workspace, {
+    occurredAt: at(11), externalKey: "RI-MIN-2", projectId, title: "Heron decision", summary: "The heron moves instead.",
+    decisions: ["Move the heron to the north marsh."], decidedBy: [], linkedWorkIds: [],
+    supersedes: [{ decision: "RI-MIN-1#D1", by: "D1" }],
+  });
+  const minutes = recallInputsFromState(next, CARDS).minutes.find((entry) => entry.externalKey === "RI-MIN-1");
+  assert.deepEqual(minutes.decisions, ["Keep the old pond."], "the obsolete decision is not indexed");
+  assert.deepEqual(minutes.decisionNumbers, [2]);
+  const hit = answer(next, "old pond").find((entry) => entry.kind === "minutes" && entry.key === "RI-MIN-1");
+  assert.equal(formatRecallLine(hit), "[纪要 RI-MIN-1] Otter decision · D2 Keep the old pond.");
+  assert.equal(answer(next, "east").some((entry) => entry.key === "RI-MIN-1"), false, "the words only the obsolete decision held find nothing");
+  const untouched = recallInputsFromState(next, CARDS).minutes.find((entry) => entry.externalKey === "RI-MIN-2");
+  assert.equal(Object.hasOwn(untouched, "decisionNumbers"), false, "a record with every decision valid reads as it always did");
+});

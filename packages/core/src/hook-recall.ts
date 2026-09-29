@@ -12,7 +12,8 @@
 // every indexed record reduced by recallInputsFromState, the strong-hit threshold and the
 // prompt's byte budget (injection.perPromptBytes) from the library's settings. What the host gets
 // is the hit lines as additionalContext and nothing else: no header, no session ledger, no model
-// call. A prompt without a strong hit gets no output at all (474 R3).
+// call. A prompt without a strong hit gets no output at all (474 R3). Only valid decisions are
+// indexed, whatever the prompt asks (TCRN-CROSS-SUB-426, MIN-239 D6).
 //
 // The launcher's registry match is a fast subset of resolveLibrary that starts no git process
 // (problem list #6). Before anything is read, resolveLibrary confirms from the same directory
@@ -29,7 +30,7 @@ import { NAVIGATION_LINES } from "./agents-sections.js";
 import { HOST_HOOK_EVENTS, HOST_HOOK_HOSTS, HOST_HOOK_POINTER_EVENTS } from "./host-hooks.js";
 import type { HostHookHost } from "./host-hooks.js";
 import { recall, recallDocuments } from "./recall.js";
-import { readRecallCards, recallContextLines, recallInputsFromState } from "./recall-inputs.js";
+import { readRecallCards, recallContextLines, recallDecisionHints, recallInputsFromState } from "./recall-inputs.js";
 import { resolveLibrary } from "./registry.js";
 import type { ResolvedLibrary } from "./registry.js";
 import { SETTINGS_CATALOG } from "./settings.js";
@@ -172,7 +173,9 @@ export async function promptRecallContext(request: PromptRecallRequest): Promise
     query: prompt,
     tau,
   });
-  const lines = recallContextLines(result.records, perPromptBytes);
+  // TCRN-CROSS-SUB-426 (MIN-239 D5, D6): the index holds valid decisions only, so the hook never
+  // recalls an obsolete one; a work or card hit that points at one says which decision replaced it.
+  const lines = recallContextLines(recallDecisionHints(state, cards, result.records), perPromptBytes);
   if (lines.length === 0) return null;
   return { lines, output: hookProtocolOutput(request.host, "UserPromptSubmit", lines) };
 }

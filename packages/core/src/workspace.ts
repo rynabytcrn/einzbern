@@ -70,8 +70,18 @@ import {
   validateConferenceRequest,
 } from "./conference.js";
 import { AssignmentGateError, validateGateRecord } from "./assignment-gate.js";
-import { MINUTES_RECORDED_OPERATION, MINUTES_RECORD_VERSION, MinutesError, nextMinutesExternalKey, validateMinutesRecord } from "./minutes.js";
-import type { MinutesRecord } from "./minutes.js";
+import {
+  MINUTES_RECORDED_OPERATION,
+  MINUTES_RECORD_VERSION,
+  MinutesError,
+  assertDeclarationsResolve,
+  assertNoDecisionTopicConflict,
+  decisionLookup,
+  declarationsFromInput,
+  nextMinutesExternalKey,
+  validateMinutesRecord,
+} from "./minutes.js";
+import type { MinutesDeclarationInput, MinutesRecord } from "./minutes.js";
 import type { ConferenceMinutes, ConferencePosition, ConferenceRequest } from "./conference.js";
 import {
   EMPTY_EXECUTION_CONFIG,
@@ -2201,6 +2211,14 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
         requireLiveWork(work, record.projectId, workId, `minutes ${record.id}`);
       }
       recordExtensionClosureValidation(1 + record.linkedWorkIds.length);
+      // TCRN-CROSS-SUB-426 (MIN-239 D3, D5): what a record declares about decisions already recorded
+      // is checked against the minutes replayed so far: each decision it names exists in the same
+      // project, and none it supersedes or withdraws is obsolete already. A record that fails is
+      // corrupt, and in a library merged from several devices it is the rejected event.
+      if (record.declarations !== undefined) {
+        recordCollectionScan(minutesRecords.size + conferenceMinutes.size);
+        extensionRecordOrCorrupt(() => assertDeclarationsResolve(record, decisionLookup(minutesRecords.values(), conferenceMinutes.values()), "replay"));
+      }
       minutesRecords.set(record.id, record);
       continue;
     }
@@ -3884,7 +3902,10 @@ export async function deleteWork(workspaceRoot: string, input: {
 // the writer's, or the next free number under the prefix of the minutes recorded last
 // (nextMinutesExternalKey); either way the id it derives must be new, to the minutes a conference
 // ever closed as well. Every linked work record is live and in the minutes' project.
-export interface RecordMinutesInput {
+// TCRN-CROSS-SUB-426 (MIN-239 D3, D5): the same write declares what the record does to decisions
+// already recorded -- supersedes, withdraws, or stands beside -- and is refused when a decision of it
+// is close in topic to a valid decision its declarations leave unsettled.
+export interface RecordMinutesInput extends MinutesDeclarationInput {
   readonly externalKey?: string;
   // Used only when no externalKey is given: the prefix to number under (TCRN-CROSS-MIN- say).
   readonly externalKeyPrefix?: string;
@@ -3911,6 +3932,7 @@ export function recordMinutesDelta(input: RecordMinutesInput & { readonly occurr
     if (state.minutes.some((entry) => entry.id === id) || state.conferenceMinutes.some((entry) => entry.id === id)) {
       fail("WORKSPACE_INPUT_INVALID", `minutes ${externalKey} (${id}) already exist`);
     }
+    const declarations = declarationsFromInput(input, id);
     const record = validateMinutesRecord({
       schemaVersion: MINUTES_RECORD_VERSION,
       id,
@@ -3924,7 +3946,10 @@ export function recordMinutesDelta(input: RecordMinutesInput & { readonly occurr
       recordedAt: input.occurredAt,
       revision: 1,
       tombstone: false,
+      ...(declarations === null ? {} : { declarations }),
     });
+    assertDeclarationsResolve(record, decisionLookup(state.minutes, state.conferenceMinutes), "write");
+    assertNoDecisionTopicConflict(state, record);
     return {
       payload: buildEventPayload(MINUTES_RECORDED_OPERATION, record as unknown as JsonValue),
       projects: state.projects,

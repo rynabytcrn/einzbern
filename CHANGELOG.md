@@ -319,6 +319,38 @@ settings `execution.independenceFloor` and `conference.positionBudgetBytes`. Eve
 event already on a chain still replays. The governed-loop tutorial and its proof record minutes
 and name them with decided-in instead of holding, distilling and promoting a conference.
 
+Each decision is valid or obsolete on its own, and a card that repeats a work record or a valid
+decision is refused (TCRN-CROSS-STORY-514 R2 to R5, TCRN-CROSS-SUB-426; MIN-239 D3, D5, D6;
+`packages/core/src/minutes.ts`, `packages/core/src/knowledge-duplicates.ts`, `specs/minutes-v1.md`).
+A decision's number is `minutes:<id>#D<n>`, the historical minutes' decisions included. A decision
+becomes obsolete only in the write that records the minutes saying so: `minutes-record` takes
+`--supersedes <decision>=<successor>` (the successor one of the record's own decisions, `D<n>`, or
+a valid decision already recorded), `--withdraws <decision>` (obsolete with no successor) and
+`--coexists <decision>` (a valid decision close in topic that stays valid beside it), each decision
+a number or `<external key>#D<n>`, and the record stores them as its optional `declarations`
+field, which its receipt echoes. Obsolete is final: declaring an obsolete decision obsolete again,
+or naming one as a successor or to stand beside, is `MINUTES_DECISION_OBSOLETE`; a decision the
+library does not hold is `MINUTES_NOT_FOUND`; replay checks every declaration, and of two devices
+that superseded one decision apart the record merged second is the rejected event. A decision close
+in topic (a weighted cosine of recall's tokens of at least 0.5, sharing three or more) to a valid
+decision the declarations leave unsettled is refused with `MINUTES_POSSIBLE_CONFLICT`, naming the
+candidates under `conflicts`. `minutes-list` and `minutes-show` give the valid decisions unless
+`--status obsolete|all` asks otherwise: a record with no valid decision is left out of the list,
+and one with obsolete decisions names their numbers under `withheldDecisions`; in an explicit read
+each decision has `status`, and an obsolete one `supersededBy` (the successor's number, text and
+status, null when withdrawn) and `declaredIn`, while a valid one lists what it `supersedes`.
+`minutes-show --id minutes:<id>#D<n>` (or `--external-key <key>#D<n>`) reads that decision whatever
+its state. Recall and the prompt hook index only valid decisions (a minutes hit's lead keeps the
+decision's own number); `work-show` and a recall hit answer `obsoleteDecisions [{decision,
+supersededBy}]` when the record's decided-in minutes, or a card's referenced minutes or named
+decisions, hold an obsolete decision, and the hit's line adds `过时决策 <decision>→<successor>`.
+No minutes verb is added. Before a card is written, knowledge-create, knowledge-batch,
+knowledge-capture and an article's index card compare it with every live work record and every
+valid decision; a card whose words one of them carries for at least half their weight (eight or
+more shared) is refused with `KNOWLEDGE_ALREADY_RECORDED`, naming the record under `target` and
+where its content belongs under `remedy`, and nothing is written. A record without declarations,
+and every read of a library with no obsolete decision, answers exactly as before.
+
 Recall answers by intent, and only on a strong hit (TCRN-CROSS-STORY-474; MIN-227 D5, D7;
 `packages/core/src/recall-inputs.ts`). The index holds the Stories and the Incidents on their title,
 goal and body, the Initiatives and Epics on their title and goal, every minutes record and the

@@ -58,6 +58,7 @@ import { readOrCreateDevice } from "./device-identity.js";
 import { FileLockError, withFileLock } from "./file-lock.js";
 import { readUserCrestPath } from "./machine-settings.js";
 import { DIRECTORY, LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY } from "./names.js";
+import { assertKnowledgeNotRecorded } from "./knowledge-duplicates.js";
 
 export const KNOWLEDGE_CORE_VERSION = "tcrn.knowledge-core.v1" as const;
 export const KNOWLEDGE_STORE_SCHEMA_VERSION = "tcrn.knowledge-store.v1" as const;
@@ -3057,6 +3058,8 @@ function buildMetadata(
   const linkState = input.scope === "user" ? null : workspace;
   const validated = validateMetadataShape(metadata as unknown as Readonly<Record<string, JsonValue>>, linkState);
   validateMetadataBody(validated, body, linkState);
+  // TCRN-CROSS-SUB-426 (MIN-239 D5, C-R17-5): a card that repeats a work record or a valid decision of the library is refused.
+  assertKnowledgeNotRecorded(workspace, metadata, input.body);
   return metadata;
 }
 

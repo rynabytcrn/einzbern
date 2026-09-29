@@ -28,6 +28,8 @@
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 
+import type { ObsoleteDecisionHint } from "./minutes.js";
+
 export type RecallKind = "card" | "minutes" | "work";
 
 /**
@@ -70,6 +72,10 @@ export interface RecallHit {
   readonly parentChain: readonly string[];
   readonly lead: string;
   readonly scope?: RecallScope;
+  // TCRN-CROSS-SUB-426 (MIN-239 D5): the obsolete decisions the hit's record points at -- a work
+  // record's decided-by minutes, a card's linked minutes and the decisions it names -- each with the
+  // decision that superseded it. Set after selection (recall-inputs.ts), never by the index.
+  readonly obsoleteDecisions?: readonly ObsoleteDecisionHint[];
 }
 
 export interface RecallSelectionOptions {
@@ -220,8 +226,14 @@ export function segmentForIndex(text: string): string {
   return String(text ?? "").replace(CJK_RUN, (run) => bigrams(run).join(" ") || run);
 }
 
-/** Query-side tokens: lowercased ASCII words and CJK bigrams, stop words and stop bigrams removed. */
-export function recallQueryTokens(text: string): readonly string[] {
+/**
+ * Every query-side token of a text, in the order it is first read and without the query's cap:
+ * lowercased ASCII words and CJK bigrams, stop words and stop bigrams removed. TCRN-CROSS-SUB-426
+ * (MIN-239 D5): the topic comparison of decisions (minutes.ts) and the duplicate check of a card
+ * write (knowledge-duplicates.ts) read a text this way, so the words they call shared are the ones
+ * recall calls shared.
+ */
+export function recallTextTokens(text: string): ReadonlySet<string> {
   const tokens = new Set<string>();
   for (const match of String(text ?? "").toLowerCase().matchAll(ASCII_TOKEN)) {
     const token = match[0].replace(/[.-]+$/u, "");
@@ -230,7 +242,12 @@ export function recallQueryTokens(text: string): readonly string[] {
   for (const run of String(text ?? "").match(CJK_RUN) ?? []) {
     for (const gram of bigrams(run)) if (!STOP_BIGRAMS.has(gram)) tokens.add(gram);
   }
-  return [...tokens].filter((token) => token.length >= 2).slice(0, MAXIMUM_QUERY_TOKENS);
+  return new Set([...tokens].filter((token) => token.length >= 2));
+}
+
+/** Query-side tokens: lowercased ASCII words and CJK bigrams, stop words and stop bigrams removed. */
+export function recallQueryTokens(text: string): readonly string[] {
+  return [...recallTextTokens(text)].slice(0, MAXIMUM_QUERY_TOKENS);
 }
 
 /**
@@ -527,6 +544,9 @@ export interface RecallKnowledgeInput {
   readonly expansions?: string;
   // TCRN-CROSS-STORY-476 R5: the store the card was read from; carried to its hit.
   readonly scope?: RecallScope;
+  // TCRN-CROSS-SUB-426 (MIN-239 D5): the card's source references, never indexed; a minutes id among
+  // them links the card to that record's decisions, for the obsolete-decision hint.
+  readonly sourceReferences?: readonly string[];
 }
 
 export interface RecallMinutesInput {
@@ -539,6 +559,9 @@ export interface RecallMinutesInput {
   // TCRN-CROSS-STORY-475: a minutes record keeps its external key (a conference's minutes never had
   // one), and it is what an exact-key prompt names.
   readonly externalKey?: string | null;
+  // TCRN-CROSS-SUB-426 (MIN-239 D6): the number of each entry of `decisions`, when they are not
+  // D1..Dn -- recall indexes only a record's valid decisions, so the first one given can be D2.
+  readonly decisionNumbers?: readonly number[];
 }
 
 export interface RecallWorkInput {
@@ -625,6 +648,7 @@ export function recallDocuments(inputs: RecallInputs): readonly RecallDocument[]
   for (const minutes of inputs.minutes ?? []) {
     const key = minutes.externalKey ?? null;
     const first = minutes.decisions[0];
+    const firstNumber = minutes.decisionNumbers?.[0] ?? 1;
     documents.push({
       id: minutes.id,
       kind: "minutes",
@@ -639,7 +663,7 @@ export function recallDocuments(inputs: RecallInputs): readonly RecallDocument[]
       summary: minutes.summary,
       recordKind: "minutes",
       parentChain: [],
-      lead: first === undefined ? "" : `D1 ${first}${minutes.decisions.length > 1 ? " …" : ""}`,
+      lead: first === undefined ? "" : `D${String(firstNumber)} ${first}${minutes.decisions.length > 1 ? " …" : ""}`,
     });
   }
   for (const record of inputs.work ?? []) {

@@ -21,10 +21,12 @@ import type { WorkRecord } from "../../protocol/src/index.js";
 import { listKnowledgeMetadata } from "./knowledge-core.js";
 import type { KnowledgeStoreScope } from "./knowledge-core.js";
 import { expansionsText } from "./knowledge-language.js";
-import { minutesView } from "./minutes.js";
+import { decisionLedger, decisionsNamedIn, decisionsOfMinutes, minutesView, obsoleteDecisionHints } from "./minutes.js";
+import type { DecisionLedger, ObsoleteDecisionHint } from "./minutes.js";
 import type { RecallHit, RecallInputs, RecallKnowledgeInput, RecallMinutesInput, RecallScope, RecallWorkInput } from "./recall.js";
 import { RECALL_INDEXED_WORK_KINDS } from "./recall.js";
 import { storyFields } from "./story-fields.js";
+import { decidedInOf } from "./work-relations.js";
 import type { WorkspaceState } from "./workspace.js";
 
 /** The longest a hit line gets, in UTF-8 bytes; a longer one is cut at a code point with an ellipsis. */
@@ -60,6 +62,9 @@ export function workParentChain(work: ReadonlyMap<string, WorkRecord>, record: W
 
 /** A card read from a store's knowledge-list record, labelled with the store it came from. */
 export function recallCardFromRecord(record: Readonly<Record<string, unknown>>, scope: RecallScope): RecallKnowledgeInput {
+  const references = Array.isArray(record["sourceReferences"])
+    ? (record["sourceReferences"] as readonly unknown[]).filter((entry): entry is string => typeof entry === "string")
+    : [];
   return {
     id: String(record["id"] ?? ""),
     externalKey: String(record["externalKey"] ?? ""),
@@ -71,6 +76,8 @@ export function recallCardFromRecord(record: Readonly<Record<string, unknown>>, 
     // flattened by the one helper the CLI's recall shares (TCRN-CROSS-STORY-364).
     expansions: expansionsText(record["expansions"]),
     scope,
+    // TCRN-CROSS-SUB-426: never indexed; read only for the obsolete-decision hint.
+    ...(references.length === 0 ? {} : { sourceReferences: references }),
   };
 }
 
@@ -359,6 +366,8 @@ export async function readRecallCards(workspaceRoot: string, options: RecallCard
  * work records of the indexed kinds with their goal, body and parent titles, every minutes record
  * (new and historical, minutesView) with its title, summary and decisions, and the cards as given
  * -- a card that does not say which store it came from is the library's (TCRN-CROSS-STORY-476 R5).
+ * TCRN-CROSS-SUB-426 (MIN-239 D6): a minutes record is indexed with its valid decisions alone, and
+ * a record none of whose decisions is valid is not indexed; the prompt hook reads the same inputs.
  */
 export function recallInputsFromState(
   state: Pick<WorkspaceState, "work" | "minutes" | "conferenceMinutes" | "conferences">,
@@ -398,6 +407,8 @@ export function recallInputsFromState(
       decisions: entry.decisions.map((decision) => decision.text),
       outcomeClass: entry.kind === "conference-minutes" && historical !== undefined ? historical.outcomeClass : "recorded",
       externalKey: entry.externalKey,
+      // Only when an obsolete decision left a gap, so every other input reads as it always did.
+      ...(entry.withheldDecisions === undefined ? {} : { decisionNumbers: entry.decisions.map((decision) => decision.number) }),
     };
   });
   return {
@@ -406,6 +417,62 @@ export function recallInputsFromState(
     work,
     ...(options.scopeExcerptBytes === undefined ? {} : { scopeExcerptBytes: options.scopeExcerptBytes }),
   };
+}
+
+type HintState = Pick<WorkspaceState, "work" | "minutes" | "conferenceMinutes">;
+
+// A card's decisions (TCRN-CROSS-SUB-426): every decision of the minutes its source references name
+// -- by minutes id or by external key -- and the decisions its subject, summary, snippet and
+// references name one by one (decisionsNamedIn).
+function cardDecisions(state: HintState, ledger: DecisionLedger, card: RecallKnowledgeInput): readonly string[] {
+  const references = card.sourceReferences ?? [];
+  const keys = new Map(state.minutes.filter((record) => !record.tombstone).map((record) => [record.externalKey, record.id]));
+  const minutesIds = references
+    .map((reference) => (ledger.records.has(reference) ? reference : keys.get(reference.toUpperCase())))
+    .filter((minutesId): minutesId is string => minutesId !== undefined);
+  return [
+    ...decisionsOfMinutes(ledger, minutesIds),
+    ...decisionsNamedIn(state, ledger, [card.subject, card.summary, card.snippet, ...references].join("\n")),
+  ];
+}
+
+/**
+ * TCRN-CROSS-SUB-426 (MIN-239 D5): the obsolete decisions of the minutes a work record names as
+ * decided-in (its advisory:decided-by list), each with the decision that superseded it; empty when
+ * none is obsolete. work-show answers them as the record's obsoleteDecisions.
+ */
+export function workObsoleteDecisions(state: Pick<WorkspaceState, "minutes" | "conferenceMinutes">, record: Pick<WorkRecord, "extensions">): readonly ObsoleteDecisionHint[] {
+  const ledger = decisionLedger(state);
+  return obsoleteDecisionHints(ledger, decisionsOfMinutes(ledger, decidedInOf(record)));
+}
+
+/**
+ * TCRN-CROSS-SUB-426 (MIN-239 D5): the hits of an answer, each with the obsolete decisions its record
+ * points at -- a work record's decided-by minutes, a card's linked minutes and named decisions -- and
+ * the decision that superseded each (null when withdrawn). A hit that points at none is returned as
+ * it was, and so is every hit of a library with no obsolete decision.
+ */
+export function recallDecisionHints(state: HintState, cards: readonly RecallKnowledgeInput[], hits: readonly RecallHit[]): readonly RecallHit[] {
+  const ledger = decisionLedger(state);
+  if (![...ledger.decisions.values()].some((entry) => entry.status === "obsolete")) return hits;
+  const work = new Map(state.work.map((record) => [record.id, record]));
+  const cardsById = new Map(cards.map((card) => [card.id, card]));
+  return hits.map((hit) => {
+    const record = hit.kind === "work" ? work.get(hit.id) : undefined;
+    const card = hit.kind === "card" ? cardsById.get(hit.id) : undefined;
+    const decisions = record !== undefined
+      ? decisionsOfMinutes(ledger, decidedInOf(record))
+      : card !== undefined ? cardDecisions(state, ledger, card) : [];
+    const hints = obsoleteDecisionHints(ledger, decisions);
+    return hints.length === 0 ? hit : { ...hit, obsoleteDecisions: hints };
+  });
+}
+
+// The hint a hit's line carries: at most three obsolete decisions, each with its successor or 撤回.
+const LINE_HINTS = 3;
+function hintText(hints: readonly ObsoleteDecisionHint[]): string {
+  const shown = hints.slice(0, LINE_HINTS).map((hint) => `${hint.decision}→${hint.supersededBy ?? "撤回"}`).join("；");
+  return `过时决策 ${shown}${hints.length > LINE_HINTS ? ` 等 ${String(hints.length)} 条` : ""}`;
 }
 
 function capBytes(text: string, maximumBytes: number): string {
@@ -421,18 +488,20 @@ function capBytes(text: string, maximumBytes: number): string {
  * One hit as one line: `[Story done] title · externalKey · id · Epic title ‹ Initiative title` for a
  * work record, `[纪要 key] title · D1 first decision …` for minutes, `[卡片] subject · id` for a card,
  * and `[卡片 用户] subject · id` for a card from the user's crest (TCRN-CROSS-STORY-476 R5). A line is
- * at most RECALL_LINE_MAX_BYTES and never holds a line break.
+ * at most RECALL_LINE_MAX_BYTES and never holds a line break. TCRN-CROSS-SUB-426: a work or card hit
+ * that points at obsolete decisions carries `过时决策 <decision>→<successor or 撤回>` after its id.
  */
 export function formatRecallLine(hit: RecallHit): string {
   const flat = (text: string): string => text.replace(/\s+/gu, " ").trim();
+  const hint = hit.obsoleteDecisions === undefined || hit.obsoleteDecisions.length === 0 ? "" : ` · ${hintText(hit.obsoleteDecisions)}`;
   let line: string;
   if (hit.kind === "card") {
-    line = `[卡片${hit.scope === "user" ? " 用户" : ""}] ${flat(hit.title)} · ${hit.id}`;
+    line = `[卡片${hit.scope === "user" ? " 用户" : ""}] ${flat(hit.title)} · ${hit.id}${hint}`;
   } else if (hit.kind === "minutes") {
     line = `[纪要 ${hit.key}] ${flat(hit.title)}${hit.lead.length > 0 ? ` · ${flat(hit.lead)}` : ""}`;
   } else {
     const chain = hit.parentChain.length > 0 ? ` · ${hit.parentChain.map(flat).join(" ‹ ")}` : "";
-    line = `[${hit.recordKind} ${hit.status}] ${flat(hit.title)} · ${hit.key} · ${hit.id}${chain}`;
+    line = `[${hit.recordKind} ${hit.status}] ${flat(hit.title)} · ${hit.key} · ${hit.id}${hint}${chain}`;
   }
   return capBytes(line, RECALL_LINE_MAX_BYTES);
 }

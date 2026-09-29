@@ -114,6 +114,9 @@ import {
   minutesById,
   minutesView,
   recordMinutes,
+  DECISION_STATUS_FILTERS,
+  recallDecisionHints,
+  workObsoleteDecisions,
   BRAND,
   SKILL_COPIES_FILES,
   computeInstallTreeDigest,
@@ -139,7 +142,7 @@ import {
   planSetup,
   runDoctor,
 } from "../../core/src/index.js";
-import type { KnowledgeLanguageBundle, KnowledgeLanguageProvider, RuleChange, RuleStatus, SectionAction, StoryFields, Variable, WithheldEntry, WorkRelationsInput } from "../../core/src/index.js";
+import type { DecisionStatusFilter, KnowledgeLanguageBundle, KnowledgeLanguageProvider, RuleChange, RuleStatus, SectionAction, StoryFields, Variable, WithheldEntry, WorkRelationsInput } from "../../core/src/index.js";
 import type { DoctorCheck, SetupApplied, SetupOptions, SetupPlan } from "../../core/src/index.js";
 import type {
   DoneGatesVerdict,
@@ -449,6 +452,29 @@ function decisionsFromFile(path: string): readonly string[] {
     fail("CLI_ARGUMENT_MALFORMED", "decisions-file holds a JSON array of decision texts");
   }
   return document as readonly string[];
+}
+
+// TCRN-CROSS-SUB-426 (MIN-239 D3, D5): --supersedes pairs each decision a record makes obsolete with
+// the decision that replaces it, <decision>=<successor>. Each side is minutes:<id>#D<n> or
+// <external key>#D<n>; the successor may be D<n>, a decision of the record being written.
+function supersessionsValue(value: string | undefined): readonly { readonly decision: string; readonly by: string }[] {
+  return listValue(value).map((entry) => {
+    const [decision, by, ...rest] = entry.split("=");
+    if (decision === undefined || by === undefined || decision.length === 0 || by.length === 0 || rest.length > 0) {
+      fail("CLI_ARGUMENT_MALFORMED", `supersedes ${entry}: give <decision>=<decision that supersedes it>`);
+    }
+    return { decision, by };
+  });
+}
+
+// TCRN-CROSS-SUB-426 (MIN-239 D6): which decisions a minutes read gives; the valid ones unless the
+// caller asks for the obsolete ones or all of them.
+function decisionStatusValue(value: string | undefined): DecisionStatusFilter {
+  if (value === undefined) return "valid";
+  if (!(DECISION_STATUS_FILTERS as readonly string[]).includes(value)) {
+    fail("CLI_ARGUMENT_MALFORMED", `status=${value}; one of ${DECISION_STATUS_FILTERS.join(", ")}`);
+  }
+  return value as DecisionStatusFilter;
 }
 
 // INC-244: a successful workspace event must not leave the derived knowledge store frozen at the
@@ -1166,10 +1192,12 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "machine-settings-catalog", availability: "cli", mutates: false, flags: [{ name: "home", required: false, valueKind: "string" }] },
   { name: "machine-settings-remove", availability: "cli", mutates: true, flags: [{ name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "home", required: false, valueKind: "string" }] },
   { name: "machine-settings-set", availability: "cli", mutates: true, flags: [{ name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "value", required: true, valueKind: "string" }, { name: "home", required: false, valueKind: "string" }] },
-  // TCRN-CROSS-STORY-475 R1, R2: minutes in one write, and their reads.
-  { name: "minutes-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "work-id", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
-  { name: "minutes-record", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-id", required: true, valueKind: "string" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "decisions", required: false, valueKind: "list" }, { name: "decisions-file", required: false, valueKind: "string" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "work-ids", required: false, valueKind: "list" }, { name: "external-key", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "minutes-show", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: false, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }] },
+  // TCRN-CROSS-STORY-475 R1, R2: minutes in one write, and their reads. TCRN-CROSS-SUB-426 (MIN-239
+  // D3, D5, D6): minutes-record declares what it supersedes, withdraws or stands beside, and the reads
+  // take --status valid|obsolete|all (valid by default).
+  { name: "minutes-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "work-id", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
+  { name: "minutes-record", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-id", required: true, valueKind: "string" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "decisions", required: false, valueKind: "list" }, { name: "decisions-file", required: false, valueKind: "string" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "work-ids", required: false, valueKind: "list" }, { name: "external-key", required: false, valueKind: "string" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "withdraws", required: false, valueKind: "list" }, { name: "coexists", required: false, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "minutes-show", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: false, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }] },
   { name: "project-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "external-key", required: true, valueKind: "string" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "project-delete", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "project-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
@@ -2655,7 +2683,11 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     });
     // TCRN-CROSS-SUB-425: a hit on a removed card, which only --status removed or all reads, says so.
     const removedCards = new Set(cards.removedCardIds);
-    const hits = result.records.map((hit) => hit.kind === "card" && removedCards.has(hit.id) ? { ...hit, status: "removed" } : hit);
+    const statusHits = result.records.map((hit) => hit.kind === "card" && removedCards.has(hit.id) ? { ...hit, status: "removed" } : hit);
+    // TCRN-CROSS-SUB-426 (MIN-239 D5, D6): only valid decisions are indexed; a work or card hit that
+    // points at an obsolete decision carries it under obsoleteDecisions, with the decision that
+    // superseded it, and its line says so.
+    const hits = recallDecisionHints(state, cards.cards, statusHits);
     io.write(canonicalJson({
       schemaVersion: "tcrn.recall.v1",
       reasonCode: result.reasonCode,
@@ -2713,6 +2745,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
         title: hit.title, summary: hit.summary, score: hit.score.toFixed(4),
         line: formatRecallLine(hit), parentChain: [...hit.parentChain],
         ...(hit.scope === undefined ? {} : { scope: hit.scope }),
+        ...(hit.obsoleteDecisions === undefined ? {} : { obsoleteDecisions: hit.obsoleteDecisions.map((entry) => ({ ...entry })) }),
       })),
       perPromptBytes,
       context: [...recallContextLines(hits, perPromptBytes)],
@@ -3016,6 +3049,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // library does not hold as a live record (deleted, or written on a device not merged yet) is
     // listed under missing.
     const relations = workRelations(state, record.id);
+    // TCRN-CROSS-SUB-426 (MIN-239 D5): the decisions of the minutes the record was decided in that are
+    // obsolete now, each with the decision that superseded it (null when withdrawn).
+    const obsoleteDecisions = workObsoleteDecisions(state, record);
     io.write(canonicalJson({
       reasonCode: "WORKSPACE_RECORD_READY",
       workspaceId: state.metadata.workspaceId,
@@ -3027,6 +3063,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       // from -- the record's own fields, or the blocks of an old scope mapped on this read.
       fields: storyFields(record),
       ...(advisory !== null ? { advisory } : {}),
+      ...(obsoleteDecisions.length === 0 ? {} : { obsoleteDecisions }),
       relations: { forward: relations.forward, reverse: relations.reverse, missing: relations.missing },
       ...(aliases.aliases.length === 0 ? {} : { aliases: aliases.aliases.map((entry) => ({ externalKey: entry.externalKey, id: entry.id, deviceId: entry.deviceId })) }),
       ...(aliases.aliasedBy.length === 0 ? {} : { aliasedBy: aliases.aliasedBy.map((entry) => ({ externalKey: entry.aliasExternalKey, id: entry.aliasId, deviceId: entry.deviceId })) }),
@@ -3056,7 +3093,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // retired and answers CLI_COMMAND_UNKNOWN; every conference event already on a chain still
   // replays, and the minutes its closes wrote are read with minutes-list and minutes-show.
   if (command === "minutes-record") {
-    const values = parseArguments(rest, [...shared, "project-id", "external-key", "title", "summary", "decisions", "decisions-file", "decided-by", "work-ids", "actor"]);
+    const values = parseArguments(rest, [...shared, "project-id", "external-key", "title", "summary", "decisions", "decisions-file", "decided-by", "work-ids", "supersedes", "withdraws", "coexists", "actor"]);
     required(values, [...requiredShared, "project-id", "title", "summary"]);
     if ((values.decisions === undefined) === (values["decisions-file"] === undefined)) {
       fail("CLI_ARGUMENT_MALFORMED", "minutes-record takes exactly one of --decisions and --decisions-file");
@@ -3072,6 +3109,10 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       decisions,
       decidedBy: listValue(values["decided-by"]),
       linkedWorkIds: listValue(values["work-ids"]),
+      // TCRN-CROSS-SUB-426 (MIN-239 D3, D5): what the record does to decisions already recorded.
+      supersedes: supersessionsValue(values.supersedes),
+      withdraws: listValue(values.withdraws),
+      coexists: listValue(values.coexists),
       ...(values["external-key"] === undefined ? {} : { externalKey: values["external-key"] }),
       ...(values.actor ? { actorId: values.actor } : {}),
     }));
@@ -3088,33 +3129,46 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       id: recorded.id,
       externalKey: recorded.externalKey,
       decisions: recorded.decisions,
+      ...(recorded.declarations === undefined ? {} : { declarations: recorded.declarations }),
       ...(hint === undefined ? {} : { knowledgeHint: hint }),
     }));
     return;
   }
   // Every live minutes record, new and historical, in the order recorded; --work-id keeps the ones
-  // that link the work record or that the work record names as decided-in.
+  // that link the work record or that the work record names as decided-in. TCRN-CROSS-SUB-426 (MIN-239
+  // D6): each with its valid decisions and a record with none left out, unless --status asks for the
+  // obsolete decisions or all of them.
   if (command === "minutes-list") {
-    const values = parseArguments(rest, ["workspace", "project-id", "work-id", "limit", "offset"]);
+    const values = parseArguments(rest, ["workspace", "project-id", "work-id", "status", "limit", "offset"]);
     required(values, ["workspace"]);
+    const status = decisionStatusValue(values.status);
     const state = await validateWorkspace(values.workspace ?? "");
     const workId = values["work-id"];
     const decidedIn = workId === undefined ? [] : workRelations(state, workId).forward.decidedIn;
-    const records = minutesView(state).filter((entry) =>
+    const records = minutesView(state, status).filter((entry) =>
       (values["project-id"] === undefined || entry.projectId === values["project-id"]) &&
       (workId === undefined || entry.linkedWorkIds.includes(workId) || decidedIn.includes(entry.id)));
     io.write(canonicalJson(paginate(state, "minutes", records, values)));
     return;
   }
   // One minutes record by id or by external key, with the work records that name it as decided-in.
+  // TCRN-CROSS-SUB-426: its valid decisions unless --status asks otherwise; a decision number
+  // (minutes:<id>#D<n> or <external key>#D<n>) reads that one decision whatever its state, and an
+  // obsolete one comes with the decision that superseded it.
   if (command === "minutes-show") {
-    const values = parseArguments(rest, ["workspace", "id", "external-key"]);
+    const values = parseArguments(rest, ["workspace", "id", "external-key", "status"]);
     required(values, ["workspace"]);
     if ((values.id === undefined) === (values["external-key"] === undefined)) {
       fail("CLI_ARGUMENT_MALFORMED", "minutes-show takes exactly one of --id and --external-key");
     }
+    const reference = values.id ?? values["external-key"] ?? "";
+    const named = /#D[1-9][0-9]{0,2}$/u.test(reference);
+    if (named && values.status !== undefined) {
+      fail("CLI_ARGUMENT_MALFORMED", "a decision named by its number is read whatever its status; --status goes with a record");
+    }
+    const status = decisionStatusValue(values.status);
     const state = await validateWorkspace(values.workspace ?? "");
-    const record = minutesById(state, values.id ?? values["external-key"] ?? "");
+    const record = minutesById(state, reference, status);
     io.write(canonicalJson({
       reasonCode: "WORKSPACE_RECORD_READY",
       workspaceId: state.metadata.workspaceId,
@@ -3122,6 +3176,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       headEventHash: state.headEventHash,
       kind: "minutes",
       record,
+      ...(named ? { decision: `${record.id}#D${String(record.decisions[0]?.number ?? 0)}` } : {}),
       decides: workRelations(state, record.id).reverse.decides,
     }));
     return;

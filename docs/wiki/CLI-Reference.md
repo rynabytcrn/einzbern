@@ -570,6 +570,7 @@
 | `--workspace` | 可选 | `string` |
 | `--project-id` | 可选 | `string` |
 | `--work-id` | 可选 | `string` |
+| `--status` | 可选 | `string` |
 | `--limit` | 可选 | `integer` |
 | `--offset` | 可选 | `integer` |
 
@@ -590,6 +591,9 @@
 | `--decided-by` | 可选 | `list` |
 | `--work-ids` | 可选 | `list` |
 | `--external-key` | 可选 | `string` |
+| `--supersedes` | 可选 | `list` |
+| `--withdraws` | 可选 | `list` |
+| `--coexists` | 可选 | `list` |
 | `--actor` | 可选 | `string` |
 
 ## `minutes-show`
@@ -602,6 +606,7 @@
 | `--workspace` | 可选 | `string` |
 | `--id` | 可选 | `string` |
 | `--external-key` | 可选 | `string` |
+| `--status` | 可选 | `string` |
 
 ## `project-create`
 

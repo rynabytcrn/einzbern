@@ -126,12 +126,13 @@ test("STORY-472 R3, R4: an annotation replaces a named list, --decided-by is the
 
 test("STORY-502 D4: work-show marks absent minutes ids missing and clears them when the record arrives", async (context) => {
   const tree = await storyTree(context);
-  const recordMinutes = (externalKey, second) => cli([
+  // TCRN-CROSS-SUB-426: two records deciding the same words are close in topic, so each decides its own.
+  const recordMinutes = (externalKey, second, decision) => cli([
     "minutes-record", "--workspace", tree.workspace, "--at", instant(second), "--project-id", tree.projectId,
-    "--external-key", externalKey, "--title", "Decision", "--summary", "Recorded for this relation test.", "--decisions", "Keep the target id.",
+    "--external-key", externalKey, "--title", "Decision", "--summary", "Recorded for this relation test.", "--decisions", decision,
   ]);
 
-  const present = await recordMinutes("REL-CLI-MIN-PRESENT", 4);
+  const present = await recordMinutes("REL-CLI-MIN-PRESENT", 4, "Keep the target id.");
   const presentStory = await tree.story("REL-CLI-MIN-PRESENT-LINK", 5, "--decided-in", present.id);
   const presentShown = await cli(["work-show", "--workspace", tree.workspace, "--id", presentStory.record.id]);
   assert.deepEqual(presentShown.relations.forward.decidedIn, [present.id]);
@@ -143,7 +144,7 @@ test("STORY-502 D4: work-show marks absent minutes ids missing and clears them w
   assert.deepEqual(absent.relations.forward.decidedIn, [laterId]);
   assert.deepEqual(absent.relations.missing, [laterId], "a shape-valid target not in the library is missing");
 
-  const arrived = await recordMinutes("REL-CLI-MIN-LATER", 7);
+  const arrived = await recordMinutes("REL-CLI-MIN-LATER", 7, "Record the later arrival.");
   assert.equal(arrived.id, laterId, "the arriving record keeps the target's identity");
   const presentAfterArrival = await cli(["work-show", "--workspace", tree.workspace, "--id", laterStory.record.id]);
   assert.deepEqual(presentAfterArrival.relations.forward.decidedIn, [laterId], "arrival leaves the stored relation intact");

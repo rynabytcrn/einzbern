@@ -502,8 +502,10 @@ export {
   openConference,
 } from "./conference.js";
 // TCRN-CROSS-STORY-475 R1, R2: minutes, recorded in one write (recordMinutes above) and read with
-// the minutes a conference close wrote.
-export { minutesById, minutesView } from "./minutes.js";
+// the minutes a conference close wrote. TCRN-CROSS-SUB-426 (MIN-239 D6): the reads give the valid
+// decisions unless asked for the obsolete ones or all of them.
+export { DECISION_STATUS_FILTERS, minutesById, minutesView } from "./minutes.js";
+export type { DecisionStatusFilter } from "./minutes.js";
 export type {
   ConferenceRequest,
   ConferencePosition,
@@ -601,6 +603,9 @@ export { RECALL_CANDIDATE_LIMIT, RECALL_DEFAULT_TAU, recall, recallDocuments } f
 // TCRN-CROSS-STORY-474 R1, R2: what recall indexes, read from a state, and how a hit reads as one
 // line; the verb builds its input here, as the prompt hook does.
 export { formatRecallLine, readRecallCards, recallContextLines, recallInputsFromState } from "./recall-inputs.js";
+// TCRN-CROSS-SUB-426 (MIN-239 D5): the obsolete decisions a recalled work record or card points at,
+// and those of the minutes a work record was decided in, as work-show answers them.
+export { recallDecisionHints, workObsoleteDecisions } from "./recall-inputs.js";
 // TCRN-CROSS-STORY-476 R4: the line a done transition and minutes-record answer, asking whether there
 // is knowledge to extract and naming the cards a card about it could conflict with. R5: recall reads
 // the library's crest and this user's (readRecallCards above), and a read verb names its store.

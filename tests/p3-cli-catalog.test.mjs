@@ -241,6 +241,15 @@ test("STORY-475 R1, R2: minutes-record writes and names its required flags; minu
   assert.equal(entry("minutes-list").mutates, false);
   assert.equal(entry("minutes-show").mutates, false);
   assert.equal(COMMAND_CATALOG.some((candidate) => candidate.name.startsWith("conference-")), false);
+  // TCRN-CROSS-SUB-426 (MIN-239 D3, D5, D6): the decision lifecycle rides on the three verbs as optional
+  // flags -- what minutes-record supersedes, withdraws and stands beside, and which decisions a read gives.
+  const flag = (name, flagName) => entry(name).flags.find((candidate) => candidate.name === flagName);
+  for (const flagName of ["supersedes", "withdraws", "coexists"]) {
+    assert.deepEqual([flag("minutes-record", flagName)?.valueKind, flag("minutes-record", flagName)?.required], ["list", false], flagName);
+  }
+  for (const name of ["minutes-list", "minutes-show"]) {
+    assert.deepEqual([flag(name, "status")?.valueKind, flag(name, "status")?.required], ["string", false], name);
+  }
 });
 
 test("STORY-476 R1, R5: knowledge-create's lifecycle is optional, the candidate flags are gone, and the knowledge reads take --scope", () => {

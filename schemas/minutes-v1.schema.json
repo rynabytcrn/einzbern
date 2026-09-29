@@ -83,7 +83,11 @@
     "declarations": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["coexists", "supersedes", "withdraws"],
+      "required": [
+        "coexists",
+        "supersedes",
+        "withdraws"
+      ],
       "properties": {
         "supersedes": {
           "type": "array",
@@ -91,10 +95,19 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["by", "decision"],
+            "required": [
+              "by",
+              "decision"
+            ],
             "properties": {
-              "by": { "type": "string", "pattern": "^minutes:[a-z0-9][a-z0-9._-]{0,127}#D[1-9][0-9]{0,2}$" },
-              "decision": { "type": "string", "pattern": "^minutes:[a-z0-9][a-z0-9._-]{0,127}#D[1-9][0-9]{0,2}$" }
+              "by": {
+                "type": "string",
+                "pattern": "^minutes:[a-z0-9][a-z0-9._-]{0,127}#D[1-9][0-9]{0,2}$"
+              },
+              "decision": {
+                "type": "string",
+                "pattern": "^minutes:[a-z0-9][a-z0-9._-]{0,127}#D[1-9][0-9]{0,2}$"
+              }
             }
           }
         },
@@ -102,13 +115,19 @@
           "type": "array",
           "maxItems": 64,
           "uniqueItems": true,
-          "items": { "type": "string", "pattern": "^minutes:[a-z0-9][a-z0-9._-]{0,127}#D[1-9][0-9]{0,2}$" }
+          "items": {
+            "type": "string",
+            "pattern": "^minutes:[a-z0-9][a-z0-9._-]{0,127}#D[1-9][0-9]{0,2}$"
+          }
         },
         "coexists": {
           "type": "array",
           "maxItems": 64,
           "uniqueItems": true,
-          "items": { "type": "string", "pattern": "^minutes:[a-z0-9][a-z0-9._-]{0,127}#D[1-9][0-9]{0,2}$" }
+          "items": {
+            "type": "string",
+            "pattern": "^minutes:[a-z0-9][a-z0-9._-]{0,127}#D[1-9][0-9]{0,2}$"
+          }
         }
       }
     }

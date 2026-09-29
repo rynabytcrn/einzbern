@@ -875,6 +875,13 @@ link that is still there under another name, a staging link that outlasts the un
 wait, a symbolic link, a file that is not regular and damaged content still fail closed with
 `DEVICE_FILE_INVALID`. The `device.json` format, the device id and the reason codes are unchanged.
 
+Atelier's gate page says what a cover is (TCRN-CROSS-STORY-513 R2, TCRN-CROSS-SUB-423; fixes
+TCRN-CROSS-STORY-485; `portal/locales.js`). The label of the cover input on the add form and the
+heading of the cover column in the gate table read, in all five languages, that a cover is a path
+glob or a work id, the two forms `gates-config-set --covers` accepts; they used to say that covers
+were paths. The input still takes one cover per line, and the covers the page writes, the gate
+records and the reason codes are unchanged.
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

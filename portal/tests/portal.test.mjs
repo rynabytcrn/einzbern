@@ -1352,6 +1352,32 @@ test("SUB-412 (STORY-507, MIN-235 D10): the knowledge capacity copy counts only 
   }
 });
 
+// TCRN-CROSS-SUB-423 (STORY-513 R2; MIN-238 D3): the gate page's cover input and its cover column say
+// what a cover is, in all five languages: a path glob or a work id, the two forms
+// `gates-config-set --covers` takes (docs/wiki/Gates.md). Neither says any more that a cover is a path.
+test("SUB-423 (STORY-513 R2, MIN-238 D3): the cover input and the cover column say a path glob or a work id, in every language", async () => {
+  const source = await readFile(join(portalRoot, "index.html"), "utf8");
+  assert.match(source, /data-i18n="gates\.coversInput">[^<]*<\/span><textarea [^>]*name="covers"/u, "the cover input is labelled by gates.coversInput");
+  assert.match(source, /data-ui="gate-config-table"><thead><tr>(?:<th [^>]*>[^<]*<\/th>)*<th scope="col" data-i18n="gates\.columnCovers">/u, "the cover column is headed by gates.columnCovers");
+  const sandbox = {};
+  new Function("window", await readFile(join(portalRoot, "locales.js"), "utf8"))(sandbox);
+  const terms = {
+    en: { says: /path glob or (?:a )?work id/u, retired: /Covered paths/u },
+    "zh-CN": { says: /路径 glob 或 work id/u, retired: /覆盖路径/u },
+    ja: { says: /パスの glob または work id/u, retired: /対象パス/u },
+    ko: { says: /경로 glob 또는 work id/u, retired: /대상 경로/u },
+    fr: { says: /glob de chemin ou (?:un )?work id/u, retired: /Chemins couverts/u },
+  };
+  assert.deepEqual(Object.keys(sandbox.PORTAL_LOCALES).sort(), Object.keys(terms).sort());
+  for (const [locale, { says, retired }] of Object.entries(terms)) {
+    for (const key of ["gates.coversInput", "gates.columnCovers"]) {
+      const text = sandbox.PORTAL_LOCALES[locale][key];
+      assert.match(text, says, `${locale} ${key}`);
+      assert.doesNotMatch(text, retired, `${locale} ${key}`);
+    }
+  }
+});
+
 // TCRN-CROSS-STORY-467 R3: the execution route and its page left with the dispatch-* verbs, and the
 // dispatch mode setting with TCRN-CROSS-STORY-484 R3. The owner's concurrency limit is a registered
 // setting, written and read back through settings.

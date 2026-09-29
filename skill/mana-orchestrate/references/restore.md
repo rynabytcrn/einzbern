@@ -67,7 +67,13 @@ A failed check is reported as its reason code with `check` naming it; quote both
    folder is not writable.
 8. `RESTORE_SECTIONS_DIVERGED` (`sections`): a managed section in the project's files differs from
    the library's record of it, or a file's marker is broken. Settle it as `doctor.md` says under
-   managed-sections, then restore again.
+   managed-sections, then restore again. A broken marker is a line the user fixes. The
+   managed-section verb works only in a project this device has registered, and a stopped restore
+   has registered nothing, so on a device where the project is not registered yet (the verb
+   refuses `LIBRARY_NOT_REGISTERED`) register the library first:
+   `library-register --project <dir> --library <library path> --at <UTC>` answers
+   `LIBRARY_REGISTERED`. Then settle the section with the managed-section verb and restore again:
+   check 6 accepts the entry, because it binds the project to this same library.
 
 Never retry a failed restore unchanged, and never edit files inside the library to make a check
 pass.

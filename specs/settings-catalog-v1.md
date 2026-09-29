@@ -106,7 +106,8 @@ locations, and host hook boundaries. An agent may explain these; it never edits
 them on a user's behalf.
 
 **Tier-2 — conversational preferences.** The legal region for agent-assisted
-adjustment: staleness defaults, work-log verbosity, and language.
+adjustment, such as `artifact.language`, the language a project writes its
+knowledge cards in.
 
 Each engine-catalogued knob records: key, type, layer, default, bounds, and a
 governed read/write mechanism.
@@ -415,10 +416,13 @@ mistakenly applied to them.
   record a decision that links back to the `SETTINGS_WRITE_COMMITTED` receipt the
   write returns (per the work-log convention).
 - Settings live in the Workspace overlay layer, never in host hook surfaces
-  (`.claude/settings.json` or Codex configuration), which are written solely by
-  adapter bundles. Replaying a settings event rechecks the registered key,
-  layer, value bounds and timestamp binding, and on one writer's chain the monotonic
-  revision.
+  (`.claude/settings.json` or Codex configuration), which only Einzbern's host
+  writers change: `scripts/host-render.mjs`, setup's `host-hooks` and
+  `writable-roots` steps (`packages/core/src/host-hooks.ts`,
+  `host-writable-roots.ts`), and `workspace-relocate`, which names a moved
+  library in each registered project's host files. Replaying a settings event
+  rechecks the registered key, layer, value bounds and timestamp binding, and on
+  one writer's chain the monotonic revision.
 - Tier-1 knobs are explain-only; the agent never edits them.
 
 ## Ledger impact

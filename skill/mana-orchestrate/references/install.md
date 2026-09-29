@@ -45,7 +45,9 @@ never ask again for an answer the user already gave, and never guess an answer.
 4. Navigation section. Add a short section that points agents to Einzbern in the project's
    instruction files? If not, the section is left out and the hooks point agents to Einzbern
    instead; the skill and the hooks are installed either way. Flag: `--navigation true` or
-   `--navigation false`.
+   `--navigation false`. The answer belongs to this device, not to the project, and each project
+   registered here follows it only once it is repaired: when the answer changes, repair each
+   other project `library-list` names with the same `--navigation` answer, as `update.md` says.
 
 ## Plan, final confirmation, apply
 
@@ -64,7 +66,13 @@ never ask again for an answer the user already gave, and never guess an answer.
    Continue only on a clear yes; a changed answer goes back to step 2.
 4. Apply. Run the same command with `--yes true`. It returns `SETUP_APPLIED`: the files written,
    the backup directory, the same `warnings`, and `selfCheck`.
-5. Report the files written, the backup directory, each warning again, and the self-check: the
+5. Knowledge store. A new library has none yet: until it has one, no card can be written to it,
+   `knowledge-list` refuses with `KNOWLEDGE_PATH_INVALID`, and `recall` reports the project's
+   store that way under `knowledgeStores`. Create it once with
+   `knowledge-init --workspace <library path> --acknowledge-disposable true`, the library path
+   being the one the plan decided; it answers `KNOWLEDGE_STORE_INITIALIZED`. A library that
+   already has a store answers `KNOWLEDGE_ALREADY_EXISTS`, and that store stays as it is.
+6. Report the files written, the backup directory, each warning again, and the self-check: the
    eight checks in `selfCheck.checks`, and what the hook added when it ran once with the project's
    name as the prompt (`selfCheck.injected`; nothing is added until the library holds something
    that matches). Handle any check that is not ok with `doctor.md`.

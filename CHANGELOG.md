@@ -875,6 +875,16 @@ link that is still there under another name, a staging link that outlasts the un
 wait, a symbolic link, a file that is not regular and damaged content still fail closed with
 `DEVICE_FILE_INVALID`. The `device.json` format, the device id and the reason codes are unchanged.
 
+The refusal for a directory this device has not registered names only the ways the refused verb
+has (TCRN-CROSS-SUB-427; fixes TCRN-CROSS-STORY-470; `packages/core/src/registry.ts`,
+`packages/cli/src/index.ts`). `LIBRARY_NOT_REGISTERED` told every caller to register a library
+with `library-register` or to pass `--workspace`, but `agents-render`, `rule-enable`,
+`rule-disable`, `rule-list`, `rule-resolve` and `library-resolve` take no `--workspace`, and
+passing it to them is refused with `CLI_ARGUMENT_UNKNOWN`. Their refusal now names
+`library-register` alone; a verb that takes `--workspace` and leaves it to the registry is still
+offered it. The reason code, its `cwd` and `remedy` details and the command catalog are unchanged;
+`resolveLibrary` takes the choice as an optional third argument, `{ workspaceFlag }`.
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

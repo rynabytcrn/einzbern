@@ -222,8 +222,13 @@ function ancestors(path: string): readonly string[] {
   }
 }
 
-/** The library the registry resolves from `cwd`, checked against the library's own id. */
-export async function resolveLibrary(cwdInput: string, home?: string): Promise<ResolvedLibrary> {
+/**
+ * The library the registry resolves from `cwd`, checked against the library's own id. The refusal
+ * for a directory no entry holds names library-register, and names --workspace as the other way
+ * only when the caller's verb takes that flag (`workspaceFlag`): agents-render, the rule verbs and
+ * library-resolve do not (TCRN-CROSS-SUB-427). Its reason code and details are the same either way.
+ */
+export async function resolveLibrary(cwdInput: string, home?: string, options: { readonly workspaceFlag?: boolean } = {}): Promise<ResolvedLibrary> {
   const registry = await readRegistry(home);
   const cwd = await real(cwdInput);
   let found: { readonly entry: RegistryEntry; readonly via: ResolutionPath } | null = null;
@@ -247,7 +252,8 @@ export async function resolveLibrary(cwdInput: string, home?: string): Promise<R
     if (entry !== undefined) found = { entry, via: "git-remote" };
   }
   if (found === null) {
-    fail("LIBRARY_NOT_REGISTERED", `no library is registered for ${cwd} on this device (register one with library-register, or pass --workspace)`, {
+    const otherWay = options.workspaceFlag === true ? ", or pass --workspace" : "";
+    fail("LIBRARY_NOT_REGISTERED", `no library is registered for ${cwd} on this device (register one with library-register${otherWay})`, {
       cwd,
       remedy: "library-register",
     });

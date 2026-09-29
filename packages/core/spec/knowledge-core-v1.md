@@ -44,8 +44,8 @@ creates, a crash before the event leaves a body no event names, which reads igno
 event is complete. This machine's lock of the library (`locks/<library>.lock` in the device
 directory, the lock every chain write takes) serialises the writers of one device's stream; two
 devices never write one file of a crest. Descriptor-bound reads bind device, inode, size, mode, and
-nanosecond change metadata. Link, special-file, source-replacement, partial, count, size, and
-aggregate violations fail closed. P1 Option-B remains the ancestor-component threat boundary.
+nanosecond change metadata. Link, special-file, source-replacement, partial, count, and size
+violations fail closed. P1 Option-B remains the ancestor-component threat boundary.
 
 A read merges every writer's records, the metadata/body layout's among them. A writer's latest record
 of a card stands for its earlier ones, and of the writers' latest records the ones no other record
@@ -123,10 +123,8 @@ it is rewritten by one. The body-file wording above describes its reader. A loca
 and a manifest; a crest holding only event streams has nothing to migrate. A mutation claim can be
 found only in that layout, left by an interrupted write of that engine, and until `knowledge-recover`
 completes it every write and rebase of the crest refuses with `KNOWLEDGE_LOCKED`.
-`knowledge.aggregateBytes` is the workspace setting for the
-body bytes of live cards (see "Capacity"), with the fixed canonical ceiling as its
-upper bound; the body layout (one file per card, segments or event streams) does not change the
-count.
+Whichever layout holds the bodies -- one file per card, segments or event streams -- nothing
+counts or bounds their sum (see "Capacity").
 
 The user crest is shared between projects and can live in a synced folder. It
 uses the same one-time root identity marker, then keeps immutable event streams
@@ -187,10 +185,12 @@ replacement stays live, and replacements that collide form a pair like any other
 A write whose event is committed answers from its own scan and that event, its
 `version` the scanned version plus one: it never reads the crest again, so what
 another device delivers meanwhile cannot turn a committed write into a refusal,
-and the next read reports any pair it forms. A merge whose live bodies exceed
-`knowledge.aggregateBytes` is still refused whole by reads and writes (its
-disposition is pending); `recall` names it, or withheld conflicts, under
-`userCrestDegraded` (see "Freshness, writing, and retrieval").
+and the next read reports any pair it forms. A merge is never refused for the
+size of its bodies (TCRN-CROSS-SUB-310 R17, MIN-238 D1; see "Capacity"): however
+many body bytes the devices' cards hold together, every read, write, recall and
+recovery of the crest answers as it would for one device's. `recall` names
+withheld conflicts under `userCrestDegraded` (see "Freshness, writing, and
+retrieval").
 
 The same-key rule (TCRN-CROSS-SUB-413, STORY-476 D7): a knowledge id is derived
 from its external key, so two writers that each write one external key before
@@ -213,14 +213,13 @@ and `revision`, or with its `revision`, `freshness`, `bodySha256` and `body`
 does); while the duplicate is unresolved they carry its `unresolvedDuplicates`
 entry at their top. Every other card reads, recalls and is written as before. A
 write sees every version: it may not reuse the id or external key
-(`KNOWLEDGE_DUPLICATE`), a version on its subject is a conflict it names by the
-id, and each live version counts toward `knowledge.aggregateBytes`. A version's
-own `supersedes` still replaces the card it names. The duplicate is resolved by
-the existing write path: a write whose `--supersedes` names the id replaces every
-version at once, whichever of them its writer saw. Each version's projected
-`supersededBy` then names the replacement, so every version leaves the budget,
-default selection and `recall`, its event and body stay in their stream and read
-by the id, and the diagnostic is gone; a duplicate is unresolved while one of its
+(`KNOWLEDGE_DUPLICATE`), and a version on its subject is a conflict it names by
+the id. A version's own `supersedes` still replaces the card it names. The
+duplicate is resolved by the existing write path: a write whose `--supersedes`
+names the id replaces every version at once, whichever of them its writer saw.
+Each version's projected `supersededBy` then names the replacement, so every
+version leaves default selection and `recall`, its event and body stay in their
+stream and read by the id, and the diagnostic is gone; a duplicate is unresolved while one of its
 versions is neither replaced nor retired. To keep one version, write its content
 again under a new external key with `--supersedes` naming the id. `recall` names
 an unresolved duplicate under `userCrestDegraded`.
@@ -260,8 +259,9 @@ library's crest and the user crest; a store it cannot read gives no cards and it
 reason code under `knowledgeStores`, and the cards a store's default selection leaves
 out are not recalled. When the user crest gave recall fewer cards than it holds, the
 answer says so at its top as `userCrestDegraded` (TCRN-CROSS-SUB-310): the read's
-refusal code alone (for example `KNOWLEDGE_LIMIT_EXCEEDED`, no user card
-recalled), or `KNOWLEDGE_POSSIBLE_CONFLICT` with `unresolvedConflicts` and
+refusal code alone (for example `KNOWLEDGE_PARTIAL_STATE` for a forked stream, no
+user card recalled; no read is refused for its bodies' size), or
+`KNOWLEDGE_POSSIBLE_CONFLICT` with `unresolvedConflicts` and
 `withheldCards` (every other user card recalled). TCRN-CROSS-SUB-413 adds
 `unresolvedDuplicates`, the entries `knowledge-list` names, when versions of an
 unresolved duplicate are withheld; the reason code is then `KNOWLEDGE_DUPLICATE`
@@ -318,38 +318,16 @@ leaves either no event or a complete one.
 
 V1 limits body bytes to 8192, subject bytes to 512, summary bytes to 2048,
 snippet bytes to 512, each source-reference string to 512,
-metadata bytes to 32768, the default query page to 8 results, the aggregate
-body budget to 1 MiB, source locators to 16, each link class to 64, tags to 32, and
-role scopes to 16. The aggregate limit is the protocol canonical-view ceiling:
-35 measured cards occupied 63,316 source-of-truth bytes and their derived index
-occupied 52,851 bytes, or 5.0% of 1,048,576 bytes. Listing more matches than one page truncates with a
-`{total, offset, truncated}` continuation window rather than failing closed, and a
+metadata bytes to 32768, the default query page to 8 results, source locators to
+16, each link class to 64, tags to 32, and role scopes to 16. Listing more
+matches than one page truncates with a `{total, offset, truncated}`
+continuation window rather than failing closed, and a
 bounded case-insensitive substring over subject, summary, snippet, and tags narrows
 results without loading bodies. `knowledge-source-check` is the explicit source
 file comparison surface; ordinary reads do not scan every source file.
 
-The one-MiB value above is the fixed engine ceiling. A workspace may select a
-lower `knowledge.aggregateBytes` value (default 131,072); changing that setting
-changes future store admission without rewriting metadata or bodies.
-
-## Capacity
-
-Capacity counts card bodies and nothing else (TCRN-CROSS-STORY-476 R3,
-TCRN-CROSS-SUB-309): not the store marker, not the metadata, not the derived index.
-Only live cards count: a card that a later card superseded, the one retirement there
-is, gives its body back to the budget, and so does a `retired` record an older engine
-left. A superseded card's body stays in its immutable store or event stream for an
-explicit read; it is simply not charged or included in default recall. No supersede
-operation physically deletes that body. The count is the sum of each counted record's own `bodyBytes`, which a full
-read binds to the body on disk, so a metadata-only read measures the same number.
-Every read measures a store this way, including one written before the change, so an
-existing store is recounted the first time it is read and nothing is migrated or
-rewritten. A write that would take the count past `knowledge.aggregateBytes` is refused
-with `KNOWLEDGE_LIMIT_EXCEEDED` (unchanged), its details carrying the projected
-`bodyBytes` and the `limit`; a write that supersedes a card is charged its own body
-less the one it retires, which is how a replacement makes room rather than doubling
-the store. A read of a store already over the limit refuses the same way.
-`knowledge-validate` reports the measure as `capacity: {bodyBytes, limit}`.
+These limits bound one card and one page. None bounds the sum of a crest's card
+bodies (see "Capacity").
 
 These text budgets are UTF-8 byte budgets. Draft 2020-12 `maxLength` counts
 Unicode code points and is retained only as a structural bound. P4 schema proof
@@ -361,6 +339,32 @@ Source and evidence locators are inert strings. The store performs no URL
 resolution, network access, database access, AOS access, or implicit process
 launch. Locators must already satisfy the accepted focused reference-redaction
 policy; this remains a bounded policy and is not a general DLP claim.
+
+## Capacity
+
+No budget bounds the sum of a crest's card bodies, the library's or the user's
+(TCRN-CROSS-SUB-310 R17; TCRN-CROSS-MIN-238 D1, D5; TCRN-CROSS-MIN-239 D1).
+Nothing counts them: no read, write, recall, `knowledge-recover` or merge of two
+devices' streams is refused for the bytes they add up to, and a merge past any
+sum an earlier engine admitted reads, recalls and is written like any other.
+What keeps a crest small is what a card is for: one fact about the environment
+or one lesson, captured where work reaches done or minutes are recorded, with
+decisions in minutes, intents in work items, and a card on a subject an active
+card holds written with `--supersedes` or `--coexist` (TCRN-CROSS-MIN-227 D9,
+D25; TCRN-CROSS-MIN-146; TCRN-CROSS-MIN-225). Each card is still held to its own
+limits ("Limits and privacy"): a body, summary, snippet or metadata past its
+limit, or an article past the canonical ceiling, is refused with
+`KNOWLEDGE_LIMIT_EXCEEDED` before anything is written. The derived index view is
+still one canonical value holding every record's metadata and no body, and like
+every canonical value it must fit the protocol's one-MiB canonical ceiling; that
+bound is not a setting and counts no body.
+
+`knowledge.aggregateBytes`, the setting that bounded the body bytes of live cards
+(TCRN-CROSS-STORY-476 R3, TCRN-CROSS-SUB-309), is a retired setting
+(`specs/settings-catalog-v1.md`): a new write of it is refused, and a value a chain
+recorded replays as history and binds nothing. `knowledge-validate` no longer
+reports the `capacity` it measured against that limit, and `KNOWLEDGE_LIMITS` has
+no `maximumAggregateBytes`.
 
 ## High-water rebase
 
@@ -405,8 +409,8 @@ supplied instant and restores a fresh posture under CAS, so written knowledge
 does not decay irreversibly out of default selection; only a promoted, non-retired
 record admits it, which is every card written now. There is no manual retirement:
 the `knowledge-retire` verb and its batch member are gone (TCRN-CROSS-SUB-308).
-There is no independent record-count cap: capacity is controlled by the canonical
-byte ceiling, not by a historical count or by a retired-record allowance. A
+There is no record-count cap and no body budget either (see "Capacity"): nothing
+retires a card to make room, and no allowance is kept for retired records. A
 `retired` record an older engine left is a tombstoned audit entry: it stays
 readable, its dangling backlinks are durably tolerated, its body may have been
 reclaimed, and `knowledge-recover` still completes a stopped write that left a
@@ -420,9 +424,9 @@ conflict with an active card is refused with `KNOWLEDGE_POSSIBLE_CONFLICT` (deta
 `conflicts`) unless it names `--supersedes` or `--coexist`; `--supersedes` marks the
 older card with `extensions.supersededBy`, which takes it out of default and
 searched retrieval while it stays lifecycle `active` and its body stays readable by
-an explicit body read. No clock, observation day, window or operator act retires a
-card: `maximumAgeDays` only marks a card `stale`, and a store at its aggregate limit
-refuses the next write with `KNOWLEDGE_LIMIT_EXCEEDED` rather than evicting anything.
+an explicit body read. No clock, observation day, window, operator act or store size
+retires a card: `maximumAgeDays` only marks a card `stale`, and a store has no body
+budget a write could reach, so nothing is ever evicted to make room (see "Capacity").
 The fitness statistic, `retire-proposals`, `retire-sweep`, `knowledge-retire` and the
 rebase's `--retire-invalid` are gone (TCRN-CROSS-SUB-308); `fitness.windowDays` and
 `fitness.minEvents` are retired settings whose recorded values replay as history.

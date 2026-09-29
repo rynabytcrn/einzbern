@@ -40,7 +40,6 @@ import {
   rebaseKnowledgeStore,
   recoverKnowledgeStore,
   reverifyKnowledgeUnit,
-  setWorkspaceSetting,
   updateKnowledgeStalenessPolicy,
   validateKnowledgeStore,
   validateWorkspace,
@@ -111,7 +110,7 @@ function card(externalKey, subject, overrides = {}) {
 // folder -- its chain stream goes back to the copy the mark took, and its new crest events and
 // bodies leave -- and `deliver(home)` puts them back, as a folder that delivers late would. The
 // chain half and the crest half can also be delivered one at a time.
-async function twoDevices(context, name, { aggregateBytes } = {}) {
+async function twoDevices(context, name) {
   const base = await realpath(await mkdtemp(join(tmpdir(), `einzbern-sub414-${name}-`)));
   context.after(() => rm(base, { recursive: true, force: true }));
   const homeA = await deviceHome(base, "device-a", DEVICE_A);
@@ -121,9 +120,6 @@ async function twoDevices(context, name, { aggregateBytes } = {}) {
   const project = await as(homeA, async () => {
     await initializeLibrary({ root: workspace, createdAt: instant(0), libraryId });
     const state = await createProject(workspace, { occurredAt: instant(1), externalKey: "SUB-414-PROJECT", name: "Two devices" });
-    if (aggregateBytes !== undefined) {
-      await setWorkspaceSetting(workspace, { key: "knowledge.aggregateBytes", value: String(aggregateBytes), occurredAt: instant(2) });
-    }
     await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
     return state.projects[0].id;
   });
@@ -948,16 +944,58 @@ test("SUB-414: an old-layout workspace's knowledge store refuses every write wit
   assert.equal((await readdir(control)).includes(DIRECTORY.knowledge), false, "and nothing laid a crest out beside it");
 });
 
-// O-1 is pending (C-R15-3): what a merge past knowledge.aggregateBytes does is not decided, so the
-// only claim here is that it is named where recall reports the library's crest.
-test("SUB-414 (O-1 pending, diagnostic only): a merge past the budget is named in recall's report of the library's crest", async (context) => {
-  const fx = await twoDevices(context, "budget", { aggregateBytes: 4_096 });
+// TCRN-CROSS-SUB-310 R17 (MIN-238 D1, D5; replaces O-1 and the diagnostic-only case that stood here):
+// no budget bounds the sum of the library crest's card bodies. Two devices that each stay under the
+// old 131,072-byte default of knowledge.aggregateBytes merge past it; neither device's list, read by
+// id, recall, validation, next card or recovery refuses, nothing is withheld, and both answer the same.
+test("SUB-310 R17 (MIN-238 D1): a two-device merge past the old default reads, recalls, writes and recovers on both devices, which answer alike", async (context) => {
+  const fx = await twoDevices(context, "past-default");
+  const subjectsA = ["Heron wading depth", "Kestrel hover timing", "Otter holt survey", "Newt pond census", "Badger sett mapping", "Vole tunnel network", "Stoat winter coat", "Hare form spotting", "Plover scrape watch"];
+  const subjectsB = ["Beaver dam height", "Curlew call record", "Lizard basking rock", "Moth trap catalogue", "Grebe dive length", "Shrew burrow route", "Swift nest ledge", "Toad crossing night", "Wagtail roost tree"];
+  const body = (letter, index) => `${letter.repeat(7_999)}${index}`;
   await fx.mark(fx.homeA);
-  await as(fx.homeA, () => createKnowledgeUnit(fx.workspace, card("SUB-414-BIG-A", "Heron wading depth", { body: "a".repeat(2_500) })));
+  const cardsA = [];
+  for (const [index, subject] of subjectsA.entries()) {
+    cardsA.push(await as(fx.homeA, () => createKnowledgeUnit(fx.workspace, card(`SUB-310-A-${index}`, subject, { body: body("a", index) }))));
+  }
   await fx.hold(fx.homeA);
-  await as(fx.homeB, () => createKnowledgeUnit(fx.workspace, card("SUB-414-BIG-B", "Beaver dam height", { body: "b".repeat(2_500) })));
+  // B writes its nine 8,000-byte cards without seeing A's: 72,000 bytes each, 144,000 merged.
+  const cardsB = [];
+  for (const [index, subject] of subjectsB.entries()) {
+    cardsB.push(await as(fx.homeB, () => createKnowledgeUnit(fx.workspace, card(`SUB-310-B-${index}`, subject, { body: body("b", index) }))));
+  }
   await fx.deliver(fx.homeA);
-  const recalled = await as(fx.homeB, () => readRecallCards(fx.workspace, { at: AT }));
-  assert.equal(recalled.stores.project.reasonCode, "KNOWLEDGE_LIMIT_EXCEEDED");
-  assert.equal(recalled.projectCrestDegraded, null, "a refused read is the answer's knowledgeReasonCode, not a withheld card");
+  assert.ok(9 * 8_000 <= 131_072 && 18 * 8_000 > 131_072, "each device stays under the old default and the merge passes it");
+
+  const answers = [];
+  for (const home of [fx.homeA, fx.homeB]) {
+    const device = home === fx.homeA ? "A" : "B";
+    const listed = await as(home, () => listKnowledgeMetadata(fx.workspace, { at: AT, limit: 64 }));
+    assert.deepEqual([listed.reasonCode, listed.total], ["KNOWLEDGE_LIST_READY", 18], device);
+    for (const name of ["unresolvedConflicts", "unresolvedDuplicates", "awaitingChain", "unresolvedScopes"]) assert.equal(Object.hasOwn(listed, name), false, `${device} ${name}`);
+    assert.equal((await as(home, () => readKnowledgeBody(fx.workspace, cardsA[8].id, { at: AT }))).body, body("a", 8), device);
+    assert.equal((await as(home, () => readKnowledgeBody(fx.workspace, cardsB[8].id, { at: AT }))).body, body("b", 8), device);
+    const recalled = await as(home, () => readRecallCards(fx.workspace, { at: AT }));
+    assert.deepEqual([recalled.stores.project.reasonCode, recalled.stores.project.cards, recalled.projectCrestDegraded], ["KNOWLEDGE_LIST_READY", 18, null], device);
+    const answer = await cli(home, ["recall", "--workspace", fx.workspace, "--at", AT, "--query", "Beaver dam height", "--tau", "0"]);
+    assert.deepEqual([answer.knowledgeReasonCode, answer.knowledgeStores.project.cards, Object.hasOwn(answer, "projectCrestDegraded")], ["KNOWLEDGE_LIST_READY", 18, false], device);
+    assert.equal(answer.records.find((record) => record.kind === "card")?.id, cardsB[0].id, `${device}: B's card is recalled by its subject`);
+    const validation = await as(home, () => validateKnowledgeStore(fx.workspace));
+    assert.deepEqual([validation.reasonCode, validation.records, Object.hasOwn(validation, "capacity")], ["KNOWLEDGE_STORE_VALID", 18, false], device);
+    answers.push({ records: listed.records, total: listed.total, resultDigest: listed.resultDigest, recallDigest: recalled.stores.project.digest, validation });
+  }
+  assert.deepEqual(answers[0], answers[1], "both devices read the same merged crest");
+
+  // Each device takes one more card, and each reads the other's at once.
+  const moreA = await as(fx.homeA, () => createKnowledgeUnit(fx.workspace, card("SUB-310-A-MORE", "Osprey plunge angle", { body: body("c", 9) })));
+  const moreB = await as(fx.homeB, () => createKnowledgeUnit(fx.workspace, card("SUB-310-B-MORE", "Dipper stream walking", { body: body("d", 9) })));
+  assert.deepEqual([moreA.reasonCode, moreB.reasonCode], ["KNOWLEDGE_UNIT_CREATED", "KNOWLEDGE_UNIT_CREATED"]);
+  const after = [];
+  for (const home of [fx.homeA, fx.homeB]) {
+    const listed = await as(home, () => listKnowledgeMetadata(fx.workspace, { at: AT, limit: 64 }));
+    assert.equal(listed.total, 20);
+    assert.equal((await as(home, () => recoverKnowledgeStore(fx.workspace))).reasonCode, "KNOWLEDGE_RECOVERY_NOT_NEEDED");
+    after.push({ records: listed.records, resultDigest: listed.resultDigest });
+  }
+  assert.deepEqual(after[0], after[1], "and both still answer alike");
 });

@@ -44,7 +44,9 @@ test("STORY-347 settings catalog exposes the new keys that remain and numeric bo
   assert.equal(catalog.settings.some((entry) => entry.key === "injection.budgetBytes"), false);
   // storage.backend retired because nothing reads it (TCRN-CROSS-STORY-484 R3).
   assert.equal(catalog.settings.some((entry) => entry.key === "storage.backend"), false);
-  const expected = ["storage.segmentBytes", "storage.snapshotEveryEvents", "injection.perPromptBytes", "retrieval.scopeExcerptBytes", "knowledge.aggregateBytes"];
+  // knowledge.aggregateBytes retired with the knowledge total it bounded (TCRN-CROSS-SUB-310 R17, MIN-238 D1).
+  assert.equal(catalog.settings.some((entry) => entry.key === "knowledge.aggregateBytes"), false);
+  const expected = ["storage.segmentBytes", "storage.snapshotEveryEvents", "injection.perPromptBytes", "retrieval.scopeExcerptBytes"];
   const entries = catalog.settings.filter((entry) => expected.includes(entry.key));
   assert.deepEqual(entries.map((entry) => entry.key).sort(), [...expected].sort());
   // TCRN-CROSS-STORY-469: the key now sizes a library's stream segments, and its default is the
@@ -53,7 +55,6 @@ test("STORY-347 settings catalog exposes the new keys that remain and numeric bo
   assert.equal(entries.find((entry) => entry.key === "storage.snapshotEveryEvents").defaultValue, "512");
   assert.equal(entries.find((entry) => entry.key === "injection.perPromptBytes").defaultValue, "1600");
   assert.equal(entries.find((entry) => entry.key === "retrieval.scopeExcerptBytes").defaultValue, "512");
-  assert.equal(entries.find((entry) => entry.key === "knowledge.aggregateBytes").defaultValue, "131072");
   assert.ok(entries.filter((entry) => entry.controlType === "number").every((entry) => entry.min !== undefined && entry.max !== undefined));
 });
 
@@ -78,7 +79,9 @@ test("STORY-347 settings reject below-minimum values and retrieval setting suppl
   assert.equal(Buffer.byteLength(overridden.records[0].scope, "utf8"), 4);
 });
 
-test("STORY-348 provenance policy is an external JSON source and the aggregate setting is bounded by the canonical ceiling", async (context) => {
+// TCRN-CROSS-SUB-310 R17 (MIN-238 D1, D5): the knowledge total setting this test once bounded by the
+// canonical ceiling is retired; a write of it is refused and records nothing.
+test("STORY-348 provenance policy is an external JSON source, and the retired knowledge total setting refuses a write", async (context) => {
   const policy = JSON.parse(await readFile(new URL("../scripts/policy/knowledge-provenance.json", import.meta.url), "utf8"));
   assert.deepEqual(policy, {
     schemaVersion: "tcrn.knowledge-provenance-policy.v1",
@@ -86,15 +89,17 @@ test("STORY-348 provenance policy is an external JSON source and the aggregate s
     strictKinds: ["guide", "reference"],
   });
   const fx = await fixture(context, "AGGREGATE");
-  const state = await setWorkspaceSetting(fx.workspace, {
+  await assert.rejects(() => setWorkspaceSetting(fx.workspace, {
     key: "knowledge.aggregateBytes", value: "65536", occurredAt: instant(2),
-  });
-  assert.equal(state.settings.find((entry) => entry.key === "knowledge.aggregateBytes").value, "65536");
+  }), (error) => error instanceof SettingsError && error.reasonCode === "SETTINGS_KEY_UNREGISTERED");
+  const catalog = await cli(["settings-catalog", "--workspace", fx.workspace]);
+  assert.equal(catalog.settings.some((entry) => entry.key === "knowledge.aggregateBytes"), false, "nothing was recorded");
 });
 
 test("STORY-348 protocol validity values remain hardcoded rather than becoming settings", async (context) => {
   assert.equal(KNOWLEDGE_LIMITS.maximumBodyBytes, 8_192);
-  assert.equal(KNOWLEDGE_LIMITS.maximumAggregateBytes, PROTOCOL_LIMITS.maxCanonicalBytes);
+  // TCRN-CROSS-SUB-310 R17 (MIN-238 D1): no budget bounds the sum of the card bodies, so there is no ceiling to fix.
+  assert.equal(Object.hasOwn(KNOWLEDGE_LIMITS, "maximumAggregateBytes"), false);
   assert.equal(PROTOCOL_LIMITS.maxCanonicalBytes, 1_048_576);
   assert.deepEqual(KNOWLEDGE_PROVENANCE_POLICY, {
     relaxedKinds: ["fact", "decision", "summary"],

@@ -155,8 +155,9 @@ export interface RecallCardStoreRead {
 
 /**
  * TCRN-CROSS-SUB-310 (MIN-235 D7): why the user crest gave recall fewer cards than it holds. Either
- * its read was refused (`reasonCode` the refusal's, e.g. KNOWLEDGE_LIMIT_EXCEEDED: no user card is
- * recalled), or it withheld cards in unresolved conflict (`reasonCode` KNOWLEDGE_POSSIBLE_CONFLICT,
+ * its read was refused (`reasonCode` the refusal's, e.g. KNOWLEDGE_PARTIAL_STATE for a forked
+ * stream: no user card is recalled; since R17 no read is refused for its bodies' size, MIN-238 D1),
+ * or it withheld cards in unresolved conflict (`reasonCode` KNOWLEDGE_POSSIBLE_CONFLICT,
  * the pairs under `unresolvedConflicts` and their number of cards as `withheldCards`; every other
  * user card is recalled). TCRN-CROSS-SUB-413: or it withheld every version of an id more than one
  * writer wrote, named under `unresolvedDuplicates`; the reason code is KNOWLEDGE_DUPLICATE when no

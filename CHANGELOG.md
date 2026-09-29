@@ -576,6 +576,26 @@ spec no longer lists the retired `conference-close --distill` among the crest's 
 leaves the records awaiting chain events waiting for good, until the whole library is restored from one
 snapshot.
 
+No budget bounds the sum of a crest's card bodies any more (TCRN-CROSS-SUB-310 R17; MIN-238 D1,
+D5; MIN-239 D1; `packages/core/src/knowledge-core.ts`, `settings.ts`;
+`packages/core/spec/knowledge-core-v1.md`). Nothing counts the bodies of the library's crest or of
+the user crest, so no read, write, `recall`, `knowledge-recover` or merge of two devices' streams is
+refused for the bytes they add up to: a merge whose live bodies pass what `knowledge.aggregateBytes`
+allowed (131,072 bytes unless set, 1 MiB at most) reads, recalls and takes the next card on every
+device, and `recall` no longer reports such a merge as a refused store under `knowledgeStores` or
+`userCrestDegraded`. Each card keeps its own limits: a body over 8,192 bytes, a summary over 2,048, a
+snippet over 512, metadata over 32,768 or an article over the canonical ceiling is still refused with
+`KNOWLEDGE_LIMIT_EXCEEDED` before anything is written. `knowledge.aggregateBytes` is a retired
+setting: `settings-catalog` and Atelier's settings page no longer offer it, its label and explanation
+leave all five languages, `settings-set` refuses it as `SETTINGS_KEY_UNREGISTERED`, and a value a
+chain recorded replays as history and binds nothing. `knowledge-validate` no longer answers
+`capacity`, the measure of live card bodies against that limit, and `KNOWLEDGE_LIMITS` has no
+`maximumAggregateBytes`. This replaces the statements above that `knowledge.aggregateBytes` counts
+the bodies of live cards and that a refusal for the budget names `bodyBytes` and `limit`
+(TCRN-CROSS-STORY-476), that a merge past it is refused whole with its disposition pending
+(TCRN-CROSS-SUB-310 and O-1, which MIN-238 D1 decided), that each live version of a duplicate holds
+budget until it is resolved (TCRN-CROSS-SUB-413), and that O-1 is unchanged (TCRN-CROSS-SUB-414).
+
 Gates are declared per project and chosen by the change (TCRN-CROSS-STORY-485; MIN-227 D4;
 `packages/core/src/gates-config.ts`, `gates-plan.ts`, `gates-run.ts`, `gates-done.ts`). A gate is a
 project-level configuration record of the gate collection, keyed by its name: its command is an

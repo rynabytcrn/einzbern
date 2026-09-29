@@ -17,7 +17,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { createProject, initializeKnowledgeStore, initializeLibrary, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
+import { createProject, initializeKnowledgeStore, initializeLibrary } from "../dist/build/packages/core/src/index.js";
 import { USER_CREST_ID } from "../dist/build/packages/core/src/knowledge-core.js";
 import { KNOWLEDGE_HINT_QUESTION } from "../dist/build/packages/core/src/knowledge-hint.js";
 import { resetRecallCache } from "../dist/build/packages/core/src/recall.js";
@@ -40,13 +40,10 @@ async function device(context) {
   return base;
 }
 
-async function library(base, name, aggregateBytes) {
+async function library(base, name) {
   const workspace = join(base, name, ".ether");
   await initializeLibrary({ root: workspace, createdAt: at(0) });
   const state = await createProject(workspace, { occurredAt: at(1), externalKey: `${name.toUpperCase()}-PROJECT`, name });
-  if (aggregateBytes !== undefined) {
-    await setWorkspaceSetting(workspace, { key: "knowledge.aggregateBytes", value: String(aggregateBytes), occurredAt: at(2) });
-  }
   await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
   return { workspace, projectId: state.projects[0].id };
 }
@@ -330,19 +327,21 @@ test("476-AC4 (CLI): done and minutes-record answer the knowledge line, naming t
 
 // Problem list #11 (TCRN-CROSS-SUB-309): the bin printed only string details, so a knowledge write
 // refused for its budget said neither how large it would be nor the limit, and a possible
-// conflict did not name the cards. Both reach stderr now.
-test("476 (bin): a refused knowledge write names its body bytes and limit, or the cards it conflicts with, on stderr", async (context) => {
+// conflict did not name the cards. Both reach stderr now. TCRN-CROSS-SUB-310 R17 (MIN-238 D1): the
+// store budget is gone, so the size refusal left is a card's own limit, and it names the field.
+test("476 (bin): a refused knowledge write names the field past its card limit, or the cards it conflicts with, on stderr", async (context) => {
   const base = await device(context);
-  const { workspace } = await library(base, "delta", 4_096);
+  const { workspace } = await library(base, "delta");
   const bin = fileURLToPath(new URL("../scripts/einzbern.mjs", import.meta.url));
   const run = (args) => {
     const result = spawnSync(process.execPath, [bin, ...args], { encoding: "utf8", env: process.env });
     assert.equal(result.status, 1, result.stdout);
     return JSON.parse(result.stderr.trim().split("\n").at(-1));
   };
-  const oversized = run(createArgs(workspace, 50, { key: "KC-HUGE", subject: "Huge card", summary: "s", snippet: "s", body: "x".repeat(5_000) }));
-  assert.equal(oversized.reasonCode, "KNOWLEDGE_LIMIT_EXCEEDED");
-  assert.deepEqual([oversized.bodyBytes, oversized.limit], [5_000, 4_096]);
+  const fits = await cli(createArgs(workspace, 49, { key: "KC-FULL", subject: "Full card", summary: "s", snippet: "s", body: "x".repeat(8_192) }));
+  assert.equal(fits.reasonCode, "KNOWLEDGE_UNIT_CREATED", "a body at the card limit is admitted");
+  const oversized = run(createArgs(workspace, 50, { key: "KC-HUGE", subject: "Huge card", summary: "s", snippet: "s", body: "x".repeat(8_193) }));
+  assert.deepEqual([oversized.reasonCode, oversized.error], ["KNOWLEDGE_LIMIT_EXCEEDED", "body"]);
 
   const kept = await cli(createArgs(workspace, 51, { key: "KC-DINGO-1", subject: "Dingo fence patrol", summary: "Walk the dingo fence weekly", snippet: "weekly patrol" }));
   const conflict = run(createArgs(workspace, 52, { key: "KC-DINGO-2", subject: "Dingo fence patrol schedule", summary: "Walk the dingo fence daily", snippet: "daily patrol" }));

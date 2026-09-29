@@ -34,9 +34,9 @@ carries:
 
 No second knowledge store is created; the single knowledge store holds work-log
 records alongside other knowledge. High-frequency small records are bounded by
-the size cap on each record and, with every other live card, by the library's
-knowledge budget: `knowledge.aggregateBytes` counts the bodies of live cards, and
-a write that would pass it fails `KNOWLEDGE_LIMIT_EXCEEDED`.
+the size cap on each record. No budget bounds the sum of the library's card
+bodies (TCRN-CROSS-SUB-310 R17, MIN-238 D1), so a work-log record is not refused
+for the bodies the crest already holds.
 
 ## Event linkage
 

@@ -100,10 +100,11 @@ test("STORY-341 knowledge body migration is explicit and keeps metadata outside 
   assert.equal((await readdir(join(root, "bodies"))).some((name) => name.endsWith(".body")), false);
 });
 
-// TCRN-CROSS-SUB-309: the capacity count is the live cards' body bytes, whatever layout holds
-// them. Moving the bodies into segments -- which adds indexes and a manifest on disk -- neither
-// changes the count nor rewrites a card's metadata.
-test("STORY-341, SUB-309: moving bodies into segments leaves the capacity count unchanged", async (context) => {
+// TCRN-CROSS-SUB-309, TCRN-CROSS-SUB-310 R17: moving the bodies into segments -- which adds indexes
+// and a manifest on disk -- changes nothing a validation answers and rewrites no card's metadata. The
+// validation no longer reports a capacity: the live-body count it measured against
+// knowledge.aggregateBytes left with that setting (MIN-238 D1).
+test("STORY-341, SUB-310 R17: moving bodies into segments leaves the validation answer unchanged", async (context) => {
   const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-s341-capacity-")));
   context.after(() => rm(base, { recursive: true, force: true }));
   const workspace = join(base, "workspace");
@@ -121,12 +122,12 @@ test("STORY-341, SUB-309: moving bodies into segments leaves the capacity count 
   await asOlderEngineCrest(workspace);
   const store = join(workspace, DIRECTORY.knowledge);
   const metadataBefore = await Promise.all((await readdir(join(store, "metadata"))).sort().map((name) => readFile(join(store, "metadata", name), "utf8")));
-  const before = (await validateKnowledgeStore(workspace)).capacity;
-  assert.deepEqual(before, { bodyBytes: 3_003, limit: 131_072 });
+  const before = await validateKnowledgeStore(workspace);
+  assert.deepEqual([before.reasonCode, before.records, Object.hasOwn(before, "capacity")], ["KNOWLEDGE_STORE_VALID", 3, false]);
   const migrated = await migrateKnowledgeBodies(workspace, 4096);
   assert.deepEqual([migrated.before, migrated.after, migrated.bodyBytes], [3, 3, 3_003]);
   assert.equal((await readdir(join(store, "bodies"))).includes("manifest.json"), true, "the bodies now live in segments");
-  assert.deepEqual((await validateKnowledgeStore(workspace)).capacity, before, "the count is the same body bytes");
+  assert.deepEqual(await validateKnowledgeStore(workspace), before, "the validation answers the same");
   const metadataAfter = await Promise.all((await readdir(join(store, "metadata"))).sort().map((name) => readFile(join(store, "metadata", name), "utf8")));
   assert.deepEqual(metadataAfter, metadataBefore, "no card's metadata was rewritten");
 });

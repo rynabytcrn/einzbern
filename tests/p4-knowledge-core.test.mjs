@@ -930,14 +930,15 @@ test("WSC-3: knowledge-create accepts unsorted arrays and sorts them server-side
 // no longer exists and `maximumAggregateBytes` had moved from 131,072 to the protocol
 // canonical-view ceiling. A contract stated as literals goes stale silently on the side
 // nobody looks at. This one compares the fixture to the running constant, so the fixture
-// cannot drift from the limits the code enforces without a red.
+// cannot drift from the limits the code enforces without a red. TCRN-CROSS-SUB-310 R17
+// (MIN-238 D1): `maximumAggregateBytes` left both sides with the knowledge total it bounded.
 test("STORY-359: the knowledge fixture declares exactly the limits the code enforces", async () => {
   const fixtureContract = JSON.parse(await readFile(
     new URL("../packages/core/fixtures/p4-knowledge-core-cases.json", import.meta.url),
     "utf8",
   ));
   const declared = Object.fromEntries(Object.entries(fixtureContract).filter(([field]) => field.startsWith("maximum")));
-  assert.equal(Object.keys(declared).length, 6);
+  assert.equal(Object.keys(declared).length, 5);
   for (const [field, value] of Object.entries(declared)) {
     assert.equal(value, KNOWLEDGE_LIMITS[field], `fixture ${field} must equal KNOWLEDGE_LIMITS.${field}`);
   }
@@ -945,9 +946,11 @@ test("STORY-359: the knowledge fixture declares exactly the limits the code enfo
   // side only: every field the fixture declares is a real limit, and the ones it does not
   // declare are the per-record shape bounds the fixture's cases exercise directly.
   assert.deepEqual(Object.keys(declared).sort(), [
-    "maximumAggregateBytes", "maximumBodyBytes", "maximumMetadataBytes",
+    "maximumBodyBytes", "maximumMetadataBytes",
     "maximumQueryResults", "maximumSnippetBytes", "maximumSummaryBytes",
   ]);
+  assert.equal(Object.hasOwn(KNOWLEDGE_LIMITS, "maximumAggregateBytes"), false);
+  assert.equal(fixtureContract.negativeCases.includes("aggregate-limit"), false, "no case refuses a store for its total");
 });
 
 test("64 real insertion orders produce exact index, list, and checkpoint parity", async () => {
@@ -1260,23 +1263,19 @@ test("INIT-047 knowledge inventory admits more than 64 records while query pages
   } finally {
     await query.close();
   }
+  // TCRN-CROSS-SUB-310 R17 (MIN-238 D1): no total bounds the inventory either. The old default of
+  // knowledge.aggregateBytes, 131,072 body bytes, refused the eighteenth 7,500-byte body; each is admitted.
   const aggregate = await workspaceFixture({ externalKey: "FIXTURE-KNOWLEDGE-AGGREGATE" });
   try {
-    let rejected = false;
-    for (let index = 0; index < 200; index += 1) {
-      try {
-        await createKnowledgeUnit(aggregate.workspace, unitInput(aggregate, `KNOWLEDGE-AGGREGATE-${index}`, {
-          occurredAt: instant(11, 3),
-          body: "x".repeat(7_500),
-        }));
-      } catch (error) {
-        assert.equal(error.reasonCode, "KNOWLEDGE_LIMIT_EXCEEDED");
-        rejected = true;
-        break;
-      }
+    for (let index = 0; index < 18; index += 1) {
+      const created = await createKnowledgeUnit(aggregate.workspace, unitInput(aggregate, `KNOWLEDGE-AGGREGATE-${index}`, {
+        occurredAt: instant(11, 3),
+        body: "x".repeat(7_500),
+      }));
+      assert.equal(created.reasonCode, "KNOWLEDGE_UNIT_CREATED", String(index));
     }
-    assert.equal(rejected, true);
-    assert.equal((await validateKnowledgeStore(aggregate.workspace)).reasonCode, "KNOWLEDGE_STORE_VALID");
+    const validation = await validateKnowledgeStore(aggregate.workspace);
+    assert.deepEqual([validation.reasonCode, validation.records, Object.hasOwn(validation, "capacity")], ["KNOWLEDGE_STORE_VALID", 18, false]);
     await expectReason("KNOWLEDGE_PATH_INVALID", () => readKnowledgeBody(aggregate.workspace, "../escape", {
       at: instant(12), allowUnpromoted: true, allowStale: true,
     }));
@@ -1466,47 +1465,36 @@ test("SUB-386: historical promotion metadata and candidate records remain readab
   }
 });
 
-test("TCRN-CROSS-STORY-023, TCRN-CROSS-SUB-309: the aggregate cap counts card bodies only, and still fires", async () => {
-  // STORY-023 stopped charging the derived index; SUB-309 stopped charging the marker and
-  // the metadata too. Fill a store with large-body records until the cap rejects one, then
-  // prove at the admitted count: (1) the bodies fit the cap and one more would not, which is
-  // where the refusal fell; (2) the SAME records exceed the cap once marker and metadata
-  // are added back -- so the change genuinely raised headroom rather than removing the
-  // bound; (3) the capacity report names exactly the body bytes and the limit.
+test("TCRN-CROSS-SUB-310 R17 (MIN-238 D1, MIN-239 D1): past the old default the per-card body limit is what still fires", async () => {
+  // STORY-023 stopped charging the derived index and SUB-309 the marker and the metadata; R17 charges
+  // nothing at all. A store whose bodies alone are past the old 131,072-byte default of
+  // knowledge.aggregateBytes takes a body at the per-card limit, and one byte past that limit is
+  // refused with the reason code it always had, writing nothing.
   const fx = await workspaceFixture({ externalKey: "FIXTURE-KNOWLEDGE-S023" });
   try {
-    const storeRoot = join(fx.workspace, DIRECTORY.knowledge);
-    let admitted = 0, rejected = null;
-    for (let i = 0; i < 200; i += 1) {
-      try {
-        await createKnowledgeUnit(fx.workspace, unitInput(fx, `S023-${i}`, {
-          occurredAt: instant(11, 3), body: "x".repeat(7_500),
-        }));
-        admitted += 1;
-      } catch (error) {
-        assert.equal(error.reasonCode, "KNOWLEDGE_LIMIT_EXCEEDED"); // the cap still fires
-        rejected = error; break;
-      }
+    for (let i = 0; i < 18; i += 1) {
+      await createKnowledgeUnit(fx.workspace, unitInput(fx, `S023-${i}`, {
+        occurredAt: instant(11, 3), body: "x".repeat(7_500),
+      }));
     }
-    assert.ok(rejected !== null, "the cap must still reject once the body bytes exceed it");
     // TCRN-CROSS-SUB-414: each card is an event (its metadata) and a body file in this device's stream.
-    let sumMeta = 0, sumBody = 0;
+    let sumBody = 0;
     const stream = await streamRoot(fx);
-    for (const n of await readdir(stream)) {
-      const bytes = (await readFile(join(stream, n))).length;
-      if (n.endsWith(".body")) sumBody += bytes;
-      else sumMeta += bytes;
-    }
-    void storeRoot;
-    const marker = (await readFile(join(storeRoot, "store.json"))).length;
-    const cap = 131_072;
-    assert.equal(sumBody, admitted * 7_500);
-    assert.ok(sumBody <= cap && sumBody + 7_500 > cap, `the refusal falls where the bodies stop fitting: ${sumBody} + 7500 > ${cap}`);
-    assert.ok(marker + sumMeta + sumBody > cap, `the same records exceed the cap once marker and metadata count: ${marker + sumMeta + sumBody} > ${cap}`);
-    assert.deepEqual(rejected.details, { bodyBytes: sumBody + 7_500, limit: cap }, "the refusal names the projected body bytes and the limit");
+    for (const n of (await readdir(stream)).filter((name) => name.endsWith(".body"))) sumBody += (await readFile(join(stream, n))).length;
+    const oldDefault = 131_072;
+    assert.equal(sumBody, 18 * 7_500);
+    assert.ok(sumBody > oldDefault, `the bodies alone are past the old default: ${sumBody} > ${oldDefault}`);
+    const atLimit = await createKnowledgeUnit(fx.workspace, unitInput(fx, "S023-AT-LIMIT", {
+      occurredAt: instant(11, 3), body: "x".repeat(KNOWLEDGE_LIMITS.maximumBodyBytes),
+    }));
+    assert.equal(atLimit.reasonCode, "KNOWLEDGE_UNIT_CREATED", "a body at the per-card limit is admitted");
+    const files = (await readdir(stream)).length;
+    await expectReason("KNOWLEDGE_LIMIT_EXCEEDED", () => createKnowledgeUnit(fx.workspace, unitInput(fx, "S023-PAST-LIMIT", {
+      occurredAt: instant(11, 3), body: "x".repeat(KNOWLEDGE_LIMITS.maximumBodyBytes + 1),
+    })));
+    assert.equal((await readdir(stream)).length, files, "the refused card wrote nothing");
     const validation = await validateKnowledgeStore(fx.workspace);
-    assert.equal(validation.reasonCode, "KNOWLEDGE_STORE_VALID");
-    assert.deepEqual(validation.capacity, { bodyBytes: sumBody, limit: cap });
+    assert.deepEqual([validation.reasonCode, validation.records, Object.hasOwn(validation, "capacity")], ["KNOWLEDGE_STORE_VALID", 19, false]);
   } finally { await fx.close(); }
 });
 

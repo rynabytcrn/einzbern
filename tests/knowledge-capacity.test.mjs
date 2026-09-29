@@ -1,21 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
-// TCRN-CROSS-SUB-309 (TCRN-CROSS-STORY-476 R3, Feature Toggle, Implementation Notes).
+// TCRN-CROSS-SUB-310 R17 (TCRN-CROSS-STORY-476 R3 and Feature Toggle as revised; MIN-238 D1, D5;
+// MIN-239 D1).
 //
-// knowledge.aggregateBytes counts card bodies and nothing else -- not the store marker, not the
-// metadata, not the derived index -- and only the bodies of live cards: a card a later card
-// superseded gives its body back to the budget while the body stays on disk. The over-limit
-// refusal keeps its reason code and names the projected body bytes and the limit. A store
-// written before this is recounted on read, and nothing is migrated or rewritten.
+// No budget bounds the sum of a crest's card bodies. knowledge.aggregateBytes, the setting that counted
+// the bodies of live cards against a limit (TCRN-CROSS-SUB-309), is retired with the limit, and no
+// read, write, recall or recovery refuses for the bytes the bodies add up to -- nor for a crest an
+// older engine laid out. Each card keeps its own limits: one past them is refused with KNOWLEDGE_LIMIT_EXCEEDED and
+// writes nothing. A superseded card still leaves default selection and recall while its body reads
+// by its id (MIN-235 D10). knowledge-validate no longer reports a capacity.
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { recall, recallDocuments } from "../dist/build/packages/core/src/recall.js";
+import { recall, recallDocuments, resetRecallCache } from "../dist/build/packages/core/src/recall.js";
 import { readRecallCards } from "../dist/build/packages/core/src/recall-inputs.js";
 import {
   captureKnowledgeUnit,
@@ -25,7 +27,7 @@ import {
   initializeLibrary,
   listKnowledgeMetadata,
   readKnowledgeBody,
-  setWorkspaceSetting,
+  recoverKnowledgeStore,
   validateKnowledgeStore,
   DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
@@ -33,22 +35,37 @@ import { readKnowledgeStoreMarker } from "../dist/build/packages/core/src/knowle
 import { canonicalJson } from "../dist/build/packages/protocol/src/index.js";
 
 const AT = "2026-09-26T10:00:00.000Z";
-const OWNER = "owner:sub-309";
+const OWNER = "owner:sub-310";
+// The default knowledge.aggregateBytes held before it retired.
+const OLD_DEFAULT = 131_072;
+// Subjects that share no word, so no write scores as a conflict with another.
+const SUBJECTS = [
+  "alpaca shearing season", "bison herd migration", "cassowary egg incubation", "dugong seagrass grazing",
+  "echidna spine care", "fennec burrow cooling", "gibbon canopy calls", "hoopoe crest display",
+  "ibis wading depth", "jerboa night foraging", "kinkajou fruit diet", "lemur tail balance",
+  "margay tree climbing", "narwhal tusk sensing", "ocelot coat pattern", "pangolin scale armour",
+  "quetzal plume moult", "racoon paw washing", "serval ear hearing", "tapir snout reach",
+];
 
-async function fixture(t, externalKey, { aggregateBytes } = {}) {
-  const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-sub309-")));
+async function fixture(t, externalKey) {
+  const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-sub310-")));
   t.after(() => rm(base, { recursive: true, force: true }));
   const workspace = join(base, "workspace");
   await initializeLibrary({ root: workspace, createdAt: "2026-01-01T00:00:00Z" });
-  const project = await createProject(workspace, { occurredAt: "2026-01-01T00:00:01Z", externalKey: `${externalKey}-PROJECT`, name: "SUB-309 fixture" });
-  if (aggregateBytes !== undefined) {
-    await setWorkspaceSetting(workspace, { key: "knowledge.aggregateBytes", value: String(aggregateBytes), occurredAt: "2026-01-01T00:00:02Z" });
-  }
+  const project = await createProject(workspace, { occurredAt: "2026-01-01T00:00:01Z", externalKey: `${externalKey}-PROJECT`, name: "SUB-310 fixture" });
   await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
   return { base, workspace, projectId: project.projects[0].id, store: join(workspace, DIRECTORY.knowledge) };
 }
 
-// Each card has its own subject so no write scores as a conflict with another.
+// A user crest of the test's own, in a device directory beside its library, so no other test's user
+// cards are in it; the test process's device is put back afterwards.
+function ownDeviceHome(t, fx) {
+  const previous = process.env.EINZBERN_HOME;
+  process.env.EINZBERN_HOME = join(fx.base, "device");
+  t.after(() => { process.env.EINZBERN_HOME = previous; resetRecallCache(); });
+  return process.env.EINZBERN_HOME;
+}
+
 function card(externalKey, subject, body, overrides = {}) {
   return {
     occurredAt: "2026-06-12T00:00:00.000Z", externalKey, subject, summary: `${subject} summary`, snippet: `${subject} snippet`,
@@ -56,8 +73,20 @@ function card(externalKey, subject, body, overrides = {}) {
   };
 }
 
+// A body of exactly `bytes` bytes, distinct per card.
+function bodyOf(bytes, index) {
+  const tail = String(index);
+  return `${"b".repeat(bytes - tail.length)}${tail}`;
+}
+
 function refusalOf(operation) {
   return operation().then(() => null, (error) => error);
+}
+
+async function cliJson(argv) {
+  let output = "";
+  await runCli(argv, { write: (value) => { output += value; } });
+  return JSON.parse(output);
 }
 
 async function fileBytes(directory, keep = () => true) {
@@ -71,6 +100,12 @@ async function fileBytes(directory, keep = () => true) {
 async function streamOf(fx) {
   const [deviceId] = await readdir(join(fx.store, "events"));
   return join(fx.store, "events", deviceId);
+}
+
+// Every file this device's stream of the crest holds, or none when no card was ever written.
+async function streamFiles(fx) {
+  try { return (await readdir(await streamOf(fx))).sort(); }
+  catch (error) { if (error.code === "ENOENT") return []; throw error; }
 }
 
 // TCRN-CROSS-SUB-414: the crest as an engine before event streams left it -- one metadata file and
@@ -107,94 +142,109 @@ async function storeFiles(fx) {
   return files;
 }
 
-test("476-R3: capacity counts card bodies only, not the marker or the metadata", async (t) => {
-  const fx = await fixture(t, "FIXTURE-SUB-309-BODIES", { aggregateBytes: 4_096 });
-  // Ten cards whose metadata is large (a 1,900-byte summary each) and whose bodies are small.
-  // Counted the old way (marker + metadata + body) the second card would already overflow 4 KiB.
-  const subjects = ["alpha lesson", "bravo lesson", "charlie lesson", "delta lesson", "echo lesson", "foxtrot lesson", "golf lesson", "hotel lesson", "india lesson", "juliet lesson"];
+test("R17 (MIN-238 D1): a library crest holding more than the old 131,072-byte default reads, recalls, validates and takes the next card", async (t) => {
+  const fx = await fixture(t, "FIXTURE-SUB-310-PAST-DEFAULT");
+  // Seventeen 8,000-byte bodies are 136,000 bytes: the old default refused the seventeenth card.
   const written = [];
-  for (const [index, subject] of subjects.entries()) {
-    written.push(await captureKnowledgeUnit(fx.workspace, card(`SUB-309-SMALL-${index}`, subject, `${"b".repeat(99)}${index}`, {
-      summary: `${subject} ${"s".repeat(1_900)}`, coexist: true,
-    })));
+  for (const [index, subject] of SUBJECTS.slice(0, 17).entries()) {
+    written.push(await captureKnowledgeUnit(fx.workspace, card(`SUB-310-FULL-${index}`, subject, bodyOf(8_000, index), { coexist: true })));
   }
-  assert.equal(written.length, 10, "every write is admitted");
+  assert.deepEqual(written.map((entry) => entry.reasonCode), Array(17).fill("KNOWLEDGE_UNIT_CREATED"));
+  const bodyBytes = await fileBytes(await streamOf(fx), (name) => name.endsWith(".body"));
+  assert.ok(bodyBytes === 17 * 8_000 && bodyBytes > OLD_DEFAULT, `live bodies past the old default: ${bodyBytes}`);
+
+  // Every read answers, and validate reports no capacity.
   const validation = await validateKnowledgeStore(fx.workspace);
-  assert.deepEqual(validation.capacity, { bodyBytes: 1_000, limit: 4_096 }, "the report counts the ten 100-byte bodies and nothing else");
-  const marker = (await readFile(join(fx.store, "store.json"))).length;
-  const stream = await streamOf(fx);
-  const metadata = await fileBytes(stream, (name) => name.endsWith(".json"));
-  assert.equal(await fileBytes(stream, (name) => name.endsWith(".body")), 1_000);
-  assert.ok(marker + metadata > 4_096, `marker and metadata alone exceed the limit and are not charged: ${marker + metadata}`);
+  assert.deepEqual([validation.reasonCode, validation.records, Object.hasOwn(validation, "capacity")], ["KNOWLEDGE_STORE_VALID", 17, false]);
+  const listed = await listKnowledgeMetadata(fx.workspace, { at: AT, limit: 64 });
+  assert.deepEqual([listed.reasonCode, listed.total], ["KNOWLEDGE_LIST_READY", 17]);
+  assert.equal((await readKnowledgeBody(fx.workspace, written[16].id, { at: AT })).body, bodyOf(8_000, 16));
+  const cards = await readRecallCards(fx.workspace, { at: AT });
+  assert.deepEqual([cards.stores.project.reasonCode, cards.stores.project.cards, cards.projectCrestDegraded], ["KNOWLEDGE_LIST_READY", 17, null]);
+  const hit = recall({ cacheKey: "sub310-past-default", checkpoint: cards.digest, documents: () => recallDocuments({ knowledge: cards.cards }), query: SUBJECTS[16], tau: 0 });
+  assert.equal(hit.records[0]?.id, written[16].id, "the last card is recalled by its subject");
 
-  // The limit still binds the bodies: one body that would take the count past it is refused,
-  // with the reason code it always had, naming the projected body bytes and the limit.
-  const refused = await refusalOf(() => captureKnowledgeUnit(fx.workspace, card("SUB-309-LARGE", "kilo lesson", "l".repeat(3_097))));
-  assert.equal(refused?.reasonCode, "KNOWLEDGE_LIMIT_EXCEEDED");
-  assert.deepEqual(refused.details, { bodyBytes: 4_097, limit: 4_096 });
-  const fits = await captureKnowledgeUnit(fx.workspace, card("SUB-309-FITS", "lima lesson", "l".repeat(3_096)));
-  assert.equal(fits.reasonCode, "KNOWLEDGE_UNIT_CREATED", "a body that brings the count exactly to the limit is admitted");
-  assert.deepEqual((await validateKnowledgeStore(fx.workspace)).capacity, { bodyBytes: 4_096, limit: 4_096 });
-
-  // knowledge-validate on the CLI reports the same measure.
-  let output = "";
-  await runCli(["knowledge-validate", "--workspace", fx.workspace], { write: (value) => { output += value; } });
-  assert.deepEqual(JSON.parse(output).capacity, { bodyBytes: 4_096, limit: 4_096 });
+  // The next card is admitted, and knowledge-validate on the CLI answers without a capacity too.
+  const next = await captureKnowledgeUnit(fx.workspace, card("SUB-310-FULL-NEXT", SUBJECTS[17], bodyOf(8_192, 17), { coexist: true }));
+  assert.equal(next.reasonCode, "KNOWLEDGE_UNIT_CREATED");
+  const cli = await cliJson(["knowledge-validate", "--workspace", fx.workspace]);
+  assert.deepEqual([cli.reasonCode, cli.records, Object.hasOwn(cli, "capacity")], ["KNOWLEDGE_STORE_VALID", 18, false]);
+  assert.equal((await recoverKnowledgeStore(fx.workspace)).reasonCode, "KNOWLEDGE_RECOVERY_NOT_NEEDED");
 });
 
-test("476-R3: a superseded card gives its body back to the budget, and its body stays readable", async (t) => {
-  const fx = await fixture(t, "FIXTURE-SUB-309-SUPERSEDE", { aggregateBytes: 4_096 });
-  const subject = "SUB-309 the old answer to the retry question";
-  const old = await captureKnowledgeUnit(fx.workspace, card("SUB-309-OLD", subject, "o".repeat(3_000), {
+test("R17 (MIN-239 D1): each card's own limits still refuse -- in the library crest and in the user crest -- and a refusal writes nothing", async (t) => {
+  const fx = await fixture(t, "FIXTURE-SUB-310-CARD-LIMITS");
+  const home = ownDeviceHome(t, fx);
+  const oversized = [
+    ["body", (base) => ({ ...base, body: "x".repeat(8_193) })],
+    ["summary", (base) => ({ ...base, summary: "s".repeat(2_049) })],
+    ["snippet", (base) => ({ ...base, snippet: "n".repeat(513) })],
+  ];
+  for (const scope of ["role", "user"]) {
+    for (const [label, change] of oversized) {
+      const refused = await refusalOf(() => captureKnowledgeUnit(fx.workspace, change(card(`SUB-310-OVER-${scope}-${label}`, SUBJECTS[0], "fits", { scope }))));
+      assert.equal(refused?.reasonCode, "KNOWLEDGE_LIMIT_EXCEEDED", `${scope} ${label}`);
+    }
+  }
+  assert.deepEqual(await streamFiles(fx), [], "no refused card reached the library's crest");
+  await assert.rejects(stat(join(home, "crest")), { code: "ENOENT" }, "and none laid the user crest out");
+  // At the limit, both crests take the card.
+  for (const [index, scope] of ["role", "user"].entries()) {
+    const admitted = await captureKnowledgeUnit(fx.workspace, card(`SUB-310-AT-LIMIT-${scope}`, SUBJECTS[1 + index], bodyOf(8_192, index), {
+      scope, summary: "s".repeat(2_048), snippet: "n".repeat(512),
+    }));
+    assert.equal(admitted.reasonCode, "KNOWLEDGE_UNIT_CREATED", scope);
+  }
+  assert.equal((await listKnowledgeMetadata(fx.workspace, { at: AT, scope: "user" })).total, 1);
+  assert.equal((await listKnowledgeMetadata(fx.workspace, { at: AT })).total, 1);
+});
+
+test("476-R3 (MIN-235 D10): a superseded card leaves default list and recall, and its body stays readable", async (t) => {
+  const fx = await fixture(t, "FIXTURE-SUB-310-SUPERSEDE");
+  const subject = "SUB-310 the old answer to the retry question";
+  const old = await captureKnowledgeUnit(fx.workspace, card("SUB-310-OLD", subject, "o".repeat(3_000), {
     summary: "Abandoned quokka migration calendar", snippet: "obsolete quokka travel date",
   }));
-  const other = card("SUB-309-OTHER", "unrelated guidance about portal ports", "p".repeat(1_500));
-  const full = await refusalOf(() => captureKnowledgeUnit(fx.workspace, other));
-  assert.equal(full?.reasonCode, "KNOWLEDGE_LIMIT_EXCEEDED");
-  assert.deepEqual(full.details, { bodyBytes: 4_500, limit: 4_096 }, "3,000 + 1,500 does not fit");
-
-  // The replacement is charged its own body less the one it retires: 2,000, not 5,000.
-  const replacement = await captureKnowledgeUnit(fx.workspace, card("SUB-309-NEW", subject, "n".repeat(2_000), {
+  const replacement = await captureKnowledgeUnit(fx.workspace, card("SUB-310-NEW", subject, "n".repeat(2_000), {
     supersedes: old.id, summary: "Revised quokka migration calendar", snippet: "current quokka travel date",
   }));
   assert.equal(replacement.superseded, old.id);
-  assert.deepEqual((await validateKnowledgeStore(fx.workspace)).capacity, { bodyBytes: 2_000, limit: 4_096 }, "the superseded body left the count");
-  const admitted = await captureKnowledgeUnit(fx.workspace, other);
-  assert.equal(admitted.reasonCode, "KNOWLEDGE_UNIT_CREATED", "and the room it left takes the write that did not fit");
-  assert.deepEqual((await validateKnowledgeStore(fx.workspace)).capacity, { bodyBytes: 3_500, limit: 4_096 });
-
-  // Reclaimed from the budget, not from the disk: the old body is still there and still reads.
+  // Superseded, not deleted: the old body file is still in the stream and still reads.
   const stream = await streamOf(fx);
   const oldEvent = (await Promise.all((await readdir(stream)).filter((name) => name.endsWith(".json"))
     .map(async (name) => JSON.parse(await readFile(join(stream, name), "utf8"))))).find((event) => event.metadata.id === old.id);
   assert.equal((await readdir(stream)).includes(oldEvent.body.file), true);
   assert.equal((await readKnowledgeBody(fx.workspace, old.id, { at: AT })).body, "o".repeat(3_000));
-  assert.equal(await fileBytes(stream, (name) => name.endsWith(".body")), 6_500, "three bodies on disk, 3,500 bytes of them charged");
   assert.equal((await listKnowledgeMetadata(fx.workspace, { at: AT })).records.some((record) => record.id === old.id), false);
   const defaultCards = await readRecallCards(fx.workspace, { at: AT });
   assert.equal(defaultCards.cards.some((record) => record.id === old.id), false, "superseded metadata is outside default recall");
   const recallResult = recall({
-    cacheKey: "sub309-superseded-default-recall",
+    cacheKey: "sub310-superseded-default-recall",
     checkpoint: defaultCards.digest,
-    documents: () => recallDocuments({ cards: defaultCards.cards }),
+    documents: () => recallDocuments({ knowledge: defaultCards.cards }),
     query: "obsolete quokka travel date",
     tau: 0,
   });
-  assert.equal(recallResult.records.some((record) => record.id === old.id), false, "the retired body is auditable but never a default recall hit");
+  assert.equal(recallResult.records.some((record) => record.id === old.id), false, "the superseded body is auditable but never a default recall hit");
+  assert.equal(recallResult.records.some((record) => record.id === replacement.id), true, "while the card that replaced it is");
 });
 
-test("476 Implementation Notes: an existing store is recounted on read, with no migration write", async (t) => {
-  const fx = await fixture(t, "FIXTURE-SUB-309-EXISTING");
-  const live = await captureKnowledgeUnit(fx.workspace, card("SUB-309-LIVE", "mike lesson", "m".repeat(700)));
-  const subject = "SUB-309 november lesson written twice";
-  const replaced = await captureKnowledgeUnit(fx.workspace, card("SUB-309-REPLACED", subject, "r".repeat(900)));
-  const replacing = await captureKnowledgeUnit(fx.workspace, card("SUB-309-REPLACING", subject, "q".repeat(400), { supersedes: replaced.id }));
-  const retired = await captureKnowledgeUnit(fx.workspace, card("SUB-309-RETIRED", "oscar lesson", "x".repeat(1_100)));
-  const candidate = await captureKnowledgeUnit(fx.workspace, card("SUB-309-CANDIDATE", "papa lesson", "c".repeat(300)));
-  // Lay down what stores written by earlier engines hold: a card an older engine retired with
-  // its body still on disk, a card still in the candidate state it was written in, and a card
-  // written before `supersedes` and `expansions` existed. None of these shapes is written now,
-  // and that engine wrote the metadata/body layout (TCRN-CROSS-SUB-414).
+test("R17 (MIN-238 D1): an older engine's crest past the old default is read by every read without a byte rewritten, and its stopped write recovers", async (t) => {
+  const fx = await fixture(t, "FIXTURE-SUB-310-EXISTING");
+  const live = await captureKnowledgeUnit(fx.workspace, card("SUB-310-LIVE", "mike lesson", "m".repeat(700)));
+  const subject = "SUB-310 november lesson written twice";
+  const replaced = await captureKnowledgeUnit(fx.workspace, card("SUB-310-REPLACED", subject, "r".repeat(900)));
+  const replacing = await captureKnowledgeUnit(fx.workspace, card("SUB-310-REPLACING", subject, "q".repeat(400), { supersedes: replaced.id }));
+  const retired = await captureKnowledgeUnit(fx.workspace, card("SUB-310-RETIRED", "oscar lesson", "x".repeat(1_100)));
+  const candidate = await captureKnowledgeUnit(fx.workspace, card("SUB-310-CANDIDATE", "papa lesson", "c".repeat(300)));
+  // Sixteen full bodies take the live bodies past the old default: 16 x 8,192 + 700 + 400 + 300.
+  for (const [index, subject] of SUBJECTS.slice(0, 16).entries()) {
+    await captureKnowledgeUnit(fx.workspace, card(`SUB-310-FILL-${index}`, subject, bodyOf(8_192, index), { coexist: true }));
+  }
+  // Lay down what stores written by earlier engines hold: a card an older engine retired with its
+  // body still on disk, a card still in the candidate state it was written in, and a card written
+  // before `supersedes` and `expansions` existed, in the metadata/body layout that engine wrote
+  // (TCRN-CROSS-SUB-414). None of these shapes is written now.
   await asOlderEngineCrest(fx);
   const rewrite = async (id, change) => {
     const path = join(fx.store, "metadata", `${id}.json`);
@@ -204,18 +254,29 @@ test("476 Implementation Notes: an existing store is recounted on read, with no 
   await rewrite(retired.id, (metadata) => ({ ...metadata, lifecycle: "retired", revision: metadata.revision + 1 }));
   await rewrite(candidate.id, (metadata) => ({ ...metadata, lifecycle: "candidate", promotionState: "candidate" }));
   await rewrite(live.id, (metadata) => Object.fromEntries(Object.entries(metadata).filter(([key]) => key !== "supersedes" && key !== "expansions")));
+  assert.ok(await fileBytes(join(fx.store, "bodies")) > OLD_DEFAULT, "the bodies on disk are past the old default");
 
   const before = await storeFiles(fx);
-  // Counted: the live card, the replacement and the candidate. Not counted: the superseded card
-  // and the retired one, whose bodies are still on disk.
-  const expected = 700 + 400 + 300;
-  assert.deepEqual((await validateKnowledgeStore(fx.workspace)).capacity, { bodyBytes: expected, limit: 131_072 });
-  await listKnowledgeMetadata(fx.workspace, { at: AT });
-  await listKnowledgeMetadata(fx.workspace, { at: AT, selection: "all" });
+  const validation = await validateKnowledgeStore(fx.workspace);
+  assert.deepEqual([validation.reasonCode, validation.records, Object.hasOwn(validation, "capacity")], ["KNOWLEDGE_STORE_VALID", 21, false]);
+  assert.equal((await listKnowledgeMetadata(fx.workspace, { at: AT, selection: "all", limit: 64 })).total, 21);
+  assert.equal((await listKnowledgeMetadata(fx.workspace, { at: AT, limit: 64 })).reasonCode, "KNOWLEDGE_LIST_READY");
   await readKnowledgeStoreMarker(fx.workspace);
   await evaluateKnowledgeFreshness(fx.workspace, AT);
-  assert.deepEqual((await validateKnowledgeStore(fx.workspace)).capacity, { bodyBytes: expected, limit: 131_072 }, "every read measures the same number");
+  assert.equal((await readKnowledgeBody(fx.workspace, live.id, { at: AT })).body, "m".repeat(700));
+  assert.equal((await readRecallCards(fx.workspace, { at: AT })).stores.project.reasonCode, "KNOWLEDGE_LIST_READY");
   assert.deepEqual(await storeFiles(fx), before, "no read migrated or rewrote a byte of the store");
-  assert.equal((await readdir(join(fx.store, "bodies"))).length, 5, "every body, counted or not, is still on disk");
+  assert.equal((await readdir(join(fx.store, "bodies"))).length, 21, "every body is still on disk");
   assert.equal(replacing.superseded, replaced.id);
+
+  // The claim a write of that engine left when it stopped: recovery reads the whole crest, past the
+  // old default, and completes the write.
+  const marker = await readKnowledgeStoreMarker(fx.workspace);
+  await writeFile(join(fx.store, "mutation.claim"), canonicalJson({
+    schemaVersion: "tcrn.knowledge-mutation-claim.v1", workspaceId: marker.workspaceId, version: marker.version,
+    token: "a".repeat(48), pid: process.pid + 1_000_000, acquiredAt: "2026-06-12T00:00:00Z",
+  }));
+  const recovered = await recoverKnowledgeStore(fx.workspace);
+  assert.deepEqual([recovered.reasonCode, recovered.recovered], ["KNOWLEDGE_RECOVERED", true]);
+  assert.equal((await validateKnowledgeStore(fx.workspace)).reasonCode, "KNOWLEDGE_STORE_VALID");
 });

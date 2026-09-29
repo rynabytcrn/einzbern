@@ -1329,26 +1329,19 @@ test("i18n full-table proof turns red when an existing translation regresses", a
   assert.ok(leg.problems.some((problem) => problem.locale === "ja" && problem.unexpected.includes("receipt.title")));
 });
 
-// TCRN-CROSS-SUB-412 (STORY-507; MIN-235 D10): the knowledge capacity counts only the body bytes of
-// live cards; a superseded card leaves the count and default recall, and its body is kept for
-// audit. Both texts say so in all five languages, and neither still counts markers or metadata.
-test("SUB-412 (STORY-507, MIN-235 D10): the knowledge capacity copy counts only live card bodies, in every language", async () => {
+// TCRN-CROSS-SUB-310 R17 (MIN-238 D1, D5): no budget bounds the sum of a crest's card bodies, and
+// knowledge.aggregateBytes, the setting that set one, is retired. Its label, its description and its
+// concept explanation -- the copy TCRN-CROSS-SUB-412 wrote for the live-body count -- leave all five
+// languages, and no text there still names the key.
+test("SUB-310 R17 (MIN-238 D1): the retired knowledge total setting has no copy left, in any language", async () => {
   const sandbox = {};
   new Function("window", await readFile(join(portalRoot, "locales.js"), "utf8"))(sandbox);
-  const terms = {
-    en: { says: [/body bytes of live cards/u, /superseded card/u, /default recall/u, /audit/u], retired: /marker|metadata/iu },
-    "zh-CN": { says: [/活卡的正文字节/u, /被取代的卡/u, /默认召回/u, /审计/u], retired: /标记|元数据/u },
-    ja: { says: [/有効なカードの本文バイト/u, /置き換えられたカード/u, /既定の recall/u, /監査/u], retired: /マーカー|メタデータ/u },
-    ko: { says: [/유효한 카드의 본문 바이트/u, /대체된 카드/u, /기본 recall/u, /감사/u], retired: /마커|메타데이터/u },
-    fr: { says: [/corps des fiches actives/u, /fiche remplacée/u, /recall par défaut/u, /audit/u], retired: /marqueur|métadonnées/iu },
-  };
-  assert.deepEqual(Object.keys(sandbox.PORTAL_LOCALES).sort(), Object.keys(terms).sort());
-  for (const [locale, { says, retired }] of Object.entries(terms)) {
-    for (const key of ["setting.knowledge.aggregateBytes.description", "concept.setting.knowledge.aggregateBytes"]) {
-      const text = sandbox.PORTAL_LOCALES[locale][key];
-      for (const pattern of says) assert.match(text, pattern, `${locale} ${key}`);
-      assert.doesNotMatch(text, retired, `${locale} ${key}`);
+  assert.deepEqual(Object.keys(sandbox.PORTAL_LOCALES).sort(), ["en", "fr", "ja", "ko", "zh-CN"]);
+  for (const [locale, table] of Object.entries(sandbox.PORTAL_LOCALES)) {
+    for (const key of ["setting.knowledge.aggregateBytes.label", "setting.knowledge.aggregateBytes.description", "concept.setting.knowledge.aggregateBytes"]) {
+      assert.equal(Object.hasOwn(table, key), false, `${locale} ${key}`);
     }
+    assert.deepEqual(Object.entries(table).filter(([key, text]) => `${key} ${text}`.includes("knowledge.aggregateBytes")).map(([key]) => key), [], locale);
   }
 });
 

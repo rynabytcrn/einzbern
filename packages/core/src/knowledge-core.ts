@@ -63,18 +63,17 @@ export const KNOWLEDGE_CORE_VERSION = "tcrn.knowledge-core.v1" as const;
 export const KNOWLEDGE_STORE_SCHEMA_VERSION = "tcrn.knowledge-store.v1" as const;
 export const KNOWLEDGE_METADATA_SCHEMA_VERSION = "tcrn.knowledge-unit-metadata.v1" as const;
 
+// The limits of one card and of one read. TCRN-CROSS-SUB-310 R17 (MIN-238 D1, D5; MIN-239 D1): nothing
+// bounds the sum of a crest's card bodies, the library's or the user's -- the knowledge.aggregateBytes
+// setting and the one-MiB ceiling above it are gone -- so no read, write, recall, recovery or merge of
+// two devices' streams refuses for the bytes the bodies add up to. Each card is still held to these,
+// and one past its limit is refused with KNOWLEDGE_LIMIT_EXCEEDED.
 export const KNOWLEDGE_LIMITS = Object.freeze({
   maximumBodyBytes: 8_192,
   maximumArticleBytes: PROTOCOL_LIMITS.maxCanonicalBytes,
   maximumSummaryBytes: 2_048,
   maximumSnippetBytes: 512,
   maximumMetadataBytes: 32_768,
-  // STORY-330: the knowledge budget is bounded by the same canonical view ceiling as
-  // the protocol. The previous 128 KiB value was a historical record count surrogate:
-  // 35 cards measured 63,316 bytes of source data while their derived index measured
-  // 52,851 bytes (5.0% of the 1 MiB view ceiling). TCRN-CROSS-SUB-309: what the budget
-  // counts is card bodies alone (see capacityBodyBytes).
-  maximumAggregateBytes: PROTOCOL_LIMITS.maxCanonicalBytes,
   maximumQueryResults: 8,
   maximumLocators: 16,
   maximumLinksPerClass: 64,
@@ -82,36 +81,12 @@ export const KNOWLEDGE_LIMITS = Object.freeze({
   maximumRoleScopes: 16,
 });
 
-const KNOWLEDGE_AGGREGATE_DEFAULT = 131_072 as const;
-
-function knowledgeAggregateLimit(workspace: WorkspaceState): number {
-  const configured = workspace.settings.find((entry) => entry.key === "knowledge.aggregateBytes")?.value;
-  const value = configured === undefined ? KNOWLEDGE_AGGREGATE_DEFAULT : Number(configured);
-  if (!Number.isSafeInteger(value) || value < 4_096 || value > PROTOCOL_LIMITS.maxCanonicalBytes) {
-    fail("KNOWLEDGE_LIMIT_EXCEEDED", "knowledge.aggregateBytes is outside its declared bounds");
-  }
-  return value;
-}
-
-// TCRN-CROSS-SUB-309 (TCRN-CROSS-STORY-476 R3): knowledge.aggregateBytes counts card bodies
-// and nothing else -- not the store marker, not the metadata, not the derived index -- and
-// only the bodies of cards that are still live. A card a later card superseded (the one
-// retirement left, TCRN-CROSS-SUB-308), or one an older engine retired, gives its body back to
-// the budget; a superseded body stays in its immutable store or event stream for explicit reads,
-// is excluded from default recall, and is never physically deleted by superseding.
-// The count reads each record's own bodyBytes, which a full read binds to the body on disk, so
-// a metadata-only read measures the same number, and a store written before this is measured
-// the new way the first time it is read: nothing is migrated or rewritten.
-function countsTowardCapacity(metadata: KnowledgeUnitMetadata): boolean {
+// A live record: no later card supersedes it (the one retirement left, TCRN-CROSS-SUB-308) and an
+// older engine did not retire it. Only live cards form an unresolved conflict, hold a duplicate
+// unresolved or are named for a project the chain no longer holds; a superseded record stays in its
+// immutable store or event stream for explicit reads and is excluded from default recall.
+function isLiveRecord(metadata: KnowledgeUnitMetadata): boolean {
   return metadata.lifecycle !== "retired" && metadata.extensions.supersededBy === undefined;
-}
-
-function capacityBodyBytes(records: readonly KnowledgeUnitMetadata[]): number {
-  return records.reduce((total, metadata) => total + (countsTowardCapacity(metadata) ? metadata.bodyBytes : 0), 0);
-}
-
-function assertWithinCapacity(bodyBytes: number, limit: number, label: string): void {
-  if (bodyBytes > limit) fail("KNOWLEDGE_LIMIT_EXCEEDED", label, { bodyBytes, limit });
 }
 
 export const KNOWLEDGE_REASON_CODES = Object.freeze([
@@ -553,7 +528,6 @@ interface CrestScan {
   // The cards: one record per id, projected (a card another card replaced carries supersededBy).
   readonly units: readonly CrestUnit[];
   readonly index: Readonly<Record<string, JsonValue>>;
-  readonly capacity: { readonly bodyBytes: number; readonly limit: number };
   // TCRN-CROSS-SUB-310 (MIN-235 D7): pairs of live cards from two writers that each wrote without
   // seeing the other, which the write-time conflict check would have refused. Each pair is in
   // canonical id order and so is the list. Both cards stay readable; default selection leaves
@@ -1640,8 +1614,6 @@ interface ScannedRecords {
   readonly units: readonly ScannedKnowledgeUnit[];
   readonly linkInvalid: readonly string[];
   readonly danglingWorkLinks: readonly { readonly knowledgeId: string; readonly workIds: readonly string[] }[];
-  readonly capacityBytes: number;
-  readonly aggregateLimit: number;
 }
 
 interface RecordChecks {
@@ -1653,13 +1625,11 @@ interface RecordChecks {
 }
 
 // Every card of a store, each checked by `checks` against what that store binds: a library's
-// crest checks links against the library, the user crest against the card alone. The budget is
-// asked for once, after the id sets are checked and before the first card is read.
+// crest checks links against the library, the user crest against the card alone.
 async function scanStoreRecords(
   backend: StoreBackend,
   roots: { readonly metadataRoot: string; readonly bodiesRoot: string },
   bodyMode: "full" | "metadata-only",
-  aggregateLimitOf: () => number,
   checks: RecordChecks,
 ): Promise<ScannedRecords> {
   const metadataNames = await backend.listKnowledgeMetadata();
@@ -1681,9 +1651,6 @@ async function scanStoreRecords(
   const units: ScannedKnowledgeUnit[] = [];
   const linkInvalid: string[] = [];
   const danglingWorkLinks: { knowledgeId: string; workIds: readonly string[] }[] = [];
-  const aggregateLimit = aggregateLimitOf();
-  // TCRN-CROSS-SUB-309: live card body bytes only (capacityBodyBytes).
-  let capacityBytes = 0;
   for (const id of metadataIds) {
     const metadataPath = resolve(roots.metadataRoot, `${id}.json`);
     const bodyPath = resolve(roots.bodiesRoot, `${id}.body`);
@@ -1714,8 +1681,6 @@ async function scanStoreRecords(
       ? await backend.readKnowledgeBody(id)
       : null;
     if (body !== null) checks.body(metadata, body);
-    if (countsTowardCapacity(metadata)) capacityBytes += metadata.bodyBytes;
-    assertWithinCapacity(capacityBytes, aggregateLimit, "knowledge aggregate bytes");
     if (metadata.id !== id) {
       fail("KNOWLEDGE_PATH_INVALID", id);
     }
@@ -1725,7 +1690,7 @@ async function scanStoreRecords(
   const metadataById = new Map(units.map((unit) => [unit.metadata.id, unit.metadata]));
   for (const unit of units) validateSupersedesLink(unit.metadata, metadataById);
   danglingWorkLinks.sort((left, right) => compareCanonicalText(left.knowledgeId, right.knowledgeId));
-  return { units, linkInvalid: linkInvalid.sort(compareCanonicalText), danglingWorkLinks, capacityBytes, aggregateLimit };
+  return { units, linkInvalid: linkInvalid.sort(compareCanonicalText), danglingWorkLinks };
 }
 
 // A view kept in this device's cache (a library's crest, the user crest): another device's crest
@@ -1808,7 +1773,7 @@ async function scanOldLayoutStore(
   }
   // WSC-2: shape remains fully validated. Rebase defers scope/project liveness into the
   // offender list; dangling work references are collected separately as non-blocking diagnostics.
-  const { units, linkInvalid, danglingWorkLinks, capacityBytes, aggregateLimit } = await scanStoreRecords(backend, { metadataRoot, bodiesRoot }, bodyMode, () => knowledgeAggregateLimit(workspace), {
+  const { units, linkInvalid, danglingWorkLinks } = await scanStoreRecords(backend, { metadataRoot, bodiesRoot }, bodyMode, {
     shape: (value) => {
       const metadata = validateMetadataShape(value, workspace, true);
       if (!rebase && metadata.lifecycle !== "retired") validateMetadataScope(metadata, workspace);
@@ -1824,11 +1789,9 @@ async function scanOldLayoutStore(
     fail("KNOWLEDGE_PARTIAL_STATE", "knowledge views are not exact");
   }
   // TCRN-CROSS-STORY-023: the index is a derived rebuildable view whose `records`
-  // array is a re-serialization of the metadata, so charging its bytes against the cap
-  // taxed every record roughly twice. TCRN-CROSS-SUB-309 went the rest of the way: the
-  // cap now counts live card bodies only (capacityBodyBytes), not the marker and not
-  // the metadata either. The index is still validated byte-for-byte against the
-  // canonical rebuild below.
+  // array is a re-serialization of the metadata; it is validated byte-for-byte against
+  // the canonical rebuild below. No card body is charged against a total
+  // (TCRN-CROSS-SUB-310 R17, MIN-238 D1).
   const viewBytes = await backend.readKnowledgeView();
   const view = viewBytes.toString("utf8");
   if (!allowStaleIndex && view !== canonicalJson(index)) {
@@ -1839,7 +1802,6 @@ async function scanOldLayoutStore(
     units: units.map(metadataBodyLayoutUnit), index,
     linkInvalid,
     danglingWorkLinks,
-    capacity: { bodyBytes: capacityBytes, limit: aggregateLimit },
     unresolvedConflicts: [], duplicates: [], awaitingChain: [], unresolvedScopes: [], eventHeads: [],
   };
 }
@@ -1988,7 +1950,7 @@ async function scanLibraryCrest(
   let legacyUnits: readonly CrestUnit[] = [];
   if (metadataRoot !== null && bodiesRoot !== null) {
     // Links are checked on the merged cards below, not on each stored record.
-    const legacy = await scanStoreRecords(backend, { metadataRoot, bodiesRoot }, bodyMode, () => knowledgeAggregateLimit(workspace), {
+    const legacy = await scanStoreRecords(backend, { metadataRoot, bodiesRoot }, bodyMode, {
       shape: (value) => validateMetadataShape(value, workspace, true),
       links: null,
       danglingWorkLinks: null,
@@ -2013,12 +1975,9 @@ async function scanLibraryCrest(
   }
   awaitingChain.sort((left, right) => compareCanonicalText(left.id, right.id) || compareCanonicalText(left.deviceId, right.deviceId) || left.sequence - right.sequence);
   const awaitingIds = new Set(awaitingChain.map((entry) => entry.id));
-  // TCRN-CROSS-SUB-413: every live version of a duplicate is live body bytes until a card supersedes
-  // its id. O-1 is pending: a merge whose live bodies exceed the budget is refused whole, unchanged.
+  // TCRN-CROSS-SUB-413: the cards and every version of a duplicate. TCRN-CROSS-SUB-310 R17 (MIN-238
+  // D1): however many body bytes the merged streams hold, the read answers; nothing sums them.
   const records = crestRecords({ units, duplicates });
-  const aggregateLimit = knowledgeAggregateLimit(workspace);
-  const capacityBytes = capacityBodyBytes(records.map((unit) => unit.metadata));
-  assertWithinCapacity(capacityBytes, aggregateLimit, "knowledge aggregate bytes");
   // WSC-2: the current record of each card is bound to the chain this read replayed. Rebase defers
   // scope/project liveness into the offender list; dangling work references are diagnostics.
   // TCRN-CROSS-SUB-414 (R16, C-R16-1): a project deleted after a card was written -- or by another
@@ -2036,7 +1995,7 @@ async function scanLibraryCrest(
     if (metadata.lifecycle === "retired" || awaitingIds.has(metadata.id)) continue;
     const offence = scopeOffence(metadata, workspace);
     if (offence === "project") {
-      if (countsTowardCapacity(metadata)) {
+      if (isLiveRecord(metadata)) {
         unresolvedScopes.push({ id: metadata.id, ...recordIdentity(unit), projectId: metadata.projectId as string });
         if (rebase) linkInvalid.add(metadata.id);
       }
@@ -2068,7 +2027,6 @@ async function scanLibraryCrest(
     layout: "library", workspaceRoot, storeRoot, metadataRoot, bodiesRoot, viewsRoot: null, marker: projectedMarker, workspace, units, index,
     linkInvalid: [...linkInvalid].sort(compareCanonicalText),
     danglingWorkLinks,
-    capacity: { bodyBytes: capacityBytes, limit: aggregateLimit },
     unresolvedConflicts, duplicates, awaitingChain, unresolvedScopes, eventHeads: streams.heads,
   };
 }
@@ -2497,10 +2455,10 @@ function projectCrestUnits(units: readonly CrestUnit[], linkState: WorkspaceStat
   const unresolvedConflicts: (readonly string[])[] = [];
   for (let leftIndex = 0; leftIndex < projected.length; leftIndex += 1) {
     const left = projected[leftIndex] as CrestUnit;
-    if (!countsTowardCapacity(left.metadata)) continue;
+    if (!isLiveRecord(left.metadata)) continue;
     for (let rightIndex = leftIndex + 1; rightIndex < projected.length; rightIndex += 1) {
       const right = projected[rightIndex] as CrestUnit;
-      if (!countsTowardCapacity(right.metadata) || origins.get(left.metadata.id) === origins.get(right.metadata.id)) continue;
+      if (!isLiveRecord(right.metadata) || origins.get(left.metadata.id) === origins.get(right.metadata.id)) continue;
       const conflicts = knowledgeConflictHits([left.metadata], right.metadata.subject, [right.metadata.id]).length > 0 ||
         knowledgeConflictHits([right.metadata], left.metadata.subject, [left.metadata.id]).length > 0;
       const acknowledged = left.metadata.extensions.coexistsWith?.includes(right.metadata.id) === true ||
@@ -2519,12 +2477,12 @@ function unresolvedConflictIds(scan: Pick<CrestScan, "unresolvedConflicts">): Re
 // TCRN-CROSS-SUB-413: a duplicate is unresolved while one of its versions is still live -- not
 // replaced and not retired. A card whose supersedes names its id resolves it.
 function unresolvedDuplicates(scan: Pick<CrestScan, "duplicates">): readonly CrestDuplicate[] {
-  return scan.duplicates.filter((duplicate) => duplicate.versions.some((version) => countsTowardCapacity(version.metadata)));
+  return scan.duplicates.filter((duplicate) => duplicate.versions.some((version) => isLiveRecord(version.metadata)));
 }
 
 // Every record a crest holds -- its cards and every version of every duplicate -- in canonical id
-// order, the versions of one id in their canonical writer order: what its index view, its budget
-// and a `--selection all` list read.
+// order, the versions of one id in their canonical writer order: what its index view and a
+// `--selection all` list read.
 function crestRecords(scan: Pick<CrestScan, "units" | "duplicates">): readonly CrestUnit[] {
   return [...scan.units, ...scan.duplicates.flatMap((duplicate) => duplicate.versions)]
     .sort((left, right) => compareCanonicalText(left.metadata.id, right.metadata.id));
@@ -2596,7 +2554,7 @@ async function scanUserCrest(
   if (legacyLayout) {
     const metadataRoot = await boundDirectory(resolve(storeRoot, "metadata"), storeRoot);
     const bodiesRoot = await boundDirectory(resolve(storeRoot, "bodies"), storeRoot);
-    const legacy = await scanStoreRecords(backend, { metadataRoot, bodiesRoot }, bodyMode, () => KNOWLEDGE_AGGREGATE_DEFAULT, {
+    const legacy = await scanStoreRecords(backend, { metadataRoot, bodiesRoot }, bodyMode, {
       shape: (value) => validateMetadataShape(value, null),
       links: null,
       danglingWorkLinks: null,
@@ -2614,14 +2572,10 @@ async function scanUserCrest(
     })
     : { units: [], eventCount: 0, heads: [] };
   const { units, unresolvedConflicts, duplicates } = projectCrestUnits([...legacyUnits, ...streams.units], null, false);
-  // TCRN-CROSS-SUB-413: every live version of a duplicate is live body bytes until a card
-  // supersedes its id; the index view lists every version beside the cards.
+  // TCRN-CROSS-SUB-413: the index view lists every version of a duplicate beside the cards.
+  // TCRN-CROSS-SUB-310 R17 (MIN-238 D1): however many body bytes the merged streams hold, the read
+  // answers; nothing sums them, so recall never finds the user crest refused for its bodies' size.
   const records = crestRecords({ units, duplicates }).map((unit) => unit.metadata);
-  // O-1 is pending (R14 (b)): a merge whose live bodies exceed the budget is refused whole here,
-  // unchanged; recall reports the refusal as a degraded user crest (readRecallCards).
-  const capacityBytes = capacityBodyBytes(records);
-  const aggregateLimit = KNOWLEDGE_AGGREGATE_DEFAULT;
-  assertWithinCapacity(capacityBytes, aggregateLimit, "knowledge aggregate bytes");
   const eventHighWaterDigest = streams.eventCount === 0
     ? marker.eventHighWaterDigest
     : canonicalSha256({ schemaVersion: USER_CREST_EVENT_HEAD_SCHEMA_VERSION, heads: streams.heads } as unknown as JsonValue);
@@ -2634,7 +2588,7 @@ async function scanUserCrest(
   await projectCachedView(backend, index);
   return {
     storeRoot, device: location.device, eventOnly: !legacyLayout, eventHeads: streams.heads, marker: projectedMarker, units, index,
-    capacity: { bodyBytes: capacityBytes, limit: aggregateLimit }, unresolvedConflicts, duplicates, awaitingChain: [], unresolvedScopes: [],
+    unresolvedConflicts, duplicates, awaitingChain: [], unresolvedScopes: [],
   };
 }
 
@@ -3189,9 +3143,8 @@ export async function validateKnowledgeStore(workspaceRoot: string, options: Kno
     records: crestRecords(scan).length,
     indexDigest: scan.index.indexDigest ?? "",
     eventHighWaterDigest: scan.marker.eventHighWaterDigest,
-    // TCRN-CROSS-SUB-309: the capacity report -- live card body bytes against the
-    // knowledge.aggregateBytes limit.
-    capacity: { bodyBytes: scan.capacity.bodyBytes, limit: scan.capacity.limit },
+    // TCRN-CROSS-SUB-310 R17: no `capacity` report. It measured the live card bodies against the
+    // knowledge.aggregateBytes limit (TCRN-CROSS-SUB-309), and that limit is gone (MIN-238 D1).
     ...(scan.danglingWorkLinks.length === 0 ? {} : { danglingWorkLinks: scan.danglingWorkLinks }),
   };
 }
@@ -3239,9 +3192,10 @@ async function createUserCrestEvent(
   if (!Number.isSafeInteger(sequence)) fail("KNOWLEDGE_LIMIT_EXCEEDED", "user crest event sequence");
 
   // TCRN-CROSS-SUB-413: a write sees every record the crest holds, each version of a duplicate as
-  // much as a card: a conflict it scores against (named once per id), an id and external key it may
-  // not reuse, and live body bytes of the budget. A write whose supersedes names a duplicate's id
-  // replaces every version of it at once; it is refused only when every version is retired.
+  // much as a card: a conflict it scores against (named once per id) and an id and external key it
+  // may not reuse. A write whose supersedes names a duplicate's id replaces every version of it at
+  // once; it is refused only when every version is retired. TCRN-CROSS-SUB-310 R17 (MIN-238 D1): no
+  // total of the crest's bodies admits or refuses it; its own card is held to KNOWLEDGE_LIMITS.
   const records = crestRecords(scan);
   const replacedRecords = metadata.supersedes === null ? [] : records.filter((unit) => unit.metadata.id === metadata.supersedes);
   if (metadata.supersedes !== null && replacedRecords.every((unit) => unit.metadata.lifecycle === "retired")) {
@@ -3269,10 +3223,9 @@ async function createUserCrestEvent(
     fail("KNOWLEDGE_DUPLICATE", metadata.id);
   }
 
-  // The records this write replaces, as the next read projects them. A retired one gives no bytes
-  // back and is left as it is. A record of the metadata/body layout carries no body reader of its
-  // own (a version of a duplicate can be one), so its body is read as an explicit read reads it.
-  const replaced = new Map<ScannedKnowledgeUnit, KnowledgeUnitMetadata>();
+  // The records this write replaces are checked as the next read projects them, with their bodies.
+  // A retired one is left as it is. A record of the metadata/body layout carries no body reader of
+  // its own (a version of a duplicate can be one), so its body is read as an explicit read reads it.
   for (const unit of replacedRecords) {
     if (unit.metadata.lifecycle === "retired") continue;
     const supersededMetadata: KnowledgeUnitMetadata = {
@@ -3285,10 +3238,7 @@ async function createUserCrestEvent(
       ? await userCrestBackend(scan.storeRoot, location.device, options).readKnowledgeBody(unit.metadata.id)
       : await unit.readBody());
     validateMetadataBody(validateExistingMetadataShape(supersededMetadata, null), oldBody, null);
-    replaced.set(unit, supersededMetadata);
   }
-  const projectedMetadata = records.map((unit) => replaced.get(unit) ?? unit.metadata).concat(written);
-  assertWithinCapacity(capacityBodyBytes(projectedMetadata), scan.capacity.limit, "knowledge create budget");
 
   const sequenceText = String(sequence).padStart(8, "0");
   const bodyFile = `${sequenceText}-${written.bodySha256}.body`;
@@ -3420,9 +3370,10 @@ async function crestRecordBody(scan: KnowledgeStoreScan, unit: CrestUnit, option
 
 // TCRN-CROSS-SUB-414: write one card to a library's crest, as an event in this device's stream. The
 // write reads the whole crest first -- every writer's records merged -- and sees every record of it:
-// a card or a version of a duplicate is a conflict it scores against (named once per id), an id and
-// external key it may not reuse, and live body bytes of the budget. A write whose supersedes names a
-// duplicate's id replaces every version of it; the replaced card is not rewritten, since a read
+// a card or a version of a duplicate is a conflict it scores against (named once per id), and an id
+// and external key it may not reuse; no total of the crest's bodies admits or refuses it
+// (TCRN-CROSS-SUB-310 R17, MIN-238 D1). A write whose supersedes names a duplicate's id replaces
+// every version of it; the replaced card is not rewritten, since a read
 // projects the mark from this card's supersedes. The conflicts the write saw and was admitted beside
 // -- with --coexist, or beside the card it supersedes -- are recorded in the new card (SUB-310 (a)),
 // so a reader tells them from a conflict no writer saw. A committed event is answered from the
@@ -3464,8 +3415,7 @@ async function createLibraryCrestEvent(
     ? metadata
     : { ...metadata, extensions: { coexistsWith: conflicts.slice(0, KNOWLEDGE_LIMITS.maximumQueryResults) } };
   if (written !== metadata) validateMetadataBody(validateMetadataShape(written as unknown as Readonly<Record<string, JsonValue>>, scan.workspace), body, scan.workspace);
-  // The records this write replaces, as the next read projects them. A retired one gives no bytes
-  // back and is left as it is.
+  // The records this write replaces, as the next read projects them. A retired one is left as it is.
   const replaced = new Map<CrestUnit, KnowledgeUnitMetadata>();
   for (const unit of replacedRecords) {
     if (unit.metadata.lifecycle === "retired") continue;
@@ -3481,11 +3431,8 @@ async function createLibraryCrestEvent(
   if (Buffer.byteLength(canonicalJson(written), "utf8") > KNOWLEDGE_LIMITS.maximumMetadataBytes) {
     fail("KNOWLEDGE_LIMIT_EXCEEDED", "knowledge create budget");
   }
-  // TCRN-CROSS-SUB-309: the live card bodies once this write lands. The new body joins them, and a
-  // card this write supersedes leaves them, which is how a replacement makes room rather than
-  // doubling the store. The scan measured knowledge.aggregateBytes against the same library.
+  // The records once this write lands, which this device's index view projects after it.
   const projectedMetadata = records.map((unit) => replaced.get(unit) ?? unit.metadata).concat(written);
-  assertWithinCapacity(capacityBodyBytes(projectedMetadata), scan.capacity.limit, "knowledge create budget");
   if (records.some((unit) => unit.metadata.id === metadata.id || unit.metadata.externalKey === metadata.externalKey)) {
     fail("KNOWLEDGE_DUPLICATE", metadata.id);
   }
@@ -4328,9 +4275,9 @@ async function refreshKnowledgeArticleUnlocked(
   validateMetadataBody(validateExistingMetadataShape(metadata, scan.workspace), body, scan.workspace);
   const secondRead = await readArticleBytes(workspaceArticle.file);
   if (!secondRead.equals(articleBytes)) fail("KNOWLEDGE_SOURCE_CHANGED", workspaceArticle.file);
-  // TCRN-CROSS-SUB-309: the refreshed index body replaces the old one in the body budget.
+  // The records once the refreshed card lands, which this device's index view projects after it; no
+  // total of the crest's bodies is checked (TCRN-CROSS-SUB-310 R17, MIN-238 D1).
   const projectedMetadata = crestRecords(scan).map((entry) => entry === unit ? metadata : entry.metadata);
-  assertWithinCapacity(capacityBodyBytes(projectedMetadata), scan.capacity.limit, "article refresh aggregate bytes");
   await appendLibraryCrestEvent(scan, metadata, body, unit, options.faultAt);
   await projectViewAfterWrite(scan, projectedMetadata, options);
   return {

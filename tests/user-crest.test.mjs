@@ -9,8 +9,10 @@
 // late. A same-subject pair no writer saw is withheld and named, not a refusal of the whole crest
 // (a); recovery never writes the root manifest (c); a committed write is answered as created (d);
 // and a user crest that gave recall fewer cards than it holds is named at the top of recall. Each
-// delay is the test's own step, so every case has one outcome. (b), a merge past the budget, is
-// O-1's: only its diagnostic is asserted.
+// delay is the test's own step, so every case has one outcome. R17 (b), as MIN-238 D1 decided it:
+// no budget bounds the sum of the crest's card bodies, so a merge past the old default of
+// knowledge.aggregateBytes reads, recalls, takes the next card and recovers on both devices, and
+// each card keeps its own limits.
 //
 // TCRN-CROSS-SUB-413 (STORY-476 D7): the same two devices writing one external key before either
 // delivers. The key's versions are an unresolved duplicate, named by list, a read of its id and
@@ -376,11 +378,13 @@ test("R13 D10: superseded user bodies remain auditable and leave active/default 
   const recallResult = recall({
     cacheKey: "r13-user-superseded-card",
     checkpoint: recallCards.digest,
-    documents: () => recallDocuments({ cards: recallCards.cards }),
+    // TCRN-CROSS-SUB-310 R17: the recall corpus reads cards from `knowledge`; `cards` gave it none.
+    documents: () => recallDocuments({ knowledge: recallCards.cards }),
     query: "outdated pademelon shelter",
     tau: 0,
   });
   assert.equal(recallResult.records.some((record) => record.id === old.id), false);
+  assert.equal(recallResult.records.some((record) => record.id === replacement.id), true, "the replacement is the card recalled");
 });
 
 test("476-R5: crest.userPath puts the user crest in a cloud folder, stored as its real path, and reads and writes go there", async (context) => {
@@ -756,7 +760,10 @@ test("R15 D7 (SUB-413): --supersedes naming the id resolves the duplicate on bot
   assert.equal((await versionsOnDisk(shared.crest, "UC-SHARED-KEY")).length, 2, "both versions' events stay in their streams");
 });
 
-test("R15 D7 (SUB-413): both versions count toward the user crest's budget until --supersedes resolves the duplicate, and neither does after", async (context) => {
+// TCRN-CROSS-SUB-310 R17 (MIN-238 D1): the two versions of a duplicate no longer hold any budget, so
+// a crest they carry past the old 131,072-byte default takes every next card while the duplicate is
+// unresolved, and --supersedes still resolves it on both devices.
+test("R15 D7 (SUB-413), R17: an unresolved duplicate whose versions carry the crest past the old default refuses no write, and --supersedes still resolves it", async (context) => {
   const shared = await twoDevices(context);
   const { workspace, deviceA, deviceB } = shared;
   const full = "x".repeat(8_192);
@@ -770,13 +777,22 @@ test("R15 D7 (SUB-413): both versions count toward the user crest's budget until
   await asDevice(deviceB, () => createKnowledgeUnit(workspace, card("UC-SHARED-BUDGET", { subject: "Beaver dam height", body: full })));
   await shared.deliver(deviceA);
   const id = deriveStableId("knowledge", "UC-SHARED-BUDGET");
-  // Fourteen cards and both versions are sixteen bodies of 8192 bytes: the whole budget, 131072.
-  const refused = await asDevice(deviceA, () => createKnowledgeUnit(workspace, card("UC-A-ONE-BYTE", { subject: "Wagtail roost tree", body: "w" }))).then(() => null, (error) => error);
-  assert.deepEqual([refused?.reasonCode, refused?.details], ["KNOWLEDGE_LIMIT_EXCEEDED", { bodyBytes: 16 * 8_192 + 1, limit: 131_072 }], "both unresolved versions are live bytes");
+  // Fourteen cards and both versions are sixteen bodies of 8192 bytes, the old default of 131072
+  // exactly; the next byte refused a write before R17. Each device now takes its next card.
+  const oneByte = await asDevice(deviceA, () => createKnowledgeUnit(workspace, card("UC-A-ONE-BYTE", { subject: "Wagtail roost tree", body: "w" })));
+  assert.equal(oneByte.reasonCode, "KNOWLEDGE_UNIT_CREATED", "the byte past the old default is admitted");
+  const listed = await asDevice(deviceB, () => listKnowledgeMetadata(workspace, { at, scope: "user", limit: 64 }));
+  assert.deepEqual(listed.unresolvedDuplicates.map((entry) => entry.id), [id], "the duplicate is still unresolved and named");
+  assert.equal(listed.total, 15, "fourteen cards and the new one; neither version is a default answer");
   const settled = await asDevice(deviceB, () => createKnowledgeUnit(workspace, card("UC-B-SETTLED", { subject: "Kestrel hover timing", body: "k", supersedes: id })));
   assert.equal(settled.reasonCode, "KNOWLEDGE_UNIT_CREATED");
-  const after = await asDevice(deviceA, () => createKnowledgeUnit(workspace, card("UC-A-FULL-AFTER", { subject: "Wagtail roost tree", body: full })));
-  assert.equal(after.reasonCode, "KNOWLEDGE_UNIT_CREATED", "neither version holds budget once the id is superseded: 14 x 8192 + 1 + 8192 bytes fit");
+  for (const home of [deviceA, deviceB]) {
+    const resolved = await asDevice(home, () => listKnowledgeMetadata(workspace, { at, scope: "user", limit: 64 }));
+    assert.equal(Object.hasOwn(resolved, "unresolvedDuplicates"), false, "the diagnostic is gone");
+    assert.equal(resolved.total, 16);
+  }
+  const after = await asDevice(deviceA, () => createKnowledgeUnit(workspace, card("UC-A-FULL-AFTER", { subject: "Vole tunnel network", body: full })));
+  assert.equal(after.reasonCode, "KNOWLEDGE_UNIT_CREATED");
 });
 
 test("R15 D7 (SUB-413): a version the metadata/body layout holds and a device's version of one key are a duplicate that names the layout as no device, and --supersedes resolves it", async (context) => {
@@ -885,23 +901,66 @@ test("R15 D7 (SUB-413) negative: a forked or altered stream is still refused nam
   assert.equal((await readRecallCards(first.workspace, { at })).userCrestDegraded?.reasonCode, "KNOWLEDGE_PARTIAL_STATE", "recall names the refusal");
 });
 
-test("R14 (b) diagnostic only: a merge past the user crest's budget is named at the top of CLI recall (O-1 pending: nothing else about it is asserted)", async (context) => {
+// R17 (b), as MIN-238 D1 decided it: two devices that each stay under the old 131,072-byte default of
+// knowledge.aggregateBytes merge past it through the folder. On both devices the crest lists, reads by
+// id, recalls with nothing degraded, takes the next card and recovers, and both answer alike.
+test("R17 (b) D7 (MIN-238 D1): a merge past the old default reads, recalls, takes the next card and recovers on both devices, which answer alike", async (context) => {
   const shared = await twoDevices(context);
   const { workspace, deviceA, deviceB } = shared;
   const subjectsA = ["Otter holt survey", "Kestrel hover timing", "Newt pond census", "Badger sett mapping", "Heron colony count", "Vole tunnel depth", "Stoat winter coat", "Hare form spotting", "Plover scrape watch"];
   const subjectsB = ["Beaver dam height", "Curlew call record", "Lizard basking rock", "Moth trap catalogue", "Grebe dive length", "Shrew burrow route", "Swift nest ledge", "Toad crossing night", "Wagtail roost tree"];
+  const body = (letter, index) => `${letter.repeat(7_999)}${index}`;
+  const cardsA = [];
   for (const [index, subject] of subjectsA.entries()) {
-    await asDevice(deviceA, () => createKnowledgeUnit(workspace, card(`UC-A-BUDGET-${index}`, { subject, body: "x".repeat(8_000) })));
+    cardsA.push(await asDevice(deviceA, () => createKnowledgeUnit(workspace, card(`UC-A-BUDGET-${index}`, { subject, body: body("a", index) }))));
   }
   await shared.hold(deviceA);
+  const cardsB = [];
   for (const [index, subject] of subjectsB.entries()) {
-    await asDevice(deviceB, () => createKnowledgeUnit(workspace, card(`UC-B-BUDGET-${index}`, { subject, body: "x".repeat(8_000) })));
+    cardsB.push(await asDevice(deviceB, () => createKnowledgeUnit(workspace, card(`UC-B-BUDGET-${index}`, { subject, body: body("b", index) }))));
   }
   assert.equal(Object.hasOwn(await asDevice(deviceB, () => recallCli(workspace, "beaver dam height")), "userCrestDegraded"), false,
-    "each device's own cards are within the budget");
+    "each device's own cards are under the old default");
   await shared.deliver(deviceA);
-  const answer = await asDevice(deviceA, () => recallCli(workspace, "beaver dam height"));
-  assert.equal(answer.userCrestDegraded?.reasonCode, "KNOWLEDGE_LIMIT_EXCEEDED", "the degraded user crest is named at the top of the answer");
+  assert.ok(9 * 8_000 <= 131_072 && 18 * 8_000 > 131_072, "the merge alone passes the old default");
+
+  const answers = [];
+  for (const home of [deviceA, deviceB]) {
+    const device = home === deviceA ? "A" : "B";
+    const listed = await asDevice(home, () => listKnowledgeMetadata(workspace, { at, scope: "user", limit: 64 }));
+    assert.deepEqual([listed.reasonCode, listed.total], ["KNOWLEDGE_LIST_READY", 18], device);
+    for (const name of ["unresolvedConflicts", "unresolvedDuplicates"]) assert.equal(Object.hasOwn(listed, name), false, `${device} ${name}`);
+    assert.equal((await asDevice(home, () => readKnowledgeBody(workspace, cardsA[8].id, { at, scope: "user" }))).body, body("a", 8), device);
+    assert.equal((await asDevice(home, () => readKnowledgeBody(workspace, cardsB[8].id, { at, scope: "user" }))).body, body("b", 8), device);
+    const snippet = await asDevice(home, () => readKnowledgeSnippet(workspace, cardsB[0].id, { scope: "user" }));
+    assert.equal(snippet.subject, "Beaver dam height", device);
+    const read = await asDevice(home, () => readRecallCards(workspace, { at }));
+    assert.deepEqual([read.stores.user.reasonCode, read.stores.user.cards, read.userCrestDegraded], ["KNOWLEDGE_LIST_READY", 18, null], device);
+    const answer = await asDevice(home, () => recallCli(workspace, "beaver dam height"));
+    assert.equal(Object.hasOwn(answer, "userCrestDegraded"), false, `${device}: nothing about the user crest is degraded`);
+    assert.deepEqual([answer.knowledgeStores.user.reasonCode, answer.knowledgeStores.user.cards], ["KNOWLEDGE_LIST_READY", 18], device);
+    assert.deepEqual(answer.records.filter((record) => record.kind === "card").map((record) => [record.id, record.scope]).slice(0, 1), [[cardsB[0].id, "user"]], device);
+    answers.push({ records: listed.records, total: listed.total, resultDigest: listed.resultDigest, recallDigest: read.stores.user.digest });
+  }
+  assert.deepEqual(answers[0], answers[1], "both devices read the same merged crest");
+
+  // Each device takes its next card, sees the other's at once, and has nothing to recover.
+  const nextA = await asDevice(deviceA, () => createKnowledgeUnit(workspace, card("UC-A-NEXT", { subject: "Osprey plunge angle", body: body("c", 9) })));
+  const nextB = await asDevice(deviceB, () => createKnowledgeUnit(workspace, card("UC-B-NEXT", { subject: "Dipper stream walking", body: body("d", 9) })));
+  assert.deepEqual([nextA.reasonCode, nextB.reasonCode], ["KNOWLEDGE_UNIT_CREATED", "KNOWLEDGE_UNIT_CREATED"]);
+  const after = [];
+  for (const home of [deviceA, deviceB]) {
+    const listed = await asDevice(home, () => listKnowledgeMetadata(workspace, { at, scope: "user", limit: 64 }));
+    assert.equal(listed.total, 20);
+    assert.equal((await asDevice(home, () => recoverKnowledgeStore(workspace, { scope: "user" }))).reasonCode, "KNOWLEDGE_RECOVERY_NOT_NEEDED");
+    after.push({ records: listed.records, resultDigest: listed.resultDigest });
+  }
+  assert.deepEqual(after[0], after[1], "and both still answer alike");
+
+  // Each card still keeps its own limits: one byte past the body limit is refused and writes nothing.
+  const events = (await shared.events()).length;
+  await expectReason("KNOWLEDGE_LIMIT_EXCEEDED", asDevice(deviceB, () => createKnowledgeUnit(workspace, card("UC-B-OVERSIZE", { subject: "Bittern boom season", body: "x".repeat(8_193) }))));
+  assert.equal((await shared.events()).length, events, "the refused card wrote no event");
 });
 
 test("R14 (c) D7: recovering a crest that holds the metadata/body layout, event streams and a stale claim leaves store.json untouched, and reads and writes go on", async (context) => {

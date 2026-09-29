@@ -56,7 +56,6 @@
     "snippet-oversize",
     "record-count-limit",
     "query-result-limit",
-    "aggregate-limit",
     "unknown-field",
     "malformed-type",
     "malicious-unicode",
@@ -83,6 +82,5 @@
   "maximumSummaryBytes": 2048,
   "maximumSnippetBytes": 512,
   "maximumMetadataBytes": 32768,
-  "maximumQueryResults": 8,
-  "maximumAggregateBytes": 1048576
+  "maximumQueryResults": 8
 }

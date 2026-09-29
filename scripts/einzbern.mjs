@@ -18,9 +18,10 @@ try {
   // A library this engine may not open names the format or engine version it needs and what this
   // engine has (TCRN-CROSS-STORY-471 R1). A Story refused for a missing goal or acceptance names
   // the field (TCRN-CROSS-STORY-473 R2). A managed-section refusal names its file, line and section
-  // (TCRN-CROSS-STORY-478). A knowledge write refused for its budget names the body
-  // bytes it would reach and the limit, and one refused as a possible conflict the cards it
-  // conflicts with (TCRN-CROSS-STORY-476, TCRN-CROSS-SUB-311). A Story refused at done names every
+  // (TCRN-CROSS-STORY-478). A knowledge write refused as a possible conflict names the cards it
+  // conflicts with (TCRN-CROSS-STORY-476, TCRN-CROSS-SUB-311); no knowledge write is refused for a
+  // body-byte budget any more (TCRN-CROSS-SUB-310 R17), so no current refusal carries bodyBytes or
+  // limit. A Story refused at done names every
   // red required gate or missing required coverage, the Stories held back and the run and tree it
   // was judged on (TCRN-CROSS-STORY-485 R4, MIN-235 D8, TCRN-CROSS-SUB-345). A restore stopped
   // by one of its eight checks names the check (TCRN-CROSS-STORY-480 R3, TCRN-CROSS-SUB-327).

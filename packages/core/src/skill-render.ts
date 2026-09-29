@@ -79,7 +79,7 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   {
     moment: "A decision is made",
     verbs: ["minutes-record"],
-    action: "As soon as you judge that something is a decision, record it: each decision gets its number, D1 to Dn. End your reply with `已记 <minutes key> Dn` for each one (`Recorded <minutes key> Dn` when the conversation is not in Chinese).",
+    action: "As soon as you judge that something is a decision, record it: each decision gets its number, D1 to Dn. End your reply with `已记 <minutes key> Dn` for each one (`Recorded <minutes key> Dn` when the conversation is not in Chinese). To replace, withdraw or stand beside a recorded decision (`minutes:<id>#D<n>`), declare it in the same record: `--supersedes <decision>=D<n>`, `--withdraws <decision>` or `--coexists <decision>`.",
   },
   {
     moment: "A lesson is learned",

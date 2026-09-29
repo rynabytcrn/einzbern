@@ -147,7 +147,10 @@ device directory (TCRN-CROSS-STORY-469 R4); a library never holds it.
   `storage.snapshotEveryEvents` merged events past the snapshot it resumed from.
 - `crest-views/index.json` is the knowledge store's index view
   (`packages/core/spec/knowledge-core-v1.md`), projected again by any read that finds it
-  missing or out of date.
+  missing or out of date. Once the index passes the protocol's canonical ceiling or its
+  record-count limit, `index.json` is a head naming its pages and the records sit in page
+  files `index-<n, six digits>.json` beside it, each projected again by a read that finds it
+  missing, damaged or out of date ("Capacity" in `packages/core/spec/knowledge-core-v1.md`).
 
 A read resumes from the snapshot only while it describes a prefix of what the streams hold:
 the same engine version wrote it, every stream it covers still holds the recorded event at

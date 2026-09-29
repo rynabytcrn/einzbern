@@ -398,3 +398,29 @@ test("480-R3: once all eight pass, the project is registered and wired from the 
   assert.deepEqual(again.writes, []);
   assert.deepEqual((await applySetup(again)).written, []);
 });
+
+test("385-R16: a restore of a library outside the project names each project host file Git tracks, in the plan and in SETUP_APPLIED", async (context) => {
+  const f = await fixture(context);
+  const library = join(f.base, "shared", "Ether", "project");
+  git(f.project, ["init", "--quiet"]);
+  // Device a installs with the library outside the project, so its wiring writes both host files.
+  await installOnA(f, { artifacts: library });
+  const files = [".claude/settings.local.json", ".codex/config.toml"];
+  use(f.b);
+  assert.deepEqual((await restorePlan(f, f.b, library)).warnings, [], "files Git does not track warn of nothing");
+
+  git(f.project, ["add", "--", ...files]);
+  const expected = files.map((file) => ({
+    reasonCode: "HOST_WRITABLE_ROOTS_TRACKED_BY_GIT",
+    file,
+    message: `${file} is tracked by Git and may publish this device's library path if committed`,
+  }));
+  const planned = await restorePlan(f, f.b, library);
+  assert.deepEqual(planned.blockers, []);
+  assert.deepEqual(planned.verification.map((check) => check.ok), RESTORE_CHECKS.map(() => true));
+  assert.deepEqual(planned.writes.filter((entry) => entry.step === "writable-roots"), [], "the files already name the library");
+  assert.deepEqual(planned.warnings, expected, "still, each tracked file is named before anything is written");
+  const applied = await applySetup(planned);
+  assert.equal(applied.reasonCode, "SETUP_APPLIED");
+  assert.deepEqual(applied.warnings, expected);
+});

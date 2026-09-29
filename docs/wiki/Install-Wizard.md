@@ -12,7 +12,7 @@ Mana Orchestrate 带有 Einzbern 安装向导。它在项目目录中运行 `set
 einzbern setup --mode <模式> --project <项目目录> --at <UTC 时刻> [选项]
 ```
 
-不加 `--yes true` 时，命令返回 `SETUP_PLAN_READY`，列出待回答的问题、选中的答案和写入计划。Mana Orchestrate 把所需问题集中在一屏呈现。补齐必要答案并检查写入项后，使用 `--yes true` 应用计划；成功返回 `SETUP_APPLIED`，列出写入文件、备份位置与 `selfCheck` 结果。恢复模式还会分别列出随库恢复的项目级配置和需要在本机重设的设备级配置。
+不加 `--yes true` 时，命令返回 `SETUP_PLAN_READY`，列出待回答的问题、选中的答案、写入计划与警示（`warnings`）。Mana Orchestrate 把所需问题集中在一屏呈现。补齐必要答案并检查写入项与警示后，使用 `--yes true` 应用计划；成功返回 `SETUP_APPLIED`，列出写入文件、备份位置、同样的警示与 `selfCheck` 结果。恢复模式还会分别列出随库恢复的项目级配置和需要在本机重设的设备级配置。
 
 ```text
 einzbern setup --mode fresh|restore|update|repair|migrate|uninstall --project <项目目录> --at <UTC 时刻> \
@@ -45,3 +45,5 @@ einzbern setup --mode fresh|restore|update|repair|migrate|uninstall --project <�
 向导在覆盖本机文件前先备份到设备目录 `~/.einzbern/backups/<UTC 时间>/`。卸载会把本机安装内容移入该备份目录，而不是删除；`--managed-sections keep`（默认）保留项目文件里的受管段，`remove` 只移走标记，把正文留给项目。
 
 向导不提交、不推送、不改 `.gitignore`，也不删除文件。更新引擎不会自动重写项目的 `AGENTS.md` 或 `CLAUDE.md`。完整健康检查使用 `doctor --project <项目目录>`。
+
+库放在项目外时，`fresh`、`restore` 与 `repair` 会把本机库的绝对路径写进项目的 `.claude/settings.local.json` 与 `.codex/config.toml`。其中已被 Git 跟踪（在索引中）的文件，计划会在任何写入之前逐个列入 `warnings`：每项含文件（相对项目根）、原因码 `HOST_WRITABLE_ROOTS_TRACKED_BY_GIT` 与说明，说明措辞与开发脚本 host-render 相同；`SETUP_APPLIED` 的 `warnings` 同样列出。警示不阻止应用：提交这些文件会公开本机的库路径，是否继续跟踪由用户决定，向导不改动 Git 索引。两个文件都未被跟踪，或库在项目内时，`warnings` 为空。

@@ -393,6 +393,7 @@ function planResult(recorder: SetupRecorder, parts: Pick<SetupModePlan, "questio
     backups: recorder.backups,
     backupDir: recorder.backups.length > 0 ? recorder.backupRoot : null,
     blockers: recorder.blockers,
+    warnings: recorder.warnings,
   };
 }
 

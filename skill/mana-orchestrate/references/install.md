@@ -52,18 +52,22 @@ never ask again for an answer the user already gave, and never guess an answer.
 1. Plan. Run `setup --mode fresh --project <dir> --at <UTC>`, with a flag for each answer already
    known and without `--yes`. It writes nothing and returns `SETUP_PLAN_READY`: the decided
    answers, the open questions, the files it would write, the originals it would back up first,
-   and any blockers. A plan with blockers is refused on apply (`SETUP_BLOCKED`): show each blocker
-   and resolve it before going on.
+   any warnings, and any blockers. A plan with blockers is refused on apply (`SETUP_BLOCKED`): show
+   each blocker and resolve it before going on. A warning does not stop the apply:
+   `HOST_WRITABLE_ROOTS_TRACKED_BY_GIT` names a project host file, `.claude/settings.local.json`
+   or `.codex/config.toml`, that Git tracks and that the apply writes this device's library path
+   into, because the library sits outside the project; committing that file would publish the path.
 2. Ask the open questions on one screen, then plan again with the answers until none is open.
 3. Final confirmation. Show the decided answers and every file the plan would write, as the plan
-   lists them, and ask once whether to apply. Continue only on a clear yes; a changed answer goes
-   back to step 2.
+   lists them, then each entry of `warnings` with its file and message, and ask once whether to
+   apply. Whether such a file stays tracked is the user's call: say so, and change nothing in Git.
+   Continue only on a clear yes; a changed answer goes back to step 2.
 4. Apply. Run the same command with `--yes true`. It returns `SETUP_APPLIED`: the files written,
-   the backup directory, and `selfCheck`.
-5. Report the files written, the backup directory, and the self-check: the eight checks in
-   `selfCheck.checks`, and what the hook added when it ran once with the project's name as the
-   prompt (`selfCheck.injected`; nothing is added until the library holds something that matches).
-   Handle any check that is not ok with `doctor.md`.
+   the backup directory, the same `warnings`, and `selfCheck`.
+5. Report the files written, the backup directory, each warning again, and the self-check: the
+   eight checks in `selfCheck.checks`, and what the hook added when it ran once with the project's
+   name as the prompt (`selfCheck.injected`; nothing is added until the library holds something
+   that matches). Handle any check that is not ok with `doctor.md`.
 
 ## Flags
 

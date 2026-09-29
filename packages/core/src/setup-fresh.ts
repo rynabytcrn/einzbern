@@ -19,7 +19,9 @@
 //                     when the navigation section is declined (host-hooks.ts): the user scope, so a
 //                     project's own settings never carry the device directory's path
 //   writable-roots    when the library is outside the project, the project's host settings name it
-//                     as a place the host may write (host-writable-roots.ts)
+//                     as a place the host may write (host-writable-roots.ts); either file that Git
+//                     tracks is named in the warnings of the plan and of the receipt
+//                     (HOST_WRITABLE_ROOTS_TRACKED_BY_GIT, TCRN-CROSS-SUB-385 R16)
 //   machine-settings  the device key agents.navigation (--navigation)
 //   managed-sections  CLAUDE.md's import section, AGENTS.md's navigation section when it is written,
 //                     and AGENTS.md's variable sections (agents-sections.ts)
@@ -33,9 +35,9 @@
 // written.
 //
 // TCRN-CROSS-SUB-324, SUB-325: the other modes run these same steps, so each is also exported as a
-// building block: SetupRecorder keeps the writes, backups and blockers of a plan or an apply;
-// planWiring and applyWiring run the steps from registry on (restore and repair all of them, update
-// only the copies, the launchers and the hooks), against a library the mode found itself.
+// building block: SetupRecorder keeps the writes, backups, blockers and warnings of a plan or an
+// apply; planWiring and applyWiring run the steps from registry on (restore and repair all of them,
+// update only the copies, the launchers and the hooks), against a library the mode found itself.
 
 import { isUtf8 } from "node:buffer";
 import type { Stats } from "node:fs";
@@ -63,6 +65,7 @@ import {
   applyWritableRoots,
   claudeWritableRoots,
   codexWritableRoots,
+  hostFileTrackedByGit,
   planWritableRoots,
   utcStamp,
 } from "./host-writable-roots.js";
@@ -89,6 +92,7 @@ import type {
   SetupPlan,
   SetupQuestion,
   SetupStep,
+  SetupWarning,
   SetupWrite,
   SetupWriteAction,
 } from "./setup.js";
@@ -250,11 +254,12 @@ export function navigationChoice(navigation: boolean): AgentsNavigationChoice {
 
 // ---- The recorder ----
 
-/** The writes, backups and blockers of one plan or apply, each path listed once, in step order. */
+/** The writes, backups, blockers and warnings of one plan or apply, each path listed once, in step order. */
 export class SetupRecorder {
   readonly writes: SetupWrite[] = [];
   readonly backups: SetupBackup[] = [];
   readonly blockers: SetupBlocker[] = [];
+  readonly warnings: SetupWarning[] = [];
   readonly backupRoot: string;
 
   constructor(deviceHome: string, at: string) {
@@ -278,6 +283,18 @@ export class SetupRecorder {
 
   block(step: SetupBlocker["step"], path: string, reasonCode: string, message: string): void {
     this.blockers.push({ step, path, reasonCode, message });
+  }
+
+  // A project host file Git tracks, which the writable-roots step names this device's library in
+  // (TCRN-CROSS-SUB-385 R16): listed once, relative to the project root, in the words
+  // scripts/host-render.mjs uses for the same file. It never stops the apply.
+  warnTrackedByGit(file: string): void {
+    if (this.warnings.some((entry) => entry.file === file)) return;
+    this.warnings.push({
+      reasonCode: "HOST_WRITABLE_ROOTS_TRACKED_BY_GIT",
+      file,
+      message: `${file} is tracked by Git and may publish this device's library path if committed`,
+    });
   }
 
   // Run a read; a refusal with a reason code becomes a blocker of `step`, and null is answered.
@@ -526,11 +543,15 @@ export async function planHooks(recorder: SetupRecorder, home: string, deviceHom
   }
 }
 
+// A host file Git tracks is a warning whether or not this run changes it: once wired, it names this
+// device's library until the user takes it out. Git is asked, not the library, which a first
+// installation has not created yet.
 async function planRoots(recorder: SetupRecorder, projectRoot: string, libraryPath: string): Promise<void> {
   if (inside(projectRoot, libraryPath)) return;
   for (const host of WRITABLE_ROOTS_HOSTS) {
     const name = WRITABLE_ROOTS_FILES[host];
     const path = join(projectRoot, ...name.split("/"));
+    if (hostFileTrackedByGit(projectRoot, name)) recorder.warnTrackedByGit(name);
     const outcome = await recorder.attempt("writable-roots", path, async () => {
       const before = await readProjectHostFile(path, name);
       const after = host === "claude-code" ? claudeWritableRoots(before, libraryPath) : codexWritableRoots(before, libraryPath);
@@ -701,6 +722,7 @@ async function applyRoots(recorder: SetupRecorder, input: WiringApplyInput, libr
   const { projectRoot, deviceHome, at } = input;
   if (inside(projectRoot, library.path)) return;
   const roots = await planWritableRoots({ projectRoot, libraryPath: library.path });
+  for (const file of roots.files) if (file.trackedByGit) recorder.warnTrackedByGit(file.path);
   await applyWritableRoots(roots, { at, home: deviceHome });
   for (const file of roots.files) {
     if (!file.changed) continue;
@@ -769,7 +791,7 @@ export async function applyWiring(recorder: SetupRecorder, input: WiringApplyInp
   return library !== null && runs(steps, "managed-sections") ? applySections(recorder, input, library) : [];
 }
 
-/** SETUP_APPLIED for a plan, with what the recorder kept and doctor's eight checks right after. */
+/** SETUP_APPLIED for a plan, with what the recorder kept (its warnings too) and doctor's eight checks right after. */
 export async function setupApplied(plan: SetupPlan, recorder: SetupRecorder, result: {
   readonly deviceId: string | null;
   readonly library: SetupApplied["library"];
@@ -795,6 +817,7 @@ export async function setupApplied(plan: SetupPlan, recorder: SetupRecorder, res
     backups: recorder.backups,
     backupDir: recorder.backups.length > 0 ? recorder.backupRoot : null,
     pendingSections: result.pending,
+    warnings: recorder.warnings,
     ...(result.columns === undefined ? {} : { columns: result.columns }),
     ...(result.engineSwitch === undefined ? {} : { engineSwitch: result.engineSwitch }),
     selfCheck,
@@ -866,6 +889,7 @@ export async function planFreshSetup(input: SetupModeInput): Promise<SetupModePl
     backupDir: recorder.backups.length > 0 ? recorder.backupRoot : null,
     pendingSections: pending,
     blockers: recorder.blockers,
+    warnings: recorder.warnings,
   };
 }
 

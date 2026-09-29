@@ -8,8 +8,11 @@
 //               take), every file the apply would write, every original it would back up first, and
 //               whatever stops the apply (a host file that is a symbolic link, a library already
 //               there, an engine that is not installed), so the user sees it before confirming.
+//               Its warnings name what does not stop the apply but should be seen first: a project
+//               host file Git tracks, into which the apply writes this device's library path
+//               (HOST_WRITABLE_ROOTS_TRACKED_BY_GIT, TCRN-CROSS-SUB-385 R16).
 //   applySetup  runs a plan the user confirmed: SETUP_APPLIED, with each file written, the backup
-//               directory and doctor's eight checks as the self-check.
+//               directory, the same warnings and doctor's eight checks as the self-check.
 //
 // An open question takes its default when the plan is applied; a skill asks all of them on one
 // screen first, and shows the files for one final confirmation (skill references install.md).
@@ -204,6 +207,18 @@ export interface SetupBlocker {
   readonly message: string;
 }
 
+// What the user should see before confirming but does not stop the apply (TCRN-CROSS-SUB-385 R16):
+// a project host file Git tracks (it is in the index), into which the writable-roots step writes
+// this device's library path, so that committing the file would publish the path. One per file,
+// worded as scripts/host-render.mjs words it for the same file. The wizard changes nothing about
+// it: it never commits, unstages or ignores a file.
+export interface SetupWarning {
+  readonly reasonCode: "HOST_WRITABLE_ROOTS_TRACKED_BY_GIT";
+  // The host file, relative to the project root: .claude/settings.local.json or .codex/config.toml.
+  readonly file: string;
+  readonly message: string;
+}
+
 // ---- The context: which mode fits (R1) ----
 
 export interface SetupContext {
@@ -339,6 +354,9 @@ export interface SetupPlan {
   readonly pendingSections: readonly { readonly file: string; readonly id: string }[];
   // What stops the apply. A plan with any is still a plan: it is shown, not applied.
   readonly blockers: readonly SetupBlocker[];
+  // What does not stop the apply but is shown before it: each project host file Git tracks while
+  // the library sits outside the project, whether or not the apply changes the file.
+  readonly warnings: readonly SetupWarning[];
 }
 
 /** update and rollback: the version current before and after, and for an update the release it installs from. */
@@ -390,6 +408,8 @@ export interface SetupApplied {
   readonly backups: readonly SetupBackup[];
   readonly backupDir: string | null;
   readonly pendingSections: readonly { readonly file: string; readonly id: string }[];
+  // The plan's warnings, found again as the apply wired the project.
+  readonly warnings: readonly SetupWarning[];
   // restore: the project-level settings that came back with the library, and the device-level ones
   // to set again here.
   readonly columns?: SetupColumns;
@@ -408,8 +428,9 @@ export interface SetupModeInput {
   readonly options: SetupModeOptions;
 }
 
-/** What a mode's planner answers; planSetup puts it into the plan. */
-export type SetupModePlan = Pick<SetupPlan, "questions" | "resolved" | "engine" | "library" | "writes" | "backups" | "backupDir" | "pendingSections" | "blockers" | "verification" | "engineSwitch">;
+/** What a mode's planner answers; planSetup puts it into the plan, with no warnings when the mode names none. */
+export type SetupModePlan = Pick<SetupPlan, "questions" | "resolved" | "engine" | "library" | "writes" | "backups" | "backupDir" | "pendingSections" | "blockers" | "verification" | "engineSwitch">
+  & { readonly warnings?: readonly SetupWarning[] };
 
 interface SetupModeEntry {
   readonly options: readonly SetupOptionName[];
@@ -561,6 +582,7 @@ export async function planSetup(options: SetupOptions): Promise<SetupPlan> {
     answers,
     options: modeOptions,
     ...planned,
+    warnings: planned.warnings ?? [],
   };
 }
 

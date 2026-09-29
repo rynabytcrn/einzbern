@@ -16,7 +16,7 @@ import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { applyWritableRoots, planWritableRoots } from "../dist/build/packages/core/src/index.js";
-import { codexWritableRoots } from "../dist/build/packages/core/src/host-writable-roots.js";
+import { codexWritableRoots, hostFileTrackedByGit } from "../dist/build/packages/core/src/host-writable-roots.js";
 
 const AT = "2026-09-26T10:00:00Z";
 const STAMP = "20260926T100000Z";
@@ -166,6 +166,25 @@ test("470-R5: a host file Git tracks is still wired, and the result says it is t
   const applied = await applyWritableRoots(await planWritableRoots({ projectRoot: root, libraryPath: lib }), { at: AT });
   assert.deepEqual(applied.files.map((file) => [file.path, file.changed, file.trackedByGit]), [[CLAUDE, true, false], [CODEX, true, true]]);
   assert.match(await readFile(join(root, CODEX), "utf8"), /^writable_roots = \[/mu);
+});
+
+test("385-R16: whether Git tracks a host file is answered from the index alone, with no library anywhere, for a project at or below the repository's root", async (context) => {
+  const base = await scratch(context);
+  const root = await project(base);
+  const git = (...args) => execFileSync("git", args, { stdio: "ignore", env: { ...process.env, HOME: base } });
+  assert.equal(hostFileTrackedByGit(root, CODEX), false, "a project that is no repository tracks nothing");
+  git("init", "-q", root);
+  assert.equal(hostFileTrackedByGit(root, CODEX), false, "a file outside the index is not tracked");
+  git("-C", root, "add", CODEX);
+  assert.deepEqual([hostFileTrackedByGit(root, CODEX), hostFileTrackedByGit(root, CLAUDE)], [true, false]);
+  // A project in a directory of a larger repository: the file is named relative to the project.
+  const nested = join(base, "monorepo");
+  await mkdir(nested);
+  git("init", "-q", nested);
+  const app = await project(nested);
+  git("-C", nested, "add", join("project", CLAUDE));
+  assert.deepEqual([hostFileTrackedByGit(app, CLAUDE), hostFileTrackedByGit(app, CODEX)], [true, false]);
+  assert.deepEqual((await readdir(base)).sort(), ["monorepo", "project"], "nothing else was made: no library, no device directory");
 });
 
 test("470-R5: a host file the wiring cannot edit safely, or one that changed after planning, is refused and nothing is written", async (context) => {

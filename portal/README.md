@@ -1,8 +1,10 @@
 # Atelier
 
 Atelier is Einzbern's local, zero-dependency portal for the parts of Einzbern a person
-configures most: workspace settings, the canonical `AGENTS.md` prose, and a
-reconciliation check between the two.
+configures most: the settings, the model categories and tiers, the project variables,
+the gates, and the built-in rules beside the canonical `AGENTS.md`, whose setting names
+are checked against what the engine registers. A status page and the engine's read-only
+vocabulary complete the eight pages that Surfaces lists.
 
 The portal ships inside the engine, beside `scripts/einzbern.mjs`, and runs from any
 installed engine copy or checkout. There is no package dependency to install and nothing
@@ -39,10 +41,12 @@ writes a chain file itself. `scripts/dependency-audit.mjs` proves the first of
 those over the whole repository and fails if any source file imports an engine
 internal.
 
-`AGENTS.md` is ordinary repository prose, so the prose surface edits it with
-plain file I/O: the file in the selected library's registered project, never one
-inside a library. It is the one canonical home for custom rules; per the platform
-convention it defines *how work is done*, never *who may decide*.
+The other pages' writes — the model tables, variables, gates and rules — go through
+the CLI the same way; `AGENTS.md` is the one file the running portal writes itself. It is
+ordinary repository prose, so the Rules page edits it with plain file I/O: the file
+in the selected library's registered project, never one inside a library. It is the
+one canonical home for custom rules; per the platform convention it defines *how
+work is done*, never *who may decide*.
 
 ## Why a process rather than a bare page
 

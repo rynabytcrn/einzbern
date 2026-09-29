@@ -4,7 +4,7 @@
 
 This is a documentation-level convention (spec only). It defines how a worker
 dispatch closes; it adds no schema, no engine code, and no enforcement hook in
-this candidate. Enforcement is a host-adapter concern deferred to a later route.
+the current engine. Enforcement is a host-adapter concern deferred to a later route.
 
 ## Dispatch closeout
 
@@ -23,18 +23,20 @@ carries:
   against a gate (grounded by gate-v1);
 - a body size cap of 4096 bytes (a convention number that fits under the
   knowledge body budget);
-- `promotionState` `promoted` — a work-log record is written official.
-  TCRN-CROSS-STORY-365 (Owner ruling TCRN-CROSS-MIN-146) removed the promotion
-  gate for the fragment kinds and TCRN-CROSS-INC-282 removed the last two
-  branches that still parked a write, so every card written lifecycle `active`
-  is written promoted whatever its kind; the earlier wording here, "never
-  auto-promoted", named a behaviour the engine had already stopped having;
+- lifecycle `active` and no `promotionState` (TCRN-CROSS-STORY-476 R1,
+  TCRN-CROSS-SUB-386): the record is written active and is retrievable as soon
+  as it is written, and neither the card nor its write receipt carries a
+  promotion marker (a marker an older card recorded stays readable). Promotion
+  is gone as a step: TCRN-CROSS-STORY-365 (Owner ruling TCRN-CROSS-MIN-146)
+  removed its gate for the fragment kinds and TCRN-CROSS-INC-282 the last two
+  branches that still parked a write;
 - lifecycle coupling: the record tombstones with its work item.
 
 No second knowledge store is created; the single knowledge store holds work-log
 records alongside other knowledge. High-frequency small records are bounded by
-the size cap alone; the promotion state no longer bounds anything, which is why
-the size cap is stated as the budget's only floor.
+the size cap on each record and, with every other live card, by the library's
+knowledge budget: `knowledge.aggregateBytes` counts the bodies of live cards, and
+a write that would pass it fails `KNOWLEDGE_LIMIT_EXCEEDED`.
 
 ## Event linkage
 
@@ -75,13 +77,14 @@ impossible on an append-only chain.
 
 A settings change is recorded as a decision, using the same convention: a work-log
 knowledge record (`kind: decision`) that records the prior value, the new
-value, the rationale, and a backlink to the overlay admission receipt. This
-grounds the WS-I settings-elicitation flow: a recommended settings change becomes
+value, the rationale, and a backlink to the receipt of the write: the
+`SETTINGS_WRITE_COMMITTED` receipt that `settings-set` (or `settings-remove`)
+returns, named by its `receiptDigest`. A recommended settings change thus becomes
 an auditable decision, not a silent mutation.
 
 ## Residuals
 
-There is no live enforcement and no automatic dispatch instrumentation in this
-candidate, and a work-log record needs no promotion: it is retrievable as soon as
+There is no live enforcement and no automatic dispatch instrumentation in the
+current engine, and a work-log record is retrievable as soon as
 it is written. The convention is normative documentation; a governed
 route may later add a host-adapter enforcement hook.

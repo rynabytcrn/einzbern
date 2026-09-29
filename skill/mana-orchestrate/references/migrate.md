@@ -107,7 +107,9 @@ cleanup and the wiring find nothing left to do.
   directory) into the library's `crest/` as its engine left it: the marker `store.json`,
   `metadata/` and `bodies/` (segments included), byte for byte. The old `views/` stays behind,
   since the library's index view is this device's cache. The library reads that layout and writes
-  new cards beside it; the carried files are never rewritten.
+  new cards beside it; writing a card never rewrites the carried files. Of the steps in this
+  reference, only the clearing step under "After the migration" does: it backs up the carried
+  `bodies/` first, then writes it again without the bodies of the removed cards.
 - A card the old engine marked as replaced (`extensions.supersededBy` in its metadata) reads as
   removed: `knowledge-list` lists it only with `--status removed` or `--status all`. It is carried
   with the rest.
@@ -123,10 +125,12 @@ cleanup and the wiring find nothing left to do.
   `LEGACY_IMPORT_MISMATCH`. To see a partition's counts before the apply, run
   `library-import-legacy --legacy <old workspace> --dry-run true --at <UTC>`; it writes nothing.
 - A store the engine cannot read blocks its partition. The plan lists the refusal as a blocker of
-  its own, whose `path` is the file of the store it is about (the store itself when it is about the
-  store as a whole), and still lists the partition's `events`, `headEventHash`,
+  its own, whose `path` is the file of the store it is about (the store itself when the refusal
+  does not fall on a single file, for example when it is about the store as a whole), and still
+  lists the partition's `events`, `headEventHash`,
   `unsatisfiedGates` and `openItems`. `library-import-legacy` names the same file in `file`,
-  relative to the store (`.` for the store as a whole).
+  relative to the store (`.` when the refusal does not fall on a single file, for example when it
+  is about the store as a whole).
   - `KNOWLEDGE_RECORD_INVALID`: the named file (the marker or a card's metadata) no longer holds
     the bytes its engine wrote, typically because another tool saved it again, indented or
     without its final newline.
@@ -145,8 +149,10 @@ cleanup and the wiring find nothing left to do.
 - Clear the bodies of removed cards from the knowledge each library carried over: the import brings
   the old store's cards as its engine left them, the bodies of superseded cards included. Run
   `knowledge-bodies-migrate --workspace <library> --clear-removed true --at <UTC>` once after the
-  import, and once more after the D7 cleanup, since a card removed after the import leaves its body
-  there too. It runs only while this device is the library's sole writer, so run both before another
+  import, and once more after each later removal of carried cards (such as a cleanup that removes
+  old cards repeating a work item or a decision, or conflicting with another card), since a card
+  removed after the import leaves its body there too. It runs only while this device is the
+  library's sole writer, so every run must come before another
   device writes to the library: `KNOWLEDGE_SOLE_WRITER_REQUIRED` says one has, and those bodies then
   stay where no read answers them. The answer gives `clearedBodies` and the backup of the bodies it
   rewrote, `backupDir`, under `backups/<UTC>/crest-bodies/`; a run with nothing left to clear writes

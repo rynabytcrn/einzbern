@@ -74,7 +74,7 @@ einzbern setup --mode migrate --project <项目目录> --mapping <迁移映射 J
 导入把旧工作区的知识库原样带进库的 `crest/`：
 
 - 带走的是旧控制目录里 `knowledge/` 的标记 `store.json`、`metadata/` 与 `bodies/`（含分段），逐字节复制并按 SHA-256 核对。旧的 `views/` 不带走，库的索引视图是本机缓存。
-- 库按这种布局读取旧卡，新卡作为事件写在旁边；带过来的文件不被改写。
+- 库按这种布局读取旧卡，新卡作为事件写在旁边；写卡从不改写带过来的文件。本页各步骤中，只有「迁移完成后」的清除步骤会改写这些文件：它先备份随迁的 `bodies/`，再去掉已移除卡的正文重写。
 - 旧引擎在元数据里标了 `extensions.supersededBy` 的卡读作已移除：`knowledge-list` 只在 `--status removed` 或 `--status all` 时列出它。它照样随迁。
 
 `library-import-legacy` 的回执里，dry-run 与正式导入同一口径。旧工作区没有知识库时 `knowledge` 为 `null`，否则各字段含义如下：
@@ -90,9 +90,9 @@ einzbern setup --mode migrate --project <项目目录> --mapping <迁移映射 J
 
 旧知识库读不通时，该分区被阻断：
 
-- 计划里这次拒绝单列为一条阻塞项，`path` 是出问题的文件；针对整个知识库时是知识库本身。
+- 计划里这次拒绝单列为一条阻塞项，`path` 是出问题的文件；拒绝落不到单个文件时（例如针对整个知识库），`path` 是知识库本身。
 - 分区条目照样列出旧链的事件数、头哈希、未满足的 gate 与在途工作。
-- `library-import-legacy` 的拒绝在 `file` 里点名同一文件，相对旧知识库根；针对整个知识库时为 `.`。
+- `library-import-legacy` 的拒绝在 `file` 里点名同一文件，相对旧知识库根；拒绝落不到单个文件时（例如针对整个知识库），`file` 为 `.`。
 
 | 拒绝码 | 含义 |
 | --- | --- |
@@ -128,6 +128,11 @@ einzbern setup --mode migrate --project <项目目录> --mapping <迁移映射 J
 
 ## 迁移完成后
 
+- 清除各库随迁知识里已移除卡的正文：导入按旧引擎留下的样子带来旧卡，被取代卡的正文也在其中。
+  - 导入后运行一次 `knowledge-bodies-migrate --workspace <库> --clear-removed true --at <UTC 时刻>`；此后每移除一批随迁旧卡（例如清理与工单或决策重复、或与其他卡冲突的存量旧卡），再运行一次，因为导入之后才移除的卡，正文同样留在那里。
+  - 只在本设备是该库唯一写者时执行，每次运行都须在其他设备写入该库之前完成。已有其他设备写入时拒绝 `KNOWLEDGE_SOLE_WRITER_REQUIRED`，那些正文就留在原处，任何读取都不返回。
+  - 答复给出 `clearedBodies`，以及改写前正文的备份目录 `backupDir`（设备目录 `backups/<UTC>/crest-bodies/` 下）；没有可清除的正文时什么也不写。
+  - 同一秒的备份已在时拒绝 `KNOWLEDGE_ALREADY_EXISTS`：换一个更晚的 `--at` 重跑。
 - 旧工作区留在原处，仍可只读打开。对它写入会返回 `LEGACY_WORKSPACE_MIGRATED`，其中 `movedTo` 指向新库，改用 `--workspace <库>` 即可。没有迁移过的旧布局，写入仍返回 `LEGACY_WORKSPACE_READ_ONLY`。
 - 旧链里未满足的 gate，在新库里保持原状态，仍挡住所绑工单转 done；拒绝码 `WORKSPACE_GATE_PENDING` 会点名这张 gate。
   - 解除只能在 Atelier 面：以 `EINZBERN_SURFACE=atelier` 运行 `work-gate-release --id <gate> --reason <原因> --actor <操作者> --at <UTC 时刻>`，记录谁、何时、为何。

@@ -15,7 +15,7 @@ import {
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 import { resolveStoreBackend, SegmentedKnowledgeStoreBackend } from "./store-backend.js";
-import type { FileStoreBackendProfile, StoreBackend, StoreBackendPlacement } from "./store-backend.js";
+import type { FileStoreBackendProfile, StoreBackend } from "./store-backend.js";
 
 import {
   ProtocolError,
@@ -527,7 +527,7 @@ interface CrestScan {
   readonly marker: KnowledgeStoreMarker;
   // The cards: one record per id, projected (a card another card replaced carries supersededBy).
   readonly units: readonly CrestUnit[];
-  readonly index: Readonly<Record<string, JsonValue>>;
+  readonly index: KnowledgeIndex;
   // TCRN-CROSS-SUB-310 (MIN-235 D7): pairs of live cards from two writers that each wrote without
   // seeing the other, which the write-time conflict check would have refused. Each pair is in
   // canonical id order and so is the list. Both cards stay readable; default selection leaves
@@ -995,22 +995,45 @@ const knowledgeBackendProfile: FileStoreBackendProfile = Object.freeze({
 });
 
 function storeBackendFor(storeRoot: string, options: KnowledgeReadOptions = {}): StoreBackend {
-  let located: Promise<string | null> | undefined;
-  return resolveStoreBackend(storeRoot, knowledgeBackendProfile, {
-    beforeDescriptorReadForTest: options.beforeDescriptorReadForTest,
-    afterDescriptorOpenForTest: options.afterDescriptorOpenForTest,
-  }, { knowledgeViewFile: () => (located ??= libraryKnowledgeViewFile(storeRoot)) });
+  return libraryKnowledgeView(storeRoot, options).file(KNOWLEDGE_VIEW_FILE);
 }
 
 // TCRN-CROSS-STORY-469 R4: a library's knowledge index view is derived state, so it is this
 // device's cache, cache/<library>/crest-views/index.json, never a file in crest/. An old-layout
-// store (read-only) keeps its views/ directory.
+// store (read-only) keeps its views/ directory. TCRN-CROSS-SUB-428 (INC-398): the folder holds
+// index.json and, past the canonical ceiling, the page files it names (knowledgeViewFiles).
 export const KNOWLEDGE_CACHE_VIEWS_DIRECTORY = "crest-views" as const;
+const KNOWLEDGE_VIEW_FILE = "index.json" as const;
+const KNOWLEDGE_VIEW_PAGE_FILE_PATTERN = /^index-(\d{6,})\.json$/u;
 
-async function libraryKnowledgeViewFile(storeRoot: string): Promise<string | null> {
+async function libraryKnowledgeViewFolder(storeRoot: string): Promise<string | null> {
   const libraryRoot = dirname(storeRoot);
   if (!(await hasLibraryManifest(libraryRoot))) return null;
-  return join(cachePath((await openLibrary(libraryRoot)).manifest.libraryId), KNOWLEDGE_CACHE_VIEWS_DIRECTORY, "index.json");
+  return join(cachePath((await openLibrary(libraryRoot)).manifest.libraryId), KNOWLEDGE_CACHE_VIEWS_DIRECTORY);
+}
+
+// A store backend whose view is the file `name` of this device's view folder, or, where the folder
+// is null, an old-layout store's views/index.json.
+function knowledgeViewFileBackend(
+  storeRoot: string,
+  options: KnowledgeReadOptions,
+  folder: () => Promise<string | null>,
+  name: string,
+): StoreBackend {
+  return resolveStoreBackend(storeRoot, knowledgeBackendProfile, {
+    beforeDescriptorReadForTest: options.beforeDescriptorReadForTest,
+    afterDescriptorOpenForTest: options.afterDescriptorOpenForTest,
+  }, { knowledgeViewFile: async () => {
+    const located = await folder();
+    return located === null ? null : join(located, name);
+  } });
+}
+
+// This device's view of a library's crest; an old-layout store's folder is null.
+function libraryKnowledgeView(storeRoot: string, options: KnowledgeReadOptions = {}): KnowledgeViewPlace {
+  let located: Promise<string | null> | undefined;
+  const folder = (): Promise<string | null> => (located ??= libraryKnowledgeViewFolder(storeRoot));
+  return { folder, file: (name) => knowledgeViewFileBackend(storeRoot, options, folder, name) };
 }
 
 /**
@@ -1541,7 +1564,21 @@ function validateMetadataBody(metadata: KnowledgeUnitMetadata, body: Buffer, wor
   }
 }
 
-function knowledgeIndex(marker: KnowledgeStoreMarker, metadata: readonly KnowledgeUnitMetadata[]): Readonly<Record<string, JsonValue>> {
+// TCRN-CROSS-SUB-428 (INC-398): a crest's derived index. `document` is the index as every engine
+// before wrote it whole, `tcrn.knowledge-index.v1`; `recordTexts` holds the canonical form of each
+// of its records, in its order. Its digest and this device's view files are built from them one
+// record at a time, so no single canonical value holds every record: neither the protocol's one-MiB
+// canonical ceiling nor its record-count limit bounds a crest's index (knowledgeViewFiles).
+interface KnowledgeIndex {
+  readonly document: Readonly<Record<string, JsonValue>>;
+  readonly recordTexts: readonly string[];
+}
+
+const KNOWLEDGE_INDEX_SCHEMA_VERSION = "tcrn.knowledge-index.v1" as const;
+const KNOWLEDGE_INDEX_PAGES_SCHEMA_VERSION = "tcrn.knowledge-index-pages.v1" as const;
+const KNOWLEDGE_INDEX_PAGE_SCHEMA_VERSION = "tcrn.knowledge-index-page.v1" as const;
+
+function knowledgeIndex(marker: KnowledgeStoreMarker, metadata: readonly KnowledgeUnitMetadata[]): KnowledgeIndex {
   const records = [...metadata]
     .sort((left, right) => compareCanonicalText(left.id, right.id))
     // Existing stores predate STORY-326. Keep the derived view byte-compatible
@@ -1549,16 +1586,100 @@ function knowledgeIndex(marker: KnowledgeStoreMarker, metadata: readonly Knowled
     .map((record) => Object.fromEntries(Object.entries(record).filter(([key]) =>
       !(key === "supersedes" && record.supersedes === null) &&
       !(key === "retirement" && record.retirement === null) &&
-      !(key === "expansions" && Object.keys(record.expansions ?? {}).length === 0))));
+      !(key === "expansions" && Object.keys(record.expansions ?? {}).length === 0)))) as unknown as readonly JsonValue[];
+  const recordTexts = records.map(canonicalEntryText);
   return {
-    schemaVersion: "tcrn.knowledge-index.v1",
-    authority: "derived-rebuildable",
-    workspaceId: marker.workspaceId,
-    eventHighWaterDigest: marker.eventHighWaterDigest,
-    version: marker.version,
-    records: records as unknown as readonly JsonValue[],
-    indexDigest: canonicalSha256(records),
+    document: {
+      schemaVersion: KNOWLEDGE_INDEX_SCHEMA_VERSION,
+      authority: "derived-rebuildable",
+      workspaceId: marker.workspaceId,
+      eventHighWaterDigest: marker.eventHighWaterDigest,
+      version: marker.version,
+      records,
+      indexDigest: canonicalListSha256(recordTexts),
+    },
+    recordTexts,
   };
+}
+
+// One value's canonical form as an entry of a canonical list: canonicalJson without its terminal LF.
+function canonicalEntryText(value: JsonValue): string {
+  return canonicalJson(value).slice(0, -1);
+}
+
+// TCRN-CROSS-SUB-428 (INC-398): the sha256 of a list as canonicalJson serializes it -- wherever the
+// list fits one canonical value, exactly the digest canonicalSha256 gives it -- hashed from its
+// entries' canonical forms one at a time, so no count or size of the list bounds it.
+function canonicalListSha256(entryTexts: readonly string[]): string {
+  const hash = createHash("sha256").update("[", "utf8");
+  for (const [position, text] of entryTexts.entries()) {
+    if (position > 0) hash.update(",", "utf8");
+    hash.update(text, "utf8");
+  }
+  return hash.update("]\n", "utf8").digest("hex");
+}
+
+function knowledgeViewPageFile(page: number): string {
+  return `index-${String(page).padStart(6, "0")}.json`;
+}
+
+interface KnowledgeViewFile {
+  readonly name: string;
+  readonly text: string;
+}
+
+// TCRN-CROSS-SUB-428 (INC-398): the files of this device's view of `index`, the pages before the
+// head that names them. While the whole index fits the protocol's canonical ceiling (one MiB, and no
+// more records than one canonical list may hold), the view is index.json alone, byte for byte what
+// every engine before wrote. Past it, index.json is a head, `tcrn.knowledge-index-pages.v1`, naming
+// how many records the index holds, how many pages hold them and the index digest; page n is
+// index-<n, six digits>.json, `tcrn.knowledge-index-page.v1`, holding the next records in index order
+// within the same ceiling. The records of the pages in page order are the index's records, and their
+// canonical list hashes to the head's `indexDigest`.
+function knowledgeViewFiles(index: KnowledgeIndex): readonly KnowledgeViewFile[] {
+  const records = index.document.records as readonly JsonValue[];
+  const entryBytes = index.recordTexts.map((text) => Buffer.byteLength(text, "utf8"));
+  // The whole index is its fields around an empty list, plus each record and the commas between them.
+  const wholeBytes = Buffer.byteLength(canonicalJson({ ...index.document, records: [] }), "utf8") +
+    entryBytes.reduce((total, bytes) => total + bytes, Math.max(0, records.length - 1));
+  if (wholeBytes <= PROTOCOL_LIMITS.maxCanonicalBytes && records.length <= PROTOCOL_LIMITS.maxRecords) {
+    return [{ name: KNOWLEDGE_VIEW_FILE, text: canonicalJson(index.document) }];
+  }
+  // A page's own fields are measured at the widest page number there can be.
+  const pageBudget = PROTOCOL_LIMITS.maxCanonicalBytes -
+    Buffer.byteLength(canonicalJson({ schemaVersion: KNOWLEDGE_INDEX_PAGE_SCHEMA_VERSION, page: Number.MAX_SAFE_INTEGER, records: [] }), "utf8");
+  const bounds: { readonly from: number; readonly to: number }[] = [];
+  let from = 0;
+  let used = 0;
+  for (const [position, bytes] of entryBytes.entries()) {
+    const added = position === from ? bytes : bytes + 1;
+    if (position > from && (used + added > pageBudget || position - from >= PROTOCOL_LIMITS.maxRecords)) {
+      bounds.push({ from, to: position });
+      from = position;
+      used = bytes;
+    } else {
+      used += added;
+    }
+  }
+  bounds.push({ from, to: records.length });
+  const pages = bounds.map((bound, page) => ({
+    name: knowledgeViewPageFile(page + 1),
+    text: canonicalJson({ schemaVersion: KNOWLEDGE_INDEX_PAGE_SCHEMA_VERSION, page: page + 1, records: records.slice(bound.from, bound.to) }),
+  }));
+  const { document } = index;
+  return [...pages, {
+    name: KNOWLEDGE_VIEW_FILE,
+    text: canonicalJson({
+      schemaVersion: KNOWLEDGE_INDEX_PAGES_SCHEMA_VERSION,
+      authority: document.authority,
+      workspaceId: document.workspaceId,
+      eventHighWaterDigest: document.eventHighWaterDigest,
+      version: document.version,
+      count: records.length,
+      pages: pages.length,
+      indexDigest: document.indexDigest,
+    }),
+  }];
 }
 
 async function claimPresence(storeRoot: string): Promise<"absent" | "present"> {
@@ -1693,12 +1814,38 @@ async function scanStoreRecords(
   return { units, linkInvalid: linkInvalid.sort(compareCanonicalText), danglingWorkLinks };
 }
 
+// TCRN-CROSS-SUB-428 (INC-398): where this device keeps its index view of a crest: the folder of its
+// cache that holds the view's files (null only for an old-layout store, whose views/ this engine
+// never writes), and a backend that reads and writes one file of it.
+interface KnowledgeViewPlace {
+  readonly folder: () => Promise<string | null>;
+  readonly file: (name: string) => StoreBackend;
+}
+
 // A view kept in this device's cache (a library's crest, the user crest): another device's crest
 // writes never reach it, so a missing or out-of-date copy is projected again rather than read as
-// a partial store.
-async function projectCachedView(backend: StoreBackend, index: Readonly<Record<string, JsonValue>>): Promise<void> {
-  const cached = await backend.readKnowledgeView().then((bytes) => bytes.toString("utf8"), () => null);
-  if (cached !== canonicalJson(index)) await backend.writeKnowledgeView(canonicalJson(index));
+// a partial store. TCRN-CROSS-SUB-428 (INC-398): each of its files (knowledgeViewFiles) whose cached
+// bytes differ is written again, the pages before the head, and a page file past the pages the head
+// names is removed. It is a cache, so nothing here fails the read, or the committed write, that asks
+// for it: what cannot be projected is left for the next read to project again.
+async function projectKnowledgeView(place: KnowledgeViewPlace, index: KnowledgeIndex): Promise<void> {
+  try {
+    const folder = await place.folder();
+    if (folder === null) return;
+    const files = knowledgeViewFiles(index);
+    for (const file of files) {
+      const backend = place.file(file.name);
+      const cached = await backend.readKnowledgeView().then((bytes) => bytes.toString("utf8"), () => null);
+      if (cached !== file.text) await backend.writeKnowledgeView(file.text);
+    }
+    const pages = files.length - 1;
+    for (const name of await readdir(folder)) {
+      const page = KNOWLEDGE_VIEW_PAGE_FILE_PATTERN.exec(name);
+      if (page !== null && Number(page[1]) > pages) await rm(join(folder, name), { force: true });
+    }
+  } catch {
+    // Left for the next read to project again.
+  }
 }
 
 async function scanKnowledgeStore(
@@ -1794,7 +1941,7 @@ async function scanOldLayoutStore(
   // (TCRN-CROSS-SUB-310 R17, MIN-238 D1).
   const viewBytes = await backend.readKnowledgeView();
   const view = viewBytes.toString("utf8");
-  if (!allowStaleIndex && view !== canonicalJson(index)) {
+  if (!allowStaleIndex && view !== canonicalJson(index.document)) {
     fail("KNOWLEDGE_PARTIAL_STATE", "knowledge index is stale");
   }
   return {
@@ -2022,7 +2169,7 @@ async function scanLibraryCrest(
     version: marker.version + streams.eventCount,
   };
   const index = knowledgeIndex(projectedMarker, records.map((unit) => unit.metadata));
-  await projectCachedView(backend, index);
+  await projectKnowledgeView(libraryKnowledgeView(storeRoot, options), index);
   return {
     layout: "library", workspaceRoot, storeRoot, metadataRoot, bodiesRoot, viewsRoot: null, marker: projectedMarker, workspace, units, index,
     linkInvalid: [...linkInvalid].sort(compareCanonicalText),
@@ -2055,16 +2202,15 @@ async function locateUserCrest(): Promise<UserCrestLocation> {
   return { device, root, configured: root !== userCrestPath({}, device) };
 }
 
-function userCrestPlacement(device: string): StoreBackendPlacement {
-  const view = join(userCrestCachePath(device), KNOWLEDGE_CACHE_VIEWS_DIRECTORY, "index.json");
-  return { knowledgeViewFile: async () => view };
+// This device's view of the user crest, in its cache.
+function userCrestKnowledgeView(storeRoot: string, device: string, options: KnowledgeReadOptions = {}): KnowledgeViewPlace {
+  const folder = join(userCrestCachePath(device), KNOWLEDGE_CACHE_VIEWS_DIRECTORY);
+  const located = async (): Promise<string | null> => folder;
+  return { folder: located, file: (name) => knowledgeViewFileBackend(storeRoot, options, located, name) };
 }
 
 function userCrestBackend(storeRoot: string, device: string, options: KnowledgeReadOptions = {}): StoreBackend {
-  return resolveStoreBackend(storeRoot, knowledgeBackendProfile, {
-    beforeDescriptorReadForTest: options.beforeDescriptorReadForTest,
-    afterDescriptorOpenForTest: options.afterDescriptorOpenForTest,
-  }, userCrestPlacement(device));
+  return userCrestKnowledgeView(storeRoot, device, options).file(KNOWLEDGE_VIEW_FILE);
 }
 
 /** Run a read or a write of the user crest under this machine's lock of it. */
@@ -2585,7 +2731,7 @@ async function scanUserCrest(
     eventHighWaterDigest,
   };
   const index = knowledgeIndex(projectedMarker, records);
-  await projectCachedView(backend, index);
+  await projectKnowledgeView(userCrestKnowledgeView(storeRoot, location.device, options), index);
   return {
     storeRoot, device: location.device, eventOnly: !legacyLayout, eventHeads: streams.heads, marker: projectedMarker, units, index,
     unresolvedConflicts, duplicates, awaitingChain: [], unresolvedScopes: [],
@@ -2772,8 +2918,7 @@ async function recoverUserCrestUnlocked(location: UserCrestLocation, options: Kn
   // (scanUserCrest), not the manifest, and persisting it would bind the manifest to one moment of
   // the streams and refuse every later read. What recovery repairs is this device's derived index
   // and the claim an interrupted writer of the metadata/body layout left; it deletes no body.
-  const backend = userCrestBackend(scan.storeRoot, location.device, options);
-  await writeIndex(backend, scan.marker, crestRecords(scan).map((unit) => unit.metadata));
+  await writeIndex(userCrestKnowledgeView(scan.storeRoot, location.device, options), scan.marker, crestRecords(scan).map((unit) => unit.metadata));
   await releaseMutationClaim(scan.storeRoot, boundClaim);
   await scanUserCrest(location, options);
   return {
@@ -2807,7 +2952,7 @@ async function recoverKnowledgeStoreUnlocked(workspaceRoot: string, options: Kno
   // again, and a record that write retired gives back the body it still holds, as that layout's
   // retire did. No event stream is touched.
   const backend = storeBackendFor(scan.storeRoot, options);
-  await writeIndex(backend, scan.marker, crestRecords(scan).map((unit) => unit.metadata));
+  await writeIndex(libraryKnowledgeView(scan.storeRoot, options), scan.marker, crestRecords(scan).map((unit) => unit.metadata));
   let reclaimedRetiredBodies = 0;
   for (const unit of crestRecords(scan)) {
     if (unit.event !== null || unit.metadata.lifecycle !== "retired" || unit.body === null) continue;
@@ -3014,8 +3159,8 @@ function buildMetadata(
   return metadata;
 }
 
-async function writeIndex(backend: StoreBackend, marker: KnowledgeStoreMarker, metadata: readonly KnowledgeUnitMetadata[]): Promise<void> {
-  await backend.writeKnowledgeView(canonicalJson(knowledgeIndex(marker, metadata)));
+async function writeIndex(place: KnowledgeViewPlace, marker: KnowledgeStoreMarker, metadata: readonly KnowledgeUnitMetadata[]): Promise<void> {
+  await projectKnowledgeView(place, knowledgeIndex(marker, metadata));
 }
 
 export async function initializeKnowledgeStore(workspaceRootInput: string, options: { readonly disposableAcknowledged?: boolean } = {}): Promise<Readonly<Record<string, JsonValue>>> {
@@ -3041,7 +3186,7 @@ async function initializeKnowledgeStoreUnlocked(workspaceRootInput: string, opti
   // a library crest's root manifest, and it creates it once, exclusively, never replacing one. The
   // manifest binds the library id and that id's own digest, not the chain head of the moment, so it
   // holds the same bytes whichever device writes it. Cards go to each device's event stream, which
-  // the first write lays out; the index view is this device's cache (libraryKnowledgeViewFile).
+  // the first write lays out; the index view is this device's cache (libraryKnowledgeViewFolder).
   const marker: KnowledgeStoreMarker = {
     schemaVersion: KNOWLEDGE_STORE_SCHEMA_VERSION,
     workspaceId: workspace.metadata.workspaceId,
@@ -3082,7 +3227,7 @@ export async function readKnowledgeStoreMarker(workspaceRoot: string, options: K
     workspaceId: scan.marker.workspaceId,
     version: scan.marker.version,
     records: crestRecords(scan).length,
-    indexDigest: scan.index.indexDigest ?? "",
+    indexDigest: scan.index.document.indexDigest ?? "",
     eventHighWaterDigest: scan.marker.eventHighWaterDigest,
     ...(scan.marker.lastSweepAt === undefined ? {} : { lastSweepAt: scan.marker.lastSweepAt }),
     ...trailingDisclosure(scan),
@@ -3141,7 +3286,7 @@ export async function validateKnowledgeStore(workspaceRoot: string, options: Kno
     workspaceId: scan.marker.workspaceId,
     version: scan.marker.version,
     records: crestRecords(scan).length,
-    indexDigest: scan.index.indexDigest ?? "",
+    indexDigest: scan.index.document.indexDigest ?? "",
     eventHighWaterDigest: scan.marker.eventHighWaterDigest,
     // TCRN-CROSS-SUB-310 R17: no `capacity` report. It measured the live card bodies against the
     // knowledge.aggregateBytes limit (TCRN-CROSS-SUB-309), and that limit is gone (MIN-238 D1).
@@ -3356,9 +3501,15 @@ async function appendLibraryCrestEvent(
 // TCRN-CROSS-SUB-414: this device's index view once a write's event is committed, projected from the
 // write's own scan and the record it appended: what the next read projects, unless another device's
 // events arrive first, and then that read projects it again. It is a cache in the device directory,
-// and failing to write it never fails the write.
+// and failing to write it never fails the write. TCRN-CROSS-SUB-428 (INC-398; R14 (d)): nor does
+// anything else here -- building the index or projecting it -- turn the committed write into a
+// refusal; what fails is left for the next read, which projects the view again.
 async function projectViewAfterWrite(scan: KnowledgeStoreScan, records: readonly KnowledgeUnitMetadata[], options: KnowledgeReadOptions): Promise<void> {
-  await writeIndex(storeBackendFor(scan.storeRoot, options), { ...scan.marker, version: scan.marker.version + 1 }, records);
+  try {
+    await writeIndex(libraryKnowledgeView(scan.storeRoot, options), { ...scan.marker, version: scan.marker.version + 1 }, records);
+  } catch {
+    // Left for the next read to project again.
+  }
 }
 
 // A crest record's body, as an explicit read reads it: from its event stream, or through the store
@@ -3924,7 +4075,7 @@ function knowledgeListAnswer(
 ): Readonly<Record<string, JsonValue>> {
   // WSC-4: truncate with a continuation window instead of failing when more than
   // one page matches — the metadata-first surface stays usable past a single page.
-  const records = matched.slice(normalized.offset, normalized.offset + normalized.limit);
+  const records = matched.slice(normalized.offset, normalized.offset + normalized.limit) as unknown as readonly JsonValue[];
   return {
     schemaVersion: "tcrn.knowledge-list.v1",
     reasonCode: "KNOWLEDGE_LIST_READY",
@@ -3934,8 +4085,10 @@ function knowledgeListAnswer(
     total: matched.length,
     offset: normalized.offset,
     truncated: normalized.offset + records.length < matched.length,
-    records: records as unknown as readonly JsonValue[],
-    resultDigest: canonicalSha256(records),
+    records,
+    // TCRN-CROSS-SUB-428 (INC-398): the page's digest is hashed record by record, so a page as large
+    // as the whole crest -- the page recall and the knowledge hint read -- is never refused for size.
+    resultDigest: canonicalListSha256(records.map(canonicalEntryText)),
   };
 }
 

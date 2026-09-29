@@ -596,6 +596,28 @@ the bodies of live cards and that a refusal for the budget names `bodyBytes` and
 (TCRN-CROSS-SUB-310 and O-1, which MIN-238 D1 decided), that each live version of a duplicate holds
 budget until it is resolved (TCRN-CROSS-SUB-413), and that O-1 is unchanged (TCRN-CROSS-SUB-414).
 
+No single canonical value bounds a crest's derived index or a list's digest any more
+(TCRN-CROSS-SUB-428, TCRN-CROSS-INC-398; `packages/core/src/knowledge-core.ts`;
+`packages/core/spec/knowledge-core-v1.md`). With the body total gone, the index view -- every
+record's metadata in one canonical value -- was the last bound on a crest: at about 300 cards with
+2,000-byte summaries, the write that carried a library's index past the protocol's one-MiB ceiling was
+refused with `INPUT_OVERSIZED` after its event was committed, and every read and write of the crest
+was refused after it, `--supersedes` included; the user crest took that card and then refused every
+read and write. The index's `indexDigest` and a `knowledge-list` page's `resultDigest` are now the
+sha256 of the records' canonical list hashed one record at a time -- wherever the list fits one
+canonical value, the digest it always was -- so `knowledge-validate`, `knowledge-list`, `recall` and
+the knowledge hint, which read the whole crest as one page, answer at any size. This device's view
+keeps the whole index in `index.json`, byte for byte as before, while it fits the ceiling and the
+record-count limit; past either, `index.json` is a head, `tcrn.knowledge-index-pages.v1` (`count`,
+`pages`, `indexDigest`), and the records are in `index-000001.json` onwards
+(`tcrn.knowledge-index-page.v1`), each within the ceiling. A read projects a missing, damaged or
+out-of-date page again and removes a page the head does not name, and a view that cannot be
+projected, at a read or after a write's event is committed, is left for the next read: a committed
+write is answered as committed (R14 (d)). `PROTOCOL_LIMITS.maxCanonicalBytes` and each card's limits
+are unchanged, and an answer printed whole -- `knowledge-checkpoint`, `knowledge-freshness`,
+`knowledge-source-check`, or a page asked for with `--limit` -- is still refused with
+`INPUT_OVERSIZED` once it passes the ceiling.
+
 Gates are declared per project and chosen by the change (TCRN-CROSS-STORY-485; MIN-227 D4;
 `packages/core/src/gates-config.ts`, `gates-plan.ts`, `gates-run.ts`, `gates-done.ts`). A gate is a
 project-level configuration record of the gate collection, keyed by its name: its command is an

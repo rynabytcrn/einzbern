@@ -20,9 +20,11 @@ holds that engine's `metadata/` and `bodies/` (the metadata/body layout below). 
 `index.json`, is derived, so it is this device's cache, `cache/<library>/crest-views/` in the
 device directory (469 R4): a read that finds it missing or out of date projects it again
 instead of failing, and another device reading the same store projects its own; a write projects
-this device's copy from its own scan. An old-layout workspace's store (`knowledge/` in its
-control directory, with a `views/index.json` entry) opens read-only; every write refuses with
-`LEGACY_WORKSPACE_READ_ONLY`.
+this device's copy from its own scan. Past the protocol's canonical ceiling the view is a head and
+its pages (see "Capacity"), and a view that cannot be projected is left for the next read: it never
+fails a read or turns a committed write into a refusal (TCRN-CROSS-SUB-428). An old-layout
+workspace's store (`knowledge/` in its control directory, with a `views/index.json` entry) opens
+read-only; every write refuses with `LEGACY_WORKSPACE_READ_ONLY`.
 Bodies are separate single-link regular files and never appear in metadata
 views, default selection, or checkpoints. Metadata listing, snippet, freshness,
 and checkpoint surfaces enumerate the closed body-name set but never open or
@@ -354,10 +356,30 @@ card holds written with `--supersedes` or `--coexist` (TCRN-CROSS-MIN-227 D9,
 D25; TCRN-CROSS-MIN-146; TCRN-CROSS-MIN-225). Each card is still held to its own
 limits ("Limits and privacy"): a body, summary, snippet or metadata past its
 limit, or an article past the canonical ceiling, is refused with
-`KNOWLEDGE_LIMIT_EXCEEDED` before anything is written. The derived index view is
-still one canonical value holding every record's metadata and no body, and like
-every canonical value it must fit the protocol's one-MiB canonical ceiling; that
-bound is not a setting and counts no body.
+`KNOWLEDGE_LIMIT_EXCEEDED` before anything is written.
+
+Nor does the metadata the cards add up to bound a crest (TCRN-CROSS-SUB-428,
+TCRN-CROSS-INC-398). The derived index is no single canonical value, so neither
+the protocol's one-MiB canonical ceiling nor its record-count limit, which stay
+where they are, reaches it. Its `indexDigest` (`knowledge-validate`, the marker
+read) and the `resultDigest` of a `knowledge-list` page are the sha256 of the
+records' canonical list -- wherever that list fits one canonical value, exactly
+the digest it always was -- hashed one record at a time, so the page recall and
+the knowledge hint read, the whole crest, is answered at any size. This device's
+view holds the whole index in `index.json`, byte for byte as before, while the
+index fits the ceiling and the record-count limit. Past either, `index.json` is a
+head, `tcrn.knowledge-index-pages.v1`, naming the index's `count` of records, the
+number of `pages` that hold them and its `indexDigest`; page n is
+`index-<n, six digits>.json`, `tcrn.knowledge-index-page.v1`, holding the next
+records in index order within the same ceiling, and the records of the pages in
+page order hash to the head's digest. A read that finds a page missing, damaged or
+out of date projects it again, and removes a page the head does not name. A view
+that cannot be projected, at a read or after a write's event is committed, is left
+for the next read: it never changes a read's answer, and a committed write is
+answered as committed (R14 (d)). What stays one canonical value is an answer
+printed whole: an answer that holds every card -- `knowledge-checkpoint`,
+`knowledge-freshness`, `knowledge-source-check` -- or a page asked for with
+`--limit`, is still refused with `INPUT_OVERSIZED` once it passes the ceiling.
 
 `knowledge.aggregateBytes`, the setting that bounded the body bytes of live cards
 (TCRN-CROSS-STORY-476 R3, TCRN-CROSS-SUB-309), is a retired setting

@@ -58,8 +58,10 @@ export const KNOWLEDGE_BATCH_VERBS = Object.freeze([
   "knowledge-create", "knowledge-policy", "knowledge-reverify",
 ]);
 
-// The store's own ceiling on live records bounds any sensible batch; a larger one is a
-// caller error, not a capacity question.
+// The batch's own bound, not the store's: no ceiling on live records or on their bytes bounds a
+// crest any more (TCRN-CROSS-SUB-310 R17, TCRN-CROSS-SUB-428; knowledge-core-v1.md "Capacity").
+// A larger batch is refused as WORK_BATCH_MALFORMED before any member runs: a caller error, not
+// a capacity question.
 const KNOWLEDGE_BATCH_MEMBER_LIMIT = 256;
 
 export interface KnowledgeBatchProblem {

@@ -54,7 +54,9 @@ export function cliProcess(args, { env = {} } = {}) {
 export const deviceHome = testDeviceHome;
 
 // TCRN-CROSS-STORY-484 R4 (TCRN-CROSS-SUB-341): the CLI refuses a model's write of a variable, or of
-// a setting that is not modelWritable, unless it runs for Atelier (EINZBERN_SURFACE=atelier). A test
+// a setting that is not modelWritable, unless it runs for Atelier (EINZBERN_SURFACE=atelier); since
+// TCRN-CROSS-STORY-513 R1 (TCRN-CROSS-SUB-422) it refuses a rule's switch (rule-enable, rule-disable)
+// and a gate declaration (gates-config-set, gates-config-remove) the same way. A test
 // that writes through those verbs stands in for Atelier: standInForAtelier() sets the surface for the
 // rest of the test process, in-process runs and spawned ones alike, and withSurface runs one
 // operation as another surface (undefined for a model's shell) and puts the previous one back.

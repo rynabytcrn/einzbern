@@ -42,7 +42,7 @@
 
 ## Story 转为完成时报 WORK_DONE_GATES_NOT_RUN，该怎么办？
 
-项目声明了启用的门，但本设备在当前这棵树上还没有跑过它们。先运行 `gates-run --at <时刻>`，全部必需门为绿之后再转换。之后又改了文件，要重新跑。
+项目有启用的必需门以精确 work id 覆盖这张 Story，但本设备还没有在当前这棵树与当前这组门声明上为它跑过这些门。先运行 `gates-run --base <提交> --work-id <Story id> --at <时刻>`：非 release 运行必须给 `--base`，发布时改用 `--release true`；`--work-id` 把这次运行绑定到这张 Story，没有绑定的运行不能证明覆盖。全部必需门为绿之后再转换。之后又改了文件、门声明或目标 Story，要重新跑。细节见「门」页。
 
 ## gates-run 的结果存在哪里？
 
@@ -50,7 +50,7 @@
 
 ## 一次已经提交的改动，gates-plan 为什么什么都没选？
 
-`gates-plan` 缺省相对 `HEAD` 找改动，已经提交的改动相对 `HEAD` 没有差别。用 `--base` 指向这次改动的分叉点，例如 `--base main`。
+非 release 计划必须给有效的 Git 提交 `--base`，不会隐式使用 `HEAD`，不给就报 `GATES_BASE_REQUIRED`。已经提交的改动相对 `HEAD` 没有差别，所以 `--base HEAD` 选不中按路径 glob 覆盖的门；用 `--base` 指向这次改动的分叉点，例如 `--base main`。以精确 work id 覆盖的门另由 `--work-id` 选中，与改动无关。
 
 ## Wiki 怎么更新？
 

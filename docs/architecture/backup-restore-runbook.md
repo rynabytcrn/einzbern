@@ -13,7 +13,16 @@ are first-class here — always double-quote them.
 
 ## Two doctrines the operator must accept before starting
 
-1. **Same-path-only for a RESTORE.** A restore targets the exact original path on
+1. **Same-path-only for a RESTORE (old layout, kept as history).** This doctrine
+   describes the old-layout control tree `<control>/` only. A library (`.ether/`) is
+   restored with `setup --mode restore`
+   ([`references/restore.md`](../../skill/mana-orchestrate/references/restore.md)),
+   which takes the library from wherever its copy is kept — another device, a backup
+   or a cloud drive — and runs eight checks before it writes anything; a library moves
+   with `workspace-relocate`, and an old-layout workspace becomes a library by
+   migration, not by a restore. The doctrine as it stood for the old layout:
+
+   A restore targets the exact original path on
    the same machine. `resolveWorkspace` fail-closes `WORKSPACE_SCHEMA_INVALID`
    ("stored roots do not match their current filesystem identities") when the
    stored root `canonicalPath`/`portableIdentity` disagree with the live
@@ -89,8 +98,12 @@ removed.
    validate result for both stores. It excludes the held `lease/` subtree and the
    in-flight claim residue classes (SDC-9), so it matches the copy byte-for-byte
    only after the lease is released.
-4. **Copy the tree.** Copy `<control>` with OS tools to a destination
-   **outside** `<root>`:
+4. **Copy the tree (old layout, kept as history).** This step copies the old-layout
+   control tree `<control>/`. For a library (`.ether/`) the current restore is
+   `setup --mode restore`
+   ([`references/restore.md`](../../skill/mana-orchestrate/references/restore.md)),
+   which takes the library from wherever its copy is kept. For the old layout, copy
+   `<control>` with OS tools to a destination **outside** `<root>`:
 
    ```
    cp -R "<root>/<control>" "<destinationParent>/<control>"      # macOS/Linux
@@ -110,10 +123,17 @@ removed.
 
 ## RESTORE
 
+This procedure restores the old-layout control tree `<control>/` and is kept as
+history. A library (`.ether/`) is restored with `setup --mode restore`
+([`references/restore.md`](../../skill/mana-orchestrate/references/restore.md)): it
+takes the library from wherever its copy is kept, runs eight checks of it and writes
+nothing until they pass.
+
 1. **Quiesce.** End every agent session against `<root>`. Never restore over a
    live workspace.
-2. **Copy the tree back to the ORIGINAL path.** Same-path doctrine — the
-   destination is the exact `<root>` the snapshot came from:
+2. **Copy the tree back to the ORIGINAL path (old layout).** Same-path doctrine
+   (item 1, old layout) — the destination is the exact `<root>` the snapshot came
+   from:
 
    ```
    cp -R "<destinationParent>/<control>" "<root>/<control>"      # macOS/Linux
@@ -167,7 +187,7 @@ of these, stop and follow the action — do not force past it.
 | --- | --- | --- |
 | `SNAPSHOT_RESIDUE_PRESENT` | The tree carries crashed-session quarantine residue (`stale-lease-*`, `released-*`, `attempt-owned-*`); a snapshot over it would bake partial state into the receipt | Remove the named quarantine directory by hand, then re-run the SNAPSHOT procedure from step 2 |
 | `SNAPSHOT_MISMATCH` | The copy differs from the manifest at the named path — corrupt or truncated copy | Discard the copy and re-copy from a verified source; do not restore from it |
-| `WORKSPACE_SCHEMA_INVALID` | Restored to the wrong path or a second machine (root-identity mismatch) | Restore in place at the exact original `<root>` on the original machine (same-path doctrine) |
+| `WORKSPACE_SCHEMA_INVALID` | Old layout, kept as history: an old-layout control tree restored to the wrong path or a second machine (root-identity mismatch) | For the old layout, restore in place at the exact original `<root>` on the original machine (same-path doctrine, item 1). A library is restored with `setup --mode restore` from wherever its copy is kept; a failed check of its eight names its own reason code ([`references/restore.md`](../../skill/mana-orchestrate/references/restore.md)) |
 | `KNOWLEDGE_HIGH_WATER_MISMATCH` | Partial restore — the workspace and knowledge stores are out of lockstep. In a library, the crest holds records written against chain events `akasha/` no longer holds, named in `details.awaitingChain` (TCRN-CROSS-SUB-414) | Restore the WHOLE control tree so both stores return together; partial restore is unrecoverable by design in V1. In a library, restore the whole library; the named records wait until those chain events are back |
 | `WORKSPACE_VIEW_STALE` | Derived views drifted from the event log | Run `recover --workspace "<root>" --at "<instant>"`, then `validate` |
 | `WORKSPACE_LOCKED` | A live lease holder is present — the workspace was not quiesced | End all agent sessions and retry |

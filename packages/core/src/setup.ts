@@ -30,9 +30,14 @@
 // apply (TCRN-CROSS-SUB-365) makes this device's identity when it has none, then imports each
 // partition and compares its head with the plan's, writes the registry entries with migratedFrom
 // and sets the portal keys this device does not hold; a partition already migrated is skipped, so
-// the same mapping applied again writes nothing. Its host cleanup and wiring are
-// TCRN-CROSS-SUB-366's. Whatever the mode, the wizard never commits, pushes, edits .gitignore or
-// deletes anything: what it takes out is moved into the device directory's backups.
+// the same mapping applied again writes nothing. Then (TCRN-CROSS-SUB-366) it writes the language
+// into the project's own library, takes off what the old installation left on this device
+// (migrate-cleanup.ts: the old hooks, deny rules and inert key of the user's and each mapped
+// project's host files, the template directories, the old helper's copies and markers, the old
+// injection state and the old portal launchers) and wires the project as fresh does, all but the
+// registry step, whose entries it wrote itself. Whatever the mode, the wizard never commits,
+// pushes, edits .gitignore or deletes anything: what it takes out is moved into the device
+// directory's backups.
 
 import { lstat, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -47,25 +52,35 @@ import type { DoctorCheck } from "./doctor.js";
 import { readEngineCurrent } from "./engine-home.js";
 import { ARTIFACT_LANGUAGE_TAGS } from "./knowledge-language.js";
 import { legacyControlDirectory } from "./legacy-workspace.js";
+import { applyCleanup, planCleanup } from "./migrate-cleanup.js";
+import type { MigrateCleanupInput, MigrateCleanupItem } from "./migrate-cleanup.js";
 import { applyMigration, inferMigrationMapping, planMigration, readMigrationMapping } from "./migrate-legacy.js";
-import type { MigrationApplied, MigrationPlan } from "./migrate-legacy.js";
+import type { MigrationApplied, MigrationPartitionPlan, MigrationPlan } from "./migrate-legacy.js";
 import { DIRECTORY, LEGACY_DEVICE_DIRECTORY } from "./names.js";
 import { readRegistry } from "./registry.js";
 import type { RegistryEntry } from "./registry.js";
 import {
+  LANGUAGE_SETTING,
   SetupRecorder,
+  WIRING_STEPS,
   applyDevice,
   applyFreshSetup,
+  applyWiring,
   defaultCloud,
   defaultLanguage,
   freshLanguageTag,
+  libraryLanguage,
+  navigationChoice,
   planDevice,
   planEngineSource,
   planFreshSetup,
+  planWiring,
   readDeviceNavigation,
+  readEngineFiles,
   realTarget,
   setupApplied,
 } from "./setup-fresh.js";
+import type { LibraryState } from "./setup-fresh.js";
 import {
   applyRepairSetup,
   applyUninstallSetup,
@@ -76,12 +91,18 @@ import {
 } from "./setup-maintain.js";
 import { applyRestoreSetup, planRestoreSetup } from "./setup-restore.js";
 import type { RestoreCheck } from "./setup-restore.js";
+import { materializeWorkspace, materializeWorkspaceFromGenesis, setWorkspaceSetting } from "./workspace.js";
 
 export const SETUP_MODES = Object.freeze(["fresh", "restore", "update", "repair", "migrate", "uninstall"] as const);
 export type SetupMode = typeof SETUP_MODES[number];
 
 export const SETUP_PLAN_SCHEMA_VERSION = "einzbern.setup-plan.v1" as const;
 export const SETUP_APPLIED_SCHEMA_VERSION = "einzbern.setup-applied.v1" as const;
+// The actor the wizard names on each event it writes into a library (TCRN-CROSS-SUB-366): a library
+// a migration imported carries its old chain, and a chain that enabled attestation refuses a write
+// that names no actor. Like Atelier's agent:portal, it says which surface wrote the event; it proves
+// nothing about who ran it.
+export const SETUP_ACTOR = "agent:setup" as const;
 
 export const SETUP_REASON_CODES = Object.freeze([
   // A given answer is not one the question takes (details: question).
@@ -369,8 +390,8 @@ export interface SetupPlan {
   readonly engineSwitch?: SetupEngineSwitch;
   // migrate: the mapping it follows and, for each partition, the library it becomes, the chain's
   // events and head, the gates that are not satisfied and the open work; the registry entries, the
-  // device settings that move and the host files it cleans up (migrate-legacy.ts).
-  readonly migration?: MigrationPlan;
+  // device settings that move (migrate-legacy.ts) and what the cleanup takes off (migrate-cleanup.ts).
+  readonly migration?: SetupMigrationPlan;
   // Every file and directory the apply writes, in the order it writes them, and every original it
   // copies first; backupDir holds the copies of this run.
   readonly writes: readonly SetupWrite[];
@@ -384,6 +405,16 @@ export interface SetupPlan {
   // the library sits outside the project, whether or not the apply changes the file.
   readonly warnings: readonly SetupWarning[];
 }
+
+/**
+ * migrate's plan (TCRN-CROSS-STORY-489 R1, R3): the migration migrate-legacy.ts plans, with its
+ * hostCleanup as migrate-cleanup.ts fills it in: each host file updated and each entry moved into
+ * this run's backups, {kind, path, action, into}.
+ */
+export type SetupMigrationPlan = MigrationPlan & { readonly hostCleanup: readonly MigrateCleanupItem[] };
+
+/** What migrate's apply did: the partitions, the registry entries and the portal keys (migrate-legacy.ts), and hostCleanup as it was made. */
+export type SetupMigrationApplied = MigrationApplied & { readonly hostCleanup: readonly MigrateCleanupItem[] };
 
 /** update and rollback: the version current before and after, and for an update the release it installs from. */
 export interface SetupEngineSwitch {
@@ -442,8 +473,9 @@ export interface SetupApplied {
   // update: the engine switch it made.
   readonly engineSwitch?: SetupEngineSwitched;
   // migrate: each partition's library as the apply left it (imported, or skipped as migrated
-  // already), each registry entry with migratedFrom, and the portal keys (migrate-legacy.ts).
-  readonly migration?: MigrationApplied;
+  // already), each registry entry with migratedFrom, the portal keys (migrate-legacy.ts) and what
+  // the cleanup took off (migrate-cleanup.ts).
+  readonly migration?: SetupMigrationApplied;
   // doctor's eight checks right after the apply.
   readonly selfCheck: readonly DoctorCheck[];
 }
@@ -478,13 +510,43 @@ function migrateQuestions(input: SetupModeInput, defaults: ResolvedSetupAnswers)
   return questions;
 }
 
+// The fresh mode's steps a migration runs after its cleanup: every one but the registry, whose
+// entries the migration writes itself, each with migratedFrom (migrate-legacy.ts). Built when it is
+// asked for: the step list lives in a module this one sits in an import cycle with.
+function migrateWiringSteps(): ReadonlySet<SetupStep> {
+  return new Set(WIRING_STEPS.filter((step) => step !== "registry"));
+}
+
+// What the cleanup looks at (migrate-cleanup.ts): the home, the device directory, the old device
+// directory, and each project the mapping names with the project setup runs for.
+function migrateCleanupInput(context: SetupContext, partitions: readonly MigrationPartitionPlan[], navigation: boolean): MigrateCleanupInput {
+  return {
+    home: context.home,
+    deviceHome: context.deviceHome,
+    legacyDeviceHome: context.legacy.deviceDirectory,
+    projectRoots: [...partitions.map((partition) => partition.projectRoot), context.projectRoot],
+    navigation: navigationChoice(navigation),
+  };
+}
+
+// The records the project's own library starts from: the old chain it is imported from, or, when an
+// earlier run imported it, the library as it stands. Both are read from genesis and nothing is
+// written; null for a partition the plan stops at.
+async function ownLibraryState(recorder: SetupRecorder, own: MigrationPartitionPlan | null): Promise<LibraryState | null> {
+  if (own === null || own.action === "blocked") return null;
+  const source = own.action === "skip" ? own.target : own.legacyWorkspace;
+  return recorder.attempt("library", source, () => materializeWorkspaceFromGenesis(source));
+}
+
 /**
- * Plan a migration (TCRN-CROSS-STORY-489 R1; TCRN-CROSS-SUB-364): SETUP_MIGRATE_NOTHING without an
- * installation from before the rename. The mapping is --mapping's file (a relative one is taken from
- * the project), else the old workspace in the project itself; with neither, the question stays open
- * and SETUP_ANSWER_REQUIRED stops the apply. Each partition's plan comes from planMigration; the
- * writes are this device's identity when it has none, then the migration's in the order it makes
- * them. Nothing is written.
+ * Plan a migration (TCRN-CROSS-STORY-489 R1, R3; TCRN-CROSS-SUB-364, SUB-366): SETUP_MIGRATE_NOTHING
+ * without an installation from before the rename. The mapping is --mapping's file (a relative one is
+ * taken from the project), else the old workspace in the project itself; with neither, the question
+ * stays open and SETUP_ANSWER_REQUIRED stops the apply. Each partition's plan comes from
+ * planMigration. The writes are this device's identity when it has none, then the migration's in the
+ * order it makes them, then the language of the project's own library, the cleanup
+ * (migrate-cleanup.ts, whose items are migration.hostCleanup) and the fresh mode's steps from
+ * skill-copies on, each file listed at the first step that writes it. Nothing is written.
  */
 async function planMigrateSetup(input: SetupModeInput): Promise<SetupModePlan> {
   const { context, answers, options } = input;
@@ -521,59 +583,115 @@ async function planMigrateSetup(input: SetupModeInput): Promise<SetupModePlan> {
     recorder.block(blocker.step, blocker.path, blocker.reasonCode, blocker.message);
   }
 
-  // The answers the project's own wiring takes: its library is the one its partition becomes.
+  // The answers the project's own wiring takes: its library is the one its partition becomes, and
+  // its language the one that library records (the old chain's, or the library's once imported).
   const own = planned.migration.partitions.find((partition) => partition.projectRoot === projectRoot) ?? null;
+  const ownState = await ownLibraryState(recorder, own);
+  const ownLanguage = ownState === null ? own?.language ?? null : libraryLanguage(ownState);
   const artifacts = own?.target ?? await realTarget(join(projectRoot, DIRECTORY.library));
   const defaults: ResolvedSetupAnswers = {
     artifacts,
     cloud: defaultCloud(context, artifacts),
-    language: own?.language ?? defaultLanguage(),
+    language: ownLanguage ?? defaultLanguage(),
     navigation: deviceNavigation !== "declined",
   };
+  const resolved: ResolvedSetupAnswers = {
+    artifacts,
+    cloud: answers.cloud ?? defaults.cloud,
+    language: language ?? defaults.language,
+    navigation: answers.navigation ?? defaults.navigation,
+  };
+  if (own !== null && ownState !== null && ownLanguage !== resolved.language) recorder.write("library", own.target, "update");
+
+  // The cleanup, then skill-copies, launchers, host-hooks, writable-roots, machine-settings and
+  // managed-sections as fresh plans them. Without a mapping there are no projects to clean or wire
+  // yet: the plan waits for its answer.
+  let hostCleanup: readonly MigrateCleanupItem[] = [];
+  let pending: readonly { readonly file: string; readonly id: string }[] = [];
+  if (mapping !== null) {
+    hostCleanup = await planCleanup(recorder, migrateCleanupInput(context, planned.migration.partitions, resolved.navigation));
+    const files = engine.directory === null ? null : await readEngineFiles(recorder, engine.directory);
+    pending = await planWiring(recorder, {
+      projectRoot,
+      home,
+      deviceHome,
+      library: own === null || ownState === null ? null : { path: own.target, libraryId: own.workspaceId, state: ownState },
+      cloud: resolved.cloud,
+      navigation: navigationChoice(resolved.navigation),
+      deviceNavigation,
+      engine: files,
+      steps: migrateWiringSteps(),
+    });
+  }
   return {
     questions: migrateQuestions(input, defaults),
-    resolved: {
-      artifacts,
-      cloud: answers.cloud ?? defaults.cloud,
-      language: language ?? defaults.language,
-      navigation: answers.navigation ?? defaults.navigation,
-    },
+    resolved,
     engine: { version: engine.version, directory: engine.directory },
     // A partition migrated by an earlier run keeps the library it has.
     library: own === null ? null : { path: own.target, action: own.action === "skip" ? "reuse" : "create", libraryId: own.workspaceId },
     writes: recorder.writes,
     backups: recorder.backups,
     backupDir: recorder.backups.length > 0 ? recorder.backupRoot : null,
-    pendingSections: [],
+    pendingSections: pending,
     blockers: recorder.blockers,
     warnings: recorder.warnings,
-    migration: planned.migration,
+    migration: { ...planned.migration, hostCleanup },
   };
 }
 
+// The project's own library records the language the plan resolved; a library that records it
+// already is not written. The event names SETUP_ACTOR, which a chain that enabled attestation
+// requires of every write.
+async function applyLibraryLanguage(recorder: SetupRecorder, libraryPath: string, language: string, at: string): Promise<void> {
+  if (libraryLanguage(await materializeWorkspace(libraryPath)) === language) return;
+  await setWorkspaceSetting(libraryPath, { key: LANGUAGE_SETTING, value: language, occurredAt: at, actorId: SETUP_ACTOR });
+  recorder.write("library", libraryPath, "update");
+}
+
 /**
- * Apply a confirmed migration (TCRN-CROSS-STORY-489 R1, R2, R4; TCRN-CROSS-SUB-365): this device's
- * identity when it has none, then applyMigration in the plan's order (each partition imported and
- * its head compared with the plan's, or skipped as migrated already; the registry entries with
- * migratedFrom; the portal keys). SETUP_APPLIED carries what it did as migration, the project's own
- * library, and doctor's eight checks. No old workspace is written and no gate is satisfied.
+ * Apply a confirmed migration (TCRN-CROSS-STORY-489 R1 to R4; TCRN-CROSS-SUB-365, SUB-366): this
+ * device's identity when it has none, then applyMigration in the plan's order (each partition
+ * imported and its head compared with the plan's, or skipped as migrated already; the registry
+ * entries with migratedFrom; the portal keys); then the language of the project's own library, the
+ * cleanup (migrate-cleanup.ts) and the fresh mode's steps from skill-copies on, each reading its
+ * files again before it writes them. SETUP_APPLIED carries what it did as migration, hostCleanup
+ * included, the project's own library, and doctor's eight checks. No old workspace is written and no
+ * gate is satisfied.
  */
 async function applyMigrateSetup(plan: SetupPlan): Promise<SetupApplied> {
-  const { at, projectRoot, deviceHome } = plan;
+  const { at, projectRoot, home, deviceHome, resolved } = plan;
   const migration = plan.migration;
   if (migration === undefined || migration.mapping === null) {
     return setupFail("SETUP_INPUT_INVALID", "the plan names no migration to apply", { field: "plan" });
+  }
+  const directory = plan.engine.directory;
+  if (directory === null) {
+    return setupFail("SETUP_ENGINE_NOT_INSTALLED", "the plan names no engine version directory to install from", { deviceHome });
   }
   const recorder = new SetupRecorder(deviceHome, at);
   const device = await applyDevice(recorder, deviceHome, at);
   const applied = await applyMigration(recorder, { migration, deviceHome, at });
   const own = applied.partitions.find((partition) => partition.projectRoot === projectRoot) ?? null;
+  if (own !== null) await applyLibraryLanguage(recorder, own.target, resolved.language, at);
+  const hostCleanup = await applyCleanup(recorder, { ...migrateCleanupInput(plan.context, migration.partitions, resolved.navigation), at });
+  const pending = await applyWiring(recorder, {
+    projectRoot,
+    home,
+    deviceHome,
+    at,
+    library: own === null ? null : { path: own.target, libraryId: own.libraryId },
+    cloud: resolved.cloud,
+    navigation: navigationChoice(resolved.navigation),
+    engineDirectory: directory,
+    steps: migrateWiringSteps(),
+    actorId: SETUP_ACTOR,
+  });
   const receipt = await setupApplied(plan, recorder, {
     deviceId: device.deviceId,
     library: own === null ? null : { path: own.target, libraryId: own.libraryId, created: own.action === "imported" },
-    pending: [],
+    pending,
   });
-  return { ...receipt, migration: applied };
+  return { ...receipt, migration: { ...applied, hostCleanup } };
 }
 
 // The mode table. Each row names the options its mode takes, its planner and its apply; the rows

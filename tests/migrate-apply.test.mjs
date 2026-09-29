@@ -31,6 +31,7 @@ import {
   initializeLibrary,
   materializeWorkspace,
   openLegacyWorkspace,
+  readAllStreams,
   readRegistry,
   registerLibrary,
 } from "../dist/build/packages/core/src/index.js";
@@ -235,6 +236,18 @@ test("489-R1, R2, AC1 (fixture): setup --mode migrate --yes true imports each pa
     ["library", targets[1], "create"],
     ["registry", registryFile, "create"],
     ["machine-settings", settingsFile, "create"],
+    // TCRN-CROSS-SUB-366: then the fresh mode's wiring, all but the registry; the project's own
+    // library (its language and section records) is listed once, at its import.
+    ["skill-copies", join(m.home, ".claude", "skills", "mana-orchestrate"), "create"],
+    ["skill-copies", join(m.home, ".agents", "skills", "mana-orchestrate"), "create"],
+    ["skill-copies", join(m.deviceHome, "skills.json"), "create"],
+    ["launchers", join(m.deviceHome, "engine", "einzbern.mjs"), "create"],
+    ["launchers", join(m.deviceHome, "engine", "hook.mjs"), "create"],
+    ["host-hooks", join(m.home, ".claude", "settings.json"), "create"],
+    ["host-hooks", join(m.home, ".codex", "hooks.json"), "create"],
+    ["host-hooks", join(m.home, ".codex", "config.toml"), "create"],
+    ["managed-sections", join(m.container, "AGENTS.md"), "create"],
+    ["managed-sections", join(m.container, "CLAUDE.md"), "create"],
   ]);
   assert.deepEqual(applied.library, { path: targets[0], libraryId: expected.workspaceId, created: true });
   assert.deepEqual(applied.migration.partitions.map((entry) => [entry.partition, entry.action, entry.target, entry.libraryId, entry.events, entry.headEventHash]), [
@@ -242,13 +255,19 @@ test("489-R1, R2, AC1 (fixture): setup --mode migrate --yes true imports each pa
     ["alpha", "imported", targets[1], ALPHA_WORKSPACE_ID, expected.events, alpha.head],
   ]);
 
-  // 489-AC1: each library chain-validates to the old chain's events, and its one stream is the old
-  // stream, imported as it was, up to the old head.
+  // 489-AC1: each library chain-validates, and its one stream is the old stream, imported as it
+  // was: the old chain's events up to the old head. alpha's ends there; in the project's own library
+  // this device went on writing the stream after the import, with the language and the section
+  // records of the wiring (TCRN-CROSS-SUB-366), so the old head is its event at the old count.
   for (const [target, partition] of [[targets[0], crossProject], [targets[1], alpha]]) {
     const validated = receipt(run(m, ["chain-validate", "--workspace", target]));
-    assert.deepEqual([validated.reasonCode, validated.layout, validated.workspaceId, validated.events, validated.rejectedEventCount],
-      ["CHAIN_VALIDATED", "library", partition.workspaceId, expected.events, 0], target);
-    assert.deepEqual(validated.streams.map((stream) => [stream.identityScheme, stream.events, stream.headEventHash]), [["legacy", expected.events, partition.head]], target);
+    assert.deepEqual([validated.reasonCode, validated.layout, validated.workspaceId, validated.rejectedEventCount],
+      ["CHAIN_VALIDATED", "library", partition.workspaceId, 0], target);
+    assert.deepEqual(validated.streams.map((stream) => stream.identityScheme), ["legacy"], target);
+    const [stream] = (await readAllStreams(target)).streams;
+    assert.equal(stream.events[expected.events - 1].eventHash, partition.head, target);
+    if (target === targets[1]) assert.deepEqual([validated.events, validated.streams[0].headEventHash], [expected.events, partition.head], target);
+    else assert.ok(validated.events > expected.events, target);
   }
 
   // The registry: one entry per project, each with the old workspace it was migrated from.
@@ -262,7 +281,7 @@ test("489-R1, R2, AC1 (fixture): setup --mode migrate --yes true imports each pa
 
   // The portal key travels; the old device's other keys do not.
   const settings = JSON.parse(await readFile(settingsFile, "utf8"));
-  assert.deepEqual(settings.values, { "portal.defaultTheme": "dark" });
+  assert.deepEqual(settings.values, { "agents.navigation": "written", "portal.defaultTheme": "dark" });
   assert.deepEqual(applied.migration.deviceSettings.keys, [{ key: "portal.defaultTheme", value: "dark", current: null, action: "set" }]);
 
   // MIN-238 D4: the fixture's pending gate is pending in the library, as it was in the old chain.

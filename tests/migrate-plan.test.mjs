@@ -210,12 +210,21 @@ test("489-R1, AC1 (fixture): a two-partition mapping plans two libraries with th
   assert.deepEqual(migration.hostCleanup, []);
 
   // What the apply writes, in its order, and the one thing that stops it here: no engine is installed.
+  // With nothing old on this device the cleanup has nothing to take off, and without an engine the
+  // wiring (TCRN-CROSS-SUB-366) plans no skill copy or launcher: it writes the user's hooks and the
+  // container's managed sections, and the language and the navigation choice go into files already
+  // listed.
   assert.deepEqual(planned.writes.map((entry) => [entry.step, entry.path, entry.action]), [
     ["device", join(m.deviceHome, "device.json"), "create"],
     ["library", targets[0], "create"],
     ["library", targets[1], "create"],
     ["registry", join(m.deviceHome, "registry.json"), "create"],
     ["machine-settings", join(m.deviceHome, "machine-settings.json"), "create"],
+    ["host-hooks", join(m.home, ".claude", "settings.json"), "create"],
+    ["host-hooks", join(m.home, ".codex", "hooks.json"), "create"],
+    ["host-hooks", join(m.home, ".codex", "config.toml"), "create"],
+    ["managed-sections", join(m.container, "AGENTS.md"), "create"],
+    ["managed-sections", join(m.container, "CLAUDE.md"), "create"],
   ]);
   assert.deepEqual(planned.blockers.map((entry) => [entry.step, entry.reasonCode]), [["engine", "SETUP_ENGINE_NOT_INSTALLED"]]);
   assert.deepEqual(planned.library, { path: targets[0], action: "create", libraryId: expected.workspaceId });

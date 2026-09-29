@@ -60,6 +60,23 @@ export interface RecallDocument {
   readonly scope?: RecallScope;
 }
 
+/**
+ * TCRN-CROSS-SUB-426 R17 续作修订三 (STORY-514 AC1): a removed card's removal, as knowledge-list
+ * answers it for the card: why (`reason`), on what basis, by whom and when, the card that superseded
+ * it (null unless it was superseded), and the device, sequence and hash of the event that holds it --
+ * all three null for a removal a supersession derives.
+ */
+export interface RecallCardRemoval {
+  readonly reason: string;
+  readonly basis: string;
+  readonly actor: string | null;
+  readonly removedAt: string;
+  readonly supersededBy: string | null;
+  readonly deviceId: string | null;
+  readonly sequence: number | null;
+  readonly eventHash: string | null;
+}
+
 export interface RecallHit {
   readonly kind: RecallKind;
   readonly key: string;
@@ -78,6 +95,9 @@ export interface RecallHit {
   // decision that superseded it, null when it was withdrawn. Set after selection (recall-inputs.ts),
   // never by the index.
   readonly obsoleteDecisions?: readonly ObsoleteDecisionHint[];
+  // TCRN-CROSS-SUB-426 R17 续作修订三 (STORY-514 AC1): a hit on a removed card, which only a recall
+  // asked for removed cards has, carries the card's removal. Set after selection, never by the index.
+  readonly removal?: RecallCardRemoval;
 }
 
 export interface RecallSelectionOptions {
@@ -549,6 +569,9 @@ export interface RecallKnowledgeInput {
   // TCRN-CROSS-SUB-426 (MIN-239 D5): the card's source references, never indexed; a minutes id among
   // them links the card to that record's decisions, for the obsolete-decision hint.
   readonly sourceReferences?: readonly string[];
+  // TCRN-CROSS-SUB-426 R17 续作修订三 (STORY-514 AC1): a removed card's removal, never indexed; only a
+  // read asked for removed cards gives one, and its hit carries it.
+  readonly removal?: RecallCardRemoval;
 }
 
 export interface RecallMinutesInput {

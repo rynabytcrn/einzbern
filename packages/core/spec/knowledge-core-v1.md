@@ -501,10 +501,15 @@ the deletion of a body before the removal event itself reads the crest as partia
 (`KNOWLEDGE_PARTIAL_STATE`) until the event arrives, as it does an event delivered
 before its body.
 
-Reads answer valid cards unless asked for another status. `knowledge-list` and
-`recall` take `--status valid|removed|all` (left out, `valid`), which a model adds only
-when a user asked for removed cards; the list echoes it as `status`, and so does a
-recall that was given one. `--selection` chooses among the valid cards as it always
+Reads answer valid cards unless asked for another status. `knowledge-list` takes
+`--status valid|removed|all` and `recall` `--status valid|removed|obsolete|all` (left
+out, `valid`), which a model adds only when a user asked for them; each value reads
+only the family of records that has that status, as that family's list does
+(`removed` the removed cards alone, `all` every card, and `obsolete`, a decision
+status in `specs/minutes-v1.md`, the valid cards), a recall hit on a removed card
+carries its `removal` as the list gives it, and the list echoes the value as
+`status`, as does a recall that was given one. `--selection` chooses among the
+valid cards as it always
 did; a removed card is listed only under `removed` or `all`, once per id, as it is
 kept, and a list filtered by project, role, category, kind, tag or freshness lists
 none, since a removed card keeps none of them, while a search matches its subject. A

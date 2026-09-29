@@ -31,11 +31,16 @@
 // that places the rule's section among the rule sections of AGENTS.md (agents-sections.ts,
 // orderRuleSections). rule-enable sets it when it is given and keeps the recorded one otherwise, and
 // rule-disable keeps it, so a rule enabled again takes its old place.
+//
+// TCRN-CROSS-STORY-489 (TCRN-CROSS-SUB-366): enabling and disabling write AGENTS.md before they
+// commit the records. When that commit fails, the file goes back to what it held before the error
+// goes on (agents-sections.ts, putBackUnrecorded), so AGENTS.md never holds a section the library
+// does not record, nor lacks one the library still records.
 
 import { join } from "node:path";
 
 import { compareCanonicalText } from "../../protocol/src/index.js";
-import { AGENTS_FILE, RULE_SECTION_PREFIX, disableSection, orderRuleSections, ruleOrders } from "./agents-sections.js";
+import { AGENTS_FILE, RULE_SECTION_PREFIX, orderRuleSections, putBackUnrecorded, ruleOrders, takeSectionOut } from "./agents-sections.js";
 import type { SectionChangeResult } from "./agents-sections.js";
 import { configRecord, configRecords, removeConfigRecordDelta, setConfigRecordDelta } from "./config-records.js";
 import type { ConfigRecordValue } from "./config-records.js";
@@ -271,6 +276,9 @@ async function commit(root: string, state: WorkspaceState, deltas: readonly ((st
  * TCRN-CROSS-STORY-508 R7: `order` sets the rule's order; left out, the rule keeps the order its
  * record holds. The rule sections of AGENTS.md are then arranged in the rules' order
  * (orderRuleSections), so a rule enabled with an order takes its place among them.
+ *
+ * TCRN-CROSS-STORY-489: when the records cannot be committed, AGENTS.md returns to what it held,
+ * and a file the enable created is taken away, before the error goes on.
  */
 export async function enableRule(input: RuleChangeInput & { readonly order?: number }): Promise<RuleChange> {
   const catalog = input.catalog ?? BUILT_IN_RULES;
@@ -314,7 +322,13 @@ export async function enableRule(input: RuleChangeInput & { readonly order?: num
     if (decision?.recordChanged === true) {
       deltas.push(setConfigRecordDelta({ collection: "managed-section", key: managedSectionRecordKey(AGENTS_FILE, section), value: decision.record }));
     }
-    const committed = await commit(root, state, deltas, input);
+    let committed: WorkspaceState;
+    try {
+      committed = await commit(root, state, deltas, input);
+    } catch (error) {
+      await putBackUnrecorded(root, state, applied.written ? [plan] : []);
+      throw error;
+    }
     return {
       id: rule.id,
       section,
@@ -335,7 +349,9 @@ export async function enableRule(input: RuleChangeInput & { readonly order?: num
  * and record the rule as disabled, its order kept. A section the user changed (it differs from the
  * engine's text, waits, or was kept) goes only with force, and MANAGED_SECTION_FORCE_REQUIRED
  * otherwise; a section whose markers are gone only loses its record. A rule the engine does not ship
- * can be disabled while the library records it.
+ * can be disabled while the library records it. When the records cannot be committed, the section
+ * goes back into AGENTS.md as the file held it, the user's change with it, before the error goes on
+ * (TCRN-CROSS-STORY-489).
  */
 export async function disableRule(input: RuleChangeInput & { readonly force?: boolean }): Promise<RuleChange> {
   const catalog = input.catalog ?? BUILT_IN_RULES;
@@ -350,7 +366,7 @@ export async function disableRule(input: RuleChangeInput & { readonly force?: bo
     }
     const section = ruleSectionId(input.id);
     const records = managedSectionRecordsFor(state, AGENTS_FILE);
-    const change = await disableSection({
+    const { change, wrote } = await takeSectionOut({
       projectRoot: input.projectRoot,
       id: section,
       records,
@@ -367,7 +383,13 @@ export async function disableRule(input: RuleChangeInput & { readonly force?: bo
       const value: ConfigRecordValue = { enabled: false, version: recorded.version, ...(recorded.order === undefined ? {} : { order: recorded.order }) };
       deltas.push(setConfigRecordDelta({ collection: "rule", key: input.id, value }));
     }
-    const committed = await commit(root, state, deltas, input);
+    let committed: WorkspaceState;
+    try {
+      committed = await commit(root, state, deltas, input);
+    } catch (error) {
+      await putBackUnrecorded(root, state, wrote === null ? [] : [wrote]);
+      throw error;
+    }
     return {
       id: input.id,
       section,

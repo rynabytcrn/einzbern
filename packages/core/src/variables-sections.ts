@@ -19,6 +19,7 @@
 
 import { join } from "node:path";
 
+import { putBackUnrecorded } from "./agents-sections.js";
 import { setConfigRecordDelta } from "./config-records.js";
 import {
   absolutePathLine,
@@ -241,7 +242,10 @@ function recordWithheldCustomVariablesAsPending(plan: ManagedWritePlan, state: P
  * Render both variable sections into the project's AGENTS.md through the managed-section writer,
  * then record in the library each section record the write changed. A section the user changed is
  * left as it is (pending); a custom section with a withheld variable is also recorded pending while
- * its safe rows are written. A section whose markers the user removed is not put back.
+ * its safe rows are written. A section whose markers the user removed is not put back. When the
+ * records cannot be committed, AGENTS.md returns to what it held, and a file the write created is
+ * taken away, before the error goes on (TCRN-CROSS-STORY-489; agents-sections.ts,
+ * putBackUnrecorded).
  */
 export async function writeVariablesSections(workspaceRoot: string, input: {
   readonly projectRoot: string;
@@ -265,8 +269,13 @@ export async function writeVariablesSections(workspaceRoot: string, input: {
       value: decision.record,
     }));
     if (deltas.length > 0) {
-      const committed = await appendEvents(root, deltas, input);
-      await projectConfiguration(root, committed);
+      try {
+        const committed = await appendEvents(root, deltas, input);
+        await projectConfiguration(root, committed);
+      } catch (error) {
+        await putBackUnrecorded(root, state, applied.written ? [plan] : []);
+        throw error;
+      }
     }
     return {
       file: VARIABLES_SECTIONS_FILE,

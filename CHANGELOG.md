@@ -1301,17 +1301,27 @@ The records digest, the segments, the carried bytes and every other reason code 
 
 A managed-section write whose records cannot be committed no longer leaves the file half changed
 (TCRN-CROSS-STORY-489, TCRN-CROSS-SUB-366; `packages/core/src/agents-sections.ts`,
-`packages/core/src/managed-sections.ts`). When `renderAgentsSections`, `resolveAgentsSection` or
-`disableAgentsSection` (behind `agents-render`, `rule-resolve` and setup) wrote AGENTS.md or
-CLAUDE.md and the commit of the section records then failed, the file kept the new text while the
-library kept the old records, and the next render took a replaced section for the user's change and
-left it pending. Each of them now puts every file it wrote back as it read it, and takes away a file
-it created, before it throws the error that stopped it, so the library holds no new event and the
-files match its records; a render whose second file cannot be written takes back the first the same
-way. A file changed again since the engine wrote it is left as it is, the backup the write made
-stays, and when the records went in all the same (a crash simulated after the event commit) the
-files stay as written. `revertManagedWrite` in `managed-sections.ts` does the putting back. The
-normal path, the results, the reason codes and the command catalog are unchanged.
+`packages/core/src/managed-sections.ts`, `packages/core/src/rules.ts`,
+`packages/core/src/variables-sections.ts`). That covers every entry point that writes AGENTS.md or
+CLAUDE.md and then commits the section records: `renderAgentsSections` behind `agents-render` and
+setup's render; `resolveAgentsSection` and then `enableRule` behind `rule-resolve`;
+`disableAgentsSection` behind setup's disabling of the navigation section; `enableRule` behind
+`rule-enable`; `disableRule` behind `rule-disable`; and `writeVariablesSections` behind the section
+render that follows `variable-set` and `variable-remove`. When one of them wrote a file and the
+commit of the records then failed, the file kept the new text while the library kept the old
+records: the next render took a replaced section for the user's change and left it pending, and a
+failed `rule-disable` left the rule enabled in the library with its section gone from the file. Each
+of them now puts every file it wrote back as it read it, and takes away a file it created, before it
+throws the error that stopped it, so the library holds no new event and the files match its
+records; a render whose second file cannot be written takes back the first the same way.
+`rule-resolve` makes two calls, and each puts back only what it wrote: when the second fails, the
+section stays as the first wrote and recorded it. A file changed again since the engine wrote it is
+left as it is, the backup the write made stays, and when the records went in all the same (a crash
+simulated after the event commit) the files stay as written. `revertManagedWrite` in
+`managed-sections.ts` does the putting back, and `putBackUnrecorded` in `agents-sections.ts`, shared
+by `rules.ts` and `variables-sections.ts`, reads the library again under the write lock and puts
+nothing back once its head has moved. The normal path, the results, the reason codes and the command
+catalog are unchanged.
 
 `knowledge-bodies-migrate` keeps every body of a crest whose metadata/body layout is already in
 segments, and `--clear-removed true` clears the removed cards' bodies from that layout

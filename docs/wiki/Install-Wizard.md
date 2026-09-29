@@ -31,10 +31,10 @@ einzbern setup --mode fresh|restore|update|repair|migrate|uninstall --project <�
 | `restore` | 把本机接回已有库。先检查库与设备状态；任一检查失败就停止且不写入。 | `--restore`、`--cloud`、`--navigation` |
 | `update` | 从本地 Einzbern 发布包更新引擎；也可把引擎切回上一个版本。 | `--archive`、`--rollback true` |
 | `repair` | 依据本机注册信息重新检查安装和宿主接线。完整的项目不会被重复改写。 | `--cloud`、`--navigation` |
-| `migrate` | 按映射把旧版 TCRN Workflow 项目迁入新库；计划逐库列出迁移信息与文件动作。 | `--mapping` |
+| `migrate` | 按映射把改名前的旧工作区导入各项目的新库，登记本机，把旧钩子、旧 deny 规则、旧模板与旧技能副本移进备份，再按 `fresh` 的步骤接线；计划逐库列出迁移信息与清理项。 | `--mapping`、`--cloud`、`--language`、`--navigation` |
 | `uninstall` | 移除本机的 Einzbern 钩子、技能副本和项目登记；库内容保留。 | `--managed-sections keep|remove` |
 
-迁移功能由第二批实施落地。若当前引擎返回 `SETUP_MIGRATE_PENDING`，表示该版本尚未提供迁移执行；这次计划不会迁移或改写旧数据。
+迁移的完整步骤、映射文件的格式、清理项与迁移后的旧工作区见[从旧版迁移](Migrating-from-TCRN-Workflow.md)。本机没有改名前的安装时，迁移模式返回 `SETUP_MIGRATE_NOTHING`，改用 `fresh`。
 
 ## 更新与离线发布包
 
@@ -42,7 +42,7 @@ einzbern setup --mode fresh|restore|update|repair|migrate|uninstall --project <�
 
 ## 备份与文件保护
 
-向导在覆盖本机文件前先备份到设备目录 `~/.einzbern/backups/<UTC 时间>/`。卸载会把本机安装内容移入该备份目录，而不是删除；`--managed-sections keep`（默认）保留项目文件里的受管段，`remove` 只移走标记，把正文留给项目。
+向导在覆盖本机文件前先备份到设备目录 `~/.einzbern/backups/<UTC 时间>/`。卸载会把本机安装内容移入该备份目录，迁移会把旧安装留下的条目移入该备份目录，都不删除；`--managed-sections keep`（默认）保留项目文件里的受管段，`remove` 只移走标记，把正文留给项目。
 
 向导不提交、不推送、不改 `.gitignore`，也不删除文件。更新引擎不会自动重写项目的 `AGENTS.md` 或 `CLAUDE.md`。完整健康检查使用 `doctor --project <项目目录>`。
 

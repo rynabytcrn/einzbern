@@ -12,10 +12,17 @@
 // which is how a second clone of the project finds the same library; otherwise
 // LIBRARY_NOT_REGISTERED. The library found must still carry the id the registry recorded, or
 // the answer is LIBRARY_REGISTRY_MISMATCH rather than another project's library.
+//
+// TCRN-CROSS-STORY-489 R2, R4 (TCRN-CROSS-SUB-365): an entry setup --mode migrate writes also
+// carries migratedFrom, the real path of the old-layout workspace its library was imported from.
+// That field is the old path's tombstone: nothing is written into the old workspace, and a write
+// aimed at it is refused with the library it moved to (workspace.ts, LEGACY_WORKSPACE_MIGRATED).
+// An entry without it reads as before, and one that has it keeps it when its project is registered
+// to the same library again.
 
 import { execFileSync } from "node:child_process";
 import { readFile, realpath } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, isAbsolute, resolve } from "node:path";
 
 import { assertStrictInstant, canonicalJson } from "../../protocol/src/index.js";
 import type { JsonValue } from "../../protocol/src/index.js";
@@ -51,6 +58,9 @@ export interface RegistryEntry {
   readonly libraryId: string;
   readonly cloudHosted: boolean;
   readonly registeredAt: string;
+  // The old-layout workspace the library was migrated from (its real path); absent on an entry
+  // that no migration wrote.
+  readonly migratedFrom?: string;
 }
 
 export interface Registry {
@@ -72,17 +82,25 @@ function fail(reasonCode: RegistryReasonCode, message: string, details: Readonly
 }
 
 const ENTRY_FIELDS = ["cloudHosted", "gitRemote", "libraryId", "libraryPath", "projectPath", "registeredAt"];
+// A migrated entry has the same fields and migratedFrom (TCRN-CROSS-STORY-489 R2).
+const MIGRATED_ENTRY_FIELDS = [...ENTRY_FIELDS, "migratedFrom"].sort();
+
+function isMigratedFrom(value: unknown): value is string {
+  return typeof value === "string" && value !== "" && !value.includes("\u0000") && isAbsolute(value);
+}
 
 function registryEntry(value: unknown, where: string): RegistryEntry {
   if (value === null || typeof value !== "object" || Array.isArray(value)) fail("LIBRARY_REGISTRY_INVALID", `${where} is not an object`);
   const record = value as Readonly<Record<string, unknown>>;
-  if (Object.keys(record).sort().join("\u0000") !== ENTRY_FIELDS.join("\u0000")) fail("LIBRARY_REGISTRY_INVALID", `${where} fields are not exact`);
-  const { projectPath, gitRemote, libraryPath, libraryId, cloudHosted, registeredAt } = record;
+  const fields = Object.keys(record).sort().join("\u0000");
+  if (fields !== ENTRY_FIELDS.join("\u0000") && fields !== MIGRATED_ENTRY_FIELDS.join("\u0000")) fail("LIBRARY_REGISTRY_INVALID", `${where} fields are not exact`);
+  const { projectPath, gitRemote, libraryPath, libraryId, cloudHosted, registeredAt, migratedFrom } = record;
   if (typeof projectPath !== "string" || typeof libraryPath !== "string" || typeof libraryId !== "string" || typeof registeredAt !== "string" ||
-    typeof cloudHosted !== "boolean" || !(gitRemote === null || typeof gitRemote === "string")) {
+    typeof cloudHosted !== "boolean" || !(gitRemote === null || typeof gitRemote === "string") ||
+    (migratedFrom !== undefined && !isMigratedFrom(migratedFrom))) {
     fail("LIBRARY_REGISTRY_INVALID", `${where} types are invalid`);
   }
-  return { projectPath, gitRemote, libraryPath, libraryId, cloudHosted, registeredAt };
+  return { projectPath, gitRemote, libraryPath, libraryId, cloudHosted, registeredAt, ...(migratedFrom === undefined ? {} : { migratedFrom }) };
 }
 
 /** This device's registry; an absent file is an empty registry, a damaged one fails closed. */
@@ -169,14 +187,26 @@ export interface RegisterLibraryInput {
   readonly cloudHosted?: boolean;
   // The project's remote; when left out it is read from the project's working tree, if any.
   readonly gitRemote?: string | null;
+  // The old-layout workspace the library was migrated from (TCRN-CROSS-STORY-489 R2), an absolute
+  // path. Left out, an entry the project already has for the same library keeps its own.
+  readonly migratedFrom?: string;
 }
 
 /** Record that the project at `projectPath` keeps its records in the library at `libraryPath`. */
 export async function registerLibrary(input: RegisterLibraryInput, home?: string): Promise<RegistryEntry> {
   assertStrictInstant(input.registeredAt);
+  if (input.migratedFrom !== undefined && !isMigratedFrom(input.migratedFrom)) {
+    // The registry would not read again with such an entry, so it is never written.
+    fail("LIBRARY_REGISTRY_INVALID", "migratedFrom must be an absolute path", { field: "migratedFrom" });
+  }
   const projectPath = await real(input.projectPath);
   const library = await openLibrary(await real(input.libraryPath));
   const remote = input.gitRemote === undefined ? gitRemoteOf(projectPath) : input.gitRemote;
+  const registry = await readRegistry(home);
+  const previous = registry.entries.find((candidate) => candidate.projectPath === projectPath);
+  const migratedFrom = input.migratedFrom === undefined
+    ? (previous?.libraryId === library.manifest.libraryId ? previous.migratedFrom : undefined)
+    : resolve(input.migratedFrom);
   const entry: RegistryEntry = {
     projectPath,
     gitRemote: remote === null ? null : normalizeGitRemote(remote),
@@ -184,10 +214,20 @@ export async function registerLibrary(input: RegisterLibraryInput, home?: string
     libraryId: library.manifest.libraryId,
     cloudHosted: input.cloudHosted ?? suggestCloudHosted(library.root),
     registeredAt: input.registeredAt,
+    ...(migratedFrom === undefined ? {} : { migratedFrom }),
   };
-  const registry = await readRegistry(home);
   await writeRegistry({ ...registry, entries: [...registry.entries.filter((candidate) => candidate.projectPath !== projectPath), entry] }, home);
   return entry;
+}
+
+/**
+ * The entry whose library was migrated from the old-layout workspace at `legacyRoot` (its real
+ * path), or null when this device migrated nothing from there (TCRN-CROSS-STORY-489 R4). With two,
+ * the first in the registry's order (by project path) answers.
+ */
+export async function findMigratedEntry(legacyRoot: string, home?: string): Promise<RegistryEntry | null> {
+  const wanted = resolve(legacyRoot);
+  return (await readRegistry(home)).entries.find((entry) => entry.migratedFrom === wanted) ?? null;
 }
 
 /** Drop the project's entry; false when it had none. */

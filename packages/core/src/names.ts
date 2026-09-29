@@ -115,6 +115,10 @@ export const LEGACY_HOOK_CHILD_SCRIPTS: readonly string[] = Object.freeze([
 // TCRN-CROSS-STORY-477 R4: the key the old adapter bundles merged into a host's settings to record
 // an inert activation; the host wiring takes it out.
 export const LEGACY_INERT_SETTINGS_KEY = "tcrnWorkflowInert" as const;
+// TCRN-CROSS-STORY-489 R3 (TCRN-CROSS-SUB-366): the state directory the old injection chain kept in
+// the user's home, which retired with that chain (TCRN-CROSS-STORY-474 R4); the migration's cleanup
+// recognises it to move it into the device directory's backups.
+export const LEGACY_INJECTION_STATE_DIRECTORY = ".tcrn-injection" as const;
 
 export interface LegacyNameEntry {
   readonly legacy: string;

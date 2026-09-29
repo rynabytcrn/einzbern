@@ -37,6 +37,8 @@ import {
   readSnapshotManifestFile,
   verifySnapshotManifest,
   transitionWork,
+  assertWorkGatesClear,
+  releaseGate,
   annotateWork,
   updateProject,
   validateKnowledgeStore,
@@ -1246,6 +1248,11 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "work-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-id", required: true, valueKind: "string" }, { name: "external-key", required: true, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "status", required: false, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "goal", required: false, valueKind: "string" }, { name: "acceptance", required: false, valueKind: "string" }, { name: "body", required: false, valueKind: "string" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "blocked-by", required: false, valueKind: "list" }, { name: "implements", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "fixes", required: false, valueKind: "list" }, { name: "decided-in", required: false, valueKind: "list" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: false, valueKind: "string" }, { name: "labels", required: false, valueKind: "list" }, { name: "template-receipt", required: false, valueKind: "json" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-delete", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "work-draft", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string" }] },
+  // TCRN-CROSS-STORY-489 (MIN-235 D17, D11, MIN-238 D4): the gates a migration carried over. work-gate-list
+  // reads them, by default the ones that still hold a work item back from done; work-gate-release
+  // releases one, recording who, when and why, and runs for Atelier only (MODEL_WRITE_REFUSED otherwise).
+  { name: "work-gate-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "work-id", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
+  { name: "work-gate-release", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "reason", required: true, valueKind: "string" }, { name: "actor", required: true, valueKind: "string" }] },
   { name: "work-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "parent-id", required: false, valueKind: "string" }, { name: "sprint", required: false, valueKind: "string" }, { name: "relation", required: false, valueKind: "string" }, { name: "search", required: false, valueKind: "string" }, { name: "scope-bytes", required: false, valueKind: "integer" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "work-show", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: false, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-485 R4: work-transition and work-batch take --project, the project the gates of a
@@ -2869,10 +2876,13 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const doneIds = batchDoneWorkIds(document);
     const { state, gates } = await withWriteLock(workspace, at, async () => {
       // TCRN-CROSS-STORY-485 R4: a Story the batch takes to done passes the gates first; a refusal
-      // writes no member.
-      const verdict: DoneGatesVerdict | null = doneIds.length === 0
+      // writes no member. TCRN-CROSS-STORY-489: before those, a gate a migration carried over that
+      // still holds a member is named (WORKSPACE_GATE_PENDING, with work-gate-release).
+      const before = doneIds.length === 0 ? null : await materializeWorkspace(workspace);
+      if (before !== null) assertWorkGatesClear(before, doneIds);
+      const verdict: DoneGatesVerdict | null = before === null
         ? null
-        : await doneGates(await materializeWorkspace(workspace), doneIds, batchCreatedKinds(document), values.project);
+        : await doneGates(before, doneIds, batchCreatedKinds(document), values.project);
       return {
         state: await applyWorkBatch(workspace, document, {
           occurredAt: at,
@@ -2902,9 +2912,13 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const { state, gates } = await withWriteLock(workspace, at, async () => {
       // TCRN-CROSS-STORY-485 R4: a Story goes to done only when the required gates of its change
       // are green on the tree as it is; the refusal names every red required gate.
-      const verdict: DoneGatesVerdict | null = values.status === "done"
-        ? await doneGates(await materializeWorkspace(workspace), [values.id ?? ""], [], values.project)
-        : null;
+      // TCRN-CROSS-STORY-489: before those, a gate a migration carried over that still holds the work
+      // item is named (WORKSPACE_GATE_PENDING, with work-gate-release).
+      const before = values.status === "done" ? await materializeWorkspace(workspace) : null;
+      if (before !== null) assertWorkGatesClear(before, [values.id ?? ""]);
+      const verdict: DoneGatesVerdict | null = before === null
+        ? null
+        : await doneGates(before, [values.id ?? ""], [], values.project);
       return {
         state: await transitionWork(workspace, {
           occurredAt: at, id: values.id ?? "", status: values.status as WorkStatus,
@@ -3070,6 +3084,52 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       ...(aliases.aliasedBy.length === 0 ? {} : { aliasedBy: aliases.aliasedBy.map((entry) => ({ externalKey: entry.aliasExternalKey, id: entry.aliasId, deviceId: entry.deviceId })) }),
       ...(rejectedEvents.length === 0 ? {} : { rejectedEvents }),
     }));
+    return;
+  }
+  // TCRN-CROSS-STORY-489 (MIN-235 D17, MIN-238 D4; TCRN-CROSS-SUB-365): the read face of the gates a
+  // migration carried over, whose own verbs are retired. Each is the gate record as the chain holds
+  // it (specs/gate-v1.md), a released one with its release entry. By default the ones that still hold
+  // their work item back from done (pending and blocked); --status pending, blocked or satisfied
+  // narrows to one, and --status all lists every gate that is not deleted.
+  if (command === "work-gate-list") {
+    const values = parseArguments(rest, ["workspace", "work-id", "status", "limit", "offset"]);
+    required(values, ["workspace"]);
+    const status = values.status;
+    if (status !== undefined && !["pending", "blocked", "satisfied", "all"].includes(status)) fail("CLI_ARGUMENT_MALFORMED", `status=${status}`);
+    const state = await validateWorkspace(values.workspace ?? "");
+    const workId = values["work-id"];
+    const records = state.gates.filter((gate) => !gate.tombstone &&
+      (status === undefined ? gate.status !== "satisfied" : status === "all" || gate.status === status) &&
+      (workId === undefined || gate.workId === workId));
+    io.write(canonicalJson(paginate(state, "work-gate", records, values)));
+    return;
+  }
+  // TCRN-CROSS-STORY-489 (MIN-235 D17, D11, MIN-238 D4; TCRN-CROSS-SUB-365): release a gate a
+  // migration carried over, recording who (--actor), when (--at) and why (--reason) in the gate
+  // itself (specs/gate-v1.md, Release). It runs for Atelier only: without EINZBERN_SURFACE=atelier it
+  // is refused with MODEL_WRITE_REFUSED and the remedy of doing it in Atelier before the library is
+  // opened, so nothing is appended. The surface is an agreed convention, not proof of who ran the
+  // command (MIN-235 D11); assertModelWriteAllowed keeps its own subjects (C-R17-6).
+  if (command === "work-gate-release") {
+    const values = parseArguments(rest, [...shared, "id", "reason", "actor"]);
+    required(values, [...requiredShared, "id", "reason", "actor"]);
+    const id = values.id ?? "";
+    if (process.env[SURFACE_ENVIRONMENT_VARIABLE] !== ATELIER_SURFACE) {
+      throw new WorkflowCliError("MODEL_WRITE_REFUSED", `gate ${id} is released in Atelier; a model does not release it through the CLI`, {
+        gate: id,
+        remedy: MODEL_WRITE_REMEDY,
+      });
+    }
+    const workspace = values.workspace ?? "";
+    const at = values.at ?? "";
+    const state = await withWriteLock(workspace, at, async () => releaseGate(workspace, {
+      occurredAt: at,
+      id,
+      reason: values.reason ?? "",
+      actorId: values.actor ?? "",
+    }));
+    const released = state.gates.find((entry) => entry.id === id);
+    writeState(io, state, released === undefined ? undefined : { ...released });
     return;
   }
   // INC-027 (TCRN-CROSS-INC-027): the event chain itself, read in windows.

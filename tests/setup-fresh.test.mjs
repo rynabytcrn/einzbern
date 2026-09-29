@@ -200,11 +200,14 @@ test("480-R1, R6: six modes, and migrate names an installation from before the r
   const found = await detectSetupContext({ projectRoot: f.project, home: f.home, deviceHome: f.deviceHome });
   assert.deepEqual(found.legacy, { detected: true, controlDirectory: null, deviceDirectory: join(f.home, ".tcrn-workflow") });
   assert.equal(found.suggestedMode, "migrate");
-  await assert.rejects(planSetup({ mode: "migrate", projectRoot: f.project, at: at(), home: f.home, deviceHome: f.deviceHome }), (error) => {
-    assert.equal(error.reasonCode, "SETUP_MIGRATE_PENDING");
-    assert.equal(error.details.deviceDirectory, join(f.home, ".tcrn-workflow"));
-    return true;
-  });
+  // TCRN-CROSS-STORY-489 R1: migrate plans it; with no mapping to follow and none to infer, the plan
+  // names the question and cannot be applied.
+  const migrate = await planSetup({ mode: "migrate", projectRoot: f.project, at: at(), home: f.home, deviceHome: f.deviceHome });
+  assert.equal(migrate.reasonCode, "SETUP_PLAN_READY");
+  assert.deepEqual(migrate.context.legacy, found.legacy);
+  assert.equal(migrate.migration.mapping, null);
+  assert.deepEqual(migrate.blockers.map((blocker) => [blocker.step, blocker.reasonCode]), [["engine", "SETUP_ENGINE_NOT_INSTALLED"], ["library", "SETUP_ANSWER_REQUIRED"]]);
+  await assert.rejects(applySetup(migrate), { reasonCode: "SETUP_BLOCKED" });
   // A fresh plan still plans, and says which mode the context points to; with no engine current it cannot be applied.
   const fresh = await plan(f, { language: "zh" });
   assert.equal(fresh.context.suggestedMode, "migrate");

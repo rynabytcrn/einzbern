@@ -51,7 +51,7 @@ import { managedSectionRecordsFor, planManagedWrite } from "./managed-sections.j
 import { DIRECTORY, LEGACY_CONTROL_DIRECTORY } from "./names.js";
 import { gitRemoteOf, normalizeGitRemote, readRegistry } from "./registry.js";
 import type { SetupApplied, SetupColumns, SetupModeInput, SetupModePlan, SetupPlan, SetupQuestion, ResolvedSetupAnswers } from "./setup.js";
-import { setupFail } from "./setup.js";
+import { SETUP_ACTOR, setupFail } from "./setup.js";
 import {
   SetupRecorder,
   applyDevice,
@@ -725,6 +725,7 @@ export async function applyRestoreSetup(plan: SetupPlan): Promise<SetupApplied> 
     cloud: resolved.cloud,
     navigation: navigationChoice(resolved.navigation),
     engineDirectory: directory,
+    actorId: SETUP_ACTOR,
   });
   return setupApplied(plan, recorder, {
     deviceId: device.deviceId,

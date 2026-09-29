@@ -649,6 +649,9 @@ export interface WiringApplyInput {
   readonly navigation: AgentsNavigationChoice;
   readonly engineDirectory: string;
   readonly steps?: ReadonlySet<SetupStep>;
+  // The actor named on each event the steps write into the library, which a chain that enabled
+  // attestation requires of every write (a migrated library); none when left out.
+  readonly actorId?: string;
 }
 
 async function applyRegistry(recorder: SetupRecorder, input: WiringApplyInput, library: NonNullable<WiringApplyInput["library"]>): Promise<void> {
@@ -744,7 +747,8 @@ async function applySections(recorder: SetupRecorder, input: WiringApplyInput, l
   const { projectRoot, deviceHome, at } = input;
   const existed = new Map<string, boolean>();
   for (const file of [AGENTS_FILE, CLAUDE_FILE]) existed.set(file, await entryKind(join(projectRoot, file)) !== null);
-  const rendered = await renderAgentsSections(library.path, { projectRoot, navigation: input.navigation, occurredAt: at, backupRoot: backupsPath(deviceHome) });
+  const actor = input.actorId === undefined ? {} : { actorId: input.actorId };
+  const rendered = await renderAgentsSections(library.path, { projectRoot, navigation: input.navigation, occurredAt: at, backupRoot: backupsPath(deviceHome), ...actor });
   for (const file of rendered.files) {
     if (!file.written) continue;
     const path = join(projectRoot, file.file);
@@ -760,6 +764,7 @@ async function applySections(recorder: SetupRecorder, input: WiringApplyInput, l
         id: "navigation",
         occurredAt: at,
         backupRoot: backupsPath(deviceHome),
+        ...actor,
       });
       if (change.written) {
         recorder.write("managed-sections", join(projectRoot, AGENTS_FILE), "update");

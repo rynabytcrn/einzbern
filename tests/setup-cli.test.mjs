@@ -275,9 +275,16 @@ test("480-AC4, AC5 through the CLI: doctor answers eight green checks; uninstall
 test("480-R6 through the CLI: migrate is the entry for an installation from before the rename", async (context) => {
   const f = await fixture(context);
   await assert.rejects(setup(f, "migrate"), { reasonCode: "SETUP_MIGRATE_NOTHING" });
-  await assert.rejects(setup(f, "migrate", "--cloud", "true"), { reasonCode: "SETUP_OPTION_NOT_APPLICABLE" });
+  await assert.rejects(setup(f, "migrate", "--artifacts", join(f.base, "elsewhere")), { reasonCode: "SETUP_OPTION_NOT_APPLICABLE" });
   await mkdir(join(f.home, ".tcrn-workflow"));
-  await assert.rejects(setup(f, "migrate"), { reasonCode: "SETUP_MIGRATE_PENDING" });
+  // TCRN-CROSS-STORY-489 R1: migrate plans what it found and takes the four answers; with no mapping
+  // to follow and none to infer, the plan names the question and --yes true applies nothing.
+  const migrate = await setup(f, "migrate", "--cloud", "true", "--language", "zh", "--navigation", "false");
+  assert.equal(migrate.reasonCode, "SETUP_PLAN_READY");
+  assert.deepEqual(migrate.questions.map((question) => question.id), ["mapping"]);
+  assert.deepEqual([migrate.resolved.cloud, migrate.resolved.language, migrate.resolved.navigation], [true, "zh-CN", false]);
+  assert.deepEqual(migrate.blockers.map((blocker) => [blocker.step, blocker.reasonCode]), [["library", "SETUP_ANSWER_REQUIRED"]]);
+  await assert.rejects(setup(f, "migrate", "--yes", "true"), (error) => error.reasonCode === "SETUP_BLOCKED" && error.details.reasonCode === "SETUP_ANSWER_REQUIRED");
   const fresh = await setup(f, "fresh");
   assert.equal(fresh.context.suggestedMode, "migrate");
   assert.equal(fresh.context.legacy.deviceDirectory, join(f.home, ".tcrn-workflow"));

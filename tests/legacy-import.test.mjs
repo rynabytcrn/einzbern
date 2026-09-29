@@ -123,22 +123,37 @@ async function restoreWithKnowledge(base, { segmented }) {
     "an old workspace without a knowledge store carries none");
   const projectId = (await materializeWorkspace(donor)).projects.find((entry) => !entry.tombstone).id;
   await initializeKnowledgeStore(donor, { disposableAcknowledged: true });
+  const crest = join(donor, DIRECTORY.knowledge);
+  const bodies = new Map();
+  const collectBodies = async () => {
+    for (const device of await readdir(join(crest, "events"))) {
+      for (const name of await readdir(join(crest, "events", device))) {
+        if (name.endsWith(".body")) bodies.set(name.slice(9, -5), await readFile(join(crest, "events", device, name)));
+      }
+    }
+  };
   const kestrel = await createKnowledgeUnit(donor, card("SUB-421-KESTREL", "Kestrel hover timing"));
-  await createKnowledgeUnit(donor, card("SUB-421-KESTREL-NEW", "Kestrel hover timing, measured", { occurredAt: "2026-09-25T06:00:06Z", supersedes: kestrel.id }));
+  // TCRN-CROSS-SUB-425: a card another card supersedes is removed -- listed only when asked for, as it
+  // is kept, its body cleared by the superseding write, its index entry the kept form -- where the old
+  // engine kept it whole. Its record, body and index entry are taken before it is superseded, as that
+  // engine left them.
+  const kestrelRecord = (await listKnowledgeMetadata(donor, { at: AT, selection: "all", limit: 100 })).records.find((record) => record.id === kestrel.id);
+  const viewPath = join(cachePath(expected.workspaceId), "crest-views", "index.json");
+  const kestrelEntry = JSON.parse(await readFile(viewPath, "utf8")).records.find((record) => record.id === kestrel.id);
+  await collectBodies();
+  const kestrelNew = await createKnowledgeUnit(donor, card("SUB-421-KESTREL-NEW", "Kestrel hover timing, measured", { occurredAt: "2026-09-25T06:00:06Z", supersedes: kestrel.id }));
   await createKnowledgeUnit(donor, card("SUB-421-HERON", "Heron wading depth", { scope: "project", projectId }));
   await createKnowledgeUnit(donor, card("SUB-421-OTTER", "Otter slide angle", { retrievalDisposition: "explicit-only" }));
-  const crest = join(donor, DIRECTORY.knowledge);
   const all = await listKnowledgeMetadata(donor, { at: AT, selection: "all", limit: 100 });
   const marker = await readKnowledgeStoreMarker(donor);
-  const bodies = new Map();
-  for (const device of await readdir(join(crest, "events"))) {
-    for (const name of await readdir(join(crest, "events", device))) {
-      if (name.endsWith(".body")) bodies.set(name.slice(9, -5), await readFile(join(crest, "events", device, name)));
-    }
-  }
+  await collectBodies();
+  // The mark the old engine stored on the card it replaced: the successor's id, the next revision and
+  // the successor's time, as a read projected it before SUB-425.
+  const successorAt = all.records.find((record) => record.id === kestrelNew.id).updatedAt;
+  const marked = (record) => ({ ...record, extensions: { ...record.extensions, supersededBy: kestrelNew.id }, revision: record.revision + 1, updatedAt: successorAt });
   await mkdir(join(crest, "metadata"));
   await mkdir(join(crest, "bodies"));
-  for (const record of all.records) {
+  for (const record of [marked(kestrelRecord), ...all.records]) {
     await writeFile(join(crest, "metadata", `${record.id}.json`), canonicalJson(record));
     await writeFile(join(crest, "bodies", `${record.id}.body`), bodies.get(record.bodySha256));
   }
@@ -151,7 +166,10 @@ async function restoreWithKnowledge(base, { segmented }) {
   const knowledge = join(restored.control, "knowledge");
   await mkdir(join(knowledge, "views"), { recursive: true });
   for (const entry of ["store.json", "metadata", "bodies"]) await cp(join(crest, entry), join(knowledge, entry), { recursive: true });
-  await cp(join(cachePath(expected.workspaceId), "crest-views", "index.json"), join(knowledge, "views", "index.json"));
+  // The old engine's index holds every record as it wrote it, the superseded card's included.
+  const view = JSON.parse(await readFile(viewPath, "utf8"));
+  const indexRecords = view.records.map((record) => (record.id === kestrel.id ? marked(kestrelEntry) : record));
+  await writeFile(join(knowledge, "views", "index.json"), canonicalJson({ ...view, records: indexRecords, indexDigest: canonicalSha256(indexRecords) }));
   await rm(donor, { recursive: true });
   return { ...restored, knowledge };
 }
@@ -246,7 +264,8 @@ test("468-AC4, SUB-421: a dry run under the write tripwire reports the chain, th
     ["LEGACY_IMPORT_DRY_RUN", true, expected.events, expected.headEventHash, null]);
   assert.equal(report.segments.length, expected.segments);
   assert.equal(report.records.digest, legacyRecordsDigest(await materializeWorkspace(root)));
-  assert.deepEqual([report.knowledge.cards, report.knowledge.defaultCards], [4, 2]);
+  // Four cards on disk; the superseded one is removed (TCRN-CROSS-SUB-425), so three in all, two by default.
+  assert.deepEqual([report.knowledge.cards, report.knowledge.defaultCards], [3, 2]);
   assert.deepEqual(await treeDigest(base), before, "nothing was written, the default target and the device directory included");
   await assert.rejects(stat(join(root, ".ether")), { code: "ENOENT" });
 });
@@ -303,7 +322,8 @@ test("SUB-421 (MIN-239 D7): a dry run and an import report the same checks; the 
   const carriedBytes = (await Promise.all(Object.keys(carried).map(async (path) => (await stat(join(knowledge, path))).size))).reduce((total, size) => total + size, 0);
   const oldTree = await treeDigest(root);
   const oldCards = await listed(root);
-  assert.deepEqual(oldCards, { all: 4, default: 2 }, "the old store read as its engine left it");
+  // Four cards as its engine left them; the superseded one is removed (TCRN-CROSS-SUB-425) and carried byte for byte.
+  assert.deepEqual(oldCards, { all: 3, default: 2 }, "the old store read as its engine left it");
 
   const dryRun = await cli(["library-import-legacy", "--legacy", root, "--at", AT, "--dry-run", "true"]);
   const target = join(base, ".ether");

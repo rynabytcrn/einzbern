@@ -393,12 +393,15 @@ async function governedWrite(build, environment = {}) {
   }
 }
 
-async function projectWrite(build) {
+// TCRN-CROSS-STORY-513 R1 (TCRN-CROSS-SUB-422): the CLI refuses a rule's enable or disable, as it
+// refuses a setting, variable or gate write, unless it runs for Atelier, so a write that needs it
+// passes ATELIER_SURFACE here as writeSetting, writeVariable, writeGate and deleteGate do.
+async function projectWrite(build, environment = {}) {
   const occurredAt = nextOccurredAt();
   try {
     if (!ACTOR) throw new Error("TCRN_PORTAL_ACTOR must be a non-empty actor id");
     const common = ["--project", currentLibrary().projectPath, "--at", occurredAt, "--actor", ACTOR];
-    return await cliResult(build(common));
+    return await cliResult(build(common), environment);
   } catch (error) {
     return { ok: false, body: { ok: false, reasonCode: "PORTAL_CLI_UNAVAILABLE", error: String(error?.message ?? error) } };
   }
@@ -880,14 +883,15 @@ const server = createServer(async (request, response) => {
         return;
       }
       // TCRN-CROSS-SUB-410 (STORY-508 R7): an enable carries the rule's order when one is given; the
-      // engine places the rule's section by it and keeps it through a later disable.
+      // engine places the rule's section by it and keeps it through a later disable. Both run for
+      // Atelier (TCRN-CROSS-SUB-422).
       const result = await projectWrite((common) => [
         action === "enable" ? "rule-enable" : "rule-disable",
         "--id", id,
         ...(action === "disable" && body.force === true ? ["--force", "true"] : []),
         ...(action === "enable" ? orderArguments(body.order) : []),
         ...common,
-      ]);
+      ], ATELIER_SURFACE);
       const payload = { ...result.body, ok: result.ok };
       if (result.ok) {
         const latest = await rulesProjection();

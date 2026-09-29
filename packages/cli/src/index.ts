@@ -936,22 +936,34 @@ function writeSettingsState(io: CliIo, state: Awaited<ReturnType<typeof material
 // it, so this is a soft barrier: it stops a model changing a decision in passing, not a model that
 // sets EINZBERN_SURFACE itself. Reads are never refused, and a key the engine refuses whoever asks
 // (a device-level or unregistered key) keeps its own refusal.
+// TCRN-CROSS-STORY-513 R1 (MIN-238 D2, MIN-235 D11; TCRN-CROSS-SUB-422): the same barrier covers the
+// rule and gate writes, rule-enable and rule-disable, gates-config-set and gates-config-remove, so a
+// model at work neither switches a Command Spell rule nor declares a gate it then satisfies itself.
+// rule-resolve, agents-render and every read are not refused.
 export const SURFACE_ENVIRONMENT_VARIABLE = "EINZBERN_SURFACE" as const;
 export const ATELIER_SURFACE = "atelier" as const;
 export const MODEL_WRITE_REMEDY = "change it in Atelier" as const;
 
 /**
  * Refuse a write a model makes through the CLI unless `modelWritable` says it may (TCRN-CROSS-STORY-484
- * R4): only a run for Atelier (EINZBERN_SURFACE=atelier) writes the rest. `subject` names the setting
- * key or the variable name for the refusal's details.
+ * R4, TCRN-CROSS-STORY-513 R1): only a run for Atelier (EINZBERN_SURFACE=atelier) writes the rest.
+ * `subject` names what the write would change, as the refusal's details carry it beside the remedy:
+ * a setting by its `key`, a variable by its `name`, a Command Spell rule by its id (`rule`) and a gate
+ * by its name (`gate`).
  */
 export function assertModelWriteAllowed(
-  subject: { readonly key: string } | { readonly name: string },
+  subject: { readonly key: string } | { readonly name: string } | { readonly rule: string } | { readonly gate: string },
   modelWritable: boolean,
   environment: Readonly<Record<string, string | undefined>> = process.env,
 ): void {
   if (modelWritable || environment[SURFACE_ENVIRONMENT_VARIABLE] === ATELIER_SURFACE) return;
-  const target = "key" in subject ? `setting ${subject.key}` : `variable ${subject.name}`;
+  const target = "key" in subject
+    ? `setting ${subject.key}`
+    : "rule" in subject
+      ? `rule ${subject.rule}`
+      : "gate" in subject
+        ? `gate ${subject.gate}`
+        : `variable ${subject.name}`;
   throw new WorkflowCliError("MODEL_WRITE_REFUSED", `${target} is changed in Atelier; a model does not write it through the CLI`, {
     ...subject,
     remedy: MODEL_WRITE_REMEDY,
@@ -1769,6 +1781,8 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // rule-enable records a rule at the version this engine ships and writes its text into AGENTS.md;
   // rule-disable takes the section out and records the rule as disabled, and a section the user
   // changed goes only with --force true. A file they replace is backed up first.
+  // TCRN-CROSS-STORY-513 R1 (TCRN-CROSS-SUB-422): both writes run for Atelier only; a model's run is
+  // refused with MODEL_WRITE_REFUSED once its arguments parse, before the project is resolved.
   if (command === "rule-list") {
     const values = parseArguments(rest, ["project"]);
     const project = await resolveAgentsProject(values.project ?? process.cwd());
@@ -1789,6 +1803,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // TCRN-CROSS-STORY-508 R7: --order places the rule's section among the rule sections; left out,
     // the rule keeps the order its record holds.
     const order = boundedInteger(values, "order");
+    assertModelWriteAllowed({ rule: values.id ?? "" }, false);
     const project = await resolveAgentsProject(values.project ?? process.cwd());
     const change = await namingSection(() => withWriteLock(project.libraryPath, at, async () => enableRule({
       libraryRoot: project.libraryPath,
@@ -1806,6 +1821,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     required(values, ["id", "at"]);
     const at = values.at ?? "";
     const force = booleanValue(values.force, "force");
+    assertModelWriteAllowed({ rule: values.id ?? "" }, false);
     const project = await resolveAgentsProject(values.project ?? process.cwd());
     const change = await namingSection(() => withWriteLock(project.libraryPath, at, async () => disableRule({
       libraryRoot: project.libraryPath,
@@ -3078,6 +3094,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // Declaring a gate that exists keeps whatever the flags leave out; a new gate runs in the project
   // itself (--root .), covers every path (--covers **), and is required and enabled, not release-only.
   // TCRN-CROSS-STORY-508 R7: --order places the gate in a plan; a new gate without it has none.
+  // TCRN-CROSS-STORY-513 R1 (TCRN-CROSS-SUB-422): gates-config-set and gates-config-remove run for
+  // Atelier only; a model's run is refused with MODEL_WRITE_REFUSED once its arguments parse, before
+  // the library is read, so a model cannot declare the gate its own Story is then held to.
   if (command === "gates-config-set") {
     const values = parseArguments(rest, [...shared, "name", "command", "root", "covers", "required", "enabled", "release-only", "order", "actor"]);
     required(values, [...requiredShared, "name"]);
@@ -3089,6 +3108,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const enabledValue = optionalBoolean(values.enabled, "enabled");
     const releaseOnlyValue = optionalBoolean(values["release-only"], "release-only");
     const orderValue = boundedInteger(values, "order");
+    assertModelWriteAllowed({ gate: name }, false);
     const state = await withWriteLock(workspace, at, async () => {
       const existing = listGates(await materializeWorkspace(workspace)).find((gate) => gate.name === name);
       if (commandValue === undefined && existing === undefined) fail("CLI_ARGUMENT_MISSING", "command");
@@ -3116,6 +3136,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     required(values, [...requiredShared, "name"]);
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
+    assertModelWriteAllowed({ gate: values.name ?? "" }, false);
     const state = await withWriteLock(workspace, at, async () => removeGate(workspace, {
       occurredAt: at, name: values.name ?? "",
       ...(values.actor ? { actorId: values.actor } : {}),

@@ -28,7 +28,8 @@ import { readCacheSnapshot } from "../dist/build/packages/core/src/library-cache
 import { LEGACY_FIXTURE_EXPECTED, restoreLegacyFixture } from "./helpers/legacy-fixture.mjs";
 import { forgeOwnStream } from "./helpers/library-forge.mjs";
 
-// TCRN-CROSS-STORY-484 R4: these tests write settings through the CLI, as Atelier does.
+// TCRN-CROSS-STORY-484 R4, TCRN-CROSS-STORY-513 R1: these tests write settings, variables and gates
+// through the CLI, as Atelier does.
 standInForAtelier();
 
 let second = 0;

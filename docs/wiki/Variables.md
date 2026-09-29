@@ -134,9 +134,13 @@ AGENTS.md 会随项目提交，所以变量里永远不放凭据。值或说明�
 
 ## 模型写保护
 
-配置由人在 Atelier 里改，模型不在工作途中顺手改它。设置目录的每一行都带 `modelWritable`，目前全部为 `false`。下面这些写入在环境变量 `EINZBERN_SURFACE` 不为 `atelier` 时一律拒绝，报 `MODEL_WRITE_REFUSED`，补救提示为 `change it in Atelier`：
+配置由人在 Atelier 里改，模型不在工作途中顺手改它。设置目录的每一行都带 `modelWritable`，目前全部为 `false`。下面这些写入在环境变量 `EINZBERN_SURFACE` 不为 `atelier` 时一律拒绝，报 `MODEL_WRITE_REFUSED`，补救提示为 `change it in Atelier`，库里不追加任何事件：
 
 - 对 `modelWritable` 为 `false` 的键执行 `settings-set` 与 `settings-remove`；
-- `variable-set` 与 `variable-remove`。
+- `variable-set` 与 `variable-remove`；
+- Command Spell 原则的 `rule-enable` 与 `rule-disable`（「受管段与 Command Spell」页）；
+- 门声明的 `gates-config-set` 与 `gates-config-remove`（「门」页）。
 
-Atelier 调用 CLI 时带着 `EINZBERN_SURFACE=atelier`，因此放行。CLI 无法分辨是谁在运行它，所以这是一道软屏障：它挡住的是顺手的改动，不是蓄意绕过。读取从不拒绝；引擎对任何人都拒绝的键（`SETTINGS_KEY_DEVICE_LEVEL`、`SETTINGS_KEY_UNREGISTERED`）保持各自的拒绝码。
+拒绝点名被拒的对象：details 里设置是 `key`，变量是 `name`，原则是 `rule`（原则 id），门是 `gate`（门名），并带 `remedy`；命令行入口在 stderr 上给出 `remedy` 和点名该对象的错误文本。
+
+在 Atelier 里改，或以 `EINZBERN_SURFACE=atelier` 运行同一条命令，写入照常进行；Atelier 调用 CLI 时就带着它。这是约定，不是身份保证：CLI 无法分辨是谁在运行它，自己带上这个变量的调用同样放行，所以这道软屏障挡住的是模型顺手的改动，不是蓄意绕过。读取从不拒绝，`rule-resolve`、`agents-render`、`gates-plan` 与 `gates-run` 也不受这道屏障限制；引擎对任何人都拒绝的键（`SETTINGS_KEY_DEVICE_LEVEL`、`SETTINGS_KEY_UNREGISTERED`）保持各自的拒绝码。

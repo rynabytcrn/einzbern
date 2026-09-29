@@ -20,6 +20,7 @@
 // with one minutes-record and the decided-in relation.
 
 import "./helpers/device-home.mjs";
+import { ATELIER_SURFACE, withSurface } from "./helpers/workspace-fixture.mjs";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -86,11 +87,13 @@ test("the flagship governed loop replays end-to-end through the CLI with an unbr
       const workspace = substitutions[WORKSPACE_PATH];
       const storyId = substitutions["<story-id>"];
       const command = [process.execPath, "-e", "process.exit(0)"];
-      const declaration = await invoke([
+      // TCRN-CROSS-STORY-513 R1 (TCRN-CROSS-SUB-422): a gate is declared in Atelier; the CLI refuses a
+      // model's gates-config-set, so the declaration runs as Atelier runs it.
+      const declaration = await withSurface(ATELIER_SURFACE, () => invoke([
         "gates-config-set", "--workspace", workspace, "--at", "2026-07-11T00:00:09Z",
         "--name", "fixture-story-coverage", "--command", JSON.stringify(command),
         "--root", ".", "--covers", storyId, "--required", "true",
-      ]);
+      ]));
       assert.deepEqual(declaration.gate, {
         name: "fixture-story-coverage", command, root: ".", covers: [storyId], required: true, enabled: true, releaseOnly: false,
       });

@@ -858,6 +858,22 @@ function statusFilterOption(value: string | undefined): { readonly status?: Know
   return { status: value as KnowledgeStatusFilter };
 }
 
+// TCRN-CROSS-SUB-426 R17 续作修订二 (MIN-239 D6; STORY-514 R4): recall's --status. Left out, or valid,
+// recall reads valid records only: valid cards and valid decisions. removed adds the removed cards, as
+// each is kept (TCRN-CROSS-SUB-425); obsolete adds the obsolete decisions, each with the decision that
+// superseded it or null when withdrawn, as minutes-show's explicit read says of it; all adds both. A
+// model adds it only when a user asked for them; the prompt hook reads valid records only, always.
+const RECALL_STATUS_FILTERS = Object.freeze(["valid", "removed", "obsolete", "all"] as const);
+type RecallStatusFilter = typeof RECALL_STATUS_FILTERS[number];
+
+function recallStatusOption(value: string | undefined): { readonly status?: RecallStatusFilter } {
+  if (value === undefined) return {};
+  if (!(RECALL_STATUS_FILTERS as readonly string[]).includes(value)) {
+    fail("CLI_ARGUMENT_MALFORMED", `status=${value}; one of ${RECALL_STATUS_FILTERS.join(", ")}`);
+  }
+  return { status: value as RecallStatusFilter };
+}
+
 // TCRN-CROSS-STORY-485 R1 (TCRN-CROSS-SUB-345): a gate's command is its argv, given as one JSON array
 // of strings; the engine checks every argument when the gate is declared.
 function gateCommandValue(value: string): unknown {
@@ -2629,9 +2645,13 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // policy the answer is negotiated against.
     // TCRN-CROSS-SUB-425 (MIN-239 D6): the cards are the valid ones unless --status asks for the removed
     // ones as well (removed, all), which a model adds only when a user asked for them.
+    // TCRN-CROSS-SUB-426 R17 续作修订二 (STORY-514 R4): so are the decisions, unless --status asks for the
+    // obsolete ones as well (obsolete, all); see recallStatusOption.
     const values = parseArguments(rest, ["workspace", "host", "at", "query", "limit", "tau", "allow-trailing", "status"]);
     required(values, ["workspace", "at", "query"]);
-    const status = statusFilterOption(values.status);
+    const status = recallStatusOption(values.status);
+    const withRemovedCards = status.status === "removed" || status.status === "all";
+    const decisions: DecisionStatusFilter = status.status === "obsolete" || status.status === "all" ? "all" : "valid";
     const workspace = values.workspace ?? "";
     const query = values.query ?? "";
     if (query.length === 0 || query.length > 4096 || !query.isWellFormed()) fail("CLI_ARGUMENT_MALFORMED", "query");
@@ -2666,15 +2686,16 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // work records and minutes to recall, and its reason code is reported rather than swallowed,
     // so "no cards" is never indistinguishable from "no card matched". knowledgeReasonCode stays
     // the library store's, as it always was.
+    // A read of the removed cards as well reads every card, the valid ones and the removed ones.
     const cards = await readRecallCards(workspace, {
       at: values.at ?? "",
       allowTrailing: booleanValue(values["allow-trailing"], "allow-trailing"),
-      ...status,
+      ...(withRemovedCards ? { status: "all" as const } : {}),
     });
     // TCRN-CROSS-STORY-474 R1: what the index holds is decided in one place (recall-inputs.ts), so
     // the verb and the prompt hook cannot index differently: the Stories, Incidents, Initiatives and
     // Epics with their goal, body and parent titles, every minutes record, and the cards.
-    const inputs = recallInputsFromState(state, cards.cards, { scopeExcerptBytes });
+    const inputs = recallInputsFromState(state, cards.cards, { scopeExcerptBytes, ...(decisions === "valid" ? {} : { decisions }) });
     const result = recall({
       // One index per library, whatever path it is read at (TCRN-CROSS-STORY-469).
       cacheKey: state.metadata.workspaceId,
@@ -2682,8 +2703,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       // digests of the two knowledge answers they were read with. Any one moving is a
       // different corpus, and the index is rebuilt from the rows that actually changed.
       // A library's head is one digest over every stream's head, so it moves with any
-      // entry of the version vector.
-      checkpoint: `${state.headEventHash}:${cards.digest}`,
+      // entry of the version vector. An index that holds the obsolete decisions as well is
+      // another corpus at the same head, and says so.
+      checkpoint: `${state.headEventHash}:${cards.digest}${decisions === "valid" ? "" : ":decisions=all"}`,
       documents: () => recallDocuments(inputs),
       query,
       tau,
@@ -2692,10 +2714,11 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // TCRN-CROSS-SUB-425: a hit on a removed card, which only --status removed or all reads, says so.
     const removedCards = new Set(cards.removedCardIds);
     const statusHits = result.records.map((hit) => hit.kind === "card" && removedCards.has(hit.id) ? { ...hit, status: "removed" } : hit);
-    // TCRN-CROSS-SUB-426 (MIN-239 D5, D6): only valid decisions are indexed; a work or card hit that
-    // points at an obsolete decision carries it under obsoleteDecisions, with the decision that
-    // superseded it, and its line says so.
-    const hits = recallDecisionHints(state, cards.cards, statusHits);
+    // TCRN-CROSS-SUB-426 (MIN-239 D5, D6): valid decisions are indexed unless --status asked for the
+    // obsolete ones too; a work or card hit that points at an obsolete decision -- and, in a recall that
+    // asked for them, a minutes hit that holds one -- carries it under obsoleteDecisions, with the
+    // decision that superseded it (null when withdrawn), and its line says so.
+    const hits = recallDecisionHints(state, cards.cards, statusHits, { decisions });
     io.write(canonicalJson({
       schemaVersion: "tcrn.recall.v1",
       reasonCode: result.reasonCode,
@@ -2703,7 +2726,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       version: state.version,
       headEventHash: state.headEventHash,
       at: values.at ?? "",
-      // The --status the cards were read with, when one was named.
+      // The --status the recall was asked with, when one was named.
       ...status,
       knowledgeReasonCode: cards.stores.project.reasonCode,
       // Both stores' reads: each one's reason code and how many cards it gave.

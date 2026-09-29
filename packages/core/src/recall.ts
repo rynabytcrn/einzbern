@@ -73,8 +73,10 @@ export interface RecallHit {
   readonly lead: string;
   readonly scope?: RecallScope;
   // TCRN-CROSS-SUB-426 (MIN-239 D5): the obsolete decisions the hit's record points at -- a work
-  // record's decided-by minutes, a card's linked minutes and the decisions it names -- each with the
-  // decision that superseded it. Set after selection (recall-inputs.ts), never by the index.
+  // record's decided-by minutes, a card's linked minutes and the decisions it names, and a minutes
+  // record's own when the recall was asked for obsolete decisions (R17 续作修订二) -- each with the
+  // decision that superseded it, null when it was withdrawn. Set after selection (recall-inputs.ts),
+  // never by the index.
   readonly obsoleteDecisions?: readonly ObsoleteDecisionHint[];
 }
 
@@ -560,7 +562,8 @@ export interface RecallMinutesInput {
   // one), and it is what an exact-key prompt names.
   readonly externalKey?: string | null;
   // TCRN-CROSS-SUB-426 (MIN-239 D6): the number of each entry of `decisions`, when they are not
-  // D1..Dn -- recall indexes only a record's valid decisions, so the first one given can be D2.
+  // D1..Dn -- recall indexes a record's valid decisions only, unless it was asked for the obsolete
+  // ones too (R17 续作修订二), so the first one given can be D2.
   readonly decisionNumbers?: readonly number[];
 }
 

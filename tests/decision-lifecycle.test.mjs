@@ -340,6 +340,110 @@ test("MIN-239 D6: the prompt hook recalls valid decisions only and says what rep
   assert.ok(storyLines.some((line) => line.includes(`过时决策 ${address("DL-MIN-1", 1)}→${address("DL-MIN-2", 1)}`)), JSON.stringify(storyLines));
 });
 
+// TCRN-CROSS-SUB-426 R17 续作修订二 (MIN-239 D6; STORY-514 R4): recall --status takes valid, removed,
+// obsolete and all. valid, the default, reads valid records only; removed adds the removed cards,
+// obsolete adds the obsolete decisions, each with the decision that superseded it or 撤回, and all
+// adds both. The prompt hook takes no status and reads valid records only.
+async function recallAs(fx, second, query, status) {
+  return cli(["recall", "--workspace", fx.workspace, "--at", at(second), "--query", query, "--tau", "0", ...(status === undefined ? [] : ["--status", status])]);
+}
+
+test("SUB-426 (R17 续作修订二; STORY-514 R4): recall adds the obsolete decisions only under --status obsolete or all, each with its successor or 撤回", async (context) => {
+  const fx = await library(context);
+  const first = await fx.record(10, "DL-MIN-1", [EAST]);
+  const second = await fx.record(11, "DL-MIN-2", [WEST, PELICAN], ["--supersedes", "DL-MIN-1#D1=D1"]);
+  await fx.record(12, "DL-MIN-3", ["Settle the heron ledger."], ["--withdraws", "DL-MIN-2#D2"]);
+  const hitOf = (answer, id) => answer.records.find((hit) => hit.id === id);
+  const superseded = { decision: address("DL-MIN-1", 1), supersededBy: address("DL-MIN-2", 1) };
+  const withdrawn = { decision: address("DL-MIN-2", 2), supersededBy: null };
+
+  // The default, and valid named: the valid decisions alone.
+  for (const [moment, status] of [[13, undefined], [14, "valid"]]) {
+    const answer = await recallAs(fx, moment, "east shelf otter archive", status);
+    assert.equal(answer.status, status, "the status is echoed when it is named");
+    assert.equal(hitOf(answer, first.id), undefined, "a record whose only decision is obsolete is not recalled");
+    const secondHit = hitOf(answer, second.id);
+    assert.ok(secondHit !== undefined, JSON.stringify(answer.records));
+    assert.equal(Object.hasOwn(secondHit, "obsoleteDecisions"), false, "a minutes hit carries its valid decisions and no hint");
+    assert.equal((await recallAs(fx, moment, "pelican noon", status)).records.some((hit) => hit.id === second.id), false, "the withdrawn decision's words find nothing");
+  }
+
+  // obsolete and all add each obsolete decision beside the valid ones, with its successor or 撤回.
+  for (const [moment, status] of [[15, "obsolete"], [16, "all"]]) {
+    const answer = await recallAs(fx, moment, "east shelf otter archive", status);
+    assert.equal(answer.status, status);
+    const firstHit = hitOf(answer, first.id);
+    assert.deepEqual(firstHit?.obsoleteDecisions, [superseded], `${status}: the obsolete decision comes with the decision that superseded it`);
+    assert.ok(firstHit.line.includes(`D1 ${EAST}`), firstHit.line);
+    assert.ok(firstHit.line.includes(`过时决策 ${superseded.decision}→${superseded.supersededBy}`), firstHit.line);
+    const secondHit = hitOf(answer, second.id);
+    assert.ok(secondHit !== undefined, `${status}: the valid decisions are still recalled`);
+    assert.deepEqual(secondHit.obsoleteDecisions, [withdrawn], `${status}: a withdrawn decision has no successor`);
+    assert.ok(secondHit.line.includes(`过时决策 ${withdrawn.decision}→撤回`), secondHit.line);
+    const pelican = await recallAs(fx, moment, "pelican noon", status);
+    assert.deepEqual(hitOf(pelican, second.id)?.obsoleteDecisions, [withdrawn], `${status}: the withdrawn decision's words find its record`);
+  }
+
+  for (const status of ["gone", "removed,obsolete", "VALID"]) {
+    const refused = await refusal(["recall", "--workspace", fx.workspace, "--at", at(17), "--query", "otter", "--status", status]);
+    assert.equal(refused?.reasonCode, "CLI_ARGUMENT_MALFORMED", status);
+  }
+  // A default read after the explicit ones is the default again: an index a status read built is not reused.
+  assert.equal(hitOf(await recallAs(fx, 18, "east shelf otter archive"), first.id), undefined);
+  assert.equal((await cli(["chain-validate", "--workspace", fx.workspace])).reasonCode, "CHAIN_VALIDATED");
+});
+
+test("SUB-426 (R17 续作修订二): recall --status removed adds the removed cards, all adds them and the obsolete decisions, and the prompt hook recalls valid records only", async (context) => {
+  const fx = await library(context, "decision-recall-status");
+  const directory = join(fx.base, "project");
+  const git = spawnSync("git", ["init", "--quiet", directory], { encoding: "utf8" });
+  assert.equal(git.status, 0, git.stderr);
+  await registerLibrary({ projectPath: directory, libraryPath: fx.workspace, registeredAt: at(4) });
+  const first = await fx.record(10, "DL-MIN-1", [EAST]);
+  await fx.record(11, "DL-MIN-2", [WEST], ["--supersedes", "DL-MIN-1#D1=D1"]);
+  await initializeKnowledgeStore(fx.workspace, { disposableAcknowledged: true });
+  const card = (moment, key, subject, summary, body) => cli(["knowledge-create", "--workspace", fx.workspace, "--at", at(moment), "--external-key", key,
+    "--scope", "workspace", "--project-id", "-", "--role-scopes", "-", "--category", "workflow", "--kind", "fact", "--tags", "lesson", "--subject", subject,
+    "--summary", summary, "--snippet", body.toLowerCase(), "--accountable-owner-id", OWNER, "--source-references", "-", "--retrieval", "default",
+    "--freshness", "fresh", "--last-verified", "-", "--stale-days", "-", "--export", "metadata-only", "--body", body]);
+  const kept = await card(12, "DL-CARD-KEPT", "Walrus pool filter schedule", "When the walrus pool filter is cleaned", "Clean the walrus pool filter weekly.");
+  const gone = await card(13, "DL-CARD-GONE", "Quokka enclosure lamp notes", "How long the quokka enclosure lamp stays on", "Keep the quokka enclosure lamp on until dusk.");
+  assert.deepEqual([kept.reasonCode, gone.reasonCode], ["KNOWLEDGE_UNIT_CREATED", "KNOWLEDGE_UNIT_CREATED"]);
+  const removed = await cli(["knowledge-remove", "--workspace", fx.workspace, "--at", at(14), "--id", gone.id, "--reason", "invalid", "--basis", "The lamp was taken out.", "--actor", OWNER]);
+  assert.equal(removed.reasonCode, "KNOWLEDGE_UNIT_REMOVED");
+  await setWorkspaceSetting(fx.workspace, { occurredAt: at(15), key: "retrieval.tau", value: "0" });
+  const ids = (answer) => answer.records.map((hit) => hit.id);
+  const obsoleteHint = [{ decision: address("DL-MIN-1", 1), supersededBy: address("DL-MIN-2", 1) }];
+
+  // removed: the removed card as it is kept, beside the valid cards, and no obsolete decision.
+  const lamp = await recallAs(fx, 16, "quokka enclosure lamp", "removed");
+  const lampHit = lamp.records.find((hit) => hit.id === gone.id);
+  assert.deepEqual([lamp.status, lampHit?.status, lampHit?.summary], ["removed", "removed", ""]);
+  assert.ok(lampHit.line.startsWith("[卡片 已移除] Quokka enclosure lamp notes"), lampHit.line);
+  assert.ok(ids(await recallAs(fx, 16, "walrus pool filter", "removed")).includes(kept.id), "removed adds to the valid cards and does not replace them");
+  assert.equal(ids(await recallAs(fx, 16, "east shelf otter archive", "removed")).includes(first.id), false, "removed adds no obsolete decision");
+  // obsolete: the obsolete decision, and no removed card.
+  assert.deepEqual((await recallAs(fx, 17, "east shelf otter archive", "obsolete")).records.find((hit) => hit.id === first.id)?.obsoleteDecisions, obsoleteHint);
+  assert.equal(ids(await recallAs(fx, 17, "quokka enclosure lamp", "obsolete")).includes(gone.id), false, "obsolete adds no removed card");
+  assert.ok(ids(await recallAs(fx, 17, "walrus pool filter", "obsolete")).includes(kept.id));
+  // all: both, beside the valid records.
+  assert.equal((await recallAs(fx, 18, "quokka enclosure lamp", "all")).records.find((hit) => hit.id === gone.id)?.status, "removed");
+  assert.deepEqual((await recallAs(fx, 18, "east shelf otter archive", "all")).records.find((hit) => hit.id === first.id)?.obsoleteDecisions, obsoleteHint);
+  assert.ok(ids(await recallAs(fx, 18, "walrus pool filter", "all")).includes(kept.id));
+  // The default: neither.
+  assert.equal(ids(await recallAs(fx, 19, "quokka enclosure lamp")).includes(gone.id), false);
+  assert.equal(ids(await recallAs(fx, 19, "east shelf otter archive")).includes(first.id), false);
+
+  // The prompt hook takes no status: valid records only, whatever recall was asked for before it.
+  const ask = async (prompt) => (await promptRecallContext({ libraryPath: fx.workspace, prompt, host: "claude-code", cwd: directory, at: at(20) }))?.lines ?? [];
+  const decisionLines = await ask("east shelf otter archive");
+  assert.equal(decisionLines.some((line) => line.includes("[纪要 DL-MIN-1]")), false, JSON.stringify(decisionLines));
+  assert.ok(decisionLines.some((line) => line.includes("[纪要 DL-MIN-2]")), JSON.stringify(decisionLines));
+  const cardLines = await ask("quokka enclosure lamp");
+  assert.equal(cardLines.some((line) => line.includes(gone.id) || line.includes("已移除")), false, JSON.stringify(cardLines));
+  assert.ok((await ask("walrus pool filter")).some((line) => line.includes(kept.id)));
+});
+
 test("SUB-426: the historical minutes' decisions are numbered and can be superseded by new minutes", async (context) => {
   const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-decision-legacy-")));
   context.after(() => rm(base, { recursive: true, force: true }));

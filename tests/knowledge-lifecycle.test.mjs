@@ -501,9 +501,10 @@ test("SUB-425: knowledge-remove checks its input before anything is written, and
   assert.equal(missing?.reasonCode, "CLI_ARGUMENT_MISSING", "the basis and the actor are required");
   assert.deepEqual([...KNOWLEDGE_REMOVAL_REASONS], ["superseded", "invalid", "duplicate"]);
   assert.deepEqual([...KNOWLEDGE_STATUS_FILTERS], ["valid", "removed", "all"]);
-  for (const verb of [["knowledge-list"], ["recall", "--query", "stilt"]]) {
-    const refusal = await as(fx.homeA, () => refusalOf(() => runCli([verb[0], "--workspace", fx.workspace, "--at", AT, ...verb.slice(1), "--status", "obsolete"], { write() {} })));
-    assert.equal(refusal?.reasonCode, "CLI_ARGUMENT_MALFORMED", verb[0]);
+  // knowledge-list takes a card status only; recall also takes obsolete (TCRN-CROSS-SUB-426 R17 续作修订二).
+  for (const [verb, status] of [[["knowledge-list"], "obsolete"], [["knowledge-list"], "gone"], [["recall", "--query", "stilt"], "gone"]]) {
+    const refusal = await as(fx.homeA, () => refusalOf(() => runCli([verb[0], "--workspace", fx.workspace, "--at", AT, ...verb.slice(1), "--status", status], { write() {} })));
+    assert.equal(refusal?.reasonCode, "CLI_ARGUMENT_MALFORMED", `${verb[0]} --status ${status}`);
   }
   assert.equal((await as(fx.homeA, () => refusalOf(() => listKnowledgeMetadata(fx.workspace, { at: AT, status: "gone" }))))?.reasonCode, "KNOWLEDGE_SELECTION_INVALID");
   // Where it was admitted, it is removed once, and what it removed is what every read answers.

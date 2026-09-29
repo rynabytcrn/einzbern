@@ -22,7 +22,7 @@ import { listKnowledgeMetadata } from "./knowledge-core.js";
 import type { KnowledgeStatusFilter, KnowledgeStoreScope } from "./knowledge-core.js";
 import { expansionsText } from "./knowledge-language.js";
 import { decisionLedger, decisionsNamedIn, decisionsOfMinutes, minutesView, obsoleteDecisionHints } from "./minutes.js";
-import type { DecisionLedger, ObsoleteDecisionHint } from "./minutes.js";
+import type { DecisionLedger, DecisionStatusFilter, ObsoleteDecisionHint } from "./minutes.js";
 import type { RecallHit, RecallInputs, RecallKnowledgeInput, RecallMinutesInput, RecallScope, RecallWorkInput } from "./recall.js";
 import { RECALL_INDEXED_WORK_KINDS } from "./recall.js";
 import { storyFields } from "./story-fields.js";
@@ -35,6 +35,10 @@ const PARENT_CHAIN_DEPTH = 8;
 
 export interface RecallInputOptions {
   readonly scopeExcerptBytes?: number;
+  // TCRN-CROSS-SUB-426 R17 续作修订二 (MIN-239 D6; STORY-514 R4): which decisions of each minutes record
+  // recall indexes. Left out, the valid ones; "all" adds the obsolete ones, which only a recall asked
+  // for them gives (the recall verb's --status obsolete or all). The prompt hook leaves it out.
+  readonly decisions?: DecisionStatusFilter;
 }
 
 function displayTitle(record: Pick<WorkRecord, "title" | "externalKey">): string {
@@ -384,6 +388,8 @@ export async function readRecallCards(workspaceRoot: string, options: RecallCard
  * -- a card that does not say which store it came from is the library's (TCRN-CROSS-STORY-476 R5).
  * TCRN-CROSS-SUB-426 (MIN-239 D6): a minutes record is indexed with its valid decisions alone, and
  * a record none of whose decisions is valid is not indexed; the prompt hook reads the same inputs.
+ * R17 续作修订二 (STORY-514 R4): `options.decisions` "all" indexes every decision of every record
+ * instead, the obsolete ones included, for a recall that was asked for them.
  */
 export function recallInputsFromState(
   state: Pick<WorkspaceState, "work" | "minutes" | "conferenceMinutes" | "conferences">,
@@ -413,7 +419,7 @@ export function recallInputsFromState(
   }
   const conferenceTypes = new Map(state.conferences.map((conference) => [conference.id, conference.type]));
   const outcomeClasses = new Map(state.conferenceMinutes.map((minutes) => [minutes.id, { outcomeClass: minutes.outcomeClass, conferenceId: minutes.conferenceId }]));
-  const minutes: RecallMinutesInput[] = minutesView(state).map((entry) => {
+  const minutes: RecallMinutesInput[] = minutesView(state, options.decisions ?? "valid").map((entry) => {
     const historical = outcomeClasses.get(entry.id);
     return {
       id: entry.id,
@@ -423,8 +429,11 @@ export function recallInputsFromState(
       decisions: entry.decisions.map((decision) => decision.text),
       outcomeClass: entry.kind === "conference-minutes" && historical !== undefined ? historical.outcomeClass : "recorded",
       externalKey: entry.externalKey,
-      // Only when an obsolete decision left a gap, so every other input reads as it always did.
-      ...(entry.withheldDecisions === undefined ? {} : { decisionNumbers: entry.decisions.map((decision) => decision.number) }),
+      // Only when an obsolete decision left a gap, or the decisions given are not D1..Dn, so every other
+      // input reads as it always did.
+      ...(entry.withheldDecisions === undefined && entry.decisions.every((decision, index) => decision.number === index + 1)
+        ? {}
+        : { decisionNumbers: entry.decisions.map((decision) => decision.number) }),
     };
   });
   return {
@@ -466,11 +475,21 @@ export function workObsoleteDecisions(state: Pick<WorkspaceState, "minutes" | "c
  * TCRN-CROSS-SUB-426 (MIN-239 D5): the hits of an answer, each with the obsolete decisions its record
  * points at -- a work record's decided-by minutes, a card's linked minutes and named decisions -- and
  * the decision that superseded each (null when withdrawn). A hit that points at none is returned as
- * it was, and so is every hit of a library with no obsolete decision.
+ * it was, and so is every hit of a library with no obsolete decision. R17 续作修订二 (STORY-514 R4):
+ * when the recall indexed the obsolete decisions too (`options.decisions` other than "valid"), a
+ * minutes hit carries its own obsolete decisions the same way, so an obsolete decision a recall gives
+ * comes with the decision that superseded it or with null, withdrawn -- what minutes-show's explicit
+ * read says of it.
  */
-export function recallDecisionHints(state: HintState, cards: readonly RecallKnowledgeInput[], hits: readonly RecallHit[]): readonly RecallHit[] {
+export function recallDecisionHints(
+  state: HintState,
+  cards: readonly RecallKnowledgeInput[],
+  hits: readonly RecallHit[],
+  options: Pick<RecallInputOptions, "decisions"> = {},
+): readonly RecallHit[] {
   const ledger = decisionLedger(state);
   if (![...ledger.decisions.values()].some((entry) => entry.status === "obsolete")) return hits;
+  const ownDecisions = (options.decisions ?? "valid") !== "valid";
   const work = new Map(state.work.map((record) => [record.id, record]));
   const cardsById = new Map(cards.map((card) => [card.id, card]));
   return hits.map((hit) => {
@@ -478,7 +497,9 @@ export function recallDecisionHints(state: HintState, cards: readonly RecallKnow
     const card = hit.kind === "card" ? cardsById.get(hit.id) : undefined;
     const decisions = record !== undefined
       ? decisionsOfMinutes(ledger, decidedInOf(record))
-      : card !== undefined ? cardDecisions(state, ledger, card) : [];
+      : card !== undefined
+        ? cardDecisions(state, ledger, card)
+        : ownDecisions && hit.kind === "minutes" ? decisionsOfMinutes(ledger, [hit.id]) : [];
     const hints = obsoleteDecisionHints(ledger, decisions);
     return hints.length === 0 ? hit : { ...hit, obsoleteDecisions: hints };
   });
@@ -507,7 +528,8 @@ function capBytes(text: string, maximumBytes: number): string {
  * whose status is "removed" -- only a recall that asked for removed cards has one (TCRN-CROSS-SUB-425)
  * -- is marked `已移除`. A line is at most RECALL_LINE_MAX_BYTES and never holds a line break.
  * TCRN-CROSS-SUB-426: a work or card hit that points at obsolete decisions carries
- * `过时决策 <decision>→<successor or 撤回>` after its id.
+ * `过时决策 <decision>→<successor or 撤回>` after its id, and a minutes hit of a recall asked for the
+ * obsolete decisions carries its own after its lead (R17 续作修订二).
  */
 export function formatRecallLine(hit: RecallHit): string {
   const flat = (text: string): string => text.replace(/\s+/gu, " ").trim();
@@ -516,7 +538,7 @@ export function formatRecallLine(hit: RecallHit): string {
   if (hit.kind === "card") {
     line = `[卡片${hit.scope === "user" ? " 用户" : ""}${hit.status === "removed" ? " 已移除" : ""}] ${flat(hit.title)} · ${hit.id}${hint}`;
   } else if (hit.kind === "minutes") {
-    line = `[纪要 ${hit.key}] ${flat(hit.title)}${hit.lead.length > 0 ? ` · ${flat(hit.lead)}` : ""}`;
+    line = `[纪要 ${hit.key}] ${flat(hit.title)}${hit.lead.length > 0 ? ` · ${flat(hit.lead)}` : ""}${hint}`;
   } else {
     const chain = hit.parentChain.length > 0 ? ` · ${hit.parentChain.map(flat).join(" ‹ ")}` : "";
     line = `[${hit.recordKind} ${hit.status}] ${flat(hit.title)} · ${hit.key} · ${hit.id}${hint}${chain}`;

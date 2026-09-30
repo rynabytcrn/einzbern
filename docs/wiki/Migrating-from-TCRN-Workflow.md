@@ -131,7 +131,7 @@ einzbern setup --mode migrate --project <项目目录> --mapping <迁移映射 J
 - 清除各库随迁知识里已移除卡的正文：导入按旧引擎留下的样子带来旧卡，被取代卡的正文也在其中。
   - 导入后运行一次 `knowledge-bodies-migrate --workspace <库> --clear-removed true --at <UTC 时刻>`；此后每移除一批随迁旧卡（例如清理与工单或决策重复、或与其他卡冲突的存量旧卡），再运行一次，因为导入之后才移除的卡，正文同样留在那里。
   - 只在本设备是该库唯一写者时执行，每次运行都须在其他设备写入该库之前完成。已有其他设备写入时拒绝 `KNOWLEDGE_SOLE_WRITER_REQUIRED`，那些正文就留在原处，任何读取都不返回。
-  - 答复给出 `clearedBodies`，以及改写前正文的备份目录 `backupDir`（设备目录 `backups/<UTC>/crest-bodies/` 下）；没有可清除的正文时什么也不写。
+  - 答复给出 `clearedBodies`，以及改写前正文的备份目录 `backupDir`（设备目录 `backups/<UTC>/crest-bodies/` 下）；只有在没有已移除卡的正文可清除、也没有逐卡正文文件待移时，才什么也不写；若随迁布局仍有旧引擎留下的逐卡 `.body` 文件，这一步会先备份布局中的 `bodies/`，再把这些文件移进段里，因此 `clearedBodies` 可以为 0，而 `backupDir` 不为 `null`。
   - 同一秒的备份已在时拒绝 `KNOWLEDGE_ALREADY_EXISTS`：换一个更晚的 `--at` 重跑。
 - 旧工作区留在原处，仍可只读打开。对它写入会返回 `LEGACY_WORKSPACE_MIGRATED`，其中 `movedTo` 指向新库，改用 `--workspace <库>` 即可。没有迁移过的旧布局，写入仍返回 `LEGACY_WORKSPACE_READ_ONLY`。
 - 旧链里未满足的 gate，在新库里保持原状态，仍挡住所绑工单转 done；拒绝码 `WORKSPACE_GATE_PENDING` 会点名这张 gate。

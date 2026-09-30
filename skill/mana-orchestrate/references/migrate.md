@@ -155,8 +155,11 @@ cleanup and the wiring find nothing left to do.
   library's sole writer, so every run must come before another
   device writes to the library: `KNOWLEDGE_SOLE_WRITER_REQUIRED` says one has, and those bodies then
   stay where no read answers them. The answer gives `clearedBodies` and the backup of the bodies it
-  rewrote, `backupDir`, under `backups/<UTC>/crest-bodies/`; a run with nothing left to clear writes
-  nothing. `KNOWLEDGE_ALREADY_EXISTS` means a backup of the same second is already there: run again
+  rewrote, `backupDir`, under `backups/<UTC>/crest-bodies/`; when no removed-card bodies remain to
+  clear and no per-card body files remain to move, a run writes nothing, but if the carried layout
+  still has per-card `.body` files, this step backs up its `bodies/` before moving those files into
+  the segments, so `clearedBodies` can be `0` while `backupDir` is not `null`.
+  `KNOWLEDGE_ALREADY_EXISTS` means a backup of the same second is already there: run again
   with a later `--at`.
 - The old workspace stays where it is and still reads. A write to it answers
   `LEGACY_WORKSPACE_MIGRATED`, whose `movedTo` is the library it became; write there instead

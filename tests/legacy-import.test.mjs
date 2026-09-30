@@ -16,7 +16,7 @@
 // (`cards`), the removed ones (`removedCards`) and the default ones (`defaultCards`), and a store the
 // reader refuses is refused naming the file of the store the refusal is about (`details.file`).
 
-import { testDeviceHome } from "./helpers/device-home.mjs";
+import { asPinnedDevice } from "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -367,7 +367,7 @@ test("SUB-421 (MIN-239 D7): a dry run and an import report the same checks; the 
   assert.deepEqual(await listed(target, LATER), { all: before.all + 1, removed: before.removed, default: before.default + 1 });
 });
 
-test("SUB-421 R20: the explicit mapping omission leaves TMS-shaped corrupt bytes behind, retains their evidence, and imports the same chain with an empty readable crest", async (context) => {
+test("SUB-421 R20: the explicit mapping omission leaves TMS-shaped corrupt bytes behind, retains their evidence, and imports the same chain with an empty readable crest", async (context) => asPinnedDevice(async (deviceHome) => {
   const base = await scratch(context);
   const { root, knowledge } = await restoreWithKnowledge(base, { segmented: false });
   const metadataFile = (await readdir(join(knowledge, "metadata"))).sort(compareCanonicalText)[0];
@@ -383,7 +383,7 @@ test("SUB-421 R20: the explicit mapping omission leaves TMS-shaped corrupt bytes
   await writeFile(mappingFile, JSON.stringify({ schemaVersion: "einzbern.migration-mapping.v1", partitions: [entry] }));
   // A partition's declaration cannot reach the independent user crest.
   await createKnowledgeUnit(root, card("SUB-421-USER-CREST", "User crest persists across partition omission", { scope: "user" }));
-  const userCrest = join(testDeviceHome, DIRECTORY.knowledge);
+  const userCrest = join(deviceHome, DIRECTORY.knowledge);
   const userBefore = await treeDigest(userCrest);
   const oldBefore = await treeDigest(root);
   for (const dryRun of [true, false]) {
@@ -394,7 +394,7 @@ test("SUB-421 R20: the explicit mapping omission leaves TMS-shaped corrupt bytes
     await assert.rejects(stat(target), { code: "ENOENT" });
   }
   const dry = spawnSync(process.execPath, ["--import", tripwirePath, cliPath, "library-import-legacy", "--legacy", root, "--mapping", mappingFile, "--dry-run", "true", "--at", AT], {
-    encoding: "utf8", env: { ...process.env, EINZBERN_TRIPWIRE_ROOT: [base, testDeviceHome].join(delimiter) },
+    encoding: "utf8", env: { ...process.env, EINZBERN_TRIPWIRE_ROOT: [base, deviceHome].join(delimiter) },
   });
   assert.equal(dry.status, 0, dry.stderr);
   const dryReport = JSON.parse(dry.stdout);
@@ -431,7 +431,7 @@ test("SUB-421 R20: the explicit mapping omission leaves TMS-shaped corrupt bytes
   for (const invalid of [true, null, {}, { reason: "" }, { reason: "two\nlines" }, { reason: "why", unchecked: true }]) {
     await assert.rejects(importLegacyWorkspace(root, target, { createdAt: AT, dryRun: true, omitLegacyKnowledge: invalid }), (error) => error.reasonCode === "LEGACY_IMPORT_MISMATCH" && error.details.field.startsWith("omitLegacyKnowledge"));
   }
-});
+}));
 
 test("SUB-421: an old store its engine bound to another place is refused with that store's own reason code, in a dry run as in an import, before anything is written", async (context) => {
   const base = await scratch(context);

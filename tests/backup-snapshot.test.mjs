@@ -3,7 +3,7 @@
 import { testDeviceHome } from "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { cp, lstat, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from "node:fs/promises";
+import { cp, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -23,13 +23,17 @@ import {
   initializeKnowledgeStore,
   initializeLibrary,
   lockPath,
+  listKnowledgeMetadata,
   materializeWorkspace,
+  migrateKnowledgeBodies,
   rebaseKnowledgeStore,
   validateKnowledgeStore,
   validateWorkspace,
   verifySnapshotManifest,
   LEGACY_CONTROL_DIRECTORY,
 } from "../dist/build/packages/core/src/index.js";
+import { readKnowledgeStoreMarker } from "../dist/build/packages/core/src/knowledge-core.js";
+import { SEGMENTED_BODY_FILE_LIMIT } from "../dist/build/packages/core/src/store-backend.js";
 import { rootPortableIdentity } from "../dist/build/packages/core/src/root-identity.js";
 import { canonicalJson, canonicalSha256, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 import { restoreLegacyFixture } from "./helpers/legacy-fixture.mjs";
@@ -155,6 +159,87 @@ test("WSF-2 case 5: the manifest validates against workspace-snapshot-manifest-v
   const validate = ajv.compile(schema);
   const manifest = await manifestUnderLock(fixture.workspace, 4, () => createSnapshotManifest(fixture.workspace));
   assert.equal(validate(JSON.parse(manifest)), true, JSON.stringify(validate.errors));
+});
+
+// An older engine's metadata/body layout, prepared only inside this fixture. The
+// current candidate migrates its bodies through the existing backend into one
+// valid segment past 1 MiB; every card is still read and validated by the store.
+async function largeKnowledgeBodySegment(fixture) {
+  const workspace = fixture.workspace;
+  await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
+  const body = "x".repeat(8_192);
+  await createKnowledgeUnit(workspace, {
+    occurredAt: instant(4), externalKey: "SNAPSHOT-BODY-SEED", scope: "workspace", projectId: null, roleScopes: [],
+    category: "implementation", kind: "fact", tags: ["snapshot"], subject: "Snapshot body seed", summary: "A body", snippet: "A body",
+    accountableOwnerId: "owner:snapshot", sourceReferences: [], sourceDigest: null, linkedWorkIds: [], linkedDecisionIds: [],
+    linkedGateIds: [], linkedEvidenceIds: [], retrievalDisposition: "default", freshnessState: "fresh", lastVerified: null,
+    stalenessPolicy: { maximumAgeDays: null, unknownDisposition: "fail-closed" }, exportDisposition: "metadata-only", body,
+  });
+  const [seed] = (await listKnowledgeMetadata(workspace, { at: instant(4), selection: "all", limit: 10 })).records;
+  const marker = await readKnowledgeStoreMarker(workspace);
+  const crest = join(workspace, "crest");
+  await mkdir(join(crest, "metadata"));
+  await mkdir(join(crest, "bodies"));
+  for (let ordinal = 0; ordinal < 160; ordinal += 1) {
+    const externalKey = `SNAPSHOT-BODY-${ordinal}`;
+    const id = deriveStableId("knowledge", externalKey);
+    await writeFile(join(crest, "metadata", `${id}.json`), canonicalJson({ ...seed, id, externalKey, subject: `Snapshot body ${ordinal}` }));
+    await writeFile(join(crest, "bodies", `${id}.body`), body);
+  }
+  const markerPath = join(crest, "store.json");
+  await writeFile(markerPath, canonicalJson({ ...JSON.parse(await readFile(markerPath, "utf8")), version: marker.version, eventHighWaterDigest: marker.eventHighWaterDigest }));
+  await rename(join(crest, "events"), join(fixture.base, "donor-knowledge-events"));
+  await migrateKnowledgeBodies(workspace, 4 * 1_048_576);
+  await validateKnowledgeStore(workspace);
+  return "crest/bodies/000001.ndjson";
+}
+
+test("STORY-515: CLI snapshots read the complete declared knowledge segment past 1 MiB and detect its last covered byte", async (t) => {
+  const fixture = await workspaceFixture();
+  t.after(() => fixture.close());
+  const relativePath = await largeKnowledgeBodySegment(fixture);
+  const bytes = await readFile(join(fixture.workspace, relativePath));
+  assert.ok(bytes.length > 1_048_576 && bytes.length < SEGMENTED_BODY_FILE_LIMIT);
+  const generated = await invokeCli(["snapshot-manifest", "--workspace", fixture.workspace, "--at", instant(5)]);
+  assert.equal(generated.ok, true, generated.reasonCode);
+  const manifest = JSON.parse(generated.output);
+  const entry = manifest.files.find((file) => file.path === relativePath);
+  assert.equal(entry.bytes, bytes.length);
+  assert.equal(entry.sha256, createHash("sha256").update(bytes).digest("hex"));
+  const receipt = join(fixture.base, "manifest.json");
+  await writeFile(receipt, generated.output);
+  const verified = await invokeCli(["snapshot-verify", "--root", fixture.workspace, "--manifest", receipt]);
+  assert.equal(verified.ok, true, verified.reasonCode);
+  assert.equal(JSON.parse(verified.output).reasonCode, "SNAPSHOT_VERIFIED");
+  const copy = join(fixture.base, "copy");
+  await cp(fixture.workspace, copy, { recursive: true });
+  const handle = await open(join(copy, relativePath), "r+");
+  try { await handle.write(Buffer.from("!"), 0, 1, bytes.length - 2); } finally { await handle.close(); }
+  assert.equal((await invokeCli(["snapshot-verify", "--root", copy, "--manifest", receipt])).reasonCode, "SNAPSHOT_MISMATCH");
+});
+
+test("STORY-515: only declared body segments get their backend limit; overflow and declaration drift still refuse", async (t) => {
+  const fixture = await workspaceFixture();
+  t.after(() => fixture.close());
+  const relativePath = await largeKnowledgeBodySegment(fixture);
+  const manifest = await createSnapshotManifest(fixture.workspace);
+  for (const relative of ["crest/bodies/000002.ndjson", "crest/bodies/other.ndjson", "akasha/other/00000001.ndjson"]) {
+    const copy = join(fixture.base, `unknown-${relative.replaceAll("/", "-")}`);
+    await cp(fixture.workspace, copy, { recursive: true });
+    await mkdir(dirname(join(copy, relative)), { recursive: true });
+    await writeFile(join(copy, relative), "x");
+    await truncate(join(copy, relative), 1_048_577);
+    await assert.rejects(verifySnapshotManifest(copy, manifest), { reasonCode: "SNAPSHOT_PATH_INVALID" });
+  }
+  const overflow = join(fixture.base, "body-overflow");
+  await cp(fixture.workspace, overflow, { recursive: true });
+  await truncate(join(overflow, relativePath), SEGMENTED_BODY_FILE_LIMIT + 1);
+  await assert.rejects(verifySnapshotManifest(overflow, manifest), { reasonCode: "SNAPSHOT_PATH_INVALID" });
+  const drift = join(fixture.base, "body-length-drift");
+  await cp(fixture.workspace, drift, { recursive: true });
+  const path = join(drift, relativePath);
+  await truncate(path, (await lstat(path)).size - 1);
+  await assert.rejects(verifySnapshotManifest(drift, manifest), { reasonCode: "SNAPSHOT_MISMATCH" });
 });
 
 test("WSF-2 case 6: the witness writes nothing — the whole tree is byte-stable across a manifest", async (t) => {

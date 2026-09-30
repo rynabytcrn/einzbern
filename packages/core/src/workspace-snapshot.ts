@@ -18,6 +18,7 @@ import { DIRECTORY, WORKSPACE_WRITE_LOCK_FILE } from "./names.js";
 import { knowledgeStorePath, validateKnowledgeStore } from "./knowledge-core.js";
 import { AKASHA_SEGMENT_BYTES_MAXIMUM } from "./akasha.js";
 import { hasLibraryManifest } from "./ether-library.js";
+import { SEGMENTED_BODY_FILE_LIMIT } from "./store-backend.js";
 
 // WSF-2: the read-only snapshot witness. It computes a deterministic manifest over
 // the workspace control tree so a copy can be proved byte-identical after restore,
@@ -135,24 +136,51 @@ const EVENT_SEGMENT_NAME_PATTERN = /^\d{6}\.ndjson$/u;
 // evaluates on that path.
 interface TreeRules {
   readonly excluded: readonly string[];
-  readonly segment: (relativePath: string) => boolean;
-  readonly segmentBytes: number;
+  readonly readLimit: (relativePath: string) => { readonly maximumBytes: number; readonly expectedBytes?: number };
 }
 
 function controlTreeRules(): TreeRules {
   return {
     excluded: EXCLUDED_RELATIVE_PATHS,
-    segment: (relativePath) => relativePath.startsWith("events/") && EVENT_SEGMENT_NAME_PATTERN.test(relativePath.slice("events/".length)),
-    segmentBytes: WORKSPACE_SEGMENT_BYTES_MAX,
+    readLimit: (relativePath) => ({ maximumBytes: relativePath.startsWith("events/") && EVENT_SEGMENT_NAME_PATTERN.test(relativePath.slice("events/".length))
+      ? WORKSPACE_SEGMENT_BYTES_MAX : PROTOCOL_LIMITS.maxCanonicalBytes }),
   };
 }
 
-function libraryTreeRules(): TreeRules {
+async function libraryTreeRules(root: string, invalidManifest: SnapshotReasonCode = "SNAPSHOT_PATH_INVALID"): Promise<TreeRules> {
   const segment = new RegExp(`^${DIRECTORY.events}/[a-f0-9]{32}/[0-9a-f]{8}\\.(?:ndjson|json)$`, "u");
+  const bodyBase = `${DIRECTORY.knowledge}/bodies/`;
+  const manifestPath = `${bodyBase}manifest.json`;
+  const bodySegments = new Map<string, number>();
+  // The metadata/body backend reads only the exact segments its bounded manifest declares.
+  // Reuse its existing dynamic limit; a filename alone never admits a larger read.
+  if (await fileExists(resolve(root, manifestPath))) {
+    let manifest: JsonValue;
+    try {
+      manifest = assertCanonicalJson((await boundReadFileBytes(resolve(root, manifestPath), 65_536)).toString("utf8"));
+    } catch (error) {
+      if (error instanceof ProtocolError) fail(invalidManifest, manifestPath);
+      throw error;
+    }
+    if (!isJsonObject(manifest) || manifest.schemaVersion !== "tcrn.knowledge-body-manifest.v1" || !Array.isArray(manifest.segments) ||
+      typeof manifest.count !== "number" || !Number.isSafeInteger(manifest.count) || manifest.count < 0 ||
+      typeof manifest.indexDigest !== "string" || !/^[a-f0-9]{64}$/u.test(manifest.indexDigest)) fail(invalidManifest, manifestPath);
+    for (const entry of manifest.segments) {
+      if (!isJsonObject(entry) || typeof entry.name !== "string" || !/^\d{6}\.ndjson$/u.test(entry.name) ||
+        typeof entry.bytes !== "number" || !Number.isSafeInteger(entry.bytes) || entry.bytes < 1 ||
+        typeof entry.records !== "number" || !Number.isSafeInteger(entry.records) ||
+        typeof entry.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(entry.sha256)) fail(invalidManifest, manifestPath);
+      bodySegments.set(`${bodyBase}${entry.name}`, entry.bytes);
+    }
+  }
   return {
     excluded: [`${DIRECTORY.knowledge}/mutation.claim`],
-    segment: (relativePath) => segment.test(relativePath),
-    segmentBytes: AKASHA_SEGMENT_BYTES_MAXIMUM,
+    readLimit: (relativePath) => {
+      if (segment.test(relativePath)) return { maximumBytes: AKASHA_SEGMENT_BYTES_MAXIMUM };
+      const expectedBytes = bodySegments.get(relativePath);
+      if (expectedBytes !== undefined) return { maximumBytes: Math.max(SEGMENTED_BODY_FILE_LIMIT, expectedBytes), expectedBytes };
+      return { maximumBytes: relativePath === manifestPath ? 65_536 : PROTOCOL_LIMITS.maxCanonicalBytes };
+    },
   };
 }
 
@@ -266,7 +294,11 @@ async function walkControlTree(controlRoot: string, rules: TreeRules = controlTr
       if (!metadata.isFile() || metadata.nlink !== 1) {
         fail("SNAPSHOT_PATH_INVALID", `${relativePath} must be a single-link regular file`);
       }
-      const content = await boundReadFileBytes(full, rules.segment(relativePath) ? rules.segmentBytes : undefined);
+      const limit = rules.readLimit(relativePath);
+      const content = await boundReadFileBytes(full, limit.maximumBytes);
+      if (limit.expectedBytes !== undefined && content.length !== limit.expectedBytes) {
+        fail("SNAPSHOT_MISMATCH", relativePath);
+      }
       collected.push({
         path: relativePath,
         sha256: createHash("sha256").update(content).digest("hex"),
@@ -284,7 +316,7 @@ async function walkControlTree(controlRoot: string, rules: TreeRules = controlTr
  * the source and the copy by it (TCRN-CROSS-STORY-470 R3).
  */
 export async function libraryTreeDigests(root: string): Promise<readonly SnapshotFileEntry[]> {
-  return walkControlTree(root, libraryTreeRules());
+  return walkControlTree(root, await libraryTreeRules(root));
 }
 
 async function fileExists(path: string): Promise<boolean> {
@@ -341,7 +373,7 @@ async function snapshotManifestHoldingLock(root: string): Promise<string> {
     knowledgeStatus = "valid";
   }
   // The write lock is only granted on a library, so this is the library tree.
-  const files = await walkControlTree(root, libraryTreeRules());
+  const files = await walkControlTree(root, await libraryTreeRules(root));
   return canonicalJson({
     schemaVersion: SNAPSHOT_MANIFEST_SCHEMA_VERSION,
     workspaceId: state.metadata.workspaceId,
@@ -433,7 +465,7 @@ export async function verifySnapshotManifest(
   const root = await boundReadDirectory(rootDirectoryInput);
   let actualTree: readonly SnapshotFileEntry[];
   if (await hasLibraryManifest(root)) {
-    actualTree = await walkControlTree(root, libraryTreeRules());
+    actualTree = await walkControlTree(root, await libraryTreeRules(root, "SNAPSHOT_MISMATCH"));
   } else {
     const controlRoot = resolve(root, WORKSPACE_CONTROL_DIRECTORY);
     if (!(await directoryExists(controlRoot))) {

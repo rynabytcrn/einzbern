@@ -5,6 +5,15 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+The work index is now a bounded `tcrn.workspace-index.v3` summary of the complete
+project and work collections, with counts and deterministic full-record digests
+(TCRN-CROSS-STORY-515 / SUB-429). Its 1 MiB view budget and the real-library
+10,000-work-record limit are unchanged. Current stamps cannot hide damaged or
+missing cached view files; replay rebuilds them. Snapshot manifests and verification
+read declared knowledge body segments at their backend's existing limit, including
+segments past 1 MiB, and continue to reject overflow, undeclared large paths and
+covered-byte changes. Old-layout compatibility remains read-only.
+
 The engine is renamed Einzbern (TCRN-CROSS-MIN-227 D1, D2; TCRN-CROSS-STORY-466). The
 helper is Mana Orchestrate, the library directory is `.ether`, events live in `akasha/`,
 knowledge in `crest/`, and the per-machine directory is `~/.einzbern`. Every event and

@@ -205,6 +205,27 @@ export function sameViewStamp(left: CacheViewStamp | null, right: CacheViewStamp
   return left !== null && left.engineVersion === right.engineVersion && left.headEventHash === right.headEventHash && left.version === right.version;
 }
 
+/** A current stamp alone does not prove that the view files still hold the replay's bytes. */
+export async function cacheViewsMatch(
+  libraryId: string,
+  documents: Readonly<Record<string, string>>,
+  stamp: CacheViewStamp,
+  home?: string,
+): Promise<boolean> {
+  if (!sameViewStamp(await readCacheViewStamp(libraryId, home), stamp)) return false;
+  try {
+    const directory = viewsDirectory(libraryId, home);
+    const names = (await readdir(directory)).filter((name) => name !== VIEWS_STAMP_FILE && !isAtomicTemporaryName(name));
+    if (names.length !== Object.keys(documents).length || names.some((name) => !Object.hasOwn(documents, name))) return false;
+    for (const [name, text] of Object.entries(documents)) {
+      if (await readCacheView(libraryId, name, home) !== text) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Replace the library's cached views with `documents`, removing any view the projection no
  * longer holds, and stamp them. The stamp is written last, so a stamp only ever describes a

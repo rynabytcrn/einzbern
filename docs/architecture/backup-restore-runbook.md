@@ -86,6 +86,11 @@ body segments and migrated attestation receipt segments are likewise derived
 files; their metadata/receipt values must be verified before legacy files are
 removed.
 
+The witness reads complete event segments under their backend's 64 MiB limit and
+declared `crest/bodies/<six digits>.ndjson` knowledge segments under the existing
+backend limit (the greater of 16 MiB and their manifest's declared byte count,
+which must match the actual bytes); unknown paths retain the generic 1 MiB limit.
+
 ## SNAPSHOT
 
 The snapshot is taken of the library, `<root>`, and copies it whole. An old-layout

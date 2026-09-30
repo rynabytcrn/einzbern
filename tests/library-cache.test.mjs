@@ -202,6 +202,32 @@ test("469-R4: a damaged cache, or one another engine wrote, is rebuilt and the r
   assert.deepEqual(tampered, expected);
 });
 
+test("STORY-515: an unchanged stamp cannot hide missing, damaged, old-shape or extra view files", async (context) => {
+  const base = await scratch(context);
+  const home = join(base, "device");
+  const { library, libraryId } = await seededLibrary(base, home);
+  const expected = await as(home, () => materializeWorkspaceFromGenesis(library));
+  await as(home, () => materializeWorkspace(library));
+  const views = join(cachePath(libraryId, home), "views");
+  const expectedIndex = await readFile(join(views, "index.json"), "utf8");
+  const stamp = await readFile(join(views, ".stamp.json"), "utf8");
+  assert.equal(JSON.parse(expectedIndex).schemaVersion, "tcrn.workspace-index.v3");
+  for (const corrupt of [
+    () => rm(join(views, "index.json")),
+    () => writeFile(join(views, "index.json"), "{damaged"),
+    () => writeFile(join(views, "index.json"), '{"schemaVersion":"tcrn.workspace-index.v2","projects":[],"work":[]}\n'),
+    () => writeFile(join(views, "STATUS.md"), "stale"),
+    () => writeFile(join(views, "extra.json"), "{}\n"),
+  ]) {
+    await corrupt();
+    assert.equal(await readFile(join(views, ".stamp.json"), "utf8"), stamp, "the stamp has not changed");
+    assert.deepEqual(await as(home, () => materializeWorkspace(library)), expected, "events still determine every record");
+    assert.equal(await readFile(join(views, "index.json"), "utf8"), expectedIndex);
+    assert.deepEqual(await files(views), [".stamp.json", "STATUS.md", "extensions.json", "index.json", "readback.json"]);
+    assert.notEqual(await readFile(join(views, "STATUS.md"), "utf8"), "stale");
+  }
+});
+
 test("469-R4: recover rebuilds the device cache from genesis and writes nothing into the library", async (context) => {
   const base = await scratch(context);
   const home = join(base, "device");

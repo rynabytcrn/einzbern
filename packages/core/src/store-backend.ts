@@ -512,7 +512,7 @@ interface SegmentedKnowledgeBodyManifest {
 }
 
 // The largest file of the segmented layout a read opens: a segment, its point index or the manifest.
-const SEGMENTED_BODY_FILE_LIMIT = 16_777_216;
+export const SEGMENTED_BODY_FILE_LIMIT = 16_777_216;
 
 function segmentedBodySha256(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -561,7 +561,7 @@ export class SegmentedKnowledgeStoreBackend implements StoreBackend {
       const index = await this.readSegmentedIndex(segment.name);
       const location = index[id];
       if (location === undefined) continue;
-      const bytes = await this.delegate.readKnowledgeBodyFile(segment.name, Math.max(16_777_216, segment.bytes));
+      const bytes = await this.delegate.readKnowledgeBodyFile(segment.name, Math.max(SEGMENTED_BODY_FILE_LIMIT, segment.bytes));
       if (bytes.length !== segment.bytes || segmentedBodySha256(bytes) !== segment.sha256) throw new StoreBackendError("KNOWLEDGE_SOURCE_CHANGED", segment.name);
       const line = bytes.subarray(location.offset, location.offset + location.length).toString("utf8");
       const value = assertCanonicalJson(line);

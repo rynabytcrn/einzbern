@@ -16,13 +16,14 @@
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readdir, readFile, realpath, rm, stat } from "node:fs/promises";
+import { cp, mkdtemp, open, readdir, readFile, realpath, rm, stat, truncate } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import {
   appendEvents,
+  AKASHA_SEGMENT_BYTES_MAXIMUM,
   createProject,
   createSnapshotManifest,
   createWorkDelta,
@@ -94,4 +95,11 @@ test("STORY-354 snapshot-manifest reads an event segment past the generic 1 MiB 
   assert.equal(segmentEntry.sha256, segmentSha256, "manifest must hash the segment's full content, not a truncated read");
 
   assert.equal((await verifySnapshotManifest(fx.workspace, manifestText)).reasonCode, "SNAPSHOT_VERIFIED");
+  const copy = join(fx.base, "copy");
+  await cp(fx.workspace, copy, { recursive: true });
+  const handle = await open(join(copy, segmentRelativePath), "r+");
+  try { await handle.write(Buffer.from("!"), 0, 1, segmentBytes - 2); } finally { await handle.close(); }
+  await assert.rejects(verifySnapshotManifest(copy, manifestText), { reasonCode: "SNAPSHOT_MISMATCH" });
+  await truncate(join(copy, segmentRelativePath), AKASHA_SEGMENT_BYTES_MAXIMUM + 1);
+  await assert.rejects(verifySnapshotManifest(copy, manifestText), { reasonCode: "SNAPSHOT_PATH_INVALID" });
 });

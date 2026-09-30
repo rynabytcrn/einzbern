@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { AsyncLocalStorage } from "node:async_hooks";
+import { createHash } from "node:crypto";
+import type { Hash } from "node:crypto";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 
@@ -38,11 +40,10 @@ import { AKASHA_SEGMENT_BYTES_DEFAULT, appendStreamEvents, emptyStreamManifest, 
 import type { LibraryRead, LibraryReadOptions, MergedEvent, StreamManifest } from "./akasha.js";
 import {
   CACHE_VIEWS_SCHEMA_VERSION,
+  cacheViewsMatch,
   clearLibraryCache,
   discardCacheSnapshot,
   readCacheSnapshot,
-  readCacheViewStamp,
-  sameViewStamp,
   writeCacheSnapshot,
   writeCacheViews,
 } from "./library-cache.js";
@@ -2668,38 +2669,31 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
   };
 }
 
-// INC-198: a view may not grow without bound. Both the graph digest and the index
-// used to canonicalise the whole record set in one value, and `canonicalJson`
-// refuses past one MiB — so a workspace that simply accumulated enough governed
-// prose stopped being readable at all, because every read verifies its views. The
-// cross-project chain crossed that line at 611 records (1.55 MiB canonical, 48%
-// over) and could no longer validate, list, show, or export.
-//
-// Both replacements keep full detection power while staying linear in record
-// count rather than in prose length. The digest hashes each record first and then
-// hashes the vector of hashes: any byte that changes inside any record still
-// changes the result. The index keeps every record's identity and status verbatim
-// and carries each extension as the digest of its value — the extension's content
-// is not lost, because views are derived and rebuildable and no read path sources
-// prose from here (reads materialise from the event log). `.v2` marks the shape.
-function digestedExtensions(extensions: WorkRecord["extensions"]): Record<string, string> {
-  const digests: Record<string, string> = {};
-  for (const key of Object.keys(extensions).sort(compareCanonicalText)) {
-    digests[key] = canonicalSha256(extensions[key]);
-  }
-  return digests;
+// STORY-515: feed the canonical vector of record hashes without serialising the whole
+// vector under the per-document ceiling. Each record still passes canonicalSha256's
+// checks, in replay order; neither a record nor a field is dropped. Within the old
+// limits this is byte-identical to canonicalSha256(records.map(canonicalSha256)).
+function feedRecordDigests(hash: Hash, records: readonly unknown[]): void {
+  hash.update("[");
+  records.forEach((record, index) => hash.update(`${index === 0 ? "" : ","}${JSON.stringify(canonicalSha256(record))}`));
+  hash.update("]");
 }
 
-// STORY-299. Hash each record, then hash the vector of hashes: any byte that
-// changes inside any record still changes the result, and so does reordering two
-// records, because the vector is not sorted or deduplicated. Unlike the shape
-// above, the result does not grow with the collection -- which is the whole point.
-//
-// This is the single place the collection-summary shape is written. The work index
-// still uses the per-record shape (STORY-302 carries that ceiling); when it moves,
-// it moves by calling this, not by growing a second copy of the idea.
+// STORY-299 / STORY-515: a fixed-size summary of the entire ordered collection.
 function collectionDigest(records: readonly unknown[]): string {
-  return canonicalSha256(records.map((record) => canonicalSha256(record)));
+  const hash = createHash("sha256");
+  feedRecordDigests(hash, records);
+  return hash.update("\n").digest("hex");
+}
+
+// Keep readback's existing active-graph digest byte contract, with the same bounded
+// feeding used for collection summaries instead of one growing canonical value.
+function activeGraphDigest(projects: readonly ProjectRecord[], work: readonly WorkRecord[]): string {
+  const hash = createHash("sha256").update('{"projects":');
+  feedRecordDigests(hash, projects);
+  hash.update(',"work":');
+  feedRecordDigests(hash, work);
+  return hash.update("}\n").digest("hex");
 }
 
 // STORY-299. Measure, then serialise -- never the other way round. `canonicalJson`
@@ -2730,10 +2724,7 @@ type ViewSource =
 function viewSources(state: WorkspaceState): readonly ViewSource[] {
   const activeProjects = state.projects.filter((record) => !record.tombstone);
   const activeWork = state.work.filter((record) => !record.tombstone);
-  const graphDigest = canonicalSha256({
-    projects: activeProjects.map((record) => canonicalSha256(record)),
-    work: activeWork.map((record) => canonicalSha256(record)),
-  });
+  const graphDigest = activeGraphDigest(activeProjects, activeWork);
   const readback = {
     schemaVersion: "tcrn.workspace-readback.v1",
     workspaceId: state.metadata.workspaceId,
@@ -2760,34 +2751,24 @@ function viewSources(state: WorkspaceState): readonly ViewSource[] {
     {
       name: "index.json",
       value: {
-        schemaVersion: "tcrn.workspace-index.v2",
-        projects: activeProjects,
-        work: activeWork.map((record) => ({ ...record, extensions: digestedExtensions(record.extensions) })),
+        schemaVersion: "tcrn.workspace-index.v3",
+        projects: summarisedCollection(state.projects),
+        work: summarisedCollection(state.work),
       },
     },
     { name: "readback.json", value: readback },
   ];
-  // WSD-1: the extension index is a fourth view emitted ONLY when the workspace
-  // holds at least one conference or gate record (positions and minutes cannot
-  // exist without their conference), so the three views above and the view set
-  // stay byte-identical for every workspace without extension records. STORY-299
-  // does not touch that condition: the view set stays four, so no view is ever
-  // orphaned and no deletion mechanism is owed.
+  // WSD-1: the extension index is a fourth view emitted only when the workspace
+  // holds extension collections. STORY-515 replaces index.json's shape above;
+  // the extension-view condition and the set of document names remain unchanged.
   if (state.conferences.length + state.gates.length + state.settings.length + state.templates.length + state.minutes.length > 0) {
     // STORY-299: v2 is a fixed-length verification summary, not an index. v1 carried
     // every conference, position, minutes and gate record whole, so the file grew with
     // the governed prose written into the chain and crossed the one MiB canonical
     // ceiling at 532 records (INC-198), taking eight read verbs down with it.
     //
-    // The shape deliberately does NOT copy what 0.11.17 did to the work index. That
-    // fix keeps each record's identity and status verbatim and digests only the
-    // extension bag, which removes the prose term but keeps the per-record one -- it
-    // is linear, and measurement puts its own ceiling eight weeks out (STORY-302).
-    // Applied literally here it would not even help: extension-record prose lives in
-    // first-class fields rather than in an extension bag, so digesting the bag alone
-    // grows this file by 537 bytes on the cross-project chain. What is copied is the
-    // method -- hash each record, hash the vector, bump the schema version, keep no
-    // compatibility read path -- not the target.
+    // STORY-515 gives the work index this same collection-summary shape. Counts and
+    // full-record digests attest every record without retaining a per-record term.
     //
     // Every collection follows the same rule, settings and templates included. An
     // exception for a collection that happens to be small today is how the linear
@@ -3281,8 +3262,9 @@ async function refreshLibraryCache(
       headEventHash: replay.state.headEventHash,
       version: replay.state.version,
     };
-    if (options.force === true || !sameViewStamp(await readCacheViewStamp(libraryId), stamp)) {
-      await writeCacheViews(libraryId, viewDocuments(replay.state), stamp);
+    const documents = viewDocuments(replay.state);
+    if (options.force === true || !await cacheViewsMatch(libraryId, documents, stamp)) {
+      await writeCacheViews(libraryId, documents, stamp);
     }
     const due = replay.state.version - (seededVersion ?? 0) >= snapshotInterval(replay.state);
     if (replay.state.version > 0 && (options.force === true || due)) {

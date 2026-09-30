@@ -138,7 +138,14 @@ device directory (TCRN-CROSS-STORY-469 R4); a library never holds it.
 - `views/` holds the view documents (`STATUS.md`, `index.json`, `readback.json` and, when
   the library holds extension records, `extensions.json`) and a stamp naming the engine
   version, head and version they were projected from. A read whose replay has another stamp
-  projects them again.
+  or whose files differ from that replay's projection writes them again. `index.json`
+  (`tcrn.workspace-index.v3`) holds `projects` and `work` as `{count, digest}` summaries
+  of the complete ordered record collections, including tombstones. Each digest is the
+  SHA-256 of the canonical vector of full-record canonical SHA-256 values, fed one at a
+  time; every record retains its normal canonical checks. The view's size grows only
+  with the count's digits, and its existing 1 MiB budget is unchanged. Work-list, work-show
+  and status read replayed state; none reads records from this summary. Old-layout view
+  bytes stay untouched by this engine's read-only compatibility path.
 - `snapshots/` holds one replay snapshot: the reducer's state and the merge's own state
   (rejected events, aliases and renames) after a prefix of the merged events, in a file named
   by its SHA-256, and a header naming it, the engine version that wrote it, the merged
@@ -160,6 +167,14 @@ back to genesis). A snapshot or view that is missing, damaged, written by anothe
 no longer a prefix is not used and is written again; a cache fault is never a library fault,
 and deleting the cache changes no read. `recover` drops the cache, replays from genesis and
 writes the views and a snapshot again; `chain-validate` always replays from genesis.
+
+The backup witness hashes every covered file's complete bytes. Event segments under
+`akasha/<device>/<ordinal>.ndjson` or `.json` retain their backend's 64 MiB ceiling.
+For the metadata/body knowledge layout, only the exact `crest/bodies/<six digits>.ndjson`
+files declared by its bounded `manifest.json` receive the backend's existing read limit:
+the greater of 16 MiB and the declared byte count. Actual bytes must match that count;
+unrecognised paths retain the generic 1 MiB ceiling. Snapshot verification compares the
+covered bytes against the receipt and refuses any change.
 
 ## Writes that readers never see half-done
 

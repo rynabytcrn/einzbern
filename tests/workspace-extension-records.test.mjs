@@ -471,7 +471,7 @@ test("hand-crafted event logs are refused by replay: unknown operations, opennes
   }
 });
 
-test("INC-198 index size follows record count rather than extension prose, and still detects a prose change", async (context) => {
+test("INC-198 / STORY-515 index stays bounded through extension prose changes and detects their content", async (context) => {
   const fixture = await workspaceFixture(context, { externalKey: "WORKSPACE-BOUNDED" });
   let state = await createProject(fixture.workspace, {
     occurredAt: instant(1), externalKey: "PROJECT-BOUNDED", name: "Bounded",
@@ -492,8 +492,8 @@ test("INC-198 index size follows record count rather than extension prose, and s
   // previous index — which carried extension values verbatim — this single record
   // would have added those 8_000 bytes to the index, and a few hundred such records
   // pushed the whole view past the one-MiB canonical ceiling and made the workspace
-  // unreadable. The index now carries the extension's digest, so the growth here is
-  // a fixed-width hash, not the prose.
+  // unreadable. The index now carries a complete collection digest, so the growth
+  // here is a fixed-width hash, not the prose or a per-record entry.
   await annotateWork(fixture.workspace, {
     occurredAt: instant(4), id: state.work[0].id, scope: "y".repeat(8_000),
   });
@@ -505,7 +505,7 @@ test("INC-198 index size follows record count rather than extension prose, and s
   assert.notEqual(largeDigest, smallDigest, "a scope change must still move the graph digest");
 });
 
-test("a workspace with zero conference/gate events keeps pre-change golden view bytes, view set, and export digest", (context) => asPinnedDevice(async () => {
+test("a workspace with zero conference/gate events has a v3 summary index and keeps its other golden views and export digest", (context) => asPinnedDevice(async () => {
   const fixture = await workspaceFixture(context, { externalKey: "WORKSPACE-GOLDEN" });
   let state = await createProject(fixture.workspace, {
     occurredAt: instant(1), externalKey: "PROJECT-GOLDEN", name: "Golden",
@@ -549,12 +549,12 @@ test("a workspace with zero conference/gate events keeps pre-change golden view 
   // for some supported user; it holds only until a chain grows, and then it bricks
   // it. Keeping it as a conditional would make view bytes depend on workspace size,
   // which is a worse invariant than changing them once. Hence a replacement with a
-  // schema bump (`tcrn.workspace-index.v2`) rather than a coexisting variant, and
+  // schema bump (`tcrn.workspace-index.v3`) rather than a coexisting variant, and
   // hence this fixture moves.
   //
   // Detection power is unchanged: the digest hashes each record and then the vector
-  // of hashes, and the index carries each extension's digest, so any byte that
-  // changes anywhere in a record still moves these bytes.
+  // of hashes, and the index summarises every complete record, tombstones included,
+  // so any byte that changes anywhere in a record still moves its digest.
   assert.equal(documents["STATUS.md"], [
     "# Workspace Status",
     "",
@@ -568,7 +568,11 @@ test("a workspace with zero conference/gate events keeps pre-change golden view 
   ].join("\n"));
   assert.equal(
     documents["index.json"],
-    "{\"projects\":[{\"externalKey\":\"PROJECT-GOLDEN\",\"id\":\"project:0bf1a7f60bdb47a6be9f4586\",\"name\":\"Golden\",\"revision\":1,\"schemaVersion\":\"tcrn.project.v1\",\"tombstone\":false,\"updatedAt\":\"2026-07-11T00:00:01Z\"}],\"schemaVersion\":\"tcrn.workspace-index.v2\",\"work\":[{\"createdAt\":\"2026-07-11T00:00:02Z\",\"extensions\":{},\"externalKey\":\"INITIATIVE-GOLDEN\",\"id\":\"work:7370232bfce90e21835d2977\",\"kind\":\"Initiative\",\"labels\":[],\"parentId\":null,\"projectId\":\"project:0bf1a7f60bdb47a6be9f4586\",\"revision\":2,\"schemaVersion\":\"tcrn.work.v1\",\"scopeDigest\":\"ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356\",\"status\":\"ready\",\"summary\":null,\"title\":null,\"tombstone\":false,\"updatedAt\":\"2026-07-11T00:00:03Z\"}]}\n",
+    canonicalJson({
+      schemaVersion: "tcrn.workspace-index.v3",
+      projects: { count: 1, digest: canonicalSha256(state.projects.map((record) => canonicalSha256(record))) },
+      work: { count: 1, digest: canonicalSha256(state.work.map((record) => canonicalSha256(record))) },
+    }),
   );
   assert.equal(
     documents["readback.json"],

@@ -1,5 +1,10 @@
 # Git as a Tier-2 Integrity Witness
 
+This page applies only to the old layout's control trees and is retained as historical guidance. A
+library's own `.gitignore` is `*`, so the project repository does not track the library; the
+integrity proof for a library is the SNAPSHOT procedure in `backup-restore-runbook.md`
+(`snapshot-manifest` and `snapshot-verify`).
+
 Git is the recommended tier-2 backup for a workspace control tree, but **only as
 an integrity witness — never as a restore mechanism.** The control tree is
 canonical JSON (stable bytes, meaningful diffs), and git's content-addressed hash

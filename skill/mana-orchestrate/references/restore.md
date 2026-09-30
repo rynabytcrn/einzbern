@@ -74,6 +74,13 @@ A failed check is reported as its reason code with `check` naming it; quote both
    `library-register --project <dir> --library <library path> --at <UTC>` answers
    `LIBRARY_REGISTERED`. Then settle the section with the managed-section verb and restore again:
    check 6 accepts the entry, because it binds the project to this same library.
+   `RESTORE_SECTIONS_DIVERGED`'s `detail.section` (comma-separated when multiple) and doctor's
+   `detail.pending` name managed sections as `<file>#<section id>` (for example,
+   `AGENTS.md#navigation`); pass only the part after `#` (here, `navigation`) to
+   `rule-resolve --section`, because a file-prefixed value writes nothing (`keep` and `unmanage`
+   return `MANAGED_SECTION_INPUT_INVALID`, and `overwrite` returns `MANAGED_SECTION_ACTION_INVALID`
+   because the engine does not write that section), so remove the prefix and retry with the same
+   choice.
 
 Never retry a failed restore unchanged, and never edit files inside the library to make a check
 pass.

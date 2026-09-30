@@ -663,7 +663,7 @@ async function verifyP8() {
   assertion(packages.every((manifest) => manifest.version === P8_VERSION && manifest.private === true), "P8_PACKAGE_VERSION_MISMATCH");
   const frameworkSource = await readText(resolve(repositoryRoot, "packages/core/src/index.ts"));
   assertion(frameworkSource.includes(`FRAMEWORK_VERSION = \"${P8_VERSION}\"`), "P8_FRAMEWORK_VERSION_MISMATCH");
-  const core = await importBuilt("packages/core/src/index.js");
+  const core = await import(pathToFileURL(resolve(repositoryRoot, "dist/build/packages/core/src/index.js")).href);
   assertion(core.FRAMEWORK_VERSION === P8_VERSION, "P8_BUILD_VERSION_MISMATCH");
   assertion(P8_SUPPORTED_AOS_RELEASES.length === 0, "P8_SUPPORTED_AOS_RELEASES_MISMATCH");
   const dogfood = await runTests({ p8Only: true });

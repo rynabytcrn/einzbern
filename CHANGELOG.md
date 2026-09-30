@@ -5,6 +5,16 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+Release preparation requires explicit registered library and project roots and
+checks the real release gate selection, execution, saved run and unchanged tree
+and declarations (TCRN-CROSS-SUB-357). Empty declarations, missing required roots
+and red gates refuse preparation. An approved future release updates the actual
+core version with the manifests; build, pack and P8 read that same version, while
+schema identifiers remain independent. Release commit checks admit only the
+single core version replacement and verified generated README and CLI documents.
+The current source version remains 1.2.1; actual release preparation and publishing
+retain their separate authorization stops.
+
 The work index is now a bounded `tcrn.workspace-index.v3` summary of the complete
 project and work collections, with counts and deterministic full-record digests
 (TCRN-CROSS-STORY-515 / SUB-429). Its 1 MiB view budget and the real-library

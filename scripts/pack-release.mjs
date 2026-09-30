@@ -181,6 +181,18 @@ async function packRelease({ version: requested, out }) {
       actual: version,
     });
   }
+  const rootManifest = JSON.parse(await readFile(join(repositoryRoot, "package.json"), "utf8"));
+  const packages = await readdir(join(repositoryRoot, "packages"), { withFileTypes: true });
+  const manifestPaths = ["package.json", ...packages.filter((entry) => entry.isDirectory() && existsSync(join(repositoryRoot, "packages", entry.name, "package.json"))).map((entry) => `packages/${entry.name}/package.json`)];
+  for (const path of manifestPaths) {
+    const manifest = path === "package.json" ? rootManifest : JSON.parse(await readFile(join(repositoryRoot, path), "utf8"));
+    if (manifest.version !== version) fail("PACK_VERSION_MISMATCH", `${path} does not match the requested release`, { path, required: version, actual: manifest.version });
+  }
+  const frameworkSource = await readFile(join(repositoryRoot, "packages/core/src/index.ts"), "utf8");
+  const declarations = [...frameworkSource.matchAll(/^export const FRAMEWORK_VERSION = "(\d+\.\d+\.\d+)" as const;$/gmu)];
+  if (declarations.length !== 1 || declarations[0][1] !== version) {
+    fail("PACK_VERSION_MISMATCH", "the actual core source does not match the built release", { required: version, actual: declarations.length === 1 ? declarations[0][1] : null });
+  }
   const name = `${BRAND.engine.id}-${version}`;
   const stage = await realpath(await mkdtemp(join(tmpdir(), `${BRAND.engine.id}-pack-`)));
   try {

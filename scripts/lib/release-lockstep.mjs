@@ -2,10 +2,12 @@
 
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { lstat, readFile, readdir, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { lstat, readFile, readdir, realpath, writeFile } from "node:fs/promises";
+import { join, relative, resolve, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { README_NAMES, renderReadmes } from "../render-readme.mjs";
+import { canonicalJson } from "./canonical-json.mjs";
 
 export const RELEASE_ACTIONS = Object.freeze(["tag", "push", "release", "wiki"]);
 export const RELEASE_VERSION_SHAPE = /^\d+\.\d+\.\d+$/u;
@@ -13,6 +15,8 @@ export const ENGINE_PACKAGE_NAME = "einzbern";
 export const HELPER_PACKAGE_NAME = "mana-orchestrate";
 export const CHANGELOG_FILE = "CHANGELOG.md";
 export const RELEASE_OUTPUT_DIRECTORY = "dist/release";
+export const FRAMEWORK_VERSION_SOURCE = "packages/core/src/index.ts";
+const FRAMEWORK_VERSION_DECLARATION = /^export const FRAMEWORK_VERSION = "(\d+\.\d+\.\d+)" as const;$/gmu;
 
 const HELPER_README_NAMES = Object.freeze(["README.md", "README.en.md", "README.ja.md", "README.ko.md", "README.fr.md"]);
 const RELEASE_ASSET = (version) => `${ENGINE_PACKAGE_NAME}-${version}.tar.gz`;
@@ -185,6 +189,23 @@ async function enginePackagePaths(engineRoot) {
   return paths;
 }
 
+function frameworkVersionDeclaration(source, path) {
+  const declarations = [...source.matchAll(FRAMEWORK_VERSION_DECLARATION)];
+  if (declarations.length !== 1) refuse("RELEASE_FRAMEWORK_VERSION_INVALID", `${path} must declare exactly one FRAMEWORK_VERSION`, { path });
+  return declarations[0];
+}
+
+async function builtReleaseModule(engineRoot, path) {
+  return import(`${pathToFileURL(join(engineRoot, "dist/build", path)).href}?release=${Date.now()}`);
+}
+
+async function releaseFrameworkVersions(engineRoot) {
+  const source = await readFile(join(engineRoot, FRAMEWORK_VERSION_SOURCE), "utf8");
+  const declaration = frameworkVersionDeclaration(source, FRAMEWORK_VERSION_SOURCE);
+  const core = await builtReleaseModule(engineRoot, "packages/core/src/index.js");
+  return { source, declaration, sourceVersion: declaration[1], builtVersion: core.FRAMEWORK_VERSION };
+}
+
 export async function checkRelease({ engineRoot, helperRoot, version, env = process.env }) {
   if (typeof version !== "string" || !RELEASE_VERSION_SHAPE.test(version)) {
     refuse("RELEASE_VERSION_INVALID", `${String(version)} is not a stable release version`, { version: String(version) });
@@ -194,6 +215,11 @@ export async function checkRelease({ engineRoot, helperRoot, version, env = proc
   ensureSeparateRepositories(engine.root, helper.root);
 
   const mismatches = [];
+  const framework = await releaseFrameworkVersions(engine.root);
+  for (const [path, actual] of [[FRAMEWORK_VERSION_SOURCE, framework.sourceVersion], ["dist/build/packages/core/src/index.js", framework.builtVersion]]) {
+    const mismatch = versionMismatch(version, path, actual);
+    if (mismatch) mismatches.push(mismatch);
+  }
   const packageFiles = [join(engine.root, "package.json"), ...await enginePackagePaths(engine.root)];
   for (const path of packageFiles) {
     const manifest = await readJson(path);
@@ -262,6 +288,93 @@ function writeResult(command, args, { cwd, env, runner } = {}) {
   return runner ? runner(command, args, { cwd, env }) : run(command, args, { cwd, env });
 }
 
+function releaseCli(engineRoot, args, env) {
+  return parseCommandJson(run(process.execPath, [join(engineRoot, "scripts/einzbern.mjs"), ...args], { cwd: engineRoot, env }), args[0]);
+}
+
+function inside(parent, candidate) {
+  const path = relative(parent, candidate);
+  return path === "" || (!path.startsWith(`..${sep}`) && path !== ".." && !path.startsWith(sep));
+}
+
+/** Read the actual CLI's release plan and its registered roots; never create a release library. */
+export async function checkReleaseGatePlan({ engineRoot, helperRoot, workspace, projectRoot, env = process.env }) {
+  if (typeof projectRoot !== "string" || projectRoot.length === 0) {
+    refuse("RELEASE_PROJECT_REQUIRED", "prepare needs the explicitly registered project for release gates");
+  }
+  if (typeof workspace !== "string" || workspace.length === 0) {
+    refuse("RELEASE_WORKSPACE_REQUIRED", "prepare needs a library path for release gates");
+  }
+  const project = await realpath(resolve(projectRoot));
+  const library = await realpath(resolve(workspace));
+  const sources = await Promise.all([engineRoot, helperRoot].map((root) => realpath(resolve(root))));
+  if (sources.some((root) => !inside(project, root))) {
+    refuse("RELEASE_GATE_ROOT_MISMATCH", "the registered gate project must contain the engine and helper release trees", { project, sources });
+  }
+  const registry = releaseCli(engineRoot, ["library-list"], env);
+  const entry = registry.entries?.find((candidate) => candidate.projectPath === project && candidate.libraryPath === library);
+  if (entry === undefined) refuse("RELEASE_GATE_REGISTRY_MISMATCH", "the explicit project and library are not registered together on this device", { project, workspace: library });
+  const declared = releaseCli(engineRoot, ["gates-config-list", "--workspace", library], env);
+  if (declared.truncated !== false || !Array.isArray(declared.records) || declared.records.length !== declared.total) {
+    refuse("RELEASE_GATE_DECLARATIONS_INVALID", "release needs the complete gate declaration list", { declared });
+  }
+  if (declared.workspaceId !== entry.libraryId) refuse("RELEASE_GATE_REGISTRY_MISMATCH", "the registry library id differs from the named library", { project, workspace: library });
+  if (declared.records.length === 0) refuse("RELEASE_GATE_DECLARATIONS_EMPTY", "a release cannot pass without declared gates");
+  const enabled = declared.records.filter((gate) => gate.enabled);
+  if (!enabled.some((gate) => gate.required)) refuse("RELEASE_REQUIRED_GATES_MISSING", "a release needs enabled required gates");
+  const plan = releaseCli(engineRoot, ["gates-plan", "--workspace", library, "--project", project, "--release", "true"], env);
+  if (plan.reasonCode !== "GATES_PLAN_READY" || plan.workspaceId !== entry.libraryId || plan.projectRoot !== project || plan.release !== true || !Array.isArray(plan.gates)) {
+    refuse("RELEASE_GATE_PLAN_INVALID", "the release plan does not bind the explicit project and library", { plan });
+  }
+  const { gateDeclarationsDigest, resolveGateRoot } = await builtReleaseModule(engineRoot, "packages/core/src/gates-plan.js");
+  if (plan.declarationsDigest !== gateDeclarationsDigest(enabled) || plan.gates.length !== enabled.length || new Set(plan.gates.map((gate) => gate.name)).size !== enabled.length) {
+    refuse("RELEASE_GATE_SELECTION_MISMATCH", "the release plan must select every enabled declaration exactly once", { plan });
+  }
+  for (const gate of enabled) {
+    const selected = plan.gates.find((candidate) => candidate.name === gate.name);
+    if (selected === undefined || selected.root !== gate.root || selected.required !== gate.required || selected.releaseOnly !== gate.releaseOnly || JSON.stringify(selected.command) !== JSON.stringify(gate.command)) {
+      refuse("RELEASE_GATE_SELECTION_MISMATCH", "a release declaration is absent or differs in the selected plan", { gate: gate.name });
+    }
+  }
+  const roots = await Promise.all(plan.gates.filter((gate) => gate.required).map((gate) => resolveGateRoot(project, gate.root)));
+  for (const source of sources) {
+    if (!roots.includes(source)) refuse("RELEASE_REQUIRED_GATES_MISSING", "each release repository needs a required gate on that exact tree", { source, roots });
+  }
+  return { plan, workspace: library, projectRoot: project };
+}
+
+/** Validate the saved native run against its real selection, declarations and tree. */
+export async function assertReleaseGateRun({ gates, plan, tree, at }) {
+  const result = gates?.run;
+  if (gates?.reasonCode !== "GATES_RUN_COMPLETED" || !isRecord(result) || result.schemaVersion !== "einzbern.gate-run.v1" || result.libraryId !== plan.workspaceId || gates.workspaceId !== plan.workspaceId || result.release !== true || result.at !== at || result.declarationsDigest !== plan.declarationsDigest || result.treeDigest !== tree.treeDigest || canonicalJson(result.trees) !== canonicalJson(tree.trees) || !Array.isArray(result.gates)) {
+    refuse("RELEASE_GATE_RUN_INVALID", "the release run does not bind the actual selected tree and declarations", { gates });
+  }
+  if (result.gates.length !== plan.gates.length || result.gates.some((gate, index) => gate.name !== plan.gates[index].name || gate.root !== plan.gates[index].root || gate.required !== plan.gates[index].required)) {
+    refuse("RELEASE_GATE_EXECUTION_MISMATCH", "every selected release gate must execute exactly once", { gates });
+  }
+  const reds = result.gates.filter((gate) => gate.ok !== true || gate.exitCode !== 0 || gate.signal !== null || gate.timedOut !== false).map((gate) => gate.name);
+  if (gates.ok !== true || reds.length > 0 || JSON.stringify(gates.reds) !== "[]" || JSON.stringify(gates.requiredReds) !== "[]" || JSON.stringify(result.reds) !== "[]") {
+    refuse("RELEASE_GATES_RED", "release gates reported one or more red results", { gates, reds });
+  }
+  const saved = await readJson(gates.recordPath);
+  if (JSON.stringify(saved) !== JSON.stringify(result)) refuse("RELEASE_GATE_RECEIPT_MISMATCH", "the native saved gate run differs from its result", { recordPath: gates.recordPath });
+  return gates;
+}
+
+export async function runReleaseGates({ engineRoot, helperRoot, workspace, projectRoot, env = process.env, at = utcNow() }) {
+  const bound = await checkReleaseGatePlan({ engineRoot, helperRoot, workspace, projectRoot, env });
+  const { gateTreeState } = await builtReleaseModule(engineRoot, "packages/core/src/gates-run.js");
+  const tree = await gateTreeState(bound.projectRoot, bound.plan.roots);
+  const gates = releaseCli(engineRoot, ["gates-run", "--workspace", bound.workspace, "--project", bound.projectRoot, "--release", "true", "--at", at], env);
+  await assertReleaseGateRun({ gates, plan: bound.plan, tree, at });
+  const after = await checkReleaseGatePlan({ engineRoot, helperRoot, workspace, projectRoot, env });
+  const afterTree = await gateTreeState(bound.projectRoot, after.plan.roots);
+  if (after.plan.declarationsDigest !== bound.plan.declarationsDigest || afterTree.treeDigest !== tree.treeDigest) {
+    refuse("RELEASE_GATE_BASIS_CHANGED", "the release tree or declarations changed during the gate run", { before: tree.treeDigest, after: afterTree.treeDigest });
+  }
+  return gates;
+}
+
 function changelogForPrepare(source, version, legacyNames) {
   const headings = [...source.matchAll(/^## Unreleased[ \t]*\r?$/gmu)];
   if (headings.length !== 1) refuse("RELEASE_CHANGELOG_UNRELEASED_MISSING", "CHANGELOG.md must have exactly one Unreleased section", { count: headings.length });
@@ -308,7 +421,7 @@ async function validatePackOutput(engineRoot, version) {
   return { archive, checksum, sha256 };
 }
 
-export async function prepareRelease({ engineRoot, helperRoot, version, workspace = null, env = process.env, runner = null, at = utcNow() }) {
+export async function prepareRelease({ engineRoot, helperRoot, version, workspace = null, projectRoot = null, env = process.env, runner = null, at = utcNow() }) {
   if (typeof version !== "string" || !RELEASE_VERSION_SHAPE.test(version)) {
     refuse("RELEASE_VERSION_INVALID", `${String(version)} is not a stable release version`, { version: String(version) });
   }
@@ -318,6 +431,9 @@ export async function prepareRelease({ engineRoot, helperRoot, version, workspac
   const engine = await assertRepository(engineRoot, ENGINE_PACKAGE_NAME, { clean: true, env });
   const helper = await assertRepository(helperRoot, HELPER_PACKAGE_NAME, { clean: true, env });
   ensureSeparateRepositories(engine.root, helper.root);
+  // Read the existing declaration and registry before changing either release tree. These reads
+  // and the actual gate process bypass a test runner: a synthetic ok cannot prove a release.
+  await checkReleaseGatePlan({ engineRoot: engine.root, helperRoot: helper.root, workspace, projectRoot, env });
 
   const packagePaths = [join(engine.root, "package.json"), ...await enginePackagePaths(engine.root)];
   const sourceVersions = [];
@@ -332,16 +448,25 @@ export async function prepareRelease({ engineRoot, helperRoot, version, workspac
   if (currentVersions.size !== 1) {
     refuse("RELEASE_VERSION_MISMATCH", "engine package versions disagree before prepare", { mismatches: sourceVersions });
   }
+  const framework = await releaseFrameworkVersions(engine.root);
+  mismatchError([...currentVersions][0], [
+    versionMismatch([...currentVersions][0], FRAMEWORK_VERSION_SOURCE, framework.sourceVersion),
+    versionMismatch([...currentVersions][0], "dist/build/packages/core/src/index.js", framework.builtVersion),
+  ].filter(Boolean));
   const changelogPath = join(engine.root, CHANGELOG_FILE);
   const changelog = await readFile(changelogPath, "utf8").catch((error) => {
     refuse("RELEASE_FILE_MISSING", `${CHANGELOG_FILE} does not exist`, { path: CHANGELOG_FILE, code: error?.code ?? "UNKNOWN" });
   });
   const nextChangelog = changelogForPrepare(changelog, version, await legacyReleaseNames());
   for (const path of packagePaths) await updatePackageVersion(path, version);
+  const declaration = framework.declaration;
+  await writeFile(join(engine.root, FRAMEWORK_VERSION_SOURCE), `${framework.source.slice(0, declaration.index)}${declaration[0].replace(`"${declaration[1]}"`, `"${version}"`)}${framework.source.slice(declaration.index + declaration[0].length)}`);
   await writeFile(changelogPath, nextChangelog);
 
   const build = parseCommandJson(await writeResult("corepack", ["pnpm@11.3.0", "--dir", engine.root, "run", "build"], { cwd: engine.root, env, runner }), "build");
   if (build.ok === false) refuse("RELEASE_BUILD_FAILED", "the release build reported failure", { build });
+  const rebuilt = await releaseFrameworkVersions(engine.root);
+  mismatchError(version, [versionMismatch(version, "dist/build/packages/core/src/index.js", rebuilt.builtVersion)].filter(Boolean));
 
   const readme = parseCommandJson(await writeResult(process.execPath, [join(engine.root, "scripts", "render-readme.mjs"), "--version", version], { cwd: engine.root, env, runner }), "render-readme");
   if (readme.ok === false) refuse("RELEASE_README_RENDER_FAILED", "render-readme reported drift or failure", { readme });
@@ -351,12 +476,7 @@ export async function prepareRelease({ engineRoot, helperRoot, version, workspac
     refuse("RELEASE_HELPER_RENDER_FAILED", "render-helper-docs did not complete", { helperDocs });
   }
 
-  const gateArgs = [join(engine.root, "scripts", "einzbern.mjs"), "gates-run", "--release", "--at", at];
-  if (workspace !== null) gateArgs.push("--workspace", resolve(workspace));
-  const gates = parseCommandJson(await writeResult(process.execPath, gateArgs, { cwd: engine.root, env, runner }), "gates-run --release");
-  if (gates.ok !== true || (Array.isArray(gates.reds) && gates.reds.length > 0) || (Array.isArray(gates.requiredReds) && gates.requiredReds.length > 0)) {
-    refuse("RELEASE_GATES_RED", "release gates reported one or more red results", { gates });
-  }
+  const gates = await runReleaseGates({ engineRoot: engine.root, helperRoot: helper.root, workspace, projectRoot, env, at });
 
   const pack = parseCommandJson(await writeResult(process.execPath, [join(engine.root, "scripts", "pack-release.mjs"), "--version", version], { cwd: engine.root, env, runner }), "pack-release");
   if (pack.ok === false || pack.reasonCode !== "RELEASE_PACKED") refuse("RELEASE_PACK_FAILED", "pack-release did not complete", { pack });
@@ -367,7 +487,7 @@ export async function prepareRelease({ engineRoot, helperRoot, version, workspac
     reasonCode: "RELEASE_PREPARED",
     version,
     at,
-    gates: { reasonCode: gates.reasonCode, ok: gates.ok, reds: gates.reds ?? [] },
+    gates: { reasonCode: gates.reasonCode, ok: gates.ok, reds: gates.reds, selected: gates.run.gates.map((gate) => gate.name), treeDigest: gates.run.treeDigest, declarationsDigest: gates.run.declarationsDigest, recordPath: gates.recordPath },
     assets,
     check: checked.reasonCode,
     helperExtraFiles: helperDocs.extraFiles ?? [],

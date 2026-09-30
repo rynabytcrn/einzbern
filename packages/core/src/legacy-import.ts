@@ -52,7 +52,7 @@ import {
 import type { StreamManifest, StreamSegment } from "./akasha.js";
 import { readOrCreateDevice } from "./device-identity.js";
 import { LIBRARY_FORMAT_VERSION, createLibrary } from "./ether-library.js";
-import { KnowledgeCoreError, listKnowledgeMetadata } from "./knowledge-core.js";
+import { KnowledgeCoreError, initializeKnowledgeStore, listKnowledgeMetadata } from "./knowledge-core.js";
 import type { KnowledgeStatusFilter } from "./knowledge-core.js";
 import { writeConfigProjection } from "./library-config.js";
 import { openLegacyWorkspace, replayLegacyWorkspace, validateLegacyChain } from "./legacy-workspace.js";
@@ -176,11 +176,55 @@ export interface LegacyImportKnowledge {
   readonly bytes: number;
 }
 
+/** An explicit mapping declaration; leaving it out keeps the ordinary, strict carry path. */
+export interface LegacyKnowledgeOmission {
+  readonly reason: string;
+}
+
+export interface LegacyKnowledgeDiagnostic {
+  readonly reasonCode: string;
+  readonly file: string;
+  readonly message: string;
+}
+
+export interface LegacyKnowledgeOmittedFile {
+  readonly file: string;
+  readonly bytes: number | null;
+  readonly sha256: string | null;
+  readonly issue: LegacyKnowledgeDiagnostic | null;
+}
+
+/** Read-only evidence, never accepted card records or a replacement knowledge store. */
+export interface LegacyKnowledgeOmissionReport {
+  readonly selection: "omit";
+  readonly reason: string;
+  readonly store: string;
+  readonly presence: "present" | "absent" | "unknown";
+  // Counts come only from the ordinary reader. Parsed metadata below cannot establish them.
+  readonly counts: Pick<LegacyImportKnowledge, "cards" | "removedCards" | "defaultCards"> | "unknown" | "absent";
+  readonly refusal: LegacyKnowledgeDiagnostic | null;
+  readonly files: readonly LegacyKnowledgeOmittedFile[];
+  readonly unvalidatedCards: readonly { readonly file: string; readonly id: string | null; readonly externalKey: string | null }[];
+}
+
+/** The mapping and the single import use the same closed shape and reason constraint. */
+export function legacyKnowledgeOmissionIssue(value: unknown): string | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return "omitLegacyKnowledge";
+  const fields = Object.keys(value);
+  const extra = fields.find((field) => field !== "reason");
+  if (extra !== undefined) return `omitLegacyKnowledge.${extra}`;
+  const reason = (value as { readonly reason?: unknown }).reason;
+  return typeof reason === "string" && reason.trim() !== "" && reason.length <= 512 && !/[\u0000-\u001f\u007f]/u.test(reason)
+    ? null
+    : "omitLegacyKnowledge.reason";
+}
+
 export interface LegacyImportOptions {
   readonly createdAt: string;
   readonly dryRun?: boolean;
   readonly projectName?: string | null;
   readonly gitRemote?: string | null;
+  readonly omitLegacyKnowledge?: LegacyKnowledgeOmission;
   // Test seam: what lands in the target for one file an import copies, named by its path relative
   // to the target (an import copies it unchanged).
   readonly copyTransformForTest?: (relativePath: string, bytes: Buffer) => Buffer;
@@ -197,8 +241,9 @@ export interface LegacyImportReport {
   // TCRN-CROSS-SUB-421: the same in a dry run and a real import.
   readonly records: LegacyImportRecords;
   // TCRN-CROSS-SUB-421 (MIN-239 D7): the old knowledge store the import carries; null when the old
-  // workspace has none.
+  // workspace has none, or an explicit omission is reported in knowledgeOmission.
   readonly knowledge: LegacyImportKnowledge | null;
+  readonly knowledgeOmission: LegacyKnowledgeOmissionReport | null;
   // Present on a real import only.
   readonly target: string | null;
   readonly deviceId: string | null;
@@ -440,6 +485,104 @@ async function readLegacyKnowledge(legacyRoot: string, at: string): Promise<Lega
   };
 }
 
+function knowledgeDiagnostic(error: unknown, file: string): LegacyKnowledgeDiagnostic {
+  const coded = error as { readonly reasonCode?: unknown; readonly code?: unknown; readonly message?: unknown } | null;
+  const code = coded?.reasonCode ?? coded?.code;
+  return {
+    reasonCode: typeof code === "string" ? code : "LEGACY_IMPORT_MISMATCH",
+    file,
+    message: String(coded?.message ?? error),
+  };
+}
+
+// MIN-240 D3/D5: inspect what is deliberately left behind. The ordinary reader still makes its
+// own checks, and its refusal is retained. A separate inventory names every regular file's raw
+// bytes and every noncanonical JSON file, including files the first reader refusal hid. Parsing
+// metadata here supplies explicitly unvalidated facts for a later reconstruction, never counts.
+// Links are named as unavailable evidence and never followed by this inventory.
+async function omittedLegacyKnowledge(legacyRoot: string, at: string, declaration: LegacyKnowledgeOmission): Promise<LegacyKnowledgeOmissionReport> {
+  const store = join(legacyRoot, LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY);
+  const report = { selection: "omit" as const, reason: declaration.reason, store };
+  let directory: boolean;
+  try {
+    directory = (await lstat(store)).isDirectory();
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") {
+      return { ...report, presence: "absent", counts: "absent", refusal: null, files: [], unvalidatedCards: [] };
+    }
+    return { ...report, presence: "unknown", counts: "unknown", refusal: knowledgeDiagnostic(error, "."), files: [], unvalidatedCards: [] };
+  }
+  if (!directory) {
+    return { ...report, presence: "present", counts: "unknown", files: [], unvalidatedCards: [], refusal: {
+      reasonCode: "KNOWLEDGE_PATH_INVALID", file: ".", message: "the omitted old knowledge store is not a directory (links are not followed)",
+    } };
+  }
+  let counts: LegacyKnowledgeOmissionReport["counts"] = "unknown";
+  let refusal: LegacyKnowledgeDiagnostic | null = null;
+  try {
+    const read = await readLegacyKnowledge(legacyRoot, at);
+    if (read !== null) {
+      const { cards, removedCards, defaultCards } = read.report;
+      counts = { cards, removedCards, defaultCards };
+    }
+  } catch (error) {
+    refusal = knowledgeDiagnostic(error, error instanceof LegacyKnowledgeRefusedError ? error.file : ".");
+  }
+  const files: LegacyKnowledgeOmittedFile[] = [];
+  const unvalidatedCards: { file: string; id: string | null; externalKey: string | null }[] = [];
+  const walk = async (directoryPath: string): Promise<void> => {
+    let names: readonly string[];
+    try {
+      names = (await readdir(directoryPath)).sort(compareCanonicalText);
+    } catch (error) {
+      const file = relative(store, directoryPath).split(sep).join("/") || ".";
+      files.push({ file, bytes: null, sha256: null, issue: knowledgeDiagnostic(error, file) });
+      return;
+    }
+    for (const name of names) {
+      const path = join(directoryPath, name);
+      const file = relative(store, path).split(sep).join("/");
+      try {
+        const entry = await lstat(path);
+        if (entry.isDirectory()) {
+          await walk(path);
+          continue;
+        }
+        if (!entry.isFile()) {
+          files.push({ file, bytes: null, sha256: null, issue: {
+            reasonCode: "KNOWLEDGE_PATH_INVALID", file, message: "the omitted entry is not a regular file (links are not followed)",
+          } });
+          continue;
+        }
+        const bytes = await readFile(path);
+        let issue: LegacyKnowledgeDiagnostic | null = null;
+        if (file.endsWith(".json")) {
+          try {
+            assertCanonicalJson(bytes.toString("utf8"));
+          } catch {
+            issue = { reasonCode: "KNOWLEDGE_RECORD_INVALID", file, message: "the omitted file does not hold canonical JSON bytes" };
+          }
+        }
+        files.push({ file, bytes: bytes.length, sha256: sha256(bytes), issue });
+        if (/^metadata\/[^/]+\.json$/u.test(file)) {
+          let parsed: { id?: unknown; externalKey?: unknown } | null = null;
+          try {
+            const value: unknown = JSON.parse(bytes.toString("utf8"));
+            if (value !== null && typeof value === "object" && !Array.isArray(value)) parsed = value;
+          } catch {
+            // The file remains in the inventory; no card identity is inferred from unreadable JSON.
+          }
+          unvalidatedCards.push({ file, id: typeof parsed?.id === "string" ? parsed.id : null, externalKey: typeof parsed?.externalKey === "string" ? parsed.externalKey : null });
+        }
+      } catch (error) {
+        files.push({ file, bytes: null, sha256: null, issue: knowledgeDiagnostic(error, file) });
+      }
+    }
+  };
+  await walk(store);
+  return { ...report, presence: "present", counts, refusal, files, unvalidatedCards };
+}
+
 function landing(options: LegacyImportOptions, relativePath: string, bytes: Buffer): Buffer {
   return options.copyTransformForTest?.(relativePath, bytes) ?? bytes;
 }
@@ -518,11 +661,16 @@ async function occupied(path: string): Promise<boolean> {
 export async function importLegacyWorkspace(legacyRoot: string, target: string, options: LegacyImportOptions): Promise<LegacyImportReport> {
   // Every check that needs no write, the same in a dry run and a real import.
   assertStrictInstant(options.createdAt);
+  if (options.omitLegacyKnowledge !== undefined) {
+    const field = legacyKnowledgeOmissionIssue(options.omitLegacyKnowledge);
+    if (field !== null) mismatch("omitLegacyKnowledge must contain only a nonempty one-line reason of at most 512 characters", { field });
+  }
   const legacy = await openLegacyWorkspace(legacyRoot);
   const chain = validateLegacyChain(legacy);
   const legacyState = replayLegacyWorkspace(legacy);
   const records = recordsReport(legacyState);
-  const knowledge = await readLegacyKnowledge(legacy.root, options.createdAt);
+  const knowledge = options.omitLegacyKnowledge === undefined ? await readLegacyKnowledge(legacy.root, options.createdAt) : null;
+  const knowledgeOmission = options.omitLegacyKnowledge === undefined ? null : await omittedLegacyKnowledge(legacy.root, options.createdAt, options.omitLegacyKnowledge);
   const segments: LegacyImportSegment[] = legacy.segments.map((segment, index) => ({
     source: segment.name,
     name: segmentName(index + 1, segment.name.endsWith(".ndjson") ? "ndjson" : "json"),
@@ -539,6 +687,7 @@ export async function importLegacyWorkspace(legacyRoot: string, target: string, 
     segments,
     records,
     knowledge: knowledge?.report ?? null,
+    knowledgeOmission,
   };
   if (options.dryRun === true) {
     return { reasonCode: "LEGACY_IMPORT_DRY_RUN", dryRun: true, ...report, target: null, deviceId: null, libraryHeadEventHash: null };
@@ -597,6 +746,13 @@ export async function importLegacyWorkspace(legacyRoot: string, target: string, 
     if ((imported.library?.rejectedEvents.length ?? 0) > 0) mismatch("the imported library rejects events of the old chain");
     assertLegacyRecordsMatch(legacyState, imported);
     if (knowledge !== null) await assertKnowledgeCarried(knowledge, library.root, options.createdAt);
+    if (knowledgeOmission !== null) {
+      await initializeKnowledgeStore(library.root, { disposableAcknowledged: true });
+      const empty = await cardCounts(library.root, options.createdAt);
+      if (empty.cards !== 0 || empty.removedCards !== 0 || empty.defaultCards !== 0) {
+        mismatch("an explicit knowledge omission must create a readable empty crest", { file: DIRECTORY.knowledge });
+      }
+    }
     // The imported settings and configuration records are the library's project-level
     // configuration (TCRN-CROSS-STORY-469 R2, 478 R1), projected once everything above checked.
     await writeConfigProjection(library.root, {

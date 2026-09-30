@@ -23,6 +23,7 @@
 
 - 映射的规则：
   - 每项可另带 `projectName` 与 `gitRemote`，作为库的项目提示。
+  - 只有用户明确选择该分区不带旧知识库时，才给这一项加 `"omitLegacyKnowledge": {"reason": "<原因>"}`，见下文「显式不带旧知识库」。
   - 分区名、旧工作区、项目各只能出现一次。
   - 不给 `--mapping` 时，若项目自身含旧工作区，计划会推定一项。
 - 一个容器里有多个项目时，`--project` 给容器根；容器根本身对应的分区（如 cross-project）的库就在容器根下。
@@ -36,7 +37,7 @@ einzbern setup --mode migrate --project <项目目录> --mapping <迁移映射 J
 
 不加 `--yes true` 时命令只读，返回 `SETUP_PLAN_READY`。`migration` 字段列出：
 
-- `partitions`：逐分区给出目标库 `target` 与目标现状 `targetState`，以及动作 `action`：导入 `import`、已迁移跳过 `skip` 或被阻断 `blocked`。另有旧链的事件数与头哈希、在途工作数，以及全部未满足的 gate。gate 逐项列出，不计为零。
+- `partitions`：逐分区给出目标库 `target` 与目标现状 `targetState`，以及动作 `action`：导入 `import`、已迁移跳过 `skip` 或被阻断 `blocked`。另有旧链的事件数与头哈希、在途工作数，以及全部未满足的 gate。gate 逐项列出，不计为零；`knowledge` 列出将携带的知识，`knowledgeOmission` 列出显式不带的选择、原因与旧文件事实。
 - `registry`：每个库将得到的注册表条目，`migratedFrom` 记旧工作区。
 - `deviceSettings`：随迁的门户设置。
 - `hostCleanup`：每一项清理，含类别 `kind`、路径、动作（改写 `update` 或移走 `move`）与去向 `into`。
@@ -71,13 +72,13 @@ einzbern setup --mode migrate --project <项目目录> --mapping <迁移映射 J
 
 ## 知识随迁
 
-导入把旧工作区的知识库原样带进库的 `crest/`：
+缺省导入把旧工作区的知识库原样带进库的 `crest/`：
 
 - 带走的是旧控制目录里 `knowledge/` 的标记 `store.json`、`metadata/` 与 `bodies/`（含分段），逐字节复制并按 SHA-256 核对。旧的 `views/` 不带走，库的索引视图是本机缓存。
 - 库按这种布局读取旧卡，新卡作为事件写在旁边；写卡从不改写带过来的文件。本页各步骤中，只有「迁移完成后」的清除步骤会改写这些文件：它先备份随迁的 `bodies/`，再去掉已移除卡的正文重写。
 - 旧引擎在元数据里标了 `extensions.supersededBy` 的卡读作已移除：`knowledge-list` 只在 `--status removed` 或 `--status all` 时列出它。它照样随迁。
 
-`library-import-legacy` 的回执里，dry-run 与正式导入同一口径。旧工作区没有知识库时 `knowledge` 为 `null`，否则各字段含义如下：
+`library-import-legacy` 的回执里，dry-run 与正式导入同一口径。旧工作区没有知识库，或映射显式选择不带它时，`knowledge` 为 `null`；后者必须连同解释未带内容的 `knowledgeOmission` 一起看。正常随迁时各字段含义如下：
 
 | 字段 | 含义 |
 | --- | --- |
@@ -88,7 +89,7 @@ einzbern setup --mode migrate --project <项目目录> --mapping <迁移映射 J
 
 复制之后，库须答出同样的三个数，否则导入停在 `LEGACY_IMPORT_MISMATCH`。执行前想看某个分区的卡数，运行 `library-import-legacy --legacy <旧工作区> --dry-run true --at <UTC 时刻>`，它不写任何文件。
 
-旧知识库读不通时，该分区被阻断：
+没有显式不带声明时，旧知识库读不通便阻断该分区：
 
 - 计划里这次拒绝单列为一条阻塞项，`path` 是出问题的文件；拒绝落不到单个文件时（例如针对整个知识库），`path` 是知识库本身。
 - 分区条目照样列出旧链的事件数、头哈希、未满足的 gate 与在途工作。
@@ -105,6 +106,30 @@ einzbern setup --mode migrate --project <项目目录> --mapping <迁移映射 J
 - 展示阻塞项及其文件后停下；有阻塞项时什么也不迁移。
 - 不要自己改写、重排格式、移动或删除旧知识库里的文件。
 - 由用户把知识库恢复成引擎留下的样子（从备份或更早的副本），或把旧工作区放回知识库绑定的位置，然后重新计划。
+
+### 显式不带旧知识库
+
+仅在用户明确批准后，给所选分区的映射项加
+`"omitLegacyKnowledge": {"reason": "<为什么不带旧知识库>"}`。这个对象只接受 `reason`：不为空白、没有控制字符的一行，最多 512 字符。未知字段、错误类型、缺失或空白原因都返回 `SETUP_ANSWER_INVALID`。选择作用于该分区的整个旧知识库，能读的旧卡也不带；用户自己的 crest 与其他分区不受影响。没有声明的分区仍按缺省路径随迁，规范字节、路径与摘要校验照常。
+
+单条导入也使用同一份映射：
+
+```text
+einzbern library-import-legacy --legacy <旧工作区> --mapping <映射文件> --dry-run true --at <UTC 时刻>
+```
+
+`--legacy` 必须对应映射中一项的绝对旧路径（解析 `.` 与 `..` 后相等），目标取这一项的 `<projectRoot>/.ether`；若另给 `--target`，它必须等于该目标。旧路径不在映射里或目标冲突时拒绝 `SETUP_ANSWER_INVALID`。正式导入在批准后去掉 `--dry-run true`；没有另一个跳过校验的旗标。
+
+dry-run、计划的分区项和执行回执都列出 `knowledgeOmission`：
+
+- `selection: "omit"`、声明的 `reason`、源知识库 `store` 与现状 `presence`。
+- `refusal` 保留普通读者的拒绝码、相对文件与消息；`files` 逐项列原文件路径、字节数、SHA-256 与 `issue`，普通读者在首个文件停下时，仍能点名第二个不规范 JSON 文件。
+- `counts` 只取普通读者的三个计数；拒绝时为 `"unknown"`，没有旧库时为 `"absent"`，不把无法读出的计数记成零。
+- `unvalidatedCards` 列从元数据解析出的卡 id、externalKey 和文件。这些是明确未验证的事实，不是已接纳卡，也不能据此计数。读不到的事实保持未知，清单不跟随链接。
+
+确认执行前，展示每个显式不带选择的原因、点名文件与未验证卡标识。链、历史、流头与 pending gate 照常随迁；新库的知识列表可读，且没有这份旧知识库的卡。旧目录原字节不变。不能靠改映射清除已经携带旧元数据的目标库，这时计划拒绝 `LEGACY_IMPORT_MISMATCH`；用同一声明再次执行时，已迁移库跳过，原因与旧文件事实仍可见。
+
+已批准的 TMS 选择让 `store.json` 与 `metadata/knowledge:af064728aab1f7daa1440840.json` 留在旧工作区，原字节不动。实际迁移完成后，再按旧文件内容用 `knowledge-create` 重建 `CARD-FALSIFIABLE-NOT-CORRECT` 与 `CARD-COUNT-ONLY-GATE`，正常的重复与语言门照常执行；导入器不修旧库，也不代写重建卡。
 
 ## 备份：只移不删
 

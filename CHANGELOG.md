@@ -14,6 +14,17 @@ read declared knowledge body segments at their backend's existing limit, includi
 segments past 1 MiB, and continue to reject overflow, undeclared large paths and
 covered-byte changes. Old-layout compatibility remains read-only.
 
+Migration mappings may explicitly leave one partition's old knowledge store behind with
+`omitLegacyKnowledge: {reason}` (TCRN-CROSS-SUB-421 R20; MIN-240 D3/D5). The default still refuses
+invalid old knowledge. A single `library-import-legacy --mapping <file>` and batch setup use the
+same declaration, bound to the old path and project library. Plans and receipts disclose the
+omission, its reason, the original reader refusal, every file's raw digest and byte size, and
+unvalidated metadata identities; unreadable card counts are `"unknown"`, never zero. The approved
+TMS choice leaves its two noncanonical JSON files unchanged and its two cards absent from the new
+crest; rebuilding those cards follows the actual migration through ordinary duplicate and language
+gates. Chains, history, heads and pending gates still migrate, other partitions carry their
+knowledge unchanged, and the user crest is unaffected.
+
 The engine is renamed Einzbern (TCRN-CROSS-MIN-227 D1, D2; TCRN-CROSS-STORY-466). The
 helper is Mana Orchestrate, the library directory is `.ether`, events live in `akasha/`,
 knowledge in `crest/`, and the per-machine directory is `~/.einzbern`. Every event and

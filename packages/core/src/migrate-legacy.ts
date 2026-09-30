@@ -50,8 +50,8 @@ import { writeFileAtomic } from "./atomic-file.js";
 import { suggestCloudHosted } from "./cloud-roots.js";
 import { ensureDeviceDirectory, registryPath } from "./device-home.js";
 import { hasLibraryManifest, openLibrary } from "./ether-library.js";
-import { LegacyImportError, LegacyKnowledgeRefusedError, importLegacyWorkspace } from "./legacy-import.js";
-import type { LegacyImportReport } from "./legacy-import.js";
+import { LegacyImportError, LegacyKnowledgeRefusedError, importLegacyWorkspace, legacyKnowledgeOmissionIssue } from "./legacy-import.js";
+import type { LegacyImportKnowledge, LegacyImportReport, LegacyKnowledgeOmission, LegacyKnowledgeOmissionReport } from "./legacy-import.js";
 import { openLegacyWorkspace, replayLegacyWorkspace } from "./legacy-workspace.js";
 import {
   MACHINE_SETTINGS_FILE_NAME,
@@ -74,7 +74,7 @@ export const MIGRATION_MAPPING_SCHEMA_VERSION = "einzbern.migration-mapping.v1" 
 
 // A mapping names a handful of partitions; a file larger than this is not one.
 const MAPPING_MAXIMUM_BYTES = 1_048_576;
-const MAPPING_FIELDS: readonly string[] = Object.freeze(["partition", "legacyWorkspace", "projectRoot", "projectName", "gitRemote"]);
+const MAPPING_FIELDS: readonly string[] = Object.freeze(["partition", "legacyWorkspace", "projectRoot", "projectName", "gitRemote", "omitLegacyKnowledge"]);
 // The library manifest's bound on a project hint (ether-library.ts), which a partition's name shares.
 const HINT_MAXIMUM_LENGTH = 512;
 const PORTAL_KEY_PREFIX = "portal.";
@@ -86,6 +86,7 @@ export interface MigrationMappingEntry {
   readonly projectRoot: string;
   readonly projectName?: string;
   readonly gitRemote?: string;
+  readonly omitLegacyKnowledge?: LegacyKnowledgeOmission;
 }
 
 export interface MigrationMapping {
@@ -143,6 +144,8 @@ export interface MigrationPartitionPlan {
   // Null when the old chain does not read: unknown, never none.
   readonly unsatisfiedGates: readonly MigrationGate[] | null;
   readonly openItems: MigrationOpenItems | null;
+  readonly knowledge: LegacyImportKnowledge | null;
+  readonly knowledgeOmission: LegacyKnowledgeOmissionReport | null;
 }
 
 /** The entry this device's registry gets for a partition's library. */
@@ -229,6 +232,8 @@ export interface MigrationPartitionApplied {
   // The old chain the library's first stream carries.
   readonly events: number;
   readonly headEventHash: string | null;
+  readonly knowledge: LegacyImportKnowledge | null;
+  readonly knowledgeOmission: LegacyKnowledgeOmissionReport | null;
 }
 
 /** What setup --mode migrate did (the SETUP_APPLIED receipt's migration field). */
@@ -282,18 +287,23 @@ export function checkMigrationMapping(value: unknown, file: string): MigrationMa
     if (!isRecord(raw)) mappingInvalid(`partitions[${index}] is not an object`, at("partitions"));
     const extra = Object.keys(raw).filter((field) => !MAPPING_FIELDS.includes(field));
     if (extra[0] !== undefined) mappingInvalid(`partitions[${index}] carries ${extra.join(", ")}, which a partition does not take`, at(extra[0]));
-    const { partition, legacyWorkspace, projectRoot, projectName, gitRemote } = raw;
+    const { partition, legacyWorkspace, projectRoot, projectName, gitRemote, omitLegacyKnowledge } = raw;
     if (!isHint(partition)) mappingInvalid(`partitions[${index}].partition must name the partition on one line`, at("partition"));
     if (!isAbsolutePath(legacyWorkspace)) mappingInvalid(`partitions[${index}].legacyWorkspace must be an absolute path`, at("legacyWorkspace"));
     if (!isAbsolutePath(projectRoot)) mappingInvalid(`partitions[${index}].projectRoot must be an absolute path`, at("projectRoot"));
     if (projectName !== undefined && !isHint(projectName)) mappingInvalid(`partitions[${index}].projectName must be one line of at most ${HINT_MAXIMUM_LENGTH} characters`, at("projectName"));
     if (gitRemote !== undefined && !isHint(gitRemote)) mappingInvalid(`partitions[${index}].gitRemote must be one line of at most ${HINT_MAXIMUM_LENGTH} characters`, at("gitRemote"));
+    if (omitLegacyKnowledge !== undefined) {
+      const field = legacyKnowledgeOmissionIssue(omitLegacyKnowledge);
+      if (field !== null) mappingInvalid(`partitions[${index}].omitLegacyKnowledge must contain only a nonempty one-line reason of at most 512 characters`, at(field));
+    }
     partitions.push({
       partition,
       legacyWorkspace,
       projectRoot,
       ...(projectName === undefined ? {} : { projectName }),
       ...(gitRemote === undefined ? {} : { gitRemote }),
+      ...(omitLegacyKnowledge === undefined ? {} : { omitLegacyKnowledge: { reason: (omitLegacyKnowledge as LegacyKnowledgeOmission).reason } }),
     });
   }
   // A partition, an old workspace and a project are each named once.
@@ -466,9 +476,11 @@ interface PlannedDryRun {
 // The import's dry run of a partition: its report, or null and a blocker. TCRN-CROSS-SUB-421 R18: a
 // refusal of the old knowledge store (LegacyKnowledgeRefusedError) is a blocker on the file of the
 // store it names, the store's root when it is about the store as a whole.
-async function dryRunImport(recorder: MigrationRecorder, legacyWorkspace: string, target: string, at: string): Promise<PlannedDryRun> {
+async function dryRunImport(recorder: MigrationRecorder, legacyWorkspace: string, target: string, at: string, omission?: LegacyKnowledgeOmission): Promise<PlannedDryRun> {
   try {
-    return { report: await importLegacyWorkspace(legacyWorkspace, target, { createdAt: at, dryRun: true }), knowledgeRefused: false };
+    return { report: await importLegacyWorkspace(legacyWorkspace, target, {
+      createdAt: at, dryRun: true, ...(omission === undefined ? {} : { omitLegacyKnowledge: omission }),
+    }), knowledgeRefused: false };
   } catch (error) {
     if (error instanceof LegacyKnowledgeRefusedError) {
       recorder.block("library", error.file === "." ? error.store : join(error.store, ...error.file.split("/")), error.reasonCode, error.message);
@@ -503,7 +515,9 @@ async function planPartition(recorder: MigrationRecorder, input: MigrationPlanIn
   // it read the store, so the replay still says what the chain is, its gates and its open work; the
   // store's refusal is a blocker of its own, on the file of the store it names.
   const legacyWorkspace = await realOrGiven(entry.legacyWorkspace);
-  const dryRun = importable ? await dryRunImport(recorder, legacyWorkspace, target, input.at) : null;
+  const dryRun = importable || entry.omitLegacyKnowledge !== undefined
+    ? await dryRunImport(recorder, legacyWorkspace, target, input.at, entry.omitLegacyKnowledge)
+    : null;
   const report = dryRun?.report ?? null;
   const replayed = importable && report === null && dryRun?.knowledgeRefused !== true
     ? null
@@ -523,6 +537,11 @@ async function planPartition(recorder: MigrationRecorder, input: MigrationPlanIn
     const found = await recorder.attempt("library", target, () => migratedLibraryState(target, chain));
     if (found === "migrated") state = "migrated";
     if (found === "diverged") recorder.block("library", target, "LEGACY_IMPORT_MISMATCH", divergedMessage(target, name, chain));
+  }
+  if (state === "migrated" && entry.omitLegacyKnowledge !== undefined &&
+      await entryKind(join(target, DIRECTORY.knowledge, "metadata")) !== null) {
+    recorder.block("library", join(target, DIRECTORY.knowledge), "LEGACY_IMPORT_MISMATCH",
+      `partition ${name} already carries old knowledge in ${target}; an omission declaration cannot remove files from an existing library`);
   }
   if (state === "not-empty" && !recorder.blockers.slice(blockersBefore).some((blocker) => blocker.path === target)) {
     recorder.block("library", target, "LIBRARY_TARGET_NOT_EMPTY", `${target} is not empty: partition ${name} is imported into a new or empty directory`);
@@ -556,6 +575,8 @@ async function planPartition(recorder: MigrationRecorder, input: MigrationPlanIn
     language: replayed === null ? null : libraryLanguage(replayed),
     unsatisfiedGates: replayed === null ? null : unsatisfiedGates(replayed),
     openItems: replayed === null ? null : openItems(replayed),
+    knowledge: report?.knowledge ?? null,
+    knowledgeOmission: report?.knowledgeOmission ?? null,
   };
   // The cloud flag: --cloud; else what this device's registry holds for the project and this
   // library, so running the plan again keeps it; else the cloud folder table's suggestion.
@@ -731,7 +752,8 @@ async function applyPartition(recorder: SetupRecorder, partition: MigrationParti
     if (found !== "migrated") {
       applyFail("LEGACY_IMPORT_MISMATCH", `partition ${partition.partition}: ${partition.target} no longer holds the library the plan found migrated; plan again`, partition);
     }
-    return { ...applied, action: "skipped", events: chain.events, headEventHash: chain.headEventHash };
+    return { ...applied, action: "skipped", events: chain.events, headEventHash: chain.headEventHash,
+      knowledge: partition.knowledge, knowledgeOmission: partition.knowledgeOmission };
   }
   let report: Awaited<ReturnType<typeof importLegacyWorkspace>>;
   try {
@@ -739,6 +761,7 @@ async function applyPartition(recorder: SetupRecorder, partition: MigrationParti
       createdAt: at,
       projectName: partition.projectName,
       gitRemote: partition.gitRemote,
+      ...(partition.knowledgeOmission === null ? {} : { omitLegacyKnowledge: { reason: partition.knowledgeOmission.reason } }),
     });
   } catch (error) {
     throw namingPartition(error, partition);
@@ -749,7 +772,8 @@ async function applyPartition(recorder: SetupRecorder, partition: MigrationParti
       `partition ${partition.partition}: the old workspace was imported with ${report.events} events up to ${report.headEventHash ?? "no head"}, not the ${chain.events} up to ${chain.headEventHash ?? "no head"} the plan read; the library at ${partition.target} holds the chain as it was imported, and the apply stopped before the registry: plan again once nothing writes to the old workspace`,
       partition);
   }
-  return { ...applied, action: "imported", events: report.events, headEventHash: report.headEventHash };
+  return { ...applied, action: "imported", events: report.events, headEventHash: report.headEventHash,
+    knowledge: report.knowledge, knowledgeOmission: report.knowledgeOmission };
 }
 
 // The registry entries, each written only when it is missing or differs; an existing registry is

@@ -74,7 +74,13 @@ The managed sections in the project's instruction files match their records. Not
 `DOCTOR_MANAGED_SECTIONS_MISMATCH`. A section changed by hand waits as pending
 (`MANAGED_SECTION_PENDING`, the sections listed in `detail.pending`): ask the user once whether to
 overwrite it, keep it, or stop managing it, and apply the choice with the managed-section verb that
-the engine's `commands` catalog lists. A section whose markers were removed stays removed. A file
+the engine's `commands` catalog lists. `RESTORE_SECTIONS_DIVERGED`'s `detail.section` (comma-separated
+when multiple) and doctor's `detail.pending` name managed sections as `<file>#<section id>` (for
+example, `AGENTS.md#navigation`); pass only the part after `#` (here, `navigation`) to
+`rule-resolve --section`, because a file-prefixed value writes nothing (`keep` and `unmanage` return
+`MANAGED_SECTION_INPUT_INVALID`, and `overwrite` returns `MANAGED_SECTION_ACTION_INVALID` because
+the engine does not write that section), so remove the prefix and retry with the same choice. A
+section whose markers were removed stays removed. A file
 with a broken marker (`MANAGED_SECTION_MALFORMED`, whose detail names the line) is not written at
 all until the user fixes that line. A file the engine cannot write sections into, because it is a
 symbolic link (`CLAUDE.md` pointing at `AGENTS.md`, say) or another kind of non-regular file, or is

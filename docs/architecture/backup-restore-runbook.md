@@ -5,8 +5,8 @@ normative procedure for taking a hermetic snapshot of a library and proving its
 copy byte-for-byte; the byte-for-byte restore of an old-layout control tree below is
 kept as history. It is the buildable half of ADR 0002's
 snapshot-not-mirror verdict: the copy is taught (OS tools), only the manifest and
-its verification are made. The companion `backup-git-tier.md` covers the optional
-git tier-2 integrity witness; both restore stories route through this runbook.
+its verification are made. The companion `backup-git-tier.md` covers the old
+layout's optional git tier-2 integrity witness and is retained as historical guidance.
 
 All paths below are placeholders. `<root>` is the library: the `.ether/` directory
 in the project, or wherever this device's registry places it
@@ -231,7 +231,7 @@ of these, stop and follow the action — do not force past it.
 
 | Reason code | What it means | Action |
 | --- | --- | --- |
-| `SNAPSHOT_RESIDUE_PRESENT` | The library (in the old layout, the control tree) carries crashed-session quarantine residue, an entry named `stale-lease-*`, `released-*` or `attempt-owned-*`; a snapshot over it would bake partial state into the receipt | Remove the named quarantine entry by hand, then re-run the SNAPSHOT procedure from step 2 |
+| `SNAPSHOT_RESIDUE_PRESENT` | The library (in the old layout, the control tree) carries crashed-session quarantine residue, an entry named `stale-lease-*`, `released-*` or `attempt-owned-*`; a snapshot over it would bake partial state into the receipt. The same kind of residue in a library's `crest/` (for example, a crash-left `released-*`) makes step 3 report `KNOWLEDGE_PARTIAL_STATE` (`knowledge store root entries are not exact`) | Remove the named quarantine entry by hand, then re-run the SNAPSHOT procedure from step 2. For the `crest/` case, find the residue there, move it outside the library by hand, then resume from step 2 |
 | `SNAPSHOT_MISMATCH` | The copy differs from the manifest at the named path — corrupt or truncated copy | Discard the copy and re-copy from a verified source; do not restore from it |
 | `WORKSPACE_SCHEMA_INVALID` | Old layout, kept as history: an old-layout control tree restored to the wrong path or a second machine (root-identity mismatch) | For the old layout, restore in place at the exact original `<root>` on the original machine (same-path doctrine, item 1). A library is restored with `setup --mode restore` from wherever its copy is kept; a failed check of its eight names its own reason code ([`references/restore.md`](../../skill/mana-orchestrate/references/restore.md)) |
 | `KNOWLEDGE_HIGH_WATER_MISMATCH` | Partial restore — the workspace and knowledge stores are out of lockstep. In a library, the crest holds records written against chain events `akasha/` no longer holds, named in `details.awaitingChain` (TCRN-CROSS-SUB-414) | Restore the WHOLE control tree so both stores return together; partial restore is unrecoverable by design in V1. In a library, restore the whole library; the named records wait until those chain events are back |
@@ -258,4 +258,4 @@ of these, stop and follow the action — do not force past it.
 ## Cross-references
 
 - ADR 0002 — snapshot-not-mirror doctrine (`docs/adr/0002-snapshot-not-mirror-backup.md`).
-- Git tier-2 integrity witness (`docs/architecture/backup-git-tier.md`).
+- Old-layout historical note: Git tier-2 integrity witness (`docs/architecture/backup-git-tier.md`).

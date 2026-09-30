@@ -1375,6 +1375,10 @@ or stands beside a recorded decision (`minutes:<id>#D<n>`): it declares it in th
 `--supersedes <decision>=D<n>`, `--withdraws <decision>` or `--coexists <decision>`
 (TCRN-CROSS-SUB-427 R18; `packages/core/src/skill-render.ts`).
 
+The restore and doctor references now explain that managed-section details identify sections as
+`<file>#<section id>` and `rule-resolve --section` takes only the section id; both references ship
+with the skill (TCRN-CROSS-SUB-427 R20).
+
 ## 1.2.1 — patch candidate
 
 This patch release makes write-time conflict detection and `--supersedes` the

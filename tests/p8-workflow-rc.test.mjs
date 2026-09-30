@@ -10,6 +10,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import {
+  FRAMEWORK_VERSION,
   createKnowledgeUnit,
   createProject,
   createWork,
@@ -71,8 +72,8 @@ test("P8 creates a closed unpublished release candidate without supported AOS re
   assert.equal(P8_RELEASE_ARTIFACTS.length, 7);
   assert.ok(P8_RELEASE_ARTIFACTS.includes(P8_RELEASE_ARCHIVE));
   assert.ok(P8_RELEASE_ARTIFACTS.includes(P8_RELEASE_ARCHIVE_SHA256));
-  assert.equal(P8_VERSION, "1.2.1");
-  assert.equal(P8_TAG, "v1.2.1");
+  assert.equal(P8_VERSION, FRAMEWORK_VERSION);
+  assert.equal(P8_TAG, `v${FRAMEWORK_VERSION}`);
   assert.deepEqual(P8_SUPPORTED_AOS_RELEASES, []);
   const manifest = JSON.parse(artifacts.get("release-manifest.json").toString("utf8"));
   assert.equal(manifest.schemaVersion, "tcrn.workflow-release-candidate-manifest.v1");

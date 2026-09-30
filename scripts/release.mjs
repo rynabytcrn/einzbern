@@ -17,7 +17,7 @@ import {
 } from "./lib/release-lockstep.mjs";
 
 const ENGINE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const USAGE = "usage: node scripts/release.mjs check --version <version> --helper <working tree> | prepare --version <version> --helper <working tree> --workspace <library> | publish-plan --version <version> --helper <working tree> --wiki-dir <Wiki working tree> [--execute tag|push|release|wiki]";
+const USAGE = "usage: node scripts/release.mjs check --version <version> --helper <working tree> | prepare --version <version> --helper <working tree> --workspace <library> --project <registered project> | publish-plan --version <version> --helper <working tree> --wiki-dir <Wiki working tree> [--execute tag|push|release|wiki]";
 
 function fail(reasonCode, message, details = {}) {
   throw new ReleaseLockstepError(reasonCode, message, details);
@@ -26,7 +26,7 @@ function fail(reasonCode, message, details = {}) {
 function parseArguments(argv) {
   let command = null;
   const values = new Map();
-  const options = new Set(["--version", "--helper", "--workspace", "--wiki-dir", "--execute"]);
+  const options = new Set(["--version", "--helper", "--workspace", "--project", "--wiki-dir", "--execute"]);
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (!argument.startsWith("--") && command === null && ["check", "prepare", "publish-plan"].includes(argument)) {
@@ -55,17 +55,20 @@ function parseArguments(argv) {
   if ((execute === null && command === "publish-plan" || execute === "wiki") && !values.has("--wiki-dir")) {
     fail("RELEASE_ARGUMENT_MISSING", "--wiki-dir is required for publish-plan and Wiki execution", { flag: "--wiki-dir" });
   }
-  if (command === "prepare" && !values.has("--workspace")) {
-    fail("RELEASE_ARGUMENT_MISSING", "--workspace is required for prepare so gates-run can run against a named library", { flag: "--workspace" });
-  }
-  if (command !== "prepare" && values.has("--workspace")) {
-    fail("RELEASE_ARGUMENT_INVALID", "--workspace is only used by prepare", { flag: "--workspace" });
+  for (const flag of ["--workspace", "--project"]) {
+    if (command === "prepare" && !values.has(flag)) {
+      fail("RELEASE_ARGUMENT_MISSING", `${flag} is required for prepare so release gates have an explicit library and project`, { flag });
+    }
+    if (command !== "prepare" && values.has(flag)) {
+      fail("RELEASE_ARGUMENT_INVALID", `${flag} is only used by prepare`, { flag });
+    }
   }
   return {
     command,
     version: values.get("--version"),
     helperRoot: resolve(values.get("--helper")),
     workspace: values.has("--workspace") ? resolve(values.get("--workspace")) : null,
+    projectRoot: values.has("--project") ? resolve(values.get("--project")) : null,
     wikiDirectory: values.has("--wiki-dir") ? resolve(values.get("--wiki-dir")) : null,
     execute,
   };
@@ -77,7 +80,7 @@ async function main() {
     return checkRelease({ engineRoot: ENGINE_ROOT, helperRoot: options.helperRoot, version: options.version });
   }
   if (options.command === "prepare") {
-    return prepareRelease({ engineRoot: ENGINE_ROOT, helperRoot: options.helperRoot, version: options.version, workspace: options.workspace });
+    return prepareRelease({ engineRoot: ENGINE_ROOT, helperRoot: options.helperRoot, version: options.version, workspace: options.workspace, projectRoot: options.projectRoot });
   }
   if (options.execute !== null) {
     return executeReleaseAction({

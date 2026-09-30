@@ -663,6 +663,8 @@ async function verifyP8() {
   assertion(packages.every((manifest) => manifest.version === P8_VERSION && manifest.private === true), "P8_PACKAGE_VERSION_MISMATCH");
   const frameworkSource = await readText(resolve(repositoryRoot, "packages/core/src/index.ts"));
   assertion(frameworkSource.includes(`FRAMEWORK_VERSION = \"${P8_VERSION}\"`), "P8_FRAMEWORK_VERSION_MISMATCH");
+  const core = await importBuilt("packages/core/src/index.js");
+  assertion(core.FRAMEWORK_VERSION === P8_VERSION, "P8_BUILD_VERSION_MISMATCH");
   assertion(P8_SUPPORTED_AOS_RELEASES.length === 0, "P8_SUPPORTED_AOS_RELEASES_MISMATCH");
   const dogfood = await runTests({ p8Only: true });
   const sourceArchive = await archive();
@@ -754,11 +756,37 @@ async function verifyReleaseTagPreflight() {
   const expectedTagIndex = process.argv.indexOf("--tag");
   const expectedTag = expectedTagIndex >= 0 ? process.argv[expectedTagIndex + 1] : (await p8Release()).P8_TAG;
   const tagCommit = run("git", ["rev-parse", "HEAD"]);
-  const parentRecord = run("git", ["rev-list", "--parents", "-n", "1", "HEAD"]).split(/\s+/u);
+  const parentRecord = run("git", ["rev-list", "--parents", "-n", "1", tagCommit]).split(/\s+/u);
   assertion(parentRecord.length === 2, "RELEASE_TAG_COMMIT_PARENT_INVALID", parentRecord.join(" "));
-  const changedPaths = run("git", ["diff", "--name-only", `${parentRecord[1]}..HEAD`]).split("\n").filter(Boolean);
+  const changedPaths = run("git", ["diff", "--name-only", `${parentRecord[1]}..${tagCommit}`]).split("\n").filter(Boolean);
   const tagProof = assertP8TagPreconditions({ p8Result: p8, expectedTag, tagCommit, p8BasisCommit: p8.p8BasisCommit });
-  const commitShape = assertReleaseCommitShape({ changedPaths });
+  const version = expectedTag.slice(1);
+  const shapeInput = { changedPaths, version };
+  if (changedPaths.includes("packages/core/src/index.ts")) {
+    // Resolve each real commit's full blob id, then read that object's complete bytes. Caller
+    // text, abbreviated ids and working-tree content cannot stand in for either committed source.
+    const sourceAt = (commit) => {
+      const entry = run("git", ["ls-tree", commit, "--", "packages/core/src/index.ts"]);
+      const matched = /^100644 blob ([0-9a-f]{40,64})\tpackages\/core\/src\/index\.ts$/u.exec(entry);
+      assertion(matched !== null, "RELEASE_COMMIT_FRAMEWORK_INVALID", "the committed framework source must be a regular blob");
+      try {
+        return new TextDecoder("utf-8", { fatal: true }).decode(run("git", ["cat-file", "blob", matched[1]], { raw: true }));
+      } catch (error) {
+        fail("RELEASE_COMMIT_FRAMEWORK_INVALID", `the committed framework source must be complete UTF-8: ${String(error?.message ?? error)}`);
+      }
+    };
+    shapeInput.frameworkBefore = sourceAt(parentRecord[1]);
+    shapeInput.frameworkAfter = sourceAt(tagCommit);
+  }
+  const { README_NAMES, renderReadmes } = await import("./render-readme.mjs");
+  if (changedPaths.some((path) => README_NAMES.includes(path))) {
+    shapeInput.generatedReadmes = await renderReadmes({ root: repositoryRoot, version, check: true });
+  }
+  if (changedPaths.includes("docs/wiki/CLI-Reference.md")) {
+    run(process.execPath, [resolve(repositoryRoot, "scripts/wiki-cli-reference.mjs"), "--check"]);
+    shapeInput.cliReferenceChecked = true;
+  }
+  const commitShape = assertReleaseCommitShape(shapeInput);
   return success("RELEASE_TAG_PREFLIGHT_VERIFIED", {
     ...tagProof,
     commitShape,

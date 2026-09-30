@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, unlink, writeFile } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import { tmpdir } from "node:os";
@@ -10,11 +11,16 @@ import { compareCanonicalText } from "./canonical-order.mjs";
 import { BRAND, LEGACY_ENGINE_NAME, LEGACY_REPOSITORY_NAMES } from "./names.mjs";
 import { readBoundRegularFile, safeWriteOutput } from "./safe-io.mjs";
 
-export const P8_VERSION = "1.2.1";
-export const P8_TAG = "v1.2.1";
+// The release identity comes from this tree's manifest, including after an approved prepare.
+// Schema identifiers remain independently versioned; neither argv nor an environment override
+// can rename an old build into a new release.
+export const P8_VERSION = JSON.parse(readFileSync(new URL("../../package.json", import.meta.url), "utf8")).version;
+assertion(typeof P8_VERSION === "string" && /^\d+\.\d+\.\d+$/u.test(P8_VERSION), "P8_PACKAGE_VERSION_INVALID");
+export const P8_TAG = `v${P8_VERSION}`;
 export const P8_FAILURE_TERMINAL_SCHEMA = "tcrn.p8-child-failure.v1";
-// The GitHub repository keeps its old name until the Owner renames it (a separate stop).
-export const P8_REPOSITORY = LEGACY_REPOSITORY_NAMES.engine;
+// Keep the current historical release's identity. Future releases use the approved final name;
+// this contract changes no remote or account.
+export const P8_REPOSITORY = P8_VERSION === "1.2.1" ? LEGACY_REPOSITORY_NAMES.engine : `${LEGACY_REPOSITORY_NAMES.owner}/${BRAND.engine.id}`;
 export const P8_WORKFLOW = "release";
 export const P8_SUPPORTED_AOS_RELEASES = Object.freeze([]);
 export const P8_RELEASE_ARCHIVE = `${BRAND.engine.id}-${P8_VERSION}.tar.gz`;

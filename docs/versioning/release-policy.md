@@ -34,10 +34,11 @@ tree explicitly:
 
 ```sh
 node scripts/release.mjs check --version <version> --helper <helper-working-tree>
-node scripts/release.mjs prepare --version <version> --helper <helper-working-tree> --workspace <library>
+node scripts/release.mjs prepare --version <version> --helper <helper-working-tree> --workspace <library> --project <registered-project>
 ```
 
-`prepare` updates the engine and package versions, cuts the current `Unreleased`
+`prepare` updates the engine and package versions and the actual core
+`FRAMEWORK_VERSION` declaration, cuts the current `Unreleased`
 notes into a versioned CHANGELOG section, records the Einzbern and Mana Orchestrate
 renames and retired surfaces, and renders both repositories' versioned documents.
 It builds the engine, runs every enabled release gate, then writes the deterministic
@@ -45,14 +46,38 @@ It builds the engine, runs every enabled release gate, then writes the determini
 release gate, pack, or digest check stops preparation. The command makes local
 working tree changes only and creates no commit.
 
-`--workspace` names the Einzbern library whose release gate configuration should
-run. Pass an existing library path; preparation does not infer one from the engine
-or helper working tree.
+`--workspace` names an existing Einzbern library and `--project` names its exact
+registered project on this device. That project must contain both release
+repositories. The current tree must already have a build for the initial CLI
+declaration checks. The gate declarations must be nonempty, include enabled
+required gates on the exact engine and helper roots, and select every enabled
+gate. Preparation passes `--release true` and both explicit roots to the real CLI;
+it reads the saved native run and checks every selection, execution, exit status,
+tree digest and declaration digest. Missing required coverage, a changed tree or
+declaration, or any red gate stops preparation.
+
+Preparation preserves its existing clean checkout checks and makes no commit.
+Gates that require a clean committed tree can therefore refuse after the release
+files change. Choosing a different commit time, splitting preparation into phases,
+or creating a separate release library requires explicit approval of that method.
 
 Run `check` after preparation and again after committing both repositories. It
-checks the engine manifest, every `packages/*/package.json`, the helper manifest,
+checks the engine manifest, every `packages/*/package.json`, the core source and
+built `FRAMEWORK_VERSION`, the helper manifest,
 the CHANGELOG section, the engine README set, the helper README set, and the helper
 `SKILL.md` all carry the requested version.
+
+Packing also checks every engine manifest and the actual source and built core
+version. P8 derives its version, tag and seven exact artifact names from this
+tree's manifest. The current 1.2.1 candidate retains its historical repository
+identity; future candidates name `tpmoonchefryan/einzbern`. These bindings change
+no remote. Release and P8 schema identifiers remain independent of the version.
+
+The release commit check admits the existing generated README language set and
+the generated CLI reference only after their actual checks pass. It admits the
+core source only when the full parent and HEAD blobs differ by one
+`FRAMEWORK_VERSION` replacement to the requested version. Other source changes
+and missing generation or source evidence remain refusals.
 
 ## Publish stops
 

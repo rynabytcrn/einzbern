@@ -16,13 +16,13 @@
 // (`cards`), the removed ones (`removedCards`) and the default ones (`defaultCards`), and a store the
 // reader refuses is refused naming the file of the store the refusal is about (`details.file`).
 
-import "./helpers/device-home.mjs";
+import { testDeviceHome } from "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cp, mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, relative, resolve, sep } from "node:path";
+import { delimiter, join, relative, resolve, sep } from "node:path";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
@@ -365,6 +365,72 @@ test("SUB-421 (MIN-239 D7): a dry run and an import report the same checks; the 
   for (const [path, digest] of Object.entries(carried)) assert.equal(appended[path], digest, `the carried layout is not rewritten: ${path}`);
   assert.deepEqual(Object.keys(appended).filter((path) => !Object.hasOwn(carried, path)).every((path) => path.startsWith("events/")), true);
   assert.deepEqual(await listed(target, LATER), { all: before.all + 1, removed: before.removed, default: before.default + 1 });
+});
+
+test("SUB-421 R20: the explicit mapping omission leaves TMS-shaped corrupt bytes behind, retains their evidence, and imports the same chain with an empty readable crest", async (context) => {
+  const base = await scratch(context);
+  const { root, knowledge } = await restoreWithKnowledge(base, { segmented: false });
+  const metadataFile = (await readdir(join(knowledge, "metadata"))).sort(compareCanonicalText)[0];
+  const broken = ["store.json", `metadata/${metadataFile}`];
+  for (const file of broken) await writeFile(join(knowledge, file), JSON.stringify(JSON.parse(await readFile(join(knowledge, file), "utf8")), null, 4));
+  const sourceCards = await Promise.all((await readdir(join(knowledge, "metadata"))).sort(compareCanonicalText).map(async (file) => JSON.parse(await readFile(join(knowledge, "metadata", file), "utf8"))));
+  const project = join(base, "project");
+  await mkdir(project);
+  const target = join(project, DIRECTORY.library);
+  const omission = { reason: "MIN-240 (b): rebuild the old cards after migration; preserve the two noncanonical source files" };
+  const mappingFile = join(base, "mapping.json");
+  const entry = { partition: "TMS", legacyWorkspace: root, projectRoot: project, omitLegacyKnowledge: omission };
+  await writeFile(mappingFile, JSON.stringify({ schemaVersion: "einzbern.migration-mapping.v1", partitions: [entry] }));
+  // A partition's declaration cannot reach the independent user crest.
+  await createKnowledgeUnit(root, card("SUB-421-USER-CREST", "User crest persists across partition omission", { scope: "user" }));
+  const userCrest = join(testDeviceHome, DIRECTORY.knowledge);
+  const userBefore = await treeDigest(userCrest);
+  const oldBefore = await treeDigest(root);
+  for (const dryRun of [true, false]) {
+    await assert.rejects(importLegacyWorkspace(root, target, { createdAt: AT, dryRun }), (error) => {
+      assert.deepEqual([error.reasonCode, error.details.file], ["KNOWLEDGE_RECORD_INVALID", "store.json"]);
+      return true;
+    });
+    await assert.rejects(stat(target), { code: "ENOENT" });
+  }
+  const dry = spawnSync(process.execPath, ["--import", tripwirePath, cliPath, "library-import-legacy", "--legacy", root, "--mapping", mappingFile, "--dry-run", "true", "--at", AT], {
+    encoding: "utf8", env: { ...process.env, EINZBERN_TRIPWIRE_ROOT: [base, testDeviceHome].join(delimiter) },
+  });
+  assert.equal(dry.status, 0, dry.stderr);
+  const dryReport = JSON.parse(dry.stdout);
+  await assert.rejects(stat(target), { code: "ENOENT" });
+  const run = spawnSync(process.execPath, ["--import", tripwirePath, cliPath, "library-import-legacy", "--legacy", root, "--mapping", mappingFile, "--at", AT], {
+    encoding: "utf8", env: { ...process.env, EINZBERN_TRIPWIRE_ROOT: [root, userCrest].join(delimiter) },
+  });
+  assert.equal(run.status, 0, run.stderr);
+  const receipt = JSON.parse(run.stdout);
+  assert.equal(receipt.reasonCode, "LEGACY_IMPORTED");
+  assert.deepEqual(receipt.knowledgeOmission, dryReport.knowledgeOmission);
+  const evidence = receipt.knowledgeOmission;
+  assert.deepEqual([receipt.knowledge, evidence.selection, evidence.reason, evidence.presence, evidence.counts], [null, "omit", omission.reason, "present", "unknown"]);
+  assert.deepEqual([evidence.refusal.reasonCode, evidence.refusal.file], ["KNOWLEDGE_RECORD_INVALID", "store.json"]);
+  assert.deepEqual(evidence.files.filter((file) => file.issue?.reasonCode === "KNOWLEDGE_RECORD_INVALID").map((file) => file.file).sort(), broken.sort());
+  for (const file of broken) {
+    const fact = evidence.files.find((entry) => entry.file === file);
+    assert.equal(fact.sha256, sha256(await readFile(join(knowledge, file))));
+    assert.equal(fact.bytes, (await stat(join(knowledge, file))).size);
+  }
+  assert.deepEqual(evidence.unvalidatedCards.map((card) => [card.id, card.externalKey]).sort(), sourceCards.map((card) => [card.id, card.externalKey]).sort());
+  assert.deepEqual(await listed(target), { all: 0, removed: 0, default: 0 }, "omitted cards are absent; the new crest reads normally");
+  assert.equal((await cli(["knowledge-list", "--workspace", target, "--scope", "user", "--at", AT])).records.some((card) => card.externalKey === "SUB-421-USER-CREST"), true);
+  const oldState = await materializeWorkspace(root);
+  const imported = await materializeWorkspace(target);
+  assert.deepEqual(recordsOf(imported), recordsOf(oldState), "every chain record, including pending gates, stays identical");
+  assert.deepEqual([receipt.events, receipt.headEventHash, receipt.records.digest], [expected.events, expected.headEventHash, legacyRecordsDigest(oldState)]);
+  const stream = (await readAllStreams(target)).streams[0];
+  assert.deepEqual([stream.events.length, stream.manifest.headEventHash], [expected.events, expected.headEventHash]);
+  assert.deepEqual(await treeDigest(root), oldBefore);
+  assert.deepEqual(await treeDigest(userCrest), userBefore);
+  await assert.rejects(cli(["library-import-legacy", "--legacy", join(base, "unmapped"), "--mapping", mappingFile, "--dry-run", "true", "--at", AT]), (error) => error.reasonCode === "SETUP_ANSWER_INVALID" && error.details.field === "legacyWorkspace");
+  await assert.rejects(cli(["library-import-legacy", "--legacy", root, "--mapping", mappingFile, "--target", join(base, "other-target"), "--dry-run", "true", "--at", AT]), (error) => error.reasonCode === "SETUP_ANSWER_INVALID" && error.details.field === "target");
+  for (const invalid of [true, null, {}, { reason: "" }, { reason: "two\nlines" }, { reason: "why", unchecked: true }]) {
+    await assert.rejects(importLegacyWorkspace(root, target, { createdAt: AT, dryRun: true, omitLegacyKnowledge: invalid }), (error) => error.reasonCode === "LEGACY_IMPORT_MISMATCH" && error.details.field.startsWith("omitLegacyKnowledge"));
+  }
 });
 
 test("SUB-421: an old store its engine bound to another place is refused with that store's own reason code, in a dry run as in an import, before anything is written", async (context) => {

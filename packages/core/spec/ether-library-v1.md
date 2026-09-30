@@ -130,6 +130,40 @@ is a vector of each device's stream sequence, and its head is one digest over ev
 head. Both the order and the renaming are deterministic, so every device merges the same
 streams to the same state.
 
+## Importing an old workspace
+
+An import validates the whole old chain from genesis, copies its segments byte for byte into the
+first stream, and compares every replayed record and the stream head. History and pending gates
+keep their identities and state. By default its old knowledge marker, metadata and bodies are
+carried unchanged into `crest/`; a canonical byte, path or digest refusal stops both a dry run and
+a real import before the target is written.
+
+An `einzbern.migration-mapping.v1` partition may explicitly declare
+`omitLegacyKnowledge: {reason: "<why>"}`. This closed object accepts only a nonblank, single-line
+`reason` of at most 512 characters with no control characters. Unknown fields and wrong types
+refuse. Absence of the field preserves strict carrying; omission applies only to that partition's
+whole old store, never the user crest or another partition. `LegacyImportOptions` takes the same
+declaration, checked by the same validator. `library-import-legacy --mapping <file>` selects it
+only for the entry whose resolved absolute `legacyWorkspace` equals `--legacy`, uses that entry's
+`<projectRoot>/.ether`, and rejects a different `--target`.
+
+The import receipt and the batch plan/applied partition have `knowledgeOmission`, null without
+the declaration. With it, `knowledge` is null and `knowledgeOmission` records `selection: "omit"`,
+the declaration's `reason`, source `store`, `presence`, the ordinary reader's original `refusal`,
+and an inventory `files` of raw byte sizes, SHA-256 hashes and per-file issues. Noncanonical JSON
+files are identified individually even when the ordinary reader refuses the first file.
+`counts` is that reader's three counts, `"unknown"` when it refuses or `"absent"` without a store.
+`unvalidatedCards` contains metadata file paths and parsed ids/external keys, explicitly
+unvalidated and never used as counts or accepted records. Unreadable inventory facts remain
+unknown; links are named and not followed by the inventory. No inventory bytes are copied into
+the target. The resulting library crest reads normally with no cards from the omitted store.
+
+Omission does not relax chain/record/segment checks, rewrite old files or reconstruct cards.
+Reconstruction follows the actual migration using ordinary card writes and their duplicate and
+language gates. A repeated apply skips an already imported library and retains omission evidence;
+changing a declaration cannot clear old metadata already carried into an existing library
+(`LEGACY_IMPORT_MISMATCH`).
+
 ## The device cache
 
 What a replay derives stays on the device that derived it, in `cache/<library>/` of the

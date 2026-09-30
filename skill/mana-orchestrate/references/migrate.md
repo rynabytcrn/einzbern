@@ -47,7 +47,9 @@ and never guess an answer.
    in a temporary directory outside every project (it names this device's paths and is never
    committed): `{"schemaVersion": "einzbern.migration-mapping.v1", "partitions": [...]}`, each
    partition `{"partition", "legacyWorkspace", "projectRoot"}` with absolute paths, and optionally
-   `"projectName"` and `"gitRemote"`. Pass it with `--mapping <file>`.
+   `"projectName"` and `"gitRemote"`. Only when the user explicitly chooses to leave that partition's
+   old knowledge behind, add `"omitLegacyKnowledge": {"reason": "<why>"}` to that entry (see below).
+   Pass it with `--mapping <file>`.
 2. Cloud drive. Is a library location synced by a cloud drive? The plan suggests an answer from
    the location; the answer holds for every library. Flag: `--cloud true` or `--cloud false`.
 3. Language. The language of the text Einzbern writes into the project's instruction files, as a
@@ -66,7 +68,8 @@ and never guess an answer.
      `migrated` when an earlier run imported it, `not-empty` or `not-a-directory`), `action`
      (`import`, `skip` or `blocked`), the old chain's `events` and `headEventHash`,
      `unsatisfiedGates` (every gate that is not satisfied, with its id, work item, status, title and
-     outcome class) and `openItems` (the work still open, by status);
+     outcome class) and `openItems` (the work still open, by status), `knowledge` for a store to carry
+     and `knowledgeOmission` for an explicit omission with its reason and source evidence;
    - `registry`, the entry each library gets, and `deviceSettings`, the portal keys that move;
    - `hostCleanup`, each item `{kind, path, action, into}`: `kind` is `host-file` (updated, its
      original copied first), `template`, `injection-state`, `launcher`, `skill-copy` or `marker`
@@ -88,7 +91,8 @@ and never guess an answer.
      directory; a move is a rename and cannot cross volumes. Tell the user which one.
    - `HOST_HOOKS_FILE_UNSUPPORTED`: a host file is a link or does not parse; the user fixes it.
 4. Final confirmation. Show the mapping, a table of the partitions (partition, library, action,
-   events, head), the gates that stay pending, the `hostCleanup` list and every file the plan
+   events, head), each explicit knowledge omission with its reason, named source files and
+   unvalidated card identities, the gates that stay pending, the `hostCleanup` list and every file the plan
    would write, and ask once whether to apply. Continue only on a clear yes.
 5. Apply. Run the same command with `--yes true`. It returns `SETUP_APPLIED`: `migration` with
    each partition `imported` or `skipped`, the registry entries and `hostCleanup` as it was done,
@@ -103,7 +107,7 @@ cleanup and the wiring find nothing left to do.
 
 ## Knowledge carried
 
-- The import carries each old workspace's knowledge store (`knowledge/` in its old control
+- By default the import carries each old workspace's knowledge store (`knowledge/` in its old control
   directory) into the library's `crest/` as its engine left it: the marker `store.json`,
   `metadata/` and `bodies/` (segments included), byte for byte. The old `views/` stays behind,
   since the library's index view is this device's cache. The library reads that layout and writes
@@ -114,7 +118,8 @@ cleanup and the wiring find nothing left to do.
   removed: `knowledge-list` lists it only with `--status removed` or `--status all`. It is carried
   with the rest.
 - The receipt of `library-import-legacy` (a dry run's and an import's alike) holds `knowledge`,
-  `null` when the old workspace has no store:
+  `null` when the old workspace has no store or its entry explicitly omits it (then
+  `knowledgeOmission` explains what was left behind):
   - `cards`: every card of the store, whatever its status
     (`knowledge-list --selection all --status all`);
   - `removedCards`: those of them that read as removed (`--status removed`);
@@ -124,7 +129,7 @@ cleanup and the wiring find nothing left to do.
   After the copy the library must answer the same three counts, or the import stops with
   `LEGACY_IMPORT_MISMATCH`. To see a partition's counts before the apply, run
   `library-import-legacy --legacy <old workspace> --dry-run true --at <UTC>`; it writes nothing.
-- A store the engine cannot read blocks its partition. The plan lists the refusal as a blocker of
+- Without an explicit omission, a store the engine cannot read blocks its partition. The plan lists the refusal as a blocker of
   its own, whose `path` is the file of the store it is about (the store itself when the refusal
   does not fall on a single file, for example when it is about the store as a whole), and still
   lists the partition's `events`, `headEventHash`,
@@ -143,6 +148,46 @@ cleanup and the wiring find nothing left to do.
   edit, reformat, move or delete a file of the old store yourself. The user restores the store as
   its engine left it, from a backup or an earlier copy, or puts the old workspace back where its
   store is bound; then plan again.
+
+### Explicitly leaving old knowledge behind
+
+Only an entry that the user explicitly approves may contain
+`"omitLegacyKnowledge": {"reason": "<why the old store is not carried>"}`. The object accepts only
+`reason`, a nonblank line of at most 512 characters with no control characters; unknown fields,
+wrong types, and missing or blank reasons refuse with `SETUP_ANSWER_INVALID`. Omission applies to
+the whole old store of that partition, including readable cards; the user's independent crest
+and other entries' knowledge are unaffected. A missing declaration still takes the strict
+carry path, with all canonical byte, path and digest checks.
+
+The same mapping works for one partition's import:
+`library-import-legacy --legacy <old workspace> --mapping <file> --dry-run true --at <UTC>`.
+`--legacy` must match one entry's absolute old path (after resolving `.` and `..`); its target is
+that entry's `<projectRoot>/.ether`. An explicit `--target` must match that target. An unmatched
+old path or a conflicting target refuses with `SETUP_ANSWER_INVALID`. Omit `--dry-run true` for
+the real import after approval. No separate flag bypasses validation.
+
+The dry run, the plan's partition and the applied receipt all expose `knowledgeOmission`:
+`selection: "omit"`, the declared `reason`, the source `store` and its `presence`, the ordinary
+reader's `refusal` (code, relative file and message), and `files` (relative path, raw byte size,
+SHA-256 and any `issue`). This inventory also identifies a second noncanonical JSON file even
+when the reader stops at the first. `counts` comes only from the ordinary reader: its three
+counts when readable, `"unknown"` when refused, or `"absent"` when there is no store.
+`unvalidatedCards` lists the ids and external keys parsed from metadata, with their files; these
+facts are not accepted card records and cannot establish counts. Unreadable facts stay unknown,
+and links are not followed by the inventory. `knowledge` is `null` for an omission, so the
+selection and evidence must be shown with it.
+
+An omission imports the chain, history, stream head and pending gates normally into a readable
+library crest containing none of that old store's cards. It never edits old bytes. An existing
+library that already carries old metadata cannot be cleared by changing its mapping declaration:
+the plan blocks with `LEGACY_IMPORT_MISMATCH`. With the same omission, a migrated library is
+skipped on a repeated apply and the reason and old source evidence remain visible.
+
+For the approved TMS choice, `store.json` and
+`metadata/knowledge:af064728aab1f7daa1440840.json` remain unchanged in the old workspace.
+After the actual migration, reconstruct `CARD-FALSIFIABLE-NOT-CORRECT` and
+`CARD-COUNT-ONLY-GATE` from their content through `knowledge-create`; the normal duplicate and
+language gates still apply. Reconstruction is a later migration action, never an import repair.
 
 ## After the migration
 

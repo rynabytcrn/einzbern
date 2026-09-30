@@ -24,15 +24,24 @@ import {
   LEGACY_CONTAINER_DIRECTORY,
   LEGACY_CONTROL_DIRECTORY,
   LEGACY_DEVICE_DIRECTORY,
+  DIRECTORY,
   MACHINE_SETTINGS_LAYER_KIND,
   MACHINE_SETTINGS_VERSION,
   applyMachineSettingSet,
+  cachePath,
+  createKnowledgeUnit,
+  importLegacyWorkspace,
+  initializeKnowledgeStore,
   initializeLibrary,
+  listKnowledgeMetadata,
+  materializeWorkspace,
   openLegacyWorkspace,
   registerLibrary,
   replayLegacyWorkspace,
 } from "../dist/build/packages/core/src/index.js";
-import { MIGRATION_MAPPING_SCHEMA_VERSION, planMigration, readMigrationMapping } from "../dist/build/packages/core/src/migrate-legacy.js";
+import { MIGRATION_MAPPING_SCHEMA_VERSION, applyMigration, planMigration, readMigrationMapping } from "../dist/build/packages/core/src/migrate-legacy.js";
+import { readKnowledgeStoreMarker } from "../dist/build/packages/core/src/knowledge-core.js";
+import { installTripwire } from "./helpers/fs-write-tripwire.mjs";
 import { applySetup, planSetup } from "../dist/build/packages/core/src/setup.js";
 import { legacyWorkspaceEventId } from "../dist/build/packages/core/src/workspace.js";
 import { canonicalJson, createEvent } from "../dist/build/packages/protocol/src/index.js";
@@ -93,6 +102,42 @@ async function bindWhereRestored(root) {
     ? { ...entry, canonicalPath: root, path: root, portableIdentity: root.toLowerCase() }
     : entry));
   await writeFile(metadataPath, canonicalJson(metadata));
+}
+
+/** Two old cards, laid out from engine-written records; the TMS variant has exactly its two JSON byte defects. */
+async function oldKnowledgePartition(m, name, broken = false) {
+  const root = await oldPartition(m, name);
+  await bindWhereRestored(root);
+  const donor = join(m.base, `${name}-donor`);
+  await importLegacyWorkspace(root, donor, { createdAt: "2026-09-25T06:00:00Z" });
+  await initializeKnowledgeStore(donor, { disposableAcknowledged: true });
+  const bodies = new Map();
+  for (const [index, externalKey] of ["CARD-FALSIFIABLE-NOT-CORRECT", "CARD-COUNT-ONLY-GATE"].entries()) {
+    const body = `${externalKey}: ${name} source text`;
+    const created = await createKnowledgeUnit(donor, {
+      occurredAt: `2026-09-25T06:00:0${index + 1}Z`, externalKey, scope: "workspace", projectId: null, roleScopes: [],
+      category: "workflow", kind: "fact", tags: ["migration"], subject: `${externalKey} ${name}`,
+      summary: `${externalKey} summary`, snippet: `${externalKey} snippet`, accountableOwnerId: "owner:sub-421", sourceReferences: [], sourceDigest: null,
+      linkedWorkIds: [], linkedDecisionIds: [], linkedGateIds: [], linkedEvidenceIds: [], retrievalDisposition: "default",
+      freshnessState: "fresh", lastVerified: null, stalenessPolicy: { maximumAgeDays: null, unknownDisposition: "fail-closed" },
+      exportDisposition: "metadata-only", body,
+    });
+    bodies.set(created.id, body);
+  }
+  const listed = await listKnowledgeMetadata(donor, { at: "2026-09-30T06:00:00Z", selection: "all", status: "all", limit: 100 });
+  const marker = await readKnowledgeStoreMarker(donor);
+  const knowledge = join(root, LEGACY_CONTROL_DIRECTORY, "knowledge");
+  for (const directory of ["metadata", "bodies", "views"]) await mkdir(join(knowledge, directory), { recursive: true });
+  const storedMarker = JSON.parse(await readFile(join(donor, DIRECTORY.knowledge, "store.json"), "utf8"));
+  await writeFile(join(knowledge, "store.json"), canonicalJson({ ...storedMarker, version: marker.version, eventHighWaterDigest: marker.eventHighWaterDigest }));
+  for (const record of listed.records) {
+    await writeFile(join(knowledge, "metadata", `${record.id}.json`), canonicalJson(record));
+    await writeFile(join(knowledge, "bodies", `${record.id}.body`), bodies.get(record.id));
+  }
+  await writeFile(join(knowledge, "views", "index.json"), await readFile(join(cachePath(expected.workspaceId), "crest-views", "index.json")));
+  const damaged = ["store.json", `metadata/${listed.records[0].id}.json`];
+  if (broken) for (const file of damaged) await writeFile(join(knowledge, file), JSON.stringify(JSON.parse(await readFile(join(knowledge, file), "utf8")), null, 4));
+  return { root, knowledge, damaged };
 }
 
 async function writeMapping(m, partitions, file = join(m.base, "mapping.json")) {
@@ -397,6 +442,68 @@ test("SUB-421 R18: a partition whose old knowledge store is refused still lists 
   assert.deepEqual(await treeDigest(m.base), before);
 });
 
+test("SUB-421 R20: a batch mapping omits only the declared TMS store, keeps its two-file evidence and pending gate, and carries other knowledge byte for byte", async (context) => {
+  const m = await machine(context);
+  const tms = await oldKnowledgePartition(m, "TMS", true);
+  const healthy = await oldKnowledgePartition(m, "healthy");
+  const projects = { TMS: await project(m, "TMS"), healthy: await project(m, "healthy") };
+  const plain = [
+    { partition: "TMS", legacyWorkspace: tms.root, projectRoot: projects.TMS },
+    { partition: "healthy", legacyWorkspace: healthy.root, projectRoot: projects.healthy },
+  ];
+  const mappingFile = await writeMapping(m, plain);
+  const input = { mapping: await readMigrationMapping(mappingFile), mappingFile, home: m.home, deviceHome: m.deviceHome, legacyDeviceHome: m.legacyDevice, at: at() };
+  const oldBefore = [await treeDigest(tms.root), await treeDigest(healthy.root)];
+  installTripwire([tms.root, healthy.root]);
+  const refused = await planMigration(input);
+  assert.deepEqual(refused.migration.partitions.map((entry) => entry.action), ["blocked", "import"]);
+  assert.deepEqual(refused.blockers.map((blocker) => [blocker.reasonCode, blocker.path]), [["KNOWLEDGE_RECORD_INVALID", join(tms.knowledge, "store.json")]]);
+  const written = [];
+  const recorder = { write: (...args) => written.push(args), backup: () => {}, backupDirectory: () => join(m.base, "backups") };
+  await assert.rejects(applyMigration(recorder, { migration: refused.migration, deviceHome: m.deviceHome, at: input.at }), (error) => error.reasonCode === "SETUP_BLOCKED");
+  for (const root of Object.values(projects)) await assert.rejects(stat(join(root, DIRECTORY.library)), { code: "ENOENT" });
+  const omission = { reason: "MIN-240 (b): leave TMS knowledge behind and rebuild its two cards after the actual migration" };
+  const explicit = [{ ...plain[0], omitLegacyKnowledge: omission }, plain[1]];
+  // The mapping itself is outside the protected old trees.
+  await writeMapping(m, explicit, mappingFile);
+  const acceptedInput = { ...input, mapping: await readMigrationMapping(mappingFile) };
+  const planned = await planMigration(acceptedInput);
+  assert.deepEqual(planned.blockers, []);
+  assert.deepEqual(planned.migration.partitions.map((entry) => entry.action), ["import", "import"]);
+  const tmsPlan = planned.migration.partitions[0];
+  assert.deepEqual([tmsPlan.knowledge, tmsPlan.knowledgeOmission.selection, tmsPlan.knowledgeOmission.reason, tmsPlan.knowledgeOmission.counts], [null, "omit", omission.reason, "unknown"]);
+  assert.deepEqual(tmsPlan.knowledgeOmission.files.filter((file) => file.issue?.reasonCode === "KNOWLEDGE_RECORD_INVALID").map((file) => file.file).sort(), tms.damaged.sort());
+  assert.deepEqual(tmsPlan.knowledgeOmission.unvalidatedCards.map((card) => card.externalKey).sort(), ["CARD-COUNT-ONLY-GATE", "CARD-FALSIFIABLE-NOT-CORRECT"]);
+  for (const entry of planned.migration.partitions) {
+    assert.deepEqual([entry.events, entry.headEventHash, entry.unsatisfiedGates], [expected.events, expected.headEventHash, [FIXTURE_GATE]]);
+  }
+  const applied = await applyMigration(recorder, { migration: planned.migration, deviceHome: m.deviceHome, at: input.at });
+  assert.deepEqual(applied.partitions[0].knowledgeOmission, tmsPlan.knowledgeOmission);
+  assert.deepEqual(applied.partitions[1].knowledge, planned.migration.partitions[1].knowledge);
+  for (const [name, old] of [["TMS", tms], ["healthy", healthy]]) {
+    const target = join(projects[name], DIRECTORY.library);
+    const listed = await listKnowledgeMetadata(target, { at: input.at, selection: "all", status: "all", limit: 100 });
+    assert.equal(listed.total, name === "TMS" ? 0 : 2);
+    const state = await materializeWorkspace(target);
+    assert.deepEqual(state.gates, replayLegacyWorkspace(await openLegacyWorkspace(old.root)).gates);
+    assert.deepEqual([applied.partitions.find((entry) => entry.partition === name).events, applied.partitions.find((entry) => entry.partition === name).headEventHash], [expected.events, expected.headEventHash]);
+  }
+  for (const directory of ["metadata", "bodies"]) for (const name of await readdir(join(healthy.knowledge, directory))) {
+    assert.deepEqual(await readFile(join(projects.healthy, DIRECTORY.library, DIRECTORY.knowledge, directory, name)), await readFile(join(healthy.knowledge, directory, name)));
+  }
+  assert.deepEqual(await readFile(join(projects.healthy, DIRECTORY.library, DIRECTORY.knowledge, "store.json")), await readFile(join(healthy.knowledge, "store.json")));
+  assert.deepEqual([await treeDigest(tms.root), await treeDigest(healthy.root)], oldBefore);
+  const again = await planMigration(acceptedInput);
+  assert.deepEqual(again.blockers, []);
+  assert.deepEqual(again.migration.partitions.map((entry) => entry.action), ["skip", "skip"]);
+  assert.deepEqual(again.migration.partitions[0].knowledgeOmission, tmsPlan.knowledgeOmission);
+  const skipped = await applyMigration(recorder, { migration: again.migration, deviceHome: m.deviceHome, at: input.at });
+  assert.deepEqual(skipped.partitions[0].knowledgeOmission, tmsPlan.knowledgeOmission);
+  const changed = await planMigration({ ...acceptedInput, mapping: { ...acceptedInput.mapping, partitions: [explicit[0], { ...plain[1], omitLegacyKnowledge: omission }] } });
+  assert.equal(changed.migration.partitions[1].action, "blocked", "an omission never removes already carried knowledge");
+  assert.equal(changed.blockers.some((blocker) => blocker.reasonCode === "LEGACY_IMPORT_MISMATCH"), true);
+});
+
 test("489-R1: with no --mapping and no old workspace in the project, the plan names the mapping and cannot be applied", async (context) => {
   const m = await machine(context);
   const before = await treeDigest(m.base);
@@ -453,6 +560,15 @@ test("489-R1: a mapping that does not read or does not check answers SETUP_ANSWE
     ["workspace-twice", mapping([good, { ...other, legacyWorkspace: good.legacyWorkspace }]), "legacyWorkspace"],
     ["project-twice", mapping([good, { ...other, projectRoot: `${good.projectRoot}/` }]), "projectRoot"],
     ["two-line-name", mapping([{ ...good, projectName: "two\nlines" }]), "projectName"],
+    ["omission-boolean", mapping([{ ...good, omitLegacyKnowledge: true }]), "omitLegacyKnowledge"],
+    ["omission-null", mapping([{ ...good, omitLegacyKnowledge: null }]), "omitLegacyKnowledge"],
+    ["omission-list", mapping([{ ...good, omitLegacyKnowledge: [] }]), "omitLegacyKnowledge"],
+    ["omission-no-reason", mapping([{ ...good, omitLegacyKnowledge: {} }]), "omitLegacyKnowledge.reason"],
+    ["omission-reason-number", mapping([{ ...good, omitLegacyKnowledge: { reason: 1 } }]), "omitLegacyKnowledge.reason"],
+    ["omission-reason-blank", mapping([{ ...good, omitLegacyKnowledge: { reason: " " } }]), "omitLegacyKnowledge.reason"],
+    ["omission-reason-lines", mapping([{ ...good, omitLegacyKnowledge: { reason: "two\nlines" } }]), "omitLegacyKnowledge.reason"],
+    ["omission-reason-long", mapping([{ ...good, omitLegacyKnowledge: { reason: "x".repeat(513) } }]), "omitLegacyKnowledge.reason"],
+    ["omission-extra", mapping([{ ...good, omitLegacyKnowledge: { reason: "why", unchecked: true } }]), "omitLegacyKnowledge.unchecked"],
   ];
   for (const [label, content, field] of cases) {
     const file = join(m.base, `${label}.json`);

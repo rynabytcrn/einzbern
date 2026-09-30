@@ -98,6 +98,7 @@ import {
   LIBRARY_ID_PATTERN,
   configProjectionStatus,
   defaultImportTarget,
+  DIRECTORY,
   importLegacyWorkspace,
   readRegistry,
   registerLibrary,
@@ -169,6 +170,7 @@ import type { JsonValue, PlannedDeliveryKind, WorkRecord, WorkStatus } from "../
 // it, so this import resolved to nothing; import elision hid the mistake from every
 // runtime check the repo had.
 import type { ProjectRecord } from "../../core/src/index.js";
+import { readMigrationMapping } from "../../core/src/migrate-legacy.js";
 
 // einzbern-release-verify's inputs: the unpacked tree and its stated install-tree digest.
 // The trust root, bundle, subject, repository, workflow and clock it took are retired with
@@ -1202,7 +1204,7 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "knowledge-snippet", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
   { name: "knowledge-source-check", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
   { name: "knowledge-validate", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
-  { name: "library-import-legacy", availability: "cli", mutates: true, flags: [{ name: "legacy", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "target", required: false, valueKind: "string" }, { name: "dry-run", required: false, valueKind: "boolean" }, { name: "project-name", required: false, valueKind: "string" }, { name: "git-remote", required: false, valueKind: "string" }] },
+  { name: "library-import-legacy", availability: "cli", mutates: true, flags: [{ name: "legacy", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "target", required: false, valueKind: "string" }, { name: "dry-run", required: false, valueKind: "boolean" }, { name: "project-name", required: false, valueKind: "string" }, { name: "git-remote", required: false, valueKind: "string" }, { name: "mapping", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-470 R1: this device's registry of libraries (registry.json in the device
   // directory). library-register writes the registry, never a project or a library.
   { name: "library-list", availability: "cli", mutates: false, flags: [] },
@@ -1990,15 +1992,27 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // nothing. The old workspace is only read. Without --target the library is .ether in the old
   // workspace root.
   if (command === "library-import-legacy") {
-    const values = parseArguments(rest, ["legacy", "at", "target", "dry-run", "project-name", "git-remote"]);
+    const values = parseArguments(rest, ["legacy", "at", "target", "dry-run", "project-name", "git-remote", "mapping"]);
     required(values, ["legacy", "at"]);
     const legacy = values.legacy ?? "";
     const dryRun = booleanValue(values["dry-run"], "dry-run");
-    io.write(canonicalJson(await importLegacyWorkspace(legacy, values.target ?? defaultImportTarget(legacy), {
+    const mapping = values.mapping === undefined ? null : await readMigrationMapping(values.mapping);
+    const entry = mapping?.partitions.find((candidate) => resolve(candidate.legacyWorkspace) === resolve(legacy));
+    if (mapping !== null && entry === undefined) {
+      throw new WorkflowCliError("SETUP_ANSWER_INVALID", "--legacy must name exactly one old workspace in --mapping", { file: resolve(values.mapping ?? ""), field: "legacyWorkspace" });
+    }
+    const mappedTarget = entry === undefined ? null : join(entry.projectRoot, DIRECTORY.library);
+    if (mappedTarget !== null && values.target !== undefined && resolve(values.target) !== resolve(mappedTarget)) {
+      throw new WorkflowCliError("SETUP_ANSWER_INVALID", "--target must be the matched mapping entry's project library", { file: resolve(values.mapping ?? ""), field: "target" });
+    }
+    const projectName = values["project-name"] ?? entry?.projectName;
+    const gitRemote = values["git-remote"] ?? entry?.gitRemote;
+    io.write(canonicalJson(await importLegacyWorkspace(legacy, values.target ?? mappedTarget ?? defaultImportTarget(legacy), {
       createdAt: values.at ?? "",
       dryRun,
-      ...(values["project-name"] === undefined ? {} : { projectName: values["project-name"] }),
-      ...(values["git-remote"] === undefined ? {} : { gitRemote: values["git-remote"] }),
+      ...(projectName === undefined ? {} : { projectName }),
+      ...(gitRemote === undefined ? {} : { gitRemote }),
+      ...(entry?.omitLegacyKnowledge === undefined ? {} : { omitLegacyKnowledge: entry.omitLegacyKnowledge }),
     }) as unknown as JsonValue));
     return;
   }

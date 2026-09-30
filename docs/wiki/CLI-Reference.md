@@ -500,6 +500,7 @@
 | `--dry-run` | 可选 | `boolean` |
 | `--project-name` | 可选 | `string` |
 | `--git-remote` | 可选 | `string` |
+| `--mapping` | 可选 | `string` |
 
 ## `library-list`
 

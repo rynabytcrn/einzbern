@@ -43,7 +43,7 @@ test("S369, STORY-484 R3: settings are sorted in source, the dispatch keys retir
   const keyType = source.match(/export type SettingKey =([\s\S]*?);/u)?.[1] ?? "";
   const catalogSource = source.match(/const catalogEntries:[\s\S]*?= \[([\s\S]*?)\];\n\nexport const SETTINGS_CATALOG/u)?.[1] ?? "";
   const sourceTypeKeys = [...keyType.matchAll(/\|\s*"([^"]+)"/gu)].map((match) => match[1]);
-  const sourceCatalogKeys = [...catalogSource.matchAll(/\bkey:\s*"([^"]+)"/gu)].map((match) => match[1]);
+  const sourceCatalogKeys = [...catalogSource.matchAll(/^ {4}key:\s*"([^"]+)",$/gmu)].map((match) => match[1]);
   assert.deepEqual(sourceTypeKeys, [...sourceTypeKeys].sort(), "SettingKey union must be independently sorted in source");
   assert.deepEqual(sourceCatalogKeys, [...sourceCatalogKeys].sort(), "catalogEntries must be independently sorted in source");
   assert.deepEqual(sourceTypeKeys, sourceCatalogKeys, "SettingKey and catalogEntries must use the same source order");

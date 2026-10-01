@@ -23,7 +23,6 @@ import assert from "node:assert/strict";
 import { mkdtemp, realpath, rm, writeFile, readFile, readdir } from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { promisify } from "node:util";
 import { ATELIER_SURFACE, withSurface } from "./helpers/workspace-fixture.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -219,7 +218,7 @@ for (const [language, translated] of Object.entries({
     assert.equal(KNOWLEDGE_EXPANSION_LIMITS.maximumBytes, 1024);
 
     const freshScript = `const core = await import(process.argv[1]); const [root,id,at] = process.argv.slice(2); const state = await core.materializeWorkspaceFromGenesis(root); console.log(JSON.stringify({ settings: state.settings, list: await core.listKnowledgeMetadata(root,{at,allowTrailing:true}), snippet: await core.readKnowledgeSnippet(root,id), body: await core.readKnowledgeBody(root,id,{at,allowTrailing:true}) }));`;
-    const { stdout } = await promisify(execFile)(process.execPath, ["--input-type=module", "--eval", freshScript, new URL("../dist/build/packages/core/src/index.js", import.meta.url).href, workspace, record.id, instant(12)], { env: process.env, maxBuffer: 32e6 });
+    const { stdout } = await runFreshProcess(["--input-type=module", "--eval", freshScript, new URL("../dist/build/packages/core/src/index.js", import.meta.url).href, workspace, record.id, instant(12)], { env: process.env, maxBuffer: 32e6 });
     const fresh = JSON.parse(stdout);
     assert.deepEqual(fresh.list.records[0], record);
     assert.equal(fresh.snippet.snippet, translated);
@@ -660,6 +659,18 @@ async function writeBundle(path, bundle) {
 function cliJson(argv) {
   let output = "";
   return runCli(argv, { write(value) { output = value; } }).then(() => JSON.parse(output));
+}
+
+function runFreshProcess(args, options) {
+  return new Promise((resolveRun, rejectRun) => {
+    execFile(process.execPath, args, options, (error, stdout, stderr) => {
+      if (error !== null) {
+        rejectRun(error);
+        return;
+      }
+      resolveRun({ stdout, stderr });
+    });
+  });
 }
 
 test("STORY-364 R3: knowledge-create reaches the write-path hook, and is refused without answers", async (context) => {

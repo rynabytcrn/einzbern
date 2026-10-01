@@ -48,6 +48,7 @@ import {
 import {
   ARTIFACT_LANGUAGE_TAGS,
   KNOWLEDGE_EXPANSION_LIMITS,
+  expansionsAreBounded,
   expansionsText,
   parsePromptLanguages,
 } from "../dist/build/packages/core/src/knowledge-language.js";
@@ -134,7 +135,7 @@ const englishCard = {
   externalKey: "STORY-364-ENGLISH",
 };
 
-test("STORY-364: character ratio, not a language identifier, decides which language prose is in", () => {
+test("STORY-364: deterministic script and word cues cover the closed language roster", () => {
   assert.equal(detectLanguage("Credentials are not a prerequisite"), "en");
   assert.equal(detectLanguage("凭据不是实现的前置"), "zh-CN");
   assert.equal(detectLanguage("凭据不是实现的前置，见 STORY-364 的 scope"), "zh-CN",
@@ -145,7 +146,59 @@ test("STORY-364: character ratio, not a language identifier, decides which langu
   assert.equal(detectLanguage("context-limit-is-not-a-reason-to-stop:停只因实质阻塞。"), "zh-CN");
   assert.equal(detectLanguage("marker-rebase-discipline:每写必 rebase。"), "zh-CN");
   assert.equal(detectLanguage("corepack pnpm run test；裸 pnpm 撞 RUNTIME_PNPM_VERSION。"), "zh-CN");
-  assert.deepEqual([...ARTIFACT_LANGUAGE_TAGS], ["en", "zh-CN"]);
+  assert.equal(detectLanguage("日本語の質問を検索します"), "ja");
+  assert.equal(detectLanguage("한국어 질문을 검색합니다"), "ko");
+  assert.equal(detectLanguage("Les identifiants ne sont pas nécessaires à la mise en œuvre"), "fr");
+  assert.equal(detectLanguage("Bonjour"), "fr", "short French greetings use a narrow cue");
+  assert.equal(detectLanguage("résumé"), "en", "an isolated ambiguous word does not prove French");
+  assert.deepEqual([...ARTIFACT_LANGUAGE_TAGS], ["en", "fr", "ja", "ko", "zh-CN"]);
+});
+
+test("STORY-364: write translation answers are verified against English, French, Japanese, and Korean targets", () => {
+  const input = { subject: "Credentials are not a prerequisite", summary: "The key does not block implementation", snippet: "Build against the interface" };
+  const translations = {
+    fr: "Les identifiants ne sont pas nécessaires à la mise en œuvre",
+    ja: "認証情報は実装の前提ではありません",
+    ko: "자격 증명은 구현의 선행 조건이 아닙니다",
+  };
+  for (const [target, answer] of Object.entries(translations)) {
+    const policy = { artifactLanguage: target, promptLanguages: [target], economyModel: ECONOMY_MODEL };
+    const written = applyWriteLanguagePolicy(input, policy, provider({
+      translate: () => answer,
+      expand: () => ["A", "B", "C"],
+    }));
+    for (const field of ["subject", "summary", "snippet"]) assert.equal(detectLanguage(written[field]), target);
+    assert.deepEqual(Object.keys(written.expansions), [target]);
+  }
+});
+
+test("STORY-364: five-language writes keep the existing bounded expansion contract", () => {
+  const fields = { subject: "Credentials are not a prerequisite", summary: "The key does not block implementation", snippet: "Build against the interface" };
+  const policy = { artifactLanguage: "fr", promptLanguages: [...ARTIFACT_LANGUAGE_TAGS], economyModel: ECONOMY_MODEL };
+  const written = applyWriteLanguagePolicy(fields, policy, provider({
+    translate: () => "Les identifiants ne sont pas nécessaires à la mise en œuvre",
+    expand: (_subject, _summary, language) => [`A ${language}`, `B ${language}`, `C ${language}`],
+  }));
+  assert.deepEqual(Object.keys(written.expansions), ["en", "fr", "ja", "ko", "zh-CN"]);
+  assert.equal(expansionsAreBounded(written.expansions), true);
+  assert.equal(KNOWLEDGE_EXPANSION_LIMITS.maximumBytes, 1_024, "the existing whole-card byte budget is unchanged");
+  assert.equal(expansionsAreBounded({ de: ["A", "B", "C"] }), false, "unknown language keys remain rejected");
+});
+
+test("STORY-364: sparse legacy English/Chinese expansion maps remain replayable", async (context) => {
+  const workspace = await languageWorkspace(context, {
+    "artifact.language": "en",
+    "retrieval.promptLanguages": "en,zh-CN",
+    "models.tiers": MODELS_TIERS_VALUE,
+  });
+  const written = await captureKnowledgeUnit(workspace, englishCard, { languageProvider: provider(), host: "claude-code" });
+  assert.equal(written.reasonCode, "KNOWLEDGE_UNIT_CREATED");
+  const records = (await listKnowledgeMetadata(workspace, { at: instant(12), allowTrailing: true })).records;
+  assert.equal(records.length, 1, "the current reader replays a card that has only the prior two language keys");
+  assert.deepEqual(Object.keys(records[0].expansions), ["en", "zh-CN"]);
+  assert.equal(expansionsAreBounded({ en: ["a", "b", "c"], "zh-CN": ["a", "b", "c"] }), true);
+  assert.equal(expansionsAreBounded({ en: ["a", "b", "c"], "zh-CN": ["a", "b", "c"], fr: ["a", "b", "c"] }), true,
+    "new sparse or mixed-era cards need not carry every newly supported language key");
 });
 
 test("STORY-364: a single quoted ideograph is below the zh-CN threshold, so the sentence stays English", () => {
@@ -389,8 +442,9 @@ test("STORY-364: phrasings outside the normative bounds are refused", () => {
 
 test("STORY-364: the settings catalog admits the language keys and refuses a tag it cannot judge", () => {
   assert.equal(validateSettingValue("artifact.language", "zh-CN"), "zh-CN");
+  for (const language of ["en", "fr", "ja", "ko", "zh-CN"]) assert.equal(validateSettingValue("artifact.language", language), language);
   assert.throws(() => validateSettingValue("artifact.language", "de-DE"), (error) => error.reasonCode === "SETTINGS_VALUE_INVALID");
-  assert.equal(validateSettingValue("retrieval.promptLanguages", "en,zh-CN"), "en,zh-CN");
+  assert.equal(validateSettingValue("retrieval.promptLanguages", "en,fr,ja,ko,zh-CN"), "en,fr,ja,ko,zh-CN");
   assert.throws(() => validateSettingValue("retrieval.promptLanguages", "en,de-DE"), (error) => error.reasonCode === "SETTINGS_VALUE_INVALID");
   assert.throws(
     () => validateSettingValue(RETIRED_ECONOMY_SETTING_KEY, ECONOMY_MODEL),
@@ -398,6 +452,7 @@ test("STORY-364: the settings catalog admits the language keys and refuses a tag
     "the retired economy-tier key is no longer an active catalog setting",
   );
   assert.deepEqual([...parsePromptLanguages("zh-CN,en")], ["en", "zh-CN"], "the list is read canonically sorted");
+  assert.deepEqual([...parsePromptLanguages("zh-CN,ko,ja,fr,en")], ["en", "fr", "ja", "ko", "zh-CN"]);
   assert.deepEqual([...parsePromptLanguages(null)], []);
 });
 

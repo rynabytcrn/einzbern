@@ -1226,6 +1226,9 @@ html[data-tcrn-theme="dark"] [data-theme-icon="dark"],
 .tcrn-table-shell__row:last-child .tcrn-table-shell__cell {
   border-bottom: 0;
 }
+.tcrn-table-shell__row[data-transient-target="true"] > .tcrn-table-shell__cell {
+  background: var(--tcrn-selection-fill);
+}
 .tcrn-table-shell__empty {
   padding: var(--tcrn-space-3);
   color: var(--tcrn-color-text-secondary);
@@ -1713,6 +1716,10 @@ a.tcrn-relationship-chip:focus-visible {
    which is exactly what produced the double frame consumers reported. */
 .tcrn-record-row[data-selected="true"] {
   border-color: var(--tcrn-selection-edge);
+}
+.tcrn-record-row[data-transient-target="true"] {
+  border-color: var(--tcrn-selection-edge);
+  background: var(--tcrn-selection-fill);
 }
 .tcrn-record-row__id,
 .tcrn-record-row__summary,
@@ -2712,6 +2719,11 @@ a.tcrn-relationship-chip:focus-visible {
 .tcrn-field__label {
   font-weight: 600;
 }
+.tcrn-field:is(fieldset) {
+  min-inline-size: 0;
+  padding: 0;
+  border: 0;
+}
 
 .tcrn-field__hint {
   color: var(--tcrn-color-text-secondary);
@@ -3043,6 +3055,10 @@ a.tcrn-relationship-chip:focus-visible {
   min-width: 0;
   padding-block: var(--tcrn-space-2);
   border-block-end: 1px solid var(--tcrn-color-border-subtle);
+}
+.tcrn-setting-row[data-transient-target="true"] {
+  border-block-end-color: var(--tcrn-selection-edge);
+  background: var(--tcrn-selection-fill);
 }
 .tcrn-setting-row__label,
 .tcrn-setting-row__control,
@@ -3500,6 +3516,14 @@ a.tcrn-relationship-chip:focus-visible {
 .tcrn-data-grid { inline-size: 100%; border-collapse: collapse; }
 .tcrn-data-grid th, .tcrn-data-grid td { padding: var(--tcrn-space-2) var(--tcrn-space-3); text-align: start; border-block-end: 1px solid var(--tcrn-color-border-subtle); }
 .tcrn-data-grid__sort { border: 0; background: none; cursor: pointer; font: inherit; padding: 0; }
+.tcrn-multi-select-group{display:grid;gap:var(--tcrn-space-2);min-inline-size:0;max-inline-size:100%}
+.tcrn-multi-select-group__options{display:grid;gap:var(--tcrn-space-1);min-inline-size:0;margin:0;padding:0;border:0}
+.tcrn-multi-select-group__option{display:flex;align-items:flex-start;gap:var(--tcrn-space-2);min-inline-size:0;overflow-wrap:anywhere}
+.tcrn-multi-select-group__option input{flex:0 0 auto;margin-block-start:var(--tcrn-space-0h)}
+.tcrn-multi-select-group__actions{display:flex;justify-content:flex-start}
+.tcrn-multi-select-group__clear{min-block-size:32px;padding-inline:var(--tcrn-space-2);border:1px solid var(--tcrn-color-border-control);border-radius:var(--tcrn-radius-control);background:transparent;color:var(--tcrn-color-text-secondary);font:inherit;cursor:pointer}
+.tcrn-multi-select-group__clear:disabled{cursor:not-allowed;opacity:.64}
+.tcrn-multi-select-group__clear:not(:disabled):hover{border-color:var(--tcrn-color-brand-primary);color:var(--tcrn-color-brand-primary)}
 
 /* DS-106/107 settings contract. */
 .tcrn-setting-choice{display:grid;gap:var(--tcrn-space-1);min-inline-size:0;max-inline-size:100%}
@@ -3518,13 +3542,18 @@ a.tcrn-relationship-chip:focus-visible {
 .tcrn-settings-layout__nav>:is(.tcrn-segmented-nav,.tcrn-section-tabs,.tcrn-module-tabs){flex-wrap:nowrap;max-inline-size:max-content}
 .tcrn-settings-layout__content{display:grid;gap:var(--tcrn-space-4);min-inline-size:0;container:tcrn-settings-content/inline-size}
 .tcrn-settings-layout__form{display:grid;gap:var(--tcrn-space-2);min-inline-size:0}
+.tcrn-settings-layout__form>.tcrn-setting-row-list{display:grid;grid-template-columns:minmax(0,1fr);min-inline-size:0}
+.tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row{display:grid;grid-column:1/-1;grid-template-columns:minmax(0,1fr);gap:var(--tcrn-space-2)}
+.tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row__tools:empty{display:none}
 .tcrn-settings-layout__form .tcrn-setting-row{grid-template-columns:minmax(0,1fr);gap:var(--tcrn-space-2)}
 .tcrn-settings-layout__form .tcrn-setting-row__control{inline-size:100%;grid-column:auto;grid-row:auto}
 .tcrn-settings-layout__form .tcrn-setting-row__tools{grid-column:auto;grid-row:auto}
-.tcrn-settings-layout__form .tcrn-setting-row__control>:is(.tcrn-input,.tcrn-select){inline-size:100%;min-inline-size:0}
+.tcrn-settings-layout__form .tcrn-setting-row__control>:is(.tcrn-input,.tcrn-select,.tcrn-field,.tcrn-setting-choice,.tcrn-number-input-field,.tcrn-multi-select-group){inline-size:100%;min-inline-size:0}
+.tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field :is(.tcrn-input,.tcrn-select,.tcrn-number-input){inline-size:100%;min-inline-size:0}
+.tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field{margin-block:0}
 .tcrn-settings-layout__form .tcrn-setting-row__control>.tcrn-number-input{inline-size:100%}
 @container tcrn-settings-layout-frame (min-width:960px){.tcrn-settings-layout__grid{grid-template-columns:minmax(0,var(--tcrn-container-settings-local-nav)) minmax(0,1fr)}}
-@container tcrn-settings-content (min-width:720px){.tcrn-settings-layout__form .tcrn-setting-row{grid-template-columns:minmax(0,1fr) minmax(var(--tcrn-container-settings-control-min),.8fr) max-content}.tcrn-settings-layout__form .tcrn-setting-row__tools{justify-content:flex-end}}
+@container tcrn-settings-content (min-width:720px){.tcrn-settings-layout__form .tcrn-setting-row-list{grid-template-columns:minmax(0,1fr) minmax(var(--tcrn-container-settings-control-min),.8fr) max-content}.tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row{grid-template-columns:subgrid}.tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row__tools{justify-content:flex-end}.tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row__control>:is(.tcrn-field,.tcrn-setting-choice,.tcrn-number-input-field,.tcrn-multi-select-group){inline-size:100%;min-inline-size:0}}
 
 /* DS-113/114/115 full-surface boundary and content rules. These follow the settings
    contract marker so Storybook's global package CSS carries them once while the
@@ -3789,7 +3818,6 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .tcrn-search-result { display: grid; gap: var(--tcrn-space-1); width: 100%; padding: var(--tcrn-space-2); border: 0; border-radius: var(--tcrn-radius-control); background: transparent; color: var(--tcrn-color-text-primary); text-align: left; }
 .tcrn-search-result:hover, .tcrn-search-result[aria-current="true"] { background: var(--tcrn-color-brand-primary-bg); }
 .tcrn-search-result__meta { color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); }
-.tcrn-highlight { box-shadow: 0 0 0 2px var(--tcrn-color-brand-primary); }
 .tcrn-detail-drawer { position: fixed; z-index: var(--tcrn-z-overlay); top: 0; right: 0; bottom: 30px; width: min(400px, 94vw); overflow: auto; border-left: 1px solid var(--tcrn-color-border-strong); box-shadow: var(--tcrn-elevation-floating); transform: translateX(0); transition: transform var(--tcrn-motion-standard) var(--tcrn-motion-ease-drawer); }
 .tcrn-detail-drawer[data-open="false"] { visibility: hidden; pointer-events: none; transform: translateX(100%); }
 .tcrn-detail-drawer__head { display: flex; justify-content: space-between; align-items: center; gap: var(--tcrn-space-3); margin-bottom: var(--tcrn-space-4); }
@@ -4362,7 +4390,7 @@ const BOOT = __PORTAL_BOOT__;
   const storedTheme = tcrnReadPreference("theme", ["light", "dark"], null);
   const machineTheme = ["light", "dark"].includes(BOOT.machineDefaults?.theme) ? BOOT.machineDefaults.theme : null;
   if (storedTheme === null && machineTheme !== null) document.documentElement.dataset.tcrnTheme = machineTheme;
-  const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? "en", theme: document.documentElement.dataset.tcrnTheme, page: "dashboard", dashboardTab: "overview", settingGroup: "general", collections: { "models.category": { draft: null, dirty: false, findings: [], refusal: null }, "models.tiers": { draft: null, dirty: false, findings: [], refusal: null } }, collectionFocus: null, settings: null, machineSettings: null, variables: null, vocabulary: null, status: null, work: null, workRead: { library: 0, readingFor: null, again: false }, knowledge: null, knowledgeQuery: "", knowledgeStatus: "valid", knowledgeBody: null, gates: [], gateResponse: null, lastGateRun: null, commands: [], selectedVocabulary: "conferenceTypes", receipt: null, operationDetailsOpen: false, agentsText: "", reconciliation: null, rules: null, pendingSection: "", searchIndex: [], searchResults: [], searchSelection: 0 };
+  const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? "en", theme: document.documentElement.dataset.tcrnTheme, page: "dashboard", dashboardTab: "overview", settingGroup: "general", collections: { "models.category": { draft: null, dirty: false, findings: [], refusal: null }, "models.tiers": { draft: null, dirty: false, findings: [], refusal: null } }, collectionFocus: null, transientTargetTimer: null, settings: null, machineSettings: null, variables: null, vocabulary: null, status: null, work: null, workRead: { library: 0, readingFor: null, again: false }, knowledge: null, knowledgeQuery: "", knowledgeStatus: "valid", knowledgeBody: null, gates: [], gateResponse: null, lastGateRun: null, commands: [], selectedVocabulary: "conferenceTypes", receipt: null, operationDetailsOpen: false, agentsText: "", reconciliation: null, rules: null, pendingSection: "", searchIndex: [], searchResults: [], searchSelection: 0 };
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   // DS Tabs is a behavior contract, not a role decoration. Every tablist below
@@ -4563,7 +4591,18 @@ const BOOT = __PORTAL_BOOT__;
     });
     renderReceipt();
   };
-  const navigate = (page) => {
+  const clearTransientTarget = () => {
+    if (state.transientTargetTimer !== null) clearTimeout(state.transientTargetTimer);
+    state.transientTargetTimer = null;
+    state.collectionFocus = null;
+    $$('[data-transient-target="true"]').forEach((target) => target.removeAttribute("data-transient-target"));
+  };
+  const armTransientTarget = () => {
+    if (state.transientTargetTimer !== null) clearTimeout(state.transientTargetTimer);
+    state.transientTargetTimer = setTimeout(clearTransientTarget, 2400);
+  };
+  const navigate = (page, { preserveTransientTarget = false } = {}) => {
+    if (!preserveTransientTarget) clearTransientTarget();
     state.page = page;
     $$('[data-page]').forEach((section) => { section.hidden = section.dataset.page !== page; });
     $$('[data-page-target]').forEach((button) => { if (button.dataset.pageTarget) button.setAttribute("aria-current", button.dataset.pageTarget === page ? "page" : "false"); });
@@ -4803,9 +4842,9 @@ const BOOT = __PORTAL_BOOT__;
       staticOverlayMounts.add({ trigger, layer, handle });
     }
   };
-  const settingChoiceAttrs = (values, key = "", reasonOverride = "") => {
+  const settingChoiceAttrs = (values, key = "", reasonOverride = "", control = "select") => {
     const reason = reasonOverride || (values.length === 2 ? "option-measurement-required" : "option-count-requires-select");
-    return `data-setting-choice="true" data-setting-choice-semantic="value-selection" data-setting-choice-control="select" data-setting-key="${esc(key)}" data-setting-choice-option-count="${values.length}" data-setting-choice-fit="false" data-setting-choice-rejection-reason="${reason}"`;
+    return `data-setting-choice="true" data-setting-choice-semantic="value-selection" data-setting-choice-control="${control}" data-setting-key="${esc(key)}" data-setting-choice-option-count="${values.length}" data-setting-choice-fit="false" data-setting-choice-rejection-reason="${reason}"`;
   };
   const promptLanguageRoster = () => {
     const values = currentSetting("artifact.language")?.allowedValues;
@@ -4815,12 +4854,12 @@ const BOOT = __PORTAL_BOOT__;
     const selected = new Set(String(value ?? "").split(",").map((part) => part.trim()).filter((part) => roster.includes(part)));
     return roster.filter((language) => selected.has(language));
   };
-  const promptLanguageLabel = (language) => BOOT.localeMetadata?.find((entry) => entry.locale === language)?.nativeName || language;
+  const promptLanguageLabel = (language) => `${BOOT.localeMetadata?.find((entry) => entry.locale === language)?.nativeName || language} (${language})`;
   const promptLanguageChoice = (entry, label, id) => {
     const roster = promptLanguageRoster();
     const selected = new Set(promptLanguageSelection(entry.currentValue, roster));
-    const options = roster.map((language) => `<option value="${esc(language)}" data-setting-option-value="${esc(language)}" ${selected.has(language) ? "selected" : ""}>${esc(promptLanguageLabel(language))} (${esc(language)})</option>`).join("");
-    return `<div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(roster, entry.key, "option-count-requires-select")} data-setting-choice-cardinality="set" data-setting-choice-source="artifact.language.allowedValues" data-setting-choice-value-format="comma-separated"><label class="tcrn-setting-choice__select-label" for="${esc(id)}"><span class="tcrn-field__label">${esc(label)}</span><select class="tcrn-select" id="${esc(id)}" multiple size="${Math.max(2, Math.min(5, roster.length))}" data-setting-cardinality="set" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set" aria-label="${esc(label)}">${options}</select></label></div>`;
+    const options = roster.map((language, index) => `<label class="tcrn-multi-select-group__option" for="${esc(id)}-option-${index}"><input id="${esc(id)}-option-${index}" class="tcrn-checkbox" type="checkbox" name="${esc(entry.key)}" value="${esc(language)}" data-setting-option-value="${esc(language)}" ${selected.has(language) ? "checked" : ""}><span>${esc(promptLanguageLabel(language))}</span></label>`).join("");
+    return `<div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(roster, entry.key, "collection-closed", "multi-select")} data-setting-choice-cardinality="set" data-setting-choice-source="artifact.language.allowedValues" data-setting-choice-value-format="comma-separated"><span id="${esc(id)}-label" class="tcrn-field__label">${esc(label)}</span><div class="tcrn-multi-select-group"><div class="tcrn-multi-select-group__options" id="${esc(id)}" role="group" aria-labelledby="${esc(id)}-label" data-choice-cardinality="collection" data-choice-value-mode="closed" data-choice-presentation="checkboxes" data-choice-option-count="${roster.length}" data-setting-cardinality="set" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set">${options}</div><div class="tcrn-multi-select-group__actions"><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--sm tcrn-multi-select-group__clear" data-reset-setting="${esc(entry.key)}" ${selected.size === 0 ? "disabled" : ""}>${esc(t("setting.retrieval.promptLanguages.reset"))}</button></div></div></div>`;
   };
   // A device key is written through machine-settings-set. The default library's legal values are the
   // libraries this device has registered, so they come from the boot payload rather than from a closed
@@ -4847,7 +4886,7 @@ const BOOT = __PORTAL_BOOT__;
     if (entry.controlType === "boolean") return `<label class="tcrn-switch" data-switch-state="${current === (entry.trueValue || "allowed") ? "on" : "off"}"><input class="tcrn-switch__control" type="checkbox" role="switch" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set" data-setting-value="${esc(entry.trueValue || "allowed")}" ${current === (entry.trueValue || "allowed") ? "checked" : ""}><span class="tcrn-switch__label">${esc(current === (entry.trueValue || "allowed") ? t("config.enabled") : t("config.disabled"))}</span></label>`;
     if (entry.controlType === "number") return `<div class="tcrn-number-input-field"><label class="tcrn-field" for="${esc(id)}"><span class="tcrn-sr-only">${esc(label)}</span><input class="tcrn-input tcrn-number-input" id="${esc(id)}" type="number" min="${esc(entry.min)}" max="${esc(entry.max)}" step="1" value="${esc(current)}" data-number-input-component="NumberInput" data-number-input="true" data-number-input-semantic="numeric-entry" data-number-input-visibility="full-value" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set" aria-label="${esc(label)}"></label><span class="tcrn-setting-choice__hint">${esc(entry.min)}–${esc(entry.max)}</span></div>`;
     if (entry.key === "retrieval.promptLanguages") return promptLanguageChoice(entry, label, id);
-    if (entry.controlType === "enum" && values.length > 0) return `<div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(values, entry.key)}><label class="tcrn-setting-choice__select-label" for="${esc(id)}"><span class="tcrn-sr-only">${esc(label)}</span><select class="tcrn-select" id="${esc(id)}" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set">${values.map((value) => `<option value="${esc(value)}" ${value === current ? "selected" : ""}>${esc(value || t("config.unset"))}</option>`).join("")}</select></label></div>`;
+    if (entry.controlType === "enum" && values.length > 0) return `<div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(values, entry.key)}><label class="tcrn-setting-choice__select-label" for="${esc(id)}"><span class="tcrn-sr-only">${esc(label)}</span><select class="tcrn-select" id="${esc(id)}" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set">${values.map((value) => `<option value="${esc(value)}" ${value === current ? "selected" : ""}>${esc(entry.key === "artifact.language" ? promptLanguageLabel(value) : value || t("config.unset"))}</option>`).join("")}</select></label></div>`;
     return `<label class="tcrn-field"><span class="tcrn-sr-only">${esc(label)}</span><input class="tcrn-input" id="${esc(id)}" value="${esc(current)}" placeholder="${esc(entry.defaultValue ?? t("config.unset"))}" aria-label="${esc(label)}" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set"></label>`;
   };
   // INC-193: the design authority is a declaration, and what is behind it is an
@@ -4909,13 +4948,13 @@ const BOOT = __PORTAL_BOOT__;
   };
   const deviceSettingRow = (entry) => {
     const description = entry.appliesOn === "restart" ? `${settingDescription(entry.key)} ${t("settings.machineRestart")}` : settingDescription(entry.key);
-    return `<div class="tcrn-setting-row" data-machine-row="${esc(entry.key)}" data-setting-shape="scalar">${settingRowLabel(entry, description)}<div class="tcrn-setting-row__control">${deviceControlFor(entry)}</div></div>`;
+    return `<div class="tcrn-setting-row" data-machine-row="${esc(entry.key)}" data-setting-shape="scalar">${settingRowLabel(entry, description)}<div class="tcrn-setting-row__control">${deviceControlFor(entry)}</div><div class="tcrn-setting-row__tools"></div></div>`;
   };
   const collectionSettingRow = (entry) => {
     const page = COLLECTION_PAGES[entry.key];
     const count = `<span class="tcrn-meta" data-collection-count>${esc(t("settings.collectionCount", { count: storedRecords(entry.key).length }))}</span>`;
     const link = page === undefined ? "" : `<button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-collection-link="${esc(page)}">${esc(t("settings.collectionOpen"))}</button>`;
-    return `<div class="tcrn-setting-row" data-setting-row="${esc(entry.key)}" data-setting-shape="collection">${settingRowLabel(entry, settingDescription(entry.key))}<div class="tcrn-setting-row__control">${link}${count}</div></div>`;
+    return `<div class="tcrn-setting-row" data-setting-row="${esc(entry.key)}" data-setting-shape="collection">${settingRowLabel(entry, settingDescription(entry.key))}<div class="tcrn-setting-row__control">${link}${count}</div><div class="tcrn-setting-row__tools"></div></div>`;
   };
   const settingRow = (entry) => entry.layer === "device" ? deviceSettingRow(entry) : entry.shape === "collection" ? collectionSettingRow(entry) : projectSettingRow(entry);
   const renderSettings = () => {
@@ -4944,7 +4983,7 @@ const BOOT = __PORTAL_BOOT__;
     const phase = loading ? "loading" : unavailable ? "error" : entries.length === 0 ? "empty" : "content";
     const stateText = phase === "loading" ? t("config.loading") : phase === "error" ? state.settings?.reasonCode || t("health.unavailable") : t("config.empty");
     const body = phase === "content"
-      ? `<div class="tcrn-content-scope__content">${entries.map(settingRow).join("")}</div>`
+      ? `<div class="tcrn-content-scope__content"><div class="tcrn-settings-layout__form"><div class="tcrn-setting-row-list" data-setting-row-list="true">${entries.map(settingRow).join("")}</div></div></div>`
       : `<div class="tcrn-state-surface" data-settings-state="${phase}">${esc(stateText)}</div>`;
     const valid = unavailable || deviceUnavailable ? "false" : "true";
     $("#settings-rows").innerHTML = `<section class="tcrn-surface tcrn-content-scope" data-content-scope="settings-group" data-content-group="${esc(state.settingGroup)}" data-content-source="engine.settings-catalog engine.machine-settings" data-content-phase="${phase}" data-content-valid="${valid}" data-content-shown-count="${entries.length}" data-content-total-count="${entries.length}" data-content-count-kind="total" data-content-stale="false"><div class="tcrn-surface__head"><div><h2>${esc(settingGroupName(state.settingGroup))}</h2><p class="tcrn-surface__note">${esc(t("settings.groupNote"))}</p></div></div>${body}</section>`;
@@ -4956,7 +4995,10 @@ const BOOT = __PORTAL_BOOT__;
     $$('[data-setting-control]', rows).forEach((control) => {
       if (control.tagName === "BUTTON") control.addEventListener("click", () => saveSetting(control.dataset.settingControl, control.dataset.settingValue));
       else if (control.getAttribute("data-setting-cardinality") === "set") control.addEventListener("change", () => {
-        const selected = [...new Set([...control.options].filter((option) => option.selected).map((option) => option.value))];
+        const values = control.dataset.choicePresentation === "checkboxes"
+          ? $$('input[type="checkbox"]', control).filter((option) => option.checked).map((option) => option.value)
+          : [...control.options].filter((option) => option.selected).map((option) => option.value);
+        const selected = [...new Set(values)];
         if (selected.length === 0) resetSetting(control.dataset.settingControl);
         else saveSetting(control.dataset.settingControl, selected.join(","));
       });
@@ -5041,10 +5083,10 @@ const BOOT = __PORTAL_BOOT__;
       if (typeof column.render === "function") return collectionCell(column, column.render(row, invalid.has(column.field)));
       return collectionInputCell(column, row[column.field] ?? "", invalid.has(column.field));
     }).join("");
-    const rowClass = highlighted ? "tcrn-table-shell__row tcrn-highlight" : "tcrn-table-shell__row";
+    const targetAttribute = highlighted ? ' data-transient-target="true"' : "";
     const invalidAttribute = findings.length === 0 ? "" : ' data-collection-row-invalid="true"';
     const findingRow = findings.length === 0 ? "" : `<div class="tcrn-table-shell__row tcrn-table-shell__empty-row" role="row" data-collection-finding-row="${index}"><div role="cell" data-collection-findings>${findings.map(findingAlert).join("")}</div></div>`;
-    return `<div class="${rowClass}" role="row" data-collection-row="${index}"${invalidAttribute}>${cells}</div>${findingRow}`;
+    return `<div class="tcrn-table-shell__row" role="row" data-collection-row="${index}"${targetAttribute}${invalidAttribute}>${cells}</div>${findingRow}`;
   };
   const collectionTable = ({ key, ui, label, columns, rows, findings, empty }) => {
     const focus = state.collectionFocus;
@@ -5093,7 +5135,7 @@ const BOOT = __PORTAL_BOOT__;
     return `<section class="tcrn-surface" data-escalation-summary aria-label="${esc(t("modelTiers.escalationTitle"))}"><div class="tcrn-surface__head"><div><h2>${esc(t("modelTiers.escalationTitle"))}</h2><p class="tcrn-surface__note">${esc(t("modelTiers.escalationNote"))}</p></div><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-escalation-settings-link>${esc(t("modelTiers.escalationChange"))}</button></div><div class="tcrn-list">${rows}</div></section>`;
   };
   const openEscalationSettings = () => {
-    state.collectionFocus = null;
+    clearTransientTarget();
     state.settingGroup = settingGroup(ESCALATION_KEYS[0]);
     navigate("settings");
     renderSettings();
@@ -5179,23 +5221,30 @@ const BOOT = __PORTAL_BOOT__;
     wireCollection(key, view);
   };
   const renderCollection = (key) => {
+    clearTransientTarget();
     if (key === "models.category") renderModelCategories();
     else if (key === "models.tiers") renderModelTiers();
   };
-  const renderCollections = () => { renderModelCategories(); renderModelTiers(); };
+  const renderCollections = ({ preserveTransientTarget = false } = {}) => {
+    if (!preserveTransientTarget) clearTransientTarget();
+    renderModelCategories(); renderModelTiers();
+  };
   const resetCollections = () => {
     for (const status of Object.values(state.collections)) Object.assign(status, { draft: null, dirty: false, findings: [], refusal: null });
-    state.collectionFocus = null;
+    clearTransientTarget();
   };
   // Open a collection's page, named by its page or its key, and mark the rows whose field holds a
   // value: a tier's category link opens that category, a category's tier count opens its tiers.
   const openCollection = (target, focus = null) => {
     const key = Object.hasOwn(COLLECTION_PAGES, target) ? target : collectionKeyOf(target);
     if (key === null) return;
+    clearTransientTarget();
     state.collectionFocus = focus === null ? null : { key, field: focus.field, value: focus.value };
-    navigate(COLLECTION_PAGES[key]);
-    renderCollections();
-    $(`[data-collection-table="${key}"] .tcrn-highlight`)?.scrollIntoView?.({ block: "center" });
+    navigate(COLLECTION_PAGES[key], { preserveTransientTarget: true });
+    renderCollections({ preserveTransientTarget: true });
+    const targetRow = focus === null ? null : $(`[data-collection-table="${key}"] [data-transient-target="true"]`);
+    targetRow?.scrollIntoView?.({ block: "center" });
+    if (targetRow) armTransientTarget();
   };
   const addCollectionRow = (key) => {
     const status = collectionState(key);
@@ -5863,14 +5912,17 @@ const BOOT = __PORTAL_BOOT__;
     if (result.key) {
       state.settingGroup = settingGroup(result.key); renderSettings();
       const target = $(`[data-setting-row="${CSS.escape(result.key)}"]`) ?? $(`[data-machine-row="${CSS.escape(result.key)}"]`);
-      target?.classList.add("tcrn-highlight"); target?.scrollIntoView?.({ block: "center" });
+      if (target) {
+        target.setAttribute("data-transient-target", "true");
+        target.scrollIntoView?.({ block: "center" });
+        armTransientTarget();
+      }
     }
   };
   // A destination chosen from the navigation opens unmarked: rows a link between the two model
   // pages marked are marked for that link only.
   $$('[data-page-target]').forEach((button) => button.addEventListener("click", () => {
     const marked = state.collectionFocus !== null;
-    state.collectionFocus = null;
     navigate(button.dataset.pageTarget);
     if (marked) renderCollections();
   }));

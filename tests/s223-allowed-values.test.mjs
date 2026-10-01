@@ -48,7 +48,7 @@ test("S223: settings-catalog exposes the engine-owned enum values", async (t) =>
   // TCRN-CROSS-STORY-484 R3 retired backup.cadence, the enum this test read first; artifact.language
   // is the enum left.
   const language = readback.settings.find((entry) => entry.key === "artifact.language");
-  assert.deepEqual(language.allowedValues, ["en", "zh-CN"]);
+  assert.deepEqual(language.allowedValues, ["en", "fr", "ja", "ko", "zh-CN"]);
   assert.deepEqual(language.allowedValues, SETTINGS_CATALOG.find((entry) => entry.key === "artifact.language").allowedValues);
   assert.equal(Object.hasOwn(readback.settings.find((entry) => entry.key === "design.authority"), "allowedValues"), false);
 });
@@ -60,12 +60,12 @@ test("S223: an enum refusal carries its allowed values and appends no event", as
     "--workspace", workspace,
     "--at", instant(1),
     "--key", "artifact.language",
-    "--value", "fr",
+    "--value", "de-DE",
     "--actor", "agent:codex",
   ]);
   assert.equal(error.reasonCode, "SETTINGS_VALUE_INVALID");
-  assert.deepEqual(error.details, { allowedValues: ["en", "zh-CN"] });
-  assert.match(error.message, /en, zh-CN/u);
+  assert.deepEqual(error.details, { allowedValues: ["en", "fr", "ja", "ko", "zh-CN"] });
+  assert.match(error.message, /en, fr, ja, ko, zh-CN/u);
   const status = await runRaw(["status", "--workspace", workspace]);
   assert.equal(status.version, 0);
 });

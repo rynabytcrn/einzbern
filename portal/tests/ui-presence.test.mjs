@@ -696,9 +696,12 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       const settingChoices = [...layout.querySelectorAll('[data-setting-choice="true"]')];
       assert.ok(settingChoices.length > 0, "the retrieval settings must render DS SettingChoice markers");
       assert.ok(settingChoices.every((choice) => choice.getAttribute("data-setting-choice-semantic") === "value-selection"
-        && choice.getAttribute("data-setting-choice-control") === "select"
+        && ["select", "multi-select"].includes(choice.getAttribute("data-setting-choice-control"))
         && Number.isInteger(Number(choice.getAttribute("data-setting-choice-option-count")))
         && choice.getAttribute("data-setting-choice-rejection-reason") !== null));
+      const promptLanguageChoice = layout.querySelector('[data-setting-key="retrieval.promptLanguages"]');
+      assert.equal(promptLanguageChoice?.getAttribute("data-setting-choice-control"), "multi-select");
+      assert.equal(promptLanguageChoice?.getAttribute("data-setting-choice-rejection-reason"), "collection-closed");
       assert.equal(layout.querySelectorAll(".tcrn-stepper").length, 0, "Stepper must not carry numeric setting semantics");
 
       // The host switcher and the single host form were the dispatch surface's, which left with
@@ -1063,8 +1066,8 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       page.document.querySelector('[data-setting-group="retrieval"]')?.click();
       const prompt = page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]');
       assert.ok(prompt, "prompt languages must have a live control");
-      assert.equal(prompt.tagName, "SELECT");
-      assert.equal(prompt.hasAttribute("multiple"), true);
+      assert.equal(prompt.getAttribute("role"), "group");
+      assert.equal(prompt.dataset.choicePresentation, "checkboxes");
       assert.equal(prompt.getAttribute("data-setting-cardinality"), "set");
       assert.equal(prompt.closest("[data-setting-choice-component]")?.getAttribute("data-setting-choice-source"), "artifact.language.allowedValues");
       assert.equal(prompt.closest("[data-setting-choice-component]")?.getAttribute("data-setting-choice-value-format"), "comma-separated");
@@ -1072,21 +1075,36 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       const languageSetting = project.find((entry) => entry.key === "artifact.language");
       const roster = languageSetting.allowedValues;
       assert.ok(Array.isArray(roster) && roster.length > 0);
-      assert.deepEqual([...prompt.options].map((option) => option.value), roster, "the selector options must come from the engine language roster");
-      assert.equal(new Set([...prompt.options].map((option) => option.value)).size, prompt.options.length, "language options must be unique");
+      const options = [...prompt.querySelectorAll('input[type="checkbox"]')];
+      assert.deepEqual(options.map((option) => option.value), roster, "the checklist options must come from the engine language roster");
+      assert.equal(new Set(options.map((option) => option.value)).size, options.length, "language options must be unique");
+      assert.match(prompt.textContent, /日本語/u);
+      assert.match(prompt.textContent, /한국어/u);
+      assert.match(prompt.textContent, /Français/u);
+      assert.equal(prompt.parentElement.querySelector("[data-reset-setting]")?.textContent, "Use artefact language");
 
       assert.ok(page.document.querySelector(".tcrn-setting-choice"), "the language collection uses the shared choice component");
-      const firstOption = prompt.options[0];
-      for (const option of [...prompt.options]) option.removeAttribute("selected");
-      firstOption.setAttribute("selected", "");
-      const duplicate = firstOption.cloneNode(true);
-      duplicate.setAttribute("selected", "");
-      prompt.append(duplicate);
+      const firstOption = options[0];
+      firstOption.checked = true;
       const before = receiptText(page.document);
       prompt.dispatchEvent(new page.window.Event("change", { bubbles: true }));
       await waitFor(receiptAdvanced(page.document, before), "the prompt-language set receipt");
       const saved = (await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages");
-      assert.equal(saved.currentValue, firstOption.value, "duplicate selected language values must be serialized once");
+      assert.equal(saved.currentValue, firstOption.value, "one checklist value is serialized in roster order");
+      const duplicate = firstOption.closest("label").cloneNode(true);
+      duplicate.querySelector("input").checked = true;
+      prompt.append(duplicate);
+      const beforeDuplicate = receiptText(page.document);
+      prompt.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+      await waitFor(receiptAdvanced(page.document, beforeDuplicate), "the duplicate prompt-language receipt");
+      const deduplicated = (await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages");
+      assert.equal(deduplicated.currentValue, firstOption.value, "repeated checkbox values are serialized once");
+      duplicate.remove();
+      firstOption.checked = false;
+      const beforeClear = receiptText(page.document);
+      prompt.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+      await waitFor(receiptAdvanced(page.document, beforeClear), "clearing the final prompt language");
+      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, null, "an empty checklist keeps the existing unset behavior");
     } finally { await page.cleanup(); }
   });
 
@@ -1161,14 +1179,14 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       }
       table("models.category").querySelector('[data-model-category-tiers="economy"]').click();
       assert.equal(page.document.querySelector('[data-page="model-tiers"]').hidden, false, "a tier count opens the tier page");
-      const marked = (key, field) => [...table(key).querySelectorAll("[data-collection-row].tcrn-highlight")].map((row) => row.querySelector(`[data-collection-field="${field}"]`).value);
+      const marked = (key, field) => [...table(key).querySelectorAll('[data-collection-row][data-transient-target="true"]')].map((row) => row.querySelector(`[data-collection-field="${field}"]`).value);
       assert.deepEqual(marked("models.tiers", "category"), tiers.filter((tier) => tier.category === "economy").map((tier) => tier.category), "and marks that category's tiers");
       // A tier's category links to its category on the category page.
       table("models.tiers").querySelector('[data-collection-row="0"] [data-model-category-link]').click();
       assert.equal(page.document.querySelector('[data-page="model-categories"]').hidden, false, "a tier's category link opens the category page");
       assert.deepEqual(marked("models.category", "id"), [tiers[0].category]);
       page.document.querySelector('[data-page-target="model-categories"]').click();
-      assert.equal(page.document.querySelectorAll("[data-collection-table] .tcrn-highlight").length, 0, "a destination chosen from the navigation opens unmarked");
+      assert.equal(page.document.querySelectorAll('[data-transient-target="true"]').length, 0, "navigation clears transient target markers");
       // Each page also links to the other from its head.
       page.document.querySelector('[data-collection-view="models.category"] [data-collection-links] [data-collection-link="model-tiers"]').click();
       assert.equal(page.document.querySelector('[data-page="model-tiers"]').hidden, false);
@@ -1232,31 +1250,55 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       assert.equal(page.document.querySelector('[data-setting-row="execution.maxConcurrentSubagents"]')?.dataset.modified, "false", "reset returns the field to the engine default");
       assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "execution.maxConcurrentSubagents").currentValue, "8");
 
+      // A global-search jump uses the shared transient row treatment and ordinary
+      // navigation clears it; the target isn't a portal-owned highlight class.
+      const globalSearch = page.document.querySelector("#global-search");
+      globalSearch.value = "execution.maxConcurrentSubagents";
+      globalSearch.dispatchEvent(new page.window.Event("input", { bubbles: true }));
+      const searchTarget = page.document.querySelector("#search-results [data-search-index]");
+      assert.ok(searchTarget, "the setting remains discoverable through global search");
+      searchTarget.click();
+      const searchedRow = page.document.querySelector('[data-setting-row="execution.maxConcurrentSubagents"]');
+      assert.equal(searchedRow?.getAttribute("data-transient-target"), "true", "a settings search result marks its target row");
+      assert.equal(searchedRow?.classList.contains("tcrn-highlight"), false, "the target treatment does not add a portal highlight class");
+      page.document.querySelector('[data-page-target="dashboard"]')?.click();
+      assert.equal(page.document.querySelectorAll('[data-transient-target="true"]').length, 0, "navigation clears a settings search target");
+
       // TCRN-CROSS-SUB-409: prompt languages sit in the retrieval group, the port in atelier, the
       // segment size in storage (their catalog rows say so). TCRN-CROSS-SUB-310 R17: the invalid-value
       // state is proven on storage.segmentBytes, since knowledge.aggregateBytes left the catalog.
       selectGroup("retrieval");
+      const resetLabels = new Map([
+        ["zh-CN", "使用生成物语言"], ["en", "Use artefact language"], ["ja", "生成物の言語を使用"],
+        ["ko", "산출물 언어 사용"], ["fr", "Utiliser la langue des artefacts"],
+      ]);
+      for (const [locale, label] of resetLabels) {
+        page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
+        page.document.querySelector('[data-setting-group="retrieval"]')?.click();
+        assert.equal(page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]')?.parentElement.querySelector("[data-reset-setting]")?.textContent, label, `${locale} reset label`);
+      }
+      page.document.querySelector('[data-locale-option="en"]')?.click();
+      page.document.querySelector('[data-setting-group="retrieval"]')?.click();
       const prompt = page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]');
-      assert.ok(prompt?.hasAttribute("multiple"));
-      for (const option of [...prompt.options]) option.removeAttribute("selected");
-      for (const option of [...prompt.options]) option.setAttribute("selected", "");
+      assert.equal(prompt?.dataset.choicePresentation, "checkboxes");
+      const languages = [...prompt.querySelectorAll('input[type="checkbox"]')];
+      for (const option of languages) option.checked = true;
       const beforeSet = receiptText(page.document);
       prompt.dispatchEvent(new page.window.Event("change", { bubbles: true }));
       await waitForReceiptChange(beforeSet, "the prompt-language collection receipt");
       await waitFor(() => page.document.querySelector('[data-setting-row="retrieval.promptLanguages"]')?.dataset.modified === "true", "the prompt-language collection to read back");
-      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, "en,zh-CN");
+      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, "en,fr,ja,ko,zh-CN");
 
       page.document.querySelector('[data-page-target="dashboard"]')?.click();
       page.document.querySelector('[data-page-target="settings"]')?.click();
-      assert.equal(page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]')?.options[0].hasAttribute("selected"), true, "page switching preserves the live collection state");
+      assert.equal([...page.document.querySelectorAll('[data-setting-control="retrieval.promptLanguages"] input[type="checkbox"]')].every((option) => option.hasAttribute("checked")), true, "page switching preserves the live collection state");
 
       const currentPrompt = page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]');
-      for (const option of [...currentPrompt.options]) option.removeAttribute("selected");
       const beforeCollectionReset = receiptText(page.document);
-      currentPrompt.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+      currentPrompt.parentElement.querySelector('[data-reset-setting="retrieval.promptLanguages"]').click();
       await waitForReceiptChange(beforeCollectionReset, "the prompt-language collection reset receipt");
       await waitFor(() => page.document.querySelector('[data-setting-row="retrieval.promptLanguages"]')?.dataset.modified === "false", "the prompt-language reset to read back");
-      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, null, "clearing the collection removes the setting rather than writing an empty value");
+      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, null, "the reset action restores the artifact-language default rather than writing an empty value");
 
       selectGroup("atelier");
       // TCRN-CROSS-STORY-482 R3: the fixture registry holds two libraries, so the switcher is live.

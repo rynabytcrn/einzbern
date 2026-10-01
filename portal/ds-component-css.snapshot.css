@@ -1199,6 +1199,9 @@ html[data-tcrn-theme="dark"] [data-theme-icon="dark"],
 .tcrn-table-shell__row:last-child .tcrn-table-shell__cell {
   border-bottom: 0;
 }
+.tcrn-table-shell__row[data-transient-target="true"] > .tcrn-table-shell__cell {
+  background: var(--tcrn-selection-fill);
+}
 .tcrn-table-shell__empty {
   padding: var(--tcrn-space-3);
   color: var(--tcrn-color-text-secondary);
@@ -1686,6 +1689,10 @@ a.tcrn-relationship-chip:focus-visible {
    which is exactly what produced the double frame consumers reported. */
 .tcrn-record-row[data-selected="true"] {
   border-color: var(--tcrn-selection-edge);
+}
+.tcrn-record-row[data-transient-target="true"] {
+  border-color: var(--tcrn-selection-edge);
+  background: var(--tcrn-selection-fill);
 }
 .tcrn-record-row__id,
 .tcrn-record-row__summary,
@@ -2685,6 +2692,11 @@ a.tcrn-relationship-chip:focus-visible {
 .tcrn-field__label {
   font-weight: 600;
 }
+.tcrn-field:is(fieldset) {
+  min-inline-size: 0;
+  padding: 0;
+  border: 0;
+}
 
 .tcrn-field__hint {
   color: var(--tcrn-color-text-secondary);
@@ -3016,6 +3028,10 @@ a.tcrn-relationship-chip:focus-visible {
   min-width: 0;
   padding-block: var(--tcrn-space-2);
   border-block-end: 1px solid var(--tcrn-color-border-subtle);
+}
+.tcrn-setting-row[data-transient-target="true"] {
+  border-block-end-color: var(--tcrn-selection-edge);
+  background: var(--tcrn-selection-fill);
 }
 .tcrn-setting-row__label,
 .tcrn-setting-row__control,
@@ -3473,6 +3489,14 @@ a.tcrn-relationship-chip:focus-visible {
 .tcrn-data-grid { inline-size: 100%; border-collapse: collapse; }
 .tcrn-data-grid th, .tcrn-data-grid td { padding: var(--tcrn-space-2) var(--tcrn-space-3); text-align: start; border-block-end: 1px solid var(--tcrn-color-border-subtle); }
 .tcrn-data-grid__sort { border: 0; background: none; cursor: pointer; font: inherit; padding: 0; }
+.tcrn-multi-select-group{display:grid;gap:var(--tcrn-space-2);min-inline-size:0;max-inline-size:100%}
+.tcrn-multi-select-group__options{display:grid;gap:var(--tcrn-space-1);min-inline-size:0;margin:0;padding:0;border:0}
+.tcrn-multi-select-group__option{display:flex;align-items:flex-start;gap:var(--tcrn-space-2);min-inline-size:0;overflow-wrap:anywhere}
+.tcrn-multi-select-group__option input{flex:0 0 auto;margin-block-start:var(--tcrn-space-0h)}
+.tcrn-multi-select-group__actions{display:flex;justify-content:flex-start}
+.tcrn-multi-select-group__clear{min-block-size:32px;padding-inline:var(--tcrn-space-2);border:1px solid var(--tcrn-color-border-control);border-radius:var(--tcrn-radius-control);background:transparent;color:var(--tcrn-color-text-secondary);font:inherit;cursor:pointer}
+.tcrn-multi-select-group__clear:disabled{cursor:not-allowed;opacity:.64}
+.tcrn-multi-select-group__clear:not(:disabled):hover{border-color:var(--tcrn-color-brand-primary);color:var(--tcrn-color-brand-primary)}
 
 /* DS-106/107 settings contract. */
 .tcrn-setting-choice{display:grid;gap:var(--tcrn-space-1);min-inline-size:0;max-inline-size:100%}
@@ -3491,13 +3515,18 @@ a.tcrn-relationship-chip:focus-visible {
 .tcrn-settings-layout__nav>:is(.tcrn-segmented-nav,.tcrn-section-tabs,.tcrn-module-tabs){flex-wrap:nowrap;max-inline-size:max-content}
 .tcrn-settings-layout__content{display:grid;gap:var(--tcrn-space-4);min-inline-size:0;container:tcrn-settings-content/inline-size}
 .tcrn-settings-layout__form{display:grid;gap:var(--tcrn-space-2);min-inline-size:0}
+.tcrn-settings-layout__form>.tcrn-setting-row-list{display:grid;grid-template-columns:minmax(0,1fr);min-inline-size:0}
+.tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row{display:grid;grid-column:1/-1;grid-template-columns:minmax(0,1fr);gap:var(--tcrn-space-2)}
+.tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row__tools:empty{display:none}
 .tcrn-settings-layout__form .tcrn-setting-row{grid-template-columns:minmax(0,1fr);gap:var(--tcrn-space-2)}
 .tcrn-settings-layout__form .tcrn-setting-row__control{inline-size:100%;grid-column:auto;grid-row:auto}
 .tcrn-settings-layout__form .tcrn-setting-row__tools{grid-column:auto;grid-row:auto}
-.tcrn-settings-layout__form .tcrn-setting-row__control>:is(.tcrn-input,.tcrn-select){inline-size:100%;min-inline-size:0}
+.tcrn-settings-layout__form .tcrn-setting-row__control>:is(.tcrn-input,.tcrn-select,.tcrn-field,.tcrn-setting-choice,.tcrn-number-input-field,.tcrn-multi-select-group){inline-size:100%;min-inline-size:0}
+.tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field :is(.tcrn-input,.tcrn-select,.tcrn-number-input){inline-size:100%;min-inline-size:0}
+.tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field{margin-block:0}
 .tcrn-settings-layout__form .tcrn-setting-row__control>.tcrn-number-input{inline-size:100%}
 @container tcrn-settings-layout-frame (min-width:960px){.tcrn-settings-layout__grid{grid-template-columns:minmax(0,var(--tcrn-container-settings-local-nav)) minmax(0,1fr)}}
-@container tcrn-settings-content (min-width:720px){.tcrn-settings-layout__form .tcrn-setting-row{grid-template-columns:minmax(0,1fr) minmax(var(--tcrn-container-settings-control-min),.8fr) max-content}.tcrn-settings-layout__form .tcrn-setting-row__tools{justify-content:flex-end}}
+@container tcrn-settings-content (min-width:720px){.tcrn-settings-layout__form .tcrn-setting-row-list{grid-template-columns:minmax(0,1fr) minmax(var(--tcrn-container-settings-control-min),.8fr) max-content}.tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row{grid-template-columns:subgrid}.tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row__tools{justify-content:flex-end}.tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row__control>:is(.tcrn-field,.tcrn-setting-choice,.tcrn-number-input-field,.tcrn-multi-select-group){inline-size:100%;min-inline-size:0}}
 
 /* DS-113/114/115 full-surface boundary and content rules. These follow the settings
    contract marker so Storybook's global package CSS carries them once while the

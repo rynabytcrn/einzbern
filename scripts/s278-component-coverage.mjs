@@ -103,8 +103,8 @@ process.stdout.write(`${JSON.stringify({
     rows: componentRows,
   },
   decisionSummary: {
-    platformLayer: "Keep the rostered S253 portal class roots stable; consume the eight named S254 return components from the DS snapshot; use the existing readback panel for the ninth slot and add no new component.",
-    followUp: "Any visual change stays in portal-owned CSS; any component-contract change waits for an Owner-approved DS workflow.",
+    platformLayer: "Preserve the sanctioned S253 portal class roots, including the TCRN-CROSS-INC-399 retirement of tcrn-highlight in favor of the DS transient-target treatment; consume the named S254 return components and use the existing readback panel for the ninth slot.",
+    followUp: "This approved transient-target state is owned by the design system. Other portal visual changes stay in portal-owned CSS; component-contract changes wait for an Owner-approved DS workflow.",
   },
 }, null, 2)}\n`);
 if (!ok) process.exitCode = 1;

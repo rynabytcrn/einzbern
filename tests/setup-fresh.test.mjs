@@ -191,7 +191,7 @@ test("480-R1, R6: six modes, and migrate names an installation from before the r
   const f = await fixture(context, { engine: false });
   await assert.rejects(planSetup({ mode: "install", projectRoot: f.project, at: at() }), { reasonCode: "SETUP_MODE_INVALID" });
   await assert.rejects(plan(f, {}, { restore: join(f.base, "library") }), { reasonCode: "SETUP_OPTION_NOT_APPLICABLE" });
-  await assert.rejects(plan(f, { language: "fr" }), { reasonCode: "SETUP_ANSWER_INVALID" });
+  await assert.rejects(plan(f, { language: "de-DE" }), { reasonCode: "SETUP_ANSWER_INVALID" });
   await assert.rejects(planSetup({ mode: "migrate", projectRoot: f.project, at: at(), home: f.home, deviceHome: f.deviceHome }), { reasonCode: "SETUP_MIGRATE_NOTHING" });
   assert.equal((await detectSetupContext({ projectRoot: f.project, home: f.home, deviceHome: f.deviceHome })).suggestedMode, "fresh");
 
@@ -212,6 +212,9 @@ test("480-R1, R6: six modes, and migrate names an installation from before the r
   const fresh = await plan(f, { language: "zh" });
   assert.equal(fresh.context.suggestedMode, "migrate");
   assert.equal(fresh.resolved.language, "zh-CN");
+  for (const language of ["fr", "ja", "ko"]) {
+    assert.equal((await plan(f, { language })).resolved.language, language, `${language} is backed by the core language policy`);
+  }
   assert.deepEqual(fresh.blockers.map((blocker) => [blocker.step, blocker.reasonCode]), [["engine", "SETUP_ENGINE_NOT_INSTALLED"]]);
   await assert.rejects(applySetup(fresh), (error) => {
     assert.equal(error.reasonCode, "SETUP_BLOCKED");

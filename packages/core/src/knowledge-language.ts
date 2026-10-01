@@ -23,11 +23,11 @@ import { baseModelsTier, readModelsTiers } from "./models-tiers.js";
 export const KNOWLEDGE_LANGUAGE_VERSION = "tcrn.knowledge-language.v1" as const;
 
 /**
- * The closed roster of artefact languages. It is closed because detectLanguage below can
- * only tell these two apart, and a setting that admitted a tag the detector cannot judge
+ * The closed roster of artefact languages. It is closed because detectLanguage below must
+ * be able to judge every tag admitted by settings and setup; a tag outside this roster
  * would record a policy nothing enforces.
  */
-export const ARTIFACT_LANGUAGE_TAGS = Object.freeze(["en", "zh-CN"] as const);
+export const ARTIFACT_LANGUAGE_TAGS = Object.freeze(["en", "fr", "ja", "ko", "zh-CN"] as const);
 export type ArtifactLanguageTag = typeof ARTIFACT_LANGUAGE_TAGS[number];
 
 export const KNOWLEDGE_EXPANSION_LIMITS = Object.freeze({
@@ -58,20 +58,54 @@ export const KNOWLEDGE_EXPANSION_LIMITS = Object.freeze({
  * outright, while an English card whose Chinese quotes are misjudged the other way only means
  * a translation that could have run does not -- the text is stored exactly as it was handed
  * in. The cheap direction is the one left uncorrected.
+ *
+ * Japanese and Korean use their distinctive writing systems before the shared Han
+ * ideograph check. French uses a conservative word-cue heuristic, not a full language
+ * identifier. Han-only Japanese remains ambiguous and follows the accepted zh-CN rule;
+ * very short and mixed-language Latin text can also be misjudged. The detector stays
+ * deterministic and offline, and write answers are still rejected when their detected tag
+ * does not match the declared artifact language.
  */
 const MINIMUM_CJK_IDEOGRAPHS = 2;
 
 const IDEOGRAPH = /[㐀-䶿一-鿿豈-﫿]/gu;
+const JAPANESE_SYLLABARY = /[ぁ-ゖァ-ヺー]/u;
+const KOREAN_SCRIPT = /[ᄀ-ᇿ㄰-㆏가-힣]/u;
 const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/u;
 const CODE_SPAN_OR_URL_OR_PATH = /`[^`]*`|https?:\/\/\S+|(?:^|\s)(?:\.\.\/|\.\/|\/)?[\w.-]+(?:\/[\w.-]+)+(?:\s|$)/gu;
 const IDENTIFIER_RUN = /[A-Za-z0-9_.:/#-]*[0-9_.:/#-][A-Za-z0-9_.:/#-]*/gu;
+const FRENCH_MARKER_WORDS = new Set([
+  "à", "après", "au", "aucun", "aucune", "aujourd", "aujourd'hui", "aussi", "avec", "beaucoup", "bien",
+  "bonjour", "bonsoir", "cette", "ceci", "cela", "ces", "chez", "comme", "comment", "dans", "dehors",
+  "depuis", "des", "donc", "du", "elle", "elles", "encore", "entre", "est", "été", "être", "fait",
+  "français", "française", "françaises", "français", "fichier", "fois", "leur", "leurs", "langue", "les",
+  "lorsque", "mais", "merci", "moins", "monde", "nous", "où", "oui", "par", "parce", "pas", "peut",
+  "plus", "pour", "pourquoi", "quel", "quelle", "quelles", "quels", "que", "qui", "réponse", "sans",
+  "sont", "sous", "sur", "tous", "tout", "très", "une", "un", "votre", "vos", "vous", "voudrais",
+]);
+const FRENCH_SHORT_CUES = new Set(["bonjour", "bonsoir", "merci", "oui", "français", "française", "très", "où"]);
+const ENGLISH_MARKER_WORDS = new Set([
+  "about", "after", "all", "also", "an", "and", "are", "as", "at", "before", "between", "both", "but",
+  "by", "can", "could", "did", "do", "does", "each", "for", "from", "had", "has", "have", "how", "if",
+  "in", "into", "is", "it", "its", "may", "more", "most", "my", "new", "no", "not", "of", "on", "one",
+  "or", "other", "our", "out", "should", "some", "than", "that", "the", "their", "them", "there", "they",
+  "this", "those", "through", "to", "two", "under", "up", "was", "we", "were", "what", "when", "where",
+  "which", "who", "will", "with", "would", "you", "your",
+]);
 
 export function detectLanguage(text: string): ArtifactLanguageTag {
   const prose = text.replace(CODE_SPAN_OR_URL_OR_PATH, " ").replace(IDENTIFIER_RUN, " ");
+  if (KOREAN_SCRIPT.test(prose)) return "ko";
+  if (JAPANESE_SYLLABARY.test(prose)) return "ja";
   const ideographs = (prose.match(IDEOGRAPH) ?? []).length;
-  return ideographs >= MINIMUM_CJK_IDEOGRAPHS
-    ? "zh-CN"
-    : "en";
+  if (ideographs >= MINIMUM_CJK_IDEOGRAPHS) return "zh-CN";
+  const words = prose.normalize("NFC").toLocaleLowerCase("fr").match(/\p{L}+/gu) ?? [];
+  const frenchHits = words.filter((word) => FRENCH_MARKER_WORDS.has(word));
+  const englishHits = words.filter((word) => ENGLISH_MARKER_WORDS.has(word)).length;
+  const hasFrenchShortCue = words.some((word) => FRENCH_SHORT_CUES.has(word));
+  if ((frenchHits.length >= 2 && frenchHits.length > englishHits) ||
+      (frenchHits.length === 1 && englishHits === 0 && hasFrenchShortCue)) return "fr";
+  return "en";
 }
 
 export function isArtifactLanguageTag(value: unknown): value is ArtifactLanguageTag {

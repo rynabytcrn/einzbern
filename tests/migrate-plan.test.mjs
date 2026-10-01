@@ -590,6 +590,8 @@ test("480-R6, 489-R1: migrate takes --mapping, --cloud, --language and --navigat
   const m = await machine(context);
   const crossProject = await oldPartition(m, "cross-project");
   await writeMapping(m, [{ partition: "cross-project", legacyWorkspace: crossProject, projectRoot: m.container }], join(m.container, "mapping.json"));
+  const before = await treeDigest(m.base);
+  installTripwire([m.container, m.home, m.deviceHome]);
   const planned = await plan(m, { mapping: "mapping.json", answers: { cloud: true, language: "zh", navigation: false } });
   assert.equal(planned.migration.mappingFile, join(m.container, "mapping.json"), "a relative --mapping is taken from the project");
   assert.deepEqual(planned.questions, []);
@@ -597,11 +599,63 @@ test("480-R6, 489-R1: migrate takes --mapping, --cloud, --language and --navigat
   assert.deepEqual(planned.migration.registry.map((entry) => entry.cloudHosted), [true]);
   await assert.rejects(plan(m, { answers: { artifacts: join(m.base, "elsewhere") } }), { reasonCode: "SETUP_OPTION_NOT_APPLICABLE" });
   await assert.rejects(plan(m, { restore: join(m.base, "library") }), { reasonCode: "SETUP_OPTION_NOT_APPLICABLE" });
-  await assert.rejects(plan(m, { mapping: "mapping.json", answers: { language: "fr" } }), { reasonCode: "SETUP_ANSWER_INVALID" });
+  await assert.rejects(plan(m, { mapping: "mapping.json", answers: { language: "de-DE" } }), (error) => {
+    assert.deepEqual([error.reasonCode, error.details.question, error.details.allowed], ["SETUP_ANSWER_INVALID", "language", "en,fr,ja,ko,zh-CN"]);
+    assert.match(error.message, /^de-DE is not a language this engine writes in/u);
+    return true;
+  });
+  assert.deepEqual(await treeDigest(m.base), before, "the alias plan and refusals wrote nothing");
   // With no installation from before the rename there is nothing to migrate, whatever a mapping names.
   const bare = await machine(context, { legacyDevice: false });
+  const bareBefore = await treeDigest(bare.base);
   await assert.rejects(plan(bare, { mapping: join(m.container, "mapping.json") }), { reasonCode: "SETUP_MIGRATE_NOTHING" });
+  assert.deepEqual(await treeDigest(bare.base), bareBefore);
 });
+
+for (const language of ["en", "zh-CN", "ja", "ko", "fr"]) {
+  test(`480-R6, 489-R1: migrate plans canonical ${language} through the CLI and writes nothing under the tripwire`, async (context) => {
+    const m = await machine(context);
+    const crossProject = await oldPartition(m, "cross-project");
+    const partitions = [{ partition: "cross-project", legacyWorkspace: crossProject, projectRoot: m.container }];
+    const mapping = await writeMapping(m, partitions, join(m.container, "mapping.json"));
+    const before = await treeDigest(m.base);
+    const argv = ["--import", join(repositoryRoot, "scripts/no-network.mjs"), "--import", tripwirePath, cliPath,
+      "setup", "--mode", "migrate", "--project", m.container, "--mapping", "mapping.json",
+      "--cloud", "true", "--language", language, "--navigation", "false", "--at", at()];
+    const run = spawnSync(process.execPath, argv, {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: m.home,
+        USERPROFILE: m.home,
+        EINZBERN_HOME: m.deviceHome,
+        EINZBERN_TRIPWIRE_ROOT: [m.container, m.home, m.deviceHome, guardHome].join(delimiter),
+      },
+    });
+    assert.equal(run.status, 0, run.stderr);
+    const after = await treeDigest(m.base);
+    assert.deepEqual(after, before, `${language}: the CLI plan wrote nothing`);
+    assert.deepEqual(await readdir(guardHome), [], "the fallback home stays empty");
+    const planned = JSON.parse(run.stdout);
+    assert.deepEqual([planned.reasonCode, planned.mode, planned.questions], ["SETUP_PLAN_READY", "migrate", []]);
+    assert.deepEqual(planned.resolved, { artifacts: join(m.container, ".ether"), cloud: true, language, navigation: false });
+    assert.equal(planned.migration.mappingFile, mapping, "a relative --mapping is taken from the project");
+    assert.deepEqual(planned.migration.mapping, { schemaVersion: MIGRATION_MAPPING_SCHEMA_VERSION, partitions });
+    const [entry] = planned.migration.partitions;
+    assert.deepEqual([entry.action, entry.events, entry.headEventHash, entry.unsatisfiedGates], ["import", expected.events, expected.headEventHash, [FIXTURE_GATE]]);
+    assert.deepEqual(planned.migration.registry, [{
+      partition: "cross-project", projectPath: m.container, libraryPath: join(m.container, ".ether"),
+      libraryId: expected.workspaceId, cloudHosted: true, gitRemote: null, migratedFrom: crossProject,
+    }]);
+    assert.deepEqual(planned.migration.deviceSettings, { from: null, to: join(m.deviceHome, "machine-settings.json"), keys: [] });
+    assert.deepEqual(planned.blockers.map((blocker) => [blocker.step, blocker.reasonCode]), [["engine", "SETUP_ENGINE_NOT_INSTALLED"]]);
+    context.diagnostic(JSON.stringify({
+      language, argv: [process.execPath, ...argv], protectedRoots: [m.container, m.home, m.deviceHome, guardHome],
+      fixtureBeforeSha256: sha256(JSON.stringify(before)), fixtureAfterSha256: sha256(JSON.stringify(after)),
+      stdout: run.stdout, stderr: run.stderr, exitCode: run.status,
+    }));
+  });
+}
 
 test("489-R1 (R2): the portal keys of the old device directory's machine settings are set, kept or refused key by key", async (context) => {
   const m = await machine(context);

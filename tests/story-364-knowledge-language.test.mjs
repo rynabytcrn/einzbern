@@ -20,7 +20,11 @@
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, realpath, rm, writeFile, readFile, readdir } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
+import { promisify } from "node:util";
+import { ATELIER_SURFACE, withSurface } from "./helpers/workspace-fixture.mjs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -34,6 +38,7 @@ import {
   initializeKnowledgeStore,
   initializeLibrary,
   listKnowledgeMetadata,
+  materializeWorkspaceFromGenesis,
   readKnowledgeLanguagePolicy,
   resolveQueryLanguage,
   setWorkspaceSetting,
@@ -185,6 +190,62 @@ test("STORY-364: five-language writes keep the existing bounded expansion contra
   assert.equal(expansionsAreBounded({ de: ["A", "B", "C"] }), false, "unknown language keys remain rejected");
 });
 
+// Synthetic answers only. Each read runs in a fresh process against serialized
+// library and crest events, including the original (untranslated) source body.
+for (const [language, translated] of Object.entries({
+  fr: "Les identifiants ne sont pas nécessaires à la mise en œuvre",
+  ja: "認証情報は実装の前提ではありません",
+  ko: "자격 증명은 구현의 선행 조건이 아닙니다",
+})) {
+  test(`INC-399: ${language} settings → capture → serialized events → fresh replay/body, with wrong-answer no append`, async (context) => {
+    const workspace = await languageWorkspace(context, {});
+    for (const [key, value] of Object.entries({ "artifact.language": language, "retrieval.promptLanguages": "en,fr,ja,ko,zh-CN", "models.tiers": MODELS_TIERS_VALUE })) {
+      await withSurface(ATELIER_SURFACE, () => cliJson(["settings-set", "--workspace", workspace, "--at", instant(key === "artifact.language" ? 3 : key === "retrieval.promptLanguages" ? 4 : 5), "--key", key, "--value", value]));
+    }
+    const catalog = await cliJson(["settings-catalog", "--workspace", workspace]);
+    assert.equal(catalog.settings.find((entry) => entry.key === "artifact.language").currentValue, language);
+    assert.equal(catalog.settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, "en,fr,ja,ko,zh-CN");
+    const input = { ...englishCard, externalKey: `INC-399-${language.toUpperCase()}`, coexist: true };
+    await captureKnowledgeUnit(workspace, input, { host: "claude-code", languageProvider: provider({ translate: () => translated, expand: (_subject, _summary, tag) => [`A ${tag}`, `B ${tag}`, `C ${tag}`] }) });
+    const state = await materializeWorkspaceFromGenesis(workspace);
+    assert.equal(readKnowledgeLanguagePolicy(state.settings, "claude-code").artifactLanguage, language);
+    const records = (await listKnowledgeMetadata(workspace, { at: instant(12), allowTrailing: true })).records;
+    assert.equal(records.length, 1);
+    const record = records[0];
+    for (const field of ["subject", "summary", "snippet"]) assert.equal(record[field], translated);
+    assert.deepEqual(Object.keys(record.expansions), [...ARTIFACT_LANGUAGE_TAGS]);
+    assert.equal(expansionsAreBounded(record.expansions), true);
+    for (const phrasings of Object.values(record.expansions)) assert.equal(phrasings.length, 3);
+    assert.equal(KNOWLEDGE_EXPANSION_LIMITS.maximumBytes, 1024);
+
+    const freshScript = `const core = await import(process.argv[1]); const [root,id,at] = process.argv.slice(2); const state = await core.materializeWorkspaceFromGenesis(root); console.log(JSON.stringify({ settings: state.settings, list: await core.listKnowledgeMetadata(root,{at,allowTrailing:true}), snippet: await core.readKnowledgeSnippet(root,id), body: await core.readKnowledgeBody(root,id,{at,allowTrailing:true}) }));`;
+    const { stdout } = await promisify(execFile)(process.execPath, ["--input-type=module", "--eval", freshScript, new URL("../dist/build/packages/core/src/index.js", import.meta.url).href, workspace, record.id, instant(12)], { env: process.env, maxBuffer: 32e6 });
+    const fresh = JSON.parse(stdout);
+    assert.deepEqual(fresh.list.records[0], record);
+    assert.equal(fresh.snippet.snippet, translated);
+    assert.equal(fresh.body.body, input.body, "the policy translates metadata fields; the source body is preserved byte for byte");
+    assert.equal(fresh.body.bodySha256, createHash("sha256").update(input.body).digest("hex"));
+    assert.equal(fresh.settings.find((entry) => entry.key === "artifact.language").value, language);
+
+    const eventBytes = async (root, prefix = "") => {
+      const result = {};
+      for (const entry of await readdir(root, { withFileTypes: true })) {
+        const path = join(root, entry.name); const key = `${prefix}${entry.name}`;
+        if (entry.isDirectory()) Object.assign(result, await eventBytes(path, `${key}/`));
+        else if (entry.name.endsWith(".jsonl") || /^\d{8,}-[a-f0-9]{64}\.(?:json|body)$/u.test(entry.name)) result[key] = (await readFile(path)).toString("base64");
+      }
+      return result;
+    };
+    const before = await eventBytes(workspace);
+    assert.ok(Object.keys(before).some((key) => key.includes("crest")), "a capture actually serialized a crest event");
+    await assert.rejects(captureKnowledgeUnit(workspace, { ...input, occurredAt: instant(13), externalKey: `${input.externalKey}-WRONG` }, {
+      host: "claude-code", languageProvider: provider({ translate: () => "This answer is in the wrong language", expand: () => ["A", "B", "C"] }),
+    }), (error) => error.reasonCode === "KNOWLEDGE_LANGUAGE_INVALID");
+    assert.deepEqual(await eventBytes(workspace), before, "the wrong answer appended neither library nor crest event bytes");
+    assert.equal((await listKnowledgeMetadata(workspace, { at: instant(14), allowTrailing: true })).records.length, 1);
+  });
+}
+
 test("STORY-364: sparse legacy English/Chinese expansion maps remain replayable", async (context) => {
   const workspace = await languageWorkspace(context, {
     "artifact.language": "en",
@@ -196,6 +257,10 @@ test("STORY-364: sparse legacy English/Chinese expansion maps remain replayable"
   const records = (await listKnowledgeMetadata(workspace, { at: instant(12), allowTrailing: true })).records;
   assert.equal(records.length, 1, "the current reader replays a card that has only the prior two language keys");
   assert.deepEqual(Object.keys(records[0].expansions), ["en", "zh-CN"]);
+  await setWorkspaceSetting(workspace, { occurredAt: instant(13), key: "retrieval.promptLanguages", value: "en,fr,zh-CN" });
+  await captureKnowledgeUnit(workspace, { ...englishCard, occurredAt: instant(14), externalKey: "INC-399-MIXED-ERA", coexist: true }, { languageProvider: provider(), host: "claude-code" });
+  const mixed = (await listKnowledgeMetadata(workspace, { at: instant(15), allowTrailing: true })).records;
+  assert.deepEqual(mixed.map((record) => Object.keys(record.expansions)).sort((left, right) => left.length - right.length), [["en", "zh-CN"], ["en", "fr", "zh-CN"]]);
   assert.equal(expansionsAreBounded({ en: ["a", "b", "c"], "zh-CN": ["a", "b", "c"] }), true);
   assert.equal(expansionsAreBounded({ en: ["a", "b", "c"], "zh-CN": ["a", "b", "c"], fr: ["a", "b", "c"] }), true,
     "new sparse or mixed-era cards need not carry every newly supported language key");

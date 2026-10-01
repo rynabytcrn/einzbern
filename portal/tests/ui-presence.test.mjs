@@ -1063,6 +1063,12 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       }
       page.document.querySelector('[data-locale-option="en"]')?.click();
 
+      page.document.querySelector('[data-setting-group="models"]')?.click();
+      const ceiling = page.document.querySelector('[data-setting-control="models.escalation.ceiling"]');
+      assert.equal(ceiling?.tagName, "SELECT", "the category reference cannot fall back to free text");
+      assert.equal(ceiling.closest('[data-setting-choice-component]').dataset.settingChoiceSource, "models.category");
+      assert.deepEqual([...ceiling.querySelectorAll('option:not([data-reference-missing])')].map((option) => option.value), JSON.parse(project.find((entry) => entry.key === "models.category").currentValue).map((category) => category.id), "the actual category mother supplies every candidate");
+
       page.document.querySelector('[data-setting-group="retrieval"]')?.click();
       const prompt = page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]');
       assert.ok(prompt, "prompt languages must have a live control");
@@ -1088,21 +1094,29 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       firstOption.checked = true;
       const before = receiptText(page.document);
       prompt.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, null, "an unsaved checklist is a local draft");
+      page.document.querySelector('[data-save-setting-choice="retrieval.promptLanguages"]').click();
       await waitFor(receiptAdvanced(page.document, before), "the prompt-language set receipt");
+      await page.waitForSettled();
       const saved = (await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages");
       assert.equal(saved.currentValue, firstOption.value, "one checklist value is serialized in roster order");
-      const duplicate = firstOption.closest("label").cloneNode(true);
+      const currentPrompt = page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]');
+      const duplicate = currentPrompt.querySelector("label").cloneNode(true);
       duplicate.querySelector("input").checked = true;
-      prompt.append(duplicate);
+      currentPrompt.append(duplicate);
+      currentPrompt.querySelector('input[value="fr"]').checked = true;
       const beforeDuplicate = receiptText(page.document);
-      prompt.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+      currentPrompt.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+      page.document.querySelector('[data-save-setting-choice="retrieval.promptLanguages"]').click();
       await waitFor(receiptAdvanced(page.document, beforeDuplicate), "the duplicate prompt-language receipt");
+      await page.waitForSettled();
       const deduplicated = (await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages");
-      assert.equal(deduplicated.currentValue, firstOption.value, "repeated checkbox values are serialized once");
-      duplicate.remove();
-      firstOption.checked = false;
+      assert.equal(deduplicated.currentValue, "en,fr", "repeated checkbox values are serialized once in roster order");
+      const clearedPrompt = page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]');
+      for (const option of clearedPrompt.querySelectorAll('input[type="checkbox"]')) option.checked = false;
       const beforeClear = receiptText(page.document);
-      prompt.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+      clearedPrompt.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+      page.document.querySelector('[data-save-setting-choice="retrieval.promptLanguages"]').click();
       await waitFor(receiptAdvanced(page.document, beforeClear), "clearing the final prompt language");
       assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, null, "an empty checklist keeps the existing unset behavior");
     } finally { await page.cleanup(); }
@@ -1285,6 +1299,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       for (const option of languages) option.checked = true;
       const beforeSet = receiptText(page.document);
       prompt.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+      page.document.querySelector('[data-save-setting-choice="retrieval.promptLanguages"]').click();
       await waitForReceiptChange(beforeSet, "the prompt-language collection receipt");
       await waitFor(() => page.document.querySelector('[data-setting-row="retrieval.promptLanguages"]')?.dataset.modified === "true", "the prompt-language collection to read back");
       assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, "en,fr,ja,ko,zh-CN");
@@ -1756,11 +1771,12 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       };
 
       answerWith({ schemaVersion: "tcrn.design-authority.v1", name: "Example System", version: "9.9.9" });
-      const input = page.document.querySelector('[data-setting-control="design.authority"]');
+      let input = page.document.querySelector('[data-setting-control="design.authority"]');
       const declaredRendered = rendered("the declared contract to be fetched and rendered");
       input.value = "https://design.example.test/";
       input.dispatchEvent(new page.window.Event("change", { bubbles: true }));
       await declaredRendered();
+      await page.waitForSettled();
       const declared = page.document.querySelector("[data-design-authority-state]");
       assert.equal(declared?.dataset.designAuthorityState, "declared");
       assert.match(declared.textContent, /Example System/u);
@@ -1772,9 +1788,11 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       // say what would turn it green, or a yellow becomes a permanent decoration.
       answerWith({ hello: "world" });
       const warnedRendered = rendered("the foreign response to be fetched and rendered");
+      input = page.document.querySelector('[data-setting-control="design.authority"]');
       input.value = "https://other.example.test/";
       input.dispatchEvent(new page.window.Event("change", { bubbles: true }));
       await warnedRendered();
+      await page.waitForSettled();
       const warned = page.document.querySelector("[data-design-authority-state]");
       assert.equal(warned?.dataset.designAuthorityState, "warning", "a response that is not this contract is yellow");
       assert.ok(warned.className.includes("tcrn-inline-alert"), "the warning uses the design system's alert");
@@ -1787,9 +1805,11 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       // would keep landing yellow by a different route.
       answerWith({ schemaVersion: "someone.elses.contract.v1", name: "Example System", version: "9.9.9" });
       const wrongSchemaRendered = rendered("the body under another contract to be fetched and rendered");
+      input = page.document.querySelector('[data-setting-control="design.authority"]');
       input.value = "https://third.example.test/";
       input.dispatchEvent(new page.window.Event("change", { bubbles: true }));
       await wrongSchemaRendered();
+      await page.waitForSettled();
       const wrongSchema = page.document.querySelector("[data-design-authority-state]");
       assert.equal(wrongSchema?.dataset.designAuthorityState, "warning", "a well-formed body under another contract is still not ours");
       assert.ok(!wrongSchema.textContent.includes("Example System"), "nothing from an unrecognised contract reaches the page");
@@ -2112,7 +2132,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       assert.equal(text("#rail-workspace-label"), "project");
       assert.equal(text("#workspace-label"), fixture.workspace);
       assert.equal(text("#stat-version"), "0");
-      const healthReasons = () => [...page.document.querySelectorAll("[data-doctor-check]")].map((row) => [row.dataset.doctorCheck, row.querySelector("code")?.textContent ?? ""]);
+      const healthReasons = () => [...page.document.querySelectorAll("[data-doctor-check]")].map((row) => [row.dataset.doctorCheck, row.querySelectorAll(".tcrn-operation-feedback__identity code")[1]?.textContent ?? ""]);
       const initialDoctor = await cli(["doctor", "--project", fixture.proseRoot], { ...fixture.deviceEnv, HOME: fixture.home });
       assert.deepEqual(healthReasons(), initialDoctor.checks.map((check) => [check.check, check.reasonCode ?? "—"]));
 
@@ -2178,8 +2198,8 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
   // starts first and does not await; that read renders the work view and nothing else.
   test("SUB-416 (STORY-510): refresh's shared wait leaves /api/work out, and the work view reads it on its own", async () => {
     const source = await readFile(join(portalRoot, "index.html"), "utf8");
-    const refresh = source.match(/\n {2}const refresh = async \(\) => \{([^\n]*)\};\n/u)?.[1] ?? "";
-    assert.match(refresh, /^ refreshWork\(\); try \{ const \[[^\]]*\] = await Promise\.all\(\[/u, "refresh starts the work read, then waits for the other views' reads together");
+    const refresh = source.match(/\n {2}const refresh = async \(\) => \{\n([\s\S]*?)\n {2}\};\n/u)?.[1] ?? "";
+    assert.match(refresh, /refreshWork\(\);[\s\S]*await Promise\.all\(\[/u, "refresh starts the work read, then waits for the other views' reads together");
     assert.doesNotMatch(refresh, /\/api\/work|await refreshWork/u, "neither /api/work nor the work read is in that wait");
     assert.equal(source.split('api("/api/work")').length - 1, 1, "the page asks for /api/work in one place");
     const refreshWork = source.match(/\n {2}const refreshWork = async \(\) => \{\n([\s\S]*?)\n {2}\};\n/u)?.[1] ?? "";

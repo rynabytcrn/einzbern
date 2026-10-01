@@ -2446,6 +2446,30 @@ a.tcrn-relationship-chip:focus-visible {
   gap: var(--tcrn-space-2h);
 }
 
+/* Surface heading/actions keep their own bounds even in a nested narrow card. */
+.tcrn-surface__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--tcrn-space-3);
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+.tcrn-surface__head > * {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow-wrap: anywhere;
+}
+.tcrn-surface__head-content { flex: 1 1 50%; }
+.tcrn-surface__head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--tcrn-space-2);
+}
+.tcrn-surface__head :is(h2,h3) { margin: 0; font-size: var(--tcrn-type-size-heading-3); }
+
 /* Typography highlight */
 .tcrn-highlight-text {
   display: inline;
@@ -3247,6 +3271,8 @@ a.tcrn-relationship-chip:focus-visible {
 
 .tcrn-definition-list {
   display: grid;
+  container-type: inline-size;
+  container-name: tcrn-definition-list;
   gap: var(--tcrn-space-3);
   margin: 0;
 }
@@ -3257,6 +3283,8 @@ a.tcrn-relationship-chip:focus-visible {
   min-width: 0;
 }
 .tcrn-definition-list__term {
+  min-inline-size: 0;
+  overflow-wrap: anywhere;
   color: var(--tcrn-color-text-secondary);
   font-weight: var(--tcrn-type-weight-medium);
 }
@@ -3271,6 +3299,14 @@ a.tcrn-relationship-chip:focus-visible {
 }
 .tcrn-definition-list--dense .tcrn-definition-list__item {
   gap: var(--tcrn-space-2);
+}
+/* A detail card can be narrow inside a wide viewport. Apply the existing
+   760px detail stacking boundary to its actual mother as well. */
+@container tcrn-definition-list (max-width: 760px) {
+  .tcrn-definition-list__item {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--tcrn-space-1);
+  }
 }
 
 .tcrn-lock-hint {
@@ -3545,15 +3581,23 @@ a.tcrn-relationship-chip:focus-visible {
 .tcrn-settings-layout__form>.tcrn-setting-row-list{display:grid;grid-template-columns:minmax(0,1fr);min-inline-size:0}
 .tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row{display:grid;grid-column:1/-1;grid-template-columns:minmax(0,1fr);gap:var(--tcrn-space-2)}
 .tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row__tools:empty{display:none}
-.tcrn-settings-layout__form .tcrn-setting-row{grid-template-columns:minmax(0,1fr);gap:var(--tcrn-space-2)}
+.tcrn-settings-layout__form .tcrn-setting-row{grid-template-columns:minmax(0,1fr);gap:var(--tcrn-space-2);overflow-wrap:anywhere}
 .tcrn-settings-layout__form .tcrn-setting-row__control{inline-size:100%;grid-column:auto;grid-row:auto}
 .tcrn-settings-layout__form .tcrn-setting-row__tools{grid-column:auto;grid-row:auto}
 .tcrn-settings-layout__form .tcrn-setting-row__control>:is(.tcrn-input,.tcrn-select,.tcrn-field,.tcrn-setting-choice,.tcrn-number-input-field,.tcrn-multi-select-group){inline-size:100%;min-inline-size:0}
 .tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field :is(.tcrn-input,.tcrn-select,.tcrn-number-input){inline-size:100%;min-inline-size:0}
-.tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field{margin-block:0}
+.tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field{margin:0}
 .tcrn-settings-layout__form .tcrn-setting-row__control>.tcrn-number-input{inline-size:100%}
 @container tcrn-settings-layout-frame (min-width:960px){.tcrn-settings-layout__grid{grid-template-columns:minmax(0,var(--tcrn-container-settings-local-nav)) minmax(0,1fr)}}
-@container tcrn-settings-content (min-width:720px){.tcrn-settings-layout__form .tcrn-setting-row-list{grid-template-columns:minmax(0,1fr) minmax(var(--tcrn-container-settings-control-min),.8fr) max-content}.tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row{grid-template-columns:subgrid}.tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row__tools{justify-content:flex-end}.tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row__control>:is(.tcrn-field,.tcrn-setting-choice,.tcrn-number-input-field,.tcrn-multi-select-group){inline-size:100%;min-inline-size:0}}
+@container tcrn-settings-content (min-width:720px){
+  /* The complete form also shares tracks for the supported direct-row API.
+     Other children still span the form; an explicit list owns its own tracks. */
+  .tcrn-settings-layout__form,.tcrn-settings-layout__form .tcrn-setting-row{grid-template-columns:minmax(0,1fr) minmax(var(--tcrn-container-settings-control-min),.8fr) max-content}
+  .tcrn-settings-layout__form .tcrn-setting-row-list{grid-template-columns:minmax(0,1fr) minmax(var(--tcrn-container-settings-control-min),.8fr) max-content}
+  .tcrn-settings-layout__form>*{grid-column:1/-1}
+  .tcrn-settings-layout__form>.tcrn-setting-row,.tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row{grid-template-columns:subgrid}
+  .tcrn-settings-layout__form .tcrn-setting-row__tools{justify-content:flex-end}
+}
 
 /* DS-113/114/115 full-surface boundary and content rules. These follow the settings
    contract marker so Storybook's global package CSS carries them once while the
@@ -3578,15 +3622,16 @@ a.tcrn-relationship-chip:focus-visible {
 .tcrn-operation-feedback,.tcrn-content-scope{display:grid;gap:var(--tcrn-space-2);min-inline-size:0;max-inline-size:100%;border:1px solid var(--tcrn-color-border-subtle);border-radius:var(--tcrn-radius-surface);background:var(--tcrn-color-surface-panel);padding:var(--tcrn-space-3)}
 .tcrn-operation-feedback__summary{display:flex;align-items:flex-start;flex-wrap:wrap;gap:var(--tcrn-space-2);min-inline-size:0;max-inline-size:100%}
 .tcrn-operation-feedback__status{flex:0 1 auto;min-inline-size:0}
-.tcrn-operation-feedback__identity{display:grid;grid-template-columns:max-content minmax(0,1fr);flex:1 1 240px;gap:var(--tcrn-space-1) var(--tcrn-space-2);min-inline-size:0;margin:0}
+.tcrn-operation-feedback__identity{display:grid;grid-template-columns:fit-content(40%) minmax(0,1fr);flex:1 1 240px;gap:var(--tcrn-space-1) var(--tcrn-space-2);min-inline-size:0;margin:0}
 .tcrn-operation-feedback__identity-row{display:grid;grid-template-columns:subgrid;grid-column:1/-1;min-inline-size:0}
-.tcrn-operation-feedback__identity dt{color:var(--tcrn-color-text-secondary);font-size:var(--tcrn-type-size-meta);font-weight:var(--tcrn-type-weight-medium)}
+.tcrn-operation-feedback__identity dt{min-inline-size:0;overflow-wrap:anywhere;color:var(--tcrn-color-text-secondary);font-size:var(--tcrn-type-size-meta);font-weight:var(--tcrn-type-weight-medium)}
 .tcrn-operation-feedback__identity dd{min-inline-size:0;margin:0;overflow-wrap:anywhere;word-break:break-word;color:var(--tcrn-color-text-primary)}
 .tcrn-operation-feedback__details-trigger{flex:0 1 auto;max-inline-size:100%;min-block-size:36px;border:1px solid var(--tcrn-color-border-control);border-radius:var(--tcrn-radius-control);background:var(--tcrn-color-surface-muted);color:var(--tcrn-color-text-primary);padding:var(--tcrn-space-1) var(--tcrn-space-2);font:inherit;cursor:pointer;overflow-wrap:anywhere}
 .tcrn-operation-feedback__details-trigger:focus-visible{outline:2px solid var(--tcrn-color-focus-ring);outline-offset:2px}
 .tcrn-operation-feedback__details{min-inline-size:0;max-inline-size:100%}
 .tcrn-operation-feedback__details-body{min-inline-size:0;max-inline-size:100%;overflow-wrap:anywhere;word-break:break-word}
 .tcrn-operation-feedback__details-body p{max-inline-size:100%;overflow-wrap:anywhere}
+.tcrn-operation-feedback__details-body pre{min-inline-size:0;max-inline-size:100%;margin:0;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;font-family:var(--tcrn-type-family-mono)}
 .tcrn-content-scope__content{min-inline-size:0;max-inline-size:100%}
 .tcrn-content-scope[data-content-valid="false"]{border-inline-start:3px solid var(--tcrn-color-state-blocked);padding-inline-start:var(--tcrn-space-2)}
 .tcrn-content-scope[data-content-phase="loading"]{border-color:var(--tcrn-color-state-warning)}
@@ -3684,8 +3729,6 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .tcrn-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .tcrn-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .tcrn-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.tcrn-surface__head { display: flex; align-items: center; justify-content: space-between; gap: var(--tcrn-space-3); margin-bottom: var(--tcrn-space-3); }
-.tcrn-surface__head h2, .tcrn-surface__head h3 { margin: 0; font-size: var(--tcrn-type-size-heading-3); }
 .tcrn-surface__note { margin: var(--tcrn-space-1) 0 0; color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); }
 .tcrn-meta { color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); }
 .tcrn-machine-token--key .tcrn-machine-token__value { color: var(--tcrn-color-text-muted); }
@@ -4045,9 +4088,6 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   grid-area: editor;
   min-width: 0;
 }
-.tcrn-definition-list__item {
-  grid-template-columns: minmax(230px, max-content) minmax(0, 1fr);
-}
 .tcrn-definition-list__detail {
   display: block;
   margin-top: var(--tcrn-space-1);
@@ -4092,9 +4132,6 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 }
 @media (max-width: 760px) {
   .tcrn-product-shell__workspace > .tcrn-top-bar, .tcrn-top-bar { grid-template-columns: minmax(0, 1fr); }
-  .tcrn-definition-list__item {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 @media (max-width: 680px) {
   .tcrn-editor-shell {
@@ -4258,12 +4295,12 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
         <div data-workspace-panel="overview">
           <div class="tcrn-grid tcrn-grid--4"><article class="tcrn-stat-card" data-stat-card="true" data-stat-tone="neutral"><span class="tcrn-stat-card__label" data-i18n="dashboard.chain">Chain version</span><strong class="tcrn-stat-card__value" id="stat-version">—</strong><span class="tcrn-stat-card__note" id="stat-head"></span></article><article class="tcrn-stat-card" data-stat-card="true" data-stat-tone="neutral"><span class="tcrn-stat-card__label" data-i18n="dashboard.events">Events</span><strong class="tcrn-stat-card__value" id="stat-events">—</strong><span class="tcrn-stat-card__note" data-i18n="dashboard.eventsNote">materialized chain</span></article><article class="tcrn-stat-card" data-stat-card="true" data-stat-tone="neutral"><span class="tcrn-stat-card__label" data-i18n="dashboard.engine">Engine</span><strong class="tcrn-stat-card__value" id="stat-engine">—</strong><span class="tcrn-stat-card__note" data-i18n="dashboard.engineNote">local loopback</span></article><article class="tcrn-stat-card" data-stat-card="true" data-stat-tone="neutral"><span class="tcrn-stat-card__label" data-i18n="dashboard.healthCard">Health</span><strong class="tcrn-stat-card__value" id="stat-health">—</strong><span class="tcrn-stat-card__note" data-i18n="dashboard.healthCardNote">read-only checks</span></article></div>
           <div class="tcrn-grid tcrn-grid--2 tcrn-dashboard-grid">
-            <article class="tcrn-surface"><div class="tcrn-surface__head"><div><h2 data-i18n="dashboard.healthTitle">Doctor checks</h2><p class="tcrn-surface__note" data-i18n="dashboard.healthNote">The eight checks returned by doctor for the selected project.</p></div><span class="tcrn-badge tcrn-badge--positive" id="validate-chip">doctor</span></div><div class="tcrn-list" id="health-list"></div></article>
-            <article class="tcrn-surface"><div class="tcrn-surface__head"><div><h2 data-i18n="dashboard.libraryTitle">Selected library</h2><p class="tcrn-surface__note" data-i18n="dashboard.libraryNote">Read from the selected library's status.</p></div></div><dl class="tcrn-definition-list" id="library-state"></dl></article>
+            <article class="tcrn-surface"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 data-i18n="dashboard.healthTitle">Doctor checks</h2><p class="tcrn-surface__note" data-i18n="dashboard.healthNote">The eight checks returned by doctor for the selected project.</p></div><span class="tcrn-badge tcrn-badge--positive" id="validate-chip">doctor</span></div><div class="tcrn-list" id="health-list"></div></article>
+            <article class="tcrn-surface"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 data-i18n="dashboard.libraryTitle">Selected library</h2><p class="tcrn-surface__note" data-i18n="dashboard.libraryNote">Read from the selected library's status.</p></div></div><dl class="tcrn-definition-list" id="library-state"></dl></article>
           </div>
         </div>
-        <div data-workspace-panel="work" hidden><div class="tcrn-surface" data-ui="work-tree"><div class="tcrn-surface__head"><div><h2 data-i18n="dashboard.workTitle">Work tree</h2><p class="tcrn-surface__note" data-i18n="dashboard.workNote">Initiatives, Epics, and Stories read from the engine.</p></div><span class="tcrn-badge" id="work-count">—</span></div><div class="tcrn-state-surface" id="work-loading" role="status" data-i18n="dashboard.workLoading" hidden>Reading work records through the engine…</div><div id="work-tree-content"></div></div></div>
-        <div data-workspace-panel="knowledge" hidden><div class="tcrn-surface" data-ui="knowledge-view"><div class="tcrn-surface__head"><div><h2 data-i18n="dashboard.knowledgeTitle">Knowledge inventory</h2><p class="tcrn-surface__note" data-i18n="dashboard.knowledgeNote">Cards and article indexes, metadata only.</p></div><span class="tcrn-badge" id="knowledge-count">—</span></div><div id="knowledge-view-content"></div></div></div>
+        <div data-workspace-panel="work" hidden><div class="tcrn-surface" data-ui="work-tree"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 data-i18n="dashboard.workTitle">Work tree</h2><p class="tcrn-surface__note" data-i18n="dashboard.workNote">Initiatives, Epics, and Stories read from the engine.</p></div><span class="tcrn-badge" id="work-count">—</span></div><div class="tcrn-state-surface" id="work-loading" role="status" data-i18n="dashboard.workLoading" hidden>Reading work records through the engine…</div><div id="work-tree-content"></div></div></div>
+        <div data-workspace-panel="knowledge" hidden><div class="tcrn-surface" data-ui="knowledge-view"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 data-i18n="dashboard.knowledgeTitle">Knowledge inventory</h2><p class="tcrn-surface__note" data-i18n="dashboard.knowledgeNote">Cards and article indexes, metadata only.</p></div><span class="tcrn-badge" id="knowledge-count">—</span></div><div id="knowledge-view-content"></div></div></div>
           </div>
         </div>
       </section>
@@ -4315,8 +4352,8 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
           <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs"><p class="tcrn-scope-note" data-i18n="gates.scope">Enabled gates run when their covered paths change. Required gates are checked before work is marked done.</p></div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content">
             <div id="gates-view" data-ui="gates-view">
-              <article class="tcrn-surface" aria-labelledby="gates-last-run-title"><div class="tcrn-surface__head"><div><h2 id="gates-last-run-title" data-i18n="gates.lastRunTitle">Most recent gate run</h2></div></div><div id="gates-last-run" data-ui="gates-last-run" aria-live="polite"></div></article>
-              <article class="tcrn-surface" aria-labelledby="gates-add-title"><div class="tcrn-surface__head"><div><h2 id="gates-add-title" data-i18n="gates.addTitle">Add a gate</h2></div></div>
+              <article class="tcrn-surface" aria-labelledby="gates-last-run-title"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 id="gates-last-run-title" data-i18n="gates.lastRunTitle">Most recent gate run</h2></div></div><div id="gates-last-run" data-ui="gates-last-run" aria-live="polite"></div></article>
+              <article class="tcrn-surface" aria-labelledby="gates-add-title"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 id="gates-add-title" data-i18n="gates.addTitle">Add a gate</h2></div></div>
                 <form id="gate-add-form" data-ui="gate-add-form">
                   <div class="tcrn-grid tcrn-grid--2">
                     <label class="tcrn-field"><span class="tcrn-field__label" data-i18n="gates.name">Gate name</span><input class="tcrn-input" name="name" required maxlength="64" autocomplete="off"></label>
@@ -4332,7 +4369,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
                   </div>
                 </form>
               </article>
-              <article class="tcrn-surface" aria-labelledby="gates-list-title"><div class="tcrn-surface__head"><div><h2 id="gates-list-title" data-i18n="gates.listTitle">Configured gates</h2></div></div>
+              <article class="tcrn-surface" aria-labelledby="gates-list-title"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 id="gates-list-title" data-i18n="gates.listTitle">Configured gates</h2></div></div>
                 <div class="tcrn-table-scroll"><table data-ui="gate-config-table"><thead><tr><th scope="col" data-i18n="collection.order">Order</th><th scope="col" data-i18n="gates.columnGate">Gate</th><th scope="col" data-i18n="gates.columnEnabled">Enabled</th><th scope="col" data-i18n="gates.columnRequired">Required</th><th scope="col" data-i18n="gates.columnCovers">Covers (path glob or work id)</th></tr></thead><tbody id="gates-rows"></tbody></table></div>
                 <div id="gates-empty" class="tcrn-state-surface" data-ui="gates-empty" hidden></div>
               </article>
@@ -4513,6 +4550,11 @@ const BOOT = __PORTAL_BOOT__;
     return term.description || `${t("vocabulary.enumValues")}: ${(term.allowedValues || term.coveredByIndependenceFloors || []).join(", ")}`;
   };
   const api = async (path, options = {}) => {
+    if (path === "/api/settings" && options.method === "POST") {
+      if (state.librarySwitching) return { ok: false, reasonCode: "PORTAL_LIBRARY_CHANGED" };
+      const request = JSON.parse(options.body);
+      options = { ...options, body: JSON.stringify({ ...request, libraryId: BOOT.library?.libraryId, libraryPath: BOOT.library?.libraryPath }) };
+    }
     const headers = { ...(options.body === undefined ? {} : { "content-type": "application/json" }), "x-portal-token": BOOT.token };
     const response = await fetch(path, { ...options, headers: { ...headers, ...(options.headers || {}) } });
     const body = await response.json();
@@ -4535,8 +4577,8 @@ const BOOT = __PORTAL_BOOT__;
     });
   };
   const recordValue = (body) => body?.record?.id ?? body?.setting?.key ?? body?.plan?.name ?? body?.name ?? body?.reasonCode ?? "—";
-  const openReceipt = () => { const drawer = $("#receipt-drawer"); drawer.dataset.open = "true"; drawer.setAttribute("aria-hidden", "false"); $("#receipt-chip").setAttribute("aria-expanded", "true"); renderReceipt(); $("#drawer-close").focus(); };
-  const closeReceipt = () => { const drawer = $("#receipt-drawer"); drawer.dataset.open = "false"; drawer.setAttribute("aria-hidden", "true"); $("#receipt-chip").setAttribute("aria-expanded", "false"); };
+  const openReceipt = () => { state.receiptReturnFocus = document.activeElement; const drawer = $("#receipt-drawer"); drawer.dataset.open = "true"; drawer.setAttribute("aria-hidden", "false"); $("#receipt-chip").setAttribute("aria-expanded", "true"); renderReceipt(); $("#drawer-close").focus(); };
+  const closeReceipt = () => { clearTransientTarget(); const drawer = $("#receipt-drawer"); drawer.dataset.open = "false"; drawer.setAttribute("aria-hidden", "true"); $("#receipt-chip").setAttribute("aria-expanded", "false"); const target = state.receiptReturnFocus; (target?.isConnected && !target.closest('[data-page]')?.hidden ? target : $("#receipt-chip"))?.focus?.(); };
   const toggleReceiptDetails = () => { state.operationDetailsOpen = !state.operationDetailsOpen; renderReceipt(); };
   const showReceipt = (body) => {
     state.receipt = body || { ok: false, reasonCode: "PORTAL_EMPTY_RECEIPT" };
@@ -4592,6 +4634,7 @@ const BOOT = __PORTAL_BOOT__;
     renderReceipt();
   };
   const clearTransientTarget = () => {
+    state.transientTargetGeneration = (state.transientTargetGeneration || 0) + 1;
     if (state.transientTargetTimer !== null) clearTimeout(state.transientTargetTimer);
     state.transientTargetTimer = null;
     state.collectionFocus = null;
@@ -4599,15 +4642,48 @@ const BOOT = __PORTAL_BOOT__;
   };
   const armTransientTarget = () => {
     if (state.transientTargetTimer !== null) clearTimeout(state.transientTargetTimer);
-    state.transientTargetTimer = setTimeout(clearTransientTarget, 2400);
+    const owner = (state.transientTargetGeneration || 0) + 1;
+    state.transientTargetGeneration = owner;
+    state.transientTargetTimer = setTimeout(() => {
+      if (state.transientTargetGeneration === owner) clearTransientTarget();
+    }, 2400);
+  };
+  // Keep keyboard identity across a replaced renderer, including a checkbox's
+  // value and a table field's row. A removed row explicitly hands focus onward.
+  const focusableSelector = 'input,select,textarea,button,[tabindex]';
+  const rememberFocus = (root) => {
+    const active = document.activeElement;
+    if (!root?.contains(active)) return null;
+    return {
+      id: active.id,
+      attributes: [...active.attributes].filter((attribute) => attribute.name.startsWith("data-") || attribute.name === "name" || attribute.name === "value").map((attribute) => [attribute.name, attribute.value]),
+      row: active.closest('[data-collection-row]')?.dataset.collectionRow,
+      index: $$(focusableSelector, root).indexOf(active),
+      start: active.selectionStart, end: active.selectionEnd,
+    };
+  };
+  const restoreFocus = (root, bookmark) => {
+    if (!bookmark || root.closest('[data-page]')?.hidden) return;
+    const controls = $$(focusableSelector, root).filter((control) => !control.disabled);
+    const exact = controls.find((control) => bookmark.id ? control.id === bookmark.id
+      : bookmark.attributes.every(([name, value]) => control.getAttribute(name) === value)
+        && control.closest('[data-collection-row]')?.dataset.collectionRow === bookmark.row);
+    const target = exact || controls[Math.min(bookmark.index, controls.length - 1)];
+    target?.focus?.({ preventScroll: true });
+    if (bookmark.start !== null && bookmark.start !== undefined && target?.setSelectionRange) {
+      try { target.setSelectionRange(bookmark.start, bookmark.end); } catch { /* number/select */ }
+    }
   };
   const navigate = (page, { preserveTransientTarget = false } = {}) => {
     if (!preserveTransientTarget) clearTransientTarget();
+    if (state.page !== page) state.promptLanguageDraft = null;
+    const previousPage = document.activeElement?.closest('[data-page]');
     state.page = page;
     $$('[data-page]').forEach((section) => { section.hidden = section.dataset.page !== page; });
     $$('[data-page-target]').forEach((button) => { if (button.dataset.pageTarget) button.setAttribute("aria-current", button.dataset.pageTarget === page ? "page" : "false"); });
     setText("#echo-command", page === "dashboard" ? t("echo.idle") : `${page} · ${BOOT.actor}`);
     $("#search-results").hidden = true;
+    if (previousPage?.hidden) $(`[data-page-target="${page}"]`)?.focus?.();
   };
   // TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R5; MIN-236 D7; contract C-R14-1): the settings page is
   // laid out from what the two catalogs say about each key, and keeps no grouping of its own. A key's
@@ -4857,9 +4933,26 @@ const BOOT = __PORTAL_BOOT__;
   const promptLanguageLabel = (language) => `${BOOT.localeMetadata?.find((entry) => entry.locale === language)?.nativeName || language} (${language})`;
   const promptLanguageChoice = (entry, label, id) => {
     const roster = promptLanguageRoster();
-    const selected = new Set(promptLanguageSelection(entry.currentValue, roster));
+    const selected = new Set(promptLanguageSelection(state.promptLanguageDraft ?? entry.currentValue, roster));
+    const dirty = [...selected].join(",") !== promptLanguageSelection(entry.currentValue, roster).join(",");
     const options = roster.map((language, index) => `<label class="tcrn-multi-select-group__option" for="${esc(id)}-option-${index}"><input id="${esc(id)}-option-${index}" class="tcrn-checkbox" type="checkbox" name="${esc(entry.key)}" value="${esc(language)}" data-setting-option-value="${esc(language)}" ${selected.has(language) ? "checked" : ""}><span>${esc(promptLanguageLabel(language))}</span></label>`).join("");
-    return `<div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(roster, entry.key, "collection-closed", "multi-select")} data-setting-choice-cardinality="set" data-setting-choice-source="artifact.language.allowedValues" data-setting-choice-value-format="comma-separated"><span id="${esc(id)}-label" class="tcrn-field__label">${esc(label)}</span><div class="tcrn-multi-select-group"><div class="tcrn-multi-select-group__options" id="${esc(id)}" role="group" aria-labelledby="${esc(id)}-label" data-choice-cardinality="collection" data-choice-value-mode="closed" data-choice-presentation="checkboxes" data-choice-option-count="${roster.length}" data-setting-cardinality="set" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set">${options}</div><div class="tcrn-multi-select-group__actions"><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--sm tcrn-multi-select-group__clear" data-reset-setting="${esc(entry.key)}" ${selected.size === 0 ? "disabled" : ""}>${esc(t("setting.retrieval.promptLanguages.reset"))}</button></div></div></div>`;
+    return `<div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(roster, entry.key, "collection-closed", "multi-select")} data-setting-choice-cardinality="set" data-setting-choice-source="artifact.language.allowedValues" data-setting-choice-value-format="comma-separated"><span id="${esc(id)}-label" class="tcrn-field__label">${esc(label)}</span><div class="tcrn-multi-select-group"><div class="tcrn-multi-select-group__options" id="${esc(id)}" role="group" aria-labelledby="${esc(id)}-label" data-choice-cardinality="collection" data-choice-value-mode="closed" data-choice-presentation="checkboxes" data-choice-option-count="${roster.length}" data-setting-cardinality="set" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set">${options}</div><div class="tcrn-multi-select-group__actions"><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--sm" data-save-setting-choice="${esc(entry.key)}" ${dirty ? "" : "disabled"}>${esc(t("config.save"))}</button><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--sm" data-undo-setting-choice="${esc(entry.key)}" ${dirty ? "" : "disabled"}>${esc(t("config.undo"))}</button><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--sm tcrn-multi-select-group__clear" data-reset-setting="${esc(entry.key)}" ${String(entry.currentValue ?? "") === "" ? "disabled" : ""}>${esc(t("setting.retrieval.promptLanguages.reset"))}</button></div></div></div>`;
+  };
+  const referenceChoice = (entry, label, id) => {
+    const values = [...new Set(entry.allowedValues || [])];
+    const current = String(entry.currentValue ?? "");
+    const categories = storedRecords(entry.valueReference.key);
+    const missing = !values.includes(current);
+    const unavailable = entry.referenceStatus === "unavailable";
+    const choices = values.map((value) => {
+      const record = categories.find((category) => category.id === value);
+      const name = record?.name && record.name !== value ? `${record.name} (${value})` : value;
+      return `<option value="${esc(value)}" ${value === current ? "selected" : ""}>${esc(name)}</option>`;
+    });
+    if (missing) choices.unshift(`<option value="${esc(current)}" selected disabled data-reference-missing>${esc(t("modelTiers.missingCategory", { category: current || t("config.unset") }))}</option>`);
+    const message = unavailable ? t("health.unavailable") : values.length === 0 ? t("modelTiers.noCategoriesBody")
+      : missing ? t("modelTiers.missingCategory", { category: current }) : entry.valueOrigin === "default" ? t("config.defaultValue", { value: current }) : "";
+    return `<div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(values, entry.key)} data-setting-choice-source="${esc(entry.valueReference.key)}" data-reference-status="${esc(entry.referenceStatus)}"><label class="tcrn-setting-choice__select-label" for="${esc(id)}"><span class="tcrn-sr-only">${esc(label)}</span><select class="tcrn-select" id="${esc(id)}" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set" ${unavailable || values.length === 0 ? "disabled" : ""} ${missing ? 'aria-invalid="true"' : ""}>${choices.join("")}</select></label>${message ? `<span class="tcrn-setting-choice__hint" role="status">${esc(message)}</span>` : ""}<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--sm" data-collection-link="model-categories">${esc(t("modelTiers.openCategories"))}</button></div>`;
   };
   // A device key is written through machine-settings-set. The default library's legal values are the
   // libraries this device has registered, so they come from the boot payload rather than from a closed
@@ -4886,6 +4979,7 @@ const BOOT = __PORTAL_BOOT__;
     if (entry.controlType === "boolean") return `<label class="tcrn-switch" data-switch-state="${current === (entry.trueValue || "allowed") ? "on" : "off"}"><input class="tcrn-switch__control" type="checkbox" role="switch" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set" data-setting-value="${esc(entry.trueValue || "allowed")}" ${current === (entry.trueValue || "allowed") ? "checked" : ""}><span class="tcrn-switch__label">${esc(current === (entry.trueValue || "allowed") ? t("config.enabled") : t("config.disabled"))}</span></label>`;
     if (entry.controlType === "number") return `<div class="tcrn-number-input-field"><label class="tcrn-field" for="${esc(id)}"><span class="tcrn-sr-only">${esc(label)}</span><input class="tcrn-input tcrn-number-input" id="${esc(id)}" type="number" min="${esc(entry.min)}" max="${esc(entry.max)}" step="1" value="${esc(current)}" data-number-input-component="NumberInput" data-number-input="true" data-number-input-semantic="numeric-entry" data-number-input-visibility="full-value" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set" aria-label="${esc(label)}"></label><span class="tcrn-setting-choice__hint">${esc(entry.min)}–${esc(entry.max)}</span></div>`;
     if (entry.key === "retrieval.promptLanguages") return promptLanguageChoice(entry, label, id);
+    if (entry.controlType === "reference") return referenceChoice(entry, label, id);
     if (entry.controlType === "enum" && values.length > 0) return `<div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(values, entry.key)}><label class="tcrn-setting-choice__select-label" for="${esc(id)}"><span class="tcrn-sr-only">${esc(label)}</span><select class="tcrn-select" id="${esc(id)}" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set">${values.map((value) => `<option value="${esc(value)}" ${value === current ? "selected" : ""}>${esc(entry.key === "artifact.language" ? promptLanguageLabel(value) : value || t("config.unset"))}</option>`).join("")}</select></label></div>`;
     return `<label class="tcrn-field"><span class="tcrn-sr-only">${esc(label)}</span><input class="tcrn-input" id="${esc(id)}" value="${esc(current)}" placeholder="${esc(entry.defaultValue ?? t("config.unset"))}" aria-label="${esc(label)}" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set"></label>`;
   };
@@ -4958,6 +5052,8 @@ const BOOT = __PORTAL_BOOT__;
   };
   const settingRow = (entry) => entry.layer === "device" ? deviceSettingRow(entry) : entry.shape === "collection" ? collectionSettingRow(entry) : projectSettingRow(entry);
   const renderSettings = () => {
+    clearTransientTarget();
+    const focus = rememberFocus($("#settings-rows"));
     destroyStaticOverlayMounts();
     const groups = settingGroups();
     if (groups.length > 0 && !groups.includes(state.settingGroup)) state.settingGroup = groups[0];
@@ -4973,7 +5069,7 @@ const BOOT = __PORTAL_BOOT__;
     if (settingsPanel) settingsPanel.dataset.settingsPanelGroup = state.settingGroup;
     bindTabList(nav, {
       selected: state.settingGroup,
-      onSelect: (tab) => { state.settingGroup = tab.dataset.settingGroup; renderSettings(); },
+      onSelect: (tab) => { state.promptLanguageDraft = null; state.settingGroup = tab.dataset.settingGroup; renderSettings(); },
     });
     const entries = groupEntries(state.settingGroup);
     setText("#settings-count", `${entries.length} ${t("config.keyCount")}`);
@@ -4986,7 +5082,7 @@ const BOOT = __PORTAL_BOOT__;
       ? `<div class="tcrn-content-scope__content"><div class="tcrn-settings-layout__form"><div class="tcrn-setting-row-list" data-setting-row-list="true">${entries.map(settingRow).join("")}</div></div></div>`
       : `<div class="tcrn-state-surface" data-settings-state="${phase}">${esc(stateText)}</div>`;
     const valid = unavailable || deviceUnavailable ? "false" : "true";
-    $("#settings-rows").innerHTML = `<section class="tcrn-surface tcrn-content-scope" data-content-scope="settings-group" data-content-group="${esc(state.settingGroup)}" data-content-source="engine.settings-catalog engine.machine-settings" data-content-phase="${phase}" data-content-valid="${valid}" data-content-shown-count="${entries.length}" data-content-total-count="${entries.length}" data-content-count-kind="total" data-content-stale="false"><div class="tcrn-surface__head"><div><h2>${esc(settingGroupName(state.settingGroup))}</h2><p class="tcrn-surface__note">${esc(t("settings.groupNote"))}</p></div></div>${body}</section>`;
+    $("#settings-rows").innerHTML = `<section class="tcrn-surface tcrn-content-scope" data-content-scope="settings-group" data-content-group="${esc(state.settingGroup)}" data-content-source="engine.settings-catalog engine.machine-settings" data-content-phase="${phase}" data-content-valid="${valid}" data-content-shown-count="${entries.length}" data-content-total-count="${entries.length}" data-content-count-kind="total" data-content-stale="false"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2>${esc(settingGroupName(state.settingGroup))}</h2><p class="tcrn-surface__note">${esc(t("settings.groupNote"))}</p></div></div>${body}</section>`;
     // The design authority's panel sits with the key, in whichever group the catalog files it.
     const authorityGroup = settingGroup("design.authority");
     $("#design-authority").hidden = state.settingGroup !== authorityGroup || designAuthorityState.status === "unset";
@@ -4994,17 +5090,21 @@ const BOOT = __PORTAL_BOOT__;
     const rows = $("#settings-rows");
     $$('[data-setting-control]', rows).forEach((control) => {
       if (control.tagName === "BUTTON") control.addEventListener("click", () => saveSetting(control.dataset.settingControl, control.dataset.settingValue));
-      else if (control.getAttribute("data-setting-cardinality") === "set") control.addEventListener("change", () => {
+      else if (control.getAttribute("data-setting-cardinality") === "set") control.addEventListener("change", (event) => {
+        if (promptLanguageRoster().includes(event.target.value)) state.promptLanguageFocusValue = event.target.value;
         const values = control.dataset.choicePresentation === "checkboxes"
           ? $$('input[type="checkbox"]', control).filter((option) => option.checked).map((option) => option.value)
           : [...control.options].filter((option) => option.selected).map((option) => option.value);
         const selected = [...new Set(values)];
-        if (selected.length === 0) resetSetting(control.dataset.settingControl);
-        else saveSetting(control.dataset.settingControl, selected.join(","));
+        state.promptLanguageDraft = promptLanguageSelection(selected.join(","), promptLanguageRoster()).join(",");
+        const dirty = state.promptLanguageDraft !== promptLanguageSelection(currentSetting(control.dataset.settingControl)?.currentValue, promptLanguageRoster()).join(",");
+        $$('[data-save-setting-choice],[data-undo-setting-choice]', rows).forEach((button) => { button.disabled = !dirty || state.settingsWritePending || state.librarySwitching; });
       });
       else control.addEventListener("change", () => saveSetting(control.dataset.settingControl, control.type === "checkbox" ? (control.checked ? control.dataset.settingValue : (currentSetting(control.dataset.settingControl)?.falseValue || "forbidden")) : control.value));
     });
     $$('[data-reset-setting]', rows).forEach((button) => button.addEventListener("click", () => resetSetting(button.dataset.resetSetting)));
+    $$('[data-save-setting-choice]', rows).forEach((button) => button.addEventListener("click", () => saveSetting(button.dataset.saveSettingChoice, state.promptLanguageDraft)));
+    $$('[data-undo-setting-choice]', rows).forEach((button) => button.addEventListener("click", () => { state.promptLanguageDraft = null; clearTransientTarget(); renderSettings(); focusPromptLanguage(); }));
     $$('[data-stepper-action]', rows).forEach((button) => button.addEventListener("click", () => {
       const input = button.closest("[data-stepper]")?.querySelector("[data-setting-control]");
       if (!input) return;
@@ -5020,6 +5120,8 @@ const BOOT = __PORTAL_BOOT__;
     $$('[data-vocabulary-link]', rows).forEach((button) => button.addEventListener("click", () => { state.selectedVocabulary = button.dataset.vocabularyLink; navigate("vocabulary"); renderVocabulary(); }));
     attachEcho(rows);
     mountStaticOverlayMounts(rows);
+    restoreFocus(rows, focus);
+    if (state.librarySwitching || state.settingsWritePending) setSettingWritesBusy(true);
   };
   // TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R5, R6; contracts C-R14-2, C-R14-6): a collection key's
   // value is a table of records, and each collection has a page of its own built from one table
@@ -5113,7 +5215,7 @@ const BOOT = __PORTAL_BOOT__;
     const alerts = [...tableFindings.map(findingAlert), ...refusal].join("");
     const alertBlock = alerts === "" ? "" : `<div data-collection-alerts="${esc(key)}" role="alert">${alerts}</div>`;
     const reset = modified ? `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-collection-reset="${esc(key)}" data-cli-action="settings-remove">${esc(t("collection.restoreDefault"))}</button>` : "";
-    return `<section class="tcrn-surface" data-content-scope="${esc(COLLECTION_PAGES[key])}"><div class="tcrn-surface__head"><div><h2>${esc(title)}</h2><p class="tcrn-surface__note">${esc(t("collection.saveNote"))}</p></div><div data-collection-links>${links}${layerBadge("project")}</div></div>${alertBlock}${table}<div class="tcrn-action-row" data-collection-actions="${esc(key)}"><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-collection-add="${esc(key)}">${esc(addLabel)}</button>${reset}<button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-collection-save="${esc(key)}" data-cli-action="settings-set">${esc(t("collection.save"))}</button></div></section>`;
+    return `<section class="tcrn-surface" data-content-scope="${esc(COLLECTION_PAGES[key])}"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2>${esc(title)}</h2><p class="tcrn-surface__note">${esc(t("collection.saveNote"))}</p></div><div class="tcrn-surface__head-actions" data-collection-links>${links}${layerBadge("project")}</div></div>${alertBlock}${table}<div class="tcrn-action-row" data-collection-actions="${esc(key)}"><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-collection-add="${esc(key)}">${esc(addLabel)}</button>${reset}<button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-collection-save="${esc(key)}" data-cli-action="settings-set">${esc(t("collection.save"))}</button></div></section>`;
   };
   // TCRN-CROSS-SUB-410 (TCRN-CROSS-STORY-508 R6; contract C-R14-3): the top of the tier page shows the
   // three escalation settings as they stand, read only, and links to the settings group that holds
@@ -5132,7 +5234,7 @@ const BOOT = __PORTAL_BOOT__;
       const tone = key === "models.escalation.ceiling" && category === undefined ? " tcrn-badge--warning" : "";
       return `<div class="tcrn-list__row" data-escalation-key="${esc(key)}"><span>${esc(settingLabel(key))}</span><span class="tcrn-badge${tone}" data-escalation-value="${esc(key)}">${esc(shown[key])}</span></div>`;
     }).join("");
-    return `<section class="tcrn-surface" data-escalation-summary aria-label="${esc(t("modelTiers.escalationTitle"))}"><div class="tcrn-surface__head"><div><h2>${esc(t("modelTiers.escalationTitle"))}</h2><p class="tcrn-surface__note">${esc(t("modelTiers.escalationNote"))}</p></div><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-escalation-settings-link>${esc(t("modelTiers.escalationChange"))}</button></div><div class="tcrn-list">${rows}</div></section>`;
+    return `<section class="tcrn-surface" data-escalation-summary aria-label="${esc(t("modelTiers.escalationTitle"))}"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2>${esc(t("modelTiers.escalationTitle"))}</h2><p class="tcrn-surface__note">${esc(t("modelTiers.escalationNote"))}</p></div><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-escalation-settings-link>${esc(t("modelTiers.escalationChange"))}</button></div><div class="tcrn-list">${rows}</div></section>`;
   };
   const openEscalationSettings = () => {
     clearTransientTarget();
@@ -5142,6 +5244,7 @@ const BOOT = __PORTAL_BOOT__;
   };
   const tierCounts = () => storedRecords("models.tiers").reduce((counts, record) => counts.set(record.category, (counts.get(record.category) ?? 0) + 1), new Map());
   const renderModelCategories = () => {
+    const focus = rememberFocus($("#model-categories-view"));
     const key = "models.category";
     const rows = collectionRows(key);
     const counts = tierCounts();
@@ -5173,8 +5276,10 @@ const BOOT = __PORTAL_BOOT__;
       table: collectionTable({ key, ui: "model-categories-table", label: t("modelCategories.title"), columns, rows, findings: collectionState(key).findings, empty }),
     });
     wireCollection(key, view);
+    restoreFocus(view, focus);
   };
   const renderModelTiers = () => {
+    const focus = rememberFocus($("#model-tiers-view"));
     const key = "models.tiers";
     const rows = collectionRows(key);
     const status = collectionState(key);
@@ -5187,7 +5292,7 @@ const BOOT = __PORTAL_BOOT__;
     const categoryChoice = (row, invalid) => {
       const current = String(row.category ?? "");
       const options = categories.map((category) => `<option value="${esc(category.id)}"${category.id === current ? " selected" : ""}>${esc(categoryLabel(category))}</option>`);
-      if (!known.has(current)) options.push(`<option value="${esc(current)}" selected data-model-category-missing="true">${esc(current === "" ? t("modelTiers.noCategory") : t("modelTiers.missingCategory", { category: current }))}</option>`);
+      if (!known.has(current)) options.push(`<option value="${esc(current)}" selected disabled data-model-category-missing="true">${esc(current === "" ? t("modelTiers.noCategory") : t("modelTiers.missingCategory", { category: current }))}</option>`);
       const invalidAttribute = invalid ? ' aria-invalid="true"' : "";
       return `<span data-collection-choice><select class="tcrn-select" aria-label="${esc(t("modelTiers.category"))}" data-collection-field="category"${invalidAttribute}>${options.join("")}</select><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md tcrn-icon-button" data-model-category-link aria-label="${esc(t("modelTiers.openCategory"))}"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 3.5h6v6"/><path d="M12.5 3.5 4 12"/></svg></button></span>`;
     };
@@ -5219,6 +5324,7 @@ const BOOT = __PORTAL_BOOT__;
     });
     $$("[data-escalation-settings-link]", view).forEach((button) => button.addEventListener("click", openEscalationSettings));
     wireCollection(key, view);
+    restoreFocus(view, focus);
   };
   const renderCollection = (key) => {
     clearTransientTarget();
@@ -5244,6 +5350,7 @@ const BOOT = __PORTAL_BOOT__;
     renderCollections({ preserveTransientTarget: true });
     const targetRow = focus === null ? null : $(`[data-collection-table="${key}"] [data-transient-target="true"]`);
     targetRow?.scrollIntoView?.({ block: "center" });
+    if (targetRow) $(focusableSelector, targetRow)?.focus?.({ preventScroll: true });
     if (targetRow) armTransientTarget();
   };
   const addCollectionRow = (key) => {
@@ -5265,10 +5372,13 @@ const BOOT = __PORTAL_BOOT__;
     rows.splice(index, 1);
     Object.assign(status, { draft: rows, dirty: true, findings: [], refusal: null });
     renderCollection(key);
+    const nextRow = $(`[data-collection-table="${key}"] [data-collection-row="${Math.min(index, rows.length - 1)}"]`);
+    (nextRow ? $(focusableSelector, nextRow) : $(`[data-collection-add="${key}"]`))?.focus?.();
   };
   // A write that landed reads everything back, AGENTS.md too (the system variables were rendered);
   // a refused one keeps the table as it was sent, with the engine's findings on its rows.
   const settleCollectionWrite = async (key, result, sent) => {
+    if (result.library && result.library.libraryPath !== BOOT.library?.libraryPath) return;
     const status = collectionState(key);
     status.findings = Array.isArray(result.findings) ? result.findings : [];
     status.refusal = result.ok === false ? result : null;
@@ -5283,15 +5393,21 @@ const BOOT = __PORTAL_BOOT__;
     renderCollection(key);
   };
   const saveCollection = async (key) => {
+    if (state.librarySwitching) return;
+    const epoch = state.libraryEpoch || 0;
     const records = readCollectionTable(key);
     echo("settings-set", ["--key", key]);
     const result = await api("/api/settings", { method: "POST", body: JSON.stringify({ key, value: JSON.stringify(records) }) });
+    if ((state.libraryEpoch || 0) !== epoch) return;
     showReceipt(result);
     await settleCollectionWrite(key, result, records);
   };
   const resetCollection = async (key) => {
+    if (state.librarySwitching) return;
+    const epoch = state.libraryEpoch || 0;
     echo("settings-remove", ["--key", key]);
     const result = await api("/api/settings", { method: "POST", body: JSON.stringify({ key, reset: true }) });
+    if ((state.libraryEpoch || 0) !== epoch) return;
     showReceipt(result);
     await settleCollectionWrite(key, result, null);
   };
@@ -5373,7 +5489,7 @@ const BOOT = __PORTAL_BOOT__;
     const headers = [t("collection.order"), t("variables.name"), t("variables.type"), t("variables.value"), t("variables.description"), t("variables.actions")];
     const content = unavailable
       ? `<div class="tcrn-state-surface" role="alert">${esc(source?.reasonCode ?? t("health.unavailable"))}</div>`
-      : `<section class="tcrn-surface" data-content-scope="custom-variables"><div class="tcrn-surface__head"><div><h2>${esc(t("variables.title"))}</h2><p class="tcrn-surface__note">${esc(t("variables.note"))}</p></div></div><div class="tcrn-table-shell tcrn-variable-table" role="table" aria-label="${esc(t("variables.title"))}" data-variable-table="true"><div class="tcrn-table-shell__head" role="row">${headers.map((label) => `<span role="columnheader">${esc(label)}</span>`).join("")}</div>${variableRow({ name: "", type: "string", value: "", description: "" }, true)}${rows}</div></section>${source?.withheld?.length ? `<p class="tcrn-scope-note">${esc(t("variables.withheld", { count: source.withheld.length }))}</p>` : ""}`;
+      : `<section class="tcrn-surface" data-content-scope="custom-variables"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2>${esc(t("variables.title"))}</h2><p class="tcrn-surface__note">${esc(t("variables.note"))}</p></div></div><div class="tcrn-table-shell tcrn-variable-table" role="table" aria-label="${esc(t("variables.title"))}" data-variable-table="true"><div class="tcrn-table-shell__head" role="row">${headers.map((label) => `<span role="columnheader">${esc(label)}</span>`).join("")}</div>${variableRow({ name: "", type: "string", value: "", description: "" }, true)}${rows}</div></section>${source?.withheld?.length ? `<p class="tcrn-scope-note">${esc(t("variables.withheld", { count: source.withheld.length }))}</p>` : ""}`;
     $("#variables-view").innerHTML = content;
     $$('[data-variable-create]').forEach((button) => button.addEventListener("click", () => saveVariable(variableFieldValues(button.closest("[data-variable-create-row]")))));
     $$('[data-variable-save]').forEach((button) => button.addEventListener("click", () => {
@@ -5480,7 +5596,7 @@ const BOOT = __PORTAL_BOOT__;
       : selectedBody.pending === true
         ? `<article class="tcrn-surface" data-ui="knowledge-body-reader" aria-live="polite"><div class="tcrn-surface__head"><h3>${esc(t("knowledge.bodyTitle"))}</h3></div><div class="tcrn-state-surface">${esc(t("knowledge.bodyLoading"))}</div></article>`
         : selectedBody.body
-          ? `<article class="tcrn-surface" data-ui="knowledge-body-reader"><div class="tcrn-surface__head"><div><h3>${esc(selectedRecord?.subject || selectedBody.id)}</h3><p class="tcrn-surface__note">${esc(t("knowledge.bodyReadBoundary"))}</p></div><span class="tcrn-badge">${esc(selectedBody.freshness || "—")}</span></div><pre class="tcrn-read-list__summary" role="document">${esc(selectedBody.body)}</pre><span class="tcrn-meta">${esc(t("knowledge.bodyDigest"))}: ${esc(selectedBody.bodySha256 || "—")}</span></article>`
+          ? `<article class="tcrn-surface" data-ui="knowledge-body-reader"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h3>${esc(selectedRecord?.subject || selectedBody.id)}</h3><p class="tcrn-surface__note">${esc(t("knowledge.bodyReadBoundary"))}</p></div><span class="tcrn-badge">${esc(selectedBody.freshness || "—")}</span></div><pre class="tcrn-read-list__summary" role="document">${esc(selectedBody.body)}</pre><span class="tcrn-meta">${esc(t("knowledge.bodyDigest"))}: ${esc(selectedBody.bodySha256 || "—")}</span></article>`
           : `<article class="tcrn-surface" data-ui="knowledge-body-reader" role="alert"><div class="tcrn-surface__head"><h3>${esc(t("knowledge.bodyTitle"))}</h3></div><div class="tcrn-state-surface">${esc(selectedBody.reasonCode || t("knowledge.bodyUnavailable"))}</div></article>`;
     const statusOptions = [["valid", t("knowledge.statusValid")], ["removed", t("knowledge.statusRemoved")], ["all", t("knowledge.statusAll")]]
       .map(([value, label]) => `<option value="${value}"${state.knowledgeStatus === value ? " selected" : ""}>${esc(label)}</option>`).join("");
@@ -5553,6 +5669,7 @@ const BOOT = __PORTAL_BOOT__;
     runHost.innerHTML = `<div><div data-gate-run-row><span>${esc(t("gates.runAt"))}: <time datetime="${esc(run.at)}">${esc(new Date(run.at).toLocaleString(state.locale))}</time></span><span class="tcrn-meta">${esc(t("gates.runId"))}: <code>${esc(run.runId)}</code></span><span class="tcrn-badge ${run.reds?.length ? "tcrn-badge--danger" : "tcrn-badge--positive"}">${passed}/${outcomes.length} · ${esc(run.reds?.length ? t("gates.runFailed") : t("gates.runOk"))}</span></div><div class="tcrn-list">${outcomes.map((gate) => `<div class="tcrn-list__row"><span>${esc(gate.name)}${gate.required ? ` · ${esc(t("gates.required"))}` : ""}</span><span class="tcrn-badge ${gate.ok ? "tcrn-badge--positive" : "tcrn-badge--danger"}">${esc(gate.ok ? t("gates.runOk") : t("gates.runFailed"))}</span></div>`).join("") || `<div class="tcrn-state-surface">${esc(t("gates.lastRunEmpty"))}</div>`}</div></div>`;
   };
   const renderDashboard = () => {
+    const doctorFocus = rememberFocus($("#health-list"));
     const status = state.status || {};
     setText("#stat-version", status.version ?? "—");
     setText("#stat-head", String(status.headEventHash || "—").slice(0, 16));
@@ -5567,7 +5684,19 @@ const BOOT = __PORTAL_BOOT__;
       registry: t("health.registry"), "library-format": t("health.libraryFormat"), "device-stream": t("health.deviceStream"),
       "managed-sections": t("health.managedSections"), "cloud-flag": t("health.cloudFlag"),
     }[name] || name);
-    $("#health-list").innerHTML = checks.map((check) => `<div class="tcrn-list__row" data-doctor-check="${esc(check.check)}"><div><strong>${esc(healthLabel(check.check))}</strong><div class="tcrn-meta">${esc(t("health.detail"))}: ${esc(JSON.stringify(check.detail ?? {}))}</div></div><div><span class="tcrn-badge ${check.ok ? "tcrn-badge--positive" : "tcrn-badge--danger"}">${esc(check.ok ? t("health.ok") : t("health.failed"))}</span><div class="tcrn-meta">${esc(t("health.reasonCode"))}: <code>${esc(check.reasonCode ?? "—")}</code></div></div></div>`).join("") || `<div class="tcrn-state-surface">${esc(t("health.unavailable"))}</div>`;
+    state.doctorDetails ??= new Set();
+    $("#health-list").innerHTML = checks.map((check, index) => {
+      const expanded = state.doctorDetails.has(check.check);
+      const id = `doctor-details-${index}`;
+      return `<section class="tcrn-operation-feedback" data-operation-feedback="true" data-operation-phase="${check.ok ? "success" : "error"}" data-operation-state="${check.ok ? "success" : "error"}" data-operation-state-claim="${check.ok ? "success" : "error"}" data-operation-valid="true" data-operation-geometry="responsive-safe" data-operation-update-notification="aria-live" aria-live="polite" data-doctor-check="${esc(check.check)}"><div class="tcrn-operation-feedback__summary"><span class="tcrn-badge tcrn-operation-feedback__status ${check.ok ? "tcrn-badge--positive" : "tcrn-badge--danger"}" data-operation-short-status="true" data-operation-short-status-phase="${check.ok ? "success" : "error"}">${esc(check.ok ? t("health.ok") : t("health.failed"))}</span><dl class="tcrn-operation-feedback__identity" data-operation-identity="true"><div class="tcrn-operation-feedback__identity-row"><dt>${esc(healthLabel(check.check))}</dt><dd><code>${esc(check.check)}</code></dd></div><div class="tcrn-operation-feedback__identity-row"><dt>${esc(t("health.reasonCode"))}</dt><dd><code>${esc(check.reasonCode ?? "—")}</code></dd></div></dl><button type="button" class="tcrn-operation-feedback__details-trigger" data-doctor-details="${esc(check.check)}" aria-expanded="${expanded}" aria-controls="${id}">${esc(t("health.detail"))}</button></div><section class="tcrn-operation-feedback__details" id="${id}" ${expanded ? "" : "hidden"}><div class="tcrn-operation-feedback__details-body"><pre tabindex="0" aria-label="${esc(healthLabel(check.check))}: ${esc(t("health.detail"))}">${esc(JSON.stringify(check.detail ?? {}, null, 2))}</pre></div></section></section>`;
+    }).join("") || `<div class="tcrn-state-surface">${esc(t("health.unavailable"))}</div>`;
+    $$('[data-doctor-details]').forEach((button) => button.addEventListener("click", () => {
+      const expanded = button.getAttribute("aria-expanded") !== "true";
+      if (expanded) state.doctorDetails.add(button.dataset.doctorDetails); else state.doctorDetails.delete(button.dataset.doctorDetails);
+      button.setAttribute("aria-expanded", String(expanded));
+      document.getElementById(button.getAttribute("aria-controls")).hidden = !expanded;
+    }));
+    restoreFocus($("#health-list"), doctorFocus);
     setText("#validate-chip", healthy ? t("health.healthy") : t("health.degraded"));
     $("#validate-chip").className = `tcrn-badge ${healthy ? "tcrn-badge--positive" : "tcrn-badge--danger"}`;
     const library = status.library ?? {};
@@ -5817,8 +5946,46 @@ const BOOT = __PORTAL_BOOT__;
   // missing argument, and the honest verb for clearing a setting is settings-remove.
   const saveSetting = async (key, value) => {
     if (String(value ?? "").trim() === "") return resetSetting(key);
-    echo("settings-set", ["--key", key, "--value", value]); const result = await api("/api/settings", { method: "POST", body: JSON.stringify({ key, value }) }); showReceipt(result); await refresh();
-    if (rendersSystemVariables(key)) await loadAgents();
+    return mutateSetting(key, { value });
+  };
+  const setSettingWritesBusy = (busy) => {
+    $$('[data-setting-control] input,[data-setting-control]:is(input,select,button),[data-reset-setting],[data-save-setting-choice],[data-undo-setting-choice]').forEach((control) => {
+      if (busy && !control.disabled) { control.dataset.writeBusy = "true"; control.disabled = true; }
+      else if (!busy && control.dataset.writeBusy === "true") { delete control.dataset.writeBusy; control.disabled = false; }
+    });
+  };
+  const focusPromptLanguage = () => {
+    const options = $$('[data-setting-control="retrieval.promptLanguages"] input[type="checkbox"]');
+    (options.find((option) => option.value === state.promptLanguageFocusValue) || options[0])?.focus?.();
+  };
+  const mutateSetting = async (key, payload) => {
+    if (state.settingsWritePending || state.librarySwitching) return;
+    const epoch = state.libraryEpoch || 0;
+    const focus = rememberFocus($("#settings-rows"));
+    state.settingsWritePending = true;
+    setSettingWritesBusy(true);
+    try {
+      echo(payload.reset ? "settings-remove" : "settings-set", ["--key", key, ...(payload.reset ? [] : ["--value", payload.value])]);
+      const result = await api("/api/settings", { method: "POST", body: JSON.stringify({ key, ...payload }) });
+      if ((state.libraryEpoch || 0) !== epoch) return;
+      state.promptLanguageDraft = null;
+      showReceipt(result);
+      await refresh();
+      if (rendersSystemVariables(key)) await loadAgents();
+    } catch (error) {
+      if ((state.libraryEpoch || 0) === epoch) {
+        state.promptLanguageDraft = null;
+        showReceipt({ ok: false, reasonCode: "PORTAL_SETTINGS_WRITE_UNAVAILABLE", error: String(error?.message ?? error) });
+        await refresh();
+      }
+    } finally {
+      state.settingsWritePending = false;
+      setSettingWritesBusy(false);
+      if ((state.libraryEpoch || 0) === epoch) {
+        restoreFocus($("#settings-rows"), focus);
+        if (key === "retrieval.promptLanguages") focusPromptLanguage();
+      }
+    }
   };
   const resetSetting = async (key) => {
     // `settings-set` refuses an empty value, so no stored record can hold one: an
@@ -5830,11 +5997,7 @@ const BOOT = __PORTAL_BOOT__;
     // because the control already shows the requested state and a fabricated receipt
     // would be worse than silence.
     if (String(currentSetting(key)?.currentValue ?? "") === "") return;
-    echo("settings-remove", ["--key", key]);
-    const result = await api("/api/settings", { method: "POST", body: JSON.stringify({ key, reset: true }) });
-    showReceipt(result);
-    await refresh();
-    if (rendersSystemVariables(key)) await loadAgents();
+    return mutateSetting(key, { reset: true });
   };
   const saveMachineSetting = async (key, value) => {
     const clearing = String(value ?? "").trim() === "";
@@ -5889,7 +6052,26 @@ const BOOT = __PORTAL_BOOT__;
   };
   // A library switch leaves the work the page showed behind: the view is empty until the new library's read returns.
   const leaveWork = () => { state.work = null; state.workRead.library += 1; };
-  const refresh = async () => { refreshWork(); try { const [settings, vocabularyResult, status, commandsResult, machine, knowledge, variables] = await Promise.all([api("/api/settings"), api("/api/vocabulary"), api("/api/status"), api("/api/commands"), api("/api/machine-settings"), api(knowledgePath()), api("/api/variables")]); state.machineSettings = machine; state.settings = settings; state.vocabulary = vocabularyResult; state.status = status; state.knowledge = knowledge; state.variables = variables; state.commands = commandsResult.commands || []; for (const collection of Object.values(state.collections)) if (!collection.dirty) collection.draft = null; renderDashboard(); renderSettings(); renderCollections(); renderVariables(); renderVocabulary(); rebuildSearchIndex(); } catch (error) { state.status = { ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE", checks: [], library: null }; renderDashboard(); showReceipt({ ok: false, reasonCode: "PORTAL_READ_FAILED", error: String(error?.message ?? error) }); } };
+  const refresh = async () => {
+    clearTransientTarget();
+    state.promptLanguageDraft = null;
+    const epoch = state.libraryEpoch || 0;
+    const read = (state.settingsRead || 0) + 1;
+    state.settingsRead = read;
+    refreshWork();
+    try {
+      const [settings, vocabularyResult, status, commandsResult, machine, knowledge, variables] = await Promise.all([api("/api/settings"), api("/api/vocabulary"), api("/api/status"), api("/api/commands"), api("/api/machine-settings"), api(knowledgePath()), api("/api/variables")]);
+      if ((state.libraryEpoch || 0) !== epoch || state.settingsRead !== read) return;
+      state.machineSettings = machine; state.settings = settings; state.vocabulary = vocabularyResult; state.status = status; state.knowledge = knowledge; state.variables = variables; state.commands = commandsResult.commands || [];
+      for (const collection of Object.values(state.collections)) if (!collection.dirty) collection.draft = null;
+      renderDashboard(); renderSettings(); renderCollections(); renderVariables(); renderVocabulary(); rebuildSearchIndex();
+    } catch (error) {
+      if ((state.libraryEpoch || 0) !== epoch || state.settingsRead !== read) return;
+      state.status = { ok: false, reasonCode: "PORTAL_STATUS_UNAVAILABLE", checks: [], library: null };
+      renderDashboard(); renderSettings(); renderCollections();
+      showReceipt({ ok: false, reasonCode: "PORTAL_READ_FAILED", error: String(error?.message ?? error) });
+    }
+  };
   const rebuildSearchIndex = () => {
     const rows = [];
     // Every key of both catalogs; a collection key is found on its own page.
@@ -5915,6 +6097,8 @@ const BOOT = __PORTAL_BOOT__;
       if (target) {
         target.setAttribute("data-transient-target", "true");
         target.scrollIntoView?.({ block: "center" });
+        const control = $('[data-setting-control]:is(input,select,textarea):not(:disabled),[data-setting-control] input:not(:disabled),[data-machine-control]:not(:disabled),[data-collection-link]', target) ?? $(focusableSelector, target);
+        control?.focus?.({ preventScroll: true });
         armTransientTarget();
       }
     }
@@ -5995,7 +6179,35 @@ const BOOT = __PORTAL_BOOT__;
     await loadAgents();
   }));
   $("#receipt-chip").addEventListener("click", openReceipt); $("#receipt-details-trigger").addEventListener("click", toggleReceiptDetails); $("#drawer-button").addEventListener("click", openReceipt); $("#drawer-close").addEventListener("click", closeReceipt);
-  $("#library-select").addEventListener("change", async (event) => { const selected = await api("/api/library", { method: "POST", body: JSON.stringify({ library: event.target.value }) }); if (selected.ok) { BOOT.library = selected.library; BOOT.workspace = selected.workspace; BOOT.libraryName = selected.libraryName; BOOT.proseRoot = selected.proseRoot; const listing = await api("/api/libraries"); loadLibraries(listing.ok ? listing.libraries : BOOT.libraries); setText("#workspace-label", BOOT.workspace); $("#workspace-label").title = BOOT.workspace; applyRailIdentity(); resetCollections(); leaveWork(); await refresh(); await refreshGates(); await loadAgents(); } else { loadLibraries(); showReceipt(selected); } });
+  $("#library-select").addEventListener("change", async (event) => {
+    if (state.librarySwitching) return;
+    const requested = event.target.value;
+    state.librarySwitching = true;
+    state.libraryEpoch = (state.libraryEpoch || 0) + 1;
+    state.promptLanguageDraft = null;
+    state.doctorDetails = new Set();
+    clearTransientTarget();
+    setSettingWritesBusy(true);
+    event.target.disabled = true;
+    try {
+      const selected = await api("/api/library", { method: "POST", body: JSON.stringify({ library: requested }) });
+      if (selected.ok) {
+        BOOT.library = selected.library; BOOT.workspace = selected.workspace; BOOT.libraryName = selected.libraryName; BOOT.proseRoot = selected.proseRoot;
+        const listing = await api("/api/libraries");
+        loadLibraries(listing.ok ? listing.libraries : BOOT.libraries);
+        setText("#workspace-label", BOOT.workspace); $("#workspace-label").title = BOOT.workspace;
+        applyRailIdentity(); resetCollections(); leaveWork();
+        await refresh(); await refreshGates(); await loadAgents();
+      } else { loadLibraries(); showReceipt(selected); await refresh(); }
+    } catch (error) {
+      loadLibraries(); showReceipt({ ok: false, reasonCode: "PORTAL_LIBRARY_SELECT_FAILED", error: String(error?.message ?? error) }); await refresh();
+    } finally {
+      state.librarySwitching = false;
+      setSettingWritesBusy(Boolean(state.settingsWritePending));
+      loadLibraries();
+      $("#library-select").focus();
+    }
+  });
   $("#theme-button").addEventListener("click", () => {
     state.theme = state.theme === "light" ? "dark" : "light";
     document.documentElement.dataset.tcrnTheme = state.theme;
@@ -6030,8 +6242,15 @@ const BOOT = __PORTAL_BOOT__;
   document.addEventListener("pointerdown", (event) => { if (!localeMenu.contains(event.target)) setLocaleMenuOpen(false); });
   document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !localePanel.hidden) { setLocaleMenuOpen(false); localeTrigger.focus(); } });
   $("#palette-button").addEventListener("click", () => $("#global-search").focus());
-  $("#global-search").addEventListener("input", (event) => search(event.target.value));
-  $("#global-search").addEventListener("keydown", (event) => { if (event.key === "ArrowDown" && state.searchResults.length) { event.preventDefault(); state.searchSelection = (state.searchSelection + 1) % state.searchResults.length; renderSearchResults(); } if (event.key === "ArrowUp" && state.searchResults.length) { event.preventDefault(); state.searchSelection = (state.searchSelection + state.searchResults.length - 1) % state.searchResults.length; renderSearchResults(); } if (event.key === "Enter") { event.preventDefault(); chooseSearch(state.searchSelection); } if (event.key === "Escape") { state.searchResults = []; renderSearchResults(); event.target.blur(); } });
+  $("#global-search").addEventListener("input", (event) => { clearTransientTarget(); search(event.target.value); });
+  $("#global-search").addEventListener("keydown", (event) => { if (event.key === "ArrowDown" && state.searchResults.length) { event.preventDefault(); state.searchSelection = (state.searchSelection + 1) % state.searchResults.length; renderSearchResults(); } if (event.key === "ArrowUp" && state.searchResults.length) { event.preventDefault(); state.searchSelection = (state.searchSelection + state.searchResults.length - 1) % state.searchResults.length; renderSearchResults(); } if (event.key === "Enter") { event.preventDefault(); chooseSearch(state.searchSelection); } if (event.key === "Escape") { clearTransientTarget(); state.searchResults = []; renderSearchResults(); } });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    clearTransientTarget();
+    if (state.promptLanguageDraft !== null && state.promptLanguageDraft !== undefined) {
+      state.promptLanguageDraft = null; renderSettings();
+    }
+  });
   document.addEventListener("keydown", (event) => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); $("#global-search").focus(); } if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s" && state.page === "prose") { event.preventDefault(); $("#save-agents").click(); } if (event.key === "Escape" && $("#receipt-drawer").dataset.open === "true") closeReceipt(); });
   // The rail states one identity: the selected library's project name as its section head, and
   // the library id beneath it.

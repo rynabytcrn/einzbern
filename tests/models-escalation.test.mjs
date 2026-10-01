@@ -26,6 +26,7 @@ import {
   readModelsCategory,
   readModelsEscalation,
   readModelsTiers,
+  readSettingsCatalog,
   resolveModelsTier,
   sortWorkspaceSettings,
   validateWorkspace,
@@ -105,7 +106,8 @@ test("508-AC1: GIVEN a new library WHEN settings-catalog THEN the three models.e
   const [enabled, threshold, ceiling] = rows;
   assert.deepEqual([enabled.type, enabled.controlType, enabled.allowedValues, enabled.trueValue, enabled.falseValue], ["enum", "boolean", ["false", "true"], "true", "false"]);
   assert.deepEqual([threshold.type, threshold.controlType, threshold.min, threshold.max], ["string", "number", 1, 100]);
-  assert.deepEqual([ceiling.type, ceiling.controlType], ["string", "text"]);
+  assert.deepEqual([ceiling.type, ceiling.controlType, ceiling.valueReference, ceiling.allowedValues, ceiling.referenceStatus, ceiling.valueOrigin],
+    ["string", "reference", { key: "models.category", field: "id" }, ["flagship", "main", "economy"], "ready", "default"]);
   // The models group: the two tables, then the three keys.
   assert.deepEqual(catalog.settings.filter((entry) => entry.group === "models").sort((left, right) => left.order - right.order).map((entry) => [entry.key, entry.shape]), [
     ["models.category", "collection"],
@@ -122,6 +124,31 @@ test("508-AC1: GIVEN a new library WHEN settings-catalog THEN the three models.e
     assert.deepEqual([refused.reasonCode, refused.details.reason], ["VARIABLE_NAME_INVALID", "system-setting"], key);
   }
   assert.equal(await versionOf(workspace), 0);
+});
+
+test("INC-399: the closed ceiling catalog follows the effective mother through add, rename, save, remove, and replay-only missing/empty states", async (context) => {
+  const workspace = await library(context);
+  const ceiling = async () => (await cli(["settings-catalog", "--workspace", workspace])).settings.find((entry) => entry.key === CEILING);
+  await cli(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("review", 40, "Review") ]));
+  assert.deepEqual((await ceiling()).allowedValues, ["flagship", "main", "economy", "review"], "a category needs no tier or runner to be a candidate");
+  await cli(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("review", 40, "Renamed review") ]));
+  assert.deepEqual((await ceiling()).allowedValues, ["flagship", "main", "economy", "review"]);
+  await cli(set(workspace, CEILING, "review"));
+  assert.deepEqual([(await ceiling()).currentValue, (await ceiling()).valueOrigin], ["review", "stored"]);
+  const fresh = await materializeWorkspaceFromGenesis(workspace);
+  assert.equal(readSettingsCatalog(fresh.workspaceId, fresh.settings).settings.find((entry) => entry.key === CEILING).currentValue, "review");
+  assert.equal((await refusalOf(set(workspace, "models.category", DEFAULT_CATEGORIES))).reasonCode, "MODELS_CATEGORY_IN_USE");
+  await cli(remove(workspace, CEILING));
+  await cli(set(workspace, "models.category", DEFAULT_CATEGORIES));
+  assert.deepEqual((await ceiling()).allowedValues, ["flagship", "main", "economy"]);
+  const replay = (key, value) => ({ schemaVersion: "tcrn.workspace-setting.v1", key, value, layerKind: "workspace_configuration", revision: 1, updatedAt: at(), tombstone: false });
+  const read = (settings) => readSettingsCatalog("fixture", settings).settings.find((entry) => entry.key === CEILING);
+  const missing = read([replay(CEILING, "old-target")]);
+  assert.equal(missing.currentValue, "old-target");
+  assert.equal(missing.allowedValues.includes("old-target"), false);
+  assert.equal(read([replay("models.category", "[]")]).referenceStatus, "empty");
+  assert.deepEqual(read([replay("models.category", "[]")]).allowedValues, []);
+  assert.equal(read([replay("models.category", "not-json")]).referenceStatus, "unavailable");
 });
 
 test("508-R3: GIVEN the CLI run from a model's shell WHEN it writes a models.escalation key THEN it is refused with the remedy of changing it in Atelier, and nothing is recorded", async (context) => {

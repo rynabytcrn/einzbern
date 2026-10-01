@@ -191,7 +191,7 @@ const currentProseRoot = () => proseRootFor(currentLibrary());
 // beside it.
 const libraryName = (library) => basename(library.projectPath) || library.libraryId;
 
-const settingsCatalog = () => cli(["settings-catalog", "--workspace", currentLibrary().libraryPath]);
+const settingsCatalog = (library = currentLibrary()) => cli(["settings-catalog", "--workspace", library.libraryPath]);
 const vocabulary = () => cli(["vocabulary"]);
 const commands = () => cli(["commands"]);
 const ruleListing = () => cliResult(["rule-list", "--project", currentLibrary().projectPath]);
@@ -386,8 +386,7 @@ function nextOccurredAt() {
   return new Date(lastWriteAt).toISOString().replace(/\.\d{3}Z$/u, "Z");
 }
 
-async function governedWrite(build, environment = {}) {
-  const selected = currentLibrary();
+async function governedWrite(build, environment = {}, selected = currentLibrary()) {
   const occurredAt = nextOccurredAt();
   try {
     if (!ACTOR) throw new Error("TCRN_PORTAL_ACTOR must be a non-empty actor id");
@@ -401,18 +400,18 @@ async function governedWrite(build, environment = {}) {
 // TCRN-CROSS-STORY-513 R1 (TCRN-CROSS-SUB-422): the CLI refuses a rule's enable or disable, as it
 // refuses a setting, variable or gate write, unless it runs for Atelier, so a write that needs it
 // passes ATELIER_SURFACE here as writeSetting, writeVariable, writeGate and deleteGate do.
-async function projectWrite(build, environment = {}) {
+async function projectWrite(build, environment = {}, selected = currentLibrary()) {
   const occurredAt = nextOccurredAt();
   try {
     if (!ACTOR) throw new Error("TCRN_PORTAL_ACTOR must be a non-empty actor id");
-    const common = ["--project", currentLibrary().projectPath, "--at", occurredAt, "--actor", ACTOR];
+    const common = ["--project", selected.projectPath, "--at", occurredAt, "--actor", ACTOR];
     return await cliResult(build(common), environment);
   } catch (error) {
     return { ok: false, body: { ok: false, reasonCode: "PORTAL_CLI_UNAVAILABLE", error: String(error?.message ?? error) } };
   }
 }
 
-const renderManagedAgents = () => projectWrite((common) => ["agents-render", ...common]);
+const renderManagedAgents = (library = currentLibrary()) => projectWrite((common) => ["agents-render", ...common], {}, library);
 
 async function rulesProjection() {
   const result = await ruleListing();
@@ -430,8 +429,8 @@ function stableId(namespace, externalKey) {
   return `${namespace}:${createHash("sha256").update(`${namespace}\u0000${key}`, "utf8").digest("hex").slice(0, 24)}`;
 }
 
-const writeSetting = (key, value) => governedWrite((common) => ["settings-set", ...common, "--key", String(key), "--value", String(value)], ATELIER_SURFACE);
-const removeSetting = (key) => governedWrite((common) => ["settings-remove", ...common, "--key", String(key)], ATELIER_SURFACE);
+const writeSetting = (key, value, library) => governedWrite((common) => ["settings-set", ...common, "--key", String(key), "--value", String(value)], ATELIER_SURFACE, library);
+const removeSetting = (key, library) => governedWrite((common) => ["settings-remove", ...common, "--key", String(key)], ATELIER_SURFACE, library);
 
 // TCRN-CROSS-STORY-508 R8 (TCRN-CROSS-SUB-409, contract C-R14-6): the keys the system variables
 // section of AGENTS.md shows. A write of one, or its removal, renders the managed sections again, so
@@ -959,14 +958,23 @@ const server = createServer(async (request, response) => {
       return;
     }
     if (request.method === "POST" && pathname === "/api/settings") {
+      // Bind the whole operation before awaiting the request body. A switch can
+      // never redirect the mutation, managed prose render, or receipt readback.
+      const library = currentLibrary();
       const body = await readJsonBody(request);
+      if ((body.libraryId !== undefined && body.libraryId !== library.libraryId)
+        || (body.libraryPath !== undefined && body.libraryPath !== library.libraryPath)
+        || currentLibrary() !== library) {
+        send(response, 409, { ok: false, reasonCode: "PORTAL_LIBRARY_CHANGED", library: publicLibrary(currentLibrary()) });
+        return;
+      }
       const key = String(body.key ?? "");
       const reset = body.reset === true;
       const value = String(body.value ?? "");
-      const result = reset ? await removeSetting(key) : await writeSetting(key, value);
-      const render = result.ok && rendersSystemVariables(key) ? await renderManagedAgents() : null;
+      const result = reset ? await removeSetting(key, library) : await writeSetting(key, value, library);
+      const render = result.ok && rendersSystemVariables(key) ? await renderManagedAgents(library) : null;
       const collection = COLLECTION_KEYS.includes(key);
-      const catalog = result.ok || collection ? await settingsCatalog() : null;
+      const catalog = result.ok || collection ? await settingsCatalog(library) : null;
       const readback = result.ok ? catalog?.settings.find((entry) => entry.key === key) ?? null : null;
       const ok = result.ok && (render?.ok ?? true);
       const findings = !collection ? null
@@ -975,6 +983,7 @@ const server = createServer(async (request, response) => {
       send(response, ok ? 200 : 409, {
         ...result.body,
         ok,
+        library: publicLibrary(library),
         ...(render === null ? {} : { render: render.body }),
         ...(!ok && result.ok && render !== null ? { mutation: result.body, reasonCode: render.body?.reasonCode ?? "PORTAL_SETTINGS_WRITE_PARTIAL" } : {}),
         readback,

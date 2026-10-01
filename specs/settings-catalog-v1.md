@@ -93,6 +93,23 @@ TCRN-CROSS-STORY-508 R3, are catalogued.
 | `atelier` | `portal.defaultPartition` | device | scalar | 3 |
 | `atelier` | `portal.port` | device | scalar | 4 |
 
+## Closed references (TCRN-CROSS-INC-399)
+
+`models.escalation.ceiling` has `controlType: reference` and
+`valueReference: { key: "models.category", field: "id" }`. Its catalog readback
+supplies `allowedValues` from the effective category table, in that table's order,
+`referenceStatus` (`ready`, `empty`, or `unavailable`) and `valueOrigin` (`stored`
+or `default`). A stored value whose category is absent remains visible as a missing
+reference; it is never added to the candidates. An empty or unreadable mother has
+no text-entry fallback. The default remains `main`, and writes and category deletion
+retain the same category-reference validation. Tier records are not a separate
+candidate directory: legacy tier categories join the effective mother only through
+the existing category reader when no explicit category table is stored.
+
+The portal's tier-category selector uses that same effective `models.category`
+table. Its device default-library selector uses registered library discovery.
+URLs and paths remain open values.
+
 ## Tier taxonomy
 
 **Tier-0 — frozen protocol limits.** Not settings; never appear in conversational

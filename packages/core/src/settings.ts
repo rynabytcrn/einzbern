@@ -120,7 +120,12 @@ export const RETIRED_SETTING_KEYS: readonly string[] = Object.freeze([
 
 export type SettingsReasonCode = typeof SETTINGS_REASON_CODES[number];
 export type SettingValueType = "enum" | "path" | "string" | "url";
-export type SettingControlType = "enum" | "boolean" | "number" | "text";
+export type SettingControlType = "enum" | "boolean" | "number" | "text" | "reference";
+
+export interface SettingValueReference {
+  readonly key: "models.category";
+  readonly field: "id";
+}
 
 export type SettingKey =
   | "artifact.language"
@@ -174,6 +179,7 @@ export interface SettingsCatalogEntry {
   readonly group: SettingGroup;
   readonly order: number;
   readonly allowedValues?: readonly string[];
+  readonly valueReference?: SettingValueReference;
   readonly min?: number;
   readonly max?: number;
   readonly trueValue?: string;
@@ -206,6 +212,9 @@ export interface SettingsCatalogReadback {
       readonly group: SettingGroup;
       readonly order: number;
       readonly allowedValues?: readonly string[];
+      readonly valueReference?: SettingValueReference;
+      readonly referenceStatus?: "ready" | "empty" | "unavailable";
+      readonly valueOrigin?: "stored" | "default";
       readonly min?: number;
       readonly max?: number;
       readonly trueValue?: string;
@@ -400,7 +409,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     // after the two tables, enabled, threshold, then ceiling.
     key: "models.escalation.ceiling",
     type: "string",
-    controlType: "text",
+    controlType: "reference",
+    valueReference: { key: "models.category", field: "id" },
     layerKind: SETTINGS_LAYER_KIND,
     defaultValue: MODELS_ESCALATION_CEILING_DEFAULT_VALUE,
     group: "models",
@@ -928,6 +938,15 @@ export function readSettingsCatalog(
   records: readonly WorkspaceSettingRecord[],
   effectiveValues: Partial<Record<SettingKey, string>> = {},
 ): SettingsCatalogReadback {
+  // Candidates and validation share the same category reader. In particular, the
+  // effective mother includes legacy categories when no explicit table is stored.
+  // An unreadable table has no candidates; consumers must offer recovery, not text.
+  let categoryIds: readonly string[] = [];
+  let referenceStatus: "ready" | "empty" | "unavailable" = "unavailable";
+  try {
+    categoryIds = readModelsCategory(records).map((category) => category.id);
+    referenceStatus = categoryIds.length === 0 ? "empty" : "ready";
+  } catch { /* retain an explicit unavailable reference state */ }
   return {
     schemaVersion: SETTINGS_CATALOG_VERSION,
     layerKind: SETTINGS_LAYER_KIND,
@@ -944,6 +963,12 @@ export function readSettingsCatalog(
       group: entry.group,
       order: entry.order,
       ...(entry.allowedValues === undefined ? {} : { allowedValues: entry.allowedValues }),
+      ...(entry.valueReference === undefined ? {} : {
+        valueReference: entry.valueReference,
+        allowedValues: categoryIds,
+        referenceStatus,
+        valueOrigin: records.some((record) => record.key === entry.key) ? "stored" as const : "default" as const,
+      }),
       ...(entry.min === undefined ? {} : { min: entry.min }),
       ...(entry.max === undefined ? {} : { max: entry.max }),
       ...(entry.trueValue === undefined ? {} : { trueValue: entry.trueValue }),

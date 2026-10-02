@@ -389,7 +389,7 @@ test("508-R7: agents-render arranges the rule sections by order across the place
   const record = (key, value) => setConfigRecord(root, { collection: "rule", key, value, occurredAt: at() });
   const render = () => renderAgentsSections(root, { projectRoot: paths.project, navigation: null, backupRoot: paths.backups, occurredAt: at() });
   await record("autonomy", { enabled: true, version: 1, order: 3 });
-  await record("batch", { enabled: true, version: 2, order: 1 });
+  await record("batch", { enabled: true, version: 3, order: 1 });
   await record("unattended-commands", { enabled: true, version: 1 });
   await render();
   const created = await readFile(agents, "utf8");
@@ -401,7 +401,7 @@ test("508-R7: agents-render arranges the rule sections by order across the place
   assert.notEqual(withNotes, created);
   await writeFile(agents, withNotes);
   await record("autonomy", { enabled: true, version: 1, order: 1 });
-  await record("batch", { enabled: true, version: 2, order: 2 });
+  await record("batch", { enabled: true, version: 3, order: 2 });
   const result = await render();
   assert.equal(result.files.find((file) => file.file === AGENTS_FILE).written, true);
   assert.deepEqual(result.sections.filter((section) => section.id.startsWith("rule:")).map((section) => section.result), ["unchanged", "unchanged", "unchanged"], "no section's text is rewritten");

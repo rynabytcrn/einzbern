@@ -21,16 +21,19 @@
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { execFile as execFileCallback } from "node:child_process";
+import { execFile as execFileCallback, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import fsPromises from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { promisify } from "node:util";
-import { mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { link, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, stat, symlink, unlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { userCrestCachePath, userCrestLockPath } from "../dist/build/packages/core/src/device-home.js";
-import { acquireFileLock, createProject, initializeLibrary } from "../dist/build/packages/core/src/index.js";
+import { acquireFileLock, createProject, initializeLibrary, DIRECTORY } from "../dist/build/packages/core/src/index.js";
 import {
   USER_CREST_ID,
   createKnowledgeUnit,
@@ -48,6 +51,101 @@ import { canonicalJson, canonicalSha256, deriveStableId } from "../dist/build/pa
 const at = "2026-09-26T12:00:00Z";
 const instant = (second) => `2026-09-26T11:00:${String(second).padStart(2, "0")}Z`;
 const execFile = promisify(execFileCallback);
+const rawSha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
+
+// INC-400: hold actual filesystem operations in a separate device process. The same
+// write barrier also exercises the old wx-final implementation, so the red proof
+// does not depend on a new production test seam or on winning a timing race.
+function publicationWriter(context, shared, input, type, phases) {
+  const payload = { workspace: shared.workspace, crest: shared.crest, input, type, phases,
+    moduleUrl: new URL("../dist/build/packages/core/src/knowledge-core.js", import.meta.url).href };
+  const source = `
+    import fs from "node:fs/promises";
+    import { constants } from "node:fs";
+    import { syncBuiltinESMExports } from "node:module";
+    import { basename } from "node:path";
+    const payload = ${JSON.stringify(payload)};
+    const states = new Map(), published = new Map();
+    const target = (path) => String(path).startsWith(payload.crest + "/") &&
+      (payload.type === "marker" ? basename(String(path)).endsWith("store.json") :
+        new RegExp("[0-9]{8}-[a-f0-9]{64}\\\\." + payload.type + "$", "u").test(basename(String(path))));
+    const finalName = (path) => String(path).replace(/[^/]+$/u,
+      basename(String(path)).match(/(?:store\\.json|[0-9]{8}-[a-f0-9]{64}\\.(?:json|body))$/u)[0]);
+    const hold = async (phase, data) => {
+      if (!payload.phases.includes(phase)) return;
+      const released = new Promise((resolve) => {
+        const listen = (message) => { if (message.phase === phase) { process.off("message", listen); resolve(); } };
+        process.on("message", listen);
+      });
+      process.send({ phase, ...data }); await released;
+    };
+    const open = fs.open;
+    fs.open = async (path, flags, ...rest) => {
+      const handle = await open(path, flags, ...rest);
+      if (!target(path) || typeof flags !== "number" || !(flags & constants.O_CREAT)) return handle;
+      const state = { synced: false, closed: false }; states.set(String(path), state);
+      const write = handle.writeFile.bind(handle), sync = handle.sync.bind(handle), close = handle.close.bind(handle);
+      handle.writeFile = async (data, ...options) => {
+        const bytes = Buffer.isBuffer(data) ? data : Buffer.from(data, "utf8");
+        if (payload.phases.includes("partial")) {
+          await write(bytes.subarray(0, bytes.length - 1));
+          await hold("partial", { path: String(path), final: finalName(path), complete: bytes.toString("base64") });
+          await write(bytes.subarray(bytes.length - 1));
+        } else await write(data, ...options);
+      };
+      handle.sync = async () => { await sync(); state.synced = true; };
+      handle.close = async () => { await close(); state.closed = true; };
+      return handle;
+    };
+    const link = fs.link;
+    fs.link = async (from, to) => {
+      if (!target(to)) return link(from, to);
+      await hold("before-link", { path: String(from), final: String(to), ...states.get(String(from)) });
+      const result = await link(from, to); published.set(String(from), String(to));
+      await hold("linked", { path: String(from), final: String(to), ...states.get(String(from)) });
+      return result;
+    };
+    const unlink = fs.unlink;
+    fs.unlink = async (path) => {
+      const result = await unlink(path);
+      if (published.has(String(path))) await hold("single-linked", { path: String(path), final: published.get(String(path)) });
+      return result;
+    };
+    syncBuiltinESMExports();
+    try {
+      const { createKnowledgeUnit } = await import(payload.moduleUrl);
+      const result = await createKnowledgeUnit(payload.workspace, payload.input);
+      process.send({ phase: "done", result }); process.disconnect();
+    } catch (error) {
+      process.send({ phase: "failed", reasonCode: error.reasonCode, error: String(error), stack: error.stack });
+      process.exitCode = 1; process.disconnect();
+    }
+  `;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", source], {
+    env: { ...process.env, EINZBERN_HOME: shared.deviceA }, stdio: ["ignore", "pipe", "pipe", "ipc"],
+  });
+  const notes = new Map(), waiting = new Map();
+  let stdout = "", stderr = "", finished;
+  child.stdout.on("data", (bytes) => { stdout += bytes; });
+  child.stderr.on("data", (bytes) => { stderr += bytes; });
+  child.on("message", (message) => { notes.set(message.phase, message); waiting.get(message.phase)?.resolve(message); });
+  const outcome = new Promise((resolve) => child.on("close", (code, signal) => {
+    finished = { code, signal, stdout, stderr, failure: notes.get("failed") };
+    for (const [phase, pending] of waiting) if (!notes.has(phase)) pending.reject(new Error(JSON.stringify(finished)));
+    resolve(finished);
+  }));
+  const stop = async () => {
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+    return outcome;
+  };
+  context.after(stop);
+  return {
+    pid: child.pid, outcome, stop,
+    wait: (phase) => notes.has(phase) ? Promise.resolve(notes.get(phase)) : finished ? Promise.reject(new Error(JSON.stringify(finished)))
+      : new Promise((resolve, reject) => waiting.set(phase, { resolve, reject })),
+    release: (phase) => child.send({ phase }),
+  };
+}
 
 // A device directory of this test's own, so the user crest it writes is never another test's.
 async function device(context) {
@@ -468,6 +566,226 @@ test("R13 D7: simultaneous writes from two devices append separate streams and b
   // TCRN-CROSS-SUB-310 (R14 (d)): the two same-subject writes this test once raced -- and then
   // accepted whichever of a refusal or two committed events came out -- are the deterministic
   // cases below: the refusal when the other card has arrived, the committed pair when it has not.
+});
+
+test("INC-400: a partial event stays private, closed complete bytes publish exclusively, and a concurrent scan reads only the same single-linked inode", async (context) => {
+  const shared = await twoDevices(context);
+  await asDevice(shared.deviceA, () => createKnowledgeUnit(shared.workspace, card("UC-PUBLISH-SEED")));
+  const input = card("UC-PUBLISH-EVENT");
+  const writer = publicationWriter(context, shared, input, "json", ["partial", "before-link", "linked", "single-linked"]);
+  const partial = await writer.wait("partial");
+  const partialBytes = await readFile(partial.path);
+  context.diagnostic(JSON.stringify({ phase: "partial", path: partial.path, final: partial.final, bytes: partialBytes.length,
+    sha256: rawSha256(partialBytes), finalVisible: await lstat(partial.final).then(() => true, () => false) }));
+  assert.equal(partialBytes.at(-1) === 10, false, "the filesystem barrier holds bytes without their canonical LF");
+  assert.equal((await asDevice(shared.deviceB, () => listKnowledgeMetadata(shared.workspace, { at, scope: "user" }))).total, 1);
+  await assert.rejects(lstat(partial.final), { code: "ENOENT" }, "no incomplete final name exists");
+  writer.release("partial");
+  const ready = await writer.wait("before-link");
+  assert.deepEqual([ready.synced, ready.closed], [true, true], "actual sync and close finished before link");
+  assert.deepEqual(await readFile(ready.path), Buffer.from(partial.complete, "base64"));
+  const staged = await lstat(ready.path, { bigint: true });
+  assert.deepEqual([staged.nlink, staged.mode & 0o777n], [1n, 0o600n]);
+  await assert.rejects(lstat(ready.final), { code: "ENOENT" });
+  writer.release("before-link");
+  const linked = await writer.wait("linked");
+  const final = await lstat(linked.final, { bigint: true });
+  assert.deepEqual([final.dev, final.ino, final.nlink], [staged.dev, staged.ino, 2n]);
+  let observedTwo = 0, observedOne = 0, signalWaiting;
+  const waiting = new Promise((resolve) => { signalWaiting = resolve; });
+  const originalLstat = fsPromises.lstat;
+  fsPromises.lstat = async (path, ...args) => {
+    const stats = await originalLstat(path, ...args);
+    if (String(path) === linked.final && stats.nlink === 2n && ++observedTwo >= 2) signalWaiting();
+    return stats;
+  };
+  syncBuiltinESMExports();
+  try {
+    const reading = asDevice(shared.deviceB, () => listKnowledgeMetadata(shared.workspace, { at, scope: "user",
+      afterDescriptorOpenForTest: async (path) => {
+        if (path === linked.final) {
+          const named = await originalLstat(path, { bigint: true });
+          assert.deepEqual([named.dev, named.ino, named.nlink], [staged.dev, staged.ino, 1n]);
+          observedOne += 1;
+        }
+      },
+    }));
+    await waiting;
+    assert.equal(observedOne, 0, "nlink two has not entered the descriptor read seam");
+    writer.release("linked");
+    await writer.wait("single-linked");
+    assert.equal((await reading).total, 2, "the scan completes while the publisher is still held after unlink");
+    assert.equal(observedOne, 1);
+    writer.release("single-linked");
+  } finally { fsPromises.lstat = originalLstat; syncBuiltinESMExports(); }
+  assert.equal((await writer.outcome).code, 0);
+  assert.equal((await asDevice(shared.deviceB, () => readKnowledgeBody(shared.workspace, deriveStableId("knowledge", input.externalKey), { at, scope: "user" }))).body, input.body);
+});
+
+test("INC-400: a body is complete and closed before its final name, and an existing different final is never overwritten", async (context) => {
+  const shared = await twoDevices(context);
+  await asDevice(shared.deviceA, () => createKnowledgeUnit(shared.workspace, card("UC-BODY-SEED")));
+  const writer = publicationWriter(context, shared, card("UC-BODY-COLLISION"), "body", ["partial", "before-link"]);
+  const partial = await writer.wait("partial");
+  await assert.rejects(lstat(partial.final), { code: "ENOENT" });
+  assert.equal((await asDevice(shared.deviceB, () => listKnowledgeMetadata(shared.workspace, { at, scope: "user" }))).total, 1);
+  writer.release("partial");
+  const ready = await writer.wait("before-link");
+  assert.deepEqual([ready.synced, ready.closed], [true, true]);
+  const different = Buffer.from(partial.complete, "base64"); different[0] ^= 1;
+  await writeFile(ready.final, different, { mode: 0o600, flag: "wx" });
+  const identity = await lstat(ready.final, { bigint: true });
+  writer.release("before-link");
+  const failed = await writer.outcome;
+  assert.deepEqual([failed.code, failed.failure.reasonCode], [1, "KNOWLEDGE_PARTIAL_STATE"]);
+  assert.deepEqual(await readFile(ready.final), different);
+  assert.equal((await lstat(ready.final, { bigint: true })).ino, identity.ino);
+  await assert.rejects(lstat(ready.path), { code: "ENOENT" }, "only this failed attempt's staging inode is cleaned");
+});
+
+test("INC-400: two first writers publish one complete immutable marker and retain both device streams", async (context) => {
+  const shared = await twoDevices(context);
+  const writer = publicationWriter(context, shared, card("UC-FIRST-A"), "marker", ["partial", "before-link"]);
+  const partial = await writer.wait("partial");
+  await assert.rejects(lstat(partial.final), { code: "ENOENT" });
+  writer.release("partial");
+  const ready = await writer.wait("before-link");
+  assert.deepEqual([ready.synced, ready.closed], [true, true]);
+  await asDevice(shared.deviceB, () => createKnowledgeUnit(shared.workspace, card("UC-FIRST-B")));
+  const marker = await readFile(ready.final), identity = await lstat(ready.final, { bigint: true });
+  assert.deepEqual(marker, await readFile(ready.path));
+  writer.release("before-link");
+  assert.equal((await writer.outcome).code, 0);
+  assert.deepEqual(await readFile(ready.final), marker);
+  assert.equal((await lstat(ready.final, { bigint: true })).ino, identity.ino);
+  assert.equal((await asDevice(shared.deviceB, () => listKnowledgeMetadata(shared.workspace, { at, scope: "user" }))).total, 2);
+});
+
+for (const phase of ["before-link", "linked"]) {
+  test(`INC-400: initial marker death at ${phase} recovers only its owned staging name, leaving first creation to initialization`, async (context) => {
+    const shared = await twoDevices(context);
+    const input = card("UC-MARKER-CRASH");
+    const writer = publicationWriter(context, shared, input, "marker", [phase]);
+    const stoppedAt = await writer.wait(phase);
+    const bytes = await readFile(stoppedAt.path), identity = await lstat(stoppedAt.path, { bigint: true });
+    assert.deepEqual([stoppedAt.synced, stoppedAt.closed], [true, true]);
+    assert.equal((await writer.stop()).signal, "SIGTERM");
+    assert.equal((await asDevice(shared.deviceB, () => recoverKnowledgeStore(shared.workspace, { scope: "user" }))).reasonCode, "KNOWLEDGE_RECOVERY_NOT_NEEDED");
+    assert.deepEqual(await readFile(stoppedAt.path), bytes);
+    assert.equal((await asDevice(shared.deviceA, () => recoverKnowledgeStore(shared.workspace, { scope: "user" }))).reasonCode, "KNOWLEDGE_RECOVERED");
+    await assert.rejects(lstat(stoppedAt.path), { code: "ENOENT" });
+    if (phase === "before-link") {
+      await assert.rejects(lstat(stoppedAt.final), { code: "ENOENT" }, "recovery never creates a root manifest");
+    } else {
+      const final = await lstat(stoppedAt.final, { bigint: true });
+      assert.deepEqual([final.dev, final.ino, final.nlink], [identity.dev, identity.ino, 1n]);
+      assert.deepEqual(await readFile(stoppedAt.final), bytes);
+      assert.equal((await asDevice(shared.deviceB, () => listKnowledgeMetadata(shared.workspace, { at, scope: "user" }))).total, 0);
+    }
+    await asDevice(shared.deviceA, () => createKnowledgeUnit(shared.workspace, input));
+    assert.deepEqual(await readFile(stoppedAt.final), bytes, "initialization publishes the same immutable marker bytes");
+    assert.equal((await asDevice(shared.deviceB, () => readKnowledgeBody(shared.workspace, deriveStableId("knowledge", input.externalKey), { at, scope: "user" }))).body, input.body);
+  });
+}
+
+test("INC-400: a library publication uses the same owned recovery and preserves its existing manifest", async (context) => {
+  const shared = await twoDevices(context);
+  shared.crest = join(shared.workspace, DIRECTORY.knowledge);
+  const marker = await readFile(join(shared.crest, "store.json"));
+  const markerIdentity = await lstat(join(shared.crest, "store.json"), { bigint: true });
+  const input = card("LC-PUBLISH-CRASH", { scope: "workspace", kind: "fact", linkedEvidenceIds: [], sourceReferences: [], sourceDigest: null });
+  const writer = publicationWriter(context, shared, input, "json", ["linked"]);
+  const stoppedAt = await writer.wait("linked");
+  const bytes = await readFile(stoppedAt.path), identity = await lstat(stoppedAt.path, { bigint: true });
+  assert.equal((await writer.stop()).signal, "SIGTERM");
+  await expectReason("KNOWLEDGE_LINK_UNSAFE", asDevice(shared.deviceB, () => listKnowledgeMetadata(shared.workspace, { at })));
+  assert.equal((await asDevice(shared.deviceB, () => recoverKnowledgeStore(shared.workspace))).reasonCode, "KNOWLEDGE_RECOVERY_NOT_NEEDED");
+  assert.deepEqual(await readFile(stoppedAt.path), bytes);
+  assert.equal((await asDevice(shared.deviceA, () => recoverKnowledgeStore(shared.workspace))).reasonCode, "KNOWLEDGE_RECOVERED");
+  await assert.rejects(lstat(stoppedAt.path), { code: "ENOENT" });
+  const final = await lstat(stoppedAt.final, { bigint: true });
+  assert.deepEqual([final.dev, final.ino, final.nlink], [identity.dev, identity.ino, 1n]);
+  assert.deepEqual(await readFile(stoppedAt.final), bytes);
+  assert.equal((await asDevice(shared.deviceB, () => readKnowledgeBody(shared.workspace, deriveStableId("knowledge", input.externalKey), { at }))).body, input.body);
+  assert.deepEqual(await readFile(join(shared.crest, "store.json")), marker);
+  assert.equal((await lstat(join(shared.crest, "store.json"), { bigint: true })).ino, markerIdentity.ino);
+});
+
+for (const [type, phase] of [["json", "before-link"], ["json", "linked"], ["body", "linked"]]) {
+  test(`INC-400: actual death at ${type}/${phase} leaves a recoverable owned residue and never repairs another device's stream`, async (context) => {
+    const shared = await twoDevices(context);
+    await asDevice(shared.deviceA, () => createKnowledgeUnit(shared.workspace, card("UC-CRASH-SEED")));
+    const marker = await readFile(join(shared.crest, "store.json"));
+    const input = card("UC-CRASH-NEXT");
+    const writer = publicationWriter(context, shared, input, type, [phase]);
+    const stoppedAt = await writer.wait(phase);
+    const bytes = await readFile(stoppedAt.path), identity = await lstat(stoppedAt.path, { bigint: true });
+    if (phase === "linked" && type === "json") {
+      await expectReason("KNOWLEDGE_LINK_UNSAFE", asDevice(shared.deviceB, () => listKnowledgeMetadata(shared.workspace, { at, scope: "user" })));
+      assert.equal(identity.nlink, 2n, "a persistent paired link is refused without reading it as a card");
+    }
+    assert.equal((await writer.stop()).signal, "SIGTERM", "the real publisher exits without running cleanup");
+    assert.equal((await asDevice(shared.deviceB, () => recoverKnowledgeStore(shared.workspace, { scope: "user" }))).reasonCode, "KNOWLEDGE_RECOVERY_NOT_NEEDED");
+    assert.deepEqual(await readFile(stoppedAt.path), bytes, "a foreign device removes no staging link");
+    const recovered = await asDevice(shared.deviceA, () => recoverKnowledgeStore(shared.workspace, { scope: "user" }));
+    assert.equal(recovered.reasonCode, "KNOWLEDGE_RECOVERED");
+    await assert.rejects(lstat(stoppedAt.path), { code: "ENOENT" });
+    if (phase === "linked") {
+      const final = await lstat(stoppedAt.final, { bigint: true });
+      assert.deepEqual([final.dev, final.ino, final.nlink], [identity.dev, identity.ino, 1n]);
+      assert.deepEqual(await readFile(stoppedAt.final), bytes);
+    }
+    if (type === "body" || phase === "before-link") await asDevice(shared.deviceA, () => createKnowledgeUnit(shared.workspace, input));
+    assert.equal((await asDevice(shared.deviceB, () => listKnowledgeMetadata(shared.workspace, { at, scope: "user" }))).total, 2);
+    assert.equal((await asDevice(shared.deviceB, () => readKnowledgeBody(shared.workspace, deriveStableId("knowledge", input.externalKey), { at, scope: "user" }))).body, input.body);
+    assert.deepEqual(await readFile(join(shared.crest, "store.json")), marker, "recovery keeps the existing marker's bytes");
+    assert.equal((await asDevice(shared.deviceA, () => recoverKnowledgeStore(shared.workspace, { scope: "user" }))).reasonCode, "KNOWLEDGE_RECOVERY_NOT_NEEDED");
+  });
+}
+
+test("INC-400: recovery refuses extra or changed links of an actual crashed publication and leaves the evidence", async (context) => {
+  const shared = await twoDevices(context);
+  await asDevice(shared.deviceA, () => createKnowledgeUnit(shared.workspace, card("UC-DAMAGED-SEED")));
+  const writer = publicationWriter(context, shared, card("UC-DAMAGED-NEXT"), "json", ["linked"]);
+  const stoppedAt = await writer.wait("linked");
+  await writer.stop();
+  const external = join(dirname(shared.crest), "external-link");
+  await link(stoppedAt.final, external);
+  await expectReason("KNOWLEDGE_LINK_UNSAFE", asDevice(shared.deviceA, () => recoverKnowledgeStore(shared.workspace, { scope: "user" })));
+  assert.equal((await lstat(stoppedAt.final)).nlink, 3);
+  await unlink(external);
+  const changed = await readFile(stoppedAt.final); changed[changed.length - 1] = 32;
+  await writeFile(stoppedAt.final, changed);
+  await expectReason("KNOWLEDGE_RECORD_INVALID", asDevice(shared.deviceA, () => recoverKnowledgeStore(shared.workspace, { scope: "user" })));
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await expectReason("KNOWLEDGE_LINK_UNSAFE", asDevice(shared.deviceB, () => listKnowledgeMetadata(shared.workspace, { at, scope: "user" })));
+  }
+  assert.deepEqual(await readFile(stoppedAt.path), changed);
+  assert.equal((await lstat(stoppedAt.final)).nlink, 2, "the refusal does not unlink corrupt evidence");
+});
+
+test("INC-400: a matching staging name with another inode cannot admit an external hardlink, and descriptor-time links or replacement are refused", async (context) => {
+  const shared = await twoDevices(context);
+  await asDevice(shared.deviceA, () => createKnowledgeUnit(shared.workspace, card("UC-LINK-SEED")));
+  const owner = JSON.parse(await readFile(join(shared.deviceA, "device.json"), "utf8")).deviceId;
+  const stream = join(shared.crest, "events", owner), name = (await readdir(stream)).find((entry) => entry.endsWith(".json"));
+  const event = join(stream, name), bytes = await readFile(event), external = join(dirname(shared.crest), "untrusted-link");
+  const fake = join(stream, `.tmp-crest-${owner}-${process.pid}-${rawSha256(bytes)}-${"f".repeat(24)}-${name}`);
+  await writeFile(fake, bytes, { mode: 0o600 });
+  await link(event, external);
+  assert.notEqual((await lstat(fake)).ino, (await lstat(event)).ino);
+  await expectReason("KNOWLEDGE_LINK_UNSAFE", asDevice(shared.deviceB, () => listKnowledgeMetadata(shared.workspace, { at, scope: "user" })));
+  await expectReason("KNOWLEDGE_LINK_UNSAFE", asDevice(shared.deviceB, () => createKnowledgeUnit(shared.workspace, card("UC-LINK-REFUSED"))));
+  assert.deepEqual(await readFile(event), bytes);
+  await unlink(external); await unlink(fake);
+  await expectReason("KNOWLEDGE_SOURCE_CHANGED", asDevice(shared.deviceB, () => listKnowledgeMetadata(shared.workspace, { at, scope: "user",
+    afterDescriptorOpenForTest: async (path) => { if (path === event) await link(event, external); },
+  })));
+  await unlink(external);
+  await expectReason("KNOWLEDGE_SOURCE_CHANGED", asDevice(shared.deviceB, () => listKnowledgeMetadata(shared.workspace, { at, scope: "user",
+    afterDescriptorOpenForTest: async (path) => { if (path === event) { await rename(event, external); await writeFile(event, bytes); } },
+  })));
+  assert.deepEqual(await readFile(event), bytes);
 });
 
 test("R14 (a) D7: a same-subject card B wrote before A's stream arrived is withheld with its pair; every other user card is read, recalled and written, and --supersedes resolves the pair", async (context) => {

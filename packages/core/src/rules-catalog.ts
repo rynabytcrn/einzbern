@@ -3,7 +3,7 @@
 // TCRN-CROSS-STORY-483 R1 (MIN-228 D3, MIN-229 D6): the Command Spell rules this engine ships
 // with. A rule is a principle a project may switch on for the agents that work in it. The engine
 // carries four, each with an id, a version, and a Chinese and an English title and body. MIN-228
-// D3 fixed the set at four, and MIN-229 D6 put batch processing at its second version.
+// D3 fixed the set at four; MIN-229 D6 supplied batch v2, and the INIT-053 Owner supplement adds communication and waiting at v3.
 //
 // The Chinese texts are the Owner's final wording, word for word. tests/fixtures/rules/ holds
 // copies of them, and tests/rules-catalog.test.mjs compares each constant here with its copy, so
@@ -49,7 +49,7 @@ const AUTONOMY_EN = `## Autonomous Operation Principle v1
 You are operating autonomously. The user is not watching in real time and cannot answer questions partway through a task, so asking "Do you want me to ...?" or "Should I continue?" only stalls the work. When a reversible action is already covered by the original request, just do it. Stop and leave the decision to the user only for destructive actions and genuine changes of scope. Suggesting follow-up work once the task is done is fine; asking for permission before you act is not.
 `;
 
-const BATCH_ZH = `## 批量处理原则 v2
+const BATCH_ZH = `## 批量处理原则 v3
 
 适用于本工作区的一切工作：拆分、实施、跑门、测试、验收、链写、汇报、派工。
 
@@ -61,10 +61,17 @@ const BATCH_ZH = `## 批量处理原则 v2
 6. 派工按批段。拆分一个代理，实施每包一个代理，集成一个代理，验收一个代理，验收可按 Epic 分片同批并行。不为单步派代理，不为确认读数派代理。
 
 修完一条又红一条的循环，本身就是违反本原则的信号：停下，把清单列全，再动手。
+
+### 代理通信与等待
+
+1. 子代理按包交付。普通进度、阶段小结、可延后的问题集中在完成时报告；已有宿主完成通知时，不再用 send_message 重复发送同一结果。派工时确保子代理收到本条约束。
+2. 中途通信限定例外。安全问题、无法继续的硬阻塞，以及不立即协调就会阻塞其他代理的依赖或冲突，可以立即上报；保留解决这些问题所需的事实澄清，不禁止必要通信。
+3. 主代理减少往返。不回复纯确认，不催问普通进度；收到需要决策或行动的信息时直接处理。普通状态消息不触发额外的全体状态查询或重复汇报。
+4. 等待避免空轮询。使用宿主支持的完成通知与阻塞等待；连续没有新状态时延长查询间隔，遵守宿主等待上限和用户中断要求；有独立可做的工作时继续该工作。
 `;
 
 // Translated when this module was written; awaits the Owner's correction.
-const BATCH_EN = `## Batch Processing Principle v2
+const BATCH_EN = `## Batch Processing Principle v3
 
 This applies to all work in this workspace: decomposition, implementation, running gates, testing, acceptance, chain writes, reporting and dispatch.
 
@@ -76,6 +83,13 @@ This applies to all work in this workspace: decomposition, implementation, runni
 6. Dispatch follows the batch stages. One agent for decomposition, one agent per package for implementation, one agent for integration and one agent for acceptance; acceptance may be split by Epic and run in parallel within the same batch. Do not dispatch an agent for a single step, and do not dispatch an agent to confirm a reading.
 
 A cycle in which fixing one red result turns up another is itself a sign that this principle is being broken: stop, list everything, then act.
+
+### Agent communication and waiting
+
+1. Subagents deliver complete packages. Report ordinary progress, stage summaries and deferrable issues together when the package is complete. When the host already sends a completion notification, do not repeat the same result through send_message. Include this constraint when dispatching subagents.
+2. Limit communication during a package to necessary exceptions. Immediately report safety issues, hard blockers that prevent further work, and dependencies or conflicts that would block other agents without immediate coordination. Keep the factual clarification needed to resolve these issues; necessary communication remains allowed.
+3. The main agent reduces round trips. Do not reply with pure acknowledgments or ask for ordinary progress. Act directly on information that needs a decision or action. Ordinary status messages do not trigger extra queries of every agent's status or repeated reports.
+4. Avoid empty polling while waiting. Use completion notifications and blocking waits supported by the host. Lengthen query intervals when there is repeatedly no new state, respect the host's wait limit and user interruption requirements, and continue independent work when it is available.
 `;
 
 const UNATTENDED_COMMANDS_ZH = `## 无人值守指令原则 v1
@@ -126,7 +140,7 @@ function builtIn(id: BuiltInRuleId, version: number, title: RuleText, body: Rule
 /** The built-in rules, in the order of BUILT_IN_RULE_IDS. */
 export const BUILT_IN_RULES: readonly BuiltInRule[] = Object.freeze([
   builtIn("autonomy", 1, { zh: "自主运行原则", en: "Autonomous Operation Principle" }, { zh: AUTONOMY_ZH, en: AUTONOMY_EN }),
-  builtIn("batch", 2, { zh: "批量处理原则", en: "Batch Processing Principle" }, { zh: BATCH_ZH, en: BATCH_EN }),
+  builtIn("batch", 3, { zh: "批量处理原则", en: "Batch Processing Principle" }, { zh: BATCH_ZH, en: BATCH_EN }),
   builtIn(
     "unattended-commands",
     1,

@@ -52,7 +52,7 @@ rule-resolve --section <段 id> --action overwrite|keep|unmanage [--force true] 
 | id | 版本 | 名称 | 大意 |
 | --- | --- | --- | --- |
 | `autonomy` | 1 | 自主运行原则 | 使用者不在实时观看，中途问「要不要继续」只会让工作停摆。原始请求涵盖的可逆动作直接做，只有破坏性动作与真正的范围变更才停下来交给使用者。 |
-| `batch` | 2 | 批量处理原则 | 一个 INIT 下的全部待办 Story 是一批：拆分一次做完，实施分包并行，见红只记不修，生成物批末再生，一批一次链写、一次汇报，派工按批段。 |
+| `batch` | 3 | 批量处理原则 | 一个 INIT 下的全部待办 Story 是一批：拆分一次做完，实施分包并行，见红只记不修，生成物批末再生，一批一次链写、一次汇报，派工按批段。 |
 | `unattended-commands` | 1 | 无人值守指令原则 | 无人值守时弹出确认框等于停摆：删除改为移到 scratch 的 trash 子目录，命令里不 cd，只写工作目录与 scratch 目录，不碰权限规则列出的路径与命令，弹过框的写法不重试。 |
 | `silent-reporting` | 1 | 静默汇报原则 | 工作进行期间主对话不输出进度汇报；只在全部完成或剩余任务全部阻塞时汇报一次。 |
 
@@ -95,3 +95,7 @@ rule-resolve --section <段 id> --action overwrite|keep|unmanage [--force true] 
 | `pending` | 一次写入因为你的修改被拒绝，正等待处置。 | `rule-resolve` |
 
 版本与本机引擎不一致的原则，`agents-render` 原样保留：旧版本等你用 `rule-enable` 更新，由更新的引擎启用的新版本也不会被旧正文覆盖。库里记录的版本比本机引擎带的更新时，`rule-enable` 报 `RULE_VERSION_NEWER`，提示先升级引擎。
+
+批量处理原则 v3 保留 v2 六条原则，并追加代理通信与等待：普通进度与可延后问题按完整包交付；宿主已通知完成时不重复发送。安全、硬阻塞及会阻塞其他代理的依赖或冲突可立即协调。主代理直接处理需要决策或行动的信息，不纯确认或催问普通进度；等待使用宿主通知及阻塞等待，无新状态时延长间隔，遵守等待上限、用户中断并继续独立工作。
+
+已有 batch v2 仍适用且保持原字节；rule-list、Atelier 读取及普通 agents-render 只显示 update-available，显式 rule-enable 升级才写 v3。用户修改仍按 user-modified/pending 与 keep/overwrite/unmanage 保护。正文验证不是运行期遵守证明，未经可比会话测量的 token 节省为 unknown。

@@ -1198,7 +1198,7 @@ test("rules routes expose state, enable a rule, judge a saved edit as user-modif
 });
 
 // TCRN-CROSS-SUB-338 (STORY-483 AC3): a project that enabled batch processing at v1, read by an
-// engine that ships v2. No verb records a rule at another version than the one this engine
+// engine that ships v3. No verb records a rule at another version than the one this engine
 // ships, so the fixture is left the way an older engine would have left it: this engine enables
 // batch, and then the section in AGENTS.md (its text and digest), the rule's recorded version and
 // the section record's digest are put back to v1, the last two through the test forger. The
@@ -1210,12 +1210,12 @@ test("SUB-338 (STORY-483 AC3): batch enabled at v1 reads update-available at the
   const agentsPath = join(fixture.proseRoot, "AGENTS.md");
   await cli(["rule-enable", "--project", fixture.proseRoot, "--id", "batch", "--at", "2026-08-11T15:20:00Z", "--actor", "agent:test"], { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" });
   const enabled = await readFile(agentsPath, "utf8");
-  const v2 = managedSection(enabled, "rule:batch");
-  assert.equal(sectionDigest(v2.body), v2.digest, "the digest taken here is the engine's");
+  const v3 = managedSection(enabled, "rule:batch");
+  assert.equal(sectionDigest(v3.body), v3.digest, "the digest taken here is the engine's");
   const v1Body = normalizedSection(await readFile(join(portalRoot, "..", "tests", "fixtures", "rules", "batch-v1.zh.md"), "utf8"));
-  assert.notEqual(v1Body, normalizedSection(v2.body));
+  assert.notEqual(v1Body, normalizedSection(v3.body));
   const v1Digest = sectionDigest(v1Body);
-  await writeFile(agentsPath, enabled.replace(v2.raw, `<!-- einzbern:section id=rule:batch rev=${v2.rev} digest=${v1Digest} -->\n${v1Body}<!-- einzbern:section-end id=rule:batch -->\n`), "utf8");
+  await writeFile(agentsPath, enabled.replace(v3.raw, `<!-- einzbern:section id=rule:batch rev=${v3.rev} digest=${v1Digest} -->\n${v1Body}<!-- einzbern:section-end id=rule:batch -->\n`), "utf8");
   let forged = 0;
   await forgeOwnStream(fixture.workspace, (events) => events.map((event) => {
     const record = event.payload?.operation === "config.record.set" ? event.payload.record : null;
@@ -1231,7 +1231,7 @@ test("SUB-338 (STORY-483 AC3): batch enabled at v1 reads update-available at the
   const { boot } = await readBoot(url);
   const listed = await request(url, "/api/rules", readOptions(boot.token));
   assert.equal(listed.response.status, 200);
-  assert.deepEqual(listed.body.rules.find((rule) => rule.id === "batch"), { id: "batch", version: 2, recordedVersion: 1, fileVersion: 1, section: "rule:batch", state: "update-available" });
+  assert.deepEqual(listed.body.rules.find((rule) => rule.id === "batch"), { id: "batch", version: 3, recordedVersion: 1, fileVersion: 1, section: "rule:batch", state: "update-available" });
   assert.deepEqual(listed.body.pending, []);
   assert.equal(await readFile(agentsPath, "utf8"), v1File, "GET /api/rules writes nothing");
 
@@ -1241,6 +1241,46 @@ test("SUB-338 (STORY-483 AC3): batch enabled at v1 reads update-available at the
   assert.equal(saved.body.rules.find((rule) => rule.id === "batch").state, "update-available");
   assert.deepEqual(saved.body.pending, []);
   assert.equal(await readFile(agentsPath, "utf8"), v1File);
+});
+
+test("INIT-053 AC2: batch enabled at v2 reads update-available at the route, and neither the read nor a save writes AGENTS.md", async (t) => {
+  const fixture = await scratch("tcrn-portal-rule-v2-", "TCRN-PORTAL-RULE-V2");
+  let portal = null;
+  t.after(async () => { portal?.child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
+  const agentsPath = join(fixture.proseRoot, "AGENTS.md");
+  await cli(["rule-enable", "--project", fixture.proseRoot, "--id", "batch", "--at", "2026-08-11T15:20:00Z", "--actor", "agent:test"], { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" });
+  const enabled = await readFile(agentsPath, "utf8");
+  const v3 = managedSection(enabled, "rule:batch");
+  assert.equal(sectionDigest(v3.body), v3.digest, "the digest taken here is the engine's");
+  const v2Body = normalizedSection(await readFile(join(portalRoot, "..", "tests", "fixtures", "rules", "batch-v2.zh.md"), "utf8"));
+  assert.notEqual(v2Body, normalizedSection(v3.body));
+  const v2Digest = sectionDigest(v2Body);
+  await writeFile(agentsPath, enabled.replace(v3.raw, `<!-- einzbern:section id=rule:batch rev=${v3.rev} digest=${v2Digest} -->\n${v2Body}<!-- einzbern:section-end id=rule:batch -->\n`), "utf8");
+  let forged = 0;
+  await forgeOwnStream(fixture.workspace, (events) => events.map((event) => {
+    const record = event.payload?.operation === "config.record.set" ? event.payload.record : null;
+    if (record?.collection === "rule" && record.key === "batch") { record.value.version = 2; forged += 1; }
+    if (record?.collection === "managed-section" && record.key === "AGENTS.md#rule:batch") { record.value.digest = v2Digest; forged += 1; }
+    return { occurredAt: event.occurredAt, payload: event.payload, clock: event.clock };
+  }));
+  assert.equal(forged, 2, "the rule's record and its section's record");
+  const v2File = await readFile(agentsPath, "utf8");
+
+  portal = await startPortal(fixture);
+  const { url } = portal;
+  const { boot } = await readBoot(url);
+  const listed = await request(url, "/api/rules", readOptions(boot.token));
+  assert.equal(listed.response.status, 200);
+  assert.deepEqual(listed.body.rules.find((rule) => rule.id === "batch"), { id: "batch", version: 3, recordedVersion: 2, fileVersion: 1, section: "rule:batch", state: "update-available" });
+  assert.deepEqual(listed.body.pending, []);
+  assert.equal(await readFile(agentsPath, "utf8"), v2File, "GET /api/rules writes nothing");
+
+  // Saving those bytes is judged and renders nothing, so the v2 section stays as it is.
+  const saved = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { file: "AGENTS.md", text: v2File }));
+  assert.equal(saved.body.reasonCode, "PORTAL_AGENTS_MD_WRITTEN");
+  assert.equal(saved.body.rules.find((rule) => rule.id === "batch").state, "update-available");
+  assert.deepEqual(saved.body.pending, []);
+  assert.equal(await readFile(agentsPath, "utf8"), v2File);
 });
 
 test("the page boots with the shipped locale contract and needs nothing outside the portal", async (t) => {

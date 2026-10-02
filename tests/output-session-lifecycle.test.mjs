@@ -2638,15 +2638,99 @@ function preBindGroupProbeFailure(result) {
   return JSON.parse(result.stderr);
 }
 
-// The processes still running the fixture's own copy of scripts/.
+// ps prints the executable and its arguments together. A later argument (for example
+// spawn-guard register --pattern) does not identify the script being executed.
+function fixtureScriptCommand(command, scriptRoots) {
+  const tokens = [];
+  let rest = command.trim();
+  while (rest !== "") {
+    const scriptRoot = scriptRoots.find((root) => rest.startsWith(root));
+    const token = scriptRoot === undefined ? /^(?:"[^"\n]*"|'[^'\n]*'|\S+)/u.exec(rest)?.[0]
+      : `${scriptRoot}${/^\S+/u.exec(rest.slice(scriptRoot.length))?.[0] ?? ""}`;
+    if (token === undefined) return false;
+    tokens.push(token.replace(/^["']|["']$/gu, ""));
+    rest = rest.slice(token.length).trimStart();
+  }
+  let index = 0;
+  if (/(?:^|\/)env$/u.test(tokens[index] ?? "")) index += 1;
+  while (/^[A-Za-z_][A-Za-z0-9_]*=/u.test(tokens[index] ?? "")) index += 1;
+  const executable = tokens[index++];
+  const inFixture = (path) => scriptRoots.some((scriptRoot) => path?.startsWith(scriptRoot));
+  if (inFixture(executable)) return true;
+  if (!/(?:^|\/)node(?:js)?(?:\.exe)?$/u.test(executable ?? "")) return false;
+  // These Node options consume the next token, which may itself be a fixture path.
+  const valueOptions = new Set(["--import", "--require", "-r", "--loader", "--experimental-loader", "--input-type", "--inspect-port", "--conditions", "-C"]);
+  while (index < tokens.length) {
+    const token = tokens[index++];
+    if (token === "--") return inFixture(tokens[index]);
+    if (["--eval", "-e", "--print", "-p"].includes(token) || /^(?:--eval|--print)=/u.test(token)) return false;
+    if (valueOptions.has(token)) { index += 1; continue; }
+    if (token.startsWith("-")) continue;
+    return inFixture(token);
+  }
+  return false;
+}
+
+// The processes still executing the fixture's own copy of scripts/, at either address.
 async function fixtureProcessLister(root) {
   const scriptRoots = [...new Set([root, await realpath(root)])].map((path) => `${path}/scripts/`);
   return () => {
     const listed = spawnSync("/bin/ps", ["-axo", "pid=,command="], { encoding: "utf8", env: { PATH: "/usr/bin:/bin" } });
     assert.equal(listed.status, 0, listed.stderr);
-    return listed.stdout.split("\n").filter((line) => scriptRoots.some((scriptRoot) => line.includes(scriptRoot)));
+    return listed.stdout.split("\n").filter((line) => {
+      const command = /^\s*\d+\s+(.*)$/u.exec(line)?.[1];
+      return command !== undefined && fixtureScriptCommand(command, scriptRoots);
+    });
   };
 }
+
+test("fixture identity distinguishes the executed Node script from observer arguments and preserves real survivors", async (context) => {
+  const root = await fixture(context, { tempRoot: "/tmp", prefix: "tcrn-identity space-", resolvePath: false });
+  await mkdir(join(root, "scripts"));
+  const script = join(root, "scripts", "unknown-fixture.mjs");
+  await writeFile(script, 'setInterval(() => {}, 1000);\n');
+  const observerRoot = await fixture(context);
+  const observer = join(observerRoot, "spawn-guard.mjs");
+  await writeFile(observer, 'setInterval(() => {}, 1000);\n');
+  const bootstrap = join(root, "scripts", "test-controller-bootstrap.mjs");
+  const children = [];
+  // Child cleanup is registered before any spawn; these share this test's owned group.
+  context.after(async () => {
+    for (const child of children) {
+      if (child.exitCode === null && child.signalCode === null) { const ended = once(child, "exit"); child.kill("SIGTERM"); await ended; }
+    }
+  });
+  const start = (argv) => {
+    const child = spawn(process.execPath, argv, { stdio: "ignore" });
+    children.push(child);
+    return child;
+  };
+  const observed = start([observer, "register", "--pattern", `${process.execPath} ${bootstrap} --test tests/entrypoint.test.mjs`]);
+  const lister = await fixtureProcessLister(root);
+  const table = spawnSync("/bin/ps", ["-axo", "pid=,command="], { encoding: "utf8" });
+  assert.equal(table.status, 0, table.stderr);
+  const originalMatch = table.stdout.split("\n").find((line) => /^\s*(\d+)/u.exec(line)?.[1] === String(observed.pid));
+  assert.ok(originalMatch.includes(`${root}/scripts/`), "the original whole-command predicate falsely includes the observer");
+  assert.equal(lister().some((line) => /^\s*(\d+)/u.exec(line)?.[1] === String(observed.pid)), false);
+  const roots = [...new Set([root, await realpath(root)])].map((path) => `${path}/scripts/`);
+  for (const address of roots) {
+    for (const launcher of [process.execPath, "node", "nodejs", '"node"', "env node", "FOO=1 node"]) {
+      for (const flags of ["", "--no-warnings", "--import node:fs", "--require node:fs", "--import=node:fs --", "--test"]) {
+        assert.equal(fixtureScriptCommand(`${launcher} ${flags} ${address}unknown-fixture.mjs`, roots), true);
+      }
+    }
+  }
+  assert.equal(fixtureScriptCommand(`${process.execPath} --eval 'void 0' ${script}`, roots), false);
+  assert.equal(fixtureScriptCommand(`${process.execPath} --import ${script} ${observer}`, roots), false, "import argument is not the executed script");
+  for (const flags of [[], ["--no-warnings"], ["--import", "node:fs"], ["--require", "node:fs"], ["--"]]) {
+    const child = start([...flags, flags.length === 0 ? await realpath(script) : script]);
+    await pollUntil(() => lister().some((line) => /^\s*(\d+)/u.exec(line)?.[1] === String(child.pid)) ? true : undefined);
+    await assert.rejects(reclaimFixtureReapers(root), /only a reaper may outlive the run/u, "a real unknown fixture survivor is refused");
+    const ended = once(child, "exit"); child.kill("SIGTERM"); await ended;
+  }
+  const ended = once(observed, "exit"); observed.kill("SIGTERM"); await ended;
+  assert.deepEqual(lister(), []);
+});
 
 // A run that fails closed before it has joined the reaper's group removes the progress directory
 // the reaper still has to record its cleanup in. Until TCRN-CROSS-INC-394 the reaper then retried

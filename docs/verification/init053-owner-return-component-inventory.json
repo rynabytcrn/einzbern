@@ -1,6 +1,7 @@
 {
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
+  "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
   "pack": "r27-owner-visual-return",
   "scope": "native R1–R6 appended to revision 4",
   "sourceFiles": [
@@ -746,7 +747,7 @@
     },
     {
       "path": "scripts/verbatim-evidence-proof.mjs",
-      "sha256": "6f3263a97a4a836400c85361db47b408b39ec25bb115cf17508cacea45399ef5"
+      "sha256": "86ff4f69c37045868c3b92d9e270f8e84181a5bca20358e9d9a068e5aa70e625"
     },
     {
       "path": "scripts/verify-otel-privacy.mjs",

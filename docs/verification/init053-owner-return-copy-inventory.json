@@ -1,6 +1,7 @@
 {
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
+  "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
   "pack": "r27-owner-visual-return",
   "scope": "native R1–R6 appended to revision 4",
   "sourceFiles": [
@@ -746,7 +747,7 @@
     },
     {
       "path": "scripts/verbatim-evidence-proof.mjs",
-      "sha256": "6f3263a97a4a836400c85361db47b408b39ec25bb115cf17508cacea45399ef5"
+      "sha256": "86ff4f69c37045868c3b92d9e270f8e84181a5bca20358e9d9a068e5aa70e625"
     },
     {
       "path": "scripts/verify-otel-privacy.mjs",
@@ -11782,6 +11783,22 @@
       "version": "current"
     },
     {
+      "file": "packages/core/src/io-policy.ts",
+      "line": 9,
+      "call": "Error",
+      "argument": 0,
+      "text": "EINZBERN_RENAME_RETRY_BUDGET_INVALID: expected a non-negative safe integer",
+      "version": "current"
+    },
+    {
+      "file": "packages/core/src/io-policy.ts",
+      "line": 19,
+      "call": "Error",
+      "argument": 0,
+      "text": "EINZBERN_LOCAL_PROBE_TIMEOUT_MS_INVALID: expected a positive integer in Node's timer range",
+      "version": "current"
+    },
+    {
       "file": "packages/core/src/knowledge-batch.ts",
       "line": 165,
       "call": "WorkspaceError",
@@ -14315,6 +14332,30 @@
       "call": "fail",
       "argument": 1,
       "text": "preset override fields are invalid",
+      "version": "current"
+    },
+    {
+      "file": "packages/core/src/project-scope.ts",
+      "line": 27,
+      "call": "ProjectScopeError",
+      "argument": 0,
+      "text": "project ancestry contains a cycle",
+      "version": "current"
+    },
+    {
+      "file": "packages/core/src/project-scope.ts",
+      "line": 30,
+      "call": "ProjectScopeError",
+      "argument": 0,
+      "text": "project scope is absent or deleted in this library",
+      "version": "current"
+    },
+    {
+      "file": "packages/core/src/project-scope.ts",
+      "line": 44,
+      "call": "ProjectScopeError",
+      "argument": 0,
+      "text": "this setting belongs to the whole library and cannot have a project override",
       "version": "current"
     },
     {
@@ -20711,7 +20752,7 @@
     },
     {
       "file": "scripts/verbatim-evidence-proof.mjs",
-      "line": 252,
+      "line": 254,
       "call": "Error",
       "argument": 0,
       "template": "`CURRENT_PORTAL_I18N_NOT_GREEN:${i18n.reasonCode}`",
@@ -20719,7 +20760,7 @@
     },
     {
       "file": "scripts/verbatim-evidence-proof.mjs",
-      "line": 267,
+      "line": 269,
       "call": "Error",
       "argument": 0,
       "template": "`EVIDENCE_VERBATIM_MODE_UNKNOWN:${mode}`",
@@ -20727,7 +20768,7 @@
     },
     {
       "file": "scripts/verbatim-evidence-proof.mjs",
-      "line": 273,
+      "line": 275,
       "call": "Error",
       "argument": 0,
       "template": "`EVIDENCE_VERBATIM_COMMAND_FORBIDDEN:${command}`",
@@ -20987,46 +21028,6 @@
       "call": "fail",
       "argument": 1,
       "template": "`${basename(source)} does not have the sha256 it was published with`",
-      "version": "current"
-    },
-    {
-      "file": "packages/core/src/io-policy.ts",
-      "line": 9,
-      "call": "Error",
-      "argument": 0,
-      "text": "EINZBERN_RENAME_RETRY_BUDGET_INVALID: expected a non-negative safe integer",
-      "version": "current"
-    },
-    {
-      "file": "packages/core/src/io-policy.ts",
-      "line": 19,
-      "call": "Error",
-      "argument": 0,
-      "text": "EINZBERN_LOCAL_PROBE_TIMEOUT_MS_INVALID: expected a positive integer in Node's timer range",
-      "version": "current"
-    },
-    {
-      "file": "packages/core/src/project-scope.ts",
-      "line": 27,
-      "call": "ProjectScopeError",
-      "argument": 0,
-      "text": "project ancestry contains a cycle",
-      "version": "current"
-    },
-    {
-      "file": "packages/core/src/project-scope.ts",
-      "line": 30,
-      "call": "ProjectScopeError",
-      "argument": 0,
-      "text": "project scope is absent or deleted in this library",
-      "version": "current"
-    },
-    {
-      "file": "packages/core/src/project-scope.ts",
-      "line": 44,
-      "call": "ProjectScopeError",
-      "argument": 0,
-      "text": "this setting belongs to the whole library and cannot have a project override",
       "version": "current"
     }
   ],

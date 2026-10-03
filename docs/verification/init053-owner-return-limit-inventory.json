@@ -1,6 +1,7 @@
 {
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
+  "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
   "pack": "r27-owner-visual-return",
   "scope": "native R1–R6 appended to revision 4",
   "sourceFiles": [
@@ -746,7 +747,7 @@
     },
     {
       "path": "scripts/verbatim-evidence-proof.mjs",
-      "sha256": "6f3263a97a4a836400c85361db47b408b39ec25bb115cf17508cacea45399ef5"
+      "sha256": "86ff4f69c37045868c3b92d9e270f8e84181a5bca20358e9d9a068e5aa70e625"
     },
     {
       "path": "scripts/verify-otel-privacy.mjs",
@@ -22674,17 +22675,17 @@
         },
         {
           "file": "scripts/verbatim-evidence-proof.mjs",
-          "line": 163,
+          "line": 165,
           "text": "export function summarizeHistoricalReplayFailure(error, { stage, maxBufferBytes = HISTORICAL_COMMAND_MAX_BUFFER_BYTES } = {}) {"
         },
         {
           "file": "scripts/verbatim-evidence-proof.mjs",
-          "line": 190,
+          "line": 192,
           "text": "export async function runHistoricalCommand(args, { cwd, env, maxBufferBytes = HISTORICAL_COMMAND_MAX_BUFFER_BYTES }) {"
         },
         {
           "file": "scripts/verbatim-evidence-proof.mjs",
-          "line": 412,
+          "line": 414,
           "text": "maxBufferBytes: HISTORICAL_COMMAND_MAX_BUFFER_BYTES,"
         }
       ],
@@ -22699,7 +22700,7 @@
       "oldInitializer": "await readFile(resolve(repositoryRoot, path))",
       "oldLine": 236,
       "currentInitializer": "await readFile(resolve(repositoryRoot, path))",
-      "currentLine": 236,
+      "currentLine": 238,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
@@ -22714,32 +22715,32 @@
         },
         {
           "file": "scripts/verbatim-evidence-proof.mjs",
-          "line": 153,
+          "line": 155,
           "text": "function sha256(bytes) {"
         },
         {
           "file": "scripts/verbatim-evidence-proof.mjs",
-          "line": 154,
+          "line": 156,
           "text": "return createHash(\"sha256\").update(bytes).digest(\"hex\");"
         },
         {
           "file": "scripts/verbatim-evidence-proof.mjs",
-          "line": 225,
+          "line": 227,
           "text": "bytes: evidence.bytes,"
         },
         {
           "file": "scripts/verbatim-evidence-proof.mjs",
-          "line": 236,
+          "line": 238,
           "text": "const bytes = await readFile(resolve(repositoryRoot, path));"
         },
         {
           "file": "scripts/verbatim-evidence-proof.mjs",
-          "line": 237,
+          "line": 239,
           "text": "sources.push({ path, bytes: bytes.length, sha256: sha256(bytes) });"
         },
         {
           "file": "scripts/verbatim-evidence-proof.mjs",
-          "line": 334,
+          "line": 336,
           "text": "if (sourceBytes.length !== evidence.bytes || sourceDigest !== evidence.sha256) {"
         }
       ],
@@ -22754,7 +22755,7 @@
       "oldInitializer": "await runHistoricalCommand(args, {\n      cwd: historicalRoot,\n      env,\n      maxBufferBytes: HISTORICAL_COMMAND_MAX_BUFFER_BYTES,\n    })",
       "oldLine": 409,
       "currentInitializer": "await runHistoricalCommand(args, {\n      cwd: historicalRoot,\n      env,\n      maxBufferBytes: HISTORICAL_COMMAND_MAX_BUFFER_BYTES,\n    })",
-      "currentLine": 409,
+      "currentLine": 411,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
@@ -22764,17 +22765,17 @@
         },
         {
           "file": "scripts/verbatim-evidence-proof.mjs",
-          "line": 409,
+          "line": 411,
           "text": "const captured = await runHistoricalCommand(args, {"
         },
         {
           "file": "scripts/verbatim-evidence-proof.mjs",
-          "line": 414,
+          "line": 416,
           "text": "if (!captured.ok) return { ok: false, reasonCode: \"EVIDENCE_HISTORY_REPLAY_FAILED\", ...captured.failure };"
         },
         {
           "file": "scripts/verbatim-evidence-proof.mjs",
-          "line": 415,
+          "line": 417,
           "text": "const { result } = captured;"
         }
       ],
@@ -22789,17 +22790,17 @@
       "oldInitializer": "Math.min(expected.length, actual.length)",
       "oldLine": 279,
       "currentInitializer": "Math.min(expected.length, actual.length)",
-      "currentLine": 279,
+      "currentLine": 281,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/verbatim-evidence-proof.mjs",
-          "line": 279,
+          "line": 281,
           "text": "const limit = Math.min(expected.length, actual.length);"
         },
         {
           "file": "scripts/verbatim-evidence-proof.mjs",
-          "line": 281,
+          "line": 283,
           "text": "while (offset < limit && expected[offset] === actual[offset]) offset += 1;"
         }
       ],
@@ -22814,27 +22815,27 @@
       "oldInitializer": "await readFile(block.sourcePath)",
       "oldLine": 332,
       "currentInitializer": "await readFile(block.sourcePath)",
-      "currentLine": 332,
+      "currentLine": 334,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/verbatim-evidence-proof.mjs",
-          "line": 332,
+          "line": 334,
           "text": "const sourceBytes = await readFile(block.sourcePath);"
         },
         {
           "file": "scripts/verbatim-evidence-proof.mjs",
-          "line": 333,
+          "line": 335,
           "text": "const sourceDigest = sha256(sourceBytes);"
         },
         {
           "file": "scripts/verbatim-evidence-proof.mjs",
-          "line": 334,
+          "line": 336,
           "text": "if (sourceBytes.length !== evidence.bytes || sourceDigest !== evidence.sha256) {"
         },
         {
           "file": "scripts/verbatim-evidence-proof.mjs",
-          "line": 344,
+          "line": 346,
           "text": "if (sha256(committedBytes) !== evidence.sha256 || !committedBytes.equals(sourceBytes)) {"
         }
       ],
@@ -27711,77 +27712,77 @@
     },
     {
       "file": "scripts/verbatim-evidence-proof.mjs",
-      "line": 114,
+      "line": 116,
       "source": "maxBuffer: 8 * 1024 * 1024,"
     },
     {
       "file": "scripts/verbatim-evidence-proof.mjs",
-      "line": 140,
+      "line": 142,
       "source": "maxBuffer: 8 * 1024 * 1024,"
     },
     {
       "file": "scripts/verbatim-evidence-proof.mjs",
-      "line": 163,
+      "line": 165,
       "source": "export function summarizeHistoricalReplayFailure(error, { stage, maxBufferBytes = HISTORICAL_COMMAND_MAX_BUFFER_BYTES } = {}) {"
     },
     {
       "file": "scripts/verbatim-evidence-proof.mjs",
-      "line": 190,
+      "line": 192,
       "source": "export async function runHistoricalCommand(args, { cwd, env, maxBufferBytes = HISTORICAL_COMMAND_MAX_BUFFER_BYTES }) {"
     },
     {
       "file": "scripts/verbatim-evidence-proof.mjs",
-      "line": 196,
+      "line": 198,
       "source": "maxBuffer: maxBufferBytes,"
     },
     {
       "file": "scripts/verbatim-evidence-proof.mjs",
-      "line": 272,
+      "line": 274,
       "source": "if (tokens[0] !== \"node\" || tokens.length < 2 || tokens[1].startsWith(\"-\")) {"
     },
     {
       "file": "scripts/verbatim-evidence-proof.mjs",
-      "line": 298,
+      "line": 300,
       "source": "line: source.slice(0, offset).split(\"\\n\").length,"
     },
     {
       "file": "scripts/verbatim-evidence-proof.mjs",
-      "line": 340,
+      "line": 342,
       "source": "committedBytes = runGit([\"show\", `${evidence.commit}:${block.path}`], { encoding: \"buffer\", maxBuffer: 8 * 1024 * 1024 });"
     },
     {
       "file": "scripts/verbatim-evidence-proof.mjs",
-      "line": 363,
+      "line": 365,
       "source": "const archive = runGit([\"archive\", \"--format=tar\", evidence.commit], { encoding: \"buffer\", maxBuffer: 256 * 1024 * 1024 });"
     },
     {
       "file": "scripts/verbatim-evidence-proof.mjs",
-      "line": 365,
+      "line": 367,
       "source": "execFileSync(\"tar\", [\"-xf\", \"-\", \"-C\", historicalRoot], { cwd: repositoryRoot, input: archive, encoding: \"utf8\", maxBuffer: 8 * 1024 * 1024 });"
     },
     {
       "file": "scripts/verbatim-evidence-proof.mjs",
-      "line": 376,
+      "line": 378,
       "source": "const historicalLock = runGit([\"show\", `${evidence.commit}:pnpm-lock.yaml`], { encoding: \"buffer\", maxBuffer: 8 * 1024 * 1024 });"
     },
     {
       "file": "scripts/verbatim-evidence-proof.mjs",
-      "line": 412,
+      "line": 414,
       "source": "maxBufferBytes: HISTORICAL_COMMAND_MAX_BUFFER_BYTES,"
     },
     {
       "file": "scripts/verbatim-evidence-proof.mjs",
-      "line": 463,
+      "line": 465,
       "source": "maxBuffer: 8 * 1024 * 1024,"
     },
     {
       "file": "scripts/verbatim-evidence-proof.mjs",
-      "line": 492,
+      "line": 494,
       "source": "ok: problems.length === 0 && blocks.length > 0,"
     },
     {
       "file": "scripts/verbatim-evidence-proof.mjs",
-      "line": 493,
+      "line": 495,
       "source": "reasonCode: problems.length === 0 && blocks.length > 0 ? \"EVIDENCE_VERBATIM_VERIFIED\" : \"EVIDENCE_VERBATIM_MISMATCH\","
     },
     {

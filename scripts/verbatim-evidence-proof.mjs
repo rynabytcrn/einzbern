@@ -107,10 +107,12 @@ function assertArrayEqual(actual, expected, label) {
 }
 
 async function designProofLegNames() {
+  const environment = { ...process.env };
+  delete environment.TCRN_DESIGN_SYSTEM_TOKENS;
   const result = await execFileAsync(process.execPath, [resolve(repositoryRoot, DESIGN_PROOF)], {
     cwd: repositoryRoot,
     encoding: "utf8",
-    env: { ...process.env, TCRN_DESIGN_SYSTEM_TOKENS: resolve(repositoryRoot, ".inc156-design-system-absent.css") },
+    env: environment,
     maxBuffer: 8 * 1024 * 1024,
   });
   const legNames = JSON.parse(result.stdout).legs.map((leg) => leg.leg);

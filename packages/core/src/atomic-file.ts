@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { renameRetryBudget } from "./io-policy.js";
 
 // TCRN-CROSS-STORY-469 R5, AC3 (MIN-227 D21): the one way a manifest or any other small file
 // that readers must never see half-written is replaced. The bytes go to a temporary file in
@@ -93,7 +94,7 @@ export async function writeFileAtomic(path: string, bytes: string | Uint8Array, 
   }
   const rename = options.rename ?? renameFile;
   const sleep = options.sleep ?? delay;
-  const retries = options.retries ?? 8;
+  const retries = renameRetryBudget(options.retries);
   let wait = options.retryDelayMs ?? 10;
   for (let attempt = 0; ; attempt += 1) {
     try {

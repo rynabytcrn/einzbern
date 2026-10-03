@@ -20,15 +20,17 @@ const at = "2026-01-01T00:00:00Z";
 
 const reason = (callback, reasonCode) => assert.throws(callback, (error) => error?.reasonCode === reasonCode);
 
-test("S369: model-plan host strings remain open and bounded record fields refuse", () => {
+test("S369/R4: model-plan fields preserve complete values and reject malformed records", () => {
   const unknown = applyModelPlanSet([], { host: "gemini", name: "valid", defaultModel: "model", updatedAt: at });
   assert.equal(unknown.record.host, "gemini");
   reason(() => applyModelPlanAssign(unknown.records, { host: "gemini", name: "missing", persona: "Verity", model: "model", updatedAt: at }, () => true), "MODEL_PLAN_NOT_FOUND");
   reason(() => applyModelPlanAssign(unknown.records, { host: "gemini", name: "valid", persona: "ghost", model: "model", updatedAt: at }, () => false), "MODEL_PLAN_PERSONA_UNKNOWN");
   reason(() => applyModelPlanSet([], { host: "", name: "valid", defaultModel: "model", updatedAt: at }), "MODEL_PLAN_RECORD_INVALID");
   reason(() => applyModelPlanSet([], { host: 42, name: "valid", defaultModel: "model", updatedAt: at }), "MODEL_PLAN_RECORD_INVALID");
-  reason(() => applyModelPlanSet([], { host: "codex", name: "x".repeat(65), defaultModel: "model", updatedAt: at }), "MODEL_PLAN_NAME_INVALID");
-  reason(() => applyModelPlanSet([], { host: "codex", name: "valid", defaultModel: "m".repeat(129), updatedAt: at }), "MODEL_PLAN_DEFAULT_MODEL_INVALID");
+  const long = applyModelPlanSet([], { host: "codex", name: "x".repeat(65), defaultModel: "m".repeat(129), updatedAt: at });
+  assert.equal(long.record.name.length, 65); assert.equal(long.record.defaultModel.length, 129);
+  reason(() => applyModelPlanSet([], { host: "codex", name: "", defaultModel: "model", updatedAt: at }), "MODEL_PLAN_NAME_INVALID");
+  reason(() => applyModelPlanSet([], { host: "codex", name: "valid", defaultModel: "m\u0000", updatedAt: at }), "MODEL_PLAN_DEFAULT_MODEL_INVALID");
 });
 
 test("INC-145 M6: an active-plan reference refuses removal", () => {

@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-472 R2, R3 (MIN-227 D6): the trail from a defect to the decision behind it is a
@@ -30,7 +31,7 @@ export type RelationName = typeof RELATION_NAMES[number];
 export type ReverseRelationName = typeof REVERSE_RELATION_NAMES[number];
 
 /** The most targets one relation of one record may name. */
-export const RELATION_LIST_LIMIT = 64;
+export const RELATION_LIST_LIMIT = RUNTIME_CAPACITY.arrayEntries;
 
 /** The four relations advisory:relations stores, by field name. */
 export const STORED_RELATION_FIELDS = Object.freeze(["blockedBy", "implements", "supersedes", "fixes"] as const);

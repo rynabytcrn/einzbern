@@ -589,6 +589,8 @@ async function build() {
     const target = toPosixPath(relative(repositoryRoot, path)).replace(/\.ts$/u, ".js");
     await safeWriteOutput(repositoryRoot, `dist/build/${target}`, `${output.replace(/\n*$/u, "")}\n`);
   }
+  const runtimeCapacity = await readSourceFile(resolve(repositoryRoot, "scripts/lib/runtime-capacity.mjs"));
+  await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/runtime-capacity.mjs", runtimeCapacity);
   const canonicalOrder = await readSourceFile(resolve(repositoryRoot, "scripts/lib/canonical-order.mjs"));
   await safeWriteOutput(repositoryRoot, "dist/build/scripts/lib/canonical-order.mjs", canonicalOrder);
   const dispatchConfigPath = resolve(repositoryRoot, "packages/core/src/dispatch-config.ts");

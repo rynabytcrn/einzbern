@@ -75,12 +75,12 @@ const currentValueOf = async (workspace, key) => (await catalogRowOf(workspace, 
 
 // The settings write receipt as it stands (SUB-417 changes where effectiveValue comes from, nothing
 // else): these fields, and receiptDigest taken over all of them but reasonCode, ids and itself.
-const RECEIPT_FIELDS = ["effectiveValue", "headEventHash", "ids", "reasonCode", "receiptDigest", "recordId", "schemaVersion", "setting", "version", "workspaceId"];
+const RECEIPT_FIELDS = ["effectiveValue", "headEventHash", "ids", "projectId", "reasonCode", "receiptDigest", "recordId", "schemaVersion", "setting", "source", "version", "workspaceId"];
 function assertReceiptShape(receipt) {
   assert.deepEqual(Object.keys(receipt).sort(), RECEIPT_FIELDS);
   assert.deepEqual([receipt.reasonCode, receipt.schemaVersion, receipt.ids], ["SETTINGS_WRITE_COMMITTED", "tcrn.settings-write-receipt.v1", [receipt.recordId]]);
-  const { schemaVersion, workspaceId, version, headEventHash, recordId, setting, effectiveValue } = receipt;
-  assert.equal(receipt.receiptDigest, canonicalSha256({ schemaVersion, workspaceId, version, headEventHash, recordId, setting, effectiveValue }));
+  const { schemaVersion, workspaceId, version, headEventHash, recordId, setting, effectiveValue, projectId, source } = receipt;
+  assert.equal(receipt.receiptDigest, canonicalSha256({ schemaVersion, workspaceId, version, headEventHash, recordId, setting, effectiveValue, projectId, source }));
 }
 
 // A settings event appended raw, as a device whose write the other never saw would leave it.
@@ -114,6 +114,8 @@ test("508-R1: models.category validation names the field it refuses; a repeated 
   const valid = [category("main", 20, "Main", "the implementing tier"), category("flagship", 10, "Flagship")];
   assert.deepEqual(validateModelsCategory(valid), [valid[1], valid[0]], "read in ascending order");
   assert.deepEqual(parseModelsCategory(JSON.stringify(valid)), [valid[1], valid[0]]);
+  const long = category("e".repeat(65), 10001, "n".repeat(65), "d".repeat(257));
+  assert.deepEqual(validateModelsCategory([long]), [long], "complete fields survive former product ceilings");
   const one = (fields) => [{ ...category("economy", 30), ...fields }];
   const refusals = [
     [{ economy: {} }, "models.category"],
@@ -121,11 +123,8 @@ test("508-R1: models.category validation names the field it refuses; a repeated 
     [[{ id: "economy", name: "economy", order: 30 }], "models.category[0]"],
     [one({ rank: 1 }), "models.category[0]"],
     [one({ id: "Economy" }), "models.category[0].id"],
-    [one({ id: "e".repeat(65) }), "models.category[0].id"],
     [one({ name: "" }), "models.category[0].name"],
-    [one({ name: "n".repeat(65) }), "models.category[0].name"],
     [one({ description: "line\nbreak" }), "models.category[0].description"],
-    [one({ description: "d".repeat(257) }), "models.category[0].description"],
     [one({ order: 0 }), "models.category[0].order"],
     [one({ order: "30" }), "models.category[0].order"],
   ];

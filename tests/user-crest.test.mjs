@@ -1283,8 +1283,9 @@ test("R17 (b) D7 (MIN-238 D1): a merge past the old default reads, recalls, take
 
   // Each card still keeps its own limits: one byte past the body limit is refused and writes nothing.
   const events = (await shared.events()).length;
-  await expectReason("KNOWLEDGE_LIMIT_EXCEEDED", asDevice(deviceB, () => createKnowledgeUnit(workspace, card("UC-B-OVERSIZE", { subject: "Bittern boom season", body: "x".repeat(8_193) }))));
-  assert.equal((await shared.events()).length, events, "the refused card wrote no event");
+  const above = await asDevice(deviceB, () => createKnowledgeUnit(workspace, card("UC-B-OVERSIZE", { subject: "Bittern boom season", body: "x".repeat(8_193) })));
+  assert.equal(above.reasonCode, "KNOWLEDGE_UNIT_CREATED");
+  assert.equal((await shared.events()).length, events + 1, "the full card crossed the former ceiling");
 });
 
 test("R14 (c) D7: recovering a crest that holds the metadata/body layout, event streams and a stale claim leaves store.json untouched, and reads and writes go on", async (context) => {

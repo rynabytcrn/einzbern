@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "./lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 //
 // INIT-007 / S041 (registration face) + S042 (host edge). This is the thin,
@@ -122,7 +123,7 @@ function parseRegistryLenient(text) {
 function readProcessTable() {
   const listed = spawnSync("/bin/ps", ["-axo", "pid=,pgid=,ppid=,%cpu=,command="], {
     encoding: "utf8",
-    maxBuffer: 16 * 1024 * 1024,
+    maxBuffer: RUNTIME_CAPACITY.bufferBytes,
     env: { PATH: "/usr/bin:/bin" },
   });
   if (listed.status !== 0 || listed.error || (listed.stderr ?? "").trim() !== "") {
@@ -184,7 +185,7 @@ export function detectFromTable(registryText, tableText, at) {
  * from this task-scoped result; an unregistered owner is unknown, not clean.
  */
 export function detectOwnedFromTable(registryText, tableText, at, purpose) {
-  if (typeof purpose !== "string" || purpose.trim().length === 0 || purpose.length > 1_024 || purpose.includes("\u0000")) {
+  if (typeof purpose !== "string" || purpose.trim().length === 0 || purpose.includes("\u0000")) {
     return { status: "not-verifiable", reasonCode: "SPAWN_GUARD_PURPOSE_REQUIRED", purpose: purpose ?? null };
   }
   const registrations = parseRegistry(registryText);

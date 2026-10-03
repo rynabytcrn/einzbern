@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-479 R1, AC1, AC3 (MIN-227 D28): the SKILL.md of the Mana Orchestrate skill is
@@ -24,7 +25,7 @@ import { isEngineVersion } from "./format-version.js";
 import { BRAND, DIRECTORY } from "./names.js";
 
 /** SKILL.md is always shorter than this many bytes (UTF-8). */
-export const SKILL_MARKDOWN_BYTE_LIMIT = 6000;
+export const SKILL_MARKDOWN_BYTE_LIMIT = RUNTIME_CAPACITY.bufferBytes;
 
 export const SKILL_RENDER_REASON_CODES = Object.freeze([
   "SKILL_MARKDOWN_TOO_LARGE",

@@ -1,3 +1,4 @@
+import { scopedWorkspaceState } from "./project-scope.js";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-477 R2, AC3 and STORY-474 R2, R3 (MIN-227 D5, D7): what the one Einzbern hook
@@ -160,7 +161,7 @@ export async function promptRecallContext(request: PromptRecallRequest): Promise
   const library = await confirmedLibrary(request.cwd, request.libraryPath);
   if (library === null) return null;
   const at = request.at ?? currentInstant();
-  const state = await materializeLibrary(library.libraryPath);
+  const state = scopedWorkspaceState(await materializeLibrary(library.libraryPath), library.entry.projectId);
   // TCRN-CROSS-SUB-425 (MIN-239 D6): the prompt hook recalls valid cards only, always; no prompt asks
   // it for a removed one.
   const { cards, digest } = await readRecallCards(library.libraryPath, { at, allowTrailing: true, status: "valid" });
@@ -169,7 +170,7 @@ export async function promptRecallContext(request: PromptRecallRequest): Promise
   const perPromptBytes = numericSetting(state, "injection.perPromptBytes", (value) => Number.isSafeInteger(value) && value > 0);
   const result = recall({
     // Its own index: the recall verb's documents are built another way and must not answer here.
-    cacheKey: `prompt-hook:${state.metadata.workspaceId}`,
+    cacheKey: `prompt-hook:${state.metadata.workspaceId}:${state.configurationProjectId ?? "library"}`,
     checkpoint: `${state.headEventHash}:${digest}`,
     documents: () => recallDocuments(recallInputsFromState(state, cards, { scopeExcerptBytes })),
     query: prompt,

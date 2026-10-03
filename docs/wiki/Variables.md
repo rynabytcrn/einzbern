@@ -1,12 +1,12 @@
 # 变量
 
-变量是项目希望写进 AGENTS.md、让 Agent 读到的配置。它分两种：系统变量是引擎设置目录里的六个键，自定义变量是项目自己起名的记录。两种都随库同步，每台合并这个库的设备读到的都一样；它们各自渲染成 AGENTS.md 里的一个受管段（受管段的规则见「受管段与 Command Spell」页）。
+变量是项目希望写进 AGENTS.md、让 Agent 读到的配置。它分两种：系统变量是引擎设置目录里的模型和设计配置键，自定义变量是项目自己起名的记录。两种都随库同步，每台合并这个库的设备读到的都一样；它们各自渲染成 AGENTS.md 里的一个受管段（受管段的规则见「受管段与 Command Spell」页）。
 
 ## 系统变量
 
-系统变量段 `variables-system` 只渲染下面六个设置，其他设置永远不会出现在这里：`models.category`、`models.tiers`、`models.escalation.enabled`、`models.escalation.threshold`、`models.escalation.ceiling` 与 `design.authority`。它们都只能经 Atelier 修改（见下文「模型写保护」）。
+系统变量段 `variables-system` 渲染下面的设置，其他设置永远不会出现在这里：`models.category`、`models.tiers`、`models.escalation.enabled`、`models.escalation.threshold`、`models.escalation.ceiling` 与全部 `design.*` 配套键。它们都只能经 Atelier 修改（见下文「模型写保护」）。
 
-分类、宿主与 runner 的名字以小写字母开头，由小写字母、数字、`.`、`_`、`-` 组成，最多 64 个字符。两张表的值都按顺序从小到大存成规范 JSON，最多 8192 个字符。
+分类、宿主与 runner 的名字以小写字母开头，由小写字母、数字、`.`、`_`、`-` 组成，没有产品长度上限。两张表的值都按顺序从小到大完整存成规范 JSON；引用、Unicode、精确整数和密钥保护保持。
 
 ### models.category
 
@@ -15,8 +15,8 @@
 | 字段 | 规则 |
 | --- | --- |
 | `id` | 名字，全表唯一；重复报 `MODELS_CATEGORY_DUPLICATE`。 |
-| `name` | 1 至 64 个字符，不含控制字符。 |
-| `description` | 最多 256 个字符，不含控制字符，可以为空。 |
+| `name` | 非空文本，不含控制字符。 |
+| `description` | 文本，不含控制字符，可以为空。 |
 | `order` | 正整数，全表唯一；重复报 `MODELS_ORDER_DUPLICATE`。顺序越小，分类越强。 |
 
 - 默认有三个分类：`flagship`（10）、`main`（20）、`economy`（30）。名字就是 id，说明为空。
@@ -33,9 +33,9 @@
 | `order` | 正整数，全表唯一；重复报 `MODELS_ORDER_DUPLICATE`。顺序越小，记录越强，升档就是往更小的顺序走。 |
 | `category` | 所属分类，必须是 `models.category` 里已有的分类，否则报 `MODELS_CATEGORY_UNKNOWN`。 |
 | `runner` | 执行这条记录的程序：宿主自己，或另一个程序（例如 `codex-cli`）。 |
-| `model` | 模型，最多 256 个字符。引擎不内置任何模型名，默认表里留空，由 Owner 填写。 |
-| `effort` | 推理强度，最多 64 个字符，默认留空。 |
-| `note` | 备注，最多 256 个字符，可以为空。 |
+| `model` | 模型，文本。引擎不内置任何模型名，默认表里留空，由 Owner 填写。 |
+| `effort` | 推理强度，文本，默认留空。 |
+| `note` | 备注，文本，可以为空。 |
 
 规则指定一个分类，拿到的是这个分类里顺序最大的那条记录，叫基础记录，不管它的 runner 是谁。下面的例子里，经济档由 `codex-cli` 执行：
 
@@ -60,7 +60,7 @@
 | 键 | 取值 | 默认 |
 | --- | --- | --- |
 | `models.escalation.enabled` | `true` 或 `false` | `true` |
-| `models.escalation.threshold` | 1 至 100 的整数 | `1` |
+| `models.escalation.threshold` | 正的安全整数 | `1` |
 | `models.escalation.ceiling` | `models.category` 里已有的分类 id | `main` |
 
 - **怎么升**：从规则所指分类的基础记录出发，每累计 `threshold` 次退回，就升一条，换成全表里顺序更小的下一条记录。可以跨分类，也可以换 runner。
@@ -76,7 +76,16 @@
 
 ### design.authority
 
-项目奉为权威的设计系统，以该设计系统自身文档的 URL 表示。可以不设。它只是声明：引擎从不访问这个地址，也不检查地址背后是什么。未设置时段里写 `(unset)`。
+当前项目或子项目奉为权威的设计系统，以该系统公开契约的 HTTPS URL 表示。
+同一配置中的 `design.repository`、`design.pullRequestTarget`、`design.productionDocs`、
+`design.buildService`、`design.buildProject` 和 `design.consumedVersion` 声明仓库、PR 目标、
+生产文档、构建服务/项目和实际消费版本。每个键显示声明位置和明确父项目的继承来源；
+缺项是未配置，换权威却继承其它权威的配套项是冲突。离线引擎不把声明或网页可访问
+当作发布成功；真实 PR、生产发布和构建证据由已获授权的执行者核对。
+
+各键和自定义变量按稳定项目身份读写。移除本项目覆盖后才继承明确的父项目或库默认；
+改名不改绑定。登记表中的真实目录没有稳定项目绑定时不猜测 AGENTS 输出目标。
+`design-authority` v1 可从系统预设显式启用；中文和英文正文不写死任何项目值。
 
 ### 在 AGENTS.md 里的样子
 
@@ -85,7 +94,7 @@
 - `models.category`：Order、Id、Name、Description 四列，按顺序排列；
 - `models.tiers`：Order、Category、Runner、Model、Effort、Note 六列，按顺序排列；
 - `models.escalation`：Setting、Value 两列，列出三个键的当前值；
-- `design.authority`：一行 URL，未设置时写 `(unset)`。
+- `design`：七个键的有效值、源项目和继承状态；未设置项写 `(unset)`。
 
 前三个小节的表格前各有一行说明：分类与档位的那一行说明顺序的含义，升档的那一行说明怎样升档。空的模型或推理强度写作 `(unset)`，空的说明或备注留空。
 
@@ -99,10 +108,10 @@
 
 | 字段 | 规则 |
 | --- | --- |
-| 名字 | 小写字母开头，由字母、数字、`.`、`_`、`-` 组成，最多 64 个字符；不能与设置目录里的键重名。 |
+| 名字 | 小写字母开头，由字母、数字、`.`、`_`、`-` 组成，文本；不能与设置目录里的键重名。 |
 | 类型 | `string`、`number` 或 `boolean`。 |
-| 值 | 始终按文本存储，最多 1024 个字符，不含控制字符。`number` 的值是十进制数（可带负号和小数部分），`boolean` 的值是 `true` 或 `false`。 |
-| 说明 | 可选，最多 512 个字符，不含控制字符。 |
+| 值 | 始终按文本存储，完整文本，不含控制字符。`number` 的值是十进制数（可带负号和小数部分），`boolean` 的值是 `true` 或 `false`。 |
+| 说明 | 可选，文本，不含控制字符。 |
 | 顺序 | 可选，正整数，决定这个变量在自定义变量段里的位置（TCRN-CROSS-STORY-508 R7）。 |
 
 自定义变量段 `variables-custom` 渲染成 Name、Type、Value、Description 四列的表，一行一个变量：

@@ -19,12 +19,12 @@ precisely `schemaVersion`, `id`, `exchangeId`, `receivedAt`, `status`,
 | Field           | Rule                                                       |
 | --------------- | ---------------------------------------------------------- |
 | `schemaVersion` | the constant string `tcrn.receipt.v1`                      |
-| `id`            | a `stableId` (`namespace:value`, at most 161 characters)   |
+| `id`            | a `stableId` (`namespace:value`, with no product length ceiling)   |
 | `exchangeId`    | the `stableId` of the received envelope                    |
 | `receivedAt`    | a `strictInstant` (no-leap-second RFC 3339 subset)         |
 | `status`        | one of exactly `accepted` or `rejected`                    |
 | `subjectDigest` | a lowercase SHA-256 digest matching `^[a-f0-9]{64}$`       |
-| `extensions`    | the shared closed extension map (at most 64 entries)       |
+| `extensions`    | the shared closed extension map (complete, within the executing runtime)       |
 
 `id` and `exchangeId` are validated independently as protocol identifiers.
 `receivedAt` is the strict receive instant. `subjectDigest` binds the exact bytes

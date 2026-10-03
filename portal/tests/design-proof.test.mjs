@@ -120,7 +120,9 @@ test("INIT-036 S276 design-proof legs turn red for injected violations and green
   assert.equal((await runProof(baseline)).report.legs.find((leg) => leg.leg === "editor-focus-boundary").ok, true);
 
   const topbarMutated = join(directory, "topbar-search-mutated.html");
-  await writeFile(topbarMutated, source.replace("  max-width: 430px;\n}\n.tcrn-product-shell__sidebar", "  max-width: 431px;\n}\n.tcrn-product-shell__sidebar"), "utf8");
+  const searchConstraint = ".tcrn-top-bar__actions .tcrn-search-input {\n  min-width: 7ch;\n  flex: 1 1 auto;\n  max-width: 430px;";
+  assert.ok(source.includes(searchConstraint), "topbar mutation anchor must exist");
+  await writeFile(topbarMutated, source.replace(searchConstraint, searchConstraint.replace("430px", "431px")), "utf8");
   const redTopbar = await runProof(topbarMutated);
   assert.notEqual(redTopbar.status, 0);
   assert.equal(redTopbar.report.legs.find((leg) => leg.leg === "topbar-four-width-single-line").reasonCode, "TOPBAR_SINGLE_LINE_CONSTRAINTS_DRIFTED");
@@ -128,11 +130,12 @@ test("INIT-036 S276 design-proof legs turn red for injected violations and green
   assert.equal((await runProof(baseline)).report.legs.find((leg) => leg.leg === "topbar-four-width-single-line").ok, true);
 
   const sidenavMutated = join(directory, "sidenav-background-mutated.html");
-  await writeFile(sidenavMutated, source.replace(".tcrn-product-shell__sidebar {\n  background: transparent;", ".tcrn-product-shell__sidebar {\n  background: var(--tcrn-color-surface-panel);"), "utf8");
+  const styleEnd = source.lastIndexOf("</style>");
+  await writeFile(sidenavMutated, `${source.slice(0, styleEnd)}\n.tcrn-product-shell__sidebar { background: var(--tcrn-color-surface-panel); }\n${source.slice(styleEnd)}`, "utf8");
   const redSidenav = await runProof(sidenavMutated);
   assert.notEqual(redSidenav.status, 0);
-  assert.equal(redSidenav.report.legs.find((leg) => leg.leg === "sidenav-v4-style-invariants").reasonCode, "SIDENAV_V4_VALUES_DRIFTED");
-  assert.ok(redSidenav.report.legs.find((leg) => leg.leg === "sidenav-v4-style-invariants").findings.some((finding) => finding.name === "sidenav transparent background"));
+  assert.equal(redSidenav.report.legs.find((leg) => leg.leg === "sidenav-v4-style-invariants").reasonCode, "SIDENAV_PUBLISHED_FAMILY_DRIFTED");
+  assert.ok(redSidenav.report.legs.find((leg) => leg.leg === "sidenav-v4-style-invariants").findings.some((finding) => finding.name === "sidenav local family override"));
   assert.equal((await runProof(baseline)).report.legs.find((leg) => leg.leg === "sidenav-v4-style-invariants").ok, true);
 
   const layoutMutations = [
@@ -154,7 +157,7 @@ test("INIT-036 S276 design-proof legs turn red for injected violations and green
     ["shell locale menu in place", 'class="tcrn-shell-locale-menu__panel"', 'class="tcrn-shell-locale-menu__pane"'],
     ["compound search input in place", 'class="tcrn-input tcrn-search-input__control', 'class="tcrn-input tcrn-search-input__ctrl'],
     ["brand mark asset in place", 'data-brand-asset="tcrn-brand-mark"', 'data-brand-asset="tcrn-brand-mark-mutated"'],
-    ["footer syntax", 'class="tcrn-rail__footer"><span data-i18n="app.boundaryBody">', 'class="tcrn-rail__footer"><span data-i18n="app.boundaryBody-mutated">'],
+    ["footer syntax", 'class="tcrn-text tcrn-rail__footer"><span data-i18n="app.boundaryBody">', 'class="tcrn-text tcrn-rail__footer"><span data-i18n="app.boundaryBody-mutated">'],
     ["boolean control mapping", 'entry.controlType === "boolean"', 'entry.controlType === "boolean-mutated"'],
     ["number control mapping", 'entry.controlType === "number") return `<div class="tcrn-number-input-field"', 'entry.controlType === "number-mutated"'],
     ["number input visual", 'data-number-input-visibility="full-value" data-setting-control', 'data-number-input-visibility="hidden" data-setting-control'],
@@ -162,9 +165,14 @@ test("INIT-036 S276 design-proof legs turn red for injected violations and green
     ["select enum mapping", 'control = "select") =>', 'control = "radio") =>'],
     ["setting choice control mapping", 'data-setting-choice-control="${control}" data-setting-key', 'data-setting-choice-control="${control-mutated}" data-setting-key'],
     ["closed multi-select mapping", 'settingChoiceAttrs(roster, entry.key, "collection-closed", "multi-select")', 'settingChoiceAttrs(roster, entry.key, "collection-open", "multi-select")'],
-    ["closed multi-select presentation", 'data-choice-value-mode="closed" data-choice-presentation="checkboxes"', 'data-choice-value-mode="open" data-choice-presentation="checkboxes"'],
+    ["closed multi-select presentation", 'data-choice-value-mode="closed" data-choice-presentation="dropdown"', 'data-choice-value-mode="closed" data-choice-presentation="checkboxes"'],
+    ["multi-select Select trigger", 'class="tcrn-select tcrn-multi-select-dropdown__trigger"', 'class="tcrn-input tcrn-multi-select-dropdown__trigger"'],
+    ["multi-select Menu option", 'class="tcrn-menu__item tcrn-multi-select-dropdown__option"', 'class="tcrn-checkbox tcrn-multi-select-dropdown__option"'],
+    ["multi-select native value", 'class="tcrn-sr-only tcrn-multi-select-dropdown__value" data-choice-presentation="dropdown" multiple', 'class="tcrn-sr-only tcrn-multi-select-dropdown__value" data-choice-presentation="dropdown"'],
+    ["multi-select list semantics", 'class="tcrn-menu tcrn-multi-select-dropdown__list" role="listbox" aria-multiselectable="true"', 'class="tcrn-menu tcrn-multi-select-dropdown__list" role="listbox" aria-multiselectable="false"'],
+    ["multi-select public bridge", 'mountStaticMultiSelect({ root })', 'mountPrivateMultiSelect({ root })'],
     ["checkbox design-system control", 'class="tcrn-checkbox" type="checkbox"', 'class="tcrn-checkbox-mutated" type="checkbox"'],
-    ["multi-select reset button component", 'class="tcrn-button tcrn-button--quiet tcrn-button--sm tcrn-multi-select-group__clear"', 'class="tcrn-button tcrn-button--quiet tcrn-button--sm tcrn-multi-select-group__clear-mutated"'],
+    ["multi-select reset button component", 'class="tcrn-button tcrn-button--quiet tcrn-button--sm" data-reset-setting="${esc(entry.key)}" ${entry.declaredValue == null ? "disabled" : ""}', 'class="tcrn-reset-local" data-reset-setting="${esc(entry.key)}" ${entry.declaredValue == null ? "disabled" : ""}'],
     ["text control mapping", 'return `<label class="tcrn-field"><span class="tcrn-sr-only">${esc(label)}', 'return `<label class="tcrn-field-mutated"><span class="tcrn-sr-only">${esc(label)}'],
     ["settings layout mode", 'data-settings-layout-mode="container-driven"', 'data-settings-layout-mode="container-driven-mutated"'],
     ["settings layout form policy", 'data-settings-layout-form-policy="single-host-single-column"', 'data-settings-layout-form-policy="single-host-single-column-mutated"'],
@@ -175,7 +183,7 @@ test("INIT-036 S276 design-proof legs turn red for injected violations and green
     ["settings long value policy", 'data-settings-long-value-policy="native-inline-scroll-copy"', 'data-settings-long-value-policy="clip"'],
     // INC-174: pinning a content column to a fixed width is the recurring layout
     // disease; the leg must go red the moment one reappears.
-    ["fixed content column", "grid-template-columns: 208px minmax(0, 860px);", "grid-template-columns: 208px 800px;"],
+    ["fixed content column", "grid-template-columns: minmax(184px, 208px) minmax(0, 1fr);", "grid-template-columns: minmax(184px, 208px) 800px;"],
   ];
   const initScopedMutations = new Set(["product shell rows", "top bar height from design system", "prose measure", "dashboard measure", "desktop-to-tablet breakpoint", "tablet-to-phone breakpoint", "phone breakpoint"]);
   const initStart = source.indexOf("/* INIT-036 S274/S275:");

@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-468 R1 (MIN-227 D20): this device's identity. The first time the engine
@@ -21,7 +22,7 @@ import { writeFileAtomic } from "./atomic-file.js";
 import { deviceFilePath, deviceHome } from "./device-home.js";
 
 export const DEVICE_SCHEMA_VERSION = "einzbern.device.v1" as const;
-export const DEVICE_DISPLAY_NAME_MAX_LENGTH = 64;
+export const DEVICE_DISPLAY_NAME_MAX_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;
 export const DEVICE_IDENTITY_REASON_CODES = Object.freeze([
   "DEVICE_DISPLAY_NAME_INVALID",
   "DEVICE_FILE_INVALID",

@@ -297,7 +297,7 @@ test("SUB-421 (INC-397): the records digest is canonicalSha256's within one MiB 
   const synthetic = Array.from({ length: 1_100 }, (_, index) => ({ ...story, id: `work:${index.toString(16).padStart(24, "0")}`, title: `synthetic ${index} ${"x".repeat(1_000)}` }));
   const large = { ...structuredClone(recordsOf(state)), work: [...structuredClone(state.work), ...synthetic] };
   assert.ok(canonicalByteLength(large) > 1_048_576, "the set is past the canonical ceiling");
-  assert.throws(() => canonicalSha256(large), (error) => error?.reasonCode === "INPUT_OVERSIZED", "which canonicalSha256 refuses");
+  assert.match(canonicalSha256(large), /^[a-f0-9]{64}$/u, "complete canonical values cross the former one MiB ceiling");
   const digest = legacyRecordsDigest(large);
   assert.match(digest, /^[a-f0-9]{64}$/u);
   assertLegacyRecordsMatch(large, structuredClone(large));

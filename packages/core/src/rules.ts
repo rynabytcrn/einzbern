@@ -1,3 +1,4 @@
+import { scopedWorkspaceState } from "./project-scope.js";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-483 R2, R3 (MIN-228 D3, MIN-229 D6; TCRN-CROSS-SUB-336): the Command Spell rules
@@ -86,9 +87,9 @@ export interface RuleRecordValue {
   readonly order?: number;
 }
 
-// A rule id: a lowercase letter, then lowercase letters, digits and hyphens, at most 64 in all, so
+// A rule id: a lowercase letter, then lowercase letters, digits and hyphens, so
 // rule:<id> is a managed-section id as well.
-const RULE_ID = /^[a-z][a-z0-9-]{0,63}$/u;
+const RULE_ID = /^[a-z][a-z0-9-]*$/u;
 const RECORD_FIELDS = "enabled,version";
 const ORDERED_RECORD_FIELDS = "enabled,order,version";
 
@@ -215,8 +216,9 @@ function ruleStatuses(state: Pick<WorkspaceState, "configRecords">, inFile: Read
 }
 
 export interface ListRulesInput {
+  readonly configurationProjectId?: string;
   readonly libraryRoot: string;
-  readonly projectRoot: string;
+  readonly projectRoot?: string;
   // The rules this engine ships (BUILT_IN_RULES); a test hands in another catalog here.
   readonly catalog?: readonly BuiltInRule[];
 }
@@ -226,8 +228,8 @@ export interface ListRulesInput {
  * its state in the project. Writes nothing.
  */
 export async function listRules(input: ListRulesInput): Promise<readonly RuleStatus[]> {
-  const state = await materializeWorkspace(input.libraryRoot);
-  return ruleStatuses(state, await sectionsOfAgentsFile(input.projectRoot), input.catalog ?? BUILT_IN_RULES);
+  const state = scopedWorkspaceState(await materializeWorkspace(input.libraryRoot), input.configurationProjectId);
+  return ruleStatuses(state, input.projectRoot === undefined ? new Map() : await sectionsOfAgentsFile(input.projectRoot), input.catalog ?? BUILT_IN_RULES);
 }
 
 export interface RuleChangeInput extends WorkspaceMutationOptions {
@@ -291,7 +293,7 @@ export async function enableRule(input: RuleChangeInput & { readonly order?: num
     fail("RULE_RECORD_INVALID", `the order of rule ${rule.id} is a positive integer`, { id: rule.id, field: "order" });
   }
   return withWorkspaceWriteLock(input.libraryRoot, async (root) => {
-    const state = await materializeWorkspace(root);
+    const state = scopedWorkspaceState(await materializeWorkspace(root), input.configurationProjectId);
     const recorded = recordedRule(state, rule.id);
     if (recorded !== null && recorded.version > rule.version) {
       fail("RULE_VERSION_NEWER", `the library records rule ${rule.id} at version ${recorded.version}; this engine ships version ${rule.version}`, {
@@ -316,11 +318,11 @@ export async function enableRule(input: RuleChangeInput & { readonly order?: num
     const decision = plan.sections.find((entry) => entry.id === section);
     const deltas: ((state: WorkspaceState) => MutationDelta)[] = [];
     if (recorded === null || !recorded.enabled || recorded.version !== rule.version || recorded.order !== order) {
-      deltas.push(setConfigRecordDelta({ collection: "rule", key: rule.id, value }));
+      deltas.push(setConfigRecordDelta({ ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), collection: "rule", key: rule.id, value }));
     }
     // Only this section's record: the other sections of the file are agents-render's to record.
     if (decision?.recordChanged === true) {
-      deltas.push(setConfigRecordDelta({ collection: "managed-section", key: managedSectionRecordKey(AGENTS_FILE, section), value: decision.record }));
+      deltas.push(setConfigRecordDelta({ ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), collection: "managed-section", key: managedSectionRecordKey(AGENTS_FILE, section), value: decision.record }));
     }
     let committed: WorkspaceState;
     try {
@@ -338,7 +340,7 @@ export async function enableRule(input: RuleChangeInput & { readonly order?: num
       written: applied.written,
       backupPath: applied.backupPath,
       recorded: deltas.length,
-      status: statusOf(committed, sectionsOfText(applied.written ? plan.after : plan.before), catalog, rule.id),
+      status: statusOf(scopedWorkspaceState(committed, input.configurationProjectId), sectionsOfText(applied.written ? plan.after : plan.before), catalog, rule.id),
       state: committed,
     };
   });
@@ -356,7 +358,7 @@ export async function enableRule(input: RuleChangeInput & { readonly order?: num
 export async function disableRule(input: RuleChangeInput & { readonly force?: boolean }): Promise<RuleChange> {
   const catalog = input.catalog ?? BUILT_IN_RULES;
   return withWorkspaceWriteLock(input.libraryRoot, async (root) => {
-    const state = await materializeWorkspace(root);
+    const state = scopedWorkspaceState(await materializeWorkspace(root), input.configurationProjectId);
     const recorded = isRuleId(input.id) ? recordedRule(state, input.id) : null;
     if (recorded === null && !catalog.some((entry) => entry.id === input.id)) {
       fail("RULE_UNKNOWN", `neither the engine nor the library knows a rule ${JSON.stringify(input.id)}`, {
@@ -376,12 +378,12 @@ export async function disableRule(input: RuleChangeInput & { readonly force?: bo
     });
     const deltas: ((state: WorkspaceState) => MutationDelta)[] = [];
     if (change.recordChanged && records.some((record) => record.id === section)) {
-      deltas.push(removeConfigRecordDelta({ collection: "managed-section", key: managedSectionRecordKey(AGENTS_FILE, section) }));
+      deltas.push(removeConfigRecordDelta({ ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), collection: "managed-section", key: managedSectionRecordKey(AGENTS_FILE, section) }));
     }
     if (recorded !== null && recorded.enabled) {
       // The order stays with the record (TCRN-CROSS-STORY-508 R7).
       const value: ConfigRecordValue = { enabled: false, version: recorded.version, ...(recorded.order === undefined ? {} : { order: recorded.order }) };
-      deltas.push(setConfigRecordDelta({ collection: "rule", key: input.id, value }));
+      deltas.push(setConfigRecordDelta({ ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), collection: "rule", key: input.id, value }));
     }
     let committed: WorkspaceState;
     try {
@@ -399,7 +401,7 @@ export async function disableRule(input: RuleChangeInput & { readonly force?: bo
       written: change.written,
       backupPath: change.backupPath,
       recorded: deltas.length,
-      status: statusOf(committed, await sectionsOfAgentsFile(input.projectRoot), catalog, input.id),
+      status: statusOf(scopedWorkspaceState(committed, input.configurationProjectId), await sectionsOfAgentsFile(input.projectRoot), catalog, input.id),
       state: committed,
     };
   });

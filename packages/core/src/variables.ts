@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-484 R1 (MIN-227 D12; TCRN-CROSS-SUB-340): custom variables. A variable is a
@@ -64,15 +65,15 @@ export interface Variable extends VariableRecordValue {
   readonly name: string;
 }
 
-export const VARIABLE_NAME_MAX_LENGTH = 64 as const;
-export const VARIABLE_VALUE_MAX_LENGTH = 1_024 as const;
-export const VARIABLE_DESCRIPTION_MAX_LENGTH = 512 as const;
+export const VARIABLE_NAME_MAX_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;
+export const VARIABLE_VALUE_MAX_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;
+export const VARIABLE_DESCRIPTION_MAX_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;
 
-// A lowercase letter first, then letters, digits, dot, underscore or hyphen, at most 64 in all.
-const NAME = /^[a-z][A-Za-z0-9._-]{0,63}$/u;
+// A lowercase letter first, then letters, digits, dot, underscore or hyphen.
+const NAME = /^[a-z][A-Za-z0-9._-]*$/u;
 // A decimal number as text: an optional minus, an integer part without leading zeros, an optional
 // fraction. No exponent, no plus sign, no surrounding space.
-const NUMBER = /^-?(?:0|[1-9][0-9]{0,15})(?:\.[0-9]{1,15})?$/u;
+const NUMBER = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?$/u;
 const CONTROL = /[\u0000-\u001f\u007f]/u;
 const RECORD_FIELDS = "description,type,value";
 const ORDERED_RECORD_FIELDS = "description,order,type,value";
@@ -102,13 +103,13 @@ export function isVariableType(value: unknown): value is VariableType {
 
 function assertName(name: unknown): asserts name is string {
   if (!isVariableName(name)) {
-    fail("VARIABLE_NAME_INVALID", `${String(name)} is not a variable name: a lowercase letter, then letters, digits, dots, underscores or hyphens, at most ${VARIABLE_NAME_MAX_LENGTH}`, { name: String(name).slice(0, 80) });
+    fail("VARIABLE_NAME_INVALID", `${String(name)} is not a variable name: a lowercase letter, then letters, digits, dots, underscores or hyphens, at most ${VARIABLE_NAME_MAX_LENGTH}`, { name: String(name) });
   }
 }
 
 function assertType(type: unknown, name: string): asserts type is VariableType {
   if (!isVariableType(type)) {
-    fail("VARIABLE_TYPE_INVALID", `the type of ${name} is one of ${VARIABLE_TYPES.join(", ")}`, { name, type: String(type).slice(0, 80) });
+    fail("VARIABLE_TYPE_INVALID", `the type of ${name} is one of ${VARIABLE_TYPES.join(", ")}`, { name, type: String(type) });
   }
 }
 
@@ -259,10 +260,10 @@ export async function setVariable(workspaceRoot: string, input: VariableSetInput
     description: variable.description,
     ...(variable.order === undefined ? {} : { order: variable.order }),
   };
-  return setConfigRecord(workspaceRoot, { ...input, collection: "variable", key: variable.name, value });
+  return setConfigRecord(workspaceRoot, { ...input, ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), collection: "variable", key: variable.name, value });
 }
 
 /** Remove one variable from a library; a name the library does not hold is refused (CONFIG_RECORD_NOT_FOUND). */
 export async function removeVariable(workspaceRoot: string, input: { readonly name: string } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return removeConfigRecord(workspaceRoot, { ...input, collection: "variable", key: input.name });
+  return removeConfigRecord(workspaceRoot, { ...input, ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), collection: "variable", key: input.name });
 }

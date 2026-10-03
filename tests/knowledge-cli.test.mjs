@@ -18,7 +18,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { createProject, initializeKnowledgeStore, initializeLibrary } from "../dist/build/packages/core/src/index.js";
+import { createProject, initializeKnowledgeStore, initializeLibrary, registerLibrary } from "../dist/build/packages/core/src/index.js";
 import { USER_CREST_ID } from "../dist/build/packages/core/src/knowledge-core.js";
 import { KNOWLEDGE_HINT_QUESTION } from "../dist/build/packages/core/src/knowledge-hint.js";
 import { resetRecallCache } from "../dist/build/packages/core/src/recall.js";
@@ -45,6 +45,7 @@ async function library(base, name) {
   const workspace = join(base, name, ".ether");
   await initializeLibrary({ root: workspace, createdAt: at(0) });
   const state = await createProject(workspace, { occurredAt: at(1), externalKey: `${name.toUpperCase()}-PROJECT`, name });
+  await registerLibrary({ projectPath: join(base, name), libraryPath: workspace, projectId: state.projects[0].id, registeredAt: at(2) }, process.env.EINZBERN_HOME);
   await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
   return { workspace, projectId: state.projects[0].id };
 }
@@ -225,9 +226,9 @@ test("476-AC3 (CLI): --scope user writes this user's crest, and another project 
   const captured = await cli(captureArgs(second.workspace, 33, { subject: "Numbat termite routes", summary: "Numbats follow termite routes", snippet: "follow the termites" }, ["--scope", "user"]));
   assert.equal(captured.scope, "user");
   assert.equal((await recallCli(first.workspace, 34, "numbat termite routes")).records.find((record) => record.id === captured.id)?.scope, "user");
-  // A user card names no role, a capture names no project, and a store is project or user.
+  // A user card names no role; a project capture requires an explicit stable id; a store is project or user.
   assert.equal((await refusal(captureArgs(second.workspace, 35, { subject: "s", summary: "s", snippet: "s" }, ["--scope", "user", "--role-scopes", "implementation"])))?.reasonCode, "CLI_ARGUMENT_MALFORMED");
-  assert.equal((await refusal(captureArgs(second.workspace, 35, { subject: "s", summary: "s", snippet: "s" }, ["--scope", "project"])))?.reasonCode, "CLI_ARGUMENT_MALFORMED");
+  assert.equal((await refusal(captureArgs(second.workspace, 35, { subject: "s", summary: "s", snippet: "s" }, ["--scope", "project"])))?.reasonCode, "KNOWLEDGE_INPUT_INVALID");
   assert.equal((await refusal(["knowledge-list", "--workspace", second.workspace, "--at", at(35), "--scope", "role"]))?.reasonCode, "CLI_ARGUMENT_MALFORMED");
 });
 
@@ -256,14 +257,14 @@ test("476-AC4 (CLI): done and minutes-record answer the knowledge line, naming t
   // TCRN-CROSS-STORY-513 R1 (TCRN-CROSS-SUB-422): gates are declared as Atelier declares them; the CLI
   // refuses a model's gates-config-set.
   const declaration = await withSurface(ATELIER_SURFACE, () => cli([
-    "gates-config-set", "--workspace", workspace, "--at", at(43), "--name", "fixture-story-coverage",
+    "gates-config-set", "--workspace", workspace, "--project-id", projectId, "--at", at(43), "--name", "fixture-story-coverage",
     "--command", JSON.stringify(gateCommand), "--root", ".", "--covers", storyId, "--required", "true",
   ]));
   assert.deepEqual(declaration.gate, {
     name: "fixture-story-coverage", command: gateCommand, root: ".", covers: [storyId], required: true, enabled: true, releaseOnly: false,
   });
   const gateRun = await cli([
-    "gates-run", "--workspace", workspace, "--at", at(43), "--project", projectRoot,
+    "gates-run", "--workspace", workspace, "--project-id", projectId, "--at", at(43), "--project", projectRoot,
     "--release", "true", "--work-id", storyId,
   ]);
   assert.equal(gateRun.reasonCode, "GATES_RUN_COMPLETED");
@@ -312,13 +313,13 @@ test("476-AC4 (CLI): done and minutes-record answer the knowledge line, naming t
     ],
   })}\n`);
   const batchCoverage = await withSurface(ATELIER_SURFACE, () => cli([
-    "gates-config-set", "--workspace", workspace, "--at", at(48), "--name", "fixture-story-coverage",
+    "gates-config-set", "--workspace", workspace, "--project-id", projectId, "--at", at(48), "--name", "fixture-story-coverage",
     "--covers", `${storyId},${story2Id}`,
   ]));
   assert.equal(batchCoverage.gate.covers.includes(storyId), true);
   assert.equal(batchCoverage.gate.covers.includes(story2Id), true);
   const batchGateRun = await cli([
-    "gates-run", "--workspace", workspace, "--at", at(48), "--project", projectRoot,
+    "gates-run", "--workspace", workspace, "--project-id", projectId, "--at", at(48), "--project", projectRoot,
     "--release", "true", "--work-id", story2Id,
   ]);
   assert.equal(batchGateRun.reasonCode, "GATES_RUN_COMPLETED");
@@ -348,8 +349,8 @@ test("476 (bin): a refused knowledge write names the field past its card limit, 
   };
   const fits = await cli(createArgs(workspace, 49, { key: "KC-FULL", subject: "Full card", summary: "s", snippet: "s", body: "x".repeat(8_192) }));
   assert.equal(fits.reasonCode, "KNOWLEDGE_UNIT_CREATED", "a body at the card limit is admitted");
-  const oversized = run(createArgs(workspace, 50, { key: "KC-HUGE", subject: "Huge card", summary: "s", snippet: "s", body: "x".repeat(8_193) }));
-  assert.deepEqual([oversized.reasonCode, oversized.error], ["KNOWLEDGE_LIMIT_EXCEEDED", "body"]);
+  const oversized = await cli(createArgs(workspace, 50, { key: "KC-HUGE", subject: "Huge card", summary: "s", snippet: "s", body: "x".repeat(8_193) }));
+  assert.equal(oversized.reasonCode, "KNOWLEDGE_UNIT_CREATED", "the old per-card ceiling no longer refuses the complete body");
 
   const kept = await cli(createArgs(workspace, 51, { key: "KC-DINGO-1", subject: "Dingo fence patrol", summary: "Walk the dingo fence weekly", snippet: "weekly patrol" }));
   const conflict = run(createArgs(workspace, 52, { key: "KC-DINGO-2", subject: "Dingo fence patrol schedule", summary: "Walk the dingo fence daily", snippet: "daily patrol" }));

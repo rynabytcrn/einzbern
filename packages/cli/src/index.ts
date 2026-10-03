@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 import {
@@ -60,7 +61,6 @@ import {
   setWorkspaceSetting,
   admitTemplateInWorkspace,
   readTemplateDocumentFile,
-  RECALL_CANDIDATE_LIMIT,
   KNOWLEDGE_LANGUAGE_BUNDLE_FALLBACK_KEY,
   KNOWLEDGE_REMOVAL_REASONS,
   KNOWLEDGE_STATUS_FILTERS,
@@ -130,6 +130,9 @@ import {
   readAgentsNavigation,
   renderAgentsSections,
   resolveAgentsProject,
+  scopedWorkspaceState,
+  designConfiguration,
+  BUILT_IN_RULES,
   resolveAgentsSection,
   managedSectionRecordsFor,
   listVariables,
@@ -212,7 +215,7 @@ function fail(reasonCode: string, message: string): never {
 }
 
 function parseArguments(arguments_: readonly string[], allowed: readonly string[]): Readonly<Record<string, string>> {
-  if (arguments_.some((value) => value.length > 65_536)) {
+  if (arguments_.some((value) => value.length > RUNTIME_CAPACITY.stringCodeUnits)) {
     fail("CLI_INPUT_OVERSIZED", "CLI arguments exceed the local input limit");
   }
   const values: Record<string, string> = {};
@@ -302,7 +305,7 @@ function sprintReference(value: string): { readonly workspaceId: string; readonl
   if (hash < 0) fail("CLI_ARGUMENT_MALFORMED", "sprint must be library:<id>#work:<id>");
   const workspaceId = value.slice(0, hash);
   const workId = value.slice(hash + 1);
-  if (!LIBRARY_ID_PATTERN.test(workspaceId) || !/^work:[a-z0-9][a-z0-9._-]{0,127}$/u.test(workId)) {
+  if (!LIBRARY_ID_PATTERN.test(workspaceId) || !/^work:[a-z0-9][a-z0-9._-]*$/u.test(workId)) {
     fail("CLI_ARGUMENT_MALFORMED", "sprint must be library:<id>#work:<id>");
   }
   return { workspaceId, workId };
@@ -529,7 +532,7 @@ function consumeWrittenIds(): readonly string[] | null {
 // WSB-1: the mutated record's identity, projected additively so agents never have
 // to read views/index.json off-disk to learn the id they just created.
 function projectSummary(record: ProjectRecord): Readonly<Record<string, string | number | boolean>> {
-  return { id: record.id, revision: record.revision, tombstone: record.tombstone };
+  return { id: record.id, revision: record.revision, tombstone: record.tombstone, ...(record.parentProjectId === undefined ? {} : { parentProjectId: record.parentProjectId }) };
 }
 
 // INIT-014 (TCRN-AOS-INC-004): the summary carries `externalKey`.
@@ -898,16 +901,27 @@ function optionalBoolean(value: string | undefined, name: string): boolean | und
 // TCRN-CROSS-STORY-485 R2, R4: the project a library's gate roots are relative to. --project names
 // it; left out, it is the project this device's registry holds for the library: the one the current
 // directory resolves to when that is this library, or else the only project registered for it.
-async function gatesProjectRoot(libraryId: string, project: string | undefined): Promise<string> {
-  if (project !== undefined) return resolve(project);
+async function gatesProjectRoot(libraryId: string, project: string | undefined, projectId?: string): Promise<string> {
+  if (project !== undefined) {
+    const root = resolve(project);
+    if (projectId !== undefined) {
+      const binding = await resolveLibrary(root);
+      if (binding.libraryId !== libraryId || binding.entry.projectId !== projectId) {
+        throw new WorkflowCliError("GATES_PROJECT_UNKNOWN", "the gate root is not registered to this library and stable project", {
+          remedy: "register the intended directory with library-register --project-id, then run its gates",
+        });
+      }
+    }
+    return root;
+  }
   let here: Awaited<ReturnType<typeof resolveLibrary>> | null = null;
   try {
     here = await resolveLibrary(process.cwd());
   } catch (error) {
     if (typeof (error as { readonly reasonCode?: unknown }).reasonCode !== "string") throw error;
   }
-  if (here !== null && here.libraryId === libraryId) return here.entry.projectPath;
-  const registered = (await readRegistry()).entries.filter((entry) => entry.libraryId === libraryId);
+  if (here !== null && here.libraryId === libraryId && here.entry.projectId === projectId) return here.entry.projectPath;
+  const registered = (await readRegistry()).entries.filter((entry) => entry.libraryId === libraryId && entry.projectId === projectId);
   if (registered.length === 1) return registered[0]!.projectPath;
   throw new WorkflowCliError(
     "GATES_PROJECT_UNKNOWN",
@@ -926,33 +940,40 @@ async function gatesProjectRoot(libraryId: string, project: string | undefined):
 async function doneGates(
   state: Awaited<ReturnType<typeof materializeWorkspace>>,
   workIds: readonly string[],
-  created: readonly { readonly id: string; readonly kind: string }[],
+  created: readonly { readonly id: string; readonly kind: string; readonly projectId?: string }[],
   project: string | undefined,
-): Promise<DoneGatesVerdict> {
+): Promise<DoneGatesVerdict & { readonly targets?: readonly (DoneGatesVerdict & { readonly projectId: string | null })[] }> {
   const known = new Set(state.work.map((record) => record.id));
-  const createdStories = created
-    .filter((entry) => entry.kind === "Story" && !known.has(entry.id))
-    .map((entry) => ({ id: entry.id, kind: "Story" }) as unknown as WorkRecord);
+  const createdStories = created.filter((entry) => entry.kind === "Story" && !known.has(entry.id)) as unknown as readonly WorkRecord[];
   const work = [...state.work, ...createdStories];
-  const gated = workIds.some((id) => work.some((record) => record.id === id && record.kind === "Story")) &&
-    listGates(state).some((gate) => gate.enabled && gate.required && gate.covers.length > 0);
-  return assertDoneGates({
-    projectRoot: gated ? await gatesProjectRoot(state.metadata.workspaceId, project) : "",
-    library: { configRecords: state.configRecords, metadata: state.metadata, work },
-    workIds,
-  });
+  const stories = workIds.map((id) => work.find((record) => record.id === id)).filter((record): record is WorkRecord => record?.kind === "Story");
+  if (stories.length === 0) return { checked: false, reason: "no-story", runId: null, treeDigest: null };
+  const targets = [...new Set(stories.map((record) => record.projectId))];
+  const verdicts: (DoneGatesVerdict & { readonly projectId: string | null })[] = [];
+  for (const projectId of targets) {
+    const view = scopedWorkspaceState(state, projectId);
+    const ids = stories.filter((record) => record.projectId === projectId).map((record) => record.id);
+    const gated = listGates(view).some((gate) => gate.enabled && gate.required && gate.covers.length > 0);
+    const verdict = await assertDoneGates({
+      projectRoot: gated ? await gatesProjectRoot(state.metadata.workspaceId, project, projectId) : "",
+      library: { ...view, work }, workIds: ids,
+      ...(projectId === undefined ? {} : { configurationProjectId: projectId }),
+    });
+    verdicts.push({ ...verdict, projectId: projectId ?? null });
+  }
+  return { ...verdicts[0]!, targets: verdicts };
 }
 
 // The records a work-batch document creates, with their kinds, by the id their external key derives.
-function batchCreatedKinds(document: unknown): readonly { readonly id: string; readonly kind: string }[] {
+function batchCreatedKinds(document: unknown): readonly { readonly id: string; readonly kind: string; readonly projectId?: string }[] {
   const members = (document as { readonly members?: unknown } | null)?.members;
   if (!Array.isArray(members)) return [];
-  const created: { readonly id: string; readonly kind: string }[] = [];
+  const created: { readonly id: string; readonly kind: string; readonly projectId?: string }[] = [];
   for (const member of members as readonly unknown[]) {
     if (member === null || typeof member !== "object") continue;
     const entry = member as Readonly<Record<string, unknown>>;
     if (entry.verb !== "work-create" || typeof entry.externalKey !== "string" || entry.externalKey.length === 0 || typeof entry.kind !== "string") continue;
-    created.push({ id: deriveStableId("work", canonicalExternalKey(entry.externalKey)), kind: entry.kind });
+    created.push({ id: deriveStableId("work", canonicalExternalKey(entry.externalKey)), kind: entry.kind, ...(typeof entry.projectId === "string" ? { projectId: entry.projectId } : {}) });
   }
   return created;
 }
@@ -969,10 +990,11 @@ function writtenIdsField(): { readonly ids?: readonly string[] } {
 // derived reads the same in both: an unset models.category is the default categories and every
 // other category models.tiers names, not the default table. A set key is still its value and any
 // other unset key its default. The readback holds every registered key and no other.
-function writeSettingsState(io: CliIo, state: Awaited<ReturnType<typeof materializeWorkspace>>, key: string): void {
+function writeSettingsState(io: CliIo, rawState: Awaited<ReturnType<typeof materializeWorkspace>>, key: string, projectId?: string): void {
+  const state = scopedWorkspaceState(rawState, projectId);
   const setting = state.settings.find((entry) => entry.key === key);
   const current = readSettingsCatalog(state.metadata.workspaceId, state.settings,
-    state.metadata.storageVersion === 2 ? { "storage.segmentBytes": String(state.metadata.segmentEventLimit) } : {})
+    state.metadata.storageVersion === 2 ? { "storage.segmentBytes": String(state.metadata.segmentEventLimit) } : {}, { projectId: state.configurationProjectId, sources: state.settingSources, fallbackValues: state.settingFallbackValues, fallbackSources: state.settingFallbackSources })
     .settings.find((entry) => entry.key === key);
   if (current === undefined) fail("CLI_COMMAND_FAILED", `setting ${key} is not registered`);
   const receipt = {
@@ -980,7 +1002,9 @@ function writeSettingsState(io: CliIo, state: Awaited<ReturnType<typeof material
     workspaceId: state.metadata.workspaceId,
     version: state.version,
     headEventHash: state.headEventHash,
-    recordId: key,
+    recordId: projectId === undefined ? key : `${projectId}:${key}`,
+    projectId: projectId ?? null,
+    source: current.source ?? null,
     setting: setting ?? null,
     effectiveValue: current.currentValue,
   } as const;
@@ -1042,7 +1066,8 @@ function assertSettingWriteAllowed(key: string): void {
   if (entry !== undefined) assertModelWriteAllowed({ key }, entry.modelWritable);
 }
 
-function writeVariableState(io: CliIo, state: Awaited<ReturnType<typeof materializeWorkspace>>, name: string): void {
+function writeVariableState(io: CliIo, rawState: Awaited<ReturnType<typeof materializeWorkspace>>, name: string, projectId?: string): void {
+  const state = scopedWorkspaceState(rawState, projectId);
   const variable: Variable | null = listVariables(state).find((entry) => entry.name === name) ?? null;
   const receipt = {
     schemaVersion: "einzbern.variable-write-receipt.v1",
@@ -1060,22 +1085,30 @@ function writeVariableState(io: CliIo, state: Awaited<ReturnType<typeof material
   }));
 }
 
-// A variable write has a project destination only when its library is registered to a project.
-// Explicit workspaces without a registry remain usable as library-only operations.
-async function registeredProjectRootForWorkspace(workspace: string): Promise<string | null> {
-  try {
-    const project = await resolveAgentsProject(workspace);
-    return await realpath(workspace) === project.libraryPath ? project.projectRoot : null;
-  } catch (error) {
-    if (error !== null && typeof error === "object" && "reasonCode" in error && error.reasonCode === "LIBRARY_NOT_REGISTERED") return null;
-    throw error;
-  }
+function outputConfigurationOptions(values: Readonly<Record<string, string>>, project: Awaited<ReturnType<typeof resolveAgentsProject>>): { readonly configurationProjectId: string } {
+  if (project.projectId === undefined) fail("WORKSPACE_INPUT_INVALID", "the project directory has no stable project binding; managed output remains pending");
+  return { configurationProjectId: configurationOptions(values, project.projectId).configurationProjectId! };
 }
 
-async function renderVariableSectionsAfterWrite(workspace: string, projectRoot: string | null, at: string, actor: string | undefined): Promise<Awaited<ReturnType<typeof materializeWorkspace>>> {
+function configurationOptions(values: Readonly<Record<string, string>>, boundProjectId?: string): { readonly configurationProjectId?: string } {
+  const projectId = values["project-id"] ?? boundProjectId;
+  if (boundProjectId !== undefined && projectId !== boundProjectId) fail("CLI_ARGUMENT_MALFORMED", "project-id conflicts with this registered project directory");
+  return projectId === undefined ? {} : { configurationProjectId: projectId };
+}
+
+// A variable write has a project destination only when its library is registered to a project.
+// Explicit workspaces without a registry remain usable as library-only operations.
+async function registeredProjectRootForWorkspace(workspace: string, projectId?: string): Promise<string | null> {
+  const state = await materializeWorkspace(workspace);
+  const entries = (await readRegistry()).entries.filter((entry) => entry.libraryId === state.metadata.workspaceId && entry.projectId === projectId);
+  return entries.length === 1 ? entries[0]!.projectPath : null;
+}
+
+async function renderVariableSectionsAfterWrite(workspace: string, projectRoot: string | null, at: string, actor: string | undefined, projectId?: string): Promise<Awaited<ReturnType<typeof materializeWorkspace>>> {
   if (projectRoot === null) return materializeWorkspace(workspace);
   await writeVariablesSections(workspace, {
     projectRoot,
+    ...(projectId === undefined ? {} : { configurationProjectId: projectId }),
     occurredAt: at,
     ...(actor === undefined ? {} : { actorId: actor }),
   });
@@ -1152,7 +1185,7 @@ export const COMMAND_CATALOG = Object.freeze([
   // TCRN-CROSS-STORY-478 R2 to R5: the engine's managed sections in a project's AGENTS.md and
   // CLAUDE.md, rendered against the library's records. --project names a directory of the project
   // (the current one when left out), and this device's registry gives the project and its library.
-  { name: "agents-render", availability: "cli", mutates: true, flags: [{ name: "project", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "agents-render", availability: "cli", mutates: true, flags: [{ name: "project", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "actor", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
   { name: "artifact-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   { name: "artifact-put", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "file", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
   { name: "artifact-verify", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
@@ -1173,15 +1206,15 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "export", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-485 R1 to R3: gate declarations (one configuration record per gate), the plan a
   // change and optional Story need, and running it into this device's cache.
-  { name: "gates-config-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
-  { name: "gates-config-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "gates-config-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "command", required: false, valueKind: "string" }, { name: "root", required: false, valueKind: "string" }, { name: "covers", required: false, valueKind: "list" }, { name: "required", required: false, valueKind: "boolean" }, { name: "enabled", required: false, valueKind: "boolean" }, { name: "release-only", required: false, valueKind: "boolean" }, { name: "order", required: false, valueKind: "integer" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "gates-plan", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "base", required: false, valueKind: "string" }, { name: "release", required: false, valueKind: "boolean" }, { name: "work-id", required: false, valueKind: "list" }] },
-  { name: "gates-run", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "base", required: false, valueKind: "string" }, { name: "release", required: false, valueKind: "boolean" }, { name: "work-id", required: false, valueKind: "list" }] },
+  { name: "gates-config-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
+  { name: "gates-config-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
+  { name: "gates-config-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "command", required: false, valueKind: "string" }, { name: "root", required: false, valueKind: "string" }, { name: "covers", required: false, valueKind: "list" }, { name: "required", required: false, valueKind: "boolean" }, { name: "enabled", required: false, valueKind: "boolean" }, { name: "release-only", required: false, valueKind: "boolean" }, { name: "order", required: false, valueKind: "integer" }, { name: "actor", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
+  { name: "gates-plan", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "base", required: false, valueKind: "string" }, { name: "release", required: false, valueKind: "boolean" }, { name: "work-id", required: false, valueKind: "list" }, { name: "project-id", required: false, valueKind: "string" }] },
+  { name: "gates-run", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "base", required: false, valueKind: "string" }, { name: "release", required: false, valueKind: "boolean" }, { name: "work-id", required: false, valueKind: "list" }, { name: "project-id", required: false, valueKind: "string" }] },
   { name: "host-probe", availability: "cli", mutates: false, flags: [{ name: "host", required: true, valueKind: "string" }, { name: "model", required: true, valueKind: "string" }, { name: "timeout-ms", required: false, valueKind: "integer" }] },
   { name: "init", availability: "cli", mutates: true, flags: [{ name: "workspace", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-name", required: false, valueKind: "string" }, { name: "git-remote", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "cloud-hosted", required: false, valueKind: "boolean" }] },
   { name: "install-manifest", availability: "cli", mutates: false, flags: [] },
-  { name: "knowledge-article-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "path", required: true, valueKind: "string" }, { name: "category", required: true, valueKind: "string" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "content", required: true, valueKind: "string" }, { name: "accountable-owner-id", required: true, valueKind: "string" }, { name: "evidence-ids", required: true, valueKind: "list" }, { name: "language-bundle", required: false, valueKind: "string" }] },
+  { name: "knowledge-article-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "path", required: true, valueKind: "string" }, { name: "category", required: true, valueKind: "string" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "content", required: true, valueKind: "string" }, { name: "accountable-owner-id", required: true, valueKind: "string" }, { name: "evidence-ids", required: true, valueKind: "list" }, { name: "language-bundle", required: false, valueKind: "string" }] },
   { name: "knowledge-article-refresh", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "expected-revision", required: true, valueKind: "integer" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "path", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "language-bundle", required: false, valueKind: "string" }] },
   { name: "knowledge-batch", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "from-file", required: true, valueKind: "string" }, { name: "align-first", required: false, valueKind: "boolean" }, { name: "language-bundle", required: false, valueKind: "string" }] },
   // TCRN-CROSS-SUB-425 R18: --clear-removed true clears the removed cards' bodies from the metadata/body
@@ -1191,7 +1224,7 @@ export const COMMAND_CATALOG = Object.freeze([
   // --promotion and --allow-unpromoted are gone with the candidate, knowledge-create and
   // knowledge-capture take scope user, and list, snippet and body read the user crest with --scope user.
   { name: "knowledge-body", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "scope", required: false, valueKind: "string" }, { name: "allow-stale", required: false, valueKind: "boolean" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
-  { name: "knowledge-capture", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "subject", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "snippet", required: true, valueKind: "string" }, { name: "tags", required: true, valueKind: "list" }, { name: "accountable-owner-id", required: true, valueKind: "string" }, { name: "body", required: true, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "role-scopes", required: false, valueKind: "list" }, { name: "category", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "source-references", required: false, valueKind: "list" }, { name: "evidence-ids", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "string" }, { name: "coexist", required: false, valueKind: "boolean" }, { name: "allow-trailing", required: false, valueKind: "boolean" }, { name: "language-bundle", required: false, valueKind: "string" }] },
+  { name: "knowledge-capture", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "subject", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "snippet", required: true, valueKind: "string" }, { name: "tags", required: true, valueKind: "list" }, { name: "accountable-owner-id", required: true, valueKind: "string" }, { name: "body", required: true, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }, { name: "scope", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "role-scopes", required: false, valueKind: "list" }, { name: "category", required: false, valueKind: "string" }, { name: "kind", required: false, valueKind: "string" }, { name: "source-references", required: false, valueKind: "list" }, { name: "evidence-ids", required: false, valueKind: "list" }, { name: "supersedes", required: false, valueKind: "string" }, { name: "coexist", required: false, valueKind: "boolean" }, { name: "allow-trailing", required: false, valueKind: "boolean" }, { name: "language-bundle", required: false, valueKind: "string" }] },
   { name: "knowledge-checkpoint", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
   { name: "knowledge-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "external-key", required: true, valueKind: "string" }, { name: "scope", required: true, valueKind: "string" }, { name: "project-id", required: true, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "role-scopes", required: true, valueKind: "list" }, { name: "category", required: true, valueKind: "string" }, { name: "kind", required: true, valueKind: "string" }, { name: "tags", required: true, valueKind: "list" }, { name: "subject", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "snippet", required: true, valueKind: "string" }, { name: "accountable-owner-id", required: true, valueKind: "string" }, { name: "source-references", required: true, valueKind: "list" }, { name: "source-digest", required: false, valueKind: "string" }, { name: "supersedes", required: false, valueKind: "string", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "work-ids", required: false, valueKind: "list" }, { name: "decision-ids", required: false, valueKind: "list" }, { name: "gate-ids", required: false, valueKind: "list" }, { name: "evidence-ids", required: false, valueKind: "list" }, { name: "coexist", required: false, valueKind: "boolean" }, { name: "lifecycle", required: false, valueKind: "string" }, { name: "retrieval", required: true, valueKind: "string" }, { name: "freshness", required: true, valueKind: "string" }, { name: "last-verified", required: true, valueKind: "instant", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "stale-days", required: true, valueKind: "integer", nullSentinel: "-", deprecatedAliases: ["null"] }, { name: "export", required: true, valueKind: "string" }, { name: "body", required: true, valueKind: "string" }, { name: "language-bundle", required: false, valueKind: "string" }] },
   { name: "knowledge-freshness", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "allow-trailing", required: false, valueKind: "boolean" }] },
@@ -1208,7 +1241,7 @@ export const COMMAND_CATALOG = Object.freeze([
   // TCRN-CROSS-STORY-470 R1: this device's registry of libraries (registry.json in the device
   // directory). library-register writes the registry, never a project or a library.
   { name: "library-list", availability: "cli", mutates: false, flags: [] },
-  { name: "library-register", availability: "cli", mutates: true, flags: [{ name: "project", required: true, valueKind: "string" }, { name: "library", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "cloud-hosted", required: false, valueKind: "boolean" }, { name: "git-remote", required: false, valueKind: "string" }] },
+  { name: "library-register", availability: "cli", mutates: true, flags: [{ name: "project", required: true, valueKind: "string" }, { name: "library", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "cloud-hosted", required: false, valueKind: "boolean" }, { name: "git-remote", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
   { name: "library-resolve", availability: "cli", mutates: false, flags: [{ name: "cwd", required: false, valueKind: "string" }] },
   // STORY-281: machine-level portal preferences. No workspace and no chain write lock:
   // this layer is not chain-backed, so there is no head to write against — see
@@ -1224,24 +1257,24 @@ export const COMMAND_CATALOG = Object.freeze([
   { name: "minutes-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }, { name: "work-id", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "minutes-record", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project-id", required: true, valueKind: "string" }, { name: "title", required: true, valueKind: "string" }, { name: "summary", required: true, valueKind: "string" }, { name: "decisions", required: false, valueKind: "list" }, { name: "decisions-file", required: false, valueKind: "string" }, { name: "decided-by", required: false, valueKind: "list" }, { name: "work-ids", required: false, valueKind: "list" }, { name: "external-key", required: false, valueKind: "string" }, { name: "supersedes", required: false, valueKind: "list" }, { name: "withdraws", required: false, valueKind: "list" }, { name: "coexists", required: false, valueKind: "list" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "minutes-show", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "id", required: false, valueKind: "string" }, { name: "external-key", required: false, valueKind: "string" }, { name: "status", required: false, valueKind: "string" }] },
-  { name: "project-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "external-key", required: true, valueKind: "string" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "project-create", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "external-key", required: true, valueKind: "string" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "parent-project-id", required: false, valueKind: "string" }] },
   { name: "project-delete", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
   { name: "project-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "offset", required: false, valueKind: "integer" }] },
   { name: "project-update", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "id", required: true, valueKind: "string" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "recall", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "query", required: true, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "tau", required: false, valueKind: "string" }, { name: "allow-trailing", required: false, valueKind: "boolean" }, { name: "status", required: false, valueKind: "string" }] },
+  { name: "recall", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "host", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "query", required: true, valueKind: "string" }, { name: "limit", required: false, valueKind: "integer" }, { name: "tau", required: false, valueKind: "string" }, { name: "allow-trailing", required: false, valueKind: "boolean" }, { name: "status", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
   { name: "recover", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }] },
   // TCRN-CROSS-STORY-483 R2 (with agents-render and rule-resolve): the Command Spell rules of the
   // project the registry resolves from --project (the current directory when left out).
   // rule-disable takes out a section the user changed only with --force.
-  { name: "rule-disable", availability: "cli", mutates: true, flags: [{ name: "id", required: true, valueKind: "string" }, { name: "force", required: false, valueKind: "boolean" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "rule-enable", availability: "cli", mutates: true, flags: [{ name: "id", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "order", required: false, valueKind: "integer" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "rule-list", availability: "cli", mutates: false, flags: [{ name: "project", required: false, valueKind: "string" }] },
+  { name: "rule-disable", availability: "cli", mutates: true, flags: [{ name: "id", required: true, valueKind: "string" }, { name: "force", required: false, valueKind: "boolean" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
+  { name: "rule-enable", availability: "cli", mutates: true, flags: [{ name: "id", required: true, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "order", required: false, valueKind: "integer" }, { name: "actor", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
+  { name: "rule-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-478 R3 (STORY-483 R2 reuses it): settle a managed section the user changed:
   // overwrite, keep or unmanage; --force overwrites a section the user kept.
-  { name: "rule-resolve", availability: "cli", mutates: true, flags: [{ name: "section", required: true, valueKind: "string" }, { name: "action", required: true, valueKind: "string" }, { name: "force", required: false, valueKind: "boolean" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "settings-catalog", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
-  { name: "settings-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "settings-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "value", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "rule-resolve", availability: "cli", mutates: true, flags: [{ name: "section", required: true, valueKind: "string" }, { name: "action", required: true, valueKind: "string" }, { name: "force", required: false, valueKind: "boolean" }, { name: "at", required: true, valueKind: "instant" }, { name: "project", required: false, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
+  { name: "settings-catalog", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
+  { name: "settings-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
+  { name: "settings-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "key", required: true, valueKind: "string" }, { name: "value", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
   // TCRN-CROSS-STORY-480 (C7 of INIT-053): the installation wizard in one of six modes. Without
   // --yes true it answers SETUP_PLAN_READY and writes nothing; with it, SETUP_APPLIED, whose
   // self-check is doctor's eight checks and the hook run once with the project's name as the prompt.
@@ -1261,9 +1294,9 @@ export const COMMAND_CATALOG = Object.freeze([
   // TCRN-CROSS-STORY-484 R1: the project's custom variables, records of the library's variable
   // collection. R4: variable-set and variable-remove, like settings-set and settings-remove on a key
   // that is not modelWritable, are refused with MODEL_WRITE_REFUSED unless they run for Atelier.
-  { name: "variable-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }] },
-  { name: "variable-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }] },
-  { name: "variable-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "type", required: true, valueKind: "string" }, { name: "value", required: true, valueKind: "string" }, { name: "description", required: false, valueKind: "string" }, { name: "order", required: false, valueKind: "integer" }, { name: "actor", required: false, valueKind: "string" }] },
+  { name: "variable-list", availability: "cli", mutates: false, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
+  { name: "variable-remove", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "actor", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
+  { name: "variable-set", availability: "cli", mutates: true, flags: [{ name: "workspace", required: false, valueKind: "string" }, { name: "at", required: true, valueKind: "instant" }, { name: "name", required: true, valueKind: "string" }, { name: "type", required: true, valueKind: "string" }, { name: "value", required: true, valueKind: "string" }, { name: "description", required: false, valueKind: "string" }, { name: "order", required: false, valueKind: "integer" }, { name: "actor", required: false, valueKind: "string" }, { name: "project-id", required: false, valueKind: "string" }] },
   { name: "vocabulary", availability: "cli", mutates: false, flags: [] },
   // TCRN-CROSS-STORY-472 R2, R4: the four stored relations and decided-in; --decided-by is the older
   // name of --decided-in. TCRN-CROSS-STORY-473 R2: a Story's goal, acceptance and body.
@@ -1609,7 +1642,7 @@ function hookSelfCheck(applied: SetupApplied): {
     input: JSON.stringify({ hook_event_name: "UserPromptSubmit", session_id: "einzbern-setup-self-check", cwd: applied.projectRoot, prompt }),
     encoding: "utf8",
     env: { ...process.env, EINZBERN_HOME: applied.deviceHome },
-    maxBuffer: 1_048_576,
+    maxBuffer: RUNTIME_CAPACITY.bufferBytes,
     timeout: HOOK_SELF_CHECK_TIMEOUT_MS,
     windowsHide: true,
   });
@@ -1651,7 +1684,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // whose hint then offers --workspace, since every verb here takes it (TCRN-CROSS-SUB-427).
   // A verb missing another required flag is left to report CLI_ARGUMENT_MISSING first.
   const otherRequired = REGISTRY_RESOLVED_VERBS.get(command);
-  if (otherRequired !== undefined && !rest.includes("--help") && !rest.includes("-h") && !hasFlag(rest, "workspace") &&
+  if (command !== "rule-list" && otherRequired !== undefined && !rest.includes("--help") && !rest.includes("-h") && !hasFlag(rest, "workspace") &&
     otherRequired.every((name) => hasFlag(rest, name))) {
     rest = ["--workspace", (await resolveLibrary(process.cwd(), undefined, { workspaceFlag: true })).libraryPath, ...rest];
   }
@@ -1732,10 +1765,11 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   }
   // TCRN-CROSS-STORY-470 R1: this device's registry of libraries.
   if (command === "library-register") {
-    const values = parseArguments(rest, ["project", "library", "at", "cloud-hosted", "git-remote"]);
+    const values = parseArguments(rest, ["project-id", "project", "library", "at", "cloud-hosted", "git-remote"]);
     required(values, ["project", "library", "at"]);
     const entry = await registerLibrary({
       projectPath: values.project ?? "",
+      ...(values["project-id"] === undefined ? {} : { projectId: values["project-id"] }),
       libraryPath: values.library ?? "",
       registeredAt: values.at ?? "",
       ...(values["cloud-hosted"] === undefined ? {} : { cloudHosted: booleanValue(values["cloud-hosted"], "cloud-hosted") }),
@@ -1755,13 +1789,13 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // imports AGENTS.md already. Each section's outcome and state, the sections waiting for the
   // user, and the directory the originals were backed up to are in the receipt.
   if (command === "agents-render") {
-    const values = parseArguments(rest, ["project", "at", "actor"]);
+    const values = parseArguments(rest, ["project-id", "project", "at", "actor"]);
     required(values, ["at"]);
     const at = values.at ?? "";
     const project = await resolveAgentsProject(values.project ?? process.cwd());
     const navigation = await readAgentsNavigation();
     const rendered = await namingSection(() => withWriteLock(project.libraryPath, at, async () => renderAgentsSections(project.libraryPath, {
-      projectRoot: project.projectRoot,
+      projectRoot: project.projectRoot, ...outputConfigurationOptions(values, project),
       navigation,
       occurredAt: at,
       ...(values.actor ? { actorId: values.actor } : {}),
@@ -1790,7 +1824,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // kept. An enabled rule's version follows an explicit overwrite, and an older engine cannot
   // overwrite a version recorded by a newer one. A file it replaces is backed up first.
   if (command === "rule-resolve") {
-    const values = parseArguments(rest, ["section", "action", "force", "at", "project", "actor"]);
+    const values = parseArguments(rest, ["project-id", "section", "action", "force", "at", "project", "actor"]);
     required(values, ["section", "action", "at"]);
     const at = values.at ?? "";
     const force = booleanValue(values.force, "force");
@@ -1799,7 +1833,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const ruleId = (values.action ?? "") === "overwrite" && section.startsWith("rule:") ? section.slice("rule:".length) : null;
     const { change, state } = await namingSection(() => withWriteLock(project.libraryPath, at, async () => {
       if (ruleId !== null) {
-        const status = (await listRules({ libraryRoot: project.libraryPath, projectRoot: project.projectRoot })).find((rule) => rule.id === ruleId);
+        const status = (await listRules({ libraryRoot: project.libraryPath, projectRoot: project.projectRoot, ...outputConfigurationOptions(values, project) })).find((rule) => rule.id === ruleId);
         if (status !== undefined && status.version !== null && status.recordedVersion !== null && status.recordedVersion > status.version) {
           throw new WorkflowCliError("RULE_VERSION_NEWER", `the library records rule ${ruleId} at version ${status.recordedVersion}; this engine ships version ${status.version}`, {
             id: ruleId,
@@ -1809,7 +1843,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
         }
       }
       const resolved = await resolveAgentsSection(project.libraryPath, {
-        projectRoot: project.projectRoot,
+        projectRoot: project.projectRoot, ...outputConfigurationOptions(values, project),
         id: section,
         action: (values.action ?? "") as SectionAction,
         force,
@@ -1818,11 +1852,11 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       });
       let state = resolved.state;
       if (ruleId !== null) {
-        const status = (await listRules({ libraryRoot: project.libraryPath, projectRoot: project.projectRoot })).find((rule) => rule.id === ruleId);
+        const status = (await listRules({ libraryRoot: project.libraryPath, projectRoot: project.projectRoot, ...outputConfigurationOptions(values, project) })).find((rule) => rule.id === ruleId);
         if (status !== undefined && status.recordedVersion !== null && status.state !== "disabled") {
           state = (await enableRule({
             libraryRoot: project.libraryPath,
-            projectRoot: project.projectRoot,
+            projectRoot: project.projectRoot, ...outputConfigurationOptions(values, project),
             id: ruleId,
             occurredAt: at,
             ...(values.actor ? { actorId: values.actor } : {}),
@@ -1858,20 +1892,24 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // TCRN-CROSS-STORY-513 R1 (TCRN-CROSS-SUB-422): both writes run for Atelier only; a model's run is
   // refused with MODEL_WRITE_REFUSED once its arguments parse, before the project is resolved.
   if (command === "rule-list") {
-    const values = parseArguments(rest, ["project"]);
-    const project = await resolveAgentsProject(values.project ?? process.cwd());
-    const rules = await namingSection(() => listRules({ libraryRoot: project.libraryPath, projectRoot: project.projectRoot }));
-    io.write(canonicalJson({
-      reasonCode: "RULE_LIST_READY",
-      schemaVersion: "einzbern.rule-list.v1",
-      projectPath: project.projectRoot,
-      libraryPath: project.libraryPath,
-      rules: rules.map(ruleStatusJson),
-    }));
+    const values = parseArguments(rest, ["project", "workspace", "project-id"]);
+    const project = values.project !== undefined || values.workspace === undefined ? await resolveAgentsProject(values.project ?? process.cwd()) : null;
+    const libraryRoot = values.workspace ?? project!.libraryPath;
+    if (project !== null && await realpath(libraryRoot) !== await realpath(project.libraryPath)) fail("WORKSPACE_INPUT_INVALID", "rule-list project and library bindings conflict");
+    const projectId = configurationOptions(values, project?.projectId).configurationProjectId;
+    const state = scopedWorkspaceState(await materializeWorkspace(libraryRoot), projectId);
+    const mapped = (await readRegistry()).entries.filter((entry) => entry.libraryId === state.metadata.workspaceId && entry.projectId === projectId);
+    const projectRoot = projectId === undefined ? undefined : project?.projectRoot ?? (mapped.length === 1 ? mapped[0]!.projectPath : undefined);
+    const rules = await namingSection(() => listRules({ libraryRoot, ...(projectRoot === undefined ? {} : { projectRoot }), ...(projectId === undefined ? {} : { configurationProjectId: projectId }) }));
+    io.write(canonicalJson({ reasonCode: "RULE_LIST_READY", schemaVersion: "einzbern.rule-list.v1", projectPath: projectRoot ?? null, projectId: projectId ?? null, libraryPath: libraryRoot,
+      outputBindingStatus: projectId === undefined || projectRoot === undefined ? "unconfigured" : "bound",
+      catalog: BUILT_IN_RULES.map((rule) => ({ id: rule.id, version: rule.version, title: rule.title })),
+      rules: rules.map((rule) => ({ ...ruleStatusJson(rule) as Readonly<Record<string, JsonValue>>, source: state.configSources[JSON.stringify(["rule", rule.id])] ?? null })) }));
     return;
   }
+
   if (command === "rule-enable") {
-    const values = parseArguments(rest, ["id", "at", "project", "order", "actor"]);
+    const values = parseArguments(rest, ["project-id", "id", "at", "project", "order", "actor"]);
     required(values, ["id", "at"]);
     const at = values.at ?? "";
     // TCRN-CROSS-STORY-508 R7: --order places the rule's section among the rule sections; left out,
@@ -1881,7 +1919,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const project = await resolveAgentsProject(values.project ?? process.cwd());
     const change = await namingSection(() => withWriteLock(project.libraryPath, at, async () => enableRule({
       libraryRoot: project.libraryPath,
-      projectRoot: project.projectRoot,
+      projectRoot: project.projectRoot, ...outputConfigurationOptions(values, project),
       id: values.id ?? "",
       occurredAt: at,
       ...(order === undefined ? {} : { order }),
@@ -1891,7 +1929,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   if (command === "rule-disable") {
-    const values = parseArguments(rest, ["id", "force", "at", "project", "actor"]);
+    const values = parseArguments(rest, ["project-id", "id", "force", "at", "project", "actor"]);
     required(values, ["id", "at"]);
     const at = values.at ?? "";
     const force = booleanValue(values.force, "force");
@@ -1899,7 +1937,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const project = await resolveAgentsProject(values.project ?? process.cwd());
     const change = await namingSection(() => withWriteLock(project.libraryPath, at, async () => disableRule({
       libraryRoot: project.libraryPath,
-      projectRoot: project.projectRoot,
+      projectRoot: project.projectRoot, ...outputConfigurationOptions(values, project),
       id: values.id ?? "",
       force,
       occurredAt: at,
@@ -2170,11 +2208,11 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   if (command === "settings-catalog") {
-    const values = parseArguments(rest, ["workspace"]);
+    const values = parseArguments(rest, ["project-id", "workspace"]);
     required(values, ["workspace"]);
-    const state = await materializeWorkspace(values.workspace ?? "");
-    io.write(canonicalJson({ reasonCode: "SETTINGS_CATALOG_READY", ...readSettingsCatalog(state.metadata.workspaceId, state.settings,
-      state.metadata.storageVersion === 2 ? { "storage.segmentBytes": String(state.metadata.segmentEventLimit) } : {}) }));
+    const state = scopedWorkspaceState(await materializeWorkspace(values.workspace ?? ""), values["project-id"]);
+    io.write(canonicalJson({ reasonCode: "SETTINGS_CATALOG_READY", projectId: state.configurationProjectId, projects: state.projects.filter((entry) => !entry.tombstone).map((entry) => ({ id: entry.id, externalKey: entry.externalKey, name: entry.name, parentProjectId: entry.parentProjectId ?? null })), design: designConfiguration(state), ...readSettingsCatalog(state.metadata.workspaceId, state.settings,
+      state.metadata.storageVersion === 2 ? { "storage.segmentBytes": String(state.metadata.segmentEventLimit) } : {}, { projectId: state.configurationProjectId, sources: state.settingSources, fallbackValues: state.settingFallbackValues, fallbackSources: state.settingFallbackSources }) }));
     return;
   }
   if (command === "install-manifest") {
@@ -2196,19 +2234,19 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   if (command === "settings-remove") {
-    const values = parseArguments(rest, [...shared, "key", "actor"]);
+    const values = parseArguments(rest, ["project-id", ...shared, "key", "actor"]);
     required(values, [...requiredShared, "key"]);
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
     assertSettingWriteAllowed(values.key ?? "");
     const state = await withWriteLock(workspace, at, async () => removeWorkspaceSetting(workspace, {
-      occurredAt: at, key: values.key ?? "", ...(values.actor ? { actorId: values.actor } : {}),
+      occurredAt: at, ...configurationOptions(values), key: values.key ?? "", ...(values.actor ? { actorId: values.actor } : {}),
     }));
-    writeSettingsState(io, state, values.key ?? "");
+    writeSettingsState(io, state, values.key ?? "", values["project-id"]);
     return;
   }
   if (command === "settings-set") {
-    const values = parseArguments(rest, [...shared, "key", "value", "actor"]);
+    const values = parseArguments(rest, ["project-id", ...shared, "key", "value", "actor"]);
     required(values, [...requiredShared, "key", "value"]);
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
@@ -2228,12 +2266,12 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       await assertGeneratedArtifactsRoot(workspace, validateSettingValue(values.key, values.value ?? "", workspace));
     }
     const state = await withWriteLock(workspace, at, async () => setWorkspaceSetting(workspace, {
-      occurredAt: at,
+      occurredAt: at, ...configurationOptions(values),
       key: values.key ?? "",
       value: values.value ?? "",
       ...(values.actor ? { actorId: values.actor } : {}),
     }));
-    writeSettingsState(io, state, values.key ?? "");
+    writeSettingsState(io, state, values.key ?? "", values["project-id"]);
     return;
   }
   // TCRN-CROSS-STORY-484 R1 (TCRN-CROSS-SUB-341): the custom variables. variable-list reads them with
@@ -2241,9 +2279,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // variable-set and variable-remove write them for Atelier only (R4). When the workspace is
   // registered to a project, each write renders its variable sections through the managed writer.
   if (command === "variable-list") {
-    const values = parseArguments(rest, ["workspace"]);
+    const values = parseArguments(rest, ["project-id", "workspace"]);
     required(values, ["workspace"]);
-    const state = await materializeWorkspace(values.workspace ?? "");
+    const state = scopedWorkspaceState(await materializeWorkspace(values.workspace ?? ""), values["project-id"]);
     const withheld: readonly WithheldEntry[] = renderCustomVariablesSection(state).withheld;
     const pendingSections = managedSectionRecordsFor(state, "AGENTS.md")
       .filter((record) => record.state === "pending" && (record.id === "variables-system" || record.id === "variables-custom"))
@@ -2252,14 +2290,15 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       reasonCode: "VARIABLE_LIST_READY",
       schemaVersion: "einzbern.variable-list.v1",
       workspaceId: state.metadata.workspaceId,
-      variables: listVariables(state),
+      projectId: state.configurationProjectId,
+      variables: listVariables(state).map((variable) => ({ ...variable, source: state.configSources[JSON.stringify(["variable", variable.name])] ?? null, declaredHere: state.configRecords.some((record) => record.collection === "variable" && record.key === variable.name && (record.projectId ?? null) === state.configurationProjectId) })),
       withheld,
       pendingSections,
     }));
     return;
   }
   if (command === "variable-set") {
-    const values = parseArguments(rest, [...shared, "name", "type", "value", "description", "order", "actor"]);
+    const values = parseArguments(rest, ["project-id", ...shared, "name", "type", "value", "description", "order", "actor"]);
     // An empty value is a value (a string variable may be empty), so --value is checked for
     // presence rather than for content.
     const missing = [...requiredShared, "name", "type"].filter((flag) => !values[flag]);
@@ -2273,10 +2312,10 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // --description has an empty description.
     const order = boundedInteger(values, "order");
     assertModelWriteAllowed({ name }, false);
-    const projectRoot = await registeredProjectRootForWorkspace(workspace);
+    const projectRoot = await registeredProjectRootForWorkspace(workspace, values["project-id"]);
     const state = await withWriteLock(workspace, at, async () => {
       await setVariable(workspace, {
-        occurredAt: at,
+        occurredAt: at, ...configurationOptions(values),
         name,
         type: values.type ?? "",
         value: values.value ?? "",
@@ -2284,28 +2323,28 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
         ...(order === undefined ? {} : { order }),
         ...(values.actor ? { actorId: values.actor } : {}),
       });
-      return renderVariableSectionsAfterWrite(workspace, projectRoot, at, values.actor);
+      return renderVariableSectionsAfterWrite(workspace, projectRoot, at, values.actor, values["project-id"]);
     });
-    writeVariableState(io, state, name);
+    writeVariableState(io, state, name, values["project-id"]);
     return;
   }
   if (command === "variable-remove") {
-    const values = parseArguments(rest, [...shared, "name", "actor"]);
+    const values = parseArguments(rest, ["project-id", ...shared, "name", "actor"]);
     required(values, [...requiredShared, "name"]);
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
     const name = values.name ?? "";
     assertModelWriteAllowed({ name }, false);
-    const projectRoot = await registeredProjectRootForWorkspace(workspace);
+    const projectRoot = await registeredProjectRootForWorkspace(workspace, values["project-id"]);
     const state = await withWriteLock(workspace, at, async () => {
       await removeVariable(workspace, {
-        occurredAt: at,
+        occurredAt: at, ...configurationOptions(values),
         name,
         ...(values.actor ? { actorId: values.actor } : {}),
       });
-      return renderVariableSectionsAfterWrite(workspace, projectRoot, at, values.actor);
+      return renderVariableSectionsAfterWrite(workspace, projectRoot, at, values.actor, values["project-id"]);
     });
-    writeVariableState(io, state, name);
+    writeVariableState(io, state, name, values["project-id"]);
     return;
   }
   if (command === "artifact-put") {
@@ -2387,13 +2426,14 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     return;
   }
   if (command === "knowledge-article-create") {
-    const names = ["workspace", "host", "at", "path", "category", "title", "summary", "content", "accountable-owner-id", "evidence-ids", "language-bundle"];
+    const names = ["workspace", "project-id", "host", "at", "path", "category", "title", "summary", "content", "accountable-owner-id", "evidence-ids", "language-bundle"];
     const values = parseArguments(rest, names);
-    required(values, names.filter((name) => !["host", "language-bundle"].includes(name)));
+    required(values, names.filter((name) => !["project-id", "host", "language-bundle"].includes(name)));
     const categories = ["architecture", "domain", "implementation", "standards", "testing", "workflow", "decision", "evidence"];
     if (!categories.includes(values.category ?? "")) fail("CLI_ARGUMENT_MALFORMED", `category=${values.category ?? ""}`);
     io.write(knowledgeWriteReceipt(await createKnowledgeArticle(values.workspace ?? "", {
       occurredAt: values.at ?? "",
+      ...(values["project-id"] === undefined ? {} : { projectId: values["project-id"] }),
       path: values.path ?? "",
       category: values.category as KnowledgeCategory,
       title: values.title ?? "",
@@ -2505,13 +2545,13 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // its project, which is knowledge-create's to take, and only a role card names roles.
     const names = [
       "workspace", "at", "subject", "summary", "snippet", "tags", "accountable-owner-id", "body",
-      "external-key", "scope", "role-scopes", "category", "kind", "source-references", "evidence-ids",
+      "external-key", "scope", "project-id", "role-scopes", "category", "kind", "source-references", "evidence-ids",
       "supersedes", "coexist", "allow-trailing", "language-bundle",
     ];
     const values = parseArguments(rest, names);
     required(values, ["workspace", "at", "subject", "summary", "snippet", "tags", "accountable-owner-id", "body"]);
     for (const [flag, admitted] of [
-      ["scope", ["role", "workspace", "user"]],
+      ["scope", ["role", "workspace", "project", "user"]],
       ["category", ["architecture", "domain", "implementation", "standards", "testing", "workflow", "decision", "evidence"]],
       ["kind", ["fact", "guide", "decision", "reference", "summary"]],
     ] as readonly (readonly [string, readonly string[]])[]) {
@@ -2531,7 +2571,8 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       body: values.body ?? "",
       coexist: booleanValue(values.coexist, "coexist"),
       ...(values["external-key"] ? { externalKey: values["external-key"] } : {}),
-      ...(values.scope ? { scope: values.scope as "role" | "workspace" | "user" } : {}),
+      ...(values.scope ? { scope: values.scope as "role" | "workspace" | "project" | "user" } : {}),
+      ...(values["project-id"] === undefined ? {} : { projectId: values["project-id"] }),
       ...(values["role-scopes"] ? { roleScopes: listValue(values["role-scopes"]) } : {}),
       ...(values.category ? { category: values.category as KnowledgeCategory } : {}),
       ...(values.kind ? { kind: values.kind as KnowledgeKind } : {}),
@@ -2672,17 +2713,17 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // that family as its list verb does (removed: the removed cards alone; obsolete: the obsolete
     // decisions alone; all: both families whole) and the other family's valid records; a model adds it
     // only when a user asked for them. See recallStatusOption.
-    const values = parseArguments(rest, ["workspace", "host", "at", "query", "limit", "tau", "allow-trailing", "status"]);
+    const values = parseArguments(rest, ["project-id", "workspace", "host", "at", "query", "limit", "tau", "allow-trailing", "status"]);
     required(values, ["workspace", "at", "query"]);
     const status = recallStatusOption(values.status);
     const cardStatus: KnowledgeStatusFilter = status.status === "removed" || status.status === "all" ? status.status : "valid";
     const decisions: DecisionStatusFilter = status.status === "obsolete" || status.status === "all" ? status.status : "valid";
     const workspace = values.workspace ?? "";
     const query = values.query ?? "";
-    if (query.length === 0 || query.length > 4096 || !query.isWellFormed()) fail("CLI_ARGUMENT_MALFORMED", "query");
+    if (query.length === 0 || query.length > RUNTIME_CAPACITY.stringCodeUnits || !query.isWellFormed()) fail("CLI_ARGUMENT_MALFORMED", "query");
     const limit = values.limit === undefined ? undefined : integerValue(values, "limit");
-    if (limit !== undefined && (limit < 1 || limit > RECALL_CANDIDATE_LIMIT)) fail("CLI_ARGUMENT_MALFORMED", "limit");
-    const state = await validateWorkspace(workspace);
+    if (limit !== undefined && (limit < 1 || !Number.isSafeInteger(limit))) fail("CLI_ARGUMENT_MALFORMED", "limit");
+    const state = scopedWorkspaceState(await validateWorkspace(workspace), values["project-id"]);
     const settingValue = (key: string): string | undefined => state.settings.find((entry) => entry.key === key)?.value;
     // The flag wins over the setting, the setting over the recorded default: the same
     // order work-list's scope-bytes already uses.
@@ -2830,12 +2871,12 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // (WORKSPACE_ACTOR_REQUIRED/_INVALID) — the CLI never duplicates that vocabulary,
   // keeping legacy no-actor invocations on non-enabled workspaces byte-identical.
   if (command === "project-create") {
-    const values = parseArguments(rest, [...shared, "external-key", "name", "actor"]);
+    const values = parseArguments(rest, ["parent-project-id", ...shared, "external-key", "name", "actor"]);
     required(values, [...requiredShared, "external-key", "name"]);
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
     const state = await withWriteLock(workspace, at, async () => createProject(workspace, {
-      occurredAt: at, externalKey: values["external-key"] ?? "", name: values.name ?? "",
+      occurredAt: at, externalKey: values["external-key"] ?? "", name: values.name ?? "", ...(values["parent-project-id"] === undefined ? {} : { parentProjectId: values["parent-project-id"] }),
       ...(values.actor ? { actorId: values.actor } : {}),
     }));
     const id = deriveStableId("project", canonicalExternalKey(values["external-key"] ?? ""));
@@ -2886,7 +2927,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const { state, gates } = await withWriteLock(workspace, at, async () => {
       const before = await materializeWorkspace(workspace);
       const verdict: DoneGatesVerdict | null = values.kind === "Story" && values.status === "done"
-        ? await doneGates(before, [id], [{ id, kind: "Story" }], undefined)
+        ? await doneGates(before, [id], [{ id, kind: "Story", projectId: values["project-id"] ?? "" }], undefined)
         : null;
       return {
         state: await createWork(workspace, {
@@ -3046,7 +3087,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   if (command === "work-list") {
     const values = parseArguments(rest, ["workspace", "project-id", "kind", "status", "parent-id", "sprint", "relation", "search", "scope-bytes", "limit", "offset"]);
     required(values, ["workspace"]);
-    if (values.search !== undefined && (values.search.length === 0 || values.search.length > 256 || !values.search.isWellFormed())) {
+    if (values.search !== undefined && (values.search.length === 0 || values.search.length > RUNTIME_CAPACITY.stringCodeUnits || !values.search.isWellFormed())) {
       fail("CLI_ARGUMENT_MALFORMED", "search");
     }
     // Incident and Release are no longer created, and records of both still read: the filter keeps them.
@@ -3058,9 +3099,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     // against the stored advisory:sprint value by canonical bytes so the round trip is closed.
     const sprintFilter = values.sprint === undefined ? undefined : canonicalJson(sprintReference(values.sprint));
     const state = await validateWorkspace(values.workspace ?? "");
-    const configuredScopeBytes = state.settings.find((entry) => entry.key === "retrieval.scopeExcerptBytes")?.value;
+    const configuredScopeBytes = scopedWorkspaceState(state, values["project-id"]).settings.find((entry) => entry.key === "retrieval.scopeExcerptBytes")?.value;
     const scopeBytes = values["scope-bytes"] === undefined ? Number(configuredScopeBytes ?? "512") : integerValue(values, "scope-bytes");
-    if (scopeBytes < 1 || scopeBytes > 65_536) fail("CLI_ARGUMENT_MALFORMED", "scope-bytes");
+    if (scopeBytes < 1 || scopeBytes > Number.MAX_SAFE_INTEGER) fail("CLI_ARGUMENT_MALFORMED", "scope-bytes");
     const search = values.search?.toLowerCase();
     // TCRN-CROSS-STORY-472 R3: the records that stand in the named relation to the given id.
     const related = relation === undefined ? undefined : relationFilter(state, relation.name, relation.id);
@@ -3279,7 +3320,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       fail("CLI_ARGUMENT_MALFORMED", "minutes-show takes exactly one of --id and --external-key");
     }
     const reference = values.id ?? values["external-key"] ?? "";
-    const named = /#D[1-9][0-9]{0,2}$/u.test(reference);
+    const named = /#D[1-9][0-9]*$/u.test(reference);
     if (named && values.status !== undefined) {
       fail("CLI_ARGUMENT_MALFORMED", "a decision named by its number is read whatever its status; --status goes with a record");
     }
@@ -3302,9 +3343,9 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // configuration record each, keyed by name: what runs (an argv), in which directory of the project,
   // which paths under it it covers, and whether it is required, enabled and release-only.
   if (command === "gates-config-list") {
-    const values = parseArguments(rest, ["workspace"]);
+    const values = parseArguments(rest, ["project-id", "workspace"]);
     required(values, ["workspace"]);
-    const state = await validateWorkspace(values.workspace ?? "");
+    const state = scopedWorkspaceState(await validateWorkspace(values.workspace ?? ""), values["project-id"]);
     io.write(canonicalJson(paginate(state, "gate", listGates(state), values)));
     return;
   }
@@ -3315,7 +3356,7 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // Atelier only; a model's run is refused with MODEL_WRITE_REFUSED once its arguments parse, before
   // the library is read, so a model cannot declare the gate its own Story is then held to.
   if (command === "gates-config-set") {
-    const values = parseArguments(rest, [...shared, "name", "command", "root", "covers", "required", "enabled", "release-only", "order", "actor"]);
+    const values = parseArguments(rest, ["project-id", ...shared, "name", "command", "root", "covers", "required", "enabled", "release-only", "order", "actor"]);
     required(values, [...requiredShared, "name"]);
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
@@ -3327,11 +3368,11 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
     const orderValue = boundedInteger(values, "order");
     assertModelWriteAllowed({ gate: name }, false);
     const state = await withWriteLock(workspace, at, async () => {
-      const existing = listGates(await materializeWorkspace(workspace)).find((gate) => gate.name === name);
+      const existing = listGates(scopedWorkspaceState(await materializeWorkspace(workspace), values["project-id"])).find((gate) => gate.name === name);
       if (commandValue === undefined && existing === undefined) fail("CLI_ARGUMENT_MISSING", "command");
       const order = orderValue ?? existing?.order;
       return setGate(workspace, {
-        occurredAt: at,
+        occurredAt: at, ...configurationOptions(values),
         name,
         gate: {
           command: commandValue ?? existing?.command,
@@ -3345,17 +3386,17 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
         ...(values.actor ? { actorId: values.actor } : {}),
       });
     });
-    writeState(io, state, undefined, undefined, { gate: listGates(state).find((gate) => gate.name === name) ?? null });
+    writeState(io, state, undefined, undefined, { gate: listGates(scopedWorkspaceState(state, values["project-id"])).find((gate) => gate.name === name) ?? null });
     return;
   }
   if (command === "gates-config-remove") {
-    const values = parseArguments(rest, [...shared, "name", "actor"]);
+    const values = parseArguments(rest, ["project-id", ...shared, "name", "actor"]);
     required(values, [...requiredShared, "name"]);
     const workspace = values.workspace ?? "";
     const at = values.at ?? "";
     assertModelWriteAllowed({ gate: values.name ?? "" }, false);
     const state = await withWriteLock(workspace, at, async () => removeGate(workspace, {
-      occurredAt: at, name: values.name ?? "",
+      occurredAt: at, ...configurationOptions(values), name: values.name ?? "",
       ...(values.actor ? { actorId: values.actor } : {}),
     }));
     writeState(io, state, undefined, undefined, { removed: values.name ?? "" });
@@ -3364,11 +3405,11 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // TCRN-CROSS-STORY-485 R2 (MIN-235 D8): the gates a change and optional Story need. Non-release
   // plans name their Git base, and --work-id binds exact Story coverage alongside path coverage.
   if (command === "gates-plan") {
-    const values = parseArguments(rest, ["workspace", "project", "base", "release", "work-id"]);
+    const values = parseArguments(rest, ["project-id", "workspace", "project", "base", "release", "work-id"]);
     required(values, ["workspace"]);
-    const state = await validateWorkspace(values.workspace ?? "");
+    const state = scopedWorkspaceState(await validateWorkspace(values.workspace ?? ""), values["project-id"]);
     const plan = await planGates({
-      projectRoot: await gatesProjectRoot(state.metadata.workspaceId, values.project),
+      projectRoot: await gatesProjectRoot(state.metadata.workspaceId, values.project, values["project-id"]),
       gates: listGates(state),
       release: booleanValue(values.release, "release"),
       ...(values.base === undefined ? {} : { base: values.base }),
@@ -3387,17 +3428,17 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   // and record the run in this device's cache of the library under the digest of the tree it ran
   // on. The answer lists every red gate, and the required ones among them apart.
   if (command === "gates-run") {
-    const values = parseArguments(rest, ["workspace", "at", "project", "base", "release", "work-id"]);
+    const values = parseArguments(rest, ["project-id", "workspace", "at", "project", "base", "release", "work-id"]);
     required(values, ["workspace", "at"]);
-    const state = await validateWorkspace(values.workspace ?? "");
+    const state = scopedWorkspaceState(await validateWorkspace(values.workspace ?? ""), values["project-id"]);
     const plan = await planGates({
-      projectRoot: await gatesProjectRoot(state.metadata.workspaceId, values.project),
+      projectRoot: await gatesProjectRoot(state.metadata.workspaceId, values.project, values["project-id"]),
       gates: listGates(state),
       release: booleanValue(values.release, "release"),
       ...(values.base === undefined ? {} : { base: values.base }),
       workIds: values["work-id"] === undefined ? [] : listValue(values["work-id"]),
     });
-    const { run, recordPath } = await runGates(plan, { libraryId: state.metadata.workspaceId, at: values.at ?? "" });
+    const { run, recordPath } = await runGates(plan, { libraryId: state.metadata.workspaceId, ...(values["project-id"] === undefined ? {} : { projectId: values["project-id"] }), at: values.at ?? "" });
     io.write(canonicalJson({
       reasonCode: "GATES_RUN_COMPLETED",
       workspaceId: state.metadata.workspaceId,

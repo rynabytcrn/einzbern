@@ -86,7 +86,7 @@ test("484-AC1 through the CLI: variable-set deploy.host is a variable, a row of 
   // A read is never refused: a model lists the variable and does not find it among the settings.
   const listed = await asModel(() => cli(["variable-list", "--workspace", fx.workspace]));
   assert.deepEqual([listed.reasonCode, listed.schemaVersion], ["VARIABLE_LIST_READY", "einzbern.variable-list.v1"]);
-  assert.deepEqual(listed.variables, [receipt.variable]);
+  assert.deepEqual(listed.variables, [{ ...receipt.variable, declaredHere: true, source: { kind: "library", projectId: null, projectName: null, inherited: false } }]);
   assert.deepEqual(listed.withheld, []);
   const catalog = await asModel(() => cli(["settings-catalog", "--workspace", fx.workspace]));
   assert.equal(catalog.settings.some((entry) => entry.key === "deploy.host"), false, "a variable is not a setting");

@@ -103,8 +103,8 @@ process.stdout.write(`${JSON.stringify({
     rows: componentRows,
   },
   decisionSummary: {
-    platformLayer: "Preserve the sanctioned S253 portal class roots, including the TCRN-CROSS-INC-399 retirement of tcrn-highlight in favor of the DS transient-target treatment; consume the named S254 return components and use the existing readback panel for the ninth slot.",
-    followUp: "This approved transient-target state is owned by the design system. Other portal visual changes stay in portal-owned CSS; component-contract changes wait for an Owner-approved DS workflow.",
+    platformLayer: "The versioned application class roster records route placement and aliases. INC-399 returns shared component typography, control metrics, selection and state styling to the matched published authority; the named S254 components remain consumed.",
+    followUp: "Class conservation is a source invariant, not visual acceptance. Shared visual or interaction changes follow the configured authority PR, matching Production publication and build dependency before application consumption.",
   },
 }, null, 2)}\n`);
 if (!ok) process.exitCode = 1;

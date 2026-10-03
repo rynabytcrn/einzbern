@@ -1,3 +1,4 @@
+import { DESIGN_CONFIGURATION_KEYS, designConfiguration, scopedWorkspaceState } from "./project-scope.js";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-484 R2 (MIN-227 D12; TCRN-CROSS-SUB-340): the two variable sections of
@@ -53,7 +54,7 @@ export const SYSTEM_VARIABLE_KEYS: readonly string[] = Object.freeze([
   MODELS_CATEGORY_SETTING_KEY,
   MODELS_TIERS_SETTING_KEY,
   ...MODELS_ESCALATION_SETTING_KEYS,
-  DESIGN_AUTHORITY_SETTING_KEY,
+  ...DESIGN_CONFIGURATION_KEYS,
 ]);
 // The heading the three models.escalation settings share in the system section.
 const MODELS_ESCALATION_HEADING = "models.escalation";
@@ -83,7 +84,7 @@ export interface RenderedVariablesSection {
 
 // One table cell: a pipe would end the cell, so it is escaped; an empty text reads as unset.
 function cell(text: string): string {
-  return text === "" ? UNSET : text.replace(/\|/gu, "\\|");
+  return text === "" ? UNSET : text.replace(/\|/gu, "\\|").replace(/\r?\n/gu, "<br>");
 }
 
 function row(cells: readonly string[]): string {
@@ -144,7 +145,8 @@ export function renderSystemVariablesSection(state: Pick<WorkspaceState, "settin
     }
   }
   const escalation = readModelsEscalation(state.settings);
-  const authority = state.settings.find((setting) => setting.key === DESIGN_AUTHORITY_SETTING_KEY)?.value ?? "";
+  const design = designConfiguration(state);
+  const context = state as Pick<WorkspaceState, "settings"> & { readonly configurationProjectId?: string | null; readonly settingSources?: Readonly<Record<string, import("./project-scope.js").ConfigurationSource>> };
   const lines = [
     "## System variables",
     "",
@@ -174,7 +176,21 @@ export function renderSystemVariablesSection(state: Pick<WorkspaceState, "settin
     "",
     `### ${DESIGN_AUTHORITY_SETTING_KEY}`,
     "",
-    authority === "" ? UNSET : authority,
+    `Configuration target: ${context.configurationProjectId ?? "library defaults"}.`,
+    "",
+    `Design bindings: ${design.status}. Production publication: ${design.publicationVerification}. The offline engine validates declarations only; an authorized agent verifies repository and production evidence.`,
+    "",
+    ...table(["Setting", "Declared value", "Effective source", "Inherited"], design.bindings.map((binding) => {
+      const value = binding.value ?? "(unconfigured)";
+      const reason = withheldReason(row([value]), [value]);
+      if (reason !== null) withheld.push({ name: binding.key, reason });
+      return row([binding.key, reason === null ? cell(value) : WITHHELD, binding.source.projectId ?? binding.source.kind, String(binding.source.inherited)]);
+    })),
+    "",
+    ...table(["System setting", "Effective source", "Inherited"], SYSTEM_VARIABLE_KEYS.map((key) => {
+      const source = context.settingSources?.[key];
+      return row([key, source?.projectId ?? source?.kind ?? (state.settings.some((entry) => entry.key === key) ? "library" : "default"), String(source?.inherited ?? false)]);
+    })),
   ];
   return { id: VARIABLES_SYSTEM_SECTION_ID, body: `${lines.join("\n")}\n`, withheld };
 }
@@ -252,7 +268,7 @@ export async function writeVariablesSections(workspaceRoot: string, input: {
   readonly backupRoot?: string;
 } & WorkspaceMutationOptions): Promise<VariablesSectionsResult> {
   return withWorkspaceWriteLock(workspaceRoot, async (root) => {
-    const state = await materializeWorkspace(root);
+    const state = scopedWorkspaceState(await materializeWorkspace(root), input.configurationProjectId);
     const system = renderSystemVariablesSection(state);
     const custom = renderCustomVariablesSection(state);
     const planned = await planManagedWrite({
@@ -264,6 +280,7 @@ export async function writeVariablesSections(workspaceRoot: string, input: {
     const plan = recordWithheldCustomVariablesAsPending(planned, state, custom.withheld);
     const applied = await applyManagedWrite(plan, { now: input.occurredAt, ...(input.backupRoot === undefined ? {} : { backupRoot: input.backupRoot }) });
     const deltas = plan.sections.filter((decision) => decision.recordChanged).map((decision) => setConfigRecordDelta({
+      ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }),
       collection: "managed-section",
       key: managedSectionRecordKey(VARIABLES_SECTIONS_FILE, decision.id),
       value: decision.record,

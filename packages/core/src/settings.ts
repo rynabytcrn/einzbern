@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 import { isAbsolute, relative, resolve, sep } from "node:path";
@@ -17,7 +18,6 @@ import {
   MODELS_ESCALATION_CEILING_SETTING_KEY,
   MODELS_ESCALATION_ENABLED_DEFAULT_VALUE,
   MODELS_ESCALATION_THRESHOLD_DEFAULT_VALUE,
-  MODELS_ESCALATION_THRESHOLD_MAX,
   assertModelsEscalationWrite,
   validateModelsEscalationCeiling,
 } from "./models-escalation.js";
@@ -61,7 +61,7 @@ export const SETTINGS_REASON_CODES = Object.freeze([
 // an event in the library, so it travels with the library and every device merges it to the same
 // value (the later writer in merge order wins); a device-level key lives only in this device's
 // directory (machine-settings.ts). Every key of this catalog is project-level.
-export type SettingLayer = "project" | "device";
+export type SettingLayer = "project" | "library" | "device";
 export const SETTINGS_PROJECT_LAYER = "project" as const satisfies SettingLayer;
 export const SETTINGS_DEVICE_LAYER = "device" as const satisfies SettingLayer;
 
@@ -130,6 +130,12 @@ export interface SettingValueReference {
 export type SettingKey =
   | "artifact.language"
   | "design.authority"
+  | "design.repository"
+  | "design.pullRequestTarget"
+  | "design.productionDocs"
+  | "design.buildService"
+  | "design.buildProject"
+  | "design.consumedVersion"
   | "engine.requiredVersion"
   | "execution.maxConcurrentSubagents"
   | "injection.perPromptBytes"
@@ -167,7 +173,8 @@ export interface SettingsCatalogEntry {
   readonly key: SettingKey;
   readonly type: SettingValueType;
   readonly controlType: SettingControlType;
-  readonly layer: typeof SETTINGS_PROJECT_LAYER;
+  readonly layer: "project" | "library";
+  readonly scope: "project" | "library";
   readonly layerKind: typeof SETTINGS_LAYER_KIND;
   readonly defaultValue: string | null;
   // TCRN-CROSS-STORY-484 R4: whether a model may write this key through the CLI. False unless the
@@ -189,6 +196,7 @@ export interface SettingsCatalogEntry {
 export interface WorkspaceSettingRecord {
   readonly schemaVersion: typeof WORKSPACE_SETTING_VERSION;
   readonly key: SettingKey;
+  readonly projectId?: string;
   readonly layerKind: typeof SETTINGS_LAYER_KIND;
   readonly value: string;
   readonly revision: number;
@@ -204,9 +212,14 @@ export interface SettingsCatalogReadback {
     readonly key: SettingKey;
     readonly type: SettingValueType;
     readonly controlType: SettingControlType;
-      readonly layer: typeof SETTINGS_PROJECT_LAYER;
+      readonly layer: "project" | "library";
+  readonly scope: "project" | "library";
       readonly defaultValue: string | null;
       readonly currentValue: string | null;
+      readonly declaredValue?: string | null;
+      readonly inheritedValue?: string | null;
+      readonly inheritedSource?: import("./project-scope.js").ConfigurationSource;
+      readonly source?: import("./project-scope.js").ConfigurationSource;
       readonly modelWritable: boolean;
       readonly shape: SettingShape;
       readonly group: SettingGroup;
@@ -243,8 +256,8 @@ function isInside(parent: string, candidate: string): boolean {
   return relation === "" || (!relation.startsWith("..") && !relation.startsWith(sep));
 }
 
-function assertCanonicalString(value: unknown, label: string, maximumLength: number): asserts value is string {
-  if (typeof value !== "string" || value.length === 0 || value.length > maximumLength || value.includes("\u0000")) {
+function assertCanonicalString(value: unknown, label: string, _maximumLength: number): asserts value is string {
+  if (typeof value !== "string" || value.length === 0 || value.includes("\u0000")) {
     fail("SETTINGS_VALUE_INVALID", `${label} must be a non-empty bounded string`);
   }
   try {
@@ -309,7 +322,7 @@ function assertAbsoluteArtifactsSettingPath(value: string, label: string, worksp
 // `modelWritable: true` here, with its reason.
 // TCRN-CROSS-STORY-508 R5: every entry names its group and its order in that group
 // (specs/settings-catalog-v1.md); an entry is a collection only when it says so.
-const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWritable" | "shape"> & {
+const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "scope" | "modelWritable" | "shape"> & {
   readonly modelWritable?: boolean;
   readonly shape?: SettingShape;
 })[] = [
@@ -342,6 +355,60 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     order: 2,
   },
   {
+    key: "design.repository",
+    type: "url",
+    controlType: "text",
+    layerKind: SETTINGS_LAYER_KIND,
+    defaultValue: null,
+    group: "general",
+    order: 4,
+  },
+  {
+    key: "design.pullRequestTarget",
+    type: "string",
+    controlType: "text",
+    layerKind: SETTINGS_LAYER_KIND,
+    defaultValue: null,
+    group: "general",
+    order: 5,
+  },
+  {
+    key: "design.productionDocs",
+    type: "url",
+    controlType: "text",
+    layerKind: SETTINGS_LAYER_KIND,
+    defaultValue: null,
+    group: "general",
+    order: 6,
+  },
+  {
+    key: "design.buildService",
+    type: "string",
+    controlType: "text",
+    layerKind: SETTINGS_LAYER_KIND,
+    defaultValue: null,
+    group: "general",
+    order: 7,
+  },
+  {
+    key: "design.buildProject",
+    type: "string",
+    controlType: "text",
+    layerKind: SETTINGS_LAYER_KIND,
+    defaultValue: null,
+    group: "general",
+    order: 8,
+  },
+  {
+    key: "design.consumedVersion",
+    type: "string",
+    controlType: "text",
+    layerKind: SETTINGS_LAYER_KIND,
+    defaultValue: null,
+    group: "general",
+    order: 9,
+  },
+  {
     key: "engine.requiredVersion",
     type: "string",
     controlType: "text",
@@ -360,7 +427,6 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     layerKind: SETTINGS_LAYER_KIND,
     defaultValue: "8",
     min: 1,
-    max: 32,
     group: "execution",
     order: 1,
   },
@@ -371,7 +437,6 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     layerKind: SETTINGS_LAYER_KIND,
     defaultValue: "1600",
     min: 1,
-    max: 1600,
     group: "retrieval",
     order: 4,
   },
@@ -440,7 +505,6 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     layerKind: SETTINGS_LAYER_KIND,
     defaultValue: MODELS_ESCALATION_THRESHOLD_DEFAULT_VALUE,
     min: 1,
-    max: MODELS_ESCALATION_THRESHOLD_MAX,
     group: "models",
     order: 4,
   },
@@ -527,7 +591,6 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     layerKind: SETTINGS_LAYER_KIND,
     defaultValue: "512",
     min: 1,
-    max: 65_536,
     group: "retrieval",
     order: 3,
   },
@@ -547,7 +610,6 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     layerKind: SETTINGS_LAYER_KIND,
     defaultValue: "3",
     min: 0,
-    max: 100,
     group: "retrieval",
     order: 2,
   },
@@ -560,7 +622,6 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     // sync client re-uploads per append small.
     defaultValue: "1048576",
     min: 4096,
-    max: 67108864,
     group: "storage",
     order: 2,
   },
@@ -571,7 +632,6 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
     layerKind: SETTINGS_LAYER_KIND,
     defaultValue: "512",
     min: 1,
-    max: 20_000,
     group: "storage",
     order: 3,
   },
@@ -590,7 +650,8 @@ const catalogEntries: readonly (Omit<SettingsCatalogEntry, "layer" | "modelWrita
 export const SETTINGS_CATALOG: readonly SettingsCatalogEntry[] = Object.freeze(
   catalogEntries.slice().sort((left, right) => compareCanonicalText(left.key, right.key)).map((entry) => Object.freeze({
     ...entry,
-    layer: SETTINGS_PROJECT_LAYER,
+    layer: ["engine.requiredVersion", "storage.segmentBytes", "storage.snapshotEveryEvents", "workspace.generatedArtifactsPath"].includes(entry.key) ? "library" as const : SETTINGS_PROJECT_LAYER,
+    scope: ["engine.requiredVersion", "storage.segmentBytes", "storage.snapshotEveryEvents", "workspace.generatedArtifactsPath"].includes(entry.key) ? "library" as const : "project" as const,
     modelWritable: entry.modelWritable ?? false,
     shape: entry.shape ?? "scalar",
     ...(entry.allowedValues === undefined ? {} : { allowedValues: Object.freeze([...entry.allowedValues]) }),
@@ -770,7 +831,7 @@ export function settingsCatalogEntry(key: unknown): SettingsCatalogEntry {
 
 // TCRN-CROSS-STORY-508 R1, R2: a collection's value is a whole table of records, so it may be as long
 // as a protocol string may be; every other value keeps the bound of one value.
-const SCALAR_VALUE_MAX_LENGTH = 4096;
+const SCALAR_VALUE_MAX_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;
 const COLLECTION_VALUE_MAX_LENGTH = PROTOCOL_LIMITS.maxStringLength;
 
 // TCRN-CROSS-STORY-508 R1, R2: the value a write of either models table records, the table as
@@ -826,7 +887,6 @@ export function validateSettingValue(key: unknown, value: unknown, workspaceRoot
     let parsed;
     try { parsed = new URL(value); } catch { fail("SETTINGS_VALUE_INVALID", `${entry.key} must be a URL`); }
     if (parsed.protocol !== "https:") fail("SETTINGS_VALUE_INVALID", `${entry.key} must use https`);
-    if (value.length > 512) fail("SETTINGS_VALUE_INVALID", `${entry.key} must be at most 512 characters`);
     if (/[\u0000-\u001f\u007f]/u.test(value)) fail("SETTINGS_VALUE_INVALID", `${entry.key} must not contain control characters`);
   }
   if (entry.key === "workspace.generatedArtifactsPath") {
@@ -869,7 +929,8 @@ export function validateWorkspaceSettingRecord(value: unknown, workspaceRoot?: s
     fail("SETTINGS_RECORD_INVALID", "setting record must be an object");
   }
   const record = value as Record<string, unknown>;
-  const expected = ["key", "layerKind", "revision", "schemaVersion", "tombstone", "updatedAt", "value"];
+  const expected = ["key", "layerKind", "revision", "schemaVersion", "tombstone", "updatedAt", "value", ...(Object.hasOwn(record, "projectId") ? ["projectId"] : [])];
+  if (Object.hasOwn(record, "projectId") && (typeof record.projectId !== "string" || !/^project:[a-f0-9]{24}$/u.test(record.projectId))) fail("SETTINGS_RECORD_INVALID", "projectId is not a stable project identity");
   const actual = Object.keys(record).sort(compareCanonicalText);
   if (JSON.stringify(actual) !== JSON.stringify([...expected].sort(compareCanonicalText))) {
     fail("SETTINGS_RECORD_INVALID", "setting record fields are not exact");
@@ -894,6 +955,7 @@ export function createWorkspaceSettingRecord(
   revision: number,
   updatedAt: string,
   workspaceRoot?: string,
+  projectId?: string,
 ): WorkspaceSettingRecord {
   const entry = settingsCatalogEntry(key);
   if (!Number.isSafeInteger(revision) || revision < 1) {
@@ -908,6 +970,7 @@ export function createWorkspaceSettingRecord(
   return validateWorkspaceSettingRecord({
     schemaVersion: WORKSPACE_SETTING_VERSION,
     key: entry.key,
+    ...(projectId === undefined ? {} : { projectId }),
     layerKind: SETTINGS_LAYER_KIND,
     value: normalizedValue,
     revision,
@@ -917,7 +980,7 @@ export function createWorkspaceSettingRecord(
 }
 
 export function sortWorkspaceSettings(records: Iterable<WorkspaceSettingRecord>): readonly WorkspaceSettingRecord[] {
-  return [...records].sort((left, right) => compareCanonicalText(left.key, right.key));
+  return [...records].sort((left, right) => compareCanonicalText(left.projectId ?? "", right.projectId ?? "") || compareCanonicalText(left.key, right.key));
 }
 
 // TCRN-CROSS-STORY-508 R1: the current value of an unset key. An unset models.category is the default
@@ -937,6 +1000,7 @@ export function readSettingsCatalog(
   workspaceId: string,
   records: readonly WorkspaceSettingRecord[],
   effectiveValues: Partial<Record<SettingKey, string>> = {},
+  context?: { readonly projectId: string | null; readonly sources: Readonly<Partial<Record<SettingKey, import("./project-scope.js").ConfigurationSource>>>; readonly fallbackValues?: Readonly<Partial<Record<SettingKey, string | null>>>; readonly fallbackSources?: Readonly<Partial<Record<SettingKey, import("./project-scope.js").ConfigurationSource>>> },
 ): SettingsCatalogReadback {
   // Candidates and validation share the same category reader. In particular, the
   // effective mother includes legacy categories when no explicit table is stored.
@@ -956,6 +1020,8 @@ export function readSettingsCatalog(
       type: entry.type,
       controlType: entry.controlType,
       layer: entry.layer,
+      scope: entry.scope,
+      ...(context === undefined ? {} : { source: context.sources[entry.key], inheritedValue: context.fallbackValues?.[entry.key] ?? entry.defaultValue, inheritedSource: context.fallbackSources?.[entry.key] ?? { kind: "default" as const, projectId: null, projectName: null, inherited: false }, declaredValue: records.find((record) => record.key === entry.key && (record.projectId ?? null) === (entry.scope === "library" ? null : context.projectId))?.value ?? null }),
       defaultValue: entry.defaultValue,
       currentValue: records.find((record) => record.key === entry.key)?.value ?? effectiveValues[entry.key] ?? unsetValue(entry, records),
       modelWritable: entry.modelWritable,

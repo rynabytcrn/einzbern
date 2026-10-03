@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "./runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -24,7 +25,7 @@ const outputOwnerStagePrefix = ".owner.json.staging-";
 const outputRecoveryClaimName = ".einzbern-output-recovery-claim";
 const outputAcquisitionClaimName = ".einzbern-output-acquisition-claim";
 const outputAcquisitionStagePrefix = ".einzbern-output-acquisition-claim.staging-";
-const maximumRecoveryClaimBytes = 65_536;
+const maximumRecoveryClaimBytes = RUNTIME_CAPACITY.bufferBytes;
 const outputOwnerFields = ["schemaVersion", "pid", "uid", "lockDev", "lockIno", "ownerDev", "ownerIno", "processGroup"];
 const recoveryClaimFields = ["schemaVersion", "pid", "uid", "repositoryPath", "lockPath", "stagingName", "claimDev", "claimIno", "lockDev", "lockIno", "lockCtimeMs", "lockMtimeMs", "ownerDev", "ownerIno", "ownerBytes"];
 const acquisitionClaimFields = ["schemaVersion", "pid", "uid", "repositoryPath", "lockPath", "claimDev", "claimIno"];
@@ -72,11 +73,11 @@ async function readReviewReceipt(path, expectedDigest, reasonCode) {
     const chunks = [];
     let total = 0;
     while (true) {
-      const buffer = Buffer.allocUnsafe(Math.min(16_384, maximumRecoveryClaimBytes + 1 - total));
+      const buffer = Buffer.allocUnsafe(Math.min(16_384, opened.size + 1 - total));
       const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
       if (bytesRead === 0) break;
       total += bytesRead;
-      if (total > maximumRecoveryClaimBytes) fail(reasonCode, path);
+      if (total > opened.size) fail(reasonCode, path);
       chunks.push(buffer.subarray(0, bytesRead));
     }
     const settled = await handle.stat();
@@ -469,13 +470,13 @@ export async function readBoundClaim(path, reasonCode) {
     const chunks = [];
     let totalBytesRead = 0;
     while (true) {
-      const remaining = maximumRecoveryClaimBytes + 1 - totalBytesRead;
+      const remaining = opened.size + 1 - totalBytesRead;
       const buffer = Buffer.allocUnsafe(Math.min(16_384, remaining));
       const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
       if (bytesRead === 0) break;
       chunks.push(buffer.subarray(0, bytesRead));
       totalBytesRead += bytesRead;
-      if (totalBytesRead > maximumRecoveryClaimBytes) fail(reasonCode, path);
+      if (totalBytesRead > opened.size) fail(reasonCode, path);
     }
     const settled = await handle.stat();
     if (!sameIdentity(opened, settled) || settled.nlink !== opened.nlink || settled.uid !== opened.uid ||

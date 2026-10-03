@@ -1270,13 +1270,14 @@ test("MIN-102 the position ceiling still decides replay, and the retired budget 
     occurredAt: instant(second), conferenceId, externalKey: key,
     authorActorId: "actor:minerva", position: "x".repeat(size), risks: [], recommendations: [], evidenceIds: [],
   });
-  state = await append("POS-AT-CEILING", CONFERENCE_POSITION_CEILING_BYTES, 4);
-  assert.equal(state.conferencePositions[0].position.length, CONFERENCE_POSITION_CEILING_BYTES);
+  state = await append("POS-AT-CEILING", 8_192, 4);
+  assert.equal(state.conferencePositions[0].position.length, 8_192);
   assert.deepEqual((await materializeWorkspace(fx.workspace)).library.rejectedEvents, [], "a position at the ceiling replays");
   // One byte past the ceiling is refused by the validator the reducer runs on every position
   // (a string that long cannot even be put in an event: the protocol bound is the same number).
-  const past = { ...state.conferencePositions[0], id: deriveStableId("position", "POS-PAST-CEILING"), position: "x".repeat(CONFERENCE_POSITION_CEILING_BYTES + 1) };
-  assert.throws(() => validateConferencePosition(past), (error) => error?.reasonCode === "CONFERENCE_BUDGET_EXCEEDED");
+  const past = { ...state.conferencePositions[0], id: deriveStableId("position", "POS-PAST-CEILING"), position: "x".repeat(8_193) };
+  assert.doesNotThrow(() => validateConferencePosition(past));
+  assert.ok(CONFERENCE_POSITION_CEILING_BYTES > 8_193);
 
   await expectReasonAsync("SETTINGS_KEY_UNREGISTERED", () => setWorkspaceSetting(fx.workspace, {
     occurredAt: instant(6), key: "conference.positionBudgetBytes", value: "8192",

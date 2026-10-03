@@ -132,8 +132,8 @@ const START_PREFIX = "<!-- einzbern:section ";
 const END_PREFIX = "<!-- einzbern:section-end ";
 const MARKER_PREFIX = "<!-- einzbern:section";
 const MARKER_SUFFIX = " -->";
-const SECTION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
-const REVISION = /^[1-9][0-9]{0,15}$/u;
+const SECTION_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u;
+const REVISION = /^[1-9][0-9]*$/u;
 const DIGEST = /^[0-9a-f]{64}$/u;
 // An absolute path: a rooted POSIX path of two or more segments, a Windows drive or a UNC share,
 // at the start of a line or after white space or punctuation that opens a path.
@@ -279,7 +279,7 @@ export function parseManagedFile(text: string, file?: string): ParsedManagedFile
 
 // A file relative to the project: forward slashes, no empty, current or parent segment, not rooted.
 function isRelativeFileName(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0 && Buffer.byteLength(value, "utf8") <= 256 && !value.includes("\\") &&
+  return typeof value === "string" && value.length > 0 && !value.includes("\\") &&
     !value.startsWith("/") && !/^[A-Za-z]:/u.test(value) && value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..") &&
     !/[\u0000-\u001f\u007f#]/u.test(value);
 }

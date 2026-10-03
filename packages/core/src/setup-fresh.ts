@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-480 R2, R5 (MIN-227; TCRN-CROSS-SUB-323): setup --mode fresh, the first
@@ -97,7 +98,9 @@ import type {
   SetupWriteAction,
 } from "./setup.js";
 import { SKILL_COPY_ROOTS, installSkillCopies, skillCopiesRecordPath, skillCopyPath, verifySkillCopies } from "./skill-copies.js";
-import { initializeLibrary, materializeWorkspace, materializeWorkspaceFromGenesis, setWorkspaceSetting } from "./workspace.js";
+import { createProject, initializeLibrary, materializeWorkspace, materializeWorkspaceFromGenesis, setWorkspaceSetting } from "./workspace.js";
+import { canonicalSha256 } from "../../protocol/src/index.js";
+import { projectLineage, scopedWorkspaceState } from "./project-scope.js";
 import type { WorkspaceState } from "./workspace.js";
 
 // What setup installs from, relative to the engine version directory: the release's layout
@@ -122,7 +125,7 @@ const BACKUP_DIRECTORIES: Readonly<Partial<Record<SetupStep, string>>> = Object.
   launchers: "launchers",
   registry: "registry",
 });
-const HINT_MAX_LENGTH = 512;
+const HINT_MAX_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;
 
 /** What the steps read of a library: its settings and its configuration records. */
 export type LibraryState = Pick<WorkspaceState, "settings" | "configRecords">;
@@ -245,7 +248,19 @@ export function defaultLanguage(): string {
 
 /** The language a library records, or null when it records none. */
 export function libraryLanguage(state: LibraryState): string | null {
-  return state.settings.find((setting) => setting.key === LANGUAGE_SETTING)?.value ?? null;
+  return state.settings.find((setting) => setting.key === LANGUAGE_SETTING && (Object.hasOwn(state, "configurationProjectId") || setting.projectId === undefined))?.value ?? null;
+}
+
+/** Read only the explicitly registered target, or the library defaults for a new target. */
+export async function setupTargetState(projectRoot: string, libraryPath: string, deviceHome: string): Promise<WorkspaceState> {
+  const root = await realpath(projectRoot);
+  const libraryRoot = await realpath(libraryPath);
+  const state = await materializeWorkspaceFromGenesis(libraryRoot);
+  const entry = (await readRegistry(deviceHome)).entries.find(candidate => candidate.projectPath === root);
+  if (entry !== undefined && (entry.libraryId !== state.metadata.workspaceId || entry.libraryPath !== libraryRoot)) {
+    setupFail("SETUP_LIBRARY_CONFLICT", "declared project binding names another library");
+  }
+  return scopedWorkspaceState(state, entry?.projectId);
 }
 
 export function navigationChoice(navigation: boolean): AgentsNavigationChoice {
@@ -630,7 +645,9 @@ export async function planWiring(recorder: SetupRecorder, input: WiringPlanInput
     recorder.write("machine-settings", settingsFile, await entryKind(settingsFile) === null ? "create" : "update");
   }
   if (library === null || !runs(steps, "managed-sections")) return [];
-  const sections = await planSections(recorder, projectRoot, library.state, navigation);
+  const declared = (await readRegistry(deviceHome)).entries.find(entry => entry.projectPath === projectRoot && entry.libraryPath === library.path)?.projectId;
+  const view = declared === undefined ? library.state : scopedWorkspaceState(await materializeWorkspaceFromGenesis(library.path), declared);
+  const sections = await planSections(recorder, projectRoot, view, navigation);
   if (sections.recordsChange) recorder.write("library", library.path, "update");
   return sections.pending;
 }
@@ -652,6 +669,35 @@ export interface WiringApplyInput {
   // The actor named on each event the steps write into the library, which a chain that enabled
   // attestation requires of every write (a migrated library); none when left out.
   readonly actorId?: string;
+  readonly configurationProjectId?: string;
+}
+
+/**
+ * Setup defines a new configuration target for its explicitly requested project root
+ * when no binding exists. It never adopts a same-name, sole or nearby native project.
+ * A previously declared binding is checked and reused; its stable identity survives
+ * renames. This is part of the existing library step, not another install phase.
+ */
+export async function ensureSetupProjectBinding(projectRoot: string, libraryPath: string, input: {
+  readonly at: string; readonly deviceHome: string; readonly actorId?: string;
+}): Promise<string> {
+  const root = await realpath(projectRoot);
+  const libraryRoot = await realpath(libraryPath);
+  const state = await materializeWorkspace(libraryRoot);
+  const entry = (await readRegistry(input.deviceHome)).entries.find(candidate => candidate.projectPath === root);
+  if (entry?.projectId !== undefined) {
+    if (entry.libraryId !== state.metadata.workspaceId || entry.libraryPath !== libraryRoot) setupFail("SETUP_LIBRARY_CONFLICT", "declared project binding names another library");
+    projectLineage(state, entry.projectId);
+    return entry.projectId;
+  }
+  // This deterministic declaration is written by setup itself. It is not a guessed
+  // binding to any existing work project's id, display name or folder hierarchy.
+  const externalKey = `SETUP-CONFIG-${canonicalSha256({ libraryId: state.metadata.workspaceId, projectRoot: root }).toUpperCase()}`;
+  const declared = state.projects.find(project => project.externalKey === externalKey && !project.tombstone);
+  if (declared !== undefined) return declared.id;
+  const created = await createProject(libraryRoot, { externalKey, name: basename(root), occurredAt: input.at,
+    ...(input.actorId === undefined ? {} : { actorId: input.actorId }) });
+  return created.projects.find(project => project.externalKey === externalKey && !project.tombstone)!.id;
 }
 
 async function applyRegistry(recorder: SetupRecorder, input: WiringApplyInput, library: NonNullable<WiringApplyInput["library"]>): Promise<void> {
@@ -659,9 +705,9 @@ async function applyRegistry(recorder: SetupRecorder, input: WiringApplyInput, l
   const remote = normalizedRemote(projectRoot);
   const registryFile = registryPath(deviceHome);
   const entry = (await readRegistry(deviceHome)).entries.find((candidate) => candidate.projectPath === projectRoot) ?? null;
-  if (entry !== null && entry.libraryPath === library.path && entry.libraryId === library.libraryId && entry.cloudHosted === input.cloud && entry.gitRemote === remote.normalized) return;
+  if (entry !== null && entry.projectId === input.configurationProjectId && entry.libraryPath === library.path && entry.libraryId === library.libraryId && entry.cloudHosted === input.cloud && entry.gitRemote === remote.normalized) return;
   const kind = await entryKind(registryFile);
-  await registerLibrary({ projectPath: projectRoot, libraryPath: library.path, registeredAt: at, cloudHosted: input.cloud, gitRemote: remote.raw }, deviceHome);
+  await registerLibrary({ projectPath: projectRoot, libraryPath: library.path, ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), registeredAt: at, cloudHosted: input.cloud, gitRemote: remote.raw }, deviceHome);
   recorder.write("registry", registryFile, kind === null ? "create" : "update");
 }
 
@@ -748,7 +794,7 @@ async function applySections(recorder: SetupRecorder, input: WiringApplyInput, l
   const existed = new Map<string, boolean>();
   for (const file of [AGENTS_FILE, CLAUDE_FILE]) existed.set(file, await entryKind(join(projectRoot, file)) !== null);
   const actor = input.actorId === undefined ? {} : { actorId: input.actorId };
-  const rendered = await renderAgentsSections(library.path, { projectRoot, navigation: input.navigation, occurredAt: at, backupRoot: backupsPath(deviceHome), ...actor });
+  const rendered = await renderAgentsSections(library.path, { projectRoot, ...(input.configurationProjectId === undefined ? {} : { configurationProjectId: input.configurationProjectId }), navigation: input.navigation, occurredAt: at, backupRoot: backupsPath(deviceHome), ...actor });
   for (const file of rendered.files) {
     if (!file.written) continue;
     const path = join(projectRoot, file.file);
@@ -761,6 +807,7 @@ async function applySections(recorder: SetupRecorder, input: WiringApplyInput, l
     try {
       const { change } = await disableAgentsSection(library.path, {
         projectRoot,
+        ...(input.configurationProjectId === undefined ? {} : { configurationProjectId: input.configurationProjectId }),
         id: "navigation",
         occurredAt: at,
         backupRoot: backupsPath(deviceHome),
@@ -787,7 +834,17 @@ async function applySections(recorder: SetupRecorder, input: WiringApplyInput, l
  */
 export async function applyWiring(recorder: SetupRecorder, input: WiringApplyInput): Promise<readonly { readonly file: string; readonly id: string }[]> {
   const { steps, library } = input;
-  if (library !== null && runs(steps, "registry")) await applyRegistry(recorder, input, library);
+  if (library !== null) {
+    const prior = await materializeWorkspace(library.path);
+    const configurationProjectId = input.configurationProjectId ?? await ensureSetupProjectBinding(input.projectRoot, library.path, input);
+    input = { ...input, configurationProjectId };
+    if ((await materializeWorkspace(library.path)).version !== prior.version) recorder.write("library", library.path, "update");
+    // Migrate/restore may have registered the library before these shared steps.
+    // Completing that same entry's declared configuration binding is required
+    // before any target-specific consumer, including the next prompt hook.
+    const entry = (await readRegistry(input.deviceHome)).entries.find(candidate => candidate.projectPath === input.projectRoot);
+    if (runs(steps, "registry") || entry?.projectId !== configurationProjectId) await applyRegistry(recorder, input, library);
+  }
   if (runs(steps, "skill-copies")) await applySkillCopies(recorder, input);
   if (runs(steps, "launchers")) await applyLaunchers(recorder, input);
   if (runs(steps, "host-hooks")) await applyHooks(recorder, input);
@@ -855,7 +912,7 @@ export async function planFreshSetup(input: SetupModeInput): Promise<SetupModePl
 
   // library
   const library = await planLibrary(recorder, input, artifacts);
-  const currentLanguage = libraryLanguage(library.state);
+  const currentLanguage = libraryLanguage(library.action === "reuse" ? await setupTargetState(projectRoot, library.path, deviceHome) : library.state);
   const defaults: ResolvedSetupAnswers = {
     artifacts,
     cloud: defaultCloud(context, artifacts),
@@ -933,9 +990,10 @@ export async function applyFreshSetup(plan: SetupPlan): Promise<SetupApplied> {
   const libraryPath = library.root;
   const libraryId = library.manifest.libraryId;
   if (planned.action === "create") recorder.write("library", libraryPath, "create");
-  const state = await materializeWorkspace(libraryPath);
+  const configurationProjectId = await ensureSetupProjectBinding(projectRoot, libraryPath, { at, deviceHome });
+  const state = scopedWorkspaceState(await materializeWorkspace(libraryPath), configurationProjectId);
   if (libraryLanguage(state) !== resolved.language) {
-    await setWorkspaceSetting(libraryPath, { key: LANGUAGE_SETTING, value: resolved.language, occurredAt: at });
+    await setWorkspaceSetting(libraryPath, { key: LANGUAGE_SETTING, value: resolved.language, configurationProjectId, occurredAt: at });
     recorder.write("library", libraryPath, "update");
   }
 
@@ -946,6 +1004,7 @@ export async function applyFreshSetup(plan: SetupPlan): Promise<SetupApplied> {
     deviceHome,
     at,
     library: { path: libraryPath, libraryId },
+    configurationProjectId,
     cloud: resolved.cloud,
     navigation: navigationChoice(resolved.navigation),
     engineDirectory: directory,

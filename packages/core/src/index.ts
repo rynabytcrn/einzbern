@@ -853,3 +853,5 @@ export { RELEASE_REASON_CODES, ReleaseSourceError } from "./setup-maintain.js";
 export type { ReleaseReasonCode } from "./setup-maintain.js";
 // The launcher a host's hook runs, which the setup self-check runs the way a host does.
 export { hookLauncherPath } from "./host-hooks.js";
+
+export * from "./project-scope.js";

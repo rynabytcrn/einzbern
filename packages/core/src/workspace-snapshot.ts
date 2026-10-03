@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 import { createHash } from "node:crypto";
@@ -124,7 +125,7 @@ const TEMPORARY_PREFIX = ".tmp-";
 // configured segmentEventLimit (16 MiB was that engine's default) before rotating, so it is read
 // under WORKSPACE_SEGMENT_BYTES_MAX below rather than the generic per-control-file
 // ceiling every other file in the tree still uses.
-const EVENT_SEGMENT_NAME_PATTERN = /^\d{6}\.ndjson$/u;
+const EVENT_SEGMENT_NAME_PATTERN = /^\d{6,}\.ndjson$/u;
 
 // TCRN-CROSS-STORY-469: in a library the witness covers the whole library tree. Its event
 // segments are the files in each akasha/<device>/ directory, and the knowledge mutation claim
@@ -157,7 +158,7 @@ async function libraryTreeRules(root: string, invalidManifest: SnapshotReasonCod
   if (await fileExists(resolve(root, manifestPath))) {
     let manifest: JsonValue;
     try {
-      manifest = assertCanonicalJson((await boundReadFileBytes(resolve(root, manifestPath), 65_536)).toString("utf8"));
+      manifest = assertCanonicalJson((await boundReadFileBytes(resolve(root, manifestPath), RUNTIME_CAPACITY.bufferBytes)).toString("utf8"));
     } catch (error) {
       if (error instanceof ProtocolError) fail(invalidManifest, manifestPath);
       throw error;
@@ -166,7 +167,7 @@ async function libraryTreeRules(root: string, invalidManifest: SnapshotReasonCod
       typeof manifest.count !== "number" || !Number.isSafeInteger(manifest.count) || manifest.count < 0 ||
       typeof manifest.indexDigest !== "string" || !/^[a-f0-9]{64}$/u.test(manifest.indexDigest)) fail(invalidManifest, manifestPath);
     for (const entry of manifest.segments) {
-      if (!isJsonObject(entry) || typeof entry.name !== "string" || !/^\d{6}\.ndjson$/u.test(entry.name) ||
+      if (!isJsonObject(entry) || typeof entry.name !== "string" || !/^\d{6,}\.ndjson$/u.test(entry.name) ||
         typeof entry.bytes !== "number" || !Number.isSafeInteger(entry.bytes) || entry.bytes < 1 ||
         typeof entry.records !== "number" || !Number.isSafeInteger(entry.records) ||
         typeof entry.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(entry.sha256)) fail(invalidManifest, manifestPath);
@@ -179,7 +180,7 @@ async function libraryTreeRules(root: string, invalidManifest: SnapshotReasonCod
       if (segment.test(relativePath)) return { maximumBytes: AKASHA_SEGMENT_BYTES_MAXIMUM };
       const expectedBytes = bodySegments.get(relativePath);
       if (expectedBytes !== undefined) return { maximumBytes: Math.max(SEGMENTED_BODY_FILE_LIMIT, expectedBytes), expectedBytes };
-      return { maximumBytes: relativePath === manifestPath ? 65_536 : PROTOCOL_LIMITS.maxCanonicalBytes };
+      return { maximumBytes: relativePath === manifestPath ? RUNTIME_CAPACITY.bufferBytes : PROTOCOL_LIMITS.maxCanonicalBytes };
     },
   };
 }
@@ -259,7 +260,7 @@ export async function readGovernedDocumentFile(path: string, label: string): Pro
   if (typeof path !== "string" || path.length === 0) {
     fail("SNAPSHOT_INPUT_INVALID", label);
   }
-  const content = await boundReadFileBytes(path, 65_536);
+  const content = await boundReadFileBytes(path, RUNTIME_CAPACITY.bufferBytes);
   return content.toString("utf8");
 }
 

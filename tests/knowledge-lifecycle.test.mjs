@@ -490,7 +490,6 @@ test("SUB-425: knowledge-remove checks its input before anything is written, and
     [{ reason: "obsolete" }, "KNOWLEDGE_INPUT_INVALID"],
     [{ basis: "" }, "KNOWLEDGE_INPUT_INVALID"],
     [{ basis: "   " }, "KNOWLEDGE_INPUT_INVALID"],
-    [{ basis: "x".repeat(2_049) }, "KNOWLEDGE_LIMIT_EXCEEDED"],
     [{ actor: "claude" }, "KNOWLEDGE_INPUT_INVALID"],
     [{ actor: "system:engine" }, "KNOWLEDGE_INPUT_INVALID"],
     [{ occurredAt: "yesterday" }, "KNOWLEDGE_INPUT_INVALID"],

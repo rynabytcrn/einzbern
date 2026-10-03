@@ -275,8 +275,8 @@ async function assertCrestAnswers(fx, count) {
   const whole = await listKnowledgeMetadata(fx.workspace, { at: AT, includeExplicitOnly: true, limit: 1_048_576, ...fx.scoped });
   assert.equal(whole.records.length, count);
   assert.ok(Buffer.byteLength(canonicalJson(whole.records[0]), "utf8") * count > CEILING, "the whole crest's page is past the ceiling");
-  assert.throws(() => canonicalSha256(whole.records), { reasonCode: "INPUT_OVERSIZED" }, "the protocol's ceiling is where it was");
-  assert.equal(PROTOCOL_LIMITS.maxCanonicalBytes, CEILING);
+  assert.equal(canonicalSha256(whole.records), whole.resultDigest, "the complete canonical page crosses the former byte ceiling without loss");
+  assert.ok(PROTOCOL_LIMITS.maxCanonicalBytes > CEILING);
   assert.equal(whole.resultDigest, listDigest(whole.records), "its digest is the canonical list's, hashed record by record");
   const read = await readRecallCards(fx.workspace, { at: AT });
   assert.deepEqual([read.stores[fx.store].reasonCode, read.stores[fx.store].cards, read.stores[fx.store].digest], ["KNOWLEDGE_LIST_READY", count, whole.resultDigest]);

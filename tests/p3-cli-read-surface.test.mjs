@@ -15,6 +15,7 @@ import {
   createWork,
   deleteWork,
   initializeLibrary,
+  initializeKnowledgeStore,
   STORY_SCOPE_HEADINGS,
   validateWorkspace,
 } from "../dist/build/packages/core/src/index.js";
@@ -411,10 +412,12 @@ test("CQ-05: malformed knowledge pagination flags are syntax errors, not range r
   // value that IS an integer must still reach core, so core keeps the whole window rule
   // (>= 1, <= canonical view-byte budget, offset >= 0) rather than half of it. A CLI-side
   // floor would silently take the lower bound and leave the ceiling behind.
-  for (const [flag, value] of [["limit", "0"], ["offset", "-1"], ["limit", "1048577"]]) {
+  for (const [flag, value] of [["limit", "0"], ["offset", "-1"]]) {
     const reason = await reasonOf(["knowledge-list", ...ws, `--${flag}`, value]);
     assert.equal(reason, "KNOWLEDGE_INPUT_INVALID", `--${flag} ${value} stays core's judgement`);
   }
+  await initializeKnowledgeStore(fx.workspace, { disposableAcknowledged: true });
+  assert.equal((await run(["knowledge-list", ...ws, "--limit", "1048577"])).total, 0);
 });
 
 test("WSB-6: the agent-integration reference stays in drift-guarded agreement with the catalog", async () => {
@@ -508,19 +511,13 @@ test("INC-027: a page that cannot fit is refused under its own code, never short
   const fx = await fatChainFixture(context, 140);
   const ws = ["--workspace", fx.workspace];
 
-  // The precondition: this chain is exactly the kind `export` refuses whole. Without this
-  // assertion the rest of the test would still pass on a chain small enough not to matter.
-  assert.equal(await reasonOf(["export", ...ws]), "INPUT_OVERSIZED");
-
-  // A caller may raise the window, and then the ceiling is theirs to hit.
-  const error = await runCli(["event-list", ...ws, "--limit", "200"], { write() {} }).then(() => null, (caught) => caught);
-  assert.ok(error, "an over-ceiling page must fail closed");
-  // Deliberately NOT export's INPUT_OVERSIZED. That code says "this chain cannot be read
-  // this way" and leaves the caller nowhere to go; this one says "this page cannot" and
-  // names the flag that fixes it.
-  assert.equal(error.reasonCode, "CLI_EVENT_PAGE_OVERSIZED");
-  assert.notEqual(error.reasonCode, "INPUT_OVERSIZED");
-  assert.equal(error.message.includes("--limit"), true, `the refusal must name the remedy, got ${error.message}`);
+  const complete = await runRaw(["export", ...ws]);
+  assert.ok(Buffer.byteLength(complete, "utf8") > 1_048_576);
+  const allEvents = JSON.parse(complete).events;
+  assert.equal(allEvents.length, (await validateWorkspace(fx.workspace)).version);
+  const raised = await run(["event-list", ...ws, "--limit", "200"]);
+  assert.equal(raised.records.length, allEvents.length);
+  assert.equal(raised.truncated, false, "an explicit larger page retains all events");
 
   // The default window on the same chain succeeds, which is what makes the refusal a
   // property of the page rather than a verdict on the chain -- and is the reason the

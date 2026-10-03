@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { constants as bufferConstants } from "node:buffer";
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-481 R3, AC2, AC3 (MIN-227 D23): the skill's fetch step, which puts one released
 // engine on this device before any engine is there to ask:
@@ -251,7 +252,7 @@ function engineUpdate(tree, release, home, at) {
     cwd: dirname(tree),
     encoding: "utf8",
     env: { ...process.env, EINZBERN_HOME: home },
-    maxBuffer: 16 * 1024 * 1024,
+    maxBuffer: bufferConstants.MAX_LENGTH,
     windowsHide: true,
   });
   const answer = lastJsonLine(run.status === 0 ? run.stdout : run.stderr);

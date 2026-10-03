@@ -105,7 +105,7 @@ test("508-AC1: GIVEN a new library WHEN settings-catalog THEN the three models.e
   ]);
   const [enabled, threshold, ceiling] = rows;
   assert.deepEqual([enabled.type, enabled.controlType, enabled.allowedValues, enabled.trueValue, enabled.falseValue], ["enum", "boolean", ["false", "true"], "true", "false"]);
-  assert.deepEqual([threshold.type, threshold.controlType, threshold.min, threshold.max], ["string", "number", 1, 100]);
+  assert.deepEqual([threshold.type, threshold.controlType, threshold.min, threshold.max], ["string", "number", 1, undefined]);
   assert.deepEqual([ceiling.type, ceiling.controlType, ceiling.valueReference, ceiling.allowedValues, ceiling.referenceStatus, ceiling.valueOrigin],
     ["string", "reference", { key: "models.category", field: "id" }, ["flagship", "main", "economy"], "ready", "default"]);
   // The models group: the two tables, then the three keys.
@@ -184,7 +184,7 @@ test("508-R3: GIVEN a value outside its bounds, or a ceiling models.category doe
     ["models.escalation.enabled", "yes"],
     ["models.escalation.enabled", "True"],
     ["models.escalation.threshold", "0"],
-    ["models.escalation.threshold", "101"],
+    ["models.escalation.threshold", "9007199254740992"],
     ["models.escalation.threshold", "1.5"],
     [CEILING, "Main"],
     [CEILING, "main tier"],
@@ -199,7 +199,7 @@ test("508-R3: GIVEN a value outside its bounds, or a ceiling models.category doe
   // Once models.category holds the category, the same ceiling is accepted.
   await cli(set(workspace, "models.category", [...DEFAULT_CATEGORIES, category("cheap", 40)]));
   assert.equal((await cli(set(workspace, CEILING, "cheap"))).setting.value, "cheap");
-  assert.equal((await cli(set(workspace, "models.escalation.threshold", "100"))).setting.value, "100");
+  assert.equal((await cli(set(workspace, "models.escalation.threshold", "101"))).setting.value, "101");
   // settings-remove puts main back, so it is checked the same way: refused while the table lacks main.
   await cli(set(workspace, "models.tiers", [record(10, "flagship", "claude-code"), record(20, "economy", "claude-code")]));
   await cli(set(workspace, "models.category", [category("flagship", 10), category("economy", 30), category("cheap", 40)]));

@@ -22,10 +22,10 @@ document has precisely `schemaVersion`, `id`, `projectId`, `workIds`,
 | `schemaVersion` | the constant string `tcrn.context.v1`                    |
 | `id`            | a `stableId`                                             |
 | `projectId`     | the anchoring project `stableId`                         |
-| `workIds`       | an array of unique `stableId`, at most 10,000 entries    |
-| `knowledgeIds`  | an array of unique `stableId`, at most 10,000 entries    |
+| `workIds`       | an array of unique `stableId`, complete within the executing runtime    |
+| `knowledgeIds`  | an array of unique `stableId`, complete within the executing runtime    |
 | `generatedAt`   | a `strictInstant`                                        |
-| `extensions`    | the shared closed extension map (at most 64 entries)     |
+| `extensions`    | the shared closed extension map (complete within the executing runtime)     |
 
 Both identifier arrays are validated by `assertSortedUnique`: each element is a
 protocol identifier, the array is duplicate-free, and it is already sorted in
@@ -43,25 +43,13 @@ are a stable function of the referenced set.
 
 ## Context-route injection budgets
 
-The context router enforces a fixed budget table (`CONTEXT_ROUTE_LIMITS`). These
-byte and count caps are normative and fail closed with `CONTEXT_BUDGET_EXCEEDED`
-/ `CONTEXT_BUDGET_INVALID`:
-
-| Budget                | Value      |
-| --------------------- | ---------- |
-| `fixedInjectionBytes` | 1024       |
-| `authorityBytes`      | 4096       |
-| `summaryCount`        | 64         |
-| `summaryBytes`        | 65536      |
-| `bodyCount`           | 16         |
-| `bodyBytes`           | 262144     |
-| `receiptBytes`        | 65536      |
-| `referenceCount`      | 64         |
-| `referenceBytes`      | 65536      |
-
-`fixedInjectionBytes` (1024) is the single injection budget the SessionStart
-activation render is bound to; an over-budget render is dropped at generation
-time rather than truncated.
+The current command catalog exposes context-document admission, not the retired
+fixed-budget context router. The former 1024/4096/65536-byte and 16/64-count
+router table is not a current product capacity contract. Current injection and
+retrieval consumers read the selected project's settings; callers can choose
+explicit prompt/result budgets. Those budgets limit a chosen response window,
+not storage, replay, canonical admission or the complete dataset. A host's actual
+immutable input capacity remains separate and must be observed from that host.
 
 ## Reason Codes
 

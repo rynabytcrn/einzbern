@@ -16,7 +16,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { SETTINGS_CATALOG, initializeLibrary, materializeWorkspace, registerLibrary, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
+import { SETTINGS_CATALOG, createProject, scopedWorkspaceState, initializeLibrary, materializeWorkspace, registerLibrary, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
 import { configRecord, setConfigRecord } from "../dist/build/packages/core/src/config-records.js";
 import { absolutePathLine, managedSectionRecordsFor, parseManagedFile } from "../dist/build/packages/core/src/managed-sections.js";
 import {
@@ -110,42 +110,44 @@ test("484-AC1: a new variable deploy.host is a row of the custom section and not
 test("484-R2/T15: CLI writes render safely, pending sections are readable, and an explicit resolve can settle them", async (context) => {
   const fx = await project(context);
   await writeFile(fx.agents, OWNER_TEXT);
-  await registerLibrary({ projectPath: fx.root, libraryPath: fx.library, registeredAt: at() });
+  const projectId = (await createProject(fx.library, { externalKey: "VARIABLE-CLI-TARGET", name: "CLI target", occurredAt: at() })).projects[0].id;
+  await registerLibrary({ projectPath: fx.root, libraryPath: fx.library, projectId, registeredAt: at() });
+  const targetCli = argv => cli(argv.includes("--workspace") ? [...argv, "--project-id", projectId] : argv);
 
-  const first = await asAtelier(() => cli(["variable-set", "--workspace", fx.library, "--at", at(), "--name", "deploy.host", "--type", "string", "--value", "build.example.com"]));
+  const first = await asAtelier(() => targetCli(["variable-set", "--workspace", fx.library, "--at", at(), "--name", "deploy.host", "--type", "string", "--value", "build.example.com"]));
   assert.equal(first.variable.value, "build.example.com");
   assert.match((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /^\| deploy\.host \| string \| build\.example\.com \|  \|$/mu);
 
-  await asAtelier(() => cli(["variable-set", "--workspace", fx.library, "--at", at(), "--name", "deploy.path", "--type", "string", "--value", "/srv/build"]));
+  await asAtelier(() => targetCli(["variable-set", "--workspace", fx.library, "--at", at(), "--name", "deploy.path", "--type", "string", "--value", "/srv/build"]));
   assert.doesNotMatch((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /deploy\.path/u, "an absolute path stays out of the committed section");
-  const withheld = await cli(["variable-list", "--workspace", fx.library]);
+  const withheld = await targetCli(["variable-list", "--workspace", fx.library]);
   assert.deepEqual(withheld.withheld, [{ name: "deploy.path", reason: "absolute-path" }]);
   assert.deepEqual(withheld.pendingSections, [VARIABLES_CUSTOM_SECTION_ID], "the withheld variable remains a persistent pending item");
-  assert.equal(configRecord(await materializeWorkspace(fx.library), "managed-section", `AGENTS.md#${VARIABLES_CUSTOM_SECTION_ID}`).value.state, "pending");
-  await asAtelier(() => cli(["variable-set", "--workspace", fx.library, "--at", at(), "--name", "deploy.path", "--type", "string", "--value", "build/config"]));
+  assert.equal(configRecord(scopedWorkspaceState(await materializeWorkspace(fx.library), projectId), "managed-section", `AGENTS.md#${VARIABLES_CUSTOM_SECTION_ID}`).value.state, "pending");
+  await asAtelier(() => targetCli(["variable-set", "--workspace", fx.library, "--at", at(), "--name", "deploy.path", "--type", "string", "--value", "build/config"]));
   assert.match((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /^\| deploy\.path \| string \| build\/config \|  \|$/mu);
-  assert.deepEqual((await cli(["variable-list", "--workspace", fx.library])).pendingSections, [], "making the variable safe settles the pending state");
+  assert.deepEqual((await targetCli(["variable-list", "--workspace", fx.library])).pendingSections, [], "making the variable safe settles the pending state");
 
   const beforeEdit = await readFile(fx.agents, "utf8");
   const edited = beforeEdit.replace("build.example.com", "hand.example.com");
   await writeFile(fx.agents, edited);
-  await asAtelier(() => cli(["variable-set", "--workspace", fx.library, "--at", at(), "--name", "deploy.port", "--type", "number", "--value", "8443"]));
+  await asAtelier(() => targetCli(["variable-set", "--workspace", fx.library, "--at", at(), "--name", "deploy.port", "--type", "number", "--value", "8443"]));
   assert.equal(await readFile(fx.agents, "utf8"), edited, "a variable write does not overwrite the user's changed managed section");
 
-  const pending = await cli(["variable-list", "--workspace", fx.library]);
+  const pending = await targetCli(["variable-list", "--workspace", fx.library]);
   assert.deepEqual(pending.pendingSections, [VARIABLES_CUSTOM_SECTION_ID]);
   assert.deepEqual(pending.withheld, []);
   assert.deepEqual(pending.variables.map((variable) => variable.name), ["deploy.host", "deploy.path", "deploy.port"]);
 
-  const resolved = await cli(["rule-resolve", "--project", fx.root, "--section", VARIABLES_CUSTOM_SECTION_ID, "--action", "overwrite", "--at", at()]);
+  const resolved = await targetCli(["rule-resolve", "--project", fx.root, "--section", VARIABLES_CUSTOM_SECTION_ID, "--action", "overwrite", "--at", at()]);
   assert.deepEqual([resolved.reasonCode, resolved.action, resolved.state], ["MANAGED_SECTION_RESOLVED", "overwrite", "managed"]);
-  const settled = await cli(["variable-list", "--workspace", fx.library]);
+  const settled = await targetCli(["variable-list", "--workspace", fx.library]);
   assert.deepEqual(settled.pendingSections, []);
   const body = (await sections(fx))[VARIABLES_CUSTOM_SECTION_ID];
   assert.match(body, /^\| deploy\.host \| string \| build\.example\.com \|  \|$/mu);
   assert.match(body, /^\| deploy\.port \| number \| 8443 \|  \|$/mu);
 
-  await asAtelier(() => cli(["variable-remove", "--workspace", fx.library, "--at", at(), "--name", "deploy.host"]));
+  await asAtelier(() => targetCli(["variable-remove", "--workspace", fx.library, "--at", at(), "--name", "deploy.host"]));
   assert.doesNotMatch((await sections(fx))[VARIABLES_CUSTOM_SECTION_ID], /deploy\.host/u);
 });
 
@@ -234,7 +236,7 @@ const SYSTEM_HEADINGS = ["### models.category", "### models.tiers", "### models.
 
 test("484-R2, 508-R8: the system section holds the categories, the tiers, the three escalation settings and design.authority, and no other setting", async (context) => {
   const fx = await project(context);
-  assert.deepEqual(SYSTEM_VARIABLE_KEYS, ["models.category", "models.tiers", "models.escalation.enabled", "models.escalation.threshold", "models.escalation.ceiling", "design.authority"]);
+  assert.deepEqual(SYSTEM_VARIABLE_KEYS, ["models.category", "models.tiers", "models.escalation.enabled", "models.escalation.threshold", "models.escalation.ceiling", "design.authority", "design.repository", "design.pullRequestTarget", "design.productionDocs", "design.buildService", "design.buildProject", "design.consumedVersion"]);
   const unset = renderSystemVariablesSection(await materializeWorkspace(fx.library));
   assert.deepEqual(unset.body.match(/^### .+$/gmu), SYSTEM_HEADINGS, "one subsection each, in this order");
   assert.deepEqual(tableRows(subsection(unset.body, "models.category")), [
@@ -252,13 +254,14 @@ test("484-R2, 508-R8: the system section holds the categories, the tiers, the th
     "| models.escalation.threshold | 1 |",
     "| models.escalation.ceiling | main |",
   ], "the escalation defaults");
-  assert.match(unset.body, /^### design\.authority\n\n\(unset\)$/mu);
+  assert.match(unset.body, /Design bindings: unconfigured\. Production publication: unverified\./u);
+  assert.match(unset.body, /^\| design\.authority \| \(unconfigured\) \| default \| false \|$/mu);
   await setWorkspaceSetting(fx.library, { key: "design.authority", value: "https://design.example/system", occurredAt: at() });
   await setWorkspaceSetting(fx.library, { key: "retrieval.tau", value: "3", occurredAt: at() });
   await setVariable(fx.library, { name: "deploy.host", type: "string", value: "build.example.com", occurredAt: at() });
   const state = await materializeWorkspace(fx.library);
   const body = renderSystemVariablesSection(state).body;
-  assert.match(body, /^### design\.authority\n\nhttps:\/\/design\.example\/system$/mu);
+  assert.match(body, /^\| design\.authority \| https:\/\/design\.example\/system \| library \| false \|$/mu);
   const others = SETTINGS_CATALOG.map((entry) => entry.key).filter((key) => !SYSTEM_VARIABLE_KEYS.includes(key));
   assert.deepEqual(others.filter((key) => body.includes(key)), [], "no other setting is named");
   assert.deepEqual(SYSTEM_VARIABLE_KEYS.filter((key) => !body.includes(key)), [], "every system setting is");
@@ -303,7 +306,8 @@ test("508-AC7: GIVEN categories, tiers, escalation settings and design.authority
     "| models.escalation.threshold | 2 |",
     "| models.escalation.ceiling | flagship |",
   ]);
-  assert.deepEqual(subsection(body, "design.authority").filter((line) => line !== ""), ["https://design.example/system"]);
+  assert.match(subsection(body, "design.authority").join("\n"), /^\| design\.authority \| https:\/\/design\.example\/system \| library \| false \|$/mu);
+  for (const key of ["design.repository", "design.pullRequestTarget", "design.productionDocs", "design.buildService", "design.buildProject", "design.consumedVersion"]) assert.ok(body.includes(`| ${key} | (unconfigured) | default | false |`));
   assert.equal(absolutePathLine(body), null, "no line names an absolute path");
   const text = await readFile(fx.agents, "utf8");
   for (const path of [fx.library, fx.root, fx.backupRoot]) assert.equal(text.includes(path), false, "not even the library's or the project's own");
@@ -351,12 +355,12 @@ test("508-R8: a changed escalation setting replaces the system section, and a sy
 test("484-R1: variable names, types and values follow their rules, and a system setting's key is not a variable name", async (context) => {
   const fx = await project(context);
   const set = (input) => setVariable(fx.library, { occurredAt: at(), ...input });
-  for (const name of ["Deploy.host", "1host", "deploy host", "a".repeat(65), "", "models.tiers", "retrieval.tau"]) {
+  for (const name of ["Deploy.host", "1host", "deploy host", "", "models.tiers", "retrieval.tau"]) {
     assert.equal((await refusal(() => set({ name, type: "string", value: "x" }))).reasonCode, "VARIABLE_NAME_INVALID", name);
   }
   assert.equal((await refusal(() => set({ name: "models.tiers", type: "string", value: "x" }))).details.reason, "system-setting");
   assert.equal((await refusal(() => set({ name: "deploy.list", type: "list", value: "x" }))).reasonCode, "VARIABLE_TYPE_INVALID");
-  for (const [type, value] of [["number", "1e3"], ["number", "abc"], ["number", "01"], ["boolean", "yes"], ["string", "two\nlines"], ["string", "x".repeat(1025)]]) {
+  for (const [type, value] of [["number", "1e3"], ["number", "abc"], ["number", "01"], ["boolean", "yes"], ["string", "two\nlines"]]) {
     assert.equal((await refusal(() => set({ name: "deploy.value", type, value }))).reasonCode, "VARIABLE_VALUE_INVALID", `${type} ${value.slice(0, 12)}`);
   }
   assert.equal((await refusal(() => set({ name: "deploy.value", type: "string", value: "x", description: "a\tb" }))).reasonCode, "VARIABLE_DESCRIPTION_INVALID");
@@ -365,6 +369,8 @@ test("484-R1: variable names, types and values follow their rules, and a system 
   await set({ name: "deploy.sshHost", type: "string", value: "", description: "" });
   assert.deepEqual(listVariables(await materializeWorkspace(fx.library)).map((variable) => [variable.name, variable.type, variable.value]),
     [["deploy.enabled", "boolean", "true"], ["deploy.replicas", "number", "-3.5"], ["deploy.sshHost", "string", ""]]);
+  await set({ name: "a".repeat(65), type: "string", value: "x".repeat(1025) });
+  assert.equal(listVariables(await materializeWorkspace(fx.library)).find(variable => variable.name === "a".repeat(65)).value.length, 1025);
 });
 
 test("484-R1: a variable is changed and removed; the next render follows, and removing it twice is refused", async (context) => {

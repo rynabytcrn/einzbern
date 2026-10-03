@@ -24,18 +24,15 @@
     },
     "protocolVersion": {
       "type": "integer",
-      "minimum": 1,
-      "maximum": 9007199254740991
+      "minimum": 1
     },
     "minimumProtocolVersion": {
       "type": "integer",
-      "minimum": 1,
-      "maximum": 9007199254740991
+      "minimum": 1
     },
     "maximumProtocolVersion": {
       "type": "integer",
-      "minimum": 1,
-      "maximum": 9007199254740991
+      "minimum": 1
     },
     "maturity": {
       "enum": [

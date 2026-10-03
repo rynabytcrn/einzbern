@@ -214,7 +214,7 @@ export function legacyKnowledgeOmissionIssue(value: unknown): string | null {
   const extra = fields.find((field) => field !== "reason");
   if (extra !== undefined) return `omitLegacyKnowledge.${extra}`;
   const reason = (value as { readonly reason?: unknown }).reason;
-  return typeof reason === "string" && reason.trim() !== "" && reason.length <= 512 && !/[\u0000-\u001f\u007f]/u.test(reason)
+  return typeof reason === "string" && reason.trim() !== "" && !/[\u0000-\u001f\u007f]/u.test(reason)
     ? null
     : "omitLegacyKnowledge.reason";
 }
@@ -663,7 +663,7 @@ export async function importLegacyWorkspace(legacyRoot: string, target: string, 
   assertStrictInstant(options.createdAt);
   if (options.omitLegacyKnowledge !== undefined) {
     const field = legacyKnowledgeOmissionIssue(options.omitLegacyKnowledge);
-    if (field !== null) mismatch("omitLegacyKnowledge must contain only a nonempty one-line reason of at most 512 characters", { field });
+    if (field !== null) mismatch("omitLegacyKnowledge must contain only a nonempty one-line reason", { field });
   }
   const legacy = await openLegacyWorkspace(legacyRoot);
   const chain = validateLegacyChain(legacy);

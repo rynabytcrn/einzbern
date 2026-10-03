@@ -247,17 +247,16 @@ function processSnapshot() {
 // TCRN-CROSS-INC-384 (STORY-460 AC4): a hook's own children are part of the hook. The old
 // injection child reads the chain through the engine CLI, whose command line holds the
 // engine path and so read as orchestration. Within one ps snapshot, a process with a host-hook
-// ancestor on its ppid chain (bounded, cycle-safe) is a hook descendant, unless its command is
+// ancestor on its ppid chain (complete and cycle-safe) is a hook descendant, unless its command is
 // or may be a governed write: that one keeps its own rule and stays in agents and writes, so
 // the batch still waits for a real write. A process whose parent is not in the snapshot keeps
 // its own rule too.
-const HOOK_ANCESTOR_DEPTH_LIMIT = 32;
 const HOOK_DESCENDANT_EXEMPT_ROLES = new Set(["formal-entry", "host-hook", "host-service"]);
 
 function hostHookAncestor(row, byPid) {
   const seen = new Set([row.pid]);
   let parent = byPid.get(row.ppid);
-  for (let depth = 0; parent !== undefined && depth < HOOK_ANCESTOR_DEPTH_LIMIT && !seen.has(parent.pid); depth += 1) {
+  while (parent !== undefined && !seen.has(parent.pid)) {
     if (parent.role === "host-hook" && parent.scopeBasis === "registered-host-hook") return parent;
     seen.add(parent.pid);
     parent = byPid.get(parent.ppid);

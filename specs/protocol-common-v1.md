@@ -21,8 +21,8 @@ enumerable own key is preserved exactly, including `__proto__` and integer-like
 keys; therefore `"10"` sorts before `"2"`.
 
 Stable IDs use `namespace:value`; namespaces and values are lowercase ASCII and
-match the common schema. The frozen maximum is 161 characters: a namespace of
-at most 32 characters, one colon, and a value of at most 128 characters. Raw
+match the common schema. The namespace starts with a letter; the namespace and
+value then use the declared ASCII characters with no product length ceiling. Raw
 external keys must be printable ASCII before any
 conversion and canonicalize with ASCII lowercase-to-uppercase conversion only;
 non-ASCII values are rejected. `deriveStableId` hashes the namespace, a NUL
@@ -38,12 +38,18 @@ Version windows are inclusive and require `1 <= minimum <= version <= maximum`.
 
 Unknown optional extensions are preserved byte-semantically through canonical
 JSON. Every extension-bearing V1 record uses the same closed extension value
-shape, 64-entry limit, stable-ID property-name rule, safe-integer
+shape, stable-ID property-name rule, safe-integer
 canonical-value rules, and registry check.
 Unknown required extensions fail with `UNKNOWN_REQUIRED_EXTENSION`.
-Objects reject unknown normative fields. Inputs are limited to 1 MiB canonical
-bytes, 10,000 records, 8,192 characters per string, 64 extensions per record,
-and 64 levels of JSON nesting.
+Objects reject unknown normative fields. R4 removes the former 1 MiB canonical,
+10,000-record, 8,192-character, 64-extension and 64-level product ceilings.
+Canonical serialization visits its stack iteratively, preserves complete values,
+refuses cycles, non-plain objects, ill-formed Unicode and unsafe integers, and
+retains the runtime's own string, buffer and array capacities. These capacities
+are measured from Node, not replacement product budgets. A caller may request a
+processing window; that window does not permanently limit library size. See
+`docs/verification/init053-owner-return-limit-inventory.json` for each consumer,
+removed bound and necessary protocol or runtime boundary.
 
 All failures use one code from `PROTOCOL_REASON_CODES`; implementations MUST NOT
 replace a more specific code with a generic success or partial result.

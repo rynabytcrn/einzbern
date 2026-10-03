@@ -173,31 +173,24 @@ test("R17 (MIN-238 D1): a library crest holding more than the old 131,072-byte d
   assert.equal((await recoverKnowledgeStore(fx.workspace)).reasonCode, "KNOWLEDGE_RECOVERY_NOT_NEEDED");
 });
 
-test("R17 (MIN-239 D1): each card's own limits still refuse -- in the library crest and in the user crest -- and a refusal writes nothing", async (t) => {
+test("INC-399: complete bodies, summaries and snippets cross their former ceilings in both crests", async (t) => {
   const fx = await fixture(t, "FIXTURE-SUB-310-CARD-LIMITS");
-  const home = ownDeviceHome(t, fx);
-  const oversized = [
-    ["body", (base) => ({ ...base, body: "x".repeat(8_193) })],
-    ["summary", (base) => ({ ...base, summary: "s".repeat(2_049) })],
-    ["snippet", (base) => ({ ...base, snippet: "n".repeat(513) })],
-  ];
+  ownDeviceHome(t, fx);
+  const fields = [["body", "x".repeat(8_193)], ["summary", "s".repeat(2_049)], ["snippet", "n".repeat(513)]];
+  let ordinal = 0;
   for (const scope of ["role", "user"]) {
-    for (const [label, change] of oversized) {
-      const refused = await refusalOf(() => captureKnowledgeUnit(fx.workspace, change(card(`SUB-310-OVER-${scope}-${label}`, SUBJECTS[0], "fits", { scope }))));
-      assert.equal(refused?.reasonCode, "KNOWLEDGE_LIMIT_EXCEEDED", `${scope} ${label}`);
+    for (const [field, complete] of fields) {
+      const input = { ...card(`SUB-310-OVER-${scope}-${field}`, SUBJECTS[ordinal++], "fits", { scope }), [field]: complete };
+      const written = await captureKnowledgeUnit(fx.workspace, input);
+      assert.equal(written.reasonCode, "KNOWLEDGE_UNIT_CREATED");
+      const storeScope = scope === "user" ? "user" : "project";
+      const listed = await listKnowledgeMetadata(fx.workspace, { at: AT, scope: storeScope, limit: 64 });
+      if (field === "body") assert.equal((await readKnowledgeBody(fx.workspace, written.id, { at: AT, scope: storeScope })).body, complete);
+      else assert.equal(listed.records.find(record => record.id === written.id)[field], complete);
     }
   }
-  assert.deepEqual(await streamFiles(fx), [], "no refused card reached the library's crest");
-  await assert.rejects(stat(join(home, "crest")), { code: "ENOENT" }, "and none laid the user crest out");
-  // At the limit, both crests take the card.
-  for (const [index, scope] of ["role", "user"].entries()) {
-    const admitted = await captureKnowledgeUnit(fx.workspace, card(`SUB-310-AT-LIMIT-${scope}`, SUBJECTS[1 + index], bodyOf(8_192, index), {
-      scope, summary: "s".repeat(2_048), snippet: "n".repeat(512),
-    }));
-    assert.equal(admitted.reasonCode, "KNOWLEDGE_UNIT_CREATED", scope);
-  }
-  assert.equal((await listKnowledgeMetadata(fx.workspace, { at: AT, scope: "user" })).total, 1);
-  assert.equal((await listKnowledgeMetadata(fx.workspace, { at: AT })).total, 1);
+  assert.equal((await listKnowledgeMetadata(fx.workspace, { at: AT, scope: "user" })).total, 3);
+  assert.equal((await listKnowledgeMetadata(fx.workspace, { at: AT })).total, 3);
 });
 
 test("476-R3, SUB-425 (MIN-239 D4): a superseded card is removed: it leaves default list and recall, its event stays and its body is cleared", async (t) => {

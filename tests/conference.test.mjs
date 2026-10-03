@@ -81,9 +81,9 @@ test("hostile records fail closed", () => {
     () => reason("CONFERENCE_ANCHOR_REQUIRED", () => validateConferenceRequest(request({ linkedWorkIds: [] }))),
     () => reason("CONFERENCE_DESIRED_OUTCOME_REQUIRED", () => validateConferenceRequest(request({ desiredOutcome: "" }))),
     () => reason("CONFERENCE_UNICODE_INVALID", () => validateConferenceRequest(request({ title: "\ud800" }))),
-    () => reason("CONFERENCE_BUDGET_EXCEEDED", () => validateConferenceRequest(request({ title: "x".repeat(2049) }))),
+    () => assert.doesNotThrow(() => validateConferenceRequest(request({ title: "x".repeat(2049) }))),
     () => reason("CONFERENCE_SCHEMA_INVALID", () => validateConferenceMinutes(minutes({ outcomeClass: "final" }))),
-    () => reason("CONFERENCE_BUDGET_EXCEEDED", () => validateConferencePosition(position({ risks: Array.from({ length: 33 }, () => "r") }))),
+    () => assert.doesNotThrow(() => validateConferencePosition(position({ risks: Array.from({ length: 33 }, (_, index) => `risk-${index}`) }))),
     () => reason("CONFERENCE_SCHEMA_INVALID", () => validateConferencePosition(position({ evidenceIds: ["NotAnId"] }))),
     () => reason("CONFERENCE_SCHEMA_INVALID", () => validateConferenceRequest(request({ revision: 0 }))),
     () => reason("CONFERENCE_SCHEMA_INVALID", () => validateConferenceRequest(request({ updatedAt: "2026-07-16" }))),
@@ -119,10 +119,12 @@ test("Draft 2020-12 schema and runtime agree", async () => {
   const positionJsonSchema = JSON.parse(await readFile(new URL("../schemas/conference-position-v1.schema.json", import.meta.url), "utf8"));
   const positionSchema = ajv.compile(positionJsonSchema);
   assert.equal(positionSchema(position()), true); validateConferencePosition(position());
+  const longRisks = position({ risks: Array.from({ length: 33 }, (_, i) => `risk ${i}`) });
+  assert.equal(positionSchema(longRisks), true); validateConferencePosition(longRisks);
   const positionVectors = [
     { ...position(), extra: true },
     position({ evidenceIds: ["NotAnId"] }),
-    position({ risks: Array.from({ length: 33 }, () => "r") }),
+    position({ risks: [""] }),
     position({ updatedAt: "2026-07-16" }),
   ];
   assert.equal(positionVectors.length, fixture.positionParityCases);
@@ -131,10 +133,12 @@ test("Draft 2020-12 schema and runtime agree", async () => {
   const minutesJsonSchema = JSON.parse(await readFile(new URL("../schemas/conference-minutes-v1.schema.json", import.meta.url), "utf8"));
   const minutesSchema = ajv.compile(minutesJsonSchema);
   assert.equal(minutesSchema(minutes()), true); validateConferenceMinutes(minutes());
+  const longDecisions = minutes({ decisions: Array.from({ length: 33 }, (_, i) => `decision ${i}`) });
+  assert.equal(minutesSchema(longDecisions), true); validateConferenceMinutes(longDecisions);
   const minutesVectors = [
     { ...minutes(), extra: true },
     minutes({ outcomeClass: "final" }),
-    minutes({ decisions: Array.from({ length: 33 }, () => "d") }),
+    minutes({ decisions: [""] }),
     minutes({ revision: 0 }),
   ];
   assert.equal(minutesVectors.length, fixture.minutesParityCases);

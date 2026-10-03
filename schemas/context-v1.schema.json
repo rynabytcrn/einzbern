@@ -29,7 +29,6 @@
     "workIds": {
       "type": "array",
       "uniqueItems": true,
-      "maxItems": 10000,
       "items": {
         "$ref": "./protocol-common-v1.schema.json#/$defs/stableId"
       }
@@ -37,7 +36,6 @@
     "knowledgeIds": {
       "type": "array",
       "uniqueItems": true,
-      "maxItems": 10000,
       "items": {
         "$ref": "./protocol-common-v1.schema.json#/$defs/stableId"
       }

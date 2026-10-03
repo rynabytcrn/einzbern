@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-471 R2, R3 and STORY-469 R3 (MIN-227 D22, D23): the engine versions installed on
@@ -237,7 +238,7 @@ async function probeEngine(directory: string, home: string): Promise<EngineProbe
       cwd: directory,
       encoding: "utf8",
       env: { ...process.env, EINZBERN_HOME: home },
-      maxBuffer: 1_048_576,
+      maxBuffer: RUNTIME_CAPACITY.bufferBytes,
       timeout: ENGINE_PROBE_TIMEOUT_MS,
       windowsHide: true,
     }));

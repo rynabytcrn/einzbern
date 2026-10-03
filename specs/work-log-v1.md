@@ -21,8 +21,7 @@ carries:
 - `kind`: `decision` or `summary`;
 - a link to the dispatch `workId`, and to a `gateId` when the dispatch closed
   against a gate (grounded by gate-v1);
-- a body size cap of 4096 bytes (a convention number that fits under the
-  knowledge body budget);
+- the complete body within the executing runtime; no separate work-log size ceiling;
 - lifecycle `active` and no `promotionState` (TCRN-CROSS-STORY-476 R1,
   TCRN-CROSS-SUB-386): the record is written active and is retrievable as soon
   as it is written, and neither the card nor its write receipt carries a
@@ -38,8 +37,7 @@ carries:
   one that repeats a work item or a decision, is removed explicitly.
 
 No second knowledge store is created; the single knowledge store holds work-log
-records alongside other knowledge. High-frequency small records are bounded by
-the size cap on each record. No budget bounds the sum of the library's card
+records alongside other knowledge. High-frequency records follow the same shape, identity and runtime checks as other cards. No budget bounds the sum of the library's card
 bodies (TCRN-CROSS-SUB-310 R17, MIN-238 D1), so a work-log record is not refused
 for the bodies the crest already holds.
 

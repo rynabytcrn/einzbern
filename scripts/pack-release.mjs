@@ -55,7 +55,7 @@ const RELEASE_MANIFEST_FILE = "manifest.json";
 // release fixes it to this constant, so Atelier always drives the engine it was packed with.
 const ATELIER_CLI = "../scripts/einzbern.mjs";
 // The files portal.mjs reads from its own directory to answer its GET routes.
-const ATELIER_STATIC_FILES = Object.freeze(["atelier-brand-mark.svg", "index.html", "locales.js", "tokens.css"]);
+const ATELIER_STATIC_FILES = Object.freeze(["atelier-brand-mark.svg", "index.html", "locales.js", "tokens.css", "ds-static-bridges.snapshot.js"]);
 // The portal's modules and how each is staged for the bundle: the names bridge imports the
 // TypeScript source of the names module, which the bundler does not read, so the stage carries
 // the build of that module in its place.
@@ -145,6 +145,7 @@ async function bundleAtelier(stage, namesBuild) {
   await writeStaged(root, "package.json", `${JSON.stringify({ private: true, type: "module" }, null, 2)}\n`);
   await writeStaged(root, "portal/portal.mjs", portal.replace(BUNDLED_CLI_DECLARATION, `const BUNDLED_CLI = join(portalRoot, ${JSON.stringify(ATELIER_CLI)});`));
   await copyStaged(root, "portal/locale-contract.mjs", join(repositoryRoot, "portal", "locale-contract.mjs"));
+  await copyStaged(root, "scripts/lib/runtime-capacity.mjs", join(repositoryRoot, "scripts", "lib", "runtime-capacity.mjs"));
   await writeStaged(root, "scripts/lib/names.mjs", names.replace(NAMES_SOURCE_SPECIFIER, NAMES_BUILD_SPECIFIER));
   await copyStaged(root, "packages/core/src/names.js", namesBuild);
   return (await bundleEntry(join(root, "portal", "portal.mjs"))).code;

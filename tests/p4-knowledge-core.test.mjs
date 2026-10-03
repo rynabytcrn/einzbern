@@ -893,7 +893,7 @@ test("WSC-4: knowledge-list supports bounded substring search over subject and t
     assert.equal(caseInsensitive.total, 1);
     const none = await listKnowledgeMetadata(fixture.workspace, { at: instant(12), selection: "all", search: "nonexistent-term" });
     assert.equal(none.total, 0);
-    await expectReason("KNOWLEDGE_INPUT_INVALID", () => listKnowledgeMetadata(fixture.workspace, { at: instant(12), selection: "all", search: "x".repeat(300) }));
+    assert.equal((await listKnowledgeMetadata(fixture.workspace, { at: instant(12), selection: "all", search: "x".repeat(300) })).total, 0);
     await expectReason("KNOWLEDGE_INPUT_INVALID", () => listKnowledgeMetadata(fixture.workspace, { at: instant(12), selection: "all", limit: 0 }));
   } finally {
     await fixture.close();
@@ -917,40 +917,17 @@ test("WSC-3: knowledge-create accepts unsorted arrays and sorts them server-side
   }
 });
 
-// TCRN-CROSS-STORY-359 (Epic disposition F2). The retired `verifyP4` verb carried
-// P4_KNOWLEDGE_LIMIT_CONTRACT, the only thing pinning the six maximum* fields of
-// packages/core/fixtures/p4-knowledge-core-cases.json. `verifyP4Knowledge` was the Epic's
-// proposed new home; that verb retired in this same Story, so the home is re-derived here.
-// This file is where it belongs: it already reads that fixture and already drives every
-// one of those limits through KNOWLEDGE_LIMITS, and `pnpm test` is on the P1 roster while
-// the focus verbs are not.
-//
-// Re-derived in one further respect. The retired assertion compared the fixture against
-// seven literals, and by the time it was retired three of them were wrong: `maximumRecords`
-// no longer exists and `maximumAggregateBytes` had moved from 131,072 to the protocol
-// canonical-view ceiling. A contract stated as literals goes stale silently on the side
-// nobody looks at. This one compares the fixture to the running constant, so the fixture
-// cannot drift from the limits the code enforces without a red. TCRN-CROSS-SUB-310 R17
-// (MIN-238 D1): `maximumAggregateBytes` left both sides with the knowledge total it bounded.
-test("STORY-359: the knowledge fixture declares exactly the limits the code enforces", async () => {
-  const fixtureContract = JSON.parse(await readFile(
-    new URL("../packages/core/fixtures/p4-knowledge-core-cases.json", import.meta.url),
-    "utf8",
-  ));
-  const declared = Object.fromEntries(Object.entries(fixtureContract).filter(([field]) => field.startsWith("maximum")));
-  assert.equal(Object.keys(declared).length, 5);
-  for (const [field, value] of Object.entries(declared)) {
-    assert.equal(value, KNOWLEDGE_LIMITS[field], `fixture ${field} must equal KNOWLEDGE_LIMITS.${field}`);
+// INC-399 R4: the fixture separates earlier product ceilings, the ordinary page
+// window, and immutable capacities of the executing runtime.
+test("INC-399: knowledge capacity bindings describe the running representation", async () => {
+  const contract = JSON.parse(await readFile(new URL("../packages/core/fixtures/p4-knowledge-core-cases.json", import.meta.url), "utf8"));
+  const { RUNTIME_CAPACITY } = await import("../scripts/lib/runtime-capacity.mjs");
+  for (const [field, capacity] of Object.entries(contract.capacityBindings)) {
+    assert.equal(KNOWLEDGE_LIMITS[field], RUNTIME_CAPACITY[capacity], field);
+    assert.ok(KNOWLEDGE_LIMITS[field] > contract.formerProductCeilings[field]);
   }
-  // And the reverse direction, so a limit the fixture never named cannot be added to one
-  // side only: every field the fixture declares is a real limit, and the ones it does not
-  // declare are the per-record shape bounds the fixture's cases exercise directly.
-  assert.deepEqual(Object.keys(declared).sort(), [
-    "maximumBodyBytes", "maximumMetadataBytes",
-    "maximumQueryResults", "maximumSnippetBytes", "maximumSummaryBytes",
-  ]);
+  assert.equal(contract.defaultQueryWindow, 8);
   assert.equal(Object.hasOwn(KNOWLEDGE_LIMITS, "maximumAggregateBytes"), false);
-  assert.equal(fixtureContract.negativeCases.includes("aggregate-limit"), false, "no case refuses a store for its total");
 });
 
 test("64 real insertion orders produce exact index, list, and checkpoint parity", async () => {
@@ -995,9 +972,6 @@ test("64 real insertion orders produce exact index, list, and checkpoint parity"
 
 test("input, link, redaction, Unicode, body, summary, and snippet boundaries fail closed", async () => {
   for (const [label, mutate, reasonCode] of [
-    ["body", (input) => ({ ...input, body: "x".repeat(KNOWLEDGE_LIMITS.maximumBodyBytes + 1) }), "KNOWLEDGE_LIMIT_EXCEEDED"],
-    ["summary", (input) => ({ ...input, summary: "x".repeat(KNOWLEDGE_LIMITS.maximumSummaryBytes + 1) }), "KNOWLEDGE_LIMIT_EXCEEDED"],
-    ["snippet", (input) => ({ ...input, snippet: "x".repeat(KNOWLEDGE_LIMITS.maximumSnippetBytes + 1) }), "KNOWLEDGE_LIMIT_EXCEEDED"],
     ["unicode", (input) => ({ ...input, subject: `broken-${String.fromCharCode(0xd800)}` }), "KNOWLEDGE_CANONICAL_INVALID"],
     ["work-link", (input) => ({ ...input, linkedWorkIds: [deriveStableId("work", "MISSING")] }), "KNOWLEDGE_LINK_INVALID"],
     ["credential", (input) => ({ ...input, sourceReferences: [credentialReference()] }), "KNOWLEDGE_REDACTION_REQUIRED"],
@@ -1019,49 +993,23 @@ test("input, link, redaction, Unicode, body, summary, and snippet boundaries fai
   }
 });
 
-test("custom schema proof enforces the normative UTF-8 byte budgets", async () => {
+test("INC-399: schema and runtime preserve UTF-8 beyond the former field ceilings", async () => {
   const schema = JSON.parse(await readFile(new URL("../packages/core/schema/knowledge-core-v1.schema.json", import.meta.url), "utf8"));
   const customAjv = knowledgeAjv();
   const stockAjv = new Ajv2020({ strict: false, validateFormats: false });
-  const boundary = (maximumBytes, prefix = "") => {
-    const remaining = maximumBytes - Buffer.byteLength(prefix, "utf8");
-    return `${prefix}${"é".repeat(Math.floor(remaining / 2))}${remaining % 2 === 0 ? "" : "a"}`;
-  };
-  for (const [field, maximumBytes, prefix] of [
-    ["subject", 512, ""],
-    ["summary", KNOWLEDGE_LIMITS.maximumSummaryBytes, ""],
-    ["snippet", KNOWLEDGE_LIMITS.maximumSnippetBytes, ""],
-    ["sourceReferences", 512, "evidence-ref-"],
-  ]) {
+  for (const [field, former, prefix] of [["subject", 512, ""], ["summary", 2048, ""], ["snippet", 512, ""], ["sourceReferences", 512, "evidence-ref-"]]) {
     const fixture = await workspaceFixture({ externalKey: `FIXTURE-UTF8-${field.toUpperCase()}` });
     try {
-      const exact = boundary(maximumBytes, prefix);
-      assert.equal(Buffer.byteLength(exact, "utf8"), maximumBytes);
-      const exactOverride = field === "sourceReferences" ? { sourceReferences: [exact] } : { [field]: exact };
-      const created = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, `KNOWLEDGE-UTF8-${field.toUpperCase()}`, exactOverride));
+      const complete = `${prefix}${"é".repeat(former + 1)}`;
+      const override = field === "sourceReferences" ? { sourceReferences: [complete] } : { [field]: complete };
+      const created = await createKnowledgeUnit(fixture.workspace, unitInput(fixture, `KNOWLEDGE-UTF8-${field.toUpperCase()}`, override));
       const { metadata } = (await cardEvent(fixture, created.id)).event;
       assert.equal(customAjv.validate(schema, metadata), true, JSON.stringify(customAjv.errors));
-      const over = `${exact}a`;
-      assert.equal(Buffer.byteLength(over, "utf8"), maximumBytes + 1);
-      const overMetadata = structuredClone(metadata);
-      if (field === "sourceReferences") overMetadata.sourceReferences = [over];
-      else overMetadata[field] = over;
-      assert.equal(stockAjv.validate(schema, overMetadata), true, JSON.stringify(stockAjv.errors));
-      assert.equal(customAjv.validate(schema, overMetadata), false);
-    } finally {
-      await fixture.close();
-    }
-    const runtime = await workspaceFixture({ externalKey: `FIXTURE-UTF8-OVER-${field.toUpperCase()}` });
-    try {
-      const over = `${boundary(maximumBytes, prefix)}a`;
-      const overOverride = field === "sourceReferences" ? { sourceReferences: [over] } : { [field]: over };
-      await expectReason("KNOWLEDGE_LIMIT_EXCEEDED", () => createKnowledgeUnit(
-        runtime.workspace,
-        unitInput(runtime, `KNOWLEDGE-UTF8-OVER-${field.toUpperCase()}`, overOverride),
-      ));
-    } finally {
-      await runtime.close();
-    }
+      assert.equal(stockAjv.validate(schema, metadata), true, JSON.stringify(stockAjv.errors));
+      assert.deepEqual(metadata[field], field === "sourceReferences" ? [complete] : complete);
+      const invalid = { ...metadata, [field]: field === "sourceReferences" ? 7 : null };
+      assert.equal(customAjv.validate(schema, invalid), false, "type protections still apply");
+    } finally { await fixture.close(); }
   }
 });
 
@@ -1246,7 +1194,7 @@ test("INIT-047 knowledge inventory admits more than 64 records while query pages
   }
   const query = await workspaceFixture({ externalKey: "FIXTURE-KNOWLEDGE-QUERY" });
   try {
-    for (let index = 0; index <= KNOWLEDGE_LIMITS.maximumQueryResults; index += 1) {
+    for (let index = 0; index < 9; index += 1) {
       await createKnowledgeUnit(query.workspace, unitInput(query, `KNOWLEDGE-QUERY-${index}`, {
         occurredAt: instant(11, 3 + index),
       }));
@@ -1254,10 +1202,10 @@ test("INIT-047 knowledge inventory admits more than 64 records while query pages
     // WSC-4: more matches than one page truncates with a continuation window
     // instead of failing closed.
     const page = await listKnowledgeMetadata(query.workspace, { at: instant(12), selection: "all" });
-    assert.equal(page.total, KNOWLEDGE_LIMITS.maximumQueryResults + 1);
-    assert.equal(page.records.length, KNOWLEDGE_LIMITS.maximumQueryResults);
+    assert.equal(page.total, 9);
+    assert.equal(page.records.length, 8);
     assert.equal(page.truncated, true);
-    const next = await listKnowledgeMetadata(query.workspace, { at: instant(12), selection: "all", offset: KNOWLEDGE_LIMITS.maximumQueryResults });
+    const next = await listKnowledgeMetadata(query.workspace, { at: instant(12), selection: "all", offset: 8 });
     assert.equal(next.records.length, 1);
     assert.equal(next.truncated, false);
   } finally {
@@ -1485,16 +1433,17 @@ test("TCRN-CROSS-SUB-310 R17 (MIN-238 D1, MIN-239 D1): past the old default the 
     assert.equal(sumBody, 18 * 7_500);
     assert.ok(sumBody > oldDefault, `the bodies alone are past the old default: ${sumBody} > ${oldDefault}`);
     const atLimit = await createKnowledgeUnit(fx.workspace, unitInput(fx, "S023-AT-LIMIT", {
-      occurredAt: instant(11, 3), body: "x".repeat(KNOWLEDGE_LIMITS.maximumBodyBytes),
+      occurredAt: instant(11, 3), body: "x".repeat(8_192),
     }));
     assert.equal(atLimit.reasonCode, "KNOWLEDGE_UNIT_CREATED", "a body at the per-card limit is admitted");
     const files = (await readdir(stream)).length;
-    await expectReason("KNOWLEDGE_LIMIT_EXCEEDED", () => createKnowledgeUnit(fx.workspace, unitInput(fx, "S023-PAST-LIMIT", {
-      occurredAt: instant(11, 3), body: "x".repeat(KNOWLEDGE_LIMITS.maximumBodyBytes + 1),
-    })));
-    assert.equal((await readdir(stream)).length, files, "the refused card wrote nothing");
+    const above = await createKnowledgeUnit(fx.workspace, unitInput(fx, "S023-PAST-LIMIT", {
+      occurredAt: instant(11, 3), body: "x".repeat(8_193),
+    }));
+    assert.equal(above.reasonCode, "KNOWLEDGE_UNIT_CREATED");
+    assert.ok((await readdir(stream)).length > files, "the complete above-former-ceiling card was recorded");
     const validation = await validateKnowledgeStore(fx.workspace);
-    assert.deepEqual([validation.reasonCode, validation.records, Object.hasOwn(validation, "capacity")], ["KNOWLEDGE_STORE_VALID", 19, false]);
+    assert.deepEqual([validation.reasonCode, validation.records, Object.hasOwn(validation, "capacity")], ["KNOWLEDGE_STORE_VALID", 20, false]);
   } finally { await fx.close(); }
 });
 

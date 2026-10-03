@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-380: the generated-artifact blob store.
 //
@@ -64,7 +65,7 @@ export const ARTIFACT_ROOT_SETTING_KEY = "workspace.generatedArtifactsPath" as c
 // The same ceiling SegmentedBackend.readSegment uses for one stored file. A blob store
 // with no bound is a memory exhaustion waiting for a large input, and a bound invented
 // per module is a second answer to a question this repository already answered.
-export const ARTIFACT_BYTES_MAX = 67_108_864;
+export const ARTIFACT_BYTES_MAX = RUNTIME_CAPACITY.bufferBytes;
 
 // New frozen reason-code list owned by this module, sorted. WORKSPACE_REASON_CODES is
 // not edited, exactly as workspace-snapshot.ts declares its own.

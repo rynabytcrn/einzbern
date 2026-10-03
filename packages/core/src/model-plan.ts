@@ -31,9 +31,9 @@ function fail(reasonCode: ModelPlanReasonCode, message: string): never {
   throw new ModelPlanError(reasonCode, message);
 }
 
-function bounded(value: unknown, label: string, maximum: number, reasonCode: ModelPlanReasonCode): string {
-  if (typeof value !== "string" || value.length === 0 || [...value].length > maximum || value.includes("\u0000")) {
-    fail(reasonCode, `${label} must be a non-empty string of at most ${maximum} characters`);
+function bounded(value: unknown, label: string, _maximum: number, reasonCode: ModelPlanReasonCode): string {
+  if (typeof value !== "string" || value.length === 0 || value.includes("\u0000")) {
+    fail(reasonCode, `${label} must be a non-empty string`);
   }
   try { canonicalJson(value); } catch { fail(reasonCode, `${label} is not canonical text`); }
   return value;

@@ -1,3 +1,5 @@
+import { localProbeTimeout } from "./io-policy.js";
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-485 R2 (MIN-227 D4; TCRN-CROSS-SUB-343): which gates a change needs. A project
@@ -42,7 +44,7 @@ function fail(reasonCode: GatesPlanReasonCode, message: string, details?: Readon
   throw new GatesPlanError(reasonCode, message, details);
 }
 
-export const GATES_GLOB_MAX_BYTES = 512 as const;
+export const GATES_GLOB_MAX_BYTES = RUNTIME_CAPACITY.bufferBytes;
 
 // One segment of a glob as a regular expression: * and ? stay inside the segment, a character
 // class is [abc], [a-z] or negated with ! or ^, and every other character stands for itself.
@@ -125,9 +127,9 @@ function git(directory: string, args: readonly string[]): string | null {
     return execFileSync("git", ["-C", directory, ...args], {
       encoding: "utf8",
       env: gitEnvironment(),
-      maxBuffer: 64 * 1024 * 1024,
+      maxBuffer: RUNTIME_CAPACITY.bufferBytes,
       stdio: ["ignore", "pipe", "ignore"],
-      timeout: 30_000,
+      timeout: localProbeTimeout(30_000),
     });
   } catch {
     return null;
@@ -144,7 +146,7 @@ export function gitHead(directory: string): string | null {
 }
 
 // A base names a commit; it never starts with - so Git cannot read it as an option.
-const BASE_SHAPE = /^[A-Za-z0-9._/@{}~^][A-Za-z0-9._/@{}~^-]{0,255}$/u;
+const BASE_SHAPE = /^[A-Za-z0-9._/@{}~^][A-Za-z0-9._/@{}~^-]*$/u;
 
 /**
  * The files changed under `root`, relative to it with forward slashes, sorted: the difference

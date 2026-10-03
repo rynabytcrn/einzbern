@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-466 R2, AC1 / STORY-467 R4, AC3: the old workspace layout
@@ -81,9 +82,9 @@ export interface ChainReport {
   readonly streams: readonly { readonly streamId: string; readonly events: number; readonly headEventHash: string | null }[];
 }
 
-// The engine that wrote these trees kept one segment up to 64 MiB; nothing larger is read.
-const SEGMENT_MAXIMUM_BYTES = 67_108_864;
-const METADATA_MAXIMUM_BYTES = 1_048_576;
+// Historical segments are read completely up to this runtime's actual Buffer capacity.
+const SEGMENT_MAXIMUM_BYTES = RUNTIME_CAPACITY.bufferBytes;
+const METADATA_MAXIMUM_BYTES = RUNTIME_CAPACITY.bufferBytes;
 
 function corrupt(message: string, details: Readonly<Record<string, string>>): never {
   throw new LegacyWorkspaceError("CHAIN_EVENT_CORRUPT", message, details);
@@ -157,7 +158,7 @@ export async function openLegacyWorkspace(rootInput: string): Promise<LegacyWork
   const ndjson = metadata.storageVersion === WORKSPACE_STORAGE_VERSION;
   const eventsDirectory = join(control, LEGACY_EVENTS_DIRECTORY);
   const names = (await readdir(eventsDirectory)).sort();
-  const pattern = ndjson ? /^\d{6}\.ndjson$/u : /^\d{6}\.json$/u;
+  const pattern = ndjson ? /^\d{6,}\.ndjson$/u : /^\d{6,}\.json$/u;
   const segmentNames = names.filter((name) => !(ndjson && (name === "manifest.json" || name.endsWith(".idx"))));
   const events: EventRecord[] = [];
   const segments: LegacySegment[] = [];

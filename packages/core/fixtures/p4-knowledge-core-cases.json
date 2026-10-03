@@ -50,12 +50,6 @@
     "selection-enum",
     "empty-store-invalid-instant",
     "ineligible-record-invalid-instant",
-    "utf8-byte-max-plus-one",
-    "body-oversize",
-    "summary-oversize",
-    "snippet-oversize",
-    "record-count-limit",
-    "query-result-limit",
     "unknown-field",
     "malformed-type",
     "malicious-unicode",
@@ -78,9 +72,27 @@
   "propertyPermutations": 64,
   "permutationLogicalRecords": 5,
   "permutationCorpusDigest": "4180a34ecc5f3501abb5dcedf0f961473a2b13f497834a4f9c71ff564f5e1218",
-  "maximumBodyBytes": 8192,
-  "maximumSummaryBytes": 2048,
-  "maximumSnippetBytes": 512,
-  "maximumMetadataBytes": 32768,
-  "maximumQueryResults": 8
+  "formerProductCeilings": {
+    "maximumBodyBytes": 8192,
+    "maximumSummaryBytes": 2048,
+    "maximumSnippetBytes": 512,
+    "maximumMetadataBytes": 32768,
+    "maximumQueryResults": 8
+  },
+  "capacityBindings": {
+    "maximumBodyBytes": "bufferBytes",
+    "maximumSummaryBytes": "bufferBytes",
+    "maximumSnippetBytes": "bufferBytes",
+    "maximumMetadataBytes": "bufferBytes",
+    "maximumQueryResults": "arrayEntries"
+  },
+  "defaultQueryWindow": 8,
+  "positiveCases": [
+    "body-over-former-8192",
+    "summary-over-former-2048",
+    "snippet-over-former-512",
+    "metadata-over-former-32768",
+    "explicit-query-window-over-former-8",
+    "complete-utf8-over-former-field-ceilings"
+  ]
 }

@@ -16,9 +16,6 @@ export const INCIDENT_REPLAY_DEFAULT_WORK_FILE = "tests/fixtures/retrieval-eval/
 export const INCIDENT_REPLAY_DEFAULT_CARDS_FILE = "tests/fixtures/retrieval-eval/corpus-snapshot.json";
 export const INCIDENT_REPLAY_DEFAULT_MINUTES_FILE = "tests/fixtures/retrieval-eval/minutes-compact.json";
 
-const TEXT_LIMIT = 4_096;
-const PROMPT_LIMIT = 1_024;
-const CARD_BODY_LIMIT = 8_192;
 
 function recordsOf(value) {
   if (Array.isArray(value)) return value.filter((entry) => entry !== null && typeof entry === "object");
@@ -29,20 +26,15 @@ function recordsOf(value) {
   return [];
 }
 
-function text(value, maximum = TEXT_LIMIT) {
+function text(value) {
   if (typeof value !== "string") return "";
-  return value.replace(/\u0000/gu, "").trim().slice(0, maximum);
+  return value.replace(/\u0000/gu, "").trim();
 }
 
-function redact(value, maximum = TEXT_LIMIT) {
-  return text(value, maximum)
+function redact(value) {
+  return text(value)
     .replace(/(?:\/Users|\/home|\/private|[A-Za-z]:[\\/])[^\s，。；;,)）]+/gu, "[redacted-path]")
     .replace(/(?:https?:\/\/)[^\s，。；;,)）]+/giu, "[redacted-url]");
-}
-
-function utf8Limit(value, maximum) {
-  const bytes = Buffer.from(String(value ?? ""), "utf8");
-  return bytes.length <= maximum ? bytes.toString("utf8") : bytes.subarray(0, maximum).toString("utf8");
 }
 
 function firstParagraph(value) {
@@ -112,10 +104,10 @@ function sourceDigest(source) {
 // whose expected record cannot be returned measures nothing.
 function indexedWorkIds(works, scopeMap) {
   const inputs = works.map((work) => ({
-    id: text(work.id, 256),
-    externalKey: text(work.externalKey, 256),
-    kind: text(work.kind, 128),
-    status: text(work.status, 64),
+    id: text(work.id),
+    externalKey: text(work.externalKey),
+    kind: text(work.kind),
+    status: text(work.status),
     title: typeof work.title === "string" ? work.title : null,
     summary: typeof work.summary === "string" ? work.summary : null,
     scope: scopeFor(work, scopeMap),
@@ -137,8 +129,8 @@ export function buildIncidentReplay({ workRecords = [], scopeRecords = {}, cards
   const pairs = [];
   const skipped = [];
   for (const work of works) {
-    const id = text(work.id, 256);
-    const externalKey = text(work.externalKey, 256);
+    const id = text(work.id);
+    const externalKey = text(work.externalKey);
     const scope = scopeFor(work, scopeMap);
     const summary = summaryFor(work, scope);
     if (!id || !externalKey || !summary.value) {
@@ -154,15 +146,15 @@ export function buildIncidentReplay({ workRecords = [], scopeRecords = {}, cards
     const source = {
       workId: id,
       externalKey,
-      kind: text(work.kind, 128) || null,
-      status: text(work.status, 64) || null,
+      kind: text(work.kind) || null,
+      status: text(work.status) || null,
       revision: Number.isSafeInteger(work.revision) ? work.revision : null,
       scopeDigest: typeof work.scopeDigest === "string" ? work.scopeDigest : sourceDigest(scope),
       summarySource: summary.source,
       decidedBy,
       linkedCardIds,
     };
-    const prompt = utf8Limit(`现象：${redact(summary.value, PROMPT_LIMIT)}`, PROMPT_LIMIT);
+    const prompt = `现象：${redact(summary.value)}`;
     const expectedIds = [...new Set([...linkedCardIds, id])].sort();
     pairs.push({
       id: `incident-replay:${sourceDigest(source).slice(0, 24)}`,
@@ -174,7 +166,7 @@ export function buildIncidentReplay({ workRecords = [], scopeRecords = {}, cards
       decidedByMinutes: minuteSummaries(decidedBy, minuteMap),
       linkedCards: cardRecords.filter((card) => linkedCardIds.includes(card.id)).map((card) => ({
         id: card.id,
-        subject: redact(card.subject, 512),
+        subject: redact(card.subject),
         sourceDigest: typeof card.bodySha256 === "string" ? card.bodySha256 : null,
       })),
     });
@@ -202,8 +194,8 @@ function sourceForExtraction(work, replay) {
 
 export function incidentRuleDraft({ work, pair, at = new Date().toISOString() } = {}) {
   if (work === null || work === undefined || pair === null || pair === undefined) throw new Error("INCIDENT_REPLAY_SOURCE_REQUIRED");
-  const key = text(work.externalKey, 128);
-  const phenomenon = redact(pair.prompt, PROMPT_LIMIT);
+  const key = text(work.externalKey);
+  const phenomenon = redact(pair.prompt);
   const content = [
     `## Proposed rule: ${key}`,
     "",
@@ -232,19 +224,19 @@ export function incidentRuleDraft({ work, pair, at = new Date().toISOString() } 
 
 export function incidentDecisionCard({ work, minute, ownerId = "owner:incident-replay", at = new Date().toISOString() } = {}) {
   if (work === null || work === undefined || minute === null || minute === undefined) throw new Error("INCIDENT_REPLAY_MINUTES_REQUIRED");
-  const minuteId = text(minute.id, 128);
+  const minuteId = text(minute.id);
   const minuteHex = minuteId.replace(/^minutes:/u, "");
   if (!/^[0-9a-f]{24}$/u.test(minuteHex)) throw new Error("INCIDENT_REPLAY_MINUTES_ID_INVALID");
-  const key = `INCIDENT-${text(work.externalKey, 80).replace(/[^A-Z0-9_-]/gu, "-")}-DECISION`;
-  const summary = redact(minute.summary, 2_048) || `Decision extracted from ${text(work.externalKey, 128)}`;
+  const key = `INCIDENT-${text(work.externalKey).replace(/[^A-Z0-9_-]/gu, "-")}-DECISION`;
+  const summary = redact(minute.summary) || `Decision extracted from ${text(work.externalKey)}`;
   const decisions = idList(minute.decisions);
-  const body = utf8Limit([
+  const body = [
     `Decision source: ${minuteId}`,
-    `Work item: ${text(work.externalKey, 128)}`,
+    `Work item: ${text(work.externalKey)}`,
     `Summary: ${summary}`,
     decisions.length === 0 ? "Decisions: none recorded" : `Decisions: ${decisions.join("; ")}`,
     `Observed at: ${at}`,
-  ].join("\n"), CARD_BODY_LIMIT);
+  ].join("\n");
   return {
     schemaVersion: INCIDENT_DECISION_CARD_SCHEMA_VERSION,
     externalKey: key,
@@ -252,9 +244,9 @@ export function incidentDecisionCard({ work, minute, ownerId = "owner:incident-r
     category: "decision",
     scope: "role",
     roleScopes: ["implementation"],
-    subject: utf8Limit(summary.split(/[。.!?\n]/u)[0] || key, 512),
-    summary: utf8Limit(summary, 2_048),
-    snippet: utf8Limit(summary, 512),
+    subject: summary.split(/[。.!?\n]/u)[0] || key,
+    summary,
+    snippet: summary,
     tags: ["decision", "incident-replay"],
     accountableOwnerId: ownerId,
     sourceReferences: [minuteId],

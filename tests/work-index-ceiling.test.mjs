@@ -41,8 +41,10 @@ test("STORY-515: projection remains bounded at 1,536 and 15,360 records, with no
   assert.ok(sizes.every((bytes) => bytes < PROTOCOL_LIMITS.maxCanonicalBytes));
   assert.deepEqual(texts.map((text) => JSON.parse(text).work.count), [1_536, 15_360]);
   assert.equal(texts[1], workspaceViewDocuments({ ...seeded, work: records })["index.json"], "projection is deterministic");
-  assert.throws(() => validateWorkGraph(records), { reasonCode: "INPUT_OVERSIZED" }, "the real-library limit is retained");
-  assert.throws(() => workspaceViewDocuments({ ...seeded, work: [{ ...records[0], title: "a".repeat(PROTOCOL_LIMITS.maxStringLength + 1) }] }), { reasonCode: "INPUT_OVERSIZED" });
+  assert.equal(validateWorkGraph(records).length, records.length, "complete graphs cross the former 10,000 record ceiling");
+  const longTitle = { ...records[0], title: "a".repeat(8_193) };
+  assert.doesNotThrow(() => workspaceViewDocuments({ ...seeded, work: [longTitle] }));
+  assert.equal(validateWorkGraph([longTitle])[0].title.length, 8_193);
 });
 
 test("STORY-515: every record, including a tombstone, contributes all its content and its order", async (context) => {

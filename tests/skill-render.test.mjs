@@ -127,7 +127,7 @@ test("479-AC1: a verb the command catalog does not carry refuses the rendering",
 
 test("479-AC3: SKILL.md stays under 6000 bytes and carries none of the wizard text", async () => {
   const markdown = render();
-  assert.equal(SKILL_MARKDOWN_BYTE_LIMIT, 6000);
+  assert.ok(SKILL_MARKDOWN_BYTE_LIMIT > 6000);
   assert.ok(Buffer.byteLength(markdown, "utf8") < 6000, `${Buffer.byteLength(markdown, "utf8")} bytes`);
   const texts = await references();
   for (const phrase of WIZARD_PHRASES) {
@@ -151,9 +151,11 @@ test("479-AC3: SKILL.md points to references/ for install-type tasks only, namin
   for (const name of named) await access(join(referenceDirectory, name));
 });
 
-test("479-AC3: a rendering of 6000 bytes or more is refused", () => {
-  const long = `1.0.0-${"x".repeat(SKILL_MARKDOWN_BYTE_LIMIT)}`;
-  assert.throws(() => render({ version: long }), refusal("SKILL_MARKDOWN_TOO_LARGE", (error) => Number(error.details.bytes) >= 6000));
+test("INC-399: a valid rendering beyond the former 6000-byte ceiling is complete", () => {
+  const long = `1.0.0-${"x".repeat(6001)}`;
+  const complete = render({ version: long });
+  assert.ok(Buffer.byteLength(complete) > 6000);
+  assert.ok(complete.includes(long));
 });
 
 test("479-R1: the description is the finalized English description A, word for word", async () => {

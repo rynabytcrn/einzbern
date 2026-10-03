@@ -81,10 +81,12 @@ import {
   readEngineFiles,
   reasonOf,
   setupApplied,
+  setupTargetState,
 } from "./setup-fresh.js";
 import type { EngineFiles, EngineSource, LibraryState } from "./setup-fresh.js";
 import { SKILL_COPIES_FILES, SKILL_COPY_ROOTS, skillCopiesRecordPath, skillCopyPath } from "./skill-copies.js";
 import { materializeWorkspaceFromGenesis } from "./workspace.js";
+import { scopedWorkspaceState } from "./project-scope.js";
 
 // ---- The release an update installs ----
 
@@ -357,7 +359,7 @@ async function currentEngine(recorder: SetupRecorder, deviceHome: string): Promi
 async function registeredState(entry: RegistryEntry | null): Promise<LibraryState | null> {
   if (entry === null) return null;
   try {
-    return await materializeWorkspaceFromGenesis(entry.libraryPath);
+    return scopedWorkspaceState(await materializeWorkspaceFromGenesis(entry.libraryPath), entry.projectId);
   } catch (error) {
     if (reasonOf(error) === null) throw error;
     return null;
@@ -573,7 +575,7 @@ async function repairLibrary(recorder: SetupRecorder, context: SetupContext): Pr
     recorder.block("library", entry.libraryPath, "SETUP_LIBRARY_CONFLICT", `${entry.libraryPath} holds ${opened.manifest.libraryId}, not the registered ${entry.libraryId}`);
     return null;
   }
-  const state = await recorder.attempt("library", entry.libraryPath, () => materializeWorkspaceFromGenesis(entry.libraryPath));
+  const state = await recorder.attempt("library", entry.libraryPath, () => setupTargetState(context.projectRoot, entry.libraryPath, context.deviceHome));
   return state === null ? null : { path: opened.root, libraryId: entry.libraryId, state };
 }
 
@@ -625,7 +627,8 @@ async function applyChangedNavigationRemoval(
   removeNavigation: boolean,
 ): Promise<readonly { readonly file: string; readonly id: string }[]> {
   if (!removeNavigation) return pending;
-  const state = await materializeWorkspaceFromGenesis(libraryPath);
+  const entry = (await readRegistry(plan.deviceHome)).entries.find(candidate => candidate.projectPath === plan.projectRoot);
+  const state = await setupTargetState(plan.projectRoot, libraryPath, plan.deviceHome);
   const record = managedSectionRecordsFor(state, AGENTS_FILE).find((entry) => entry.id === "navigation");
   if (record?.state === "pending") {
     return pending.some((section) => section.file === AGENTS_FILE && section.id === "navigation")
@@ -646,6 +649,7 @@ async function applyChangedNavigationRemoval(
   try {
     const { change } = await disableAgentsSection(libraryPath, {
       projectRoot: plan.projectRoot,
+      ...(entry?.projectId === undefined ? {} : { configurationProjectId: entry.projectId }),
       id: "navigation",
       occurredAt: plan.at,
       backupRoot: backupsPath(plan.deviceHome),

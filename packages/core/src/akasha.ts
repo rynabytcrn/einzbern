@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-468 R2, R3 and STORY-469 R5 (MIN-227 D20, D21): akasha, the event truth of a
@@ -59,7 +60,7 @@ export const STREAM_MANIFEST_SCHEMA_VERSION = "einzbern.stream-manifest.v1" as c
 export const STREAM_MANIFEST_FILE = "manifest.json" as const;
 export const AKASHA_SEGMENT_BYTES_DEFAULT = 1_048_576 as const;
 // One segment is never read past this, whatever a manifest claims.
-export const AKASHA_SEGMENT_BYTES_MAXIMUM = 67_108_864 as const;
+export const AKASHA_SEGMENT_BYTES_MAXIMUM = RUNTIME_CAPACITY.bufferBytes;
 const SEGMENT_NAME_PATTERN = /^[0-9a-f]{8}\.(?:ndjson|json)$/u;
 
 export const AKASHA_REASON_CODES = Object.freeze([
@@ -126,9 +127,9 @@ export function streamDirectory(libraryRoot: string, deviceId: string): string {
   return join(libraryRoot, DIRECTORY.events, deviceId);
 }
 
-/** The eight-digit hex name of the segment at a 1-based ordinal. */
+/** Eight hex digits cover every ordinal representable by the manifest array. */
 export function segmentName(ordinal: number, extension: "ndjson" | "json" = "ndjson"): string {
-  if (!Number.isSafeInteger(ordinal) || ordinal < 1 || ordinal > 0xffffffff) fail("AKASHA_INPUT_INVALID", `segment ordinal ${ordinal}`);
+  if (!Number.isSafeInteger(ordinal) || ordinal < 1 || ordinal > RUNTIME_CAPACITY.arrayEntries) fail("AKASHA_INPUT_INVALID", `segment ordinal ${ordinal}`);
   return `${ordinal.toString(16).padStart(8, "0")}.${extension}`;
 }
 
@@ -148,8 +149,8 @@ export function validateStreamManifest(value: unknown, deviceId: string): Stream
   if (Object.keys(record).sort().join("\u0000") !== MANIFEST_FIELDS.join("\u0000")) invalid("fields are not exact");
   if (record.schemaVersion !== STREAM_MANIFEST_SCHEMA_VERSION) invalid(`schemaVersion must be ${STREAM_MANIFEST_SCHEMA_VERSION}`);
   if (record.deviceId !== deviceId) invalid("deviceId does not name its own directory");
-  if (typeof record.streamId !== "string" || !/^stream:[a-z0-9][a-z0-9._-]{0,127}$/u.test(record.streamId)) invalid("streamId");
-  if (typeof record.displayName !== "string" || record.displayName.length === 0 || record.displayName.length > 64) invalid("displayName");
+  if (typeof record.streamId !== "string" || !/^stream:[a-z0-9][a-z0-9._-]*$/u.test(record.streamId)) invalid("streamId");
+  if (typeof record.displayName !== "string" || record.displayName.length === 0) invalid("displayName");
   if (record.identityScheme !== "einzbern" && record.identityScheme !== "legacy") invalid("identityScheme");
   if (!Number.isSafeInteger(record.sequence) || Number(record.sequence) < 0) invalid("sequence");
   const sequence = Number(record.sequence);

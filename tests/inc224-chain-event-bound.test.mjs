@@ -32,29 +32,22 @@ import {
   sortWorkspaceSettings,
 } from "../dist/build/packages/core/src/index.js";
 
-// Red leg: point assertWorkspaceRecordCount back at maxRecords and a chain is capped at
-// the length of a single canonical array again -- which is the state INC-224 measured,
-// with the cross-project chain a documented handful of weeks from a wall it did not need.
-test("INC-224: the chain accepts more events than a single document may hold elements", () => {
-  assert.ok(PROTOCOL_LIMITS.maxChainEvents > PROTOCOL_LIMITS.maxRecords,
-    "the lifetime bound must exceed the per-document bound, or separating them bought nothing");
-  // Exactly at the old shared ceiling, and one past it: both are legal chain lengths now.
-  assert.doesNotThrow(() => assertWorkspaceRecordCount(PROTOCOL_LIMITS.maxRecords));
-  assert.doesNotThrow(() => assertWorkspaceRecordCount(PROTOCOL_LIMITS.maxRecords + 1));
-  assert.doesNotThrow(() => assertWorkspaceRecordCount(PROTOCOL_LIMITS.maxChainEvents));
+// INC-399 R4 removes the earlier arbitrary document and lifetime ceilings. Both
+// exported compatibility fields now describe the JavaScript array representation.
+// Fixtures cross the old boundary without trying to allocate a runtime-sized array.
+test("INC-399: document and chain counts cross the former 10,000 boundary", () => {
+  assert.equal(PROTOCOL_LIMITS.maxChainEvents, 0xffff_ffff);
+  assert.equal(PROTOCOL_LIMITS.maxRecords, 0xffff_ffff);
+  for (const count of [10_000, 10_001, PROTOCOL_LIMITS.maxChainEvents]) {
+    assert.doesNotThrow(() => assertWorkspaceRecordCount(count));
+  }
 });
 
-// Red leg: raise maxRecords alongside maxChainEvents -- the change that was nearly made --
-// and a canonical array of eleven thousand elements starts being accepted, which no
-// measurement in INC-224 supports and which is not what the chain needed.
-test("INC-224: raising the chain bound did not loosen the document shape bound", () => {
-  assert.equal(PROTOCOL_LIMITS.maxRecords, 10_000, "the per-document bound is unchanged");
-  const overLong = Array.from({ length: PROTOCOL_LIMITS.maxRecords + 1 }, (_, index) => index);
-  assert.throws(() => canonicalJson(overLong), (error) => error?.reasonCode === "INPUT_OVERSIZED",
-    "a canonical array past the record limit is still refused");
-  const overWide = Object.fromEntries(overLong.map((index) => [`k${index}`, index]));
-  assert.throws(() => canonicalJson(overWide), (error) => error?.reasonCode === "INPUT_OVERSIZED",
-    "a canonical object past the property limit is still refused");
+test("INC-399: canonical collections retain every member beyond the old boundary", () => {
+  const entries = Array.from({ length: 10_001 }, (_, index) => index);
+  assert.deepEqual(JSON.parse(canonicalJson(entries)), entries);
+  const object = Object.fromEntries(entries.map((index) => [`k${index}`, index]));
+  assert.deepEqual(JSON.parse(canonicalJson(object)), object);
 });
 
 // The lifetime bound must still be a bound. Red leg: drop the comparison and the chain
@@ -97,7 +90,7 @@ test("STORY-451: a chain past the per-document bound replays from genesis withou
       settings: sortWorkspaceSettings([...state.settings.filter((entry) => entry.key !== key), record]),
     };
   };
-  const events = PROTOCOL_LIMITS.maxRecords + 1;
+  const events = 10_001; // former document ceiling plus one, a bounded replay fixture
   // The largest interval keeps this chain snapshot-less under either snapshot rule. The
   // 1 MiB segment keeps each segment index (two keys an event) under its own bounds.
   const deltas = [settingDelta("storage.snapshotEveryEvents", "20000"), settingDelta("storage.segmentBytes", "1048576")];
@@ -120,12 +113,11 @@ test("STORY-451: a chain past the per-document bound replays from genesis withou
 // reaches per-record validation; past maxChainEvents it is refused by length. Red
 // leg: maxRecords as the bound refuses the first array by length too.
 test("STORY-451: validateEventChain bounds the chain by maxChainEvents, not by maxRecords", () => {
-  assert.throws(() => validateEventChain(Array.from({ length: PROTOCOL_LIMITS.maxRecords + 1 }, () => null)),
+  assert.throws(() => validateEventChain(Array.from({ length: 10_001 }, () => null)),
     (error) => error?.reasonCode === "RECORD_MALFORMED",
     "a chain one past the per-document bound is read record by record");
-  assert.throws(() => validateEventChain(Array.from({ length: PROTOCOL_LIMITS.maxChainEvents + 1 }, () => null)),
-    (error) => error?.reasonCode === "INPUT_OVERSIZED",
-    "a chain past the lifetime bound is still refused by length");
+  assert.throws(() => new Array(PROTOCOL_LIMITS.maxChainEvents + 1), RangeError,
+    "JavaScript itself cannot represent a longer array; no huge allocation is attempted");
   assert.throws(() => assertWorkspaceRecordCount(PROTOCOL_LIMITS.maxChainEvents + 1),
     (error) => error?.reasonCode === "WORKSPACE_RECORD_LIMIT");
 });

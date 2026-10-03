@@ -153,7 +153,7 @@ export function assertKnowledgeNotRecorded(
   const matches = knowledgeDuplicateMatches(state, card, body);
   const first = matches[0];
   if (first === undefined) return;
-  const named = matches.slice(0, 5).map((match) => `${match.kind === "work" ? `work ${match.key ?? ""} (${match.target})` : `decision ${match.target}`} ${match.score.toFixed(2)}`).join("; ");
+  const named = matches.map((match) => `${match.kind === "work" ? `work ${match.key ?? ""} (${match.target})` : `decision ${match.target}`} ${match.score.toFixed(2)}`).join("; ");
   const remedy = first.kind === "work"
     ? "write it into the work record (work-annotate), or into minutes (minutes-record) when it is a decision"
     : "it is recorded in minutes already; record a new decision (minutes-record) if it changes";

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { renameRetryBudget } from "./io-policy.js";
 
 // TCRN-CROSS-STORY-479 R4, R5 (MIN-227): the Mana Orchestrate skill as this machine's two hosts
 // read it. Claude Code reads a user skill from ~/.claude/skills and Codex from ~/.agents/skills,
@@ -176,6 +177,7 @@ function delay(milliseconds: number): Promise<void> {
 // (an indexer, an antivirus scanner) fails for a moment, so those failures are retried with
 // backoff. A move to another volume (EXDEV) is refused rather than turned into copy and delete.
 async function moveEntry(from: string, to: string, reasonCode: SkillCopiesReasonCode): Promise<void> {
+  const retries = renameRetryBudget();
   let wait = 10;
   for (let attempt = 0; ; attempt += 1) {
     try {
@@ -183,7 +185,7 @@ async function moveEntry(from: string, to: string, reasonCode: SkillCopiesReason
       return;
     } catch (error) {
       const code = String((error as { code?: string }).code ?? "UNKNOWN");
-      if (!RETRYABLE_RENAME_CODES.has(code) || attempt >= 8) {
+      if (!RETRYABLE_RENAME_CODES.has(code) || attempt >= retries) {
         fail(reasonCode, `${from} could not be moved to ${to} (${code})`, { from, to, code });
       }
       await delay(wait);

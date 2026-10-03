@@ -77,8 +77,8 @@ test("STORY-354 snapshot-manifest reads an event segment past the generic 1 MiB 
   const segmentPath = join(fx.workspace, segmentRelativePath);
   const segmentBytes = (await stat(segmentPath)).size;
   assert.ok(
-    segmentBytes > PROTOCOL_LIMITS.maxCanonicalBytes,
-    `precondition: the segment must exceed the snapshot read limit (${PROTOCOL_LIMITS.maxCanonicalBytes} bytes) to exercise the fix; got ${segmentBytes} bytes from ${PAD_COUNT} padding events`,
+    segmentBytes > 1_048_576,
+    `precondition: the segment must exceed the snapshot read limit (former 1,048,576 bytes) to exercise the fix; got ${segmentBytes} bytes from ${PAD_COUNT} padding events`,
   );
   assert.deepEqual((await readdir(join(fx.workspace, "akasha", deviceId))).sort(), ["00000001.ndjson", "manifest.json"], "the padded stream has not rolled");
   const segmentSha256 = createHash("sha256").update(await readFile(segmentPath)).digest("hex");
@@ -100,6 +100,6 @@ test("STORY-354 snapshot-manifest reads an event segment past the generic 1 MiB 
   const handle = await open(join(copy, segmentRelativePath), "r+");
   try { await handle.write(Buffer.from("!"), 0, 1, segmentBytes - 2); } finally { await handle.close(); }
   await assert.rejects(verifySnapshotManifest(copy, manifestText), { reasonCode: "SNAPSHOT_MISMATCH" });
-  await truncate(join(copy, segmentRelativePath), AKASHA_SEGMENT_BYTES_MAXIMUM + 1);
-  await assert.rejects(verifySnapshotManifest(copy, manifestText), { reasonCode: "SNAPSHOT_PATH_INVALID" });
+  await truncate(join(copy, segmentRelativePath), segmentBytes + 1);
+  await assert.rejects(verifySnapshotManifest(copy, manifestText), { reasonCode: "SNAPSHOT_MISMATCH" });
 });

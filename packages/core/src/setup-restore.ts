@@ -29,6 +29,7 @@
 // settings are not written: they come back with the library, and SETUP_APPLIED lists them in one
 // column beside the device-level settings, which never travel with a library, in the other.
 
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 import { constants } from "node:fs";
 import { access, readdir, readFile as readFileBytes, realpath, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
@@ -69,9 +70,11 @@ import {
   readEngineFiles,
   reasonOf,
   setupApplied,
+  setupTargetState,
 } from "./setup-fresh.js";
-import { materializeLibraryRead, materializeWorkspace, readLibraryTombstone } from "./workspace.js";
+import { materializeLibraryRead, readLibraryTombstone } from "./workspace.js";
 import type { WorkspaceState } from "./workspace.js";
+import { scopedWorkspaceState } from "./project-scope.js";
 
 /** The eight checks, in the order they run. */
 export const RESTORE_CHECKS = Object.freeze([
@@ -222,6 +225,9 @@ interface Snapshot {
 }
 
 function timedReader(readFile: ReadBytes, timeoutMs: number): ReadBytes {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > RUNTIME_CAPACITY.timerMilliseconds) {
+    throw new CheckFailure("RESTORE_UNREADABLE", "timeoutMs must be a positive integer within the Node timer range");
+  }
   return (path) => new Promise<Buffer>((resolveRead, rejectRead) => {
     const timer = setTimeout(() => {
       rejectRead(new CheckFailure("AKASHA_READ_TIMEOUT", `reading ${path} did not finish in ${timeoutMs} ms`, {
@@ -563,7 +569,8 @@ export async function verifyRestore(input: RestoreInput, options: RestoreReadOpt
   if (device instanceof CheckFailure) return stopped("device-stream", device);
   run.pass("device-stream", device.detail);
 
-  const sections = await sectionsCheck(input.projectRoot, streams.state);
+  const registered = (await readRegistry(input.deviceHome)).entries.find(entry => entry.projectPath === input.projectRoot);
+  const sections = await sectionsCheck(input.projectRoot, scopedWorkspaceState(streams.state, registered?.projectId));
   if (sections instanceof CheckFailure) return stopped("sections", sections);
   run.pass("sections", sections);
 
@@ -652,7 +659,7 @@ export async function planRestoreSetup(input: SetupModeInput): Promise<SetupMode
   const resolved: ResolvedSetupAnswers = {
     artifacts: library.root,
     cloud: answers.cloud ?? cloud,
-    language: libraryLanguage(library.state) ?? defaultLanguage(),
+    language: libraryLanguage(await setupTargetState(projectRoot, library.root, deviceHome)) ?? defaultLanguage(),
     navigation,
   };
   const pending = await planWiring(recorder, {
@@ -681,8 +688,8 @@ export async function planRestoreSetup(input: SetupModeInput): Promise<SetupMode
 }
 
 // The two columns: the library's settings and records for the project, and this device's own keys.
-async function restoreColumns(libraryPath: string, deviceHome: string, cloud: boolean): Promise<SetupColumns> {
-  const state = await materializeWorkspace(libraryPath);
+async function restoreColumns(projectRoot: string, libraryPath: string, deviceHome: string, cloud: boolean): Promise<SetupColumns> {
+  const state = await setupTargetState(projectRoot, libraryPath, deviceHome);
   const counts = new Map<string, number>();
   for (const record of state.configRecords) counts.set(record.collection, (counts.get(record.collection) ?? 0) + 1);
   const machine = await readMachineSettings(join(deviceHome, MACHINE_SETTINGS_FILE_NAME));
@@ -731,6 +738,6 @@ export async function applyRestoreSetup(plan: SetupPlan): Promise<SetupApplied> 
     deviceId: device.deviceId,
     library: { path: library.root, libraryId: library.libraryId, created: false },
     pending,
-    columns: await restoreColumns(library.root, deviceHome, resolved.cloud),
+    columns: await restoreColumns(projectRoot, library.root, deviceHome, resolved.cloud),
   });
 }

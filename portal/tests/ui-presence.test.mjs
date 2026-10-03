@@ -19,6 +19,9 @@ import { historicalModelPlan } from "../../tests/helpers/model-plan-history.mjs"
 const execFileAsync = promisify(execFile);
 const portalRoot = fileURLToPath(new URL("..", import.meta.url));
 const CLI = process.env.TCRN_WORKFLOW_CLI ?? join(portalRoot, "..", "scripts", "einzbern.mjs");
+const DS_CONTRACT = JSON.parse(await readFile(join(portalRoot, "ds-consumer-contract.json"), "utf8"));
+const fixtureProjectIds = new Map();
+const GLOBAL_SETTING_KEYS = new Set(["engine.requiredVersion", "storage.segmentBytes", "storage.snapshotEveryEvents", "workspace.generatedArtifactsPath"]);
 const MUTATION = process.env.TCRN_UI_MUTATION ?? "";
 const COMPONENTS = Object.freeze([
   ["workspace tabs", '[data-ui="workspace-tabs"]'],
@@ -52,6 +55,13 @@ let logicalAt = Date.parse("2026-08-13T00:00:00Z");
 const nextAt = () => new Date(logicalAt += 1000).toISOString();
 
 async function cli(args, env = {}) {
+  // An executed Atelier fixture reads its explicitly registered native project, never an
+  // inferred directory identity. Library-owned settings deliberately have no project target.
+  const scoped = ["settings-catalog", "settings-set", "settings-remove", "gates-config-list", "gates-config-set", "gates-config-remove", "variable-list", "variable-set", "variable-remove"];
+  const workspaceIndex = args.indexOf("--workspace");
+  const projectId = fixtureProjectIds.get(args[workspaceIndex + 1]);
+  const keyIndex = args.indexOf("--key");
+  if (scoped.includes(args[0]) && projectId && !args.includes("--project-id") && !GLOBAL_SETTING_KEYS.has(args[keyIndex + 1])) args = [...args, "--project-id", projectId];
   const { stdout } = await execFileAsync(process.execPath, [CLI, ...args], { encoding: "utf8", maxBuffer: 32e6, env: { ...process.env, ...env } });
   return JSON.parse(stdout);
 }
@@ -63,7 +73,11 @@ async function cli(args, env = {}) {
 async function registeredLibrary(deviceEnv, project, library, externalKey) {
   await mkdir(project, { recursive: true });
   await cli(["init", "--workspace", library, "--project-name", externalKey, "--at", nextAt()], deviceEnv);
-  await cli(["library-register", "--project", project, "--library", library, "--at", nextAt()], deviceEnv);
+  const created = await cli(["project-create", "--workspace", library, "--external-key", externalKey, "--name", externalKey, "--at", nextAt()], deviceEnv);
+  const projectId = created.record.id;
+  await cli(["library-register", "--project", project, "--library", library, "--project-id", projectId, "--at", nextAt()], deviceEnv);
+  fixtureProjectIds.set(library, projectId);
+  return projectId;
 }
 
 async function scratch(prefix) {
@@ -75,18 +89,18 @@ async function scratch(prefix) {
   const deviceEnv = { EINZBERN_HOME: join(base, "device", "einzbern") };
   const proseRoot = join(base, "project");
   const workspace = join(proseRoot, ".ether");
-  await registeredLibrary(deviceEnv, proseRoot, workspace, "TCRN-INC148-DOM");
+  const projectId = await registeredLibrary(deviceEnv, proseRoot, workspace, "TCRN-INC148-DOM");
   // A registered key and an unregistered one in a registered namespace (the backup namespace
   // retired with TCRN-CROSS-STORY-484 R3, and reconciliation reads only registered namespaces).
   await writeFile(join(proseRoot, "AGENTS.md"), "# Workspace rules\n\nretrieval.tau\nretrieval.unknown\n", "utf8");
   const second = { project: join(base, "second-project"), library: join(base, "second-library") };
-  await registeredLibrary(deviceEnv, second.project, second.library, "TCRN-INC148-DOM-SECOND");
-  return { base, workspace, proseRoot, home, deviceEnv, second };
+  second.projectId = await registeredLibrary(deviceEnv, second.project, second.library, "TCRN-INC148-DOM-SECOND");
+  return { base, workspace, proseRoot, home, deviceEnv, projectId, second };
 }
 
 async function writeScratch(fixture, command, args) {
   // The engine serialises writers with its own lock (TCRN-CROSS-STORY-467 R1): no version to read first.
-  return cli([command, "--workspace", fixture.workspace, "--at", nextAt(), "--actor", "agent:test", ...args], fixture.deviceEnv);
+  return cli([command, "--workspace", fixture.workspace, "--at", nextAt(), "--actor", "agent:test", ...args], { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" });
 }
 
 // The helper runs as the test process's device; the fixture's device is lent to it for the call,
@@ -155,7 +169,12 @@ function installDomShims(window) {
       });
     },
   });
+  const optionPrototype = window.HTMLOptionElement.prototype;
+  Object.defineProperty(optionPrototype, "selected", { configurable: true, get() { return this.hasAttribute("selected"); }, set(value) { if (this.hasAttribute("selected") === Boolean(value)) return; if (value) this.setAttribute("selected", ""); else this.removeAttribute("selected"); } });
+  // Match the native option label fallback that the published bridge reads.
+  Object.defineProperty(optionPrototype, "label", { configurable: true, get() { return this.getAttribute("label") ?? this.textContent; }, set(value) { this.setAttribute("label", String(value)); } });
   const selectPrototype = window.HTMLSelectElement.prototype;
+  Object.defineProperty(selectPrototype, "selectedOptions", { configurable: true, get() { return [...this.querySelectorAll("option[selected]")]; } });
   Object.defineProperty(selectPrototype, "value", {
     configurable: true,
     get() {
@@ -247,7 +266,18 @@ async function loadExecutedDom(fixture, env = {}, { hold = () => false } = {}) {
       const scriptSource = await (await nativeFetch(new URL(script.src, url))).text();
       vm.runInContext(scriptSource, context);
     } else if (script.textContent.trim()) {
-      vm.runInContext(script.textContent, context);
+      let executable = script.textContent;
+      if (script.type === "module") {
+        // Link the exact served ES module in this CommonJS-style VM harness. The product
+        // snapshot and module import stay untouched; aliases are read from its own export.
+        const bridgeSource = await (await nativeFetch(new URL("/ds-static-bridges.snapshot.js", url))).text();
+        const exports = bridgeSource.match(/export\{(\w+) as mountStaticMultiSelect,(\w+) as mountStaticOverlayBoundary\};/u);
+        assert.ok(exports, "the published bridge must export both declared bindings");
+        const linkedBridge = bridgeSource.replace(exports[0], `window.mountStaticMultiSelect=${exports[1]};window.mountStaticOverlayBoundary=${exports[2]};`);
+        vm.runInContext(`(()=>{${linkedBridge}\n})();`, context);
+        executable = executable.replace(/^\s*import \{ mountStaticMultiSelect, mountStaticOverlayBoundary \} from [^;]+;\s*/u, "const { mountStaticMultiSelect, mountStaticOverlayBoundary } = window;\n");
+      }
+      vm.runInContext(executable, context);
     }
   }
   // The quiet period covers a handler that starts its next request from the previous
@@ -328,7 +358,7 @@ function pageHierarchyFindings(document, source) {
       const form = view?.querySelector('[data-ui="gate-add-form"]');
       const lastRun = view?.querySelector('[data-ui="gates-last-run"]');
       // TCRN-CROSS-SUB-410: the order column leads the gate table, so it has five columns.
-      if (!view || !table || table.querySelectorAll("thead th").length !== 5 || !form || !lastRun || childIndex(lowerContent, view) !== 0) findings.push("gates:five-columns");
+      if (!view || !table || table.querySelectorAll('[role="columnheader"]').length !== 5 || !form || !lastRun || childIndex(lowerContent, view) !== 0) findings.push("gates:five-columns");
     }
     // TCRN-CROSS-SUB-410 (STORY-508 R7): the variables, rules and gates pages each say in their header
     // what their order column is for.
@@ -354,7 +384,6 @@ function pageHierarchyFindings(document, source) {
   const sourceRules = [
     '[data-page-hierarchy="true"][data-page-hierarchy-depth="two"] [data-settings-layout-grid] { display: block; }',
     '[data-page-hierarchy="true"][data-page-hierarchy-depth="two"] .tcrn-editor-shell { display: block; }',
-    '[data-page-hierarchy="true"][data-page-hierarchy-depth="two"] .tcrn-editor__directory { margin-bottom: var(--tcrn-space-3); }',
     '[data-page-hierarchy="true"][data-page-hierarchy-depth="two"] [data-settings-layout-nav],',
   ];
   for (const rule of sourceRules) if (!source.includes(rule)) findings.push(`source:${rule}`);
@@ -376,7 +405,7 @@ function topbarFindings(document) {
   const domOrder = header ? [header, ...header.querySelectorAll("*")] : [];
   if (actionOrder.some((node) => !node || !domOrder.includes(node))) findings.push("topbar:action-ownership");
   else if (actionOrder.some((node, index) => index > 0 && domOrder.indexOf(actionOrder[index - 1]) >= domOrder.indexOf(node))) findings.push("topbar:action-order");
-  if (header?.getAttribute("data-ds-mapping-status") !== "candidate-consumed-pending-coordination") findings.push("topbar:mapping-status");
+  if (header?.getAttribute("data-ds-mapping-status") !== DS_CONTRACT.reconciliation.status) findings.push("topbar:mapping-status");
   return findings;
 }
 
@@ -553,7 +582,13 @@ if (MUTATION) {
 
   test("INC-148 rendered DOM behavior changes receipt state", async () => {
     const page = await preparePage();
-    try { assertDomContract(page.document); await assertBehaviorContract(page); } finally { await page.cleanup(); }
+    try {
+      assertDomContract(page.document);
+      await assertBehaviorContract(page);
+      const complete = JSON.parse(page.document.querySelector("#receipt-raw").textContent);
+      assert.equal(typeof complete.reasonCode, "string", "the complete result remains available inside the disclosed receipt");
+      assert.ok(page.document.querySelector("#receipt-raw").closest("#receipt-details"), "technical JSON uses the existing on-demand details boundary");
+    } finally { await page.cleanup(); }
   });
 
   test("INC-221 a settle signal that never arrives fails by name, not by silent misread", async () => {
@@ -659,10 +694,10 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       await new Promise((resolve) => setTimeout(resolve, 80));
       const layout = page.document.querySelector('[data-settings-layout-component="SettingsLayout"]');
       assert.ok(layout, "the settings page must consume the DS SettingsLayout contract");
-      assert.equal(layout.getAttribute("data-ds-candidate"), "TCRN-Design-System@610680b81a950e91e9e1e77718ea7f3f3b19bc27");
-      assert.equal(layout.getAttribute("data-ds-contract-status"), "candidate-consumed-pending-coordination");
+      assert.equal(layout.getAttribute("data-ds-candidate"), `TCRN-Design-System@${DS_CONTRACT.candidate}`);
+      assert.equal(layout.getAttribute("data-ds-contract-status"), DS_CONTRACT.reconciliation.status);
       assert.equal(layout.getAttribute("data-ds-contract-version"), "ai_consumption_contract_v1");
-      assert.equal(layout.getAttribute("data-ds-contract-digest"), "a56fcf3427866d4034ede1c59b59b888ac8169ca19fcd1c3af66b0a49cd16138");
+      assert.equal(layout.getAttribute("data-ds-contract-digest"), DS_CONTRACT.aiContract.payloadDigest);
       assert.equal(layout.getAttribute("data-ds-surface-contracts"), "overlay-boundary-contract-v1 field-value-selection-contract-v1 dictionary-content-contract-v1 operation-feedback-contract-v1 content-scope-contract-v1 consumer-evidence-contract-v1 verification-cadence-contract-v1");
       assert.equal(layout.getAttribute("data-ds-static-overlay-bridge"), "mountStaticOverlayBoundary");
       assert.deepEqual(layout.getAttribute("data-ds-rules")?.split(" "), ["DS-106-R1", "DS-106-R2", "DS-107-R1", "DS-107-R2", "DS-108-R1", "DS-108-R2", "DS-112-R1", "DS-112-R2", "DS-116-R1", "DS-116-R2", "DS-117-R1", "DS-117-R2", "DS-118-R1", "DS-118-R2", "DS-119-R1", "DS-119-R2"]);
@@ -690,7 +725,6 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
         && input.getAttribute("data-number-input") === "true"
         && input.getAttribute("data-number-input-semantic") === "numeric-entry"
         && input.getAttribute("min") !== null
-        && input.getAttribute("max") !== null
         && input.getAttribute("value") !== null
         && input.getAttribute("data-number-input-visibility") === "full-value"));
       const settingChoices = [...layout.querySelectorAll('[data-setting-choice="true"]')];
@@ -727,10 +761,10 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       assert.ok(layout);
       const findings = (root) => {
         const output = [];
-        if (root.getAttribute("data-ds-candidate") !== "TCRN-Design-System@610680b81a950e91e9e1e77718ea7f3f3b19bc27") output.push("ds-candidate");
-        if (root.getAttribute("data-ds-contract-status") !== "candidate-consumed-pending-coordination") output.push("ds-contract-status");
+        if (root.getAttribute("data-ds-candidate") !== `TCRN-Design-System@${DS_CONTRACT.candidate}`) output.push("ds-candidate");
+        if (root.getAttribute("data-ds-contract-status") !== DS_CONTRACT.reconciliation.status) output.push("ds-contract-status");
         if (root.getAttribute("data-ds-contract-version") !== "ai_consumption_contract_v1") output.push("ds-contract-version");
-        if (root.getAttribute("data-ds-contract-digest") !== "a56fcf3427866d4034ede1c59b59b888ac8169ca19fcd1c3af66b0a49cd16138") output.push("ds-contract-digest");
+        if (root.getAttribute("data-ds-contract-digest") !== DS_CONTRACT.aiContract.payloadDigest) output.push("ds-contract-digest");
         if (root.getAttribute("data-ds-rules") !== "DS-106-R1 DS-106-R2 DS-107-R1 DS-107-R2 DS-108-R1 DS-108-R2 DS-112-R1 DS-112-R2 DS-116-R1 DS-116-R2 DS-117-R1 DS-117-R2 DS-118-R1 DS-118-R2 DS-119-R1 DS-119-R2") output.push("ds-rules");
         if (root.getAttribute("data-settings-layout-navigation-location") !== "page-hierarchy-section-tabs") output.push("navigation-location");
         const required = {
@@ -747,7 +781,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
         for (const input of root.querySelectorAll('[data-number-input-component="NumberInput"]')) {
           if (!input.classList.contains("tcrn-number-input")) output.push("number-input-identity");
           if (input.getAttribute("data-number-input-visibility") !== "full-value") output.push("number-input-visibility");
-          if (input.type !== "number" || input.getAttribute("min") === null || input.getAttribute("max") === null || input.getAttribute("value") === null) output.push("number-input-native-range");
+          if (input.type !== "number" || input.getAttribute("min") === null || input.getAttribute("value") === null) output.push("number-input-native-range");
         }
         return output;
       };
@@ -989,7 +1023,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       assert.doesNotMatch(page.source, /\bSETTING_GROUPS\b/u, "the page's hard-coded key-to-group table is gone");
       const project = (await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings;
       const device = (await cli(["machine-settings-catalog"], { ...page.deviceEnv, HOME: page.fixture.home })).settings;
-      const rows = [...project.map((entry) => ({ ...entry, layer: "project" })), ...device.map((entry) => ({ ...entry, layer: "device" }))];
+      const rows = [...project.map((entry) => ({ ...entry })), ...device.map((entry) => ({ ...entry, layer: "device" }))];
       for (const row of rows) {
         assert.equal(page.source.includes(`"${row.key}": "${row.group}"`), false, `${row.key} has no group written into the page`);
         assert.ok(["scalar", "collection"].includes(row.shape) && typeof row.group === "string" && Number.isSafeInteger(row.order), `${row.key} carries its layout`);
@@ -1027,7 +1061,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
 
       // Every row names where it lives, in five languages; in Chinese 项目级（随库同步） or 本机.
       page.document.querySelector('[data-setting-group="knowledge"]')?.click();
-      const layerNames = { en: ["Project level (synced with the library)", "This device"], "zh-CN": ["项目级（随库同步）", "本机"] };
+      const layerNames = { en: ["Selected project", "This device"], "zh-CN": ["所选项目", "本机"] };
       for (const locale of ["zh-CN", "en", "ja", "ko", "fr"]) {
         page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
         const names = [...page.document.querySelectorAll("[data-settings-layout-nav] [data-setting-group]")].map((button) => button.textContent.trim());
@@ -1072,53 +1106,59 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       page.document.querySelector('[data-setting-group="retrieval"]')?.click();
       const prompt = page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]');
       assert.ok(prompt, "prompt languages must have a live control");
-      assert.equal(prompt.getAttribute("role"), "group");
-      assert.equal(prompt.dataset.choicePresentation, "checkboxes");
+      assert.equal(prompt.tagName, "SELECT");
+      assert.equal(prompt.multiple || prompt.hasAttribute("multiple"), true);
+      assert.equal(prompt.closest("[data-prompt-language-dropdown]").dataset.choicePresentation, "dropdown");
       assert.equal(prompt.getAttribute("data-setting-cardinality"), "set");
-      assert.equal(prompt.closest("[data-setting-choice-component]")?.getAttribute("data-setting-choice-source"), "artifact.language.allowedValues");
-      assert.equal(prompt.closest("[data-setting-choice-component]")?.getAttribute("data-setting-choice-value-format"), "comma-separated");
-
-      const languageSetting = project.find((entry) => entry.key === "artifact.language");
-      const roster = languageSetting.allowedValues;
-      assert.ok(Array.isArray(roster) && roster.length > 0);
-      const options = [...prompt.querySelectorAll('input[type="checkbox"]')];
-      assert.deepEqual(options.map((option) => option.value), roster, "the checklist options must come from the engine language roster");
-      assert.equal(new Set(options.map((option) => option.value)).size, options.length, "language options must be unique");
-      assert.match(prompt.textContent, /日本語/u);
-      assert.match(prompt.textContent, /한국어/u);
-      assert.match(prompt.textContent, /Français/u);
-      assert.equal(prompt.parentElement.querySelector("[data-reset-setting]")?.textContent, "Use artefact language");
-
-      assert.ok(page.document.querySelector(".tcrn-setting-choice"), "the language collection uses the shared choice component");
-      const firstOption = options[0];
-      firstOption.checked = true;
+      const choice = prompt.closest("[data-setting-choice-component]");
+      assert.equal(choice?.getAttribute("data-setting-choice-source"), "artifact.language.allowedValues");
+      assert.equal(choice?.getAttribute("data-setting-choice-value-format"), "comma-separated");
+      const dropdown = prompt.closest("[data-prompt-language-dropdown]");
+      const trigger = dropdown.querySelector('[aria-haspopup="listbox"]');
+      assert.equal(trigger.getAttribute("aria-expanded"), "false", "the Select-family trigger starts collapsed");
+      const listbox = page.document.getElementById(trigger.getAttribute("aria-controls"));
+      assert.ok(listbox && listbox.parentElement === page.document.body, "the published bridge owns a body-level overlay");
+      assert.equal(listbox.hidden, true);
+      assert.equal(listbox.querySelectorAll('input[type="checkbox"]').length, 0, "the language collection is a dropdown, not a checkbox list");
+      const roster = project.find((entry) => entry.key === "artifact.language").allowedValues;
+      assert.deepEqual([...prompt.options].map((option) => option.value), roster, "native values and the authority bridge share the real roster");
+      trigger.click();
+      assert.equal(trigger.getAttribute("aria-expanded"), "true");
+      const options = [...listbox.querySelectorAll('[role="option"]')];
+      assert.equal(options.length, roster.length);
+      assert.match(listbox.textContent, /日本語/u);
+      assert.match(listbox.textContent, /한국어/u);
+      assert.match(listbox.textContent, /Français/u);
+      assert.equal(choice.querySelector("[data-reset-setting]")?.textContent, "Reset override");
       const before = receiptText(page.document);
-      prompt.dispatchEvent(new page.window.Event("change", { bubbles: true }));
-      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, null, "an unsaved checklist is a local draft");
+      // en is the inherited default. A click adds fr locally, then Escape dismisses
+      // the list without writing and retains the native focused selection.
+      options[roster.indexOf("fr")].click();
+      const escape = new page.window.Event("keydown", { bubbles: true });
+      Object.defineProperty(escape, "key", { value: "Escape" });
+      listbox.dispatchEvent(escape);
+      assert.equal(trigger.getAttribute("aria-expanded"), "false");
+      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, null, "an unsaved dropdown is a local draft");
+      choice.querySelector('[data-undo-setting-choice="retrieval.promptLanguages"]').click();
+      assert.deepEqual([...page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]').selectedOptions].map((option) => option.value), ["en"], "Undo restores the read-back selection");
+      const restoredDropdown = page.document.querySelector("[data-prompt-language-dropdown]");
+      restoredDropdown.querySelector('[aria-haspopup="listbox"]').click();
+      const restoredListbox = page.document.getElementById(restoredDropdown.querySelector('[aria-haspopup="listbox"]').getAttribute("aria-controls"));
+      restoredListbox.querySelectorAll('[role="option"]')[roster.indexOf("fr")].click();
       page.document.querySelector('[data-save-setting-choice="retrieval.promptLanguages"]').click();
       await waitFor(receiptAdvanced(page.document, before), "the prompt-language set receipt");
       await page.waitForSettled();
-      const saved = (await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages");
-      assert.equal(saved.currentValue, firstOption.value, "one checklist value is serialized in roster order");
+      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, "en,fr", "a saved selection is unique and serialized in roster order");
       const currentPrompt = page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]');
-      const duplicate = currentPrompt.querySelector("label").cloneNode(true);
-      duplicate.querySelector("input").checked = true;
-      currentPrompt.append(duplicate);
-      currentPrompt.querySelector('input[value="fr"]').checked = true;
-      const beforeDuplicate = receiptText(page.document);
+      for (const option of currentPrompt.options) option.selected = false;
       currentPrompt.dispatchEvent(new page.window.Event("change", { bubbles: true }));
-      page.document.querySelector('[data-save-setting-choice="retrieval.promptLanguages"]').click();
-      await waitFor(receiptAdvanced(page.document, beforeDuplicate), "the duplicate prompt-language receipt");
-      await page.waitForSettled();
-      const deduplicated = (await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages");
-      assert.equal(deduplicated.currentValue, "en,fr", "repeated checkbox values are serialized once in roster order");
-      const clearedPrompt = page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]');
-      for (const option of clearedPrompt.querySelectorAll('input[type="checkbox"]')) option.checked = false;
       const beforeClear = receiptText(page.document);
-      clearedPrompt.dispatchEvent(new page.window.Event("change", { bubbles: true }));
-      page.document.querySelector('[data-save-setting-choice="retrieval.promptLanguages"]').click();
-      await waitFor(receiptAdvanced(page.document, beforeClear), "clearing the final prompt language");
-      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, null, "an empty checklist keeps the existing unset behavior");
+      currentPrompt.closest('[data-setting-choice-component]').querySelector('[data-save-setting-choice="retrieval.promptLanguages"]').click();
+      await waitFor(() => receiptText(page.document) !== beforeClear && receiptText(page.document).startsWith("✕"), "the required-selection refusal");
+      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, "en,fr", "empty Save refuses and preserves the last saved value");
+      currentPrompt.closest('[data-setting-choice-component]').querySelector('[data-reset-setting="retrieval.promptLanguages"]').click();
+      await page.waitForSettled();
+      assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, null, "explicit Reset restores inheritance");
     } finally { await page.cleanup(); }
   });
 
@@ -1289,14 +1329,14 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       for (const [locale, label] of resetLabels) {
         page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
         page.document.querySelector('[data-setting-group="retrieval"]')?.click();
-        assert.equal(page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]')?.parentElement.querySelector("[data-reset-setting]")?.textContent, label, `${locale} reset label`);
+        assert.equal(page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]')?.closest("[data-setting-choice-component]").querySelector("[data-reset-setting]")?.textContent, page.window.PORTAL_LOCALES[locale]["config.reset"], `${locale} reset label`);
       }
       page.document.querySelector('[data-locale-option="en"]')?.click();
       page.document.querySelector('[data-setting-group="retrieval"]')?.click();
       const prompt = page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]');
-      assert.equal(prompt?.dataset.choicePresentation, "checkboxes");
-      const languages = [...prompt.querySelectorAll('input[type="checkbox"]')];
-      for (const option of languages) option.checked = true;
+      assert.equal(prompt?.closest("[data-prompt-language-dropdown]").dataset.choicePresentation, "dropdown");
+      const languages = [...prompt.options];
+      for (const option of languages) option.selected = true;
       const beforeSet = receiptText(page.document);
       prompt.dispatchEvent(new page.window.Event("change", { bubbles: true }));
       page.document.querySelector('[data-save-setting-choice="retrieval.promptLanguages"]').click();
@@ -1306,11 +1346,11 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
 
       page.document.querySelector('[data-page-target="dashboard"]')?.click();
       page.document.querySelector('[data-page-target="settings"]')?.click();
-      assert.equal([...page.document.querySelectorAll('[data-setting-control="retrieval.promptLanguages"] input[type="checkbox"]')].every((option) => option.hasAttribute("checked")), true, "page switching preserves the live collection state");
+      assert.equal([...page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]').options].every((option) => option.selected), true, "page switching preserves the live collection state");
 
       const currentPrompt = page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]');
       const beforeCollectionReset = receiptText(page.document);
-      currentPrompt.parentElement.querySelector('[data-reset-setting="retrieval.promptLanguages"]').click();
+      currentPrompt.closest("[data-setting-choice-component]").querySelector('[data-reset-setting="retrieval.promptLanguages"]').click();
       await waitForReceiptChange(beforeCollectionReset, "the prompt-language collection reset receipt");
       await waitFor(() => page.document.querySelector('[data-setting-row="retrieval.promptLanguages"]')?.dataset.modified === "false", "the prompt-language reset to read back");
       assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, null, "the reset action restores the artifact-language default rather than writing an empty value");
@@ -1614,8 +1654,8 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       // Each page lists its records as the engine renders or plans them, each order in a NumberInput.
       assert.deepEqual(variableRows(), [["beta", "5"], ["alpha", ""]]);
       assert.deepEqual(gateRows(), [["unit", "4"], ["lint", ""]]);
-      assert.deepEqual(ruleCards(), [["batch", "3"], ["autonomy", ""], ["unattended-commands", ""], ["silent-reporting", ""]]);
-      const orderInputs = [...document.querySelectorAll('[data-variable-field="order"], [data-gate-order], [data-rule-order]')];
+      assert.deepEqual(ruleCards(), [["batch", "3"], ["autonomy", ""], ["unattended-commands", ""], ["silent-reporting", ""], ["design-authority", ""]]);
+      const orderInputs = [...document.querySelectorAll('[data-variable-row] [data-variable-field="order"], [data-gate-row] [data-gate-order], [data-rule-card] [data-rule-order]')];
       assert.ok(orderInputs.length === 9 && orderInputs.every((input) => input.getAttribute("data-number-input-component") === "NumberInput" && input.type === "number" && input.getAttribute("min") === "1"));
       // An enabled rule saves its order; a disabled one takes it when it is switched on.
       assert.ok(document.querySelector('[data-rule-card="batch"] [data-rule-order-save][data-cli-action="rule-enable"]'));
@@ -1631,7 +1671,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
           assert.ok(text.toLocaleLowerCase().includes(orderName.toLocaleLowerCase()) && text.includes(purpose === "gates" ? "" : "AGENTS.md"), `${locale} ${purpose}: the header says what the order is for`);
         }
         assert.equal(document.querySelector("[data-variable-table] [role=columnheader]").textContent, orderName);
-        assert.equal(document.querySelector('[data-ui="gate-config-table"] thead th').textContent, orderName);
+        assert.equal(document.querySelector('[data-ui="gate-config-table"] [role=columnheader]').textContent, orderName);
         assert.equal(document.querySelector('[data-rule-card="batch"] [data-rule-card-order] .tcrn-field__label').textContent, orderName);
       }
       document.querySelector('[data-locale-option="en"]')?.click();
@@ -1681,7 +1721,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       toggle.checked = true;
       toggle.dispatchEvent(new page.window.Event("change", { bubbles: true }));
       await page.waitForSettled();
-      assert.deepEqual(ruleCards(), [["autonomy", "1"], ["silent-reporting", "2"], ["batch", "3"], ["unattended-commands", ""]]);
+      assert.deepEqual(ruleCards(), [["autonomy", "1"], ["silent-reporting", "2"], ["batch", "3"], ["unattended-commands", ""], ["design-authority", ""]]);
       const listed = (await cli(["rule-list", "--project", fixture.proseRoot], fixture.deviceEnv)).rules;
       assert.deepEqual(listed.filter((rule) => rule.order !== undefined).map((rule) => [rule.id, rule.state, rule.order]), [["autonomy", "enabled", 1], ["batch", "enabled", 3], ["silent-reporting", "enabled", 2]]);
       const text = await agents();
@@ -1742,7 +1782,8 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       // satisfied in this world would make the optional key effectively required.
       const panel = page.document.querySelector("#design-authority");
       assert.ok(panel, "the panel exists even when there is nothing to show");
-      assert.equal(panel.hidden, true, "an undeclared authority says nothing at all");
+      assert.equal(panel.hidden, false, "missing project bindings are visible");
+      assert.equal(panel.querySelector("[data-design-authority-state]")?.dataset.designAuthorityState, "unconfigured");
 
       // The contract is fetched by the reader's browser. Both outcomes are exercised
       // here because only one of them can be produced against a real address offline,
@@ -1770,6 +1811,10 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
         };
       };
 
+      for (const [key, value] of Object.entries({"design.repository":"https://design.example.test/repository","design.pullRequestTarget":"main","design.productionDocs":"https://design.example.test/docs","design.buildService":"Example build","design.buildProject":"Example docs","design.consumedVersion":"9.9.9"})) {
+        await writeScratch(page.fixture, "settings-set", ["--key", key, "--value", value]);
+      }
+      await page.window.fetch("/api/settings").then(r=>r.json());
       answerWith({ schemaVersion: "tcrn.design-authority.v1", name: "Example System", version: "9.9.9" });
       let input = page.document.querySelector('[data-setting-control="design.authority"]');
       const declaredRendered = rendered("the declared contract to be fetched and rendered");
@@ -1797,7 +1842,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       assert.equal(warned?.dataset.designAuthorityState, "warning", "a response that is not this contract is yellow");
       assert.ok(warned.className.includes("tcrn-inline-alert"), "the warning uses the design system's alert");
       assert.ok(warned.className.includes("tcrn-inline-alert--warning"));
-      assert.match(warned.textContent, /turns green/u, "a yellow must say what resolves it");
+      assert.match(warned.textContent, /advisory|unknown/u, "a browser check cannot claim production publication");
 
       // A body that is well-formed in every way EXCEPT the schema version isolates that
       // check. Without this case the schema check could be deleted and nothing would
@@ -1839,7 +1884,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       assert.equal(content.parentElement, page.document.body, "the popover layer must be mounted at document body");
       assert.equal(content.getAttribute("data-overlay-boundary"), "document-body");
       assert.equal(content.getAttribute("data-overlay-positioning"), "static-fixed");
-      assert.equal(content.getAttribute("data-ds-overlay-candidate"), "TCRN-Design-System@610680b81a950e91e9e1e77718ea7f3f3b19bc27");
+      assert.equal(content.getAttribute("data-ds-overlay-candidate"), `TCRN-Design-System@${DS_CONTRACT.candidate}`);
       assert.equal(content.hidden, true, "a mounted popover starts closed");
       // INC-201: the contract is that the trigger names *a* design-system button
       // component, which is what design-proof's button-family leg enforces. It used to
@@ -1896,7 +1941,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
         assert.equal(layer.parentElement, page.document.body, "every layer must escape the settings row boundary");
         assert.equal(layer.getAttribute("data-overlay-boundary"), "document-body");
         assert.equal(layer.getAttribute("data-overlay-positioning"), "static-fixed");
-        assert.equal(layer.getAttribute("data-ds-overlay-candidate"), "TCRN-Design-System@610680b81a950e91e9e1e77718ea7f3f3b19bc27");
+        assert.equal(layer.getAttribute("data-ds-overlay-candidate"), `TCRN-Design-System@${DS_CONTRACT.candidate}`);
         assert.equal(layer.hidden, true);
         return { trigger, layer };
       };
@@ -2131,14 +2176,15 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       assert.match(firstId, /^library:/u);
       assert.equal(text("#rail-workspace-label"), "project");
       assert.equal(text("#workspace-label"), fixture.workspace);
-      assert.equal(text("#stat-version"), "0");
+      assert.equal(text("#stat-version"), "1");
       const healthReasons = () => [...page.document.querySelectorAll("[data-doctor-check]")].map((row) => [row.dataset.doctorCheck, row.querySelectorAll(".tcrn-operation-feedback__identity code")[1]?.textContent ?? ""]);
       const initialDoctor = await cli(["doctor", "--project", fixture.proseRoot], { ...fixture.deviceEnv, HOME: fixture.home });
       assert.deepEqual(healthReasons(), initialDoctor.checks.map((check) => [check.check, check.reasonCode ?? "—"]));
 
+      const secondVersion = String((await cli(["status", "--workspace", fixture.second.library], fixture.deviceEnv)).version);
       select.value = fixture.second.project;
       select.dispatchEvent(new page.window.Event("change", { bubbles: true }));
-      await waitFor(() => text("#workspace-label") === fixture.second.library && text("#stat-version") === "1" && text("#agents-path") === join(fixture.second.project, "AGENTS.md"), "the page to move to the second library");
+      await waitFor(() => text("#workspace-label") === fixture.second.library && text("#stat-version") === secondVersion && text("#agents-path") === join(fixture.second.project, "AGENTS.md"), "the page to move to the second library");
       assert.equal(text("#rail-workspace-label"), "second-project");
       assert.notEqual(text("#library-label"), firstId);
       assert.ok(options[1].textContent.includes(text("#library-label")), "the rail names the id the switcher showed");
@@ -2162,9 +2208,10 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
         assert.deepEqual(stateKeys.map((key) => page.document.querySelector(`#library-state [data-i18n="${key}"]`)?.textContent), labels);
       }
 
+      const firstVersion = String((await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).version);
       page.document.querySelector("#library-select").value = fixture.proseRoot;
       page.document.querySelector("#library-select").dispatchEvent(new page.window.Event("change", { bubbles: true }));
-      await waitFor(() => text("#workspace-label") === fixture.workspace && text("#stat-version") === "0" && text("#agents-path") === join(fixture.proseRoot, "AGENTS.md"), "the page to return to the first library");
+      await waitFor(() => text("#workspace-label") === fixture.workspace && text("#stat-version") === firstVersion && text("#agents-path") === join(fixture.proseRoot, "AGENTS.md"), "the page to return to the first library");
       assert.equal(text("#library-label"), firstId);
       const firstDoctor = await cli(["doctor", "--project", fixture.proseRoot], { ...fixture.deviceEnv, HOME: fixture.home });
       assert.equal(page.document.querySelector("#health-chip")?.className.includes("tcrn-badge--positive"), firstDoctor.ok);
@@ -2297,14 +2344,29 @@ if (process.argv[2] === "work-list") {
 
       const refused = await loadExecutedDom(fixture, { TCRN_WORKFLOW_CLI: wrapper });
       try {
-        assert.equal(assertOnlyWorkFailed(refused, "PORTAL_WORK_READ_FAILED").textContent, "PORTAL_WORK_READ_FAILED · PORTAL_TEST_WORK_REFUSED");
+        const failure = assertOnlyWorkFailed(refused, "PORTAL_WORK_READ_FAILED");
+        const complete = JSON.parse(failure.querySelector("pre").textContent);
+        assert.equal(complete.reasonCode, "PORTAL_WORK_READ_FAILED");
+        assert.equal(complete.source.reasonCode, "PORTAL_TEST_WORK_REFUSED");
+        assert.equal(failure.querySelector("details").hasAttribute("open"), false, "technical reasons start inside a closed disclosure");
+        const sandbox = {};
+        new Function("window", await readFile(join(portalRoot, "locales.js"), "utf8"))(sandbox);
+        for (const locale of Object.keys(sandbox.PORTAL_LOCALES)) {
+          refused.document.querySelector(`[data-locale-option="${locale}"]`).click();
+          const description = refused.document.querySelector("[data-work-failure] .tcrn-state-surface__description");
+          assert.equal(description.textContent, sandbox.PORTAL_LOCALES[locale]["app.readUnavailable"]);
+        }
       } finally { refused.child.kill(); }
 
       const broken = await loadExecutedDom(fixture, {}, { hold: (path) => path === "/api/work" });
       try {
         assert.equal(broken.release({ error: new TypeError("fetch failed") }), 1);
         await broken.waitForSettled();
-        assert.equal(assertOnlyWorkFailed(broken, "PORTAL_READ_FAILED").textContent, "PORTAL_READ_FAILED");
+        const failure = assertOnlyWorkFailed(broken, "PORTAL_READ_FAILED");
+        const complete = JSON.parse(failure.querySelector("pre").textContent);
+        assert.equal(complete.reasonCode, "PORTAL_READ_FAILED");
+        assert.equal(complete.error, "fetch failed");
+        assert.ok(failure.querySelector(".tcrn-state-surface__description").textContent.length > 0);
       } finally { broken.child.kill(); }
     } finally { await rm(fixture.base, { recursive: true, force: true }); }
   });

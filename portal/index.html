@@ -2760,6 +2760,9 @@ a.tcrn-relationship-chip:focus-visible {
 /* Form input + select (.tcrn-input--short is a docs-only demo width and stays there) */
 .tcrn-input,
 .tcrn-select {
+  font: inherit;
+  color: var(--tcrn-color-text-primary);
+  background: var(--tcrn-color-surface-panel);
   min-height: 34px;
   border: 1px solid var(--tcrn-color-border-strong);
   border-radius: var(--tcrn-radius-control);
@@ -3557,9 +3560,23 @@ a.tcrn-relationship-chip:focus-visible {
 .tcrn-multi-select-group__option{display:flex;align-items:flex-start;gap:var(--tcrn-space-2);min-inline-size:0;overflow-wrap:anywhere}
 .tcrn-multi-select-group__option input{flex:0 0 auto;margin-block-start:var(--tcrn-space-0h)}
 .tcrn-multi-select-group__actions{display:flex;justify-content:flex-start}
-.tcrn-multi-select-group__clear{min-block-size:32px;padding-inline:var(--tcrn-space-2);border:1px solid var(--tcrn-color-border-control);border-radius:var(--tcrn-radius-control);background:transparent;color:var(--tcrn-color-text-secondary);font:inherit;cursor:pointer}
-.tcrn-multi-select-group__clear:disabled{cursor:not-allowed;opacity:.64}
-.tcrn-multi-select-group__clear:not(:disabled):hover{border-color:var(--tcrn-color-brand-primary);color:var(--tcrn-color-brand-primary)}
+.tcrn-multi-select-group__clear{justify-self:start}
+
+
+/* A collection dropdown uses the Select trigger and Menu option families. */
+.tcrn-multi-select-dropdown{position:relative;min-inline-size:0;max-inline-size:100%}
+.tcrn-multi-select-dropdown__trigger{display:flex;align-items:center;justify-content:space-between;gap:var(--tcrn-space-2);inline-size:100%;font:inherit;color:var(--tcrn-color-text-primary);background:var(--tcrn-color-surface-panel);text-align:start;cursor:pointer}
+.tcrn-multi-select-dropdown__trigger [data-multi-select-summary]{min-inline-size:0;overflow-wrap:anywhere}
+.tcrn-multi-select-dropdown__caret{flex:0 0 auto}
+.tcrn-multi-select-dropdown__trigger:focus-visible{outline:var(--tcrn-space-0h) solid var(--tcrn-color-focus-ring);outline-offset:var(--tcrn-space-0h)}
+.tcrn-multi-select-dropdown__trigger:disabled{color:var(--tcrn-color-text-disabled);cursor:not-allowed}
+.tcrn-multi-select-dropdown__list{z-index:var(--tcrn-z-popover);min-inline-size:0;max-inline-size:calc(100vw - var(--tcrn-space-4));max-block-size:calc(100vh - var(--tcrn-space-4));overflow:auto;box-sizing:border-box}
+.tcrn-multi-select-dropdown__list[hidden]{display:none}
+.tcrn-multi-select-dropdown__option{display:flex;justify-content:space-between;align-items:center;gap:var(--tcrn-space-2);font:inherit;color:var(--tcrn-color-text-primary);overflow-wrap:anywhere}
+.tcrn-multi-select-dropdown__option:not(:disabled):hover{background:var(--tcrn-selection-fill-hover)}
+.tcrn-multi-select-dropdown__option[aria-selected="true"]{background:var(--tcrn-selection-fill)}
+.tcrn-multi-select-dropdown__option [data-multi-select-check]{flex:0 0 auto;visibility:hidden}
+.tcrn-multi-select-dropdown__option [data-multi-select-check][data-selected="true"]{visibility:visible}
 
 /* DS-106/107 settings contract. */
 .tcrn-setting-choice{display:grid;gap:var(--tcrn-space-1);min-inline-size:0;max-inline-size:100%}
@@ -3584,7 +3601,7 @@ a.tcrn-relationship-chip:focus-visible {
 .tcrn-settings-layout__form .tcrn-setting-row{grid-template-columns:minmax(0,1fr);gap:var(--tcrn-space-2);overflow-wrap:anywhere}
 .tcrn-settings-layout__form .tcrn-setting-row__control{inline-size:100%;grid-column:auto;grid-row:auto}
 .tcrn-settings-layout__form .tcrn-setting-row__tools{grid-column:auto;grid-row:auto}
-.tcrn-settings-layout__form .tcrn-setting-row__control>:is(.tcrn-input,.tcrn-select,.tcrn-field,.tcrn-setting-choice,.tcrn-number-input-field,.tcrn-multi-select-group){inline-size:100%;min-inline-size:0}
+.tcrn-settings-layout__form .tcrn-setting-row__control>:is(.tcrn-input,.tcrn-select,.tcrn-field,.tcrn-setting-choice,.tcrn-number-input-field,.tcrn-multi-select-group,.tcrn-multi-select-dropdown){inline-size:100%;min-inline-size:0}
 .tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field :is(.tcrn-input,.tcrn-select,.tcrn-number-input){inline-size:100%;min-inline-size:0}
 .tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field{margin:0}
 .tcrn-settings-layout__form .tcrn-setting-row__control>.tcrn-number-input{inline-size:100%}
@@ -3667,76 +3684,32 @@ a.tcrn-relationship-chip:focus-visible {
 body { margin: 0; min-width: 320px; background: var(--tcrn-color-surface-canvas); color: var(--tcrn-color-text-primary); font: var(--tcrn-text-body-dense); }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
-button:disabled { cursor: not-allowed; opacity: 0.55; }
+button:disabled { cursor: not-allowed; }
 .tcrn-app { min-height: 100dvh; display: grid; grid-template-rows: minmax(0, 1fr); }
-.tcrn-brand { display: inline-flex; align-items: baseline; gap: var(--tcrn-space-2); min-width: 196px; padding: 0; border: 0; background: transparent; color: var(--tcrn-color-text-primary); text-align: left; }
-.tcrn-brand__name { font-weight: var(--tcrn-type-weight-strong); letter-spacing: -0.02em; }
-.tcrn-brand__sub { color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); }
 .tcrn-top-bar__actions { display: flex; align-items: center; gap: var(--tcrn-space-2); min-width: 0; }
 .tcrn-top-bar__actions .tcrn-select { width: auto; min-width: 92px; }
-.tcrn-top-bar__library { width: 160px; }
 /* fieldset/legend for the grouping semantics a screen reader needs, without the
    browser's default box: the design system has no fieldset precedent, and a legend
    straddling a border is not part of its visual language. The legend reads as the
    caption-weight group heading the rest of the portal uses. */
-.tcrn-form__group { display: grid; gap: var(--tcrn-space-3); margin: 0; padding: 0; border: 0; }
-.tcrn-form__group > legend { padding: 0; margin-bottom: var(--tcrn-space-1); color: var(--tcrn-color-text-secondary); font-size: var(--tcrn-type-size-caption); font-weight: var(--tcrn-type-weight-medium); }
 .tcrn-rail__mark { display: grid; gap: var(--tcrn-space-1); padding: 0 var(--tcrn-space-2); }
-.tcrn-rail__workspace { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--tcrn-color-text-primary); font-size: var(--tcrn-type-size-ui); font-weight: var(--tcrn-type-weight-strong); }
-.tcrn-eyebrow { margin: 0 0 var(--tcrn-space-2); color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); font-weight: var(--tcrn-type-weight-medium); letter-spacing: 0.06em; text-transform: uppercase; }
-.tcrn-rail__footer { margin-top: auto; padding: var(--tcrn-space-3) var(--tcrn-space-2); color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); line-height: var(--tcrn-type-line-caption); }
+.tcrn-rail__workspace { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tcrn-rail__footer { margin-top: auto; padding: var(--tcrn-space-3) var(--tcrn-space-2); }
 /* The top of the content area follows the v4 page head (preview.html:215, which pads
    space-4 above the title); space-6 all round left a band of empty canvas under the
    top bar at wide viewports. Sides and bottom keep the v4 paneview measure. */
 .tcrn-main { min-width: 0; min-height: 0; overflow: auto; padding: var(--tcrn-space-4) var(--tcrn-space-6) var(--tcrn-space-6); }
 .tcrn-page { width: min(1040px, 100%); margin: 0 auto; }
 .tcrn-page--manage { width: min(1100px, 100%); }
-.tcrn-page__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--tcrn-space-4); margin-bottom: var(--tcrn-space-5); }
-.tcrn-page__head h1 { margin: 0; font-size: var(--tcrn-type-size-page); line-height: var(--tcrn-type-line-page); letter-spacing: -0.03em; }
-.tcrn-page__lede { max-width: 680px; margin: var(--tcrn-space-2) 0 0; color: var(--tcrn-color-text-secondary); line-height: var(--tcrn-type-line-reading); }
-.tcrn-page__actions { display: flex; align-items: center; gap: var(--tcrn-space-2); }
 .tcrn-dot { width: var(--tcrn-state-dot-size); height: var(--tcrn-state-dot-size); border-radius: var(--tcrn-radius-pill); background: currentColor; }
 .tcrn-grid { display: grid; gap: var(--tcrn-space-3); }
 /* Grid items stretch by default, so one column growing drags its row-mates to the
    same height — the dashboard's two panels and the entity list beside its inspector
    both did this. v4 states the rule for the same construct (preview.html:279
-   .dashcols { align-items: start }), and .tcrn-manage / .tcrn-vocabulary here already
    follow it; these two were simply never brought along. */
 .tcrn-dashboard-grid { margin-top: var(--tcrn-space-3); align-items: start; }
-.tcrn-work-tree { display: grid; gap: var(--tcrn-space-2); }
-.tcrn-work-tree__epic { border-bottom: 1px solid var(--tcrn-color-border-subtle); padding-bottom: var(--tcrn-space-2); }
-.tcrn-work-tree__epic:last-child { border-bottom: 0; padding-bottom: 0; }
-.tcrn-work-tree__summary { display: flex; align-items: baseline; justify-content: space-between; gap: var(--tcrn-space-3); cursor: pointer; }
-.tcrn-work-tree__summary strong { min-width: 0; overflow-wrap: anywhere; }
-.tcrn-work-tree__children { display: grid; gap: var(--tcrn-space-1); margin-top: var(--tcrn-space-2); padding-inline-start: var(--tcrn-space-4); }
-.tcrn-work-tree__story { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--tcrn-space-2); padding: var(--tcrn-space-1) 0; border-bottom: 1px solid var(--tcrn-color-border-subtle); }
-.tcrn-work-tree__story:last-child { border-bottom: 0; }
-.tcrn-work-tree__text { min-width: 0; }
-.tcrn-work-tree__key { display: block; color: var(--tcrn-color-text-muted); font-family: var(--tcrn-type-family-mono); font-size: var(--tcrn-type-size-caption); overflow-wrap: anywhere; }
-.tcrn-work-tree__title { display: block; margin-top: var(--tcrn-space-1); overflow-wrap: anywhere; }
-.tcrn-work-tree__missing { color: var(--tcrn-color-state-warning); }
-.tcrn-read-list { display: grid; gap: var(--tcrn-space-1); }
-.tcrn-read-list__row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--tcrn-space-3); padding: var(--tcrn-space-2) 0; border-bottom: 1px solid var(--tcrn-color-border-subtle); }
-.tcrn-read-list__row:last-child { border-bottom: 0; }
-.tcrn-read-list__main { min-width: 0; overflow-wrap: anywhere; }
-.tcrn-read-list__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tcrn-space-1); margin-top: var(--tcrn-space-1); }
-.tcrn-read-list__summary { display: block; margin-top: var(--tcrn-space-1); color: var(--tcrn-color-text-secondary); font-size: var(--tcrn-type-size-caption); overflow-wrap: anywhere; }
-.tcrn-read-list__summary[role="document"] { max-width: 100%; margin: 0 0 var(--tcrn-space-2); white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; font: inherit; color: var(--tcrn-color-text-primary); }
-.tcrn-read-table { width: 100%; border-collapse: collapse; }
-.tcrn-read-table th, .tcrn-read-table td { padding: var(--tcrn-space-2) 0; border-bottom: 1px solid var(--tcrn-color-border-subtle); text-align: left; vertical-align: top; overflow-wrap: anywhere; }
-.tcrn-read-table th { color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); font-weight: var(--tcrn-type-weight-medium); }
-.tcrn-read-table td + td, .tcrn-read-table th + th { padding-inline-start: var(--tcrn-space-2); }
 .tcrn-grid--2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.tcrn-grid--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .tcrn-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.tcrn-surface__note { margin: var(--tcrn-space-1) 0 0; color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); }
-.tcrn-meta { color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); }
-.tcrn-machine-token--key .tcrn-machine-token__value { color: var(--tcrn-color-text-muted); }
-.tcrn-list { display: grid; gap: var(--tcrn-space-1); }
-.tcrn-list__row { display: flex; align-items: center; justify-content: space-between; gap: var(--tcrn-space-3); min-height: 34px; padding: var(--tcrn-space-1) var(--tcrn-space-2); border-bottom: 1px solid var(--tcrn-color-border-subtle); }
-.tcrn-list__row:last-child { border-bottom: 0; }
-.tcrn-list__main { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tcrn-list__sub { color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); }
 .tcrn-section-tabs { margin-bottom: var(--tcrn-space-4); }
 .tcrn-manage { display: grid; grid-template-columns: 208px minmax(0, 860px); gap: var(--tcrn-space-6); align-items: start; }
 [data-settings-layout-mode] { display: block; width: 100%; }
@@ -3753,42 +3726,13 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
    share one grid cell through this row instead. */
 .tcrn-subnav__row { display: flex; align-items: center; gap: var(--tcrn-space-1); }
 .tcrn-subnav__row .tcrn-subnav__item { flex: 1 1 auto; min-width: 0; }
-.tcrn-subnav__item { display: flex; align-items: center; gap: var(--tcrn-space-2); width: 100%; min-height: 34px; padding: 0 var(--tcrn-space-2h); border: 1px solid transparent; border-radius: var(--tcrn-radius-control); background: transparent; color: var(--tcrn-color-text-secondary); text-align: left; }
-.tcrn-subnav__item:hover { background: var(--tcrn-color-surface-muted); color: var(--tcrn-color-text-primary); }
-.tcrn-subnav__item[data-selected="true"] { background: var(--tcrn-color-brand-primary-bg); color: var(--tcrn-color-brand-primary); font-weight: var(--tcrn-type-weight-medium); }
-.tcrn-section { margin-bottom: var(--tcrn-space-5); }
-.tcrn-section__title { display: flex; align-items: center; gap: var(--tcrn-space-2); margin: 0 0 var(--tcrn-space-2); color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); font-weight: var(--tcrn-type-weight-medium); letter-spacing: 0.06em; text-transform: uppercase; }
+.tcrn-subnav__item { width: 100%; }
+.tcrn-finding-link { inline-size: 100%; justify-content: start; }
 .tcrn-top-bar__actions .tcrn-search-input { min-width: 0; flex: 1 1 auto; max-width: 430px; }
-.tcrn-form { display: grid; gap: var(--tcrn-space-3); }
-.tcrn-form__row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--tcrn-space-3); }
-.tcrn-scope-note { margin: var(--tcrn-space-2) 0 0; color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); }
 .tcrn-editor-shell { display: grid; grid-template-columns: 184px minmax(0, 1fr); gap: var(--tcrn-space-3); }
 .tcrn-editor__bar { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: var(--tcrn-space-3); }
-.tcrn-editor__status { color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); }
-.tcrn-editor__directory { display: grid; align-content: start; gap: var(--tcrn-space-1); position: sticky; top: 0; }
-.tcrn-directory__item { display: flex; align-items: center; width: 100%; min-height: 28px; padding: 0 var(--tcrn-space-2); border: 0; border-left: 2px solid transparent; background: transparent; color: var(--tcrn-color-text-secondary); text-align: left; font-size: var(--tcrn-type-size-caption); }
-.tcrn-directory__item:hover { border-left-color: var(--tcrn-color-brand-primary); background: var(--tcrn-color-surface-muted); }
-.tcrn-finding-link { display: flex; align-items: center; gap: var(--tcrn-space-2); width: 100%; padding: var(--tcrn-space-2); border: 0; border-bottom: 1px solid var(--tcrn-color-border-subtle); background: transparent; color: var(--tcrn-color-state-warning); text-align: left; }
-.tcrn-finding-link:hover { background: var(--tcrn-color-state-warning-bg); }
-.tcrn-entity-layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: var(--tcrn-space-4); align-items: start; }
-.tcrn-entity-list { min-height: 520px; }
-.tcrn-entity-section { display: grid; gap: var(--tcrn-space-1); margin-bottom: var(--tcrn-space-3); }
-.tcrn-entity-section__label { padding: 0 var(--tcrn-space-2); color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); font-weight: var(--tcrn-type-weight-medium); letter-spacing: 0.04em; text-transform: uppercase; }
-.tcrn-entity { display: grid; grid-template-columns: minmax(0, 1fr) auto; width: 100%; padding: var(--tcrn-space-2); border: 1px solid transparent; border-radius: var(--tcrn-radius-control); background: transparent; color: var(--tcrn-color-text-primary); text-align: left; }
-.tcrn-entity:hover { background: var(--tcrn-color-surface-muted); }
-.tcrn-entity[aria-current="true"] { border-color: var(--tcrn-color-brand-primary); background: var(--tcrn-color-brand-primary-bg); }
-.tcrn-entity__role { color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); }
-.tcrn-entity__source { color: var(--tcrn-color-brand-primary); font-size: var(--tcrn-type-size-caption); }
 .tcrn-detail-inspector { min-width: 0; }
-.tcrn-detail-inspector__head { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--tcrn-space-3); margin-bottom: var(--tcrn-space-4); }
-.tcrn-detail-inspector__head h2 { margin: 0; font-size: var(--tcrn-type-size-heading-2); }
-.tcrn-detail-inspector__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--tcrn-space-2); }
-.tcrn-detail-inspector__identity { display: flex; align-items: center; gap: var(--tcrn-space-2); flex-wrap: wrap; }
-.tcrn-more-fields { margin-top: var(--tcrn-space-4); border-top: 1px solid var(--tcrn-color-border-subtle); border-bottom: 1px solid var(--tcrn-color-border-subtle); }
-.tcrn-more-fields summary { padding: var(--tcrn-space-3) 0; color: var(--tcrn-color-text-secondary); cursor: pointer; }
-.tcrn-more-fields__body { display: grid; gap: var(--tcrn-space-3); padding-bottom: var(--tcrn-space-3); }
 .tcrn-confirm-dialog { margin-top: var(--tcrn-space-3); }
-.tcrn-confirm-dialog__actions { display: flex; gap: var(--tcrn-space-2); margin-top: var(--tcrn-space-2); }
 /* Same grammar as .tcrn-manage: without align-items start the group nav cell stretches
    to the term list's full height and grid spreads its rows across it, which reads as
    group names scattered through the content. */
@@ -3797,46 +3741,9 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 /* Cell shapes for the vocabulary table. The table itself is the design system's
    tcrn-table-shell; these only say how a semantics map and a source link sit inside
    a cell, which no DS construct covers. */
-/* The design system groups form buttons in a tcrn-action-row (its storybook uses that
-   construct), but the class carries no CSS in the distributable snapshot, so the row's
-   two rules live here. Without it a primary button inherits the form grid's stretch and
-   spans the whole column, which is not how a form action reads. */
-/* The concept trigger sits inline beside a label rather than standing alone in a
-   toolbar, so it takes a smaller box than the design system's default icon button.
-   Everything else — the tooltip surface, its placement, and the hover/focus rule that
-   reveals it — comes from the design system unchanged. */
-/* INC-201: this is a 16px icon affordance sitting beside a label, not a control box.
-   The design system's button base is a 38px box (min-height plus horizontal padding),
-   so the two axes have to be neutralised explicitly here — the same way the design
-   system neutralises its input base for its own search control. Without the
-   reset the trigger measured 16x38 and pushed every row it sat in to 38px. */
-.tcrn-concept-tip__trigger {
-  inline-size: var(--tcrn-space-4);
-  block-size: var(--tcrn-space-4);
-  min-block-size: 0;
-  padding: 0;
-  border-color: transparent;
-  color: var(--tcrn-color-text-muted);
-  vertical-align: middle;
-}
-/* Hover is the only time the explanation is on screen, so the button base's hover box
-   — a control border plus a filled ground — was visible every single time anyone read
-   a tooltip. An info affordance answers with its colour, not with a box; the border
-   measured transparent at rest and a solid control grey on hover before this reset.
-   The :not([disabled]) is not decoration: the design system's own button hover rule
-   carries it, and a plain one-class-plus-pseudo selector loses to that on specificity. Matching the selector's shape is how this wins without
-   reaching for !important. */
-.tcrn-concept-tip__trigger:not([disabled]):hover,
-.tcrn-concept-tip__trigger:not([disabled]):active,
-.tcrn-concept-tip__trigger:not([disabled]):focus { border-color: transparent; background: transparent; }
-.tcrn-concept-tip__trigger:hover { color: var(--tcrn-color-text-primary); }
-/* An info affordance should not answer a mouse click with a selection box. It must
-   still answer the keyboard, or the explanation becomes mouse-only and INC-192's
-   whole point is lost — so the ring stays for :focus-visible and is tightened to
-   suit a 16px icon rather than the shell's 3px control ring. */
-.tcrn-concept-tip__trigger svg { inline-size: 13px; block-size: 13px; }
-.tcrn-action-row { display: flex; justify-content: flex-end; gap: var(--tcrn-space-2); }
-.tcrn-action-row .tcrn-button { width: auto; }
+/* Form actions consume the published Surface head-actions construction. */
+/* Explanation triggers use the published Button/IconButton family verbatim;
+   the former 16px app-only control, hover reset and ring variant are removed. */
 /* The design system's table shell takes its column track list from a custom property,
    which its storybook sets inline. The portal forbids inline style attributes, so the
    same variable is set per column count here — same contract, no inline attribute.
@@ -3853,23 +3760,13 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 [data-vocabulary-columns="6"] { --tcrn-table-column-count: 6; --tcrn-table-shell-columns: repeat(6, minmax(var(--tcrn-table-shell-column-min-width, 160px), 1fr)); }
 .tcrn-vocabulary__semantic { display: block; }
 .tcrn-vocabulary__semantic + .tcrn-vocabulary__semantic { margin-top: var(--tcrn-space-1); }
-.tcrn-vocabulary__semantic .tcrn-meta { display: block; }
+.tcrn-vocabulary__semantic .tcrn-text { display: block; }
 .tcrn-vocabulary__source { display: block; color: var(--tcrn-color-brand-primary); text-decoration: none; }
 .tcrn-vocabulary__source + .tcrn-vocabulary__source { margin-top: var(--tcrn-space-1); }
 .tcrn-vocabulary__source:hover { text-decoration: underline; }
-.tcrn-search-results { position: absolute; z-index: var(--tcrn-z-popover); top: 42px; right: var(--tcrn-space-4); width: min(440px, calc(100vw - 32px)); max-height: 360px; overflow: auto; padding: var(--tcrn-space-2); border: 1px solid var(--tcrn-color-border-strong); border-radius: var(--tcrn-radius-panel); background: var(--tcrn-color-surface-panel); box-shadow: var(--tcrn-elevation-floating); }
-.tcrn-search-result { display: grid; gap: var(--tcrn-space-1); width: 100%; padding: var(--tcrn-space-2); border: 0; border-radius: var(--tcrn-radius-control); background: transparent; color: var(--tcrn-color-text-primary); text-align: left; }
-.tcrn-search-result:hover, .tcrn-search-result[aria-current="true"] { background: var(--tcrn-color-brand-primary-bg); }
-.tcrn-search-result__meta { color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); }
-.tcrn-detail-drawer { position: fixed; z-index: var(--tcrn-z-overlay); top: 0; right: 0; bottom: 30px; width: min(400px, 94vw); overflow: auto; border-left: 1px solid var(--tcrn-color-border-strong); box-shadow: var(--tcrn-elevation-floating); transform: translateX(0); transition: transform var(--tcrn-motion-standard) var(--tcrn-motion-ease-drawer); }
+.tcrn-search-results { inset-block-start: 42px; inset-inline-end: var(--tcrn-space-4); max-block-size: 360px; overflow: auto; }
+.tcrn-detail-drawer { position: fixed; z-index: var(--tcrn-z-overlay); top: 0; right: 0; bottom: 30px; width: min(400px, 94vw); overflow: auto; transform: translateX(0); transition: transform var(--tcrn-motion-standard) var(--tcrn-motion-ease-drawer); }
 .tcrn-detail-drawer[data-open="false"] { visibility: hidden; pointer-events: none; transform: translateX(100%); }
-.tcrn-detail-drawer__head { display: flex; justify-content: space-between; align-items: center; gap: var(--tcrn-space-3); margin-bottom: var(--tcrn-space-4); }
-.tcrn-detail-drawer__head h2 { margin: 0; font-size: var(--tcrn-type-size-heading-2); }
-.tcrn-readback-panel { display: grid; gap: var(--tcrn-space-2); background: var(--tcrn-color-surface-muted); }
-.tcrn-readback-panel__row { display: flex; justify-content: space-between; gap: var(--tcrn-space-3); }
-.tcrn-readback-panel__key { color: var(--tcrn-color-text-muted); }
-.tcrn-readback-panel__value { max-width: 62%; overflow-wrap: anywhere; color: var(--tcrn-color-text-secondary); font-family: var(--tcrn-type-family-mono); text-align: right; }
-.tcrn-portal-note { margin: var(--tcrn-space-4) 0 0; padding: var(--tcrn-space-3); border-left: 3px solid var(--tcrn-color-brand-primary); background: var(--tcrn-color-brand-primary-bg); color: var(--tcrn-color-text-secondary); line-height: var(--tcrn-type-line-reading); }
 [hidden] { display: none !important; }
 [data-tcrn-locale="en"], [data-tcrn-locale="fr"] { --tcrn-type-family-ui: var(--tcrn-type-family-latin); }
 [data-tcrn-locale="zh-CN"] { --tcrn-type-family-ui: var(--tcrn-type-family-zh-cn); }
@@ -3877,23 +3774,18 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 [data-tcrn-locale="ko"] { --tcrn-type-family-ui: var(--tcrn-type-family-ko); }
 @media (max-width: 980px) {
   .tcrn-product-shell { grid-template-columns: 1fr; }
-  .tcrn-product-shell__sidebar { border-right: 0; border-bottom: 1px solid var(--tcrn-color-border-subtle); padding: var(--tcrn-space-2) var(--tcrn-space-3); }
   .tcrn-rail__mark, .tcrn-rail__footer { display: none; }
   .tcrn-side-nav { flex-direction: row; overflow: auto; }
   .tcrn-nav-item { width: auto; white-space: nowrap; }
   .tcrn-main { padding: var(--tcrn-space-4); }
   .tcrn-manage, .tcrn-vocabulary { grid-template-columns: 1fr; gap: var(--tcrn-space-3); }
   .tcrn-subnav { position: static; display: flex; overflow: auto; }
-  .tcrn-subnav__item { width: auto; white-space: nowrap; }
   .tcrn-grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 680px) {
   .tcrn-top-bar__module, .tcrn-top-bar__actions .tcrn-search-input, .tcrn-top-bar__library { display: none; }
-  .tcrn-top-bar { padding: 0 var(--tcrn-space-2); }
-  .tcrn-grid--2, .tcrn-grid--3, .tcrn-grid--4, .tcrn-form__row, .tcrn-entity-layout, .tcrn-read-list__row, .tcrn-work-tree__story { grid-template-columns: 1fr; }
-  .tcrn-page__head { display: grid; }
+  .tcrn-grid--2, .tcrn-grid--3, .tcrn-grid--4, .tcrn-form__row, .tcrn-entity-layout { grid-template-columns: 1fr; }
   .tcrn-editor-shell { grid-template-columns: 1fr; }
-  .tcrn-editor__directory { position: static; }
 }
 @media (max-width: 520px) {
   .tcrn-top-bar__actions { flex-wrap: wrap; width: 100%; }
@@ -3901,8 +3793,6 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   .tcrn-app-status-bar__command { flex: 1 1 100%; white-space: normal; overflow-wrap: anywhere; }
   .tcrn-app-status-bar__state, .tcrn-app-status-bar__action { flex: 0 0 auto; }
   .tcrn-app-status-bar__action { margin-inline-start: auto; }
-  .tcrn-readback-panel__row { flex-direction: column; align-items: flex-start; }
-  .tcrn-readback-panel__value { max-width: 100%; text-align: start; }
 }
 /* INIT-036 S274/S275: the portal consumes the platform shell contract directly, and
    INC-167 stopped narrowing it. The sidebar width is the design system's 280px: the
@@ -3967,15 +3857,6 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .tcrn-product-shell__sidebar-header .tcrn-brand-mark {
   --tcrn-brand-mark-size: 28px;
 }
-.tcrn-product-shell__sidebar-header .tcrn-product-shell__brand {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--tcrn-color-text-primary);
-  text-align: left;
-  gap: var(--tcrn-space-1h);
-  cursor: pointer;
-}
 .tcrn-top-bar__module {
   min-width: 0;
   overflow: hidden;
@@ -4004,39 +3885,12 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   flex: 1 1 auto;
   max-width: 430px;
 }
-.tcrn-product-shell__sidebar {
-  background: transparent;
-}
-.tcrn-product-shell__sidebar .tcrn-side-nav {
-  gap: 1px;
-}
-.tcrn-product-shell__sidebar .tcrn-nav-item {
-  display: flex;
-  align-items: center;
-  gap: var(--tcrn-space-2);
-  padding: var(--tcrn-space-1h) var(--tcrn-space-2);
-  border: 0;
-  background: transparent;
-  border-radius: var(--tcrn-radius-control);
-  font-size: var(--tcrn-type-size-ui);
-  color: var(--tcrn-color-text-secondary);
-  text-align: left;
-}
-.tcrn-product-shell__sidebar .tcrn-nav-item__content {
-  flex: 0 0 16px;
-  width: 16px;
-  opacity: .8;
-  font-size: 12px;
-  text-align: center;
-}
-.tcrn-product-shell__sidebar .tcrn-nav-item[aria-current="page"] {
-  background: var(--tcrn-color-brand-primary-bg);
-  color: var(--tcrn-color-brand-primary);
-  font-weight: var(--tcrn-type-weight-medium);
-}
-.tcrn-product-shell__sidebar .tcrn-nav-item:hover:not([aria-current="page"]) {
-  background: var(--tcrn-color-surface-muted);
-}
+
+
+
+
+
+
 .tcrn-product-shell .tcrn-line-numbered-editor__control:focus-visible {
   outline: none;
   outline-width: 0;
@@ -4058,17 +3912,16 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 .tcrn-page[data-page="vocabulary"] {
   max-width: 1040px;
 }
-[data-ui="rules-pending"] { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tcrn-space-2); padding: var(--tcrn-space-3); border: 1px solid var(--tcrn-color-border-subtle); border-radius: var(--tcrn-radius-surface); background: var(--tcrn-color-surface-panel); }
+[data-ui="rules-pending"] { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tcrn-space-2); }
 [data-ui="rules-pending"] > select { min-width: min(100%, 240px); flex: 1 1 240px; }
 [data-ui="rules-layout"] { display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); gap: var(--tcrn-space-4); align-items: start; }
 [data-ui="rule-list"] { display: grid; gap: var(--tcrn-space-2); min-width: 0; }
-[data-rule-card] { display: grid; gap: var(--tcrn-space-2); padding: var(--tcrn-space-3); border: 1px solid var(--tcrn-color-border-subtle); border-radius: var(--tcrn-radius-surface); background: var(--tcrn-color-surface-panel); }
+[data-rule-card] { display: grid; gap: var(--tcrn-space-2); }
 [data-rule-card-head] { display: flex; justify-content: space-between; align-items: start; gap: var(--tcrn-space-2); }
-[data-rule-card-title] { margin: 0; font-size: var(--tcrn-type-size-body); }
-[data-rule-card-meta] { color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); }
+[data-rule-card-title] { margin: 0; }
+
 [data-rule-card-actions] { display: flex; align-items: center; justify-content: space-between; gap: var(--tcrn-space-2); }
-[data-rule-force-label] { display: flex; align-items: center; gap: var(--tcrn-space-1); color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); }
-#prose-directory [data-rule-force] { width: auto; min-height: auto; padding: 0; accent-color: var(--tcrn-color-brand-primary); }
+[data-rule-force-label] { display: flex; align-items: center; gap: var(--tcrn-space-1); }
 @media (max-width: 760px) { [data-ui="rules-layout"] { grid-template-columns: minmax(0, 1fr); } }
 .tcrn-editor-shell {
   grid-template-columns: minmax(184px, 208px) minmax(0, 1fr);
@@ -4088,39 +3941,10 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   grid-area: editor;
   min-width: 0;
 }
-.tcrn-definition-list__detail {
-  display: block;
-  margin-top: var(--tcrn-space-1);
-  color: var(--tcrn-color-text-muted);
-  font-size: var(--tcrn-type-size-caption);
-}
-.tcrn-stepper {
-  display: inline-grid;
-  grid-template-columns: 30px minmax(56px, 1fr) 30px max-content;
-  align-items: center;
-  gap: var(--tcrn-space-1);
-  max-width: 220px;
-  padding: var(--tcrn-space-0h);
-  border: 1px solid var(--tcrn-color-border-subtle);
-  border-radius: var(--tcrn-radius-control);
-  background: var(--tcrn-color-surface-panel);
-}
-.tcrn-stepper__button {
-  min-width: 30px;
-  min-height: 30px;
-  padding-inline: var(--tcrn-space-1);
-}
-.tcrn-stepper__input {
-  min-width: 0;
-  width: 64px;
-  text-align: center;
-}
-.tcrn-stepper__bound {
-  padding-inline-end: var(--tcrn-space-2);
-  color: var(--tcrn-color-text-muted);
-  font-size: var(--tcrn-type-size-caption);
-  white-space: nowrap;
-}
+
+
+
+
 @media (max-width: 980px) {
   .tcrn-product-shell {
     grid-template-columns: 1fr;
@@ -4169,16 +3993,10 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 [data-page-hierarchy="true"][data-page-hierarchy-depth="two"] .tcrn-vocabulary { display: block; width: 100%; }
 [data-page-hierarchy="true"][data-page-hierarchy-depth="two"] .tcrn-editor-shell { display: block; }
 [data-page-hierarchy="true"][data-page-hierarchy-depth="two"] .tcrn-editor__bar { margin-bottom: var(--tcrn-space-3); }
-[data-page-hierarchy="true"][data-page-hierarchy-depth="two"] .tcrn-editor__directory { margin-bottom: var(--tcrn-space-3); }
 #gates-view { display: grid; gap: var(--tcrn-space-4); }
 #gate-add-form { display: grid; gap: var(--tcrn-space-3); }
 [data-gate-options] { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tcrn-space-3); }
-[data-ui="gate-config-table"] { width: 100%; border-collapse: collapse; }
-[data-ui="gate-config-table"] th, [data-ui="gate-config-table"] td { padding: var(--tcrn-space-3); border-bottom: 1px solid var(--tcrn-color-border-subtle); text-align: start; vertical-align: top; }
-[data-ui="gate-config-table"] th { color: var(--tcrn-color-text-secondary); font-size: var(--tcrn-type-size-caption); font-weight: var(--tcrn-type-weight-semibold); }
-[data-ui="gate-config-table"] th:first-child, [data-ui="gate-config-table"] td:first-child { width: 7.5rem; min-width: 6.5rem; }
-[data-ui="gate-config-table"] td:nth-child(2) { min-width: 15rem; }
-[data-ui="gate-config-table"] td:last-child { min-width: 13rem; }
+[data-ui="gate-config-table"] { --tcrn-table-column-count: 5; --tcrn-table-shell-columns: minmax(6rem, .6fr) minmax(15rem, 2fr) repeat(2, minmax(7rem, .7fr)) minmax(13rem, 1.5fr); }
 [data-gate-cell] { display: grid; gap: var(--tcrn-space-2); }
 [data-gate-cell-actions] { display: flex; flex-wrap: wrap; gap: var(--tcrn-space-2); }
 [data-gate-covers] { display: grid; gap: var(--tcrn-space-2); }
@@ -4196,10 +4014,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 [data-collection-table] { --tcrn-table-shell-column-min-width: 7.5rem; }
 [data-collection-columns="6"] { --tcrn-table-column-count: 6; --tcrn-table-shell-columns: minmax(5.5rem, 0.6fr) repeat(5, minmax(var(--tcrn-table-shell-column-min-width, 160px), 1fr)); }
 [data-collection-columns="7"] { --tcrn-table-column-count: 7; --tcrn-table-shell-columns: minmax(5.5rem, 0.6fr) repeat(6, minmax(var(--tcrn-table-shell-column-min-width, 160px), 1fr)); }
-[data-collection-table="models.category"] { --tcrn-table-shell-columns: minmax(5.5rem, 0.6fr) minmax(8rem, 1fr) minmax(8rem, 1fr) minmax(10rem, 1.6fr) minmax(7rem, 0.8fr) minmax(6.5rem, 0.7fr); }
-[data-collection-table="models.tiers"] { --tcrn-table-shell-columns: minmax(5.5rem, 0.6fr) minmax(10.5rem, 1.3fr) minmax(8rem, 1fr) minmax(9rem, 1.2fr) minmax(6rem, 0.8fr) minmax(8rem, 1fr) minmax(6.5rem, 0.7fr); }
 [data-collection-field] { min-inline-size: 0; inline-size: 100%; }
-[data-collection-field][aria-invalid="true"] { border-color: var(--tcrn-color-state-blocked); }
 [data-collection-choice] { display: flex; align-items: center; gap: var(--tcrn-space-1); min-width: 0; }
 [data-collection-choice] > [data-collection-field] { flex: 1 1 0; inline-size: auto; }
 [data-collection-findings] { display: grid; gap: var(--tcrn-space-1); padding: 0 var(--tcrn-space-3) var(--tcrn-space-3); }
@@ -4216,10 +4031,13 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
 [data-variable-field] { min-inline-size: 0; inline-size: 100%; }
 [data-rule-card-order] { display: flex; flex-wrap: wrap; align-items: end; gap: var(--tcrn-space-2); }
 [data-rule-order-field] { flex: 0 1 8rem; }
-[data-rule-order-note] { color: var(--tcrn-color-text-muted); font-size: var(--tcrn-type-size-caption); }
 [data-gate-order] { min-inline-size: 0; inline-size: 100%; }
-[data-escalation-summary] .tcrn-list__row { align-items: center; }
+[data-escalation-summary] .tcrn-definition-list__item { align-items: center; }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: var(--tcrn-motion-reduced-duration) !important; animation-duration: var(--tcrn-motion-reduced-duration) !important; } }
+
+.tcrn-page > [data-page-hierarchy-region="header"] { margin-block-end: var(--tcrn-space-5); }
+.tcrn-work-tree__children { margin-inline-start: var(--tcrn-space-4); }
+.tcrn-work-tree__summary { cursor: pointer; }
 </style>
 </head>
 <body>
@@ -4227,7 +4045,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
   <div class="tcrn-product-shell">
     <aside class="tcrn-product-shell__sidebar">
       <div class="tcrn-product-shell__sidebar-header">
-        <button class="tcrn-product-shell__brand tcrn-product-logo tcrn-shell-brand-lockup" id="brand-button" data-page-target="dashboard" aria-label="Atelier" data-i18n-aria-label="app.brand" data-product-id="workflow" data-product-logo-asset-id="tcrn-workflow-two-line">
+        <button class="tcrn-button tcrn-button--quiet tcrn-button--md tcrn-product-shell__brand tcrn-product-logo tcrn-shell-brand-lockup" id="brand-button" data-page-target="dashboard" aria-label="Atelier" data-i18n-aria-label="app.brand" data-product-id="workflow" data-product-logo-asset-id="tcrn-workflow-two-line">
           <img class="tcrn-brand-mark" src="/atelier-brand-mark.svg" alt="" data-brand-asset="tcrn-brand-mark" data-brand-asset-registration="workflow">
           <span class="tcrn-product-logo__copy" aria-hidden="true">
             <span class="tcrn-product-logo__line-one"><span class="tcrn-product-logo__line-one-base">Einzbern</span><span class="tcrn-product-logo__line-one-suffix tcrn-brand-wordmark__suffix--workflow">Atelier</span></span>
@@ -4236,7 +4054,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
         </button>
         <button type="button" class="tcrn-icon-button tcrn-shell-mobile-nav-toggle" id="mobile-nav-toggle" data-ui="mobile-nav-toggle" aria-expanded="false" aria-controls="primary-side-nav" aria-label="Toggle navigation"><span class="tcrn-shell-side-nav-toggle__icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 6h14M3 10h14M3 14h14"/></svg></span></button>
       </div>
-      <div class="tcrn-rail__mark"><strong class="tcrn-rail__workspace" id="rail-workspace-label"></strong><span class="tcrn-meta tcrn-rail__library" id="library-label"></span></div>
+      <div class="tcrn-rail__mark"><strong class="tcrn-rail__workspace" id="rail-workspace-label"></strong><span class="tcrn-text tcrn-rail__library" id="library-label"></span></div>
       <nav class="tcrn-side-nav" id="primary-side-nav" aria-label="Portal navigation">
         <button class="tcrn-nav-item" data-nav-item-has-icon="true" data-page-target="dashboard" aria-current="page" aria-label="Status" data-i18n-aria-label="nav.dashboard"><span class="tcrn-nav-item__content" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="1.8" y="1.8" width="5.2" height="5.2" rx="1"/><rect x="9" y="1.8" width="5.2" height="5.2" rx="1"/><rect x="1.8" y="9" width="5.2" height="5.2" rx="1"/><rect x="9" y="9" width="5.2" height="5.2" rx="1"/></svg></span><span class="tcrn-nav-item__label" data-i18n="nav.dashboard">Status</span></button>
         <button class="tcrn-nav-item" data-nav-item-has-icon="true" data-page-target="settings" aria-label="Settings" data-i18n-aria-label="nav.settings"><span class="tcrn-nav-item__content" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="2.4"/><path d="M8 1.6v2M8 12.4v2M1.6 8h2M12.4 8h2M3.5 3.5l1.4 1.4M11.1 11.1l1.4 1.4M12.5 3.5l-1.4 1.4M4.9 11.1l-1.4 1.4"/></svg></span><span class="tcrn-nav-item__label" data-i18n="nav.settings">Settings</span></button>
@@ -4247,14 +4065,16 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
         <button class="tcrn-nav-item" data-nav-item-has-icon="true" data-page-target="vocabulary" aria-label="Vocabulary" data-i18n-aria-label="nav.vocabulary"><span class="tcrn-nav-item__content" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.8C6.6 1.9 4.4 1.7 2.2 2.2v10.6c2.2-.5 4.4-.3 5.8.6 1.4-.9 3.6-1.1 5.8-.6V2.2C11.6 1.7 9.4 1.9 8 2.8Z"/><path d="M8 2.8v10.6"/></svg></span><span class="tcrn-nav-item__label" data-i18n="nav.vocabulary">Vocabulary</span></button>
         <button class="tcrn-nav-item" data-nav-item-has-icon="true" data-page-target="gates" aria-label="Gates" data-i18n-aria-label="nav.gates"><span class="tcrn-nav-item__content" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3h10v10H3z"/><path d="m5 8 2 2 4-4"/></svg></span><span class="tcrn-nav-item__label" data-i18n="nav.gates">Gates</span></button>
       </nav>
-      <div class="tcrn-rail__footer"><span data-i18n="app.boundaryBody">Writes use the public CLI and return the engine receipt.</span></div>
+      <div class="tcrn-text tcrn-rail__footer"><span data-i18n="app.boundaryBody">Writes use the public CLI and return the engine receipt.</span></div>
     </aside>
     <div class="tcrn-product-shell__workspace">
-      <header class="tcrn-top-bar" data-ds-component="ProductShell/TopBar" data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html#navigation-shell-spec" data-ds-mapping-status="candidate-consumed-pending-coordination" data-ds-candidate-sha="610680b81a950e91e9e1e77718ea7f3f3b19bc27">
+      <header class="tcrn-top-bar" data-ds-component="ProductShell/TopBar" data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html#navigation-shell-spec" data-ds-mapping-status="production-published-consumed" data-ds-candidate-sha="48ded198a7148efdaa245271d1885e468f24f4a4">
         <div class="tcrn-top-bar__module tcrn-top-bar__module--path" id="workspace-label"></div>
         <div class="tcrn-top-bar__actions">
           <label class="tcrn-sr-only" for="library-select" data-i18n="library.label">Library</label>
-          <select class="tcrn-select tcrn-top-bar__library" id="library-select" data-ui="library-switcher" data-ds-component="Select" data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/components-controls-data.html#field-spec-usage" aria-label="Library" data-i18n-aria-label="library.label"></select>
+          <select class="tcrn-select" id="library-select" data-ui="library-switcher" data-ds-component="Select" data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/components-controls-data.html#field-spec-usage" aria-label="Library" data-i18n-aria-label="library.label"></select>
+          <label class="tcrn-sr-only" for="configuration-project-select" data-i18n="scope.target">Configuration target</label>
+          <select class="tcrn-select" id="configuration-project-select" data-ui="configuration-project-switcher" data-ds-component="Select" data-i18n-aria-label="scope.target" aria-label="Configuration target"></select>
           <span class="tcrn-badge tcrn-badge--positive" id="engine-connection" data-ui="engine-connection" data-ds-component="Badge" data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/proof-proof-visual-instances.html#owner-quality-product-shell" role="status"><span id="engine-connection-text">engine · local loopback</span></span>
           <span class="tcrn-search-input" data-search-input="true" data-shortcut-visible="true">
             <span class="tcrn-search-input__icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg></span>
@@ -4286,7 +4106,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
       <section class="tcrn-page" data-page="dashboard">
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
-            <div class="tcrn-page__head"><div><h1 data-i18n="page.dashboard">Workspace status</h1><p class="tcrn-page__lede" data-i18n="dashboard.lede">Doctor's eight checks and the selected library state.</p></div><div class="tcrn-page__actions"><span class="tcrn-badge tcrn-badge--positive" id="health-chip"><span id="health-chip-text" data-i18n="health.healthy">healthy</span></span></div></div>
+            <header class="tcrn-page-header tcrn-page__head"><div class="tcrn-page-header__body"><div class="tcrn-page-header__title"><h1 class="tcrn-heading tcrn-heading--2" data-i18n="page.dashboard">Workspace status</h1><p class="tcrn-text tcrn-page__lede" data-i18n="dashboard.lede">Doctor's eight checks and the selected library state.</p></div><div class="tcrn-page-header__actions tcrn-page__actions"><span class="tcrn-badge tcrn-badge--positive" id="health-chip"><span id="health-chip-text" data-i18n="health.healthy">healthy</span></span></div></div></header>
           </div>
           <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs">
             <div class="tcrn-section-tabs" role="tablist" data-ui="workspace-tabs" aria-label="Workspace views"><button class="tcrn-button" role="tab" aria-selected="true" data-selected="true" data-workspace-tab="overview" data-i18n="dashboard.overview">Status</button><button class="tcrn-button" role="tab" aria-selected="false" data-selected="false" data-workspace-tab="work" data-i18n="dashboard.work">Work</button><button class="tcrn-button" role="tab" aria-selected="false" data-selected="false" data-workspace-tab="knowledge" data-i18n="dashboard.knowledge">Knowledge</button></div>
@@ -4295,68 +4115,68 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
         <div data-workspace-panel="overview">
           <div class="tcrn-grid tcrn-grid--4"><article class="tcrn-stat-card" data-stat-card="true" data-stat-tone="neutral"><span class="tcrn-stat-card__label" data-i18n="dashboard.chain">Chain version</span><strong class="tcrn-stat-card__value" id="stat-version">—</strong><span class="tcrn-stat-card__note" id="stat-head"></span></article><article class="tcrn-stat-card" data-stat-card="true" data-stat-tone="neutral"><span class="tcrn-stat-card__label" data-i18n="dashboard.events">Events</span><strong class="tcrn-stat-card__value" id="stat-events">—</strong><span class="tcrn-stat-card__note" data-i18n="dashboard.eventsNote">materialized chain</span></article><article class="tcrn-stat-card" data-stat-card="true" data-stat-tone="neutral"><span class="tcrn-stat-card__label" data-i18n="dashboard.engine">Engine</span><strong class="tcrn-stat-card__value" id="stat-engine">—</strong><span class="tcrn-stat-card__note" data-i18n="dashboard.engineNote">local loopback</span></article><article class="tcrn-stat-card" data-stat-card="true" data-stat-tone="neutral"><span class="tcrn-stat-card__label" data-i18n="dashboard.healthCard">Health</span><strong class="tcrn-stat-card__value" id="stat-health">—</strong><span class="tcrn-stat-card__note" data-i18n="dashboard.healthCardNote">read-only checks</span></article></div>
           <div class="tcrn-grid tcrn-grid--2 tcrn-dashboard-grid">
-            <article class="tcrn-surface"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 data-i18n="dashboard.healthTitle">Doctor checks</h2><p class="tcrn-surface__note" data-i18n="dashboard.healthNote">The eight checks returned by doctor for the selected project.</p></div><span class="tcrn-badge tcrn-badge--positive" id="validate-chip">doctor</span></div><div class="tcrn-list" id="health-list"></div></article>
-            <article class="tcrn-surface"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 data-i18n="dashboard.libraryTitle">Selected library</h2><p class="tcrn-surface__note" data-i18n="dashboard.libraryNote">Read from the selected library's status.</p></div></div><dl class="tcrn-definition-list" id="library-state"></dl></article>
+            <article class="tcrn-surface"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 data-i18n="dashboard.healthTitle">Doctor checks</h2><p class="tcrn-text" data-i18n="dashboard.healthNote">The eight checks returned by doctor for the selected project.</p></div><span class="tcrn-badge tcrn-badge--positive" id="validate-chip">doctor</span></div><div class="tcrn-definition-list tcrn-definition-list--dense" id="health-list"></div></article>
+            <article class="tcrn-surface"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 data-i18n="dashboard.libraryTitle">Selected library</h2><p class="tcrn-text" data-i18n="dashboard.libraryNote">Read from the selected library's status.</p></div></div><dl class="tcrn-definition-list" id="library-state"></dl></article>
           </div>
         </div>
-        <div data-workspace-panel="work" hidden><div class="tcrn-surface" data-ui="work-tree"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 data-i18n="dashboard.workTitle">Work tree</h2><p class="tcrn-surface__note" data-i18n="dashboard.workNote">Initiatives, Epics, and Stories read from the engine.</p></div><span class="tcrn-badge" id="work-count">—</span></div><div class="tcrn-state-surface" id="work-loading" role="status" data-i18n="dashboard.workLoading" hidden>Reading work records through the engine…</div><div id="work-tree-content"></div></div></div>
-        <div data-workspace-panel="knowledge" hidden><div class="tcrn-surface" data-ui="knowledge-view"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 data-i18n="dashboard.knowledgeTitle">Knowledge inventory</h2><p class="tcrn-surface__note" data-i18n="dashboard.knowledgeNote">Cards and article indexes, metadata only.</p></div><span class="tcrn-badge" id="knowledge-count">—</span></div><div id="knowledge-view-content"></div></div></div>
+        <div data-workspace-panel="work" hidden><div class="tcrn-surface" data-ui="work-tree"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 data-i18n="dashboard.workTitle">Work tree</h2><p class="tcrn-text" data-i18n="dashboard.workNote">Initiatives, Epics, and Stories read from the engine.</p></div><span class="tcrn-badge" id="work-count">—</span></div><div class="tcrn-state-surface" id="work-loading" role="status" data-i18n="dashboard.workLoading" hidden>Reading work records through the engine…</div><div id="work-tree-content"></div></div></div>
+        <div data-workspace-panel="knowledge" hidden><div class="tcrn-surface" data-ui="knowledge-view"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 data-i18n="dashboard.knowledgeTitle">Knowledge inventory</h2><p class="tcrn-text" data-i18n="dashboard.knowledgeNote">Cards and article indexes, metadata only.</p></div><span class="tcrn-badge" id="knowledge-count">—</span></div><div id="knowledge-view-content"></div></div></div>
           </div>
         </div>
       </section>
       <section class="tcrn-page tcrn-page--manage" data-page="settings" hidden>
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
-            <div class="tcrn-page__head"><div><h1 data-i18n="page.settings">Settings</h1><p class="tcrn-page__lede" data-i18n="config.lede">Registered settings, read from the engine and changed through its public CLI.</p></div><div class="tcrn-page__actions"><span class="tcrn-badge" id="settings-count"></span></div></div>
+            <header class="tcrn-page-header tcrn-page__head"><div class="tcrn-page-header__body"><div class="tcrn-page-header__title"><h1 class="tcrn-heading tcrn-heading--2" data-i18n="page.settings">Settings</h1><p class="tcrn-text tcrn-page__lede" data-i18n="config.lede">Registered settings, read from the engine and changed through its public CLI.</p></div><div class="tcrn-page-header__actions tcrn-page__actions"><span class="tcrn-badge" id="settings-count"></span></div></div></header>
           </div>
           <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs">
             <nav class="tcrn-subnav tcrn-settings-layout__nav" data-settings-layout-nav data-settings-local-nav="true" aria-label="Settings groups" data-i18n-aria-label="settings.groupsLabel" role="tablist"></nav>
           </div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content">
-            <div class="tcrn-manage tcrn-settings-layout" data-settings-layout-component="SettingsLayout" data-settings-layout="true" data-settings-layout-navigation-location="page-hierarchy-section-tabs" data-ds-candidate="TCRN-Design-System@610680b81a950e91e9e1e77718ea7f3f3b19bc27" data-ds-contract-status="candidate-consumed-pending-coordination" data-ds-contract-version="ai_consumption_contract_v1" data-ds-contract-digest="a56fcf3427866d4034ede1c59b59b888ac8169ca19fcd1c3af66b0a49cd16138" data-ds-component-css-sha256="025be2c8b3380cfc20c7c1b468243d6e61fe5291f28483a614de469235788877" data-ds-rules="DS-106-R1 DS-106-R2 DS-107-R1 DS-107-R2 DS-108-R1 DS-108-R2 DS-112-R1 DS-112-R2 DS-116-R1 DS-116-R2 DS-117-R1 DS-117-R2 DS-118-R1 DS-118-R2 DS-119-R1 DS-119-R2" data-ds-surface-contracts="overlay-boundary-contract-v1 field-value-selection-contract-v1 dictionary-content-contract-v1 operation-feedback-contract-v1 content-scope-contract-v1 consumer-evidence-contract-v1 verification-cadence-contract-v1" data-ds-static-overlay-bridge="mountStaticOverlayBoundary" data-ds-candidate-status="fixed-candidate-pending-coordination" data-settings-layout-mode="container-driven" data-settings-layout-form-policy="single-host-single-column" data-settings-layout-breakpoint="960px" data-settings-content-breakpoint="720px" data-settings-local-navigation="compact" data-settings-overflow-policy="no-page-overflow" data-settings-long-value-policy="native-inline-scroll-copy"><div class="tcrn-settings-layout__frame"><div class="tcrn-settings-layout__grid" data-settings-layout-grid><div class="tcrn-settings-layout__content" data-settings-layout-content data-settings-content="true" data-settings-complete-form="true"><div id="design-authority" hidden></div><div id="settings-rows" class="tcrn-settings-layout__form"></div></div></div></div></div>
+            <div class="tcrn-manage tcrn-settings-layout" data-settings-layout-component="SettingsLayout" data-settings-layout="true" data-settings-layout-navigation-location="page-hierarchy-section-tabs" data-ds-candidate="TCRN-Design-System@48ded198a7148efdaa245271d1885e468f24f4a4" data-ds-contract-status="production-published-consumed" data-ds-contract-version="ai_consumption_contract_v1" data-ds-contract-digest="4def7d68d25912757a0892c00c9565feefe908425b499d7e7759142e8fdeb68a" data-ds-component-css-sha256="89edf550b6aa2dce64ceb9bd385429c5a48dd206043b0a904e810e4d097a8166" data-ds-rules="DS-106-R1 DS-106-R2 DS-107-R1 DS-107-R2 DS-108-R1 DS-108-R2 DS-112-R1 DS-112-R2 DS-116-R1 DS-116-R2 DS-117-R1 DS-117-R2 DS-118-R1 DS-118-R2 DS-119-R1 DS-119-R2" data-ds-surface-contracts="overlay-boundary-contract-v1 field-value-selection-contract-v1 dictionary-content-contract-v1 operation-feedback-contract-v1 content-scope-contract-v1 consumer-evidence-contract-v1 verification-cadence-contract-v1" data-ds-static-overlay-bridge="mountStaticOverlayBoundary" data-ds-candidate-status="production-published-consumed" data-settings-layout-mode="container-driven" data-settings-layout-form-policy="single-host-single-column" data-settings-layout-breakpoint="960px" data-settings-content-breakpoint="720px" data-settings-local-navigation="compact" data-settings-overflow-policy="no-page-overflow" data-settings-long-value-policy="native-inline-scroll-copy"><div class="tcrn-settings-layout__frame"><div class="tcrn-settings-layout__grid" data-settings-layout-grid><div class="tcrn-settings-layout__content" data-settings-layout-content data-settings-content="true" data-settings-complete-form="true"><div id="design-authority" hidden></div><div id="settings-rows" class="tcrn-settings-layout__form"></div></div></div></div></div>
           </div>
         </div>
       </section>
       <section class="tcrn-page tcrn-page--manage" data-page="model-categories" hidden>
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
-            <div class="tcrn-page__head"><div><h1 data-i18n="page.modelCategories">Model categories</h1><p class="tcrn-page__lede" data-i18n="modelCategories.lede" data-collection-purpose="models.category">The parent table of the model tiers. The order column ranks the categories: the lower the order, the stronger the category, and escalation climbs toward the lower orders.</p></div><div class="tcrn-page__actions"><span class="tcrn-badge" id="model-categories-count">—</span></div></div>
+            <header class="tcrn-page-header tcrn-page__head"><div class="tcrn-page-header__body"><div class="tcrn-page-header__title"><h1 class="tcrn-heading tcrn-heading--2" data-i18n="page.modelCategories">Model categories</h1><p class="tcrn-text tcrn-page__lede" data-i18n="modelCategories.lede" data-collection-purpose="models.category">The parent table of the model tiers. The order column ranks the categories: the lower the order, the stronger the category, and escalation climbs toward the lower orders.</p></div><div class="tcrn-page-header__actions tcrn-page__actions"><span class="tcrn-badge" id="model-categories-count">—</span></div></div></header>
           </div>
-          <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs"><p class="tcrn-scope-note" data-i18n="modelCategories.scope">Project level: stored with this library and synced with it. A rule names a category and is given the category's tier with the largest order.</p></div>
+          <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs"><p class="tcrn-text" data-i18n="modelCategories.scope">Project level: stored with this library and synced with it. A rule names a category and is given the category's tier with the largest order.</p></div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content"><div id="model-categories-view" data-ui="model-categories-view" data-collection-view="models.category"></div></div>
         </div>
       </section>
       <section class="tcrn-page tcrn-page--manage" data-page="model-tiers" hidden>
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
-            <div class="tcrn-page__head"><div><h1 data-i18n="page.modelTiers">Model tiers</h1><p class="tcrn-page__lede" data-i18n="modelTiers.lede" data-collection-purpose="models.tiers">Every model a rule can be given, one record per row. The order column ranks all records together: the lower the order, the stronger the record. A category's tier with the largest order is the one a rule gets, and escalation moves to the next smaller order.</p></div><div class="tcrn-page__actions"><span class="tcrn-badge" id="model-tiers-count">—</span></div></div>
+            <header class="tcrn-page-header tcrn-page__head"><div class="tcrn-page-header__body"><div class="tcrn-page-header__title"><h1 class="tcrn-heading tcrn-heading--2" data-i18n="page.modelTiers">Model tiers</h1><p class="tcrn-text tcrn-page__lede" data-i18n="modelTiers.lede" data-collection-purpose="models.tiers">Every model a rule can be given, one record per row. The order column ranks all records together: the lower the order, the stronger the record. A category's tier with the largest order is the one a rule gets, and escalation moves to the next smaller order.</p></div><div class="tcrn-page-header__actions tcrn-page__actions"><span class="tcrn-badge" id="model-tiers-count">—</span></div></div></header>
           </div>
-          <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs"><p class="tcrn-scope-note" data-i18n="modelTiers.scope">Project level: stored with this library and synced with it. Each tier is filed under a category from the model categories page.</p></div>
+          <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs"><p class="tcrn-text" data-i18n="modelTiers.scope">Project level: stored with this library and synced with it. Each tier is filed under a category from the model categories page.</p></div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content"><div id="model-tiers-view" data-ui="model-tiers-view" data-collection-view="models.tiers"></div></div>
         </div>
       </section>
       <section class="tcrn-page tcrn-page--manage" data-page="variables" hidden>
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
-            <div class="tcrn-page__head"><div><h1 data-i18n="page.variables">Variables</h1><p class="tcrn-page__lede" data-i18n="variables.lede" data-order-purpose="variables">Add, edit, rename and remove project variables. The order column sets the order AGENTS.md renders them in: variables with an order first, from the smallest, then the others by name.</p></div><div class="tcrn-page__actions"><span class="tcrn-badge" id="variables-count"></span></div></div>
+            <header class="tcrn-page-header tcrn-page__head"><div class="tcrn-page-header__body"><div class="tcrn-page-header__title"><h1 class="tcrn-heading tcrn-heading--2" data-i18n="page.variables">Variables</h1><p class="tcrn-text tcrn-page__lede" data-i18n="variables.lede" data-order-purpose="variables">Add, edit, rename and remove project variables. The order column sets the order AGENTS.md renders them in: variables with an order first, from the smallest, then the others by name.</p></div><div class="tcrn-page-header__actions tcrn-page__actions"><span class="tcrn-badge" id="variables-count"></span></div></div></header>
           </div>
-          <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs"><p class="tcrn-scope-note" data-i18n="variables.scope">Custom variables are stored with this library and rendered into AGENTS.md.</p></div>
+          <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs"><p class="tcrn-text" data-i18n="variables.scope">Custom variables are stored with this library and rendered into AGENTS.md.</p></div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content"><div id="variables-view" data-ui="variables-view"></div></div>
         </div>
       </section>
       <section class="tcrn-page tcrn-page--manage" data-page="gates" hidden>
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
-            <div class="tcrn-page__head"><div><h1 data-i18n="page.gates">Gate configuration</h1><p class="tcrn-page__lede" data-i18n="gates.lede" data-order-purpose="gates">Project gates are selected from changed paths and stored with this library. The order column sets the order gates are planned, run and listed in: gates with an order first, from the smallest, then the others by name.</p></div><div class="tcrn-page__actions"><span class="tcrn-badge" id="gates-count">—</span></div></div>
+            <header class="tcrn-page-header tcrn-page__head"><div class="tcrn-page-header__body"><div class="tcrn-page-header__title"><h1 class="tcrn-heading tcrn-heading--2" data-i18n="page.gates">Gate configuration</h1><p class="tcrn-text tcrn-page__lede" data-i18n="gates.lede" data-order-purpose="gates">Project gates are selected from changed paths and stored with this library. The order column sets the order gates are planned, run and listed in: gates with an order first, from the smallest, then the others by name.</p></div><div class="tcrn-page-header__actions tcrn-page__actions"><span class="tcrn-badge" id="gates-count">—</span></div></div></header>
           </div>
-          <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs"><p class="tcrn-scope-note" data-i18n="gates.scope">Enabled gates run when their covered paths change. Required gates are checked before work is marked done.</p></div>
+          <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs"><p class="tcrn-text" data-i18n="gates.scope">Enabled gates run when their covered paths change. Required gates are checked before work is marked done.</p></div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content">
             <div id="gates-view" data-ui="gates-view">
               <article class="tcrn-surface" aria-labelledby="gates-last-run-title"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 id="gates-last-run-title" data-i18n="gates.lastRunTitle">Most recent gate run</h2></div></div><div id="gates-last-run" data-ui="gates-last-run" aria-live="polite"></div></article>
               <article class="tcrn-surface" aria-labelledby="gates-add-title"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 id="gates-add-title" data-i18n="gates.addTitle">Add a gate</h2></div></div>
                 <form id="gate-add-form" data-ui="gate-add-form">
                   <div class="tcrn-grid tcrn-grid--2">
-                    <label class="tcrn-field"><span class="tcrn-field__label" data-i18n="gates.name">Gate name</span><input class="tcrn-input" name="name" required maxlength="64" autocomplete="off"></label>
+                    <label class="tcrn-field"><span class="tcrn-field__label" data-i18n="gates.name">Gate name</span><input class="tcrn-input" name="name" required autocomplete="off"></label>
                     <label class="tcrn-field"><span class="tcrn-field__label" data-i18n="gates.root">Project-relative root</span><input class="tcrn-input" name="root" value="." required autocomplete="off"></label>
                     <label class="tcrn-field"><span class="tcrn-field__label" data-i18n="gates.command">Command as JSON argv</span><textarea class="tcrn-input tcrn-textarea" name="command" required rows="2" placeholder='["pnpm","verify:links"]'></textarea></label>
                     <label class="tcrn-field"><span class="tcrn-field__label" data-i18n="gates.coversInput">Covers, one per line: a path glob or a work id</span><textarea class="tcrn-input tcrn-textarea" name="covers" rows="2" placeholder="src/**"></textarea></label>
@@ -4370,7 +4190,7 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
                 </form>
               </article>
               <article class="tcrn-surface" aria-labelledby="gates-list-title"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 id="gates-list-title" data-i18n="gates.listTitle">Configured gates</h2></div></div>
-                <div class="tcrn-table-scroll"><table data-ui="gate-config-table"><thead><tr><th scope="col" data-i18n="collection.order">Order</th><th scope="col" data-i18n="gates.columnGate">Gate</th><th scope="col" data-i18n="gates.columnEnabled">Enabled</th><th scope="col" data-i18n="gates.columnRequired">Required</th><th scope="col" data-i18n="gates.columnCovers">Covers (path glob or work id)</th></tr></thead><tbody id="gates-rows"></tbody></table></div>
+                <div class="tcrn-table-shell" role="table" aria-label="Gates" data-i18n-aria-label="gates.title" data-ui="gate-config-table" data-mobile-layout="stacked-cards"><div class="tcrn-table-shell__head" role="row"><span class="tcrn-table-shell__heading" role="columnheader" data-i18n="collection.order">Order</span><span class="tcrn-table-shell__heading" role="columnheader" data-i18n="gates.columnGate">Gate</span><span class="tcrn-table-shell__heading" role="columnheader" data-i18n="gates.columnEnabled">Enabled</span><span class="tcrn-table-shell__heading" role="columnheader" data-i18n="gates.columnRequired">Required</span><span class="tcrn-table-shell__heading" role="columnheader" data-i18n="gates.columnCovers">Covers (path glob or work id)</span></div><div id="gates-rows" role="rowgroup"></div></div>
                 <div id="gates-empty" class="tcrn-state-surface" data-ui="gates-empty" hidden></div>
               </article>
             </div>
@@ -4380,20 +4200,20 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
       <section class="tcrn-page tcrn-page--manage" data-page="prose" hidden>
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
-            <div class="tcrn-page__head"><div><h1 data-i18n="page.prose">Rules</h1><p class="tcrn-page__lede" data-i18n="prose.lede" data-order-purpose="rules">Manage built-in rules and edit the project's AGENTS.md. A rule's order sets the order AGENTS.md renders the rule sections in: rules with an order first, from the smallest, then the others in catalog order.</p></div><div class="tcrn-page__actions"><button class="tcrn-button tcrn-button--secondary" id="pending-open" data-i18n="rule.pendingTitle">Pending</button><span class="tcrn-badge" id="reconcile-chip">—</span><button class="tcrn-button tcrn-button--primary" id="save-agents" data-i18n="prose.save" data-cli-action="rule-list">Save and check</button></div></div>
+            <header class="tcrn-page-header tcrn-page__head"><div class="tcrn-page-header__body"><div class="tcrn-page-header__title"><h1 class="tcrn-heading tcrn-heading--2" data-i18n="page.prose">Rules</h1><p class="tcrn-text tcrn-page__lede" data-i18n="prose.lede" data-order-purpose="rules">Manage built-in rules and edit the project's AGENTS.md. A rule's order sets the order AGENTS.md renders the rule sections in: rules with an order first, from the smallest, then the others in catalog order.</p></div><div class="tcrn-page-header__actions tcrn-page__actions"><button class="tcrn-button tcrn-button--secondary" id="pending-open" data-i18n="rule.pendingTitle">Pending</button><span class="tcrn-badge" id="reconcile-chip">—</span><button class="tcrn-button tcrn-button--primary" id="save-agents" data-i18n="prose.save" data-cli-action="rule-list">Save and check</button></div></div></header>
           </div>
           <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs">
-            <div id="rules-pending" data-ui="rules-pending" aria-label="Pending rule changes"><strong data-i18n="rule.pendingTitle">Pending</strong><label class="tcrn-sr-only" for="pending-section" data-i18n="rule.pendingSelect">Pending section</label><select class="tcrn-select" id="pending-section" data-ui="pending-section"></select><button class="tcrn-button tcrn-button--secondary" type="button" data-pending-action="keep" data-i18n="rule.keep">Keep my text</button><button class="tcrn-button tcrn-button--secondary" type="button" data-pending-action="overwrite" data-i18n="rule.overwrite">Overwrite</button><button class="tcrn-button tcrn-button--quiet" type="button" data-pending-action="unmanage" data-i18n="rule.unmanage">Unmanage</button></div>
+            <div id="rules-pending" class="tcrn-surface" data-ui="rules-pending" aria-label="Pending rule changes"><strong data-i18n="rule.pendingTitle">Pending</strong><label class="tcrn-sr-only" for="pending-section" data-i18n="rule.pendingSelect">Pending section</label><select class="tcrn-select" id="pending-section" data-ui="pending-section"></select><button class="tcrn-button tcrn-button--secondary" type="button" data-pending-action="keep" data-i18n="rule.keep">Keep my text</button><button class="tcrn-button tcrn-button--secondary" type="button" data-pending-action="overwrite" data-i18n="rule.overwrite">Overwrite</button><button class="tcrn-button tcrn-button--quiet" type="button" data-pending-action="unmanage" data-i18n="rule.unmanage">Unmanage</button></div>
           </div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content">
-            <div data-ui="rules-layout"><section id="prose-directory" data-ui="rule-list" aria-label="Built-in rules"></section><div class="tcrn-editor-shell"><div class="tcrn-editor__bar"><span class="tcrn-meta" id="agents-path"></span><span class="tcrn-editor__status" id="agents-status" data-i18n="prose.fileNote">AGENTS.md</span></div><div class="tcrn-line-numbered-editor" id="prose-editor" data-line-numbered-editor="true"><ol class="tcrn-line-numbered-editor__gutter" id="prose-gutter" data-ui="prose-gutter" role="note" aria-label="Line numbers"></ol><div class="tcrn-line-numbered-editor__content"><textarea class="tcrn-input tcrn-textarea tcrn-line-numbered-editor__control" id="agents-md" spellcheck="false" aria-label="AGENTS.md"></textarea><ul class="tcrn-line-numbered-editor__findings" id="reconcile-findings" aria-label="Editor findings"></ul></div></div></div></div>
+            <div data-ui="rules-layout"><section id="prose-directory" data-ui="rule-list" aria-label="Built-in rules"></section><div class="tcrn-editor-shell"><div class="tcrn-editor__bar"><span class="tcrn-text" id="agents-path"></span><span class="tcrn-text tcrn-editor__status" id="agents-status" data-i18n="prose.fileNote">AGENTS.md</span></div><div class="tcrn-line-numbered-editor" id="prose-editor" data-line-numbered-editor="true"><ol class="tcrn-line-numbered-editor__gutter" id="prose-gutter" data-ui="prose-gutter" role="note" aria-label="Line numbers"></ol><div class="tcrn-line-numbered-editor__content"><textarea class="tcrn-input tcrn-textarea tcrn-line-numbered-editor__control" id="agents-md" spellcheck="false" aria-label="AGENTS.md"></textarea><ul class="tcrn-line-numbered-editor__findings" id="reconcile-findings" aria-label="Editor findings"></ul></div></div></div></div>
           </div>
         </div>
       </section>
       <section class="tcrn-page tcrn-page--manage" data-page="vocabulary" hidden>
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
-            <div class="tcrn-page__head"><div><h1 data-i18n="page.vocabulary">System vocabulary</h1><p class="tcrn-page__lede" data-i18n="vocabulary.lede">Read-only terms come from the engine roster. The portal does not invent enums.</p></div><span class="tcrn-badge" id="vocabulary-version">—</span></div>
+            <header class="tcrn-page-header tcrn-page__head"><div class="tcrn-page-header__body"><div class="tcrn-page-header__title"><h1 class="tcrn-heading tcrn-heading--2" data-i18n="page.vocabulary">System vocabulary</h1><p class="tcrn-text tcrn-page__lede" data-i18n="vocabulary.lede">Read-only terms come from the engine roster. The portal does not invent enums.</p></div><span class="tcrn-badge tcrn-page-header__actions" id="vocabulary-version">—</span></div></header>
           </div>
           <div class="tcrn-page-hierarchy__section-tabs" data-page-hierarchy-region="section-tabs" data-page-hierarchy-slot="section-tabs">
             <nav class="tcrn-subnav" aria-label="Vocabulary categories" id="vocabulary-nav" role="tablist"></nav>
@@ -4408,13 +4228,14 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
     <div class="tcrn-app-status-bar" role="status" data-app-status-bar="true"><span class="tcrn-app-status-bar__command" id="echo-command"><code data-i18n="echo.idle">agent:portal · public CLI</code></span><span class="tcrn-app-status-bar__state"><span class="tcrn-dot" aria-hidden="true"></span><span id="status-state" data-i18n="health.healthy">healthy</span></span><span class="tcrn-app-status-bar__action"><button class="tcrn-button tcrn-button--quiet" id="drawer-button" data-i18n="receipt.open">Receipt</button></span></div>
   </div>
 </div>
-<div class="tcrn-search-results" id="search-results" hidden aria-label="Search results"></div>
-<aside class="tcrn-detail-drawer" id="receipt-drawer" data-ui="receipt-drawer" data-open="false" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="receipt-title"><div class="tcrn-detail-drawer__head"><h2 id="receipt-title" data-i18n="receipt.title">Engine receipt</h2><button class="tcrn-button tcrn-button--quiet" id="drawer-close" data-i18n="receipt.close">Close</button></div><section id="operation-feedback" class="tcrn-operation-feedback" data-operation-feedback="true" data-operation-phase="idle" data-operation-state="idle" data-operation-geometry="responsive-safe" data-operation-update-notification="aria-live" aria-live="polite"><div class="tcrn-operation-feedback__summary"><span id="receipt-operation-status" class="tcrn-badge tcrn-badge--positive tcrn-operation-feedback__status" data-operation-short-status="true" data-operation-short-status-phase="idle" role="status"><span id="receipt-operation-status-text" data-i18n="chip.idle">idle</span></span><dl id="receipt-operation-identity" class="tcrn-operation-feedback__identity" data-operation-identity="true"></dl><button type="button" class="tcrn-operation-feedback__details-trigger" id="receipt-details-trigger" aria-expanded="false" aria-controls="receipt-details" data-operation-details-trigger="true" data-i18n="receipt.details">View full receipt</button></div><section id="receipt-details" class="tcrn-operation-feedback__details" data-operation-details="true" hidden><div class="tcrn-operation-feedback__details-body"><div class="tcrn-readback-panel" id="receipt-body"></div></div></section></section></aside>
+<div class="tcrn-product-shell-search__results tcrn-search-results" id="search-results" hidden aria-label="Search results"></div>
+<aside class="tcrn-detail-drawer" id="receipt-drawer" data-ui="receipt-drawer" data-open="false" aria-hidden="true" role="complementary" data-modal-scope="structural-drawer" tabindex="-1" aria-labelledby="receipt-title"><div class="tcrn-surface__head tcrn-detail-drawer__head"><h2 class="tcrn-heading tcrn-heading--3" id="receipt-title" data-i18n="receipt.title">Engine receipt</h2><button class="tcrn-button tcrn-button--quiet" id="drawer-close" data-i18n="receipt.close">Close</button></div><section id="operation-feedback" class="tcrn-operation-feedback" data-operation-feedback="true" data-operation-phase="idle" data-operation-state="idle" data-operation-geometry="responsive-safe" data-operation-update-notification="aria-live" aria-live="polite"><div class="tcrn-operation-feedback__summary"><p id="operation-message" class="tcrn-text" role="status" hidden></p><span id="receipt-operation-status" class="tcrn-badge tcrn-badge--positive tcrn-operation-feedback__status" data-operation-short-status="true" data-operation-short-status-phase="idle" role="status"><span id="receipt-operation-status-text" data-i18n="chip.idle">idle</span></span><dl id="receipt-operation-identity" class="tcrn-operation-feedback__identity" data-operation-identity="true"></dl><button type="button" class="tcrn-operation-feedback__details-trigger" id="receipt-details-trigger" aria-expanded="false" aria-controls="receipt-details" data-operation-details-trigger="true" data-i18n="receipt.details">View full receipt</button></div><section id="receipt-details" class="tcrn-operation-feedback__details" data-operation-details="true" hidden><div class="tcrn-operation-feedback__details-body"><dl class="tcrn-readback-panel tcrn-definition-list" id="receipt-body"></dl><pre id="receipt-raw" tabindex="0" data-i18n-aria-label="receipt.title" aria-label="Engine receipt"></pre></div></section></section></aside>
 <!-- These stable markers keep the static DOM contract visible before data loads. The
      live renderers replace their content with the same selectors after the engine
      read completes. -->
 <script src="/locales.js"></script>
-<script>
+<script type="module">
+import { mountStaticMultiSelect, mountStaticOverlayBoundary } from "/ds-static-bridges.snapshot.js";
 const BOOT = __PORTAL_BOOT__;
 (() => {
   "use strict";
@@ -4536,6 +4357,7 @@ const BOOT = __PORTAL_BOOT__;
   // A reason code's hint, where the locale table has one: the receipt and the collection pages both
   // explain an engine code this way, and a code without a hint is shown alone.
   const reasonHint = (code) => { const key = "reason." + String(code || ""); const hint = t(key); return hint === key ? "" : hint; };
+  const readFailureContent = (body) => `<p class="tcrn-text tcrn-state-surface__description">${esc(t("app.readUnavailable"))}</p><details class="tcrn-disclosure-panel"><summary class="tcrn-disclosure-panel__title tcrn-text">${esc(t("health.detail"))}</summary><div class="tcrn-operation-feedback__details-body"><pre tabindex="0" aria-label="${esc(t("health.detail"))}">${esc(JSON.stringify(body ?? {}, null, 2))}</pre></div></details>`;
   const termValue = (term) => typeof term === "string" ? term : term?.value ?? term?.key ?? term?.name ?? "";
   const vocabularyDefinition = (category, term) => {
     const value = termValue(term);
@@ -4555,7 +4377,7 @@ const BOOT = __PORTAL_BOOT__;
       const request = JSON.parse(options.body);
       options = { ...options, body: JSON.stringify({ ...request, libraryId: BOOT.library?.libraryId, libraryPath: BOOT.library?.libraryPath }) };
     }
-    const headers = { ...(options.body === undefined ? {} : { "content-type": "application/json" }), "x-portal-token": BOOT.token };
+    const headers = { ...(options.body === undefined ? {} : { "content-type": "application/json" }), "x-portal-token": BOOT.token, "x-configuration-target": JSON.stringify({ libraryId: BOOT.library?.libraryId, projectId: BOOT.library?.configurationProjectId ?? null }) };
     const response = await fetch(path, { ...options, headers: { ...headers, ...(options.headers || {}) } });
     const body = await response.json();
     return { ...body, httpStatus: response.status };
@@ -4610,10 +4432,14 @@ const BOOT = __PORTAL_BOOT__;
     operationStatus.dataset.operationShortStatusPhase = phase;
     setText("#receipt-operation-status-text", state.receipt ? state.receipt.version ? `${success ? "✓" : "✕"}v${state.receipt.version}` : success ? t("receipt.saved") : `✕ ${t("receipt.failed")}` : t("chip.idle"));
     const hint = reasonHint(body.reasonCode);
-    const fields = [["receipt.reasonCode", t("receipt.reasonCode"), body.reasonCode + (hint ? " — " + hint : "")], ["receipt.record", t("receipt.record"), recordValue(body)], ["receipt.version", t("receipt.version"), body.version ?? "—"], ["receipt.updatedAt", t("receipt.updatedAt"), body.updatedAt ?? "—"], ["receipt.digest", t("receipt.digest"), body.receiptDigest ?? "—"], ["receipt.head", t("receipt.head"), body.headEventHash ?? "—"], ["receipt.actor", t("receipt.actor"), body.actor ?? BOOT.actor]];
+    const message = $("#operation-message");
+    message.hidden = !state.receipt || success;
+    message.textContent = hint || t("receipt.failureMessage");
+    const fields = [["receipt.reasonCode", t("receipt.reasonCode"), body.reasonCode + (hint ? " — " + hint : "")], ["receipt.record", t("receipt.record"), recordValue(body)], ["receipt.version", t("receipt.version"), body.version ?? "—"], ["receipt.updatedAt", t("receipt.updatedAt"), body.updatedAt ?? "—"], ["receipt.digest", t("receipt.digest"), body.receiptDigest ?? "—"], ["receipt.head", t("receipt.head"), body.headEventHash ?? "—"], ["receipt.actor", t("receipt.actor"), body.actor ?? BOOT.actor], ...(body.error ? [["receipt.error", t("receipt.error"), body.error]] : [])];
     const identity = [["operation", t("receipt.operation"), body.operation ?? body.command], ["operation-id", t("receipt.operationId"), body.operationId ?? body.headEventHash], ["actor", t("receipt.actor"), body.actor ?? BOOT.actor], ["occurred-at", t("receipt.occurredAt"), body.updatedAt ?? body.occurredAt]].filter(([, , value]) => value !== undefined && value !== null && String(value).length > 0);
     $("#receipt-operation-identity").innerHTML = identity.map(([id, label, value]) => `<div class="tcrn-operation-feedback__identity-row" data-operation-identity-field="${esc(id)}"><dt>${esc(label)}</dt><dd class="tcrn-operation-feedback__identity-value">${["operation-id", "occurred-at"].includes(id) ? `<code>${esc(value)}</code>` : esc(value)}</dd></div>`).join("");
-    $("#receipt-body").innerHTML = fields.map(([key, label, value]) => `<div class="tcrn-readback-panel__row" data-operation-detail-field="${esc(key)}"><span class="tcrn-readback-panel__key">${esc(label)}</span><span class="tcrn-readback-panel__value">${esc(value)}</span></div>`).join("");
+    $("#receipt-body").innerHTML = fields.map(([key, label, value]) => `<div class="tcrn-definition-list__item" data-operation-detail-field="${esc(key)}"><dt class="tcrn-definition-list__term">${esc(label)}</dt><dd class="tcrn-definition-list__definition">${esc(value)}</dd></div>`).join("");
+    $("#receipt-raw").textContent = JSON.stringify(body, null, 2);
     const detail = $("#receipt-details");
     detail.hidden = !state.operationDetailsOpen;
     $("#receipt-details-trigger").setAttribute("aria-expanded", String(state.operationDetailsOpen));
@@ -4705,7 +4531,7 @@ const BOOT = __PORTAL_BOOT__;
   const settingGroupName = (group) => SETTING_GROUP_NAMES.find(([id]) => id === group)?.[1]() ?? group;
   // Both catalogs' rows: the library's keys (settings-catalog) and this device's (machine-settings-catalog).
   const settingEntries = () => [
-    ...(Array.isArray(state.settings?.settings) ? state.settings.settings : []).map((entry) => ({ ...entry, layer: "project" })),
+    ...(Array.isArray(state.settings?.settings) ? state.settings.settings : []).map((entry) => ({ ...entry })),
     ...(Array.isArray(state.machineSettings?.settings) ? state.machineSettings.settings : []).map((entry) => ({ ...entry, layer: "device" })),
   ];
   const settingEntry = (key) => settingEntries().find((entry) => entry.key === key);
@@ -4725,7 +4551,7 @@ const BOOT = __PORTAL_BOOT__;
   // device that syncs it; a device key is kept by this device alone.
   const layerBadge = (layer) => layer === "device"
     ? `<span class="tcrn-badge" data-setting-layer="device">${esc(t("settings.layer.device"))}</span>`
-    : `<span class="tcrn-badge" data-setting-layer="project">${esc(t("settings.layer.project"))}</span>`;
+    : `<span class="tcrn-badge" data-setting-layer="${esc(layer)}">${esc(layer === "library" ? t("settings.layer.library") : t("settings.layer.project"))}</span>`;
   // The collection keys and the pages that edit them (MIN-236 D7). A collection with no page here is
   // listed in its group without a link.
   const COLLECTION_PAGES = Object.freeze({ "models.category": "model-categories", "models.tiers": "model-tiers" });
@@ -4740,168 +4566,26 @@ const BOOT = __PORTAL_BOOT__;
     const body = t(`concept.${key}`);
     if (body === `concept.${key}`) return "";
     const id = `concept-tip-${conceptTipSequence += 1}`;
-    const kind = body.length > 240 ? "popover" : "tooltip";
+    const kind = key === "setting.design.authority" || body.length > 240 ? "popover" : "tooltip";
     const layerTag = kind === "popover" ? "section" : "span";
     const layerClass = kind === "popover" ? "tcrn-popover" : "tcrn-tooltip__content";
     const layerRole = kind === "popover" ? `role="dialog" aria-modal="false" aria-label="${esc(t("concept.explain"))}" data-overlay-scope="popover"` : `role="tooltip" data-tooltip-scope="supplemental" data-tooltip-interactive-content="forbidden"`;
     const triggerRelation = kind === "popover" ? `aria-controls="${id}" aria-haspopup="dialog" aria-expanded="false"` : `aria-describedby="${id}"`;
-    return `<span class="tcrn-tooltip" data-placement="${esc(placement)}" data-overlay-scope="${kind}" data-concept-tip="${esc(key)}" data-static-overlay-kind="${kind}" data-ds-overlay-candidate="${DS_STATIC_OVERLAY_CANDIDATE}">`
-      + `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-concept-tip__trigger" ${triggerRelation} data-static-overlay-trigger="true" data-static-overlay-kind="${kind}" aria-label="${esc(t("concept.explain"))}">`
+    return `<span class="tcrn-tooltip" data-placement="${esc(placement)}" data-overlay-scope="${kind}" data-concept-tip="${esc(key)}" data-static-overlay-kind="${kind}" data-ds-overlay-candidate="TCRN-Design-System@48ded198a7148efdaa245271d1885e468f24f4a4">`
+      + `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-icon-button" ${triggerRelation} data-static-overlay-trigger="true" data-static-overlay-kind="${kind}" aria-label="${esc(t("concept.explain"))}">`
       + `<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 7.2v4"/><path d="M8 4.8h.01"/></svg>`
       + `</button>`
-      + `<${layerTag} id="${id}" ${layerRole} class="${layerClass}" data-static-overlay-layer="true" data-static-overlay-kind="${kind}" data-ds-overlay-candidate="${DS_STATIC_OVERLAY_CANDIDATE}" hidden>${esc(body)}</${layerTag}>`
+      + `<${layerTag} id="${id}" ${layerRole} class="${layerClass}" data-static-overlay-layer="true" data-static-overlay-kind="${kind}" data-ds-overlay-candidate="TCRN-Design-System@48ded198a7148efdaa245271d1885e468f24f4a4" hidden>${esc(body)}</${layerTag}>`
       + `</span>`;
   };
   const settingDescription = (key) => t(`setting.${key}.description`);
   const currentSetting = (key) => state.settings?.settings?.find((entry) => entry.key === key);
   const controlId = (prefix, key) => `${prefix}-${String(key).replace(/[^a-zA-Z0-9_-]/gu, "-")}`;
-  // DS R2 static-consumer bridge. This is the package's fixed DOM bridge from
-  // TCRN-Design-System@610680b81a950e91e9e1e77718ea7f3f3b19bc27, kept inline because
-  // the portal is intentionally dependency-free at runtime. The portal owns only
+  // The public, published DOM bridge is imported from this consumer's verified
+  // snapshot. The portal owns only
   // pairing, placement choice, and domain content; boundary, geometry, and dismissal
   // mechanics remain the signed DS implementation.
-  const DS_STATIC_OVERLAY_CANDIDATE = "TCRN-Design-System@610680b81a950e91e9e1e77718ea7f3f3b19bc27";
-  const clampStaticOverlay = (value, minimum, maximum) => Math.min(Math.max(value, minimum), Math.max(minimum, maximum));
-  const staticOverlayRect = (element) => {
-    const rect = element.getBoundingClientRect();
-    return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height };
-  };
-  const computeStaticOverlayPosition = (anchor, layer, requestedPlacement, viewportWidth, viewportHeight, gap) => {
-    const layerWidth = Math.max(layer.width, 0);
-    const layerHeight = Math.max(layer.height, 0);
-    const edge = Math.max(gap, 0);
-    const fitsTop = anchor.top - layerHeight - edge >= edge;
-    const fitsBottom = anchor.bottom + layerHeight + edge <= viewportHeight - edge;
-    const fitsLeft = anchor.left - layerWidth - edge >= edge;
-    const fitsRight = anchor.right + layerWidth + edge <= viewportWidth - edge;
-    let placement = requestedPlacement;
-    const direction = requestedPlacement.split("-")[0];
-    if (direction === "top" && !fitsTop && fitsBottom) placement = requestedPlacement.replace(/^top/u, "bottom");
-    if (direction === "bottom" && !fitsBottom && fitsTop) placement = requestedPlacement.replace(/^bottom/u, "top");
-    if (direction === "left" && !fitsLeft && fitsRight) placement = "right";
-    if (direction === "right" && !fitsRight && fitsLeft) placement = "left";
-    let left = anchor.left;
-    let top = anchor.bottom + edge;
-    if (["top", "top-start", "top-end"].includes(placement)) top = anchor.top - layerHeight - edge;
-    else if (["bottom", "bottom-start", "bottom-end"].includes(placement)) top = anchor.bottom + edge;
-    else if (placement === "left") { left = anchor.left - layerWidth - edge; top = anchor.top + ((anchor.height - layerHeight) / 2); }
-    else if (placement === "right") { left = anchor.right + edge; top = anchor.top + ((anchor.height - layerHeight) / 2); }
-    if (placement === "top-end" || placement === "bottom-end") left = anchor.right - layerWidth;
-    if (placement === "top" || placement === "bottom") left = anchor.left + ((anchor.width - layerWidth) / 2);
-    if (placement === "top-start" || placement === "bottom-start") left = anchor.left;
-    return {
-      left: clampStaticOverlay(left, edge, viewportWidth - layerWidth - edge),
-      top: clampStaticOverlay(top, edge, viewportHeight - layerHeight - edge),
-      placement,
-    };
-  };
-  const mountStaticOverlayBoundary = ({ trigger, layer, kind, placement, gap = 8 }) => {
-    const inert = { open: () => undefined, close: () => undefined, reposition: () => undefined, destroy: () => undefined };
-    if (!(trigger instanceof HTMLElement) || !(layer instanceof HTMLElement)) return inert;
-    const originalParent = layer.parentNode;
-    const originalNextSibling = layer.nextSibling;
-    const previousStyle = layer.getAttribute("style");
-    const previousHidden = layer.hidden;
-    const previousBoundary = layer.getAttribute("data-overlay-boundary");
-    const previousPositioning = layer.getAttribute("data-overlay-positioning");
-    const previousResolvedPlacement = layer.getAttribute("data-overlay-placement-resolved");
-    const previousOpen = layer.getAttribute("data-overlay-open");
-    const previousTooltipOpen = layer.getAttribute("data-tooltip-open");
-    const previousExpanded = trigger.getAttribute("aria-expanded");
-    const initialOpen = layer.getAttribute("data-overlay-open") === "true"
-      || (layer.getAttribute("data-overlay-open") === null && !layer.hidden);
-    let openState = initialOpen;
-    let disposed = false;
-    const setLayerState = (nextOpen) => {
-      openState = nextOpen;
-      layer.hidden = !nextOpen;
-      layer.setAttribute("data-overlay-open", nextOpen ? "true" : "false");
-      if (kind === "tooltip") layer.setAttribute("data-tooltip-open", nextOpen ? "true" : "false");
-      if (kind === "popover") trigger.setAttribute("aria-expanded", nextOpen ? "true" : "false");
-    };
-    const reposition = () => {
-      if (disposed || !openState) return;
-      layer.hidden = false;
-      layer.style.visibility = "hidden";
-      const next = computeStaticOverlayPosition(staticOverlayRect(trigger), staticOverlayRect(layer), placement, window.innerWidth, window.innerHeight, gap);
-      layer.style.left = `${next.left}px`;
-      layer.style.top = `${next.top}px`;
-      layer.setAttribute("data-overlay-placement-resolved", next.placement);
-      layer.style.visibility = "visible";
-    };
-    const open = () => { if (!disposed) { setLayerState(true); reposition(); } };
-    const close = ({ restoreFocus = false } = {}) => {
-      if (disposed) return;
-      setLayerState(false);
-      layer.style.visibility = "hidden";
-      if (restoreFocus) trigger.focus();
-    };
-    const onFocusIn = () => { if (kind === "tooltip") open(); };
-    const onFocusOut = (event) => {
-      const related = event.relatedTarget;
-      if (related instanceof Node && (trigger.contains(related) || layer.contains(related))) return;
-      if (kind === "tooltip") close();
-    };
-    const onMouseEnter = () => { if (kind === "tooltip") open(); };
-    const onMouseLeave = () => { if (kind === "tooltip") close(); };
-    const onClick = () => { if (kind === "popover") (openState ? close : open)(); };
-    const onKeyDown = (event) => {
-      if (event.key !== "Escape" || !openState) return;
-      event.preventDefault();
-      close({ restoreFocus: kind === "popover" });
-    };
-    const onPointerDown = (event) => {
-      const target = event.target;
-      if (kind === "popover" && openState && (!(target instanceof Node) || (!trigger.contains(target) && !layer.contains(target)))) close();
-    };
-    document.body.append(layer);
-    layer.setAttribute("data-overlay-boundary", "document-body");
-    layer.setAttribute("data-overlay-positioning", "static-fixed");
-    layer.setAttribute("data-ds-overlay-candidate", DS_STATIC_OVERLAY_CANDIDATE);
-    layer.style.position = "fixed";
-    trigger.addEventListener("focusin", onFocusIn);
-    trigger.addEventListener("focusout", onFocusOut);
-    trigger.addEventListener("mouseenter", onMouseEnter);
-    trigger.addEventListener("mouseleave", onMouseLeave);
-    trigger.addEventListener("click", onClick);
-    document.addEventListener("keydown", onKeyDown);
-    document.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("resize", reposition);
-    window.addEventListener("scroll", reposition, true);
-    if (openState) open(); else close();
-    return {
-      open,
-      close,
-      reposition,
-      destroy() {
-        if (disposed) return;
-        disposed = true;
-        trigger.removeEventListener("focusin", onFocusIn);
-        trigger.removeEventListener("focusout", onFocusOut);
-        trigger.removeEventListener("mouseenter", onMouseEnter);
-        trigger.removeEventListener("mouseleave", onMouseLeave);
-        trigger.removeEventListener("click", onClick);
-        document.removeEventListener("keydown", onKeyDown);
-        document.removeEventListener("pointerdown", onPointerDown);
-        window.removeEventListener("resize", reposition);
-        window.removeEventListener("scroll", reposition, true);
-        if (originalParent) {
-          if (originalNextSibling?.parentNode === originalParent) originalParent.insertBefore(layer, originalNextSibling);
-          else originalParent.appendChild(layer);
-        }
-        if (previousStyle === null) layer.removeAttribute("style"); else layer.setAttribute("style", previousStyle);
-        if (previousHidden) layer.hidden = true; else layer.removeAttribute("hidden");
-        if (previousBoundary === null) layer.removeAttribute("data-overlay-boundary"); else layer.setAttribute("data-overlay-boundary", previousBoundary);
-        if (previousPositioning === null) layer.removeAttribute("data-overlay-positioning"); else layer.setAttribute("data-overlay-positioning", previousPositioning);
-        if (previousResolvedPlacement === null) layer.removeAttribute("data-overlay-placement-resolved"); else layer.setAttribute("data-overlay-placement-resolved", previousResolvedPlacement);
-        if (previousOpen === null) layer.removeAttribute("data-overlay-open"); else layer.setAttribute("data-overlay-open", previousOpen);
-        if (previousTooltipOpen === null) layer.removeAttribute("data-tooltip-open"); else layer.setAttribute("data-tooltip-open", previousTooltipOpen);
-        if (kind === "popover") {
-          if (previousExpanded === null) trigger.removeAttribute("aria-expanded"); else trigger.setAttribute("aria-expanded", previousExpanded);
-        }
-      },
-    };
-  };
+  const DS_STATIC_OVERLAY_CANDIDATE = "TCRN-Design-System@48ded198a7148efdaa245271d1885e468f24f4a4";
   const staticOverlayMounts = new Set();
   const destroyStaticOverlayMounts = () => {
     for (const mounted of staticOverlayMounts) mounted.handle.destroy();
@@ -4927,17 +4611,20 @@ const BOOT = __PORTAL_BOOT__;
     return Array.isArray(values) ? [...new Set(values.filter((value) => typeof value === "string" && value.length > 0))] : [];
   };
   const promptLanguageSelection = (value, roster) => {
-    const selected = new Set(String(value ?? "").split(",").map((part) => part.trim()).filter((part) => roster.includes(part)));
+    const selected = new Set(String(value ?? currentSetting("artifact.language")?.currentValue ?? "").split(",").map((part) => part.trim()).filter((part) => roster.includes(part)));
     return roster.filter((language) => selected.has(language));
   };
   const promptLanguageLabel = (language) => `${BOOT.localeMetadata?.find((entry) => entry.locale === language)?.nativeName || language} (${language})`;
+  const multiSelectMounts = new Set();
   const promptLanguageChoice = (entry, label, id) => {
     const roster = promptLanguageRoster();
     const selected = new Set(promptLanguageSelection(state.promptLanguageDraft ?? entry.currentValue, roster));
     const dirty = [...selected].join(",") !== promptLanguageSelection(entry.currentValue, roster).join(",");
-    const options = roster.map((language, index) => `<label class="tcrn-multi-select-group__option" for="${esc(id)}-option-${index}"><input id="${esc(id)}-option-${index}" class="tcrn-checkbox" type="checkbox" name="${esc(entry.key)}" value="${esc(language)}" data-setting-option-value="${esc(language)}" ${selected.has(language) ? "checked" : ""}><span>${esc(promptLanguageLabel(language))}</span></label>`).join("");
-    return `<div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(roster, entry.key, "collection-closed", "multi-select")} data-setting-choice-cardinality="set" data-setting-choice-source="artifact.language.allowedValues" data-setting-choice-value-format="comma-separated"><span id="${esc(id)}-label" class="tcrn-field__label">${esc(label)}</span><div class="tcrn-multi-select-group"><div class="tcrn-multi-select-group__options" id="${esc(id)}" role="group" aria-labelledby="${esc(id)}-label" data-choice-cardinality="collection" data-choice-value-mode="closed" data-choice-presentation="checkboxes" data-choice-option-count="${roster.length}" data-setting-cardinality="set" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set">${options}</div><div class="tcrn-multi-select-group__actions"><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--sm" data-save-setting-choice="${esc(entry.key)}" ${dirty ? "" : "disabled"}>${esc(t("config.save"))}</button><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--sm" data-undo-setting-choice="${esc(entry.key)}" ${dirty ? "" : "disabled"}>${esc(t("config.undo"))}</button><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--sm tcrn-multi-select-group__clear" data-reset-setting="${esc(entry.key)}" ${String(entry.currentValue ?? "") === "" ? "disabled" : ""}>${esc(t("setting.retrieval.promptLanguages.reset"))}</button></div></div></div>`;
+    const listId = `${id}-list`;
+    const options = roster.map((language, index) => `<button type="button" role="option" id="${esc(listId)}-${index}" class="tcrn-menu__item tcrn-multi-select-dropdown__option" data-multi-select-value="${esc(language)}" data-selected="${selected.has(language)}" aria-selected="${selected.has(language)}"><span data-multi-select-label>${esc(promptLanguageLabel(language))}</span><span data-multi-select-check data-selected="${selected.has(language)}" aria-hidden="true"><svg class="tcrn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4 10-10"/></svg></span></button>`).join("");
+    return `<div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(roster, entry.key, "collection-closed", "multi-select")} data-setting-choice-cardinality="set" data-setting-choice-source="artifact.language.allowedValues" data-setting-choice-value-format="comma-separated"><div class="tcrn-multi-select-dropdown" data-prompt-language-dropdown data-choice-cardinality="collection" data-choice-value-mode="closed" data-choice-presentation="dropdown" data-choice-option-count="${roster.length}" data-empty-selection-label="${esc(t("scope.selectLanguages"))}"><button type="button" id="${esc(id)}" class="tcrn-select tcrn-multi-select-dropdown__trigger" aria-label="${esc(label)}" aria-required="true" aria-haspopup="listbox" aria-expanded="false" aria-controls="${esc(listId)}"><span data-multi-select-summary>${esc([...selected].map(promptLanguageLabel).join(", ") || t("scope.selectLanguages"))}</span><svg class="tcrn-icon tcrn-multi-select-dropdown__caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><select class="tcrn-sr-only tcrn-multi-select-dropdown__value" data-choice-presentation="dropdown" multiple name="${esc(entry.key)}" tabindex="-1" aria-hidden="true" data-setting-control="${esc(entry.key)}" data-setting-cardinality="set" data-cli-action="settings-set">${roster.map((language) => `<option value="${esc(language)}" ${selected.has(language) ? "selected" : ""}>${esc(promptLanguageLabel(language))}</option>`).join("")}</select><input class="tcrn-sr-only tcrn-multi-select-dropdown__validation" type="checkbox" required tabindex="-1" aria-hidden="true" ${selected.size > 0 ? "checked" : ""}><div id="${esc(listId)}" class="tcrn-menu tcrn-multi-select-dropdown__list" role="listbox" aria-multiselectable="true" aria-label="${esc(label)}" tabindex="-1" hidden>${options}</div></div><div class="tcrn-surface__head-actions tcrn-action-row"><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--sm" data-save-setting-choice="${esc(entry.key)}" ${dirty ? "" : "disabled"}>${esc(t("config.save"))}</button><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--sm" data-undo-setting-choice="${esc(entry.key)}" ${dirty ? "" : "disabled"}>${esc(t("config.undo"))}</button><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--sm" data-reset-setting="${esc(entry.key)}" ${entry.declaredValue == null ? "disabled" : ""}>${esc(t("config.reset"))}</button></div></div>`;
   };
+
   const referenceChoice = (entry, label, id) => {
     const values = [...new Set(entry.allowedValues || [])];
     const current = String(entry.currentValue ?? "");
@@ -4966,7 +4653,7 @@ const BOOT = __PORTAL_BOOT__;
     const current = entry.currentValue ?? "";
     // Named `name`, not `label`: the design proof pins the project controls' own markup by its text.
     const name = settingLabel(entry.key);
-    if (entry.controlType === "number") return `<label class="tcrn-field"><span class="tcrn-sr-only">${esc(name)}</span><input class="tcrn-input tcrn-number-input" type="number" min="${esc(entry.min)}" max="${esc(entry.max)}" step="1" value="${esc(current)}" data-machine-control="${esc(entry.key)}" data-number-input-component="NumberInput" data-number-input="true" data-number-input-semantic="numeric-entry" data-number-input-visibility="full-value" data-cli-action="machine-settings-set" aria-label="${esc(name)}"></label>`;
+    if (entry.controlType === "number") return `<label class="tcrn-field"><span class="tcrn-sr-only">${esc(name)}</span><input class="tcrn-input tcrn-number-input" type="number" min="${esc(entry.min)}" ${entry.max === undefined ? "" : `max="${esc(entry.max)}"`} step="1" value="${esc(current)}" data-machine-control="${esc(entry.key)}" data-number-input-component="NumberInput" data-number-input="true" data-number-input-semantic="numeric-entry" data-number-input-visibility="full-value" data-cli-action="machine-settings-set" aria-label="${esc(name)}"></label>`;
     if (entry.controlType === "text") return `<label class="tcrn-field"><span class="tcrn-sr-only">${esc(name)}</span><input class="tcrn-input" value="${esc(current)}" placeholder="${esc(t("config.unset"))}" aria-label="${esc(name)}" data-machine-control="${esc(entry.key)}" data-cli-action="machine-settings-set"></label>`;
     const values = ["", ...deviceOptions(entry)];
     return `<div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(values, entry.key)}><label class="tcrn-setting-choice__select-label"><span class="tcrn-sr-only">${esc(name)}</span><select class="tcrn-select" data-machine-control="${esc(entry.key)}" data-cli-action="machine-settings-set" aria-label="${esc(name)}">${values.map((value) => `<option value="${esc(value)}" ${value === current ? "selected" : ""}>${esc(value || t("config.unset"))}</option>`).join("")}</select></label></div>`;
@@ -4977,7 +4664,7 @@ const BOOT = __PORTAL_BOOT__;
     const id = controlId("setting-control", entry.key);
     const label = settingLabel(entry.key);
     if (entry.controlType === "boolean") return `<label class="tcrn-switch" data-switch-state="${current === (entry.trueValue || "allowed") ? "on" : "off"}"><input class="tcrn-switch__control" type="checkbox" role="switch" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set" data-setting-value="${esc(entry.trueValue || "allowed")}" ${current === (entry.trueValue || "allowed") ? "checked" : ""}><span class="tcrn-switch__label">${esc(current === (entry.trueValue || "allowed") ? t("config.enabled") : t("config.disabled"))}</span></label>`;
-    if (entry.controlType === "number") return `<div class="tcrn-number-input-field"><label class="tcrn-field" for="${esc(id)}"><span class="tcrn-sr-only">${esc(label)}</span><input class="tcrn-input tcrn-number-input" id="${esc(id)}" type="number" min="${esc(entry.min)}" max="${esc(entry.max)}" step="1" value="${esc(current)}" data-number-input-component="NumberInput" data-number-input="true" data-number-input-semantic="numeric-entry" data-number-input-visibility="full-value" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set" aria-label="${esc(label)}"></label><span class="tcrn-setting-choice__hint">${esc(entry.min)}–${esc(entry.max)}</span></div>`;
+    if (entry.controlType === "number") return `<div class="tcrn-number-input-field"><label class="tcrn-field" for="${esc(id)}"><span class="tcrn-sr-only">${esc(label)}</span><input class="tcrn-input tcrn-number-input" id="${esc(id)}" type="number" min="${esc(entry.min)}" ${entry.max === undefined ? "" : `max="${esc(entry.max)}"`} step="1" value="${esc(current)}" data-number-input-component="NumberInput" data-number-input="true" data-number-input-semantic="numeric-entry" data-number-input-visibility="full-value" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set" aria-label="${esc(label)}"></label><span class="tcrn-setting-choice__hint">${entry.max === undefined ? esc(t("scope.minimum", { value: entry.min })) : `${esc(entry.min)}–${esc(entry.max)}`}</span></div>`;
     if (entry.key === "retrieval.promptLanguages") return promptLanguageChoice(entry, label, id);
     if (entry.controlType === "reference") return referenceChoice(entry, label, id);
     if (entry.controlType === "enum" && values.length > 0) return `<div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(values, entry.key)}><label class="tcrn-setting-choice__select-label" for="${esc(id)}"><span class="tcrn-sr-only">${esc(label)}</span><select class="tcrn-select" id="${esc(id)}" data-setting-control="${esc(entry.key)}" data-cli-action="settings-set">${values.map((value) => `<option value="${esc(value)}" ${value === current ? "selected" : ""}>${esc(entry.key === "artifact.language" ? promptLanguageLabel(value) : value || t("config.unset"))}</option>`).join("")}</select></label></div>`;
@@ -4990,7 +4677,7 @@ const BOOT = __PORTAL_BOOT__;
   // states what would turn it green. The fetch happens in the reader's browser: the
   // engine is offline by construction and the portal server never reaches out either.
   const DESIGN_AUTHORITY_CONTRACT = "/tcrn-design-authority.json";
-  const designAuthorityState = { url: null, status: "unset", detail: null };
+  const designAuthorityState = { key: null, status: "unset", detail: null, epoch: 0 };
   const readDesignAuthority = async (url) => {
     if (!url) return { status: "unset", detail: null };
     let contract;
@@ -5005,7 +4692,7 @@ const BOOT = __PORTAL_BOOT__;
       if (typeof body.name !== "string" || typeof body.version !== "string" || body.name.length === 0 || body.version.length === 0) {
         return { status: "warning", detail: t("design.warnFields") };
       }
-      return { status: "declared", detail: { name: body.name.slice(0, 120), version: body.version.slice(0, 60) } };
+      return { status: "declared", detail: { name: body.name, version: body.version } };
     } catch { return { status: "warning", detail: t("design.warnUnreachable") }; }
   };
   const renderDesignAuthority = () => {
@@ -5015,22 +4702,37 @@ const BOOT = __PORTAL_BOOT__;
     if (status === "unset") { host.innerHTML = ""; host.hidden = true; return; }
     host.hidden = false;
     host.innerHTML = status === "declared"
-      ? `<div class="tcrn-inline-alert" data-design-authority-state="declared"><span>${esc(t("design.declared"))}: <strong>${esc(detail.name)}</strong> ${esc(detail.version)}</span></div>`
-      : `<div class="tcrn-inline-alert tcrn-inline-alert--warning" data-design-authority-state="warning" role="status"><span>${esc(detail)} ${esc(t("design.warnResolve"))}</span></div>`;
+      ? `<div class="tcrn-inline-alert" data-design-authority-state="declared"><span>${esc(t("design.declared"))}: <strong>${esc(detail.name)}</strong> ${esc(detail.version)}. ${esc(t("design.warnResolve"))}</span></div>`
+      : `<div class="tcrn-inline-alert tcrn-inline-alert--warning" data-design-authority-state="${esc(status)}" role="status"><span>${esc(detail)} ${["unconfigured", "conflicting"].includes(status) ? "" : esc(t("design.warnResolve"))}</span></div>`;
   };
   const refreshDesignAuthority = async () => {
     const url = currentSetting("design.authority")?.currentValue ?? null;
-    if (url === designAuthorityState.url && designAuthorityState.status !== "unset") return;
-    designAuthorityState.url = url;
-    Object.assign(designAuthorityState, await readDesignAuthority(url), { url });
+    const declaration = state.settings?.design;
+    const key = JSON.stringify([BOOT.library?.libraryId, state.settings?.projectId, declaration, state.locale]);
+    if (key === designAuthorityState.key) return;
+    const epoch = ++designAuthorityState.epoch;
+    designAuthorityState.key = key;
+    const result = declaration?.status === "unconfigured"
+      ? { status: "unconfigured", detail: t("design.missingBindings", { fields: declaration.missing.map(settingLabel).join(", ") }) }
+      : declaration?.status === "conflicting"
+        ? { status: "conflicting", detail: t("design.conflictingBindings") }
+        : await readDesignAuthority(url);
+    if (epoch !== designAuthorityState.epoch || key !== designAuthorityState.key) return;
+    Object.assign(designAuthorityState, result);
     renderDesignAuthority();
   };
   // A settings row for each shape and layer. A project-level key keeps the controls it always had; a
   // device key is written to this device's own file (machine-settings-set); a collection key is a
   // link to its page, since a table of records is edited there (MIN-236 D7). Every row names its layer.
-  const settingRowLabel = (entry, description) => `<div class="tcrn-setting-row__label"><code class="tcrn-setting-row__key">${esc(entry.key)}</code><span class="tcrn-setting-row__name">${esc(settingLabel(entry.key))}${conceptTip("setting." + entry.key)}</span><span class="tcrn-setting-row__description">${esc(description)}</span>${layerBadge(entry.layer)}</div>`;
+  const settingSourceText = (entry) => {
+    if (entry.layer === "device") return t("scope.device");
+    const source = entry.source;
+    if (source?.kind === "project") return source.inherited ? t("scope.inheritedProject", { name: source.projectName ?? source.projectId }) : t("scope.thisProject");
+    return source?.kind === "library" ? t("scope.libraryDefaults") : t("scope.builtIn");
+  };
+  const settingRowLabel = (entry, description) => `<div class="tcrn-setting-row__label"><code class="tcrn-setting-row__key">${esc(entry.key)}</code><span class="tcrn-setting-row__name">${esc(settingLabel(entry.key))}${conceptTip("setting." + entry.key)}</span><span class="tcrn-setting-row__description">${esc(description)}</span>${layerBadge(entry.layer)}<span class="tcrn-field__hint" data-effective-source="${esc(entry.source?.projectId ?? entry.source?.kind ?? entry.layer)}">${esc(settingSourceText(entry))}</span></div>`;
   const projectSettingRow = (entry) => {
-    const modified = entry.currentValue !== entry.defaultValue;
+    const modified = entry.declaredValue != null;
     const reset = modified ? `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md tcrn-icon-button tcrn-setting-row__reset" data-reset-setting="${esc(entry.key)}" data-cli-action="settings-remove" aria-label="${esc(t("config.reset"))}"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3.2 8a4.8 4.8 0 1 0 1.5-3.5"/><path d="M2.6 2.8v2.6h2.6"/></svg></button>` : "";
     // The dictionary link and the dictionary row must agree on who is in the domain:
     // the vocabulary lists a key when its controlType is "enum", so the icon asks the
@@ -5046,12 +4748,14 @@ const BOOT = __PORTAL_BOOT__;
   };
   const collectionSettingRow = (entry) => {
     const page = COLLECTION_PAGES[entry.key];
-    const count = `<span class="tcrn-meta" data-collection-count>${esc(t("settings.collectionCount", { count: storedRecords(entry.key).length }))}</span>`;
+    const count = `<span class="tcrn-text" data-collection-count>${esc(t("settings.collectionCount", { count: storedRecords(entry.key).length }))}</span>`;
     const link = page === undefined ? "" : `<button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-collection-link="${esc(page)}">${esc(t("settings.collectionOpen"))}</button>`;
     return `<div class="tcrn-setting-row" data-setting-row="${esc(entry.key)}" data-setting-shape="collection">${settingRowLabel(entry, settingDescription(entry.key))}<div class="tcrn-setting-row__control">${link}${count}</div><div class="tcrn-setting-row__tools"></div></div>`;
   };
   const settingRow = (entry) => entry.layer === "device" ? deviceSettingRow(entry) : entry.shape === "collection" ? collectionSettingRow(entry) : projectSettingRow(entry);
   const renderSettings = () => {
+    for (const handle of multiSelectMounts) handle.destroy();
+    multiSelectMounts.clear();
     clearTransientTarget();
     const focus = rememberFocus($("#settings-rows"));
     destroyStaticOverlayMounts();
@@ -5061,7 +4765,7 @@ const BOOT = __PORTAL_BOOT__;
     // identity, and its focus, while the reader moves between groups; a language change renames them.
     const nav = $("[data-settings-layout-nav]");
     if (nav.dataset.settingGroupSet !== groups.join(" ")) {
-      nav.innerHTML = groups.map((group) => `<button type="button" class="tcrn-subnav__item" data-setting-group="${esc(group)}"></button>`).join("");
+      nav.innerHTML = groups.map((group) => `<button type="button" class="tcrn-nav-item tcrn-subnav__item" data-nav-item-has-icon="false" data-setting-group="${esc(group)}"></button>`).join("");
       nav.dataset.settingGroupSet = groups.join(" ");
     }
     $$("[data-setting-group]", nav).forEach((button) => { button.textContent = settingGroupName(button.dataset.settingGroup); });
@@ -5077,12 +4781,12 @@ const BOOT = __PORTAL_BOOT__;
     const unavailable = !loading && !Array.isArray(state.settings?.settings);
     const deviceUnavailable = state.machineSettings !== null && !Array.isArray(state.machineSettings?.settings);
     const phase = loading ? "loading" : unavailable ? "error" : entries.length === 0 ? "empty" : "content";
-    const stateText = phase === "loading" ? t("config.loading") : phase === "error" ? state.settings?.reasonCode || t("health.unavailable") : t("config.empty");
+    const stateText = phase === "loading" ? t("config.loading") : phase === "error" ? t("config.readUnavailable") : t("config.empty");
     const body = phase === "content"
       ? `<div class="tcrn-content-scope__content"><div class="tcrn-settings-layout__form"><div class="tcrn-setting-row-list" data-setting-row-list="true">${entries.map(settingRow).join("")}</div></div></div>`
       : `<div class="tcrn-state-surface" data-settings-state="${phase}">${esc(stateText)}</div>`;
     const valid = unavailable || deviceUnavailable ? "false" : "true";
-    $("#settings-rows").innerHTML = `<section class="tcrn-surface tcrn-content-scope" data-content-scope="settings-group" data-content-group="${esc(state.settingGroup)}" data-content-source="engine.settings-catalog engine.machine-settings" data-content-phase="${phase}" data-content-valid="${valid}" data-content-shown-count="${entries.length}" data-content-total-count="${entries.length}" data-content-count-kind="total" data-content-stale="false"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2>${esc(settingGroupName(state.settingGroup))}</h2><p class="tcrn-surface__note">${esc(t("settings.groupNote"))}</p></div></div>${body}</section>`;
+    $("#settings-rows").innerHTML = `<section class="tcrn-surface tcrn-content-scope" data-content-scope="settings-group" data-content-group="${esc(state.settingGroup)}" data-content-source="engine.settings-catalog engine.machine-settings" data-content-phase="${phase}" data-content-valid="${valid}" data-content-shown-count="${entries.length}" data-content-total-count="${entries.length}" data-content-count-kind="total" data-content-stale="false"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2>${esc(settingGroupName(state.settingGroup))}</h2><p class="tcrn-text">${esc(t("settings.groupNote"))}</p></div></div>${body}</section>`;
     // The design authority's panel sits with the key, in whichever group the catalog files it.
     const authorityGroup = settingGroup("design.authority");
     $("#design-authority").hidden = state.settingGroup !== authorityGroup || designAuthorityState.status === "unset";
@@ -5092,9 +4796,7 @@ const BOOT = __PORTAL_BOOT__;
       if (control.tagName === "BUTTON") control.addEventListener("click", () => saveSetting(control.dataset.settingControl, control.dataset.settingValue));
       else if (control.getAttribute("data-setting-cardinality") === "set") control.addEventListener("change", (event) => {
         if (promptLanguageRoster().includes(event.target.value)) state.promptLanguageFocusValue = event.target.value;
-        const values = control.dataset.choicePresentation === "checkboxes"
-          ? $$('input[type="checkbox"]', control).filter((option) => option.checked).map((option) => option.value)
-          : [...control.options].filter((option) => option.selected).map((option) => option.value);
+        const values = [...control.options].filter((option) => option.selected).map((option) => option.value);
         const selected = [...new Set(values)];
         state.promptLanguageDraft = promptLanguageSelection(selected.join(","), promptLanguageRoster()).join(",");
         const dirty = state.promptLanguageDraft !== promptLanguageSelection(currentSetting(control.dataset.settingControl)?.currentValue, promptLanguageRoster()).join(",");
@@ -5109,7 +4811,7 @@ const BOOT = __PORTAL_BOOT__;
       const input = button.closest("[data-stepper]")?.querySelector("[data-setting-control]");
       if (!input) return;
       const delta = button.dataset.stepperAction === "increment" ? 1 : -1;
-      const value = Math.min(Number(input.max), Math.max(Number(input.min), Number(input.value) + delta));
+      const value = Math.min(input.max === "" ? Number.MAX_SAFE_INTEGER : Number(input.max), Math.max(Number(input.min), Number(input.value) + delta));
       if (Number.isFinite(value) && value !== Number(input.value)) {
         input.value = String(value);
         input.dispatchEvent(new Event("change", { bubbles: true }));
@@ -5119,6 +4821,8 @@ const BOOT = __PORTAL_BOOT__;
     $$('[data-collection-link]', rows).forEach((button) => button.addEventListener("click", () => openCollection(button.dataset.collectionLink)));
     $$('[data-vocabulary-link]', rows).forEach((button) => button.addEventListener("click", () => { state.selectedVocabulary = button.dataset.vocabularyLink; navigate("vocabulary"); renderVocabulary(); }));
     attachEcho(rows);
+    for (const root of $$("[data-prompt-language-dropdown]", rows)) multiSelectMounts.add(mountStaticMultiSelect({ root }));
+    for (const field of $$(".tcrn-field", rows)) field.classList.toggle("tcrn-field--error", Boolean(field.querySelector('[aria-invalid="true"]')));
     mountStaticOverlayMounts(rows);
     restoreFocus(rows, focus);
     if (state.librarySwitching || state.settingsWritePending) setSettingWritesBusy(true);
@@ -5169,7 +4873,7 @@ const BOOT = __PORTAL_BOOT__;
     const references = Array.isArray(finding.references) && finding.references.length > 0 ? `${finding.category ?? ""}: ${finding.references.join(", ")}` : "";
     return `<div class="tcrn-inline-alert tcrn-inline-alert--${tone}" data-collection-finding="${esc(finding.reasonCode)}" data-collection-finding-field="${esc(finding.field ?? "")}"><code>${esc(finding.reasonCode)}</code><span>${esc([hint, references].filter((part) => part !== "").join(" "))}</span></div>`;
   };
-  const refusalAlert = (body) => `<div class="tcrn-inline-alert tcrn-inline-alert--danger" data-collection-refusal="${esc(body.reasonCode ?? "")}"><code>${esc(body.reasonCode ?? "")}</code><span>${esc(reasonHint(body.reasonCode) || body.error || "")}</span></div>`;
+  const refusalAlert = (body) => `<div class="tcrn-inline-alert tcrn-inline-alert--danger" data-collection-refusal="${esc(body.reasonCode ?? "")}"><code>${esc(body.reasonCode ?? "")}</code><span>${esc(reasonHint(body.reasonCode) || t("receipt.failureMessage"))}</span></div>`;
   const collectionCell = (column, content) => `<span class="tcrn-table-shell__cell" role="cell" data-label="${esc(column.label)}" data-collection-cell="${esc(column.field)}">${content}</span>`;
   const collectionInputCell = (column, value, invalid) => {
     const common = `aria-label="${esc(column.label)}" data-collection-field="${esc(column.field)}"${invalid ? ' aria-invalid="true"' : ""}`;
@@ -5215,7 +4919,7 @@ const BOOT = __PORTAL_BOOT__;
     const alerts = [...tableFindings.map(findingAlert), ...refusal].join("");
     const alertBlock = alerts === "" ? "" : `<div data-collection-alerts="${esc(key)}" role="alert">${alerts}</div>`;
     const reset = modified ? `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-collection-reset="${esc(key)}" data-cli-action="settings-remove">${esc(t("collection.restoreDefault"))}</button>` : "";
-    return `<section class="tcrn-surface" data-content-scope="${esc(COLLECTION_PAGES[key])}"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2>${esc(title)}</h2><p class="tcrn-surface__note">${esc(t("collection.saveNote"))}</p></div><div class="tcrn-surface__head-actions" data-collection-links>${links}${layerBadge("project")}</div></div>${alertBlock}${table}<div class="tcrn-action-row" data-collection-actions="${esc(key)}"><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-collection-add="${esc(key)}">${esc(addLabel)}</button>${reset}<button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-collection-save="${esc(key)}" data-cli-action="settings-set">${esc(t("collection.save"))}</button></div></section>`;
+    return `<section class="tcrn-surface" data-content-scope="${esc(COLLECTION_PAGES[key])}"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2>${esc(title)}</h2><p class="tcrn-text">${esc(t("collection.saveNote"))}</p></div><div class="tcrn-surface__head-actions" data-collection-links>${links}${layerBadge("project")}</div></div>${alertBlock}${table}<div class="tcrn-surface__head-actions tcrn-action-row" data-collection-actions="${esc(key)}"><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-collection-add="${esc(key)}">${esc(addLabel)}</button>${reset}<button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-collection-save="${esc(key)}" data-cli-action="settings-set">${esc(t("collection.save"))}</button></div></section>`;
   };
   // TCRN-CROSS-SUB-410 (TCRN-CROSS-STORY-508 R6; contract C-R14-3): the top of the tier page shows the
   // three escalation settings as they stand, read only, and links to the settings group that holds
@@ -5232,9 +4936,9 @@ const BOOT = __PORTAL_BOOT__;
     };
     const rows = ESCALATION_KEYS.map((key) => {
       const tone = key === "models.escalation.ceiling" && category === undefined ? " tcrn-badge--warning" : "";
-      return `<div class="tcrn-list__row" data-escalation-key="${esc(key)}"><span>${esc(settingLabel(key))}</span><span class="tcrn-badge${tone}" data-escalation-value="${esc(key)}">${esc(shown[key])}</span></div>`;
+      return `<div class="tcrn-definition-list__item" data-escalation-key="${esc(key)}"><span>${esc(settingLabel(key))}</span><span class="tcrn-badge${tone}" data-escalation-value="${esc(key)}">${esc(shown[key])}</span></div>`;
     }).join("");
-    return `<section class="tcrn-surface" data-escalation-summary aria-label="${esc(t("modelTiers.escalationTitle"))}"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2>${esc(t("modelTiers.escalationTitle"))}</h2><p class="tcrn-surface__note">${esc(t("modelTiers.escalationNote"))}</p></div><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-escalation-settings-link>${esc(t("modelTiers.escalationChange"))}</button></div><div class="tcrn-list">${rows}</div></section>`;
+    return `<section class="tcrn-surface" data-escalation-summary aria-label="${esc(t("modelTiers.escalationTitle"))}"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2>${esc(t("modelTiers.escalationTitle"))}</h2><p class="tcrn-text">${esc(t("modelTiers.escalationNote"))}</p></div><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-escalation-settings-link>${esc(t("modelTiers.escalationChange"))}</button></div><div class="tcrn-definition-list tcrn-definition-list--dense">${rows}</div></section>`;
   };
   const openEscalationSettings = () => {
     clearTransientTarget();
@@ -5254,7 +4958,7 @@ const BOOT = __PORTAL_BOOT__;
       const count = counts.get(row.id) ?? 0;
       const text = t("modelCategories.tierCount", { count });
       return count === 0
-        ? `<span class="tcrn-meta" data-model-category-tier-count="0">${esc(text)}</span>`
+        ? `<span class="tcrn-text" data-model-category-tier-count="0">${esc(text)}</span>`
         : `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-model-category-tiers="${esc(row.id)}" data-model-category-tier-count="${esc(count)}" aria-label="${esc(t("modelCategories.showTiers", { category: row.id, count }))}">${esc(text)}</button>`;
     };
     const columns = [
@@ -5470,13 +5174,13 @@ const BOOT = __PORTAL_BOOT__;
   };
   const variableRow = (variable, isNew = false) => `<div class="tcrn-table-shell__row" role="row" ${isNew ? 'data-variable-create-row' : `data-variable-row="${esc(variable.name)}"`}>
     ${variableField("order", variable.order ?? "")}
-    ${variableField("name", variable.name ?? "")}
+    ${variableField("name", variable.name ?? "").replace("data-variable-field=\"name\"", `data-variable-field="name"${!isNew && variable.declaredHere === false ? " readonly" : ""}`).replace("</label>", `${!isNew ? `<span class="tcrn-text" data-variable-source="${esc(variable.name)}">${esc(settingSourceText({ source: variable.source }))}</span>` : ""}</label>`)}
     ${variableField("type", variable.type ?? "string")}
     ${variableField("value", variable.value ?? "")}
     ${variableField("description", variable.description ?? "")}
     <span class="tcrn-table-shell__cell" role="cell" data-label="${esc(t("variables.actions"))}">${isNew
       ? `<button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-variable-create data-cli-action="variable-set">${esc(t("variables.add"))}</button>`
-      : `<button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-variable-save data-cli-action="variable-set">${esc(t("config.save"))}</button> <button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-variable-delete data-cli-action="variable-remove">${esc(t("config.remove"))}</button>`}</span>
+      : `<button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-variable-save data-cli-action="variable-set">${esc(t("config.save"))}</button> <button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-variable-delete data-cli-action="variable-remove"${variable.declaredHere === false ? " disabled" : ""}>${esc(t("config.reset"))}</button>`}</span>
   </div>`;
   const variableFieldValues = (row) => Object.fromEntries([...row.querySelectorAll("[data-variable-field]")].map((field) => [field.dataset.variableField, field.value]));
   const renderVariables = () => {
@@ -5488,8 +5192,8 @@ const BOOT = __PORTAL_BOOT__;
     const rows = variables.length > 0 ? variables.map((variable) => variableRow(variable)).join("") : `<div class="tcrn-table-shell__row tcrn-table-shell__empty-row" role="row" data-variable-empty><span class="tcrn-table-shell__empty" role="cell">${esc(t("variables.empty"))}</span></div>`;
     const headers = [t("collection.order"), t("variables.name"), t("variables.type"), t("variables.value"), t("variables.description"), t("variables.actions")];
     const content = unavailable
-      ? `<div class="tcrn-state-surface" role="alert">${esc(source?.reasonCode ?? t("health.unavailable"))}</div>`
-      : `<section class="tcrn-surface" data-content-scope="custom-variables"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2>${esc(t("variables.title"))}</h2><p class="tcrn-surface__note">${esc(t("variables.note"))}</p></div></div><div class="tcrn-table-shell tcrn-variable-table" role="table" aria-label="${esc(t("variables.title"))}" data-variable-table="true"><div class="tcrn-table-shell__head" role="row">${headers.map((label) => `<span role="columnheader">${esc(label)}</span>`).join("")}</div>${variableRow({ name: "", type: "string", value: "", description: "" }, true)}${rows}</div></section>${source?.withheld?.length ? `<p class="tcrn-scope-note">${esc(t("variables.withheld", { count: source.withheld.length }))}</p>` : ""}`;
+      ? `<div class="tcrn-state-surface" role="alert">${readFailureContent(source)}</div>`
+      : `<section class="tcrn-surface" data-content-scope="custom-variables"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2>${esc(t("variables.title"))}</h2><p class="tcrn-text">${esc(t("variables.note"))}</p></div></div><div class="tcrn-table-shell tcrn-variable-table" role="table" aria-label="${esc(t("variables.title"))}" data-variable-table="true"><div class="tcrn-table-shell__head" role="row">${headers.map((label) => `<span role="columnheader">${esc(label)}</span>`).join("")}</div>${variableRow({ name: "", type: "string", value: "", description: "" }, true)}${rows}</div></section>${source?.withheld?.length ? `<p class="tcrn-text">${esc(t("variables.withheld", { count: source.withheld.length }))}</p>` : ""}`;
     $("#variables-view").innerHTML = content;
     $$('[data-variable-create]').forEach((button) => button.addEventListener("click", () => saveVariable(variableFieldValues(button.closest("[data-variable-create-row]")))));
     $$('[data-variable-save]').forEach((button) => button.addEventListener("click", () => {
@@ -5553,9 +5257,7 @@ const BOOT = __PORTAL_BOOT__;
     }
     if (data.ok === false) {
       setText("#work-count", "—");
-      const reason = typeof data.reasonCode === "string" ? `<code>${esc(data.reasonCode)}</code>` : esc(t("dashboard.noWork"));
-      const cause = typeof data.source?.reasonCode === "string" ? ` · <code>${esc(data.source.reasonCode)}</code>` : "";
-      content.innerHTML = `<div class="tcrn-state-surface" role="alert" data-work-failure="${esc(data.reasonCode ?? "")}">${reason}${cause}</div>`;
+      content.innerHTML = `<div class="tcrn-state-surface" role="alert" data-work-failure="${esc(data.reasonCode ?? "")}">${readFailureContent(data)}</div>`;
       return;
     }
     const records = Array.isArray(data.records) ? data.records : [];
@@ -5568,9 +5270,9 @@ const BOOT = __PORTAL_BOOT__;
       return;
     }
     const summaryFor = (entry) => entry.summary || entry.title || t("dashboard.missingSummary");
-    const storyRows = (epic) => records.filter((entry) => entry.parentId === epic.id && entry.kind === "Story").sort((left, right) => String(left.externalKey).localeCompare(String(right.externalKey))).map((entry) => `<div class="tcrn-work-tree__story" role="treeitem" data-work-id="${esc(entry.id)}"><div class="tcrn-work-tree__text"><code class="tcrn-work-tree__key">${esc(entry.externalKey)}</code><span class="tcrn-work-tree__title ${entry.summary || entry.title ? "" : "tcrn-work-tree__missing"}">${esc(summaryFor(entry))}</span></div>${statusBadge(entry.status, statusTone(entry.status))}</div>`).join("") || `<div class="tcrn-meta">${esc(t("dashboard.noStories"))}</div>`;
-    const epicRows = (initiative) => epicsFor(initiative).map((epic) => `<details class="tcrn-work-tree__epic" open role="treeitem" data-work-id="${esc(epic.id)}"><summary class="tcrn-work-tree__summary"><span><code class="tcrn-work-tree__key">${esc(epic.externalKey)}</code><strong>${esc(summaryFor(epic))}</strong></span>${statusBadge(epic.status, statusTone(epic.status))}</summary><div class="tcrn-work-tree__children" role="group">${storyRows(epic)}</div></details>`).join("") || `<div class="tcrn-meta">${esc(t("dashboard.noEpics"))}</div>`;
-    $("#work-tree-content").innerHTML = `<div class="tcrn-work-tree" role="tree" aria-label="${esc(t("dashboard.workTreeLabel"))}">${initiatives.map((initiative) => `<details class="tcrn-work-tree__epic" open role="treeitem" data-work-id="${esc(initiative.id)}"><summary class="tcrn-work-tree__summary"><span><code class="tcrn-work-tree__key">${esc(initiative.externalKey)}</code><strong>${esc(summaryFor(initiative))}</strong></span>${statusBadge(initiative.status, statusTone(initiative.status))}</summary><div class="tcrn-work-tree__children" role="group">${epicRows(initiative)}</div></details>`).join("")}</div>`;
+    const storyRows = (epic) => records.filter((entry) => entry.parentId === epic.id && entry.kind === "Story").sort((left, right) => String(left.externalKey).localeCompare(String(right.externalKey))).map((entry) => `<div class="tcrn-record-row tcrn-record-row--dense tcrn-work-tree__story" role="treeitem" data-work-id="${esc(entry.id)}"><code class="tcrn-record-row__id tcrn-work-tree__key">${esc(entry.externalKey)}</code><div class="tcrn-record-row__summary tcrn-work-tree__text"><span class="tcrn-text tcrn-work-tree__title ${entry.summary || entry.title ? "" : "tcrn-work-tree__missing"}">${esc(summaryFor(entry))}</span></div><div class="tcrn-record-row__meta">${statusBadge(entry.status, statusTone(entry.status))}</div></div>`).join("") || `<div class="tcrn-text">${esc(t("dashboard.noStories"))}</div>`;
+    const epicRows = (initiative) => epicsFor(initiative).map((epic) => `<details class="tcrn-row-group tcrn-row-group--dense tcrn-work-tree__epic" open role="treeitem" data-work-id="${esc(epic.id)}"><summary class="tcrn-row-group__head tcrn-work-tree__summary"><span><code class="tcrn-record-row__id tcrn-work-tree__key">${esc(epic.externalKey)}</code><strong>${esc(summaryFor(epic))}</strong></span>${statusBadge(epic.status, statusTone(epic.status))}</summary><div class="tcrn-record-table tcrn-work-tree__children" role="group">${storyRows(epic)}</div></details>`).join("") || `<div class="tcrn-text">${esc(t("dashboard.noEpics"))}</div>`;
+    $("#work-tree-content").innerHTML = `<div class="tcrn-document-canvas tcrn-work-tree" role="tree" aria-label="${esc(t("dashboard.workTreeLabel"))}">${initiatives.map((initiative) => `<details class="tcrn-row-group tcrn-row-group--dense tcrn-work-tree__epic" open role="treeitem" data-work-id="${esc(initiative.id)}"><summary class="tcrn-row-group__head tcrn-work-tree__summary"><span><code class="tcrn-record-row__id tcrn-work-tree__key">${esc(initiative.externalKey)}</code><strong>${esc(summaryFor(initiative))}</strong></span>${statusBadge(initiative.status, statusTone(initiative.status))}</summary><div class="tcrn-record-table tcrn-work-tree__children" role="group">${epicRows(initiative)}</div></details>`).join("")}</div>`;
   };
   // TCRN-CROSS-SUB-425 (MIN-239 D6): the list reads valid cards unless the viewer picks another status.
   // A removed card is shown as it is kept -- its subject, the removal's reason, basis, actor and
@@ -5580,8 +5282,8 @@ const BOOT = __PORTAL_BOOT__;
   const removedKnowledgeRow = (record) => {
     const removal = record.removal ?? {};
     const removedBy = t("knowledge.removedBy", { actor: removal.actor ?? "—", at: removal.removedAt ?? "—" });
-    const successor = typeof removal.supersededBy === "string" ? `<span class="tcrn-read-list__summary">${esc(t("knowledge.supersededBy"))}: <code>${esc(removal.supersededBy)}</code></span>` : "";
-    return `<div class="tcrn-read-list__row" role="listitem" data-knowledge-id="${esc(record.id)}" data-knowledge-status="removed"><div class="tcrn-read-list__main"><strong>${esc(record.subject || record.externalKey || record.id)}</strong><span class="tcrn-read-list__summary">${esc(t("knowledge.removalBasis"))}: ${esc(removal.basis ?? "—")}</span><span class="tcrn-read-list__meta"><code>${esc(record.id)}</code>${statusBadge(t("knowledge.statusRemoved"), "danger")}<span class="tcrn-meta">${esc(removalReasonLabel(removal.reason))}</span><span class="tcrn-meta">${esc(removedBy)}</span></span>${successor}</div></div>`;
+    const successor = typeof removal.supersededBy === "string" ? `<span class="tcrn-text">${esc(t("knowledge.supersededBy"))}: <code>${esc(removal.supersededBy)}</code></span>` : "";
+    return `<div class="tcrn-search-result-list__item" role="listitem" data-knowledge-id="${esc(record.id)}" data-knowledge-status="removed"><div class="tcrn-document-canvas__section"><strong>${esc(record.subject || record.externalKey || record.id)}</strong><span class="tcrn-text">${esc(t("knowledge.removalBasis"))}: ${esc(removal.basis ?? "—")}</span><span class="tcrn-label-set"><code>${esc(record.id)}</code>${statusBadge(t("knowledge.statusRemoved"), "danger")}<span class="tcrn-text">${esc(removalReasonLabel(removal.reason))}</span><span class="tcrn-text">${esc(removedBy)}</span></span>${successor}</div></div>`;
   };
   const renderKnowledgeView = () => {
     const data = state.knowledge;
@@ -5596,16 +5298,16 @@ const BOOT = __PORTAL_BOOT__;
       : selectedBody.pending === true
         ? `<article class="tcrn-surface" data-ui="knowledge-body-reader" aria-live="polite"><div class="tcrn-surface__head"><h3>${esc(t("knowledge.bodyTitle"))}</h3></div><div class="tcrn-state-surface">${esc(t("knowledge.bodyLoading"))}</div></article>`
         : selectedBody.body
-          ? `<article class="tcrn-surface" data-ui="knowledge-body-reader"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h3>${esc(selectedRecord?.subject || selectedBody.id)}</h3><p class="tcrn-surface__note">${esc(t("knowledge.bodyReadBoundary"))}</p></div><span class="tcrn-badge">${esc(selectedBody.freshness || "—")}</span></div><pre class="tcrn-read-list__summary" role="document">${esc(selectedBody.body)}</pre><span class="tcrn-meta">${esc(t("knowledge.bodyDigest"))}: ${esc(selectedBody.bodySha256 || "—")}</span></article>`
-          : `<article class="tcrn-surface" data-ui="knowledge-body-reader" role="alert"><div class="tcrn-surface__head"><h3>${esc(t("knowledge.bodyTitle"))}</h3></div><div class="tcrn-state-surface">${esc(selectedBody.reasonCode || t("knowledge.bodyUnavailable"))}</div></article>`;
+          ? `<article class="tcrn-surface" data-ui="knowledge-body-reader"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h3 class="tcrn-heading tcrn-heading--3">${esc(selectedRecord?.subject || selectedBody.id)}</h3><p class="tcrn-text">${esc(t("knowledge.bodyReadBoundary"))}</p></div><span class="tcrn-badge">${esc(selectedBody.freshness || "—")}</span></div><pre class="tcrn-text atelier-article-body" role="document">${esc(selectedBody.body)}</pre><span class="tcrn-text">${esc(t("knowledge.bodyDigest"))}: ${esc(selectedBody.bodySha256 || "—")}</span></article>`
+          : `<article class="tcrn-surface" data-ui="knowledge-body-reader" role="alert"><div class="tcrn-surface__head"><h3>${esc(t("knowledge.bodyTitle"))}</h3></div><div class="tcrn-state-surface">${esc(t("knowledge.bodyUnavailable"))}</div></article>`;
     const statusOptions = [["valid", t("knowledge.statusValid")], ["removed", t("knowledge.statusRemoved")], ["all", t("knowledge.statusAll")]]
       .map(([value, label]) => `<option value="${value}"${state.knowledgeStatus === value ? " selected" : ""}>${esc(label)}</option>`).join("");
-    const statusField = `<label class="tcrn-field" for="knowledge-status"><span class="tcrn-field__label">${esc(t("knowledge.status"))}</span><select class="tcrn-select" id="knowledge-status" data-ui="knowledge-status-filter">${statusOptions}</select></label>${state.knowledgeStatus === "valid" ? "" : `<p class="tcrn-scope-note">${esc(t("knowledge.removedNote"))}</p>`}`;
+    const statusField = `<label class="tcrn-field" for="knowledge-status"><span class="tcrn-field__label">${esc(t("knowledge.status"))}</span><select class="tcrn-select" id="knowledge-status" data-ui="knowledge-status-filter">${statusOptions}</select></label>${state.knowledgeStatus === "valid" ? "" : `<p class="tcrn-text">${esc(t("knowledge.removedNote"))}</p>`}`;
     const filterField = `${statusField}<label class="tcrn-field"><span class="tcrn-field__label">${esc(t("knowledge.search"))}</span><input class="tcrn-input" id="knowledge-filter" type="search" value="${esc(state.knowledgeQuery)}" placeholder="${esc(t("knowledge.searchPlaceholder"))}" autocomplete="off"></label>`;
     if (visibleRecords.length === 0) {
-      $("#knowledge-view-content").innerHTML = `${filterField}<div class="tcrn-state-surface">${esc(records.length === 0 ? (data?.listing?.reasonCode ?? t("dashboard.knowledgeEmpty")) : t("knowledge.noMatches"))}</div>${bodyReader}`;
+      $("#knowledge-view-content").innerHTML = `${filterField}<div class="tcrn-state-surface">${esc(records.length === 0 ? (data?.listing?.ok === false ? t("config.readUnavailable") : t("dashboard.knowledgeEmpty")) : t("knowledge.noMatches"))}</div>${bodyReader}`;
     } else {
-      $("#knowledge-view-content").innerHTML = `${filterField}<div class="tcrn-read-list" role="list">${visibleRecords.slice(0, 160).map((record) => {
+      $("#knowledge-view-content").innerHTML = `${filterField}<div class="tcrn-search-result-list" role="list">${visibleRecords.map((record) => {
       if (record.status === "removed") return removedKnowledgeRow(record);
       const retired = record.lifecycle === "retired";
       const label = retired ? t("dashboard.retired") : record.lifecycle === "candidate" ? t("dashboard.candidate") : t("dashboard.active");
@@ -5615,8 +5317,8 @@ const BOOT = __PORTAL_BOOT__;
       const readAction = typeof record.id === "string" && record.id.startsWith("knowledge:")
         ? `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-knowledge-body-id="${esc(record.id)}" data-cli-action="knowledge-body">${esc(t("knowledge.readBody"))}</button>`
         : "";
-      return `<div class="tcrn-read-list__row" role="listitem" data-knowledge-id="${esc(record.id)}"><div class="tcrn-read-list__main"><strong>${esc(record.subject || record.externalKey || record.id)}</strong><span class="tcrn-read-list__summary">${esc(record.summary || t("dashboard.missingSummary"))}</span><span class="tcrn-read-list__meta"><code>${esc(record.id)}</code><span class="tcrn-badge">${esc(record.kind || "—")}</span>${statusBadge(label, retired ? "danger" : "positive")}<span class="tcrn-meta">${esc(retirement)}</span></span><span class="tcrn-read-list__summary">${esc(sourceText)}</span></div>${readAction}</div>`;
-      }).join("")}</div>${visibleRecords.length > 160 ? `<p class="tcrn-scope-note">${esc(t("dashboard.showingFirst", { count: 160 }))}</p>` : ""}${bodyReader}`;
+      return `<div class="tcrn-search-result-list__item" role="listitem" data-knowledge-id="${esc(record.id)}"><div class="tcrn-document-canvas__section"><strong>${esc(record.subject || record.externalKey || record.id)}</strong><span class="tcrn-text">${esc(record.summary || t("dashboard.missingSummary"))}</span><span class="tcrn-label-set"><code>${esc(record.id)}</code><span class="tcrn-badge">${esc(record.kind || "—")}</span>${statusBadge(label, retired ? "danger" : "positive")}<span class="tcrn-text">${esc(retirement)}</span></span><span class="tcrn-text">${esc(sourceText)}</span></div>${readAction}</div>`;
+      }).join("")}</div>${bodyReader}`;
     }
     $("#knowledge-filter")?.addEventListener("input", (event) => {
       state.knowledgeQuery = event.target.value;
@@ -5644,29 +5346,29 @@ const BOOT = __PORTAL_BOOT__;
     setText("#gates-count", String(gates.length));
     const empty = $("#gates-empty");
     empty.hidden = gates.length > 0;
-    empty.textContent = state.gateResponse?.ok === false ? state.gateResponse.reasonCode || t("gates.listEmpty") : t("gates.listEmpty");
-    $("#gates-rows").innerHTML = gates.map((gate) => `<tr data-gate-row="${esc(gate.name)}">
-      <td><label class="tcrn-field"><span class="tcrn-sr-only">${esc(t("collection.order"))}</span>${orderInput(gate.order ?? "", `aria-label="${esc(t("collection.order"))}" data-gate-order`)}</label></td>
-      <td><div data-gate-cell><strong><code>${esc(gate.name)}</code></strong>
+    empty.textContent = state.gateResponse?.ok === false ? t("config.readUnavailable") : t("gates.listEmpty");
+    $("#gates-rows").innerHTML = gates.map((gate) => `<div class="tcrn-table-shell__row" role="row" data-gate-row="${esc(gate.name)}">
+      <div class="tcrn-table-shell__cell" role="cell" data-column-label="${esc(t("collection.order"))}"><label class="tcrn-field"><span class="tcrn-sr-only">${esc(t("collection.order"))}</span>${orderInput(gate.order ?? "", `aria-label="${esc(t("collection.order"))}" data-gate-order`)}</label></div>
+      <div class="tcrn-table-shell__cell" role="cell" data-column-label="${esc(t("gates.columnGate"))}"><div data-gate-cell><strong><code>${esc(gate.name)}</code></strong>
         <label class="tcrn-field"><span class="tcrn-field__label">${esc(t("gates.command"))}</span><textarea class="tcrn-input tcrn-textarea" data-gate-command rows="2">${esc(JSON.stringify(gate.command ?? []))}</textarea></label>
         <label class="tcrn-field"><span class="tcrn-field__label">${esc(t("gates.root"))}</span><input class="tcrn-input" data-gate-root value="${esc(gate.root ?? ".")}"></label>
         <label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-gate-release-only ${gate.releaseOnly ? "checked" : ""}><span class="tcrn-switch__label">${esc(t("gates.releaseOnly"))}</span></label>
         <div data-gate-cell-actions><button type="button" class="tcrn-button tcrn-button--secondary" data-gate-save="${esc(gate.name)}" data-cli-action="gates-config-set">${esc(t("gates.save"))}</button><button type="button" class="tcrn-button tcrn-button--quiet" data-gate-remove="${esc(gate.name)}" data-cli-action="gates-config-remove">${esc(t("gates.remove"))}</button></div>
-      </div></td>
-      <td><label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-gate-enabled ${gate.enabled ? "checked" : ""}><span class="tcrn-switch__label">${esc(t("gates.enabled"))}</span></label></td>
-      <td><label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-gate-required ${gate.required ? "checked" : ""}><span class="tcrn-switch__label">${esc(t("gates.required"))}</span></label></td>
-      <td><div data-gate-covers>${(Array.isArray(gate.covers) ? gate.covers : []).map((cover) => `<div data-gate-cover-row><input class="tcrn-input" data-gate-cover value="${esc(cover)}" aria-label="${esc(t("gates.columnCovers"))}"><button type="button" class="tcrn-button tcrn-button--quiet" data-gate-remove-cover aria-label="${esc(t("gates.removeCover"))}">×</button></div>`).join("")}<button type="button" class="tcrn-button tcrn-button--quiet" data-gate-add-cover>${esc(t("gates.addCover"))}</button></div></td>
-    </tr>`).join("");
+      </div></div>
+      <div class="tcrn-table-shell__cell" role="cell" data-column-label="${esc(t("gates.columnEnabled"))}"><label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-gate-enabled ${gate.enabled ? "checked" : ""}><span class="tcrn-switch__label">${esc(t("gates.enabled"))}</span></label></div>
+      <div class="tcrn-table-shell__cell" role="cell" data-column-label="${esc(t("gates.columnRequired"))}"><label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-gate-required ${gate.required ? "checked" : ""}><span class="tcrn-switch__label">${esc(t("gates.required"))}</span></label></div>
+      <div class="tcrn-table-shell__cell" role="cell" data-column-label="${esc(t("gates.columnCovers"))}"><div data-gate-covers>${(Array.isArray(gate.covers) ? gate.covers : []).map((cover) => `<div data-gate-cover-row><input class="tcrn-input" data-gate-cover value="${esc(cover)}" aria-label="${esc(t("gates.columnCovers"))}"><button type="button" class="tcrn-button tcrn-button--quiet" data-gate-remove-cover aria-label="${esc(t("gates.removeCover"))}">×</button></div>`).join("")}<button type="button" class="tcrn-button tcrn-button--quiet" data-gate-add-cover>${esc(t("gates.addCover"))}</button></div></div>
+    </div>`).join("");
     const lastRun = state.lastGateRun;
     const run = lastRun?.run ?? null;
     const runHost = $("#gates-last-run");
     if (!run) {
-      runHost.innerHTML = `<div class="tcrn-state-surface">${esc(lastRun?.ok === false ? lastRun.reasonCode || t("gates.lastRunEmpty") : t("gates.lastRunEmpty"))}</div>`;
+      runHost.innerHTML = `<div class="tcrn-state-surface">${esc(lastRun?.ok === false ? t("config.readUnavailable") : t("gates.lastRunEmpty"))}</div>`;
       return;
     }
     const outcomes = Array.isArray(run.gates) ? run.gates : [];
     const passed = outcomes.filter((gate) => gate.ok).length;
-    runHost.innerHTML = `<div><div data-gate-run-row><span>${esc(t("gates.runAt"))}: <time datetime="${esc(run.at)}">${esc(new Date(run.at).toLocaleString(state.locale))}</time></span><span class="tcrn-meta">${esc(t("gates.runId"))}: <code>${esc(run.runId)}</code></span><span class="tcrn-badge ${run.reds?.length ? "tcrn-badge--danger" : "tcrn-badge--positive"}">${passed}/${outcomes.length} · ${esc(run.reds?.length ? t("gates.runFailed") : t("gates.runOk"))}</span></div><div class="tcrn-list">${outcomes.map((gate) => `<div class="tcrn-list__row"><span>${esc(gate.name)}${gate.required ? ` · ${esc(t("gates.required"))}` : ""}</span><span class="tcrn-badge ${gate.ok ? "tcrn-badge--positive" : "tcrn-badge--danger"}">${esc(gate.ok ? t("gates.runOk") : t("gates.runFailed"))}</span></div>`).join("") || `<div class="tcrn-state-surface">${esc(t("gates.lastRunEmpty"))}</div>`}</div></div>`;
+    runHost.innerHTML = `<div><div data-gate-run-row><span>${esc(t("gates.runAt"))}: <time datetime="${esc(run.at)}">${esc(new Date(run.at).toLocaleString(state.locale))}</time></span><span class="tcrn-text">${esc(t("gates.runId"))}: <code>${esc(run.runId)}</code></span><span class="tcrn-badge ${run.reds?.length ? "tcrn-badge--danger" : "tcrn-badge--positive"}">${passed}/${outcomes.length} · ${esc(run.reds?.length ? t("gates.runFailed") : t("gates.runOk"))}</span></div><div class="tcrn-definition-list tcrn-definition-list--dense">${outcomes.map((gate) => `<div class="tcrn-definition-list__item"><span>${esc(gate.name)}${gate.required ? ` · ${esc(t("gates.required"))}` : ""}</span><span class="tcrn-badge ${gate.ok ? "tcrn-badge--positive" : "tcrn-badge--danger"}">${esc(gate.ok ? t("gates.runOk") : t("gates.runFailed"))}</span></div>`).join("") || `<div class="tcrn-state-surface">${esc(t("gates.lastRunEmpty"))}</div>`}</div></div>`;
   };
   const renderDashboard = () => {
     const doctorFocus = rememberFocus($("#health-list"));
@@ -5801,23 +5503,23 @@ const BOOT = __PORTAL_BOOT__;
     if (column.kind === "description") return `<span>${esc(vocabularyDefinition(category, term))}</span>`;
     const raw = term?.[column.key];
     if (column.kind === "boolean") {
-      if (raw === null || raw === undefined) return `<span class="tcrn-meta">—</span>`;
+      if (raw === null || raw === undefined) return `<span class="tcrn-text">—</span>`;
       return `<span class="tcrn-badge ${raw ? "tcrn-badge--positive" : ""}">${esc(t(raw ? "vocabulary.yes" : "vocabulary.no"))}</span>`;
     }
     if (column.kind === "badges") {
       const items = Array.isArray(raw) ? raw : [];
-      return items.length === 0 ? `<span class="tcrn-meta">—</span>` : items.map((item) => `<span class="tcrn-badge">${esc(String(item))}</span>`).join(" ");
+      return items.length === 0 ? `<span class="tcrn-text">—</span>` : items.map((item) => `<span class="tcrn-badge">${esc(String(item))}</span>`).join(" ");
     }
     if (column.kind === "semantics") {
       const entries = raw && typeof raw === "object" ? Object.entries(raw) : [];
-      return entries.length === 0 ? `<span class="tcrn-meta">—</span>`
-        : entries.map(([host, text]) => `<span class="tcrn-vocabulary__semantic"><span class="tcrn-meta">${esc(host)}</span>${esc(String(text))}</span>`).join("");
+      return entries.length === 0 ? `<span class="tcrn-text">—</span>`
+        : entries.map(([host, text]) => `<span class="tcrn-vocabulary__semantic"><span class="tcrn-text">${esc(host)}</span>${esc(String(text))}</span>`).join("");
     }
     if (column.kind === "evidence") {
       // The full URL stays in href and the official quote in the tooltip: the anchor
       // loses nothing, but the page is not a wall of pasted documentation.
       const items = Array.isArray(raw) ? raw : [];
-      return items.length === 0 ? `<span class="tcrn-meta">—</span>` : items.map((entry) => {
+      return items.length === 0 ? `<span class="tcrn-text">—</span>` : items.map((entry) => {
         let domain = String(entry.url || "");
         try { domain = new URL(entry.url).hostname.replace(/^www\./u, ""); } catch { /* keep raw */ }
         return `<a class="tcrn-vocabulary__source" href="${esc(entry.url || "")}" title="${esc(entry.quote || "")}" target="_blank" rel="noreferrer">${esc(entry.sourceHost || "")} · ${esc(domain)} · ${esc(entry.accessedAt || "")}</a>`;
@@ -5837,14 +5539,14 @@ const BOOT = __PORTAL_BOOT__;
     if (!categories.includes(state.selectedVocabulary)) state.selectedVocabulary = categories[0];
     const vocabularyPanel = $("#vocabulary-terms");
     if (vocabularyPanel) vocabularyPanel.dataset.vocabularyPanelCategory = state.selectedVocabulary;
-    $("#vocabulary-nav").innerHTML = categories.map((category) => `<span class="tcrn-subnav__row"><button class="tcrn-subnav__item" data-vocabulary-category="${esc(category)}">${esc(vocabularyCategoryLabel(category))}</button>${conceptTip("vocabulary." + category, "bottom")}</span>`).join("");
+    $("#vocabulary-nav").innerHTML = categories.map((category) => `<span class="tcrn-subnav__row"><button class="tcrn-nav-item tcrn-subnav__item" data-nav-item-has-icon="false" data-vocabulary-category="${esc(category)}">${esc(vocabularyCategoryLabel(category))}</button>${conceptTip("vocabulary." + category, "bottom")}</span>`).join("");
     bindTabList($("#vocabulary-nav"), {
       selected: state.selectedVocabulary,
       onSelect: (tab) => { state.selectedVocabulary = tab.dataset.vocabularyCategory; renderVocabulary(); },
     });
     const terms = vocabularyRows(state.selectedVocabulary);
     const columns = vocabularyColumns(state.selectedVocabulary);
-    const categoryDescription = `<p class="tcrn-scope-note tcrn-vocabulary__category-description" data-vocabulary-category-description="${esc(state.selectedVocabulary)}">${esc(vocabularyCategoryDescription(state.selectedVocabulary))}</p>`;
+    const categoryDescription = `<p class="tcrn-text tcrn-vocabulary__category-description" data-vocabulary-category-description="${esc(state.selectedVocabulary)}">${esc(vocabularyCategoryDescription(state.selectedVocabulary))}</p>`;
     $("#vocabulary-terms").innerHTML = terms.length === 0
       ? `${categoryDescription}<div class="tcrn-state-surface">${esc(t("vocabulary.empty"))}</div>`
       : `${categoryDescription}<div class="tcrn-table-shell" role="table" data-mobile-layout="stacked-cards" data-vocabulary-table="${esc(state.selectedVocabulary)}" data-vocabulary-columns="${columns.length}" tabindex="0">`
@@ -5859,6 +5561,7 @@ const BOOT = __PORTAL_BOOT__;
     batch: t("rule.title.batch"),
     "unattended-commands": t("rule.title.unattended-commands"),
     "silent-reporting": t("rule.title.silent-reporting"),
+    "design-authority": t("rule.title.design-authority"),
   })[id] || id;
   const ruleStateLabel = (value) => ({
     disabled: t("rule.state.disabled"),
@@ -5896,7 +5599,8 @@ const BOOT = __PORTAL_BOOT__;
       const enabled = ruleIsEnabled(rule);
       const changed = ["user-modified", "pending"].includes(rule.state);
       const forceId = `rule-force-${rule.id}`;
-      return `<article data-rule-card="${esc(rule.id)}"><div data-rule-card-head><h2 data-rule-card-title>${esc(ruleTitle(rule.id))}</h2><span class="tcrn-badge" data-rule-state="${esc(rule.state)}">${esc(ruleStateLabel(rule.state))}</span></div><div data-rule-card-meta>${esc(rule.section)} · v${esc(rule.version ?? "—")}</div>${ruleOrderField(rule)}<div data-rule-card-actions><label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-rule-switch="${esc(rule.id)}" aria-label="${esc(ruleTitle(rule.id))}" ${enabled ? "checked" : ""}><span class="tcrn-switch__label">${esc(enabled ? t("config.enabled") : t("config.disabled"))}</span></label>${changed && enabled ? `<label data-rule-force-label for="${forceId}"><input class="tcrn-input" type="checkbox" id="${forceId}" data-rule-force="${esc(rule.id)}">${esc(t("rule.forceDisable"))}</label>` : ""}</div></article>`;
+      const upgrade = rule.state === "update-available" ? `<button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-rule-upgrade="${esc(rule.id)}" data-cli-action="rule-enable">${esc(t("rule.upgrade", { version: rule.version }))}</button>` : "";
+      return `<article class="tcrn-surface" data-rule-card="${esc(rule.id)}"><div class="tcrn-surface__head" data-rule-card-head><h2 class="tcrn-heading tcrn-heading--3" data-rule-card-title>${esc(ruleTitle(rule.id))}</h2><span class="tcrn-badge" data-rule-state="${esc(rule.state)}">${esc(ruleStateLabel(rule.state))}</span></div><div class="tcrn-text" data-rule-card-meta>${esc(rule.section)} · v${esc(rule.version ?? "—")}</div>${ruleOrderField(rule)}<div data-rule-card-actions><label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-rule-switch="${esc(rule.id)}" aria-label="${esc(ruleTitle(rule.id))}" ${enabled ? "checked" : ""}><span class="tcrn-switch__label">${esc(enabled ? t("config.enabled") : t("config.disabled"))}</span></label>${upgrade}${changed && enabled ? `<label class="tcrn-text" data-rule-force-label for="${forceId}"><input class="tcrn-checkbox" type="checkbox" id="${forceId}" data-rule-force="${esc(rule.id)}">${esc(t("rule.forceDisable"))}</label>` : ""}</div></article>`;
     }).join("") : `<div class="tcrn-state-surface">${esc(t("config.loading"))}</div>`;
     $$('[data-rule-switch]').forEach((input) => input.addEventListener("change", async () => {
       const id = input.dataset.ruleSwitch;
@@ -5909,6 +5613,15 @@ const BOOT = __PORTAL_BOOT__;
       if (result.ok && result.rules) state.rules = result;
       else input.checked = !input.checked;
       renderProseDirectory(); renderPending();
+    }));
+    $$('[data-rule-upgrade]').forEach((button) => button.addEventListener("click", async () => {
+      const id = button.dataset.ruleUpgrade;
+      button.disabled = true;
+      echo("rule-enable", ["--id", id]);
+      const result = await api(`/api/rules/${encodeURIComponent(id)}`, { method: "POST", body: JSON.stringify({ action: "enable" }) });
+      showReceipt(result);
+      if (result.ok && result.rules) await loadAgents();
+      else { renderProseDirectory(); renderPending(); }
     }));
     // A saved order moves the rule's section, so AGENTS.md is read back with the rules.
     $$('[data-rule-order-save]').forEach((button) => button.addEventListener("click", async () => {
@@ -5934,17 +5647,22 @@ const BOOT = __PORTAL_BOOT__;
   const renderReconciliation = (result) => {
     state.reconciliation = result;
     const chip = $("#reconcile-chip"); chip.className = `tcrn-badge ${result.ok ? "tcrn-badge--positive" : "tcrn-badge--warning"}`; chip.textContent = result.ok ? t("reconcile.green") : `${result.findings?.length || result.mismatchCount || 0} ${t("reconcile.findings")}`;
-    $("#reconcile-findings").innerHTML = result.findings?.length ? result.findings.map((finding) => `<li class="tcrn-line-numbered-editor__finding--${finding.tone === "danger" ? "danger" : "warning"}" data-editor-finding-line="${esc(finding.line)}"><button type="button" class="tcrn-finding-link" data-ui="prose-finding-link" data-prose-line="${esc(finding.line)}"><span class="tcrn-dot" aria-hidden="true"></span><span>${esc(finding.file)}:${esc(finding.line)}</span><span class="tcrn-machine-token tcrn-machine-token--compact tcrn-machine-token--key"><span class="tcrn-machine-token__value">${esc(finding.token || finding.key)}</span></span><span>${esc(finding.kind)}</span></button></li>`).join("") : `<li class="tcrn-meta">${esc(t("reconcile.green"))}</li>`;
+    $("#reconcile-findings").innerHTML = result.findings?.length ? result.findings.map((finding) => `<li class="tcrn-line-numbered-editor__finding--${finding.tone === "danger" ? "danger" : "warning"}" data-editor-finding-line="${esc(finding.line)}"><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md tcrn-finding-link" data-ui="prose-finding-link" data-prose-line="${esc(finding.line)}"><span class="tcrn-dot" aria-hidden="true"></span><span>${esc(finding.file)}:${esc(finding.line)}</span><span class="tcrn-machine-token tcrn-machine-token--compact tcrn-machine-token--key"><span class="tcrn-machine-token__value">${esc(finding.token || finding.key)}</span></span><span>${esc(finding.kind)}</span></button></li>`).join("") : `<li class="tcrn-text">${esc(t("reconcile.green"))}</li>`;
     renderGutter();
     $$('[data-prose-line]', $("#reconcile-findings")).forEach((button) => button.addEventListener("click", () => focusLine(Number(button.dataset.proseLine))));
   };
   const loadAgents = async () => { const [documentResult, reconciliation, rules] = await Promise.all([api("/api/agents-md"), api("/api/agents-md/reconcile"), api("/api/rules")]); state.agentsText = documentResult.text || ""; state.rules = rules; $("#agents-md").value = state.agentsText; setText("#agents-path", documentResult.path || "AGENTS.md"); renderProseDirectory(); renderPending(); renderGutter(); renderReconciliation(reconciliation); };
   // TCRN-CROSS-STORY-508 R8 (C-R14-6): a write of a key the system variables section shows renders
   // AGENTS.md again (portal.mjs), so the Rules page reads the file back after it.
-  const rendersSystemVariables = (key) => ["design.authority", "models.category", "models.tiers"].includes(key) || String(key).startsWith("models.escalation.");
+  const rendersSystemVariables = (key) => ["models.category", "models.tiers"].includes(key) || String(key).startsWith("models.escalation.") || String(key).startsWith("design.");
   // An empty selection means "unset this key": the engine refuses an empty --value as a
   // missing argument, and the honest verb for clearing a setting is settings-remove.
   const saveSetting = async (key, value) => {
+    if (key === "retrieval.promptLanguages" && String(value ?? "").trim() === "") {
+      const trigger = $("[data-prompt-language-dropdown] .tcrn-multi-select-dropdown__trigger");
+      trigger?.setAttribute("aria-invalid", "true");
+      showReceipt({ ok: false, reasonCode: "PORTAL_PROMPT_LANGUAGES_EMPTY", error: t("scope.languagesRequired") }); trigger?.focus(); return;
+    }
     if (String(value ?? "").trim() === "") return resetSetting(key);
     return mutateSetting(key, { value });
   };
@@ -5955,8 +5673,7 @@ const BOOT = __PORTAL_BOOT__;
     });
   };
   const focusPromptLanguage = () => {
-    const options = $$('[data-setting-control="retrieval.promptLanguages"] input[type="checkbox"]');
-    (options.find((option) => option.value === state.promptLanguageFocusValue) || options[0])?.focus?.();
+    $("[data-prompt-language-dropdown] .tcrn-multi-select-dropdown__trigger")?.focus?.();
   };
   const mutateSetting = async (key, payload) => {
     if (state.settingsWritePending || state.librarySwitching) return;
@@ -5996,7 +5713,7 @@ const BOOT = __PORTAL_BOOT__;
     // nothing is set used to error. Nothing is written and nothing is reported here,
     // because the control already shows the requested state and a fabricated receipt
     // would be worse than silence.
-    if (String(currentSetting(key)?.currentValue ?? "") === "") return;
+    if (currentSetting(key)?.declaredValue == null) return;
     return mutateSetting(key, { reset: true });
   };
   const saveMachineSetting = async (key, value) => {
@@ -6019,6 +5736,16 @@ const BOOT = __PORTAL_BOOT__;
   // by its project's name, its project path and its library id; an option's value is the project
   // path, the registry's own key.
   const libraryLabel = (library) => `${String(library.projectPath).split(/[\\/]/u).filter(Boolean).at(-1) || library.libraryId} · ${library.projectPath} · ${library.libraryId}`;
+  const renderConfigurationTargets = () => {
+    const select = $("#configuration-project-select");
+    const projects = state.settings?.projects ?? [];
+    const selected = BOOT.library?.configurationProjectId ?? "";
+    select.innerHTML = `<option value="">${esc(t("scope.libraryDefaults"))}</option>` + projects.map((project) => {
+      const parent = projects.find((entry) => entry.id === project.parentProjectId);
+      return `<option value="${esc(project.id)}" ${project.id === selected ? "selected" : ""} title="${esc(project.id)}">${esc(parent ? `${parent.name} / ${project.name}` : project.name)}</option>`;
+    }).join("");
+    select.value = selected; select.disabled = state.librarySwitching || state.settingsWritePending;
+  };
   const loadLibraries = (libraries = BOOT.libraries || []) => {
     BOOT.libraries = libraries;
     const select = $("#library-select");
@@ -6062,7 +5789,7 @@ const BOOT = __PORTAL_BOOT__;
     try {
       const [settings, vocabularyResult, status, commandsResult, machine, knowledge, variables] = await Promise.all([api("/api/settings"), api("/api/vocabulary"), api("/api/status"), api("/api/commands"), api("/api/machine-settings"), api(knowledgePath()), api("/api/variables")]);
       if ((state.libraryEpoch || 0) !== epoch || state.settingsRead !== read) return;
-      state.machineSettings = machine; state.settings = settings; state.vocabulary = vocabularyResult; state.status = status; state.knowledge = knowledge; state.variables = variables; state.commands = commandsResult.commands || [];
+      state.machineSettings = machine; state.settings = settings; renderConfigurationTargets(); state.vocabulary = vocabularyResult; state.status = status; state.knowledge = knowledge; state.variables = variables; state.commands = commandsResult.commands || [];
       for (const collection of Object.values(state.collections)) if (!collection.dirty) collection.draft = null;
       renderDashboard(); renderSettings(); renderCollections(); renderVariables(); renderVocabulary(); rebuildSearchIndex();
     } catch (error) {
@@ -6083,8 +5810,8 @@ const BOOT = __PORTAL_BOOT__;
     state.searchIndex = rows;
   };
   const refreshGates = async () => { const [response, lastRun] = await Promise.all([api("/api/gates"), api("/api/gates/last-run")]); state.gateResponse = response; state.gates = Array.isArray(response.gates) ? response.gates : []; state.lastGateRun = lastRun; renderGates(); };
-  const renderSearchResults = () => { const target = $("#search-results"); target.hidden = state.searchResults.length === 0; target.innerHTML = state.searchResults.map((result, index) => `<button type="button" class="tcrn-search-result" aria-current="${index === state.searchSelection ? "true" : "false"}" data-search-index="${index}"><strong>${esc(result.label)}</strong><span class="tcrn-search-result__meta">${esc(result.meta)} · ${esc(result.page)}</span></button>`).join(""); $$('[data-search-index]').forEach((button) => button.addEventListener("click", () => chooseSearch(Number(button.dataset.searchIndex)))); };
-  const search = (query) => { const normalized = query.trim().toLocaleLowerCase(); state.searchResults = normalized ? state.searchIndex.filter((entry) => entry.text.toLocaleLowerCase().includes(normalized)).slice(0, 12) : []; state.searchSelection = 0; renderSearchResults(); };
+  const renderSearchResults = () => { const target = $("#search-results"); target.hidden = state.searchResults.length === 0; target.innerHTML = state.searchResults.map((result, index) => `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md tcrn-product-shell-search__result" data-selected="${index === state.searchSelection ? "true" : "false"}" aria-current="${index === state.searchSelection ? "true" : "false"}" data-search-index="${index}"><strong>${esc(result.label)}</strong><span >${esc(result.meta)} · ${esc(result.page)}</span></button>`).join(""); $$('[data-search-index]').forEach((button) => button.addEventListener("click", () => chooseSearch(Number(button.dataset.searchIndex)))); };
+  const search = (query) => { const normalized = query.trim().toLocaleLowerCase(); state.searchResults = normalized ? state.searchIndex.filter((entry) => entry.text.toLocaleLowerCase().includes(normalized)) : []; state.searchSelection = 0; renderSearchResults(); };
   const chooseSearch = (index = 0) => {
     const result = state.searchResults[index]; if (!result) return;
     state.searchResults = []; renderSearchResults();
@@ -6179,6 +5906,16 @@ const BOOT = __PORTAL_BOOT__;
     await loadAgents();
   }));
   $("#receipt-chip").addEventListener("click", openReceipt); $("#receipt-details-trigger").addEventListener("click", toggleReceiptDetails); $("#drawer-button").addEventListener("click", openReceipt); $("#drawer-close").addEventListener("click", closeReceipt);
+  $("#configuration-project-select").addEventListener("change", async (event) => {
+    if (state.librarySwitching || state.settingsWritePending) { renderConfigurationTargets(); return; }
+    state.librarySwitching = true; state.libraryEpoch = (state.libraryEpoch || 0) + 1;
+    state.promptLanguageDraft = null; resetCollections(); clearTransientTarget(); setSettingWritesBusy(true);
+    try {
+      const selected = await api("/api/configuration-scope", { method: "POST", body: JSON.stringify({ projectId: event.target.value || null }) });
+      if (selected.ok) { BOOT.library = selected.library; BOOT.proseRoot = selected.proseRoot; state.settings = selected.settings; await refresh(); await refreshGates(); await loadAgents(); }
+      else showReceipt(selected);
+    } finally { state.librarySwitching = false; setSettingWritesBusy(Boolean(state.settingsWritePending)); renderConfigurationTargets(); }
+  });
   $("#library-select").addEventListener("change", async (event) => {
     if (state.librarySwitching) return;
     const requested = event.target.value;

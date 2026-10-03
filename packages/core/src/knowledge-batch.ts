@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 // Knowledge-batch: file, reverify or re-policy N knowledge cards in one CLI act.
@@ -62,7 +63,7 @@ export const KNOWLEDGE_BATCH_VERBS = Object.freeze([
 // crest any more (TCRN-CROSS-SUB-310 R17, TCRN-CROSS-SUB-428; knowledge-core-v1.md "Capacity").
 // A larger batch is refused as WORK_BATCH_MALFORMED before any member runs: a caller error, not
 // a capacity question.
-const KNOWLEDGE_BATCH_MEMBER_LIMIT = 256;
+const KNOWLEDGE_BATCH_MEMBER_LIMIT = RUNTIME_CAPACITY.arrayEntries;
 
 export interface KnowledgeBatchProblem {
   readonly index: number;

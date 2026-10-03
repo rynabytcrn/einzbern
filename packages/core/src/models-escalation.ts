@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 import { MODELS_CATEGORY_SETTING_KEY, isModelsObject, modelsFail, modelsName, validateModelsCategory } from "./models-category.js";
@@ -38,7 +39,7 @@ export const MODELS_ESCALATION_ENABLED_DEFAULT_VALUE = "true" as const;
 export const MODELS_ESCALATION_THRESHOLD_DEFAULT_VALUE = "1" as const;
 export const MODELS_ESCALATION_CEILING_DEFAULT_VALUE = "main" as const;
 /** The largest threshold the settings catalog records. */
-export const MODELS_ESCALATION_THRESHOLD_MAX = 100;
+export const MODELS_ESCALATION_THRESHOLD_MAX = RUNTIME_CAPACITY.safeInteger;
 
 /** The effective values of the three settings. */
 export interface ModelsEscalation {

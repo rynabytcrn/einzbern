@@ -34,30 +34,22 @@
     },
     "title": {
       "type": "string",
-      "minLength": 1,
-      "maxLength": 512,
-      "x-tcrn-maxUtf8Bytes": 512
+      "minLength": 1
     },
     "summary": {
       "type": "string",
-      "minLength": 1,
-      "maxLength": 4096,
-      "x-tcrn-maxUtf8Bytes": 4096
+      "minLength": 1
     },
     "decisions": {
       "type": "array",
       "minItems": 1,
-      "maxItems": 64,
       "items": {
         "type": "string",
-        "minLength": 1,
-        "maxLength": 4096,
-        "x-tcrn-maxUtf8Bytes": 4096
+        "minLength": 1
       }
     },
     "decidedBy": {
       "type": "array",
-      "maxItems": 64,
       "uniqueItems": true,
       "items": {
         "$ref": "https://tcrn.dev/schemas/protocol-common-v1.schema.json#/$defs/stableId"
@@ -65,7 +57,6 @@
     },
     "linkedWorkIds": {
       "type": "array",
-      "maxItems": 64,
       "uniqueItems": true,
       "items": {
         "$ref": "https://tcrn.dev/schemas/protocol-common-v1.schema.json#/$defs/stableId"
@@ -91,7 +82,6 @@
       "properties": {
         "supersedes": {
           "type": "array",
-          "maxItems": 64,
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -102,31 +92,29 @@
             "properties": {
               "by": {
                 "type": "string",
-                "pattern": "^minutes:[a-z0-9][a-z0-9._-]{0,127}#D[1-9][0-9]{0,2}$"
+                "pattern": "^minutes:[a-z0-9][a-z0-9._-]*#D[1-9][0-9]*$"
               },
               "decision": {
                 "type": "string",
-                "pattern": "^minutes:[a-z0-9][a-z0-9._-]{0,127}#D[1-9][0-9]{0,2}$"
+                "pattern": "^minutes:[a-z0-9][a-z0-9._-]*#D[1-9][0-9]*$"
               }
             }
           }
         },
         "withdraws": {
           "type": "array",
-          "maxItems": 64,
           "uniqueItems": true,
           "items": {
             "type": "string",
-            "pattern": "^minutes:[a-z0-9][a-z0-9._-]{0,127}#D[1-9][0-9]{0,2}$"
+            "pattern": "^minutes:[a-z0-9][a-z0-9._-]*#D[1-9][0-9]*$"
           }
         },
         "coexists": {
           "type": "array",
-          "maxItems": 64,
           "uniqueItems": true,
           "items": {
             "type": "string",
-            "pattern": "^minutes:[a-z0-9][a-z0-9._-]{0,127}#D[1-9][0-9]{0,2}$"
+            "pattern": "^minutes:[a-z0-9][a-z0-9._-]*#D[1-9][0-9]*$"
           }
         }
       }

@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-474 R1, R2 (MIN-227 D5, D7): what recall indexes and how a hit reads. The
@@ -30,8 +31,8 @@ import { decidedInOf } from "./work-relations.js";
 import type { WorkspaceState } from "./workspace.js";
 
 /** The longest a hit line gets, in UTF-8 bytes; a longer one is cut at a code point with an ellipsis. */
-export const RECALL_LINE_MAX_BYTES = 480;
-const PARENT_CHAIN_DEPTH = 8;
+export const RECALL_LINE_MAX_BYTES = RUNTIME_CAPACITY.bufferBytes;
+// Declared ancestry is complete; the seen set below rejects cycles without a depth ceiling.
 
 export interface RecallInputOptions {
   readonly scopeExcerptBytes?: number;
@@ -48,14 +49,13 @@ function displayTitle(record: Pick<WorkRecord, "title" | "externalKey">): string
 
 /**
  * The titles above a work record, nearest first: a Story's Epic, then its Initiative; an Incident
- * walks its parentId the same way. The walk stops at the root, at a missing parent, or after
- * PARENT_CHAIN_DEPTH steps.
+ * walks its parentId the same way. The walk stops at the root, at a missing parent, or at a cycle.
  */
 export function workParentChain(work: ReadonlyMap<string, WorkRecord>, record: WorkRecord): readonly string[] {
   const chain: string[] = [];
   const seen = new Set<string>([record.id]);
   let parentId = record.parentId;
-  while (parentId !== null && chain.length < PARENT_CHAIN_DEPTH && !seen.has(parentId)) {
+  while (parentId !== null && !seen.has(parentId)) {
     const parent = work.get(parentId);
     if (parent === undefined) break;
     seen.add(parent.id);
@@ -373,7 +373,7 @@ export async function readRecallCards(workspaceRoot: string, options: RecallCard
         ...(options.allowTrailing === undefined ? {} : { allowTrailing: options.allowTrailing }),
         ...(options.status === undefined ? {} : { status: options.status }),
         includeExplicitOnly: true,
-        limit: 1_048_576,
+        limit: Number.MAX_SAFE_INTEGER,
         ...(scope === "user" ? { scope } : {}),
       });
       const records = (answer["records"] ?? []) as readonly Readonly<Record<string, unknown>>[];
@@ -536,10 +536,10 @@ export function recallDecisionHints(
 }
 
 // The hint a hit's line carries: at most three obsolete decisions, each with its successor or 撤回.
-const LINE_HINTS = 3;
+
 function hintText(hints: readonly ObsoleteDecisionHint[]): string {
-  const shown = hints.slice(0, LINE_HINTS).map((hint) => `${hint.decision}→${hint.supersededBy ?? "撤回"}`).join("；");
-  return `过时决策 ${shown}${hints.length > LINE_HINTS ? ` 等 ${String(hints.length)} 条` : ""}`;
+  const shown = hints.map((hint) => `${hint.decision}→${hint.supersededBy ?? "撤回"}`).join("；");
+  return `过时决策 ${shown}`;
 }
 
 function capBytes(text: string, maximumBytes: number): string {

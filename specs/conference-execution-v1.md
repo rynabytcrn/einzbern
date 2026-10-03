@@ -42,7 +42,7 @@ A receipt binds one position to one real host invocation:
 deliberately *not* held to TCRN's protocol-id grammar — Codex 0.139.0 emits bare UUIDs
 with no namespace, and forcing the grammar here would make real collector output
 unprojectable. "Opaque" is not "anything": a host id is well-formed Unicode, at least
-four characters (the shortest string the protocol-id grammar itself admits), at most 512
+four characters (the shortest string the protocol-id grammar itself admits), no product length ceiling;
 UTF-8 bytes, and carries no whitespace, control character or invisible format character
 anywhere — leading, trailing or interior. A single space is not an identifier.
 

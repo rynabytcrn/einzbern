@@ -35,13 +35,11 @@
     },
     "minimumProtocolVersion": {
       "type": "integer",
-      "minimum": 1,
-      "maximum": 9007199254740991
+      "minimum": 1
     },
     "maximumProtocolVersion": {
       "type": "integer",
-      "minimum": 1,
-      "maximum": 9007199254740991
+      "minimum": 1
     },
     "capabilityDigest": {
       "$ref": "./protocol-common-v1.schema.json#/$defs/sha256"

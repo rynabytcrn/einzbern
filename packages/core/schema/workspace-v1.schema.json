@@ -34,8 +34,7 @@
     },
     "externalKey": {
       "type": "string",
-      "pattern": "^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$",
-      "maxLength": 128
+      "pattern": "^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$"
     },
     "createdAt": {
       "type": "string",
@@ -44,7 +43,7 @@
     "segmentEventLimit": {
       "type": "integer",
       "minimum": 2,
-      "maximum": 1024
+      "maximum": 9007199254740991
     },
     "roots": {
       "type": "array",
@@ -57,7 +56,6 @@
     "relocations": {
       "type": "array",
       "minItems": 1,
-      "maxItems": 16,
       "items": {
         "$ref": "#/$defs/relocation"
       }
@@ -85,7 +83,7 @@
         "sequence": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 16
+          "maximum": 9007199254740991
         },
         "relocationId": {
           "type": "string",
@@ -154,8 +152,7 @@
           "properties": {
             "actorId": {
               "type": "string",
-              "minLength": 3,
-              "maxLength": 160
+              "minLength": 3
             },
             "authorityFileSha256": {
               "type": "string",
@@ -186,18 +183,15 @@
         },
         "path": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
+          "minLength": 1
         },
         "canonicalPath": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
+          "minLength": 1
         },
         "portableIdentity": {
           "type": "string",
-          "minLength": 1,
-          "maxLength": 4096
+          "minLength": 1
         }
       }
     }

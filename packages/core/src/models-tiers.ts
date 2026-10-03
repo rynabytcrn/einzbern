@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 import { canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
@@ -60,9 +61,9 @@ export interface ModelsSettingView {
   readonly value: string;
 }
 
-const MODEL_MAX_LENGTH = 256;
-const EFFORT_MAX_LENGTH = 64;
-const NOTE_MAX_LENGTH = 256;
+const MODEL_MAX_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;
+const EFFORT_MAX_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;
+const NOTE_MAX_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;
 const TIER_FIELDS = "category,effort,model,note,order,runner";
 
 /** How a record is named where a list of records is reported: models.tiers.<order>. */

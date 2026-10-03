@@ -2,12 +2,14 @@
 // STORY-373: one-shot, no-shell host model probe. The host owns credentials and
 // output semantics; this module only returns a bounded observation.
 
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
+
 import { spawn } from "node:child_process";
 import { accessSync, constants as fsConstants, statSync } from "node:fs";
 
 export const HOST_PROBE_HOSTS = Object.freeze(["claude-code", "codex"] as const);
 export const HOST_PROBE_DEFAULT_TIMEOUT_MS = 30_000 as const;
-export const HOST_PROBE_OUTPUT_BYTES = 65_536 as const;
+export const HOST_PROBE_OUTPUT_BYTES = RUNTIME_CAPACITY.bufferBytes;
 export type HostProbeHost = typeof HOST_PROBE_HOSTS[number];
 
 export interface HostProbeResult {
@@ -42,7 +44,7 @@ function fail(reasonCode: string, message: string): never {
 }
 
 function boundedModel(value: unknown): string {
-  if (typeof value !== "string" || value.length === 0 || value.length > 256 || value.includes("\u0000") || !value.isWellFormed()) {
+  if (typeof value !== "string" || value.length === 0 || value.includes("\u0000") || !value.isWellFormed()) {
     fail("HOST_PROBE_MODEL_INVALID", "model must be non-empty, bounded, well-formed text");
   }
   return value;
@@ -130,8 +132,8 @@ export async function probeHost(input: {
   const selectedHost = host(input.host);
   const model = boundedModel(input.model);
   const timeoutMs = input.timeoutMs ?? HOST_PROBE_DEFAULT_TIMEOUT_MS;
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 120_000) {
-    fail("HOST_PROBE_TIMEOUT_INVALID", "timeoutMs must be an integer from 100 through 120000");
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > RUNTIME_CAPACITY.timerMilliseconds) {
+    fail("HOST_PROBE_TIMEOUT_INVALID", "timeoutMs must fit the native timer and be at least 100 milliseconds");
   }
   const env = input.env ?? process.env;
   const args = argumentsFor(selectedHost, model);

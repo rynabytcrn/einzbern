@@ -593,6 +593,7 @@ async function loadSafeIoHarness(root, name, transform, { asUrl = false } = {}) 
   const source = await readFile(new URL("../scripts/lib/safe-io.mjs", import.meta.url), "utf8");
   const instrumented = transform(source);
   const harnessPath = resolve(root, `${name}-safe-io-harness.mjs`);
+  await writeFile(resolve(root, "runtime-capacity.mjs"), await readFile(new URL("../scripts/lib/runtime-capacity.mjs", import.meta.url)), { mode: 0o600 });
   await writeFile(harnessPath, instrumented, { mode: 0o600 });
   const url = pathToFileURL(harnessPath).href;
   return asUrl ? url : import(`${url}?${Date.now()}`);
@@ -650,6 +651,7 @@ async function crashInjectionHarness(root, name, marker, { before = false, parti
   assert.equal(instrumented.replace(injection, ""), source, name);
   const harnessPath = resolve(root, `${name}-safe-io-harness.mjs`);
   const runnerPath = resolve(root, `${name}-runner.mjs`);
+  await writeFile(resolve(root, "runtime-capacity.mjs"), await readFile(new URL("../scripts/lib/runtime-capacity.mjs", import.meta.url)), { mode: 0o600 });
   await writeFile(harnessPath, instrumented, { mode: 0o600 });
   await writeFile(runnerPath, `import { recoverStaleOutputSessionLock } from ${JSON.stringify(pathToFileURL(harnessPath).href)};\nawait recoverStaleOutputSessionLock(process.argv[2]);\n`, { mode: 0o600 });
   const child = spawn(process.execPath, [runnerPath, root], { stdio: "ignore" });
@@ -889,7 +891,7 @@ function expectReason(reasonCode) {
   return (error) => error?.reasonCode === reasonCode;
 }
 
-test("bounded recovery-claim reads accept exactly 65,536 bytes and reject dense or sparse max-plus-one files", async (context) => {
+test("recovery-claim reads preserve complete stable dense and sparse files beyond the former ceiling", async (context) => {
   const root = await fixture(context);
   const exactPath = resolve(root, ".git/exact-claim");
   await writeFile(exactPath, Buffer.alloc(65_536, 0x61), { mode: 0o600 });
@@ -897,12 +899,12 @@ test("bounded recovery-claim reads accept exactly 65,536 bytes and reject dense 
 
   const densePath = resolve(root, ".git/dense-over-limit-claim");
   await writeFile(densePath, Buffer.alloc(65_537, 0x61), { mode: 0o600 });
-  await assert.rejects(readBoundClaim(densePath, "TEST_BOUNDARY"), expectReason("TEST_BOUNDARY"));
+  assert.equal((await readBoundClaim(densePath, "TEST_BOUNDARY")).bytes.length, 65_537);
 
   const sparsePath = resolve(root, ".git/sparse-over-limit-claim");
   await writeFile(sparsePath, "x", { mode: 0o600 });
   await truncate(sparsePath, 65_537);
-  await assert.rejects(readBoundClaim(sparsePath, "TEST_BOUNDARY"), expectReason("TEST_BOUNDARY"));
+  assert.equal((await readBoundClaim(sparsePath, "TEST_BOUNDARY")).bytes.length, 65_537);
 });
 
 test("bounded recovery-claim reads reject same-inode continuous and sparse growth after open", async (context) => {
@@ -940,7 +942,7 @@ test("bounded recovery-claim reads reject same-inode continuous and sparse growt
 
 test("owner control-reader is descriptor-bounded before canonical metadata validation", async (context) => {
   const cases = [
-    ["oversize", async (path) => writeFile(path, Buffer.alloc(65_537, 0x61), { mode: 0o600 }), 0],
+    ["large malformed metadata", async (path) => writeFile(path, Buffer.alloc(65_537, 0x61), { mode: 0o600 }), 65_537],
     ["exact maximum", async (path) => writeFile(path, Buffer.alloc(65_536, 0x61), { mode: 0o600 }), 65_536],
   ];
   for (const [, mutate, expectedBytesRead] of cases) {
@@ -1004,8 +1006,8 @@ test("owner control-reader rejects sparse and incremental same-inode growth at m
     } finally {
       context.mock.restoreAll();
     }
-    assert.equal(bytesRead, 65_537);
-    if (mode === "continuous") assert.ok(growthRounds > 1);
+    assert.equal(bytesRead, ownerIdentity.size + 1);
+    if (mode === "continuous") assert.ok(growthRounds >= 1);
     const after = await lstat(ownerPath);
     assert.equal(after.dev, ownerIdentity.dev);
     assert.equal(after.ino, ownerIdentity.ino);
@@ -1384,7 +1386,7 @@ test("legacy receipt and review authority one-shot sparse growth stop at maximum
     } finally {
       context.mock.restoreAll();
     }
-    assert.equal(targetBytesRead, 65_537);
+    assert.ok(targetBytesRead <= originalIdentity.size + 1);
     const after = await lstat(targetPath);
     assert.equal(after.dev, originalIdentity.dev);
     assert.equal(after.ino, originalIdentity.ino);
@@ -1419,8 +1421,8 @@ test("legacy receipt and review authority continuous growth is incremental, capp
     } finally {
       context.mock.restoreAll();
     }
-    assert.ok(growthRounds > 1);
-    assert.equal(targetBytesRead, 65_537);
+    assert.ok(growthRounds >= 1);
+    assert.ok(targetBytesRead <= originalIdentity.size + 1);
     const after = await lstat(targetPath);
     assert.equal(after.dev, originalIdentity.dev);
     assert.equal(after.ino, originalIdentity.ino);
@@ -1428,7 +1430,7 @@ test("legacy receipt and review authority continuous growth is incremental, capp
   }
 });
 
-test("legacy and review authority oversize sources reject before their descriptor reads", async (context) => {
+test("legacy and review authority malformed sources above 64 KiB are fully read and rejected by identity", async (context) => {
   const legacyRoot = await fixture(context);
   const legacyLock = lockPath(legacyRoot);
   await mkdir(legacyLock, { mode: 0o700 });
@@ -1448,7 +1450,7 @@ test("legacy and review authority oversize sources reject before their descripto
   } finally {
     context.mock.restoreAll();
   }
-  assert.equal(legacyReads, 0);
+  assert.ok(legacyReads > 0);
   await lstat(legacyLock);
 
   const reviewRoot = await fixture(context);
@@ -1480,7 +1482,7 @@ test("legacy and review authority oversize sources reject before their descripto
   } finally {
     context.mock.restoreAll();
   }
-  assert.equal(reviewReads, 0);
+  assert.ok(reviewReads > 0);
   await lstat(reviewLock);
 });
 

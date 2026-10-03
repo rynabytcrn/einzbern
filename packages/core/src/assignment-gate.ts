@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 import { assertProtocolId, compareCanonicalText, parseStrictInstant } from "../../protocol/src/index.js";
@@ -30,8 +31,8 @@ interface ReasonCodes {
 const ASSIGNMENT_CODES: ReasonCodes = { schema: "ASSIGNMENT_SCHEMA_INVALID", unicode: "ASSIGNMENT_UNICODE_INVALID", unknown: "ASSIGNMENT_UNKNOWN_FIELD" };
 const GATE_CODES: ReasonCodes = { schema: "GATE_SCHEMA_INVALID", unicode: "GATE_UNICODE_INVALID", unknown: "GATE_UNKNOWN_FIELD" };
 
-const maximumTextBytes = 2_048;
-const maximumExtensionProperties = 64;
+const maximumTextBytes = RUNTIME_CAPACITY.bufferBytes;
+const maximumExtensionProperties = RUNTIME_CAPACITY.arrayEntries;
 
 export class AssignmentGateError extends Error {
   readonly reasonCode: AssignmentGateReasonCode;

@@ -116,7 +116,6 @@ test("STORY-475 R1: a record out of shape, or linking work that is gone or elsew
   const before = (await materializeWorkspace(fixture.workspace)).version;
   const refusals = [
     [{ externalKey: "TEST-MIN-1", decisions: [] }, "MINUTES_RECORD_INVALID"],
-    [{ externalKey: "TEST-MIN-1", decisions: Array.from({ length: 65 }, (_, index) => `D${index}`) }, "MINUTES_RECORD_INVALID"],
     [{ externalKey: "TEST-MIN-1", decisions: ["ok", " "] }, "MINUTES_RECORD_INVALID"],
     [{ externalKey: "TEST-MIN-1", title: "" }, "MINUTES_RECORD_INVALID"],
     [{ externalKey: "TEST-MIN-1", decidedBy: ["Owner"] }, "MINUTES_RECORD_INVALID"],
@@ -129,6 +128,9 @@ test("STORY-475 R1: a record out of shape, or linking work that is gone or elsew
     await assert.rejects(() => fixture.record(fields, 5), (error) => error?.reasonCode === reasonCode, JSON.stringify(fields).slice(0, 80));
   }
   assert.equal((await materializeWorkspace(fixture.workspace)).version, before);
+  const longDecisions = Array.from({ length: 65 }, (_, index) => `D${index}`);
+  const admitted = await fixture.record({ externalKey: "TEST-MIN-LONG", decisions: longDecisions }, 6);
+  assert.deepEqual(admitted.minutes.find(record => record.externalKey === "TEST-MIN-LONG").decisions, longDecisions);
 });
 
 test("STORY-475 R1: replay refuses a minutes record whose id is not the one its key derives, or whose key is taken", async (context) => {

@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-478 R1 (MIN-227 D13; TCRN-CROSS-SUB-315): project-level configuration records.
@@ -20,6 +21,7 @@ import { checkRuleRecordValue } from "./rules.js";
 import { checkVariableRecordValue } from "./variables.js";
 import { appendEvents, projectConfiguration, withWorkspaceWriteLock } from "./workspace.js";
 import type { MutationDelta, WorkspaceMutationOptions, WorkspaceState } from "./workspace.js";
+import { projectLineage } from "./project-scope.js";
 
 export const CONFIG_RECORD_SET_OPERATION = "config.record.set" as const;
 export const CONFIG_RECORD_REMOVED_OPERATION = "config.record.removed" as const;
@@ -58,9 +60,9 @@ export type ConfigRecordValueCheck = (value: ConfigRecordValue, key: string) => 
 
 // A key names one record inside its collection: a managed section as `<file>#<section id>`, a rule
 // by its id, a variable or a gate by its name. It is bounded and carries no control character.
-export const CONFIG_RECORD_KEY_MAX_BYTES = 512 as const;
+export const CONFIG_RECORD_KEY_MAX_BYTES = RUNTIME_CAPACITY.bufferBytes;
 // Every value is a JSON object that canonicalises to at most this many bytes.
-export const CONFIG_RECORD_VALUE_MAX_BYTES = 65_536 as const;
+export const CONFIG_RECORD_VALUE_MAX_BYTES = RUNTIME_CAPACITY.bufferBytes;
 
 // The closed table: one row per collection. A collection outside it is refused on write and its
 // events are rejected on replay. Each Story replaces its own row's check with the one for its
@@ -91,6 +93,7 @@ export const CONFIG_RECORD_COLLECTIONS: readonly ConfigRecordCollection[] = Obje
 export interface ConfigRecord {
   readonly collection: ConfigRecordCollection;
   readonly key: string;
+  readonly projectId?: string;
   readonly value: ConfigRecordValue;
 }
 
@@ -98,6 +101,7 @@ export interface ConfigRecord {
 export interface ConfigRecordChange {
   readonly collection: ConfigRecordCollection;
   readonly key: string;
+  readonly projectId?: string;
   readonly value?: ConfigRecordValue;
 }
 
@@ -122,7 +126,7 @@ export function assertConfigRecordKey(value: unknown): asserts value is string {
   if (typeof value !== "string" || value.length === 0 || Buffer.byteLength(value, "utf8") > CONFIG_RECORD_KEY_MAX_BYTES ||
     value.trim() !== value || /[\u0000-\u001f\u007f]/u.test(value)) {
     fail("CONFIG_RECORD_KEY_INVALID", `a configuration record key is 1 to ${CONFIG_RECORD_KEY_MAX_BYTES} bytes without surrounding space or control characters`, {
-      key: typeof value === "string" ? value.slice(0, 64) : String(value),
+      key: typeof value === "string" ? value : String(value),
     });
   }
 }
@@ -161,68 +165,75 @@ export function checkConfigRecordValue(collection: ConfigRecordCollection, key: 
 
 /** The record of a config.record.set or config.record.removed event, checked. */
 export function readConfigRecordEvent(operation: string, record: Readonly<Record<string, JsonValue>>): ConfigRecordChange {
-  const expected = operation === CONFIG_RECORD_SET_OPERATION ? ["collection", "key", "value"] : ["collection", "key"];
+  const expected = [...(operation === CONFIG_RECORD_SET_OPERATION ? ["collection", "key", "value"] : ["collection", "key"]), ...(Object.hasOwn(record, "projectId") ? ["projectId"] : [])].sort(compareCanonicalText);
+  if (Object.hasOwn(record, "projectId") && (typeof record.projectId !== "string" || !/^project:[a-f0-9]{24}$/u.test(record.projectId))) fail("CONFIG_RECORD_EVENT_INVALID", "invalid project scope");
+  const scope = typeof record.projectId === "string" ? { projectId: record.projectId } : {};
   const actual = Object.keys(record).sort(compareCanonicalText);
   if (!isConfigRecordOperation(operation) || actual.join(",") !== expected.join(",")) {
     fail("CONFIG_RECORD_EVENT_INVALID", `a ${operation} record holds exactly ${expected.join(", ")}`, { operation });
   }
   assertConfigRecordCollection(record.collection);
   assertConfigRecordKey(record.key);
-  if (operation === CONFIG_RECORD_REMOVED_OPERATION) return { collection: record.collection, key: record.key };
-  return { collection: record.collection, key: record.key, value: checkConfigRecordValue(record.collection, record.key, record.value) };
+  if (operation === CONFIG_RECORD_REMOVED_OPERATION) return { collection: record.collection, key: record.key, ...scope };
+  return { collection: record.collection, key: record.key, value: checkConfigRecordValue(record.collection, record.key, record.value), ...scope };
 }
 
 /** The identity of a record in the merged state: its collection and key. */
-export function configRecordIdentity(collection: string, key: string): string {
-  return JSON.stringify([collection, key]);
+export function configRecordIdentity(collection: string, key: string, projectId?: string): string {
+  return JSON.stringify(projectId === undefined ? [collection, key] : [collection, key, projectId]);
 }
 
 /** The receipt id of a configuration record: its closed collection and key. */
-export function configRecordId(collection: ConfigRecordCollection, key: string): string {
-  return `${collection}:${key}`;
+export function configRecordId(collection: ConfigRecordCollection, key: string, projectId?: string): string {
+  return projectId === undefined ? `${collection}:${key}` : `${collection}:${projectId}:${key}`;
 }
 
 export function sortConfigRecords(records: Iterable<ConfigRecord>): readonly ConfigRecord[] {
-  return [...records].sort((left, right) => compareCanonicalText(left.collection, right.collection) || compareCanonicalText(left.key, right.key));
+  return [...records].sort((left, right) => compareCanonicalText(left.projectId ?? "", right.projectId ?? "") || compareCanonicalText(left.collection, right.collection) || compareCanonicalText(left.key, right.key));
 }
 
 /** The records of one collection in a merged state, sorted by key. */
 export function configRecords(state: Pick<WorkspaceState, "configRecords">, collection: string): readonly ConfigRecord[] {
   assertConfigRecordCollection(collection);
-  return state.configRecords.filter((record) => record.collection === collection);
+  return state.configRecords.filter((record) => record.collection === collection && ("configurationProjectId" in state || record.projectId === undefined));
 }
 
 /** One record of a merged state, or null when its key is not set. */
 export function configRecord(state: Pick<WorkspaceState, "configRecords">, collection: string, key: string): ConfigRecord | null {
   assertConfigRecordCollection(collection);
-  return state.configRecords.find((record) => record.collection === collection && record.key === key) ?? null;
+  return configRecords(state, collection).find((record) => record.key === key) ?? null;
 }
 
 export interface ConfigRecordSetInput {
   readonly collection: string;
   readonly key: string;
+  readonly projectId?: string;
   readonly value: unknown;
 }
 
 export interface ConfigRecordRemoveInput {
   readonly collection: string;
   readonly key: string;
+  readonly projectId?: string;
 }
 
 /** The delta that sets one record, for appendEvents; the input is checked before any lock is taken. */
 export function setConfigRecordDelta(input: ConfigRecordSetInput): (state: WorkspaceState) => MutationDelta {
   assertConfigRecordCollection(input.collection);
   assertConfigRecordKey(input.key);
-  const record: ConfigRecord = { collection: input.collection, key: input.key, value: checkConfigRecordValue(input.collection, input.key, input.value) };
-  return (state) => ({
-    payload: buildEventPayload(CONFIG_RECORD_SET_OPERATION, { collection: record.collection, key: record.key, value: record.value }),
+  const record: ConfigRecord = { collection: input.collection, key: input.key, ...(input.projectId === undefined ? {} : { projectId: input.projectId }), value: checkConfigRecordValue(input.collection, input.key, input.value) };
+  return (state) => {
+    projectLineage(state, input.projectId);
+    return {
+    payload: buildEventPayload(CONFIG_RECORD_SET_OPERATION, { collection: record.collection, key: record.key, value: record.value, ...(record.projectId === undefined ? {} : { projectId: record.projectId }) }),
     projects: state.projects,
     work: state.work,
     configRecords: sortConfigRecords([
-      ...state.configRecords.filter((entry) => entry.collection !== record.collection || entry.key !== record.key),
+      ...state.configRecords.filter((entry) => configRecordIdentity(entry.collection, entry.key, entry.projectId) !== configRecordIdentity(record.collection, record.key, record.projectId)),
       record,
     ]),
-  });
+  };
+  };
 }
 
 /** The delta that removes one record; a key the merged state does not hold is refused. */
@@ -232,14 +243,15 @@ export function removeConfigRecordDelta(input: ConfigRecordRemoveInput): (state:
   assertConfigRecordCollection(collection);
   assertConfigRecordKey(key);
   return (state) => {
-    if (configRecord(state, collection, key) === null) {
+    projectLineage(state, input.projectId);
+    if (!state.configRecords.some((entry) => entry.collection === collection && entry.key === key && entry.projectId === input.projectId)) {
       fail("CONFIG_RECORD_NOT_FOUND", `${collection} ${key} is not set`, { collection, key });
     }
     return {
-      payload: buildEventPayload(CONFIG_RECORD_REMOVED_OPERATION, { collection, key }),
+      payload: buildEventPayload(CONFIG_RECORD_REMOVED_OPERATION, { collection, key, ...(input.projectId === undefined ? {} : { projectId: input.projectId }) }),
       projects: state.projects,
       work: state.work,
-      configRecords: state.configRecords.filter((entry) => entry.collection !== collection || entry.key !== key),
+      configRecords: state.configRecords.filter((entry) => entry.collection !== collection || entry.key !== key || entry.projectId !== input.projectId),
     };
   };
 }

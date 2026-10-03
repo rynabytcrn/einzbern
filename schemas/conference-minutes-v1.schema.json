@@ -34,9 +34,7 @@
     },
     "summary": {
       "type": "string",
-      "minLength": 1,
-      "maxLength": 2048,
-      "x-tcrn-maxUtf8Bytes": 2048
+      "minLength": 1
     },
     "outcomeClass": {
       "enum": [
@@ -49,22 +47,16 @@
     },
     "decisions": {
       "type": "array",
-      "maxItems": 32,
       "items": {
         "type": "string",
-        "minLength": 1,
-        "maxLength": 2048,
-        "x-tcrn-maxUtf8Bytes": 2048
+        "minLength": 1
       }
     },
     "unresolvedIssues": {
       "type": "array",
-      "maxItems": 32,
       "items": {
         "type": "string",
-        "minLength": 1,
-        "maxLength": 2048,
-        "x-tcrn-maxUtf8Bytes": 2048
+        "minLength": 1
       }
     },
     "revision": {

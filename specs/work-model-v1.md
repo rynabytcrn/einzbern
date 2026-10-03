@@ -39,7 +39,7 @@ record stores only its forward relations:
 - `blocked-by`, `implements`, `supersedes` and `fixes` live in the `required:false`
   extension `advisory:relations`, whose value (`$defs/relationsExtensionValue` in
   `work-model-v1.schema.json`) is `{blockedBy?, implements?, supersedes?, fixes?}`,
-  each a non-empty list of at most 64 work ids, sorted in `utf8-byte-order-v1`,
+  each a non-empty complete list of work ids, sorted in `utf8-byte-order-v1`,
   without repeats, never naming the record itself.
 
 The reverse relations — `blocks`, `implemented-by`, `superseded-by`, `fixed-by` and

@@ -25,9 +25,9 @@ replay.
 
 Every record meets one common shape, and each collection may add its own check on top of it:
 
-- the key is 1 to 512 UTF-8 bytes, without surrounding white space or control characters
+- the key is non-empty, without surrounding white space or control characters
   (`CONFIG_RECORD_KEY_INVALID`);
-- the value is a JSON object that canonicalises (safe integers only) to at most 65536 bytes
+- the value is a plain JSON object that canonicalises completely (safe integers only; no product byte ceiling)
   (`CONFIG_RECORD_VALUE_INVALID`). A collection's own refusal is reported as
   `CONFIG_RECORD_VALUE_INVALID` with its own code in `details.refusedBy`.
 
@@ -35,8 +35,8 @@ Every record meets one common shape, and each collection may add its own check o
 
 | Operation | Record |
 | --- | --- |
-| `config.record.set` | exactly `{collection, key, value}` |
-| `config.record.removed` | exactly `{collection, key}` |
+| `config.record.set` | exactly `{collection, key, value}` with optional `projectId` |
+| `config.record.removed` | exactly `{collection, key}` with optional `projectId` |
 
 A record of any other shape is `CONFIG_RECORD_EVENT_INVALID`. The payload is the common
 `{operation, record}` (plus `actor` once attestation is enabled).
@@ -60,8 +60,13 @@ is corrupt, and a record write to it refuses with `LEGACY_WORKSPACE_READ_ONLY`.
 
 ## Merged state and cache
 
-`WorkspaceState.configRecords` lists every record as `{collection, key, value}`, sorted by
-collection, then key. `configRecords(state, collection)` and `configRecord(state, collection,
+`WorkspaceState.configRecords` lists every record as `{collection, key, value}` with optional
+`projectId`, sorted by project identity, collection and key. Legacy records without a project
+identity are library defaults. A declared project uses its own record first, then explicit
+parent records and library defaults for rules and variables. Gate declarations and managed
+sections never inherit: their roots, covers and file records belong to the selected target.
+`scopedWorkspaceState` returns a consumer view and source provenance; writes and export keep
+the complete native state. `configRecords(state, collection)` and `configRecord(state, collection,
 key)` read them. The device cache's replay snapshot keeps them; a snapshot written without them
 is not used as a seed.
 
@@ -76,7 +81,9 @@ caller that appends several events at once.
 ## Projection
 
 `config/project.json` (`einzbern.project-config.v1`) carries `records` beside `values`: the
-records grouped by collection, then keyed by record key, holding each record's value. Every
+library-default records grouped by collection, then keyed by record key, holding each
+record's value. `projects` maps each stable project ID to its own `values` and `records`;
+these are declarations, not flattened inherited copies. Every
 project-level write rewrites it, settings writes included, so neither kind of write drops the
 other's part. No read trusts it. `configProjectionStatus(libraryRoot, settings, records)` judges
 the records as well as the values when the records are passed; a projection written before

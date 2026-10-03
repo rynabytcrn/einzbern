@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-475 R1-R3 (MIN-227 D9, D10): a decision is written down, not deliberated into
@@ -29,10 +30,10 @@ export const MINUTES_RECORD_VERSION = "einzbern.minutes.v1" as const;
 export const MINUTES_RECORDED_OPERATION = "minutes.recorded" as const;
 
 /** At most this many decisions in one record, and at most this many participants and linked records. */
-export const MINUTES_DECISIONS_LIMIT = 64;
-const MINUTES_LIST_LIMIT = 64;
-const MINUTES_TITLE_BYTES = 512;
-const MINUTES_TEXT_BYTES = 4_096;
+export const MINUTES_DECISIONS_LIMIT = RUNTIME_CAPACITY.arrayEntries;
+const MINUTES_LIST_LIMIT = RUNTIME_CAPACITY.arrayEntries;
+const MINUTES_TITLE_BYTES = RUNTIME_CAPACITY.bufferBytes;
+const MINUTES_TEXT_BYTES = RUNTIME_CAPACITY.bufferBytes;
 
 export const MINUTES_REASON_CODES = Object.freeze([
   "MINUTES_DECISION_OBSOLETE",
@@ -150,7 +151,7 @@ const DECLARATION_FIELDS = ["coexists", "supersedes", "withdraws"];
 const SUPERSESSION_FIELDS = ["by", "decision"];
 
 /** A decision's number: its minutes id and its place in the record, minutes:<id>#D<n>. */
-export const DECISION_ADDRESS_PATTERN = /^(minutes:[a-z0-9][a-z0-9._-]{0,127})#D([1-9][0-9]{0,2})$/u;
+export const DECISION_ADDRESS_PATTERN = /^(minutes:[a-z0-9][a-z0-9._-]*)#D([1-9][0-9]*)$/u;
 
 /** One decision named by its number. */
 export interface DecisionReference {
@@ -173,7 +174,9 @@ export function parseDecisionAddress(value: unknown): DecisionReference | null {
   } catch {
     return null;
   }
-  return { minutesId: match[1] ?? "", number: Number(match[2]) };
+  const number = Number(match[2]);
+  if (!Number.isSafeInteger(number) || number < 1) return null;
+  return { minutesId: match[1] ?? "", number };
 }
 
 function text(value: unknown, label: string, budget: number): string {
@@ -625,7 +628,7 @@ export function minutesView(state: Pick<WorkspaceState, "minutes" | "conferenceM
  * read of that one decision whatever its state, answered with it alone as an explicit read shows it.
  */
 export function minutesById(state: Pick<WorkspaceState, "minutes" | "conferenceMinutes" | "conferences">, idOrKey: string, filter: DecisionStatusFilter = "valid"): MinutesViewEntry {
-  const numbered = /^(.+)#D([1-9][0-9]{0,2})$/u.exec(idOrKey);
+  const numbered = /^(.+)#D([1-9][0-9]*)$/u.exec(idOrKey);
   const recordRef = numbered === null ? idOrKey : numbered[1] ?? "";
   const key = recordRef.startsWith("minutes:") ? null : recordRef.toUpperCase();
   const base = viewBases(state).find((entry) => (key === null ? entry.id === recordRef : entry.externalKey === key));
@@ -649,10 +652,10 @@ function withheldOf(base: ViewBase, ledger: DecisionLedger, filter: DecisionStat
  * number, minutes:<id>#D<n>. Whether the decision exists is assertDeclarationsResolve's to say.
  */
 export function resolveDecisionReference(reference: string, self: string): string {
-  const own = /^D([1-9][0-9]{0,2})$/u.exec(reference);
+  const own = /^D([1-9][0-9]*)$/u.exec(reference);
   if (own !== null) return decisionAddress(self, Number(own[1]));
   if (parseDecisionAddress(reference) !== null) return reference;
-  const keyed = /^([A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*)#D([1-9][0-9]{0,2})$/u.exec(reference);
+  const keyed = /^([A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*)#D([1-9][0-9]*)$/u.exec(reference);
   if (keyed !== null) {
     try {
       return decisionAddress(deriveStableId("minutes", keyed[1]), Number(keyed[2]));
@@ -782,7 +785,7 @@ export function assertNoDecisionTopicConflict(state: LedgerState, record: Pick<M
   const conflicts = decisionTopicConflicts(state, record);
   if (conflicts.length === 0) return;
   const named = [...new Set(conflicts.map((entry) => entry.decision))].slice(0, MINUTES_LIST_LIMIT);
-  const pairs = conflicts.slice(0, 8).map((entry) => `D${String(entry.number)} ~ ${entry.decision} (${entry.score.toFixed(2)})`).join("; ");
+  const pairs = conflicts.map((entry) => `D${String(entry.number)} ~ ${entry.decision} (${entry.score.toFixed(2)})`).join("; ");
   fail("MINUTES_POSSIBLE_CONFLICT", `a decision is close in topic to a valid decision: ${pairs}; declare which it supersedes or withdraws, or that it stands beside it`, {
     conflicts: named,
     remedy: "for each decision named: --supersedes <decision>=D<n>, --withdraws <decision> or --coexists <decision>",
@@ -816,7 +819,7 @@ export function decisionsOfMinutes(ledger: DecisionLedger, minutesIds: readonly 
   return minutesIds.flatMap((minutesId) => (ledger.records.get(minutesId) ?? []).map((entry) => entry.decision));
 }
 
-const NAMED_DECISION = /(minutes:[a-z0-9][a-z0-9._-]{0,127}|[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+)\s*#?\s*D([1-9][0-9]{0,2})(?![0-9])/gu;
+const NAMED_DECISION = /(minutes:[a-z0-9][a-z0-9._-]*|[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+)\s*#?\s*D([1-9][0-9]*)(?![0-9])/gu;
 
 /**
  * The decisions a text names, as decision numbers: minutes:<id>#D<n> or minutes:<id> D<n>, and a

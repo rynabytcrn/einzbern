@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 import { canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
@@ -32,11 +33,11 @@ export type ArtifactLanguageTag = typeof ARTIFACT_LANGUAGE_TAGS[number];
 
 export const KNOWLEDGE_EXPANSION_LIMITS = Object.freeze({
   minimumPhrasings: 3,
-  maximumPhrasings: 4,
-  maximumPhrasingBytes: 256,
+  maximumPhrasings: RUNTIME_CAPACITY.arrayEntries,
+  maximumPhrasingBytes: RUNTIME_CAPACITY.bufferBytes,
   // The normative budget the Story states: one card's whole expansions map, canonically
   // serialised, in UTF-8 bytes.
-  maximumBytes: 1_024,
+  maximumBytes: RUNTIME_CAPACITY.bufferBytes,
 });
 
 /**

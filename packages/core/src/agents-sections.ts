@@ -1,3 +1,4 @@
+import { scopedWorkspaceState } from "./project-scope.js";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-478 R3, R4, R5, AC4, AC5 and the pointer hooks of STORY-477 R3 (MIN-227 D14,
@@ -459,6 +460,7 @@ export interface AgentsProject {
   readonly projectRoot: string;
   readonly libraryPath: string;
   readonly via: ResolutionPath;
+  readonly projectId?: string;
 }
 
 /**
@@ -473,7 +475,7 @@ export async function resolveAgentsProject(directory: string): Promise<AgentsPro
     const top = gitTopLevel(await realpath(resolve(directory)));
     if (top !== null) projectRoot = await realpath(top);
   }
-  return { projectRoot, libraryPath: resolved.libraryPath, via: resolved.via };
+  return { projectRoot, libraryPath: resolved.libraryPath, via: resolved.via, ...(resolved.entry.projectId === undefined ? {} : { projectId: resolved.entry.projectId }) };
 }
 
 // The language a project writes its artifacts in, which picks a rule's text (rules-catalog.ts).
@@ -498,11 +500,11 @@ export function engineSectionBody(state: Pick<WorkspaceState, "settings" | "conf
   return null;
 }
 
-function recordDeltas(changes: readonly { readonly file: string; readonly id: string; readonly record: ManagedSectionRecord | null; readonly recordChanged: boolean; readonly hadRecord: boolean }[]): readonly ((state: WorkspaceState) => MutationDelta)[] {
+function recordDeltas(changes: readonly { readonly file: string; readonly id: string; readonly record: ManagedSectionRecord | null; readonly recordChanged: boolean; readonly hadRecord: boolean }[], projectId?: string): readonly ((state: WorkspaceState) => MutationDelta)[] {
   return changes.filter((entry) => entry.recordChanged).flatMap((entry) => {
     const key = managedSectionRecordKey(entry.file, entry.id);
-    if (entry.record !== null) return [setConfigRecordDelta({ collection: "managed-section", key, value: entry.record })];
-    return entry.hadRecord ? [removeConfigRecordDelta({ collection: "managed-section", key })] : [];
+    if (entry.record !== null) return [setConfigRecordDelta({ ...(projectId === undefined ? {} : { projectId }), collection: "managed-section", key, value: entry.record })];
+    return entry.hadRecord ? [removeConfigRecordDelta({ ...(projectId === undefined ? {} : { projectId }), collection: "managed-section", key })] : [];
   });
 }
 
@@ -690,7 +692,7 @@ export async function renderAgentsSections(workspaceRoot: string, input: {
   readonly backupRoot?: string;
 } & WorkspaceMutationOptions): Promise<AgentsRenderResult> {
   return withWorkspaceWriteLock(workspaceRoot, async (root) => {
-    const state = await materializeWorkspace(root);
+    const state = scopedWorkspaceState(await materializeWorkspace(root), input.configurationProjectId);
     const agents = agentsFileSections(state, input.navigation);
     const plans = [
       // TCRN-CROSS-STORY-508 R7: with the rule sections in the rules' order.
@@ -703,7 +705,7 @@ export async function renderAgentsSections(workspaceRoot: string, input: {
       await planClaudeImport(input.projectRoot, managedSectionRecordsFor(state, CLAUDE_FILE)),
     ];
     const decisions = plans.flatMap((plan) => plan.sections.map((decision) => ({ plan, decision })));
-    const deltas = recordDeltas(decisions.map(({ plan, decision }) => ({ file: plan.file, id: decision.id, record: decision.record, recordChanged: decision.recordChanged, hadRecord: true })));
+    const deltas = recordDeltas(decisions.map(({ plan, decision }) => ({ file: plan.file, id: decision.id, record: decision.record, recordChanged: decision.recordChanged, hadRecord: true })), input.configurationProjectId);
     const files: RenderedFile[] = [];
     const wrote: ManagedWritePlan[] = [];
     let committed: WorkspaceState;
@@ -754,7 +756,7 @@ export async function resolveAgentsSection(workspaceRoot: string, input: {
   readonly backupRoot?: string;
 } & WorkspaceMutationOptions): Promise<AgentsSectionChangeResult> {
   return withWorkspaceWriteLock(workspaceRoot, async (root) => {
-    const state = await materializeWorkspace(root);
+    const state = scopedWorkspaceState(await materializeWorkspace(root), input.configurationProjectId);
     const file = managedSectionFile(input.id);
     const records = managedSectionRecordsFor(state, file);
     let body: string | undefined;
@@ -777,7 +779,7 @@ export async function resolveAgentsSection(workspaceRoot: string, input: {
     });
     const hadRecord = records.some((record) => record.id === input.id);
     try {
-      const committed = await commit(root, state, recordDeltas([{ file, id: input.id, record: outcome.record, recordChanged: outcome.recordChanged, hadRecord }]), input);
+      const committed = await commit(root, state, recordDeltas([{ file, id: input.id, record: outcome.record, recordChanged: outcome.recordChanged, hadRecord }], input.configurationProjectId), input);
       return { change: outcome, state: committed };
     } catch (error) {
       await putBackUnrecorded(root, state, wrote === null ? [] : [wrote]);
@@ -798,7 +800,7 @@ export async function disableAgentsSection(workspaceRoot: string, input: {
   readonly backupRoot?: string;
 } & WorkspaceMutationOptions): Promise<AgentsSectionChangeResult> {
   return withWorkspaceWriteLock(workspaceRoot, async (root) => {
-    const state = await materializeWorkspace(root);
+    const state = scopedWorkspaceState(await materializeWorkspace(root), input.configurationProjectId);
     const file = managedSectionFile(input.id);
     const records = managedSectionRecordsFor(state, file);
     const { change: outcome, wrote } = await takeSectionOut({
@@ -811,7 +813,7 @@ export async function disableAgentsSection(workspaceRoot: string, input: {
     });
     const hadRecord = records.some((record) => record.id === input.id);
     try {
-      const committed = await commit(root, state, recordDeltas([{ file, id: input.id, record: outcome.record, recordChanged: outcome.recordChanged, hadRecord }]), input);
+      const committed = await commit(root, state, recordDeltas([{ file, id: input.id, record: outcome.record, recordChanged: outcome.recordChanged, hadRecord }], input.configurationProjectId), input);
       return { change: outcome, state: committed };
     } catch (error) {
       await putBackUnrecorded(root, state, wrote === null ? [] : [wrote]);

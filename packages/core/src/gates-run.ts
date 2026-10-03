@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-485 R3 (MIN-235 D8; TCRN-CROSS-SUB-344): running a plan's gates. Every planned
@@ -84,6 +85,7 @@ export interface GateRun {
   readonly schemaVersion: typeof GATE_RUN_SCHEMA_VERSION;
   readonly runId: string;
   readonly libraryId: string;
+  readonly projectId?: string;
   readonly at: string;
   readonly release: boolean;
   readonly base: string | null;
@@ -230,6 +232,7 @@ function utcStamp(at: string): string {
  */
 export async function runGates(plan: GatesPlan, options: {
   readonly libraryId: string;
+  readonly projectId?: string;
   readonly at: string;
   readonly deviceHome?: string;
   readonly timeoutMs?: number;
@@ -239,12 +242,13 @@ export async function runGates(plan: GatesPlan, options: {
   assertStrictInstant(options.at);
   const timeoutMs = options.timeoutMs ?? GATE_RUN_DEFAULT_TIMEOUT_MS;
   const outputBytes = options.outputBytes ?? GATE_RUN_DEFAULT_OUTPUT_BYTES;
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 86_400_000) fail("a gate timeout is 100 to 86400000 milliseconds", { timeoutMs: String(timeoutMs) });
-  if (!Number.isSafeInteger(outputBytes) || outputBytes < 1_024 || outputBytes > 16_777_216) fail("a gate's output bound is 1024 to 16777216 bytes", { outputBytes: String(outputBytes) });
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > RUNTIME_CAPACITY.timerMilliseconds) fail("a gate timeout must fit the native timer and be at least 100 milliseconds", { timeoutMs: String(timeoutMs) });
+  if (!Number.isSafeInteger(outputBytes) || outputBytes < 1_024 || outputBytes > RUNTIME_CAPACITY.bufferBytes) fail("a gate's output budget must fit the runtime buffer and be at least 1024 bytes", { outputBytes: String(outputBytes) });
   const directory = gateRunsDirectory(options.libraryId, options.deviceHome);
   const tree = await gateTreeState(plan.projectRoot, plan.roots);
   const runId = `${utcStamp(options.at)}-${canonicalSha256({
     at: options.at,
+    ...(options.projectId === undefined ? {} : { projectId: options.projectId }),
     treeDigest: tree.treeDigest,
     declarationsDigest: plan.declarationsDigest,
     release: plan.release,
@@ -278,6 +282,7 @@ export async function runGates(plan: GatesPlan, options: {
     schemaVersion: GATE_RUN_SCHEMA_VERSION,
     runId,
     libraryId: options.libraryId,
+    ...(options.projectId === undefined ? {} : { projectId: options.projectId }),
     at: options.at,
     release: plan.release,
     base: plan.base,
@@ -299,6 +304,7 @@ function isGateRun(value: unknown): value is GateRun {
   const workIds = record.workIds;
   const gates = record.gates;
   return record.schemaVersion === GATE_RUN_SCHEMA_VERSION && typeof record.runId === "string" && typeof record.libraryId === "string" &&
+    (record.projectId === undefined || (typeof record.projectId === "string" && /^project:[a-f0-9]{24}$/u.test(record.projectId))) &&
     typeof record.at === "string" && typeof record.treeDigest === "string" && typeof record.declarationsDigest === "string" &&
     Array.isArray(workIds) && workIds.every((workId: unknown) => typeof workId === "string" && /^work:[0-9a-f]{24}$/u.test(workId)) &&
     Array.isArray(gates) && gates.every((gate: unknown) => {
@@ -327,6 +333,7 @@ function instant(value: string): bigint | null {
  */
 export async function latestGateRun(input: {
   readonly libraryId: string;
+  readonly projectId?: string;
   readonly deviceHome?: string;
   readonly treeDigest?: string;
   readonly declarationsDigest?: string;
@@ -348,7 +355,7 @@ export async function latestGateRun(input: {
     } catch {
       continue;
     }
-    if (!isGateRun(run) || run.libraryId !== input.libraryId) continue;
+    if (!isGateRun(run) || run.libraryId !== input.libraryId || run.projectId !== input.projectId) continue;
     if (input.treeDigest !== undefined && run.treeDigest !== input.treeDigest) continue;
     if (input.declarationsDigest !== undefined && run.declarationsDigest !== input.declarationsDigest) continue;
     if (input.workIds !== undefined) {

@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 //
 // EPIC-019 (INIT-010): verifiable conference execution provenance. Every export here
@@ -57,8 +58,8 @@ export const EXECUTION_REASON_CODES = Object.freeze([
 ] as const);
 export type ExecutionReasonCode = typeof EXECUTION_REASON_CODES[number];
 
-const maximumTextBytes = 2_048;
-const maximumExtensionProperties = 64;
+const maximumTextBytes = RUNTIME_CAPACITY.bufferBytes;
+const maximumExtensionProperties = RUNTIME_CAPACITY.arrayEntries;
 const shaPattern = /^[a-f0-9]{64}$/u;
 
 export class ExecutionError extends Error {
@@ -115,7 +116,6 @@ function hostId(value: unknown, label: string): string {
     typeof value !== "string" ||
     !value.isWellFormed() ||
     value.length < MINIMUM_HOST_ID_LENGTH ||
-    Buffer.byteLength(value, "utf8") > 512 ||
     HOST_ID_FORBIDDEN.test(value)
   ) {
     fail("EXECUTION_RECEIPT_INVALID", label);

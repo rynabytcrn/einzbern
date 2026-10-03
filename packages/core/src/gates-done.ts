@@ -50,6 +50,7 @@ export async function assertDoneGates(input: {
   readonly projectRoot: string;
   readonly library: Pick<WorkspaceState, "configRecords" | "metadata" | "work">;
   readonly workIds: readonly string[];
+  readonly configurationProjectId?: string;
   readonly deviceHome?: string;
 }): Promise<DoneGatesVerdict> {
   const stories = input.workIds.filter((id) => input.library.work.some((record) => record.id === id && record.kind === "Story"));
@@ -66,6 +67,7 @@ export async function assertDoneGates(input: {
   const tree = await gateTreeState(input.projectRoot, [...new Set(gates.map((gate) => gate.root))].sort(compareCanonicalText));
   const run = await latestGateRun({
     libraryId: input.library.metadata.workspaceId,
+    ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }),
     treeDigest: tree.treeDigest,
     declarationsDigest: gateDeclarationsDigest(gates),
     workIds: stories,

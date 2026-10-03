@@ -367,6 +367,8 @@ test("508-R2: models.tiers validation names the field it refuses", () => {
   const valid = [record(20, "economy", "codex-cli", "fixture-codex", "max"), record(10, "main", "claude-code", "fixture-main", "max", "the reviewer")];
   assert.deepEqual(validateModelsTiers(valid), [valid[1], valid[0]], "read in ascending order");
   assert.deepEqual(validateModelsTiers([]), [], "an empty table is a table");
+  const long = record(10001, "economy", "codex", "m".repeat(257), "ultra", "n".repeat(257));
+  assert.deepEqual(validateModelsTiers([long]), [long], "former field/order ceilings are not admission limits");
   assert.deepEqual(parseModelsTiers(JSON.stringify(valid)), [valid[1], valid[0]]);
   const one = (fields) => [{ ...record(10, "economy", "codex", "m", "low"), ...fields }];
   const refusals = [
@@ -381,9 +383,7 @@ test("508-R2: models.tiers validation names the field it refuses", () => {
     [one({ category: "Economy" }), "models.tiers[0].category"],
     [one({ runner: "" }), "models.tiers[0].runner"],
     [one({ model: "m\nn" }), "models.tiers[0].model"],
-    [one({ model: "m".repeat(257) }), "models.tiers[0].model"],
     [one({ effort: 3 }), "models.tiers[0].effort"],
-    [one({ note: "n".repeat(257) }), "models.tiers[0].note"],
     [one({ note: "tab\there" }), "models.tiers[0].note"],
   ];
   for (const [value, path] of refusals) {

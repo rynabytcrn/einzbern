@@ -64,7 +64,6 @@ export const CARDS_SCHEMA_VERSION = "einzbern.retrieval-eval-cards.v1";
 export const SCOPE_EXCERPT_BYTES = 512;
 export const DEFAULT_SAMPLE = 4;
 const SAMPLED_KINDS = ["Story", "Incident"];
-const KNOWLEDGE_LIST_LIMIT = 1_048_576;
 
 const repositoryRoot = resolve(fileURLToPath(new URL("..", import.meta.url)));
 const fixtureDirectory = resolve(repositoryRoot, "tests/fixtures/retrieval-eval");
@@ -244,7 +243,7 @@ export async function recordCorpus(options) {
   // reason code the card read produced is recorded rather than swallowed.
   let knowledge;
   try {
-    knowledge = await listKnowledgeMetadata(options.source, { at: options.at, allowTrailing: true, includeExplicitOnly: true, limit: KNOWLEDGE_LIST_LIMIT });
+    knowledge = await listKnowledgeMetadata(options.source, { at: options.at, allowTrailing: true, includeExplicitOnly: true });
   } catch (error) {
     if (typeof error?.reasonCode !== "string") throw error;
     knowledge = { reasonCode: error.reasonCode, resultDigest: "absent", records: [] };

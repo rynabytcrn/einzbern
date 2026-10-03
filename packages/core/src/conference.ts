@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 import { assertProtocolId, compareCanonicalText, parseStrictInstant } from "../../protocol/src/index.js";
@@ -41,34 +42,14 @@ export const CONFERENCE_REASON_CODES = Object.freeze([
 
 export type ConferenceReasonCode = typeof CONFERENCE_REASON_CODES[number];
 
-const maximumTextBytes = 2_048;
-const maximumExtensionProperties = 64;
+const maximumTextBytes = RUNTIME_CAPACITY.bufferBytes;
+const maximumExtensionProperties = RUNTIME_CAPACITY.arrayEntries;
 
-/**
- * The hard ceiling on a single `position`, and the only budget replay knows about.
- *
- * A deliberation's positions are carried verbatim — summarising one is exactly the
- * thing the deliberation-adoption convention forbids — and at 2,048 bytes a CJK
- * position ran out at roughly 680 characters, which forced 23 of this platform's
- * deliberations to be split across continuation records purely to fit.
- *
- * Why a ceiling *and* a setting, rather than the setting alone: this predicate runs
- * in the replay reducer, so if the admissible size depended on a workspace setting
- * then the same bytes would be legal or illegal according to where they sit in the
- * chain. That would falsify conference-v1's store-independent promise and leave the
- * schema unable to state a bound at all. So replay knows only this constant, record
- * validity stays a pure function of the bytes, and the per-deployment budget
- * (`conference.positionBudgetBytes`) is enforced on the write path instead — the
- * shape `execution.independenceFloor` already uses.
- *
- * Raising this is a one-way step for a chain that uses it: an engine older than the
- * release that introduced it reads an over-2,048 position as WORKSPACE_EVENT_CORRUPT,
- * which is why it is version-gated once here rather than nudged upward repeatedly.
- * Only `position` is raised; every other conference text field keeps 2,048, which
- * also keeps the per-segment envelope within its 1 MiB canonical bound.
- * TCRN-CROSS-MIN-102 裁定四.
+/** Pure replay capacity: complete positions fit the executing runtime buffer.
+ * Former product ceilings and the retired position-budget write path are not
+ * admission authority. Older installed binaries can still refuse larger records.
  */
-export const CONFERENCE_POSITION_CEILING_BYTES = 8_192;
+export const CONFERENCE_POSITION_CEILING_BYTES = RUNTIME_CAPACITY.bufferBytes;
 
 export class ConferenceError extends Error {
   readonly reasonCode: ConferenceReasonCode;
@@ -119,7 +100,7 @@ function boundedTextArray(value: unknown, label: string, maximum: number): reado
   return value.map((entry, index) => text(entry, `${label}[${index}]`));
 }
 
-function idArray(value: unknown, label: string, { min = 0, max = 64, unique = true } = {}): readonly string[] {
+function idArray(value: unknown, label: string, { min = 0, max = RUNTIME_CAPACITY.arrayEntries, unique = true } = {}): readonly string[] {
   if (!Array.isArray(value)) fail("CONFERENCE_SCHEMA_INVALID", label);
   if (value.length < min) fail("CONFERENCE_ANCHOR_REQUIRED", label);
   if (value.length > max) fail("CONFERENCE_BUDGET_EXCEEDED", label);
@@ -222,9 +203,9 @@ export function validateConferencePosition(value: unknown): ConferencePosition {
     actorId: id(document.actorId, "actorId"),
     ...(stance === undefined ? {} : { stance }),
     position: text(document.position, "position", CONFERENCE_POSITION_CEILING_BYTES),
-    risks: boundedTextArray(document.risks, "risks", 32),
-    recommendations: boundedTextArray(document.recommendations, "recommendations", 32),
-    evidenceIds: idArray(document.evidenceIds, "evidenceIds", { max: 32 }),
+    risks: boundedTextArray(document.risks, "risks", RUNTIME_CAPACITY.arrayEntries),
+    recommendations: boundedTextArray(document.recommendations, "recommendations", RUNTIME_CAPACITY.arrayEntries),
+    evidenceIds: idArray(document.evidenceIds, "evidenceIds", { max: RUNTIME_CAPACITY.arrayEntries }),
     ...common(document),
   });
 }
@@ -256,8 +237,8 @@ export function validateConferenceMinutes(value: unknown): ConferenceMinutes {
     projectId: id(document.projectId, "projectId"),
     summary: text(document.summary, "summary"),
     outcomeClass: document.outcomeClass as ConferenceMinutes["outcomeClass"],
-    decisions: boundedTextArray(document.decisions, "decisions", 32),
-    unresolvedIssues: boundedTextArray(document.unresolvedIssues, "unresolvedIssues", 32),
+    decisions: boundedTextArray(document.decisions, "decisions", RUNTIME_CAPACITY.arrayEntries),
+    unresolvedIssues: boundedTextArray(document.unresolvedIssues, "unresolvedIssues", RUNTIME_CAPACITY.arrayEntries),
     ...common(document),
   });
 }

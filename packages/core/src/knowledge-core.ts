@@ -1,3 +1,5 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
+import { scopedWorkspaceState } from "./project-scope.js";
 // SPDX-License-Identifier: Apache-2.0
 
 import { createHash, randomBytes } from "node:crypto";
@@ -66,6 +68,7 @@ import { FileLockError, withFileLock } from "./file-lock.js";
 import { readUserCrestPath } from "./machine-settings.js";
 import { DIRECTORY, LEGACY_CONTROL_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY } from "./names.js";
 import { assertKnowledgeNotRecorded } from "./knowledge-duplicates.js";
+import { readRegistry } from "./registry.js";
 
 export const KNOWLEDGE_CORE_VERSION = "tcrn.knowledge-core.v1" as const;
 export const KNOWLEDGE_STORE_SCHEMA_VERSION = "tcrn.knowledge-store.v1" as const;
@@ -76,17 +79,20 @@ export const KNOWLEDGE_METADATA_SCHEMA_VERSION = "tcrn.knowledge-unit-metadata.v
 // setting and the one-MiB ceiling above it are gone -- so no read, write, recall, recovery or merge of
 // two devices' streams refuses for the bytes the bodies add up to. Each card is still held to these,
 // and one past its limit is refused with KNOWLEDGE_LIMIT_EXCEEDED.
+export const KNOWLEDGE_QUERY_DEFAULT_RESULTS = 8;
+// Storage page target: an operational chunk size, never a total-store or per-record refusal.
+const KNOWLEDGE_INDEX_PAGE_TARGET_BYTES = 1_048_576;
 export const KNOWLEDGE_LIMITS = Object.freeze({
-  maximumBodyBytes: 8_192,
+  maximumBodyBytes: RUNTIME_CAPACITY.bufferBytes,
   maximumArticleBytes: PROTOCOL_LIMITS.maxCanonicalBytes,
-  maximumSummaryBytes: 2_048,
-  maximumSnippetBytes: 512,
-  maximumMetadataBytes: 32_768,
-  maximumQueryResults: 8,
-  maximumLocators: 16,
-  maximumLinksPerClass: 64,
-  maximumTags: 32,
-  maximumRoleScopes: 16,
+  maximumSummaryBytes: RUNTIME_CAPACITY.bufferBytes,
+  maximumSnippetBytes: RUNTIME_CAPACITY.bufferBytes,
+  maximumMetadataBytes: RUNTIME_CAPACITY.bufferBytes,
+  maximumQueryResults: RUNTIME_CAPACITY.arrayEntries,
+  maximumLocators: RUNTIME_CAPACITY.arrayEntries,
+  maximumLinksPerClass: RUNTIME_CAPACITY.arrayEntries,
+  maximumTags: RUNTIME_CAPACITY.arrayEntries,
+  maximumRoleScopes: RUNTIME_CAPACITY.arrayEntries,
 });
 
 // A live record: no later card supersedes it and an older engine did not retire it. Only live cards
@@ -186,7 +192,7 @@ export const KNOWLEDGE_STATUS_FILTERS: readonly KnowledgeStatusFilter[] = Object
 // body, only the card it removes and why.
 const CREST_REMOVAL_SCHEMA_VERSION = "einzbern.crest-removal.v1" as const;
 // A removal's basis is a bounded sentence, held to the summary's budget.
-const KNOWLEDGE_REMOVAL_BASIS_BYTES = 2_048;
+const KNOWLEDGE_REMOVAL_BASIS_BYTES = RUNTIME_CAPACITY.bufferBytes;
 
 /**
  * TCRN-CROSS-STORY-476 R5: the identity a user crest's marker binds where a library's crest binds
@@ -208,8 +214,8 @@ const CREST_EVENT_SCHEMA_VERSION = "einzbern.crest-event.v1" as const;
 const CREST_EVENTS_DIRECTORY = USER_CREST_EVENTS_DIRECTORY;
 // The most chain streams one event may name as the chain it was written against, and so the
 // largest event file a reader admits: the metadata budget, the event's own fields, and the chain.
-const CREST_EVENT_CHAIN_LIMIT = 256;
-const CREST_EVENT_MAXIMUM_BYTES = KNOWLEDGE_LIMITS.maximumMetadataBytes + 4_096 + CREST_EVENT_CHAIN_LIMIT * 160;
+const CREST_EVENT_CHAIN_LIMIT = RUNTIME_CAPACITY.arrayEntries;
+const CREST_EVENT_MAXIMUM_BYTES = RUNTIME_CAPACITY.bufferBytes;
 export type KnowledgeCategory = "architecture" | "domain" | "implementation" | "standards" | "testing" | "workflow" | "decision" | "evidence";
 export type KnowledgeKind = "fact" | "guide" | "decision" | "reference" | "summary";
 export type KnowledgeLifecycle = "candidate" | "active" | "retired";
@@ -347,6 +353,7 @@ export interface CreateKnowledgeUnitInput {
 
 export interface KnowledgeArticleCreateInput {
   readonly occurredAt: string;
+  readonly projectId?: string;
   /** Markdown file path relative to the effective articles directory. */
   readonly path: string;
   readonly category: KnowledgeCategory;
@@ -798,16 +805,18 @@ function sourceReferenceIsFile(reference: string): boolean {
   return !reference.includes("://") && !/^[a-z][a-z0-9+.-]*:/iu.test(reference);
 }
 
-function sourceRoots(workspaceRoot: string, workspace: WorkspaceState): readonly string[] {
+async function sourceRoots(workspaceRoot: string, workspace: WorkspaceState): Promise<readonly string[]> {
   const roots = workspace.metadata.roots.map((root) => root.canonicalPath);
-  const containerRoot = resolve(workspaceRoot, "../../..");
-  return [...new Set([workspaceRoot, containerRoot, process.cwd(), ...roots])];
+  const projectId = (workspace as WorkspaceState & { readonly configurationProjectId?: string | null }).configurationProjectId ?? undefined;
+  const registered = (await readRegistry()).entries.filter((entry) => entry.libraryId === workspace.metadata.workspaceId && entry.projectId === projectId);
+  const articlesRoot = resolveKnowledgeArticlesPath(workspaceRoot, articleSettingValue(workspace));
+  return [...new Set([articlesRoot, ...registered.map((entry) => entry.projectPath), workspaceRoot, ...roots])];
 }
 
 async function resolveSourceFile(reference: string, workspaceRoot: string, workspace: WorkspaceState): Promise<string | null> {
   if (!sourceReferenceIsFile(reference)) return null;
   if (reference.startsWith("/") || reference.includes("\\")) return null;
-  for (const root of sourceRoots(workspaceRoot, workspace)) {
+  for (const root of await sourceRoots(workspaceRoot, workspace)) {
     const candidate = resolve(root, reference);
     if (!inside(root, candidate)) continue;
     try {
@@ -892,7 +901,7 @@ function articleSettingValue(workspace: WorkspaceState): string {
 }
 
 function assertArticlePath(path: string): void {
-  if (typeof path !== "string" || path.length === 0 || Buffer.byteLength(path, "utf8") > 512 ||
+  if (typeof path !== "string" || path.length === 0 ||
     isAbsolute(path) || path.includes("\\") || /[\u0000-\u001f\u007f]/u.test(path)) {
     fail("KNOWLEDGE_PATH_INVALID", "article path");
   }
@@ -1001,7 +1010,7 @@ function parseArticleMarkdown(bytes: Buffer, path: string): { readonly category:
     fail("KNOWLEDGE_RECORD_INVALID", `${path}:article front matter`);
   }
   const title = match[2] ?? "";
-  assertArticleField(title, 512, "article title");
+  assertArticleField(title, RUNTIME_CAPACITY.bufferBytes, "article title");
   return { category: match[1] as KnowledgeCategory, title, content: match[3] ?? "" };
 }
 
@@ -1066,7 +1075,7 @@ function assertSortedStrings(values: unknown, maximum: number, label: string, pa
     fail("KNOWLEDGE_INPUT_INVALID", label);
   }
   for (const value of values) {
-    assertBoundedString(value, 512, label);
+    assertBoundedString(value, RUNTIME_CAPACITY.stringCodeUnits, label);
   }
   if (JSON.stringify(values) !== JSON.stringify([...values].sort(compareCanonicalText))) {
     fail("KNOWLEDGE_CANONICAL_INVALID", `${label} must be sorted`);
@@ -1126,7 +1135,7 @@ const knowledgeBackendProfile: FileStoreBackendProfile = Object.freeze({
     alreadyExists: "KNOWLEDGE_ALREADY_EXISTS",
   }),
   limits: Object.freeze({
-    markerBytes: 16_384,
+    markerBytes: RUNTIME_CAPACITY.bufferBytes,
     metadataBytes: KNOWLEDGE_LIMITS.maximumMetadataBytes,
     bodyBytes: KNOWLEDGE_LIMITS.maximumBodyBytes,
     viewBytes: PROTOCOL_LIMITS.maxCanonicalBytes,
@@ -1339,7 +1348,7 @@ async function syncDirectory(path: string): Promise<void> {
 // INC-400: these are staging names, not a new record format. The owner and raw-byte digest
 // let explicit recovery distinguish this device's complete publication from foreign or
 // changed leftovers. A scan never removes a staging name, even in another device's stream.
-const CREST_TEMP_NAME = /^\.tmp-crest-([a-f0-9]{32})-([1-9][0-9]*)-([a-f0-9]{64})-([a-f0-9]{24})-(store\.json|[0-9]{8}-[a-f0-9]{64}\.(?:json|body))$/u;
+const CREST_TEMP_NAME = /^\.tmp-crest-([a-f0-9]{32})-([1-9][0-9]*)-([a-f0-9]{64})-([a-f0-9]{24})-(store\.json|[0-9]{8,}-[a-f0-9]{64}\.(?:json|body))$/u;
 const CREST_PUBLISH_WAIT_MS = 1_000;
 
 function sameCrestBytes(left: BigIntStats, right: BigIntStats): boolean {
@@ -1619,7 +1628,7 @@ function validateRetirementRecord(value: unknown, expectedId?: string): Knowledg
 // (see the sourceReferences loop in validateMetadataShape below) and never needed
 // to distinguish the two.
 function redactArtifactReference(input: unknown): string {
-  if (typeof input !== "string" || input.length === 0 || input.length > 8_192 || /[\u0000-\u001f\u007f]/u.test(input)) {
+  if (typeof input !== "string" || input.length === 0 || /[\u0000-\u001f\u007f]/u.test(input)) {
     fail("KNOWLEDGE_REDACTION_REQUIRED", "artifact reference must be a bounded printable string");
   }
   let value = input.replace(/^ +| +$/gu, "");
@@ -1654,7 +1663,7 @@ function redactArtifactReference(input: unknown): string {
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/giu, "[redacted-private-identifier]")
     .replace(/(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,}|(?:AKIA|ASIA)[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{10,}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})/gu, "[redacted-credential]")
     .replace(/\/(?:Users|home|private|var\/folders)\/[^\s]*/gu, "/[redacted-private-path]");
-  if (value.length === 0 || value.length > 512) {
+  if (value.length === 0) {
     fail("KNOWLEDGE_REDACTION_REQUIRED", "redacted artifact reference is empty or oversized");
   }
   try {
@@ -1701,7 +1710,7 @@ function validateMetadataShape(value: Readonly<Record<string, JsonValue>>, works
   }
   validateRetirementRecord(normalizedValue.retirement, typeof normalizedValue.id === "string" ? normalizedValue.id : undefined);
   if ((normalizedValue.stalenessPolicy.maximumAgeDays !== null &&
-    (!Number.isSafeInteger(normalizedValue.stalenessPolicy.maximumAgeDays) || Number(normalizedValue.stalenessPolicy.maximumAgeDays) < 1 || Number(normalizedValue.stalenessPolicy.maximumAgeDays) > 3_650)) ||
+    (!Number.isSafeInteger(normalizedValue.stalenessPolicy.maximumAgeDays) || Number(normalizedValue.stalenessPolicy.maximumAgeDays) < 1 || Number(normalizedValue.stalenessPolicy.maximumAgeDays) > Number.MAX_SAFE_INTEGER)) ||
     (normalizedValue.stalenessPolicy.unknownDisposition !== "fail-closed" && normalizedValue.stalenessPolicy.unknownDisposition !== "fail-open")) {
     fail("KNOWLEDGE_RECORD_INVALID", "staleness policy is invalid");
   }
@@ -1724,11 +1733,11 @@ function validateMetadataShape(value: Readonly<Record<string, JsonValue>>, works
   if (deriveStableId("knowledge", metadata.externalKey) !== metadata.id) {
     fail("KNOWLEDGE_RECORD_INVALID", `${metadata.id}:identity binding`);
   }
-  assertBoundedString(metadata.subject, 512, "subject");
+  assertBoundedString(metadata.subject, RUNTIME_CAPACITY.stringCodeUnits, "subject");
   assertBoundedString(metadata.summary, KNOWLEDGE_LIMITS.maximumSummaryBytes, "summary");
   assertBoundedString(metadata.snippet, KNOWLEDGE_LIMITS.maximumSnippetBytes, "snippet");
-  assertSortedStrings(metadata.roleScopes, KNOWLEDGE_LIMITS.maximumRoleScopes, "role scopes", /^[a-z][a-z0-9-]{0,63}$/u);
-  assertSortedStrings(metadata.tags, KNOWLEDGE_LIMITS.maximumTags, "tags", /^[a-z0-9][a-z0-9-]{0,63}$/u);
+  assertSortedStrings(metadata.roleScopes, KNOWLEDGE_LIMITS.maximumRoleScopes, "role scopes", /^[a-z][a-z0-9-]*$/u);
+  assertSortedStrings(metadata.tags, KNOWLEDGE_LIMITS.maximumTags, "tags", /^[a-z0-9][a-z0-9-]*$/u);
   assertSortedStrings(metadata.sourceReferences, KNOWLEDGE_LIMITS.maximumLocators, "source references");
   assertLinkIds(metadata.linkedWorkIds, "work", "linked work IDs");
   assertLinkIds(metadata.linkedDecisionIds, "decision", "linked decision IDs");
@@ -2007,11 +2016,11 @@ function knowledgeViewFiles(index: KnowledgeIndex): readonly KnowledgeViewFile[]
   // The whole index is its fields around an empty list, plus each record and the commas between them.
   const wholeBytes = Buffer.byteLength(canonicalJson({ ...index.document, records: [] }), "utf8") +
     entryBytes.reduce((total, bytes) => total + bytes, Math.max(0, records.length - 1));
-  if (wholeBytes <= PROTOCOL_LIMITS.maxCanonicalBytes && records.length <= PROTOCOL_LIMITS.maxRecords) {
+  if (wholeBytes <= KNOWLEDGE_INDEX_PAGE_TARGET_BYTES && records.length <= PROTOCOL_LIMITS.maxRecords) {
     return [{ name: KNOWLEDGE_VIEW_FILE, text: canonicalJson(index.document) }];
   }
   // A page's own fields are measured at the widest page number there can be.
-  const pageBudget = PROTOCOL_LIMITS.maxCanonicalBytes -
+  const pageBudget = KNOWLEDGE_INDEX_PAGE_TARGET_BYTES -
     Buffer.byteLength(canonicalJson({ schemaVersion: KNOWLEDGE_INDEX_PAGE_SCHEMA_VERSION, page: Number.MAX_SAFE_INTEGER, records: [] }), "utf8");
   const bounds: { readonly from: number; readonly to: number }[] = [];
   let from = 0;
@@ -2697,7 +2706,7 @@ async function readUserCrestFile(path: string, maximumBytes: number, hooks: Know
       fail("KNOWLEDGE_SOURCE_CHANGED", path);
     }
     await hooks.afterDescriptorOpenForTest?.(path);
-    const bounded = Buffer.alloc(maximumBytes + 1);
+    const bounded = Buffer.alloc(Number(opened.size));
     let bytesRead = 0;
     while (bytesRead < bounded.length) {
       const result = await handle.read(bounded, bytesRead, bounded.length - bytesRead, bytesRead);
@@ -3387,7 +3396,7 @@ async function scanUserCrest(
   const reading: CrestStreamReading = {
     linkState: null,
     validate: (value, deviceId, filename) => ({ ...validateUserCrestEvent(value, deviceId, filename), replaces: null, chain: null }),
-    maximumEventBytes: KNOWLEDGE_LIMITS.maximumMetadataBytes + 4_096,
+    maximumEventBytes: RUNTIME_CAPACITY.bufferBytes,
     library: false,
     hooks: options,
   };
@@ -3557,7 +3566,7 @@ async function recoverCrestPublications(storeRootInput: string, home: string, wo
       if (!linked && named !== undefined && sameIdentity(before, named)) fail("KNOWLEDGE_LINK_UNSAFE", temporary);
       const maximum = match[5] === "store.json" ? knowledgeBackendProfile.limits.markerBytes
         : match[5]!.endsWith(".body") ? KNOWLEDGE_LIMITS.maximumBodyBytes
-        : workspace === null ? KNOWLEDGE_LIMITS.maximumMetadataBytes + 4_096 : CREST_EVENT_MAXIMUM_BYTES;
+        : workspace === null ? RUNTIME_CAPACITY.bufferBytes : CREST_EVENT_MAXIMUM_BYTES;
       if (before.size > BigInt(maximum)) fail("KNOWLEDGE_LIMIT_EXCEEDED", temporary);
       const handle = await open(temporary, constants.O_RDONLY | constants.O_NOFOLLOW);
       let bytes: Buffer;
@@ -3897,6 +3906,9 @@ function buildMetadata(
   host?: string,
 ): KnowledgeUnitMetadata {
   assertWritableLifecycle(input.lifecycle);
+  if (input.projectId !== null && !workspace.projects.some((project) => project.id === input.projectId && !project.tombstone)) {
+    fail("KNOWLEDGE_LINK_INVALID", `unknown project ${input.projectId}`);
+  }
   let externalKey: string;
   try {
     externalKey = canonicalExternalKey(input.externalKey);
@@ -3931,7 +3943,7 @@ function buildMetadata(
   try {
     language = applyWriteLanguagePolicy(
       { subject: input.subject, summary: input.summary, snippet: input.snippet },
-      readKnowledgeLanguagePolicy(workspace.settings, host),
+      readKnowledgeLanguagePolicy(scopedWorkspaceState(workspace, input.projectId ?? undefined).settings, host),
       languageProvider,
     );
   } catch (error) {
@@ -4152,7 +4164,7 @@ async function createUserCrestEvent(
   const workspace = await materializeWorkspace(workspaceRoot);
   const sourceDigest = input.sourceDigest && input.sourceDigest.length > 0
     ? input.sourceDigest
-    : await calculateKnowledgeSourceDigest(workspaceRoot, workspace, input.sourceReferences, input.body);
+    : await calculateKnowledgeSourceDigest(workspaceRoot, scopedWorkspaceState(workspace, input.projectId ?? undefined), input.sourceReferences, input.body);
   const metadata = buildMetadata({ ...input, sourceDigest }, body, workspace, options.languageProvider, options.host);
   const { eventsRoot } = await ensureUserCrestEventRoot(location);
   const { device } = await readOrCreateDevice({ home: location.device });
@@ -4380,7 +4392,7 @@ async function createLibraryCrestEvent(
   const workspace = await materializeWorkspace(workspaceRoot);
   const sourceDigest = input.sourceDigest && input.sourceDigest.length > 0
     ? input.sourceDigest
-    : await calculateKnowledgeSourceDigest(workspaceRoot, workspace, input.sourceReferences, input.body);
+    : await calculateKnowledgeSourceDigest(workspaceRoot, scopedWorkspaceState(workspace, input.projectId ?? undefined), input.sourceReferences, input.body);
   const metadata = buildMetadata({ ...input, sourceDigest }, body, workspace, options.languageProvider, options.host);
   const scan = await mutationAdmissionScan(workspaceRoot, options);
   // The chain the event will name is the one the scan read, so the card's links are held to it.
@@ -4623,7 +4635,7 @@ export async function createKnowledgeArticle(
 ): Promise<Readonly<Record<string, JsonValue>>> {
   try { assertStrictInstant(input.occurredAt); } catch (error) { fail("KNOWLEDGE_INPUT_INVALID", String(error)); }
   if (!ARTICLE_CATEGORY_VALUES.includes(input.category)) fail("KNOWLEDGE_INPUT_INVALID", "article category");
-  assertArticleField(input.title, 512, "article title");
+  assertArticleField(input.title, RUNTIME_CAPACITY.bufferBytes, "article title");
   assertArticleField(input.summary, KNOWLEDGE_LIMITS.maximumSummaryBytes, "article summary");
   if (typeof input.content !== "string" || Buffer.byteLength(input.content, "utf8") > KNOWLEDGE_LIMITS.maximumArticleBytes) {
     fail("KNOWLEDGE_LIMIT_EXCEEDED", "article content");
@@ -4641,19 +4653,19 @@ export async function createKnowledgeArticle(
     try { assertProtocolId(evidenceId); } catch (error) { fail("KNOWLEDGE_PROVENANCE_INVALID", String(error)); }
     if (!evidenceId.startsWith("evidence:")) fail("KNOWLEDGE_PROVENANCE_INVALID", evidenceId);
   }
-  const workspace = await materializeWorkspace(workspaceRoot);
+  const workspace = scopedWorkspaceState(await materializeWorkspace(workspaceRoot), input.projectId);
   const article = await articlePathFor(workspaceRoot, workspace, input.path);
   const markdown = articleMarkdown(input.category, input.title, input.content);
   const body = articleIndexBody(input.title, input.summary, input.path);
   const articleBytes = await writeArticleBytes(article.file, markdown, false);
   const sourceDigest = sha256(articleBytes);
-  const externalKey = `ARTICLE-${sha256(input.path).slice(0, 24).toUpperCase()}`;
+  const externalKey = `ARTICLE-${sha256(input.projectId === undefined ? input.path : canonicalJson({ projectId: input.projectId, path: input.path })).slice(0, 24).toUpperCase()}`;
   try {
     const created = await createKnowledgeUnit(workspaceRoot, {
       occurredAt: input.occurredAt,
       externalKey,
-      scope: "workspace",
-      projectId: null,
+      scope: input.projectId === undefined ? "workspace" : "project",
+      projectId: input.projectId ?? null,
       roleScopes: [],
       category: input.category,
       kind: "reference",
@@ -4716,7 +4728,8 @@ export interface CaptureKnowledgeUnitInput {
   // stored. Left out it is a role card in the library's crest, as a capture always was;
   // "workspace" is a card of the whole library, and "user" a card of this user's crest, recalled
   // in every project. Neither of those two names a role.
-  readonly scope?: "role" | "workspace" | "user";
+  readonly scope?: "role" | "workspace" | "project" | "user";
+  readonly projectId?: string;
 }
 
 /**
@@ -4741,13 +4754,14 @@ export async function captureKnowledgeUnit(
   // A derived key so the hook never has to invent one, and so the same lesson written
   // twice at the same instant is a duplicate rather than a second card.
   const externalKey = input.externalKey ??
-    `CAPTURE-${createHash("sha256").update(`${input.subject}\u0000${input.body}\u0000${input.occurredAt}`, "utf8").digest("hex").slice(0, 24).toUpperCase()}`;
+    `CAPTURE-${createHash("sha256").update(`${input.projectId === undefined ? "" : input.projectId + "\u0000"}${input.subject}\u0000${input.body}\u0000${input.occurredAt}`, "utf8").digest("hex").slice(0, 24).toUpperCase()}`;
   const scope = input.scope ?? "role";
+  if ((scope === "project") !== (input.projectId !== undefined)) fail("KNOWLEDGE_INPUT_INVALID", "a project capture requires its stable project id; other scopes do not accept one");
   return createKnowledgeUnit(workspaceRoot, {
     occurredAt: input.occurredAt,
     externalKey,
     scope,
-    projectId: null,
+    projectId: input.projectId ?? null,
     roleScopes: input.roleScopes ?? (scope === "role" ? ["implementation"] : []),
     category: input.category ?? "workflow",
     kind: input.kind ?? "fact",
@@ -4841,16 +4855,16 @@ function normalizeListQuery(query: KnowledgeListQuery): NormalizedListQuery {
   assertStatusFilter(status);
   let search: string | undefined;
   if (query.search !== undefined) {
-    if (typeof query.search !== "string" || query.search.length === 0 || query.search.length > 256 || !query.search.isWellFormed()) {
+    if (typeof query.search !== "string" || query.search.length === 0 || !query.search.isWellFormed()) {
       fail("KNOWLEDGE_INPUT_INVALID", "search term");
     }
     search = query.search.toLowerCase();
   }
   // Annotated because the default comes from a literal-typed limits constant; the
   // variable really holds whichever caller-supplied page size is within bounds.
-  let limit: number = KNOWLEDGE_LIMITS.maximumQueryResults;
+  let limit: number = KNOWLEDGE_QUERY_DEFAULT_RESULTS;
   if (query.limit !== undefined) {
-    if (!Number.isSafeInteger(query.limit) || query.limit < 1 || query.limit > PROTOCOL_LIMITS.maxCanonicalBytes) {
+    if (!Number.isSafeInteger(query.limit) || query.limit < 1 || query.limit > Number.MAX_SAFE_INTEGER) {
       fail("KNOWLEDGE_INPUT_INVALID", "limit");
     }
     limit = query.limit;
@@ -4879,7 +4893,7 @@ function occurrenceCount(text: string, token: string): number {
 }
 
 function relevanceTokens(search: string): readonly string[] {
-  const tokens = [...search.toLowerCase().matchAll(/[a-z0-9][a-z0-9_-]{1,31}|[一-鿿]+/gu)].map((match) => match[0]);
+  const tokens = [...search.toLowerCase().matchAll(/[a-z0-9][a-z0-9_-]+|[一-鿿]+/gu)].map((match) => match[0]);
   return tokens.length === 0 ? [search.toLowerCase()] : [...new Set(tokens)];
 }
 
@@ -5345,7 +5359,7 @@ export async function checkKnowledgeSources(workspaceRoot: string, options: Know
       continue;
     }
     try {
-      const parts = await sourceDigestParts(scan.workspaceRoot, scan.workspace, references);
+      const parts = await sourceDigestParts(scan.workspaceRoot, scopedWorkspaceState(scan.workspace, unit.metadata.projectId ?? undefined), references);
       const missing = parts.filter((part) => part.path === null).map((part) => part.reference);
       if (missing.length > 0) {
         reports.push({ id: unit.metadata.id, status: "missing", sourceReferences: missing, expectedDigest: unit.metadata.sourceDigest, action: "report-and-reverify-or-retire" });
@@ -5457,7 +5471,7 @@ async function refreshKnowledgeArticleUnlocked(
     fail("KNOWLEDGE_LIFECYCLE_INVALID", "only an active article index can be refreshed");
   }
   if (!unit.metadata.sourceReferences.includes(input.path)) fail("KNOWLEDGE_PATH_INVALID", "article identity does not match source path");
-  const workspaceArticle = await articlePathFor(scan.workspaceRoot, scan.workspace, input.path);
+  const workspaceArticle = await articlePathFor(scan.workspaceRoot, scopedWorkspaceState(scan.workspace, unit.metadata.projectId ?? undefined), input.path);
   const articleBytes = await readArticleBytes(workspaceArticle.file);
   const article = parseArticleMarkdown(articleBytes, input.path);
   const sourceDigest = sha256(articleBytes);
@@ -5465,7 +5479,7 @@ async function refreshKnowledgeArticleUnlocked(
   try {
     language = applyWriteLanguagePolicy(
       { subject: article.title, summary: input.summary, snippet: truncateArticleUtf8(input.summary, KNOWLEDGE_LIMITS.maximumSnippetBytes) },
-      readKnowledgeLanguagePolicy(scan.workspace.settings, options.host),
+      readKnowledgeLanguagePolicy(scopedWorkspaceState(scan.workspace, unit.metadata.projectId ?? undefined).settings, options.host),
       options.languageProvider,
     );
   } catch (error) {
@@ -5546,7 +5560,7 @@ async function updateKnowledgeStalenessPolicyUnlocked(workspaceRoot: string, inp
   }
   const maximumAgeDays = input.stalenessPolicy?.maximumAgeDays;
   const unknownDisposition = input.stalenessPolicy?.unknownDisposition;
-  if ((maximumAgeDays !== null && (!Number.isSafeInteger(maximumAgeDays) || maximumAgeDays < 1 || maximumAgeDays > 3_650)) ||
+  if ((maximumAgeDays !== null && (!Number.isSafeInteger(maximumAgeDays) || maximumAgeDays < 1 || maximumAgeDays > Number.MAX_SAFE_INTEGER)) ||
     (unknownDisposition !== "fail-closed" && unknownDisposition !== "fail-open")) {
     fail("KNOWLEDGE_INPUT_INVALID", "staleness policy");
   }

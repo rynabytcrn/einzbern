@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 import { canonicalJson, compareCanonicalText } from "../../protocol/src/index.js";
@@ -67,12 +68,12 @@ export function modelsFail(reasonCode: ModelsReasonCode, message: string, detail
 }
 
 // A category id, a host, a tier and a runner are names: a lowercase letter first, then lowercase
-// letters, digits, dot, underscore or hyphen, at most 64 characters, so the system variables section
+// letters, digits, dot, underscore or hyphen, so the system variables section
 // of AGENTS.md (variables-sections.ts) never has to escape one.
-const NAME = /^[a-z][a-z0-9._-]{0,63}$/u;
+const NAME = /^[a-z][a-z0-9._-]*$/u;
 const CONTROL = /[\u0000-\u001f\u007f]/u;
-const CATEGORY_NAME_MAX_LENGTH = 64;
-const CATEGORY_DESCRIPTION_MAX_LENGTH = 256;
+const CATEGORY_NAME_MAX_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;
+const CATEGORY_DESCRIPTION_MAX_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;
 const CATEGORY_FIELDS = "description,id,name,order";
 
 export function isModelsObject(value: unknown): value is Readonly<Record<string, unknown>> {
@@ -82,15 +83,15 @@ export function isModelsObject(value: unknown): value is Readonly<Record<string,
 /** A name (NAME), or the reason code refusing it at `path`. */
 export function modelsName(value: unknown, path: string, reasonCode: ModelsReasonCode): string {
   if (typeof value !== "string" || !NAME.test(value)) {
-    modelsFail(reasonCode, `${path} must be a lowercase name of at most 64 characters (a-z first, then a-z, 0-9, dot, underscore or hyphen)`, { path });
+    modelsFail(reasonCode, `${path} must be a lowercase name (a-z first, then a-z, 0-9, dot, underscore or hyphen)`, { path });
   }
   return value;
 }
 
-/** A text of at most `maximum` characters without control characters, or the reason code refusing it. */
-export function modelsText(value: unknown, path: string, maximum: number, reasonCode: ModelsReasonCode, minimum = 0): string {
-  if (typeof value !== "string" || value.length < minimum || value.length > maximum || CONTROL.test(value)) {
-    modelsFail(reasonCode, `${path} must be a string of ${minimum === 0 ? "at most" : `${minimum} to`} ${maximum} characters without control characters`, { path });
+/** A text without control characters, or the reason code refusing it. */
+export function modelsText(value: unknown, path: string, _maximum: number, reasonCode: ModelsReasonCode, minimum = 0): string {
+  if (typeof value !== "string" || value.length < minimum || CONTROL.test(value)) {
+    modelsFail(reasonCode, `${path} must be text with at least ${minimum} characters and no control characters`, { path });
   }
   return value;
 }

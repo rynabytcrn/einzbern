@@ -48,7 +48,7 @@ function assertUnique(places, message) {
 async function specLayout() {
   const text = await readFile(new URL("../specs/settings-catalog-v1.md", import.meta.url), "utf8");
   const section = text.split("\n## Layout: shape, group and order")[1]?.split("\n## ")[0] ?? "";
-  const pattern = /^\| `([a-z]+)` \| `([^`]+)`( \(\*planned\*\))? \| (project|device) \| (collection|scalar) \| ([1-9][0-9]*) \|$/gmu;
+  const pattern = /^\| `([a-z]+)` \| `([^`]+)`( \(\*planned\*\))? \| (project|library|device) \| (collection|scalar) \| ([1-9][0-9]*) \|$/gmu;
   return [...section.matchAll(pattern)].map((match) => ({
     group: match[1],
     key: match[2],
@@ -66,7 +66,7 @@ test("STORY-508 R5: GIVEN a new library WHEN settings-catalog THEN every row car
   assert.ok(catalog.settings.length > 0);
   for (const row of catalog.settings) {
     assertLayoutFields(row);
-    assert.equal(row.layer, "project", row.key);
+    assert.equal(row.layer, SETTINGS_CATALOG.find((entry) => entry.key === row.key).layer, row.key);
     assert.equal(row.shape, COLLECTION_KEYS.has(row.key) ? "collection" : "scalar", row.key);
   }
   const tiers = catalog.settings.find((row) => row.key === "models.tiers");

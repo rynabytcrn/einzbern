@@ -337,24 +337,15 @@ leaves either no event or a complete one.
 
 ## Limits and privacy
 
-V1 limits body bytes to 8192, subject bytes to 512, summary bytes to 2048,
-snippet bytes to 512, each source-reference string to 512,
-metadata bytes to 32768, the default query page to 8 results, source locators to
-16, each link class to 64, tags to 32, and role scopes to 16. Listing more
-matches than one page truncates with a `{total, offset, truncated}`
-continuation window rather than failing closed, and a
-bounded case-insensitive substring over subject, summary, snippet, and tags narrows
-results without loading bodies. `knowledge-source-check` is the explicit source
-file comparison surface; ordinary reads do not scan every source file.
-
-These limits bound one card and one page. None bounds the sum of a crest's card
-bodies (see "Capacity").
-
-These text budgets are UTF-8 byte budgets. Draft 2020-12 `maxLength` counts
-Unicode code points and is retained only as a structural bound. P4 schema proof
-registers the local `x-tcrn-maxUtf8Bytes` assertion and executes multibyte
-max/max+1 parity vectors; stock JSON Schema alone is not claimed to enforce
-UTF-8 byte length.
+R4 removes the former body, subject, summary, snippet, locator, metadata,
+link, tag and role collection ceilings. Values are validated and retained in
+full up to the runtime's actual representational capacities. Empty/ill-formed
+values, unknown fields, unsafe numbers, bad references, focused secret redaction,
+write-language and offline/permission boundaries still refuse before a write.
+The default query page is 8 results; `--limit` is a caller-selected safe integer.
+A page returns `{total, offset, truncated}` continuation information, rather than
+silently dropping the rest. Source comparison is explicit; ordinary reads do not
+scan every source file.
 
 Source and evidence locators are inert strings. The store performs no URL
 resolution, network access, database access, AOS access, or implicit process
@@ -372,25 +363,24 @@ What keeps a crest small is what a card is for: one fact about the environment
 or one lesson, captured where work reaches done or minutes are recorded, with
 decisions in minutes, intents in work items, and a card on a subject an active
 card holds written with `--supersedes` or `--coexist` (TCRN-CROSS-MIN-227 D9,
-D25; TCRN-CROSS-MIN-146; TCRN-CROSS-MIN-225). Each card is still held to its own
-limits ("Limits and privacy"): a body, summary, snippet or metadata past its
-limit, or an article past the canonical ceiling, is refused with
-`KNOWLEDGE_LIMIT_EXCEEDED` before anything is written.
+D25; TCRN-CROSS-MIN-146; TCRN-CROSS-MIN-225). Each card keeps the value/identity/privacy validation above. The runtime buffer,
+string and array capacities are representational constraints, not arbitrary card
+quotas; the inventory names their evidence.
 
 Nor does the metadata the cards add up to bound a crest (TCRN-CROSS-SUB-428,
 TCRN-CROSS-INC-398). The derived index is no single canonical value, so neither
-the protocol's one-MiB canonical ceiling nor its record-count limit, which stay
-where they are, reaches it. Its `indexDigest` (`knowledge-validate`, the marker
+the former protocol one-MiB canonical ceiling nor record-count limit reaches it;
+R4 removes both. A derived page uses a processing window, never a permanent total. Its `indexDigest` (`knowledge-validate`, the marker
 read) and the `resultDigest` of a `knowledge-list` page are the sha256 of the
 records' canonical list -- wherever that list fits one canonical value, exactly
 the digest it always was -- hashed one record at a time, so the page recall and
 the knowledge hint read, the whole crest, is answered at any size. This device's
 view holds the whole index in `index.json`, byte for byte as before, while the
-index fits the ceiling and the record-count limit. Past either, `index.json` is a
+index fits the current processing window. Past that window, `index.json` is a
 head, `tcrn.knowledge-index-pages.v1`, naming the index's `count` of records, the
 number of `pages` that hold them and its `indexDigest`; page n is
 `index-<n, six digits>.json`, `tcrn.knowledge-index-page.v1`, holding the next
-records in index order within the same ceiling, and the records of the pages in
+records in index order within the same processing window, and the records of the pages in
 page order hash to the head's digest. A read that finds a page missing, damaged or
 out of date projects it again, and removes a page the head does not name. A view
 that cannot be projected, at a read or after a write's event is committed, is left
@@ -398,7 +388,8 @@ for the next read: it never changes a read's answer, and a committed write is
 answered as committed (R14 (d)). What stays one canonical value is an answer
 printed whole: an answer that holds every card -- `knowledge-checkpoint`,
 `knowledge-freshness`, `knowledge-source-check` -- or a page asked for with
-`--limit`, is still refused with `INPUT_OVERSIZED` once it passes the ceiling.
+`--limit`, is complete up to the actual runtime capacities; no 1 MiB output refusal
+remains in the new source. Historical installed-engine refusals remain historical.
 
 `knowledge.aggregateBytes`, the setting that bounded the body bytes of live cards
 (TCRN-CROSS-STORY-476 R3, TCRN-CROSS-SUB-309), is a retired setting
@@ -470,7 +461,7 @@ basis, its actor and its instant:
 card of the user crest) reads the whole crest under this machine's lock of it and
 refuses, before anything is written: an unknown reason, a blank basis, an actor that is
 no `owner:`, `profile:` or `agent:` id, or `--superseded-by` given for another reason or
-left out for `superseded` (`KNOWLEDGE_INPUT_INVALID`); a basis past 2,048 bytes
+left out for `superseded` (`KNOWLEDGE_INPUT_INVALID`); a basis beyond the executing runtime capacity
 (`KNOWLEDGE_LIMIT_EXCEEDED`); a card the crest does not hold (`KNOWLEDGE_NOT_FOUND`); a
 successor it does not hold (`KNOWLEDGE_LINK_INVALID`); and a card or successor already
 removed (`KNOWLEDGE_CARD_REMOVED`). Otherwise it appends one removal event,

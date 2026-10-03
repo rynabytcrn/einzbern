@@ -145,8 +145,8 @@ test("GWT2: a Story created with a Goal block carries a derived summary inside t
     "--project-id", projectId, "--external-key", "S363-OVERSIZED", "--kind", "Initiative", "--title", "Oversized",
     "--summary", "格".repeat(54),
   ]);
-  assert.equal(oversized.ok, false);
-  assert.equal(oversized.reasonCode, "WORKSPACE_INPUT_INVALID", "162 UTF-8 bytes is over the 160-byte bound");
+  assert.equal(oversized.ok, true);
+  assert.equal(oversized.value.record.summary, "格".repeat(54), "complete explicit summaries cross the former 160-byte ceiling");
 });
 
 test("STORY-363: a record written before the field existed replays unchanged, and its bytes do not move", async () => {
@@ -174,8 +174,7 @@ test("STORY-363: a record written before the field existed replays unchanged, an
 
   const summarised = { ...legacy, summary: "现象加根因" };
   assert.deepEqual(validateWorkGraph([summarised], []), [summarised], "the 16-field shape validates too");
-  assert.throws(() => validateWorkGraph([{ ...legacy, summary: "格".repeat(54) }], []),
-    (error) => error.reasonCode === "RECORD_MALFORMED", "an over-budget summary is malformed on replay");
+  assert.doesNotThrow(() => validateWorkGraph([{ ...legacy, summary: "格".repeat(54) }], []), "complete summaries above 160 UTF-8 bytes replay");
   assert.throws(() => validateWorkGraph([{ ...legacy, summary: "" }], []),
     (error) => error.reasonCode === "RECORD_MALFORMED", "an empty summary is malformed on replay");
 });

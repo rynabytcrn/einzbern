@@ -22,11 +22,11 @@ corrected by a new decision.
 | `externalKey` | the record's key, canonical (upper case), such as `TCRN-CROSS-MIN-233` |
 | `id` | `deriveStableId("minutes", externalKey)`; replay refuses any other value |
 | `projectId` | a live project |
-| `title` | non-empty text, at most 512 UTF-8 bytes |
-| `summary` | non-empty text, at most 4096 UTF-8 bytes |
-| `decisions` | 1 to 64 entries of non-empty text, each at most 4096 UTF-8 bytes |
-| `decidedBy` | the participants who decided: up to 64 protocol ids, without repeats |
-| `linkedWorkIds` | up to 64 live work ids of the same project, without repeats |
+| `title` | non-empty complete text within the executing runtime |
+| `summary` | non-empty complete text within the executing runtime |
+| `decisions` | one or more entries of complete non-empty text |
+| `decidedBy` | the participants who decided: a complete collection of protocol ids, without repeats |
+| `linkedWorkIds` | a complete collection of live work ids of the same project, without repeats |
 | `recordedAt` | the strict instant of the event that wrote it |
 | `revision` | 1 |
 | `tombstone` | false |

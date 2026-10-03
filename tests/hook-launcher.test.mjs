@@ -387,7 +387,10 @@ test("477-R2: a changed library, a missing engine, a damaged registry and a bad 
   assert.deepEqual([changed.status, changed.stdout, changed.stderr], [0, "", ""]);
 
   assert.equal(refusal(runHook(launcherPath, { home, cwd: directory, input: "not json" })), "HOOK_INPUT_INVALID");
-  assert.equal(refusal(runHook(launcherPath, { home, cwd: directory, input: " ".repeat(launcher.HOOK_STDIN_MAX_BYTES + 1) })), "HOOK_INPUT_TOO_LARGE");
+  const largeInput = JSON.stringify({ prompt: " ".repeat(1_048_577) });
+  const complete = runHook(launcherPath, { home, cwd: directory, input: largeInput });
+  assert.equal(complete.status, 0);
+  assert.equal(complete.stderr, "", "valid transport above 1 MiB reaches the changed-library silent outcome");
   assert.equal(refusal(runHook(launcherPath, { home, cwd: directory, event: "" })), "HOOK_EVENT_MISSING");
   await rm(join(home, "engine", "current"));
   assert.equal(refusal(runHook(launcherPath, { home, cwd: directory })), "HOOK_ENGINE_CURRENT_INVALID");

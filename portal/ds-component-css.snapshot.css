@@ -2733,6 +2733,9 @@ a.tcrn-relationship-chip:focus-visible {
 /* Form input + select (.tcrn-input--short is a docs-only demo width and stays there) */
 .tcrn-input,
 .tcrn-select {
+  font: inherit;
+  color: var(--tcrn-color-text-primary);
+  background: var(--tcrn-color-surface-panel);
   min-height: 34px;
   border: 1px solid var(--tcrn-color-border-strong);
   border-radius: var(--tcrn-radius-control);
@@ -3530,9 +3533,23 @@ a.tcrn-relationship-chip:focus-visible {
 .tcrn-multi-select-group__option{display:flex;align-items:flex-start;gap:var(--tcrn-space-2);min-inline-size:0;overflow-wrap:anywhere}
 .tcrn-multi-select-group__option input{flex:0 0 auto;margin-block-start:var(--tcrn-space-0h)}
 .tcrn-multi-select-group__actions{display:flex;justify-content:flex-start}
-.tcrn-multi-select-group__clear{min-block-size:32px;padding-inline:var(--tcrn-space-2);border:1px solid var(--tcrn-color-border-control);border-radius:var(--tcrn-radius-control);background:transparent;color:var(--tcrn-color-text-secondary);font:inherit;cursor:pointer}
-.tcrn-multi-select-group__clear:disabled{cursor:not-allowed;opacity:.64}
-.tcrn-multi-select-group__clear:not(:disabled):hover{border-color:var(--tcrn-color-brand-primary);color:var(--tcrn-color-brand-primary)}
+.tcrn-multi-select-group__clear{justify-self:start}
+
+
+/* A collection dropdown uses the Select trigger and Menu option families. */
+.tcrn-multi-select-dropdown{position:relative;min-inline-size:0;max-inline-size:100%}
+.tcrn-multi-select-dropdown__trigger{display:flex;align-items:center;justify-content:space-between;gap:var(--tcrn-space-2);inline-size:100%;font:inherit;color:var(--tcrn-color-text-primary);background:var(--tcrn-color-surface-panel);text-align:start;cursor:pointer}
+.tcrn-multi-select-dropdown__trigger [data-multi-select-summary]{min-inline-size:0;overflow-wrap:anywhere}
+.tcrn-multi-select-dropdown__caret{flex:0 0 auto}
+.tcrn-multi-select-dropdown__trigger:focus-visible{outline:var(--tcrn-space-0h) solid var(--tcrn-color-focus-ring);outline-offset:var(--tcrn-space-0h)}
+.tcrn-multi-select-dropdown__trigger:disabled{color:var(--tcrn-color-text-disabled);cursor:not-allowed}
+.tcrn-multi-select-dropdown__list{z-index:var(--tcrn-z-popover);min-inline-size:0;max-inline-size:calc(100vw - var(--tcrn-space-4));max-block-size:calc(100vh - var(--tcrn-space-4));overflow:auto;box-sizing:border-box}
+.tcrn-multi-select-dropdown__list[hidden]{display:none}
+.tcrn-multi-select-dropdown__option{display:flex;justify-content:space-between;align-items:center;gap:var(--tcrn-space-2);font:inherit;color:var(--tcrn-color-text-primary);overflow-wrap:anywhere}
+.tcrn-multi-select-dropdown__option:not(:disabled):hover{background:var(--tcrn-selection-fill-hover)}
+.tcrn-multi-select-dropdown__option[aria-selected="true"]{background:var(--tcrn-selection-fill)}
+.tcrn-multi-select-dropdown__option [data-multi-select-check]{flex:0 0 auto;visibility:hidden}
+.tcrn-multi-select-dropdown__option [data-multi-select-check][data-selected="true"]{visibility:visible}
 
 /* DS-106/107 settings contract. */
 .tcrn-setting-choice{display:grid;gap:var(--tcrn-space-1);min-inline-size:0;max-inline-size:100%}
@@ -3557,7 +3574,7 @@ a.tcrn-relationship-chip:focus-visible {
 .tcrn-settings-layout__form .tcrn-setting-row{grid-template-columns:minmax(0,1fr);gap:var(--tcrn-space-2);overflow-wrap:anywhere}
 .tcrn-settings-layout__form .tcrn-setting-row__control{inline-size:100%;grid-column:auto;grid-row:auto}
 .tcrn-settings-layout__form .tcrn-setting-row__tools{grid-column:auto;grid-row:auto}
-.tcrn-settings-layout__form .tcrn-setting-row__control>:is(.tcrn-input,.tcrn-select,.tcrn-field,.tcrn-setting-choice,.tcrn-number-input-field,.tcrn-multi-select-group){inline-size:100%;min-inline-size:0}
+.tcrn-settings-layout__form .tcrn-setting-row__control>:is(.tcrn-input,.tcrn-select,.tcrn-field,.tcrn-setting-choice,.tcrn-number-input-field,.tcrn-multi-select-group,.tcrn-multi-select-dropdown){inline-size:100%;min-inline-size:0}
 .tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field :is(.tcrn-input,.tcrn-select,.tcrn-number-input){inline-size:100%;min-inline-size:0}
 .tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field{margin:0}
 .tcrn-settings-layout__form .tcrn-setting-row__control>.tcrn-number-input{inline-size:100%}

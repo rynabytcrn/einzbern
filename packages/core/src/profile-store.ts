@@ -77,11 +77,10 @@ function fail(reasonCode: PersonaReasonCode, message: string): never {
   throw new PersonaStoreError(reasonCode, message);
 }
 
-const codePointLength = (value: string): number => [...value].length;
 
-function boundedText(value: unknown, label: string, maximum: number, reasonCode: PersonaReasonCode, allowEmpty = false): string {
-  if (typeof value !== "string" || (!allowEmpty && value.length === 0) || codePointLength(value) > maximum || value.includes("\u0000")) {
-    fail(reasonCode, `${label} must be ${allowEmpty ? "an empty or " : "a non-empty "}string of at most ${maximum} characters`);
+function boundedText(value: unknown, label: string, _maximum: number, reasonCode: PersonaReasonCode, allowEmpty = false): string {
+  if (typeof value !== "string" || (!allowEmpty && value.length === 0) || value.includes("\u0000")) {
+    fail(reasonCode, `${label} must be ${allowEmpty ? "an empty or " : "a non-empty "}string`);
   }
   try {
     canonicalJson(value);

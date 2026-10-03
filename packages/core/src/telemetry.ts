@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-467 R3 (MIN-227 D3): the local telemetry store is retired -- nothing
@@ -9,7 +10,7 @@ import { canonicalJson, canonicalSha256, parseStrictInstant } from "../../protoc
 
 export const TELEMETRY_SCHEMA_VERSION = "tcrn.telemetry.v1" as const;
 export const TELEMETRY_AVAILABILITY = Object.freeze(["available", "unavailable", "unknown"] as const);
-export const TELEMETRY_LINE_BYTES = 16 * 1024;
+export const TELEMETRY_LINE_BYTES = RUNTIME_CAPACITY.bufferBytes;
 export type TelemetryAvailability = typeof TELEMETRY_AVAILABILITY[number];
 
 export interface TelemetryUsage {
@@ -60,47 +61,37 @@ function object(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function nullableText(value: unknown, label: string, maximum = 256): string | null {
+function nullableText(value: unknown, label: string, _maximum = 256): string | null {
   if (value === null || value === undefined) return null;
-  if (typeof value !== "string" || value.length === 0 || value.length > maximum || !value.isWellFormed() || value.includes("\u0000")) fail("TELEMETRY_RECORD_INVALID", `${label} must be null or bounded text`);
+  if (typeof value !== "string" || value.length === 0 || !value.isWellFormed() || value.includes("\u0000")) fail("TELEMETRY_RECORD_INVALID", `${label} must be null or bounded text`);
   canonicalJson(value);
   return value;
 }
 
-function requiredText(value: unknown, label: string, maximum = 256): string {
-  const result = nullableText(value, label, maximum);
+function requiredText(value: unknown, label: string, _maximum = 256): string {
+  const result = nullableText(value, label, _maximum);
   if (result === null) fail("TELEMETRY_RECORD_INVALID", `${label} is required`);
   return result;
 }
 
 const FORBIDDEN_PAYLOAD_KEYS = /(?:prompt|body|content|transcript|stdin|stdout|stderr|secret|password|token(?!s)|response)/iu;
 
-function safePayloadValue(value: unknown, key: string, depth = 0): unknown {
-  if (depth > 4) fail("TELEMETRY_RECORD_INVALID", `${key} is too deeply nested`);
-  if (value === null || typeof value === "boolean") return value;
-  if (typeof value === "string") {
-    if (value.length > 256 || !value.isWellFormed() || value.includes("\u0000")) fail("TELEMETRY_RECORD_INVALID", `${key} must be bounded text`);
-    return value;
-  }
-  if (typeof value === "number") {
-    if (!Number.isFinite(value) || Math.abs(value) > Number.MAX_SAFE_INTEGER) fail("TELEMETRY_RECORD_INVALID", `${key} must be a finite safe number`);
-    return value;
-  }
-  if (Array.isArray(value)) {
-    if (value.length > 64) fail("TELEMETRY_RECORD_INVALID", `${key} has too many entries`);
-    return Object.freeze(value.map((entry, index) => safePayloadValue(entry, `${key}[${index}]`, depth + 1)));
-  }
-  if (typeof value === "object") {
-    const entries = Object.entries(value as Record<string, unknown>);
-    if (entries.length > 32) fail("TELEMETRY_RECORD_INVALID", `${key} has too many fields`);
-    const next: Record<string, unknown> = {};
-    for (const [childKey, childValue] of entries) {
-      if (!/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/u.test(childKey) || FORBIDDEN_PAYLOAD_KEYS.test(childKey)) fail("TELEMETRY_RECORD_INVALID", `${key}.${childKey} is not an allowed telemetry field`);
-      next[childKey] = safePayloadValue(childValue, `${key}.${childKey}`, depth + 1);
+function safePayloadValue(value: unknown, key: string): unknown {
+  const detached = JSON.parse(canonicalJson(value)) as unknown;
+  const pending: { readonly value: unknown; readonly key: string }[] = [{ value: detached, key }];
+  while (pending.length > 0) {
+    const next = pending.pop()!;
+    if (typeof next.value === "string") {
+      if (!next.value.isWellFormed() || next.value.includes("\u0000")) fail("TELEMETRY_RECORD_INVALID", `${next.key} contains invalid text`);
+    } else if (next.value !== null && typeof next.value === "object") {
+      for (const [childKey, childValue] of Object.entries(next.value)) {
+        if (!Array.isArray(next.value) && (!/^[A-Za-z][A-Za-z0-9_.-]*$/u.test(childKey) || FORBIDDEN_PAYLOAD_KEYS.test(childKey))) fail("TELEMETRY_RECORD_INVALID", `${next.key}.${childKey} is not an allowed telemetry field`);
+        pending.push({ value: childValue, key: `${next.key}.${childKey}` });
+      }
+      Object.freeze(next.value);
     }
-    return Object.freeze(next);
   }
-  fail("TELEMETRY_RECORD_INVALID", `${key} has an unsupported value`);
+  return detached;
 }
 
 function nullableCount(value: unknown, label: string): number | null {
@@ -146,7 +137,7 @@ function payload(value: unknown): TelemetryPayload {
   if (Object.keys(entry).some((key) => FORBIDDEN_PAYLOAD_KEYS.test(key))) fail("TELEMETRY_RECORD_INVALID", "payload contains private content");
   const safe: Record<string, unknown> = {};
   for (const [key, entryValue] of Object.entries(entry)) {
-    if (!/^[A-Za-z][A-Za-z0-9_.-]{0,63}$/u.test(key)) fail("TELEMETRY_RECORD_INVALID", "payload field name");
+    if (!/^[A-Za-z][A-Za-z0-9_.-]*$/u.test(key)) fail("TELEMETRY_RECORD_INVALID", "payload field name");
     safe[key] = safePayloadValue(entryValue, `payload.${key}`);
   }
   requiredText(safe.source, "payload.source", 128);

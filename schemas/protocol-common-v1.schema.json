@@ -12,12 +12,10 @@
   "$defs": {
     "canonicalExternalKey": {
       "type": "string",
-      "pattern": "^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$",
-      "maxLength": 128
+      "pattern": "^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$"
     },
     "extensionMap": {
       "type": "object",
-      "maxProperties": 64,
       "propertyNames": {
         "$ref": "#/$defs/stableId"
       },
@@ -47,24 +45,20 @@
           "type": "boolean"
         },
         {
-          "type": "string",
-          "maxLength": 8192
+          "type": "string"
         },
         {
           "type": "integer",
-          "minimum": -9007199254740991,
-          "maximum": 9007199254740991
+          "minimum": -9007199254740991
         },
         {
           "type": "array",
-          "maxItems": 10000,
           "items": {
             "$ref": "#/$defs/jsonValue"
           }
         },
         {
           "type": "object",
-          "maxProperties": 10000,
           "additionalProperties": {
             "$ref": "#/$defs/jsonValue"
           }
@@ -77,8 +71,7 @@
     },
     "stableId": {
       "type": "string",
-      "pattern": "^[a-z][a-z0-9-]{1,31}:[a-z0-9][a-z0-9._-]{0,127}$",
-      "maxLength": 161
+      "pattern": "^[a-z][a-z0-9-]+:[a-z0-9][a-z0-9._-]*$"
     },
     "strictInstant": {
       "type": "string",

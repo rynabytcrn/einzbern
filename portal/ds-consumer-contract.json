@@ -1,17 +1,17 @@
 {
   "schemaVersion": "tcrn.workflow.ds-consumer-contract.v1",
   "consumer": "Atelier static consumer",
-  "candidate": "610680b81a950e91e9e1e77718ea7f3f3b19bc27",
-  "candidateTree": "bc11d2fd36648648c93bff9b98d5ce0dea7fd4cf",
+  "candidate": "48ded198a7148efdaa245271d1885e468f24f4a4",
+  "candidateTree": "c7198ebb3f17abf66c9f2aede15f8d2f2cf3d804",
   "package": "@tcrn/ui-react@3.0.0",
   "aiContract": {
     "version": "ai_consumption_contract_v1",
-    "payloadDigest": "a56fcf3427866d4034ede1c59b59b888ac8169ca19fcd1c3af66b0a49cd16138"
+    "payloadDigest": "4def7d68d25912757a0892c00c9565feefe908425b499d7e7759142e8fdeb68a"
   },
   "componentCss": {
     "sourceExport": "tcrnComponentCss",
-    "bytes": 115116,
-    "sha256": "025be2c8b3380cfc20c7c1b468243d6e61fe5291f28483a614de469235788877",
+    "bytes": 120592,
+    "sha256": "89edf550b6aa2dce64ceb9bd385429c5a48dd206043b0a904e810e4d097a8166",
     "snapshot": "portal/ds-component-css.snapshot.css",
     "inlineSelector": "style#tcrn-ds-component-css[data-source=\"snapshot\"]"
   },
@@ -37,17 +37,62 @@
         "pinch-visual-viewport",
         "page-zoom"
       ]
+    },
+    "multiSelect": {
+      "presentation": "dropdown",
+      "family": "Select/Menu",
+      "publicBridge": "mountStaticMultiSelect",
+      "valueBridge": "native multiple select",
+      "selectionRole": "listbox/option",
+      "draftActions": [
+        "Save",
+        "Undo",
+        "Reset"
+      ],
+      "compatibilityPresentations": [
+        "native",
+        "checkboxes"
+      ]
     }
   },
   "reconciliation": {
     "snapshotMatchesSource": true,
     "inlineMatchesSnapshot": true,
     "productValuesOwnedByWorkflow": true,
-    "status": "candidate-consumed-pending-coordination"
+    "status": "production-published-consumed"
   },
   "boundaries": {
     "ownerVisualAcceptance": "independent",
-    "packagePublication": "not claimed",
+    "packagePublication": "Production documentation/static contract verified; package registry publication not claimed",
     "externalRelease": "not claimed"
+  },
+  "staticBridge": {
+    "snapshot": "portal/ds-static-bridges.snapshot.js",
+    "bytes": 25621,
+    "sha256": "26e51f7b7f7beb18ae00fec4daaf19dbf1d8e588063fd509c81a1761a87ccf8a",
+    "publicExports": [
+      "mountStaticMultiSelect",
+      "mountStaticOverlayBoundary"
+    ]
+  },
+  "production": {
+    "sourceCommit": "48ded198a7148efdaa245271d1885e468f24f4a4",
+    "environment": "Production",
+    "documentationOrigin": "https://tcrn-design-system-storybook.vercel.app",
+    "deploymentId": 6821658955,
+    "deploymentStatusId": 19199799925,
+    "buildStatusId": 55497151004,
+    "buildUrl": "https://vercel.com/tcrn-platform/tcrn-design-system-storybook/5zjW2eKwAFb6DvNVHwVkawpwTv3B"
+  },
+  "tokensCss": {
+    "snapshot": "portal/tokens.css",
+    "bytes": 8014,
+    "sha256": "87e9b5c6d6cbc765e81803a02160460dc1b84143d761651212b64fb5e41edf1d"
+  },
+  "brandAsset": {
+    "snapshot": "portal/atelier-brand-mark.svg",
+    "bytes": 64989,
+    "sha256": "5f28f17c599c63a05a51c81be03f9ef7845299af1940ebe6aef61f7af47fc25b",
+    "publishedSource": "https://tcrn-design-system-storybook.vercel.app/tcrn-brand-mark.svg"
   }
 }

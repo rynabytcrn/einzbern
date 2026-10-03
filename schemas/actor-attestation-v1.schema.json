@@ -23,8 +23,7 @@
   "$defs": {
     "actorId": {
       "type": "string",
-      "pattern": "^(owner|profile|agent):[a-z0-9][a-z0-9._-]{0,127}$",
-      "maxLength": 161
+      "pattern": "^(owner|profile|agent):[a-z0-9][a-z0-9._-]*$"
     }
   }
 }

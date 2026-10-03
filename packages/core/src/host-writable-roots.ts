@@ -1,3 +1,4 @@
+import { localProbeTimeout } from "./io-policy.js";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-470 R5, AC4 (MIN-227 D19): a library outside its project lies outside what the
@@ -425,7 +426,7 @@ async function readHostFile(path: string, file: string): Promise<string | null> 
  */
 export function hostFileTrackedByGit(projectRoot: string, file: string): boolean {
   try {
-    execFileSync("git", ["-C", projectRoot, "ls-files", "--error-unmatch", "--", file], { stdio: "ignore", timeout: 5_000 });
+    execFileSync("git", ["-C", projectRoot, "ls-files", "--error-unmatch", "--", file], { stdio: "ignore", timeout: localProbeTimeout(5_000) });
     return true;
   } catch {
     return false;

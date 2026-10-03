@@ -66,10 +66,12 @@ import {
   applyDevice,
   applyFreshSetup,
   applyWiring,
+  ensureSetupProjectBinding,
   defaultCloud,
   defaultLanguage,
   freshLanguageTag,
   libraryLanguage,
+  setupTargetState,
   navigationChoice,
   planDevice,
   planEngineSource,
@@ -92,6 +94,7 @@ import {
 import { applyRestoreSetup, planRestoreSetup } from "./setup-restore.js";
 import type { RestoreCheck } from "./setup-restore.js";
 import { materializeWorkspace, materializeWorkspaceFromGenesis, setWorkspaceSetting } from "./workspace.js";
+import { scopedWorkspaceState } from "./project-scope.js";
 
 export const SETUP_MODES = Object.freeze(["fresh", "restore", "update", "repair", "migrate", "uninstall"] as const);
 export type SetupMode = typeof SETUP_MODES[number];
@@ -587,7 +590,7 @@ async function planMigrateSetup(input: SetupModeInput): Promise<SetupModePlan> {
   // its language the one that library records (the old chain's, or the library's once imported).
   const own = planned.migration.partitions.find((partition) => partition.projectRoot === projectRoot) ?? null;
   const ownState = await ownLibraryState(recorder, own);
-  const ownLanguage = ownState === null ? own?.language ?? null : libraryLanguage(ownState);
+  const ownLanguage = ownState === null ? own?.language ?? null : libraryLanguage(await setupTargetState(projectRoot, own!.target, deviceHome));
   const artifacts = own?.target ?? await realTarget(join(projectRoot, DIRECTORY.library));
   const defaults: ResolvedSetupAnswers = {
     artifacts,
@@ -642,10 +645,12 @@ async function planMigrateSetup(input: SetupModeInput): Promise<SetupModePlan> {
 // The project's own library records the language the plan resolved; a library that records it
 // already is not written. The event names SETUP_ACTOR, which a chain that enabled attestation
 // requires of every write.
-async function applyLibraryLanguage(recorder: SetupRecorder, libraryPath: string, language: string, at: string): Promise<void> {
-  if (libraryLanguage(await materializeWorkspace(libraryPath)) === language) return;
-  await setWorkspaceSetting(libraryPath, { key: LANGUAGE_SETTING, value: language, occurredAt: at, actorId: SETUP_ACTOR });
+async function applyLibraryLanguage(recorder: SetupRecorder, libraryPath: string, language: string, at: string, projectRoot: string, deviceHome: string): Promise<string> {
+  const configurationProjectId = await ensureSetupProjectBinding(projectRoot, libraryPath, { at, deviceHome, actorId: SETUP_ACTOR });
+  if (libraryLanguage(scopedWorkspaceState(await materializeWorkspace(libraryPath), configurationProjectId)) === language) return configurationProjectId;
+  await setWorkspaceSetting(libraryPath, { key: LANGUAGE_SETTING, value: language, configurationProjectId, occurredAt: at, actorId: SETUP_ACTOR });
   recorder.write("library", libraryPath, "update");
+  return configurationProjectId;
 }
 
 /**
@@ -672,7 +677,7 @@ async function applyMigrateSetup(plan: SetupPlan): Promise<SetupApplied> {
   const device = await applyDevice(recorder, deviceHome, at);
   const applied = await applyMigration(recorder, { migration, deviceHome, at });
   const own = applied.partitions.find((partition) => partition.projectRoot === projectRoot) ?? null;
-  if (own !== null) await applyLibraryLanguage(recorder, own.target, resolved.language, at);
+  const configurationProjectId = own === null ? undefined : await applyLibraryLanguage(recorder, own.target, resolved.language, at, projectRoot, deviceHome);
   const hostCleanup = await applyCleanup(recorder, { ...migrateCleanupInput(plan.context, migration.partitions, resolved.navigation), at });
   const pending = await applyWiring(recorder, {
     projectRoot,
@@ -680,6 +685,7 @@ async function applyMigrateSetup(plan: SetupPlan): Promise<SetupApplied> {
     deviceHome,
     at,
     library: own === null ? null : { path: own.target, libraryId: own.libraryId },
+    ...(configurationProjectId === undefined ? {} : { configurationProjectId }),
     cloud: resolved.cloud,
     navigation: navigationChoice(resolved.navigation),
     engineDirectory: directory,

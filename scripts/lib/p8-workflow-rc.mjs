@@ -149,7 +149,7 @@ function posix(value) {
 }
 
 function safePath(path) {
-  assertion(typeof path === "string" && path.length > 0 && path.length <= 255, "P8_RELEASE_PATH_INVALID", String(path));
+  assertion(typeof path === "string" && path.length > 0, "P8_RELEASE_PATH_INVALID", String(path));
   assertion(!path.startsWith("/") && !path.includes("\\"), "P8_RELEASE_PATH_INVALID", path);
   const parts = path.split("/");
   assertion(parts.every((part) => part !== "" && part !== "." && part !== ".."), "P8_RELEASE_PATH_INVALID", path);

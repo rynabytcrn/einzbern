@@ -15,6 +15,7 @@ import { promisify } from "node:util";
 import assert from "node:assert/strict";
 import test from "node:test";
 
+const withoutSource = ({ source, declaredHere, ...record }) => record;
 const execFileAsync = promisify(execFile);
 const portalRoot = fileURLToPath(new URL("..", import.meta.url));
 const CLI = process.env.TCRN_WORKFLOW_CLI ?? join(portalRoot, "..", "scripts", "einzbern.mjs");
@@ -52,7 +53,10 @@ async function scratchHome(base) {
 async function registeredLibrary(deviceEnv, project, library, externalKey, at) {
   await mkdir(project, { recursive: true });
   await cli(["init", "--workspace", library, "--project-name", externalKey, "--at", at], deviceEnv);
-  await cli(["library-register", "--project", project, "--library", library, "--at", at], deviceEnv);
+  const created = await cli(["project-create", "--workspace", library, "--external-key", externalKey + "-PROJECT", "--name", externalKey, "--at", at], deviceEnv);
+  const projectId = created.record.id;
+  await cli(["library-register", "--project", project, "--library", library, "--project-id", projectId, "--at", at], deviceEnv);
+  return projectId;
 }
 
 async function scratch(prefix, externalKey) {
@@ -61,10 +65,10 @@ async function scratch(prefix, externalKey) {
   const deviceEnv = { EINZBERN_HOME: join(base, "device", "einzbern") };
   const proseRoot = join(base, "project");
   const workspace = join(proseRoot, ".ether");
-  await registeredLibrary(deviceEnv, proseRoot, workspace, externalKey, "2026-08-11T15:00:00Z");
+  const projectId = await registeredLibrary(deviceEnv, proseRoot, workspace, externalKey, "2026-08-11T15:00:00Z");
   const second = { project: join(base, "second-project"), library: join(base, "second-library") };
-  await registeredLibrary(deviceEnv, second.project, second.library, `${externalKey}-SECOND`, "2026-08-11T15:00:01Z");
-  return { base, workspace, proseRoot, home, deviceEnv, second };
+  second.projectId = await registeredLibrary(deviceEnv, second.project, second.library, `${externalKey}-SECOND`, "2026-08-11T15:00:01Z");
+  return { base, workspace, proseRoot, home, deviceEnv, second, projectId };
 }
 
 // `library` names the library to open first; null starts the portal without --library, so it
@@ -102,14 +106,18 @@ async function startupRefusal(args, env, cwd) {
   });
 }
 
+const clientTargets = new Map();
+const visibleTarget = (library) => ({ libraryId: library.libraryId, projectId: Object.hasOwn(library, "configurationProjectId") ? library.configurationProjectId : library.projectId ?? null });
 async function readBoot(url) {
   const page = await (await fetch(url)).text();
   assert.ok(!page.includes("__PORTAL_BOOT__"));
-  return { page, boot: JSON.parse(page.match(/const BOOT = (\{.*\});/u)[1]) };
+  const boot = JSON.parse(page.match(/const BOOT = (\{.*\});/u)[1]);
+  clientTargets.set(boot.token, visibleTarget(boot.library));
+  return { page, boot };
 }
 
-function request(url, path, options) { return fetch(new URL(path, url), options).then(async (response) => ({ response, body: await response.json() })); }
-function writeOptions(token, method, body) { return { method, headers: { "content-type": "application/json", "x-portal-token": token }, body: JSON.stringify(body) }; }
+function request(url, path, options) { return fetch(new URL(path, url), options).then(async (response) => { const body = await response.json(); if (body.ok && body.library && ["/api/library", "/api/configuration-scope"].includes(path)) clientTargets.set(options.headers["x-portal-token"], visibleTarget(body.library)); return { response, body }; }); }
+function writeOptions(token, method, body) { return { method, headers: { "content-type": "application/json", "x-portal-token": token, "x-configuration-target": JSON.stringify(clientTargets.get(token)) }, body: JSON.stringify(body) }; }
 function readOptions(token) { return { headers: { "x-portal-token": token } }; }
 
 // STORY-355 GWT1: `fetch` (undici) never forwards a caller-supplied Host header — it
@@ -268,6 +276,7 @@ const workList = () => {
   const setting = JSON.parse(readFileSync(join(state, "mode.json"), "utf8"));
   const offset = flag("offset") ?? "0";
   if (setting.mode === "oversized") return oversized;
+  if (Number(flag("limit")) > (setting.cap ?? Infinity)) return oversized;
   if (setting.mode === "delay") {
     if (Number(flag("limit")) > (setting.caps?.[offset] ?? setting.cap ?? Infinity)) return oversized;
     pause(setting.delays?.[offset] ?? 0);
@@ -319,14 +328,15 @@ const unordered = (pages) => [...pages].sort((left, right) => Number(left[1]) - 
 test("SUB-403 (STORY-482 R3): /api/work reads a library larger than one work-list page whole, and never mixes two versions of it", async (t) => {
   const fixture = await scratch("tcrn-portal-large-", "TCRN-PORTAL-LARGE");
   await largeLibrary(fixture);
-  assert.equal((await cliRefusal(["work-list", "--workspace", fixture.workspace], fixture.deviceEnv)).reasonCode, "CLI_WORK_LIST_OVERSIZED", "the fixture carries more bytes than one work-list read");
-  assert.equal((await cliRefusal(["work-list", "--workspace", fixture.workspace, "--limit", "100"], fixture.deviceEnv)).reasonCode, "CLI_WORK_LIST_OVERSIZED", "a page of 100 is over the budget too");
+  const completeLargePage = await cli(["work-list", "--workspace", fixture.workspace, "--limit", "100"], fixture.deviceEnv);
+  assert.equal(completeLargePage.records.length, 100, "the new source preserves a complete page past the former byte ceiling");
   const expected = await pagedWork(fixture, 30);
   assert.equal(expected.total, LARGE_STORIES + 2);
   assert.equal(expected.ids.length, expected.total);
 
   const harness = await workPagesHarness(fixture);
   const { mode, calls } = harness;
+  await mode({ mode: "pass", cap: 50 });
   const { child, url } = await startPortal({ ...fixture, env: harness.env });
   t.after(async () => { child.kill(); await rm(fixture.base, { recursive: true, force: true }); });
   const { boot } = await readBoot(url);
@@ -347,7 +357,7 @@ test("SUB-403 (STORY-482 R3): /api/work reads a library larger than one work-lis
   assert.deepEqual(unordered(wholeCalls.slice(2)), [["50", "50"], ["50", "100"]]);
 
   // The library moves between two pages: the read starts over and answers for the new version.
-  await mode("move-once");
+  await mode({ mode: "move-once", cap: 50 });
   const moved = await readWork();
   const after = await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv);
   assert.equal(moved.ok, true);
@@ -366,7 +376,7 @@ test("SUB-403 (STORY-482 R3): /api/work reads a library larger than one work-lis
   ], "the moved read was abandoned and read again from the start");
 
   // It moves on every read: nothing mixed, a refusal.
-  await mode("move-always");
+  await mode({ mode: "move-always", cap: 50 });
   const unstable = await readWork();
   assert.deepEqual([unstable.ok, unstable.reasonCode, unstable.total, unstable.records], [false, "PORTAL_WORK_READ_FAILED", 0, []]);
   assert.deepEqual([unstable.source.reasonCode, unstable.source.attempts, unstable.source.cause], ["PORTAL_WORK_READ_UNSTABLE", 3, "moved"]);
@@ -391,7 +401,7 @@ test("SUB-403 (STORY-482 R3): /api/work reads a library larger than one work-lis
 // the same total, nothing twice. A page past the first that the budget refuses is halved within
 // its own stretch, and one the budget still refuses at one record is the refusal.
 test("SUB-416 (STORY-510): /api/work reads the pages past the first a few at a time and answers exactly the serial page-by-page read", async (t) => {
-  const bound = Number((await readFile(join(portalRoot, "portal.mjs"), "utf8")).match(/const WORK_PAGE_CONCURRENCY = (\d+);/u)?.[1]);
+  const bound = Number((await readFile(join(portalRoot, "portal.mjs"), "utf8")).match(/const WORK_PAGE_CONCURRENCY = workReadBudget\("TCRN_PORTAL_WORK_PAGE_CONCURRENCY", (\d+)\);/u)?.[1]);
   assert.ok(bound > 1, "the portal names a concurrency bound above one");
   const fixture = await scratch("tcrn-portal-concurrent-", "TCRN-PORTAL-CONCURRENT");
   await largeLibrary(fixture);
@@ -546,7 +556,7 @@ test("SUB-409 (STORY-508 R5): the settings routes carry every row's shape, group
   const project = await request(url, "/api/settings", readOptions(boot.token));
   assert.deepEqual(layout(project.body.settings), layout((await cli(["settings-catalog", "--workspace", fixture.workspace], fixture.deviceEnv)).settings));
   assert.deepEqual(project.body.settings.filter((row) => row.shape === "collection").map((row) => row.key).sort(), ["models.category", "models.tiers"]);
-  assert.ok(project.body.settings.every((row) => row.layer === "project" && typeof row.group === "string" && Number.isSafeInteger(row.order) && row.order > 0));
+  assert.ok(project.body.settings.every((row) => ["project", "library"].includes(row.layer) && typeof row.group === "string" && Number.isSafeInteger(row.order) && row.order > 0));
   const device = await request(url, "/api/machine-settings", readOptions(boot.token));
   assert.deepEqual(layout(device.body.settings), layout((await cli(["machine-settings-catalog"], { ...fixture.deviceEnv, HOME: fixture.home })).settings));
   assert.ok(device.body.settings.every((row) => row.layer === "device" && row.shape === "scalar"));
@@ -661,7 +671,8 @@ test("STORY-484 variable routes write, read back and render safe values while wi
   }));
   assert.equal(created.response.status, 200);
   assert.equal(created.body.reasonCode, "VARIABLE_WRITE_COMMITTED");
-  assert.deepEqual(created.body.readback, { name: "deploy.host", type: "string", value: "build.example.com", description: "Build endpoint" });
+  assert.equal(created.body.readback.source.projectId, fixture.projectId);
+  assert.deepEqual(withoutSource(created.body.readback), { name: "deploy.host", type: "string", value: "build.example.com", description: "Build endpoint" });
   assert.deepEqual(created.body.variables, [created.body.readback]);
   assert.equal(created.body.render.reasonCode, "AGENTS_RENDERED");
   assert.match(await readFile(join(fixture.proseRoot, "AGENTS.md"), "utf8"), /deploy\.host.*build\.example\.com/u);
@@ -764,9 +775,9 @@ test("STORY-485: Atelier edits gate declarations and reads each library's latest
     const directory = join(fixture.deviceEnv.EINZBERN_HOME, "cache", libraryId.replace(":", "-"), "gate-runs");
     await mkdir(directory, { recursive: true });
     await writeFile(join(directory, `${runId}.json`), JSON.stringify({
-      schemaVersion: "einzbern.gate-run.v1", runId, libraryId, at, release: false, base: null,
+      schemaVersion: "einzbern.gate-run.v1", runId, libraryId, projectId: libraryId === boot.library.libraryId ? fixture.projectId : fixture.second.projectId, workIds: [], at, release: false, base: null,
       treeDigest: `tree-${runId}`, declarationsDigest: `declarations-${runId}`, trees: [],
-      gates: [{ name: gateName, root: ".", required: true, ok, exitCode: ok ? 0 : 1, signal: null, timedOut: false, outputFile: `${runId}/1-${gateName}.log`, outputBytes: 0, truncated: false }],
+      gates: [{ name: gateName, root: ".", required: true, matched: [], matchedWorkIds: [], ok, exitCode: ok ? 0 : 1, signal: null, timedOut: false, outputFile: `${runId}/1-${gateName}.log`, outputBytes: 0, truncated: false }],
       reds: ok ? [] : [gateName],
     }));
   };
@@ -804,7 +815,8 @@ test("SUB-410 (STORY-508 R7): the variable, rule and gate routes write an order 
 
   const variable = await post("/api/variables", { name: "deploy.host", type: "string", value: "build.example.com", order: "3" });
   assert.equal(variable.response.status, 200);
-  assert.deepEqual(variable.body.readback, { name: "deploy.host", type: "string", value: "build.example.com", description: "", order: 3 });
+  assert.equal(variable.body.readback.source.projectId, fixture.projectId);
+  assert.deepEqual(withoutSource(variable.body.readback), { name: "deploy.host", type: "string", value: "build.example.com", description: "", order: 3 });
   const unordered = await post("/api/variables", { name: "deploy.host", type: "string", value: "build.example.com", order: "" });
   assert.equal(Object.hasOwn(unordered.body.readback, "order"), false, "variable-set writes the whole record, so no order is none");
   const malformed = await post("/api/variables", { name: "deploy.host", type: "string", value: "x", order: "0" });
@@ -975,16 +987,16 @@ test("STORY-482 AC1: the registry's two libraries can be switched, and each answ
   const listed = await request(url, "/api/libraries", readOptions(boot.token));
   assert.equal(listed.body.reasonCode, "PORTAL_LIBRARIES_READY");
   assert.deepEqual(listed.body.libraries, [
-    { projectPath: fixture.proseRoot, libraryId: first.workspaceId, libraryPath: fixture.workspace },
-    { projectPath: fixture.second.project, libraryId: second.workspaceId, libraryPath: fixture.second.library },
+    { projectPath: fixture.proseRoot, projectId: fixture.projectId, configurationProjectId: null, libraryId: first.workspaceId, libraryPath: fixture.workspace },
+    { projectPath: fixture.second.project, projectId: fixture.second.projectId, configurationProjectId: null, libraryId: second.workspaceId, libraryPath: fixture.second.library },
   ]);
-  assert.deepEqual(listed.body.selected, listed.body.libraries[0]);
+  assert.deepEqual(listed.body.selected, { ...listed.body.libraries[0], configurationProjectId: fixture.projectId });
   assert.deepEqual(boot.libraries, listed.body.libraries);
 
   const statusNow = async () => (await request(url, "/api/status", readOptions(boot.token))).body;
   const languageNow = async () => (await request(url, "/api/settings", readOptions(boot.token))).body.settings.find((entry) => entry.key === "artifact.language").currentValue;
   let status = await statusNow();
-  assert.deepEqual([status.workspaceId, status.version], [first.workspaceId, 0]);
+  assert.deepEqual([status.workspaceId, status.version], [first.workspaceId, first.version]);
   assert.equal(status.ok, firstDoctor.ok);
   assert.deepEqual(status.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })), firstDoctor.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })));
   assert.deepEqual(status.library.versionVector, first.versionVector);
@@ -995,24 +1007,24 @@ test("STORY-482 AC1: the registry's two libraries can be switched, and each answ
   const switched = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: fixture.second.project }));
   assert.equal(switched.response.status, 200);
   assert.equal(switched.body.reasonCode, "PORTAL_LIBRARY_SELECTED");
-  assert.deepEqual(switched.body.library, listed.body.libraries[1]);
+  assert.deepEqual(switched.body.library, { ...listed.body.libraries[1], configurationProjectId: listed.body.libraries[1].projectId });
   assert.equal(switched.body.workspace, fixture.second.library);
   assert.equal(switched.body.proseRoot, fixture.second.project);
   status = await statusNow();
-  assert.deepEqual([status.workspaceId, status.version], [second.workspaceId, 1]);
+  assert.deepEqual([status.workspaceId, status.version], [second.workspaceId, second.version]);
   assert.equal(status.ok, secondDoctor.ok);
   assert.deepEqual(status.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })), secondDoctor.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })));
   assert.deepEqual(status.library.versionVector, second.versionVector);
   assert.equal(status.library.rejectedEventCount, second.rejectedEventCount);
   assert.deepEqual(status.library.configProjection, second.configProjection);
   assert.equal(await languageNow(), "zh-CN");
-  assert.deepEqual((await request(url, "/api/libraries", readOptions(boot.token))).body.selected, listed.body.libraries[1]);
+  assert.deepEqual((await request(url, "/api/libraries", readOptions(boot.token))).body.selected, { ...listed.body.libraries[1], configurationProjectId: fixture.second.projectId });
 
   // A library is named by its id too; the switch back reads the first library again.
   const back = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: first.workspaceId }));
   assert.equal(back.body.reasonCode, "PORTAL_LIBRARY_SELECTED");
   status = await statusNow();
-  assert.deepEqual([status.workspaceId, status.version], [first.workspaceId, 0]);
+  assert.deepEqual([status.workspaceId, status.version], [first.workspaceId, first.version]);
   assert.equal(status.ok, firstDoctor.ok);
   assert.deepEqual(status.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })), firstDoctor.checks.map(({ check, ok, reasonCode }) => ({ check, ok, reasonCode })));
   assert.deepEqual(status.library.versionVector, first.versionVector);
@@ -1096,7 +1108,7 @@ test("AGENTS.md save writes the file, judges it without rendering, and reads it 
   assert.equal(written.body.reasonCode, "PORTAL_AGENTS_MD_WRITTEN");
   assert.equal(written.body.matches, true);
   assert.equal(Object.hasOwn(written.body, "render"), false);
-  assert.deepEqual(written.body.rules.map((rule) => [rule.id, rule.state]), [["autonomy", "disabled"], ["batch", "disabled"], ["unattended-commands", "disabled"], ["silent-reporting", "disabled"]]);
+  assert.deepEqual(written.body.rules.map((rule) => [rule.id, rule.state]), [["autonomy", "disabled"], ["batch", "disabled"], ["unattended-commands", "disabled"], ["silent-reporting", "disabled"], ["design-authority", "disabled"]]);
   assert.deepEqual(written.body.pending, []);
   assert.equal(written.body.text, text, "no managed section was rendered into the saved text");
   assert.equal((await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).version, version, "a save writes nothing to the library");
@@ -1141,7 +1153,7 @@ test("rules routes expose state, enable a rule, judge a saved edit as user-modif
   const libraryVersion = async () => (await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).version;
   const listed = await request(url, "/api/rules", readOptions(boot.token));
   assert.equal(listed.body.reasonCode, "RULE_LIST_READY");
-  assert.deepEqual(listed.body.rules.map((rule) => rule.id), ["autonomy", "batch", "unattended-commands", "silent-reporting"]);
+  assert.deepEqual(listed.body.rules.map((rule) => rule.id), ["autonomy", "batch", "unattended-commands", "silent-reporting", "design-authority"]);
   assert.ok(listed.body.rules.every((rule) => rule.state === "disabled"));
 
   const enabled = await request(url, "/api/rules/batch", writeOptions(boot.token, "POST", { action: "enable" }));
@@ -1231,7 +1243,7 @@ test("SUB-338 (STORY-483 AC3): batch enabled at v1 reads update-available at the
   const { boot } = await readBoot(url);
   const listed = await request(url, "/api/rules", readOptions(boot.token));
   assert.equal(listed.response.status, 200);
-  assert.deepEqual(listed.body.rules.find((rule) => rule.id === "batch"), { id: "batch", version: 3, recordedVersion: 1, fileVersion: 1, section: "rule:batch", state: "update-available" });
+  assert.deepEqual(withoutSource(listed.body.rules.find((rule) => rule.id === "batch")), { id: "batch", version: 3, recordedVersion: 1, fileVersion: 1, section: "rule:batch", state: "update-available" });
   assert.deepEqual(listed.body.pending, []);
   assert.equal(await readFile(agentsPath, "utf8"), v1File, "GET /api/rules writes nothing");
 
@@ -1271,7 +1283,7 @@ test("INIT-053 AC2: batch enabled at v2 reads update-available at the route, and
   const { boot } = await readBoot(url);
   const listed = await request(url, "/api/rules", readOptions(boot.token));
   assert.equal(listed.response.status, 200);
-  assert.deepEqual(listed.body.rules.find((rule) => rule.id === "batch"), { id: "batch", version: 3, recordedVersion: 2, fileVersion: 1, section: "rule:batch", state: "update-available" });
+  assert.deepEqual(withoutSource(listed.body.rules.find((rule) => rule.id === "batch")), { id: "batch", version: 3, recordedVersion: 2, fileVersion: 1, section: "rule:batch", state: "update-available" });
   assert.deepEqual(listed.body.pending, []);
   assert.equal(await readFile(agentsPath, "utf8"), v2File, "GET /api/rules writes nothing");
 
@@ -1444,7 +1456,7 @@ test("SUB-310 R17 (MIN-238 D1): the retired knowledge total setting has no copy 
 test("SUB-423 (STORY-513 R2, MIN-238 D3): the cover input, the cover column and its add and remove buttons say a path glob or a work id, in every language", async () => {
   const source = await readFile(join(portalRoot, "index.html"), "utf8");
   assert.match(source, /data-i18n="gates\.coversInput">[^<]*<\/span><textarea [^>]*name="covers"/u, "the cover input is labelled by gates.coversInput");
-  assert.match(source, /data-ui="gate-config-table"><thead><tr>(?:<th [^>]*>[^<]*<\/th>)*<th scope="col" data-i18n="gates\.columnCovers">/u, "the cover column is headed by gates.columnCovers");
+  assert.match(source, /data-ui="gate-config-table"[^>]*>[\s\S]*?role="columnheader" data-i18n="gates\.columnCovers"/u, "the cover column is headed by gates.columnCovers");
   assert.match(source, /data-gate-add-cover>\$\{esc\(t\("gates\.addCover"\)\)\}<\/button>/u, "the add button reads gates.addCover");
   assert.match(source, /data-gate-remove-cover aria-label="\$\{esc\(t\("gates\.removeCover"\)\)\}"/u, "the remove button is named by gates.removeCover");
   const sandbox = {};
@@ -1596,7 +1608,7 @@ test("STORY-355: a project registered inside its own library is refused at boot 
   const fixture = await scratch("tcrn-portal-prose-unsafe-", "TCRN-PORTAL-PROSE-UNSAFE");
   const nested = join(fixture.second.library, "nested-project");
   await mkdir(nested);
-  await cli(["library-register", "--project", nested, "--library", fixture.second.library, "--at", "2026-08-11T15:05:00Z"], fixture.deviceEnv);
+  await cli(["library-register", "--project", nested, "--library", fixture.second.library, "--project-id", fixture.second.projectId, "--at", "2026-08-11T15:05:00Z"], fixture.deviceEnv);
   const refused = await startupRefusal(["--library", nested], { ...fixture.deviceEnv, HOME: fixture.home });
   assert.equal(refused.status, 2);
   assert.equal(refused.report.ok, false);

@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 import { AsyncLocalStorage } from "node:async_hooks";
@@ -135,7 +136,6 @@ import {
   SETTINGS_LAYER_KIND,
   SettingsError,
   assertProjectSettingKey,
-  assertSettingWriteConsistent,
   compareEngineVersions,
   createWorkspaceSettingRecord,
   currentSettingRecord,
@@ -156,6 +156,7 @@ import type { TelemetryEvidenceSnapshot } from "./telemetry.js";
 // this module, so nothing here may read one of its bindings while the module is being evaluated.
 import { mergeStoredRelations, relationsShapeProblem, storedRelationsOf, validateRelationsInput } from "./work-relations.js";
 import type { NormalizedWorkRelations, WorkRelationsInput } from "./work-relations.js";
+import { projectLineage, workspaceSettingIdentity, assertScopedSettingWriteConsistent } from "./project-scope.js";
 import { ConfigRecordError, configRecordId, configRecordIdentity, isConfigRecordCollection, isConfigRecordOperation, readConfigRecordEvent, sortConfigRecords } from "./config-records.js";
 import type { ConfigRecord } from "./config-records.js";
 
@@ -164,7 +165,7 @@ export const WORKSPACE_STORAGE_VERSION = 2 as const;
 export const WORKSPACE_LEGACY_STORAGE_VERSION = 1 as const;
 export const WORKSPACE_SEGMENT_BYTES_DEFAULT = 16_777_216 as const;
 export const WORKSPACE_SEGMENT_BYTES_MIN = 4_096 as const;
-export const WORKSPACE_SEGMENT_BYTES_MAX = 67_108_864 as const;
+export const WORKSPACE_SEGMENT_BYTES_MAX = RUNTIME_CAPACITY.bufferBytes;
 export const WORKSPACE_STORAGE_MIGRATION_SEGMENT_BYTES = 4_194_304 as const;
 // The old-layout control directory, named by the names module (read-only from EPIC-141 on).
 export const WORKSPACE_CONTROL_DIRECTORY = LEGACY_CONTROL_DIRECTORY;
@@ -301,7 +302,7 @@ export const WORKSPACE_RELOCATION_IDENTITY_VERSION = "tcrn.workspace-relocation-
 // an operational problem a cap does not fix, and each entry carries ten root paths
 // in a file that is re-read on EVERY workspace operation. Picked deliberately so it
 // does not become an accidental constant.
-export const WORKSPACE_RELOCATION_LEDGER_LIMIT = 16 as const;
+export const WORKSPACE_RELOCATION_LEDGER_LIMIT = RUNTIME_CAPACITY.arrayEntries;
 
 export type WorkspaceRelocationStage = "vacated" | "adopted" | "aborted";
 
@@ -359,6 +360,7 @@ export interface ProjectRecord {
   readonly id: string;
   readonly externalKey: string;
   readonly name: string;
+  readonly parentProjectId?: string;
   readonly revision: number;
   readonly updatedAt: string;
   readonly tombstone: boolean;
@@ -470,6 +472,7 @@ interface ReplaySeed {
 }
 
 export interface WorkspaceMutationOptions {
+  readonly configurationProjectId?: string;
   readonly occurredAt: string;
   // WSE-2: the accountable actor for this mutation. Caller-supplied like
   // occurredAt (no clock, no randomness — determinism preserved). Once
@@ -602,7 +605,7 @@ function inside(parent: string, candidate: string): boolean {
 }
 
 export function assertWorkspaceRelativePath(value: unknown): asserts value is string {
-  if (typeof value !== "string" || value.length === 0 || value.length > 512 || isAbsolute(value) || value.includes("\\")) {
+  if (typeof value !== "string" || value.length === 0 || isAbsolute(value) || value.includes("\\")) {
     fail("WORKSPACE_PATH_ESCAPE", String(value));
   }
   const segments = value.split("/");
@@ -663,7 +666,8 @@ function crash(point: WorkspaceCrashPoint, selected?: WorkspaceCrashPoint): void
 }
 
 function validateProject(record: unknown, reasonCode: WorkspaceReasonCode = "WORKSPACE_EVENT_CORRUPT"): ProjectRecord {
-  exactFields(record, projectFields, reasonCode, "project record");
+  exactFields(record, [...projectFields, ...(record !== null && typeof record === "object" && Object.hasOwn(record, "parentProjectId") ? ["parentProjectId"] : [])], reasonCode, "project record");
+  if (Object.hasOwn(record, "parentProjectId") && (typeof record.parentProjectId !== "string" || !/^project:[a-f0-9]{24}$/u.test(record.parentProjectId) || record.parentProjectId === record.id)) fail(reasonCode, "invalid declared project parent");
   if (record.schemaVersion !== "tcrn.project.v1" || typeof record.id !== "string" || typeof record.externalKey !== "string" ||
     typeof record.name !== "string" || !Number.isSafeInteger(record.revision) || Number(record.revision) < 1 ||
     typeof record.updatedAt !== "string" || typeof record.tombstone !== "boolean") {
@@ -681,7 +685,7 @@ function validateProject(record: unknown, reasonCode: WorkspaceReasonCode = "WOR
     }
     throw error;
   }
-  if ([...record.name].length < 1 || [...record.name].length > 512) {
+  if ([...record.name].length < 1) {
     fail("WORKSPACE_INPUT_OVERSIZED", "project name limit exceeded");
   }
   return record as unknown as ProjectRecord;
@@ -860,7 +864,7 @@ function validateMetadata(value: unknown): WorkspaceMetadata {
   }
   const legacyStorage = value.storageVersion === WORKSPACE_LEGACY_STORAGE_VERSION && value.minimumStorageVersion === 1 &&
     value.maximumStorageVersion === 1 && Number.isSafeInteger(value.segmentEventLimit) &&
-    Number(value.segmentEventLimit) >= 2 && Number(value.segmentEventLimit) <= 1024;
+    Number(value.segmentEventLimit) >= 2 && Number(value.segmentEventLimit) <= Number.MAX_SAFE_INTEGER;
   const segmentedStorage = value.storageVersion === WORKSPACE_STORAGE_VERSION && value.minimumStorageVersion === 1 &&
     value.maximumStorageVersion === WORKSPACE_STORAGE_VERSION && Number.isSafeInteger(value.segmentEventLimit) &&
     Number(value.segmentEventLimit) >= WORKSPACE_SEGMENT_BYTES_MIN && Number(value.segmentEventLimit) <= WORKSPACE_SEGMENT_BYTES_MAX;
@@ -1164,7 +1168,7 @@ function readGateEvidenceLocator(extensions: Readonly<Record<string, unknown>>):
 // EINZBERN_SURFACE=atelier); that surface is an agreed convention, not proof of who ran it (D11).
 const GATE_RELEASE_KEY = "gate-evidence:atelier-release";
 const GATE_RELEASE_FIELDS = ["actor", "reason", "releasedAt"];
-const GATE_RELEASE_REASON_MAXIMUM_BYTES = 2_048;
+const GATE_RELEASE_REASON_MAXIMUM_BYTES = RUNTIME_CAPACITY.bufferBytes;
 /** The verb a gate is released with, named by the refusal a gate that is not satisfied gives. */
 export const GATE_RELEASE_VERB = "work-gate-release" as const;
 
@@ -1421,7 +1425,7 @@ function normalizeWorkRecord(record: WorkRecord, reasonCode: WorkspaceReasonCode
 }
 
 function normalizeWorkLabels(value: unknown, reasonCode: WorkspaceReasonCode = "WORKSPACE_INPUT_INVALID"): readonly string[] {
-  if (!Array.isArray(value) || value.some((label) => typeof label !== "string" || label.length === 0 || label.length > 128) || new Set(value).size !== value.length) {
+  if (!Array.isArray(value) || value.some((label) => typeof label !== "string" || label.length === 0) || new Set(value).size !== value.length) {
     fail(reasonCode, "work labels must be unique bounded strings");
   }
   return [...value].sort(compareCanonicalText);
@@ -1429,7 +1433,7 @@ function normalizeWorkLabels(value: unknown, reasonCode: WorkspaceReasonCode = "
 
 function normalizeWorkTitle(value: unknown, reasonCode: WorkspaceReasonCode = "WORKSPACE_INPUT_INVALID"): string | null {
   if (value === undefined || value === null) return null;
-  if (typeof value !== "string" || value.length === 0 || [...value].length > 512) {
+  if (typeof value !== "string" || value.length === 0) {
     fail(reasonCode, "work title must be a non-empty bounded string");
   }
   try {
@@ -1594,7 +1598,7 @@ function assertAdvisoryEntryShape(key: string, entry: unknown, id: string, reaso
     return;
   }
   if (key === ADVISORY_VERIFY_KEY) {
-    if (typeof value !== "string" || value.length === 0 || Buffer.byteLength(value, "utf8") > 4_096 || value.includes("\u0000") || !value.isWellFormed()) {
+    if (typeof value !== "string" || value.length === 0 || value.includes("\u0000") || !value.isWellFormed()) {
       fail(reasonCode, `work ${id} advisory verify must be non-empty bounded text`);
     }
     return;
@@ -1664,7 +1668,7 @@ function assertAdvisoryEntryShape(key: string, entry: unknown, id: string, reaso
       || typeof result.status !== "string" || result.status.length === 0
       || typeof result.ok !== "boolean"
       || (result.exitCode !== null && (typeof result.exitCode !== "number" || !Number.isSafeInteger(result.exitCode) || result.exitCode < 0))
-      || typeof result.command !== "string" || result.command.length === 0 || Buffer.byteLength(result.command, "utf8") > 4_096
+      || typeof result.command !== "string" || result.command.length === 0
       || (typeof result.evidence === "string" ? result.evidence.length === 0 : (!Array.isArray(result.evidence) || result.evidence.length === 0 || !result.evidence.every((entry) => typeof entry === "string" && entry.length > 0)))
       || !Array.isArray(result.dependencies) || result.dependencies.some((dependency) => typeof dependency !== "string" || dependency.length === 0)
       || new Set(result.dependencies).size !== result.dependencies.length
@@ -2040,7 +2044,7 @@ class MergeReplay {
       operation: isJsonObject(payload) && typeof payload.operation === "string" ? payload.operation : null,
       recordId: typeof recordId === "string" ? recordId : null,
       reasonCode: String((error as { reasonCode?: unknown }).reasonCode ?? "WORKSPACE_EVENT_CORRUPT"),
-      detail: String((error as { message?: unknown }).message ?? error).slice(0, 512),
+      detail: String((error as { message?: unknown }).message ?? error),
     });
   }
 
@@ -2081,10 +2085,10 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
     if (!isRetiredSettingKey(record.key)) return [currentSettingRecord(record)];
     const successor = renamedSettingRecord(record);
     return successor === null ? [] : [successor];
-  }).map((record) => [record.key, record]));
+  }).map((record) => [workspaceSettingIdentity(record.key, record.projectId), record]));
   let executionConfig: ExecutionConfigState = snapshot?.executionConfig ?? EMPTY_EXECUTION_CONFIG;
   const templates = collection<string, TemplateAdmissionRecord>((snapshot?.templates ?? []).map((record) => [record.registrationId, record]));
-  const configRecords = collection<string, ConfigRecord>((snapshot?.configRecords ?? []).map((record) => [configRecordIdentity(record.collection, record.key), record]));
+  const configRecords = collection<string, ConfigRecord>((snapshot?.configRecords ?? []).map((record) => [configRecordIdentity(record.collection, record.key, record.projectId), record]));
   const workspaceRoot = metadata.roots.find((root) => root.kind === "workspace")?.path;
   let attestationEnabledAtSequence: number | null = snapshot?.attestationEnabledAtSequence ?? null;
   for (const sourceEvent of events) {
@@ -2143,11 +2147,15 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
         if (current || record.revision !== 1 || record.tombstone) {
           fail("WORKSPACE_EVENT_CORRUPT", `invalid project create ${record.id}`);
         }
-      } else if (!current || current.tombstone || record.revision !== current.revision + 1 || record.externalKey !== current.externalKey ||
+      } else if (!current || current.tombstone || record.revision !== current.revision + 1 || record.externalKey !== current.externalKey || record.parentProjectId !== current.parentProjectId ||
         (operation === "project.updated" && record.tombstone) || (operation === "project.deleted" && !record.tombstone)) {
         fail("WORKSPACE_EVENT_CORRUPT", `invalid project mutation ${record.id}`);
       }
+      if (record.parentProjectId !== undefined && !projects.get(record.parentProjectId)?.tombstone && projects.has(record.parentProjectId)) {
+        projectLineage({ projects: [...projects.values(), ...(current === undefined ? [record] : [])] }, record.parentProjectId);
+      } else if (record.parentProjectId !== undefined) fail("WORKSPACE_EVENT_CORRUPT", "declared project parent is absent or deleted");
       if (operation === "project.deleted") {
+        if ([...projects.values()].some((entry) => entry.parentProjectId === record.id && !entry.tombstone) || [...settings.values()].some((entry) => entry.projectId === record.id) || [...configRecords.values()].some((entry) => entry.projectId === record.id)) fail("WORKSPACE_EVENT_CORRUPT", "project deletion precedes its subprojects or scoped configuration");
         // CQ-10b: counted full scan. Fires only on project.deleted, which is rare
         // and few in number, so its measured contribution is nil.
         recordCollectionScan(work.size);
@@ -2413,7 +2421,8 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
     if (settingsOperations.has(operation)) {
       const body = payloadRecord(payload, operation, actorRequired);
       if (operation === "settings.removed") {
-        exactFields(body, ["key", "updatedAt"], "WORKSPACE_EVENT_CORRUPT", "setting removal record");
+        exactFields(body, ["key", "updatedAt", ...(Object.hasOwn(body, "projectId") ? ["projectId"] : [])], "WORKSPACE_EVENT_CORRUPT", "setting removal record");
+        if (Object.hasOwn(body, "projectId")) projectLineage({ projects: [...projects.values()] }, typeof body.projectId === "string" ? body.projectId : "");
         if (typeof body.key !== "string" || typeof body.updatedAt !== "string") fail("WORKSPACE_EVENT_CORRUPT", "setting removal record is invalid");
         try { assertStrictInstant(body.updatedAt); } catch { fail("WORKSPACE_EVENT_CORRUPT", "setting removal timestamp is invalid"); }
         requireEventBoundTimestamp(body.updatedAt, event, `setting ${body.key}`);
@@ -2429,9 +2438,10 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
           if (successorKey !== undefined) settings.delete(successorKey);
           continue;
         }
-        const current = settings.get(body.key);
+        const identity = workspaceSettingIdentity(body.key, typeof body.projectId === "string" ? body.projectId : undefined);
+        const current = settings.get(identity);
         if (current === undefined) fail("WORKSPACE_EVENT_CORRUPT", `cannot remove unknown setting ${body.key}`);
-        settings.delete(body.key);
+        settings.delete(identity);
         continue;
       }
       if (isRetiredSettingKey(body.key)) {
@@ -2457,7 +2467,8 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
         workspaceRoot,
       ));
       requireEventBoundTimestamp(record.updatedAt, event, `setting ${record.key}`);
-      const current = settings.get(record.key);
+      if (record.projectId !== undefined) projectLineage({ projects: [...projects.values()] }, record.projectId);
+      const current = settings.get(workspaceSettingIdentity(record.key, record.projectId));
       // TCRN-CROSS-STORY-469 R2 (MIN-227 D13): in a library a project-level setting is the last
       // write in merge order. A device that set a key without having seen another device's write
       // to it carries a revision that no longer follows, and its write still takes effect, so
@@ -2468,7 +2479,7 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
       if (!revisionFollows || record.layerKind !== SETTINGS_LAYER_KIND || record.tombstone !== false) {
         fail("WORKSPACE_EVENT_CORRUPT", `invalid setting mutation ${record.key}`);
       }
-      settings.set(record.key, record);
+      settings.set(workspaceSettingIdentity(record.key, record.projectId), record);
       continue;
     }
     if (isConfigRecordOperation(operation)) {
@@ -2480,12 +2491,13 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
       const body = payloadRecord(payload, operation, actorRequired);
       try {
         const change = readConfigRecordEvent(operation, body);
-        const identity = configRecordIdentity(change.collection, change.key);
+        const identity = configRecordIdentity(change.collection, change.key, change.projectId);
+        if (change.projectId !== undefined) projectLineage({ projects: [...projects.values()] }, change.projectId);
         if (change.value === undefined) {
           if (!configRecords.has(identity)) throw new ConfigRecordError("CONFIG_RECORD_NOT_FOUND", `${change.collection} ${change.key} is not set`);
           configRecords.delete(identity);
         } else {
-          configRecords.set(identity, { collection: change.collection, key: change.key, value: change.value });
+          configRecords.set(identity, { collection: change.collection, key: change.key, value: change.value, ...(change.projectId === undefined ? {} : { projectId: change.projectId }) });
         }
       } catch (error) {
         if (error instanceof ConfigRecordError) fail("WORKSPACE_EVENT_CORRUPT", `${error.reasonCode}:${error.message}`);
@@ -3558,9 +3570,9 @@ export function writtenRecordIds(state: WorkspaceState, sinceVersion: number): r
     const operation = event.payload.operation;
     if (typeof operation === "string" && isConfigRecordOperation(operation)) {
       if (isJsonObject(event.payload.record)) {
-        const { collection, key } = event.payload.record;
+        const { collection, key, projectId } = event.payload.record;
         if (typeof collection === "string" && isConfigRecordCollection(collection) && typeof key === "string") {
-          const id = configRecordId(collection, key);
+          const id = configRecordId(collection, key, typeof projectId === "string" ? projectId : undefined);
           if (!ids.includes(id)) ids.push(id);
         }
       }
@@ -3571,7 +3583,8 @@ export function writtenRecordIds(state: WorkspaceState, sinceVersion: number): r
       if (!isJsonObject(value)) continue;
       // A record names itself by id; a template admission by its registration id and a
       // setting by its key, which is the identity its receipt reports as recordId.
-      const identity = [value.id, value.registrationId, value.key].find((candidate) => typeof candidate === "string");
+      const rawIdentity = [value.id, value.registrationId, value.key].find((candidate) => typeof candidate === "string");
+      const identity = typeof value.projectId === "string" && typeof value.key === "string" && rawIdentity === value.key ? `${value.projectId}:${value.key}` : rawIdentity;
       if (typeof identity === "string" && !ids.includes(identity)) ids.push(identity);
     }
   }
@@ -3605,6 +3618,7 @@ function workById(state: WorkspaceState, id: string): WorkRecord {
 export async function createProject(workspaceRoot: string, input: {
   readonly externalKey: string;
   readonly name: string;
+  readonly parentProjectId?: string;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
   const externalKey = canonicalExternalKey(input.externalKey);
   const id = deriveStableId("project", externalKey);
@@ -3612,11 +3626,13 @@ export async function createProject(workspaceRoot: string, input: {
     if (state.projects.some((record) => record.id === id)) {
       fail("WORKSPACE_INPUT_INVALID", `project ${id} already exists`);
     }
+    projectLineage(state, input.parentProjectId);
     const record = validateProject({
       schemaVersion: "tcrn.project.v1",
       id,
       externalKey,
       name: input.name,
+      ...(input.parentProjectId === undefined ? {} : { parentProjectId: input.parentProjectId }),
       revision: 1,
       updatedAt: input.occurredAt,
       tombstone: false,
@@ -3644,6 +3660,7 @@ export async function deleteProject(workspaceRoot: string, input: {
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
   return appendEvent(workspaceRoot, (state) => {
     const current = projectById(state, input.id);
+    if (state.projects.some((record) => record.parentProjectId === current.id && !record.tombstone) || state.settings.some((record) => record.projectId === current.id) || state.configRecords.some((record) => record.projectId === current.id)) fail("WORKSPACE_INPUT_INVALID", "project still has subprojects or scoped configuration");
     if (state.work.some((record) => record.projectId === current.id && !record.tombstone)) {
       fail("WORKSPACE_INPUT_INVALID", `project ${current.id} still owns live work`);
     }
@@ -4388,21 +4405,22 @@ export async function setWorkspaceSetting(workspaceRoot: string, input: {
   assertProjectSettingKey(input.key);
   return withWorkspaceWriteLock(workspaceRoot, async (root) => {
     const committed = await appendEvent(root, (state) => {
-      const current = state.settings.find((record) => record.key === input.key);
+      const current = state.settings.find((record) => record.key === input.key && record.projectId === input.configurationProjectId);
       const record = createWorkspaceSettingRecord(
         input.key,
         input.value,
         (current?.revision ?? 0) + 1,
         input.occurredAt,
         workspaceRoot,
+        input.configurationProjectId,
       );
-      assertSettingWriteConsistent(state.settings, record.key, record.value);
+      assertScopedSettingWriteConsistent(state, record.key, record.value, input.configurationProjectId);
       return {
         payload: buildEventPayload("settings.updated", record as unknown as JsonValue),
         projects: state.projects,
         work: state.work,
         settings: sortWorkspaceSettings([
-          ...state.settings.filter((entry) => entry.key !== record.key),
+          ...state.settings.filter((entry) => entry.key !== record.key || entry.projectId !== record.projectId),
           record,
         ]),
       };
@@ -4418,14 +4436,14 @@ export async function removeWorkspaceSetting(workspaceRoot: string, input: {
   assertProjectSettingKey(input.key);
   return withWorkspaceWriteLock(workspaceRoot, async (root) => {
     const committed = await appendEvent(root, (state) => {
-      const current = state.settings.find((record) => record.key === input.key);
+      const current = state.settings.find((record) => record.key === input.key && record.projectId === input.configurationProjectId);
       if (current === undefined) fail("WORKSPACE_INPUT_INVALID", `setting ${input.key} is not set`);
-      assertSettingWriteConsistent(state.settings, input.key, null);
+      assertScopedSettingWriteConsistent(state, input.key, null, input.configurationProjectId);
       return {
-        payload: buildEventPayload("settings.removed", { key: input.key, updatedAt: input.occurredAt } as unknown as JsonValue),
+        payload: buildEventPayload("settings.removed", { key: input.key, updatedAt: input.occurredAt, ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }) } as unknown as JsonValue),
         projects: state.projects,
         work: state.work,
-        settings: sortWorkspaceSettings(state.settings.filter((entry) => entry.key !== input.key)),
+        settings: sortWorkspaceSettings(state.settings.filter((entry) => entry.key !== input.key || entry.projectId !== input.configurationProjectId)),
       };
     }, input);
     await projectConfiguration(root, committed);

@@ -149,7 +149,7 @@ test("478-R1: two devices write one key apart; after the sync both read the writ
   }
 });
 
-test("478-R1: an unknown collection, key or value is refused before anything is written", async (context) => {
+test("478-R1: unknown collections, malformed keys and invalid collection values are refused before writing", async (context) => {
   const base = await scratch(context);
   const desk = await device(base, "desk", DESK_ID);
   const library = join(base, ".ether");
@@ -164,7 +164,6 @@ test("478-R1: an unknown collection, key or value is refused before anything is 
     [{ collection: "gate", key: "", value: {} }, "CONFIG_RECORD_KEY_INVALID"],
     [{ collection: "gate", key: "line\nbreak", value: {} }, "CONFIG_RECORD_KEY_INVALID"],
     [{ collection: "gate", key: " padded", value: {} }, "CONFIG_RECORD_KEY_INVALID"],
-    [{ collection: "gate", key: "x".repeat(513), value: {} }, "CONFIG_RECORD_KEY_INVALID"],
     [{ collection: "gate", key: "list", value: ["pnpm"] }, "CONFIG_RECORD_VALUE_INVALID"],
     [{ collection: "gate", key: "null", value: null }, "CONFIG_RECORD_VALUE_INVALID"],
     [{ collection: "gate", key: "fraction", value: { timeout: 1.5 } }, "CONFIG_RECORD_VALUE_INVALID"],

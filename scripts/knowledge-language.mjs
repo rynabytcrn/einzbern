@@ -90,23 +90,24 @@ async function loadCore() {
 }
 
 export async function planCommand(core, values) {
-  const { listKnowledgeMetadata, materializeWorkspace, readKnowledgeLanguagePolicy, detectLanguage } = core;
+  const { listKnowledgeMetadata, materializeWorkspace, scopedWorkspaceState, readKnowledgeLanguagePolicy, detectLanguage } = core;
   const workspace = values.workspace ?? "";
   const state = await materializeWorkspace(workspace);
   // plan has no host input in its command contract, so the optional host remains
   // undefined rather than being guessed here.
-  const policy = readKnowledgeLanguagePolicy(state.settings);
-  if (policy.artifactLanguage === null) return fail("KNOWLEDGE_LANGUAGE_UNCONFIGURED", "artifact.language is not recorded in this workspace");
-  const answer = await listKnowledgeMetadata(workspace, { at: values.at ?? new Date().toISOString().replace(/\.\d+Z$/u, "Z"), selection: "all", limit: 1_048_576, allowTrailing: true });
+  const policy = readKnowledgeLanguagePolicy(scopedWorkspaceState(state, values["project-id"]).settings);
+  const answer = await listKnowledgeMetadata(workspace, { at: values.at ?? new Date().toISOString().replace(/\.\d+Z$/u, "Z"), selection: "all", ...(values["project-id"] === undefined ? {} : { projectId: values["project-id"] }), allowTrailing: true });
   const cards = (answer.records ?? []).filter((record) => record.lifecycle !== "retired" && !record.extensions?.supersededBy);
   const request = cards.map((record) => {
+    const policy = readKnowledgeLanguagePolicy(scopedWorkspaceState(state, record.projectId ?? values["project-id"]).settings);
+    if (policy.artifactLanguage === null) return { id: record.id, externalKey: record.externalKey, reasonCode: "KNOWLEDGE_LANGUAGE_UNCONFIGURED", translate: [], expand: [] };
     const fields = ["subject", "summary", "snippet"]
       .filter((field) => detectLanguage(String(record[field] ?? "")) !== policy.artifactLanguage)
       .map((field) => ({ field, text: String(record[field] ?? "") }));
     const phrasings = Object.keys(record.expansions ?? {});
     const missing = policy.promptLanguages.filter((language) => !phrasings.includes(language));
-    return { id: record.id, externalKey: record.externalKey, translate: fields, expand: missing };
-  }).filter((entry) => entry.translate.length > 0 || entry.expand.length > 0);
+    return { id: record.id, externalKey: record.externalKey, artifactLanguage: policy.artifactLanguage, economyModel: policy.economyModel, translate: fields, expand: missing };
+  }).filter((entry) => entry.reasonCode !== undefined || entry.translate.length > 0 || entry.expand.length > 0);
   const payload = {
     ok: true,
     reasonCode: "KNOWLEDGE_LANGUAGE_PLAN_READY",
@@ -124,7 +125,7 @@ export async function planCommand(core, values) {
 }
 
 export async function migrateCommand(core, values) {
-  const { listKnowledgeMetadata, materializeWorkspace, readKnowledgeLanguagePolicy, applyWriteLanguagePolicy, readKnowledgeBody, createKnowledgeUnit, validateKnowledgeStore } = core;
+  const { listKnowledgeMetadata, materializeWorkspace, scopedWorkspaceState, readKnowledgeLanguagePolicy, applyWriteLanguagePolicy, readKnowledgeBody, createKnowledgeUnit, validateKnowledgeStore } = core;
   const workspace = values.workspace ?? "";
   const dryRun = values["dry-run"] === "true";
   const at = values.at ?? new Date().toISOString().replace(/\.\d+Z$/u, "Z");
@@ -132,12 +133,13 @@ export async function migrateCommand(core, values) {
   const state = await materializeWorkspace(workspace);
   // migrate has no host input in its command contract, so the optional host remains
   // undefined rather than being guessed here.
-  const policy = readKnowledgeLanguagePolicy(state.settings);
-  if (policy.artifactLanguage === null) return fail("KNOWLEDGE_LANGUAGE_UNCONFIGURED", "artifact.language is not recorded in this workspace");
-  const answer = await listKnowledgeMetadata(workspace, { at, selection: "all", limit: 1_048_576, allowTrailing: true });
+  const policy = readKnowledgeLanguagePolicy(scopedWorkspaceState(state, values["project-id"]).settings);
+  const answer = await listKnowledgeMetadata(workspace, { at, selection: "all", ...(values["project-id"] === undefined ? {} : { projectId: values["project-id"] }), allowTrailing: true });
   const rewrites = [];
   for (const record of answer.records ?? []) {
     if (record.lifecycle === "retired" || record.extensions?.supersededBy) continue;
+    const policy = readKnowledgeLanguagePolicy(scopedWorkspaceState(state, record.projectId ?? values["project-id"]).settings);
+    if (policy.artifactLanguage === null) { rewrites.push({ id: record.id, externalKey: record.externalKey, applied: false, reason: "KNOWLEDGE_LANGUAGE_UNCONFIGURED" }); continue; }
     const provider = bundleProvider(core, bundle, record.id);
     let applied;
     try {
@@ -189,6 +191,7 @@ async function captureCommand(core, values) {
   const bundle = readBundle(values.bundle ?? "");
   const answer = await captureKnowledgeUnit(values.workspace ?? "", {
     occurredAt: values.at ?? new Date().toISOString().replace(/\.\d+Z$/u, "Z"),
+    ...(values["project-id"] === undefined ? {} : { scope: "project", projectId: values["project-id"] }),
     subject: values.subject ?? "",
     summary: values.summary ?? "",
     snippet: values.snippet ?? "",

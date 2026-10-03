@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 import {
@@ -32,14 +33,14 @@ export const BACKGROUND_RESOURCE_REGISTRATION_VERSION = "tcrn.background-resourc
 export const BACKGROUND_RESOURCE_RESIDUE_VERSION = "tcrn.background-resource-residue.v1" as const;
 
 export const BACKGROUND_RESOURCE_LIMITS = Object.freeze({
-  maximumRegistrations: 256,
-  maximumProcessRows: 65_536,
+  maximumRegistrations: RUNTIME_CAPACITY.arrayEntries,
+  maximumProcessRows: RUNTIME_CAPACITY.arrayEntries,
   // The registry is small (bounded by maximumRegistrations); a live process
   // table on a busy CI/container host is not, so it gets its own bound sized to
   // the host adapter's ps read buffer rather than an arbitrarily tighter cap
   // that would make the detector break exactly when the host is loaded.
-  maximumTextBytes: 262_144,
-  maximumProcessTableBytes: 16 * 1024 * 1024,
+  maximumTextBytes: RUNTIME_CAPACITY.bufferBytes,
+  maximumProcessTableBytes: RUNTIME_CAPACITY.bufferBytes,
 });
 
 // New frozen reason-code list, sorted, owned by this module. It is additive: no

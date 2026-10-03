@@ -30,17 +30,14 @@
     },
     "subject": {
       "type": "string",
-      "minLength": 1,
-      "maxLength": 512
+      "minLength": 1
     },
     "body": {
-      "type": "string",
-      "maxLength": 8192
+      "type": "string"
     },
     "revision": {
       "type": "integer",
-      "minimum": 1,
-      "maximum": 9007199254740991
+      "minimum": 1
     },
     "updatedAt": {
       "$ref": "./protocol-common-v1.schema.json#/$defs/strictInstant"

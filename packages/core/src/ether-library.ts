@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-469 R1, R6 (MIN-227 D19, D21): a library, the `.ether` directory that holds
@@ -94,7 +95,7 @@ const PROJECT_FIELDS = ["gitRemote", "name"];
 // whose id it keeps.
 export const LIBRARY_ID_PATTERN = /^(?:library|workspace):[a-f0-9]{24}$/u;
 const ENGINE_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u;
-const HINT_MAX_LENGTH = 512;
+const HINT_MAX_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;
 
 function fail(reasonCode: LibraryReasonCode, message: string, details?: Readonly<Record<string, string>>): never {
   throw new LibraryError(reasonCode, message, details);

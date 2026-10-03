@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-485 R1 (MIN-227 D4; TCRN-CROSS-SUB-343): gate declarations. A gate is a
@@ -52,13 +53,13 @@ export interface NamedGate extends GateDeclaration {
   readonly name: string;
 }
 
-export const GATE_COMMAND_MAX_ARGUMENTS = 64 as const;
-export const GATE_ARGUMENT_MAX_BYTES = 4_096 as const;
-export const GATE_COVERS_MAX = 64 as const;
+export const GATE_COMMAND_MAX_ARGUMENTS = RUNTIME_CAPACITY.arrayEntries;
+export const GATE_ARGUMENT_MAX_BYTES = RUNTIME_CAPACITY.bufferBytes;
+export const GATE_COVERS_MAX = RUNTIME_CAPACITY.arrayEntries;
 const GATE_WORK_COVER = /^work:[0-9a-f]{24}$/u;
 const GATE_FIELDS = ["command", "covers", "enabled", "releaseOnly", "required", "root"];
 const ORDERED_GATE_FIELDS = ["command", "covers", "enabled", "order", "releaseOnly", "required", "root"];
-const GATE_NAME = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/u;
+const GATE_NAME = /^[A-Za-z0-9][A-Za-z0-9._:-]*$/u;
 
 export function isGateName(value: unknown): value is string {
   return typeof value === "string" && GATE_NAME.test(value);
@@ -66,7 +67,7 @@ export function isGateName(value: unknown): value is string {
 
 /** A directory of the project, relative to it: "." for the project itself, or forward-slash segments that stay inside. */
 export function isProjectRelativeRoot(value: unknown): value is string {
-  if (typeof value !== "string" || value === "" || Buffer.byteLength(value, "utf8") > 512) return false;
+  if (typeof value !== "string" || value === "") return false;
   if (value === ".") return true;
   if (value.includes("\\") || value.startsWith("/") || /^[A-Za-z]:/u.test(value) || /[\u0000-\u001f\u007f]/u.test(value)) return false;
   return value.split("/").every((segment) => segment !== "" && segment !== "." && segment !== "..");
@@ -124,7 +125,7 @@ export function checkGateDeclaration(value: unknown, name = "the gate"): GateDec
 
 /** The check the gate collection of config-records.ts applies to a record: its key is the gate's name. */
 export function checkGateRecordValue(value: Readonly<Record<string, unknown>>, key: string): void {
-  if (!isGateName(key)) invalid("name", `${key} is not a gate name: 1 to 64 letters, digits, dots, colons, underscores and hyphens`, { name: key });
+  if (!isGateName(key)) invalid("name", `${key} is not a gate name: use non-empty letters, digits, dots, colons, underscores and hyphens`, { name: key });
   checkGateDeclaration(value, key);
 }
 
@@ -135,12 +136,12 @@ export function listGates(state: Pick<WorkspaceState, "configRecords">): readonl
 
 /** Declare or redeclare one gate in a library. */
 export async function setGate(workspaceRoot: string, input: { readonly name: string; readonly gate: unknown } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  if (!isGateName(input.name)) invalid("name", `${input.name} is not a gate name: 1 to 64 letters, digits, dots, colons, underscores and hyphens`, { name: String(input.name) });
+  if (!isGateName(input.name)) invalid("name", `${input.name} is not a gate name: use non-empty letters, digits, dots, colons, underscores and hyphens`, { name: String(input.name) });
   const gate = checkGateDeclaration(input.gate, input.name);
-  return setConfigRecord(workspaceRoot, { ...input, collection: "gate", key: input.name, value: gate });
+  return setConfigRecord(workspaceRoot, { ...input, ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), collection: "gate", key: input.name, value: gate });
 }
 
 /** Remove one gate from a library; a name the library does not declare is refused (CONFIG_RECORD_NOT_FOUND). */
 export async function removeGate(workspaceRoot: string, input: { readonly name: string } & WorkspaceMutationOptions): Promise<WorkspaceState> {
-  return removeConfigRecord(workspaceRoot, { ...input, collection: "gate", key: input.name });
+  return removeConfigRecord(workspaceRoot, { ...input, ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), collection: "gate", key: input.name });
 }

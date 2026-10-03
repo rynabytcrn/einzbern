@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-362 — the FTS5 recall core.
 //
@@ -172,12 +173,12 @@ export const RECALL_RELATIVE_FLOOR = 0.25;
  * defect wants the card, the minutes that decided it and the record that carries it,
  * not eight work records.
  */
-export const RECALL_KIND_QUOTA: Readonly<Record<RecallKind, number>> = { card: 3, minutes: 3, work: 2 };
+export const RECALL_KIND_QUOTA: Readonly<Record<RecallKind, number>> = { card: RUNTIME_CAPACITY.arrayEntries, minutes: RUNTIME_CAPACITY.arrayEntries, work: RUNTIME_CAPACITY.arrayEntries };
 
 export const RECALL_DEFAULT_LIMIT = 8;
 
 /** How deep the ranked list goes before selection, so the quota has something to choose from. */
-export const RECALL_CANDIDATE_LIMIT = 80;
+export const RECALL_CANDIDATE_LIMIT = RUNTIME_CAPACITY.arrayEntries;
 
 /**
  * The score an exact external-key match carries. It is not a bm25 number and is not
@@ -187,9 +188,9 @@ export const RECALL_CANDIDATE_LIMIT = 80;
 export const RECALL_EXTERNAL_KEY_SCORE = 99;
 
 const CJK_RUN = /[㐀-鿿豈-﫿]+/gu;
-const ASCII_TOKEN = /[a-z0-9][a-z0-9_.-]{1,31}/gu;
+const ASCII_TOKEN = /[a-z0-9][a-z0-9_.-]+/gu;
 const EXTERNAL_KEY_CANDIDATE = /[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)+/gu;
-const MAXIMUM_QUERY_TOKENS = 24;
+
 
 /**
  * Bigrams that carry no topic. They are the connective tissue of a spoken question,
@@ -269,7 +270,7 @@ export function recallTextTokens(text: string): ReadonlySet<string> {
 
 /** Query-side tokens: lowercased ASCII words and CJK bigrams, stop words and stop bigrams removed. */
 export function recallQueryTokens(text: string): readonly string[] {
-  return [...recallTextTokens(text)].slice(0, MAXIMUM_QUERY_TOKENS);
+  return [...recallTextTokens(text)];
 }
 
 /**
@@ -293,7 +294,7 @@ function externalKeyTokens(text: string): readonly string[] {
 
 function externalKeyExpression(query: string): string {
   return (query.match(/[A-Za-z0-9][A-Za-z0-9-]*/gu) ?? [])
-    .slice(0, MAXIMUM_QUERY_TOKENS)
+
     .map((part) => externalKeyTokens(part))
     // A lone word asks for a key prefix only when it could be one: not a stop word, not one letter.
     .filter((tokens) => tokens.length > 1 || (tokens.length === 1 && tokens[0]!.length > 1 && !STOP_WORDS.has(tokens[0]!)))
@@ -498,8 +499,8 @@ export class RecallIndex {
       );
       try {
         rows.push(...statement.all(search.expression, limit) as Record<string, unknown>[]);
-      } catch {
-        // An invalid prompt expression contributes no hits from this table.
+      } catch (error) {
+        throw new RecallError("RECALL_QUERY_FAILED", `the complete recall query could not be evaluated: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
     // Keep the strongest score for a record found by both routes, never sum them.
@@ -536,7 +537,7 @@ export function selectRecallHits(
   const tau = options.tau ?? 0;
   const relativeFloor = options.relativeFloor ?? RECALL_RELATIVE_FLOOR;
   const limit = options.limit ?? RECALL_DEFAULT_LIMIT;
-  const quota = options.quota === undefined ? RECALL_KIND_QUOTA : options.quota;
+  const quota = options.quota ?? null;
   const best = ranked.find((hit) => hit.score !== RECALL_EXTERNAL_KEY_SCORE)?.score ?? 0;
   const floor = Math.max(tau, best * relativeFloor);
   const taken = new Map<RecallKind, number>();
@@ -762,16 +763,15 @@ export interface RecallResult {
  * TCRN-CROSS-STORY-362 requirement 5. The index is cached against the storage
  * checkpoint, so a second query at the same chain head reads nothing and rebuilds
  * nothing; a moved chain head rewrites the rows whose own digest changed and leaves
- * the rest of the table in place. Bounded to a handful of workspaces, because the
- * whole point of this structure is that it is derived state and not a store.
+ * the rest of the table in place. Each explicit cache key owns its index until
+ * resetRecallCache closes it; selecting another project does not evict its index.
  */
-const CACHE_LIMIT = 4;
 const cachedIndexes = new Map<string, RecallIndex>();
 
 /** A request recall cannot answer as asked. */
 export class RecallError extends Error {
-  readonly reasonCode: "RECALL_TAU_INVALID";
-  constructor(reasonCode: "RECALL_TAU_INVALID", message: string) {
+  readonly reasonCode: "RECALL_TAU_INVALID" | "RECALL_QUERY_FAILED";
+  constructor(reasonCode: "RECALL_TAU_INVALID" | "RECALL_QUERY_FAILED", message: string) {
     super(message);
     this.name = "RecallError";
     this.reasonCode = reasonCode;
@@ -792,11 +792,6 @@ export function recall(request: RecallRequest): RecallResult {
   }
   cachedIndexes.delete(request.cacheKey);
   cachedIndexes.set(request.cacheKey, index);
-  while (cachedIndexes.size > CACHE_LIMIT) {
-    const oldest = [...cachedIndexes.keys()][0]!;
-    cachedIndexes.get(oldest)?.close();
-    cachedIndexes.delete(oldest);
-  }
   const ranked = index.search(request.query);
   const tau = request.tau ?? RECALL_STRONG_TAU;
   if (!Number.isFinite(tau) || tau < 0) {
@@ -815,7 +810,7 @@ export function recall(request: RecallRequest): RecallResult {
       tau: floor,
       relativeFloor,
       limit,
-      quota: request.quota === undefined ? RECALL_KIND_QUOTA : request.quota,
+      quota: request.quota ?? null,
     })
     : [];
   return {

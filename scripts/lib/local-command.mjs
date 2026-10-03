@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "./runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 import { spawnSync } from "node:child_process";
@@ -61,6 +62,7 @@ export function runLocalCommand(executable, arguments_, options = {}) {
   assertion(typeof cwd === "string" && cwd.length > 0, "PROCESS_CWD_REQUIRED", String(cwd));
   assertion(encoding === undefined, "PROCESS_ENCODING_FORBIDDEN", String(encoding));
   const executionOptions = {
+    maxBuffer: RUNTIME_CAPACITY.bufferBytes,
     cwd,
     env: {
       ...process.env,

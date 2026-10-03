@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { renameRetryBudget } from "./io-policy.js";
 
 // TCRN-CROSS-STORY-489 R3, AC2 (TCRN-CROSS-SUB-366; MIN-238 D4; TCRN-CROSS-STORY-479 R5): what setup
 // --mode migrate takes off this device once it has imported and registered the partitions, before
@@ -306,6 +307,7 @@ function delay(milliseconds: number): Promise<void> {
 // indexer, an antivirus scanner) fails for a moment, so those failures are retried with backoff. A
 // move to another volume (EXDEV) is refused rather than turned into copy and delete.
 async function moveEntry(from: string, to: string): Promise<void> {
+  const retries = renameRetryBudget();
   let wait = 10;
   for (let attempt = 0; ; attempt += 1) {
     try {
@@ -313,7 +315,7 @@ async function moveEntry(from: string, to: string): Promise<void> {
       return;
     } catch (error) {
       const code = String((error as { code?: string }).code ?? "UNKNOWN");
-      if (!RETRYABLE_RENAME_CODES.has(code) || attempt >= 8) fail("MIGRATE_CLEANUP_MOVE_FAILED", `${from} could not be moved to ${to} (${code})`, { from, to, code });
+      if (!RETRYABLE_RENAME_CODES.has(code) || attempt >= retries) fail("MIGRATE_CLEANUP_MOVE_FAILED", `${from} could not be moved to ${to} (${code})`, { from, to, code });
       await delay(wait);
       wait = Math.min(wait * 2, 500);
     }

@@ -22,17 +22,17 @@ envelope has precisely `schemaVersion`, `id`, `createdAt`, `protocolVersion`,
 | `id`              | a `stableId`                                            |
 | `createdAt`       | a `strictInstant`                                       |
 | `protocolVersion` | the constant integer 1                                  |
-| `entries`         | an array of at most 10,000 entries                      |
-| `extensions`      | the shared closed extension map (at most 64 entries)    |
+| `entries`         | a complete array within the executing runtime                      |
+| `extensions`      | the shared closed extension map (complete within the executing runtime)    |
 
 Each entry is exact and closed with precisely `path`, `mediaType`, `size`, and
 `sha256`:
 
-- `path` — a portable relative path of at most 512 Unicode scalar values. It may
+- `path` — a portable relative path without a product length ceiling. It may
   not be absolute, contain a backslash, or contain an empty, `.`, or `..`
   segment.
 - `mediaType` — a string of 1 through 128 Unicode scalar values.
-- `size` — a safe integer from 0 through 1,048,576 (1 MiB) inclusive.
+- `size` — a nonnegative safe integer that fits the executing runtime buffer.
 - `sha256` — a lowercase SHA-256 digest matching `^[a-f0-9]{64}$`.
 
 ## Digest & Canonicalization
@@ -55,7 +55,7 @@ Envelope admission emits codes from the shared `PROTOCOL_REASON_CODES` list:
 - `ID_INVALID` — an `id` that is not a valid `stableId`.
 - `TIMESTAMP_INVALID` — a `createdAt` outside the strict instant subset.
 - `PATH_ESCAPE` — an absolute path, a backslash, or an empty/`.`/`..` segment.
-- `INPUT_OVERSIZED` — more than 10,000 entries, a `size` above 1 MiB, a
+- `INPUT_OVERSIZED` — a value beyond the executing runtime capacity, a
   `mediaType` above 128 scalar values, or a `path` above 512 scalar values.
 - `CANONICALIZATION_MISMATCH` — entries not in strictly ascending path order.
 - `UNKNOWN_REQUIRED_EXTENSION` — a required extension with no registration.

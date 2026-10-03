@@ -31,12 +31,14 @@ export interface ProjectConfigProjection {
   readonly values: Readonly<Record<string, string>>;
   // A projection written before records existed carries none and reads as holding none.
   readonly records: ProjectConfigRecords;
+  readonly projects?: Readonly<Record<string, { readonly values: Readonly<Record<string, string>>; readonly records: ProjectConfigRecords }>>;
 }
 
 /** A configuration record in the shape a projection needs (config-records.ts holds the full one). */
 export interface ProjectedConfigRecord {
   readonly collection: string;
   readonly key: string;
+  readonly projectId?: string;
   readonly value: JsonValue;
 }
 
@@ -48,9 +50,9 @@ export function projectConfigPath(libraryRoot: string): string {
 }
 
 /** The project-level values of a merged state, keyed and sorted by setting key. */
-export function projectConfigValues(settings: readonly { readonly key: string; readonly value: string }[]): Readonly<Record<string, string>> {
+export function projectConfigValues(settings: readonly { readonly key: string; readonly value: string; readonly projectId?: string }[]): Readonly<Record<string, string>> {
   const values: Record<string, string> = {};
-  for (const setting of [...settings].sort((left, right) => (left.key < right.key ? -1 : left.key > right.key ? 1 : 0))) {
+  for (const setting of [...settings].filter((entry) => entry.projectId === undefined).sort((left, right) => (left.key < right.key ? -1 : left.key > right.key ? 1 : 0))) {
     values[setting.key] = setting.value;
   }
   return values;
@@ -59,10 +61,19 @@ export function projectConfigValues(settings: readonly { readonly key: string; r
 /** The configuration records of a merged state, grouped by collection and keyed by record key. */
 export function projectConfigRecords(records: readonly ProjectedConfigRecord[]): ProjectConfigRecords {
   const grouped: Record<string, Record<string, JsonValue>> = {};
-  for (const record of records) {
+  for (const record of records.filter((entry) => entry.projectId === undefined)) {
     (grouped[record.collection] ??= {})[record.key] = record.value;
   }
   return grouped;
+}
+
+/** Raw overrides by stable project identity; effective values are resolved by the engine, not stored here. */
+export function projectConfigScopes(settings: readonly { readonly key: string; readonly value: string; readonly projectId?: string }[], records: readonly ProjectedConfigRecord[]): NonNullable<ProjectConfigProjection["projects"]> {
+  const ids = [...new Set([...settings, ...records].flatMap((entry) => entry.projectId === undefined ? [] : [entry.projectId]))].sort();
+  return Object.fromEntries(ids.map((id) => [id, {
+    values: projectConfigValues(settings.filter((entry) => entry.projectId === id).map(({ projectId: _scope, ...entry }) => entry)),
+    records: projectConfigRecords(records.filter((entry) => entry.projectId === id).map(({ projectId: _scope, ...entry }) => entry)),
+  }]));
 }
 
 /** Rewrite config/project.json from a merged state, atomically. */
@@ -70,7 +81,7 @@ export async function writeConfigProjection(
   libraryRoot: string,
   state: {
     readonly versionVector: Readonly<Record<string, number>>;
-    readonly settings: readonly { readonly key: string; readonly value: string }[];
+    readonly settings: readonly { readonly key: string; readonly value: string; readonly projectId?: string }[];
     readonly configRecords?: readonly ProjectedConfigRecord[];
   },
 ): Promise<ProjectConfigProjection> {
@@ -79,6 +90,7 @@ export async function writeConfigProjection(
     versionVector: state.versionVector,
     values: projectConfigValues(state.settings),
     records: projectConfigRecords(state.configRecords ?? []),
+    ...(Object.keys(projectConfigScopes(state.settings, state.configRecords ?? [])).length === 0 ? {} : { projects: projectConfigScopes(state.settings, state.configRecords ?? []) }),
   };
   await writeFileAtomic(projectConfigPath(libraryRoot), canonicalJson(projection));
   return projection;
@@ -103,6 +115,8 @@ export async function readConfigProjection(libraryRoot: string): Promise<Project
     const values = value.values;
     const versionVector = value.versionVector;
     const records = value.records;
+    const projects = value.projects;
+    if (projects !== undefined && (!isObject(projects) || Object.entries(projects).some(([id, entry]) => !/^project:[a-f0-9]{24}$/u.test(id) || !isObject(entry) || !isObject(entry.values) || Object.values(entry.values).some((v) => typeof v !== "string") || !isObject(entry.records) || Object.values(entry.records).some((v) => !isObject(v))))) return "invalid";
     if (value.schemaVersion !== PROJECT_CONFIG_SCHEMA_VERSION || !isObject(values) || !isObject(versionVector) ||
       Object.values(values).some((entry) => typeof entry !== "string") ||
       Object.values(versionVector).some((entry) => !Number.isSafeInteger(entry)) ||
@@ -114,6 +128,7 @@ export async function readConfigProjection(libraryRoot: string): Promise<Project
       versionVector: versionVector as Readonly<Record<string, number>>,
       values: values as Readonly<Record<string, string>>,
       records: (records ?? {}) as ProjectConfigRecords,
+      ...(projects === undefined ? {} : { projects: projects as NonNullable<ProjectConfigProjection["projects"]> }),
     };
   } catch {
     return "invalid";
@@ -128,7 +143,7 @@ export async function readConfigProjection(libraryRoot: string): Promise<Project
  */
 export async function configProjectionStatus(
   libraryRoot: string,
-  settings: readonly { readonly key: string; readonly value: string }[],
+  settings: readonly { readonly key: string; readonly value: string; readonly projectId?: string }[],
   records?: readonly ProjectedConfigRecord[],
 ): Promise<ProjectConfigStatus> {
   const stored = await readConfigProjection(libraryRoot);
@@ -137,5 +152,6 @@ export async function configProjectionStatus(
     return stored === "absent" && settings.length === 0 && (records?.length ?? 0) === 0 ? "current" : stored;
   }
   if (canonicalJson(stored.values) !== canonicalJson(projectConfigValues(settings))) return "stale";
+  if (canonicalJson(stored.projects ?? {}) !== canonicalJson(projectConfigScopes(settings, records ?? []))) return "stale";
   return records === undefined || canonicalJson(stored.records) === canonicalJson(projectConfigRecords(records)) ? "current" : "stale";
 }

@@ -13,6 +13,7 @@ import { fileURLToPath } from "node:url";
 
 import { ENGINE_REPOSITORY_NAMES, LOCAL_DIRECTORY_NAMES } from "./lib/names.mjs";
 import { buildContainedExecutionPlan } from "./lib/push-gate-children.mjs";
+import { RUNTIME_CAPACITY } from "./lib/runtime-capacity.mjs";
 
 export const FINAL_GATE_PLAN_VERSION = "tcrn.gate-execution-plan.v1";
 export const FINAL_GATE_PHASES = Object.freeze(["candidate-final", "publication", "merge-sensitive"]);
@@ -1314,7 +1315,6 @@ export function normalizeNativeImplementationResult(value, { workId = null, revi
   if (command === null) problems.push("result command is missing");
   if (source.stale === true || source.invalidated === true) problems.push("result is explicitly stale or invalidated");
   if (successful && (candidateId === null || candidateDigest === null || !/^[a-f0-9]{64}$/u.test(candidateDigest))) problems.push("successful result candidate identity and digest are missing or malformed");
-  if (candidateId !== null && candidateId.length > 256) problems.push("result candidateId is too long");
   return {
     present: true,
     valid: problems.length === 0,
@@ -1658,7 +1658,7 @@ function stableTaskSnapshot(taskSource) {
  * supply `readNative` in tests or an adapter; the default reads only the local
  * engine CLI and never imports a sibling repository as an authority.
  */
-export async function readNativeBatchState({ workspace, engineCli, workIds = [], series, pack, stage, readNative } = {}) {
+export async function readNativeBatchState({ workspace, engineCli, workIds = [], series, pack, stage, readNative, readTimeoutMs = Number(process.env.TCRN_BATCH_NATIVE_READ_TIMEOUT_MS ?? 5_000) } = {}) {
   if (!Array.isArray(workIds)) return { ok: false, reasonCode: "BATCH_NATIVE_WORK_NOT_VERIFIABLE", error: "bound work ids must be an array" };
   if (typeof readNative === "function") {
     try {
@@ -1672,10 +1672,11 @@ export async function readNativeBatchState({ workspace, engineCli, workIds = [],
     }
   }
   if (typeof workspace !== "string" || !workspace.startsWith("/") || workspace.includes("\u0000")) return { ok: false, reasonCode: "BATCH_NATIVE_READ_NOT_VERIFIABLE", error: "absolute workspace is required" };
+  if (!Number.isSafeInteger(readTimeoutMs) || readTimeoutMs < 1 || readTimeoutMs > RUNTIME_CAPACITY.timerMilliseconds) return { ok: false, reasonCode: "BATCH_NATIVE_READ_NOT_VERIFIABLE", error: "readTimeoutMs must be a positive integer supported by the Node timer" };
   if (!(typeof series === "string" && series.length > 0) && workIds.length === 0) return { ok: false, reasonCode: "BATCH_NATIVE_SCOPE_NOT_VERIFIABLE", error: "series or bound work ids are required for a scoped native read" };
   const cli = typeof engineCli === "string" && engineCli.length > 0 ? engineCli : resolve(repositoryRoot, "scripts/einzbern.mjs");
   const invoke = (verb, args) => {
-    const result = spawnSync(process.execPath, [cli, verb, "--workspace", workspace, ...args], { cwd: repositoryRoot, encoding: "utf8", timeout: 5_000, maxBuffer: 4 * 1024 * 1024, shell: false });
+    const result = spawnSync(process.execPath, [cli, verb, "--workspace", workspace, ...args], { cwd: repositoryRoot, encoding: "utf8", timeout: readTimeoutMs, maxBuffer: RUNTIME_CAPACITY.bufferBytes, shell: false });
     if (result.error || result.status !== 0) return { ok: false, reasonCode: "BATCH_NATIVE_READ_NOT_VERIFIABLE", error: String(result.error?.message ?? result.stderr ?? "native read failed").trim() };
     try {
       const parsed = JSON.parse(String(result.stdout ?? "").trim());
@@ -1694,18 +1695,23 @@ export async function readNativeBatchState({ workspace, engineCli, workIds = [],
   const listedRecords = [];
   let offset = 0;
   let total = null;
+  const seenPageIds = new Set();
   for (;;) {
     const listed = invoke("work-list", ["--limit", String(pageSize), "--offset", String(offset)]);
     if (!listed.ok) return listed;
     const records = listed.result?.records ?? listed.result?.result?.records;
     if (!Array.isArray(records)) return { ok: false, reasonCode: "BATCH_NATIVE_QUEUE_NOT_VERIFIABLE", offset };
+    for (const record of records) {
+      if (typeof record?.id !== "string" || seenPageIds.has(record.id)) return { ok: false, reasonCode: "BATCH_NATIVE_QUEUE_NOT_VERIFIABLE", error: "work-list pagination repeated or omitted a stable id" };
+      seenPageIds.add(record.id);
+    }
     pages.push({ offset, total: listed.result?.total ?? null, truncated: listed.result?.truncated ?? null, version: listed.result?.version ?? null, headEventHash: listed.result?.headEventHash ?? null, recordCount: records.length });
     if (total === null && Number.isSafeInteger(listed.result?.total)) total = listed.result.total;
     listedRecords.push(...records);
     if (listed.result?.truncated === false || records.length === 0 || total !== null && listedRecords.length >= total) break;
     if (records.length < pageSize) return { ok: false, reasonCode: "BATCH_NATIVE_QUEUE_NOT_VERIFIABLE", error: "work-list reported truncation without a complete page" };
     offset += records.length;
-    if (pages.length > 10_000) return { ok: false, reasonCode: "BATCH_NATIVE_QUEUE_NOT_VERIFIABLE", error: "work-list pagination did not converge" };
+    if (!Number.isSafeInteger(offset)) return { ok: false, reasonCode: "BATCH_NATIVE_QUEUE_NOT_VERIFIABLE", error: "work-list offset is outside the runtime exact-integer range" };
   }
   const complete = total !== null ? listedRecords.length === total : pages.at(-1)?.truncated === false;
   if (!complete) return { ok: false, reasonCode: "BATCH_NATIVE_QUEUE_NOT_VERIFIABLE", error: "complete work-list pagination could not be proven", total, observed: listedRecords.length };

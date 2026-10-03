@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-489 R1 (TCRN-CROSS-SUB-364; MIN-235 D17, MIN-238 D4): the plan of setup --mode
@@ -73,10 +74,10 @@ import type { WorkspaceState } from "./workspace.js";
 export const MIGRATION_MAPPING_SCHEMA_VERSION = "einzbern.migration-mapping.v1" as const;
 
 // A mapping names a handful of partitions; a file larger than this is not one.
-const MAPPING_MAXIMUM_BYTES = 1_048_576;
+const MAPPING_MAXIMUM_BYTES = RUNTIME_CAPACITY.bufferBytes;
 const MAPPING_FIELDS: readonly string[] = Object.freeze(["partition", "legacyWorkspace", "projectRoot", "projectName", "gitRemote", "omitLegacyKnowledge"]);
 // The library manifest's bound on a project hint (ether-library.ts), which a partition's name shares.
-const HINT_MAXIMUM_LENGTH = 512;
+const HINT_MAXIMUM_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;
 const PORTAL_KEY_PREFIX = "portal.";
 
 /** One partition of the mapping: the old workspace and the project whose library it becomes. */
@@ -295,7 +296,7 @@ export function checkMigrationMapping(value: unknown, file: string): MigrationMa
     if (gitRemote !== undefined && !isHint(gitRemote)) mappingInvalid(`partitions[${index}].gitRemote must be one line of at most ${HINT_MAXIMUM_LENGTH} characters`, at("gitRemote"));
     if (omitLegacyKnowledge !== undefined) {
       const field = legacyKnowledgeOmissionIssue(omitLegacyKnowledge);
-      if (field !== null) mappingInvalid(`partitions[${index}].omitLegacyKnowledge must contain only a nonempty one-line reason of at most 512 characters`, at(field));
+      if (field !== null) mappingInvalid(`partitions[${index}].omitLegacyKnowledge must contain only a nonempty one-line reason`, at(field));
     }
     partitions.push({
       partition,

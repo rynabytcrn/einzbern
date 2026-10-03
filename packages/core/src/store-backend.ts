@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 // STORY-177 — the knowledge/artifact store data-plane abstraction. The workspace
 // control tree already rides behind a StorageBackend (STORY-174); this file gives
@@ -294,7 +295,7 @@ export class FileStoreBackend implements StoreBackend {
   }
 
   private assertRelativePath(value: string): asserts value is string {
-    if (typeof value !== "string" || value.length === 0 || value.length > 512 || value.startsWith("/") || value.includes("\\")) {
+    if (typeof value !== "string" || value.length === 0 || value.startsWith("/") || value.includes("\\")) {
       throw new StoreBackendError(this.codes.pathInvalid, value);
     }
     const segments = value.split("/");
@@ -512,7 +513,7 @@ interface SegmentedKnowledgeBodyManifest {
 }
 
 // The largest file of the segmented layout a read opens: a segment, its point index or the manifest.
-export const SEGMENTED_BODY_FILE_LIMIT = 16_777_216;
+export const SEGMENTED_BODY_FILE_LIMIT = RUNTIME_CAPACITY.bufferBytes;
 
 function segmentedBodySha256(bytes: Buffer): string {
   return createHash("sha256").update(bytes).digest("hex");
@@ -685,19 +686,19 @@ export class SegmentedKnowledgeStoreBackend implements StoreBackend {
 
   private async readSegmentedManifest(): Promise<SegmentedKnowledgeBodyManifest | null> {
     const names = await this.delegate.listKnowledgeBodyFiles();
-    const hasSegments = names.some((name) => /^\d{6}\.(?:ndjson|idx)$/u.test(name));
+    const hasSegments = names.some((name) => /^\d{6,}\.(?:ndjson|idx)$/u.test(name));
     if (!names.includes("manifest.json")) {
       if (hasSegments) throw new StoreBackendError("KNOWLEDGE_RECORD_INVALID", "segmented body manifest is missing");
       return null;
     }
-    const value = assertCanonicalJson((await this.delegate.readKnowledgeBodyFile("manifest.json", 65_536)).toString("utf8"));
+    const value = assertCanonicalJson((await this.delegate.readKnowledgeBodyFile("manifest.json", RUNTIME_CAPACITY.bufferBytes)).toString("utf8"));
     if (!segmentedBodyObject(value) || value.schemaVersion !== "tcrn.knowledge-body-manifest.v1" || !Array.isArray(value.segments) ||
       !Number.isSafeInteger(value.count) || Number(value.count) < 0 || typeof value.indexDigest !== "string" || !/^[a-f0-9]{64}$/u.test(value.indexDigest)) {
       throw new StoreBackendError("KNOWLEDGE_RECORD_INVALID", "segmented body manifest is invalid");
     }
     const segments: Array<SegmentedKnowledgeBodyManifest["segments"][number]> = [];
     for (const raw of value.segments) {
-      if (!segmentedBodyObject(raw) || typeof raw.name !== "string" || !/^\d{6}\.ndjson$/u.test(raw.name) ||
+      if (!segmentedBodyObject(raw) || typeof raw.name !== "string" || !/^\d{6,}\.ndjson$/u.test(raw.name) ||
         !Number.isSafeInteger(raw.bytes) || !Number.isSafeInteger(raw.records) || typeof raw.sha256 !== "string" || !/^[a-f0-9]{64}$/u.test(raw.sha256)) {
         throw new StoreBackendError("KNOWLEDGE_RECORD_INVALID", "segmented body manifest segment is invalid");
       }
@@ -757,7 +758,7 @@ export class SegmentedKnowledgeStoreBackend implements StoreBackend {
       segments.push({ name, bytes: content.length, records: part.length, sha256: segmentedBodySha256(content) });
     }
     for (const name of await this.delegate.listKnowledgeBodyFiles()) {
-      if ((/^\d{6}\.(?:ndjson|idx)$/u.test(name)) && !segments.some((segment) => segment.name === name || segment.name.replace(".ndjson", ".idx") === name)) {
+      if ((/^\d{6,}\.(?:ndjson|idx)$/u.test(name)) && !segments.some((segment) => segment.name === name || segment.name.replace(".ndjson", ".idx") === name)) {
         await this.delegate.removeKnowledgeBodyFile(name);
       }
     }

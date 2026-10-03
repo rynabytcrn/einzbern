@@ -15,8 +15,8 @@
 //      tcrn-* class, so the design-system contract remains visible at the DOM
 //      boundary instead of being inferred from tag names alone.
 //
-// When the design system is not on disk the token leg reports UNVERIFIED and
-// exits non-zero rather than passing: an unchecked copy is not a matching copy.
+// Offline consumption is bound to the checked-in matched Production contract.
+// Missing or mismatched expected digests fail; no sibling authority is inferred.
 
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
@@ -25,8 +25,8 @@ import { fileURLToPath } from "node:url";
 
 const portalRoot = fileURLToPath(new URL("..", import.meta.url));
 const vendored = join(portalRoot, "tokens.css");
-const upstream = process.env.TCRN_DESIGN_SYSTEM_TOKENS
-  ?? join(portalRoot, "..", "..", "TCRN-Design-System", "packages", "ui-tokens", "src", "tokens.css");
+const upstream = process.env.TCRN_DESIGN_SYSTEM_TOKENS;
+const dsContract = JSON.parse(await readFile(join(portalRoot, "ds-consumer-contract.json"), "utf8"));
 
 const digest = (text) => createHash("sha256").update(text).digest("hex");
 const indexPath = process.env.TCRN_PORTAL_INDEX ?? join(portalRoot, "index.html");
@@ -34,8 +34,7 @@ const baselinePath = process.env.TCRN_PORTAL_BASELINE ?? join(portalRoot, "desig
 // Atelier ships the design system's mother-brand mark under its own file name; the bytes, and
 // the source file they are compared with, are the design system's (TCRN-CROSS-STORY-482 R1).
 const brandAssetPath = process.env.TCRN_PORTAL_BRAND_ASSET ?? join(portalRoot, "atelier-brand-mark.svg");
-const brandSourcePath = process.env.TCRN_PORTAL_BRAND_SOURCE
-  ?? join(portalRoot, "..", "..", "TCRN-Design-System", "apps", "storybook", "assets", "tcrn-brand-mark.svg");
+const brandSourcePath = process.env.TCRN_PORTAL_BRAND_SOURCE;
 const EXPECTED_BRAND_MARK_SHA256 = "5f28f17c599c63a05a51c81be03f9ef7845299af1940ebe6aef61f7af47fc25b";
 const styled = [{ label: "index.html", path: indexPath }];
 const DS_COMPONENT_STYLE = /<style id="tcrn-ds-component-css" data-source="snapshot">[\s\S]*?<\/style>/u;
@@ -55,34 +54,17 @@ const PORTAL_BRAND_TOKEN_LINE = /^\s*--tcrn-brand-accent-workflow:\s*#(?:3b5272|
 const legs = [];
 const indexText = await readFile(indexPath, "utf8");
 
-// Leg 1 — token fidelity.
+// Leg 1 — exact bytes against the matched Production authority's published token digest.
+// An explicitly supplied comparison input is additional development evidence; no sibling
+// checkout is discovered or treated as runtime authority.
 try {
-  const [local, source] = await Promise.all([readFile(vendored, "utf8"), readFile(upstream, "utf8")]);
-  const matches = local === source;
-legs.push({
-  leg: "token-fidelity",
-    ok: matches,
-    reasonCode: matches ? "TOKENS_MATCH_DESIGN_SYSTEM" : "TOKENS_DRIFTED",
-    vendoredSha256: digest(local),
-    upstreamSha256: digest(source),
-    upstream,
-  });
+  const local = await readFile(vendored);
+  const source = upstream === undefined ? null : await readFile(upstream);
+  const expected = dsContract.tokensCss?.sha256;
+  const matches = /^[a-f0-9]{64}$/u.test(expected ?? "") && digest(local) === expected && (source === null || local.equals(source));
+  legs.push({ leg: "token-fidelity", ok: matches, reasonCode: matches ? "TOKENS_MATCH_DESIGN_SYSTEM" : "TOKENS_DRIFTED", vendoredSha256: digest(local), expectedSha256: expected ?? null, ...(source === null ? {} : { upstreamSha256: digest(source), upstream }) });
 } catch (error) {
-  // An absent upstream is not a failure. This leg compares the shipped token
-  // bytes against the design system, which lives on the platform that authors
-  // the portal; since the portal now ships inside the engine, this script
-  // reaches every user, and none of them has that repository. A gate that goes
-  // red where it was never meant to apply teaches people to ignore red. The
-  // other leg — no literal colours — still runs, because it needs nothing.
-  const absent = error?.code === "ENOENT";
-  legs.push({
-    leg: "token-fidelity",
-    ok: absent,
-    ...(absent ? { skipped: true } : {}),
-    reasonCode: absent ? "TOKENS_SOURCE_ABSENT" : "TOKENS_UNREADABLE",
-    upstream,
-    ...(absent ? { note: "run this on the platform that holds the design system" } : { error: String(error?.message ?? error) }),
-  });
+  legs.push({ leg: "token-fidelity", ok: false, reasonCode: "TOKENS_UNREADABLE", error: String(error?.message ?? error) });
 }
 
 // Leg 2 — the portal ships the admitted Design System mother-brand asset
@@ -97,9 +79,8 @@ try {
   let sourceSha256;
   let sourceAvailable = true;
   try {
-    const source = await readFile(brandSourcePath);
-    sourceSha256 = digest(source);
-    if (!asset.equals(source)) findings.push({ name: "source bytes", reason: "portal asset differs from Design System source" });
+    if (brandSourcePath === undefined) sourceAvailable = false;
+    else { const source = await readFile(brandSourcePath); sourceSha256 = digest(source); if (!asset.equals(source)) findings.push({ name: "source bytes", reason: "portal asset differs from explicitly named Design System source" }); }
   } catch (error) {
     if (error?.code === "ENOENT") sourceAvailable = false;
     else findings.push({ name: "source read", reason: String(error?.message ?? error) });
@@ -210,6 +191,8 @@ const NON_BUTTON_CONTROLS = new Set([
   "tcrn-search-result",         // command palette result row
   "tcrn-shell-locale-menu__trigger", "tcrn-shell-locale-menu__option",
   "tcrn-switch__control",       // the switch's own input
+  "tcrn-multi-select-dropdown__trigger", // published Select-family trigger
+  "tcrn-multi-select-dropdown__option",  // published Menu-family option
   "tcrn-workspace-tab",
   "tcrn-badge",                 // the receipt chip is a status badge that opens the drawer
 ]);
@@ -388,7 +371,7 @@ const layoutRequirements = [
   { name: "shell theme toggle in place", source: indexText, text: "tcrn-icon-button tcrn-shell-theme-toggle" },
   { name: "shell locale menu in place", source: indexText, text: 'class="tcrn-shell-locale-menu__panel"' },
   { name: "compound search input in place", source: indexText, text: 'class="tcrn-input tcrn-search-input__control' },
-  { name: "footer syntax", source: indexText, text: 'class="tcrn-rail__footer"><span data-i18n="app.boundaryBody">' },
+  { name: "footer syntax", source: indexText, text: 'class="tcrn-text tcrn-rail__footer"><span data-i18n="app.boundaryBody">' },
   { name: "boolean control mapping", source: indexText, text: 'entry.controlType === "boolean"' },
   { name: "number control mapping", source: indexText, text: 'entry.controlType === "number") return `<div class="tcrn-number-input-field"' },
   { name: "number input visual", source: indexText, text: 'data-number-input-visibility="full-value" data-setting-control' },
@@ -396,9 +379,14 @@ const layoutRequirements = [
   { name: "select enum mapping", source: indexText, text: 'control = "select") =>' },
   { name: "setting choice control mapping", source: indexText, text: 'data-setting-choice-control="${control}" data-setting-key' },
   { name: "closed multi-select mapping", source: indexText, text: 'settingChoiceAttrs(roster, entry.key, "collection-closed", "multi-select")' },
-  { name: "closed multi-select presentation", source: indexText, text: 'data-choice-value-mode="closed" data-choice-presentation="checkboxes"' },
+  { name: "closed multi-select presentation", source: indexText, text: 'data-choice-value-mode="closed" data-choice-presentation="dropdown"' },
+  { name: "multi-select Select trigger", source: indexText, text: 'class="tcrn-select tcrn-multi-select-dropdown__trigger"' },
+  { name: "multi-select Menu option", source: indexText, text: 'class="tcrn-menu__item tcrn-multi-select-dropdown__option"' },
+  { name: "multi-select native value", source: indexText, text: 'class="tcrn-sr-only tcrn-multi-select-dropdown__value" data-choice-presentation="dropdown" multiple' },
+  { name: "multi-select list semantics", source: indexText, text: 'class="tcrn-menu tcrn-multi-select-dropdown__list" role="listbox" aria-multiselectable="true"' },
+  { name: "multi-select public bridge", source: indexText, text: 'mountStaticMultiSelect({ root })' },
   { name: "checkbox design-system control", source: indexText, text: 'class="tcrn-checkbox" type="checkbox"' },
-  { name: "multi-select reset button component", source: indexText, text: 'class="tcrn-button tcrn-button--quiet tcrn-button--sm tcrn-multi-select-group__clear"' },
+  { name: "multi-select reset button component", source: indexText, text: 'class="tcrn-button tcrn-button--quiet tcrn-button--sm" data-reset-setting="${esc(entry.key)}" ${entry.declaredValue == null ? "disabled" : ""}' },
   { name: "text control mapping", source: indexText, text: 'return `<label class="tcrn-field"><span class="tcrn-sr-only">${esc(label)}' },
   { name: "settings layout mode", source: indexText, text: 'data-settings-layout-mode="container-driven"' },
   { name: "settings layout identity", source: indexText, text: 'data-settings-layout="true"' },
@@ -413,11 +401,11 @@ const layoutRequirements = [
   { name: "two-level settings flow", source: initLayoutSource, text: '[data-page-hierarchy="true"][data-page-hierarchy-depth="two"] [data-settings-layout-grid] { display: block; }' },
   { name: "two-level editor flow", source: initLayoutSource, text: '[data-page-hierarchy="true"][data-page-hierarchy-depth="two"] .tcrn-editor-shell { display: block; }' },
   { name: "two-level navigation is not sticky", source: initLayoutSource, text: "  position: static;" },
-  { name: "settings DS candidate", source: indexText, text: 'data-ds-candidate="TCRN-Design-System@610680b81a950e91e9e1e77718ea7f3f3b19bc27"' },
+  { name: "settings DS candidate", source: indexText, text: `data-ds-candidate="TCRN-Design-System@${dsContract.candidate}"` },
   { name: "settings DS contract version", source: indexText, text: 'data-ds-contract-version="ai_consumption_contract_v1"' },
-  { name: "settings DS contract digest", source: indexText, text: 'data-ds-contract-digest="a56fcf3427866d4034ede1c59b59b888ac8169ca19fcd1c3af66b0a49cd16138"' },
-  { name: "settings DS coordination status", source: indexText, text: 'data-ds-contract-status="candidate-consumed-pending-coordination"' },
-  { name: "topbar DS mapping status", source: indexText, text: 'data-ds-mapping-status="candidate-consumed-pending-coordination"' },
+  { name: "settings DS contract digest", source: indexText, text: `data-ds-contract-digest="${dsContract.aiContract.payloadDigest}"` },
+  { name: "settings DS coordination status", source: indexText, text: `data-ds-contract-status="${dsContract.reconciliation.status}"` },
+  { name: "topbar DS mapping status", source: indexText, text: `data-ds-mapping-status="${dsContract.reconciliation.status}"` },
   { name: "settings DS surface contracts", source: indexText, text: 'data-ds-surface-contracts="overlay-boundary-contract-v1 field-value-selection-contract-v1 dictionary-content-contract-v1 operation-feedback-contract-v1 content-scope-contract-v1 consumer-evidence-contract-v1 verification-cadence-contract-v1"' },
   { name: "settings DS static overlay bridge", source: indexText, text: 'data-ds-static-overlay-bridge="mountStaticOverlayBoundary"' },
   { name: "DS tabs keyboard contract", source: indexText, text: 'event.key === "ArrowRight"' },
@@ -511,26 +499,37 @@ legs.push({
   findings: topbarFindings,
 });
 
-// Leg 11 — the portal sidebar mirrors the v4 values exactly. This is scoped to
-// the portal override so the package snapshot remains governed by its own
-// source and reconciliation gate.
+// Leg 11 keeps its historical name so the retained verbatim leg roster remains
+// stable. INC-399 R2/R5 now consumes the published navigation family: the old
+// private v4 sidebar colours, typography and control metrics were removed.
+// Exact snapshot/inline bytes and no local family overrides are source checks;
+// they do not establish current browser geometry or Owner visual acceptance.
 const sidenavRequirements = [
-  { name: "sidenav transparent background", text: ".tcrn-product-shell__sidebar {\n  background: transparent;" },
-  { name: "sidenav list gap", text: ".tcrn-product-shell__sidebar .tcrn-side-nav {\n  gap: 1px;" },
-  { name: "sidenav item padding", text: "  padding: var(--tcrn-space-1h) var(--tcrn-space-2);" },
-  { name: "sidenav icon slot width", text: ".tcrn-product-shell__sidebar .tcrn-nav-item__content {\n  flex: 0 0 16px;\n  width: 16px;" },
-  { name: "sidenav icon opacity", text: "  opacity: .8;\n  font-size: 12px;" },
-  { name: "sidenav current colors", text: ".tcrn-product-shell__sidebar .tcrn-nav-item[aria-current=\"page\"] {\n  background: var(--tcrn-color-brand-primary-bg);\n  color: var(--tcrn-color-brand-primary);" },
-  { name: "sidenav non-current hover", text: ".tcrn-product-shell__sidebar .tcrn-nav-item:hover:not([aria-current=\"page\"]) {\n  background: var(--tcrn-color-surface-muted);" },
+  { name: "sidenav published item", text: '<button class="tcrn-nav-item" data-nav-item-has-icon="true" data-page-target=' },
+  { name: "sidenav published icon slot", text: '<span class="tcrn-nav-item__content" aria-hidden="true">' },
+  { name: "sidenav published label", text: '<span class="tcrn-nav-item__label" data-i18n=' },
 ];
 const sidenavFindings = sidenavRequirements
   .filter((requirement) => !indexText.includes(requirement.text))
-  .map((requirement) => ({ name: requirement.name, reason: "v4 sidenav value absent", text: requirement.text }));
+  .map((requirement) => ({ name: requirement.name, reason: "published navigation construction absent", text: requirement.text }));
+const publishedCss = await readFile(join(portalRoot, "ds-component-css.snapshot.css"), "utf8");
+const inlineCss = /<style id="tcrn-ds-component-css" data-source="snapshot">([\s\S]*?)<\/style>/u.exec(indexText)?.[1];
+if (digest(publishedCss) !== dsContract.componentCss?.sha256 || inlineCss !== publishedCss) {
+  sidenavFindings.push({ name: "published component CSS binding", reason: "snapshot or inline bytes differ from the consumed Production contract" });
+}
+const localCss = indexText.slice(indexText.indexOf("/* The Workflow accent"), indexText.lastIndexOf("</style>"))
+  .replace(/\/\*[\s\S]*?\*\//gu, "");
+for (const rule of localCss.matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
+  if (!/\.(?:tcrn-product-shell__sidebar|tcrn-nav-item(?:__content|__label)?|tcrn-side-nav)\b/u.test(rule[1])) continue;
+  if (/(?:^|;)\s*(?:background(?:-color)?|color|font(?:-[a-z-]+)?|line-height|letter-spacing|padding(?:-[a-z-]+)?|border(?:-[a-z-]+)?|opacity)\s*:/u.test(rule[2])) {
+    sidenavFindings.push({ name: "sidenav local family override", reason: "local declarations replace published visual family values", selector: rule[1].trim(), declarations: rule[2].trim() });
+  }
+}
 legs.push({
   leg: "sidenav-v4-style-invariants",
   ok: sidenavFindings.length === 0,
-  reasonCode: sidenavFindings.length === 0 ? "SIDENAV_V4_VALUES_EXPLICIT" : "SIDENAV_V4_VALUES_DRIFTED",
-  reference: "docs/reports/init-028-design/preview.html:207-211",
+  reasonCode: sidenavFindings.length === 0 ? "SIDENAV_PUBLISHED_FAMILY_BOUND" : "SIDENAV_PUBLISHED_FAMILY_DRIFTED",
+  reference: `TCRN-Design-System@${dsContract.candidate}`,
   scanned: "index.html",
   findings: sidenavFindings,
 });

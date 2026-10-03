@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { createHash } from "node:crypto";
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 
 import {
   CanonicalOrderError,
@@ -14,42 +15,16 @@ export const PROTOCOL_STATUS = "implemented-p2-v1" as const;
 export const PROTOCOL_VERSION = 1 as const;
 export const P3_ACCEPTANCE_MARKER_PATH = ".context/platform/workflow-v3-capabilities/p3-local-work-graph.accepted.json" as const;
 
-// TCRN-CROSS-INC-224: maxRecords and maxChainEvents are two different questions that
-// shared one constant by an accident of naming. Every protocol-side use of maxRecords
-// bounds the shape of a SINGLE document or call -- a canonical array's length, an
-// object's property count, the context record inputs, the exchange entries, the work
-// graph inputs. maxChainEvents bounds what an append-only log accumulates over its
-// lifetime (validateEventChain and the workspace record count, TCRN-CROSS-STORY-451),
-// which is a different quantity with a different failure mode and a different
-// remedy. A chain holding twelve thousand events after a year has nothing to say about
-// whether one canonical array may hold twelve thousand elements.
-//
-// Raising the shared constant to buy chain headroom would have loosened six unrelated
-// input bounds to fix one lifetime bound. Nothing measured argues for that, so the input
-// bound stays where it was and only the lifetime bound moves.
-//
-// 20,000 comes from measurement rather than preference. Replay is linear: across the six
-// live partitions on 2026-08-19, spanning 243 to 4,316 events -- a seventeen-fold range --
-// per-event materialize cost stayed flat between 95 and 133 microseconds with no
-// superlinear term, fitting 117 us/event. That projects 2.34 s at 20,000 against 0.51 s
-// measured at 4,316. The cost is real, felt on every command, and predictable, which is
-// what makes it a budget rather than a gamble. No timing gate enforces it: this
-// repository's own convention is that a gate must be host-independent, and wall clock is
-// the opposite of that. The linearity is asserted by counting instead.
+// INC-399 R4: no product-owned byte/count ceiling. Compatibility names expose immutable runtime
+// capacities. Budget/window defaults belong to their actual consumers and never refuse whole data.
 export const PROTOCOL_LIMITS = Object.freeze({
-  maxCanonicalBytes: 1_048_576,
-  maxRecords: 10_000,
-  maxChainEvents: 20_000,
-  maxStringLength: 8_192,
-  maxExtensions: 64,
+  maxCanonicalBytes: RUNTIME_CAPACITY.bufferBytes,
+  maxRecords: RUNTIME_CAPACITY.arrayEntries,
+  maxChainEvents: RUNTIME_CAPACITY.arrayEntries,
+  maxStringLength: RUNTIME_CAPACITY.stringCodeUnits,
+  maxExtensions: RUNTIME_CAPACITY.arrayEntries,
 });
-
-// TCRN-CROSS-STORY-363. The summary is a retrieval line, not a description: it
-// rides in every work-list row and in the injected "[Story KEY status] summary"
-// line, so its cost is paid once per record per read. 160 UTF-8 bytes is the
-// budget that keeps a fifty-record listing under one screen; it is a byte bound
-// rather than a character bound because that is what the transport pays for.
-export const WORK_SUMMARY_MAX_BYTES = 160;
+export const WORK_SUMMARY_MAX_BYTES = RUNTIME_CAPACITY.bufferBytes;
 
 export const PROTOCOL_REASON_CODES = Object.freeze([
   "CANONICAL_VALUE_INVALID",
@@ -306,73 +281,63 @@ function assertSortedUnique(values: unknown, label: string): asserts values is r
   }
 }
 
-function canonicalValue(value: unknown, depth: number): string {
-  if (depth > 64) {
-    fail("CANONICAL_VALUE_INVALID", "Canonical values may not exceed 64 levels");
-  }
-  if (value === null || typeof value === "boolean" || typeof value === "string") {
-    if (typeof value === "string" && canonicalStringLength(value) > PROTOCOL_LIMITS.maxStringLength) {
-      fail("INPUT_OVERSIZED", "A protocol string exceeds the configured limit");
+/** Iterative serialization preserves V1 bytes without a made-up nesting depth or call-stack limit. */
+function canonicalValue(value: unknown): string {
+  type Step = { readonly kind: "value"; readonly value: unknown } | { readonly kind: "text"; readonly text: string } | { readonly kind: "leave"; readonly object: object };
+  const stack: Step[] = [{ kind: "value", value }];
+  const ancestors = new WeakSet<object>();
+  const output: string[] = [];
+  while (stack.length > 0) {
+    const step = stack.pop()!;
+    if (step.kind === "text") { output.push(step.text); continue; }
+    if (step.kind === "leave") { ancestors.delete(step.object); continue; }
+    const item = step.value;
+    if (item === null || typeof item === "boolean" || typeof item === "string") {
+      if (typeof item === "string") canonicalStringLength(item);
+      output.push(JSON.stringify(item)); continue;
     }
-    return JSON.stringify(value);
-  }
-  if (typeof value === "number") {
-    if (!Number.isSafeInteger(value)) {
-      fail("CANONICAL_VALUE_INVALID", "Only safe integers are canonical protocol numbers");
+    if (typeof item === "number") {
+      if (!Number.isSafeInteger(item)) fail("CANONICAL_VALUE_INVALID", "Only safe integers are canonical protocol numbers");
+      output.push(JSON.stringify(item)); continue;
     }
-    return JSON.stringify(value);
-  }
-  if (isUnknownArray(value)) {
-    if (value.length > PROTOCOL_LIMITS.maxRecords) {
-      fail("INPUT_OVERSIZED", "Canonical arrays may not exceed the record limit");
+    if (!isUnknownArray(item) && !isPlainObject(item)) fail("CANONICAL_VALUE_INVALID", "Only plain JSON objects, arrays, strings, booleans, null, and safe integers are supported");
+    if (ancestors.has(item)) fail("CANONICAL_VALUE_INVALID", "Canonical values cannot contain a cycle");
+    ancestors.add(item); stack.push({ kind: "leave", object: item });
+    if (isUnknownArray(item)) {
+      stack.push({ kind: "text", text: "]" });
+      for (let index = item.length - 1; index >= 0; index -= 1) {
+        stack.push({ kind: "value", value: item[index] });
+        if (index > 0) stack.push({ kind: "text", text: "," });
+      }
+      stack.push({ kind: "text", text: "[" });
+    } else {
+      const keys = Object.keys(item);
+      for (const key of keys) canonicalStringLength(key);
+      keys.sort(compareCanonicalText);
+      stack.push({ kind: "text", text: "}" });
+      for (let index = keys.length - 1; index >= 0; index -= 1) {
+        const key = keys[index]!;
+        stack.push({ kind: "value", value: item[key] });
+        stack.push({ kind: "text", text: `${JSON.stringify(key)}:` });
+        if (index > 0) stack.push({ kind: "text", text: "," });
+      }
+      stack.push({ kind: "text", text: "{" });
     }
-    return `[${value.map((entry) => canonicalValue(entry, depth + 1)).join(",")}]`;
   }
-  if (!isPlainObject(value)) {
-    fail("CANONICAL_VALUE_INVALID", "Only JSON objects, arrays, strings, booleans, null, and safe integers are supported");
-  }
-  let keys: string[];
-  try {
-    keys = Object.keys(value);
-    for (const key of keys) {
-      canonicalStringLength(key);
-    }
-    keys.sort(compareCanonicalText);
-  } catch (error) {
-    if (error instanceof CanonicalOrderError) {
-      fail("CANONICAL_VALUE_INVALID", error.message);
-    }
-    throw error;
-  }
-  if (keys.length > PROTOCOL_LIMITS.maxRecords) {
-    fail("INPUT_OVERSIZED", "Canonical objects may not exceed the property limit");
-  }
-  return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalValue(value[key], depth + 1)}`).join(",")}}`;
+  return output.join("");
 }
 
 export function canonicalJson(value: unknown): string {
-  const canonical = `${canonicalValue(value, 0)}\n`;
-  if (Buffer.byteLength(canonical, "utf8") > PROTOCOL_LIMITS.maxCanonicalBytes) {
-    fail("INPUT_OVERSIZED", "Canonical input exceeds one MiB");
+  try { return `${canonicalValue(value)}\n`; }
+  catch (error) {
+    if (error instanceof RangeError) fail("INPUT_OVERSIZED", "The executing runtime cannot represent the complete canonical value");
+    throw error;
   }
-  return canonical;
 }
 
-/**
- * The size a value would canonicalise to, measured rather than judged.
- *
- * A capacity meter cannot be built out of `canonicalJson`, because that function
- * fails closed at exactly the ceiling the meter exists to warn about: wrapping it
- * would make the gauge stop reading at the moment it matters. So this shares the
- * serialiser and skips only the `maxCanonicalBytes` verdict. The record-level
- * limits inside `canonicalValue` (string length, array and property counts) still
- * throw, because those are defects in the value rather than facts about its size.
- *
- * It returns a number and never the string: there must be no route through this
- * function that writes bytes past the ceiling.
- */
+/** Measures complete canonical bytes; never narrows the value or truncates its data. */
 export function canonicalByteLength(value: unknown): number {
-  return Buffer.byteLength(`${canonicalValue(value, 0)}\n`, "utf8");
+  return Buffer.byteLength(canonicalJson(value), "utf8");
 }
 
 export function canonicalSha256(value: unknown): string {
@@ -400,14 +365,14 @@ export function canonicalExternalKey(value: unknown): string {
     fail("EXTERNAL_KEY_INVALID", String(value));
   }
   const canonical = value.toUpperCase();
-  if (!/^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$/u.test(canonical) || canonical.length > 128) {
+  if (!/^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)*$/u.test(canonical)) {
     fail("EXTERNAL_KEY_INVALID", value);
   }
   return canonical;
 }
 
 export function deriveStableId(namespace: unknown, externalKey: unknown): string {
-  if (typeof namespace !== "string" || !/^[a-z][a-z0-9-]{1,31}$/u.test(namespace)) {
+  if (typeof namespace !== "string" || !/^[a-z][a-z0-9-]+$/u.test(namespace)) {
     fail("ID_INVALID", String(namespace));
   }
   const key = canonicalExternalKey(externalKey);
@@ -415,7 +380,7 @@ export function deriveStableId(namespace: unknown, externalKey: unknown): string
 }
 
 export function assertProtocolId(value: unknown): asserts value is string {
-  if (typeof value !== "string" || !/^[a-z][a-z0-9-]{1,31}:[a-z0-9][a-z0-9._-]{0,127}$/u.test(value)) {
+  if (typeof value !== "string" || !/^[a-z][a-z0-9-]+:[a-z0-9][a-z0-9._-]*$/u.test(value)) {
     fail("ID_INVALID", String(value));
   }
 }
@@ -616,7 +581,7 @@ export function validateKnowledgeRecord(record: KnowledgeRecord, registry: reado
     "Knowledge records",
   );
   if (record.schemaVersion !== "tcrn.knowledge.v1" || !Number.isSafeInteger(record.revision) || record.revision < 1 ||
-    typeof record.subject !== "string" || canonicalStringLength(record.subject) < 1 || canonicalStringLength(record.subject) > 512 ||
+    typeof record.subject !== "string" || canonicalStringLength(record.subject) < 1 ||
     typeof record.body !== "string" || canonicalStringLength(record.body) > PROTOCOL_LIMITS.maxStringLength || typeof record.tombstone !== "boolean") {
     fail("RECORD_MALFORMED", String(record.id ?? "unknown"));
   }
@@ -699,7 +664,7 @@ export function validateExchangeEnvelope(envelope: ExchangeEnvelope, registry: r
     if (!Number.isSafeInteger(entry.size) || entry.size < 0 || typeof entry.mediaType !== "string" || canonicalStringLength(entry.mediaType) < 1) {
       fail("RECORD_MALFORMED", entry.path);
     }
-    if (entry.size > PROTOCOL_LIMITS.maxCanonicalBytes || canonicalStringLength(entry.mediaType) > 128) {
+    if (entry.size > PROTOCOL_LIMITS.maxCanonicalBytes) {
       fail("INPUT_OVERSIZED", entry.path);
     }
     if (previous !== null && compareCanonicalText(entry.path, previous) <= 0) {
@@ -1150,9 +1115,7 @@ export function assertExchangePath(path: unknown): asserts path is string {
   if (typeof path !== "string") {
     fail("RECORD_MALFORMED", "Exchange path must be a string");
   }
-  if (canonicalStringLength(path) > 512) {
-    fail("INPUT_OVERSIZED", path.slice(0, 32));
-  }
+  canonicalStringLength(path);
   if (path.startsWith("/") || path.includes("\\") || path.split("/").some((segment) => segment === "" || segment === "." || segment === "..")) {
     fail("PATH_ESCAPE", path);
   }

@@ -26,12 +26,13 @@ function absolutePath(text) {
   return ABSOLUTE_PATH.exec(text)?.[0] ?? null;
 }
 
-test("the engine ships four built-in rules at their versions, batch processing at v3", () => {
+test("the engine ships five built-in rules at their versions, batch processing at v3", () => {
   assert.deepEqual(BUILT_IN_RULES.map((rule) => [rule.id, rule.version]), [
     ["autonomy", 1],
     ["batch", 3],
     ["unattended-commands", 1],
     ["silent-reporting", 1],
+    ["design-authority", 1],
   ]);
   assert.deepEqual([...BUILT_IN_RULE_IDS], BUILT_IN_RULES.map((rule) => rule.id));
   assert.equal(builtInRule("batch")?.version, 3);
@@ -73,6 +74,7 @@ test("every Chinese body is the Owner's final text word for word, and so is the 
   for (const rule of BUILT_IN_RULES) {
     assert.equal(rule.body.zh, await readFile(join(fixtures, `${rule.id}.zh.md`), "utf8"), rule.id);
   }
+  assert.equal(builtInRule("design-authority")?.body.en, await readFile(join(fixtures, "design-authority.en.md"), "utf8"));
   assert.equal(builtInRule("silent-reporting")?.body.en, await readFile(join(fixtures, "silent-reporting.en.md"), "utf8"));
 });
 

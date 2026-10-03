@@ -66,8 +66,8 @@ function exactFields(value: Readonly<Record<string, unknown>>, expected: readonl
   }
 }
 
-function text(value: unknown, label: string, maximum = 256): string {
-  if (typeof value !== "string" || value.length === 0 || value.length > maximum || value.includes("\u0000")) {
+function text(value: unknown, label: string, _maximum = 256): string {
+  if (typeof value !== "string" || value.length === 0 || value.includes("\u0000")) {
     fail("TEMPLATE_ADMISSION_INVALID", `${label} must be a bounded string`);
   }
   try {
@@ -78,8 +78,8 @@ function text(value: unknown, label: string, maximum = 256): string {
   return value;
 }
 
-function sortedUniqueStrings(value: unknown, label: string, maximum: number): readonly string[] {
-  if (!Array.isArray(value) || value.length === 0 || value.length > maximum) {
+function sortedUniqueStrings(value: unknown, label: string, _maximum: number): readonly string[] {
+  if (!Array.isArray(value) || value.length === 0) {
     fail("TEMPLATE_ADMISSION_INVALID", `${label} must be a non-empty bounded array`);
   }
   const values = value.map((entry, index) => text(entry, `${label}[${index}]`));
@@ -90,8 +90,8 @@ function sortedUniqueStrings(value: unknown, label: string, maximum: number): re
   return Object.freeze(values);
 }
 
-function orderedUniqueStrings(value: unknown, label: string, maximum: number): readonly string[] {
-  if (!Array.isArray(value) || value.length === 0 || value.length > maximum) {
+function orderedUniqueStrings(value: unknown, label: string, _maximum: number): readonly string[] {
+  if (!Array.isArray(value) || value.length === 0) {
     fail("TEMPLATE_ADMISSION_INVALID", `${label} must be a non-empty bounded array`);
   }
   const values = value.map((entry, index) => text(entry, `${label}[${index}]`));
@@ -99,17 +99,17 @@ function orderedUniqueStrings(value: unknown, label: string, maximum: number): r
   return Object.freeze(values);
 }
 
-function optionalSortedUniqueStrings(value: unknown, label: string, maximum: number): readonly string[] {
-  if (!Array.isArray(value) || value.length > maximum) {
+function optionalSortedUniqueStrings(value: unknown, label: string, _maximum: number): readonly string[] {
+  if (!Array.isArray(value)) {
     fail("TEMPLATE_ADMISSION_INVALID", `${label} must be an array`);
   }
   if (value.length === 0) return Object.freeze([]);
-  return sortedUniqueStrings(value, label, maximum);
+  return sortedUniqueStrings(value, label, _maximum);
 }
 
 function templateId(value: unknown): string {
   const id = text(value, "template.id", 96);
-  if (!/^[a-z][a-z0-9.-]{1,95}$/u.test(id)) {
+  if (!/^[a-z][a-z0-9.-]+$/u.test(id)) {
     fail("TEMPLATE_ADMISSION_INVALID", "template.id is not a stable template id");
   }
   return id;

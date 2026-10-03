@@ -140,7 +140,7 @@ a real import before the target is written.
 
 An `einzbern.migration-mapping.v1` partition may explicitly declare
 `omitLegacyKnowledge: {reason: "<why>"}`. This closed object accepts only a nonblank, single-line
-`reason` of at most 512 characters with no control characters. Unknown fields and wrong types
+`reason` without control characters or a product length ceiling. Unknown fields and wrong types
 refuse. Absence of the field preserves strict carrying; omission applies only to that partition's
 whole old store, never the user crest or another partition. `LegacyImportOptions` takes the same
 declaration, checked by the same validator. `library-import-legacy --mapping <file>` selects it
@@ -177,7 +177,7 @@ device directory (TCRN-CROSS-STORY-469 R4); a library never holds it.
   of the complete ordered record collections, including tombstones. Each digest is the
   SHA-256 of the canonical vector of full-record canonical SHA-256 values, fed one at a
   time; every record retains its normal canonical checks. The view's size grows only
-  with the count's digits, and its existing 1 MiB budget is unchanged. Work-list, work-show
+  with the count's digits, and its capacity is the executing runtime's capacity. Work-list, work-show
   and status read replayed state; none reads records from this summary. Old-layout view
   bytes stay untouched by this engine's read-only compatibility path.
 - `snapshots/` holds one replay snapshot: the reducer's state and the merge's own state
@@ -188,9 +188,8 @@ device directory (TCRN-CROSS-STORY-469 R4); a library never holds it.
   `storage.snapshotEveryEvents` merged events past the snapshot it resumed from.
 - `crest-views/index.json` is the knowledge store's index view
   (`packages/core/spec/knowledge-core-v1.md`), projected again by any read that finds it
-  missing or out of date. Once the index passes the protocol's canonical ceiling or its
-  record-count limit, `index.json` is a head naming its pages and the records sit in page
-  files `index-<n, six digits>.json` beside it, each projected again by a read that finds it
+  missing or out of date. Once the index passes its processing page target, `index.json` is a head naming its pages and the records sit in page
+  files `index-<n, padded to at least six digits>.json` beside it, each projected again by a read that finds it
   missing, damaged or out of date ("Capacity" in `packages/core/spec/knowledge-core-v1.md`).
 
 A read resumes from the snapshot only while it describes a prefix of what the streams hold:
@@ -202,12 +201,10 @@ no longer a prefix is not used and is written again; a cache fault is never a li
 and deleting the cache changes no read. `recover` drops the cache, replays from genesis and
 writes the views and a snapshot again; `chain-validate` always replays from genesis.
 
-The backup witness hashes every covered file's complete bytes. Event segments under
-`akasha/<device>/<ordinal>.ndjson` or `.json` retain their backend's 64 MiB ceiling.
-For the metadata/body knowledge layout, only the exact `crest/bodies/<six digits>.ndjson`
-files declared by its bounded `manifest.json` receive the backend's existing read limit:
-the greater of 16 MiB and the declared byte count. Actual bytes must match that count;
-unrecognised paths retain the generic 1 MiB ceiling. Snapshot verification compares the
+The backup witness hashes every covered file's complete bytes. Event segments and all covered manifest/body files fit the executing runtime buffer.
+The manifest declares exact `crest/bodies/<ordinal, padded to at least six digits>.ndjson`
+files and their sizes; actual bytes must match each declared count. Page and segment
+size settings are processing targets, never total dataset ceilings. Snapshot verification compares the
 covered bytes against the receipt and refuses any change.
 
 ## Writes that readers never see half-done

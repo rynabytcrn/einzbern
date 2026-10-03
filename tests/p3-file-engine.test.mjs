@@ -887,7 +887,7 @@ test("path, Unicode, size, and record boundaries have stable failures", async ()
   // assertion hard-coded 10,001 and so broke on a change that was correct. 10,001 is now
   // a legal chain length -- the lifetime bound and the per-document shape bound stopped
   // sharing a number -- and that behavioural change is asserted beside the refusal.
-  assert.doesNotThrow(() => assertWorkspaceRecordCount(PROTOCOL_LIMITS.maxRecords + 1));
+  assert.doesNotThrow(() => assertWorkspaceRecordCount(10_001));
   expectReason("WORKSPACE_RECORD_LIMIT", () => assertWorkspaceRecordCount(PROTOCOL_LIMITS.maxChainEvents + 1));
 
   const malformed = await workspaceFixture();
@@ -895,10 +895,11 @@ test("path, Unicode, size, and record boundaries have stable failures", async ()
     await expectReasonAsync("WORKSPACE_INPUT_INVALID", () => createProject(malformed.workspace, {
       occurredAt: instant(1), externalKey: "PROJECT-UNICODE", name: "\ud800",
     }));
-    await expectReasonAsync("WORKSPACE_INPUT_OVERSIZED", () => createProject(malformed.workspace, {
+    assert.equal((await validateWorkspace(malformed.workspace)).version, 0, "the malformed Unicode input wrote nothing");
+    const admitted = await createProject(malformed.workspace, {
       occurredAt: instant(1), externalKey: "PROJECT-LARGE", name: "x".repeat(513),
-    }));
-    assert.equal((await validateWorkspace(malformed.workspace)).version, 0, "a refused input writes nothing");
+    });
+    assert.equal(admitted.projects[0].name.length, 513);
   } finally {
     await malformed.close();
   }

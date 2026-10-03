@@ -9,24 +9,34 @@ machine-readable read surface and `settings-set` is the governed write surface.
 This file documents the finite keys the engine is allowed to consume. A key is not in the
 engine catalog merely because it appears in helper or portal prose.
 
-## Two layers (TCRN-CROSS-STORY-469 R2, R3)
+## Configuration scopes (INC-399 R1)
 
-Configuration has two layers, and `settings-catalog` and `machine-settings-catalog`
-name each key's `layer`.
+Catalog `layer` and `scope` describe three ownership levels:
 
-- **project**: every key of this catalog. A project-level setting is an event in the
-  library's `akasha/`, so it travels with the library and every device that merges the
-  library reads the same value. When two devices set one key without seeing each other's
-  write, the later write in merge order (clock, then device id) wins on every device; a
-  stale revision there is not a rejected event. An old-layout workspace, one writer's
-  chain, keeps the strict revision sequence.
-- **device**: the machine settings (`portal.*`, `crest.userPath` and `agents.navigation`), kept
-  in this device's directory (`machine-settings.json`) and never written into a library. `settings-set` and
-  `settings-remove` refuse a device-level key with `SETTINGS_KEY_DEVICE_LEVEL` and the
-  remedy `machine-settings-set`.
+- **project**: language, article folders, retrieval and prompt budgets, design bindings,
+  execution preferences and model configuration use an optional stable `projectId` on
+  their recorded setting. Reads resolve the declared project, its explicitly recorded
+  parent chain, legacy library defaults, then catalog defaults. Every row returns
+  `declaredValue`, effective `currentValue`, `source` and `inheritedFrom`. Reset removes
+  only this target's declaration. Renaming a project never changes its identity.
+- **library**: `engine.requiredVersion`, `storage.segmentBytes`,
+  `storage.snapshotEveryEvents` and `workspace.generatedArtifactsPath` govern shared
+  storage or the one artifact manifest. A project-specific write refuses; all targets
+  use the same declaration. Their values still travel with the library event chain.
+- **device**: `portal.*`, `crest.userPath` and `agents.navigation` are kept in this
+  device's `machine-settings.json`, never in the library. Project setting verbs refuse
+  them with the existing device-level remedy.
+
+A registry entry binds a real filesystem project root to its stable native `projectId`;
+Atelier's target selector uses native projects and declared parents. Missing bindings
+are unconfigured, conflicting bindings refuse, and no directory spelling supplies an
+identity. Target writes acknowledge the displayed library/project pair. Concurrent
+library/target changes reject stale requests. Rule/variable inheritance keeps source
+provenance; gate and managed-section records stay local. The complete consumer audit is
+`docs/verification/init053-owner-return-scope-inventory.json`.
 
 Every `settings-set` and `settings-remove` also rewrites `config/project.json`
-(`einzbern.project-config.v1`: the version vector, the merged values and, grouped by
+(`einzbern.project-config.v1`: the version vector, the library-default values, stable-project declaration maps and, grouped by
 collection, the merged configuration records of `specs/config-records-v1.md`), atomically,
 and so does every configuration record write. It is a projection for readers outside the
 engine: no read trusts it, and `status` reports `configProjection` as `current`, `stale`
@@ -46,8 +56,8 @@ fields, and Atelier lays its configuration pages out from them instead of a copy
 - **`group`**: a stable lowercase id from the closed list `SETTING_GROUPS`
   (`packages/core/src/settings.ts`). The settings page shows the groups in the order of the
   table below, and a group's name is the text key `settings.group.<id>`. A group may hold keys
-  of both layers; Atelier marks each key as project-level (it travels with the library) or as
-  this device's from its `layer`. `models` is the models and escalation group: it holds the two
+  of these scopes; Atelier marks the selected project, whole library or this device
+  from its `layer`. `models` is the models and escalation group: it holds the two
   collection keys and the three `models.escalation.*` keys, and it is the group the escalation
   summary on the model tiers page links to.
 - **`order`**: a positive integer, the key's place in its group. It is unique within the
@@ -65,9 +75,15 @@ TCRN-CROSS-STORY-508 R3, are catalogued.
 
 | Group | Key | Layer | Shape | Order |
 | --- | --- | --- | --- | --- |
-| `general` | `engine.requiredVersion` | project | scalar | 1 |
+| `general` | `engine.requiredVersion` | library | scalar | 1 |
 | `general` | `design.authority` | project | scalar | 2 |
 | `general` | `agents.navigation` | device | scalar | 3 |
+| `general` | `design.repository` | project | scalar | 4 |
+| `general` | `design.pullRequestTarget` | project | scalar | 5 |
+| `general` | `design.productionDocs` | project | scalar | 6 |
+| `general` | `design.buildService` | project | scalar | 7 |
+| `general` | `design.buildProject` | project | scalar | 8 |
+| `general` | `design.consumedVersion` | project | scalar | 9 |
 | `models` | `models.category` | project | collection | 1 |
 | `models` | `models.tiers` | project | collection | 2 |
 | `models` | `models.escalation.enabled` | project | scalar | 3 |
@@ -85,9 +101,9 @@ TCRN-CROSS-STORY-508 R3, are catalogued.
 | `retrieval` | `retrieval.tau` | project | scalar | 2 |
 | `retrieval` | `retrieval.scopeExcerptBytes` | project | scalar | 3 |
 | `retrieval` | `injection.perPromptBytes` | project | scalar | 4 |
-| `storage` | `workspace.generatedArtifactsPath` | project | scalar | 1 |
-| `storage` | `storage.segmentBytes` | project | scalar | 2 |
-| `storage` | `storage.snapshotEveryEvents` | project | scalar | 3 |
+| `storage` | `workspace.generatedArtifactsPath` | library | scalar | 1 |
+| `storage` | `storage.segmentBytes` | library | scalar | 2 |
+| `storage` | `storage.snapshotEveryEvents` | library | scalar | 3 |
 | `atelier` | `portal.defaultLocale` | device | scalar | 1 |
 | `atelier` | `portal.defaultTheme` | device | scalar | 2 |
 | `atelier` | `portal.defaultPartition` | device | scalar | 3 |
@@ -112,9 +128,11 @@ URLs and paths remain open values.
 
 ## Tier taxonomy
 
-**Tier-0 — frozen protocol limits.** Not settings; never appear in conversational
-adjustment. Examples: `PROTOCOL_LIMITS`, `KNOWLEDGE_LIMITS`, and other frozen
-constants. Changing them is a protocol revision, not a setting.
+**Tier-0 — protocol and runtime constraints.** Closed shapes, identity grammars,
+reference integrity, exact integers and immutable host capacities are not settings.
+The R4 inventory records their concrete failure evidence. Former product byte,
+collection and nesting ceilings are removed rather than treated as permanent
+protocol requirements.
 
 **Tier-1 — governed-action-only policy.** Changeable only through an explicit
 governed action with a receipt: release trust, anti-rollback state, install
@@ -259,9 +277,9 @@ entries below are TCRN-CROSS-STORY-484's; the others name the change that retire
 The two model keys are tables of records (TCRN-CROSS-STORY-508 R1, R2; MIN-236 D5, D6):
 `models.category` is the parent table and every record of `models.tiers` is filed under one of
 its categories. A rule names a category, never a model. A name below is a lowercase letter
-first, then lowercase letters, digits, `.`, `_` or `-`, at most 64 characters. Each value is a
-JSON array stored as canonical JSON in ascending order, at most 8192 characters (the protocol's
-string limit; every other key's value stays at most 4096).
+first, then lowercase letters, digits, `.`, `_` or `-`, without a product length ceiling.
+Each value is a JSON array stored as complete canonical JSON in ascending order.
+Scalar strings and tables have no product 4096/8192-character ceiling.
 
 - **Key:** `models.category`
   - **Type:** JSON text: `[{id, name, description, order}]`.
@@ -272,7 +290,7 @@ string limit; every other key's value stays at most 4096).
     effective `models.tiers` names that the default table lacks, by name, numbered on in steps
     of 10, so a tiers table read from a legacy value never names a missing category.
   - **Bounds:** exactly the four fields; `id` a name, unique (`MODELS_CATEGORY_DUPLICATE`);
-    `name` 1 to 64 characters and `description` at most 256, without control characters;
+    `name` non-empty and `description` a string, both without control characters;
     `order` a positive integer, unique (`MODELS_ORDER_DUPLICATE`). The lower the order the
     stronger the category.
   - **Decision record:** MIN-236 D6 (TCRN-CROSS-STORY-508 R1).
@@ -287,8 +305,8 @@ string limit; every other key's value stays at most 4096).
     `main`/`codex`, 40 `main`/`claude-code`, 50 `economy`/`codex`, 60 `economy`/`claude-code`.
     It is the TCRN-CROSS-STORY-484 default table read as records.
   - **Bounds:** exactly the six fields; `order` a positive integer, unique across the table
-    (`MODELS_ORDER_DUPLICATE`); `category` and `runner` names; `model` at most 256 characters,
-    `effort` at most 64 and `note` at most 256, without control characters. Records are added
+    (`MODELS_ORDER_DUPLICATE`); `category` and `runner` names; `model`,
+    `effort` and `note` strings without control characters. Records are added
     and removed freely; the lower the order the stronger the record.
   - **Base record** (R4, first half): a rule that names a category gets the category's record
     with the largest order, whatever its runner; a category without a record is
@@ -331,11 +349,11 @@ The three escalation keys say how a rule's record escalates along the order of `
   - **Decision record:** MIN-236 D5 (TCRN-CROSS-STORY-508 R3).
 
 - **Key:** `models.escalation.threshold`
-  - **Type:** integer, 1 to 100.
+  - **Type:** positive safe integer.
   - **Layer:** `workspace_configuration`.
   - **Tier:** 1 (the Owner sets it, in Atelier; a model never edits it).
   - **Default:** `1`.
-  - **Bounds:** a decimal integer from 1 to 100; any other value is `SETTINGS_VALUE_INVALID`.
+  - **Bounds:** a canonical decimal positive safe integer; any other value is `SETTINGS_VALUE_INVALID`.
   - **Meaning:** how many rejections escalate a record one step: after `n` rejections the record
     has escalated `floor(n / threshold)` steps, as far as the ceiling lets it.
   - **Decision record:** MIN-236 D5 (TCRN-CROSS-STORY-508 R3).
@@ -449,3 +467,21 @@ mistakenly applied to them.
 No new release ledger entry is claimed. The workspace event operation and CLI
 catalog are local governed protocol surfaces; release, publication, and remote
 repository actions remain outside this story's scope.
+
+## Generic design authority preset (INC-399 R6)
+
+`design-authority` v1 is the fifth system rule. Its approved Chinese and English
+bodies are in `rules-catalog.ts` and exact text fixtures. It follows the same
+enable/read/render/explicit-upgrade, keep/overwrite/unmanage and user-modified
+protection as the other four rules. It is disabled until explicitly enabled.
+
+The seven actual catalog variables are `design.authority`, `design.repository`,
+`design.pullRequestTarget`, `design.productionDocs`, `design.buildService`,
+`design.buildProject` and `design.consumedVersion`. They resolve independently per
+project and show inherited sources. Changing only an authority identity while
+inheriting companion bindings from another authority reports `conflicting`.
+Missing companions report `unconfigured`. Declared bindings report publication
+`unverified`: offline reads, a reachable URL or matching text are not production
+release evidence. An authorized agent separately verifies PR merge, Production
+publish, build result and consumed commit/artifact identities. The generic rule
+hardcodes no repository, URL, vendor or component value.

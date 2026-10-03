@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { constants as bufferConstants } from "node:buffer";
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-477 R1, R2, R5 (MIN-227 D4, D5, D23): the stable hook launcher. The installer
 // places this file as engine/hook.mjs in the device directory, beside engine/einzbern.mjs
@@ -32,7 +33,7 @@ import { dirname, isAbsolute, join, posix, resolve, sep, win32 } from "node:path
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 /** The most the launcher reads from stdin; a larger hook input is refused. */
-export const HOOK_STDIN_MAX_BYTES = 1_048_576;
+export const HOOK_STDIN_MAX_BYTES = bufferConstants.MAX_LENGTH;
 const DEVICE_DIRECTORY = ".einzbern";
 const REGISTRY_FILE = "registry.json";
 const REGISTRY_SCHEMA_VERSION = "einzbern.registry.v1";

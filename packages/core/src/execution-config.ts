@@ -132,9 +132,9 @@ export function assertExecutionHost(value: unknown): asserts value is ExecutionH
   }
 }
 
-function assertBoundedText(value: unknown, label: string, maximumLength: number, allowSpaces: boolean): asserts value is string {
-  if (typeof value !== "string" || value.length === 0 || value.length > maximumLength || value.includes("\u0000") || (!allowSpaces && /\s/u.test(value))) {
-    fail("EXECUTION_RECORD_INVALID", `${label} must be a non-empty string of at most ${maximumLength} characters`);
+function assertBoundedText(value: unknown, label: string, _maximumLength: number, allowSpaces: boolean): asserts value is string {
+  if (typeof value !== "string" || value.length === 0 || value.includes("\u0000") || (!allowSpaces && /\s/u.test(value))) {
+    fail("EXECUTION_RECORD_INVALID", `${label} must be a non-empty string`);
   }
   try {
     canonicalJson(value);

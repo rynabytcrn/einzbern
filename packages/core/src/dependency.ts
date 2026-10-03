@@ -1,3 +1,4 @@
+import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
 import { canonicalSha256, assertProtocolId, compareCanonicalText, parseStrictInstant } from "../../protocol/src/index.js";
@@ -48,8 +49,8 @@ export interface DependencyWorkReference {
   readonly tombstone: boolean;
 }
 
-const maximumWaivedReasonBytes = 512;
-const maximumExtensionProperties = 64;
+const maximumWaivedReasonBytes = RUNTIME_CAPACITY.bufferBytes;
+const maximumExtensionProperties = RUNTIME_CAPACITY.arrayEntries;
 
 export class DependencyError extends Error {
   readonly reasonCode: DependencyReasonCode;

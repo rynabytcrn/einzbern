@@ -207,7 +207,11 @@ test("relations beyond the retired list ceiling keep every real target through f
   const targets = keys.map(idOf).sort();
   await initiative(fixture, "REL-LARGE-SOURCE", 3, { relations: { blockedBy: targets } });
   const fresh = await materializeWorkspaceFromGenesis(fixture.workspace);
-  assert.deepEqual(fresh.work.find(record => record.externalKey === "REL-LARGE-SOURCE").relations.blockedBy, targets);
+  const source = fresh.work.find(record => record.externalKey === "REL-LARGE-SOURCE");
+  assert.ok(source);
+  assert.deepEqual(workRelations(fresh, source.id).forward.blockedBy, targets);
+  assert.deepEqual(fresh.work.filter(record => keys.includes(record.externalKey)).map(record => record.id).sort(), targets, "all 65 real target records survive full replay");
+  for (const target of targets) assert.deepEqual(workRelations(fresh, target).reverse.blocks, [source.id]);
 });
 
 test("STORY-472 R2: repeats collapse, lists sort, and an annotation replaces each list it names whole", async (context) => {

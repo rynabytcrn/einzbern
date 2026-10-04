@@ -344,12 +344,18 @@ test("480-R3: once all eight pass, the project is registered and wired from the 
   await assert.rejects(applySetup(unanswered), (error) => error.reasonCode === "SETUP_BLOCKED" && error.details.reasonCode === "SETUP_ANSWER_REQUIRED");
   await assert.rejects(planSetup({ mode: "restore", projectRoot: f.project, at: at(), home: f.b.home, deviceHome: f.b.deviceHome, answers: { language: "en" } }), { reasonCode: "SETUP_OPTION_NOT_APPLICABLE" });
 
+  // Fixture library writes belong to device a; device b is the restore target and
+  // must still be absent when the read-only restore plan declares its create row.
+  use(f.a);
   const other = await createProject(library, { externalKey: "OTHER-RESTORE-TARGET", name: "Other target", occurredAt: at() });
   const otherId = other.projects.find(project => project.externalKey === "OTHER-RESTORE-TARGET").id;
   await setWorkspaceSetting(library, { configurationProjectId: otherId, key: "artifact.language", value: "fr", occurredAt: at() });
   await setWorkspaceSetting(library, { key: "artifact.language", value: "ko", occurredAt: at() });
+  use(f.b);
+  await assert.rejects(lstat(join(f.b.deviceHome, "device.json")), { code: "ENOENT" });
   const libraryDigest = (await computeInstallTreeDigest(library)).sha256;
   const planned = await restorePlan(f, f.b, library);
+  await assert.rejects(lstat(join(f.b.deviceHome, "device.json")), { code: "ENOENT" }, "planning does not create the restore device");
   assert.equal(planned.mode, "restore");
   assert.deepEqual(planned.blockers, []);
   assert.deepEqual(planned.verification.map((check) => [check.item, check.check, check.ok]), RESTORE_CHECKS.map((check, index) => [index + 1, check, true]));

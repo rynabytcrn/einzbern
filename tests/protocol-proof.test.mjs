@@ -2,9 +2,10 @@
 
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-import { canonicalJson as protocolCanonicalJson } from "../dist/build/packages/protocol/src/index.js";
+import { assertProtocolId, canonicalJson as protocolCanonicalJson } from "../dist/build/packages/protocol/src/index.js";
 import { canonicalDocumentBytes, canonicalJson, canonicalJsonBytes } from "../scripts/lib/canonical-json.mjs";
 import {
   ProtocolProofError,
@@ -20,7 +21,14 @@ test("Draft 2020-12 schemas are meta-validated with local refs and executable ca
   assert.ok(result.schemaNegativeCases >= 22);
   assert.equal(result.stableIdFormerBoundaryLength, 161);
   assert.equal(result.stableIdBoundaryCases, 18);
-  assert.equal(result.extensionNameCases, 3);
+  assert.equal(result.extensionNameCases, 4);
+  const fixture = JSON.parse(await readFile(new URL("../fixtures/protocol/v1/schema-cases.json", import.meta.url), "utf8"));
+  for (const valid of [fixture.idBoundaryCases.maximumId, fixture.idBoundaryCases.overlongId, fixture.extensionNameCases.valid, fixture.extensionNameCases.beyondFormerBoundary]) {
+    assert.doesNotThrow(() => assertProtocolId(valid), "the runtime admits the same constructed grammar positives as the schema");
+  }
+  for (const invalid of fixture.extensionNameCases.invalid) {
+    assert.throws(() => assertProtocolId(invalid), { reasonCode: "ID_INVALID" }, "the runtime and schema both refuse malformed extension-name grammar");
+  }
   assert.ok(result.resolvedLocalRefs >= 20);
   assert.equal(result.p3Marker, "absent");
 });

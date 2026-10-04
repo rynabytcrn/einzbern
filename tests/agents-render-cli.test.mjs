@@ -70,7 +70,7 @@ async function scratch(context, navigation = "written") {
   const projectId = (await cli(["project-create", "--workspace", library, "--at", at(), "--external-key", "AGENTS-EXPLICIT-PROJECT", "--name", "Managed fixture"])).record.id;
   await cli(["library-register", "--project", project, "--library", library, "--project-id", projectId, "--at", at()]);
   if (navigation !== null) await cli(["machine-settings-set", "--key", "agents.navigation", "--value", navigation, "--at", at()]);
-  return { base, device, project, library, agents: join(project, "AGENTS.md"), claude: join(project, "CLAUDE.md") };
+  return { base, device, project, projectId, library, agents: join(project, "AGENTS.md"), claude: join(project, "CLAUDE.md") };
 }
 
 function sectionOf(text, id) {
@@ -80,7 +80,7 @@ function sectionOf(text, id) {
 const render = (project) => cli(["agents-render", "--project", project, "--at", at()]);
 
 test("478-AC1 via agents-render: a section changed by one character stays as it is and goes pending, and an untouched one is updated", async (context) => {
-  const { device, project, library, agents, claude } = await scratch(context);
+  const { device, project, projectId, library, agents, claude } = await scratch(context);
   const first = await render(project);
   assert.equal(first.reasonCode, "AGENTS_RENDERED");
   assert.deepEqual(first.sections, [
@@ -91,7 +91,7 @@ test("478-AC1 via agents-render: a section changed by one character stays as it 
   ]);
   assert.deepEqual([first.pending, first.recorded, first.projectPath, first.libraryPath], [[], 4, project, library]);
   assert.deepEqual(first.navigation, { key: "agents.navigation", value: "written" });
-  assert.deepEqual([...first.ids].sort(), ["managed-section:AGENTS.md#navigation", "managed-section:AGENTS.md#variables-custom", "managed-section:AGENTS.md#variables-system", "managed-section:CLAUDE.md#claude-import"]);
+  assert.deepEqual([...first.ids].sort(), [`managed-section:${projectId}:AGENTS.md#navigation`, `managed-section:${projectId}:AGENTS.md#variables-custom`, `managed-section:${projectId}:AGENTS.md#variables-system`, `managed-section:${projectId}:CLAUDE.md#claude-import`]);
   assert.deepEqual(first.files.map((file) => [file.file, file.written, file.backupPath === null]), [["AGENTS.md", true, false], ["CLAUDE.md", true, true]]);
   assert.equal(first.backupDir.startsWith(join(device, "backups")), true, "the backup is in the device directory");
   assert.equal(await readFile(join(first.backupDir, "AGENTS.md"), "utf8"), USER_TEXT, "AGENTS.md was backed up before it was replaced");
@@ -132,13 +132,13 @@ test("478-AC1 via agents-render: a section changed by one character stays as it 
 });
 
 test("478-AC2 via agents-render: a section deleted with its markers is not put back, and its record says removed", async (context) => {
-  const { project, agents } = await scratch(context);
+  const { project, projectId, agents } = await scratch(context);
   await render(project);
   const written = await readFile(agents, "utf8");
   await writeFile(agents, written.replace(sectionOf(written, "variables-custom").raw, ""));
   const next = await render(project);
   assert.deepEqual(next.sections.find((section) => section.id === "variables-custom"), { id: "variables-custom", file: "AGENTS.md", result: "removed", state: "removed" });
-  assert.deepEqual([next.recorded, next.ids, next.files.some((file) => file.written)], [1, ["managed-section:AGENTS.md#variables-custom"], false]);
+  assert.deepEqual([next.recorded, next.ids, next.files.some((file) => file.written)], [1, [`managed-section:${projectId}:AGENTS.md#variables-custom`], false]);
   assert.equal((await readFile(agents, "utf8")).includes("id=variables-custom"), false, "the removed section is not put back");
   const third = await render(project);
   assert.deepEqual(third.sections.find((section) => section.id === "variables-custom"), { id: "variables-custom", file: "AGENTS.md", result: "removed", state: "removed" });
@@ -165,7 +165,7 @@ test("478-AC3 via the shipped entry: markers that do not parse refuse the whole 
 });
 
 test("478-R3 via rule-resolve: after keep, agents-render never writes that section; overwrite then needs --force; unmanage leaves the text", async (context) => {
-  const { device, project, agents } = await scratch(context);
+  const { device, project, projectId, agents } = await scratch(context);
   await render(project);
   const edited = (await readFile(agents, "utf8")).replace("Recall first:", "Recall frst:");
   await writeFile(agents, edited);
@@ -174,7 +174,7 @@ test("478-R3 via rule-resolve: after keep, agents-render never writes that secti
   const kept = await cli(["rule-resolve", "--project", project, "--section", "navigation", "--action", "keep", "--at", at()]);
   assert.deepEqual(
     [kept.reasonCode, kept.section, kept.file, kept.action, kept.result, kept.state, kept.written, kept.backupDir, kept.ids],
-    ["MANAGED_SECTION_RESOLVED", "navigation", "AGENTS.md", "keep", "kept", "user-owned", false, null, ["managed-section:AGENTS.md#navigation"]],
+    ["MANAGED_SECTION_RESOLVED", "navigation", "AGENTS.md", "keep", "kept", "user-owned", false, null, [`managed-section:${projectId}:AGENTS.md#navigation`]],
   );
   const again = await render(project);
   assert.deepEqual(again.sections.find((section) => section.id === "navigation"), { id: "navigation", file: "AGENTS.md", result: "unchanged", state: "user-owned" });

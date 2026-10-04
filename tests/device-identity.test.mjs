@@ -84,9 +84,15 @@ test("468-R1: the display name can be changed and the id stays", async (t) => {
   const renamed = await setDeviceDisplayName("Studio desktop", home);
   assert.equal(renamed.deviceId, device.deviceId);
   assert.equal((await readDevice(home)).displayName, "Studio desktop");
-  for (const bad of ["", " padded", "two\nlines", "\ud800"]) {
+  const beforeRefusals = await readFile(deviceFilePath(home));
+  for (const bad of ["", " padded", "two\nlines", "\ud800", "\udfff"]) {
     await assert.rejects(setDeviceDisplayName(bad, home), (error) => error?.reasonCode === "DEVICE_DISPLAY_NAME_INVALID", JSON.stringify(bad));
+    assert.deepEqual(await readFile(deviceFilePath(home)), beforeRefusals, "refusal preserves the identity bytes");
+    assert.deepEqual(await readdir(home), ["device.json"], "refusal leaves no staging write");
   }
+  const absentHome = await deviceHomeFor(t);
+  await assert.rejects(setDeviceDisplayName("\ud800", absentHome), { reasonCode: "DEVICE_DISPLAY_NAME_INVALID" });
+  await assert.rejects(lstat(absentHome), { code: "ENOENT" }, "malformed Unicode is refused before first-use device creation");
   assert.equal(displayNameFromHostname("  \u0007  "), "device", "a host name with nothing readable still yields a name");
   assert.equal(displayNameFromHostname("x".repeat(80)), "x".repeat(80));
   const longName = "x".repeat(257);

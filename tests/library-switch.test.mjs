@@ -144,7 +144,7 @@ test("469: init creates a library, and projects, work, transitions, lists and sh
   assert.equal(created.reasonCode, "LIBRARY_CREATED");
   assert.match(created.libraryId, /^library:[a-f0-9]{24}$/u);
   assert.deepEqual(created.versionVector, {});
-  const { story, epic } = await seed(device, library, "SWITCH");
+  const { projectId, story, epic } = await seed(device, library, "SWITCH");
   await declareStoryGate(device, library, story.id);
   await runStoryGate(device, library, project, story.id);
   const moved = await as(device, ["work-transition", "--workspace", library, "--at", at(), "--id", story.id, "--status", "done", "--summary", "finished", "--project", project]);
@@ -167,7 +167,11 @@ test("469: init creates a library, and projects, work, transitions, lists and sh
   // state live on the device (TCRN-CROSS-STORY-469 R4).
   assert.deepEqual((await readdir(library)).sort(), [".gitignore", "README.md", "akasha", "artifacts", "config", "crest", "manifest.json"]);
   assert.deepEqual(await readdir(join(library, "akasha")), [deviceId]);
-  assert.deepEqual((await readdir(device)).sort(), ["cache", "device.json", "locks"]);
+  assert.deepEqual((await readdir(device)).sort(), ["cache", "device.json", "locks", "registry.json"]);
+  const registry = JSON.parse(await readFile(join(device, "registry.json"), "utf8"));
+  assert.equal(registry.schemaVersion, "einzbern.registry.v1");
+  assert.deepEqual(registry.entries.map(({ projectPath, projectId: target, libraryPath, libraryId }) => ({ projectPath, projectId: target, libraryPath, libraryId })),
+    [{ projectPath: project, projectId, libraryPath: library, libraryId: created.libraryId }], "registration records the explicit project's exact library binding");
   const validated = await as(device, ["chain-validate", "--workspace", library]);
   assert.deepEqual([validated.reasonCode, validated.layout, validated.headEventHash], ["CHAIN_VALIDATED", "library", status.headEventHash]);
   assert.equal((await as(device, ["validate", "--workspace", library])).headEventHash, status.headEventHash, "validate is chain-validate");

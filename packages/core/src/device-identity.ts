@@ -54,7 +54,7 @@ function fail(reasonCode: DeviceIdentityReasonCode, message: string): never {
 
 function validDisplayName(value: unknown): value is string {
   return typeof value === "string" && value.length > 0 && value.length <= DEVICE_DISPLAY_NAME_MAX_LENGTH &&
-    value.trim() === value && !/[\u0000-\u001f\u007f]/u.test(value);
+    value.isWellFormed() && value.trim() === value && !/[\u0000-\u001f\u007f]/u.test(value);
 }
 
 /** A readable name from a host name: the first label kept, control characters dropped, bounded. */

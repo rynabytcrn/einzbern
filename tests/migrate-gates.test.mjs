@@ -188,11 +188,16 @@ test("489: releasing refuses a gate that is not there or already satisfied, a bl
   const release = (input) => releaseGate(library, { id: OWNER_GATE_ID, reason: "why", actorId: RELEASER, occurredAt: at(), ...input });
   await assert.rejects(release({ id: "gate:ffffffffffffffffffffffff" }), { reasonCode: "WORKSPACE_INPUT_INVALID" });
   await assert.rejects(release({ reason: " \n" }), { reasonCode: "WORKSPACE_INPUT_INVALID" });
-  await assert.rejects(release({ reason: "x".repeat(2_049) }), { reasonCode: "WORKSPACE_INPUT_INVALID" });
+  for (const reason of ["\ud800", "\udfff"]) await assert.rejects(release({ reason }), { reasonCode: "WORKSPACE_INPUT_INVALID" });
   await assert.rejects(release({ actorId: "nobody" }), { reasonCode: "WORKSPACE_ACTOR_INVALID" });
   assert.equal((await materializeWorkspace(library)).version, before, "a refused release appends nothing");
-  await release({});
+  const longReason = "x".repeat(2_049);
+  await release({ reason: longReason });
+  const fresh = await materializeWorkspaceFromGenesis(library);
+  assert.equal(fresh.gates.find(gate => gate.id === OWNER_GATE_ID).extensions[RELEASE_KEY].value.reason, longReason, "full replay keeps the complete admitted release reason");
+  assert.equal(fresh.version, before + 1);
   await assert.rejects(release({}), (error) => error.reasonCode === "WORKSPACE_INPUT_INVALID" && /satisfied already/u.test(error.message));
+  assert.equal((await materializeWorkspace(library)).version, fresh.version, "already-satisfied refusal appends nothing");
 });
 
 test("489 (TCRN-CROSS-SUB-365): work-gate-list reads the gates that still hold work back, and --status the others", async (context) => {

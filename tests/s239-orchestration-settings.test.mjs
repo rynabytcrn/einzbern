@@ -47,14 +47,21 @@ test("S239: defaults, closed enum, and bounded numeric strings are catalog-backe
   const catalog = await json(["settings-catalog", "--workspace", workspace]);
   const entries = new Map(catalog.settings.map((entry) => [entry.key, entry]));
   assert.deepEqual(entries.get("execution.maxConcurrentSubagents"), {
-    key: "execution.maxConcurrentSubagents", type: "string", controlType: "number", layer: "project", defaultValue: "8", currentValue: "8", modelWritable: false, scope: "project", source: { kind: "default", projectId: null, projectName: null, inherited: false }, inheritedValue: "8", inheritedSource: { kind: "default", projectId: null, projectName: null, inherited: false }, declaredValue: null, min: 1, max: Number.MAX_SAFE_INTEGER, shape: "scalar", group: "execution", order: 1,
+    key: "execution.maxConcurrentSubagents", type: "string", controlType: "number", layer: "project", defaultValue: "8", currentValue: "8", modelWritable: false, scope: "project", source: { kind: "default", projectId: null, projectName: null, inherited: false }, inheritedValue: "8", inheritedSource: { kind: "default", projectId: null, projectName: null, inherited: false }, declaredValue: null, min: 1, shape: "scalar", group: "execution", order: 1,
   });
   assert.equal(entries.has("execution.maxDispatchDepth"), false);
   assert.equal(entries.has("execution.personalessDispatch"), false);
 
-  const first = await json(["settings-set", "--workspace", workspace, "--at", instant(1),
-    "--key", "execution.maxConcurrentSubagents", "--value", "65", "--actor", "agent:test"]);
-  assert.equal(first.setting.value, "65");
+  for (const [index, value] of ["1", "65", String(Number.MAX_SAFE_INTEGER)].entries()) {
+    const before = await version();
+    const written = await json(["settings-set", "--workspace", workspace, "--at", instant(index + 1),
+      "--key", "execution.maxConcurrentSubagents", "--value", value, "--actor", "agent:test"]);
+    assert.equal(written.setting.value, value);
+    assert.equal(await version(), before + 1);
+    const current = (await json(["settings-catalog", "--workspace", workspace])).settings.find((entry) => entry.key === "execution.maxConcurrentSubagents");
+    assert.equal(current.currentValue, value, "the shipped read consumer retains every permitted safe value");
+    assert.equal(Object.hasOwn(current, "max"), false, "the catalog does not invent an admission ceiling");
+  }
 });
 
 test("S239: semantic refusals identify the setting and leave the head unchanged", async (t) => {

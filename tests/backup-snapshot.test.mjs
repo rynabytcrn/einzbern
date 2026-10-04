@@ -233,8 +233,20 @@ test("STORY-515: only declared body segments get their backend limit; overflow a
   }
   const overflow = join(fixture.base, "body-overflow");
   await cp(fixture.workspace, overflow, { recursive: true });
-  await truncate(join(overflow, relativePath), SEGMENTED_BODY_FILE_LIMIT + 1);
-  await assert.rejects(verifySnapshotManifest(overflow, manifest), { reasonCode: "SNAPSHOT_PATH_INVALID" });
+  // The runtime limit is the safe-integer domain; no filesystem can truthfully create
+  // MAX_SAFE_INTEGER + 1 bytes. Put that unrepresentable declaration in the copied
+  // body manifest instead, so the downstream snapshot checker must refuse its format.
+  const bodyManifestPath = "crest/bodies/manifest.json";
+  const bodyManifestFile = join(overflow, bodyManifestPath);
+  const bodyManifest = JSON.parse(await readFile(bodyManifestFile, "utf8"));
+  const declaredSegment = bodyManifest.segments.find((entry) => `crest/bodies/${entry.name}` === relativePath);
+  assert.ok(declaredSegment, "the actual segment is declared by the body manifest");
+  declaredSegment.bytes = Number.MAX_SAFE_INTEGER + 1;
+  await writeFile(bodyManifestFile, `${JSON.stringify(bodyManifest)}\n`);
+  const overflowBefore = await listTree(overflow);
+  await assert.rejects(verifySnapshotManifest(overflow, manifest),
+    (error) => error instanceof SnapshotError && error.reasonCode === "SNAPSHOT_MISMATCH" && error.message.includes(bodyManifestPath));
+  assert.deepEqual(await listTree(overflow), overflowBefore, "format refusal writes nothing");
   const drift = join(fixture.base, "body-length-drift");
   await cp(fixture.workspace, drift, { recursive: true });
   const path = join(drift, relativePath);

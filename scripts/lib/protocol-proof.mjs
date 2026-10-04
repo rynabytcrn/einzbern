@@ -215,10 +215,12 @@ export async function validateP2SchemasAndFixtures() {
   const commonSchema = p2Documents.find((entry) => entry.$id.endsWith("protocol-common-v1.schema.json"));
   const validateExtensionMap = ajv.compile({ $ref: `${commonSchema.$id}#/$defs/extensionMap` });
   const extensionNameCases = schemaCases.extensionNameCases;
-  assertion(typeof extensionNameCases?.valid === "string" && Array.isArray(extensionNameCases.invalid),
+  assertion(typeof extensionNameCases?.valid === "string" && typeof extensionNameCases.beyondFormerBoundary === "string" && Array.isArray(extensionNameCases.invalid),
     "P2_EXTENSION_NAME_CASES_INVALID", "Extension-name fixture");
   assertion(validateExtensionMap({ [extensionNameCases.valid]: { required: false, value: null } }),
     "P2_EXTENSION_NAME_MAXIMUM_REJECTED", ajv.errorsText(validateExtensionMap.errors));
+  assertion(validateExtensionMap({ [extensionNameCases.beyondFormerBoundary]: { required: false, value: null } }),
+    "P2_EXTENSION_NAME_FORMER_BOUNDARY_REJECTED", ajv.errorsText(validateExtensionMap.errors));
   for (const invalidName of extensionNameCases.invalid) {
     assertion(!validateExtensionMap({ [invalidName]: { required: false, value: null } }),
       "P2_EXTENSION_NAME_INVALID_ADMITTED", invalidName);
@@ -248,7 +250,7 @@ export async function validateP2SchemasAndFixtures() {
     schemaNegativeCases,
     stableIdFormerBoundaryLength: idBoundaryCases.maximumLength,
     stableIdBoundaryCases,
-    extensionNameCases: 1 + extensionNameCases.invalid.length,
+    extensionNameCases: 2 + extensionNameCases.invalid.length,
     resolvedLocalRefs,
     evaluator: "ajv@8.17.1-draft-2020-12",
     p3Marker: "absent",

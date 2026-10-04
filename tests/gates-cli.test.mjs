@@ -431,11 +431,11 @@ test("513-AC1 (CLI): a model's gates-config-set and gates-config-remove are refu
   const green = [node, "-e", "process.exit(0)"];
   const writes = [
     // a green gate of its own that covers its Story,
-    [() => ["gates-config-set", "--workspace", library, "--at", at(), "--name", "self-check", "--command", JSON.stringify(green), "--covers", storyId], "self-check"],
+    [() => ["gates-config-set", "--workspace", library, "--project-id", projectId, "--at", at(), "--name", "self-check", "--command", JSON.stringify(green), "--covers", storyId], "self-check"],
     // the red gate made optional,
-    [() => ["gates-config-set", "--workspace", library, "--at", at(), "--name", "unit", "--required", "false"], "unit"],
+    [() => ["gates-config-set", "--workspace", library, "--project-id", projectId, "--at", at(), "--name", "unit", "--required", "false"], "unit"],
     // or the red gate taken away.
-    [() => ["gates-config-remove", "--workspace", library, "--at", at(), "--name", "unit"], "unit"],
+    [() => ["gates-config-remove", "--workspace", library, "--project-id", projectId, "--at", at(), "--name", "unit"], "unit"],
   ];
   // Only the exact surface name lets a write through.
   for (const surface of [undefined, "", "Atelier", "atelier ", "portal"]) {

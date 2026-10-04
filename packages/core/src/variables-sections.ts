@@ -6,7 +6,9 @@ import { DESIGN_CONFIGURATION_KEYS, designConfiguration, scopedWorkspaceState } 
 // setting ever appears there. TCRN-CROSS-STORY-508 R8 (MIN-236 D8; TCRN-CROSS-SUB-407) adds to what
 // it rendered, keeping design.authority (MIN-227 D11): models.category and models.tiers, each a table
 // of records in ascending order (order, id, name, description; order, category, runner, model, effort,
-// note), the three models.escalation settings, and design.authority.
+// note), the three models.escalation settings, and all seven declared design bindings. The design
+// table names its explicit configuration target, effective sources and inheritance; missing bindings
+// stay unconfigured and production publication stays unverified by the offline renderer.
 // The custom section renders the project's variables (variables.ts): name, type, value and
 // description. Both are managed sections (managed-sections.ts), variables-system and
 // variables-custom, written only when writeVariablesSections is called.
@@ -112,7 +114,9 @@ function modelsCategoryReference(category: Pick<ModelsCategoryRecord, "id">): st
  * The system section, a subsection for each system setting in SYSTEM_VARIABLE_KEYS' order, the three
  * models.escalation settings sharing one (TCRN-CROSS-STORY-508 R8): models.category and models.tiers
  * as their tables of records in ascending order, the escalation settings as a table of their effective
- * values, and design.authority. A line before each table says how to read it. An empty model or effort
+ * values, and the explicit target's seven design bindings with their effective source and inheritance.
+ * A separate table preserves provenance for every system setting. A line before each table says how
+ * to read it. An empty model or effort
  * reads as unset, and an empty description or note is an empty cell. A category whose name or
  * description, or a tier record whose model, effort or note, would put an absolute path or a
  * credential into the file keeps its row with those cells withheld; the escalation values are true or

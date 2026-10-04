@@ -2,7 +2,7 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r29-safe-source-f01-held",
+  "pack": "r30-safe-source-f01-held",
   "scope": "native R1–R6 appended to revision 4",
   "sourceFiles": [
     {
@@ -323,7 +323,7 @@
     },
     {
       "path": "packages/core/src/variables-sections.ts",
-      "sha256": "496653dfb6b3fc0dbd3fdc025bb363f142cc17d39cea8ffadd0887093c45465d"
+      "sha256": "a9a25fb35a397b7d399fe4e437cc2d11020265a419427075f57cfe8cc6692132"
     },
     {
       "path": "packages/core/src/variables.ts",
@@ -778,28 +778,159 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R29 safe source implementation with one focused cadence recorded separately; this inventory never implies passing verification, final acceptance or Owner visual judgment. F01 migration-language-negative remains held without source repair; F19 belongs to the later truthful final evidence producer. The complete actual candidate parent/publication/build/consumption disposition below determines whether its source may be consumed. Current consumed-authority identity is bound by the publication and snapshot fields. Fresh canonical integration and affected MAIN acceptance remain separate pending acts. No live Engine installation/migration or governed write was performed.",
+  "evidenceDisposition": "R30 safe source implementation with one focused cadence recorded separately; this inventory never implies passing verification, final acceptance or Owner visual judgment. F01 migration-language-negative remains held without source repair; F19 belongs to the later truthful final evidence producer. The complete actual candidate parent/publication/build/consumption disposition below determines whether its source may be consumed. Current consumed-authority identity is bound by the publication and snapshot fields. Fresh canonical integration and affected MAIN acceptance remain separate pending acts. No live Engine installation/migration or governed write was performed.",
   "dsCandidateDisposition": {
-    "candidateCommit": "fbac1c00e747684239ed9a3133ec2ba15d21f83f",
+    "candidateCommit": "cc9aa338bb616086b8f84cc6e95306183e1f2292",
     "candidateParent": {
       "command": "pnpm verify",
       "exit": 1,
       "raw": "ds-p3-ordinary-parent-once.run.json",
-      "actualFirstBlockingChild": "tokens:proof / scripts/selection-grammar-proof.mjs",
-      "reason": "brand-colour in .tcrn-tabs__tab--selected: direct --tcrn-color-brand-primary reference",
-      "sourceFindings": 1,
+      "actualFirstBlockingChild": "full-surface:proof: tests/full-surface-remediation.test.mjs:189–193",
+      "reason": "Missing expected exception (AssertionError)",
+      "wholeFileTestResult": {
+        "tests": 9,
+        "pass": 8,
+        "fail": 1,
+        "cancelled": 0,
+        "skipped": 0,
+        "todo": 0
+      },
+      "selectionGrammar": {
+        "ok": true,
+        "sourcesScanned": 4,
+        "selectionRulesScanned": 31,
+        "findings": []
+      },
+      "actualExecutedStages": [
+        {
+          "stage": "verify",
+          "command": "pnpm install --frozen-lockfile && pnpm typecheck && pnpm build && pnpm dist:hygiene && pnpm test && pnpm tokens:proof && pnpm component-modifiers:proof && pnpm badge-wrap:proof && pnpm geometry:proof && pnpm shell:parity && pnpm doc-shell:proof && pnpm brand-asset:proof && pnpm exports:check && pnpm pack:smoke && pnpm storybook:smoke && pnpm readme:proof && pnpm public:naming:proof && pnpm public-output:scan && pnpm internal-vocab:scan && pnpm generic:scan && pnpm ds:consumption:proof && pnpm full-surface:proof && pnpm scaffold:proof && pnpm internal-alpha:proof",
+          "stdoutLine": 2
+        },
+        {
+          "stage": "typecheck",
+          "command": "tsc -b --pretty false",
+          "stdoutLine": 11
+        },
+        {
+          "stage": "build",
+          "command": "pnpm --filter @tcrn/ui-tokens build && pnpm --filter @tcrn/ui-copy-state build && pnpm --filter @tcrn/ui-react build && pnpm --filter @tcrn/tms-react-pilot build && pnpm --filter @tcrn/aos-token-copy-state-pilot build && pnpm --filter @tcrn/design-system-storybook build",
+          "stdoutLine": 15
+        },
+        {
+          "stage": "dist:hygiene",
+          "command": "node scripts/dist-hygiene-proof.mjs",
+          "stdoutLine": 91
+        },
+        {
+          "stage": "test",
+          "command": "pnpm --filter @tcrn/ui-tokens test && pnpm --filter @tcrn/ui-copy-state test && pnpm --filter @tcrn/ui-react test && pnpm --filter @tcrn/design-system-storybook test && pnpm --filter @tcrn/tms-react-pilot test && pnpm --filter @tcrn/aos-token-copy-state-pilot test",
+          "stdoutLine": 99
+        },
+        {
+          "stage": "tokens:proof",
+          "command": "node scripts/css-template-integrity-proof.mjs && node scripts/tokens-sync.mjs --check && node scripts/demo-styles-sync.mjs --check && node scripts/token-contrast-proof.mjs && node scripts/fonts-proof.mjs && node scripts/stamp-whitelist-proof.mjs && node scripts/shell-fidelity-proof.mjs && node scripts/token-extension-proof.mjs && node scripts/selection-grammar-proof.mjs",
+          "stdoutLine": 308
+        },
+        {
+          "stage": "component-modifiers:proof",
+          "command": "node scripts/component-modifier-proof.mjs",
+          "stdoutLine": 410
+        },
+        {
+          "stage": "badge-wrap:proof",
+          "command": "node scripts/badge-wrap-proof.mjs",
+          "stdoutLine": 475
+        },
+        {
+          "stage": "geometry:proof",
+          "command": "node scripts/geometry-proof.mjs",
+          "stdoutLine": 508
+        },
+        {
+          "stage": "shell:parity",
+          "command": "node scripts/shell-parity-proof.mjs",
+          "stdoutLine": 513
+        },
+        {
+          "stage": "doc-shell:proof",
+          "command": "node scripts/doc-shell-class-proof.mjs",
+          "stdoutLine": 518
+        },
+        {
+          "stage": "brand-asset:proof",
+          "command": "node scripts/brand-asset-source-proof.mjs",
+          "stdoutLine": 608
+        },
+        {
+          "stage": "exports:check",
+          "command": "node scripts/check-exports.mjs",
+          "stdoutLine": 624
+        },
+        {
+          "stage": "pack:smoke",
+          "command": "node scripts/pack-smoke.mjs",
+          "stdoutLine": 654
+        },
+        {
+          "stage": "storybook:smoke",
+          "command": "node scripts/storybook-smoke.mjs",
+          "stdoutLine": 681
+        },
+        {
+          "stage": "readme:proof",
+          "command": "node --test scripts/readme-public-contract.test.mjs",
+          "stdoutLine": 29596
+        },
+        {
+          "stage": "public:naming:proof",
+          "command": "node --test scripts/public-naming-proof.test.mjs && node scripts/public-naming-proof.mjs",
+          "stdoutLine": 29609
+        },
+        {
+          "stage": "public-output:scan",
+          "command": "node scripts/public-output-scan.mjs",
+          "stdoutLine": 29645
+        },
+        {
+          "stage": "internal-vocab:scan",
+          "command": "node --test scripts/internal-vocabulary-scan.test.mjs && node scripts/internal-vocabulary-scan.mjs",
+          "stdoutLine": 29678
+        },
+        {
+          "stage": "generic:scan",
+          "command": "node --test scripts/generic-primitive-scan.test.mjs && node scripts/generic-primitive-scan.mjs",
+          "stdoutLine": 29854
+        },
+        {
+          "stage": "ds:consumption:proof",
+          "command": "node --test tests/ds-consumption-proof.test.mjs && node scripts/ds-consumption-proof.mjs",
+          "stdoutLine": 29891
+        },
+        {
+          "stage": "full-surface:proof",
+          "command": "node --test tests/full-surface-remediation.test.mjs && node scripts/full-surface-remediation-proof.mjs",
+          "stdoutLine": 43275
+        }
+      ],
       "visualSignatureRegressions": null,
       "storyHeightViolations": null,
       "storyHeightStaleAllowlist": null,
       "axeViolationCount": null,
       "browserCaptureCount": 0,
-      "unexecuted": "component modifiers and all later verify children, including executable full-surface proof/internal-alpha 271-capture parent; original NB11 signature/height repaired-source outcome remains unverified"
+      "captureCountScope": "internal-alpha original271capture stage only; other earlier browser measurements did execute",
+      "unexecuted": [
+        "full-surface-remediation-proof.mjs after failing test",
+        "scaffold:proof",
+        "internal-alpha:contracts/browser271capture",
+        "internal-alpha scan/hardening"
+      ]
     },
     "candidateMerged": false,
     "candidateProductionPublished": false,
     "candidateBuildAndArtifactVerified": false,
     "candidateConsumed": false,
-    "reason": "Original approved ordinary P3 parent failed once at a newly exposed selection-grammar violation. No post-cadence source repair/rerun, baseline/threshold/debt/budget weakening or red-authority publication/consumption.",
+    "reason": "Original approved ordinary parent failed once at the genuine exposed whole-file public-token negative. No post-cadence repair/rerun, baseline/threshold/debt/budget waiver, red-authority publication or application consumption.",
     "retainedCurrentAuthorityCommit": "48ded198a7148efdaa245271d1885e468f24f4a4",
     "retainedPublicationEvidence": "retained-ds-publication-binding.json",
     "retainedAuthorityEvidenceIsNewCandidateEvidence": false,
@@ -843,7 +974,28 @@
     ],
     "prCreatePushMergeAttempted": false,
     "productionAttempted": false,
-    "canonicalDsRestored": "canonical-ds-restored-after-parent.json"
+    "canonicalDsRestored": "canonical-ds-restored-after-parent.json",
+    "originalVisualSignatureHistory": {
+      "mean": [
+        2.625,
+        2.855,
+        2.668
+      ],
+      "max": [
+        13,
+        15,
+        11
+      ],
+      "staleHeight": 1,
+      "newHeight": 0,
+      "thresholdMean": 2,
+      "thresholdMax": 8,
+      "maxStoryHeight": 2000,
+      "debt": 9,
+      "captures": 271
+    },
+    "baselinesCriteriaAndAllowancesChanged": false,
+    "currentBrowserSignatureHeightAxeOutcome": "unknown/unexecuted; historical outputs do not establish candidate results"
   },
   "settings": [
     {
@@ -1278,18 +1430,8 @@
         },
         {
           "file": "packages/core/src/variables-sections.ts",
-          "line": 9,
-          "text": "// note), the three models.escalation settings, and design.authority."
-        },
-        {
-          "file": "packages/core/src/variables-sections.ts",
-          "line": 50,
+          "line": 52,
           "text": "const DESIGN_AUTHORITY_SETTING_KEY = \"design.authority\";"
-        },
-        {
-          "file": "packages/core/src/variables-sections.ts",
-          "line": 115,
-          "text": "* values, and design.authority. A line before each table says how to read it. An empty model or effort"
         },
         {
           "file": "portal/index.html",
@@ -2795,17 +2937,17 @@
         },
         {
           "file": "packages/core/src/variables-sections.ts",
-          "line": 70,
+          "line": 72,
           "text": "* What a section left out: a variable's name, a category as models.category.<id>, or a tier record as"
         },
         {
           "file": "packages/core/src/variables-sections.ts",
-          "line": 106,
+          "line": 108,
           "text": "/** How a category is named where what a section left out is reported: models.category.<id>. */"
         },
         {
           "file": "packages/core/src/variables-sections.ts",
-          "line": 113,
+          "line": 115,
           "text": "* models.escalation settings sharing one (TCRN-CROSS-STORY-508 R8): models.category and models.tiers"
         },
         {
@@ -3628,17 +3770,17 @@
         },
         {
           "file": "packages/core/src/variables-sections.ts",
-          "line": 71,
+          "line": 73,
           "text": "* models.tiers.<order>, and why."
         },
         {
           "file": "packages/core/src/variables-sections.ts",
-          "line": 113,
+          "line": 115,
           "text": "* models.escalation settings sharing one (TCRN-CROSS-STORY-508 R8): models.category and models.tiers"
         },
         {
           "file": "packages/core/src/variables-sections.ts",
-          "line": 230,
+          "line": 234,
           "text": "// What the sections left out: a variable's name, or a tier record as models.tiers.<order>, and why."
         },
         {

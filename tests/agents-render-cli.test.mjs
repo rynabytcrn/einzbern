@@ -123,7 +123,41 @@ test("478-AC1 via agents-render: a section changed by one character stays as it 
   assert.equal(sectionOf(after, "navigation").raw, sectionOf(edited, "navigation").raw, "the changed section is byte for byte what the user left");
   const system = sectionOf(after, "variables-system");
   assert.equal(system.rev, 2);
-  assert.match(system.body, /^https:\/\/design\.example\.com\/system$/mu);
+  const designHeading = "### design.authority\n";
+  assert.equal(system.body.split(designHeading).length, 2, "the design contract appears exactly once");
+  assert.equal(system.body.slice(system.body.indexOf(designHeading)), [
+    "### design.authority",
+    "",
+    `Configuration target: ${projectId}.`,
+    "",
+    "Design bindings: unconfigured. Production publication: unverified. The offline engine validates declarations only; an authorized agent verifies repository and production evidence.",
+    "",
+    "| Setting | Declared value | Effective source | Inherited |",
+    "| --- | --- | --- | --- |",
+    "| design.authority | https://design.example.com/system | library | true |",
+    "| design.repository | (unconfigured) | default | false |",
+    "| design.pullRequestTarget | (unconfigured) | default | false |",
+    "| design.productionDocs | (unconfigured) | default | false |",
+    "| design.buildService | (unconfigured) | default | false |",
+    "| design.buildProject | (unconfigured) | default | false |",
+    "| design.consumedVersion | (unconfigured) | default | false |",
+    "",
+    "| System setting | Effective source | Inherited |",
+    "| --- | --- | --- |",
+    "| models.category | default | false |",
+    "| models.tiers | default | false |",
+    "| models.escalation.enabled | default | false |",
+    "| models.escalation.threshold | default | false |",
+    "| models.escalation.ceiling | default | false |",
+    "| design.authority | library | true |",
+    "| design.repository | default | false |",
+    "| design.pullRequestTarget | default | false |",
+    "| design.productionDocs | default | false |",
+    "| design.buildService | default | false |",
+    "| design.buildProject | default | false |",
+    "| design.consumedVersion | default | false |",
+    "",
+  ].join("\n"), "the explicit target, all seven design bindings and every system source retain their exact contract");
   assert.deepEqual(parseManagedFile(after).outside, parseManagedFile(edited).outside, "nothing outside the sections changed");
   assert.equal(await readFile(join(next.backupDir, "AGENTS.md"), "utf8"), edited);
 

@@ -176,7 +176,7 @@ test("STORY-364: write translation answers are verified against English, French,
   }
 });
 
-test("STORY-364: five-language writes keep the existing bounded expansion contract", () => {
+test("STORY-364: five-language writes keep complete expansions and their closed language grammar", () => {
   const fields = { subject: "Credentials are not a prerequisite", summary: "The key does not block implementation", snippet: "Build against the interface" };
   const policy = { artifactLanguage: "fr", promptLanguages: [...ARTIFACT_LANGUAGE_TAGS], economyModel: ECONOMY_MODEL };
   const written = applyWriteLanguagePolicy(fields, policy, provider({
@@ -185,7 +185,7 @@ test("STORY-364: five-language writes keep the existing bounded expansion contra
   }));
   assert.deepEqual(Object.keys(written.expansions), ["en", "fr", "ja", "ko", "zh-CN"]);
   assert.equal(expansionsAreBounded(written.expansions), true);
-  assert.equal(KNOWLEDGE_EXPANSION_LIMITS.maximumBytes, 1_024, "the existing whole-card byte budget is unchanged");
+  assert.equal(KNOWLEDGE_EXPANSION_LIMITS.maximumBytes, Number.MAX_SAFE_INTEGER, "only runtime Buffer capacity remains");
   assert.equal(expansionsAreBounded({ de: ["A", "B", "C"] }), false, "unknown language keys remain rejected");
 });
 
@@ -215,7 +215,7 @@ for (const [language, translated] of Object.entries({
     assert.deepEqual(Object.keys(record.expansions), [...ARTIFACT_LANGUAGE_TAGS]);
     assert.equal(expansionsAreBounded(record.expansions), true);
     for (const phrasings of Object.values(record.expansions)) assert.equal(phrasings.length, 3);
-    assert.equal(KNOWLEDGE_EXPANSION_LIMITS.maximumBytes, 1024);
+    assert.equal(KNOWLEDGE_EXPANSION_LIMITS.maximumBytes, Number.MAX_SAFE_INTEGER);
 
     const freshScript = `const core = await import(process.argv[1]); const [root,id,at] = process.argv.slice(2); const state = await core.materializeWorkspaceFromGenesis(root); console.log(JSON.stringify({ settings: state.settings, list: await core.listKnowledgeMetadata(root,{at,allowTrailing:true}), snippet: await core.readKnowledgeSnippet(root,id), body: await core.readKnowledgeBody(root,id,{at,allowTrailing:true}) }));`;
     const { stdout } = await runFreshProcess(["--input-type=module", "--eval", freshScript, new URL("../dist/build/packages/core/src/index.js", import.meta.url).href, workspace, record.id, instant(12)], { env: process.env, maxBuffer: 32e6 });
@@ -487,11 +487,11 @@ test("STORY-364: phrasings outside the normative bounds are refused", () => {
     { key: "models.tiers", value: MODELS_TIERS_VALUE },
   ], "claude-code");
   const fields = { subject: "凭据不是前置", summary: "密钥未批不阻塞实现", snippet: "对着接口做" };
-  assert.equal(KNOWLEDGE_EXPANSION_LIMITS.maximumBytes, 1_024);
+  assert.equal(KNOWLEDGE_EXPANSION_LIMITS.maximumBytes, Number.MAX_SAFE_INTEGER);
   for (const [label, phrasings] of [
     ["two phrasings is below the floor", ["甲一", "乙二"]],
-    ["five phrasings is above the ceiling", ["一", "二", "三", "四", "五"]],
-    ["one phrasing over the whole-map byte budget", ["密" .repeat(200), "钥".repeat(200), "证".repeat(200)]],
+    ["empty phrasing is invalid", ["", "甲", "乙"]],
+    ["control character is invalid", ["甲\n", "乙", "丙"]],
   ]) {
     assert.throws(
       () => applyWriteLanguagePolicy(fields, policy, provider({ expand: () => phrasings })),
@@ -500,7 +500,10 @@ test("STORY-364: phrasings outside the normative bounds are refused", () => {
     );
   }
   const exact = applyWriteLanguagePolicy(fields, policy, provider({ expand: () => ["甲", "乙", "丙", "丁"] }));
-  assert.equal(exact.expansions["zh-CN"].length, KNOWLEDGE_EXPANSION_LIMITS.maximumPhrasings);
+  assert.equal(exact.expansions["zh-CN"].length, 4);
+  const complete = applyWriteLanguagePolicy(fields, policy, provider({ expand: () => ["一", "二", "三", "四", "五"].map(value => value.repeat(200)) }));
+  assert.equal(complete.expansions["zh-CN"].length, 5);
+  assert.ok(Object.values(complete.expansions).flat().every(value => value.length === 200));
   assert.equal(expansionsText(exact.expansions), "丁\n丙\n乙\n甲", "the weight-6 column is the flattened map");
 });
 
@@ -781,6 +784,7 @@ test("language migration excludes retired cards before planning or applying poli
   const bodyCalls = [];
   const writes = [];
   const core = {
+    scopedWorkspaceState(state, projectId) { assert.equal(projectId, undefined); return state; },
     async materializeWorkspace() {
       return { settings: [] };
     },

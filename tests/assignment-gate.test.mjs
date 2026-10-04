@@ -65,12 +65,14 @@ test("hostile gate records fail closed", () => {
     () => reason("GATE_SCHEMA_INVALID", () => validateGateRecord(gate({ status: "open" }))),
     () => reason("GATE_SCHEMA_INVALID", () => validateGateRecord(gate({ outcomeClass: "final" }))),
     () => reason("GATE_UNICODE_INVALID", () => validateGateRecord(gate({ title: "\ud800" }))),
-    () => reason("GATE_UNICODE_INVALID", () => validateGateRecord(gate({ title: "x".repeat(2049) }))),
+    () => reason("GATE_UNICODE_INVALID", () => validateGateRecord(gate({ title: "\udfff" }))),
     () => reason("GATE_SCHEMA_INVALID", () => validateGateRecord(gate({ revision: 0 }))),
     () => reason("GATE_SCHEMA_INVALID", () => validateGateRecord(gate({ projectId: "NotAnId" }))),
   ];
   assert.equal(hostile.length, fixture.gateHostileCases);
   for (const operation of hostile) operation();
+  const title = "x".repeat(4097);
+  assert.equal(validateGateRecord(gate({ title })).title, title, "complete title beyond the retired bound");
 });
 
 test("list-by-work-item filters tombstones and other work items", () => {

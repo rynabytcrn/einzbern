@@ -449,7 +449,9 @@ test("508-AC7 via the render: the system section in AGENTS.md holds the categori
   const tiers = lines.slice(lines.indexOf("### models.tiers"), lines.indexOf("### models.escalation"));
   const tierOrders = tiers.filter((line) => /^\| [0-9]+ \| /u.test(line)).map((line) => Number(line.split(" | ")[0].slice(2)));
   assert.deepEqual(tierOrders, [10, 20, 30, 40, 50, 60], "the tiers in ascending order");
-  assert.match(system.body, /^### design\.authority\n\n\(unset\)$/mu);
+  assert.match(system.body, /^### design\.authority\n\nConfiguration target: library defaults\./mu);
+  assert.match(system.body, /Design bindings: unconfigured\. Production publication: unverified/);
+  assert.match(system.body, /\| design\.authority \| \(unconfigured\) \| default \| false \|/);
   assert.equal(absolutePathLine(system.body), null);
   assert.equal(text.includes(base), false, "no path of this machine appears in AGENTS.md");
 });

@@ -12,6 +12,7 @@
 | `--project` | 可选 | `string` |
 | `--at` | 必填 | `instant` |
 | `--actor` | 可选 | `string` |
+| `--project-id` | 可选 | `string` |
 
 ## `artifact-list`
 
@@ -123,6 +124,7 @@
 | 旗标 | 必填 | 取值类型 |
 | --- | --- | --- |
 | `--workspace` | 可选 | `string` |
+| `--project-id` | 可选 | `string` |
 
 ## `gates-config-remove`
 
@@ -135,6 +137,7 @@
 | `--at` | 必填 | `instant` |
 | `--name` | 必填 | `string` |
 | `--actor` | 可选 | `string` |
+| `--project-id` | 可选 | `string` |
 
 ## `gates-config-set`
 
@@ -154,6 +157,7 @@
 | `--release-only` | 可选 | `boolean` |
 | `--order` | 可选 | `integer` |
 | `--actor` | 可选 | `string` |
+| `--project-id` | 可选 | `string` |
 
 ## `gates-plan`
 
@@ -167,6 +171,7 @@
 | `--base` | 可选 | `string` |
 | `--release` | 可选 | `boolean` |
 | `--work-id` | 可选 | `list` |
+| `--project-id` | 可选 | `string` |
 
 ## `gates-run`
 
@@ -181,6 +186,7 @@
 | `--base` | 可选 | `string` |
 | `--release` | 可选 | `boolean` |
 | `--work-id` | 可选 | `list` |
+| `--project-id` | 可选 | `string` |
 
 ## `host-probe`
 
@@ -222,6 +228,7 @@
 | 旗标 | 必填 | 取值类型 |
 | --- | --- | --- |
 | `--workspace` | 可选 | `string` |
+| `--project-id` | 可选 | `string` |
 | `--host` | 可选 | `string` |
 | `--at` | 必填 | `instant` |
 | `--path` | 必填 | `string` |
@@ -306,6 +313,7 @@
 | `--body` | 必填 | `string` |
 | `--external-key` | 可选 | `string` |
 | `--scope` | 可选 | `string` |
+| `--project-id` | 可选 | `string` |
 | `--role-scopes` | 可选 | `list` |
 | `--category` | 可选 | `string` |
 | `--kind` | 可选 | `string` |
@@ -521,6 +529,7 @@
 | `--at` | 必填 | `instant` |
 | `--cloud-hosted` | 可选 | `boolean` |
 | `--git-remote` | 可选 | `string` |
+| `--project-id` | 可选 | `string` |
 
 ## `library-resolve`
 
@@ -623,6 +632,7 @@
 | `--external-key` | 必填 | `string` |
 | `--name` | 必填 | `string` |
 | `--actor` | 可选 | `string` |
+| `--parent-project-id` | 可选 | `string` |
 
 ## `project-delete`
 
@@ -675,6 +685,7 @@
 | `--tau` | 可选 | `string` |
 | `--allow-trailing` | 可选 | `boolean` |
 | `--status` | 可选 | `string` |
+| `--project-id` | 可选 | `string` |
 
 ## `recover`
 
@@ -698,6 +709,7 @@
 | `--at` | 必填 | `instant` |
 | `--project` | 可选 | `string` |
 | `--actor` | 可选 | `string` |
+| `--project-id` | 可选 | `string` |
 
 ## `rule-enable`
 
@@ -711,6 +723,7 @@
 | `--project` | 可选 | `string` |
 | `--order` | 可选 | `integer` |
 | `--actor` | 可选 | `string` |
+| `--project-id` | 可选 | `string` |
 
 ## `rule-list`
 
@@ -719,7 +732,9 @@
 
 | 旗标 | 必填 | 取值类型 |
 | --- | --- | --- |
+| `--workspace` | 可选 | `string` |
 | `--project` | 可选 | `string` |
+| `--project-id` | 可选 | `string` |
 
 ## `rule-resolve`
 
@@ -734,6 +749,7 @@
 | `--at` | 必填 | `instant` |
 | `--project` | 可选 | `string` |
 | `--actor` | 可选 | `string` |
+| `--project-id` | 可选 | `string` |
 
 ## `settings-catalog`
 
@@ -743,6 +759,7 @@
 | 旗标 | 必填 | 取值类型 |
 | --- | --- | --- |
 | `--workspace` | 可选 | `string` |
+| `--project-id` | 可选 | `string` |
 
 ## `settings-remove`
 
@@ -755,6 +772,7 @@
 | `--at` | 必填 | `instant` |
 | `--key` | 必填 | `string` |
 | `--actor` | 可选 | `string` |
+| `--project-id` | 可选 | `string` |
 
 ## `settings-set`
 
@@ -768,6 +786,7 @@
 | `--key` | 必填 | `string` |
 | `--value` | 必填 | `string` |
 | `--actor` | 可选 | `string` |
+| `--project-id` | 可选 | `string` |
 
 ## `setup`
 
@@ -868,6 +887,7 @@
 | 旗标 | 必填 | 取值类型 |
 | --- | --- | --- |
 | `--workspace` | 可选 | `string` |
+| `--project-id` | 可选 | `string` |
 
 ## `variable-remove`
 
@@ -880,6 +900,7 @@
 | `--at` | 必填 | `instant` |
 | `--name` | 必填 | `string` |
 | `--actor` | 可选 | `string` |
+| `--project-id` | 可选 | `string` |
 
 ## `variable-set`
 
@@ -896,6 +917,7 @@
 | `--description` | 可选 | `string` |
 | `--order` | 可选 | `integer` |
 | `--actor` | 可选 | `string` |
+| `--project-id` | 可选 | `string` |
 
 ## `vocabulary`
 

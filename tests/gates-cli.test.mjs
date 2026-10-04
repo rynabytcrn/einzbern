@@ -68,10 +68,20 @@ async function put(root, path, text = `${path}\n`) {
   await writeFile(join(root, path), text);
 }
 
+const fixtureProjectIds = new Map();
+
 async function cli(args) {
+  // Configuration targets come from this fixture's explicit project-create receipt.
+  const libraryFlag = args[0] === "library-register" ? "--library" : "--workspace";
+  const library = args[args.indexOf(libraryFlag) + 1];
+  const projectId = fixtureProjectIds.get(library);
+  const targetVerbs = ["gates-config-set", "gates-config-list", "gates-config-remove", "gates-plan", "gates-run", "library-register"];
+  if (projectId && targetVerbs.includes(args[0]) && !args.includes("--project-id")) args = [...args, "--project-id", projectId];
   let output = "";
   await runCli(args, { write(value) { output += value; } });
-  return JSON.parse(output);
+  const result = JSON.parse(output);
+  if (args[0] === "project-create") fixtureProjectIds.set(library, result.record.id);
+  return result;
 }
 
 async function refusal(args) {
@@ -289,13 +299,13 @@ test("485-AC4 (CLI): required exact Story covers guard transition, birth-done, a
   assert.deepEqual([green.reds, green.requiredReds], [["lint"], []], gateDiagnostic(green.run, green.recordPath));
   const passed = await cli(done());
   assert.equal(passed.record.status, "done");
-  assert.deepEqual(passed.doneGates, { checked: true, reason: "green", runId: green.run.runId, treeDigest: green.run.treeDigest });
+  assert.deepEqual(passed.doneGates, { checked: true, reason: "green", runId: green.run.runId, treeDigest: green.run.treeDigest, projectId, targets: [{ checked: true, reason: "green", runId: green.run.runId, treeDigest: green.run.treeDigest, projectId }] });
 
   const greenBirth = await cli(["gates-run", "--workspace", library, "--at", at(), "--project", project, "--base", baseCommit, "--work-id", birthId]);
   assert.deepEqual(greenBirth.requiredReds, [], gateDiagnostic(greenBirth.run, greenBirth.recordPath));
   const born = await cli(createBorn);
   assert.equal(born.record.status, "done");
-  assert.deepEqual(born.doneGates, { checked: true, reason: "green", runId: greenBirth.run.runId, treeDigest: greenBirth.run.treeDigest });
+  assert.deepEqual(born.doneGates, { checked: true, reason: "green", runId: greenBirth.run.runId, treeDigest: greenBirth.run.treeDigest, projectId, targets: [{ checked: true, reason: "green", runId: greenBirth.run.runId, treeDigest: greenBirth.run.treeDigest, projectId }] });
 });
 
 test("D8 (CLI): path covers still select gates, but only exact work-id covers establish Story coverage", async (context) => {

@@ -197,7 +197,7 @@ test("STORY-473 R2: work-list says where each record's fields come from, and --s
   assert.equal(scoped.records[0].fields.goal, "Keep the old ten blocks readable.", "a scope's fields are mapped in a search listing too");
 });
 
-test("STORY-473 R2: work-list refuses a page over the canonical budget instead of returning an incomplete summary", async (context) => {
+test("STORY-473 R2: work-list keeps a complete page beyond the retired byte ceiling and honors explicit pagination", async (context) => {
   const tree = await storyTree(context, "SF-LIST-BUDGET");
   const body = "x".repeat(6_500);
   const members = Array.from({ length: 150 }, (_, index) => {
@@ -219,10 +219,10 @@ test("STORY-473 R2: work-list refuses a page over the canonical budget instead o
   await writeFile(batchFile, `${JSON.stringify({ schemaVersion: "tcrn.work-batch.v1", members })}\n`);
   await cli(["work-batch", "--workspace", tree.workspace, "--at", instant(4), "--from-file", batchFile]);
 
-  await assert.rejects(
-    cli(["work-list", "--workspace", tree.workspace, "--kind", "Story"]),
-    (error) => error?.reasonCode === "CLI_WORK_LIST_OVERSIZED" && /--limit/u.test(error.message),
-  );
+  const complete = await cli(["work-list", "--workspace", tree.workspace, "--kind", "Story"]);
+  assert.equal(complete.records.length, members.length);
+  assert.equal(complete.truncated, false);
+  assert.ok(complete.records.every(record => record.fields.body === body));
   const page = await cli(["work-list", "--workspace", tree.workspace, "--kind", "Story", "--limit", "1"]);
   assert.equal(page.total, members.length);
   assert.equal(page.truncated, true);

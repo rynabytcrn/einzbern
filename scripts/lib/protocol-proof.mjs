@@ -205,8 +205,10 @@ export async function validateP2SchemasAndFixtures() {
       "P2_ID_BOUNDARY_TARGET_INVALID", boundaryCase.schema);
     assertion(validate(withPathValue(schemaCase.valid, boundaryCase.path, idBoundaryCases.maximumId)),
       "P2_ID_MAXIMUM_REJECTED", `${boundaryCase.schema}:${boundaryCase.path.join(".")}:${ajv.errorsText(validate.errors)}`);
-    assertion(!validate(withPathValue(schemaCase.valid, boundaryCase.path, idBoundaryCases.overlongId)),
-      "P2_ID_OVERLONG_ADMITTED", `${boundaryCase.schema}:${boundaryCase.path.join(".")}`);
+    assertion(validate(withPathValue(schemaCase.valid, boundaryCase.path, idBoundaryCases.overlongId)),
+      "P2_ID_FORMER_BOUNDARY_REJECTED", `${boundaryCase.schema}:${boundaryCase.path.join(".")}`);
+    assertion(!validate(withPathValue(schemaCase.valid, boundaryCase.path, `${idBoundaryCases.overlongId}\n`)),
+      "P2_ID_INVALID_GRAMMAR_ADMITTED", `${boundaryCase.schema}:${boundaryCase.path.join(".")}`);
     stableIdBoundaryCases += 1;
   }
 
@@ -244,7 +246,7 @@ export async function validateP2SchemasAndFixtures() {
     metaSchemasValidated,
     schemaPositiveCases,
     schemaNegativeCases,
-    stableIdMaximumLength: idBoundaryCases.maximumLength,
+    stableIdFormerBoundaryLength: idBoundaryCases.maximumLength,
     stableIdBoundaryCases,
     extensionNameCases: 1 + extensionNameCases.invalid.length,
     resolvedLocalRefs,

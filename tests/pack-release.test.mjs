@@ -154,12 +154,13 @@ test("481-R2: the archive is one einzbern-<version>/ directory in the release la
   const template = await filesUnder(join(repositoryRoot, "skill/mana-orchestrate"));
   const expected = [
     "scripts/einzbern.mjs", "scripts/einzbern-hook.mjs", "launchers/einzbern.mjs", "launchers/hook.mjs",
-    "atelier/portal.mjs", "atelier/atelier-brand-mark.svg", "atelier/index.html", "atelier/locales.js", "atelier/tokens.css",
+    "atelier/portal.mjs", "atelier/ds-static-bridges.snapshot.js", "atelier/atelier-brand-mark.svg", "atelier/index.html", "atelier/locales.js", "atelier/tokens.css",
     "skill/mana-orchestrate/SKILL.md", ...template.map((path) => `skill/mana-orchestrate/${path}`),
     ...readmes, "CHANGELOG.md", "LICENSE", "NOTICE", "manifest.json",
   ];
   assert.deepEqual([...paths].sort(), [...new Set(expected)].sort());
   const byPath = new Map(entries.map((entry) => [entry.path.slice(RELEASE.length + 1), entry]));
+  assert.ok(byPath.get("atelier/ds-static-bridges.snapshot.js").bytes.equals(await readFile(join(repositoryRoot, "portal/ds-static-bridges.snapshot.js"))), "the archive retains exact published bridge bytes");
   assert.ok(byPath.get("launchers/einzbern.mjs").bytes.equals(await readFile(join(repositoryRoot, "scripts/einzbern-launcher.mjs"))));
   assert.ok(byPath.get("launchers/hook.mjs").bytes.equals(await readFile(join(repositoryRoot, "scripts/einzbern-hook-launcher.mjs"))));
   for (const path of template) {

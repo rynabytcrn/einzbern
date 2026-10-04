@@ -47,22 +47,22 @@ test("S239: defaults, closed enum, and bounded numeric strings are catalog-backe
   const catalog = await json(["settings-catalog", "--workspace", workspace]);
   const entries = new Map(catalog.settings.map((entry) => [entry.key, entry]));
   assert.deepEqual(entries.get("execution.maxConcurrentSubagents"), {
-    key: "execution.maxConcurrentSubagents", type: "string", controlType: "number", layer: "project", defaultValue: "8", currentValue: "8", modelWritable: false, min: 1, max: 32, shape: "scalar", group: "execution", order: 1,
+    key: "execution.maxConcurrentSubagents", type: "string", controlType: "number", layer: "project", defaultValue: "8", currentValue: "8", modelWritable: false, scope: "project", source: { kind: "default", projectId: null, projectName: null, inherited: false }, inheritedValue: "8", inheritedSource: { kind: "default", projectId: null, projectName: null, inherited: false }, declaredValue: null, min: 1, max: Number.MAX_SAFE_INTEGER, shape: "scalar", group: "execution", order: 1,
   });
   assert.equal(entries.has("execution.maxDispatchDepth"), false);
   assert.equal(entries.has("execution.personalessDispatch"), false);
 
   const first = await json(["settings-set", "--workspace", workspace, "--at", instant(1),
-    "--key", "execution.maxConcurrentSubagents", "--value", "32", "--actor", "agent:test"]);
-  assert.equal(first.setting.value, "32");
+    "--key", "execution.maxConcurrentSubagents", "--value", "65", "--actor", "agent:test"]);
+  assert.equal(first.setting.value, "65");
 });
 
 test("S239: semantic refusals identify the setting and leave the head unchanged", async (t) => {
   const { workspace, version } = await fixture(t);
   const cases = [
-    ["execution.maxConcurrentSubagents", "0", /1 to 32/u, "SETTINGS_VALUE_INVALID"],
-    ["execution.maxConcurrentSubagents", "33", /1 to 32/u, "SETTINGS_VALUE_INVALID"],
-    ["execution.maxConcurrentSubagents", "1.0", /1 to 32/u, "SETTINGS_VALUE_INVALID"],
+    ["execution.maxConcurrentSubagents", "0", /1 to 9007199254740991/u, "SETTINGS_VALUE_INVALID"],
+    ["execution.maxConcurrentSubagents", "9007199254740992", /1 to 9007199254740991/u, "SETTINGS_VALUE_INVALID"],
+    ["execution.maxConcurrentSubagents", "1.0", /1 to 9007199254740991/u, "SETTINGS_VALUE_INVALID"],
     ["execution.maxDispatchDepth", "4", /maxDispatchDepth/u, "SETTINGS_KEY_UNREGISTERED"],
     ["execution.personalessDispatch", "unknown", /personalessDispatch/u, "SETTINGS_KEY_UNREGISTERED"],
   ];

@@ -229,7 +229,7 @@ test("STORY-515: only declared body segments get their backend limit; overflow a
     await mkdir(dirname(join(copy, relative)), { recursive: true });
     await writeFile(join(copy, relative), "x");
     await truncate(join(copy, relative), 1_048_577);
-    await assert.rejects(verifySnapshotManifest(copy, manifest), { reasonCode: "SNAPSHOT_PATH_INVALID" });
+    await assert.rejects(verifySnapshotManifest(copy, manifest), { reasonCode: "SNAPSHOT_MISMATCH" });
   }
   const overflow = join(fixture.base, "body-overflow");
   await cp(fixture.workspace, overflow, { recursive: true });

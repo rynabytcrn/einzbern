@@ -2,7 +2,7 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r27-owner-visual-return",
+  "pack": "r29-safe-source-f01-held",
   "scope": "native R1–R6 appended to revision 4",
   "sourceFiles": [
     {
@@ -67,7 +67,7 @@
     },
     {
       "path": "packages/core/src/device-identity.ts",
-      "sha256": "d7ddd7b43ea8c4a8aca3ee87e09d0a89e0001908c0924d7a372f32e5ab479e20"
+      "sha256": "9315dd06807cdf9f320ee76b15eb5c0812841ca85728d8659072cc50c8719308"
     },
     {
       "path": "packages/core/src/doctor.ts",
@@ -139,7 +139,7 @@
     },
     {
       "path": "packages/core/src/index.ts",
-      "sha256": "7d4c3ed50e7a0af61cbb0a1083a241d9a829e3a09477d394887290e6bb75b969"
+      "sha256": "823c450f96618663ccc4367be44c2667bff5fe6a1bf8ea4bd5ba2a8fbb035ee9"
     },
     {
       "path": "packages/core/src/install-manifest.ts",
@@ -247,7 +247,7 @@
     },
     {
       "path": "packages/core/src/recall.ts",
-      "sha256": "dc7f88889a2d93ac992798d0f47a9775e9e7517333f309cfc749c3535d7a3616"
+      "sha256": "fe62f4285ba349e491f2edc503e37b65faa0cf9719112d13959933c976d3cb25"
     },
     {
       "path": "packages/core/src/reference-profiles.ts",
@@ -275,11 +275,11 @@
     },
     {
       "path": "packages/core/src/settings.ts",
-      "sha256": "6c83b43ac933dff63d1cc447c811ec80598b388756a73b2a5728e767cbfabbd0"
+      "sha256": "4a6a1b78d646699fbc6f875272c8e05b204a155ad60d13eadd5710e8894ae153"
     },
     {
       "path": "packages/core/src/setup-fresh.ts",
-      "sha256": "ca1a1bce7730827373189623f66362a4898a7ee1ef99f83778390250bdcdbf7a"
+      "sha256": "efdb1f7906e55b4d869283a4f9b16332ee81bf06369f5ff49aa409655ed51a9e"
     },
     {
       "path": "packages/core/src/setup-maintain.ts",
@@ -287,7 +287,7 @@
     },
     {
       "path": "packages/core/src/setup-restore.ts",
-      "sha256": "8e4ea31b8136a183fa4d7a237fdb6cd6fcd52bf041779b692b23beb891c62f72"
+      "sha256": "5448d47f6880fd0bc599e8681d9d9ce933e51991799efb0335d21e5c84f9fe2d"
     },
     {
       "path": "packages/core/src/setup.ts",
@@ -571,7 +571,7 @@
     },
     {
       "path": "scripts/lib/protocol-proof.mjs",
-      "sha256": "1a86dd04da110b38c3d7cc96ed79e39ab29092cb47682f8c44116045d688e0db"
+      "sha256": "927ba56d66317c49929b7ffaff362cf8024682101070790bdc893901daed3d75"
     },
     {
       "path": "scripts/lib/push-gate-children.mjs",
@@ -778,7 +778,73 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "Source implementation and focused checks; canonical integration, affected fresh MAIN acceptance and Owner visual judgment are separate pending acts. No live installation/migration or governed write was performed.",
+  "evidenceDisposition": "R29 safe source implementation with one focused cadence recorded separately; this inventory never implies passing verification, final acceptance or Owner visual judgment. F01 migration-language-negative remains held without source repair; F19 belongs to the later truthful final evidence producer. The complete actual candidate parent/publication/build/consumption disposition below determines whether its source may be consumed. Current consumed-authority identity is bound by the publication and snapshot fields. Fresh canonical integration and affected MAIN acceptance remain separate pending acts. No live Engine installation/migration or governed write was performed.",
+  "dsCandidateDisposition": {
+    "candidateCommit": "fbac1c00e747684239ed9a3133ec2ba15d21f83f",
+    "candidateParent": {
+      "command": "pnpm verify",
+      "exit": 1,
+      "raw": "ds-p3-ordinary-parent-once.run.json",
+      "actualFirstBlockingChild": "tokens:proof / scripts/selection-grammar-proof.mjs",
+      "reason": "brand-colour in .tcrn-tabs__tab--selected: direct --tcrn-color-brand-primary reference",
+      "sourceFindings": 1,
+      "visualSignatureRegressions": null,
+      "storyHeightViolations": null,
+      "storyHeightStaleAllowlist": null,
+      "axeViolationCount": null,
+      "browserCaptureCount": 0,
+      "unexecuted": "component modifiers and all later verify children, including executable full-surface proof/internal-alpha 271-capture parent; original NB11 signature/height repaired-source outcome remains unverified"
+    },
+    "candidateMerged": false,
+    "candidateProductionPublished": false,
+    "candidateBuildAndArtifactVerified": false,
+    "candidateConsumed": false,
+    "reason": "Original approved ordinary P3 parent failed once at a newly exposed selection-grammar violation. No post-cadence source repair/rerun, baseline/threshold/debt/budget weakening or red-authority publication/consumption.",
+    "retainedCurrentAuthorityCommit": "48ded198a7148efdaa245271d1885e468f24f4a4",
+    "retainedPublicationEvidence": "retained-ds-publication-binding.json",
+    "retainedAuthorityEvidenceIsNewCandidateEvidence": false,
+    "applicationSnapshots": [
+      {
+        "path": "portal/tokens.css",
+        "bytes": 8014,
+        "sha256": "87e9b5c6d6cbc765e81803a02160460dc1b84143d761651212b64fb5e41edf1d",
+        "equalsEngineBase": true
+      },
+      {
+        "path": "portal/ds-component-css.snapshot.css",
+        "bytes": 120592,
+        "sha256": "89edf550b6aa2dce64ceb9bd385429c5a48dd206043b0a904e810e4d097a8166",
+        "equalsEngineBase": true
+      },
+      {
+        "path": "portal/ds-static-bridges.snapshot.js",
+        "bytes": 25621,
+        "sha256": "26e51f7b7f7beb18ae00fec4daaf19dbf1d8e588063fd509c81a1761a87ccf8a",
+        "equalsEngineBase": true
+      },
+      {
+        "path": "portal/ds-consumer-contract.json",
+        "bytes": 3460,
+        "sha256": "48f32d5844fa2019f98e55da6ef4fde43a9c449942bac840180b448e5cab4b48",
+        "equalsEngineBase": true
+      },
+      {
+        "path": "portal/index.html",
+        "bytes": 342875,
+        "sha256": "1cabb8e17a30d96732e921631532cb8cadf8a47c942be48c7b8baa529ebf279f",
+        "equalsEngineBase": true
+      }
+    ],
+    "heldGenerators": [
+      "new DS component snapshot",
+      "new DS token snapshot",
+      "new DS static bridge snapshot",
+      "new DS consumption-contract publication binding"
+    ],
+    "prCreatePushMergeAttempted": false,
+    "productionAttempted": false,
+    "canonicalDsRestored": "canonical-ds-restored-after-parent.json"
+  },
   "closureMethod": "Trace every family across core, wire schema, CLI, host/hook, persistence, list/export, consumer and named focused positive/negative checks. This matrix and retained schema bounds constitute the semantic dispositions; the source census is discovery/review material, not an assertion that regex results alone prove closure. Physical host failure thresholds beyond concrete runtime/format capacities remain unknown.",
   "families": [
     {
@@ -3338,12 +3404,12 @@
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 261,
+          "line": 262,
           "text": "const read = timedReader(options.readFile ?? readFileBytes, options.timeoutMs ?? AKASHA_READ_TIMEOUT_DEFAULT_MS);"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 387,
+          "line": 388,
           "text": "const read = await readAllStreams(snapshot.root, { readFile: cached, timeoutMs: options.timeoutMs ?? AKASHA_READ_TIMEOUT_DEFAULT_MS });"
         }
       ],
@@ -10110,14 +10176,9 @@
       "disposition": "runtime representation; immutable running Node capacities, with physical memory/OS failure threshold unknown",
       "currentConsumerSites": [
         {
-          "file": "packages/core/src/index.ts",
-          "line": 604,
-          "text": "export { RECALL_CANDIDATE_LIMIT, RECALL_DEFAULT_TAU, recall, recallDocuments } from \"./recall.js\";"
-        },
-        {
           "file": "packages/core/src/recall.ts",
           "line": 181,
-          "text": "export const RECALL_CANDIDATE_LIMIT = RUNTIME_CAPACITY.arrayEntries;"
+          "text": "const RECALL_CANDIDATE_LIMIT = RUNTIME_CAPACITY.arrayEntries;"
         },
         {
           "file": "packages/core/src/recall.ts",
@@ -10650,7 +10711,7 @@
       "symbol": "catalogEntries",
       "oldInitializer": "[\n  {\n    // TCRN-CROSS-STORY-364: the language this workspace writes its knowledge cards in.\n    // Its value set is the roster knowledge-language.ts can actually judge, so the two\n    // cannot drift. A new installation defaults to English; this platform records zh-CN.\n    key: \"artifact.language\",\n    type: \"enum\",\n    controlType: \"enum\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"en\",\n    allowedValues: [...ARTIFACT_LANGUAGE_TAGS],\n    group: \"knowledge\",\n    order: 1,\n  },\n  {\n    // INC-193: which design system this workspace treats as its authority, named by the\n    // URL of that system's own documentation. Optional — a workspace with no design\n    // system leaves it unset — and purely declarative: the engine never fetches this\n    // address and never checks what is behind it, because doing so would cross the\n    // offline boundary. Its value set is the whole web, not a closed roster, so it is\n    // not vocabulary and does not appear in the dictionary.\n    key: \"design.authority\",\n    type: \"url\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    group: \"general\",\n    order: 2,\n  },\n  {\n    key: \"engine.requiredVersion\",\n    type: \"string\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    group: \"general\",\n    order: 1,\n  },\n  {\n    // INIT-027 S239. An orchestration control, a string on the governed surface so it stays\n    // compatible with the settings transport; its numeric domain is enforced below.\n    // TCRN-CROSS-STORY-484 R5: kept (MIN-229 D2); the orchestrating conversation reads it.\n    key: \"execution.maxConcurrentSubagents\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"8\",\n    min: 1,\n    max: 32,\n    group: \"execution\",\n    order: 1,\n  },\n  {\n    key: \"injection.perPromptBytes\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"1600\",\n    min: 1,\n    max: 1600,\n    group: \"retrieval\",\n    order: 4,\n  },\n  {\n    // Article files are repository material, not knowledge-store control bytes. A\n    // relative value is anchored at the workspace root; an absolute value is stored\n    // as the normalized absolute path the operator supplied. Both forms are refused\n    // when they name the control tree, because article writes use ordinary file IO.\n    key: \"knowledge.articlesPath\",\n    type: \"path\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"docs/knowledge/articles\",\n    group: \"knowledge\",\n    order: 2,\n  },\n  {\n    // TCRN-CROSS-STORY-508 R1 (MIN-236 D6): the model categories, records {id, name, description,\n    // order}; models-category.ts owns the shape and the default table. A table of records, first in\n    // the models group (R5).\n    key: \"models.category\",\n    type: \"string\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: MODELS_CATEGORY_DEFAULT_VALUE,\n    shape: \"collection\",\n    group: \"models\",\n    order: 1,\n  },\n  {\n    // TCRN-CROSS-STORY-508 R3 (MIN-236 D5): the category an escalation stops in, at its record with\n    // the smallest order: a category id, which a write may only set to a category models.category\n    // holds (assertSettingWriteConsistent). The entries here stay in key order (S369); a key's place\n    // on the settings page is its group and order (R5), so the three escalation keys still show\n    // after the two tables, enabled, threshold, then ceiling.\n    key: \"models.escalation.ceiling\",\n    type: \"string\",\n    controlType: \"reference\",\n    valueReference: { key: \"models.category\", field: \"id\" },\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: MODELS_ESCALATION_CEILING_DEFAULT_VALUE,\n    group: \"models\",\n    order: 5,\n  },\n  {\n    // TCRN-CROSS-STORY-508 R3 (MIN-236 D5): whether a rule's record escalates along the order of\n    // models.tiers as the attempts it serves are sent back; models-escalation.ts reads the three\n    // models.escalation keys and resolves the escalation (resolveModelsTier). Scalars of the models\n    // group after the two tables (R5); like every key here, a model does not write them (R4).\n    key: \"models.escalation.enabled\",\n    type: \"enum\",\n    controlType: \"boolean\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: MODELS_ESCALATION_ENABLED_DEFAULT_VALUE,\n    allowedValues: [\"false\", \"true\"],\n    trueValue: \"true\",\n    falseValue: \"false\",\n    group: \"models\",\n    order: 3,\n  },\n  {\n    // How many rejections escalate a rule's record one step.\n    key: \"models.escalation.threshold\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: MODELS_ESCALATION_THRESHOLD_DEFAULT_VALUE,\n    min: 1,\n    max: MODELS_ESCALATION_THRESHOLD_MAX,\n    group: \"models\",\n    order: 4,\n  },\n  {\n    // TCRN-CROSS-STORY-484 R3 (MIN-227 D11, D12): the model tiers; models-tiers.ts owns the shape and\n    // the default table. It replaces execution.dispatchTiers (RENAMED_SETTING_KEYS).\n    // TCRN-CROSS-STORY-508 R2 (MIN-236 D6): one table of records {order, category, runner, model,\n    // effort, note}, each filed under a category of models.category, and second in the models group\n    // after the categories it refers to (R5).\n    key: \"models.tiers\",\n    type: \"string\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: MODELS_TIERS_DEFAULT_VALUE,\n    shape: \"collection\",\n    group: \"models\",\n    order: 2,\n  },\n  {\n    // TCRN-CROSS-STORY-484 (MIN-233 D2): when the orchestrating conversation shrinks its parallel\n    // subagents. Each is a percentage of a usage window: at or above fiveHourParallelOffPercent of\n    // the five-hour window it runs one subagent at a time, at or above fiveHourWaitPercent it\n    // dispatches none until the window resets; the weekly pair reads the weekly window the same\n    // way. weeklyWaitPercent has no default: unset, the weekly window never makes it wait.\n    key: \"quota.fiveHourParallelOffPercent\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"75\",\n    min: 1,\n    max: 100,\n    group: \"execution\",\n    order: 2,\n  },\n  {\n    key: \"quota.fiveHourWaitPercent\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"90\",\n    min: 1,\n    max: 100,\n    group: \"execution\",\n    order: 3,\n  },\n  {\n    key: \"quota.weeklyParallelOffPercent\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"95\",\n    min: 1,\n    max: 100,\n    group: \"execution\",\n    order: 4,\n  },\n  {\n    key: \"quota.weeklyWaitPercent\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    min: 1,\n    max: 100,\n    group: \"execution\",\n    order: 5,\n  },\n  {\n    // TCRN-CROSS-STORY-364: which prompt languages this workspace expects questions in. A\n    // list in the one value shape this catalog has: comma-separated roster tags. Unset reads\n    // as the artefact language alone, which is the default requirement 1 states.\n    key: \"retrieval.promptLanguages\",\n    type: \"string\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    group: \"retrieval\",\n    order: 1,\n  },\n  {\n    key: \"retrieval.scopeExcerptBytes\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"512\",\n    min: 1,\n    max: 65_536,\n    group: \"retrieval\",\n    order: 3,\n  },\n  {\n    // TCRN-CROSS-STORY-362, STORY-474 R3: the strong-hit threshold. A prompt whose best hit scores\n    // below it is answered with nothing (RECALL_NO_STRONG_HIT); above it, it is also every hit's\n    // absolute floor. MIN-235 D9 (TCRN-CROSS-SUB-302): it is counted in words that only one record\n    // of the library carries (recallScoreUnit, recall.ts), not in raw bm25, so one value means the\n    // same in a library of four records and in one of six hundred; its default is\n    // RECALL_STRONG_TAU, 3, calibrated by retrieval-eval on both sizes\n    // (tests/fixtures/retrieval-eval/strong-threshold.json, TCRN-CROSS-SUB-303). A string-typed\n    // whole number like every other numeric setting here, so the catalog keeps one value shape;\n    // the verb parses it and refuses a value it cannot use.\n    key: \"retrieval.tau\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"3\",\n    min: 0,\n    max: 100,\n    group: \"retrieval\",\n    order: 2,\n  },\n  {\n    key: \"storage.segmentBytes\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    // TCRN-CROSS-STORY-468/469: the size a library stream segment rolls at. One MiB keeps what a\n    // sync client re-uploads per append small.\n    defaultValue: \"1048576\",\n    min: 4096,\n    max: 67108864,\n    group: \"storage\",\n    order: 2,\n  },\n  {\n    key: \"storage.snapshotEveryEvents\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"512\",\n    min: 1,\n    max: 20_000,\n    group: \"storage\",\n    order: 3,\n  },\n  {\n    key: \"workspace.generatedArtifactsPath\",\n    type: \"path\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    // TCRN-CROSS-STORY-469 R1: relative to the library root, its artifacts/ directory.\n    defaultValue: DIRECTORY.artifacts,\n    group: \"storage\",\n    order: 1,\n  },\n]",
       "oldLine": 312,
-      "currentInitializer": "[\n  {\n    // TCRN-CROSS-STORY-364: the language this workspace writes its knowledge cards in.\n    // Its value set is the roster knowledge-language.ts can actually judge, so the two\n    // cannot drift. A new installation defaults to English; this platform records zh-CN.\n    key: \"artifact.language\",\n    type: \"enum\",\n    controlType: \"enum\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"en\",\n    allowedValues: [...ARTIFACT_LANGUAGE_TAGS],\n    group: \"knowledge\",\n    order: 1,\n  },\n  {\n    // INC-193: which design system this workspace treats as its authority, named by the\n    // URL of that system's own documentation. Optional — a workspace with no design\n    // system leaves it unset — and purely declarative: the engine never fetches this\n    // address and never checks what is behind it, because doing so would cross the\n    // offline boundary. Its value set is the whole web, not a closed roster, so it is\n    // not vocabulary and does not appear in the dictionary.\n    key: \"design.authority\",\n    type: \"url\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    group: \"general\",\n    order: 2,\n  },\n  {\n    key: \"design.repository\",\n    type: \"url\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    group: \"general\",\n    order: 4,\n  },\n  {\n    key: \"design.pullRequestTarget\",\n    type: \"string\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    group: \"general\",\n    order: 5,\n  },\n  {\n    key: \"design.productionDocs\",\n    type: \"url\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    group: \"general\",\n    order: 6,\n  },\n  {\n    key: \"design.buildService\",\n    type: \"string\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    group: \"general\",\n    order: 7,\n  },\n  {\n    key: \"design.buildProject\",\n    type: \"string\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    group: \"general\",\n    order: 8,\n  },\n  {\n    key: \"design.consumedVersion\",\n    type: \"string\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    group: \"general\",\n    order: 9,\n  },\n  {\n    key: \"engine.requiredVersion\",\n    type: \"string\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    group: \"general\",\n    order: 1,\n  },\n  {\n    // INIT-027 S239. An orchestration control, a string on the governed surface so it stays\n    // compatible with the settings transport; its numeric domain is enforced below.\n    // TCRN-CROSS-STORY-484 R5: kept (MIN-229 D2); the orchestrating conversation reads it.\n    key: \"execution.maxConcurrentSubagents\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"8\",\n    min: 1,\n    group: \"execution\",\n    order: 1,\n  },\n  {\n    key: \"injection.perPromptBytes\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"1600\",\n    min: 1,\n    group: \"retrieval\",\n    order: 4,\n  },\n  {\n    // Article files are repository material, not knowledge-store control bytes. A\n    // relative value is anchored at the workspace root; an absolute value is stored\n    // as the normalized absolute path the operator supplied. Both forms are refused\n    // when they name the control tree, because article writes use ordinary file IO.\n    key: \"knowledge.articlesPath\",\n    type: \"path\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"docs/knowledge/articles\",\n    group: \"knowledge\",\n    order: 2,\n  },\n  {\n    // TCRN-CROSS-STORY-508 R1 (MIN-236 D6): the model categories, records {id, name, description,\n    // order}; models-category.ts owns the shape and the default table. A table of records, first in\n    // the models group (R5).\n    key: \"models.category\",\n    type: \"string\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: MODELS_CATEGORY_DEFAULT_VALUE,\n    shape: \"collection\",\n    group: \"models\",\n    order: 1,\n  },\n  {\n    // TCRN-CROSS-STORY-508 R3 (MIN-236 D5): the category an escalation stops in, at its record with\n    // the smallest order: a category id, which a write may only set to a category models.category\n    // holds (assertSettingWriteConsistent). The entries here stay in key order (S369); a key's place\n    // on the settings page is its group and order (R5), so the three escalation keys still show\n    // after the two tables, enabled, threshold, then ceiling.\n    key: \"models.escalation.ceiling\",\n    type: \"string\",\n    controlType: \"reference\",\n    valueReference: { key: \"models.category\", field: \"id\" },\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: MODELS_ESCALATION_CEILING_DEFAULT_VALUE,\n    group: \"models\",\n    order: 5,\n  },\n  {\n    // TCRN-CROSS-STORY-508 R3 (MIN-236 D5): whether a rule's record escalates along the order of\n    // models.tiers as the attempts it serves are sent back; models-escalation.ts reads the three\n    // models.escalation keys and resolves the escalation (resolveModelsTier). Scalars of the models\n    // group after the two tables (R5); like every key here, a model does not write them (R4).\n    key: \"models.escalation.enabled\",\n    type: \"enum\",\n    controlType: \"boolean\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: MODELS_ESCALATION_ENABLED_DEFAULT_VALUE,\n    allowedValues: [\"false\", \"true\"],\n    trueValue: \"true\",\n    falseValue: \"false\",\n    group: \"models\",\n    order: 3,\n  },\n  {\n    // How many rejections escalate a rule's record one step.\n    key: \"models.escalation.threshold\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: MODELS_ESCALATION_THRESHOLD_DEFAULT_VALUE,\n    min: 1,\n    group: \"models\",\n    order: 4,\n  },\n  {\n    // TCRN-CROSS-STORY-484 R3 (MIN-227 D11, D12): the model tiers; models-tiers.ts owns the shape and\n    // the default table. It replaces execution.dispatchTiers (RENAMED_SETTING_KEYS).\n    // TCRN-CROSS-STORY-508 R2 (MIN-236 D6): one table of records {order, category, runner, model,\n    // effort, note}, each filed under a category of models.category, and second in the models group\n    // after the categories it refers to (R5).\n    key: \"models.tiers\",\n    type: \"string\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: MODELS_TIERS_DEFAULT_VALUE,\n    shape: \"collection\",\n    group: \"models\",\n    order: 2,\n  },\n  {\n    // TCRN-CROSS-STORY-484 (MIN-233 D2): when the orchestrating conversation shrinks its parallel\n    // subagents. Each is a percentage of a usage window: at or above fiveHourParallelOffPercent of\n    // the five-hour window it runs one subagent at a time, at or above fiveHourWaitPercent it\n    // dispatches none until the window resets; the weekly pair reads the weekly window the same\n    // way. weeklyWaitPercent has no default: unset, the weekly window never makes it wait.\n    key: \"quota.fiveHourParallelOffPercent\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"75\",\n    min: 1,\n    max: 100,\n    group: \"execution\",\n    order: 2,\n  },\n  {\n    key: \"quota.fiveHourWaitPercent\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"90\",\n    min: 1,\n    max: 100,\n    group: \"execution\",\n    order: 3,\n  },\n  {\n    key: \"quota.weeklyParallelOffPercent\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"95\",\n    min: 1,\n    max: 100,\n    group: \"execution\",\n    order: 4,\n  },\n  {\n    key: \"quota.weeklyWaitPercent\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    min: 1,\n    max: 100,\n    group: \"execution\",\n    order: 5,\n  },\n  {\n    // TCRN-CROSS-STORY-364: which prompt languages this workspace expects questions in. A\n    // list in the one value shape this catalog has: comma-separated roster tags. Unset reads\n    // as the artefact language alone, which is the default requirement 1 states.\n    key: \"retrieval.promptLanguages\",\n    type: \"string\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    group: \"retrieval\",\n    order: 1,\n  },\n  {\n    key: \"retrieval.scopeExcerptBytes\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"512\",\n    min: 1,\n    group: \"retrieval\",\n    order: 3,\n  },\n  {\n    // TCRN-CROSS-STORY-362, STORY-474 R3: the strong-hit threshold. A prompt whose best hit scores\n    // below it is answered with nothing (RECALL_NO_STRONG_HIT); above it, it is also every hit's\n    // absolute floor. MIN-235 D9 (TCRN-CROSS-SUB-302): it is counted in words that only one record\n    // of the library carries (recallScoreUnit, recall.ts), not in raw bm25, so one value means the\n    // same in a library of four records and in one of six hundred; its default is\n    // RECALL_STRONG_TAU, 3, calibrated by retrieval-eval on both sizes\n    // (tests/fixtures/retrieval-eval/strong-threshold.json, TCRN-CROSS-SUB-303). A string-typed\n    // whole number like every other numeric setting here, so the catalog keeps one value shape;\n    // the verb parses it and refuses a value it cannot use.\n    key: \"retrieval.tau\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"3\",\n    min: 0,\n    group: \"retrieval\",\n    order: 2,\n  },\n  {\n    key: \"storage.segmentBytes\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    // TCRN-CROSS-STORY-468/469: the size a library stream segment rolls at. One MiB keeps what a\n    // sync client re-uploads per append small.\n    defaultValue: \"1048576\",\n    min: 4096,\n    group: \"storage\",\n    order: 2,\n  },\n  {\n    key: \"storage.snapshotEveryEvents\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"512\",\n    min: 1,\n    group: \"storage\",\n    order: 3,\n  },\n  {\n    key: \"workspace.generatedArtifactsPath\",\n    type: \"path\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    // TCRN-CROSS-STORY-469 R1: relative to the library root, its artifacts/ directory.\n    defaultValue: DIRECTORY.artifacts,\n    group: \"storage\",\n    order: 1,\n  },\n]",
+      "currentInitializer": "[\n  {\n    // TCRN-CROSS-STORY-364: the language this workspace writes its knowledge cards in.\n    // Its value set is the roster knowledge-language.ts can actually judge, so the two\n    // cannot drift. A new installation defaults to English; this platform records zh-CN.\n    key: \"artifact.language\",\n    type: \"enum\",\n    controlType: \"enum\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"en\",\n    allowedValues: [...ARTIFACT_LANGUAGE_TAGS],\n    group: \"knowledge\",\n    order: 1,\n  },\n  {\n    // INC-193: which design system this workspace treats as its authority, named by the\n    // URL of that system's own documentation. Optional — a workspace with no design\n    // system leaves it unset — and purely declarative: the engine never fetches this\n    // address and never checks what is behind it, because doing so would cross the\n    // offline boundary. Its value set is the whole web, not a closed roster, so it is\n    // not vocabulary and does not appear in the dictionary.\n    key: \"design.authority\",\n    type: \"url\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    group: \"general\",\n    order: 2,\n  },\n  {\n    key: \"design.buildProject\",\n    type: \"string\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    group: \"general\",\n    order: 8,\n  },\n  {\n    key: \"design.buildService\",\n    type: \"string\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    group: \"general\",\n    order: 7,\n  },\n  {\n    key: \"design.consumedVersion\",\n    type: \"string\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    group: \"general\",\n    order: 9,\n  },\n  {\n    key: \"design.productionDocs\",\n    type: \"url\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    group: \"general\",\n    order: 6,\n  },\n  {\n    key: \"design.pullRequestTarget\",\n    type: \"string\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    group: \"general\",\n    order: 5,\n  },\n  {\n    key: \"design.repository\",\n    type: \"url\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    group: \"general\",\n    order: 4,\n  },\n  {\n    key: \"engine.requiredVersion\",\n    type: \"string\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    group: \"general\",\n    order: 1,\n  },\n  {\n    // INIT-027 S239. An orchestration control, a string on the governed surface so it stays\n    // compatible with the settings transport; its numeric domain is enforced below.\n    // TCRN-CROSS-STORY-484 R5: kept (MIN-229 D2); the orchestrating conversation reads it.\n    key: \"execution.maxConcurrentSubagents\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"8\",\n    min: 1,\n    group: \"execution\",\n    order: 1,\n  },\n  {\n    key: \"injection.perPromptBytes\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"1600\",\n    min: 1,\n    group: \"retrieval\",\n    order: 4,\n  },\n  {\n    // Article files are repository material, not knowledge-store control bytes. A\n    // relative value is anchored at the workspace root; an absolute value is stored\n    // as the normalized absolute path the operator supplied. Both forms are refused\n    // when they name the control tree, because article writes use ordinary file IO.\n    key: \"knowledge.articlesPath\",\n    type: \"path\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"docs/knowledge/articles\",\n    group: \"knowledge\",\n    order: 2,\n  },\n  {\n    // TCRN-CROSS-STORY-508 R1 (MIN-236 D6): the model categories, records {id, name, description,\n    // order}; models-category.ts owns the shape and the default table. A table of records, first in\n    // the models group (R5).\n    key: \"models.category\",\n    type: \"string\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: MODELS_CATEGORY_DEFAULT_VALUE,\n    shape: \"collection\",\n    group: \"models\",\n    order: 1,\n  },\n  {\n    // TCRN-CROSS-STORY-508 R3 (MIN-236 D5): the category an escalation stops in, at its record with\n    // the smallest order: a category id, which a write may only set to a category models.category\n    // holds (assertSettingWriteConsistent). The entries here stay in key order (S369); a key's place\n    // on the settings page is its group and order (R5), so the three escalation keys still show\n    // after the two tables, enabled, threshold, then ceiling.\n    key: \"models.escalation.ceiling\",\n    type: \"string\",\n    controlType: \"reference\",\n    valueReference: { key: \"models.category\", field: \"id\" },\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: MODELS_ESCALATION_CEILING_DEFAULT_VALUE,\n    group: \"models\",\n    order: 5,\n  },\n  {\n    // TCRN-CROSS-STORY-508 R3 (MIN-236 D5): whether a rule's record escalates along the order of\n    // models.tiers as the attempts it serves are sent back; models-escalation.ts reads the three\n    // models.escalation keys and resolves the escalation (resolveModelsTier). Scalars of the models\n    // group after the two tables (R5); like every key here, a model does not write them (R4).\n    key: \"models.escalation.enabled\",\n    type: \"enum\",\n    controlType: \"boolean\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: MODELS_ESCALATION_ENABLED_DEFAULT_VALUE,\n    allowedValues: [\"false\", \"true\"],\n    trueValue: \"true\",\n    falseValue: \"false\",\n    group: \"models\",\n    order: 3,\n  },\n  {\n    // How many rejections escalate a rule's record one step.\n    key: \"models.escalation.threshold\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: MODELS_ESCALATION_THRESHOLD_DEFAULT_VALUE,\n    min: 1,\n    group: \"models\",\n    order: 4,\n  },\n  {\n    // TCRN-CROSS-STORY-484 R3 (MIN-227 D11, D12): the model tiers; models-tiers.ts owns the shape and\n    // the default table. It replaces execution.dispatchTiers (RENAMED_SETTING_KEYS).\n    // TCRN-CROSS-STORY-508 R2 (MIN-236 D6): one table of records {order, category, runner, model,\n    // effort, note}, each filed under a category of models.category, and second in the models group\n    // after the categories it refers to (R5).\n    key: \"models.tiers\",\n    type: \"string\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: MODELS_TIERS_DEFAULT_VALUE,\n    shape: \"collection\",\n    group: \"models\",\n    order: 2,\n  },\n  {\n    // TCRN-CROSS-STORY-484 (MIN-233 D2): when the orchestrating conversation shrinks its parallel\n    // subagents. Each is a percentage of a usage window: at or above fiveHourParallelOffPercent of\n    // the five-hour window it runs one subagent at a time, at or above fiveHourWaitPercent it\n    // dispatches none until the window resets; the weekly pair reads the weekly window the same\n    // way. weeklyWaitPercent has no default: unset, the weekly window never makes it wait.\n    key: \"quota.fiveHourParallelOffPercent\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"75\",\n    min: 1,\n    max: 100,\n    group: \"execution\",\n    order: 2,\n  },\n  {\n    key: \"quota.fiveHourWaitPercent\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"90\",\n    min: 1,\n    max: 100,\n    group: \"execution\",\n    order: 3,\n  },\n  {\n    key: \"quota.weeklyParallelOffPercent\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"95\",\n    min: 1,\n    max: 100,\n    group: \"execution\",\n    order: 4,\n  },\n  {\n    key: \"quota.weeklyWaitPercent\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    min: 1,\n    max: 100,\n    group: \"execution\",\n    order: 5,\n  },\n  {\n    // TCRN-CROSS-STORY-364: which prompt languages this workspace expects questions in. A\n    // list in the one value shape this catalog has: comma-separated roster tags. Unset reads\n    // as the artefact language alone, which is the default requirement 1 states.\n    key: \"retrieval.promptLanguages\",\n    type: \"string\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: null,\n    group: \"retrieval\",\n    order: 1,\n  },\n  {\n    key: \"retrieval.scopeExcerptBytes\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"512\",\n    min: 1,\n    group: \"retrieval\",\n    order: 3,\n  },\n  {\n    // TCRN-CROSS-STORY-362, STORY-474 R3: the strong-hit threshold. A prompt whose best hit scores\n    // below it is answered with nothing (RECALL_NO_STRONG_HIT); above it, it is also every hit's\n    // absolute floor. MIN-235 D9 (TCRN-CROSS-SUB-302): it is counted in words that only one record\n    // of the library carries (recallScoreUnit, recall.ts), not in raw bm25, so one value means the\n    // same in a library of four records and in one of six hundred; its default is\n    // RECALL_STRONG_TAU, 3, calibrated by retrieval-eval on both sizes\n    // (tests/fixtures/retrieval-eval/strong-threshold.json, TCRN-CROSS-SUB-303). A string-typed\n    // whole number like every other numeric setting here, so the catalog keeps one value shape;\n    // the verb parses it and refuses a value it cannot use.\n    key: \"retrieval.tau\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"3\",\n    min: 0,\n    group: \"retrieval\",\n    order: 2,\n  },\n  {\n    key: \"storage.segmentBytes\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    // TCRN-CROSS-STORY-468/469: the size a library stream segment rolls at. One MiB keeps what a\n    // sync client re-uploads per append small.\n    defaultValue: \"1048576\",\n    min: 4096,\n    group: \"storage\",\n    order: 2,\n  },\n  {\n    key: \"storage.snapshotEveryEvents\",\n    type: \"string\",\n    controlType: \"number\",\n    layerKind: SETTINGS_LAYER_KIND,\n    defaultValue: \"512\",\n    min: 1,\n    group: \"storage\",\n    order: 3,\n  },\n  {\n    key: \"workspace.generatedArtifactsPath\",\n    type: \"path\",\n    controlType: \"text\",\n    layerKind: SETTINGS_LAYER_KIND,\n    // TCRN-CROSS-STORY-469 R1: relative to the library root, its artifacts/ directory.\n    defaultValue: DIRECTORY.artifacts,\n    group: \"storage\",\n    order: 1,\n  },\n]",
       "currentLine": 325,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
@@ -10766,7 +10827,7 @@
       "oldInitializer": "await readFile(join(input.engineDirectory, ...launcher.from.split(\"/\")))",
       "oldLine": 685,
       "currentInitializer": "await readFile(join(input.engineDirectory, ...launcher.from.split(\"/\")))",
-      "currentLine": 731,
+      "currentLine": 732,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
@@ -10806,22 +10867,22 @@
         },
         {
           "file": "packages/core/src/setup-fresh.ts",
-          "line": 540,
+          "line": 541,
           "text": "if (!launcher.bytes.equals(await readFile(target))) {"
         },
         {
           "file": "packages/core/src/setup-fresh.ts",
-          "line": 731,
+          "line": 732,
           "text": "const bytes = await readFile(join(input.engineDirectory, ...launcher.from.split(\"/\")));"
         },
         {
           "file": "packages/core/src/setup-fresh.ts",
-          "line": 735,
+          "line": 736,
           "text": "if (before !== null && before.equals(bytes)) continue;"
         },
         {
           "file": "packages/core/src/setup-fresh.ts",
-          "line": 745,
+          "line": 746,
           "text": "await writeFileAtomic(target, bytes);"
         }
       ],
@@ -11016,22 +11077,22 @@
       "oldInitializer": "/^[0-9a-f]{8}\\.(?:ndjson|json)$/u",
       "oldLine": 198,
       "currentInitializer": "/^[0-9a-f]{8}\\.(?:ndjson|json)$/u",
-      "currentLine": 201,
+      "currentLine": 202,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 201,
+          "line": 202,
           "text": "const SEGMENT_NAME = /^[0-9a-f]{8}\\.(?:ndjson|json)$/u;"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 280,
+          "line": 281,
           "text": "if (name !== STREAM_MANIFEST_FILE && !SEGMENT_NAME.test(name)) continue;"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 376,
+          "line": 377,
           "text": "if (name === STREAM_MANIFEST_FILE || SEGMENT_NAME.test(name)) continue;"
         }
       ],
@@ -11046,17 +11107,17 @@
       "oldInitializer": "/^[0-9a-f]{8}(?![0-9a-f])/u",
       "oldLine": 199,
       "currentInitializer": "/^[0-9a-f]{8}(?![0-9a-f])/u",
-      "currentLine": 202,
+      "currentLine": 203,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 202,
+          "line": 203,
           "text": "const SEGMENT_STEM = /^[0-9a-f]{8}(?![0-9a-f])/u;"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 377,
+          "line": 378,
           "text": "if (isConflictCopy(name, [/^manifest/u, SEGMENT_STEM])) {"
         }
       ],
@@ -11071,52 +11132,52 @@
       "oldInitializer": "snapshot.files.get(join(snapshot.root, DIRECTORY.events, deviceId, STREAM_MANIFEST_FILE))",
       "oldLine": 335,
       "currentInitializer": "snapshot.files.get(join(snapshot.root, DIRECTORY.events, deviceId, STREAM_MANIFEST_FILE))",
-      "currentLine": 341,
+      "currentLine": 342,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 238,
+          "line": 239,
           "text": "readFile(path).then((bytes) => {"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 240,
+          "line": 241,
           "text": "resolveRead(bytes);"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 303,
+          "line": 304,
           "text": "const bytes = snapshot.files.get(path);"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 304,
+          "line": 305,
           "text": "if (bytes === undefined) {"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 313,
+          "line": 314,
           "text": "parsed = JSON.parse(bytes.toString(\"utf8\"));"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 326,
+          "line": 327,
           "text": "if (canonicalJson(manifest) !== bytes.toString(\"utf8\")) {"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 341,
+          "line": 342,
           "text": "const bytes = snapshot.files.get(join(snapshot.root, DIRECTORY.events, deviceId, STREAM_MANIFEST_FILE));"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 342,
+          "line": 343,
           "text": "if (bytes === undefined) continue;"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 345,
+          "line": 346,
           "text": "parsed = assertCanonicalJson(bytes.toString(\"utf8\"));"
         }
       ],
@@ -11131,73 +11192,73 @@
       "oldInitializer": "[]",
       "oldLine": 258,
       "currentInitializer": "[]",
-      "currentLine": 264,
+      "currentLine": 265,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 193,
+          "line": 194,
           "text": "return Object.fromEntries(Object.entries(details as Readonly<Record<string, unknown>>).filter((entry): entry is [string, string] => typeof entry[1] === \"string\"));"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 219,
+          "line": 220,
           "text": "readonly entries: readonly string[];"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 222,
+          "line": 223,
           "text": "// akasha/: its entries, and each device directory's entries."
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 260,
+          "line": 261,
           "text": "if (!directory) return { root, directory, entries: [], files: new Map(), akasha: null, streams: new Map() };"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 264,
+          "line": 265,
           "text": "let entries: readonly string[] = [];"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 267,
+          "line": 268,
           "text": "entries = (await readdir(root)).sort();"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 268,
+          "line": 269,
           "text": "if (entries.includes(LIBRARY_FILES.manifest) && await entryKind(join(root, LIBRARY_FILES.manifest)) === \"file\") {"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 288,
+          "line": 289,
           "text": "return { root, directory, entries, files, akasha, streams };"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 306,
+          "line": 307,
           "text": "(basename(snapshot.root) === LEGACY_CONTROL_DIRECTORY && snapshot.entries.includes(\"workspace.json\"));"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 410,
+          "line": 411,
           "text": "let entries;"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 412,
+          "line": 413,
           "text": "entries = (await readRegistry(input.deviceHome)).entries;"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 417,
+          "line": 418,
           "text": "const entry = entries.find((candidate) => candidate.projectPath === input.projectRoot);"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 572,
-          "text": "const registered = (await readRegistry(input.deviceHome)).entries.find(entry => entry.projectPath === input.projectRoot);"
+          "line": 532,
+          "text": "const entry = (await readRegistry(input.deviceHome)).entries.find((candidate) => candidate.projectPath === input.projectRoot);"
         }
       ],
       "originalBasis": "exact protocol/representation or explicit caller/session policy; see initializer and family disposition",
@@ -11211,148 +11272,153 @@
       "oldInitializer": "await readSnapshot(input.libraryPath, options)",
       "oldLine": 535,
       "currentInitializer": "await readSnapshot(input.libraryPath, options)",
-      "currentLine": 541,
+      "currentLine": 557,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 300,
+          "line": 301,
           "text": "async function libraryCheck(snapshot: Snapshot): Promise<ManifestRead | CheckFailure> {"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 301,
+          "line": 302,
           "text": "const path = join(snapshot.root, LIBRARY_FILES.manifest);"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 302,
+          "line": 303,
           "text": "if (!snapshot.directory) return new CheckFailure(\"LIBRARY_NOT_FOUND\", `${snapshot.root} is a file, not a library`, { path: snapshot.root });"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 303,
+          "line": 304,
           "text": "const bytes = snapshot.files.get(path);"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 305,
+          "line": 306,
           "text": "const legacy = await legacyControlDirectory(snapshot.root) !== null ||"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 306,
+          "line": 307,
           "text": "(basename(snapshot.root) === LEGACY_CONTROL_DIRECTORY && snapshot.entries.includes(\"workspace.json\"));"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 308,
+          "line": 309,
           "text": "? new CheckFailure(\"LEGACY_WORKSPACE\", `${snapshot.root} holds an old-layout workspace, which is migrated rather than restored`, { path: snapshot.root, remedy: \"--mode migrate\" })"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 309,
+          "line": 310,
           "text": ": new CheckFailure(\"LIBRARY_NOT_FOUND\", `${snapshot.root} holds no ${LIBRARY_FILES.manifest}: it is not a library`, { path: snapshot.root });"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 336,
+          "line": 337,
           "text": "function formatCheck(snapshot: Snapshot, read: ManifestRead): Detail | CheckFailure {"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 337,
+          "line": 338,
           "text": "const where = `library ${snapshot.root}`;"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 340,
+          "line": 341,
           "text": "for (const deviceId of snapshot.streams.keys()) {"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 341,
+          "line": 342,
           "text": "const bytes = snapshot.files.get(join(snapshot.root, DIRECTORY.events, deviceId, STREAM_MANIFEST_FILE));"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 368,
+          "line": 369,
           "text": "async function streamsCheck(snapshot: Snapshot, manifest: Library[\"manifest\"], options: RestoreReadOptions): Promise<{ readonly state: WorkspaceState; readonly detail: Detail } | CheckFailure> {"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 369,
+          "line": 370,
           "text": "for (const name of snapshot.akasha ?? []) {"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 374,
+          "line": 375,
           "text": "for (const [deviceId, names] of snapshot.streams) {"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 385,
+          "line": 386,
           "text": "const cached: ReadBytes = async (path) => snapshot.files.get(path) ?? (options.readFile ?? readFileBytes)(path);"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 387,
+          "line": 388,
           "text": "const read = await readAllStreams(snapshot.root, { readFile: cached, timeoutMs: options.timeoutMs ?? AKASHA_READ_TIMEOUT_DEFAULT_MS });"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 388,
+          "line": 389,
           "text": "const state = materializeLibraryRead({ root: snapshot.root, manifest }, read);"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 541,
+          "line": 557,
           "text": "const snapshot = await readSnapshot(input.libraryPath, options);"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 542,
+          "line": 558,
           "text": "if (snapshot instanceof CheckFailure) return stopped(\"readable\", snapshot);"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 543,
+          "line": 559,
           "text": "run.pass(\"readable\", { path: snapshot.root, files: String(snapshot.files.size) });"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 545,
+          "line": 561,
           "text": "const read = await libraryCheck(snapshot);"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 549,
+          "line": 565,
           "text": "const format = formatCheck(snapshot, read);"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 553,
+          "line": 569,
           "text": "if (manifest === null) return stopped(\"format\", new CheckFailure(\"LIBRARY_FORMAT_UNSUPPORTED\", `library ${snapshot.root} cannot be judged by engine ${FRAMEWORK_VERSION}`));"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 556,
+          "line": 572,
           "text": "const streams = await streamsCheck(snapshot, manifest, options);"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 564,
+          "line": 580,
           "text": "const registry = await registryCheck(input, snapshot.root, manifest.libraryId);"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 568,
+          "line": 584,
           "text": "const device = await deviceStreamCheck(input, snapshot.root);"
         },
         {
           "file": "packages/core/src/setup-restore.ts",
-          "line": 581,
-          "text": "library: { root: snapshot.root, libraryId: manifest.libraryId, state: streams.state, deviceStream: device.stream },"
+          "line": 589,
+          "text": "try { configurationProjectId = await declaredRestoreProjectId(input, snapshot.root, streams.state); }"
+        },
+        {
+          "file": "packages/core/src/setup-restore.ts",
+          "line": 600,
+          "text": "library: { root: snapshot.root, libraryId: manifest.libraryId, state: targetState, ...(configurationProjectId === undefined ? {} : { configurationProjectId }), deviceStream: device.stream },"
         }
       ],
       "originalBasis": "exact protocol/representation or explicit caller/session policy; see initializer and family disposition",
@@ -24963,7 +25029,7 @@
     {
       "file": "packages/core/src/recall.ts",
       "line": 181,
-      "source": "export const RECALL_CANDIDATE_LIMIT = RUNTIME_CAPACITY.arrayEntries;"
+      "source": "const RECALL_CANDIDATE_LIMIT = RUNTIME_CAPACITY.arrayEntries;"
     },
     {
       "file": "packages/core/src/recall.ts",
@@ -25117,12 +25183,12 @@
     },
     {
       "file": "packages/core/src/setup-fresh.ts",
-      "line": 880,
+      "line": 881,
       "source": "backupDir: recorder.backups.length > 0 ? recorder.backupRoot : null,"
     },
     {
       "file": "packages/core/src/setup-fresh.ts",
-      "line": 951,
+      "line": 952,
       "source": "backupDir: recorder.backups.length > 0 ? recorder.backupRoot : null,"
     },
     {
@@ -25142,17 +25208,17 @@
     },
     {
       "file": "packages/core/src/setup-restore.ts",
-      "line": 228,
+      "line": 229,
       "source": "if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > RUNTIME_CAPACITY.timerMilliseconds) {"
     },
     {
       "file": "packages/core/src/setup-restore.ts",
-      "line": 501,
+      "line": 502,
       "source": "if (diverged.length > 0) {"
     },
     {
       "file": "packages/core/src/setup-restore.ts",
-      "line": 682,
+      "line": 702,
       "source": "backupDir: recorder.backups.length > 0 ? recorder.backupRoot : null,"
     },
     {
@@ -26672,8 +26738,8 @@
     },
     {
       "file": "scripts/lib/protocol-proof.mjs",
-      "line": 247,
-      "source": "stableIdMaximumLength: idBoundaryCases.maximumLength,"
+      "line": 251,
+      "source": "stableIdFormerBoundaryLength: idBoundaryCases.maximumLength,"
     },
     {
       "file": "scripts/lib/push-gate-children.mjs",

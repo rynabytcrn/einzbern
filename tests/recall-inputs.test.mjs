@@ -116,7 +116,10 @@ test("STORY-474 R2: an answer is cut to its byte budget at whole lines", async (
   assert.deepEqual(recallContextLines(hits, firstTwo - 1), lines.slice(0, 1), "one byte less and the second line is dropped whole");
   assert.deepEqual(recallContextLines(hits, 0), []);
   const long = formatRecallLine({ ...hits[0], title: "长".repeat(400) });
-  assert.ok(Buffer.byteLength(long, "utf8") <= 480 && long.endsWith("…"), "a line is capped at a code point");
+  assert.ok(long.includes("长".repeat(400)), "the complete title remains in the line");
+  assert.ok(Buffer.byteLength(long, "utf8") > 480);
+  assert.deepEqual(recallContextLines([{ ...hits[0], title: "长".repeat(400) }], Buffer.byteLength(long, "utf8")), [long]);
+  assert.deepEqual(recallContextLines([{ ...hits[0], title: "长".repeat(400) }], Buffer.byteLength(long, "utf8") - 1), []);
 });
 
 test("SUB-426 (MIN-239 D6): a minutes record is indexed with its valid decisions, its lead numbered as recorded", async (context) => {

@@ -101,7 +101,7 @@ test("469-AC5: device A sets design.authority and device B, merging the same lib
   assert.equal(settingValue(merged, "design.authority"), "https://design.example/desk");
   const catalog = await as(laptop, ["settings-catalog", "--workspace", library]);
   assert.equal(catalog.settings.find((entry) => entry.key === "design.authority").currentValue, "https://design.example/desk");
-  assert.deepEqual([...new Set(catalog.settings.map((entry) => entry.layer))], ["project"], "every key of the settings catalog is project-level");
+  assert.deepEqual([...new Set(catalog.settings.map((entry) => entry.layer))], ["project", "library"], "the catalog declares project and library scopes");
 
   // The projection shows the merged values and the version vector they were read at.
   const projection = JSON.parse(await readFile(join(library, "config", "project.json"), "utf8"));

@@ -216,7 +216,7 @@ test("STORY-474 R2, R4: recall reads, keeps --host and --tau, and no longer take
   const entry = COMMAND_CATALOG.find((candidate) => candidate.name === "recall");
   assert.equal(entry.mutates, false);
   // TCRN-CROSS-SUB-425 (MIN-239 D6): --status adds removed cards only when a user asked for them.
-  assert.deepEqual(entry.flags.map((flag) => flag.name).sort(), ["allow-trailing", "at", "host", "limit", "query", "status", "tau", "workspace"]);
+  assert.deepEqual(entry.flags.map((flag) => flag.name).sort(), ["allow-trailing", "at", "host", "limit", "project-id", "query", "status", "tau", "workspace"]);
   assert.deepEqual(entry.flags.filter((flag) => flag.required).map((flag) => flag.name).sort(), ["at", "query"]);
 });
 
@@ -316,7 +316,7 @@ test("STORY-478 R3: agents-render and rule-resolve write, take --at and resolve 
   const render = entry("agents-render");
   assert.ok(render !== undefined, "agents-render is cataloged");
   assert.equal(render.mutates, true, "it writes the project's files and the library's records");
-  assert.deepEqual(render.flags.map((flag) => [flag.name, flag.required, flag.valueKind]), [["project", false, "string"], ["at", true, "instant"], ["actor", false, "string"]]);
+  assert.deepEqual(render.flags.map((flag) => [flag.name, flag.required, flag.valueKind]), [["project", false, "string"], ["at", true, "instant"], ["actor", false, "string"], ["project-id", false, "string"]]);
   const resolve = entry("rule-resolve");
   assert.ok(resolve !== undefined, "rule-resolve is cataloged (STORY-483 R2 reuses it)");
   assert.equal(resolve.mutates, true);
@@ -326,7 +326,7 @@ test("STORY-478 R3: agents-render and rule-resolve write, take --at and resolve 
     ["force", false, "boolean"],
     ["at", true, "instant"],
     ["project", false, "string"],
-    ["actor", false, "string"],
+    ["actor", false, "string"], ["project-id", false, "string"],
   ]);
   // Neither takes --workspace: the library is the one the registry names for the project.
   assert.equal([render, resolve].some((candidate) => candidate.flags.some((flag) => flag.name === "workspace")), false);
@@ -336,36 +336,36 @@ test("STORY-484 R1, R4: variable-list reads; variable-set and variable-remove wr
   const entry = (name) => COMMAND_CATALOG.find((candidate) => candidate.name === name);
   const flags = (name) => entry(name).flags.map((flag) => [flag.name, flag.required, flag.valueKind]);
   assert.equal(entry("variable-list").mutates, false);
-  assert.deepEqual(flags("variable-list"), [["workspace", false, "string"]]);
+  assert.deepEqual(flags("variable-list"), [["workspace", false, "string"], ["project-id", false, "string"]]);
   assert.equal(entry("variable-set").mutates, true);
   assert.deepEqual(flags("variable-set"), [
     ["workspace", false, "string"], ["at", true, "instant"], ["name", true, "string"], ["type", true, "string"],
-    ["value", true, "string"], ["description", false, "string"], ["order", false, "integer"], ["actor", false, "string"],
+    ["value", true, "string"], ["description", false, "string"], ["order", false, "integer"], ["actor", false, "string"], ["project-id", false, "string"],
   ]);
   assert.equal(entry("variable-remove").mutates, true);
-  assert.deepEqual(flags("variable-remove"), [["workspace", false, "string"], ["at", true, "instant"], ["name", true, "string"], ["actor", false, "string"]]);
+  assert.deepEqual(flags("variable-remove"), [["workspace", false, "string"], ["at", true, "instant"], ["name", true, "string"], ["actor", false, "string"], ["project-id", false, "string"]]);
   // The refusal of a model's write (MODEL_WRITE_REFUSED) is the dispatcher's, not a flag: the settings
   // writes keep their flags.
-  assert.deepEqual(entry("settings-set").flags.map((flag) => flag.name), ["workspace", "at", "key", "value", "actor"]);
-  assert.deepEqual(entry("settings-remove").flags.map((flag) => flag.name), ["workspace", "at", "key", "actor"]);
+  assert.deepEqual(entry("settings-set").flags.map((flag) => flag.name), ["workspace", "at", "key", "value", "actor", "project-id"]);
+  assert.deepEqual(entry("settings-remove").flags.map((flag) => flag.name), ["workspace", "at", "key", "actor", "project-id"]);
 });
 
 test("STORY-483 R2: rule-list reads; rule-enable and rule-disable write, take --id and --at, and resolve the project from --project or the current directory", () => {
   const entry = (name) => COMMAND_CATALOG.find((candidate) => candidate.name === name);
   const flags = (name) => entry(name).flags.map((flag) => [flag.name, flag.required, flag.valueKind]);
   assert.equal(entry("rule-list").mutates, false);
-  assert.deepEqual(flags("rule-list"), [["project", false, "string"]]);
+  assert.deepEqual(flags("rule-list"), [["workspace", false, "string"], ["project", false, "string"], ["project-id", false, "string"]]);
   assert.equal(entry("rule-enable").mutates, true);
-  assert.deepEqual(flags("rule-enable"), [["id", true, "string"], ["at", true, "instant"], ["project", false, "string"], ["order", false, "integer"], ["actor", false, "string"]]);
+  assert.deepEqual(flags("rule-enable"), [["id", true, "string"], ["at", true, "instant"], ["project", false, "string"], ["order", false, "integer"], ["actor", false, "string"], ["project-id", false, "string"]]);
   assert.equal(entry("rule-disable").mutates, true);
   assert.deepEqual(flags("rule-disable"), [
-    ["id", true, "string"], ["force", false, "boolean"], ["at", true, "instant"], ["project", false, "string"], ["actor", false, "string"],
+    ["id", true, "string"], ["force", false, "boolean"], ["at", true, "instant"], ["project", false, "string"], ["actor", false, "string"], ["project-id", false, "string"],
   ]);
-  // With agents-render and rule-resolve (STORY-478 R3) they are the five rule verbs, and none takes
-  // --workspace: the library is the one the registry names for the project.
+  // Managed writes resolve their stable project through the registry or explicit project-id.
+  // rule-list additionally permits an explicit library-only read.
   const verbs = ["agents-render", "rule-disable", "rule-enable", "rule-list", "rule-resolve"];
   assert.equal(verbs.every((name) => entry(name) !== undefined), true);
-  assert.equal(verbs.some((name) => entry(name).flags.some((flag) => flag.name === "workspace")), false);
+  assert.deepEqual(verbs.filter((name) => entry(name).flags.some((flag) => flag.name === "workspace")), ["rule-list"], "explicit library-only rule read is declared");
 });
 
 test("STORY-480: setup writes and takes the wizard's flags; doctor reads and takes --project alone", () => {

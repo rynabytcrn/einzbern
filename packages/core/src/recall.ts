@@ -178,7 +178,7 @@ export const RECALL_KIND_QUOTA: Readonly<Record<RecallKind, number>> = { card: R
 export const RECALL_DEFAULT_LIMIT = 8;
 
 /** How deep the ranked list goes before selection, so the quota has something to choose from. */
-export const RECALL_CANDIDATE_LIMIT = RUNTIME_CAPACITY.arrayEntries;
+const RECALL_CANDIDATE_LIMIT = RUNTIME_CAPACITY.arrayEntries;
 
 /**
  * The score an exact external-key match carries. It is not a bm25 number and is not

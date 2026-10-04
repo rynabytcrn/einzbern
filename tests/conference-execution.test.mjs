@@ -80,7 +80,7 @@ test("host-execution receipt validates and rejects malformed receipts", () => {
     () => reason("EXECUTION_RECEIPT_INVALID", () => validateHostExecutionReceipt(receipt({ invokedAt: "not-an-instant" }))),
     () => reason("EXECUTION_RECEIPT_INVALID", () => validateHostExecutionReceipt(receipt({ promptDigest: "short" }))),
     () => reason("EXECUTION_UNICODE_INVALID", () => validateHostExecutionReceipt(receipt({ hostProduct: "" }))),
-    () => reason("EXECUTION_BUDGET_EXCEEDED", () => validateHostExecutionReceipt(receipt({ attributionNote: "x".repeat(2049) }))),
+    () => reason("EXECUTION_UNICODE_INVALID", () => validateHostExecutionReceipt(receipt({ attributionNote: "\ud800" }))),
     // INC-020: hostId was relaxed for UUID-shaped Codex ids and went too far -- a single
     // space passed. Each case kills a different half-measure: a trim()-only rule survives
     // the interior-space case, and a "non-empty" rule survives all of them.
@@ -93,6 +93,7 @@ test("host-execution receipt validates and rejects malformed receipts", () => {
     // synthesized from escapes so this test file stays reviewable (INC-018).
     () => reason("EXECUTION_RECEIPT_INVALID", () => validateHostExecutionReceipt(receipt({ sessionId: "\u200b".repeat(4) }))),
   ];
+  assert.equal(validateHostExecutionReceipt(receipt({ attributionNote: "x".repeat(4097) })).attributionNote, "x".repeat(4097));
   assert.equal(positives.length, fixture.receiptPositiveCases);
   assert.equal(hostiles.length, fixture.receiptHostileCases);
   for (const c of [...positives, ...hostiles]) c();

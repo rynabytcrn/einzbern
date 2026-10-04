@@ -1814,7 +1814,6 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       for (const [key, value] of Object.entries({"design.repository":"https://design.example.test/repository","design.pullRequestTarget":"main","design.productionDocs":"https://design.example.test/docs","design.buildService":"Example build","design.buildProject":"Example docs","design.consumedVersion":"9.9.9"})) {
         await writeScratch(page.fixture, "settings-set", ["--key", key, "--value", value]);
       }
-      await page.window.fetch("/api/settings").then(r=>r.json());
       answerWith({ schemaVersion: "tcrn.design-authority.v1", name: "Example System", version: "9.9.9" });
       let input = page.document.querySelector('[data-setting-control="design.authority"]');
       const declaredRendered = rendered("the declared contract to be fetched and rendered");

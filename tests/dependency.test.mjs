@@ -101,12 +101,14 @@ test("hostile records fail closed", () => {
     () => reason("DEPENDENCY_SCHEMA_INVALID", () => validateDependencyRecord(dependency({ id: "NotAnId" }))),
     () => reason("DEPENDENCY_SCHEMA_INVALID", () => validateDependencyRecord(dependency({ tombstone: "false" }))),
     () => reason("DEPENDENCY_UNICODE_INVALID", () => validateDependencyRecord(dependency({ status: "waived", waivedReason: "\ud800", waivedByActorId: "actor:o" }))),
-    () => reason("DEPENDENCY_BUDGET_EXCEEDED", () => validateDependencyRecord(dependency({ status: "waived", waivedReason: "x".repeat(513), waivedByActorId: "actor:o" }))),
+    () => reason("DEPENDENCY_UNICODE_INVALID", () => validateDependencyRecord(dependency({ status: "waived", waivedReason: "\udfff", waivedByActorId: "actor:o" }))),
     () => reason("DEPENDENCY_SCHEMA_INVALID", () => validateDependencyRecord(dependency({ extensions: { "extension:bad": { required: "yes", value: {} } } }))),
     () => reason("DEPENDENCY_SCHEMA_INVALID", () => validateDependencyRecord(dependency({ extensions: [] }))),
   ];
   assert.equal(hostile.length, fixture.hostileCases);
   for (const operation of hostile) operation();
+  const waivedReason = "x".repeat(1025);
+  assert.equal(validateDependencyRecord(dependency({ status: "waived", waivedReason, waivedByActorId: "actor:o" })).waivedReason, waivedReason);
 });
 
 test("endpoint rules require live same-project work records", () => {

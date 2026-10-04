@@ -67,6 +67,8 @@ async function scratch(context, navigation = "written") {
   await writeFile(join(project, "AGENTS.md"), USER_TEXT);
   const library = join(project, ".ether");
   assert.equal((await cli(["init", "--workspace", library, "--at", at(), "--project", project])).reasonCode, "LIBRARY_CREATED");
+  const projectId = (await cli(["project-create", "--workspace", library, "--at", at(), "--external-key", "AGENTS-EXPLICIT-PROJECT", "--name", "Managed fixture"])).record.id;
+  await cli(["library-register", "--project", project, "--library", library, "--project-id", projectId, "--at", at()]);
   if (navigation !== null) await cli(["machine-settings-set", "--key", "agents.navigation", "--value", navigation, "--at", at()]);
   return { base, device, project, library, agents: join(project, "AGENTS.md"), claude: join(project, "CLAUDE.md") };
 }

@@ -909,7 +909,7 @@ test("INC-224: crossing the trigger is red, with the remaining headroom and whos
   const leg = result.checks.find((entry) => entry.name === "chainHeadroom");
   assert.equal(leg.ok, false);
   assert.equal(leg.reasonCode, "PLATFORM_CHAIN_REVIEW_TRIGGER_REACHED");
-  assert.deepEqual(leg.partitions, [{ partition: "cross-project", events: 15_001, headroom: 4_999 }]);
+  assert.deepEqual(leg.partitions, [{ partition: "cross-project", events: 15_001, headroom: PROTOCOL_LIMITS.maxChainEvents - 15_001 }]);
   // The remedy must say the disposition is Owner's. A red that reads as a chore gets
   // treated as one, and the decision it exists to prompt is not a chore.
   assert.match(leg.remedy, /Owner decision/u);

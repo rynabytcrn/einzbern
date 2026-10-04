@@ -486,6 +486,7 @@ export interface WiringPlanInput {
   readonly engine: EngineFiles | null;
   // The steps planned; every step from registry on when left out.
   readonly steps?: ReadonlySet<SetupStep>;
+  readonly configurationProjectId?: string;
 }
 
 function runs(steps: ReadonlySet<SetupStep> | undefined, step: SetupStep): boolean {
@@ -645,7 +646,7 @@ export async function planWiring(recorder: SetupRecorder, input: WiringPlanInput
     recorder.write("machine-settings", settingsFile, await entryKind(settingsFile) === null ? "create" : "update");
   }
   if (library === null || !runs(steps, "managed-sections")) return [];
-  const declared = (await readRegistry(deviceHome)).entries.find(entry => entry.projectPath === projectRoot && entry.libraryPath === library.path)?.projectId;
+  const declared = input.configurationProjectId ?? (await readRegistry(deviceHome)).entries.find(entry => entry.projectPath === projectRoot && entry.libraryPath === library.path)?.projectId;
   const view = declared === undefined ? library.state : scopedWorkspaceState(await materializeWorkspaceFromGenesis(library.path), declared);
   const sections = await planSections(recorder, projectRoot, view, navigation);
   if (sections.recordsChange) recorder.write("library", library.path, "update");

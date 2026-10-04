@@ -78,8 +78,9 @@ async function version(workspace) {
 test("SUB-426 R2: a decision's number is minutes:<id>#D<n>, and a record's shape is checked on its own", () => {
   const id = minutesId("DL-MIN-1");
   assert.equal(decisionAddress(id, 3), `${id}#D3`);
+  assert.deepEqual(parseDecisionAddress(`${id}#D1000`), { minutesId: id, number: 1000 });
   assert.deepEqual(parseDecisionAddress(`${id}#D12`), { minutesId: id, number: 12 });
-  for (const value of [`${id}#D0`, `${id} D1`, `${id}#d1`, "work:000000000000000000000000#D1", `${id}#D1000`, 12]) {
+  for (const value of [`${id}#D0`, `${id} D1`, `${id}#d1`, "work:000000000000000000000000#D1", `${id}#D9007199254740992`, 12]) {
     assert.equal(parseDecisionAddress(value), null, String(value));
   }
   const base = {

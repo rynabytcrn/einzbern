@@ -112,7 +112,7 @@ test("adversarial object-database shapes fail closed instead of shortening the s
     );
   });
 
-  await context.test("an oversized object database overflows the capture bound instead of truncating", async (caseContext) => {
+  await context.test("an object database beyond the former capture bound remains complete; an explicit caller bound refuses", async (caseContext) => {
     const root = await emptyFixtureRepository(caseContext, "tcrn-privacy-oversize-");
     await writeFile(join(root, "big.bin"), Buffer.alloc(2 * 1024 * 1024, 0x41));
     fixtureGit(root, ["add", "-A"]);
@@ -120,11 +120,8 @@ test("adversarial object-database shapes fail closed instead of shortening the s
     const expected = declaredBatchBytes(root);
     // spawnSync's 1 MiB default silently returns a truncated stdout on overflow, which is
     // the fail-open shape: every object past the cut goes unscanned while the gate stays
-    // green. The capture must instead surface a typed overflow.
-    assert.throws(
-      () => runLocalCommand("git", batchArguments, { cwd: root, raw: true }),
-      (error) => error instanceof LocalCommandError && error.reasonCode === "COMMAND_OUTPUT_OVERFLOW",
-    );
+    // green. The default keeps the complete stream, and an explicit caller budget refuses.
+    assert.equal(runLocalCommand("git", batchArguments, { cwd: root, raw: true }).length, expected, "default capture keeps all declared bytes");
     assert.throws(
       () => runLocalCommand("git", batchArguments, { cwd: root, raw: true, maxBuffer: expected - 1 }),
       (error) => error instanceof LocalCommandError && error.reasonCode === "COMMAND_OUTPUT_OVERFLOW",

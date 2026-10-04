@@ -193,11 +193,21 @@ test("STORY-472 R2: a missing or deleted target, the record itself and an unknow
   const tooMany = Array.from({ length: 65 }, (_, index) => `work:${String(index + 1).padStart(24, "0")}`);
   await assert.rejects(
     () => initiative(fixture, "REL-Y", 5, { relations: { blockedBy: tooMany } }),
-    (error) => error?.reasonCode === "WORKSPACE_INPUT_INVALID" && /at most 64/u.test(error.message),
-    "the list limit is judged before any target is looked up",
+    (error) => error?.reasonCode === "WORKSPACE_INPUT_INVALID" && /target|unknown|not exist/i.test(error.message),
+    "all references still need actual targets beyond the retired list limit",
   );
   assert.throws(() => relationFilter(before, "causes", idOf("REL-X")), (error) => error?.reasonCode === "WORKSPACE_INPUT_INVALID");
   assert.equal((await materializeWorkspace(fixture.workspace)).version, before.version, "no refusal appended an event");
+});
+
+test("relations beyond the retired list ceiling keep every real target through fresh replay", async (context) => {
+  const fixture = await library(context);
+  const keys = Array.from({ length: 65 }, (_, index) => `REL-LARGE-${String(index).padStart(3, "0")}`);
+  await applyWorkBatch(fixture.workspace, { schemaVersion: "tcrn.work-batch.v1", members: keys.map(externalKey => ({ verb: "work-create", projectId: fixture.projectId, externalKey, kind: "Initiative", parentId: null, title: externalKey })) }, { occurredAt: at(2) });
+  const targets = keys.map(idOf).sort();
+  await initiative(fixture, "REL-LARGE-SOURCE", 3, { relations: { blockedBy: targets } });
+  const fresh = await materializeWorkspaceFromGenesis(fixture.workspace);
+  assert.deepEqual(fresh.work.find(record => record.externalKey === "REL-LARGE-SOURCE").relations.blockedBy, targets);
 });
 
 test("STORY-472 R2: repeats collapse, lists sort, and an annotation replaces each list it names whole", async (context) => {

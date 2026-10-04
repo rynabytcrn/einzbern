@@ -18,7 +18,7 @@ import { pathToFileURL } from "node:url";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { FRAMEWORK_VERSION, computeInstallTreeDigest } from "../dist/build/packages/core/src/index.js";
+import { FRAMEWORK_VERSION, computeInstallTreeDigest, createProject, setWorkspaceSetting } from "../dist/build/packages/core/src/index.js";
 import { DOCTOR_CHECKS } from "../dist/build/packages/core/src/doctor.js";
 import { canonicalJson } from "../dist/build/packages/protocol/src/index.js";
 import { applySetup, planSetup } from "../dist/build/packages/core/src/setup.js";
@@ -344,6 +344,10 @@ test("480-R3: once all eight pass, the project is registered and wired from the 
   await assert.rejects(applySetup(unanswered), (error) => error.reasonCode === "SETUP_BLOCKED" && error.details.reasonCode === "SETUP_ANSWER_REQUIRED");
   await assert.rejects(planSetup({ mode: "restore", projectRoot: f.project, at: at(), home: f.b.home, deviceHome: f.b.deviceHome, answers: { language: "en" } }), { reasonCode: "SETUP_OPTION_NOT_APPLICABLE" });
 
+  const other = await createProject(library, { externalKey: "OTHER-RESTORE-TARGET", name: "Other target", occurredAt: at() });
+  const otherId = other.projects.find(project => project.externalKey === "OTHER-RESTORE-TARGET").id;
+  await setWorkspaceSetting(library, { configurationProjectId: otherId, key: "artifact.language", value: "fr", occurredAt: at() });
+  await setWorkspaceSetting(library, { key: "artifact.language", value: "ko", occurredAt: at() });
   const libraryDigest = (await computeInstallTreeDigest(library)).sha256;
   const planned = await restorePlan(f, f.b, library);
   assert.equal(planned.mode, "restore");
@@ -351,7 +355,7 @@ test("480-R3: once all eight pass, the project is registered and wired from the 
   assert.deepEqual(planned.verification.map((check) => [check.item, check.check, check.ok]), RESTORE_CHECKS.map((check, index) => [index + 1, check, true]));
   assert.deepEqual(planned.library, { path: library, action: "reuse", libraryId: first.library.libraryId });
   assert.deepEqual(planned.questions.map((question) => [question.id, question.default]), [["cloud", false]]);
-  assert.equal(planned.resolved.language, "zh-CN", "the library's language comes back with it");
+  assert.equal(planned.resolved.language, "zh-CN", "the declared restored target keeps zh-CN independently of library ko and another project fr");
   const expected = [
     ["device", join(f.b.deviceHome, "device.json"), "create"],
     ["registry", join(f.b.deviceHome, "registry.json"), "create"],

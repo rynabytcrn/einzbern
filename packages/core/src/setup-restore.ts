@@ -37,7 +37,7 @@ import { basename, join, resolve } from "node:path";
 // The barrel is loaded first, so every module below is evaluated in the order the engine's own entry
 // evaluates it, whichever module a caller imports first.
 import { FRAMEWORK_VERSION } from "./index.js";
-import { assertCanonicalJson, canonicalJson } from "../../protocol/src/index.js";
+import { assertCanonicalJson, canonicalJson, canonicalSha256 } from "../../protocol/src/index.js";
 import { AGENTS_FILE, CLAUDE_FILE } from "./agents-sections.js";
 import { isAtomicTemporaryName } from "./atomic-file.js";
 import { AKASHA_READ_TIMEOUT_DEFAULT_MS, STREAM_MANIFEST_FILE, readAllStreams } from "./akasha.js";
@@ -74,7 +74,7 @@ import {
 } from "./setup-fresh.js";
 import { materializeLibraryRead, readLibraryTombstone } from "./workspace.js";
 import type { WorkspaceState } from "./workspace.js";
-import { scopedWorkspaceState } from "./project-scope.js";
+import { projectLineage, scopedWorkspaceState } from "./project-scope.js";
 
 /** The eight checks, in the order they run. */
 export const RESTORE_CHECKS = Object.freeze([
@@ -158,6 +158,7 @@ export interface VerifiedLibrary {
   readonly libraryId: string;
   // The library merged from the streams the checks read.
   readonly state: WorkspaceState;
+  readonly configurationProjectId?: string;
   // This device's stream: created at its first write, or reused.
   readonly deviceStream: { readonly deviceId: string | null; readonly action: "create" | "reuse" };
 }
@@ -526,6 +527,21 @@ class CheckRun {
   }
 }
 
+/** Read only a device binding or the exact declaration previously written by setup. */
+async function declaredRestoreProjectId(input: RestoreInput, libraryRoot: string, state: WorkspaceState): Promise<string | undefined> {
+  const entry = (await readRegistry(input.deviceHome)).entries.find((candidate) => candidate.projectPath === input.projectRoot);
+  if (entry?.projectId !== undefined) {
+    if (entry.libraryPath !== libraryRoot || entry.libraryId !== state.metadata.workspaceId) throw new CheckFailure("REGISTRY_LIBRARY_CONFLICT", "the declared project belongs to another library");
+    projectLineage(state, entry.projectId);
+    return entry.projectId;
+  }
+  // This key is setup's explicit recorded declaration, not a name/sole-project guess.
+  // A different root without that declaration stays unconfigured on this device.
+  const externalKey = `SETUP-CONFIG-${canonicalSha256({ libraryId: state.metadata.workspaceId, projectRoot: input.projectRoot }).toUpperCase()}`;
+  const declared = state.projects.find((project) => project.externalKey === externalKey && !project.tombstone);
+  return declared?.id;
+}
+
 /**
  * The eight checks of a library before it is restored (R3), in order, up to the first that fails.
  * Nothing is written: not a probe, not a lock, not the device cache.
@@ -569,8 +585,11 @@ export async function verifyRestore(input: RestoreInput, options: RestoreReadOpt
   if (device instanceof CheckFailure) return stopped("device-stream", device);
   run.pass("device-stream", device.detail);
 
-  const registered = (await readRegistry(input.deviceHome)).entries.find(entry => entry.projectPath === input.projectRoot);
-  const sections = await sectionsCheck(input.projectRoot, scopedWorkspaceState(streams.state, registered?.projectId));
+  let configurationProjectId: string | undefined;
+  try { configurationProjectId = await declaredRestoreProjectId(input, snapshot.root, streams.state); }
+  catch (error) { return stopped("sections", error instanceof CheckFailure ? error : new CheckFailure("PROJECT_CONFIGURATION_UNAVAILABLE", messageOf(error))); }
+  const targetState = scopedWorkspaceState(streams.state, configurationProjectId);
+  const sections = await sectionsCheck(input.projectRoot, targetState);
   if (sections instanceof CheckFailure) return stopped("sections", sections);
   run.pass("sections", sections);
 
@@ -578,7 +597,7 @@ export async function verifyRestore(input: RestoreInput, options: RestoreReadOpt
     ok: true,
     libraryPath: input.libraryPath,
     checks: run.checks,
-    library: { root: snapshot.root, libraryId: manifest.libraryId, state: streams.state, deviceStream: device.stream },
+    library: { root: snapshot.root, libraryId: manifest.libraryId, state: targetState, ...(configurationProjectId === undefined ? {} : { configurationProjectId }), deviceStream: device.stream },
   };
 }
 
@@ -659,7 +678,7 @@ export async function planRestoreSetup(input: SetupModeInput): Promise<SetupMode
   const resolved: ResolvedSetupAnswers = {
     artifacts: library.root,
     cloud: answers.cloud ?? cloud,
-    language: libraryLanguage(await setupTargetState(projectRoot, library.root, deviceHome)) ?? defaultLanguage(),
+    language: libraryLanguage(library.state) ?? defaultLanguage(),
     navigation,
   };
   const pending = await planWiring(recorder, {
@@ -667,6 +686,7 @@ export async function planRestoreSetup(input: SetupModeInput): Promise<SetupMode
     home,
     deviceHome,
     library: { path: library.root, libraryId: library.libraryId, state: library.state },
+    ...(library.configurationProjectId === undefined ? {} : { configurationProjectId: library.configurationProjectId }),
     cloud: resolved.cloud,
     navigation: navigationChoice(navigation),
     deviceNavigation,

@@ -84,11 +84,14 @@ test("468-R1: the display name can be changed and the id stays", async (t) => {
   const renamed = await setDeviceDisplayName("Studio desktop", home);
   assert.equal(renamed.deviceId, device.deviceId);
   assert.equal((await readDevice(home)).displayName, "Studio desktop");
-  for (const bad of ["", " padded", "two\nlines", "x".repeat(65)]) {
+  for (const bad of ["", " padded", "two\nlines", "\ud800"]) {
     await assert.rejects(setDeviceDisplayName(bad, home), (error) => error?.reasonCode === "DEVICE_DISPLAY_NAME_INVALID", JSON.stringify(bad));
   }
   assert.equal(displayNameFromHostname("  \u0007  "), "device", "a host name with nothing readable still yields a name");
-  assert.equal(displayNameFromHostname("x".repeat(80)).length, 64);
+  assert.equal(displayNameFromHostname("x".repeat(80)), "x".repeat(80));
+  const longName = "x".repeat(257);
+  assert.equal((await setDeviceDisplayName(longName, home)).displayName, longName);
+  assert.equal((await readDevice(home)).deviceId, device.deviceId);
 });
 
 const STAGING_NAME = ".tmp-device-0123456789ab";

@@ -60,11 +60,21 @@ async function scratch(context) {
 }
 
 /** Run one CLI command in-process as the device whose directory is `device`. */
+const fixtureProjectIds = new Map();
+
 async function as(device, args) {
   process.env.EINZBERN_HOME = device;
+  // Configuration targets come from this fixture's explicit project-create receipt.
+  const libraryFlag = args[0] === "library-register" ? "--library" : "--workspace";
+  const library = args[args.indexOf(libraryFlag) + 1];
+  const projectId = fixtureProjectIds.get(library);
+  const targetVerbs = ["gates-config-set", "gates-config-list", "gates-config-remove", "gates-plan", "gates-run", "library-register"];
+  if (projectId && targetVerbs.includes(args[0]) && !args.includes("--project-id")) args = [...args, "--project-id", projectId];
   let output = "";
   await runCli(args, { write: (value) => { output += value; } });
-  return JSON.parse(output);
+  const result = JSON.parse(output);
+  if (args[0] === "project-create") fixtureProjectIds.set(library, result.record.id);
+  return result;
 }
 
 async function refusal(device, args) {
@@ -77,9 +87,10 @@ async function refusal(device, args) {
 }
 
 async function declareStoryGate(device, library, storyId) {
+  const projectId = (await as(device, ["work-show", "--workspace", library, "--id", storyId])).record.projectId;
   const command = [process.execPath, "-e", "process.exit(0)"];
   const declaration = await as(device, [
-    "gates-config-set", "--workspace", library, "--at", at(), "--name", "fixture-story-coverage",
+    "gates-config-set", "--workspace", library, "--project-id", projectId, "--at", at(), "--name", "fixture-story-coverage",
     "--command", JSON.stringify(command), "--root", ".", "--covers", storyId, "--required", "true",
   ]);
   assert.deepEqual(declaration.gate, {
@@ -88,8 +99,10 @@ async function declareStoryGate(device, library, storyId) {
 }
 
 async function runStoryGate(device, library, projectRoot, storyId) {
+  const projectId = (await as(device, ["work-show", "--workspace", library, "--id", storyId])).record.projectId;
+  await as(device, ["library-register", "--project", projectRoot, "--library", library, "--project-id", projectId, "--at", at()]);
   const gateRun = await as(device, [
-    "gates-run", "--workspace", library, "--at", at(), "--project", projectRoot,
+    "gates-run", "--workspace", library, "--project-id", projectId, "--at", at(), "--project", projectRoot,
     "--release", "true", "--work-id", storyId,
   ]);
   assert.equal(gateRun.reasonCode, "GATES_RUN_COMPLETED");

@@ -84,13 +84,14 @@ test("the flagship governed loop replays end-to-end through the CLI with an unbr
   const captured = {};
   for (const step of governedLoopStoryline) {
     if (step.key === "work-transition-story-done") {
+      await invoke(["library-register", "--project", base, "--library", substitutions[WORKSPACE_PATH], "--project-id", substitutions["<project-id>"], "--at", "2026-07-11T00:00:09Z"]);
       const workspace = substitutions[WORKSPACE_PATH];
       const storyId = substitutions["<story-id>"];
       const command = [process.execPath, "-e", "process.exit(0)"];
       // TCRN-CROSS-STORY-513 R1 (TCRN-CROSS-SUB-422): a gate is declared in Atelier; the CLI refuses a
       // model's gates-config-set, so the declaration runs as Atelier runs it.
       const declaration = await withSurface(ATELIER_SURFACE, () => invoke([
-        "gates-config-set", "--workspace", workspace, "--at", "2026-07-11T00:00:09Z",
+        "gates-config-set", "--workspace", workspace, "--project-id", substitutions["<project-id>"], "--at", "2026-07-11T00:00:09Z",
         "--name", "fixture-story-coverage", "--command", JSON.stringify(command),
         "--root", ".", "--covers", storyId, "--required", "true",
       ]));
@@ -98,7 +99,7 @@ test("the flagship governed loop replays end-to-end through the CLI with an unbr
         name: "fixture-story-coverage", command, root: ".", covers: [storyId], required: true, enabled: true, releaseOnly: false,
       });
       const gateRun = await invoke([
-        "gates-run", "--workspace", workspace, "--at", "2026-07-11T00:00:09Z",
+        "gates-run", "--workspace", workspace, "--project-id", substitutions["<project-id>"], "--at", "2026-07-11T00:00:09Z",
         "--release", "true", "--work-id", storyId,
       ]);
       assert.equal(gateRun.reasonCode, "GATES_RUN_COMPLETED");

@@ -18,7 +18,7 @@ test("Draft 2020-12 schemas are meta-validated with local refs and executable ca
   assert.equal(result.metaSchemasValidated, 11);
   assert.equal(result.schemaPositiveCases, 11);
   assert.ok(result.schemaNegativeCases >= 22);
-  assert.equal(result.stableIdMaximumLength, 161);
+  assert.equal(result.stableIdFormerBoundaryLength, 161);
   assert.equal(result.stableIdBoundaryCases, 18);
   assert.equal(result.extensionNameCases, 3);
   assert.ok(result.resolvedLocalRefs >= 20);

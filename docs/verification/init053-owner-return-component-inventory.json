@@ -2,7 +2,7 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r27-owner-visual-return",
+  "pack": "r29-safe-source-f01-held",
   "scope": "native R1–R6 appended to revision 4",
   "sourceFiles": [
     {
@@ -67,7 +67,7 @@
     },
     {
       "path": "packages/core/src/device-identity.ts",
-      "sha256": "d7ddd7b43ea8c4a8aca3ee87e09d0a89e0001908c0924d7a372f32e5ab479e20"
+      "sha256": "9315dd06807cdf9f320ee76b15eb5c0812841ca85728d8659072cc50c8719308"
     },
     {
       "path": "packages/core/src/doctor.ts",
@@ -139,7 +139,7 @@
     },
     {
       "path": "packages/core/src/index.ts",
-      "sha256": "7d4c3ed50e7a0af61cbb0a1083a241d9a829e3a09477d394887290e6bb75b969"
+      "sha256": "823c450f96618663ccc4367be44c2667bff5fe6a1bf8ea4bd5ba2a8fbb035ee9"
     },
     {
       "path": "packages/core/src/install-manifest.ts",
@@ -247,7 +247,7 @@
     },
     {
       "path": "packages/core/src/recall.ts",
-      "sha256": "dc7f88889a2d93ac992798d0f47a9775e9e7517333f309cfc749c3535d7a3616"
+      "sha256": "fe62f4285ba349e491f2edc503e37b65faa0cf9719112d13959933c976d3cb25"
     },
     {
       "path": "packages/core/src/reference-profiles.ts",
@@ -275,11 +275,11 @@
     },
     {
       "path": "packages/core/src/settings.ts",
-      "sha256": "6c83b43ac933dff63d1cc447c811ec80598b388756a73b2a5728e767cbfabbd0"
+      "sha256": "4a6a1b78d646699fbc6f875272c8e05b204a155ad60d13eadd5710e8894ae153"
     },
     {
       "path": "packages/core/src/setup-fresh.ts",
-      "sha256": "ca1a1bce7730827373189623f66362a4898a7ee1ef99f83778390250bdcdbf7a"
+      "sha256": "efdb1f7906e55b4d869283a4f9b16332ee81bf06369f5ff49aa409655ed51a9e"
     },
     {
       "path": "packages/core/src/setup-maintain.ts",
@@ -287,7 +287,7 @@
     },
     {
       "path": "packages/core/src/setup-restore.ts",
-      "sha256": "8e4ea31b8136a183fa4d7a237fdb6cd6fcd52bf041779b692b23beb891c62f72"
+      "sha256": "5448d47f6880fd0bc599e8681d9d9ce933e51991799efb0335d21e5c84f9fe2d"
     },
     {
       "path": "packages/core/src/setup.ts",
@@ -571,7 +571,7 @@
     },
     {
       "path": "scripts/lib/protocol-proof.mjs",
-      "sha256": "1a86dd04da110b38c3d7cc96ed79e39ab29092cb47682f8c44116045d688e0db"
+      "sha256": "927ba56d66317c49929b7ffaff362cf8024682101070790bdc893901daed3d75"
     },
     {
       "path": "scripts/lib/push-gate-children.mjs",
@@ -778,7 +778,73 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "Source implementation and focused checks; canonical integration, affected fresh MAIN acceptance and Owner visual judgment are separate pending acts. No live installation/migration or governed write was performed.",
+  "evidenceDisposition": "R29 safe source implementation with one focused cadence recorded separately; this inventory never implies passing verification, final acceptance or Owner visual judgment. F01 migration-language-negative remains held without source repair; F19 belongs to the later truthful final evidence producer. The complete actual candidate parent/publication/build/consumption disposition below determines whether its source may be consumed. Current consumed-authority identity is bound by the publication and snapshot fields. Fresh canonical integration and affected MAIN acceptance remain separate pending acts. No live Engine installation/migration or governed write was performed.",
+  "dsCandidateDisposition": {
+    "candidateCommit": "fbac1c00e747684239ed9a3133ec2ba15d21f83f",
+    "candidateParent": {
+      "command": "pnpm verify",
+      "exit": 1,
+      "raw": "ds-p3-ordinary-parent-once.run.json",
+      "actualFirstBlockingChild": "tokens:proof / scripts/selection-grammar-proof.mjs",
+      "reason": "brand-colour in .tcrn-tabs__tab--selected: direct --tcrn-color-brand-primary reference",
+      "sourceFindings": 1,
+      "visualSignatureRegressions": null,
+      "storyHeightViolations": null,
+      "storyHeightStaleAllowlist": null,
+      "axeViolationCount": null,
+      "browserCaptureCount": 0,
+      "unexecuted": "component modifiers and all later verify children, including executable full-surface proof/internal-alpha 271-capture parent; original NB11 signature/height repaired-source outcome remains unverified"
+    },
+    "candidateMerged": false,
+    "candidateProductionPublished": false,
+    "candidateBuildAndArtifactVerified": false,
+    "candidateConsumed": false,
+    "reason": "Original approved ordinary P3 parent failed once at a newly exposed selection-grammar violation. No post-cadence source repair/rerun, baseline/threshold/debt/budget weakening or red-authority publication/consumption.",
+    "retainedCurrentAuthorityCommit": "48ded198a7148efdaa245271d1885e468f24f4a4",
+    "retainedPublicationEvidence": "retained-ds-publication-binding.json",
+    "retainedAuthorityEvidenceIsNewCandidateEvidence": false,
+    "applicationSnapshots": [
+      {
+        "path": "portal/tokens.css",
+        "bytes": 8014,
+        "sha256": "87e9b5c6d6cbc765e81803a02160460dc1b84143d761651212b64fb5e41edf1d",
+        "equalsEngineBase": true
+      },
+      {
+        "path": "portal/ds-component-css.snapshot.css",
+        "bytes": 120592,
+        "sha256": "89edf550b6aa2dce64ceb9bd385429c5a48dd206043b0a904e810e4d097a8166",
+        "equalsEngineBase": true
+      },
+      {
+        "path": "portal/ds-static-bridges.snapshot.js",
+        "bytes": 25621,
+        "sha256": "26e51f7b7f7beb18ae00fec4daaf19dbf1d8e588063fd509c81a1761a87ccf8a",
+        "equalsEngineBase": true
+      },
+      {
+        "path": "portal/ds-consumer-contract.json",
+        "bytes": 3460,
+        "sha256": "48f32d5844fa2019f98e55da6ef4fde43a9c449942bac840180b448e5cab4b48",
+        "equalsEngineBase": true
+      },
+      {
+        "path": "portal/index.html",
+        "bytes": 342875,
+        "sha256": "1cabb8e17a30d96732e921631532cb8cadf8a47c942be48c7b8baa529ebf279f",
+        "equalsEngineBase": true
+      }
+    ],
+    "heldGenerators": [
+      "new DS component snapshot",
+      "new DS token snapshot",
+      "new DS static bridge snapshot",
+      "new DS consumption-contract publication binding"
+    ],
+    "prCreatePushMergeAttempted": false,
+    "productionAttempted": false,
+    "canonicalDsRestored": "canonical-ds-restored-after-parent.json"
+  },
   "publication": {
     "mergeCommit": "48ded198a7148efdaa245271d1885e468f24f4a4",
     "mergeTree": "c7198ebb3f17abf66c9f2aede15f8d2f2cf3d804",
@@ -827,7 +893,7 @@
         "Save/Undo/Reset/error",
         "keyboard/focus/disabled/required"
       ],
-      "sourceVerification": "published snapshot exact digest; native construction and executable DOM interactions; DS authority 271 capture/0axe source evidence retained",
+      "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
       "currentComputedStyleGeometryStatus": "must be verified by affected fresh MAIN browser acceptance on integrated final bytes; unchanged old preview is not current proof",
       "ownerVisualStatus": "pending, not a machine claim"
     },
@@ -868,7 +934,7 @@
         "Save/Undo/Reset/error",
         "keyboard/focus/disabled/required"
       ],
-      "sourceVerification": "published snapshot exact digest; native construction and executable DOM interactions; DS authority 271 capture/0axe source evidence retained",
+      "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
       "currentComputedStyleGeometryStatus": "must be verified by affected fresh MAIN browser acceptance on integrated final bytes; unchanged old preview is not current proof",
       "ownerVisualStatus": "pending, not a machine claim"
     },
@@ -909,7 +975,7 @@
         "Save/Undo/Reset/error",
         "keyboard/focus/disabled/required"
       ],
-      "sourceVerification": "published snapshot exact digest; native construction and executable DOM interactions; DS authority 271 capture/0axe source evidence retained",
+      "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
       "currentComputedStyleGeometryStatus": "must be verified by affected fresh MAIN browser acceptance on integrated final bytes; unchanged old preview is not current proof",
       "ownerVisualStatus": "pending, not a machine claim"
     },
@@ -950,7 +1016,7 @@
         "Save/Undo/Reset/error",
         "keyboard/focus/disabled/required"
       ],
-      "sourceVerification": "published snapshot exact digest; native construction and executable DOM interactions; DS authority 271 capture/0axe source evidence retained",
+      "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
       "currentComputedStyleGeometryStatus": "must be verified by affected fresh MAIN browser acceptance on integrated final bytes; unchanged old preview is not current proof",
       "ownerVisualStatus": "pending, not a machine claim"
     },
@@ -991,7 +1057,7 @@
         "Save/Undo/Reset/error",
         "keyboard/focus/disabled/required"
       ],
-      "sourceVerification": "published snapshot exact digest; native construction and executable DOM interactions; DS authority 271 capture/0axe source evidence retained",
+      "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
       "currentComputedStyleGeometryStatus": "must be verified by affected fresh MAIN browser acceptance on integrated final bytes; unchanged old preview is not current proof",
       "ownerVisualStatus": "pending, not a machine claim"
     },
@@ -1032,7 +1098,7 @@
         "Save/Undo/Reset/error",
         "keyboard/focus/disabled/required"
       ],
-      "sourceVerification": "published snapshot exact digest; native construction and executable DOM interactions; DS authority 271 capture/0axe source evidence retained",
+      "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
       "currentComputedStyleGeometryStatus": "must be verified by affected fresh MAIN browser acceptance on integrated final bytes; unchanged old preview is not current proof",
       "ownerVisualStatus": "pending, not a machine claim"
     },
@@ -1073,7 +1139,7 @@
         "Save/Undo/Reset/error",
         "keyboard/focus/disabled/required"
       ],
-      "sourceVerification": "published snapshot exact digest; native construction and executable DOM interactions; DS authority 271 capture/0axe source evidence retained",
+      "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
       "currentComputedStyleGeometryStatus": "must be verified by affected fresh MAIN browser acceptance on integrated final bytes; unchanged old preview is not current proof",
       "ownerVisualStatus": "pending, not a machine claim"
     },
@@ -1114,7 +1180,7 @@
         "Save/Undo/Reset/error",
         "keyboard/focus/disabled/required"
       ],
-      "sourceVerification": "published snapshot exact digest; native construction and executable DOM interactions; DS authority 271 capture/0axe source evidence retained",
+      "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
       "currentComputedStyleGeometryStatus": "must be verified by affected fresh MAIN browser acceptance on integrated final bytes; unchanged old preview is not current proof",
       "ownerVisualStatus": "pending, not a machine claim"
     },
@@ -1155,7 +1221,7 @@
         "Save/Undo/Reset/error",
         "keyboard/focus/disabled/required"
       ],
-      "sourceVerification": "published snapshot exact digest; native construction and executable DOM interactions; DS authority 271 capture/0axe source evidence retained",
+      "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
       "currentComputedStyleGeometryStatus": "must be verified by affected fresh MAIN browser acceptance on integrated final bytes; unchanged old preview is not current proof",
       "ownerVisualStatus": "pending, not a machine claim"
     }

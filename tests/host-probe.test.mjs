@@ -66,10 +66,11 @@ test("STORY-373: missing CLI, authentication failure, timeout, and output trunca
 
   const outputExecutable = await fakeExecutable(t, "process.stdout.write('x'.repeat(70_000))");
   const truncated = await runUnpreloadedRelay(t, `const result = await probeHost({ host: "claude-code", model: "loud", executable: ${JSON.stringify(outputExecutable)}, env: process.env }); process.stdout.write(JSON.stringify(result));`);
-  assert.equal(truncated.reasonCode, "HOST_PROBE_OUTPUT_TRUNCATED");
-  assert.equal(truncated.ok, false);
+  assert.equal(truncated.reasonCode, "HOST_PROBE_SUCCEEDED");
+  assert.equal(truncated.ok, true);
+  assert.equal(truncated.stdout, "x".repeat(70_000), "complete output beyond the former capture ceiling");
   assert.ok(Buffer.byteLength(truncated.stdout, "utf8") <= HOST_PROBE_OUTPUT_BYTES);
-  assert.equal(truncated.stdoutTruncated, true);
+  assert.equal(truncated.stdoutTruncated, false);
 });
 
 test("STORY-373: Codex and Claude argv forms are fixed and input validation is fail-closed", async (t) => {

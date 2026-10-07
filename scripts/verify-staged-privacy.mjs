@@ -3,6 +3,12 @@
 // TCRN-CROSS-STORY-425: scan the bytes currently in Git's index before they can
 // become a reachable commit. This is deliberately an incremental companion to
 // verify:privacy; it never narrows or replaces the historical privacy scan.
+// TCRN-CROSS-SUB-357 S1 (INIT-053 R41 B3): staged content is labelled with its real repository
+// path, as the verify:privacy working-tree scan labels source files. The exact-path privacy
+// classification keys on that path; a `staged-source:` prefix never matched it, so a reviewed
+// line staged at its own path was reported. The filename entries keep their `staged-filename:`
+// label, and a reviewed line at any other path, a renamed path or extra private content remains
+// a finding.
 
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
@@ -123,7 +129,7 @@ function scanStaged(root) {
     }
     const content = stagedContent(root, path);
     bytes += content.length;
-    entries.push({ label: `staged-source:${path}`, kind: "source", content: content.toString("utf8") });
+    entries.push({ label: path, kind: "source", content: content.toString("utf8") });
     objects.push({ path, object: indexEntry.object, mode: indexEntry.mode, bytes: content.length, scanned: true });
   }
   const runtime = privateRuntimeConfig();

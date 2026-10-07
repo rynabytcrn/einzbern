@@ -58,8 +58,61 @@ declaration, or any red gate stops preparation.
 
 Preparation preserves its existing clean checkout checks and makes no commit.
 Gates that require a clean committed tree can therefore refuse after the release
-files change. Choosing a different commit time, splitting preparation into phases,
-or creating a separate release library requires explicit approval of that method.
+files change. The approved two-phase method below commits each repository once
+between generating the release files and running the gates.
+
+## Two-phase preparation
+
+The approved method splits preparation around one local release commit per
+repository. Run both phases from the Einzbern repository, on checkouts whose `.git`
+is a directory rather than linked worktrees: the build, the gates and the output
+session that moves stale artifacts refuse a linked worktree. Keep `EINZBERN_HOME`
+on the same device directory for both phases, because the library registration
+and the gate runs belong to that device.
+
+```sh
+node scripts/release.mjs generate --version <version> --helper <helper-working-tree> --workspace <library> --project <registered-project> --receipt <new-receipt-file> [--keep-extra <helper-path>]...
+node scripts/release.mjs finish --version <version> --helper <helper-working-tree> --workspace <library> --project <registered-project> --receipt <new-receipt-file>
+```
+
+`generate` requires both trees clean and records both HEAD commits. Before it
+changes a file it reads the release gate plan, the current versions and the
+CHANGELOG cut, checks that the receipt is a new file outside both repositories
+and that each `--keep-extra` path is tracked by the helper, and reports every
+failed condition together. It then writes the package versions, the single
+`FRAMEWORK_VERSION` replacement, the versioned CHANGELOG section and
+`docs/releases/<version>.md` from that section, builds the engine and checks the
+built version, renders the engine READMEs, regenerates the CLI reference only when
+its check reports it out of date, and renders the helper tree. The receipt records
+every changed file of both repositories with its status, size and SHA-256, the
+gate library and declaration digest, and the helper's extra files: those Git
+tracks, and those it does not track, such as an ignored lockfile. `--keep-extra`
+names a tracked extra file that stays in the helper; every other tracked extra
+file is listed in `removeFiles`. Untracked extra files are never removed and never
+committed. `generate` creates no commit and runs no gate.
+
+Commit each repository exactly once after `generate`. The engine commit contains
+the receipt's changes. The helper commit contains the receipt's changes and the
+`git rm` of every `removeFiles` path; kept files and untracked extra files stay as
+they are.
+
+`finish` reads the receipt and requires the same version, repositories, library
+and project. Each repository must be exactly one single-parent commit past its
+recorded HEAD and clean. The engine commit must change exactly the recorded files
+with the recorded bytes and pass the release commit check below. The helper commit
+must change exactly the recorded files and remove exactly `removeFiles`, while the
+helper's kept files and kept extra files stay byte-identical. The gate library and
+its declaration digest must still match the receipt
+(`RELEASE_RECEIPT_BASIS_CHANGED` otherwise), and the source and built core version
+must be the release version. Every failed condition is reported together, and
+nothing runs. When the commits match, `finish` moves the source archive and
+formal package of every other version from `dist/release/` to
+`dist/stale-release/<version>/` by the existing P8 rule, runs every enabled release
+gate as preparation does, refuses to pack while `dist/release/` still holds an
+artifact of another version, packs, checks the archive digest and runs `check`.
+A red gate stops `finish` before packing. `finish` can run again on the same two
+commits; a source change means removing both release commits and generating
+again.
 
 Run `check` after preparation and again after committing both repositories. It
 checks the engine manifest, every `packages/*/package.json`, the core source and
@@ -69,7 +122,7 @@ the CHANGELOG section, the engine README set, the helper README set, and the hel
 
 Packing also checks every engine manifest and the actual source and built core
 version. P8 derives its version, tag and seven exact artifact names from this
-tree's manifest. The current 1.2.1 candidate retains its historical repository
+tree's manifest. The 1.2.1 candidate retains its historical repository
 identity; future candidates name `tpmoonchefryan/einzbern`. These bindings change
 no remote. Release and P8 schema identifiers remain independent of the version.
 

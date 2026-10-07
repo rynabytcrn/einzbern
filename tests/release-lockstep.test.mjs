@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-488 R1, R2, R4 (TCRN-CROSS-SUB-355): verify the two-repository version lock,
 // local release preparation, all-red stop, and explicit tag/push/release execution in scratch.
+// TCRN-CROSS-SUB-357 rev4 (INIT-053 R41 B1): the two-phase generate and finish entries around one
+// local release commit per repository, with every refusal they add.
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { chmod, cp, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { chmod, cp, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -18,6 +21,8 @@ import {
   executeReleaseAction,
   checkReleaseGatePlan,
   assertReleaseGateRun,
+  finishRelease,
+  generateRelease,
   prepareRelease,
   runReleaseGates,
 } from "../scripts/lib/release-lockstep.mjs";
@@ -434,4 +439,282 @@ test("SUB-357: build ok without the requested actual core version stops before r
   const environment = await makeEnvironment("stale-build");
   const workspace = await makeWorkspace("stale-build", repos, environment);
   await assert.rejects(controlledPrepareRunner({ ...repos, environment, workspace, staleBuild: true }), (error) => error.reasonCode === "RELEASE_VERSION_MISMATCH" && error.details.mismatches.some((entry) => entry.path === "dist/build/packages/core/src/index.js"));
+});
+
+// TCRN-CROSS-SUB-357 rev4 (INIT-053 R41 B1): generate and finish. The fixture helper carries a kept
+// LICENSE, two tracked extra files (the C5 script and a retired reference) and, when asked, an
+// ignored extra file; render and build are stand-ins, gate reads and runs are the real CLI.
+const CREATE_SKILL_ARCHIVE = "skill/mana-orchestrate/scripts/create-skill-archive.mjs";
+const RETIRED_REFERENCE = "skill/mana-orchestrate/references/retired-guide.md";
+const IGNORED_EXTRA = "ignored-extra.txt";
+const OTHER_VERSION = "9.9.9";
+
+async function helperFiles(root, prefix = "") {
+  const found = [];
+  for (const entry of await readdir(prefix === "" ? root : join(root, ...prefix.split("/")), { withFileTypes: true })) {
+    if (entry.name === ".git" || entry.name === "node_modules") continue;
+    const path = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+    if (entry.isDirectory()) found.push(...await helperFiles(root, path));
+    else found.push(path);
+  }
+  return found.sort();
+}
+
+function releaseRunner(engineRoot, calls) {
+  return async (command, args, { cwd, env }) => {
+    calls.push({ command, args, cwd });
+    if (command === "corepack") {
+      const source = await readFile(join(engineRoot, "packages/core/src/index.ts"), "utf8");
+      await writeText(engineRoot, "dist/build/packages/core/src/index.js", stripTypesWithScopedExperimentalWarning(source, { mode: "transform", sourceMap: false }));
+      return { status: 0, stdout: '{"ok":true,"reasonCode":"BUILD_VERIFIED"}\n', stderr: "" };
+    }
+    const scriptName = args[0]?.split("/").at(-1);
+    if (scriptName === "render-readme.mjs") {
+      const result = await renderReadmes({ root: engineRoot, version: args[args.indexOf("--version") + 1] });
+      return { status: 0, stdout: `${JSON.stringify(result)}\n`, stderr: "" };
+    }
+    if (scriptName === "wiki-cli-reference.mjs") return { status: 0, stdout: "CLI_REFERENCE_UP_TO_DATE\n", stderr: "" };
+    if (scriptName === "render-helper-docs.mjs") {
+      const out = args[args.indexOf("--out") + 1];
+      const version = args[args.indexOf("--version") + 1];
+      await writeText(out, "package.json", `${JSON.stringify({ name: "mana-orchestrate", version, private: true }, null, 2)}\n`);
+      await writeText(out, "skill/mana-orchestrate/SKILL.md", `# Mana Orchestrate\n\nNavigation for Einzbern ${version}: generated for this version.\n`);
+      for (const name of HELPER_READMES) await writeText(out, name, helperReadme(version));
+      const files = ["package.json", "skill/mana-orchestrate/SKILL.md", ...HELPER_READMES].sort();
+      const extraFiles = (await helperFiles(out)).filter((path) => !files.includes(path) && path !== "LICENSE" && path !== ".gitignore");
+      return { status: 0, stdout: `${JSON.stringify({ ok: true, reasonCode: "HELPER_DOCS_RENDERED", version, files, extraFiles })}\n`, stderr: "" };
+    }
+    if (scriptName === "einzbern.mjs") throw new Error("a test runner must never replace real gate reads or execution");
+    if (scriptName === "pack-release.mjs") {
+      await cp(await realpath(join(REPOSITORY_ROOT, "node_modules/typescript")), join(engineRoot, "node_modules/typescript"), { recursive: true });
+      return { status: 0, stdout: execFileSync(command, args, { cwd, env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }), stderr: "" };
+    }
+    throw new Error(`unexpected command ${command} ${args.join(" ")} in ${cwd}`);
+  };
+}
+
+async function createReleaseFixture(name, { red = false, ignoredExtra = false } = {}) {
+  const repos = await createRepos(name);
+  await writeText(repos.helperRoot, "LICENSE", "Apache-2.0 fixture\n");
+  await writeText(repos.helperRoot, CREATE_SKILL_ARCHIVE, "// fixture copy of the helper archive script\n");
+  await writeText(repos.helperRoot, RETIRED_REFERENCE, "# Retired guide\n");
+  if (ignoredExtra) await writeText(repos.helperRoot, ".gitignore", `/node_modules/\n/${IGNORED_EXTRA}\n`);
+  await commitAll(repos.helperRoot, "helper extras");
+  if (ignoredExtra) await writeText(repos.helperRoot, IGNORED_EXTRA, "ignored, untracked\n");
+  const environment = await makeEnvironment(name);
+  const workspace = await makeWorkspace(name, repos, environment, { red });
+  return { ...repos, environment, workspace, receiptPath: join(repos.projectRoot, "release-receipt.json") };
+}
+
+function generateFixture(fixture, { keepExtra = [], calls = [], receiptPath = fixture.receiptPath, engineRoot = fixture.engineRoot } = {}) {
+  return generateRelease({ engineRoot, helperRoot: fixture.helperRoot, version: NEXT_VERSION, workspace: fixture.workspace, projectRoot: fixture.projectRoot, receiptPath, keepExtra, env: fixture.environment, runner: releaseRunner(engineRoot, calls), at: "2026-10-08T01:00:00Z" });
+}
+
+function finishFixture(fixture, { calls = [], version = NEXT_VERSION, receiptPath = fixture.receiptPath } = {}) {
+  return finishRelease({ engineRoot: fixture.engineRoot, helperRoot: fixture.helperRoot, version, workspace: fixture.workspace, projectRoot: fixture.projectRoot, receiptPath, env: fixture.environment, runner: releaseRunner(fixture.engineRoot, calls), at: "2026-10-08T02:00:00Z" });
+}
+
+function commitRelease(fixture, receipt) {
+  git(fixture.engineRoot, ["add", "-A"]);
+  git(fixture.engineRoot, ["commit", "-q", "-m", "release engine"]);
+  if (receipt.helper.removeFiles.length > 0) git(fixture.helperRoot, ["rm", "-q", "--", ...receipt.helper.removeFiles]);
+  git(fixture.helperRoot, ["add", "-A"]);
+  git(fixture.helperRoot, ["commit", "-q", "-m", "release helper"]);
+}
+
+test("SUB-357 R41 B1: generate writes the release files and a receipt without a commit or a gate; finish checks both commits, moves stale artifacts, gates and packs", async () => {
+  const fixture = await createReleaseFixture("two-phase", { ignoredExtra: true });
+  const heads = { engine: git(fixture.engineRoot, ["rev-parse", "HEAD"]), helper: git(fixture.helperRoot, ["rev-parse", "HEAD"]) };
+  const calls = [];
+  const generated = await generateFixture(fixture, { keepExtra: [CREATE_SKILL_ARCHIVE], calls });
+  assert.equal(generated.reasonCode, "RELEASE_GENERATED");
+  assert.deepEqual(generated.cliReference, { checked: true, changed: false });
+  assert.equal(git(fixture.engineRoot, ["rev-parse", "HEAD"]), heads.engine, "generate commits nothing");
+  assert.equal(git(fixture.helperRoot, ["rev-parse", "HEAD"]), heads.helper, "generate commits nothing");
+  assert.equal(calls.some((call) => call.args.includes("gates-run") || call.args[0]?.endsWith("pack-release.mjs")), false, "generate runs no gate and packs nothing");
+  const receipt = JSON.parse(await readFile(fixture.receiptPath, "utf8"));
+  assert.equal(receipt.schemaVersion, "einzbern.release-generate-receipt.v1");
+  assert.equal(receipt.version, NEXT_VERSION);
+  assert.deepEqual([receipt.engine.head, receipt.helper.head], [heads.engine, heads.helper]);
+  assert.deepEqual(receipt.helper.extraFiles, { tracked: [RETIRED_REFERENCE, CREATE_SKILL_ARCHIVE], untracked: [IGNORED_EXTRA] });
+  assert.deepEqual(receipt.helper.keptExtraFiles, [CREATE_SKILL_ARCHIVE]);
+  assert.deepEqual(receipt.helper.removeFiles, [RETIRED_REFERENCE], "the ignored extra file is never removed");
+  assert.deepEqual(receipt.helper.keptFiles, [".gitignore", "LICENSE"]);
+  assert.equal(receipt.gates.libraryId, generated.gates.libraryId);
+  const note = `docs/releases/${NEXT_VERSION}.md`;
+  const noteText = await readFile(join(fixture.engineRoot, note), "utf8");
+  assert.ok(noteText.startsWith(`# Einzbern ${NEXT_VERSION}\n\n`) && noteText.includes(RELEASE_NOTES) && noteText.endsWith("\n"));
+  assert.deepEqual(receipt.engine.changes.filter((change) => change.status === "A").map((change) => change.path), [note]);
+  assert.ok(["CHANGELOG.md", "package.json", "packages/core/src/index.ts", ...README_NAMES].every((path) => receipt.engine.changes.some((change) => change.path === path && change.status === "M")));
+  for (const [root, changes] of [[fixture.engineRoot, receipt.engine.changes], [fixture.helperRoot, receipt.helper.changes]]) {
+    for (const change of changes) {
+      const content = await readFile(join(root, change.path));
+      assert.deepEqual([change.bytes, change.sha256], [content.length, createHash("sha256").update(content).digest("hex")], change.path);
+    }
+  }
+  await writeText(fixture.engineRoot, `dist/release/einzbern-${OLD_VERSION}.tar.gz`, "previous formal package\n");
+  await writeText(fixture.engineRoot, `dist/release/einzbern-${OLD_VERSION}.tar.gz.sha256`, "previous digest\n");
+  commitRelease(fixture, receipt);
+
+  const finishCalls = [];
+  const finished = await finishFixture(fixture, { calls: finishCalls });
+  assert.equal(finished.reasonCode, "RELEASE_FINISHED");
+  assert.deepEqual(finished.commits.engine.parent, heads.engine);
+  assert.deepEqual(finished.commits.helper.parent, heads.helper);
+  assert.deepEqual(finished.commitShape.changedPaths, receipt.engine.changes.map((change) => change.path).sort());
+  assert.deepEqual(finished.staleReleaseArtifacts.map((move) => move.to), [`dist/stale-release/${OLD_VERSION}/einzbern-${OLD_VERSION}.tar.gz`, `dist/stale-release/${OLD_VERSION}/einzbern-${OLD_VERSION}.tar.gz.sha256`]);
+  assert.deepEqual((await readdir(join(fixture.engineRoot, "dist/release"))).sort(), [`einzbern-${NEXT_VERSION}.tar.gz`, `einzbern-${NEXT_VERSION}.tar.gz.sha256`]);
+  assert.equal(finished.gates.ok, true);
+  assert.deepEqual(finished.gates.selected, ["engine:fixture", "helper:fixture"]);
+  assert.equal(finished.check, "RELEASE_VERSION_CHECKED");
+  assert.equal(await readFile(finished.assets.checksum, "utf8"), `${finished.assets.sha256}  einzbern-${NEXT_VERSION}.tar.gz\n`);
+  assert.ok(finishCalls.some((call) => call.args[0]?.endsWith("pack-release.mjs")));
+  assert.equal(finishCalls.some((call) => call.command === "gh" || call.args.includes("tag") || call.args.includes("push")), false);
+  assert.deepEqual(git(fixture.helperRoot, ["ls-files", "--", CREATE_SKILL_ARCHIVE, RETIRED_REFERENCE]).split("\n"), [CREATE_SKILL_ARCHIVE]);
+  assert.equal(await readFile(join(fixture.helperRoot, IGNORED_EXTRA), "utf8"), "ignored, untracked\n");
+  assert.equal(git(fixture.engineRoot, ["status", "--porcelain", "--untracked-files=all"]), "");
+});
+
+test("SUB-357 R41 B1, C5: without --keep-extra every tracked extra helper file is removed and finish passes", async () => {
+  const fixture = await createReleaseFixture("two-phase-remove-all");
+  await generateFixture(fixture);
+  const receipt = JSON.parse(await readFile(fixture.receiptPath, "utf8"));
+  assert.deepEqual(receipt.helper.keptExtraFiles, []);
+  assert.deepEqual(receipt.helper.removeFiles, [RETIRED_REFERENCE, CREATE_SKILL_ARCHIVE]);
+  assert.deepEqual(receipt.helper.extraFiles.untracked, []);
+  commitRelease(fixture, receipt);
+  const finished = await finishFixture(fixture);
+  assert.equal(finished.reasonCode, "RELEASE_FINISHED");
+  assert.deepEqual(finished.staleReleaseArtifacts, []);
+  assert.equal(git(fixture.helperRoot, ["ls-files", "--", CREATE_SKILL_ARCHIVE, RETIRED_REFERENCE]), "");
+});
+
+test("SUB-357 R41 B1: generate reports every failed precondition together before either tree changes", async () => {
+  const fixture = await createReleaseFixture("generate-refusals");
+  const unchanged = async () => {
+    for (const root of [fixture.engineRoot, fixture.helperRoot]) assert.equal(git(root, ["status", "--porcelain", "--untracked-files=all"]), "", root);
+    assert.equal(JSON.parse(await readFile(join(fixture.engineRoot, "package.json"), "utf8")).version, OLD_VERSION);
+  };
+  await assert.rejects(
+    generateFixture(fixture, { receiptPath: join(fixture.engineRoot, "release-receipt.json"), keepExtra: ["skill/mana-orchestrate/scripts/missing.mjs", "../outside.mjs"] }),
+    (error) => {
+      assert.equal(error.reasonCode, "RELEASE_RECEIPT_INSIDE_REPOSITORY");
+      assert.deepEqual(error.details.violations.map((violation) => violation.code), ["RELEASE_RECEIPT_INSIDE_REPOSITORY", "RELEASE_KEEP_EXTRA_UNKNOWN", "RELEASE_KEEP_EXTRA_UNKNOWN"]);
+      return true;
+    },
+  );
+  await unchanged();
+  await writeFile(fixture.receiptPath, "{}\n");
+  await assert.rejects(generateFixture(fixture), (error) => error.reasonCode === "RELEASE_RECEIPT_EXISTS");
+  await rm(fixture.receiptPath);
+  await assert.rejects(generateFixture(fixture, { receiptPath: join(fixture.projectRoot, "absent", "release-receipt.json") }), (error) => error.reasonCode === "RELEASE_RECEIPT_INVALID");
+  const linked = join(fixture.projectRoot, "einzbern-linked");
+  git(fixture.engineRoot, ["worktree", "add", "--quiet", linked, "HEAD"]);
+  await assert.rejects(generateFixture(fixture, { engineRoot: await realpath(linked) }), (error) => error.reasonCode === "RELEASE_ENGINE_CHECKOUT_LINKED");
+  git(fixture.engineRoot, ["worktree", "remove", "--force", linked]);
+  await unchanged();
+  await assert.rejects(
+    generateFixture(fixture, { keepExtra: ["README.md"] }),
+    (error) => error.reasonCode === "RELEASE_KEEP_EXTRA_UNKNOWN" && error.details.violations.length === 1 && error.details.violations[0].path === "README.md",
+    "a generated file is not an extra file to keep",
+  );
+  await assert.rejects(readFile(fixture.receiptPath), (error) => error.code === "ENOENT", "no receipt is written for a refused generation");
+});
+
+test("SUB-357 R41 B1: finish refuses a missing, invalid or mismatched receipt and any commit that is not exactly the receipt", async () => {
+  const fixture = await createReleaseFixture("finish-refusals");
+  await generateFixture(fixture, { keepExtra: [CREATE_SKILL_ARCHIVE] });
+  const receipt = JSON.parse(await readFile(fixture.receiptPath, "utf8"));
+  commitRelease(fixture, receipt);
+  const release = { engine: git(fixture.engineRoot, ["rev-parse", "HEAD"]), helper: git(fixture.helperRoot, ["rev-parse", "HEAD"]) };
+  const calls = [];
+  const refusedWith = async (code, options = {}) => {
+    let violations = [];
+    await assert.rejects(finishFixture(fixture, { calls, ...options }), (error) => {
+      violations = error.details?.violations ?? [{ code: error.reasonCode }];
+      return true;
+    });
+    assert.ok(violations.some((violation) => violation.code === code), JSON.stringify(violations));
+    return violations;
+  };
+  const amend = (root) => {
+    git(root, ["add", "-A"]);
+    git(root, ["commit", "-q", "--amend", "--no-edit"]);
+  };
+
+  await refusedWith("RELEASE_RECEIPT_MISSING", { receiptPath: join(fixture.projectRoot, "absent-receipt.json") });
+  const invalid = join(fixture.projectRoot, "invalid-receipt.json");
+  await writeFile(invalid, "{ not json\n");
+  await refusedWith("RELEASE_RECEIPT_INVALID", { receiptPath: invalid });
+  await rm(invalid);
+  await writeFile(invalid, `${JSON.stringify({ ...receipt, schemaVersion: "other" })}\n`);
+  await refusedWith("RELEASE_RECEIPT_INVALID", { receiptPath: invalid });
+  await refusedWith("RELEASE_RECEIPT_MISMATCH", { version: OTHER_VERSION });
+
+  git(fixture.engineRoot, ["reset", "-q", "--hard", receipt.engine.head]);
+  await refusedWith("RELEASE_COMMIT_COUNT_INVALID");
+  git(fixture.engineRoot, ["reset", "-q", "--hard", release.engine]);
+  git(fixture.engineRoot, ["commit", "-q", "--allow-empty", "-m", "a second commit"]);
+  await refusedWith("RELEASE_COMMIT_COUNT_INVALID");
+  git(fixture.engineRoot, ["reset", "-q", "--hard", release.engine]);
+  git(fixture.helperRoot, ["checkout", "-q", "--orphan", "orphan-release"]);
+  git(fixture.helperRoot, ["commit", "-q", "-m", "an orphan release commit"]);
+  await refusedWith("RELEASE_COMMIT_PARENT_INVALID");
+  git(fixture.helperRoot, ["checkout", "-q", "main"]);
+  git(fixture.helperRoot, ["branch", "-q", "-D", "orphan-release"]);
+
+  await writeText(fixture.engineRoot, "tests/extra.test.mjs", "export {};\n");
+  amend(fixture.engineRoot);
+  const extraTest = await refusedWith("RELEASE_COMMIT_SHAPE_INVALID");
+  assert.ok(extraTest.some((violation) => violation.code === "RELEASE_COMMIT_CONTENT_MISMATCH" && violation.path === "tests/extra.test.mjs"));
+  git(fixture.engineRoot, ["reset", "-q", "--hard", release.engine]);
+  const note = `docs/releases/${NEXT_VERSION}.md`;
+  await writeText(fixture.engineRoot, note, `# Einzbern ${NEXT_VERSION}\n\nChanged after generate.\n`);
+  amend(fixture.engineRoot);
+  const changedBytes = await refusedWith("RELEASE_COMMIT_CONTENT_MISMATCH");
+  assert.ok(changedBytes.some((violation) => violation.path === note && violation.expected.sha256 !== violation.actual.sha256));
+  git(fixture.engineRoot, ["reset", "-q", "--hard", release.engine]);
+
+  git(fixture.helperRoot, ["checkout", "-q", receipt.helper.head, "--", ...receipt.helper.removeFiles]);
+  amend(fixture.helperRoot);
+  const missedRemoval = await refusedWith("RELEASE_COMMIT_CONTENT_MISMATCH");
+  assert.ok(missedRemoval.some((violation) => violation.path === RETIRED_REFERENCE && violation.expected === "D" && violation.actual === "unchanged"));
+  git(fixture.helperRoot, ["reset", "-q", "--hard", release.helper]);
+  git(fixture.helperRoot, ["rm", "-q", "--", CREATE_SKILL_ARCHIVE]);
+  amend(fixture.helperRoot);
+  await refusedWith("RELEASE_HELPER_KEPT_CHANGED");
+  git(fixture.helperRoot, ["reset", "-q", "--hard", release.helper]);
+  await writeText(fixture.helperRoot, "notes.txt", "not generated\n");
+  amend(fixture.helperRoot);
+  const unknownFile = await refusedWith("RELEASE_COMMIT_CONTENT_MISMATCH");
+  assert.ok(unknownFile.some((violation) => violation.path === "notes.txt" && violation.expected === "unchanged" && violation.actual === "A"));
+  git(fixture.helperRoot, ["reset", "-q", "--hard", release.helper]);
+
+  await setGate(fixture.workspace, { occurredAt: "2026-10-08T03:00:00Z", name: "engine:fixture", gate: { command: [process.execPath, "-e", "process.exit(0)"], root: "einzbern", covers: ["**"], required: true, enabled: true, releaseOnly: true } });
+  const changedDeclaration = await refusedWith("RELEASE_RECEIPT_BASIS_CHANGED");
+  assert.equal(changedDeclaration.length, 1, JSON.stringify(changedDeclaration));
+  assert.equal(calls.some((call) => call.args[0]?.endsWith("pack-release.mjs")), false, "a refused finish packs nothing");
+});
+
+test("SUB-357 R41 B1: a red release gate stops finish before packing", async () => {
+  const fixture = await createReleaseFixture("finish-red", { red: true });
+  await generateFixture(fixture);
+  commitRelease(fixture, JSON.parse(await readFile(fixture.receiptPath, "utf8")));
+  const calls = [];
+  await assert.rejects(finishFixture(fixture, { calls }), (error) => error.reasonCode === "RELEASE_GATES_RED" && error.details.gates.run.gates.some((gate) => gate.exitCode === 3));
+  assert.equal(calls.some((call) => call.args[0]?.endsWith("pack-release.mjs")), false);
+});
+
+test("SUB-357 R41 B1: generate and finish need a receipt, and every release option stays with its commands", () => {
+  const common = ["--version", NEXT_VERSION, "--helper", join(base, "missing-helper")];
+  const gated = ["--workspace", join(base, "library"), "--project", base];
+  const receipt = ["--receipt", join(base, "cli-receipt.json")];
+  assertCliReason(["generate", ...common, ...gated], "RELEASE_ARGUMENT_MISSING");
+  assertCliReason(["finish", ...common, "--project", base, ...receipt], "RELEASE_ARGUMENT_MISSING");
+  assertCliReason(["finish", ...common, ...gated, ...receipt, "--keep-extra", CREATE_SKILL_ARCHIVE], "RELEASE_ARGUMENT_INVALID");
+  assertCliReason(["prepare", ...common, ...gated, "--keep-extra", CREATE_SKILL_ARCHIVE], "RELEASE_ARGUMENT_INVALID");
+  assertCliReason(["check", ...common, ...receipt], "RELEASE_ARGUMENT_INVALID");
+  assertCliReason(["generate", ...common, ...gated, ...receipt, "--execute", "tag"], "RELEASE_ARGUMENT_INVALID");
+  assertCliReason(["generate", ...common, ...gated, ...receipt, ...receipt], "RELEASE_ARGUMENT_DUPLICATE");
+  assertCliReason(["generate", "--version", "not-a-version", "--helper", join(base, "missing-helper"), ...gated, ...receipt, "--keep-extra", CREATE_SKILL_ARCHIVE, "--keep-extra", RETIRED_REFERENCE], "RELEASE_VERSION_INVALID");
 });

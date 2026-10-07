@@ -5,6 +5,27 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+Release preparation can now run in two phases around one local release commit per repository
+(TCRN-CROSS-SUB-357, the Owner's method of 2026-10-08). `scripts/release.mjs generate` checks
+both trees, reads the gate plan, the versions and the CHANGELOG cut before it changes a file, then
+writes the versions, the single core version replacement, the CHANGELOG section and
+`docs/releases/<version>.md`, builds, renders the READMEs, regenerates the CLI reference only when
+it is out of date and renders the helper tree. It records a receipt outside both repositories: every
+changed file with its status, size and SHA-256, the gate library and declaration digest, and the
+helper's extra files, tracked and untracked, with the tracked ones kept by `--keep-extra` and the
+rest to remove. It commits nothing and runs no gate. `scripts/release.mjs finish` refuses unless
+each repository is exactly one single-parent commit past the recorded HEAD with the recorded bytes,
+the engine commit passes the release commit check, the helper commit removes exactly the listed
+files and leaves the kept ones unchanged, and the gate library and declarations are unchanged. It
+then moves other versions' release artifacts to `dist/stale-release/` by the P8 rule, runs the
+release gates, packs and checks. Both phases report every failed condition together; `prepare`,
+`check`, `publish-plan` and `--execute` are unchanged.
+
+`pnpm privacy:staged` labels staged content with its repository path, as `verify:privacy` labels
+working-tree files, so the reviewed DS provenance line staged at its own inventory path is
+classified and no longer reported, while the same line at another or renamed path, or next to other
+private content, remains a finding (TCRN-CROSS-SUB-357 S1).
+
 The built-in Command Spell texts carry the Owner's revision of 2026-10-08 (TCRN-CROSS-INIT-053
 R40): batch processing v3 adds clause 7, that "once" counts per round, and silent reporting v1
 adds that no report falls between two rounds. The Chinese texts equal the Owner's archived wording;
@@ -20,8 +41,7 @@ and red gates refuse preparation. An approved future release updates the actual
 core version with the manifests; build, pack and P8 read that same version, while
 schema identifiers remain independent. Release commit checks admit only the
 single core version replacement and verified generated README and CLI documents.
-The current source version remains 1.2.1; actual release preparation and publishing
-retain their separate authorization stops.
+Actual release preparation and publishing retain their separate authorization stops.
 
 The work index is now a bounded `tcrn.workspace-index.v3` summary of the complete
 project and work collections, with counts and deterministic full-record digests

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -20,6 +21,10 @@ import {
   STRIP_TYPES_EXPERIMENTAL_WARNING,
   stripTypesWithScopedExperimentalWarning,
 } from "../scripts/lib/scoped-strip-types.mjs";
+
+// TCRN-CROSS-SUB-357 (INIT-053 R41 B2a): the root manifest is the one version source; the core
+// version, the packages and P8 all read it, so a release commit never edits this test.
+const MANIFEST_VERSION = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
 function runStripWarningFixture(emissions) {
   const originalEmitWarning = process.emitWarning;
@@ -45,7 +50,8 @@ function runStripWarningFixture(emissions) {
 
 test("development mode is explicitly offline and telemetry-free", () => {
   assert.equal(DEFAULT_MODE, "development");
-  assert.equal(FRAMEWORK_VERSION, "1.2.1");
+  assert.match(MANIFEST_VERSION, /^\d+\.\d+\.\d+$/u);
+  assert.equal(FRAMEWORK_VERSION, MANIFEST_VERSION);
   assert.deepEqual(admitDevelopment(), {
     admitted: true,
     mode: "development",

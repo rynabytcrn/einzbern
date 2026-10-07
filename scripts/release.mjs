@@ -3,6 +3,9 @@
 // TCRN-CROSS-STORY-488 R1, R2, R4 (TCRN-CROSS-SUB-355): keep the engine and helper on one
 // version, prepare their local release files, run every release gate, then rehearse publication.
 // Remote and tag actions only run when the caller names one with --execute.
+// TCRN-CROSS-SUB-357 rev4 (Owner 2026-10-08 item 4): `generate` and `finish` split preparation
+// around one local release commit per repository; `generate` writes the release files and a
+// receipt, `finish` checks the two commits against it, then runs the gates and packs.
 
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,11 +16,16 @@ import {
   buildPublishPlan,
   checkRelease,
   executeReleaseAction,
+  finishRelease,
+  generateRelease,
   prepareRelease,
 } from "./lib/release-lockstep.mjs";
 
 const ENGINE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const USAGE = "usage: node scripts/release.mjs check --version <version> --helper <working tree> | prepare --version <version> --helper <working tree> --workspace <library> --project <registered project> | publish-plan --version <version> --helper <working tree> --wiki-dir <Wiki working tree> [--execute tag|push|release|wiki]";
+const USAGE = "usage: node scripts/release.mjs check --version <version> --helper <working tree> | prepare --version <version> --helper <working tree> --workspace <library> --project <registered project> | generate --version <version> --helper <working tree> --workspace <library> --project <registered project> --receipt <new file outside both repositories> [--keep-extra <helper path>]... | finish --version <version> --helper <working tree> --workspace <library> --project <registered project> --receipt <generate receipt> | publish-plan --version <version> --helper <working tree> --wiki-dir <Wiki working tree> [--execute tag|push|release|wiki]";
+const COMMANDS = Object.freeze(["check", "prepare", "generate", "finish", "publish-plan"]);
+const GATED_COMMANDS = Object.freeze(["prepare", "generate", "finish"]);
+const RECEIPT_COMMANDS = Object.freeze(["generate", "finish"]);
 
 function fail(reasonCode, message, details = {}) {
   throw new ReleaseLockstepError(reasonCode, message, details);
@@ -26,19 +34,25 @@ function fail(reasonCode, message, details = {}) {
 function parseArguments(argv) {
   let command = null;
   const values = new Map();
-  const options = new Set(["--version", "--helper", "--workspace", "--project", "--wiki-dir", "--execute"]);
+  const keepExtra = [];
+  const options = new Set(["--version", "--helper", "--workspace", "--project", "--wiki-dir", "--execute", "--receipt", "--keep-extra"]);
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (!argument.startsWith("--") && command === null && ["check", "prepare", "publish-plan"].includes(argument)) {
+    if (!argument.startsWith("--") && command === null && COMMANDS.includes(argument)) {
       command = argument;
       continue;
     }
     if (!options.has(argument)) fail("RELEASE_ARGUMENT_UNKNOWN", `unknown argument ${argument}`, { argument });
     const value = argv[index + 1];
     if (value === undefined || value.startsWith("--")) fail("RELEASE_ARGUMENT_VALUE_MISSING", `${argument} needs a value`, { argument });
+    index += 1;
+    // --keep-extra may name several helper files; every other option is given once.
+    if (argument === "--keep-extra") {
+      keepExtra.push(value);
+      continue;
+    }
     if (values.has(argument)) fail("RELEASE_ARGUMENT_DUPLICATE", `${argument} is given twice`, { argument });
     values.set(argument, value);
-    index += 1;
   }
   const execute = values.get("--execute") ?? null;
   if (execute !== null && !RELEASE_ACTIONS.includes(execute)) {
@@ -56,12 +70,21 @@ function parseArguments(argv) {
     fail("RELEASE_ARGUMENT_MISSING", "--wiki-dir is required for publish-plan and Wiki execution", { flag: "--wiki-dir" });
   }
   for (const flag of ["--workspace", "--project"]) {
-    if (command === "prepare" && !values.has(flag)) {
-      fail("RELEASE_ARGUMENT_MISSING", `${flag} is required for prepare so release gates have an explicit library and project`, { flag });
+    if (GATED_COMMANDS.includes(command) && !values.has(flag)) {
+      fail("RELEASE_ARGUMENT_MISSING", `${flag} is required for ${command} so release gates have an explicit library and project`, { flag });
     }
-    if (command !== "prepare" && values.has(flag)) {
-      fail("RELEASE_ARGUMENT_INVALID", `${flag} is only used by prepare`, { flag });
+    if (!GATED_COMMANDS.includes(command) && values.has(flag)) {
+      fail("RELEASE_ARGUMENT_INVALID", `${flag} is only used by prepare, generate and finish`, { flag });
     }
+  }
+  if (RECEIPT_COMMANDS.includes(command) && !values.has("--receipt")) {
+    fail("RELEASE_ARGUMENT_MISSING", `--receipt is required for ${command}`, { flag: "--receipt" });
+  }
+  if (!RECEIPT_COMMANDS.includes(command) && values.has("--receipt")) {
+    fail("RELEASE_ARGUMENT_INVALID", "--receipt is only used by generate and finish", { flag: "--receipt" });
+  }
+  if (command !== "generate" && keepExtra.length > 0) {
+    fail("RELEASE_ARGUMENT_INVALID", "--keep-extra is only used by generate", { flag: "--keep-extra" });
   }
   return {
     command,
@@ -69,6 +92,8 @@ function parseArguments(argv) {
     helperRoot: resolve(values.get("--helper")),
     workspace: values.has("--workspace") ? resolve(values.get("--workspace")) : null,
     projectRoot: values.has("--project") ? resolve(values.get("--project")) : null,
+    receiptPath: values.has("--receipt") ? resolve(values.get("--receipt")) : null,
+    keepExtra,
     wikiDirectory: values.has("--wiki-dir") ? resolve(values.get("--wiki-dir")) : null,
     execute,
   };
@@ -81,6 +106,12 @@ async function main() {
   }
   if (options.command === "prepare") {
     return prepareRelease({ engineRoot: ENGINE_ROOT, helperRoot: options.helperRoot, version: options.version, workspace: options.workspace, projectRoot: options.projectRoot });
+  }
+  if (options.command === "generate") {
+    return generateRelease({ engineRoot: ENGINE_ROOT, helperRoot: options.helperRoot, version: options.version, workspace: options.workspace, projectRoot: options.projectRoot, receiptPath: options.receiptPath, keepExtra: options.keepExtra });
+  }
+  if (options.command === "finish") {
+    return finishRelease({ engineRoot: ENGINE_ROOT, helperRoot: options.helperRoot, version: options.version, workspace: options.workspace, projectRoot: options.projectRoot, receiptPath: options.receiptPath });
   }
   if (options.execute !== null) {
     return executeReleaseAction({

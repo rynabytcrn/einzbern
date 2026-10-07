@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import test from 'node:test';
+import Ajv2020 from 'ajv/dist/2020.js';
 import { runCli } from '../dist/build/packages/cli/src/index.js';
 import { canonicalJson, canonicalSha256, assertProtocolId } from '../dist/build/packages/protocol/src/index.js';
 import { materializeWorkspace, materializeWorkspaceFromGenesis, createProject, updateProject, deleteProject, createWork, setWorkspaceSetting, removeWorkspaceSetting, exportWorkspace } from '../dist/build/packages/core/src/workspace.js';
@@ -192,4 +193,15 @@ test('R4: large settings/custom value, actual event replay/export, full query ca
  const idx=new RecallIndex(docs,'test');try{const hits=idx.search('uncommonterm');assert.equal(hits.length,120);assert.equal(selectRecallHits(hits,{limit:120,tau:0,relativeFloor:0}).length,120);}finally{idx.close();}
  const prompt=Array.from({length:100},(_,i)=>'uniqueterm'+i).join(' ');assert.ok(recallQueryTokens(prompt).length>24);
  const work=new Map(Array.from({length:25},(_,i)=>['w'+i,{id:'w'+i,parentId:i===24?null:'w'+(i+1),title:'Title '+i,externalKey:'K'+i}]));assert.equal(workParentChain(work,work.get('w0')).length,24);
+});
+
+// R33: the schema describes the same closed extension slot as the knowledge reader.
+// Retain the complete parent definitions: compiling a detached fragment loses local refs.
+test('R4: knowledge metadata schema admits legal conflict links and rejects forged extension shapes',async()=>{
+ const schema=JSON.parse(await readFile(new URL('../packages/core/schema/knowledge-core-v1.schema.json',import.meta.url),'utf8'));
+ const ajv=new Ajv2020({strict:false,validateFormats:false});
+ const validate=ajv.compile({...schema,oneOf:undefined,$ref:'#/$defs/metadata/properties/extensions'});
+ const a='knowledge:'+'a'.repeat(24),b='knowledge:'+'b'.repeat(24);
+ for(const extensions of [{},{coexistsWith:[a,b]},{supersededBy:b},{coexistsWith:[a],supersededBy:b}])assert.equal(validate(extensions),true,JSON.stringify(validate.errors));
+ for(const extensions of [null,[],{unknownKey:a},{supersededBy:1},{supersededBy:'not-an-id'},{supersededBy:'knowledge:'+'ａ'.repeat(24)},{coexistsWith:a},{coexistsWith:[]},{coexistsWith:[a,a]},{coexistsWith:[null]}])assert.equal(validate(extensions),false,JSON.stringify(extensions));
 });

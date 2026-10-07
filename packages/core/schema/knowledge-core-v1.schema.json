@@ -420,7 +420,23 @@
         },
         "extensions": {
           "type": "object",
-          "maxProperties": 0
+          "additionalProperties": false,
+          "properties": {
+            "coexistsWith": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "pattern": "^knowledge:[a-f0-9]{24}$"
+              },
+              "description": "Canonical ascending knowledge IDs; runtime also verifies strict ordering."
+            },
+            "supersededBy": {
+              "type": "string",
+              "pattern": "^knowledge:[a-f0-9]{24}$"
+            }
+          }
         },
         "retirement": {
           "$ref": "#/$defs/retirement"

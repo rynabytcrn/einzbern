@@ -2,7 +2,7 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r32-init053-safe-complete-source",
+  "pack": "r33-source-continuation",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
@@ -367,7 +367,7 @@
     },
     {
       "path": "portal/locales.js",
-      "sha256": "675636945ae8c1312beb0ab79a324d5dfbdc1b767ab69c29d5421274a1c3fff6"
+      "sha256": "dfdebe1c8fbff02ae5939f1e6b27ec7cead10e71ff6331d8e444903be56a5d1e"
     },
     {
       "path": "portal/portal.mjs",
@@ -778,7 +778,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "Current Source implements final migration registry receipt and exact public PR23 provenance classification. Full 49-file Source verification remains held for the explicit fixture-location decision. Independent actual application/native probes and semantic review are archived under dispatch-runs/init-053/r32-source-raw. Probe failures and substantive review findings are retained together; no complete R1-R4 acceptance or Owner visual result is claimed. Published DS PR23 binding is unchanged.",
+  "evidenceDisposition": "R33 source continuation; complete49 cadence held without fixture-location authorization; actual independent application/schema/native probes recorded separately; this inventory never implies passing verification, final acceptance or Owner visual judgment. F01 migration-language-negative source repair is authorized; full migration dependent files remain held together in the original49-file Source cadence; F19 belongs to the later truthful final evidence producer. The complete actual candidate parent/publication/build/consumption disposition below determines whether its source may be consumed. Current consumed-authority identity is bound by the publication and snapshot fields. Fresh canonical integration and affected MAIN acceptance remain separate pending acts. No live Engine installation/migration or governed write was performed.",
   "dsCandidateDisposition": {
     "candidate": "788f02c76c1d1b2f8c03628253bd8456964b381e",
     "mergeCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
@@ -959,7 +959,7 @@
         "keyboard/focus/disabled/required"
       ],
       "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
-      "currentComputedStyleGeometryStatus": "must be verified by affected fresh MAIN browser acceptance on integrated final bytes; unchanged old preview is not current proof",
+      "currentComputedStyleGeometryStatus": "R33 Source observed six wide pages plus seven settings groups; narrow navigation is blocked by an actual pointer-interception failure; multi-select and target-switch observations failed. Full computed geometry/interaction is not accepted; fresh affected MAIN integrated acceptance remains separate",
       "ownerVisualStatus": "pending, not a machine claim"
     },
     {
@@ -1000,7 +1000,7 @@
         "keyboard/focus/disabled/required"
       ],
       "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
-      "currentComputedStyleGeometryStatus": "must be verified by affected fresh MAIN browser acceptance on integrated final bytes; unchanged old preview is not current proof",
+      "currentComputedStyleGeometryStatus": "R33 Source observed six wide pages plus seven settings groups; narrow navigation is blocked by an actual pointer-interception failure; multi-select and target-switch observations failed. Full computed geometry/interaction is not accepted; fresh affected MAIN integrated acceptance remains separate",
       "ownerVisualStatus": "pending, not a machine claim"
     },
     {
@@ -1041,7 +1041,7 @@
         "keyboard/focus/disabled/required"
       ],
       "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
-      "currentComputedStyleGeometryStatus": "must be verified by affected fresh MAIN browser acceptance on integrated final bytes; unchanged old preview is not current proof",
+      "currentComputedStyleGeometryStatus": "R33 Source observed six wide pages plus seven settings groups; narrow navigation is blocked by an actual pointer-interception failure; multi-select and target-switch observations failed. Full computed geometry/interaction is not accepted; fresh affected MAIN integrated acceptance remains separate",
       "ownerVisualStatus": "pending, not a machine claim"
     },
     {
@@ -1082,7 +1082,7 @@
         "keyboard/focus/disabled/required"
       ],
       "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
-      "currentComputedStyleGeometryStatus": "must be verified by affected fresh MAIN browser acceptance on integrated final bytes; unchanged old preview is not current proof",
+      "currentComputedStyleGeometryStatus": "R33 Source observed six wide pages plus seven settings groups; narrow navigation is blocked by an actual pointer-interception failure; multi-select and target-switch observations failed. Full computed geometry/interaction is not accepted; fresh affected MAIN integrated acceptance remains separate",
       "ownerVisualStatus": "pending, not a machine claim"
     },
     {
@@ -1123,7 +1123,7 @@
         "keyboard/focus/disabled/required"
       ],
       "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
-      "currentComputedStyleGeometryStatus": "must be verified by affected fresh MAIN browser acceptance on integrated final bytes; unchanged old preview is not current proof",
+      "currentComputedStyleGeometryStatus": "R33 Source observed six wide pages plus seven settings groups; narrow navigation is blocked by an actual pointer-interception failure; multi-select and target-switch observations failed. Full computed geometry/interaction is not accepted; fresh affected MAIN integrated acceptance remains separate",
       "ownerVisualStatus": "pending, not a machine claim"
     },
     {
@@ -1164,7 +1164,7 @@
         "keyboard/focus/disabled/required"
       ],
       "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
-      "currentComputedStyleGeometryStatus": "must be verified by affected fresh MAIN browser acceptance on integrated final bytes; unchanged old preview is not current proof",
+      "currentComputedStyleGeometryStatus": "R33 Source observed six wide pages plus seven settings groups; narrow navigation is blocked by an actual pointer-interception failure; multi-select and target-switch observations failed. Full computed geometry/interaction is not accepted; fresh affected MAIN integrated acceptance remains separate",
       "ownerVisualStatus": "pending, not a machine claim"
     },
     {
@@ -1205,7 +1205,7 @@
         "keyboard/focus/disabled/required"
       ],
       "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
-      "currentComputedStyleGeometryStatus": "must be verified by affected fresh MAIN browser acceptance on integrated final bytes; unchanged old preview is not current proof",
+      "currentComputedStyleGeometryStatus": "R33 Source observed six wide pages plus seven settings groups; narrow navigation is blocked by an actual pointer-interception failure; multi-select and target-switch observations failed. Full computed geometry/interaction is not accepted; fresh affected MAIN integrated acceptance remains separate",
       "ownerVisualStatus": "pending, not a machine claim"
     },
     {
@@ -1246,7 +1246,7 @@
         "keyboard/focus/disabled/required"
       ],
       "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
-      "currentComputedStyleGeometryStatus": "must be verified by affected fresh MAIN browser acceptance on integrated final bytes; unchanged old preview is not current proof",
+      "currentComputedStyleGeometryStatus": "R33 Source observed six wide pages plus seven settings groups; narrow navigation is blocked by an actual pointer-interception failure; multi-select and target-switch observations failed. Full computed geometry/interaction is not accepted; fresh affected MAIN integrated acceptance remains separate",
       "ownerVisualStatus": "pending, not a machine claim"
     },
     {
@@ -1287,7 +1287,7 @@
         "keyboard/focus/disabled/required"
       ],
       "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
-      "currentComputedStyleGeometryStatus": "must be verified by affected fresh MAIN browser acceptance on integrated final bytes; unchanged old preview is not current proof",
+      "currentComputedStyleGeometryStatus": "R33 Source observed six wide pages plus seven settings groups; narrow navigation is blocked by an actual pointer-interception failure; multi-select and target-switch observations failed. Full computed geometry/interaction is not accepted; fresh affected MAIN integrated acceptance remains separate",
       "ownerVisualStatus": "pending, not a machine claim"
     }
   ],
@@ -10095,16 +10095,8 @@
     }
   },
   "actualBounds": [
-    "the old preview on port4340 is an older worktree and retained without being claimed as current",
-    "machine DOM checks do not assert computed geometry or Owner visual acceptance",
+    "R33 isolated current Source browser observations are retained in the archive, with every failed case; no canonical integration claim",
+    "actual wide computed bounds exist; narrow and lifecycle coverage is incomplete; Owner visual remains separate",
     "no checkbox compatibility presentation is legalized as the requested dropdown; actual dropdown uses the published Select/Menu family"
-  ],
-  "r32Review": {
-    "evidence": "dispatch-runs/init-053/r32-source-raw",
-    "fullAcceptance": false,
-    "OwnerVisualAcceptance": false,
-    "application": "actual isolated browser six-wide-page geometry and four-target native inheritance; narrow navigation/lifecycle harness failures retained",
-    "copy": "415 keys/2075 locale values and1519 diagnostics reviewed with exact source/placement and22 concrete copy/behavior findings; generic fallback does not prove every diagnostic recovery",
-    "limits": "15 retained bounds individually assessed; metadata extensions schema maxProperties0 contradicts runtime closed two-key grammar. Full124/435/930 dispositions remain source evidence, not manufactured severe-failure proof. Runtime fragment probe failed missing local ref before cases."
-  }
+  ]
 }

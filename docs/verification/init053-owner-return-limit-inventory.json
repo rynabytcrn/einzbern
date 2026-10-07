@@ -2,7 +2,7 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r32-init053-safe-complete-source",
+  "pack": "r33-source-continuation",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
@@ -367,7 +367,7 @@
     },
     {
       "path": "portal/locales.js",
-      "sha256": "675636945ae8c1312beb0ab79a324d5dfbdc1b767ab69c29d5421274a1c3fff6"
+      "sha256": "dfdebe1c8fbff02ae5939f1e6b27ec7cead10e71ff6331d8e444903be56a5d1e"
     },
     {
       "path": "portal/portal.mjs",
@@ -778,7 +778,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "Current Source implements final migration registry receipt and exact public PR23 provenance classification. Full 49-file Source verification remains held for the explicit fixture-location decision. Independent actual application/native probes and semantic review are archived under dispatch-runs/init-053/r32-source-raw. Probe failures and substantive review findings are retained together; no complete R1-R4 acceptance or Owner visual result is claimed. Published DS PR23 binding is unchanged.",
+  "evidenceDisposition": "R33 source continuation; complete49 cadence held without fixture-location authorization; actual independent application/schema/native probes recorded separately; this inventory never implies passing verification, final acceptance or Owner visual judgment. F01 migration-language-negative source repair is authorized; full migration dependent files remain held together in the original49-file Source cadence; F19 belongs to the later truthful final evidence producer. The complete actual candidate parent/publication/build/consumption disposition below determines whether its source may be consumed. Current consumed-authority identity is bound by the publication and snapshot fields. Fresh canonical integration and affected MAIN acceptance remain separate pending acts. No live Engine installation/migration or governed write was performed.",
   "dsCandidateDisposition": {
     "candidate": "788f02c76c1d1b2f8c03628253bd8456964b381e",
     "mergeCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
@@ -1139,12 +1139,6 @@
       "pointer": "/$defs/metadata/properties/revision/maximum",
       "value": 9007199254740991,
       "basis": "safe integer representation"
-    },
-    {
-      "file": "packages/core/schema/knowledge-core-v1.schema.json",
-      "pointer": "/$defs/metadata/properties/extensions/maxProperties",
-      "value": 0,
-      "basis": "closed extensions object"
     },
     {
       "file": "packages/core/schema/workspace-v1.schema.json",
@@ -1554,12 +1548,12 @@
       "file": "packages/core/schema/knowledge-core-v1.schema.json",
       "pointer": "/$defs/metadata/properties/extensions/maxProperties",
       "oldValue": 0,
-      "currentValue": 0,
-      "disposition": "necessary representation/closed protocol retained",
+      "currentValue": null,
+      "disposition": "upper admission deleted; fixed identity/format grammar remains where declared",
       "fieldPattern": null,
       "fieldFormat": null,
       "enum": null,
-      "basis": "closed extensions object",
+      "basis": "no arbitrary size/count ceiling; any fixed hash/version/date/closed-value grammar remains its protocol representation; runtime allocation and full read/replay/export remain the concrete capacity",
       "consumption": "schema document and the same wire/core admission, replay and export family above; runtime validation and schema values audited together"
     },
     {
@@ -18094,7 +18088,7 @@
       "oldInitializer": "Buffer.isBuffer(entry.content) ? entry.content : Buffer.from(entry.content, \"utf8\")",
       "oldLine": 242,
       "currentInitializer": "Buffer.isBuffer(entry.content) ? entry.content : Buffer.from(entry.content, \"utf8\")",
-      "currentLine": 242,
+      "currentLine": 246,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
@@ -18114,52 +18108,52 @@
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 242,
+          "line": 246,
           "text": "const bytes = Buffer.isBuffer(entry.content) ? entry.content : Buffer.from(entry.content, \"utf8\");"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 243,
+          "line": 247,
           "text": "const files = readUstar(bytes);"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 247,
+          "line": 251,
           "text": "while (offset + TAR_BLOCK_BYTES <= bytes.length && !bytes.subarray(offset, offset + TAR_BLOCK_BYTES).every((byte) => byte === 0)) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 248,
+          "line": 252,
           "text": "const header = bytes.subarray(offset, offset + TAR_BLOCK_BYTES);"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 256,
+          "line": 260,
           "text": "if (file === undefined || file.path !== joinedPath || file.bytes.length !== size) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 262,
+          "line": 266,
           "text": "if (paddedEnd > bytes.length) throw new Error(\"PRIVACY_ARCHIVE_LAYOUT_INVALID\");"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 264,
+          "line": 268,
           "text": "expanded.push({ label: `${entry.label}#body:${joinedPath}`, kind: entry.kind, sourcePaths: [joinedPath], content: decodePrivacyScanBytes(file.bytes) });"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 265,
+          "line": 269,
           "text": "const padding = bytes.subarray(dataEnd, paddedEnd);"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 270,
+          "line": 274,
           "text": "const trailer = bytes.subarray(offset);"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 777,
+          "line": 781,
           "text": "// `git cat-file --batch` frames each object as \"<oid> SP <type> SP <size> LF <bytes> LF\"."
         }
       ],
@@ -18174,7 +18168,7 @@
       "oldInitializer": "[]",
       "oldLine": 848,
       "currentInitializer": "[]",
-      "currentLine": 848,
+      "currentLine": 852,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
@@ -18184,72 +18178,72 @@
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 117,
+          "line": 121,
           "text": "// tracked names.ts object and its compiled output before adding these entries."
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 124,
+          "line": 128,
           "text": "[...CLASSIFIED_P8_RELEASE_ENTRY_SOURCES.entries()].map(([label, sourcePath]) => ["
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 200,
+          "line": 204,
           "text": "// other release entries need the exact P8 package rule above."
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 711,
+          "line": 715,
           "text": "export function scanPrivacyEntries(entries, { owner, privateTokens = [], repositories = [], onProgress = undefined } = {}) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 715,
+          "line": 719,
           "text": "if (!Array.isArray(entries)) throw new Error(\"PRIVACY_ENTRY_INVALID\");"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 721,
+          "line": 725,
           "text": "for (const entry of entries) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 740,
+          "line": 744,
           "text": "for (const originalEntry of entries) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 848,
+          "line": 852,
           "text": "const entries = [];"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 867,
+          "line": 871,
           "text": "entries.push({ name, object: content.subarray(objectStart, objectEnd).toString(\"hex\"), type });"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 870,
+          "line": 874,
           "text": "return entries;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 918,
+          "line": 922,
           "text": "const stack = [{ tree: rootTree, prefix: \"\", entries: trees.get(rootTree), nextIndex: 0 }];"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 921,
+          "line": 925,
           "text": "if (frame.nextIndex >= frame.entries.length) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 925,
+          "line": 929,
           "text": "const entry = frame.entries[frame.nextIndex];"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 931,
+          "line": 935,
           "text": "stack.push({ tree: entry.object, prefix: path, entries: children, nextIndex: 0 });"
         }
       ],
@@ -18264,42 +18258,42 @@
       "oldInitializer": "0",
       "oldLine": 738,
       "currentInitializer": "0",
-      "currentLine": 738,
+      "currentLine": 742,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 738,
+          "line": 742,
           "text": "let entriesScanned = 0;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 762,
+          "line": 766,
           "text": "entriesScanned += 1;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 763,
+          "line": 767,
           "text": "if (typeof onProgress === \"function\" && entriesScanned % 5_000 === 0) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 764,
+          "line": 768,
           "text": "onProgress({ entriesScanned, totalEntries });"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 765,
+          "line": 769,
           "text": "lastProgressCount = entriesScanned;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 769,
+          "line": 773,
           "text": "if (typeof onProgress === \"function\" && lastProgressCount !== entriesScanned) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 770,
+          "line": 774,
           "text": "onProgress({ entriesScanned, totalEntries });"
         }
       ],
@@ -18314,22 +18308,22 @@
       "oldInitializer": "content.subarray(modeEnd + 1, nameEnd)",
       "oldLine": 863,
       "currentInitializer": "content.subarray(modeEnd + 1, nameEnd)",
-      "currentLine": 863,
+      "currentLine": 867,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 863,
+          "line": 867,
           "text": "const nameBytes = content.subarray(modeEnd + 1, nameEnd);"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 864,
+          "line": 868,
           "text": "if (nameBytes.length === 0 || nameBytes.includes(0x2f)) throw new Error(\"PRIVACY_TREE_RECORD_INVALID\");"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 865,
+          "line": 869,
           "text": "const name = decodeGitMetadataBytes(nameBytes, \"PRIVACY_TREE_UTF8_INVALID\");"
         }
       ],
@@ -18344,17 +18338,17 @@
       "oldInitializer": "objectIdLength / 2",
       "oldLine": 847,
       "currentInitializer": "objectIdLength / 2",
-      "currentLine": 847,
+      "currentLine": 851,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 847,
+          "line": 851,
           "text": "const objectIdBytes = objectIdLength / 2;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 856,
+          "line": 860,
           "text": "const objectEnd = objectStart + objectIdBytes;"
         }
       ],
@@ -18369,57 +18363,57 @@
       "oldInitializer": "commits[0]?.length",
       "oldLine": 893,
       "currentInitializer": "commits[0]?.length",
-      "currentLine": 893,
+      "currentLine": 897,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 843,
+          "line": 847,
           "text": "export function parseGitTreeObject(content, objectIdLength) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 844,
+          "line": 848,
           "text": "if (!Buffer.isBuffer(content) || ![40, 64].includes(objectIdLength)) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 847,
+          "line": 851,
           "text": "const objectIdBytes = objectIdLength / 2;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 873,
+          "line": 877,
           "text": "function parseCommitTreeId(content, objectIdLength) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 879,
+          "line": 883,
           "text": "if (!match || match[1].length !== objectIdLength) throw new Error(\"PRIVACY_GIT_OBJECT_TYPE\");"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 893,
+          "line": 897,
           "text": "const objectIdLength = commits[0]?.length;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 894,
+          "line": 898,
           "text": "if (commits.some((commit) => typeof commit !== \"string\" || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(commit) || commit.length !== objectIdLength)) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 902,
+          "line": 906,
           "text": "if (object.length !== objectIdLength || !Buffer.isBuffer(record.content)) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 906,
+          "line": 910,
           "text": "commitTrees.set(object, parseCommitTreeId(record.content, objectIdLength));"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 908,
+          "line": 912,
           "text": "trees.set(object, parseGitTreeObject(record.content, objectIdLength));"
         }
       ],
@@ -18434,27 +18428,27 @@
       "oldInitializer": "[]",
       "oldLine": 626,
       "currentInitializer": "[]",
-      "currentLine": 626,
+      "currentLine": 630,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 626,
+          "line": 630,
           "text": "const protectedPatternLines = [];"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 629,
+          "line": 633,
           "text": "const marker = `__PUBLIC_PATTERN_LINE_${protectedPatternLines.length}__`;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 630,
+          "line": 634,
           "text": "protectedPatternLines.push(line);"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 676,
+          "line": 680,
           "text": ".replace(/__PUBLIC_PATTERN_LINE_(\\d+)__/gu, (_, index) => protectedPatternLines[Number(index)]);"
         }
       ],
@@ -18469,32 +18463,32 @@
       "oldInitializer": "0",
       "oldLine": 720,
       "currentInitializer": "0",
-      "currentLine": 720,
+      "currentLine": 724,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 720,
+          "line": 724,
           "text": "let totalEntries = 0;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 732,
+          "line": 736,
           "text": "totalEntries += expanded.length;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 735,
+          "line": 739,
           "text": "totalEntries += 1;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 764,
+          "line": 768,
           "text": "onProgress({ entriesScanned, totalEntries });"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 770,
+          "line": 774,
           "text": "onProgress({ entriesScanned, totalEntries });"
         }
       ],
@@ -19781,22 +19775,22 @@
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 247,
+          "line": 251,
           "text": "while (offset + TAR_BLOCK_BYTES <= bytes.length && !bytes.subarray(offset, offset + TAR_BLOCK_BYTES).every((byte) => byte === 0)) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 248,
+          "line": 252,
           "text": "const header = bytes.subarray(offset, offset + TAR_BLOCK_BYTES);"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 259,
+          "line": 263,
           "text": "const dataStart = offset + TAR_BLOCK_BYTES;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 261,
+          "line": 265,
           "text": "const paddedEnd = dataStart + Math.ceil(size / TAR_BLOCK_BYTES) * TAR_BLOCK_BYTES;"
         },
         {
@@ -26738,37 +26732,37 @@
     },
     {
       "file": "scripts/lib/privacy.mjs",
-      "line": 266,
+      "line": 270,
       "source": "if (padding.length > 0) expanded.push({ label: `${entry.label}#padding:${joinedPath}`, kind: entry.kind, content: padding.toString(\"utf8\") });"
     },
     {
       "file": "scripts/lib/privacy.mjs",
-      "line": 271,
+      "line": 275,
       "source": "if (trailer.length > 0) expanded.push({ label: `${entry.label}#trailer`, kind: entry.kind, content: trailer.toString(\"utf8\") });"
     },
     {
       "file": "scripts/lib/privacy.mjs",
-      "line": 464,
+      "line": 468,
       "source": "if (digits.length > 0 && /^[0-9a-f]+$/iu.test(digits) && (!brace || close >= 0)) {"
     },
     {
       "file": "scripts/lib/privacy.mjs",
-      "line": 664,
+      "line": 668,
       "source": "return parts.length > 0 ? parts.join(separator) : _;"
     },
     {
       "file": "scripts/lib/privacy.mjs",
-      "line": 672,
+      "line": 676,
       "source": "return parts.length > 0 ? parts.join(separator) : _;"
     },
     {
       "file": "scripts/lib/privacy.mjs",
-      "line": 833,
+      "line": 837,
       "source": ".slice(0, -1)"
     },
     {
       "file": "scripts/lib/privacy.mjs",
-      "line": 919,
+      "line": 923,
       "source": "while (stack.length > 0) {"
     },
     {
@@ -28076,13 +28070,5 @@
       "max": null,
       "kind": "user budget or cadence"
     }
-  ],
-  "r32Review": {
-    "evidence": "dispatch-runs/init-053/r32-source-raw",
-    "fullAcceptance": false,
-    "OwnerVisualAcceptance": false,
-    "application": "actual isolated browser six-wide-page geometry and four-target native inheritance; narrow navigation/lifecycle harness failures retained",
-    "copy": "415 keys/2075 locale values and1519 diagnostics reviewed with exact source/placement and22 concrete copy/behavior findings; generic fallback does not prove every diagnostic recovery",
-    "limits": "15 retained bounds individually assessed; metadata extensions schema maxProperties0 contradicts runtime closed two-key grammar. Full124/435/930 dispositions remain source evidence, not manufactured severe-failure proof. Runtime fragment probe failed missing local ref before cases."
-  }
+  ]
 }

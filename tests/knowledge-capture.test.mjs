@@ -219,7 +219,7 @@ test("STORY-365 the extension slot stays a closed roster of two knowledge-id key
     await asOlderEngineCrest(fixture.workspace);
     const path = join(fixture.workspace, DIRECTORY.knowledge, "metadata", `${first.id}.json`);
     const stored = JSON.parse(await readFile(path, "utf8"));
-    for (const forged of [{ unknownKey: "x" }, { supersededBy: "not-an-id" }, { coexistsWith: [] }, { coexistsWith: ["knowledge:000000000000000000000002", "knowledge:000000000000000000000001"] }]) {
+    for (const forged of [{ unknownKey: "x" }, { supersededBy: "not-an-id" }, { supersededBy: 1 }, { supersededBy: "knowledge:" + "ａ".repeat(24) }, { coexistsWith: "knowledge:" + "a".repeat(24) }, { coexistsWith: ["knowledge:" + "a".repeat(24), "knowledge:" + "a".repeat(24)] }, { coexistsWith: [] }, { coexistsWith: ["knowledge:000000000000000000000002", "knowledge:000000000000000000000001"] }]) {
       await write(path, canonicalJson({ ...stored, extensions: forged }));
       const refusal = await listKnowledgeMetadata(fixture.workspace, { at: instant(3), allowTrailing: true })
         .then(() => null, (error) => error);

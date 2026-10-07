@@ -2,7 +2,7 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r32-init053-safe-complete-source",
+  "pack": "r33-source-continuation",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
@@ -367,7 +367,7 @@
     },
     {
       "path": "portal/locales.js",
-      "sha256": "675636945ae8c1312beb0ab79a324d5dfbdc1b767ab69c29d5421274a1c3fff6"
+      "sha256": "dfdebe1c8fbff02ae5939f1e6b27ec7cead10e71ff6331d8e444903be56a5d1e"
     },
     {
       "path": "portal/portal.mjs",
@@ -778,7 +778,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "Current Source implements final migration registry receipt and exact public PR23 provenance classification. Full 49-file Source verification remains held for the explicit fixture-location decision. Independent actual application/native probes and semantic review are archived under dispatch-runs/init-053/r32-source-raw. Probe failures and substantive review findings are retained together; no complete R1-R4 acceptance or Owner visual result is claimed. Published DS PR23 binding is unchanged.",
+  "evidenceDisposition": "R33 source continuation; complete49 cadence held without fixture-location authorization; actual independent application/schema/native probes recorded separately; this inventory never implies passing verification, final acceptance or Owner visual judgment. F01 migration-language-negative source repair is authorized; full migration dependent files remain held together in the original49-file Source cadence; F19 belongs to the later truthful final evidence producer. The complete actual candidate parent/publication/build/consumption disposition below determines whether its source may be consumed. Current consumed-authority identity is bound by the publication and snapshot fields. Fresh canonical integration and affected MAIN acceptance remain separate pending acts. No live Engine installation/migration or governed write was performed.",
   "dsCandidateDisposition": {
     "candidate": "788f02c76c1d1b2f8c03628253bd8456964b381e",
     "mergeCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
@@ -2110,7 +2110,7 @@
         {
           "file": "portal/locales.js",
           "line": 189,
-          "text": "\"concept.setting.engine.requiredVersion\": \"The engine version this workspace expects. It records an expectation for readers; it does not install or upgrade anything.\","
+          "text": "\"concept.setting.engine.requiredVersion\": \"Minimum engine version needed to open this library. Older engines refuse to open it. This setting does not install or upgrade the engine; unset means no extra version requirement.\","
         },
         {
           "file": "portal/locales.js",
@@ -2125,7 +2125,7 @@
         {
           "file": "portal/locales.js",
           "line": 606,
-          "text": "\"concept.setting.engine.requiredVersion\": \"本工作区期望的引擎版本。它为读者记录一个期望，不安装也不升级任何东西。\","
+          "text": "\"concept.setting.engine.requiredVersion\": \"打开此库所需的最低引擎版本。旧引擎会拒绝打开；此设置不会安装或升级引擎。未设置时不增加版本要求。\","
         },
         {
           "file": "portal/locales.js",
@@ -2140,7 +2140,7 @@
         {
           "file": "portal/locales.js",
           "line": 1023,
-          "text": "\"concept.setting.engine.requiredVersion\": \"このワークスペースが想定するエンジンのバージョン。読み手のために期待を記録するだけで、導入も更新も行いません。\","
+          "text": "\"concept.setting.engine.requiredVersion\": \"このライブラリを開くために必要な最小エンジンバージョンです。古いエンジンは開くことを拒否します。導入や更新は行いません。未設定なら追加のバージョン要件はありません。\","
         },
         {
           "file": "portal/locales.js",
@@ -2155,7 +2155,7 @@
         {
           "file": "portal/locales.js",
           "line": 1440,
-          "text": "\"concept.setting.engine.requiredVersion\": \"이 워크스페이스가 기대하는 엔진 버전. 읽는 사람을 위해 기대를 기록할 뿐 설치하거나 업그레이드하지 않습니다.\","
+          "text": "\"concept.setting.engine.requiredVersion\": \"이 라이브러리를 여는 데 필요한 최소 엔진 버전입니다. 이전 엔진은 열기를 거부합니다. 엔진을 설치하거나 업데이트하지 않으며 미설정 시 추가 버전 요구가 없습니다.\","
         },
         {
           "file": "portal/locales.js",
@@ -2170,7 +2170,7 @@
         {
           "file": "portal/locales.js",
           "line": 1857,
-          "text": "\"concept.setting.engine.requiredVersion\": \"La version du moteur que cet espace attend. Elle consigne une attente pour le lecteur ; elle n’installe ni ne met à jour rien.\","
+          "text": "\"concept.setting.engine.requiredVersion\": \"Version minimale du moteur pour ouvrir cette bibliothèque. Les versions antérieures refusent de l’ouvrir. Ce réglage n’installe ni ne met à jour le moteur ; non défini, il n’ajoute aucune exigence de version.\","
         },
         {
           "file": "portal/locales.js",
@@ -3941,7 +3941,7 @@
         {
           "file": "portal/locales.js",
           "line": 319,
-          "text": "\"setting.quota.fiveHourParallelOffPercent.description\": \"At this usage percentage, run one subagent at a time.\","
+          "text": "\"setting.quota.fiveHourParallelOffPercent.description\": \"Declares the five-hour usage percentage at which the host should run one subagent at a time. The host must read usage and apply this policy; the engine does neither automatically.\","
         },
         {
           "file": "portal/locales.js",
@@ -3951,7 +3951,7 @@
         {
           "file": "portal/locales.js",
           "line": 736,
-          "text": "\"setting.quota.fiveHourParallelOffPercent.description\": \"达到此使用比例后，每次只运行一个子代理。\","
+          "text": "\"setting.quota.fiveHourParallelOffPercent.description\": \"声明五小时用量达到多少百分比时，宿主应每次只运行一个子代理。宿主须读取用量并执行此策略；引擎不会自动执行。\","
         },
         {
           "file": "portal/locales.js",
@@ -3961,7 +3961,7 @@
         {
           "file": "portal/locales.js",
           "line": 1153,
-          "text": "\"setting.quota.fiveHourParallelOffPercent.description\": \"この使用率に達すると、サブエージェントを一度に一つだけ実行します。\","
+          "text": "\"setting.quota.fiveHourParallelOffPercent.description\": \"5 時間使用率が何パーセントに達したらホストがサブエージェントを一つずつ実行するかを定めます。使用率の取得と方針の適用はホストが行います。エンジンは自動では行いません。\","
         },
         {
           "file": "portal/locales.js",
@@ -3971,7 +3971,7 @@
         {
           "file": "portal/locales.js",
           "line": 1570,
-          "text": "\"setting.quota.fiveHourParallelOffPercent.description\": \"이 사용률에 도달하면 서브에이전트를 한 번에 하나씩 실행합니다.\","
+          "text": "\"setting.quota.fiveHourParallelOffPercent.description\": \"5시간 사용률이 몇 퍼센트에 도달하면 호스트가 서브에이전트를 하나씩 실행할지 정합니다. 사용량 조회와 정책 적용은 호스트가 해야 하며 엔진은 자동으로 수행하지 않습니다.\","
         },
         {
           "file": "portal/locales.js",
@@ -3981,7 +3981,7 @@
         {
           "file": "portal/locales.js",
           "line": 1987,
-          "text": "\"setting.quota.fiveHourParallelOffPercent.description\": \"À ce pourcentage d’utilisation, un seul sous-agent s’exécute à la fois.\","
+          "text": "\"setting.quota.fiveHourParallelOffPercent.description\": \"Déclare le pourcentage d’utilisation de cinq heures auquel l’hôte doit exécuter un seul sous-agent à la fois. L’hôte doit lire l’utilisation et appliquer cette politique ; le moteur ne le fait pas automatiquement.\","
         }
       ],
       "verification": "init053-owner-return stable target/inheritance/replay/export/registered output and scoped article checks; portal target epoch/header stale-write refusal; settings/machine policy tests",
@@ -4043,7 +4043,7 @@
         {
           "file": "portal/locales.js",
           "line": 321,
-          "text": "\"setting.quota.fiveHourWaitPercent.description\": \"At this usage percentage, wait until the five-hour window resets.\","
+          "text": "\"setting.quota.fiveHourWaitPercent.description\": \"Declares the five-hour usage percentage at which the host should wait for the five-hour window to reset. The host must read usage and apply this policy; the engine does neither automatically.\","
         },
         {
           "file": "portal/locales.js",
@@ -4053,7 +4053,7 @@
         {
           "file": "portal/locales.js",
           "line": 738,
-          "text": "\"setting.quota.fiveHourWaitPercent.description\": \"达到此使用比例后，等待五小时窗口重置。\","
+          "text": "\"setting.quota.fiveHourWaitPercent.description\": \"声明五小时用量达到多少百分比时，宿主应等待五小时窗口重置。宿主须读取用量并执行此策略；引擎不会自动执行。\","
         },
         {
           "file": "portal/locales.js",
@@ -4063,7 +4063,7 @@
         {
           "file": "portal/locales.js",
           "line": 1155,
-          "text": "\"setting.quota.fiveHourWaitPercent.description\": \"この使用率に達すると、5 時間枠がリセットされるまで待機します。\","
+          "text": "\"setting.quota.fiveHourWaitPercent.description\": \"5 時間使用率が何パーセントに達したらホストが5 時間枠のリセットを待つかを定めます。使用率の取得と方針の適用はホストが行います。エンジンは自動では行いません。\","
         },
         {
           "file": "portal/locales.js",
@@ -4073,7 +4073,7 @@
         {
           "file": "portal/locales.js",
           "line": 1572,
-          "text": "\"setting.quota.fiveHourWaitPercent.description\": \"이 사용률에 도달하면 5시간 창이 초기화될 때까지 기다립니다.\","
+          "text": "\"setting.quota.fiveHourWaitPercent.description\": \"5시간 사용률이 몇 퍼센트에 도달하면 호스트가 5시간 창 초기화를 기다릴지 정합니다. 사용량 조회와 정책 적용은 호스트가 해야 하며 엔진은 자동으로 수행하지 않습니다.\","
         },
         {
           "file": "portal/locales.js",
@@ -4083,7 +4083,7 @@
         {
           "file": "portal/locales.js",
           "line": 1989,
-          "text": "\"setting.quota.fiveHourWaitPercent.description\": \"À ce pourcentage, attendre le renouvellement de la fenêtre de cinq heures.\","
+          "text": "\"setting.quota.fiveHourWaitPercent.description\": \"Déclare le pourcentage d’utilisation de cinq heures auquel l’hôte doit attendre le renouvellement de la fenêtre de cinq heures. L’hôte doit lire l’utilisation et appliquer cette politique ; le moteur ne le fait pas automatiquement.\","
         }
       ],
       "verification": "init053-owner-return stable target/inheritance/replay/export/registered output and scoped article checks; portal target epoch/header stale-write refusal; settings/machine policy tests",
@@ -4145,7 +4145,7 @@
         {
           "file": "portal/locales.js",
           "line": 323,
-          "text": "\"setting.quota.weeklyParallelOffPercent.description\": \"At this weekly usage percentage, run one subagent at a time.\","
+          "text": "\"setting.quota.weeklyParallelOffPercent.description\": \"Declares the weekly usage percentage at which the host should run one subagent at a time. The host must read usage and apply this policy; the engine does neither automatically.\","
         },
         {
           "file": "portal/locales.js",
@@ -4155,7 +4155,7 @@
         {
           "file": "portal/locales.js",
           "line": 740,
-          "text": "\"setting.quota.weeklyParallelOffPercent.description\": \"达到此每周使用比例后，每次只运行一个子代理。\","
+          "text": "\"setting.quota.weeklyParallelOffPercent.description\": \"声明每周用量达到多少百分比时，宿主应每次只运行一个子代理。宿主须读取用量并执行此策略；引擎不会自动执行。\","
         },
         {
           "file": "portal/locales.js",
@@ -4165,7 +4165,7 @@
         {
           "file": "portal/locales.js",
           "line": 1157,
-          "text": "\"setting.quota.weeklyParallelOffPercent.description\": \"週間使用率がこの値に達すると、サブエージェントを一度に一つだけ実行します。\","
+          "text": "\"setting.quota.weeklyParallelOffPercent.description\": \"週間使用率が何パーセントに達したらホストがサブエージェントを一つずつ実行するかを定めます。使用率の取得と方針の適用はホストが行います。エンジンは自動では行いません。\","
         },
         {
           "file": "portal/locales.js",
@@ -4175,7 +4175,7 @@
         {
           "file": "portal/locales.js",
           "line": 1574,
-          "text": "\"setting.quota.weeklyParallelOffPercent.description\": \"주간 사용률이 이 값에 도달하면 서브에이전트를 한 번에 하나씩 실행합니다.\","
+          "text": "\"setting.quota.weeklyParallelOffPercent.description\": \"주간 사용률이 몇 퍼센트에 도달하면 호스트가 서브에이전트를 하나씩 실행할지 정합니다. 사용량 조회와 정책 적용은 호스트가 해야 하며 엔진은 자동으로 수행하지 않습니다.\","
         },
         {
           "file": "portal/locales.js",
@@ -4185,7 +4185,7 @@
         {
           "file": "portal/locales.js",
           "line": 1991,
-          "text": "\"setting.quota.weeklyParallelOffPercent.description\": \"À ce pourcentage hebdomadaire, un seul sous-agent s’exécute à la fois.\","
+          "text": "\"setting.quota.weeklyParallelOffPercent.description\": \"Déclare le pourcentage d’utilisation hebdomadaire auquel l’hôte doit exécuter un seul sous-agent à la fois. L’hôte doit lire l’utilisation et appliquer cette politique ; le moteur ne le fait pas automatiquement.\","
         }
       ],
       "verification": "init053-owner-return stable target/inheritance/replay/export/registered output and scoped article checks; portal target epoch/header stale-write refusal; settings/machine policy tests",
@@ -4247,7 +4247,7 @@
         {
           "file": "portal/locales.js",
           "line": 325,
-          "text": "\"setting.quota.weeklyWaitPercent.description\": \"At this weekly usage percentage, wait until the weekly window resets. Unset means no weekly wait.\","
+          "text": "\"setting.quota.weeklyWaitPercent.description\": \"Declares the weekly usage percentage at which the host should wait for the weekly window to reset. The host must read usage and apply this policy; the engine does neither automatically. Unset means no weekly wait policy.\","
         },
         {
           "file": "portal/locales.js",
@@ -4257,7 +4257,7 @@
         {
           "file": "portal/locales.js",
           "line": 742,
-          "text": "\"setting.quota.weeklyWaitPercent.description\": \"达到此每周使用比例后，等待每周窗口重置；未设置时不等待。\","
+          "text": "\"setting.quota.weeklyWaitPercent.description\": \"声明每周用量达到多少百分比时，宿主应等待每周窗口重置。宿主须读取用量并执行此策略；引擎不会自动执行。未设置表示没有每周等待策略。\","
         },
         {
           "file": "portal/locales.js",
@@ -4267,7 +4267,7 @@
         {
           "file": "portal/locales.js",
           "line": 1159,
-          "text": "\"setting.quota.weeklyWaitPercent.description\": \"週間使用率がこの値に達すると、週次枠のリセットまで待機します。未設定なら待機しません。\","
+          "text": "\"setting.quota.weeklyWaitPercent.description\": \"週間使用率が何パーセントに達したらホストが週間枠のリセットを待つかを定めます。使用率の取得と方針の適用はホストが行います。エンジンは自動では行いません。未設定なら週次の待機方針はありません。\","
         },
         {
           "file": "portal/locales.js",
@@ -4277,7 +4277,7 @@
         {
           "file": "portal/locales.js",
           "line": 1576,
-          "text": "\"setting.quota.weeklyWaitPercent.description\": \"주간 사용률이 이 값에 도달하면 주간 창이 초기화될 때까지 기다립니다. 비어 있으면 기다리지 않습니다.\","
+          "text": "\"setting.quota.weeklyWaitPercent.description\": \"주간 사용률이 몇 퍼센트에 도달하면 호스트가 주간 창 초기화를 기다릴지 정합니다. 사용량 조회와 정책 적용은 호스트가 해야 하며 엔진은 자동으로 수행하지 않습니다. 미설정 시 주간 대기 정책이 없습니다.\","
         },
         {
           "file": "portal/locales.js",
@@ -4287,7 +4287,7 @@
         {
           "file": "portal/locales.js",
           "line": 1993,
-          "text": "\"setting.quota.weeklyWaitPercent.description\": \"À ce pourcentage, attendre le renouvellement de la fenêtre hebdomadaire. Non défini : aucune attente.\","
+          "text": "\"setting.quota.weeklyWaitPercent.description\": \"Déclare le pourcentage d’utilisation hebdomadaire auquel l’hôte doit attendre le renouvellement de la fenêtre hebdomadaire. L’hôte doit lire l’utilisation et appliquer cette politique ; le moteur ne le fait pas automatiquement. Non défini : aucune politique d’attente hebdomadaire.\","
         }
       ],
       "verification": "init053-owner-return stable target/inheritance/replay/export/registered output and scoped article checks; portal target epoch/header stale-write refusal; settings/machine policy tests",
@@ -4551,7 +4551,7 @@
         {
           "file": "portal/locales.js",
           "line": 288,
-          "text": "\"concept.setting.retrieval.scopeExcerptBytes\": \"Sets the default amount of advisory scope shown by work-list search while preserving an explicit per-call override.\","
+          "text": "\"concept.setting.retrieval.scopeExcerptBytes\": \"Amount of each work description shown in search results, in bytes. Increase it for longer excerpts. Each search can override this default; the stored description stays complete.\","
         },
         {
           "file": "portal/locales.js",
@@ -4566,7 +4566,7 @@
         {
           "file": "portal/locales.js",
           "line": 705,
-          "text": "\"concept.setting.retrieval.scopeExcerptBytes\": \"设定 work-list 搜索默认显示的 advisory scope 数量，同时保留调用级显式覆盖。\","
+          "text": "\"concept.setting.retrieval.scopeExcerptBytes\": \"搜索结果中每条工作说明的摘录长度，单位为字节。调大可显示更多内容；每次搜索可覆盖此默认值，保存的完整说明不变。\","
         },
         {
           "file": "portal/locales.js",
@@ -4581,7 +4581,7 @@
         {
           "file": "portal/locales.js",
           "line": 1122,
-          "text": "\"concept.setting.retrieval.scopeExcerptBytes\": \"work-list 検索が表示する advisory scope の既定量を設定し、呼び出し単位の明示的な上書きを保ちます。\","
+          "text": "\"concept.setting.retrieval.scopeExcerptBytes\": \"検索結果に表示する各作業説明の抜粋量をバイトで指定します。増やすと長く表示されます。検索ごとに変更でき、保存済みの全文は変わりません。\","
         },
         {
           "file": "portal/locales.js",
@@ -4596,7 +4596,7 @@
         {
           "file": "portal/locales.js",
           "line": 1539,
-          "text": "\"concept.setting.retrieval.scopeExcerptBytes\": \"work-list 검색에 표시되는 advisory scope의 기본량을 정하고 호출별 명시적 재정의를 보존합니다.\","
+          "text": "\"concept.setting.retrieval.scopeExcerptBytes\": \"검색 결과에 표시할 각 작업 설명의 발췌 길이(바이트)입니다. 늘리면 더 길게 표시됩니다. 검색마다 재정의할 수 있으며 저장된 전체 설명은 바뀌지 않습니다.\","
         },
         {
           "file": "portal/locales.js",
@@ -4611,7 +4611,7 @@
         {
           "file": "portal/locales.js",
           "line": 1956,
-          "text": "\"concept.setting.retrieval.scopeExcerptBytes\": \"Définit la quantité de scope advisory affichée par défaut tout en gardant la surcharge explicite par appel.\","
+          "text": "\"concept.setting.retrieval.scopeExcerptBytes\": \"Longueur de l’extrait de chaque description de travail dans les résultats, en octets. Augmentez-la pour voir davantage de texte. Chaque recherche peut remplacer cette valeur ; le texte enregistré reste complet.\","
         }
       ],
       "verification": "init053-owner-return stable target/inheritance/replay/export/registered output and scoped article checks; portal target epoch/header stale-write refusal; settings/machine policy tests",
@@ -4858,7 +4858,7 @@
         {
           "file": "portal/locales.js",
           "line": 264,
-          "text": "\"setting.storage.segmentBytes.label\": \"Event segment byte limit\","
+          "text": "\"setting.storage.segmentBytes.label\": \"Event segment rollover size (bytes)\","
         },
         {
           "file": "portal/locales.js",
@@ -4873,7 +4873,7 @@
         {
           "file": "portal/locales.js",
           "line": 681,
-          "text": "\"setting.storage.segmentBytes.label\": \"事件段字节上限\","
+          "text": "\"setting.storage.segmentBytes.label\": \"事件分段目标大小（字节）\","
         },
         {
           "file": "portal/locales.js",
@@ -4888,7 +4888,7 @@
         {
           "file": "portal/locales.js",
           "line": 1098,
-          "text": "\"setting.storage.segmentBytes.label\": \"イベントセグメントのバイト上限\","
+          "text": "\"setting.storage.segmentBytes.label\": \"イベント分割の目安（バイト）\","
         },
         {
           "file": "portal/locales.js",
@@ -4903,7 +4903,7 @@
         {
           "file": "portal/locales.js",
           "line": 1515,
-          "text": "\"setting.storage.segmentBytes.label\": \"이벤트 세그먼트 바이트 상한\","
+          "text": "\"setting.storage.segmentBytes.label\": \"이벤트 분할 목표 크기(바이트)\","
         },
         {
           "file": "portal/locales.js",
@@ -4918,7 +4918,7 @@
         {
           "file": "portal/locales.js",
           "line": 1932,
-          "text": "\"setting.storage.segmentBytes.label\": \"Limite d’octets des segments d’événements\","
+          "text": "\"setting.storage.segmentBytes.label\": \"Taille cible des segments (octets)\","
         },
         {
           "file": "portal/locales.js",
@@ -5019,7 +5019,7 @@
         {
           "file": "portal/locales.js",
           "line": 269,
-          "text": "\"concept.setting.storage.snapshotEveryEvents\": \"Controls how often the engine writes an atomic replay checkpoint; readers apply only the tail after the newest valid checkpoint.\","
+          "text": "\"concept.setting.storage.snapshotEveryEvents\": \"Number of new events between saved checkpoints. A smaller interval reduces the history to replay when loading, but writes checkpoints more often. Earlier history is preserved.\","
         },
         {
           "file": "portal/locales.js",
@@ -5034,7 +5034,7 @@
         {
           "file": "portal/locales.js",
           "line": 686,
-          "text": "\"concept.setting.storage.snapshotEveryEvents\": \"控制原子重放检查点的写入频率；读取时只应用最新有效检查点之后的尾部事件。\","
+          "text": "\"concept.setting.storage.snapshotEveryEvents\": \"每新增多少条事件保存一次检查点。间隔越小，加载时需重放的历史越少，但检查点写入更频繁；此前历史仍完整保留。\","
         },
         {
           "file": "portal/locales.js",
@@ -5049,7 +5049,7 @@
         {
           "file": "portal/locales.js",
           "line": 1103,
-          "text": "\"concept.setting.storage.snapshotEveryEvents\": \"原子的なリプレイチェックポイントの書き込み間隔を制御し、読み取りは最新チェックポイント後の末尾だけを適用します。\","
+          "text": "\"concept.setting.storage.snapshotEveryEvents\": \"チェックポイントを保存する間隔を新規イベント数で指定します。短くすると読み込み時に再生する履歴が減りますが、保存頻度が増えます。以前の履歴は保持されます。\","
         },
         {
           "file": "portal/locales.js",
@@ -5064,7 +5064,7 @@
         {
           "file": "portal/locales.js",
           "line": 1520,
-          "text": "\"concept.setting.storage.snapshotEveryEvents\": \"원자적 재생 체크포인트의 기록 간격을 정하고, 읽기는 최신 체크포인트 이후의 꼬리만 적용합니다.\","
+          "text": "\"concept.setting.storage.snapshotEveryEvents\": \"새 이벤트 몇 건마다 체크포인트를 저장할지 정합니다. 간격이 짧으면 로딩 시 재생할 기록이 줄지만 저장이 더 잦아집니다. 이전 기록은 보존됩니다.\","
         },
         {
           "file": "portal/locales.js",
@@ -5079,7 +5079,7 @@
         {
           "file": "portal/locales.js",
           "line": 1937,
-          "text": "\"concept.setting.storage.snapshotEveryEvents\": \"Contrôle la fréquence des points de reprise atomiques ; la lecture ne rejoue ensuite que la queue.\","
+          "text": "\"concept.setting.storage.snapshotEveryEvents\": \"Nombre de nouveaux événements entre deux points de reprise. Un intervalle plus court réduit l’historique à rejouer au chargement, mais écrit plus souvent. L’historique antérieur est conservé.\","
         }
       ],
       "verification": "init053-owner-return stable target/inheritance/replay/export/registered output and scoped article checks; portal target epoch/header stale-write refusal; settings/machine policy tests",
@@ -5982,13 +5982,5 @@
     }
   ],
   "settingCount": 33,
-  "nativeReads": "Installed engine 1.2.1 status/settings/work-show read on entry; exact receipts retained in r32-source-raw, no governed mutation.",
-  "r32Review": {
-    "evidence": "dispatch-runs/init-053/r32-source-raw",
-    "fullAcceptance": false,
-    "OwnerVisualAcceptance": false,
-    "application": "actual isolated browser six-wide-page geometry and four-target native inheritance; narrow navigation/lifecycle harness failures retained",
-    "copy": "415 keys/2075 locale values and1519 diagnostics reviewed with exact source/placement and22 concrete copy/behavior findings; generic fallback does not prove every diagnostic recovery",
-    "limits": "15 retained bounds individually assessed; metadata extensions schema maxProperties0 contradicts runtime closed two-key grammar. Full124/435/930 dispositions remain source evidence, not manufactured severe-failure proof. Runtime fragment probe failed missing local ref before cases."
-  }
+  "nativeReads": "read at 10035, head 985ccd28c711178221d43fc911e15a320c93906ffe3dc11ee322bbd3f4bd1de2; full status/work-list/work-show and dispatch read receipts retained in raw archive"
 }

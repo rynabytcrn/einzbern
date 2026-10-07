@@ -2,7 +2,7 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r32-init053-safe-complete-source",
+  "pack": "r33-source-continuation",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
@@ -367,7 +367,7 @@
     },
     {
       "path": "portal/locales.js",
-      "sha256": "675636945ae8c1312beb0ab79a324d5dfbdc1b767ab69c29d5421274a1c3fff6"
+      "sha256": "dfdebe1c8fbff02ae5939f1e6b27ec7cead10e71ff6331d8e444903be56a5d1e"
     },
     {
       "path": "portal/portal.mjs",
@@ -778,7 +778,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "Current Source implements final migration registry receipt and exact public PR23 provenance classification. Full 49-file Source verification remains held for the explicit fixture-location decision. Independent actual application/native probes and semantic review are archived under dispatch-runs/init-053/r32-source-raw. Probe failures and substantive review findings are retained together; no complete R1-R4 acceptance or Owner visual result is claimed. Published DS PR23 binding is unchanged.",
+  "evidenceDisposition": "R33 source continuation; complete49 cadence held without fixture-location authorization; actual independent application/schema/native probes recorded separately; this inventory never implies passing verification, final acceptance or Owner visual judgment. F01 migration-language-negative source repair is authorized; full migration dependent files remain held together in the original49-file Source cadence; F19 belongs to the later truthful final evidence producer. The complete actual candidate parent/publication/build/consumption disposition below determines whether its source may be consumed. Current consumed-authority identity is bound by the publication and snapshot fields. Fresh canonical integration and affected MAIN acceptance remain separate pending acts. No live Engine installation/migration or governed write was performed.",
   "dsCandidateDisposition": {
     "candidate": "788f02c76c1d1b2f8c03628253bd8456964b381e",
     "mergeCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
@@ -1218,11 +1218,11 @@
     {
       "key": "concept.column.vocabulary.columnFloors",
       "supportedLocaleText": {
-        "en": "The independence floors that cover this conference type. Under a covering floor, closing one requires declaring an independent execution form.",
-        "zh-CN": "覆盖此会议类型的独立性底线。在覆盖它的底线下，收口须声明 independent 执行形态。",
-        "ja": "この会議種別を対象とする独立性フロア。対象となるフロアの下では、クローズに independent の実行形態の宣言が必要です。",
-        "ko": "이 회의 유형을 포함하는 독립성 기준. 포함하는 기준 아래에서는 종료 시 independent 실행 형태를 선언해야 합니다.",
-        "fr": "Les seuils d’indépendance qui couvrent ce type de conférence. Sous un seuil couvrant, la clôture exige une forme d’exécution indépendante déclarée."
+        "en": "Conference types that require separately formed opinions. Before closing a covered conference, declare the independent execution form used.",
+        "zh-CN": "这些会议类型要求分别形成意见。关闭适用会议前，须声明所用的独立执行方式。",
+        "ja": "個別に形成した意見が必要な会議種別です。対象の会議を閉じる前に、使用した独立した実行方式を申告します。",
+        "ko": "각각 형성한 의견이 필요한 회의 유형입니다. 해당 회의를 종료하기 전에 사용한 독립 실행 방식을 명시해야 합니다.",
+        "fr": "Types de conférence exigeant des avis formés séparément. Avant de clore une conférence concernée, déclarez le mode d’exécution indépendant utilisé."
       },
       "actualStateAndBehavior": "on-demand explanation beside the actual control or vocabulary",
       "directConsumerSites": [],
@@ -1287,11 +1287,11 @@
     {
       "key": "concept.setting.engine.requiredVersion",
       "supportedLocaleText": {
-        "en": "The engine version this workspace expects. It records an expectation for readers; it does not install or upgrade anything.",
-        "zh-CN": "本工作区期望的引擎版本。它为读者记录一个期望，不安装也不升级任何东西。",
-        "ja": "このワークスペースが想定するエンジンのバージョン。読み手のために期待を記録するだけで、導入も更新も行いません。",
-        "ko": "이 워크스페이스가 기대하는 엔진 버전. 읽는 사람을 위해 기대를 기록할 뿐 설치하거나 업그레이드하지 않습니다.",
-        "fr": "La version du moteur que cet espace attend. Elle consigne une attente pour le lecteur ; elle n’installe ni ne met à jour rien."
+        "en": "Minimum engine version needed to open this library. Older engines refuse to open it. This setting does not install or upgrade the engine; unset means no extra version requirement.",
+        "zh-CN": "打开此库所需的最低引擎版本。旧引擎会拒绝打开；此设置不会安装或升级引擎。未设置时不增加版本要求。",
+        "ja": "このライブラリを開くために必要な最小エンジンバージョンです。古いエンジンは開くことを拒否します。導入や更新は行いません。未設定なら追加のバージョン要件はありません。",
+        "ko": "이 라이브러리를 여는 데 필요한 최소 엔진 버전입니다. 이전 엔진은 열기를 거부합니다. 엔진을 설치하거나 업데이트하지 않으며 미설정 시 추가 버전 요구가 없습니다.",
+        "fr": "Version minimale du moteur pour ouvrir cette bibliothèque. Les versions antérieures refusent de l’ouvrir. Ce réglage n’installe ni ne met à jour le moteur ; non défini, il n’ajoute aucune exigence de version."
       },
       "actualStateAndBehavior": "on-demand explanation beside the actual control or vocabulary",
       "directConsumerSites": [],
@@ -1392,11 +1392,11 @@
     {
       "key": "concept.setting.retrieval.scopeExcerptBytes",
       "supportedLocaleText": {
-        "en": "Sets the default amount of advisory scope shown by work-list search while preserving an explicit per-call override.",
-        "zh-CN": "设定 work-list 搜索默认显示的 advisory scope 数量，同时保留调用级显式覆盖。",
-        "ja": "work-list 検索が表示する advisory scope の既定量を設定し、呼び出し単位の明示的な上書きを保ちます。",
-        "ko": "work-list 검색에 표시되는 advisory scope의 기본량을 정하고 호출별 명시적 재정의를 보존합니다.",
-        "fr": "Définit la quantité de scope advisory affichée par défaut tout en gardant la surcharge explicite par appel."
+        "en": "Amount of each work description shown in search results, in bytes. Increase it for longer excerpts. Each search can override this default; the stored description stays complete.",
+        "zh-CN": "搜索结果中每条工作说明的摘录长度，单位为字节。调大可显示更多内容；每次搜索可覆盖此默认值，保存的完整说明不变。",
+        "ja": "検索結果に表示する各作業説明の抜粋量をバイトで指定します。増やすと長く表示されます。検索ごとに変更でき、保存済みの全文は変わりません。",
+        "ko": "검색 결과에 표시할 각 작업 설명의 발췌 길이(바이트)입니다. 늘리면 더 길게 표시됩니다. 검색마다 재정의할 수 있으며 저장된 전체 설명은 바뀌지 않습니다.",
+        "fr": "Longueur de l’extrait de chaque description de travail dans les résultats, en octets. Augmentez-la pour voir davantage de texte. Chaque recherche peut remplacer cette valeur ; le texte enregistré reste complet."
       },
       "actualStateAndBehavior": "on-demand explanation beside the actual control or vocabulary",
       "directConsumerSites": [],
@@ -1437,11 +1437,11 @@
     {
       "key": "concept.setting.storage.snapshotEveryEvents",
       "supportedLocaleText": {
-        "en": "Controls how often the engine writes an atomic replay checkpoint; readers apply only the tail after the newest valid checkpoint.",
-        "zh-CN": "控制原子重放检查点的写入频率；读取时只应用最新有效检查点之后的尾部事件。",
-        "ja": "原子的なリプレイチェックポイントの書き込み間隔を制御し、読み取りは最新チェックポイント後の末尾だけを適用します。",
-        "ko": "원자적 재생 체크포인트의 기록 간격을 정하고, 읽기는 최신 체크포인트 이후의 꼬리만 적용합니다.",
-        "fr": "Contrôle la fréquence des points de reprise atomiques ; la lecture ne rejoue ensuite que la queue."
+        "en": "Number of new events between saved checkpoints. A smaller interval reduces the history to replay when loading, but writes checkpoints more often. Earlier history is preserved.",
+        "zh-CN": "每新增多少条事件保存一次检查点。间隔越小，加载时需重放的历史越少，但检查点写入更频繁；此前历史仍完整保留。",
+        "ja": "チェックポイントを保存する間隔を新規イベント数で指定します。短くすると読み込み時に再生する履歴が減りますが、保存頻度が増えます。以前の履歴は保持されます。",
+        "ko": "새 이벤트 몇 건마다 체크포인트를 저장할지 정합니다. 간격이 짧으면 로딩 시 재생할 기록이 줄지만 저장이 더 잦아집니다. 이전 기록은 보존됩니다.",
+        "fr": "Nombre de nouveaux événements entre deux points de reprise. Un intervalle plus court réduit l’historique à rejouer au chargement, mais écrit plus souvent. L’historique antérieur est conservé."
       },
       "actualStateAndBehavior": "on-demand explanation beside the actual control or vocabulary",
       "directConsumerSites": [],
@@ -2541,11 +2541,11 @@
     {
       "key": "dashboard.workTreeLabel",
       "supportedLocaleText": {
-        "en": "Work tree",
-        "zh-CN": "工作树",
-        "ja": "作業ツリー",
-        "ko": "작업 트리",
-        "fr": "Arbre du travail"
+        "en": "Work item tree",
+        "zh-CN": "工单树",
+        "ja": "作業項目ツリー",
+        "ko": "작업 항목 트리",
+        "fr": "Arbre des tâches"
       },
       "actualStateAndBehavior": "actual doctor/work/library view, loading/empty/refusal state",
       "directConsumerSites": [
@@ -2906,7 +2906,7 @@
       "key": "gates.columnRequired",
       "supportedLocaleText": {
         "en": "Required",
-        "zh-CN": "required",
+        "zh-CN": "必需",
         "ja": "必須",
         "ko": "필수",
         "fr": "Requise"
@@ -3190,7 +3190,7 @@
       "key": "gates.required",
       "supportedLocaleText": {
         "en": "Required",
-        "zh-CN": "required",
+        "zh-CN": "必需",
         "ja": "必須",
         "ko": "필수",
         "fr": "Requise"
@@ -3341,11 +3341,11 @@
     {
       "key": "gates.scope",
       "supportedLocaleText": {
-        "en": "Enabled gates run when covered paths change. Required gates are checked before work is marked done.",
-        "zh-CN": "启用的门会在覆盖路径变化时运行。任务转为完成前会检查 required 门。",
-        "ja": "有効なゲートは対象パスが変わると実行されます。作業を完了にする前に必須ゲートを確認します。",
-        "ko": "활성 게이트는 대상 경로가 변경될 때 실행됩니다. 작업을 완료로 바꾸기 전에 필수 게이트를 확인합니다.",
-        "fr": "Les portes activées s'exécutent quand leurs chemins couverts changent. Les portes requises sont vérifiées avant de terminer un travail."
+        "en": "When a verification plan is requested, changed paths select the enabled gates to run. Running the plan is an explicit action. Required gate results are checked before work is marked done.",
+        "zh-CN": "请求验证计划时，变更路径用于选择要运行的已启用门；执行计划需要明确操作。任务标为完成前会检查必需门的结果。",
+        "ja": "検証計画を要求すると、変更パスから実行対象の有効なゲートを選びます。計画の実行には明示的な操作が必要です。作業を完了にする前に必須ゲートの結果を確認します。",
+        "ko": "검증 계획을 요청하면 변경 경로에 따라 실행할 활성 게이트를 선택합니다. 계획 실행은 명시적인 작업입니다. 작업을 완료로 표시하기 전에 필수 게이트 결과를 확인합니다.",
+        "fr": "Lorsqu’un plan de vérification est demandé, les chemins modifiés déterminent les portes activées à exécuter. L’exécution du plan est une action explicite. Les résultats des portes requises sont contrôlés avant de terminer le travail."
       },
       "actualStateAndBehavior": "selected target command/coverage/order/run result",
       "directConsumerSites": [
@@ -3685,11 +3685,11 @@
     {
       "key": "knowledge.bodyDigest",
       "supportedLocaleText": {
-        "en": "Body digest",
-        "zh-CN": "正文摘要",
-        "ja": "本文ダイジェスト",
-        "ko": "본문 다이제스트",
-        "fr": "Empreinte du corps"
+        "en": "Body hash",
+        "zh-CN": "正文哈希",
+        "ja": "本文ハッシュ",
+        "ko": "본문 해시",
+        "fr": "Empreinte du texte"
       },
       "actualStateAndBehavior": "active/removed card/store/article read state, provenance, full body",
       "directConsumerSites": [
@@ -3769,11 +3769,11 @@
     {
       "key": "knowledge.bodyUnavailable",
       "supportedLocaleText": {
-        "en": "This body is not available through the governed read boundary.",
-        "zh-CN": "该正文不能通过受治理读取边界访问。",
-        "ja": "この本文は統治された読み取り境界から利用できません。",
-        "ko": "이 본문은 거버넌스 읽기 경계를 통해 사용할 수 없습니다.",
-        "fr": "Ce corps n’est pas disponible via la limite de lecture gouvernée."
+        "en": "The record’s full text could not be loaded. Refresh and confirm that the intended library and record are selected. If it remains unavailable, give the record ID to the person maintaining the library.",
+        "zh-CN": "无法加载记录全文。请刷新并确认选中了预期的库和记录；若仍不可用，请将记录 ID 提供给库的维护者。",
+        "ja": "記録の全文を読み込めませんでした。更新し、目的のライブラリと記録が選ばれているか確認してください。解消しない場合は、記録 ID をライブラリの管理者に伝えてください。",
+        "ko": "기록 전문을 불러오지 못했습니다. 새로고침하고 원하는 라이브러리와 기록을 선택했는지 확인하세요. 계속 사용할 수 없으면 라이브러리 관리자에게 기록 ID를 알려 주세요.",
+        "fr": "Le texte intégral du document n’a pas pu être chargé. Actualisez et vérifiez la bibliothèque et le document sélectionnés. Si le problème persiste, transmettez l’identifiant du document à la personne qui maintient la bibliothèque."
       },
       "actualStateAndBehavior": "active/removed card/store/article read state, provenance, full body",
       "directConsumerSites": [
@@ -4865,11 +4865,11 @@
     {
       "key": "models.effort",
       "supportedLocaleText": {
-        "en": "Effort",
-        "zh-CN": "effort",
-        "ja": "effort",
-        "ko": "effort",
-        "fr": "effort"
+        "en": "Reasoning effort",
+        "zh-CN": "推理强度",
+        "ja": "推論の強度",
+        "ko": "추론 강도",
+        "fr": "Intensité du raisonnement"
       },
       "actualStateAndBehavior": "actual localized enum or presentation value; see consumer source",
       "directConsumerSites": [
@@ -5594,11 +5594,11 @@
     {
       "key": "receipt.digest",
       "supportedLocaleText": {
-        "en": "receipt digest",
-        "zh-CN": "回执摘要",
-        "ja": "レシートダイジェスト",
-        "ko": "영수증 다이제스트",
-        "fr": "empreinte du reçu"
+        "en": "Operation record hash",
+        "zh-CN": "操作记录哈希",
+        "ja": "操作記録のハッシュ",
+        "ko": "작업 기록 해시",
+        "fr": "Empreinte du compte rendu"
       },
       "actualStateAndBehavior": "operation phase/identity and full result disclosure",
       "directConsumerSites": [
@@ -5726,11 +5726,11 @@
     {
       "key": "receipt.open",
       "supportedLocaleText": {
-        "en": "Receipt",
-        "zh-CN": "回执",
-        "ja": "レシート",
-        "ko": "영수증",
-        "fr": "Reçu"
+        "en": "Operation record",
+        "zh-CN": "操作记录",
+        "ja": "操作記録",
+        "ko": "작업 기록",
+        "fr": "Compte rendu"
       },
       "actualStateAndBehavior": "operation phase/identity and full result disclosure",
       "directConsumerSites": [
@@ -5814,11 +5814,11 @@
     {
       "key": "receipt.title",
       "supportedLocaleText": {
-        "en": "Engine receipt",
-        "zh-CN": "引擎回执",
-        "ja": "エンジンのレシート",
-        "ko": "엔진 영수증",
-        "fr": "Reçu du moteur"
+        "en": "Engine operation record",
+        "zh-CN": "引擎操作记录",
+        "ja": "エンジンの操作記録",
+        "ko": "엔진 작업 기록",
+        "fr": "Compte rendu du moteur"
       },
       "actualStateAndBehavior": "operation phase/identity and full result disclosure",
       "directConsumerSites": [
@@ -6556,9 +6556,9 @@
       "supportedLocaleText": {
         "en": "⌘K",
         "zh-CN": "⌘K",
-        "ja": "⌘K を開く",
-        "ko": "⌘K 열기",
-        "fr": "⌘K ouvrir"
+        "ja": "⌘K",
+        "ko": "⌘K",
+        "fr": "⌘K"
       },
       "actualStateAndBehavior": "actual localized enum or presentation value; see consumer source",
       "directConsumerSites": [
@@ -7399,11 +7399,11 @@
     {
       "key": "setting.quota.fiveHourParallelOffPercent.description",
       "supportedLocaleText": {
-        "en": "At this usage percentage, run one subagent at a time.",
-        "zh-CN": "达到此使用比例后，每次只运行一个子代理。",
-        "ja": "この使用率に達すると、サブエージェントを一度に一つだけ実行します。",
-        "ko": "이 사용률에 도달하면 서브에이전트를 한 번에 하나씩 실행합니다.",
-        "fr": "À ce pourcentage d’utilisation, un seul sous-agent s’exécute à la fois."
+        "en": "Declares the five-hour usage percentage at which the host should run one subagent at a time. The host must read usage and apply this policy; the engine does neither automatically.",
+        "zh-CN": "声明五小时用量达到多少百分比时，宿主应每次只运行一个子代理。宿主须读取用量并执行此策略；引擎不会自动执行。",
+        "ja": "5 時間使用率が何パーセントに達したらホストがサブエージェントを一つずつ実行するかを定めます。使用率の取得と方針の適用はホストが行います。エンジンは自動では行いません。",
+        "ko": "5시간 사용률이 몇 퍼센트에 도달하면 호스트가 서브에이전트를 하나씩 실행할지 정합니다. 사용량 조회와 정책 적용은 호스트가 해야 하며 엔진은 자동으로 수행하지 않습니다.",
+        "fr": "Déclare le pourcentage d’utilisation de cinq heures auquel l’hôte doit exécuter un seul sous-agent à la fois. L’hôte doit lire l’utilisation et appliquer cette politique ; le moteur ne le fait pas automatiquement."
       },
       "actualStateAndBehavior": "catalog-driven configured value, what changes and how/when it applies",
       "directConsumerSites": [],
@@ -7429,11 +7429,11 @@
     {
       "key": "setting.quota.fiveHourWaitPercent.description",
       "supportedLocaleText": {
-        "en": "At this usage percentage, wait until the five-hour window resets.",
-        "zh-CN": "达到此使用比例后，等待五小时窗口重置。",
-        "ja": "この使用率に達すると、5 時間枠がリセットされるまで待機します。",
-        "ko": "이 사용률에 도달하면 5시간 창이 초기화될 때까지 기다립니다.",
-        "fr": "À ce pourcentage, attendre le renouvellement de la fenêtre de cinq heures."
+        "en": "Declares the five-hour usage percentage at which the host should wait for the five-hour window to reset. The host must read usage and apply this policy; the engine does neither automatically.",
+        "zh-CN": "声明五小时用量达到多少百分比时，宿主应等待五小时窗口重置。宿主须读取用量并执行此策略；引擎不会自动执行。",
+        "ja": "5 時間使用率が何パーセントに達したらホストが5 時間枠のリセットを待つかを定めます。使用率の取得と方針の適用はホストが行います。エンジンは自動では行いません。",
+        "ko": "5시간 사용률이 몇 퍼센트에 도달하면 호스트가 5시간 창 초기화를 기다릴지 정합니다. 사용량 조회와 정책 적용은 호스트가 해야 하며 엔진은 자동으로 수행하지 않습니다.",
+        "fr": "Déclare le pourcentage d’utilisation de cinq heures auquel l’hôte doit attendre le renouvellement de la fenêtre de cinq heures. L’hôte doit lire l’utilisation et appliquer cette politique ; le moteur ne le fait pas automatiquement."
       },
       "actualStateAndBehavior": "catalog-driven configured value, what changes and how/when it applies",
       "directConsumerSites": [],
@@ -7459,11 +7459,11 @@
     {
       "key": "setting.quota.weeklyParallelOffPercent.description",
       "supportedLocaleText": {
-        "en": "At this weekly usage percentage, run one subagent at a time.",
-        "zh-CN": "达到此每周使用比例后，每次只运行一个子代理。",
-        "ja": "週間使用率がこの値に達すると、サブエージェントを一度に一つだけ実行します。",
-        "ko": "주간 사용률이 이 값에 도달하면 서브에이전트를 한 번에 하나씩 실행합니다.",
-        "fr": "À ce pourcentage hebdomadaire, un seul sous-agent s’exécute à la fois."
+        "en": "Declares the weekly usage percentage at which the host should run one subagent at a time. The host must read usage and apply this policy; the engine does neither automatically.",
+        "zh-CN": "声明每周用量达到多少百分比时，宿主应每次只运行一个子代理。宿主须读取用量并执行此策略；引擎不会自动执行。",
+        "ja": "週間使用率が何パーセントに達したらホストがサブエージェントを一つずつ実行するかを定めます。使用率の取得と方針の適用はホストが行います。エンジンは自動では行いません。",
+        "ko": "주간 사용률이 몇 퍼센트에 도달하면 호스트가 서브에이전트를 하나씩 실행할지 정합니다. 사용량 조회와 정책 적용은 호스트가 해야 하며 엔진은 자동으로 수행하지 않습니다.",
+        "fr": "Déclare le pourcentage d’utilisation hebdomadaire auquel l’hôte doit exécuter un seul sous-agent à la fois. L’hôte doit lire l’utilisation et appliquer cette politique ; le moteur ne le fait pas automatiquement."
       },
       "actualStateAndBehavior": "catalog-driven configured value, what changes and how/when it applies",
       "directConsumerSites": [],
@@ -7489,11 +7489,11 @@
     {
       "key": "setting.quota.weeklyWaitPercent.description",
       "supportedLocaleText": {
-        "en": "At this weekly usage percentage, wait until the weekly window resets. Unset means no weekly wait.",
-        "zh-CN": "达到此每周使用比例后，等待每周窗口重置；未设置时不等待。",
-        "ja": "週間使用率がこの値に達すると、週次枠のリセットまで待機します。未設定なら待機しません。",
-        "ko": "주간 사용률이 이 값에 도달하면 주간 창이 초기화될 때까지 기다립니다. 비어 있으면 기다리지 않습니다.",
-        "fr": "À ce pourcentage, attendre le renouvellement de la fenêtre hebdomadaire. Non défini : aucune attente."
+        "en": "Declares the weekly usage percentage at which the host should wait for the weekly window to reset. The host must read usage and apply this policy; the engine does neither automatically. Unset means no weekly wait policy.",
+        "zh-CN": "声明每周用量达到多少百分比时，宿主应等待每周窗口重置。宿主须读取用量并执行此策略；引擎不会自动执行。未设置表示没有每周等待策略。",
+        "ja": "週間使用率が何パーセントに達したらホストが週間枠のリセットを待つかを定めます。使用率の取得と方針の適用はホストが行います。エンジンは自動では行いません。未設定なら週次の待機方針はありません。",
+        "ko": "주간 사용률이 몇 퍼센트에 도달하면 호스트가 주간 창 초기화를 기다릴지 정합니다. 사용량 조회와 정책 적용은 호스트가 해야 하며 엔진은 자동으로 수행하지 않습니다. 미설정 시 주간 대기 정책이 없습니다.",
+        "fr": "Déclare le pourcentage d’utilisation hebdomadaire auquel l’hôte doit attendre le renouvellement de la fenêtre hebdomadaire. L’hôte doit lire l’utilisation et appliquer cette politique ; le moteur ne le fait pas automatiquement. Non défini : aucune politique d’attente hebdomadaire."
       },
       "actualStateAndBehavior": "catalog-driven configured value, what changes and how/when it applies",
       "directConsumerSites": [],
@@ -7639,11 +7639,11 @@
     {
       "key": "setting.storage.segmentBytes.label",
       "supportedLocaleText": {
-        "en": "Event segment byte limit",
-        "zh-CN": "事件段字节上限",
-        "ja": "イベントセグメントのバイト上限",
-        "ko": "이벤트 세그먼트 바이트 상한",
-        "fr": "Limite d’octets des segments d’événements"
+        "en": "Event segment rollover size (bytes)",
+        "zh-CN": "事件分段目标大小（字节）",
+        "ja": "イベント分割の目安（バイト）",
+        "ko": "이벤트 분할 목표 크기(바이트)",
+        "fr": "Taille cible des segments (octets)"
       },
       "actualStateAndBehavior": "catalog-driven configured value, what changes and how/when it applies",
       "directConsumerSites": [],
@@ -8703,11 +8703,11 @@
     {
       "key": "vocabulary.readOnly",
       "supportedLocaleText": {
-        "en": "Closed engine vocabulary.",
-        "zh-CN": "引擎封闭词汇。",
-        "ja": "エンジンの閉じた語彙。",
-        "ko": "엔진의 폐쇄형 용어입니다.",
-        "fr": "Vocabulaire fermé du moteur."
+        "en": "Terms cannot be added or edited here.",
+        "zh-CN": "这里不能添加或修改术语。",
+        "ja": "ここでは用語の追加や編集はできません。",
+        "ko": "여기에서는 용어를 추가하거나 수정할 수 없습니다.",
+        "fr": "Les termes ne peuvent pas être ajoutés ou modifiés ici."
       },
       "actualStateAndBehavior": "engine-owned read-only roster and distinct term definitions",
       "directConsumerSites": [
@@ -8723,11 +8723,11 @@
     {
       "key": "vocabulary.source",
       "supportedLocaleText": {
-        "en": "Source: engine vocabulary read surface.",
-        "zh-CN": "来源：引擎词汇读取面。",
-        "ja": "ソース：エンジン語彙の読み取り面。",
-        "ko": "출처: 엔진 용어 읽기 화면.",
-        "fr": "Source : surface de lecture du vocabulaire moteur."
+        "en": "These terms are supplied by the engine.",
+        "zh-CN": "这些术语由引擎提供。",
+        "ja": "これらの用語はエンジンが提供します。",
+        "ko": "이 용어는 엔진에서 제공합니다.",
+        "fr": "Ces termes sont fournis par le moteur."
       },
       "actualStateAndBehavior": "engine-owned read-only roster and distinct term definitions",
       "directConsumerSites": [],
@@ -21186,13 +21186,5 @@
     "successful save/reading/empty/missing/refused/ambiguous operation states; full errors on demand",
     "technical machine vocabulary remains available without replacing ordinary action labels"
   ],
-  "verification": "portal i18n source/true negative proof, real executed DOM five-locale labels/control/action/readbacks; no human readability score inferred from key presence",
-  "r32Review": {
-    "evidence": "dispatch-runs/init-053/r32-source-raw",
-    "fullAcceptance": false,
-    "OwnerVisualAcceptance": false,
-    "application": "actual isolated browser six-wide-page geometry and four-target native inheritance; narrow navigation/lifecycle harness failures retained",
-    "copy": "415 keys/2075 locale values and1519 diagnostics reviewed with exact source/placement and22 concrete copy/behavior findings; generic fallback does not prove every diagnostic recovery",
-    "limits": "15 retained bounds individually assessed; metadata extensions schema maxProperties0 contradicts runtime closed two-key grammar. Full124/435/930 dispositions remain source evidence, not manufactured severe-failure proof. Runtime fragment probe failed missing local ref before cases."
-  }
+  "verification": "portal i18n source/true negative proof, real executed DOM five-locale labels/control/action/readbacks; no human readability score inferred from key presence"
 }

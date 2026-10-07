@@ -698,7 +698,10 @@ async function applyMigrateSetup(plan: SetupPlan): Promise<SetupApplied> {
     library: own === null ? null : { path: own.target, libraryId: own.libraryId, created: own.action === "imported" },
     pending,
   });
-  return { ...receipt, migration: { ...applied, hostCleanup } };
+  // Project binding and wiring may enrich the imported registry entries. The receipt
+  // describes the final explicit registration, not the earlier import snapshot.
+  const registry = (await readRegistry(deviceHome)).entries;
+  return { ...receipt, migration: { ...applied, registry, hostCleanup } };
 }
 
 // The mode table. Each row names the options its mode takes, its planner and its apply; the rows

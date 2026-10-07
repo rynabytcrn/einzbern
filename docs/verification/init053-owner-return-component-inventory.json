@@ -2,7 +2,7 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r31-source-f01-authorized",
+  "pack": "r32-init053-safe-complete-source",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
@@ -291,7 +291,7 @@
     },
     {
       "path": "packages/core/src/setup.ts",
-      "sha256": "494e4ec98fc91199de807f7ba1a0f4541693bb42ee8b380ede4a6785dec079d8"
+      "sha256": "a66b97a792814b5156a293f8889efccb162e4f9c5d9dd8c594cc41717e773f62"
     },
     {
       "path": "packages/core/src/skill-copies.ts",
@@ -563,7 +563,7 @@
     },
     {
       "path": "scripts/lib/privacy.mjs",
-      "sha256": "09fce57477c902f89ed8b2ca6e68338bd48759717fb43b6e6ed8693920a8b575"
+      "sha256": "5590a0218de781599e46a607e0c6afb5459ccab3599755978f963b779554d984"
     },
     {
       "path": "scripts/lib/private-token-roster.mjs",
@@ -778,7 +778,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R31 authorized source implementation with one focused cadence recorded separately; this inventory never implies passing verification, final acceptance or Owner visual judgment. F01 migration-language-negative source repair is authorized; full migration dependent files execute in the same Source cadence; F19 belongs to the later truthful final evidence producer. The complete actual candidate parent/publication/build/consumption disposition below determines whether its source may be consumed. Current consumed-authority identity is bound by the publication and snapshot fields. Fresh canonical integration and affected MAIN acceptance remain separate pending acts. No live Engine installation/migration or governed write was performed.",
+  "evidenceDisposition": "Current Source implements final migration registry receipt and exact public PR23 provenance classification. Full 49-file Source verification remains held for the explicit fixture-location decision. Independent actual application/native probes and semantic review are archived under dispatch-runs/init-053/r32-source-raw. Probe failures and substantive review findings are retained together; no complete R1-R4 acceptance or Owner visual result is claimed. Published DS PR23 binding is unchanged.",
   "dsCandidateDisposition": {
     "candidate": "788f02c76c1d1b2f8c03628253bd8456964b381e",
     "mergeCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
@@ -10098,5 +10098,13 @@
     "the old preview on port4340 is an older worktree and retained without being claimed as current",
     "machine DOM checks do not assert computed geometry or Owner visual acceptance",
     "no checkbox compatibility presentation is legalized as the requested dropdown; actual dropdown uses the published Select/Menu family"
-  ]
+  ],
+  "r32Review": {
+    "evidence": "dispatch-runs/init-053/r32-source-raw",
+    "fullAcceptance": false,
+    "OwnerVisualAcceptance": false,
+    "application": "actual isolated browser six-wide-page geometry and four-target native inheritance; narrow navigation/lifecycle harness failures retained",
+    "copy": "415 keys/2075 locale values and1519 diagnostics reviewed with exact source/placement and22 concrete copy/behavior findings; generic fallback does not prove every diagnostic recovery",
+    "limits": "15 retained bounds individually assessed; metadata extensions schema maxProperties0 contradicts runtime closed two-key grammar. Full124/435/930 dispositions remain source evidence, not manufactured severe-failure proof. Runtime fragment probe failed missing local ref before cases."
+  }
 }

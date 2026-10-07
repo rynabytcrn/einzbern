@@ -341,6 +341,38 @@ test("classified privacy samples stay path-and-line exact across source, history
   assert.ok(archiveFindings.some((finding) => finding.startsWith("EMAIL_IDENTIFIER:release:") && finding.includes("#header:fixtures/")));
 });
 
+test("DS publication provenance is classified only at exact inventory source lines", async () => {
+  const root = resolve(import.meta.dirname, "..");
+  const names = await readFile(join(root, "packages/core/src/names.ts"), "utf8");
+  const owner = names.match(/owner:\s*"([^"]+)"/u)?.[1];
+  assert.ok(owner);
+  for (const family of ["component", "copy", "limit", "scope"]) {
+    const path = `docs/verification/init053-owner-return-${family}-inventory.json`;
+    const content = await readFile(join(root, path), "utf8");
+    const line = content.split("\n").find(value => value.includes(`/TCRN-Design-System/pull/23`));
+    assert.ok(line);
+    const entry = { label: path, kind: "source", content: line };
+    assert.deepEqual(scanPrivacyEntries([entry], { owner }), []);
+    assert.deepEqual(scanPrivacyEntries([{ label: "git-blob:reviewed-inventory", kind: "blob", sourcePaths: [path], content: line }], { owner }), []);
+    const tar = writeUstar([{ path, bytes: Buffer.from(line) }]);
+    for (const kind of ["archive", "release"]) assert.deepEqual(scanPrivacyEntries([{ label: "dist/source/reviewed.tar", kind, content: tar }], { owner }), []);
+    const negatives = [
+      { ...entry, content: line.replace("/pull/23", "/pull/24") },
+      { ...entry, content: line.replace("TCRN-Design-System", "other-repository") },
+      { ...entry, content: line + " " },
+      { ...entry, content: owner },
+      { ...entry, content: line + "\n" + owner },
+      { ...entry, label: "docs/verification/other-inventory.json" },
+      { label: "git-blob:unknown", kind: "blob", content: line },
+      { label: "git-blob:mixed-origin", kind: "blob", sourcePaths: [path, "other.json"], content: line },
+      { ...entry, content: line.replace(owner, owner + "-other") },
+    ];
+    for (const candidate of negatives) assert.ok(scanPrivacyEntries([candidate], { owner }).some(value => value.startsWith("OWNER_PRIVATE_IDENTIFIER:")), JSON.stringify(candidate));
+    const privatePath = ["/", "Users", "/", owner, "/Code"].join("");
+    assert.ok(scanPrivacyEntries([{ ...entry, content: line + "\n" + privatePath }], { owner }).some(value => value.startsWith("MACOS_HOME_PATH:") || value.startsWith("OWNER_PRIVATE_IDENTIFIER:")));
+  }
+});
+
 test("P8 classifies only the exact compiled public-owner metadata line", async () => {
   const repositoryRoot = resolve(import.meta.dirname, "..");
   const names = await readFile(join(repositoryRoot, "packages/core/src/names.ts"), "utf8");

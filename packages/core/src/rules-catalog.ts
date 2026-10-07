@@ -8,9 +8,18 @@
 // The Chinese texts are the Owner's final wording, word for word. tests/fixtures/rules/ holds
 // copies of them, and tests/rules-catalog.test.mjs compares each constant here with its copy, so
 // an edit to either side is a red test rather than a quiet drift. The English text of
-// silent-reporting is the Owner's final translation as well. The English texts of autonomy, batch
-// and unattended-commands were translated when this module was written and await the Owner's
-// correction; a correction changes the text here and nothing else.
+// silent-reporting is the Owner's final translation as well, apart from its last sentence (below).
+// The English texts of autonomy, batch and unattended-commands were translated when this module
+// was written and await the Owner's correction; a correction changes the text here and nothing else.
+//
+// INIT-053 R40 (the Owner's third supplement of 2026-10-08): the Owner revised two texts at the
+// same version, recorded as rev 2 of their sections in the Owner's own AGENTS.md. Batch v3 gains
+// clause 7 ("once" counts per round) and silent-reporting v1 gains its last sentence (no report
+// between rounds). Both Chinese texts equal the Owner's archived wording; the English of the two
+// additions is an agent's translation that awaits the Owner's correction. As with every correction,
+// the versions stay: a project that enabled batch v3 or silent-reporting v1 still reads enabled, an
+// unchanged section of it takes the revised text at its next agents-render with its section
+// revision raised by one, and a section the user changed is left as it is and waits (pending).
 //
 // Every text is a constant in this file, and this module reads no file: a packaged engine is one
 // script, and a text kept anywhere else would not travel with it. A body is the whole rule as it
@@ -59,6 +68,7 @@ const BATCH_ZH = `## 批量处理原则 v3
 4. 生成物批末再生。覆盖基线、证明物、钩子渲染、预算抬线这类工具生成的东西，批末各做一次，作为固定收尾步骤，不随单条修改重做。
 5. 一批一次链写、一次汇报。转态与注解用批量入口一次写完。待 Owner 决定的事项在收口汇报里成批列出，每项附建议。不阻塞工作的事项按建议先做，汇报里回显所做的选择，由 Owner 事后更正。
 6. 派工按批段。拆分一个代理，实施每包一个代理，集成一个代理，验收一个代理，验收可按 Epic 分片同批并行。不为单步派代理，不为确认读数派代理。
+7. 「一次」按轮计，不是整个会话只做一轮。一轮（一个批次）内，拆分、每包实施、集成、名册、验收、判断各做一遍，不逐红重复；一轮做完，判断列出的问题清单与排队项就是下一轮的输入，loop 立即开下一轮（R41、R42……），直到 goal 写明的终态达成，或剩余工作全部阻塞于只有 Owner 能做的决定。轮与轮之间不等 Owner 答复、不换会话、不汇报。
 
 修完一条又红一条的循环，本身就是违反本原则的信号：停下，把清单列全，再动手。
 
@@ -70,7 +80,8 @@ const BATCH_ZH = `## 批量处理原则 v3
 4. 等待避免空轮询。使用宿主支持的完成通知与阻塞等待；连续没有新状态时延长查询间隔，遵守宿主等待上限和用户中断要求；有独立可做的工作时继续该工作。
 `;
 
-// Translated when this module was written; awaits the Owner's correction.
+// Translated when this module was written, clause 7 with the Owner's revision (INIT-053 R40);
+// awaits the Owner's correction.
 const BATCH_EN = `## Batch Processing Principle v3
 
 This applies to all work in this workspace: decomposition, implementation, running gates, testing, acceptance, chain writes, reporting and dispatch.
@@ -81,6 +92,7 @@ This applies to all work in this workspace: decomposition, implementation, runni
 4. Generated output is regenerated at the end of the batch. Tool-generated things such as coverage baselines, proof artifacts, hook renderings and budget-ceiling raises are each done once at the end of the batch as a fixed closing step, not redone with every individual change.
 5. One chain write and one report per batch. Status transitions and annotations are written in one pass through the batch entry point. Items awaiting the Owner's decision are listed together in the closing report, each with a recommendation. Items that do not block the work are done first as recommended; the report echoes the choices made, and the Owner corrects them afterwards.
 6. Dispatch follows the batch stages. One agent for decomposition, one agent per package for implementation, one agent for integration and one agent for acceptance; acceptance may be split by Epic and run in parallel within the same batch. Do not dispatch an agent for a single step, and do not dispatch an agent to confirm a reading.
+7. "Once" counts per round, not once for the whole session. Within a round (one batch), decomposition, the implementation of each package, integration, the gate roster, acceptance and judgment are each done once, not repeated for every red result. When a round is done, the problem list and the queued items that the judgment lists are the input to the next round, and the loop starts the next round at once (R41, R42 and so on), until the end state written in the goal is reached or all remaining work is blocked on decisions only the Owner can make. Between rounds, do not wait for the Owner's reply, do not change sessions, and do not report.
 
 A cycle in which fixing one red result turns up another is itself a sign that this principle is being broken: stop, list everything, then act.
 
@@ -123,14 +135,16 @@ const SILENT_REPORTING_ZH = `## 静默汇报原则 v1
 
 工作进行期间，主对话不输出汇报。子代理之间的切换、派工、落链、跑门，回合里只有工具调用，没有进度文字，也没有一行小结。需要留痕的事实由发现它的子代理写进状态文件。
 
-只有两种时刻输出汇报：全部任务完成，或剩余任务全部阻塞。汇报按 owner-output-contract 写，待 Owner 决定的事项一次列全并附建议。安排唤醒源不算汇报。
+只有两种时刻输出汇报：全部任务完成，或剩余任务全部阻塞。汇报按 owner-output-contract 写，待 Owner 决定的事项一次列全并附建议。安排唤醒源不算汇报。一轮做完、下一轮开始之间不算这两种时刻，同样不汇报。
 `;
 
+// The Owner's final translation, except its last sentence: the Owner's revision (INIT-053 R40)
+// added it in Chinese, and the English here is an agent's translation that awaits the Owner's correction.
 const SILENT_REPORTING_EN = `## Silent Reporting Principle v1
 
 While work is in progress, the main conversation produces no reports. Between subagents, when dispatching, writing to the chain, or running gates, a turn contains tool calls only: no progress prose, no one-line summaries. Facts that must be kept are written to the state file by the subagent that found them.
 
-Reports are produced at exactly two moments: when every task is complete, or when every remaining task is blocked. A report follows the owner-output-contract and lists every item awaiting the Owner's decision at once, each with a recommendation. Scheduling a wake-up does not count as a report.
+Reports are produced at exactly two moments: when every task is complete, or when every remaining task is blocked. A report follows the owner-output-contract and lists every item awaiting the Owner's decision at once, each with a recommendation. Scheduling a wake-up does not count as a report. The time between finishing one round and starting the next is not one of these two moments, so no report is produced then either.
 `;
 
 const DESIGN_AUTHORITY_ZH = "## \u8bbe\u8ba1\u6743\u5a01\u4e0e\u4e00\u81f4\u6027\u539f\u5219 v1\n\n1. \u5148\u786e\u5b9a\u8bbe\u8ba1\u6743\u5a01\u3002\u8bfb\u53d6\u5f53\u524d\u9879\u76ee\u53ca\u76ee\u6807\u5b50\u9879\u76ee\u7684\u7cfb\u7edf\u53d8\u91cf `design.authority`\uff0c\u4ee5\u53ca\u540c\u4e00\u914d\u7f6e\u4e2d\u58f0\u660e\u7684\u6743\u5a01\u4ed3\u5e93\u3001\u751f\u4ea7\u6587\u6863\u548c\u6784\u5efa\u90e8\u7f72\u7ed1\u5b9a\u3002\u6bcf\u4e2a\u9879\u76ee\u3001\u5b50\u9879\u76ee\u90fd\u5e94\u80fd\u5bf9\u5e94\u5230\u81ea\u5df1\u7684\u6709\u6548\u6743\u5a01\uff1b\u7ee7\u627f\u503c\u987b\u663e\u793a\u6765\u6e90\u3002\u7f3a\u5931\u6216\u51b2\u7a81\u65f6\u5148\u8865\u9f50\u914d\u7f6e\uff0c\u4e0d\u6309\u76ee\u5f55\u4f4d\u7f6e\u3001\u9876\u5c42\u9879\u76ee\u6216\u8bb0\u5fc6\u731c\u6d4b\u3002\n2. \u5148\u67e5\u5df2\u6709\u7ec4\u4ef6\u4e0e\u89c4\u8303\u3002\u6839\u636e\u8be5\u6743\u5a01\u7684\u5df2\u53d1\u5e03\u5951\u7ea6\uff0c\u6838\u5bf9\u7ec4\u4ef6\u5bb6\u65cf\u3001\u53d8\u4f53\u3001\u72b6\u6001\u3001\u5e03\u5c40\u548c\u4ea4\u4e92\u89c4\u8303\uff0c\u518d\u51b3\u5b9a\u5982\u4f55\u5b9e\u73b0\u3002\u5df2\u6709\u80fd\u529b\u76f4\u63a5\u590d\u7528\uff1b\u7f3a\u5c11\u80fd\u529b\u8bb0\u5165\u8bbe\u8ba1\u6743\u5a01\u7684\u6539\u52a8\u8303\u56f4\u3002\n3. \u8bbe\u8ba1\u6743\u5a01\u5148\u6539\u3002\u4efb\u4f55\u7ec4\u4ef6\u3001\u89c6\u89c9\u8bbe\u8ba1\u6216\u8bbe\u8ba1\u89c4\u8303\u7684\u65b0\u589e\u4e0e\u6539\u52a8\uff0c\u5148\u5411\u6743\u5a01\u4ed3\u5e93\u63d0 PR\uff0c\u5728\u6743\u5a01\u4e2d\u8865\u9f50\u5b9e\u73b0\u3001\u8bbe\u8ba1\u89c4\u8303\u3001\u5b9e\u9645\u793a\u4f8b\u548c\u9002\u7528\u9a8c\u8bc1\uff1b\u4e0d\u5f97\u5148\u5728\u5e94\u7528\u4e2d\u53e6\u9020\u4e00\u5957\u518d\u8865\u89c4\u8303\u3002\n4. \u53d1\u5e03\u901a\u8fc7\u540e\u518d\u63a5\u5165\u3002\u6743\u5a01 PR \u5408\u5e76\u3001\u58f0\u660e\u7684\u751f\u4ea7\u6587\u6863\u6216\u7ec4\u4ef6\u5e93\u53d1\u5e03\u6210\u529f\u3001\u58f0\u660e\u7684\u6784\u5efa\u90e8\u7f72\u670d\u52a1\u6210\u529f\uff0c\u5e76\u6838\u5bf9\u8fd9\u4e9b\u8bc1\u636e\u5bf9\u5e94\u540c\u4e00\u63d0\u4ea4\u6216\u4ea7\u7269\u7248\u672c\u540e\uff0c\u5e94\u7528\u624d\u80fd\u63a5\u5165\u65b0\u80fd\u529b\u3002\u672c\u5730\u901a\u8fc7\u3001\u9884\u89c8\u90e8\u7f72\u6216\u53ea\u6709\u9875\u9762\u80fd\u6253\u5f00\uff0c\u90fd\u4e0d\u4ee3\u8868\u751f\u4ea7\u53d1\u5e03\u901a\u8fc7\u3002\u8fd9\u4e2a\u53d1\u5e03\u4f9d\u8d56\u5e94\u5728\u6279\u6b21\u5206\u5305\u65f6\u660e\u786e\uff0c\u672a\u6ee1\u8db3\u65f6\u4e0d\u8d8a\u8fc7\u4f9d\u8d56\u3002\n5. \u4fdd\u6301\u7ec4\u4ef6\u5bb6\u65cf\u4e00\u81f4\u3002\u65b0\u589e\u548c\u4fee\u6539\u7684\u7ec4\u4ef6\u6cbf\u7528\u539f\u5bb6\u65cf\u7684\u989c\u8272\u3001\u5b57\u4f53\u3001\u95f4\u8ddd\u3001\u5c3a\u5bf8\u3001\u5706\u89d2\u3001\u8fb9\u6846\u3001\u56fe\u6807\u3001\u52a8\u6548\u53ca\u4ea4\u4e92\u72b6\u6001\uff1b\u589e\u91cf\u529f\u80fd\u6cbf\u7528\u5df2\u6709\u9009\u7528\u65b9\u5f0f\u3001\u53cd\u9988\u548c\u952e\u76d8\u64cd\u4f5c\u3002\u7528\u540c\u7c7b\u7ec4\u4ef6\u9010\u9879\u5bf9\u7167\uff0c\u907f\u514d\u4ea7\u751f\u660e\u663e\u4e0d\u540c\u7684\u89c6\u89c9\u6216\u4ea4\u4e92\u8bed\u8a00\uff1b\u8f83\u5927\u7684\u98ce\u683c\u53d8\u5316\u5148\u53d6\u5f97 Owner \u660e\u786e\u540c\u610f\u3002 \u628a\u660e\u663e\u504f\u79bb\u539f\u5bb6\u65cf\u7684\u5b9e\u73b0\u8865\u8fdb\u8bbe\u8ba1\u6743\u5a01\uff0c\u4e0d\u80fd\u4f5c\u4e3a\u98ce\u683c\u4e00\u81f4\u6216 Owner \u76ee\u89c6\u901a\u8fc7\u7684\u8bc1\u660e\u3002 \u68c0\u67e5\u5168\u90e8\u65b0\u589e\u6216\u4fee\u6539\u7684\u7ec4\u4ef6\u4e0e\u53d8\u4f53\uff1a\u540c\u7c7b\u4efb\u52a1\u5e94\u4f7f\u7528\u540c\u7c7b\u63a7\u4ef6\uff0c\u4fdd\u6301\u9009\u62e9\u3001\u5bfc\u822a\u3001\u4fdd\u5b58\u3001\u64a4\u9500\u3001\u91cd\u7f6e\u3001\u9519\u8bef\u53cd\u9988\u548c\u952e\u76d8\u64cd\u4f5c\u7684\u542b\u4e49\u4e0e\u9884\u671f\u4e00\u81f4\u3002\n6. \u901a\u8fc7\u6b63\u5f0f\u5951\u7ea6\u6d88\u8d39\u3002\u5e94\u7528\u4f7f\u7528\u5df2\u53d1\u5e03\u7ec4\u4ef6\u3001\u4ee4\u724c\u6216\u6743\u5a01\u8ba4\u53ef\u7684\u9759\u6001\u6d88\u8d39\u65b9\u5f0f\uff0c\u7ed1\u5b9a\u5b9e\u9645\u7248\u672c\u5e76\u540c\u6b65\u751f\u6210\u7684\u5951\u7ea6\u4e0e\u6837\u5f0f\u5feb\u7167\uff1b\u4e0d\u590d\u5236\u6587\u6863\u7ad9\u79c1\u6709\u6837\u5f0f\u3001\u4e0d\u5728\u5e94\u7528\u5185\u91cd\u9020\u901a\u7528\u7ec4\u4ef6\u3001\u4e0d\u7528\u5c40\u90e8\u8986\u76d6\u63a9\u76d6\u6743\u5a01\u7f3a\u53e3\u3002\n7. \u6838\u5bf9\u73b0\u5b58\u7f3a\u53e3\u3002\u53d1\u73b0\u5e94\u7528\u5df2\u4f7f\u7528\u6743\u5a01\u672a\u63d0\u4f9b\u6216\u672a\u53d1\u5e03\u7684\u7ec4\u4ef6\u3001\u53d8\u4f53\u3001\u8bbe\u8ba1\u89c4\u8303\u65f6\uff0c\u5217\u51fa\u4f7f\u7528\u5904\u548c\u7f3a\u5c11\u7684\u6743\u5a01\u8bc1\u636e\uff0c\u5148\u6309\u540c\u4e00 PR\u3001\u751f\u4ea7\u53d1\u5e03\u548c\u6784\u5efa\u6d41\u7a0b\u8865\u9f50\u6743\u5a01\uff0c\u518d\u7ee7\u7eed\u53d7\u5f71\u54cd\u7684\u5e94\u7528\u6539\u52a8\u3002\u673a\u5668\u9a8c\u8bc1\u4e0e Owner \u76ee\u89c6\u9a8c\u6536\u5206\u522b\u8bb0\u5f55\u3002\n8. \u89c4\u5219\u4e0e\u53d8\u91cf\u5206\u79bb\u3002\u89c4\u5219\u6b63\u6587\u53ea\u5f15\u7528\u7cfb\u7edf\u53d8\u91cf\u53ca\u5176\u6743\u5a01\u5951\u7ea6\uff0c\u4e0d\u5199\u6b7b\u9879\u76ee\u540d\u3001\u4ed3\u5e93\u5730\u5740\u3001\u6587\u6863 URL\u3001\u90e8\u7f72\u5382\u5546\u3001\u7248\u672c\u53f7\u6216\u7ec4\u4ef6\u6570\u503c\u3002\u5f53\u524d\u9879\u76ee\u4f7f\u7528\u7684\u5177\u4f53\u503c\u5c5e\u4e8e\u9879\u76ee\u6216\u5b50\u9879\u76ee\u914d\u7f6e\uff1b\u914d\u7f6e\u80fd\u529b\u5c1a\u672a\u5b9e\u73b0\u6216\u8bc1\u636e\u65e0\u6cd5\u8bfb\u53d6\u65f6\uff0c\u660e\u786e\u8bb0\u5f55\u4e3a\u672a\u914d\u7f6e\u6216\u672a\u9a8c\u8bc1\u3002\u63d0\u4ea4\u548c\u53d1\u5e03\u52a8\u4f5c\u4f7f\u7528\u5f53\u524d\u4efb\u52a1\u5df2\u7ecf\u83b7\u5f97\u7684\u6388\u6743\u3002\n";

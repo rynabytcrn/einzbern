@@ -664,3 +664,45 @@ test("INIT-053 AC3: modified v2 remains protected through render, upgrade, keep,
     }
   }
 });
+
+// INIT-053 R40: the Owner's revision of a rule at the same version (batch v3 and silent-reporting
+// v1, recorded as rev 2 of their sections) changes the text and nothing else, as rules-catalog.ts
+// says of a correction. A section enabled with the earlier text and left unchanged takes the revised
+// text at the next agents-render, its revision raised by one; a section the user changed waits.
+test("INIT-053 R40: a same-version revision replaces an unchanged rule section at the next render and leaves a changed one pending", async (context) => {
+  for (const [language, suffix] of [["zh-CN", "zh"], ["en", "en"]]) {
+    const previous = await readFile(join(fixtures, `batch-v3-rev1.${suffix}.md`), "utf8");
+    const current = builtInRule("batch").body[suffix];
+    assert.notEqual(previous, current, "the fixture is the v3 text before the revision");
+    assert.equal(previous.split("\n")[0], current.split("\n")[0], "the revision keeps the heading and its version");
+    const catalog = BUILT_IN_RULES.map((rule) => rule.id !== "batch" ? rule : { ...rule, body: { ...rule.body, [suffix]: previous } });
+    const render = (paths) => renderAgentsSections(paths.library, { projectRoot: paths.project, configurationProjectId: paths.projectId, backupRoot: paths.backups, occurredAt: at() });
+
+    // Unchanged: enabled while the engine shipped the earlier v3 text.
+    const paths = await scratch(context, language);
+    await render(paths);
+    const first = await enable(paths, "batch", { catalog });
+    assert.deepEqual([first.result, first.status.version, first.status.fileVersion, first.status.state], ["create", 3, 1, "enabled"]);
+    assert.equal(sectionOf(await readFile(paths.agents, "utf8"), "rule:batch").body, previous);
+    assert.equal((await ruleOf(paths, "batch")).state, "enabled", "the same version is not an update to enable");
+    const rendered = await render(paths);
+    assert.equal(rendered.sections.find((section) => section.id === "rule:batch").result, "replace");
+    const section = sectionOf(await readFile(paths.agents, "utf8"), "rule:batch");
+    assert.deepEqual([section.body, section.rev], [current, 2]);
+    assert.deepEqual(await ruleOf(paths, "batch"), { id: "batch", version: 3, recordedVersion: 3, fileVersion: 2, section: "rule:batch", state: "enabled" });
+    assert.deepEqual(await ruleRecord(paths, "batch"), { enabled: true, version: 3 });
+    assert.deepEqual(await sectionRecord(paths, "batch"), { file: "AGENTS.md", id: "rule:batch", rev: 2, digest: sectionDigest(current), state: "managed" });
+
+    // Changed by the user: the render leaves the section byte for byte and it waits.
+    const changed = await scratch(context, language);
+    await render(changed);
+    await enable(changed, "batch", { catalog });
+    const edited = (await readFile(changed.agents, "utf8")).replace(previous, `${previous}User addition.\n`);
+    await writeFile(changed.agents, edited);
+    assert.equal((await ruleOf(changed, "batch")).state, "user-modified");
+    const refused = await render(changed);
+    assert.deepEqual(refused.pending, [{ id: "rule:batch", file: "AGENTS.md" }]);
+    assert.equal(await readFile(changed.agents, "utf8"), edited, "the user's text stays");
+    assert.equal((await ruleOf(changed, "batch")).state, "pending");
+  }
+});

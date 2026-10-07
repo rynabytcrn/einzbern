@@ -5,6 +5,14 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+The built-in Command Spell texts carry the Owner's revision of 2026-10-08 (TCRN-CROSS-INIT-053
+R40): batch processing v3 adds clause 7, that "once" counts per round, and silent reporting v1
+adds that no report falls between two rounds. The Chinese texts equal the Owner's archived wording;
+the English of both additions is an agent's translation that awaits the Owner's correction. The
+versions stay at 3 and 1, as for every correction of a text: an enabled rule still reads `enabled`,
+an unchanged section takes the revised text at the next `agents-render` with its section revision
+raised by one, and a section the user changed keeps its `user-modified`/`pending` protection.
+
 Release preparation requires explicit registered library and project roots and
 checks the real release gate selection, execution, saved run and unchanged tree
 and declarations (TCRN-CROSS-SUB-357). Empty declarations, missing required roots

@@ -485,3 +485,13 @@ Missing companions report `unconfigured`. Declared bindings report publication
 release evidence. An authorized agent separately verifies PR merge, Production
 publish, build result and consumed commit/artifact identities. The generic rule
 hardcodes no repository, URL, vendor or component value.
+
+### Operator cancellation and host deadlines
+
+The setup hook self-check and installed-engine probe have no product-owned
+fixed deadline. Their invoking operator may cancel the command. Generated
+Einzbern host-hook entries omit a timeout override and therefore leave deadline
+policy to the host; a host default is still an effective host limit, not proof
+of unbounded execution. Existing unrelated host entries and their user-chosen
+timeouts remain intact. Explicit user byte budgets remain distinct from these
+execution policies and from representation or protocol bounds.

@@ -335,7 +335,7 @@ test("489-R3, AC2 (fixture): after the cleanup each host's user file holds one E
     assert.deepEqual(hookCommands(document).filter((hook) => isLegacyHookCommand(hook.command)), [], label);
   }
   // Other tools' hooks and every other key stay.
-  const einzbern = { hooks: [{ type: "command", command: launcherCommand(m.device), timeout: 30 }] };
+  const einzbern = { hooks: [{ type: "command", command: launcherCommand(m.device) }] };
   assert.deepEqual(userClaude, {
     env: files.userClaude.env,
     permissions: { deny: [] },

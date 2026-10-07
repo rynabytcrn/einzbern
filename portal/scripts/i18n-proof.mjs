@@ -147,10 +147,12 @@ legs.push({
 // reviewable; the checked-in baseline count records the pre-fix observation.
 const fullTableProblems = [];
 const fullTableReference = policy.referenceLocale ?? fallbackLocale;
+// Exact nonlinguistic key/value pairs only: a changed value loses this classification.
+const invariant = (key, value) => Object.hasOwn(policy.localeInvariantValues ?? {}, key) && policy.localeInvariantValues[key] === value;
 const policyLocales = policy.locales ?? {};
 for (const locale of contractLocales.filter((candidate) => candidate !== fullTableReference)) {
   const config = policyLocales[locale];
-  const equalKeys = allKeys.filter((key) => table?.[locale]?.[key] === table?.[fullTableReference]?.[key]);
+  const equalKeys = allKeys.filter((key) => table?.[locale]?.[key] === table?.[fullTableReference]?.[key] && !invariant(key, table?.[locale]?.[key]));
   if (!config || !Number.isSafeInteger(config.maxEnglishMatches) || !Array.isArray(config.waivers)) {
     fullTableProblems.push({ locale, reason: "policy-missing" });
     continue;

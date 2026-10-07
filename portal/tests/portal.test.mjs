@@ -1421,7 +1421,9 @@ test("i18n full-table proof turns red when an existing translation regresses", a
   t.after(() => rm(base, { recursive: true, force: true }));
   const sourcePath = join(base, "locales-mutated.js");
   const source = await readFile(join(portalRoot, "locales.js"), "utf8");
-  await writeFile(sourcePath, source.replace('"receipt.title": "エンジンのレシート"', '"receipt.title": "Engine receipt"'), "utf8");
+  const anchor = '"receipt.title": "エンジンの操作記録"';
+  assert.equal(source.split(anchor).length, 2, "the Japanese fixture matches exactly one current translation");
+  await writeFile(sourcePath, source.replace(anchor, '"receipt.title": "Engine operation record"'), "utf8");
   let failure;
   try {
     await execFileAsync(process.execPath, [join(portalRoot, "scripts", "i18n-proof.mjs")], { encoding: "utf8", env: { ...process.env, TCRN_PORTAL_LOCALES_SOURCE: sourcePath } });
@@ -1431,6 +1433,20 @@ test("i18n full-table proof turns red when an existing translation regresses", a
   const leg = report.legs.find((entry) => entry.leg === "translation-full-table");
   assert.equal(leg.reasonCode, "FULL_LOCALE_TABLE_REALITY_GAP");
   assert.ok(leg.problems.some((problem) => problem.locale === "ja" && problem.unexpected.includes("receipt.title")));
+});
+
+test("i18n invariant policy does not waive translated text under the shortcut key", async (t) => {
+  const base = await realpath(await mkdtemp(join(tmpdir(), "tcrn-portal-i18n-shortcut-")));
+  t.after(() => rm(base, { recursive: true, force: true }));
+  const sourcePath = join(base, "locales-mutated.js");
+  const source = await readFile(join(portalRoot, "locales.js"), "utf8");
+  assert.equal(source.split('"search.command": "⌘K"').length, 6);
+  await writeFile(sourcePath, source.replaceAll('"search.command": "⌘K"', '"search.command": "Keyboard command"'), "utf8");
+  let failure;
+  try { await execFileAsync(process.execPath, [join(portalRoot, "scripts", "i18n-proof.mjs")], { encoding: "utf8", env: { ...process.env, TCRN_PORTAL_LOCALES_SOURCE: sourcePath } }); } catch (error) { failure = error; }
+  assert.ok(failure);
+  const leg = JSON.parse(failure.stdout).legs.find((entry) => entry.leg === "translation-full-table");
+  assert.ok(leg.problems.some((problem) => problem.locale === "ja" && problem.unexpected.includes("search.command")));
 });
 
 // TCRN-CROSS-SUB-310 R17 (MIN-238 D1, D5): no budget bounds the sum of a crest's card bodies, and

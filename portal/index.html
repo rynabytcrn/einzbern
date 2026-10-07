@@ -2233,6 +2233,13 @@ a.tcrn-relationship-chip:focus-visible {
     border-right: 0;
     border-bottom: 1px solid var(--tcrn-color-border-subtle);
   }
+  /* The sidebar owns the persistent mobile navigation trigger. A second sticky
+   * topbar at the same inset would cover it as content scrolls underneath. */
+  .tcrn-product-shell__workspace > .tcrn-top-bar {
+    position: relative;
+    top: auto;
+    z-index: auto;
+  }
   .tcrn-product-shell__workspace > .tcrn-top-bar,
   .tcrn-top-bar {
     grid-template-columns: 1fr;
@@ -4068,7 +4075,7 @@ button:disabled { cursor: not-allowed; }
       <div class="tcrn-text tcrn-rail__footer"><span data-i18n="app.boundaryBody">Writes use the public CLI and return the engine receipt.</span></div>
     </aside>
     <div class="tcrn-product-shell__workspace">
-      <header class="tcrn-top-bar" data-ds-component="ProductShell/TopBar" data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html#navigation-shell-spec" data-ds-mapping-status="production-published-consumed" data-ds-candidate-sha="2f40478bb2993e6b6d02137f5870a890800d8662">
+      <header class="tcrn-top-bar" data-ds-component="ProductShell/TopBar" data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html#navigation-shell-spec" data-ds-mapping-status="production-published-consumed" data-ds-candidate-sha="884f3c7b73a1b67783e74df3fa967fcd25ae9767">
         <div class="tcrn-top-bar__module tcrn-top-bar__module--path" id="workspace-label"></div>
         <div class="tcrn-top-bar__actions">
           <label class="tcrn-sr-only" for="library-select" data-i18n="library.label">Library</label>
@@ -4133,7 +4140,7 @@ button:disabled { cursor: not-allowed; }
             <nav class="tcrn-subnav tcrn-settings-layout__nav" data-settings-layout-nav data-settings-local-nav="true" aria-label="Settings groups" data-i18n-aria-label="settings.groupsLabel" role="tablist"></nav>
           </div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content">
-            <div class="tcrn-manage tcrn-settings-layout" data-settings-layout-component="SettingsLayout" data-settings-layout="true" data-settings-layout-navigation-location="page-hierarchy-section-tabs" data-ds-candidate="TCRN-Design-System@2f40478bb2993e6b6d02137f5870a890800d8662" data-ds-contract-status="production-published-consumed" data-ds-contract-version="ai_consumption_contract_v1" data-ds-contract-digest="d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7" data-ds-component-css-sha256="74f51554a6977429e99fbb95fa16143dbd8596d321d6cee0a06136f4da41b94f" data-ds-rules="DS-106-R1 DS-106-R2 DS-107-R1 DS-107-R2 DS-108-R1 DS-108-R2 DS-112-R1 DS-112-R2 DS-116-R1 DS-116-R2 DS-117-R1 DS-117-R2 DS-118-R1 DS-118-R2 DS-119-R1 DS-119-R2" data-ds-surface-contracts="overlay-boundary-contract-v1 field-value-selection-contract-v1 dictionary-content-contract-v1 operation-feedback-contract-v1 content-scope-contract-v1 consumer-evidence-contract-v1 verification-cadence-contract-v1" data-ds-static-overlay-bridge="mountStaticOverlayBoundary" data-ds-candidate-status="production-published-consumed" data-settings-layout-mode="container-driven" data-settings-layout-form-policy="single-host-single-column" data-settings-layout-breakpoint="960px" data-settings-content-breakpoint="720px" data-settings-local-navigation="compact" data-settings-overflow-policy="no-page-overflow" data-settings-long-value-policy="native-inline-scroll-copy"><div class="tcrn-settings-layout__frame"><div class="tcrn-settings-layout__grid" data-settings-layout-grid><div class="tcrn-settings-layout__content" data-settings-layout-content data-settings-content="true" data-settings-complete-form="true"><div id="design-authority" hidden></div><div id="settings-rows" class="tcrn-settings-layout__form"></div></div></div></div></div>
+            <div class="tcrn-manage tcrn-settings-layout" data-settings-layout-component="SettingsLayout" data-settings-layout="true" data-settings-layout-navigation-location="page-hierarchy-section-tabs" data-ds-candidate="TCRN-Design-System@884f3c7b73a1b67783e74df3fa967fcd25ae9767" data-ds-contract-status="production-published-consumed" data-ds-contract-version="ai_consumption_contract_v1" data-ds-contract-digest="d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7" data-ds-component-css-sha256="3bb21fb49333e602d9fe580ac9cfe4830c71d985f4454337ec9e8be2d3c5d99a" data-ds-rules="DS-106-R1 DS-106-R2 DS-107-R1 DS-107-R2 DS-108-R1 DS-108-R2 DS-112-R1 DS-112-R2 DS-116-R1 DS-116-R2 DS-117-R1 DS-117-R2 DS-118-R1 DS-118-R2 DS-119-R1 DS-119-R2" data-ds-surface-contracts="overlay-boundary-contract-v1 field-value-selection-contract-v1 dictionary-content-contract-v1 operation-feedback-contract-v1 content-scope-contract-v1 consumer-evidence-contract-v1 verification-cadence-contract-v1" data-ds-static-overlay-bridge="mountStaticOverlayBoundary" data-ds-candidate-status="production-published-consumed" data-settings-layout-mode="container-driven" data-settings-layout-form-policy="single-host-single-column" data-settings-layout-breakpoint="960px" data-settings-content-breakpoint="720px" data-settings-local-navigation="compact" data-settings-overflow-policy="no-page-overflow" data-settings-long-value-policy="native-inline-scroll-copy"><div class="tcrn-settings-layout__frame"><div class="tcrn-settings-layout__grid" data-settings-layout-grid><div class="tcrn-settings-layout__content" data-settings-layout-content data-settings-content="true" data-settings-complete-form="true"><div id="design-authority" hidden></div><div id="settings-rows" class="tcrn-settings-layout__form"></div></div></div></div></div>
           </div>
         </div>
       </section>
@@ -4571,11 +4578,11 @@ const BOOT = __PORTAL_BOOT__;
     const layerClass = kind === "popover" ? "tcrn-popover" : "tcrn-tooltip__content";
     const layerRole = kind === "popover" ? `role="dialog" aria-modal="false" aria-label="${esc(t("concept.explain"))}" data-overlay-scope="popover"` : `role="tooltip" data-tooltip-scope="supplemental" data-tooltip-interactive-content="forbidden"`;
     const triggerRelation = kind === "popover" ? `aria-controls="${id}" aria-haspopup="dialog" aria-expanded="false"` : `aria-describedby="${id}"`;
-    return `<span class="tcrn-tooltip" data-placement="${esc(placement)}" data-overlay-scope="${kind}" data-concept-tip="${esc(key)}" data-static-overlay-kind="${kind}" data-ds-overlay-candidate="TCRN-Design-System@2f40478bb2993e6b6d02137f5870a890800d8662">`
+    return `<span class="tcrn-tooltip" data-placement="${esc(placement)}" data-overlay-scope="${kind}" data-concept-tip="${esc(key)}" data-static-overlay-kind="${kind}" data-ds-overlay-candidate="TCRN-Design-System@884f3c7b73a1b67783e74df3fa967fcd25ae9767">`
       + `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-icon-button" ${triggerRelation} data-static-overlay-trigger="true" data-static-overlay-kind="${kind}" aria-label="${esc(t("concept.explain"))}">`
       + `<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 7.2v4"/><path d="M8 4.8h.01"/></svg>`
       + `</button>`
-      + `<${layerTag} id="${id}" ${layerRole} class="${layerClass}" data-static-overlay-layer="true" data-static-overlay-kind="${kind}" data-ds-overlay-candidate="TCRN-Design-System@2f40478bb2993e6b6d02137f5870a890800d8662" hidden>${esc(body)}</${layerTag}>`
+      + `<${layerTag} id="${id}" ${layerRole} class="${layerClass}" data-static-overlay-layer="true" data-static-overlay-kind="${kind}" data-ds-overlay-candidate="TCRN-Design-System@884f3c7b73a1b67783e74df3fa967fcd25ae9767" hidden>${esc(body)}</${layerTag}>`
       + `</span>`;
   };
   const settingDescription = (key) => t(`setting.${key}.description`);
@@ -5908,6 +5915,9 @@ const BOOT = __PORTAL_BOOT__;
   $("#receipt-chip").addEventListener("click", openReceipt); $("#receipt-details-trigger").addEventListener("click", toggleReceiptDetails); $("#drawer-button").addEventListener("click", openReceipt); $("#drawer-close").addEventListener("click", closeReceipt);
   $("#configuration-project-select").addEventListener("change", async (event) => {
     if (state.librarySwitching || state.settingsWritePending) { renderConfigurationTargets(); return; }
+    // Disable the selector immediately, before the POST yields. Its enabled state
+    // means the complete selected-scope render (including dependent reads) settled.
+    event.target.disabled = true;
     state.librarySwitching = true; state.libraryEpoch = (state.libraryEpoch || 0) + 1;
     state.promptLanguageDraft = null; resetCollections(); clearTransientTarget(); setSettingWritesBusy(true);
     try {
@@ -5984,9 +5994,8 @@ const BOOT = __PORTAL_BOOT__;
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     clearTransientTarget();
-    if (state.promptLanguageDraft !== null && state.promptLanguageDraft !== undefined) {
-      state.promptLanguageDraft = null; renderSettings();
-    }
+    // The published MultiSelect bridge owns Escape and returns focus to its trigger.
+    // Closing a popup preserves the draft; the explicit Undo action discards it.
   });
   document.addEventListener("keydown", (event) => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); $("#global-search").focus(); } if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s" && state.page === "prose") { event.preventDefault(); $("#save-agents").click(); } if (event.key === "Escape" && $("#receipt-drawer").dataset.open === "true") closeReceipt(); });
   // The rail states one identity: the selected library's project name as its section head, and

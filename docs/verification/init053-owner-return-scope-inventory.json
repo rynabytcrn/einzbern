@@ -2,12 +2,12 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r33-source-continuation",
+  "pack": "r34-source-continuation",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
       "path": "packages/cli/src/index.ts",
-      "sha256": "757106918d915c73ebc31e5c32618325704ebb68319cbe45662a49039884baed"
+      "sha256": "192762b80a44ee5b955ed3cb12ae5fd3294160b393a5f090823667a44bcc3b42"
     },
     {
       "path": "packages/cli/src/otel-spans.ts",
@@ -79,7 +79,7 @@
     },
     {
       "path": "packages/core/src/engine-home.ts",
-      "sha256": "e201827b7fdc933b394a1ab16481de0dbdc630d62431764777782aedd2b76d7f"
+      "sha256": "0f06b57e29638bb9efa968190295fdc6b7d3e102d36948bf146519162f066fe9"
     },
     {
       "path": "packages/core/src/ether-library.ts",
@@ -127,7 +127,7 @@
     },
     {
       "path": "packages/core/src/host-hooks.ts",
-      "sha256": "c8583c1665cfcbd37d7f6610edb67052dec1544ed151946d8988be3e68c14019"
+      "sha256": "4697db134c99c8ae5930b52647214918bc9c8b414910e10b6415f721a8d2abb6"
     },
     {
       "path": "packages/core/src/host-probe.ts",
@@ -359,7 +359,7 @@
     },
     {
       "path": "portal/index.html",
-      "sha256": "107e7b057e24561a8348d5024241220ced9b7f4a33b805d176869da8cbdbbd30"
+      "sha256": "1e33630b197bd6f1fa64ef08127824ddb3c1bc2572168ff09951be7bc398f236"
     },
     {
       "path": "portal/locale-contract.mjs",
@@ -367,7 +367,7 @@
     },
     {
       "path": "portal/locales.js",
-      "sha256": "dfdebe1c8fbff02ae5939f1e6b27ec7cead10e71ff6331d8e444903be56a5d1e"
+      "sha256": "84fb85cbd7df36713ad448e7e0c8c5cb357b5577442f0c35237ac6628ec05c11"
     },
     {
       "path": "portal/portal.mjs",
@@ -391,7 +391,7 @@
     },
     {
       "path": "portal/scripts/i18n-proof.mjs",
-      "sha256": "273da5bedad917093f48d50a1ad97f3ea2df773c45ce12ee0565cee169d2778d"
+      "sha256": "56895e7049afd72b76d4346f31446e8dacd04d8ca5143fe546a96eac17bb8079"
     },
     {
       "path": "portal/scripts/proof.mjs",
@@ -778,48 +778,48 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R33 source continuation; complete49 cadence held without fixture-location authorization; actual independent application/schema/native probes recorded separately; this inventory never implies passing verification, final acceptance or Owner visual judgment. F01 migration-language-negative source repair is authorized; full migration dependent files remain held together in the original49-file Source cadence; F19 belongs to the later truthful final evidence producer. The complete actual candidate parent/publication/build/consumption disposition below determines whether its source may be consumed. Current consumed-authority identity is bound by the publication and snapshot fields. Fresh canonical integration and affected MAIN acceptance remain separate pending acts. No live Engine installation/migration or governed write was performed.",
+  "evidenceDisposition": "R34 current Source final generation. Original full-file cadence and affected dependency files have run; actual exit/counts are attached below, including every failure. Prior held49 prose is superseded. Source development verification is separate from integrated acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are included; no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
-    "candidate": "788f02c76c1d1b2f8c03628253bd8456964b381e",
-    "mergeCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+    "candidate": "bb91bdc40d2669aef823abaf8d2050ca105e9a89",
+    "mergeCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
     "candidateParent": {
       "argv": [
         "pnpm",
         "verify"
       ],
       "exit": 0,
-      "sourceTree": "de0b19e6b750702d18f8d727bba734362d240e25",
-      "run": "ds-p3-ordinary-parent-once.run.json",
+      "sourceTree": "68a7edb311804d6981610c5ddf75ada66ec4aa06",
+      "run": "ds-verify-once.run.json",
       "fullOriginalParent": true
     },
     "staticBuild": {
       "command": "pnpm public-docs:vercel-build",
       "exit": 0,
-      "run": "ds-production-static-build-once.run.json"
+      "run": "ds-production-build-once.run.json"
     },
     "candidateMerged": true,
     "candidateProductionPublished": true,
     "candidateBuildAndArtifactVerified": true,
     "candidateConsumed": true,
     "publication": {
-      "pr": "https://github.com/tpmoonchefryan/TCRN-Design-System/pull/23",
-      "prHead": "788f02c76c1d1b2f8c03628253bd8456964b381e",
-      "mergeCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
-      "mergeTree": "de0b19e6b750702d18f8d727bba734362d240e25",
+      "pullRequestNumber": 24,
+      "prHead": "bb91bdc40d2669aef823abaf8d2050ca105e9a89",
+      "mergeCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
+      "mergeTree": "68a7edb311804d6981610c5ddf75ada66ec4aa06",
       "environment": "Production",
-      "deploymentId": 6904637050,
-      "deploymentStatusId": 19388278778,
-      "vercelBuildStatusId": 55773429554,
-      "vercelBuildURL": "https://vercel.com/tcrn-platform/tcrn-design-system-storybook/7yzUQWhbNoeRSJ4wGsLX4LhGqb1B",
-      "productionDeploymentURL": "https://tcrn-design-system-storybook-m0306iz13-tcrn-platform.vercel.app",
+      "deploymentId": 6908102337,
+      "deploymentStatusId": 19396305924,
+      "vercelBuildStatusId": 55785918568,
+      "vercelBuildURL": "https://vercel.com/tcrn-platform/tcrn-design-system-storybook/ECZ5EfvLqfhCoUAXmA7uKYua33Fd",
+      "productionDeploymentURL": "https://tcrn-design-system-storybook-negu64rme-tcrn-platform.vercel.app",
       "productionOrigin": "https://tcrn-design-system-storybook.vercel.app",
       "authority": {
         "schemaVersion": "tcrn.design-authority.v1",
         "name": "TCRN Design System",
         "version": "3.0.0",
         "tokensDigest": "118c6e45b8698a45a551226deb865d5bee71f64d0f787550751489aae2c891c9",
-        "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
-        "componentCssDigest": "74f51554a6977429e99fbb95fa16143dbd8596d321d6cee0a06136f4da41b94f",
+        "sourceCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
+        "componentCssDigest": "3bb21fb49333e602d9fe580ac9cfe4830c71d985f4454337ec9e8be2d3c5d99a",
         "staticBridgeDigest": "26e51f7b7f7beb18ae00fec4daaf19dbf1d8e588063fd509c81a1761a87ccf8a"
       },
       "aiContractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
@@ -829,7 +829,7 @@
           "url": "https://tcrn-design-system-storybook.vercel.app/tcrn-design-authority.json",
           "status": 200,
           "contentType": "application/json; charset=utf-8",
-          "sha256": "fd77fd2b7b154ba7cc9366fd429f1a4f43708e832c23faca72bcdb6836b40972",
+          "sha256": "e2fb76a8f8de110484fbda12df323325f2e8b24a423821f2dd7dc4a1371b362f",
           "bytes": 436,
           "file": "published-tcrn-design-authority.json"
         },
@@ -852,13 +852,13 @@
           "file": "published-ds-static-bridges.js"
         },
         {
-          "artifact": "patterns-feedback-selection.html",
-          "url": "https://tcrn-design-system-storybook.vercel.app/patterns-feedback-selection.html",
+          "artifact": "components-navigation-shells.html",
+          "url": "https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html",
           "status": 200,
           "contentType": "text/html; charset=utf-8",
-          "sha256": "de1e422d40e02026237f3e1982aac5adab371ba1f611d4f97f569d733613c775",
-          "bytes": 548450,
-          "file": "published-patterns-feedback-selection.html"
+          "sha256": "f58d77f18011235e3258bca567ef9938c3edacda5b2087f92eccbcf8d13ba07d",
+          "bytes": 667481,
+          "file": "published-components-navigation-shells.html"
         },
         {
           "artifact": "llms.txt",
@@ -872,44 +872,46 @@
       ],
       "dependencySatisfied": true,
       "basis": [
-        "PR merged matching source tree",
-        "Production deployment success on merge SHA",
-        "Vercel successful static build on merge SHA",
-        "Production authority sourceCommit and artifact byte digests",
-        "full original local pnpm verify and public-docs:vercel-build passed on exact same source tree"
-      ],
-      "ownerVisualAcceptance": "not claimed"
+        "PR merged same source tree as local full verify and static build",
+        "Production deployment and Vercel build success on merge SHA",
+        "Production authority sourceCommit and component CSS/static bridge digests checked"
+      ]
     },
-    "originalVisualSignatureHistory": {
-      "mean": [
-        2.625,
-        2.855,
-        2.668
-      ],
-      "max": [
-        13,
-        15,
-        11
-      ],
-      "staleHeight": 1,
-      "newHeight": 0,
-      "thresholdMean": 2,
-      "thresholdMax": 8,
-      "maxStoryHeight": 2000,
-      "debt": 9,
-      "captures": 271
-    },
-    "currentBrowserSummary": "ds-current-browser-proof-summary.json",
-    "currentBrowserResult": {
-      "ok": true,
-      "screenshots": 271,
-      "axeViolationCount": 0
-    },
-    "baselinesCriteriaAndAllowancesChanged": false,
-    "formalApplicationAcceptance": "pending",
-    "OwnerVisual": "not claimed",
-    "noEngineHelperReleaseInstallMigration": true
+    "priorPublication": {
+      "pr": "https://github.com/tpmoonchefryan/TCRN-Design-System/pull/23",
+      "mergeCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+      "status": "retained prior publication; superseded for the mobile shell repair"
+    }
   },
+  "currentWholeFileCadence": {
+    "commandEvidence": "full-file-cadence-command.json",
+    "runEvidence": "full-file-cadence-once.run.json",
+    "exit": 0,
+    "counts": {
+      "tests": 550,
+      "pass": 550,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0
+    },
+    "wholeFiles": 53,
+    "original49Retained": true,
+    "retainedDependency": "tests/knowledge-capture.test.mjs",
+    "addedAffectedDependencies": [
+      "tests/host-hooks.test.mjs",
+      "tests/host-render.test.mjs",
+      "tests/engine-home.test.mjs"
+    ],
+    "stdoutSha256": "0faaef34b2a73642eada697b75de40a0b916b56a465b418f8afa9ce8692b36d0",
+    "finishedAt": "2026-10-07T11:06:23.097084+00:00",
+    "runtime": {
+      "node": "24.16.0",
+      "pnpm": "11.3.0",
+      "cwdBinding": "Source checkout; actual cwd runtime, not container root runtime"
+    },
+    "scope": "Source full-file development verification; not D1/Root/final acceptance"
+  },
+  "generationTimeUtc": "2026-10-07T11:14:19.551101+00:00",
   "settings": [
     {
       "catalog": {
@@ -1023,22 +1025,22 @@
         },
         {
           "file": "portal/index.html",
-          "line": 4610,
+          "line": 4617,
           "text": "const values = currentSetting(\"artifact.language\")?.allowedValues;"
         },
         {
           "file": "portal/index.html",
-          "line": 4614,
+          "line": 4621,
           "text": "const selected = new Set(String(value ?? currentSetting(\"artifact.language\")?.currentValue ?? \"\").split(\",\").map((part) => part.trim()).filter((part) => roster.includes(part)));"
         },
         {
           "file": "portal/index.html",
-          "line": 4625,
+          "line": 4632,
           "text": "return `<div class=\"tcrn-setting-choice\" data-setting-choice-component=\"SettingChoice\" ${settingChoiceAttrs(roster, entry.key, \"collection-closed\", \"multi-select\")} data-setting-choice-cardinality=\"set\" data-setting-choice-source=\"artifact.language.allowedValues\" data-setting-choice-value-format=\"comma-separated\"><div class=\"tcrn-multi-select-dropdown\" data-prompt-language-dropdown data-choice-cardinality=\"collection\" data-choice-value-mode=\"closed\" data-choice-presentation=\"dropdown\" data-choice-option-count=\"${roster.length}\" data-empty-selection-label=\"${esc(t(\"scope.selectLanguages\"))}\"><button type=\"button\" id=\"${esc(id)}\" class=\"tcrn-select tcrn-multi-select-dropdown__trigger\" aria-label=\"${esc(label)}\" aria-required=\"true\" aria-haspopup=\"listbox\" aria-expanded=\"false\" aria-controls=\"${esc(listId)}\"><span data-multi-select-summary>${esc([...selected].map(promptLanguageLabel).join(\", \") || t(\"scope.selectLanguages\"))}</span><svg class=\"tcrn-icon tcrn-multi-select-dropdown__caret\" width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" aria-hidden=\"true\"><path d=\"m6 9 6 6 6-6\"/></svg></button><select class=\"tcrn-sr-only tcrn-multi-select-dropdown__value\" data-choice-presentation=\"dropdown\" multiple name=\"${esc(entry.key)}\" tabindex=\"-1\" aria-hidden=\"true\" data-setting-control=\"${esc(entry.key)}\" data-setting-cardinality=\"set\" data-cli-action=\"settings-set\">${roster.map((language) => `<option value=\"${esc(language)}\" ${selected.has(language) ? \"selected\" : \"\"}>${esc(promptLanguageLabel(language))}</option>`).join(\"\")}</select><input class=\"tcrn-sr-only tcrn-multi-select-dropdown__validation\" type=\"checkbox\" required tabindex=\"-1\" aria-hidden=\"true\" ${selected.size > 0 ? \"checked\" : \"\"}><div id=\"${esc(listId)}\" class=\"tcrn-menu tcrn-multi-select-dropdown__list\" role=\"listbox\" aria-multiselectable=\"true\" aria-label=\"${esc(label)}\" tabindex=\"-1\" hidden>${options}</div></div><div class=\"tcrn-surface__head-actions tcrn-action-row\"><button type=\"button\" class=\"tcrn-button tcrn-button--primary tcrn-button--sm\" data-save-setting-choice=\"${esc(entry.key)}\" ${dirty ? \"\" : \"disabled\"}>${esc(t(\"config.save\"))}</button><button type=\"button\" class=\"tcrn-button tcrn-button--quiet tcrn-button--sm\" data-undo-setting-choice=\"${esc(entry.key)}\" ${dirty ? \"\" : \"disabled\"}>${esc(t(\"config.undo\"))}</button><button type=\"button\" class=\"tcrn-button tcrn-button--quiet tcrn-button--sm\" data-reset-setting=\"${esc(entry.key)}\" ${entry.declaredValue == null ? \"disabled\" : \"\"}>${esc(t(\"config.reset\"))}</button></div></div>`;"
         },
         {
           "file": "portal/index.html",
-          "line": 4670,
+          "line": 4677,
           "text": "if (entry.controlType === \"enum\" && values.length > 0) return `<div class=\"tcrn-setting-choice\" data-setting-choice-component=\"SettingChoice\" ${settingChoiceAttrs(values, entry.key)}><label class=\"tcrn-setting-choice__select-label\" for=\"${esc(id)}\"><span class=\"tcrn-sr-only\">${esc(label)}</span><select class=\"tcrn-select\" id=\"${esc(id)}\" data-setting-control=\"${esc(entry.key)}\" data-cli-action=\"settings-set\">${values.map((value) => `<option value=\"${esc(value)}\" ${value === current ? \"selected\" : \"\"}>${esc(entry.key === \"artifact.language\" ? promptLanguageLabel(value) : value || t(\"config.unset\"))}</option>`).join(\"\")}</select></label></div>`;"
         },
         {
@@ -1348,17 +1350,17 @@
         },
         {
           "file": "portal/index.html",
-          "line": 4569,
+          "line": 4576,
           "text": "const kind = key === \"setting.design.authority\" || body.length > 240 ? \"popover\" : \"tooltip\";"
         },
         {
           "file": "portal/index.html",
-          "line": 4709,
+          "line": 4716,
           "text": "const url = currentSetting(\"design.authority\")?.currentValue ?? null;"
         },
         {
           "file": "portal/index.html",
-          "line": 4791,
+          "line": 4798,
           "text": "const authorityGroup = settingGroup(\"design.authority\");"
         },
         {
@@ -2880,67 +2882,67 @@
         },
         {
           "file": "portal/index.html",
-          "line": 4143,
+          "line": 4150,
           "text": "<header class=\"tcrn-page-header tcrn-page__head\"><div class=\"tcrn-page-header__body\"><div class=\"tcrn-page-header__title\"><h1 class=\"tcrn-heading tcrn-heading--2\" data-i18n=\"page.modelCategories\">Model categories</h1><p class=\"tcrn-text tcrn-page__lede\" data-i18n=\"modelCategories.lede\" data-collection-purpose=\"models.category\">The parent table of the model tiers. The order column ranks the categories: the lower the order, the stronger the category, and escalation climbs toward the lower orders.</p></div><div class=\"tcrn-page-header__actions tcrn-page__actions\"><span class=\"tcrn-badge\" id=\"model-categories-count\">—</span></div></div></header>"
         },
         {
           "file": "portal/index.html",
-          "line": 4146,
+          "line": 4153,
           "text": "<div class=\"tcrn-page-hierarchy__lower-content\" data-page-hierarchy-region=\"lower-content\" data-page-hierarchy-slot=\"content\"><div id=\"model-categories-view\" data-ui=\"model-categories-view\" data-collection-view=\"models.category\"></div></div>"
         },
         {
           "file": "portal/index.html",
-          "line": 4251,
+          "line": 4258,
           "text": "const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? \"en\", theme: document.documentElement.dataset.tcrnTheme, page: \"dashboard\", dashboardTab: \"overview\", settingGroup: \"general\", collections: { \"models.category\": { draft: null, dirty: false, findings: [], refusal: null }, \"models.tiers\": { draft: null, dirty: false, findings: [], refusal: null } }, collectionFocus: null, transientTargetTimer: null, settings: null, machineSettings: null, variables: null, vocabulary: null, status: null, work: null, workRead: { library: 0, readingFor: null, again: false }, knowledge: null, knowledgeQuery: \"\", knowledgeStatus: \"valid\", knowledgeBody: null, gates: [], gateResponse: null, lastGateRun: null, commands: [], selectedVocabulary: \"conferenceTypes\", receipt: null, operationDetailsOpen: false, agentsText: \"\", reconciliation: null, rules: null, pendingSection: \"\", searchIndex: [], searchResults: [], searchSelection: 0 };"
         },
         {
           "file": "portal/index.html",
-          "line": 4557,
+          "line": 4564,
           "text": "const COLLECTION_PAGES = Object.freeze({ \"models.category\": \"model-categories\", \"models.tiers\": \"model-tiers\" });"
         },
         {
           "file": "portal/index.html",
-          "line": 4838,
+          "line": 4845,
           "text": "\"models.category\": Object.freeze([\"order\", \"id\", \"name\", \"description\"]),"
         },
         {
           "file": "portal/index.html",
-          "line": 4952,
+          "line": 4959,
           "text": "const key = \"models.category\";"
         },
         {
           "file": "portal/index.html",
-          "line": 4972,
+          "line": 4979,
           "text": "const empty = emptyGuide(t(\"modelCategories.emptyTitle\"), t(\"modelCategories.emptyBody\"), `<button type=\"button\" class=\"tcrn-button tcrn-button--primary tcrn-button--md\" data-collection-add=\"models.category\">${esc(t(\"modelCategories.add\"))}</button>`);"
         },
         {
           "file": "portal/index.html",
-          "line": 4990,
+          "line": 4997,
           "text": "const categories = storedRecords(\"models.category\");"
         },
         {
           "file": "portal/index.html",
-          "line": 5035,
+          "line": 5042,
           "text": "if (key === \"models.category\") renderModelCategories();"
         },
         {
           "file": "portal/index.html",
-          "line": 5064,
+          "line": 5071,
           "text": "const category = focus?.key === key && focus.field === \"category\" ? String(focus.value) : String(rows.at(-1)?.category ?? storedRecords(\"models.category\")[0]?.id ?? \"\");"
         },
         {
           "file": "portal/index.html",
-          "line": 5065,
+          "line": 5072,
           "text": "const record = key === \"models.category\""
         },
         {
           "file": "portal/index.html",
-          "line": 5071,
+          "line": 5078,
           "text": "$(`[data-collection-table=\"${key}\"] [data-collection-row=\"${rows.length}\"] [data-collection-field=\"${key === \"models.category\" ? \"id\" : \"runner\"}\"]`)?.focus?.();"
         },
         {
           "file": "portal/index.html",
-          "line": 5657,
+          "line": 5664,
           "text": "const rendersSystemVariables = (key) => [\"models.category\", \"models.tiers\"].includes(key) || String(key).startsWith(\"models.escalation.\") || String(key).startsWith(\"design.\");"
         },
         {
@@ -3172,22 +3174,22 @@
         },
         {
           "file": "portal/index.html",
-          "line": 4927,
+          "line": 4934,
           "text": "const ESCALATION_KEYS = Object.freeze([\"models.escalation.enabled\", \"models.escalation.threshold\", \"models.escalation.ceiling\"]);"
         },
         {
           "file": "portal/index.html",
-          "line": 4930,
+          "line": 4937,
           "text": "const ceiling = effectiveSetting(\"models.escalation.ceiling\");"
         },
         {
           "file": "portal/index.html",
-          "line": 4935,
+          "line": 4942,
           "text": "\"models.escalation.ceiling\": category === undefined ? t(\"modelTiers.missingCategory\", { category: ceiling }) : categoryLabel(category),"
         },
         {
           "file": "portal/index.html",
-          "line": 4938,
+          "line": 4945,
           "text": "const tone = key === \"models.escalation.ceiling\" && category === undefined ? \" tcrn-badge--warning\" : \"\";"
         },
         {
@@ -3321,12 +3323,12 @@
         },
         {
           "file": "portal/index.html",
-          "line": 4927,
+          "line": 4934,
           "text": "const ESCALATION_KEYS = Object.freeze([\"models.escalation.enabled\", \"models.escalation.threshold\", \"models.escalation.ceiling\"]);"
         },
         {
           "file": "portal/index.html",
-          "line": 4933,
+          "line": 4940,
           "text": "\"models.escalation.enabled\": effectiveSetting(\"models.escalation.enabled\") === \"true\" ? t(\"config.enabled\") : t(\"config.disabled\"),"
         },
         {
@@ -3442,12 +3444,12 @@
         },
         {
           "file": "portal/index.html",
-          "line": 4927,
+          "line": 4934,
           "text": "const ESCALATION_KEYS = Object.freeze([\"models.escalation.enabled\", \"models.escalation.threshold\", \"models.escalation.ceiling\"]);"
         },
         {
           "file": "portal/index.html",
-          "line": 4934,
+          "line": 4941,
           "text": "\"models.escalation.threshold\": effectiveSetting(\"models.escalation.threshold\"),"
         },
         {
@@ -3723,52 +3725,52 @@
         },
         {
           "file": "portal/index.html",
-          "line": 4152,
+          "line": 4159,
           "text": "<header class=\"tcrn-page-header tcrn-page__head\"><div class=\"tcrn-page-header__body\"><div class=\"tcrn-page-header__title\"><h1 class=\"tcrn-heading tcrn-heading--2\" data-i18n=\"page.modelTiers\">Model tiers</h1><p class=\"tcrn-text tcrn-page__lede\" data-i18n=\"modelTiers.lede\" data-collection-purpose=\"models.tiers\">Every model a rule can be given, one record per row. The order column ranks all records together: the lower the order, the stronger the record. A category's tier with the largest order is the one a rule gets, and escalation moves to the next smaller order.</p></div><div class=\"tcrn-page-header__actions tcrn-page__actions\"><span class=\"tcrn-badge\" id=\"model-tiers-count\">—</span></div></div></header>"
         },
         {
           "file": "portal/index.html",
-          "line": 4155,
+          "line": 4162,
           "text": "<div class=\"tcrn-page-hierarchy__lower-content\" data-page-hierarchy-region=\"lower-content\" data-page-hierarchy-slot=\"content\"><div id=\"model-tiers-view\" data-ui=\"model-tiers-view\" data-collection-view=\"models.tiers\"></div></div>"
         },
         {
           "file": "portal/index.html",
-          "line": 4251,
+          "line": 4258,
           "text": "const state = { locale: storedLocale ?? (Object.keys(LOCALES).includes(BOOT.machineDefaults?.locale) ? BOOT.machineDefaults.locale : null) ?? BOOT.defaultLocale ?? \"en\", theme: document.documentElement.dataset.tcrnTheme, page: \"dashboard\", dashboardTab: \"overview\", settingGroup: \"general\", collections: { \"models.category\": { draft: null, dirty: false, findings: [], refusal: null }, \"models.tiers\": { draft: null, dirty: false, findings: [], refusal: null } }, collectionFocus: null, transientTargetTimer: null, settings: null, machineSettings: null, variables: null, vocabulary: null, status: null, work: null, workRead: { library: 0, readingFor: null, again: false }, knowledge: null, knowledgeQuery: \"\", knowledgeStatus: \"valid\", knowledgeBody: null, gates: [], gateResponse: null, lastGateRun: null, commands: [], selectedVocabulary: \"conferenceTypes\", receipt: null, operationDetailsOpen: false, agentsText: \"\", reconciliation: null, rules: null, pendingSection: \"\", searchIndex: [], searchResults: [], searchSelection: 0 };"
         },
         {
           "file": "portal/index.html",
-          "line": 4557,
+          "line": 4564,
           "text": "const COLLECTION_PAGES = Object.freeze({ \"models.category\": \"model-categories\", \"models.tiers\": \"model-tiers\" });"
         },
         {
           "file": "portal/index.html",
-          "line": 4839,
+          "line": 4846,
           "text": "\"models.tiers\": Object.freeze([\"order\", \"category\", \"runner\", \"model\", \"effort\", \"note\"]),"
         },
         {
           "file": "portal/index.html",
-          "line": 4949,
+          "line": 4956,
           "text": "const tierCounts = () => storedRecords(\"models.tiers\").reduce((counts, record) => counts.set(record.category, (counts.get(record.category) ?? 0) + 1), new Map());"
         },
         {
           "file": "portal/index.html",
-          "line": 4987,
+          "line": 4994,
           "text": "const key = \"models.tiers\";"
         },
         {
           "file": "portal/index.html",
-          "line": 5019,
+          "line": 5026,
           "text": ": emptyGuide(t(\"modelTiers.emptyTitle\"), t(\"modelTiers.emptyBody\"), `<button type=\"button\" class=\"tcrn-button tcrn-button--primary tcrn-button--md\" data-collection-add=\"models.tiers\">${esc(t(\"modelTiers.add\"))}</button>`);"
         },
         {
           "file": "portal/index.html",
-          "line": 5036,
+          "line": 5043,
           "text": "else if (key === \"models.tiers\") renderModelTiers();"
         },
         {
           "file": "portal/index.html",
-          "line": 5657,
+          "line": 5664,
           "text": "const rendersSystemVariables = (key) => [\"models.category\", \"models.tiers\"].includes(key) || String(key).startsWith(\"models.escalation.\") || String(key).startsWith(\"design.\");"
         },
         {
@@ -4354,17 +4356,17 @@
         },
         {
           "file": "portal/index.html",
-          "line": 4668,
+          "line": 4675,
           "text": "if (entry.key === \"retrieval.promptLanguages\") return promptLanguageChoice(entry, label, id);"
         },
         {
           "file": "portal/index.html",
-          "line": 5661,
+          "line": 5668,
           "text": "if (key === \"retrieval.promptLanguages\" && String(value ?? \"\").trim() === \"\") {"
         },
         {
           "file": "portal/index.html",
-          "line": 5703,
+          "line": 5710,
           "text": "if (key === \"retrieval.promptLanguages\") focusPromptLanguage();"
         },
         {
@@ -5286,7 +5288,7 @@
         },
         {
           "file": "packages/core/src/host-hooks.ts",
-          "line": 139,
+          "line": 140,
           "text": "// This device's agents.navigation (machine-settings.ts): declined adds the two pointer hooks;"
         },
         {
@@ -5626,7 +5628,7 @@
         },
         {
           "file": "portal/index.html",
-          "line": 4649,
+          "line": 4656,
           "text": "const deviceOptions = (entry) => entry.key === \"portal.defaultPartition\""
         },
         {
@@ -5982,5 +5984,5 @@
     }
   ],
   "settingCount": 33,
-  "nativeReads": "read at 10035, head 985ccd28c711178221d43fc911e15a320c93906ffe3dc11ee322bbd3f4bd1de2; full status/work-list/work-show and dispatch read receipts retained in raw archive"
+  "nativeReads": "installed engine 1.2.1, live 10036, INIT revision14 and INC399 revision5; current native work/scope/dispatch readbacks retained in the raw archive"
 }

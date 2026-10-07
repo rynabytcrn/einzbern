@@ -2206,6 +2206,13 @@ a.tcrn-relationship-chip:focus-visible {
     border-right: 0;
     border-bottom: 1px solid var(--tcrn-color-border-subtle);
   }
+  /* The sidebar owns the persistent mobile navigation trigger. A second sticky
+   * topbar at the same inset would cover it as content scrolls underneath. */
+  .tcrn-product-shell__workspace > .tcrn-top-bar {
+    position: relative;
+    top: auto;
+    z-index: auto;
+  }
   .tcrn-product-shell__workspace > .tcrn-top-bar,
   .tcrn-top-bar {
     grid-template-columns: 1fr;

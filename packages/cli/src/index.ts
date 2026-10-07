@@ -1626,7 +1626,7 @@ function setupOptions(values: Readonly<Record<string, string>>): SetupOptions {
 // in a process of its own as a host starts it, from the project's directory, with the project's name
 // as a sample prompt. injected is what it would add to that prompt; a launcher never fails a
 // prompt, so a failure shows as its reason code on stderr (hookReasonCode) and nothing injected.
-const HOOK_SELF_CHECK_TIMEOUT_MS = 60_000;
+// No product deadline: the invoking operator owns cancellation.
 
 function hookSelfCheck(applied: SetupApplied): {
   readonly prompt: string;
@@ -1643,7 +1643,7 @@ function hookSelfCheck(applied: SetupApplied): {
     encoding: "utf8",
     env: { ...process.env, EINZBERN_HOME: applied.deviceHome },
     maxBuffer: RUNTIME_CAPACITY.bufferBytes,
-    timeout: HOOK_SELF_CHECK_TIMEOUT_MS,
+
     windowsHide: true,
   });
   let hookReasonCode: string | null = null;

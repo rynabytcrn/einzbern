@@ -30,7 +30,7 @@ import {
   validateMinutesRecord,
 } from "../dist/build/packages/core/src/minutes.js";
 import { resetRecallCache } from "../dist/build/packages/core/src/recall.js";
-import { registerLibrary } from "../dist/build/packages/core/src/registry.js";
+import { registerLibrary, resolveLibrary } from "../dist/build/packages/core/src/registry.js";
 import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 import { forgeOwnStream } from "./helpers/library-forge.mjs";
 import { restoreLegacyFixture } from "./helpers/legacy-fixture.mjs";
@@ -324,14 +324,17 @@ test("MIN-239 D6: the prompt hook recalls valid decisions only and says what rep
   const directory = join(fx.base, "project");
   const git = spawnSync("git", ["init", "--quiet", directory], { encoding: "utf8" });
   assert.equal(git.status, 0, git.stderr);
-  await registerLibrary({ projectPath: directory, libraryPath: fx.workspace, registeredAt: at(4) });
+  await registerLibrary({ projectPath: directory, projectId: fx.projectId, libraryPath: fx.workspace, registeredAt: at(4) });
   const first = await fx.record(10, "DL-MIN-1", [EAST]);
   await cli(["work-create", "--workspace", fx.workspace, "--at", at(11), "--project-id", fx.projectId, "--external-key", "DL-STORY",
     "--kind", "Story", "--parent-id", fx.epicId, "--scope", STORY_SCOPE, "--title", "Zebrafish tank", "--decided-in", first.id]);
   // A small library lowers the strong-hit threshold the way the recall tests' small libraries do.
-  await setWorkspaceSetting(fx.workspace, { occurredAt: at(12), key: "retrieval.tau", value: "0" });
+  await setWorkspaceSetting(fx.workspace, { occurredAt: at(12), configurationProjectId: fx.projectId, key: "retrieval.tau", value: "0" });
   const ask = (prompt, second) => promptRecallContext({ libraryPath: fx.workspace, prompt, host: "claude-code", cwd: directory, at: at(second) });
-  const beforeLines = (await ask("east shelf otter archive", 13))?.lines ?? [];
+  assert.equal((await resolveLibrary(directory)).entry.projectId, fx.projectId);
+  const beforeResult = await ask("east shelf otter archive", 13);
+  context.diagnostic(JSON.stringify({ beforeResult, binding: await resolveLibrary(directory), settings: (await materializeWorkspace(fx.workspace)).settings }));
+  const beforeLines = beforeResult?.lines ?? [];
   assert.ok(beforeLines.some((line) => line.includes("DL-MIN-1")), JSON.stringify(beforeLines));
 
   await fx.record(14, "DL-MIN-2", [WEST], ["--supersedes", "DL-MIN-1#D1=D1"]);
@@ -416,7 +419,7 @@ test("SUB-426 (R17 续作修订三; STORY-514 AC1): recall --status removed read
   const directory = join(fx.base, "project");
   const git = spawnSync("git", ["init", "--quiet", directory], { encoding: "utf8" });
   assert.equal(git.status, 0, git.stderr);
-  await registerLibrary({ projectPath: directory, libraryPath: fx.workspace, registeredAt: at(4) });
+  await registerLibrary({ projectPath: directory, projectId: fx.projectId, libraryPath: fx.workspace, registeredAt: at(4) });
   const first = await fx.record(10, "DL-MIN-1", [EAST]);
   const second = await fx.record(11, "DL-MIN-2", [WEST], ["--supersedes", "DL-MIN-1#D1=D1"]);
   await initializeKnowledgeStore(fx.workspace, { disposableAcknowledged: true });
@@ -429,7 +432,7 @@ test("SUB-426 (R17 续作修订三; STORY-514 AC1): recall --status removed read
   assert.deepEqual([kept.reasonCode, gone.reasonCode], ["KNOWLEDGE_UNIT_CREATED", "KNOWLEDGE_UNIT_CREATED"]);
   const removed = await cli(["knowledge-remove", "--workspace", fx.workspace, "--at", at(14), "--id", gone.id, "--reason", "invalid", "--basis", "The lamp was taken out.", "--actor", OWNER]);
   assert.equal(removed.reasonCode, "KNOWLEDGE_UNIT_REMOVED");
-  await setWorkspaceSetting(fx.workspace, { occurredAt: at(15), key: "retrieval.tau", value: "0" });
+  await setWorkspaceSetting(fx.workspace, { occurredAt: at(15), configurationProjectId: fx.projectId, key: "retrieval.tau", value: "0" });
   const ids = (answer) => answer.records.map((hit) => hit.id);
   const obsoleteHint = [{ decision: address("DL-MIN-1", 1), supersededBy: address("DL-MIN-2", 1) }];
   const listedRemoval = (await cli(["knowledge-list", "--workspace", fx.workspace, "--at", at(16), "--status", "removed"])).records.find((record) => record.id === gone.id)?.removal;

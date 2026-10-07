@@ -1,8 +1,8 @@
 {
   "schemaVersion": "tcrn.workflow.ds-consumer-contract.v1",
   "consumer": "Atelier static consumer",
-  "candidate": "2f40478bb2993e6b6d02137f5870a890800d8662",
-  "candidateTree": "de0b19e6b750702d18f8d727bba734362d240e25",
+  "candidate": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
+  "candidateTree": "68a7edb311804d6981610c5ddf75ada66ec4aa06",
   "package": "@tcrn/ui-react@3.0.0",
   "aiContract": {
     "version": "ai_consumption_contract_v1",
@@ -10,8 +10,8 @@
   },
   "componentCss": {
     "sourceExport": "tcrnComponentCss",
-    "bytes": 120670,
-    "sha256": "74f51554a6977429e99fbb95fa16143dbd8596d321d6cee0a06136f4da41b94f",
+    "bytes": 120942,
+    "sha256": "3bb21fb49333e602d9fe580ac9cfe4830c71d985f4454337ec9e8be2d3c5d99a",
     "snapshot": "portal/ds-component-css.snapshot.css",
     "inlineSelector": "style#tcrn-ds-component-css[data-source=\"snapshot\"]"
   },
@@ -76,13 +76,13 @@
     ]
   },
   "production": {
-    "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+    "sourceCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
     "environment": "Production",
     "documentationOrigin": "https://tcrn-design-system-storybook.vercel.app",
-    "deploymentId": 6904637050,
-    "deploymentStatusId": 19388278778,
-    "buildStatusId": 55773429554,
-    "buildUrl": "https://vercel.com/tcrn-platform/tcrn-design-system-storybook/7yzUQWhbNoeRSJ4wGsLX4LhGqb1B"
+    "deploymentId": 6908102337,
+    "deploymentStatusId": 19396305924,
+    "buildStatusId": 55785918568,
+    "buildUrl": "https://vercel.com/tcrn-platform/tcrn-design-system-storybook/ECZ5EfvLqfhCoUAXmA7uKYua33Fd"
   },
   "tokensCss": {
     "snapshot": "portal/tokens.css",

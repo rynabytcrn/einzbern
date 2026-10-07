@@ -235,7 +235,7 @@ test("477-AC1, AC4: after the move each host's user file holds one Einzbern User
   }
   // Other tools' hooks and the rest of each file stay, in their order.
   assert.deepEqual(claude.hooks, {
-    UserPromptSubmit: [{ hooks: [{ type: "command", command: launcherCommand(device), timeout: 30 }] }, OTHER_PROMPT],
+    UserPromptSubmit: [{ hooks: [{ type: "command", command: launcherCommand(device) }] }, OTHER_PROMPT],
     PreToolUse: [OTHER_TOOL],
     ...OTHER_EVENT,
   });
@@ -243,7 +243,7 @@ test("477-AC1, AC4: after the move each host's user file holds one Einzbern User
   assert.equal(claude.skipWorkflowUsageWarning, true);
   assert.deepEqual(codex, {
     description: "the user's own hooks",
-    hooks: { PreToolUse: [OTHER_TOOL], UserPromptSubmit: [{ hooks: [{ type: "command", command: launcherCommand(device), timeout: 30 }] }] },
+    hooks: { PreToolUse: [OTHER_TOOL], UserPromptSubmit: [{ hooks: [{ type: "command", command: launcherCommand(device) }] }] },
   });
 
   // The container keeps no hook of ours, old or new, and keeps everything else.

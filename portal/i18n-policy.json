@@ -9,10 +9,9 @@
   },
   "locales": {
     "zh-CN": {
-      "maxEnglishMatches": 3,
+      "maxEnglishMatches": 2,
       "waivers": [
         "app.brand",
-        "search.command",
         "settings.machine"
       ]
     },
@@ -39,5 +38,8 @@
         "vocabulary.columnSource"
       ]
     }
+  },
+  "localeInvariantValues": {
+    "search.command": "⌘K"
   }
 }

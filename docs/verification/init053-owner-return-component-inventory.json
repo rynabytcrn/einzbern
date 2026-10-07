@@ -2,12 +2,12 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r33-source-continuation",
+  "pack": "r34-source-continuation",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
       "path": "packages/cli/src/index.ts",
-      "sha256": "757106918d915c73ebc31e5c32618325704ebb68319cbe45662a49039884baed"
+      "sha256": "192762b80a44ee5b955ed3cb12ae5fd3294160b393a5f090823667a44bcc3b42"
     },
     {
       "path": "packages/cli/src/otel-spans.ts",
@@ -79,7 +79,7 @@
     },
     {
       "path": "packages/core/src/engine-home.ts",
-      "sha256": "e201827b7fdc933b394a1ab16481de0dbdc630d62431764777782aedd2b76d7f"
+      "sha256": "0f06b57e29638bb9efa968190295fdc6b7d3e102d36948bf146519162f066fe9"
     },
     {
       "path": "packages/core/src/ether-library.ts",
@@ -127,7 +127,7 @@
     },
     {
       "path": "packages/core/src/host-hooks.ts",
-      "sha256": "c8583c1665cfcbd37d7f6610edb67052dec1544ed151946d8988be3e68c14019"
+      "sha256": "4697db134c99c8ae5930b52647214918bc9c8b414910e10b6415f721a8d2abb6"
     },
     {
       "path": "packages/core/src/host-probe.ts",
@@ -359,7 +359,7 @@
     },
     {
       "path": "portal/index.html",
-      "sha256": "107e7b057e24561a8348d5024241220ced9b7f4a33b805d176869da8cbdbbd30"
+      "sha256": "1e33630b197bd6f1fa64ef08127824ddb3c1bc2572168ff09951be7bc398f236"
     },
     {
       "path": "portal/locale-contract.mjs",
@@ -367,7 +367,7 @@
     },
     {
       "path": "portal/locales.js",
-      "sha256": "dfdebe1c8fbff02ae5939f1e6b27ec7cead10e71ff6331d8e444903be56a5d1e"
+      "sha256": "84fb85cbd7df36713ad448e7e0c8c5cb357b5577442f0c35237ac6628ec05c11"
     },
     {
       "path": "portal/portal.mjs",
@@ -391,7 +391,7 @@
     },
     {
       "path": "portal/scripts/i18n-proof.mjs",
-      "sha256": "273da5bedad917093f48d50a1ad97f3ea2df773c45ce12ee0565cee169d2778d"
+      "sha256": "56895e7049afd72b76d4346f31446e8dacd04d8ca5143fe546a96eac17bb8079"
     },
     {
       "path": "portal/scripts/proof.mjs",
@@ -778,48 +778,48 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R33 source continuation; complete49 cadence held without fixture-location authorization; actual independent application/schema/native probes recorded separately; this inventory never implies passing verification, final acceptance or Owner visual judgment. F01 migration-language-negative source repair is authorized; full migration dependent files remain held together in the original49-file Source cadence; F19 belongs to the later truthful final evidence producer. The complete actual candidate parent/publication/build/consumption disposition below determines whether its source may be consumed. Current consumed-authority identity is bound by the publication and snapshot fields. Fresh canonical integration and affected MAIN acceptance remain separate pending acts. No live Engine installation/migration or governed write was performed.",
+  "evidenceDisposition": "R34 current Source final generation. Original full-file cadence and affected dependency files have run; actual exit/counts are attached below, including every failure. Prior held49 prose is superseded. Source development verification is separate from integrated acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are included; no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
-    "candidate": "788f02c76c1d1b2f8c03628253bd8456964b381e",
-    "mergeCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+    "candidate": "bb91bdc40d2669aef823abaf8d2050ca105e9a89",
+    "mergeCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
     "candidateParent": {
       "argv": [
         "pnpm",
         "verify"
       ],
       "exit": 0,
-      "sourceTree": "de0b19e6b750702d18f8d727bba734362d240e25",
-      "run": "ds-p3-ordinary-parent-once.run.json",
+      "sourceTree": "68a7edb311804d6981610c5ddf75ada66ec4aa06",
+      "run": "ds-verify-once.run.json",
       "fullOriginalParent": true
     },
     "staticBuild": {
       "command": "pnpm public-docs:vercel-build",
       "exit": 0,
-      "run": "ds-production-static-build-once.run.json"
+      "run": "ds-production-build-once.run.json"
     },
     "candidateMerged": true,
     "candidateProductionPublished": true,
     "candidateBuildAndArtifactVerified": true,
     "candidateConsumed": true,
     "publication": {
-      "pr": "https://github.com/tpmoonchefryan/TCRN-Design-System/pull/23",
-      "prHead": "788f02c76c1d1b2f8c03628253bd8456964b381e",
-      "mergeCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
-      "mergeTree": "de0b19e6b750702d18f8d727bba734362d240e25",
+      "pullRequestNumber": 24,
+      "prHead": "bb91bdc40d2669aef823abaf8d2050ca105e9a89",
+      "mergeCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
+      "mergeTree": "68a7edb311804d6981610c5ddf75ada66ec4aa06",
       "environment": "Production",
-      "deploymentId": 6904637050,
-      "deploymentStatusId": 19388278778,
-      "vercelBuildStatusId": 55773429554,
-      "vercelBuildURL": "https://vercel.com/tcrn-platform/tcrn-design-system-storybook/7yzUQWhbNoeRSJ4wGsLX4LhGqb1B",
-      "productionDeploymentURL": "https://tcrn-design-system-storybook-m0306iz13-tcrn-platform.vercel.app",
+      "deploymentId": 6908102337,
+      "deploymentStatusId": 19396305924,
+      "vercelBuildStatusId": 55785918568,
+      "vercelBuildURL": "https://vercel.com/tcrn-platform/tcrn-design-system-storybook/ECZ5EfvLqfhCoUAXmA7uKYua33Fd",
+      "productionDeploymentURL": "https://tcrn-design-system-storybook-negu64rme-tcrn-platform.vercel.app",
       "productionOrigin": "https://tcrn-design-system-storybook.vercel.app",
       "authority": {
         "schemaVersion": "tcrn.design-authority.v1",
         "name": "TCRN Design System",
         "version": "3.0.0",
         "tokensDigest": "118c6e45b8698a45a551226deb865d5bee71f64d0f787550751489aae2c891c9",
-        "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
-        "componentCssDigest": "74f51554a6977429e99fbb95fa16143dbd8596d321d6cee0a06136f4da41b94f",
+        "sourceCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
+        "componentCssDigest": "3bb21fb49333e602d9fe580ac9cfe4830c71d985f4454337ec9e8be2d3c5d99a",
         "staticBridgeDigest": "26e51f7b7f7beb18ae00fec4daaf19dbf1d8e588063fd509c81a1761a87ccf8a"
       },
       "aiContractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
@@ -829,7 +829,7 @@
           "url": "https://tcrn-design-system-storybook.vercel.app/tcrn-design-authority.json",
           "status": 200,
           "contentType": "application/json; charset=utf-8",
-          "sha256": "fd77fd2b7b154ba7cc9366fd429f1a4f43708e832c23faca72bcdb6836b40972",
+          "sha256": "e2fb76a8f8de110484fbda12df323325f2e8b24a423821f2dd7dc4a1371b362f",
           "bytes": 436,
           "file": "published-tcrn-design-authority.json"
         },
@@ -852,13 +852,13 @@
           "file": "published-ds-static-bridges.js"
         },
         {
-          "artifact": "patterns-feedback-selection.html",
-          "url": "https://tcrn-design-system-storybook.vercel.app/patterns-feedback-selection.html",
+          "artifact": "components-navigation-shells.html",
+          "url": "https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html",
           "status": 200,
           "contentType": "text/html; charset=utf-8",
-          "sha256": "de1e422d40e02026237f3e1982aac5adab371ba1f611d4f97f569d733613c775",
-          "bytes": 548450,
-          "file": "published-patterns-feedback-selection.html"
+          "sha256": "f58d77f18011235e3258bca567ef9938c3edacda5b2087f92eccbcf8d13ba07d",
+          "bytes": 667481,
+          "file": "published-components-navigation-shells.html"
         },
         {
           "artifact": "llms.txt",
@@ -872,51 +872,167 @@
       ],
       "dependencySatisfied": true,
       "basis": [
-        "PR merged matching source tree",
-        "Production deployment success on merge SHA",
-        "Vercel successful static build on merge SHA",
-        "Production authority sourceCommit and artifact byte digests",
-        "full original local pnpm verify and public-docs:vercel-build passed on exact same source tree"
-      ],
-      "ownerVisualAcceptance": "not claimed"
+        "PR merged same source tree as local full verify and static build",
+        "Production deployment and Vercel build success on merge SHA",
+        "Production authority sourceCommit and component CSS/static bridge digests checked"
+      ]
     },
-    "originalVisualSignatureHistory": {
-      "mean": [
-        2.625,
-        2.855,
-        2.668
-      ],
-      "max": [
-        13,
-        15,
-        11
-      ],
-      "staleHeight": 1,
-      "newHeight": 0,
-      "thresholdMean": 2,
-      "thresholdMax": 8,
-      "maxStoryHeight": 2000,
-      "debt": 9,
-      "captures": 271
-    },
-    "currentBrowserSummary": "ds-current-browser-proof-summary.json",
-    "currentBrowserResult": {
-      "ok": true,
-      "screenshots": 271,
-      "axeViolationCount": 0
-    },
-    "baselinesCriteriaAndAllowancesChanged": false,
-    "formalApplicationAcceptance": "pending",
-    "OwnerVisual": "not claimed",
-    "noEngineHelperReleaseInstallMigration": true
+    "priorPublication": {
+      "pr": "https://github.com/tpmoonchefryan/TCRN-Design-System/pull/23",
+      "mergeCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+      "status": "retained prior publication; superseded for the mobile shell repair"
+    }
   },
+  "currentWholeFileCadence": {
+    "commandEvidence": "full-file-cadence-command.json",
+    "runEvidence": "full-file-cadence-once.run.json",
+    "exit": 0,
+    "counts": {
+      "tests": 550,
+      "pass": 550,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0
+    },
+    "wholeFiles": 53,
+    "original49Retained": true,
+    "retainedDependency": "tests/knowledge-capture.test.mjs",
+    "addedAffectedDependencies": [
+      "tests/host-hooks.test.mjs",
+      "tests/host-render.test.mjs",
+      "tests/engine-home.test.mjs"
+    ],
+    "stdoutSha256": "0faaef34b2a73642eada697b75de40a0b916b56a465b418f8afa9ce8692b36d0",
+    "finishedAt": "2026-10-07T11:06:23.097084+00:00",
+    "runtime": {
+      "node": "24.16.0",
+      "pnpm": "11.3.0",
+      "cwdBinding": "Source checkout; actual cwd runtime, not container root runtime"
+    },
+    "scope": "Source full-file development verification; not D1/Root/final acceptance"
+  },
+  "generationTimeUtc": "2026-10-07T11:14:19.551101+00:00",
+  "currentApplicationCaseResults": [
+    {
+      "name": "target switch settles on matching response, UI authority and native inheritance",
+      "ok": true
+    },
+    {
+      "name": "geometry dashboard 1440",
+      "ok": true
+    },
+    {
+      "name": "geometry settings 1440",
+      "ok": true
+    },
+    {
+      "name": "geometry model-categories 1440",
+      "ok": true
+    },
+    {
+      "name": "geometry model-tiers 1440",
+      "ok": true
+    },
+    {
+      "name": "geometry variables 1440",
+      "ok": true
+    },
+    {
+      "name": "geometry gates 1440",
+      "ok": true
+    },
+    {
+      "name": "geometry dashboard 760",
+      "ok": false
+    },
+    {
+      "name": "geometry settings 760",
+      "ok": false
+    },
+    {
+      "name": "geometry model-categories 760",
+      "ok": false
+    },
+    {
+      "name": "geometry model-tiers 760",
+      "ok": false
+    },
+    {
+      "name": "geometry variables 760",
+      "ok": false
+    },
+    {
+      "name": "geometry gates 760",
+      "ok": false
+    },
+    {
+      "name": "geometry dashboard 390",
+      "ok": false
+    },
+    {
+      "name": "geometry settings 390",
+      "ok": false
+    },
+    {
+      "name": "geometry model-categories 390",
+      "ok": false
+    },
+    {
+      "name": "geometry model-tiers 390",
+      "ok": false
+    },
+    {
+      "name": "geometry variables 390",
+      "ok": false
+    },
+    {
+      "name": "geometry gates 390",
+      "ok": false
+    },
+    {
+      "name": "genuine Doctor detail text and failure badges retain complete API values",
+      "ok": true
+    },
+    {
+      "name": "multi-select actual click dirty then Undo restores selected values and focus",
+      "ok": true
+    },
+    {
+      "name": "multi-select keyboard save fresh read, refresh, target switch and reset",
+      "ok": false
+    },
+    {
+      "name": "transient target expiry, retrigger, navigation and target switch cleanup",
+      "ok": true
+    },
+    {
+      "name": "category add rename remove updates real reference candidates after save and readback",
+      "ok": false
+    },
+    {
+      "name": "actual refused setting exposes failure badge and complete error JSON",
+      "ok": false
+    },
+    {
+      "name": "transient exact matching row identity border geometry and Escape cleanup",
+      "ok": true
+    },
+    {
+      "name": "transient library-switch cleanup uses actual registered library selector",
+      "ok": true
+    },
+    {
+      "name": "reference empty and missing candidates render explicit controlled transport variants",
+      "ok": true
+    }
+  ],
   "publication": {
-    "mergeCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
-    "mergeTree": "de0b19e6b750702d18f8d727bba734362d240e25",
+    "mergeCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
+    "mergeTree": "68a7edb311804d6981610c5ddf75ada66ec4aa06",
     "environment": "Production",
-    "deploymentId": 6904637050,
-    "deploymentStatusId": 19388278778,
-    "vercelBuildStatusId": 55773429554,
+    "deploymentId": 6908102337,
+    "deploymentStatusId": 19396305924,
+    "vercelBuildStatusId": 55785918568,
     "productionOrigin": "https://tcrn-design-system-storybook.vercel.app",
     "dependencySatisfied": true
   },
@@ -927,7 +1043,7 @@
       "constructionAndStates": "native hidden select[multiple] value + published trigger/listbox/option/check/label construction; mountStaticMultiSelect; body overlay; Save/Undo/Reset; selected/disabled/required",
       "interaction": "ArrowUp/Down/Home/End/typeahead/Space/Enter/Escape/Tab/outside; published bridge owns movement and native change",
       "authority": {
-        "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+        "sourceCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
         "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
         "standardRegistry": "foundation-visual-standards-v1",
         "standardCategories": [
@@ -959,7 +1075,7 @@
         "keyboard/focus/disabled/required"
       ],
       "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
-      "currentComputedStyleGeometryStatus": "R33 Source observed six wide pages plus seven settings groups; narrow navigation is blocked by an actual pointer-interception failure; multi-select and target-switch observations failed. Full computed geometry/interaction is not accepted; fresh affected MAIN integrated acceptance remains separate",
+      "currentComputedStyleGeometryStatus": "Current Source application outcomes, full request/response/native/UI checkpoints, failure stacks and geometry are in the current raw application result. No universal geometry or lifecycle success is inferred; fresh affected MAIN integrated acceptance remains separate",
       "ownerVisualStatus": "pending, not a machine claim"
     },
     {
@@ -968,7 +1084,7 @@
       "constructionAndStates": "published classes/full38px IconButton; proper labels; native type/min1/step1; disabled0.64; shared commands and meanings",
       "interaction": "native keyboard/label activation, focus-visible, required feedback; Save commits, Undo local draft, Reset inheritance",
       "authority": {
-        "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+        "sourceCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
         "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
         "standardRegistry": "foundation-visual-standards-v1",
         "standardCategories": [
@@ -1000,7 +1116,7 @@
         "keyboard/focus/disabled/required"
       ],
       "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
-      "currentComputedStyleGeometryStatus": "R33 Source observed six wide pages plus seven settings groups; narrow navigation is blocked by an actual pointer-interception failure; multi-select and target-switch observations failed. Full computed geometry/interaction is not accepted; fresh affected MAIN integrated acceptance remains separate",
+      "currentComputedStyleGeometryStatus": "Current Source application outcomes, full request/response/native/UI checkpoints, failure stacks and geometry are in the current raw application result. No universal geometry or lifecycle success is inferred; fresh affected MAIN integrated acceptance remains separate",
       "ownerVisualStatus": "pending, not a machine claim"
     },
     {
@@ -1009,7 +1125,7 @@
       "constructionAndStates": "real header/body/title/actions children; public Heading2/Text; private title/lede/font/letterspacing clones removed",
       "interaction": "semantic h1 for route title, h2/h3 published sizes; public title/actions responsive layout",
       "authority": {
-        "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+        "sourceCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
         "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
         "standardRegistry": "foundation-visual-standards-v1",
         "standardCategories": [
@@ -1041,7 +1157,7 @@
         "keyboard/focus/disabled/required"
       ],
       "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
-      "currentComputedStyleGeometryStatus": "R33 Source observed six wide pages plus seven settings groups; narrow navigation is blocked by an actual pointer-interception failure; multi-select and target-switch observations failed. Full computed geometry/interaction is not accepted; fresh affected MAIN integrated acceptance remains separate",
+      "currentComputedStyleGeometryStatus": "Current Source application outcomes, full request/response/native/UI checkpoints, failure stacks and geometry are in the current raw application result. No universal geometry or lifecycle success is inferred; fresh affected MAIN integrated acceptance remains separate",
       "ownerVisualStatus": "pending, not a machine claim"
     },
     {
@@ -1050,7 +1166,7 @@
       "constructionAndStates": "actual public headers/rows/cells, typed control children; public table track custom properties; labelled cell/columnheader; responsive stacked cards",
       "interaction": "read-only vs editable columns, explicit complete errors on demand; per-row aria labels",
       "authority": {
-        "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+        "sourceCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
         "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
         "standardRegistry": "foundation-visual-standards-v1",
         "standardCategories": [
@@ -1082,7 +1198,7 @@
         "keyboard/focus/disabled/required"
       ],
       "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
-      "currentComputedStyleGeometryStatus": "R33 Source observed six wide pages plus seven settings groups; narrow navigation is blocked by an actual pointer-interception failure; multi-select and target-switch observations failed. Full computed geometry/interaction is not accepted; fresh affected MAIN integrated acceptance remains separate",
+      "currentComputedStyleGeometryStatus": "Current Source application outcomes, full request/response/native/UI checkpoints, failure stacks and geometry are in the current raw application result. No universal geometry or lifecycle success is inferred; fresh affected MAIN integrated acceptance remains separate",
       "ownerVisualStatus": "pending, not a machine claim"
     },
     {
@@ -1091,7 +1207,7 @@
       "constructionAndStates": "published container mode720/content +960 frame; shared label grid; native depth comes from route definition; no viewport-inferred depth",
       "interaction": "tab Arrow keys/Home/End, one selection/panel naming; owned subnavigation same meaning",
       "authority": {
-        "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+        "sourceCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
         "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
         "standardRegistry": "foundation-visual-standards-v1",
         "standardCategories": [
@@ -1123,7 +1239,7 @@
         "keyboard/focus/disabled/required"
       ],
       "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
-      "currentComputedStyleGeometryStatus": "R33 Source observed six wide pages plus seven settings groups; narrow navigation is blocked by an actual pointer-interception failure; multi-select and target-switch observations failed. Full computed geometry/interaction is not accepted; fresh affected MAIN integrated acceptance remains separate",
+      "currentComputedStyleGeometryStatus": "Current Source application outcomes, full request/response/native/UI checkpoints, failure stacks and geometry are in the current raw application result. No universal geometry or lifecycle success is inferred; fresh affected MAIN integrated acceptance remains separate",
       "ownerVisualStatus": "pending, not a machine claim"
     },
     {
@@ -1132,7 +1248,7 @@
       "constructionAndStates": "published exact logo/tokens/snapshot; library and configuration target labelled separately; route status row placement; actual count semantics",
       "interaction": "collapse/focus/locale/theme/local storage are presentation preferences; target switch invalidates stale requests",
       "authority": {
-        "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+        "sourceCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
         "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
         "standardRegistry": "foundation-visual-standards-v1",
         "standardCategories": [
@@ -1164,7 +1280,7 @@
         "keyboard/focus/disabled/required"
       ],
       "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
-      "currentComputedStyleGeometryStatus": "R33 Source observed six wide pages plus seven settings groups; narrow navigation is blocked by an actual pointer-interception failure; multi-select and target-switch observations failed. Full computed geometry/interaction is not accepted; fresh affected MAIN integrated acceptance remains separate",
+      "currentComputedStyleGeometryStatus": "Current Source application outcomes, full request/response/native/UI checkpoints, failure stacks and geometry are in the current raw application result. No universal geometry or lifecycle success is inferred; fresh affected MAIN integrated acceptance remains separate",
       "ownerVisualStatus": "pending, not a machine claim"
     },
     {
@@ -1173,7 +1289,7 @@
       "constructionAndStates": "mountStaticOverlayBoundary body-level positioning; Tooltip supplemental content, Popover dialog aria-modal=false; Drawer complementary structural not modal; polite receipt summary/details",
       "interaction": "Escape/outside close; focus returns to trigger; structural drawer does not claim a focus trap; full technical receipt disclosure",
       "authority": {
-        "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+        "sourceCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
         "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
         "standardRegistry": "foundation-visual-standards-v1",
         "standardCategories": [
@@ -1205,7 +1321,7 @@
         "keyboard/focus/disabled/required"
       ],
       "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
-      "currentComputedStyleGeometryStatus": "R33 Source observed six wide pages plus seven settings groups; narrow navigation is blocked by an actual pointer-interception failure; multi-select and target-switch observations failed. Full computed geometry/interaction is not accepted; fresh affected MAIN integrated acceptance remains separate",
+      "currentComputedStyleGeometryStatus": "Current Source application outcomes, full request/response/native/UI checkpoints, failure stacks and geometry are in the current raw application result. No universal geometry or lifecycle success is inferred; fresh affected MAIN integrated acceptance remains separate",
       "ownerVisualStatus": "pending, not a machine claim"
     },
     {
@@ -1214,7 +1330,7 @@
       "constructionAndStates": "public list/section/meta children; work details use RowGroup with header and complete RecordRow id/summary/meta three cells inside RecordTable",
       "interaction": "native details disclosure; removed cards have no body read action; complete readback identifies digest and lifecycle",
       "authority": {
-        "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+        "sourceCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
         "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
         "standardRegistry": "foundation-visual-standards-v1",
         "standardCategories": [
@@ -1246,7 +1362,7 @@
         "keyboard/focus/disabled/required"
       ],
       "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
-      "currentComputedStyleGeometryStatus": "R33 Source observed six wide pages plus seven settings groups; narrow navigation is blocked by an actual pointer-interception failure; multi-select and target-switch observations failed. Full computed geometry/interaction is not accepted; fresh affected MAIN integrated acceptance remains separate",
+      "currentComputedStyleGeometryStatus": "Current Source application outcomes, full request/response/native/UI checkpoints, failure stacks and geometry are in the current raw application result. No universal geometry or lifecycle success is inferred; fresh affected MAIN integrated acceptance remains separate",
       "ownerVisualStatus": "pending, not a machine claim"
     },
     {
@@ -1255,7 +1371,7 @@
       "constructionAndStates": "published full editor/gutter/content/control/finding construction; directory public buttons; public focus wrapper; native disclosure for read errors; complete raw receipt JSON; original D5 outline-none predicate retained",
       "interaction": "Ctrl/Cmd+S save/check; finding reveals line; user-modified managed output never overwritten; detail disclosure on demand",
       "authority": {
-        "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+        "sourceCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
         "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
         "standardRegistry": "foundation-visual-standards-v1",
         "standardCategories": [
@@ -1287,7 +1403,7 @@
         "keyboard/focus/disabled/required"
       ],
       "sourceVerification": "current consumed authority snapshot and retained actual publication identities are bound explicitly; the DS candidate actual ordinary-parent/publication disposition is recorded separately below; fresh source focused results are separate raw receipts, never inferred from this inventory",
-      "currentComputedStyleGeometryStatus": "R33 Source observed six wide pages plus seven settings groups; narrow navigation is blocked by an actual pointer-interception failure; multi-select and target-switch observations failed. Full computed geometry/interaction is not accepted; fresh affected MAIN integrated acceptance remains separate",
+      "currentComputedStyleGeometryStatus": "Current Source application outcomes, full request/response/native/UI checkpoints, failure stacks and geometry are in the current raw application result. No universal geometry or lifecycle success is inferred; fresh affected MAIN integrated acceptance remains separate",
       "ownerVisualStatus": "pending, not a machine claim"
     }
   ],
@@ -1296,23 +1412,23 @@
       "class": "tcrn-app-status-bar",
       "variant": "family root/alias",
       "consumerLines": [
-        4228
+        4235
       ],
       "publishedStyleSites": [
         {
-          "line": 3221,
+          "line": 3228,
           "source": ".tcrn-app-status-bar {"
         },
         {
-          "line": 3233,
+          "line": 3240,
           "source": ".tcrn-app-status-bar__command {"
         },
         {
-          "line": 3239,
+          "line": 3246,
           "source": ".tcrn-app-status-bar__state {"
         },
         {
-          "line": 3244,
+          "line": 3251,
           "source": ".tcrn-app-status-bar__action {"
         }
       ],
@@ -1324,11 +1440,11 @@
       "class": "tcrn-app-status-bar__action",
       "variant": "component part",
       "consumerLines": [
-        4228
+        4235
       ],
       "publishedStyleSites": [
         {
-          "line": 3244,
+          "line": 3251,
           "source": ".tcrn-app-status-bar__action {"
         }
       ],
@@ -1340,11 +1456,11 @@
       "class": "tcrn-app-status-bar__command",
       "variant": "component part",
       "consumerLines": [
-        4228
+        4235
       ],
       "publishedStyleSites": [
         {
-          "line": 3233,
+          "line": 3240,
           "source": ".tcrn-app-status-bar__command {"
         }
       ],
@@ -1356,11 +1472,11 @@
       "class": "tcrn-app-status-bar__state",
       "variant": "component part",
       "consumerLines": [
-        4228
+        4235
       ],
       "publishedStyleSites": [
         {
-          "line": 3239,
+          "line": 3246,
           "source": ".tcrn-app-status-bar__state {"
         }
       ],
@@ -1372,38 +1488,38 @@
       "class": "tcrn-badge",
       "variant": "family root/alias",
       "consumerLines": [
-        4078,
-        4102,
+        4085,
         4109,
-        4118,
-        4122,
-        4123,
+        4116,
+        4125,
+        4129,
         4130,
-        4143,
-        4152,
-        4161,
-        4170,
-        4203,
-        4216,
-        4232,
-        4412,
-        4416,
-        4431,
-        4553,
-        4554,
-        4938,
-        4939,
-        5240,
-        5301,
-        5320,
-        5371,
-        5383,
-        5393,
-        5403,
-        5507,
-        5511,
-        5603,
-        5649
+        4137,
+        4150,
+        4159,
+        4168,
+        4177,
+        4210,
+        4223,
+        4239,
+        4419,
+        4423,
+        4438,
+        4560,
+        4561,
+        4945,
+        4946,
+        5247,
+        5308,
+        5327,
+        5378,
+        5390,
+        5400,
+        5410,
+        5514,
+        5518,
+        5610,
+        5656
       ],
       "publishedStyleSites": [
         {
@@ -1482,13 +1598,13 @@
       "class": "tcrn-badge--danger",
       "variant": "modifier",
       "consumerLines": [
-        4412,
-        4416,
-        4431,
-        5371,
-        5383,
-        5393,
-        5403
+        4419,
+        4423,
+        4438,
+        5378,
+        5390,
+        5400,
+        5410
       ],
       "publishedStyleSites": [
         {
@@ -1510,20 +1626,20 @@
       "class": "tcrn-badge--positive",
       "variant": "modifier",
       "consumerLines": [
-        4078,
-        4102,
+        4085,
         4109,
-        4118,
-        4232,
-        4412,
-        4416,
-        4431,
-        5371,
-        5383,
-        5393,
-        5403,
-        5507,
-        5649
+        4116,
+        4125,
+        4239,
+        4419,
+        4423,
+        4438,
+        5378,
+        5390,
+        5400,
+        5410,
+        5514,
+        5656
       ],
       "publishedStyleSites": [
         {
@@ -1552,8 +1668,8 @@
       "class": "tcrn-badge--warning",
       "variant": "modifier",
       "consumerLines": [
-        4938,
-        5649
+        4945,
+        5656
       ],
       "publishedStyleSites": [
         {
@@ -1570,7 +1686,7 @@
       "class": "tcrn-brand-mark",
       "variant": "family root/alias",
       "consumerLines": [
-        4049
+        4056
       ],
       "publishedStyleSites": [
         {
@@ -1586,7 +1702,7 @@
       "class": "tcrn-brand-wordmark__suffix--workflow",
       "variant": "modifier",
       "consumerLines": [
-        4051
+        4058
       ],
       "publishedStyleSites": [
         {
@@ -1602,41 +1718,41 @@
       "class": "tcrn-button",
       "variant": "family root/alias",
       "consumerLines": [
-        4048,
-        4084,
-        4112,
-        4188,
-        4203,
-        4206,
-        4228,
-        4232,
-        4575,
-        4625,
-        4642,
-        4736,
-        4741,
-        4752,
-        4888,
-        4921,
-        4922,
-        4941,
-        4962,
-        4972,
-        4973,
-        5001,
-        5018,
-        5019,
-        5020,
-        5182,
-        5183,
-        5318,
-        5356,
-        5360,
-        5591,
-        5602,
-        5650,
-        5813,
-        5866
+        4055,
+        4091,
+        4119,
+        4195,
+        4210,
+        4213,
+        4235,
+        4239,
+        4582,
+        4632,
+        4649,
+        4743,
+        4748,
+        4759,
+        4895,
+        4928,
+        4929,
+        4948,
+        4969,
+        4979,
+        4980,
+        5008,
+        5025,
+        5026,
+        5027,
+        5189,
+        5190,
+        5325,
+        5363,
+        5367,
+        5598,
+        5609,
+        5657,
+        5820,
+        5873
       ],
       "publishedStyleSites": [
         {
@@ -1704,15 +1820,15 @@
           "source": ".tcrn-button.tcrn-shell-theme-toggle {"
         },
         {
-          "line": 2355,
+          "line": 2362,
           "source": ".tcrn-button,"
         },
         {
-          "line": 2356,
+          "line": 2363,
           "source": ".tcrn-button.tcrn-shell-theme-toggle,"
         },
         {
-          "line": 2365,
+          "line": 2372,
           "source": ".tcrn-button:active,"
         }
       ],
@@ -1754,29 +1870,29 @@
       "class": "tcrn-button--md",
       "variant": "modifier",
       "consumerLines": [
-        4048,
-        4084,
-        4736,
-        4741,
-        4752,
-        4888,
-        4921,
-        4922,
-        4941,
-        4962,
-        4972,
-        4973,
-        5001,
-        5018,
-        5019,
-        5020,
-        5182,
-        5183,
-        5318,
-        5591,
-        5602,
-        5650,
-        5813
+        4055,
+        4091,
+        4743,
+        4748,
+        4759,
+        4895,
+        4928,
+        4929,
+        4948,
+        4969,
+        4979,
+        4980,
+        5008,
+        5025,
+        5026,
+        5027,
+        5189,
+        5190,
+        5325,
+        5598,
+        5609,
+        5657,
+        5820
       ],
       "publishedStyleSites": [
         {
@@ -1810,14 +1926,14 @@
       "class": "tcrn-button--primary",
       "variant": "modifier",
       "consumerLines": [
-        4188,
-        4203,
-        4625,
-        4922,
-        4972,
-        5018,
-        5019,
-        5182
+        4195,
+        4210,
+        4632,
+        4929,
+        4979,
+        5025,
+        5026,
+        5189
       ],
       "publishedStyleSites": [
         {
@@ -1848,29 +1964,29 @@
       "class": "tcrn-button--quiet",
       "variant": "modifier",
       "consumerLines": [
-        4048,
-        4206,
-        4228,
-        4232,
-        4575,
-        4625,
-        4642,
-        4736,
-        4741,
-        4888,
-        4921,
-        4941,
-        4962,
-        4973,
-        5001,
-        5020,
-        5183,
-        5318,
-        5356,
-        5360,
-        5650,
-        5813,
-        5866
+        4055,
+        4213,
+        4235,
+        4239,
+        4582,
+        4632,
+        4649,
+        4743,
+        4748,
+        4895,
+        4928,
+        4948,
+        4969,
+        4980,
+        5008,
+        5027,
+        5190,
+        5325,
+        5363,
+        5367,
+        5657,
+        5820,
+        5873
       ],
       "publishedStyleSites": [
         {
@@ -1905,15 +2021,15 @@
       "class": "tcrn-button--secondary",
       "variant": "modifier",
       "consumerLines": [
-        4084,
-        4203,
-        4206,
-        4752,
-        4922,
-        5183,
-        5356,
-        5591,
-        5602
+        4091,
+        4210,
+        4213,
+        4759,
+        4929,
+        5190,
+        5363,
+        5598,
+        5609
       ],
       "publishedStyleSites": [
         {
@@ -1936,8 +2052,8 @@
       "class": "tcrn-button--sm",
       "variant": "modifier",
       "consumerLines": [
-        4625,
-        4642
+        4632,
+        4649
       ],
       "publishedStyleSites": [
         {
@@ -1954,28 +2070,28 @@
       "class": "tcrn-content-scope",
       "variant": "family root/alias",
       "consumerLines": [
-        4786,
-        4789
+        4793,
+        4796
       ],
       "publishedStyleSites": [
         {
-          "line": 3612,
+          "line": 3619,
           "source": ".tcrn-operation-feedback,.tcrn-content-scope{display:grid;gap:var(--tcrn-space-2);min-inline-size:0;max-inline-size:100%;border:1px solid var(--tcrn-color-border-subtle);border-radius:var(--tcrn-radius-surface);background:var(--tcrn-color-surface-panel);padding:var(--tcrn-space-3)}"
         },
         {
-          "line": 3625,
+          "line": 3632,
           "source": ".tcrn-content-scope__content{min-inline-size:0;max-inline-size:100%}"
         },
         {
-          "line": 3626,
+          "line": 3633,
           "source": ".tcrn-content-scope[data-content-valid=\"false\"]{border-inline-start:3px solid var(--tcrn-color-state-blocked);padding-inline-start:var(--tcrn-space-2)}"
         },
         {
-          "line": 3627,
+          "line": 3634,
           "source": ".tcrn-content-scope[data-content-phase=\"loading\"]{border-color:var(--tcrn-color-state-warning)}"
         },
         {
-          "line": 3628,
+          "line": 3635,
           "source": ".tcrn-content-scope[data-content-phase=\"error\"]{border-color:var(--tcrn-color-state-blocked)}"
         }
       ],
@@ -1988,11 +2104,11 @@
       "class": "tcrn-content-scope__content",
       "variant": "component part",
       "consumerLines": [
-        4786
+        4793
       ],
       "publishedStyleSites": [
         {
-          "line": 3625,
+          "line": 3632,
           "source": ".tcrn-content-scope__content{min-inline-size:0;max-inline-size:100%}"
         }
       ],
@@ -2004,46 +2120,46 @@
       "class": "tcrn-definition-list",
       "variant": "family root/alias",
       "consumerLines": [
-        4118,
-        4119,
-        4232,
-        4441,
-        4939,
-        4941,
-        5371,
-        5411
+        4125,
+        4126,
+        4239,
+        4448,
+        4946,
+        4948,
+        5378,
+        5418
       ],
       "publishedStyleSites": [
         {
-          "line": 3248,
+          "line": 3255,
           "source": ".tcrn-definition-list {"
         },
         {
-          "line": 3255,
+          "line": 3262,
           "source": ".tcrn-definition-list__item {"
         },
         {
-          "line": 3261,
+          "line": 3268,
           "source": ".tcrn-definition-list__term {"
         },
         {
-          "line": 3267,
+          "line": 3274,
           "source": ".tcrn-definition-list__definition {"
         },
         {
-          "line": 3273,
+          "line": 3280,
           "source": ".tcrn-definition-list--dense {"
         },
         {
-          "line": 3276,
+          "line": 3283,
           "source": ".tcrn-definition-list--dense .tcrn-definition-list__item {"
         },
         {
-          "line": 3282,
+          "line": 3289,
           "source": ".tcrn-definition-list__item {"
         },
         {
-          "line": 3321,
+          "line": 3328,
           "source": ".tcrn-definition-list__item {"
         }
       ],
@@ -2056,17 +2172,17 @@
       "class": "tcrn-definition-list--dense",
       "variant": "modifier",
       "consumerLines": [
-        4118,
-        4941,
-        5371
+        4125,
+        4948,
+        5378
       ],
       "publishedStyleSites": [
         {
-          "line": 3273,
+          "line": 3280,
           "source": ".tcrn-definition-list--dense {"
         },
         {
-          "line": 3276,
+          "line": 3283,
           "source": ".tcrn-definition-list--dense .tcrn-definition-list__item {"
         }
       ],
@@ -2076,12 +2192,12 @@
       "class": "tcrn-definition-list__definition",
       "variant": "component part",
       "consumerLines": [
-        4441,
-        5411
+        4448,
+        5418
       ],
       "publishedStyleSites": [
         {
-          "line": 3267,
+          "line": 3274,
           "source": ".tcrn-definition-list__definition {"
         }
       ],
@@ -2093,26 +2209,26 @@
       "class": "tcrn-definition-list__item",
       "variant": "component part",
       "consumerLines": [
-        4441,
-        4939,
-        5371,
-        5411
+        4448,
+        4946,
+        5378,
+        5418
       ],
       "publishedStyleSites": [
         {
-          "line": 3255,
+          "line": 3262,
           "source": ".tcrn-definition-list__item {"
         },
         {
-          "line": 3276,
+          "line": 3283,
           "source": ".tcrn-definition-list--dense .tcrn-definition-list__item {"
         },
         {
-          "line": 3282,
+          "line": 3289,
           "source": ".tcrn-definition-list__item {"
         },
         {
-          "line": 3321,
+          "line": 3328,
           "source": ".tcrn-definition-list__item {"
         }
       ],
@@ -2124,12 +2240,12 @@
       "class": "tcrn-definition-list__term",
       "variant": "component part",
       "consumerLines": [
-        4441,
-        5411
+        4448,
+        5418
       ],
       "publishedStyleSites": [
         {
-          "line": 3261,
+          "line": 3268,
           "source": ".tcrn-definition-list__term {"
         }
       ],
@@ -2141,19 +2257,19 @@
       "class": "tcrn-detail-drawer",
       "variant": "family root/alias",
       "consumerLines": [
-        4232
+        4239
       ],
       "publishedStyleSites": [
         {
-          "line": 2392,
+          "line": 2399,
           "source": ".tcrn-detail-drawer / .tcrn-action-drawer. */"
         },
         {
-          "line": 2402,
+          "line": 2409,
           "source": ".tcrn-detail-drawer,"
         },
         {
-          "line": 2416,
+          "line": 2423,
           "source": ".tcrn-detail-drawer,"
         }
       ],
@@ -2165,23 +2281,23 @@
       "class": "tcrn-disclosure-panel",
       "variant": "family root/alias",
       "consumerLines": [
-        4360
+        4367
       ],
       "publishedStyleSites": [
         {
-          "line": 2389,
+          "line": 2396,
           "source": "/* Base surface card — Layout .tcrn-surface / .tcrn-disclosure-panel, Feedback"
         },
         {
-          "line": 2398,
+          "line": 2405,
           "source": ".tcrn-disclosure-panel,"
         },
         {
-          "line": 2677,
+          "line": 2684,
           "source": ".tcrn-disclosure-panel {"
         },
         {
-          "line": 2682,
+          "line": 2689,
           "source": ".tcrn-disclosure-panel__title {"
         }
       ],
@@ -2191,11 +2307,11 @@
       "class": "tcrn-disclosure-panel__title",
       "variant": "component part",
       "consumerLines": [
-        4360
+        4367
       ],
       "publishedStyleSites": [
         {
-          "line": 2682,
+          "line": 2689,
           "source": ".tcrn-disclosure-panel__title {"
         }
       ],
@@ -2205,9 +2321,9 @@
       "class": "tcrn-document-canvas",
       "variant": "family root/alias",
       "consumerLines": [
-        5275,
-        5286,
-        5320
+        5282,
+        5293,
+        5327
       ],
       "publishedStyleSites": [
         {
@@ -2269,8 +2385,8 @@
       "class": "tcrn-document-canvas__section",
       "variant": "component part",
       "consumerLines": [
-        5286,
-        5320
+        5293,
+        5327
       ],
       "publishedStyleSites": [
         {
@@ -2292,98 +2408,98 @@
       "class": "tcrn-field",
       "variant": "family root/alias",
       "consumerLines": [
-        4179,
-        4180,
-        4181,
-        4182,
-        4656,
-        4657,
-        4667,
-        4671,
-        4733,
-        4825,
-        4883,
-        5171,
-        5172,
-        5173,
-        5305,
-        5306,
-        5351,
-        5353,
-        5354,
-        5592
+        4186,
+        4187,
+        4188,
+        4189,
+        4663,
+        4664,
+        4674,
+        4678,
+        4740,
+        4832,
+        4890,
+        5178,
+        5179,
+        5180,
+        5312,
+        5313,
+        5358,
+        5360,
+        5361,
+        5599
       ],
       "publishedStyleSites": [
         {
-          "line": 2687,
+          "line": 2694,
           "source": ".tcrn-field {"
         },
         {
-          "line": 2706,
+          "line": 2713,
           "source": ".tcrn-field:focus-within {"
         },
         {
-          "line": 2711,
+          "line": 2718,
           "source": ".tcrn-field--error {"
         },
         {
-          "line": 2716,
+          "line": 2723,
           "source": ".tcrn-field__label {"
         },
         {
-          "line": 2719,
+          "line": 2726,
           "source": ".tcrn-field:is(fieldset) {"
         },
         {
-          "line": 2725,
+          "line": 2732,
           "source": ".tcrn-field__hint {"
         },
         {
-          "line": 2729,
+          "line": 2736,
           "source": ".tcrn-field__error {"
         },
         {
-          "line": 3117,
+          "line": 3124,
           "source": ".tcrn-field-provenance {"
         },
         {
-          "line": 3128,
+          "line": 3135,
           "source": ".tcrn-field-provenance__value {"
         },
         {
-          "line": 3133,
+          "line": 3140,
           "source": ".tcrn-field-provenance__source {"
         },
         {
-          "line": 3137,
+          "line": 3144,
           "source": ".tcrn-field-provenance__action {"
         },
         {
-          "line": 3141,
+          "line": 3148,
           "source": ".tcrn-field-provenance--overridden {"
         },
         {
-          "line": 3349,
+          "line": 3356,
           "source": ".tcrn-field {"
         },
         {
-          "line": 3355,
+          "line": 3362,
           "source": ".tcrn-field:focus-within,"
         },
         {
-          "line": 3356,
+          "line": 3363,
           "source": ".tcrn-field--error {"
         },
         {
-          "line": 3577,
+          "line": 3584,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control>:is(.tcrn-input,.tcrn-select,.tcrn-field,.tcrn-setting-choice,.tcrn-number-input-field,.tcrn-multi-select-group,.tcrn-multi-select-dropdown){inline-size:100%;min-inline-size:0}"
         },
         {
-          "line": 3578,
+          "line": 3585,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field :is(.tcrn-input,.tcrn-select,.tcrn-number-input){inline-size:100%;min-inline-size:0}"
         },
         {
-          "line": 3579,
+          "line": 3586,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field{margin:0}"
         }
       ],
@@ -2413,15 +2529,15 @@
       "class": "tcrn-field--error",
       "variant": "modifier",
       "consumerLines": [
-        4825
+        4832
       ],
       "publishedStyleSites": [
         {
-          "line": 2711,
+          "line": 2718,
           "source": ".tcrn-field--error {"
         },
         {
-          "line": 3356,
+          "line": 3363,
           "source": ".tcrn-field--error {"
         }
       ],
@@ -2431,11 +2547,11 @@
       "class": "tcrn-field__hint",
       "variant": "component part",
       "consumerLines": [
-        4733
+        4740
       ],
       "publishedStyleSites": [
         {
-          "line": 2725,
+          "line": 2732,
           "source": ".tcrn-field__hint {"
         }
       ],
@@ -2445,19 +2561,19 @@
       "class": "tcrn-field__label",
       "variant": "component part",
       "consumerLines": [
-        4179,
-        4180,
-        4181,
-        4182,
-        5305,
-        5306,
-        5353,
-        5354,
-        5592
+        4186,
+        4187,
+        4188,
+        4189,
+        5312,
+        5313,
+        5360,
+        5361,
+        5599
       ],
       "publishedStyleSites": [
         {
-          "line": 2716,
+          "line": 2723,
           "source": ".tcrn-field__label {"
         }
       ],
@@ -2478,17 +2594,17 @@
       "class": "tcrn-heading",
       "variant": "family root/alias",
       "consumerLines": [
-        4109,
-        4130,
-        4143,
-        4152,
-        4161,
-        4170,
-        4203,
-        4216,
-        4232,
-        5301,
-        5603
+        4116,
+        4137,
+        4150,
+        4159,
+        4168,
+        4177,
+        4210,
+        4223,
+        4239,
+        5308,
+        5610
       ],
       "publishedStyleSites": [
         {
@@ -2558,14 +2674,14 @@
       "class": "tcrn-heading--2",
       "variant": "modifier",
       "consumerLines": [
-        4109,
-        4130,
-        4143,
-        4152,
-        4161,
-        4170,
-        4203,
-        4216
+        4116,
+        4137,
+        4150,
+        4159,
+        4168,
+        4177,
+        4210,
+        4223
       ],
       "publishedStyleSites": [
         {
@@ -2579,9 +2695,9 @@
       "class": "tcrn-heading--3",
       "variant": "modifier",
       "consumerLines": [
-        4232,
-        5301,
-        5603
+        4239,
+        5308,
+        5610
       ],
       "publishedStyleSites": [
         {
@@ -2595,12 +2711,12 @@
       "class": "tcrn-icon-button",
       "variant": "family root/alias",
       "consumerLines": [
-        4055,
-        4084,
-        4575,
-        4736,
-        4741,
-        5001
+        4062,
+        4091,
+        4582,
+        4743,
+        4748,
+        5008
       ],
       "publishedStyleSites": [
         {
@@ -2624,10 +2740,10 @@
       "class": "tcrn-inline-alert",
       "variant": "family root/alias",
       "consumerLines": [
-        4705,
-        4706,
-        4874,
-        4876
+        4712,
+        4713,
+        4881,
+        4883
       ],
       "publishedStyleSites": [
         {
@@ -2662,7 +2778,7 @@
       "class": "tcrn-inline-alert--danger",
       "variant": "modifier",
       "consumerLines": [
-        4876
+        4883
       ],
       "publishedStyleSites": [
         {
@@ -2678,7 +2794,7 @@
       "class": "tcrn-inline-alert--warning",
       "variant": "modifier",
       "consumerLines": [
-        4706
+        4713
       ],
       "publishedStyleSites": [
         {
@@ -2694,45 +2810,45 @@
       "class": "tcrn-input",
       "variant": "family root/alias",
       "consumerLines": [
-        4081,
-        4179,
-        4180,
-        4181,
-        4182,
-        4209,
-        4656,
-        4657,
-        4667,
-        4671,
-        4881,
-        4882,
-        5168,
-        5173,
-        5306,
-        5353,
-        5354,
+        4088,
+        4186,
+        4187,
+        4188,
+        4189,
+        4216,
+        4663,
+        4664,
+        4674,
+        4678,
+        4888,
+        4889,
+        5175,
+        5180,
+        5313,
         5360,
-        5865
+        5361,
+        5367,
+        5872
       ],
       "publishedStyleSites": [
         {
-          "line": 2733,
+          "line": 2740,
           "source": "/* Form input + select (.tcrn-input--short is a docs-only demo width and stays there) */"
         },
         {
-          "line": 2734,
+          "line": 2741,
           "source": ".tcrn-input,"
         },
         {
-          "line": 2745,
+          "line": 2752,
           "source": "/* Textarea is a modifier on .tcrn-input (border/bg/radius/font come from the base);"
         },
         {
-          "line": 3577,
+          "line": 3584,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control>:is(.tcrn-input,.tcrn-select,.tcrn-field,.tcrn-setting-choice,.tcrn-number-input-field,.tcrn-multi-select-group,.tcrn-multi-select-dropdown){inline-size:100%;min-inline-size:0}"
         },
         {
-          "line": 3578,
+          "line": 3585,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field :is(.tcrn-input,.tcrn-select,.tcrn-number-input){inline-size:100%;min-inline-size:0}"
         }
       ],
@@ -2763,8 +2879,8 @@
       "class": "tcrn-label-set",
       "variant": "family root/alias",
       "consumerLines": [
-        5286,
-        5320
+        5293,
+        5327
       ],
       "publishedStyleSites": [
         {
@@ -2782,61 +2898,61 @@
       "class": "tcrn-line-numbered-editor",
       "variant": "family root/alias",
       "consumerLines": [
-        4209,
-        5643,
-        5650
+        4216,
+        5650,
+        5657
       ],
       "publishedStyleSites": [
         {
-          "line": 3147,
+          "line": 3154,
           "source": ".tcrn-line-numbered-editor {"
         },
         {
-          "line": 3156,
+          "line": 3163,
           "source": ".tcrn-line-numbered-editor__gutter {"
         },
         {
-          "line": 3171,
+          "line": 3178,
           "source": ".tcrn-line-numbered-editor__gutter li {"
         },
         {
-          "line": 3174,
+          "line": 3181,
           "source": ".tcrn-line-numbered-editor__gutter li[data-editor-line-finding=\"true\"] {"
         },
         {
-          "line": 3178,
+          "line": 3185,
           "source": ".tcrn-line-numbered-editor__gutter li.tcrn-line-numbered-editor__line--danger {"
         },
         {
-          "line": 3181,
+          "line": 3188,
           "source": ".tcrn-line-numbered-editor__content {"
         },
         {
-          "line": 3186,
+          "line": 3193,
           "source": ".tcrn-line-numbered-editor__control {"
         },
         {
-          "line": 3195,
+          "line": 3202,
           "source": ".tcrn-line-numbered-editor__control:focus-visible {"
         },
         {
-          "line": 3199,
+          "line": 3206,
           "source": ".tcrn-line-numbered-editor__findings {"
         },
         {
-          "line": 3208,
+          "line": 3215,
           "source": ".tcrn-line-numbered-editor__finding--warning,"
         },
         {
-          "line": 3209,
+          "line": 3216,
           "source": ".tcrn-line-numbered-editor__finding--danger {"
         },
         {
-          "line": 3212,
+          "line": 3219,
           "source": ".tcrn-line-numbered-editor__finding--danger {"
         },
         {
-          "line": 3215,
+          "line": 3222,
           "source": ".tcrn-line-numbered-editor__finding-line {"
         }
       ],
@@ -2850,11 +2966,11 @@
       "class": "tcrn-line-numbered-editor__content",
       "variant": "component part",
       "consumerLines": [
-        4209
+        4216
       ],
       "publishedStyleSites": [
         {
-          "line": 3181,
+          "line": 3188,
           "source": ".tcrn-line-numbered-editor__content {"
         }
       ],
@@ -2866,15 +2982,15 @@
       "class": "tcrn-line-numbered-editor__control",
       "variant": "component part",
       "consumerLines": [
-        4209
+        4216
       ],
       "publishedStyleSites": [
         {
-          "line": 3186,
+          "line": 3193,
           "source": ".tcrn-line-numbered-editor__control {"
         },
         {
-          "line": 3195,
+          "line": 3202,
           "source": ".tcrn-line-numbered-editor__control:focus-visible {"
         }
       ],
@@ -2886,11 +3002,11 @@
       "class": "tcrn-line-numbered-editor__findings",
       "variant": "component part",
       "consumerLines": [
-        4209
+        4216
       ],
       "publishedStyleSites": [
         {
-          "line": 3199,
+          "line": 3206,
           "source": ".tcrn-line-numbered-editor__findings {"
         }
       ],
@@ -2902,23 +3018,23 @@
       "class": "tcrn-line-numbered-editor__gutter",
       "variant": "component part",
       "consumerLines": [
-        4209
+        4216
       ],
       "publishedStyleSites": [
         {
-          "line": 3156,
+          "line": 3163,
           "source": ".tcrn-line-numbered-editor__gutter {"
         },
         {
-          "line": 3171,
+          "line": 3178,
           "source": ".tcrn-line-numbered-editor__gutter li {"
         },
         {
-          "line": 3174,
+          "line": 3181,
           "source": ".tcrn-line-numbered-editor__gutter li[data-editor-line-finding=\"true\"] {"
         },
         {
-          "line": 3178,
+          "line": 3185,
           "source": ".tcrn-line-numbered-editor__gutter li.tcrn-line-numbered-editor__line--danger {"
         }
       ],
@@ -2930,8 +3046,8 @@
       "class": "tcrn-machine-token",
       "variant": "family root/alias",
       "consumerLines": [
-        5528,
-        5650
+        5535,
+        5657
       ],
       "publishedStyleSites": [
         {
@@ -2988,7 +3104,7 @@
       "class": "tcrn-machine-token--compact",
       "variant": "modifier",
       "consumerLines": [
-        5650
+        5657
       ],
       "publishedStyleSites": [
         {
@@ -3012,7 +3128,7 @@
       "class": "tcrn-machine-token__value",
       "variant": "component part",
       "consumerLines": [
-        5650
+        5657
       ],
       "publishedStyleSites": [
         {
@@ -3036,28 +3152,28 @@
       "class": "tcrn-menu",
       "variant": "family root/alias",
       "consumerLines": [
-        4624,
-        4625
+        4631,
+        4632
       ],
       "publishedStyleSites": [
         {
-          "line": 3481,
+          "line": 3488,
           "source": ".tcrn-menu {"
         },
         {
-          "line": 3491,
+          "line": 3498,
           "source": ".tcrn-menu__item {"
         },
         {
-          "line": 3499,
+          "line": 3506,
           "source": ".tcrn-menu__item--active { background: var(--tcrn-color-surface-muted); }"
         },
         {
-          "line": 3500,
+          "line": 3507,
           "source": ".tcrn-menu__item:disabled { color: var(--tcrn-color-text-muted); cursor: not-allowed; }"
         },
         {
-          "line": 3501,
+          "line": 3508,
           "source": ".tcrn-menu__item:focus-visible { outline: 2px solid var(--tcrn-color-focus-ring); outline-offset: -2px; }"
         }
       ],
@@ -3067,23 +3183,23 @@
       "class": "tcrn-menu__item",
       "variant": "component part",
       "consumerLines": [
-        4624
+        4631
       ],
       "publishedStyleSites": [
         {
-          "line": 3491,
+          "line": 3498,
           "source": ".tcrn-menu__item {"
         },
         {
-          "line": 3499,
+          "line": 3506,
           "source": ".tcrn-menu__item--active { background: var(--tcrn-color-surface-muted); }"
         },
         {
-          "line": 3500,
+          "line": 3507,
           "source": ".tcrn-menu__item:disabled { color: var(--tcrn-color-text-muted); cursor: not-allowed; }"
         },
         {
-          "line": 3501,
+          "line": 3508,
           "source": ".tcrn-menu__item:focus-visible { outline: 2px solid var(--tcrn-color-focus-ring); outline-offset: -2px; }"
         }
       ],
@@ -3093,66 +3209,66 @@
       "class": "tcrn-multi-select-dropdown",
       "variant": "family root/alias",
       "consumerLines": [
-        4624,
-        4625,
-        5662,
-        5676
+        4631,
+        4632,
+        5669,
+        5683
       ],
       "publishedStyleSites": [
         {
-          "line": 3540,
+          "line": 3547,
           "source": ".tcrn-multi-select-dropdown{position:relative;min-inline-size:0;max-inline-size:100%}"
         },
         {
-          "line": 3541,
+          "line": 3548,
           "source": ".tcrn-multi-select-dropdown__trigger{display:flex;align-items:center;justify-content:space-between;gap:var(--tcrn-space-2);inline-size:100%;font:inherit;color:var(--tcrn-color-text-primary);background:var(--tcrn-color-surface-panel);text-align:start;cursor:pointer}"
         },
         {
-          "line": 3542,
+          "line": 3549,
           "source": ".tcrn-multi-select-dropdown__trigger [data-multi-select-summary]{min-inline-size:0;overflow-wrap:anywhere}"
         },
         {
-          "line": 3543,
+          "line": 3550,
           "source": ".tcrn-multi-select-dropdown__caret{flex:0 0 auto}"
         },
         {
-          "line": 3544,
+          "line": 3551,
           "source": ".tcrn-multi-select-dropdown__trigger:focus-visible{outline:var(--tcrn-space-0h) solid var(--tcrn-color-focus-ring);outline-offset:var(--tcrn-space-0h)}"
         },
         {
-          "line": 3545,
+          "line": 3552,
           "source": ".tcrn-multi-select-dropdown__trigger:disabled{color:var(--tcrn-color-text-muted);cursor:not-allowed}"
         },
         {
-          "line": 3546,
+          "line": 3553,
           "source": ".tcrn-multi-select-dropdown__list{z-index:var(--tcrn-z-popover);min-inline-size:0;max-inline-size:calc(100vw - var(--tcrn-space-4));max-block-size:calc(100vh - var(--tcrn-space-4));overflow:auto;box-sizing:border-box}"
         },
         {
-          "line": 3547,
+          "line": 3554,
           "source": ".tcrn-multi-select-dropdown__list[hidden]{display:none}"
         },
         {
-          "line": 3548,
+          "line": 3555,
           "source": ".tcrn-multi-select-dropdown__option{display:flex;justify-content:space-between;align-items:center;gap:var(--tcrn-space-2);font:inherit;color:var(--tcrn-color-text-primary);overflow-wrap:anywhere}"
         },
         {
-          "line": 3549,
+          "line": 3556,
           "source": ".tcrn-multi-select-dropdown__option:not(:disabled):hover{background:var(--tcrn-selection-fill-hover)}"
         },
         {
-          "line": 3550,
+          "line": 3557,
           "source": ".tcrn-multi-select-dropdown__option[aria-selected=\"true\"]{background:var(--tcrn-selection-fill)}"
         },
         {
-          "line": 3551,
+          "line": 3558,
           "source": ".tcrn-multi-select-dropdown__option [data-multi-select-check]{flex:0 0 auto;visibility:hidden}"
         },
         {
-          "line": 3552,
+          "line": 3559,
           "source": ".tcrn-multi-select-dropdown__option [data-multi-select-check][data-selected=\"true\"]{visibility:visible}"
         },
         {
-          "line": 3577,
+          "line": 3584,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control>:is(.tcrn-input,.tcrn-select,.tcrn-field,.tcrn-setting-choice,.tcrn-number-input-field,.tcrn-multi-select-group,.tcrn-multi-select-dropdown){inline-size:100%;min-inline-size:0}"
         }
       ],
@@ -3162,11 +3278,11 @@
       "class": "tcrn-multi-select-dropdown__caret",
       "variant": "component part",
       "consumerLines": [
-        4625
+        4632
       ],
       "publishedStyleSites": [
         {
-          "line": 3543,
+          "line": 3550,
           "source": ".tcrn-multi-select-dropdown__caret{flex:0 0 auto}"
         }
       ],
@@ -3176,15 +3292,15 @@
       "class": "tcrn-multi-select-dropdown__list",
       "variant": "component part",
       "consumerLines": [
-        4625
+        4632
       ],
       "publishedStyleSites": [
         {
-          "line": 3546,
+          "line": 3553,
           "source": ".tcrn-multi-select-dropdown__list{z-index:var(--tcrn-z-popover);min-inline-size:0;max-inline-size:calc(100vw - var(--tcrn-space-4));max-block-size:calc(100vh - var(--tcrn-space-4));overflow:auto;box-sizing:border-box}"
         },
         {
-          "line": 3547,
+          "line": 3554,
           "source": ".tcrn-multi-select-dropdown__list[hidden]{display:none}"
         }
       ],
@@ -3194,27 +3310,27 @@
       "class": "tcrn-multi-select-dropdown__option",
       "variant": "component part",
       "consumerLines": [
-        4624
+        4631
       ],
       "publishedStyleSites": [
         {
-          "line": 3548,
+          "line": 3555,
           "source": ".tcrn-multi-select-dropdown__option{display:flex;justify-content:space-between;align-items:center;gap:var(--tcrn-space-2);font:inherit;color:var(--tcrn-color-text-primary);overflow-wrap:anywhere}"
         },
         {
-          "line": 3549,
+          "line": 3556,
           "source": ".tcrn-multi-select-dropdown__option:not(:disabled):hover{background:var(--tcrn-selection-fill-hover)}"
         },
         {
-          "line": 3550,
+          "line": 3557,
           "source": ".tcrn-multi-select-dropdown__option[aria-selected=\"true\"]{background:var(--tcrn-selection-fill)}"
         },
         {
-          "line": 3551,
+          "line": 3558,
           "source": ".tcrn-multi-select-dropdown__option [data-multi-select-check]{flex:0 0 auto;visibility:hidden}"
         },
         {
-          "line": 3552,
+          "line": 3559,
           "source": ".tcrn-multi-select-dropdown__option [data-multi-select-check][data-selected=\"true\"]{visibility:visible}"
         }
       ],
@@ -3224,25 +3340,25 @@
       "class": "tcrn-multi-select-dropdown__trigger",
       "variant": "component part",
       "consumerLines": [
-        4625,
-        5662,
-        5676
+        4632,
+        5669,
+        5683
       ],
       "publishedStyleSites": [
         {
-          "line": 3541,
+          "line": 3548,
           "source": ".tcrn-multi-select-dropdown__trigger{display:flex;align-items:center;justify-content:space-between;gap:var(--tcrn-space-2);inline-size:100%;font:inherit;color:var(--tcrn-color-text-primary);background:var(--tcrn-color-surface-panel);text-align:start;cursor:pointer}"
         },
         {
-          "line": 3542,
+          "line": 3549,
           "source": ".tcrn-multi-select-dropdown__trigger [data-multi-select-summary]{min-inline-size:0;overflow-wrap:anywhere}"
         },
         {
-          "line": 3544,
+          "line": 3551,
           "source": ".tcrn-multi-select-dropdown__trigger:focus-visible{outline:var(--tcrn-space-0h) solid var(--tcrn-color-focus-ring);outline-offset:var(--tcrn-space-0h)}"
         },
         {
-          "line": 3545,
+          "line": 3552,
           "source": ".tcrn-multi-select-dropdown__trigger:disabled{color:var(--tcrn-color-text-muted);cursor:not-allowed}"
         }
       ],
@@ -3252,16 +3368,16 @@
       "class": "tcrn-nav-item",
       "variant": "family root/alias",
       "consumerLines": [
-        4059,
-        4060,
-        4061,
-        4062,
-        4063,
-        4064,
-        4065,
         4066,
-        4768,
-        5542
+        4067,
+        4068,
+        4069,
+        4070,
+        4071,
+        4072,
+        4073,
+        4775,
+        5549
       ],
       "publishedStyleSites": [
         {
@@ -3317,11 +3433,11 @@
           "source": ".tcrn-nav-item__label {"
         },
         {
-          "line": 2357,
+          "line": 2364,
           "source": ".tcrn-nav-item,"
         },
         {
-          "line": 2366,
+          "line": 2373,
           "source": ".tcrn-nav-item:active,"
         }
       ],
@@ -3340,14 +3456,14 @@
       "class": "tcrn-nav-item__content",
       "variant": "component part",
       "consumerLines": [
-        4059,
-        4060,
-        4061,
-        4062,
-        4063,
-        4064,
-        4065,
-        4066
+        4066,
+        4067,
+        4068,
+        4069,
+        4070,
+        4071,
+        4072,
+        4073
       ],
       "publishedStyleSites": [
         {
@@ -3370,14 +3486,14 @@
       "class": "tcrn-nav-item__label",
       "variant": "component part",
       "consumerLines": [
-        4059,
-        4060,
-        4061,
-        4062,
-        4063,
-        4064,
-        4065,
-        4066
+        4066,
+        4067,
+        4068,
+        4069,
+        4070,
+        4071,
+        4072,
+        4073
       ],
       "publishedStyleSites": [
         {
@@ -3404,26 +3520,26 @@
       "class": "tcrn-number-input",
       "variant": "family root/alias",
       "consumerLines": [
-        4656,
-        4667,
-        4881,
-        5168
+        4663,
+        4674,
+        4888,
+        5175
       ],
       "publishedStyleSites": [
         {
-          "line": 3563,
+          "line": 3570,
           "source": ".tcrn-number-input{inline-size:100%;min-inline-size:var(--tcrn-container-settings-number-min);font-variant-numeric:tabular-nums;text-overflow:clip}"
         },
         {
-          "line": 3577,
+          "line": 3584,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control>:is(.tcrn-input,.tcrn-select,.tcrn-field,.tcrn-setting-choice,.tcrn-number-input-field,.tcrn-multi-select-group,.tcrn-multi-select-dropdown){inline-size:100%;min-inline-size:0}"
         },
         {
-          "line": 3578,
+          "line": 3585,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field :is(.tcrn-input,.tcrn-select,.tcrn-number-input){inline-size:100%;min-inline-size:0}"
         },
         {
-          "line": 3580,
+          "line": 3587,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control>.tcrn-number-input{inline-size:100%}"
         }
       ],
@@ -3438,11 +3554,11 @@
       "class": "tcrn-number-input-field",
       "variant": "family root/alias",
       "consumerLines": [
-        4667
+        4674
       ],
       "publishedStyleSites": [
         {
-          "line": 3577,
+          "line": 3584,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control>:is(.tcrn-input,.tcrn-select,.tcrn-field,.tcrn-setting-choice,.tcrn-number-input-field,.tcrn-multi-select-group,.tcrn-multi-select-dropdown){inline-size:100%;min-inline-size:0}"
         }
       ],
@@ -3454,64 +3570,64 @@
       "class": "tcrn-operation-feedback",
       "variant": "family root/alias",
       "consumerLines": [
-        4232,
-        4360,
-        4412,
-        4431,
-        4440,
-        5393
+        4239,
+        4367,
+        4419,
+        4438,
+        4447,
+        5400
       ],
       "publishedStyleSites": [
         {
-          "line": 3612,
+          "line": 3619,
           "source": ".tcrn-operation-feedback,.tcrn-content-scope{display:grid;gap:var(--tcrn-space-2);min-inline-size:0;max-inline-size:100%;border:1px solid var(--tcrn-color-border-subtle);border-radius:var(--tcrn-radius-surface);background:var(--tcrn-color-surface-panel);padding:var(--tcrn-space-3)}"
         },
         {
-          "line": 3613,
+          "line": 3620,
           "source": ".tcrn-operation-feedback__summary{display:flex;align-items:flex-start;flex-wrap:wrap;gap:var(--tcrn-space-2);min-inline-size:0;max-inline-size:100%}"
         },
         {
-          "line": 3614,
+          "line": 3621,
           "source": ".tcrn-operation-feedback__status{flex:0 1 auto;min-inline-size:0}"
         },
         {
-          "line": 3615,
+          "line": 3622,
           "source": ".tcrn-operation-feedback__identity{display:grid;grid-template-columns:fit-content(40%) minmax(0,1fr);flex:1 1 240px;gap:var(--tcrn-space-1) var(--tcrn-space-2);min-inline-size:0;margin:0}"
         },
         {
-          "line": 3616,
+          "line": 3623,
           "source": ".tcrn-operation-feedback__identity-row{display:grid;grid-template-columns:subgrid;grid-column:1/-1;min-inline-size:0}"
         },
         {
-          "line": 3617,
+          "line": 3624,
           "source": ".tcrn-operation-feedback__identity dt{min-inline-size:0;overflow-wrap:anywhere;color:var(--tcrn-color-text-secondary);font-size:var(--tcrn-type-size-meta);font-weight:var(--tcrn-type-weight-medium)}"
         },
         {
-          "line": 3618,
+          "line": 3625,
           "source": ".tcrn-operation-feedback__identity dd{min-inline-size:0;margin:0;overflow-wrap:anywhere;word-break:break-word;color:var(--tcrn-color-text-primary)}"
         },
         {
-          "line": 3619,
+          "line": 3626,
           "source": ".tcrn-operation-feedback__details-trigger{flex:0 1 auto;max-inline-size:100%;min-block-size:36px;border:1px solid var(--tcrn-color-border-control);border-radius:var(--tcrn-radius-control);background:var(--tcrn-color-surface-muted);color:var(--tcrn-color-text-primary);padding:var(--tcrn-space-1) var(--tcrn-space-2);font:inherit;cursor:pointer;overflow-wrap:anywhere}"
         },
         {
-          "line": 3620,
+          "line": 3627,
           "source": ".tcrn-operation-feedback__details-trigger:focus-visible{outline:2px solid var(--tcrn-color-focus-ring);outline-offset:2px}"
         },
         {
-          "line": 3621,
+          "line": 3628,
           "source": ".tcrn-operation-feedback__details{min-inline-size:0;max-inline-size:100%}"
         },
         {
-          "line": 3622,
+          "line": 3629,
           "source": ".tcrn-operation-feedback__details-body{min-inline-size:0;max-inline-size:100%;overflow-wrap:anywhere;word-break:break-word}"
         },
         {
-          "line": 3623,
+          "line": 3630,
           "source": ".tcrn-operation-feedback__details-body p{max-inline-size:100%;overflow-wrap:anywhere}"
         },
         {
-          "line": 3624,
+          "line": 3631,
           "source": ".tcrn-operation-feedback__details-body pre{min-inline-size:0;max-inline-size:100%;margin:0;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;font-family:var(--tcrn-type-family-mono)}"
         }
       ],
@@ -3527,33 +3643,33 @@
       "class": "tcrn-operation-feedback__details",
       "variant": "component part",
       "consumerLines": [
-        4232,
-        4360,
-        5393
+        4239,
+        4367,
+        5400
       ],
       "publishedStyleSites": [
         {
-          "line": 3619,
+          "line": 3626,
           "source": ".tcrn-operation-feedback__details-trigger{flex:0 1 auto;max-inline-size:100%;min-block-size:36px;border:1px solid var(--tcrn-color-border-control);border-radius:var(--tcrn-radius-control);background:var(--tcrn-color-surface-muted);color:var(--tcrn-color-text-primary);padding:var(--tcrn-space-1) var(--tcrn-space-2);font:inherit;cursor:pointer;overflow-wrap:anywhere}"
         },
         {
-          "line": 3620,
+          "line": 3627,
           "source": ".tcrn-operation-feedback__details-trigger:focus-visible{outline:2px solid var(--tcrn-color-focus-ring);outline-offset:2px}"
         },
         {
-          "line": 3621,
+          "line": 3628,
           "source": ".tcrn-operation-feedback__details{min-inline-size:0;max-inline-size:100%}"
         },
         {
-          "line": 3622,
+          "line": 3629,
           "source": ".tcrn-operation-feedback__details-body{min-inline-size:0;max-inline-size:100%;overflow-wrap:anywhere;word-break:break-word}"
         },
         {
-          "line": 3623,
+          "line": 3630,
           "source": ".tcrn-operation-feedback__details-body p{max-inline-size:100%;overflow-wrap:anywhere}"
         },
         {
-          "line": 3624,
+          "line": 3631,
           "source": ".tcrn-operation-feedback__details-body pre{min-inline-size:0;max-inline-size:100%;margin:0;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;font-family:var(--tcrn-type-family-mono)}"
         }
       ],
@@ -3566,21 +3682,21 @@
       "class": "tcrn-operation-feedback__details-body",
       "variant": "component part",
       "consumerLines": [
-        4232,
-        4360,
-        5393
+        4239,
+        4367,
+        5400
       ],
       "publishedStyleSites": [
         {
-          "line": 3622,
+          "line": 3629,
           "source": ".tcrn-operation-feedback__details-body{min-inline-size:0;max-inline-size:100%;overflow-wrap:anywhere;word-break:break-word}"
         },
         {
-          "line": 3623,
+          "line": 3630,
           "source": ".tcrn-operation-feedback__details-body p{max-inline-size:100%;overflow-wrap:anywhere}"
         },
         {
-          "line": 3624,
+          "line": 3631,
           "source": ".tcrn-operation-feedback__details-body pre{min-inline-size:0;max-inline-size:100%;margin:0;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;font-family:var(--tcrn-type-family-mono)}"
         }
       ],
@@ -3593,16 +3709,16 @@
       "class": "tcrn-operation-feedback__details-trigger",
       "variant": "component part",
       "consumerLines": [
-        4232,
-        5393
+        4239,
+        5400
       ],
       "publishedStyleSites": [
         {
-          "line": 3619,
+          "line": 3626,
           "source": ".tcrn-operation-feedback__details-trigger{flex:0 1 auto;max-inline-size:100%;min-block-size:36px;border:1px solid var(--tcrn-color-border-control);border-radius:var(--tcrn-radius-control);background:var(--tcrn-color-surface-muted);color:var(--tcrn-color-text-primary);padding:var(--tcrn-space-1) var(--tcrn-space-2);font:inherit;cursor:pointer;overflow-wrap:anywhere}"
         },
         {
-          "line": 3620,
+          "line": 3627,
           "source": ".tcrn-operation-feedback__details-trigger:focus-visible{outline:2px solid var(--tcrn-color-focus-ring);outline-offset:2px}"
         }
       ],
@@ -3615,25 +3731,25 @@
       "class": "tcrn-operation-feedback__identity",
       "variant": "component part",
       "consumerLines": [
-        4232,
-        4440,
-        5393
+        4239,
+        4447,
+        5400
       ],
       "publishedStyleSites": [
         {
-          "line": 3615,
+          "line": 3622,
           "source": ".tcrn-operation-feedback__identity{display:grid;grid-template-columns:fit-content(40%) minmax(0,1fr);flex:1 1 240px;gap:var(--tcrn-space-1) var(--tcrn-space-2);min-inline-size:0;margin:0}"
         },
         {
-          "line": 3616,
+          "line": 3623,
           "source": ".tcrn-operation-feedback__identity-row{display:grid;grid-template-columns:subgrid;grid-column:1/-1;min-inline-size:0}"
         },
         {
-          "line": 3617,
+          "line": 3624,
           "source": ".tcrn-operation-feedback__identity dt{min-inline-size:0;overflow-wrap:anywhere;color:var(--tcrn-color-text-secondary);font-size:var(--tcrn-type-size-meta);font-weight:var(--tcrn-type-weight-medium)}"
         },
         {
-          "line": 3618,
+          "line": 3625,
           "source": ".tcrn-operation-feedback__identity dd{min-inline-size:0;margin:0;overflow-wrap:anywhere;word-break:break-word;color:var(--tcrn-color-text-primary)}"
         }
       ],
@@ -3647,12 +3763,12 @@
       "class": "tcrn-operation-feedback__identity-row",
       "variant": "component part",
       "consumerLines": [
-        4440,
-        5393
+        4447,
+        5400
       ],
       "publishedStyleSites": [
         {
-          "line": 3616,
+          "line": 3623,
           "source": ".tcrn-operation-feedback__identity-row{display:grid;grid-template-columns:subgrid;grid-column:1/-1;min-inline-size:0}"
         }
       ],
@@ -3665,14 +3781,14 @@
       "class": "tcrn-operation-feedback__status",
       "variant": "component part",
       "consumerLines": [
-        4232,
-        4412,
-        4431,
-        5393
+        4239,
+        4419,
+        4438,
+        5400
       ],
       "publishedStyleSites": [
         {
-          "line": 3614,
+          "line": 3621,
           "source": ".tcrn-operation-feedback__status{flex:0 1 auto;min-inline-size:0}"
         }
       ],
@@ -3687,12 +3803,12 @@
       "class": "tcrn-operation-feedback__summary",
       "variant": "component part",
       "consumerLines": [
-        4232,
-        5393
+        4239,
+        5400
       ],
       "publishedStyleSites": [
         {
-          "line": 3613,
+          "line": 3620,
           "source": ".tcrn-operation-feedback__summary{display:flex;align-items:flex-start;flex-wrap:wrap;gap:var(--tcrn-space-2);min-inline-size:0;max-inline-size:100%}"
         }
       ],
@@ -3705,14 +3821,14 @@
       "class": "tcrn-page-header",
       "variant": "family root/alias",
       "consumerLines": [
-        4109,
-        4130,
-        4143,
-        4152,
-        4161,
-        4170,
-        4203,
-        4216
+        4116,
+        4137,
+        4150,
+        4159,
+        4168,
+        4177,
+        4210,
+        4223
       ],
       "publishedStyleSites": [
         {
@@ -3780,15 +3896,15 @@
           "source": ".tcrn-page-header__actions {"
         },
         {
-          "line": 2283,
+          "line": 2290,
           "source": ".tcrn-page-header__body,"
         },
         {
-          "line": 2290,
+          "line": 2297,
           "source": ".tcrn-page-header__meta,"
         },
         {
-          "line": 2291,
+          "line": 2298,
           "source": ".tcrn-page-header__actions,"
         }
       ],
@@ -3798,14 +3914,14 @@
       "class": "tcrn-page-header__actions",
       "variant": "component part",
       "consumerLines": [
-        4109,
-        4130,
-        4143,
-        4152,
-        4161,
-        4170,
-        4203,
-        4216
+        4116,
+        4137,
+        4150,
+        4159,
+        4168,
+        4177,
+        4210,
+        4223
       ],
       "publishedStyleSites": [
         {
@@ -3817,7 +3933,7 @@
           "source": ".tcrn-page-header__actions {"
         },
         {
-          "line": 2291,
+          "line": 2298,
           "source": ".tcrn-page-header__actions,"
         }
       ],
@@ -3827,14 +3943,14 @@
       "class": "tcrn-page-header__body",
       "variant": "component part",
       "consumerLines": [
-        4109,
-        4130,
-        4143,
-        4152,
-        4161,
-        4170,
-        4203,
-        4216
+        4116,
+        4137,
+        4150,
+        4159,
+        4168,
+        4177,
+        4210,
+        4223
       ],
       "publishedStyleSites": [
         {
@@ -3842,7 +3958,7 @@
           "source": ".tcrn-page-header__body {"
         },
         {
-          "line": 2283,
+          "line": 2290,
           "source": ".tcrn-page-header__body,"
         }
       ],
@@ -3852,14 +3968,14 @@
       "class": "tcrn-page-header__title",
       "variant": "component part",
       "consumerLines": [
-        4109,
-        4130,
-        4143,
-        4152,
-        4161,
-        4170,
-        4203,
-        4216
+        4116,
+        4137,
+        4150,
+        4159,
+        4168,
+        4177,
+        4210,
+        4223
       ],
       "publishedStyleSites": [
         {
@@ -3881,70 +3997,70 @@
       "class": "tcrn-page-hierarchy",
       "variant": "family root/alias",
       "consumerLines": [
-        4107,
-        4108,
-        4111,
         4114,
-        4128,
-        4129,
-        4132,
+        4115,
+        4118,
+        4121,
         4135,
-        4141,
+        4136,
+        4139,
         4142,
-        4145,
-        4146,
-        4150,
-        4151,
-        4154,
-        4155,
-        4159,
-        4160,
-        4163,
-        4164,
-        4168,
-        4169,
-        4172,
-        4173,
-        4201,
-        4202,
-        4205,
+        4148,
+        4149,
+        4152,
+        4153,
+        4157,
+        4158,
+        4161,
+        4162,
+        4166,
+        4167,
+        4170,
+        4171,
+        4175,
+        4176,
+        4179,
+        4180,
         4208,
-        4214,
+        4209,
+        4212,
         4215,
-        4218,
-        4221
+        4221,
+        4222,
+        4225,
+        4228
       ],
       "publishedStyleSites": [
         {
-          "line": 3631,
+          "line": 3638,
           "source": ".tcrn-page-hierarchy{display:grid;gap:var(--tcrn-space-4);min-inline-size:0;max-inline-size:100%}"
         },
         {
-          "line": 3632,
+          "line": 3639,
           "source": ".tcrn-page-hierarchy__header,.tcrn-page-hierarchy__section-tabs,.tcrn-page-hierarchy__lower-content,.tcrn-page-hierarchy__third-level-frame,.tcrn-page-hierarchy__third-level,.tcrn-page-hierarchy__content{min-inline-size:0;max-inline-size:100%}"
         },
         {
-          "line": 3633,
+          "line": 3640,
           "source": ".tcrn-page-hierarchy__section-tabs{display:block}"
         },
         {
-          "line": 3634,
+          "line": 3641,
           "source": ".tcrn-page-hierarchy__third-level-frame{container:tcrn-page-hierarchy-third-level/inline-size}"
         },
         {
-          "line": 3635,
+          "line": 3642,
           "source": ".tcrn-page-hierarchy__third-level{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--tcrn-space-4)}"
         },
         {
-          "line": 3636,
+          "line": 3643,
           "source": ".tcrn-page-hierarchy__local-navigation{min-inline-size:0;max-inline-size:100%;overflow-x:auto}"
         },
         {
-          "line": 3637,
+          "line": 3644,
           "source": ".tcrn-page-hierarchy__content{display:grid;gap:var(--tcrn-space-3)}"
         },
         {
-          "line": 3638,
+          "line": 3645,
           "source": "@container tcrn-page-hierarchy-third-level (min-width:960px){.tcrn-page-hierarchy__third-level{grid-template-columns:minmax(0,var(--tcrn-container-page-third-level-nav)) minmax(0,1fr)}}"
         }
       ],
@@ -3987,18 +4103,18 @@
       "class": "tcrn-page-hierarchy__header",
       "variant": "component part",
       "consumerLines": [
-        4108,
-        4129,
-        4142,
-        4151,
-        4160,
-        4169,
-        4202,
-        4215
+        4115,
+        4136,
+        4149,
+        4158,
+        4167,
+        4176,
+        4209,
+        4222
       ],
       "publishedStyleSites": [
         {
-          "line": 3632,
+          "line": 3639,
           "source": ".tcrn-page-hierarchy__header,.tcrn-page-hierarchy__section-tabs,.tcrn-page-hierarchy__lower-content,.tcrn-page-hierarchy__third-level-frame,.tcrn-page-hierarchy__third-level,.tcrn-page-hierarchy__content{min-inline-size:0;max-inline-size:100%}"
         }
       ],
@@ -4017,18 +4133,18 @@
       "class": "tcrn-page-hierarchy__lower-content",
       "variant": "component part",
       "consumerLines": [
-        4114,
-        4135,
-        4146,
-        4155,
-        4164,
-        4173,
-        4208,
-        4221
+        4121,
+        4142,
+        4153,
+        4162,
+        4171,
+        4180,
+        4215,
+        4228
       ],
       "publishedStyleSites": [
         {
-          "line": 3632,
+          "line": 3639,
           "source": ".tcrn-page-hierarchy__header,.tcrn-page-hierarchy__section-tabs,.tcrn-page-hierarchy__lower-content,.tcrn-page-hierarchy__third-level-frame,.tcrn-page-hierarchy__third-level,.tcrn-page-hierarchy__content{min-inline-size:0;max-inline-size:100%}"
         }
       ],
@@ -4047,22 +4163,22 @@
       "class": "tcrn-page-hierarchy__section-tabs",
       "variant": "component part",
       "consumerLines": [
-        4111,
-        4132,
-        4145,
-        4154,
-        4163,
-        4172,
-        4205,
-        4218
+        4118,
+        4139,
+        4152,
+        4161,
+        4170,
+        4179,
+        4212,
+        4225
       ],
       "publishedStyleSites": [
         {
-          "line": 3632,
+          "line": 3639,
           "source": ".tcrn-page-hierarchy__header,.tcrn-page-hierarchy__section-tabs,.tcrn-page-hierarchy__lower-content,.tcrn-page-hierarchy__third-level-frame,.tcrn-page-hierarchy__third-level,.tcrn-page-hierarchy__content{min-inline-size:0;max-inline-size:100%}"
         },
         {
-          "line": 3633,
+          "line": 3640,
           "source": ".tcrn-page-hierarchy__section-tabs{display:block}"
         }
       ],
@@ -4081,27 +4197,27 @@
       "class": "tcrn-popover",
       "variant": "family root/alias",
       "consumerLines": [
-        4571
+        4578
       ],
       "publishedStyleSites": [
         {
-          "line": 2391,
+          "line": 2398,
           "source": ".tcrn-detail-inspector, Overlay .tcrn-popover / .tcrn-dialog / .tcrn-confirm-dialog /"
         },
         {
-          "line": 2399,
+          "line": 2406,
           "source": ".tcrn-popover,"
         },
         {
-          "line": 3329,
+          "line": 3336,
           "source": ".tcrn-popover {"
         },
         {
-          "line": 3334,
+          "line": 3341,
           "source": ".tcrn-popover {"
         },
         {
-          "line": 3606,
+          "line": 3613,
           "source": ".tcrn-popover[data-overlay-positioning=\"portal-fixed\"],.tcrn-popover[data-overlay-positioning=\"static-fixed\"]{position:fixed;max-width:min(420px,calc(100vw - var(--tcrn-space-4)));max-height:calc(100vh - var(--tcrn-space-4));overflow:auto;overflow-wrap:anywhere}"
         }
       ],
@@ -4113,10 +4229,10 @@
       "class": "tcrn-product-logo",
       "variant": "family root/alias",
       "consumerLines": [
-        4048,
-        4050,
-        4051,
-        4052
+        4055,
+        4057,
+        4058,
+        4059
       ],
       "publishedStyleSites": [
         {
@@ -4152,7 +4268,7 @@
           "source": ".tcrn-product-shell[data-product-shell-collapsed=\"true\"] .tcrn-product-logo__copy,"
         },
         {
-          "line": 2332,
+          "line": 2339,
           "source": ".tcrn-product-logo__line-two {"
         }
       ],
@@ -4167,7 +4283,7 @@
       "class": "tcrn-product-logo__copy",
       "variant": "component part",
       "consumerLines": [
-        4050
+        4057
       ],
       "publishedStyleSites": [
         {
@@ -4187,7 +4303,7 @@
       "class": "tcrn-product-logo__line-one",
       "variant": "component part",
       "consumerLines": [
-        4051
+        4058
       ],
       "publishedStyleSites": [
         {
@@ -4215,7 +4331,7 @@
       "class": "tcrn-product-logo__line-one-base",
       "variant": "component part",
       "consumerLines": [
-        4051
+        4058
       ],
       "publishedStyleSites": [
         {
@@ -4231,7 +4347,7 @@
       "class": "tcrn-product-logo__line-one-suffix",
       "variant": "component part",
       "consumerLines": [
-        4051
+        4058
       ],
       "publishedStyleSites": [
         {
@@ -4247,7 +4363,7 @@
       "class": "tcrn-product-logo__line-two",
       "variant": "component part",
       "consumerLines": [
-        4052
+        4059
       ],
       "publishedStyleSites": [
         {
@@ -4255,7 +4371,7 @@
           "source": ".tcrn-product-logo__line-two {"
         },
         {
-          "line": 2332,
+          "line": 2339,
           "source": ".tcrn-product-logo__line-two {"
         }
       ],
@@ -4267,15 +4383,15 @@
       "class": "tcrn-product-shell",
       "variant": "family root/alias",
       "consumerLines": [
-        4045,
-        4046,
-        4047,
-        4048,
-        4070,
-        4105,
-        4231,
-        5813,
-        6005
+        4052,
+        4053,
+        4054,
+        4055,
+        4077,
+        4112,
+        4238,
+        5820,
+        6014
       ],
       "publishedStyleSites": [
         {
@@ -4487,59 +4603,63 @@
           "source": ".tcrn-product-shell__sidebar {"
         },
         {
-          "line": 2209,
+          "line": 2211,
+          "source": ".tcrn-product-shell__workspace > .tcrn-top-bar {"
+        },
+        {
+          "line": 2216,
           "source": ".tcrn-product-shell__workspace > .tcrn-top-bar,"
         },
         {
-          "line": 2219,
+          "line": 2226,
           "source": ".tcrn-product-shell__utility-row {"
         },
         {
-          "line": 2225,
+          "line": 2232,
           "source": ".tcrn-product-shell__current-location,"
         },
         {
-          "line": 2232,
+          "line": 2239,
           "source": ".tcrn-product-shell-search,"
         },
         {
-          "line": 2233,
+          "line": 2240,
           "source": ".tcrn-product-shell-search[data-search-expanded=\"true\"] {"
         },
         {
-          "line": 2248,
+          "line": 2255,
           "source": ".tcrn-product-shell__sidebar-header .tcrn-shell-side-nav-toggle {"
         },
         {
-          "line": 2264,
+          "line": 2271,
           "source": ".tcrn-product-shell__sidebar .tcrn-side-nav {"
         },
         {
-          "line": 2267,
+          "line": 2274,
           "source": ".tcrn-product-shell[data-mobile-nav-expanded=\"true\"] .tcrn-product-shell__sidebar .tcrn-side-nav {"
         },
         {
-          "line": 2275,
+          "line": 2282,
           "source": ".tcrn-product-shell__sidebar {"
         },
         {
-          "line": 2328,
+          "line": 2335,
           "source": ".tcrn-product-shell__main {"
         },
         {
-          "line": 2335,
+          "line": 2342,
           "source": ".tcrn-product-shell-section-grid {"
         },
         {
-          "line": 2348,
+          "line": 2355,
           "source": ".tcrn-product-shell,"
         },
         {
-          "line": 2349,
+          "line": 2356,
           "source": ".tcrn-product-shell-search {"
         },
         {
-          "line": 2352,
+          "line": 2359,
           "source": ".tcrn-product-shell[data-theme-switching=\"true\"]::after {"
         }
       ],
@@ -4557,8 +4677,8 @@
       "class": "tcrn-product-shell-search__result",
       "variant": "component part",
       "consumerLines": [
-        4231,
-        5813
+        4238,
+        5820
       ],
       "publishedStyleSites": [
         {
@@ -4592,7 +4712,7 @@
       "class": "tcrn-product-shell-search__results",
       "variant": "component part",
       "consumerLines": [
-        4231
+        4238
       ],
       "publishedStyleSites": [
         {
@@ -4610,7 +4730,7 @@
       "class": "tcrn-product-shell__brand",
       "variant": "component part",
       "consumerLines": [
-        4048
+        4055
       ],
       "publishedStyleSites": [
         {
@@ -4630,7 +4750,7 @@
       "class": "tcrn-product-shell__main",
       "variant": "component part",
       "consumerLines": [
-        4105
+        4112
       ],
       "publishedStyleSites": [
         {
@@ -4638,7 +4758,7 @@
           "source": ".tcrn-product-shell__main {"
         },
         {
-          "line": 2328,
+          "line": 2335,
           "source": ".tcrn-product-shell__main {"
         }
       ],
@@ -4650,8 +4770,8 @@
       "class": "tcrn-product-shell__sidebar",
       "variant": "component part",
       "consumerLines": [
-        4046,
-        4047
+        4053,
+        4054
       ],
       "publishedStyleSites": [
         {
@@ -4675,19 +4795,19 @@
           "source": ".tcrn-product-shell__sidebar {"
         },
         {
-          "line": 2248,
+          "line": 2255,
           "source": ".tcrn-product-shell__sidebar-header .tcrn-shell-side-nav-toggle {"
         },
         {
-          "line": 2264,
+          "line": 2271,
           "source": ".tcrn-product-shell__sidebar .tcrn-side-nav {"
         },
         {
-          "line": 2267,
+          "line": 2274,
           "source": ".tcrn-product-shell[data-mobile-nav-expanded=\"true\"] .tcrn-product-shell__sidebar .tcrn-side-nav {"
         },
         {
-          "line": 2275,
+          "line": 2282,
           "source": ".tcrn-product-shell__sidebar {"
         }
       ],
@@ -4700,7 +4820,7 @@
       "class": "tcrn-product-shell__sidebar-header",
       "variant": "component part",
       "consumerLines": [
-        4047
+        4054
       ],
       "publishedStyleSites": [
         {
@@ -4712,7 +4832,7 @@
           "source": ".tcrn-product-shell[data-product-shell-collapsed=\"true\"] .tcrn-product-shell__sidebar-header {"
         },
         {
-          "line": 2248,
+          "line": 2255,
           "source": ".tcrn-product-shell__sidebar-header .tcrn-shell-side-nav-toggle {"
         }
       ],
@@ -4724,7 +4844,7 @@
       "class": "tcrn-product-shell__workspace",
       "variant": "component part",
       "consumerLines": [
-        4070
+        4077
       ],
       "publishedStyleSites": [
         {
@@ -4736,7 +4856,11 @@
           "source": ".tcrn-product-shell__workspace > .tcrn-top-bar {"
         },
         {
-          "line": 2209,
+          "line": 2211,
+          "source": ".tcrn-product-shell__workspace > .tcrn-top-bar {"
+        },
+        {
+          "line": 2216,
           "source": ".tcrn-product-shell__workspace > .tcrn-top-bar,"
         }
       ],
@@ -4748,7 +4872,7 @@
       "class": "tcrn-readback-panel",
       "variant": "family root/alias",
       "consumerLines": [
-        4232
+        4239
       ],
       "publishedStyleSites": [
         {
@@ -4773,9 +4897,9 @@
       "class": "tcrn-record-row",
       "variant": "family root/alias",
       "consumerLines": [
-        5273,
-        5274,
-        5275
+        5280,
+        5281,
+        5282
       ],
       "publishedStyleSites": [
         {
@@ -4879,19 +5003,19 @@
           "source": ".tcrn-record-row__relationships {"
         },
         {
-          "line": 2284,
+          "line": 2291,
           "source": ".tcrn-record-row,"
         },
         {
-          "line": 2285,
+          "line": 2292,
           "source": ".tcrn-record-row--compact,"
         },
         {
-          "line": 2913,
+          "line": 2920,
           "source": ".tcrn-record-row[href]:hover {"
         },
         {
-          "line": 2920,
+          "line": 2927,
           "source": ".tcrn-record-row[href]:focus-visible,"
         }
       ],
@@ -4901,7 +5025,7 @@
       "class": "tcrn-record-row--dense",
       "variant": "modifier",
       "consumerLines": [
-        5273
+        5280
       ],
       "publishedStyleSites": [
         {
@@ -4923,9 +5047,9 @@
       "class": "tcrn-record-row__id",
       "variant": "component part",
       "consumerLines": [
-        5273,
-        5274,
-        5275
+        5280,
+        5281,
+        5282
       ],
       "publishedStyleSites": [
         {
@@ -4943,7 +5067,7 @@
       "class": "tcrn-record-row__meta",
       "variant": "component part",
       "consumerLines": [
-        5273
+        5280
       ],
       "publishedStyleSites": [
         {
@@ -4961,7 +5085,7 @@
       "class": "tcrn-record-row__summary",
       "variant": "component part",
       "consumerLines": [
-        5273
+        5280
       ],
       "publishedStyleSites": [
         {
@@ -4987,8 +5111,8 @@
       "class": "tcrn-record-table",
       "variant": "family root/alias",
       "consumerLines": [
-        5274,
-        5275
+        5281,
+        5282
       ],
       "publishedStyleSites": [
         {
@@ -5018,8 +5142,8 @@
       "class": "tcrn-row-group",
       "variant": "family root/alias",
       "consumerLines": [
-        5274,
-        5275
+        5281,
+        5282
       ],
       "publishedStyleSites": [
         {
@@ -5073,8 +5197,8 @@
       "class": "tcrn-row-group--dense",
       "variant": "modifier",
       "consumerLines": [
-        5274,
-        5275
+        5281,
+        5282
       ],
       "publishedStyleSites": [
         {
@@ -5088,8 +5212,8 @@
       "class": "tcrn-row-group__head",
       "variant": "component part",
       "consumerLines": [
-        5274,
-        5275
+        5281,
+        5282
       ],
       "publishedStyleSites": [
         {
@@ -5115,10 +5239,10 @@
       "class": "tcrn-search-input",
       "variant": "family root/alias",
       "consumerLines": [
-        4079,
-        4080,
-        4081,
-        4082
+        4086,
+        4087,
+        4088,
+        4089
       ],
       "publishedStyleSites": [
         {
@@ -5182,7 +5306,7 @@
           "source": ".tcrn-table-toolbar .tcrn-search-input {"
         },
         {
-          "line": 2358,
+          "line": 2365,
           "source": ".tcrn-search-input,"
         }
       ],
@@ -5197,7 +5321,7 @@
       "class": "tcrn-search-input__control",
       "variant": "component part",
       "consumerLines": [
-        4081
+        4088
       ],
       "publishedStyleSites": [
         {
@@ -5233,7 +5357,7 @@
       "class": "tcrn-search-input__icon",
       "variant": "component part",
       "consumerLines": [
-        4080
+        4087
       ],
       "publishedStyleSites": [
         {
@@ -5253,7 +5377,7 @@
       "class": "tcrn-search-input__shortcut",
       "variant": "component part",
       "consumerLines": [
-        4082
+        4089
       ],
       "publishedStyleSites": [
         {
@@ -5269,9 +5393,9 @@
       "class": "tcrn-search-result-list",
       "variant": "family root/alias",
       "consumerLines": [
-        5286,
-        5310,
-        5320
+        5293,
+        5317,
+        5327
       ],
       "publishedStyleSites": [
         {
@@ -5311,15 +5435,15 @@
           "source": ".tcrn-search-result-list__head span {"
         },
         {
-          "line": 2923,
+          "line": 2930,
           "source": ".tcrn-search-result-list__head a:focus-visible,"
         },
         {
-          "line": 2942,
+          "line": 2949,
           "source": ".tcrn-search-result-list__head a {"
         },
         {
-          "line": 2949,
+          "line": 2956,
           "source": ".tcrn-search-result-list__head a:hover {"
         }
       ],
@@ -5329,8 +5453,8 @@
       "class": "tcrn-search-result-list__item",
       "variant": "component part",
       "consumerLines": [
-        5286,
-        5320
+        5293,
+        5327
       ],
       "publishedStyleSites": [
         {
@@ -5352,43 +5476,43 @@
       "class": "tcrn-section-tabs",
       "variant": "family root/alias",
       "consumerLines": [
-        4112
+        4119
       ],
       "publishedStyleSites": [
         {
-          "line": 2375,
+          "line": 2382,
           "source": ".tcrn-section-tabs button:active,"
         },
         {
-          "line": 2852,
+          "line": 2859,
           "source": ".tcrn-section-tabs,"
         },
         {
-          "line": 2868,
+          "line": 2875,
           "source": ".tcrn-section-tabs button,"
         },
         {
-          "line": 2882,
+          "line": 2889,
           "source": ".tcrn-section-tabs button[data-selected=\"true\"],"
         },
         {
-          "line": 2887,
+          "line": 2894,
           "source": ".tcrn-section-tabs button[aria-current=\"page\"],"
         },
         {
-          "line": 2906,
+          "line": 2913,
           "source": ".tcrn-section-tabs button:hover,"
         },
         {
-          "line": 2927,
+          "line": 2934,
           "source": ".tcrn-section-tabs button:focus-visible,"
         },
         {
-          "line": 2935,
+          "line": 2942,
           "source": ".tcrn-section-tabs button:active,"
         },
         {
-          "line": 3568,
+          "line": 3575,
           "source": ".tcrn-settings-layout__nav>:is(.tcrn-segmented-nav,.tcrn-section-tabs,.tcrn-module-tabs){flex-wrap:nowrap;max-inline-size:max-content}"
         }
       ],
@@ -5400,32 +5524,32 @@
       "class": "tcrn-select",
       "variant": "family root/alias",
       "consumerLines": [
-        4075,
-        4077,
-        4206,
-        4625,
-        4642,
-        4659,
-        4670,
-        5001,
-        5172,
-        5305
+        4082,
+        4084,
+        4213,
+        4632,
+        4649,
+        4666,
+        4677,
+        5008,
+        5179,
+        5312
       ],
       "publishedStyleSites": [
         {
-          "line": 2735,
+          "line": 2742,
           "source": ".tcrn-select {"
         },
         {
-          "line": 3557,
+          "line": 3564,
           "source": ".tcrn-setting-choice__select-label>.tcrn-select{inline-size:100%}"
         },
         {
-          "line": 3577,
+          "line": 3584,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control>:is(.tcrn-input,.tcrn-select,.tcrn-field,.tcrn-setting-choice,.tcrn-number-input-field,.tcrn-multi-select-group,.tcrn-multi-select-dropdown){inline-size:100%;min-inline-size:0}"
         },
         {
-          "line": 3578,
+          "line": 3585,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field :is(.tcrn-input,.tcrn-select,.tcrn-number-input){inline-size:100%;min-inline-size:0}"
         }
       ],
@@ -5444,47 +5568,47 @@
       "class": "tcrn-setting-choice",
       "variant": "family root/alias",
       "consumerLines": [
-        4625,
-        4642,
-        4659,
-        4667,
-        4670
+        4632,
+        4649,
+        4666,
+        4674,
+        4677
       ],
       "publishedStyleSites": [
         {
-          "line": 3555,
+          "line": 3562,
           "source": ".tcrn-setting-choice{display:grid;gap:var(--tcrn-space-1);min-inline-size:0;max-inline-size:100%}"
         },
         {
-          "line": 3556,
+          "line": 3563,
           "source": ".tcrn-setting-choice__select-label{display:grid;gap:var(--tcrn-space-1);min-inline-size:0;color:var(--tcrn-color-text-primary);font-weight:var(--tcrn-type-weight-medium)}"
         },
         {
-          "line": 3557,
+          "line": 3564,
           "source": ".tcrn-setting-choice__select-label>.tcrn-select{inline-size:100%}"
         },
         {
-          "line": 3558,
+          "line": 3565,
           "source": ".tcrn-setting-choice[data-setting-choice-control=\"radio\"] .tcrn-radio-group{flex-direction:row;flex-wrap:nowrap;gap:var(--tcrn-space-2);max-inline-size:100%;overflow-x:auto;padding:var(--tcrn-container-settings-choice-padding);border:1px solid var(--tcrn-color-border-subtle);border-radius:var(--tcrn-radius-surface);background:var(--tcrn-color-surface-muted)}"
         },
         {
-          "line": 3559,
+          "line": 3566,
           "source": ".tcrn-setting-choice[data-setting-choice-control=\"radio\"] .tcrn-radio-group__option{min-inline-size:0;flex:1 1 0}"
         },
         {
-          "line": 3560,
+          "line": 3567,
           "source": ".tcrn-setting-choice[data-setting-choice-control=\"radio\"] .tcrn-radio-group__label{min-inline-size:0;overflow-wrap:anywhere}"
         },
         {
-          "line": 3561,
+          "line": 3568,
           "source": ".tcrn-setting-choice__hint,.tcrn-setting-choice__error{overflow-wrap:anywhere;font-size:var(--tcrn-type-size-meta);line-height:var(--tcrn-type-line-caption)}"
         },
         {
-          "line": 3562,
+          "line": 3569,
           "source": ".tcrn-setting-choice__hint{color:var(--tcrn-color-text-secondary)}.tcrn-setting-choice__error{color:var(--tcrn-color-state-blocked)}"
         },
         {
-          "line": 3577,
+          "line": 3584,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control>:is(.tcrn-input,.tcrn-select,.tcrn-field,.tcrn-setting-choice,.tcrn-number-input-field,.tcrn-multi-select-group,.tcrn-multi-select-dropdown){inline-size:100%;min-inline-size:0}"
         }
       ],
@@ -5500,16 +5624,16 @@
       "class": "tcrn-setting-choice__hint",
       "variant": "component part",
       "consumerLines": [
-        4642,
-        4667
+        4649,
+        4674
       ],
       "publishedStyleSites": [
         {
-          "line": 3561,
+          "line": 3568,
           "source": ".tcrn-setting-choice__hint,.tcrn-setting-choice__error{overflow-wrap:anywhere;font-size:var(--tcrn-type-size-meta);line-height:var(--tcrn-type-line-caption)}"
         },
         {
-          "line": 3562,
+          "line": 3569,
           "source": ".tcrn-setting-choice__hint{color:var(--tcrn-color-text-secondary)}.tcrn-setting-choice__error{color:var(--tcrn-color-state-blocked)}"
         }
       ],
@@ -5522,17 +5646,17 @@
       "class": "tcrn-setting-choice__select-label",
       "variant": "component part",
       "consumerLines": [
-        4642,
-        4659,
-        4670
+        4649,
+        4666,
+        4677
       ],
       "publishedStyleSites": [
         {
-          "line": 3556,
+          "line": 3563,
           "source": ".tcrn-setting-choice__select-label{display:grid;gap:var(--tcrn-space-1);min-inline-size:0;color:var(--tcrn-color-text-primary);font-weight:var(--tcrn-type-weight-medium)}"
         },
         {
-          "line": 3557,
+          "line": 3564,
           "source": ".tcrn-setting-choice__select-label>.tcrn-select{inline-size:100%}"
         }
       ],
@@ -5546,137 +5670,137 @@
       "class": "tcrn-setting-row",
       "variant": "family root/alias",
       "consumerLines": [
-        4733,
-        4736,
-        4742,
+        4740,
         4743,
-        4747,
-        4753,
-        4786
+        4749,
+        4750,
+        4754,
+        4760,
+        4793
       ],
       "publishedStyleSites": [
         {
-          "line": 3050,
+          "line": 3057,
           "source": ".tcrn-setting-row {"
         },
         {
-          "line": 3059,
+          "line": 3066,
           "source": ".tcrn-setting-row[data-transient-target=\"true\"] {"
         },
         {
-          "line": 3063,
+          "line": 3070,
           "source": ".tcrn-setting-row__label,"
         },
         {
-          "line": 3064,
+          "line": 3071,
           "source": ".tcrn-setting-row__control,"
         },
         {
-          "line": 3065,
+          "line": 3072,
           "source": ".tcrn-setting-row__tools {"
         },
         {
-          "line": 3068,
+          "line": 3075,
           "source": ".tcrn-setting-row__label {"
         },
         {
-          "line": 3072,
+          "line": 3079,
           "source": ".tcrn-setting-row__key {"
         },
         {
-          "line": 3077,
+          "line": 3084,
           "source": ".tcrn-setting-row__name {"
         },
         {
-          "line": 3081,
+          "line": 3088,
           "source": ".tcrn-setting-row__description {"
         },
         {
-          "line": 3086,
+          "line": 3093,
           "source": ".tcrn-setting-row__control {"
         },
         {
-          "line": 3090,
+          "line": 3097,
           "source": ".tcrn-setting-row__tools {"
         },
         {
-          "line": 3096,
+          "line": 3103,
           "source": ".tcrn-setting-row__modified {"
         },
         {
-          "line": 3102,
+          "line": 3109,
           "source": ".tcrn-setting-row__reset {"
         },
         {
-          "line": 3112,
+          "line": 3119,
           "source": ".tcrn-setting-row__reset:hover {"
         },
         {
-          "line": 3307,
+          "line": 3314,
           "source": ".tcrn-setting-row {"
         },
         {
-          "line": 3311,
+          "line": 3318,
           "source": ".tcrn-setting-row__control {"
         },
         {
-          "line": 3316,
+          "line": 3323,
           "source": ".tcrn-setting-row__tools {"
         },
         {
-          "line": 3571,
+          "line": 3578,
           "source": ".tcrn-settings-layout__form>.tcrn-setting-row-list{display:grid;grid-template-columns:minmax(0,1fr);min-inline-size:0}"
         },
         {
-          "line": 3572,
+          "line": 3579,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row{display:grid;grid-column:1/-1;grid-template-columns:minmax(0,1fr);gap:var(--tcrn-space-2)}"
         },
         {
-          "line": 3573,
+          "line": 3580,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row__tools:empty{display:none}"
         },
         {
-          "line": 3574,
+          "line": 3581,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row{grid-template-columns:minmax(0,1fr);gap:var(--tcrn-space-2);overflow-wrap:anywhere}"
         },
         {
-          "line": 3575,
+          "line": 3582,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control{inline-size:100%;grid-column:auto;grid-row:auto}"
         },
         {
-          "line": 3576,
+          "line": 3583,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__tools{grid-column:auto;grid-row:auto}"
         },
         {
-          "line": 3577,
+          "line": 3584,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control>:is(.tcrn-input,.tcrn-select,.tcrn-field,.tcrn-setting-choice,.tcrn-number-input-field,.tcrn-multi-select-group,.tcrn-multi-select-dropdown){inline-size:100%;min-inline-size:0}"
         },
         {
-          "line": 3578,
+          "line": 3585,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field :is(.tcrn-input,.tcrn-select,.tcrn-number-input){inline-size:100%;min-inline-size:0}"
         },
         {
-          "line": 3579,
+          "line": 3586,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field{margin:0}"
         },
         {
-          "line": 3580,
+          "line": 3587,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control>.tcrn-number-input{inline-size:100%}"
         },
         {
-          "line": 3585,
+          "line": 3592,
           "source": ".tcrn-settings-layout__form,.tcrn-settings-layout__form .tcrn-setting-row{grid-template-columns:minmax(0,1fr) minmax(var(--tcrn-container-settings-control-min),.8fr) max-content}"
         },
         {
-          "line": 3586,
+          "line": 3593,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row-list{grid-template-columns:minmax(0,1fr) minmax(var(--tcrn-container-settings-control-min),.8fr) max-content}"
         },
         {
-          "line": 3588,
+          "line": 3595,
           "source": ".tcrn-settings-layout__form>.tcrn-setting-row,.tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row{grid-template-columns:subgrid}"
         },
         {
-          "line": 3589,
+          "line": 3596,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__tools{justify-content:flex-end}"
         }
       ],
@@ -5694,27 +5818,27 @@
       "class": "tcrn-setting-row-list",
       "variant": "family root/alias",
       "consumerLines": [
-        4786
+        4793
       ],
       "publishedStyleSites": [
         {
-          "line": 3571,
+          "line": 3578,
           "source": ".tcrn-settings-layout__form>.tcrn-setting-row-list{display:grid;grid-template-columns:minmax(0,1fr);min-inline-size:0}"
         },
         {
-          "line": 3572,
+          "line": 3579,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row{display:grid;grid-column:1/-1;grid-template-columns:minmax(0,1fr);gap:var(--tcrn-space-2)}"
         },
         {
-          "line": 3573,
+          "line": 3580,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row__tools:empty{display:none}"
         },
         {
-          "line": 3586,
+          "line": 3593,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row-list{grid-template-columns:minmax(0,1fr) minmax(var(--tcrn-container-settings-control-min),.8fr) max-content}"
         },
         {
-          "line": 3588,
+          "line": 3595,
           "source": ".tcrn-settings-layout__form>.tcrn-setting-row,.tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row{grid-template-columns:subgrid}"
         }
       ],
@@ -5726,41 +5850,41 @@
       "class": "tcrn-setting-row__control",
       "variant": "component part",
       "consumerLines": [
-        4743,
-        4747,
-        4753
+        4750,
+        4754,
+        4760
       ],
       "publishedStyleSites": [
         {
-          "line": 3064,
+          "line": 3071,
           "source": ".tcrn-setting-row__control,"
         },
         {
-          "line": 3086,
+          "line": 3093,
           "source": ".tcrn-setting-row__control {"
         },
         {
-          "line": 3311,
+          "line": 3318,
           "source": ".tcrn-setting-row__control {"
         },
         {
-          "line": 3575,
+          "line": 3582,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control{inline-size:100%;grid-column:auto;grid-row:auto}"
         },
         {
-          "line": 3577,
+          "line": 3584,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control>:is(.tcrn-input,.tcrn-select,.tcrn-field,.tcrn-setting-choice,.tcrn-number-input-field,.tcrn-multi-select-group,.tcrn-multi-select-dropdown){inline-size:100%;min-inline-size:0}"
         },
         {
-          "line": 3578,
+          "line": 3585,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field :is(.tcrn-input,.tcrn-select,.tcrn-number-input){inline-size:100%;min-inline-size:0}"
         },
         {
-          "line": 3579,
+          "line": 3586,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field{margin:0}"
         },
         {
-          "line": 3580,
+          "line": 3587,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control>.tcrn-number-input{inline-size:100%}"
         }
       ],
@@ -5774,11 +5898,11 @@
       "class": "tcrn-setting-row__description",
       "variant": "component part",
       "consumerLines": [
-        4733
+        4740
       ],
       "publishedStyleSites": [
         {
-          "line": 3081,
+          "line": 3088,
           "source": ".tcrn-setting-row__description {"
         }
       ],
@@ -5790,11 +5914,11 @@
       "class": "tcrn-setting-row__key",
       "variant": "component part",
       "consumerLines": [
-        4733
+        4740
       ],
       "publishedStyleSites": [
         {
-          "line": 3072,
+          "line": 3079,
           "source": ".tcrn-setting-row__key {"
         }
       ],
@@ -5806,15 +5930,15 @@
       "class": "tcrn-setting-row__label",
       "variant": "component part",
       "consumerLines": [
-        4733
+        4740
       ],
       "publishedStyleSites": [
         {
-          "line": 3063,
+          "line": 3070,
           "source": ".tcrn-setting-row__label,"
         },
         {
-          "line": 3068,
+          "line": 3075,
           "source": ".tcrn-setting-row__label {"
         }
       ],
@@ -5826,11 +5950,11 @@
       "class": "tcrn-setting-row__modified",
       "variant": "component part",
       "consumerLines": [
-        4742
+        4749
       ],
       "publishedStyleSites": [
         {
-          "line": 3096,
+          "line": 3103,
           "source": ".tcrn-setting-row__modified {"
         }
       ],
@@ -5842,11 +5966,11 @@
       "class": "tcrn-setting-row__name",
       "variant": "component part",
       "consumerLines": [
-        4733
+        4740
       ],
       "publishedStyleSites": [
         {
-          "line": 3077,
+          "line": 3084,
           "source": ".tcrn-setting-row__name {"
         }
       ],
@@ -5858,15 +5982,15 @@
       "class": "tcrn-setting-row__reset",
       "variant": "component part",
       "consumerLines": [
-        4736
+        4743
       ],
       "publishedStyleSites": [
         {
-          "line": 3102,
+          "line": 3109,
           "source": ".tcrn-setting-row__reset {"
         },
         {
-          "line": 3112,
+          "line": 3119,
           "source": ".tcrn-setting-row__reset:hover {"
         }
       ],
@@ -5878,33 +6002,33 @@
       "class": "tcrn-setting-row__tools",
       "variant": "component part",
       "consumerLines": [
-        4743,
-        4747,
-        4753
+        4750,
+        4754,
+        4760
       ],
       "publishedStyleSites": [
         {
-          "line": 3065,
+          "line": 3072,
           "source": ".tcrn-setting-row__tools {"
         },
         {
-          "line": 3090,
+          "line": 3097,
           "source": ".tcrn-setting-row__tools {"
         },
         {
-          "line": 3316,
+          "line": 3323,
           "source": ".tcrn-setting-row__tools {"
         },
         {
-          "line": 3573,
+          "line": 3580,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row__tools:empty{display:none}"
         },
         {
-          "line": 3576,
+          "line": 3583,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__tools{grid-column:auto;grid-row:auto}"
         },
         {
-          "line": 3589,
+          "line": 3596,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__tools{justify-content:flex-end}"
         }
       ],
@@ -5918,101 +6042,101 @@
       "class": "tcrn-settings-layout",
       "variant": "family root/alias",
       "consumerLines": [
-        4133,
-        4136,
-        4786
+        4140,
+        4143,
+        4793
       ],
       "publishedStyleSites": [
         {
-          "line": 3564,
+          "line": 3571,
           "source": ".tcrn-settings-layout{min-inline-size:0;max-inline-size:100%}"
         },
         {
-          "line": 3565,
+          "line": 3572,
           "source": ".tcrn-settings-layout__frame{container:tcrn-settings-layout-frame/inline-size;min-inline-size:0}"
         },
         {
-          "line": 3566,
+          "line": 3573,
           "source": ".tcrn-settings-layout__grid{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--tcrn-space-4);min-inline-size:0}"
         },
         {
-          "line": 3567,
+          "line": 3574,
           "source": ".tcrn-settings-layout__nav{min-inline-size:0;max-inline-size:100%;overflow-x:auto}"
         },
         {
-          "line": 3568,
+          "line": 3575,
           "source": ".tcrn-settings-layout__nav>:is(.tcrn-segmented-nav,.tcrn-section-tabs,.tcrn-module-tabs){flex-wrap:nowrap;max-inline-size:max-content}"
         },
         {
-          "line": 3569,
+          "line": 3576,
           "source": ".tcrn-settings-layout__content{display:grid;gap:var(--tcrn-space-4);min-inline-size:0;container:tcrn-settings-content/inline-size}"
         },
         {
-          "line": 3570,
+          "line": 3577,
           "source": ".tcrn-settings-layout__form{display:grid;gap:var(--tcrn-space-2);min-inline-size:0}"
         },
         {
-          "line": 3571,
+          "line": 3578,
           "source": ".tcrn-settings-layout__form>.tcrn-setting-row-list{display:grid;grid-template-columns:minmax(0,1fr);min-inline-size:0}"
         },
         {
-          "line": 3572,
+          "line": 3579,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row{display:grid;grid-column:1/-1;grid-template-columns:minmax(0,1fr);gap:var(--tcrn-space-2)}"
         },
         {
-          "line": 3573,
+          "line": 3580,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row__tools:empty{display:none}"
         },
         {
-          "line": 3574,
+          "line": 3581,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row{grid-template-columns:minmax(0,1fr);gap:var(--tcrn-space-2);overflow-wrap:anywhere}"
         },
         {
-          "line": 3575,
+          "line": 3582,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control{inline-size:100%;grid-column:auto;grid-row:auto}"
         },
         {
-          "line": 3576,
+          "line": 3583,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__tools{grid-column:auto;grid-row:auto}"
         },
         {
-          "line": 3577,
+          "line": 3584,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control>:is(.tcrn-input,.tcrn-select,.tcrn-field,.tcrn-setting-choice,.tcrn-number-input-field,.tcrn-multi-select-group,.tcrn-multi-select-dropdown){inline-size:100%;min-inline-size:0}"
         },
         {
-          "line": 3578,
+          "line": 3585,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field :is(.tcrn-input,.tcrn-select,.tcrn-number-input){inline-size:100%;min-inline-size:0}"
         },
         {
-          "line": 3579,
+          "line": 3586,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field{margin:0}"
         },
         {
-          "line": 3580,
+          "line": 3587,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control>.tcrn-number-input{inline-size:100%}"
         },
         {
-          "line": 3581,
+          "line": 3588,
           "source": "@container tcrn-settings-layout-frame (min-width:960px){.tcrn-settings-layout__grid{grid-template-columns:minmax(0,var(--tcrn-container-settings-local-nav)) minmax(0,1fr)}}"
         },
         {
-          "line": 3585,
+          "line": 3592,
           "source": ".tcrn-settings-layout__form,.tcrn-settings-layout__form .tcrn-setting-row{grid-template-columns:minmax(0,1fr) minmax(var(--tcrn-container-settings-control-min),.8fr) max-content}"
         },
         {
-          "line": 3586,
+          "line": 3593,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row-list{grid-template-columns:minmax(0,1fr) minmax(var(--tcrn-container-settings-control-min),.8fr) max-content}"
         },
         {
-          "line": 3587,
+          "line": 3594,
           "source": ".tcrn-settings-layout__form>*{grid-column:1/-1}"
         },
         {
-          "line": 3588,
+          "line": 3595,
           "source": ".tcrn-settings-layout__form>.tcrn-setting-row,.tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row{grid-template-columns:subgrid}"
         },
         {
-          "line": 3589,
+          "line": 3596,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__tools{justify-content:flex-end}"
         }
       ],
@@ -6026,11 +6150,11 @@
       "class": "tcrn-settings-layout__content",
       "variant": "component part",
       "consumerLines": [
-        4136
+        4143
       ],
       "publishedStyleSites": [
         {
-          "line": 3569,
+          "line": 3576,
           "source": ".tcrn-settings-layout__content{display:grid;gap:var(--tcrn-space-4);min-inline-size:0;container:tcrn-settings-content/inline-size}"
         }
       ],
@@ -6042,72 +6166,72 @@
       "class": "tcrn-settings-layout__form",
       "variant": "component part",
       "consumerLines": [
-        4136,
-        4786
+        4143,
+        4793
       ],
       "publishedStyleSites": [
         {
-          "line": 3570,
+          "line": 3577,
           "source": ".tcrn-settings-layout__form{display:grid;gap:var(--tcrn-space-2);min-inline-size:0}"
         },
         {
-          "line": 3571,
+          "line": 3578,
           "source": ".tcrn-settings-layout__form>.tcrn-setting-row-list{display:grid;grid-template-columns:minmax(0,1fr);min-inline-size:0}"
         },
         {
-          "line": 3572,
+          "line": 3579,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row{display:grid;grid-column:1/-1;grid-template-columns:minmax(0,1fr);gap:var(--tcrn-space-2)}"
         },
         {
-          "line": 3573,
+          "line": 3580,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row__tools:empty{display:none}"
         },
         {
-          "line": 3574,
+          "line": 3581,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row{grid-template-columns:minmax(0,1fr);gap:var(--tcrn-space-2);overflow-wrap:anywhere}"
         },
         {
-          "line": 3575,
+          "line": 3582,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control{inline-size:100%;grid-column:auto;grid-row:auto}"
         },
         {
-          "line": 3576,
+          "line": 3583,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__tools{grid-column:auto;grid-row:auto}"
         },
         {
-          "line": 3577,
+          "line": 3584,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control>:is(.tcrn-input,.tcrn-select,.tcrn-field,.tcrn-setting-choice,.tcrn-number-input-field,.tcrn-multi-select-group,.tcrn-multi-select-dropdown){inline-size:100%;min-inline-size:0}"
         },
         {
-          "line": 3578,
+          "line": 3585,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field :is(.tcrn-input,.tcrn-select,.tcrn-number-input){inline-size:100%;min-inline-size:0}"
         },
         {
-          "line": 3579,
+          "line": 3586,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control .tcrn-field{margin:0}"
         },
         {
-          "line": 3580,
+          "line": 3587,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__control>.tcrn-number-input{inline-size:100%}"
         },
         {
-          "line": 3585,
+          "line": 3592,
           "source": ".tcrn-settings-layout__form,.tcrn-settings-layout__form .tcrn-setting-row{grid-template-columns:minmax(0,1fr) minmax(var(--tcrn-container-settings-control-min),.8fr) max-content}"
         },
         {
-          "line": 3586,
+          "line": 3593,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row-list{grid-template-columns:minmax(0,1fr) minmax(var(--tcrn-container-settings-control-min),.8fr) max-content}"
         },
         {
-          "line": 3587,
+          "line": 3594,
           "source": ".tcrn-settings-layout__form>*{grid-column:1/-1}"
         },
         {
-          "line": 3588,
+          "line": 3595,
           "source": ".tcrn-settings-layout__form>.tcrn-setting-row,.tcrn-settings-layout__form .tcrn-setting-row-list .tcrn-setting-row{grid-template-columns:subgrid}"
         },
         {
-          "line": 3589,
+          "line": 3596,
           "source": ".tcrn-settings-layout__form .tcrn-setting-row__tools{justify-content:flex-end}"
         }
       ],
@@ -6120,11 +6244,11 @@
       "class": "tcrn-settings-layout__frame",
       "variant": "component part",
       "consumerLines": [
-        4136
+        4143
       ],
       "publishedStyleSites": [
         {
-          "line": 3565,
+          "line": 3572,
           "source": ".tcrn-settings-layout__frame{container:tcrn-settings-layout-frame/inline-size;min-inline-size:0}"
         }
       ],
@@ -6136,15 +6260,15 @@
       "class": "tcrn-settings-layout__grid",
       "variant": "component part",
       "consumerLines": [
-        4136
+        4143
       ],
       "publishedStyleSites": [
         {
-          "line": 3566,
+          "line": 3573,
           "source": ".tcrn-settings-layout__grid{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--tcrn-space-4);min-inline-size:0}"
         },
         {
-          "line": 3581,
+          "line": 3588,
           "source": "@container tcrn-settings-layout-frame (min-width:960px){.tcrn-settings-layout__grid{grid-template-columns:minmax(0,var(--tcrn-container-settings-local-nav)) minmax(0,1fr)}}"
         }
       ],
@@ -6156,15 +6280,15 @@
       "class": "tcrn-settings-layout__nav",
       "variant": "component part",
       "consumerLines": [
-        4133
+        4140
       ],
       "publishedStyleSites": [
         {
-          "line": 3567,
+          "line": 3574,
           "source": ".tcrn-settings-layout__nav{min-inline-size:0;max-inline-size:100%;overflow-x:auto}"
         },
         {
-          "line": 3568,
+          "line": 3575,
           "source": ".tcrn-settings-layout__nav>:is(.tcrn-segmented-nav,.tcrn-section-tabs,.tcrn-module-tabs){flex-wrap:nowrap;max-inline-size:max-content}"
         }
       ],
@@ -6176,7 +6300,7 @@
       "class": "tcrn-shell-brand-lockup",
       "variant": "family root/alias",
       "consumerLines": [
-        4048
+        4055
       ],
       "publishedStyleSites": [
         {
@@ -6196,7 +6320,7 @@
           "source": ".tcrn-product-shell[data-product-shell-collapsed=\"true\"] .tcrn-shell-brand-lockup__copy,"
         },
         {
-          "line": 2331,
+          "line": 2338,
           "source": ".tcrn-shell-brand-lockup__caption,"
         }
       ],
@@ -6208,16 +6332,16 @@
       "class": "tcrn-shell-locale-menu",
       "variant": "family root/alias",
       "consumerLines": [
-        4088,
-        4089,
-        4091,
-        4094,
         4095,
         4096,
-        4097,
         4098,
-        4099,
-        4456
+        4101,
+        4102,
+        4103,
+        4104,
+        4105,
+        4106,
+        4463
       ],
       "publishedStyleSites": [
         {
@@ -6293,23 +6417,23 @@
           "source": ".tcrn-shell-locale-menu__name {"
         },
         {
-          "line": 2226,
+          "line": 2233,
           "source": ".tcrn-shell-locale-menu {"
         },
         {
-          "line": 2323,
+          "line": 2330,
           "source": ".tcrn-shell-locale-menu__trigger {"
         },
         {
-          "line": 2360,
+          "line": 2367,
           "source": ".tcrn-shell-locale-menu__trigger,"
         },
         {
-          "line": 2361,
+          "line": 2368,
           "source": ".tcrn-shell-locale-menu__chevron {"
         },
         {
-          "line": 2368,
+          "line": 2375,
           "source": ".tcrn-shell-locale-menu__trigger:active,"
         }
       ],
@@ -6330,8 +6454,8 @@
       "class": "tcrn-shell-locale-menu__current",
       "variant": "component part",
       "consumerLines": [
-        4091,
-        4456
+        4098,
+        4463
       ],
       "publishedStyleSites": [
         {
@@ -6348,11 +6472,11 @@
       "class": "tcrn-shell-locale-menu__name",
       "variant": "component part",
       "consumerLines": [
-        4095,
-        4096,
-        4097,
-        4098,
-        4099
+        4102,
+        4103,
+        4104,
+        4105,
+        4106
       ],
       "publishedStyleSites": [
         {
@@ -6372,11 +6496,11 @@
       "class": "tcrn-shell-locale-menu__option",
       "variant": "component part",
       "consumerLines": [
-        4095,
-        4096,
-        4097,
-        4098,
-        4099
+        4102,
+        4103,
+        4104,
+        4105,
+        4106
       ],
       "publishedStyleSites": [
         {
@@ -6408,7 +6532,7 @@
       "class": "tcrn-shell-locale-menu__panel",
       "variant": "component part",
       "consumerLines": [
-        4094
+        4101
       ],
       "publishedStyleSites": [
         {
@@ -6428,7 +6552,7 @@
       "class": "tcrn-shell-locale-menu__trigger",
       "variant": "component part",
       "consumerLines": [
-        4089
+        4096
       ],
       "publishedStyleSites": [
         {
@@ -6460,15 +6584,15 @@
           "source": ".tcrn-shell-locale-menu__trigger[aria-expanded=\"true\"] .tcrn-shell-locale-menu__chevron {"
         },
         {
-          "line": 2323,
+          "line": 2330,
           "source": ".tcrn-shell-locale-menu__trigger {"
         },
         {
-          "line": 2360,
+          "line": 2367,
           "source": ".tcrn-shell-locale-menu__trigger,"
         },
         {
-          "line": 2368,
+          "line": 2375,
           "source": ".tcrn-shell-locale-menu__trigger:active,"
         }
       ],
@@ -6480,8 +6604,8 @@
       "class": "tcrn-shell-mobile-nav-toggle",
       "variant": "family root/alias",
       "consumerLines": [
-        4055,
-        6003
+        4062,
+        6012
       ],
       "publishedStyleSites": [
         {
@@ -6489,7 +6613,7 @@
           "source": ".tcrn-shell-mobile-nav-toggle {"
         },
         {
-          "line": 2251,
+          "line": 2258,
           "source": ".tcrn-shell-mobile-nav-toggle {"
         }
       ],
@@ -6502,7 +6626,7 @@
       "class": "tcrn-shell-side-nav-toggle__icon",
       "variant": "component part",
       "consumerLines": [
-        4055
+        4062
       ],
       "publishedStyleSites": [
         {
@@ -6518,9 +6642,9 @@
       "class": "tcrn-shell-theme-toggle",
       "variant": "family root/alias",
       "consumerLines": [
-        4084,
-        4085,
-        4086
+        4091,
+        4092,
+        4093
       ],
       "publishedStyleSites": [
         {
@@ -6564,15 +6688,15 @@
           "source": ".tcrn-shell-theme-toggle[data-current-theme=\"dark\"] .tcrn-shell-theme-toggle__icon[data-theme-icon=\"light\"] {"
         },
         {
-          "line": 2356,
+          "line": 2363,
           "source": ".tcrn-button.tcrn-shell-theme-toggle,"
         },
         {
-          "line": 2359,
+          "line": 2366,
           "source": ".tcrn-shell-theme-toggle__icon,"
         },
         {
-          "line": 2367,
+          "line": 2374,
           "source": ".tcrn-shell-theme-toggle:active,"
         }
       ],
@@ -6586,8 +6710,8 @@
       "class": "tcrn-shell-theme-toggle__icon",
       "variant": "component part",
       "consumerLines": [
-        4085,
-        4086
+        4092,
+        4093
       ],
       "publishedStyleSites": [
         {
@@ -6611,7 +6735,7 @@
           "source": ".tcrn-shell-theme-toggle[data-current-theme=\"dark\"] .tcrn-shell-theme-toggle__icon[data-theme-icon=\"light\"] {"
         },
         {
-          "line": 2359,
+          "line": 2366,
           "source": ".tcrn-shell-theme-toggle__icon,"
         }
       ],
@@ -6624,7 +6748,7 @@
       "class": "tcrn-side-nav",
       "variant": "family root/alias",
       "consumerLines": [
-        4058
+        4065
       ],
       "publishedStyleSites": [
         {
@@ -6636,11 +6760,11 @@
           "source": ".tcrn-side-nav {"
         },
         {
-          "line": 2264,
+          "line": 2271,
           "source": ".tcrn-product-shell__sidebar .tcrn-side-nav {"
         },
         {
-          "line": 2267,
+          "line": 2274,
           "source": ".tcrn-product-shell[data-mobile-nav-expanded=\"true\"] .tcrn-product-shell__sidebar .tcrn-side-nav {"
         }
       ],
@@ -6652,22 +6776,22 @@
       "class": "tcrn-sr-only",
       "variant": "family root/alias",
       "consumerLines": [
-        4074,
-        4076,
-        4206,
-        4625,
-        4642,
-        4656,
-        4657,
-        4659,
-        4667,
-        4670,
-        4671,
-        4883,
-        5171,
-        5172,
-        5173,
-        5351
+        4081,
+        4083,
+        4213,
+        4632,
+        4649,
+        4663,
+        4664,
+        4666,
+        4674,
+        4677,
+        4678,
+        4890,
+        5178,
+        5179,
+        5180,
+        5358
       ],
       "publishedStyleSites": [
         {
@@ -6696,35 +6820,35 @@
       "class": "tcrn-stat-card",
       "variant": "family root/alias",
       "consumerLines": [
-        4116
+        4123
       ],
       "publishedStyleSites": [
         {
-          "line": 3017,
+          "line": 3024,
           "source": ".tcrn-stat-card {"
         },
         {
-          "line": 3026,
+          "line": 3033,
           "source": ".tcrn-stat-card__label,"
         },
         {
-          "line": 3027,
+          "line": 3034,
           "source": ".tcrn-stat-card__note {"
         },
         {
-          "line": 3033,
+          "line": 3040,
           "source": ".tcrn-stat-card__value {"
         },
         {
-          "line": 3040,
+          "line": 3047,
           "source": ".tcrn-stat-card--positive .tcrn-stat-card__value {"
         },
         {
-          "line": 3043,
+          "line": 3050,
           "source": ".tcrn-stat-card--warning .tcrn-stat-card__value {"
         },
         {
-          "line": 3046,
+          "line": 3053,
           "source": ".tcrn-stat-card--danger .tcrn-stat-card__value {"
         }
       ],
@@ -6736,11 +6860,11 @@
       "class": "tcrn-stat-card__label",
       "variant": "component part",
       "consumerLines": [
-        4116
+        4123
       ],
       "publishedStyleSites": [
         {
-          "line": 3026,
+          "line": 3033,
           "source": ".tcrn-stat-card__label,"
         }
       ],
@@ -6752,11 +6876,11 @@
       "class": "tcrn-stat-card__note",
       "variant": "component part",
       "consumerLines": [
-        4116
+        4123
       ],
       "publishedStyleSites": [
         {
-          "line": 3027,
+          "line": 3034,
           "source": ".tcrn-stat-card__note {"
         }
       ],
@@ -6768,23 +6892,23 @@
       "class": "tcrn-stat-card__value",
       "variant": "component part",
       "consumerLines": [
-        4116
+        4123
       ],
       "publishedStyleSites": [
         {
-          "line": 3033,
+          "line": 3040,
           "source": ".tcrn-stat-card__value {"
         },
         {
-          "line": 3040,
+          "line": 3047,
           "source": ".tcrn-stat-card--positive .tcrn-stat-card__value {"
         },
         {
-          "line": 3043,
+          "line": 3050,
           "source": ".tcrn-stat-card--warning .tcrn-stat-card__value {"
         },
         {
-          "line": 3046,
+          "line": 3053,
           "source": ".tcrn-stat-card--danger .tcrn-stat-card__value {"
         }
       ],
@@ -6796,67 +6920,67 @@
       "class": "tcrn-state-surface",
       "variant": "family root/alias",
       "consumerLines": [
-        4122,
-        4194,
-        4360,
-        4787,
-        4901,
-        4912,
-        5195,
-        5260,
-        5269,
-        5299,
-        5302,
-        5308,
-        5366,
-        5371,
-        5394,
-        5551,
-        5604
+        4129,
+        4201,
+        4367,
+        4794,
+        4908,
+        4919,
+        5202,
+        5267,
+        5276,
+        5306,
+        5309,
+        5315,
+        5373,
+        5378,
+        5401,
+        5558,
+        5611
       ],
       "publishedStyleSites": [
         {
-          "line": 2390,
+          "line": 2397,
           "source": ".tcrn-state-view / .tcrn-state-surface / .tcrn-status-summary-panel, DataDisplay"
         },
         {
-          "line": 2397,
+          "line": 2404,
           "source": ".tcrn-state-surface,"
         },
         {
-          "line": 2542,
+          "line": 2549,
           "source": ".tcrn-state-surface {"
         },
         {
-          "line": 2551,
+          "line": 2558,
           "source": ".tcrn-state-surface__icon {"
         },
         {
-          "line": 2555,
+          "line": 2562,
           "source": ".tcrn-state-surface__title,"
         },
         {
-          "line": 2556,
+          "line": 2563,
           "source": ".tcrn-state-surface__description {"
         },
         {
-          "line": 2560,
+          "line": 2567,
           "source": ".tcrn-state-surface--warning .tcrn-state-surface__title,"
         },
         {
-          "line": 2561,
+          "line": 2568,
           "source": ".tcrn-state-surface--warning .tcrn-state-surface__icon {"
         },
         {
-          "line": 2565,
+          "line": 2572,
           "source": ".tcrn-state-surface--danger .tcrn-state-surface__title,"
         },
         {
-          "line": 2566,
+          "line": 2573,
           "source": ".tcrn-state-surface--danger .tcrn-state-surface__icon {"
         },
         {
-          "line": 2570,
+          "line": 2577,
           "source": ".tcrn-state-surface__action {"
         }
       ],
@@ -6883,11 +7007,11 @@
       "class": "tcrn-state-surface__action",
       "variant": "component part",
       "consumerLines": [
-        4912
+        4919
       ],
       "publishedStyleSites": [
         {
-          "line": 2570,
+          "line": 2577,
           "source": ".tcrn-state-surface__action {"
         }
       ],
@@ -6899,12 +7023,12 @@
       "class": "tcrn-state-surface__description",
       "variant": "component part",
       "consumerLines": [
-        4360,
-        4912
+        4367,
+        4919
       ],
       "publishedStyleSites": [
         {
-          "line": 2556,
+          "line": 2563,
           "source": ".tcrn-state-surface__description {"
         }
       ],
@@ -6916,19 +7040,19 @@
       "class": "tcrn-state-surface__title",
       "variant": "component part",
       "consumerLines": [
-        4912
+        4919
       ],
       "publishedStyleSites": [
         {
-          "line": 2555,
+          "line": 2562,
           "source": ".tcrn-state-surface__title,"
         },
         {
-          "line": 2560,
+          "line": 2567,
           "source": ".tcrn-state-surface--warning .tcrn-state-surface__title,"
         },
         {
-          "line": 2565,
+          "line": 2572,
           "source": ".tcrn-state-surface--danger .tcrn-state-surface__title,"
         }
       ],
@@ -6940,56 +7064,56 @@
       "class": "tcrn-surface",
       "variant": "family root/alias",
       "consumerLines": [
-        4118,
-        4119,
-        4122,
-        4123,
-        4175,
-        4176,
-        4192,
-        4206,
-        4232,
-        4625,
-        4789,
-        4922,
-        4941,
-        5196,
-        5299,
-        5301,
-        5302,
-        5603
+        4125,
+        4126,
+        4129,
+        4130,
+        4182,
+        4183,
+        4199,
+        4213,
+        4239,
+        4632,
+        4796,
+        4929,
+        4948,
+        5203,
+        5306,
+        5308,
+        5309,
+        5610
       ],
       "publishedStyleSites": [
         {
-          "line": 2389,
+          "line": 2396,
           "source": "/* Base surface card — Layout .tcrn-surface / .tcrn-disclosure-panel, Feedback"
         },
         {
-          "line": 2393,
+          "line": 2400,
           "source": ".tcrn-surface,"
         },
         {
-          "line": 2412,
+          "line": 2419,
           "source": ".tcrn-surface,"
         },
         {
-          "line": 2423,
+          "line": 2430,
           "source": ".tcrn-surface__head {"
         },
         {
-          "line": 2432,
+          "line": 2439,
           "source": ".tcrn-surface__head > * {"
         },
         {
-          "line": 2437,
+          "line": 2444,
           "source": ".tcrn-surface__head-content { flex: 1 1 50%; }"
         },
         {
-          "line": 2438,
+          "line": 2445,
           "source": ".tcrn-surface__head-actions {"
         },
         {
-          "line": 2444,
+          "line": 2451,
           "source": ".tcrn-surface__head :is(h2,h3) { margin: 0; font-size: var(--tcrn-type-size-heading-3); }"
         }
       ],
@@ -7014,43 +7138,43 @@
       "class": "tcrn-surface__head",
       "variant": "component part",
       "consumerLines": [
-        4118,
-        4119,
-        4122,
-        4123,
-        4175,
-        4176,
-        4192,
-        4232,
-        4625,
-        4789,
-        4922,
-        4941,
-        5196,
-        5299,
-        5301,
-        5302,
-        5603
+        4125,
+        4126,
+        4129,
+        4130,
+        4182,
+        4183,
+        4199,
+        4239,
+        4632,
+        4796,
+        4929,
+        4948,
+        5203,
+        5306,
+        5308,
+        5309,
+        5610
       ],
       "publishedStyleSites": [
         {
-          "line": 2423,
+          "line": 2430,
           "source": ".tcrn-surface__head {"
         },
         {
-          "line": 2432,
+          "line": 2439,
           "source": ".tcrn-surface__head > * {"
         },
         {
-          "line": 2437,
+          "line": 2444,
           "source": ".tcrn-surface__head-content { flex: 1 1 50%; }"
         },
         {
-          "line": 2438,
+          "line": 2445,
           "source": ".tcrn-surface__head-actions {"
         },
         {
-          "line": 2444,
+          "line": 2451,
           "source": ".tcrn-surface__head :is(h2,h3) { margin: 0; font-size: var(--tcrn-type-size-heading-3); }"
         }
       ],
@@ -7075,12 +7199,12 @@
       "class": "tcrn-surface__head-actions",
       "variant": "component part",
       "consumerLines": [
-        4625,
-        4922
+        4632,
+        4929
       ],
       "publishedStyleSites": [
         {
-          "line": 2438,
+          "line": 2445,
           "source": ".tcrn-surface__head-actions {"
         }
       ],
@@ -7092,22 +7216,22 @@
       "class": "tcrn-surface__head-content",
       "variant": "component part",
       "consumerLines": [
-        4118,
-        4119,
-        4122,
-        4123,
-        4175,
-        4176,
-        4192,
-        4789,
-        4922,
-        4941,
-        5196,
-        5301
+        4125,
+        4126,
+        4129,
+        4130,
+        4182,
+        4183,
+        4199,
+        4796,
+        4929,
+        4948,
+        5203,
+        5308
       ],
       "publishedStyleSites": [
         {
-          "line": 2437,
+          "line": 2444,
           "source": ".tcrn-surface__head-content { flex: 1 1 50%; }"
         }
       ],
@@ -7130,54 +7254,54 @@
       "class": "tcrn-switch",
       "variant": "family root/alias",
       "consumerLines": [
-        4185,
-        4186,
-        4187,
-        4666,
-        5355,
-        5358,
-        5359,
-        5603
+        4192,
+        4193,
+        4194,
+        4673,
+        5362,
+        5365,
+        5366,
+        5610
       ],
       "publishedStyleSites": [
         {
-          "line": 2955,
+          "line": 2962,
           "source": ".tcrn-switch {"
         },
         {
-          "line": 2964,
+          "line": 2971,
           "source": ".tcrn-switch__control {"
         },
         {
-          "line": 2975,
+          "line": 2982,
           "source": ".tcrn-switch__control::before {"
         },
         {
-          "line": 2985,
+          "line": 2992,
           "source": ".tcrn-switch__control:checked {"
         },
         {
-          "line": 2989,
+          "line": 2996,
           "source": ".tcrn-switch__control:checked::before {"
         },
         {
-          "line": 2993,
+          "line": 3000,
           "source": ".tcrn-switch__control:focus-visible {"
         },
         {
-          "line": 2997,
+          "line": 3004,
           "source": ".tcrn-switch__label {"
         },
         {
-          "line": 3001,
+          "line": 3008,
           "source": ".tcrn-switch__description {"
         },
         {
-          "line": 3008,
+          "line": 3015,
           "source": ".tcrn-switch--disabled {"
         },
         {
-          "line": 3012,
+          "line": 3019,
           "source": ".tcrn-switch--disabled .tcrn-switch__control {"
         }
       ],
@@ -7196,38 +7320,38 @@
       "class": "tcrn-switch__control",
       "variant": "component part",
       "consumerLines": [
-        4185,
-        4186,
-        4187,
-        4666,
-        5355,
-        5358,
-        5359,
-        5603
+        4192,
+        4193,
+        4194,
+        4673,
+        5362,
+        5365,
+        5366,
+        5610
       ],
       "publishedStyleSites": [
         {
-          "line": 2964,
+          "line": 2971,
           "source": ".tcrn-switch__control {"
         },
         {
-          "line": 2975,
+          "line": 2982,
           "source": ".tcrn-switch__control::before {"
         },
         {
-          "line": 2985,
+          "line": 2992,
           "source": ".tcrn-switch__control:checked {"
         },
         {
-          "line": 2989,
+          "line": 2996,
           "source": ".tcrn-switch__control:checked::before {"
         },
         {
-          "line": 2993,
+          "line": 3000,
           "source": ".tcrn-switch__control:focus-visible {"
         },
         {
-          "line": 3012,
+          "line": 3019,
           "source": ".tcrn-switch--disabled .tcrn-switch__control {"
         }
       ],
@@ -7246,18 +7370,18 @@
       "class": "tcrn-switch__label",
       "variant": "component part",
       "consumerLines": [
-        4185,
-        4186,
-        4187,
-        4666,
-        5355,
-        5358,
-        5359,
-        5603
+        4192,
+        4193,
+        4194,
+        4673,
+        5362,
+        5365,
+        5366,
+        5610
       ],
       "publishedStyleSites": [
         {
-          "line": 2997,
+          "line": 3004,
           "source": ".tcrn-switch__label {"
         }
       ],
@@ -7276,30 +7400,30 @@
       "class": "tcrn-table-shell",
       "variant": "family root/alias",
       "consumerLines": [
-        4193,
-        4877,
-        4883,
-        4894,
-        4895,
-        4899,
+        4200,
+        4884,
+        4890,
         4901,
-        4909,
-        5171,
-        5172,
-        5173,
-        5175,
-        5181,
-        5192,
-        5196,
-        5350,
-        5351,
-        5352,
+        4902,
+        4906,
+        4908,
+        4916,
+        5178,
+        5179,
+        5180,
+        5182,
+        5188,
+        5199,
+        5203,
+        5357,
         5358,
         5359,
-        5360,
-        5552,
-        5553,
-        5554
+        5365,
+        5366,
+        5367,
+        5559,
+        5560,
+        5561
       ],
       "publishedStyleSites": [
         {
@@ -7395,18 +7519,18 @@
       "class": "tcrn-table-shell__cell",
       "variant": "component part",
       "consumerLines": [
-        4877,
-        4883,
-        5171,
-        5172,
-        5173,
-        5181,
-        5351,
-        5352,
+        4884,
+        4890,
+        5178,
+        5179,
+        5180,
+        5188,
         5358,
         5359,
-        5360,
-        5554
+        5365,
+        5366,
+        5367,
+        5561
       ],
       "publishedStyleSites": [
         {
@@ -7444,9 +7568,9 @@
       "class": "tcrn-table-shell__empty",
       "variant": "component part",
       "consumerLines": [
-        4894,
         4901,
-        5192
+        4908,
+        5199
       ],
       "publishedStyleSites": [
         {
@@ -7468,9 +7592,9 @@
       "class": "tcrn-table-shell__empty-row",
       "variant": "component part",
       "consumerLines": [
-        4894,
         4901,
-        5192
+        4908,
+        5199
       ],
       "publishedStyleSites": [
         {
@@ -7488,10 +7612,10 @@
       "class": "tcrn-table-shell__head",
       "variant": "component part",
       "consumerLines": [
-        4193,
-        4899,
-        5196,
-        5553
+        4200,
+        4906,
+        5203,
+        5560
       ],
       "publishedStyleSites": [
         {
@@ -7521,13 +7645,13 @@
       "class": "tcrn-table-shell__row",
       "variant": "component part",
       "consumerLines": [
-        4894,
-        4895,
         4901,
-        5175,
-        5192,
-        5350,
-        5554
+        4902,
+        4908,
+        5182,
+        5199,
+        5357,
+        5561
       ],
       "publishedStyleSites": [
         {
@@ -7560,53 +7684,53 @@
       "class": "tcrn-text",
       "variant": "family root/alias",
       "consumerLines": [
-        4057,
-        4068,
-        4109,
-        4118,
-        4119,
-        4122,
-        4123,
+        4064,
+        4075,
+        4116,
+        4125,
+        4126,
+        4129,
         4130,
-        4143,
-        4145,
+        4137,
+        4150,
         4152,
-        4154,
+        4159,
         4161,
-        4163,
+        4168,
         4170,
-        4172,
-        4181,
-        4182,
-        4203,
-        4209,
+        4177,
+        4179,
+        4188,
+        4189,
+        4210,
         4216,
-        4232,
-        4360,
-        4751,
-        4789,
-        4922,
-        4941,
-        4961,
-        5177,
-        5196,
-        5273,
-        5274,
-        5285,
-        5286,
-        5301,
-        5305,
-        5320,
-        5353,
-        5371,
-        5506,
-        5511,
-        5515,
-        5516,
+        4223,
+        4239,
+        4367,
+        4758,
+        4796,
+        4929,
+        4948,
+        4968,
+        5184,
+        5203,
+        5280,
+        5281,
+        5292,
+        5293,
+        5308,
+        5312,
+        5327,
+        5360,
+        5378,
+        5513,
+        5518,
         5522,
-        5549,
-        5603,
-        5650
+        5523,
+        5529,
+        5556,
+        5610,
+        5657
       ],
       "publishedStyleSites": [
         {
@@ -7666,7 +7790,7 @@
           "source": ".tcrn-search-result-list__item .tcrn-text,"
         },
         {
-          "line": 2747,
+          "line": 2754,
           "source": ".tcrn-textarea {"
         }
       ],
@@ -7681,14 +7805,14 @@
       "class": "tcrn-textarea",
       "variant": "family root/alias",
       "consumerLines": [
-        4181,
-        4182,
-        4209,
-        5353
+        4188,
+        4189,
+        4216,
+        5360
       ],
       "publishedStyleSites": [
         {
-          "line": 2747,
+          "line": 2754,
           "source": ".tcrn-textarea {"
         }
       ],
@@ -7703,84 +7827,84 @@
       "class": "tcrn-tooltip",
       "variant": "family root/alias",
       "consumerLines": [
-        4571,
-        4574
+        4578,
+        4581
       ],
       "publishedStyleSites": [
         {
-          "line": 2579,
+          "line": 2586,
           "source": ".tcrn-tooltip {"
         },
         {
-          "line": 2586,
+          "line": 2593,
           "source": ".tcrn-tooltip__content {"
         },
         {
-          "line": 2605,
+          "line": 2612,
           "source": ".tcrn-tooltip:hover .tcrn-tooltip__content,"
         },
         {
-          "line": 2606,
+          "line": 2613,
           "source": ".tcrn-tooltip:focus-within .tcrn-tooltip__content {"
         },
         {
-          "line": 2611,
+          "line": 2618,
           "source": ".tcrn-tooltip[data-placement=\"top\"] .tcrn-tooltip__content {"
         },
         {
-          "line": 2617,
+          "line": 2624,
           "source": ".tcrn-tooltip[data-placement=\"top\"]:hover .tcrn-tooltip__content,"
         },
         {
-          "line": 2618,
+          "line": 2625,
           "source": ".tcrn-tooltip[data-placement=\"top\"]:focus-within .tcrn-tooltip__content {"
         },
         {
-          "line": 2622,
+          "line": 2629,
           "source": ".tcrn-tooltip[data-placement=\"bottom\"] .tcrn-tooltip__content {"
         },
         {
-          "line": 2628,
+          "line": 2635,
           "source": ".tcrn-tooltip[data-placement=\"bottom\"]:hover .tcrn-tooltip__content,"
         },
         {
-          "line": 2629,
+          "line": 2636,
           "source": ".tcrn-tooltip[data-placement=\"bottom\"]:focus-within .tcrn-tooltip__content {"
         },
         {
-          "line": 2633,
+          "line": 2640,
           "source": ".tcrn-tooltip[data-placement=\"right\"] .tcrn-tooltip__content {"
         },
         {
-          "line": 2639,
+          "line": 2646,
           "source": ".tcrn-tooltip[data-placement=\"right\"]:hover .tcrn-tooltip__content,"
         },
         {
-          "line": 2640,
+          "line": 2647,
           "source": ".tcrn-tooltip[data-placement=\"right\"]:focus-within .tcrn-tooltip__content {"
         },
         {
-          "line": 2644,
+          "line": 2651,
           "source": ".tcrn-tooltip[data-placement=\"left\"] .tcrn-tooltip__content {"
         },
         {
-          "line": 2650,
+          "line": 2657,
           "source": ".tcrn-tooltip[data-placement=\"left\"]:hover .tcrn-tooltip__content,"
         },
         {
-          "line": 2651,
+          "line": 2658,
           "source": ".tcrn-tooltip[data-placement=\"left\"]:focus-within .tcrn-tooltip__content {"
         },
         {
-          "line": 3347,
+          "line": 3354,
           "source": ".tcrn-tooltip__content,"
         },
         {
-          "line": 3595,
+          "line": 3602,
           "source": ".tcrn-tooltip__content[data-tooltip-portal=\"true\"],.tcrn-tooltip__content[data-overlay-positioning=\"static-fixed\"]{position:fixed;transform:none;max-width:min(260px,calc(100vw - var(--tcrn-space-4)))}"
         },
         {
-          "line": 3596,
+          "line": 3603,
           "source": ".tcrn-tooltip__content[data-tooltip-portal=\"true\"][data-tooltip-open=\"true\"],.tcrn-tooltip__content[data-overlay-positioning=\"static-fixed\"][data-tooltip-open=\"true\"]{opacity:1}"
         }
       ],
@@ -7793,79 +7917,79 @@
       "class": "tcrn-tooltip__content",
       "variant": "component part",
       "consumerLines": [
-        4571
+        4578
       ],
       "publishedStyleSites": [
         {
-          "line": 2586,
+          "line": 2593,
           "source": ".tcrn-tooltip__content {"
         },
         {
-          "line": 2605,
+          "line": 2612,
           "source": ".tcrn-tooltip:hover .tcrn-tooltip__content,"
         },
         {
-          "line": 2606,
+          "line": 2613,
           "source": ".tcrn-tooltip:focus-within .tcrn-tooltip__content {"
         },
         {
-          "line": 2611,
+          "line": 2618,
           "source": ".tcrn-tooltip[data-placement=\"top\"] .tcrn-tooltip__content {"
         },
         {
-          "line": 2617,
+          "line": 2624,
           "source": ".tcrn-tooltip[data-placement=\"top\"]:hover .tcrn-tooltip__content,"
         },
         {
-          "line": 2618,
+          "line": 2625,
           "source": ".tcrn-tooltip[data-placement=\"top\"]:focus-within .tcrn-tooltip__content {"
         },
         {
-          "line": 2622,
+          "line": 2629,
           "source": ".tcrn-tooltip[data-placement=\"bottom\"] .tcrn-tooltip__content {"
         },
         {
-          "line": 2628,
+          "line": 2635,
           "source": ".tcrn-tooltip[data-placement=\"bottom\"]:hover .tcrn-tooltip__content,"
         },
         {
-          "line": 2629,
+          "line": 2636,
           "source": ".tcrn-tooltip[data-placement=\"bottom\"]:focus-within .tcrn-tooltip__content {"
         },
         {
-          "line": 2633,
+          "line": 2640,
           "source": ".tcrn-tooltip[data-placement=\"right\"] .tcrn-tooltip__content {"
         },
         {
-          "line": 2639,
+          "line": 2646,
           "source": ".tcrn-tooltip[data-placement=\"right\"]:hover .tcrn-tooltip__content,"
         },
         {
-          "line": 2640,
+          "line": 2647,
           "source": ".tcrn-tooltip[data-placement=\"right\"]:focus-within .tcrn-tooltip__content {"
         },
         {
-          "line": 2644,
+          "line": 2651,
           "source": ".tcrn-tooltip[data-placement=\"left\"] .tcrn-tooltip__content {"
         },
         {
-          "line": 2650,
+          "line": 2657,
           "source": ".tcrn-tooltip[data-placement=\"left\"]:hover .tcrn-tooltip__content,"
         },
         {
-          "line": 2651,
+          "line": 2658,
           "source": ".tcrn-tooltip[data-placement=\"left\"]:focus-within .tcrn-tooltip__content {"
         },
         {
-          "line": 3347,
+          "line": 3354,
           "source": ".tcrn-tooltip__content,"
         },
         {
-          "line": 3595,
+          "line": 3602,
           "source": ".tcrn-tooltip__content[data-tooltip-portal=\"true\"],.tcrn-tooltip__content[data-overlay-positioning=\"static-fixed\"]{position:fixed;transform:none;max-width:min(260px,calc(100vw - var(--tcrn-space-4)))}"
         },
         {
-          "line": 3596,
+          "line": 3603,
           "source": ".tcrn-tooltip__content[data-tooltip-portal=\"true\"][data-tooltip-open=\"true\"],.tcrn-tooltip__content[data-overlay-positioning=\"static-fixed\"][data-tooltip-open=\"true\"]{opacity:1}"
         }
       ],
@@ -7877,9 +8001,9 @@
       "class": "tcrn-top-bar",
       "variant": "family root/alias",
       "consumerLines": [
-        4071,
-        4072,
-        4073
+        4078,
+        4079,
+        4080
       ],
       "publishedStyleSites": [
         {
@@ -7903,11 +8027,15 @@
           "source": ".tcrn-top-bar__actions {"
         },
         {
-          "line": 2209,
+          "line": 2211,
+          "source": ".tcrn-product-shell__workspace > .tcrn-top-bar {"
+        },
+        {
+          "line": 2216,
           "source": ".tcrn-product-shell__workspace > .tcrn-top-bar,"
         },
         {
-          "line": 2210,
+          "line": 2217,
           "source": ".tcrn-top-bar {"
         }
       ],
@@ -7922,7 +8050,7 @@
       "class": "tcrn-top-bar__actions",
       "variant": "component part",
       "consumerLines": [
-        4073
+        4080
       ],
       "publishedStyleSites": [
         {
@@ -7938,7 +8066,7 @@
       "class": "tcrn-top-bar__module",
       "variant": "component part",
       "consumerLines": [
-        4072
+        4079
       ],
       "publishedStyleSites": [
         {
@@ -7956,8 +8084,8 @@
       "class": "tcrn-action-row",
       "variant": "family root/alias",
       "consumerLines": [
-        4625,
-        4922
+        4632,
+        4929
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -7968,24 +8096,24 @@
       "class": "tcrn-app",
       "variant": "family root/alias",
       "consumerLines": [
-        4044,
-        4228
+        4051,
+        4235
       ],
       "publishedStyleSites": [
         {
-          "line": 3221,
+          "line": 3228,
           "source": ".tcrn-app-status-bar {"
         },
         {
-          "line": 3233,
+          "line": 3240,
           "source": ".tcrn-app-status-bar__command {"
         },
         {
-          "line": 3239,
+          "line": 3246,
           "source": ".tcrn-app-status-bar__state {"
         },
         {
-          "line": 3244,
+          "line": 3251,
           "source": ".tcrn-app-status-bar__action {"
         }
       ],
@@ -7998,22 +8126,22 @@
       "class": "tcrn-badge--",
       "variant": "modifier",
       "consumerLines": [
-        4078,
-        4102,
+        4085,
         4109,
-        4118,
-        4232,
-        4412,
-        4416,
-        4431,
-        4938,
-        5240,
-        5371,
-        5383,
-        5393,
-        5403,
-        5507,
-        5649
+        4116,
+        4125,
+        4239,
+        4419,
+        4423,
+        4438,
+        4945,
+        5247,
+        5378,
+        5390,
+        5400,
+        5410,
+        5514,
+        5656
       ],
       "publishedStyleSites": [
         {
@@ -8064,7 +8192,7 @@
       "class": "tcrn-checkbox",
       "variant": "family root/alias",
       "consumerLines": [
-        5603
+        5610
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8075,7 +8203,7 @@
       "class": "tcrn-dashboard-grid",
       "variant": "family root/alias",
       "consumerLines": [
-        4117
+        4124
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8086,7 +8214,7 @@
       "class": "tcrn-design-authority",
       "variant": "family root/alias",
       "consumerLines": [
-        4679
+        4686
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8097,13 +8225,13 @@
       "class": "tcrn-design-system-storybook",
       "variant": "family root/alias",
       "consumerLines": [
-        4071,
-        4075,
         4078,
-        4081,
-        4084,
+        4082,
+        4085,
         4088,
-        4102
+        4091,
+        4095,
+        4109
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8120,7 +8248,7 @@
       "class": "tcrn-detail-drawer__head",
       "variant": "component part",
       "consumerLines": [
-        4232
+        4239
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8131,9 +8259,9 @@
       "class": "tcrn-dot",
       "variant": "family root/alias",
       "consumerLines": [
-        4228,
-        4742,
-        5650
+        4235,
+        4749,
+        5657
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8146,7 +8274,7 @@
       "class": "tcrn-editor-shell",
       "variant": "family root/alias",
       "consumerLines": [
-        4209
+        4216
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8157,7 +8285,7 @@
       "class": "tcrn-editor__bar",
       "variant": "component part",
       "consumerLines": [
-        4209
+        4216
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8168,7 +8296,7 @@
       "class": "tcrn-editor__status",
       "variant": "component part",
       "consumerLines": [
-        4209
+        4216
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8179,7 +8307,7 @@
       "class": "tcrn-finding-link",
       "variant": "family root/alias",
       "consumerLines": [
-        5650
+        5657
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8190,9 +8318,9 @@
       "class": "tcrn-grid",
       "variant": "family root/alias",
       "consumerLines": [
-        4116,
-        4117,
-        4178
+        4123,
+        4124,
+        4185
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8205,8 +8333,8 @@
       "class": "tcrn-grid--2",
       "variant": "modifier",
       "consumerLines": [
-        4117,
-        4178
+        4124,
+        4185
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8218,7 +8346,7 @@
       "class": "tcrn-grid--4",
       "variant": "modifier",
       "consumerLines": [
-        4116
+        4123
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8229,7 +8357,7 @@
       "class": "tcrn-highlightable",
       "variant": "family root/alias",
       "consumerLines": [
-        4743
+        4750
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8240,14 +8368,14 @@
       "class": "tcrn-icon",
       "variant": "family root/alias",
       "consumerLines": [
-        4055,
-        4084,
-        4575,
-        4624,
-        4625,
-        4736,
-        4741,
-        5001
+        4062,
+        4091,
+        4582,
+        4631,
+        4632,
+        4743,
+        4748,
+        5008
       ],
       "publishedStyleSites": [
         {
@@ -8271,9 +8399,9 @@
       "class": "tcrn-inline-alert--",
       "variant": "modifier",
       "consumerLines": [
-        4706,
-        4874,
-        4876
+        4713,
+        4881,
+        4883
       ],
       "publishedStyleSites": [
         {
@@ -8303,19 +8431,19 @@
       "class": "tcrn-line-numbered-editor__finding--",
       "variant": "modifier",
       "consumerLines": [
-        5650
+        5657
       ],
       "publishedStyleSites": [
         {
-          "line": 3208,
+          "line": 3215,
           "source": ".tcrn-line-numbered-editor__finding--warning,"
         },
         {
-          "line": 3209,
+          "line": 3216,
           "source": ".tcrn-line-numbered-editor__finding--danger {"
         },
         {
-          "line": 3212,
+          "line": 3219,
           "source": ".tcrn-line-numbered-editor__finding--danger {"
         }
       ],
@@ -8327,11 +8455,11 @@
       "class": "tcrn-line-numbered-editor__line--",
       "variant": "modifier",
       "consumerLines": [
-        5643
+        5650
       ],
       "publishedStyleSites": [
         {
-          "line": 3178,
+          "line": 3185,
           "source": ".tcrn-line-numbered-editor__gutter li.tcrn-line-numbered-editor__line--danger {"
         }
       ],
@@ -8343,7 +8471,7 @@
       "class": "tcrn-machine-token--key",
       "variant": "modifier",
       "consumerLines": [
-        5650
+        5657
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8354,7 +8482,7 @@
       "class": "tcrn-main",
       "variant": "family root/alias",
       "consumerLines": [
-        4105
+        4112
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8365,7 +8493,7 @@
       "class": "tcrn-manage",
       "variant": "family root/alias",
       "consumerLines": [
-        4136
+        4143
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8376,7 +8504,7 @@
       "class": "tcrn-multi-select-dropdown__validation",
       "variant": "component part",
       "consumerLines": [
-        4625
+        4632
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": []
@@ -8385,7 +8513,7 @@
       "class": "tcrn-multi-select-dropdown__value",
       "variant": "component part",
       "consumerLines": [
-        4625
+        4632
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": []
@@ -8394,7 +8522,7 @@
       "class": "tcrn-operation-feedback__identity-value",
       "variant": "component part",
       "consumerLines": [
-        4440
+        4447
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8405,54 +8533,54 @@
       "class": "tcrn-page",
       "variant": "family root/alias",
       "consumerLines": [
-        4106,
-        4107,
-        4108,
-        4109,
-        4111,
+        4113,
         4114,
-        4127,
-        4128,
-        4129,
-        4130,
-        4132,
+        4115,
+        4116,
+        4118,
+        4121,
+        4134,
         4135,
-        4140,
-        4141,
+        4136,
+        4137,
+        4139,
         4142,
-        4143,
-        4145,
-        4146,
+        4147,
+        4148,
         4149,
         4150,
-        4151,
         4152,
-        4154,
-        4155,
+        4153,
+        4156,
+        4157,
         4158,
         4159,
-        4160,
         4161,
-        4163,
-        4164,
+        4162,
+        4165,
+        4166,
         4167,
         4168,
-        4169,
         4170,
-        4172,
-        4173,
-        4200,
-        4201,
-        4202,
-        4203,
-        4205,
+        4171,
+        4174,
+        4175,
+        4176,
+        4177,
+        4179,
+        4180,
+        4207,
         4208,
-        4213,
-        4214,
+        4209,
+        4210,
+        4212,
         4215,
-        4216,
-        4218,
-        4221
+        4220,
+        4221,
+        4222,
+        4223,
+        4225,
+        4228
       ],
       "publishedStyleSites": [
         {
@@ -8520,47 +8648,47 @@
           "source": ".tcrn-page-header__actions {"
         },
         {
-          "line": 2283,
+          "line": 2290,
           "source": ".tcrn-page-header__body,"
         },
         {
-          "line": 2290,
+          "line": 2297,
           "source": ".tcrn-page-header__meta,"
         },
         {
-          "line": 2291,
+          "line": 2298,
           "source": ".tcrn-page-header__actions,"
         },
         {
-          "line": 3631,
+          "line": 3638,
           "source": ".tcrn-page-hierarchy{display:grid;gap:var(--tcrn-space-4);min-inline-size:0;max-inline-size:100%}"
         },
         {
-          "line": 3632,
+          "line": 3639,
           "source": ".tcrn-page-hierarchy__header,.tcrn-page-hierarchy__section-tabs,.tcrn-page-hierarchy__lower-content,.tcrn-page-hierarchy__third-level-frame,.tcrn-page-hierarchy__third-level,.tcrn-page-hierarchy__content{min-inline-size:0;max-inline-size:100%}"
         },
         {
-          "line": 3633,
+          "line": 3640,
           "source": ".tcrn-page-hierarchy__section-tabs{display:block}"
         },
         {
-          "line": 3634,
+          "line": 3641,
           "source": ".tcrn-page-hierarchy__third-level-frame{container:tcrn-page-hierarchy-third-level/inline-size}"
         },
         {
-          "line": 3635,
+          "line": 3642,
           "source": ".tcrn-page-hierarchy__third-level{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--tcrn-space-4)}"
         },
         {
-          "line": 3636,
+          "line": 3643,
           "source": ".tcrn-page-hierarchy__local-navigation{min-inline-size:0;max-inline-size:100%;overflow-x:auto}"
         },
         {
-          "line": 3637,
+          "line": 3644,
           "source": ".tcrn-page-hierarchy__content{display:grid;gap:var(--tcrn-space-3)}"
         },
         {
-          "line": 3638,
+          "line": 3645,
           "source": "@container tcrn-page-hierarchy-third-level (min-width:960px){.tcrn-page-hierarchy__third-level{grid-template-columns:minmax(0,var(--tcrn-container-page-third-level-nav)) minmax(0,1fr)}}"
         }
       ],
@@ -8619,13 +8747,13 @@
       "class": "tcrn-page--manage",
       "variant": "modifier",
       "consumerLines": [
-        4127,
-        4140,
-        4149,
-        4158,
-        4167,
-        4200,
-        4213
+        4134,
+        4147,
+        4156,
+        4165,
+        4174,
+        4207,
+        4220
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8642,13 +8770,13 @@
       "class": "tcrn-page__actions",
       "variant": "component part",
       "consumerLines": [
-        4109,
-        4130,
-        4143,
-        4152,
-        4161,
-        4170,
-        4203
+        4116,
+        4137,
+        4150,
+        4159,
+        4168,
+        4177,
+        4210
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8665,14 +8793,14 @@
       "class": "tcrn-page__head",
       "variant": "component part",
       "consumerLines": [
-        4109,
-        4130,
-        4143,
-        4152,
-        4161,
-        4170,
-        4203,
-        4216
+        4116,
+        4137,
+        4150,
+        4159,
+        4168,
+        4177,
+        4210,
+        4223
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8690,14 +8818,14 @@
       "class": "tcrn-page__lede",
       "variant": "component part",
       "consumerLines": [
-        4109,
-        4130,
-        4143,
-        4152,
-        4161,
-        4170,
-        4203,
-        4216
+        4116,
+        4137,
+        4150,
+        4159,
+        4168,
+        4177,
+        4210,
+        4223
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8715,7 +8843,7 @@
       "class": "tcrn-rail__footer",
       "variant": "component part",
       "consumerLines": [
-        4068
+        4075
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8726,7 +8854,7 @@
       "class": "tcrn-rail__library",
       "variant": "component part",
       "consumerLines": [
-        4057
+        4064
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8737,7 +8865,7 @@
       "class": "tcrn-rail__mark",
       "variant": "component part",
       "consumerLines": [
-        4057
+        4064
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8748,7 +8876,7 @@
       "class": "tcrn-rail__workspace",
       "variant": "component part",
       "consumerLines": [
-        4057
+        4064
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8759,7 +8887,7 @@
       "class": "tcrn-search-input--compact",
       "variant": "modifier",
       "consumerLines": [
-        4081
+        4088
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8770,7 +8898,7 @@
       "class": "tcrn-search-results",
       "variant": "family root/alias",
       "consumerLines": [
-        4231
+        4238
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8781,7 +8909,7 @@
       "class": "tcrn-setting-row--modified",
       "variant": "modifier",
       "consumerLines": [
-        4743
+        4750
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8792,10 +8920,10 @@
       "class": "tcrn-subnav",
       "variant": "family root/alias",
       "consumerLines": [
-        4133,
-        4219,
-        4768,
-        5542
+        4140,
+        4226,
+        4775,
+        5549
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8809,8 +8937,8 @@
       "class": "tcrn-subnav__item",
       "variant": "component part",
       "consumerLines": [
-        4768,
-        5542
+        4775,
+        5549
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8822,7 +8950,7 @@
       "class": "tcrn-subnav__row",
       "variant": "component part",
       "consumerLines": [
-        5542
+        5549
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8833,7 +8961,7 @@
       "class": "tcrn-table-shell__heading",
       "variant": "component part",
       "consumerLines": [
-        4193
+        4200
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": []
@@ -8842,7 +8970,7 @@
       "class": "tcrn-top-bar__module--path",
       "variant": "modifier",
       "consumerLines": [
-        4072
+        4079
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8853,7 +8981,7 @@
       "class": "tcrn-variable-table",
       "variant": "family root/alias",
       "consumerLines": [
-        5196
+        5203
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8864,10 +8992,10 @@
       "class": "tcrn-vocabulary",
       "variant": "family root/alias",
       "consumerLines": [
-        4222,
-        5516,
-        5525,
-        5549
+        4229,
+        5523,
+        5532,
+        5556
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8881,7 +9009,7 @@
       "class": "tcrn-vocabulary__category-description",
       "variant": "component part",
       "consumerLines": [
-        5549
+        5556
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8892,7 +9020,7 @@
       "class": "tcrn-vocabulary__semantic",
       "variant": "component part",
       "consumerLines": [
-        5516
+        5523
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8903,7 +9031,7 @@
       "class": "tcrn-vocabulary__source",
       "variant": "component part",
       "consumerLines": [
-        5525
+        5532
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8914,7 +9042,7 @@
       "class": "tcrn-vocabulary__terms",
       "variant": "component part",
       "consumerLines": [
-        4222
+        4229
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8925,9 +9053,9 @@
       "class": "tcrn-work-tree",
       "variant": "family root/alias",
       "consumerLines": [
-        5273,
-        5274,
-        5275
+        5280,
+        5281,
+        5282
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8940,8 +9068,8 @@
       "class": "tcrn-work-tree__children",
       "variant": "component part",
       "consumerLines": [
-        5274,
-        5275
+        5281,
+        5282
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8953,8 +9081,8 @@
       "class": "tcrn-work-tree__epic",
       "variant": "component part",
       "consumerLines": [
-        5274,
-        5275
+        5281,
+        5282
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8966,9 +9094,9 @@
       "class": "tcrn-work-tree__key",
       "variant": "component part",
       "consumerLines": [
-        5273,
-        5274,
-        5275
+        5280,
+        5281,
+        5282
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8981,7 +9109,7 @@
       "class": "tcrn-work-tree__missing",
       "variant": "component part",
       "consumerLines": [
-        5273
+        5280
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -8992,7 +9120,7 @@
       "class": "tcrn-work-tree__story",
       "variant": "component part",
       "consumerLines": [
-        5273
+        5280
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9003,8 +9131,8 @@
       "class": "tcrn-work-tree__summary",
       "variant": "component part",
       "consumerLines": [
-        5274,
-        5275
+        5281,
+        5282
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9016,7 +9144,7 @@
       "class": "tcrn-work-tree__text",
       "variant": "component part",
       "consumerLines": [
-        5273
+        5280
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9027,7 +9155,7 @@
       "class": "tcrn-work-tree__title",
       "variant": "component part",
       "consumerLines": [
-        5273
+        5280
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9038,7 +9166,7 @@
       "class": "tcrn-workflow-two-line",
       "variant": "family root/alias",
       "consumerLines": [
-        4048
+        4055
       ],
       "publishedStyleSites": [],
       "previousConsumerLines": [
@@ -9999,8 +10127,8 @@
   "snapshotBinding": {
     "schemaVersion": "tcrn.workflow.ds-consumer-contract.v1",
     "consumer": "Atelier static consumer",
-    "candidate": "2f40478bb2993e6b6d02137f5870a890800d8662",
-    "candidateTree": "de0b19e6b750702d18f8d727bba734362d240e25",
+    "candidate": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
+    "candidateTree": "68a7edb311804d6981610c5ddf75ada66ec4aa06",
     "package": "@tcrn/ui-react@3.0.0",
     "aiContract": {
       "version": "ai_consumption_contract_v1",
@@ -10008,8 +10136,8 @@
     },
     "componentCss": {
       "sourceExport": "tcrnComponentCss",
-      "bytes": 120670,
-      "sha256": "74f51554a6977429e99fbb95fa16143dbd8596d321d6cee0a06136f4da41b94f",
+      "bytes": 120942,
+      "sha256": "3bb21fb49333e602d9fe580ac9cfe4830c71d985f4454337ec9e8be2d3c5d99a",
       "snapshot": "portal/ds-component-css.snapshot.css",
       "inlineSelector": "style#tcrn-ds-component-css[data-source=\"snapshot\"]"
     },
@@ -10074,13 +10202,13 @@
       ]
     },
     "production": {
-      "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+      "sourceCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
       "environment": "Production",
       "documentationOrigin": "https://tcrn-design-system-storybook.vercel.app",
-      "deploymentId": 6904637050,
-      "deploymentStatusId": 19388278778,
-      "buildStatusId": 55773429554,
-      "buildUrl": "https://vercel.com/tcrn-platform/tcrn-design-system-storybook/7yzUQWhbNoeRSJ4wGsLX4LhGqb1B"
+      "deploymentId": 6908102337,
+      "deploymentStatusId": 19396305924,
+      "buildStatusId": 55785918568,
+      "buildUrl": "https://vercel.com/tcrn-platform/tcrn-design-system-storybook/ECZ5EfvLqfhCoUAXmA7uKYua33Fd"
     },
     "tokensCss": {
       "snapshot": "portal/tokens.css",
@@ -10095,8 +10223,8 @@
     }
   },
   "actualBounds": [
-    "R33 isolated current Source browser observations are retained in the archive, with every failed case; no canonical integration claim",
-    "actual wide computed bounds exist; narrow and lifecycle coverage is incomplete; Owner visual remains separate",
+    "R34 isolated current Source browser observations are retained in the archive, with every failed case; no canonical integration claim",
+    "actual wide/narrow/column and lifecycle outcomes are recorded individually in the current application evidence; Owner visual remains separate",
     "no checkbox compatibility presentation is legalized as the requested dropdown; actual dropdown uses the published Select/Menu family"
   ]
 }

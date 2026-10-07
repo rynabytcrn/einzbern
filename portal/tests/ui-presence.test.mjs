@@ -1138,6 +1138,8 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       Object.defineProperty(escape, "key", { value: "Escape" });
       listbox.dispatchEvent(escape);
       assert.equal(trigger.getAttribute("aria-expanded"), "false");
+      assert.deepEqual([...prompt.selectedOptions].map((option) => option.value), ["en", "fr"], "Escape closes the list without discarding the draft");
+      assert.equal(choice.querySelector('[data-undo-setting-choice="retrieval.promptLanguages"]').disabled, false, "the retained draft can still be undone");
       assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, null, "an unsaved dropdown is a local draft");
       choice.querySelector('[data-undo-setting-choice="retrieval.promptLanguages"]').click();
       assert.deepEqual([...page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]').selectedOptions].map((option) => option.value), ["en"], "Undo restores the read-back selection");
@@ -2151,7 +2153,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       assert.equal(details.hidden, false);
       assert.ok(details.querySelector("#receipt-body.tcrn-readback-panel"), "the drawer keeps the engine receipt");
       assert.equal(details.querySelectorAll("h3").length, 0, "the drawer no longer lists this session's writes");
-      assert.equal(page.document.querySelector("#drawer-button")?.textContent.trim(), "Receipt");
+      assert.equal(page.document.querySelector("#drawer-button")?.textContent.trim(), "Operation record");
     } finally { await page.cleanup(); }
   });
 

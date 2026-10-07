@@ -66,7 +66,7 @@ export const ENGINE_FILES = Object.freeze({
   // In locks/ of the device directory.
   lock: "engine.lock",
 } as const);
-export const ENGINE_PROBE_TIMEOUT_MS = 60_000 as const;
+// No product deadline: the invoking operator owns cancellation.
 
 export const ENGINE_HOME_REASON_CODES = Object.freeze([
   "ENGINE_CURRENT_INVALID",
@@ -239,7 +239,7 @@ async function probeEngine(directory: string, home: string): Promise<EngineProbe
       encoding: "utf8",
       env: { ...process.env, EINZBERN_HOME: home },
       maxBuffer: RUNTIME_CAPACITY.bufferBytes,
-      timeout: ENGINE_PROBE_TIMEOUT_MS,
+
       windowsHide: true,
     }));
   } catch (error) {

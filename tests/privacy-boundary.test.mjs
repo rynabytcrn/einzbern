@@ -355,7 +355,7 @@ test("DS publication provenance is classified only at exact inventory source lin
     assert.deepEqual(scanPrivacyEntries([entry], { owner }), []);
     assert.deepEqual(scanPrivacyEntries([{ label: "git-blob:reviewed-inventory", kind: "blob", sourcePaths: [path], content: line }], { owner }), []);
     const tar = writeUstar([{ path, bytes: Buffer.from(line) }]);
-    for (const kind of ["archive", "release"]) assert.deepEqual(scanPrivacyEntries([{ label: "dist/source/reviewed.tar", kind, content: tar }], { owner }), []);
+    for (const [kind, label] of [["archive", "dist/source/einzbern-source.tar"], ["release", "dist/release/einzbern-source.tar"]]) assert.deepEqual(scanPrivacyEntries([{ label, kind, content: tar }], { owner }), []);
     const negatives = [
       { ...entry, content: line.replace("/pull/23", "/pull/24") },
       { ...entry, content: line.replace("TCRN-Design-System", "other-repository") },

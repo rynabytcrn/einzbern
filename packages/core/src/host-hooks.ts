@@ -106,7 +106,8 @@ const HOOK_EVENT_WORDS: Readonly<Record<string, string>> = Object.freeze({ ...HO
 // The stable launcher, in engine/ of the device directory; installed from
 // scripts/einzbern-hook-launcher.mjs. Its name has one source, device-home.ts.
 export const HOST_HOOK_LAUNCHER = ENGINE_HOOK_LAUNCHER;
-export const HOST_HOOK_TIMEOUT_SECONDS = 30 as const;
+// Do not impose a product deadline on generated host hooks. The host owns its
+// execution policy; omission does not claim that the host has no default timeout.
 // Where each host keeps its hooks, relative to the scope's root: the user's home or the project.
 export const HOST_HOOK_FILES: Readonly<Record<HostHookHost, string>> = Object.freeze({
   "claude-code": ".claude/settings.json",
@@ -119,7 +120,7 @@ export const CODEX_CONFIG_FILE = ".codex/config.toml" as const;
 export interface HostHook {
   readonly type: "command";
   readonly command: string;
-  readonly timeout: number;
+  readonly timeout?: number;
 }
 
 export interface HostHookGroup {
@@ -221,7 +222,7 @@ export function planHostHooks(request: HostHooksRequest): HostHooksExpectation {
   if (install) {
     const events = [...Object.keys(HOST_HOOK_EVENTS), ...(navigation === "declined" ? Object.keys(HOST_HOOK_POINTER_EVENTS) : [])];
     for (const event of events) {
-      groups[event] = [{ hooks: [{ type: "command", command: hostHookCommand(launcher, event), timeout: HOST_HOOK_TIMEOUT_SECONDS }] }];
+      groups[event] = [{ hooks: [{ type: "command", command: hostHookCommand(launcher, event) }] }];
     }
   }
   return {

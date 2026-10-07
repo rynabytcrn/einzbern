@@ -47,7 +47,7 @@ function refusal(args, env) {
 }
 
 function oneHook(device) {
-  return { UserPromptSubmit: [{ hooks: [{ type: "command", command: `node "${join(device, "engine", "hook.mjs")}" user-prompt-submit`, timeout: 30 }] }] };
+  return { UserPromptSubmit: [{ hooks: [{ type: "command", command: `node "${join(device, "engine", "hook.mjs")}" user-prompt-submit` }] }] };
 }
 
 test("477-R1: --scope user renders one UserPromptSubmit hook for each host into the home directory, and nothing else", async (t) => {

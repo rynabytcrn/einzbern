@@ -2,7 +2,7 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r37-init053-complete-source",
+  "pack": "r40-init053-closure",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
@@ -267,7 +267,7 @@
     },
     {
       "path": "packages/core/src/rules-catalog.ts",
-      "sha256": "2dd099f9f41da8cce9c935a3e667f18bc5ddff1b49891bdc13bf464b36482f37"
+      "sha256": "6db60b7fe6433d99a5cb5d53fede363180aaa7c99be5b08fa5b7f8bfb3c5f5c6"
     },
     {
       "path": "packages/core/src/rules.ts",
@@ -359,7 +359,7 @@
     },
     {
       "path": "portal/index.html",
-      "sha256": "936e176d5b718ecca89beeea6ec9d18c6375984c72ed11db0b40dcda973f4736"
+      "sha256": "713b14dc4697eeef284f39dfcd6748ef9536e9e1bac09a31a563d564877bc5a1"
     },
     {
       "path": "portal/locale-contract.mjs",
@@ -379,7 +379,7 @@
     },
     {
       "path": "portal/scripts/design-proof.mjs",
-      "sha256": "66ceecea90de51a48d14573134957f386a377e26a37ce85fb6e9231b1e98b6c3"
+      "sha256": "fdc3bb78b51a25d52c22c416d7b3c8f186056c6e0146a2aa7a85abb5942fb495"
     },
     {
       "path": "portal/scripts/e2e-demo.mjs",
@@ -778,7 +778,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R37 current Source final generation. Original full-file cadence and affected dependency files have run; actual exit/counts are attached below, including every failure. Prior held49 prose is superseded. Source development verification is separate from integrated acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are included; no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "R40 current Source final generation (package r40-closure). The original 62 whole files and the R40 necessary added whole files ran before this generation; the actual exit/counts are attached below with every failure, including the existing privacy-boundary historical PR23 provenance assertion, red before this generation because the scope and limit inventories it replaces lack that line. Source development verification is separate from integrated acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the unchanged R39 Source inputs, read in place; no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "bb91bdc40d2669aef823abaf8d2050ca105e9a89",
     "mergeCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
@@ -802,7 +802,6 @@
     "candidateBuildAndArtifactVerified": true,
     "candidateConsumed": true,
     "publication": {
-      "pullRequestNumber": 24,
       "prHead": "bb91bdc40d2669aef823abaf8d2050ca105e9a89",
       "mergeCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
       "mergeTree": "68a7edb311804d6981610c5ddf75ada66ec4aa06",
@@ -875,7 +874,8 @@
         "PR merged same source tree as local full verify and static build",
         "Production deployment and Vercel build success on merge SHA",
         "Production authority sourceCommit and component CSS/static bridge digests checked"
-      ]
+      ],
+      "pullRequestNumber": 24
     },
     "priorPublication": {
       "pr": "https://github.com/tpmoonchefryan/TCRN-Design-System/pull/23",
@@ -883,33 +883,123 @@
       "status": "retained prior publication; superseded for the mobile shell repair"
     }
   },
+  "publicEvidenceDeclaration": "Public structured projection: private runtime diagnostics are retained in archive-relative raw evidence, not reproduced verbatim. All emitted text and keys pass the shared public-input boundary.",
+  "inputProjections": [
+    {
+      "input": "inventory-values.json",
+      "sha256": "922873f49c8237f7b23c4e538b2c1a8a68171d232ecc53949faed4c7850e9c20",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/inventory-values.json"
+    },
+    {
+      "input": "publication-binding.json",
+      "sha256": "16f5341a79931c0736d1b25f00fe2d3072684365774cec633bcc0e781ee078b0",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r39-source-raw/publication-binding.json"
+    },
+    {
+      "input": "published-ai-consumption-contract.json",
+      "sha256": "cd829848bf101689bbf75d792c20116ae31469ec4e994a702a776dbf1ad83415",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r39-source-raw/published-ai-consumption-contract.json"
+    },
+    {
+      "input": "source-inventory-inputs.json",
+      "sha256": "f416e9900f01dbf956f972d484d91cdc88fdec03ce812471fa692b426049adc7",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/source-inventory-inputs.json"
+    },
+    {
+      "input": "ds-publication-dependency-disposition.json",
+      "sha256": "f15b8707c68e609137aaef9d54a1ccfaf9b1b0b8637c7c21f4171e6ec817288c",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r39-source-raw/ds-publication-dependency-disposition.json"
+    },
+    {
+      "input": "full-file-cadence-result.json",
+      "sha256": "1ae118ca27c36118e75c745ca72ec8cfecc3397e8ed193712096d3d58a696c72",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/full-file-cadence-result.json"
+    },
+    {
+      "input": "limit-review-dispositions.json",
+      "sha256": "8268ac76a01511ae6b0b49f93533c78c0f7c9ae110756678ae10e7a1b9530474",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/limit-review-dispositions.json"
+    },
+    {
+      "input": "r4-actual-callers.json",
+      "sha256": "97ff71afd46c9b9371961a996d1db6069d51dddd19c5bdb3836f00f26a3cd67c",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r39-source-raw/r4-actual-callers.json"
+    },
+    {
+      "input": "retained-bound-probe-result.json",
+      "sha256": "70574c7704cb891f725132c60dd1c0cf4bf2b978c024d834f10594593e0d0ba0",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/retained-bound-probe-result.json"
+    },
+    {
+      "input": "application-combined-result.json",
+      "sha256": "4bcecb845148e64363169e7b737fe2a9e68ae66bbc4191f73c95441ca8687879",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r39-source-raw/application-combined-result.json"
+    },
+    {
+      "input": "consumer-remedy-disposition.json",
+      "sha256": "17ba361419edb3e400f1b32ed1b4b8e555ab578b2da232d32b344fef71f36692",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r39-source-raw/consumer-remedy-disposition.json"
+    },
+    {
+      "input": "copy-edits.json",
+      "sha256": "4a668021b44cccb33b74595d5bbd2cfcf74b95a0cc326e4a236e0915da0dab18",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r39-source-raw/copy-edits.json"
+    },
+    {
+      "input": "copy-semantic-review.json",
+      "sha256": "7fa1da8d4d18889564fb0bfb672ad907b1cec140aca9c2869fe79c7849b809fc",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r39-source-raw/copy-semantic-review.json"
+    }
+  ],
   "currentWholeFileCadence": {
     "exit": 1,
     "counts": {
-      "tests": 702,
-      "pass": 701,
+      "tests": 736,
+      "pass": 735,
       "fail": 1,
       "cancelled": 0,
       "skipped": 0
     },
-    "wholeFiles": 62,
+    "wholeFiles": 69,
     "original61Retained": true,
     "necessaryAddedWholeFiles": [
-      "tests/e2e-governed-loop.test.mjs"
+      "tests/e2e-governed-loop.test.mjs",
+      "tests/rules-catalog.test.mjs",
+      "tests/managed-sections.test.mjs",
+      "tests/privacy-normalization.test.mjs",
+      "tests/inc238-markdown-link-gate.test.mjs",
+      "tests/wiki-pages.test.mjs",
+      "tests/names-alias-table.test.mjs",
+      "tests/push-wiki.test.mjs"
     ],
-    "newRegistryCases": 2,
-    "reds": [
+    "newRegistryCases": 0,
+    "representation": "public structured summary; full raw diagnostic is retained separately",
+    "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/full-file-cadence-result.json",
+    "failures": [
       {
-        "file": "portal/tests/design-proof.test.mjs",
-        "line": 52,
-        "test": "INIT-036 S276 design-proof legs turn red for injected violations and green after restore",
-        "reason": "initial full design-proof positive exits1; expected0",
-        "rawEvidence": "r37-source-raw/full-file-cadence-once.stdout",
-        "redaction": "machine-local location and stack retained only in archive"
+        "test": "DS publication provenance is classified only at exact inventory source lines",
+        "file": "tests/privacy-boundary.test.mjs",
+        "line": 344,
+        "reason": "The expression evaluated to a falsy value:; assert.ok(line)",
+        "reasonCode": "ERR_ASSERTION",
+        "rawAnchor": "dispatch-runs/init-053/r40-closure-raw/full-file-cadence-result.json#/reds/0"
       }
     ]
   },
-  "generationTimeUtc": "2026-10-07T15:43:57.213125+00:00",
+  "generationTimeUtc": "2026-10-07T20:52:27.412774+00:00",
   "currentApplicationCaseResults": [
     {
       "name": "target switch settles on matching response, UI authority and native inheritance",
@@ -1045,7 +1135,7 @@
     },
     {
       "name": "geometry model-tiers 900",
-      "ok": false
+      "ok": true
     },
     {
       "name": "geometry variables 900",
@@ -1073,7 +1163,7 @@
     },
     {
       "name": "geometry model-tiers 800",
-      "ok": false
+      "ok": true
     },
     {
       "name": "geometry variables 800",
@@ -1101,11 +1191,11 @@
     },
     {
       "name": "geometry model-tiers 761",
-      "ok": false
+      "ok": true
     },
     {
       "name": "geometry variables 761",
-      "ok": false
+      "ok": true
     },
     {
       "name": "geometry gates 761",
@@ -7017,10 +7107,6 @@
         4687,
         4690,
         4691,
-        4903,
-        5204,
-        5205,
-        5206,
         5384
       ],
       "publishedStyleSites": [
@@ -10412,6 +10498,12 @@
       "reset": "Both complete tests now assert absence by default, actual native saved override before five-locale labels, one owning-row action and actual removal/inherited readback. Both original whole-file scenarios pass.",
       "designProof": "Three old structural requirements reconciled but full design-proof remains red; no qualifying negatives until full/restored positives recover.",
       "authority": "Published PR24 exact source/consumption unchanged. Correct DS-cwd lifecycle invocation now actually passes21+53 checks; no publication or271 screenshot regeneration."
+    },
+    "currentR38": {
+      "tableFields": "Only redundant absolute sr-only spans removed in collectionInputCell and variableField. Native complete aria-label is unchanged and equals visible mobile data-label; native label/cell/table associations remain. All87 original application cases pass, including four formerly spilled routes/widths. No visual CSS or DS snapshot change. Actual prior removed-node containing block remains unknown.",
+      "reset": "Explicit published SettingRow Reset button family admitted. Original13-leg positives and original38 layout/nonlayout/versioned tail pass; newly added contested Reset box negative fails because the owner predicate requests padding while the published declaration is padding-inline. This failure is retained, no immediate repair/rerun.",
+      "authority": "PR24 production/build/contract unchanged; no generic DS gap claimed and no republication.",
+      "projection": "Every emitted key/string checked recursively; actual cadence failures explicitly projected to test/file/line/reason plus archive-relative anchor, raw diagnostics remain private."
     }
   },
   "snapshotBinding": {
@@ -10513,8 +10605,8 @@
     }
   },
   "actualBounds": [
-    "R37 isolated current Source browser observations are retained in the archive, with every failed case; no canonical integration claim",
-    "actual wide/narrow/column and lifecycle outcomes are recorded individually in the current application evidence; Owner visual remains separate",
+    "R40 reuses the R39 isolated current Source browser observations (Source 06c1c0a158ea5635b737575b1203431f4af4b5cc) retained in the archive in place, with every failed case; R40 changes no portal file, settings.ts or machine-settings.ts (their git diff against that commit is empty before this generation); no canonical integration claim",
+    "actual wide/narrow/column and lifecycle outcomes are recorded individually in that application evidence; Owner visual remains separate",
     "no checkbox compatibility presentation is legalized as the requested dropdown; actual dropdown uses the published Select/Menu family"
   ]
 }

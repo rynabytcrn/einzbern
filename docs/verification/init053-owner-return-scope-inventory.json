@@ -2,7 +2,7 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r38-init053-complete-source",
+  "pack": "r40-init053-closure",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
@@ -267,7 +267,7 @@
     },
     {
       "path": "packages/core/src/rules-catalog.ts",
-      "sha256": "2dd099f9f41da8cce9c935a3e667f18bc5ddff1b49891bdc13bf464b36482f37"
+      "sha256": "6db60b7fe6433d99a5cb5d53fede363180aaa7c99be5b08fa5b7f8bfb3c5f5c6"
     },
     {
       "path": "packages/core/src/rules.ts",
@@ -379,7 +379,7 @@
     },
     {
       "path": "portal/scripts/design-proof.mjs",
-      "sha256": "b14f58942586aa4f778a4206ecd2de18ba0dce12768d787d33baf89fc8bc5a26"
+      "sha256": "fdc3bb78b51a25d52c22c416d7b3c8f186056c6e0146a2aa7a85abb5942fb495"
     },
     {
       "path": "portal/scripts/e2e-demo.mjs",
@@ -778,7 +778,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R38 current Source final generation. Original full-file cadence and affected dependency files have run; actual exit/counts are attached below, including every failure. Prior held49 prose is superseded. Source development verification is separate from integrated acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are included; no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "R40 current Source final generation (package r40-closure). The original 62 whole files and the R40 necessary added whole files ran before this generation; the actual exit/counts are attached below with every failure, including the existing privacy-boundary historical PR23 provenance assertion, red before this generation because the scope and limit inventories it replaces lack that line. Source development verification is separate from integrated acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the unchanged R39 Source inputs, read in place; no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "bb91bdc40d2669aef823abaf8d2050ca105e9a89",
     "mergeCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
@@ -878,9 +878,9 @@
       "pullRequestNumber": 24
     },
     "priorPublication": {
+      "pr": "https://github.com/tpmoonchefryan/TCRN-Design-System/pull/23",
       "mergeCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
-      "status": "retained prior publication; superseded for the mobile shell repair",
-      "pullRequestNumber": 23
+      "status": "retained prior publication; superseded for the mobile shell repair"
     }
   },
   "publicEvidenceDeclaration": "Public structured projection: private runtime diagnostics are retained in archive-relative raw evidence, not reproduced verbatim. All emitted text and keys pass the shared public-input boundary.",
@@ -889,110 +889,117 @@
       "input": "inventory-values.json",
       "sha256": "922873f49c8237f7b23c4e538b2c1a8a68171d232ecc53949faed4c7850e9c20",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/inventory-values.json"
+      "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/inventory-values.json"
     },
     {
       "input": "publication-binding.json",
       "sha256": "16f5341a79931c0736d1b25f00fe2d3072684365774cec633bcc0e781ee078b0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/publication-binding.json"
+      "rawEvidence": "dispatch-runs/init-053/r39-source-raw/publication-binding.json"
     },
     {
       "input": "published-ai-consumption-contract.json",
       "sha256": "cd829848bf101689bbf75d792c20116ae31469ec4e994a702a776dbf1ad83415",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/published-ai-consumption-contract.json"
+      "rawEvidence": "dispatch-runs/init-053/r39-source-raw/published-ai-consumption-contract.json"
     },
     {
       "input": "source-inventory-inputs.json",
-      "sha256": "46abba601589535649fff5c9c3df176b516e1db50fcbb60ee89daac9638194a8",
+      "sha256": "f416e9900f01dbf956f972d484d91cdc88fdec03ce812471fa692b426049adc7",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/source-inventory-inputs.json"
+      "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/source-inventory-inputs.json"
     },
     {
       "input": "ds-publication-dependency-disposition.json",
       "sha256": "f15b8707c68e609137aaef9d54a1ccfaf9b1b0b8637c7c21f4171e6ec817288c",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/ds-publication-dependency-disposition.json"
+      "rawEvidence": "dispatch-runs/init-053/r39-source-raw/ds-publication-dependency-disposition.json"
     },
     {
       "input": "full-file-cadence-result.json",
-      "sha256": "88034c0b9e424b0ee58b575236f45dab687a94c7a61bb13e3caa4c12231b5bc3",
+      "sha256": "1ae118ca27c36118e75c745ca72ec8cfecc3397e8ed193712096d3d58a696c72",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/full-file-cadence-result.json"
+      "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/full-file-cadence-result.json"
     },
     {
       "input": "limit-review-dispositions.json",
-      "sha256": "64f42fee86f8d38128af557b257d5adcb02ef67bfa619cc87a545b2a91b6d6b4",
+      "sha256": "8268ac76a01511ae6b0b49f93533c78c0f7c9ae110756678ae10e7a1b9530474",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/limit-review-dispositions.json"
+      "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/limit-review-dispositions.json"
     },
     {
       "input": "r4-actual-callers.json",
       "sha256": "97ff71afd46c9b9371961a996d1db6069d51dddd19c5bdb3836f00f26a3cd67c",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/r4-actual-callers.json"
+      "rawEvidence": "dispatch-runs/init-053/r39-source-raw/r4-actual-callers.json"
     },
     {
       "input": "retained-bound-probe-result.json",
       "sha256": "70574c7704cb891f725132c60dd1c0cf4bf2b978c024d834f10594593e0d0ba0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/retained-bound-probe-result.json"
+      "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/retained-bound-probe-result.json"
     },
     {
       "input": "application-combined-result.json",
-      "sha256": "a02bf8ab9ec987fe3e73e845a0a55829703e00d658fcf7f358a7f45475ddd9ab",
+      "sha256": "4bcecb845148e64363169e7b737fe2a9e68ae66bbc4191f73c95441ca8687879",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/application-combined-result.json"
+      "rawEvidence": "dispatch-runs/init-053/r39-source-raw/application-combined-result.json"
     },
     {
       "input": "consumer-remedy-disposition.json",
       "sha256": "17ba361419edb3e400f1b32ed1b4b8e555ab578b2da232d32b344fef71f36692",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/consumer-remedy-disposition.json"
+      "rawEvidence": "dispatch-runs/init-053/r39-source-raw/consumer-remedy-disposition.json"
     },
     {
       "input": "copy-edits.json",
       "sha256": "4a668021b44cccb33b74595d5bbd2cfcf74b95a0cc326e4a236e0915da0dab18",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/copy-edits.json"
+      "rawEvidence": "dispatch-runs/init-053/r39-source-raw/copy-edits.json"
     },
     {
       "input": "copy-semantic-review.json",
       "sha256": "7fa1da8d4d18889564fb0bfb672ad907b1cec140aca9c2869fe79c7849b809fc",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/copy-semantic-review.json"
+      "rawEvidence": "dispatch-runs/init-053/r39-source-raw/copy-semantic-review.json"
     }
   ],
   "currentWholeFileCadence": {
     "exit": 1,
     "counts": {
-      "tests": 702,
-      "pass": 701,
+      "tests": 736,
+      "pass": 735,
       "fail": 1,
       "cancelled": 0,
       "skipped": 0
     },
-    "wholeFiles": 62,
+    "wholeFiles": 69,
     "original61Retained": true,
     "necessaryAddedWholeFiles": [
-      "tests/e2e-governed-loop.test.mjs"
+      "tests/e2e-governed-loop.test.mjs",
+      "tests/rules-catalog.test.mjs",
+      "tests/managed-sections.test.mjs",
+      "tests/privacy-normalization.test.mjs",
+      "tests/inc238-markdown-link-gate.test.mjs",
+      "tests/wiki-pages.test.mjs",
+      "tests/names-alias-table.test.mjs",
+      "tests/push-wiki.test.mjs"
     ],
-    "newRegistryCases": 2,
+    "newRegistryCases": 0,
     "representation": "public structured summary; full raw diagnostic is retained separately",
-    "rawEvidence": "dispatch-runs/init-053/r38-source-raw/full-file-cadence-result.json",
+    "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/full-file-cadence-result.json",
     "failures": [
       {
-        "test": "INIT-036 S276 design-proof legs turn red for injected violations and green after restore",
-        "file": "portal/tests/design-proof.test.mjs",
-        "line": 44,
-        "reason": "Expected values to be strictly equal:; true !== false",
+        "test": "DS publication provenance is classified only at exact inventory source lines",
+        "file": "tests/privacy-boundary.test.mjs",
+        "line": 344,
+        "reason": "The expression evaluated to a falsy value:; assert.ok(line)",
         "reasonCode": "ERR_ASSERTION",
-        "rawAnchor": "dispatch-runs/init-053/r38-source-raw/full-file-cadence-result.json#/reds/0"
+        "rawAnchor": "dispatch-runs/init-053/r40-closure-raw/full-file-cadence-result.json#/reds/0"
       }
     ]
   },
-  "generationTimeUtc": "2026-10-07T16:47:04.318302+00:00",
+  "generationTimeUtc": "2026-10-07T20:52:27.412774+00:00",
   "settings": [
     {
       "catalog": {
@@ -1071,7 +1078,7 @@
         },
         {
           "file": "packages/core/src/rules-catalog.ts",
-          "line": 164,
+          "line": 178,
           "text": "* artifact.language is zh-CN, and the English body for every other value and when it is not set."
         },
         {
@@ -1396,12 +1403,12 @@
         },
         {
           "file": "packages/core/src/rules-catalog.ts",
-          "line": 136,
+          "line": 150,
           "text": "const DESIGN_AUTHORITY_ZH = \"## \\u8bbe\\u8ba1\\u6743\\u5a01\\u4e0e\\u4e00\\u81f4\\u6027\\u539f\\u5219 v1\\n\\n1. \\u5148\\u786e\\u5b9a\\u8bbe\\u8ba1\\u6743\\u5a01\\u3002\\u8bfb\\u53d6\\u5f53\\u524d\\u9879\\u76ee\\u53ca\\u76ee\\u6807\\u5b50\\u9879\\u76ee\\u7684\\u7cfb\\u7edf\\u53d8\\u91cf `design.authority`\\uff0c\\u4ee5\\u53ca\\u540c\\u4e00\\u914d\\u7f6e\\u4e2d\\u58f0\\u660e\\u7684\\u6743\\u5a01\\u4ed3\\u5e93\\u3001\\u751f\\u4ea7\\u6587\\u6863\\u548c\\u6784\\u5efa\\u90e8\\u7f72\\u7ed1\\u5b9a\\u3002\\u6bcf\\u4e2a\\u9879\\u76ee\\u3001\\u5b50\\u9879\\u76ee\\u90fd\\u5e94\\u80fd\\u5bf9\\u5e94\\u5230\\u81ea\\u5df1\\u7684\\u6709\\u6548\\u6743\\u5a01\\uff1b\\u7ee7\\u627f\\u503c\\u987b\\u663e\\u793a\\u6765\\u6e90\\u3002\\u7f3a\\u5931\\u6216\\u51b2\\u7a81\\u65f6\\u5148\\u8865\\u9f50\\u914d\\u7f6e\\uff0c\\u4e0d\\u6309\\u76ee\\u5f55\\u4f4d\\u7f6e\\u3001\\u9876\\u5c42\\u9879\\u76ee\\u6216\\u8bb0\\u5fc6\\u731c\\u6d4b\\u3002\\n2. \\u5148\\u67e5\\u5df2\\u6709\\u7ec4\\u4ef6\\u4e0e\\u89c4\\u8303\\u3002\\u6839\\u636e\\u8be5\\u6743\\u5a01\\u7684\\u5df2\\u53d1\\u5e03\\u5951\\u7ea6\\uff0c\\u6838\\u5bf9\\u7ec4\\u4ef6\\u5bb6\\u65cf\\u3001\\u53d8\\u4f53\\u3001\\u72b6\\u6001\\u3001\\u5e03\\u5c40\\u548c\\u4ea4\\u4e92\\u89c4\\u8303\\uff0c\\u518d\\u51b3\\u5b9a\\u5982\\u4f55\\u5b9e\\u73b0\\u3002\\u5df2\\u6709\\u80fd\\u529b\\u76f4\\u63a5\\u590d\\u7528\\uff1b\\u7f3a\\u5c11\\u80fd\\u529b\\u8bb0\\u5165\\u8bbe\\u8ba1\\u6743\\u5a01\\u7684\\u6539\\u52a8\\u8303\\u56f4\\u3002\\n3. \\u8bbe\\u8ba1\\u6743\\u5a01\\u5148\\u6539\\u3002\\u4efb\\u4f55\\u7ec4\\u4ef6\\u3001\\u89c6\\u89c9\\u8bbe\\u8ba1\\u6216\\u8bbe\\u8ba1\\u89c4\\u8303\\u7684\\u65b0\\u589e\\u4e0e\\u6539\\u52a8\\uff0c\\u5148\\u5411\\u6743\\u5a01\\u4ed3\\u5e93\\u63d0 PR\\uff0c\\u5728\\u6743\\u5a01\\u4e2d\\u8865\\u9f50\\u5b9e\\u73b0\\u3001\\u8bbe\\u8ba1\\u89c4\\u8303\\u3001\\u5b9e\\u9645\\u793a\\u4f8b\\u548c\\u9002\\u7528\\u9a8c\\u8bc1\\uff1b\\u4e0d\\u5f97\\u5148\\u5728\\u5e94\\u7528\\u4e2d\\u53e6\\u9020\\u4e00\\u5957\\u518d\\u8865\\u89c4\\u8303\\u3002\\n4. \\u53d1\\u5e03\\u901a\\u8fc7\\u540e\\u518d\\u63a5\\u5165\\u3002\\u6743\\u5a01 PR \\u5408\\u5e76\\u3001\\u58f0\\u660e\\u7684\\u751f\\u4ea7\\u6587\\u6863\\u6216\\u7ec4\\u4ef6\\u5e93\\u53d1\\u5e03\\u6210\\u529f\\u3001\\u58f0\\u660e\\u7684\\u6784\\u5efa\\u90e8\\u7f72\\u670d\\u52a1\\u6210\\u529f\\uff0c\\u5e76\\u6838\\u5bf9\\u8fd9\\u4e9b\\u8bc1\\u636e\\u5bf9\\u5e94\\u540c\\u4e00\\u63d0\\u4ea4\\u6216\\u4ea7\\u7269\\u7248\\u672c\\u540e\\uff0c\\u5e94\\u7528\\u624d\\u80fd\\u63a5\\u5165\\u65b0\\u80fd\\u529b\\u3002\\u672c\\u5730\\u901a\\u8fc7\\u3001\\u9884\\u89c8\\u90e8\\u7f72\\u6216\\u53ea\\u6709\\u9875\\u9762\\u80fd\\u6253\\u5f00\\uff0c\\u90fd\\u4e0d\\u4ee3\\u8868\\u751f\\u4ea7\\u53d1\\u5e03\\u901a\\u8fc7\\u3002\\u8fd9\\u4e2a\\u53d1\\u5e03\\u4f9d\\u8d56\\u5e94\\u5728\\u6279\\u6b21\\u5206\\u5305\\u65f6\\u660e\\u786e\\uff0c\\u672a\\u6ee1\\u8db3\\u65f6\\u4e0d\\u8d8a\\u8fc7\\u4f9d\\u8d56\\u3002\\n5. \\u4fdd\\u6301\\u7ec4\\u4ef6\\u5bb6\\u65cf\\u4e00\\u81f4\\u3002\\u65b0\\u589e\\u548c\\u4fee\\u6539\\u7684\\u7ec4\\u4ef6\\u6cbf\\u7528\\u539f\\u5bb6\\u65cf\\u7684\\u989c\\u8272\\u3001\\u5b57\\u4f53\\u3001\\u95f4\\u8ddd\\u3001\\u5c3a\\u5bf8\\u3001\\u5706\\u89d2\\u3001\\u8fb9\\u6846\\u3001\\u56fe\\u6807\\u3001\\u52a8\\u6548\\u53ca\\u4ea4\\u4e92\\u72b6\\u6001\\uff1b\\u589e\\u91cf\\u529f\\u80fd\\u6cbf\\u7528\\u5df2\\u6709\\u9009\\u7528\\u65b9\\u5f0f\\u3001\\u53cd\\u9988\\u548c\\u952e\\u76d8\\u64cd\\u4f5c\\u3002\\u7528\\u540c\\u7c7b\\u7ec4\\u4ef6\\u9010\\u9879\\u5bf9\\u7167\\uff0c\\u907f\\u514d\\u4ea7\\u751f\\u660e\\u663e\\u4e0d\\u540c\\u7684\\u89c6\\u89c9\\u6216\\u4ea4\\u4e92\\u8bed\\u8a00\\uff1b\\u8f83\\u5927\\u7684\\u98ce\\u683c\\u53d8\\u5316\\u5148\\u53d6\\u5f97 Owner \\u660e\\u786e\\u540c\\u610f\\u3002 \\u628a\\u660e\\u663e\\u504f\\u79bb\\u539f\\u5bb6\\u65cf\\u7684\\u5b9e\\u73b0\\u8865\\u8fdb\\u8bbe\\u8ba1\\u6743\\u5a01\\uff0c\\u4e0d\\u80fd\\u4f5c\\u4e3a\\u98ce\\u683c\\u4e00\\u81f4\\u6216 Owner \\u76ee\\u89c6\\u901a\\u8fc7\\u7684\\u8bc1\\u660e\\u3002 \\u68c0\\u67e5\\u5168\\u90e8\\u65b0\\u589e\\u6216\\u4fee\\u6539\\u7684\\u7ec4\\u4ef6\\u4e0e\\u53d8\\u4f53\\uff1a\\u540c\\u7c7b\\u4efb\\u52a1\\u5e94\\u4f7f\\u7528\\u540c\\u7c7b\\u63a7\\u4ef6\\uff0c\\u4fdd\\u6301\\u9009\\u62e9\\u3001\\u5bfc\\u822a\\u3001\\u4fdd\\u5b58\\u3001\\u64a4\\u9500\\u3001\\u91cd\\u7f6e\\u3001\\u9519\\u8bef\\u53cd\\u9988\\u548c\\u952e\\u76d8\\u64cd\\u4f5c\\u7684\\u542b\\u4e49\\u4e0e\\u9884\\u671f\\u4e00\\u81f4\\u3002\\n6. \\u901a\\u8fc7\\u6b63\\u5f0f\\u5951\\u7ea6\\u6d88\\u8d39\\u3002\\u5e94\\u7528\\u4f7f\\u7528\\u5df2\\u53d1\\u5e03\\u7ec4\\u4ef6\\u3001\\u4ee4\\u724c\\u6216\\u6743\\u5a01\\u8ba4\\u53ef\\u7684\\u9759\\u6001\\u6d88\\u8d39\\u65b9\\u5f0f\\uff0c\\u7ed1\\u5b9a\\u5b9e\\u9645\\u7248\\u672c\\u5e76\\u540c\\u6b65\\u751f\\u6210\\u7684\\u5951\\u7ea6\\u4e0e\\u6837\\u5f0f\\u5feb\\u7167\\uff1b\\u4e0d\\u590d\\u5236\\u6587\\u6863\\u7ad9\\u79c1\\u6709\\u6837\\u5f0f\\u3001\\u4e0d\\u5728\\u5e94\\u7528\\u5185\\u91cd\\u9020\\u901a\\u7528\\u7ec4\\u4ef6\\u3001\\u4e0d\\u7528\\u5c40\\u90e8\\u8986\\u76d6\\u63a9\\u76d6\\u6743\\u5a01\\u7f3a\\u53e3\\u3002\\n7. \\u6838\\u5bf9\\u73b0\\u5b58\\u7f3a\\u53e3\\u3002\\u53d1\\u73b0\\u5e94\\u7528\\u5df2\\u4f7f\\u7528\\u6743\\u5a01\\u672a\\u63d0\\u4f9b\\u6216\\u672a\\u53d1\\u5e03\\u7684\\u7ec4\\u4ef6\\u3001\\u53d8\\u4f53\\u3001\\u8bbe\\u8ba1\\u89c4\\u8303\\u65f6\\uff0c\\u5217\\u51fa\\u4f7f\\u7528\\u5904\\u548c\\u7f3a\\u5c11\\u7684\\u6743\\u5a01\\u8bc1\\u636e\\uff0c\\u5148\\u6309\\u540c\\u4e00 PR\\u3001\\u751f\\u4ea7\\u53d1\\u5e03\\u548c\\u6784\\u5efa\\u6d41\\u7a0b\\u8865\\u9f50\\u6743\\u5a01\\uff0c\\u518d\\u7ee7\\u7eed\\u53d7\\u5f71\\u54cd\\u7684\\u5e94\\u7528\\u6539\\u52a8\\u3002\\u673a\\u5668\\u9a8c\\u8bc1\\u4e0e Owner \\u76ee\\u89c6\\u9a8c\\u6536\\u5206\\u522b\\u8bb0\\u5f55\\u3002\\n8. \\u89c4\\u5219\\u4e0e\\u53d8\\u91cf\\u5206\\u79bb\\u3002\\u89c4\\u5219\\u6b63\\u6587\\u53ea\\u5f15\\u7528\\u7cfb\\u7edf\\u53d8\\u91cf\\u53ca\\u5176\\u6743\\u5a01\\u5951\\u7ea6\\uff0c\\u4e0d\\u5199\\u6b7b\\u9879\\u76ee\\u540d\\u3001\\u4ed3\\u5e93\\u5730\\u5740\\u3001\\u6587\\u6863 URL\\u3001\\u90e8\\u7f72\\u5382\\u5546\\u3001\\u7248\\u672c\\u53f7\\u6216\\u7ec4\\u4ef6\\u6570\\u503c\\u3002\\u5f53\\u524d\\u9879\\u76ee\\u4f7f\\u7528\\u7684\\u5177\\u4f53\\u503c\\u5c5e\\u4e8e\\u9879\\u76ee\\u6216\\u5b50\\u9879\\u76ee\\u914d\\u7f6e\\uff1b\\u914d\\u7f6e\\u80fd\\u529b\\u5c1a\\u672a\\u5b9e\\u73b0\\u6216\\u8bc1\\u636e\\u65e0\\u6cd5\\u8bfb\\u53d6\\u65f6\\uff0c\\u660e\\u786e\\u8bb0\\u5f55\\u4e3a\\u672a\\u914d\\u7f6e\\u6216\\u672a\\u9a8c\\u8bc1\\u3002\\u63d0\\u4ea4\\u548c\\u53d1\\u5e03\\u52a8\\u4f5c\\u4f7f\\u7528\\u5f53\\u524d\\u4efb\\u52a1\\u5df2\\u7ecf\\u83b7\\u5f97\\u7684\\u6388\\u6743\\u3002\\n\";"
         },
         {
           "file": "packages/core/src/rules-catalog.ts",
-          "line": 137,
+          "line": 151,
           "text": "const DESIGN_AUTHORITY_EN = \"## Design Authority and Consistency Principle v1\\n\\n1. Resolve the design authority first. Read the current project's and target subproject's system variable `design.authority`, together with the authority repository, production documentation, and build and deployment bindings declared in the same configuration. Each project and subproject must resolve to its own effective authority; inherited values must identify their source. Resolve missing or conflicting bindings before design work, without guessing from directory placement, the parent project, or memory.\\n2. Inspect existing components and standards. Use the authority's published contract to identify component families, variants, states, layouts, and interactions before implementation. Reuse existing capabilities and include missing ones in the authority's change scope.\\n3. Change the authority first. Every addition or change to a component, visual design, or design standard starts with a PR to the authority repository, covering implementation, standards, working examples, and applicable validation. Do not create a separate design in the application and document it afterwards.\\n4. Consume changes after production succeeds. The application may use the new capability only after the authority PR is merged, its declared production documentation or component library is published successfully, and its declared build and deployment service succeeds, with all evidence bound to the same source commit or artifact version. A local pass, preview deployment, or reachable page does not establish production success. Include this dependency when organizing the batch and do not consume the change before it is satisfied.\\n5. Keep component families consistent. Preserve the family's colors, typography, spacing, sizing, radii, borders, icons, motion, and interaction states. Added features follow existing selection, feedback, and keyboard patterns. Compare equivalent components directly to prevent a substantially different visual or interaction language; obtain explicit Owner agreement before a substantial style change. Adding a substantially divergent implementation to the authority does not establish family consistency or Owner visual acceptance. Check every added or changed component and variant: equivalent tasks use equivalent controls, with consistent meanings and expectations for selection, navigation, saving, undoing, resetting, error feedback, and keyboard interaction.\\n6. Consume the published contract. Use published components, tokens, or an authority-approved static consumption method, bind the actual version, and refresh generated contracts and stylesheet snapshots together. Do not copy documentation-only styles, recreate reusable components in the application, or conceal missing authority support with local overrides.\\n7. Reconcile existing gaps. When the application already uses a component, variant, or design standard absent from the authority or its production release, identify the consumer locations and missing evidence. Complete the same authority PR, production publication, and build sequence before continuing affected application changes. Record machine verification and Owner visual acceptance separately.\\n8. Separate rules from values. Reference system variables and their authority contracts in the rule body instead of hard-coding project names, repository addresses, documentation URLs, deployment vendors, versions, or component measurements. Store actual values in project or subproject configuration. Mark unavailable configuration capabilities or unreadable evidence as unconfigured or unverified. Use the current task's existing authorization for commits and publication.\\n\";"
         },
         {
@@ -2333,12 +2340,12 @@
       "consumerSites": [
         {
           "file": "packages/core/src/rules-catalog.ts",
-          "line": 57,
+          "line": 66,
           "text": "2. 实施分包并行。拆分完成后先分包：有先后依赖或改同一批文件的 Subtask 进同一个包，包内按顺序做；互不影响的 Subtask 各成一包。每个包派一个经济档子代理，在自己的工作树与分支上做，多个包同时跑。并发上限按 execution.maxConcurrentSubagents；该值超过宿主的上限或未设置时，按宿主的规则派遣。包完成即退役，不跑门、不验收、不写链。全部包完成后按依赖顺序合并到集成分支，冲突交一个集成子代理。"
         },
         {
           "file": "packages/core/src/rules-catalog.ts",
-          "line": 79,
+          "line": 90,
           "text": "2. Implementation runs in parallel packages. Once decomposition is done, group the Subtasks into packages first: Subtasks that depend on one another or change the same files go into the same package and are done in order within it; Subtasks that do not affect one another each form a package of their own. Each package goes to one economy-tier subagent, which works in its own worktree and branch, and several packages run at the same time. The concurrency limit is execution.maxConcurrentSubagents; when that value exceeds the host's limit or is not set, dispatch by the host's rules. A package retires as soon as it is finished: it runs no gates, does no acceptance and writes nothing to the chain. When every package is finished, merge them into the integration branch in dependency order and hand any conflicts to one integration subagent."
         },
         {
@@ -6075,5 +6082,5 @@
     }
   ],
   "settingCount": 33,
-  "nativeReads": "installed engine 1.2.1, live 10036, INIT revision14 and INC399 revision5; current native work/scope/dispatch readbacks retained in the raw archive"
+  "nativeReads": "installed engine 1.2.1, live 10036, INIT revision14 and INC399 revision5; read-only status/work-show readbacks of 2026-10-07T20:42:06Z retained in the raw archive (dispatch-runs/init-053/r40-closure-raw/native-reads.json)"
 }

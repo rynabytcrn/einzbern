@@ -621,7 +621,8 @@ async function runTests({ p8Only = false, extraEnvironment = {} } = {}) {
     .filter((path) => path.startsWith("tests/") && path.endsWith(".test.mjs"))
     .filter((path) => !p8Only || ["tests/local-command-byte-fidelity.test.mjs", "tests/p8-workflow-rc.test.mjs"].includes(path));
   // TCRN-CROSS-STORY-469 R3: the suite never reaches the real device directory. Every test
-  // process inherits a disposable EINZBERN_HOME, removed when the run ends.
+  // process receives its own device home under this owned run root. The fallback
+  // also keeps any test without the helper away from the real device directory.
   const deviceDirectory = await mkdtemp(join(tmpdir(), "einzbern-test-device-"));
   let controller;
   try {
@@ -629,6 +630,7 @@ async function runTests({ p8Only = false, extraEnvironment = {} } = {}) {
       NODE_OPTIONS: `--import=${noNetworkImport}`,
       TCRN_OFFLINE_PROOF: "1",
       EINZBERN_HOME: join(deviceDirectory, "einzbern"),
+      EINZBERN_TEST_DEVICE_ROOT: deviceDirectory,
       ...extraEnvironment,
     });
   } finally {

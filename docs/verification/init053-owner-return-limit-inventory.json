@@ -2,7 +2,7 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r36-init053-complete-source",
+  "pack": "r37-init053-complete-source",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
@@ -255,7 +255,7 @@
     },
     {
       "path": "packages/core/src/registry.ts",
-      "sha256": "22108cd35ebe367b104ae96d7ceadb258b0f697bda6e79f34c57e5305a85738a"
+      "sha256": "83e1fe22f61c5fa3c127b4ae1bd7ac8dd580da803a2b7a4b8a5ace2f8713c31f"
     },
     {
       "path": "packages/core/src/relocate.ts",
@@ -359,7 +359,7 @@
     },
     {
       "path": "portal/index.html",
-      "sha256": "e6894955a36193825abff8a77da8177c6b5cc7005e60c29067226be96e94de38"
+      "sha256": "936e176d5b718ecca89beeea6ec9d18c6375984c72ed11db0b40dcda973f4736"
     },
     {
       "path": "portal/locale-contract.mjs",
@@ -379,7 +379,7 @@
     },
     {
       "path": "portal/scripts/design-proof.mjs",
-      "sha256": "2c4981aace520f26b2f20243868c4c3a441ed2f60d4fe917ebae9c2a842149ca"
+      "sha256": "66ceecea90de51a48d14573134957f386a377e26a37ce85fb6e9231b1e98b6c3"
     },
     {
       "path": "portal/scripts/e2e-demo.mjs",
@@ -715,7 +715,7 @@
     },
     {
       "path": "scripts/task.mjs",
-      "sha256": "ceca9425c4e08e2a95e2332ef8752c8cada8a3f26108122731be021638aaa71b"
+      "sha256": "36d149f65c8932f7c3ecf36b4077e7f3c2737b69fe90a0db0f7c75dcf853136d"
     },
     {
       "path": "scripts/test-controller-bootstrap.mjs",
@@ -778,7 +778,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R36 current Source final generation. Original full-file cadence and affected dependency files have run; actual exit/counts are attached below, including every failure. Prior held49 prose is superseded. Source development verification is separate from integrated acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are included; no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "R37 current Source final generation. Original full-file cadence and affected dependency files have run; actual exit/counts are attached below, including every failure. Prior held49 prose is superseded. Source development verification is separate from integrated acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are included; no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "bb91bdc40d2669aef823abaf8d2050ca105e9a89",
     "mergeCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
@@ -884,36 +884,32 @@
     }
   },
   "currentWholeFileCadence": {
-    "commandEvidence": "full-file-cadence-command.json",
-    "runEvidence": "full-file-cadence-once.run.json",
     "exit": 1,
     "counts": {
-      "tests": 695,
-      "pass": 692,
-      "fail": 3,
-      "skipped": 0,
-      "cancelled": 0
+      "tests": 702,
+      "pass": 701,
+      "fail": 1,
+      "cancelled": 0,
+      "skipped": 0
     },
-    "wholeFiles": 61,
-    "original53Retained": true,
-    "addedAffectedDependencies": [
-      "tests/doctor.test.mjs",
-      "tests/file-lock-concurrency.test.mjs",
-      "tests/akasha-merge.test.mjs",
-      "tests/akasha-stream.test.mjs",
-      "tests/relocate.test.mjs",
-      "tests/skill-copies.test.mjs",
-      "tests/user-crest.test.mjs",
-      "tests/p4-knowledge-core.test.mjs"
+    "wholeFiles": 62,
+    "original61Retained": true,
+    "necessaryAddedWholeFiles": [
+      "tests/e2e-governed-loop.test.mjs"
     ],
-    "stdoutSha256": "076128cc7ad04eca4df7271819a8ebe4f8906420017742ecd82dfe7cd815428a",
-    "runtime": {
-      "node": "v24.16.0",
-      "pnpm": "11.3.0"
-    },
-    "source": "original whole61 files once, six additional lock tests; original guards and exact approved TMPDIR retained"
+    "newRegistryCases": 2,
+    "reds": [
+      {
+        "file": "portal/tests/design-proof.test.mjs",
+        "line": 52,
+        "test": "INIT-036 S276 design-proof legs turn red for injected violations and green after restore",
+        "reason": "initial full design-proof positive exits1; expected0",
+        "rawEvidence": "r37-source-raw/full-file-cadence-once.stdout",
+        "redaction": "machine-local location and stack retained only in archive"
+      }
+    ]
   },
-  "generationTimeUtc": "2026-10-07T14:30:32.175177+00:00",
+  "generationTimeUtc": "2026-10-07T15:43:57.213125+00:00",
   "currentIndividualReview": {
     "namedDeclarations": [
       {
@@ -15607,25 +15603,25 @@
         "currentInitializer": "registry.entries.map((entry) => (entry.libraryId === libraryId\n    ? { ...entry, libraryPath: target, ...(cloudHosted === undefined ? {} : { cloudHosted }) }\n    : entry))",
         "declarations": [
           {
-            "line": 132,
+            "line": 133,
             "initializer": "((value as { readonly entries: readonly unknown[] }).entries).map((entry, index) => registryEntry(entry, `${path} entries[${index}]`))"
           },
           {
-            "line": 139,
+            "line": 140,
             "initializer": "[...registry.entries].sort((left, right) => (left.projectPath < right.projectPath ? -1 : left.projectPath > right.projectPath ? 1 : 0))"
           },
           {
-            "line": 246,
+            "line": 257,
             "initializer": "registry.entries.filter((entry) => entry.projectPath !== projectPath)"
           },
           {
-            "line": 256,
-            "initializer": "registry.entries.map((entry) => (entry.libraryId === libraryId\n    ? { ...entry, libraryPath: target, ...(cloudHosted === undefined ? {} : { cloudHosted }) }\n    : entry))"
+            "line": 268,
+            "initializer": "registry.entries.map((entry) => (entry.libraryId === libraryId\n      ? { ...entry, libraryPath: target, ...(cloudHosted === undefined ? {} : { cloudHosted }) }\n      : entry))"
           }
         ],
         "exactUses": [
           {
-            "line": 72,
+            "line": 73,
             "syntax": "PropertySignature",
             "context": [
               "export interface Registry {",
@@ -15637,7 +15633,7 @@
             ]
           },
           {
-            "line": 118,
+            "line": 119,
             "syntax": "PropertyAssignment",
             "context": [
               "    text = await readFile(path, \"utf8\");",
@@ -15649,7 +15645,7 @@
             ]
           },
           {
-            "line": 129,
+            "line": 130,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  if (value === null || typeof value !== \"object\" || Array.isArray(value) ||",
@@ -15661,32 +15657,8 @@
             ]
           },
           {
-            "line": 132,
+            "line": 133,
             "syntax": "VariableDeclaration",
-            "context": [
-              "    fail(\"LIBRARY_REGISTRY_INVALID\", `${path} is not an ${REGISTRY_SCHEMA_VERSION} registry`, { file: path });",
-              "  }",
-              "  const entries = ((value as { readonly entries: readonly unknown[] }).entries).map((entry, index) => registryEntry(entry, `${path} entries[${index}]`));",
-              "  return { schemaVersion: REGISTRY_SCHEMA_VERSION, entries };",
-              "}",
-              ""
-            ]
-          },
-          {
-            "line": 132,
-            "syntax": "PropertySignature",
-            "context": [
-              "    fail(\"LIBRARY_REGISTRY_INVALID\", `${path} is not an ${REGISTRY_SCHEMA_VERSION} registry`, { file: path });",
-              "  }",
-              "  const entries = ((value as { readonly entries: readonly unknown[] }).entries).map((entry, index) => registryEntry(entry, `${path} entries[${index}]`));",
-              "  return { schemaVersion: REGISTRY_SCHEMA_VERSION, entries };",
-              "}",
-              ""
-            ]
-          },
-          {
-            "line": 132,
-            "syntax": "PropertyAccessExpression",
             "context": [
               "    fail(\"LIBRARY_REGISTRY_INVALID\", `${path} is not an ${REGISTRY_SCHEMA_VERSION} registry`, { file: path });",
               "  }",
@@ -15698,6 +15670,30 @@
           },
           {
             "line": 133,
+            "syntax": "PropertySignature",
+            "context": [
+              "    fail(\"LIBRARY_REGISTRY_INVALID\", `${path} is not an ${REGISTRY_SCHEMA_VERSION} registry`, { file: path });",
+              "  }",
+              "  const entries = ((value as { readonly entries: readonly unknown[] }).entries).map((entry, index) => registryEntry(entry, `${path} entries[${index}]`));",
+              "  return { schemaVersion: REGISTRY_SCHEMA_VERSION, entries };",
+              "}",
+              ""
+            ]
+          },
+          {
+            "line": 133,
+            "syntax": "PropertyAccessExpression",
+            "context": [
+              "    fail(\"LIBRARY_REGISTRY_INVALID\", `${path} is not an ${REGISTRY_SCHEMA_VERSION} registry`, { file: path });",
+              "  }",
+              "  const entries = ((value as { readonly entries: readonly unknown[] }).entries).map((entry, index) => registryEntry(entry, `${path} entries[${index}]`));",
+              "  return { schemaVersion: REGISTRY_SCHEMA_VERSION, entries };",
+              "}",
+              ""
+            ]
+          },
+          {
+            "line": 134,
             "syntax": "ShorthandPropertyAssignment",
             "context": [
               "  }",
@@ -15709,20 +15705,8 @@
             ]
           },
           {
-            "line": 139,
+            "line": 140,
             "syntax": "VariableDeclaration",
-            "context": [
-              "  const path = home === undefined ? registryPath() : registryPath(home);",
-              "  await ensureDeviceDirectory(dirname(path));",
-              "  const entries = [...registry.entries].sort((left, right) => (left.projectPath < right.projectPath ? -1 : left.projectPath > right.projectPath ? 1 : 0));",
-              "  await writeFileAtomic(path, canonicalJson({ schemaVersion: REGISTRY_SCHEMA_VERSION, entries } as unknown as JsonValue));",
-              "}",
-              ""
-            ]
-          },
-          {
-            "line": 139,
-            "syntax": "PropertyAccessExpression",
             "context": [
               "  const path = home === undefined ? registryPath() : registryPath(home);",
               "  await ensureDeviceDirectory(dirname(path));",
@@ -15734,6 +15718,18 @@
           },
           {
             "line": 140,
+            "syntax": "PropertyAccessExpression",
+            "context": [
+              "  const path = home === undefined ? registryPath() : registryPath(home);",
+              "  await ensureDeviceDirectory(dirname(path));",
+              "  const entries = [...registry.entries].sort((left, right) => (left.projectPath < right.projectPath ? -1 : left.projectPath > right.projectPath ? 1 : 0));",
+              "  await writeFileAtomic(path, canonicalJson({ schemaVersion: REGISTRY_SCHEMA_VERSION, entries } as unknown as JsonValue));",
+              "}",
+              ""
+            ]
+          },
+          {
+            "line": 141,
             "syntax": "ShorthandPropertyAssignment",
             "context": [
               "  await ensureDeviceDirectory(dirname(path));",
@@ -15741,47 +15737,47 @@
               "  await writeFileAtomic(path, canonicalJson({ schemaVersion: REGISTRY_SCHEMA_VERSION, entries } as unknown as JsonValue));",
               "}",
               "",
-              "/**"
+              "/** Serialize the whole read/modify/replace transaction, not just publication."
             ]
           },
           {
-            "line": 212,
+            "line": 222,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  const remote = input.gitRemote === undefined ? gitRemoteOf(projectPath) : input.gitRemote;",
-              "  const registry = await readRegistry(home);",
-              "  const previous = registry.entries.find((candidate) => candidate.projectPath === projectPath);",
-              "  const migratedFrom = input.migratedFrom === undefined",
-              "    ? (previous?.libraryId === library.manifest.libraryId ? previous.migratedFrom : undefined)",
-              "    : resolve(input.migratedFrom);"
+              "  return mutateRegistry(home, async (registry, directory) => {",
+              "    const previous = registry.entries.find((candidate) => candidate.projectPath === projectPath);",
+              "    const migratedFrom = input.migratedFrom === undefined",
+              "      ? (previous?.libraryId === library.manifest.libraryId ? previous.migratedFrom : undefined)",
+              "      : resolve(input.migratedFrom);"
             ]
           },
           {
-            "line": 228,
+            "line": 238,
             "syntax": "PropertyAssignment",
             "context": [
-              "    ...(migratedFrom === undefined ? {} : { migratedFrom }),",
-              "  };",
-              "  await writeRegistry({ ...registry, entries: [...registry.entries.filter((candidate) => candidate.projectPath !== projectPath), entry] }, home);",
-              "  return entry;",
-              "}",
-              ""
+              "      ...(migratedFrom === undefined ? {} : { migratedFrom }),",
+              "    };",
+              "    await writeRegistry({ ...registry, entries: [...registry.entries.filter((candidate) => candidate.projectPath !== projectPath), entry] }, directory);",
+              "    return entry;",
+              "  });",
+              "}"
             ]
           },
           {
-            "line": 228,
+            "line": 238,
             "syntax": "PropertyAccessExpression",
             "context": [
-              "    ...(migratedFrom === undefined ? {} : { migratedFrom }),",
-              "  };",
-              "  await writeRegistry({ ...registry, entries: [...registry.entries.filter((candidate) => candidate.projectPath !== projectPath), entry] }, home);",
-              "  return entry;",
-              "}",
-              ""
+              "      ...(migratedFrom === undefined ? {} : { migratedFrom }),",
+              "    };",
+              "    await writeRegistry({ ...registry, entries: [...registry.entries.filter((candidate) => candidate.projectPath !== projectPath), entry] }, directory);",
+              "    return entry;",
+              "  });",
+              "}"
             ]
           },
           {
-            "line": 239,
+            "line": 250,
             "syntax": "PropertyAccessExpression",
             "context": [
               "export async function findMigratedEntry(legacyRoot: string, home?: string): Promise<RegistryEntry | null> {",
@@ -15793,115 +15789,115 @@
             ]
           },
           {
-            "line": 246,
+            "line": 257,
             "syntax": "VariableDeclaration",
             "context": [
               "  const projectPath = await real(projectPathInput);",
-              "  const registry = await readRegistry(home);",
-              "  const entries = registry.entries.filter((entry) => entry.projectPath !== projectPath);",
-              "  if (entries.length === registry.entries.length) return false;",
-              "  await writeRegistry({ ...registry, entries }, home);",
-              "  return true;"
+              "  return mutateRegistry(home, async (registry, directory) => {",
+              "    const entries = registry.entries.filter((entry) => entry.projectPath !== projectPath);",
+              "    if (entries.length === registry.entries.length) return false;",
+              "    await writeRegistry({ ...registry, entries }, directory);",
+              "    return true;"
             ]
           },
           {
-            "line": 246,
+            "line": 257,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  const projectPath = await real(projectPathInput);",
-              "  const registry = await readRegistry(home);",
-              "  const entries = registry.entries.filter((entry) => entry.projectPath !== projectPath);",
-              "  if (entries.length === registry.entries.length) return false;",
-              "  await writeRegistry({ ...registry, entries }, home);",
-              "  return true;"
+              "  return mutateRegistry(home, async (registry, directory) => {",
+              "    const entries = registry.entries.filter((entry) => entry.projectPath !== projectPath);",
+              "    if (entries.length === registry.entries.length) return false;",
+              "    await writeRegistry({ ...registry, entries }, directory);",
+              "    return true;"
             ]
           },
           {
-            "line": 247,
+            "line": 258,
             "syntax": "PropertyAccessExpression",
             "context": [
-              "  const registry = await readRegistry(home);",
-              "  const entries = registry.entries.filter((entry) => entry.projectPath !== projectPath);",
-              "  if (entries.length === registry.entries.length) return false;",
-              "  await writeRegistry({ ...registry, entries }, home);",
-              "  return true;",
-              "}"
+              "  return mutateRegistry(home, async (registry, directory) => {",
+              "    const entries = registry.entries.filter((entry) => entry.projectPath !== projectPath);",
+              "    if (entries.length === registry.entries.length) return false;",
+              "    await writeRegistry({ ...registry, entries }, directory);",
+              "    return true;",
+              "  });"
             ]
           },
           {
-            "line": 247,
+            "line": 258,
             "syntax": "PropertyAccessExpression",
             "context": [
-              "  const registry = await readRegistry(home);",
-              "  const entries = registry.entries.filter((entry) => entry.projectPath !== projectPath);",
-              "  if (entries.length === registry.entries.length) return false;",
-              "  await writeRegistry({ ...registry, entries }, home);",
-              "  return true;",
-              "}"
-            ]
-          },
-          {
-            "line": 248,
-            "syntax": "ShorthandPropertyAssignment",
-            "context": [
-              "  const entries = registry.entries.filter((entry) => entry.projectPath !== projectPath);",
-              "  if (entries.length === registry.entries.length) return false;",
-              "  await writeRegistry({ ...registry, entries }, home);",
-              "  return true;",
-              "}",
-              ""
-            ]
-          },
-          {
-            "line": 256,
-            "syntax": "VariableDeclaration",
-            "context": [
-              "  const registry = await readRegistry(home);",
-              "  const target = await real(libraryPath);",
-              "  const entries = registry.entries.map((entry) => (entry.libraryId === libraryId",
-              "    ? { ...entry, libraryPath: target, ...(cloudHosted === undefined ? {} : { cloudHosted }) }",
-              "    : entry));",
-              "  await writeRegistry({ ...registry, entries }, home);"
-            ]
-          },
-          {
-            "line": 256,
-            "syntax": "PropertyAccessExpression",
-            "context": [
-              "  const registry = await readRegistry(home);",
-              "  const target = await real(libraryPath);",
-              "  const entries = registry.entries.map((entry) => (entry.libraryId === libraryId",
-              "    ? { ...entry, libraryPath: target, ...(cloudHosted === undefined ? {} : { cloudHosted }) }",
-              "    : entry));",
-              "  await writeRegistry({ ...registry, entries }, home);"
+              "  return mutateRegistry(home, async (registry, directory) => {",
+              "    const entries = registry.entries.filter((entry) => entry.projectPath !== projectPath);",
+              "    if (entries.length === registry.entries.length) return false;",
+              "    await writeRegistry({ ...registry, entries }, directory);",
+              "    return true;",
+              "  });"
             ]
           },
           {
             "line": 259,
             "syntax": "ShorthandPropertyAssignment",
             "context": [
-              "    ? { ...entry, libraryPath: target, ...(cloudHosted === undefined ? {} : { cloudHosted }) }",
-              "    : entry));",
-              "  await writeRegistry({ ...registry, entries }, home);",
-              "  return entries.filter((entry) => entry.libraryId === libraryId);",
+              "    const entries = registry.entries.filter((entry) => entry.projectPath !== projectPath);",
+              "    if (entries.length === registry.entries.length) return false;",
+              "    await writeRegistry({ ...registry, entries }, directory);",
+              "    return true;",
+              "  });",
+              "}"
+            ]
+          },
+          {
+            "line": 268,
+            "syntax": "VariableDeclaration",
+            "context": [
+              "  const target = await real(libraryPath);",
+              "  return mutateRegistry(home, async (registry, directory) => {",
+              "    const entries = registry.entries.map((entry) => (entry.libraryId === libraryId",
+              "      ? { ...entry, libraryPath: target, ...(cloudHosted === undefined ? {} : { cloudHosted }) }",
+              "      : entry));",
+              "    await writeRegistry({ ...registry, entries }, directory);"
+            ]
+          },
+          {
+            "line": 268,
+            "syntax": "PropertyAccessExpression",
+            "context": [
+              "  const target = await real(libraryPath);",
+              "  return mutateRegistry(home, async (registry, directory) => {",
+              "    const entries = registry.entries.map((entry) => (entry.libraryId === libraryId",
+              "      ? { ...entry, libraryPath: target, ...(cloudHosted === undefined ? {} : { cloudHosted }) }",
+              "      : entry));",
+              "    await writeRegistry({ ...registry, entries }, directory);"
+            ]
+          },
+          {
+            "line": 271,
+            "syntax": "ShorthandPropertyAssignment",
+            "context": [
+              "      ? { ...entry, libraryPath: target, ...(cloudHosted === undefined ? {} : { cloudHosted }) }",
+              "      : entry));",
+              "    await writeRegistry({ ...registry, entries }, directory);",
+              "    return entries.filter((entry) => entry.libraryId === libraryId);",
+              "  });",
+              "}"
+            ]
+          },
+          {
+            "line": 272,
+            "syntax": "PropertyAccessExpression",
+            "context": [
+              "      : entry));",
+              "    await writeRegistry({ ...registry, entries }, directory);",
+              "    return entries.filter((entry) => entry.libraryId === libraryId);",
+              "  });",
               "}",
               ""
             ]
           },
           {
-            "line": 260,
-            "syntax": "PropertyAccessExpression",
-            "context": [
-              "    : entry));",
-              "  await writeRegistry({ ...registry, entries }, home);",
-              "  return entries.filter((entry) => entry.libraryId === libraryId);",
-              "}",
-              "",
-              "function ancestors(path: string): readonly string[] {"
-            ]
-          },
-          {
-            "line": 285,
+            "line": 298,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  let found: { readonly entry: RegistryEntry; readonly via: ResolutionPath } | null = null;",
@@ -15913,7 +15909,7 @@
             ]
           },
           {
-            "line": 291,
+            "line": 304,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    }",
@@ -15925,7 +15921,7 @@
             ]
           },
           {
-            "line": 294,
+            "line": 307,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    const top = gitTopLevel(cwd);",
@@ -15937,7 +15933,7 @@
             ]
           },
           {
-            "line": 297,
+            "line": 310,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    if (entry !== undefined) found = { entry, via: \"git-toplevel\" };",
@@ -15949,7 +15945,7 @@
             ]
           },
           {
-            "line": 300,
+            "line": 313,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    const remote = gitRemoteOf(cwd);",
@@ -39106,13 +39102,13 @@
         "currentInitializer": "decodeGitMetadataBytes(batchCheck, \"PRIVACY_GIT_OBJECT_INDEX_UTF8_INVALID\").split(\"\\n\").filter(Boolean)",
         "declarations": [
           {
-            "line": 1017,
+            "line": 1019,
             "initializer": "decodeGitMetadataBytes(batchCheck, \"PRIVACY_GIT_OBJECT_INDEX_UTF8_INVALID\").split(\"\\n\").filter(Boolean)"
           }
         ],
         "exactUses": [
           {
-            "line": 1017,
+            "line": 1019,
             "syntax": "VariableDeclaration",
             "context": [
               "  );",
@@ -39124,19 +39120,7 @@
             ]
           },
           {
-            "line": 1019,
-            "syntax": "PropertyAccessExpression",
-            "context": [
-              "  const batchCheckLines = decodeGitMetadataBytes(batchCheck, \"PRIVACY_GIT_OBJECT_INDEX_UTF8_INVALID\").split(\"\\n\").filter(Boolean);",
-              "  if (objectIds !== null) {",
-              "    assertion(batchCheckLines.length === objectIds.length, \"PRIVACY_REACHABLE_OBJECT_COUNT_MISMATCH\", `${objectIds.length}/${batchCheckLines.length}`);",
-              "  }",
-              "  for (const line of batchCheckLines) {",
-              "    const [object, type, sizeText] = line.split(\" \");"
-            ]
-          },
-          {
-            "line": 1019,
+            "line": 1021,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  const batchCheckLines = decodeGitMetadataBytes(batchCheck, \"PRIVACY_GIT_OBJECT_INDEX_UTF8_INVALID\").split(\"\\n\").filter(Boolean);",
@@ -39149,6 +39133,18 @@
           },
           {
             "line": 1021,
+            "syntax": "PropertyAccessExpression",
+            "context": [
+              "  const batchCheckLines = decodeGitMetadataBytes(batchCheck, \"PRIVACY_GIT_OBJECT_INDEX_UTF8_INVALID\").split(\"\\n\").filter(Boolean);",
+              "  if (objectIds !== null) {",
+              "    assertion(batchCheckLines.length === objectIds.length, \"PRIVACY_REACHABLE_OBJECT_COUNT_MISMATCH\", `${objectIds.length}/${batchCheckLines.length}`);",
+              "  }",
+              "  for (const line of batchCheckLines) {",
+              "    const [object, type, sizeText] = line.split(\" \");"
+            ]
+          },
+          {
+            "line": 1023,
             "syntax": "ForOfStatement",
             "context": [
               "    assertion(batchCheckLines.length === objectIds.length, \"PRIVACY_REACHABLE_OBJECT_COUNT_MISMATCH\", `${objectIds.length}/${batchCheckLines.length}`);",
@@ -39160,7 +39156,7 @@
             ]
           },
           {
-            "line": 1030,
+            "line": 1032,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  writePrivacyProgress({",
@@ -39225,7 +39221,7 @@
             ]
           },
           {
-            "line": 699,
+            "line": 701,
             "syntax": "BindingElement",
             "context": [
               "  const { readUstar } = await import(\"./lib/tar.mjs\");",
@@ -39237,7 +39233,7 @@
             ]
           },
           {
-            "line": 708,
+            "line": 710,
             "syntax": "CallExpression",
             "context": [
               "        releaseArchiveMember: true,",
@@ -39249,7 +39245,7 @@
             ]
           },
           {
-            "line": 809,
+            "line": 811,
             "syntax": "PropertyAssignment",
             "context": [
               "  const records = [];",
@@ -39272,13 +39268,13 @@
         "currentInitializer": "[]",
         "declarations": [
           {
-            "line": 970,
+            "line": 972,
             "initializer": "[]"
           }
         ],
         "exactUses": [
           {
-            "line": 714,
+            "line": 716,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  const owner = await remoteOwner();",
@@ -39290,7 +39286,7 @@
             ]
           },
           {
-            "line": 970,
+            "line": 972,
             "syntax": "VariableDeclaration",
             "context": [
               "  writePrivacyProgress({ phase: \"source-surface-scan\", historicalPaths: 0 });",
@@ -39302,7 +39298,7 @@
             ]
           },
           {
-            "line": 971,
+            "line": 973,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  const owner = await remoteOwner();",
@@ -39314,7 +39310,7 @@
             ]
           },
           {
-            "line": 979,
+            "line": 981,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  for (const record of trackedSourceRecords) {",
@@ -39326,7 +39322,7 @@
             ]
           },
           {
-            "line": 980,
+            "line": 982,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    const label = record.path;",
@@ -39338,7 +39334,7 @@
             ]
           },
           {
-            "line": 982,
+            "line": 984,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    entries.push({ label, kind: \"source\", content: record.content.toString(\"utf8\") });",
@@ -39350,7 +39346,7 @@
             ]
           },
           {
-            "line": 1044,
+            "line": 1046,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    objectCount += 1;",
@@ -39362,7 +39358,7 @@
             ]
           },
           {
-            "line": 1068,
+            "line": 1070,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    const { p8ReleaseArtifactSetMatches } = await p8Release();",
@@ -39374,7 +39370,7 @@
             ]
           },
           {
-            "line": 1069,
+            "line": 1071,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    assertion(p8ReleaseArtifactSetMatches(releaseRecords.map((record) => record.path.slice(\"dist/release/\".length))), \"P8_PRIVACY_RELEASE_ARTIFACT_SET\");",
@@ -39386,7 +39382,7 @@
             ]
           },
           {
-            "line": 1070,
+            "line": 1072,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    entries.push(...buildRecords.map((record) => ({ label: record.path, kind: \"build\", content: record.content.toString(\"utf8\") })));",
@@ -39398,7 +39394,7 @@
             ]
           },
           {
-            "line": 1103,
+            "line": 1105,
             "syntax": "PropertyAccessExpression",
             "context": [
               "      (commit, path, object) => {",
@@ -39410,7 +39406,7 @@
             ]
           },
           {
-            "line": 1148,
+            "line": 1150,
             "syntax": "ForOfStatement",
             "context": [
               "    throw error;",
@@ -39422,7 +39418,7 @@
             ]
           },
           {
-            "line": 1154,
+            "line": 1156,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  }",
@@ -39434,7 +39430,7 @@
             ]
           },
           {
-            "line": 1177,
+            "line": 1179,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    historicalPaths,",
@@ -39446,7 +39442,7 @@
             ]
           },
           {
-            "line": 1180,
+            "line": 1182,
             "syntax": "CallExpression",
             "context": [
               "  });",
@@ -39458,7 +39454,7 @@
             ]
           },
           {
-            "line": 1208,
+            "line": 1210,
             "syntax": "PropertyAccessExpression",
             "context": [
               "      totalCommits: commits.length,",
@@ -39470,7 +39466,7 @@
             ]
           },
           {
-            "line": 1209,
+            "line": 1211,
             "syntax": "PropertyAccessExpression",
             "context": [
               "      historicalPaths,",
@@ -39482,7 +39478,7 @@
             ]
           },
           {
-            "line": 1221,
+            "line": 1223,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    totalCommits: commits.length,",
@@ -39494,7 +39490,7 @@
             ]
           },
           {
-            "line": 1222,
+            "line": 1224,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    historicalPaths,",
@@ -39506,7 +39502,7 @@
             ]
           },
           {
-            "line": 1226,
+            "line": 1228,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  return success(\"PRIVACY_SOURCE_CLEAN\", {",
@@ -39518,7 +39514,7 @@
             ]
           },
           {
-            "line": 1230,
+            "line": 1232,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    historicalCommits: commits.length,",
@@ -39530,7 +39526,7 @@
             ]
           },
           {
-            "line": 1338,
+            "line": 1340,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  const packageJson = await readJson(resolve(repositoryRoot, \"package.json\"));",
@@ -39542,7 +39538,7 @@
             ]
           },
           {
-            "line": 1380,
+            "line": 1382,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  }",
@@ -39565,13 +39561,13 @@
         "currentInitializer": "batchCheck.length",
         "declarations": [
           {
-            "line": 1016,
+            "line": 1018,
             "initializer": "batchCheck.length"
           }
         ],
         "exactUses": [
           {
-            "line": 1016,
+            "line": 1018,
             "syntax": "VariableDeclaration",
             "context": [
               "    { raw: true, input: objectInput, maxBuffer: 64 * 1024 * 1024 },",
@@ -39583,7 +39579,7 @@
             ]
           },
           {
-            "line": 1026,
+            "line": 1028,
             "syntax": "BinaryExpression",
             "context": [
               "    const declaredSize = Number(sizeText);",
@@ -39595,7 +39591,7 @@
             ]
           },
           {
-            "line": 1031,
+            "line": 1033,
             "syntax": "ShorthandPropertyAssignment",
             "context": [
               "    phase: \"git-object-read\",",
@@ -39607,7 +39603,7 @@
             ]
           },
           {
-            "line": 1037,
+            "line": 1039,
             "syntax": "BinaryExpression",
             "context": [
               "    \"git\",",
@@ -39619,7 +39615,7 @@
             ]
           },
           {
-            "line": 1041,
+            "line": 1043,
             "syntax": "CallExpression",
             "context": [
               "  const historyRecords = [];",
@@ -39642,13 +39638,13 @@
         "currentInitializer": "readUstar(gunzipSync(releaseArchive))",
         "declarations": [
           {
-            "line": 698,
+            "line": 700,
             "initializer": "readUstar(gunzipSync(releaseArchive))"
           }
         ],
         "exactUses": [
           {
-            "line": 698,
+            "line": 700,
             "syntax": "VariableDeclaration",
             "context": [
               "  const { gunzipSync } = await import(\"node:zlib\");",
@@ -39660,7 +39656,7 @@
             ]
           },
           {
-            "line": 699,
+            "line": 701,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  const { readUstar } = await import(\"./lib/tar.mjs\");",
@@ -39683,13 +39679,13 @@
         "currentInitializer": "packagedEntries.flatMap(({ path, bytes }) => {\n    const label = `dist/release/${P8_RELEASE_ARCHIVE}/${path}`;\n    return [\n      { label, kind: \"filename\", content: path },\n      {\n        label,\n        kind: \"release\",\n        releaseArchiveMember: true,\n        sourcePaths: p8ReleasePrivacySourcePaths(label),\n        content: decodePrivacyScanBytes(bytes),\n      },\n    ];\n  })",
         "declarations": [
           {
-            "line": 699,
+            "line": 701,
             "initializer": "packagedEntries.flatMap(({ path, bytes }) => {\n    const label = `dist/release/${P8_RELEASE_ARCHIVE}/${path}`;\n    return [\n      { label, kind: \"filename\", content: path },\n      {\n        label,\n        kind: \"release\",\n        releaseArchiveMember: true,\n        sourcePaths: p8ReleasePrivacySourcePaths(label),\n        content: decodePrivacyScanBytes(bytes),\n      },\n    ];\n  })"
           }
         ],
         "exactUses": [
           {
-            "line": 699,
+            "line": 701,
             "syntax": "VariableDeclaration",
             "context": [
               "  const { readUstar } = await import(\"./lib/tar.mjs\");",
@@ -39701,7 +39697,7 @@
             ]
           },
           {
-            "line": 718,
+            "line": 720,
             "syntax": "CallExpression",
             "context": [
               "      kind: \"release\",",
@@ -39724,13 +39720,13 @@
         "currentInitializer": "await readSourceFile(resolve(repositoryRoot, sbomResult.path))",
         "declarations": [
           {
-            "line": 675,
+            "line": 677,
             "initializer": "await readSourceFile(resolve(repositoryRoot, sbomResult.path))"
           }
         ],
         "exactUses": [
           {
-            "line": 675,
+            "line": 677,
             "syntax": "VariableDeclaration",
             "context": [
               "  const sbomResult = await sbom();",
@@ -39742,7 +39738,7 @@
             ]
           },
           {
-            "line": 694,
+            "line": 696,
             "syntax": "PropertyAssignment",
             "context": [
               "  const releaseArchiveSha256 = await readSourceFile(resolve(repositoryRoot, `dist/release/${P8_RELEASE_ARCHIVE_SHA256}`));",
@@ -39765,13 +39761,13 @@
         "currentInitializer": "await readSourceFile(resolve(repositoryRoot, sourceArchive.path))",
         "declarations": [
           {
-            "line": 674,
+            "line": 676,
             "initializer": "await readSourceFile(resolve(repositoryRoot, sourceArchive.path))"
           }
         ],
         "exactUses": [
           {
-            "line": 674,
+            "line": 676,
             "syntax": "VariableDeclaration",
             "context": [
               "  const sourceArchive = await archive();",
@@ -39783,7 +39779,7 @@
             ]
           },
           {
-            "line": 680,
+            "line": 682,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    allowedFiles: trackedSourcePaths(),",
@@ -39795,7 +39791,7 @@
             ]
           },
           {
-            "line": 694,
+            "line": 696,
             "syntax": "PropertyAssignment",
             "context": [
               "  const releaseArchiveSha256 = await readSourceFile(resolve(repositoryRoot, `dist/release/${P8_RELEASE_ARCHIVE_SHA256}`));",
@@ -53743,11 +53739,11 @@
         "oldLine": 157,
         "source": "return slash < 0 ? value.toLowerCase() : `${value.slice(0, slash).toLowerCase()}${value.slice(slash)}`;",
         "currentLines": [
-          157
+          167
         ],
         "syntax": [
           {
-            "line": 157,
+            "line": 167,
             "parents": [
               "ReturnStatement",
               "Block",
@@ -53775,11 +53771,11 @@
         "oldLine": 162,
         "source": "return execFileSync(\"git\", [\"-C\", cwd, ...args], { encoding: \"utf8\", stdio: [\"ignore\", \"pipe\", \"ignore\"], timeout: localProbeTimeout(5_000) }).trim();",
         "currentLines": [
-          162
+          172
         ],
         "syntax": [
           {
-            "line": 162,
+            "line": 172,
             "parents": [
               "ReturnStatement",
               "Block",
@@ -53808,11 +53804,11 @@
         "oldLine": 291,
         "source": "if (found === null && registry.entries.length > 0) {",
         "currentLines": [
-          291
+          304
         ],
         "syntax": [
           {
-            "line": 291,
+            "line": 304,
             "parents": [
               "IfStatement",
               "Block",
@@ -58321,11 +58317,11 @@
         "oldLine": 4439,
         "source": "const identity = [[\"operation\", t(\"receipt.operation\"), body.operation ?? body.command], [\"operation-id\", t(\"receipt.operationId\"), body.operationId ?? body.headEventHash], [\"actor\", t(\"receipt.actor\"), body.actor ?? BOOT.actor], [\"occurred-at\", t(\"receipt.occurredAt\"), body.updatedAt ?? body.occurredAt]].filter(([, , value]) => value !== undefined && value !== null && String(value).length > 0);",
         "currentLines": [
-          4449
+          4459
         ],
         "syntax": [
           {
-            "line": 4449,
+            "line": 4459,
             "parents": [
               "JsxText",
               "JsxElement",
@@ -58354,11 +58350,11 @@
         "oldLine": 4538,
         "source": "const entryGroup = (entry) => typeof entry?.group === \"string\" && entry.group.length > 0 ? entry.group : SETTING_GROUP_NAMES[0][0];",
         "currentLines": [
-          4548
+          4558
         ],
         "syntax": [
           {
-            "line": 4548,
+            "line": 4558,
             "parents": [
               "JsxText",
               "JsxElement",
@@ -58387,11 +58383,11 @@
         "oldLine": 4539,
         "source": "const entryOrder = (entry) => Number.isSafeInteger(entry?.order) ? entry.order : Number.MAX_SAFE_INTEGER;",
         "currentLines": [
-          4549
+          4559
         ],
         "syntax": [
           {
-            "line": 4549,
+            "line": 4559,
             "parents": [
               "JsxText",
               "JsxElement",
@@ -58420,11 +58416,11 @@
         "oldLine": 4569,
         "source": "const kind = key === \"setting.design.authority\" || body.length > 240 ? \"popover\" : \"tooltip\";",
         "currentLines": [
-          4579
+          4589
         ],
         "syntax": [
           {
-            "line": 4579,
+            "line": 4589,
             "parents": [
               "JsxText",
               "JsxElement",
@@ -58453,11 +58449,11 @@
         "oldLine": 4611,
         "source": "return Array.isArray(values) ? [...new Set(values.filter((value) => typeof value === \"string\" && value.length > 0))] : [];",
         "currentLines": [
-          4621
+          4631
         ],
         "syntax": [
           {
-            "line": 4621,
+            "line": 4631,
             "parents": [
               "JsxText",
               "JsxElement",
@@ -58486,11 +58482,11 @@
         "oldLine": 4670,
         "source": "if (entry.controlType === \"enum\" && values.length > 0) return `<div class=\"tcrn-setting-choice\" data-setting-choice-component=\"SettingChoice\" ${settingChoiceAttrs(values, entry.key)}><label class=\"tcrn-setting-choice__select-label\" for=\"${esc(id)}\"><span class=\"tcrn-sr-only\">${esc(label)}</span><select class=\"tcrn-select\" id=\"${esc(id)}\" data-setting-control=\"${esc(entry.key)}\" data-cli-action=\"settings-set\">${values.map((value) => `<option value=\"${esc(value)}\" ${value === current ? \"selected\" : \"\"}>${esc(entry.key === \"artifact.language\" ? promptLanguageLabel(value) : value || t(\"config.unset\"))}</option>`).join(\"\")}</select></label></div>`;",
         "currentLines": [
-          4680
+          4690
         ],
         "syntax": [
           {
-            "line": 4680,
+            "line": 4690,
             "parents": [
               "JsxText",
               "JsxElement",
@@ -58519,11 +58515,11 @@
         "oldLine": 4763,
         "source": "if (groups.length > 0 && !groups.includes(state.settingGroup)) state.settingGroup = groups[0];",
         "currentLines": [
-          4773
+          4783
         ],
         "syntax": [
           {
-            "line": 4773,
+            "line": 4783,
             "parents": [
               "JsxText",
               "JsxElement",
@@ -58552,11 +58548,11 @@
         "oldLine": 4814,
         "source": "const value = Math.min(input.max === \"\" ? Number.MAX_SAFE_INTEGER : Number(input.max), Math.max(Number(input.min), Number(input.value) + delta));",
         "currentLines": [
-          4824
+          4834
         ],
         "syntax": [
           {
-            "line": 4824,
+            "line": 4834,
             "parents": [
               "JsxText",
               "JsxElement",
@@ -58585,11 +58581,11 @@
         "oldLine": 4873,
         "source": "const references = Array.isArray(finding.references) && finding.references.length > 0 ? `${finding.category ?? \"\"}: ${finding.references.join(\", \")}` : \"\";",
         "currentLines": [
-          4883
+          4893
         ],
         "syntax": [
           {
-            "line": 4883,
+            "line": 4893,
             "parents": [
               "JsxText",
               "JsxElement",
@@ -58618,11 +58614,11 @@
         "oldLine": 5192,
         "source": "const rows = variables.length > 0 ? variables.map((variable) => variableRow(variable)).join(\"\") : `<div class=\"tcrn-table-shell__row tcrn-table-shell__empty-row\" role=\"row\" data-variable-empty><span class=\"tcrn-table-shell__empty\" role=\"cell\">${esc(t(\"variables.empty\"))}</span></div>`;",
         "currentLines": [
-          5215
+          5225
         ],
         "syntax": [
           {
-            "line": 5215,
+            "line": 5225,
             "parents": [
               "FirstTemplateToken",
               "BinaryExpression",
@@ -58651,11 +58647,11 @@
         "oldLine": 5315,
         "source": "const sources = Array.isArray(record.sourceReferences) ? record.sourceReferences.filter((source) => typeof source === \"string\" && source.length > 0) : [];",
         "currentLines": [
-          5338
+          5348
         ],
         "syntax": [
           {
-            "line": 5338,
+            "line": 5348,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -58684,11 +58680,11 @@
         "oldLine": 5316,
         "source": "const sourceText = sources.length > 0 ? `${t(\"knowledge.sources\")}: ${sources.join(\", \")}` : t(\"knowledge.noSources\");",
         "currentLines": [
-          5339
+          5349
         ],
         "syntax": [
           {
-            "line": 5339,
+            "line": 5349,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -58717,11 +58713,11 @@
         "oldLine": 5348,
         "source": "empty.hidden = gates.length > 0;",
         "currentLines": [
-          5371
+          5381
         ],
         "syntax": [
           {
-            "line": 5371,
+            "line": 5381,
             "parents": [
               "FirstTemplateToken",
               "BinaryExpression",
@@ -58749,11 +58745,11 @@
         "oldLine": 5377,
         "source": "setText(\"#stat-head\", String(status.headEventHash || \"—\").slice(0, 16));",
         "currentLines": [
-          5400
+          5410
         ],
         "syntax": [
           {
-            "line": 5400,
+            "line": 5410,
             "parents": [
               "FirstTemplateToken",
               "BinaryExpression",
@@ -58781,11 +58777,11 @@
         "oldLine": 5466,
         "source": "const hasClosedValueSet = (entry) => Array.isArray(entry?.allowedValues) && entry.allowedValues.length > 0;",
         "currentLines": [
-          5489
+          5499
         ],
         "syntax": [
           {
-            "line": 5489,
+            "line": 5499,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -58812,11 +58808,11 @@
         "oldLine": 5646,
         "source": "const focusLine = (line) => { const editor = $(\"#agents-md\"); const before = lineFromText(editor.value).slice(0, Math.max(0, line - 1)).join(\"\\n\"); editor.focus(); editor.setSelectionRange(before.length, before.length + (lineFromText(editor.value)[line - 1] || \"\").length); };",
         "currentLines": [
-          5669
+          5679
         ],
         "syntax": [
           {
-            "line": 5669,
+            "line": 5679,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -58843,11 +58839,11 @@
         "oldLine": 5754,
         "source": "select.disabled = libraries.length < 2;",
         "currentLines": [
-          5777
+          5789
         ],
         "syntax": [
           {
-            "line": 5777,
+            "line": 5789,
             "parents": [
               "Identifier",
               "PropertyAccessExpression",
@@ -58876,11 +58872,11 @@
         "oldLine": 5840,
         "source": "const parseGateArgv = (value) => { try { const command = JSON.parse(value); return Array.isArray(command) && command.length > 0 && command.every((part) => typeof part === \"string\" && part.length > 0) ? command : null; } catch { return null; } };",
         "currentLines": [
-          5863
+          5875
         ],
         "syntax": [
           {
-            "line": 5863,
+            "line": 5875,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -58907,11 +58903,11 @@
         "oldLine": 5841,
         "source": "const gateCoversFrom = (container) => [...container.querySelectorAll(\"[data-gate-cover]\")].map((input) => input.value.trim()).filter((cover) => cover.length > 0);",
         "currentLines": [
-          5864
+          5876
         ],
         "syntax": [
           {
-            "line": 5864,
+            "line": 5876,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -58938,11 +58934,11 @@
         "oldLine": 5850,
         "source": "covers: String(values.get(\"covers\") ?? \"\").split(/\\r?\\n/u).map((cover) => cover.trim()).filter((cover) => cover.length > 0),",
         "currentLines": [
-          5873
+          5885
         ],
         "syntax": [
           {
-            "line": 5873,
+            "line": 5885,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -71858,11 +71854,11 @@
         "oldLine": 848,
         "source": "serialNumber: `urn:uuid:${basis.slice(0, 8)}-${basis.slice(8, 12)}-4${basis.slice(13, 16)}-a${basis.slice(17, 20)}-${basis.slice(20, 32)}`,",
         "currentLines": [
-          848
+          850
         ],
         "syntax": [
           {
-            "line": 848,
+            "line": 850,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -71891,11 +71887,11 @@
         "oldLine": 996,
         "source": "assertion(objectIds.length > 0, \"PRIVACY_REACHABLE_OBJECTS_EMPTY\");",
         "currentLines": [
-          996
+          998
         ],
         "syntax": [
           {
-            "line": 996,
+            "line": 998,
             "parents": [
               "Identifier",
               "CallExpression",
@@ -71924,11 +71920,11 @@
         "oldLine": 1014,
         "source": "{ raw: true, input: objectInput, maxBuffer: 64 * 1024 * 1024 },",
         "currentLines": [
-          1014
+          1016
         ],
         "syntax": [
           {
-            "line": 1014,
+            "line": 1016,
             "parents": [
               "ObjectLiteralExpression",
               "CallExpression",
@@ -71957,11 +71953,11 @@
         "oldLine": 1037,
         "source": "{ raw: true, input: objectInput, maxBuffer: expectedStreamBytes + 1 },",
         "currentLines": [
-          1037
+          1039
         ],
         "syntax": [
           {
-            "line": 1037,
+            "line": 1039,
             "parents": [
               "ObjectLiteralExpression",
               "CallExpression",
@@ -71990,11 +71986,11 @@
         "oldLine": 1199,
         "source": "if (findings.length > 0) {",
         "currentLines": [
-          1199
+          1201
         ],
         "syntax": [
           {
-            "line": 1199,
+            "line": 1201,
             "parents": [
               "IfStatement",
               "Block",
@@ -72022,11 +72018,11 @@
         "oldLine": 1404,
         "source": "if (outcome.reds.length > 0) {",
         "currentLines": [
-          1404
+          1406
         ],
         "syntax": [
           {
-            "line": 1404,
+            "line": 1406,
             "parents": [
               "IfStatement",
               "Block",
@@ -84123,117 +84119,117 @@
       "symbol": "entries",
       "oldInitializer": "registry.entries.map((entry) => (entry.libraryId === libraryId\n    ? { ...entry, libraryPath: target, ...(cloudHosted === undefined ? {} : { cloudHosted }) }\n    : entry))",
       "oldLine": 247,
-      "currentInitializer": "registry.entries.map((entry) => (entry.libraryId === libraryId\n    ? { ...entry, libraryPath: target, ...(cloudHosted === undefined ? {} : { cloudHosted }) }\n    : entry))",
-      "currentLine": 256,
+      "currentInitializer": "registry.entries.map((entry) => (entry.libraryId === libraryId\n      ? { ...entry, libraryPath: target, ...(cloudHosted === undefined ? {} : { cloudHosted }) }\n      : entry))",
+      "currentLine": 268,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "packages/core/src/registry.ts",
-          "line": 72,
+          "line": 73,
           "text": "readonly entries: readonly RegistryEntry[];"
         },
         {
           "file": "packages/core/src/registry.ts",
-          "line": 118,
+          "line": 119,
           "text": "if ((error as { code?: string }).code === \"ENOENT\") return { schemaVersion: REGISTRY_SCHEMA_VERSION, entries: [] };"
         },
         {
           "file": "packages/core/src/registry.ts",
-          "line": 129,
+          "line": 130,
           "text": "!Array.isArray((value as Readonly<Record<string, unknown>>).entries)) {"
         },
         {
           "file": "packages/core/src/registry.ts",
-          "line": 132,
+          "line": 133,
           "text": "const entries = ((value as { readonly entries: readonly unknown[] }).entries).map((entry, index) => registryEntry(entry, `${path} entries[${index}]`));"
         },
         {
           "file": "packages/core/src/registry.ts",
-          "line": 133,
+          "line": 134,
           "text": "return { schemaVersion: REGISTRY_SCHEMA_VERSION, entries };"
         },
         {
           "file": "packages/core/src/registry.ts",
-          "line": 139,
+          "line": 140,
           "text": "const entries = [...registry.entries].sort((left, right) => (left.projectPath < right.projectPath ? -1 : left.projectPath > right.projectPath ? 1 : 0));"
         },
         {
           "file": "packages/core/src/registry.ts",
-          "line": 140,
+          "line": 141,
           "text": "await writeFileAtomic(path, canonicalJson({ schemaVersion: REGISTRY_SCHEMA_VERSION, entries } as unknown as JsonValue));"
         },
         {
           "file": "packages/core/src/registry.ts",
-          "line": 212,
+          "line": 222,
           "text": "const previous = registry.entries.find((candidate) => candidate.projectPath === projectPath);"
         },
         {
           "file": "packages/core/src/registry.ts",
-          "line": 228,
-          "text": "await writeRegistry({ ...registry, entries: [...registry.entries.filter((candidate) => candidate.projectPath !== projectPath), entry] }, home);"
+          "line": 238,
+          "text": "await writeRegistry({ ...registry, entries: [...registry.entries.filter((candidate) => candidate.projectPath !== projectPath), entry] }, directory);"
         },
         {
           "file": "packages/core/src/registry.ts",
-          "line": 239,
+          "line": 250,
           "text": "return (await readRegistry(home)).entries.find((entry) => entry.migratedFrom === wanted) ?? null;"
         },
         {
           "file": "packages/core/src/registry.ts",
-          "line": 246,
+          "line": 257,
           "text": "const entries = registry.entries.filter((entry) => entry.projectPath !== projectPath);"
         },
         {
           "file": "packages/core/src/registry.ts",
-          "line": 247,
+          "line": 258,
           "text": "if (entries.length === registry.entries.length) return false;"
         },
         {
           "file": "packages/core/src/registry.ts",
-          "line": 248,
-          "text": "await writeRegistry({ ...registry, entries }, home);"
+          "line": 259,
+          "text": "await writeRegistry({ ...registry, entries }, directory);"
         },
         {
           "file": "packages/core/src/registry.ts",
-          "line": 256,
+          "line": 268,
           "text": "const entries = registry.entries.map((entry) => (entry.libraryId === libraryId"
         },
         {
           "file": "packages/core/src/registry.ts",
-          "line": 259,
-          "text": "await writeRegistry({ ...registry, entries }, home);"
+          "line": 271,
+          "text": "await writeRegistry({ ...registry, entries }, directory);"
         },
         {
           "file": "packages/core/src/registry.ts",
-          "line": 260,
+          "line": 272,
           "text": "return entries.filter((entry) => entry.libraryId === libraryId);"
         },
         {
           "file": "packages/core/src/registry.ts",
-          "line": 285,
+          "line": 298,
           "text": "const entry = registry.entries.find((item) => item.projectPath === candidate);"
         },
         {
           "file": "packages/core/src/registry.ts",
-          "line": 291,
+          "line": 304,
           "text": "if (found === null && registry.entries.length > 0) {"
         },
         {
           "file": "packages/core/src/registry.ts",
-          "line": 294,
+          "line": 307,
           "text": "const entry = topReal === null ? undefined : registry.entries.find((item) => item.projectPath === topReal);"
         },
         {
           "file": "packages/core/src/registry.ts",
-          "line": 297,
+          "line": 310,
           "text": "if (found === null && registry.entries.some((item) => item.gitRemote !== null)) {"
         },
         {
           "file": "packages/core/src/registry.ts",
-          "line": 300,
+          "line": 313,
           "text": "const entry = normalized === null ? undefined : registry.entries.find((item) => item.gitRemote === normalized);"
         }
       ],
-      "originalBasis": "exact protocol/representation or explicit caller/session policy; see initializer and family disposition",
+      "originalBasis": "unknown for historical arbitrary product ceilings; they were not retained as permanent bounds without concrete necessity",
       "failureIfRemoved": "Node allocation/timer/counter representation would fail or clamp for runtime limits; invalid closed protocol/identity would be admitted for format limits; caller/default policies determine a processing window rather than total data admission",
       "alternatives": "full paging/segments/all-candidate traversal and complete readbacks remove arbitrary total ceilings; runtime allocations and declared exact encodings remain; configurable windows, explicit user budgets and approved verification run windows are distinguished",
       "verificationEvidence": "named focused positives/negatives in the semantic family matrix and retained raw run receipts; physical OS/process/memory maxima are unknown, not inferred"
@@ -95893,27 +95889,27 @@
       "oldInitializer": "decodeGitMetadataBytes(batchCheck, \"PRIVACY_GIT_OBJECT_INDEX_UTF8_INVALID\").split(\"\\n\").filter(Boolean)",
       "oldLine": 1015,
       "currentInitializer": "decodeGitMetadataBytes(batchCheck, \"PRIVACY_GIT_OBJECT_INDEX_UTF8_INVALID\").split(\"\\n\").filter(Boolean)",
-      "currentLine": 1017,
+      "currentLine": 1019,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/task.mjs",
-          "line": 1017,
+          "line": 1019,
           "text": "const batchCheckLines = decodeGitMetadataBytes(batchCheck, \"PRIVACY_GIT_OBJECT_INDEX_UTF8_INVALID\").split(\"\\n\").filter(Boolean);"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1019,
+          "line": 1021,
           "text": "assertion(batchCheckLines.length === objectIds.length, \"PRIVACY_REACHABLE_OBJECT_COUNT_MISMATCH\", `${objectIds.length}/${batchCheckLines.length}`);"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1021,
+          "line": 1023,
           "text": "for (const line of batchCheckLines) {"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1030,
+          "line": 1032,
           "text": "objectCount: batchCheckLines.length,"
         }
       ],
@@ -95948,52 +95944,52 @@
         },
         {
           "file": "scripts/task.mjs",
-          "line": 699,
+          "line": 701,
           "text": "const packagedPrivacyEntries = packagedEntries.flatMap(({ path, bytes }) => {"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 708,
+          "line": 710,
           "text": "content: decodePrivacyScanBytes(bytes),"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 768,
+          "line": 770,
           "text": "// Resolve each real commit's full blob id, then read that object's complete bytes. Caller"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 809,
+          "line": 811,
           "text": "records.push({ path: record.path, bytes: await readSourceFile(resolve(repositoryRoot, record.path)) });"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1002,
+          "line": 1004,
           "text": "// \"<oid> <type> <size>\\n\" followed by exactly <size> bytes and a trailing newline,"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1075,
+          "line": 1077,
           "text": "p8Surfaces.aggregateAlgorithm = \"sha256(path-NUL-byteLength-NUL-bytes over canonical path order)\";"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1283,
+          "line": 1285,
           "text": "!localArchiveSource.includes(\"if (sha256 !== null) return { bytes, expected: sha256, source: archive };\") ||"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1284,
+          "line": 1286,
           "text": "!localArchiveSource.includes(\"return { bytes, expected: statedDigest(stated,\")) return null;"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1289,
+          "line": 1291,
           "text": "!versionRetrievalSource.includes(\"const bytes = await download(url);\") ||"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1301,
+          "line": 1303,
           "text": "// is a loopback server: it binds 127.0.0.1 and serves bytes already on disk, and its"
         }
       ],
@@ -96008,122 +96004,122 @@
       "oldInitializer": "[]",
       "oldLine": 968,
       "currentInitializer": "[]",
-      "currentLine": 970,
+      "currentLine": 972,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/task.mjs",
-          "line": 714,
+          "line": 716,
           "text": "[...artifacts.entries()].map(([path, content]) => ({"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 970,
+          "line": 972,
           "text": "const entries = [];"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 971,
+          "line": 973,
           "text": "entries.push({"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 979,
+          "line": 981,
           "text": "entries.push({ label, kind: \"filename\", content: label });"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 980,
+          "line": 982,
           "text": "entries.push({ label, kind: \"source\", content: record.content.toString(\"utf8\") });"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 982,
+          "line": 984,
           "text": "entries.push(...await archiveEntryIfPresent());"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1044,
+          "line": 1046,
           "text": "entries.push({"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1068,
+          "line": 1070,
           "text": "entries.push(...buildRecords.map((record) => ({ label: record.path, kind: \"build\", content: record.content.toString(\"utf8\") })));"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1069,
+          "line": 1071,
           "text": "entries.push({ label: \"dist/source/einzbern-source.tar\", kind: \"archive\", content: sourceArchive.content });"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1070,
+          "line": 1072,
           "text": "entries.push(...releaseRecords.map((record) => ({"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1103,
+          "line": 1105,
           "text": "entries.push({ label: `git-commit-tree:${commit}:${path}`, kind: \"filename\", content: path });"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1148,
+          "line": 1150,
           "text": "for (const entry of entries) {"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1154,
+          "line": 1156,
           "text": "entries.push({ label: \"git-refs\", kind: \"ref\", content: decodeGitMetadataBytes(refs, \"PRIVACY_REFS_UTF8_INVALID\") });"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1177,
+          "line": 1179,
           "text": "totalEntries: entries.length,"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1180,
+          "line": 1182,
           "text": "const findings = scanPrivacyEntries(entries, {"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1208,
+          "line": 1210,
           "text": "entriesScanned: entries.length,"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1209,
+          "line": 1211,
           "text": "totalEntries: entries.length,"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1221,
+          "line": 1223,
           "text": "entriesScanned: entries.length,"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1222,
+          "line": 1224,
           "text": "totalEntries: entries.length,"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1226,
+          "line": 1228,
           "text": "scannedEntries: entries.length,"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1230,
+          "line": 1232,
           "text": "archiveScanned: entries.some((entry) => entry.kind === \"archive\"),"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1338,
+          "line": 1340,
           "text": "for (const [name, script] of Object.entries(packageJson.scripts ?? {})) {"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1380,
+          "line": 1382,
           "text": "for (const [task, outcome] of Object.entries(value)) {"
         }
       ],
@@ -96138,32 +96134,32 @@
       "oldInitializer": "batchCheck.length",
       "oldLine": 1014,
       "currentInitializer": "batchCheck.length",
-      "currentLine": 1016,
+      "currentLine": 1018,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/task.mjs",
-          "line": 1016,
+          "line": 1018,
           "text": "let expectedStreamBytes = batchCheck.length;"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1026,
+          "line": 1028,
           "text": "expectedStreamBytes += declaredSize + 1;"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1031,
+          "line": 1033,
           "text": "expectedStreamBytes,"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1037,
+          "line": 1039,
           "text": "{ raw: true, input: objectInput, maxBuffer: expectedStreamBytes + 1 },"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 1041,
+          "line": 1043,
           "text": "for (const { object, type, content } of parseGitObjectBatch(batch, expectedStreamBytes)) {"
         }
       ],
@@ -96178,17 +96174,17 @@
       "oldInitializer": "readUstar(gunzipSync(releaseArchive))",
       "oldLine": 696,
       "currentInitializer": "readUstar(gunzipSync(releaseArchive))",
-      "currentLine": 698,
+      "currentLine": 700,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/task.mjs",
-          "line": 698,
+          "line": 700,
           "text": "const packagedEntries = readUstar(gunzipSync(releaseArchive));"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 699,
+          "line": 701,
           "text": "const packagedPrivacyEntries = packagedEntries.flatMap(({ path, bytes }) => {"
         }
       ],
@@ -96203,17 +96199,17 @@
       "oldInitializer": "packagedEntries.flatMap(({ path, bytes }) => {\n    const label = `dist/release/${P8_RELEASE_ARCHIVE}/${path}`;\n    return [\n      { label, kind: \"filename\", content: path },\n      {\n        label,\n        kind: \"release\",\n        releaseArchiveMember: true,\n        sourcePaths: p8ReleasePrivacySourcePaths(label),\n        content: decodePrivacyScanBytes(bytes),\n      },\n    ];\n  })",
       "oldLine": 697,
       "currentInitializer": "packagedEntries.flatMap(({ path, bytes }) => {\n    const label = `dist/release/${P8_RELEASE_ARCHIVE}/${path}`;\n    return [\n      { label, kind: \"filename\", content: path },\n      {\n        label,\n        kind: \"release\",\n        releaseArchiveMember: true,\n        sourcePaths: p8ReleasePrivacySourcePaths(label),\n        content: decodePrivacyScanBytes(bytes),\n      },\n    ];\n  })",
-      "currentLine": 699,
+      "currentLine": 701,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/task.mjs",
-          "line": 699,
+          "line": 701,
           "text": "const packagedPrivacyEntries = packagedEntries.flatMap(({ path, bytes }) => {"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 718,
+          "line": 720,
           "text": "})).concat(packagedPrivacyEntries),"
         }
       ],
@@ -96228,17 +96224,17 @@
       "oldInitializer": "await readSourceFile(resolve(repositoryRoot, sbomResult.path))",
       "oldLine": 673,
       "currentInitializer": "await readSourceFile(resolve(repositoryRoot, sbomResult.path))",
-      "currentLine": 675,
+      "currentLine": 677,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/task.mjs",
-          "line": 675,
+          "line": 677,
           "text": "const sbomBytes = await readSourceFile(resolve(repositoryRoot, sbomResult.path));"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 694,
+          "line": 696,
           "text": "const artifacts = buildP8ReleaseArtifacts({ sourceArchive: sourceBytes, sbom: sbomBytes, releaseArchive, releaseArchiveSha256 });"
         }
       ],
@@ -96253,22 +96249,22 @@
       "oldInitializer": "await readSourceFile(resolve(repositoryRoot, sourceArchive.path))",
       "oldLine": 672,
       "currentInitializer": "await readSourceFile(resolve(repositoryRoot, sourceArchive.path))",
-      "currentLine": 674,
+      "currentLine": 676,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/task.mjs",
-          "line": 674,
+          "line": 676,
           "text": "const sourceBytes = await readSourceFile(resolve(repositoryRoot, sourceArchive.path));"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 680,
+          "line": 682,
           "text": "assertion(sourceBytes.equals(independentlyRebuilt.archive), \"P8_ARCHIVE_REPRODUCIBILITY_MISMATCH\");"
         },
         {
           "file": "scripts/task.mjs",
-          "line": 694,
+          "line": 696,
           "text": "const artifacts = buildP8ReleaseArtifacts({ sourceArchive: sourceBytes, sbom: sbomBytes, releaseArchive, releaseArchiveSha256 });"
         }
       ],
@@ -98785,17 +98781,17 @@
     },
     {
       "file": "packages/core/src/registry.ts",
-      "line": 157,
+      "line": 167,
       "source": "return slash < 0 ? value.toLowerCase() : `${value.slice(0, slash).toLowerCase()}${value.slice(slash)}`;"
     },
     {
       "file": "packages/core/src/registry.ts",
-      "line": 162,
+      "line": 172,
       "source": "return execFileSync(\"git\", [\"-C\", cwd, ...args], { encoding: \"utf8\", stdio: [\"ignore\", \"pipe\", \"ignore\"], timeout: localProbeTimeout(5_000) }).trim();"
     },
     {
       "file": "packages/core/src/registry.ts",
-      "line": 291,
+      "line": 304,
       "source": "if (found === null && registry.entries.length > 0) {"
     },
     {
@@ -99455,102 +99451,102 @@
     },
     {
       "file": "portal/index.html",
-      "line": 4449,
+      "line": 4459,
       "source": "const identity = [[\"operation\", t(\"receipt.operation\"), body.operation ?? body.command], [\"operation-id\", t(\"receipt.operationId\"), body.operationId ?? body.headEventHash], [\"actor\", t(\"receipt.actor\"), body.actor ?? BOOT.actor], [\"occurred-at\", t(\"receipt.occurredAt\"), body.updatedAt ?? body.occurredAt]].filter(([, , value]) => value !== undefined && value !== null && String(value).length > 0);"
     },
     {
       "file": "portal/index.html",
-      "line": 4548,
+      "line": 4558,
       "source": "const entryGroup = (entry) => typeof entry?.group === \"string\" && entry.group.length > 0 ? entry.group : SETTING_GROUP_NAMES[0][0];"
     },
     {
       "file": "portal/index.html",
-      "line": 4549,
+      "line": 4559,
       "source": "const entryOrder = (entry) => Number.isSafeInteger(entry?.order) ? entry.order : Number.MAX_SAFE_INTEGER;"
     },
     {
       "file": "portal/index.html",
-      "line": 4579,
+      "line": 4589,
       "source": "const kind = key === \"setting.design.authority\" || body.length > 240 ? \"popover\" : \"tooltip\";"
     },
     {
       "file": "portal/index.html",
-      "line": 4621,
+      "line": 4631,
       "source": "return Array.isArray(values) ? [...new Set(values.filter((value) => typeof value === \"string\" && value.length > 0))] : [];"
     },
     {
       "file": "portal/index.html",
-      "line": 4680,
+      "line": 4690,
       "source": "if (entry.controlType === \"enum\" && values.length > 0) return `<div class=\"tcrn-setting-choice\" data-setting-choice-component=\"SettingChoice\" ${settingChoiceAttrs(values, entry.key)}><label class=\"tcrn-setting-choice__select-label\" for=\"${esc(id)}\"><span class=\"tcrn-sr-only\">${esc(label)}</span><select class=\"tcrn-select\" id=\"${esc(id)}\" data-setting-control=\"${esc(entry.key)}\" data-cli-action=\"settings-set\">${values.map((value) => `<option value=\"${esc(value)}\" ${value === current ? \"selected\" : \"\"}>${esc(entry.key === \"artifact.language\" ? promptLanguageLabel(value) : value || t(\"config.unset\"))}</option>`).join(\"\")}</select></label></div>`;"
     },
     {
       "file": "portal/index.html",
-      "line": 4773,
+      "line": 4783,
       "source": "if (groups.length > 0 && !groups.includes(state.settingGroup)) state.settingGroup = groups[0];"
     },
     {
       "file": "portal/index.html",
-      "line": 4824,
+      "line": 4834,
       "source": "const value = Math.min(input.max === \"\" ? Number.MAX_SAFE_INTEGER : Number(input.max), Math.max(Number(input.min), Number(input.value) + delta));"
     },
     {
       "file": "portal/index.html",
-      "line": 4883,
+      "line": 4893,
       "source": "const references = Array.isArray(finding.references) && finding.references.length > 0 ? `${finding.category ?? \"\"}: ${finding.references.join(\", \")}` : \"\";"
     },
     {
       "file": "portal/index.html",
-      "line": 5215,
+      "line": 5225,
       "source": "const rows = variables.length > 0 ? variables.map((variable) => variableRow(variable)).join(\"\") : `<div class=\"tcrn-table-shell__row tcrn-table-shell__empty-row\" role=\"row\" data-variable-empty><span class=\"tcrn-table-shell__empty\" role=\"cell\">${esc(t(\"variables.empty\"))}</span></div>`;"
     },
     {
       "file": "portal/index.html",
-      "line": 5338,
+      "line": 5348,
       "source": "const sources = Array.isArray(record.sourceReferences) ? record.sourceReferences.filter((source) => typeof source === \"string\" && source.length > 0) : [];"
     },
     {
       "file": "portal/index.html",
-      "line": 5339,
+      "line": 5349,
       "source": "const sourceText = sources.length > 0 ? `${t(\"knowledge.sources\")}: ${sources.join(\", \")}` : t(\"knowledge.noSources\");"
     },
     {
       "file": "portal/index.html",
-      "line": 5371,
+      "line": 5381,
       "source": "empty.hidden = gates.length > 0;"
     },
     {
       "file": "portal/index.html",
-      "line": 5400,
+      "line": 5410,
       "source": "setText(\"#stat-head\", String(status.headEventHash || \"—\").slice(0, 16));"
     },
     {
       "file": "portal/index.html",
-      "line": 5489,
+      "line": 5499,
       "source": "const hasClosedValueSet = (entry) => Array.isArray(entry?.allowedValues) && entry.allowedValues.length > 0;"
     },
     {
       "file": "portal/index.html",
-      "line": 5669,
+      "line": 5679,
       "source": "const focusLine = (line) => { const editor = $(\"#agents-md\"); const before = lineFromText(editor.value).slice(0, Math.max(0, line - 1)).join(\"\\n\"); editor.focus(); editor.setSelectionRange(before.length, before.length + (lineFromText(editor.value)[line - 1] || \"\").length); };"
     },
     {
       "file": "portal/index.html",
-      "line": 5777,
+      "line": 5789,
       "source": "select.disabled = libraries.length < 2;"
     },
     {
       "file": "portal/index.html",
-      "line": 5863,
+      "line": 5875,
       "source": "const parseGateArgv = (value) => { try { const command = JSON.parse(value); return Array.isArray(command) && command.length > 0 && command.every((part) => typeof part === \"string\" && part.length > 0) ? command : null; } catch { return null; } };"
     },
     {
       "file": "portal/index.html",
-      "line": 5864,
+      "line": 5876,
       "source": "const gateCoversFrom = (container) => [...container.querySelectorAll(\"[data-gate-cover]\")].map((input) => input.value.trim()).filter((cover) => cover.length > 0);"
     },
     {
       "file": "portal/index.html",
-      "line": 5873,
+      "line": 5885,
       "source": "covers: String(values.get(\"covers\") ?? \"\").split(/\\r?\\n/u).map((cover) => cover.trim()).filter((cover) => cover.length > 0),"
     },
     {
@@ -101390,32 +101386,32 @@
     },
     {
       "file": "scripts/task.mjs",
-      "line": 848,
+      "line": 850,
       "source": "serialNumber: `urn:uuid:${basis.slice(0, 8)}-${basis.slice(8, 12)}-4${basis.slice(13, 16)}-a${basis.slice(17, 20)}-${basis.slice(20, 32)}`,"
     },
     {
       "file": "scripts/task.mjs",
-      "line": 996,
+      "line": 998,
       "source": "assertion(objectIds.length > 0, \"PRIVACY_REACHABLE_OBJECTS_EMPTY\");"
     },
     {
       "file": "scripts/task.mjs",
-      "line": 1014,
+      "line": 1016,
       "source": "{ raw: true, input: objectInput, maxBuffer: 64 * 1024 * 1024 },"
     },
     {
       "file": "scripts/task.mjs",
-      "line": 1037,
+      "line": 1039,
       "source": "{ raw: true, input: objectInput, maxBuffer: expectedStreamBytes + 1 },"
     },
     {
       "file": "scripts/task.mjs",
-      "line": 1199,
+      "line": 1201,
       "source": "if (findings.length > 0) {"
     },
     {
       "file": "scripts/task.mjs",
-      "line": 1404,
+      "line": 1406,
       "source": "if (outcome.reds.length > 0) {"
     },
     {

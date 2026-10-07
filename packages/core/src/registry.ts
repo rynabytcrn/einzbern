@@ -29,6 +29,7 @@ import { dirname, isAbsolute, resolve } from "node:path";
 
 import { assertStrictInstant, canonicalJson } from "../../protocol/src/index.js";
 import type { JsonValue } from "../../protocol/src/index.js";
+import { withFileLock } from "./file-lock.js";
 import { writeFileAtomic } from "./atomic-file.js";
 import { ensureDeviceDirectory, registryPath } from "./device-home.js";
 import { openLibrary } from "./ether-library.js";
@@ -140,6 +141,15 @@ async function writeRegistry(registry: Registry, home?: string): Promise<void> {
   await writeFileAtomic(path, canonicalJson({ schemaVersion: REGISTRY_SCHEMA_VERSION, entries } as unknown as JsonValue));
 }
 
+/** Serialize the whole read/modify/replace transaction, not just publication.
+ * Capture the device path once so every read and write uses the locked registry. */
+async function mutateRegistry<T>(home: string | undefined, operation: (registry: Registry, home: string) => Promise<T>): Promise<T> {
+  const path = home === undefined ? registryPath() : registryPath(home);
+  const directory = dirname(path);
+  await ensureDeviceDirectory(directory);
+  return withFileLock(`${path}.lock`, async () => operation(await readRegistry(directory), directory));
+}
+
 /**
  * One remote in one spelling, so an https and an ssh clone of the same repository compare
  * equal: no scheme, user or trailing .git or slash, the host in lower case, and host and path
@@ -208,25 +218,26 @@ export async function registerLibrary(input: RegisterLibraryInput, home?: string
   const projectPath = await real(input.projectPath);
   const library = await openLibrary(await real(input.libraryPath));
   const remote = input.gitRemote === undefined ? gitRemoteOf(projectPath) : input.gitRemote;
-  const registry = await readRegistry(home);
-  const previous = registry.entries.find((candidate) => candidate.projectPath === projectPath);
-  const migratedFrom = input.migratedFrom === undefined
-    ? (previous?.libraryId === library.manifest.libraryId ? previous.migratedFrom : undefined)
-    : resolve(input.migratedFrom);
-  const projectId = input.projectId ?? (previous?.libraryId === library.manifest.libraryId ? previous.projectId : undefined);
-  if (projectId !== undefined) projectLineage(await materializeWorkspace(library.root), projectId);
-  const entry: RegistryEntry = {
-    projectPath,
-    ...(projectId === undefined ? {} : { projectId }),
-    gitRemote: remote === null ? null : normalizeGitRemote(remote),
-    libraryPath: library.root,
-    libraryId: library.manifest.libraryId,
-    cloudHosted: input.cloudHosted ?? suggestCloudHosted(library.root),
-    registeredAt: input.registeredAt,
-    ...(migratedFrom === undefined ? {} : { migratedFrom }),
-  };
-  await writeRegistry({ ...registry, entries: [...registry.entries.filter((candidate) => candidate.projectPath !== projectPath), entry] }, home);
-  return entry;
+  return mutateRegistry(home, async (registry, directory) => {
+    const previous = registry.entries.find((candidate) => candidate.projectPath === projectPath);
+    const migratedFrom = input.migratedFrom === undefined
+      ? (previous?.libraryId === library.manifest.libraryId ? previous.migratedFrom : undefined)
+      : resolve(input.migratedFrom);
+    const projectId = input.projectId ?? (previous?.libraryId === library.manifest.libraryId ? previous.projectId : undefined);
+    if (projectId !== undefined) projectLineage(await materializeWorkspace(library.root), projectId);
+    const entry: RegistryEntry = {
+      projectPath,
+      ...(projectId === undefined ? {} : { projectId }),
+      gitRemote: remote === null ? null : normalizeGitRemote(remote),
+      libraryPath: library.root,
+      libraryId: library.manifest.libraryId,
+      cloudHosted: input.cloudHosted ?? suggestCloudHosted(library.root),
+      registeredAt: input.registeredAt,
+      ...(migratedFrom === undefined ? {} : { migratedFrom }),
+    };
+    await writeRegistry({ ...registry, entries: [...registry.entries.filter((candidate) => candidate.projectPath !== projectPath), entry] }, directory);
+    return entry;
+  });
 }
 
 /**
@@ -242,22 +253,24 @@ export async function findMigratedEntry(legacyRoot: string, home?: string): Prom
 /** Drop the project's entry; false when it had none. */
 export async function unregisterLibrary(projectPathInput: string, home?: string): Promise<boolean> {
   const projectPath = await real(projectPathInput);
-  const registry = await readRegistry(home);
-  const entries = registry.entries.filter((entry) => entry.projectPath !== projectPath);
-  if (entries.length === registry.entries.length) return false;
-  await writeRegistry({ ...registry, entries }, home);
-  return true;
+  return mutateRegistry(home, async (registry, directory) => {
+    const entries = registry.entries.filter((entry) => entry.projectPath !== projectPath);
+    if (entries.length === registry.entries.length) return false;
+    await writeRegistry({ ...registry, entries }, directory);
+    return true;
+  });
 }
 
 /** Point an entry at the library's new location (a relocation moved it). */
 export async function repointLibrary(libraryId: string, libraryPath: string, cloudHosted: boolean | undefined, home?: string): Promise<readonly RegistryEntry[]> {
-  const registry = await readRegistry(home);
   const target = await real(libraryPath);
-  const entries = registry.entries.map((entry) => (entry.libraryId === libraryId
-    ? { ...entry, libraryPath: target, ...(cloudHosted === undefined ? {} : { cloudHosted }) }
-    : entry));
-  await writeRegistry({ ...registry, entries }, home);
-  return entries.filter((entry) => entry.libraryId === libraryId);
+  return mutateRegistry(home, async (registry, directory) => {
+    const entries = registry.entries.map((entry) => (entry.libraryId === libraryId
+      ? { ...entry, libraryPath: target, ...(cloudHosted === undefined ? {} : { cloudHosted }) }
+      : entry));
+    await writeRegistry({ ...registry, entries }, directory);
+    return entries.filter((entry) => entry.libraryId === libraryId);
+  });
 }
 
 function ancestors(path: string): readonly string[] {

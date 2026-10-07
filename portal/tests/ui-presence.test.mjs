@@ -1129,7 +1129,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       assert.match(listbox.textContent, /日本語/u);
       assert.match(listbox.textContent, /한국어/u);
       assert.match(listbox.textContent, /Français/u);
-      assert.equal(prompt.closest("[data-setting-row]").querySelector(".tcrn-setting-row__tools [data-reset-setting]")?.textContent, "Reset override");
+      assert.equal(prompt.closest("[data-setting-row]").querySelector(".tcrn-setting-row__tools [data-reset-setting]"), null, "an inherited default has no override to reset");
       const before = receiptText(page.document);
       // en is the inherited default. A click adds fr locally, then Escape dismisses
       // the list without writing and retains the native focused selection.
@@ -1158,7 +1158,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       currentPrompt.closest('[data-setting-choice-component]').querySelector('[data-save-setting-choice="retrieval.promptLanguages"]').click();
       await waitFor(() => receiptText(page.document) !== beforeClear && receiptText(page.document).startsWith("✕"), "the required-selection refusal");
       assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, "en,fr", "empty Save refuses and preserves the last saved value");
-      currentPrompt.closest('[data-setting-choice-component]').querySelector('[data-reset-setting="retrieval.promptLanguages"]').click();
+      currentPrompt.closest('[data-setting-row]').querySelector('.tcrn-setting-row__tools [data-reset-setting="retrieval.promptLanguages"]').click();
       await page.waitForSettled();
       assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, null, "explicit Reset restores inheritance");
     } finally { await page.cleanup(); }
@@ -1324,19 +1324,11 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       // segment size in storage (their catalog rows say so). TCRN-CROSS-SUB-310 R17: the invalid-value
       // state is proven on storage.segmentBytes, since knowledge.aggregateBytes left the catalog.
       selectGroup("retrieval");
-      const resetLabels = new Map([
-        ["zh-CN", "使用生成物语言"], ["en", "Use artefact language"], ["ja", "生成物の言語を使用"],
-        ["ko", "산출물 언어 사용"], ["fr", "Utiliser la langue des artefacts"],
-      ]);
-      for (const [locale, label] of resetLabels) {
-        page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
-        page.document.querySelector('[data-setting-group="retrieval"]')?.click();
-        assert.equal(page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]')?.closest("[data-setting-row]").querySelector(".tcrn-setting-row__tools [data-reset-setting]")?.textContent, page.window.PORTAL_LOCALES[locale]["config.reset"], `${locale} reset label`);
-      }
       page.document.querySelector('[data-locale-option="en"]')?.click();
       page.document.querySelector('[data-setting-group="retrieval"]')?.click();
       const prompt = page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]');
       assert.equal(prompt?.closest("[data-prompt-language-dropdown]").dataset.choicePresentation, "dropdown");
+      assert.equal(prompt.closest("[data-setting-row]").querySelector("[data-reset-setting]"), null, "default state has no Reset override action");
       const languages = [...prompt.options];
       for (const option of languages) option.selected = true;
       const beforeSet = receiptText(page.document);
@@ -1346,13 +1338,25 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       await waitFor(() => page.document.querySelector('[data-setting-row="retrieval.promptLanguages"]')?.dataset.modified === "true", "the prompt-language collection to read back");
       assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, "en,fr,ja,ko,zh-CN");
 
+      const resetLabels = new Map([
+        ["zh-CN", "使用生成物语言"], ["en", "Use artefact language"], ["ja", "生成物の言語を使用"],
+        ["ko", "산출물 언어 사용"], ["fr", "Utiliser la langue des artefacts"],
+      ]);
+      for (const [locale] of resetLabels) {
+        page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
+        page.document.querySelector('[data-setting-group="retrieval"]')?.click();
+        assert.equal(page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]')?.closest("[data-setting-row]").querySelector(".tcrn-setting-row__tools [data-reset-setting]")?.textContent, page.window.PORTAL_LOCALES[locale]["config.reset"], `${locale} reset label`);
+        assert.equal(page.document.querySelector('[data-setting-row="retrieval.promptLanguages"]').querySelectorAll("[data-reset-setting]").length, 1, "one reset action belongs to the row");
+      }
+      page.document.querySelector('[data-locale-option="en"]')?.click();
+      page.document.querySelector('[data-setting-group="retrieval"]')?.click();
       page.document.querySelector('[data-page-target="dashboard"]')?.click();
       page.document.querySelector('[data-page-target="settings"]')?.click();
       assert.equal([...page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]').options].every((option) => option.selected), true, "page switching preserves the live collection state");
 
       const currentPrompt = page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]');
       const beforeCollectionReset = receiptText(page.document);
-      currentPrompt.closest("[data-setting-choice-component]").querySelector('[data-reset-setting="retrieval.promptLanguages"]').click();
+      currentPrompt.closest("[data-setting-row]").querySelector('.tcrn-setting-row__tools [data-reset-setting="retrieval.promptLanguages"]').click();
       await waitForReceiptChange(beforeCollectionReset, "the prompt-language collection reset receipt");
       await waitFor(() => page.document.querySelector('[data-setting-row="retrieval.promptLanguages"]')?.dataset.modified === "false", "the prompt-language reset to read back");
       assert.equal((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === "retrieval.promptLanguages").currentValue, null, "the reset action restores the artifact-language default rather than writing an empty value");

@@ -346,7 +346,7 @@ const layoutRequirements = [
   // rather than by a hand-picked 30px that its content overflowed.
   { name: "product shell rows", source: initLayoutSource, text: "grid-template-rows: auto minmax(0, 1fr);" },
   { name: "status strip spans the shell", source: initLayoutSource, text: ".tcrn-product-shell > .tcrn-app-status-bar {\n  grid-column: 1 / -1;\n}" },
-  { name: "sidebar fills its row", source: initLayoutSource, text: ".tcrn-product-shell__sidebar {\n  height: 100%;" },
+  { name: "sidebar fills its row", source: initLayoutSource, pattern: /@media\s*\(min-width:\s*761px\)\s*\{[^}]*\}\s*\.tcrn-product-shell__sidebar\s*\{\s*height:\s*100%;/u },
   { name: "top bar height from design system", source: initLayoutSource, text: ".tcrn-product-shell__workspace > .tcrn-top-bar {" },
   { name: "editor areas", source: initLayoutSource, text: 'grid-template-areas:\n    "directory bar"\n    "directory editor";' },
   { name: "directory placement", source: initLayoutSource, text: "grid-area: directory;" },
@@ -386,7 +386,7 @@ const layoutRequirements = [
   { name: "multi-select list semantics", source: indexText, text: 'class="tcrn-menu tcrn-multi-select-dropdown__list" role="listbox" aria-multiselectable="true"' },
   { name: "multi-select public bridge", source: indexText, text: 'mountStaticMultiSelect({ root })' },
   { name: "checkbox design-system control", source: indexText, text: 'class="tcrn-checkbox" type="checkbox"' },
-  { name: "multi-select reset button component", source: indexText, text: 'class="tcrn-button tcrn-button--quiet tcrn-button--sm" data-reset-setting="${esc(entry.key)}" ${entry.declaredValue == null ? "disabled" : ""}' },
+  { name: "multi-select reset button component", source: indexText, text: 'const reset = modified ? `<button type="button" class="tcrn-setting-row__reset" data-reset-setting="${esc(entry.key)}" data-cli-action="settings-remove">${esc(t("config.reset"))}</button>` : "";' },
   { name: "text control mapping", source: indexText, text: 'return `<label class="tcrn-field"><span class="tcrn-sr-only">${esc(label)}' },
   { name: "settings layout mode", source: indexText, text: 'data-settings-layout-mode="container-driven"' },
   { name: "settings layout identity", source: indexText, text: 'data-settings-layout="true"' },
@@ -434,8 +434,8 @@ const layoutRequirements = [
   { name: "locale choice is recorded", source: indexText, text: 'tcrnWritePreference("locale", state.locale);' },
 ];
 const layoutFindings = layoutRequirements
-  .filter((requirement) => !requirement.source.includes(requirement.text))
-  .map((requirement) => ({ name: requirement.name, reason: "required structural invariant absent", text: requirement.text }));
+  .filter((requirement) => requirement.pattern ? !requirement.pattern.test(requirement.source) : !requirement.source.includes(requirement.text))
+  .map((requirement) => ({ name: requirement.name, reason: "required structural invariant absent", text: requirement.text ?? String(requirement.pattern) }));
 // INC-174: a grid whose CONTENT column is a fixed pixel width is this portal's
 // recurring disease (the 1000px shell, the 800px vocabulary column). Label and nav
 // columns may be pinned measures; the last column of a template must be a flexible

@@ -172,7 +172,7 @@ test("INIT-036 S276 design-proof legs turn red for injected violations and green
     ["multi-select list semantics", 'class="tcrn-menu tcrn-multi-select-dropdown__list" role="listbox" aria-multiselectable="true"', 'class="tcrn-menu tcrn-multi-select-dropdown__list" role="listbox" aria-multiselectable="false"'],
     ["multi-select public bridge", 'mountStaticMultiSelect({ root })', 'mountPrivateMultiSelect({ root })'],
     ["checkbox design-system control", 'class="tcrn-checkbox" type="checkbox"', 'class="tcrn-checkbox-mutated" type="checkbox"'],
-    ["multi-select reset button component", 'class="tcrn-button tcrn-button--quiet tcrn-button--sm" data-reset-setting="${esc(entry.key)}" ${entry.declaredValue == null ? "disabled" : ""}', 'class="tcrn-reset-local" data-reset-setting="${esc(entry.key)}" ${entry.declaredValue == null ? "disabled" : ""}'],
+    ["multi-select reset button component", 'class="tcrn-setting-row__reset" data-reset-setting="${esc(entry.key)}" data-cli-action="settings-remove"', 'class="tcrn-reset-local" data-reset-setting="${esc(entry.key)}" ${entry.declaredValue == null ? "disabled" : ""}'],
     ["text control mapping", 'return `<label class="tcrn-field"><span class="tcrn-sr-only">${esc(label)}', 'return `<label class="tcrn-field-mutated"><span class="tcrn-sr-only">${esc(label)}'],
     ["settings layout mode", 'data-settings-layout-mode="container-driven"', 'data-settings-layout-mode="container-driven-mutated"'],
     ["settings layout form policy", 'data-settings-layout-form-policy="single-host-single-column"', 'data-settings-layout-form-policy="single-host-single-column-mutated"'],

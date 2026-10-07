@@ -3964,8 +3964,18 @@ button:disabled { cursor: not-allowed; }
     grid-template-rows: auto minmax(0, 1fr);
   }
 }
-@media (max-width: 760px) {
-  .tcrn-product-shell__workspace > .tcrn-top-bar, .tcrn-top-bar { grid-template-columns: minmax(0, 1fr); }
+/* Content adapts before the published shell changes to stacked navigation.
+   The 280px desktop rail leaves a narrow workspace throughout this interval. */
+@media (max-width: 980px) {
+  .tcrn-product-shell__workspace > .tcrn-top-bar { grid-template-columns: minmax(0, 1fr); }
+  .tcrn-top-bar__actions { flex-wrap: wrap; min-width: 0; }
+  .tcrn-top-bar__actions > * { max-inline-size: 100%; }
+  .tcrn-manage, .tcrn-vocabulary { grid-template-columns: minmax(0, 1fr); }
+  [data-ui="rules-layout"] { grid-template-columns: minmax(0, 1fr); }
+  .tcrn-editor-shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "bar" "directory" "editor";
+  }
 }
 @media (max-width: 680px) {
   .tcrn-editor-shell {
@@ -5704,6 +5714,7 @@ const BOOT = __PORTAL_BOOT__;
     const focus = rememberFocus($("#settings-rows"));
     state.settingsWritePending = true;
     setSettingWritesBusy(true);
+    renderConfigurationTargets();
     try {
       echo(payload.reset ? "settings-remove" : "settings-set", ["--key", key, ...(payload.reset ? [] : ["--value", payload.value])]);
       const result = await api("/api/settings", { method: "POST", body: JSON.stringify({ key, ...payload }) });
@@ -5720,7 +5731,8 @@ const BOOT = __PORTAL_BOOT__;
       }
     } finally {
       state.settingsWritePending = false;
-      setSettingWritesBusy(false);
+      setSettingWritesBusy(Boolean(state.librarySwitching));
+      renderConfigurationTargets();
       if ((state.libraryEpoch || 0) === epoch) {
         restoreFocus($("#settings-rows"), focus);
         if (key === "retrieval.promptLanguages") focusPromptLanguage();
@@ -5967,6 +5979,7 @@ const BOOT = __PORTAL_BOOT__;
     } finally {
       state.librarySwitching = false;
       setSettingWritesBusy(Boolean(state.settingsWritePending));
+      renderConfigurationTargets();
       loadLibraries();
       $("#library-select").focus();
     }

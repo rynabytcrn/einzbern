@@ -147,3 +147,57 @@ test("SUB-427: the LIBRARY_NOT_REGISTERED hint offers --workspace only to a verb
   assert.deepEqual([answer.reasonCode, answer.remedy], ["LIBRARY_NOT_REGISTERED", "library-register"]);
   assert.match(answer.error, /on this device \(register one with library-register, or pass --workspace\)$/u);
 });
+
+
+test("registry mutators queue their complete read/modify/replace behind the same lock", async (context) => {
+  const base = await scratch(context);
+  const home = process.env.EINZBERN_HOME;
+  const { registerLibrary, unregisterLibrary, repointLibrary, readRegistry } = await import("../dist/build/packages/core/src/registry.js");
+  const { acquireFileLock } = await import("../dist/build/packages/core/src/file-lock.js");
+  const projects = Object.fromEntries(["keep", "remove", "add-a", "add-b"].map((name) => [name, join(base, name)]));
+  await Promise.all(Object.values(projects).map((path) => mkdir(path)));
+  const library = join(base, "library");
+  const created = await cli(["init", "--workspace", library, "--at", at()]);
+  for (const name of ["keep", "remove"]) await registerLibrary({ projectPath: projects[name], libraryPath: library, registeredAt: at(), gitRemote: null }, home);
+  const destination = join(base, "destination");
+  await mkdir(destination);
+  const lock = await acquireFileLock(join(home, "registry.json.lock"));
+  let settled = 0;
+  const mutations = [
+    registerLibrary({ projectPath: projects["add-a"], libraryPath: library, registeredAt: at(), gitRemote: null }, home),
+    registerLibrary({ projectPath: projects["add-b"], libraryPath: library, registeredAt: at(), gitRemote: null }, home),
+    unregisterLibrary(projects.remove, home),
+    repointLibrary(created.libraryId, destination, true, home),
+  ].map((promise) => promise.finally(() => { settled += 1; }));
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(settled, 0, "every mutator must respect the registry transaction lock");
+    assert.deepEqual((await readRegistry(home)).entries.map((entry) => entry.projectPath).sort(), [projects.keep, projects.remove].sort(), "a held lock leaves the old complete registry readable");
+  } finally { await lock.release(); }
+  await Promise.all(mutations);
+  const entries = (await readRegistry(home)).entries;
+  assert.deepEqual(entries.map((entry) => entry.projectPath).sort(), [projects.keep, projects["add-a"], projects["add-b"]].sort(), "concurrent independent registration and removal preserve all unrelated entries");
+  const kept = entries.find((entry) => entry.projectPath === projects.keep);
+  assert.equal(kept.libraryPath, destination, "repoint survives concurrent registrations");
+  assert.equal(kept.cloudHosted, true);
+  assert.equal(entries.every((entry) => entry.libraryId === created.libraryId), true);
+  assert.equal((await readdir(home)).some((name) => name.endsWith(".lock")), false);
+});
+
+
+test("whole-suite test processes isolate inherited device state without serialising files", async (context) => {
+  const base = await scratch(context);
+  const environment = { ...process.env, EINZBERN_TEST_DEVICE_ROOT: base };
+  const module = new URL("./helpers/device-home.mjs", import.meta.url).href;
+  const homes = Array.from({ length: 2 }, () => {
+    const child = spawnSync(process.execPath, ["--input-type=module", "-e", `import {testDeviceHome} from ${JSON.stringify(module)};process.stdout.write(testDeviceHome);`], { env: environment, encoding: "utf8" });
+    assert.equal(child.status, 0, child.stderr);
+    return child.stdout;
+  });
+  assert.notEqual(homes[0], homes[1]);
+  for (const home of homes) {
+    assert.ok(home.startsWith(base + "/"));
+    assert.notEqual(home, environment.EINZBERN_HOME);
+    await assert.rejects(readdir(home), { code: "ENOENT" }, "each child reclaims its own device home");
+  }
+});

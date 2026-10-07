@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-469 R3: a test never reaches the real device directory. Importing this module
 // points EINZBERN_HOME at a fresh temporary directory for the whole test process, unless the
-// runner already chose one, and removes it when the process exits.
+// caller explicitly chose one outside a whole-suite run, and removes it when the process exits.
 
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-if (process.env.EINZBERN_HOME === undefined || process.env.EINZBERN_HOME === "") {
-  const directory = mkdtempSync(join(tmpdir(), "einzbern-test-device-"));
+if (process.env.EINZBERN_TEST_DEVICE_ROOT || process.env.EINZBERN_HOME === undefined || process.env.EINZBERN_HOME === "") {
+  const directory = mkdtempSync(join(process.env.EINZBERN_TEST_DEVICE_ROOT || tmpdir(), "einzbern-test-device-"));
   process.env.EINZBERN_HOME = join(directory, "einzbern");
   process.once("exit", () => rmSync(directory, { recursive: true, force: true }));
 }

@@ -30,8 +30,8 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
   "currentSources": [
     {
       "path": "portal/index.html",
-      "bytes": 344075,
-      "sha256": "e6894955a36193825abff8a77da8177c6b5cc7005e60c29067226be96e94de38"
+      "bytes": 344734,
+      "sha256": "936e176d5b718ecca89beeea6ec9d18c6375984c72ed11db0b40dcda973f4736"
     },
     {
       "path": "portal/locales.js",
@@ -60,8 +60,8 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
     },
     {
       "path": "portal/tests/ui-presence.test.mjs",
-      "bytes": 182174,
-      "sha256": "477a53486cf5369ec0f397faf2f4a19ee297e643792fda6c5233209b8e2683f3"
+      "bytes": 182707,
+      "sha256": "f38118b0068300d15970749ac659e06e9e57e5a0e45b2b3d6a7ac092a66ec993"
     },
     {
       "path": "packages/core/src/doctor.ts",

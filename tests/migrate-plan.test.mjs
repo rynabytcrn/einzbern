@@ -568,6 +568,8 @@ test("489-R1: a mapping that does not read or does not check answers SETUP_ANSWE
     ["omission-reason-blank", mapping([{ ...good, omitLegacyKnowledge: { reason: " " } }]), "omitLegacyKnowledge.reason"],
     ["omission-reason-lines", mapping([{ ...good, omitLegacyKnowledge: { reason: "two\nlines" } }]), "omitLegacyKnowledge.reason"],
     ["omission-reason-control", mapping([{ ...good, omitLegacyKnowledge: { reason: "x\u0000y" } }]), "omitLegacyKnowledge.reason"],
+    ["omission-reason-high-surrogate", mapping([{ ...good, omitLegacyKnowledge: { reason: "x\ud800y" } }]), "omitLegacyKnowledge.reason"],
+    ["omission-reason-low-surrogate", mapping([{ ...good, omitLegacyKnowledge: { reason: "x\udc00y" } }]), "omitLegacyKnowledge.reason"],
     ["omission-extra", mapping([{ ...good, omitLegacyKnowledge: { reason: "why", unchecked: true } }]), "omitLegacyKnowledge.unchecked"],
   ];
   for (const [label, content, field] of cases) {
@@ -579,7 +581,7 @@ test("489-R1: a mapping that does not read or does not check answers SETUP_ANSWE
       return true;
     });
   }
-  const longReason = "x".repeat(513);
+  const longReason = "x".repeat(513) + " 🧭";
   const longMapping = await writeMapping(m, [{ ...good, omitLegacyKnowledge: { reason: longReason } }]);
   const beforeLongRead = await treeDigest(m.base);
   assert.equal((await readMigrationMapping(longMapping)).partitions[0].omitLegacyKnowledge.reason, longReason, "mapping preserves the complete admitted omission reason");

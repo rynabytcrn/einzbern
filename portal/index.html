@@ -3392,11 +3392,11 @@ a.tcrn-relationship-chip:focus-visible {
   gap: var(--tcrn-space-3);
   padding: var(--tcrn-space-4);
   border: 1px solid var(--tcrn-color-border-subtle);
-  border-radius: var(--tcrn-radius-md);
-  background: var(--tcrn-color-surface);
+  border-radius: var(--tcrn-radius-panel);
+  background: var(--tcrn-color-surface-panel);
 }
-.tcrn-card--raised { box-shadow: var(--tcrn-shadow-raised); }
-.tcrn-card--quiet { background: var(--tcrn-color-surface-subtle); border-color: transparent; }
+.tcrn-card--raised { box-shadow: var(--tcrn-elevation-floating); }
+.tcrn-card--quiet { background: var(--tcrn-color-surface-muted); border-color: transparent; }
 .tcrn-card--interactive { cursor: pointer; }
 .tcrn-card--interactive:focus-visible {
   outline: 2px solid var(--tcrn-color-focus-ring);
@@ -3409,27 +3409,27 @@ a.tcrn-relationship-chip:focus-visible {
   justify-content: center;
   overflow: hidden;
   border-radius: 50%;
-  background: var(--tcrn-color-surface-subtle);
+  background: var(--tcrn-color-surface-muted);
   color: var(--tcrn-color-text-secondary);
   font-weight: 600;
   flex: none;
 }
-.tcrn-avatar--small { inline-size: 24px; block-size: 24px; font-size: var(--tcrn-font-size-xs); }
-.tcrn-avatar--medium { inline-size: 32px; block-size: 32px; font-size: var(--tcrn-font-size-sm); }
-.tcrn-avatar--large { inline-size: 48px; block-size: 48px; font-size: var(--tcrn-font-size-md); }
+.tcrn-avatar--small { inline-size: 24px; block-size: 24px; font-size: var(--tcrn-type-size-caption); }
+.tcrn-avatar--medium { inline-size: 32px; block-size: 32px; font-size: var(--tcrn-type-size-meta); }
+.tcrn-avatar--large { inline-size: 48px; block-size: 48px; font-size: var(--tcrn-type-size-ui); }
 .tcrn-avatar__image { inline-size: 100%; block-size: 100%; object-fit: cover; }
 
 .tcrn-progress {
   position: relative;
   overflow: hidden;
   block-size: var(--tcrn-space-2);
-  border-radius: var(--tcrn-radius-sm);
-  background: var(--tcrn-color-surface-subtle);
+  border-radius: var(--tcrn-radius-control);
+  background: var(--tcrn-color-surface-muted);
 }
 .tcrn-progress__fill {
   display: block;
   block-size: 100%;
-  background: var(--tcrn-color-accent);
+  background: var(--tcrn-color-brand-primary);
 }
 .tcrn-progress--indeterminate .tcrn-progress__fill {
   inline-size: 40%;
@@ -3466,14 +3466,14 @@ a.tcrn-relationship-chip:focus-visible {
   block-size: 24px;
   border-radius: 50%;
   border: 1px solid currentColor;
-  font-size: var(--tcrn-font-size-xs);
+  font-size: var(--tcrn-type-size-caption);
 }
 .tcrn-stepper__step--complete .tcrn-stepper__marker {
-  background: var(--tcrn-color-accent);
-  border-color: var(--tcrn-color-accent);
-  color: var(--tcrn-color-on-accent);
+  background: var(--tcrn-color-brand-primary);
+  border-color: var(--tcrn-color-brand-primary);
+  color: var(--tcrn-color-text-inverse);
 }
-.tcrn-stepper__description { grid-column: 2; font-size: var(--tcrn-font-size-xs); }
+.tcrn-stepper__description { grid-column: 2; font-size: var(--tcrn-type-size-caption); }
 
 .tcrn-radio-group { border: 0; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--tcrn-space-2); }
 .tcrn-radio-group__legend { padding: 0; font-weight: 600; }
@@ -3483,8 +3483,8 @@ a.tcrn-relationship-chip:focus-visible {
   align-items: center;
   gap: var(--tcrn-space-2);
 }
-.tcrn-radio-group__description { grid-column: 2; font-size: var(--tcrn-font-size-xs); color: var(--tcrn-color-text-secondary); }
-.tcrn-radio-group__option[data-option-disabled="true"] { color: var(--tcrn-color-text-disabled); }
+.tcrn-radio-group__description { grid-column: 2; font-size: var(--tcrn-type-size-caption); color: var(--tcrn-color-text-secondary); }
+.tcrn-radio-group__option[data-option-disabled="true"] { color: var(--tcrn-color-text-muted); }
 
 .tcrn-tabs__list {
   display: flex;
@@ -3499,9 +3499,9 @@ a.tcrn-relationship-chip:focus-visible {
   cursor: pointer;
   border-block-end: 2px solid transparent;
 }
-.tcrn-tabs__tab--selected { color: var(--tcrn-color-text-primary); border-block-end-color: var(--tcrn-color-accent); font-weight: 600; }
+.tcrn-tabs__tab--selected { color: var(--tcrn-color-text-primary); border-block-end-color: var(--tcrn-selection-edge); font-weight: 600; }
 .tcrn-tabs__tab:focus-visible { outline: 2px solid var(--tcrn-color-focus-ring); outline-offset: -2px; }
-.tcrn-tabs__tab:disabled { color: var(--tcrn-color-text-disabled); cursor: not-allowed; }
+.tcrn-tabs__tab:disabled { color: var(--tcrn-color-text-muted); cursor: not-allowed; }
 .tcrn-tabs__panel { padding-block-start: var(--tcrn-space-3); }
 .tcrn-tabs__panel:focus-visible { outline: 2px solid var(--tcrn-color-focus-ring); outline-offset: 2px; }
 
@@ -3511,9 +3511,9 @@ a.tcrn-relationship-chip:focus-visible {
   min-inline-size: 12rem;
   padding: var(--tcrn-space-1);
   border: 1px solid var(--tcrn-color-border-subtle);
-  border-radius: var(--tcrn-radius-md);
-  background: var(--tcrn-color-surface);
-  box-shadow: var(--tcrn-shadow-raised);
+  border-radius: var(--tcrn-radius-panel);
+  background: var(--tcrn-color-surface-panel);
+  box-shadow: var(--tcrn-elevation-floating);
 }
 .tcrn-menu__item {
   padding: var(--tcrn-space-2) var(--tcrn-space-3);
@@ -3521,10 +3521,10 @@ a.tcrn-relationship-chip:focus-visible {
   background: none;
   text-align: start;
   cursor: pointer;
-  border-radius: var(--tcrn-radius-sm);
+  border-radius: var(--tcrn-radius-control);
 }
-.tcrn-menu__item--active { background: var(--tcrn-color-surface-subtle); }
-.tcrn-menu__item:disabled { color: var(--tcrn-color-text-disabled); cursor: not-allowed; }
+.tcrn-menu__item--active { background: var(--tcrn-color-surface-muted); }
+.tcrn-menu__item:disabled { color: var(--tcrn-color-text-muted); cursor: not-allowed; }
 .tcrn-menu__item:focus-visible { outline: 2px solid var(--tcrn-color-focus-ring); outline-offset: -2px; }
 
 .tcrn-toast {
@@ -3533,16 +3533,16 @@ a.tcrn-relationship-chip:focus-visible {
   gap: var(--tcrn-space-3);
   padding: var(--tcrn-space-3) var(--tcrn-space-4);
   border: 1px solid var(--tcrn-color-border-subtle);
-  border-radius: var(--tcrn-radius-md);
-  background: var(--tcrn-color-surface);
+  border-radius: var(--tcrn-radius-panel);
+  background: var(--tcrn-color-surface-panel);
 }
-.tcrn-toast--positive { border-color: var(--tcrn-color-positive-border); }
-.tcrn-toast--warning { border-color: var(--tcrn-color-warning-border); }
-.tcrn-toast--danger { border-color: var(--tcrn-color-danger-border); }
+.tcrn-toast--positive { border-color: var(--tcrn-color-state-ready); }
+.tcrn-toast--warning { border-color: var(--tcrn-color-state-warning); }
+.tcrn-toast--danger { border-color: var(--tcrn-color-state-blocked); }
 .tcrn-toast__message { flex: 1; }
 .tcrn-toast__dismiss { border: 0; background: none; cursor: pointer; padding: var(--tcrn-space-1); }
 
-.tcrn-date-picker { padding: var(--tcrn-space-2); border: 1px solid var(--tcrn-color-border-subtle); border-radius: var(--tcrn-radius-sm); }
+.tcrn-date-picker { padding: var(--tcrn-space-2); border: 1px solid var(--tcrn-color-border-subtle); border-radius: var(--tcrn-radius-control); }
 
 .tcrn-tree, .tcrn-tree__group { list-style: none; margin: 0; padding: 0; }
 .tcrn-tree__group { padding-inline-start: var(--tcrn-space-4); }
@@ -3550,7 +3550,7 @@ a.tcrn-relationship-chip:focus-visible {
 .tcrn-tree__toggle { border: 0; background: none; cursor: pointer; padding: 0; inline-size: 1.25rem; }
 .tcrn-tree__toggle--leaf { visibility: hidden; }
 .tcrn-tree__label { border: 0; background: none; cursor: pointer; text-align: start; padding: var(--tcrn-space-1); }
-.tcrn-tree__item[aria-selected="true"] > .tcrn-tree__row { background: var(--tcrn-color-surface-subtle); }
+.tcrn-tree__item[aria-selected="true"] > .tcrn-tree__row { background: var(--tcrn-color-surface-muted); }
 
 .tcrn-data-grid { inline-size: 100%; border-collapse: collapse; }
 .tcrn-data-grid th, .tcrn-data-grid td { padding: var(--tcrn-space-2) var(--tcrn-space-3); text-align: start; border-block-end: 1px solid var(--tcrn-color-border-subtle); }
@@ -3569,7 +3569,7 @@ a.tcrn-relationship-chip:focus-visible {
 .tcrn-multi-select-dropdown__trigger [data-multi-select-summary]{min-inline-size:0;overflow-wrap:anywhere}
 .tcrn-multi-select-dropdown__caret{flex:0 0 auto}
 .tcrn-multi-select-dropdown__trigger:focus-visible{outline:var(--tcrn-space-0h) solid var(--tcrn-color-focus-ring);outline-offset:var(--tcrn-space-0h)}
-.tcrn-multi-select-dropdown__trigger:disabled{color:var(--tcrn-color-text-disabled);cursor:not-allowed}
+.tcrn-multi-select-dropdown__trigger:disabled{color:var(--tcrn-color-text-muted);cursor:not-allowed}
 .tcrn-multi-select-dropdown__list{z-index:var(--tcrn-z-popover);min-inline-size:0;max-inline-size:calc(100vw - var(--tcrn-space-4));max-block-size:calc(100vh - var(--tcrn-space-4));overflow:auto;box-sizing:border-box}
 .tcrn-multi-select-dropdown__list[hidden]{display:none}
 .tcrn-multi-select-dropdown__option{display:flex;justify-content:space-between;align-items:center;gap:var(--tcrn-space-2);font:inherit;color:var(--tcrn-color-text-primary);overflow-wrap:anywhere}
@@ -4068,7 +4068,7 @@ button:disabled { cursor: not-allowed; }
       <div class="tcrn-text tcrn-rail__footer"><span data-i18n="app.boundaryBody">Writes use the public CLI and return the engine receipt.</span></div>
     </aside>
     <div class="tcrn-product-shell__workspace">
-      <header class="tcrn-top-bar" data-ds-component="ProductShell/TopBar" data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html#navigation-shell-spec" data-ds-mapping-status="production-published-consumed" data-ds-candidate-sha="48ded198a7148efdaa245271d1885e468f24f4a4">
+      <header class="tcrn-top-bar" data-ds-component="ProductShell/TopBar" data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html#navigation-shell-spec" data-ds-mapping-status="production-published-consumed" data-ds-candidate-sha="2f40478bb2993e6b6d02137f5870a890800d8662">
         <div class="tcrn-top-bar__module tcrn-top-bar__module--path" id="workspace-label"></div>
         <div class="tcrn-top-bar__actions">
           <label class="tcrn-sr-only" for="library-select" data-i18n="library.label">Library</label>
@@ -4133,7 +4133,7 @@ button:disabled { cursor: not-allowed; }
             <nav class="tcrn-subnav tcrn-settings-layout__nav" data-settings-layout-nav data-settings-local-nav="true" aria-label="Settings groups" data-i18n-aria-label="settings.groupsLabel" role="tablist"></nav>
           </div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content">
-            <div class="tcrn-manage tcrn-settings-layout" data-settings-layout-component="SettingsLayout" data-settings-layout="true" data-settings-layout-navigation-location="page-hierarchy-section-tabs" data-ds-candidate="TCRN-Design-System@48ded198a7148efdaa245271d1885e468f24f4a4" data-ds-contract-status="production-published-consumed" data-ds-contract-version="ai_consumption_contract_v1" data-ds-contract-digest="4def7d68d25912757a0892c00c9565feefe908425b499d7e7759142e8fdeb68a" data-ds-component-css-sha256="89edf550b6aa2dce64ceb9bd385429c5a48dd206043b0a904e810e4d097a8166" data-ds-rules="DS-106-R1 DS-106-R2 DS-107-R1 DS-107-R2 DS-108-R1 DS-108-R2 DS-112-R1 DS-112-R2 DS-116-R1 DS-116-R2 DS-117-R1 DS-117-R2 DS-118-R1 DS-118-R2 DS-119-R1 DS-119-R2" data-ds-surface-contracts="overlay-boundary-contract-v1 field-value-selection-contract-v1 dictionary-content-contract-v1 operation-feedback-contract-v1 content-scope-contract-v1 consumer-evidence-contract-v1 verification-cadence-contract-v1" data-ds-static-overlay-bridge="mountStaticOverlayBoundary" data-ds-candidate-status="production-published-consumed" data-settings-layout-mode="container-driven" data-settings-layout-form-policy="single-host-single-column" data-settings-layout-breakpoint="960px" data-settings-content-breakpoint="720px" data-settings-local-navigation="compact" data-settings-overflow-policy="no-page-overflow" data-settings-long-value-policy="native-inline-scroll-copy"><div class="tcrn-settings-layout__frame"><div class="tcrn-settings-layout__grid" data-settings-layout-grid><div class="tcrn-settings-layout__content" data-settings-layout-content data-settings-content="true" data-settings-complete-form="true"><div id="design-authority" hidden></div><div id="settings-rows" class="tcrn-settings-layout__form"></div></div></div></div></div>
+            <div class="tcrn-manage tcrn-settings-layout" data-settings-layout-component="SettingsLayout" data-settings-layout="true" data-settings-layout-navigation-location="page-hierarchy-section-tabs" data-ds-candidate="TCRN-Design-System@2f40478bb2993e6b6d02137f5870a890800d8662" data-ds-contract-status="production-published-consumed" data-ds-contract-version="ai_consumption_contract_v1" data-ds-contract-digest="d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7" data-ds-component-css-sha256="74f51554a6977429e99fbb95fa16143dbd8596d321d6cee0a06136f4da41b94f" data-ds-rules="DS-106-R1 DS-106-R2 DS-107-R1 DS-107-R2 DS-108-R1 DS-108-R2 DS-112-R1 DS-112-R2 DS-116-R1 DS-116-R2 DS-117-R1 DS-117-R2 DS-118-R1 DS-118-R2 DS-119-R1 DS-119-R2" data-ds-surface-contracts="overlay-boundary-contract-v1 field-value-selection-contract-v1 dictionary-content-contract-v1 operation-feedback-contract-v1 content-scope-contract-v1 consumer-evidence-contract-v1 verification-cadence-contract-v1" data-ds-static-overlay-bridge="mountStaticOverlayBoundary" data-ds-candidate-status="production-published-consumed" data-settings-layout-mode="container-driven" data-settings-layout-form-policy="single-host-single-column" data-settings-layout-breakpoint="960px" data-settings-content-breakpoint="720px" data-settings-local-navigation="compact" data-settings-overflow-policy="no-page-overflow" data-settings-long-value-policy="native-inline-scroll-copy"><div class="tcrn-settings-layout__frame"><div class="tcrn-settings-layout__grid" data-settings-layout-grid><div class="tcrn-settings-layout__content" data-settings-layout-content data-settings-content="true" data-settings-complete-form="true"><div id="design-authority" hidden></div><div id="settings-rows" class="tcrn-settings-layout__form"></div></div></div></div></div>
           </div>
         </div>
       </section>
@@ -4571,11 +4571,11 @@ const BOOT = __PORTAL_BOOT__;
     const layerClass = kind === "popover" ? "tcrn-popover" : "tcrn-tooltip__content";
     const layerRole = kind === "popover" ? `role="dialog" aria-modal="false" aria-label="${esc(t("concept.explain"))}" data-overlay-scope="popover"` : `role="tooltip" data-tooltip-scope="supplemental" data-tooltip-interactive-content="forbidden"`;
     const triggerRelation = kind === "popover" ? `aria-controls="${id}" aria-haspopup="dialog" aria-expanded="false"` : `aria-describedby="${id}"`;
-    return `<span class="tcrn-tooltip" data-placement="${esc(placement)}" data-overlay-scope="${kind}" data-concept-tip="${esc(key)}" data-static-overlay-kind="${kind}" data-ds-overlay-candidate="TCRN-Design-System@48ded198a7148efdaa245271d1885e468f24f4a4">`
+    return `<span class="tcrn-tooltip" data-placement="${esc(placement)}" data-overlay-scope="${kind}" data-concept-tip="${esc(key)}" data-static-overlay-kind="${kind}" data-ds-overlay-candidate="TCRN-Design-System@2f40478bb2993e6b6d02137f5870a890800d8662">`
       + `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-icon-button" ${triggerRelation} data-static-overlay-trigger="true" data-static-overlay-kind="${kind}" aria-label="${esc(t("concept.explain"))}">`
       + `<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 7.2v4"/><path d="M8 4.8h.01"/></svg>`
       + `</button>`
-      + `<${layerTag} id="${id}" ${layerRole} class="${layerClass}" data-static-overlay-layer="true" data-static-overlay-kind="${kind}" data-ds-overlay-candidate="TCRN-Design-System@48ded198a7148efdaa245271d1885e468f24f4a4" hidden>${esc(body)}</${layerTag}>`
+      + `<${layerTag} id="${id}" ${layerRole} class="${layerClass}" data-static-overlay-layer="true" data-static-overlay-kind="${kind}" data-ds-overlay-candidate="TCRN-Design-System@2f40478bb2993e6b6d02137f5870a890800d8662" hidden>${esc(body)}</${layerTag}>`
       + `</span>`;
   };
   const settingDescription = (key) => t(`setting.${key}.description`);

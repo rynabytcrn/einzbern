@@ -256,6 +256,13 @@ export async function setupTargetState(projectRoot: string, libraryPath: string,
   const root = await realpath(projectRoot);
   const libraryRoot = await realpath(libraryPath);
   const state = await materializeWorkspaceFromGenesis(libraryRoot);
+  return scopeSetupTargetState(root, libraryRoot, deviceHome, state);
+}
+
+/** Scope already-read migration state without opening its not-yet-created target. */
+export async function scopeSetupTargetState(projectRoot: string, libraryPath: string, deviceHome: string, state: WorkspaceState): Promise<WorkspaceState> {
+  const root = await realpath(projectRoot);
+  const libraryRoot = await realTarget(libraryPath);
   const entry = (await readRegistry(deviceHome)).entries.find(candidate => candidate.projectPath === root);
   if (entry !== undefined && (entry.libraryId !== state.metadata.workspaceId || entry.libraryPath !== libraryRoot)) {
     setupFail("SETUP_LIBRARY_CONFLICT", "declared project binding names another library");
@@ -647,7 +654,8 @@ export async function planWiring(recorder: SetupRecorder, input: WiringPlanInput
   }
   if (library === null || !runs(steps, "managed-sections")) return [];
   const declared = input.configurationProjectId ?? (await readRegistry(deviceHome)).entries.find(entry => entry.projectPath === projectRoot && entry.libraryPath === library.path)?.projectId;
-  const view = declared === undefined ? library.state : scopedWorkspaceState(await materializeWorkspaceFromGenesis(library.path), declared);
+  const view = Object.hasOwn(library.state, "configurationProjectId") || declared === undefined
+    ? library.state : scopedWorkspaceState(await materializeWorkspaceFromGenesis(library.path), declared);
   const sections = await planSections(recorder, projectRoot, view, navigation);
   if (sections.recordsChange) recorder.write("library", library.path, "update");
   return sections.pending;

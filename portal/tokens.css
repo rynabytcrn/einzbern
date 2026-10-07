@@ -127,6 +127,8 @@
   --tcrn-container-settings-number-min: 12ch;
   --tcrn-container-page-third-level-split: 960px;
   --tcrn-container-page-third-level-nav: 208px;
+  --tcrn-brand-mark-filter: none;
+  --tcrn-search-input-min-inline-size: 0;
 }
 [data-tcrn-theme="dark"] {
   --tcrn-selection-fill: rgba(236, 236, 234, 0.09);

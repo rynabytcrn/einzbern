@@ -2,8 +2,8 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r30-safe-source-f01-held",
-  "scope": "native R1–R6 appended to revision 4",
+  "pack": "r31-source-f01-authorized",
+  "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
       "path": "packages/cli/src/index.ts",
@@ -175,7 +175,7 @@
     },
     {
       "path": "packages/core/src/legacy-import.ts",
-      "sha256": "ef36f5103d09088292ac4d0d118082c6834782ecf41ab9b68c610688ac58a3a2"
+      "sha256": "b3f174cb0920818f80b2e47e4dbc182ef7027b5ca330811f4b2b3afb3497f210"
     },
     {
       "path": "packages/core/src/legacy-workspace.ts",
@@ -279,7 +279,7 @@
     },
     {
       "path": "packages/core/src/setup-fresh.ts",
-      "sha256": "efdb1f7906e55b4d869283a4f9b16332ee81bf06369f5ff49aa409655ed51a9e"
+      "sha256": "6337f750d48df564e40a872bc81252e7046d409b539eec40325ab979da331e7f"
     },
     {
       "path": "packages/core/src/setup-maintain.ts",
@@ -291,7 +291,7 @@
     },
     {
       "path": "packages/core/src/setup.ts",
-      "sha256": "8ee359a6bd3c9b372834dbd06d521ea7a1bb756b59be21e409b3425a6329b8df"
+      "sha256": "494e4ec98fc91199de807f7ba1a0f4541693bb42ee8b380ede4a6785dec079d8"
     },
     {
       "path": "packages/core/src/skill-copies.ts",
@@ -359,7 +359,7 @@
     },
     {
       "path": "portal/index.html",
-      "sha256": "1cabb8e17a30d96732e921631532cb8cadf8a47c942be48c7b8baa529ebf279f"
+      "sha256": "107e7b057e24561a8348d5024241220ced9b7f4a33b805d176869da8cbdbbd30"
     },
     {
       "path": "portal/locale-contract.mjs",
@@ -778,203 +778,108 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R30 safe source implementation with one focused cadence recorded separately; this inventory never implies passing verification, final acceptance or Owner visual judgment. F01 migration-language-negative remains held without source repair; F19 belongs to the later truthful final evidence producer. The complete actual candidate parent/publication/build/consumption disposition below determines whether its source may be consumed. Current consumed-authority identity is bound by the publication and snapshot fields. Fresh canonical integration and affected MAIN acceptance remain separate pending acts. No live Engine installation/migration or governed write was performed.",
+  "evidenceDisposition": "R31 authorized source implementation with one focused cadence recorded separately; this inventory never implies passing verification, final acceptance or Owner visual judgment. F01 migration-language-negative source repair is authorized; full migration dependent files execute in the same Source cadence; F19 belongs to the later truthful final evidence producer. The complete actual candidate parent/publication/build/consumption disposition below determines whether its source may be consumed. Current consumed-authority identity is bound by the publication and snapshot fields. Fresh canonical integration and affected MAIN acceptance remain separate pending acts. No live Engine installation/migration or governed write was performed.",
   "dsCandidateDisposition": {
-    "candidateCommit": "cc9aa338bb616086b8f84cc6e95306183e1f2292",
+    "candidate": "788f02c76c1d1b2f8c03628253bd8456964b381e",
+    "mergeCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
     "candidateParent": {
-      "command": "pnpm verify",
-      "exit": 1,
-      "raw": "ds-p3-ordinary-parent-once.run.json",
-      "actualFirstBlockingChild": "full-surface:proof: tests/full-surface-remediation.test.mjs:189–193",
-      "reason": "Missing expected exception (AssertionError)",
-      "wholeFileTestResult": {
-        "tests": 9,
-        "pass": 8,
-        "fail": 1,
-        "cancelled": 0,
-        "skipped": 0,
-        "todo": 0
+      "argv": [
+        "pnpm",
+        "verify"
+      ],
+      "exit": 0,
+      "sourceTree": "de0b19e6b750702d18f8d727bba734362d240e25",
+      "run": "ds-p3-ordinary-parent-once.run.json",
+      "fullOriginalParent": true
+    },
+    "staticBuild": {
+      "command": "pnpm public-docs:vercel-build",
+      "exit": 0,
+      "run": "ds-production-static-build-once.run.json"
+    },
+    "candidateMerged": true,
+    "candidateProductionPublished": true,
+    "candidateBuildAndArtifactVerified": true,
+    "candidateConsumed": true,
+    "publication": {
+      "pr": "https://github.com/tpmoonchefryan/TCRN-Design-System/pull/23",
+      "prHead": "788f02c76c1d1b2f8c03628253bd8456964b381e",
+      "mergeCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+      "mergeTree": "de0b19e6b750702d18f8d727bba734362d240e25",
+      "environment": "Production",
+      "deploymentId": 6904637050,
+      "deploymentStatusId": 19388278778,
+      "vercelBuildStatusId": 55773429554,
+      "vercelBuildURL": "https://vercel.com/tcrn-platform/tcrn-design-system-storybook/7yzUQWhbNoeRSJ4wGsLX4LhGqb1B",
+      "productionDeploymentURL": "https://tcrn-design-system-storybook-m0306iz13-tcrn-platform.vercel.app",
+      "productionOrigin": "https://tcrn-design-system-storybook.vercel.app",
+      "authority": {
+        "schemaVersion": "tcrn.design-authority.v1",
+        "name": "TCRN Design System",
+        "version": "3.0.0",
+        "tokensDigest": "118c6e45b8698a45a551226deb865d5bee71f64d0f787550751489aae2c891c9",
+        "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+        "componentCssDigest": "74f51554a6977429e99fbb95fa16143dbd8596d321d6cee0a06136f4da41b94f",
+        "staticBridgeDigest": "26e51f7b7f7beb18ae00fec4daaf19dbf1d8e588063fd509c81a1761a87ccf8a"
       },
-      "selectionGrammar": {
-        "ok": true,
-        "sourcesScanned": 4,
-        "selectionRulesScanned": 31,
-        "findings": []
-      },
-      "actualExecutedStages": [
+      "aiContractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
+      "artifacts": [
         {
-          "stage": "verify",
-          "command": "pnpm install --frozen-lockfile && pnpm typecheck && pnpm build && pnpm dist:hygiene && pnpm test && pnpm tokens:proof && pnpm component-modifiers:proof && pnpm badge-wrap:proof && pnpm geometry:proof && pnpm shell:parity && pnpm doc-shell:proof && pnpm brand-asset:proof && pnpm exports:check && pnpm pack:smoke && pnpm storybook:smoke && pnpm readme:proof && pnpm public:naming:proof && pnpm public-output:scan && pnpm internal-vocab:scan && pnpm generic:scan && pnpm ds:consumption:proof && pnpm full-surface:proof && pnpm scaffold:proof && pnpm internal-alpha:proof",
-          "stdoutLine": 2
+          "artifact": "tcrn-design-authority.json",
+          "url": "https://tcrn-design-system-storybook.vercel.app/tcrn-design-authority.json",
+          "status": 200,
+          "contentType": "application/json; charset=utf-8",
+          "sha256": "fd77fd2b7b154ba7cc9366fd429f1a4f43708e832c23faca72bcdb6836b40972",
+          "bytes": 436,
+          "file": "published-tcrn-design-authority.json"
         },
         {
-          "stage": "typecheck",
-          "command": "tsc -b --pretty false",
-          "stdoutLine": 11
+          "artifact": "ai-consumption-contract.json",
+          "url": "https://tcrn-design-system-storybook.vercel.app/ai-consumption-contract.json",
+          "status": 200,
+          "contentType": "application/json; charset=utf-8",
+          "sha256": "cd829848bf101689bbf75d792c20116ae31469ec4e994a702a776dbf1ad83415",
+          "bytes": 199428,
+          "file": "published-ai-consumption-contract.json"
         },
         {
-          "stage": "build",
-          "command": "pnpm --filter @tcrn/ui-tokens build && pnpm --filter @tcrn/ui-copy-state build && pnpm --filter @tcrn/ui-react build && pnpm --filter @tcrn/tms-react-pilot build && pnpm --filter @tcrn/aos-token-copy-state-pilot build && pnpm --filter @tcrn/design-system-storybook build",
-          "stdoutLine": 15
+          "artifact": "ds-static-bridges.js",
+          "url": "https://tcrn-design-system-storybook.vercel.app/ds-static-bridges.js",
+          "status": 200,
+          "contentType": "application/javascript; charset=utf-8",
+          "sha256": "26e51f7b7f7beb18ae00fec4daaf19dbf1d8e588063fd509c81a1761a87ccf8a",
+          "bytes": 25621,
+          "file": "published-ds-static-bridges.js"
         },
         {
-          "stage": "dist:hygiene",
-          "command": "node scripts/dist-hygiene-proof.mjs",
-          "stdoutLine": 91
+          "artifact": "patterns-feedback-selection.html",
+          "url": "https://tcrn-design-system-storybook.vercel.app/patterns-feedback-selection.html",
+          "status": 200,
+          "contentType": "text/html; charset=utf-8",
+          "sha256": "de1e422d40e02026237f3e1982aac5adab371ba1f611d4f97f569d733613c775",
+          "bytes": 548450,
+          "file": "published-patterns-feedback-selection.html"
         },
         {
-          "stage": "test",
-          "command": "pnpm --filter @tcrn/ui-tokens test && pnpm --filter @tcrn/ui-copy-state test && pnpm --filter @tcrn/ui-react test && pnpm --filter @tcrn/design-system-storybook test && pnpm --filter @tcrn/tms-react-pilot test && pnpm --filter @tcrn/aos-token-copy-state-pilot test",
-          "stdoutLine": 99
-        },
-        {
-          "stage": "tokens:proof",
-          "command": "node scripts/css-template-integrity-proof.mjs && node scripts/tokens-sync.mjs --check && node scripts/demo-styles-sync.mjs --check && node scripts/token-contrast-proof.mjs && node scripts/fonts-proof.mjs && node scripts/stamp-whitelist-proof.mjs && node scripts/shell-fidelity-proof.mjs && node scripts/token-extension-proof.mjs && node scripts/selection-grammar-proof.mjs",
-          "stdoutLine": 308
-        },
-        {
-          "stage": "component-modifiers:proof",
-          "command": "node scripts/component-modifier-proof.mjs",
-          "stdoutLine": 410
-        },
-        {
-          "stage": "badge-wrap:proof",
-          "command": "node scripts/badge-wrap-proof.mjs",
-          "stdoutLine": 475
-        },
-        {
-          "stage": "geometry:proof",
-          "command": "node scripts/geometry-proof.mjs",
-          "stdoutLine": 508
-        },
-        {
-          "stage": "shell:parity",
-          "command": "node scripts/shell-parity-proof.mjs",
-          "stdoutLine": 513
-        },
-        {
-          "stage": "doc-shell:proof",
-          "command": "node scripts/doc-shell-class-proof.mjs",
-          "stdoutLine": 518
-        },
-        {
-          "stage": "brand-asset:proof",
-          "command": "node scripts/brand-asset-source-proof.mjs",
-          "stdoutLine": 608
-        },
-        {
-          "stage": "exports:check",
-          "command": "node scripts/check-exports.mjs",
-          "stdoutLine": 624
-        },
-        {
-          "stage": "pack:smoke",
-          "command": "node scripts/pack-smoke.mjs",
-          "stdoutLine": 654
-        },
-        {
-          "stage": "storybook:smoke",
-          "command": "node scripts/storybook-smoke.mjs",
-          "stdoutLine": 681
-        },
-        {
-          "stage": "readme:proof",
-          "command": "node --test scripts/readme-public-contract.test.mjs",
-          "stdoutLine": 29596
-        },
-        {
-          "stage": "public:naming:proof",
-          "command": "node --test scripts/public-naming-proof.test.mjs && node scripts/public-naming-proof.mjs",
-          "stdoutLine": 29609
-        },
-        {
-          "stage": "public-output:scan",
-          "command": "node scripts/public-output-scan.mjs",
-          "stdoutLine": 29645
-        },
-        {
-          "stage": "internal-vocab:scan",
-          "command": "node --test scripts/internal-vocabulary-scan.test.mjs && node scripts/internal-vocabulary-scan.mjs",
-          "stdoutLine": 29678
-        },
-        {
-          "stage": "generic:scan",
-          "command": "node --test scripts/generic-primitive-scan.test.mjs && node scripts/generic-primitive-scan.mjs",
-          "stdoutLine": 29854
-        },
-        {
-          "stage": "ds:consumption:proof",
-          "command": "node --test tests/ds-consumption-proof.test.mjs && node scripts/ds-consumption-proof.mjs",
-          "stdoutLine": 29891
-        },
-        {
-          "stage": "full-surface:proof",
-          "command": "node --test tests/full-surface-remediation.test.mjs && node scripts/full-surface-remediation-proof.mjs",
-          "stdoutLine": 43275
+          "artifact": "llms.txt",
+          "url": "https://tcrn-design-system-storybook.vercel.app/llms.txt",
+          "status": 200,
+          "contentType": "text/plain; charset=utf-8",
+          "sha256": "8fda1f80b3cd5f412633e326aed7fab6b2a18aa42503f451086d57773fdb0398",
+          "bytes": 28990,
+          "file": "published-llms.txt"
         }
       ],
-      "visualSignatureRegressions": null,
-      "storyHeightViolations": null,
-      "storyHeightStaleAllowlist": null,
-      "axeViolationCount": null,
-      "browserCaptureCount": 0,
-      "captureCountScope": "internal-alpha original271capture stage only; other earlier browser measurements did execute",
-      "unexecuted": [
-        "full-surface-remediation-proof.mjs after failing test",
-        "scaffold:proof",
-        "internal-alpha:contracts/browser271capture",
-        "internal-alpha scan/hardening"
-      ]
+      "dependencySatisfied": true,
+      "basis": [
+        "PR merged matching source tree",
+        "Production deployment success on merge SHA",
+        "Vercel successful static build on merge SHA",
+        "Production authority sourceCommit and artifact byte digests",
+        "full original local pnpm verify and public-docs:vercel-build passed on exact same source tree"
+      ],
+      "ownerVisualAcceptance": "not claimed"
     },
-    "candidateMerged": false,
-    "candidateProductionPublished": false,
-    "candidateBuildAndArtifactVerified": false,
-    "candidateConsumed": false,
-    "reason": "Original approved ordinary parent failed once at the genuine exposed whole-file public-token negative. No post-cadence repair/rerun, baseline/threshold/debt/budget waiver, red-authority publication or application consumption.",
-    "retainedCurrentAuthorityCommit": "48ded198a7148efdaa245271d1885e468f24f4a4",
-    "retainedPublicationEvidence": "retained-ds-publication-binding.json",
-    "retainedAuthorityEvidenceIsNewCandidateEvidence": false,
-    "applicationSnapshots": [
-      {
-        "path": "portal/tokens.css",
-        "bytes": 8014,
-        "sha256": "87e9b5c6d6cbc765e81803a02160460dc1b84143d761651212b64fb5e41edf1d",
-        "equalsEngineBase": true
-      },
-      {
-        "path": "portal/ds-component-css.snapshot.css",
-        "bytes": 120592,
-        "sha256": "89edf550b6aa2dce64ceb9bd385429c5a48dd206043b0a904e810e4d097a8166",
-        "equalsEngineBase": true
-      },
-      {
-        "path": "portal/ds-static-bridges.snapshot.js",
-        "bytes": 25621,
-        "sha256": "26e51f7b7f7beb18ae00fec4daaf19dbf1d8e588063fd509c81a1761a87ccf8a",
-        "equalsEngineBase": true
-      },
-      {
-        "path": "portal/ds-consumer-contract.json",
-        "bytes": 3460,
-        "sha256": "48f32d5844fa2019f98e55da6ef4fde43a9c449942bac840180b448e5cab4b48",
-        "equalsEngineBase": true
-      },
-      {
-        "path": "portal/index.html",
-        "bytes": 342875,
-        "sha256": "1cabb8e17a30d96732e921631532cb8cadf8a47c942be48c7b8baa529ebf279f",
-        "equalsEngineBase": true
-      }
-    ],
-    "heldGenerators": [
-      "new DS component snapshot",
-      "new DS token snapshot",
-      "new DS static bridge snapshot",
-      "new DS consumption-contract publication binding"
-    ],
-    "prCreatePushMergeAttempted": false,
-    "productionAttempted": false,
-    "canonicalDsRestored": "canonical-ds-restored-after-parent.json",
     "originalVisualSignatureHistory": {
       "mean": [
         2.625,
@@ -994,16 +899,24 @@
       "debt": 9,
       "captures": 271
     },
+    "currentBrowserSummary": "ds-current-browser-proof-summary.json",
+    "currentBrowserResult": {
+      "ok": true,
+      "screenshots": 271,
+      "axeViolationCount": 0
+    },
     "baselinesCriteriaAndAllowancesChanged": false,
-    "currentBrowserSignatureHeightAxeOutcome": "unknown/unexecuted; historical outputs do not establish candidate results"
+    "formalApplicationAcceptance": "pending",
+    "OwnerVisual": "not claimed",
+    "noEngineHelperReleaseInstallMigration": true
   },
   "publication": {
-    "mergeCommit": "48ded198a7148efdaa245271d1885e468f24f4a4",
-    "mergeTree": "c7198ebb3f17abf66c9f2aede15f8d2f2cf3d804",
+    "mergeCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+    "mergeTree": "de0b19e6b750702d18f8d727bba734362d240e25",
     "environment": "Production",
-    "deploymentId": 6821658955,
-    "deploymentStatusId": 19199799925,
-    "vercelBuildStatusId": 55497151004,
+    "deploymentId": 6904637050,
+    "deploymentStatusId": 19388278778,
+    "vercelBuildStatusId": 55773429554,
     "productionOrigin": "https://tcrn-design-system-storybook.vercel.app",
     "dependencySatisfied": true
   },
@@ -1014,8 +927,8 @@
       "constructionAndStates": "native hidden select[multiple] value + published trigger/listbox/option/check/label construction; mountStaticMultiSelect; body overlay; Save/Undo/Reset; selected/disabled/required",
       "interaction": "ArrowUp/Down/Home/End/typeahead/Space/Enter/Escape/Tab/outside; published bridge owns movement and native change",
       "authority": {
-        "sourceCommit": "48ded198a7148efdaa245271d1885e468f24f4a4",
-        "contractPayloadDigest": "4def7d68d25912757a0892c00c9565feefe908425b499d7e7759142e8fdeb68a",
+        "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+        "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
         "standardRegistry": "foundation-visual-standards-v1",
         "standardCategories": [
           "visual-philosophy-ownership",
@@ -1055,8 +968,8 @@
       "constructionAndStates": "published classes/full38px IconButton; proper labels; native type/min1/step1; disabled0.64; shared commands and meanings",
       "interaction": "native keyboard/label activation, focus-visible, required feedback; Save commits, Undo local draft, Reset inheritance",
       "authority": {
-        "sourceCommit": "48ded198a7148efdaa245271d1885e468f24f4a4",
-        "contractPayloadDigest": "4def7d68d25912757a0892c00c9565feefe908425b499d7e7759142e8fdeb68a",
+        "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+        "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
         "standardRegistry": "foundation-visual-standards-v1",
         "standardCategories": [
           "visual-philosophy-ownership",
@@ -1096,8 +1009,8 @@
       "constructionAndStates": "real header/body/title/actions children; public Heading2/Text; private title/lede/font/letterspacing clones removed",
       "interaction": "semantic h1 for route title, h2/h3 published sizes; public title/actions responsive layout",
       "authority": {
-        "sourceCommit": "48ded198a7148efdaa245271d1885e468f24f4a4",
-        "contractPayloadDigest": "4def7d68d25912757a0892c00c9565feefe908425b499d7e7759142e8fdeb68a",
+        "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+        "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
         "standardRegistry": "foundation-visual-standards-v1",
         "standardCategories": [
           "visual-philosophy-ownership",
@@ -1137,8 +1050,8 @@
       "constructionAndStates": "actual public headers/rows/cells, typed control children; public table track custom properties; labelled cell/columnheader; responsive stacked cards",
       "interaction": "read-only vs editable columns, explicit complete errors on demand; per-row aria labels",
       "authority": {
-        "sourceCommit": "48ded198a7148efdaa245271d1885e468f24f4a4",
-        "contractPayloadDigest": "4def7d68d25912757a0892c00c9565feefe908425b499d7e7759142e8fdeb68a",
+        "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+        "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
         "standardRegistry": "foundation-visual-standards-v1",
         "standardCategories": [
           "visual-philosophy-ownership",
@@ -1178,8 +1091,8 @@
       "constructionAndStates": "published container mode720/content +960 frame; shared label grid; native depth comes from route definition; no viewport-inferred depth",
       "interaction": "tab Arrow keys/Home/End, one selection/panel naming; owned subnavigation same meaning",
       "authority": {
-        "sourceCommit": "48ded198a7148efdaa245271d1885e468f24f4a4",
-        "contractPayloadDigest": "4def7d68d25912757a0892c00c9565feefe908425b499d7e7759142e8fdeb68a",
+        "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+        "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
         "standardRegistry": "foundation-visual-standards-v1",
         "standardCategories": [
           "visual-philosophy-ownership",
@@ -1219,8 +1132,8 @@
       "constructionAndStates": "published exact logo/tokens/snapshot; library and configuration target labelled separately; route status row placement; actual count semantics",
       "interaction": "collapse/focus/locale/theme/local storage are presentation preferences; target switch invalidates stale requests",
       "authority": {
-        "sourceCommit": "48ded198a7148efdaa245271d1885e468f24f4a4",
-        "contractPayloadDigest": "4def7d68d25912757a0892c00c9565feefe908425b499d7e7759142e8fdeb68a",
+        "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+        "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
         "standardRegistry": "foundation-visual-standards-v1",
         "standardCategories": [
           "visual-philosophy-ownership",
@@ -1260,8 +1173,8 @@
       "constructionAndStates": "mountStaticOverlayBoundary body-level positioning; Tooltip supplemental content, Popover dialog aria-modal=false; Drawer complementary structural not modal; polite receipt summary/details",
       "interaction": "Escape/outside close; focus returns to trigger; structural drawer does not claim a focus trap; full technical receipt disclosure",
       "authority": {
-        "sourceCommit": "48ded198a7148efdaa245271d1885e468f24f4a4",
-        "contractPayloadDigest": "4def7d68d25912757a0892c00c9565feefe908425b499d7e7759142e8fdeb68a",
+        "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+        "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
         "standardRegistry": "foundation-visual-standards-v1",
         "standardCategories": [
           "visual-philosophy-ownership",
@@ -1301,8 +1214,8 @@
       "constructionAndStates": "public list/section/meta children; work details use RowGroup with header and complete RecordRow id/summary/meta three cells inside RecordTable",
       "interaction": "native details disclosure; removed cards have no body read action; complete readback identifies digest and lifecycle",
       "authority": {
-        "sourceCommit": "48ded198a7148efdaa245271d1885e468f24f4a4",
-        "contractPayloadDigest": "4def7d68d25912757a0892c00c9565feefe908425b499d7e7759142e8fdeb68a",
+        "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+        "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
         "standardRegistry": "foundation-visual-standards-v1",
         "standardCategories": [
           "visual-philosophy-ownership",
@@ -1342,8 +1255,8 @@
       "constructionAndStates": "published full editor/gutter/content/control/finding construction; directory public buttons; public focus wrapper; native disclosure for read errors; complete raw receipt JSON; original D5 outline-none predicate retained",
       "interaction": "Ctrl/Cmd+S save/check; finding reveals line; user-modified managed output never overwritten; detail disclosure on demand",
       "authority": {
-        "sourceCommit": "48ded198a7148efdaa245271d1885e468f24f4a4",
-        "contractPayloadDigest": "4def7d68d25912757a0892c00c9565feefe908425b499d7e7759142e8fdeb68a",
+        "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
+        "contractPayloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7",
         "standardRegistry": "foundation-visual-standards-v1",
         "standardCategories": [
           "visual-philosophy-ownership",
@@ -3137,11 +3050,11 @@
         },
         {
           "line": 3499,
-          "source": ".tcrn-menu__item--active { background: var(--tcrn-color-surface-subtle); }"
+          "source": ".tcrn-menu__item--active { background: var(--tcrn-color-surface-muted); }"
         },
         {
           "line": 3500,
-          "source": ".tcrn-menu__item:disabled { color: var(--tcrn-color-text-disabled); cursor: not-allowed; }"
+          "source": ".tcrn-menu__item:disabled { color: var(--tcrn-color-text-muted); cursor: not-allowed; }"
         },
         {
           "line": 3501,
@@ -3163,11 +3076,11 @@
         },
         {
           "line": 3499,
-          "source": ".tcrn-menu__item--active { background: var(--tcrn-color-surface-subtle); }"
+          "source": ".tcrn-menu__item--active { background: var(--tcrn-color-surface-muted); }"
         },
         {
           "line": 3500,
-          "source": ".tcrn-menu__item:disabled { color: var(--tcrn-color-text-disabled); cursor: not-allowed; }"
+          "source": ".tcrn-menu__item:disabled { color: var(--tcrn-color-text-muted); cursor: not-allowed; }"
         },
         {
           "line": 3501,
@@ -3208,7 +3121,7 @@
         },
         {
           "line": 3545,
-          "source": ".tcrn-multi-select-dropdown__trigger:disabled{color:var(--tcrn-color-text-disabled);cursor:not-allowed}"
+          "source": ".tcrn-multi-select-dropdown__trigger:disabled{color:var(--tcrn-color-text-muted);cursor:not-allowed}"
         },
         {
           "line": 3546,
@@ -3330,7 +3243,7 @@
         },
         {
           "line": 3545,
-          "source": ".tcrn-multi-select-dropdown__trigger:disabled{color:var(--tcrn-color-text-disabled);cursor:not-allowed}"
+          "source": ".tcrn-multi-select-dropdown__trigger:disabled{color:var(--tcrn-color-text-muted);cursor:not-allowed}"
         }
       ],
       "previousConsumerLines": []
@@ -10086,17 +9999,17 @@
   "snapshotBinding": {
     "schemaVersion": "tcrn.workflow.ds-consumer-contract.v1",
     "consumer": "Atelier static consumer",
-    "candidate": "48ded198a7148efdaa245271d1885e468f24f4a4",
-    "candidateTree": "c7198ebb3f17abf66c9f2aede15f8d2f2cf3d804",
+    "candidate": "2f40478bb2993e6b6d02137f5870a890800d8662",
+    "candidateTree": "de0b19e6b750702d18f8d727bba734362d240e25",
     "package": "@tcrn/ui-react@3.0.0",
     "aiContract": {
       "version": "ai_consumption_contract_v1",
-      "payloadDigest": "4def7d68d25912757a0892c00c9565feefe908425b499d7e7759142e8fdeb68a"
+      "payloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7"
     },
     "componentCss": {
       "sourceExport": "tcrnComponentCss",
-      "bytes": 120592,
-      "sha256": "89edf550b6aa2dce64ceb9bd385429c5a48dd206043b0a904e810e4d097a8166",
+      "bytes": 120670,
+      "sha256": "74f51554a6977429e99fbb95fa16143dbd8596d321d6cee0a06136f4da41b94f",
       "snapshot": "portal/ds-component-css.snapshot.css",
       "inlineSelector": "style#tcrn-ds-component-css[data-source=\"snapshot\"]"
     },
@@ -10161,18 +10074,18 @@
       ]
     },
     "production": {
-      "sourceCommit": "48ded198a7148efdaa245271d1885e468f24f4a4",
+      "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
       "environment": "Production",
       "documentationOrigin": "https://tcrn-design-system-storybook.vercel.app",
-      "deploymentId": 6821658955,
-      "deploymentStatusId": 19199799925,
-      "buildStatusId": 55497151004,
-      "buildUrl": "https://vercel.com/tcrn-platform/tcrn-design-system-storybook/5zjW2eKwAFb6DvNVHwVkawpwTv3B"
+      "deploymentId": 6904637050,
+      "deploymentStatusId": 19388278778,
+      "buildStatusId": 55773429554,
+      "buildUrl": "https://vercel.com/tcrn-platform/tcrn-design-system-storybook/7yzUQWhbNoeRSJ4wGsLX4LhGqb1B"
     },
     "tokensCss": {
       "snapshot": "portal/tokens.css",
-      "bytes": 8014,
-      "sha256": "87e9b5c6d6cbc765e81803a02160460dc1b84143d761651212b64fb5e41edf1d"
+      "bytes": 8090,
+      "sha256": "118c6e45b8698a45a551226deb865d5bee71f64d0f787550751489aae2c891c9"
     },
     "brandAsset": {
       "snapshot": "portal/atelier-brand-mark.svg",

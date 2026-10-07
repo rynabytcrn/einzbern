@@ -21,7 +21,7 @@ import { RecallIndex, recallQueryTokens, selectRecallHits } from '../dist/build/
 import { registerLibrary } from '../dist/build/packages/core/src/registry.js';
 import { initializeKnowledgeStore, createKnowledgeArticle, captureKnowledgeUnit, listKnowledgeMetadata, readKnowledgeBody, checkKnowledgeSources } from '../dist/build/packages/core/src/knowledge-core.js';
 import { renameRetryBudget } from '../dist/build/packages/core/src/io-policy.js';
-import { ensureSetupProjectBinding } from '../dist/build/packages/core/src/setup-fresh.js';
+import { ensureSetupProjectBinding, setupTargetState, scopeSetupTargetState, libraryLanguage } from '../dist/build/packages/core/src/setup-fresh.js';
 import { localProbeTimeout } from '../dist/build/packages/core/src/io-policy.js';
 import { RUNTIME_CAPACITY } from '../scripts/lib/runtime-capacity.mjs';
 import { constants as bufferConstants } from 'node:buffer';
@@ -46,6 +46,24 @@ test('R1: setup defines explicit new targets, reuses declared identities and nev
  const state=await materializeWorkspaceFromGenesis(workspace);
  assert.equal(value(scopedWorkspaceState(state,a),'artifact.language'),'fr');assert.equal(value(scopedWorkspaceState(state,b),'artifact.language'),'ja');
  assert.equal(value(scopedWorkspaceState(state,p),'artifact.language'),null);
+});
+
+test('R1/F01: setup planning scopes retained state by explicit binding and refuses conflicting library identity',async ctx=>{
+ const {workspace,projectId:p,base}=await workspaceFixture(ctx,{externalKey:'R31-SETUP-READ'});
+ const project=join(base,'declared'),unregistered=join(base,'unregistered');await mkdir(project);await mkdir(unregistered);
+ let state=await createProject(workspace,{externalKey:'R31-SETUP-CHILD',name:'Child',parentProjectId:p,occurredAt:at()});
+ const c=state.projects.find(x=>x.externalKey==='R31-SETUP-CHILD').id;
+ await setWorkspaceSetting(workspace,{key:'artifact.language',value:'fr',configurationProjectId:p,occurredAt:at()});
+ await registerLibrary({projectPath:project,libraryPath:workspace,projectId:c,registeredAt:at()},process.env.EINZBERN_HOME);
+ state=await materializeWorkspaceFromGenesis(workspace);
+ const inherited=await scopeSetupTargetState(project,workspace,process.env.EINZBERN_HOME,state);
+ assert.equal(libraryLanguage(inherited),'fr');assert.equal(inherited.settingSources['artifact.language'].projectId,p);
+ assert.equal(libraryLanguage(await setupTargetState(project,workspace,process.env.EINZBERN_HOME)),'fr');
+ assert.equal(libraryLanguage(await scopeSetupTargetState(unregistered,join(unregistered,'.ether'),process.env.EINZBERN_HOME,state)),null,'an absent target never adopts the only project or another project language');
+ await assert.rejects(scopeSetupTargetState(project,join(project,'.ether'),process.env.EINZBERN_HOME,state),{reasonCode:'SETUP_LIBRARY_CONFLICT'});
+ await assert.rejects(scopeSetupTargetState(project,workspace,process.env.EINZBERN_HOME,{...state,metadata:{...state.metadata,workspaceId:'workspace:000000000000000000000000'}}),{reasonCode:'SETUP_LIBRARY_CONFLICT'});
+ await setWorkspaceSetting(workspace,{key:'artifact.language',value:'ja',configurationProjectId:c,occurredAt:at()});
+ assert.equal(libraryLanguage(await setupTargetState(project,workspace,process.env.EINZBERN_HOME)),'ja');
 });
 
 test('R4: retained runtime and format capacities have actual failure evidence; scheduling budgets are caller choices',()=>{

@@ -428,7 +428,7 @@ test("SUB-421 R20: the explicit mapping omission leaves TMS-shaped corrupt bytes
   assert.deepEqual(await treeDigest(userCrest), userBefore);
   await assert.rejects(cli(["library-import-legacy", "--legacy", join(base, "unmapped"), "--mapping", mappingFile, "--dry-run", "true", "--at", AT]), (error) => error.reasonCode === "SETUP_ANSWER_INVALID" && error.details.field === "legacyWorkspace");
   await assert.rejects(cli(["library-import-legacy", "--legacy", root, "--mapping", mappingFile, "--target", join(base, "other-target"), "--dry-run", "true", "--at", AT]), (error) => error.reasonCode === "SETUP_ANSWER_INVALID" && error.details.field === "target");
-  for (const invalid of [true, null, {}, { reason: "" }, { reason: "two\nlines" }, { reason: "why", unchecked: true }]) {
+  for (const invalid of [true, null, {}, { reason: "" }, { reason: "two\nlines" }, { reason: "x\ud800y" }, { reason: "x\udc00y" }, { reason: "why", unchecked: true }]) {
     await assert.rejects(importLegacyWorkspace(root, target, { createdAt: AT, dryRun: true, omitLegacyKnowledge: invalid }), (error) => error.reasonCode === "LEGACY_IMPORT_MISMATCH" && error.details.field.startsWith("omitLegacyKnowledge"));
   }
 }));

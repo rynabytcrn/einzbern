@@ -1,17 +1,17 @@
 {
   "schemaVersion": "tcrn.workflow.ds-consumer-contract.v1",
   "consumer": "Atelier static consumer",
-  "candidate": "48ded198a7148efdaa245271d1885e468f24f4a4",
-  "candidateTree": "c7198ebb3f17abf66c9f2aede15f8d2f2cf3d804",
+  "candidate": "2f40478bb2993e6b6d02137f5870a890800d8662",
+  "candidateTree": "de0b19e6b750702d18f8d727bba734362d240e25",
   "package": "@tcrn/ui-react@3.0.0",
   "aiContract": {
     "version": "ai_consumption_contract_v1",
-    "payloadDigest": "4def7d68d25912757a0892c00c9565feefe908425b499d7e7759142e8fdeb68a"
+    "payloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7"
   },
   "componentCss": {
     "sourceExport": "tcrnComponentCss",
-    "bytes": 120592,
-    "sha256": "89edf550b6aa2dce64ceb9bd385429c5a48dd206043b0a904e810e4d097a8166",
+    "bytes": 120670,
+    "sha256": "74f51554a6977429e99fbb95fa16143dbd8596d321d6cee0a06136f4da41b94f",
     "snapshot": "portal/ds-component-css.snapshot.css",
     "inlineSelector": "style#tcrn-ds-component-css[data-source=\"snapshot\"]"
   },
@@ -76,18 +76,18 @@
     ]
   },
   "production": {
-    "sourceCommit": "48ded198a7148efdaa245271d1885e468f24f4a4",
+    "sourceCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
     "environment": "Production",
     "documentationOrigin": "https://tcrn-design-system-storybook.vercel.app",
-    "deploymentId": 6821658955,
-    "deploymentStatusId": 19199799925,
-    "buildStatusId": 55497151004,
-    "buildUrl": "https://vercel.com/tcrn-platform/tcrn-design-system-storybook/5zjW2eKwAFb6DvNVHwVkawpwTv3B"
+    "deploymentId": 6904637050,
+    "deploymentStatusId": 19388278778,
+    "buildStatusId": 55773429554,
+    "buildUrl": "https://vercel.com/tcrn-platform/tcrn-design-system-storybook/7yzUQWhbNoeRSJ4wGsLX4LhGqb1B"
   },
   "tokensCss": {
     "snapshot": "portal/tokens.css",
-    "bytes": 8014,
-    "sha256": "87e9b5c6d6cbc765e81803a02160460dc1b84143d761651212b64fb5e41edf1d"
+    "bytes": 8090,
+    "sha256": "118c6e45b8698a45a551226deb865d5bee71f64d0f787550751489aae2c891c9"
   },
   "brandAsset": {
     "snapshot": "portal/atelier-brand-mark.svg",

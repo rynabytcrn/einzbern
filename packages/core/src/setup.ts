@@ -71,7 +71,7 @@ import {
   defaultLanguage,
   freshLanguageTag,
   libraryLanguage,
-  setupTargetState,
+  scopeSetupTargetState,
   navigationChoice,
   planDevice,
   planEngineSource,
@@ -82,7 +82,7 @@ import {
   realTarget,
   setupApplied,
 } from "./setup-fresh.js";
-import type { LibraryState } from "./setup-fresh.js";
+import type { WorkspaceState } from "./workspace.js";
 import {
   applyRepairSetup,
   applyUninstallSetup,
@@ -535,7 +535,7 @@ function migrateCleanupInput(context: SetupContext, partitions: readonly Migrati
 // The records the project's own library starts from: the old chain it is imported from, or, when an
 // earlier run imported it, the library as it stands. Both are read from genesis and nothing is
 // written; null for a partition the plan stops at.
-async function ownLibraryState(recorder: SetupRecorder, own: MigrationPartitionPlan | null): Promise<LibraryState | null> {
+async function ownLibraryState(recorder: SetupRecorder, own: MigrationPartitionPlan | null): Promise<WorkspaceState | null> {
   if (own === null || own.action === "blocked") return null;
   const source = own.action === "skip" ? own.target : own.legacyWorkspace;
   return recorder.attempt("library", source, () => materializeWorkspaceFromGenesis(source));
@@ -589,8 +589,9 @@ async function planMigrateSetup(input: SetupModeInput): Promise<SetupModePlan> {
   // The answers the project's own wiring takes: its library is the one its partition becomes, and
   // its language the one that library records (the old chain's, or the library's once imported).
   const own = planned.migration.partitions.find((partition) => partition.projectRoot === projectRoot) ?? null;
-  const ownState = await ownLibraryState(recorder, own);
-  const ownLanguage = ownState === null ? own?.language ?? null : libraryLanguage(await setupTargetState(projectRoot, own!.target, deviceHome));
+  const retainedState = await ownLibraryState(recorder, own);
+  const ownState = retainedState === null ? null : await scopeSetupTargetState(projectRoot, own!.target, deviceHome, retainedState);
+  const ownLanguage = ownState === null ? own?.language ?? null : libraryLanguage(ownState);
   const artifacts = own?.target ?? await realTarget(join(projectRoot, DIRECTORY.library));
   const defaults: ResolvedSetupAnswers = {
     artifacts,

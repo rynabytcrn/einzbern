@@ -2,7 +2,7 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r35-init053-complete-source",
+  "pack": "r36-init053-complete-source",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
@@ -95,7 +95,7 @@
     },
     {
       "path": "packages/core/src/file-lock.ts",
-      "sha256": "5499329e9178854e37e9cff294d0224b0e62685abd857bdb2e74ed5a70687835"
+      "sha256": "2352c8d8f48a9349ba67ba5f33fd025d9e1585e2ced4a2ffe58937e32080a387"
     },
     {
       "path": "packages/core/src/format-version.ts",
@@ -359,7 +359,7 @@
     },
     {
       "path": "portal/index.html",
-      "sha256": "aecd4dff324fcdbbdcd0de8ef44f2e2498e0880222565b130d9b01ea9b283b7e"
+      "sha256": "e6894955a36193825abff8a77da8177c6b5cc7005e60c29067226be96e94de38"
     },
     {
       "path": "portal/locale-contract.mjs",
@@ -778,7 +778,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R35 current Source final generation. Original full-file cadence and affected dependency files have run; actual exit/counts are attached below, including every failure. Prior held49 prose is superseded. Source development verification is separate from integrated acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are included; no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "R36 current Source final generation. Original full-file cadence and affected dependency files have run; actual exit/counts are attached below, including every failure. Prior held49 prose is superseded. Source development verification is separate from integrated acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are included; no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "bb91bdc40d2669aef823abaf8d2050ca105e9a89",
     "mergeCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
@@ -888,9 +888,9 @@
     "runEvidence": "full-file-cadence-once.run.json",
     "exit": 1,
     "counts": {
-      "tests": 689,
-      "pass": 684,
-      "fail": 5,
+      "tests": 695,
+      "pass": 692,
+      "fail": 3,
       "skipped": 0,
       "cancelled": 0
     },
@@ -906,14 +906,14 @@
       "tests/user-crest.test.mjs",
       "tests/p4-knowledge-core.test.mjs"
     ],
-    "stdoutSha256": "5b56e94fe7e8b37235a87bdf537fb7ce24700d5fc00e94df3591fc5c748a3b70",
+    "stdoutSha256": "076128cc7ad04eca4df7271819a8ebe4f8906420017742ecd82dfe7cd815428a",
     "runtime": {
       "node": "v24.16.0",
       "pnpm": "11.3.0"
     },
-    "source": "original Source whole-file invocation only; no name filtering; approved test TMPDIR and original guards retained"
+    "source": "original whole61 files once, six additional lock tests; original guards and exact approved TMPDIR retained"
   },
-  "generationTimeUtc": "2026-10-07T13:04:43.621306+00:00",
+  "generationTimeUtc": "2026-10-07T14:30:32.175177+00:00",
   "currentApplicationCaseResults": [
     {
       "name": "target switch settles on matching response, UI authority and native inheritance",
@@ -976,16 +976,44 @@
       "ok": true
     },
     {
+      "name": "geometry dashboard 981",
+      "ok": true
+    },
+    {
+      "name": "geometry prose 981",
+      "ok": true
+    },
+    {
+      "name": "geometry settings 981",
+      "ok": true
+    },
+    {
+      "name": "geometry model-categories 981",
+      "ok": true
+    },
+    {
+      "name": "geometry model-tiers 981",
+      "ok": true
+    },
+    {
+      "name": "geometry variables 981",
+      "ok": true
+    },
+    {
+      "name": "geometry gates 981",
+      "ok": true
+    },
+    {
       "name": "geometry dashboard 980",
-      "ok": false
+      "ok": true
     },
     {
       "name": "geometry prose 980",
-      "ok": false
+      "ok": true
     },
     {
       "name": "geometry settings 980",
-      "ok": false
+      "ok": true
     },
     {
       "name": "geometry model-categories 980",
@@ -997,11 +1025,95 @@
     },
     {
       "name": "geometry variables 980",
-      "ok": false
+      "ok": true
     },
     {
       "name": "geometry gates 980",
       "ok": true
+    },
+    {
+      "name": "geometry dashboard 900",
+      "ok": false
+    },
+    {
+      "name": "geometry prose 900",
+      "ok": false
+    },
+    {
+      "name": "geometry settings 900",
+      "ok": false
+    },
+    {
+      "name": "geometry model-categories 900",
+      "ok": false
+    },
+    {
+      "name": "geometry model-tiers 900",
+      "ok": false
+    },
+    {
+      "name": "geometry variables 900",
+      "ok": false
+    },
+    {
+      "name": "geometry gates 900",
+      "ok": false
+    },
+    {
+      "name": "geometry dashboard 800",
+      "ok": false
+    },
+    {
+      "name": "geometry prose 800",
+      "ok": false
+    },
+    {
+      "name": "geometry settings 800",
+      "ok": false
+    },
+    {
+      "name": "geometry model-categories 800",
+      "ok": false
+    },
+    {
+      "name": "geometry model-tiers 800",
+      "ok": false
+    },
+    {
+      "name": "geometry variables 800",
+      "ok": false
+    },
+    {
+      "name": "geometry gates 800",
+      "ok": false
+    },
+    {
+      "name": "geometry dashboard 761",
+      "ok": false
+    },
+    {
+      "name": "geometry prose 761",
+      "ok": false
+    },
+    {
+      "name": "geometry settings 761",
+      "ok": false
+    },
+    {
+      "name": "geometry model-categories 761",
+      "ok": false
+    },
+    {
+      "name": "geometry model-tiers 761",
+      "ok": false
+    },
+    {
+      "name": "geometry variables 761",
+      "ok": false
+    },
+    {
+      "name": "geometry gates 761",
+      "ok": false
     },
     {
       "name": "geometry dashboard 760",
@@ -1101,23 +1213,23 @@
     },
     {
       "name": "transient target expiry, retrigger, navigation and target switch cleanup",
-      "ok": true
+      "ok": false
     },
     {
       "name": "category add rename remove updates real reference candidates after save and readback",
-      "ok": true
+      "ok": false
     },
     {
       "name": "last selected language can clear draft but cannot save an empty set",
-      "ok": true
+      "ok": false
     },
     {
       "name": "category references save readback and in-use removal refusal keep stable ids",
-      "ok": true
+      "ok": false
     },
     {
       "name": "actual refused setting exposes failure badge and complete error JSON",
-      "ok": true
+      "ok": false
     },
     {
       "name": "transient exact matching row identity border geometry and Escape cleanup",
@@ -9635,7 +9747,7 @@
     {
       "selector": ".tcrn-product-shell",
       "context": [
-        "@media (max-width: 980px)"
+        "@media (max-width: 760px)"
       ],
       "declarations": "grid-template-columns: 1fr;",
       "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
@@ -9643,7 +9755,7 @@
     {
       "selector": ".tcrn-rail__mark, .tcrn-rail__footer",
       "context": [
-        "@media (max-width: 980px)"
+        "@media (max-width: 760px)"
       ],
       "declarations": "display: none;",
       "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
@@ -9651,7 +9763,7 @@
     {
       "selector": ".tcrn-side-nav",
       "context": [
-        "@media (max-width: 980px)"
+        "@media (max-width: 760px)"
       ],
       "declarations": "flex-direction: row; overflow: auto;",
       "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
@@ -9659,7 +9771,7 @@
     {
       "selector": ".tcrn-nav-item",
       "context": [
-        "@media (max-width: 980px)"
+        "@media (max-width: 760px)"
       ],
       "declarations": "width: auto; white-space: nowrap;",
       "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
@@ -9667,7 +9779,7 @@
     {
       "selector": ".tcrn-main",
       "context": [
-        "@media (max-width: 980px)"
+        "@media (max-width: 760px)"
       ],
       "declarations": "padding: var(--tcrn-space-4);",
       "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
@@ -9675,7 +9787,7 @@
     {
       "selector": ".tcrn-manage, .tcrn-vocabulary",
       "context": [
-        "@media (max-width: 980px)"
+        "@media (max-width: 760px)"
       ],
       "declarations": "grid-template-columns: 1fr; gap: var(--tcrn-space-3);",
       "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
@@ -9683,7 +9795,7 @@
     {
       "selector": ".tcrn-subnav",
       "context": [
-        "@media (max-width: 980px)"
+        "@media (max-width: 760px)"
       ],
       "declarations": "position: static; display: flex; overflow: auto;",
       "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
@@ -9691,7 +9803,7 @@
     {
       "selector": ".tcrn-grid--4",
       "context": [
-        "@media (max-width: 980px)"
+        "@media (max-width: 760px)"
       ],
       "declarations": "grid-template-columns: repeat(2, minmax(0, 1fr));",
       "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
@@ -9951,7 +10063,7 @@
     {
       "selector": ".tcrn-product-shell",
       "context": [
-        "@media (max-width: 980px)"
+        "@media (max-width: 760px)"
       ],
       "declarations": "grid-template-columns: 1fr;",
       "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
@@ -9959,7 +10071,7 @@
     {
       "selector": ".tcrn-product-shell__workspace",
       "context": [
-        "@media (max-width: 980px)"
+        "@media (max-width: 760px)"
       ],
       "declarations": "min-height: auto;\n    grid-template-rows: auto minmax(0, 1fr);",
       "disposition": "application document/route placement, published table/custom-property contract, semantic decoration, or original D5 editor predicate; shared visual family is supplied by the immutable snapshot"
@@ -10251,10 +10363,11 @@
   ],
   "actualConsumerRemedies": {
     "mobile": "Measured expanded navigation: nav height0, aside33, shell first grid row0 at760/390; application desktop status-grid minmax override and height100% applied to stacked mobile shell. Restrict those existing desktop overrides to desktop, allowing unchanged published auto-height mobile shell. No new DS feature/styles required.",
-    "reset": "Published SettingRow owns one text reset in its tools, independent control slot. Remove extra consumer SettingChoice reset; replace application icon reset with existing SettingRow text reset; action still removes override.",
+    "reset": "Two obsolete SettingChoice descendant textContent assertions now target the single owning SettingRow tools action; exact localized label literals and behavioral save/remove/inheritance tests retained. No aria-label regression alleged.",
     "category": "Original source did await refresh but gave no pending affordance and admitted another save during it. Keep pending through settleCollectionWrite/refresh/loadAgents, native disable and aria-busy, existing button family with five-language progress label.",
     "authority": "PR24 production and exact frozen bytes unchanged; no DS source/output generator invoked. Existing271 DS screenshot evidence untouched.",
-    "diagnostic": "diagnosis-application-checkpoints.ndjson preserves complete hit stack and independent keyboard views for12 mobile cases"
+    "diagnostic": "diagnosis-application-checkpoints.ndjson preserves complete hit stack and independent keyboard views for12 mobile cases",
+    "desktopInterval": "Both max980 single-column shell overrides now use the published max760 stack breakpoint, matching desktop min761 fractional row/sidebar height. Adjacent981/980/761/760 and interior900/800 plus preserved720/390 and all7 routes exercised. No z-index/pointer workaround or shared authority source change."
   },
   "snapshotBinding": {
     "schemaVersion": "tcrn.workflow.ds-consumer-contract.v1",
@@ -10355,7 +10468,7 @@
     }
   },
   "actualBounds": [
-    "R35 isolated current Source browser observations are retained in the archive, with every failed case; no canonical integration claim",
+    "R36 isolated current Source browser observations are retained in the archive, with every failed case; no canonical integration claim",
     "actual wide/narrow/column and lifecycle outcomes are recorded individually in the current application evidence; Owner visual remains separate",
     "no checkbox compatibility presentation is legalized as the requested dropdown; actual dropdown uses the published Select/Menu family"
   ]

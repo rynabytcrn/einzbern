@@ -2,7 +2,7 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r35-init053-complete-source",
+  "pack": "r36-init053-complete-source",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
@@ -95,7 +95,7 @@
     },
     {
       "path": "packages/core/src/file-lock.ts",
-      "sha256": "5499329e9178854e37e9cff294d0224b0e62685abd857bdb2e74ed5a70687835"
+      "sha256": "2352c8d8f48a9349ba67ba5f33fd025d9e1585e2ced4a2ffe58937e32080a387"
     },
     {
       "path": "packages/core/src/format-version.ts",
@@ -359,7 +359,7 @@
     },
     {
       "path": "portal/index.html",
-      "sha256": "aecd4dff324fcdbbdcd0de8ef44f2e2498e0880222565b130d9b01ea9b283b7e"
+      "sha256": "e6894955a36193825abff8a77da8177c6b5cc7005e60c29067226be96e94de38"
     },
     {
       "path": "portal/locale-contract.mjs",
@@ -778,7 +778,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R35 current Source final generation. Original full-file cadence and affected dependency files have run; actual exit/counts are attached below, including every failure. Prior held49 prose is superseded. Source development verification is separate from integrated acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are included; no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "R36 current Source final generation. Original full-file cadence and affected dependency files have run; actual exit/counts are attached below, including every failure. Prior held49 prose is superseded. Source development verification is separate from integrated acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are included; no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "bb91bdc40d2669aef823abaf8d2050ca105e9a89",
     "mergeCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
@@ -888,9 +888,9 @@
     "runEvidence": "full-file-cadence-once.run.json",
     "exit": 1,
     "counts": {
-      "tests": 689,
-      "pass": 684,
-      "fail": 5,
+      "tests": 695,
+      "pass": 692,
+      "fail": 3,
       "skipped": 0,
       "cancelled": 0
     },
@@ -906,14 +906,14 @@
       "tests/user-crest.test.mjs",
       "tests/p4-knowledge-core.test.mjs"
     ],
-    "stdoutSha256": "5b56e94fe7e8b37235a87bdf537fb7ce24700d5fc00e94df3591fc5c748a3b70",
+    "stdoutSha256": "076128cc7ad04eca4df7271819a8ebe4f8906420017742ecd82dfe7cd815428a",
     "runtime": {
       "node": "v24.16.0",
       "pnpm": "11.3.0"
     },
-    "source": "original Source whole-file invocation only; no name filtering; approved test TMPDIR and original guards retained"
+    "source": "original whole61 files once, six additional lock tests; original guards and exact approved TMPDIR retained"
   },
-  "generationTimeUtc": "2026-10-07T13:04:43.621306+00:00",
+  "generationTimeUtc": "2026-10-07T14:30:32.175177+00:00",
   "supportedLocales": [
     "en",
     "zh-CN",
@@ -1201,7 +1201,7 @@
         },
         {
           "line": 5120,
-          "source": "if (save) save.textContent = t(busy ? \"collection.saving\" : \"collection.save\");"
+          "source": "if (save) save.textContent = busy ? t(\"collection.saving\") : t(\"collection.save\");"
         }
       ],
       "dynamicConsumer": null,
@@ -1251,7 +1251,7 @@
       "directConsumerSites": [
         {
           "line": 5120,
-          "source": "if (save) save.textContent = t(busy ? \"collection.saving\" : \"collection.save\");"
+          "source": "if (save) save.textContent = busy ? t(\"collection.saving\") : t(\"collection.save\");"
         }
       ],
       "dynamicConsumer": null,
@@ -11392,6 +11392,71 @@
       }
     }
   },
+  "specificSemanticReview": {
+    "coverage": {
+      "keys": 417,
+      "localizedStrings": 2085,
+      "diagnostics": 1519,
+      "meaning": "complete inventories retained as review maps; not independent comprehension proof"
+    },
+    "localeReview": [
+      "en",
+      "zh-CN",
+      "ja",
+      "ko",
+      "fr"
+    ],
+    "specificMeanings": [
+      {
+        "keys": [
+          "collection.saving",
+          "collection.save"
+        ],
+        "actualBehavior": "explicit literal t calls select save versus saving; setCollectionSaving disables save and sets aria-busy until settleCollectionWrite, refresh and loadAgents complete; error releases pending state. Label describes saving and refreshing rather than claiming save completion.",
+        "remainingProof": "real application category response/native/UI checkpoints and original i18n full-table negatives"
+      },
+      {
+        "keys": [
+          "reason.PORTAL_SETTINGS_WRITE_UNAVAILABLE",
+          "receipt.failureMessage",
+          "receipt.details"
+        ],
+        "actualBehavior": "request failure is not proof no write landed. Recovery directs user to read complete error details and refresh/check the selected target saved value before retrying. Real409 details retain exact status and native body in open receipt drawer.",
+        "languageReview": "All five avoid a claim that a failed response rolled back writes; the recovery action and target check stay explicit."
+      },
+      {
+        "keys": [
+          "dashboard.versionVector",
+          "dashboard.streams",
+          "dashboard.configProjection"
+        ],
+        "actualBehavior": "device event count mapping, histories and effective settings correspond to actual selected-library status; substantive library id/path/versionVector and Doctor readback assertions retained while headings use plain established copy.",
+        "languageReview": "All five keep the distinction between histories by device and effective configuration; labels are not presented as migration completion."
+      },
+      {
+        "keys": [
+          "config.reset",
+          "config.source",
+          "design.warnBadUrl",
+          "design.warnUnreachable"
+        ],
+        "actualBehavior": "Reset removes the selected target declaration and exposes parent/library/default; it is available only for a declared override. Invalid address recovery points to Settings; unreachable address asks to check address/connection and refresh and keeps publication verification unknown.",
+        "limit": "Current original Reset tests still incorrectly expect a reset in an undeclared/default state. The application tests observe declared-reset semantics separately."
+      },
+      {
+        "keys": [
+          "concept.setting.execution.maxConcurrentSubagents",
+          "vocabulary.floor",
+          "health.deviceStream",
+          "health.managedSections",
+          "health.cloudFlag"
+        ],
+        "actualBehavior": "Maximum agents is a requested host budget with no execution-method redesign authority. Independent opinions remain a requirement; health labels describe checked storage/generated sections/cloud declaration, not unperformed host installation."
+      }
+    ],
+    "humanComprehension": "unknown; final Owner visual/comprehension separate",
+    "pendingAndSourceTranslation": "Concrete meanings reviewed against actual five-language strings and consumers, not dictionary-presence acceptance"
+  },
   "allSupportedInterfaceInventory": [
     {
       "interface": "Atelier portal",
@@ -13675,7 +13740,7 @@
     },
     {
       "file": "packages/core/src/file-lock.ts",
-      "line": 178,
+      "line": 175,
       "call": "FileLockError",
       "argument": 1,
       "template": "`${lockPath} is no longer held by this writer`",
@@ -13683,7 +13748,7 @@
     },
     {
       "file": "packages/core/src/file-lock.ts",
-      "line": 193,
+      "line": 192,
       "call": "FileLockError",
       "argument": 1,
       "template": "`${lockPath} is held by another writer`",

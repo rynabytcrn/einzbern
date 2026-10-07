@@ -30,13 +30,13 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
   "currentSources": [
     {
       "path": "portal/index.html",
-      "bytes": 343442,
-      "sha256": "1e33630b197bd6f1fa64ef08127824ddb3c1bc2572168ff09951be7bc398f236"
+      "bytes": 344075,
+      "sha256": "e6894955a36193825abff8a77da8177c6b5cc7005e60c29067226be96e94de38"
     },
     {
       "path": "portal/locales.js",
-      "bytes": 182547,
-      "sha256": "84fb85cbd7df36713ad448e7e0c8c5cb357b5577442f0c35237ac6628ec05c11"
+      "bytes": 185047,
+      "sha256": "696e9c83bcd33999ad7a95791a0da56ca0af04ebc5763feef2d3d4fddf672757"
     },
     {
       "path": "portal/portal.mjs",
@@ -60,18 +60,18 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
     },
     {
       "path": "portal/tests/ui-presence.test.mjs",
-      "bytes": 181968,
-      "sha256": "f24558ad7b3a79e410216fa89c93aa24c0298c2471a4115192dcc940105d80ff"
+      "bytes": 182174,
+      "sha256": "477a53486cf5369ec0f397faf2f4a19ee297e643792fda6c5233209b8e2683f3"
     },
     {
       "path": "packages/core/src/doctor.ts",
-      "bytes": 30839,
-      "sha256": "def4e03cf8eb88f5f1c7d7dda2732b7b6be9f3596444eb0f5da4aee5f5489cda"
+      "bytes": 30974,
+      "sha256": "a096ad19e497781fa785020a748d86228bccc11b2771370b3f0fe74624527ed7"
     },
     {
       "path": "tests/doctor.test.mjs",
-      "bytes": 16405,
-      "sha256": "2877b101fba3f0295e409ee88188e184028fb993c7933dd3518462f4f721f3ad"
+      "bytes": 17001,
+      "sha256": "d0aa085e459d97f3c3e9f55d419a4004073958524caa1c072338f501ceed550e"
     },
     {
       "path": "scripts/verify-portal.mjs",
@@ -117,9 +117,9 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
         "leg": "key-coverage",
         "ok": true,
         "reasonCode": "EVERY_KEY_TRANSLATED",
-        "keyCount": 415,
+        "keyCount": 417,
         "localeCount": 5,
-        "expectedStrings": 2075,
+        "expectedStrings": 2085,
         "gaps": []
       },
       {

@@ -1129,7 +1129,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       assert.match(listbox.textContent, /日本語/u);
       assert.match(listbox.textContent, /한국어/u);
       assert.match(listbox.textContent, /Français/u);
-      assert.equal(choice.querySelector("[data-reset-setting]")?.textContent, "Reset override");
+      assert.equal(prompt.closest("[data-setting-row]").querySelector(".tcrn-setting-row__tools [data-reset-setting]")?.textContent, "Reset override");
       const before = receiptText(page.document);
       // en is the inherited default. A click adds fr locally, then Escape dismisses
       // the list without writing and retains the native focused selection.
@@ -1331,7 +1331,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       for (const [locale, label] of resetLabels) {
         page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
         page.document.querySelector('[data-setting-group="retrieval"]')?.click();
-        assert.equal(page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]')?.closest("[data-setting-choice-component]").querySelector("[data-reset-setting]")?.textContent, page.window.PORTAL_LOCALES[locale]["config.reset"], `${locale} reset label`);
+        assert.equal(page.document.querySelector('[data-setting-control="retrieval.promptLanguages"]')?.closest("[data-setting-row]").querySelector(".tcrn-setting-row__tools [data-reset-setting]")?.textContent, page.window.PORTAL_LOCALES[locale]["config.reset"], `${locale} reset label`);
       }
       page.document.querySelector('[data-locale-option="en"]')?.click();
       page.document.querySelector('[data-setting-group="retrieval"]')?.click();
@@ -2196,11 +2196,11 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       assert.equal(page.requests.filter((path) => path === "/api/library").length, 1);
 
       const stateLabels = {
-        en: ["Version vector", "Streams", "Rejected events", "Configuration projection"],
-        "zh-CN": ["版本向量", "流", "被拒事件数", "配置投影"],
-        ja: ["バージョンベクトル", "ストリーム", "拒否されたイベント数", "設定投影"],
-        ko: ["버전 벡터", "스트림", "거부된 이벤트 수", "구성 투영"],
-        fr: ["Vecteur de versions", "Flux", "Événements rejetés", "Projection de configuration"],
+        en: ["Saved event count by device", "Device histories", "Rejected events", "Effective configuration"],
+        "zh-CN": ["各设备已保存事件数", "设备历史", "被拒事件数", "当前有效配置"],
+        ja: ["デバイス別の保存イベント数", "デバイスの履歴", "拒否されたイベント数", "適用中の設定"],
+        ko: ["기기별 저장 이벤트 수", "기기 기록", "거부된 이벤트 수", "적용 중인 설정"],
+        fr: ["Événements enregistrés par appareil", "Historiques des appareils", "Événements rejetés", "Configuration effective"],
       };
       const stateKeys = ["dashboard.versionVector", "dashboard.streams", "dashboard.rejectedEvents", "dashboard.configProjection"];
       for (const [locale, labels] of Object.entries(stateLabels)) {

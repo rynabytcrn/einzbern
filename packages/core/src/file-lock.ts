@@ -6,16 +6,17 @@
 // waits with backoff until the first is done. There is nothing for a caller to pass and
 // nothing to retry: the engine reads the latest state inside the lock.
 //
-// A lock is stale when its holder is provably gone (same host, process not alive) or
-// when it is older than staleMs. A stale lock is broken under a short-lived breaker
-// file, and only after the breaker holder re-reads the lock and finds the same owner
-// it judged stale, so two waiters can never both break and one of them remove the
-// other's fresh lock. The mechanism uses exclusive create, read and unlink only; it
-// does not depend on permission bits.
+// A lock is reclaimable only when a well-formed owner on this host is provably
+// dead. Age is never ownership evidence. Foreign, malformed and unknown owners
+// remain untouched. Reclamation takes the same exclusive, token-owned lock on the
+// breaker path and rechecks the original owner under it. If a breaker itself was
+// abandoned, that same protocol recovers it under its own breaker; a living breaker
+// is never displaced. This keeps concurrent reclaimers serialised after a crash,
+// without an unguarded age-based unlink of the breaker.
 
 import { randomBytes } from "node:crypto";
 import { hostname } from "node:os";
-import { open, readFile, rm, stat } from "node:fs/promises";
+import { open, readFile, rm } from "node:fs/promises";
 
 export const FILE_LOCK_SCHEMA_VERSION = "einzbern.file-lock.v1" as const;
 export const FILE_LOCK_REASON_CODES = Object.freeze([
@@ -39,7 +40,7 @@ export class FileLockError extends Error {
 export interface FileLockOptions {
   // Optional caller wait budget. Omission waits until ownership becomes available.
   readonly timeoutMs?: number;
-  // A lock older than this is stale whatever its holder (default 10 min).
+  // Deprecated compatibility option: age no longer authorizes ownership removal.
   readonly staleMs?: number;
   // Test seams: the clock and the liveness probe.
   readonly now?: () => number;
@@ -60,15 +61,13 @@ interface LockOwner {
   readonly createdAt: string;
 }
 
-const DEFAULT_STALE_MS = 600_000;
-const BREAKER_STALE_MS = 10_000;
-
 function defaultProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
   } catch (error) {
-    return (error as { code?: string }).code === "EPERM";
+    // Only ESRCH establishes absence. Permission and unknown probe failures do not.
+    return (error as { code?: string }).code !== "ESRCH";
   }
 }
 
@@ -82,8 +81,10 @@ function parseOwner(text: string): LockOwner | null {
   try {
     const value = JSON.parse(text) as Partial<LockOwner> | null;
     if (value === null || typeof value !== "object" || value.schemaVersion !== FILE_LOCK_SCHEMA_VERSION ||
-      !Number.isSafeInteger(value.pid) || typeof value.token !== "string" || typeof value.hostname !== "string" ||
-      typeof value.createdAt !== "string") {
+      !Number.isSafeInteger(value.pid) || (value.pid ?? 0) <= 0 ||
+      typeof value.token !== "string" || !/^[a-f0-9]{32}$/u.test(value.token) ||
+      typeof value.hostname !== "string" || value.hostname.length === 0 ||
+      typeof value.createdAt !== "string" || !Number.isFinite(Date.parse(value.createdAt))) {
       return null;
     }
     return value as LockOwner;
@@ -92,10 +93,10 @@ function parseOwner(text: string): LockOwner | null {
   }
 }
 
-async function readOwner(path: string): Promise<{ readonly owner: LockOwner | null; readonly ageMs: number; readonly text: string } | null> {
+async function readOwner(path: string): Promise<{ readonly owner: LockOwner | null; readonly text: string } | null> {
   try {
-    const [text, metadata] = await Promise.all([readFile(path, "utf8"), stat(path)]);
-    return { owner: parseOwner(text), ageMs: Date.now() - metadata.mtimeMs, text };
+    const text = await readFile(path, "utf8");
+    return { owner: parseOwner(text), text };
   } catch (error) {
     if ((error as { code?: string }).code === "ENOENT") return null;
     throw error;
@@ -119,28 +120,25 @@ async function createExclusive(path: string, content: string): Promise<boolean> 
   return true;
 }
 
-// Break a lock judged stale, under the breaker, only if it still carries the text that
-// was judged. Returns whether the stale lock is gone.
-async function breakStaleLock(path: string, judgedText: string): Promise<boolean> {
-  const breaker = `${path}.breaker`;
-  if (!await createExclusive(breaker, `${process.pid}\n`)) {
-    const existing = await stat(breaker).catch(() => null);
-    if (existing !== null && Date.now() - existing.mtimeMs > BREAKER_STALE_MS) {
-      await rm(breaker, { force: true });
-    }
-    return false;
-  }
+function isDeadOwner(owner: LockOwner | null, processAlive: (pid: number) => boolean): boolean {
+  if (owner === null || owner.hostname !== hostname()) return false;
+  try { return processAlive(owner.pid) === false; }
+  catch { return false; } // Unknown liveness is never permission to remove an owner.
+}
+
+// All breaker paths use the same owner format, exclusion and token-safe release.
+// Recursion occurs only for existing provably dead owners, not for ordinary waits.
+async function breakStaleLock(path: string, judgedText: string, options: FileLockOptions,
+  processAlive: (pid: number) => boolean): Promise<boolean> {
+  const breaker = await acquireFileLock(`${path}.breaker`, options);
   try {
-    const current = await readFile(path, "utf8").catch((error: unknown) => {
-      if ((error as { code?: string }).code === "ENOENT") return null;
-      throw error;
-    });
+    const current = await readOwner(path);
     if (current === null) return true;
-    if (current !== judgedText) return false;
+    if (current.text !== judgedText || !isDeadOwner(current.owner, processAlive)) return false;
     await rm(path, { force: true });
     return true;
   } finally {
-    await rm(breaker, { force: true });
+    await breaker.release();
   }
 }
 
@@ -150,7 +148,6 @@ async function breakStaleLock(path: string, judgedText: string): Promise<boolean
  */
 export async function acquireFileLock(lockPath: string, options: FileLockOptions = {}): Promise<FileLock> {
   const timeoutMs = options.timeoutMs;
-  const staleMs = options.staleMs ?? DEFAULT_STALE_MS;
   const now = options.now ?? Date.now;
   const processAlive = options.processAlive ?? defaultProcessAlive;
   const token = randomBytes(16).toString("hex");
@@ -183,9 +180,11 @@ export async function acquireFileLock(lockPath: string, options: FileLockOptions
     }
     const held = await readOwner(lockPath);
     if (held !== null) {
-      const deadHolder = held.owner !== null && held.owner.hostname === hostname() && !processAlive(held.owner.pid);
-      if (deadHolder || held.ageMs > staleMs) {
-        if (await breakStaleLock(lockPath, held.text)) continue;
+      if (isDeadOwner(held.owner, processAlive)) {
+        // Nested recovery shares the caller's remaining wait budget. Omission still
+        // has no deadline, including while another reclaimer owns the breaker.
+        const recoveryOptions = { ...options, ...(deadline === undefined ? {} : { timeoutMs: Math.max(0, deadline - now()) }) };
+        if (await breakStaleLock(lockPath, held.text, recoveryOptions, processAlive)) continue;
       }
     }
     if (deadline !== undefined && now() >= deadline) {

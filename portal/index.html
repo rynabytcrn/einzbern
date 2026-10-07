@@ -3779,7 +3779,7 @@ button:disabled { cursor: not-allowed; }
 [data-tcrn-locale="zh-CN"] { --tcrn-type-family-ui: var(--tcrn-type-family-zh-cn); }
 [data-tcrn-locale="ja"] { --tcrn-type-family-ui: var(--tcrn-type-family-ja); }
 [data-tcrn-locale="ko"] { --tcrn-type-family-ui: var(--tcrn-type-family-ko); }
-@media (max-width: 980px) {
+@media (max-width: 760px) {
   .tcrn-product-shell { grid-template-columns: 1fr; }
   .tcrn-rail__mark, .tcrn-rail__footer { display: none; }
   .tcrn-side-nav { flex-direction: row; overflow: auto; }
@@ -3955,7 +3955,7 @@ button:disabled { cursor: not-allowed; }
 
 
 
-@media (max-width: 980px) {
+@media (max-width: 760px) {
   .tcrn-product-shell {
     grid-template-columns: 1fr;
   }
@@ -5117,7 +5117,7 @@ const BOOT = __PORTAL_BOOT__;
         else if (!busy && control.dataset.collectionBusy === "true") { delete control.dataset.collectionBusy; control.disabled = false; }
       });
       const save = $(`[data-collection-save="${key}"]`, view);
-      if (save) save.textContent = t(busy ? "collection.saving" : "collection.save");
+      if (save) save.textContent = busy ? t("collection.saving") : t("collection.save");
     }
   };
   const mutateCollection = async (key, reset) => {

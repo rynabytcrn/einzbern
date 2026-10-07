@@ -10,7 +10,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { hostname } from "node:os";
-import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -21,6 +21,7 @@ import {
   lockPath as libraryLockPath,
   materializeWorkspace,
   validateWorkspace,
+  withFileLock,
 } from "../dist/build/packages/core/src/index.js";
 import { COMMAND_CATALOG } from "../dist/build/packages/cli/src/index.js";
 import { cli, cliProcess, deviceHome, instant, standInForAtelier, workspaceFixture } from "./helpers/workspace-fixture.mjs";
@@ -112,11 +113,10 @@ test("a live holder makes a waiter time out instead of writing beside it", async
   const held = await acquireFileLock(lockPath);
   try {
     await assert.rejects(acquireFileLock(lockPath, { timeoutMs: 150 }), (error) => error.reasonCode === "FILE_LOCK_TIMEOUT");
-    // A lock older than the stale bound is broken whatever its holder.
-    const late = await acquireFileLock(lockPath, { timeoutMs: 2_000, staleMs: 0 });
-    await late.release();
+    // Even the deprecated zero-age option cannot evict a living holder.
+    await assert.rejects(acquireFileLock(lockPath, { timeoutMs: 30, staleMs: 0 }), (error) => error.reasonCode === "FILE_LOCK_TIMEOUT");
   } finally {
-    await held.release().catch((error) => assert.equal(error.reasonCode, "FILE_LOCK_LOST", "the broken holder learns it lost the lock"));
+    await held.release();
   }
   const again = await acquireFileLock(lockPath, { timeoutMs: 150 });
   await again.release();
@@ -159,4 +159,94 @@ test("cancelling a no-deadline waiter leaves the live holder and lock bytes inta
     if (child.exitCode === null && child.signalCode === null) { child.kill("SIGTERM"); await exit; }
     await held.release();
   }
+});
+
+// R4 ownership recovery: deterministic mtime aging exercises the old eviction
+// branches without waiting ten minutes or changing the actual execution budget.
+async function isolatedLock(context) {
+  const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-lock-integrity-")));
+  context.after(() => rm(base, { recursive: true, force: true }));
+  return join(base, "write.lock");
+}
+const deadPid = 2_147_483_000;
+const ownerText = (changes = {}) => JSON.stringify({ schemaVersion: FILE_LOCK_SCHEMA_VERSION,
+  pid: deadPid, token: "a".repeat(32), hostname: hostname(), createdAt: instant(0), ...changes }) + "\n";
+async function ageLock(path) { const old = new Date(Date.now() - 601_000); await utimes(path, old, old); }
+
+test("an aged live owner survives an ordinary waiter and retains safe release", async (context) => {
+  const path = await isolatedLock(context), held = await acquireFileLock(path);
+  await ageLock(path); const before = await readFile(path, "utf8");
+  let acquired = false;
+  const waiting = acquireFileLock(path).then(lock => { acquired = true; return lock; });
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(acquired, false); assert.equal(await readFile(path, "utf8"), before);
+  await held.release(); const next = await waiting;
+  assert.notEqual(next.token, held.token); await next.release();
+});
+
+test("an aged live breaker is not evicted; the caller budget applies during recovery", async (context) => {
+  const path = await isolatedLock(context); await writeFile(path, ownerText());
+  const breaker = await acquireFileLock(path + ".breaker"); await ageLock(breaker.path);
+  const before = await readFile(breaker.path, "utf8");
+  try {
+    await assert.rejects(acquireFileLock(path, { timeoutMs: 30 }), { reasonCode: "FILE_LOCK_TIMEOUT" });
+    assert.equal(await readFile(breaker.path, "utf8"), before);
+    assert.equal(await readFile(path, "utf8"), ownerText());
+  } finally { await breaker.release(); }
+  const next = await acquireFileLock(path); await next.release();
+});
+
+test("dead breaker recovery serialises concurrent waiters including an abandoned recovery breaker", async (context) => {
+  const path = await isolatedLock(context);
+  for (const suffix of ["", ".breaker", ".breaker.breaker"]) await writeFile(path + suffix, ownerText());
+  let active = 0, completed = 0;
+  await Promise.all(Array.from({ length: 8 }, () => withFileLock(path, async () => {
+    assert.equal(++active, 1, "only one writer may enter after nested crash recovery");
+    await new Promise(resolve => setTimeout(resolve, 2)); active--; completed++;
+  })));
+  assert.equal(completed, 8);
+  for (const suffix of ["", ".breaker", ".breaker.breaker", ".breaker.breaker.breaker"]) await assert.rejects(readFile(path + suffix), { code: "ENOENT" });
+});
+
+test("foreign, malformed, legacy breaker and unknown liveness never become age-based eviction authority", async (context) => {
+  const path = await isolatedLock(context);
+  const cases = [ownerText({ hostname: "another-device.invalid" }), "not json\n", ownerText({ pid: -1 }), ownerText({ token: "" }), ownerText({ createdAt: "invalid" })];
+  for (const text of cases) {
+    await writeFile(path, text); await ageLock(path);
+    await assert.rejects(acquireFileLock(path, { timeoutMs: 0 }), { reasonCode: "FILE_LOCK_TIMEOUT" });
+    assert.equal(await readFile(path, "utf8"), text);
+  }
+  const text = ownerText(); await writeFile(path, text); await ageLock(path);
+  await assert.rejects(acquireFileLock(path, { timeoutMs: 0, processAlive() { throw Error("probe unavailable"); } }), { reasonCode: "FILE_LOCK_TIMEOUT" });
+  assert.equal(await readFile(path, "utf8"), text);
+  for (const breakerText of [String(deadPid) + "\n", "", ownerText({ hostname: "foreign.invalid" })]) {
+    await writeFile(path + ".breaker", breakerText); await ageLock(path + ".breaker");
+    await assert.rejects(acquireFileLock(path, { timeoutMs: 0 }), { reasonCode: "FILE_LOCK_TIMEOUT" });
+    assert.equal(await readFile(path + ".breaker", "utf8"), breakerText);
+    assert.equal(await readFile(path, "utf8"), text);
+  }
+});
+
+test("recovery rechecks liveness under the breaker and release refuses a replaced token", async (context) => {
+  const path = await isolatedLock(context); await writeFile(path, ownerText()); let probes = 0;
+  await assert.rejects(acquireFileLock(path, { timeoutMs: 0, processAlive: () => ++probes > 1 }), { reasonCode: "FILE_LOCK_TIMEOUT" });
+  assert.equal(await readFile(path, "utf8"), ownerText());
+  assert.ok(probes >= 2);
+  const held = await acquireFileLock(path); const replacement = ownerText({ pid: process.pid, token: "b".repeat(32) });
+  await writeFile(path, replacement);
+  await assert.rejects(held.release(), { reasonCode: "FILE_LOCK_LOST" });
+  assert.equal(await readFile(path, "utf8"), replacement);
+});
+
+test("an interrupted real owner is reclaimed and an operation failure still releases ownership", async (context) => {
+  const path = await isolatedLock(context);
+  const module = new URL("../dist/build/packages/core/src/file-lock.js", import.meta.url).href;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", `import {acquireFileLock} from ${JSON.stringify(module)};await acquireFileLock(${JSON.stringify(path)});process.stdout.write("held");setInterval(()=>{},1000);`], { stdio: ["ignore", "pipe", "pipe"] });
+  const exit = once(child, "exit");
+  try { await once(child.stdout, "data"); child.kill("SIGTERM"); await exit; }
+  finally { if (child.exitCode === null && child.signalCode === null) { child.kill("SIGTERM"); await exit; } }
+  const failure = Error("operation failed");
+  await assert.rejects(withFileLock(path, async () => { throw failure; }), error => error === failure);
+  await assert.rejects(readFile(path), { code: "ENOENT" });
+  const next = await acquireFileLock(path); await next.release();
 });

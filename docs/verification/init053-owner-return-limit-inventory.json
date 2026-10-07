@@ -2,7 +2,7 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r35-init053-complete-source",
+  "pack": "r36-init053-complete-source",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
@@ -95,7 +95,7 @@
     },
     {
       "path": "packages/core/src/file-lock.ts",
-      "sha256": "5499329e9178854e37e9cff294d0224b0e62685abd857bdb2e74ed5a70687835"
+      "sha256": "2352c8d8f48a9349ba67ba5f33fd025d9e1585e2ced4a2ffe58937e32080a387"
     },
     {
       "path": "packages/core/src/format-version.ts",
@@ -359,7 +359,7 @@
     },
     {
       "path": "portal/index.html",
-      "sha256": "aecd4dff324fcdbbdcd0de8ef44f2e2498e0880222565b130d9b01ea9b283b7e"
+      "sha256": "e6894955a36193825abff8a77da8177c6b5cc7005e60c29067226be96e94de38"
     },
     {
       "path": "portal/locale-contract.mjs",
@@ -778,7 +778,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R35 current Source final generation. Original full-file cadence and affected dependency files have run; actual exit/counts are attached below, including every failure. Prior held49 prose is superseded. Source development verification is separate from integrated acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are included; no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "R36 current Source final generation. Original full-file cadence and affected dependency files have run; actual exit/counts are attached below, including every failure. Prior held49 prose is superseded. Source development verification is separate from integrated acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are included; no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "bb91bdc40d2669aef823abaf8d2050ca105e9a89",
     "mergeCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
@@ -888,9 +888,9 @@
     "runEvidence": "full-file-cadence-once.run.json",
     "exit": 1,
     "counts": {
-      "tests": 689,
-      "pass": 684,
-      "fail": 5,
+      "tests": 695,
+      "pass": 692,
+      "fail": 3,
       "skipped": 0,
       "cancelled": 0
     },
@@ -906,14 +906,14 @@
       "tests/user-crest.test.mjs",
       "tests/p4-knowledge-core.test.mjs"
     ],
-    "stdoutSha256": "5b56e94fe7e8b37235a87bdf537fb7ce24700d5fc00e94df3591fc5c748a3b70",
+    "stdoutSha256": "076128cc7ad04eca4df7271819a8ebe4f8906420017742ecd82dfe7cd815428a",
     "runtime": {
       "node": "v24.16.0",
       "pnpm": "11.3.0"
     },
-    "source": "original Source whole-file invocation only; no name filtering; approved test TMPDIR and original guards retained"
+    "source": "original whole61 files once, six additional lock tests; original guards and exact approved TMPDIR retained"
   },
-  "generationTimeUtc": "2026-10-07T13:04:43.621306+00:00",
+  "generationTimeUtc": "2026-10-07T14:30:32.175177+00:00",
   "currentIndividualReview": {
     "namedDeclarations": [
       {
@@ -5927,49 +5927,49 @@
         "currentInitializer": "options.timeoutMs",
         "declarations": [
           {
-            "line": 152,
+            "line": 150,
             "initializer": "options.timeoutMs"
           }
         ],
         "exactUses": [
           {
-            "line": 41,
+            "line": 42,
             "syntax": "PropertySignature",
             "context": [
               "export interface FileLockOptions {",
               "  // Optional caller wait budget. Omission waits until ownership becomes available.",
               "  readonly timeoutMs?: number;",
-              "  // A lock older than this is stale whatever its holder (default 10 min).",
+              "  // Deprecated compatibility option: age no longer authorizes ownership removal.",
               "  readonly staleMs?: number;",
               "  // Test seams: the clock and the liveness probe."
             ]
           },
           {
-            "line": 152,
+            "line": 150,
             "syntax": "VariableDeclaration",
             "context": [
               " */",
               "export async function acquireFileLock(lockPath: string, options: FileLockOptions = {}): Promise<FileLock> {",
               "  const timeoutMs = options.timeoutMs;",
-              "  const staleMs = options.staleMs ?? DEFAULT_STALE_MS;",
               "  const now = options.now ?? Date.now;",
-              "  const processAlive = options.processAlive ?? defaultProcessAlive;"
+              "  const processAlive = options.processAlive ?? defaultProcessAlive;",
+              "  const token = randomBytes(16).toString(\"hex\");"
             ]
           },
           {
-            "line": 152,
+            "line": 150,
             "syntax": "PropertyAccessExpression",
             "context": [
               " */",
               "export async function acquireFileLock(lockPath: string, options: FileLockOptions = {}): Promise<FileLock> {",
               "  const timeoutMs = options.timeoutMs;",
-              "  const staleMs = options.staleMs ?? DEFAULT_STALE_MS;",
               "  const now = options.now ?? Date.now;",
-              "  const processAlive = options.processAlive ?? defaultProcessAlive;"
+              "  const processAlive = options.processAlive ?? defaultProcessAlive;",
+              "  const token = randomBytes(16).toString(\"hex\");"
             ]
           },
           {
-            "line": 165,
+            "line": 162,
             "syntax": "BinaryExpression",
             "context": [
               "  };",
@@ -5981,7 +5981,7 @@
             ]
           },
           {
-            "line": 165,
+            "line": 162,
             "syntax": "BinaryExpression",
             "context": [
               "  };",
@@ -5990,6 +5990,18 @@
               "  let wait = 5;",
               "  for (;;) {",
               "    if (await createExclusive(lockPath, content)) {"
+            ]
+          },
+          {
+            "line": 186,
+            "syntax": "PropertyAssignment",
+            "context": [
+              "        // Nested recovery shares the caller's remaining wait budget. Omission still",
+              "        // has no deadline, including while another reclaimer owns the breaker.",
+              "        const recoveryOptions = { ...options, ...(deadline === undefined ? {} : { timeoutMs: Math.max(0, deadline - now()) }) };",
+              "        if (await breakStaleLock(lockPath, held.text, recoveryOptions, processAlive)) continue;",
+              "      }",
+              "    }"
             ]
           }
         ],
@@ -41129,6 +41141,28 @@
           "class": "computed-data",
           "basis": "initializer reads, measures, transforms, or accumulates data; declaration alone does not enforce an upper bound"
         }
+      },
+      {
+        "file": "packages/core/src/file-lock.ts",
+        "symbol": "DEFAULT_STALE_MS",
+        "currentInitializer": null,
+        "declarations": [],
+        "exactUses": [],
+        "review": {
+          "class": "removed-ownership-deadline",
+          "basis": "Removed600000ms from acquireFileLock. Only a well-formed same-host owner proven dead may be reclaimed; age and staleMs compatibility input cannot evict live/foreign/unknown owners."
+        }
+      },
+      {
+        "file": "packages/core/src/file-lock.ts",
+        "symbol": "BREAKER_STALE_MS",
+        "currentInitializer": null,
+        "declarations": [],
+        "exactUses": [],
+        "review": {
+          "class": "removed-ownership-deadline",
+          "basis": "Removed10000ms unguarded breaker unlink. Breakers now use the same exclusive owner/token/liveness protocol recursively; dead breaker recovery is serialised under its own breaker, no live-owner expiry."
+        }
       }
     ],
     "census": [
@@ -73511,7 +73545,7 @@
     "physicalCapacity": "unknown; no maximum-size allocation attempted",
     "qualification": "Every retained map row has its exact current source, context and semantic disposition; this is source review, not a claim of435 independent capacity experiments. Six unsupported implicit deadlines removed. Named actual callers trace omission and explicit budgets. No physical-capacity/host-default/live-execution-limit change or universal runtime claim.",
     "counts": {
-      "named": 435,
+      "named": 437,
       "census": 930,
       "namedClasses": {
         "caller-default": 5,
@@ -73536,7 +73570,8 @@
         "approved-verification-budget": 3,
         "historical-verification-budget": 1,
         "privacy-diagnostic-projection": 1,
-        "verification-capture-budget": 1
+        "verification-capture-budget": 1,
+        "removed-ownership-deadline": 2
       },
       "censusClasses": {
         "nonexecuting-reference": 51,
@@ -73558,22 +73593,6 @@
     },
     "actualCallerClosure": {
       "rows": [
-        {
-          "path": "packages/core/src/file-lock.ts",
-          "line": 151,
-          "source": "export async function acquireFileLock(lockPath: string, options: FileLockOptions = {}): Promise<FileLock> {",
-          "omittedDeadline": "no product deadline; invoking process owns cancellation",
-          "explicitDeadline": "only supplied caller timeoutMs/lockTimeoutMs applies; existing failure reason remains",
-          "hash": "5499329e9178854e37e9cff294d0224b0e62685abd857bdb2e74ed5a70687835"
-        },
-        {
-          "path": "packages/core/src/file-lock.ts",
-          "line": 205,
-          "source": "  const lock = await acquireFileLock(lockPath, options);",
-          "omittedDeadline": "no product deadline; invoking process owns cancellation",
-          "explicitDeadline": "only supplied caller timeoutMs/lockTimeoutMs applies; existing failure reason remains",
-          "hash": "5499329e9178854e37e9cff294d0224b0e62685abd857bdb2e74ed5a70687835"
-        },
         {
           "path": "packages/core/src/doctor.ts",
           "line": 525,
@@ -73797,6 +73816,78 @@
           "omittedDeadline": "no product deadline; invoking process owns cancellation",
           "explicitDeadline": "only supplied caller timeoutMs/lockTimeoutMs applies; existing failure reason remains",
           "hash": "192762b80a44ee5b955ed3cb12ae5fd3294160b393a5f090823667a44bcc3b42"
+        },
+        {
+          "path": "packages/core/src/file-lock.ts",
+          "line": 133,
+          "source": "  const breaker = await acquireFileLock(`${path}.breaker`, options);",
+          "hash": "2352c8d8f48a9349ba67ba5f33fd025d9e1585e2ced4a2ffe58937e32080a387",
+          "omittedDeadline": "no deadline; process cancellation or ownership release",
+          "explicitDeadline": "timeoutMs propagated, including remaining caller budget for breaker recovery",
+          "ownership": "only validated same-host provably dead owner reclaimed; unknown/malformed/foreign retained"
+        },
+        {
+          "path": "packages/core/src/file-lock.ts",
+          "line": 149,
+          "source": "export async function acquireFileLock(lockPath: string, options: FileLockOptions = {}): Promise<FileLock> {",
+          "hash": "2352c8d8f48a9349ba67ba5f33fd025d9e1585e2ced4a2ffe58937e32080a387",
+          "omittedDeadline": "no deadline; process cancellation or ownership release",
+          "explicitDeadline": "timeoutMs propagated, including remaining caller budget for breaker recovery",
+          "ownership": "only validated same-host provably dead owner reclaimed; unknown/malformed/foreign retained"
+        },
+        {
+          "path": "packages/core/src/file-lock.ts",
+          "line": 204,
+          "source": "  const lock = await acquireFileLock(lockPath, options);",
+          "hash": "2352c8d8f48a9349ba67ba5f33fd025d9e1585e2ced4a2ffe58937e32080a387",
+          "omittedDeadline": "no deadline; process cancellation or ownership release",
+          "explicitDeadline": "timeoutMs propagated, including remaining caller budget for breaker recovery",
+          "ownership": "only validated same-host provably dead owner reclaimed; unknown/malformed/foreign retained"
+        },
+        {
+          "path": "packages/core/src/akasha.ts",
+          "line": 491,
+          "source": "  return withFileLock(path, operation, options);",
+          "hash": "bbc58d2bf69cd3e4ea7d61e4580293dd9be37498b4df2effba8752a3f0a19678",
+          "omittedDeadline": "no deadline; process cancellation or ownership release",
+          "explicitDeadline": "timeoutMs propagated, including remaining caller budget for breaker recovery",
+          "ownership": "only validated same-host provably dead owner reclaimed; unknown/malformed/foreign retained"
+        },
+        {
+          "path": "packages/core/src/engine-home.ts",
+          "line": 310,
+          "source": "  return withFileLock(path, operation);",
+          "hash": "0f06b57e29638bb9efa968190295fdc6b7d3e102d36948bf146519162f066fe9",
+          "omittedDeadline": "no deadline; process cancellation or ownership release",
+          "explicitDeadline": "timeoutMs propagated, including remaining caller budget for breaker recovery",
+          "ownership": "only validated same-host provably dead owner reclaimed; unknown/malformed/foreign retained"
+        },
+        {
+          "path": "packages/core/src/doctor.ts",
+          "line": 525,
+          "source": "    held = await acquireFileLock(lock, context.lockTimeoutMs === undefined ? {} : { timeoutMs: context.lockTimeoutMs });",
+          "hash": "a096ad19e497781fa785020a748d86228bccc11b2771370b3f0fe74624527ed7",
+          "omittedDeadline": "no deadline; process cancellation or ownership release",
+          "explicitDeadline": "timeoutMs propagated, including remaining caller budget for breaker recovery",
+          "ownership": "only validated same-host provably dead owner reclaimed; unknown/malformed/foreign retained"
+        },
+        {
+          "path": "packages/core/src/skill-copies.ts",
+          "line": 347,
+          "source": "  return withFileLock(lock, async () => {",
+          "hash": "a7b4269d5aebf2bae07068f96a6e07ed5ef89d2e8ff642151777e6aedf6b0ea0",
+          "omittedDeadline": "no deadline; process cancellation or ownership release",
+          "explicitDeadline": "timeoutMs propagated, including remaining caller budget for breaker recovery",
+          "ownership": "only validated same-host provably dead owner reclaimed; unknown/malformed/foreign retained"
+        },
+        {
+          "path": "packages/core/src/knowledge-core.ts",
+          "line": 2627,
+          "source": "    return await withFileLock(path, operation);",
+          "hash": "f5c96de82ad232a44c9806246163021424c08aefddabe45af43b1f229f349648",
+          "omittedDeadline": "no deadline; process cancellation or ownership release",
+          "explicitDeadline": "timeoutMs propagated, including remaining caller budget for breaker recovery",
+          "ownership": "only validated same-host provably dead owner reclaimed; unknown/malformed/foreign retained"
         }
       ],
       "total": 30,
@@ -73818,28 +73909,32 @@
         }
       ],
       "cancellation": "CLI/node process SIGINT/SIGTERM; no host defaults or live limits modified",
-      "evidence": "complete affected files plus ordinary lock waiter process termination test; existing timeout/corruption/ownership negatives retained"
+      "evidence": "complete affected files plus ordinary lock waiter process termination test; existing timeout/corruption/ownership negatives retained",
+      "priorEvidence": "../r35-source-raw/r4-actual-callers.json",
+      "lockIntegrity": {
+        "retired": [
+          {
+            "symbol": "DEFAULT_STALE_MS",
+            "prior": 600000,
+            "consumer": "acquireFileLock staleMs fallback and OR age branch; removed"
+          },
+          {
+            "symbol": "BREAKER_STALE_MS",
+            "prior": 10000,
+            "consumer": "breakStaleLock breaker unguarded rm; removed"
+          }
+        ],
+        "mechanism": "original exclusive-create/read/unlink/token ownership; breaker now obeys same lock protocol; recursively recovers a dead breaker under its own breaker; original owner bytes and liveness rechecked under exclusive breaker",
+        "residualCompatibility": "staleMs remains accepted but never grants eviction permission. No production caller supplied staleMs. Old PID-only or partial/corrupt owners have unknown host/ownership: cannot be automatically removed, wait ends only via explicit timeout or operator cancellation. This conservative recovery boundary is not a green recovery claim for malformed ownership.",
+        "noNewDeadline": true,
+        "tests": "tests/file-lock-concurrency.test.mjs entire original file plus deterministic aged living/breaker, nested crash/concurrent waiter, corrupt/foreign/probe error, recheck/token and real interruption cases",
+        "firstIntroduction": "unknown; no attribution to last change"
+      }
     },
     "remainingConsumerExposureIssues": []
   },
   "actualCurrentCallerReview": {
     "rows": [
-      {
-        "path": "packages/core/src/file-lock.ts",
-        "line": 151,
-        "source": "export async function acquireFileLock(lockPath: string, options: FileLockOptions = {}): Promise<FileLock> {",
-        "omittedDeadline": "no product deadline; invoking process owns cancellation",
-        "explicitDeadline": "only supplied caller timeoutMs/lockTimeoutMs applies; existing failure reason remains",
-        "hash": "5499329e9178854e37e9cff294d0224b0e62685abd857bdb2e74ed5a70687835"
-      },
-      {
-        "path": "packages/core/src/file-lock.ts",
-        "line": 205,
-        "source": "  const lock = await acquireFileLock(lockPath, options);",
-        "omittedDeadline": "no product deadline; invoking process owns cancellation",
-        "explicitDeadline": "only supplied caller timeoutMs/lockTimeoutMs applies; existing failure reason remains",
-        "hash": "5499329e9178854e37e9cff294d0224b0e62685abd857bdb2e74ed5a70687835"
-      },
       {
         "path": "packages/core/src/doctor.ts",
         "line": 525,
@@ -74063,6 +74158,78 @@
         "omittedDeadline": "no product deadline; invoking process owns cancellation",
         "explicitDeadline": "only supplied caller timeoutMs/lockTimeoutMs applies; existing failure reason remains",
         "hash": "192762b80a44ee5b955ed3cb12ae5fd3294160b393a5f090823667a44bcc3b42"
+      },
+      {
+        "path": "packages/core/src/file-lock.ts",
+        "line": 133,
+        "source": "  const breaker = await acquireFileLock(`${path}.breaker`, options);",
+        "hash": "2352c8d8f48a9349ba67ba5f33fd025d9e1585e2ced4a2ffe58937e32080a387",
+        "omittedDeadline": "no deadline; process cancellation or ownership release",
+        "explicitDeadline": "timeoutMs propagated, including remaining caller budget for breaker recovery",
+        "ownership": "only validated same-host provably dead owner reclaimed; unknown/malformed/foreign retained"
+      },
+      {
+        "path": "packages/core/src/file-lock.ts",
+        "line": 149,
+        "source": "export async function acquireFileLock(lockPath: string, options: FileLockOptions = {}): Promise<FileLock> {",
+        "hash": "2352c8d8f48a9349ba67ba5f33fd025d9e1585e2ced4a2ffe58937e32080a387",
+        "omittedDeadline": "no deadline; process cancellation or ownership release",
+        "explicitDeadline": "timeoutMs propagated, including remaining caller budget for breaker recovery",
+        "ownership": "only validated same-host provably dead owner reclaimed; unknown/malformed/foreign retained"
+      },
+      {
+        "path": "packages/core/src/file-lock.ts",
+        "line": 204,
+        "source": "  const lock = await acquireFileLock(lockPath, options);",
+        "hash": "2352c8d8f48a9349ba67ba5f33fd025d9e1585e2ced4a2ffe58937e32080a387",
+        "omittedDeadline": "no deadline; process cancellation or ownership release",
+        "explicitDeadline": "timeoutMs propagated, including remaining caller budget for breaker recovery",
+        "ownership": "only validated same-host provably dead owner reclaimed; unknown/malformed/foreign retained"
+      },
+      {
+        "path": "packages/core/src/akasha.ts",
+        "line": 491,
+        "source": "  return withFileLock(path, operation, options);",
+        "hash": "bbc58d2bf69cd3e4ea7d61e4580293dd9be37498b4df2effba8752a3f0a19678",
+        "omittedDeadline": "no deadline; process cancellation or ownership release",
+        "explicitDeadline": "timeoutMs propagated, including remaining caller budget for breaker recovery",
+        "ownership": "only validated same-host provably dead owner reclaimed; unknown/malformed/foreign retained"
+      },
+      {
+        "path": "packages/core/src/engine-home.ts",
+        "line": 310,
+        "source": "  return withFileLock(path, operation);",
+        "hash": "0f06b57e29638bb9efa968190295fdc6b7d3e102d36948bf146519162f066fe9",
+        "omittedDeadline": "no deadline; process cancellation or ownership release",
+        "explicitDeadline": "timeoutMs propagated, including remaining caller budget for breaker recovery",
+        "ownership": "only validated same-host provably dead owner reclaimed; unknown/malformed/foreign retained"
+      },
+      {
+        "path": "packages/core/src/doctor.ts",
+        "line": 525,
+        "source": "    held = await acquireFileLock(lock, context.lockTimeoutMs === undefined ? {} : { timeoutMs: context.lockTimeoutMs });",
+        "hash": "a096ad19e497781fa785020a748d86228bccc11b2771370b3f0fe74624527ed7",
+        "omittedDeadline": "no deadline; process cancellation or ownership release",
+        "explicitDeadline": "timeoutMs propagated, including remaining caller budget for breaker recovery",
+        "ownership": "only validated same-host provably dead owner reclaimed; unknown/malformed/foreign retained"
+      },
+      {
+        "path": "packages/core/src/skill-copies.ts",
+        "line": 347,
+        "source": "  return withFileLock(lock, async () => {",
+        "hash": "a7b4269d5aebf2bae07068f96a6e07ed5ef89d2e8ff642151777e6aedf6b0ea0",
+        "omittedDeadline": "no deadline; process cancellation or ownership release",
+        "explicitDeadline": "timeoutMs propagated, including remaining caller budget for breaker recovery",
+        "ownership": "only validated same-host provably dead owner reclaimed; unknown/malformed/foreign retained"
+      },
+      {
+        "path": "packages/core/src/knowledge-core.ts",
+        "line": 2627,
+        "source": "    return await withFileLock(path, operation);",
+        "hash": "f5c96de82ad232a44c9806246163021424c08aefddabe45af43b1f229f349648",
+        "omittedDeadline": "no deadline; process cancellation or ownership release",
+        "explicitDeadline": "timeoutMs propagated, including remaining caller budget for breaker recovery",
+        "ownership": "only validated same-host provably dead owner reclaimed; unknown/malformed/foreign retained"
       }
     ],
     "total": 30,
@@ -74084,7 +74251,27 @@
       }
     ],
     "cancellation": "CLI/node process SIGINT/SIGTERM; no host defaults or live limits modified",
-    "evidence": "complete affected files plus ordinary lock waiter process termination test; existing timeout/corruption/ownership negatives retained"
+    "evidence": "complete affected files plus ordinary lock waiter process termination test; existing timeout/corruption/ownership negatives retained",
+    "priorEvidence": "../r35-source-raw/r4-actual-callers.json",
+    "lockIntegrity": {
+      "retired": [
+        {
+          "symbol": "DEFAULT_STALE_MS",
+          "prior": 600000,
+          "consumer": "acquireFileLock staleMs fallback and OR age branch; removed"
+        },
+        {
+          "symbol": "BREAKER_STALE_MS",
+          "prior": 10000,
+          "consumer": "breakStaleLock breaker unguarded rm; removed"
+        }
+      ],
+      "mechanism": "original exclusive-create/read/unlink/token ownership; breaker now obeys same lock protocol; recursively recovers a dead breaker under its own breaker; original owner bytes and liveness rechecked under exclusive breaker",
+      "residualCompatibility": "staleMs remains accepted but never grants eviction permission. No production caller supplied staleMs. Old PID-only or partial/corrupt owners have unknown host/ownership: cannot be automatically removed, wait ends only via explicit timeout or operator cancellation. This conservative recovery boundary is not a green recovery claim for malformed ownership.",
+      "noNewDeadline": true,
+      "tests": "tests/file-lock-concurrency.test.mjs entire original file plus deterministic aged living/breaker, nested crash/concurrent waiter, corrupt/foreign/probe error, recheck/token and real interruption cases",
+      "firstIntroduction": "unknown; no attribution to last change"
+    }
   },
   "currentFormerBoundWitnesses": {
     "rows": [
@@ -79058,23 +79245,28 @@
       "oldInitializer": "options.timeoutMs ?? DEFAULT_TIMEOUT_MS",
       "oldLine": 153,
       "currentInitializer": "options.timeoutMs",
-      "currentLine": 152,
+      "currentLine": 150,
       "disposition": "default or caller processing budget; actual caller/environment settings and timer validation determine the run",
       "currentConsumerSites": [
         {
           "file": "packages/core/src/file-lock.ts",
-          "line": 41,
+          "line": 42,
           "text": "readonly timeoutMs?: number;"
         },
         {
           "file": "packages/core/src/file-lock.ts",
-          "line": 152,
+          "line": 150,
           "text": "const timeoutMs = options.timeoutMs;"
         },
         {
           "file": "packages/core/src/file-lock.ts",
-          "line": 165,
+          "line": 162,
           "text": "const deadline = timeoutMs === undefined ? undefined : now() + timeoutMs;"
+        },
+        {
+          "file": "packages/core/src/file-lock.ts",
+          "line": 186,
+          "text": "const recoveryOptions = { ...options, ...(deadline === undefined ? {} : { timeoutMs: Math.max(0, deadline - now()) }) };"
         }
       ],
       "originalBasis": "unknown for historical arbitrary product ceilings; they were not retained as permanent bounds without concrete necessity",

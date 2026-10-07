@@ -40,7 +40,7 @@ import { FRAMEWORK_VERSION } from "./index.js";
 import { assertCanonicalJson, canonicalJson, canonicalSha256 } from "../../protocol/src/index.js";
 import { AGENTS_FILE, CLAUDE_FILE } from "./agents-sections.js";
 import { isAtomicTemporaryName } from "./atomic-file.js";
-import { AKASHA_READ_TIMEOUT_DEFAULT_MS, STREAM_MANIFEST_FILE, readAllStreams } from "./akasha.js";
+import { STREAM_MANIFEST_FILE, readAllStreams } from "./akasha.js";
 import type { ReadBytes } from "./akasha.js";
 import { readDevice } from "./device-identity.js";
 import { LIBRARY_FILES, validateLibraryManifest } from "./ether-library.js";
@@ -225,7 +225,8 @@ interface Snapshot {
   readonly streams: ReadonlyMap<string, readonly string[]>;
 }
 
-function timedReader(readFile: ReadBytes, timeoutMs: number): ReadBytes {
+function timedReader(readFile: ReadBytes, timeoutMs: number | undefined): ReadBytes {
+  if (timeoutMs === undefined) return readFile;
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > RUNTIME_CAPACITY.timerMilliseconds) {
     throw new CheckFailure("RESTORE_UNREADABLE", "timeoutMs must be a positive integer within the Node timer range");
   }
@@ -246,7 +247,7 @@ function timedReader(readFile: ReadBytes, timeoutMs: number): ReadBytes {
   });
 }
 
-// 1 readable: the place, its manifest and every file of akasha/, each read within the timeout.
+// 1 readable: the place, its manifest and every file of akasha/, with an optional caller deadline.
 async function readSnapshot(libraryPath: string, options: RestoreReadOptions): Promise<Snapshot | CheckFailure> {
   let root: string;
   let directory: boolean;
@@ -259,7 +260,7 @@ async function readSnapshot(libraryPath: string, options: RestoreReadOptions): P
     return failureOf(error, "RESTORE_UNREADABLE");
   }
   if (!directory) return { root, directory, entries: [], files: new Map(), akasha: null, streams: new Map() };
-  const read = timedReader(options.readFile ?? readFileBytes, options.timeoutMs ?? AKASHA_READ_TIMEOUT_DEFAULT_MS);
+  const read = timedReader(options.readFile ?? readFileBytes, options.timeoutMs);
   const files = new Map<string, Buffer>();
   const streams = new Map<string, readonly string[]>();
   let entries: readonly string[] = [];
@@ -385,7 +386,7 @@ async function streamsCheck(snapshot: Snapshot, manifest: Library["manifest"], o
   }
   const cached: ReadBytes = async (path) => snapshot.files.get(path) ?? (options.readFile ?? readFileBytes)(path);
   try {
-    const read = await readAllStreams(snapshot.root, { readFile: cached, timeoutMs: options.timeoutMs ?? AKASHA_READ_TIMEOUT_DEFAULT_MS });
+    const read = await readAllStreams(snapshot.root, { readFile: cached, ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }) });
     const state = materializeLibraryRead({ root: snapshot.root, manifest }, read);
     return { state, detail: { streams: String(read.streams.length), events: String(read.events.length) } };
   } catch (error) {

@@ -3821,17 +3821,20 @@ button:disabled { cursor: not-allowed; }
 /* The shell carries the status row, and the sidebar fills its row rather than the
    viewport: the design system gives the sidebar height: 100dvh because its shell has
    no row below it. With one, 100dvh would overhang the status strip by its height. */
-.tcrn-product-shell {
-  height: 100dvh;
-  grid-template-rows: minmax(0, 1fr) auto;
+/* Only the two-column desktop composition has one shared sidebar/workspace row.
+   Mobile uses the published auto-height stacked shell; a desktop fractional row
+   would collapse the navigation track when the workspace is taller than the view. */
+@media (min-width: 761px) {
+  .tcrn-product-shell {
+    height: 100dvh;
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .tcrn-product-shell__sidebar { height: 100%; }
 }
 .tcrn-product-shell > .tcrn-app-status-bar {
   grid-column: 1 / -1;
 }
-.tcrn-product-shell__sidebar {
-  height: 100%;
-  overflow-y: auto;
-}
+
 .tcrn-product-shell__workspace > .tcrn-top-bar {
   /* The actions track is shrinkable rather than content-sized: with a plain `auto`
      the actions always take their max-content width, so the flex rules inside them
@@ -4629,7 +4632,7 @@ const BOOT = __PORTAL_BOOT__;
     const dirty = [...selected].join(",") !== promptLanguageSelection(entry.currentValue, roster).join(",");
     const listId = `${id}-list`;
     const options = roster.map((language, index) => `<button type="button" role="option" id="${esc(listId)}-${index}" class="tcrn-menu__item tcrn-multi-select-dropdown__option" data-multi-select-value="${esc(language)}" data-selected="${selected.has(language)}" aria-selected="${selected.has(language)}"><span data-multi-select-label>${esc(promptLanguageLabel(language))}</span><span data-multi-select-check data-selected="${selected.has(language)}" aria-hidden="true"><svg class="tcrn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4 10-10"/></svg></span></button>`).join("");
-    return `<div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(roster, entry.key, "collection-closed", "multi-select")} data-setting-choice-cardinality="set" data-setting-choice-source="artifact.language.allowedValues" data-setting-choice-value-format="comma-separated"><div class="tcrn-multi-select-dropdown" data-prompt-language-dropdown data-choice-cardinality="collection" data-choice-value-mode="closed" data-choice-presentation="dropdown" data-choice-option-count="${roster.length}" data-empty-selection-label="${esc(t("scope.selectLanguages"))}"><button type="button" id="${esc(id)}" class="tcrn-select tcrn-multi-select-dropdown__trigger" aria-label="${esc(label)}" aria-required="true" aria-haspopup="listbox" aria-expanded="false" aria-controls="${esc(listId)}"><span data-multi-select-summary>${esc([...selected].map(promptLanguageLabel).join(", ") || t("scope.selectLanguages"))}</span><svg class="tcrn-icon tcrn-multi-select-dropdown__caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><select class="tcrn-sr-only tcrn-multi-select-dropdown__value" data-choice-presentation="dropdown" multiple name="${esc(entry.key)}" tabindex="-1" aria-hidden="true" data-setting-control="${esc(entry.key)}" data-setting-cardinality="set" data-cli-action="settings-set">${roster.map((language) => `<option value="${esc(language)}" ${selected.has(language) ? "selected" : ""}>${esc(promptLanguageLabel(language))}</option>`).join("")}</select><input class="tcrn-sr-only tcrn-multi-select-dropdown__validation" type="checkbox" required tabindex="-1" aria-hidden="true" ${selected.size > 0 ? "checked" : ""}><div id="${esc(listId)}" class="tcrn-menu tcrn-multi-select-dropdown__list" role="listbox" aria-multiselectable="true" aria-label="${esc(label)}" tabindex="-1" hidden>${options}</div></div><div class="tcrn-surface__head-actions tcrn-action-row"><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--sm" data-save-setting-choice="${esc(entry.key)}" ${dirty ? "" : "disabled"}>${esc(t("config.save"))}</button><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--sm" data-undo-setting-choice="${esc(entry.key)}" ${dirty ? "" : "disabled"}>${esc(t("config.undo"))}</button><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--sm" data-reset-setting="${esc(entry.key)}" ${entry.declaredValue == null ? "disabled" : ""}>${esc(t("config.reset"))}</button></div></div>`;
+    return `<div class="tcrn-setting-choice" data-setting-choice-component="SettingChoice" ${settingChoiceAttrs(roster, entry.key, "collection-closed", "multi-select")} data-setting-choice-cardinality="set" data-setting-choice-source="artifact.language.allowedValues" data-setting-choice-value-format="comma-separated"><div class="tcrn-multi-select-dropdown" data-prompt-language-dropdown data-choice-cardinality="collection" data-choice-value-mode="closed" data-choice-presentation="dropdown" data-choice-option-count="${roster.length}" data-empty-selection-label="${esc(t("scope.selectLanguages"))}"><button type="button" id="${esc(id)}" class="tcrn-select tcrn-multi-select-dropdown__trigger" aria-label="${esc(label)}" aria-required="true" aria-haspopup="listbox" aria-expanded="false" aria-controls="${esc(listId)}"><span data-multi-select-summary>${esc([...selected].map(promptLanguageLabel).join(", ") || t("scope.selectLanguages"))}</span><svg class="tcrn-icon tcrn-multi-select-dropdown__caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><select class="tcrn-sr-only tcrn-multi-select-dropdown__value" data-choice-presentation="dropdown" multiple name="${esc(entry.key)}" tabindex="-1" aria-hidden="true" data-setting-control="${esc(entry.key)}" data-setting-cardinality="set" data-cli-action="settings-set">${roster.map((language) => `<option value="${esc(language)}" ${selected.has(language) ? "selected" : ""}>${esc(promptLanguageLabel(language))}</option>`).join("")}</select><input class="tcrn-sr-only tcrn-multi-select-dropdown__validation" type="checkbox" required tabindex="-1" aria-hidden="true" ${selected.size > 0 ? "checked" : ""}><div id="${esc(listId)}" class="tcrn-menu tcrn-multi-select-dropdown__list" role="listbox" aria-multiselectable="true" aria-label="${esc(label)}" tabindex="-1" hidden>${options}</div></div><div class="tcrn-surface__head-actions tcrn-action-row"><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--sm" data-save-setting-choice="${esc(entry.key)}" ${dirty ? "" : "disabled"}>${esc(t("config.save"))}</button><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--sm" data-undo-setting-choice="${esc(entry.key)}" ${dirty ? "" : "disabled"}>${esc(t("config.undo"))}</button></div></div>`;
   };
 
   const referenceChoice = (entry, label, id) => {
@@ -4740,7 +4743,7 @@ const BOOT = __PORTAL_BOOT__;
   const settingRowLabel = (entry, description) => `<div class="tcrn-setting-row__label"><code class="tcrn-setting-row__key">${esc(entry.key)}</code><span class="tcrn-setting-row__name">${esc(settingLabel(entry.key))}${conceptTip("setting." + entry.key)}</span><span class="tcrn-setting-row__description">${esc(description)}</span>${layerBadge(entry.layer)}<span class="tcrn-field__hint" data-effective-source="${esc(entry.source?.projectId ?? entry.source?.kind ?? entry.layer)}">${esc(settingSourceText(entry))}</span></div>`;
   const projectSettingRow = (entry) => {
     const modified = entry.declaredValue != null;
-    const reset = modified ? `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md tcrn-icon-button tcrn-setting-row__reset" data-reset-setting="${esc(entry.key)}" data-cli-action="settings-remove" aria-label="${esc(t("config.reset"))}"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M3.2 8a4.8 4.8 0 1 0 1.5-3.5"/><path d="M2.6 2.8v2.6h2.6"/></svg></button>` : "";
+    const reset = modified ? `<button type="button" class="tcrn-setting-row__reset" data-reset-setting="${esc(entry.key)}" data-cli-action="settings-remove">${esc(t("config.reset"))}</button>` : "";
     // The dictionary link and the dictionary row must agree on who is in the domain:
     // the vocabulary lists a key when its controlType is "enum", so the icon asks the
     // same question. Keying the icon off allowedValues instead produced links that
@@ -5103,26 +5106,39 @@ const BOOT = __PORTAL_BOOT__;
     if (sent !== null) Object.assign(status, { draft: sent, dirty: true });
     renderCollection(key);
   };
-  const saveCollection = async (key) => {
-    if (state.librarySwitching) return;
-    const epoch = state.libraryEpoch || 0;
-    const records = readCollectionTable(key);
-    echo("settings-set", ["--key", key]);
-    const result = await api("/api/settings", { method: "POST", body: JSON.stringify({ key, value: JSON.stringify(records) }) });
-    if ((state.libraryEpoch || 0) !== epoch) return;
-    showReceipt(result);
-    await settleCollectionWrite(key, result, records);
+  const setCollectionWritesBusy = (busy) => {
+    state.collectionWritePending = busy;
+    for (const key of ["models.category", "models.tiers"]) {
+      const view = $(`[data-collection-actions="${key}"]`)?.closest("section");
+      if (!view) continue;
+      view.setAttribute("aria-busy", String(busy));
+      $$("input,select,button", view).forEach((control) => {
+        if (busy && !control.disabled) { control.dataset.collectionBusy = "true"; control.disabled = true; }
+        else if (!busy && control.dataset.collectionBusy === "true") { delete control.dataset.collectionBusy; control.disabled = false; }
+      });
+      const save = $(`[data-collection-save="${key}"]`, view);
+      if (save) save.textContent = t(busy ? "collection.saving" : "collection.save");
+    }
   };
-  const resetCollection = async (key) => {
-    if (state.librarySwitching) return;
+  const mutateCollection = async (key, reset) => {
+    if (state.librarySwitching || state.collectionWritePending) return;
     const epoch = state.libraryEpoch || 0;
-    echo("settings-remove", ["--key", key]);
-    const result = await api("/api/settings", { method: "POST", body: JSON.stringify({ key, reset: true }) });
-    if ((state.libraryEpoch || 0) !== epoch) return;
-    showReceipt(result);
-    await settleCollectionWrite(key, result, null);
+    const records = reset ? null : readCollectionTable(key);
+    setCollectionWritesBusy(true);
+    try {
+      echo(reset ? "settings-remove" : "settings-set", ["--key", key]);
+      const result = await api("/api/settings", { method: "POST", body: JSON.stringify(reset ? { key, reset: true } : { key, value: JSON.stringify(records) }) });
+      if ((state.libraryEpoch || 0) !== epoch) return;
+      showReceipt(result);
+      await settleCollectionWrite(key, result, records);
+    } finally {
+      setCollectionWritesBusy(false);
+    }
   };
+  const saveCollection = (key) => mutateCollection(key, false);
+  const resetCollection = (key) => mutateCollection(key, true);
   const wireCollection = (key, view) => {
+    if (state.collectionWritePending) setCollectionWritesBusy(true);
     $$(`[data-collection-add="${key}"]`, view).forEach((button) => button.addEventListener("click", () => addCollectionRow(key)));
     $$("[data-collection-remove]", view).forEach((button) => button.addEventListener("click", () => removeCollectionRow(key, Number(button.dataset.collectionRemove))));
     $$(`[data-collection-save="${key}"]`, view).forEach((button) => button.addEventListener("click", () => saveCollection(key)));
@@ -5674,7 +5690,7 @@ const BOOT = __PORTAL_BOOT__;
     return mutateSetting(key, { value });
   };
   const setSettingWritesBusy = (busy) => {
-    $$('[data-setting-control] input,[data-setting-control]:is(input,select,button),[data-reset-setting],[data-save-setting-choice],[data-undo-setting-choice]').forEach((control) => {
+    $$('[data-setting-control] input,[data-setting-control]:is(input,select,button),[data-reset-setting],[data-save-setting-choice],[data-undo-setting-choice],[data-prompt-language-dropdown] button').forEach((control) => {
       if (busy && !control.disabled) { control.dataset.writeBusy = "true"; control.disabled = true; }
       else if (!busy && control.dataset.writeBusy === "true") { delete control.dataset.writeBusy; control.disabled = false; }
     });

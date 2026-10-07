@@ -665,12 +665,9 @@ export async function appendToOwnStream(
   }, options);
 }
 
-// TCRN-CROSS-STORY-468 R3, R4 and STORY-470 R4: reading every stream of a library. Each read of a
-// file carries a timeout, because a sync client may have evicted a segment to a placeholder
-// whose read blocks until the file is fetched: a read that does not finish in time fails with
-// AKASHA_READ_TIMEOUT naming the device and the file, rather than hanging the engine.
-export const AKASHA_READ_TIMEOUT_DEFAULT_MS = 30_000 as const;
-
+// Reading every stream may wait for a sync client to hydrate a placeholder.
+// An omitted deadline leaves cancellation to the invoking process; it does not
+// silently classify a slow but valid file as corrupt or incomplete.
 export interface LibraryReadOptions extends StreamReadOptions {
   readonly timeoutMs?: number;
 }
@@ -731,12 +728,12 @@ export function compareMergedEvents(left: MergedEvent, right: MergedEvent): numb
  */
 export async function readAllStreams(libraryRoot: string, options: LibraryReadOptions = {}): Promise<LibraryRead> {
   const readFile = options.readFile ?? defaultReadBytes;
-  const timeoutMs = options.timeoutMs ?? AKASHA_READ_TIMEOUT_DEFAULT_MS;
+  const timeoutMs = options.timeoutMs;
   const streams: StreamRead[] = [];
   const merged: MergedEvent[] = [];
   const versionVector: Record<string, number> = {};
   for (const deviceId of await listStreamDevices(libraryRoot)) {
-    const reader = timed(readFile, timeoutMs, deviceId);
+    const reader = timeoutMs === undefined ? readFile : timed(readFile, timeoutMs, deviceId);
     const manifest = await readStreamManifest(libraryRoot, deviceId, { readFile: reader });
     const events = manifest === null ? [] : await readStreamEvents(libraryRoot, manifest, { readFile: reader });
     streams.push({ deviceId, manifest, events });

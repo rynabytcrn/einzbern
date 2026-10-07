@@ -286,3 +286,14 @@ test("480-R4: a library in a newer format is refused before its lock is taken or
   assert.deepEqual(await lockFiles(fixture), []);
   assert.deepEqual(await readdir(join(fixture.library, "akasha"), { recursive: true }), streams);
 });
+
+test("ordinary doctor waits for a live writer beyond the removed two-second product deadline", async (context) => {
+  const fixture = await healthy(context);
+  const held = await acquireFileLock(lockPath(await libraryId(fixture), fixture.deviceHome));
+  const waiting = runDoctor({ projectRoot: fixture.project, home: fixture.home, deviceHome: fixture.deviceHome });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 2150));
+  } finally { await held.release(); }
+  const checks = await waiting;
+  assert.equal(byCheck(checks, "device-stream").ok, true, JSON.stringify(checks));
+});

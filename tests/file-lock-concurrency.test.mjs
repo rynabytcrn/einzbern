@@ -7,6 +7,8 @@
 // than write beside it.
 
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { hostname } from "node:os";
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -118,4 +120,43 @@ test("a live holder makes a waiter time out instead of writing beside it", async
   }
   const again = await acquireFileLock(lockPath, { timeoutMs: 150 });
   await again.release();
+});
+
+// An omitted deadline is not a hidden sixty-second product budget. The injected
+// clock advances beyond the old boundary while real ownership stays unchanged.
+test("an ordinary lock waiter survives the former deadline and resumes after release", async (context) => {
+  const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-lock-no-deadline-")));
+  context.after(() => rm(base, { recursive: true, force: true }));
+  const path = join(base, "write.lock");
+  const held = await acquireFileLock(path);
+  const before = await readFile(path, "utf8");
+  let ticks = 0;
+  const waiting = acquireFileLock(path, { now: () => 1_800_000_000_000 + 61_000 * ticks++ });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.equal(await readFile(path, "utf8"), before, "the waiting writer has not replaced the owner");
+  await held.release();
+  const acquired = await waiting;
+  assert.notEqual(acquired.token, held.token);
+  await acquired.release();
+});
+
+test("cancelling a no-deadline waiter leaves the live holder and lock bytes intact", async (context) => {
+  const base = await realpath(await mkdtemp(join(tmpdir(), "einzbern-lock-cancel-")));
+  context.after(() => rm(base, { recursive: true, force: true }));
+  const path = join(base, "write.lock");
+  const held = await acquireFileLock(path);
+  const before = await readFile(path, "utf8");
+  const module = new URL("../dist/build/packages/core/src/file-lock.js", import.meta.url).href;
+  const child = spawn(process.execPath, ["--input-type=module", "-e", `import {acquireFileLock} from ${JSON.stringify(module)};process.stdout.write("waiting");await acquireFileLock(${JSON.stringify(path)});process.stdout.write("acquired");`], { stdio: ["ignore", "pipe", "pipe"] });
+  const exit = once(child, "exit");
+  try {
+    await once(child.stdout, "data");
+    child.kill("SIGTERM");
+    const [, signal] = await exit;
+    assert.equal(signal, "SIGTERM");
+    assert.equal(await readFile(path, "utf8"), before);
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) { child.kill("SIGTERM"); await exit; }
+    await held.release();
+  }
 });

@@ -37,7 +37,7 @@ export class FileLockError extends Error {
 }
 
 export interface FileLockOptions {
-  // How long to wait for another holder before giving up (default 60 s).
+  // Optional caller wait budget. Omission waits until ownership becomes available.
   readonly timeoutMs?: number;
   // A lock older than this is stale whatever its holder (default 10 min).
   readonly staleMs?: number;
@@ -60,7 +60,6 @@ interface LockOwner {
   readonly createdAt: string;
 }
 
-const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_STALE_MS = 600_000;
 const BREAKER_STALE_MS = 10_000;
 
@@ -150,7 +149,7 @@ async function breakStaleLock(path: string, judgedText: string): Promise<boolean
  * The returned release removes the lock only if it still carries this holder's token.
  */
 export async function acquireFileLock(lockPath: string, options: FileLockOptions = {}): Promise<FileLock> {
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const timeoutMs = options.timeoutMs;
   const staleMs = options.staleMs ?? DEFAULT_STALE_MS;
   const now = options.now ?? Date.now;
   const processAlive = options.processAlive ?? defaultProcessAlive;
@@ -163,7 +162,7 @@ export async function acquireFileLock(lockPath: string, options: FileLockOptions
     createdAt: new Date(now()).toISOString(),
   };
   const content = `${JSON.stringify(owner)}\n`;
-  const deadline = now() + timeoutMs;
+  const deadline = timeoutMs === undefined ? undefined : now() + timeoutMs;
   let wait = 5;
   for (;;) {
     if (await createExclusive(lockPath, content)) {
@@ -189,7 +188,7 @@ export async function acquireFileLock(lockPath: string, options: FileLockOptions
         if (await breakStaleLock(lockPath, held.text)) continue;
       }
     }
-    if (now() >= deadline) {
+    if (deadline !== undefined && now() >= deadline) {
       const holderPid = held?.owner?.pid;
       throw new FileLockError("FILE_LOCK_TIMEOUT", `${lockPath} is held by another writer`, {
         lockPath,

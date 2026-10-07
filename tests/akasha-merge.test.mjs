@@ -251,3 +251,27 @@ test("468: a forged event, even with its segment digest rewritten, fails closed 
     return true;
   });
 });
+
+test("ordinary stream reads do not schedule a product timeout and retain all hydrated data", async (t) => {
+  const context = await setup(t);
+  await write(context, context.library, A, createProject("HYDRATED"));
+  const scheduled = [];
+  const original = globalThis.setTimeout;
+  let release;
+  const hydration = new Promise((resolve) => { release = resolve; });
+  let entered;
+  const reached = new Promise((resolve) => { entered = resolve; });
+  globalThis.setTimeout = (...args) => { scheduled.push(args[1]); return original(...args); };
+  try {
+    const reading = readAllStreams(context.library.root, { readFile: async (path) => {
+      if (path.endsWith(".ndjson")) { entered(); await hydration; }
+      return readFile(path);
+    }});
+    await reached;
+    assert.deepEqual(scheduled, [], "omission does not become a thirty-second timer");
+    release();
+    const read = await reading;
+    assert.ok(read.events.length > 0);
+    assert.deepEqual(read, await readAllStreams(context.library.root));
+  } finally { release(); globalThis.setTimeout = original; }
+});

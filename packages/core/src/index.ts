@@ -823,7 +823,7 @@ export type {
 } from "./akasha.js";
 // TCRN-CROSS-STORY-468 R3-R5, STORY-470 R4: every stream of a library read (with a timeout per
 // file) and replayed merged: the version vector, rejected events and key aliases.
-export { AKASHA_READ_TIMEOUT_DEFAULT_MS, compareMergedEvents, readAllStreams } from "./akasha.js";
+export { compareMergedEvents, readAllStreams } from "./akasha.js";
 export type { LibraryRead, LibraryReadOptions, MergedEvent, StreamRead } from "./akasha.js";
 export {
   LIBRARY_HEAD_SCHEMA_VERSION,
@@ -837,7 +837,7 @@ export type { KeyAlias, LibraryReplay, LibraryStreamHead, RejectedEvent } from "
 // TCRN-CROSS-STORY-480 R4, AC5 (TCRN-CROSS-SUB-326, SUB-327): doctor, the eight checks of this device
 // and one project, each green or naming its red; the doctor verb reads it, and every setup apply
 // reports it as its self-check.
-export { DOCTOR_CHECKS, DOCTOR_CHECK_REASON_CODES, DOCTOR_LOCK_TIMEOUT_MS, DOCTOR_REASON_CODES, runDoctor } from "./doctor.js";
+export { DOCTOR_CHECKS, DOCTOR_CHECK_REASON_CODES, DOCTOR_REASON_CODES, runDoctor } from "./doctor.js";
 export type { DoctorCheck, DoctorCheckName, DoctorInput, DoctorReasonCode } from "./doctor.js";
 // TCRN-CROSS-STORY-480 R1 to R6 (TCRN-CROSS-SUB-323 to SUB-327): setup, the installation wizard: a
 // plan that writes nothing and the apply of a confirmed plan, in six modes. fresh installs

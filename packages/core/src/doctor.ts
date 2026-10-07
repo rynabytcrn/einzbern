@@ -97,7 +97,8 @@ export const DOCTOR_CHECK_REASON_CODES: Readonly<Record<DoctorCheckName, DoctorR
 });
 
 // How long device-stream waits for the library's write lock before it calls the stream unwritable.
-export const DOCTOR_LOCK_TIMEOUT_MS = 2_000 as const;
+// Lock contention is not a failed health check merely because two seconds pass.
+// Only an explicit caller budget may end the wait; the CLI owns cancellation.
 
 // The project files managed sections are written into (TCRN-CROSS-STORY-478); a file a library
 // record names is read too.
@@ -136,7 +137,7 @@ interface DoctorContext {
   readonly nodeVersion: string;
   readonly platform: NodeJS.Platform;
   readonly cloud: CloudRootContext;
-  readonly lockTimeoutMs: number;
+  readonly lockTimeoutMs: number | undefined;
 }
 
 // The library the project resolves to, found once for every check that reads it.
@@ -521,7 +522,7 @@ async function deviceStreamCheck(context: DoctorContext, located: ProjectLibrary
   await ensureDeviceDirectory(dirname(lock));
   let held: FileLock;
   try {
-    held = await acquireFileLock(lock, { timeoutMs: context.lockTimeoutMs });
+    held = await acquireFileLock(lock, context.lockTimeoutMs === undefined ? {} : { timeoutMs: context.lockTimeoutMs });
   } catch (error) {
     const holderPid = isObject(error) && isObject(error.details) ? error.details.holderPid : undefined;
     return result("device-stream", [causeOf(error)], { ...detail, holderPid: typeof holderPid === "string" ? holderPid : null });
@@ -627,7 +628,7 @@ async function doctorContext(input: DoctorInput): Promise<DoctorContext> {
     nodeVersion: input.nodeVersion ?? process.versions.node,
     platform,
     cloud: { platform, env: input.env ?? process.env, home },
-    lockTimeoutMs: input.lockTimeoutMs ?? DOCTOR_LOCK_TIMEOUT_MS,
+    lockTimeoutMs: input.lockTimeoutMs,
   };
 }
 

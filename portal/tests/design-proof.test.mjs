@@ -102,6 +102,39 @@ test("INIT-036 S276 design-proof legs turn red for injected violations and green
     assert.equal(red.report.legs.find((leg) => leg.leg === legName).ok, false);
   }
 
+  // The same published ownership predicate handles logical/physical metrics.
+  // Inject only into the fixture snapshot; other fidelity legs may also reject
+  // these synthetic bytes, so assert this named leg rather than global status.
+  const snapshotStart = source.indexOf('<style id="tcrn-ds-component-css" data-source="snapshot">');
+  const snapshotEnd = source.indexOf('</style>', snapshotStart);
+  const resetRule = /\.tcrn-setting-row__reset\s*\{[^{}]*\}/u;
+  const originalResetRule = source.slice(snapshotStart, snapshotEnd).match(resetRule)?.[0];
+  assert.ok(originalResetRule);
+  const paddingProperties = ["padding", "padding-inline", "padding-block", "padding-top", "padding-right",
+    "padding-bottom", "padding-left", "padding-inline-start", "padding-inline-end", "padding-block-start", "padding-block-end"];
+  const blockProperties = ["min-height", "min-block-size", "height", "block-size"];
+  const intruderProperties = [...paddingProperties, ...blockProperties, "width", "inline-size", "min-width", "min-inline-size",
+    "max-height", "max-block-size", "max-width", "max-inline-size", "border-radius", "border-start-end-radius"];
+  const ownershipCases = [
+    ...paddingProperties.map(property => ({ name: `reset-owner-${property}`, ownerRule: originalResetRule.replace("padding-inline:", `${property}:`), intruder: "padding:1px;", contested: true })),
+    ...blockProperties.map(property => ({ name: `reset-owner-${property}`, ownerRule: originalResetRule.replace("min-height:", `${property}:`), intruder: "padding:1px;", contested: true })),
+    ...intruderProperties.map(property => ({ name: `intruder-${property}`, intruder: `${property}:1px;`, contested: true })),
+    { name: "font-cursor-not-metrics", intruder: "font:inherit;cursor:pointer;", contested: false },
+  ];
+  for (const scenario of ownershipCases) {
+    let fixture = source.slice(0, snapshotEnd) + `\n/* standalone selector list after comment */ .tcrn-box-test, .tcrn-box-test-alias { ${scenario.intruder} }\n` + source.slice(snapshotEnd);
+    if (scenario.ownerRule && !["reset-owner-padding-inline", "reset-owner-min-height"].includes(scenario.name)) assert.notEqual(scenario.ownerRule, originalResetRule, scenario.name);
+    // Unchanged spellings are positive controls; alternatives must really edit.
+    fixture = fixture.replace(originalResetRule, scenario.ownerRule ?? originalResetRule)
+      .replace(resetClass, 'class="tcrn-setting-row__reset tcrn-box-test-alias" data-reset-setting=');
+    const file = join(directory, `${scenario.name}.html`);
+    await writeFile(file, fixture, "utf8");
+    const result = await runProof(file);
+    const leg = result.report.legs.find(row => row.leg === "ds-control-box-ownership");
+    assert.equal(leg.ok, !scenario.contested, scenario.name);
+    if (scenario.contested) assert.ok(leg.findings.some(row => row.owner === "tcrn-setting-row__reset" && row.conflicting === "tcrn-box-test-alias"), scenario.name);
+  }
+
   const restored = await runProof(baseline);
   assert.equal(restored.status, 0);
   assert.equal(restored.report.legs.find((leg) => leg.leg === "portal-layout-invariants").ok, true);

@@ -172,13 +172,10 @@ legs.push({
 // The portal's dynamic controls use the same class contract in the page script;
 // this leg proves the shipped native surface where a regression is easiest to
 // introduce and where a browser can inspect it without executing the page.
-// A <button> has to carry a class from the design system's button family. The reset
-// control carried `tcrn-setting-row__reset` — a class the design system does define,
-// but as a part of the settings row, not as a button — so it took the row's placement
-// and none of the button treatment, and looked unlike every other control beside it.
-// Checking "is this class design-system-defined" is therefore not enough; the question
-// is whether the element names the component it is.
-const DS_BUTTON_FAMILY = new Set(["tcrn-button", "tcrn-icon-button", "tcrn-link-button", "tcrn-operation-feedback__details-trigger"]);
+// Native buttons name an explicit published control family. SettingRow's Reset is
+// a public button part with its own box, font and hover treatment in the consumed
+// production snapshot; it must not acquire a second Button box to qualify.
+const DS_BUTTON_FAMILY = new Set(["tcrn-button", "tcrn-icon-button", "tcrn-link-button", "tcrn-operation-feedback__details-trigger", "tcrn-setting-row__reset"]);
 // Controls that are legitimately not button components: rows and items that happen to
 // be rendered as <button> for keyboard semantics. Explicit, so a new one is a decision
 // rather than a class name that slips past.
@@ -211,11 +208,8 @@ for (const match of indexText.matchAll(/<(button|input|select|textarea)\b([^>]*)
     });
     continue;
   }
-  // INC-191: the prefix alone was not enough. A reset control carried
-  // `tcrn-setting-row__reset` — a portal-local name with the right prefix and no design
-  // system component behind it — and this leg called it covered for as long as it
-  // existed. A button now has to name a real button component, not merely start with
-  // the letters.
+  // A prefix alone never qualifies a local/fake button. Only the explicit
+  // published families and semantic controls above qualify.
   if (match[1].toLowerCase() === "button" && !tokens.some((token) => DS_BUTTON_FAMILY.has(token) || NON_BUTTON_CONTROLS.has(token))) {
     interactiveFindings.push({
       file: "index.html",
@@ -565,9 +559,12 @@ for (const rule of dsBlock.matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
 }
 const declares = (className, property) =>
   new RegExp(`(?:^|;)\\s*${property}\\s*:`, "u").test(declarationsByClass.get(className) ?? "");
-const ownsItsBox = (className) => declares(className, "appearance")
+const ownsItsBox = (className) => (declares(className, "appearance")
   && declares(className, "inline-size")
-  && declares(className, "block-size");
+  && declares(className, "block-size"))
+  // Published Reset is content-sized, but still owns its complete button box.
+  || (className === "tcrn-setting-row__reset"
+    && ["min-height", "padding", "border-radius", "font", "cursor"].every((property) => declares(className, property)));
 const redeclaresBox = (className) => ["min-height", "padding", "border-radius"]
   .some((property) => declares(className, property));
 

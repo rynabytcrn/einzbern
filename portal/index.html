@@ -4900,7 +4900,7 @@ const BOOT = __PORTAL_BOOT__;
     const input = column.kind === "order"
       ? `<input class="tcrn-input tcrn-number-input" type="number" min="1" step="1" value="${esc(value)}" data-number-input-component="NumberInput" data-number-input="true" data-number-input-semantic="numeric-entry" data-number-input-visibility="full-value" ${common}>`
       : `<input class="tcrn-input" value="${esc(value)}" ${common}>`;
-    return `<label class="tcrn-table-shell__cell tcrn-field" role="cell" data-label="${esc(column.label)}" data-collection-cell="${esc(column.field)}"><span class="tcrn-sr-only">${esc(column.label)}</span>${input}</label>`;
+    return `<label class="tcrn-table-shell__cell tcrn-field" role="cell" data-label="${esc(column.label)}" data-collection-cell="${esc(column.field)}">${input}</label>`;
   };
   const collectionRowMarkup = ({ columns, row, index, findings, highlighted }) => {
     const invalid = new Set(findings.map((finding) => finding.field).filter((field) => typeof field === "string" && field !== ""));
@@ -5201,9 +5201,9 @@ const BOOT = __PORTAL_BOOT__;
   const orderInput = (value, attributes) => `<input class="tcrn-input tcrn-number-input" type="number" min="1" step="1" value="${esc(value ?? "")}" data-number-input-component="NumberInput" data-number-input="true" data-number-input-semantic="numeric-entry" data-number-input-visibility="full-value" ${attributes}>`;
   const variableField = (field, value, selector = "data-variable-field") => {
     const label = variableLabel(field);
-    if (field === "order") return `<label class="tcrn-table-shell__cell tcrn-field" role="cell" data-label="${esc(label)}"><span class="tcrn-sr-only">${esc(label)}</span>${orderInput(value, `aria-label="${esc(label)}" ${selector}="order"`)}</label>`;
-    if (field === "type") return `<label class="tcrn-table-shell__cell tcrn-field" role="cell" data-label="${esc(label)}"><span class="tcrn-sr-only">${esc(label)}</span><select class="tcrn-select" aria-label="${esc(label)}" ${selector}="type">${variableTypes.map((type) => `<option value="${type}" ${type === value ? "selected" : ""}>${esc(variableTypeLabel(type))}</option>`).join("")}</select></label>`;
-    return `<label class="tcrn-table-shell__cell tcrn-field" role="cell" data-label="${esc(label)}"><span class="tcrn-sr-only">${esc(label)}</span><input class="tcrn-input" value="${esc(value)}" aria-label="${esc(label)}" ${selector}="${field}"></label>`;
+    if (field === "order") return `<label class="tcrn-table-shell__cell tcrn-field" role="cell" data-label="${esc(label)}">${orderInput(value, `aria-label="${esc(label)}" ${selector}="order"`)}</label>`;
+    if (field === "type") return `<label class="tcrn-table-shell__cell tcrn-field" role="cell" data-label="${esc(label)}"><select class="tcrn-select" aria-label="${esc(label)}" ${selector}="type">${variableTypes.map((type) => `<option value="${type}" ${type === value ? "selected" : ""}>${esc(variableTypeLabel(type))}</option>`).join("")}</select></label>`;
+    return `<label class="tcrn-table-shell__cell tcrn-field" role="cell" data-label="${esc(label)}"><input class="tcrn-input" value="${esc(value)}" aria-label="${esc(label)}" ${selector}="${field}"></label>`;
   };
   const variableRow = (variable, isNew = false) => `<div class="tcrn-table-shell__row" role="row" ${isNew ? 'data-variable-create-row' : `data-variable-row="${esc(variable.name)}"`}>
     ${variableField("order", variable.order ?? "")}

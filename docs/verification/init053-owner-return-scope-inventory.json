@@ -2,7 +2,7 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r37-init053-complete-source",
+  "pack": "r38-init053-complete-source",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
@@ -359,7 +359,7 @@
     },
     {
       "path": "portal/index.html",
-      "sha256": "936e176d5b718ecca89beeea6ec9d18c6375984c72ed11db0b40dcda973f4736"
+      "sha256": "713b14dc4697eeef284f39dfcd6748ef9536e9e1bac09a31a563d564877bc5a1"
     },
     {
       "path": "portal/locale-contract.mjs",
@@ -379,7 +379,7 @@
     },
     {
       "path": "portal/scripts/design-proof.mjs",
-      "sha256": "66ceecea90de51a48d14573134957f386a377e26a37ce85fb6e9231b1e98b6c3"
+      "sha256": "b14f58942586aa4f778a4206ecd2de18ba0dce12768d787d33baf89fc8bc5a26"
     },
     {
       "path": "portal/scripts/e2e-demo.mjs",
@@ -778,7 +778,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R37 current Source final generation. Original full-file cadence and affected dependency files have run; actual exit/counts are attached below, including every failure. Prior held49 prose is superseded. Source development verification is separate from integrated acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are included; no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "R38 current Source final generation. Original full-file cadence and affected dependency files have run; actual exit/counts are attached below, including every failure. Prior held49 prose is superseded. Source development verification is separate from integrated acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are included; no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "bb91bdc40d2669aef823abaf8d2050ca105e9a89",
     "mergeCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
@@ -802,7 +802,6 @@
     "candidateBuildAndArtifactVerified": true,
     "candidateConsumed": true,
     "publication": {
-      "pullRequestNumber": 24,
       "prHead": "bb91bdc40d2669aef823abaf8d2050ca105e9a89",
       "mergeCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
       "mergeTree": "68a7edb311804d6981610c5ddf75ada66ec4aa06",
@@ -875,14 +874,96 @@
         "PR merged same source tree as local full verify and static build",
         "Production deployment and Vercel build success on merge SHA",
         "Production authority sourceCommit and component CSS/static bridge digests checked"
-      ]
+      ],
+      "pullRequestNumber": 24
     },
     "priorPublication": {
-      "pr": "https://github.com/tpmoonchefryan/TCRN-Design-System/pull/23",
       "mergeCommit": "2f40478bb2993e6b6d02137f5870a890800d8662",
-      "status": "retained prior publication; superseded for the mobile shell repair"
+      "status": "retained prior publication; superseded for the mobile shell repair",
+      "pullRequestNumber": 23
     }
   },
+  "publicEvidenceDeclaration": "Public structured projection: private runtime diagnostics are retained in archive-relative raw evidence, not reproduced verbatim. All emitted text and keys pass the shared public-input boundary.",
+  "inputProjections": [
+    {
+      "input": "inventory-values.json",
+      "sha256": "922873f49c8237f7b23c4e538b2c1a8a68171d232ecc53949faed4c7850e9c20",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/inventory-values.json"
+    },
+    {
+      "input": "publication-binding.json",
+      "sha256": "16f5341a79931c0736d1b25f00fe2d3072684365774cec633bcc0e781ee078b0",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/publication-binding.json"
+    },
+    {
+      "input": "published-ai-consumption-contract.json",
+      "sha256": "cd829848bf101689bbf75d792c20116ae31469ec4e994a702a776dbf1ad83415",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/published-ai-consumption-contract.json"
+    },
+    {
+      "input": "source-inventory-inputs.json",
+      "sha256": "46abba601589535649fff5c9c3df176b516e1db50fcbb60ee89daac9638194a8",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/source-inventory-inputs.json"
+    },
+    {
+      "input": "ds-publication-dependency-disposition.json",
+      "sha256": "f15b8707c68e609137aaef9d54a1ccfaf9b1b0b8637c7c21f4171e6ec817288c",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/ds-publication-dependency-disposition.json"
+    },
+    {
+      "input": "full-file-cadence-result.json",
+      "sha256": "88034c0b9e424b0ee58b575236f45dab687a94c7a61bb13e3caa4c12231b5bc3",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/full-file-cadence-result.json"
+    },
+    {
+      "input": "limit-review-dispositions.json",
+      "sha256": "64f42fee86f8d38128af557b257d5adcb02ef67bfa619cc87a545b2a91b6d6b4",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/limit-review-dispositions.json"
+    },
+    {
+      "input": "r4-actual-callers.json",
+      "sha256": "97ff71afd46c9b9371961a996d1db6069d51dddd19c5bdb3836f00f26a3cd67c",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/r4-actual-callers.json"
+    },
+    {
+      "input": "retained-bound-probe-result.json",
+      "sha256": "70574c7704cb891f725132c60dd1c0cf4bf2b978c024d834f10594593e0d0ba0",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/retained-bound-probe-result.json"
+    },
+    {
+      "input": "application-combined-result.json",
+      "sha256": "a02bf8ab9ec987fe3e73e845a0a55829703e00d658fcf7f358a7f45475ddd9ab",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/application-combined-result.json"
+    },
+    {
+      "input": "consumer-remedy-disposition.json",
+      "sha256": "17ba361419edb3e400f1b32ed1b4b8e555ab578b2da232d32b344fef71f36692",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/consumer-remedy-disposition.json"
+    },
+    {
+      "input": "copy-edits.json",
+      "sha256": "4a668021b44cccb33b74595d5bbd2cfcf74b95a0cc326e4a236e0915da0dab18",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/copy-edits.json"
+    },
+    {
+      "input": "copy-semantic-review.json",
+      "sha256": "7fa1da8d4d18889564fb0bfb672ad907b1cec140aca9c2869fe79c7849b809fc",
+      "representation": "validated public structured projection",
+      "rawEvidence": "dispatch-runs/init-053/r38-source-raw/copy-semantic-review.json"
+    }
+  ],
   "currentWholeFileCadence": {
     "exit": 1,
     "counts": {
@@ -898,18 +979,20 @@
       "tests/e2e-governed-loop.test.mjs"
     ],
     "newRegistryCases": 2,
-    "reds": [
+    "representation": "public structured summary; full raw diagnostic is retained separately",
+    "rawEvidence": "dispatch-runs/init-053/r38-source-raw/full-file-cadence-result.json",
+    "failures": [
       {
-        "file": "portal/tests/design-proof.test.mjs",
-        "line": 52,
         "test": "INIT-036 S276 design-proof legs turn red for injected violations and green after restore",
-        "reason": "initial full design-proof positive exits1; expected0",
-        "rawEvidence": "r37-source-raw/full-file-cadence-once.stdout",
-        "redaction": "machine-local location and stack retained only in archive"
+        "file": "portal/tests/design-proof.test.mjs",
+        "line": 44,
+        "reason": "Expected values to be strictly equal:; true !== false",
+        "reasonCode": "ERR_ASSERTION",
+        "rawAnchor": "dispatch-runs/init-053/r38-source-raw/full-file-cadence-result.json#/reds/0"
       }
     ]
   },
-  "generationTimeUtc": "2026-10-07T15:43:57.213125+00:00",
+  "generationTimeUtc": "2026-10-07T16:47:04.318302+00:00",
   "settings": [
     {
       "catalog": {

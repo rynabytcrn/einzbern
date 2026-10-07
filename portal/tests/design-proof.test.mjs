@@ -88,6 +88,20 @@ test("INIT-036 S276 design-proof legs turn red for injected violations and green
   assert.notEqual(redClass.status, 0);
   assert.equal(redClass.report.legs.find((leg) => leg.leg === "interactive-tcrn-class-coverage").reasonCode, "INTERACTIVE_ELEMENT_CLASS_MISSING");
 
+  // Reset is an explicit published control, not a blanket tcrn-* exemption.
+  const resetClass = 'class="tcrn-setting-row__reset" data-reset-setting=';
+  assert.ok(source.includes(resetClass));
+  for (const [name, replacement, legName] of [
+    ["local-reset", 'class="tcrn-reset-local" data-reset-setting=', "interactive-tcrn-class-coverage"],
+    ["contested-reset", 'class="tcrn-setting-row__reset tcrn-button" data-reset-setting=', "ds-control-box-ownership"],
+  ]) {
+    const path = join(directory, `${name}.html`);
+    await writeFile(path, source.replace(resetClass, replacement), "utf8");
+    const red = await runProof(path);
+    assert.notEqual(red.status, 0);
+    assert.equal(red.report.legs.find((leg) => leg.leg === legName).ok, false);
+  }
+
   const restored = await runProof(baseline);
   assert.equal(restored.status, 0);
   assert.equal(restored.report.legs.find((leg) => leg.leg === "portal-layout-invariants").ok, true);

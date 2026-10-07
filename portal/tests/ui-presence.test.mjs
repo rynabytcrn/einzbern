@@ -1478,6 +1478,10 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       const stored = async (key) => JSON.parse((await cli(["settings-catalog", "--workspace", page.workspace], page.deviceEnv)).settings.find((entry) => entry.key === key).currentValue);
       const table = (key) => page.document.querySelector(`[data-collection-table="${key}"]`);
       const field = (key, index, name) => table(key).querySelector(`[data-collection-row="${index}"] [data-collection-field="${name}"]`);
+      for (const input of page.document.querySelectorAll('[data-collection-field]')) {
+        assert.equal(input.getAttribute("aria-label"), input.closest('[role="cell"]').getAttribute("data-label"));
+        assert.ok(input.getAttribute("aria-label"));
+      }
       // Typing sends the input event a reader's typing would, so the page's draft keeps the edit.
       const type = (input, value) => { input.value = value; input.dispatchEvent(new page.window.Event("input", { bubbles: true })); };
       const save = async (key) => {
@@ -1684,6 +1688,11 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
 
       // Variables: an order moves the variable in the table and in the custom section; an empty one clears it.
       document.querySelector('[data-page-target="variables"]').click();
+      for (const input of document.querySelectorAll('[data-variable-field], [data-variable-create]')) {
+        if (!input.matches("input,select,textarea")) continue;
+        assert.equal(input.getAttribute("aria-label"), input.closest('[role="cell"]').getAttribute("data-label"));
+        assert.ok(input.getAttribute("aria-label"));
+      }
       type(document.querySelector('[data-variable-row="alpha"] [data-variable-field="order"]'), "2");
       assert.match(await act(document.querySelector('[data-variable-row="alpha"] [data-variable-save]')), /^✓v\d+$/u);
       assert.deepEqual(variableRows(), [["alpha", "2"], ["beta", "5"]]);

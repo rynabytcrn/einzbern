@@ -23,8 +23,6 @@
     "format:check": "node scripts/task.mjs format-check",
     "lint": "node scripts/task.mjs lint",
     "pack:release": "node scripts/pack-release.mjs",
-    "pg:schema": "node scripts/apply-pg-schema.mjs",
-    "pg:test": "node scripts/pg-test-runner.mjs",
     "platform:doctor": "node scripts/platform-doctor.mjs",
     "portal": "node portal/portal.mjs",
     "portal:launchers": "node portal/scripts/generate-launchers.mjs",

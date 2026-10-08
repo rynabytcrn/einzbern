@@ -6,7 +6,7 @@
 
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { access, mkdtemp, realpath, rm } from "node:fs/promises";
+import { access, mkdtemp, readFile, realpath, rm } from "node:fs/promises";
 import { constants } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -46,6 +46,9 @@ test("STORY-346 PostgreSQL implementation and migration scripts are absent", asy
   await fileNotFound(new URL("../scripts/apply-pg-test-schema.mjs", import.meta.url));
   await fileNotFound(new URL("../scripts/pg-test-runner.mjs", import.meta.url));
   // The claim map this case also searched for pg fixtures is retired (TCRN-CROSS-STORY-467 R2).
+  // TCRN-CROSS-SUB-357 S2: the dead pg:schema and pg:test entries are removed and stay removed.
+  const manifest = JSON.parse(await readFile(new URL("../package.json", import.meta.url), "utf8"));
+  assert.deepEqual(Object.keys(manifest.scripts ?? {}).filter((name) => name.startsWith("pg:")), [], "no pg:* package script");
 });
 
 test("STORY-346 production backend selection rejects PostgreSQL", async () => {

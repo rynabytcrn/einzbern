@@ -5,6 +5,8 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+The root `package.json` drops `pg:schema` and `pg:test`, whose target files were removed with the PostgreSQL backend in TCRN-CROSS-INC-275 (TCRN-CROSS-SUB-357 S2).
+
 Release preparation can now run in two phases around one local release commit per repository
 (TCRN-CROSS-SUB-357, the Owner's method of 2026-10-08). `scripts/release.mjs generate` checks
 both trees, reads the gate plan, the versions and the CHANGELOG cut before it changes a file, then

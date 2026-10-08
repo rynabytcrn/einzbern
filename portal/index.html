@@ -4012,12 +4012,19 @@ button:disabled { cursor: not-allowed; }
 #gates-view { display: grid; gap: var(--tcrn-space-4); }
 #gate-add-form { display: grid; gap: var(--tcrn-space-3); }
 [data-gate-options] { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tcrn-space-3); }
-[data-ui="gate-config-table"] { --tcrn-table-column-count: 5; --tcrn-table-shell-columns: minmax(6rem, .6fr) minmax(15rem, 2fr) repeat(2, minmax(7rem, .7fr)) minmax(13rem, 1.5fr); }
+/* TCRN-CROSS-INIT-053 R46 (I15; U20 D7, D8): the gate table has three columns at every width. A
+   gate's three switches sit in its own cell with the command, the root and its actions, so no switch
+   label is held to a narrow column and broken inside a word; the covers column holds a whole work id.
+   The record tables below keep every column, the actions last, inside the container from 1024 px:
+   fixed minimums that fit the narrowest desktop width and shares of the rest, on the published
+   TableShell variables only. */
+[data-ui="gate-config-table"] { --tcrn-table-column-count: 3; --tcrn-table-shell-columns: minmax(5.5rem, 0.4fr) minmax(13rem, 1.6fr) minmax(19rem, 2fr); }
+[data-gate-switches] { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tcrn-space-2) var(--tcrn-space-4); }
 [data-gate-cell] { display: grid; gap: var(--tcrn-space-2); }
 [data-gate-cell-actions] { display: flex; flex-wrap: wrap; gap: var(--tcrn-space-2); }
 [data-gate-covers] { display: grid; gap: var(--tcrn-space-2); }
 [data-gate-cover-row] { display: flex; align-items: center; gap: var(--tcrn-space-2); }
-[data-gate-cover-row] [data-gate-cover] { min-width: 0; }
+[data-gate-cover-row] [data-gate-cover] { flex: 1 1 auto; min-width: 0; }
 #gates-last-run { display: grid; gap: var(--tcrn-space-2); }
 [data-gate-run-row] { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tcrn-space-2); }
 /* TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R5, R6): every collection page is one table component on
@@ -4027,9 +4034,11 @@ button:disabled { cursor: not-allowed; }
    are not squeezed to the width of an effort. A field fills its cell rather than its own intrinsic
    width. The layer badge of a settings row keeps its own width inside the label grid. */
 [data-collection-view] { display: grid; gap: var(--tcrn-space-4); }
-[data-collection-table] { --tcrn-table-shell-column-min-width: 7.5rem; }
-[data-collection-columns="6"] { --tcrn-table-column-count: 6; --tcrn-table-shell-columns: minmax(5.5rem, 0.6fr) repeat(5, minmax(var(--tcrn-table-shell-column-min-width, 160px), 1fr)); }
-[data-collection-columns="7"] { --tcrn-table-column-count: 7; --tcrn-table-shell-columns: minmax(5.5rem, 0.6fr) repeat(6, minmax(var(--tcrn-table-shell-column-min-width, 160px), 1fr)); }
+[data-collection-table] { --tcrn-table-shell-column-min-width: 5.5rem; }
+[data-collection-columns="6"] { --tcrn-table-column-count: 6; --tcrn-table-shell-columns: minmax(5.5rem, 0.5fr) repeat(4, minmax(var(--tcrn-table-shell-column-min-width, 160px), 1fr)) minmax(7.5rem, 0.6fr); }
+[data-collection-columns="7"] { --tcrn-table-column-count: 7; --tcrn-table-shell-columns: minmax(5.5rem, 0.5fr) repeat(5, minmax(var(--tcrn-table-shell-column-min-width, 160px), 1fr)) minmax(7.5rem, 0.6fr); }
+[data-collection-table="models.category"] { --tcrn-table-shell-columns: minmax(5.5rem, 0.5fr) minmax(5.5rem, 1fr) minmax(5.5rem, 1fr) minmax(6rem, 1.4fr) minmax(8rem, 0.6fr) minmax(7.5rem, 0.5fr); }
+[data-collection-table="models.tiers"] { --tcrn-table-shell-columns: minmax(5.5rem, 0.3fr) minmax(5.5rem, 0.9fr) minmax(5.5rem, 0.8fr) minmax(4.5rem, 1.3fr) minmax(6.75rem, 0.5fr) minmax(5.5rem, 1fr) minmax(7.5rem, 0.4fr); }
 [data-collection-field] { min-inline-size: 0; inline-size: 100%; }
 [data-collection-choice] { display: flex; align-items: center; gap: var(--tcrn-space-1); min-width: 0; }
 [data-collection-choice] > [data-collection-field] { flex: 1 1 0; inline-size: auto; }
@@ -4043,7 +4052,7 @@ button:disabled { cursor: not-allowed; }
 /* TCRN-CROSS-SUB-410 (TCRN-CROSS-STORY-508 R6, R7): the custom variables table leads with its order
    column as the collection tables do, and its fields fill their cells; a rule card and a gate row
    carry their order in the same NumberInput. The tier page's escalation summary is a read-only list. */
-[data-variable-table] { --tcrn-table-column-count: 6; --tcrn-table-shell-column-min-width: 7.5rem; --tcrn-table-shell-columns: minmax(5.5rem, 0.6fr) minmax(8rem, 1fr) minmax(7rem, 0.8fr) minmax(8rem, 1.1fr) minmax(8rem, 1.1fr) minmax(10.5rem, 1fr); }
+[data-variable-table] { --tcrn-table-column-count: 6; --tcrn-table-shell-column-min-width: 5.5rem; --tcrn-table-shell-columns: minmax(5.5rem, 0.5fr) minmax(7rem, 1fr) minmax(5.5rem, 0.8fr) minmax(7rem, 1.1fr) minmax(6rem, 1.1fr) minmax(10.25rem, 1fr); }
 [data-variable-field] { min-inline-size: 0; inline-size: 100%; }
 [data-rule-card-order] { display: flex; flex-wrap: wrap; align-items: end; gap: var(--tcrn-space-2); }
 [data-rule-order-field] { flex: 0 1 8rem; }
@@ -4210,7 +4219,7 @@ button:disabled { cursor: not-allowed; }
                 </form>
               </article>
               <article class="tcrn-surface" aria-labelledby="gates-list-title"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2 id="gates-list-title" data-i18n="gates.listTitle">Configured gates</h2></div></div>
-                <div class="tcrn-table-shell" role="table" aria-label="Gates" data-i18n-aria-label="gates.title" data-ui="gate-config-table" data-mobile-layout="stacked-cards"><div class="tcrn-table-shell__head" role="row"><span class="tcrn-table-shell__heading" role="columnheader" data-i18n="collection.order">Order</span><span class="tcrn-table-shell__heading" role="columnheader" data-i18n="gates.columnGate">Gate</span><span class="tcrn-table-shell__heading" role="columnheader" data-i18n="gates.columnEnabled">Enabled</span><span class="tcrn-table-shell__heading" role="columnheader" data-i18n="gates.columnRequired">Required</span><span class="tcrn-table-shell__heading" role="columnheader" data-i18n="gates.columnCovers">Covers (path glob or work id)</span></div><div id="gates-rows" role="rowgroup"></div></div>
+                <div class="tcrn-table-shell" role="table" aria-label="Gates" data-i18n-aria-label="gates.title" data-ui="gate-config-table" data-mobile-layout="stacked-cards"><div class="tcrn-table-shell__head" role="row"><span class="tcrn-table-shell__heading" role="columnheader" data-i18n="collection.order">Order</span><span class="tcrn-table-shell__heading" role="columnheader" data-i18n="gates.columnGate">Gate</span><span class="tcrn-table-shell__heading" role="columnheader" data-i18n="gates.columnCovers">Covers (path glob or work id)</span></div><div id="gates-rows" role="rowgroup"></div></div>
                 <div id="gates-empty" class="tcrn-state-surface" data-ui="gates-empty" hidden></div>
               </article>
             </div>
@@ -5687,11 +5696,9 @@ const BOOT = __PORTAL_BOOT__;
       <div class="tcrn-table-shell__cell" role="cell" data-column-label="${esc(t("gates.columnGate"))}"><div data-gate-cell><strong><code>${esc(gate.name)}</code></strong>
         <label class="tcrn-field"><span class="tcrn-field__label">${esc(t("gates.command"))}</span><textarea class="tcrn-input tcrn-textarea" data-gate-command rows="2">${esc(JSON.stringify(gate.command ?? []))}</textarea></label>
         <label class="tcrn-field"><span class="tcrn-field__label">${esc(t("gates.root"))}</span><input class="tcrn-input" data-gate-root value="${esc(gate.root ?? ".")}"></label>
-        <label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-gate-release-only ${gate.releaseOnly ? "checked" : ""}><span class="tcrn-switch__label">${esc(t("gates.releaseOnly"))}</span></label>
+        <div data-gate-switches><label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-gate-enabled ${gate.enabled ? "checked" : ""}><span class="tcrn-switch__label">${esc(t("gates.enabled"))}</span></label><label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-gate-required ${gate.required ? "checked" : ""}><span class="tcrn-switch__label">${esc(t("gates.required"))}</span></label><label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-gate-release-only ${gate.releaseOnly ? "checked" : ""}><span class="tcrn-switch__label">${esc(t("gates.releaseOnly"))}</span></label></div>
         <div data-gate-cell-actions><button type="button" class="tcrn-button tcrn-button--secondary" data-gate-save="${esc(gate.name)}" data-cli-action="gates-config-set">${esc(t("gates.save"))}</button><button type="button" class="tcrn-button tcrn-button--quiet" data-gate-remove="${esc(gate.name)}" data-cli-action="gates-config-remove">${esc(t("gates.remove"))}</button></div>
       </div></div>
-      <div class="tcrn-table-shell__cell" role="cell" data-column-label="${esc(t("gates.columnEnabled"))}"><label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-gate-enabled ${gate.enabled ? "checked" : ""}><span class="tcrn-switch__label">${esc(t("gates.enabled"))}</span></label></div>
-      <div class="tcrn-table-shell__cell" role="cell" data-column-label="${esc(t("gates.columnRequired"))}"><label class="tcrn-switch"><input class="tcrn-switch__control" type="checkbox" role="switch" data-gate-required ${gate.required ? "checked" : ""}><span class="tcrn-switch__label">${esc(t("gates.required"))}</span></label></div>
       <div class="tcrn-table-shell__cell" role="cell" data-column-label="${esc(t("gates.columnCovers"))}"><div data-gate-covers>${(Array.isArray(gate.covers) ? gate.covers : []).map((cover) => `<div data-gate-cover-row><input class="tcrn-input" data-gate-cover value="${esc(cover)}" aria-label="${esc(t("gates.columnCovers"))}"><button type="button" class="tcrn-button tcrn-button--quiet" data-gate-remove-cover aria-label="${esc(t("gates.removeCover"))}">×</button></div>`).join("")}<button type="button" class="tcrn-button tcrn-button--quiet" data-gate-add-cover>${esc(t("gates.addCover"))}</button></div></div>
     </div>`).join("");
     const lastRun = state.lastGateRun;

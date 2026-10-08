@@ -359,8 +359,10 @@ function pageHierarchyFindings(document, source) {
       const table = view?.querySelector('[data-ui="gate-config-table"]');
       const form = view?.querySelector('[data-ui="gate-add-form"]');
       const lastRun = view?.querySelector('[data-ui="gates-last-run"]');
-      // TCRN-CROSS-SUB-410: the order column leads the gate table, so it has five columns.
-      if (!view || !table || table.querySelectorAll('[role="columnheader"]').length !== 5 || !form || !lastRun || childIndex(lowerContent, view) !== 0) findings.push("gates:five-columns");
+      // TCRN-CROSS-SUB-410: the order column leads the gate table. TCRN-CROSS-INIT-053 R46 (I15): a gate's
+      // switches sit in its own cell, so the table has three columns: order, gate and covers.
+      const switches = [...(table?.querySelectorAll("[data-gate-row]") ?? [])].every((row) => row.querySelectorAll("[data-gate-cell] [data-gate-switches] .tcrn-switch").length === 3 && row.querySelectorAll(":scope > .tcrn-table-shell__cell").length === 3);
+      if (!view || !table || table.querySelectorAll('[role="columnheader"]').length !== 3 || !switches || !form || !lastRun || childIndex(lowerContent, view) !== 0) findings.push("gates:three-columns");
     }
     // TCRN-CROSS-SUB-410 (STORY-508 R7): the variables, rules and gates pages each say in their header
     // what their order column is for.

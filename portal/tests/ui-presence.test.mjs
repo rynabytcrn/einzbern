@@ -210,8 +210,10 @@ async function startPortal(fixture, env = {}) {
   return { child, url };
 }
 
-async function loadExecutedDom(fixture, env = {}, { hold = () => false } = {}) {
-  const { child, url } = await startPortal(fixture, env);
+// TCRN-CROSS-INIT-053 R46 (I10, U20 D13): a second page can be loaded from a portal already running, as a
+// second browser tab of the same Atelier is.
+async function loadExecutedDom(fixture, env = {}, { hold = () => false, portal = null } = {}) {
+  const { child, url } = portal ?? await startPortal(fixture, env);
   const nativeFetch = globalThis.fetch;
   let source = await (await nativeFetch(url)).text();
   source = mutateSource(source, MUTATION);
@@ -292,7 +294,7 @@ async function loadExecutedDom(fixture, env = {}, { hold = () => false } = {}) {
     "the page's requests to settle",
     20_000,
   );
-  return { child, document, source, window, requests, waitForSettled, held: () => held.length, release, hold: (predicate) => { holding = predicate; } };
+  return { child, url, document, source, window, requests, waitForSettled, held: () => held.length, release, hold: (predicate) => { holding = predicate; } };
 }
 
 function missingComponents(document) {
@@ -2784,6 +2786,152 @@ if (!MUTATION) test("R46 I09: a library without a knowledge store shows an empty
     await waitFor(() => document.querySelector('#knowledge-view-content [data-ui="knowledge-status-filter"]')?.value === "all" && document.querySelector("#knowledge-view-content [data-knowledge-store]") === null, "the view of the created store");
     assert.equal(document.querySelector("#knowledge-view-content .tcrn-state-surface").textContent, locales.en["dashboard.knowledgeEmpty"]);
   } finally { await page.cleanup(); }
+});
+
+// TCRN-CROSS-INIT-053 R46 (I10; U20 D3, receipt badge): a library switch clears what the page showed for the
+// library it leaves -- the design authority panel, the receipt and the readiness result -- before the next
+// library is read, so nothing of the old one is on screen while the new one loads.
+if (!MUTATION) test("R46 I10: a library switch clears the design authority panel, the receipt and the readiness result before the next library is read", async () => {
+  const fixture = await scratch("tcrn-r46-i10-leave-");
+  await cli(["work-create", "--workspace", fixture.workspace, "--project-id", fixture.projectId, "--at", nextAt(), "--external-key", "R46-I10-LEAVE", "--kind", "Initiative", "--title", "Work of the first library"], fixture.deviceEnv);
+  const locales = await localeTable();
+  const page = await loadExecutedDom(fixture);
+  try {
+    const { document, window } = page;
+    const editor = await openWorkEditor(page);
+    editor.querySelector("[data-target-context]").click();
+    await waitFor(() => editor.querySelector("[data-target-result]")?.innerHTML !== "", "the readiness result");
+    document.querySelector('[data-page-target="settings"]')?.click();
+    document.querySelector('[data-setting-group="atelier"]')?.click();
+    const control = document.querySelector('[data-machine-control="portal.defaultTheme"]');
+    control.value = control.value === "dark" ? "light" : "dark";
+    control.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await waitFor(() => document.querySelector("#operation-feedback")?.dataset.operationPhase === "success", "the write's receipt");
+    assert.notEqual(receiptText(document), locales.en["chip.idle"]);
+    document.querySelector("#receipt-chip").click();
+    assert.equal(document.querySelector("#receipt-drawer").dataset.open, "true");
+    document.querySelector('[data-setting-group="general"]')?.click();
+    const panel = document.querySelector("#design-authority");
+    await waitFor(() => panel.hidden === false && panel.querySelector("[data-design-authority-state]"), "the first library's design authority panel");
+    await page.waitForSettled();
+    page.hold((path) => path === "/api/settings");
+    const select = document.querySelector("#library-select");
+    select.value = fixture.second.project;
+    select.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await waitFor(() => page.held() === 1, "the second library's settings read");
+    assert.equal(panel.hidden, true, "the panel is hidden before the next library is read");
+    assert.equal(panel.innerHTML, "", "and holds nothing of the library left");
+    assert.equal(receiptText(document), locales.en["chip.idle"], "the receipt badge is idle again");
+    assert.equal(document.querySelector("#receipt-chip").className, "tcrn-badge tcrn-badge--positive");
+    assert.equal(document.querySelector("#receipt-drawer").dataset.open, "false", "the drawer closed");
+    assert.equal(document.querySelector("#operation-feedback").dataset.operationPhase, "idle");
+    assert.equal(editor.querySelector("[data-target-result]")?.innerHTML ?? "", "", "the readiness result is gone");
+    assert.equal(page.release(), 1);
+    await page.waitForSettled();
+    await waitFor(() => document.querySelector("#rail-workspace-label").textContent === "TCRN-INC148-DOM-SECOND", "the second library");
+    assert.equal(receiptText(document), locales.en["chip.idle"], "a switch leaves no receipt of the library left");
+  } finally { await closePage(page, fixture); }
+});
+
+// TCRN-CROSS-INIT-053 R46 (I10; U20 D13, PC-3): two tabs of one Atelier. When the other tab switches the
+// library, this tab's next read is refused with the selection as it is now: the page names both libraries
+// above its pages, shows none of the other library's values under its own name, refuses a write, and
+// switches back on request. A switch refused elsewhere only moves the epoch: the page reads again without
+// a notice.
+if (!MUTATION) test("R46 I10: another tab's switch is named on this page, which shows none of the other library's values and switches back", async () => {
+  const fixture = await scratch("tcrn-r46-i10-tabs-");
+  await cli(["settings-set", "--workspace", fixture.second.library, "--at", nextAt(), "--actor", "agent:test", "--key", "artifact.language", "--value", "zh-CN"], { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" });
+  const locales = await localeTable();
+  const tabA = await loadExecutedDom(fixture);
+  const tabB = await loadExecutedDom(fixture, {}, { portal: { child: tabA.child, url: tabA.url } });
+  const languageRow = () => tabA.document.querySelector('[data-setting-row="artifact.language"] [data-setting-control]')?.value;
+  const readAgain = (tab, status) => {
+    const filter = tab.document.querySelector('[data-ui="knowledge-status-filter"]');
+    filter.value = status;
+    filter.dispatchEvent(new tab.window.Event("change", { bubbles: true }));
+  };
+  try {
+    tabA.document.querySelector('[data-page-target="settings"]')?.click();
+    tabA.document.querySelector('[data-setting-group="knowledge"]')?.click();
+    const firstLanguage = languageRow();
+    assert.equal(typeof firstLanguage, "string", "tab A shows the first library's artifact language");
+    assert.notEqual(firstLanguage, "zh-CN");
+    // Tab B moves the selection to the second library.
+    const selectB = tabB.document.querySelector("#library-select");
+    selectB.value = fixture.second.project;
+    selectB.dispatchEvent(new tabB.window.Event("change", { bubbles: true }));
+    await waitFor(() => tabB.document.querySelector("#rail-workspace-label").textContent === "TCRN-INC148-DOM-SECOND", "tab B on the second library");
+    await tabB.waitForSettled();
+    // Tab A reads: refused, named, and nothing of the second library shown.
+    readAgain(tabA, "all");
+    const notice = await waitFor(() => tabA.document.querySelector('#target-notice:not([hidden]) [data-target-notice]'), "the notice on tab A");
+    assert.equal(notice.querySelector("span").textContent, locales.en["target.changedElsewhere"].replace("{current}", "TCRN-INC148-DOM-SECOND").replace("{previous}", "TCRN-INC148-DOM"));
+    assert.equal(notice.querySelector("[data-target-follow]").textContent, locales.en["target.follow"].replace("{name}", "TCRN-INC148-DOM-SECOND"));
+    assert.ok(notice.classList.contains("tcrn-inline-alert") && notice.classList.contains("tcrn-inline-alert--warning"));
+    await tabA.waitForSettled();
+    assert.equal(tabA.document.querySelector("#rail-workspace-label").textContent, "TCRN-INC148-DOM");
+    assert.equal(languageRow(), firstLanguage, "tab A shows none of the second library's values");
+    // A write from tab A is refused, and neither library changes.
+    const before = { first: (await cli(["settings-catalog", "--workspace", fixture.workspace], fixture.deviceEnv)).settings.find((entry) => entry.key === "artifact.language").currentValue, second: (await cli(["settings-catalog", "--workspace", fixture.second.library], fixture.deviceEnv)).settings.find((entry) => entry.key === "artifact.language").currentValue };
+    const control = tabA.document.querySelector('[data-setting-row="artifact.language"] [data-setting-control]');
+    control.value = "fr";
+    control.dispatchEvent(new tabA.window.Event("change", { bubbles: true }));
+    await waitFor(() => /^✕/u.test(receiptText(tabA.document)), "the refused write's receipt");
+    assert.match(tabA.document.querySelector("#receipt-raw").textContent, /PORTAL_CONFIGURATION_TARGET_CHANGED/u);
+    await tabA.waitForSettled();
+    assert.deepEqual({ first: (await cli(["settings-catalog", "--workspace", fixture.workspace], fixture.deviceEnv)).settings.find((entry) => entry.key === "artifact.language").currentValue, second: (await cli(["settings-catalog", "--workspace", fixture.second.library], fixture.deviceEnv)).settings.find((entry) => entry.key === "artifact.language").currentValue }, before);
+    // Switch back: the selection is the first library again and the notice is gone.
+    tabA.document.querySelector("[data-target-switch-back]").click();
+    await waitFor(() => tabA.document.querySelector("#target-notice").hidden === true, "the notice to leave");
+    await tabA.waitForSettled();
+    const boot = JSON.parse(tabA.source.match(/const BOOT = (\{[^\n]*\});/u)[1]);
+    const selected = await (await fetch(new URL("/api/libraries", tabA.url), { headers: { "x-portal-token": boot.token } })).json();
+    assert.equal(selected.selected.projectPath, fixture.proseRoot, "the selection is the first library again");
+    assert.equal(tabA.document.querySelector("#rail-workspace-label").textContent, "TCRN-INC148-DOM");
+    // Tab B, still showing the second library, is told in turn.
+    readAgain(tabB, "removed");
+    await waitFor(() => tabB.document.querySelector('#target-notice:not([hidden]) [data-target-notice]'), "the notice on tab B");
+    // A switch refused elsewhere moves only the epoch: tab A reads again, with no notice.
+    const refused = await fetch(new URL("/api/library", tabA.url), { method: "POST", headers: { "content-type": "application/json", "x-portal-token": boot.token }, body: JSON.stringify({ library: "not-a-registered-library" }) });
+    assert.equal(refused.status, 404);
+    readAgain(tabA, "removed");
+    await waitFor(() => tabA.document.querySelector('[data-ui="knowledge-status-filter"]')?.value === "removed", "tab A's read after the refused switch");
+    await tabA.waitForSettled();
+    assert.equal(tabA.document.querySelector("#target-notice").hidden, true, "a refused switch is not another tab's selection");
+  } finally {
+    try { await tabB.waitForSettled(); } catch { /* the case's own assertion already failed */ }
+    await closePage(tabA, fixture);
+  }
+});
+
+// TCRN-CROSS-INIT-053 R46 (I10): an answer that comes back after the page has left its library is dropped,
+// not rendered into the next one.
+if (!MUTATION) test("R46 I10: an answer for the library the page has left is dropped", async () => {
+  const fixture = await scratch("tcrn-r46-i10-late-");
+  await cli(["knowledge-init", "--workspace", fixture.second.library, "--acknowledge-disposable", "true"], fixture.deviceEnv);
+  const page = await loadExecutedDom(fixture);
+  try {
+    const { document, window } = page;
+    document.querySelector('[data-page-target="dashboard"]')?.click();
+    document.querySelector('[data-workspace-tab="knowledge"]')?.click();
+    assert.ok(document.querySelector('#knowledge-view-content [data-knowledge-store="absent"]'), "the first library has no knowledge store");
+    let reads = 0;
+    page.hold((path) => path === "/api/knowledge?status=all" && (reads += 1) === 1);
+    const filter = document.querySelector('[data-ui="knowledge-status-filter"]');
+    filter.value = "all";
+    filter.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await waitFor(() => page.held() === 1, "the first library's knowledge read");
+    const select = document.querySelector("#library-select");
+    select.value = fixture.second.project;
+    select.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await waitFor(() => document.querySelector("#rail-workspace-label").textContent === "TCRN-INC148-DOM-SECOND", "the second library");
+    await page.waitForSettled();
+    assert.equal(document.querySelector('#knowledge-view-content [data-knowledge-store="absent"]'), null, "the second library has a store");
+    assert.equal(page.release(), 1);
+    await page.waitForSettled();
+    assert.equal(document.querySelector('#knowledge-view-content [data-knowledge-store="absent"]'), null, "the first library's late answer is not shown");
+    assert.equal(document.querySelector("#target-notice").hidden, true);
+  } finally { await closePage(page, fixture); }
 });
 
 if (!MUTATION) test("R45 U14: execution contexts read as one row per target in the page's language, not as JSON", async () => {

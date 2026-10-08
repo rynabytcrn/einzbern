@@ -4057,6 +4057,8 @@ button:disabled { cursor: not-allowed; }
 
 .tcrn-page > [data-page-hierarchy-region="header"] { margin-block-end: var(--tcrn-space-5); }
 .tcrn-work-tree__children { margin-inline-start: var(--tcrn-space-4); }
+/* TCRN-CROSS-INIT-053 R46 (I10): the notice that another tab moved the selection sits above the pages. */
+[data-ui="target-notice"] { margin-block-end: var(--tcrn-space-4); }
 .tcrn-work-tree__summary { cursor: pointer; }
 </style>
 </head>
@@ -4124,6 +4126,7 @@ button:disabled { cursor: not-allowed; }
         </div>
       </header>
     <main class="tcrn-product-shell__main tcrn-main" id="main-content">
+      <div id="target-notice" data-ui="target-notice" hidden></div>
       <section class="tcrn-page tcrn-product-shell-content-stack" data-page="dashboard">
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
@@ -4403,19 +4406,53 @@ const BOOT = __PORTAL_BOOT__;
       return served !== null && typeof served === "object" && !Array.isArray(served) ? served : null;
     } catch { return null; }
   };
+  // TCRN-CROSS-INIT-053 R46 (I10; I05, PC-3, PC-5): a request names the target this page shows -- its
+  // selection epoch, library, registered project path and configuration project -- and an answer is kept
+  // only for that target. Header values are Latin-1, so everything outside printable ASCII travels as a
+  // \u escape, which the server's JSON.parse reads back unchanged.
+  const headerJson = (value) => JSON.stringify(value).replace(/[^\x20-\x7e]/gu, (character) => Array.from({ length: character.length }, (_, index) => `\\u${character.charCodeAt(index).toString(16).padStart(4, "0")}`).join(""));
+  const pageTarget = () => ({ epoch: BOOT.epoch, libraryId: BOOT.library?.libraryId, projectPath: BOOT.library?.projectPath, projectId: BOOT.library?.configurationProjectId ?? null });
+  const sameTarget = (target) => target !== null && typeof target === "object" && target.libraryId === BOOT.library?.libraryId
+    && target.projectPath === BOOT.library?.projectPath && (target.projectId ?? null) === (BOOT.library?.configurationProjectId ?? null);
+  const answered = (result, served) => { Object.defineProperty(result, "servedTarget", { value: served, enumerable: false }); return result; };
+  // An answer for another target, or an older one for this target, is dropped: a read returns a marked
+  // answer every caller leaves alone. The same target at a newer epoch is this page's selection after a
+  // switch elsewhere came back or was refused (PC-3): the page takes the epoch, and a refused read is
+  // asked again once without a notice. A selection another tab moved is refused (409) with the target it
+  // moved to; the page says so above its pages and offers to switch back or to follow, and shows nothing
+  // of the other target meanwhile. A write's answer always reaches its receipt.
   const api = async (path, options = {}) => {
-    if (path === "/api/settings" && options.method === "POST") {
+    const { anyTarget = false, retried = false, ...request } = options;
+    if (path === "/api/settings" && request.method === "POST") {
       if (state.librarySwitching) return { ok: false, reasonCode: "PORTAL_LIBRARY_CHANGED" };
-      const request = JSON.parse(options.body);
-      options = { ...options, body: JSON.stringify({ ...request, libraryId: BOOT.library?.libraryId, libraryPath: BOOT.library?.libraryPath }) };
+      const sent = JSON.parse(request.body);
+      request.body = JSON.stringify({ ...sent, libraryId: BOOT.library?.libraryId, libraryPath: BOOT.library?.libraryPath });
     }
-    const headers = { ...(options.body === undefined ? {} : { "content-type": "application/json" }), "x-portal-token": BOOT.token, "x-configuration-target": JSON.stringify({ libraryId: BOOT.library?.libraryId, projectId: BOOT.library?.configurationProjectId ?? null, epoch: BOOT.epoch }) };
-    const response = await fetch(path, { ...options, headers: { ...headers, ...(options.headers || {}) } });
+    const headers = { ...(request.body === undefined ? {} : { "content-type": "application/json" }), "x-portal-token": BOOT.token, "x-configuration-target": headerJson(pageTarget()) };
+    const response = await fetch(path, { ...request, headers: { ...headers, ...(request.headers || {}) } });
     const body = await response.json();
-    const result = { ...body, httpStatus: response.status };
-    Object.defineProperty(result, "servedTarget", { value: servedTargetOf(response), enumerable: false });
-    return result;
+    const served = servedTargetOf(response);
+    const read = (request.method ?? "GET") === "GET";
+    const dropped = () => answered({ ok: false, reasonCode: "PORTAL_ANSWER_DISCARDED", discarded: true, httpStatus: response.status }, served);
+    const moved = response.status === 409 && body?.reasonCode === "PORTAL_CONFIGURATION_TARGET_CHANGED" && body.target !== null && typeof body.target === "object" ? body.target : null;
+    if (moved !== null && !anyTarget) {
+      if (sameTarget(moved)) {
+        if (Number.isSafeInteger(moved.epoch) && moved.epoch > BOOT.epoch) BOOT.epoch = moved.epoch;
+        if (read && !retried) return api(path, { ...options, retried: true });
+      } else {
+        showTargetNotice(moved);
+        return answered({ ...body, httpStatus: response.status, selectionMoved: true }, served);
+      }
+    }
+    if (served !== null && !anyTarget) {
+      if (!sameTarget(served)) { if (read) return dropped(); }
+      else if (Number.isSafeInteger(served.epoch) && served.epoch > BOOT.epoch) BOOT.epoch = served.epoch;
+      else if (read && served.epoch < BOOT.epoch) return dropped();
+    }
+    return answered({ ...body, httpStatus: response.status }, served);
   };
+  // Every caller that keeps a read's answer leaves a dropped or refused one alone.
+  const unkept = (...answers) => answers.some((answer) => answer?.discarded === true || answer?.selectionMoved === true);
   const commandEntry = (name) => state.commands.find((entry) => entry.name === name);
   const echo = (name, args = []) => {
     if (!commandEntry(name)) return;
@@ -4838,7 +4875,7 @@ const BOOT = __PORTAL_BOOT__;
     const target = JSON.stringify([BOOT.library?.libraryId, BOOT.library?.configurationProjectId]);
     if (state.settings?.chain?.role !== "project" || !BOOT.library?.configurationProjectId) return;
     const available = await api("/api/project-targets");
-    if (epoch !== bindingsEpoch || target !== JSON.stringify([BOOT.library?.libraryId, BOOT.library?.configurationProjectId])) return;
+    if (epoch !== bindingsEpoch || target !== JSON.stringify([BOOT.library?.libraryId, BOOT.library?.configurationProjectId]) || unkept(available)) return;
     const common = state.settings.projectBindings?.find(record => record.key === "common-default")?.value;
     let repositories = JSON.parse(JSON.stringify(state.settings.projectBindings?.find(record => record.key === "repositories")?.value?.bindings || []));
     const section = document.createElement("section"); section.className = "tcrn-surface"; section.dataset.projectBindings = "true";
@@ -5335,7 +5372,9 @@ const BOOT = __PORTAL_BOOT__;
     attachEcho($("#variables-view"));
   };
   const refreshVariables = async () => {
-    state.variables = await api("/api/variables");
+    const variables = await api("/api/variables");
+    if (unkept(variables)) return;
+    state.variables = variables;
     renderVariables();
   };
   const saveVariable = async (values, previousName = null) => {
@@ -5402,7 +5441,7 @@ const BOOT = __PORTAL_BOOT__;
     const epoch = ++workTargetEpoch;
     const library = BOOT.library?.libraryId;
     const targets = await api("/api/project-targets");
-    if (epoch !== workTargetEpoch || library !== BOOT.library?.libraryId) return;
+    if (epoch !== workTargetEpoch || library !== BOOT.library?.libraryId || unkept(targets)) return;
     const records = (state.work?.records || []).filter(record => ["Initiative", "Story", "Subtask"].includes(record.kind));
     const root = $("#work-target-editor");
     workTargetMount?.destroy?.(); workTargetMount = null;
@@ -5441,7 +5480,7 @@ const BOOT = __PORTAL_BOOT__;
       };
       form.querySelector("[data-target-context]").onclick = async () => {
         const result = await api("/api/work/project-context?id=" + encodeURIComponent(record.id));
-        if (epoch !== workTargetEpoch || library !== BOOT.library?.libraryId) return;
+        if (epoch !== workTargetEpoch || library !== BOOT.library?.libraryId || unkept(result)) return;
         form.querySelector("[data-target-result]").innerHTML = projectContextView(result);
       };
     };
@@ -5545,14 +5584,18 @@ const BOOT = __PORTAL_BOOT__;
     $("#knowledge-status")?.addEventListener("change", async (event) => {
       state.knowledgeStatus = ["valid", "removed", "all"].includes(event.target.value) ? event.target.value : "valid";
       state.knowledgeBody = null;
-      state.knowledge = await api(knowledgePath());
+      const knowledge = await api(knowledgePath());
+      if (unkept(knowledge)) return;
+      state.knowledge = knowledge;
       renderKnowledgeView();
     });
     $$('[data-knowledge-body-id]').forEach((button) => button.addEventListener("click", async () => {
       const id = button.dataset.knowledgeBodyId;
       state.knowledgeBody = { id, pending: true };
       renderKnowledgeView();
-      state.knowledgeBody = await api(`/api/knowledge/body?id=${encodeURIComponent(id)}`);
+      const body = await api(`/api/knowledge/body?id=${encodeURIComponent(id)}`);
+      if (unkept(body) || state.knowledgeBody?.id !== id) return;
+      state.knowledgeBody = body;
       renderKnowledgeView();
       $("[data-ui=knowledge-body-reader]")?.scrollIntoView({ block: "nearest" });
     }));
@@ -5869,7 +5912,7 @@ const BOOT = __PORTAL_BOOT__;
     renderGutter();
     $$('[data-prose-line]', $("#reconcile-findings")).forEach((button) => button.addEventListener("click", () => focusLine(Number(button.dataset.proseLine))));
   };
-  const loadAgents = async () => { const [documentResult, reconciliation, rules] = await Promise.all([api("/api/agents-md"), api("/api/agents-md/reconcile"), api("/api/rules")]); state.agentsText = documentResult.text || ""; state.rules = rules; $("#agents-md").value = state.agentsText; setText("#agents-path", documentResult.path || "AGENTS.md"); renderProseDirectory(); renderPending(); renderGutter(); renderReconciliation(reconciliation); };
+  const loadAgents = async () => { const [documentResult, reconciliation, rules] = await Promise.all([api("/api/agents-md"), api("/api/agents-md/reconcile"), api("/api/rules")]); if (unkept(documentResult, reconciliation, rules)) return; state.agentsText = documentResult.text || ""; state.rules = rules; $("#agents-md").value = state.agentsText; setText("#agents-path", documentResult.path || "AGENTS.md"); renderProseDirectory(); renderPending(); renderGutter(); renderReconciliation(reconciliation); };
   // TCRN-CROSS-STORY-508 R8 (C-R14-6): a write of a key the system variables section shows renders
   // AGENTS.md again (portal.mjs), so the Rules page reads the file back after it.
   const rendersSystemVariables = (key) => ["models.category", "models.tiers"].includes(key) || String(key).startsWith("models.escalation.") || String(key).startsWith("design.");
@@ -5944,6 +5987,7 @@ const BOOT = __PORTAL_BOOT__;
     // reader sees MACHINE_SETTING_NOT_SET for a state they have already reached.
     if (clearing) {
       const live = await api("/api/machine-settings");
+      if (unkept(live)) return;
       const current = live?.settings?.find((candidate) => candidate.key === key)?.currentValue ?? "";
       if (current === "") return;
     }
@@ -5999,12 +6043,17 @@ const BOOT = __PORTAL_BOOT__;
     const library = reading.library;
     if (reading.readingFor === library) { reading.again = true; return; }
     reading.readingFor = library;
+    let dropped = 0;
     do {
       reading.again = false;
       renderWorkView();
       let work;
       try { work = await api("/api/work"); } catch (error) { work = { ok: false, reasonCode: "PORTAL_READ_FAILED", error: String(error?.message ?? error), records: [], total: 0 }; }
       if (reading.library !== library) return;
+      // An answer for a target the page has since left is read again for the target it shows (I10); one
+      // refused because another tab moved the selection leaves the view as it was.
+      if (work.discarded === true && (dropped += 1) <= 3) { reading.again = true; continue; }
+      if (work.selectionMoved === true) break;
       state.work = work;
     } while (reading.again);
     reading.readingFor = null;
@@ -6022,6 +6071,7 @@ const BOOT = __PORTAL_BOOT__;
     try {
       const [settings, vocabularyResult, status, commandsResult, machine, knowledge, variables] = await Promise.all([api("/api/settings"), api("/api/vocabulary"), api("/api/status"), api("/api/commands"), api("/api/machine-settings"), api(knowledgePath()), api("/api/variables")]);
       if ((state.libraryEpoch || 0) !== epoch || state.settingsRead !== read) return;
+      if (unkept(settings, vocabularyResult, status, commandsResult, machine, knowledge, variables)) return;
       state.machineSettings = machine; state.settings = settings; renderConfigurationTargets(); state.vocabulary = vocabularyResult; state.status = status; state.knowledge = knowledge; state.variables = variables; state.commands = commandsResult.commands || [];
       for (const collection of Object.values(state.collections)) if (!collection.dirty) collection.draft = null;
       renderDashboard(); renderSettings(); renderCollections(); renderVariables(); renderVocabulary(); rebuildSearchIndex();
@@ -6042,7 +6092,7 @@ const BOOT = __PORTAL_BOOT__;
     for (const category of vocabularyCategories()) for (const term of vocabularyRows(category)) rows.push({ text: `${termValue(term)} ${vocabularyDefinition(category, term)}`, label: termValue(term), meta: t("search.vocabulary"), page: "vocabulary", vocabulary: category });
     state.searchIndex = rows;
   };
-  const refreshGates = async () => { const [response, lastRun] = await Promise.all([api("/api/gates"), api("/api/gates/last-run")]); state.gateResponse = response; state.gates = Array.isArray(response.gates) ? response.gates : []; state.lastGateRun = lastRun; renderGates(); };
+  const refreshGates = async () => { const [response, lastRun] = await Promise.all([api("/api/gates"), api("/api/gates/last-run")]); if (unkept(response, lastRun)) return; state.gateResponse = response; state.gates = Array.isArray(response.gates) ? response.gates : []; state.lastGateRun = lastRun; renderGates(); };
   const renderSearchResults = () => { const target = $("#search-results"); target.hidden = state.searchResults.length === 0; target.innerHTML = state.searchResults.map((result, index) => `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md tcrn-product-shell-search__result" data-selected="${index === state.searchSelection ? "true" : "false"}" aria-current="${index === state.searchSelection ? "true" : "false"}" data-search-index="${index}"><strong>${esc(result.label)}</strong><span >${esc(result.meta)} · ${esc(result.page)}</span></button>`).join(""); $$('[data-search-index]').forEach((button) => button.addEventListener("click", () => chooseSearch(Number(button.dataset.searchIndex)))); };
   const search = (query) => { const normalized = query.trim().toLocaleLowerCase(); state.searchResults = normalized ? state.searchIndex.filter((entry) => entry.text.toLocaleLowerCase().includes(normalized)) : []; state.searchSelection = 0; renderSearchResults(); };
   const chooseSearch = (index = 0) => {
@@ -6140,17 +6190,101 @@ const BOOT = __PORTAL_BOOT__;
     await loadAgents();
   }));
   $("#receipt-chip").addEventListener("click", openReceipt); $("#receipt-details-trigger").addEventListener("click", toggleReceiptDetails); $("#drawer-button").addEventListener("click", openReceipt); $("#drawer-close").addEventListener("click", closeReceipt);
+  // TCRN-CROSS-INIT-053 R46 (I10; U20 D3, D13): what a view shows for the target the page is leaving goes
+  // before any request for the next one is sent -- the design authority panel, the receipt (its badge back
+  // to idle, the drawer closed), the readiness and context results, an open knowledge body and a notice.
+  const leaveTarget = () => {
+    designAuthorityState.epoch += 1;
+    Object.assign(designAuthorityState, { key: null, status: "unset", detail: null });
+    renderDesignAuthority();
+    state.receipt = null;
+    state.operationDetailsOpen = false;
+    const chip = $("#receipt-chip");
+    chip.className = "tcrn-badge tcrn-badge--positive";
+    chip.setAttribute("aria-expanded", "false");
+    setText("#receipt-chip-text", t("chip.idle"));
+    const drawer = $("#receipt-drawer");
+    drawer.dataset.open = "false";
+    drawer.setAttribute("aria-hidden", "true");
+    renderReceipt();
+    workTargetEpoch += 1;
+    $$("[data-target-result]").forEach((node) => { node.innerHTML = ""; });
+    state.knowledgeBody = null;
+    state.targetNotice = null;
+    renderTargetNotice();
+  };
+  // The page takes a selection it was answered with: the switch's own, or the one another tab made.
+  const adoptSelection = async ({ library, epoch, libraries = null }) => {
+    Object.assign(BOOT, { epoch, library, workspace: library.libraryPath, libraryName: library.name ?? null });
+    loadLibraries(Array.isArray(libraries) ? libraries : BOOT.libraries);
+    state.workspaceLabelPage = null; renderWorkspaceLabel(); $("#workspace-label").title = BOOT.workspace;
+    applyRailIdentity(); resetCollections(); leaveWork();
+    await refresh(); await refreshGates(); await loadAgents();
+  };
+  // Another Atelier tab moved the selection this page shows: the notice names both, and the page shows
+  // nothing of the other target until the reader switches back or follows it.
+  const selectionLabel = (target) => {
+    const registered = (BOOT.libraries || []).find((entry) => entry.projectPath === target.projectPath);
+    return registered && (registered.projectId ?? null) === (target.projectId ?? null) ? libraryLabel(registered) : targetBaseName({ name: target.name, chain: { role: target.chainRole } });
+  };
+  const renderTargetNotice = () => {
+    const host = $("#target-notice");
+    const target = state.targetNotice;
+    if (!target) { host.hidden = true; host.innerHTML = ""; return; }
+    const elsewhere = selectionLabel(target);
+    host.hidden = false;
+    host.innerHTML = `<div class="tcrn-inline-alert tcrn-inline-alert--warning" role="status" data-target-notice="${esc(JSON.stringify({ libraryId: target.libraryId, projectPath: target.projectPath, projectId: target.projectId ?? null }))}"><span>${esc(t("target.changedElsewhere", { current: elsewhere, previous: BOOT.library ? libraryLabel(BOOT.library) : "" }))}</span><span class="tcrn-surface__head-actions"><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--sm" data-target-switch-back>${esc(t("target.switchBack"))}</button><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--sm" data-target-follow>${esc(t("target.follow", { name: elsewhere }))}</button></span></div>`;
+    $("[data-target-switch-back]", host).addEventListener("click", switchBack);
+    $("[data-target-follow]", host).addEventListener("click", followSelection);
+  };
+  const showTargetNotice = (target) => {
+    if (state.targetNotice && JSON.stringify([state.targetNotice.libraryId, state.targetNotice.projectPath, state.targetNotice.projectId ?? null, state.targetNotice.epoch]) === JSON.stringify([target.libraryId, target.projectPath, target.projectId ?? null, target.epoch])) return;
+    state.targetNotice = target;
+    renderTargetNotice();
+  };
+  // Switch back: select this page's registration again, and its configuration target when it was another.
+  const switchBack = async () => {
+    if (state.librarySwitching) return;
+    const wanted = { ...BOOT.library };
+    state.librarySwitching = true; state.libraryEpoch = (state.libraryEpoch || 0) + 1;
+    leaveTarget(); setSettingWritesBusy(true);
+    try {
+      const library = await api("/api/library", { method: "POST", body: JSON.stringify({ library: wanted.projectPath }) });
+      if (!library.ok) { showReceipt(library); await refresh(); return; }
+      let chosen = library;
+      if ((library.library.configurationProjectId ?? null) !== (wanted.configurationProjectId ?? null)) {
+        BOOT.epoch = library.epoch; BOOT.library = library.library;
+        const scoped = await api("/api/configuration-scope", { method: "POST", body: JSON.stringify({ projectId: wanted.configurationProjectId ?? null }) });
+        if (scoped.ok) chosen = scoped; else showReceipt(scoped);
+      }
+      BOOT.proseRoot = chosen.proseRoot;
+      const listing = await api("/api/libraries", { anyTarget: true });
+      await adoptSelection({ library: chosen.library, epoch: chosen.epoch, libraries: listing.ok ? listing.libraries : null });
+    } finally { state.librarySwitching = false; setSettingWritesBusy(Boolean(state.settingsWritePending)); renderConfigurationTargets(); loadLibraries(); }
+  };
+  // Follow: take the selection the server holds now, and read everything for it.
+  const followSelection = async () => {
+    if (state.librarySwitching) return;
+    state.librarySwitching = true; state.libraryEpoch = (state.libraryEpoch || 0) + 1;
+    leaveTarget(); setSettingWritesBusy(true);
+    try {
+      const listing = await api("/api/libraries", { anyTarget: true });
+      if (!listing.ok || !listing.selected || !Number.isSafeInteger(listing.servedTarget?.epoch)) { showReceipt(listing); return; }
+      BOOT.proseRoot = null;
+      await adoptSelection({ library: listing.selected, epoch: listing.servedTarget.epoch, libraries: listing.libraries });
+    } finally { state.librarySwitching = false; setSettingWritesBusy(Boolean(state.settingsWritePending)); renderConfigurationTargets(); loadLibraries(); }
+  };
   $("#configuration-project-select").addEventListener("change", async (event) => {
     if (state.librarySwitching || state.settingsWritePending) { renderConfigurationTargets(); return; }
     // Disable the selector immediately, before the POST yields. Its enabled state
     // means the complete selected-scope render (including dependent reads) settled.
     event.target.disabled = true;
     state.librarySwitching = true; state.libraryEpoch = (state.libraryEpoch || 0) + 1;
-    state.promptLanguageDraft = null; resetCollections(); clearTransientTarget(); setSettingWritesBusy(true);
+    state.promptLanguageDraft = null; resetCollections(); clearTransientTarget(); leaveTarget(); setSettingWritesBusy(true);
     try {
       const selected = await api("/api/configuration-scope", { method: "POST", body: JSON.stringify({ projectId: event.target.value || null }) });
       if (selected.ok) { BOOT.epoch = selected.epoch; BOOT.library = selected.library; BOOT.proseRoot = selected.proseRoot; state.settings = selected.settings; await refresh(); await refreshGates(); await loadAgents(); }
-      else showReceipt(selected);
+      else { showReceipt(selected); await refresh(); }
     } finally { state.librarySwitching = false; setSettingWritesBusy(Boolean(state.settingsWritePending)); renderConfigurationTargets(); }
   });
   $("#library-select").addEventListener("change", async (event) => {
@@ -6161,6 +6295,7 @@ const BOOT = __PORTAL_BOOT__;
     state.promptLanguageDraft = null;
     state.doctorDetails = new Set();
     clearTransientTarget();
+    leaveTarget();
     setSettingWritesBusy(true);
     event.target.disabled = true;
     try {
@@ -6168,10 +6303,7 @@ const BOOT = __PORTAL_BOOT__;
       if (selected.ok) {
         BOOT.epoch = selected.epoch; BOOT.library = selected.library; BOOT.workspace = selected.workspace; BOOT.libraryName = selected.libraryName; BOOT.proseRoot = selected.proseRoot;
         const listing = await api("/api/libraries");
-        loadLibraries(listing.ok ? listing.libraries : BOOT.libraries);
-        state.workspaceLabelPage = null; renderWorkspaceLabel(); $("#workspace-label").title = BOOT.workspace;
-        applyRailIdentity(); resetCollections(); leaveWork();
-        await refresh(); await refreshGates(); await loadAgents();
+        await adoptSelection({ library: selected.library, epoch: BOOT.epoch, libraries: listing.ok ? listing.libraries : null });
       } else { loadLibraries(); showReceipt(selected); await refresh(); }
     } catch (error) {
       loadLibraries(); showReceipt({ ok: false, reasonCode: "PORTAL_LIBRARY_SELECT_FAILED", error: String(error?.message ?? error) }); await refresh();

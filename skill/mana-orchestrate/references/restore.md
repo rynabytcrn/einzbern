@@ -43,7 +43,11 @@ among the decided answers.
 4. Apply. Run the same command with `--yes true`. It runs the eight checks again, then returns
    `SETUP_APPLIED`: the files written, two columns of settings, the backup directory, and
    `selfCheck`.
-5. Report the two columns and the self-check as the sections below say.
+5. Report the two columns and the self-check as the sections below say, and `coordination`, which
+   both answers carry: the coordination chain the library names as this device has it,
+   `registered`, `located` (the apply registers it and answers `registered`) or `unregistered`
+   (register it with `library-register` once it is on this device), or null when the library is
+   itself a coordination chain or names none.
 
 ## Eight checks before anything is written
 

@@ -9,7 +9,7 @@ import { openLibrary, hasLibraryManifest } from "./ether-library.js";
 import { materializeWorkspace, materializeWorkspaceFromGenesis, initializeLibrary, createProject, readLibraryTombstone } from "./workspace.js";
 import type { WorkspaceState, WorkspaceMutationOptions } from "./workspace.js";
 import { readRegistry, registerLibrary, normalizeGitRemote, unregisterEntries } from "./registry.js";
-import type { RegistryEntry } from "./registry.js";
+import type { Registry, RegistryEntry } from "./registry.js";
 import { setConfigRecord } from "./config-records.js";
 import { designConfiguration, scopedWorkspaceState } from "./project-scope.js";
 import type { ConfigurationSource, ScopedWorkspaceState } from "./project-scope.js";
@@ -476,22 +476,31 @@ export async function coordinationNamedBy(path: string): Promise<string | null |
 }
 
 /**
- * STORY-480 R4/AC4: after an uninstall, take out the registration setup made for a coordination
- * (chainRole coordination, the library registered as its own project path) once no other
- * registration still names it. A registration whose library cannot be read keeps it, and so does
- * any other registration of the coordination itself. The library is never written, moved or
- * deleted. Answers the registrations taken out.
+ * STORY-480 R4/AC4: the registrations setup made for a coordination (chainRole coordination, the
+ * library registered as its own project path) that an uninstall takes out of `registry`: all of
+ * them once no other registration still names the coordination, else none. A registration whose
+ * library cannot be read keeps them, and so does any other registration of the coordination itself.
+ * It only reads: releaseSetupCoordination applies it under the registry lock, and the uninstall plan
+ * judges with it the registry as it will stand once the project's own entry is out
+ * (TCRN-CROSS-INIT-053 R46 I08).
+ */
+export async function releasableSetupCoordination(registry: Registry, libraryId: string): Promise<readonly RegistryEntry[]> {
+  const made = registry.entries.filter(entry => entry.libraryId === libraryId && entry.chainRole === "coordination" && entry.projectPath === entry.libraryPath);
+  if (made.length === 0) return [];
+  for (const entry of registry.entries) {
+    if (made.includes(entry)) continue;
+    if (entry.libraryId === libraryId) return [];
+    const named = await coordinationNamedBy(entry.libraryPath);
+    if (named === undefined || named === libraryId) return [];
+  }
+  return made;
+}
+
+/**
+ * STORY-480 R4/AC4: after an uninstall, take out the registration setup made for a coordination once
+ * no other registration still names it (releasableSetupCoordination). The library is never written,
+ * moved or deleted. Answers the registrations taken out.
  */
 export async function releaseSetupCoordination(libraryId: string, home: string = deviceHome()): Promise<readonly RegistryEntry[]> {
-  return unregisterEntries(async (registry) => {
-    const made = registry.entries.filter(entry => entry.libraryId === libraryId && entry.chainRole === "coordination" && entry.projectPath === entry.libraryPath);
-    if (made.length === 0) return [];
-    for (const entry of registry.entries) {
-      if (made.includes(entry)) continue;
-      if (entry.libraryId === libraryId) return [];
-      const named = await coordinationNamedBy(entry.libraryPath);
-      if (named === undefined || named === libraryId) return [];
-    }
-    return made;
-  }, home);
+  return unregisterEntries((registry) => releasableSetupCoordination(registry, libraryId), home);
 }

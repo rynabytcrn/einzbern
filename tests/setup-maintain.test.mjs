@@ -283,6 +283,8 @@ test("480-R4: repair puts back what is missing, and a second repair changes noth
   assert.deepEqual(rows(planned.writes), expected);
   const repaired = await applySetup(planned);
   assert.deepEqual(rows(repaired.written), expected);
+  // R46 I08: repair names no coordination binding, in the plan or the receipt.
+  assert.deepEqual([Object.hasOwn(planned, "coordination"), Object.hasOwn(repaired, "coordination")], [false, false]);
   assert.deepEqual(repaired.backups.map((entry) => entry.path), [settings], "the settings file is backed up before it is replaced");
   assertSelfCheckGreen(repaired);
 
@@ -440,21 +442,31 @@ test("480-AC4 (U04): uninstall keeps the coordination registration while a regis
   const digests = () => Promise.all(libraries.map(async (path) => (await computeInstallTreeDigest(path)).sha256));
   const before = await digests();
   const registered = async () => (await readRegistry(f.deviceHome)).entries.map((entry) => entry.projectPath);
-  const uninstallPlanned = async (project) => applySetup(await planSetup({ mode: "uninstall", projectRoot: project, at: at(), home: f.home, deviceHome: f.deviceHome, managedSections: "keep" }));
+  // TCRN-CROSS-INIT-053 R46 (I08): the plan says what the apply then does to setup's coordination
+  // registration, released or retained, and the receipt says what it did.
+  const uninstallPlanned = async (project) => {
+    const planned = await planSetup({ mode: "uninstall", projectRoot: project, at: at(), home: f.home, deviceHome: f.deviceHome, managedSections: "keep" });
+    const applied = await applySetup(planned);
+    assert.deepEqual(applied.coordination, planned.coordination, `${project}: the receipt names what the plan named`);
+    return applied;
+  };
+  const coordinationAs = (status) => ({ libraryId: coordinationId, status, path: coordination });
 
   // Referenced: the other two projects still name the coordination.
-  assert.equal((await uninstallPlanned(projects[0])).reasonCode, "SETUP_APPLIED");
+  const referenced = await uninstallPlanned(projects[0]);
+  assert.equal(referenced.reasonCode, "SETUP_APPLIED");
+  assert.deepEqual(referenced.coordination, coordinationAs("retained"));
   assert.deepEqual(await registered(), [coordination, projects[1], projects[2]], "a referenced coordination registration stays");
 
   // Unreadable: the third project's library is away, so nothing proves the coordination unnamed.
   const away = `${libraries[2]}-away`;
   await rename(libraries[2], away);
-  await uninstallPlanned(projects[1]);
+  assert.deepEqual((await uninstallPlanned(projects[1])).coordination, coordinationAs("retained"));
   assert.deepEqual(await registered(), [coordination, projects[2]], "a registration whose library cannot be read keeps it");
   await rename(away, libraries[2]);
 
   // Unreferenced: the last project naming it goes, and the registration setup made goes with it.
-  await uninstallPlanned(projects[2]);
+  assert.deepEqual((await uninstallPlanned(projects[2])).coordination, coordinationAs("released"));
   assert.deepEqual(await registered(), [], "the coordination registration goes with the last project naming it");
   assert.deepEqual(await digests(), before, "no library was written, moved or deleted");
   assert.ok((await lstat(join(coordination, "manifest.json"))).isFile(), "the coordination library itself stays");

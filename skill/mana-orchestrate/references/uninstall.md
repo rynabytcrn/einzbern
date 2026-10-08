@@ -36,7 +36,11 @@ the conversation. Skip it if the user already answered it, and never guess the a
 4. Apply. Run the same command with `--yes true`. It returns `SETUP_APPLIED`: the files changed,
    the backup directory, and `selfCheck`, whose hooks-present, skill-copies and registry checks
    now report what was taken out.
-5. Report the files changed, the backup directory, and where the library still is.
+5. Report the files changed, the backup directory, and where the library still is, and
+   `coordination`, which both answers carry: `released` when the registration setup made for the
+   coordination chain the library names goes with this project, `retained` when another
+   registration still names it (or one does not read), or null when the library names none; the
+   coordination library itself is never touched.
 
 ## What stays
 

@@ -49,14 +49,15 @@ import type { AgentsNavigationChoice } from "./machine-settings.js";
 import { managedSectionRecordsFor, parseManagedFile } from "./managed-sections.js";
 import { BRAND, DIRECTORY } from "./names.js";
 import { readRegistry, unregisterLibrary } from "./registry.js";
-import { coordinationNamedBy, releaseSetupCoordination } from "./project-chain.js";
-import type { RegistryEntry } from "./registry.js";
+import { coordinationNamedBy, releasableSetupCoordination, releaseSetupCoordination } from "./project-chain.js";
+import type { Registry, RegistryEntry } from "./registry.js";
 import { SETUP_ACTOR, setupFail } from "./setup.js";
 import type {
   ResolvedSetupAnswers,
   SetupAnswers,
   SetupApplied,
   SetupContext,
+  SetupCoordination,
   SetupEngineSwitch,
   SetupModeInput,
   SetupModePlan,
@@ -391,7 +392,7 @@ function appliedLibrary(plan: SetupPlan): SetupApplied["library"] {
   return library === null || library.libraryId === null ? null : { path: library.path, libraryId: library.libraryId, created: false };
 }
 
-function planResult(recorder: SetupRecorder, parts: Pick<SetupModePlan, "questions" | "resolved" | "engine" | "library" | "pendingSections"> & { readonly engineSwitch?: SetupEngineSwitch }): SetupModePlan {
+function planResult(recorder: SetupRecorder, parts: Pick<SetupModePlan, "questions" | "resolved" | "engine" | "library" | "pendingSections"> & { readonly engineSwitch?: SetupEngineSwitch; readonly coordination?: SetupCoordination | null }): SetupModePlan {
   return {
     ...parts,
     writes: recorder.writes,
@@ -755,6 +756,27 @@ function managedSectionsChoice(input: SetupModeInput): "keep" | "remove" {
   return input.options.managedSections ?? "keep";
 }
 
+// TCRN-CROSS-INIT-053 R46 (I08): where this device registers coordination `libraryId`, setup's own
+// registration of it first; null when it registers it nowhere.
+function coordinationLocation(registry: Registry, libraryId: string): string | null {
+  const entries = registry.entries.filter((entry) => entry.libraryId === libraryId);
+  return (entries.find((entry) => entry.chainRole === "coordination" && entry.projectPath === entry.libraryPath) ?? entries[0])?.libraryPath ?? null;
+}
+
+// The coordination an uninstall releases or retains with the project registered as `registered`,
+// judged without writing on `registry` as it will stand once that entry is out, by the rule the apply
+// releases by (releasableSetupCoordination). Null when the project's library names no coordination
+// (unclassified) or does not read.
+async function uninstallCoordination(registry: Registry, registered: RegistryEntry): Promise<SetupCoordination | null> {
+  const named = await coordinationNamedBy(registered.libraryPath);
+  if (typeof named !== "string") return null;
+  const remaining: Registry = { ...registry, entries: registry.entries.filter((entry) => entry.projectPath !== registered.projectPath) };
+  const released = await releasableSetupCoordination(remaining, named);
+  return released.length > 0
+    ? { libraryId: named, status: "released", path: released[0]!.libraryPath }
+    : { libraryId: named, status: "retained", path: coordinationLocation(remaining, named) };
+}
+
 /**
  * Plan an uninstall (R4): the hook groups that come out of both hosts' user settings, the skill
  * copies and skills.json that move into the backups, the registry entry that is removed and, with
@@ -801,6 +823,7 @@ export async function planUninstallSetup(input: SetupModeInput): Promise<SetupMo
     engine: { version: null, directory: null },
     library: registeredLibrary(context),
     pendingSections: [],
+    coordination: context.registered === null ? null : await uninstallCoordination(await readRegistry(deviceHome), context.registered),
   });
 }
 
@@ -839,6 +862,7 @@ export async function applyUninstallSetup(plan: SetupPlan): Promise<SetupApplied
   }
   const registryFile = registryPath(deviceHome);
   const registered = (await readRegistry(deviceHome)).entries.find((entry) => entry.projectPath === projectRoot);
+  let binding: SetupCoordination | null = null;
   if (registered !== undefined) {
     const copy = join(recorder.backupDirectory("registry"), DEVICE_HOME_ENTRIES.registry);
     if (await entryKind(copy) === null) {
@@ -848,7 +872,13 @@ export async function applyUninstallSetup(plan: SetupPlan): Promise<SetupApplied
     // The coordination this project's library names (none when it is unclassified or does not read).
     const coordination = await coordinationNamedBy(registered.libraryPath);
     await unregisterLibrary(projectRoot, deviceHome);
-    if (typeof coordination === "string") await releaseSetupCoordination(coordination, deviceHome);
+    if (typeof coordination === "string") {
+      // TCRN-CROSS-INIT-053 R46 (I08): the receipt says whether setup's registration of it went.
+      const released = await releaseSetupCoordination(coordination, deviceHome);
+      binding = released.length > 0
+        ? { libraryId: coordination, status: "released", path: released[0]!.libraryPath }
+        : { libraryId: coordination, status: "retained", path: coordinationLocation(await readRegistry(deviceHome), coordination) };
+    }
     recorder.write("registry", registryFile, "update");
     recorder.backup("registry", registryFile);
   }
@@ -869,5 +899,6 @@ export async function applyUninstallSetup(plan: SetupPlan): Promise<SetupApplied
     deviceId: (await readDevice(deviceHome))?.deviceId ?? null,
     library: appliedLibrary(plan),
     pending: [],
+    coordination: binding,
   });
 }

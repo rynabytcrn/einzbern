@@ -402,11 +402,32 @@ export interface SetupPlan {
   readonly backupDir: string | null;
   // Managed sections the user changed: they stay as they are and wait for rule-resolve.
   readonly pendingSections: readonly { readonly file: string; readonly id: string }[];
+  // fresh, restore and uninstall: the coordination binding the apply makes or finds (SetupCoordination);
+  // null when there is none to name. update, repair and migrate leave it out.
+  readonly coordination?: SetupCoordination | null;
   // What stops the apply. A plan with any is still a plan: it is shown, not applied.
   readonly blockers: readonly SetupBlocker[];
   // What does not stop the apply but is shown before it: each project host file Git tracks while
   // the library sits outside the project, whether or not the apply changes the file.
   readonly warnings: readonly SetupWarning[];
+}
+
+/**
+ * TCRN-CROSS-INIT-053 R46 (I08): the coordination chain a setup binds, as SETUP_PLAN_READY and
+ * SETUP_APPLIED name it. fresh plans create (a new coordination library at this device's default
+ * location; libraryId null), registered, located (the library at the default location, registered by
+ * the apply) or unregistered (this device does not locate it, and nothing replaces it); its apply
+ * answers registered or unregistered. restore plans registered, located or unregistered, and its apply
+ * answers located as registered; a restored coordination or unclassified library names none (null).
+ * uninstall answers released (the registration setup made for it is taken out) or retained (another
+ * registration still names it, or one does not read); null when the project's library names none.
+ */
+export interface SetupCoordination {
+  readonly libraryId: string | null;
+  readonly status: "create" | "registered" | "located" | "unregistered" | "released" | "retained";
+  // Where this device has the coordination library (for create, where the apply makes it); null while
+  // unregistered, and for a retained coordination this device registers nowhere.
+  readonly path: string | null;
 }
 
 /**
@@ -470,6 +491,8 @@ export interface SetupApplied {
   readonly pendingSections: readonly { readonly file: string; readonly id: string }[];
   // The plan's warnings, found again as the apply wired the project.
   readonly warnings: readonly SetupWarning[];
+  // fresh, restore and uninstall: the coordination binding as the apply left it (SetupCoordination).
+  readonly coordination?: SetupCoordination | null;
   // restore: the project-level settings that came back with the library, and the device-level ones
   // to set again here.
   readonly columns?: SetupColumns;
@@ -493,7 +516,7 @@ export interface SetupModeInput {
 }
 
 /** What a mode's planner answers; planSetup puts it into the plan, with no warnings when the mode names none. */
-export type SetupModePlan = Pick<SetupPlan, "questions" | "resolved" | "engine" | "library" | "writes" | "backups" | "backupDir" | "pendingSections" | "blockers" | "verification" | "engineSwitch" | "migration">
+export type SetupModePlan = Pick<SetupPlan, "questions" | "resolved" | "engine" | "library" | "writes" | "backups" | "backupDir" | "pendingSections" | "blockers" | "verification" | "engineSwitch" | "migration" | "coordination">
   & { readonly warnings?: readonly SetupWarning[] };
 
 interface SetupModeEntry {

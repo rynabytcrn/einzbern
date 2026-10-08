@@ -259,6 +259,9 @@ test("480-AC1: the default answers install the library, the registry entry, both
   assert.deepEqual(rows(planned.writes), expected);
   assert.deepEqual(planned.backups, []);
   assert.equal(planned.backupDir, null);
+  // TCRN-CROSS-INIT-053 R46 (I08): the plan names the coordination chain it creates at this device's
+  // default location, and the receipt the one it registered there.
+  assert.deepEqual(planned.coordination, { libraryId: null, status: "create", path: join(f.deviceHome, "coordination-library") });
 
   const applied = await applySetup(planned);
   assert.equal(applied.reasonCode, "SETUP_APPLIED");
@@ -277,6 +280,7 @@ test("480-AC1: the default answers install the library, the registry entry, both
   const coordinationId = chainIdentity(await materializeWorkspace(join(f.project, ".ether"))).coordinationLibraryId;
   assert.deepEqual(registry.entries.map((entry) => [entry.projectPath, entry.libraryPath, entry.libraryId, entry.cloudHosted, entry.chainRole]),
     [[coordination, coordination, coordinationId, false, "coordination"], [f.project, join(f.project, ".ether"), applied.library.libraryId, false, "project"]]);
+  assert.deepEqual(applied.coordination, { libraryId: coordinationId, status: "registered", path: coordination });
   const state = await materializeWorkspace(join(f.project, ".ether"));
   assert.equal(state.settings.find((setting) => setting.key === "artifact.language")?.value, "en");
   for (const root of SKILL_COPY_ROOTS) assert.ok((await lstat(join(skillCopyPath(f.home, root), "SKILL.md"))).isFile(), root.host);
@@ -320,6 +324,9 @@ test("480-AC2: a second run with the same answers plans no write and writes noth
   assert.deepEqual(again.blockers, []);
   assert.equal(again.library.action, "reuse");
   assert.deepEqual(again.writes, [], "a second plan writes nothing");
+  // R46 I08: the second plan finds the coordination chain the first registered.
+  const registeredCoordination = { libraryId: chainIdentity(await materializeWorkspace(join(f.project, ".ether"))).coordinationLibraryId, status: "registered", path: join(f.deviceHome, "coordination-library") };
+  assert.deepEqual(again.coordination, registeredCoordination);
   assert.deepEqual(again.questions.map((question) => [question.id, question.default]), [
     ["artifacts", join(f.project, ".ether")],
     ["cloud", false],
@@ -328,6 +335,7 @@ test("480-AC2: a second run with the same answers plans no write and writes noth
   ]);
   const second = await applySetup(again);
   assert.deepEqual(second.written, []);
+  assert.deepEqual(second.coordination, registeredCoordination);
   assert.equal(second.library.created, false);
   assert.equal(second.library.libraryId, first.library.libraryId);
   assert.deepEqual(await Promise.all(files.map((path) => readFile(path, "utf8"))), before, "every file keeps its bytes");

@@ -164,6 +164,8 @@ test("480-AC1, AC2 through the CLI: setup plans without --yes and writes nothing
   const coordination = join(f.deviceHome, "coordination-library");
   assert.deepEqual(planned.writes.filter((entry) => entry.path === coordination).map((entry) => [entry.step, entry.action]), [["library", "create"]]);
   assert.equal(planned.writes.filter((entry) => entry.path !== coordination).length, 14);
+  // TCRN-CROSS-INIT-053 R46 (I08): the plan names that coordination chain, and the receipt its registration.
+  assert.deepEqual(planned.coordination, { libraryId: null, status: "create", path: coordination });
   assert.deepEqual(planned.warnings, []);
   assert.deepEqual(await snapshot(roots), before, "without --yes true nothing is written");
 
@@ -172,6 +174,8 @@ test("480-AC1, AC2 through the CLI: setup plans without --yes and writes nothing
   assert.deepEqual(rows(applied.written), rows(planned.writes), "the summary lists what the plan said");
   assert.deepEqual(applied.warnings, []);
   assert.deepEqual(applied.library.path, f.library);
+  const coordinationId = JSON.parse(await readFile(join(f.deviceHome, "registry.json"), "utf8")).entries.find((entry) => entry.projectPath === coordination).libraryId;
+  assert.deepEqual(applied.coordination, { libraryId: coordinationId, status: "registered", path: coordination });
   // The self-check: doctor's eight checks, and the hook run once as a host runs it.
   assertChecksGreen(applied.selfCheck.checks);
   assert.equal(applied.selfCheck.prompt, "zebrafish");
@@ -258,8 +262,14 @@ test("480-AC4, AC5 through the CLI: doctor answers eight green checks; uninstall
   const sections = await Promise.all(["AGENTS.md", "CLAUDE.md"].map((file) => readFile(join(f.project, file))));
   const planned = await setup(f, "uninstall");
   assert.deepEqual(planned.questions.map((question) => [question.flag, question.default]), [["--managed-sections", "keep"]]);
+  // TCRN-CROSS-INIT-053 R46 (I08): the only project naming the coordination chain goes, and setup's
+  // registration of it goes with it; the plan says so before the apply does it.
+  const coordination = join(f.deviceHome, "coordination-library");
+  const released = { libraryId: JSON.parse(await readFile(join(f.deviceHome, "registry.json"), "utf8")).entries.find((entry) => entry.projectPath === coordination).libraryId, status: "released", path: coordination };
+  assert.deepEqual(planned.coordination, released);
   const removed = await setup(f, "uninstall", "--managed-sections", "keep", "--yes", "true");
   assert.equal(removed.reasonCode, "SETUP_APPLIED");
+  assert.deepEqual(removed.coordination, released);
   assert.deepEqual(await einzbernHooks(join(f.home, ".claude", "settings.json")), []);
   assert.deepEqual(await einzbernHooks(join(f.home, ".codex", "hooks.json")), []);
   for (const root of SKILL_COPY_ROOTS) assert.equal(await lstat(skillCopyPath(f.home, root)).catch(() => null), null, root.host);

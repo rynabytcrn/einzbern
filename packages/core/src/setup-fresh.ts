@@ -88,6 +88,7 @@ import type {
   SetupBackup,
   SetupBlocker,
   SetupColumns,
+  SetupCoordination,
   SetupEngineSwitched,
   SetupModeInput,
   SetupModePlan,
@@ -879,6 +880,8 @@ export async function setupApplied(plan: SetupPlan, recorder: SetupRecorder, res
   readonly pending: readonly { readonly file: string; readonly id: string }[];
   readonly columns?: SetupColumns;
   readonly engineSwitch?: SetupEngineSwitched;
+  // fresh, restore and uninstall (TCRN-CROSS-INIT-053 R46 I08).
+  readonly coordination?: SetupCoordination | null;
 }): Promise<SetupApplied> {
   const { at, projectRoot, home, deviceHome } = plan;
   const selfCheck = await runDoctor({ projectRoot, home, deviceHome });
@@ -901,6 +904,7 @@ export async function setupApplied(plan: SetupPlan, recorder: SetupRecorder, res
     warnings: recorder.warnings,
     ...(result.columns === undefined ? {} : { columns: result.columns }),
     ...(result.engineSwitch === undefined ? {} : { engineSwitch: result.engineSwitch }),
+    ...(result.coordination === undefined ? {} : { coordination: result.coordination }),
     selfCheck,
   };
 }
@@ -950,10 +954,13 @@ export async function planFreshSetup(input: SetupModeInput): Promise<SetupModePl
   // The coordination binding is part of this plan, including repeat/restore conflicts: the choice
   // the apply makes (project-chain.ts), and the writes it takes. A coordination library at the
   // default location that this device does not register yet is registered (with its Cross
-  // Project project when it has none), never created again.
+  // Project project when it has none), never created again. The plan names the choice
+  // (TCRN-CROSS-INIT-053 R46 I08); a conflict is a blocker and names none.
+  let binding: SetupCoordination | null = null;
   try {
     const identity = library.action === "reuse" ? chainIdentity(await materializeWorkspace(library.path)) : null;
     const coordination = await projectCoordinationChoice(identity, deviceHome);
+    binding = { libraryId: coordination.libraryId, status: coordination.status, path: coordination.path };
     if (coordination.status === "create") recorder.write("library", coordination.path!, "create");
     if (coordination.status === "located") {
       const registryFile = registryPath(deviceHome);
@@ -986,6 +993,7 @@ export async function planFreshSetup(input: SetupModeInput): Promise<SetupModePl
     backups: recorder.backups,
     backupDir: recorder.backups.length > 0 ? recorder.backupRoot : null,
     pendingSections: pending,
+    coordination: binding,
     blockers: recorder.blockers,
     warnings: recorder.warnings,
   };
@@ -1064,5 +1072,10 @@ export async function applyFreshSetup(plan: SetupPlan): Promise<SetupApplied> {
     deviceId: device.deviceId,
     library: { path: libraryPath, libraryId, created: planned.action === "create" },
     pending,
+    // TCRN-CROSS-INIT-053 R46 (I08): created or found in place, it is registered now; one this device
+    // does not locate stays unregistered, and nothing was made in its place.
+    coordination: coordination.status === "unregistered"
+      ? { libraryId: coordination.libraryId, status: "unregistered", path: null }
+      : { libraryId: coordination.libraryId, status: "registered", path: await realpath(coordination.path!) },
   });
 }

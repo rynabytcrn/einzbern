@@ -53,7 +53,7 @@ import { managedSectionRecordsFor, planManagedWrite } from "./managed-sections.j
 import { DIRECTORY, LEGACY_CONTROL_DIRECTORY } from "./names.js";
 import { gitRemoteOf, normalizeGitRemote, readRegistry } from "./registry.js";
 import { registryPath } from "./device-home.js";
-import type { SetupApplied, SetupColumns, SetupModeInput, SetupModePlan, SetupPlan, SetupQuestion, ResolvedSetupAnswers } from "./setup.js";
+import type { SetupApplied, SetupColumns, SetupCoordination, SetupModeInput, SetupModePlan, SetupPlan, SetupQuestion, ResolvedSetupAnswers } from "./setup.js";
 import { SETUP_ACTOR, setupFail } from "./setup.js";
 import {
   SetupRecorder,
@@ -667,6 +667,8 @@ export async function planRestoreSetup(input: SetupModeInput): Promise<SetupMode
       backups: [],
       backupDir: null,
       pendingSections: [],
+      // No library yet, so no coordination it names (TCRN-CROSS-INIT-053 R46 I08).
+      coordination: null,
       blockers: recorder.blockers,
     };
   }
@@ -713,6 +715,8 @@ export async function planRestoreSetup(input: SetupModeInput): Promise<SetupMode
     backups: recorder.backups,
     backupDir: recorder.backups.length > 0 ? recorder.backupRoot : null,
     pendingSections: pending,
+    // TCRN-CROSS-INIT-053 R46 (I08): the coordination the restored library names, as this device has it.
+    coordination: coordination === null ? null : { libraryId: coordination.libraryId, status: coordination.status, path: coordination.path },
     blockers: recorder.blockers,
     warnings: recorder.warnings,
     verification: verification.checks,
@@ -774,10 +778,14 @@ export async function applyRestoreSetup(plan: SetupPlan): Promise<SetupApplied> 
     engineDirectory: directory,
     actorId: SETUP_ACTOR,
   });
+  // TCRN-CROSS-INIT-053 R46 (I08): a coordination found at the default location is registered now.
+  const bound: SetupCoordination | null = coordination === null ? null
+    : { libraryId: coordination.libraryId, status: coordination.status === "located" ? "registered" : coordination.status, path: coordination.path };
   return setupApplied(plan, recorder, {
     deviceId: device.deviceId,
     library: { path: library.root, libraryId: library.libraryId, created: false },
     pending,
     columns: await restoreColumns(projectRoot, library.root, deviceHome, resolved.cloud),
+    coordination: bound,
   });
 }

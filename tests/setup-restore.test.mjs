@@ -342,6 +342,7 @@ test("480-R3: once all eight pass, the project is registered and wired from the 
   assert.deepEqual(unanswered.questions.map((question) => [question.id, question.flag, question.default]), [["restore", "--restore", library], ["cloud", "--cloud", null]]);
   assert.deepEqual(unanswered.blockers.map((blocker) => blocker.reasonCode), ["SETUP_ANSWER_REQUIRED"]);
   assert.deepEqual(unanswered.writes, []);
+  assert.equal(unanswered.coordination, null, "R46 I08: without a library there is no coordination to name");
   await assert.rejects(applySetup(unanswered), (error) => error.reasonCode === "SETUP_BLOCKED" && error.details.reasonCode === "SETUP_ANSWER_REQUIRED");
   await assert.rejects(planSetup({ mode: "restore", projectRoot: f.project, at: at(), home: f.b.home, deviceHome: f.b.deviceHome, answers: { language: "en" } }), { reasonCode: "SETUP_OPTION_NOT_APPLICABLE" });
 
@@ -456,8 +457,15 @@ test("480-R3 (U04): a second device recognizes the restored coordination identit
   });
   assert.equal(offline.status, 0, offline.stderr);
   assert.equal(JSON.parse(offline.stdout).reasonCode, "SETUP_PLAN_READY");
-  const applied = await applySetup(await restorePlan(f, f.b, f.library));
+  // TCRN-CROSS-INIT-053 R46 (I08): the plan and the receipt name the coordination chain the library
+  // names, as this device has it: here unregistered, with nothing made in its place.
+  const unregistered = { libraryId: coordinationId, status: "unregistered", path: null };
+  assert.deepEqual(JSON.parse(offline.stdout).coordination, unregistered);
+  const restoring = await restorePlan(f, f.b, f.library);
+  assert.deepEqual(restoring.coordination, unregistered);
+  const applied = await applySetup(restoring);
   assert.equal(applied.reasonCode, "SETUP_APPLIED");
+  assert.deepEqual(applied.coordination, unregistered);
   assert.equal(await lstat(coordinationOnB).catch(() => null), null, "no second coordination library is created");
   assert.equal(chainIdentity(await materializeWorkspace(f.library)).coordinationLibraryId, coordinationId, "the restored library still names its coordination");
   assert.deepEqual((await readRegistry(f.b.deviceHome)).entries.map((entry) => entry.libraryId), [first.library.libraryId], "the coordination stays unregistered on device b");
@@ -468,7 +476,10 @@ test("480-R3 (U04): a second device recognizes the restored coordination identit
   const planned = await planSetup({ mode: "fresh", projectRoot: other, at: at(), home: f.b.home, deviceHome: f.b.deviceHome });
   assert.deepEqual(planned.blockers, []);
   assert.ok(!planned.writes.some((entry) => entry.path === coordinationOnB), "the plan creates no coordination library");
-  assert.equal((await applySetup(planned)).reasonCode, "SETUP_APPLIED");
+  assert.deepEqual(planned.coordination, unregistered, "R46 I08: a fresh plan names the identity it joins, unregistered here");
+  const joined = await applySetup(planned);
+  assert.equal(joined.reasonCode, "SETUP_APPLIED");
+  assert.deepEqual(joined.coordination, unregistered);
   assert.equal(chainIdentity(await materializeWorkspace(join(other, ".ether"))).coordinationLibraryId, coordinationId, "it joins the identity the restored library names");
   assert.equal(await lstat(coordinationOnB).catch(() => null), null);
 
@@ -477,13 +488,17 @@ test("480-R3 (U04): a second device recognizes the restored coordination identit
   const digestOnB = (await computeInstallTreeDigest(coordinationOnB)).sha256;
   const located = await restorePlan(f, f.b, f.library);
   assert.deepEqual(rows(located.writes), [["registry", join(f.b.deviceHome, "registry.json"), "update"]]);
+  assert.deepEqual(located.coordination, { libraryId: coordinationId, status: "located", path: coordinationOnB }, "R46 I08: found at the default location");
   const registered = await applySetup(located);
   assert.deepEqual(rows(registered.written), rows(located.writes), "the apply wrote what the plan listed");
+  assert.deepEqual(registered.coordination, { libraryId: coordinationId, status: "registered", path: coordinationOnB }, "R46 I08: the apply registered it");
   const entry = (await readRegistry(f.b.deviceHome)).entries.find((candidate) => candidate.libraryId === coordinationId);
   assert.deepEqual([entry.projectPath, entry.libraryPath, entry.chainRole], [coordinationOnB, coordinationOnB, "coordination"]);
   assert.equal((await computeInstallTreeDigest(coordinationOnB)).sha256, digestOnB, "registering it writes nothing into the coordination library");
   assert.equal((await computeInstallTreeDigest(coordinationOnA)).sha256, digestOnA, "device a's coordination library is untouched");
-  assert.deepEqual((await restorePlan(f, f.b, f.library)).writes, [], "a further restore finds everything in place");
+  const further = await restorePlan(f, f.b, f.library);
+  assert.deepEqual(further.writes, [], "a further restore finds everything in place");
+  assert.deepEqual(further.coordination, { libraryId: coordinationId, status: "registered", path: coordinationOnB });
 });
 
 // Approved contract item 3 (INIT-053 U04): competing coordination identities are a conflict that

@@ -2934,6 +2934,91 @@ if (!MUTATION) test("R46 I10: an answer for the library the page has left is dro
   } finally { await closePage(page, fixture); }
 });
 
+// TCRN-CROSS-INIT-053 R46 (I11; U20 D2): one chain's project registered for two repositories is two
+// registrations with one identity. The label rule tells them apart by their repositories' directory names,
+// never by a path, and keeps the id tails for alike names that are different projects.
+if (!MUTATION) test("R46 I11: the label rule tells one chain's two repositories apart by their directory names, never by a path", async () => {
+  const source = await readFile(join(portalRoot, "index.html"), "utf8");
+  const block = source.match(/\n {2}\/\/ Target labels \(TCRN-CROSS-INIT-053 R45 U14, F08\) begin\.\n([\s\S]*?)\n {2}\/\/ Target labels end\./u)?.[1];
+  const locales = await localeTable();
+  const { distinctLabels } = new Function("t", `${block}\nreturn { distinctLabels };`)((key) => locales.en[key]);
+  const library = `library:${"a".repeat(24)}`;
+  const project = `project:${"b".repeat(24)}`;
+  const registrations = [
+    { name: "Alpha", libraryId: library, projectId: project, projectPath: "/srv/work/alpha-einzbern" },
+    { name: "Alpha", libraryId: library, projectId: project, projectPath: "/srv/work/alpha-mana" },
+  ];
+  assert.deepEqual(distinctLabels(registrations), ["Alpha · alpha-einzbern", "Alpha · alpha-mana"]);
+  const sameLeaf = [
+    { name: "Alpha", libraryId: library, projectId: project, projectPath: "C:\\work\\one\\app" },
+    { name: "Alpha", libraryId: library, projectId: project, projectPath: "C:\\work\\two\\app" },
+  ];
+  assert.deepEqual(distinctLabels(sameLeaf), ["Alpha · one · app", "Alpha · two · app"], "directories that end alike are told apart by the one before");
+  const other = { name: "Alpha", libraryId: `library:${"c".repeat(24)}`, projectId: `project:${"d".repeat(24)}`, projectPath: "/srv/work/alpha-other" };
+  const mixed = distinctLabels([...registrations, other]);
+  assert.deepEqual(mixed, ["Alpha · aaaaaa/bbbbbb · alpha-einzbern", "Alpha · aaaaaa/bbbbbb · alpha-mana", "Alpha · cccccc/dddddd"], "another project of the same name keeps its id tail");
+  for (const label of [...distinctLabels(registrations), ...distinctLabels(sameLeaf)]) assert.doesNotMatch(label, /[\\/]/u, "no path separator in a repository's label");
+  for (const label of [...distinctLabels(registrations), ...distinctLabels(sameLeaf), ...mixed]) {
+    assert.doesNotMatch(label, /srv|work|C:/u, "no path above the directory that tells them apart");
+    assert.doesNotMatch(label, COMPLETE_ID);
+  }
+  assert.deepEqual(distinctLabels([registrations[0]]), ["Alpha"], "a single registration is its name");
+});
+
+// TCRN-CROSS-INIT-053 R46 (I11; U20 D2, I06): in the page, the switcher names one chain's two repositories
+// apart, and the Rules page names the repository whose AGENTS.md it edits; the full path is in the Details.
+if (!MUTATION) test("R46 I11: the switcher tells one chain's two repositories apart, and the Rules page names the repository it edits", async () => {
+  const fixture = await scratch("tcrn-r46-i11-");
+  // The registry orders registrations by project path; "repo-mana" follows the fixture's own "project", so
+  // the portal opens on the fixture's first registration.
+  const mana = join(fixture.base, "repo-mana");
+  await mkdir(mana);
+  await cli(["library-register", "--project", mana, "--library", fixture.workspace, "--project-id", fixture.projectId, "--at", nextAt()], fixture.deviceEnv);
+  await writeFile(join(mana, "AGENTS.md"), "# mana rules\n", "utf8");
+  const locales = await localeTable();
+  const page = await loadExecutedDom(fixture);
+  try {
+    const { document, window } = page;
+    const options = [...document.querySelectorAll("#library-select option")];
+    const byPath = Object.fromEntries(options.map((option) => [option.getAttribute("value"), option.textContent]));
+    assert.equal(byPath[fixture.proseRoot], "TCRN-INC148-DOM · project");
+    assert.equal(byPath[mana], "TCRN-INC148-DOM · repo-mana");
+    assert.equal(byPath[fixture.second.project], "TCRN-INC148-DOM-SECOND");
+    for (const option of options) {
+      assert.doesNotMatch(option.textContent, /[\\/]/u, "no path in the switcher");
+      assert.doesNotMatch(option.textContent, COMPLETE_ID);
+    }
+    assert.equal(document.querySelector("#rail-workspace-label").textContent, "TCRN-INC148-DOM · project");
+    document.querySelector('[data-page-target="prose"]')?.click();
+    assert.equal(document.querySelector("#agents-file").textContent, "AGENTS.md · project");
+    const select = document.querySelector("#library-select");
+    select.value = mana;
+    select.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await waitFor(() => document.querySelector("#agents-file").textContent === "AGENTS.md · repo-mana", "the second repository's file");
+    assert.equal(document.querySelector("#agents-md").value, "# mana rules\n", "the editor holds the second repository's file");
+    const details = document.querySelector("#agents-path-details");
+    assert.equal(details.tagName, "DETAILS");
+    assert.equal(details.hidden, false);
+    assert.ok(details.classList.contains("tcrn-disclosure-panel"));
+    assert.equal(details.querySelector(":scope > summary").className, "tcrn-disclosure-panel__title");
+    assert.equal(details.querySelector(":scope > summary").textContent, locales.en["prose.fullPath"]);
+    assert.equal(document.querySelector("#agents-path").textContent, join(mana, "AGENTS.md"), "the full path is in the Details");
+    const copy = details.querySelector("[data-copy-identity]");
+    assert.equal(copy.getAttribute("data-copy-identity"), join(mana, "AGENTS.md"));
+    assert.equal(copy.getAttribute("aria-label"), locales.en["prose.copyPath"].replace("{file}", "AGENTS.md"));
+    details.setAttribute("open", "");
+    let focused = 0;
+    details.querySelector("summary").focus = () => { focused += 1; };
+    keydown(page, copy, "Escape");
+    assert.equal(details.hasAttribute("open"), false, "Escape closes the Details");
+    assert.equal(focused, 1, "and returns focus to the summary");
+    document.querySelector('[data-locale-option="ja"]')?.click();
+    assert.equal(details.querySelector(":scope > summary").textContent, locales.ja["prose.fullPath"]);
+    assert.equal(copy.getAttribute("aria-label"), locales.ja["prose.copyPath"].replace("{file}", "AGENTS.md"));
+    assert.equal(document.querySelector("#agents-file").textContent, "AGENTS.md · repo-mana");
+  } finally { await closePage(page, fixture); }
+});
+
 if (!MUTATION) test("R45 U14: execution contexts read as one row per target in the page's language, not as JSON", async () => {
   const fixture = await projectChainFixture("tcrn-r45-u14-context-");
   const [, second] = fixture.targets;

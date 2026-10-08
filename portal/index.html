@@ -4230,7 +4230,7 @@ button:disabled { cursor: not-allowed; }
             <div id="rules-pending" class="tcrn-surface" data-ui="rules-pending" aria-label="Pending rule changes"><strong data-i18n="rule.pendingTitle">Pending</strong><label class="tcrn-sr-only" for="pending-section" data-i18n="rule.pendingSelect">Pending section</label><select class="tcrn-select" id="pending-section" data-ui="pending-section"></select><button class="tcrn-button tcrn-button--secondary" type="button" data-pending-action="keep" data-i18n="rule.keep">Keep my text</button><button class="tcrn-button tcrn-button--secondary" type="button" data-pending-action="overwrite" data-i18n="rule.overwrite">Overwrite</button><button class="tcrn-button tcrn-button--quiet" type="button" data-pending-action="unmanage" data-i18n="rule.unmanage">Unmanage</button></div>
           </div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content">
-            <div data-ui="rules-layout"><section id="prose-directory" data-ui="rule-list" aria-label="Built-in rules"></section><div class="tcrn-editor-shell"><div class="tcrn-editor__bar"><span class="tcrn-text" id="agents-path"></span><span class="tcrn-text tcrn-editor__status" id="agents-status" data-i18n="prose.fileNote">AGENTS.md</span></div><div class="tcrn-line-numbered-editor" id="prose-editor" data-line-numbered-editor="true"><ol class="tcrn-line-numbered-editor__gutter" id="prose-gutter" data-ui="prose-gutter" role="note" aria-label="Line numbers"></ol><div class="tcrn-line-numbered-editor__content"><textarea class="tcrn-input tcrn-textarea tcrn-line-numbered-editor__control" id="agents-md" spellcheck="false" aria-label="AGENTS.md"></textarea><ul class="tcrn-line-numbered-editor__findings" id="reconcile-findings" aria-label="Editor findings"></ul></div></div></div></div>
+            <div data-ui="rules-layout"><section id="prose-directory" data-ui="rule-list" aria-label="Built-in rules"></section><div class="tcrn-editor-shell"><div class="tcrn-editor__bar"><span class="tcrn-text" id="agents-file">AGENTS.md</span><details class="tcrn-disclosure-panel" id="agents-path-details" data-identity-details="agents-path" hidden><summary class="tcrn-disclosure-panel__title" data-i18n="prose.fullPath">Full path</summary><code id="agents-path"></code> <button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--sm" data-copy-identity="" data-clipboard-copy-state="idle" aria-label="Copy the full path of AGENTS.md"><span data-copy-label>Copy</span><span class="tcrn-sr-only" role="status" aria-live="polite" data-copy-status></span></button></details><span class="tcrn-text tcrn-editor__status" id="agents-status" data-i18n="prose.fileNote">AGENTS.md</span></div><div class="tcrn-line-numbered-editor" id="prose-editor" data-line-numbered-editor="true"><ol class="tcrn-line-numbered-editor__gutter" id="prose-gutter" data-ui="prose-gutter" role="note" aria-label="Line numbers"></ol><div class="tcrn-line-numbered-editor__content"><textarea class="tcrn-input tcrn-textarea tcrn-line-numbered-editor__control" id="agents-md" spellcheck="false" aria-label="AGENTS.md"></textarea><ul class="tcrn-line-numbered-editor__findings" id="reconcile-findings" aria-label="Editor findings"></ul></div></div></div></div>
           </div>
         </div>
       </section>
@@ -4850,16 +4850,34 @@ const BOOT = __PORTAL_BOOT__;
     : typeof target?.name === "string" && target.name.trim() !== "" ? target.name
       : target?.chain?.role === "coordination" ? t("projects.coordination") : t("projects.unnamed");
   const identityTail = (target, length) => [target.libraryId, target.projectId].filter((id) => typeof id === "string" && id !== "").map((id) => id.slice(-length)).join("/");
+  // TCRN-CROSS-INIT-053 R46 (I11; U20 D2): one chain's project registered for two repositories is two
+  // registrations with one identity; the directory names of their registered project paths tell them
+  // apart (the last segment, more only when the last ones match), joined without a path separator.
+  const pathSegments = (target) => typeof target?.projectPath === "string" ? target.projectPath.split(/[\\/]+/u).filter((segment) => segment !== "") : [];
+  const repositoryTail = (target, count) => pathSegments(target).slice(-count).join(" · ");
   const distinctLabels = (targets) => {
     const bases = targets.map(targetBaseName);
     return targets.map((target, index) => {
       const peers = targets.filter((_, other) => bases[other] === bases[index]);
       if (peers.length < 2) return bases[index];
-      const widest = Math.max(...peers.flatMap((peer) => [String(peer.libraryId ?? "").length, String(peer.projectId ?? "").length]));
-      const distinctAt = (length) => new Set(peers.map((peer) => identityTail(peer, length))).size;
-      let length = Math.min(6, widest);
-      while (length < widest && distinctAt(length) < distinctAt(widest)) length += 1;
-      return `${bases[index]} · ${identityTail(target, length)}`;
+      const parts = [bases[index]];
+      const identity = (peer) => identityTail(peer, Number.MAX_SAFE_INTEGER);
+      if (new Set(peers.map(identity)).size > 1) {
+        const widest = Math.max(...peers.flatMap((peer) => [String(peer.libraryId ?? "").length, String(peer.projectId ?? "").length]));
+        const distinctAt = (length) => new Set(peers.map((peer) => identityTail(peer, length))).size;
+        let length = Math.min(6, widest);
+        while (length < widest && distinctAt(length) < distinctAt(widest)) length += 1;
+        parts.push(identityTail(target, length));
+      }
+      const repositories = peers.filter((peer) => identity(peer) === identity(target));
+      if (repositories.length > 1) {
+        const deepest = Math.max(...repositories.map((peer) => pathSegments(peer).length));
+        let count = 1;
+        while (count < deepest && new Set(repositories.map((peer) => repositoryTail(peer, count))).size < repositories.length) count += 1;
+        const tail = repositoryTail(target, count);
+        if (tail !== "") parts.push(tail);
+      }
+      return parts.join(" · ");
     });
   };
   // Target labels end.
@@ -5912,7 +5930,27 @@ const BOOT = __PORTAL_BOOT__;
     renderGutter();
     $$('[data-prose-line]', $("#reconcile-findings")).forEach((button) => button.addEventListener("click", () => focusLine(Number(button.dataset.proseLine))));
   };
-  const loadAgents = async () => { const [documentResult, reconciliation, rules] = await Promise.all([api("/api/agents-md"), api("/api/agents-md/reconcile"), api("/api/rules")]); if (unkept(documentResult, reconciliation, rules)) return; state.agentsText = documentResult.text || ""; state.rules = rules; $("#agents-md").value = state.agentsText; setText("#agents-path", documentResult.path || "AGENTS.md"); renderProseDirectory(); renderPending(); renderGutter(); renderReconciliation(reconciliation); };
+  // TCRN-CROSS-INIT-053 R46 (I11; U20 D2): the editor names the repository whose file it holds, from the
+  // answer's own path: the file and the repository's directory are what it shows, and the full path is in
+  // the published disclosure with a copy action, as a target's identity is. A project registered for
+  // several repositories has no one file; the editor names the candidates instead.
+  const renderAgentsFile = (documentResult) => {
+    const file = typeof documentResult?.file === "string" && documentResult.file !== "" ? documentResult.file : "AGENTS.md";
+    const path = typeof documentResult?.path === "string" ? documentResult.path : "";
+    const directoryOf = (value) => String(value).split(/[\\/]+/u).filter((segment) => segment !== "");
+    const repository = directoryOf(path).at(-2) ?? "";
+    const candidates = documentResult?.outputBindingStatus === "ambiguous" && Array.isArray(documentResult.candidates) ? documentResult.candidates.map((candidate) => directoryOf(candidate).at(-1) ?? "") : [];
+    setText("#agents-file", candidates.length > 0 ? `${file} · ${t("prose.ambiguous", { repositories: candidates.join(", ") })}` : repository !== "" ? `${file} · ${repository}` : file);
+    const details = $("#agents-path-details");
+    details.hidden = path === "";
+    if (path === "") details.removeAttribute("open");
+    setText("#agents-path", path);
+    const copy = $("[data-copy-identity]", details);
+    copy.setAttribute("data-copy-identity", path);
+    copy.setAttribute("aria-label", t("prose.copyPath", { file }));
+    if (copy.dataset.clipboardCopyState === "idle") setText("#agents-path-details [data-copy-label]", t("copy.idle"));
+  };
+  const loadAgents = async () => { const [documentResult, reconciliation, rules] = await Promise.all([api("/api/agents-md"), api("/api/agents-md/reconcile"), api("/api/rules")]); if (unkept(documentResult, reconciliation, rules)) return; state.agentsText = documentResult.text || ""; state.agentsDocument = documentResult; state.rules = rules; $("#agents-md").value = state.agentsText; renderAgentsFile(documentResult); renderProseDirectory(); renderPending(); renderGutter(); renderReconciliation(reconciliation); };
   // TCRN-CROSS-STORY-508 R8 (C-R14-6): a write of a key the system variables section shows renders
   // AGENTS.md again (portal.mjs), so the Rules page reads the file back after it.
   const rendersSystemVariables = (key) => ["models.category", "models.tiers"].includes(key) || String(key).startsWith("models.escalation.") || String(key).startsWith("design.");
@@ -6343,7 +6381,7 @@ const BOOT = __PORTAL_BOOT__;
       tcrnWritePreference("locale", state.locale);
       setLocaleMenuOpen(false);
       localeTrigger.focus();
-      applyLocale(); loadLibraries(); applyRailIdentity(); renderWorkspaceLabel(); applySideNavCollapsed(state.sideNavCollapsed); renderDashboard(); renderSettings(); renderCollections(); renderVariables(); renderVocabulary(); renderGates(); renderProseDirectory(); renderPending(); renderReconciliation(state.reconciliation || { ok: true, findings: [] });
+      applyLocale(); loadLibraries(); applyRailIdentity(); renderWorkspaceLabel(); applySideNavCollapsed(state.sideNavCollapsed); renderDashboard(); renderSettings(); renderCollections(); renderVariables(); renderVocabulary(); renderGates(); renderProseDirectory(); renderPending(); renderReconciliation(state.reconciliation || { ok: true, findings: [] }); renderAgentsFile(state.agentsDocument); renderTargetNotice();
     });
   });
   document.addEventListener("pointerdown", (event) => { if (!localeMenu.contains(event.target)) setLocaleMenuOpen(false); });

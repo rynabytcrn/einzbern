@@ -46,6 +46,8 @@ Atelier 是项目配置工作台。进入页面后，先核对当前项目与知
 
 规则状态包括 `disabled`、`enabled`、`user-modified`、`removed-from-file`、`update-available` 和 `pending`。启用前先阅读规则正文；规则本身不会授权更改已批准的工作步骤。
 
+编辑器上方写明所编辑的是哪个仓库的文件（「AGENTS.md · 仓库目录名」），完整路径收在旁边的「完整路径」详情里，可以复制。同一条链的项目登记了两个仓库时，库切换器里是两项，以仓库目录名区分，选哪一项就编辑哪个仓库的 AGENTS.md。当前目标的项目登记了多个仓库、无法确定是哪一个时，编辑器列出这些仓库，先在库切换器中选定其一再编辑。
+
 每条规则有「顺序」，页头写明它的用途：决定规则段在 AGENTS.md 中的渲染顺序。有顺序的规则排在前面，从小到大；其余按目录顺序。规则卡片也按这个顺序排列。已启用的规则改好顺序后点「保存顺序」，经 `rule-enable --order` 写入，并重读 AGENTS.md；未启用的规则在启用时带上所填的顺序。处于其他状态的规则（例如 `user-modified`、`update-available`、`pending`）要先处理状态再改顺序，因为经 `rule-enable` 改顺序会连带改动它的版本或段落。
 
 ## 变量
@@ -73,7 +75,9 @@ misses. Selecting a project does not grant permission to edit its
 files. Lists, the library switcher, the rail and the top bar show each
 project's own name from its project record; only a project without a name
 reads "Unnamed project" in the page's language, and names that read alike carry
-the shortest tails of their ids that tell them apart. The Details under each list
+the shortest tails of their ids that tell them apart. One chain's project
+registered for two repositories is two entries in the library switcher, told
+apart by the repositories' directory names, never by a path. The Details under each list
 keep the full identities: the summary opens and closes from the keyboard, Escape
 closes it and returns focus, and each identity has a copy action. Saving reads
 the work list again through the work view's own read, so a library left in the

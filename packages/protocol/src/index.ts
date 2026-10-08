@@ -86,7 +86,17 @@ export interface ExtensionRegistration {
   readonly requiredByDefault: boolean;
 }
 
+export interface ProjectReference {
+  readonly libraryId: string;
+  readonly projectId: string;
+}
+
+export type InvolvedProjects =
+  | { readonly state: "undecided" | "coordination-only"; readonly targets: readonly [] }
+  | { readonly state: "selected"; readonly targets: readonly ProjectReference[] };
+
 export interface WorkRecord {
+  readonly involvedProjects?: InvolvedProjects;
   readonly schemaVersion: "tcrn.work.v1";
   readonly id: string;
   readonly externalKey: string;
@@ -464,7 +474,18 @@ function assertWorkRecordShape(record: WorkRecord): void {
   // the 16-field record that also carries a summary all replay, and a record is
   // one of the three exactly -- a partial upgrade is still malformed.
   const summarisedFields = [...currentFields, "summary"];
-  const actualFields = Object.keys(record).sort(compareCanonicalText);
+  if (Object.hasOwn(record, "involvedProjects")) {
+    const relation = record.involvedProjects;
+    if (!relation || typeof relation !== "object" || Array.isArray(relation) || Object.keys(relation).sort().join(",") !== "state,targets" || !Array.isArray(relation.targets) || !["undecided", "coordination-only", "selected"].includes(relation.state) || (relation.state === "selected" ? relation.targets.length === 0 : relation.targets.length !== 0)) fail("RECORD_MALFORMED", String(record.id));
+    let previous = "";
+    for (const target of relation.targets) {
+      if (!target || typeof target !== "object" || Object.keys(target).sort().join(",") !== "libraryId,projectId" || !/^(library|workspace):[a-f0-9]{24}$/u.test(target.libraryId) || !/^project:[a-f0-9]{24}$/u.test(target.projectId)) fail("RECORD_MALFORMED", String(record.id));
+      const key = JSON.stringify([target.libraryId, target.projectId]);
+      if (previous !== "" && compareCanonicalText(previous, key) >= 0) fail("RECORD_MALFORMED", String(record.id));
+      previous = key;
+    }
+  }
+  const actualFields = Object.keys(record).filter(field => field !== "involvedProjects").sort(compareCanonicalText);
   const legacy = JSON.stringify(actualFields) === JSON.stringify([...legacyFields].sort(compareCanonicalText));
   const current = JSON.stringify(actualFields) === JSON.stringify([...currentFields].sort(compareCanonicalText));
   const summarised = JSON.stringify(actualFields) === JSON.stringify([...summarisedFields].sort(compareCanonicalText));

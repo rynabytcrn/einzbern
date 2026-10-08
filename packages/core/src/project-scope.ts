@@ -1,3 +1,4 @@
+import { chainIdentity } from "./project-chain.js";
 // SPDX-License-Identifier: Apache-2.0
 
 import { SETTINGS_CATALOG, assertSettingWriteConsistent, readSettingsCatalog, settingsCatalogEntry } from "./settings.js";
@@ -11,7 +12,8 @@ export class ProjectScopeError extends Error {
 }
 
 export interface ConfigurationSource {
-  readonly kind: "project" | "library" | "default";
+  readonly libraryId?: string;
+  readonly kind: "project" | "library" | "default" | "common";
   readonly projectId: string | null;
   readonly projectName: string | null;
   readonly inherited: boolean;
@@ -40,6 +42,7 @@ export function workspaceSettingIdentity(key: string, projectId?: string): strin
 
 export function assertSettingScope(state: WorkspaceState, key: string, projectId?: string): void {
   projectLineage(state, projectId);
+  if (chainIdentity(state)?.role === "coordination" && settingsCatalogEntry(key).scope !== "library") throw new ProjectScopeError("coordination chains expose runtime settings only", { key });
   if (projectId !== undefined && settingsCatalogEntry(key).scope === "library") {
     throw new ProjectScopeError("this setting belongs to the whole library and cannot have a project override", { key, projectId });
   }
@@ -70,14 +73,15 @@ export function designConfiguration(state: Pick<ScopedWorkspaceState, "settings"
   const authoritySource = bindings[0]!.source;
   // A new local authority cannot silently borrow another authority’s inherited publication bindings.
   // Explicit local companion declarations are valid; the application’s consumed version may be local.
-  const conflicting = bindings.some((entry) => entry.key !== "design.consumedVersion" && entry.value !== null && entry.source.inherited && entry.source.projectId !== authoritySource.projectId);
-  return { status: missing.length > 0 ? "unconfigured" : conflicting ? "conflicting" : "declared", publicationVerification: "unverified", bindings, missing };
+  const conflicting = bindings.some((entry) => entry.key !== "design.consumedVersion" && entry.value !== null && entry.source.inherited && (entry.source.projectId !== authoritySource.projectId || entry.source.libraryId !== authoritySource.libraryId || entry.source.kind !== authoritySource.kind));
+  return { status: conflicting ? "conflicting" : missing.length > 0 ? "unconfigured" : "declared", publicationVerification: "unverified", bindings, missing };
 }
 
 /** Read view; never pass it to appendEvents as the replacement for the full native state. */
 export function scopedWorkspaceState(state: WorkspaceState, projectId?: string): ScopedWorkspaceState {
   const lineage = projectLineage(state, projectId);
-  const scopes: readonly (string | undefined)[] = [...lineage.map((entry) => entry.id), undefined];
+  const coordination = chainIdentity(state)?.role === "coordination";
+  const scopes: readonly (string | undefined)[] = coordination ? [] : [...lineage.map((entry) => entry.id), undefined];
   const source = (scope: string | undefined): ConfigurationSource => ({
     kind: scope === undefined ? "library" : "project", projectId: scope ?? null,
     projectName: scope === undefined ? null : lineage.find((entry) => entry.id === scope)?.name ?? null,
@@ -89,6 +93,7 @@ export function scopedWorkspaceState(state: WorkspaceState, projectId?: string):
   const settings: WorkspaceSettingRecord[] = [];
   const fallbackRecords: WorkspaceSettingRecord[] = [];
   for (const entry of SETTINGS_CATALOG) {
+    if (coordination && entry.scope !== "library") continue;
     const eligible = entry.scope === "library" ? [undefined] : scopes;
     const record = eligible.map((scope) => state.settings.find((value) => value.key === entry.key && value.projectId === scope)).find((value) => value !== undefined);
     const fallback = eligible.filter((scope) => scope !== (entry.scope === "library" ? undefined : projectId)).map((scope) => state.settings.find((value) => value.key === entry.key && value.projectId === scope)).find((value) => value !== undefined);
@@ -99,11 +104,11 @@ export function scopedWorkspaceState(state: WorkspaceState, projectId?: string):
     else settingSources[entry.key] = { kind: "default", projectId: null, projectName: null, inherited: false };
   }
   for (const entry of readSettingsCatalog(state.metadata.workspaceId, fallbackRecords).settings) settingFallbackValues[entry.key] = entry.currentValue;
-  const configRecords: ConfigRecord[] = [];
+  const configRecords: ConfigRecord[] = state.configRecords.filter(record => record.collection === "chain" && record.key === "identity" && record.projectId === undefined);
   const configSources: Record<string, ConfigurationSource> = {};
   const seen = new Set<string>();
   for (const scope of scopes) for (const record of state.configRecords) {
-    if (record.projectId !== scope) continue;
+    if (record.projectId !== scope || (record.collection === "chain" && record.key === "identity")) continue;
     // Gate roots/coverage and file digests are specific to their actual target, not inheritable values.
     if ((record.collection === "managed-section" || record.collection === "gate") && scope !== projectId) continue;
     const identity = JSON.stringify([record.collection, record.key]);

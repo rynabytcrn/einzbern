@@ -153,3 +153,10 @@ AGENTS.md 会随项目提交，所以变量里永远不放凭据。值或说明�
 拒绝点名被拒的对象：details 里设置是 `key`，变量是 `name`，原则是 `rule`（原则 id），门是 `gate`（门名），并带 `remedy`；命令行入口在 stderr 上给出 `remedy` 和点名该对象的错误文本。
 
 在 Atelier 里改，或以 `EINZBERN_SURFACE=atelier` 运行同一条命令，写入照常进行；Atelier 调用 CLI 时就带着它。这是约定，不是身份保证：CLI 无法分辨是谁在运行它，自己带上这个变量的调用同样放行，所以这道软屏障挡住的是模型顺手的改动，不是蓄意绕过。读取从不拒绝，`rule-resolve`、`agents-render`、`gates-plan` 与 `gates-run` 也不受这道屏障限制；引擎对任何人都拒绝的键（`SETTINGS_KEY_DEVICE_LEVEL`、`SETTINGS_KEY_UNREGISTERED`）保持各自的拒绝码。
+
+## Configuration sources
+
+Effective values name the concrete project, declared ancestor, explicit common
+default or built-in default. Device/user values remain separate. Cross Project
+is never an implicit development fallback. A common source is deliberately
+bound through `project-bindings-set`, not inferred from where a work item lives.

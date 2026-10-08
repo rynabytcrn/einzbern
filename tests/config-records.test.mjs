@@ -154,12 +154,12 @@ test("478-R1: unknown collections, malformed keys and invalid collection values 
   const desk = await device(base, "desk", DESK_ID);
   const library = join(base, ".ether");
   await cli(desk, ["init", "--workspace", library, "--at", at()]);
-  assert.deepEqual(CONFIG_RECORD_COLLECTIONS, ["gate", "managed-section", "rule", "variable"], "the four collections, closed");
+  assert.deepEqual(CONFIG_RECORD_COLLECTIONS, ["chain", "gate", "managed-section", "rule", "variable"], "the typed collections, closed");
   const before = await treeDigest(library);
 
   const unknown = await refusal(() => as(desk, () => setConfigRecord(library, { collection: "settings", key: "x", value: {}, occurredAt: at() })));
   assert.equal(unknown.reasonCode, "CONFIG_RECORD_COLLECTION_UNKNOWN");
-  assert.equal(unknown.details.known, "gate,managed-section,rule,variable");
+  assert.equal(unknown.details.known, "chain,gate,managed-section,rule,variable");
   for (const [input, reasonCode] of [
     [{ collection: "gate", key: "", value: {} }, "CONFIG_RECORD_KEY_INVALID"],
     [{ collection: "gate", key: "line\nbreak", value: {} }, "CONFIG_RECORD_KEY_INVALID"],
@@ -326,4 +326,20 @@ test("SUB-388: configuration CLI receipts identify the records set or removed", 
   assert.deepEqual(variableSet.ids, ["variable:links"], "the collection is part of the record id");
   const variableRemoved = await cli(desk, ["variable-remove", "--workspace", library, "--at", at(), "--name", "links"]);
   assert.deepEqual(variableRemoved.ids, ["variable:links"]);
+});
+
+
+test("chain configuration validates its typed identity and refuses guessed references", async context => {
+  const base = await scratch(context);
+  const desk = await device(base, "desk", DESK_ID);
+  const library = join(base, "chain");
+  const { initializeLibrary } = await import("../dist/build/packages/core/src/index.js");
+  const initial = await as(desk, () => initializeLibrary({ root: library, createdAt: at() }));
+  await as(desk, () => setConfigRecord(library, { collection: "chain", key: "identity", value: { role: "coordination", coordinationLibraryId: initial.metadata.workspaceId }, occurredAt: at() }));
+  const replay = await as(desk, () => materializeWorkspaceFromGenesis(library));
+  assert.equal(configRecord(replay, "chain", "identity").value.role, "coordination");
+  for (const value of [{ role: "coordination" }, { role: "by-name", coordinationLibraryId: initial.metadata.workspaceId }, { role: "project", coordinationLibraryId: "/folder" }]) {
+    await assert.rejects(as(desk, () => setConfigRecord(library, { collection: "chain", key: "identity", value, occurredAt: at() })), { reasonCode: "CONFIG_RECORD_VALUE_INVALID" });
+  }
+  await assert.rejects(as(desk, () => setConfigRecord(library, { collection: "chain", key: "common-default", value: { libraryId: initial.metadata.workspaceId, projectId: "project:" + "a".repeat(24) }, occurredAt: at() })), { reasonCode: "CONFIG_RECORD_VALUE_INVALID" });
 });

@@ -19,3 +19,11 @@
 ## 新格式前先更新每台设备
 
 每条设备流记录最后写入它的引擎版本。普通写入可以继续使用当前库格式；一项操作若要提升库格式，引擎会检查库已知的所有设备。只要有设备版本未知或低于要求，就会以 `LIBRARY_UPGRADE_NOT_READY` 拒绝这次格式升级，并列出先要更新的设备。先更新所有设备，再写入新格式，才能让每台设备都能读取同一份库。
+
+## Stable project targets
+
+A project reference contains library and project identities, never a device path.
+Register the same restored libraries on each device. Multiple repositories may
+share one product identity. Different physical locations claiming the same
+identity on one device are reported as ambiguous; equal display names never
+collapse distinct targets. Unavailable references stay saved on work items.

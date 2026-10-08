@@ -169,3 +169,20 @@ test("STORY-472 R4: work-create --help lists the relation flags", async () => {
   const listHelp = await cli(["work-list", "--help"]);
   assert.ok(listHelp.commands[0].flags.some((flag) => flag.name === "relation"));
 });
+
+
+test("involved projects survive CLI create/annotate/show and stable-identity filtering", async context => {
+  const tree = await storyTree(context);
+  const reference = { libraryId: "library:" + "a".repeat(24), projectId: "project:" + "b".repeat(24) };
+  const selected = { state: "selected", targets: [reference] };
+  const created = await tree.story("REL-CLI-PROJECTS", 6, "--involved-projects", JSON.stringify(selected));
+  const shown = await cli(["work-show", "--workspace", tree.workspace, "--id", created.record.id]);
+  assert.deepEqual(shown.record.involvedProjects, selected);
+  const page = await cli(["work-list", "--workspace", tree.workspace, "--involved-project", JSON.stringify(reference), "--limit", "1"]);
+  assert.equal(page.total, 1); assert.equal(page.records[0].id, created.record.id);
+  const empty = await cli(["work-list", "--workspace", tree.workspace, "--involved-project", JSON.stringify({ ...reference, libraryId: "library:" + "c".repeat(24) })]);
+  assert.equal(empty.total, 0);
+  await cli(["work-annotate", "--workspace", tree.workspace, "--id", created.record.id, "--at", instant(7), "--expected-revision", String(created.record.revision), "--involved-projects", JSON.stringify({ state: "coordination-only", targets: [] })]);
+  const reread = await cli(["work-show", "--workspace", tree.workspace, "--id", created.record.id]);
+  assert.equal(reread.record.involvedProjects.state, "coordination-only");
+});

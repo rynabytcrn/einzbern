@@ -44,3 +44,11 @@
 项目知识保存在 `.ether/crest/`，随项目库同步。每位用户自己的知识库也使用 `crest` 这个名字，但缺省保存在本机设备目录中；它不会随项目库同步，可以在设备级 `crest.userPath` 中指定别处。
 
 设备目录 `~/.einzbern/` 保存该机身份、库注册信息、本机设置、锁、备份、已安装引擎版本，以及按库分开的 `cache/`。缓存里有重放后的视图、索引、快照和门结果；它只服务本机，可以从同步来的事件流重建，不属于库，也不会上传到云端。
+
+## Coordination and concrete projects
+
+Cross Project is an explicitly declared coordination chain. Each concrete
+project chain owns its development configuration. Names and directories never
+identify a chain's role. Stable `{libraryId, projectId}` references identify
+involved projects; this device's registry locates them. See the project-chain
+sections of the configuration and compatibility specifications.

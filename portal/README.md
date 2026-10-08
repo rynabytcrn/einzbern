@@ -147,3 +147,9 @@ corepack pnpm@11.3.0 run verify:portal      # the portal train: suite, proofs, p
 
 `portal/README-TESTING.md` explains why the portal suite runs beside the engine
 suite rather than inside it.
+
+Project scope is persisted as `involvedProjects`, with stable library/project
+references and an explicit state. `/api/work/involved-projects` uses the canonical
+annotation command with the submitted work revision; `/api/work/project-context`
+returns per-target effective contexts. Mutation headers bind selection epoch as
+well as library/project. Registry and selection changes refuse stale writes.

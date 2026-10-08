@@ -1,3 +1,4 @@
+import { normalizeInvolvedProjects } from "./involved-projects.js";
 // SPDX-License-Identifier: Apache-2.0
 
 // STORY-300 slice 3: apply an ordered, heterogeneous sequence of work-record writes as
@@ -143,7 +144,7 @@ function shapeProblems(members: readonly unknown[]): readonly WorkBatchProblem[]
       }
       return;
     }
-    if (member.scope === undefined && member.decidedBy === undefined && member.sprint === undefined && member.summary === undefined && member.relations === undefined &&
+    if (member.involvedProjects === undefined && member.scope === undefined && member.decidedBy === undefined && member.sprint === undefined && member.summary === undefined && member.relations === undefined &&
       member.goal === undefined && member.acceptance === undefined && member.body === undefined) {
       problems.push({ index, verb, rule: "advisory-required", detail: "an annotation carries at least one of scope, decidedBy, sprint, summary, relations, goal, acceptance, body" });
     }
@@ -183,6 +184,7 @@ function deltaFor(member: Readonly<Record<string, unknown>>, occurredAt: string)
       ...(member.scope === undefined ? {} : { scope: member.scope as string }),
       ...(member.decidedBy === undefined ? {} : { decidedBy: member.decidedBy as readonly string[] }),
       ...relationsOf(member),
+      ...(member.involvedProjects === undefined ? {} : { involvedProjects: normalizeInvolvedProjects(member.involvedProjects) }),
       ...storyFieldsOf(member),
       title: member.title as string,
       ...(member.summary === undefined ? {} : { summary: member.summary as string }),
@@ -200,10 +202,12 @@ function deltaFor(member: Readonly<Record<string, unknown>>, occurredAt: string)
   }
   return annotateWorkDelta({
     id,
+    ...(member.expectedRevision === undefined ? {} : { expectedRevision: member.expectedRevision as number }),
     ...(member.scope === undefined ? {} : { scope: member.scope as string }),
     ...(member.decidedBy === undefined ? {} : { decidedBy: member.decidedBy as readonly string[] }),
     ...(member.sprint === undefined ? {} : { sprint: member.sprint as never }),
     ...relationsOf(member),
+      ...(member.involvedProjects === undefined ? {} : { involvedProjects: normalizeInvolvedProjects(member.involvedProjects) }),
     ...storyFieldsOf(member),
     ...(member.summary === undefined ? {} : { summary: member.summary as string }),
     occurredAt,

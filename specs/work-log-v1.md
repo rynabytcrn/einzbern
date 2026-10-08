@@ -91,3 +91,12 @@ There is no live enforcement and no automatic dispatch instrumentation in the
 current engine, and a work-log record is retrievable as soon as
 it is written. The convention is normative documentation; a governed
 route may later add a host-adapter enforcement hook.
+
+## Project relation persistence
+
+Format-2 `work.created` and `work.annotated` records carry `involvedProjects` as
+a first-class field. Transition and deletion preserve it. Annotation replay
+permits that field to change while still enforcing all status, evidence and
+non-advisory extension invariants. Snapshots and collection digests include the
+stored field; absent legacy fields retain their original canonical bytes.
+Project accessibility is a read-time context result, never a replay prerequisite.

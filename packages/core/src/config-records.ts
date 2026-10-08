@@ -1,3 +1,4 @@
+import { checkChainRecord } from "./project-chain.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
@@ -52,7 +53,7 @@ function fail(reasonCode: ConfigRecordReasonCode, message: string, details?: Rea
   throw new ConfigRecordError(reasonCode, message, details);
 }
 
-export type ConfigRecordCollection = "gate" | "managed-section" | "rule" | "variable";
+export type ConfigRecordCollection = "gate" | "managed-section" | "rule" | "variable" | "chain";
 export type ConfigRecordValue = Readonly<Record<string, JsonValue>>;
 
 /** The check a collection adds on top of the shape every record meets. It throws to refuse. */
@@ -71,6 +72,7 @@ const CONFIG_RECORD_VALUE_CHECKS: Readonly<Record<ConfigRecordCollection, Config
   // TCRN-CROSS-STORY-478: a managed section's file, id, revision, digest and state, keyed
   // <file>#<id> (SUB-316, managed-sections.ts).
   "managed-section": checkManagedSectionRecordValue,
+  chain: checkChainRecord,
 
   // TCRN-CROSS-STORY-483: whether a Command Spell rule is enabled and the version it was enabled
   // at, keyed by the rule's id (SUB-336, rules.ts).
@@ -167,6 +169,7 @@ export function checkConfigRecordValue(collection: ConfigRecordCollection, key: 
 export function readConfigRecordEvent(operation: string, record: Readonly<Record<string, JsonValue>>): ConfigRecordChange {
   const expected = [...(operation === CONFIG_RECORD_SET_OPERATION ? ["collection", "key", "value"] : ["collection", "key"]), ...(Object.hasOwn(record, "projectId") ? ["projectId"] : [])].sort(compareCanonicalText);
   if (Object.hasOwn(record, "projectId") && (typeof record.projectId !== "string" || !/^project:[a-f0-9]{24}$/u.test(record.projectId))) fail("CONFIG_RECORD_EVENT_INVALID", "invalid project scope");
+  if (record.collection === "chain" && ((record.key === "identity" && record.projectId !== undefined) || (record.key !== "identity" && record.projectId === undefined))) fail("CONFIG_RECORD_EVENT_INVALID", "invalid chain record scope");
   const scope = typeof record.projectId === "string" ? { projectId: record.projectId } : {};
   const actual = Object.keys(record).sort(compareCanonicalText);
   if (!isConfigRecordOperation(operation) || actual.join(",") !== expected.join(",")) {
@@ -224,6 +227,9 @@ export function setConfigRecordDelta(input: ConfigRecordSetInput): (state: Works
   const record: ConfigRecord = { collection: input.collection, key: input.key, ...(input.projectId === undefined ? {} : { projectId: input.projectId }), value: checkConfigRecordValue(input.collection, input.key, input.value) };
   return (state) => {
     projectLineage(state, input.projectId);
+    if (input.collection === "chain" && input.key === "identity" && "value" in input && typeof (input.value as Record<string, unknown>)?.primaryProjectId === "string") projectLineage(state, (input.value as Record<string, unknown>).primaryProjectId as string);
+    if (input.collection === "chain" && input.key === "identity" && "value" in input && (input.value as Record<string, unknown>)?.role === "coordination" && (input.value as Record<string, unknown>)?.coordinationLibraryId !== state.metadata.workspaceId) fail("CONFIG_RECORD_VALUE_INVALID", "coordination identity must refer to this library");
+    if (input.collection === "chain" && ((input.key === "identity" && input.projectId !== undefined) || (input.key !== "identity" && input.projectId === undefined))) fail("CONFIG_RECORD_VALUE_INVALID", "chain identity is library scoped; common defaults require an explicit project");
     return {
     payload: buildEventPayload(CONFIG_RECORD_SET_OPERATION, { collection: record.collection, key: record.key, value: record.value, ...(record.projectId === undefined ? {} : { projectId: record.projectId }) }),
     projects: state.projects,
@@ -244,6 +250,9 @@ export function removeConfigRecordDelta(input: ConfigRecordRemoveInput): (state:
   assertConfigRecordKey(key);
   return (state) => {
     projectLineage(state, input.projectId);
+    if (input.collection === "chain" && input.key === "identity" && "value" in input && typeof (input.value as Record<string, unknown>)?.primaryProjectId === "string") projectLineage(state, (input.value as Record<string, unknown>).primaryProjectId as string);
+    if (input.collection === "chain" && input.key === "identity" && "value" in input && (input.value as Record<string, unknown>)?.role === "coordination" && (input.value as Record<string, unknown>)?.coordinationLibraryId !== state.metadata.workspaceId) fail("CONFIG_RECORD_VALUE_INVALID", "coordination identity must refer to this library");
+    if (input.collection === "chain" && ((input.key === "identity" && input.projectId !== undefined) || (input.key !== "identity" && input.projectId === undefined))) fail("CONFIG_RECORD_VALUE_INVALID", "chain identity is library scoped; common defaults require an explicit project");
     if (!state.configRecords.some((entry) => entry.collection === collection && entry.key === key && entry.projectId === input.projectId)) {
       fail("CONFIG_RECORD_NOT_FOUND", `${collection} ${key} is not set`, { collection, key });
     }

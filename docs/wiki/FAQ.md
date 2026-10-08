@@ -55,3 +55,10 @@
 ## Wiki 怎么更新？
 
 Wiki 的每一页都在引擎仓库的 `docs/wiki/` 里编辑，不在网页上改。`scripts/push-wiki.mjs --wiki-dir <Wiki 仓库的本地工作树>` 把 `docs/wiki/` 同步进那个工作树并在本地提交，然后列出将要推送的提交；这是缺省的演练，不会推送。确认无误后加 `--execute push` 才真正推送。
+
+### Does involving a project authorize writes there?
+
+No. `work-project-context` resolves configuration and reports conflicts. Check
+authorization and writable roots independently for each target. An unresolved
+reference remains unresolved; it is never an empty success or a fallback to
+Cross Project's settings.

@@ -855,3 +855,7 @@ export type { ReleaseReasonCode } from "./setup-maintain.js";
 export { hookLauncherPath } from "./host-hooks.js";
 
 export * from "./project-scope.js";
+
+export * from "./involved-projects.js";
+
+export * from "./project-chain.js";

@@ -78,3 +78,8 @@ Command Spell 默认全部关闭，可按项目逐条启用。完整正文与启
 已有 batch v2 仍适用且保持原字节；rule-list、Atelier 读取及普通 agents-render 只显示 update-available，显式 rule-enable 升级才写 v3。用户修改仍按 user-modified/pending 与 keep/overwrite/unmanage 保护。正文验证不是运行期遵守证明，未经可比会话测量的 token 节省为 unknown。
 
 同一版本内的正文修订不改版本号（INIT-053 R40：batch v3 追加第 7 条，silent-reporting v1 追加「一轮做完、下一轮开始之间同样不汇报」一句，Owner 在自己的 AGENTS.md 里把这两段记为修订号 2）。已在该版本启用的原则，rule-list 与 Atelier 仍读作 enabled，没有单独的「正文过期」状态；下一次 agents-render 把未改动的段换成修订后的正文，段的修订号加 1；你改过的段照旧不被覆盖，按 user-modified/pending 等待处置。
+
+- **Coordination chain**: explicitly marked library for cross-project work and decisions.
+- **Concrete project target**: stable library/project pair with its own development configuration.
+- **Involved projects**: formal work scope; undecided, coordination-only, or selected targets.
+- **Common default**: explicitly opted-in configuration source, distinct from device preferences.

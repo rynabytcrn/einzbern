@@ -412,7 +412,7 @@ const layoutRequirements = [
   // sized for a short label, and clipped the path at 240px with 630px of unused space
   // beside it. The needle names the module class on that element so swapping back to
   // the capped variant is caught.
-  { name: "workspace path uses the uncapped module", source: indexText, text: 'class="tcrn-top-bar__module tcrn-top-bar__module--path" id="workspace-label"' },
+  { name: "current project uses the uncapped module", source: indexText, text: 'class="tcrn-top-bar__module tcrn-top-bar__module--path" id="workspace-label"' },
   // Every partition path shares a prefix and differs only in its last segments, so a
   // tail-side ellipsis removes the only part worth reading.
   { name: "workspace path truncates at the head", source: indexText, text: ".tcrn-top-bar__module--path {\n  direction: rtl;" },
@@ -499,7 +499,7 @@ legs.push({
 // Exact snapshot/inline bytes and no local family overrides are source checks;
 // they do not establish current browser geometry or Owner visual acceptance.
 const sidenavRequirements = [
-  { name: "sidenav published item", text: '<button class="tcrn-nav-item" data-nav-item-has-icon="true" data-page-target=' },
+  { name: "sidenav published item", text: '<a class="tcrn-nav-item" href="#dashboard" data-nav-item-has-icon="true" data-page-target=' },
   { name: "sidenav published icon slot", text: '<span class="tcrn-nav-item__content" aria-hidden="true">' },
   { name: "sidenav published label", text: '<span class="tcrn-nav-item__label" data-i18n=' },
 ];

@@ -55,3 +55,13 @@ Atelier 是项目配置工作台。进入页面后，先核对当前项目与知
 ## 切换知识库
 
 使用项目的知识库选择器切换到已登记的库。切换只更改项目当前绑定；不会搬动、合并或复制库数据。切换前核对目标库身份，切换后再从状态页确认选中的项目与库。不要通过复制或手改 `.ether` 文件来切换。
+
+## Involved projects and target details
+
+The work view edits explicit undecided, coordination-only or selected project
+scope and filters by stable project reference. Inspect execution contexts to
+read every target's configuration and unresolved bindings. Selecting a project
+does not grant permission to edit its files. The navigation shows project names;
+Details retains full paths and identities and supports keyboard dismissal.
+Switching while a target write is in flight is refused, and stale form revisions
+require reloading. Coordination chains do not expose development settings.

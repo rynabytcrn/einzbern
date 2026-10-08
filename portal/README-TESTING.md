@@ -19,3 +19,11 @@ against the design system. That repository exists on the platform that authors
 the portal and on no user's machine, so both checks **skip** when it is absent
 rather than going red — a gate that fails where it was never meant to apply
 teaches people to ignore red. On the platform, they compare for real.
+
+R43 regression inputs: independent libraries with equal names and distinct
+design/build/language/model settings; coordination work referencing both;
+undecided/coordination-only/selected edits and stable-reference filtering;
+missing registration and deleted targets; A→B save→reload→A isolation; stale
+work revision and selection epoch; navigation anchors, full identity disclosure
+and Escape focus return. Existing five-language/theme and narrow-width browser
+matrices apply to the new controls. These are cases within existing acceptance.

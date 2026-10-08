@@ -56,3 +56,19 @@ The catalog is the source of truth for the verb set: every dispatched verb has
 exactly one entry and every entry dispatches. New verbs MUST add an entry in the
 same change (enforced by the catalog↔dispatcher parity proof). Entries are
 append-only; removing a flag or verb requires a new catalog version.
+
+## Project-chain commands
+
+`chain-identity` reads the explicit role or returns unclassified. `chain-declare`
+writes an explicit role and coordination identity through the canonical engine
+writer. `project-bindings-set --project-id --key --value` accepts the typed
+`common-default` and `repositories` keys. `project-bindings-remove` explicitly
+removes a project binding without changing unrelated configuration. These configuration changes have the
+same Atelier-only CLI convention as other Owner configuration; the convention
+is not authenticated-human identity.
+
+`work-create` and `work-annotate` accept JSON `--involved-projects`; annotation
+also accepts `--expected-revision`. `work-list --involved-project` accepts a
+JSON stable reference. `project-context --reference` and
+`work-project-context --workspace --id` are read-only and never acquire write
+permission. The live command catalog specifies exact flags.

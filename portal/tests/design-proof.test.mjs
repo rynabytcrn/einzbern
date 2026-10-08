@@ -83,7 +83,7 @@ test("INIT-036 S276 design-proof legs turn red for injected violations and green
   assert.equal(redStyle.report.legs.find((leg) => leg.leg === "no-inline-style-attributes").reasonCode, "INLINE_STYLE_ATTRIBUTE_FOUND");
 
   const unclassed = join(directory, "unclassed-control.html");
-  await writeFile(unclassed, source.replace('<button class="tcrn-nav-item"', "<button"), "utf8");
+  await writeFile(unclassed, source.replace('<a class="tcrn-nav-item"', "<a"), "utf8");
   const redClass = await runProof(unclassed);
   assert.notEqual(redClass.status, 0);
   assert.equal(redClass.report.legs.find((leg) => leg.leg === "interactive-tcrn-class-coverage").reasonCode, "INTERACTIVE_ELEMENT_CLASS_MISSING");

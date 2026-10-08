@@ -168,3 +168,12 @@ dry-run、计划的分区项和执行回执都列出 `knowledgeOmission`：
   - 其余分区的库与旧链的事件数和头哈希完全相同；
   - 可用 `chain-validate --workspace <库>` 核对。
 - 用 `doctor --project <项目目录>` 检查八项。旧名与当前名的对应关系见[词汇表](Glossary.md)。
+
+## Project roles after import
+
+Imported old events retain their bytes and identities. Missing roles and work
+project relations remain unclassified/undecided until explicitly declared.
+Do not infer a coordination role from a Cross Project label, or copy its old
+development settings into a newly created product as implicit consent. The real
+Einzbern/Mana product identity and migration mapping must be supplied at the
+authorized migration step.

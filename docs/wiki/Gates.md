@@ -77,3 +77,10 @@ gates-run --release true --at <时刻>
 ## 项目从哪里来
 
 `gates-plan`、`gates-run`、`work-transition` 与 `work-batch` 都接受 `--project`。省略时取本机注册表为这个库记录的项目；门需要项目而注册表里一个也没有时，命令报 `GATES_PROJECT_UNKNOWN`。
+
+## Target boundaries
+
+A cross-project work item has one execution context per involved concrete
+project. Resolve it with `work-project-context` before planning verification.
+Gate roots and coverage bindings belong to their target; they are never copied
+from coordination or inherited as ordinary common scalar defaults.

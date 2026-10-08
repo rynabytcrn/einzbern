@@ -1,3 +1,4 @@
+import type { InvolvedProjects } from "../../protocol/src/index.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 // TCRN-CROSS-STORY-362 — the FTS5 recall core.
@@ -42,6 +43,7 @@ export type RecallScope = "project" | "user";
 
 /** One indexed record, reduced to the four ranked fields plus what a caller reads back. */
 export interface RecallDocument {
+  readonly involvedProjects?: InvolvedProjects;
   readonly id: string;
   readonly kind: RecallKind;
   readonly key: string;
@@ -79,6 +81,7 @@ export interface RecallCardRemoval {
 }
 
 export interface RecallHit {
+  readonly involvedProjects?: InvolvedProjects;
   readonly kind: RecallKind;
   readonly key: string;
   readonly id: string;
@@ -324,7 +327,7 @@ function documentDigest(document: RecallDocument): string {
   return createHash("sha256")
     .update(`${document.key}\u0000${document.title}\u0000${document.body}\u0000${document.tags}\u0000${document.expansions}`
       + `\u0000${document.status}\u0000${document.summary}\u0000${document.recordKind}\u0000${document.parentChain.join("\u0001")}\u0000${document.lead}`
-      + `\u0000${document.scope ?? ""}`, "utf8")
+      + `\u0000${document.scope ?? ""}\u0000${JSON.stringify(document.involvedProjects ?? null)}`, "utf8")
     .digest("hex");
 }
 
@@ -351,6 +354,7 @@ function hitOf(document: RecallDocument, score: number): RecallHit {
     parentChain: document.parentChain,
     lead: document.lead,
     ...(document.scope === undefined ? {} : { scope: document.scope }),
+    ...(document.involvedProjects === undefined ? {} : { involvedProjects: document.involvedProjects }),
   };
 }
 
@@ -592,6 +596,7 @@ export interface RecallMinutesInput {
 }
 
 export interface RecallWorkInput {
+  readonly involvedProjects?: InvolvedProjects;
   readonly id: string;
   readonly externalKey: string;
   readonly kind: string;
@@ -719,6 +724,7 @@ export function recallDocuments(inputs: RecallInputs): readonly RecallDocument[]
       expansions: "",
       summary: summary.length > 0 ? summary : goal,
       recordKind: record.kind,
+      ...(record.involvedProjects === undefined ? {} : { involvedProjects: record.involvedProjects }),
       parentChain: record.parentChain ?? [],
       lead: "",
     });

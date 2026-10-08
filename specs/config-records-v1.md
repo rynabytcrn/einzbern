@@ -88,3 +88,18 @@ project-level write rewrites it, settings writes included, so neither kind of wr
 other's part. No read trusts it. `configProjectionStatus(libraryRoot, settings, records)` judges
 the records as well as the values when the records are passed; a projection written before
 records existed carries no `records` and reads as holding none.
+
+## Explicit chain configuration
+
+The `chain` collection is added in library format 2. `identity` is library scoped
+and requires `{role: "coordination" | "project", coordinationLibraryId}`. A
+coordination identity points to its own stable library id. Optional `primaryProjectId`
+is an explicit canonical project binding used on restore and a second device;
+it is validated against the owning library, never inferred from a sole project. Missing identity is
+unclassified; labels, paths and project count never classify a library. The
+project-scoped `common-default` key is an explicit `{libraryId, projectId}` opt-in.
+`repositories` requires a nonempty `bindings` list whose unique ids each name
+`id`, `name`, `repository`, `buildService` and `buildProject`. This represents
+Einzbern and generated Mana as two repositories of one product without inventing
+a real migration identity. The ordinary engine set/replay/config projection is
+the sole persistence route. Device registries contain locations, not authority.

@@ -60,3 +60,20 @@ record here carries, minutes a conference close wrote included. It is marked whe
 the record is read and never stored: once the target arrives, from a later write
 or a merged device stream, the next read no longer lists it, and the stored
 relation is unchanged.
+
+## Involved projects (format 2)
+
+`involvedProjects` is a canonical work field, independent of the work item's owning
+`projectId` and work-to-work relations. Its exact shape is `{state, targets}`.
+`undecided` and `coordination-only` require an empty list; `selected` requires a
+nonempty list of `{libraryId, projectId}` stable references. Writers deduplicate
+and sort targets; replay refuses malformed or noncanonical shape without
+requiring this device to access any target. An absent historical field reads as
+undecided and is not backfilled during replay. A child's actual scope is explicit;
+a selected parent provides candidates, never automatic child scope. A selected
+child cannot exceed a declared parent's selected scope.
+
+Create, annotate and batch preserve the field. `work-show` includes separately
+resolved project contexts; `work-list --involved-project <JSON>` filters by both
+identities. `work-annotate --expected-revision` rejects stale form submissions.
+A selected relationship grants neither filesystem permission nor write authority.

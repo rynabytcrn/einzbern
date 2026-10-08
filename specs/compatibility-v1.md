@@ -69,3 +69,19 @@ and an accepted release boundary that P2 cannot grant.
 A compatibility document does not name a live endpoint, a release artifact, or a
 counterpart deployment, and it does not confer the external Release Trust Root's
 authority. Negotiating or activating a live release pair is out of scope here.
+
+## Format 2: explicit project-chain semantics
+
+New libraries and legacy imports use format 2. Format-1 libraries remain readable;
+reads do not rewrite their manifests, streams, heads or absent work fields. A
+format-1 reader rejects a format-2 manifest before replay. Writes of new chain
+configuration or involved-project fields into a format-1 library refuse with
+`LIBRARY_FORMAT_UNSUPPORTED`; there is no silent in-place upgrade.
+
+Stable library and project identities survive restore and relocation. Registries
+on another device locate those identities independently. Setup validates a
+synchronized coordination binding before creating anything: missing restored
+bindings require registration, and competing identities or locations are
+conflicts. Low-level `initializeLibrary` creates an unclassified library; fresh
+installation and registered-project initialization create/reuse the explicit
+coordination identity. Real installation and migration are separate operations.

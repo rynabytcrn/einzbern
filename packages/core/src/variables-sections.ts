@@ -1,4 +1,5 @@
-import { DESIGN_CONFIGURATION_KEYS, designConfiguration, scopedWorkspaceState } from "./project-scope.js";
+import { effectiveProjectState } from "./project-chain.js";
+import { DESIGN_CONFIGURATION_KEYS, designConfiguration } from "./project-scope.js";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-484 R2 (MIN-227 D12; TCRN-CROSS-SUB-340): the two variable sections of
@@ -272,7 +273,7 @@ export async function writeVariablesSections(workspaceRoot: string, input: {
   readonly backupRoot?: string;
 } & WorkspaceMutationOptions): Promise<VariablesSectionsResult> {
   return withWorkspaceWriteLock(workspaceRoot, async (root) => {
-    const state = scopedWorkspaceState(await materializeWorkspace(root), input.configurationProjectId);
+    const state = await effectiveProjectState(await materializeWorkspace(root), input.configurationProjectId);
     const system = renderSystemVariablesSection(state);
     const custom = renderCustomVariablesSection(state);
     const planned = await planManagedWrite({

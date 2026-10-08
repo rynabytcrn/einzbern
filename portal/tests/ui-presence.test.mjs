@@ -400,7 +400,9 @@ function topbarFindings(document) {
     if (node.getAttribute("data-ds-source-url") !== sourceUrl) findings.push(`${name}:source-url`);
   }
   const header = document.querySelector("header.tcrn-top-bar");
-  const actionOrder = ["#library-select", "#engine-connection", "#global-search", "#theme-button", "#locale-menu", "#receipt-chip"]
+  if (!document.querySelector("#library-details #engine-connection")) findings.push("engine-details:ownership");
+  if (!document.querySelector("#library-details summary")) findings.push("engine-details:keyboard-trigger");
+  const actionOrder = ["#library-select", "#global-search", "#theme-button", "#locale-menu", "#receipt-chip"]
     .map((selector) => document.querySelector(selector));
   const domOrder = header ? [header, ...header.querySelectorAll("*")] : [];
   if (actionOrder.some((node) => !node || !domOrder.includes(node))) findings.push("topbar:action-ownership");
@@ -2184,12 +2186,14 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       assert.equal(select?.id, "library-select");
       const options = [...select.querySelectorAll("option")];
       assert.deepEqual(options.map((option) => option.getAttribute("value")), [fixture.proseRoot, fixture.second.project]);
-      assert.ok(options.every((option) => option.textContent.includes(option.getAttribute("value")) && / · library:/u.test(option.textContent)), "each option names its project path and library id");
+      const firstName = (await cli(["project-list", "--workspace", fixture.workspace], fixture.deviceEnv)).records.find(record => record.id === fixtureProjectIds.get(fixture.workspace)).name;
+      const secondName = (await cli(["project-list", "--workspace", fixture.second.library], fixture.deviceEnv)).records.find(record => record.id === fixtureProjectIds.get(fixture.second.library)).name;
+      assert.deepEqual(options.map(option => option.textContent), [firstName, secondName], "navigation uses canonical names, full identity belongs in Details");
       assert.equal(options[0].hasAttribute("selected"), true);
       const firstId = text("#library-label");
       assert.match(firstId, /^library:/u);
-      assert.equal(text("#rail-workspace-label"), "project");
-      assert.equal(text("#workspace-label"), fixture.workspace);
+      assert.equal(text("#rail-workspace-label"), firstName);
+      assert.equal(text("#workspace-label"), firstName);
       assert.equal(text("#stat-version"), "1");
       const healthReasons = () => [...page.document.querySelectorAll("[data-doctor-check]")].map((row) => [row.dataset.doctorCheck, row.querySelectorAll(".tcrn-operation-feedback__identity code")[1]?.textContent ?? ""]);
       const initialDoctor = await cli(["doctor", "--project", fixture.proseRoot], { ...fixture.deviceEnv, HOME: fixture.home });
@@ -2198,10 +2202,10 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       const secondVersion = String((await cli(["status", "--workspace", fixture.second.library], fixture.deviceEnv)).version);
       select.value = fixture.second.project;
       select.dispatchEvent(new page.window.Event("change", { bubbles: true }));
-      await waitFor(() => text("#workspace-label") === fixture.second.library && text("#stat-version") === secondVersion && text("#agents-path") === join(fixture.second.project, "AGENTS.md"), "the page to move to the second library");
-      assert.equal(text("#rail-workspace-label"), "second-project");
+      await waitFor(() => text("#workspace-label") === secondName && text("#stat-version") === secondVersion && text("#agents-path") === join(fixture.second.project, "AGENTS.md"), "the page to move to the second library");
+      assert.equal(text("#rail-workspace-label"), secondName);
       assert.notEqual(text("#library-label"), firstId);
-      assert.ok(options[1].textContent.includes(text("#library-label")), "the rail names the id the switcher showed");
+      assert.ok(text("#library-label").includes(fixture.second.library), "Details retains the full selected path");
       const secondDoctor = await cli(["doctor", "--project", fixture.second.project], { ...fixture.deviceEnv, HOME: fixture.home });
       assert.equal(page.document.querySelector("#health-chip")?.className.includes("tcrn-badge--positive"), secondDoctor.ok);
       assert.deepEqual(healthReasons(), secondDoctor.checks.map((check) => [check.check, check.reasonCode ?? "—"]));
@@ -2225,7 +2229,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       const firstVersion = String((await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).version);
       page.document.querySelector("#library-select").value = fixture.proseRoot;
       page.document.querySelector("#library-select").dispatchEvent(new page.window.Event("change", { bubbles: true }));
-      await waitFor(() => text("#workspace-label") === fixture.workspace && text("#stat-version") === firstVersion && text("#agents-path") === join(fixture.proseRoot, "AGENTS.md"), "the page to return to the first library");
+      await waitFor(() => text("#workspace-label") === firstName && text("#stat-version") === firstVersion && text("#agents-path") === join(fixture.proseRoot, "AGENTS.md"), "the page to return to the first library");
       assert.equal(text("#library-label"), firstId);
       const firstDoctor = await cli(["doctor", "--project", fixture.proseRoot], { ...fixture.deviceEnv, HOME: fixture.home });
       assert.equal(page.document.querySelector("#health-chip")?.className.includes("tcrn-badge--positive"), firstDoctor.ok);
@@ -2457,3 +2461,18 @@ if (process.argv[2] === "work-list") {
     } finally { page.child.kill(); await rm(fixture.base, { recursive: true, force: true }); }
   });
 }
+
+
+if (!MUTATION) test("R43 navigation destinations are anchors and full identity stays in keyboard Details", async () => {
+  const page = await preparePage();
+  try {
+    const nav = [...page.document.querySelectorAll("#primary-side-nav [data-page-target]")];
+    assert.ok(nav.length > 0);
+    assert.ok(nav.every(node => node.tagName === "A" && node.getAttribute("href") === "#" + node.dataset.pageTarget));
+    const details = page.document.querySelector("#library-details");
+    assert.ok(details.querySelector("summary"));
+    assert.ok(details.textContent.includes(page.workspace));
+    assert.ok(details.querySelector("#engine-connection"));
+    assert.equal(page.document.querySelector("header #engine-connection"), null);
+  } finally { await page.cleanup(); }
+});

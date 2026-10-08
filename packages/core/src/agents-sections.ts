@@ -1,4 +1,4 @@
-import { scopedWorkspaceState } from "./project-scope.js";
+import { effectiveProjectState } from "./project-chain.js";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-478 R3, R4, R5, AC4, AC5 and the pointer hooks of STORY-477 R3 (MIN-227 D14,
@@ -692,7 +692,7 @@ export async function renderAgentsSections(workspaceRoot: string, input: {
   readonly backupRoot?: string;
 } & WorkspaceMutationOptions): Promise<AgentsRenderResult> {
   return withWorkspaceWriteLock(workspaceRoot, async (root) => {
-    const state = scopedWorkspaceState(await materializeWorkspace(root), input.configurationProjectId);
+    const state = await effectiveProjectState(await materializeWorkspace(root), input.configurationProjectId);
     const agents = agentsFileSections(state, input.navigation);
     const plans = [
       // TCRN-CROSS-STORY-508 R7: with the rule sections in the rules' order.
@@ -756,7 +756,7 @@ export async function resolveAgentsSection(workspaceRoot: string, input: {
   readonly backupRoot?: string;
 } & WorkspaceMutationOptions): Promise<AgentsSectionChangeResult> {
   return withWorkspaceWriteLock(workspaceRoot, async (root) => {
-    const state = scopedWorkspaceState(await materializeWorkspace(root), input.configurationProjectId);
+    const state = await effectiveProjectState(await materializeWorkspace(root), input.configurationProjectId);
     const file = managedSectionFile(input.id);
     const records = managedSectionRecordsFor(state, file);
     let body: string | undefined;
@@ -800,7 +800,7 @@ export async function disableAgentsSection(workspaceRoot: string, input: {
   readonly backupRoot?: string;
 } & WorkspaceMutationOptions): Promise<AgentsSectionChangeResult> {
   return withWorkspaceWriteLock(workspaceRoot, async (root) => {
-    const state = scopedWorkspaceState(await materializeWorkspace(root), input.configurationProjectId);
+    const state = await effectiveProjectState(await materializeWorkspace(root), input.configurationProjectId);
     const file = managedSectionFile(input.id);
     const records = managedSectionRecordsFor(state, file);
     const { change: outcome, wrote } = await takeSectionOut({

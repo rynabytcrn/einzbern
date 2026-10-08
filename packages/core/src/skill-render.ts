@@ -69,8 +69,8 @@ export const SKILL_NAVIGATION: readonly SkillNavigationEntry[] = Object.freeze([
   },
   {
     moment: "Need the full text",
-    verbs: ["work-show", "minutes-show"],
-    action: "Read the work item or the minutes whole (`--id` or `--external-key`) before relying on a headline.",
+    verbs: ["work-show", "minutes-show", "work-project-context"],
+    action: "Read the work item or the minutes whole (`--id` or `--external-key`) before relying on a headline. Before development dispatch, read `work-project-context --id <work>`: use each involved project’s own configuration separately, stop on unresolved scope, and check write permission independently. Coordination-only work requires no invented development target.",
   },
   {
     moment: "Work is done",

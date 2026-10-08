@@ -304,3 +304,16 @@ test("STORY-472: a work-create member carries relations, resolved against what e
     await rm(fixture.base, { recursive: true, force: true });
   }
 });
+
+
+test("batch carries involved-project state through ordered create and annotation", async context => {
+  const f = await workspace("BATCH-PROJECTS");
+  context.after(() => rm(f.base, { recursive: true, force: true }));
+  const reference = { libraryId: "library:" + "a".repeat(24), projectId: "project:" + "b".repeat(24) };
+  await apply(f, [
+    { verb: "work-create", projectId: f.projectId, externalKey: "BATCH-PROJECTS-INIT", kind: "Initiative", title: "Projects", involvedProjects: { state: "undecided", targets: [] } },
+    { verb: "work-annotate", externalKey: "BATCH-PROJECTS-INIT", expectedRevision: 1, involvedProjects: { state: "selected", targets: [reference, reference] } },
+  ]);
+  const state = await materializeWorkspaceFromGenesis(f.root);
+  assert.deepEqual(state.work[0].involvedProjects, { state: "selected", targets: [reference] });
+});

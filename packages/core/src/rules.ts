@@ -1,3 +1,4 @@
+import { effectiveProjectState } from "./project-chain.js";
 import { scopedWorkspaceState } from "./project-scope.js";
 // SPDX-License-Identifier: Apache-2.0
 
@@ -228,7 +229,7 @@ export interface ListRulesInput {
  * its state in the project. Writes nothing.
  */
 export async function listRules(input: ListRulesInput): Promise<readonly RuleStatus[]> {
-  const state = scopedWorkspaceState(await materializeWorkspace(input.libraryRoot), input.configurationProjectId);
+  const state = await effectiveProjectState(await materializeWorkspace(input.libraryRoot), input.configurationProjectId);
   return ruleStatuses(state, input.projectRoot === undefined ? new Map() : await sectionsOfAgentsFile(input.projectRoot), input.catalog ?? BUILT_IN_RULES);
 }
 
@@ -293,7 +294,7 @@ export async function enableRule(input: RuleChangeInput & { readonly order?: num
     fail("RULE_RECORD_INVALID", `the order of rule ${rule.id} is a positive integer`, { id: rule.id, field: "order" });
   }
   return withWorkspaceWriteLock(input.libraryRoot, async (root) => {
-    const state = scopedWorkspaceState(await materializeWorkspace(root), input.configurationProjectId);
+    const state = await effectiveProjectState(await materializeWorkspace(root), input.configurationProjectId);
     const recorded = recordedRule(state, rule.id);
     if (recorded !== null && recorded.version > rule.version) {
       fail("RULE_VERSION_NEWER", `the library records rule ${rule.id} at version ${recorded.version}; this engine ships version ${rule.version}`, {
@@ -358,7 +359,7 @@ export async function enableRule(input: RuleChangeInput & { readonly order?: num
 export async function disableRule(input: RuleChangeInput & { readonly force?: boolean }): Promise<RuleChange> {
   const catalog = input.catalog ?? BUILT_IN_RULES;
   return withWorkspaceWriteLock(input.libraryRoot, async (root) => {
-    const state = scopedWorkspaceState(await materializeWorkspace(root), input.configurationProjectId);
+    const state = await effectiveProjectState(await materializeWorkspace(root), input.configurationProjectId);
     const recorded = isRuleId(input.id) ? recordedRule(state, input.id) : null;
     if (recorded === null && !catalog.some((entry) => entry.id === input.id)) {
       fail("RULE_UNKNOWN", `neither the engine nor the library knows a rule ${JSON.stringify(input.id)}`, {

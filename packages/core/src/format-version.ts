@@ -21,7 +21,9 @@
 // This module imports nothing, so every other module may import it.
 
 /** The newest library format this engine reads, and the one it writes. */
-export const ENGINE_FORMAT_VERSION = 1 as const;
+// Format 2 requires explicit project-chain and involved-project semantics.
+// A format-1 reader must refuse before it can skip an unknown required record.
+export const ENGINE_FORMAT_VERSION = 2 as const;
 
 export const FORMAT_VERSION_REASON_CODES = Object.freeze([
   "ENGINE_TOO_OLD",

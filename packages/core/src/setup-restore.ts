@@ -1,3 +1,4 @@
+import { chainIdentity, registeredCoordination } from "./project-chain.js";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-480 R3, AC3 (MIN-227 D24; TCRN-CROSS-SUB-324): setup --mode restore, which
@@ -672,6 +673,8 @@ export async function planRestoreSetup(input: SetupModeInput): Promise<SetupMode
   const verification = await verifyRestore({ projectRoot, home, deviceHome, libraryPath: resolve(projectRoot, input.options.restore) });
   if (!verification.ok || verification.library === null) throw restoreRefusal(verification);
   const library = verification.library;
+  const identity = chainIdentity(library.state);
+  if (identity !== null) await registeredCoordination(deviceHome, identity.coordinationLibraryId);
 
   const engine = await planEngineSource(recorder, deviceHome);
   await planDevice(recorder, deviceHome);
@@ -742,6 +745,8 @@ export async function applyRestoreSetup(plan: SetupPlan): Promise<SetupApplied> 
   if (library.libraryId !== planned.libraryId) {
     setupFail("SETUP_LIBRARY_CONFLICT", `${library.root} holds ${library.libraryId}, not the planned ${planned.libraryId}`, { library: library.root });
   }
+  const identity = chainIdentity(library.state);
+  if (identity !== null) await registeredCoordination(deviceHome, identity.coordinationLibraryId);
   const recorder = new SetupRecorder(deviceHome, at);
   const device = await applyDevice(recorder, deviceHome, at);
   const pending = await applyWiring(recorder, {

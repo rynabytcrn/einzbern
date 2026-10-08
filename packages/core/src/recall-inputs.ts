@@ -1,3 +1,4 @@
+import { involvedProjectsOf } from "./involved-projects.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
@@ -436,6 +437,7 @@ export function recallInputsFromState(
     work.push({
       id: record.id,
       externalKey: record.externalKey,
+      involvedProjects: involvedProjectsOf(record),
       kind: record.kind,
       status: record.status,
       title: record.title ?? null,

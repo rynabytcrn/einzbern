@@ -1,3 +1,6 @@
+import { FormatVersionError } from "./format-version.js";
+import type { InvolvedProjects } from "../../protocol/src/index.js";
+import { normalizeInvolvedProjects, involvedProjectsOf, assertStoredInvolvedProjects, assertInvolvedProjectScope } from "./involved-projects.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
@@ -1312,6 +1315,8 @@ type WorkAdvisoryInput = {
 };
 
 type WorkAnnotationInput = WorkAdvisoryInput & {
+  readonly expectedRevision?: number;
+  readonly involvedProjects?: InvolvedProjects;
   readonly id: string;
   readonly title?: string | null;
   readonly summary?: string | null;
@@ -1401,6 +1406,9 @@ function workEventExtensions(record: WorkRecord, deduplicateScope: boolean): Wor
 }
 
 function normalizeWorkRecord(record: WorkRecord, reasonCode: WorkspaceReasonCode = "WORKSPACE_EVENT_CORRUPT"): WorkRecord {
+  if (record.involvedProjects !== undefined) {
+    try { assertStoredInvolvedProjects(record.involvedProjects); } catch (error) { fail(reasonCode, String(error)); }
+  }
   const currentFields = ["scopeDigest", "title", "createdAt", "labels"];
   const present = currentFields.filter((field) => Object.hasOwn(record, field)).length;
   if (present === 0) {
@@ -1751,6 +1759,7 @@ function assertWorkTransitionEvidence(current: WorkRecord, next: WorkRecord, rea
 // smuggled through. What becomes legal is exactly the write the verb was already the
 // only producer of.
 interface WorkAnnotationFields {
+  readonly involvedProjects: InvolvedProjects;
   readonly extensions: Readonly<Record<string, unknown>>;
   readonly title: string | null;
   readonly summary: string | null;
@@ -1759,6 +1768,7 @@ interface WorkAnnotationFields {
 
 function workAnnotationFields(record: WorkRecord): WorkAnnotationFields {
   return {
+    involvedProjects: involvedProjectsOf(record),
     extensions: record.extensions,
     title: record.title ?? null,
     summary: record.summary ?? null,
@@ -1774,7 +1784,7 @@ function assertWorkAnnotation(
 ): void {
   const advisory = new Set(ADVISORY_KEYS);
   const keys = new Set([...Object.keys(current.extensions), ...Object.keys(next.extensions)]);
-  let changed = current.title !== next.title || current.summary !== next.summary ||
+  let changed = canonicalJson(current.involvedProjects) !== canonicalJson(next.involvedProjects) || current.title !== next.title || current.summary !== next.summary ||
     canonicalJson(current.labels as JsonValue) !== canonicalJson(next.labels as JsonValue);
   for (const key of keys) {
     const before = canonicalJson((current.extensions[key] ?? null) as JsonValue);
@@ -2230,6 +2240,10 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
         assertWorkAnnotation(workAnnotationFields(current), workAnnotationFields(record), record.id, "WORKSPACE_EVENT_CORRUPT");
       }
       extensionRecordOrCorrupt(() => validateBoundTemplateWork(record, [...templates.values()]));
+      try { assertInvolvedProjectScope([...work.values()], record); } catch (error) { fail("WORKSPACE_EVENT_CORRUPT", String(error)); }
+      for (const child of work.values()) if (child.parentId === record.id) {
+        try { assertInvolvedProjectScope([...work.values()].filter(entry => entry.id !== record.id).concat(record), child); } catch (error) { fail("WORKSPACE_EVENT_CORRUPT", String(error)); }
+      }
       work.set(record.id, record);
       validateWorkClosure(work, projects, record, templateRegistry([...templates.values()]));
       continue;
@@ -2491,6 +2505,8 @@ function materialize(metadata: WorkspaceMetadata, events: readonly EventRecord[]
       const body = payloadRecord(payload, operation, actorRequired);
       try {
         const change = readConfigRecordEvent(operation, body);
+        if (change.collection === "chain" && change.key === "identity" && change.value?.role === "coordination" && change.value.coordinationLibraryId !== metadata.workspaceId) throw new ConfigRecordError("CONFIG_RECORD_EVENT_INVALID", "coordination identity must refer to this library");
+        if (change.collection === "chain" && change.key === "identity" && typeof change.value?.primaryProjectId === "string") projectLineage({ projects: [...projects.values()] }, change.value.primaryProjectId);
         const identity = configRecordIdentity(change.collection, change.key, change.projectId);
         if (change.projectId !== undefined) projectLineage({ projects: [...projects.values()] }, change.projectId);
         if (change.value === undefined) {
@@ -3495,6 +3511,10 @@ export async function appendEvents(
       // Each member sees the state the members before it produced, which is what makes an
       // ordered batch express a dependency.
       const delta = buildDelta(current);
+      if (library.manifest.formatVersion < 2 && isJsonObject(delta.payload) && isJsonObject(delta.payload.record) &&
+        (Object.hasOwn(delta.payload.record, "involvedProjects") || delta.payload.record.collection === "chain")) {
+        throw new FormatVersionError("LIBRARY_FORMAT_UNSUPPORTED", "project-chain semantics require a format-2 library; no implicit in-place upgrade is performed", { required: "2", actual: String(library.manifest.formatVersion) });
+      }
       // WSE-2: once attestation is enabled (or on the enabling event itself) a valid actor is
       // mandatory and joins the hashed payload; before it, no actor is written. The reducer
       // re-derives the boundary and enforces the same rule on replay.
@@ -3687,6 +3707,7 @@ export function createWorkDelta(input: {
   readonly title?: string | null;
   readonly summary?: string | null;
   readonly labels?: readonly string[];
+  readonly involvedProjects?: InvolvedProjects;
   readonly templateAdmission?: unknown;
   readonly occurredAt: string;
 }): (state: WorkspaceState) => MutationDelta {
@@ -3708,6 +3729,7 @@ export async function createWork(workspaceRoot: string, input: {
   readonly title?: string | null;
   readonly summary?: string | null;
   readonly labels?: readonly string[];
+  readonly involvedProjects?: InvolvedProjects;
   readonly templateAdmission?: unknown;
 } & WorkspaceMutationOptions): Promise<WorkspaceState> {
   return appendEvent(workspaceRoot, (state) => createWorkReducerDelta(state, input), input);
@@ -3728,6 +3750,7 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
   readonly title?: string | null;
   readonly summary?: string | null;
   readonly labels?: readonly string[];
+  readonly involvedProjects?: InvolvedProjects;
   readonly templateAdmission?: unknown;
   readonly occurredAt: string;
 }): MutationDelta {
@@ -3809,9 +3832,11 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
       createdAt: input.occurredAt,
       labels,
       summary,
+      involvedProjects: normalizeInvolvedProjects(input.involvedProjects ?? { state: "undecided", targets: [] }),
     };
     // TCRN-CROSS-STORY-473 R1, R2: a Story is checked for its goal and its acceptance and
     // nothing else, bound to a template or not; the ten-block contract is gone.
+    assertInvolvedProjectScope(state.work, record);
     assertStoryFields(record);
     validateBoundTemplateWork(record, state.templates);
     assertStoryCompletionAdmission(record, record.status);
@@ -4000,10 +4025,11 @@ export async function annotateWork(workspaceRoot: string, input: WorkAnnotationI
 
 function annotateWorkReducerDelta(state: WorkspaceState, input: WorkAnnotationInput): MutationDelta {
   const current = workById(state, input.id);
+  if (input.expectedRevision !== undefined && input.expectedRevision !== current.revision) fail("WORKSPACE_INPUT_INVALID", "work revision changed; reload before saving");
   if (current.tombstone) {
     fail("WORKSPACE_INPUT_INVALID", `work ${input.id} is deleted`);
   }
-  if (input.scope === undefined && input.decidedBy === undefined && input.verify === undefined && input.result === undefined && input.sprint === undefined && input.relations === undefined && input.goal === undefined && input.acceptance === undefined && input.body === undefined && input.title === undefined && input.summary === undefined && input.labels === undefined) {
+  if (input.scope === undefined && input.decidedBy === undefined && input.verify === undefined && input.result === undefined && input.sprint === undefined && input.relations === undefined && input.goal === undefined && input.acceptance === undefined && input.body === undefined && input.title === undefined && input.summary === undefined && input.labels === undefined && input.involvedProjects === undefined) {
     fail("WORKSPACE_INPUT_INVALID", "an annotation must set scope, decided-by, verify, result, sprint, relations, goal, acceptance, body, title, summary, or labels");
   }
   validateWorkAdvisoryInput(input, input.id, "WORKSPACE_INPUT_INVALID");
@@ -4016,6 +4042,7 @@ function annotateWorkReducerDelta(state: WorkspaceState, input: WorkAnnotationIn
   // that is the only way a pre-363 record acquires one -- by an event that says
   // who wrote it and when, not by a replay-time default.
   const summary = input.summary === undefined ? current.summary : normalizeWorkSummary(input.summary);
+  const involvedProjects = input.involvedProjects === undefined ? involvedProjectsOf(current) : normalizeInvolvedProjects(input.involvedProjects);
   const extensions = workAdvisoryExtensions(current.extensions, input, relations);
   // TCRN-CROSS-INC-269: the reducer's own predicate, run before the event exists.
   // title, labels and summary are top-level work fields rather than extensions, so an
@@ -4028,7 +4055,7 @@ function annotateWorkReducerDelta(state: WorkspaceState, input: WorkAnnotationIn
   // INC-269 exactly. TCRN-CROSS-STORY-363.
   assertWorkAnnotation(
     workAnnotationFields(current),
-    { extensions, title, summary: summary ?? null, labels },
+    { extensions, title, summary: summary ?? null, labels, involvedProjects },
     input.id,
     "WORKSPACE_INPUT_INVALID",
   );
@@ -4039,6 +4066,7 @@ function annotateWorkReducerDelta(state: WorkspaceState, input: WorkAnnotationIn
     title,
     labels,
     ...(summary === undefined ? {} : { summary }),
+    ...(input.involvedProjects === undefined ? {} : { involvedProjects }),
     revision: current.revision + 1,
     updatedAt: input.occurredAt,
   };
@@ -4046,10 +4074,13 @@ function annotateWorkReducerDelta(state: WorkspaceState, input: WorkAnnotationIn
   // from must leave both in place. One that touches neither -- a title, a summary, a relation --
   // stays open to every Story, including one written before the fields existed.
   if (input.goal !== undefined || input.acceptance !== undefined || input.scope !== undefined) {
+    assertInvolvedProjectScope(state.work, record);
     assertStoryFields(record);
   }
   validateBoundTemplateWork(record, state.templates);
   const work = validateWorkGraph(state.work.map((entry) => entry.id === record.id ? record : entry), templateRegistry(state.templates));
+  assertInvolvedProjectScope(state.work, record);
+  for (const child of state.work.filter(entry => entry.parentId === record.id)) assertInvolvedProjectScope([...state.work.filter(entry => entry.id !== record.id), record], child);
   return { payload: { operation: "work.annotated", record: workJsonFields(record) }, projects: state.projects, work };
 }
 

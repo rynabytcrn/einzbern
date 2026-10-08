@@ -107,16 +107,16 @@ async function startupRefusal(args, env, cwd) {
 }
 
 const clientTargets = new Map();
-const visibleTarget = (library) => ({ libraryId: library.libraryId, projectId: Object.hasOwn(library, "configurationProjectId") ? library.configurationProjectId : library.projectId ?? null });
+const visibleTarget = (library, epoch) => ({ epoch, libraryId: library.libraryId, projectId: Object.hasOwn(library, "configurationProjectId") ? library.configurationProjectId : library.projectId ?? null });
 async function readBoot(url) {
   const page = await (await fetch(url)).text();
   assert.ok(!page.includes("__PORTAL_BOOT__"));
   const boot = JSON.parse(page.match(/const BOOT = (\{.*\});/u)[1]);
-  clientTargets.set(boot.token, visibleTarget(boot.library));
+  clientTargets.set(boot.token, visibleTarget(boot.library, boot.epoch));
   return { page, boot };
 }
 
-function request(url, path, options) { return fetch(new URL(path, url), options).then(async (response) => { const body = await response.json(); if (body.ok && body.library && ["/api/library", "/api/configuration-scope"].includes(path)) clientTargets.set(options.headers["x-portal-token"], visibleTarget(body.library)); return { response, body }; }); }
+function request(url, path, options) { return fetch(new URL(path, url), options).then(async (response) => { const body = await response.json(); if (body.ok && body.library && ["/api/library", "/api/configuration-scope"].includes(path)) clientTargets.set(options.headers["x-portal-token"], visibleTarget(body.library, body.epoch)); return { response, body }; }); }
 function writeOptions(token, method, body) { return { method, headers: { "content-type": "application/json", "x-portal-token": token, "x-configuration-target": JSON.stringify(clientTargets.get(token)) }, body: JSON.stringify(body) }; }
 function readOptions(token) { return { headers: { "x-portal-token": token } }; }
 
@@ -986,9 +986,11 @@ test("STORY-482 AC1: the registry's two libraries can be switched, and each answ
   const { boot } = await readBoot(url);
   const listed = await request(url, "/api/libraries", readOptions(boot.token));
   assert.equal(listed.body.reasonCode, "PORTAL_LIBRARIES_READY");
+  const firstName = (await cli(["project-list", "--workspace", fixture.workspace], fixture.deviceEnv)).records.find(record => record.id === fixture.projectId).name;
+  const secondName = (await cli(["project-list", "--workspace", fixture.second.library], fixture.deviceEnv)).records.find(record => record.id === fixture.second.projectId).name;
   assert.deepEqual(listed.body.libraries, [
-    { projectPath: fixture.proseRoot, projectId: fixture.projectId, configurationProjectId: null, libraryId: first.workspaceId, libraryPath: fixture.workspace },
-    { projectPath: fixture.second.project, projectId: fixture.second.projectId, configurationProjectId: null, libraryId: second.workspaceId, libraryPath: fixture.second.library },
+    { projectPath: fixture.proseRoot, projectId: fixture.projectId, configurationProjectId: null, libraryId: first.workspaceId, libraryPath: fixture.workspace, name: firstName, chain: null },
+    { projectPath: fixture.second.project, projectId: fixture.second.projectId, configurationProjectId: null, libraryId: second.workspaceId, libraryPath: fixture.second.library, name: secondName, chain: null },
   ]);
   assert.deepEqual(listed.body.selected, { ...listed.body.libraries[0], configurationProjectId: fixture.projectId });
   assert.deepEqual(boot.libraries, listed.body.libraries);

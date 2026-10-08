@@ -495,3 +495,20 @@ policy to the host; a host default is still an effective host limit, not proof
 of unbounded execution. Existing unrelated host entries and their user-chosen
 timeouts remain intact. Explicit user byte budgets remain distinct from these
 execution policies and from representation or protocol bounds.
+
+## Coordination and target provenance
+
+Classified coordination chains expose library runtime settings; their historical
+project development settings remain canonical history but are not effective
+development defaults. A concrete target is resolved from an explicit registered
+`{libraryId, projectId}`. Each target independently supplies its effective
+settings and declared ancestry. An opted-in common default is separately marked
+`common`; device/user settings remain separately returned by their own catalog.
+No gate root, coverage binding or managed-file digest is inherited from a common
+source. Missing, cyclic and conflicting sources remain explicit failures.
+
+`project-context --reference <JSON>` and `work-project-context --id <work>` return
+per-target contexts, provenance, unresolved references and differences between
+design/build/model/language configurations. Differences require separate target
+execution; no first target becomes a global default. Publication verification
+remains unverified until the authorized external evidence lane checks it.

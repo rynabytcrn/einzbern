@@ -1,3 +1,4 @@
+import { chainIdentity, declareChainIdentity, registeredCoordination, ensureProjectCoordination } from "./project-chain.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
@@ -694,6 +695,11 @@ export async function ensureSetupProjectBinding(projectRoot: string, libraryPath
   const libraryRoot = await realpath(libraryPath);
   const state = await materializeWorkspace(libraryRoot);
   const entry = (await readRegistry(input.deviceHome)).entries.find(candidate => candidate.projectPath === root);
+  const identity = chainIdentity(state);
+  if (entry?.projectId === undefined && identity?.primaryProjectId !== undefined) {
+    projectLineage(state, identity.primaryProjectId);
+    return identity.primaryProjectId;
+  }
   if (entry?.projectId !== undefined) {
     if (entry.libraryId !== state.metadata.workspaceId || entry.libraryPath !== libraryRoot) setupFail("SETUP_LIBRARY_CONFLICT", "declared project binding names another library");
     projectLineage(state, entry.projectId);
@@ -845,6 +851,8 @@ export async function applyWiring(recorder: SetupRecorder, input: WiringApplyInp
   const { steps, library } = input;
   if (library !== null) {
     const prior = await materializeWorkspace(library.path);
+    const identity = chainIdentity(prior);
+    if (identity !== null) await registeredCoordination(input.deviceHome, identity.coordinationLibraryId);
     const configurationProjectId = input.configurationProjectId ?? await ensureSetupProjectBinding(input.projectRoot, library.path, input);
     input = { ...input, configurationProjectId };
     if ((await materializeWorkspace(library.path)).version !== prior.version) recorder.write("library", library.path, "update");
@@ -937,6 +945,14 @@ export async function planFreshSetup(input: SetupModeInput): Promise<SetupModePl
   if (library.action === "create") recorder.write("library", library.path, "create");
   else if (currentLanguage !== resolved.language) recorder.write("library", library.path, "update");
 
+  // The coordination binding is part of this plan, including repeat/restore conflicts.
+  try {
+    const identity = library.action === "reuse" ? chainIdentity(await materializeWorkspace(library.path)) : null;
+    const coordination = await registeredCoordination(deviceHome, identity?.coordinationLibraryId);
+    if (coordination === null) recorder.write("library", join(deviceHome, "coordination-library"), "create");
+    if (identity === null && library.action !== "create") recorder.write("library", library.path, "update");
+  } catch (error) { recorder.block("library", library.path, "SETUP_LIBRARY_CONFLICT", String(error)); }
+
   // registry, skill-copies, launchers, host-hooks, writable-roots, machine-settings, managed-sections
   const files = engine.directory === null ? null : await readEngineFiles(recorder, engine.directory);
   const pending = await planWiring(recorder, {
@@ -999,7 +1015,13 @@ export async function applyFreshSetup(plan: SetupPlan): Promise<SetupApplied> {
   const libraryPath = library.root;
   const libraryId = library.manifest.libraryId;
   if (planned.action === "create") recorder.write("library", libraryPath, "create");
+  const existingIdentity = chainIdentity(await materializeWorkspace(libraryPath));
+  const coordination = await ensureProjectCoordination(libraryPath, at, deviceHome);
+  if (coordination.created) recorder.write("library", coordination.path, "create");
+  if (existingIdentity === null) recorder.write("library", libraryPath, "update");
   const configurationProjectId = await ensureSetupProjectBinding(projectRoot, libraryPath, { at, deviceHome });
+  const declaredIdentity = chainIdentity(await materializeWorkspace(libraryPath))!;
+  if (declaredIdentity.primaryProjectId === undefined) await declareChainIdentity(libraryPath, { ...declaredIdentity, primaryProjectId: configurationProjectId }, { occurredAt: at });
   const state = scopedWorkspaceState(await materializeWorkspace(libraryPath), configurationProjectId);
   if (libraryLanguage(state) !== resolved.language) {
     await setWorkspaceSetting(libraryPath, { key: LANGUAGE_SETTING, value: resolved.language, configurationProjectId, occurredAt: at });

@@ -1,4 +1,4 @@
-import { scopedWorkspaceState } from "./project-scope.js";
+import { effectiveProjectState } from "./project-chain.js";
 // SPDX-License-Identifier: Apache-2.0
 
 // TCRN-CROSS-STORY-477 R2, AC3 and STORY-474 R2, R3 (MIN-227 D5, D7): what the one Einzbern hook
@@ -161,7 +161,7 @@ export async function promptRecallContext(request: PromptRecallRequest): Promise
   const library = await confirmedLibrary(request.cwd, request.libraryPath);
   if (library === null) return null;
   const at = request.at ?? currentInstant();
-  const state = scopedWorkspaceState(await materializeLibrary(library.libraryPath), library.entry.projectId);
+  const state = await effectiveProjectState(await materializeLibrary(library.libraryPath), library.entry.projectId);
   // TCRN-CROSS-SUB-425 (MIN-239 D6): the prompt hook recalls valid cards only, always; no prompt asks
   // it for a removed one.
   const { cards, digest } = await readRecallCards(library.libraryPath, { at, allowTrailing: true, status: "valid" });

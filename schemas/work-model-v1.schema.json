@@ -81,6 +81,45 @@
     },
     "extensions": {
       "$ref": "./protocol-common-v1.schema.json#/$defs/extensionMap"
+    },
+    "scopeDigest": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "createdAt": {
+      "anyOf": [
+        {
+          "$ref": "./protocol-common-v1.schema.json#/$defs/strictInstant"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "labels": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      }
+    },
+    "summary": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "involvedProjects": {
+      "$ref": "#/$defs/involvedProjects"
     }
   },
   "$defs": {
@@ -111,6 +150,102 @@
       "items": {
         "$ref": "./protocol-common-v1.schema.json#/$defs/stableId"
       }
+    },
+    "projectReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "libraryId",
+        "projectId"
+      ],
+      "properties": {
+        "libraryId": {
+          "type": "string",
+          "pattern": "^(library|workspace):[a-f0-9]{24}$"
+        },
+        "projectId": {
+          "type": "string",
+          "pattern": "^project:[a-f0-9]{24}$"
+        }
+      }
+    },
+    "involvedProjects": {
+      "$comment": "Absence reads undecided without replay backfill. Targets are canonical UTF-8 sorted by libraryId/projectId; the reducer enforces order and declared parent scope, independently of device registration.",
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "targets"
+          ],
+          "properties": {
+            "state": {
+              "enum": [
+                "undecided",
+                "coordination-only"
+              ]
+            },
+            "targets": {
+              "type": "array",
+              "maxItems": 0
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "state",
+            "targets"
+          ],
+          "properties": {
+            "state": {
+              "const": "selected"
+            },
+            "targets": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "#/$defs/projectReference"
+              }
+            }
+          }
+        }
+      ]
     }
+  },
+  "dependentRequired": {
+    "scopeDigest": [
+      "scopeDigest",
+      "title",
+      "createdAt",
+      "labels"
+    ],
+    "title": [
+      "scopeDigest",
+      "title",
+      "createdAt",
+      "labels"
+    ],
+    "createdAt": [
+      "scopeDigest",
+      "title",
+      "createdAt",
+      "labels"
+    ],
+    "labels": [
+      "scopeDigest",
+      "title",
+      "createdAt",
+      "labels"
+    ],
+    "summary": [
+      "scopeDigest",
+      "title",
+      "createdAt",
+      "labels"
+    ]
   }
 }

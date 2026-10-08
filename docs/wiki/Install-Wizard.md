@@ -47,3 +47,12 @@ einzbern setup --mode fresh|restore|update|repair|migrate|uninstall --project <�
 向导不提交、不推送、不改 `.gitignore`，也不删除文件。更新引擎不会自动重写项目的 `AGENTS.md` 或 `CLAUDE.md`。完整健康检查使用 `doctor --project <项目目录>`。
 
 库放在项目外时，`fresh`、`restore` 与 `repair` 会把本机库的绝对路径写进项目的 `.claude/settings.local.json` 与 `.codex/config.toml`。其中已被 Git 跟踪（在索引中）的文件，计划会在任何写入之前逐个列入 `warnings`：每项含文件（相对项目根）、原因码 `HOST_WRITABLE_ROOTS_TRACKED_BY_GIT` 与说明，说明措辞与开发脚本 host-render 相同；`SETUP_APPLIED` 的 `warnings` 同样列出。警示不阻止应用：提交这些文件会公开本机的库路径，是否继续跟踪由用户决定，向导不改动 Git 索引。两个文件都未被跟踪，或库在项目内时，`warnings` 为空。
+
+## Coordination initialization
+
+Fresh installation creates one explicitly marked coordination library for this
+device's installation context and registers the concrete project separately.
+Repeated setup reuses the canonical coordination identity. Restore checks an
+existing project's synchronized binding first; register a missing coordination
+library instead of creating a replacement. Competing identities require an
+explicit choice. Planning reports the additional library write before apply.

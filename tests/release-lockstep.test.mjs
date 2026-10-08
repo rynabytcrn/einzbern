@@ -86,7 +86,7 @@ async function createRepos(name) {
   for (const path of ["LICENSE", "NOTICE", "packages/core/src/names.ts"]) {
     await writeText(engineRoot, path, await readFile(join(REPOSITORY_ROOT, path), "utf8"));
   }
-  await writeText(engineRoot, "packages/core/src/index.ts", await readFile(join(REPOSITORY_ROOT, "packages/core/src/index.ts"), "utf8"));
+  await writeText(engineRoot, "packages/core/src/framework-version.ts", await readFile(join(REPOSITORY_ROOT, "packages/core/src/framework-version.ts"), "utf8"));
   await writeText(engineRoot, "scripts/einzbern.mjs", await readFile(join(REPOSITORY_ROOT, "scripts/einzbern.mjs"), "utf8"));
   await writeText(engineRoot, ".gitignore", "/dist/\n/node_modules/\n");
   await writeText(engineRoot, "CHANGELOG.md", `# Changelog\n\n## Unreleased\n\n${RELEASE_NOTES}\n\n## ${OLD_VERSION}\n\nEarlier release.\n`);
@@ -172,7 +172,7 @@ async function controlledPrepareRunner({ engineRoot, helperRoot, projectRoot, en
     calls.push({ command, args, cwd });
     if (command === "corepack") {
       if (!staleBuild) {
-        const source = await readFile(join(engineRoot, "packages/core/src/index.ts"), "utf8");
+        const source = await readFile(join(engineRoot, "packages/core/src/framework-version.ts"), "utf8");
         await writeText(engineRoot, "dist/build/packages/core/src/index.js", stripTypesWithScopedExperimentalWarning(source, { mode: "transform", sourceMap: false }));
       }
       return { status: 0, stdout: '{"ok":true,"reasonCode":"BUILD_VERIFIED"}\n', stderr: "" };
@@ -276,10 +276,10 @@ test("488-R1/R2/R4, MIN-235 D13: prepare aligns both repositories, keeps schema 
   assert.equal(native.gates.every((gate) => gate.exitCode === 0 && gate.ok), true);
   assert.equal(calls.some((call) => call.args.includes("gates-run")), false, "real gates bypass the controlled renderer/pack runner");
   assert.equal(calls.some((call) => call.command === "gh" || call.args.includes("tag") || call.args.includes("push")), false);
-  const sourcePath = join(repos.engineRoot, "packages/core/src/index.ts");
+  const sourcePath = join(repos.engineRoot, "packages/core/src/framework-version.ts");
   const preparedSource = await readFile(sourcePath, "utf8");
   await writeFile(sourcePath, preparedSource.replace(`FRAMEWORK_VERSION = "${NEXT_VERSION}"`, `FRAMEWORK_VERSION = "${OLD_VERSION}"`));
-  await assert.rejects(checkRelease({ ...repos, version: NEXT_VERSION, env: environment }), (error) => error.reasonCode === "RELEASE_VERSION_MISMATCH" && error.details.mismatches.some((entry) => entry.path === "packages/core/src/index.ts"));
+  await assert.rejects(checkRelease({ ...repos, version: NEXT_VERSION, env: environment }), (error) => error.reasonCode === "RELEASE_VERSION_MISMATCH" && error.details.mismatches.some((entry) => entry.path === "packages/core/src/framework-version.ts"));
   assert.throws(
     () => execFileSync(process.execPath, [join(repos.engineRoot, "scripts/pack-release.mjs"), "--version", NEXT_VERSION], { cwd: repos.engineRoot, env: environment, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }),
     (error) => JSON.parse(error.stderr.toString()).reasonCode === "PACK_VERSION_MISMATCH",
@@ -297,7 +297,7 @@ test("488-R4: a red release gate stops preparation before the archive step", asy
     calls.push({ command, args });
     const scriptName = args[0]?.split("/").at(-1);
     if (command === "corepack") {
-      const source = await readFile(join(repos.engineRoot, "packages/core/src/index.ts"), "utf8");
+      const source = await readFile(join(repos.engineRoot, "packages/core/src/framework-version.ts"), "utf8");
       await writeText(repos.engineRoot, "dist/build/packages/core/src/index.js", stripTypesWithScopedExperimentalWarning(source, { mode: "transform", sourceMap: false }));
       return { status: 0, stdout: '{"ok":true}\n', stderr: "" };
     }
@@ -464,7 +464,7 @@ function releaseRunner(engineRoot, calls) {
   return async (command, args, { cwd, env }) => {
     calls.push({ command, args, cwd });
     if (command === "corepack") {
-      const source = await readFile(join(engineRoot, "packages/core/src/index.ts"), "utf8");
+      const source = await readFile(join(engineRoot, "packages/core/src/framework-version.ts"), "utf8");
       await writeText(engineRoot, "dist/build/packages/core/src/index.js", stripTypesWithScopedExperimentalWarning(source, { mode: "transform", sourceMap: false }));
       return { status: 0, stdout: '{"ok":true,"reasonCode":"BUILD_VERIFIED"}\n', stderr: "" };
     }
@@ -545,7 +545,7 @@ test("SUB-357 R41 B1: generate writes the release files and a receipt without a 
   const noteText = await readFile(join(fixture.engineRoot, note), "utf8");
   assert.ok(noteText.startsWith(`# Einzbern ${NEXT_VERSION}\n\n`) && noteText.includes(RELEASE_NOTES) && noteText.endsWith("\n"));
   assert.deepEqual(receipt.engine.changes.filter((change) => change.status === "A").map((change) => change.path), [note]);
-  assert.ok(["CHANGELOG.md", "package.json", "packages/core/src/index.ts", ...README_NAMES].every((path) => receipt.engine.changes.some((change) => change.path === path && change.status === "M")));
+  assert.ok(["CHANGELOG.md", "package.json", "packages/core/src/framework-version.ts", ...README_NAMES].every((path) => receipt.engine.changes.some((change) => change.path === path && change.status === "M")));
   for (const [root, changes] of [[fixture.engineRoot, receipt.engine.changes], [fixture.helperRoot, receipt.helper.changes]]) {
     for (const change of changes) {
       const content = await readFile(join(root, change.path));

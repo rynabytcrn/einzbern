@@ -37,7 +37,7 @@ import { withFileLock } from "./file-lock.js";
 import { ENGINE_FORMAT_VERSION, compareSemver, isEngineVersion, librarySupportRefusal } from "./format-version.js";
 import { computeInstallTreeDigest, verifyInstallTree } from "./install-tree-digest.js";
 import { readRegistry } from "./registry.js";
-import { FRAMEWORK_VERSION } from "./index.js";
+import { FRAMEWORK_VERSION } from "./framework-version.js";
 
 // Keep callback output explicit: the test-controller wrapper does not preserve execFile's custom promisifier.
 function runFile(

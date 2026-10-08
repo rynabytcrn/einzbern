@@ -1,6 +1,6 @@
 import { readMachineSettingsCatalog, machineSettingsPath } from "./machine-settings.js";
 // SPDX-License-Identifier: Apache-2.0
-import { join } from "node:path";
+import { join, relative, isAbsolute } from "node:path";
 import { deviceHome } from "./device-home.js";
 import { realpath } from "node:fs/promises";
 import { canonicalJson } from "../../protocol/src/index.js";
@@ -8,53 +8,21 @@ import type { ProjectReference } from "../../protocol/src/index.js";
 import { openLibrary, hasLibraryManifest } from "./ether-library.js";
 import { materializeWorkspace, initializeLibrary, createProject, readLibraryTombstone } from "./workspace.js";
 import type { WorkspaceState, WorkspaceMutationOptions } from "./workspace.js";
-import { readRegistry, registerLibrary } from "./registry.js";
+import { readRegistry, registerLibrary, normalizeGitRemote } from "./registry.js";
 import { setConfigRecord } from "./config-records.js";
-import type { ConfigRecordValue } from "./config-records.js";
 import { designConfiguration, scopedWorkspaceState } from "./project-scope.js";
 import { readSettingsCatalog } from "./settings.js";
 import { involvedProjectsOf, projectReference, projectReferenceKey } from "./involved-projects.js";
 
-export class ProjectChainError extends Error {
-  readonly reasonCode = "PROJECT_CHAIN_INVALID";
-}
-export interface ChainIdentity {
-  readonly primaryProjectId?: string;
-  readonly role: "coordination" | "project";
-  readonly coordinationLibraryId: string;
-}
-const libraryId = (value: unknown): value is string => typeof value === "string" && /^(library|workspace):[a-f0-9]{24}$/u.test(value);
-/** Canonical records travel in device streams; registries only locate them. */
-export function checkChainRecord(value: ConfigRecordValue, key: string): void {
-  if (key === "identity") {
-    if (Object.keys(value).filter(field => field !== "primaryProjectId").sort().join(",") !== "coordinationLibraryId,role" || (value.primaryProjectId !== undefined && (typeof value.primaryProjectId !== "string" || !/^project:[a-f0-9]{24}$/u.test(value.primaryProjectId))) || !["coordination", "project"].includes(String(value.role)) || !libraryId(value.coordinationLibraryId)) throw new ProjectChainError("chain identity requires an explicit role and coordination library identity");
-    return;
-  }
-  if (key === "common-default") { projectReference(value); return; }
-  if (key === "repositories") {
-    if (Object.keys(value).join(",") !== "bindings" || !Array.isArray(value.bindings) || value.bindings.length === 0) throw new ProjectChainError("repositories require a nonempty bindings list");
-    const ids = new Set<string>();
-    for (const binding of value.bindings) {
-      if (binding === null || typeof binding !== "object" || Array.isArray(binding) || Object.keys(binding).sort().join(",") !== "buildProject,buildService,id,name,repository" || [binding.id, binding.name, binding.repository, binding.buildService, binding.buildProject].some(field => typeof field !== "string" || field.trim() === "")) throw new ProjectChainError("each repository requires its own id, name, repository, buildService and buildProject");
-      if (ids.has(String(binding.id))) throw new ProjectChainError("repository binding ids must be unique");
-      ids.add(String(binding.id));
-    }
-    return;
-  }
-  throw new ProjectChainError("unknown chain record");
-}
-export function chainIdentity(state: Pick<WorkspaceState, "configRecords" | "metadata">): ChainIdentity | null {
-  const record = state.configRecords.find(r => r.collection === "chain" && r.key === "identity" && r.projectId === undefined);
-  if (!record) return null;
-  checkChainRecord(record.value, record.key);
-  const identity = record.value as unknown as ChainIdentity;
-  if (identity.role === "coordination" && identity.coordinationLibraryId !== state.metadata.workspaceId) throw new ProjectChainError("coordination identity must name its own library");
-  return identity;
-}
+import { ProjectChainError, chainIdentity } from "./chain-identity.js";
+import type { ChainIdentity } from "./chain-identity.js";
+export { ProjectChainError, chainIdentity, checkChainRecord } from "./chain-identity.js";
+export type { ChainIdentity } from "./chain-identity.js";
 export async function declareChainIdentity(root: string, identity: ChainIdentity, options: WorkspaceMutationOptions): Promise<WorkspaceState> {
   const state = await materializeWorkspace(root);
   if (identity.role === "coordination" && identity.coordinationLibraryId !== state.metadata.workspaceId) throw new ProjectChainError("coordination identity must name its own library");
-  if (canonicalJson(chainIdentity(state)) === canonicalJson(identity)) return state;
+  const previous = chainIdentity(state);
+  if (canonicalJson(previous) === canonicalJson(identity)) return state;
   return setConfigRecord(root, { collection: "chain", key: "identity", value: identity, ...options });
 }
 export type ProjectTargetStatus = "unregistered" | "unavailable" | "invalid-chain" | "project-absent" | "project-deleted" | "ambiguous" | "unconfigured" | "conflicting" | "configured";
@@ -95,7 +63,7 @@ export async function resolveProjectTarget(referenceInput: ProjectReference, hom
       if (!["configured", "unconfigured"].includes(String(common.status)) || !Array.isArray(common.settings)) return { ...base, status: "conflicting", reason: "common-default-unresolved", common };
       const defaults = common.settings as typeof settings;
       for (const entry of settings) {
-        if (entry.source.kind !== "default" || catalog.settings.find(candidate => candidate.key === entry.key)?.scope === "library") continue;
+        if (entry.source.kind !== "default" || catalog.settings.find(candidate => candidate.key === entry.key)?.scope === "library" || catalog.settings.find(candidate => candidate.key === entry.key)?.shape === "collection") continue;
         const fallback = defaults.find(other => other.key === entry.key);
         if (fallback && fallback.source.kind !== "default") { entry.value = fallback.value; entry.source = { ...fallback.source, kind: "common" as typeof entry.source.kind, inherited: true }; }
       }
@@ -105,7 +73,28 @@ export async function resolveProjectTarget(referenceInput: ProjectReference, hom
       settingSources: Object.fromEntries(settings.map(entry => [entry.key, entry.source])),
     };
     const design = designConfiguration(effective);
-    return { ...base, status: design.status === "conflicting" ? "conflicting" : design.status === "unconfigured" ? "unconfigured" : "configured", name: project.name, chain: identity, version: state.version, settings, configRecords: scoped.configRecords, configSources: scoped.configSources, design, common, repositoryBindings: scoped.configRecords.find(entry => entry.collection === "chain" && entry.key === "repositories")?.value ?? null, deviceRepositories: entries.map(entry => ({ projectPath: entry.projectPath, gitRemote: entry.gitRemote })), deviceSettings: await readMachineSettingsCatalog(machineSettingsPath(home)), deviceSettingsSource: "device/user; not a chain default" };
+    const repositories = scoped.configRecords.find(entry => entry.collection === "chain" && entry.key === "repositories")?.value ?? null;
+    const declaredRepositories = (repositories?.bindings ?? []) as { repository: string; id: string; buildService: string; buildProject: string }[];
+    const repositoryContexts = await Promise.all(entries.map(async entry => {
+      const matches = declaredRepositories.filter(binding => entry.gitRemote !== null && normalizeGitRemote(binding.repository) === entry.gitRemote);
+      let outputReady = false;
+      try { const projectRoot = await realpath(entry.projectPath); const relation = relative(root, projectRoot); outputReady = relation !== "" && (relation.startsWith("..") || isAbsolute(relation)); } catch { /* unavailable output remains unready */ }
+      return { projectPath: entry.projectPath, gitRemote: entry.gitRemote, outputReady, binding: matches.length === 1 ? matches[0]! : null, status: matches.length === 1 ? "bound" : matches.length > 1 ? "ambiguous" : "unconfigured" };
+    }));
+    const models = settings.find(entry => entry.key === "models.tiers");
+    const language = settings.find(entry => entry.key === "artifact.language");
+    const requirements = {
+      design: design.status === "declared" ? [] : ["design.bundle"],
+      model: models?.value && JSON.parse(models.value).some((tier: { model?: string; runner?: string }) => Boolean(tier.model?.trim() && tier.runner?.trim())) ? [] : ["models.tiers"],
+      repository: repositoryContexts.length > 0 && repositoryContexts.every(entry => entry.status === "bound") ? [] : ["registered.repository-build-binding"],
+      output: repositoryContexts.length > 0 && repositoryContexts.every(entry => entry.outputReady) ? [] : ["registered.project-output"],
+      gates: scoped.configRecords.some(entry => entry.collection === "gate" && entry.value.enabled !== false) ? [] : ["gate.declarations"],
+      language: language?.value ? [] : ["artifact.language"],
+    };
+    const readiness = Object.fromEntries(Object.entries(requirements).map(([operation, missing]) => [operation, { ready: missing.length === 0, missing }]));
+    const developmentMissing = [...requirements.design, ...requirements.model, ...requirements.repository, ...requirements.output, ...requirements.language];
+    readiness.development = { ready: developmentMissing.length === 0, missing: developmentMissing };
+    return { ...base, status: design.status === "conflicting" ? "conflicting" : design.status === "unconfigured" ? "unconfigured" : "configured", name: project.name, libraryPath: root, chain: identity, version: state.version, readiness, repositoryContexts, commonDefaultsContract: "optional project scalar settings only; local gate roots and managed digests never inherit", settings, configRecords: scoped.configRecords, configSources: scoped.configSources, design, common, repositoryBindings: scoped.configRecords.find(entry => entry.collection === "chain" && entry.key === "repositories")?.value ?? null, deviceRepositories: entries.map(entry => ({ projectPath: entry.projectPath, gitRemote: entry.gitRemote })), deviceSettings: await readMachineSettingsCatalog(machineSettingsPath(home)), deviceSettingsSource: "device/user; not a chain default" };
   } catch (error) { return { ...base, status: "conflicting", reason: String(error) }; }
 }
 export async function workProjectContexts(state: WorkspaceState, workId: string, home?: string): Promise<Record<string, unknown>> {
@@ -118,17 +107,23 @@ export async function workProjectContexts(state: WorkspaceState, workId: string,
     const values = contexts.map(context => (context.settings as { key: string; value: unknown }[] | undefined)?.find(setting => setting.key === key)?.value).filter(value => value !== undefined);
     if (new Set(values.map(value => canonicalJson(value))).size > 1) conflicts.push(key);
   }
-  return { workId, involvedProjects, contexts, conflicts, developmentReady: involvedProjects.state === "selected" && contexts.every(context => context.status === "configured"), coordinationReady: involvedProjects.state === "coordination-only", writeAuthority: "not-granted", explanation: "Each context applies only to its stable project reference; authorization and writable roots must be checked independently." };
+  return { workId, workRevision: work.revision, involvedProjects, contexts, conflicts, developmentReady: involvedProjects.state === "selected" && contexts.every(context => (context.readiness as Record<string, { ready: boolean }> | undefined)?.development?.ready === true), coordinationReady: involvedProjects.state === "coordination-only", writeAuthority: "not-granted", explanation: "Each context applies only to its stable project reference; authorization and writable roots must be checked independently." };
 }
 
 /** Resolve a synchronized binding before any fresh/restore write. Missing restoration
  * bindings are actionable conflicts, never permission to mint a replacement identity. */
-export async function registeredCoordination(home?: string, expectedId?: string): Promise<{ libraryId: string; path: string } | null> {
+export async function registeredCoordination(home?: string, expectedId?: string): Promise<{ libraryId: string; path: string; unavailable: readonly { libraryId: string; path: string }[] } | null> {
   const registry = await readRegistry(home);
   const candidates = new Map<string, { libraryId: string; path: string }>();
+  const unavailable: { libraryId: string; path: string }[] = [];
   for (const entry of registry.entries) {
     if (expectedId !== undefined && entry.libraryId !== expectedId) continue;
-    const state = await materializeWorkspace(entry.libraryPath);
+    let state: WorkspaceState;
+    try { state = await materializeWorkspace(entry.libraryPath); }
+    catch (error) {
+      if (expectedId === undefined && entry.chainRole === "project") { unavailable.push({ libraryId: entry.libraryId, path: entry.libraryPath }); continue; }
+      throw new ProjectChainError(`coordination discovery cannot classify ${entry.libraryId}: ${String(error)}`);
+    }
     if (state.metadata.workspaceId !== entry.libraryId) throw new ProjectChainError("registered coordination identity mismatch");
     if (chainIdentity(state)?.role !== "coordination") continue;
     const path = await realpath(entry.libraryPath);
@@ -138,7 +133,8 @@ export async function registeredCoordination(home?: string, expectedId?: string)
   }
   if (candidates.size > 1) throw new ProjectChainError(`competing coordination identities: ${[...candidates.keys()].join(", ")}`);
   if (expectedId && !candidates.size) throw new ProjectChainError(`register the restored coordination library ${expectedId} before continuing`);
-  return [...candidates.values()][0] ?? null;
+  const candidate = [...candidates.values()][0];
+  return candidate ? { ...candidate, unavailable } : null;
 }
 
 /** Async read boundary for explicitly opted-in cross-chain defaults. Canonical writers
@@ -183,7 +179,7 @@ export async function ensureProjectCoordination(root: string, occurredAt: string
       project = current.projects.find(entry => entry.externalKey === "CROSS-PROJECT" && !entry.tombstone)!;
     }
     await registerLibrary({ projectPath: path, libraryPath: path, projectId: project.id, registeredAt: occurredAt, gitRemote: null }, home);
-    coordination = { path, libraryId: current.metadata.workspaceId };
+    coordination = { path, libraryId: current.metadata.workspaceId, unavailable: [] };
   }
   if (identity === null) await declareChainIdentity(root, { role: "project", coordinationLibraryId: coordination.libraryId }, { occurredAt });
   return { ...coordination, created };

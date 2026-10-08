@@ -27,3 +27,14 @@ missing registration and deleted targets; A→B save→reload→A isolation; sta
 work revision and selection epoch; navigation anchors, full identity disclosure
 and Escape focus return. Existing five-language/theme and narrow-width browser
 matrices apply to the new controls. These are cases within existing acceptance.
+
+Project-chain regressions cover the actual fresh coordination registration
+(project directory equals library directory), switching back from a concrete
+project, absent prose output, and stale unregistered targets across every
+mutation family. Portal mutation transactions hold the device registry lock
+through the CLI write; register/unregister/repoint use that same lock. Selection
+is excluded while a target write holds it, and requests waiting on the lock
+revalidate their selection epoch and stable binding. The CLI retains its own
+library lock and work-revision check. This is process coordination, not human
+authentication. Run these tests with the rebuilt current core; source presence
+alone is not evidence that they passed.

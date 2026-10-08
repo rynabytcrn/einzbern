@@ -117,7 +117,7 @@ import type { GateRecord } from "./assignment-gate.js";
 import { GateIdentityError, validateGateIdentityDecision } from "./gate-identity.js";
 import type { GateIdentityDecision } from "./gate-identity.js";
 import type { CanonicalRoot } from "./root-identity.js";
-import { FRAMEWORK_VERSION } from "./index.js";
+import { FRAMEWORK_VERSION } from "./framework-version.js";
 import { summarizeGoal } from "./story-scope-compliance.js";
 import { deriveStoryFieldsFromScope, missingStoryField, storyFields, storyOwnerDeciderNamed } from "./story-fields.js";
 import type { StoryRequiredField } from "./story-fields.js";

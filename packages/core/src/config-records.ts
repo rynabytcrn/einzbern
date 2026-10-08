@@ -1,4 +1,4 @@
-import { checkChainRecord } from "./project-chain.js";
+import { checkChainRecord } from "./chain-identity.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 

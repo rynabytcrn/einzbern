@@ -59,7 +59,7 @@ import { openLegacyWorkspace, replayLegacyWorkspace, validateLegacyChain } from 
 import { DIRECTORY, LEGACY_CONTROL_DIRECTORY, LEGACY_EVENTS_DIRECTORY, LEGACY_KNOWLEDGE_DIRECTORY } from "./names.js";
 import { materializeLibrary } from "./workspace.js";
 import type { WorkspaceState } from "./workspace.js";
-import { FRAMEWORK_VERSION } from "./index.js";
+import { FRAMEWORK_VERSION } from "./framework-version.js";
 
 export const LEGACY_IMPORT_REASON_CODES = Object.freeze([
   "LEGACY_IMPORT_MISMATCH",

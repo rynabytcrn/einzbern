@@ -1,5 +1,6 @@
 import { localProbeTimeout } from "./io-policy.js";
 import { materializeWorkspace } from "./workspace.js";
+import { chainIdentity } from "./chain-identity.js";
 import { projectLineage } from "./project-scope.js";
 // SPDX-License-Identifier: Apache-2.0
 
@@ -56,6 +57,7 @@ export class RegistryError extends Error {
 }
 
 export interface RegistryEntry {
+  readonly chainRole?: "project" | "coordination";
   readonly projectPath: string;
   readonly projectId?: string;
   readonly gitRemote: string | null;
@@ -97,16 +99,17 @@ function isMigratedFrom(value: unknown): value is string {
 function registryEntry(value: unknown, where: string): RegistryEntry {
   if (value === null || typeof value !== "object" || Array.isArray(value)) fail("LIBRARY_REGISTRY_INVALID", `${where} is not an object`);
   const record = value as Readonly<Record<string, unknown>>;
-  const fields = Object.keys(record).filter((key) => key !== "projectId").sort().join("\u0000");
+  const fields = Object.keys(record).filter((key) => key !== "projectId" && key !== "chainRole").sort().join("\u0000");
   if (Object.hasOwn(record, "projectId") && (typeof record.projectId !== "string" || !/^project:[a-f0-9]{24}$/u.test(record.projectId))) fail("LIBRARY_REGISTRY_INVALID", "projectId must be a stable project identity");
   if (fields !== ENTRY_FIELDS.join("\u0000") && fields !== MIGRATED_ENTRY_FIELDS.join("\u0000")) fail("LIBRARY_REGISTRY_INVALID", `${where} fields are not exact`);
-  const { projectPath, gitRemote, libraryPath, libraryId, cloudHosted, registeredAt, migratedFrom, projectId } = record;
+  const { projectPath, gitRemote, libraryPath, libraryId, cloudHosted, registeredAt, migratedFrom, projectId, chainRole } = record;
+  if (chainRole !== undefined && chainRole !== "project" && chainRole !== "coordination") fail("LIBRARY_REGISTRY_INVALID", "invalid registered chain role");
   if (typeof projectPath !== "string" || typeof libraryPath !== "string" || typeof libraryId !== "string" || typeof registeredAt !== "string" ||
     typeof cloudHosted !== "boolean" || !(gitRemote === null || typeof gitRemote === "string") ||
     (migratedFrom !== undefined && !isMigratedFrom(migratedFrom))) {
     fail("LIBRARY_REGISTRY_INVALID", `${where} types are invalid`);
   }
-  return { projectPath, gitRemote, libraryPath, libraryId, cloudHosted, registeredAt, ...(typeof projectId === "string" ? { projectId } : {}), ...(migratedFrom === undefined ? {} : { migratedFrom }) };
+  return { projectPath, gitRemote, libraryPath, libraryId, cloudHosted, registeredAt, ...(chainRole === undefined ? {} : { chainRole }), ...(typeof projectId === "string" ? { projectId } : {}), ...(migratedFrom === undefined ? {} : { migratedFrom }) };
 }
 
 /** This device's registry; an absent file is an empty registry, a damaged one fails closed. */
@@ -224,8 +227,11 @@ export async function registerLibrary(input: RegisterLibraryInput, home?: string
       ? (previous?.libraryId === library.manifest.libraryId ? previous.migratedFrom : undefined)
       : resolve(input.migratedFrom);
     const projectId = input.projectId ?? (previous?.libraryId === library.manifest.libraryId ? previous.projectId : undefined);
-    if (projectId !== undefined) projectLineage(await materializeWorkspace(library.root), projectId);
+    const state = await materializeWorkspace(library.root);
+    if (projectId !== undefined) projectLineage(state, projectId);
+    const role = chainIdentity(state)?.role;
     const entry: RegistryEntry = {
+      ...(role === undefined ? {} : { chainRole: role }),
       projectPath,
       ...(projectId === undefined ? {} : { projectId }),
       gitRemote: remote === null ? null : normalizeGitRemote(remote),

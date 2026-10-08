@@ -247,6 +247,7 @@ export async function runGates(plan: GatesPlan, options: {
   const directory = gateRunsDirectory(options.libraryId, options.deviceHome);
   const tree = await gateTreeState(plan.projectRoot, plan.roots);
   const runId = `${utcStamp(options.at)}-${canonicalSha256({
+    projectRoot: plan.projectRoot,
     at: options.at,
     ...(options.projectId === undefined ? {} : { projectId: options.projectId }),
     treeDigest: tree.treeDigest,

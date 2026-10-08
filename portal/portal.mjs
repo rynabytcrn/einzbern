@@ -15,6 +15,12 @@ import { createHash, randomBytes } from "node:crypto";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
+// Hold the same device registry lock used by register/unregister/repoint until
+// the CLI's library lock and all output writes finish. This is exclusion, not
+// another preflight or an authentication mechanism.
+import { withFileLock } from "../dist/build/packages/core/src/file-lock.js";
+import { registryPath } from "../dist/build/packages/core/src/device-home.js";
+
 import { LOCALE_CONTRACT } from "./locale-contract.mjs";
 import { DIRECTORY, LEGACY_CONTAINER_DIRECTORY } from "../scripts/lib/names.mjs";
 
@@ -199,7 +205,7 @@ let activeTargetWrites = 0;
 const requestContext = new AsyncLocalStorage();
 const currentLibrary = () => requestContext.getStore()?.library ?? { ...selectedLibrary, configurationProjectId: selectedConfigurationProjectId };
 const scopeArguments = (library = currentLibrary()) => library.configurationProjectId == null ? [] : ["--project-id", library.configurationProjectId];
-const boundProseLibrary = (library = currentLibrary()) => library.configurationProjectId == null ? null : libraryCatalog.find((entry) => entry.libraryId === library.libraryId && entry.projectId === library.configurationProjectId) ?? null;
+const boundProseLibrary = (library = currentLibrary()) => library.chain?.role === "coordination" || library.configurationProjectId == null ? null : libraryCatalog.find((entry) => entry.libraryId === library.libraryId && entry.projectId === library.configurationProjectId) ?? null;
 const currentProseRoot = () => { const bound = boundProseLibrary(); return bound === null ? null : proseRootFor(bound); };
 // The rail's name for a library is its project's folder name; the id and the path are shown
 // beside it.
@@ -411,37 +417,44 @@ function nextOccurredAt() {
   return new Date(lastWriteAt).toISOString().replace(/\.\d{3}Z$/u, "Z");
 }
 
-async function governedWrite(build, environment = {}, selected = currentLibrary()) {
+async function targetWrite(selected, operation) {
   activeTargetWrites += 1;
-  const occurredAt = nextOccurredAt();
   try {
-    if (!ACTOR) throw new Error("TCRN_PORTAL_ACTOR must be a non-empty actor id");
-    const context = requestContext.getStore();
-    const registrations = await readLibraryCatalog();
-    if (context?.epoch !== selectionEpoch || selectedLibrary.libraryId !== selected.libraryId || !registrations.some(entry => entry.libraryId === selected.libraryId && entry.libraryPath === selected.libraryPath && entry.projectId === selected.projectId)) return { ok: false, body: { ok: false, reasonCode: "PORTAL_CONFIGURATION_TARGET_CHANGED" } };
-    const common = ["--workspace", selected.libraryPath, "--at", occurredAt, "--actor", ACTOR, ...scopeArguments(selected)];
-    return await cliResult(build(common), environment);
+    return await withFileLock(`${registryPath()}.lock`, async () => {
+      const registrations = await readLibraryCatalog();
+      if (requestContext.getStore()?.epoch !== selectionEpoch || selectedLibrary.libraryId !== selected.libraryId ||
+          !registrations.some(entry => entry.libraryId === selected.libraryId && entry.libraryPath === selected.libraryPath && entry.projectPath === selected.projectPath && entry.projectId === selected.projectId)) {
+        return { ok: false, body: { ok: false, reasonCode: "PORTAL_CONFIGURATION_TARGET_CHANGED" } };
+      }
+      const identity = await cliResult(["status", "--workspace", selected.libraryPath]);
+      if (!identity.ok || identity.body.workspaceId !== selected.libraryId) return { ok: false, body: { ok: false, reasonCode: "PORTAL_CONFIGURATION_TARGET_CHANGED" } };
+      libraryCatalog = registrations;
+      return operation();
+    });
   } catch (error) {
-    return { ok: false, body: { ok: false, reasonCode: "PORTAL_CLI_UNAVAILABLE", error: String(error?.message ?? error) } };
+    return { ok: false, body: { ok: false, reasonCode: error.reasonCode ?? "PORTAL_CLI_UNAVAILABLE", error: String(error?.message ?? error) } };
   } finally { activeTargetWrites -= 1; }
 }
 
-// TCRN-CROSS-STORY-513 R1 (TCRN-CROSS-SUB-422): the CLI refuses a rule's enable or disable, as it
-// refuses a setting, variable or gate write, unless it runs for Atelier, so a write that needs it
-// passes ATELIER_SURFACE here as writeSetting, writeVariable, writeGate and deleteGate do.
-async function projectWrite(build, environment = {}, selected = currentLibrary()) {
-  activeTargetWrites += 1;
-  const occurredAt = nextOccurredAt();
-  try {
+async function governedWrite(build, environment = {}, selected = currentLibrary()) {
+  return targetWrite(selected, async () => {
     if (!ACTOR) throw new Error("TCRN_PORTAL_ACTOR must be a non-empty actor id");
-    if (requestContext.getStore()?.epoch !== selectionEpoch || selectedLibrary.libraryId !== selected.libraryId) return { ok: false, body: { ok: false, reasonCode: "PORTAL_CONFIGURATION_TARGET_CHANGED" } };
-    const bound = boundProseLibrary(selected);
-    if (bound === null) return { ok: false, body: { ok: false, reasonCode: "PORTAL_PROJECT_BINDING_UNCONFIGURED", projectId: selected.configurationProjectId ?? null } };
-    const common = ["--project", bound.projectPath, "--at", occurredAt, "--actor", ACTOR, ...scopeArguments(selected)];
-    return await cliResult(build(common), environment);
-  } catch (error) {
-    return { ok: false, body: { ok: false, reasonCode: "PORTAL_CLI_UNAVAILABLE", error: String(error?.message ?? error) } };
-  } finally { activeTargetWrites -= 1; }
+    const common = ["--workspace", selected.libraryPath, "--at", nextOccurredAt(), "--actor", ACTOR, ...scopeArguments(selected)];
+    return cliResult(build(common), environment);
+  });
+}
+
+async function projectWrite(build, environment = {}, selected = currentLibrary(), runtimeRule = false) {
+  return targetWrite(selected, async () => {
+    if (!ACTOR) throw new Error("TCRN_PORTAL_ACTOR must be a non-empty actor id");
+    const coordinationRule = runtimeRule && selected.chain?.role === "coordination";
+    const bound = coordinationRule ? libraryCatalog.find(entry => entry.libraryId === selected.libraryId && entry.projectId === selected.configurationProjectId) : boundProseLibrary(selected);
+    if (bound == null) return { ok: false, body: { ok: false, reasonCode: "PORTAL_PROJECT_BINDING_UNCONFIGURED", projectId: selected.configurationProjectId ?? null } };
+    const projectPath = coordinationRule ? bound.projectPath : proseRootFor(bound);
+    if (await realpath(projectPath) !== projectPath) throw startupError("PORTAL_PROSE_ROOT_UNSAFE", { projectPath });
+    const common = ["--project", projectPath, "--at", nextOccurredAt(), "--actor", ACTOR, ...scopeArguments(selected)];
+    return cliResult(build(common), environment);
+  });
 }
 
 const renderManagedAgents = (library = currentLibrary()) => boundProseLibrary(library) === null
@@ -769,6 +782,10 @@ async function agentsWrite(body) {
   const path = proseTarget(file);
   if (!path) return { status: 404, body: { ok: false, reasonCode: "PORTAL_PATH_ESCAPE", file } };
   const text = String(body.text ?? "");
+  // Refuse symlinked files as well as a replaced project root before opening.
+  if (await realpath(dirname(path)) !== dirname(path)) return { status: 409, body: { ok: false, reasonCode: "PORTAL_PATH_ESCAPE" } };
+  const existing = await realpath(path).catch(error => { if (error.code === "ENOENT") return path; throw error; });
+  if (existing !== path) return { status: 409, body: { ok: false, reasonCode: "PORTAL_PATH_ESCAPE" } };
   await writeFile(path, text, "utf8");
   const readback = await readFile(path, "utf8");
   const saved = { file, path, saved: true, matches: readback === text, text: readback };
@@ -882,7 +899,7 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
       if (projectId !== null && !available.projects.some((entry) => entry.id === projectId)) { send(response, 404, { ok: false, reasonCode: "PORTAL_PROJECT_SCOPE_UNKNOWN" }); return; }
       const target = { ...library, configurationProjectId: projectId, name: available.projects.find(entry => entry.id === projectId)?.name ?? library.name };
       const catalog = projectId === library.configurationProjectId ? available : await settingsCatalog(target);
-      if (epoch !== selectionEpoch || selectedLibrary.libraryId !== library.libraryId) { send(response, 409, { ok: false, reasonCode: "PORTAL_CONFIGURATION_TARGET_CHANGED" }); return; }
+      if (activeTargetWrites > 0 || epoch !== selectionEpoch || selectedLibrary.libraryId !== library.libraryId) { send(response, 409, { ok: false, reasonCode: "PORTAL_CONFIGURATION_TARGET_CHANGED" }); return; }
       selectedConfigurationProjectId = projectId;
       requestContext.getStore().library = target;
       send(response, 200, { ok: true, reasonCode: "PORTAL_CONFIGURATION_SCOPE_SELECTED", epoch: selectionEpoch, projectId, library: publicLibrary(target), settings: catalog, proseRoot: currentProseRoot(), outputBindingStatus: boundProseLibrary() === null ? "unconfigured" : "bound" });
@@ -985,7 +1002,7 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
         ...(action === "disable" && body.force === true ? ["--force", "true"] : []),
         ...(action === "enable" ? orderArguments(body.order) : []),
         ...common,
-      ], ATELIER_SURFACE);
+      ], ATELIER_SURFACE, currentLibrary(), true);
       const payload = { ...result.body, ok: result.ok };
       if (result.ok) {
         const latest = await rulesProjection();
@@ -1039,11 +1056,11 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
       const next = await matchLibrary(await refreshLibraryCatalog(), requested);
       if (!next) { send(response, 404, { ok: false, reasonCode: "PORTAL_LIBRARY_UNKNOWN", requestedLibrary: requested }); return; }
       let proseRoot;
-      try { proseRoot = proseRootFor(next); } catch (error) {
+      try { proseRoot = next.chain?.role === "coordination" ? null : proseRootFor(next); } catch (error) {
         send(response, 409, { ok: false, reasonCode: error.reasonCode, ...error.detail });
         return;
       }
-      if (epoch !== selectionEpoch) { send(response, 409, { ok: false, reasonCode: "PORTAL_CONFIGURATION_TARGET_CHANGED" }); return; }
+      if (activeTargetWrites > 0 || epoch !== selectionEpoch) { send(response, 409, { ok: false, reasonCode: "PORTAL_CONFIGURATION_TARGET_CHANGED" }); return; }
       selectedLibrary = next;
       selectedConfigurationProjectId = next.projectId ?? null;
       requestContext.getStore().library = { ...next, configurationProjectId: selectedConfigurationProjectId };
@@ -1145,8 +1162,9 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
       return;
     }
     if (request.method === "PUT" && pathname === "/api/agents-md") {
-      const result = await agentsWrite(await readJsonBody(request));
-      send(response, result.status, result.body);
+      const body = await readJsonBody(request);
+      const result = await targetWrite(currentLibrary(), () => agentsWrite(body));
+      send(response, result.status ?? (result.ok ? 200 : 409), result.body);
       return;
     }
     if (request.method === "GET" && pathname === "/api/agents-md/reconcile") {

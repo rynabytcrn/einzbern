@@ -903,6 +903,58 @@ function optionalBoolean(value: string | undefined, name: string): boolean | und
   return value === undefined ? undefined : booleanValue(value, name);
 }
 
+/** Apply a Cross Project work relation through the existing gate consumer. Each
+ * target has its own native state, root, declaration set and cache identity.
+ * A relation is never a writable-root grant; actual filesystem/host refusals are
+ * retained per target, and one refused target does not erase other results. */
+async function workGateTargets(state: Awaited<ReturnType<typeof materializeWorkspace>>, values: Record<string, string | undefined>, execute: boolean): Promise<Record<string, unknown> | null> {
+  if (chainIdentity(state)?.role !== "coordination" || values["work-id"] === undefined) return null;
+  const results: Record<string, unknown>[] = [];
+  for (const workId of listValue(values["work-id"])) {
+    const resolved = await workProjectContexts(state, workId);
+    const relation = resolved.involvedProjects as ReturnType<typeof involvedProjectsOf>;
+    if (relation.state !== "selected") {
+      results.push({ workId, status: relation.state, ok: relation.state === "coordination-only", reasonCode: relation.state === "coordination-only" ? "COORDINATION_ONLY" : "PROJECT_SCOPE_UNDECIDED" });
+      continue;
+    }
+    for (const context of resolved.contexts as Record<string, unknown>[]) {
+      const reference = projectReference(context.reference);
+      const binding = { workId, workRevision: resolved.workRevision, reference };
+      try {
+        const readiness = context.readiness as Record<string, { ready: boolean; missing: string[] }> | undefined;
+        if (!readiness?.gates?.ready || typeof context.libraryPath !== "string") {
+          results.push({ ...binding, ok: false, status: context.status, reasonCode: "PROJECT_GATE_CONFIGURATION_UNAVAILABLE", readiness }); continue;
+        }
+        const target = await effectiveProjectState(await validateWorkspace(context.libraryPath), reference.projectId);
+        if (target.metadata.workspaceId !== reference.libraryId || target.version !== context.version) throw new Error("target identity or configuration changed; resolve again");
+        const repositories = (context.repositoryContexts as { projectPath: string; binding: unknown }[]).filter(repository => values.project === undefined || resolve(values.project) === repository.projectPath);
+        if (!repositories.length) throw new Error("no registered repository matches this operation");
+        for (const repository of repositories) {
+          try {
+          const currentWork = (await materializeWorkspace(values.workspace!)).work.find(record => record.id === workId && !record.tombstone);
+          if (currentWork?.revision !== resolved.workRevision) throw new Error("work revision changed; resolve again");
+          const projectRoot = await gatesProjectRoot(reference.libraryId, repository.projectPath, reference.projectId);
+          const plan = await planGates({ projectRoot, gates: listGates(target), release: booleanValue(values.release, "release"), ...(values.base === undefined ? {} : { base: values.base }), workIds: [workId] });
+          // This handoff is bound to the very target whose gates execute. Native host
+          // dispatch consumes its settings; no global first-target setting applies.
+          const handoff = { ...binding, repository: repository.binding, libraryPath: context.libraryPath, projectRoot, version: target.version, settings: context.settings, design: context.design, repositoryBindings: context.repositoryBindings, readiness, writeAuthority: "not-granted" };
+          if (execute) {
+            const { run, recordPath } = await runGates(plan, { libraryId: reference.libraryId, projectId: reference.projectId, at: values.at!, env: { ...process.env, EINZBERN_PROJECT_CONTEXT: canonicalJson(handoff) } });
+            results.push({ ...binding, projectRoot, ok: run.reds.length === 0, handoff, run, recordPath });
+          } else results.push({ ...binding, projectRoot, ok: true, handoff, plan });
+          } catch (error) {
+            results.push({ ...binding, projectRoot: repository.projectPath, ok: false, reasonCode: (error as { reasonCode?: string }).reasonCode ?? "PROJECT_OPERATION_REFUSED", error: String(error) });
+          }
+        }
+
+      } catch (error) {
+        results.push({ ...binding, ok: false, reasonCode: (error as { reasonCode?: string }).reasonCode ?? "PROJECT_OPERATION_REFUSED", error: String(error) });
+      }
+    }
+  }
+  return { reasonCode: execute ? "GATES_RUN_COMPLETED" : "GATES_PLAN_READY", workspaceId: state.metadata.workspaceId, version: state.version, ok: results.every(result => result.ok === true), targets: results };
+}
+
 // TCRN-CROSS-STORY-485 R2, R4: the project a library's gate roots are relative to. --project names
 // it; left out, it is the project this device's registry holds for the library: the one the current
 // directory resolves to when that is this library, or else the only project registered for it.
@@ -3472,7 +3524,10 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   if (command === "gates-plan") {
     const values = parseArguments(rest, ["project-id", "workspace", "project", "base", "release", "work-id"]);
     required(values, ["workspace"]);
-    const state = await effectiveProjectState(await validateWorkspace(values.workspace ?? ""), values["project-id"]);
+    const native = await validateWorkspace(values.workspace ?? "");
+    const targets = await workGateTargets(native, values, false);
+    if (targets !== null) { io.write(canonicalJson(targets)); return; }
+    const state = await effectiveProjectState(native, values["project-id"]);
     const plan = await planGates({
       projectRoot: await gatesProjectRoot(state.metadata.workspaceId, values.project, values["project-id"]),
       gates: listGates(state),
@@ -3495,7 +3550,10 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   if (command === "gates-run") {
     const values = parseArguments(rest, ["project-id", "workspace", "at", "project", "base", "release", "work-id"]);
     required(values, ["workspace", "at"]);
-    const state = await effectiveProjectState(await validateWorkspace(values.workspace ?? ""), values["project-id"]);
+    const native = await validateWorkspace(values.workspace ?? "");
+    const targets = await workGateTargets(native, values, true);
+    if (targets !== null) { io.write(canonicalJson(targets)); return; }
+    const state = await effectiveProjectState(native, values["project-id"]);
     const plan = await planGates({
       projectRoot: await gatesProjectRoot(state.metadata.workspaceId, values.project, values["project-id"]),
       gates: listGates(state),

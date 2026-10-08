@@ -39,12 +39,12 @@ test("INC-093 red leg: a red P8 result or a different basis refuses tag prefligh
 });
 
 test("SUB-357: a release commit admits only the actual single core version replacement", async () => {
-  const before = await readFile(new URL("../packages/core/src/index.ts", import.meta.url), "utf8");
+  const before = await readFile(new URL("../packages/core/src/framework-version.ts", import.meta.url), "utf8");
   const current = /^export const FRAMEWORK_VERSION = "(\d+\.\d+\.\d+)" as const;$/mu.exec(before)[1];
   const version = current === "2.0.0" ? "2.0.1" : "2.0.0";
   const after = before.replace(`FRAMEWORK_VERSION = "${current}"`, `FRAMEWORK_VERSION = "${version}"`);
-  const input = { changedPaths: ["packages/core/src/index.ts", "package.json"], frameworkBefore: before, frameworkAfter: after, version };
-  assert.deepEqual(assertReleaseCommitShape(input).changedPaths, ["package.json", "packages/core/src/index.ts"]);
+  const input = { changedPaths: ["packages/core/src/framework-version.ts", "package.json"], frameworkBefore: before, frameworkAfter: after, version };
+  assert.deepEqual(assertReleaseCommitShape(input).changedPaths, ["package.json", "packages/core/src/framework-version.ts"]);
   for (const change of [
     { frameworkBefore: undefined },
     { frameworkAfter: `${after}\nexport const EXTRA = true;\n` },

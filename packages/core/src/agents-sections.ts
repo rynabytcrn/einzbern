@@ -1,3 +1,4 @@
+import { chainIdentity } from "./chain-identity.js";
 import { effectiveProjectState } from "./project-chain.js";
 // SPDX-License-Identifier: Apache-2.0
 
@@ -30,7 +31,7 @@ import { effectiveProjectState } from "./project-chain.js";
 
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { isUtf8 } from "node:buffer";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, relative, isAbsolute } from "node:path";
 
 import { compareCanonicalText } from "../../protocol/src/index.js";
 import { removeConfigRecordDelta, setConfigRecordDelta } from "./config-records.js";
@@ -468,6 +469,16 @@ export interface AgentsProject {
  * R1): the registered project that holds the directory, or, for another clone of it found through
  * its remote, that clone's working tree. LIBRARY_NOT_REGISTERED when the registry names none.
  */
+/** A coordination library is not a prose destination, even for direct callers. */
+export async function assertManagedOutputRoot(libraryRoot: string, projectRoot: string, state: WorkspaceState): Promise<void> {
+  const library = await realpath(libraryRoot);
+  const project = await realpath(projectRoot);
+  const relation = relative(library, project);
+  if (chainIdentity(state)?.role === "coordination" || relation === "" || (!relation.startsWith("..") && !isAbsolute(relation))) {
+    throw new Error("managed prose cannot be written inside a library or for coordination");
+  }
+}
+
 export async function resolveAgentsProject(directory: string): Promise<AgentsProject> {
   const resolved = await resolveLibrary(directory);
   let projectRoot = resolved.entry.projectPath;
@@ -692,7 +703,9 @@ export async function renderAgentsSections(workspaceRoot: string, input: {
   readonly backupRoot?: string;
 } & WorkspaceMutationOptions): Promise<AgentsRenderResult> {
   return withWorkspaceWriteLock(workspaceRoot, async (root) => {
-    const state = await effectiveProjectState(await materializeWorkspace(root), input.configurationProjectId);
+    const nativeState = await materializeWorkspace(root);
+    await assertManagedOutputRoot(root, input.projectRoot, nativeState);
+    const state = await effectiveProjectState(nativeState, input.configurationProjectId);
     const agents = agentsFileSections(state, input.navigation);
     const plans = [
       // TCRN-CROSS-STORY-508 R7: with the rule sections in the rules' order.
@@ -715,10 +728,10 @@ export async function renderAgentsSections(workspaceRoot: string, input: {
         if (applied.written) wrote.push(plan);
         files.push({ file: plan.file, written: applied.written, backupPath: applied.backupPath });
       }
-      committed = await commit(root, state, deltas, input);
+      committed = await commit(root, nativeState, deltas, input);
     } catch (error) {
       // TCRN-CROSS-STORY-489: this also takes back the first file when the second cannot be written.
-      await putBackUnrecorded(root, state, wrote);
+      await putBackUnrecorded(root, nativeState, wrote);
       throw error;
     }
     const backup = files.find((file) => file.backupPath !== null)?.backupPath ?? null;
@@ -756,7 +769,9 @@ export async function resolveAgentsSection(workspaceRoot: string, input: {
   readonly backupRoot?: string;
 } & WorkspaceMutationOptions): Promise<AgentsSectionChangeResult> {
   return withWorkspaceWriteLock(workspaceRoot, async (root) => {
-    const state = await effectiveProjectState(await materializeWorkspace(root), input.configurationProjectId);
+    const nativeState = await materializeWorkspace(root);
+    await assertManagedOutputRoot(root, input.projectRoot, nativeState);
+    const state = await effectiveProjectState(nativeState, input.configurationProjectId);
     const file = managedSectionFile(input.id);
     const records = managedSectionRecordsFor(state, file);
     let body: string | undefined;
@@ -779,10 +794,10 @@ export async function resolveAgentsSection(workspaceRoot: string, input: {
     });
     const hadRecord = records.some((record) => record.id === input.id);
     try {
-      const committed = await commit(root, state, recordDeltas([{ file, id: input.id, record: outcome.record, recordChanged: outcome.recordChanged, hadRecord }], input.configurationProjectId), input);
+      const committed = await commit(root, nativeState, recordDeltas([{ file, id: input.id, record: outcome.record, recordChanged: outcome.recordChanged, hadRecord }], input.configurationProjectId), input);
       return { change: outcome, state: committed };
     } catch (error) {
-      await putBackUnrecorded(root, state, wrote === null ? [] : [wrote]);
+      await putBackUnrecorded(root, nativeState, wrote === null ? [] : [wrote]);
       throw error;
     }
   });
@@ -800,7 +815,9 @@ export async function disableAgentsSection(workspaceRoot: string, input: {
   readonly backupRoot?: string;
 } & WorkspaceMutationOptions): Promise<AgentsSectionChangeResult> {
   return withWorkspaceWriteLock(workspaceRoot, async (root) => {
-    const state = await effectiveProjectState(await materializeWorkspace(root), input.configurationProjectId);
+    const nativeState = await materializeWorkspace(root);
+    await assertManagedOutputRoot(root, input.projectRoot, nativeState);
+    const state = await effectiveProjectState(nativeState, input.configurationProjectId);
     const file = managedSectionFile(input.id);
     const records = managedSectionRecordsFor(state, file);
     const { change: outcome, wrote } = await takeSectionOut({
@@ -813,10 +830,10 @@ export async function disableAgentsSection(workspaceRoot: string, input: {
     });
     const hadRecord = records.some((record) => record.id === input.id);
     try {
-      const committed = await commit(root, state, recordDeltas([{ file, id: input.id, record: outcome.record, recordChanged: outcome.recordChanged, hadRecord }], input.configurationProjectId), input);
+      const committed = await commit(root, nativeState, recordDeltas([{ file, id: input.id, record: outcome.record, recordChanged: outcome.recordChanged, hadRecord }], input.configurationProjectId), input);
       return { change: outcome, state: committed };
     } catch (error) {
-      await putBackUnrecorded(root, state, wrote === null ? [] : [wrote]);
+      await putBackUnrecorded(root, nativeState, wrote === null ? [] : [wrote]);
       throw error;
     }
   });

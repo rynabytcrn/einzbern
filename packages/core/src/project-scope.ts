@@ -1,4 +1,4 @@
-import { chainIdentity } from "./project-chain.js";
+import { chainIdentity } from "./chain-identity.js";
 // SPDX-License-Identifier: Apache-2.0
 
 import { SETTINGS_CATALOG, assertSettingWriteConsistent, readSettingsCatalog, settingsCatalogEntry } from "./settings.js";
@@ -81,7 +81,7 @@ export function designConfiguration(state: Pick<ScopedWorkspaceState, "settings"
 export function scopedWorkspaceState(state: WorkspaceState, projectId?: string): ScopedWorkspaceState {
   const lineage = projectLineage(state, projectId);
   const coordination = chainIdentity(state)?.role === "coordination";
-  const scopes: readonly (string | undefined)[] = coordination ? [] : [...lineage.map((entry) => entry.id), undefined];
+  const scopes: readonly (string | undefined)[] = [...lineage.map((entry) => entry.id), undefined];
   const source = (scope: string | undefined): ConfigurationSource => ({
     kind: scope === undefined ? "library" : "project", projectId: scope ?? null,
     projectName: scope === undefined ? null : lineage.find((entry) => entry.id === scope)?.name ?? null,
@@ -108,6 +108,7 @@ export function scopedWorkspaceState(state: WorkspaceState, projectId?: string):
   const configSources: Record<string, ConfigurationSource> = {};
   const seen = new Set<string>();
   for (const scope of scopes) for (const record of state.configRecords) {
+    if (coordination && !["rule", "variable", "gate", "managed-section"].includes(record.collection)) continue;
     if (record.projectId !== scope || (record.collection === "chain" && record.key === "identity")) continue;
     // Gate roots/coverage and file digests are specific to their actual target, not inheritable values.
     if ((record.collection === "managed-section" || record.collection === "gate") && scope !== projectId) continue;

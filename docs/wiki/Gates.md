@@ -84,3 +84,10 @@ A cross-project work item has one execution context per involved concrete
 project. Resolve it with `work-project-context` before planning verification.
 Gate roots and coverage bindings belong to their target; they are never copied
 from coordination or inherited as ordinary common scalar defaults.
+
+For a Cross Project work item, pass its `--work-id` to the existing gate plan or
+run command on the coordination library. Each selected target uses its own
+registered repository and gate declarations. The response separates successful
+and refused targets and includes the effective configuration handed to each
+process. A target reference does not grant filesystem access. An undecided
+relation must be resolved; coordination-only work needs no development target.

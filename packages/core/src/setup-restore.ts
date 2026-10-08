@@ -37,7 +37,7 @@ import { basename, join, resolve } from "node:path";
 
 // The barrel is loaded first, so every module below is evaluated in the order the engine's own entry
 // evaluates it, whichever module a caller imports first.
-import { FRAMEWORK_VERSION } from "./index.js";
+import { FRAMEWORK_VERSION } from "./framework-version.js";
 import { assertCanonicalJson, canonicalJson, canonicalSha256 } from "../../protocol/src/index.js";
 import { AGENTS_FILE, CLAUDE_FILE } from "./agents-sections.js";
 import { isAtomicTemporaryName } from "./atomic-file.js";

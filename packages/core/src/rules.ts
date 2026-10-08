@@ -1,3 +1,4 @@
+import { chainIdentity } from "./chain-identity.js";
 import { effectiveProjectState } from "./project-chain.js";
 import { scopedWorkspaceState } from "./project-scope.js";
 // SPDX-License-Identifier: Apache-2.0
@@ -42,7 +43,7 @@ import { scopedWorkspaceState } from "./project-scope.js";
 import { join } from "node:path";
 
 import { compareCanonicalText } from "../../protocol/src/index.js";
-import { AGENTS_FILE, RULE_SECTION_PREFIX, orderRuleSections, putBackUnrecorded, ruleOrders, takeSectionOut } from "./agents-sections.js";
+import { assertManagedOutputRoot, AGENTS_FILE, RULE_SECTION_PREFIX, orderRuleSections, putBackUnrecorded, ruleOrders, takeSectionOut } from "./agents-sections.js";
 import type { SectionChangeResult } from "./agents-sections.js";
 import { configRecord, configRecords, removeConfigRecordDelta, setConfigRecordDelta } from "./config-records.js";
 import type { ConfigRecordValue } from "./config-records.js";
@@ -205,7 +206,9 @@ function statusOf(state: Pick<WorkspaceState, "configRecords">, inFile: Readonly
     recordedVersion: record?.version ?? null,
     fileVersion: inFileSection?.rev ?? null,
     section,
-    state: ruleState({ record, shippedVersion, section: inFileSection, sectionRecord }),
+    state: state.configRecords.some(entry => entry.collection === "chain" && entry.key === "identity" && entry.value.role === "coordination")
+      ? (!record?.enabled ? "disabled" : shippedVersion !== null && shippedVersion > record.version ? "update-available" : "enabled")
+      : ruleState({ record, shippedVersion, section: inFileSection, sectionRecord }),
     ...(record?.order === undefined ? {} : { order: record.order }),
   };
 }
@@ -283,6 +286,15 @@ async function commit(root: string, state: WorkspaceState, deltas: readonly ((st
  * TCRN-CROSS-STORY-489: when the records cannot be committed, AGENTS.md returns to what it held,
  * and a file the enable created is taken away, before the error goes on.
  */
+async function changeCoordinationRule(root: string, nativeState: WorkspaceState, input: RuleChangeInput, enabled: boolean, version: number, order?: number): Promise<RuleChange> {
+  const state = await effectiveProjectState(nativeState, input.configurationProjectId);
+  const previous = recordedRule(state, input.id);
+  const value = { enabled, version, ...(order === undefined ? {} : { order }) };
+  const deltas = previous?.enabled === enabled && previous.version === version && previous.order === order ? [] : [setConfigRecordDelta({ ...(input.configurationProjectId === undefined ? {} : { projectId: input.configurationProjectId }), collection: "rule", key: input.id, value })];
+  const committed = await commit(root, nativeState, deltas, input);
+  return { id: input.id, section: ruleSectionId(input.id), file: AGENTS_FILE, action: enabled ? "enable" : "disable", result: "unchanged", written: false, backupPath: null, recorded: deltas.length, status: statusOf(scopedWorkspaceState(committed, input.configurationProjectId), new Map(), input.catalog ?? BUILT_IN_RULES, input.id), state: committed };
+}
+
 export async function enableRule(input: RuleChangeInput & { readonly order?: number }): Promise<RuleChange> {
   const catalog = input.catalog ?? BUILT_IN_RULES;
   const rule = catalog.find((entry) => entry.id === input.id) ?? fail("RULE_UNKNOWN", `the engine ships no rule ${JSON.stringify(input.id)}`, {
@@ -294,7 +306,14 @@ export async function enableRule(input: RuleChangeInput & { readonly order?: num
     fail("RULE_RECORD_INVALID", `the order of rule ${rule.id} is a positive integer`, { id: rule.id, field: "order" });
   }
   return withWorkspaceWriteLock(input.libraryRoot, async (root) => {
-    const state = await effectiveProjectState(await materializeWorkspace(root), input.configurationProjectId);
+    const nativeState = await materializeWorkspace(root);
+    if (chainIdentity(nativeState)?.role === "coordination") {
+      const recorded = recordedRule(scopedWorkspaceState(nativeState, input.configurationProjectId), rule.id);
+      if (recorded !== null && recorded.version > rule.version) fail("RULE_VERSION_NEWER", "recorded rule version is newer");
+      return changeCoordinationRule(root, nativeState, input, true, rule.version, input.order ?? recorded?.order);
+    }
+    await assertManagedOutputRoot(root, input.projectRoot, nativeState);
+    const state = await effectiveProjectState(nativeState, input.configurationProjectId);
     const recorded = recordedRule(state, rule.id);
     if (recorded !== null && recorded.version > rule.version) {
       fail("RULE_VERSION_NEWER", `the library records rule ${rule.id} at version ${recorded.version}; this engine ships version ${rule.version}`, {
@@ -327,9 +346,9 @@ export async function enableRule(input: RuleChangeInput & { readonly order?: num
     }
     let committed: WorkspaceState;
     try {
-      committed = await commit(root, state, deltas, input);
+      committed = await commit(root, nativeState, deltas, input);
     } catch (error) {
-      await putBackUnrecorded(root, state, applied.written ? [plan] : []);
+      await putBackUnrecorded(root, nativeState, applied.written ? [plan] : []);
       throw error;
     }
     return {
@@ -359,7 +378,15 @@ export async function enableRule(input: RuleChangeInput & { readonly order?: num
 export async function disableRule(input: RuleChangeInput & { readonly force?: boolean }): Promise<RuleChange> {
   const catalog = input.catalog ?? BUILT_IN_RULES;
   return withWorkspaceWriteLock(input.libraryRoot, async (root) => {
-    const state = await effectiveProjectState(await materializeWorkspace(root), input.configurationProjectId);
+    const nativeState = await materializeWorkspace(root);
+    if (chainIdentity(nativeState)?.role === "coordination") {
+      const recorded = recordedRule(scopedWorkspaceState(nativeState, input.configurationProjectId), input.id);
+      const shipped = catalog.find(rule => rule.id === input.id);
+      if (!recorded && !shipped) fail("RULE_UNKNOWN", "rule is not recorded or shipped");
+      return changeCoordinationRule(root, nativeState, input, false, recorded?.version ?? shipped!.version, recorded?.order);
+    }
+    await assertManagedOutputRoot(root, input.projectRoot, nativeState);
+    const state = await effectiveProjectState(nativeState, input.configurationProjectId);
     const recorded = isRuleId(input.id) ? recordedRule(state, input.id) : null;
     if (recorded === null && !catalog.some((entry) => entry.id === input.id)) {
       fail("RULE_UNKNOWN", `neither the engine nor the library knows a rule ${JSON.stringify(input.id)}`, {
@@ -388,9 +415,9 @@ export async function disableRule(input: RuleChangeInput & { readonly force?: bo
     }
     let committed: WorkspaceState;
     try {
-      committed = await commit(root, state, deltas, input);
+      committed = await commit(root, nativeState, deltas, input);
     } catch (error) {
-      await putBackUnrecorded(root, state, wrote === null ? [] : [wrote]);
+      await putBackUnrecorded(root, nativeState, wrote === null ? [] : [wrote]);
       throw error;
     }
     return {

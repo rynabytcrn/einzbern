@@ -48,7 +48,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "nod
 
 // The barrel is loaded first, so every module below is evaluated in the order the engine's own entry
 // evaluates it, whichever module a caller imports first.
-import { FRAMEWORK_VERSION } from "./index.js";
+import { FRAMEWORK_VERSION } from "./framework-version.js";
 import { AGENTS_FILE, CLAUDE_FILE, agentsFileSections, disableAgentsSection, planClaudeImport, renderAgentsSections } from "./agents-sections.js";
 import { writeFileAtomic } from "./atomic-file.js";
 import { suggestCloudHosted } from "./cloud-roots.js";

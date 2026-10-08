@@ -72,3 +72,14 @@ also accepts `--expected-revision`. `work-list --involved-project` accepts a
 JSON stable reference. `project-context --reference` and
 `work-project-context --workspace --id` are read-only and never acquire write
 permission. The live command catalog specifies exact flags.
+
+On an explicitly classified coordination chain, `gates-plan` / `gates-run` with
+`--work-id` resolve each selected stable target and apply the existing gate
+consumer to that target's own registered project root and local declarations.
+Results contain one target result per work/reference, its work revision,
+configuration version, effective settings and repository/build handoff. Runs
+write to each target's own cache and pass the same handoff to its gate process
+as `EINZBERN_PROJECT_CONTEXT`; the relation grants no permission. A missing,
+unavailable or refused target remains a failed target result. Undecided work
+refuses this operation; explicit coordination-only work needs no project run.
+Without a Cross Project work subject the existing single-library form remains.

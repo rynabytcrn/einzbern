@@ -665,7 +665,7 @@ async function verifyP8() {
   const packagePaths = ["package.json", "packages/cli/package.json", "packages/core/package.json", "packages/protocol/package.json"];
   const packages = await Promise.all(packagePaths.map((path) => readJson(resolve(repositoryRoot, path))));
   assertion(packages.every((manifest) => manifest.version === P8_VERSION && manifest.private === true), "P8_PACKAGE_VERSION_MISMATCH");
-  const frameworkSource = await readText(resolve(repositoryRoot, "packages/core/src/index.ts"));
+  const frameworkSource = await readText(resolve(repositoryRoot, "packages/core/src/framework-version.ts"));
   assertion(frameworkSource.includes(`FRAMEWORK_VERSION = \"${P8_VERSION}\"`), "P8_FRAMEWORK_VERSION_MISMATCH");
   const core = await import(pathToFileURL(resolve(repositoryRoot, "dist/build/packages/core/src/index.js")).href);
   assertion(core.FRAMEWORK_VERSION === P8_VERSION, "P8_BUILD_VERSION_MISMATCH");
@@ -766,12 +766,12 @@ async function verifyReleaseTagPreflight() {
   const tagProof = assertP8TagPreconditions({ p8Result: p8, expectedTag, tagCommit, p8BasisCommit: p8.p8BasisCommit });
   const version = expectedTag.slice(1);
   const shapeInput = { changedPaths, version };
-  if (changedPaths.includes("packages/core/src/index.ts")) {
+  if (changedPaths.includes("packages/core/src/framework-version.ts")) {
     // Resolve each real commit's full blob id, then read that object's complete bytes. Caller
     // text, abbreviated ids and working-tree content cannot stand in for either committed source.
     const sourceAt = (commit) => {
-      const entry = run("git", ["ls-tree", commit, "--", "packages/core/src/index.ts"]);
-      const matched = /^100644 blob ([0-9a-f]{40,64})\tpackages\/core\/src\/index\.ts$/u.exec(entry);
+      const entry = run("git", ["ls-tree", commit, "--", "packages/core/src/framework-version.ts"]);
+      const matched = /^100644 blob ([0-9a-f]{40,64})\tpackages\/core\/src\/framework-version\.ts$/u.exec(entry);
       assertion(matched !== null, "RELEASE_COMMIT_FRAMEWORK_INVALID", "the committed framework source must be a regular blob");
       try {
         return new TextDecoder("utf-8", { fatal: true }).decode(run("git", ["cat-file", "blob", matched[1]], { raw: true }));

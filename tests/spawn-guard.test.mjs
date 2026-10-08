@@ -7,10 +7,11 @@
 // and self-healing over a corrupt registry line.
 
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile, mkdir, copyFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
+import { pathToFileURL, fileURLToPath } from "node:url";
 
 import {
   appendRegistration,
@@ -149,4 +150,22 @@ test("spawn-guard: registryPath derives the transient sibling of a workspace roo
 test("spawn-guard: parseFlags rejects a dangling flag", () => {
   assert.throws(() => parseFlags(["--pgid"]), (error) => error instanceof SpawnGuardError);
   assert.deepEqual(parseFlags(["--pgid", "10", "--pattern", "yes"]), { pgid: "10", pattern: "yes" });
+});
+
+test("guard bootstrap uses the current background module without initializing the core barrel", async t => {
+  const root = await mkdtemp(join(tmpdir(), "guard-bootstrap-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const source = fileURLToPath(new URL("..", import.meta.url));
+  const files = ["scripts/spawn-guard.mjs", "scripts/lib/runtime-capacity.mjs", "dist/build/packages/core/src/background-resource.js", "dist/build/packages/protocol/src/index.js", "dist/build/scripts/lib/runtime-capacity.mjs", "dist/build/scripts/lib/canonical-order.mjs"];
+  for (const name of files) {
+    await mkdir(resolve(root, name, ".."), { recursive: true });
+    await copyFile(join(source, name), join(root, name));
+  }
+  await writeFile(join(root, "package.json"), '{"type":"module"}');
+  await writeFile(join(root, "dist/build/packages/core/src/index.js"), 'throw new Error("unrelated core initialization failed");');
+  const guard = await import(pathToFileURL(join(root, "scripts/spawn-guard.mjs")).href);
+  const registry = join(root, "registry.jsonl");
+  await guard.appendRegistration(registry, reg(99123, "test", "bootstrap-owner"));
+  assert.equal((await guard.listRegistrations(registry))[0].purpose, "bootstrap-owner");
+  assert.equal((await guard.detectOwnedFromTable(await readFile(registry, "utf8"), "", "2026-10-08T09:00:00Z", "bootstrap-owner")).status, "clean");
 });

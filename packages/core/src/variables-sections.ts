@@ -23,7 +23,7 @@ import { DESIGN_CONFIGURATION_KEYS, designConfiguration } from "./project-scope.
 
 import { join } from "node:path";
 
-import { putBackUnrecorded } from "./agents-sections.js";
+import { assertManagedOutputRoot, putBackUnrecorded } from "./agents-sections.js";
 import { setConfigRecordDelta } from "./config-records.js";
 import {
   absolutePathLine,
@@ -273,7 +273,9 @@ export async function writeVariablesSections(workspaceRoot: string, input: {
   readonly backupRoot?: string;
 } & WorkspaceMutationOptions): Promise<VariablesSectionsResult> {
   return withWorkspaceWriteLock(workspaceRoot, async (root) => {
-    const state = await effectiveProjectState(await materializeWorkspace(root), input.configurationProjectId);
+    const nativeState = await materializeWorkspace(root);
+    await assertManagedOutputRoot(root, input.projectRoot, nativeState);
+    const state = await effectiveProjectState(nativeState, input.configurationProjectId);
     const system = renderSystemVariablesSection(state);
     const custom = renderCustomVariablesSection(state);
     const planned = await planManagedWrite({
@@ -295,7 +297,7 @@ export async function writeVariablesSections(workspaceRoot: string, input: {
         const committed = await appendEvents(root, deltas, input);
         await projectConfiguration(root, committed);
       } catch (error) {
-        await putBackUnrecorded(root, state, applied.written ? [plan] : []);
+        await putBackUnrecorded(root, nativeState, applied.written ? [plan] : []);
         throw error;
       }
     }

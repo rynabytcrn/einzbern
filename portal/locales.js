@@ -29,6 +29,7 @@ window.PORTAL_LOCALES = {
     "projects.coordination": "Cross Project",
     "projects.unconfigured": "Unconfigured project",
     "projects.unavailable": "Unavailable project",
+    "projects.identity": "Stable project identity",
 
     "app.readUnavailable": "This page could not read the selected target. Use Refresh to try again. Open Details to see the complete reason.",
     "receipt.failureMessage": "The operation was not confirmed. Open the complete details, check the saved values, and follow the reason before retrying.",
@@ -474,6 +475,7 @@ window.PORTAL_LOCALES = {
     "projects.coordination": "跨项目协调",
     "projects.unconfigured": "项目未配置",
     "projects.unavailable": "项目不可访问",
+    "projects.identity": "稳定项目标识",
 
     "app.readUnavailable": "此页面未能读取所选目标。请点击刷新重试；展开详情可查看完整原因。",
     "receipt.failureMessage": "本次操作尚未确认。请打开完整详情，核对已保存的值，并按原因说明处理后再重试。",
@@ -919,6 +921,7 @@ window.PORTAL_LOCALES = {
     "projects.coordination": "プロジェクト間調整",
     "projects.unconfigured": "未設定のプロジェクト",
     "projects.unavailable": "アクセスできないプロジェクト",
+    "projects.identity": "プロジェクトの固定識別子",
 
     "app.readUnavailable": "このページは選択した対象を読み込めませんでした。更新して再試行し、詳細を開いて詳しい理由を確認してください。",
     "receipt.failureMessage": "操作を確認できませんでした。詳細を開き、保存済みの値を確認して、理由に従って対処してから再試行してください。",
@@ -1364,6 +1367,7 @@ window.PORTAL_LOCALES = {
     "projects.coordination": "프로젝트 간 조정",
     "projects.unconfigured": "미설정 프로젝트",
     "projects.unavailable": "접근할 수 없는 프로젝트",
+    "projects.identity": "고정 프로젝트 식별자",
 
     "app.readUnavailable": "이 페이지에서 선택한 대상을 읽지 못했습니다. 새로고침으로 다시 시도하고 세부 정보를 열어 전체 이유를 확인하세요.",
     "receipt.failureMessage": "작업이 확인되지 않았습니다. 전체 상세를 열고 저장된 값을 확인한 뒤 원인에 따라 조치하고 다시 시도하세요.",
@@ -1809,6 +1813,7 @@ window.PORTAL_LOCALES = {
     "projects.coordination": "Coordination des projets",
     "projects.unconfigured": "Projet non configuré",
     "projects.unavailable": "Projet inaccessible",
+    "projects.identity": "Identité stable du projet",
 
     "app.readUnavailable": "Cette page n’a pas pu lire la cible sélectionnée. Utilisez Actualiser pour réessayer et ouvrez les détails pour voir la raison complète.",
     "receipt.failureMessage": "L’opération n’est pas confirmée. Ouvrez les détails, vérifiez les valeurs enregistrées et suivez la raison indiquée avant de réessayer.",

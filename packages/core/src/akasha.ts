@@ -54,7 +54,7 @@ import type { FileLockOptions } from "./file-lock.js";
 import { assertLibrarySupported, upgradeReadiness } from "./format-version.js";
 import type { DeviceEngine, UpgradeReadiness } from "./format-version.js";
 import { DIRECTORY } from "./names.js";
-import { FRAMEWORK_VERSION } from "./index.js";
+import { FRAMEWORK_VERSION } from "./framework-version.js";
 
 export const STREAM_MANIFEST_SCHEMA_VERSION = "einzbern.stream-manifest.v1" as const;
 export const STREAM_MANIFEST_FILE = "manifest.json" as const;

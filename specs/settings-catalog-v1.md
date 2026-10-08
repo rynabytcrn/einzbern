@@ -512,3 +512,13 @@ per-target contexts, provenance, unresolved references and differences between
 design/build/model/language configurations. Differences require separate target
 execution; no first target becomes a global default. Publication verification
 remains unverified until the authorized external evidence lane checks it.
+
+Common defaults are optional project scalar settings only. Collection tables,
+library/runtime settings, gate roots/coverage and managed-file digests are not
+cross-chain defaults. Coordination retains its own rule, variable, gate and
+managed-section records and their provenance; it does not inherit development
+configuration or acquire a managed prose root. Context readiness is reported
+separately for design declarations, model configuration, repository/build
+bindings, registered output, language and gates. Publication verification stays
+unverified until separately established. A gate operation requires its own
+registered root and declarations, not unrelated design/model readiness.

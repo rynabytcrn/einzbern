@@ -45,7 +45,7 @@ import { isAbsolute, join, resolve } from "node:path";
 
 // The barrel is loaded first, so every module below is evaluated in the order the engine's own entry
 // evaluates it, whichever module a caller imports first.
-import { FRAMEWORK_VERSION } from "./index.js";
+import { FRAMEWORK_VERSION } from "./framework-version.js";
 import { assertStrictInstant } from "../../protocol/src/index.js";
 import { deviceFilePath, deviceHome as currentDeviceHome } from "./device-home.js";
 import type { DoctorCheck } from "./doctor.js";

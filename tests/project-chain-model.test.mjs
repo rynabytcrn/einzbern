@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, rm, realpath, rename, cp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { initializeLibrary, createProject, deleteProject, createWork, annotateWork, materializeWorkspace, materializeWorkspaceFromGenesis, setWorkspaceSetting, setConfigRecord, registerLibrary, unregisterLibrary, declareChainIdentity, chainIdentity, workProjectContexts, resolveProjectTarget, registeredCoordination, ensureProjectCoordination, normalizeInvolvedProjects, involvedProjectsOf, projectLineage, scopedWorkspaceState } from "../dist/build/packages/core/src/index.js";
+import { initializeLibrary, createProject, deleteProject, createWork, annotateWork, materializeWorkspace, materializeWorkspaceFromGenesis, setWorkspaceSetting, setConfigRecord, registerLibrary, unregisterLibrary, readRegistry, registryPath, withFileLock, declareChainIdentity, chainIdentity, workProjectContexts, resolveProjectTarget, registeredCoordination, ensureProjectCoordination, normalizeInvolvedProjects, involvedProjectsOf, projectLineage, scopedWorkspaceState, enableRule, disableRule, listRules, renderAgentsSections } from "../dist/build/packages/core/src/index.js";
 import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
 const at = "2026-10-08T08:00:00Z";
@@ -40,7 +40,7 @@ test("Cross Project work reaches independent project settings and never grants a
   const state = await createWork(f.coordination.path, { projectId: f.coordination.reference.projectId, externalKey: "CROSS-INIT", kind: "Initiative", parentId: null, title: "Two projects", involvedProjects: selected, occurredAt: at });
   const id = state.work[0].id;
   const contexts = await workProjectContexts(state, id, f.home);
-  assert.equal(contexts.contexts.length, 2); assert.equal(contexts.developmentReady, true);
+  assert.equal(contexts.contexts.length, 2); assert.equal(contexts.developmentReady, false, "design declaration alone is not development readiness");
   assert.equal(contexts.writeAuthority, "not-granted");
   assert.ok(contexts.conflicts.includes("design.authority")); assert.ok(contexts.conflicts.includes("artifact.language"));
   for (const context of contexts.contexts) assert.equal(context.settings.find(s => s.key === "design.authority").source.libraryId, context.reference.libraryId);
@@ -157,4 +157,66 @@ test("declared ancestry retains provenance and mixed authority bundles are confl
   assert.equal((await resolveProjectTarget(reference, f.home)).status, "conflicting");
   assert.throws(() => projectLineage({ projects: [{ ...child, parentProjectId: child.id }] }, child.id), /cycle/u);
   assert.throws(() => projectLineage({ projects: [child] }, child.id), /absent/u);
+});
+
+test("coordination retains local runtime records without inheriting development settings", async t => {
+  const f = await fixture(t);
+  await setConfigRecord(f.coordination.path, { collection: "variable", key: "runtime.note", value: { type: "string", value: "coordination", description: "Runtime note" }, occurredAt: at });
+  const native = await materializeWorkspace(f.coordination.path);
+  const scoped = scopedWorkspaceState(native);
+  assert.equal(scoped.configRecords.find(r => r.collection === "variable").value.value, "coordination");
+  assert.equal(scoped.configSources[JSON.stringify(["variable", "runtime.note"])].kind, "library");
+  assert.equal(scoped.settings.some(s => s.key === "design.authority"), false);
+});
+test("coordination discovery reports a known unavailable unrelated project but refuses an expected unavailable chain", async t => {
+  const f = await fixture(t);
+  await rename(f.a.path, f.a.path + "-offline");
+  const found = await registeredCoordination(f.home);
+  assert.equal(found.libraryId, f.coordination.reference.libraryId);
+  assert.deepEqual(found.unavailable, [{ libraryId: f.a.reference.libraryId, path: f.a.path }]);
+  await assert.rejects(registeredCoordination(f.home, f.a.reference.libraryId), /cannot classify/u);
+  await rename(f.coordination.path, f.coordination.path + "-offline");
+  await assert.rejects(registeredCoordination(f.home), /cannot classify/u);
+});
+test("operation readiness separates gate declarations from models, repository and design", async t => {
+  const f = await fixture(t); await configure(f.a, "alpha");
+  let target = await resolveProjectTarget(f.a.reference, f.home);
+  assert.equal(target.readiness.design.ready, true);
+  assert.equal(target.readiness.model.ready, false);
+  assert.equal(target.readiness.repository.ready, false);
+  assert.equal(target.readiness.development.ready, false);
+  assert.equal(target.design.publicationVerification, "unverified");
+  await setConfigRecord(f.a.path, { collection: "gate", key: "own", projectId: f.a.reference.projectId, value: { command: [process.execPath, "-e", "process.exit(0)"], root: ".", covers: ["**"], required: true, enabled: true, releaseOnly: false }, occurredAt: at });
+  target = await resolveProjectTarget(f.a.reference, f.home);
+  assert.equal(target.readiness.gates.ready, true);
+  assert.equal(target.readiness.development.ready, false);
+});
+
+test("coordination rule writes preserve runtime enable/disable and never create managed prose", async t => {
+  const f = await fixture(t);
+  const input = { libraryRoot: f.coordination.path, projectRoot: f.coordination.path, id: "autonomy", occurredAt: at };
+  const enabled = await enableRule(input);
+  assert.equal(enabled.status.state, "enabled");
+  assert.equal(enabled.written, false);
+  assert.equal((await listRules({ libraryRoot: f.coordination.path })).find(rule => rule.id === "autonomy").state, "enabled");
+  await assert.rejects(renderAgentsSections(f.coordination.path, { projectRoot: f.coordination.path, navigation: null, occurredAt: at }), /managed prose/u);
+  const disabled = await disableRule(input);
+  assert.equal(disabled.status.state, "disabled");
+  assert.equal(disabled.written, false);
+});
+
+test("registry exclusion spans a complete consumer operation, so rebinding cannot interleave", async t => {
+  const f = await fixture(t);
+  let release, entered;
+  const barrier = new Promise(resolve => { release = resolve; });
+  const acquired = new Promise(resolve => { entered = resolve; });
+  const consumer = withFileLock(`${registryPath(f.home)}.lock`, async () => {
+    entered(); await barrier;
+    assert.ok((await readRegistry(f.home)).entries.some(entry => entry.projectPath === f.a.repo));
+  });
+  await acquired;
+  const unregister = unregisterLibrary(f.a.repo, f.home);
+  release(); await consumer;
+  assert.equal(await unregister, true);
+  assert.equal((await readRegistry(f.home)).entries.some(entry => entry.projectPath === f.a.repo), false);
 });

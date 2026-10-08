@@ -41,7 +41,7 @@ const {
   parseProcessTable,
   parseRegistrationLine,
   parseRegistry,
-} = await import(`${repositoryRoot}/dist/build/packages/core/src/index.js`);
+} = await import(`${repositoryRoot}/dist/build/packages/core/src/background-resource.js`);
 
 const REGISTRY_SUBPATH = "spawn-registry/registrations.jsonl";
 

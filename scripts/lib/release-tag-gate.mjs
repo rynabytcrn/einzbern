@@ -13,7 +13,7 @@ import { README_NAMES } from "../render-readme.mjs";
 
 const SHA = /^[0-9a-f]{40,64}$/u;
 const TAG = /^v\d+\.\d+\.\d+$/u;
-const FRAMEWORK_PATH = "packages/core/src/index.ts";
+const FRAMEWORK_PATH = "packages/core/src/framework-version.ts";
 const FRAMEWORK_VERSION = /^export const FRAMEWORK_VERSION = "(\d+\.\d+\.\d+)" as const;$/gmu;
 // This is the existing README generator's closed language set, not a README filename glob.
 const GENERATED_READMES = README_NAMES;

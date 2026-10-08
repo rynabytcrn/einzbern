@@ -27,7 +27,7 @@ import { writeFileAtomic } from "./atomic-file.js";
 import { ENGINE_FORMAT_VERSION, assertLibrarySupported } from "./format-version.js";
 import type { LibraryVersionFields } from "./format-version.js";
 import { DIRECTORY, renderLibraryReadme } from "./names.js";
-import { FRAMEWORK_VERSION } from "./index.js";
+import { FRAMEWORK_VERSION } from "./framework-version.js";
 
 export const LIBRARY_MANIFEST_SCHEMA_VERSION = "einzbern.library-manifest.v1" as const;
 // The format a new library and every stream manifest is written in: the newest this engine reads

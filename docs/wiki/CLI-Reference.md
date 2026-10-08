@@ -43,6 +43,29 @@
 | --- | --- | --- |
 | `--workspace` | 可选 | `string` |
 
+## `chain-declare`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--project-id` | 可选 | `string` |
+| `--workspace` | 可选 | `string` |
+| `--role` | 必填 | `string` |
+| `--coordination-library-id` | 必填 | `string` |
+| `--at` | 必填 | `instant` |
+| `--actor` | 可选 | `string` |
+
+## `chain-identity`
+
+- 可用范围：`cli`。
+- 是否写入：否。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--workspace` | 可选 | `string` |
+
 ## `chain-validate`
 
 - 可用范围：`cli`。
@@ -620,6 +643,42 @@
 | `--external-key` | 可选 | `string` |
 | `--status` | 可选 | `string` |
 
+## `project-bindings-remove`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--workspace` | 可选 | `string` |
+| `--project-id` | 必填 | `string` |
+| `--key` | 必填 | `string` |
+| `--at` | 必填 | `instant` |
+| `--actor` | 可选 | `string` |
+
+## `project-bindings-set`
+
+- 可用范围：`cli`。
+- 是否写入：是。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--workspace` | 可选 | `string` |
+| `--project-id` | 必填 | `string` |
+| `--key` | 必填 | `string` |
+| `--value` | 必填 | `json` |
+| `--at` | 必填 | `instant` |
+| `--actor` | 可选 | `string` |
+
+## `project-context`
+
+- 可用范围：`cli`。
+- 是否写入：否。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--reference` | 必填 | `json` |
+
 ## `project-create`
 
 - 可用范围：`cli`。
@@ -933,6 +992,8 @@
 
 | 旗标 | 必填 | 取值类型 |
 | --- | --- | --- |
+| `--expected-revision` | 可选 | `integer` |
+| `--involved-projects` | 可选 | `json` |
 | `--workspace` | 可选 | `string` |
 | `--at` | 必填 | `instant` |
 | `--id` | 必填 | `string` |
@@ -974,6 +1035,7 @@
 
 | 旗标 | 必填 | 取值类型 |
 | --- | --- | --- |
+| `--involved-projects` | 可选 | `json` |
 | `--workspace` | 可选 | `string` |
 | `--at` | 必填 | `instant` |
 | `--project-id` | 必填 | `string` |
@@ -1053,6 +1115,7 @@
 
 | 旗标 | 必填 | 取值类型 |
 | --- | --- | --- |
+| `--involved-project` | 可选 | `json` |
 | `--workspace` | 可选 | `string` |
 | `--project-id` | 可选 | `string` |
 | `--kind` | 可选 | `string` |
@@ -1064,6 +1127,16 @@
 | `--scope-bytes` | 可选 | `integer` |
 | `--limit` | 可选 | `integer` |
 | `--offset` | 可选 | `integer` |
+
+## `work-project-context`
+
+- 可用范围：`cli`。
+- 是否写入：否。
+
+| 旗标 | 必填 | 取值类型 |
+| --- | --- | --- |
+| `--workspace` | 可选 | `string` |
+| `--id` | 必填 | `string` |
 
 ## `work-show`
 

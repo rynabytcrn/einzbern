@@ -5,7 +5,8 @@ import { mkdtemp, mkdir, readFile, rm, realpath, rename, cp, writeFile } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { initializeLibrary, createProject, deleteProject, createWork, annotateWork, materializeWorkspace, materializeWorkspaceFromGenesis, setWorkspaceSetting, setConfigRecord, registerLibrary, readRegistry, registryPath, withFileLock, declareChainIdentity, chainIdentity, workProjectContexts, resolveProjectTarget, registeredCoordination, ensureProjectCoordination, normalizeInvolvedProjects, involvedProjectsOf, projectLineage, scopedWorkspaceState, enableRule, disableRule, listRules, renderAgentsSections } from "../dist/build/packages/core/src/index.js";
+import { initializeLibrary, createProject, deleteProject, createWork, annotateWork, materializeWorkspace, materializeWorkspaceFromGenesis, setWorkspaceSetting, setConfigRecord, registerLibrary, readRegistry, registryPath, withFileLock, declareChainIdentity, chainIdentity, workProjectContexts, resolveProjectTarget, registeredCoordination, ensureProjectCoordination, effectiveProjectState, normalizeInvolvedProjects, involvedProjectsOf, projectLineage, scopedWorkspaceState, enableRule, disableRule, listRules, renderAgentsSections, readSettingsCatalog } from "../dist/build/packages/core/src/index.js";
+import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { unregisterLibrary } from "../dist/build/packages/core/src/registry.js";
 import { canonicalJson, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 import { readAllStreams } from "../dist/build/packages/core/src/akasha.js";
@@ -266,4 +267,109 @@ test("U06: on format 2 a relation returned to undecided is stored explicitly, an
   const plain = deriveStableId("work", "PLAIN");
   assert.equal(Object.hasOwn((await materializeWorkspaceFromGenesis(f.coordination.path)).work.find(entry => entry.id === plain), "involvedProjects"), false);
   await assert.rejects(annotateWork(f.coordination.path, { id: plain, involvedProjects: { state: "undecided", targets: [] }, occurredAt: at }), /changed no annotatable field/u);
+});
+
+// F06 (U09), within its qualified scope: unavailable registrations are reported, never classified
+// from a name or a path. Case 1: a registration recorded with the project role. Case 2: one with no
+// recorded role, beside an explicit expected coordination identity that resolves. Case 3: one with
+// no recorded role and no expectation. Each case has its positive and its refusal.
+test("F06: unavailable registrations are listed by what was recorded, refused without an expectation, and never classified from a name or a path", async t => {
+  const f = await fixture(t);
+  const coordinationId = f.coordination.reference.libraryId;
+  // A registration made before the library had any identity records no role, whatever it is called
+  // and wherever it sits: here the place and the name a coordination library would have.
+  const legacyPath = join(f.root, "coordination-library");
+  const legacy = await initializeLibrary({ root: legacyPath, createdAt: at, projectName: "Cross Project" });
+  await registerLibrary({ projectPath: legacyPath, libraryPath: legacyPath, registeredAt: at, gitRemote: null }, f.home);
+  assert.equal((await readRegistry(f.home)).entries.find(entry => entry.libraryId === legacy.metadata.workspaceId).chainRole, undefined);
+  const offline = async path => { await rename(path, `${path}-offline`); return () => rename(`${path}-offline`, path); };
+
+  // Available, the unclassified library is classified by its records alone: not a coordination.
+  assert.equal((await registeredCoordination(f.home)).libraryId, coordinationId);
+
+  // Case 1: the recorded project role is reported as unavailable; as the expected identity it refuses.
+  const backA = await offline(f.a.path);
+  const found = await registeredCoordination(f.home);
+  assert.deepEqual([found.libraryId, found.unavailable, found.unclassifiedUnavailable], [coordinationId, [{ libraryId: f.a.reference.libraryId, path: f.a.path }], []]);
+  await assert.rejects(registeredCoordination(f.home, f.a.reference.libraryId), /cannot classify/u);
+  await backA();
+
+  // Case 2: beside an expected coordination that resolves, the unclassified unavailable registration
+  // is listed apart, and is not a candidate; when the expected coordination itself is away, refused.
+  const backLegacy = await offline(legacyPath);
+  const expected = await registeredCoordination(f.home, coordinationId);
+  assert.deepEqual([expected.libraryId, expected.unclassifiedUnavailable, expected.unavailable], [coordinationId, [{ libraryId: legacy.metadata.workspaceId, path: legacyPath }], []]);
+  const backCoordination = await offline(f.coordination.path);
+  await assert.rejects(registeredCoordination(f.home, coordinationId), /cannot classify/u);
+  await backCoordination();
+
+  // Case 3: without an expectation the same registration refuses discovery, although its path and
+  // project name are a coordination library's: neither classifies it.
+  await assert.rejects(registeredCoordination(f.home), /cannot classify/u);
+  await backLegacy();
+  assert.equal((await registeredCoordination(f.home)).libraryId, coordinationId, "once it opens, its records say it is no coordination");
+
+  // A registration recorded as a coordination that does not open is never accepted beside another.
+  const other = await f.library("other-coordination", "coordination");
+  const backOther = await offline(other.path);
+  await assert.rejects(registeredCoordination(f.home, coordinationId), /registered coordination does not open/u);
+  await backOther();
+});
+
+// F07 (U09): an optional common default supplies only optional project scalars; library-scope and
+// collection settings, gate declarations and managed records never inherit, and a common default
+// that does not resolve is refused truthfully rather than read as an empty default.
+test("F07: common defaults inherit optional project scalars only, and an unresolved common default refuses", async t => {
+  const f = await fixture(t); await configure(f.a, "alpha");
+  const tiers = JSON.parse(readSettingsCatalog(f.a.reference.libraryId, []).settings.find(entry => entry.key === "models.tiers").currentValue).map(tier => ({ ...tier, model: "alpha-model" }));
+  await setWorkspaceSetting(f.a.path, { key: "models.tiers", value: JSON.stringify(tiers), configurationProjectId: f.a.reference.projectId, occurredAt: at });
+  await setWorkspaceSetting(f.a.path, { key: "workspace.generatedArtifactsPath", value: "alpha-artifacts", occurredAt: at });
+  await setConfigRecord(f.a.path, { collection: "gate", key: "alpha-gate", projectId: f.a.reference.projectId, value: { command: [process.execPath, "-e", "process.exit(0)"], root: ".", covers: ["**"], required: true, enabled: true, releaseOnly: false }, occurredAt: at });
+  await setConfigRecord(f.b.path, { collection: "chain", key: "common-default", projectId: f.b.reference.projectId, value: f.a.reference, occurredAt: at });
+  const resolved = await resolveProjectTarget(f.b.reference, f.home);
+  const source = key => resolved.settings.find(entry => entry.key === key).source.kind;
+  assert.equal(source("design.authority"), "common", "an optional project scalar comes from the common default");
+  assert.equal(source("artifact.language"), "common");
+  assert.notEqual(source("models.tiers"), "common", "a collection setting never inherits");
+  assert.notEqual(source("workspace.generatedArtifactsPath"), "common", "a library-scope setting never inherits");
+  assert.equal(resolved.configRecords.some(record => record.collection === "gate"), false, "gate declarations never inherit");
+  assert.equal(resolved.readiness.gates.ready, false);
+  // The common default names a target this device does not register: refused, not an empty default.
+  const unregistered = { libraryId: "library:" + "c".repeat(24), projectId: "project:" + "d".repeat(24) };
+  await setConfigRecord(f.b.path, { collection: "chain", key: "common-default", projectId: f.b.reference.projectId, value: unregistered, occurredAt: at });
+  const refused = await resolveProjectTarget(f.b.reference, f.home);
+  assert.deepEqual([refused.status, refused.reason, refused.common.status], ["conflicting", "common-default-unresolved", "unregistered"]);
+  await assert.rejects(effectiveProjectState(await materializeWorkspace(f.b.path), f.b.reference.projectId, f.home), /effective configuration unavailable/u);
+});
+
+// F02 (U09): the runtime rule write path Atelier takes for a coordination chain, the CLI's
+// rule-enable and rule-disable on the coordination registration setup makes, records the rule's
+// state and never writes managed prose into the library.
+test("F02: rule-enable and rule-disable through the CLI on a setup-made coordination record runtime state and write no prose", async t => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "einzbern-coordination-rule-")));
+  const previous = { home: process.env.EINZBERN_HOME, surface: process.env.EINZBERN_SURFACE };
+  const home = join(root, "device");
+  process.env.EINZBERN_HOME = home;
+  t.after(async () => {
+    process.env.EINZBERN_HOME = previous.home;
+    if (previous.surface === undefined) delete process.env.EINZBERN_SURFACE; else process.env.EINZBERN_SURFACE = previous.surface;
+    await rm(root, { recursive: true, force: true });
+  });
+  const project = join(root, "project");
+  await initializeLibrary({ root: project, createdAt: at });
+  const coordination = await ensureProjectCoordination(project, at, home);
+  const entry = (await readRegistry(home)).entries.find(candidate => candidate.libraryId === coordination.libraryId);
+  assert.deepEqual([entry.projectPath, entry.libraryPath, entry.chainRole], [coordination.path, coordination.path, "coordination"]);
+  const cli = async args => { let output = ""; await runCli(args, { write: text => { output += text; } }); return JSON.parse(output); };
+  await assert.rejects(cli(["rule-enable", "--id", "autonomy", "--project", coordination.path, "--project-id", entry.projectId, "--at", at]), error => error.reasonCode === "MODEL_WRITE_REFUSED", "a model does not change a rule");
+  // Atelier's surface, as its runtime rule write runs the CLI (no human-identity claim).
+  process.env.EINZBERN_SURFACE = "atelier";
+  const enabled = await cli(["rule-enable", "--id", "autonomy", "--project", coordination.path, "--project-id", entry.projectId, "--at", at]);
+  assert.deepEqual([enabled.reasonCode, enabled.written, enabled.recorded, enabled.result, enabled.rule.state], ["RULE_ENABLED", false, 1, "unchanged", "enabled"]);
+  assert.equal((await listRules({ libraryRoot: coordination.path, configurationProjectId: entry.projectId })).find(rule => rule.id === "autonomy").state, "enabled");
+  assert.equal((await cli(["rule-list", "--project", coordination.path])).rules.find(rule => rule.id === "autonomy").state, "enabled");
+  const disabled = await cli(["rule-disable", "--id", "autonomy", "--project", coordination.path, "--project-id", entry.projectId, "--at", at]);
+  assert.deepEqual([disabled.reasonCode, disabled.written, disabled.recorded], ["RULE_DISABLED", false, 1]);
+  assert.equal((await listRules({ libraryRoot: coordination.path, configurationProjectId: entry.projectId })).find(rule => rule.id === "autonomy").state, "disabled");
+  await assert.rejects(readFile(join(coordination.path, "AGENTS.md")), { code: "ENOENT" }, "no managed prose in the coordination library");
 });

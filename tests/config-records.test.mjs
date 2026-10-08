@@ -343,3 +343,26 @@ test("chain configuration validates its typed identity and refuses guessed refer
   }
   await assert.rejects(as(desk, () => setConfigRecord(library, { collection: "chain", key: "common-default", value: { libraryId: initial.metadata.workspaceId, projectId: "project:" + "a".repeat(24) }, occurredAt: at() })), { reasonCode: "CONFIG_RECORD_VALUE_INVALID" });
 });
+
+// TCRN-CROSS-INIT-053 R47 (c1-B; Owner 2026-10-09, round 7): a coordination chain's own runtime settings are
+// library values. The CLI writes them without a project, config/project.json projects them beside the chain's
+// records, and a replay from genesis reads the same; a development key stays refused there.
+test("R47 c1-B: a coordination chain's runtime settings are written, projected and replayed as library values", async (context) => {
+  const base = await scratch(context);
+  const desk = await device(base, "desk", DESK_ID);
+  const library = join(base, "coordination");
+  const { initializeLibrary } = await import("../dist/build/packages/core/src/index.js");
+  const initial = await as(desk, () => initializeLibrary({ root: library, createdAt: at() }));
+  await as(desk, () => setConfigRecord(library, { collection: "chain", key: "identity", value: { role: "coordination", coordinationLibraryId: initial.metadata.workspaceId }, occurredAt: at() }));
+  const language = await cli(desk, ["settings-set", "--workspace", library, "--at", at(), "--key", "artifact.language", "--value", "ja"]);
+  assert.deepEqual([language.reasonCode, language.projectId, language.source.kind, language.effectiveValue], ["SETTINGS_WRITE_COMMITTED", null, "library", "ja"]);
+  await cli(desk, ["settings-set", "--workspace", library, "--at", at(), "--key", "execution.maxConcurrentSubagents", "--value", "3"]);
+  const projection = JSON.parse(await readFile(join(library, "config", "project.json"), "utf8"));
+  assert.deepEqual(projection.values, { "artifact.language": "ja", "execution.maxConcurrentSubagents": "3" });
+  assert.equal(projection.records.chain.identity.role, "coordination");
+  const replay = await as(desk, () => materializeWorkspaceFromGenesis(library));
+  assert.deepEqual(replay.settings.map((record) => [record.key, record.value, record.projectId ?? null]), [["artifact.language", "ja", null], ["execution.maxConcurrentSubagents", "3", null]]);
+  assert.equal(await configProjectionStatus(library, replay.settings, replay.configRecords), "current");
+  const refused = await refusal(() => cli(desk, ["settings-set", "--workspace", library, "--at", at(), "--key", "design.authority", "--value", "https://example.test"]));
+  assert.deepEqual([refused.reasonCode, refused.message], ["WORKSPACE_INPUT_INVALID", "coordination chains expose runtime settings only"]);
+});

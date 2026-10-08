@@ -23,6 +23,12 @@ Catalog `layer` and `scope` describe three ownership levels:
   `storage.snapshotEveryEvents` and `workspace.generatedArtifactsPath` govern shared
   storage or the one artifact manifest. A project-specific write refuses; all targets
   use the same declaration. Their values still travel with the library event chain.
+  On a classified coordination chain the library level also holds the chain's own
+  runtime settings (TCRN-CROSS-INIT-053 R47, c1-B): `artifact.language`,
+  `execution.maxConcurrentSubagents` and the four `quota.*` keys join the four above,
+  ten in all. There `settings-catalog` lists exactly these ten, each with `scope` and
+  `layer` `library`; they are read and written for the whole library (a write naming a
+  `projectId` refuses as above) and never inherited as development configuration.
 - **device**: `portal.*`, `crest.userPath` and `agents.navigation` are kept in this
   device's `machine-settings.json`, never in the library. Project setting verbs refuse
   them with the existing device-level remedy.
@@ -498,9 +504,16 @@ execution policies and from representation or protocol bounds.
 
 ## Coordination and target provenance
 
-Classified coordination chains expose library runtime settings; their historical
-project development settings remain canonical history but are not effective
-development defaults. A concrete target is resolved from an explicit registered
+Classified coordination chains expose their own runtime settings and nothing else
+(TCRN-CROSS-INIT-053 R47, c1-B): the four library keys, `artifact.language`, and
+`execution.maxConcurrentSubagents`, `quota.fiveHourParallelOffPercent`,
+`quota.fiveHourWaitPercent`, `quota.weeklyParallelOffPercent` and
+`quota.weeklyWaitPercent`, the orchestration limits of the work dispatched from the
+chain. Each is read and written at the library level only; a coordination chain is
+never a development target or a common default, so no involved project inherits
+them. `models.*` and every other development key stay per target and refuse on a
+coordination chain; its historical project development settings remain canonical
+history but are not effective development defaults. A concrete target is resolved from an explicit registered
 `{libraryId, projectId}`. Each target independently supplies its effective
 settings and declared ancestry. An opted-in common default is separately marked
 `common`; device/user settings remain separately returned by their own catalog.

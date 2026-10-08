@@ -22,6 +22,10 @@ const CLI = process.env.TCRN_WORKFLOW_CLI ?? join(portalRoot, "..", "scripts", "
 const DS_CONTRACT = JSON.parse(await readFile(join(portalRoot, "ds-consumer-contract.json"), "utf8"));
 const fixtureProjectIds = new Map();
 const GLOBAL_SETTING_KEYS = new Set(["engine.requiredVersion", "storage.segmentBytes", "storage.snapshotEveryEvents", "workspace.generatedArtifactsPath"]);
+// TCRN-CROSS-INIT-053 R47 (c1-B): a coordination chain writes these for the whole library as well, so a fixture
+// write of one to a coordination library names no project either.
+const COORDINATION_SETTING_KEYS = new Set([...GLOBAL_SETTING_KEYS, "artifact.language", "execution.maxConcurrentSubagents", "quota.fiveHourParallelOffPercent", "quota.fiveHourWaitPercent", "quota.weeklyParallelOffPercent", "quota.weeklyWaitPercent"]);
+const coordinationLibraries = new Set();
 const MUTATION = process.env.TCRN_UI_MUTATION ?? "";
 const COMPONENTS = Object.freeze([
   ["workspace tabs", '[data-ui="workspace-tabs"]'],
@@ -61,7 +65,8 @@ async function cli(args, env = {}) {
   const workspaceIndex = args.indexOf("--workspace");
   const projectId = fixtureProjectIds.get(args[workspaceIndex + 1]);
   const keyIndex = args.indexOf("--key");
-  if (scoped.includes(args[0]) && projectId && !args.includes("--project-id") && !GLOBAL_SETTING_KEYS.has(args[keyIndex + 1])) args = [...args, "--project-id", projectId];
+  const libraryKeys = coordinationLibraries.has(args[workspaceIndex + 1]) ? COORDINATION_SETTING_KEYS : GLOBAL_SETTING_KEYS;
+  if (scoped.includes(args[0]) && projectId && !args.includes("--project-id") && !libraryKeys.has(args[keyIndex + 1])) args = [...args, "--project-id", projectId];
   const { stdout } = await execFileAsync(process.execPath, [CLI, ...args], { encoding: "utf8", maxBuffer: 32e6, env: { ...process.env, ...env } });
   return JSON.parse(stdout);
 }
@@ -2561,6 +2566,7 @@ async function projectChainFixture(prefix) {
   const libraryId = async (library) => (await cli(["status", "--workspace", library], fixture.deviceEnv)).workspaceId;
   coordination.libraryId = await libraryId(coordination.library);
   await cli(["chain-declare", "--workspace", coordination.library, "--role", "coordination", "--coordination-library-id", coordination.libraryId, "--at", nextAt()], atelier);
+  coordinationLibraries.add(coordination.library);
   const targets = [];
   for (const [library, projectId] of [[fixture.workspace, fixture.projectId], [fixture.second.library, fixture.second.projectId], [third.library, third.projectId]]) {
     await cli(["chain-declare", "--workspace", library, "--role", "project", "--coordination-library-id", coordination.libraryId, "--at", nextAt()], atelier);
@@ -3188,6 +3194,37 @@ if (!MUTATION) test("R46 I12: the coordination chain's model pages are read only
     document.querySelector('[data-locale-option="fr"]')?.click();
     document.querySelector('[data-page-target="model-tiers"]')?.click();
     assert.equal(document.querySelector('[data-collection-read-only-note="models.tiers"]').textContent, locales.fr["collection.coordinationReadOnly"].replace("{chain}", "TCRN-R45-COORDINATION"));
+  } finally { await closePage(page, fixture); }
+});
+
+// TCRN-CROSS-INIT-053 R47 (c1-B; Owner 2026-10-09, round 7): the coordination chain lists its own runtime
+// settings, so its settings page saves the artifact language, and the engine records it for the whole library
+// with no project; a fixture write of another of them names no project either. Its model pages stay as R46 I12.
+if (!MUTATION) test("R47 c1-B: the coordination chain's artifact language saves from its settings page, for the whole library", async () => {
+  const fixture = await projectChainFixture("tcrn-r47-c1b-coordination-");
+  await cli(["settings-set", "--workspace", fixture.coordination.library, "--at", nextAt(), "--actor", "agent:test", "--key", "execution.maxConcurrentSubagents", "--value", "3"], fixture.atelier);
+  const page = await loadExecutedDom(fixture);
+  try {
+    const { document, window } = page;
+    const select = document.querySelector("#library-select");
+    select.value = fixture.coordination.project;
+    select.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await waitFor(() => document.querySelector("#rail-workspace-label").textContent === "TCRN-R45-COORDINATION", "the coordination chain");
+    await page.waitForSettled();
+    document.querySelector('[data-page-target="settings"]')?.click();
+    document.querySelector('[data-setting-group="knowledge"]')?.click();
+    const control = await waitFor(() => document.querySelector('[data-setting-row="artifact.language"] [data-setting-control]'), "the artifact language row");
+    assert.equal(control.disabled, false, "the coordination chain's own setting can be changed");
+    const before = receiptText(document);
+    control.value = "fr";
+    control.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await waitFor(receiptAdvanced(document, before), "the saved write's receipt");
+    await page.waitForSettled();
+    const catalog = await cli(["settings-catalog", "--workspace", fixture.coordination.library, "--project-id", fixture.coordination.projectId], fixture.deviceEnv);
+    const row = (key) => catalog.settings.find((entry) => entry.key === key);
+    assert.deepEqual([row("artifact.language").currentValue, row("artifact.language").declaredValue, row("artifact.language").scope, row("artifact.language").source.kind], ["fr", "fr", "library", "library"]);
+    assert.deepEqual([row("execution.maxConcurrentSubagents").currentValue, row("execution.maxConcurrentSubagents").source.kind], ["3", "library"]);
+    assert.equal(row("models.tiers"), undefined, "the model tables are not the coordination chain's");
   } finally { await closePage(page, fixture); }
 });
 

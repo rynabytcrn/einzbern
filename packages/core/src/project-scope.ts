@@ -2,7 +2,7 @@ import { chainIdentity } from "./chain-identity.js";
 // SPDX-License-Identifier: Apache-2.0
 
 import { SETTINGS_CATALOG, assertSettingWriteConsistent, readSettingsCatalog, settingsCatalogEntry } from "./settings.js";
-import type { SettingKey, WorkspaceSettingRecord } from "./settings.js";
+import type { SettingKey, SettingsCatalogReadback, WorkspaceSettingRecord } from "./settings.js";
 import type { ConfigRecord } from "./config-records.js";
 import type { ProjectRecord, WorkspaceState } from "./workspace.js";
 
@@ -45,10 +45,36 @@ export function workspaceSettingIdentity(key: string, projectId?: string): strin
 
 export function assertSettingScope(state: WorkspaceState, key: string, projectId?: string): void {
   projectLineage(state, projectId);
-  if (chainIdentity(state)?.role === "coordination" && settingsCatalogEntry(key).scope !== "library") throw new ProjectScopeError("coordination chains expose runtime settings only", { key });
-  if (projectId !== undefined && settingsCatalogEntry(key).scope === "library") {
+  if (chainIdentity(state)?.role === "coordination" && !coordinationRuntimeSetting(settingsCatalogEntry(key).key)) throw new ProjectScopeError("coordination chains expose runtime settings only", { key });
+  if (projectId !== undefined && (chainIdentity(state)?.role === "coordination" || settingsCatalogEntry(key).scope === "library")) {
     throw new ProjectScopeError("this setting belongs to the whole library and cannot have a project override", { key, projectId });
   }
+}
+
+/**
+ * TCRN-CROSS-INIT-053 R47 (c1-B; Owner 2026-10-09, round 7): the settings a coordination chain keeps for
+ * itself. The four library settings, and the artifact language and orchestration limits of the work
+ * dispatched from it. On a coordination chain each is read and written for the whole library, and no
+ * involved project inherits one as development configuration (a coordination chain is never a
+ * development target or a common default). Every other key, models.* among them, stays per target.
+ */
+export const COORDINATION_RUNTIME_SETTING_KEYS = Object.freeze([
+  "engine.requiredVersion", "storage.segmentBytes", "storage.snapshotEveryEvents", "workspace.generatedArtifactsPath",
+  "artifact.language", "execution.maxConcurrentSubagents",
+  "quota.fiveHourParallelOffPercent", "quota.fiveHourWaitPercent", "quota.weeklyParallelOffPercent", "quota.weeklyWaitPercent",
+] as const satisfies readonly SettingKey[]);
+
+/** Whether a coordination chain keeps this key for itself (COORDINATION_RUNTIME_SETTING_KEYS). */
+export function coordinationRuntimeSetting(key: string): boolean {
+  return (COORDINATION_RUNTIME_SETTING_KEYS as readonly string[]).includes(key);
+}
+
+/** settings-catalog rows on a coordination chain: its runtime settings only, each with scope and layer library, declared at the library level. */
+export function coordinationCatalogRows(state: Pick<WorkspaceState, "settings">, rows: SettingsCatalogReadback["settings"]): SettingsCatalogReadback["settings"] {
+  return rows.filter((row) => coordinationRuntimeSetting(row.key)).map((row) => ({
+    ...row, layer: "library" as const, scope: "library" as const,
+    ...(row.declaredValue === undefined ? {} : { declaredValue: state.settings.find((record) => record.key === row.key && record.projectId === undefined)?.value ?? null }),
+  }));
 }
 
 export type ScopedWorkspaceState = WorkspaceState & {
@@ -96,10 +122,12 @@ export function scopedWorkspaceState(state: WorkspaceState, projectId?: string):
   const settings: WorkspaceSettingRecord[] = [];
   const fallbackRecords: WorkspaceSettingRecord[] = [];
   for (const entry of SETTINGS_CATALOG) {
-    if (coordination && entry.scope !== "library") continue;
-    const eligible = entry.scope === "library" ? [undefined] : scopes;
+    // A coordination chain reads its runtime settings at the library level only (c1-B), like a library setting.
+    if (coordination && !coordinationRuntimeSetting(entry.key)) continue;
+    const libraryLevel = coordination || entry.scope === "library";
+    const eligible = libraryLevel ? [undefined] : scopes;
     const record = eligible.map((scope) => state.settings.find((value) => value.key === entry.key && value.projectId === scope)).find((value) => value !== undefined);
-    const fallback = eligible.filter((scope) => scope !== (entry.scope === "library" ? undefined : projectId)).map((scope) => state.settings.find((value) => value.key === entry.key && value.projectId === scope)).find((value) => value !== undefined);
+    const fallback = eligible.filter((scope) => scope !== (libraryLevel ? undefined : projectId)).map((scope) => state.settings.find((value) => value.key === entry.key && value.projectId === scope)).find((value) => value !== undefined);
     if (fallback !== undefined) fallbackRecords.push(fallback);
     settingFallbackValues[entry.key] = fallback?.value ?? entry.defaultValue;
     settingFallbackSources[entry.key] = fallback === undefined ? { kind: "default", projectId: null, projectName: null, inherited: false } : source(fallback.projectId);

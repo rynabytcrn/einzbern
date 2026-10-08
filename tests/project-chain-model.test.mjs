@@ -471,3 +471,74 @@ test("R46 I03: unregistered, unavailable and cyclic common defaults are read per
   assert.deepEqual([rowOf(repaired, "design.authority").currentValue, rowOf(repaired, "design.authority").source.kind], [null, "default"]);
   assert.equal(repaired.settings.some(row => row.source?.status === "unresolved"), false);
 });
+
+// TCRN-CROSS-INIT-053 R47 (c1-B; Owner 2026-10-09, round 7): a coordination chain keeps ten runtime settings
+// for itself, the four library settings with the artifact language and the orchestration limits of the work
+// dispatched from it. It lists and writes them for the whole library only; a project override of one refuses
+// in the library's words, and models.* and every development key keep the coordination refusal.
+const COORDINATION_RUNTIME_KEYS = ["artifact.language", "engine.requiredVersion", "execution.maxConcurrentSubagents", "quota.fiveHourParallelOffPercent", "quota.fiveHourWaitPercent", "quota.weeklyParallelOffPercent", "quota.weeklyWaitPercent", "storage.segmentBytes", "storage.snapshotEveryEvents", "workspace.generatedArtifactsPath"];
+test("R47 c1-B: a coordination chain lists and writes its ten runtime settings for the whole library only", async t => {
+  const f = await fixture(t);
+  const own = ["--workspace", f.coordination.path];
+  const targeted = [...own, "--project-id", f.coordination.reference.projectId];
+  for (const args of [own, targeted]) {
+    const catalog = await catalogAs(f, args);
+    assert.deepEqual(catalog.settings.map(row => row.key), COORDINATION_RUNTIME_KEYS);
+    assert.deepEqual([...new Set(catalog.settings.flatMap(row => [row.scope, row.layer]))], ["library"]);
+    assert.equal(catalog.design, null);
+  }
+  const written = [["artifact.language", "fr"], ["execution.maxConcurrentSubagents", "3"], ["quota.weeklyWaitPercent", "90"]];
+  for (const [key, value] of written) await setWorkspaceSetting(f.coordination.path, { key, value, occurredAt: at });
+  for (const args of [own, targeted]) {
+    const catalog = await catalogAs(f, args);
+    for (const [key, value] of written) assert.deepEqual([rowOf(catalog, key).currentValue, rowOf(catalog, key).declaredValue, rowOf(catalog, key).source.kind], [value, value, "library"], key);
+    assert.deepEqual([rowOf(catalog, "quota.fiveHourWaitPercent").currentValue, rowOf(catalog, "quota.fiveHourWaitPercent").declaredValue, rowOf(catalog, "quota.fiveHourWaitPercent").source.kind], ["90", null, "default"]);
+  }
+  const native = await materializeWorkspace(f.coordination.path);
+  assert.deepEqual(native.settings.filter(record => COORDINATION_RUNTIME_KEYS.includes(record.key)).map(record => [record.key, record.projectId ?? null]), written.map(([key]) => [key, null]));
+  assert.deepEqual(scopedWorkspaceState(native, f.coordination.reference.projectId).settings.map(record => [record.key, record.value]), written);
+  const projectOverride = /this setting belongs to the whole library and cannot have a project override/u;
+  for (const [key, value] of [["artifact.language", "ja"], ["execution.maxConcurrentSubagents", "2"], ["quota.fiveHourParallelOffPercent", "50"], ["quota.fiveHourWaitPercent", "50"], ["quota.weeklyParallelOffPercent", "50"], ["quota.weeklyWaitPercent", "50"], ["workspace.generatedArtifactsPath", "elsewhere"]]) {
+    await assert.rejects(setWorkspaceSetting(f.coordination.path, { key, value, configurationProjectId: f.coordination.reference.projectId, occurredAt: at }), projectOverride, key);
+  }
+  await assert.rejects(removeWorkspaceSetting(f.coordination.path, { key: "artifact.language", configurationProjectId: f.coordination.reference.projectId, occurredAt: at }), /is not set/u);
+  const runtimeOnly = /coordination chains expose runtime settings only/u;
+  const tiers = readSettingsCatalog(f.coordination.reference.libraryId, []).settings.find(entry => entry.key === "models.tiers").currentValue;
+  for (const projectId of [undefined, f.coordination.reference.projectId]) {
+    await assert.rejects(setWorkspaceSetting(f.coordination.path, { key: "models.tiers", value: tiers, ...(projectId === undefined ? {} : { configurationProjectId: projectId }), occurredAt: at }), runtimeOnly);
+    await assert.rejects(setWorkspaceSetting(f.coordination.path, { key: "knowledge.articlesPath", value: "articles", ...(projectId === undefined ? {} : { configurationProjectId: projectId }), occurredAt: at }), runtimeOnly);
+  }
+  // The library-level declaration is removed for the whole library.
+  await removeWorkspaceSetting(f.coordination.path, { key: "quota.weeklyWaitPercent", occurredAt: at });
+  assert.equal(rowOf(await catalogAs(f, targeted), "quota.weeklyWaitPercent").source.kind, "default");
+  // A project chain's catalog is as before: every key, each with its static scope and layer.
+  const project = await catalogAs(f, ["--workspace", f.a.path, "--project-id", f.a.reference.projectId]);
+  const statics = readSettingsCatalog(f.a.reference.libraryId, []).settings;
+  assert.deepEqual(project.settings.map(row => [row.key, row.scope, row.layer]), statics.map(row => [row.key, row.scope, row.layer]));
+  for (const key of ["artifact.language", "execution.maxConcurrentSubagents", "quota.weeklyWaitPercent"]) assert.deepEqual([rowOf(project, key).scope, rowOf(project, key).layer], ["project", "project"], key);
+  await setWorkspaceSetting(f.a.path, { key: "artifact.language", value: "ja", configurationProjectId: f.a.reference.projectId, occurredAt: at });
+  assert.equal(rowOf(await catalogAs(f, ["--workspace", f.a.path, "--project-id", f.a.reference.projectId]), "artifact.language").declaredValue, "ja");
+});
+
+// R47 c1-B (approved contract items 7 and 10): a coordination chain's runtime settings are its own. An
+// involved project resolves its own values, and a project whose common default is the coordination chain
+// gets none of them (the coordination chain is not a development target).
+test("R47 c1-B: involved projects and common defaults never take the coordination chain's runtime settings", async t => {
+  const f = await fixture(t);
+  await setWorkspaceSetting(f.coordination.path, { key: "artifact.language", value: "fr", occurredAt: at });
+  await setWorkspaceSetting(f.coordination.path, { key: "execution.maxConcurrentSubagents", value: "3", occurredAt: at });
+  const state = await createWork(f.coordination.path, { projectId: f.coordination.reference.projectId, externalKey: "R47-C1B", kind: "Initiative", parentId: null, title: "Coordinated work", involvedProjects: { state: "selected", targets: [f.a.reference] }, occurredAt: at });
+  const contexts = await workProjectContexts(state, state.work[0].id, f.home);
+  const value = key => contexts.contexts[0].settings.find(entry => entry.key === key);
+  assert.deepEqual([value("artifact.language").value, value("artifact.language").source.kind, value("artifact.language").source.libraryId], ["en", "default", f.a.reference.libraryId]);
+  assert.deepEqual([value("execution.maxConcurrentSubagents").value, value("execution.maxConcurrentSubagents").source.kind], ["8", "default"]);
+  assert.equal(contexts.contexts[0].handoff.output.language, "en");
+  await setConfigRecord(f.b.path, { collection: "chain", key: "common-default", projectId: f.b.reference.projectId, value: f.coordination.reference, occurredAt: at });
+  const resolved = await resolveProjectTarget(f.b.reference, f.home);
+  assert.deepEqual([resolved.status, resolved.reason, resolved.common.status, resolved.common.reason], ["conflicting", "common-default-unresolved", "unconfigured", "coordination-is-not-development"]);
+  const catalog = await catalogAs(f, ["--workspace", f.b.path, "--project-id", f.b.reference.projectId]);
+  for (const key of ["artifact.language", "execution.maxConcurrentSubagents"]) {
+    assert.deepEqual([rowOf(catalog, key).currentValue, rowOf(catalog, key).source.kind, rowOf(catalog, key).source.status], [null, "common", "unresolved"], key);
+  }
+  await assert.rejects(effectiveProjectState(await materializeWorkspace(f.b.path), f.b.reference.projectId, f.home), /effective configuration unavailable/u);
+});

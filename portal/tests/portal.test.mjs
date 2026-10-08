@@ -1944,3 +1944,33 @@ test("INIT-053 R46 I06: a chain's two repositories bind by registration, and a p
   const rule = await request(url, "/api/rules/autonomy", writeOptions(boot.token, "POST", { action: "enable" }));
   assert.deepEqual([rule.body.ok, rule.body.reasonCode, [...rule.body.candidates].sort()], [false, "PORTAL_PROJECT_BINDING_AMBIGUOUS", [...otherRoots].sort()]);
 });
+
+// TCRN-CROSS-INIT-053 R47 (c1-B; Owner 2026-10-09, round 7): on a coordination chain /api/settings lists its ten
+// runtime settings, each for the whole library, and a write from a selection that names the chain's project is
+// made at the library level, as the catalog's scope says; a model table stays refused by the engine.
+const R47_COORDINATION_KEYS = ["artifact.language", "engine.requiredVersion", "execution.maxConcurrentSubagents", "quota.fiveHourParallelOffPercent", "quota.fiveHourWaitPercent", "quota.weeklyParallelOffPercent", "quota.weeklyWaitPercent", "storage.segmentBytes", "storage.snapshotEveryEvents", "workspace.generatedArtifactsPath"];
+test("INIT-053 R47 c1-B: a coordination chain's /api/settings lists its runtime settings and writes them for the whole library", async t => {
+  const fixture = await scratch("portal-r47-coordination-", "R47-COORDINATION");
+  const atelier = { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" };
+  const libraryId = (await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).workspaceId;
+  await cli(["chain-declare", "--workspace", fixture.workspace, "--role", "coordination", "--coordination-library-id", libraryId, "--at", R46_AT, "--actor", "agent:test"], atelier);
+  const tiers = (await cli(["settings-catalog", "--workspace", fixture.second.library, "--project-id", fixture.second.projectId], fixture.deviceEnv)).settings.find((entry) => entry.key === "models.tiers").currentValue;
+  const { child, url } = await startPortal(fixture);
+  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
+  const { boot } = await readBoot(url);
+  assert.deepEqual([boot.library.chain.role, boot.library.configurationProjectId], ["coordination", fixture.projectId]);
+  const settings = await request(url, "/api/settings", readOptions(boot.token));
+  assert.equal(settings.body.reasonCode, "SETTINGS_CATALOG_READY");
+  assert.deepEqual(settings.body.settings.map((entry) => [entry.key, entry.scope, entry.layer]), R47_COORDINATION_KEYS.map((key) => [key, "library", "library"]));
+  const written = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "artifact.language", value: "fr" }));
+  assert.equal(written.response.status, 200);
+  assert.deepEqual([written.body.reasonCode, written.body.readback.currentValue, written.body.readback.declaredValue, written.body.readback.source.kind], ["SETTINGS_WRITE_COMMITTED", "fr", "fr", "library"]);
+  const library = (await cli(["settings-catalog", "--workspace", fixture.workspace], fixture.deviceEnv)).settings.find((entry) => entry.key === "artifact.language");
+  assert.deepEqual([library.currentValue, library.declaredValue, library.source.kind], ["fr", "fr", "library"], "the write is the library's, not the project's");
+  const refused = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "models.tiers", value: tiers }));
+  assert.equal(refused.response.status, 409);
+  assert.equal(refused.body.ok, false);
+  assert.match(JSON.stringify(refused.body), /coordination chains expose runtime settings only/u);
+  const after = await cli(["settings-catalog", "--workspace", fixture.workspace, "--project-id", fixture.projectId], fixture.deviceEnv);
+  assert.deepEqual(after.settings.map((entry) => entry.key), R47_COORDINATION_KEYS, "models.tiers is not listed and was not written");
+});

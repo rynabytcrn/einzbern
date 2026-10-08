@@ -1,5 +1,6 @@
 import { ensureSetupProjectBinding } from "../../core/src/setup-fresh.js";
 import { setConfigRecord, removeConfigRecord } from "../../core/src/config-records.js";
+import { coordinationCatalogRows } from "../../core/src/project-scope.js";
 import { chainIdentity, declareChainIdentity, resolveProjectTarget, workProjectContexts, effectiveProjectState, ensureProjectCoordination, settingsCatalogState, markUnresolvedCommonDefault } from "../../core/src/project-chain.js";
 import { normalizeInvolvedProjects, involvedProjectsOf, projectReference, hasInvolvedProject } from "../../core/src/involved-projects.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
@@ -2297,7 +2298,8 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
       projects: state.projects.filter(entry => !entry.tombstone).map(entry => ({ id: entry.id, externalKey: entry.externalKey, name: entry.name, parentProjectId: entry.parentProjectId ?? null })),
       design: chain?.role === "coordination" ? null : designConfiguration(state),
       projectBindings: state.configRecords.filter(record => record.collection === "chain" && record.key !== "identity"),
-      settings: chain?.role === "coordination" ? catalog.settings.filter(entry => entry.scope === "library") : markUnresolvedCommonDefault(catalog.settings, reading) }));
+      // TCRN-CROSS-INIT-053 R47 (c1-B): a coordination chain lists its own runtime settings, each for the whole library.
+      settings: chain?.role === "coordination" ? coordinationCatalogRows(state, catalog.settings) : markUnresolvedCommonDefault(catalog.settings, reading) }));
     return;
   }
   if (command === "install-manifest") {

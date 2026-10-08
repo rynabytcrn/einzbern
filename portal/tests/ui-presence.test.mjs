@@ -2209,17 +2209,19 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       assert.equal(select?.id, "library-select");
       const options = [...select.querySelectorAll("option")];
       assert.deepEqual(options.map((option) => option.getAttribute("value")), [fixture.proseRoot, fixture.second.project]);
-      // INIT-053 R45 (U14): the API names a library by what project-list says of its project, null when
-      // it says nothing; the page names a null as "Unnamed project" and tells two alike apart by the
-      // shortest tails of their ids, so the expectation is derived from the API's null by that rule.
+      // INIT-053 R46 (I01, I09): project-list names each project, and the page names a library by its
+      // project's own name end to end: the switcher, the rail and the top bar show the fixture's real
+      // names ("Unnamed project" is only for a project that has none).
       const named = async (library) => ({
         name: (await cli(["project-list", "--workspace", library], fixture.deviceEnv)).records.find(record => record.id === fixtureProjectIds.get(library)).name ?? null,
         libraryId: (await cli(["status", "--workspace", library], fixture.deviceEnv)).workspaceId,
         projectId: fixtureProjectIds.get(library),
       });
       const listed = [await named(fixture.workspace), await named(fixture.second.library)];
+      assert.deepEqual(listed.map((entry) => entry.name), ["TCRN-INC148-DOM", "TCRN-INC148-DOM-SECOND"], "project-list names both projects");
       const locales = await localeTable();
       const [firstName, secondName] = expectedTargetLabels(listed, (entry) => entry.name ?? locales.en["projects.unnamed"]);
+      assert.deepEqual([firstName, secondName], ["TCRN-INC148-DOM", "TCRN-INC148-DOM-SECOND"], "two named projects read as their names, with no id tail");
       assert.deepEqual(options.map(option => option.textContent), [firstName, secondName], "navigation uses canonical names, full identity belongs in Details");
       for (const option of options) assert.doesNotMatch(option.textContent, /(?:library|project):[0-9a-f]{24}/u, "no complete id in the visible label");
       assert.equal(options[0].hasAttribute("selected"), true);
@@ -2257,7 +2259,8 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
         page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
         await waitFor(() => page.document.documentElement.lang === locale, `the ${locale} locale`);
         assert.deepEqual(stateKeys.map((key) => page.document.querySelector(`#library-state [data-i18n="${key}"]`)?.textContent), labels);
-        // The switcher, the rail and the top bar name an unnamed library in the page's language.
+        // The switcher, the rail and the top bar keep a project's own name in every language (only an
+        // unnamed one would follow the language).
         const localized = expectedTargetLabels(listed, (entry) => entry.name ?? locales[locale]["projects.unnamed"]);
         assert.deepEqual([...select.querySelectorAll("option")].map((option) => option.textContent), localized, `${locale}: the switcher follows the language`);
         assert.equal(text("#rail-workspace-label"), localized[1], `${locale}: the rail follows the language`);
@@ -2517,7 +2520,8 @@ if (!MUTATION) test("R43 navigation destinations are anchors and full identity s
 
 // TCRN-CROSS-INIT-053 R45 (U12, U14): a device whose two fixture libraries and a third are project chains
 // under one coordination chain, declared through the CLI on Atelier's surface as Atelier declares them.
-// project-list carries no project name, so every target reaches the page unnamed.
+// project-list names each project by its external key (TCRN-CROSS-INIT-053 R46 I01), so every target
+// reaches the page under its own name.
 async function projectChainFixture(prefix) {
   const fixture = await scratch(prefix);
   const atelier = { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" };
@@ -2610,10 +2614,17 @@ if (!MUTATION) test("R45 U14: the page's label rule tells alike names apart by t
 
 if (!MUTATION) test("R45 U14: targets are named, not identified, in the filter, the selection and the common default; their identities are in keyboard Details with a copy action", async () => {
   const fixture = await projectChainFixture("tcrn-r45-u14-dom-");
-  const [own, second, third] = fixture.targets;
-  await cli(["work-create", "--workspace", fixture.workspace, "--project-id", fixture.projectId, "--at", nextAt(), "--external-key", "R45-U14-WORK", "--kind", "Initiative", "--title", "Targets of record", "--involved-projects", JSON.stringify({ state: "selected", targets: [second, GHOST_TARGET] })], fixture.atelier);
+  const [ownTarget, secondTarget, thirdTarget] = fixture.targets;
+  await cli(["work-create", "--workspace", fixture.workspace, "--project-id", fixture.projectId, "--at", nextAt(), "--external-key", "R45-U14-WORK", "--kind", "Initiative", "--title", "Targets of record", "--involved-projects", JSON.stringify({ state: "selected", targets: [secondTarget, GHOST_TARGET] })], fixture.atelier);
   const locales = await localeTable();
-  const labelsIn = (locale, targets) => expectedTargetLabels(targets, (target) => target.unavailable ? locales[locale]["projects.unavailable"] : locales[locale]["projects.unnamed"]);
+  // TCRN-CROSS-INIT-053 R46 (I01, I09; PC-2): each target carries its project's name from project-list,
+  // so the expectation is derived from the API's names by the label rule, and the names are the real ones.
+  const projectName = async (library, projectId) => (await cli(["project-list", "--workspace", library], fixture.deviceEnv)).records.find((record) => record.id === projectId)?.name ?? null;
+  const own = { ...ownTarget, name: await projectName(fixture.workspace, fixture.projectId) };
+  const second = { ...secondTarget, name: await projectName(fixture.second.library, fixture.second.projectId) };
+  const third = { ...thirdTarget, name: await projectName(fixture.third.library, fixture.third.projectId) };
+  assert.deepEqual([own.name, second.name, third.name], ["TCRN-INC148-DOM", "TCRN-INC148-DOM-SECOND", "TCRN-R45-THIRD"]);
+  const labelsIn = (locale, targets) => expectedTargetLabels(targets, (target) => target.unavailable ? locales[locale]["projects.unavailable"] : target.name ?? locales[locale]["projects.unnamed"]);
   const page = await loadExecutedDom(fixture);
   try {
     const { document } = page;
@@ -2621,6 +2632,7 @@ if (!MUTATION) test("R45 U14: targets are named, not identified, in the filter, 
     const available = [own, second, third];
     const filterTexts = () => [...editor.querySelectorAll("[data-target-filter] option")].slice(1).map((option) => option.textContent);
     assert.deepEqual(filterTexts(), labelsIn("en", available), "the filter names the targets by the label rule");
+    assert.deepEqual(filterTexts(), ["TCRN-INC148-DOM", "TCRN-INC148-DOM-SECOND", "TCRN-R45-THIRD"], "a named project reads as its name, not as Unnamed project");
     const candidates = [{ ...GHOST_TARGET, unavailable: true }, ...available];
     const expectedCandidates = [locales.en["projects.unavailable"], ...labelsIn("en", available)];
     // The published bridge raises the listbox to the page body while it is mounted; the native value
@@ -2688,16 +2700,90 @@ if (!MUTATION) test("R45 U14: targets are named, not identified, in the filter, 
     assert.deepEqual([...bindings.querySelectorAll('[data-identity-details="common-default"] [data-identity-value]')].map((node) => node.textContent), others.map((target) => `${target.libraryId} / ${target.projectId}`));
     assert.deepEqual([...bindings.querySelectorAll("[data-repository-field]")].length, 0, "no repository binding is saved");
 
-    // Five languages: the names, the Details and the copy action follow the page's language.
+    // Five languages: a project's own name stays, while the Details, the unavailable reference and the
+    // copy action follow the page's language.
     for (const locale of ["zh-CN", "ja", "ko", "fr", "en"]) {
       document.querySelector(`[data-locale-option="${locale}"]`)?.click();
-      await waitFor(() => JSON.stringify(filterTexts()) === JSON.stringify(labelsIn(locale, available)), `${locale}: the filter in the page's language`);
+      await waitFor(() => document.querySelector('#work-target-editor [data-identity-details="work-targets"] summary')?.textContent === locales[locale]["projects.identity"], `${locale}: the editor in the page's language`);
+      assert.deepEqual(filterTexts(), labelsIn(locale, available), `${locale}: the filter keeps the projects' names`);
       const localizedDetails = document.querySelector('#work-target-editor [data-identity-details="work-targets"]');
       assert.equal(localizedDetails.querySelector("summary").textContent, locales[locale]["projects.identity"]);
       assert.equal(localizedDetails.querySelector("[data-copy-label]").textContent, locales[locale]["copy.idle"]);
       assert.equal(localizedDetails.querySelector("dt").textContent, locales[locale]["projects.unavailable"]);
     }
   } finally { await closePage(page, fixture); }
+});
+
+// TCRN-CROSS-INIT-053 R46 (I09; I03, PP-2): a saved common default that no registered library answers no
+// longer refuses the target's settings. The settings read; every key that would inherit from it has no
+// value, says so and offers no default in its place; the bindings list the saved choice first as
+// unavailable, say why, and stop the inheritance from the page, after which the target reads plainly.
+if (!MUTATION) test("R46 I09: a common default that does not resolve is read, named unavailable, and taken out from the page", async () => {
+  const fixture = await projectChainFixture("tcrn-r46-i09-common-");
+  await cli(["project-bindings-set", "--workspace", fixture.workspace, "--project-id", fixture.projectId, "--at", nextAt(), "--actor", "agent:test", "--key", "common-default", "--value", JSON.stringify(GHOST_TARGET)], fixture.atelier);
+  const locales = await localeTable();
+  const page = await loadExecutedDom(fixture);
+  try {
+    const { document } = page;
+    document.querySelector('[data-page-target="settings"]')?.click();
+    document.querySelector('[data-setting-group="general"]')?.click();
+    const bindings = await waitFor(() => document.querySelector("[data-project-bindings] [data-common-source]")?.closest("[data-project-bindings]"), "the project bindings section");
+    assert.equal(document.querySelector('[data-settings-state="error"]'), null, "the target's settings are read, not refused");
+    const row = document.querySelector('[data-setting-row="design.authority"]');
+    const provenance = row?.querySelector('.tcrn-field-provenance[data-setting-unresolved="design.authority"]');
+    assert.equal(provenance?.querySelector(".tcrn-field-provenance__value")?.textContent, "\u2014", "an inheriting key has no value");
+    assert.equal(provenance.querySelector(".tcrn-field-provenance__source").textContent, locales.en["settings.unresolvedValue"]);
+    assert.equal(row.querySelector("[data-setting-control]"), null, "no default is offered in its place");
+    assert.equal(row.querySelector("[data-effective-source]").textContent, locales.en["projects.commonUnavailable"]);
+    const notice = bindings.querySelector("[data-common-default-unresolved]");
+    assert.equal(notice?.dataset.commonDefaultUnresolved, "common-default-unresolved");
+    assert.equal(notice.querySelector("span").textContent, locales.en["projects.commonUnresolved"].replace("{status}", locales.en["projects.statusUnregistered"]));
+    const options = [...bindings.querySelectorAll("[data-common-source] option")];
+    assert.equal(options[1].textContent, locales.en["projects.unavailable"], "the saved choice comes first, named unavailable");
+    assert.equal(options[1].hasAttribute("selected"), true);
+    assert.equal(options.filter((option) => option.hasAttribute("selected")).length, 1);
+    // Stopping the inheritance from the page removes the binding, and the target reads plainly again.
+    const before = receiptText(document);
+    bindings.querySelector("[data-remove-common]").click();
+    await waitFor(receiptAdvanced(document, before), "the removal's receipt");
+    await waitFor(() => document.querySelector("[data-project-bindings] [data-common-source]") && document.querySelector("[data-common-default-unresolved]") === null && document.querySelectorAll("[data-setting-unresolved]").length === 0, "the settings read without an unresolved common default");
+    assert.ok(document.querySelector('[data-setting-row="design.authority"] [data-setting-control]'), "the key has its control again");
+    assert.equal(document.querySelector("[data-project-bindings] [data-common-source] option[selected]"), null, "no common default is saved");
+    const settings = await cli(["settings-catalog", "--workspace", fixture.workspace, "--project-id", fixture.projectId], fixture.deviceEnv);
+    assert.equal(Object.hasOwn(settings, "commonDefault"), false);
+  } finally { await closePage(page, fixture); }
+});
+
+// TCRN-CROSS-INIT-053 R46 (I09; I04, U20 D5): a library whose knowledge store was never created shows the
+// published EmptyState that says so, with the status filter in place, rather than a failed read; once
+// the library has a store the view is the ordinary one.
+if (!MUTATION) test("R46 I09: a library without a knowledge store shows an empty inventory, and a created store does not", async () => {
+  const page = await preparePage();
+  try {
+    const { document, window } = page;
+    const locales = await localeTable();
+    document.querySelector('[data-page-target="dashboard"]')?.click();
+    document.querySelector('[data-workspace-tab="knowledge"]')?.click();
+    const content = document.querySelector("#knowledge-view-content");
+    const empty = content.querySelector('[data-knowledge-store="absent"]');
+    assert.ok(empty, "the empty inventory is shown");
+    assert.equal(empty.tagName, "SECTION");
+    assert.deepEqual(["tcrn-state-surface", "tcrn-state-surface--neutral"].filter((name) => empty.classList.contains(name)), ["tcrn-state-surface", "tcrn-state-surface--neutral"]);
+    assert.equal(empty.dataset.stateSurfaceKind, "empty");
+    assert.equal(empty.querySelector("h3.tcrn-heading.tcrn-state-surface__title").textContent, locales.en["knowledge.storeAbsentTitle"]);
+    assert.equal(empty.querySelector("p.tcrn-text.tcrn-state-surface__description").textContent, locales.en["knowledge.storeAbsentBody"]);
+    assert.equal(content.textContent.includes(locales.en["config.readUnavailable"]), false, "not a failed read");
+    assert.ok(content.querySelector('[data-ui="knowledge-status-filter"]'), "the status filter stays");
+    document.querySelector('[data-locale-option="ja"]')?.click();
+    assert.equal(document.querySelector('#knowledge-view-content [data-knowledge-store="absent"] .tcrn-state-surface__title').textContent, locales.ja["knowledge.storeAbsentTitle"]);
+    document.querySelector('[data-locale-option="en"]')?.click();
+    await cli(["knowledge-init", "--workspace", page.workspace, "--acknowledge-disposable", "true"], page.deviceEnv);
+    const status = document.querySelector('[data-ui="knowledge-status-filter"]');
+    status.value = "all";
+    status.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await waitFor(() => document.querySelector('#knowledge-view-content [data-ui="knowledge-status-filter"]')?.value === "all" && document.querySelector("#knowledge-view-content [data-knowledge-store]") === null, "the view of the created store");
+    assert.equal(document.querySelector("#knowledge-view-content .tcrn-state-surface").textContent, locales.en["dashboard.knowledgeEmpty"]);
+  } finally { await page.cleanup(); }
 });
 
 if (!MUTATION) test("R45 U14: execution contexts read as one row per target in the page's language, not as JSON", async () => {

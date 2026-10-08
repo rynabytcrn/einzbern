@@ -12,9 +12,13 @@ Atelier 是项目配置工作台。进入页面后，先核对当前项目与知
 
 已移除卡片只显示编号、主题、移除原因（冲突被取代、判为无效、与工单或决策重复）、依据、操作者与时间，以及取代它的卡片。它的正文已清除：页面不提供读取正文的按钮，经引擎读取也会以 `KNOWLEDGE_CARD_REMOVED` 拒绝。移除是终态，页面和引擎都没有恢复入口；移除有误时写一张新卡。移除由 `knowledge-remove` 写入，不在 Atelier 中进行。
 
+新建的库还没有知识存储时，`knowledge-list` 回答空库存（`knowledgeStore` 为 `absent`），「知识」标签显示「尚无知识」的空状态，而不是读取失败；卡片状态筛选仍在。写入第一张卡片或文章索引后，标签按普通列表显示。
+
 ## 设置
 
 设置页只放单值的键（`shape` 为 `scalar`），按领域分组：通用、模型与升档、执行与限额、知识、召回、存储、Atelier 门户。一个键归入哪一组、在组内排第几，取自 `settings-catalog` 与 `machine-settings-catalog` 每一行的 `group` 与 `order`；页面本身不保存分组表。每一项都标明存放位置：「项目级（随库同步）」的键写入库中，随库同步到其他设备；「本机」的键只存在这台设备的设备目录里。多条记录的配置（`shape` 为 `collection`）不在设置页编辑，「模型与升档」组里的链接会打开它们各自的页面。
+
+项目绑定中「从此项目继承默认值」所存的来源项目，在本设备无法解析时（未登记、登记位置打不开，或继承关系绕回当前目标），设置页照常打开：本该继承它的键显示「—」，并注明继承的默认值不可访问，不显示缺省值；项目绑定区把这个已存选择列在第一位，写明原因，可以改选其他项目后保存，或点「停止继承默认值」移除它。移除后各键恢复正常显示。引擎在求有效配置、项目上下文与按工单运行门时仍如实拒绝这样的目标。
 
 ## 模型分类与模型档位
 
@@ -62,9 +66,10 @@ The work view edits explicit undecided, coordination-only or selected project
 scope and filters by stable project reference. Project readiness shows, for
 every target, its status, whether it is ready for development and what it still
 misses. Selecting a project does not grant permission to edit its
-files. Lists and the navigation show project names: a project without one reads
-"Unnamed project" in the page's language, and names that read alike carry the
-shortest tails of their ids that tell them apart. The Details under each list
+files. Lists, the library switcher, the rail and the top bar show each
+project's own name from its project record; only a project without a name
+reads "Unnamed project" in the page's language, and names that read alike carry
+the shortest tails of their ids that tell them apart. The Details under each list
 keep the full identities: the summary opens and closes from the keyboard, Escape
 closes it and returns focus, and each identity has a copy action. Saving reads
 the work list again through the work view's own read, so a library left in the

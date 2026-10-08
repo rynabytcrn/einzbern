@@ -4392,6 +4392,17 @@ const BOOT = __PORTAL_BOOT__;
     }
     return term.description || `${t("vocabulary.enumValues")}: ${(term.allowedValues || term.coveredByIndependenceFloors || []).join(", ")}`;
   };
+  // TCRN-CROSS-INIT-053 R46 (I09): every answer past the token check names the target it was served for
+  // in x-portal-served-target (I05). The page keeps it beside the answer, out of the answer's own fields
+  // (the receipt shows those), so what a view renders can be held to the target it belongs to. A stub
+  // or an answer without the header serves nothing named.
+  const servedTargetOf = (response) => {
+    try {
+      const raw = typeof response?.headers?.get === "function" ? response.headers.get("x-portal-served-target") : null;
+      const served = typeof raw === "string" && raw !== "" ? JSON.parse(raw) : null;
+      return served !== null && typeof served === "object" && !Array.isArray(served) ? served : null;
+    } catch { return null; }
+  };
   const api = async (path, options = {}) => {
     if (path === "/api/settings" && options.method === "POST") {
       if (state.librarySwitching) return { ok: false, reasonCode: "PORTAL_LIBRARY_CHANGED" };
@@ -4401,7 +4412,9 @@ const BOOT = __PORTAL_BOOT__;
     const headers = { ...(options.body === undefined ? {} : { "content-type": "application/json" }), "x-portal-token": BOOT.token, "x-configuration-target": JSON.stringify({ libraryId: BOOT.library?.libraryId, projectId: BOOT.library?.configurationProjectId ?? null, epoch: BOOT.epoch }) };
     const response = await fetch(path, { ...options, headers: { ...headers, ...(options.headers || {}) } });
     const body = await response.json();
-    return { ...body, httpStatus: response.status };
+    const result = { ...body, httpStatus: response.status };
+    Object.defineProperty(result, "servedTarget", { value: servedTargetOf(response), enumerable: false });
+    return result;
   };
   const commandEntry = (name) => state.commands.find((entry) => entry.name === name);
   const echo = (name, args = []) => {
@@ -4747,9 +4760,15 @@ const BOOT = __PORTAL_BOOT__;
   // A settings row for each shape and layer. A project-level key keeps the controls it always had; a
   // device key is written to this device's own file (machine-settings-set); a collection key is a
   // link to its page, since a table of records is edited there (MIN-236 D7). Every row names its layer.
+  // TCRN-CROSS-INIT-053 R46 (I09; I03): a key that would inherit from a saved common default that does
+  // not resolve has no value here. The engine marks its source unresolved and gives it no current value;
+  // the row says so and shows no default in its place, and the project bindings below change or remove
+  // the common default.
+  const unresolvedCommon = (entry) => entry?.source?.kind === "common" && entry.source.status === "unresolved";
   const settingSourceText = (entry) => {
     if (entry.layer === "device") return t("scope.device");
     const source = entry.source;
+    if (unresolvedCommon(entry)) return t("projects.commonUnavailable");
     if (source?.kind === "common") return t("projects.common") + ": " + (source.projectName ?? source.projectId ?? "");
     if (source?.kind === "project") return source.inherited ? t("scope.inheritedProject", { name: source.projectName ?? source.projectId }) : t("scope.thisProject");
     return source?.kind === "library" ? t("scope.libraryDefaults") : t("scope.builtIn");
@@ -4764,7 +4783,12 @@ const BOOT = __PORTAL_BOOT__;
     // landed on a page with no matching row.
     const dictionary = hasClosedValueSet(entry) ? `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md tcrn-icon-button" data-vocabulary-link="setting:${esc(entry.key)}" data-ui="setting-dictionary-link" aria-label="${esc(t("config.dictionary"))}"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2.5 3.2h3.3c.9 0 1.7.4 2.2 1.1.5-.7 1.3-1.1 2.2-1.1h3.3v8.6h-3.3c-.9 0-1.7.4-2.2 1.1-.5-.7-1.3-1.1-2.2-1.1H2.5Z"/><path d="M8 4.3v8.6"/></svg></button>` : "";
     const dot = `<span class="tcrn-setting-row__modified" data-ui="setting-modified-dot" role="img" aria-label="${esc(t("config.modified"))}" ${modified ? "" : "hidden"}><span class="tcrn-dot" aria-hidden="true"></span></span>`;
-    return `<div class="tcrn-setting-row ${modified ? "tcrn-setting-row--modified tcrn-highlightable" : ""}" data-setting-row="${esc(entry.key)}" data-setting-shape="scalar" data-modified="${modified ? "true" : "false"}">${settingRowLabel(entry, settingDescription(entry.key))}<div class="tcrn-setting-row__control">${controlFor(entry)}</div><div class="tcrn-setting-row__tools">${dot}${dictionary}${reset}</div></div>`;
+    // The published FieldProvenance: a value with where it comes from. An unresolved common default
+    // gives none, so the value reads "—" and the source says why, with no control to write a default into.
+    const control = unresolvedCommon(entry)
+      ? `<div class="tcrn-field-provenance" data-provenance-state="default" data-setting-unresolved="${esc(entry.key)}"><span class="tcrn-field-provenance__value">—</span><span class="tcrn-field-provenance__source">${esc(t("settings.unresolvedValue"))}</span></div>`
+      : controlFor(entry);
+    return `<div class="tcrn-setting-row ${modified ? "tcrn-setting-row--modified tcrn-highlightable" : ""}" data-setting-row="${esc(entry.key)}" data-setting-shape="scalar" data-modified="${modified ? "true" : "false"}">${settingRowLabel(entry, settingDescription(entry.key))}<div class="tcrn-setting-row__control">${control}</div><div class="tcrn-setting-row__tools">${dot}${dictionary}${reset}</div></div>`;
   };
   const deviceSettingRow = (entry) => {
     const description = entry.appliesOn === "restart" ? `${settingDescription(entry.key)} ${t("settings.machineRestart")}` : settingDescription(entry.key);
@@ -4822,15 +4846,23 @@ const BOOT = __PORTAL_BOOT__;
     const render = () => {
       // The common default lists the other project targets by name, an unavailable saved choice
       // first; their complete identities are in the Details under the list (TCRN-CROSS-INIT-053 R45 U14).
-      const others = (available.targets || []).filter(item => item.libraryId !== BOOT.library.libraryId || item.projectId !== BOOT.library.configurationProjectId);
-      const commonUnavailable = Boolean(common) && !(available.targets || []).some(item => item.libraryId === common.libraryId && item.projectId === common.projectId);
+      // TCRN-CROSS-INIT-053 R46 (I09; I03): a saved choice the engine cannot resolve is unavailable even
+      // when its library is registered here; the notice above the list says why and removes it.
+      const unresolved = state.settings.commonDefault?.status === "unresolved" ? state.settings.commonDefault : null;
+      const isCommon = item => Boolean(common) && item.libraryId === common.libraryId && item.projectId === common.projectId;
+      const commonUnavailable = Boolean(common) && (unresolved !== null || !(available.targets || []).some(isCommon));
+      const others = (available.targets || []).filter(item => (item.libraryId !== BOOT.library.libraryId || item.projectId !== BOOT.library.configurationProjectId) && !(commonUnavailable && isCommon(item)));
       const sources = [...(commonUnavailable ? [{ libraryId: common.libraryId, projectId: common.projectId, availability: "unavailable" }] : []), ...others];
       const sourceLabels = distinctLabels(sources);
       const repositoryFieldLabels = { id: t("projects.id"), name: t("projects.name"), repository: t("projects.repository"), buildService: t("projects.buildService"), buildProject: t("projects.buildProject") };
-      section.innerHTML = `<h3 class="tcrn-heading tcrn-heading--3">${esc(t("projects.bindings"))}</h3><label class="tcrn-field"><span class="tcrn-field__label">${esc(t("projects.common"))}</span><select class="tcrn-select" data-common-source><option value="">${esc(t("projects.noCommon"))}</option>${sources.map((item, index) => { const value = item.availability === "unavailable" ? JSON.stringify(common) : JSON.stringify({ libraryId: item.libraryId, projectId: item.projectId }); return `<option value="${esc(value)}" ${common && common.libraryId === item.libraryId && common.projectId === item.projectId ? "selected" : ""}>${esc(sourceLabels[index])}</option>`; }).join("")}</select></label>${identityDetails("common-default", sources, sourceLabels)}<div class="tcrn-surface__head-actions"><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-save-common>${esc(t("config.save"))}</button></div><div data-repositories>${repositories.map((binding, index) => `<fieldset class="tcrn-surface" data-repository-index="${index}"><legend>${esc(binding.name || t("projects.repository"))}</legend><div class="tcrn-surface__head-actions"><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-remove-repository="${index}">${esc(t("config.remove"))}</button></div>${Object.entries(repositoryFieldLabels).map(([field, label]) => `<label class="tcrn-field"><span class="tcrn-field__label">${esc(label)}</span><input class="tcrn-input" data-repository-field="${field}" value="${esc(binding[field] || "")}"></label>`).join("")}</fieldset>`).join("")}</div><div class="tcrn-surface__head-actions"><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-add-repository>${esc(t("projects.addRepository"))}</button><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-save-repositories>${esc(t("config.save"))}</button><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-undo-repositories>${esc(t("config.undo"))}</button></div>`;
+      const unresolvedWhy = unresolved === null ? "" : unresolved.reason === "common-default-cycle" ? t("projects.commonCycle") : contextStatusLabels()[unresolved.targetStatus] ?? String(unresolved.targetStatus ?? "");
+      const unresolvedNotice = unresolved === null ? "" : `<div class="tcrn-inline-alert tcrn-inline-alert--warning" role="status" data-common-default-unresolved="${esc(unresolved.reason ?? "")}"><span>${esc(t("projects.commonUnresolved", { status: unresolvedWhy }))}</span><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--sm" data-remove-common>${esc(t("projects.removeCommon"))}</button></div>`;
+      section.innerHTML = `<h3 class="tcrn-heading tcrn-heading--3">${esc(t("projects.bindings"))}</h3>${unresolvedNotice}<label class="tcrn-field"><span class="tcrn-field__label">${esc(t("projects.common"))}</span><select class="tcrn-select" data-common-source><option value="">${esc(t("projects.noCommon"))}</option>${sources.map((item, index) => { const value = item.availability === "unavailable" ? JSON.stringify(common) : JSON.stringify({ libraryId: item.libraryId, projectId: item.projectId }); return `<option value="${esc(value)}" ${common && common.libraryId === item.libraryId && common.projectId === item.projectId ? "selected" : ""}>${esc(sourceLabels[index])}</option>`; }).join("")}</select></label>${identityDetails("common-default", sources, sourceLabels)}<div class="tcrn-surface__head-actions"><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-save-common>${esc(t("config.save"))}</button></div><div data-repositories>${repositories.map((binding, index) => `<fieldset class="tcrn-surface" data-repository-index="${index}"><legend>${esc(binding.name || t("projects.repository"))}</legend><div class="tcrn-surface__head-actions"><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-remove-repository="${index}">${esc(t("config.remove"))}</button></div>${Object.entries(repositoryFieldLabels).map(([field, label]) => `<label class="tcrn-field"><span class="tcrn-field__label">${esc(label)}</span><input class="tcrn-input" data-repository-field="${field}" value="${esc(binding[field] || "")}"></label>`).join("")}</fieldset>`).join("")}</div><div class="tcrn-surface__head-actions"><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-add-repository>${esc(t("projects.addRepository"))}</button><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-save-repositories>${esc(t("config.save"))}</button><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-undo-repositories>${esc(t("config.undo"))}</button></div>`;
       const current = () => [...section.querySelectorAll("[data-repository-index]")].map(row => Object.fromEntries([...row.querySelectorAll("[data-repository-field]")].map(input => [input.dataset.repositoryField, input.value])));
       const save = async (key, value) => { if (target !== JSON.stringify([BOOT.library?.libraryId, BOOT.library?.configurationProjectId])) return; const result = await api("/api/project-bindings", { method: value === null ? "DELETE" : "POST", body: JSON.stringify({ key, value }) }); showReceipt(result); if (result.ok) await refresh(); };
       section.querySelector("[data-save-common]").onclick = () => { const value = section.querySelector("[data-common-source]").value; if (value || common) void save("common-default", value ? JSON.parse(value) : null); };
+      const removeCommon = section.querySelector("[data-remove-common]");
+      if (removeCommon) removeCommon.onclick = () => void save("common-default", null);
       section.querySelectorAll("[data-remove-repository]").forEach(button => { button.onclick = () => { repositories = current().filter((_, index) => index !== Number(button.dataset.removeRepository)); render(); }; });
       section.querySelector("[data-add-repository]").onclick = () => { repositories = [...current(), {}]; render(); };
       section.querySelector("[data-save-repositories]").onclick = () => save("repositories", current().length ? { bindings: current() } : null);
@@ -5485,7 +5517,12 @@ const BOOT = __PORTAL_BOOT__;
       .map(([value, label]) => `<option value="${value}"${state.knowledgeStatus === value ? " selected" : ""}>${esc(label)}</option>`).join("");
     const statusField = `<label class="tcrn-field" for="knowledge-status"><span class="tcrn-field__label">${esc(t("knowledge.status"))}</span><select class="tcrn-select" id="knowledge-status" data-ui="knowledge-status-filter">${statusOptions}</select></label>${state.knowledgeStatus === "valid" ? "" : `<p class="tcrn-text">${esc(t("knowledge.removedNote"))}</p>`}`;
     const filterField = `${statusField}<label class="tcrn-field"><span class="tcrn-field__label">${esc(t("knowledge.search"))}</span><input class="tcrn-input" id="knowledge-filter" type="search" value="${esc(state.knowledgeQuery)}" placeholder="${esc(t("knowledge.searchPlaceholder"))}" autocomplete="off"></label>`;
-    if (visibleRecords.length === 0) {
+    // TCRN-CROSS-INIT-053 R46 (I09; I04): a library whose knowledge store was never created answers an
+    // empty inventory; the view says so with the published EmptyState rather than as a failed read.
+    const storeAbsent = data?.knowledgeStore === "absent" && records.length === 0;
+    if (storeAbsent) {
+      $("#knowledge-view-content").innerHTML = `${filterField}<section class="tcrn-state-surface tcrn-state-surface--neutral" data-tone="neutral" data-state-surface-kind="empty" data-knowledge-store="absent"><h3 class="tcrn-heading tcrn-heading--3 tcrn-state-surface__title">${esc(t("knowledge.storeAbsentTitle"))}</h3><p class="tcrn-text tcrn-state-surface__description">${esc(t("knowledge.storeAbsentBody"))}</p></section>${bodyReader}`;
+    } else if (visibleRecords.length === 0) {
       $("#knowledge-view-content").innerHTML = `${filterField}<div class="tcrn-state-surface">${esc(records.length === 0 ? (data?.listing?.ok === false ? t("config.readUnavailable") : t("dashboard.knowledgeEmpty")) : t("knowledge.noMatches"))}</div>${bodyReader}`;
     } else {
       $("#knowledge-view-content").innerHTML = `${filterField}<div class="tcrn-search-result-list" role="list">${visibleRecords.map((record) => {

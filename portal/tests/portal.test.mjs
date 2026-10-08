@@ -1691,7 +1691,7 @@ test("unregistered selection refuses every configuration and prose mutation with
   t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
   const { boot } = await readBoot(url);
   const before = await Promise.all([fixture.workspace, fixture.second.library].map(workspace => cli(["status", "--workspace", workspace], fixture.deviceEnv)));
-  const { unregisterLibrary } = await import("../../dist/build/packages/core/src/index.js");
+  const { unregisterLibrary } = await import("../../dist/build/packages/core/src/registry.js");
   await unregisterLibrary(fixture.proseRoot, fixture.deviceEnv.EINZBERN_HOME);
   const routes = [
     ["/api/settings", "POST", { key: "artifact.language", value: "fr" }],
@@ -1726,7 +1726,7 @@ test("an admitted request whose body is still in flight refuses an unregistered 
     });
     req.on("error", reject); req.flushHeaders(); req.write(body.slice(0, 1));
   });
-  const { unregisterLibrary } = await import("../../dist/build/packages/core/src/index.js");
+  const { unregisterLibrary } = await import("../../dist/build/packages/core/src/registry.js");
   await unregisterLibrary(fixture.proseRoot, fixture.deviceEnv.EINZBERN_HOME);
   req.end(body.slice(1));
   assert.equal((await completed).reasonCode, "PORTAL_CONFIGURATION_TARGET_CHANGED");

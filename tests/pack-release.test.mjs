@@ -13,7 +13,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -276,6 +276,54 @@ test("481-R2: Atelier runs from the release, serves its static files and reaches
   let startup;
   try { startup = JSON.parse(lastLine(run.stderr)); } catch { assert.fail(`Atelier startup did not return a JSON diagnostic: ${diagnostic(run)}`); }
   assert.equal(startup.reasonCode, "PORTAL_LIBRARY_REGISTRY_EMPTY", `Atelier packaged CLI startup diagnostic (${bridge}): ${diagnostic(run)}; startup=${safeDiagnostic(JSON.stringify({ reasonCode: startup.reasonCode, error: startup.error }))}`);
+});
+
+// INIT-053 R45 (U11): Atelier holds the device registry lock through the engine's own file lock and
+// device directory modules. The release carries their builds inside atelier/portal.mjs, once each and
+// beside the one names module, and nothing in the bundle still points at dist/build, which no release
+// ships. The labels are the bundle's own per-module headers.
+test("R45 U11: the packed Atelier carries the lock and device-home modules once and no dist/build specifier", async () => {
+  const { tree } = await packedRelease();
+  const packedPortal = await readFile(join(tree, "atelier/portal.mjs"), "utf8");
+  const labels = [...packedPortal.matchAll(/^\/\/ \d+ (\S+)$/gmu)].map((match) => match[1]);
+  for (const module of ["packages/core/src/file-lock.js", "packages/core/src/device-home.js", "packages/core/src/names.js"]) {
+    assert.equal(labels.filter((label) => label === module).length, 1, `${module} is bundled exactly once: ${JSON.stringify(labels)}`);
+  }
+  assert.equal(labels.some((label) => label.includes("dist/")), false, `no bundled module comes from dist: ${JSON.stringify(labels)}`);
+  assert.doesNotMatch(packedPortal, /["'`][^"'`\n]*dist\/build[^"'`\n]*["'`]/u, "no string in the bundle names a dist/build module");
+  assert.equal(labels.filter((label) => /(?:^|\/)file-lock\.js$/u.test(label)).length, 1, "only one lock implementation is bundled");
+});
+
+// INIT-053 R45 (U11): the stage rewrites each of the portal's two engine imports only when it finds
+// it exactly once, the same refusal as the BUNDLED_CLI and names checks. A copy of this repository
+// whose portal lost one import, or imports the device directory twice, is refused and writes nothing.
+test("R45 U11: a portal whose lock or device-home import is not found exactly once is refused", async () => {
+  const source = await readFile(join(repositoryRoot, "portal/portal.mjs"), "utf8");
+  const lockSpecifier = "\"../dist/build/packages/core/src/file-lock.js\"";
+  const homeImport = "import { registryPath } from \"../dist/build/packages/core/src/device-home.js\";";
+  assert.equal(source.split(lockSpecifier).length, 2, "the portal imports the lock build once");
+  assert.equal(source.split(homeImport).length, 2, "the portal imports the device directory build once");
+  const mutations = [
+    ["absent", source.replace(lockSpecifier, "\"../dist/build/packages/core/src/file-lock-renamed.js\"")],
+    ["doubled", source.replace(homeImport, `${homeImport}\nimport { deviceHome as deviceHomeAgain } from "../dist/build/packages/core/src/device-home.js";`)],
+  ];
+  for (const [name, portal] of mutations) {
+    assert.notEqual(portal, source, `${name} must change the portal`);
+    const copy = join(base, `unbound-${name}`);
+    await mkdir(join(copy, "scripts"), { recursive: true });
+    await mkdir(join(copy, "portal"), { recursive: true });
+    await writeFile(join(copy, "scripts/pack-release.mjs"), await readFile(packScript));
+    for (const path of ["scripts/lib", "scripts/einzbern.mjs", "scripts/einzbern-hook.mjs", "scripts/einzbern-launcher.mjs", "scripts/einzbern-hook-launcher.mjs", "dist", "packages", "package.json"]) {
+      await symlink(join(repositoryRoot, path), join(copy, path));
+    }
+    await writeFile(join(copy, "portal/portal.mjs"), portal);
+    const out = join(copy, "out");
+    const run = node([join(copy, "scripts/pack-release.mjs"), "--out", out]);
+    assert.equal(run.status, 1, `${name}: ${safeDiagnostic(run.stderr)}`);
+    const refusal = JSON.parse(lastLine(run.stderr));
+    assert.equal(refusal.reasonCode, "PACK_ATELIER_UNBOUND", `${name}: ${safeDiagnostic(run.stderr)}`);
+    assert.equal(existsSync(out), false, `${name}: a refused pack writes nothing`);
+  }
 });
 
 test("481-R2, SUB-399: Atelier decodes a failed library-list from CLI stderr", async () => {

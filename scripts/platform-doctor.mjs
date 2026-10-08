@@ -1376,8 +1376,8 @@ async function readHookFile(path) {
 }
 
 /**
- * The user-level hook files (TCRN-CROSS-INIT-053 R47-06): ~/.claude/settings.json and
- * ~/.codex/hooks.json, where the hooks a host runs in every project live. Both failures the harness
+ * The user-level hook files (TCRN-CROSS-INIT-053 R47-06): .claude/settings.json and .codex/hooks.json
+ * in the user's home, where the hooks a host runs in every project live. Both failures the harness
  * audit found sat there, out of reach of a leg that read the container's files only. A user file
  * also holds hooks of the user's own, so only the commands Einzbern can answer for are checked:
  * its launcher and the old harness's scripts (host-hooks.ts names both). An absent file has no

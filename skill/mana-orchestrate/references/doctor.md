@@ -122,10 +122,10 @@ with `--yes true` only on a clear yes. Then run `doctor` again and report the ne
 The hook answers a prompt only in a project this device's registry holds; anywhere else it ends
 with exit code 0 and prints nothing. When that directory lies in a known container the registry
 does not cover (a library, an old-layout workspace or an old platform container), the launcher
-also appends one line to `log/hook.ndjson` in the device directory, which is `~/.einzbern`
-unless `EINZBERN_HOME` names another place. Each line is one JSON object with `schemaVersion`
-(`einzbern.hook-log.v1`), `at`, `event`, `cwd`, `container`, `marker` (`library` or
-`legacy`) and `reasonCode`:
+also appends one line to `log/hook.ndjson` in the device directory, which is `.einzbern` in the
+user's home unless `EINZBERN_HOME` names another place. Each line is one JSON object with
+`schemaVersion` (`einzbern.hook-log.v1`), `at`, `event`, `cwd`, `container`, `marker` (`library`
+or `legacy`) and `reasonCode`:
 
 | reasonCode | What it means | Fix |
 | --- | --- | --- |

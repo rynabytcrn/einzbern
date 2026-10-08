@@ -8,12 +8,21 @@ import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // a JSON file of this device's paths that is never committed:
 //
 //   { "schemaVersion": "einzbern.migration-mapping.v1",
-//     "partitions": [ { "partition", "legacyWorkspace", "projectRoot", "projectName"?, "gitRemote"? } ] }
+//     "partitions": [ { "partition", "legacyWorkspace", "projectRoot", "projectName"?, "gitRemote"?, "chainRole"? } ] }
 //
 // legacyWorkspace is the directory that holds the old control directory and projectRoot the project
 // whose library the chain becomes, both absolute. projectName and gitRemote are the library's project
 // hints, by default the project directory's name and its working tree's remote. Without a mapping,
 // an old workspace in the project itself is the one partition there is to infer.
+//
+// chainRole (INIT-053 U08, approved contract item 1) is the only source of a migrated library's chain
+// role: "coordination" for the one coordination chain of the mapping, whose identity names its own
+// library, or "project" for a concrete project chain, whose identity names the coordination row's
+// library. A mapping takes at most one coordination row, and project rows need it in the same
+// mapping. A row without chainRole stays unclassified, and the plan says so (chainIdentity null);
+// a role is never inferred from a partition's name, its paths or a basename. The identity is written
+// once the import is checked, signed by the setup actor; a library migrated before carrying none
+// gets it, and one carrying another identity stops the plan.
 //
 // planMigration writes nothing. For each partition whose target the import can create the library
 // in, it runs the import's dry run (legacy-import.ts), which validates the whole chain from genesis
@@ -64,18 +73,21 @@ import {
 import { DIRECTORY } from "./names.js";
 import { gitRemoteOf, normalizeGitRemote, readRegistry, registerLibrary } from "./registry.js";
 import type { Registry, RegistryEntry } from "./registry.js";
-import { setupFail } from "./setup.js";
+import { SETUP_ACTOR, setupFail } from "./setup.js";
 import type { SetupBlocker, SetupStep, SetupWrite, SetupWriteAction } from "./setup.js";
 import { entryKind, libraryLanguage, messageOf, realTarget, reasonOf } from "./setup-fresh.js";
 import type { SetupRecorder } from "./setup-fresh.js";
-import { legacyWorkspaceStreamId } from "./workspace.js";
+import { legacyWorkspaceStreamId, materializeWorkspaceFromGenesis } from "./workspace.js";
+import { chainIdentity, declareChainIdentity } from "./project-chain.js";
+import type { ChainIdentity } from "./project-chain.js";
 import type { WorkspaceState } from "./workspace.js";
 
 export const MIGRATION_MAPPING_SCHEMA_VERSION = "einzbern.migration-mapping.v1" as const;
 
 // A mapping names a handful of partitions; a file larger than this is not one.
 const MAPPING_MAXIMUM_BYTES = RUNTIME_CAPACITY.bufferBytes;
-const MAPPING_FIELDS: readonly string[] = Object.freeze(["partition", "legacyWorkspace", "projectRoot", "projectName", "gitRemote", "omitLegacyKnowledge"]);
+const MAPPING_FIELDS: readonly string[] = Object.freeze(["partition", "legacyWorkspace", "projectRoot", "projectName", "gitRemote", "omitLegacyKnowledge", "chainRole"]);
+const CHAIN_ROLES: readonly string[] = Object.freeze(["coordination", "project"]);
 // The library manifest's bound on a project hint (ether-library.ts), which a partition's name shares.
 const HINT_MAXIMUM_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;
 const PORTAL_KEY_PREFIX = "portal.";
@@ -88,6 +100,8 @@ export interface MigrationMappingEntry {
   readonly projectName?: string;
   readonly gitRemote?: string;
   readonly omitLegacyKnowledge?: LegacyKnowledgeOmission;
+  // The partition's chain role, given explicitly; absent, the library stays unclassified.
+  readonly chainRole?: ChainIdentity["role"];
 }
 
 export interface MigrationMapping {
@@ -147,6 +161,9 @@ export interface MigrationPartitionPlan {
   readonly openItems: MigrationOpenItems | null;
   readonly knowledge: LegacyImportKnowledge | null;
   readonly knowledgeOmission: LegacyKnowledgeOmissionReport | null;
+  // The chain identity the mapping's chainRole gives the library; null while unclassified (no
+  // chainRole), or while the coordination row's library id is unknown.
+  readonly chainIdentity: ChainIdentity | null;
 }
 
 /** The entry this device's registry gets for a partition's library. */
@@ -235,6 +252,8 @@ export interface MigrationPartitionApplied {
   readonly headEventHash: string | null;
   readonly knowledge: LegacyImportKnowledge | null;
   readonly knowledgeOmission: LegacyKnowledgeOmissionReport | null;
+  // The chain identity the library carries after the apply; null when it stays unclassified.
+  readonly chainIdentity: ChainIdentity | null;
 }
 
 /** What setup --mode migrate did (the SETUP_APPLIED receipt's migration field). */
@@ -288,7 +307,7 @@ export function checkMigrationMapping(value: unknown, file: string): MigrationMa
     if (!isRecord(raw)) mappingInvalid(`partitions[${index}] is not an object`, at("partitions"));
     const extra = Object.keys(raw).filter((field) => !MAPPING_FIELDS.includes(field));
     if (extra[0] !== undefined) mappingInvalid(`partitions[${index}] carries ${extra.join(", ")}, which a partition does not take`, at(extra[0]));
-    const { partition, legacyWorkspace, projectRoot, projectName, gitRemote, omitLegacyKnowledge } = raw;
+    const { partition, legacyWorkspace, projectRoot, projectName, gitRemote, omitLegacyKnowledge, chainRole } = raw;
     if (!isHint(partition)) mappingInvalid(`partitions[${index}].partition must name the partition on one line`, at("partition"));
     if (!isAbsolutePath(legacyWorkspace)) mappingInvalid(`partitions[${index}].legacyWorkspace must be an absolute path`, at("legacyWorkspace"));
     if (!isAbsolutePath(projectRoot)) mappingInvalid(`partitions[${index}].projectRoot must be an absolute path`, at("projectRoot"));
@@ -298,6 +317,7 @@ export function checkMigrationMapping(value: unknown, file: string): MigrationMa
       const field = legacyKnowledgeOmissionIssue(omitLegacyKnowledge);
       if (field !== null) mappingInvalid(`partitions[${index}].omitLegacyKnowledge must contain only a nonempty one-line reason`, at(field));
     }
+    if (chainRole !== undefined && !CHAIN_ROLES.includes(chainRole as string)) mappingInvalid(`partitions[${index}].chainRole must be coordination or project`, at("chainRole"));
     partitions.push({
       partition,
       legacyWorkspace,
@@ -305,7 +325,17 @@ export function checkMigrationMapping(value: unknown, file: string): MigrationMa
       ...(projectName === undefined ? {} : { projectName }),
       ...(gitRemote === undefined ? {} : { gitRemote }),
       ...(omitLegacyKnowledge === undefined ? {} : { omitLegacyKnowledge: { reason: (omitLegacyKnowledge as LegacyKnowledgeOmission).reason } }),
+      ...(chainRole === undefined ? {} : { chainRole: chainRole as ChainIdentity["role"] }),
     });
+  }
+  // One coordination chain per mapping; project rows name the coordination of this same mapping.
+  const coordinationRows = [...partitions.entries()].filter(([, entry]) => entry.chainRole === "coordination");
+  if (coordinationRows.length > 1) {
+    mappingInvalid(`partitions[${coordinationRows[1]![0]}].chainRole names a second coordination chain`, { file, entry: String(coordinationRows[1]![0]), field: "chainRole" });
+  }
+  const projectRow = partitions.findIndex((entry) => entry.chainRole === "project");
+  if (projectRow >= 0 && coordinationRows.length === 0) {
+    mappingInvalid(`partitions[${projectRow}].chainRole project needs the coordination partition in this mapping`, { file, entry: String(projectRow), field: "chainRole" });
   }
   // A partition, an old workspace and a project are each named once.
   for (const field of ["partition", "legacyWorkspace", "projectRoot"] as const) {
@@ -578,6 +608,7 @@ async function planPartition(recorder: MigrationRecorder, input: MigrationPlanIn
     openItems: replayed === null ? null : openItems(replayed),
     knowledge: report?.knowledge ?? null,
     knowledgeOmission: report?.knowledgeOmission ?? null,
+    chainIdentity: null,
   };
   // The cloud flag: --cloud; else what this device's registry holds for the project and this
   // library, so running the plan again keeps it; else the cloud folder table's suggestion.
@@ -598,10 +629,57 @@ async function planPartition(recorder: MigrationRecorder, input: MigrationPlanIn
 }
 
 // Whether the registry already holds the entry a partition gets, so the apply leaves it as it is.
-function registryEntryCurrent(registry: Registry | null, planned: MigrationRegistryEntry): boolean {
+// With the partition's chain role, the entry must also record that role (registry.ts records it from
+// the library's identity when the entry is written), so an entry written before the identity is
+// written again.
+function registryEntryCurrent(registry: Registry | null, planned: MigrationRegistryEntry, role: ChainIdentity["role"] | null = null): boolean {
   const entry = registry?.entries.find((candidate) => candidate.projectPath === planned.projectPath);
   return entry !== undefined && entry.libraryPath === planned.libraryPath && entry.libraryId === planned.libraryId &&
-    entry.cloudHosted === planned.cloudHosted && entry.gitRemote === planned.gitRemote && entry.migratedFrom === planned.migratedFrom;
+    entry.cloudHosted === planned.cloudHosted && entry.gitRemote === planned.gitRemote && entry.migratedFrom === planned.migratedFrom &&
+    (role === null || entry.chainRole === role);
+}
+
+// The role the plan gives the partition named `name`; null while it stays unclassified.
+function plannedRole(partitions: readonly MigrationPartitionPlan[], name: string): ChainIdentity["role"] | null {
+  return partitions.find((partition) => partition.partition === name)?.chainIdentity?.role ?? null;
+}
+
+// INIT-053 U08: each partition's chain identity, from the mapping's explicit chainRole alone. A
+// coordination row names its own library; a project row names the coordination row's library. A
+// partition migrated before is read for the identity it carries: none is written by the apply,
+// the same is left, another stops the plan. Answers the partitions with their identities.
+async function plannedChainIdentities(recorder: MigrationRecorder, entries: readonly MigrationMappingEntry[], planned: readonly MigrationPartitionPlan[]): Promise<MigrationPartitionPlan[]> {
+  const coordinationIndex = entries.findIndex((entry) => entry.chainRole === "coordination");
+  const coordinationId = coordinationIndex >= 0 ? planned[coordinationIndex]?.workspaceId ?? null : null;
+  const partitions: MigrationPartitionPlan[] = [];
+  for (const [index, partition] of planned.entries()) {
+    const role = entries[index]?.chainRole;
+    const identity: ChainIdentity | null = role === undefined || coordinationId === null || partition.workspaceId === null
+      ? null
+      : role === "coordination" ? { role, coordinationLibraryId: partition.workspaceId } : { role, coordinationLibraryId: coordinationId };
+    const conflict = (message: string): void => {
+      recorder.block("library", partition.target, "SETUP_LIBRARY_CONFLICT", message);
+    };
+    if (identity !== null && identity.role === "project" && partition.workspaceId === coordinationId) {
+      conflict(`partition ${partition.partition} carries the library id ${coordinationId} of the coordination partition; a project chain cannot be its own coordination`);
+      partitions.push({ ...partition, action: "blocked", chainIdentity: identity });
+      continue;
+    }
+    if (identity !== null && partition.action === "skip") {
+      const held = await recorder.attempt("library", partition.target, async () => ({ identity: chainIdentity(await materializeWorkspaceFromGenesis(partition.target)) }));
+      if (held === null) {
+        partitions.push({ ...partition, action: "blocked", chainIdentity: identity });
+        continue;
+      }
+      if (held.identity !== null && (held.identity.role !== identity.role || held.identity.coordinationLibraryId !== identity.coordinationLibraryId)) {
+        conflict(`${partition.target} already declares the ${held.identity.role} identity naming ${held.identity.coordinationLibraryId}; a chain role changes only through chain-declare`);
+        partitions.push({ ...partition, action: "blocked", chainIdentity: identity });
+        continue;
+      }
+    }
+    partitions.push({ ...partition, chainIdentity: identity });
+  }
+  return partitions;
 }
 
 function validPortalSetting(key: string, value: unknown): boolean {
@@ -684,9 +762,14 @@ export async function planMigration(input: MigrationPlanInput): Promise<Migratio
     partitions.push(planned.partition);
     registryEntries.push(planned.registry);
   }
-  for (const partition of partitions) if (partition.action === "import") recorder.write("library", partition.target, "create");
+  const identified = await plannedChainIdentities(recorder, input.mapping?.partitions ?? [], partitions);
+  for (const partition of identified) {
+    if (partition.action === "import") recorder.write("library", partition.target, "create");
+    else if (partition.action === "skip" && partition.chainIdentity !== null && await libraryLacksIdentity(partition.target)) recorder.write("library", partition.target, "update");
+  }
+  partitions.splice(0, partitions.length, ...identified);
   // The registry is written when an entry is missing or differs; an existing file is copied first.
-  if (registryEntries.some((planned) => !registryEntryCurrent(registry, planned))) {
+  if (registryEntries.some((planned) => !registryEntryCurrent(registry, planned, plannedRole(partitions, planned.partition)))) {
     const exists = await entryKind(registryFile) !== null;
     recorder.write("registry", registryFile, exists ? "update" : "create");
     if (exists) recorder.backup("registry", registryFile);
@@ -734,6 +817,28 @@ function plannedChain(partition: MigrationPartitionPlan): LegacyChainFacts {
   return { workspaceId: partition.workspaceId, streamId: partition.streamId, events: partition.events, headEventHash: partition.headEventHash };
 }
 
+// Whether the library at `target` declares no chain identity yet (read without writing).
+async function libraryLacksIdentity(target: string): Promise<boolean> {
+  return chainIdentity(await materializeWorkspaceFromGenesis(target)) === null;
+}
+
+// INIT-053 U08: the identity the plan gave the partition, written once the import is checked and
+// signed by the setup actor (an imported chain that enabled attestation requires one). A library
+// migrated before gets it when it has none; one holding another identity stops the apply.
+async function applyChainIdentity(recorder: SetupRecorder, partition: MigrationPartitionPlan, at: string, imported: boolean): Promise<ChainIdentity | null> {
+  if (partition.chainIdentity === null) return null;
+  const current = chainIdentity(await materializeWorkspaceFromGenesis(partition.target));
+  if (current !== null) {
+    if (current.role !== partition.chainIdentity.role || current.coordinationLibraryId !== partition.chainIdentity.coordinationLibraryId) {
+      setupFail("SETUP_LIBRARY_CONFLICT", `${partition.target} declares another chain identity than partition ${partition.partition}'s plan; a chain role changes only through chain-declare`, { library: partition.target, partition: partition.partition });
+    }
+    return current;
+  }
+  await declareChainIdentity(partition.target, partition.chainIdentity, { occurredAt: at, actorId: SETUP_ACTOR });
+  recorder.write("library", partition.target, imported ? "create" : "update");
+  return partition.chainIdentity;
+}
+
 // One partition's library, in the plan's order: imported, with the events and head it carries
 // compared with the plan's, or, planned as skipped, found holding the same chain again.
 async function applyPartition(recorder: SetupRecorder, partition: MigrationPartitionPlan, at: string): Promise<MigrationPartitionApplied> {
@@ -754,7 +859,8 @@ async function applyPartition(recorder: SetupRecorder, partition: MigrationParti
       applyFail("LEGACY_IMPORT_MISMATCH", `partition ${partition.partition}: ${partition.target} no longer holds the library the plan found migrated; plan again`, partition);
     }
     return { ...applied, action: "skipped", events: chain.events, headEventHash: chain.headEventHash,
-      knowledge: partition.knowledge, knowledgeOmission: partition.knowledgeOmission };
+      knowledge: partition.knowledge, knowledgeOmission: partition.knowledgeOmission,
+      chainIdentity: await applyChainIdentity(recorder, partition, at, false) };
   }
   let report: Awaited<ReturnType<typeof importLegacyWorkspace>>;
   try {
@@ -774,7 +880,8 @@ async function applyPartition(recorder: SetupRecorder, partition: MigrationParti
       partition);
   }
   return { ...applied, action: "imported", events: report.events, headEventHash: report.headEventHash,
-    knowledge: report.knowledge, knowledgeOmission: report.knowledgeOmission };
+    knowledge: report.knowledge, knowledgeOmission: report.knowledgeOmission,
+    chainIdentity: await applyChainIdentity(recorder, partition, at, true) };
 }
 
 // The registry entries, each written only when it is missing or differs; an existing registry is
@@ -786,7 +893,7 @@ async function applyRegistryEntries(recorder: SetupRecorder, input: MigrationApp
   const written: RegistryEntry[] = [];
   let backedUp = false;
   for (const entry of planned) {
-    if (!registryEntryCurrent(registry, entry)) {
+    if (!registryEntryCurrent(registry, entry, plannedRole(input.migration.partitions, entry.partition))) {
       if (existed && !backedUp) {
         const copy = join(recorder.backupDirectory("registry"), basename(registryFile));
         if (await entryKind(copy) === null) {

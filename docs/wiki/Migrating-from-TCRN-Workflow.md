@@ -24,6 +24,7 @@
 - 映射的规则：
   - 每项可另带 `projectName` 与 `gitRemote`，作为库的项目提示。
   - 只有用户明确选择该分区不带旧知识库时，才给这一项加 `"omitLegacyKnowledge": {"reason": "<原因>"}`，见下文「显式不带旧知识库」。
+  - 链角色只来自显式的 `"chainRole"`：协调链一项写 `"coordination"`，具体项目写 `"project"`，见下文「Project roles after import」。
   - 分区名、旧工作区、项目各只能出现一次。
   - 不给 `--mapping` 时，若项目自身含旧工作区，计划会推定一项。
 - 一个容器里有多个项目时，`--project` 给容器根；容器根本身对应的分区（如 cross-project）的库就在容器根下。
@@ -37,7 +38,7 @@ einzbern setup --mode migrate --project <项目目录> --mapping <迁移映射 J
 
 不加 `--yes true` 时命令只读，返回 `SETUP_PLAN_READY`。`migration` 字段列出：
 
-- `partitions`：逐分区给出目标库 `target` 与目标现状 `targetState`，以及动作 `action`：导入 `import`、已迁移跳过 `skip` 或被阻断 `blocked`。另有旧链的事件数与头哈希、在途工作数，以及全部未满足的 gate。gate 逐项列出，不计为零；`knowledge` 列出将携带的知识，`knowledgeOmission` 列出显式不带的选择、原因与旧文件事实。
+- `partitions`：逐分区给出目标库 `target` 与目标现状 `targetState`，以及动作 `action`：导入 `import`、已迁移跳过 `skip` 或被阻断 `blocked`。另有旧链的事件数与头哈希、在途工作数，以及全部未满足的 gate；`chainIdentity` 是映射给出的链身份，未给角色时为 `null`。gate 逐项列出，不计为零；`knowledge` 列出将携带的知识，`knowledgeOmission` 列出显式不带的选择、原因与旧文件事实。
 - `registry`：每个库将得到的注册表条目，`migratedFrom` 记旧工作区。
 - `deviceSettings`：随迁的门户设置。
 - `hostCleanup`：每一项清理，含类别 `kind`、路径、动作（改写 `update` 或移走 `move`）与去向 `into`。
@@ -165,15 +166,29 @@ dry-run、计划的分区项和执行回执都列出 `knowledgeOmission`：
   - `work-gate-list --status all` 列出这些 gate。
 - 库里的事件数与头哈希：
   - 项目自己的库，第一条流前段就是旧链，到旧头为止；之后是本机在迁移中写入的语言与受管段记录，由安装向导以 `agent:setup` 署名；
-  - 其余分区的库与旧链的事件数和头哈希完全相同；
+  - 其余分区的库与旧链的事件数和头哈希完全相同；映射给了 `chainRole` 时，旧链之后另有一条链身份记录，同样以 `agent:setup` 署名；
   - 可用 `chain-validate --workspace <库>` 核对。
 - 用 `doctor --project <项目目录>` 检查八项。旧名与当前名的对应关系见[词汇表](Glossary.md)。
 
 ## Project roles after import
 
-Imported old events retain their bytes and identities. Missing roles and work
-project relations remain unclassified/undecided until explicitly declared.
-Do not infer a coordination role from a Cross Project label, or copy its old
-development settings into a newly created product as implicit consent. The real
-Einzbern/Mana product identity and migration mapping must be supplied at the
-authorized migration step.
+Imported old events retain their bytes and identities. A partition's chain role
+comes only from its explicit `chainRole` in the mapping: `"coordination"` for the
+mapping's one coordination chain, whose identity names its own library, and
+`"project"` for a concrete project, whose identity names that coordination
+partition's library. A mapping takes at most one coordination partition, and
+project partitions need it in the same mapping; otherwise the plan refuses with
+`SETUP_ANSWER_INVALID` on `chainRole`. The identity is written after the import is
+checked, signed `agent:setup`, and the registry entry records the role. A
+library migrated before without an identity gets it on the next run; one with
+another identity stops the plan (`SETUP_LIBRARY_CONFLICT`) until `chain-declare`
+changes it. A partition without `chainRole` stays unclassified, and the plan
+shows `chainIdentity: null`; work project relations remain undecided until
+explicitly declared. With roles, `--project` must name a project partition: the
+wizard writes that project's language and managed sections, and a coordination
+chain takes neither, so a run whose `--project` is the coordination partition's
+root stops after the import, at that project's language. Never infer a coordination role from a Cross Project label,
+a partition name or a path, or copy its old development settings into a newly
+created product as implicit consent. The real Einzbern/Mana product identity and
+the roles of the real migration mapping must be supplied at the authorized
+migration step.

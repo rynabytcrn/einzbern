@@ -24,6 +24,9 @@ import test from "node:test";
 import {
   FRAMEWORK_VERSION,
   LEGACY_CONTAINER_DIRECTORY,
+  chainIdentity,
+  declareChainIdentity,
+  resolveProjectTarget,
   LEGACY_CONTROL_DIRECTORY,
   LEGACY_DEVICE_DIRECTORY,
   MACHINE_SETTINGS_LAYER_KIND,
@@ -36,9 +39,9 @@ import {
   registerLibrary,
 } from "../dist/build/packages/core/src/index.js";
 import { ENGINE_CURRENT_SCHEMA_VERSION, ENGINE_FILES } from "../dist/build/packages/core/src/engine-home.js";
-import { MIGRATION_MAPPING_SCHEMA_VERSION } from "../dist/build/packages/core/src/migrate-legacy.js";
+import { MIGRATION_MAPPING_SCHEMA_VERSION, applyMigration, planMigration, readMigrationMapping } from "../dist/build/packages/core/src/migrate-legacy.js";
 import { findMigratedEntry } from "../dist/build/packages/core/src/registry.js";
-import { FRESH_ENGINE_TREE } from "../dist/build/packages/core/src/setup-fresh.js";
+import { FRESH_ENGINE_TREE, SetupRecorder } from "../dist/build/packages/core/src/setup-fresh.js";
 import { applySetup, planSetup } from "../dist/build/packages/core/src/setup.js";
 import { legacyWorkspaceEventId, legacyWorkspaceStreamId } from "../dist/build/packages/core/src/workspace.js";
 import { canonicalJson, createEvent, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
@@ -442,4 +445,122 @@ test("489-R2 (registry): an entry with migratedFrom reads beside one without, re
   const document = JSON.parse(await readFile(registryFile, "utf8"));
   await writeFile(registryFile, JSON.stringify({ ...document, entries: [{ ...document.entries[0], migratedFrom: "relative/path" }] }));
   await assert.rejects(readRegistry(m.deviceHome), { reasonCode: "LIBRARY_REGISTRY_INVALID" });
+});
+
+// INIT-053 U08: the migration's own steps as the wizard runs them, in this process as the device
+// the fixture's CLI runs created: the plan and the apply of migrate-legacy.ts, without the wiring of
+// a project (setup.ts does that for --project; see the U08 note in the migration wiki).
+async function asDevice(m, operation) {
+  const previous = process.env.EINZBERN_HOME;
+  process.env.EINZBERN_HOME = m.deviceHome;
+  try {
+    return await operation();
+  } finally {
+    process.env.EINZBERN_HOME = previous;
+  }
+}
+
+async function migrateOnly(m, mappingFile) {
+  const instant = at();
+  const input = { mapping: await readMigrationMapping(mappingFile), mappingFile, home: m.home, deviceHome: m.deviceHome, legacyDeviceHome: m.legacyDevice, at: instant };
+  const planned = await asDevice(m, () => planMigration(input));
+  const recorder = new SetupRecorder(m.deviceHome, instant);
+  const applied = planned.blockers.length > 0 ? null : await asDevice(m, () => applyMigration(recorder, { migration: planned.migration, deviceHome: m.deviceHome, at: instant }));
+  return { planned, applied, written: recorder.writes };
+}
+
+const rowsOf = (writes) => writes.map((entry) => [entry.step, entry.path, entry.action]);
+
+// INIT-053 U08 (approved contract item 1): the mapping's explicit chainRole is the only source of a
+// migrated library's chain role. Nine rows, the container's cross-project as the coordination and
+// eight projects, each its own old workspace: the plan names every identity, the apply writes them
+// after the old chains, signed by the setup actor, the registry records each role, and a migrated
+// project chain resolves as a project rather than as an unclassified chain.
+test("489-R1, U08 (fixture): a nine-row mapping with explicit roles writes one coordination and eight project identities, and none resolves as unclassified", async (context) => {
+  const m = await machine(context);
+  const crossProject = await oldPartition(m, "cross-project");
+  const names = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta"];
+  const rows = [{ partition: "cross-project", legacyWorkspace: crossProject.root, projectRoot: m.container, chainRole: "coordination" }];
+  for (const name of names) {
+    const old = await oldPartition(m, name, `LEGACY-${name.toUpperCase()}-WORKSPACE`);
+    rows.push({ partition: name, legacyWorkspace: old.root, projectRoot: await project(m, name), chainRole: "project" });
+  }
+  const mapping = await writeMapping(m, rows);
+  const coordination = { role: "coordination", coordinationLibraryId: crossProject.workspaceId };
+  const projectIdentity = { role: "project", coordinationLibraryId: crossProject.workspaceId };
+  const expectedIdentities = [["cross-project", coordination], ...names.map((name) => [name, projectIdentity])];
+
+  // The wizard's plan for the container names every identity before anything is written.
+  const wizardPlan = receipt(setup(m, mapping));
+  assert.deepEqual(wizardPlan.migration.partitions.map((entry) => [entry.partition, entry.action, entry.chainIdentity]), expectedIdentities.map(([name, identity]) => [name, "import", identity]));
+
+  const { planned, applied, written } = await migrateOnly(m, mapping);
+  assert.deepEqual(planned.blockers, []);
+  assert.deepEqual(applied.partitions.map((entry) => [entry.partition, entry.action, entry.chainIdentity]), expectedIdentities.map(([name, identity]) => [name, "imported", identity]));
+  assert.deepEqual(rowsOf(written), rowsOf(planned.writes), "the apply wrote what the plan listed");
+  for (const row of rows) {
+    const library = join(row.projectRoot, ".ether");
+    const identity = chainIdentity(await materializeWorkspace(library));
+    assert.deepEqual([identity.role, identity.coordinationLibraryId], [row.chainRole, crossProject.workspaceId], row.partition);
+    // The identity follows the old chain in the library's one stream, signed by the wizard.
+    const streams = (await readAllStreams(library)).streams;
+    assert.equal(streams.length, 1, row.partition);
+    const event = streams[0].events.find((candidate) => candidate.payload.record?.collection === "chain" && candidate.payload.record?.key === "identity");
+    assert.equal(event?.payload.actor, "agent:setup", row.partition);
+    assert.equal(streams[0].events.indexOf(event), expected.events, `${row.partition}: right after the old chain`);
+  }
+  const registry = await readRegistry(m.deviceHome);
+  assert.deepEqual(registry.entries.map((entry) => entry.chainRole).sort(), ["coordination", ...names.map(() => "project")].sort());
+
+  // Resolution of a migrated project chain once a project of it is registered with its identity.
+  const alphaRoot = rows[1].projectRoot;
+  const alphaLibrary = join(alphaRoot, ".ether");
+  const alphaState = await materializeWorkspace(alphaLibrary);
+  const alphaProject = alphaState.projects.find((entry) => !entry.tombstone);
+  await asDevice(m, () => registerLibrary({ projectPath: alphaRoot, libraryPath: alphaLibrary, projectId: alphaProject.id, registeredAt: at(), cloudHosted: false, gitRemote: null }, m.deviceHome));
+  const resolved = await resolveProjectTarget({ libraryId: alphaState.metadata.workspaceId, projectId: alphaProject.id }, m.deviceHome);
+  assert.notEqual(resolved.reason, "chain-role-unclassified");
+  assert.equal(resolved.chain.role, "project");
+});
+
+// INIT-053 U08: a library migrated before its mapping named roles stays unclassified and resolves as
+// such; the roles added later are written once (the plan lists both library writes and the registry
+// write), the same mapping then changes nothing, and a library that declares another identity stops
+// the plan instead of having its role rewritten.
+test("489-R1, U08 (fixture): roles added to a mapping already applied are written once; another declared identity stops the plan", async (context) => {
+  const { m, crossProject, alpha, alphaProject, mapping, targets } = await migrated(context);
+  const first = receipt(setup(m, mapping, ["--yes", "true"]));
+  assert.deepEqual(first.migration.partitions.map((entry) => entry.chainIdentity), [null, null], "without chainRole both stay unclassified");
+  for (const target of targets) assert.equal(chainIdentity(await materializeWorkspace(target)), null);
+  const alphaProjectId = (await materializeWorkspace(targets[1])).projects.find((entry) => !entry.tombstone).id;
+  await asDevice(m, () => registerLibrary({ projectPath: alphaProject, libraryPath: targets[1], projectId: alphaProjectId, registeredAt: at(), cloudHosted: false, gitRemote: "https://example.invalid/team/alpha.git" }, m.deviceHome));
+  const reference = { libraryId: alpha.workspaceId, projectId: alphaProjectId };
+  assert.equal((await resolveProjectTarget(reference, m.deviceHome)).reason, "chain-role-unclassified", "unclassified until a role is given");
+
+  const roled = await writeMapping(m, [
+    { partition: "cross-project", legacyWorkspace: crossProject.root, projectRoot: m.container, chainRole: "coordination" },
+    { partition: "alpha", legacyWorkspace: alpha.root, projectRoot: alphaProject, projectName: "Alpha", gitRemote: "https://example.invalid/team/alpha.git", chainRole: "project" },
+  ], join(m.base, "roled.json"));
+  const { planned, applied, written } = await migrateOnly(m, roled);
+  assert.deepEqual(planned.migration.partitions.map((entry) => [entry.action, entry.chainIdentity?.role ?? null]), [["skip", "coordination"], ["skip", "project"]]);
+  assert.deepEqual(rowsOf(planned.writes), [
+    ["library", targets[0], "update"],
+    ["library", targets[1], "update"],
+    ["registry", join(m.deviceHome, "registry.json"), "update"],
+  ]);
+  assert.deepEqual(rowsOf(written), rowsOf(planned.writes), "the apply wrote what the plan listed");
+  assert.deepEqual(applied.partitions.map((entry) => entry.chainIdentity), [
+    { role: "coordination", coordinationLibraryId: crossProject.workspaceId },
+    { role: "project", coordinationLibraryId: crossProject.workspaceId },
+  ]);
+  assert.deepEqual((await readRegistry(m.deviceHome)).entries.map((entry) => entry.chainRole), ["coordination", "project"]);
+  assert.notEqual((await resolveProjectTarget(reference, m.deviceHome)).reason, "chain-role-unclassified");
+  assert.deepEqual((await migrateOnly(m, roled)).planned.writes, [], "the same mapping again changes nothing");
+
+  // alpha now declares itself a coordination chain: the plan stops on it, naming the library.
+  await asDevice(m, () => declareChainIdentity(targets[1], { role: "coordination", coordinationLibraryId: alpha.workspaceId }, { occurredAt: at(), actorId: "agent:setup" }));
+  const refused = await migrateOnly(m, roled);
+  assert.deepEqual(refused.planned.blockers.map((entry) => [entry.path, entry.reasonCode]), [[targets[1], "SETUP_LIBRARY_CONFLICT"]]);
+  assert.deepEqual(refused.planned.migration.partitions.map((entry) => entry.action), ["skip", "blocked"]);
+  assert.equal(refused.applied, null);
 });

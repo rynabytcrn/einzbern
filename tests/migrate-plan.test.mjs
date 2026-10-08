@@ -571,6 +571,12 @@ test("489-R1: a mapping that does not read or does not check answers SETUP_ANSWE
     ["omission-reason-high-surrogate", mapping([{ ...good, omitLegacyKnowledge: { reason: "x\ud800y" } }]), "omitLegacyKnowledge.reason"],
     ["omission-reason-low-surrogate", mapping([{ ...good, omitLegacyKnowledge: { reason: "x\udc00y" } }]), "omitLegacyKnowledge.reason"],
     ["omission-extra", mapping([{ ...good, omitLegacyKnowledge: { reason: "why", unchecked: true } }]), "omitLegacyKnowledge.unchecked"],
+    // INIT-053 U08: chainRole is coordination or project; one coordination chain per mapping; a
+    // project row needs the coordination row of the same mapping, never one outside it.
+    ["role-unknown", mapping([{ ...good, chainRole: "owner" }]), "chainRole"],
+    ["role-not-text", mapping([{ ...good, chainRole: true }]), "chainRole"],
+    ["role-two-coordination", mapping([{ ...good, chainRole: "coordination" }, { ...other, chainRole: "coordination" }]), "chainRole"],
+    ["role-project-outside-mapping", mapping([{ ...good, chainRole: "project" }, { ...other, chainRole: "project" }]), "chainRole"],
   ];
   for (const [label, content, field] of cases) {
     const file = join(m.base, `${label}.json`);
@@ -591,6 +597,24 @@ test("489-R1: a mapping that does not read or does not check answers SETUP_ANSWE
     ["legacyWorkspace", "partition", "projectRoot"],
     ["gitRemote", "legacyWorkspace", "partition", "projectName", "projectRoot"],
   ]);
+  // An explicit role travels in the mapping's shape; a row without one stays without one.
+  const roles = await readMigrationMapping(await writeMapping(m, [{ ...good, chainRole: "coordination" }, { ...other, chainRole: "project" }, { ...other, partition: "gamma", legacyWorkspace: join(m.base, "old-gamma"), projectRoot: join(m.base, "gamma") }]));
+  assert.deepEqual(roles.partitions.map((entry) => entry.chainRole ?? null), ["coordination", "project", null]);
+});
+
+// INIT-053 U08 (approved contract item 1): a partition named cross-project, at the container root,
+// with no chainRole is not taken for the coordination chain: it stays unclassified, and the plan
+// says so. Its chain is still planned for import as before.
+test("489-R1, U08: a partition named cross-project without chainRole stays unclassified; nothing infers its role", async (context) => {
+  const m = await machine(context);
+  const crossProject = await oldPartition(m, "cross-project");
+  await writeMapping(m, [{ partition: "cross-project", legacyWorkspace: crossProject, projectRoot: m.container }], join(m.container, "mapping.json"));
+  const before = await treeDigest(m.base);
+  const planned = await plan(m, { mapping: "mapping.json" });
+  const [entry] = planned.migration.partitions;
+  assert.deepEqual([entry.partition, entry.action, entry.chainIdentity], ["cross-project", "import", null]);
+  assert.deepEqual(planned.migration.mapping.partitions.map((row) => Object.hasOwn(row, "chainRole")), [false]);
+  assert.deepEqual(await treeDigest(m.base), before, "the plan wrote nothing");
 });
 
 test("480-R6, 489-R1: migrate takes --mapping, --cloud, --language and --navigation and no other answer", async (context) => {

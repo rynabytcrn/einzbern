@@ -7,7 +7,6 @@
     "tcrn-app",
     "tcrn-app-status-bar",
     "tcrn-badge",
-    "tcrn-brand-mark",
     "tcrn-confirm-dialog",
     "tcrn-dashboard-grid",
     "tcrn-definition-list",
@@ -69,5 +68,12 @@
     "authorityCommit": "48ded198a7148efdaa245271d1885e468f24f4a4",
     "basis": "Owner-approved full family audit and actual published consumption; original root roster retained in raw archive",
     "verification": "existing bidirectional class-conservation true negatives; published CSS/bridge digest and current UI family interactions; fresh browser and Owner visual acceptance remain separate"
+  },
+  "init053R45U15Disposition": {
+    "removedRoots": [
+      "tcrn-brand-mark"
+    ],
+    "basis": "The portal's only rule for the root set the brand mark to 28px against the published ProductShell lockup's 38px; the real-browser family comparison of R45 (U15) measured the mark at 28px against the published 38px. The override is retired, so the portal no longer defines the root and the roster drops it in the same change, as its discipline requires.",
+    "verification": "bidirectional class-conservation (scripts/s278-component-coverage.mjs) and the browser family comparison; Owner visual acceptance remains separate"
   }
 }

@@ -59,9 +59,15 @@ Atelier 是项目配置工作台。进入页面后，先核对当前项目与知
 ## Involved projects and target details
 
 The work view edits explicit undecided, coordination-only or selected project
-scope and filters by stable project reference. Inspect execution contexts to
-read every target's configuration and unresolved bindings. Selecting a project
-does not grant permission to edit its files. The navigation shows project names;
-Details retains full paths and identities and supports keyboard dismissal.
-Switching while a target write is in flight is refused, and stale form revisions
-require reloading. Coordination chains do not expose development settings.
+scope and filters by stable project reference. Project readiness shows, for
+every target, its status, whether it is ready for development and what it still
+misses. Selecting a project does not grant permission to edit its
+files. Lists and the navigation show project names: a project without one reads
+"Unnamed project" in the page's language, and names that read alike carry the
+shortest tails of their ids that tell them apart. The Details under each list
+keep the full identities: the summary opens and closes from the keyboard, Escape
+closes it and returns focus, and each identity has a copy action. Saving reads
+the work list again through the work view's own read, so a library left in the
+meantime is not shown. Switching while a target write is in flight is refused,
+and stale form revisions require reloading. Coordination chains do not expose
+development settings.

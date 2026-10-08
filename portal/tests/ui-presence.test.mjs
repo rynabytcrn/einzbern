@@ -443,6 +443,28 @@ const receiptAdvanced = (document, before) => () => {
   return current !== before && /^✓v\d+$/u.test(current) ? current : null;
 };
 
+// TCRN-CROSS-INIT-053 R45 (U14): the page's label rule, restated for expectations. Each target has
+// one base name; targets whose bases read alike carry the shortest tails of their library and project
+// ids, from six characters, that tell them apart as well as the complete ids do.
+function expectedTargetLabels(targets, base) {
+  const tail = (target, length) => `${target.libraryId.slice(-length)}/${target.projectId.slice(-length)}`;
+  const bases = targets.map(base);
+  return targets.map((target, index) => {
+    const peers = targets.filter((_, other) => bases[other] === bases[index]);
+    if (peers.length < 2) return bases[index];
+    const widest = Math.max(...peers.flatMap((peer) => [peer.libraryId.length, peer.projectId.length]));
+    let length = 6;
+    while (length < widest && new Set(peers.map((peer) => tail(peer, length))).size < new Set(peers.map((peer) => tail(peer, widest))).size) length += 1;
+    return `${bases[index]} · ${tail(target, length)}`;
+  });
+}
+
+async function localeTable() {
+  const sandbox = {};
+  new Function("window", await readFile(join(portalRoot, "locales.js"), "utf8"))(sandbox);
+  return sandbox.PORTAL_LOCALES;
+}
+
 async function preparePage(env = {}) {
   const fixture = await scratch("tcrn-inc148-dom-");
   await seed(fixture);
@@ -2186,9 +2208,19 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       assert.equal(select?.id, "library-select");
       const options = [...select.querySelectorAll("option")];
       assert.deepEqual(options.map((option) => option.getAttribute("value")), [fixture.proseRoot, fixture.second.project]);
-      const firstName = (await cli(["project-list", "--workspace", fixture.workspace], fixture.deviceEnv)).records.find(record => record.id === fixtureProjectIds.get(fixture.workspace)).name;
-      const secondName = (await cli(["project-list", "--workspace", fixture.second.library], fixture.deviceEnv)).records.find(record => record.id === fixtureProjectIds.get(fixture.second.library)).name;
+      // INIT-053 R45 (U14): the API names a library by what project-list says of its project, null when
+      // it says nothing; the page names a null as "Unnamed project" and tells two alike apart by the
+      // shortest tails of their ids, so the expectation is derived from the API's null by that rule.
+      const named = async (library) => ({
+        name: (await cli(["project-list", "--workspace", library], fixture.deviceEnv)).records.find(record => record.id === fixtureProjectIds.get(library)).name ?? null,
+        libraryId: (await cli(["status", "--workspace", library], fixture.deviceEnv)).workspaceId,
+        projectId: fixtureProjectIds.get(library),
+      });
+      const listed = [await named(fixture.workspace), await named(fixture.second.library)];
+      const locales = await localeTable();
+      const [firstName, secondName] = expectedTargetLabels(listed, (entry) => entry.name ?? locales.en["projects.unnamed"]);
       assert.deepEqual(options.map(option => option.textContent), [firstName, secondName], "navigation uses canonical names, full identity belongs in Details");
+      for (const option of options) assert.doesNotMatch(option.textContent, /(?:library|project):[0-9a-f]{24}/u, "no complete id in the visible label");
       assert.equal(options[0].hasAttribute("selected"), true);
       const firstId = text("#library-label");
       assert.match(firstId, /^library:/u);
@@ -2224,12 +2256,17 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
         page.document.querySelector(`[data-locale-option="${locale}"]`)?.click();
         await waitFor(() => page.document.documentElement.lang === locale, `the ${locale} locale`);
         assert.deepEqual(stateKeys.map((key) => page.document.querySelector(`#library-state [data-i18n="${key}"]`)?.textContent), labels);
+        // The switcher, the rail and the top bar name an unnamed library in the page's language.
+        const localized = expectedTargetLabels(listed, (entry) => entry.name ?? locales[locale]["projects.unnamed"]);
+        assert.deepEqual([...select.querySelectorAll("option")].map((option) => option.textContent), localized, `${locale}: the switcher follows the language`);
+        assert.equal(text("#rail-workspace-label"), localized[1], `${locale}: the rail follows the language`);
       }
 
       const firstVersion = String((await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).version);
+      const [firstNameInFrench] = expectedTargetLabels(listed, (entry) => entry.name ?? locales.fr["projects.unnamed"]);
       page.document.querySelector("#library-select").value = fixture.proseRoot;
       page.document.querySelector("#library-select").dispatchEvent(new page.window.Event("change", { bubbles: true }));
-      await waitFor(() => text("#workspace-label") === firstName && text("#stat-version") === firstVersion && text("#agents-path") === join(fixture.proseRoot, "AGENTS.md"), "the page to return to the first library");
+      await waitFor(() => text("#workspace-label") === firstNameInFrench && text("#stat-version") === firstVersion && text("#agents-path") === join(fixture.proseRoot, "AGENTS.md"), "the page to return to the first library");
       assert.equal(text("#library-label"), firstId);
       const firstDoctor = await cli(["doctor", "--project", fixture.proseRoot], { ...fixture.deviceEnv, HOME: fixture.home });
       assert.equal(page.document.querySelector("#health-chip")?.className.includes("tcrn-badge--positive"), firstDoctor.ok);
@@ -2474,5 +2511,326 @@ if (!MUTATION) test("R43 navigation destinations are anchors and full identity s
     assert.ok(details.textContent.includes(page.workspace));
     assert.ok(details.querySelector("#engine-connection"));
     assert.equal(page.document.querySelector("header #engine-connection"), null);
+  } finally { await page.cleanup(); }
+});
+
+// TCRN-CROSS-INIT-053 R45 (U12, U14): a device whose two fixture libraries and a third are project chains
+// under one coordination chain, declared through the CLI on Atelier's surface as Atelier declares them.
+// project-list carries no project name, so every target reaches the page unnamed.
+async function projectChainFixture(prefix) {
+  const fixture = await scratch(prefix);
+  const atelier = { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" };
+  const coordination = { project: join(fixture.base, "coordination-project"), library: join(fixture.base, "coordination-library") };
+  coordination.projectId = await registeredLibrary(fixture.deviceEnv, coordination.project, coordination.library, "TCRN-R45-COORDINATION");
+  const third = { project: join(fixture.base, "third-project"), library: join(fixture.base, "third-library") };
+  third.projectId = await registeredLibrary(fixture.deviceEnv, third.project, third.library, "TCRN-R45-THIRD");
+  const libraryId = async (library) => (await cli(["status", "--workspace", library], fixture.deviceEnv)).workspaceId;
+  coordination.libraryId = await libraryId(coordination.library);
+  await cli(["chain-declare", "--workspace", coordination.library, "--role", "coordination", "--coordination-library-id", coordination.libraryId, "--at", nextAt()], atelier);
+  const targets = [];
+  for (const [library, projectId] of [[fixture.workspace, fixture.projectId], [fixture.second.library, fixture.second.projectId], [third.library, third.projectId]]) {
+    await cli(["chain-declare", "--workspace", library, "--role", "project", "--coordination-library-id", coordination.libraryId, "--at", nextAt()], atelier);
+    targets.push({ libraryId: await libraryId(library), projectId });
+  }
+  return { ...fixture, atelier, coordination, third, targets };
+}
+
+const GHOST_TARGET = Object.freeze({ libraryId: `library:${"f".repeat(24)}`, projectId: `project:${"e".repeat(24)}` });
+const COMPLETE_ID = /(?:library|project):[0-9a-f]{24}/u;
+
+async function openWorkEditor(page) {
+  const { document } = page;
+  document.querySelector('[data-page-target="dashboard"]')?.click();
+  document.querySelector('[data-workspace-tab="work"]')?.click();
+  await waitFor(() => document.querySelector("#work-target-editor [data-target-save]"), "the work target editor");
+  return document.querySelector("#work-target-editor");
+}
+
+// A page is closed only after its own requests settle: a read still out when the portal exits would
+// fail inside the page after the case has ended.
+async function closePage(page, fixture) {
+  try { await page.waitForSettled(); } catch { /* the case's own assertion already failed */ }
+  const exited = new Promise((resolveExit) => {
+    if (page.child.exitCode !== null || page.child.signalCode !== null) resolveExit();
+    else page.child.once("exit", resolveExit);
+  });
+  if (page.child.exitCode === null && page.child.signalCode === null) page.child.kill();
+  await exited;
+  await rm(fixture.base, { recursive: true, force: true });
+}
+
+function keydown(page, target, key) {
+  const event = new page.window.Event("keydown", { bubbles: true, cancelable: true });
+  Object.defineProperty(event, "key", { value: key });
+  target.dispatchEvent(event);
+}
+
+if (!MUTATION) test("R45 U14: the page's label rule tells alike names apart by the shortest id tails and never shows a complete id", async () => {
+  const source = await readFile(join(portalRoot, "index.html"), "utf8");
+  const block = source.match(/\n {2}\/\/ Target labels \(TCRN-CROSS-INIT-053 R45 U14, F08\) begin\.\n([\s\S]*?)\n {2}\/\/ Target labels end\./u)?.[1];
+  assert.ok(block, "the page states its label rule in one block");
+  const locales = await localeTable();
+  const rule = (locale) => new Function("t", `${block}\nreturn { distinctLabels, projectIdentity };`)((key) => locales[locale][key]);
+  const { distinctLabels, projectIdentity } = rule("en");
+  const id = (kind, hex) => `${kind}:${hex}`;
+  const equalNames = [
+    { name: "Payments", libraryId: id("library", `${"a".repeat(18)}000001`), projectId: id("project", `${"b".repeat(18)}000001`) },
+    { name: "Payments", libraryId: id("library", `${"a".repeat(18)}000002`), projectId: id("project", `${"b".repeat(18)}000001`) },
+  ];
+  assert.deepEqual(distinctLabels(equalNames), ["Payments · 000001/000001", "Payments · 000002/000001"], "equal names carry six-character tails");
+  const longPrefixNames = [
+    { name: "Payments platform service for the EU region, primary", libraryId: id("library", "1".repeat(24)), projectId: id("project", "2".repeat(24)) },
+    { name: "Payments platform service for the EU region, secondary", libraryId: id("library", "3".repeat(24)), projectId: id("project", "4".repeat(24)) },
+  ];
+  assert.deepEqual(distinctLabels(longPrefixNames), longPrefixNames.map((entry) => entry.name), "distinct names, however long their common prefix, need no tail");
+  const longEqualTails = [
+    { name: null, libraryId: id("library", `0${"c".repeat(23)}`), projectId: id("project", "d".repeat(24)) },
+    { name: null, libraryId: id("library", `1${"c".repeat(23)}`), projectId: id("project", "d".repeat(24)) },
+  ];
+  const tailed = distinctLabels(longEqualTails);
+  assert.equal(new Set(tailed).size, 2, "ids alike in their last 23 characters are still told apart");
+  assert.deepEqual(tailed, [`Unnamed project · 0${"c".repeat(23)}/${"d".repeat(24)}`, `Unnamed project · 1${"c".repeat(23)}/${"d".repeat(24)}`]);
+  for (const [entries, labels] of [[equalNames, distinctLabels(equalNames)], [longPrefixNames, distinctLabels(longPrefixNames)], [longEqualTails, tailed]]) {
+    for (const label of labels) assert.doesNotMatch(label, COMPLETE_ID, "a label never holds a complete library: or project: id");
+    assert.deepEqual(entries.map(projectIdentity), entries.map((entry) => `${entry.libraryId} / ${entry.projectId}`), "the complete identity is kept for the Details");
+  }
+  assert.deepEqual(distinctLabels([{ ...GHOST_TARGET, availability: "unavailable" }, { name: null, ...GHOST_TARGET }]), ["Unavailable project", "Unnamed project"], "an unavailable reference and an unnamed project have different words");
+  const seen = new Set();
+  for (const locale of Object.keys(locales)) {
+    const { distinctLabels: localized } = rule(locale);
+    const [label] = localized([{ name: "", libraryId: GHOST_TARGET.libraryId, projectId: GHOST_TARGET.projectId }]);
+    assert.equal(label, locales[locale]["projects.unnamed"], `${locale}: an unnamed project reads in the page's language`);
+    assert.notEqual(label, locales[locale]["projects.statusUnconfigured"], `${locale}: unnamed is not the word for an unconfigured state`);
+    assert.equal(Object.hasOwn(locales[locale], "projects.unconfigured"), false, `${locale}: the colliding fallback key is gone`);
+    seen.add(label);
+  }
+  assert.equal(seen.size, 5, "each language has its own word for an unnamed project");
+});
+
+if (!MUTATION) test("R45 U14: targets are named, not identified, in the filter, the selection and the common default; their identities are in keyboard Details with a copy action", async () => {
+  const fixture = await projectChainFixture("tcrn-r45-u14-dom-");
+  const [own, second, third] = fixture.targets;
+  await cli(["work-create", "--workspace", fixture.workspace, "--project-id", fixture.projectId, "--at", nextAt(), "--external-key", "R45-U14-WORK", "--kind", "Initiative", "--title", "Targets of record", "--involved-projects", JSON.stringify({ state: "selected", targets: [second, GHOST_TARGET] })], fixture.atelier);
+  const locales = await localeTable();
+  const labelsIn = (locale, targets) => expectedTargetLabels(targets, (target) => target.unavailable ? locales[locale]["projects.unavailable"] : locales[locale]["projects.unnamed"]);
+  const page = await loadExecutedDom(fixture);
+  try {
+    const { document } = page;
+    const editor = await openWorkEditor(page);
+    const available = [own, second, third];
+    const filterTexts = () => [...editor.querySelectorAll("[data-target-filter] option")].slice(1).map((option) => option.textContent);
+    assert.deepEqual(filterTexts(), labelsIn("en", available), "the filter names the targets by the label rule");
+    const candidates = [{ ...GHOST_TARGET, unavailable: true }, ...available];
+    const expectedCandidates = [locales.en["projects.unavailable"], ...labelsIn("en", available)];
+    // The published bridge raises the listbox to the page body while it is mounted; the native value
+    // select stays in the editor.
+    assert.deepEqual([...editor.querySelectorAll(".tcrn-multi-select-dropdown__value option")].map((option) => option.textContent), expectedCandidates, "the selection names its candidates alike, an unavailable reference first");
+    assert.deepEqual([...document.querySelectorAll("#work-project-options [data-multi-select-label]")].map((label) => label.textContent), expectedCandidates);
+    for (const node of [...editor.querySelectorAll("option"), ...document.querySelectorAll("#work-project-options [role=option]")]) {
+      assert.doesNotMatch(node.textContent, COMPLETE_ID, "no visible label holds a complete id");
+      assert.equal(node.hasAttribute("title"), false, "identity is not hidden in a title");
+      assert.doesNotMatch(node.getAttribute("aria-label") ?? "", COMPLETE_ID, "the accessible name is the label, not the identity");
+    }
+    assert.deepEqual(new Set([...editor.querySelectorAll(".tcrn-multi-select-dropdown__value option[selected]")].map((option) => JSON.parse(option.value).projectId)), new Set([second.projectId, GHOST_TARGET.projectId]), "the saved relation stays selected, the unavailable reference included");
+
+    const details = editor.querySelector('[data-identity-details="work-targets"]');
+    assert.equal(details?.tagName, "DETAILS");
+    assert.ok(details.classList.contains("tcrn-disclosure-panel"));
+    const summary = details.querySelector(":scope > summary");
+    assert.ok(summary.classList.contains("tcrn-disclosure-panel__title"));
+    assert.equal(summary.textContent, locales.en["projects.identity"]);
+    const rows = [...details.querySelectorAll("[data-identity-row]")];
+    assert.deepEqual(rows.map((row) => row.querySelector("[data-identity-value]").textContent), candidates.map((target) => `${target.libraryId} / ${target.projectId}`), "every candidate's complete identity is in the Details");
+    assert.deepEqual(rows.map((row) => row.querySelector("dt").textContent), expectedCandidates, "each identity is labelled as the lists label it");
+
+    // Keyboard: the summary is the native disclosure toggle. Escape inside closes it and gives focus back.
+    details.setAttribute("open", "");
+    let summaryFocused = 0;
+    summary.focus = () => { summaryFocused += 1; };
+    const copy = rows[1].querySelector("[data-copy-identity]");
+    keydown(page, copy, "Escape");
+    assert.equal(details.hasAttribute("open"), false, "Escape closes the Details");
+    assert.equal(summaryFocused, 1, "focus returns to the summary");
+
+    // Copy: linkedom's window answers navigator with a fixed object that has no clipboard, so here the
+    // action takes the Clipboard family's "unavailable" branch: it says so in its own status region,
+    // keeps focus, and returns to its idle label. The value it carries is the row's complete identity;
+    // the written value and the copied state are taken in a real browser (r45-portal-raw/browser).
+    assert.equal(copy.getAttribute("data-copy-identity"), rows[1].querySelector("[data-identity-value]").textContent, "the action carries the row's complete identity");
+    assert.equal(copy.getAttribute("data-clipboard-copy-state"), "idle");
+    assert.equal(copy.querySelector("[data-copy-label]").textContent, locales.en["copy.idle"]);
+    assert.equal(copy.querySelector("[data-copy-status]").getAttribute("role"), "status");
+    assert.equal(copy.querySelector("[data-copy-status]").getAttribute("aria-live"), "polite");
+    assert.equal(copy.getAttribute("aria-label"), locales.en["projects.copyIdentity"].replace("{name}", expectedCandidates[1]));
+    assert.doesNotMatch(copy.getAttribute("aria-label"), COMPLETE_ID, "the copy action is named without the value it copies");
+    let copyFocused = 0;
+    copy.focus = () => { copyFocused += 1; };
+    copy.click();
+    await waitFor(() => copy.getAttribute("data-clipboard-copy-state") === "unsupported", "the copy action's answer");
+    assert.equal(copy.querySelector("[data-copy-status]").textContent, locales.en["copy.unsupported"]);
+    assert.equal(copy.querySelector("[data-copy-label]").textContent, locales.en["copy.unsupported"]);
+    assert.equal(copyFocused, 1, "focus stays on the copy action");
+    await waitFor(() => copy.getAttribute("data-clipboard-copy-state") === "idle", "the copy action to return to idle", 5000);
+    assert.equal(copy.querySelector("[data-copy-status]").textContent, "");
+    assert.equal(copy.querySelector("[data-copy-label]").textContent, locales.en["copy.idle"]);
+
+    // The common default lists the other targets by the same rule. (A saved common default that no
+    // registered library answers makes the engine refuse this target's whole effective configuration,
+    // so the settings page has no catalog to draw it from; recorded as a problem, not drawn here.)
+    document.querySelector('[data-page-target="settings"]')?.click();
+    const bindings = await waitFor(() => document.querySelector("[data-project-bindings]"), "the project bindings section");
+    const common = bindings.querySelector("[data-common-source]");
+    const others = [second, third];
+    assert.deepEqual([...common.querySelectorAll("option")].slice(1).map((option) => option.textContent), labelsIn("en", others));
+    assert.equal(common.querySelector("option[selected]"), null, "no common default is saved");
+    for (const option of common.querySelectorAll("option")) assert.doesNotMatch(option.textContent, COMPLETE_ID);
+    assert.deepEqual([...bindings.querySelectorAll('[data-identity-details="common-default"] [data-identity-value]')].map((node) => node.textContent), others.map((target) => `${target.libraryId} / ${target.projectId}`));
+    assert.deepEqual([...bindings.querySelectorAll("[data-repository-field]")].length, 0, "no repository binding is saved");
+
+    // Five languages: the names, the Details and the copy action follow the page's language.
+    for (const locale of ["zh-CN", "ja", "ko", "fr", "en"]) {
+      document.querySelector(`[data-locale-option="${locale}"]`)?.click();
+      await waitFor(() => JSON.stringify(filterTexts()) === JSON.stringify(labelsIn(locale, available)), `${locale}: the filter in the page's language`);
+      const localizedDetails = document.querySelector('#work-target-editor [data-identity-details="work-targets"]');
+      assert.equal(localizedDetails.querySelector("summary").textContent, locales[locale]["projects.identity"]);
+      assert.equal(localizedDetails.querySelector("[data-copy-label]").textContent, locales[locale]["copy.idle"]);
+      assert.equal(localizedDetails.querySelector("dt").textContent, locales[locale]["projects.unavailable"]);
+    }
+  } finally { await closePage(page, fixture); }
+});
+
+if (!MUTATION) test("R45 U14: execution contexts read as one row per target in the page's language, not as JSON", async () => {
+  const fixture = await projectChainFixture("tcrn-r45-u14-context-");
+  const [, second] = fixture.targets;
+  await cli(["work-create", "--workspace", fixture.workspace, "--project-id", fixture.projectId, "--at", nextAt(), "--external-key", "R45-U14-CONTEXT", "--kind", "Initiative", "--title", "Contexts of record", "--involved-projects", JSON.stringify({ state: "selected", targets: [second, GHOST_TARGET] })], fixture.atelier);
+  const locales = await localeTable();
+  const page = await loadExecutedDom(fixture);
+  try {
+    const editor = await openWorkEditor(page);
+    const context = await cli(["work-project-context", "--workspace", fixture.workspace, "--id", (await cli(["work-list", "--workspace", fixture.workspace], fixture.deviceEnv)).records.find((record) => record.externalKey === "R45-U14-CONTEXT").id], fixture.deviceEnv);
+    editor.querySelector("[data-target-context]").click();
+    const view = await waitFor(() => editor.querySelector("[data-project-context]"), "the execution contexts");
+    assert.equal(view.querySelectorAll("pre").length, 0, "no raw JSON block");
+    assert.doesNotMatch(view.querySelector("dl").textContent, /[{}]/u, "the rows are read, not serialized");
+    const rows = [...view.querySelectorAll("[data-context-target]")];
+    assert.deepEqual(rows.map((row) => JSON.parse(row.dataset.contextTarget).projectId), context.contexts.map((entry) => entry.reference.projectId), "one row per target, in the engine's order");
+    for (const [index, entry] of context.contexts.entries()) {
+      const row = rows[index];
+      const statusKey = { configured: "projects.statusConfigured", unconfigured: "projects.statusUnconfigured", unregistered: "projects.statusUnregistered", unavailable: "projects.statusUnavailable", "invalid-chain": "projects.statusInvalidChain", "project-absent": "projects.statusProjectAbsent", "project-deleted": "projects.statusProjectDeleted", ambiguous: "projects.statusAmbiguous", conflicting: "projects.statusConflicting" }[entry.status];
+      assert.ok(statusKey, `the engine status ${entry.status} has a label`);
+      assert.equal(row.querySelector("[data-context-status-label]").textContent, locales.en[statusKey]);
+      assert.doesNotMatch(row.querySelector("dt").textContent, COMPLETE_ID, "a row is named by its label");
+      const missing = entry.readiness?.development?.missing ?? [];
+      assert.deepEqual([...row.querySelectorAll("[data-context-missing] code")].map((node) => node.textContent), missing, "what development still misses is listed by its engine name");
+    }
+    assert.equal(rows.find((row) => JSON.parse(row.dataset.contextTarget).projectId === GHOST_TARGET.projectId)?.querySelector("dt").textContent, locales.en["projects.unavailable"]);
+    assert.deepEqual([...view.querySelectorAll('[data-identity-details="work-contexts"] [data-identity-value]')].map((node) => node.textContent), context.contexts.map((entry) => `${entry.reference.libraryId} / ${entry.reference.projectId}`), "the complete identities are in the Details");
+    assert.equal(view.querySelector('[data-context-readiness="development"] .tcrn-badge').textContent, context.developmentReady ? locales.en["projects.ready"] : locales.en["projects.notReady"]);
+    const summary = view.querySelector(":scope > summary");
+    let focused = 0;
+    summary.focus = () => { focused += 1; };
+    keydown(page, view.querySelector("dl"), "Escape");
+    assert.equal(view.hasAttribute("open"), false, "Escape closes the contexts");
+    assert.equal(focused, 1, "and returns focus to their summary");
+  } finally { await closePage(page, fixture); }
+});
+
+if (!MUTATION) test("R45 U12: a saved relation is read back through the work view's one read, which drops a library the page has left and shows a failed read", async () => {
+  const fixture = await projectChainFixture("tcrn-r45-u12-dom-");
+  const first = await cli(["work-create", "--workspace", fixture.workspace, "--project-id", fixture.projectId, "--at", nextAt(), "--external-key", "R45-U12-FIRST", "--kind", "Initiative", "--title", "First library work"], fixture.atelier);
+  const second = await cli(["work-create", "--workspace", fixture.second.library, "--project-id", fixture.second.projectId, "--at", nextAt(), "--external-key", "R45-U12-SECOND", "--kind", "Initiative", "--title", "Second library work"], fixture.atelier);
+  const page = await loadExecutedDom(fixture);
+  try {
+    const { document } = page;
+    const content = document.querySelector("#work-tree-content");
+    let editor = await openWorkEditor(page);
+    await page.waitForSettled();
+    assert.ok(content.querySelector(`[data-work-id="${first.record.id}"]`), "the first library's work is listed");
+    const source = await readFile(join(portalRoot, "index.html"), "utf8");
+    assert.equal(source.split('api("/api/work")').length - 1, 1, "the save path has no read of its own");
+
+    // The save's read of /api/work is held; the reader switches to the second library; the held read
+    // then fails. Its answer belongs to a library the page has left, so the view shows the second
+    // library's work and no failure.
+    // The receipt names the record a save wrote; two libraries can reach the same version number.
+    const receiptNames = (id) => () => document.querySelector("#operation-feedback")?.textContent.includes(id);
+    let workReads = 0;
+    page.hold((path) => path === "/api/work" && (workReads += 1) === 1);
+    editor.querySelector("[data-target-state]").value = "coordination-only";
+    editor.querySelector("[data-target-save]").click();
+    await waitFor(receiptNames(first.record.id), "the save receipt");
+    await waitFor(() => page.held() === 1, "the save's read of /api/work");
+    const select = document.querySelector("#library-select");
+    select.value = fixture.second.project;
+    select.dispatchEvent(new page.window.Event("change", { bubbles: true }));
+    await waitFor(() => content.querySelector(`[data-work-id="${second.record.id}"]`), "the second library's work");
+    assert.equal(page.release({ error: new TypeError("fetch failed") }), 1);
+    await page.waitForSettled();
+    assert.equal(content.querySelector("[data-work-failure]"), null, "the left library's failed read is dropped");
+    assert.ok(content.querySelector(`[data-work-id="${second.record.id}"]`), "the view keeps the second library's work");
+    assert.equal(content.querySelector(`[data-work-id="${first.record.id}"]`), null);
+
+    // On the second library, a save whose read fails shows the failure in the work view, and the
+    // save's own receipt stays the receipt.
+    editor = await openWorkEditor(page);
+    await waitFor(() => editor.querySelector("[data-target-work] option")?.value === second.record.id, "the second library's editor");
+    await page.waitForSettled();
+    editor.querySelector("[data-target-state]").value = "coordination-only";
+    page.hold((path) => path === "/api/work");
+    editor.querySelector("[data-target-save]").click();
+    await waitFor(receiptNames(second.record.id), "the second save receipt");
+    const savedReceipt = receiptText(document);
+    await waitFor(() => page.held() === 1, "the second save's read of /api/work");
+    assert.equal(page.release({ error: new TypeError("fetch failed") }), 1);
+    await page.waitForSettled();
+    const failure = content.querySelector("[data-work-failure]");
+    assert.equal(failure?.dataset.workFailure, "PORTAL_READ_FAILED", "a failed read is shown in the work view");
+    assert.equal(failure.getAttribute("role"), "alert");
+    assert.equal(receiptText(document), savedReceipt, "the receipt is still the save's");
+    assert.ok(receiptNames(second.record.id)(), "and still names the record the save wrote");
+  } finally { await closePage(page, fixture); }
+});
+
+// TCRN-CROSS-INIT-053 R45 (U15): the desktop rail has the published SideNavCollapseButton beside the
+// brand, as ProductShell renders it. It narrows the rail to the family's icon rail through the shell's
+// own attribute, names the action it will take in the page's language, and leaves the stacked mobile
+// shell to the mobile toggle (the family's CSS hides it there; the width itself is measured in a real
+// browser, r45-portal-raw/browser).
+if (!MUTATION) test("R45 U15: the side navigation collapses and expands through the published collapse control, named in the page's language", async () => {
+  const page = await preparePage();
+  try {
+    const { document } = page;
+    const locales = await localeTable();
+    const shell = document.querySelector(".tcrn-product-shell");
+    const toggle = document.querySelector(".tcrn-product-shell__sidebar-header > #side-nav-toggle");
+    assert.ok(toggle, "the collapse control sits in the sidebar header");
+    assert.deepEqual(["tcrn-button", "tcrn-icon-button", "tcrn-shell-side-nav-toggle"].filter((name) => toggle.classList.contains(name)), ["tcrn-button", "tcrn-icon-button", "tcrn-shell-side-nav-toggle"], "it is the published IconButton construction");
+    assert.equal(toggle.getAttribute("type"), "button");
+    assert.equal(toggle.getAttribute("aria-controls"), "primary-side-nav");
+    assert.equal(toggle.dataset.shellControl, "side-nav-collapse");
+    assert.equal([...toggle.querySelectorAll("[data-side-nav-icon] svg")].length, 2, "both icons are inline SVG");
+    const children = [...document.querySelector(".tcrn-product-shell__sidebar-header").children].map((node) => node.id);
+    assert.deepEqual(children, ["brand-button", "side-nav-toggle", "mobile-nav-toggle"], "brand, collapse control, mobile toggle, in the family's order");
+    const brand = document.querySelector("#brand-button");
+    assert.equal(brand.tagName, "A", "the brand is the published home link");
+    assert.equal(brand.getAttribute("href"), "#dashboard");
+    assert.equal(shell.getAttribute("data-product-shell-collapsed"), "false");
+    assert.equal(toggle.getAttribute("aria-expanded"), "true");
+    assert.equal(toggle.getAttribute("aria-label"), locales.en["shell.collapseNavigation"]);
+    toggle.click();
+    assert.equal(shell.getAttribute("data-product-shell-collapsed"), "true", "the shell carries the collapsed state the family's CSS reads");
+    assert.equal(shell.getAttribute("data-side-nav-collapsed"), "true");
+    assert.equal(toggle.getAttribute("aria-expanded"), "false");
+    assert.equal(toggle.getAttribute("aria-label"), locales.en["shell.expandNavigation"]);
+    assert.equal(toggle.getAttribute("title"), locales.en["shell.expandNavigation"]);
+    for (const locale of ["zh-CN", "ja", "ko", "fr"]) {
+      document.querySelector(`[data-locale-option="${locale}"]`)?.click();
+      assert.equal(toggle.getAttribute("aria-label"), locales[locale]["shell.expandNavigation"], `${locale}: the action is named in the page's language`);
+    }
+    toggle.click();
+    assert.equal(shell.getAttribute("data-product-shell-collapsed"), "false");
+    assert.equal(toggle.getAttribute("aria-label"), locales.fr["shell.collapseNavigation"]);
+    const css = page.source;
+    assert.match(css, /\.tcrn-product-shell\[data-product-shell-collapsed="true"\] \.tcrn-rail__mark,\s*\.tcrn-product-shell\[data-product-shell-collapsed="true"\] \.tcrn-rail__footer \{\s*display: none;/u, "the rail's library name and footer leave the icon rail");
   } finally { await page.cleanup(); }
 });

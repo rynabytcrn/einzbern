@@ -3677,9 +3677,10 @@ a.tcrn-relationship-chip:focus-visible {
    of declaring its own. Only the colour scheme stays here.
 
    Measure provenance (INC-174). Every raw pixel value in this block is one of:
-   v4-pinned measures (48px top bar row, 30px echo row, 860px prose measure, 1040px
-   dashboard measure, 980/760/680px breakpoints, 208px group-nav column, 430px search
-   max-width), DS control metrics carried by the snapshot's components, or a label
+   v4-pinned measures (48px top bar row, 30px echo row, 860px prose measure,
+   980/760/680px breakpoints, 208px group-nav column, 430px search max-width; the
+   pages' measure is the published content stack's since R45), DS control metrics
+   carried by the snapshot's components, or a label
    column of a two-column row (120–250px). Spacing never uses raw pixels — gaps,
    paddings and margins are space tokens throughout, which the design-proof layout
    leg asserts. Content columns are never fixed pixels: the 1000px shell and 800px
@@ -3688,7 +3689,10 @@ a.tcrn-relationship-chip:focus-visible {
 :root { color-scheme: light; }
 [data-tcrn-theme="dark"] { color-scheme: dark; }
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 320px; background: var(--tcrn-color-surface-canvas); color: var(--tcrn-color-text-primary); font: var(--tcrn-text-body-dense); }
+/* The body carries the type the published family is set on (the DS documentation's own body and the
+   ProductShell: UI family, size and line), so text outside the shell, such as the receipt drawer, reads
+   as the shell does (TCRN-CROSS-INIT-053 R45 U15). */
+body { margin: 0; min-width: 320px; background: var(--tcrn-color-surface-canvas); color: var(--tcrn-color-text-primary); font-family: var(--tcrn-type-family-ui); font-size: var(--tcrn-type-size-ui); line-height: var(--tcrn-type-line-ui); }
 button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
@@ -3705,9 +3709,11 @@ button:disabled { cursor: not-allowed; }
 /* The top of the content area follows the v4 page head (preview.html:215, which pads
    space-4 above the title); space-6 all round left a band of empty canvas under the
    top bar at wide viewports. Sides and bottom keep the v4 paneview measure. */
-.tcrn-main { min-width: 0; min-height: 0; overflow: auto; padding: var(--tcrn-space-4) var(--tcrn-space-6) var(--tcrn-space-6); }
-.tcrn-page { width: min(1040px, 100%); margin: 0 auto; }
-.tcrn-page--manage { width: min(1100px, 100%); }
+/* The content region keeps the published ProductShell main padding, and every page is the published
+   content stack (tcrn-product-shell-content-stack) on the same left edge as the top bar, not a page
+   centred at an application width (TCRN-CROSS-INIT-053 R45 U15). Only the scroll belongs here: the
+   shell is one viewport tall and the main region scrolls inside it. */
+.tcrn-main { min-width: 0; min-height: 0; overflow: auto; }
 .tcrn-dot { width: var(--tcrn-state-dot-size); height: var(--tcrn-state-dot-size); border-radius: var(--tcrn-radius-pill); background: currentColor; }
 .tcrn-grid { display: grid; gap: var(--tcrn-space-3); }
 /* Grid items stretch by default, so one column growing drags its row-mates to the
@@ -3768,9 +3774,10 @@ button:disabled { cursor: not-allowed; }
 .tcrn-vocabulary__semantic { display: block; }
 .tcrn-vocabulary__semantic + .tcrn-vocabulary__semantic { margin-top: var(--tcrn-space-1); }
 .tcrn-vocabulary__semantic .tcrn-text { display: block; }
-.tcrn-vocabulary__source { display: block; color: var(--tcrn-color-brand-primary); text-decoration: none; }
+/* A source link is the published Link (TCRN-CROSS-INIT-053 R45 U13/U15): its colour, underline and
+   focus are the family's; only its place in the cell is stated here. */
+.tcrn-vocabulary__source { display: block; }
 .tcrn-vocabulary__source + .tcrn-vocabulary__source { margin-top: var(--tcrn-space-1); }
-.tcrn-vocabulary__source:hover { text-decoration: underline; }
 .tcrn-search-results { inset-block-start: 42px; inset-inline-end: var(--tcrn-space-4); max-block-size: 360px; overflow: auto; }
 .tcrn-detail-drawer { position: fixed; z-index: var(--tcrn-z-overlay); top: 0; right: 0; bottom: 30px; width: min(400px, 94vw); overflow: auto; transform: translateX(0); transition: transform var(--tcrn-motion-standard) var(--tcrn-motion-ease-drawer); }
 .tcrn-detail-drawer[data-open="false"] { visibility: hidden; pointer-events: none; transform: translateX(100%); }
@@ -3784,7 +3791,6 @@ button:disabled { cursor: not-allowed; }
   .tcrn-rail__mark, .tcrn-rail__footer { display: none; }
   .tcrn-side-nav { flex-direction: row; overflow: auto; }
   .tcrn-nav-item { width: auto; white-space: nowrap; }
-  .tcrn-main { padding: var(--tcrn-space-4); }
   .tcrn-manage, .tcrn-vocabulary { grid-template-columns: 1fr; gap: var(--tcrn-space-3); }
   .tcrn-subnav { position: static; display: flex; overflow: auto; }
   .tcrn-grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -3861,11 +3867,14 @@ button:disabled { cursor: not-allowed; }
 }
 /* The brand lives in the sidebar header, which is where the design system's
    product shell puts it: __sidebar-header is a grid of the lockup and the collapse
-   control, and __brand is defined as its child. Only the mark's size at this scale
-   is the portal's to state; the wordmark, the workflow suffix colour and the second
-   line all come from the product-logo family in the snapshot. */
-.tcrn-product-shell__sidebar-header .tcrn-brand-mark {
-  --tcrn-brand-mark-size: 28px;
+   control, and __brand is defined as its child. The mark keeps the family's own size
+   (TCRN-CROSS-INIT-053 R45 U15 retired the 28px override); the wordmark, the workflow
+   suffix colour and the second line all come from the product-logo family. A collapsed
+   rail is the published 92px icon rail, where the library name, its Details and the
+   footer have no room, so they leave with the labels the family hides. */
+.tcrn-product-shell[data-product-shell-collapsed="true"] .tcrn-rail__mark,
+.tcrn-product-shell[data-product-shell-collapsed="true"] .tcrn-rail__footer {
+  display: none;
 }
 .tcrn-top-bar__module {
   min-width: 0;
@@ -3912,15 +3921,6 @@ button:disabled { cursor: not-allowed; }
 }
 .tcrn-page[data-page="prose"] {
   max-width: 860px;
-}
-.tcrn-page[data-page="dashboard"],
-.tcrn-page[data-page="settings"],
-.tcrn-page[data-page="model-categories"],
-.tcrn-page[data-page="model-tiers"],
-.tcrn-page[data-page="variables"],
-.tcrn-page[data-page="entities"],
-.tcrn-page[data-page="vocabulary"] {
-  max-width: 1040px;
 }
 [data-ui="rules-pending"] { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tcrn-space-2); }
 [data-ui="rules-pending"] > select { min-width: min(100%, 240px); flex: 1 1 240px; }
@@ -4065,14 +4065,15 @@ button:disabled { cursor: not-allowed; }
   <div class="tcrn-product-shell">
     <aside class="tcrn-product-shell__sidebar">
       <div class="tcrn-product-shell__sidebar-header">
-        <button class="tcrn-button tcrn-button--quiet tcrn-button--md tcrn-product-shell__brand tcrn-product-logo tcrn-shell-brand-lockup" id="brand-button" data-page-target="dashboard" aria-label="Atelier" data-i18n-aria-label="app.brand" data-product-id="workflow" data-product-logo-asset-id="tcrn-workflow-two-line">
+        <a class="tcrn-product-shell__brand tcrn-product-logo tcrn-shell-brand-lockup" id="brand-button" href="#dashboard" data-page-target="dashboard" aria-label="Atelier" data-i18n-aria-label="app.brand" data-product-id="workflow" data-product-logo-asset-id="tcrn-workflow-two-line">
           <img class="tcrn-brand-mark" src="/atelier-brand-mark.svg" alt="" data-brand-asset="tcrn-brand-mark" data-brand-asset-registration="workflow">
           <span class="tcrn-product-logo__copy" aria-hidden="true">
             <span class="tcrn-product-logo__line-one"><span class="tcrn-product-logo__line-one-base">Einzbern</span><span class="tcrn-product-logo__line-one-suffix tcrn-brand-wordmark__suffix--workflow">Atelier</span></span>
             <span class="tcrn-product-logo__line-two" data-i18n="app.subtitle">Portal</span>
           </span>
-        </button>
-        <button type="button" class="tcrn-icon-button tcrn-shell-mobile-nav-toggle" id="mobile-nav-toggle" data-ui="mobile-nav-toggle" aria-expanded="false" aria-controls="primary-side-nav" aria-label="Toggle navigation"><span class="tcrn-shell-side-nav-toggle__icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 6h14M3 10h14M3 14h14"/></svg></span></button>
+        </a>
+        <button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md tcrn-icon-button tcrn-shell-side-nav-toggle" id="side-nav-toggle" data-ui="side-nav-toggle" data-shell-control="side-nav-collapse" data-side-nav-toggle="true" data-side-nav-collapsed="false" aria-expanded="true" aria-controls="primary-side-nav" aria-label="Collapse side navigation" title="Collapse side navigation"><span class="tcrn-shell-side-nav-toggle__icon" data-side-nav-icon="collapse" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m12 5-5 5 5 5"/></svg></span><span class="tcrn-shell-side-nav-toggle__icon" data-side-nav-icon="expand" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m8 5 5 5-5 5"/></svg></span></button>
+        <button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md tcrn-icon-button tcrn-shell-mobile-nav-toggle" id="mobile-nav-toggle" data-ui="mobile-nav-toggle" aria-expanded="false" aria-controls="primary-side-nav" aria-label="Toggle navigation"><span class="tcrn-shell-side-nav-toggle__icon" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 6h14M3 10h14M3 14h14"/></svg></span></button>
       </div>
       <div class="tcrn-rail__mark"><strong class="tcrn-rail__workspace" id="rail-workspace-label"></strong><details class="tcrn-disclosure-panel" id="library-details"><summary class="tcrn-disclosure-panel__title" data-i18n="health.detail">Details</summary><pre tabindex="0" id="library-label"></pre><span class="tcrn-badge tcrn-badge--positive" id="engine-connection" data-ui="engine-connection" data-ds-component="Badge" data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/proof-proof-visual-instances.html#owner-quality-product-shell" role="status"><span id="engine-connection-text">engine · local loopback</span></span></details></div>
       <nav class="tcrn-side-nav" id="primary-side-nav" aria-label="Portal navigation">
@@ -4123,7 +4124,7 @@ button:disabled { cursor: not-allowed; }
         </div>
       </header>
     <main class="tcrn-product-shell__main tcrn-main" id="main-content">
-      <section class="tcrn-page" data-page="dashboard">
+      <section class="tcrn-page tcrn-product-shell-content-stack" data-page="dashboard">
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
             <header class="tcrn-page-header tcrn-page__head"><div class="tcrn-page-header__body"><div class="tcrn-page-header__title"><h1 class="tcrn-heading tcrn-heading--2" data-i18n="page.dashboard">Workspace status</h1><p class="tcrn-text tcrn-page__lede" data-i18n="dashboard.lede">Doctor's eight checks and the selected library state.</p></div><div class="tcrn-page-header__actions tcrn-page__actions"><span class="tcrn-badge tcrn-badge--positive" id="health-chip"><span id="health-chip-text" data-i18n="health.healthy">healthy</span></span></div></div></header>
@@ -4144,7 +4145,7 @@ button:disabled { cursor: not-allowed; }
           </div>
         </div>
       </section>
-      <section class="tcrn-page tcrn-page--manage" data-page="settings" hidden>
+      <section class="tcrn-page tcrn-product-shell-content-stack" data-page="settings" hidden>
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
             <header class="tcrn-page-header tcrn-page__head"><div class="tcrn-page-header__body"><div class="tcrn-page-header__title"><h1 class="tcrn-heading tcrn-heading--2" data-i18n="page.settings">Settings</h1><p class="tcrn-text tcrn-page__lede" data-i18n="config.lede">Registered settings, read from the engine and changed through its public CLI.</p></div><div class="tcrn-page-header__actions tcrn-page__actions"><span class="tcrn-badge" id="settings-count"></span></div></div></header>
@@ -4157,7 +4158,7 @@ button:disabled { cursor: not-allowed; }
           </div>
         </div>
       </section>
-      <section class="tcrn-page tcrn-page--manage" data-page="model-categories" hidden>
+      <section class="tcrn-page tcrn-product-shell-content-stack" data-page="model-categories" hidden>
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
             <header class="tcrn-page-header tcrn-page__head"><div class="tcrn-page-header__body"><div class="tcrn-page-header__title"><h1 class="tcrn-heading tcrn-heading--2" data-i18n="page.modelCategories">Model categories</h1><p class="tcrn-text tcrn-page__lede" data-i18n="modelCategories.lede" data-collection-purpose="models.category">The parent table of the model tiers. The order column ranks the categories: the lower the order, the stronger the category, and escalation climbs toward the lower orders.</p></div><div class="tcrn-page-header__actions tcrn-page__actions"><span class="tcrn-badge" id="model-categories-count">—</span></div></div></header>
@@ -4166,7 +4167,7 @@ button:disabled { cursor: not-allowed; }
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content"><div id="model-categories-view" data-ui="model-categories-view" data-collection-view="models.category"></div></div>
         </div>
       </section>
-      <section class="tcrn-page tcrn-page--manage" data-page="model-tiers" hidden>
+      <section class="tcrn-page tcrn-product-shell-content-stack" data-page="model-tiers" hidden>
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
             <header class="tcrn-page-header tcrn-page__head"><div class="tcrn-page-header__body"><div class="tcrn-page-header__title"><h1 class="tcrn-heading tcrn-heading--2" data-i18n="page.modelTiers">Model tiers</h1><p class="tcrn-text tcrn-page__lede" data-i18n="modelTiers.lede" data-collection-purpose="models.tiers">Every model a rule can be given, one record per row. The order column ranks all records together: the lower the order, the stronger the record. A category's tier with the largest order is the one a rule gets, and escalation moves to the next smaller order.</p></div><div class="tcrn-page-header__actions tcrn-page__actions"><span class="tcrn-badge" id="model-tiers-count">—</span></div></div></header>
@@ -4175,7 +4176,7 @@ button:disabled { cursor: not-allowed; }
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content"><div id="model-tiers-view" data-ui="model-tiers-view" data-collection-view="models.tiers"></div></div>
         </div>
       </section>
-      <section class="tcrn-page tcrn-page--manage" data-page="variables" hidden>
+      <section class="tcrn-page tcrn-product-shell-content-stack" data-page="variables" hidden>
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
             <header class="tcrn-page-header tcrn-page__head"><div class="tcrn-page-header__body"><div class="tcrn-page-header__title"><h1 class="tcrn-heading tcrn-heading--2" data-i18n="page.variables">Variables</h1><p class="tcrn-text tcrn-page__lede" data-i18n="variables.lede" data-order-purpose="variables">Add, edit, rename and remove project variables. The order column sets the order AGENTS.md renders them in: variables with an order first, from the smallest, then the others by name.</p></div><div class="tcrn-page-header__actions tcrn-page__actions"><span class="tcrn-badge" id="variables-count"></span></div></div></header>
@@ -4184,7 +4185,7 @@ button:disabled { cursor: not-allowed; }
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content"><div id="variables-view" data-ui="variables-view"></div></div>
         </div>
       </section>
-      <section class="tcrn-page tcrn-page--manage" data-page="gates" hidden>
+      <section class="tcrn-page tcrn-product-shell-content-stack" data-page="gates" hidden>
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
             <header class="tcrn-page-header tcrn-page__head"><div class="tcrn-page-header__body"><div class="tcrn-page-header__title"><h1 class="tcrn-heading tcrn-heading--2" data-i18n="page.gates">Gate configuration</h1><p class="tcrn-text tcrn-page__lede" data-i18n="gates.lede" data-order-purpose="gates">Project gates are selected from changed paths and stored with this library. The order column sets the order gates are planned, run and listed in: gates with an order first, from the smallest, then the others by name.</p></div><div class="tcrn-page-header__actions tcrn-page__actions"><span class="tcrn-badge" id="gates-count">—</span></div></div></header>
@@ -4217,7 +4218,7 @@ button:disabled { cursor: not-allowed; }
           </div>
         </div>
       </section>
-      <section class="tcrn-page tcrn-page--manage" data-page="prose" hidden>
+      <section class="tcrn-page tcrn-product-shell-content-stack" data-page="prose" hidden>
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
             <header class="tcrn-page-header tcrn-page__head"><div class="tcrn-page-header__body"><div class="tcrn-page-header__title"><h1 class="tcrn-heading tcrn-heading--2" data-i18n="page.prose">Rules</h1><p class="tcrn-text tcrn-page__lede" data-i18n="prose.lede" data-order-purpose="rules">Manage built-in rules and edit the project's AGENTS.md. A rule's order sets the order AGENTS.md renders the rule sections in: rules with an order first, from the smallest, then the others in catalog order.</p></div><div class="tcrn-page-header__actions tcrn-page__actions"><button class="tcrn-button tcrn-button--secondary" id="pending-open" data-i18n="rule.pendingTitle">Pending</button><span class="tcrn-badge" id="reconcile-chip">—</span><button class="tcrn-button tcrn-button--primary" id="save-agents" data-i18n="prose.save" data-cli-action="rule-list">Save and check</button></div></div></header>
@@ -4230,7 +4231,7 @@ button:disabled { cursor: not-allowed; }
           </div>
         </div>
       </section>
-      <section class="tcrn-page tcrn-page--manage" data-page="vocabulary" hidden>
+      <section class="tcrn-page tcrn-product-shell-content-stack" data-page="vocabulary" hidden>
         <div class="tcrn-page-hierarchy" data-page-hierarchy="true" data-page-hierarchy-depth="two" data-page-hierarchy-source="explicit-depth-prop" data-page-hierarchy-width-policy="container-only" data-page-hierarchy-shell-boundary="global-product-shell-external" data-page-hierarchy-valid="true" data-page-hierarchy-validation="valid">
           <div class="tcrn-page-hierarchy__header" data-page-hierarchy-region="header" data-page-hierarchy-slot="header">
             <header class="tcrn-page-header tcrn-page__head"><div class="tcrn-page-header__body"><div class="tcrn-page-header__title"><h1 class="tcrn-heading tcrn-heading--2" data-i18n="page.vocabulary">System vocabulary</h1><p class="tcrn-text tcrn-page__lede" data-i18n="vocabulary.lede">Read-only terms come from the engine roster. The portal does not invent enums.</p></div><span class="tcrn-badge tcrn-page-header__actions" id="vocabulary-version">—</span></div></header>
@@ -4525,7 +4526,8 @@ const BOOT = __PORTAL_BOOT__;
     if (state.page !== page) state.promptLanguageDraft = null;
     const previousPage = document.activeElement?.closest('[data-page]');
     state.page = page;
-    setText("#workspace-label", (BOOT.libraryName || "") + " / " + ($(`[data-page-target="${page}"] .tcrn-nav-item__label`)?.textContent || page));
+    state.workspaceLabelPage = page;
+    renderWorkspaceLabel();
     $$('[data-page]').forEach((section) => { section.hidden = section.dataset.page !== page; });
     $$('[data-page-target]').forEach((button) => { if (button.dataset.pageTarget) button.setAttribute("aria-current", button.dataset.pageTarget === page ? "page" : "false"); });
     setText("#echo-command", page === "dashboard" ? t("echo.idle") : `${page} · ${BOOT.actor}`);
@@ -4775,9 +4777,37 @@ const BOOT = __PORTAL_BOOT__;
     return `<div class="tcrn-setting-row" data-setting-row="${esc(entry.key)}" data-setting-shape="collection">${settingRowLabel(entry, settingDescription(entry.key))}<div class="tcrn-setting-row__control">${link}${count}</div><div class="tcrn-setting-row__tools"></div></div>`;
   };
   const settingRow = (entry) => entry.layer === "device" ? deviceSettingRow(entry) : entry.shape === "collection" ? collectionSettingRow(entry) : projectSettingRow(entry);
-  const projectIdentity = target => `${target.libraryId} / ${target.projectId}`;
-  const projectChoiceLabel = target => `${target.name} · ${projectIdentity(target)}`;
-  const compactProjectChoice = target => `${target.name} · ${target.libraryId.slice(-8)}/${target.projectId.slice(-8)}`;
+  // Target labels (TCRN-CROSS-INIT-053 R45 U14, F08) begin.
+  // What a library or a project target is called on the page. The project's own name comes first; a
+  // project the engine names nothing is "Unnamed project", never the word an unconfigured state uses;
+  // the coordination chain is Cross Project; a reference no registered library answers is
+  // "Unavailable project". Labels that read alike in one list carry the shortest tails of their
+  // library and project ids that tell them apart, so a visible label never holds a complete library:
+  // or project: id. The complete identity is in the Details beside each list (identityDetails).
+  const projectIdentity = target => [target.libraryId, target.projectId].filter((id) => typeof id === "string" && id !== "").join(" / ");
+  const targetBaseName = (target) => target?.availability === "unavailable" ? t("projects.unavailable")
+    : typeof target?.name === "string" && target.name.trim() !== "" ? target.name
+      : target?.chain?.role === "coordination" ? t("projects.coordination") : t("projects.unnamed");
+  const identityTail = (target, length) => [target.libraryId, target.projectId].filter((id) => typeof id === "string" && id !== "").map((id) => id.slice(-length)).join("/");
+  const distinctLabels = (targets) => {
+    const bases = targets.map(targetBaseName);
+    return targets.map((target, index) => {
+      const peers = targets.filter((_, other) => bases[other] === bases[index]);
+      if (peers.length < 2) return bases[index];
+      const widest = Math.max(...peers.flatMap((peer) => [String(peer.libraryId ?? "").length, String(peer.projectId ?? "").length]));
+      const distinctAt = (length) => new Set(peers.map((peer) => identityTail(peer, length))).size;
+      let length = Math.min(6, widest);
+      while (length < widest && distinctAt(length) < distinctAt(widest)) length += 1;
+      return `${bases[index]} · ${identityTail(target, length)}`;
+    });
+  };
+  // Target labels end.
+  // The complete identities of a list's targets in the published disclosure: its summary opens and
+  // closes it from the keyboard, Escape closes it and returns focus to the summary, and every
+  // identity has a copy action built as the Clipboard family builds one (a Button that says its state
+  // in a polite status region inside it, in the page's language).
+  const copyStates = () => ({ idle: t("copy.idle"), copying: t("copy.copying"), copied: t("copy.copied"), failed: t("copy.failed"), unsupported: t("copy.unsupported") });
+  const identityDetails = (scope, targets, labels = distinctLabels(targets)) => targets.length === 0 ? "" : `<details class="tcrn-disclosure-panel" data-identity-details="${esc(scope)}"><summary class="tcrn-disclosure-panel__title">${esc(t("projects.identity"))}</summary><dl class="tcrn-definition-list tcrn-definition-list--dense">${targets.map((target, index) => `<div class="tcrn-definition-list__item" data-identity-row="${esc(JSON.stringify({ libraryId: target.libraryId, projectId: target.projectId }))}"><dt class="tcrn-definition-list__term">${esc(labels[index])}</dt><dd class="tcrn-definition-list__definition"><code data-identity-value>${esc(projectIdentity(target))}</code> <button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--sm" data-copy-identity="${esc(projectIdentity(target))}" data-clipboard-copy-state="idle" aria-label="${esc(t("projects.copyIdentity", { name: labels[index] }))}"><span data-copy-label>${esc(copyStates().idle)}</span><span class="tcrn-sr-only" role="status" aria-live="polite" data-copy-status></span></button></dd></div>`).join("")}</dl></details>`;
   let bindingsEpoch = 0;
   const renderProjectBindings = async () => {
     const epoch = ++bindingsEpoch;
@@ -4790,7 +4820,14 @@ const BOOT = __PORTAL_BOOT__;
     const section = document.createElement("section"); section.className = "tcrn-surface"; section.dataset.projectBindings = "true";
     $("#settings-rows").append(section);
     const render = () => {
-      section.innerHTML = `<h3>${esc(t("projects.bindings"))}</h3><label class="tcrn-field"><span class="tcrn-field__label">${esc(t("projects.common"))}</span><select class="tcrn-select" data-common-source><option value="">${esc(t("projects.noCommon"))}</option>${common && !(available.targets || []).some(item => item.libraryId === common.libraryId && item.projectId === common.projectId) ? `<option selected value="${esc(JSON.stringify(common))}">${esc(t("projects.unavailable"))} · ${esc(projectIdentity(common))}</option>` : ""}${(available.targets || []).filter(item => item.libraryId !== BOOT.library.libraryId || item.projectId !== BOOT.library.configurationProjectId).map(item => { const value = JSON.stringify({ libraryId: item.libraryId, projectId: item.projectId }); return `<option value="${esc(value)}" ${common && common.libraryId === item.libraryId && common.projectId === item.projectId ? "selected" : ""}>${esc(projectChoiceLabel(item))}</option>`; }).join("")}</select></label><button type="button" class="tcrn-button tcrn-button--primary" data-save-common>${esc(t("config.save"))}</button><div data-repositories>${repositories.map((binding, index) => `<fieldset class="tcrn-surface" data-repository-index="${index}"><legend>${esc(binding.name || t("projects.repository"))}</legend><button type="button" class="tcrn-button tcrn-button--quiet" data-remove-repository="${index}">${esc(t("config.remove"))}</button>${["id", "name", "repository", "buildService", "buildProject"].map(field => `<label class="tcrn-field"><span class="tcrn-field__label">${esc(t("projects." + field))}</span><input class="tcrn-input" data-repository-field="${field}" value="${esc(binding[field] || "")}"></label>`).join("")}</fieldset>`).join("")}</div><div class="tcrn-action-row"><button type="button" class="tcrn-button tcrn-button--secondary" data-add-repository>${esc(t("projects.addRepository"))}</button><button type="button" class="tcrn-button tcrn-button--primary" data-save-repositories>${esc(t("config.save"))}</button><button type="button" class="tcrn-button tcrn-button--quiet" data-undo-repositories>${esc(t("config.undo"))}</button></div>`;
+      // The common default lists the other project targets by name, an unavailable saved choice
+      // first; their complete identities are in the Details under the list (TCRN-CROSS-INIT-053 R45 U14).
+      const others = (available.targets || []).filter(item => item.libraryId !== BOOT.library.libraryId || item.projectId !== BOOT.library.configurationProjectId);
+      const commonUnavailable = Boolean(common) && !(available.targets || []).some(item => item.libraryId === common.libraryId && item.projectId === common.projectId);
+      const sources = [...(commonUnavailable ? [{ libraryId: common.libraryId, projectId: common.projectId, availability: "unavailable" }] : []), ...others];
+      const sourceLabels = distinctLabels(sources);
+      const repositoryFieldLabels = { id: t("projects.id"), name: t("projects.name"), repository: t("projects.repository"), buildService: t("projects.buildService"), buildProject: t("projects.buildProject") };
+      section.innerHTML = `<h3 class="tcrn-heading tcrn-heading--3">${esc(t("projects.bindings"))}</h3><label class="tcrn-field"><span class="tcrn-field__label">${esc(t("projects.common"))}</span><select class="tcrn-select" data-common-source><option value="">${esc(t("projects.noCommon"))}</option>${sources.map((item, index) => { const value = item.availability === "unavailable" ? JSON.stringify(common) : JSON.stringify({ libraryId: item.libraryId, projectId: item.projectId }); return `<option value="${esc(value)}" ${common && common.libraryId === item.libraryId && common.projectId === item.projectId ? "selected" : ""}>${esc(sourceLabels[index])}</option>`; }).join("")}</select></label>${identityDetails("common-default", sources, sourceLabels)}<div class="tcrn-surface__head-actions"><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-save-common>${esc(t("config.save"))}</button></div><div data-repositories>${repositories.map((binding, index) => `<fieldset class="tcrn-surface" data-repository-index="${index}"><legend>${esc(binding.name || t("projects.repository"))}</legend><div class="tcrn-surface__head-actions"><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-remove-repository="${index}">${esc(t("config.remove"))}</button></div>${Object.entries(repositoryFieldLabels).map(([field, label]) => `<label class="tcrn-field"><span class="tcrn-field__label">${esc(label)}</span><input class="tcrn-input" data-repository-field="${field}" value="${esc(binding[field] || "")}"></label>`).join("")}</fieldset>`).join("")}</div><div class="tcrn-surface__head-actions"><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-add-repository>${esc(t("projects.addRepository"))}</button><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-save-repositories>${esc(t("config.save"))}</button><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-undo-repositories>${esc(t("config.undo"))}</button></div>`;
       const current = () => [...section.querySelectorAll("[data-repository-index]")].map(row => Object.fromEntries([...row.querySelectorAll("[data-repository-field]")].map(input => [input.dataset.repositoryField, input.value])));
       const save = async (key, value) => { if (target !== JSON.stringify([BOOT.library?.libraryId, BOOT.library?.configurationProjectId])) return; const result = await api("/api/project-bindings", { method: value === null ? "DELETE" : "POST", body: JSON.stringify({ key, value }) }); showReceipt(result); if (result.ok) await refresh(); };
       section.querySelector("[data-save-common]").onclick = () => { const value = section.querySelector("[data-common-source]").value; if (value || common) void save("common-default", value ? JSON.parse(value) : null); };
@@ -5308,6 +5345,27 @@ const BOOT = __PORTAL_BOOT__;
   // page's language, on a status line above what it shows; the line goes when the read returns.
   let workTargetMount = null;
   let workTargetEpoch = 0;
+  // TCRN-CROSS-INIT-053 R45 (U14, F08): a work item's execution contexts read as one row per target:
+  // its label, its status in the page's language, whether it is ready for development and what it
+  // still misses, instead of the engine's JSON. A read that failed shows the page's failure state.
+  const contextStatusLabels = () => ({ configured: t("projects.statusConfigured"), unconfigured: t("projects.statusUnconfigured"), unregistered: t("projects.statusUnregistered"), unavailable: t("projects.statusUnavailable"), "invalid-chain": t("projects.statusInvalidChain"), "project-absent": t("projects.statusProjectAbsent"), "project-deleted": t("projects.statusProjectDeleted"), ambiguous: t("projects.statusAmbiguous"), conflicting: t("projects.statusConflicting") });
+  const contextStatusTone = (status) => status === "configured" ? "positive" : ["unconfigured", "ambiguous", "conflicting"].includes(status) ? "warning" : "danger";
+  const readinessBadge = (ready) => `<span class="tcrn-badge tcrn-badge--${ready ? "positive" : "warning"}">${esc(ready ? t("projects.ready") : t("projects.notReady"))}</span>`;
+  const projectContextView = (result) => {
+    if (result?.ok === false || !Array.isArray(result?.contexts)) return `<div class="tcrn-state-surface" role="alert" data-project-context-failure="${esc(result?.reasonCode ?? "")}">${readFailureContent(result)}</div>`;
+    const targets = result.contexts.map((context) => ({ libraryId: context.reference?.libraryId, projectId: context.reference?.projectId, name: context.name, ...(["unregistered", "unavailable"].includes(context.status) ? { availability: "unavailable" } : {}) }));
+    const labels = distinctLabels(targets);
+    const statuses = contextStatusLabels();
+    const rows = result.contexts.map((context, index) => {
+      const development = context.readiness?.development;
+      const missing = Array.isArray(development?.missing) ? development.missing : [];
+      return `<div class="tcrn-definition-list__item" data-context-target="${esc(JSON.stringify({ libraryId: targets[index].libraryId, projectId: targets[index].projectId }))}" data-context-status="${esc(context.status ?? "")}"><dt class="tcrn-definition-list__term">${esc(labels[index])}</dt><dd class="tcrn-definition-list__definition"><span class="tcrn-label-set"><span class="tcrn-badge tcrn-badge--${contextStatusTone(context.status)}" data-context-status-label>${esc(statuses[context.status] ?? String(context.status ?? "—"))}</span>${development ? readinessBadge(development.ready === true) : ""}</span>${missing.length ? `<span class="tcrn-text" data-context-missing>${esc(t("projects.missing"))}: ${missing.map((item) => `<code>${esc(item)}</code>`).join(", ")}</span>` : ""}</dd></div>`;
+    }).join("");
+    const summary = [["development", t("projects.developmentReadiness"), result.developmentReady === true], ["coordination", t("projects.coordinationReadiness"), result.coordinationReady === true]].map(([kind, label, ready]) => `<div class="tcrn-definition-list__item" data-context-readiness="${kind}"><dt class="tcrn-definition-list__term">${esc(label)}</dt><dd class="tcrn-definition-list__definition">${readinessBadge(ready)}</dd></div>`).join("");
+    const conflicts = Array.isArray(result.conflicts) && result.conflicts.length > 0 ? `<div class="tcrn-definition-list__item" data-context-conflicts><dt class="tcrn-definition-list__term">${esc(t("projects.conflicts"))}</dt><dd class="tcrn-definition-list__definition">${result.conflicts.map((key) => `<code>${esc(key)}</code>`).join(", ")}</dd></div>` : "";
+    const empty = result.contexts.length === 0 ? `<p class="tcrn-text" data-context-empty>${esc(t("projects.noContexts"))}</p>` : "";
+    return `<details class="tcrn-disclosure-panel" open data-project-context><summary class="tcrn-disclosure-panel__title">${esc(t("projects.context"))}</summary><dl class="tcrn-definition-list tcrn-definition-list--dense">${summary}${rows}${conflicts}</dl>${empty}${identityDetails("work-contexts", targets, labels)}</details>`;
+  };
   const renderWorkTargetEditor = async () => {
     const epoch = ++workTargetEpoch;
     const library = BOOT.library?.libraryId;
@@ -5316,17 +5374,27 @@ const BOOT = __PORTAL_BOOT__;
     const records = (state.work?.records || []).filter(record => ["Initiative", "Story", "Subtask"].includes(record.kind));
     const root = $("#work-target-editor");
     workTargetMount?.destroy?.(); workTargetMount = null;
-    root.innerHTML = `<label class="tcrn-field"><span class="tcrn-field__label">${esc(t("projects.filter"))}</span><select class="tcrn-select" data-target-filter><option value="">${esc(t("projects.all"))}</option>${(targets.targets || []).map(target => `<option value="${esc(JSON.stringify({ libraryId: target.libraryId, projectId: target.projectId }))}">${esc(projectChoiceLabel(target))}</option>`).join("")}</select></label><h3>${esc(t("projects.title"))}</h3><p class="tcrn-text">${esc(t("projects.help"))}</p><label class="tcrn-field"><span class="tcrn-field__label">${esc(t("projects.work"))}</span><select class="tcrn-select" data-target-work>${records.map(record => `<option value="${esc(record.id)}">${esc(record.title || record.externalKey)}</option>`).join("")}</select></label><div data-target-form></div>`;
+    // The filter and the selection list name each target the same way; complete identities are in
+    // the Details under the filter, which follows the selected work item's references.
+    const key = target => JSON.stringify({ libraryId: target.libraryId, projectId: target.projectId });
+    const available = Array.isArray(targets.targets) ? targets.targets : [];
+    const availableLabels = distinctLabels(available);
+    const scopeLabels = { undecided: t("projects.undecided"), "coordination-only": t("projects.coordination-only"), selected: t("projects.selected") };
+    root.innerHTML = `<label class="tcrn-field"><span class="tcrn-field__label">${esc(t("projects.filter"))}</span><select class="tcrn-select" data-target-filter><option value="">${esc(t("projects.all"))}</option>${available.map((target, index) => `<option value="${esc(key(target))}">${esc(availableLabels[index])}</option>`).join("")}</select></label><div data-target-identity>${identityDetails("work-targets", available, availableLabels)}</div><h3 class="tcrn-heading tcrn-heading--3">${esc(t("projects.title"))}</h3><p class="tcrn-text">${esc(t("projects.help"))}</p><label class="tcrn-field"><span class="tcrn-field__label">${esc(t("projects.work"))}</span><select class="tcrn-select" data-target-work>${records.map(record => `<option value="${esc(record.id)}">${esc(record.title || record.externalKey)}</option>`).join("")}</select></label><div data-target-form></div>`;
     const render = () => {
       workTargetMount?.destroy?.(); workTargetMount = null;
       const record = records.find(record => record.id === root.querySelector("[data-target-work]").value);
       if (!record) return;
       const relation = record.involvedProjects || { state: "undecided", targets: [] };
-      const key = target => JSON.stringify({ libraryId: target.libraryId, projectId: target.projectId });
-      const candidates = [...new Map([...(targets.targets || []), ...relation.targets.map(target => ({ ...target, name: t("projects.unavailable") }))].reverse().map(target => [key(target), target])).values()];
+      const unavailable = relation.targets.filter(target => !available.some(item => key(item) === key(target))).map(target => ({ libraryId: target.libraryId, projectId: target.projectId, availability: "unavailable" }));
+      const candidates = [...unavailable, ...available];
+      const labels = distinctLabels(candidates);
       const selected = new Set(relation.targets.map(key));
+      root.querySelector("[data-target-identity]").innerHTML = identityDetails("work-targets", candidates, labels);
       const form = root.querySelector("[data-target-form]");
-      form.innerHTML = `<label class="tcrn-field"><span class="tcrn-field__label">${esc(t("projects.scope"))}</span><select class="tcrn-select" data-target-state>${["undecided", "coordination-only", "selected"].map(value => `<option value="${value}" ${relation.state === value ? "selected" : ""}>${esc(t("projects." + value))}</option>`).join("")}</select></label><div class="tcrn-multi-select-dropdown" data-multi-select-dropdown="true" data-choice-cardinality="set" data-choice-value-mode="closed" data-choice-presentation="dropdown" data-empty-selection-label="${esc(t("projects.choose"))}"><button type="button" class="tcrn-select tcrn-multi-select-dropdown__trigger" aria-label="${esc(t("projects.title"))}" aria-haspopup="listbox" aria-expanded="false" aria-controls="work-project-options"><span data-multi-select-summary>${esc(t("projects.choose"))}</span></button><select class="tcrn-sr-only tcrn-multi-select-dropdown__value" multiple tabindex="-1" aria-hidden="true">${candidates.map(target => `<option value="${esc(key(target))}" ${selected.has(key(target)) ? "selected" : ""}>${esc(compactProjectChoice(target))}</option>`).join("")}</select><div id="work-project-options" class="tcrn-menu tcrn-multi-select-dropdown__list" role="listbox" aria-multiselectable="true" aria-label="${esc(t("projects.title"))}" tabindex="-1" hidden>${candidates.map(target => `<button type="button" class="tcrn-menu-item tcrn-multi-select-dropdown__option" role="option" data-multi-select-value="${esc(key(target))}" aria-label="${esc(projectChoiceLabel(target))}" title="${esc(t("projects.identity"))}: ${esc(projectIdentity(target))}" aria-selected="${selected.has(key(target))}" tabindex="-1"><span data-multi-select-label>${esc(compactProjectChoice(target))}</span><span data-multi-select-check aria-hidden="true">✓</span></button>`).join("")}</div></div><div class="tcrn-action-row"><button type="button" class="tcrn-button tcrn-button--primary" data-target-save>${esc(t("config.save"))}</button><button type="button" class="tcrn-button tcrn-button--quiet" data-target-undo>${esc(t("config.undo"))}</button><button type="button" class="tcrn-button tcrn-button--quiet" data-target-context>${esc(t("projects.context"))}</button></div><details class="tcrn-disclosure-panel"><summary>${esc(t("projects.identity"))}</summary><pre tabindex="0">${esc(candidates.map(target => projectChoiceLabel(target)).join("\n"))}</pre></details><div data-target-result></div>`;
+      const summaryText = candidates.filter(target => selected.has(key(target))).map(target => labels[candidates.indexOf(target)]).join(", ") || t("projects.choose");
+      const options = candidates.map((target, index) => `<button type="button" role="option" id="work-project-options-${index}" class="tcrn-menu__item tcrn-multi-select-dropdown__option" data-multi-select-value="${esc(key(target))}" data-selected="${selected.has(key(target))}" aria-selected="${selected.has(key(target))}"><span data-multi-select-label>${esc(labels[index])}</span><span data-multi-select-check data-selected="${selected.has(key(target))}" aria-hidden="true"><svg class="tcrn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4 10-10"/></svg></span></button>`).join("");
+      form.innerHTML = `<label class="tcrn-field"><span class="tcrn-field__label">${esc(t("projects.scope"))}</span><select class="tcrn-select" data-target-state>${Object.entries(scopeLabels).map(([value, label]) => `<option value="${value}" ${relation.state === value ? "selected" : ""}>${esc(label)}</option>`).join("")}</select></label><div class="tcrn-multi-select-dropdown" data-multi-select-dropdown="true" data-choice-cardinality="set" data-choice-value-mode="closed" data-choice-presentation="dropdown" data-choice-option-count="${candidates.length}" data-empty-selection-label="${esc(t("projects.choose"))}"><button type="button" class="tcrn-select tcrn-multi-select-dropdown__trigger" aria-label="${esc(t("projects.title"))}" aria-haspopup="listbox" aria-expanded="false" aria-controls="work-project-options"><span data-multi-select-summary>${esc(summaryText)}</span><svg class="tcrn-icon tcrn-multi-select-dropdown__caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><select class="tcrn-sr-only tcrn-multi-select-dropdown__value" data-choice-presentation="dropdown" multiple tabindex="-1" aria-hidden="true">${candidates.map((target, index) => `<option value="${esc(key(target))}" ${selected.has(key(target)) ? "selected" : ""}>${esc(labels[index])}</option>`).join("")}</select><div id="work-project-options" class="tcrn-menu tcrn-multi-select-dropdown__list" role="listbox" aria-multiselectable="true" aria-label="${esc(t("projects.title"))}" tabindex="-1" hidden>${options}</div></div><div class="tcrn-surface__head-actions"><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-target-save>${esc(t("config.save"))}</button><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-target-undo>${esc(t("config.undo"))}</button><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-target-context>${esc(t("projects.context"))}</button></div><div data-target-result></div>`;
       workTargetMount = mountStaticMultiSelect({ root: form.querySelector(".tcrn-multi-select-dropdown") });
       form.querySelector("[data-target-undo]").onclick = render;
       form.querySelector("[data-target-save]").onclick = async () => {
@@ -5335,12 +5403,14 @@ const BOOT = __PORTAL_BOOT__;
         const involvedProjects = { state: scope, targets: scope === "selected" ? [...form.querySelector("select[multiple]").selectedOptions].map(option => JSON.parse(option.value)) : [] };
         const result = await api("/api/work/involved-projects", { method: "POST", body: JSON.stringify({ id: record.id, revision: record.revision, involvedProjects }) });
         showReceipt(result);
-        if (result.ok && library === BOOT.library?.libraryId) { state.work = await api("/api/work"); renderWorkView(); }
+        // The saved relation is read back through the work view's own read (SUB-416): one read at a
+        // time, an answer for a library the page has left is dropped, and a failed read shows in the view.
+        if (result.ok && library === BOOT.library?.libraryId) await refreshWork();
       };
       form.querySelector("[data-target-context]").onclick = async () => {
         const result = await api("/api/work/project-context?id=" + encodeURIComponent(record.id));
-        if (epoch !== workTargetEpoch) return;
-        form.querySelector("[data-target-result]").innerHTML = `<details class="tcrn-disclosure-panel" open><summary>${esc(t("projects.context"))}</summary><pre tabindex="0">${esc(JSON.stringify(result, null, 2))}</pre></details>`;
+        if (epoch !== workTargetEpoch || library !== BOOT.library?.libraryId) return;
+        form.querySelector("[data-target-result]").innerHTML = projectContextView(result);
       };
     };
     const filter = root.querySelector("[data-target-filter]"); filter.value = state.workProjectFilter || "";
@@ -5633,7 +5703,7 @@ const BOOT = __PORTAL_BOOT__;
       return items.length === 0 ? `<span class="tcrn-text">—</span>` : items.map((entry) => {
         let domain = String(entry.url || "");
         try { domain = new URL(entry.url).hostname.replace(/^www\./u, ""); } catch { /* keep raw */ }
-        return `<a class="tcrn-vocabulary__source" href="${esc(entry.url || "")}" title="${esc(entry.quote || "")}" target="_blank" rel="noreferrer">${esc(entry.sourceHost || "")} · ${esc(domain)} · ${esc(entry.accessedAt || "")}</a>`;
+        return `<a class="tcrn-link tcrn-vocabulary__source" href="${esc(entry.url || "")}" title="${esc(entry.quote || "")}" target="_blank" rel="noreferrer">${esc(entry.sourceHost || "")} · ${esc(domain)} · ${esc(entry.accessedAt || "")}</a>`;
       }).join("");
     }
     if (column.kind === "machine") return `<span class="tcrn-machine-token">${esc(raw === undefined || raw === null || raw === "" ? "—" : String(raw))}</span>`;
@@ -5845,10 +5915,22 @@ const BOOT = __PORTAL_BOOT__;
     showReceipt(result);
     await refresh();
   };
-  // TCRN-CROSS-STORY-482 R3: the switcher lists the libraries this device has registered, each
-  // by its project's name, its project path and its library id; an option's value is the project
-  // path, the registry's own key.
-  const libraryLabel = (library) => (library.name || (library.chain?.role === "coordination" ? t("projects.coordination") : t("projects.unconfigured"))) + (BOOT.libraries?.filter(entry => entry.name === library.name).length > 1 ? ` · ${library.libraryId.slice(-6)}` : "");
+  // TCRN-CROSS-STORY-482 R3: the switcher lists the libraries this device has registered; an
+  // option's value is the project path, the registry's own key. TCRN-CROSS-INIT-053 R45 (U14): each is
+  // named by the same rule as every project list (distinctLabels), so an unnamed project reads
+  // "Unnamed project" in the page's language and two alike carry the id tails that tell them apart.
+  const libraryLabel = (library) => {
+    const libraries = Array.isArray(BOOT.libraries) && BOOT.libraries.length > 0 ? BOOT.libraries : [library];
+    const index = libraries.findIndex((entry) => entry.projectPath === library.projectPath);
+    return index < 0 ? distinctLabels([library])[0] : distinctLabels(libraries)[index];
+  };
+  // The top bar names the selected library by that label, and the page the reader is on once they
+  // have navigated; both follow the page's language.
+  const renderWorkspaceLabel = () => {
+    const library = BOOT.library ? libraryLabel(BOOT.library) : "";
+    const page = state.workspaceLabelPage;
+    setText("#workspace-label", page ? `${library} / ${$(`[data-page-target="${page}"] .tcrn-nav-item__label`)?.textContent || page}` : library);
+  };
   const renderConfigurationTargets = () => {
     const select = $("#configuration-project-select");
     const projects = state.settings?.projects ?? [];
@@ -6050,7 +6132,7 @@ const BOOT = __PORTAL_BOOT__;
         BOOT.epoch = selected.epoch; BOOT.library = selected.library; BOOT.workspace = selected.workspace; BOOT.libraryName = selected.libraryName; BOOT.proseRoot = selected.proseRoot;
         const listing = await api("/api/libraries");
         loadLibraries(listing.ok ? listing.libraries : BOOT.libraries);
-        setText("#workspace-label", BOOT.libraryName); $("#workspace-label").title = BOOT.workspace;
+        state.workspaceLabelPage = null; renderWorkspaceLabel(); $("#workspace-label").title = BOOT.workspace;
         applyRailIdentity(); resetCollections(); leaveWork();
         await refresh(); await refreshGates(); await loadAgents();
       } else { loadLibraries(); showReceipt(selected); await refresh(); }
@@ -6092,7 +6174,7 @@ const BOOT = __PORTAL_BOOT__;
       tcrnWritePreference("locale", state.locale);
       setLocaleMenuOpen(false);
       localeTrigger.focus();
-      applyLocale(); renderDashboard(); renderSettings(); renderCollections(); renderVariables(); renderVocabulary(); renderGates(); renderProseDirectory(); renderPending(); renderReconciliation(state.reconciliation || { ok: true, findings: [] });
+      applyLocale(); loadLibraries(); applyRailIdentity(); renderWorkspaceLabel(); applySideNavCollapsed(state.sideNavCollapsed); renderDashboard(); renderSettings(); renderCollections(); renderVariables(); renderVocabulary(); renderGates(); renderProseDirectory(); renderPending(); renderReconciliation(state.reconciliation || { ok: true, findings: [] });
     });
   });
   document.addEventListener("pointerdown", (event) => { if (!localeMenu.contains(event.target)) setLocaleMenuOpen(false); });
@@ -6110,8 +6192,44 @@ const BOOT = __PORTAL_BOOT__;
   // The rail states one identity: the selected library's project name as its section head, and
   // the library id beneath it.
   $("#library-details").addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); event.currentTarget.open = false; event.currentTarget.querySelector("summary").focus(); } });
+  // TCRN-CROSS-INIT-053 R45 (U14): the identity Details and the execution contexts close on Escape
+  // and give focus back to their summary, as #library-details does. A copy action writes the complete
+  // identity, says copying, copied, failed or unavailable in its own status region and keeps focus;
+  // it returns to its idle label after two seconds, the Clipboard family's own delay.
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    const details = event.target?.closest?.("[data-identity-details], [data-project-context]");
+    if (!details || !details.hasAttribute("open")) return;
+    event.preventDefault();
+    details.removeAttribute("open");
+    details.querySelector("summary")?.focus();
+  });
+  const copyResetTimers = new WeakMap();
+  const setCopyState = (button, copyState) => {
+    const labels = copyStates();
+    button.dataset.clipboardCopyState = copyState;
+    if (copyState === "copying") button.setAttribute("aria-busy", "true"); else button.removeAttribute("aria-busy");
+    const label = button.querySelector("[data-copy-label]");
+    if (label) label.textContent = labels[copyState] ?? labels.idle;
+    const status = button.querySelector("[data-copy-status]");
+    if (status) status.textContent = copyState === "idle" ? "" : labels[copyState] ?? "";
+  };
+  document.addEventListener("click", async (event) => {
+    const button = event.target?.closest?.("[data-copy-identity]");
+    if (!button || button.dataset.clipboardCopyState === "copying") return;
+    clearTimeout(copyResetTimers.get(button));
+    const clipboard = globalThis.navigator?.clipboard;
+    const writeText = typeof clipboard?.writeText === "function" ? clipboard.writeText.bind(clipboard) : null;
+    if (writeText === null) setCopyState(button, "unsupported");
+    else {
+      setCopyState(button, "copying");
+      try { await writeText(button.dataset.copyIdentity); setCopyState(button, "copied"); } catch { setCopyState(button, "failed"); }
+    }
+    button.focus({ preventScroll: true });
+    copyResetTimers.set(button, setTimeout(() => { if (button.isConnected !== false) setCopyState(button, "idle"); }, 2000));
+  });
   const applyRailIdentity = () => {
-    setText("#rail-workspace-label", BOOT.libraryName || BOOT.library?.libraryId || "");
+    setText("#rail-workspace-label", (BOOT.library ? libraryLabel(BOOT.library) : "") || BOOT.library?.libraryId || "");
     setText("#library-label", [BOOT.library?.libraryId, BOOT.library?.configurationProjectId, BOOT.library?.libraryPath].filter(Boolean).join("\n"));
   };
   const themeToggle = $("#theme-button");
@@ -6122,13 +6240,33 @@ const BOOT = __PORTAL_BOOT__;
   // always on screen (see the 760px rules above .tcrn-shell-mobile-nav-toggle). The
   // attribute lives on the shell so the same CSS can key visibility off it.
   const productShell = $(".tcrn-product-shell");
+  // TCRN-CROSS-INIT-053 R45 (U15): the published SideNavCollapseButton narrows the desktop rail to the
+  // family's 92px icon rail and widens it again. The shell carries the state the family's CSS reads,
+  // the button names the action it will take in the page's language, and the choice is remembered in
+  // this browser beside the theme and the language. The 760px stacked shell hides it, as the family does.
+  const sideNavToggle = $("#side-nav-toggle");
+  const applySideNavCollapsed = (collapsed) => {
+    productShell.setAttribute("data-product-shell-collapsed", String(collapsed));
+    productShell.setAttribute("data-side-nav-collapsed", String(collapsed));
+    sideNavToggle.setAttribute("data-side-nav-collapsed", String(collapsed));
+    sideNavToggle.setAttribute("aria-expanded", String(!collapsed));
+    const label = collapsed ? t("shell.expandNavigation") : t("shell.collapseNavigation");
+    sideNavToggle.setAttribute("aria-label", label);
+    sideNavToggle.setAttribute("title", label);
+  };
+  state.sideNavCollapsed = window.tcrnReadPreference("navigation", ["expanded", "collapsed"], "expanded") === "collapsed";
+  sideNavToggle.addEventListener("click", () => {
+    state.sideNavCollapsed = !state.sideNavCollapsed;
+    tcrnWritePreference("navigation", state.sideNavCollapsed ? "collapsed" : "expanded");
+    applySideNavCollapsed(state.sideNavCollapsed);
+  });
   const mobileNavToggle = $("#mobile-nav-toggle");
   mobileNavToggle.addEventListener("click", () => {
     const expanded = productShell.getAttribute("data-mobile-nav-expanded") === "true";
     productShell.setAttribute("data-mobile-nav-expanded", String(!expanded));
     mobileNavToggle.setAttribute("aria-expanded", String(!expanded));
   });
-  loadLibraries(); applyLocale(); setText("#workspace-label", BOOT.libraryName); $("#workspace-label").title = BOOT.workspace; applyRailIdentity(); renderReceipt(); refresh(); refreshGates(); loadAgents();
+  loadLibraries(); applyLocale(); applySideNavCollapsed(state.sideNavCollapsed); renderWorkspaceLabel(); $("#workspace-label").title = BOOT.workspace; applyRailIdentity(); renderReceipt(); refresh(); refreshGates(); loadAgents();
 })();
 </script>
 </body>

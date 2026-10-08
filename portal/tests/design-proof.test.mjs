@@ -88,6 +88,39 @@ test("INIT-036 S276 design-proof legs turn red for injected violations and green
   assert.notEqual(redClass.status, 0);
   assert.equal(redClass.report.legs.find((leg) => leg.leg === "interactive-tcrn-class-coverage").reasonCode, "INTERACTIVE_ELEMENT_CLASS_MISSING");
 
+  // TCRN-CROSS-INIT-053 R45 (U13): anchors and disclosure summaries are interactive elements held to
+  // their published families, and the side navigation is checked element by element: a destination
+  // turned back into a button, or one missing its icon or label slot, is red. Each case is red with its
+  // injection and green once the source is restored (the restored run below).
+  const settingsItem = source.match(/<a class="tcrn-nav-item" href="#settings"[^>]*>[\s\S]*?<\/a>/u)?.[0];
+  assert.ok(settingsItem, "the settings destination is a published NavItem anchor");
+  const iconSlot = settingsItem.match(/<span class="tcrn-nav-item__content" aria-hidden="true">[\s\S]*?<\/svg><\/span>/u)?.[0];
+  const labelSlot = settingsItem.match(/<span class="tcrn-nav-item__label"[^>]*>[^<]*<\/span>/u)?.[0];
+  assert.ok(iconSlot && labelSlot, "the settings destination carries both slots");
+  const constructionCases = [
+    ["anchor-local-class", source.replace('<a class="tcrn-nav-item" href="#settings"', '<a class="tcrn-local-link" href="#settings"'), "interactive-tcrn-class-coverage", "an anchor that names no published link or navigation component"],
+    ["summary-unclassed", source.replace('<summary class="tcrn-disclosure-panel__title" data-i18n="health.detail">', '<summary data-i18n="health.detail">'), "interactive-tcrn-class-coverage", "missing tcrn-* class"],
+    ["summary-local-class", source.replace('<summary class="tcrn-disclosure-panel__title" data-i18n="health.detail">', '<summary class="tcrn-local-summary" data-i18n="health.detail">'), "interactive-tcrn-class-coverage", "a disclosure summary that names no published disclosure or row-group heading"],
+    ["nav-item-button", source.replace(settingsItem, settingsItem.replace('<a class="tcrn-nav-item" href="#settings"', '<button type="button" class="tcrn-nav-item"').replace(/<\/a>$/u, "</button>")), "sidenav-v4-style-invariants", "sidenav destination is an anchor"],
+    ["nav-item-no-icon", source.replace(settingsItem, settingsItem.replace(iconSlot, "")), "sidenav-v4-style-invariants", "sidenav icon slot"],
+    ["nav-item-no-label", source.replace(settingsItem, settingsItem.replace(labelSlot, "")), "sidenav-v4-style-invariants", "sidenav label slot"],
+    ["nav-item-swapped-slots", source.replace(settingsItem, settingsItem.replace(`${iconSlot}${labelSlot}`, `${labelSlot}${iconSlot}`)), "sidenav-v4-style-invariants", "sidenav icon slot"],
+  ];
+  for (const [name, mutated, legName, expected] of constructionCases) {
+    assert.notEqual(mutated, source, `${name} must change the fixture`);
+    const path = join(directory, `construction-${name}.html`);
+    await writeFile(path, mutated, "utf8");
+    const red = await runProof(path);
+    assert.notEqual(red.status, 0, `${name} must red`);
+    const leg = red.report.legs.find((entry) => entry.leg === legName);
+    assert.equal(leg.ok, false, `${name} is named by ${legName}`);
+    assert.ok(leg.findings.some((finding) => finding.reason === expected || finding.name === expected), `${name}: ${JSON.stringify(leg.findings)}`);
+  }
+  // The button form of a destination is accepted by the class leg (settings tabs are nav items rendered
+  // as buttons); only the construction leg can see that a destination stopped being an anchor.
+  const buttonDestination = await runProof(join(directory, "construction-nav-item-button.html"));
+  assert.equal(buttonDestination.report.legs.find((leg) => leg.leg === "interactive-tcrn-class-coverage").ok, true);
+
   // Reset is an explicit published control, not a blanket tcrn-* exemption.
   const resetClass = 'class="tcrn-setting-row__reset" data-reset-setting=';
   assert.ok(source.includes(resetClass));
@@ -189,7 +222,7 @@ test("INIT-036 S276 design-proof legs turn red for injected violations and green
     ["product shell rows", "grid-template-rows: auto minmax(0, 1fr);", "grid-template-rows: 48px minmax(0, 1fr);"],
     ["top bar height from design system", ".tcrn-product-shell__workspace > .tcrn-top-bar {", ".tcrn-product-shell__workspace > .tcrn-top-bar-mutated {"],
     ["prose measure", "max-width: 860px;", "max-width: 861px;"],
-    ["dashboard measure", "max-width: 1040px;", "max-width: 1041px;"],
+    ["dashboard measure", '<section class="tcrn-page tcrn-product-shell-content-stack" data-page="dashboard">', '<section class="tcrn-page" data-page="dashboard">'],
     ["desktop-to-tablet breakpoint", "@media (max-width: 980px)", "@media (max-width: 981px)"],
     ["tablet-to-phone breakpoint", "@media (max-width: 760px)", "@media (max-width: 761px)"],
     ["phone breakpoint", "@media (max-width: 680px)", "@media (max-width: 681px)"],
@@ -232,16 +265,19 @@ test("INIT-036 S276 design-proof legs turn red for injected violations and green
     // disease; the leg must go red the moment one reappears.
     ["fixed content column", "grid-template-columns: minmax(184px, 208px) minmax(0, 1fr);", "grid-template-columns: minmax(184px, 208px) 800px;"],
   ];
-  const initScopedMutations = new Set(["product shell rows", "top bar height from design system", "prose measure", "dashboard measure", "desktop-to-tablet breakpoint", "tablet-to-phone breakpoint", "phone breakpoint"]);
+  const initScopedMutations = new Set(["product shell rows", "top bar height from design system", "prose measure", "desktop-to-tablet breakpoint", "tablet-to-phone breakpoint", "phone breakpoint"]);
   const initStart = source.indexOf("/* INIT-036 S274/S275:");
   const initEnd = source.indexOf("</style>", initStart);
   assert.ok(initStart >= 0 && initEnd > initStart, "INIT-036 style block must be present");
+  // A needle can stand at more than one construction (the work view's project selection is built as the
+  // settings multi-select is, TCRN-CROSS-INIT-053 R45), so a mutation breaks every occurrence of it: one
+  // left behind keeps the invariant satisfied and the mutation would prove nothing.
   for (const [name, needle, replacement] of layoutMutations) {
     assert.ok(source.includes(needle), `${name} mutation anchor must exist`);
     const mutatedPath = join(directory, `layout-${name.replaceAll(/[^a-z0-9]+/giu, "-")}.html`);
     const mutatedSource = initScopedMutations.has(name)
       ? `${source.slice(0, initStart)}${source.slice(initStart, initEnd).replaceAll(needle, replacement)}${source.slice(initEnd)}`
-      : source.replace(needle, replacement);
+      : source.replaceAll(needle, replacement);
     assert.notEqual(mutatedSource, source, `${name} mutation must change the fixture`);
     await writeFile(mutatedPath, mutatedSource, "utf8");
     const red = await runProof(mutatedPath);

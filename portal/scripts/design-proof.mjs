@@ -193,9 +193,26 @@ const NON_BUTTON_CONTROLS = new Set([
   "tcrn-workspace-tab",
   "tcrn-badge",                 // the receipt chip is a status badge that opens the drawer
 ]);
+// TCRN-CROSS-INIT-053 R45 (U13): anchors that lead somewhere and disclosure summaries are interactive
+// elements too. R43 made the sidebar destinations anchors while this scan read only
+// button|input|select|textarea, so an unclassed destination went unseen. Each is held to its published
+// family the way a button is: a tcrn- prefix alone never qualifies.
+const DS_ANCHOR_FAMILY = new Set([
+  "tcrn-nav-item",                    // NavItem: a navigation destination
+  "tcrn-link",                        // Link
+  "tcrn-link-button",                 // LinkButton
+  "tcrn-product-shell__brand",        // ProductShell brand home link
+  "tcrn-skip-link",                   // SkipLink
+  "tcrn-relationship-chip",           // RelationshipChip as a link
+  "tcrn-product-shell-search__result", // ProductShellSearch result link
+]);
+const DS_SUMMARY_FAMILY = new Set(["tcrn-disclosure-panel__title", "tcrn-row-group__head"]);
 const interactiveFindings = [];
-for (const match of indexText.matchAll(/<(button|input|select|textarea)\b([^>]*)>/giu)) {
+for (const match of indexText.matchAll(/<(button|input|select|textarea|a|summary)\b([^>]*)>/giu)) {
+  const element = match[1].toLowerCase();
   const attributes = match[2] ?? "";
+  // An anchor without href is not a control (and the snapshot's comments speak of one).
+  if (element === "a" && !/\bhref\s*=/iu.test(attributes)) continue;
   const classMatch = attributes.match(/\bclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/iu);
   const classValue = classMatch?.[1] ?? classMatch?.[2] ?? classMatch?.[3] ?? "";
   const tokens = classValue.split(/\s+/u);
@@ -210,12 +227,30 @@ for (const match of indexText.matchAll(/<(button|input|select|textarea)\b([^>]*)
   }
   // A prefix alone never qualifies a local/fake button. Only the explicit
   // published families and semantic controls above qualify.
-  if (match[1].toLowerCase() === "button" && !tokens.some((token) => DS_BUTTON_FAMILY.has(token) || NON_BUTTON_CONTROLS.has(token))) {
+  if (element === "button" && !tokens.some((token) => DS_BUTTON_FAMILY.has(token) || NON_BUTTON_CONTROLS.has(token))) {
     interactiveFindings.push({
       file: "index.html",
       line: lineNumberAt(match.index ?? 0),
       element: match[1],
       reason: "a button that names no design-system button component and is not a registered non-button control",
+      classValue,
+    });
+  }
+  if (element === "a" && !tokens.some((token) => DS_ANCHOR_FAMILY.has(token))) {
+    interactiveFindings.push({
+      file: "index.html",
+      line: lineNumberAt(match.index ?? 0),
+      element: match[1],
+      reason: "an anchor that names no published link or navigation component",
+      classValue,
+    });
+  }
+  if (element === "summary" && !tokens.some((token) => DS_SUMMARY_FAMILY.has(token))) {
+    interactiveFindings.push({
+      file: "index.html",
+      line: lineNumberAt(match.index ?? 0),
+      element: match[1],
+      reason: "a disclosure summary that names no published disclosure or row-group heading",
       classValue,
     });
   }
@@ -348,7 +383,9 @@ const layoutRequirements = [
   { name: "editor toolbar no full-row placement", source: initLayoutSource, text: "grid-column: auto;" },
   { name: "editor placement", source: initLayoutSource, text: "grid-area: editor;" },
   { name: "prose measure", source: initLayoutSource, text: "max-width: 860px;" },
-  { name: "dashboard measure", source: initLayoutSource, text: "max-width: 1040px;" },
+  // TCRN-CROSS-INIT-053 R45 (U15): the pages no longer centre on an application width; each is the
+  // published content stack on the shell's own left edge, so the measure is the family's.
+  { name: "dashboard measure", source: indexText, text: '<section class="tcrn-page tcrn-product-shell-content-stack" data-page="dashboard">' },
   { name: "desktop-to-tablet breakpoint", source: initLayoutSource, text: "@media (max-width: 980px)" },
   { name: "tablet-to-phone breakpoint", source: initLayoutSource, text: "@media (max-width: 760px)" },
   { name: "phone breakpoint", source: initLayoutSource, text: "@media (max-width: 680px)" },
@@ -498,14 +535,58 @@ legs.push({
 // private v4 sidebar colours, typography and control metrics were removed.
 // Exact snapshot/inline bytes and no local family overrides are source checks;
 // they do not establish current browser geometry or Owner visual acceptance.
-const sidenavRequirements = [
-  { name: "sidenav published item", text: '<a class="tcrn-nav-item" href="#dashboard" data-nav-item-has-icon="true" data-page-target=' },
-  { name: "sidenav published icon slot", text: '<span class="tcrn-nav-item__content" aria-hidden="true">' },
-  { name: "sidenav published label", text: '<span class="tcrn-nav-item__label" data-i18n=' },
-];
-const sidenavFindings = sidenavRequirements
-  .filter((requirement) => !indexText.includes(requirement.text))
-  .map((requirement) => ({ name: requirement.name, reason: "published navigation construction absent", text: requirement.text }));
+// TCRN-CROSS-INIT-053 R45 (U13): the destinations are checked by their construction, element by
+// element, not by finding a few substrings: every node of #primary-side-nav that names a page is the
+// published NavItem anchor, <a class="tcrn-nav-item" href="#<page>">, and holds exactly its two slots
+// in order -- the icon slot (span.tcrn-nav-item__content, aria-hidden, carrying an svg) and the label
+// slot (span.tcrn-nav-item__label, translated, with text). A destination turned back into a button, or
+// a slot that is missing, moved or renamed, is named here.
+const VOID_ELEMENTS = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "track", "wbr"]);
+function parseFragment(html) {
+  const root = { tag: "#root", attributes: "", children: [], text: "" };
+  const stack = [root];
+  for (const match of html.matchAll(/<!--[\s\S]*?-->|<\/([A-Za-z][\w-]*)\s*>|<([A-Za-z][\w-]*)\b((?:[^>"']|"[^"]*"|'[^']*')*?)(\/?)>|([^<]+)/gu)) {
+    const [, closing, opening, attributes, selfClosing, text] = match;
+    const top = stack.at(-1);
+    if (text !== undefined) { top.text += text; continue; }
+    if (closing !== undefined) {
+      const index = stack.findLastIndex((node) => node.tag === closing.toLowerCase());
+      if (index > 0) stack.length = index;
+      continue;
+    }
+    if (opening === undefined) continue;
+    const node = { tag: opening.toLowerCase(), attributes: attributes ?? "", children: [], text: "" };
+    top.children.push(node);
+    if (selfClosing !== "/" && !VOID_ELEMENTS.has(node.tag)) stack.push(node);
+  }
+  return root;
+}
+const attributeOf = (node, name) => new RegExp(`(?:^|\\s)${name}\\s*=\\s*"([^"]*)"`, "u").exec(node.attributes)?.[1] ?? null;
+const classesOf = (node) => (attributeOf(node, "class") ?? "").split(/\s+/u).filter(Boolean);
+const descendants = (node) => node.children.flatMap((child) => [child, ...descendants(child)]);
+const textOf = (node) => `${node.text}${node.children.map(textOf).join("")}`;
+const sidenavFindings = [];
+const navStart = indexText.search(/<nav\b[^>]*\bid="primary-side-nav"/u);
+const navEnd = navStart < 0 ? -1 : indexText.indexOf("</nav>", navStart);
+const nav = navStart < 0 || navEnd < 0 ? null : parseFragment(indexText.slice(navStart, navEnd + "</nav>".length)).children[0];
+const destinations = nav === null ? [] : descendants(nav).filter((node) => attributeOf(node, "data-page-target") !== null);
+if (nav === null || !classesOf(nav).includes("tcrn-side-nav")) sidenavFindings.push({ name: "sidenav published container", reason: "#primary-side-nav is not the published side navigation" });
+if (destinations.length === 0) sidenavFindings.push({ name: "sidenav destinations", reason: "the side navigation names no destination" });
+for (const node of destinations) {
+  const page = attributeOf(node, "data-page-target");
+  const finding = (name, reason) => sidenavFindings.push({ name, page, reason });
+  if (node.tag !== "a") finding("sidenav destination is an anchor", `the ${page} destination is a <${node.tag}>, not the published NavItem anchor`);
+  if (!classesOf(node).includes("tcrn-nav-item")) finding("sidenav destination is a nav item", `the ${page} destination does not carry tcrn-nav-item`);
+  if (attributeOf(node, "href") !== `#${page}`) finding("sidenav destination href", `the ${page} destination does not link to #${page}`);
+  const [icon, label, ...rest] = node.children;
+  if (!icon || icon.tag !== "span" || !classesOf(icon).includes("tcrn-nav-item__content") || attributeOf(icon, "aria-hidden") !== "true" || !descendants(icon).some((child) => child.tag === "svg")) {
+    finding("sidenav icon slot", `the ${page} destination does not open with its hidden icon slot carrying an svg`);
+  }
+  if (!label || label.tag !== "span" || !classesOf(label).includes("tcrn-nav-item__label") || attributeOf(label, "data-i18n") === null || textOf(label).trim() === "") {
+    finding("sidenav label slot", `the ${page} destination does not follow its icon with a translated label slot`);
+  }
+  if (rest.length > 0) finding("sidenav slot count", `the ${page} destination holds more than its two slots`);
+}
 const publishedCss = await readFile(join(portalRoot, "ds-component-css.snapshot.css"), "utf8");
 const inlineCss = /<style id="tcrn-ds-component-css" data-source="snapshot">([\s\S]*?)<\/style>/u.exec(indexText)?.[1];
 if (digest(publishedCss) !== dsContract.componentCss?.sha256 || inlineCss !== publishedCss) {

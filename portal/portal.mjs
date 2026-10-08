@@ -923,8 +923,10 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
       send(response, result.ok ? 200 : 409, { ...result.body, ok: result.ok }); return;
     }
     if (request.method === "GET" && pathname === "/api/project-targets") {
+      // A target carries the project's own name or null, never an English stand-in: the page names an
+      // unnamed project in the reader's language (TCRN-CROSS-INIT-053 R45 U14).
       const entries = await refreshLibraryCatalog();
-      const targets = [...new Map(entries.filter(entry => entry.projectId && entry.chain?.role === "project").map(entry => [JSON.stringify([entry.libraryId, entry.projectId]), { libraryId: entry.libraryId, projectId: entry.projectId, name: libraryName(entry) }])).values()];
+      const targets = [...new Map(entries.filter(entry => entry.projectId && entry.chain?.role === "project").map(entry => [JSON.stringify([entry.libraryId, entry.projectId]), { libraryId: entry.libraryId, projectId: entry.projectId, name: entry.name ?? null }])).values()];
       send(response, 200, { targets }); return;
     }
     if (request.method === "GET" && pathname === "/api/work/project-context") {

@@ -986,8 +986,10 @@ test("STORY-482 AC1: the registry's two libraries can be switched, and each answ
   const { boot } = await readBoot(url);
   const listed = await request(url, "/api/libraries", readOptions(boot.token));
   assert.equal(listed.body.reasonCode, "PORTAL_LIBRARIES_READY");
-  const firstName = (await cli(["project-list", "--workspace", fixture.workspace], fixture.deviceEnv)).records.find(record => record.id === fixture.projectId).name;
-  const secondName = (await cli(["project-list", "--workspace", fixture.second.library], fixture.deviceEnv)).records.find(record => record.id === fixture.second.projectId).name;
+  // The registry's name for a library is what project-list says of its project; the route answers
+  // null, not undefined and not a stand-in, when project-list carries no name (INIT-053 R45 U14).
+  const firstName = (await cli(["project-list", "--workspace", fixture.workspace], fixture.deviceEnv)).records.find(record => record.id === fixture.projectId).name ?? null;
+  const secondName = (await cli(["project-list", "--workspace", fixture.second.library], fixture.deviceEnv)).records.find(record => record.id === fixture.second.projectId).name ?? null;
   assert.deepEqual(listed.body.libraries, [
     { projectPath: fixture.proseRoot, projectId: fixture.projectId, configurationProjectId: null, libraryId: first.workspaceId, libraryPath: fixture.workspace, name: firstName, chain: null },
     { projectPath: fixture.second.project, projectId: fixture.second.projectId, configurationProjectId: null, libraryId: second.workspaceId, libraryPath: fixture.second.library, name: secondName, chain: null },

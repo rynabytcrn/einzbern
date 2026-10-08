@@ -310,8 +310,7 @@ const topbarDesignMap = Object.freeze([
   ["workspace-search", "#global-search", "SearchInput", "https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html#navigation-shell-spec"],
   ["theme-toggle", "#theme-button", "ThemeToggle", "https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html#navigation-shell-spec"],
   ["locale-menu", "#locale-menu", "LocaleMenu", "https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html#navigation-shell-spec"],
-  // TCRN-CROSS-INIT-053 R46 (I13, option 1): the receipt badge is a secondary tool of the status bar.
-  ["receipt-chip", ".tcrn-app-status-bar > .tcrn-app-status-bar__action > #receipt-chip", "Badge/Button", "https://tcrn-design-system-storybook.vercel.app/proof-proof-visual-instances.html#owner-quality-product-shell"],
+  ["receipt-chip", "#receipt-chip", "Badge/Button", "https://tcrn-design-system-storybook.vercel.app/proof-proof-visual-instances.html#owner-quality-product-shell"],
 ]);
 
 function childIndex(parent, child) {
@@ -405,18 +404,11 @@ function topbarFindings(document) {
   const header = document.querySelector("header.tcrn-top-bar");
   if (!document.querySelector("#library-details #engine-connection")) findings.push("engine-details:ownership");
   if (!document.querySelector("#library-details summary")) findings.push("engine-details:keyboard-trigger");
-  // TCRN-CROSS-INIT-053 R46 (I13, option 1): the published ProductShell order -- current location, search,
-  // header actions (the library switcher), theme, language -- in one utility row; the receipt badge is in
-  // the status bar, not the top bar.
-  const row = header?.querySelector(":scope > .tcrn-product-shell__utility-row");
-  const construction = [".tcrn-product-shell__current-location", ".tcrn-product-shell-search", ".tcrn-product-shell__header-actions", ".tcrn-shell-theme-toggle", ".tcrn-shell-locale-menu"];
-  if (!row || header.children.length !== 1 || row.children.length !== construction.length || construction.some((selector, index) => !row.children[index]?.matches(selector))) findings.push("topbar:construction");
-  const actionOrder = ["#global-search", "#library-select", "#theme-button", "#locale-menu"]
+  const actionOrder = ["#library-select", "#global-search", "#theme-button", "#locale-menu", "#receipt-chip"]
     .map((selector) => document.querySelector(selector));
   const domOrder = header ? [header, ...header.querySelectorAll("*")] : [];
   if (actionOrder.some((node) => !node || !domOrder.includes(node))) findings.push("topbar:action-ownership");
   else if (actionOrder.some((node, index) => index > 0 && domOrder.indexOf(actionOrder[index - 1]) >= domOrder.indexOf(node))) findings.push("topbar:action-order");
-  if (header?.querySelector("#receipt-chip")) findings.push("receipt:topbar");
   if (header?.getAttribute("data-ds-mapping-status") !== DS_CONTRACT.reconciliation.status) findings.push("topbar:mapping-status");
   return findings;
 }
@@ -942,20 +934,6 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       assert.ok(topbarFindings(page.document).includes("receipt-chip:count"), "a missing mapped action must red");
       receiptParent.append(receipt);
       assert.deepEqual(topbarFindings(page.document), [], "restoring the mapped action must return green");
-
-      // TCRN-CROSS-INIT-053 R46 (I13): the receipt badge back in the top bar, or the utility row out of the
-      // published order, is red.
-      const locale = page.document.querySelector("#locale-menu");
-      locale.parentElement.insertBefore(receipt, locale);
-      assert.ok(topbarFindings(page.document).includes("receipt:topbar"), "the receipt badge back in the top bar must red");
-      receiptParent.insertBefore(receipt, receiptParent.firstChild);
-      const search = page.document.querySelector(".tcrn-product-shell-search");
-      const searchParent = search.parentElement;
-      const actions = page.document.querySelector(".tcrn-product-shell__header-actions");
-      searchParent.insertBefore(actions, search);
-      assert.ok(topbarFindings(page.document).includes("topbar:construction"), "the header actions before the search must red");
-      searchParent.insertBefore(search, actions);
-      assert.deepEqual(topbarFindings(page.document), [], "restoring the published order returns green");
 
       header.removeAttribute("data-ds-source-url");
       assert.ok(topbarFindings(page.document).includes("product-shell-header:source-url"), "a self-reported but incomplete DS binding must red");
@@ -2252,10 +2230,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       const firstId = text("#library-label");
       assert.match(firstId, /^library:/u);
       assert.equal(text("#rail-workspace-label"), firstName);
-      // TCRN-CROSS-INIT-053 R46 (I13): the published current location names the chain in its span and the
-      // page in its strong.
-      assert.equal(text(".tcrn-product-shell__current-location > span"), firstName);
-      assert.equal(text(".tcrn-product-shell__current-location > strong"), text('#primary-side-nav [data-page-target="dashboard"] .tcrn-nav-item__label'));
+      assert.equal(text("#workspace-label"), firstName);
       assert.equal(text("#stat-version"), "1");
       const healthReasons = () => [...page.document.querySelectorAll("[data-doctor-check]")].map((row) => [row.dataset.doctorCheck, row.querySelectorAll(".tcrn-operation-feedback__identity code")[1]?.textContent ?? ""]);
       const initialDoctor = await cli(["doctor", "--project", fixture.proseRoot], { ...fixture.deviceEnv, HOME: fixture.home });
@@ -2264,7 +2239,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       const secondVersion = String((await cli(["status", "--workspace", fixture.second.library], fixture.deviceEnv)).version);
       select.value = fixture.second.project;
       select.dispatchEvent(new page.window.Event("change", { bubbles: true }));
-      await waitFor(() => text(".tcrn-product-shell__current-location > span") === secondName && text("#stat-version") === secondVersion && text("#agents-path") === join(fixture.second.project, "AGENTS.md"), "the page to move to the second library");
+      await waitFor(() => text("#workspace-label") === secondName && text("#stat-version") === secondVersion && text("#agents-path") === join(fixture.second.project, "AGENTS.md"), "the page to move to the second library");
       assert.equal(text("#rail-workspace-label"), secondName);
       assert.notEqual(text("#library-label"), firstId);
       assert.ok(text("#library-label").includes(fixture.second.library), "Details retains the full selected path");
@@ -2297,8 +2272,7 @@ if (process.argv[2] === "doctor" && actual.status === 0) {
       const [firstNameInFrench] = expectedTargetLabels(listed, (entry) => entry.name ?? locales.fr["projects.unnamed"]);
       page.document.querySelector("#library-select").value = fixture.proseRoot;
       page.document.querySelector("#library-select").dispatchEvent(new page.window.Event("change", { bubbles: true }));
-      await waitFor(() => text(".tcrn-product-shell__current-location > span") === firstNameInFrench && text("#stat-version") === firstVersion && text("#agents-path") === join(fixture.proseRoot, "AGENTS.md"), "the page to return to the first library");
-      assert.equal(text(".tcrn-product-shell__current-location > strong"), text('#primary-side-nav [data-page-target="dashboard"] .tcrn-nav-item__label'), "the page is named in the page's language");
+      await waitFor(() => text("#workspace-label") === firstNameInFrench && text("#stat-version") === firstVersion && text("#agents-path") === join(fixture.proseRoot, "AGENTS.md"), "the page to return to the first library");
       assert.equal(text("#library-label"), firstId);
       const firstDoctor = await cli(["doctor", "--project", fixture.proseRoot], { ...fixture.deviceEnv, HOME: fixture.home });
       assert.equal(page.document.querySelector("#health-chip")?.className.includes("tcrn-badge--positive"), firstDoctor.ok);

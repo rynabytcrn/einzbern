@@ -199,31 +199,14 @@ test("INIT-036 S276 design-proof legs turn red for injected violations and green
   assert.ok(redFocus.report.legs.find((leg) => leg.leg === "editor-focus-boundary").findings.some((finding) => finding.name === "editor textarea outline none"));
   assert.equal((await runProof(baseline)).report.legs.find((leg) => leg.leg === "editor-focus-boundary").ok, true);
 
-  // TCRN-CROSS-INIT-053 R46 (I13, option 1): the top bar is the published utility row, styled by the family
-  // alone. A local rule for any of its parts -- the row itself, or the old search constraint brought back --
-  // is red, a receipt badge moved back into the top bar is red, and each is green once the source is restored.
-  const portalStyleEnd = source.lastIndexOf("</style>");
-  const topbarOverrides = [
-    ["utility row", ".tcrn-product-shell__utility-row { flex-wrap: nowrap; }"],
-    ["search constraint", ".tcrn-product-shell-search .tcrn-search-input { min-width: 7ch; max-width: 430px; }"],
-    ["current location", "@media (max-width: 1100px) { .tcrn-product-shell__current-location { max-width: 160px; } }"],
-  ];
-  for (const [name, rule] of topbarOverrides) {
-    const topbarMutated = join(directory, `topbar-override-${name.replaceAll(" ", "-")}.html`);
-    await writeFile(topbarMutated, `${source.slice(0, portalStyleEnd)}\n${rule}\n${source.slice(portalStyleEnd)}`, "utf8");
-    const redTopbar = await runProof(topbarMutated);
-    assert.notEqual(redTopbar.status, 0, `${name} override must red`);
-    const topbarLeg = redTopbar.report.legs.find((leg) => leg.leg === "topbar-four-width-single-line");
-    assert.equal(topbarLeg.reasonCode, "TOPBAR_LOCAL_OVERRIDE_FOUND");
-    assert.ok(topbarLeg.findings.some((finding) => finding.name === "topbar local override" && rule.includes(finding.selector)), `${name}: ${JSON.stringify(topbarLeg.findings)}`);
-  }
-  const receiptChip = source.match(/<button class="tcrn-badge tcrn-badge--positive" id="receipt-chip"[^>]*>[\s\S]*?<\/button> /u)?.[0];
-  assert.ok(receiptChip, "the receipt badge sits in the status bar");
-  const receiptInTopbar = join(directory, "topbar-receipt.html");
-  await writeFile(receiptInTopbar, source.replace(receiptChip, "").replace('<div class="tcrn-shell-locale-menu"', `${receiptChip}<div class="tcrn-shell-locale-menu"`), "utf8");
-  const redReceipt = await runProof(receiptInTopbar);
-  assert.notEqual(redReceipt.status, 0);
-  assert.ok(redReceipt.report.legs.find((leg) => leg.leg === "topbar-four-width-single-line").findings.some((finding) => finding.name === "topbar receipt placement"));
+  const topbarMutated = join(directory, "topbar-search-mutated.html");
+  const searchConstraint = ".tcrn-top-bar__actions .tcrn-search-input {\n  min-width: 7ch;\n  flex: 1 1 auto;\n  max-width: 430px;";
+  assert.ok(source.includes(searchConstraint), "topbar mutation anchor must exist");
+  await writeFile(topbarMutated, source.replace(searchConstraint, searchConstraint.replace("430px", "431px")), "utf8");
+  const redTopbar = await runProof(topbarMutated);
+  assert.notEqual(redTopbar.status, 0);
+  assert.equal(redTopbar.report.legs.find((leg) => leg.leg === "topbar-four-width-single-line").reasonCode, "TOPBAR_SINGLE_LINE_CONSTRAINTS_DRIFTED");
+  assert.ok(redTopbar.report.legs.find((leg) => leg.leg === "topbar-four-width-single-line").findings.some((finding) => finding.name === "topbar search flex basis"));
   assert.equal((await runProof(baseline)).report.legs.find((leg) => leg.leg === "topbar-four-width-single-line").ok, true);
 
   const sidenavMutated = join(directory, "sidenav-background-mutated.html");
@@ -237,11 +220,7 @@ test("INIT-036 S276 design-proof legs turn red for injected violations and green
 
   const layoutMutations = [
     ["product shell rows", "grid-template-rows: auto minmax(0, 1fr);", "grid-template-rows: 48px minmax(0, 1fr);"],
-    // TCRN-CROSS-INIT-053 R46 (I13, option 1): the published top bar construction and its three parts.
-    ["top bar is the published utility row", '<div class="tcrn-product-shell__utility-row" data-product-shell-region="utility-row">', '<div class="tcrn-top-bar__actions" data-product-shell-region="utility-row">'],
-    ["current location is the published span and strong", '<strong id="current-page-label"></strong>', '<b id="current-page-label"></b>'],
-    ["search is the published ProductShellSearch", '<div class="tcrn-product-shell-search" data-shell-control="product-shell-search"', '<div class="tcrn-search-shell" data-shell-control="product-shell-search"'],
-    ["receipt badge in the status bar action slot", '<span class="tcrn-app-status-bar__action"><button class="tcrn-badge tcrn-badge--positive" id="receipt-chip"', '<span class="tcrn-app-status-bar__action"><button class="tcrn-badge tcrn-badge--positive" id="receipt-chip-moved"'],
+    ["top bar height from design system", ".tcrn-product-shell__workspace > .tcrn-top-bar {", ".tcrn-product-shell__workspace > .tcrn-top-bar-mutated {"],
     ["prose measure", "max-width: 860px;", "max-width: 861px;"],
     ["dashboard measure", '<section class="tcrn-page tcrn-product-shell-content-stack" data-page="dashboard">', '<section class="tcrn-page" data-page="dashboard">'],
     ["desktop-to-tablet breakpoint", "@media (max-width: 980px)", "@media (max-width: 981px)"],
@@ -286,7 +265,7 @@ test("INIT-036 S276 design-proof legs turn red for injected violations and green
     // disease; the leg must go red the moment one reappears.
     ["fixed content column", "grid-template-columns: minmax(184px, 208px) minmax(0, 1fr);", "grid-template-columns: minmax(184px, 208px) 800px;"],
   ];
-  const initScopedMutations = new Set(["product shell rows", "prose measure", "desktop-to-tablet breakpoint", "tablet-to-phone breakpoint", "phone breakpoint"]);
+  const initScopedMutations = new Set(["product shell rows", "top bar height from design system", "prose measure", "desktop-to-tablet breakpoint", "tablet-to-phone breakpoint", "phone breakpoint"]);
   const initStart = source.indexOf("/* INIT-036 S274/S275:");
   const initEnd = source.indexOf("</style>", initStart);
   assert.ok(initStart >= 0 && initEnd > initStart, "INIT-036 style block must be present");
@@ -355,14 +334,12 @@ test("INIT-036 S276 design-proof legs turn red for injected violations and green
     "unregistered",
   );
 
-  // The top bar's root left the roster with its local rules (TCRN-CROSS-INIT-053 R46, I13), so a rename
-  // is proven on a root the portal still styles.
   const renamedClasses = join(directory, "coverage-renamed.html");
-  await writeFile(renamedClasses, source.replaceAll("tcrn-editor-shell", "tcrn-editorshell"), "utf8");
+  await writeFile(renamedClasses, source.replaceAll("tcrn-top-bar", "tcrn-topbar"), "utf8");
   const redRename = await runCoverageProof(renamedClasses);
   assert.notEqual(redRename.status, 0);
   assert.equal(redRename.report.reasonCode, "COMPONENT_COVERAGE_CONSERVATION_RED");
-  assert.ok(redRename.report.portalOwnedClassBaseline.snapshotDiff.removedOrRenamed.includes("tcrn-editor-shell"));
+  assert.ok(redRename.report.portalOwnedClassBaseline.snapshotDiff.removedOrRenamed.includes("tcrn-top-bar"));
 
   const missingReturned = join(directory, "coverage-missing-return.html");
   await writeFile(missingReturned, source.replaceAll('class="tcrn-stat-card"', 'class="tcrn-stat-cardmutated"'), "utf8");

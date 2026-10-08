@@ -6,6 +6,7 @@
   "roots": [
     "tcrn-app",
     "tcrn-app-status-bar",
+    "tcrn-badge",
     "tcrn-confirm-dialog",
     "tcrn-dashboard-grid",
     "tcrn-definition-list",
@@ -26,10 +27,14 @@
     "tcrn-page",
     "tcrn-product-shell",
     "tcrn-rail",
+    "tcrn-search-input",
+    "tcrn-search-results",
     "tcrn-section-tabs",
+    "tcrn-select",
     "tcrn-side-nav",
     "tcrn-subnav",
     "tcrn-text",
+    "tcrn-top-bar",
     "tcrn-vocabulary",
     "tcrn-work-tree"
   ],
@@ -70,16 +75,5 @@
     ],
     "basis": "The portal's only rule for the root set the brand mark to 28px against the published ProductShell lockup's 38px; the real-browser family comparison of R45 (U15) measured the mark at 28px against the published 38px. The override is retired, so the portal no longer defines the root and the roster drops it in the same change, as its discipline requires.",
     "verification": "bidirectional class-conservation (scripts/s278-component-coverage.mjs) and the browser family comparison; Owner visual acceptance remains separate"
-  },
-  "init053R46S16Disposition": {
-    "removedRoots": [
-      "tcrn-badge",
-      "tcrn-search-input",
-      "tcrn-search-results",
-      "tcrn-select",
-      "tcrn-top-bar"
-    ],
-    "basis": "TCRN-CROSS-INIT-053 R46 (I13, option 1): the top bar became the published ProductShell utility row and the portal stopped styling it. Every local rule these roots appeared in addressed the top bar, its select and badge, its search or the search results' placement, so the portal no longer defines them and the roster drops them in the same change, as its discipline requires.",
-    "verification": "bidirectional class-conservation (scripts/s278-component-coverage.mjs), design-proof legs portal-layout-invariants and topbar-four-width-single-line, and the four-width real-browser measurement of the utility row; Owner visual acceptance remains separate"
   }
 }

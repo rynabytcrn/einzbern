@@ -2,7 +2,7 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r40-init053-closure",
+  "pack": "r41-init053-release",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
@@ -563,7 +563,7 @@
     },
     {
       "path": "scripts/lib/privacy.mjs",
-      "sha256": "5590a0218de781599e46a607e0c6afb5459ccab3599755978f963b779554d984"
+      "sha256": "57af661c425e6227bfed4572d0eeb1aa7e7a0ec04c9ae5d765a1c16fadd25589"
     },
     {
       "path": "scripts/lib/private-token-roster.mjs",
@@ -583,7 +583,7 @@
     },
     {
       "path": "scripts/lib/release-lockstep.mjs",
-      "sha256": "b930004afb3fc4b9a4fa8b53df1152a03ee68ddfa23f7bdf1c89d9e58bf1543e"
+      "sha256": "37b7a7b48e2cbd3820f3e766814638eaa9cfe03e38b87a2bfbbb6b252293ee56"
     },
     {
       "path": "scripts/lib/release-tag-gate.mjs",
@@ -671,7 +671,7 @@
     },
     {
       "path": "scripts/release.mjs",
-      "sha256": "88206dd79b2131e46bf806de098571eeba9f85944f2f83c313e925a9e12f9383"
+      "sha256": "3630562cf93ccb444df644b15d1aefd10e7e45bb13695ec206457e32b4c08e26"
     },
     {
       "path": "scripts/render-helper-docs.mjs",
@@ -767,7 +767,7 @@
     },
     {
       "path": "scripts/verify-staged-privacy.mjs",
-      "sha256": "729618ee306b68c1590db2aeea197818b4a7c9f1d504678ff8a312c38623c2e8"
+      "sha256": "a3af30ccafb6eba0e7d9cc61fd826dc38c03c2ab622d89aa9cbbfbd5333116f4"
     },
     {
       "path": "scripts/wiki-cli-reference.mjs",
@@ -778,7 +778,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R40 current Source final generation (package r40-closure). The original 62 whole files and the R40 necessary added whole files ran before this generation; the actual exit/counts are attached below with every failure, including the existing privacy-boundary historical PR23 provenance assertion, red before this generation because the scope and limit inventories it replaces lack that line. Source development verification is separate from integrated acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the unchanged R39 Source inputs, read in place; no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "R41 current Source final generation (package r41-release). The original 62 whole files and the R41 necessary added whole files ran before this generation; the actual exit and counts of that run are attached below with every failure. Source development verification is separate from integrated acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the unchanged R39 Source inputs, read in place; no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "bb91bdc40d2669aef823abaf8d2050ca105e9a89",
     "mergeCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
@@ -889,7 +889,7 @@
       "input": "inventory-values.json",
       "sha256": "922873f49c8237f7b23c4e538b2c1a8a68171d232ecc53949faed4c7850e9c20",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/inventory-values.json"
+      "rawEvidence": "dispatch-runs/init-053/r41-release-raw/inventory-values.json"
     },
     {
       "input": "publication-binding.json",
@@ -905,9 +905,9 @@
     },
     {
       "input": "source-inventory-inputs.json",
-      "sha256": "f416e9900f01dbf956f972d484d91cdc88fdec03ce812471fa692b426049adc7",
+      "sha256": "ef6c1bed10343bc39ee1377ca53c32d219b4d11fba755b75fdb9db2861a65c82",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/source-inventory-inputs.json"
+      "rawEvidence": "dispatch-runs/init-053/r41-release-raw/source-inventory-inputs.json"
     },
     {
       "input": "ds-publication-dependency-disposition.json",
@@ -917,15 +917,15 @@
     },
     {
       "input": "full-file-cadence-result.json",
-      "sha256": "1ae118ca27c36118e75c745ca72ec8cfecc3397e8ed193712096d3d58a696c72",
+      "sha256": "9617347e15a29462213e32deaa84d7f921f4a296fe79ac1ca0af85541d7bd6ca",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/full-file-cadence-result.json"
+      "rawEvidence": "dispatch-runs/init-053/r41-release-raw/full-file-cadence-result.json"
     },
     {
       "input": "limit-review-dispositions.json",
-      "sha256": "8268ac76a01511ae6b0b49f93533c78c0f7c9ae110756678ae10e7a1b9530474",
+      "sha256": "c7beedc8a11ec946ee1c6a708d46833c98a405e8712163054b017831b45e178e",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/limit-review-dispositions.json"
+      "rawEvidence": "dispatch-runs/init-053/r41-release-raw/limit-review-dispositions.json"
     },
     {
       "input": "r4-actual-callers.json",
@@ -937,7 +937,7 @@
       "input": "retained-bound-probe-result.json",
       "sha256": "70574c7704cb891f725132c60dd1c0cf4bf2b978c024d834f10594593e0d0ba0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/retained-bound-probe-result.json"
+      "rawEvidence": "dispatch-runs/init-053/r41-release-raw/retained-bound-probe-result.json"
     },
     {
       "input": "application-combined-result.json",
@@ -965,41 +965,40 @@
     }
   ],
   "currentWholeFileCadence": {
-    "exit": 1,
+    "exit": 0,
     "counts": {
-      "tests": 736,
-      "pass": 735,
-      "fail": 1,
+      "tests": 835,
+      "pass": 835,
+      "fail": 0,
       "cancelled": 0,
       "skipped": 0
     },
-    "wholeFiles": 69,
+    "wholeFiles": 77,
     "original61Retained": true,
     "necessaryAddedWholeFiles": [
       "tests/e2e-governed-loop.test.mjs",
-      "tests/rules-catalog.test.mjs",
-      "tests/managed-sections.test.mjs",
-      "tests/privacy-normalization.test.mjs",
-      "tests/inc238-markdown-link-gate.test.mjs",
-      "tests/wiki-pages.test.mjs",
+      "tests/release-lockstep.test.mjs",
+      "tests/release-tag-gate.test.mjs",
+      "tests/release-trust.test.mjs",
       "tests/names-alias-table.test.mjs",
-      "tests/push-wiki.test.mjs"
+      "tests/inc238-markdown-link-gate.test.mjs",
+      "tests/bootstrap.test.mjs",
+      "tests/staged-privacy-reviewed-paths.test.mjs",
+      "tests/p8-workflow-rc.test.mjs",
+      "tests/privacy-normalization.test.mjs",
+      "tests/local-command-byte-fidelity.test.mjs",
+      "tests/readme-render.test.mjs",
+      "tests/render-helper-docs.test.mjs",
+      "tests/cross-repo-privacy.test.mjs",
+      "tests/otel-privacy-guard.test.mjs",
+      "tests/token-attribution.test.mjs"
     ],
     "newRegistryCases": 0,
     "representation": "public structured summary; full raw diagnostic is retained separately",
-    "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/full-file-cadence-result.json",
-    "failures": [
-      {
-        "test": "DS publication provenance is classified only at exact inventory source lines",
-        "file": "tests/privacy-boundary.test.mjs",
-        "line": 344,
-        "reason": "The expression evaluated to a falsy value:; assert.ok(line)",
-        "reasonCode": "ERR_ASSERTION",
-        "rawAnchor": "dispatch-runs/init-053/r40-closure-raw/full-file-cadence-result.json#/reds/0"
-      }
-    ]
+    "rawEvidence": "dispatch-runs/init-053/r41-release-raw/full-file-cadence-result.json",
+    "failures": []
   },
-  "generationTimeUtc": "2026-10-07T20:52:27.412774+00:00",
+  "generationTimeUtc": "2026-10-08T00:23:43.506120+00:00",
   "currentIndividualReview": {
     "namedDeclarations": [
       {
@@ -30182,7 +30181,7 @@
             "initializer": "0"
           },
           {
-            "line": 246,
+            "line": 253,
             "initializer": "Buffer.isBuffer(entry.content) ? entry.content : Buffer.from(entry.content, \"utf8\")"
           }
         ],
@@ -30224,7 +30223,7 @@
             ]
           },
           {
-            "line": 246,
+            "line": 253,
             "syntax": "VariableDeclaration",
             "context": [
               "",
@@ -30236,7 +30235,7 @@
             ]
           },
           {
-            "line": 247,
+            "line": 254,
             "syntax": "CallExpression",
             "context": [
               "function expandSourceArchiveEntry(entry) {",
@@ -30248,7 +30247,7 @@
             ]
           },
           {
-            "line": 251,
+            "line": 258,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  let offset = 0;",
@@ -30260,7 +30259,7 @@
             ]
           },
           {
-            "line": 251,
+            "line": 258,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  let offset = 0;",
@@ -30272,7 +30271,7 @@
             ]
           },
           {
-            "line": 252,
+            "line": 259,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  let fileIndex = 0;",
@@ -30284,7 +30283,7 @@
             ]
           },
           {
-            "line": 260,
+            "line": 267,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    const joinedPath = prefix === \"\" ? path : `${prefix}/${path}`;",
@@ -30296,7 +30295,7 @@
             ]
           },
           {
-            "line": 266,
+            "line": 273,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    const dataEnd = dataStart + size;",
@@ -30308,7 +30307,7 @@
             ]
           },
           {
-            "line": 268,
+            "line": 275,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    if (paddedEnd > bytes.length) throw new Error(\"PRIVACY_ARCHIVE_LAYOUT_INVALID\");",
@@ -30320,7 +30319,7 @@
             ]
           },
           {
-            "line": 269,
+            "line": 276,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    expanded.push({ label: `${entry.label}#header:${joinedPath}`, kind: entry.kind, content: header.toString(\"utf8\") });",
@@ -30332,7 +30331,7 @@
             ]
           },
           {
-            "line": 274,
+            "line": 281,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  }",
@@ -30355,7 +30354,7 @@
         "currentInitializer": "[]",
         "declarations": [
           {
-            "line": 852,
+            "line": 859,
             "initializer": "[]"
           }
         ],
@@ -30373,7 +30372,7 @@
             ]
           },
           {
-            "line": 128,
+            "line": 135,
             "syntax": "PropertyAccessExpression",
             "context": [
               "]);",
@@ -30385,7 +30384,7 @@
             ]
           },
           {
-            "line": 715,
+            "line": 722,
             "syntax": "Parameter",
             "context": [
               "// `repositories` names the public GitHub repositories whose origin URL under `owner` is",
@@ -30397,7 +30396,7 @@
             ]
           },
           {
-            "line": 719,
+            "line": 726,
             "syntax": "CallExpression",
             "context": [
               "    throw new Error(\"PRIVACY_OWNER_REQUIRED\");",
@@ -30409,7 +30408,7 @@
             ]
           },
           {
-            "line": 725,
+            "line": 732,
             "syntax": "ForOfStatement",
             "context": [
               "  const archiveExpansions = new Map();",
@@ -30421,7 +30420,7 @@
             ]
           },
           {
-            "line": 744,
+            "line": 751,
             "syntax": "ForOfStatement",
             "context": [
               "  let entriesScanned = 0;",
@@ -30433,7 +30432,7 @@
             ]
           },
           {
-            "line": 852,
+            "line": 859,
             "syntax": "VariableDeclaration",
             "context": [
               "  }",
@@ -30445,7 +30444,7 @@
             ]
           },
           {
-            "line": 871,
+            "line": 878,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    const name = decodeGitMetadataBytes(nameBytes, \"PRIVACY_TREE_UTF8_INVALID\");",
@@ -30457,7 +30456,7 @@
             ]
           },
           {
-            "line": 874,
+            "line": 881,
             "syntax": "ReturnStatement",
             "context": [
               "    cursor = objectEnd;",
@@ -30469,7 +30468,7 @@
             ]
           },
           {
-            "line": 922,
+            "line": 929,
             "syntax": "PropertyAssignment",
             "context": [
               "    if (rootTree === undefined || !trees.has(rootTree)) throw new Error(\"PRIVACY_GIT_OBJECT_TYPE\");",
@@ -30481,7 +30480,7 @@
             ]
           },
           {
-            "line": 925,
+            "line": 932,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    while (stack.length > 0) {",
@@ -30493,7 +30492,7 @@
             ]
           },
           {
-            "line": 929,
+            "line": 936,
             "syntax": "PropertyAccessExpression",
             "context": [
               "        continue;",
@@ -30505,7 +30504,7 @@
             ]
           },
           {
-            "line": 935,
+            "line": 942,
             "syntax": "PropertyAssignment",
             "context": [
               "        const children = trees.get(entry.object);",
@@ -30528,13 +30527,13 @@
         "currentInitializer": "0",
         "declarations": [
           {
-            "line": 742,
+            "line": 749,
             "initializer": "0"
           }
         ],
         "exactUses": [
           {
-            "line": 742,
+            "line": 749,
             "syntax": "VariableDeclaration",
             "context": [
               "    }",
@@ -30546,7 +30545,7 @@
             ]
           },
           {
-            "line": 766,
+            "line": 773,
             "syntax": "BinaryExpression",
             "context": [
               "      }",
@@ -30558,7 +30557,7 @@
             ]
           },
           {
-            "line": 767,
+            "line": 774,
             "syntax": "BinaryExpression",
             "context": [
               "",
@@ -30570,7 +30569,7 @@
             ]
           },
           {
-            "line": 768,
+            "line": 775,
             "syntax": "ShorthandPropertyAssignment",
             "context": [
               "      entriesScanned += 1;",
@@ -30582,7 +30581,7 @@
             ]
           },
           {
-            "line": 769,
+            "line": 776,
             "syntax": "BinaryExpression",
             "context": [
               "      if (typeof onProgress === \"function\" && entriesScanned % 5_000 === 0) {",
@@ -30594,7 +30593,7 @@
             ]
           },
           {
-            "line": 773,
+            "line": 780,
             "syntax": "BinaryExpression",
             "context": [
               "    }",
@@ -30606,7 +30605,7 @@
             ]
           },
           {
-            "line": 774,
+            "line": 781,
             "syntax": "ShorthandPropertyAssignment",
             "context": [
               "  }",
@@ -30629,13 +30628,13 @@
         "currentInitializer": "content.subarray(modeEnd + 1, nameEnd)",
         "declarations": [
           {
-            "line": 867,
+            "line": 874,
             "initializer": "content.subarray(modeEnd + 1, nameEnd)"
           }
         ],
         "exactUses": [
           {
-            "line": 867,
+            "line": 874,
             "syntax": "VariableDeclaration",
             "context": [
               "      throw new Error(\"PRIVACY_TREE_RECORD_INVALID\");",
@@ -30647,7 +30646,7 @@
             ]
           },
           {
-            "line": 868,
+            "line": 875,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    }",
@@ -30659,7 +30658,7 @@
             ]
           },
           {
-            "line": 868,
+            "line": 875,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    }",
@@ -30671,7 +30670,7 @@
             ]
           },
           {
-            "line": 869,
+            "line": 876,
             "syntax": "CallExpression",
             "context": [
               "    const nameBytes = content.subarray(modeEnd + 1, nameEnd);",
@@ -30694,13 +30693,13 @@
         "currentInitializer": "objectIdLength / 2",
         "declarations": [
           {
-            "line": 851,
+            "line": 858,
             "initializer": "objectIdLength / 2"
           }
         ],
         "exactUses": [
           {
-            "line": 851,
+            "line": 858,
             "syntax": "VariableDeclaration",
             "context": [
               "    throw new Error(\"PRIVACY_GIT_OBJECT_TYPE\");",
@@ -30712,7 +30711,7 @@
             ]
           },
           {
-            "line": 860,
+            "line": 867,
             "syntax": "BinaryExpression",
             "context": [
               "    if (nameEnd === -1) throw new Error(\"PRIVACY_TREE_RECORD_INVALID\");",
@@ -30735,13 +30734,13 @@
         "currentInitializer": "commits[0]?.length",
         "declarations": [
           {
-            "line": 897,
+            "line": 904,
             "initializer": "commits[0]?.length"
           }
         ],
         "exactUses": [
           {
-            "line": 847,
+            "line": 854,
             "syntax": "Parameter",
             "context": [
               "}",
@@ -30753,7 +30752,7 @@
             ]
           },
           {
-            "line": 848,
+            "line": 855,
             "syntax": "CallExpression",
             "context": [
               "",
@@ -30765,7 +30764,7 @@
             ]
           },
           {
-            "line": 851,
+            "line": 858,
             "syntax": "BinaryExpression",
             "context": [
               "    throw new Error(\"PRIVACY_GIT_OBJECT_TYPE\");",
@@ -30777,7 +30776,7 @@
             ]
           },
           {
-            "line": 877,
+            "line": 884,
             "syntax": "Parameter",
             "context": [
               "}",
@@ -30789,7 +30788,7 @@
             ]
           },
           {
-            "line": 883,
+            "line": 890,
             "syntax": "BinaryExpression",
             "context": [
               "  const firstLine = content.subarray(0, lineEnd).toString(\"ascii\");",
@@ -30801,7 +30800,7 @@
             ]
           },
           {
-            "line": 897,
+            "line": 904,
             "syntax": "VariableDeclaration",
             "context": [
               "  const commitTrees = new Map();",
@@ -30813,7 +30812,7 @@
             ]
           },
           {
-            "line": 898,
+            "line": 905,
             "syntax": "BinaryExpression",
             "context": [
               "  const trees = new Map();",
@@ -30825,7 +30824,7 @@
             ]
           },
           {
-            "line": 906,
+            "line": 913,
             "syntax": "BinaryExpression",
             "context": [
               "    if (!match) continue;",
@@ -30837,7 +30836,7 @@
             ]
           },
           {
-            "line": 910,
+            "line": 917,
             "syntax": "CallExpression",
             "context": [
               "    }",
@@ -30849,7 +30848,7 @@
             ]
           },
           {
-            "line": 912,
+            "line": 919,
             "syntax": "CallExpression",
             "context": [
               "      commitTrees.set(object, parseCommitTreeId(record.content, objectIdLength));",
@@ -30872,13 +30871,13 @@
         "currentInitializer": "[]",
         "declarations": [
           {
-            "line": 630,
+            "line": 637,
             "initializer": "[]"
           }
         ],
         "exactUses": [
           {
-            "line": 630,
+            "line": 637,
             "syntax": "VariableDeclaration",
             "context": [
               "  let normalized = String(content);",
@@ -30890,7 +30889,7 @@
             ]
           },
           {
-            "line": 633,
+            "line": 640,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    normalized = normalized.split(\"\\n\").map((line) => {",
@@ -30902,7 +30901,7 @@
             ]
           },
           {
-            "line": 634,
+            "line": 641,
             "syntax": "PropertyAccessExpression",
             "context": [
               "      if (/\\[\\s*[\"'](?:LOCAL_ABSOLUTE_PATH|PRIVATE_SSH_URL)[\"']\\s*,/u.test(line)) {",
@@ -30914,7 +30913,7 @@
             ]
           },
           {
-            "line": 680,
+            "line": 687,
             "syntax": "ElementAccessExpression",
             "context": [
               "    normalized = normalized",
@@ -30937,13 +30936,13 @@
         "currentInitializer": "0",
         "declarations": [
           {
-            "line": 724,
+            "line": 731,
             "initializer": "0"
           }
         ],
         "exactUses": [
           {
-            "line": 724,
+            "line": 731,
             "syntax": "VariableDeclaration",
             "context": [
               "  const filenameMatches = new Map();",
@@ -30955,7 +30954,7 @@
             ]
           },
           {
-            "line": 736,
+            "line": 743,
             "syntax": "BinaryExpression",
             "context": [
               "      const expanded = expandSourceArchiveEntry(entry);",
@@ -30967,7 +30966,7 @@
             ]
           },
           {
-            "line": 739,
+            "line": 746,
             "syntax": "BinaryExpression",
             "context": [
               "    } else {",
@@ -30979,7 +30978,7 @@
             ]
           },
           {
-            "line": 768,
+            "line": 775,
             "syntax": "ShorthandPropertyAssignment",
             "context": [
               "      entriesScanned += 1;",
@@ -30991,7 +30990,7 @@
             ]
           },
           {
-            "line": 774,
+            "line": 781,
             "syntax": "ShorthandPropertyAssignment",
             "context": [
               "  }",
@@ -31353,13 +31352,13 @@
         "currentInitializer": "await readFile(archive).catch((error) => {\n    refuse(\"RELEASE_ASSET_MISSING\", `pack-release did not create ${archive}`, { path: archive, code: error?.code ?? \"UNKNOWN\" });\n  })",
         "declarations": [
           {
-            "line": 411,
+            "line": 428,
             "initializer": "await readFile(archive).catch((error) => {\n    refuse(\"RELEASE_ASSET_MISSING\", `pack-release did not create ${archive}`, { path: archive, code: error?.code ?? \"UNKNOWN\" });\n  })"
           }
         ],
         "exactUses": [
           {
-            "line": 411,
+            "line": 428,
             "syntax": "VariableDeclaration",
             "context": [
               "  const archive = join(engineRoot, RELEASE_OUTPUT_DIRECTORY, RELEASE_ASSET(version));",
@@ -31371,7 +31370,7 @@
             ]
           },
           {
-            "line": 417,
+            "line": 434,
             "syntax": "CallExpression",
             "context": [
               "    refuse(\"RELEASE_ASSET_MISSING\", `pack-release did not create ${checksum}`, { path: checksum, code: error?.code ?? \"UNKNOWN\" });",
@@ -31380,6 +31379,102 @@
               "  if (shaFile !== `${sha256}  ${RELEASE_ASSET(version)}\\n`) {",
               "    refuse(\"RELEASE_ASSET_DIGEST_MISMATCH\", `${checksum} does not match the release archive`, { archive, checksum, expected: sha256, actual: shaFile.trim() });",
               "  }"
+            ]
+          },
+          {
+            "line": 646,
+            "syntax": "PropertyAssignment",
+            "context": [
+              "    }",
+              "    const content = await readFile(join(root, ...path.split(\"/\")));",
+              "    changes.push({ path, status, bytes: content.length, sha256: sha256Hex(content) });",
+              "  }",
+              "  return changes.sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));",
+              "}"
+            ]
+          },
+          {
+            "line": 800,
+            "syntax": "PropertyAccessExpression",
+            "context": [
+              "  const text = (value) => typeof value === \"string\" && value.length > 0;",
+              "  const list = (value) => Array.isArray(value) && value.every(text);",
+              "  const changes = (value) => Array.isArray(value) && value.every((change) => isRecord(change) && text(change.path) && (change.status === \"A\" || change.status === \"M\") && Number.isSafeInteger(change.bytes) && change.bytes >= 0 && /^[0-9a-f]{64}$/u.test(change.sha256 ?? \"\"));",
+              "  if (!isRecord(document)) return [\"the receipt is not a JSON object\"];",
+              "  if (document.schemaVersion !== RELEASE_RECEIPT_SCHEMA) problems.push(\"schemaVersion\");",
+              "  if (!text(document.version)) problems.push(\"version\");"
+            ]
+          },
+          {
+            "line": 800,
+            "syntax": "PropertyAccessExpression",
+            "context": [
+              "  const text = (value) => typeof value === \"string\" && value.length > 0;",
+              "  const list = (value) => Array.isArray(value) && value.every(text);",
+              "  const changes = (value) => Array.isArray(value) && value.every((change) => isRecord(change) && text(change.path) && (change.status === \"A\" || change.status === \"M\") && Number.isSafeInteger(change.bytes) && change.bytes >= 0 && /^[0-9a-f]{64}$/u.test(change.sha256 ?? \"\"));",
+              "  if (!isRecord(document)) return [\"the receipt is not a JSON object\"];",
+              "  if (document.schemaVersion !== RELEASE_RECEIPT_SCHEMA) problems.push(\"schemaVersion\");",
+              "  if (!text(document.version)) problems.push(\"version\");"
+            ]
+          },
+          {
+            "line": 879,
+            "syntax": "PropertyAssignment",
+            "context": [
+              "    else {",
+              "      const blob = gitRaw(root, [\"cat-file\", \"blob\", `HEAD:${change.path}`], env);",
+              "      const found = { bytes: blob.length, sha256: sha256Hex(blob) };",
+              "      if (found.bytes !== wanted.bytes || found.sha256 !== wanted.sha256) mismatch(change.path, { bytes: wanted.bytes, sha256: wanted.sha256 }, found);",
+              "    }",
+              "  }"
+            ]
+          },
+          {
+            "line": 880,
+            "syntax": "PropertyAccessExpression",
+            "context": [
+              "      const blob = gitRaw(root, [\"cat-file\", \"blob\", `HEAD:${change.path}`], env);",
+              "      const found = { bytes: blob.length, sha256: sha256Hex(blob) };",
+              "      if (found.bytes !== wanted.bytes || found.sha256 !== wanted.sha256) mismatch(change.path, { bytes: wanted.bytes, sha256: wanted.sha256 }, found);",
+              "    }",
+              "  }",
+              "  for (const change of recorded) if (!seen.has(change.path)) mismatch(change.path, change.status, \"unchanged\");"
+            ]
+          },
+          {
+            "line": 880,
+            "syntax": "PropertyAccessExpression",
+            "context": [
+              "      const blob = gitRaw(root, [\"cat-file\", \"blob\", `HEAD:${change.path}`], env);",
+              "      const found = { bytes: blob.length, sha256: sha256Hex(blob) };",
+              "      if (found.bytes !== wanted.bytes || found.sha256 !== wanted.sha256) mismatch(change.path, { bytes: wanted.bytes, sha256: wanted.sha256 }, found);",
+              "    }",
+              "  }",
+              "  for (const change of recorded) if (!seen.has(change.path)) mismatch(change.path, change.status, \"unchanged\");"
+            ]
+          },
+          {
+            "line": 880,
+            "syntax": "PropertyAssignment",
+            "context": [
+              "      const blob = gitRaw(root, [\"cat-file\", \"blob\", `HEAD:${change.path}`], env);",
+              "      const found = { bytes: blob.length, sha256: sha256Hex(blob) };",
+              "      if (found.bytes !== wanted.bytes || found.sha256 !== wanted.sha256) mismatch(change.path, { bytes: wanted.bytes, sha256: wanted.sha256 }, found);",
+              "    }",
+              "  }",
+              "  for (const change of recorded) if (!seen.has(change.path)) mismatch(change.path, change.status, \"unchanged\");"
+            ]
+          },
+          {
+            "line": 880,
+            "syntax": "PropertyAccessExpression",
+            "context": [
+              "      const blob = gitRaw(root, [\"cat-file\", \"blob\", `HEAD:${change.path}`], env);",
+              "      const found = { bytes: blob.length, sha256: sha256Hex(blob) };",
+              "      if (found.bytes !== wanted.bytes || found.sha256 !== wanted.sha256) mismatch(change.path, { bytes: wanted.bytes, sha256: wanted.sha256 }, found);",
+              "    }",
+              "  }",
+              "  for (const change of recorded) if (!seen.has(change.path)) mismatch(change.path, change.status, \"unchanged\");"
             ]
           }
         ],
@@ -31394,13 +31489,13 @@
         "currentInitializer": "/(retired|retire|deprecated|deprecation|停用|退役|移除|删除)/iu.test(section)",
         "declarations": [
           {
-            "line": 107,
+            "line": 112,
             "initializer": "/(retired|retire|deprecated|deprecation|停用|退役|移除|删除)/iu.test(section)"
           }
         ],
         "exactUses": [
           {
-            "line": 107,
+            "line": 112,
             "syntax": "VariableDeclaration",
             "context": [
               "  const hasHelperRename = section.includes(\"Mana Orchestrate\");",
@@ -31412,7 +31507,7 @@
             ]
           },
           {
-            "line": 108,
+            "line": 113,
             "syntax": "PrefixUnaryExpression",
             "context": [
               "  const hasDeprecatedNames = section.includes(LEGACY_HELPER_NAME) && new RegExp(escapeRegExp(LEGACY_BRAND_NAME), \"iu\").test(section);",
@@ -31435,13 +31530,13 @@
         "currentInitializer": "result.stdout.trim().split(\"\\n\").filter((line) => line !== \"\")",
         "declarations": [
           {
-            "line": 279,
+            "line": 296,
             "initializer": "result.stdout.trim().split(\"\\n\").filter((line) => line !== \"\")"
           }
         ],
         "exactUses": [
           {
-            "line": 279,
+            "line": 296,
             "syntax": "VariableDeclaration",
             "context": [
               "    refuse(\"RELEASE_STEP_FAILED\", `${label} failed`, { step: label, status: result.status, stderr: result.stderr.trim(), stdout: result.stdout.trim() });",
@@ -31453,7 +31548,7 @@
             ]
           },
           {
-            "line": 281,
+            "line": 298,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  const lines = result.stdout.trim().split(\"\\n\").filter((line) => line !== \"\");",
@@ -40826,13 +40921,13 @@
         "currentInitializer": "64 * 1024 * 1024",
         "declarations": [
           {
-            "line": 16,
+            "line": 22,
             "initializer": "64 * 1024 * 1024"
           }
         ],
         "exactUses": [
           {
-            "line": 16,
+            "line": 22,
             "syntax": "VariableDeclaration",
             "context": [
               "const REPOSITORY_NAME_PATTERN = ENGINE_REPOSITORY_NAMES.map((name) => name.replace(/[.*+?^${}()|[\\]\\\\]/gu, \"\\\\$&\")).join(\"|\");",
@@ -40844,7 +40939,7 @@
             ]
           },
           {
-            "line": 35,
+            "line": 41,
             "syntax": "PropertyAssignment",
             "context": [
               "    cwd: root,",
@@ -40856,7 +40951,7 @@
             ]
           },
           {
-            "line": 100,
+            "line": 106,
             "syntax": "PropertyAssignment",
             "context": [
               "    cwd: root,",
@@ -40879,13 +40974,13 @@
         "currentInitializer": "0",
         "declarations": [
           {
-            "line": 112,
+            "line": 118,
             "initializer": "0"
           }
         ],
         "exactUses": [
           {
-            "line": 112,
+            "line": 118,
             "syntax": "VariableDeclaration",
             "context": [
               "  const paths = stagedPaths(root);",
@@ -40897,7 +40992,7 @@
             ]
           },
           {
-            "line": 121,
+            "line": 127,
             "syntax": "PropertyAssignment",
             "context": [
               "    // inspect without reaching into a sibling repository.",
@@ -40909,23 +41004,23 @@
             ]
           },
           {
-            "line": 125,
+            "line": 131,
             "syntax": "BinaryExpression",
             "context": [
               "    }",
               "    const content = stagedContent(root, path);",
               "    bytes += content.length;",
-              "    entries.push({ label: `staged-source:${path}`, kind: \"source\", content: content.toString(\"utf8\") });",
+              "    entries.push({ label: path, kind: \"source\", content: content.toString(\"utf8\") });",
               "    objects.push({ path, object: indexEntry.object, mode: indexEntry.mode, bytes: content.length, scanned: true });",
               "  }"
             ]
           },
           {
-            "line": 127,
+            "line": 133,
             "syntax": "PropertyAssignment",
             "context": [
               "    bytes += content.length;",
-              "    entries.push({ label: `staged-source:${path}`, kind: \"source\", content: content.toString(\"utf8\") });",
+              "    entries.push({ label: path, kind: \"source\", content: content.toString(\"utf8\") });",
               "    objects.push({ path, object: indexEntry.object, mode: indexEntry.mode, bytes: content.length, scanned: true });",
               "  }",
               "  const runtime = privateRuntimeConfig();",
@@ -40933,7 +41028,7 @@
             ]
           },
           {
-            "line": 141,
+            "line": 147,
             "syntax": "PropertyAssignment",
             "context": [
               "    stagedPaths: paths.length,",
@@ -40956,13 +41051,13 @@
         "currentInitializer": "[]",
         "declarations": [
           {
-            "line": 111,
+            "line": 117,
             "initializer": "[]"
           }
         ],
         "exactUses": [
           {
-            "line": 111,
+            "line": 117,
             "syntax": "VariableDeclaration",
             "context": [
               "  const owner = remoteOwner(root);",
@@ -40974,7 +41069,7 @@
             ]
           },
           {
-            "line": 116,
+            "line": 122,
             "syntax": "PropertyAccessExpression",
             "context": [
               "  for (const path of paths) {",
@@ -40986,19 +41081,19 @@
             ]
           },
           {
-            "line": 126,
+            "line": 132,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    const content = stagedContent(root, path);",
               "    bytes += content.length;",
-              "    entries.push({ label: `staged-source:${path}`, kind: \"source\", content: content.toString(\"utf8\") });",
+              "    entries.push({ label: path, kind: \"source\", content: content.toString(\"utf8\") });",
               "    objects.push({ path, object: indexEntry.object, mode: indexEntry.mode, bytes: content.length, scanned: true });",
               "  }",
               "  const runtime = privateRuntimeConfig();"
             ]
           },
           {
-            "line": 133,
+            "line": 139,
             "syntax": "CallExpression",
             "context": [
               "    ? [runtime.host, runtime.runtimeRoot, `${runtime.runtimeRoot}/governance`]",
@@ -41010,7 +41105,7 @@
             ]
           },
           {
-            "line": 140,
+            "line": 146,
             "syntax": "PropertyAccessExpression",
             "context": [
               "    owner,",
@@ -64447,11 +64542,11 @@
         "oldLine": 270,
         "source": "if (padding.length > 0) expanded.push({ label: `${entry.label}#padding:${joinedPath}`, kind: entry.kind, content: padding.toString(\"utf8\") });",
         "currentLines": [
-          270
+          277
         ],
         "syntax": [
           {
-            "line": 270,
+            "line": 277,
             "parents": [
               "IfStatement",
               "Block",
@@ -64480,11 +64575,11 @@
         "oldLine": 275,
         "source": "if (trailer.length > 0) expanded.push({ label: `${entry.label}#trailer`, kind: entry.kind, content: trailer.toString(\"utf8\") });",
         "currentLines": [
-          275
+          282
         ],
         "syntax": [
           {
-            "line": 275,
+            "line": 282,
             "parents": [
               "IfStatement",
               "Block",
@@ -64512,11 +64607,11 @@
         "oldLine": 468,
         "source": "if (digits.length > 0 && /^[0-9a-f]+$/iu.test(digits) && (!brace || close >= 0)) {",
         "currentLines": [
-          468
+          475
         ],
         "syntax": [
           {
-            "line": 468,
+            "line": 475,
             "parents": [
               "IfStatement",
               "Block",
@@ -64545,12 +64640,12 @@
         "oldLine": 668,
         "source": "return parts.length > 0 ? parts.join(separator) : _;",
         "currentLines": [
-          668,
-          676
+          675,
+          683
         ],
         "syntax": [
           {
-            "line": 668,
+            "line": 675,
             "parents": [
               "ReturnStatement",
               "Block",
@@ -64569,7 +64664,7 @@
             ]
           },
           {
-            "line": 676,
+            "line": 683,
             "parents": [
               "ReturnStatement",
               "Block",
@@ -64598,12 +64693,12 @@
         "oldLine": 676,
         "source": "return parts.length > 0 ? parts.join(separator) : _;",
         "currentLines": [
-          668,
-          676
+          675,
+          683
         ],
         "syntax": [
           {
-            "line": 668,
+            "line": 675,
             "parents": [
               "ReturnStatement",
               "Block",
@@ -64622,7 +64717,7 @@
             ]
           },
           {
-            "line": 676,
+            "line": 683,
             "parents": [
               "ReturnStatement",
               "Block",
@@ -64651,11 +64746,11 @@
         "oldLine": 837,
         "source": ".slice(0, -1)",
         "currentLines": [
-          837
+          844
         ],
         "syntax": [
           {
-            "line": 837,
+            "line": 844,
             "parents": [
               "PropertyAccessExpression",
               "CallExpression",
@@ -64684,11 +64779,11 @@
         "oldLine": 923,
         "source": "while (stack.length > 0) {",
         "currentLines": [
-          923
+          930
         ],
         "syntax": [
           {
-            "line": 923,
+            "line": 930,
             "parents": [
               "WhileStatement",
               "Block",
@@ -65242,11 +65337,11 @@
         "oldLine": 95,
         "source": "return next ? remainder.slice(0, next.index).trim() : remainder.trim();",
         "currentLines": [
-          95
+          100
         ],
         "syntax": [
           {
-            "line": 95,
+            "line": 100,
             "parents": [
               "ReturnStatement",
               "Block",
@@ -65274,11 +65369,11 @@
         "oldLine": 133,
         "source": "maxBuffer: 16 * 1024 * 1024,",
         "currentLines": [
-          133
+          140
         ],
         "syntax": [
           {
-            "line": 133,
+            "line": 140,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -65287,13 +65382,13 @@
               "VariableDeclaration"
             ],
             "context": [
-              "    encoding: \"utf8\",",
+              "    encoding: raw ? \"buffer\" : \"utf8\",",
               "    stdio: [\"ignore\", \"pipe\", \"pipe\"],",
               "    maxBuffer: 16 * 1024 * 1024,",
               "  });",
-              "  if (result.error) return { status: 1, stdout: result.stdout ?? \"\", stderr: String(result.error) };",
-              "  return { status: result.status ?? 1, stdout: result.stdout ?? \"\", stderr: result.stderr ?? \"\" };",
-              "}"
+              "  const stdout = result.stdout ?? (raw ? Buffer.alloc(0) : \"\");",
+              "  const stderr = Buffer.isBuffer(result.stderr) ? result.stderr.toString(\"utf8\") : result.stderr ?? \"\";",
+              "  if (result.error) return { status: 1, stdout, stderr: String(result.error) };"
             ]
           }
         ],
@@ -65307,11 +65402,11 @@
         "oldLine": 356,
         "source": "if (gates.ok !== true || reds.length > 0 || JSON.stringify(gates.reds) !== \"[]\" || JSON.stringify(gates.requiredReds) !== \"[]\" || JSON.stringify(result.reds) !== \"[]\") {",
         "currentLines": [
-          356
+          373
         ],
         "syntax": [
           {
-            "line": 356,
+            "line": 373,
             "parents": [
               "IfStatement",
               "Block",
@@ -65339,11 +65434,11 @@
         "oldLine": 387,
         "source": "const body = (next ? remainder.slice(0, next.index) : remainder).trim();",
         "currentLines": [
-          387
+          404
         ],
         "syntax": [
           {
-            "line": 387,
+            "line": 404,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -65372,11 +65467,11 @@
         "oldLine": 390,
         "source": "const prefix = source.slice(0, heading.index);",
         "currentLines": [
-          390
+          407
         ],
         "syntax": [
           {
-            "line": 390,
+            "line": 407,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -65404,33 +65499,11 @@
         "file": "scripts/lib/release-lockstep.mjs",
         "oldLine": 463,
         "source": "await writeFile(join(engine.root, FRAMEWORK_VERSION_SOURCE), `${framework.source.slice(0, declaration.index)}${declaration[0].replace(`\"${declaration[1]}\"`, `\"${version}\"`)}${framework.source.slice(declaration.index + declaration[0].length)}`);",
-        "currentLines": [
-          463
-        ],
-        "syntax": [
-          {
-            "line": 463,
-            "parents": [
-              "AwaitExpression",
-              "ExpressionStatement",
-              "Block",
-              "FunctionDeclaration",
-              "SourceFile"
-            ],
-            "context": [
-              "  for (const path of packagePaths) await updatePackageVersion(path, version);",
-              "  const declaration = framework.declaration;",
-              "  await writeFile(join(engine.root, FRAMEWORK_VERSION_SOURCE), `${framework.source.slice(0, declaration.index)}${declaration[0].replace(`\"${declaration[1]}\"`, `\"${version}\"`)}${framework.source.slice(declaration.index + declaration[0].length)}`);",
-              "  await writeFile(changelogPath, nextChangelog);",
-              "",
-              "  const build = parseCommandJson(await writeResult(\"corepack\", [\"pnpm@11.3.0\", \"--dir\", engine.root, \"run\", \"build\"], { cwd: engine.root, env, runner }), \"build\");",
-              "  if (build.ok === false) refuse(\"RELEASE_BUILD_FAILED\", \"the release build reported failure\", { build });"
-            ]
-          }
-        ],
+        "currentLines": [],
+        "syntax": [],
         "review": {
-          "class": "data-measurement-or-transformation",
-          "basis": "no upper-bound comparison or cap argument on this observed line; enclosing expression retained"
+          "class": "changed-or-removed-source",
+          "basis": "original exact source observation no longer occurs; current named review and source bindings supersede its old line"
         }
       },
       {
@@ -73182,11 +73255,11 @@
         "oldLine": 16,
         "source": "const MAX_CAPTURE_BYTES = 64 * 1024 * 1024;",
         "currentLines": [
-          16
+          22
         ],
         "syntax": [
           {
-            "line": 16,
+            "line": 22,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -73222,12 +73295,12 @@
         "oldLine": 35,
         "source": "maxBuffer: MAX_CAPTURE_BYTES,",
         "currentLines": [
-          35,
-          100
+          41,
+          106
         ],
         "syntax": [
           {
-            "line": 35,
+            "line": 41,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -73246,7 +73319,7 @@
             ]
           },
           {
-            "line": 100,
+            "line": 106,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -73284,11 +73357,11 @@
         "oldLine": 41,
         "source": "if (!allowStderr && result.stderr.length > 0) {",
         "currentLines": [
-          41
+          47
         ],
         "syntax": [
           {
-            "line": 41,
+            "line": 47,
             "parents": [
               "IfStatement",
               "Block",
@@ -73316,11 +73389,11 @@
         "oldLine": 51,
         "source": "maxBuffer: 4096,",
         "currentLines": [
-          51
+          57
         ],
         "syntax": [
           {
-            "line": 51,
+            "line": 57,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -73349,11 +73422,11 @@
         "oldLine": 85,
         "source": "const [mode, object, stage] = record.slice(0, separator).split(/\\s+/u);",
         "currentLines": [
-          85
+          91
         ],
         "syntax": [
           {
-            "line": 85,
+            "line": 91,
             "parents": [
               "VariableDeclarationList",
               "FirstStatement",
@@ -73382,12 +73455,12 @@
         "oldLine": 100,
         "source": "maxBuffer: MAX_CAPTURE_BYTES,",
         "currentLines": [
-          35,
-          100
+          41,
+          106
         ],
         "syntax": [
           {
-            "line": 35,
+            "line": 41,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -73406,7 +73479,7 @@
             ]
           },
           {
-            "line": 100,
+            "line": 106,
             "parents": [
               "Identifier",
               "PropertyAssignment",
@@ -73444,11 +73517,11 @@
         "oldLine": 104,
         "source": "if (result.stderr.length > 0) fail(\"PRIVACY_STAGED_GIT_UNEXPECTED_STDERR\", `${path}: ${result.stderr.toString(\"utf8\")}`.trim());",
         "currentLines": [
-          104
+          110
         ],
         "syntax": [
           {
-            "line": 104,
+            "line": 110,
             "parents": [
               "IfStatement",
               "Block",
@@ -73663,10 +73736,10 @@
         "nonexecuting-reference": 51,
         "runtime-representation-use": 122,
         "presence-or-shape": 350,
-        "data-measurement-or-transformation": 165,
+        "data-measurement-or-transformation": 164,
         "structural-selection": 19,
         "linked-exact-consumers": 123,
-        "changed-or-removed-source": 4,
+        "changed-or-removed-source": 5,
         "declared-staleness-policy": 4,
         "runtime-or-bound-file-contract": 21,
         "retired-parameter": 2,
@@ -91817,7 +91890,7 @@
       "oldInitializer": "Buffer.isBuffer(entry.content) ? entry.content : Buffer.from(entry.content, \"utf8\")",
       "oldLine": 242,
       "currentInitializer": "Buffer.isBuffer(entry.content) ? entry.content : Buffer.from(entry.content, \"utf8\")",
-      "currentLine": 246,
+      "currentLine": 253,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
@@ -91837,52 +91910,52 @@
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 246,
+          "line": 253,
           "text": "const bytes = Buffer.isBuffer(entry.content) ? entry.content : Buffer.from(entry.content, \"utf8\");"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 247,
+          "line": 254,
           "text": "const files = readUstar(bytes);"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 251,
+          "line": 258,
           "text": "while (offset + TAR_BLOCK_BYTES <= bytes.length && !bytes.subarray(offset, offset + TAR_BLOCK_BYTES).every((byte) => byte === 0)) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 252,
+          "line": 259,
           "text": "const header = bytes.subarray(offset, offset + TAR_BLOCK_BYTES);"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 260,
+          "line": 267,
           "text": "if (file === undefined || file.path !== joinedPath || file.bytes.length !== size) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 266,
+          "line": 273,
           "text": "if (paddedEnd > bytes.length) throw new Error(\"PRIVACY_ARCHIVE_LAYOUT_INVALID\");"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 268,
+          "line": 275,
           "text": "expanded.push({ label: `${entry.label}#body:${joinedPath}`, kind: entry.kind, sourcePaths: [joinedPath], content: decodePrivacyScanBytes(file.bytes) });"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 269,
+          "line": 276,
           "text": "const padding = bytes.subarray(dataEnd, paddedEnd);"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 274,
+          "line": 281,
           "text": "const trailer = bytes.subarray(offset);"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 781,
+          "line": 788,
           "text": "// `git cat-file --batch` frames each object as \"<oid> SP <type> SP <size> LF <bytes> LF\"."
         }
       ],
@@ -91897,7 +91970,7 @@
       "oldInitializer": "[]",
       "oldLine": 848,
       "currentInitializer": "[]",
-      "currentLine": 852,
+      "currentLine": 859,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
@@ -91912,67 +91985,67 @@
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 128,
+          "line": 135,
           "text": "[...CLASSIFIED_P8_RELEASE_ENTRY_SOURCES.entries()].map(([label, sourcePath]) => ["
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 204,
+          "line": 211,
           "text": "// other release entries need the exact P8 package rule above."
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 715,
+          "line": 722,
           "text": "export function scanPrivacyEntries(entries, { owner, privateTokens = [], repositories = [], onProgress = undefined } = {}) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 719,
+          "line": 726,
           "text": "if (!Array.isArray(entries)) throw new Error(\"PRIVACY_ENTRY_INVALID\");"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 725,
+          "line": 732,
           "text": "for (const entry of entries) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 744,
+          "line": 751,
           "text": "for (const originalEntry of entries) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 852,
+          "line": 859,
           "text": "const entries = [];"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 871,
+          "line": 878,
           "text": "entries.push({ name, object: content.subarray(objectStart, objectEnd).toString(\"hex\"), type });"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 874,
+          "line": 881,
           "text": "return entries;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 922,
+          "line": 929,
           "text": "const stack = [{ tree: rootTree, prefix: \"\", entries: trees.get(rootTree), nextIndex: 0 }];"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 925,
+          "line": 932,
           "text": "if (frame.nextIndex >= frame.entries.length) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 929,
+          "line": 936,
           "text": "const entry = frame.entries[frame.nextIndex];"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 935,
+          "line": 942,
           "text": "stack.push({ tree: entry.object, prefix: path, entries: children, nextIndex: 0 });"
         }
       ],
@@ -91987,42 +92060,42 @@
       "oldInitializer": "0",
       "oldLine": 738,
       "currentInitializer": "0",
-      "currentLine": 742,
+      "currentLine": 749,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 742,
+          "line": 749,
           "text": "let entriesScanned = 0;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 766,
+          "line": 773,
           "text": "entriesScanned += 1;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 767,
+          "line": 774,
           "text": "if (typeof onProgress === \"function\" && entriesScanned % 5_000 === 0) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 768,
+          "line": 775,
           "text": "onProgress({ entriesScanned, totalEntries });"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 769,
+          "line": 776,
           "text": "lastProgressCount = entriesScanned;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 773,
+          "line": 780,
           "text": "if (typeof onProgress === \"function\" && lastProgressCount !== entriesScanned) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 774,
+          "line": 781,
           "text": "onProgress({ entriesScanned, totalEntries });"
         }
       ],
@@ -92037,22 +92110,22 @@
       "oldInitializer": "content.subarray(modeEnd + 1, nameEnd)",
       "oldLine": 863,
       "currentInitializer": "content.subarray(modeEnd + 1, nameEnd)",
-      "currentLine": 867,
+      "currentLine": 874,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 867,
+          "line": 874,
           "text": "const nameBytes = content.subarray(modeEnd + 1, nameEnd);"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 868,
+          "line": 875,
           "text": "if (nameBytes.length === 0 || nameBytes.includes(0x2f)) throw new Error(\"PRIVACY_TREE_RECORD_INVALID\");"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 869,
+          "line": 876,
           "text": "const name = decodeGitMetadataBytes(nameBytes, \"PRIVACY_TREE_UTF8_INVALID\");"
         }
       ],
@@ -92067,17 +92140,17 @@
       "oldInitializer": "objectIdLength / 2",
       "oldLine": 847,
       "currentInitializer": "objectIdLength / 2",
-      "currentLine": 851,
+      "currentLine": 858,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 851,
+          "line": 858,
           "text": "const objectIdBytes = objectIdLength / 2;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 860,
+          "line": 867,
           "text": "const objectEnd = objectStart + objectIdBytes;"
         }
       ],
@@ -92092,57 +92165,57 @@
       "oldInitializer": "commits[0]?.length",
       "oldLine": 893,
       "currentInitializer": "commits[0]?.length",
-      "currentLine": 897,
+      "currentLine": 904,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 847,
+          "line": 854,
           "text": "export function parseGitTreeObject(content, objectIdLength) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 848,
+          "line": 855,
           "text": "if (!Buffer.isBuffer(content) || ![40, 64].includes(objectIdLength)) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 851,
+          "line": 858,
           "text": "const objectIdBytes = objectIdLength / 2;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 877,
+          "line": 884,
           "text": "function parseCommitTreeId(content, objectIdLength) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 883,
+          "line": 890,
           "text": "if (!match || match[1].length !== objectIdLength) throw new Error(\"PRIVACY_GIT_OBJECT_TYPE\");"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 897,
+          "line": 904,
           "text": "const objectIdLength = commits[0]?.length;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 898,
+          "line": 905,
           "text": "if (commits.some((commit) => typeof commit !== \"string\" || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(commit) || commit.length !== objectIdLength)) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 906,
+          "line": 913,
           "text": "if (object.length !== objectIdLength || !Buffer.isBuffer(record.content)) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 910,
+          "line": 917,
           "text": "commitTrees.set(object, parseCommitTreeId(record.content, objectIdLength));"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 912,
+          "line": 919,
           "text": "trees.set(object, parseGitTreeObject(record.content, objectIdLength));"
         }
       ],
@@ -92157,27 +92230,27 @@
       "oldInitializer": "[]",
       "oldLine": 626,
       "currentInitializer": "[]",
-      "currentLine": 630,
+      "currentLine": 637,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 630,
+          "line": 637,
           "text": "const protectedPatternLines = [];"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 633,
+          "line": 640,
           "text": "const marker = `__PUBLIC_PATTERN_LINE_${protectedPatternLines.length}__`;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 634,
+          "line": 641,
           "text": "protectedPatternLines.push(line);"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 680,
+          "line": 687,
           "text": ".replace(/__PUBLIC_PATTERN_LINE_(\\d+)__/gu, (_, index) => protectedPatternLines[Number(index)]);"
         }
       ],
@@ -92192,32 +92265,32 @@
       "oldInitializer": "0",
       "oldLine": 720,
       "currentInitializer": "0",
-      "currentLine": 724,
+      "currentLine": 731,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 724,
+          "line": 731,
           "text": "let totalEntries = 0;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 736,
+          "line": 743,
           "text": "totalEntries += expanded.length;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 739,
+          "line": 746,
           "text": "totalEntries += 1;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 768,
+          "line": 775,
           "text": "onProgress({ entriesScanned, totalEntries });"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 774,
+          "line": 781,
           "text": "onProgress({ entriesScanned, totalEntries });"
         }
       ],
@@ -92357,18 +92430,58 @@
       "oldInitializer": "await readFile(archive).catch((error) => {\n    refuse(\"RELEASE_ASSET_MISSING\", `pack-release did not create ${archive}`, { path: archive, code: error?.code ?? \"UNKNOWN\" });\n  })",
       "oldLine": 411,
       "currentInitializer": "await readFile(archive).catch((error) => {\n    refuse(\"RELEASE_ASSET_MISSING\", `pack-release did not create ${archive}`, { path: archive, code: error?.code ?? \"UNKNOWN\" });\n  })",
-      "currentLine": 411,
+      "currentLine": 428,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/release-lockstep.mjs",
-          "line": 411,
+          "line": 132,
+          "text": "// `raw` keeps stdout as the exact bytes (committed blobs are compared byte for byte); stderr is"
+        },
+        {
+          "file": "scripts/lib/release-lockstep.mjs",
+          "line": 428,
           "text": "const bytes = await readFile(archive).catch((error) => {"
         },
         {
           "file": "scripts/lib/release-lockstep.mjs",
-          "line": 417,
+          "line": 434,
           "text": "const sha256 = createHash(\"sha256\").update(bytes).digest(\"hex\");"
+        },
+        {
+          "file": "scripts/lib/release-lockstep.mjs",
+          "line": 633,
+          "text": "// regular file, with its exact bytes. Anything else is not a generated release file."
+        },
+        {
+          "file": "scripts/lib/release-lockstep.mjs",
+          "line": 646,
+          "text": "changes.push({ path, status, bytes: content.length, sha256: sha256Hex(content) });"
+        },
+        {
+          "file": "scripts/lib/release-lockstep.mjs",
+          "line": 651,
+          "text": "// The complete committed bytes of a regular file, read through its blob id as the release"
+        },
+        {
+          "file": "scripts/lib/release-lockstep.mjs",
+          "line": 800,
+          "text": "const changes = (value) => Array.isArray(value) && value.every((change) => isRecord(change) && text(change.path) && (change.status === \"A\" || change.status === \"M\") && Number.isSafeInteger(change.bytes) && change.bytes >= 0 && /^[0-9a-f]{64}$/u.test(change.sha256 ?? \"\"));"
+        },
+        {
+          "file": "scripts/lib/release-lockstep.mjs",
+          "line": 859,
+          "text": "// its exact bytes, every path to remove as a deletion, and nothing else."
+        },
+        {
+          "file": "scripts/lib/release-lockstep.mjs",
+          "line": 879,
+          "text": "const found = { bytes: blob.length, sha256: sha256Hex(blob) };"
+        },
+        {
+          "file": "scripts/lib/release-lockstep.mjs",
+          "line": 880,
+          "text": "if (found.bytes !== wanted.bytes || found.sha256 !== wanted.sha256) mismatch(change.path, { bytes: wanted.bytes, sha256: wanted.sha256 }, found);"
         }
       ],
       "originalBasis": "exact protocol/representation or explicit caller/session policy; see initializer and family disposition",
@@ -92382,17 +92495,17 @@
       "oldInitializer": "/(retired|retire|deprecated|deprecation|停用|退役|移除|删除)/iu.test(section)",
       "oldLine": 107,
       "currentInitializer": "/(retired|retire|deprecated|deprecation|停用|退役|移除|删除)/iu.test(section)",
-      "currentLine": 107,
+      "currentLine": 112,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/release-lockstep.mjs",
-          "line": 107,
+          "line": 112,
           "text": "const hasRetiredItems = /(retired|retire|deprecated|deprecation|停用|退役|移除|删除)/iu.test(section);"
         },
         {
           "file": "scripts/lib/release-lockstep.mjs",
-          "line": 108,
+          "line": 113,
           "text": "if (!hasEngineRename || !hasHelperRename || !hasDeprecatedNames || !hasRetiredItems) {"
         }
       ],
@@ -92407,17 +92520,17 @@
       "oldInitializer": "result.stdout.trim().split(\"\\n\").filter((line) => line !== \"\")",
       "oldLine": 279,
       "currentInitializer": "result.stdout.trim().split(\"\\n\").filter((line) => line !== \"\")",
-      "currentLine": 279,
+      "currentLine": 296,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/lib/release-lockstep.mjs",
-          "line": 279,
+          "line": 296,
           "text": "const lines = result.stdout.trim().split(\"\\n\").filter((line) => line !== \"\");"
         },
         {
           "file": "scripts/lib/release-lockstep.mjs",
-          "line": 281,
+          "line": 298,
           "text": "return JSON.parse(lines.at(-1) ?? \"\");"
         }
       ],
@@ -93504,22 +93617,22 @@
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 251,
+          "line": 258,
           "text": "while (offset + TAR_BLOCK_BYTES <= bytes.length && !bytes.subarray(offset, offset + TAR_BLOCK_BYTES).every((byte) => byte === 0)) {"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 252,
+          "line": 259,
           "text": "const header = bytes.subarray(offset, offset + TAR_BLOCK_BYTES);"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 263,
+          "line": 270,
           "text": "const dataStart = offset + TAR_BLOCK_BYTES;"
         },
         {
           "file": "scripts/lib/privacy.mjs",
-          "line": 265,
+          "line": 272,
           "text": "const paddedEnd = dataStart + Math.ceil(size / TAR_BLOCK_BYTES) * TAR_BLOCK_BYTES;"
         },
         {
@@ -96839,22 +96952,22 @@
       "oldInitializer": "64 * 1024 * 1024",
       "oldLine": 16,
       "currentInitializer": "64 * 1024 * 1024",
-      "currentLine": 16,
+      "currentLine": 22,
       "disposition": "governed verification/session processing window; retained execution budget, not a permanent product-data or host-capacity claim",
       "currentConsumerSites": [
         {
           "file": "scripts/verify-staged-privacy.mjs",
-          "line": 16,
+          "line": 22,
           "text": "const MAX_CAPTURE_BYTES = 64 * 1024 * 1024;"
         },
         {
           "file": "scripts/verify-staged-privacy.mjs",
-          "line": 35,
+          "line": 41,
           "text": "maxBuffer: MAX_CAPTURE_BYTES,"
         },
         {
           "file": "scripts/verify-staged-privacy.mjs",
-          "line": 100,
+          "line": 106,
           "text": "maxBuffer: MAX_CAPTURE_BYTES,"
         }
       ],
@@ -96869,7 +96982,7 @@
       "oldInitializer": "0",
       "oldLine": 112,
       "currentInitializer": "0",
-      "currentLine": 112,
+      "currentLine": 118,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
@@ -96879,32 +96992,32 @@
         },
         {
           "file": "scripts/verify-staged-privacy.mjs",
-          "line": 112,
+          "line": 118,
           "text": "let bytes = 0;"
         },
         {
           "file": "scripts/verify-staged-privacy.mjs",
-          "line": 118,
+          "line": 124,
           "text": "// repository. Its path is still scanned above; there are no local bytes to"
         },
         {
           "file": "scripts/verify-staged-privacy.mjs",
-          "line": 121,
+          "line": 127,
           "text": "objects.push({ path, object: indexEntry.object, mode: indexEntry.mode, bytes: 0, scanned: false });"
         },
         {
           "file": "scripts/verify-staged-privacy.mjs",
-          "line": 125,
+          "line": 131,
           "text": "bytes += content.length;"
         },
         {
           "file": "scripts/verify-staged-privacy.mjs",
-          "line": 127,
+          "line": 133,
           "text": "objects.push({ path, object: indexEntry.object, mode: indexEntry.mode, bytes: content.length, scanned: true });"
         },
         {
           "file": "scripts/verify-staged-privacy.mjs",
-          "line": 141,
+          "line": 147,
           "text": "stagedBytes: bytes,"
         }
       ],
@@ -96919,32 +97032,37 @@
       "oldInitializer": "[]",
       "oldLine": 111,
       "currentInitializer": "[]",
-      "currentLine": 111,
+      "currentLine": 117,
       "disposition": "derived value, protocol field/closed set, semantic lower bound, caller budget, or compatibility declaration; see exact initializer and semantic family above, not presumed a hard total cap",
       "currentConsumerSites": [
         {
           "file": "scripts/verify-staged-privacy.mjs",
-          "line": 111,
+          "line": 9,
+          "text": "// line staged at its own path was reported. The filename entries keep their `staged-filename:`"
+        },
+        {
+          "file": "scripts/verify-staged-privacy.mjs",
+          "line": 117,
           "text": "const entries = [];"
         },
         {
           "file": "scripts/verify-staged-privacy.mjs",
-          "line": 116,
+          "line": 122,
           "text": "entries.push({ label: `staged-filename:${path}`, kind: \"filename\", content: path });"
         },
         {
           "file": "scripts/verify-staged-privacy.mjs",
-          "line": 126,
-          "text": "entries.push({ label: `staged-source:${path}`, kind: \"source\", content: content.toString(\"utf8\") });"
+          "line": 132,
+          "text": "entries.push({ label: path, kind: \"source\", content: content.toString(\"utf8\") });"
         },
         {
           "file": "scripts/verify-staged-privacy.mjs",
-          "line": 133,
+          "line": 139,
           "text": "const findings = scanPrivacyEntries(entries, { owner, privateTokens, repositories: ENGINE_REPOSITORY_NAMES });"
         },
         {
           "file": "scripts/verify-staged-privacy.mjs",
-          "line": 140,
+          "line": 146,
           "text": "scannedEntries: entries.length,"
         }
       ],
@@ -100441,37 +100559,37 @@
     },
     {
       "file": "scripts/lib/privacy.mjs",
-      "line": 270,
+      "line": 277,
       "source": "if (padding.length > 0) expanded.push({ label: `${entry.label}#padding:${joinedPath}`, kind: entry.kind, content: padding.toString(\"utf8\") });"
     },
     {
       "file": "scripts/lib/privacy.mjs",
-      "line": 275,
+      "line": 282,
       "source": "if (trailer.length > 0) expanded.push({ label: `${entry.label}#trailer`, kind: entry.kind, content: trailer.toString(\"utf8\") });"
     },
     {
       "file": "scripts/lib/privacy.mjs",
-      "line": 468,
+      "line": 475,
       "source": "if (digits.length > 0 && /^[0-9a-f]+$/iu.test(digits) && (!brace || close >= 0)) {"
     },
     {
       "file": "scripts/lib/privacy.mjs",
-      "line": 668,
+      "line": 675,
       "source": "return parts.length > 0 ? parts.join(separator) : _;"
     },
     {
       "file": "scripts/lib/privacy.mjs",
-      "line": 676,
+      "line": 683,
       "source": "return parts.length > 0 ? parts.join(separator) : _;"
     },
     {
       "file": "scripts/lib/privacy.mjs",
-      "line": 837,
+      "line": 844,
       "source": ".slice(0, -1)"
     },
     {
       "file": "scripts/lib/privacy.mjs",
-      "line": 923,
+      "line": 930,
       "source": "while (stack.length > 0) {"
     },
     {
@@ -100551,33 +100669,63 @@
     },
     {
       "file": "scripts/lib/release-lockstep.mjs",
-      "line": 95,
+      "line": 100,
       "source": "return next ? remainder.slice(0, next.index).trim() : remainder.trim();"
     },
     {
       "file": "scripts/lib/release-lockstep.mjs",
-      "line": 133,
+      "line": 140,
       "source": "maxBuffer: 16 * 1024 * 1024,"
     },
     {
       "file": "scripts/lib/release-lockstep.mjs",
-      "line": 356,
+      "line": 373,
       "source": "if (gates.ok !== true || reds.length > 0 || JSON.stringify(gates.reds) !== \"[]\" || JSON.stringify(gates.requiredReds) !== \"[]\" || JSON.stringify(result.reds) !== \"[]\") {"
     },
     {
       "file": "scripts/lib/release-lockstep.mjs",
-      "line": 387,
+      "line": 404,
       "source": "const body = (next ? remainder.slice(0, next.index) : remainder).trim();"
     },
     {
       "file": "scripts/lib/release-lockstep.mjs",
-      "line": 390,
+      "line": 407,
       "source": "const prefix = source.slice(0, heading.index);"
     },
     {
       "file": "scripts/lib/release-lockstep.mjs",
-      "line": 463,
-      "source": "await writeFile(join(engine.root, FRAMEWORK_VERSION_SOURCE), `${framework.source.slice(0, declaration.index)}${declaration[0].replace(`\"${declaration[1]}\"`, `\"${version}\"`)}${framework.source.slice(declaration.index + declaration[0].length)}`);"
+      "line": 477,
+      "source": "await writeFile(join(engineRoot, FRAMEWORK_VERSION_SOURCE), `${framework.source.slice(0, declaration.index)}${declaration[0].replace(`\"${declaration[1]}\"`, `\"${version}\"`)}${framework.source.slice(declaration.index + declaration[0].length)}`);"
+    },
+    {
+      "file": "scripts/lib/release-lockstep.mjs",
+      "line": 590,
+      "source": "if (violations.length > 0) refuse(violations[0].code, message, { violations });"
+    },
+    {
+      "file": "scripts/lib/release-lockstep.mjs",
+      "line": 637,
+      "source": "const code = record.slice(0, 2);"
+    },
+    {
+      "file": "scripts/lib/release-lockstep.mjs",
+      "line": 798,
+      "source": "const text = (value) => typeof value === \"string\" && value.length > 0;"
+    },
+    {
+      "file": "scripts/lib/release-lockstep.mjs",
+      "line": 829,
+      "source": "if (problems.length > 0) refuse(\"RELEASE_RECEIPT_INVALID\", `${location} is not a ${RELEASE_RECEIPT_SCHEMA} receipt`, { receipt: location, problems });"
+    },
+    {
+      "file": "scripts/lib/release-lockstep.mjs",
+      "line": 902,
+      "source": "const named = async (path) => (typeof path === \"string\" && path.length > 0 ? realpath(resolve(path)).catch(() => resolve(path)) : null);"
+    },
+    {
+      "file": "scripts/lib/release-lockstep.mjs",
+      "line": 963,
+      "source": "if (remaining.length > 0) {"
     },
     {
       "file": "scripts/lib/release-tag-gate.mjs",
@@ -101250,6 +101398,11 @@
       "source": "const pushed = options.push && pending.length > 0;"
     },
     {
+      "file": "scripts/release.mjs",
+      "line": 86,
+      "source": "if (command !== \"generate\" && keepExtra.length > 0) {"
+    },
+    {
       "file": "scripts/retrieval-eval-record.mjs",
       "line": 100,
       "source": "const at = values.at ?? `${new Date().toISOString().slice(0, 19)}Z`;"
@@ -101646,37 +101799,37 @@
     },
     {
       "file": "scripts/verify-staged-privacy.mjs",
-      "line": 16,
+      "line": 22,
       "source": "const MAX_CAPTURE_BYTES = 64 * 1024 * 1024;"
     },
     {
       "file": "scripts/verify-staged-privacy.mjs",
-      "line": 35,
+      "line": 41,
       "source": "maxBuffer: MAX_CAPTURE_BYTES,"
     },
     {
       "file": "scripts/verify-staged-privacy.mjs",
-      "line": 41,
+      "line": 47,
       "source": "if (!allowStderr && result.stderr.length > 0) {"
     },
     {
       "file": "scripts/verify-staged-privacy.mjs",
-      "line": 51,
+      "line": 57,
       "source": "maxBuffer: 4096,"
     },
     {
       "file": "scripts/verify-staged-privacy.mjs",
-      "line": 85,
+      "line": 91,
       "source": "const [mode, object, stage] = record.slice(0, separator).split(/\\s+/u);"
     },
     {
       "file": "scripts/verify-staged-privacy.mjs",
-      "line": 100,
+      "line": 106,
       "source": "maxBuffer: MAX_CAPTURE_BYTES,"
     },
     {
       "file": "scripts/verify-staged-privacy.mjs",
-      "line": 104,
+      "line": 110,
       "source": "if (result.stderr.length > 0) fail(\"PRIVACY_STAGED_GIT_UNEXPECTED_STDERR\", `${path}: ${result.stderr.toString(\"utf8\")}`.trim());"
     },
     {

@@ -2,7 +2,7 @@
   "schemaVersion": "tcrn.init053-owner-return-inventory.v1",
   "work": "INC-399",
   "comparisonBaseCommit": "32f8e9ab954cfc1ed4c939c931cc0d927f0a0722",
-  "pack": "r40-init053-closure",
+  "pack": "r41-init053-release",
   "scope": "native R1–R6 and F01 continuation authorized at revision 5",
   "sourceFiles": [
     {
@@ -563,7 +563,7 @@
     },
     {
       "path": "scripts/lib/privacy.mjs",
-      "sha256": "5590a0218de781599e46a607e0c6afb5459ccab3599755978f963b779554d984"
+      "sha256": "57af661c425e6227bfed4572d0eeb1aa7e7a0ec04c9ae5d765a1c16fadd25589"
     },
     {
       "path": "scripts/lib/private-token-roster.mjs",
@@ -583,7 +583,7 @@
     },
     {
       "path": "scripts/lib/release-lockstep.mjs",
-      "sha256": "b930004afb3fc4b9a4fa8b53df1152a03ee68ddfa23f7bdf1c89d9e58bf1543e"
+      "sha256": "37b7a7b48e2cbd3820f3e766814638eaa9cfe03e38b87a2bfbbb6b252293ee56"
     },
     {
       "path": "scripts/lib/release-tag-gate.mjs",
@@ -671,7 +671,7 @@
     },
     {
       "path": "scripts/release.mjs",
-      "sha256": "88206dd79b2131e46bf806de098571eeba9f85944f2f83c313e925a9e12f9383"
+      "sha256": "3630562cf93ccb444df644b15d1aefd10e7e45bb13695ec206457e32b4c08e26"
     },
     {
       "path": "scripts/render-helper-docs.mjs",
@@ -767,7 +767,7 @@
     },
     {
       "path": "scripts/verify-staged-privacy.mjs",
-      "sha256": "729618ee306b68c1590db2aeea197818b4a7c9f1d504678ff8a312c38623c2e8"
+      "sha256": "a3af30ccafb6eba0e7d9cc61fd826dc38c03c2ab622d89aa9cbbfbd5333116f4"
     },
     {
       "path": "scripts/wiki-cli-reference.mjs",
@@ -778,7 +778,7 @@
       "sha256": "b1617e981ce136a8a6bdf861e286bf0d5f75b2b1d8519da0304f9a69ef4ddebb"
     }
   ],
-  "evidenceDisposition": "R40 current Source final generation (package r40-closure). The original 62 whole files and the R40 necessary added whole files ran before this generation; the actual exit/counts are attached below with every failure, including the existing privacy-boundary historical PR23 provenance assertion, red before this generation because the scope and limit inventories it replaces lack that line. Source development verification is separate from integrated acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the unchanged R39 Source inputs, read in place; no live Engine installation, migration, or governed write.",
+  "evidenceDisposition": "R41 current Source final generation (package r41-release). The original 62 whole files and the R41 necessary added whole files ran before this generation; the actual exit and counts of that run are attached below with every failure. Source development verification is separate from integrated acceptance and Owner visual judgment. Current DS production/build/source/tree/consumption bindings are the unchanged R39 Source inputs, read in place; no live Engine installation, migration, or governed write.",
   "dsCandidateDisposition": {
     "candidate": "bb91bdc40d2669aef823abaf8d2050ca105e9a89",
     "mergeCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
@@ -889,7 +889,7 @@
       "input": "inventory-values.json",
       "sha256": "922873f49c8237f7b23c4e538b2c1a8a68171d232ecc53949faed4c7850e9c20",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/inventory-values.json"
+      "rawEvidence": "dispatch-runs/init-053/r41-release-raw/inventory-values.json"
     },
     {
       "input": "publication-binding.json",
@@ -905,9 +905,9 @@
     },
     {
       "input": "source-inventory-inputs.json",
-      "sha256": "f416e9900f01dbf956f972d484d91cdc88fdec03ce812471fa692b426049adc7",
+      "sha256": "ef6c1bed10343bc39ee1377ca53c32d219b4d11fba755b75fdb9db2861a65c82",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/source-inventory-inputs.json"
+      "rawEvidence": "dispatch-runs/init-053/r41-release-raw/source-inventory-inputs.json"
     },
     {
       "input": "ds-publication-dependency-disposition.json",
@@ -917,15 +917,15 @@
     },
     {
       "input": "full-file-cadence-result.json",
-      "sha256": "1ae118ca27c36118e75c745ca72ec8cfecc3397e8ed193712096d3d58a696c72",
+      "sha256": "9617347e15a29462213e32deaa84d7f921f4a296fe79ac1ca0af85541d7bd6ca",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/full-file-cadence-result.json"
+      "rawEvidence": "dispatch-runs/init-053/r41-release-raw/full-file-cadence-result.json"
     },
     {
       "input": "limit-review-dispositions.json",
-      "sha256": "8268ac76a01511ae6b0b49f93533c78c0f7c9ae110756678ae10e7a1b9530474",
+      "sha256": "c7beedc8a11ec946ee1c6a708d46833c98a405e8712163054b017831b45e178e",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/limit-review-dispositions.json"
+      "rawEvidence": "dispatch-runs/init-053/r41-release-raw/limit-review-dispositions.json"
     },
     {
       "input": "r4-actual-callers.json",
@@ -937,7 +937,7 @@
       "input": "retained-bound-probe-result.json",
       "sha256": "70574c7704cb891f725132c60dd1c0cf4bf2b978c024d834f10594593e0d0ba0",
       "representation": "validated public structured projection",
-      "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/retained-bound-probe-result.json"
+      "rawEvidence": "dispatch-runs/init-053/r41-release-raw/retained-bound-probe-result.json"
     },
     {
       "input": "application-combined-result.json",
@@ -965,41 +965,40 @@
     }
   ],
   "currentWholeFileCadence": {
-    "exit": 1,
+    "exit": 0,
     "counts": {
-      "tests": 736,
-      "pass": 735,
-      "fail": 1,
+      "tests": 835,
+      "pass": 835,
+      "fail": 0,
       "cancelled": 0,
       "skipped": 0
     },
-    "wholeFiles": 69,
+    "wholeFiles": 77,
     "original61Retained": true,
     "necessaryAddedWholeFiles": [
       "tests/e2e-governed-loop.test.mjs",
-      "tests/rules-catalog.test.mjs",
-      "tests/managed-sections.test.mjs",
-      "tests/privacy-normalization.test.mjs",
-      "tests/inc238-markdown-link-gate.test.mjs",
-      "tests/wiki-pages.test.mjs",
+      "tests/release-lockstep.test.mjs",
+      "tests/release-tag-gate.test.mjs",
+      "tests/release-trust.test.mjs",
       "tests/names-alias-table.test.mjs",
-      "tests/push-wiki.test.mjs"
+      "tests/inc238-markdown-link-gate.test.mjs",
+      "tests/bootstrap.test.mjs",
+      "tests/staged-privacy-reviewed-paths.test.mjs",
+      "tests/p8-workflow-rc.test.mjs",
+      "tests/privacy-normalization.test.mjs",
+      "tests/local-command-byte-fidelity.test.mjs",
+      "tests/readme-render.test.mjs",
+      "tests/render-helper-docs.test.mjs",
+      "tests/cross-repo-privacy.test.mjs",
+      "tests/otel-privacy-guard.test.mjs",
+      "tests/token-attribution.test.mjs"
     ],
     "newRegistryCases": 0,
     "representation": "public structured summary; full raw diagnostic is retained separately",
-    "rawEvidence": "dispatch-runs/init-053/r40-closure-raw/full-file-cadence-result.json",
-    "failures": [
-      {
-        "test": "DS publication provenance is classified only at exact inventory source lines",
-        "file": "tests/privacy-boundary.test.mjs",
-        "line": 344,
-        "reason": "The expression evaluated to a falsy value:; assert.ok(line)",
-        "reasonCode": "ERR_ASSERTION",
-        "rawAnchor": "dispatch-runs/init-053/r40-closure-raw/full-file-cadence-result.json#/reds/0"
-      }
-    ]
+    "rawEvidence": "dispatch-runs/init-053/r41-release-raw/full-file-cadence-result.json",
+    "failures": []
   },
-  "generationTimeUtc": "2026-10-07T20:52:27.412774+00:00",
+  "generationTimeUtc": "2026-10-08T00:23:43.506120+00:00",
   "settings": [
     {
       "catalog": {
@@ -6082,5 +6081,5 @@
     }
   ],
   "settingCount": 33,
-  "nativeReads": "installed engine 1.2.1, live 10036, INIT revision14 and INC399 revision5; read-only status/work-show readbacks of 2026-10-07T20:42:06Z retained in the raw archive (dispatch-runs/init-053/r40-closure-raw/native-reads.json)"
+  "nativeReads": "installed engine 1.2.1, live 10036, INIT revision14 and INC399 revision5; read-only status/work-show readbacks of 2026-10-08T00:22:44Z retained in the raw archive (dispatch-runs/init-053/r41-release-raw/native-reads.json)"
 }

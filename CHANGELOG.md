@@ -87,6 +87,45 @@ family. The gate, model and variable tables fit a 1024 px desktop without sidewa
 gate table has three columns, a gate's switches sit in its own cell, and a cover input shows a whole
 work id.
 
+A coordination chain keeps its own runtime settings (TCRN-CROSS-INIT-053 R47). On a coordination
+chain `settings-catalog` lists ten settings, each with scope and layer `library`: the four library
+settings, `artifact.language`, `execution.maxConcurrentSubagents` and the four `quota.*` keys. They
+are read and written for the whole library only: a write with `--project-id` is refused, every other
+key (`models.*` among them) is still refused, and no involved project or common default reads one.
+`setup --mode migrate` lists them for the coordination partition as `coordinationSettings` rows
+(`{ key, value, source, action }`): `artifact.language` always (`legacy-declared`, or the catalog
+default as `legacy-default`) and the orchestration limits the old chain declares. Each is carried by the
+import or written once into the coordination library, signed `agent:setup`, and never into a project
+chain. Once the old chains are imported and the project's library records its language, the wizard
+asks the prompt hook's recall for that library's newest valid card by its subject: `SETUP_APPLIED`
+carries `recallSmoke` (`hit` with `cardId` and `query`, or `no-card`), and a miss stops the apply
+with `SETUP_RECALL_SMOKE_MISSED` before the cleanup and the wiring; the same mapping applied again
+goes on from there. The offline boundary check passes again with its allowlist unchanged: the
+two-tab portal test asks the portal server through the test harness instead of calling `fetch`.
+
+The hook launcher (`engine/hook.mjs`, TCRN-CROSS-INIT-053 R47) now appends one line to
+`log/hook.ndjson` in the device directory when a prompt lands in a known container (a library, an
+old-layout workspace or an old platform container) that this device's registry does not cover,
+naming why with `HOOK_REGISTRY_ABSENT`, `HOOK_PROJECT_UNREGISTERED` or `HOOK_LIBRARY_UNREGISTERED`;
+its exit code, stdout and stderr are unchanged, and a note it cannot write is dropped.
+`scripts/platform-doctor.mjs`'s hooks leg now also reads the user-level `.claude/settings.json` and
+`.codex/hooks.json` of the home it is given (checking only Einzbern's launcher and the old harness's
+hooks there), reports a launcher hook whose device directory lacks `engine/current` or
+`registry.json` as `PLATFORM_HOOK_ENGINE_NOT_INSTALLED`, listed after any
+`PLATFORM_HOOK_TARGET_UNAVAILABLE`, and no longer lets an absent container Claude settings file hide
+failures in the other hook files. Its `helperSettingsCoverage` is now red when the engine's settings
+catalog or the installed helper payload cannot be read (`PLATFORM_HELPER_SETTINGS_UNREADABLE`,
+`PLATFORM_HELPER_PAYLOAD_UNREADABLE`, still with `coverageAsserted: false`).
+`scripts/verify-staged-privacy.mjs` accepts an origin naming the helper repository
+(`mana-orchestrate`, or its old name) as well as the engine repository; the owner still comes from
+origin and no classification is widened. The doctor reference of the helper skill gains "A hook that
+answers nothing" (where the hook log is and how to read it), and the wiki FAQ answers how to tell a
+hook that answers nothing from one that never ran.
+
+Atelier consumes the design system at `d53f2305` (TCRN-CROSS-INIT-053 R46 and R47): its record
+component family, its documentation stories and a static Clipboard bridge that Atelier can use;
+Atelier does not use the bridge yet (post-MVP backlog item BL-04).
+
 The root `package.json` drops `pg:schema` and `pg:test`, whose target files were removed with the PostgreSQL backend in TCRN-CROSS-INC-275 (TCRN-CROSS-SUB-357 S2).
 
 Release preparation can now run in two phases around one local release commit per repository

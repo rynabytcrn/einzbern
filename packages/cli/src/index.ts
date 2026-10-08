@@ -1,6 +1,6 @@
 import { ensureSetupProjectBinding } from "../../core/src/setup-fresh.js";
 import { setConfigRecord, removeConfigRecord } from "../../core/src/config-records.js";
-import { chainIdentity, declareChainIdentity, resolveProjectTarget, workProjectContexts, effectiveProjectState, ensureProjectCoordination } from "../../core/src/project-chain.js";
+import { chainIdentity, declareChainIdentity, resolveProjectTarget, workProjectContexts, effectiveProjectState, ensureProjectCoordination, settingsCatalogState, markUnresolvedCommonDefault } from "../../core/src/project-chain.js";
 import { normalizeInvolvedProjects, involvedProjectsOf, projectReference, hasInvolvedProject } from "../../core/src/involved-projects.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
@@ -2285,15 +2285,19 @@ async function dispatchCli(arguments_: readonly string[], io: CliIo): Promise<vo
   if (command === "settings-catalog") {
     const values = parseArguments(rest, ["project-id", "workspace"]);
     required(values, ["workspace"]);
-    const state = await effectiveProjectState(await materializeWorkspace(values.workspace ?? ""), values["project-id"]);
+    // TCRN-CROSS-INIT-053 R46 (I03): a common default that does not resolve is read, not refused;
+    // commonDefault says what the catalog found, and the rows that would inherit from it read null.
+    const reading = await settingsCatalogState(await materializeWorkspace(values.workspace ?? ""), values["project-id"]);
+    const state = reading.state;
     const catalog = readSettingsCatalog(state.metadata.workspaceId, state.settings,
       state.metadata.storageVersion === 2 ? { "storage.segmentBytes": String(state.metadata.segmentEventLimit) } : {}, { projectId: state.configurationProjectId, sources: state.settingSources, fallbackValues: state.settingFallbackValues, fallbackSources: state.settingFallbackSources });
     const chain = chainIdentity(state);
     io.write(canonicalJson({ ...catalog, reasonCode: "SETTINGS_CATALOG_READY", chain, projectId: state.configurationProjectId,
+      ...(reading.commonDefault === null ? {} : { commonDefault: reading.commonDefault as unknown as JsonValue }),
       projects: state.projects.filter(entry => !entry.tombstone).map(entry => ({ id: entry.id, externalKey: entry.externalKey, name: entry.name, parentProjectId: entry.parentProjectId ?? null })),
       design: chain?.role === "coordination" ? null : designConfiguration(state),
       projectBindings: state.configRecords.filter(record => record.collection === "chain" && record.key !== "identity"),
-      settings: chain?.role === "coordination" ? catalog.settings.filter(entry => entry.scope === "library") : catalog.settings }));
+      settings: chain?.role === "coordination" ? catalog.settings.filter(entry => entry.scope === "library") : markUnresolvedCommonDefault(catalog.settings, reading) }));
     return;
   }
   if (command === "install-manifest") {

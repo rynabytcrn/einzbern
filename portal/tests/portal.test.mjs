@@ -1785,3 +1785,36 @@ test("INIT-053 R46 I01: names come from the project records, and a registration 
   assert.equal((await readFile(join(portalRoot, "portal.mjs"), "utf8")).includes("Unconfigured project"), false);
 });
 
+// R46 I03 (PP-2; approved contract items 6, 7): a target whose saved common default does not resolve is
+// still read: /api/settings answers the catalog with commonDefault and the rows that would inherit marked
+// unresolved, the configuration scope can be switched to it, and removing the common default through
+// /api/project-bindings reads it plainly again.
+test("INIT-053 R46 I03: a target with an unresolved common default is read, switched to and repaired", async t => {
+  const fixture = await scratch("portal-r46-common-", "R46-COMMON");
+  await ensureProjectCoordination(fixture.workspace, R46_AT, fixture.deviceEnv.EINZBERN_HOME);
+  const { child, url } = await startPortal(fixture);
+  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
+  const { boot } = await readBoot(url);
+  const unregistered = { libraryId: "library:" + "c".repeat(24), projectId: "project:" + "d".repeat(24) };
+  const saved = await request(url, "/api/project-bindings", writeOptions(boot.token, "POST", { key: "common-default", value: unregistered }));
+  assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
+  const settings = await request(url, "/api/settings", readOptions(boot.token));
+  assert.equal(settings.response.status, 200);
+  assert.equal(settings.body.reasonCode, "SETTINGS_CATALOG_READY");
+  assert.deepEqual(settings.body.commonDefault, { reference: unregistered, status: "unresolved", targetStatus: "unregistered", reason: "common-default-unresolved" });
+  const authority = settings.body.settings.find(entry => entry.key === "design.authority");
+  assert.deepEqual([authority.currentValue, authority.source.kind, authority.source.status, authority.source.libraryId], [null, "common", "unresolved", unregistered.libraryId]);
+  // The scope can leave the target and come back to it.
+  const away = await request(url, "/api/configuration-scope", writeOptions(boot.token, "POST", { projectId: null }));
+  assert.equal(away.response.status, 200);
+  const back = await request(url, "/api/configuration-scope", writeOptions(boot.token, "POST", { projectId: fixture.projectId }));
+  assert.equal(back.response.status, 200, JSON.stringify(back.body));
+  assert.deepEqual([back.body.reasonCode, back.body.settings.commonDefault.status], ["PORTAL_CONFIGURATION_SCOPE_SELECTED", "unresolved"]);
+  // The repair the page offers: take the common default out.
+  const removed = await request(url, "/api/project-bindings", writeOptions(boot.token, "DELETE", { key: "common-default" }));
+  assert.equal(removed.response.status, 200, JSON.stringify(removed.body));
+  const repaired = await request(url, "/api/settings", readOptions(boot.token));
+  assert.equal(Object.hasOwn(repaired.body, "commonDefault"), false);
+  assert.equal(repaired.body.settings.some(entry => entry.source?.status === "unresolved"), false);
+});
+

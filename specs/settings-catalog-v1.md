@@ -522,3 +522,15 @@ separately for design declarations, model configuration, repository/build
 bindings, registered output, language and gates. Publication verification stays
 unverified until separately established. A gate operation requires its own
 registered root and declarations, not unrelated design/model readiness.
+
+`settings-catalog --project-id` no longer refuses a target whose common default
+does not resolve (TCRN-CROSS-INIT-053 R46): it names that default in
+`commonDefault` (`reference`, `status` `unresolved`, the reference's own
+`targetStatus` and `reason` `common-default-unresolved` or
+`common-default-cycle`; a default that resolves is `resolved`, and a target
+without one has no `commonDefault`) and gives every optional project scalar that
+would inherit from it the source `{kind: "common", status: "unresolved"}` with no
+current or inherited value, while the target's own, ancestral and library
+declarations read as they are and applying configuration still refuses the
+target until `project-bindings-set` or `project-bindings-remove` with
+`--key common-default` repairs it.

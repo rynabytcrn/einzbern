@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, readFile, rm, realpath, rename, cp, writeFile } from "n
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { initializeLibrary, createProject, deleteProject, createWork, annotateWork, materializeWorkspace, materializeWorkspaceFromGenesis, setWorkspaceSetting, setConfigRecord, registerLibrary, readRegistry, registryPath, withFileLock, declareChainIdentity, chainIdentity, workProjectContexts, resolveProjectTarget, registeredCoordination, ensureProjectCoordination, effectiveProjectState, normalizeInvolvedProjects, involvedProjectsOf, projectLineage, scopedWorkspaceState, enableRule, disableRule, listRules, renderAgentsSections, readSettingsCatalog } from "../dist/build/packages/core/src/index.js";
+import { initializeLibrary, createProject, deleteProject, createWork, annotateWork, materializeWorkspace, materializeWorkspaceFromGenesis, setWorkspaceSetting, removeWorkspaceSetting, setConfigRecord, removeConfigRecord, registerLibrary, readRegistry, registryPath, withFileLock, declareChainIdentity, chainIdentity, workProjectContexts, resolveProjectTarget, registeredCoordination, ensureProjectCoordination, effectiveProjectState, normalizeInvolvedProjects, involvedProjectsOf, projectLineage, scopedWorkspaceState, enableRule, disableRule, listRules, renderAgentsSections, readSettingsCatalog } from "../dist/build/packages/core/src/index.js";
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { unregisterLibrary } from "../dist/build/packages/core/src/registry.js";
 import { canonicalJson, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
@@ -372,4 +372,102 @@ test("F02: rule-enable and rule-disable through the CLI on a setup-made coordina
   assert.deepEqual([disabled.reasonCode, disabled.written, disabled.recorded], ["RULE_DISABLED", false, 1]);
   assert.equal((await listRules({ libraryRoot: coordination.path, configurationProjectId: entry.projectId })).find(rule => rule.id === "autonomy").state, "disabled");
   await assert.rejects(readFile(join(coordination.path, "AGENTS.md")), { code: "ENOENT" }, "no managed prose in the coordination library");
+});
+
+// TCRN-CROSS-INIT-053 R46: settings-catalog as the fixture's device, whose registry resolves the targets.
+async function catalogAs(f, args) {
+  const previous = process.env.EINZBERN_HOME;
+  process.env.EINZBERN_HOME = f.home;
+  try {
+    let output = "";
+    await runCli(["settings-catalog", ...args], { write: text => { output += text; } });
+    return JSON.parse(output);
+  } finally { process.env.EINZBERN_HOME = previous; }
+}
+const rowOf = (catalog, key) => catalog.settings.find(entry => entry.key === key);
+
+// R46 I02 (approved contract item 7; U20 D4): under a common default, settings-catalog still says what
+// the target declared itself. A key declared on the target reads its declaredValue; a library key reads
+// the library's; a key inherited from the common default reads no declaration and the common default's
+// value as inherited; settings-remove takes out the target's own declaration and nothing else.
+test("R46 I02: declared, library and inherited values keep their provenance under a common default", async t => {
+  const f = await fixture(t); await configure(f.a, "alpha");
+  await setWorkspaceSetting(f.b.path, { key: "artifact.language", value: "fr", configurationProjectId: f.b.reference.projectId, occurredAt: at });
+  await setWorkspaceSetting(f.b.path, { key: "artifact.language", value: "ja", occurredAt: at });
+  await setWorkspaceSetting(f.b.path, { key: "workspace.generatedArtifactsPath", value: "beta-artifacts", occurredAt: at });
+  const args = ["--workspace", f.b.path, "--project-id", f.b.reference.projectId];
+  const without = await catalogAs(f, args);
+  assert.equal(Object.hasOwn(without, "commonDefault"), false, "a target without a common default gets no new field");
+  await setConfigRecord(f.b.path, { collection: "chain", key: "common-default", projectId: f.b.reference.projectId, value: f.a.reference, occurredAt: at });
+  const catalog = await catalogAs(f, args);
+  assert.deepEqual(catalog.commonDefault, { reference: f.a.reference, status: "resolved", targetStatus: "configured" });
+  const view = (key) => { const row = rowOf(catalog, key); return [row.currentValue, row.declaredValue, row.source.kind]; };
+  assert.deepEqual(view("artifact.language"), ["fr", "fr", "project"], "the target's own declaration is its declaredValue");
+  assert.equal(rowOf(catalog, "artifact.language").source.projectId, f.b.reference.projectId);
+  assert.deepEqual(view("workspace.generatedArtifactsPath"), ["beta-artifacts", "beta-artifacts", "library"], "a library key reads the library's declaration");
+  assert.deepEqual(view("design.authority"), ["https://alpha.example.test", null, "common"], "an inherited key is not the target's declaration");
+  assert.equal(rowOf(catalog, "design.authority").inheritedValue, "https://alpha.example.test");
+  assert.deepEqual([rowOf(catalog, "design.authority").source.libraryId, rowOf(catalog, "design.authority").source.projectId], [f.a.reference.libraryId, f.a.reference.projectId]);
+  // The rows that were right without a common default stay as they were, but for the provenance's library.
+  for (const key of ["artifact.language", "workspace.generatedArtifactsPath"]) assert.equal(rowOf(catalog, key).declaredValue, rowOf(without, key).declaredValue, key);
+  // The effective state the catalog reads rebuilds each record with the project it was declared on:
+  // the target's own declaration keeps the target, a library key and an inherited key carry none.
+  const effective = await effectiveProjectState(await materializeWorkspace(f.b.path), f.b.reference.projectId, f.home);
+  assert.deepEqual(effective.settings.filter(entry => ["artifact.language", "design.authority", "workspace.generatedArtifactsPath"].includes(entry.key)).map(entry => [entry.key, entry.value, entry.projectId ?? null]).sort(),
+    [["artifact.language", "fr", f.b.reference.projectId], ["design.authority", "https://alpha.example.test", null], ["workspace.generatedArtifactsPath", "beta-artifacts", null]]);
+  // A reset of the target's language takes out its own declaration only: the library's stands and answers.
+  await removeWorkspaceSetting(f.b.path, { key: "artifact.language", configurationProjectId: f.b.reference.projectId, occurredAt: at });
+  const reset = await catalogAs(f, args);
+  assert.deepEqual([rowOf(reset, "artifact.language").currentValue, rowOf(reset, "artifact.language").declaredValue, rowOf(reset, "artifact.language").source.kind], ["ja", null, "library"]);
+  assert.deepEqual((await materializeWorkspace(f.b.path)).settings.filter(entry => entry.key === "artifact.language").map(entry => [entry.value, entry.projectId ?? null]), [["ja", null]]);
+});
+
+// R46 I03 (approved contract items 6, 7; PP-2): a common default that does not resolve keeps the
+// target's catalog readable. Unregistered, unavailable and a cycle each answer SETTINGS_CATALOG_READY
+// with commonDefault naming why, every optional project scalar that would inherit from it marked with
+// the unresolved source and read as null, and the target's own and its library's values as they are;
+// effectiveProjectState and resolveProjectTarget still refuse the target (F07).
+test("R46 I03: unregistered, unavailable and cyclic common defaults are read per key, and the effective state still refuses", async t => {
+  const f = await fixture(t); await configure(f.a, "alpha");
+  await setWorkspaceSetting(f.b.path, { key: "artifact.language", value: "fr", configurationProjectId: f.b.reference.projectId, occurredAt: at });
+  await setWorkspaceSetting(f.b.path, { key: "workspace.generatedArtifactsPath", value: "beta-artifacts", occurredAt: at });
+  const args = ["--workspace", f.b.path, "--project-id", f.b.reference.projectId];
+  const check = async (reference, targetStatus, reason) => {
+    const catalog = await catalogAs(f, args);
+    assert.equal(catalog.reasonCode, "SETTINGS_CATALOG_READY", reason);
+    assert.deepEqual(catalog.commonDefault, { reference, status: "unresolved", targetStatus, reason });
+    const unresolved = { inherited: true, kind: "common", libraryId: reference.libraryId, projectId: reference.projectId, projectName: null, status: "unresolved" };
+    const authority = rowOf(catalog, "design.authority");
+    assert.deepEqual([authority.currentValue, authority.inheritedValue, authority.declaredValue, authority.source, authority.inheritedSource], [null, null, null, unresolved, unresolved], `${targetStatus}: an inheriting key is marked`);
+    assert.deepEqual([rowOf(catalog, "artifact.language").currentValue, rowOf(catalog, "artifact.language").declaredValue, rowOf(catalog, "artifact.language").source.kind], ["fr", "fr", "project"], "the target's own declaration stands");
+    assert.deepEqual([rowOf(catalog, "workspace.generatedArtifactsPath").currentValue, rowOf(catalog, "workspace.generatedArtifactsPath").source.kind], ["beta-artifacts", "library"], "a library key stands");
+    assert.notEqual(rowOf(catalog, "models.tiers").source.status, "unresolved", "a collection never inherits");
+    assert.equal(rowOf(catalog, "storage.segmentBytes").source.status, undefined, "a library-scope key never inherits");
+    const marked = catalog.settings.filter(row => row.source?.status === "unresolved").map(row => row.key);
+    assert.ok(marked.length > 0 && marked.every(key => rowOf(catalog, key).scope === "project" && rowOf(catalog, key).shape !== "collection"), `${targetStatus}: only optional project scalars are marked`);
+    assert.equal(catalog.design.status, "unconfigured");
+    assert.ok(catalog.design.missing.includes("design.authority"));
+    assert.deepEqual(catalog.design.bindings.find(binding => binding.key === "design.authority").source, unresolved);
+    const refused = await resolveProjectTarget(f.b.reference, f.home);
+    assert.deepEqual([refused.status, refused.reason], ["conflicting", "common-default-unresolved"], "resolution still refuses");
+    await assert.rejects(effectiveProjectState(await materializeWorkspace(f.b.path), f.b.reference.projectId, f.home), /effective configuration unavailable/u);
+  };
+  // Unregistered on this device.
+  const unregistered = { libraryId: "library:" + "c".repeat(24), projectId: "project:" + "d".repeat(24) };
+  await setConfigRecord(f.b.path, { collection: "chain", key: "common-default", projectId: f.b.reference.projectId, value: unregistered, occurredAt: at });
+  await check(unregistered, "unregistered", "common-default-unresolved");
+  // Registered, but its library is away.
+  await setConfigRecord(f.b.path, { collection: "chain", key: "common-default", projectId: f.b.reference.projectId, value: f.a.reference, occurredAt: at });
+  await rename(f.a.path, `${f.a.path}-away`);
+  await check(f.a.reference, "unavailable", "common-default-unresolved");
+  await rename(`${f.a.path}-away`, f.a.path);
+  // A cycle: alpha's common default is beta again.
+  await setConfigRecord(f.a.path, { collection: "chain", key: "common-default", projectId: f.a.reference.projectId, value: f.b.reference, occurredAt: at });
+  await check(f.a.reference, "conflicting", "common-default-cycle");
+  // The repair the catalog leads to: removing the common default reads the target plainly again.
+  await removeConfigRecord(f.b.path, { collection: "chain", key: "common-default", projectId: f.b.reference.projectId, occurredAt: at });
+  const repaired = await catalogAs(f, args);
+  assert.equal(Object.hasOwn(repaired, "commonDefault"), false);
+  assert.deepEqual([rowOf(repaired, "design.authority").currentValue, rowOf(repaired, "design.authority").source.kind], [null, "default"]);
+  assert.equal(repaired.settings.some(row => row.source?.status === "unresolved"), false);
 });

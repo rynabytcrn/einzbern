@@ -17,6 +17,9 @@ export interface ConfigurationSource {
   readonly projectId: string | null;
   readonly projectName: string | null;
   readonly inherited: boolean;
+  // TCRN-CROSS-INIT-053 R46 (I03): a common default the read catalog names but cannot resolve on
+  // this device. Its value is unknown, never the built-in default.
+  readonly status?: "unresolved";
 }
 
 /** Stable declared ancestry only. A path, display name or sole registry entry never implies it. */

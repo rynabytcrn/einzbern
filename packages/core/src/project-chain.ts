@@ -12,7 +12,9 @@ import { readRegistry, registerLibrary, normalizeGitRemote, unregisterEntries } 
 import type { RegistryEntry } from "./registry.js";
 import { setConfigRecord } from "./config-records.js";
 import { designConfiguration, scopedWorkspaceState } from "./project-scope.js";
-import { readSettingsCatalog } from "./settings.js";
+import type { ConfigurationSource, ScopedWorkspaceState } from "./project-scope.js";
+import { SETTINGS_CATALOG, readSettingsCatalog } from "./settings.js";
+import type { SettingKey, SettingsCatalogReadback } from "./settings.js";
 import { involvedProjectsOf, projectReference, projectReferenceKey } from "./involved-projects.js";
 
 import { ProjectChainError, chainIdentity } from "./chain-identity.js";
@@ -218,21 +220,105 @@ export async function registeredCoordination(home?: string, expectedId?: string)
   return candidate ? { ...candidate, unavailable: found.unavailable, unclassifiedUnavailable: found.unclassifiedUnavailable } : null;
 }
 
+type EffectiveSettingEntry = { readonly key: SettingKey; readonly value: string | null; readonly source: ConfigurationSource };
+
+// The effective view a resolved target's settings make over its scoped state. TCRN-CROSS-INIT-053 R46
+// (I02, approved contract item 7): a record is rebuilt with the project its value was declared on, as
+// the scoped state holds it, so settings-catalog's declaredValue, its modified marker and its reset all
+// see this target's own declarations. A library key carries no project, and a value inherited from the
+// common default is never this target's declaration, so it carries none either.
+function effectiveFromSettings(state: WorkspaceState, scoped: ScopedWorkspaceState, entries: readonly EffectiveSettingEntry[]): ScopedWorkspaceState {
+  return { ...scoped,
+    settings: entries.filter(entry => entry.value !== null).map(entry => ({ schemaVersion: "tcrn.workspace-setting.v1" as const, layerKind: "workspace_configuration" as const, key: entry.key, value: entry.value!, revision: 1, updatedAt: state.metadata.createdAt, tombstone: false as const,
+      ...(entry.source.kind === "project" && entry.source.projectId !== null ? { projectId: entry.source.projectId } : {}) })),
+    settingSources: Object.fromEntries(entries.map(entry => [entry.key, entry.source])),
+    settingFallbackValues: { ...scoped.settingFallbackValues, ...Object.fromEntries(entries.filter(entry => entry.source.kind === "common").map(entry => [entry.key, entry.value])) },
+    settingFallbackSources: { ...scoped.settingFallbackSources, ...Object.fromEntries(entries.filter(entry => entry.source.kind === "common").map(entry => [entry.key, entry.source])) },
+  };
+}
+
+function effectiveConfigurationUnavailable(context: Readonly<Record<string, unknown>>): ProjectChainError {
+  return new ProjectChainError(`effective configuration unavailable: ${String(context.reason ?? context.status)}`);
+}
+
 /** Async read boundary for explicitly opted-in cross-chain defaults. Canonical writers
  * continue to use the full native state; this view is never an append replacement. */
 export async function effectiveProjectState(state: WorkspaceState, projectId?: string, home?: string): Promise<ReturnType<typeof scopedWorkspaceState>> {
   const scoped = scopedWorkspaceState(state, projectId);
   if (projectId === undefined || !scoped.configRecords.some(record => record.collection === "chain" && record.key === "common-default")) return scoped;
   const context = await resolveProjectTarget({ libraryId: state.metadata.workspaceId, projectId }, home);
-  if (!Array.isArray(context.settings) || context.status === "conflicting") throw new ProjectChainError(`effective configuration unavailable: ${String(context.reason ?? context.status)}`);
-  type Entry = { key: import("./settings.js").SettingKey; value: string | null; source: import("./project-scope.js").ConfigurationSource };
-  const entries = context.settings as Entry[];
-  return { ...scoped,
-    settings: entries.filter(entry => entry.value !== null).map(entry => ({ schemaVersion: "tcrn.workspace-setting.v1", layerKind: "workspace_configuration", key: entry.key, value: entry.value!, revision: 1, updatedAt: state.metadata.createdAt, tombstone: false })),
-    settingSources: Object.fromEntries(entries.map(entry => [entry.key, entry.source])),
-    settingFallbackValues: { ...scoped.settingFallbackValues, ...Object.fromEntries(entries.filter(entry => entry.source.kind === "common").map(entry => [entry.key, entry.value])) },
-    settingFallbackSources: { ...scoped.settingFallbackSources, ...Object.fromEntries(entries.filter(entry => entry.source.kind === "common").map(entry => [entry.key, entry.source])) },
+  if (!Array.isArray(context.settings) || context.status === "conflicting") throw effectiveConfigurationUnavailable(context);
+  return effectiveFromSettings(state, scoped, context.settings as EffectiveSettingEntry[]);
+}
+
+/** What settings-catalog says of a target's common default (TCRN-CROSS-INIT-053 R46 I03). */
+export interface CommonDefaultReading {
+  readonly reference: ProjectReference;
+  readonly status: "resolved" | "unresolved";
+  // The status the common default's own target resolves to on this device.
+  readonly targetStatus: string;
+  // Present while unresolved: common-default-cycle when the common defaults lead back to a target
+  // already on the way, else common-default-unresolved.
+  readonly reason?: "common-default-unresolved" | "common-default-cycle";
+}
+
+/** The state the read catalog is built from, what it says of the common default, and the keys it reads as unresolved. */
+export interface SettingsCatalogState {
+  readonly state: ScopedWorkspaceState;
+  // Null when the target names no common default.
+  readonly commonDefault: CommonDefaultReading | null;
+  // The optional project scalars that would inherit from an unresolved common default.
+  readonly unresolvedKeys: readonly SettingKey[];
+}
+
+// Whether the common defaults a refusal names lead back into a cycle, at any depth.
+function commonDefaultCycle(context: Readonly<Record<string, unknown>> | undefined): boolean {
+  for (let current = context; current !== undefined && current !== null; current = current.common as Readonly<Record<string, unknown>> | undefined) {
+    if (current.reason === "common-default-cycle") return true;
+  }
+  return false;
+}
+
+/**
+ * TCRN-CROSS-INIT-053 R46 (I03; approved contract items 6, 7): the state settings-catalog reads for
+ * a target. Without a common default it is the scoped state; with one that resolves, the effective
+ * state (effectiveProjectState). A common default that does not resolve (unregistered, unavailable,
+ * a cycle or anything else that keeps it from answering) no longer refuses the whole read: the
+ * catalog is built on the scoped state, where the target's own, its declared ancestors' and its
+ * library's declarations stand as they are, and every optional project scalar that would inherit from
+ * the common default is marked with it as an unresolved source; the value is unknown, never the
+ * built-in default. Every other refusal stands, and effectiveProjectState and resolveProjectTarget
+ * still refuse such a target (F07), so nothing that applies configuration reads it.
+ */
+export async function settingsCatalogState(state: WorkspaceState, projectId?: string, home?: string): Promise<SettingsCatalogState> {
+  const scoped = scopedWorkspaceState(state, projectId);
+  const record = projectId === undefined ? undefined : scoped.configRecords.find(entry => entry.collection === "chain" && entry.key === "common-default");
+  if (projectId === undefined || record === undefined) return { state: scoped, commonDefault: null, unresolvedKeys: [] };
+  const reference = projectReference(record.value);
+  const context = await resolveProjectTarget({ libraryId: state.metadata.workspaceId, projectId }, home);
+  const common = context.common as Readonly<Record<string, unknown>> | undefined;
+  if (context.status === "conflicting" && (context.reason === "common-default-unresolved" || context.reason === "common-default-cycle")) {
+    const source: ConfigurationSource = { kind: "common", status: "unresolved", libraryId: reference.libraryId, projectId: reference.projectId, projectName: null, inherited: true };
+    const unresolvedKeys = SETTINGS_CATALOG.filter(entry => entry.scope !== "library" && entry.shape !== "collection" && scoped.settingSources[entry.key]?.kind === "default").map(entry => entry.key);
+    const marked = Object.fromEntries(unresolvedKeys.map(key => [key, source]));
+    return {
+      state: { ...scoped, settingSources: { ...scoped.settingSources, ...marked }, settingFallbackSources: { ...scoped.settingFallbackSources, ...marked } },
+      commonDefault: { reference, status: "unresolved", targetStatus: String(common?.status ?? "conflicting"), reason: commonDefaultCycle(context) ? "common-default-cycle" : "common-default-unresolved" },
+      unresolvedKeys,
+    };
+  }
+  if (!Array.isArray(context.settings) || context.status === "conflicting") throw effectiveConfigurationUnavailable(context);
+  return {
+    state: effectiveFromSettings(state, scoped, context.settings as EffectiveSettingEntry[]),
+    commonDefault: { reference, status: "resolved", targetStatus: String(common?.status) },
+    unresolvedKeys: [],
   };
+}
+
+/** The catalog's rows as settingsCatalogState reads them: a row inheriting from an unresolved common default has no current and no inherited value. */
+export function markUnresolvedCommonDefault(settings: SettingsCatalogReadback["settings"], reading: SettingsCatalogState): SettingsCatalogReadback["settings"] {
+  const unresolved = new Set<SettingKey>(reading.unresolvedKeys);
+  return settings.map(row => unresolved.has(row.key) ? { ...row, currentValue: null, inheritedValue: null } : row);
 }
 
 

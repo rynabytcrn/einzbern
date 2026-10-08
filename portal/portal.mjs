@@ -389,6 +389,9 @@ async function knowledgeProjection(status = "valid") {
     reasonCode: listing.ok ? "PORTAL_KNOWLEDGE_READY" : "PORTAL_KNOWLEDGE_PARTIAL",
     at,
     status,
+    // TCRN-CROSS-INIT-053 R46 (I04): absent when the library's knowledge store was never created (an
+    // empty inventory, not a failure); present otherwise, a refused read included.
+    knowledgeStore: listing.ok && listing.body?.knowledgeStore === "absent" ? "absent" : "present",
     listing: listing.body,
     records: listing.ok ? (listing.body.records ?? []) : [],
     total: listing.ok ? (listing.body.total ?? listing.body.records?.length ?? 0) : 0,

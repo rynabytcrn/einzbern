@@ -11,7 +11,7 @@ import "./helpers/device-home.mjs";
 import { ATELIER_SURFACE, withSurface } from "./helpers/workspace-fixture.mjs";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -397,4 +397,43 @@ test("D9 (476-AC1, AC3 at the default threshold): a project card and a user card
   // The one-word coincidence is answered at --tau 0: the emptiness above hangs on the threshold.
   const lowered = await recallCli(first.workspace, 67, "how many scales does a fish have");
   assert.deepEqual(lowered.records.map((record) => record.id), [project.id]);
+});
+
+// TCRN-CROSS-INIT-053 R46 (I04; U20 D5): a library whose knowledge store was never created lists as an
+// empty inventory that says so, both as the library was made (its store directory empty) and with that
+// directory gone, and recall reads it as a ready store with no card. A file, a link, or a directory that
+// holds anything without its marker at the store's place is still refused with its own reason code, and
+// the list of a store that exists carries no new field.
+test("R46 I04 (CLI): a library that never created its knowledge store lists an empty inventory; a file, a link or a directory without its marker is still refused", async (context) => {
+  const base = await device(context);
+  const workspace = join(base, "fresh", ".ether");
+  await initializeLibrary({ root: workspace, createdAt: at(0) });
+  const store = join(workspace, "crest");
+  const args = ["knowledge-list", "--workspace", workspace, "--at", at(1)];
+  const view = (answer) => [answer.schemaVersion, answer.reasonCode, answer.knowledgeStore, answer.total, answer.records, answer.truncated];
+  const absent = ["tcrn.knowledge-list.v1", "KNOWLEDGE_LIST_READY", "absent", 0, [], false];
+  assert.deepEqual(await readdir(store), [], "a library is made with its store directory empty");
+  assert.deepEqual(view(await cli(args)), absent, "as made");
+  const recalled = await recallCli(workspace, 2, "anything the library might know");
+  assert.deepEqual(recalled.knowledgeStores.project, { reasonCode: "KNOWLEDGE_LIST_READY", cards: 0 }, "recall reads the empty inventory as a ready store");
+  assert.deepEqual(recalled.records, []);
+  await rename(store, join(base, "store-away"));
+  assert.deepEqual(view(await cli(args)), absent, "with the store directory gone");
+
+  const refused = async () => (await refusal(args))?.reasonCode;
+  await writeFile(store, "not a store\n");
+  assert.equal(await refused(), "KNOWLEDGE_SPECIAL_FILE", "a file at the store's place");
+  await rename(store, join(base, "store-file"));
+  await symlink(join(base, "store-away"), store);
+  assert.equal(await refused(), "KNOWLEDGE_LINK_UNSAFE", "a link at the store's place");
+  await rename(store, join(base, "store-link"));
+  await mkdir(join(store, "metadata"), { recursive: true });
+  assert.equal(await refused(), "KNOWLEDGE_PATH_INVALID", "a directory holding something without its marker");
+
+  await rename(store, join(base, "store-partial"));
+  // A store is initialized over a chain that holds something.
+  await createProject(workspace, { occurredAt: at(3), externalKey: "FRESH-PROJECT", name: "fresh" });
+  await initializeKnowledgeStore(workspace, { disposableAcknowledged: true });
+  const present = await cli(args);
+  assert.deepEqual([present.reasonCode, present.total, Object.hasOwn(present, "knowledgeStore")], ["KNOWLEDGE_LIST_READY", 0, false], "an existing store's list carries no new field");
 });

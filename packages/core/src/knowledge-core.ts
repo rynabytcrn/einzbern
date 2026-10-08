@@ -2232,14 +2232,15 @@ async function projectKnowledgeView(place: KnowledgeViewPlace, index: KnowledgeI
   }
 }
 
-async function scanKnowledgeStore(
-  workspaceRootInput: string,
-  options: KnowledgeReadOptions = {},
-  allowClaim = false,
-  bodyMode: "full" | "metadata-only" = "full",
-  rebase = false,
-  allowStaleIndex = false,
-): Promise<KnowledgeStoreScan> {
+// The workspace a knowledge read is about, its bound root and the place of its store, before the
+// store itself is read.
+interface KnowledgeStorePlace {
+  readonly workspace: WorkspaceState;
+  readonly workspaceRoot: string;
+  readonly storePath: string;
+}
+
+async function knowledgeStorePlace(workspaceRootInput: string): Promise<KnowledgeStorePlace> {
   const workspace = await materializeWorkspace(workspaceRootInput);
   const workspaceRoot = await boundDirectory(workspaceRootInput);
   // WSR-1: read the ACTIVE binding, not the raw roots array, so this stays the
@@ -2248,11 +2249,56 @@ async function scanKnowledgeStore(
   if (storedWorkspaceRoot !== workspaceRoot) {
     fail("KNOWLEDGE_PATH_INVALID", "knowledge store is not under the Workspace authority root");
   }
-  const storeRoot = await boundDirectory(await knowledgeStorePath(workspaceRoot), workspaceRoot);
+  return { workspace, workspaceRoot, storePath: await knowledgeStorePath(workspaceRoot) };
+}
+
+async function scanKnowledgeStore(
+  workspaceRootInput: string,
+  options: KnowledgeReadOptions = {},
+  allowClaim = false,
+  bodyMode: "full" | "metadata-only" = "full",
+  rebase = false,
+  allowStaleIndex = false,
+): Promise<KnowledgeStoreScan> {
+  return scanKnowledgeStoreAt(await knowledgeStorePlace(workspaceRootInput), options, allowClaim, bodyMode, rebase, allowStaleIndex);
+}
+
+async function scanKnowledgeStoreAt(
+  place: KnowledgeStorePlace,
+  options: KnowledgeReadOptions,
+  allowClaim: boolean,
+  bodyMode: "full" | "metadata-only",
+  rebase: boolean,
+  allowStaleIndex: boolean,
+): Promise<KnowledgeStoreScan> {
+  const { workspace, workspaceRoot } = place;
+  const storeRoot = await boundDirectory(place.storePath, workspaceRoot);
   if (await hasLibraryManifest(workspaceRoot)) {
     return scanLibraryCrest(workspace, workspaceRoot, storeRoot, options, allowClaim, bodyMode, rebase);
   }
   return scanOldLayoutStore(workspace, workspaceRoot, storeRoot, options, allowClaim, bodyMode, rebase, allowStaleIndex);
+}
+
+// TCRN-CROSS-INIT-053 R46 (I04): whether a library's knowledge store was never created. A library
+// is made with its store directory empty (initializeLibrary), and a store is created there by its first
+// card or initialization; so the store is absent when its place holds nothing at all, or when the place
+// itself is gone. A file, a link, an unreadable place, or a directory holding anything without its
+// marker is not absent: the scan refuses each of them with its own reason code, as it always did. An
+// old-layout workspace is never read as absent.
+async function libraryStoreNeverCreated(place: KnowledgeStorePlace): Promise<boolean> {
+  if (!await hasLibraryManifest(place.workspaceRoot)) return false;
+  let entry;
+  try {
+    entry = await lstat(place.storePath);
+  } catch (error) {
+    return (error as { code?: string }).code === "ENOENT";
+  }
+  if (entry.isSymbolicLink() || !entry.isDirectory()) return false;
+  try {
+    return (await readdir(place.storePath)).length === 0;
+  } catch {
+    return false;
+  }
 }
 
 // An old-layout workspace's store (knowledge/ in its control directory), read exactly as its
@@ -5017,6 +5063,10 @@ function trailingDisclosure(scan: KnowledgeStoreScan): Readonly<Record<string, J
 // read carries its trailing disclosure; the user crest has no chain head to trail.
 const USER_CREST_DISCLOSURE: Readonly<Record<string, JsonValue>> = Object.freeze({ scope: "user" });
 
+// TCRN-CROSS-INIT-053 R46 (I04): what a list of a library whose knowledge store was never created
+// carries at its top. A list of a store that exists carries nothing new.
+const ABSENT_STORE_DISCLOSURE: Readonly<Record<string, JsonValue>> = Object.freeze({ knowledgeStore: "absent" });
+
 // What a crest merged from more than one writer says at the top of a list: its unresolved pairs
 // (TCRN-CROSS-SUB-310), its unresolved duplicates (TCRN-CROSS-SUB-413) and, for a library's crest,
 // the records awaiting chain events this device has not received (TCRN-CROSS-SUB-414) and the live
@@ -5067,7 +5117,8 @@ function withheldCardIds(scan: CrestScan): ReadonlySet<string> {
  * the records written against chain events this device has not received, whose cards default
  * selection leaves out until the chain arrives. R16: and under `unresolvedScopes` the live records
  * whose project the chain no longer holds, whose cards default selection leaves out until a card
- * supersedes them.
+ * supersedes them. TCRN-CROSS-INIT-053 R46 (I04): a library whose store was never created answers an
+ * empty list with `knowledgeStore: "absent"`; every other store state answers as it did.
  */
 export async function listKnowledgeMetadata(workspaceRoot: string, query: KnowledgeListQuery): Promise<Readonly<Record<string, JsonValue>>> {
   const normalized = normalizeListQuery(query);
@@ -5078,7 +5129,11 @@ export async function listKnowledgeMetadata(workspaceRoot: string, query: Knowle
       return mergedCrestList(scan, query, normalized, USER_CREST_DISCLOSURE);
     });
   }
-  const scan = await scanKnowledgeStore(workspaceRoot, query, false, "metadata-only");
+  const place = await knowledgeStorePlace(workspaceRoot);
+  // TCRN-CROSS-INIT-053 R46 (I04): a library whose store was never created holds no card yet: an empty
+  // inventory that says so, never a refusal.
+  if (await libraryStoreNeverCreated(place)) return knowledgeListAnswer([], query, normalized, ABSENT_STORE_DISCLOSURE);
+  const scan = await scanKnowledgeStoreAt(place, query, false, "metadata-only", false, false);
   return mergedCrestList(scan, query, normalized, trailingDisclosure(scan));
 }
 

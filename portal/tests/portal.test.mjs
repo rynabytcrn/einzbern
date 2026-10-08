@@ -1818,3 +1818,18 @@ test("INIT-053 R46 I03: a target with an unresolved common default is read, swit
   assert.equal(repaired.body.settings.some(entry => entry.source?.status === "unresolved"), false);
 });
 
+// R46 I04 (U20 D5): a new library's knowledge view is an empty inventory that says so; once a store
+// exists the view says present.
+test("INIT-053 R46 I04: /api/knowledge answers a library without a knowledge store as an empty inventory", async t => {
+  const fixture = await scratch("portal-r46-knowledge-", "R46-KNOWLEDGE");
+  const { child, url } = await startPortal(fixture);
+  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
+  const { boot } = await readBoot(url);
+  const empty = await request(url, "/api/knowledge", readOptions(boot.token));
+  assert.equal(empty.response.status, 200);
+  assert.deepEqual([empty.body.ok, empty.body.reasonCode, empty.body.knowledgeStore, empty.body.records, empty.body.total], [true, "PORTAL_KNOWLEDGE_READY", "absent", [], 0]);
+  await cli(["knowledge-init", "--workspace", fixture.workspace, "--acknowledge-disposable", "true"], fixture.deviceEnv);
+  const present = await request(url, "/api/knowledge", readOptions(boot.token));
+  assert.deepEqual([present.body.reasonCode, present.body.knowledgeStore, present.body.total], ["PORTAL_KNOWLEDGE_READY", "present", 0]);
+});
+

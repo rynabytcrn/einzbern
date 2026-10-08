@@ -367,11 +367,15 @@ test("R2-NEW-7: empty-string integer flags are rejected, not silently dropped", 
   const fx = await fixture(context);
   const ws = ["--workspace", fx.workspace, "--at", instant(32)];
   for (const verb of ["knowledge-list"]) {
-    // Baseline: with the flag omitted the verb gets past pagination entirely and fails
-    // later, on the absent knowledge store. "Silently dropped" means indistinguishable
-    // from this, which is precisely what the truthy guard did to --limit=.
+    // Baseline: with the flag omitted the verb gets past pagination entirely and answers.
+    // The fixture library never created its knowledge store, which TCRN-CROSS-INIT-053 R46
+    // (I04) reads as an empty inventory that says so; before I04 the read was refused
+    // (KNOWLEDGE_PATH_INVALID) and that refusal was this baseline. "Silently dropped" means
+    // indistinguishable from this, which is precisely what the truthy guard did to --limit=.
     const omitted = await reasonOf([verb, ...ws]);
-    assert.equal(omitted, "KNOWLEDGE_PATH_INVALID");
+    assert.equal(omitted, null);
+    const answer = await run([verb, ...ws]);
+    assert.deepEqual([answer.reasonCode, answer.knowledgeStore, answer.total, answer.records], ["KNOWLEDGE_LIST_READY", "absent", 0, []]);
 
     for (const flag of ["limit", "offset"]) {
       // The empty string is a SUPPLIED value, so it must be handed to core verbatim and

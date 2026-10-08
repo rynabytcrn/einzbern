@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 import "./helpers/device-home.mjs";
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, realpath, rename, cp } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, realpath, rename, cp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { initializeLibrary, createProject, deleteProject, createWork, annotateWork, materializeWorkspace, materializeWorkspaceFromGenesis, setWorkspaceSetting, setConfigRecord, registerLibrary, readRegistry, registryPath, withFileLock, declareChainIdentity, chainIdentity, workProjectContexts, resolveProjectTarget, registeredCoordination, ensureProjectCoordination, normalizeInvolvedProjects, involvedProjectsOf, projectLineage, scopedWorkspaceState, enableRule, disableRule, listRules, renderAgentsSections } from "../dist/build/packages/core/src/index.js";
 import { unregisterLibrary } from "../dist/build/packages/core/src/registry.js";
-import { deriveStableId } from "../dist/build/packages/protocol/src/index.js";
+import { canonicalJson, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
+import { readAllStreams } from "../dist/build/packages/core/src/akasha.js";
 
 const at = "2026-10-08T08:00:00Z";
 async function fixture(t) {
@@ -220,4 +221,49 @@ test("registry exclusion spans a complete consumer operation, so rebinding canno
   release(); await consumer;
   assert.equal(await unregister, true);
   assert.equal((await readRegistry(f.home)).entries.some(entry => entry.projectPath === f.a.repo), false);
+});
+
+// INIT-053 U06, choice (a): an undecided relation is stored as absence (approved contract item 4:
+// absence reads as undecided; item 12: a new optional field never breaks missing-field replay).
+// A format-1 library therefore still takes new work, while the format-2 semantics it cannot hold
+// (a selected or coordination-only relation, a chain record) still refuse without an upgrade.
+test("U06: a format-1 library takes new work without a relation, stores no field and replays it as undecided; selected, coordination-only and chain records still refuse", async t => {
+  const root = await realpath(await mkdtemp(join(tmpdir(), "einzbern-format-one-")));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const library = join(root, "library");
+  const initial = await initializeLibrary({ root: library, createdAt: at });
+  // The library as an engine of format 1 left it: its manifest declares format 1.
+  const manifestPath = join(library, "manifest.json");
+  await writeFile(manifestPath, canonicalJson({ ...JSON.parse(await readFile(manifestPath, "utf8")), formatVersion: 1 }));
+  const projectId = (await createProject(library, { externalKey: "ONE", name: "One", occurredAt: at })).projects[0].id;
+  await createWork(library, { projectId, externalKey: "OMITTED", kind: "Initiative", parentId: null, occurredAt: at });
+  await createWork(library, { projectId, externalKey: "EXPLICIT", kind: "Initiative", parentId: null, involvedProjects: { state: "undecided", targets: [] }, occurredAt: at });
+  const stored = (await readAllStreams(library)).streams.flatMap(stream => stream.events).map(event => event.payload).filter(payload => payload.operation === "work.created");
+  assert.equal(stored.length, 2);
+  for (const payload of stored) assert.equal(Object.hasOwn(payload.record, "involvedProjects"), false, `${payload.record.externalKey}: undecided is not stored`);
+  for (const record of (await materializeWorkspaceFromGenesis(library)).work) {
+    assert.equal(Object.hasOwn(record, "involvedProjects"), false);
+    assert.deepEqual(involvedProjectsOf(record), { state: "undecided", targets: [] }, `${record.externalKey} replays as undecided`);
+  }
+  const reference = { libraryId: initial.metadata.workspaceId, projectId };
+  for (const [key, involvedProjects] of [["SELECTED", { state: "selected", targets: [reference] }], ["COORDINATION", { state: "coordination-only", targets: [] }]]) {
+    await assert.rejects(createWork(library, { projectId, externalKey: key, kind: "Initiative", parentId: null, involvedProjects, occurredAt: at }), error => error.reasonCode === "LIBRARY_FORMAT_UNSUPPORTED", key);
+  }
+  await assert.rejects(declareChainIdentity(library, { role: "coordination", coordinationLibraryId: initial.metadata.workspaceId }, { occurredAt: at }), error => error.reasonCode === "LIBRARY_FORMAT_UNSUPPORTED");
+  assert.equal((await materializeWorkspace(library)).work.length, 2, "the refused writes left nothing");
+});
+
+test("U06: on format 2 a relation returned to undecided is stored explicitly, and undecided over an absent relation refuses as no change", async t => {
+  const f = await fixture(t);
+  const projectId = f.coordination.reference.projectId;
+  await createWork(f.coordination.path, { projectId, externalKey: "BACK", kind: "Initiative", parentId: null, involvedProjects: { state: "selected", targets: [f.a.reference] }, occurredAt: at });
+  const back = deriveStableId("work", "BACK");
+  await annotateWork(f.coordination.path, { id: back, involvedProjects: { state: "undecided", targets: [] }, occurredAt: at });
+  const record = (await materializeWorkspaceFromGenesis(f.coordination.path)).work.find(entry => entry.id === back);
+  assert.deepEqual(record.involvedProjects, { state: "undecided", targets: [] }, "the change back is a stored value");
+  await assert.rejects(annotateWork(f.coordination.path, { id: back, involvedProjects: { state: "undecided", targets: [] }, occurredAt: at }), /changed no annotatable field/u);
+  await createWork(f.coordination.path, { projectId, externalKey: "PLAIN", kind: "Initiative", parentId: null, occurredAt: at });
+  const plain = deriveStableId("work", "PLAIN");
+  assert.equal(Object.hasOwn((await materializeWorkspaceFromGenesis(f.coordination.path)).work.find(entry => entry.id === plain), "involvedProjects"), false);
+  await assert.rejects(annotateWork(f.coordination.path, { id: plain, involvedProjects: { state: "undecided", targets: [] }, occurredAt: at }), /changed no annotatable field/u);
 });

@@ -95,7 +95,10 @@ route may later add a host-adapter enforcement hook.
 ## Project relation persistence
 
 Format-2 `work.created` and `work.annotated` records carry `involvedProjects` as
-a first-class field. Transition and deletion preserve it. Annotation replay
+a first-class field when it is `selected` or `coordination-only`. `undecided` is
+represented by absence: a writer creating work does not store it, and an absent
+field reads as `undecided`. An annotation that changes a stored relation back to
+`undecided` stores it explicitly. Transition and deletion preserve the field. Annotation replay
 permits that field to change while still enforcing all status, evidence and
 non-advisory extension invariants. Snapshots and collection digests include the
 stored field; absent legacy fields retain their original canonical bytes.

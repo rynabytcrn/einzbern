@@ -1,6 +1,6 @@
 import { FormatVersionError } from "./format-version.js";
 import type { InvolvedProjects } from "../../protocol/src/index.js";
-import { normalizeInvolvedProjects, involvedProjectsOf, assertStoredInvolvedProjects, assertInvolvedProjectScope } from "./involved-projects.js";
+import { normalizeInvolvedProjects, involvedProjectsOf, assertStoredInvolvedProjects, assertInvolvedProjectScope, storedInvolvedProjects } from "./involved-projects.js";
 import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // SPDX-License-Identifier: Apache-2.0
 
@@ -3812,6 +3812,10 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
       throw new TemplateAdmissionError("TEMPLATE_NOT_APPLICABLE", `${templateRecord.template.id}:${input.kind}`);
     }
     const extensions: Record<string, unknown> = workAdvisoryExtensions({}, input, relations);
+    // INIT-053 U06 (a): an undecided relation is stored as absence, which reads as undecided
+    // (approved contract item 4); a format-1 library therefore still takes new work, and a record
+    // with no relation keeps the bytes it had before the field existed (contract item 12).
+    const involvedProjects = storedInvolvedProjects(normalizeInvolvedProjects(input.involvedProjects ?? { state: "undecided", targets: [] }));
     if (templateReceipt !== undefined && templateRecord !== undefined) {
       extensions[templateRecord.registrationId] = { required: true, value: templateBindingFromReceipt(templateReceipt) };
     }
@@ -3832,7 +3836,7 @@ function createWorkReducerDelta(state: WorkspaceState, input: {
       createdAt: input.occurredAt,
       labels,
       summary,
-      involvedProjects: normalizeInvolvedProjects(input.involvedProjects ?? { state: "undecided", targets: [] }),
+      ...(involvedProjects === undefined ? {} : { involvedProjects }),
     };
     // TCRN-CROSS-STORY-473 R1, R2: a Story is checked for its goal and its acceptance and
     // nothing else, bound to a template or not; the ten-block contract is gone.

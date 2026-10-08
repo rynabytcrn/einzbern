@@ -27,6 +27,10 @@ export function normalizeInvolvedProjects(value: unknown): InvolvedProjects {
 export function involvedProjectsOf(record: Pick<WorkRecord, "involvedProjects">): InvolvedProjects {
   return record.involvedProjects ?? { state: "undecided", targets: [] };
 }
+/** What a new record stores: undecided is absence (contract item 4), so it is never written; the other states are. */
+export function storedInvolvedProjects(value: InvolvedProjects): InvolvedProjects | undefined {
+  return value.state === "undecided" ? undefined : value;
+}
 export function assertStoredInvolvedProjects(value: unknown): void {
   if (canonicalJson(value) !== canonicalJson(normalizeInvolvedProjects(value))) throw new InvolvedProjectsError("stored involvedProjects must be canonical and deduplicated");
 }

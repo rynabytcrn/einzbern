@@ -68,8 +68,11 @@ relation is unchanged.
 `undecided` and `coordination-only` require an empty list; `selected` requires a
 nonempty list of `{libraryId, projectId}` stable references. Writers deduplicate
 and sort targets; replay refuses malformed or noncanonical shape without
-requiring this device to access any target. An absent historical field reads as
-undecided and is not backfilled during replay. A child's actual scope is explicit;
+requiring this device to access any target. An absent field reads as undecided
+and is not backfilled during replay; a writer creating work stores `selected` and
+`coordination-only` and represents `undecided` by absence, so a format-1 library
+still takes new work, while an annotation that returns a stored relation to
+`undecided` stores it explicitly. A child's actual scope is explicit;
 a selected parent provides candidates, never automatic child scope. A selected
 child cannot exceed a declared parent's selected scope.
 

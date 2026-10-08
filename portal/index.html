@@ -632,10 +632,19 @@
   min-width: 0;
   padding: var(--tcrn-space-5);
 }
+/*
+ * The content stack is the size container for the section grid it holds, the
+ * same arrangement as the split-view frame: an element cannot answer a container
+ * query about itself, so the parent carries the container and the grid's own
+ * columns respond to it. width 100% keeps a definite size wherever the parent
+ * has one to give, because inline-size containment removes the intrinsic width.
+ */
 .tcrn-product-shell-content-stack {
+  container: tcrn-product-shell-content / inline-size;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--tcrn-space-5);
+  width: 100%;
   min-width: 0;
   max-width: 1180px;
 }
@@ -649,6 +658,19 @@
   grid-template-columns: minmax(0, 1.45fr) minmax(280px, 0.75fr);
   gap: var(--tcrn-space-4);
   align-items: start;
+}
+/*
+ * The section grid stacks when ITS OWN container cannot hold its columns, the
+ * record family's rule. Side by side, the second column keeps its 280px floor
+ * and the primary column gets the same floor: 280 + 16 + 280 = 576px of
+ * container. Below that the primary column used to keep a zero minimum and
+ * collapsed to about 20px on a 1024px viewport with a 280px rail, so a work
+ * queue broke its records one character per line (TCRN-CROSS-INC-399).
+ */
+@container tcrn-product-shell-content (max-width: 576px) {
+  .tcrn-product-shell-section-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .tcrn-top-bar {
   display: grid;
@@ -1171,12 +1193,20 @@ html[data-tcrn-theme="dark"] [data-theme-icon="dark"],
   gap: var(--tcrn-space-3);
   margin: var(--tcrn-space-3) 0 0;
 }
-.tcrn-key-value-list div {
+.tcrn-key-value-list > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
   display: grid;
   gap: var(--tcrn-space-0h);
   padding: var(--tcrn-space-2);
   border-radius: var(--tcrn-radius-panel);
   background: var(--tcrn-color-surface-muted);
+}
+.tcrn-key-value-list dt,
+.tcrn-key-value-list dd {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 .tcrn-key-value-list dt {
   color: var(--tcrn-color-text-secondary);
@@ -1668,7 +1698,7 @@ a.tcrn-relationship-chip:focus-visible {
 }
 .tcrn-record-row {
   display: grid;
-  grid-template-columns: minmax(112px, 0.18fr) minmax(180px, 1fr) minmax(220px, 0.8fr);
+  grid-template-columns: minmax(112px, 0.18fr) minmax(0, 1fr) minmax(0, 0.8fr);
   align-items: center;
   gap: var(--tcrn-density-gap);
   min-height: var(--tcrn-density-row-min);
@@ -1677,7 +1707,7 @@ a.tcrn-relationship-chip:focus-visible {
   text-decoration: none;
 }
 .tcrn-record-row--compact {
-  grid-template-columns: minmax(96px, 0.16fr) minmax(160px, 1fr) minmax(192px, 0.72fr);
+  grid-template-columns: minmax(96px, 0.16fr) minmax(0, 1fr) minmax(0, 0.72fr);
   gap: var(--tcrn-space-2);
   padding: var(--tcrn-space-2) var(--tcrn-space-3);
 }
@@ -1685,7 +1715,16 @@ a.tcrn-relationship-chip:focus-visible {
  * A row stacks when ITS OWN container cannot hold its columns, not when the
  * viewport crosses a number.
  *
- * The three floors plus their gaps need 464px. The mobile block stacks the row
+ * The established compact boundary is 464px. Above it, the summary and meta
+ * tracks keep zero minima so long content wraps rather than adding an intrinsic
+ * floor. The identifier track keeps a readable floor instead: with a zero
+ * minimum it fell to about 40px in a half-width table and broke identifiers
+ * inside words, one fragment per line (TCRN-CROSS-INC-399). The floor is the one
+ * the family published before the zero minima — 112px, 96px compact, 92px dense —
+ * so identifiers break only at their own hyphens. It cannot overflow the row:
+ * the largest floor plus both gaps is far below the 464px boundary.
+ *
+ * The mobile block stacks the row
  * below a 760px viewport, which sounds like the same thing and is not: on a
  * shell with a 280px rail, a 761px viewport leaves the row 441px — 23px short
  * of its own floor, and the row overflowed the page by exactly that. Measured
@@ -1699,17 +1738,17 @@ a.tcrn-relationship-chip:focus-visible {
 .tcrn-record-table {
   container: tcrn-record-row / inline-size;
 }
+.tcrn-record-row--dense {
+  grid-template-columns: minmax(92px, 0.14fr) minmax(0, 1fr) minmax(0, 0.62fr);
+  padding: var(--tcrn-space-1) var(--tcrn-space-2);
+  font-size: var(--tcrn-type-size-ui);
+}
 @container tcrn-record-row (max-width: 464px) {
   .tcrn-record-row,
   .tcrn-record-row--compact,
   .tcrn-record-row--dense {
     grid-template-columns: minmax(0, 1fr);
   }
-}
-.tcrn-record-row--dense {
-  grid-template-columns: minmax(92px, 0.14fr) minmax(180px, 1fr) minmax(172px, 0.62fr);
-  padding: var(--tcrn-space-1) var(--tcrn-space-2);
-  font-size: var(--tcrn-type-size-ui);
 }
 /* The framed half of the grammar. A row already has a border, so selection
    promotes that border to ink rather than drawing a second mark inside it —
@@ -1738,6 +1777,10 @@ a.tcrn-relationship-chip:focus-visible {
 .tcrn-record-row__summary {
   display: grid;
   gap: var(--tcrn-space-0h);
+}
+.tcrn-record-row__field,
+.tcrn-record-row__summary {
+  overflow-wrap: anywhere;
 }
 .tcrn-record-row__summary strong {
   overflow-wrap: anywhere;
@@ -1998,6 +2041,10 @@ a.tcrn-relationship-chip:focus-visible {
   margin: 0;
 }
 .tcrn-record-inspector {
+  container: tcrn-record-inspector / inline-size;
+  box-sizing: border-box;
+  width: 100%;
+  overflow-wrap: anywhere;
   display: grid;
   gap: var(--tcrn-space-4);
 }
@@ -2009,6 +2056,45 @@ a.tcrn-relationship-chip:focus-visible {
 }
 .tcrn-record-inspector__grid > section {
   min-width: 0;
+}
+/* Detail cards are nested within split views and inspectors. Their own available
+   width governs fields; a desktop viewport does not imply two readable columns.
+   Reuse the record family's compact containment boundary. */
+.tcrn-detail-inspector {
+  container: tcrn-detail-fields / inline-size;
+}
+@container tcrn-detail-fields (max-width: 464px) {
+  .tcrn-key-value-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@container tcrn-record-inspector (max-width: 464px) {
+  .tcrn-record-inspector__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* Inspection is a full-content surface. Use the existing wrapping badge grammar
+   for values and row metadata rather than hiding status/owner suffixes. */
+.tcrn-attachment-list .tcrn-badge,
+.tcrn-record-inspector__head .tcrn-badge,
+.tcrn-key-value-list .tcrn-badge,
+.tcrn-record-row__meta .tcrn-badge {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.tcrn-attachment-list .tcrn-badge__label,
+.tcrn-record-inspector__head .tcrn-badge__label,
+.tcrn-key-value-list .tcrn-badge__label,
+.tcrn-record-row__meta .tcrn-badge__label {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+.tcrn-attachment-list .tcrn-badge::before,
+.tcrn-record-inspector__head .tcrn-badge::before,
+.tcrn-key-value-list .tcrn-badge::before,
+.tcrn-record-row__meta .tcrn-badge::before {
+  inset-block-start: var(--tcrn-space-2h);
 }
 .tcrn-record-inspector__actions {
   display: flex;
@@ -2034,6 +2120,10 @@ a.tcrn-relationship-chip:focus-visible {
   margin: 0;
 }
 .tcrn-detail-layout {
+  container: tcrn-detail-layout / inline-size;
+  box-sizing: border-box;
+  width: 100%;
+  overflow-wrap: anywhere;
   gap: var(--tcrn-density-gap);
   padding: var(--tcrn-density-padding);
 }
@@ -2047,6 +2137,11 @@ a.tcrn-relationship-chip:focus-visible {
   gap: var(--tcrn-space-3);
   min-width: 0;
   align-items: start;
+}
+@container tcrn-detail-layout (max-width: 464px) {
+  .tcrn-detail-layout__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .tcrn-tree-nav,
 .tcrn-document-canvas,
@@ -4096,7 +4191,7 @@ button:disabled { cursor: not-allowed; }
       <div class="tcrn-text tcrn-rail__footer"><span data-i18n="app.boundaryBody">Writes use the public CLI and return the engine receipt.</span></div>
     </aside>
     <div class="tcrn-product-shell__workspace">
-      <header class="tcrn-top-bar" data-ds-component="ProductShell/TopBar" data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html#navigation-shell-spec" data-ds-mapping-status="production-published-consumed" data-ds-candidate-sha="884f3c7b73a1b67783e74df3fa967fcd25ae9767">
+      <header class="tcrn-top-bar" data-ds-component="ProductShell/TopBar" data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html#navigation-shell-spec" data-ds-mapping-status="production-published-consumed" data-ds-candidate-sha="d53f23055ddedc6e0881cd85d54e6ab79cd02f75">
         <div class="tcrn-top-bar__module tcrn-top-bar__module--path" id="workspace-label"></div>
         <div class="tcrn-top-bar__actions">
           <label class="tcrn-sr-only" for="library-select" data-i18n="library.label">Library</label>
@@ -4162,7 +4257,7 @@ button:disabled { cursor: not-allowed; }
             <nav class="tcrn-subnav tcrn-settings-layout__nav" data-settings-layout-nav data-settings-local-nav="true" aria-label="Settings groups" data-i18n-aria-label="settings.groupsLabel" role="tablist"></nav>
           </div>
           <div class="tcrn-page-hierarchy__lower-content" data-page-hierarchy-region="lower-content" data-page-hierarchy-slot="content">
-            <div class="tcrn-manage tcrn-settings-layout" data-settings-layout-component="SettingsLayout" data-settings-layout="true" data-settings-layout-navigation-location="page-hierarchy-section-tabs" data-ds-candidate="TCRN-Design-System@884f3c7b73a1b67783e74df3fa967fcd25ae9767" data-ds-contract-status="production-published-consumed" data-ds-contract-version="ai_consumption_contract_v1" data-ds-contract-digest="d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7" data-ds-component-css-sha256="3bb21fb49333e602d9fe580ac9cfe4830c71d985f4454337ec9e8be2d3c5d99a" data-ds-rules="DS-106-R1 DS-106-R2 DS-107-R1 DS-107-R2 DS-108-R1 DS-108-R2 DS-112-R1 DS-112-R2 DS-116-R1 DS-116-R2 DS-117-R1 DS-117-R2 DS-118-R1 DS-118-R2 DS-119-R1 DS-119-R2" data-ds-surface-contracts="overlay-boundary-contract-v1 field-value-selection-contract-v1 dictionary-content-contract-v1 operation-feedback-contract-v1 content-scope-contract-v1 consumer-evidence-contract-v1 verification-cadence-contract-v1" data-ds-static-overlay-bridge="mountStaticOverlayBoundary" data-ds-candidate-status="production-published-consumed" data-settings-layout-mode="container-driven" data-settings-layout-form-policy="single-host-single-column" data-settings-layout-breakpoint="960px" data-settings-content-breakpoint="720px" data-settings-local-navigation="compact" data-settings-overflow-policy="no-page-overflow" data-settings-long-value-policy="native-inline-scroll-copy"><div class="tcrn-settings-layout__frame"><div class="tcrn-settings-layout__grid" data-settings-layout-grid><div class="tcrn-settings-layout__content" data-settings-layout-content data-settings-content="true" data-settings-complete-form="true"><div id="design-authority" hidden></div><div id="settings-rows" class="tcrn-settings-layout__form"></div></div></div></div></div>
+            <div class="tcrn-manage tcrn-settings-layout" data-settings-layout-component="SettingsLayout" data-settings-layout="true" data-settings-layout-navigation-location="page-hierarchy-section-tabs" data-ds-candidate="TCRN-Design-System@d53f23055ddedc6e0881cd85d54e6ab79cd02f75" data-ds-contract-status="production-published-consumed" data-ds-contract-version="ai_consumption_contract_v1" data-ds-contract-digest="012b12f5b84052510b84e477781901c52ad352390fbbf37dd49ff3ee49eae649" data-ds-component-css-sha256="f8200e9b9b0cce4b4ac642620030e252dfde7d65a994639d49f12241e135ac4b" data-ds-rules="DS-106-R1 DS-106-R2 DS-107-R1 DS-107-R2 DS-108-R1 DS-108-R2 DS-112-R1 DS-112-R2 DS-116-R1 DS-116-R2 DS-117-R1 DS-117-R2 DS-118-R1 DS-118-R2 DS-119-R1 DS-119-R2" data-ds-surface-contracts="overlay-boundary-contract-v1 field-value-selection-contract-v1 dictionary-content-contract-v1 operation-feedback-contract-v1 content-scope-contract-v1 consumer-evidence-contract-v1 verification-cadence-contract-v1" data-ds-static-overlay-bridge="mountStaticOverlayBoundary" data-ds-candidate-status="production-published-consumed" data-settings-layout-mode="container-driven" data-settings-layout-form-policy="single-host-single-column" data-settings-layout-breakpoint="960px" data-settings-content-breakpoint="720px" data-settings-local-navigation="compact" data-settings-overflow-policy="no-page-overflow" data-settings-long-value-policy="native-inline-scroll-copy"><div class="tcrn-settings-layout__frame"><div class="tcrn-settings-layout__grid" data-settings-layout-grid><div class="tcrn-settings-layout__content" data-settings-layout-content data-settings-content="true" data-settings-complete-form="true"><div id="design-authority" hidden></div><div id="settings-rows" class="tcrn-settings-layout__form"></div></div></div></div></div>
           </div>
         </div>
       </section>
@@ -4649,11 +4744,11 @@ const BOOT = __PORTAL_BOOT__;
     const layerClass = kind === "popover" ? "tcrn-popover" : "tcrn-tooltip__content";
     const layerRole = kind === "popover" ? `role="dialog" aria-modal="false" aria-label="${esc(t("concept.explain"))}" data-overlay-scope="popover"` : `role="tooltip" data-tooltip-scope="supplemental" data-tooltip-interactive-content="forbidden"`;
     const triggerRelation = kind === "popover" ? `aria-controls="${id}" aria-haspopup="dialog" aria-expanded="false"` : `aria-describedby="${id}"`;
-    return `<span class="tcrn-tooltip" data-placement="${esc(placement)}" data-overlay-scope="${kind}" data-concept-tip="${esc(key)}" data-static-overlay-kind="${kind}" data-ds-overlay-candidate="TCRN-Design-System@884f3c7b73a1b67783e74df3fa967fcd25ae9767">`
+    return `<span class="tcrn-tooltip" data-placement="${esc(placement)}" data-overlay-scope="${kind}" data-concept-tip="${esc(key)}" data-static-overlay-kind="${kind}" data-ds-overlay-candidate="TCRN-Design-System@d53f23055ddedc6e0881cd85d54e6ab79cd02f75">`
       + `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-icon-button" ${triggerRelation} data-static-overlay-trigger="true" data-static-overlay-kind="${kind}" aria-label="${esc(t("concept.explain"))}">`
       + `<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 7.2v4"/><path d="M8 4.8h.01"/></svg>`
       + `</button>`
-      + `<${layerTag} id="${id}" ${layerRole} class="${layerClass}" data-static-overlay-layer="true" data-static-overlay-kind="${kind}" data-ds-overlay-candidate="TCRN-Design-System@884f3c7b73a1b67783e74df3fa967fcd25ae9767" hidden>${esc(body)}</${layerTag}>`
+      + `<${layerTag} id="${id}" ${layerRole} class="${layerClass}" data-static-overlay-layer="true" data-static-overlay-kind="${kind}" data-ds-overlay-candidate="TCRN-Design-System@d53f23055ddedc6e0881cd85d54e6ab79cd02f75" hidden>${esc(body)}</${layerTag}>`
       + `</span>`;
   };
   const settingDescription = (key) => t(`setting.${key}.description`);

@@ -1,17 +1,17 @@
 {
   "schemaVersion": "tcrn.workflow.ds-consumer-contract.v1",
   "consumer": "Atelier static consumer",
-  "candidate": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
-  "candidateTree": "68a7edb311804d6981610c5ddf75ada66ec4aa06",
+  "candidate": "d53f23055ddedc6e0881cd85d54e6ab79cd02f75",
+  "candidateTree": "a8f096c8602ccb5af5ae0e1c2223d9a0ad673429",
   "package": "@tcrn/ui-react@3.0.0",
   "aiContract": {
     "version": "ai_consumption_contract_v1",
-    "payloadDigest": "d4e37627877029e08f18636dc005429b06b7c1bc0868266017feac1b3889dee7"
+    "payloadDigest": "012b12f5b84052510b84e477781901c52ad352390fbbf37dd49ff3ee49eae649"
   },
   "componentCss": {
     "sourceExport": "tcrnComponentCss",
-    "bytes": 120942,
-    "sha256": "3bb21fb49333e602d9fe580ac9cfe4830c71d985f4454337ec9e8be2d3c5d99a",
+    "bytes": 124578,
+    "sha256": "f8200e9b9b0cce4b4ac642620030e252dfde7d65a994639d49f12241e135ac4b",
     "snapshot": "portal/ds-component-css.snapshot.css",
     "inlineSelector": "style#tcrn-ds-component-css[data-source=\"snapshot\"]"
   },
@@ -68,21 +68,22 @@
   },
   "staticBridge": {
     "snapshot": "portal/ds-static-bridges.snapshot.js",
-    "bytes": 25621,
-    "sha256": "26e51f7b7f7beb18ae00fec4daaf19dbf1d8e588063fd509c81a1761a87ccf8a",
+    "bytes": 28391,
+    "sha256": "e44b14d7fa5342982849aa46c967ef00a460cf2ab127223e4abcac5df6f4a7f0",
     "publicExports": [
+      "mountStaticClipboardCopyButton",
       "mountStaticMultiSelect",
       "mountStaticOverlayBoundary"
     ]
   },
   "production": {
-    "sourceCommit": "884f3c7b73a1b67783e74df3fa967fcd25ae9767",
+    "sourceCommit": "d53f23055ddedc6e0881cd85d54e6ab79cd02f75",
     "environment": "Production",
     "documentationOrigin": "https://tcrn-design-system-storybook.vercel.app",
-    "deploymentId": 6908102337,
-    "deploymentStatusId": 19396305924,
-    "buildStatusId": 55785918568,
-    "buildUrl": "https://vercel.com/tcrn-platform/tcrn-design-system-storybook/ECZ5EfvLqfhCoUAXmA7uKYua33Fd"
+    "deploymentId": 6943471590,
+    "deploymentStatusId": 19477903808,
+    "buildStatusId": 55920346483,
+    "buildUrl": "https://vercel.com/tcrn-platform/tcrn-design-system-storybook/6vvD7Zjv1KKcnfctCknAc129dg4q"
   },
   "tokensCss": {
     "snapshot": "portal/tokens.css",

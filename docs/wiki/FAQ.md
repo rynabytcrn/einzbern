@@ -52,6 +52,10 @@
 
 非 release 计划必须给有效的 Git 提交 `--base`，不会隐式使用 `HEAD`，不给就报 `GATES_BASE_REQUIRED`。已经提交的改动相对 `HEAD` 没有差别，所以 `--base HEAD` 选不中按路径 glob 覆盖的门；用 `--base` 指向这次改动的分叉点，例如 `--base main`。以精确 work id 覆盖的门另由 `--work-id` 选中，与改动无关。
 
+## 钩子看起来没反应，怎么知道它有没有运行？
+
+钩子只在本设备注册表登记过的项目里回答提示，其他地方照常以退出码 0 结束、什么也不输出，所以「没反应」和「没运行」看起来一样。如果提示所在的目录属于已知容器（库、旧布局工作区或旧平台容器），而注册表没有覆盖它，启动器会在设备目录的 `log/hook.ndjson` 追加一行（设备目录缺省是 `~/.einzbern/`，`EINZBERN_HOME` 可以改）。每行一个 JSON 对象，`reasonCode` 说明原因：`HOOK_REGISTRY_ABSENT` 是本设备没有注册表，还没装好；`HOOK_PROJECT_UNREGISTERED` 是目录在旧布局里、没有登记的项目，按迁移办；`HOOK_LIBRARY_UNREGISTERED` 是目录里的库没有登记，按恢复办。这个文件只在提示一直落在这类地方时增长，删掉不丢任何东西。没有新行，说明目录不在已知容器里，或者钩子根本没有运行，这时看 `doctor` 的 `hooks-present`；平台容器上的 `platform-doctor` 还会把「钩子指向的脚本不存在」（`PLATFORM_HOOK_TARGET_UNAVAILABLE`）与「启动器在、但设备上没有装好引擎」（`PLATFORM_HOOK_ENGINE_NOT_INSTALLED`）分开报，用户级的 `~/.claude/settings.json` 与 `~/.codex/hooks.json` 也在它检查的范围内。
+
 ## Wiki 怎么更新？
 
 Wiki 的每一页都在引擎仓库的 `docs/wiki/` 里编辑，不在网页上改。`scripts/push-wiki.mjs --wiki-dir <Wiki 仓库的本地工作树>` 把 `docs/wiki/` 同步进那个工作树并在本地提交，然后列出将要推送的提交；这是缺省的演练，不会推送。确认无误后加 `--execute push` 才真正推送。

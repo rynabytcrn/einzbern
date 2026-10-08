@@ -117,6 +117,26 @@ current instant written `YYYY-MM-DDTHH:MM:SSZ`. Plan it without `--yes`, which r
 `SETUP_PLAN_READY`; as the final confirmation, show the files the plan lists and ask once; apply
 with `--yes true` only on a clear yes. Then run `doctor` again and report the new result.
 
+## A hook that answers nothing
+
+The hook answers a prompt only in a project this device's registry holds; anywhere else it ends
+with exit code 0 and prints nothing. When that directory lies in a known container the registry
+does not cover (a library, an old-layout workspace or an old platform container), the launcher
+also appends one line to `log/hook.ndjson` in the device directory, which is `~/.einzbern`
+unless `EINZBERN_HOME` names another place. Each line is one JSON object with `schemaVersion`
+(`einzbern.hook-log.v1`), `at`, `event`, `cwd`, `container`, `marker` (`library` or
+`legacy`) and `reasonCode`:
+
+| reasonCode | What it means | Fix |
+| --- | --- | --- |
+| `HOOK_REGISTRY_ABSENT` | This device has no registry, or an empty one: Einzbern was never set up here. | the `setup` mode the project needs |
+| `HOOK_PROJECT_UNREGISTERED` | The directory is in an old-layout workspace or platform container that no registered project holds. | `setup --mode migrate` |
+| `HOOK_LIBRARY_UNREGISTERED` | The directory's library is not in this device's registry. | `setup --mode restore` |
+
+Read the last few lines to see why the latest prompts got nothing. The file grows only while
+prompts keep landing in such a place, and deleting it loses nothing. No new line means the
+directory is in no known container, or the hook never ran: check `hooks-present`.
+
 ## Flags
 
 | Purpose | Command or flag |

@@ -3782,10 +3782,6 @@ button:disabled { cursor: not-allowed; }
 .tcrn-detail-drawer { position: fixed; z-index: var(--tcrn-z-overlay); top: 0; right: 0; bottom: 30px; width: min(400px, 94vw); overflow: auto; transform: translateX(0); transition: transform var(--tcrn-motion-standard) var(--tcrn-motion-ease-drawer); }
 .tcrn-detail-drawer[data-open="false"] { visibility: hidden; pointer-events: none; transform: translateX(100%); }
 [hidden] { display: none !important; }
-[data-tcrn-locale="en"], [data-tcrn-locale="fr"] { --tcrn-type-family-ui: var(--tcrn-type-family-latin); }
-[data-tcrn-locale="zh-CN"] { --tcrn-type-family-ui: var(--tcrn-type-family-zh-cn); }
-[data-tcrn-locale="ja"] { --tcrn-type-family-ui: var(--tcrn-type-family-ja); }
-[data-tcrn-locale="ko"] { --tcrn-type-family-ui: var(--tcrn-type-family-ko); }
 @media (max-width: 760px) {
   .tcrn-product-shell { grid-template-columns: 1fr; }
   .tcrn-rail__mark, .tcrn-rail__footer { display: none; }

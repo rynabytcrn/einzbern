@@ -3148,6 +3148,83 @@ if (!MUTATION) test("R46 I12: the coordination chain's model pages are read only
   } finally { await closePage(page, fixture); }
 });
 
+// TCRN-CROSS-INIT-053 R46 (I16; EPIC-144 R3): the readiness view lists, for each setting whose value differs
+// between the targets, every target's value and where it comes from; "not ready" is information, so its
+// badge is the neutral one.
+if (!MUTATION) test("R46 I16: a differing setting is listed with each target's value and source, and not ready is neutral", async () => {
+  const fixture = await projectChainFixture("tcrn-r46-i16-context-");
+  const [, second, third] = fixture.targets;
+  await cli(["settings-set", "--workspace", fixture.second.library, "--at", nextAt(), "--actor", "agent:test", "--key", "artifact.language", "--value", "fr"], fixture.atelier);
+  await cli(["settings-set", "--workspace", fixture.third.library, "--at", nextAt(), "--actor", "agent:test", "--key", "artifact.language", "--value", "ja"], fixture.atelier);
+  const initiative = (await cli(["work-create", "--workspace", fixture.workspace, "--project-id", fixture.projectId, "--at", nextAt(), "--external-key", "R46-I16-CONTEXT", "--kind", "Initiative", "--title", "Two targets of record", "--involved-projects", JSON.stringify({ state: "selected", targets: [second, third] })], fixture.atelier)).record;
+  const locales = await localeTable();
+  const page = await loadExecutedDom(fixture);
+  try {
+    const { window } = page;
+    const editor = await openWorkEditor(page);
+    const work = editor.querySelector("[data-target-work]");
+    work.value = initiative.id;
+    work.dispatchEvent(new window.Event("change", { bubbles: true }));
+    editor.querySelector("[data-target-context]").click();
+    const view = await waitFor(() => editor.querySelector("[data-project-context]"), "the readiness view");
+    const conflict = view.querySelector('[data-context-conflict="artifact.language"]');
+    assert.ok(conflict, "the differing setting is listed");
+    const rows = [...conflict.querySelectorAll("[data-context-conflict-target]")].map((row) => [JSON.parse(row.dataset.contextConflictTarget).projectId, row.querySelector("dt").textContent, row.querySelector("[data-context-conflict-value]").textContent, row.querySelector("[data-context-conflict-source]").textContent]);
+    const byProject = (left, right) => left[0].localeCompare(right[0]);
+    assert.deepEqual([...rows].sort(byProject), [[second.projectId, "TCRN-INC148-DOM-SECOND", "fr", locales.en["scope.thisProject"]], [third.projectId, "TCRN-R45-THIRD", "ja", locales.en["scope.thisProject"]]].sort(byProject), "each target's value and its source");
+    assert.ok(conflict.querySelector(".tcrn-machine-token > .tcrn-machine-token__value"), "values use the published MachineToken");
+    const readiness = view.querySelector('[data-context-readiness="development"] .tcrn-badge');
+    assert.equal(readiness.textContent, locales.en["projects.notReady"]);
+    assert.equal(readiness.className, "tcrn-badge", "not ready is the neutral badge");
+    assert.equal(view.querySelectorAll("[data-context-readiness] .tcrn-badge--warning").length, 0, "no readiness badge is a warning");
+  } finally { await closePage(page, fixture); }
+});
+
+// TCRN-CROSS-INIT-053 R46 (I16; approved contract items 5, 9): Subtasks are listed under their Story, built as
+// the Story row is, each naming the projects it involves; the project filter keeps them with their parents.
+if (!MUTATION) test("R46 I16: Subtasks are listed under their Story with the projects they involve, and the filter keeps them", async () => {
+  const fixture = await projectChainFixture("tcrn-r46-i16-subtasks-");
+  const [, second, third] = fixture.targets;
+  const create = async (externalKey, kind, extra) => (await cli(["work-create", "--workspace", fixture.workspace, "--project-id", fixture.projectId, "--at", nextAt(), "--external-key", externalKey, "--kind", kind, ...extra], fixture.atelier)).record;
+  const initiative = await create("R46-I16-INIT", "Initiative", ["--title", "Initiative with subtasks", "--involved-projects", JSON.stringify({ state: "selected", targets: [second, third] })]);
+  const epic = await create("R46-I16-EPIC", "Epic", ["--parent-id", initiative.id, "--title", "Epic with subtasks"]);
+  const story = await create("R46-I16-STORY", "Story", ["--parent-id", epic.id, "--title", "Story with subtasks", "--goal", "The second project changes.", "--acceptance", "Given the second project When worked Then it changes.", "--involved-projects", JSON.stringify({ state: "selected", targets: [second] })]);
+  const first = await create("R46-I16-SUB-A", "Subtask", ["--parent-id", story.id, "--title", "Second project's subtask", "--involved-projects", JSON.stringify({ state: "selected", targets: [second] })]);
+  const other = await create("R46-I16-SUB-B", "Subtask", ["--parent-id", story.id, "--title", "Coordinating subtask", "--involved-projects", JSON.stringify({ state: "coordination-only", targets: [] })]);
+  const locales = await localeTable();
+  const page = await loadExecutedDom(fixture);
+  try {
+    const { document, window } = page;
+    await openWorkEditor(page);
+    const content = document.querySelector("#work-tree-content");
+    const storyRow = content.querySelector(`[data-work-id="${story.id}"]`);
+    assert.ok(storyRow);
+    const group = content.querySelector(`[data-work-subtasks="${story.id}"]`);
+    assert.ok(group, "the Story's Subtasks are listed under it");
+    assert.equal(group.getAttribute("role"), "group");
+    assert.equal(storyRow.getAttribute("aria-owns"), group.id, "the Story owns its Subtasks in the tree");
+    const rows = [...group.querySelectorAll('[role="treeitem"]')];
+    assert.deepEqual(rows.map((row) => row.dataset.workId), [first.id, other.id]);
+    for (const row of rows) {
+      assert.deepEqual(["tcrn-record-row", "tcrn-record-row--dense"].filter((name) => row.classList.contains(name)), ["tcrn-record-row", "tcrn-record-row--dense"], "built as the Story row is");
+      assert.equal(row.dataset.workKind, "Subtask");
+    }
+    assert.equal(rows[0].querySelector("[data-work-involved]").textContent, `${locales.en["projects.title"]}: TCRN-INC148-DOM-SECOND`);
+    assert.equal(rows[1].querySelector("[data-work-involved]").textContent, `${locales.en["projects.title"]}: ${locales.en["projects.coordination-only"]}`);
+    assert.equal(storyRow.querySelector("[data-work-involved]").textContent, `${locales.en["projects.title"]}: TCRN-INC148-DOM-SECOND`);
+    // Filtering by the second project keeps the Subtask and its parents, and drops what involves only others.
+    const filter = document.querySelector("#work-target-editor [data-target-filter]");
+    filter.value = JSON.stringify({ libraryId: second.libraryId, projectId: second.projectId });
+    filter.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await waitFor(() => document.querySelector(`#work-tree-content [data-work-subtasks="${story.id}"]`), "the filtered tree");
+    assert.ok(document.querySelector(`#work-tree-content [data-work-id="${first.id}"]`), "the matching Subtask stays");
+    assert.equal(document.querySelector(`#work-tree-content [data-work-id="${other.id}"]`), null, "a Subtask involving no matching project leaves");
+    assert.ok(document.querySelector(`#work-tree-content [data-work-id="${initiative.id}"]`), "its parents stay");
+    document.querySelector('[data-locale-option="ko"]')?.click();
+    await waitFor(() => document.querySelector(`#work-tree-content [data-work-id="${first.id}"] [data-work-involved]`)?.textContent === `${locales.ko["projects.title"]}: TCRN-INC148-DOM-SECOND`, "ko: the involved projects in the page's language");
+  } finally { await closePage(page, fixture); }
+});
+
 if (!MUTATION) test("R45 U14: execution contexts read as one row per target in the page's language, not as JSON", async () => {
   const fixture = await projectChainFixture("tcrn-r45-u14-context-");
   const [, second] = fixture.targets;

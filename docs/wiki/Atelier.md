@@ -71,22 +71,26 @@ Atelier 是项目配置工作台。进入页面后，先核对当前项目与知
 ## Involved projects and target details
 
 The work view edits explicit undecided, coordination-only or selected project
-scope and filters by stable project reference. A child stays within its
-parent's declared scope, as the engine requires: under a parent with selected
-projects only those can be chosen, under a coordination-only parent none can,
-nor the selected scope, and the unavailable choices say why. A refused save
-shows the engine's reason code, its own words and how to recover. Project readiness shows, for
-every target, its status, whether it is ready for development and what it still
-misses. Selecting a project does not grant permission to edit its
-files. Lists, the library switcher, the rail and the top bar show each
-project's own name from its project record; only a project without a name
-reads "Unnamed project" in the page's language, and names that read alike carry
-the shortest tails of their ids that tell them apart. One chain's project
+scope and filters by stable project reference. A child stays within its parent's
+declared scope, as the engine requires: under a parent with selected projects
+only those can be chosen, under a coordination-only parent none can, nor the
+selected scope, and the unavailable choices say why. A refused save shows the
+engine's reason code, its own words and how to recover. Project readiness shows,
+for every target, its status, whether it is ready for development and what it
+still misses; "not ready" is information, shown with the neutral badge. A
+setting whose value differs between the targets is listed with each target's
+value and where that value comes from. The work tree lists each Story's Subtasks
+under it, every row naming the projects it involves, and the project filter
+keeps a matching Subtask with its parents. Selecting a project does not grant
+permission to edit its files. Lists, the library switcher, the rail and the top
+bar show each project's own name from its project record; only a project without
+a name reads "Unnamed project" in the page's language, and names that read alike
+carry the shortest tails of their ids that tell them apart. One chain's project
 registered for two repositories is two entries in the library switcher, told
-apart by the repositories' directory names, never by a path. The Details under each list
-keep the full identities: the summary opens and closes from the keyboard, Escape
-closes it and returns focus, and each identity has a copy action. Saving reads
-the work list again through the work view's own read, so a library left in the
-meantime is not shown. Switching while a target write is in flight is refused,
-and stale form revisions require reloading. Coordination chains do not expose
-development settings.
+apart by the repositories' directory names, never by a path. The Details under
+each list keep the full identities: the summary opens and closes from the
+keyboard, Escape closes it and returns focus, and each identity has a copy
+action. Saving reads the work list again through the work view's own read, so a
+library left in the meantime is not shown. Switching while a target write is in
+flight is refused, and stale form revisions require reloading. Coordination
+chains do not expose development settings.

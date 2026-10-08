@@ -207,9 +207,10 @@ const currentLibrary = () => requestContext.getStore()?.library ?? { ...selected
 const scopeArguments = (library = currentLibrary()) => library.configurationProjectId == null ? [] : ["--project-id", library.configurationProjectId];
 const boundProseLibrary = (library = currentLibrary()) => library.chain?.role === "coordination" || library.configurationProjectId == null ? null : libraryCatalog.find((entry) => entry.libraryId === library.libraryId && entry.projectId === library.configurationProjectId) ?? null;
 const currentProseRoot = () => { const bound = boundProseLibrary(); return bound === null ? null : proseRootFor(bound); };
-// The rail's name for a library is its project's folder name; the id and the path are shown
-// beside it.
-const libraryName = (library) => library.name ?? (library.chain?.role === "coordination" ? "Cross Project" : "Unconfigured project");
+// A library's name is its project's canonical name from project-list, or null when the
+// registration names no project or the project is gone; the page names a null in the reader's
+// language, the coordination chain's included (TCRN-CROSS-INIT-053 R46 I01).
+const libraryName = (library) => library.name ?? null;
 
 const settingsCatalog = (library = currentLibrary()) => cli(["settings-catalog", "--workspace", library.libraryPath, ...scopeArguments(library)]);
 const vocabulary = () => cli(["vocabulary"]);

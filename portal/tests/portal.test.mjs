@@ -989,10 +989,12 @@ test("STORY-482 AC1: the registry's two libraries can be switched, and each answ
   const { boot } = await readBoot(url);
   const listed = await request(url, "/api/libraries", readOptions(boot.token));
   assert.equal(listed.body.reasonCode, "PORTAL_LIBRARIES_READY");
-  // The registry's name for a library is what project-list says of its project; the route answers
-  // null, not undefined and not a stand-in, when project-list carries no name (INIT-053 R45 U14).
-  const firstName = (await cli(["project-list", "--workspace", fixture.workspace], fixture.deviceEnv)).records.find(record => record.id === fixture.projectId).name ?? null;
-  const secondName = (await cli(["project-list", "--workspace", fixture.second.library], fixture.deviceEnv)).records.find(record => record.id === fixture.second.projectId).name ?? null;
+  // The registry's name for a library is what project-list says of its project: its canonical name
+  // (TCRN-CROSS-INIT-053 R46 I01; the fixture names each project by its external key).
+  const firstName = (await cli(["project-list", "--workspace", fixture.workspace], fixture.deviceEnv)).records.find(record => record.id === fixture.projectId).name;
+  const secondName = (await cli(["project-list", "--workspace", fixture.second.library], fixture.deviceEnv)).records.find(record => record.id === fixture.second.projectId).name;
+  assert.deepEqual([firstName, secondName], ["TCRN-PORTAL-LIBRARIES", "TCRN-PORTAL-LIBRARIES-SECOND"]);
+  assert.equal(boot.libraryName, firstName);
   assert.deepEqual(listed.body.libraries, [
     { projectPath: fixture.proseRoot, projectId: fixture.projectId, configurationProjectId: null, libraryId: first.workspaceId, libraryPath: fixture.workspace, name: firstName, chain: null },
     { projectPath: fixture.second.project, projectId: fixture.second.projectId, configurationProjectId: null, libraryId: second.workspaceId, libraryPath: fixture.second.library, name: secondName, chain: null },
@@ -1015,6 +1017,7 @@ test("STORY-482 AC1: the registry's two libraries can be switched, and each answ
   assert.equal(switched.response.status, 200);
   assert.equal(switched.body.reasonCode, "PORTAL_LIBRARY_SELECTED");
   assert.deepEqual(switched.body.library, { ...listed.body.libraries[1], configurationProjectId: listed.body.libraries[1].projectId });
+  assert.equal(switched.body.libraryName, secondName);
   assert.equal(switched.body.workspace, fixture.second.library);
   assert.equal(switched.body.proseRoot, fixture.second.project);
   status = await statusNow();
@@ -1734,3 +1737,51 @@ test("an admitted request whose body is still in flight refuses an unregistered 
   assert.equal((await completed).reasonCode, "PORTAL_CONFIGURATION_TARGET_CHANGED");
   assert.equal((await cli(["status", "--workspace", fixture.workspace], fixture.deviceEnv)).headEventHash, before.headEventHash);
 });
+
+// TCRN-CROSS-INIT-053 R46 helpers: the target an answer names in x-portal-served-target (I05), and a
+// read that names the target it was made for, as the page's requests do.
+const servedBy = (response) => JSON.parse(response.headers.get("x-portal-served-target"));
+const shownTarget = (library, epoch) => ({ epoch, libraryId: library.libraryId, projectPath: library.projectPath, projectId: library.configurationProjectId ?? null, chainRole: library.chain?.role ?? null });
+function namedRead(token, target) { return { headers: { "x-portal-token": token, "x-configuration-target": JSON.stringify(target) } }; }
+const R46_AT = "2026-10-09T09:00:00Z";
+
+// R46 I01 (approved contract item 2; EPIC-144 R3; Owner return 2): the name of a library and of a target
+// is its project's canonical name, end to end. A registration that names no project, and a coordination
+// chain registered without one, answer null rather than an English stand-in, in /api/libraries, the
+// boot and /api/library; a project chain's target answers its project's name.
+test("INIT-053 R46 I01: names come from the project records, and a registration without a project answers null", async t => {
+  const fixture = await scratch("portal-r46-names-", "R46-NAMES");
+  const atelier = { ...fixture.deviceEnv, EINZBERN_SURFACE: "atelier" };
+  // A coordination chain registered as its own project path, with no project.
+  const bare = join(fixture.base, "bare-coordination");
+  await cli(["init", "--workspace", bare, "--at", R46_AT], fixture.deviceEnv);
+  const bareId = (await cli(["status", "--workspace", bare], fixture.deviceEnv)).workspaceId;
+  await cli(["chain-declare", "--workspace", bare, "--role", "coordination", "--coordination-library-id", bareId, "--at", R46_AT, "--actor", "agent:test"], atelier);
+  await cli(["library-register", "--project", bare, "--library", bare, "--at", R46_AT], fixture.deviceEnv);
+  // The second library is a project chain of it, and has a second registration that names no project.
+  await cli(["chain-declare", "--workspace", fixture.second.library, "--role", "project", "--coordination-library-id", bareId, "--at", R46_AT, "--actor", "agent:test"], atelier);
+  const unnamed = join(fixture.base, "unnamed-project");
+  await mkdir(unnamed);
+  await cli(["library-register", "--project", unnamed, "--library", fixture.second.library, "--at", R46_AT], fixture.deviceEnv);
+  assert.deepEqual((await cli(["project-list", "--workspace", fixture.second.library], fixture.deviceEnv)).records.map(record => [record.id, record.name]), [[fixture.second.projectId, "R46-NAMES-SECOND"]]);
+
+  const { child, url } = await startPortal({ ...fixture, library: bare });
+  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
+  const { boot } = await readBoot(url);
+  assert.deepEqual([boot.library.chain.role, boot.library.name, boot.libraryName], ["coordination", null, null], "a coordination chain without a project has no name, and no stand-in");
+  const listed = await request(url, "/api/libraries", readOptions(boot.token));
+  const nameAt = (path) => listed.body.libraries.find(entry => entry.projectPath === path).name;
+  assert.deepEqual([nameAt(fixture.proseRoot), nameAt(fixture.second.project), nameAt(unnamed), nameAt(bare)], ["R46-NAMES", "R46-NAMES-SECOND", null, null]);
+  const secondId = (await cli(["status", "--workspace", fixture.second.library], fixture.deviceEnv)).workspaceId;
+  const targets = await request(url, "/api/project-targets", readOptions(boot.token));
+  assert.deepEqual(targets.body.targets, [{ libraryId: secondId, projectId: fixture.second.projectId, name: "R46-NAMES-SECOND" }]);
+  const toUnnamed = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: unnamed }));
+  assert.deepEqual([toUnnamed.response.status, toUnnamed.body.libraryName, toUnnamed.body.library.name, toUnnamed.body.proseRoot], [200, null, null, null], "a registration without a project is unnamed and has no prose output");
+  const toFirst = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: fixture.proseRoot }));
+  assert.deepEqual([toFirst.body.libraryName, toFirst.body.library.name], ["R46-NAMES", "R46-NAMES"]);
+  for (const answer of [boot, listed.body, targets.body, toUnnamed.body, toFirst.body]) {
+    assert.doesNotMatch(JSON.stringify(answer), /Unconfigured project|"Cross Project"/u, "no English stand-in name");
+  }
+  assert.equal((await readFile(join(portalRoot, "portal.mjs"), "utf8")).includes("Unconfigured project"), false);
+});
+

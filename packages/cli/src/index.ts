@@ -534,9 +534,11 @@ function consumeWrittenIds(): readonly string[] | null {
 }
 
 // WSB-1: the mutated record's identity, projected additively so agents never have
-// to read views/index.json off-disk to learn the id they just created.
+// to read views/index.json off-disk to learn the id they just created. TCRN-CROSS-INIT-053 R46
+// (I01, approved contract item 2): it carries the project's canonical name, the one display name a
+// reader may show, in the same shape for project-create, -update, -delete and -list.
 function projectSummary(record: ProjectRecord): Readonly<Record<string, string | number | boolean>> {
-  return { id: record.id, revision: record.revision, tombstone: record.tombstone, ...(record.parentProjectId === undefined ? {} : { parentProjectId: record.parentProjectId }) };
+  return { id: record.id, name: record.name, revision: record.revision, tombstone: record.tombstone, ...(record.parentProjectId === undefined ? {} : { parentProjectId: record.parentProjectId }) };
 }
 
 // INIT-014 (TCRN-AOS-INC-004): the summary carries `externalKey`.

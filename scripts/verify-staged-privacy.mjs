@@ -9,15 +9,19 @@
 // line staged at its own path was reported. The filename entries keep their `staged-filename:`
 // label, and a reviewed line at any other path, a renamed path or extra private content remains
 // a finding.
+// TCRN-CROSS-INIT-053 R47-08: the check also runs in the helper repository, before its rendered
+// pages are committed, so origin may name either repository. The owner still comes from origin, and
+// the classifier still receives the engine's repository names: no classification is widened.
 
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
 
 import { privateRuntimeConfig } from "./lib/private-token-roster.mjs";
-import { ENGINE_REPOSITORY_NAMES } from "./lib/names.mjs";
+import { ENGINE_REPOSITORY_NAMES, HELPER_REPOSITORY_NAMES } from "./lib/names.mjs";
 import { scanPrivacyEntries } from "./lib/privacy.mjs";
 
-const REPOSITORY_NAME_PATTERN = ENGINE_REPOSITORY_NAMES.map((name) => name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|");
+const ORIGIN_REPOSITORY_NAMES = Object.freeze([...ENGINE_REPOSITORY_NAMES, ...HELPER_REPOSITORY_NAMES]);
+const REPOSITORY_NAME_PATTERN = ORIGIN_REPOSITORY_NAMES.map((name) => name.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")).join("|");
 
 const MAX_CAPTURE_BYTES = 64 * 1024 * 1024;
 const STAGED_DIFF_FILTER = "ACMRTUXB";

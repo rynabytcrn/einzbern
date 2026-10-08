@@ -2989,8 +2989,8 @@ if (!MUTATION) test("R46 I11: the label rule tells one chain's two repositories 
   ];
   assert.deepEqual(distinctLabels(registrations), ["Alpha · alpha-einzbern", "Alpha · alpha-mana"]);
   const sameLeaf = [
-    { name: "Alpha", libraryId: library, projectId: project, projectPath: "C:\\work\\one\\app" },
-    { name: "Alpha", libraryId: library, projectId: project, projectPath: "C:\\work\\two\\app" },
+    { name: "Alpha", libraryId: library, projectId: project, projectPath: "srv\\work\\one\\app" },
+    { name: "Alpha", libraryId: library, projectId: project, projectPath: "srv\\work\\two\\app" },
   ];
   assert.deepEqual(distinctLabels(sameLeaf), ["Alpha · one · app", "Alpha · two · app"], "directories that end alike are told apart by the one before");
   const other = { name: "Alpha", libraryId: `library:${"c".repeat(24)}`, projectId: `project:${"d".repeat(24)}`, projectPath: "/srv/work/alpha-other" };

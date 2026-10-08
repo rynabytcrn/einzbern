@@ -26,6 +26,12 @@ working-tree files, so the reviewed DS provenance line staged at its own invento
 classified and no longer reported, while the same line at another or renamed path, or next to other
 private content, remains a finding (TCRN-CROSS-SUB-357 S1).
 
+P8 classifies the compiled public-owner metadata line in a 2.0.0 package only in the three members
+that carry it, `atelier/portal.mjs`, `scripts/einzbern-hook.mjs` and `scripts/einzbern.mjs`, each
+by its exact label, after a member-by-member review of an isolated 2.0.0 release dry run; another
+version, member, line or value remains a finding (TCRN-CROSS-SUB-357 S1). The version checks in the
+tests read the current version, so the release commit changes no test.
+
 The built-in Command Spell texts carry the Owner's revision of 2026-10-08 (TCRN-CROSS-INIT-053
 R40): batch processing v3 adds clause 7, that "once" counts per round, and silent reporting v1
 adds that no report falls between two rounds. The Chinese texts equal the Owner's archived wording;

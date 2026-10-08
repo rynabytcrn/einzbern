@@ -119,10 +119,17 @@ const CLASSIFIED_PRIVACY_MATCHES = new Set([
 // of the rule; changing the archive, version, member path, origin, value, or line
 // falls back to a finding. The line and value digests were verified against the
 // tracked names.ts object and its compiled output before adding these entries.
+// TCRN-CROSS-SUB-357 S1 (INIT-053 R41 B2): the 2.0.0 package was reviewed member by member
+// from an isolated end-to-end release dry run. Exactly the same three members carry the same
+// compiled owner line, each once, and get their own exact labels; no other member or artifact
+// is classified, and no version is matched by pattern.
 const CLASSIFIED_P8_RELEASE_ENTRY_SOURCES = new Map([
   ["dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
   ["dist/release/einzbern-1.2.1.tar.gz/einzbern-1.2.1/scripts/einzbern.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-2.0.0.tar.gz/einzbern-2.0.0/atelier/portal.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-2.0.0.tar.gz/einzbern-2.0.0/scripts/einzbern-hook.mjs", "dist/build/packages/core/src/names.js"],
+  ["dist/release/einzbern-2.0.0.tar.gz/einzbern-2.0.0/scripts/einzbern.mjs", "dist/build/packages/core/src/names.js"],
 ]);
 const CLASSIFIED_P8_RELEASE_MATCHES = new Set(
   [...CLASSIFIED_P8_RELEASE_ENTRY_SOURCES.entries()].map(([label, sourcePath]) => [

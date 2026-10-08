@@ -59,7 +59,9 @@ test("SUB-357: only the generated README language set and a checked CLI referenc
   assert.equal(checked.ok, true);
   assert.deepEqual(assertReleaseCommitShape({ changedPaths: [...README_NAMES, "docs/wiki/CLI-Reference.md"], version: checked.version, generatedReadmes: checked, cliReferenceChecked: true }).changedPaths, [...README_NAMES, "docs/wiki/CLI-Reference.md"].sort());
   assert.throws(() => assertReleaseCommitShape({ changedPaths: ["README.zh-CN.md"], generatedReadmes: checked }), (error) => error.reasonCode === "RELEASE_COMMIT_SHAPE_INVALID");
-  for (const generatedReadmes of [undefined, { ...checked, drifted: ["README.md"] }, { ...checked, version: "2.0.0" }]) {
+  // Another version than the current one, derived as above so a 2.0.0 tree still has one.
+  const otherVersion = checked.version === "2.0.0" ? "2.0.1" : "2.0.0";
+  for (const generatedReadmes of [undefined, { ...checked, drifted: ["README.md"] }, { ...checked, version: otherVersion }]) {
     assert.throws(() => assertReleaseCommitShape({ changedPaths: ["README.md"], version: checked.version, generatedReadmes }), (error) => error.reasonCode === "RELEASE_COMMIT_README_UNVERIFIED");
   }
   assert.throws(() => assertReleaseCommitShape({ changedPaths: ["docs/wiki/CLI-Reference.md"] }), (error) => error.reasonCode === "RELEASE_COMMIT_CLI_UNVERIFIED");

@@ -119,6 +119,15 @@ test("479-R1, 475-R4: the table records a decision as soon as it is judged one a
   assert.ok(design[2].includes("`design.authority`"), "UI design reads design.authority first");
 });
 
+// INIT-053 U10 (approved contract item 9): the native host dispatch passes each target's own handoff,
+// the object gate processes receive, and an unresolved target stops only the work that needs it.
+test("U10: the full-text row passes each target's handoff to the native host dispatch, as gate processes receive it", () => {
+  const fullText = tableRows(render()).find(([, verbs]) => verbs.includes("`work-project-context`"));
+  for (const phrase of ["`handoff`", "a native host dispatch passes that object for that target", "the same object as `EINZBERN_PROJECT_CONTEXT`", "stops only the work that needs it", "Coordination-only work requires no invented development target"]) {
+    assert.ok(fullText[2].includes(phrase), phrase);
+  }
+});
+
 test("479-AC1: a verb the command catalog does not carry refuses the rendering", () => {
   for (const verb of skillNamedVerbs()) {
     const without = catalogNames.filter((name) => name !== verb);

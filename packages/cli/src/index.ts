@@ -923,7 +923,9 @@ async function workGateTargets(state: Awaited<ReturnType<typeof materializeWorks
       try {
         const readiness = context.readiness as Record<string, { ready: boolean; missing: string[] }> | undefined;
         if (!readiness?.gates?.ready || typeof context.libraryPath !== "string") {
-          results.push({ ...binding, ok: false, status: context.status, reasonCode: "PROJECT_GATE_CONFIGURATION_UNAVAILABLE", readiness }); continue;
+          // A missing or unavailable target has no readiness at all: its result says so (null), and
+          // the other targets go on (INIT-053 U10).
+          results.push({ ...binding, ok: false, status: context.status, reasonCode: "PROJECT_GATE_CONFIGURATION_UNAVAILABLE", readiness: readiness ?? null }); continue;
         }
         const target = await effectiveProjectState(await validateWorkspace(context.libraryPath), reference.projectId);
         if (target.metadata.workspaceId !== reference.libraryId || target.version !== context.version) throw new Error("target identity or configuration changed; resolve again");
@@ -935,9 +937,10 @@ async function workGateTargets(state: Awaited<ReturnType<typeof materializeWorks
           if (currentWork?.revision !== resolved.workRevision) throw new Error("work revision changed; resolve again");
           const projectRoot = await gatesProjectRoot(reference.libraryId, repository.projectPath, reference.projectId);
           const plan = await planGates({ projectRoot, gates: listGates(target), release: booleanValue(values.release, "release"), ...(values.base === undefined ? {} : { base: values.base }), workIds: [workId] });
-          // This handoff is bound to the very target whose gates execute. Native host
-          // dispatch consumes its settings; no global first-target setting applies.
-          const handoff = { ...binding, repository: repository.binding, libraryPath: context.libraryPath, projectRoot, version: target.version, settings: context.settings, design: context.design, repositoryBindings: context.repositoryBindings, readiness, writeAuthority: "not-granted" };
+          // This handoff is bound to the very target whose gates execute: the target's own handoff
+          // (project-chain.ts, the object the native host dispatch passes for it), with the
+          // repository and root the gates run in. No global first-target setting applies.
+          const handoff = { ...(context.handoff as Record<string, unknown>), repository: repository.binding, projectRoot };
           if (execute) {
             const { run, recordPath } = await runGates(plan, { libraryId: reference.libraryId, projectId: reference.projectId, at: values.at!, env: { ...process.env, EINZBERN_PROJECT_CONTEXT: canonicalJson(handoff) } });
             results.push({ ...binding, projectRoot, ok: run.reds.length === 0, handoff, run, recordPath });

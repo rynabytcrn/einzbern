@@ -89,5 +89,7 @@ For a Cross Project work item, pass its `--work-id` to the existing gate plan or
 run command on the coordination library. Each selected target uses its own
 registered repository and gate declarations. The response separates successful
 and refused targets and includes the effective configuration handed to each
-process. A target reference does not grant filesystem access. An undecided
+process: the target's `handoff` from `work-project-context`, with the repository
+and root the gates run in. A missing or unavailable target is a refused result
+of its own; the other targets still run. A target reference does not grant filesystem access. An undecided
 relation must be resolved; coordination-only work needs no development target.

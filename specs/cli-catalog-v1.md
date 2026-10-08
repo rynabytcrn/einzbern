@@ -78,8 +78,14 @@ On an explicitly classified coordination chain, `gates-plan` / `gates-run` with
 consumer to that target's own registered project root and local declarations.
 Results contain one target result per work/reference, its work revision,
 configuration version, effective settings and repository/build handoff. Runs
-write to each target's own cache and pass the same handoff to its gate process
-as `EINZBERN_PROJECT_CONTEXT`; the relation grants no permission. A missing,
-unavailable or refused target remains a failed target result. Undecided work
+write to each target's own cache and pass the target's handoff, with the
+repository and root the gates run in, to its gate process as
+`EINZBERN_PROJECT_CONTEXT`; the relation grants no permission. A missing,
+unavailable or refused target remains a failed target result, and the other
+targets keep theirs. `work-project-context` gives each resolved context the same
+`handoff` (reference, work revision, version, library, repositories, effective
+settings, design, readiness, output places, enabled rules and variables) for a
+native host dispatch to pass per target; a target that does not resolve has a
+null `handoff`. Undecided work
 refuses this operation; explicit coordination-only work needs no project run.
 Without a Cross Project work subject the existing single-library form remains.

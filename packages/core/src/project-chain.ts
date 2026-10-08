@@ -98,11 +98,40 @@ export async function resolveProjectTarget(referenceInput: ProjectReference, hom
     return { ...base, status: design.status === "conflicting" ? "conflicting" : design.status === "unconfigured" ? "unconfigured" : "configured", name: project.name, libraryPath: root, chain: identity, version: state.version, readiness, repositoryContexts, commonDefaultsContract: "optional project scalar settings only; local gate roots and managed digests never inherit", settings, configRecords: scoped.configRecords, configSources: scoped.configSources, design, common, repositoryBindings: scoped.configRecords.find(entry => entry.collection === "chain" && entry.key === "repositories")?.value ?? null, deviceRepositories: entries.map(entry => ({ projectPath: entry.projectPath, gitRemote: entry.gitRemote })), deviceSettings: await readMachineSettingsCatalog(machineSettingsPath(home)), deviceSettingsSource: "device/user; not a chain default" };
   } catch (error) { return { ...base, status: "conflicting", reason: String(error) }; }
 }
+/**
+ * Approved contract item 9 (INIT-053 U10): the configuration one resolved target hands to whatever
+ * applies it. Gate processes receive it as EINZBERN_PROJECT_CONTEXT, with the repository and root
+ * they run in, and the native host dispatch passes the same object for that target: its stable
+ * reference and the work revision it was resolved for, its version and library, its registered
+ * repositories, effective settings with their provenance, design, repository bindings, readiness,
+ * output places, enabled rules and variables. Never write authority. A target that does not resolve
+ * to a project chain on this device (unregistered, unavailable, invalid, unclassified) has none.
+ */
+export function projectTargetHandoff(work: { readonly workId: string; readonly workRevision: number }, context: Readonly<Record<string, unknown>>): Record<string, unknown> | null {
+  if (typeof context.libraryPath !== "string" || !Array.isArray(context.settings)) return null;
+  const settings = context.settings as readonly { readonly key: string; readonly value: unknown }[];
+  const value = (key: string): unknown => settings.find(entry => entry.key === key)?.value ?? null;
+  const records = (Array.isArray(context.configRecords) ? context.configRecords : []) as readonly { readonly collection: string; readonly key: string; readonly value: Readonly<Record<string, unknown>> }[];
+  return {
+    workId: work.workId, workRevision: work.workRevision, reference: context.reference, version: context.version, libraryPath: context.libraryPath,
+    repositories: context.repositoryContexts, settings: context.settings, design: context.design, repositoryBindings: context.repositoryBindings, readiness: context.readiness,
+    output: { language: value("artifact.language"), knowledgeArticlesPath: value("knowledge.articlesPath"), generatedArtifactsPath: value("workspace.generatedArtifactsPath") },
+    rules: records.filter(record => record.collection === "rule" && record.value.enabled === true).map(record => ({ id: record.key, version: record.value.version, ...(record.value.order === undefined ? {} : { order: record.value.order }) })),
+    variables: records.filter(record => record.collection === "variable").map(record => ({ key: record.key, value: record.value })),
+    writeAuthority: "not-granted",
+  };
+}
+
 export async function workProjectContexts(state: WorkspaceState, workId: string, home?: string): Promise<Record<string, unknown>> {
   const work = state.work.find(entry => entry.id === workId && !entry.tombstone);
   if (!work) throw new ProjectChainError("work does not exist");
   const involvedProjects = involvedProjectsOf(work);
-  const contexts = await Promise.all(involvedProjects.targets.map(reference => resolveProjectTarget(reference, home)));
+  // Each target resolves on its own: one that fails is a result of its own, never the end of the others.
+  const resolved = await Promise.all(involvedProjects.targets.map(async (reference): Promise<Record<string, unknown>> => {
+    try { return await resolveProjectTarget(reference, home); }
+    catch (error) { return { reference, writeAuthority: "not-granted", status: "invalid-chain", reason: String(error) }; }
+  }));
+  const contexts: Record<string, unknown>[] = resolved.map(context => ({ ...context, handoff: projectTargetHandoff({ workId, workRevision: work.revision }, context) }));
   const conflicts: string[] = [];
   for (const key of ["design.authority", "design.buildProject", "models.tiers", "artifact.language"]) {
     const values = contexts.map(context => (context.settings as { key: string; value: unknown }[] | undefined)?.find(setting => setting.key === key)?.value).filter(value => value !== undefined);

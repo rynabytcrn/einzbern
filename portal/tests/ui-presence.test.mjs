@@ -520,8 +520,9 @@ function assertDomContract(document) {
     ["product shell", ".tcrn-product-shell"],
     ["top bar", "header.tcrn-top-bar"],
     // INC-167: the brand is the design system's shell lockup and it sits in the sidebar
-    // header, which is where the product shell defines __brand as a child.
-    ["brand lockup", "button.tcrn-product-shell__brand.tcrn-shell-brand-lockup"],
+    // header, which is where the product shell defines __brand as a child. INIT-053 R45 (U15):
+    // ProductShell renders __brand as the home link, so the construct is an anchor.
+    ["brand lockup", "a.tcrn-product-shell__brand.tcrn-shell-brand-lockup[href]"],
     ["sidebar header", ".tcrn-product-shell__sidebar .tcrn-product-shell__sidebar-header"],
     ["brand mark", 'img.tcrn-brand-mark[data-brand-asset="tcrn-brand-mark"]'],
     ["side navigation", ".tcrn-side-nav"],

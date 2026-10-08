@@ -376,7 +376,10 @@ const layoutRequirements = [
   { name: "product shell rows", source: initLayoutSource, text: "grid-template-rows: auto minmax(0, 1fr);" },
   { name: "status strip spans the shell", source: initLayoutSource, text: ".tcrn-product-shell > .tcrn-app-status-bar {\n  grid-column: 1 / -1;\n}" },
   { name: "sidebar fills its row", source: initLayoutSource, pattern: /@media\s*\(min-width:\s*761px\)\s*\{[^}]*\}\s*\.tcrn-product-shell__sidebar\s*\{\s*height:\s*100%;/u },
-  { name: "top bar height from design system", source: initLayoutSource, text: ".tcrn-product-shell__workspace > .tcrn-top-bar {" },
+  // TCRN-CROSS-INIT-053 R46 (I13, option 1): the top bar is the published ProductShell construction, in
+  // order: header > utility row > current location, ProductShellSearch, header actions, ThemeToggle,
+  // LocaleMenu. Its height and every measure are the family's; leg 10 refuses a local rule for any of it.
+  { name: "top bar is the published utility row", source: indexText, pattern: /<header class="tcrn-top-bar" data-product-shell-region="topbar"[^>]*>\s*<div class="tcrn-product-shell__utility-row" data-product-shell-region="utility-row">\s*<div class="tcrn-product-shell__current-location"[^>]*>[\s\S]*?<\/div>\s*<div class="tcrn-product-shell-search"[\s\S]*?<div class="tcrn-product-shell__header-actions" data-product-shell-region="header-actions">[\s\S]*?<\/div>\s*<button class="[^"]*\btcrn-shell-theme-toggle\b[\s\S]*?<\/button>\s*<div class="tcrn-shell-locale-menu"[\s\S]*?<\/div>\s*<\/div>\s*<\/div>\s*<\/header>/u },
   { name: "editor areas", source: initLayoutSource, text: 'grid-template-areas:\n    "directory bar"\n    "directory editor";' },
   { name: "directory placement", source: initLayoutSource, text: "grid-area: directory;" },
   { name: "editor toolbar placement", source: initLayoutSource, text: "grid-area: bar;" },
@@ -444,16 +447,13 @@ const layoutRequirements = [
   { name: "topbar DS source address", source: indexText, text: 'data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html#navigation-shell-spec"' },
   { name: "partition DS source address", source: indexText, text: 'data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/components-controls-data.html#field-spec-usage"' },
   { name: "status DS source address", source: indexText, text: 'data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/proof-proof-visual-instances.html#owner-quality-product-shell"' },
-  // INC-188: the workspace path uses the design system's plain top-bar module. Its
-  // breadcrumb sibling `__current-location` ships flex: 0 1 240px and max-width: 240px,
-  // sized for a short label, and clipped the path at 240px with 630px of unused space
-  // beside it. The needle names the module class on that element so swapping back to
-  // the capped variant is caught.
-  { name: "current project uses the uncapped module", source: indexText, text: 'class="tcrn-top-bar__module tcrn-top-bar__module--path" id="workspace-label"' },
-  // Every partition path shares a prefix and differs only in its last segments, so a
-  // tail-side ellipsis removes the only part worth reading.
-  { name: "workspace path truncates at the head", source: indexText, text: ".tcrn-top-bar__module--path {\n  direction: rtl;" },
-  { name: "workspace path column keeps a floor", source: indexText, text: "grid-template-columns: minmax(163px, 1fr) minmax(0, auto);" },
+  // INC-188 retired with the path module (TCRN-CROSS-INIT-053 R46, I13 option 1): the top bar names the
+  // chain by its label and the page, in the published current location's span and strong, never by a
+  // path; the search is the published ProductShellSearch with its results inside it; the receipt badge
+  // is a secondary tool and sits in the status bar's action slot beside the operation record.
+  { name: "current location is the published span and strong", source: indexText, text: '<div class="tcrn-product-shell__current-location" id="current-location"><span id="workspace-label"></span><strong id="current-page-label"></strong></div>' },
+  { name: "search is the published ProductShellSearch", source: indexText, pattern: /<div class="tcrn-product-shell-search" data-shell-control="product-shell-search"[^>]*>\s*<span class="tcrn-search-input"[\s\S]*?<\/span>\s*<div class="tcrn-product-shell-search__results" id="search-results" role="listbox"/u },
+  { name: "receipt badge in the status bar action slot", source: indexText, text: '<span class="tcrn-app-status-bar__action"><button class="tcrn-badge tcrn-badge--positive" id="receipt-chip"' },
   // INC-190: view preferences persist in this browser. The restore runs in <head> so
   // the first painted frame is already in the chosen theme rather than flashing the
   // default, and both writes sit where the reader chooses so nothing else has to
@@ -508,23 +508,28 @@ legs.push({
   findings: focusFindings,
 });
 
-// Leg 10 — the topbar owns the constraints that let the browser keep one row
-// at each acceptance width. Width-specific DOM measurements remain evidence,
-// not a claim that a source scan can make.
-const topbarRequirements = [
-  { name: "topbar path min width", text: ".tcrn-top-bar__module {\n  min-width: 0;" },
-  { name: "topbar path overflow", text: "  overflow: hidden;\n  text-overflow: ellipsis;\n  white-space: nowrap;\n}" },
-  { name: "topbar chips no wrap", text: ".tcrn-top-bar__actions .tcrn-badge {\n  flex-shrink: 0;\n  white-space: nowrap;" },
-  { name: "topbar search shrink", text: ".tcrn-top-bar__actions .tcrn-search-input {\n  min-width: 7ch;" },
-  { name: "topbar search flex basis", text: "  flex: 1 1 auto;\n  max-width: 430px;" },
-];
-const topbarFindings = topbarRequirements
-  .filter((requirement) => !indexText.includes(requirement.text))
-  .map((requirement) => ({ name: requirement.name, reason: "topbar single-line constraint absent", text: requirement.text }));
+// Leg 10 keeps its historical name so the retained verbatim leg roster remains stable. Since
+// TCRN-CROSS-INIT-053 R46 (I13, option 1) the top bar is the published ProductShell utility row and the
+// published family alone styles it: the leg refuses any rule of the portal's own style block (comments
+// stripped) whose selector names the top bar or its parts, the utility row, the current location, the
+// header actions or the search, since a local override is how a single row used to be forced at the
+// acceptance widths, and it refuses a receipt badge back in the top bar. Whether the published row holds
+// one line at each acceptance width is browser evidence, not a claim a source scan can make.
+const TOPBAR_FAMILY_SELECTOR = /\.(?:tcrn-top-bar|tcrn-product-shell__utility-row|tcrn-product-shell__current-location|tcrn-product-shell__header-actions|tcrn-product-shell-search|tcrn-search-input|tcrn-search-results)(?![a-z0-9-])/u;
+const topbarLocalCss = indexText.slice(indexText.indexOf("/* The Workflow accent"), indexText.lastIndexOf("</style>"))
+  .replace(/\/\*[\s\S]*?\*\//gu, "");
+const topbarFindings = [];
+for (const rule of topbarLocalCss.matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
+  const selector = rule[1].trim();
+  if (TOPBAR_FAMILY_SELECTOR.test(selector)) topbarFindings.push({ name: "topbar local override", reason: "a local rule overrides the published top bar", selector, declarations: rule[2].trim() });
+}
+const topbarHeader = /<header class="tcrn-top-bar"[\s\S]*?<\/header>/u.exec(indexText)?.[0] ?? "";
+if (topbarHeader === "") topbarFindings.push({ name: "topbar present", reason: "no published top bar header" });
+if (/id="receipt-chip"/u.test(topbarHeader)) topbarFindings.push({ name: "topbar receipt placement", reason: "the receipt badge is back in the top bar; it belongs in the status bar's action slot" });
 legs.push({
   leg: "topbar-four-width-single-line",
   ok: topbarFindings.length === 0,
-  reasonCode: topbarFindings.length === 0 ? "TOPBAR_SINGLE_LINE_CONSTRAINTS_EXPLICIT" : "TOPBAR_SINGLE_LINE_CONSTRAINTS_DRIFTED",
+  reasonCode: topbarFindings.length === 0 ? "TOPBAR_PUBLISHED_ROW_UNOVERRIDDEN" : "TOPBAR_LOCAL_OVERRIDE_FOUND",
   acceptanceWidths: [1024, 1280, 1440, 1680],
   scanned: "index.html",
   findings: topbarFindings,

@@ -3678,8 +3678,9 @@ a.tcrn-relationship-chip:focus-visible {
 
    Measure provenance (INC-174). Every raw pixel value in this block is one of:
    v4-pinned measures (48px top bar row, 30px echo row, 860px prose measure,
-   980/760/680px breakpoints, 208px group-nav column, 430px search max-width; the
-   pages' measure is the published content stack's since R45), DS control metrics
+   980/760/680px breakpoints, 208px group-nav column; the pages' measure is the
+   published content stack's since R45, and the top bar's every measure is the
+   published utility row's since R46), DS control metrics
    carried by the snapshot's components, or a label
    column of a two-column row (120–250px). Spacing never uses raw pixels — gaps,
    paddings and margins are space tokens throughout, which the design-proof layout
@@ -3697,8 +3698,6 @@ button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
 .tcrn-app { min-height: 100dvh; display: grid; grid-template-rows: minmax(0, 1fr); }
-.tcrn-top-bar__actions { display: flex; align-items: center; gap: var(--tcrn-space-2); min-width: 0; }
-.tcrn-top-bar__actions .tcrn-select { width: auto; min-width: 92px; }
 /* fieldset/legend for the grouping semantics a screen reader needs, without the
    browser's default box: the design system has no fieldset precedent, and a legend
    straddling a border is not part of its visual language. The legend reads as the
@@ -3741,7 +3740,6 @@ button:disabled { cursor: not-allowed; }
 .tcrn-subnav__row .tcrn-subnav__item { flex: 1 1 auto; min-width: 0; }
 .tcrn-subnav__item { width: 100%; }
 .tcrn-finding-link { inline-size: 100%; justify-content: start; }
-.tcrn-top-bar__actions .tcrn-search-input { min-width: 0; flex: 1 1 auto; max-width: 430px; }
 .tcrn-editor-shell { display: grid; grid-template-columns: 184px minmax(0, 1fr); gap: var(--tcrn-space-3); }
 .tcrn-editor__bar { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: var(--tcrn-space-3); }
 .tcrn-detail-inspector { min-width: 0; }
@@ -3778,7 +3776,6 @@ button:disabled { cursor: not-allowed; }
    focus are the family's; only its place in the cell is stated here. */
 .tcrn-vocabulary__source { display: block; }
 .tcrn-vocabulary__source + .tcrn-vocabulary__source { margin-top: var(--tcrn-space-1); }
-.tcrn-search-results { inset-block-start: 42px; inset-inline-end: var(--tcrn-space-4); max-block-size: 360px; overflow: auto; }
 .tcrn-detail-drawer { position: fixed; z-index: var(--tcrn-z-overlay); top: 0; right: 0; bottom: 30px; width: min(400px, 94vw); overflow: auto; transform: translateX(0); transition: transform var(--tcrn-motion-standard) var(--tcrn-motion-ease-drawer); }
 .tcrn-detail-drawer[data-open="false"] { visibility: hidden; pointer-events: none; transform: translateX(100%); }
 [hidden] { display: none !important; }
@@ -3796,12 +3793,10 @@ button:disabled { cursor: not-allowed; }
   .tcrn-grid--4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 680px) {
-  .tcrn-top-bar__module, .tcrn-top-bar__actions .tcrn-search-input, .tcrn-top-bar__library { display: none; }
   .tcrn-grid--2, .tcrn-grid--3, .tcrn-grid--4, .tcrn-form__row, .tcrn-entity-layout { grid-template-columns: 1fr; }
   .tcrn-editor-shell { grid-template-columns: 1fr; }
 }
 @media (max-width: 520px) {
-  .tcrn-top-bar__actions { flex-wrap: wrap; width: 100%; }
   .tcrn-app-status-bar { align-items: flex-start; }
   .tcrn-app-status-bar__command { flex: 1 1 100%; white-space: normal; overflow-wrap: anywhere; }
   .tcrn-app-status-bar__state, .tcrn-app-status-bar__action { flex: 0 0 auto; }
@@ -3841,30 +3836,10 @@ button:disabled { cursor: not-allowed; }
   grid-column: 1 / -1;
 }
 
-.tcrn-product-shell__workspace > .tcrn-top-bar {
-  /* The actions track is shrinkable rather than content-sized: with a plain `auto`
-     the actions always take their max-content width, so the flex rules inside them
-     never get a chance to compress and the path column absorbs the whole shortfall
-     alone. Measured at 1280px before this change: actions 793px fixed, path squeezed
-     to 151px. */
-  /* The path column carries a floor and the actions column does not: the path is
-     identity — every partition shares its prefix and differs only in the last two
-     segments — while the search is a convenience with its shortcut beside it. Without
-     the floor the path column absorbed the entire shortfall and reached 0px at 1000px
-     while the actions still held 664px. 163px is the measured width of
-     "…/cross-project/workspace" at this type size; `min()` keeps the floor from
-     forcing overflow on a viewport narrower than the floor itself. */
-  grid-template-columns: minmax(0, 1fr) minmax(0, auto);
-}
-/* The floor applies only where the actions still fit beside it. Measured: at 1280px
-   the bar settles at 163 + 781 with no overflow; at 1000px the actions cannot compress
-   below what is left and the page gains a horizontal scrollbar, which is worse than a
-   short path — the full path is on the title and on the dashboard either way. */
-@media (min-width: 1200px) {
-  .tcrn-product-shell__workspace > .tcrn-top-bar {
-    grid-template-columns: minmax(163px, 1fr) minmax(0, auto);
-  }
-}
+/* TCRN-CROSS-INIT-053 R46 (I13, option 1): the top bar is the published ProductShell utility row --
+   current location, search, header actions, theme and language, in that order -- styled by the
+   published family alone. No rule here touches the top bar, its row, the location, the header
+   actions or the search; the receipt badge sits in the status bar's action slot. */
 /* The brand lives in the sidebar header, which is where the design system's
    product shell puts it: __sidebar-header is a grid of the lockup and the collapse
    control, and __brand is defined as its child. The mark keeps the family's own size
@@ -3875,34 +3850,6 @@ button:disabled { cursor: not-allowed; }
 .tcrn-product-shell[data-product-shell-collapsed="true"] .tcrn-rail__mark,
 .tcrn-product-shell[data-product-shell-collapsed="true"] .tcrn-rail__footer {
   display: none;
-}
-.tcrn-top-bar__module {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* The workspace path is distinguished by its tail — every partition shares the same
-   prefix and differs only in the last two segments — so a tail-side ellipsis removes
-   the only part worth reading. Measured at 1440px: the default clips to
-   "…/cross-project/" and drops "workspace"; with the truncation moved to the head it
-   keeps "…/cross-project/workspace" with the segment order intact. The full path is
-   also on the element's title. */
-.tcrn-top-bar__module--path {
-  direction: rtl;
-  text-align: left;
-}
-.tcrn-top-bar__actions .tcrn-badge {
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-/* The search gives way before the path does: the path is identity, the search is a
-   convenience with a keyboard shortcut beside it. Floor sized to keep the icon and a
-   few characters legible. */
-.tcrn-top-bar__actions .tcrn-search-input {
-  min-width: 7ch;
-  flex: 1 1 auto;
-  max-width: 430px;
 }
 
 
@@ -3967,9 +3914,6 @@ button:disabled { cursor: not-allowed; }
 /* Content adapts before the published shell changes to stacked navigation.
    The 280px desktop rail leaves a narrow workspace throughout this interval. */
 @media (max-width: 980px) {
-  .tcrn-product-shell__workspace > .tcrn-top-bar { grid-template-columns: minmax(0, 1fr); }
-  .tcrn-top-bar__actions { flex-wrap: wrap; min-width: 0; }
-  .tcrn-top-bar__actions > * { max-inline-size: 100%; }
   .tcrn-manage, .tcrn-vocabulary { grid-template-columns: minmax(0, 1fr); }
   [data-ui="rules-layout"] { grid-template-columns: minmax(0, 1fr); }
   .tcrn-editor-shell {
@@ -4091,19 +4035,23 @@ button:disabled { cursor: not-allowed; }
       <div class="tcrn-text tcrn-rail__footer"><span data-i18n="app.boundaryBody">Writes use the public CLI and return the engine receipt.</span></div>
     </aside>
     <div class="tcrn-product-shell__workspace">
-      <header class="tcrn-top-bar" data-ds-component="ProductShell/TopBar" data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html#navigation-shell-spec" data-ds-mapping-status="production-published-consumed" data-ds-candidate-sha="884f3c7b73a1b67783e74df3fa967fcd25ae9767">
-        <div class="tcrn-top-bar__module tcrn-top-bar__module--path" id="workspace-label"></div>
-        <div class="tcrn-top-bar__actions">
-          <label class="tcrn-sr-only" for="library-select" data-i18n="library.label">Library</label>
-          <select class="tcrn-select" id="library-select" data-ui="library-switcher" data-ds-component="Select" data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/components-controls-data.html#field-spec-usage" aria-label="Library" data-i18n-aria-label="library.label"></select>
-          <label class="tcrn-sr-only" for="configuration-project-select" data-i18n="scope.target">Configuration target</label>
-          <select class="tcrn-select" id="configuration-project-select" data-ui="configuration-project-switcher" data-ds-component="Select" data-i18n-aria-label="scope.target" aria-label="Configuration target"></select>
-
-          <span class="tcrn-search-input" data-search-input="true" data-shortcut-visible="true">
-            <span class="tcrn-search-input__icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg></span>
-            <input class="tcrn-input tcrn-search-input__control tcrn-search-input--compact" id="global-search" data-ds-component="SearchInput" data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html#navigation-shell-spec" type="search" placeholder="Search" data-i18n-placeholder="search.placeholder" autocomplete="off" aria-keyshortcuts="Control+K Meta+K">
-            <kbd class="tcrn-search-input__shortcut" id="palette-button" data-shortcut-auto="search" data-i18n="search.command">⌘K</kbd>
-          </span>
+      <header class="tcrn-top-bar" data-product-shell-region="topbar" data-ds-component="ProductShell/TopBar" data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html#navigation-shell-spec" data-ds-mapping-status="production-published-consumed" data-ds-candidate-sha="884f3c7b73a1b67783e74df3fa967fcd25ae9767">
+        <div class="tcrn-product-shell__utility-row" data-product-shell-region="utility-row">
+          <div class="tcrn-product-shell__current-location" id="current-location"><span id="workspace-label"></span><strong id="current-page-label"></strong></div>
+          <div class="tcrn-product-shell-search" data-shell-control="product-shell-search" data-package-backed-shell-control="product-shell-search" data-search-expanded="false" data-search-results-visible="false" data-search-dismissal-contract="blur-outside-pointer-tab-escape">
+            <span class="tcrn-search-input" data-search-input="true" data-shortcut-visible="true">
+              <span class="tcrn-search-input__icon" aria-hidden="true"><svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg></span>
+              <input class="tcrn-input tcrn-search-input__control tcrn-search-input--compact" id="global-search" data-ds-component="SearchInput" data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html#navigation-shell-spec" type="search" role="combobox" aria-controls="search-results" aria-expanded="false" aria-haspopup="listbox" aria-autocomplete="list" placeholder="Search" data-i18n-placeholder="search.placeholder" autocomplete="off" aria-keyshortcuts="Control+K Meta+K">
+              <kbd class="tcrn-search-input__shortcut" id="palette-button" data-shortcut-auto="search" data-i18n="search.command">⌘K</kbd>
+            </span>
+            <div class="tcrn-product-shell-search__results" id="search-results" role="listbox" aria-label="Search results" hidden></div>
+          </div>
+          <div class="tcrn-product-shell__header-actions" data-product-shell-region="header-actions">
+            <label class="tcrn-sr-only" for="library-select" data-i18n="library.label">Library</label>
+            <select class="tcrn-select" id="library-select" data-ui="library-switcher" data-ds-component="Select" data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/components-controls-data.html#field-spec-usage" aria-label="Library" data-i18n-aria-label="library.label"></select>
+            <label class="tcrn-sr-only" for="configuration-project-select" data-i18n="scope.target">Configuration target</label>
+            <select class="tcrn-select" id="configuration-project-select" data-ui="configuration-project-switcher" data-ds-component="Select" data-i18n-aria-label="scope.target" aria-label="Configuration target"></select>
+          </div>
           <button class="tcrn-button tcrn-button--secondary tcrn-button--md tcrn-icon-button tcrn-shell-theme-toggle" id="theme-button" data-ds-component="ThemeToggle" data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/components-navigation-shells.html#navigation-shell-spec" type="button" data-shell-control="theme-toggle" data-theme-toggle="true" data-current-theme="light" data-theme-next="dark" aria-pressed="false" aria-label="Theme" data-i18n-aria-label="theme.toggle" title="Theme">
             <span class="tcrn-shell-theme-toggle__icon" data-theme-icon="light" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="3.2"/><path d="M8 .8v2M8 13.2v2M.8 8h2M13.2 8h2M2.9 2.9l1.4 1.4M11.7 11.7l1.4 1.4M13.1 2.9l-1.4 1.4M4.3 11.7l-1.4 1.4"/></svg></span>
             <span class="tcrn-shell-theme-toggle__icon" data-theme-icon="dark" aria-hidden="true"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13.4 9.6A5.8 5.8 0 0 1 6.4 2.6a5.8 5.8 0 1 0 7 7Z"/></svg></span>
@@ -4122,7 +4070,6 @@ button:disabled { cursor: not-allowed; }
               <button class="tcrn-shell-locale-menu__option" type="button" role="option" data-locale-option="fr" aria-selected="false"><span class="tcrn-shell-locale-menu__name">Français</span></button>
             </div>
           </div>
-          <button class="tcrn-badge tcrn-badge--positive" id="receipt-chip" data-ui="receipt-chip" data-ds-component="Badge/Button" data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/proof-proof-visual-instances.html#owner-quality-product-shell" aria-controls="receipt-drawer" aria-expanded="false" data-ui-action="open-receipt" type="button"><span id="receipt-chip-text" data-i18n="chip.idle">idle</span></button>
         </div>
       </header>
     <main class="tcrn-product-shell__main tcrn-main" id="main-content">
@@ -4249,10 +4196,9 @@ button:disabled { cursor: not-allowed; }
       </section>
     </main>
     </div>
-    <div class="tcrn-app-status-bar" role="status" data-app-status-bar="true"><span class="tcrn-app-status-bar__command" id="echo-command"><code data-i18n="echo.idle">agent:portal · public CLI</code></span><span class="tcrn-app-status-bar__state"><span class="tcrn-dot" aria-hidden="true"></span><span id="status-state" data-i18n="health.healthy">healthy</span></span><span class="tcrn-app-status-bar__action"><button class="tcrn-button tcrn-button--quiet" id="drawer-button" data-i18n="receipt.open">Receipt</button></span></div>
+    <div class="tcrn-app-status-bar" role="status" data-app-status-bar="true"><span class="tcrn-app-status-bar__command" id="echo-command"><code data-i18n="echo.idle">agent:portal · public CLI</code></span><span class="tcrn-app-status-bar__state"><span class="tcrn-dot" aria-hidden="true"></span><span id="status-state" data-i18n="health.healthy">healthy</span></span><span class="tcrn-app-status-bar__action"><button class="tcrn-badge tcrn-badge--positive" id="receipt-chip" data-ui="receipt-chip" data-ds-component="Badge/Button" data-ds-source-url="https://tcrn-design-system-storybook.vercel.app/proof-proof-visual-instances.html#owner-quality-product-shell" aria-controls="receipt-drawer" aria-expanded="false" data-ui-action="open-receipt" type="button"><span id="receipt-chip-text" data-i18n="chip.idle">idle</span></button> <button class="tcrn-button tcrn-button--quiet" id="drawer-button" data-i18n="receipt.open">Receipt</button></span></div>
   </div>
 </div>
-<div class="tcrn-product-shell-search__results tcrn-search-results" id="search-results" hidden aria-label="Search results"></div>
 <aside class="tcrn-detail-drawer" id="receipt-drawer" data-ui="receipt-drawer" data-open="false" aria-hidden="true" role="complementary" data-modal-scope="structural-drawer" tabindex="-1" aria-labelledby="receipt-title"><div class="tcrn-surface__head tcrn-detail-drawer__head"><h2 class="tcrn-heading tcrn-heading--3" id="receipt-title" data-i18n="receipt.title">Engine receipt</h2><button class="tcrn-button tcrn-button--quiet" id="drawer-close" data-i18n="receipt.close">Close</button></div><section id="operation-feedback" class="tcrn-operation-feedback" data-operation-feedback="true" data-operation-phase="idle" data-operation-state="idle" data-operation-geometry="responsive-safe" data-operation-update-notification="aria-live" aria-live="polite"><div class="tcrn-operation-feedback__summary"><p id="operation-message" class="tcrn-text" role="status" hidden></p><span id="receipt-operation-status" class="tcrn-badge tcrn-badge--positive tcrn-operation-feedback__status" data-operation-short-status="true" data-operation-short-status-phase="idle" role="status"><span id="receipt-operation-status-text" data-i18n="chip.idle">idle</span></span><dl id="receipt-operation-identity" class="tcrn-operation-feedback__identity" data-operation-identity="true"></dl><button type="button" class="tcrn-operation-feedback__details-trigger" id="receipt-details-trigger" aria-expanded="false" aria-controls="receipt-details" data-operation-details-trigger="true" data-i18n="receipt.details">View full receipt</button></div><section id="receipt-details" class="tcrn-operation-feedback__details" data-operation-details="true" hidden><div class="tcrn-operation-feedback__details-body"><dl class="tcrn-readback-panel tcrn-definition-list" id="receipt-body"></dl><pre id="receipt-raw" tabindex="0" data-i18n-aria-label="receipt.title" aria-label="Engine receipt"></pre></div></section></section></aside>
 <!-- These stable markers keep the static DOM contract visible before data loads. The
      live renderers replace their content with the same selectors after the engine
@@ -4582,6 +4528,7 @@ const BOOT = __PORTAL_BOOT__;
     $$('[data-page-target]').forEach((button) => { if (button.dataset.pageTarget) button.setAttribute("aria-current", button.dataset.pageTarget === page ? "page" : "false"); });
     setText("#echo-command", page === "dashboard" ? t("echo.idle") : `${page} · ${BOOT.actor}`);
     $("#search-results").hidden = true;
+    syncSearch();
     if (previousPage?.hidden) $(`[data-page-target="${page}"]`)?.focus?.();
   };
   // TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R5; MIN-236 D7; contract C-R14-1): the settings page is
@@ -6103,17 +6050,20 @@ const BOOT = __PORTAL_BOOT__;
     const index = libraries.findIndex((entry) => entry.projectPath === library.projectPath);
     return index < 0 ? distinctLabels([library])[0] : distinctLabels(libraries)[index];
   };
-  // The top bar names the selected library by that label, and the page the reader is on once they
-  // have navigated; both follow the page's language.
+  // TCRN-CROSS-INIT-053 R46 (I13): the published current location names the chain the page shows (its
+  // label, never a path) and the page the reader is on; both follow the page's language.
   const renderWorkspaceLabel = () => {
-    const library = BOOT.library ? libraryLabel(BOOT.library) : "";
-    const page = state.workspaceLabelPage;
-    setText("#workspace-label", page ? `${library} / ${$(`[data-page-target="${page}"] .tcrn-nav-item__label`)?.textContent || page}` : library);
+    setText("#workspace-label", BOOT.library ? libraryLabel(BOOT.library) : "");
+    const page = state.page || "dashboard";
+    setText("#current-page-label", $(`#primary-side-nav [data-page-target="${page}"] .tcrn-nav-item__label`)?.textContent || page);
   };
   const renderConfigurationTargets = () => {
     const select = $("#configuration-project-select");
     const projects = state.settings?.projects ?? [];
-    select.hidden = state.settings?.chain?.role === "coordination";
+    // The configuration target is offered only where the library has more than one project to choose.
+    select.hidden = state.settings?.chain?.role === "coordination" || projects.length <= 1;
+    const selectLabel = $('label[for="configuration-project-select"]');
+    if (selectLabel) selectLabel.hidden = select.hidden;
     const selected = BOOT.library?.configurationProjectId ?? "";
     select.innerHTML = `<option value="">${esc(t("scope.libraryDefaults"))}</option>` + projects.map((project) => {
       const parent = projects.find((entry) => entry.id === project.parentProjectId);
@@ -6191,7 +6141,16 @@ const BOOT = __PORTAL_BOOT__;
     state.searchIndex = rows;
   };
   const refreshGates = async () => { const [response, lastRun] = await Promise.all([api("/api/gates"), api("/api/gates/last-run")]); if (unkept(response, lastRun)) return; state.gateResponse = response; state.gates = Array.isArray(response.gates) ? response.gates : []; state.lastGateRun = lastRun; renderGates(); };
-  const renderSearchResults = () => { const target = $("#search-results"); target.hidden = state.searchResults.length === 0; target.innerHTML = state.searchResults.map((result, index) => `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md tcrn-product-shell-search__result" data-selected="${index === state.searchSelection ? "true" : "false"}" aria-current="${index === state.searchSelection ? "true" : "false"}" data-search-index="${index}"><strong>${esc(result.label)}</strong><span >${esc(result.meta)} · ${esc(result.page)}</span></button>`).join(""); $$('[data-search-index]').forEach((button) => button.addEventListener("click", () => chooseSearch(Number(button.dataset.searchIndex)))); };
+  // TCRN-CROSS-INIT-053 R46 (I13): the published ProductShellSearch widens while it is focused or shows
+  // results, and says whether its results are showing.
+  const syncSearch = () => {
+    const root = $(".tcrn-product-shell-search");
+    const visible = !$("#search-results").hidden;
+    root.dataset.searchResultsVisible = String(visible);
+    root.dataset.searchExpanded = String(visible || document.activeElement === $("#global-search"));
+    $("#global-search").setAttribute("aria-expanded", String(visible));
+  };
+  const renderSearchResults = () => { const target = $("#search-results"); target.hidden = state.searchResults.length === 0; target.innerHTML = state.searchResults.map((result, index) => `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md tcrn-product-shell-search__result" data-selected="${index === state.searchSelection ? "true" : "false"}" aria-current="${index === state.searchSelection ? "true" : "false"}" data-search-index="${index}"><strong>${esc(result.label)}</strong><span >${esc(result.meta)} · ${esc(result.page)}</span></button>`).join(""); $$('[data-search-index]').forEach((button) => button.addEventListener("click", () => chooseSearch(Number(button.dataset.searchIndex)))); syncSearch(); };
   const search = (query) => { const normalized = query.trim().toLocaleLowerCase(); state.searchResults = normalized ? state.searchIndex.filter((entry) => entry.text.toLocaleLowerCase().includes(normalized)) : []; state.searchSelection = 0; renderSearchResults(); };
   const chooseSearch = (index = 0) => {
     const result = state.searchResults[index]; if (!result) return;
@@ -6316,7 +6275,7 @@ const BOOT = __PORTAL_BOOT__;
   const adoptSelection = async ({ library, epoch, libraries = null }) => {
     Object.assign(BOOT, { epoch, library, workspace: library.libraryPath, libraryName: library.name ?? null });
     loadLibraries(Array.isArray(libraries) ? libraries : BOOT.libraries);
-    state.workspaceLabelPage = null; renderWorkspaceLabel(); $("#workspace-label").title = BOOT.workspace;
+    state.workspaceLabelPage = null; renderWorkspaceLabel();
     applyRailIdentity(); resetCollections(); leaveWork();
     await refresh(); await refreshGates(); await loadAgents();
   };
@@ -6448,8 +6407,12 @@ const BOOT = __PORTAL_BOOT__;
   document.addEventListener("pointerdown", (event) => { if (!localeMenu.contains(event.target)) setLocaleMenuOpen(false); });
   document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !localePanel.hidden) { setLocaleMenuOpen(false); localeTrigger.focus(); } });
   $("#palette-button").addEventListener("click", () => $("#global-search").focus());
+  // The published dismissal: an outside pointer, Tab or Escape closes the results.
+  $("#global-search").addEventListener("focus", syncSearch);
+  $("#global-search").addEventListener("blur", syncSearch);
+  document.addEventListener("pointerdown", (event) => { if (state.searchResults.length && !$(".tcrn-product-shell-search").contains(event.target)) { state.searchResults = []; renderSearchResults(); } });
   $("#global-search").addEventListener("input", (event) => { clearTransientTarget(); search(event.target.value); });
-  $("#global-search").addEventListener("keydown", (event) => { if (event.key === "ArrowDown" && state.searchResults.length) { event.preventDefault(); state.searchSelection = (state.searchSelection + 1) % state.searchResults.length; renderSearchResults(); } if (event.key === "ArrowUp" && state.searchResults.length) { event.preventDefault(); state.searchSelection = (state.searchSelection + state.searchResults.length - 1) % state.searchResults.length; renderSearchResults(); } if (event.key === "Enter") { event.preventDefault(); chooseSearch(state.searchSelection); } if (event.key === "Escape") { clearTransientTarget(); state.searchResults = []; renderSearchResults(); } });
+  $("#global-search").addEventListener("keydown", (event) => { if (event.key === "ArrowDown" && state.searchResults.length) { event.preventDefault(); state.searchSelection = (state.searchSelection + 1) % state.searchResults.length; renderSearchResults(); } if (event.key === "ArrowUp" && state.searchResults.length) { event.preventDefault(); state.searchSelection = (state.searchSelection + state.searchResults.length - 1) % state.searchResults.length; renderSearchResults(); } if (event.key === "Enter") { event.preventDefault(); chooseSearch(state.searchSelection); } if (event.key === "Escape") { clearTransientTarget(); state.searchResults = []; renderSearchResults(); } if (event.key === "Tab" && state.searchResults.length) { state.searchResults = []; renderSearchResults(); } });
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Escape") return;
     clearTransientTarget();
@@ -6534,7 +6497,7 @@ const BOOT = __PORTAL_BOOT__;
     productShell.setAttribute("data-mobile-nav-expanded", String(!expanded));
     mobileNavToggle.setAttribute("aria-expanded", String(!expanded));
   });
-  loadLibraries(); applyLocale(); applySideNavCollapsed(state.sideNavCollapsed); renderWorkspaceLabel(); $("#workspace-label").title = BOOT.workspace; applyRailIdentity(); renderReceipt(); refresh(); refreshGates(); loadAgents();
+  loadLibraries(); applyLocale(); applySideNavCollapsed(state.sideNavCollapsed); renderWorkspaceLabel(); applyRailIdentity(); renderReceipt(); refresh(); refreshGates(); loadAgents();
 })();
 </script>
 </body>

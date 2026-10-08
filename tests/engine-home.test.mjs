@@ -15,7 +15,7 @@ import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { FRAMEWORK_VERSION, computeInstallTreeDigest } from "../dist/build/packages/core/src/index.js";
-import { compareSemver, parseEngineVersion } from "../dist/build/packages/core/src/format-version.js";
+import { ENGINE_FORMAT_VERSION, compareSemver, parseEngineVersion } from "../dist/build/packages/core/src/format-version.js";
 import { canonicalJson } from "../dist/build/packages/protocol/src/index.js";
 
 const repositoryRoot = resolve(import.meta.dirname, "..");
@@ -106,7 +106,8 @@ test("471-R2: engine-update copies a checked version into engine/<version>, runs
   const empty = await cli(["engine-list"]);
   assert.equal(empty.reasonCode, "ENGINE_LIST_READY");
   assert.equal(empty.engineVersion, FRAMEWORK_VERSION);
-  assert.equal(empty.formatVersion, 1);
+  // The format this engine reads and writes (format-version.ts; format 2 since EPIC-144 R2), not a literal.
+  assert.equal(empty.formatVersion, ENGINE_FORMAT_VERSION);
   assert.equal(empty.current, null);
   assert.deepEqual(empty.versions, []);
   assert.deepEqual(empty.launcher, { path: join(home, "engine", "einzbern.mjs"), present: false });
@@ -114,7 +115,7 @@ test("471-R2: engine-update copies a checked version into engine/<version>, runs
   const installed = await update(engine);
   assert.equal(installed.reasonCode, "ENGINE_UPDATED");
   assert.equal(installed.installed, "copied");
-  assert.deepEqual(installed.engine, { engineVersion: FRAMEWORK_VERSION, formatVersion: 1 });
+  assert.deepEqual(installed.engine, { engineVersion: FRAMEWORK_VERSION, formatVersion: ENGINE_FORMAT_VERSION });
   assert.equal(installed.current.version, FRAMEWORK_VERSION);
   assert.equal(installed.current.previous, null);
   assert.deepEqual(installed.libraries, []);
@@ -187,12 +188,14 @@ test("471-AC3: after an update, rollback points current at the old version and s
   const updated = await update(newer);
   assert.equal(updated.current.version, NEWER);
   assert.equal(updated.current.previous, FRAMEWORK_VERSION);
-  assert.deepEqual(updated.libraries.map((entry) => [entry.libraryPath, entry.opens, entry.reasonCode]), [[library, true, null]],
+  // init --project also created and registered this device's coordination library (EPIC-144 R2);
+  // every registered library is checked, and each opens under the new version.
+  assert.deepEqual(updated.libraries.map((entry) => [entry.libraryPath, entry.opens, entry.reasonCode]), [[join(home, "coordination-library"), true, null], [library, true, null]],
     "the registered library opens under the new version");
   assert.equal(JSON.parse(viaLauncher(home, ["status", "--workspace", library]).stdout).engineVersion, NEWER);
   const rolled = await cli(["engine-rollback", "--at", at()]);
   assert.equal(rolled.reasonCode, "ENGINE_ROLLED_BACK");
-  assert.deepEqual(rolled.engine, { engineVersion: FRAMEWORK_VERSION, formatVersion: 1 });
+  assert.deepEqual(rolled.engine, { engineVersion: FRAMEWORK_VERSION, formatVersion: ENGINE_FORMAT_VERSION });
   assert.equal(rolled.current.version, FRAMEWORK_VERSION);
   assert.equal(rolled.current.previous, NEWER);
   assert.equal(JSON.parse(await readFile(join(home, "engine", "current"), "utf8")).version, FRAMEWORK_VERSION);
@@ -274,13 +277,17 @@ test("471-R3: after a switch every registered library is checked against the eng
   assert.equal(byProject[projects.plain].reasonCode, "ENGINE_TOO_OLD");
   assert.deepEqual([byProject[projects.plain].details.required, byProject[projects.plain].details.actual], [FRAMEWORK_VERSION, OLDER]);
   assert.equal(byProject[projects.future].reasonCode, "LIBRARY_FORMAT_UNSUPPORTED");
-  assert.deepEqual([byProject[projects.future].details.required, byProject[projects.future].details.supported], ["99", "1"]);
-  assert.equal(downgraded.incompatible, 2);
+  assert.deepEqual([byProject[projects.future].details.required, byProject[projects.future].details.supported], ["99", String(ENGINE_FORMAT_VERSION)]);
+  // The coordination library the first init created (EPIC-144 R2) needs this engine too.
+  const coordination = byProject[join(base, "device", "coordination-library")];
+  assert.deepEqual([coordination.opens, coordination.reasonCode], [false, "ENGINE_TOO_OLD"]);
+  assert.equal(downgraded.incompatible, 3);
   const restored = await update(await engineTree(base, FRAMEWORK_VERSION));
   const again = Object.fromEntries(restored.libraries.map((entry) => [entry.projectPath, entry]));
   assert.equal(again[projects.plain].opens, true);
   assert.equal(again[projects.plain].reasonCode, null);
   assert.equal(again[projects.future].reasonCode, "LIBRARY_FORMAT_UNSUPPORTED");
+  assert.equal(again[join(base, "device", "coordination-library")].opens, true);
   assert.equal(restored.incompatible, 1);
 });
 

@@ -67,7 +67,11 @@ test("470-AC1: a directory inside a registered project resolves to its library",
   const resolved = await cli(["library-resolve", "--cwd", join(project, "src", "deep")]);
   assert.deepEqual([resolved.reasonCode, resolved.via, resolved.libraryPath, resolved.libraryId], ["LIBRARY_RESOLVED", "project-path", join(project, ".ether"), created.libraryId]);
   const listed = await cli(["library-list"]);
-  assert.deepEqual(listed.entries.map((entry) => [entry.projectPath, entry.libraryId]), [[project, created.libraryId]]);
+  // init --project also registered the coordination library it created (EPIC-144 R2); the project
+  // still resolves to its own library, never to the coordination library its chain names.
+  const coordinationId = (await cli(["chain-identity", "--workspace", join(project, ".ether")])).identity.coordinationLibraryId;
+  assert.notEqual(coordinationId, created.libraryId);
+  assert.deepEqual(listed.entries.map((entry) => [entry.projectPath, entry.libraryId]), [[join(base, "device", "coordination-library"), coordinationId], [project, created.libraryId]]);
   // The registry is in the device directory; the project holds no pointer to it.
   assert.ok((await readdir(join(base, "device"))).includes("registry.json"));
   assert.deepEqual((await readdir(project)).sort(), [".ether", "src"]);
@@ -113,11 +117,14 @@ test("470-R1: a verb run without --workspace works on the library the current di
   await cli(["init", "--workspace", join(project, ".ether"), "--at", at(), "--project", project]);
   const env = { ...process.env };
   const run = (args, cwd) => spawnSync(process.execPath, [cliPath, ...args], { cwd, env, encoding: "utf8" });
+  // init --project already wrote the chain identity and the setup project (EPIC-144 R2): the verb
+  // adds exactly one event to the library the directory resolves to.
+  const before = JSON.parse(run(["status"], join(project, "docs")).stdout).version;
   const created = run(["project-create", "--at", at(), "--external-key", "REGISTRY-PROJECT", "--name", "Registry"], join(project, "docs"));
   assert.equal(created.status, 0, created.stderr);
-  assert.equal(JSON.parse(created.stdout).version, 1);
+  assert.equal(JSON.parse(created.stdout).version, before + 1);
   const status = run(["status"], join(project, "docs"));
-  assert.equal(JSON.parse(status.stdout).version, 1);
+  assert.equal(JSON.parse(status.stdout).version, before + 1);
   const outside = run(["status"], base);
   assert.equal(outside.status, 1);
   assert.equal(JSON.parse(outside.stderr).reasonCode, "LIBRARY_NOT_REGISTERED");

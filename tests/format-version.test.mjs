@@ -143,8 +143,10 @@ test("471-AC1: a library in a newer format is refused by status, work-list and w
 
 test("471-R1: a newer format is named even when the rest of its manifest has changed shape", async (context) => {
   const { library } = await seeded(context);
-  await rewriteManifest(library, (manifest) => ({ ...manifest, schemaVersion: "einzbern.library-manifest.v2", formatVersion: 2, streams: "a field this engine does not know" }));
-  await assert.rejects(openLibrary(library), (error) => error?.reasonCode === "LIBRARY_FORMAT_UNSUPPORTED" && error.details.required === "2");
+  // One past the format this engine reads (format-version.ts), whatever that format is.
+  const newer = ENGINE_FORMAT_VERSION + 1;
+  await rewriteManifest(library, (manifest) => ({ ...manifest, schemaVersion: "einzbern.library-manifest.v2", formatVersion: newer, streams: "a field this engine does not know" }));
+  await assert.rejects(openLibrary(library), (error) => error?.reasonCode === "LIBRARY_FORMAT_UNSUPPORTED" && error.details.required === String(newer));
   assert.equal((await refusal(["chain-validate", "--workspace", library])).reasonCode, "LIBRARY_FORMAT_UNSUPPORTED");
   // A manifest in this engine's format that does not validate is still invalid, not unsupported.
   await rewriteManifest(library, (manifest) => ({ ...manifest, schemaVersion: "einzbern.library-manifest.v1", formatVersion: ENGINE_FORMAT_VERSION }));

@@ -13,7 +13,7 @@ import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
 import { FRAMEWORK_VERSION, appendToOwnStream, createLibrary, libraryUpgradeReadiness, openLibrary } from "../dist/build/packages/core/src/index.js";
-import { assertUpgradeReady, upgradeReadiness } from "../dist/build/packages/core/src/format-version.js";
+import { ENGINE_FORMAT_VERSION, assertUpgradeReady, upgradeReadiness } from "../dist/build/packages/core/src/format-version.js";
 import { canonicalJson, deriveStableId } from "../dist/build/packages/protocol/src/index.js";
 
 const DESK = { deviceId: "a".repeat(32), displayName: "desk" };
@@ -106,7 +106,8 @@ test("471-R4: with the target format raised (test seam), a device on an older en
   assert.equal(staying.upgradeNeeded, false);
   assert.equal(staying.ready, true, "while the format stays, 0.5.0 meets the library's own minimum");
   assert.doesNotThrow(() => assertUpgradeReady(staying));
-  const raising = await libraryUpgradeReadiness(library, { targetFormat: 2 });
+  // The seam raises the target one past the format the library is in (format-version.ts).
+  const raising = await libraryUpgradeReadiness(library, { targetFormat: ENGINE_FORMAT_VERSION + 1 });
   assert.equal(raising.upgradeNeeded, true);
   assert.equal(raising.requiredEngineVersion, FRAMEWORK_VERSION);
   assert.equal(raising.ready, false);
@@ -115,7 +116,7 @@ test("471-R4: with the target format raised (test seam), a device on an older en
     error.message === raising.hint && error.details.required === FRAMEWORK_VERSION);
   // Once the laptop runs this engine too, the new format may be written.
   await rewriteJson(streamManifest(created, LAPTOP.deviceId), (manifest) => ({ ...manifest, engineVersion: FRAMEWORK_VERSION }));
-  const upgraded = await libraryUpgradeReadiness(library, { targetFormat: 2 });
+  const upgraded = await libraryUpgradeReadiness(library, { targetFormat: ENGINE_FORMAT_VERSION + 1 });
   assert.equal(upgraded.ready, true);
   assert.equal(upgraded.hint, null);
   assert.doesNotThrow(() => assertUpgradeReady(upgraded));
@@ -124,16 +125,17 @@ test("471-R4: with the target format raised (test seam), a device on an older en
 
 test("471-R4: this device is ready whatever its stream last recorded, and a device without a name is named by its id", () => {
   const readiness = upgradeReadiness({
-    formatVersion: 1,
+    formatVersion: ENGINE_FORMAT_VERSION,
     minEngineVersion: "1.0.0",
     devices: [
       { deviceId: DESK.deviceId, displayName: "desk", engineVersion: "1.0.0" },
       { deviceId: LAPTOP.deviceId, displayName: "laptop", engineVersion: "2.0.0" },
       { deviceId: TABLET, displayName: null, engineVersion: null },
     ],
-  }, { engineVersion: "2.1.0", targetFormat: 2, selfDeviceId: DESK.deviceId });
+  }, { engineVersion: "2.1.0", targetFormat: ENGINE_FORMAT_VERSION + 1, selfDeviceId: DESK.deviceId });
   assert.deepEqual(readiness.devices.map((device) => [device.self, device.ready]), [[true, true], [false, false], [false, false]]);
   assert.equal(readiness.hint, `先把以下设备升级到 ≥2.1.0 再写入新格式：laptop（2.0.0）、${TABLET}（版本未知）`);
-  const withoutSelf = upgradeReadiness({ formatVersion: 1, minEngineVersion: "1.0.0", devices: [] }, { engineVersion: "2.1.0" });
-  assert.deepEqual([withoutSelf.ready, withoutSelf.hint, withoutSelf.targetFormat], [true, null, 1]);
+  // Without a target the target is this engine's format, so a library already in it raises nothing.
+  const withoutSelf = upgradeReadiness({ formatVersion: ENGINE_FORMAT_VERSION, minEngineVersion: "1.0.0", devices: [] }, { engineVersion: "2.1.0" });
+  assert.deepEqual([withoutSelf.ready, withoutSelf.hint, withoutSelf.targetFormat, withoutSelf.upgradeNeeded], [true, null, ENGINE_FORMAT_VERSION, false]);
 });

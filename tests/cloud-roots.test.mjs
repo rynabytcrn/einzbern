@@ -109,6 +109,9 @@ test("470-AC5: a library given through a symbolic link is created, registered an
   const registered = await cli(["library-register", "--project", project, "--library", direct, "--at", at(), "--cloud-hosted", "true"]);
   assert.deepEqual([registered.realPath, registered.entry.libraryPath, registered.entry.cloudHosted, registered.suggestedCloudHosted], [realLibrary, realLibrary, true, false]);
   const registry = JSON.parse(await readFile(join(base, "device", "registry.json"), "utf8"));
-  assert.deepEqual(registry.entries.map((entry) => [entry.projectPath, entry.libraryPath, entry.cloudHosted]), [[project, realLibrary, true]]);
+  // init --project also created and registered this device's coordination library (EPIC-144 R2),
+  // in the device directory and not cloud-hosted; the project's entry is the real library path.
+  const coordination = join(base, "device", "coordination-library");
+  assert.deepEqual(registry.entries.map((entry) => [entry.projectPath, entry.libraryPath, entry.cloudHosted]), [[coordination, coordination, false], [project, realLibrary, true]]);
   assert.equal((await cli(["library-resolve", "--cwd", project])).libraryPath, realLibrary);
 });

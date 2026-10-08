@@ -88,9 +88,11 @@ async function references() {
 }
 
 test("479-AC1: every verb the navigation table names is a verb of the current command catalog", () => {
+  // STORY-479 AC1 with EPIC-144 R3: reading the full text before development dispatch includes
+  // each involved project's own configuration (work-project-context).
   assert.deepEqual(SKILL_NAVIGATION.map((entry) => [...entry.verbs]), [
     ["recall"],
-    ["work-show", "minutes-show"],
+    ["work-show", "minutes-show", "work-project-context"],
     ["work-transition", "work-annotate"],
     ["minutes-record"],
     ["knowledge-create"],

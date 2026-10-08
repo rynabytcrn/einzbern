@@ -18,7 +18,7 @@ import { pathToFileURL } from "node:url";
 import test from "node:test";
 
 import { runCli } from "../dist/build/packages/cli/src/index.js";
-import { FRAMEWORK_VERSION, computeInstallTreeDigest, materializeWorkspace } from "../dist/build/packages/core/src/index.js";
+import { FRAMEWORK_VERSION, chainIdentity, computeInstallTreeDigest, materializeWorkspace } from "../dist/build/packages/core/src/index.js";
 import { DOCTOR_CHECKS } from "../dist/build/packages/core/src/doctor.js";
 import { SETUP_MODES, applySetup, detectSetupContext, planSetup } from "../dist/build/packages/core/src/setup.js";
 import { SKILL_COPY_ROOTS, skillCopyPath } from "../dist/build/packages/core/src/skill-copies.js";
@@ -241,6 +241,8 @@ test("480-AC1: the default answers install the library, the registry entry, both
   const expected = [
     ["device", join(f.deviceHome, "device.json"), "create"],
     ["library", join(f.project, ".ether"), "create"],
+    // EPIC-144 R2: this device's coordination library, created by the first installation.
+    ["library", join(f.deviceHome, "coordination-library"), "create"],
     ["registry", join(f.deviceHome, "registry.json"), "create"],
     ["skill-copies", join(f.home, ".claude", "skills", "mana-orchestrate"), "create"],
     ["skill-copies", join(f.home, ".agents", "skills", "mana-orchestrate"), "create"],
@@ -269,8 +271,12 @@ test("480-AC1: the default answers install the library, the registry entry, both
   assert.equal(manifest.libraryId, applied.library.libraryId);
   assert.equal(manifest.project.name, "project");
   const registry = JSON.parse(await readFile(join(f.deviceHome, "registry.json"), "utf8"));
-  assert.deepEqual(registry.entries.map((entry) => [entry.projectPath, entry.libraryPath, entry.libraryId, entry.cloudHosted]),
-    [[f.project, join(f.project, ".ether"), applied.library.libraryId, false]]);
+  // The coordination library is registered as setup registers it, its own path the project path,
+  // and the project's library names it (EPIC-144 R2).
+  const coordination = join(f.deviceHome, "coordination-library");
+  const coordinationId = chainIdentity(await materializeWorkspace(join(f.project, ".ether"))).coordinationLibraryId;
+  assert.deepEqual(registry.entries.map((entry) => [entry.projectPath, entry.libraryPath, entry.libraryId, entry.cloudHosted, entry.chainRole]),
+    [[coordination, coordination, coordinationId, false, "coordination"], [f.project, join(f.project, ".ether"), applied.library.libraryId, false, "project"]]);
   const state = await materializeWorkspace(join(f.project, ".ether"));
   assert.equal(state.settings.find((setting) => setting.key === "artifact.language")?.value, "en");
   for (const root of SKILL_COPY_ROOTS) assert.ok((await lstat(join(skillCopyPath(f.home, root), "SKILL.md"))).isFile(), root.host);

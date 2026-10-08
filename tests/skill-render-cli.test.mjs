@@ -122,7 +122,8 @@ test("479-AC1, AC3 through the CLI: every verb the generated table names is list
   const markdown = await readFile(join(out, "SKILL.md"), "utf8");
   const listed = (await invoke(["commands"])).report.commands.map((entry) => entry.name);
   const verbs = tableVerbs(markdown);
-  assert.equal(verbs.length, 8, "the six moments name eight verbs");
+  // STORY-479 AC1 with EPIC-144 R3: the full-text moment also names work-project-context.
+  assert.equal(verbs.length, 9, "the six moments name nine verbs");
   for (const verb of verbs) assert.ok(listed.includes(verb), `${verb} is listed by commands`);
   assert.ok(listed.includes("skill-render"), "skill-render is itself listed by commands");
   assert.ok(Buffer.byteLength(markdown, "utf8") < SKILL_MARKDOWN_BYTE_LIMIT);

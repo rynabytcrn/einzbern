@@ -27,6 +27,7 @@ import {
   materializeWorkspace,
   setWorkspaceSetting,
 } from "../dist/build/packages/core/src/index.js";
+import { ENGINE_FORMAT_VERSION } from "../dist/build/packages/core/src/format-version.js";
 import { canonicalJson } from "../dist/build/packages/protocol/src/index.js";
 import { SKILL_COPY_ROOTS, skillCopyPath } from "../dist/build/packages/core/src/skill-copies.js";
 
@@ -158,7 +159,11 @@ test("480-AC1, AC2 through the CLI: setup plans without --yes and writes nothing
   assert.equal(planned.mode, "fresh");
   assert.deepEqual(planned.blockers, []);
   assert.deepEqual(planned.questions.map((question) => question.flag), ["--artifacts", "--cloud", "--language", "--navigation"]);
-  assert.equal(planned.writes.length, 14);
+  // EPIC-144 R2: besides its 14 writes, a first installation creates this device's coordination
+  // library, and the plan lists that write before the apply.
+  const coordination = join(f.deviceHome, "coordination-library");
+  assert.deepEqual(planned.writes.filter((entry) => entry.path === coordination).map((entry) => [entry.step, entry.action]), [["library", "create"]]);
+  assert.equal(planned.writes.filter((entry) => entry.path !== coordination).length, 14);
   assert.deepEqual(planned.warnings, []);
   assert.deepEqual(await snapshot(roots), before, "without --yes true nothing is written");
 
@@ -212,7 +217,8 @@ test("480-AC3 through the CLI: a restore of a library in a newer format stops at
   const f = await fixture(context);
   await setup(f, "fresh", "--yes", "true");
   const manifestPath = join(f.library, "manifest.json");
-  await writeFile(manifestPath, canonicalJson({ ...JSON.parse(await readFile(manifestPath, "utf8")), formatVersion: 2 }));
+  // One past the format this engine reads (format-version.ts), whatever that format is.
+  await writeFile(manifestPath, canonicalJson({ ...JSON.parse(await readFile(manifestPath, "utf8")), formatVersion: ENGINE_FORMAT_VERSION + 1 }));
   const roots = [f.home, f.deviceHome, f.project];
   const before = await snapshot(roots);
   for (const flags of [[], ["--yes", "true"]]) {
@@ -233,8 +239,8 @@ test("480-AC3 through the CLI: a restore of a library in a newer format stops at
   const refusal = JSON.parse(run.stderr.trim().split("\n").at(-1));
   assert.equal(refusal.reasonCode, "RESTORE_FORMAT_UNSUPPORTED");
   assert.equal(refusal.check, "format");
-  assert.equal(refusal.required, "2");
-  assert.equal(refusal.supported, "1");
+  assert.equal(refusal.required, String(ENGINE_FORMAT_VERSION + 1));
+  assert.equal(refusal.supported, String(ENGINE_FORMAT_VERSION));
   assert.equal(refusal.remedy, "engine-update");
 });
 

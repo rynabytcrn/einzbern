@@ -212,6 +212,28 @@ async function startPortal(fixture, env = {}) {
 
 // TCRN-CROSS-INIT-053 R46 (I10, U20 D13): a second page can be loaded from a portal already running, as a
 // second browser tab of the same Atelier is.
+// TCRN-CROSS-INIT-053 R46 S19 (I20/I23): the published bridge is read as data. Its one export clause
+// lists every binding as `local as exported` (or a bare name), whatever its minifier called the locals
+// (a `$` among them) and however many it exports; linking puts each on the window under its exported
+// name, and a function replacement keeps `$` patterns in a local name literal.
+const BRIDGE_IDENTIFIER = String.raw`[\p{ID_Start}$_][\p{ID_Continue}$\u200c\u200d]*`;
+function bridgeExports(source) {
+  const clauses = [...source.matchAll(/export\s*\{([^{}]*)\}\s*;?/gu)];
+  assert.equal(clauses.length, 1, "the published bridge has exactly one export clause");
+  const entry = new RegExp(`^(${BRIDGE_IDENTIFIER})(?:\\s+as\\s+(${BRIDGE_IDENTIFIER}))?$`, "u");
+  const bindings = clauses[0][1].split(",").map((part) => part.trim()).filter((part) => part !== "").map((part) => {
+    const match = entry.exec(part);
+    assert.ok(match, `the bridge export ${part} names a binding`);
+    return { local: match[1], name: match[2] ?? match[1] };
+  });
+  return { clause: clauses[0][0], bindings };
+}
+function linkBridge(source) {
+  const { clause, bindings } = bridgeExports(source);
+  const assignments = bindings.map(({ local, name }) => `window[${JSON.stringify(name)}]=${local};`).join("");
+  return { linked: source.replace(clause, () => assignments), names: bindings.map(({ name }) => name) };
+}
+
 async function loadExecutedDom(fixture, env = {}, { hold = () => false, portal = null } = {}) {
   const { child, url } = portal ?? await startPortal(fixture, env);
   const nativeFetch = globalThis.fetch;
@@ -273,9 +295,8 @@ async function loadExecutedDom(fixture, env = {}, { hold = () => false, portal =
         // Link the exact served ES module in this CommonJS-style VM harness. The product
         // snapshot and module import stay untouched; aliases are read from its own export.
         const bridgeSource = await (await nativeFetch(new URL("/ds-static-bridges.snapshot.js", url))).text();
-        const exports = bridgeSource.match(/export\{(\w+) as mountStaticMultiSelect,(\w+) as mountStaticOverlayBoundary\};/u);
-        assert.ok(exports, "the published bridge must export both declared bindings");
-        const linkedBridge = bridgeSource.replace(exports[0], `window.mountStaticMultiSelect=${exports[1]};window.mountStaticOverlayBoundary=${exports[2]};`);
+        const { linked: linkedBridge, names } = linkBridge(bridgeSource);
+        assert.ok(["mountStaticMultiSelect", "mountStaticOverlayBoundary"].every((name) => names.includes(name)), "the published bridge must export both declared bindings");
         vm.runInContext(`(()=>{${linkedBridge}\n})();`, context);
         executable = executable.replace(/^\s*import \{ mountStaticMultiSelect, mountStaticOverlayBoundary \} from [^;]+;\s*/u, "const { mountStaticMultiSelect, mountStaticOverlayBoundary } = window;\n");
       }
@@ -2722,7 +2743,23 @@ if (!MUTATION) test("R45 U14: targets are named, not identified, in the filter, 
 // longer refuses the target's settings. The settings read; every key that would inherit from it has no
 // value, says so and offers no default in its place; the bindings list the saved choice first as
 // unavailable, say why, and stop the inheritance from the page, after which the target reads plainly.
-if (!MUTATION) test("R46 I09: a common default that does not resolve is read, named unavailable, and taken out from the page", async () => {
+if (!MUTATION) test("R46 S19: the harness reads the export clause of a static bridge as data", () => {
+  // A synthetic bridge with three exports, locals a minifier could name, and a notice after the clause.
+  const source = "const $a=1;function _$b(){return 2}const c$$=3;export{$a as first,_$b as second,c$$};\n/*! notice: export is a word here too */\n";
+  const { clause, bindings } = bridgeExports(source);
+  assert.equal(clause, "export{$a as first,_$b as second,c$$};");
+  assert.deepEqual(bindings, [{ local: "$a", name: "first" }, { local: "_$b", name: "second" }, { local: "c$$", name: "c$$" }]);
+  const { linked, names } = linkBridge(source);
+  assert.deepEqual(names, ["first", "second", "c$$"]);
+  const context = vm.createContext({});
+  context.window = context;
+  vm.runInContext(`(()=>{${linked}\n})();`, context);
+  assert.deepEqual([context.window.first, context.window.second(), context.window["c$$"]], [1, 2, 3]);
+  assert.throws(() => bridgeExports("const a=1;"), /exactly one export clause/u);
+  assert.throws(() => bridgeExports("export{a as b};export{c as d};"), /exactly one export clause/u);
+});
+
+test("R46 I09: a common default that does not resolve is read, named unavailable, and taken out from the page", async () => {
   const fixture = await projectChainFixture("tcrn-r46-i09-common-");
   await cli(["project-bindings-set", "--workspace", fixture.workspace, "--project-id", fixture.projectId, "--at", nextAt(), "--actor", "agent:test", "--key", "common-default", "--value", JSON.stringify(GHOST_TARGET)], fixture.atelier);
   const locales = await localeTable();

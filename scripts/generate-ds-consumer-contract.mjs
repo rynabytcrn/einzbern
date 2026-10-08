@@ -14,6 +14,15 @@ const proof=JSON.parse(await readFile(proofPath,"utf8"));
 const sha=value=>createHash("sha256").update(value).digest("hex");
 if(proof.dependencySatisfied!==true || proof.environment!=="Production" || proof.authority?.sourceCommit!==proof.mergeCommit || !/^[a-f0-9]{40}$/u.test(proof.mergeCommit) || !proof.deploymentStatusId || !proof.vercelBuildStatusId)throw new Error("DS_PRODUCTION_DEPENDENCY_UNSATISFIED");
 const bridge=await readFile(resolve(options["--static-bridge-source"]));
+// TCRN-CROSS-INIT-053 R46 S19 (I20/I23): the public exports are the bridge's own, read from its one
+// export clause and sorted by name; a bridge without either binding the page imports is refused
+// before anything is written.
+const bridgeIdentifier=String.raw`[\p{ID_Start}$_][\p{ID_Continue}$\u200c\u200d]*`;
+const bridgeClauses=[...bridge.toString("utf8").matchAll(/export\s*\{([^{}]*)\}\s*;?/gu)];
+const bridgeEntry=new RegExp(`^(${bridgeIdentifier})(?:\\s+as\\s+(${bridgeIdentifier}))?$`,"u");
+const publicExports=bridgeClauses.length!==1?[]:bridgeClauses[0][1].split(",").map(part=>part.trim()).filter(part=>part!=="").map(part=>{const match=bridgeEntry.exec(part);return match?match[2]??match[1]:null;});
+if(publicExports.length===0 || publicExports.includes(null) || new Set(publicExports).size!==publicExports.length || !["mountStaticMultiSelect","mountStaticOverlayBoundary"].every(name=>publicExports.includes(name)))throw new Error("DS_STATIC_BRIDGE_EXPORTS_INVALID");
+publicExports.sort();
 const css=await readFile(resolve(repositoryRoot,"portal/ds-component-css.snapshot.css"));
 const tokens=await readFile(resolve(repositoryRoot,"portal/tokens.css"));
 if(sha(bridge)!==proof.authority.staticBridgeDigest || sha(css)!==proof.authority.componentCssDigest || sha(tokens)!==proof.authority.tokensDigest)throw new Error("DS_PUBLISHED_ASSET_DIGEST_MISMATCH");
@@ -37,7 +46,7 @@ contract.aiContract.payloadDigest=proof.aiContractPayloadDigest;
 contract.componentCss.bytes=css.length;contract.componentCss.sha256=sha(css);
 contract.tokensCss={snapshot:"portal/tokens.css",bytes:tokens.length,sha256:sha(tokens)};
 contract.brandAsset={snapshot:"portal/atelier-brand-mark.svg",bytes:brand.length,sha256:sha(brand),publishedSource:publishedAI.brandAssetSource.url};
-contract.staticBridge={snapshot:"portal/ds-static-bridges.snapshot.js",bytes:bridge.length,sha256:sha(bridge),publicExports:["mountStaticMultiSelect","mountStaticOverlayBoundary"]};
+contract.staticBridge={snapshot:"portal/ds-static-bridges.snapshot.js",bytes:bridge.length,sha256:sha(bridge),publicExports};
 contract.production={sourceCommit:proof.mergeCommit,environment:proof.environment,documentationOrigin:proof.productionOrigin,deploymentId:proof.deploymentId,deploymentStatusId:proof.deploymentStatusId,buildStatusId:proof.vercelBuildStatusId,buildUrl:proof.vercelBuildURL};
 contract.consumedContracts.multiSelect={presentation:"dropdown",family:"Select/Menu",publicBridge:"mountStaticMultiSelect",valueBridge:"native multiple select",selectionRole:"listbox/option",draftActions:["Save","Undo","Reset"],compatibilityPresentations:["native","checkboxes"]};
 contract.reconciliation.status="production-published-consumed";

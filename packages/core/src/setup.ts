@@ -532,6 +532,22 @@ function migrateCleanupInput(context: SetupContext, partitions: readonly Migrati
   };
 }
 
+// TCRN-CROSS-INIT-053 R46 (I07): whether --project names the coordination partition, by the role the
+// mapping gives it (its chainRole) and nothing else: a row without one is not a coordination chain
+// here, whatever its name or path.
+function coordinationPartition(migration: MigrationPlan, own: MigrationPartitionPlan | null): boolean {
+  if (own === null) return false;
+  return own.chainIdentity?.role === "coordination" || migration.mapping?.partitions.find((entry) => entry.partition === own.partition)?.chainRole === "coordination";
+}
+
+// The refusal a plan holds when --project names the coordination partition: a coordination chain takes
+// no project language and no project wiring, so the plan is made again for a project partition.
+function coordinationProjectMessage(migration: MigrationPlan, own: MigrationPartitionPlan): string {
+  const projectRow = migration.mapping?.partitions.find((entry) => entry.chainRole === "project");
+  const example = projectRow === undefined ? undefined : migration.partitions.find((partition) => partition.partition === projectRow.partition)?.projectRoot ?? projectRow.projectRoot;
+  return `--project names the coordination partition ${own.partition}: a coordination chain takes no project language or project wiring. Plan again with --project set to the root of a partition whose chainRole is "project"${example === undefined ? "" : ` (for example ${example})`} and the same --mapping.`;
+}
+
 // The records the project's own library starts from: the old chain it is imported from, or, when an
 // earlier run imported it, the library as it stands. Both are read from genesis and nothing is
 // written; null for a partition the plan stops at.
@@ -589,7 +605,12 @@ async function planMigrateSetup(input: SetupModeInput): Promise<SetupModePlan> {
   // The answers the project's own wiring takes: its library is the one its partition becomes, and
   // its language the one that library records (the old chain's, or the library's once imported).
   const own = planned.migration.partitions.find((partition) => partition.projectRoot === projectRoot) ?? null;
-  const retainedState = await ownLibraryState(recorder, own);
+  // TCRN-CROSS-INIT-053 R46 (I07): --project naming the coordination partition stops the plan here,
+  // before anything is imported, with what to plan instead. The plan still lists every partition; it
+  // records no project language and plans no project wiring for a coordination chain.
+  const ownCoordination = coordinationPartition(planned.migration, own);
+  if (ownCoordination) recorder.block("library", projectRoot, "SETUP_ANSWER_INVALID", coordinationProjectMessage(planned.migration, own!));
+  const retainedState = ownCoordination ? null : await ownLibraryState(recorder, own);
   const ownState = retainedState === null ? null : await scopeSetupTargetState(projectRoot, own!.target, deviceHome, retainedState);
   const ownLanguage = ownState === null ? own?.language ?? null : libraryLanguage(ownState);
   const artifacts = own?.target ?? await realTarget(join(projectRoot, DIRECTORY.library));
@@ -614,6 +635,8 @@ async function planMigrateSetup(input: SetupModeInput): Promise<SetupModePlan> {
   let pending: readonly { readonly file: string; readonly id: string }[] = [];
   if (mapping !== null) {
     hostCleanup = await planCleanup(recorder, migrateCleanupInput(context, planned.migration.partitions, resolved.navigation));
+  }
+  if (mapping !== null && !ownCoordination) {
     const files = engine.directory === null ? null : await readEngineFiles(recorder, engine.directory);
     pending = await planWiring(recorder, {
       projectRoot,
@@ -673,6 +696,13 @@ async function applyMigrateSetup(plan: SetupPlan): Promise<SetupApplied> {
   const directory = plan.engine.directory;
   if (directory === null) {
     return setupFail("SETUP_ENGINE_NOT_INSTALLED", "the plan names no engine version directory to install from", { deviceHome });
+  }
+  // TCRN-CROSS-INIT-053 R46 (I07): a plan whose --project is the coordination partition holds a
+  // blocker, so applySetup never reaches here with one; a plan changed by hand is refused before
+  // anything is imported, never after.
+  const planned = migration.partitions.find((partition) => partition.projectRoot === projectRoot) ?? null;
+  if (coordinationPartition(migration, planned)) {
+    return setupFail("SETUP_ANSWER_INVALID", coordinationProjectMessage(migration, planned!), { field: "project", partition: planned!.partition });
   }
   const recorder = new SetupRecorder(deviceHome, at);
   const device = await applyDevice(recorder, deviceHome, at);

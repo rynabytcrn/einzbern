@@ -27,7 +27,9 @@
   - 链角色只来自显式的 `"chainRole"`：协调链一项写 `"coordination"`，具体项目写 `"project"`，见下文「Project roles after import」。
   - 分区名、旧工作区、项目各只能出现一次。
   - 不给 `--mapping` 时，若项目自身含旧工作区，计划会推定一项。
-- 一个容器里有多个项目时，`--project` 给容器根；容器根本身对应的分区（如 cross-project）的库就在容器根下。
+- 一个容器里有多个项目时：
+  - 映射不带 `chainRole` 时，`--project` 给容器根；容器根本身对应的分区（如 cross-project）的库就在容器根下。
+  - 映射带 `chainRole` 时，`--project` 给任一 `chainRole` 为 `"project"` 的分区的根。协调分区的根会在计划阶段被拒（`SETUP_ANSWER_INVALID`，blocker 写明可改用的项目分区根），什么都不导入；用同一份映射改给项目分区的根再计划一次。
 
 ## 先看计划
 
@@ -184,10 +186,12 @@ library migrated before without an identity gets it on the next run; one with
 another identity stops the plan (`SETUP_LIBRARY_CONFLICT`) until `chain-declare`
 changes it. A partition without `chainRole` stays unclassified, and the plan
 shows `chainIdentity: null`; work project relations remain undecided until
-explicitly declared. With roles, `--project` must name a project partition: the
-wizard writes that project's language and managed sections, and a coordination
-chain takes neither, so a run whose `--project` is the coordination partition's
-root stops after the import, at that project's language. Never infer a coordination role from a Cross Project label,
+explicitly declared. With roles, `--project` must name the root of a project
+partition: the wizard writes that project's language and managed sections, and a
+coordination chain takes neither, so a plan whose `--project` is the
+coordination partition's root is refused at plan time (`SETUP_ANSWER_INVALID`,
+one blocker naming a project partition's root to plan again with, the same
+mapping) and nothing is imported. Never infer a coordination role from a Cross Project label,
 a partition name or a path, or copy its old development settings into a newly
 created product as implicit consent. The real Einzbern/Mana product identity and
 the roles of the real migration mapping must be supplied at the authorized

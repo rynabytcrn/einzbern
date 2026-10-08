@@ -16,7 +16,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
@@ -563,4 +563,73 @@ test("489-R1, U08 (fixture): roles added to a mapping already applied are writte
   assert.deepEqual(refused.planned.blockers.map((entry) => [entry.path, entry.reasonCode]), [[targets[1], "SETUP_LIBRARY_CONFLICT"]]);
   assert.deepEqual(refused.planned.migration.partitions.map((entry) => entry.action), ["skip", "blocked"]);
   assert.equal(refused.applied, null);
+});
+
+// TCRN-CROSS-INIT-053 R46 (I07; PC-2): with roles, --project names a project partition. The nine-row
+// mapping in its real shape (the container root is the coordination partition; eight project
+// partitions in directories of their own, three of them under a nested folder) goes through setup
+// --mode migrate both ways. The coordination root is refused at plan time with one blocker that names
+// a project partition's root, the plan still lists all nine partitions and plans no project language
+// or wiring, and its apply imports nothing; a plan changed by hand to drop the blocker is refused
+// before any import. A project partition's root imports all nine, writes each identity, wires that
+// project, and writes no project language into the coordination chain.
+test("R46 I07 (fixture): --project at the coordination partition's root is refused at plan time and imports nothing; at a project partition's root all nine import", async (context) => {
+  const m = await machine(context);
+  const crossProject = await oldPartition(m, "cross-project");
+  const names = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta"];
+  const nested = new Set(["delta", "epsilon", "zeta"]);
+  const rows = [{ partition: "cross-project", legacyWorkspace: crossProject.root, projectRoot: m.container, chainRole: "coordination" }];
+  for (const name of names) {
+    const old = await oldPartition(m, name, `LEGACY-${name.toUpperCase()}-WORKSPACE`);
+    const projectRoot = nested.has(name) ? join(m.container, "Platform Folder", name) : join(m.container, name);
+    await mkdir(projectRoot, { recursive: true });
+    rows.push({ partition: name, legacyWorkspace: old.root, projectRoot, chainRole: "project" });
+  }
+  const mapping = await writeMapping(m, rows);
+  const targets = rows.map((row) => join(row.projectRoot, ".ether"));
+  const migrate = (project, extra = []) => run(m, ["setup", "--mode", "migrate", "--project", project, "--mapping", mapping, "--at", at(), ...extra]);
+  const before = { container: await treeDigest(m.container), device: await treeDigest(m.deviceHome), home: await treeDigest(m.home) };
+
+  // The coordination partition's root: one blocker, the whole migration shown, no language or wiring.
+  const refusedPlan = receipt(migrate(m.container));
+  assert.equal(refusedPlan.reasonCode, "SETUP_PLAN_READY");
+  assert.deepEqual(refusedPlan.blockers.map((blocker) => [blocker.step, blocker.path, blocker.reasonCode]), [["library", m.container, "SETUP_ANSWER_INVALID"]]);
+  assert.equal(refusedPlan.blockers[0].message,
+    `--project names the coordination partition cross-project: a coordination chain takes no project language or project wiring. Plan again with --project set to the root of a partition whose chainRole is "project" (for example ${rows[1].projectRoot}) and the same --mapping.`);
+  assert.deepEqual(refusedPlan.migration.partitions.map((entry) => [entry.partition, entry.action, entry.chainIdentity?.role ?? null]), rows.map((row) => [row.partition, "import", row.chainRole]));
+  assert.equal(refusedPlan.writes.some((entry) => entry.path === targets[0] && entry.action === "update"), false, "no language row for the coordination chain");
+  assert.deepEqual(refusedPlan.writes.filter((entry) => ["skill-copies", "launchers", "host-hooks", "managed-sections"].includes(entry.step)), [], "no project wiring is planned");
+  assert.deepEqual(refusedPlan.pendingSections, []);
+  assert.equal(Object.hasOwn(refusedPlan, "coordination"), false, "migrate names no coordination binding (R46 I08)");
+  const blocked = refusal(migrate(m.container, ["--yes", "true"]));
+  assert.equal(blocked.reasonCode, "SETUP_BLOCKED");
+  for (const target of targets) await assert.rejects(lstat(target), { code: "ENOENT" }, `${target}: nothing is imported`);
+  assert.deepEqual({ container: await treeDigest(m.container), device: await treeDigest(m.deviceHome), home: await treeDigest(m.home) }, before, "the refused run wrote nothing");
+
+  // The same plan with its blocker dropped by hand: the apply refuses before any import.
+  const handEdited = await asDevice(m, async () => ({ ...await planSetup({ mode: "migrate", projectRoot: m.container, mapping, at: at(), home: m.home, deviceHome: m.deviceHome }), blockers: [] }));
+  await assert.rejects(asDevice(m, () => applySetup(handEdited)), (error) => error.reasonCode === "SETUP_ANSWER_INVALID" && error.details.field === "project" && error.details.partition === "cross-project");
+  for (const target of targets) await assert.rejects(lstat(target), { code: "ENOENT" }, `${target}: still nothing imported`);
+  assert.deepEqual({ container: await treeDigest(m.container), device: await treeDigest(m.deviceHome), home: await treeDigest(m.home) }, before, "the refused apply wrote nothing");
+
+  // A project partition's root: all nine import with their identities, and the project is wired.
+  const projectRoot = rows[1].projectRoot;
+  const plannedForProject = receipt(migrate(projectRoot));
+  assert.deepEqual(plannedForProject.blockers, []);
+  const applied = receipt(migrate(projectRoot, ["--yes", "true"]));
+  assert.deepEqual([applied.reasonCode, applied.mode], ["SETUP_APPLIED", "migrate"]);
+  assert.deepEqual(applied.migration.partitions.map((entry) => [entry.partition, entry.action]), rows.map((row) => [row.partition, "imported"]));
+  assert.deepEqual(applied.library, { path: targets[1], libraryId: deriveStableId("workspace", "LEGACY-ALPHA-WORKSPACE"), created: true });
+  for (const [index, row] of rows.entries()) {
+    const identity = chainIdentity(await materializeWorkspace(targets[index]));
+    assert.deepEqual([identity.role, identity.coordinationLibraryId], [row.chainRole, crossProject.workspaceId], row.partition);
+  }
+  // The coordination chain holds the old chain and its identity, and no setting setup wrote.
+  const coordinationEvents = (await readAllStreams(targets[0])).streams.flatMap((stream) => stream.events);
+  assert.equal(coordinationEvents.length, expected.events + 1, "the old chain, then its identity");
+  assert.equal(coordinationEvents.at(-1).payload.record?.key, "identity");
+  assert.equal(coordinationEvents.slice(expected.events).some((event) => String(event.payload.operation).startsWith("settings.")), false, "no project language in the coordination chain");
+  assert.equal((await materializeWorkspace(targets[1])).settings.some((setting) => setting.key === "artifact.language" && setting.value === applied.answers.language), true, "the project chain records the language");
+  for (const file of ["AGENTS.md", "CLAUDE.md"]) assert.ok((await lstat(join(projectRoot, file))).isFile(), `${file} is wired into the project`);
+  await assert.rejects(lstat(join(m.container, "AGENTS.md")), { code: "ENOENT" }, "the coordination root gets no project wiring");
 });

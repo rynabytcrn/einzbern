@@ -7,8 +7,10 @@ Use it when a plan or `doctor` reports an installation from before the engine wa
 an older engine copy, its helper skill copies or hooks, or an old-layout workspace. It is the
 wizard for `setup --mode migrate`. Run the engine verbs below the way SKILL.md says to invoke the
 engine. Supply two flags yourself: `--project <dir>`, the project the migration wires (for a
-container of several projects, the container root), and `--at <UTC>`, the current instant written
-`YYYY-MM-DDTHH:MM:SSZ`. An engine must be current on this device first; if the plan reports
+container of several projects, the container root when the mapping gives no `chainRole`; when it
+does, the root of a partition whose `chainRole` is `project`, since a coordination chain takes no
+project language or wiring and the plan refuses its root), and `--at <UTC>`, the current instant
+written `YYYY-MM-DDTHH:MM:SSZ`. An engine must be current on this device first; if the plan reports
 `SETUP_ENGINE_NOT_INSTALLED`, place one as `install.md` says and plan again.
 
 ## What the migration does
@@ -85,6 +87,10 @@ and never guess an answer.
      partition's old knowledge store does not read, and the blocker's `path` is the file of the
      store it is about. Handle it as "Knowledge carried" below says.
    - `SETUP_LIBRARY_CONFLICT`: this device registered the project to another library.
+   - `SETUP_ANSWER_INVALID` on the project itself: `--project` names the partition whose
+     `chainRole` is `coordination`. Nothing is imported. Plan again with the same mapping and
+     `--project` set to the root of a partition whose `chainRole` is `project`; the blocker names
+     one.
    - `MIGRATE_CLEANUP_BACKUP_EXISTS` or `LEGACY_SKILL_CLEANUP_BACKUP_EXISTS`: a backup of the same
      second is already there. Plan again with a later `--at`.
    - `MIGRATE_CLEANUP_CROSS_VOLUME`: an entry to move is on another volume than the device

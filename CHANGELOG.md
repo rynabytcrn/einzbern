@@ -5,6 +5,88 @@ Versioning after the first accepted release.
 
 ## Unreleased
 
+Work items record the projects they involve (TCRN-CROSS-INIT-053 R43). `--involved-projects` holds
+an explicit `undecided`, `coordination-only` or `selected` state with stable library and project
+references; `work-create`, `work-annotate` (with `--expected-revision`), batches, replay, listing
+and filtering, `work-show` and recall keep it, and a child's projects are checked against its
+parent's declared scope. A library records its chain configuration: its role, the coordination
+identity, an optional primary project, an opt-in common default, and its repository and build
+bindings. New libraries are format 2; a format 1 library still reads without being rewritten and
+refuses the new fields. Fresh setup and project initialisation create or reuse the device's
+coordination chain, and restore checks that chain's identity before it writes on the device. A
+target resolves through this device's registry against the library's actual identity, and one that
+cannot be used says why: unregistered, unavailable, an invalid or tombstoned chain, a missing
+project, a duplicate location, unconfigured or conflicting. Settings read for a target follow an
+explicit common default; collection tables, runtime settings, gate roots and managed digests are
+never inherited. `work-project-context` returns each involved target with the keys whose values
+differ between them, and grants no write authority.
+
+Gates plan and run a Cross Project work item per involved target and per registered repository
+(TCRN-CROSS-INIT-053 R44). Each run receives its target's effective configuration and its own cache,
+and reports the work revision, the target's identity and version, its root and its handoff (models,
+design authority, language, repository and build); a target that cannot be used is a refusal of its
+own and does not stop the others. On a coordination chain, rules, variables and gates are runtime
+records with no prose root: enabling or disabling a rule changes the runtime record without writing
+prose, and a managed writer refuses a coordination or library-contained output. Prose writes from
+the CLI and from Atelier hold the device registry lock and recheck the registration, the library's
+identity and the selection before they write. A registration may record the chain role it was
+observed with; older entries stay compatible, and discovery reports a known unavailable project
+apart from a valid coordination chain.
+
+Setup, migration and gate handoffs (TCRN-CROSS-INIT-053 R45). Release preparation reads the
+framework version from its leaf module, and the command catalog lists its verbs in ascending order.
+A second device restores into the coordination chain it finds by identity instead of creating one, a
+project installed there later joins the same identity, competing identities refuse with
+`PROJECT_CHAIN_INVALID` naming `chain-declare` as the remedy, and uninstalling keeps a coordination
+registration while anything refers to it and releases it with the last reference. On a format 1
+library `undecided` is stored as the absent field. A migration mapping row may carry `chainRole`
+(`coordination` or `project`): plan and apply write each library's chain identity, and a second
+coordination row, or a role pointing outside the mapping, refuses with `SETUP_ANSWER_INVALID`.
+Output, rule and AGENTS.md consumers and the gate process take each target's own handoff, the object
+`work-project-context` gives, and an unresolved gate target is a serialisable refusal of its own.
+
+Atelier (TCRN-CROSS-INIT-053 R43 to R45) edits a work item's involved projects, filters by them and
+shows each target's readiness, and sets a project's common default and repository bindings. Its
+release package carries the registry lock and device directory modules once, behind a guard. Every
+list names a target by one rule: the project's own name, "Unnamed project" only for a project
+without one, and the shortest id tails where two read alike, never a full id in a visible label; the
+complete identities are in a keyboard-operable disclosure with a copy action. Project readiness
+lists, per target, its status, whether it is ready for development, what it still misses and the
+settings whose values differ. The work view reads the work list once per refresh by its own read;
+the side navigation collapses to a rail with the published control and keeps the choice; and the
+shell's type, page width and brand mark follow the published family. Writes bind the selection's
+epoch, library and project, and a switch is refused while a target write is in flight.
+
+Projects and targets read whole (TCRN-CROSS-INIT-053 R46). Project records carry their `name` in
+`project-list` and in Atelier's library and target lists. `settings-catalog` reads a target whose
+common default cannot be resolved: a top-level `commonDefault` gives the reference, its status and
+the reason, and every row that would inherit from it reads `source.kind: "common"` with `status:
+"unresolved"` and no value; `project-bindings-set` or `project-bindings-remove` repairs the binding,
+and target resolution and gates still refuse such a target. `knowledge-list` answers a library that
+has no knowledge store yet with `knowledgeStore: "absent"` and no records, and recall reads it as an
+empty store. Atelier names the target it served on every API response (`x-portal-served-target`) and
+refuses with `PORTAL_CONFIGURATION_TARGET_CHANGED` a read or write sent for a target the selection
+has since left; the Rules page, rule switches and rendering use the registration the reader
+selected, and refuse as ambiguous where two registrations fit. A migration plan whose `--project` is
+the coordination partition refuses at plan time, and setup names the coordination binding in its
+plan and receipt.
+
+Atelier (TCRN-CROSS-INIT-053 R46) shows each project's own name in its lists, switcher, rail and top
+bar; one chain's project registered for two repositories is told apart by the repositories'
+directory names, and the Rules page names the repository it edits. A target whose common default
+cannot be read marks the rows it would set "Inherited defaults unavailable", with no value, and
+offers to choose another project or stop inheriting; a library without a knowledge store says "No
+knowledge yet". A switch clears what belonged to the old target, an answer for a target the page no
+longer shows is dropped, and when another tab moves the selection the page says where it went and
+offers to switch back or to view it. A child work item's projects stay within its parent's scope,
+and a refused save shows the engine's reason code, its own words and how to recover; on a
+coordination chain the model tables are read only and say why. Readiness lists each target's value
+and source for every setting that differs and shows "Not ready" with the neutral badge, and the work
+tree lists each Story's Subtasks with their projects. Every language uses the published UI type
+family. The gate, model and variable tables fit a 1024 px desktop without sideways scrolling: the
+gate table has three columns, a gate's switches sit in its own cell, and a cover input shows a whole
+work id.
+
 The root `package.json` drops `pg:schema` and `pg:test`, whose target files were removed with the PostgreSQL backend in TCRN-CROSS-INC-275 (TCRN-CROSS-SUB-357 S2).
 
 Release preparation can now run in two phases around one local release commit per repository

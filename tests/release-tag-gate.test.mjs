@@ -45,13 +45,19 @@ test("SUB-357: a release commit admits only the actual single core version repla
   const after = before.replace(`FRAMEWORK_VERSION = "${current}"`, `FRAMEWORK_VERSION = "${version}"`);
   const input = { changedPaths: ["packages/core/src/framework-version.ts", "package.json"], frameworkBefore: before, frameworkAfter: after, version };
   assert.deepEqual(assertReleaseCommitShape(input).changedPaths, ["package.json", "packages/core/src/framework-version.ts"]);
-  for (const change of [
+  for (const [index, change] of [
     { frameworkBefore: undefined },
     { frameworkAfter: `${after}\nexport const EXTRA = true;\n` },
-    { frameworkAfter: after.replace('DEFAULT_MODE = "development"', 'DEFAULT_MODE = "release"') },
+    // A byte change in framework-version.ts beside the version replacement: its comment line.
+    { frameworkAfter: after.replace("// Dependency-free release identity", "// A dependency-free release identity") },
     { frameworkAfter: after.replace(`FRAMEWORK_VERSION = "${version}"`, 'FRAMEWORK_VERSION = "2.0.2"') },
     { frameworkAfter: `${after}\nexport const FRAMEWORK_VERSION = "${version}" as const;\n` },
-  ]) assert.throws(() => assertReleaseCommitShape({ ...input, ...change }), (error) => error.reasonCode === "RELEASE_COMMIT_FRAMEWORK_INVALID");
+  ].entries()) {
+    // Each mutation must change a source, or it would prove nothing about the shape check.
+    const mutated = { ...input, ...change };
+    assert.ok(mutated.frameworkBefore !== input.frameworkBefore || mutated.frameworkAfter !== input.frameworkAfter, `mutation ${index} changes a source`);
+    assert.throws(() => assertReleaseCommitShape(mutated), (error) => error.reasonCode === "RELEASE_COMMIT_FRAMEWORK_INVALID", `mutation ${index}`);
+  }
 });
 
 test("SUB-357: only the generated README language set and a checked CLI reference are release metadata", async () => {

@@ -173,7 +173,7 @@ async function controlledPrepareRunner({ engineRoot, helperRoot, projectRoot, en
     if (command === "corepack") {
       if (!staleBuild) {
         const source = await readFile(join(engineRoot, "packages/core/src/framework-version.ts"), "utf8");
-        await writeText(engineRoot, "dist/build/packages/core/src/index.js", stripTypesWithScopedExperimentalWarning(source, { mode: "transform", sourceMap: false }));
+        await writeText(engineRoot, "dist/build/packages/core/src/framework-version.js", stripTypesWithScopedExperimentalWarning(source, { mode: "transform", sourceMap: false }));
       }
       return { status: 0, stdout: '{"ok":true,"reasonCode":"BUILD_VERIFIED"}\n', stderr: "" };
     }
@@ -298,7 +298,7 @@ test("488-R4: a red release gate stops preparation before the archive step", asy
     const scriptName = args[0]?.split("/").at(-1);
     if (command === "corepack") {
       const source = await readFile(join(repos.engineRoot, "packages/core/src/framework-version.ts"), "utf8");
-      await writeText(repos.engineRoot, "dist/build/packages/core/src/index.js", stripTypesWithScopedExperimentalWarning(source, { mode: "transform", sourceMap: false }));
+      await writeText(repos.engineRoot, "dist/build/packages/core/src/framework-version.js", stripTypesWithScopedExperimentalWarning(source, { mode: "transform", sourceMap: false }));
       return { status: 0, stdout: '{"ok":true}\n', stderr: "" };
     }
     if (scriptName === "render-readme.mjs") {
@@ -438,7 +438,7 @@ test("SUB-357: build ok without the requested actual core version stops before r
   const repos = await createRepos("stale-build");
   const environment = await makeEnvironment("stale-build");
   const workspace = await makeWorkspace("stale-build", repos, environment);
-  await assert.rejects(controlledPrepareRunner({ ...repos, environment, workspace, staleBuild: true }), (error) => error.reasonCode === "RELEASE_VERSION_MISMATCH" && error.details.mismatches.some((entry) => entry.path === "dist/build/packages/core/src/index.js"));
+  await assert.rejects(controlledPrepareRunner({ ...repos, environment, workspace, staleBuild: true }), (error) => error.reasonCode === "RELEASE_VERSION_MISMATCH" && error.details.mismatches.some((entry) => entry.path === "dist/build/packages/core/src/framework-version.js"));
 });
 
 // TCRN-CROSS-SUB-357 rev4 (INIT-053 R41 B1): generate and finish. The fixture helper carries a kept
@@ -465,7 +465,7 @@ function releaseRunner(engineRoot, calls) {
     calls.push({ command, args, cwd });
     if (command === "corepack") {
       const source = await readFile(join(engineRoot, "packages/core/src/framework-version.ts"), "utf8");
-      await writeText(engineRoot, "dist/build/packages/core/src/index.js", stripTypesWithScopedExperimentalWarning(source, { mode: "transform", sourceMap: false }));
+      await writeText(engineRoot, "dist/build/packages/core/src/framework-version.js", stripTypesWithScopedExperimentalWarning(source, { mode: "transform", sourceMap: false }));
       return { status: 0, stdout: '{"ok":true,"reasonCode":"BUILD_VERIFIED"}\n', stderr: "" };
     }
     const scriptName = args[0]?.split("/").at(-1);

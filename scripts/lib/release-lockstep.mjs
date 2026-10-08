@@ -17,6 +17,9 @@ export const HELPER_PACKAGE_NAME = "mana-orchestrate";
 export const CHANGELOG_FILE = "CHANGELOG.md";
 export const RELEASE_OUTPUT_DIRECTORY = "dist/release";
 export const FRAMEWORK_VERSION_SOURCE = "packages/core/src/framework-version.ts";
+// The built leaf the release reads the engine version from: the barrel re-exports it, and a module the
+// barrel imports keeps its first evaluation in this process, so only the leaf itself can be read again.
+const FRAMEWORK_VERSION_BUILT = "dist/build/packages/core/src/framework-version.js";
 export const RELEASE_RECEIPT_SCHEMA = "einzbern.release-generate-receipt.v1";
 export const RELEASE_NOTE_DIRECTORY = "docs/releases";
 const CLI_REFERENCE_FILE = "docs/wiki/CLI-Reference.md";
@@ -219,8 +222,8 @@ async function builtReleaseModule(engineRoot, path) {
 async function releaseFrameworkVersions(engineRoot) {
   const source = await readFile(join(engineRoot, FRAMEWORK_VERSION_SOURCE), "utf8");
   const declaration = frameworkVersionDeclaration(source, FRAMEWORK_VERSION_SOURCE);
-  const core = await builtReleaseModule(engineRoot, "packages/core/src/index.js");
-  return { source, declaration, sourceVersion: declaration[1], builtVersion: core.FRAMEWORK_VERSION };
+  const leaf = await builtReleaseModule(engineRoot, "packages/core/src/framework-version.js");
+  return { source, declaration, sourceVersion: declaration[1], builtVersion: leaf.FRAMEWORK_VERSION };
 }
 
 export async function checkRelease({ engineRoot, helperRoot, version, env = process.env }) {
@@ -233,7 +236,7 @@ export async function checkRelease({ engineRoot, helperRoot, version, env = proc
 
   const mismatches = [];
   const framework = await releaseFrameworkVersions(engine.root);
-  for (const [path, actual] of [[FRAMEWORK_VERSION_SOURCE, framework.sourceVersion], ["dist/build/packages/core/src/index.js", framework.builtVersion]]) {
+  for (const [path, actual] of [[FRAMEWORK_VERSION_SOURCE, framework.sourceVersion], [FRAMEWORK_VERSION_BUILT, framework.builtVersion]]) {
     const mismatch = versionMismatch(version, path, actual);
     if (mismatch) mismatches.push(mismatch);
   }
@@ -457,7 +460,7 @@ async function currentReleaseState(engineRoot) {
   const framework = await releaseFrameworkVersions(engineRoot);
   mismatchError([...currentVersions][0], [
     versionMismatch([...currentVersions][0], FRAMEWORK_VERSION_SOURCE, framework.sourceVersion),
-    versionMismatch([...currentVersions][0], "dist/build/packages/core/src/index.js", framework.builtVersion),
+    versionMismatch([...currentVersions][0], FRAMEWORK_VERSION_BUILT, framework.builtVersion),
   ].filter(Boolean));
   return { packagePaths, framework };
 }
@@ -482,7 +485,7 @@ async function buildReleaseTree({ engineRoot, version, env, runner }) {
   const build = parseCommandJson(await writeResult("corepack", ["pnpm@11.3.0", "--dir", engineRoot, "run", "build"], { cwd: engineRoot, env, runner }), "build");
   if (build.ok === false) refuse("RELEASE_BUILD_FAILED", "the release build reported failure", { build });
   const rebuilt = await releaseFrameworkVersions(engineRoot);
-  mismatchError(version, [versionMismatch(version, "dist/build/packages/core/src/index.js", rebuilt.builtVersion)].filter(Boolean));
+  mismatchError(version, [versionMismatch(version, FRAMEWORK_VERSION_BUILT, rebuilt.builtVersion)].filter(Boolean));
   return { reasonCode: build.reasonCode ?? null, builtVersion: rebuilt.builtVersion };
 }
 
@@ -941,7 +944,7 @@ export async function finishRelease({ engineRoot, helperRoot, version, workspace
   }
   const framework = await collect(violations, () => releaseFrameworkVersions(engine.root));
   if (framework !== undefined) {
-    for (const [path, actual] of [[FRAMEWORK_VERSION_SOURCE, framework.sourceVersion], ["dist/build/packages/core/src/index.js", framework.builtVersion]]) {
+    for (const [path, actual] of [[FRAMEWORK_VERSION_SOURCE, framework.sourceVersion], [FRAMEWORK_VERSION_BUILT, framework.builtVersion]]) {
       if (actual !== version) violations.push({ code: "RELEASE_VERSION_MISMATCH", path, expected: version, actual: typeof actual === "string" ? actual : null });
     }
   }

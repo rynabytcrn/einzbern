@@ -69,11 +69,13 @@ async function engineTree(base, version, name = version) {
   await copyFile(join(repositoryRoot, "scripts/policy/knowledge-provenance.json"), join(tree, "scripts/policy/knowledge-provenance.json"));
   await cp(join(repositoryRoot, "dist/build"), join(tree, "dist/build"), { recursive: true });
   if (version !== FRAMEWORK_VERSION) {
-    const index = join(tree, "dist/build/packages/core/src/index.js");
+    // The engine version lives in its own module (packages/core/src/framework-version.ts), which
+    // the barrel re-exports: the built leaf is where another version is declared.
+    const leaf = join(tree, "dist/build/packages/core/src/framework-version.js");
     const declaration = `export const FRAMEWORK_VERSION = "${FRAMEWORK_VERSION}";`;
-    const source = await readFile(index, "utf8");
-    assert.ok(source.includes(declaration), "the built index declares the engine version");
-    await writeFile(index, source.replace(declaration, `export const FRAMEWORK_VERSION = "${version}";`));
+    const source = await readFile(leaf, "utf8");
+    assert.ok(source.includes(declaration), "the built framework-version module declares the engine version");
+    await writeFile(leaf, source.replace(declaration, `export const FRAMEWORK_VERSION = "${version}";`));
   }
   return { tree, version, sha256: (await computeInstallTreeDigest(tree)).sha256 };
 }

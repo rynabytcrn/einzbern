@@ -1833,3 +1833,114 @@ test("INIT-053 R46 I04: /api/knowledge answers a library without a knowledge sto
   assert.deepEqual([present.body.reasonCode, present.body.knowledgeStore, present.body.total], ["PORTAL_KNOWLEDGE_READY", "present", 0]);
 });
 
+// R46 I05 (approved contract item 11; U20 D13): every answer names the target it was served for, refusals
+// and device-wide routes included; a read that names another target than the one it would be served is
+// refused with the selection as it is, a read that names none is served as before, and each switch's
+// answer names the target it selected. A project path in any script survives the header.
+test("INIT-053 R46 I05: answers name the target they served, and a read naming a stale target is refused", async t => {
+  const fixture = await scratch("portal-r46-served-", "R46-SERVED");
+  const wide = join(fixture.base, "项目-ü-second");
+  await mkdir(wide);
+  await cli(["library-register", "--project", wide, "--library", fixture.second.library, "--project-id", fixture.second.projectId, "--at", R46_AT], fixture.deviceEnv);
+  const { child, url } = await startPortal(fixture);
+  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
+  const { boot } = await readBoot(url);
+  const first = shownTarget(boot.library, boot.epoch);
+  assert.deepEqual(first, { epoch: boot.epoch, libraryId: boot.library.libraryId, projectPath: fixture.proseRoot, projectId: fixture.projectId, chainRole: null });
+  const routes = [
+    ["/api/settings", 200], ["/api/libraries", 200], ["/api/project-targets", 200], ["/api/machine-settings", 200], ["/api/vocabulary", 200], ["/api/commands", 200],
+    ["/api/work", 200], ["/api/knowledge", 200], ["/api/rules", 200], ["/api/variables", 200], ["/api/gates", 200], ["/api/gates/last-run", 200],
+    ["/api/agents-md", 200], ["/api/agents-md/reconcile", 200], ["/api/knowledge?status=bogus", 400], ["/api/execution", 404],
+  ];
+  for (const [path, status] of routes) {
+    const answer = await request(url, path, readOptions(boot.token));
+    assert.equal(answer.response.status, status, path);
+    assert.deepEqual(servedBy(answer.response), first, `${path} names the target it served`);
+  }
+  const refusedWrite = await request(url, "/api/settings", writeOptions(boot.token, "POST", { key: "bogus.key", value: "x" }));
+  assert.deepEqual([refusedWrite.response.status, servedBy(refusedWrite.response)], [409, first], "a refused write names its target too");
+  const untokened = await fetch(new URL("/api/settings", url));
+  assert.equal(untokened.status, 403);
+  assert.equal(untokened.headers.get("x-portal-served-target"), null, "a request without the token is told nothing about the selection");
+  const forged = await rawRequest(url, "/api/settings", { host: "attacker.example", headers: { "x-portal-token": boot.token } });
+  assert.equal(forged.status, 403);
+
+  // A read naming the target it is served for is answered; one naming another epoch, project path or
+  // project is refused with the selection as it is.
+  const named = await request(url, "/api/settings", namedRead(boot.token, first));
+  assert.deepEqual([named.response.status, servedBy(named.response)], [200, first]);
+  const selection = { epoch: first.epoch, libraryId: first.libraryId, projectPath: first.projectPath, projectId: first.projectId, name: "R46-SERVED", chainRole: null };
+  for (const stale of [{ ...first, epoch: first.epoch + 1 }, { ...first, projectPath: fixture.second.project }, { ...first, projectId: null }, { ...first, libraryId: "library:" + "e".repeat(24) }]) {
+    const refused = await request(url, "/api/settings", namedRead(boot.token, stale));
+    assert.deepEqual([refused.response.status, refused.body.reasonCode, refused.body.target], [409, "PORTAL_CONFIGURATION_TARGET_CHANGED", selection], JSON.stringify(stale));
+  }
+  const malformed = await request(url, "/api/work", { headers: { "x-portal-token": boot.token, "x-configuration-target": "not json" } });
+  assert.equal(malformed.response.status, 409);
+
+  // Another client switches the library: this client's read naming its old target is refused, not answered
+  // with the other library's values, and a read naming none is the new selection's.
+  const switched = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: wide }));
+  assert.equal(switched.response.status, 200, JSON.stringify(switched.body));
+  const second = shownTarget(switched.body.library, switched.body.epoch);
+  assert.deepEqual(second, { epoch: switched.body.epoch, libraryId: switched.body.library.libraryId, projectPath: wide, projectId: fixture.second.projectId, chainRole: null }, "a project path in any script survives the header");
+  assert.deepEqual(servedBy(switched.response), second, "the switch's answer names the target it selected");
+  assert.equal(servedBy(switched.response).epoch, switched.body.epoch);
+  const stale = await request(url, "/api/settings", namedRead(boot.token, first));
+  assert.deepEqual([stale.response.status, stale.body.target.libraryId, stale.body.target.projectPath, stale.body.target.epoch, stale.body.settings], [409, second.libraryId, wide, second.epoch, undefined]);
+  const plain = await request(url, "/api/settings", readOptions(boot.token));
+  assert.deepEqual([plain.response.status, servedBy(plain.response)], [200, second]);
+  // The configuration scope's answer names the target it selects.
+  const scoped = await request(url, "/api/configuration-scope", writeOptions(boot.token, "POST", { projectId: fixture.second.projectId }));
+  assert.equal(scoped.response.status, 200, JSON.stringify(scoped.body));
+  assert.deepEqual(servedBy(scoped.response), { ...second, epoch: scoped.body.epoch });
+  // A write naming the old target is still refused (F05), now with the selection's six keys.
+  const staleWrite = await request(url, "/api/settings", { method: "POST", headers: { "content-type": "application/json", "x-portal-token": boot.token, "x-configuration-target": JSON.stringify(first) }, body: JSON.stringify({ key: "artifact.language", value: "fr" }) });
+  assert.deepEqual([staleWrite.response.status, staleWrite.body.reasonCode, Object.keys(staleWrite.body.target).sort()], [409, "PORTAL_CONFIGURATION_TARGET_CHANGED", ["chainRole", "epoch", "libraryId", "name", "projectId", "projectPath"]]);
+});
+
+// R46 I06 (approved contract items 2, 10; U20 D2): one chain's two repositories are two registrations,
+// and each is bound by its own project path: /api/library, /api/configuration-scope and GET/PUT
+// /api/agents-md name the selected registration's root. A project of the library that several
+// registrations name is ambiguous, and none of them is taken.
+test("INIT-053 R46 I06: a chain's two repositories bind by registration, and a project with several registrations is ambiguous", async t => {
+  const fixture = await scratch("portal-r46-bind-", "R46-BIND");
+  const mana = join(fixture.base, "second-mana");
+  await mkdir(mana);
+  await cli(["library-register", "--project", mana, "--library", fixture.second.library, "--project-id", fixture.second.projectId, "--at", R46_AT], fixture.deviceEnv);
+  const other = (await cli(["project-create", "--workspace", fixture.second.library, "--external-key", "R46-BIND-OTHER", "--name", "Other", "--at", R46_AT], fixture.deviceEnv)).record.id;
+  const otherRoots = [join(fixture.base, "other-a"), join(fixture.base, "other-b")];
+  for (const root of otherRoots) {
+    await mkdir(root);
+    await cli(["library-register", "--project", root, "--library", fixture.second.library, "--project-id", other, "--at", R46_AT], fixture.deviceEnv);
+  }
+  const { child, url } = await startPortal(fixture);
+  t.after(async () => { if (child.exitCode === null) { const exited = new Promise(resolve => child.once("exit", resolve)); child.kill(); await exited; } await rm(fixture.base, { recursive: true, force: true }); });
+  const { boot } = await readBoot(url);
+  const agentsFile = (root) => join(root, "AGENTS.md");
+  for (const [root, sibling] of [[mana, fixture.second.project], [fixture.second.project, mana]]) {
+    const selected = await request(url, "/api/library", writeOptions(boot.token, "POST", { library: root }));
+    assert.deepEqual([selected.response.status, selected.body.proseRoot], [200, root], `${root}: the switch names the selected registration's root`);
+    const scoped = await request(url, "/api/configuration-scope", writeOptions(boot.token, "POST", { projectId: fixture.second.projectId }));
+    assert.deepEqual([scoped.body.proseRoot, scoped.body.outputBindingStatus], [root, "bound"]);
+    const read = await request(url, "/api/agents-md", readOptions(boot.token));
+    assert.equal(read.body.path, agentsFile(root));
+    const text = `# AGENTS.md of ${root}\n`;
+    const written = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { text }));
+    assert.deepEqual([written.response.status, written.body.path], [200, agentsFile(root)], JSON.stringify(written.body));
+    assert.equal(await readFile(agentsFile(root), "utf8"), text);
+    if (root === mana) await assert.rejects(readFile(agentsFile(sibling)), { code: "ENOENT" }, "the other repository's file is untouched");
+    else assert.equal(await readFile(agentsFile(sibling), "utf8"), `# AGENTS.md of ${sibling}\n`, "the other repository's file is untouched");
+  }
+  // The library's other project has two registrations: switching the configuration target to it
+  // takes neither, and names both.
+  const ambiguous = await request(url, "/api/configuration-scope", writeOptions(boot.token, "POST", { projectId: other }));
+  assert.equal(ambiguous.response.status, 200, JSON.stringify(ambiguous.body));
+  assert.deepEqual([ambiguous.body.outputBindingStatus, ambiguous.body.proseRoot, [...ambiguous.body.candidates].sort()], ["ambiguous", null, [...otherRoots].sort()]);
+  const read = await request(url, "/api/agents-md", readOptions(boot.token));
+  assert.deepEqual([read.response.status, read.body.reasonCode, read.body.outputBindingStatus, [...read.body.candidates].sort()], [409, "PORTAL_PROJECT_BINDING_AMBIGUOUS", "ambiguous", [...otherRoots].sort()]);
+  const write = await request(url, "/api/agents-md", writeOptions(boot.token, "PUT", { text: "# not written\n" }));
+  assert.deepEqual([write.response.status, write.body.reasonCode], [409, "PORTAL_PROJECT_BINDING_AMBIGUOUS"]);
+  for (const root of otherRoots) await assert.rejects(readFile(agentsFile(root)), { code: "ENOENT" });
+  const rule = await request(url, "/api/rules/autonomy", writeOptions(boot.token, "POST", { action: "enable" }));
+  assert.deepEqual([rule.body.ok, rule.body.reasonCode, [...rule.body.candidates].sort()], [false, "PORTAL_PROJECT_BINDING_AMBIGUOUS", [...otherRoots].sort()]);
+});

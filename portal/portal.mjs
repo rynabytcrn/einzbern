@@ -205,8 +205,29 @@ let activeTargetWrites = 0;
 const requestContext = new AsyncLocalStorage();
 const currentLibrary = () => requestContext.getStore()?.library ?? { ...selectedLibrary, configurationProjectId: selectedConfigurationProjectId };
 const scopeArguments = (library = currentLibrary()) => library.configurationProjectId == null ? [] : ["--project-id", library.configurationProjectId];
-const boundProseLibrary = (library = currentLibrary()) => library.chain?.role === "coordination" || library.configurationProjectId == null ? null : libraryCatalog.find((entry) => entry.libraryId === library.libraryId && entry.projectId === library.configurationProjectId) ?? null;
+// TCRN-CROSS-INIT-053 R46 (I06; approved contract items 2, 10): a target's repository is a
+// registration, keyed by its registered project path, so one chain with two repositories is two
+// registrations. The registration's own project is that registration; another project of the same
+// library is that project's one registration. Several registrations of it are ambiguous: none is
+// taken, and their project paths are named.
+function registrationBinding(library) {
+  const own = (library.configurationProjectId ?? null) === (library.projectId ?? null);
+  const candidates = libraryCatalog.filter((entry) => entry.libraryId === library.libraryId && (entry.projectId ?? null) === (library.configurationProjectId ?? null) &&
+    (!own || entry.projectPath === library.projectPath));
+  if (candidates.length === 1) return { status: "bound", entry: candidates[0], candidates: [] };
+  return { status: candidates.length === 0 ? "unconfigured" : "ambiguous", entry: null, candidates: candidates.map((entry) => entry.projectPath) };
+}
+// The prose and managed output of a target: none for a coordination chain or a target without a
+// project. /api/library, /api/configuration-scope and /api/agents-md all name the root this gives.
+const proseBinding = (library = currentLibrary()) => library.chain?.role === "coordination" || library.configurationProjectId == null
+  ? { status: "unconfigured", entry: null, candidates: [] }
+  : registrationBinding(library);
+const boundProseLibrary = (library = currentLibrary()) => proseBinding(library).entry;
 const currentProseRoot = () => { const bound = boundProseLibrary(); return bound === null ? null : proseRootFor(bound); };
+const AMBIGUOUS_BINDING = "PORTAL_PROJECT_BINDING_AMBIGUOUS";
+const bindingRefusal = (binding, library) => binding.status === "ambiguous"
+  ? { ok: false, reasonCode: AMBIGUOUS_BINDING, outputBindingStatus: "ambiguous", candidates: binding.candidates, projectId: library.configurationProjectId ?? null }
+  : { ok: false, reasonCode: "PORTAL_PROJECT_BINDING_UNCONFIGURED", projectId: library.configurationProjectId ?? null };
 // A library's name is its project's canonical name from project-list, or null when the
 // registration names no project or the project is gone; the page names a null in the reader's
 // language, the coordination chain's included (TCRN-CROSS-INIT-053 R46 I01).
@@ -452,8 +473,11 @@ async function projectWrite(build, environment = {}, selected = currentLibrary()
   return targetWrite(selected, async () => {
     if (!ACTOR) throw new Error("TCRN_PORTAL_ACTOR must be a non-empty actor id");
     const coordinationRule = runtimeRule && selected.chain?.role === "coordination";
-    const bound = coordinationRule ? libraryCatalog.find(entry => entry.libraryId === selected.libraryId && entry.projectId === selected.configurationProjectId) : boundProseLibrary(selected);
-    if (bound == null) return { ok: false, body: { ok: false, reasonCode: "PORTAL_PROJECT_BINDING_UNCONFIGURED", projectId: selected.configurationProjectId ?? null } };
+    // A coordination chain's runtime rule is written through its registration, by the same rule as
+    // a project's prose (TCRN-CROSS-INIT-053 R46 I06).
+    const binding = coordinationRule ? registrationBinding(selected) : proseBinding(selected);
+    if (binding.entry === null) return { ok: false, body: bindingRefusal(binding, selected) };
+    const bound = binding.entry;
     const projectPath = coordinationRule ? bound.projectPath : proseRootFor(bound);
     if (await realpath(projectPath) !== projectPath) throw startupError("PORTAL_PROSE_ROOT_UNSAFE", { projectPath });
     const common = ["--project", projectPath, "--at", nextOccurredAt(), "--actor", ACTOR, ...scopeArguments(selected)];
@@ -461,9 +485,13 @@ async function projectWrite(build, environment = {}, selected = currentLibrary()
   });
 }
 
-const renderManagedAgents = (library = currentLibrary()) => boundProseLibrary(library) === null
-  ? Promise.resolve({ ok: true, body: { ok: true, reasonCode: "PORTAL_PROJECT_BINDING_UNCONFIGURED", outputBindingStatus: "unconfigured", pending: true, projectId: library.configurationProjectId ?? null } })
-  : projectWrite((common) => ["agents-render", ...common], {}, library);
+// A render with no single output binding stays pending: the write it follows still stands.
+function renderManagedAgents(library = currentLibrary()) {
+  const binding = proseBinding(library);
+  if (binding.entry !== null) return projectWrite((common) => ["agents-render", ...common], {}, library);
+  const ambiguous = binding.status === "ambiguous";
+  return Promise.resolve({ ok: true, body: { ok: true, reasonCode: ambiguous ? AMBIGUOUS_BINDING : "PORTAL_PROJECT_BINDING_UNCONFIGURED", outputBindingStatus: binding.status, pending: true, projectId: library.configurationProjectId ?? null, ...(ambiguous ? { candidates: binding.candidates } : {}) } });
+}
 
 async function rulesProjection() {
   const result = await ruleListing();
@@ -752,8 +780,32 @@ async function reconcile() {
   };
 }
 
+// TCRN-CROSS-INIT-053 R46 (I05; approved contract item 11): the target a request was served for, from
+// its request context: the selection epoch, the library, the registration's project path, the
+// configuration project and the chain role.
+const servedTarget = (context) => ({
+  epoch: context.epoch,
+  libraryId: context.library.libraryId,
+  projectPath: context.library.projectPath,
+  projectId: context.library.configurationProjectId ?? null,
+  chainRole: context.library.chain?.role ?? null,
+});
+// The selection a refused request is told about: the served target and the project's name.
+const selectionTarget = (context) => {
+  const { chainRole, ...target } = servedTarget(context);
+  return { ...target, name: context.library.name ?? null, chainRole };
+};
+// A header value is Latin-1, so the JSON goes out with every character outside printable ASCII as a
+// \u escape; JSON.parse gives back a project path in any script unchanged.
+const headerJson = (value) => JSON.stringify(value).replace(/[^\x20-\x7e]/gu, (character) => Array.from({ length: character.length }, (_, index) => `\\u${character.charCodeAt(index).toString(16).padStart(4, "0")}`).join(""));
+
+// Every /api/ answer past the host and token checks carries x-portal-served-target, the target it was
+// served for, refusals included; a page keeps an answer only when it names the target the page shows.
+// An answer to a request without the token names nothing (STORY-355).
 function send(response, status, body) {
-  response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+  const context = requestContext.getStore();
+  const served = context?.authenticated === true ? { "x-portal-served-target": headerJson(servedTarget(context)) } : {};
+  response.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...served });
   response.end(JSON.stringify(body));
 }
 
@@ -768,7 +820,16 @@ async function readJsonBody(request) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
+// A target whose project has several registrations has no one AGENTS.md: reading or saving it is
+// refused with the registrations to choose among (TCRN-CROSS-INIT-053 R46 I06).
+const ambiguousProse = (file) => {
+  const binding = proseBinding();
+  return binding.status !== "ambiguous" ? null : { status: 409, body: { ...bindingRefusal(binding, currentLibrary()), file } };
+};
+
 async function agentsRead(name) {
+  const ambiguous = ambiguousProse(name);
+  if (ambiguous !== null) return ambiguous;
   const path = proseTarget(name);
   if (!path) return { status: currentProseRoot() === null ? 200 : 404, body: { ok: currentProseRoot() === null, reasonCode: currentProseRoot() === null ? "PORTAL_PROJECT_BINDING_UNCONFIGURED" : "PORTAL_PATH_ESCAPE", file: name, text: "", outputBindingStatus: "unconfigured" } };
   let text = "";
@@ -783,6 +844,8 @@ async function agentsRead(name) {
 // the engine writes that change what they show (a setting, a variable, a rule), never by a save.
 async function agentsWrite(body) {
   const file = String(body.file ?? PROSE_FILES[0]);
+  const ambiguous = ambiguousProse(file);
+  if (ambiguous !== null) return ambiguous;
   const path = proseTarget(file);
   if (!path) return { status: 404, body: { ok: false, reasonCode: "PORTAL_PATH_ESCAPE", file } };
   const text = String(body.text ?? "");
@@ -818,7 +881,13 @@ function isLoopbackHost(hostHeader) {
   return true;
 }
 
-const server = createServer((request, response) => requestContext.run({ epoch: selectionEpoch, library: { ...selectedLibrary, configurationProjectId: selectedConfigurationProjectId } }, async () => {
+// The routes that answer for this device or engine rather than for the selected target, and the two
+// switches, which name the target they select (TCRN-CROSS-INIT-053 R46 I05). The writes are the ones the
+// target check left alone before.
+const TARGET_EXEMPT_READS = Object.freeze(["/api/libraries", "/api/project-targets", "/api/machine-settings", "/api/vocabulary", "/api/commands"]);
+const TARGET_EXEMPT_WRITES = Object.freeze(["/api/library", "/api/configuration-scope", "/api/machine-settings"]);
+
+const server = createServer((request, response) => requestContext.run({ epoch: selectionEpoch, library: { ...selectedLibrary, configurationProjectId: selectedConfigurationProjectId }, authenticated: false }, async () => {
   if (!isLoopbackHost(request.headers.host)) {
     send(response, 403, { ok: false, reasonCode: "PORTAL_HOST_REJECTED" });
     return;
@@ -833,7 +902,8 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
         token: TOKEN,
         workspace: library.libraryPath,
         library: publicLibrary(library),
-        epoch: selectionEpoch,
+        // The epoch of the selection this page is served, which the library beside it belongs to.
+        epoch: requestContext.getStore().epoch,
         libraryName: libraryName(library),
         libraries: (await refreshLibraryCatalog()).map(publicLibrary),
         proseRoot: currentProseRoot(),
@@ -878,12 +948,23 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
       send(response, 403, { ok: false, reasonCode: "PORTAL_TOKEN_REQUIRED" });
       return;
     }
-    if (["POST", "PUT", "DELETE"].includes(request.method) && !["/api/library", "/api/configuration-scope", "/api/machine-settings"].includes(pathname)) {
+    const context = requestContext.getStore();
+    context.authenticated = true;
+    // A write names the target it was made for, and so may a read (TCRN-CROSS-INIT-053 R46 I05): one
+    // that names another epoch, library, configuration project or registration than this request was
+    // served for is refused, with the selection as it is, rather than answered from another target. A
+    // read without the header is served the current selection, as before. Device- and engine-wide
+    // routes and the two switches name no target of their own.
+    const write = ["POST", "PUT", "DELETE"].includes(request.method);
+    const exempt = write ? TARGET_EXEMPT_WRITES.includes(pathname) : request.method !== "GET" || TARGET_EXEMPT_READS.includes(pathname);
+    const declared = request.headers["x-configuration-target"];
+    if (!exempt && (write || declared !== undefined)) {
       let expected;
-      try { expected = JSON.parse(String(request.headers["x-configuration-target"] ?? "")); } catch { expected = null; }
-      const target = currentLibrary();
-      if (expected?.epoch !== selectionEpoch || expected?.libraryId !== target.libraryId || (expected?.projectId ?? null) !== (target.configurationProjectId ?? null)) {
-        send(response, 409, { ok: false, reasonCode: "PORTAL_CONFIGURATION_TARGET_CHANGED", target: { libraryId: target.libraryId, projectId: target.configurationProjectId ?? null } }); return;
+      try { expected = JSON.parse(String(declared ?? "")); } catch { expected = null; }
+      const target = context.library;
+      if (expected?.epoch !== context.epoch || expected?.libraryId !== target.libraryId || (expected?.projectId ?? null) !== (target.configurationProjectId ?? null) ||
+          (expected?.projectPath !== undefined && expected.projectPath !== target.projectPath)) {
+        send(response, 409, { ok: false, reasonCode: "PORTAL_CONFIGURATION_TARGET_CHANGED", target: selectionTarget(context) }); return;
       }
     }
     // TCRN-CROSS-SUB-409 (TCRN-CROSS-STORY-508 R5, contract C-R14-1): both catalogs are passed on as
@@ -905,8 +986,10 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
       const catalog = projectId === library.configurationProjectId ? available : await settingsCatalog(target);
       if (activeTargetWrites > 0 || epoch !== selectionEpoch || selectedLibrary.libraryId !== library.libraryId) { send(response, 409, { ok: false, reasonCode: "PORTAL_CONFIGURATION_TARGET_CHANGED" }); return; }
       selectedConfigurationProjectId = projectId;
-      requestContext.getStore().library = target;
-      send(response, 200, { ok: true, reasonCode: "PORTAL_CONFIGURATION_SCOPE_SELECTED", epoch: selectionEpoch, projectId, library: publicLibrary(target), settings: catalog, proseRoot: currentProseRoot(), outputBindingStatus: boundProseLibrary() === null ? "unconfigured" : "bound" });
+      // The answer is served for the target it selects (TCRN-CROSS-INIT-053 R46 I05).
+      Object.assign(requestContext.getStore(), { library: target, epoch: selectionEpoch });
+      const binding = proseBinding();
+      send(response, 200, { ok: true, reasonCode: "PORTAL_CONFIGURATION_SCOPE_SELECTED", epoch: selectionEpoch, projectId, library: publicLibrary(target), settings: catalog, proseRoot: currentProseRoot(), outputBindingStatus: binding.status, ...(binding.status === "ambiguous" ? { candidates: binding.candidates } : {}) });
       return;
     }
     if (request.method === "GET" && pathname === "/api/rules") {
@@ -1061,16 +1144,17 @@ const server = createServer((request, response) => requestContext.run({ epoch: s
       const requested = String(body.library ?? body.projectPath ?? "");
       const next = await matchLibrary(await refreshLibraryCatalog(), requested);
       if (!next) { send(response, 404, { ok: false, reasonCode: "PORTAL_LIBRARY_UNKNOWN", requestedLibrary: requested }); return; }
-      let proseRoot;
-      try { proseRoot = next.chain?.role === "coordination" ? null : proseRootFor(next); } catch (error) {
+      try { if (next.chain?.role !== "coordination") proseRootFor(next); } catch (error) {
         send(response, 409, { ok: false, reasonCode: error.reasonCode, ...error.detail });
         return;
       }
       if (activeTargetWrites > 0 || epoch !== selectionEpoch) { send(response, 409, { ok: false, reasonCode: "PORTAL_CONFIGURATION_TARGET_CHANGED" }); return; }
       selectedLibrary = next;
       selectedConfigurationProjectId = next.projectId ?? null;
-      requestContext.getStore().library = { ...next, configurationProjectId: selectedConfigurationProjectId };
-      send(response, 200, { ok: true, reasonCode: "PORTAL_LIBRARY_SELECTED", epoch: selectionEpoch, library: publicLibrary(currentLibrary()), workspace: next.libraryPath, libraryName: libraryName(next), proseRoot });
+      // The answer is served for the library it selects (I05), and names the prose root the reads and
+      // writes of AGENTS.md use (I06).
+      Object.assign(requestContext.getStore(), { library: { ...next, configurationProjectId: selectedConfigurationProjectId }, epoch: selectionEpoch });
+      send(response, 200, { ok: true, reasonCode: "PORTAL_LIBRARY_SELECTED", epoch: selectionEpoch, library: publicLibrary(currentLibrary()), workspace: next.libraryPath, libraryName: libraryName(next), proseRoot: currentProseRoot() });
       return;
     }
     if (request.method === "POST" && pathname === "/api/settings") {

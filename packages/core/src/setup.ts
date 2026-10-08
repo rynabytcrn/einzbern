@@ -31,7 +31,8 @@
 // partition and compares its head with the plan's, writes the registry entries with migratedFrom
 // and sets the portal keys this device does not hold; a partition already migrated is skipped, so
 // the same mapping applied again writes nothing. Then (TCRN-CROSS-SUB-366) it writes the language
-// into the project's own library, takes off what the old installation left on this device
+// into the project's own library, asks the prompt hook's recall for that library's newest card
+// (TCRN-CROSS-INIT-053 R47: a miss stops the apply here), takes off what the old installation left on this device
 // (migrate-cleanup.ts: the old hooks, deny rules and inert key of the user's and each mapped
 // project's host files, the template directories, the old helper's copies and markers, the old
 // injection state and the old portal launchers) and wires the project as fresh does, all but the
@@ -47,9 +48,13 @@ import { isAbsolute, join, resolve } from "node:path";
 // evaluates it, whichever module a caller imports first.
 import { FRAMEWORK_VERSION } from "./framework-version.js";
 import { assertStrictInstant } from "../../protocol/src/index.js";
+import type { JsonValue } from "../../protocol/src/index.js";
 import { deviceFilePath, deviceHome as currentDeviceHome } from "./device-home.js";
 import type { DoctorCheck } from "./doctor.js";
 import { readEngineCurrent } from "./engine-home.js";
+import { promptRecallContext } from "./hook-recall.js";
+import { HOST_HOOK_HOSTS } from "./host-hooks.js";
+import { listKnowledgeMetadata } from "./knowledge-core.js";
 import { ARTIFACT_LANGUAGE_TAGS } from "./knowledge-language.js";
 import { legacyControlDirectory } from "./legacy-workspace.js";
 import { applyCleanup, planCleanup } from "./migrate-cleanup.js";
@@ -80,6 +85,8 @@ import {
   readDeviceNavigation,
   readEngineFiles,
   realTarget,
+  messageOf,
+  reasonOf,
   setupApplied,
 } from "./setup-fresh.js";
 import type { WorkspaceState } from "./workspace.js";
@@ -129,6 +136,10 @@ export const SETUP_REASON_CODES = Object.freeze([
   "SETUP_MODE_INVALID",
   // An option that belongs to another mode.
   "SETUP_OPTION_NOT_APPLICABLE",
+  // migrate: after the import, the prompt hook's recall does not find the newest valid card of the
+  // project's own library by its subject (TCRN-CROSS-INIT-053 R47, SetupRecallSmoke); nothing old is
+  // taken off and the project is not wired.
+  "SETUP_RECALL_SMOKE_MISSED",
   // A file setup would replace is not a regular file.
   "SETUP_TARGET_UNSUPPORTED",
 ] as const);
@@ -502,9 +513,25 @@ export interface SetupApplied {
   // already), each registry entry with migratedFrom, the portal keys (migrate-legacy.ts) and what
   // the cleanup took off (migrate-cleanup.ts).
   readonly migration?: SetupMigrationApplied;
+  // migrate: the recall smoke on the project's own library (SetupRecallSmoke); absent when the
+  // migration gives the project no library.
+  readonly recallSmoke?: SetupRecallSmoke;
   // doctor's eight checks right after the apply.
   readonly selfCheck: readonly DoctorCheck[];
 }
+
+/**
+ * TCRN-CROSS-INIT-053 R47 (R47-05; audit P1): migrate's recall smoke. Once the old chains are imported
+ * and the project's own library records its language, and before the cleanup and the wiring, the
+ * newest valid card of that library (by updatedAt, then by id) is asked for by its subject through
+ * the prompt hook's own path (hook-recall.ts), from the project directory. hit: the answer names the
+ * card; no-card: the library holds no valid card, so there is nothing to ask for. A miss stops the
+ * apply with SETUP_RECALL_SMOKE_MISSED before anything old is taken off; once recall finds the card,
+ * the same mapping applied again skips the migrated partitions and goes on from here.
+ */
+export type SetupRecallSmoke =
+  | { readonly status: "hit"; readonly cardId: string; readonly query: string }
+  | { readonly status: "no-card" };
 
 /** What a mode's planner is given: the context and the checked inputs. */
 export interface SetupModeInput {
@@ -700,15 +727,52 @@ async function applyLibraryLanguage(recorder: SetupRecorder, libraryPath: string
   return configurationProjectId;
 }
 
+// The newest valid card of a library (by updatedAt, then by id), read as the prompt hook reads its cards:
+// valid ones only, explicit-only ones included, a store that trails the chain allowed; null when the
+// library holds none. A store that does not read stops the apply: recall could not answer from it.
+async function newestValidCard(libraryPath: string, at: string): Promise<{ readonly id: string; readonly subject: string } | null> {
+  let listed: Readonly<Record<string, JsonValue>>;
+  try {
+    listed = await listKnowledgeMetadata(libraryPath, { at, allowTrailing: true, status: "valid", includeExplicitOnly: true, limit: Number.MAX_SAFE_INTEGER });
+  } catch (error) {
+    const reasonCode = reasonOf(error);
+    if (reasonCode === null) throw error;
+    return setupFail("SETUP_RECALL_SMOKE_MISSED", `the knowledge store of ${libraryPath} does not read (${reasonCode}), so recall cannot answer from it: ${messageOf(error)}`,
+      { target: libraryPath, cause: reasonCode });
+  }
+  const records = listed["records"];
+  let newest: { readonly id: string; readonly subject: string; readonly updatedAt: string } | null = null;
+  for (const record of Array.isArray(records) ? records : []) {
+    if (record === null || typeof record !== "object" || Array.isArray(record)) continue;
+    const { id, subject, updatedAt } = record;
+    if (typeof id !== "string" || typeof subject !== "string" || typeof updatedAt !== "string") continue;
+    if (newest === null || updatedAt > newest.updatedAt || (updatedAt === newest.updatedAt && id < newest.id)) newest = { id, subject, updatedAt };
+  }
+  return newest === null ? null : { id: newest.id, subject: newest.subject };
+}
+
+// TCRN-CROSS-INIT-053 R47 (R47-05): the recall smoke (SetupRecallSmoke) on the project's own library,
+// once applyMigration has registered it: the hook's own function, from the project directory.
+async function recallSmoke(libraryPath: string, projectRoot: string, at: string): Promise<SetupRecallSmoke> {
+  const card = await newestValidCard(libraryPath, at);
+  if (card === null) return { status: "no-card" };
+  const answer = await promptRecallContext({ libraryPath, prompt: card.subject, host: HOST_HOOK_HOSTS[0]!, cwd: projectRoot, at });
+  if (answer !== null && answer.lines.some((line) => line.includes(card.id))) return { status: "hit", cardId: card.id, query: card.subject };
+  return setupFail("SETUP_RECALL_SMOKE_MISSED",
+    `recall in ${projectRoot} does not find the card ${card.id} of ${libraryPath} by its subject, so the prompt hook would not inject it: nothing old was taken off and the project is not wired. Check the library's retrieval settings (retrieval.tau among them) and the card, then run the migration again with the same mapping; the migrated partitions are skipped and it goes on from here.`,
+    { target: libraryPath, cardId: card.id, query: card.subject });
+}
+
 /**
  * Apply a confirmed migration (TCRN-CROSS-STORY-489 R1 to R4; TCRN-CROSS-SUB-365, SUB-366): this
  * device's identity when it has none, then applyMigration in the plan's order (each partition
  * imported and its head compared with the plan's, or skipped as migrated already; the registry
- * entries with migratedFrom; the portal keys); then the language of the project's own library, the
- * cleanup (migrate-cleanup.ts) and the fresh mode's steps from skill-copies on, each reading its
- * files again before it writes them. SETUP_APPLIED carries what it did as migration, hostCleanup
- * included, the project's own library, and doctor's eight checks. No old workspace is written and no
- * gate is satisfied.
+ * entries with migratedFrom; the portal keys; the coordination chain's own settings); then the
+ * language of the project's own library, the recall smoke on it (TCRN-CROSS-INIT-053 R47,
+ * SetupRecallSmoke), the cleanup (migrate-cleanup.ts) and the fresh mode's steps from skill-copies
+ * on, each reading its files again before it writes them. SETUP_APPLIED carries what it did as
+ * migration, hostCleanup included, the project's own library, the smoke's answer and doctor's eight
+ * checks. No old workspace is written and no gate is satisfied.
  */
 async function applyMigrateSetup(plan: SetupPlan): Promise<SetupApplied> {
   const { at, projectRoot, home, deviceHome, resolved } = plan;
@@ -732,6 +796,8 @@ async function applyMigrateSetup(plan: SetupPlan): Promise<SetupApplied> {
   const applied = await applyMigration(recorder, { migration, deviceHome, at });
   const own = applied.partitions.find((partition) => partition.projectRoot === projectRoot) ?? null;
   const configurationProjectId = own === null ? undefined : await applyLibraryLanguage(recorder, own.target, resolved.language, at, projectRoot, deviceHome);
+  // TCRN-CROSS-INIT-053 R47 (R47-05): a miss stops here, before anything old is taken off.
+  const smoke = own === null ? null : await recallSmoke(own.target, projectRoot, at);
   const hostCleanup = await applyCleanup(recorder, { ...migrateCleanupInput(plan.context, migration.partitions, resolved.navigation), at });
   const pending = await applyWiring(recorder, {
     projectRoot,
@@ -754,7 +820,7 @@ async function applyMigrateSetup(plan: SetupPlan): Promise<SetupApplied> {
   // Project binding and wiring may enrich the imported registry entries. The receipt
   // describes the final explicit registration, not the earlier import snapshot.
   const registry = (await readRegistry(deviceHome)).entries;
-  return { ...receipt, migration: { ...applied, registry, hostCleanup } };
+  return { ...receipt, migration: { ...applied, registry, hostCleanup }, ...(smoke === null ? {} : { recallSmoke: smoke }) };
 }
 
 // The mode table. Each row names the options its mode takes, its planner and its apply; the rows

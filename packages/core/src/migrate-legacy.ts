@@ -38,6 +38,12 @@ import { RUNTIME_CAPACITY } from "../../../scripts/lib/runtime-capacity.mjs";
 // workspace), the portal keys of the old device directory's machine settings, and the host files
 // the migration cleans up (TCRN-CROSS-SUB-366 fills those in).
 //
+// TCRN-CROSS-INIT-053 R47 (R47-04): the coordination partition's plan also lists the settings the
+// coordination chain keeps for itself (coordinationSettings): its artifact language always, and the
+// orchestration limits only when the old chain declares them. Each is carried by the import or written
+// once, at the coordination library's library level, by the last step of the apply; none is ever
+// written into a project chain.
+//
 // applyMigration (TCRN-CROSS-STORY-489 R1, R2, R4; TCRN-CROSS-SUB-365) runs a confirmed plan in the
 // plan's order: each partition's library, imported as its first stream and its events and head
 // compared with the plan's (a difference stops the apply and names the partition), or skipped
@@ -75,9 +81,10 @@ import { gitRemoteOf, normalizeGitRemote, readRegistry, registerLibrary } from "
 import type { Registry, RegistryEntry } from "./registry.js";
 import { SETUP_ACTOR, setupFail } from "./setup.js";
 import type { SetupBlocker, SetupStep, SetupWrite, SetupWriteAction } from "./setup.js";
-import { entryKind, libraryLanguage, messageOf, realTarget, reasonOf } from "./setup-fresh.js";
+import { defaultLanguage, entryKind, libraryLanguage, messageOf, realTarget, reasonOf } from "./setup-fresh.js";
 import type { SetupRecorder } from "./setup-fresh.js";
-import { legacyWorkspaceStreamId, materializeWorkspaceFromGenesis } from "./workspace.js";
+import type { SettingKey } from "./settings.js";
+import { legacyWorkspaceStreamId, materializeWorkspaceFromGenesis, setWorkspaceSetting } from "./workspace.js";
 import { chainIdentity, declareChainIdentity } from "./project-chain.js";
 import type { ChainIdentity } from "./project-chain.js";
 import type { WorkspaceState } from "./workspace.js";
@@ -91,6 +98,14 @@ const CHAIN_ROLES: readonly string[] = Object.freeze(["coordination", "project"]
 // The library manifest's bound on a project hint (ether-library.ts), which a partition's name shares.
 const HINT_MAXIMUM_LENGTH = RUNTIME_CAPACITY.stringCodeUnits;
 const PORTAL_KEY_PREFIX = "portal.";
+// TCRN-CROSS-INIT-053 R47 (R47-04): the coordination chain's artifact language, listed for its partition
+// always, and the orchestration limits it keeps for itself (project-scope.ts,
+// COORDINATION_RUNTIME_SETTING_KEYS), listed only when the old chain declares them.
+const COORDINATION_LANGUAGE_KEY: SettingKey = "artifact.language";
+const COORDINATION_LIMIT_KEYS = Object.freeze([
+  "execution.maxConcurrentSubagents",
+  "quota.fiveHourParallelOffPercent", "quota.fiveHourWaitPercent", "quota.weeklyParallelOffPercent", "quota.weeklyWaitPercent",
+] as const satisfies readonly SettingKey[]);
 
 /** One partition of the mapping: the old workspace and the project whose library it becomes. */
 export interface MigrationMappingEntry {
@@ -164,6 +179,26 @@ export interface MigrationPartitionPlan {
   // The chain identity the mapping's chainRole gives the library; null while unclassified (no
   // chainRole), or while the coordination row's library id is unknown.
   readonly chainIdentity: ChainIdentity | null;
+  // TCRN-CROSS-INIT-053 R47 (R47-04): the coordination partition's own settings
+  // (MigrationCoordinationSetting); absent on every other partition, and while the old chain does not read.
+  readonly coordinationSettings?: readonly MigrationCoordinationSetting[];
+}
+
+/**
+ * TCRN-CROSS-INIT-053 R47 (R47-04; Owner 2026-10-09, round 7): a setting the coordination chain keeps
+ * for itself, as its partition's plan lists it. artifact.language is always listed: the old chain's
+ * library-level value (legacy-declared), else the catalog default (legacy-default);
+ * execution.maxConcurrentSubagents and the four quota.* keys only when the old chain declares them at
+ * the library level. carried: the coordination library declares the key at its library level once the
+ * old chain is imported (for a partition migrated before, as it stands), and value is what it
+ * declares; write: the apply writes value there, signed by the setup actor. A project chain never
+ * gets one of these values.
+ */
+export interface MigrationCoordinationSetting {
+  readonly key: SettingKey;
+  readonly value: string;
+  readonly source: "legacy-declared" | "legacy-default";
+  readonly action: "carried" | "write";
 }
 
 /** The entry this device's registry gets for a partition's library. */
@@ -465,6 +500,31 @@ function hintOrNull(value: string | null): string | null {
   return value !== null && isHint(value) ? value : null;
 }
 
+// What a state declares for `key` at the library level (no project), the only level a coordination
+// chain reads its runtime settings at (project-scope.ts); null when it declares none.
+function libraryLevelSetting(state: WorkspaceState, key: SettingKey): string | null {
+  return state.settings.find((record) => record.key === key && record.projectId === undefined)?.value ?? null;
+}
+
+// TCRN-CROSS-INIT-053 R47 (R47-04): the coordination partition's own settings (MigrationCoordinationSetting).
+// `legacy` is the old chain; `held` is what the coordination library holds once the old chain is
+// imported: the old chain itself, or, for a partition migrated before, the library as it stands.
+function plannedCoordinationSettings(legacy: WorkspaceState, held: WorkspaceState): readonly MigrationCoordinationSetting[] {
+  const rows: MigrationCoordinationSetting[] = [];
+  for (const key of [COORDINATION_LANGUAGE_KEY, ...COORDINATION_LIMIT_KEYS]) {
+    const declared = libraryLevelSetting(legacy, key);
+    if (declared === null && key !== COORDINATION_LANGUAGE_KEY) continue;
+    const kept = libraryLevelSetting(held, key);
+    rows.push({
+      key,
+      value: kept ?? declared ?? defaultLanguage(),
+      source: declared === null ? "legacy-default" : "legacy-declared",
+      action: kept === null ? "write" : "carried",
+    });
+  }
+  return rows;
+}
+
 interface PlannedPartition {
   readonly partition: MigrationPartitionPlan;
   readonly registry: MigrationRegistryEntry;
@@ -587,6 +647,13 @@ async function planPartition(recorder: MigrationRecorder, input: MigrationPlanIn
       `the project ${projectRoot} is registered to the library at ${registered.libraryPath}, not to ${target}, which partition ${name} becomes`);
   }
 
+  // TCRN-CROSS-INIT-053 R47 (R47-04): a coordination partition's own settings, from the old chain, each
+  // carried or written as the library will hold it: the old chain once imported, or, migrated before,
+  // the library as it stands (read without writing).
+  const held = entry.chainRole !== "coordination" || replayed === null ? null
+    : state === "migrated" ? await recorder.attempt("library", target, () => materializeWorkspaceFromGenesis(target)) : replayed;
+  const coordinationSettings = replayed === null || held === null ? null : plannedCoordinationSettings(replayed, held);
+
   const remote = entry.gitRemote ?? (projectKind === "directory" ? gitRemoteOf(projectRoot) : null);
   const gitRemote = remote === null ? null : hintOrNull(normalizeGitRemote(remote));
   const workspaceId = chain?.workspaceId ?? null;
@@ -609,6 +676,7 @@ async function planPartition(recorder: MigrationRecorder, input: MigrationPlanIn
     knowledge: report?.knowledge ?? null,
     knowledgeOmission: report?.knowledgeOmission ?? null,
     chainIdentity: null,
+    ...(coordinationSettings === null ? {} : { coordinationSettings }),
   };
   // The cloud flag: --cloud; else what this device's registry holds for the project and this
   // library, so running the plan again keeps it; else the cloud folder table's suggestion.
@@ -765,7 +833,8 @@ export async function planMigration(input: MigrationPlanInput): Promise<Migratio
   const identified = await plannedChainIdentities(recorder, input.mapping?.partitions ?? [], partitions);
   for (const partition of identified) {
     if (partition.action === "import") recorder.write("library", partition.target, "create");
-    else if (partition.action === "skip" && partition.chainIdentity !== null && await libraryLacksIdentity(partition.target)) recorder.write("library", partition.target, "update");
+    else if (partition.action === "skip" && ((partition.chainIdentity !== null && await libraryLacksIdentity(partition.target)) ||
+      coordinationWrites(partition).length > 0)) recorder.write("library", partition.target, "update");
   }
   partitions.splice(0, partitions.length, ...identified);
   // The registry is written when an entry is missing or differs; an existing file is copied first.
@@ -820,6 +889,30 @@ function plannedChain(partition: MigrationPartitionPlan): LegacyChainFacts {
 // Whether the library at `target` declares no chain identity yet (read without writing).
 async function libraryLacksIdentity(target: string): Promise<boolean> {
   return chainIdentity(await materializeWorkspaceFromGenesis(target)) === null;
+}
+
+// The coordination settings the plan lists for the apply to write (TCRN-CROSS-INIT-053 R47, R47-04).
+function coordinationWrites(partition: MigrationPartitionPlan): readonly MigrationCoordinationSetting[] {
+  return (partition.coordinationSettings ?? []).filter((setting) => setting.action === "write");
+}
+
+// TCRN-CROSS-INIT-053 R47 (R47-04): the coordination chain's own settings the plan lists to write, each
+// at the coordination library's library level, signed by the setup actor, once its identity is written.
+// Each is read again first: a key the library declares by now is left as it is, so the same plan
+// applied again writes nothing. Only the coordination chain is ever written; a plan that lists these
+// settings for any other library is refused before it writes one.
+async function applyCoordinationSettings(recorder: SetupRecorder, partition: MigrationPartitionPlan, applied: MigrationPartitionApplied, at: string): Promise<void> {
+  const writes = coordinationWrites(partition);
+  if (writes.length === 0) return;
+  const state = await materializeWorkspaceFromGenesis(partition.target);
+  if (partition.chainIdentity?.role !== "coordination" || chainIdentity(state)?.role !== "coordination") {
+    setupFail("SETUP_INPUT_INVALID", `the plan lists coordination settings for partition ${partition.partition}, whose library is not the coordination chain`, { field: "plan", partition: partition.partition });
+  }
+  for (const setting of writes) {
+    if (libraryLevelSetting(state, setting.key) !== null) continue;
+    await setWorkspaceSetting(partition.target, { key: setting.key, value: setting.value, occurredAt: at, actorId: SETUP_ACTOR });
+    recorder.write("library", partition.target, applied.action === "imported" ? "create" : "update");
+  }
 }
 
 // INIT-053 U08: the identity the plan gave the partition, written once the import is checked and
@@ -948,14 +1041,18 @@ async function applyDeviceSettings(recorder: SetupRecorder, input: MigrationAppl
  * Apply a confirmed migration plan (TCRN-CROSS-STORY-489 R1, R2, R4; TCRN-CROSS-SUB-365), after the
  * device step: each partition's library in the plan's order (imported and compared with the plan,
  * or skipped as migrated already; a difference stops the apply and names the partition), then the
- * registry entries with migratedFrom, then the portal keys this device does not hold yet. Every
- * file is read again before it is written, so applying the same mapping again writes nothing. No
- * old workspace is written, and no gate is satisfied.
+ * registry entries with migratedFrom, then the portal keys this device does not hold yet, and last
+ * the coordination chain's own settings the plan lists to write (TCRN-CROSS-INIT-053 R47, R47-04).
+ * Every file is read again before it is written, so applying the same mapping again writes nothing.
+ * No old workspace is written, and no gate is satisfied.
  */
 export async function applyMigration(recorder: SetupRecorder, input: MigrationApplyInput): Promise<MigrationApplied> {
   const partitions: MigrationPartitionApplied[] = [];
   for (const partition of input.migration.partitions) partitions.push(await applyPartition(recorder, partition, input.at));
   const registry = await applyRegistryEntries(recorder, input, input.migration.registry);
   const deviceSettings = await applyDeviceSettings(recorder, input);
+  for (const [index, partition] of input.migration.partitions.entries()) {
+    await applyCoordinationSettings(recorder, partition, partitions[index]!, input.at);
+  }
   return { partitions, registry, deviceSettings };
 }

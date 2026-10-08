@@ -34,7 +34,7 @@ einzbern setup --mode fresh|restore|update|repair|migrate|uninstall --project <�
 | `migrate` | 按映射把改名前的旧工作区导入各项目的新库，登记本机，把旧钩子、旧 deny 规则、旧模板与旧技能副本移进备份，再按 `fresh` 的步骤接线；计划逐库列出迁移信息与清理项。 | `--mapping`、`--cloud`、`--language`、`--navigation` |
 | `uninstall` | 移除本机的 Einzbern 钩子、技能副本和项目登记；库内容保留。 | `--managed-sections keep|remove` |
 
-迁移的完整步骤、映射文件的格式、清理项与迁移后的旧工作区见[从旧版迁移](Migrating-from-TCRN-Workflow.md)。本机没有改名前的安装时，迁移模式返回 `SETUP_MIGRATE_NOTHING`，改用 `fresh`。
+迁移的完整步骤、映射文件的格式、清理项与迁移后的旧工作区见[从旧版迁移](Migrating-from-TCRN-Workflow.md)。本机没有改名前的安装时，迁移模式返回 `SETUP_MIGRATE_NOTHING`，改用 `fresh`。迁移在导入之后、清理与接线之前，对项目自己的库跑一次召回冒烟（`recallSmoke`）；没有召回到最新的有效卡时返回 `SETUP_RECALL_SMOKE_MISSED` 并停下，不清理也不接线，查明原因后用同一映射再运行即可继续。
 
 ## 更新与离线发布包
 

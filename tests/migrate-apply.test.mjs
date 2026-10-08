@@ -22,10 +22,17 @@ import { delimiter, dirname, join, relative, resolve } from "node:path";
 import test from "node:test";
 
 import {
+  DIRECTORY,
   FRAMEWORK_VERSION,
   LEGACY_CONTAINER_DIRECTORY,
+  cachePath,
   chainIdentity,
+  createKnowledgeUnit,
   declareChainIdentity,
+  importLegacyWorkspace,
+  initializeKnowledgeStore,
+  listKnowledgeMetadata,
+  removeWorkspaceSetting,
   resolveProjectTarget,
   LEGACY_CONTROL_DIRECTORY,
   LEGACY_DEVICE_DIRECTORY,
@@ -39,6 +46,7 @@ import {
   registerLibrary,
 } from "../dist/build/packages/core/src/index.js";
 import { ENGINE_CURRENT_SCHEMA_VERSION, ENGINE_FILES } from "../dist/build/packages/core/src/engine-home.js";
+import { readKnowledgeStoreMarker } from "../dist/build/packages/core/src/knowledge-core.js";
 import { MIGRATION_MAPPING_SCHEMA_VERSION, applyMigration, planMigration, readMigrationMapping } from "../dist/build/packages/core/src/migrate-legacy.js";
 import { findMigratedEntry } from "../dist/build/packages/core/src/registry.js";
 import { FRESH_ENGINE_TREE, SetupRecorder } from "../dist/build/packages/core/src/setup-fresh.js";
@@ -155,6 +163,86 @@ async function project(m, name) {
   return root;
 }
 
+/** Append events to an old chain as its engine wrote them, in one more segment (tests/migrate-plan.test.mjs); answers the new head. */
+async function appendLegacyEvents(root, payloads) {
+  const workspace = await openLegacyWorkspace(root);
+  let priorHash = workspace.events.at(-1).eventHash;
+  let sequence = workspace.events.length;
+  const lines = [];
+  for (const payload of payloads) {
+    sequence += 1;
+    const event = createEvent({
+      id: legacyWorkspaceEventId(workspace.streamId, sequence),
+      streamId: workspace.streamId,
+      sequence,
+      occurredAt: payload.record.updatedAt,
+      priorHash,
+      payload,
+    }, "tcrn.event.v1");
+    lines.push(canonicalJson(event));
+    priorHash = event.eventHash;
+  }
+  const segment = `${String(workspace.segments.length + 1).padStart(6, "0")}.ndjson`;
+  await writeFile(join(root, LEGACY_CONTROL_DIRECTORY, "events", segment), lines.join(""));
+  return priorHash;
+}
+
+/** Old chains declare settings at the library level; after attestation was enabled each payload carries the fixture's actor. */
+async function appendLegacySettings(root, settings) {
+  const actor = (await openLegacyWorkspace(root)).events.at(-1).payload.actor;
+  return appendLegacyEvents(root, settings.map(([key, value], index) => ({
+    actor,
+    operation: "settings.updated",
+    record: { key, layerKind: "workspace_configuration", revision: 1, schemaVersion: "tcrn.workspace-setting.v1", tombstone: false,
+      updatedAt: `2026-01-01T00:00:${40 + index}Z`, value },
+  })));
+}
+
+/**
+ * TCRN-CROSS-INIT-053 R47 (R47-05): an old partition whose knowledge store holds two cards, laid out from
+ * engine-written records as tests/migrate-plan.test.mjs lays them out; `settings` go into the old chain
+ * first, so the store is written at the chain's head. Answers the old workspace and the two card ids.
+ */
+async function oldCardPartition(m, name, settings = []) {
+  const { root } = await restoreLegacyFixture(join(m.oldContainer, name), "workspace");
+  const metadataPath = join(root, LEGACY_CONTROL_DIRECTORY, "workspace.json");
+  const metadata = JSON.parse(await readFile(metadataPath, "utf8"));
+  metadata.roots = metadata.roots.map((entry) => (entry.kind === "workspace" ? { ...entry, canonicalPath: root, path: root, portableIdentity: root.toLowerCase() } : entry));
+  await writeFile(metadataPath, canonicalJson(metadata));
+  if (settings.length > 0) await appendLegacySettings(root, settings);
+  const donor = join(m.base, `${name}-donor`);
+  await importLegacyWorkspace(root, donor, { createdAt: "2026-09-25T06:00:00Z" });
+  await initializeKnowledgeStore(donor, { disposableAcknowledged: true });
+  // Two cards on different subjects; the store is told they coexist.
+  const subjects = [`${name} release archives carry a digest file beside them`, `${name} wizard recall smoke asks for the newest card`];
+  const bodies = new Map();
+  for (const [index, externalKey] of ["CARD-SMOKE-OLDER", "CARD-SMOKE-NEWEST"].entries()) {
+    const body = `${externalKey}: ${name} source text`;
+    const created = await createKnowledgeUnit(donor, {
+      occurredAt: `2026-09-25T06:00:0${index + 1}Z`, externalKey, scope: "workspace", projectId: null, roleScopes: [],
+      category: "workflow", kind: "fact", tags: ["migration"], subject: subjects[index],
+      summary: `${externalKey} summary`, snippet: `${externalKey} snippet`, accountableOwnerId: "owner:r47", sourceReferences: [], sourceDigest: null,
+      linkedWorkIds: [], linkedDecisionIds: [], linkedGateIds: [], linkedEvidenceIds: [], retrievalDisposition: "default",
+      freshnessState: "fresh", lastVerified: null, stalenessPolicy: { maximumAgeDays: null, unknownDisposition: "fail-closed" },
+      exportDisposition: "metadata-only", body, coexist: true,
+    });
+    bodies.set(created.id, body);
+  }
+  const listed = await listKnowledgeMetadata(donor, { at: "2026-09-30T06:00:00Z", selection: "all", status: "all", limit: 100 });
+  const marker = await readKnowledgeStoreMarker(donor);
+  const knowledge = join(root, LEGACY_CONTROL_DIRECTORY, "knowledge");
+  for (const directory of ["metadata", "bodies", "views"]) await mkdir(join(knowledge, directory), { recursive: true });
+  const storedMarker = JSON.parse(await readFile(join(donor, DIRECTORY.knowledge, "store.json"), "utf8"));
+  await writeFile(join(knowledge, "store.json"), canonicalJson({ ...storedMarker, version: marker.version, eventHighWaterDigest: marker.eventHighWaterDigest }));
+  for (const record of listed.records) {
+    await writeFile(join(knowledge, "metadata", `${record.id}.json`), canonicalJson(record));
+    await writeFile(join(knowledge, "bodies", `${record.id}.body`), bodies.get(record.id));
+  }
+  await writeFile(join(knowledge, "views", "index.json"), await readFile(join(cachePath(expected.workspaceId), "crest-views", "index.json")));
+  const byKey = new Map(listed.records.map((record) => [record.externalKey, record]));
+  return { root, newest: byKey.get("CARD-SMOKE-NEWEST"), older: byKey.get("CARD-SMOKE-OLDER") };
+}
+
 async function writeMapping(m, partitions, file = join(m.base, "mapping.json")) {
   await writeFile(file, `${JSON.stringify({ schemaVersion: MIGRATION_MAPPING_SCHEMA_VERSION, partitions }, null, 2)}\n`);
   return file;
@@ -228,6 +316,8 @@ test("489-R1, R2, AC1 (fixture): setup --mode migrate --yes true imports each pa
   // directory is refused.
   const applied = receipt(setup(m, mapping, ["--yes", "true"], { tripwire: [m.oldContainer, m.legacyDevice] }));
   assert.deepEqual([applied.reasonCode, applied.mode], ["SETUP_APPLIED", "migrate"]);
+  // TCRN-CROSS-INIT-053 R47 (R47-05): the project's own library holds no card, so the smoke has nothing to ask for.
+  assert.deepEqual(applied.recallSmoke, { status: "no-card" });
   assert.deepEqual(await treeDigest(m.oldContainer), oldBefore, "no old workspace was written");
   assert.deepEqual(await treeDigest(m.legacyDevice), legacyDeviceBefore, "the old device directory was only read");
 
@@ -616,6 +706,12 @@ test("R46 I07 (fixture): --project at the coordination partition's root is refus
   const projectRoot = rows[1].projectRoot;
   const plannedForProject = receipt(migrate(projectRoot));
   assert.deepEqual(plannedForProject.blockers, []);
+  // TCRN-CROSS-INIT-053 R47 (R47-04): the old coordination chain declares no language, so its own row is
+  // the default, written by the apply; it declares no orchestration limit, so none is listed.
+  const ownLanguage = { key: "artifact.language", value: "en", source: "legacy-default" };
+  assert.deepEqual(plannedForProject.migration.partitions[0].coordinationSettings, [{ ...ownLanguage, action: "write" }]);
+  assert.deepEqual(refusedPlan.migration.partitions[0].coordinationSettings, [{ ...ownLanguage, action: "write" }], "the refused plan shows the same row");
+  for (const entry of plannedForProject.migration.partitions.slice(1)) assert.equal(Object.hasOwn(entry, "coordinationSettings"), false, entry.partition);
   const applied = receipt(migrate(projectRoot, ["--yes", "true"]));
   assert.deepEqual([applied.reasonCode, applied.mode], ["SETUP_APPLIED", "migrate"]);
   assert.deepEqual(applied.migration.partitions.map((entry) => [entry.partition, entry.action]), rows.map((row) => [row.partition, "imported"]));
@@ -624,12 +720,134 @@ test("R46 I07 (fixture): --project at the coordination partition's root is refus
     const identity = chainIdentity(await materializeWorkspace(targets[index]));
     assert.deepEqual([identity.role, identity.coordinationLibraryId], [row.chainRole, crossProject.workspaceId], row.partition);
   }
-  // The coordination chain holds the old chain and its identity, and no setting setup wrote.
+  // The coordination chain holds the old chain, its identity and, since R47-04, its own language at the
+  // library level, signed by the setup actor; no project language (none names a project).
   const coordinationEvents = (await readAllStreams(targets[0])).streams.flatMap((stream) => stream.events);
-  assert.equal(coordinationEvents.length, expected.events + 1, "the old chain, then its identity");
-  assert.equal(coordinationEvents.at(-1).payload.record?.key, "identity");
-  assert.equal(coordinationEvents.slice(expected.events).some((event) => String(event.payload.operation).startsWith("settings.")), false, "no project language in the coordination chain");
+  assert.equal(coordinationEvents.length, expected.events + 2, "the old chain, its identity, then its own language");
+  assert.equal(coordinationEvents[expected.events].payload.record?.key, "identity");
+  const own = coordinationEvents.at(-1).payload;
+  assert.deepEqual([own.operation, own.record.key, own.record.value, Object.hasOwn(own.record, "projectId"), own.actor], ["settings.updated", "artifact.language", "en", false, "agent:setup"]);
+  assert.equal(coordinationEvents.slice(expected.events).some((event) => event.payload.record?.projectId !== undefined), false, "no project language in the coordination chain");
   assert.equal((await materializeWorkspace(targets[1])).settings.some((setting) => setting.key === "artifact.language" && setting.value === applied.answers.language), true, "the project chain records the language");
   for (const file of ["AGENTS.md", "CLAUDE.md"]) assert.ok((await lstat(join(projectRoot, file))).isFile(), `${file} is wired into the project`);
   await assert.rejects(lstat(join(m.container, "AGENTS.md")), { code: "ENOENT" }, "the coordination root gets no project wiring");
+
+  // The same mapping again: the row is carried now, and nothing is written into any library.
+  const replanned = receipt(migrate(projectRoot));
+  assert.deepEqual(replanned.migration.partitions[0].coordinationSettings, [{ ...ownLanguage, action: "carried" }]);
+  assert.deepEqual(replanned.writes.filter((entry) => entry.step === "library"), []);
+  const again = receipt(migrate(projectRoot, ["--yes", "true"]));
+  assert.deepEqual(again.written.filter((entry) => entry.step === "library"), []);
+  assert.equal((await readAllStreams(targets[0])).streams.flatMap((stream) => stream.events).length, expected.events + 2, "the coordination chain is as it was");
+});
+
+// TCRN-CROSS-INIT-053 R47 (R47-04; Owner 2026-10-09 round 7, c1-B; audit P6): the coordination chain keeps
+// its own artifact language and orchestration limit through the migration. In the nine-row mapping the
+// old coordination chain declares fr and execution.maxConcurrentSubagents 3 at its library level: the
+// plan lists both rows for the coordination partition alone, the import carries both (the wizard writes
+// neither), the coordination library reads them at its library level through settings-catalog, and no
+// project library reads either. The coordination root as --project is still refused at plan time, and
+// the same mapping applied again writes nothing.
+test("R47-04 (fixture): the coordination partition's own language and orchestration limit are listed in its plan, carried by the import, and never reach a project chain", async (context) => {
+  const m = await machine(context);
+  const crossProject = await oldPartition(m, "cross-project");
+  await appendLegacySettings(crossProject.root, [["artifact.language", "fr"], ["execution.maxConcurrentSubagents", "3"]]);
+  const names = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta"];
+  const rows = [{ partition: "cross-project", legacyWorkspace: crossProject.root, projectRoot: m.container, chainRole: "coordination" }];
+  for (const name of names) {
+    const old = await oldPartition(m, name, `LEGACY-${name.toUpperCase()}-WORKSPACE`);
+    rows.push({ partition: name, legacyWorkspace: old.root, projectRoot: await project(m, name), chainRole: "project" });
+  }
+  const mapping = await writeMapping(m, rows);
+  const targets = rows.map((row) => join(row.projectRoot, ".ether"));
+  const migrate = (projectRoot, extra = []) => run(m, ["setup", "--mode", "migrate", "--project", projectRoot, "--mapping", mapping, "--at", at(), ...extra]);
+  const carried = [
+    { key: "artifact.language", value: "fr", source: "legacy-declared", action: "carried" },
+    { key: "execution.maxConcurrentSubagents", value: "3", source: "legacy-declared", action: "carried" },
+  ];
+
+  // The coordination root is still refused at plan time; the plan shows its rows all the same.
+  const refusedPlan = receipt(migrate(m.container));
+  assert.deepEqual(refusedPlan.blockers.map((blocker) => [blocker.path, blocker.reasonCode]), [[m.container, "SETUP_ANSWER_INVALID"]]);
+  assert.deepEqual(refusedPlan.migration.partitions[0].coordinationSettings, carried);
+
+  const projectRoot = rows[1].projectRoot;
+  const planned = receipt(migrate(projectRoot));
+  assert.deepEqual(planned.blockers, []);
+  assert.deepEqual(planned.migration.partitions[0].coordinationSettings, carried);
+  assert.equal(planned.migration.partitions[0].language, "fr");
+  for (const entry of planned.migration.partitions.slice(1)) assert.equal(Object.hasOwn(entry, "coordinationSettings"), false, entry.partition);
+  assert.equal(planned.resolved.language, "en", "the project's own language is not the coordination chain's");
+
+  const applied = receipt(migrate(projectRoot, ["--yes", "true"]));
+  assert.equal(applied.reasonCode, "SETUP_APPLIED");
+  assert.deepEqual(applied.recallSmoke, { status: "no-card" });
+  const catalog = (library, extra = []) => receipt(run(m, ["settings-catalog", "--workspace", library, ...extra])).settings;
+  const runtime = (settings) => Object.fromEntries(settings.filter((entry) => ["artifact.language", "execution.maxConcurrentSubagents"].includes(entry.key))
+    .map((entry) => [entry.key, [entry.currentValue, entry.scope, entry.source?.kind ?? null]]));
+  assert.deepEqual(runtime(catalog(targets[0])), { "artifact.language": ["fr", "library", "library"], "execution.maxConcurrentSubagents": ["3", "library", "library"] },
+    "the coordination library reads its own values at the library level");
+  const coordinationEvents = (await readAllStreams(targets[0])).streams.flatMap((stream) => stream.events);
+  assert.deepEqual(coordinationEvents.slice(expected.events + 2).map((event) => event.payload.record?.key), ["identity"], "the import carried both; the wizard wrote neither");
+  const projectId = (await readRegistry(m.deviceHome)).entries.find((entry) => entry.projectPath === projectRoot).projectId;
+  for (const [index, row] of rows.entries()) {
+    if (index === 0) continue;
+    const reads = [runtime(catalog(targets[index])), ...(index === 1 ? [runtime(catalog(targets[index], ["--project-id", projectId]))] : [])];
+    for (const read of reads) {
+      assert.notEqual(read["artifact.language"][0], "fr", row.partition);
+      assert.notEqual(read["execution.maxConcurrentSubagents"][0], "3", row.partition);
+    }
+  }
+
+  const again = receipt(migrate(projectRoot, ["--yes", "true"]));
+  assert.deepEqual(again.migration.partitions.map((entry) => entry.action), rows.map(() => "skipped"));
+  assert.deepEqual(again.written.filter((entry) => entry.step === "library"), [], "the same mapping writes nothing into a library");
+  assert.equal((await readAllStreams(targets[0])).streams.flatMap((stream) => stream.events).length, coordinationEvents.length);
+});
+
+// TCRN-CROSS-INIT-053 R47 (R47-05; audit P1): after the import, before the cleanup and the wiring, the
+// wizard asks the prompt hook's recall for the newest valid card of the project's own library by its
+// subject. A library imported with two old cards answers a hit naming the newest one.
+test("R47-05 (fixture): the recall smoke finds the newest valid card of the project's own library, and the apply goes on", async (context) => {
+  const m = await machine(context);
+  const old = await oldCardPartition(m, "alpha");
+  const alphaProject = await project(m, "alpha");
+  const mapping = await writeMapping(m, [{ partition: "alpha", legacyWorkspace: old.root, projectRoot: alphaProject }]);
+  const applied = receipt(run(m, ["setup", "--mode", "migrate", "--project", alphaProject, "--mapping", mapping, "--at", at(), "--yes", "true"]));
+  assert.equal(applied.reasonCode, "SETUP_APPLIED");
+  assert.deepEqual(applied.recallSmoke, { status: "hit", cardId: old.newest.id, query: old.newest.subject });
+  assert.ok(applied.written.some((entry) => entry.step === "managed-sections"), "the project is wired after the smoke");
+});
+
+// TCRN-CROSS-INIT-053 R47 (R47-05): a miss stops the apply after the import and before the cleanup and the
+// wiring, with SETUP_RECALL_SMOKE_MISSED. Here the old chain's retrieval.tau is set where recall can have no
+// strong hit. Nothing in the home (the old installation, the host files, the skill copies) is touched,
+// the project gets no managed section and the device no launcher; once the library's tau is back, the
+// same mapping applied again skips the migrated partition and goes on from the smoke.
+test("R47-05 (fixture): a forced miss stops before the cleanup and the wiring, and the same mapping goes on once recall finds the card", async (context) => {
+  const m = await machine(context);
+  const old = await oldCardPartition(m, "alpha", [["retrieval.tau", "1000000"]]);
+  const alphaProject = await project(m, "alpha");
+  const mapping = await writeMapping(m, [{ partition: "alpha", legacyWorkspace: old.root, projectRoot: alphaProject }]);
+  const library = join(alphaProject, ".ether");
+  const homeBefore = await treeDigest(m.home);
+  const apply = () => run(m, ["setup", "--mode", "migrate", "--project", alphaProject, "--mapping", mapping, "--at", at(), "--yes", "true"]);
+
+  const missed = refusal(apply());
+  assert.deepEqual([missed.reasonCode, missed.target], ["SETUP_RECALL_SMOKE_MISSED", library]);
+  assert.ok(missed.error.includes(old.newest.id), "the refusal names the card it asked for");
+  assert.ok((await readRegistry(m.deviceHome)).entries.some((entry) => entry.libraryPath === library), "the import and the registry entry stay");
+  assert.deepEqual(await treeDigest(m.home), homeBefore, "no cleanup and no host wiring: the home is as it was");
+  for (const file of ["AGENTS.md", "CLAUDE.md"]) await assert.rejects(lstat(join(alphaProject, file)), { code: "ENOENT" }, `${file}: not wired`);
+  for (const path of [join(m.deviceHome, "engine", "einzbern.mjs"), join(m.deviceHome, "engine", "hook.mjs"), join(m.deviceHome, "skills.json"), join(m.deviceHome, "backups")]) {
+    await assert.rejects(lstat(path), { code: "ENOENT" }, `${path}: nothing of the cleanup or the wiring`);
+  }
+
+  // The library's tau goes back to its default; the same mapping goes on from the smoke.
+  await asDevice(m, () => removeWorkspaceSetting(library, { key: "retrieval.tau", occurredAt: at(), actorId: "agent:setup" }));
+  const resumed = receipt(apply());
+  assert.deepEqual(resumed.migration.partitions.map((entry) => entry.action), ["skipped"]);
+  assert.deepEqual(resumed.recallSmoke, { status: "hit", cardId: old.newest.id, query: old.newest.subject });
+  for (const file of ["AGENTS.md", "CLAUDE.md"]) assert.ok((await lstat(join(alphaProject, file))).isFile(), `${file} is wired once the smoke hits`);
+  assert.ok((await lstat(join(m.deviceHome, "engine", "hook.mjs"))).isFile());
 });

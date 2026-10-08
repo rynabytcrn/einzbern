@@ -20,17 +20,22 @@ With `--yes true`, in this order:
 1. Each old workspace the mapping names becomes the first stream of its project's library, `.ether`
    in the project root. The import validates the whole old chain and compares its events and head
    with the plan's; each library is registered on this device with the old workspace as
-   `migratedFrom`, and the portal settings of the old device directory are carried over.
+   `migratedFrom`, and the portal settings of the old device directory are carried over. The
+   coordination partition's own settings the plan marks `write` (`coordinationSettings`, below) go
+   into the coordination library, never into a project's.
 2. The project's own library records the language answer.
-3. The cleanup takes the old installation off this device (`migration.hostCleanup`): the old hooks,
+3. Recall smoke: the newest valid card of the project's own library is asked for by its subject the
+   way the prompt hook asks. `recallSmoke` is `hit` (with `cardId` and `query`) or `no-card`; a
+   miss stops the apply with `SETUP_RECALL_SMOKE_MISSED` before the cleanup and the wiring.
+4. The cleanup takes the old installation off this device (`migration.hostCleanup`): the old hooks,
    the old deny rules and the old inert key come out of the user's host files and of each mapped
    project's (the container's among them); the old templates, the old helper's skill copies and
    install markers, the old injection state and the old portal launchers are moved into the
    backups. Other tools' hooks and settings stay.
-4. The project is wired as a first installation wires it: the two skill copies, the launchers, one
+5. The project is wired as a first installation wires it: the two skill copies, the launchers, one
    Einzbern hook per host in the user's settings, CLAUDE.md's import section and, when the answer is
    yes, AGENTS.md's navigation section.
-5. `doctor`'s eight checks run as the self-check.
+6. `doctor`'s eight checks run as the self-check.
 
 With no installation from before the rename the plan answers `SETUP_MIGRATE_NOTHING`: install with
 `install.md` instead.
@@ -71,7 +76,12 @@ and never guess an answer.
      (`import`, `skip` or `blocked`), the old chain's `events` and `headEventHash`,
      `unsatisfiedGates` (every gate that is not satisfied, with its id, work item, status, title and
      outcome class) and `openItems` (the work still open, by status), `knowledge` for a store to carry
-     and `knowledgeOmission` for an explicit omission with its reason and source evidence;
+     and `knowledgeOmission` for an explicit omission with its reason and source evidence; the
+     coordination partition alone has `coordinationSettings`, the chain's own settings, each
+     `{key, value, source, action}`: `artifact.language` always (`source` `legacy-declared` when the
+     old chain declares it, else `legacy-default` with the catalog default) and
+     `execution.maxConcurrentSubagents` and the `quota.*` keys the old chain declares; `action` is
+     `carried` (the import brings it) or `write` (the apply writes it into the coordination library);
    - `registry`, the entry each library gets, and `deviceSettings`, the portal keys that move;
    - `hostCleanup`, each item `{kind, path, action, into}`: `kind` is `host-file` (updated, its
      original copied first), `template`, `injection-state`, `launcher`, `skill-copy` or `marker`
@@ -102,9 +112,13 @@ and never guess an answer.
    would write, and ask once whether to apply. Continue only on a clear yes.
 5. Apply. Run the same command with `--yes true`. It returns `SETUP_APPLIED`: `migration` with
    each partition `imported` or `skipped`, the registry entries and `hostCleanup` as it was done,
-   the files `written`, the backup directory (`backupDir`) and `selfCheck`. If it stops with
-   `LEGACY_IMPORT_MISMATCH`, its `partition` names where; the partitions before it are in their
-   libraries and are skipped when you plan and apply again.
+   the files `written`, the backup directory (`backupDir`), `recallSmoke` and `selfCheck`. If it
+   stops with `LEGACY_IMPORT_MISMATCH`, its `partition` names where; the partitions before it are in
+   their libraries and are skipped when you plan and apply again. If it stops with
+   `SETUP_RECALL_SMOKE_MISSED`, the libraries are imported and registered, nothing old is taken off
+   and nothing is wired: tell the user the card the refusal names in the library it names as
+   `target`, check that library's retrieval settings such as `retrieval.tau`, then plan and apply
+   again with the same mapping and a later `--at`; the migrated partitions are skipped.
 6. Report the backup directory, what the cleanup took off, each library, the gates still pending,
    and the eight checks in `selfCheck`. Handle any check that is not ok with `doctor.md`.
 

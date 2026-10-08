@@ -501,6 +501,50 @@ test("480-R3 (U04): a second device recognizes the restored coordination identit
   assert.deepEqual(further.coordination, { libraryId: coordinationId, status: "registered", path: coordinationOnB });
 });
 
+// TCRN-CROSS-INIT-053 R47 (R47-04, audit P6; PC-2): the coordination chain's own runtime settings on a
+// second device. Device a's coordination library holds its own language and orchestration limit at
+// its library level, as a migration leaves them (c1-B). Device b restores the project: it recognizes
+// the same coordination identity and creates none; unregistered there, the restore completes as
+// usual and runs no recall smoke (that is migrate's alone). The restored project library reads neither
+// value. Once the coordination library is at device b's default location, the restore registers it
+// and device b reads the same two values from it, at the library level.
+test("R47-04 (P6): a second device restores with the coordination unregistered, and reads the coordination chain's own settings once it is registered", async (context) => {
+  const f = await fixture(context);
+  const first = await installOnA(f);
+  assert.equal(Object.hasOwn(first, "recallSmoke"), false, "R47-05: a fresh setup runs no recall smoke");
+  const coordinationId = chainIdentity(await materializeWorkspace(f.library)).coordinationLibraryId;
+  const coordinationOnA = join(f.a.deviceHome, "coordination-library");
+  const coordinationOnB = join(f.b.deviceHome, "coordination-library");
+  for (const [key, value] of [["artifact.language", "fr"], ["execution.maxConcurrentSubagents", "3"]]) {
+    await setWorkspaceSetting(coordinationOnA, { key, value, occurredAt: at(), actorId: "agent:setup" });
+  }
+  const runtime = async (library, extra = []) => Object.fromEntries((await cli(["settings-catalog", "--workspace", library, ...extra])).settings
+    .filter((entry) => ["artifact.language", "execution.maxConcurrentSubagents"].includes(entry.key))
+    .map((entry) => [entry.key, [entry.currentValue, entry.scope, entry.source?.kind ?? null]]));
+  const own = { "artifact.language": ["fr", "library", "library"], "execution.maxConcurrentSubagents": ["3", "library", "library"] };
+  assert.deepEqual(await runtime(coordinationOnA), own);
+
+  use(f.b);
+  const unregistered = { libraryId: coordinationId, status: "unregistered", path: null };
+  const restoring = await restorePlan(f, f.b, f.library);
+  assert.deepEqual(restoring.coordination, unregistered, "the same coordination identity, unregistered on device b");
+  const applied = await applySetup(restoring);
+  assert.equal(applied.reasonCode, "SETUP_APPLIED");
+  assert.deepEqual(applied.coordination, unregistered);
+  assert.equal(Object.hasOwn(applied, "recallSmoke"), false, "R47-05: a restore runs no recall smoke");
+  assert.equal(await lstat(coordinationOnB).catch(() => null), null, "no second coordination library is created");
+  const projectId = (await readRegistry(f.b.deviceHome)).entries.find((entry) => entry.projectPath === f.project).projectId;
+  for (const read of [await runtime(f.library), await runtime(f.library, ["--project-id", projectId])]) {
+    assert.notEqual(read["artifact.language"][0], "fr", "the project library does not read the coordination chain's language");
+    assert.notEqual(read["execution.maxConcurrentSubagents"][0], "3", "nor its orchestration limit");
+  }
+
+  await cp(coordinationOnA, coordinationOnB, { recursive: true });
+  const registered = await applySetup(await restorePlan(f, f.b, f.library));
+  assert.deepEqual(registered.coordination, { libraryId: coordinationId, status: "registered", path: coordinationOnB });
+  assert.deepEqual(await runtime(coordinationOnB), own, "device b reads the coordination chain's own values");
+});
+
 // Approved contract item 3 (INIT-053 U04): competing coordination identities are a conflict that
 // names every candidate and how to settle it, and the refused plan writes nothing.
 test("480-R3 (U04): restoring a library that names another coordination than this device's stops with both candidates", async (context) => {

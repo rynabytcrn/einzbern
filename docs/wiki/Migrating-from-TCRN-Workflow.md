@@ -40,7 +40,7 @@ einzbern setup --mode migrate --project <项目目录> --mapping <迁移映射 J
 
 不加 `--yes true` 时命令只读，返回 `SETUP_PLAN_READY`。`migration` 字段列出：
 
-- `partitions`：逐分区给出目标库 `target` 与目标现状 `targetState`，以及动作 `action`：导入 `import`、已迁移跳过 `skip` 或被阻断 `blocked`。另有旧链的事件数与头哈希、在途工作数，以及全部未满足的 gate；`chainIdentity` 是映射给出的链身份，未给角色时为 `null`。gate 逐项列出，不计为零；`knowledge` 列出将携带的知识，`knowledgeOmission` 列出显式不带的选择、原因与旧文件事实。
+- `partitions`：逐分区给出目标库 `target` 与目标现状 `targetState`，以及动作 `action`：导入 `import`、已迁移跳过 `skip` 或被阻断 `blocked`。另有旧链的事件数与头哈希、在途工作数，以及全部未满足的 gate；`chainIdentity` 是映射给出的链身份，未给角色时为 `null`。gate 逐项列出，不计为零；`knowledge` 列出将携带的知识，`knowledgeOmission` 列出显式不带的选择、原因与旧文件事实。协调分区另有 `coordinationSettings`，即协调链自己的设置，见下文「Project roles after import」。
 - `registry`：每个库将得到的注册表条目，`migratedFrom` 记旧工作区。
 - `deviceSettings`：随迁的门户设置。
 - `hostCleanup`：每一项清理，含类别 `kind`、路径、动作（改写 `update` 或移走 `move`）与去向 `into`。
@@ -52,23 +52,25 @@ einzbern setup --mode migrate --project <项目目录> --mapping <迁移映射 J
 核对计划后，用同一条命令加 `--yes true`，依次：
 
 1. 逐分区导入，并把事件数与头哈希同计划比对。不等即停，返回 `LEGACY_IMPORT_MISMATCH` 并点名分区；此时注册表尚未写入。
-2. 写入各库的注册表条目（带 `migratedFrom`），以及本机还没有的门户设置。
+2. 写入各库的注册表条目（带 `migratedFrom`），以及本机还没有的门户设置；协调库再写入计划标为 `write` 的自身设置。
 3. 在项目自己的库里写入语言。
-4. 清理旧安装：
+4. 召回冒烟：取项目自己的库里最新的一张有效卡（按 `updatedAt`，同刻按 id），以它的标题经提示钩子的同一路径召回。命中记为 `recallSmoke` 的 `hit`（带卡 id 与查询），库里没有有效卡记为 `no-card`；未命中返回 `SETUP_RECALL_SMOKE_MISSED` 并停下，此时库已导入并登记，旧安装未清理，也未接线。查明原因（例如库的 `retrieval.tau`）后，用同一映射再运行，已迁移的分区跳过，从冒烟处继续。
+5. 清理旧安装：
    - 用户级与每个映射项目（含容器根）的 `.claude/settings.json`、`.codex/hooks.json`，去掉旧平台钩子（不论挂在哪个事件上）、旧 deny 规则与旧惰性键；
    - Codex 的 `config.toml` 保持 hooks 开关开启，去掉已移除钩子的信任状态；
    - 其他工具的钩子与键不动；
    - 旧模板目录、旧技能副本与安装标记、旧注入状态、旧门户启动器，移进备份。
-5. 按全新安装的步骤接线：
+6. 按全新安装的步骤接线：
    - 两份技能副本、两个启动器；
    - 用户级设置里每个宿主一条 Einzbern 钩子；
    - `CLAUDE.md` 的导入段，以及按 `--navigation` 写入的 `AGENTS.md` 导航段；
    - 注册表已在第 2 步写好，不再重复。
-6. 以 `doctor` 的八项检查作自检。
+7. 以 `doctor` 的八项检查作自检。
 
 成功返回 `SETUP_APPLIED`：
 
 - `migration` 含逐分区结果（`imported` 或 `skipped`）、注册表条目与实际完成的 `hostCleanup`；
+- `recallSmoke` 是召回冒烟的结果；
 - 另列出写入的文件、备份目录与 `selfCheck`。
 
 用同一映射再运行一次，什么也不写。
@@ -168,7 +170,7 @@ dry-run、计划的分区项和执行回执都列出 `knowledgeOmission`：
   - `work-gate-list --status all` 列出这些 gate。
 - 库里的事件数与头哈希：
   - 项目自己的库，第一条流前段就是旧链，到旧头为止；之后是本机在迁移中写入的语言与受管段记录，由安装向导以 `agent:setup` 署名；
-  - 其余分区的库与旧链的事件数和头哈希完全相同；映射给了 `chainRole` 时，旧链之后另有一条链身份记录，同样以 `agent:setup` 署名；
+  - 其余分区的库与旧链的事件数和头哈希完全相同；映射给了 `chainRole` 时，旧链之后另有一条链身份记录，同样以 `agent:setup` 署名；协调库在其后还可能有它自己的设置记录（见下文），同样署名；
   - 可用 `chain-validate --workspace <库>` 核对。
 - 用 `doctor --project <项目目录>` 检查八项。旧名与当前名的对应关系见[词汇表](Glossary.md)。
 
@@ -191,7 +193,16 @@ partition: the wizard writes that project's language and managed sections, and a
 coordination chain takes neither, so a plan whose `--project` is the
 coordination partition's root is refused at plan time (`SETUP_ANSWER_INVALID`,
 one blocker naming a project partition's root to plan again with, the same
-mapping) and nothing is imported. Never infer a coordination role from a Cross Project label,
+mapping) and nothing is imported. The coordination chain keeps its own artifact
+language and orchestration limits instead: the plan's coordination partition
+carries `coordinationSettings`, rows `{ key, value, source, action }` for
+`artifact.language` (always: the old chain's library-level value,
+`source: "legacy-declared"`, else the catalog default, `"legacy-default"`) and for
+`execution.maxConcurrentSubagents` and the four `quota.*` keys when the old chain
+declares them. `action: "carried"` means the import already holds the value at the
+coordination library's library level; a `"write"` row is written there by the
+apply, signed `agent:setup`, once. These values are never written into a project
+chain, and no project chain reads them. Never infer a coordination role from a Cross Project label,
 a partition name or a path, or copy its old development settings into a newly
 created product as implicit consent. The real Einzbern/Mana product identity and
 the roles of the real migration mapping must be supplied at the authorized

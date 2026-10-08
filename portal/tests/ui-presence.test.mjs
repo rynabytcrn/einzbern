@@ -315,7 +315,11 @@ async function loadExecutedDom(fixture, env = {}, { hold = () => false, portal =
     "the page's requests to settle",
     20_000,
   );
-  return { child, url, document, source, window, requests, waitForSettled, held: () => held.length, release, hold: (predicate) => { holding = predicate; } };
+  // TCRN-CROSS-INIT-053 R47 (R46-REG-1): a request from outside the page, over the loopback channel the
+  // page itself was loaded through. It is neither one of the page's requests nor counted in its settling,
+  // so a case can read or change the server's state as another client would.
+  const serverRequest = (path, options) => nativeFetch(new URL(path, url), options);
+  return { child, url, document, source, window, requests, waitForSettled, serverRequest, held: () => held.length, release, hold: (predicate) => { holding = predicate; } };
 }
 
 function missingComponents(document) {
@@ -2924,14 +2928,14 @@ if (!MUTATION) test("R46 I10: another tab's switch is named on this page, which 
     await waitFor(() => tabA.document.querySelector("#target-notice").hidden === true, "the notice to leave");
     await tabA.waitForSettled();
     const boot = JSON.parse(tabA.source.match(/const BOOT = (\{[^\n]*\});/u)[1]);
-    const selected = await (await fetch(new URL("/api/libraries", tabA.url), { headers: { "x-portal-token": boot.token } })).json();
+    const selected = await (await tabA.serverRequest("/api/libraries", { headers: { "x-portal-token": boot.token } })).json();
     assert.equal(selected.selected.projectPath, fixture.proseRoot, "the selection is the first library again");
     assert.equal(tabA.document.querySelector("#rail-workspace-label").textContent, "TCRN-INC148-DOM");
     // Tab B, still showing the second library, is told in turn.
     readAgain(tabB, "removed");
     await waitFor(() => tabB.document.querySelector('#target-notice:not([hidden]) [data-target-notice]'), "the notice on tab B");
     // A switch refused elsewhere moves only the epoch: tab A reads again, with no notice.
-    const refused = await fetch(new URL("/api/library", tabA.url), { method: "POST", headers: { "content-type": "application/json", "x-portal-token": boot.token }, body: JSON.stringify({ library: "not-a-registered-library" }) });
+    const refused = await tabA.serverRequest("/api/library", { method: "POST", headers: { "content-type": "application/json", "x-portal-token": boot.token }, body: JSON.stringify({ library: "not-a-registered-library" }) });
     assert.equal(refused.status, 404);
     readAgain(tabA, "removed");
     await waitFor(() => tabA.document.querySelector('[data-ui="knowledge-status-filter"]')?.value === "removed", "tab A's read after the refused switch");

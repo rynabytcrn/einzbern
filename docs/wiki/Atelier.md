@@ -33,6 +33,8 @@ Atelier 是项目配置工作台。进入页面后，先核对当前项目与知
 
 写入模型分类、模型档位、三个升档键或 `design.authority` 之后，Atelier 会重新渲染 AGENTS.md 的受管段。
 
+两页是否可以保存，跟随当前链 `settings-catalog` 是否列出该键。协调链只保存它自己的运行设置，目录里没有模型分类与模型档位，所以这两页在协调链上只读：没有添加、保存与恢复默认，页首写明「模型配置属于各个具体项目」。门、变量与规则页在协调链上照常保存。
+
 ## 规则
 
 规则页管理 Command Spell。内置规则及版本为：
@@ -69,7 +71,11 @@ Atelier 是项目配置工作台。进入页面后，先核对当前项目与知
 ## Involved projects and target details
 
 The work view edits explicit undecided, coordination-only or selected project
-scope and filters by stable project reference. Project readiness shows, for
+scope and filters by stable project reference. A child stays within its
+parent's declared scope, as the engine requires: under a parent with selected
+projects only those can be chosen, under a coordination-only parent none can,
+nor the selected scope, and the unavailable choices say why. A refused save
+shows the engine's reason code, its own words and how to recover. Project readiness shows, for
 every target, its status, whether it is ready for development and what it still
 misses. Selecting a project does not grant permission to edit its
 files. Lists, the library switcher, the rail and the top bar show each

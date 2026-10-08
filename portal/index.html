@@ -5048,26 +5048,31 @@ const BOOT = __PORTAL_BOOT__;
   };
   const refusalAlert = (body) => `<div class="tcrn-inline-alert tcrn-inline-alert--danger" data-collection-refusal="${esc(body.reasonCode ?? "")}"><code>${esc(body.reasonCode ?? "")}</code><span>${esc(reasonHint(body.reasonCode) || t("receipt.failureMessage"))}</span></div>`;
   const collectionCell = (column, content) => `<span class="tcrn-table-shell__cell" role="cell" data-label="${esc(column.label)}" data-collection-cell="${esc(column.field)}">${content}</span>`;
-  const collectionInputCell = (column, value, invalid) => {
-    const common = `aria-label="${esc(column.label)}" data-collection-field="${esc(column.field)}"${invalid ? ' aria-invalid="true"' : ""}`;
+  // TCRN-CROSS-INIT-053 R46 (I12; U20 D9, c1): a collection is saved only where this chain's settings catalog
+  // lists its key. A coordination chain lists its own runtime settings only, so there its model tables are
+  // read only and say why; gates, variables and rules are written as before. The page follows the engine's
+  // catalog, so the answer moves with it.
+  const collectionReadOnly = (key) => state.settings?.chain?.role === "coordination" && Array.isArray(state.settings?.settings) && currentSetting(key) === undefined;
+  const collectionInputCell = (column, value, invalid, readOnly = false) => {
+    const common = `aria-label="${esc(column.label)}" data-collection-field="${esc(column.field)}"${invalid ? ' aria-invalid="true"' : ""}${readOnly ? " disabled" : ""}`;
     const input = column.kind === "order"
       ? `<input class="tcrn-input tcrn-number-input" type="number" min="1" step="1" value="${esc(value)}" data-number-input-component="NumberInput" data-number-input="true" data-number-input-semantic="numeric-entry" data-number-input-visibility="full-value" ${common}>`
       : `<input class="tcrn-input" value="${esc(value)}" ${common}>`;
     return `<label class="tcrn-table-shell__cell tcrn-field" role="cell" data-label="${esc(column.label)}" data-collection-cell="${esc(column.field)}">${input}</label>`;
   };
-  const collectionRowMarkup = ({ columns, row, index, findings, highlighted }) => {
+  const collectionRowMarkup = ({ columns, row, index, findings, highlighted, readOnly = false }) => {
     const invalid = new Set(findings.map((finding) => finding.field).filter((field) => typeof field === "string" && field !== ""));
     const cells = columns.map((column) => {
-      if (column.kind === "actions") return collectionCell(column, `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-collection-remove="${index}" aria-label="${esc(t("collection.removeRow", { order: row.order ?? "" }))}">${esc(t("config.remove"))}</button>`);
+      if (column.kind === "actions") return collectionCell(column, readOnly ? "" : `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-collection-remove="${index}" aria-label="${esc(t("collection.removeRow", { order: row.order ?? "" }))}">${esc(t("config.remove"))}</button>`);
       if (typeof column.render === "function") return collectionCell(column, column.render(row, invalid.has(column.field)));
-      return collectionInputCell(column, row[column.field] ?? "", invalid.has(column.field));
+      return collectionInputCell(column, row[column.field] ?? "", invalid.has(column.field), readOnly);
     }).join("");
     const targetAttribute = highlighted ? ' data-transient-target="true"' : "";
     const invalidAttribute = findings.length === 0 ? "" : ' data-collection-row-invalid="true"';
     const findingRow = findings.length === 0 ? "" : `<div class="tcrn-table-shell__row tcrn-table-shell__empty-row" role="row" data-collection-finding-row="${index}"><div role="cell" data-collection-findings>${findings.map(findingAlert).join("")}</div></div>`;
     return `<div class="tcrn-table-shell__row" role="row" data-collection-row="${index}"${targetAttribute}${invalidAttribute}>${cells}</div>${findingRow}`;
   };
-  const collectionTable = ({ key, ui, label, columns, rows, findings, empty }) => {
+  const collectionTable = ({ key, ui, label, columns, rows, findings, empty, readOnly = false }) => {
     const focus = state.collectionFocus;
     const head = `<div class="tcrn-table-shell__head" role="row">${columns.map((column) => `<span role="columnheader" data-collection-column="${esc(column.field)}">${esc(column.label)}</span>`).join("")}</div>`;
     const body = rows.length === 0
@@ -5078,13 +5083,15 @@ const BOOT = __PORTAL_BOOT__;
         index,
         findings: findings.filter((finding) => finding.index === index),
         highlighted: focus !== null && focus.key === key && String(row[focus.field] ?? "") === String(focus.value),
+        readOnly,
       })).join("");
     return `<div class="tcrn-table-shell" role="table" aria-label="${esc(label)}" data-ui="${esc(ui)}" data-collection-component="CollectionTable" data-collection-table="${esc(key)}" data-collection-columns="${columns.length}" data-mobile-layout="stacked-cards">${head}${body}</div>`;
   };
   // An empty table says what to do first, with the control that does it.
   const emptyGuide = (title, description, action) => `<p class="tcrn-state-surface__title">${esc(title)}</p><p class="tcrn-state-surface__description">${esc(description)}</p><div class="tcrn-state-surface__action">${action}</div>`;
-  const collectionView = ({ key, title, links, addLabel, table }) => {
+  const collectionView = ({ key, title, links, addLabel, table, readOnly = false }) => {
     const entry = currentSetting(key);
+    if (readOnly) return `<section class="tcrn-surface" data-content-scope="${esc(COLLECTION_PAGES[key])}" data-collection-read-only="${esc(key)}"><div class="tcrn-surface__head"><div class="tcrn-surface__head-content"><h2>${esc(title)}</h2></div><div class="tcrn-surface__head-actions" data-collection-links>${links}</div></div><div class="tcrn-inline-alert tcrn-inline-alert--neutral" role="status" data-collection-read-only-note="${esc(key)}"><span>${esc(t("collection.coordinationReadOnly", { chain: BOOT.library ? libraryLabel(BOOT.library) : t("projects.coordination") }))}</span></div>${table}</section>`;
     const status = collectionState(key);
     const modified = entry !== undefined && entry.currentValue !== entry.defaultValue;
     const tableFindings = status.findings.filter((finding) => !Number.isInteger(finding.index));
@@ -5142,7 +5149,8 @@ const BOOT = __PORTAL_BOOT__;
       { field: "tiers", label: t("modelCategories.tiers"), render: tierCount },
       { field: "actions", label: t("collection.actions"), kind: "actions" },
     ];
-    const empty = emptyGuide(t("modelCategories.emptyTitle"), t("modelCategories.emptyBody"), `<button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-collection-add="models.category">${esc(t("modelCategories.add"))}</button>`);
+    const readOnly = collectionReadOnly(key);
+    const empty = readOnly ? `<p class="tcrn-state-surface__description">${esc(t("collection.readOnlyEmpty"))}</p>` : emptyGuide(t("modelCategories.emptyTitle"), t("modelCategories.emptyBody"), `<button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-collection-add="models.category">${esc(t("modelCategories.add"))}</button>`);
     const links = `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-collection-link="model-tiers">${esc(t("modelCategories.openTiers"))}</button>`;
     const view = $("#model-categories-view");
     view.innerHTML = collectionView({
@@ -5150,7 +5158,8 @@ const BOOT = __PORTAL_BOOT__;
       title: t("modelCategories.title"),
       links,
       addLabel: t("modelCategories.add"),
-      table: collectionTable({ key, ui: "model-categories-table", label: t("modelCategories.title"), columns, rows, findings: collectionState(key).findings, empty }),
+      readOnly,
+      table: collectionTable({ key, ui: "model-categories-table", label: t("modelCategories.title"), columns, rows, findings: collectionState(key).findings, empty, readOnly }),
     });
     wireCollection(key, view);
     restoreFocus(view, focus);
@@ -5166,11 +5175,12 @@ const BOOT = __PORTAL_BOOT__;
     const categoryLabel = (category) => typeof category.name === "string" && category.name !== "" && category.name !== category.id ? `${category.name} (${category.id})` : category.id;
     // The category column chooses from the category table and links to it. A tier naming a category
     // the table lacks keeps its value, marked, until the reader picks another.
+    const readOnly = collectionReadOnly(key);
     const categoryChoice = (row, invalid) => {
       const current = String(row.category ?? "");
       const options = categories.map((category) => `<option value="${esc(category.id)}"${category.id === current ? " selected" : ""}>${esc(categoryLabel(category))}</option>`);
       if (!known.has(current)) options.push(`<option value="${esc(current)}" selected disabled data-model-category-missing="true">${esc(current === "" ? t("modelTiers.noCategory") : t("modelTiers.missingCategory", { category: current }))}</option>`);
-      const invalidAttribute = invalid ? ' aria-invalid="true"' : "";
+      const invalidAttribute = `${invalid ? ' aria-invalid="true"' : ""}${readOnly ? " disabled" : ""}`;
       return `<span data-collection-choice><select class="tcrn-select" aria-label="${esc(t("modelTiers.category"))}" data-collection-field="category"${invalidAttribute}>${options.join("")}</select><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md tcrn-icon-button" data-model-category-link aria-label="${esc(t("modelTiers.openCategory"))}"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6.5 3.5h6v6"/><path d="M12.5 3.5 4 12"/></svg></button></span>`;
     };
     // A tier the table already holds under a category the category table lacks (two devices' tables
@@ -5187,17 +5197,18 @@ const BOOT = __PORTAL_BOOT__;
       { field: "note", label: t("modelTiers.note") },
       { field: "actions", label: t("collection.actions"), kind: "actions" },
     ];
-    const empty = categories.length === 0
+    const empty = readOnly ? `<p class="tcrn-state-surface__description">${esc(t("collection.readOnlyEmpty"))}</p>` : categories.length === 0
       ? emptyGuide(t("modelTiers.noCategoriesTitle"), t("modelTiers.noCategoriesBody"), `<button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-collection-link="model-categories">${esc(t("modelTiers.openCategories"))}</button>`)
       : emptyGuide(t("modelTiers.emptyTitle"), t("modelTiers.emptyBody"), `<button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-collection-add="models.tiers">${esc(t("modelTiers.add"))}</button>`);
     const links = `<button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-collection-link="model-categories">${esc(t("modelTiers.openCategories"))}</button>`;
     const view = $("#model-tiers-view");
-    view.innerHTML = escalationSummary(categories, categoryLabel) + collectionView({
+    view.innerHTML = (readOnly ? "" : escalationSummary(categories, categoryLabel)) + collectionView({
       key,
       title: t("modelTiers.title"),
       links,
       addLabel: t("modelTiers.add"),
-      table: collectionTable({ key, ui: "model-tiers-table", label: t("modelTiers.title"), columns, rows, findings: [...status.findings, ...dangling], empty }),
+      readOnly,
+      table: collectionTable({ key, ui: "model-tiers-table", label: t("modelTiers.title"), columns, rows, findings: readOnly ? [] : [...status.findings, ...dangling], empty, readOnly }),
     });
     $$("[data-escalation-settings-link]", view).forEach((button) => button.addEventListener("click", openEscalationSettings));
     wireCollection(key, view);
@@ -5482,8 +5493,21 @@ const BOOT = __PORTAL_BOOT__;
       root.querySelector("[data-target-identity]").innerHTML = identityDetails("work-targets", candidates, labels);
       const form = root.querySelector("[data-target-form]");
       const summaryText = candidates.filter(target => selected.has(key(target))).map(target => labels[candidates.indexOf(target)]).join(", ") || t("projects.choose");
-      const options = candidates.map((target, index) => `<button type="button" role="option" id="work-project-options-${index}" class="tcrn-menu__item tcrn-multi-select-dropdown__option" data-multi-select-value="${esc(key(target))}" data-selected="${selected.has(key(target))}" aria-selected="${selected.has(key(target))}"><span data-multi-select-label>${esc(labels[index])}</span><span data-multi-select-check data-selected="${selected.has(key(target))}" aria-hidden="true"><svg class="tcrn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4 10-10"/></svg></span></button>`).join("");
-      form.innerHTML = `<label class="tcrn-field"><span class="tcrn-field__label">${esc(t("projects.scope"))}</span><select class="tcrn-select" data-target-state>${Object.entries(scopeLabels).map(([value, label]) => `<option value="${value}" ${relation.state === value ? "selected" : ""}>${esc(label)}</option>`).join("")}</select></label><div class="tcrn-multi-select-dropdown" data-multi-select-dropdown="true" data-choice-cardinality="set" data-choice-value-mode="closed" data-choice-presentation="dropdown" data-choice-option-count="${candidates.length}" data-empty-selection-label="${esc(t("projects.choose"))}"><button type="button" class="tcrn-select tcrn-multi-select-dropdown__trigger" aria-label="${esc(t("projects.title"))}" aria-haspopup="listbox" aria-expanded="false" aria-controls="work-project-options"><span data-multi-select-summary>${esc(summaryText)}</span><svg class="tcrn-icon tcrn-multi-select-dropdown__caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><select class="tcrn-sr-only tcrn-multi-select-dropdown__value" data-choice-presentation="dropdown" multiple tabindex="-1" aria-hidden="true">${candidates.map((target, index) => `<option value="${esc(key(target))}" ${selected.has(key(target)) ? "selected" : ""}>${esc(labels[index])}</option>`).join("")}</select><div id="work-project-options" class="tcrn-menu tcrn-multi-select-dropdown__list" role="listbox" aria-multiselectable="true" aria-label="${esc(t("projects.title"))}" tabindex="-1" hidden>${options}</div></div><div class="tcrn-surface__head-actions"><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-target-save>${esc(t("config.save"))}</button><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-target-undo>${esc(t("config.undo"))}</button><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-target-context>${esc(t("projects.context"))}</button></div><div data-target-result></div>`;
+      // TCRN-CROSS-INIT-053 R46 (I12; U20 D6): a child's projects stay within its parent's declared scope,
+      // as the engine requires. Under a parent with selected projects only those can be chosen; under a
+      // coordination-only parent none can, nor the selected scope. The others say why; one chosen before
+      // the parent narrowed stays choosable so that it can be taken out, and is marked.
+      const parent = (state.work?.records || []).find(entry => entry.id === record.parentId) ?? null;
+      const parentScope = parent?.involvedProjects?.state ?? "undecided";
+      const parentTargets = parent?.involvedProjects?.targets ?? [];
+      const outside = target => parentScope === "coordination-only" || (parentScope === "selected" && !parentTargets.some(item => key(item) === key(target)));
+      const blocked = target => outside(target) && !selected.has(key(target));
+      const scopeNote = parentScope === "coordination-only" ? t("projects.parentCoordinationOnly")
+        : parentScope === "selected" ? t("projects.parentScope", { projects: parentTargets.map(item => labels[candidates.findIndex(candidate => key(candidate) === key(item))] ?? t("projects.unavailable")).join(", ") }) : "";
+      const marked = candidates.some(target => outside(target) && selected.has(key(target)));
+      const noteFor = target => scopeNote !== "" && outside(target) ? ` aria-describedby="work-project-scope-note"` : "";
+      const options = candidates.map((target, index) => `<button type="button" role="option" id="work-project-options-${index}" class="tcrn-menu__item tcrn-multi-select-dropdown__option" data-multi-select-value="${esc(key(target))}" data-selected="${selected.has(key(target))}" aria-selected="${selected.has(key(target))}"${blocked(target) ? ' disabled aria-disabled="true" data-outside-parent="true"' : outside(target) ? ' data-outside-parent="true"' : ""}${noteFor(target)}><span data-multi-select-label>${esc(labels[index])}</span><span data-multi-select-check data-selected="${selected.has(key(target))}" aria-hidden="true"><svg class="tcrn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 4 4 10-10"/></svg></span></button>`).join("");
+      form.innerHTML = `<label class="tcrn-field"><span class="tcrn-field__label">${esc(t("projects.scope"))}</span><select class="tcrn-select" data-target-state>${Object.entries(scopeLabels).map(([value, label]) => `<option value="${value}" ${relation.state === value ? "selected" : ""}${value === "selected" && parentScope === "coordination-only" && relation.state !== "selected" ? " disabled" : ""}>${esc(label)}</option>`).join("")}</select></label><div class="tcrn-multi-select-dropdown" data-multi-select-dropdown="true" data-choice-cardinality="set" data-choice-value-mode="closed" data-choice-presentation="dropdown" data-choice-option-count="${candidates.length}" data-empty-selection-label="${esc(t("projects.choose"))}"><button type="button" class="tcrn-select tcrn-multi-select-dropdown__trigger" aria-label="${esc(t("projects.title"))}" aria-haspopup="listbox" aria-expanded="false" aria-controls="work-project-options"><span data-multi-select-summary>${esc(summaryText)}</span><svg class="tcrn-icon tcrn-multi-select-dropdown__caret" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><select class="tcrn-sr-only tcrn-multi-select-dropdown__value" data-choice-presentation="dropdown" multiple tabindex="-1" aria-hidden="true">${candidates.map((target, index) => `<option value="${esc(key(target))}" ${selected.has(key(target)) ? "selected" : ""}${blocked(target) ? " disabled" : ""}>${esc(labels[index])}</option>`).join("")}</select><div id="work-project-options" class="tcrn-menu tcrn-multi-select-dropdown__list" role="listbox" aria-multiselectable="true" aria-label="${esc(t("projects.title"))}" tabindex="-1" hidden>${options}</div></div>${scopeNote === "" ? "" : `<p class="tcrn-text" id="work-project-scope-note" data-target-scope-note="${esc(parentScope)}">${esc(scopeNote)}${marked ? ` ${esc(t("projects.outsideParent"))}` : ""}</p>`}<div class="tcrn-surface__head-actions"><button type="button" class="tcrn-button tcrn-button--primary tcrn-button--md" data-target-save>${esc(t("config.save"))}</button><button type="button" class="tcrn-button tcrn-button--quiet tcrn-button--md" data-target-undo>${esc(t("config.undo"))}</button><button type="button" class="tcrn-button tcrn-button--secondary tcrn-button--md" data-target-context>${esc(t("projects.context"))}</button></div><div data-target-result></div>`;
       workTargetMount = mountStaticMultiSelect({ root: form.querySelector(".tcrn-multi-select-dropdown") });
       form.querySelector("[data-target-undo]").onclick = render;
       form.querySelector("[data-target-save]").onclick = async () => {
@@ -5495,6 +5519,12 @@ const BOOT = __PORTAL_BOOT__;
         // The saved relation is read back through the work view's own read (SUB-416): one read at a
         // time, an answer for a library the page has left is dropped, and a failed read shows in the view.
         if (result.ok && library === BOOT.library?.libraryId) await refreshWork();
+        // TCRN-CROSS-INIT-053 R46 (I12; U20 D6): a refusal says which, in the engine's own words, and how to
+        // recover: a child beyond its parent's scope is told to stay within it or widen the parent first.
+        else if (!result.ok && !unkept(result) && library === BOOT.library?.libraryId && epoch === workTargetEpoch) {
+          const beyondParent = /parent scope/u.test(String(result.error ?? "")) || (scope === "selected" && involvedProjects.targets.some(outside)) || (scope === "selected" && parentScope === "coordination-only");
+          form.querySelector("[data-target-result]").innerHTML = `<div class="tcrn-inline-alert tcrn-inline-alert--danger" role="alert" data-target-refusal="${esc(result.reasonCode ?? "")}"><span><code>${esc(result.reasonCode ?? "")}</code></span><span lang="en" data-target-refusal-engine>${esc(result.error ?? "")}</span><span data-target-refusal-recovery>${esc(beyondParent ? t("projects.recoverScope") : t("projects.recoverRefusal"))}</span></div>`;
+        }
       };
       form.querySelector("[data-target-context]").onclick = async () => {
         const result = await api("/api/work/project-context?id=" + encodeURIComponent(record.id));
@@ -5504,7 +5534,11 @@ const BOOT = __PORTAL_BOOT__;
     };
     const filter = root.querySelector("[data-target-filter]"); filter.value = state.workProjectFilter || "";
     filter.onchange = () => { state.workProjectFilter = filter.value; renderWorkView(); };
-    root.querySelector("[data-target-work]").onchange = render; render();
+    // The work item being edited stays chosen when the editor is drawn again (a language change, a read
+    // back), as long as the library still holds it (TCRN-CROSS-INIT-053 R46 I12).
+    const workSelect = root.querySelector("[data-target-work]");
+    if (records.some(record => record.id === state.workTargetRecord)) workSelect.value = state.workTargetRecord;
+    workSelect.onchange = () => { state.workTargetRecord = workSelect.value; render(); }; render();
   };
   const renderWorkView = () => {
     const data = state.work;
@@ -6248,6 +6282,7 @@ const BOOT = __PORTAL_BOOT__;
     workTargetEpoch += 1;
     $$("[data-target-result]").forEach((node) => { node.innerHTML = ""; });
     state.knowledgeBody = null;
+    state.workTargetRecord = null;
     state.targetNotice = null;
     renderTargetNotice();
   };

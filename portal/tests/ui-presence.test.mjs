@@ -3019,6 +3019,135 @@ if (!MUTATION) test("R46 I11: the switcher tells one chain's two repositories ap
   } finally { await closePage(page, fixture); }
 });
 
+// TCRN-CROSS-INIT-053 R46 (I12; U20 D6): a child's projects stay within its parent's declared scope, as the
+// engine requires. Under a Story with selected projects a Subtask can choose only those; the others are
+// unavailable and say why. Under a coordination-only Story none can be chosen, nor the selected scope.
+async function scopedWorkFixture(prefix) {
+  const fixture = await projectChainFixture(prefix);
+  const [, second, third] = fixture.targets;
+  const create = async (externalKey, kind, extra) => (await cli(["work-create", "--workspace", fixture.workspace, "--project-id", fixture.projectId, "--at", nextAt(), "--external-key", externalKey, "--kind", kind, ...extra], fixture.atelier)).record;
+  const initiative = await create("R46-I12-INIT", "Initiative", ["--title", "Scoped initiative", "--involved-projects", JSON.stringify({ state: "selected", targets: [second, third] })]);
+  const epic = await create("R46-I12-EPIC", "Epic", ["--parent-id", initiative.id, "--title", "Scoped epic"]);
+  const story = await create("R46-I12-STORY", "Story", ["--parent-id", epic.id, "--title", "Story for the second project", "--goal", "Only the second project changes.", "--acceptance", "Given the second project When the story is worked Then only it changes.", "--involved-projects", JSON.stringify({ state: "selected", targets: [second] })]);
+  const subtask = await create("R46-I12-SUBTASK", "Subtask", ["--parent-id", story.id, "--title", "Subtask of the second project's story"]);
+  const coordinationStory = await create("R46-I12-COORD-STORY", "Story", ["--parent-id", epic.id, "--title", "Coordination story", "--goal", "Coordination only.", "--acceptance", "Given coordination When worked Then no project changes.", "--involved-projects", JSON.stringify({ state: "coordination-only", targets: [] })]);
+  const coordinationSubtask = await create("R46-I12-COORD-SUBTASK", "Subtask", ["--parent-id", coordinationStory.id, "--title", "Subtask of the coordination story"]);
+  return { ...fixture, initiative, epic, story, subtask, coordinationStory, coordinationSubtask };
+}
+
+if (!MUTATION) test("R46 I12: a Subtask chooses only within its parent's projects, and a coordination-only parent allows none", async () => {
+  const fixture = await scopedWorkFixture("tcrn-r46-i12-scope-");
+  const [own, second, third] = fixture.targets;
+  const key = (target) => JSON.stringify({ libraryId: target.libraryId, projectId: target.projectId });
+  const locales = await localeTable();
+  const page = await loadExecutedDom(fixture);
+  try {
+    const { document, window } = page;
+    const editor = await openWorkEditor(page);
+    const work = editor.querySelector("[data-target-work]");
+    work.value = fixture.subtask.id;
+    work.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await waitFor(() => editor.querySelector("[data-target-scope-note]"), "the parent's scope note");
+    const native = (target) => [...editor.querySelectorAll(".tcrn-multi-select-dropdown__value option")].find((option) => option.value === key(target));
+    const listed = (target) => [...document.querySelectorAll("#work-project-options [role=option]")].find((option) => option.dataset.multiSelectValue === key(target));
+    for (const target of [own, third]) {
+      assert.equal(native(target).hasAttribute("disabled"), true, "a project outside the parent cannot be chosen");
+      const option = listed(target);
+      assert.equal(option.hasAttribute("disabled"), true);
+      assert.equal(option.getAttribute("aria-disabled"), "true");
+      assert.equal(option.getAttribute("aria-describedby"), "work-project-scope-note", "and says why");
+    }
+    assert.equal(native(second).hasAttribute("disabled"), false, "the parent's project can be chosen");
+    assert.equal(listed(second).hasAttribute("disabled"), false);
+    const note = editor.querySelector("#work-project-scope-note");
+    assert.equal(note.dataset.targetScopeNote, "selected");
+    assert.equal(note.textContent, locales.en["projects.parentScope"].replace("{projects}", "TCRN-INC148-DOM-SECOND"));
+    // A coordination-only parent: no project and no selected scope.
+    work.value = fixture.coordinationSubtask.id;
+    work.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await waitFor(() => editor.querySelector('[data-target-scope-note="coordination-only"]'), "the coordination-only note");
+    assert.equal(editor.querySelector("#work-project-scope-note").textContent, locales.en["projects.parentCoordinationOnly"]);
+    for (const target of [own, second, third]) assert.equal(native(target).hasAttribute("disabled"), true);
+    assert.equal(editor.querySelector('[data-target-state] option[value="selected"]').hasAttribute("disabled"), true, "the selected scope is not offered");
+    // The Story itself has an undecided parent (the Epic): nothing is limited.
+    work.value = fixture.story.id;
+    work.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await waitFor(() => editor.querySelector("[data-target-scope-note]") === null, "the unlimited Story");
+    for (const target of [own, second, third]) assert.equal(native(target).hasAttribute("disabled"), false);
+    // Five languages: the note follows the page's language.
+    work.value = fixture.subtask.id;
+    work.dispatchEvent(new window.Event("change", { bubbles: true }));
+    for (const locale of ["zh-CN", "ja", "ko", "fr"]) {
+      document.querySelector(`[data-locale-option="${locale}"]`)?.click();
+      await waitFor(() => document.querySelector("#work-project-scope-note")?.textContent === locales[locale]["projects.parentScope"].replace("{projects}", "TCRN-INC148-DOM-SECOND"), `${locale}: the scope note`);
+    }
+  } finally { await closePage(page, fixture); }
+});
+
+// TCRN-CROSS-INIT-053 R46 (I12; U20 D6): a refused save says which refusal, in the engine's own words, and
+// how to recover. The parent is narrowed elsewhere after the page read it, so the page's choice is stale.
+if (!MUTATION) test("R46 I12: a refused relation shows its reason code, the engine's words and how to recover", async () => {
+  const fixture = await scopedWorkFixture("tcrn-r46-i12-refusal-");
+  const [, second] = fixture.targets;
+  const key = JSON.stringify({ libraryId: second.libraryId, projectId: second.projectId });
+  const locales = await localeTable();
+  const page = await loadExecutedDom(fixture);
+  try {
+    const { document, window } = page;
+    const editor = await openWorkEditor(page);
+    const work = editor.querySelector("[data-target-work]");
+    work.value = fixture.subtask.id;
+    work.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await waitFor(() => editor.querySelector("[data-target-scope-note]"), "the subtask's editor");
+    const story = (await cli(["work-list", "--workspace", fixture.workspace], fixture.deviceEnv)).records.find((record) => record.id === fixture.story.id);
+    await cli(["work-annotate", "--workspace", fixture.workspace, "--at", nextAt(), "--actor", "agent:test", "--id", story.id, "--expected-revision", String(story.revision), "--involved-projects", JSON.stringify({ state: "coordination-only", targets: [] })], fixture.atelier);
+    editor.querySelector("[data-target-state]").value = "selected";
+    [...editor.querySelectorAll(".tcrn-multi-select-dropdown__value option")].find((option) => option.value === key).setAttribute("selected", "");
+    editor.querySelector("[data-target-save]").click();
+    const refusal = await waitFor(() => editor.querySelector("[data-target-refusal]"), "the refusal");
+    assert.equal(refusal.dataset.targetRefusal, "WORKSPACE_INPUT_INVALID");
+    assert.ok(refusal.classList.contains("tcrn-inline-alert") && refusal.classList.contains("tcrn-inline-alert--danger"));
+    assert.equal(refusal.querySelector("code").textContent, "WORKSPACE_INPUT_INVALID");
+    assert.equal(refusal.querySelector("[data-target-refusal-engine]").textContent, "child projects exceed the declared parent scope", "the engine's own words");
+    assert.equal(refusal.querySelector("[data-target-refusal-engine]").getAttribute("lang"), "en");
+    assert.equal(refusal.querySelector("[data-target-refusal-recovery]").textContent, locales.en["projects.recoverScope"]);
+    assert.match(receiptText(document), /^✕/u);
+    const subtask = (await cli(["work-list", "--workspace", fixture.workspace], fixture.deviceEnv)).records.find((record) => record.id === fixture.subtask.id);
+    assert.equal(subtask.involvedProjects?.state ?? "undecided", "undecided", "nothing was saved");
+  } finally { await closePage(page, fixture); }
+});
+
+// TCRN-CROSS-INIT-053 R46 (I12; U20 D9, c1): on the coordination chain the model tables are read only and
+// say why, since its catalog lists its own runtime settings only; its gate page still saves.
+if (!MUTATION) test("R46 I12: the coordination chain's model pages are read only and say why, and its gate page still saves", async () => {
+  const fixture = await projectChainFixture("tcrn-r46-i12-coordination-");
+  const locales = await localeTable();
+  const page = await loadExecutedDom(fixture);
+  try {
+    const { document, window } = page;
+    const select = document.querySelector("#library-select");
+    select.value = fixture.coordination.project;
+    select.dispatchEvent(new window.Event("change", { bubbles: true }));
+    await waitFor(() => document.querySelector("#rail-workspace-label").textContent === "TCRN-R45-COORDINATION", "the coordination chain");
+    await page.waitForSettled();
+    for (const [page_, key] of [["model-categories", "models.category"], ["model-tiers", "models.tiers"]]) {
+      document.querySelector(`[data-page-target="${page_}"]`)?.click();
+      const view = document.querySelector(`#${page_}-view`);
+      const note = view.querySelector(`[data-collection-read-only-note="${key}"]`);
+      assert.ok(note, `${key}: the page says why it is read only`);
+      assert.equal(note.textContent, locales.en["collection.coordinationReadOnly"].replace("{chain}", "TCRN-R45-COORDINATION"));
+      assert.equal(view.querySelectorAll("[data-collection-save], [data-collection-add], [data-collection-reset], [data-collection-remove]").length, 0, `${key}: no control that would save`);
+      assert.equal(view.querySelectorAll("[data-collection-field]:not([disabled])").length, 0, `${key}: no editable field`);
+    }
+    assert.equal(document.querySelector("[data-escalation-summary]"), null, "no escalation settings the chain does not have");
+    document.querySelector('[data-page-target="gates"]')?.click();
+    assert.ok(document.querySelector('#gate-add-form button[type="submit"][data-cli-action="gates-config-set"]'), "the gate page still adds a gate");
+    document.querySelector('[data-locale-option="fr"]')?.click();
+    document.querySelector('[data-page-target="model-tiers"]')?.click();
+    assert.equal(document.querySelector('[data-collection-read-only-note="models.tiers"]').textContent, locales.fr["collection.coordinationReadOnly"].replace("{chain}", "TCRN-R45-COORDINATION"));
+  } finally { await closePage(page, fixture); }
+});
+
 if (!MUTATION) test("R45 U14: execution contexts read as one row per target in the page's language, not as JSON", async () => {
   const fixture = await projectChainFixture("tcrn-r45-u14-context-");
   const [, second] = fixture.targets;

@@ -30,18 +30,18 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
   "currentSources": [
     {
       "path": "portal/index.html",
-      "bytes": 373257,
-      "sha256": "1dee1b656a163eac80606824937f39657dec08df2bdd3e1a1a8e383d2921353e"
+      "bytes": 403130,
+      "sha256": "2d7faf1dcec053fb31fd066848275c5139a3ebd02a850047fc8dcaacd6c9809a"
     },
     {
       "path": "portal/locales.js",
-      "bytes": 197983,
-      "sha256": "db808426a4b3a755506f5d1eee4fa6c3565cc497c574f4ccaebedb4d4b2c1abe"
+      "bytes": 208696,
+      "sha256": "b237be0313027a385755af19e1f092df1904a5ea08d501c4de70f24d98cf1ff0"
     },
     {
       "path": "portal/portal.mjs",
-      "bytes": 66727,
-      "sha256": "8e2947917ffdaa456563234476537ab42836be7105de1d968a99e3e43c04eb3b"
+      "bytes": 72996,
+      "sha256": "622e2606cc933037c1499c6b015bbe31097f7f0e6daa583b816f3f885c62640f"
     },
     {
       "path": "portal/scripts/i18n-proof.mjs",
@@ -55,13 +55,13 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
     },
     {
       "path": "portal/tests/portal.test.mjs",
-      "bytes": 127672,
-      "sha256": "5c7fe955129e79b4d33b9f200e594f5ca924d04871b1fac0431730a9336053db"
+      "bytes": 147406,
+      "sha256": "47fee91a043f42137684bee299bb64ed5426ca1686950afeaee69ac0416f6d09"
     },
     {
       "path": "portal/tests/ui-presence.test.mjs",
-      "bytes": 213731,
-      "sha256": "1268b970bf6989bd65090be2084c2679c80bcc030e93a10352dbe9c04df3dbd1"
+      "bytes": 261827,
+      "sha256": "3fc050d653113c07fb870c286102512e4ce9f44c12531824de8ceb54d1fcf329"
     },
     {
       "path": "packages/core/src/doctor.ts",
@@ -92,10 +92,11 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
   "hostRoleScan": {
     "scan": "rg --no-line-number 'claude-code|codex|reviewer|role ===|host ===|host \\?' portal/index.html | sed 's/^ *//' | sort -u",
     "exitCode": 0,
-    "matchCount": 3,
+    "matchCount": 4,
     "matches": [
       "$(\"#design-authority\").hidden = state.settings?.chain?.role === \"coordination\" || state.settingGroup !== authorityGroup || designAuthorityState.status === \"unset\";",
       ": target?.chain?.role === \"coordination\" ? t(\"projects.coordination\") : t(\"projects.unnamed\");",
+      "const collectionReadOnly = (key) => state.settings?.chain?.role === \"coordination\" && Array.isArray(state.settings?.settings) && currentSetting(key) === undefined;",
       "select.hidden = state.settings?.chain?.role === \"coordination\";"
     ]
   },
@@ -121,9 +122,9 @@ This record covers the current Portal tree. Historical INC-153 and INC-155 evide
         "leg": "key-coverage",
         "ok": true,
         "reasonCode": "EVERY_KEY_TRANSLATED",
-        "keyCount": 465,
+        "keyCount": 483,
         "localeCount": 5,
-        "expectedStrings": 2325,
+        "expectedStrings": 2415,
         "gaps": []
       },
       {
